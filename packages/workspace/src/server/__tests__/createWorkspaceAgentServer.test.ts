@@ -99,7 +99,6 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
       },
     }
     const hostFactory = () => undefined
-    const pluginFactory = () => undefined
     const result = collectWorkspaceAgentServerPlugins({
       workspaceRoot,
       systemPromptAppend: "Host prompt",
@@ -116,7 +115,6 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
           agentTools: [domainTool],
           piPackages: ["npm:plugin-pi"],
           extensionPaths: ["/plugin/agent/index.ts"],
-          extensionFactories: [pluginFactory],
         },
       ],
     })
@@ -136,10 +134,9 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
       "/plugin/agent/index.ts",
       "/host/agent/index.ts",
     ])
-    expect(result.agentOptions.pi?.extensionFactories).toEqual([
-      pluginFactory,
-      hostFactory,
-    ])
+    // Host-level extensionFactories flow through unchanged; plugin-level
+    // declaration has been dropped (DESIGN.md §11 deferred capability).
+    expect(result.agentOptions.pi?.extensionFactories).toEqual([hostFactory])
   })
 
   test("plugin collector applies server defaults before host plugins", async () => {

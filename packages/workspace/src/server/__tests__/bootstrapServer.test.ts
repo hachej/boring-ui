@@ -22,7 +22,6 @@ describe("bootstrapServer", () => {
       systemPromptAppend: "",
       piPackages: [],
       extensionPaths: [],
-      extensionFactories: [],
       agentTools: [],
       provisioningContributions: [],
       routeContributions: [],
@@ -351,29 +350,6 @@ describe("bootstrapServer", () => {
     expect(plugin.routes).toBe(routes)
     expect(plugin.provisioning?.templateDirs).toHaveLength(1)
     expect(plugin.provisioning?.nodePackages).toHaveLength(1)
-  })
-
-  describe("extensionFactories", () => {
-    it("defaults to empty array when no plugins", () => {
-      const result = bootstrapServer({})
-      expect(result.extensionFactories).toEqual([])
-    })
-
-    it("collects extensionFactories from plugins", () => {
-      const factory = vi.fn()
-      const result = bootstrapServer({
-        plugins: [{ id: "factory-plugin", extensionFactories: [factory] }],
-      })
-      expect(result.extensionFactories).toEqual([factory])
-    })
-
-    it("rejects invalid extensionFactories", () => {
-      expect(() =>
-        bootstrapServer({
-          plugins: [{ id: "bad-factory", extensionFactories: [123 as any] }],
-        }),
-      ).toThrow(ServerPluginError)
-    })
   })
 
   describe("extensionPaths", () => {
