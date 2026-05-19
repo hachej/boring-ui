@@ -421,7 +421,11 @@ function handleScaffoldPluginCommand(opts: { positionals: string[] }) {
   }
   console.log("")
   console.log("Next steps:")
-  console.log(`  1. npx @hachej/boring-ui-cli ${workspaceRoot}`)
-  console.log(`  2. ask the agent: /reload`)
-  console.log(`  3. open the "${name}" tab in the left sidebar`)
+  console.log(`  1. edit front/index.tsx (and server/index.ts if you need agent tools)`)
+  console.log(`  2. bash \`boring-ui verify-plugin\` — confirms manifests + files are valid`)
+  console.log(`  3. ask the user: /reload`)
+  console.log("")
+  console.log("Front-only plugin (no agent tools / HTTP routes)?")
+  console.log(`  Remove BOTH server/index.ts AND the \`"server": "server/index.ts"\` line`)
+  console.log(`  from package.json. \`boring-ui verify-plugin\` will catch the half-removed case.`)
 }

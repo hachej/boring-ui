@@ -1,13 +1,20 @@
-# Plugin template
+# Full npm-package plugin template (`plugins/_template-full/`)
 
-Canonical, self-contained shape for plugins under `plugins/*`. The
-existing plugins (`askUserPlugin`, `data-explorer`, `data-catalog`) are
+Canonical, self-contained shape for **publishable npm-package plugins**
+under `plugins/*` — `tsup` builds to `dist/`, consuming apps install
+the published package and declare it in `defaultPluginPackages`. The
+existing plugins (`ask-user`, `data-explorer`, `data-catalog`) are
 aligned to match this shape — if they drift, fix them, not the template.
+
+> **Building a user plugin instead** (hot-reloadable, no build step,
+> drops into a workspace's `.pi/extensions/<name>/`)? Don't copy this
+> template. Run `boring-ui scaffold-plugin <name>` — see
+> `plugins/_template-hot-reload/README.md`.
 
 ## Scaffolding a new plugin
 
 ```sh
-cp -R plugins/_template plugins/<your-name>
+cp -R plugins/_template-full plugins/<your-name>
 cd plugins/<your-name>
 # rename: `sample` → `<your-name>` in src/, package.json:name,
 #         tsup entries, vitest aliases as needed
