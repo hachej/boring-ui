@@ -48,10 +48,18 @@ is an array of registration objects:
 | `providers` / `bindings` / `catalogs` | (rare) | Advanced |
 | `setup` | `(api) => void` | Escape hatch — runtime branching, called LAST |
 
-The function form `definePlugin("id", (api) => { api.registerPanel(...) })`
-is also accepted (existing in-repo plugins use it), but the declarative
-form above is preferred for new code — it matches the shape most JS
-plugin systems use.
+`definePlugin` takes a single declarative config object — the legacy
+3-arg `definePlugin("id", factory, opts)` form was removed. To chain
+an imperative factory (e.g. when composing with a 3rd-party kit),
+call it from the `setup` escape hatch:
+
+```ts
+definePlugin({
+  id: "my-extended",
+  panels: [...],
+  setup: (api) => baseKitFactory(api),
+})
+```
 
 **Names that DO NOT EXIST and will silently fail:**
 

@@ -9,10 +9,9 @@ import { sampleSurfaceResolver } from "./surfaceResolver"
  * it dispatches each declarative field to the corresponding
  * `api.register*` method.
  *
- * `definePlugin(config)` accepts a declarative config object. The
- * function form `definePlugin(id, (api) => void, { label? })` also
- * works for backwards compatibility but the declarative form is
- * preferred for new plugins.
+ * `definePlugin(config)` takes a single declarative config object.
+ * For imperative composition (calling an external factory), use the
+ * `setup: (api) => void` escape hatch — see SKILL.md.
  *
  * Plugins in `.pi/extensions/<name>/` also get hot-reloaded — the
  * workspace dynamically re-imports this module and re-runs the
