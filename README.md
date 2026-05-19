@@ -24,6 +24,21 @@ You bring the intelligence. Boring UI brings the workspace.
 
 ---
 
+## What it looks like
+
+![Boring UI — chat, file tree, workbench, and command palette across one shell](docs/assets/readme/demo.gif)
+
+Three surfaces in one shell:
+
+- **Chat** (centre) — you steer; the agent calls tools
+- **File tree** (right) — the sandbox the agent reads and writes
+- **Workbench** (right of file tree) — where the agent opens panels: editors, tables, catalogs, custom plugin panes
+- **Command palette** (`⌘K`) — keyboard-driven access to commands and catalogs
+
+Plugins extend the workbench with new pane types, commands, and catalogs. The agent decides when to open them.
+
+---
+
 ## Quickstart
 
 ```bash
@@ -41,21 +56,6 @@ It opens at `http://localhost:5200`. Try these in chat:
 - _"create a markdown file called notes.md with bullet points of my open files"_
 
 You'll see the agent open files in the workbench, render results into panels, and react to your follow-ups — all from the chat box, against your real directory.
-
----
-
-## What it looks like
-
-![Boring UI — chat, file tree, workbench, and command palette across one shell](docs/assets/readme/demo.gif)
-
-Three surfaces in one shell:
-
-- **Chat** (centre) — you steer; the agent calls tools
-- **File tree** (right) — the sandbox the agent reads and writes
-- **Workbench** (right of file tree) — where the agent opens panels: editors, tables, catalogs, custom plugin panes
-- **Command palette** (`⌘K`) — keyboard-driven access to commands and catalogs
-
-Plugins extend the workbench with new pane types, commands, and catalogs. The agent decides when to open them.
 
 ---
 
