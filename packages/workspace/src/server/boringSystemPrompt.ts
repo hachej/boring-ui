@@ -1,25 +1,31 @@
 /**
- * boring-ui system prompt — numbered TODO workflow with the canonical
- * plugin shape inlined.
+ * boring-ui system prompt — numbered TODO workflow.
  *
- * Tried shrinking this to a pure TODO with no inline canonical (just
- * scaffold → edit → verify → /reload pointers). Both Gemini-2.5-Flash
- * and Qwen3.6-Plus regressed to ~4-6 of 7 evals across runs — drifting
- * back to invented APIs, wrong file paths, or skipping the customize
- * step after scaffold. The inlined shape is what anchors reliability
- * across runs; the TODO numbering is what makes the workflow legible.
+ * The canonical plugin shape is NOT inlined here. Instead:
+ *   - `boring-ui scaffold-plugin` writes the shape into the workspace
+ *     (the agent reads the generated files to learn it).
+ *   - `boring-ui verify-plugin` validates manifests + file existence
+ *     and surfaces actionable hints (the closed loop).
+ *   - The `boring-plugin-authoring` skill (under <available_skills>)
+ *     is the longer-form reference for composition, file visualizers,
+ *     etc.
+ *
+ * The prompt's only job is to teach the WORKFLOW + name the common
+ * hallucinations that don't exist. Everything else flows from the
+ * tools and the skill.
  */
 export interface BuildBoringSystemPromptOptions {
   /**
-   * Optional scaffold CLI invocation (e.g. `boring-ui scaffold-plugin`
-   * or `npx @hachej/boring-ui-cli scaffold-plugin`). When set, step 1
-   * becomes "scaffold then edit"; when unset, step 1 is "create the
-   * plugin files from scratch".
+   * CLI invocation that writes the canonical files (e.g.
+   * `boring-ui scaffold-plugin` or `npx @hachej/boring-ui-cli
+   * scaffold-plugin`). When unset, step 1 falls back to "read the
+   * skill" — the agent then has no canonical anchor and reliability
+   * suffers on smaller models, so always provide this in production.
    */
   scaffoldCommand?: string
   /**
-   * Optional verify CLI invocation. Defaults to
-   * `boring-ui verify-plugin`. Set to `false` to drop the verify step.
+   * CLI invocation that validates `.pi/extensions/*` manifests. Defaults
+   * to `boring-ui verify-plugin`. Set to `false` to drop the verify step.
    */
   verifyCommand?: string | false
 }
@@ -32,68 +38,24 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions = {
   if (opts.scaffoldCommand) {
     n += 1
     steps.push(
-      `**${n}. Scaffold.** Bash \`${opts.scaffoldCommand} <kebab-name>\` — writes the canonical \`package.json\` + \`front/index.tsx\` under \`<cwd>/.pi/extensions/<kebab-name>/\`. Then read the two generated files.`,
+      `**${n}. Scaffold.** Bash \`${opts.scaffoldCommand} <kebab-name>\` — writes the canonical \`package.json\` + \`front/index.tsx\` under \`<cwd>/.pi/extensions/<kebab-name>/\`. Read the two generated files to learn the exact shape (\`definePlugin({...})\`, manifest fields, import paths). Do NOT skip this step and write from training-data memory.`,
+    )
+  } else {
+    n += 1
+    steps.push(
+      `**${n}. Read the \`boring-plugin-authoring\` skill** from the \`<location>\` listed under \`<available_skills>\` for the canonical \`package.json\` + \`front/index.tsx\` shape.`,
     )
   }
 
   n += 1
-  const editStep = opts.scaffoldCommand
-    ? `**${n}. Edit the generated files to implement what the user actually asked for.** The scaffolded files are a stub — you MUST replace the placeholder content (the default "Hello" pane, default ids/labels) with the real implementation.`
-    : `**${n}. Create the plugin files** under \`<cwd>/.pi/extensions/<kebab-name>/\` (never the package root or \`src/\` / \`dist/\`).`
   steps.push(
-    [
-      editStep,
-      "",
-      "Canonical `front/index.tsx`:",
-      "```tsx",
-      `import { definePlugin } from "@hachej/boring-workspace/plugin"`,
-      "",
-      "function MyPane() { return <div>Hello</div> }",
-      "",
-      "export default definePlugin({",
-      `  id: "<kebab-name>",        // MUST match package.json#name`,
-      `  label: "<Label>",`,
-      `  panels: [{ id: "<name>.panel", label: "<Label>", component: MyPane }],`,
-      `  commands: [{ id: "<name>.open", title: "Open <Label>", panelId: "<name>.panel" }],`,
-      `  leftTabs: [{ id: "<name>.tab", title: "<Label>", panelId: "<name>.panel" }],`,
-      "  // surfaceResolvers, providers, bindings, catalogs, setup (escape hatch) — all optional",
-      "})",
-      "```",
-      "",
-      "Canonical `package.json`: declares `name` (must match `definePlugin({id})`), `boring.front` (path string), optional `boring.server` (string path like `\"server/index.ts\"` — NEVER the boolean `true`), optional `pi.systemPrompt` (when-to-use hint).",
-      "",
-      "**For agent tools / HTTP routes**, add `server/index.ts`:",
-      "```ts",
-      `import { defineServerPlugin, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"`,
-      "",
-      "export default function (",
-      "  _options: unknown,",
-      "  ctx: { workspaceRoot: string; bridge: unknown },",
-      "): WorkspaceServerPlugin {",
-      "  return defineServerPlugin({",
-      `    id: "<kebab-name>",`,
-      "    agentTools: [{",
-      `      name: "<snake_case_tool_name>",`,
-      `      description: "<what the tool does>",`,
-      `      parameters: { type: "object", properties: {} },`,
-      "      async execute() {",
-      `        return { content: [{ type: "text", text: "..." }] }`,
-      "      },",
-      "    }],",
-      `    systemPrompt: "Use <tool_name> when …",`,
-      "  })",
-      "}",
-      "```",
-      "Tool method is `execute` (NOT `handler`); return `{ content: [{ type: \"text\", text }] }` (NOT a bare string); set `boring.server: \"server/index.ts\"` in package.json.",
-      "",
-      "**Forbidden** (these DO NOT EXIST): `createPlugin`, `defineFrontPlugin`, `registerComponent`, `addPanel`, `@hachej/boring-pi` as an import, `@boring-ui/*`, files at the package root, `boring.server: true`.",
-    ].join("\n"),
+    `**${n}. Edit the generated files to implement what the user asked for.** Keep the imports, the \`definePlugin\` call shape, and the manifest layout from the scaffold — only change the placeholder content (default "Hello" pane, default ids/labels, sample comments) into the real implementation.`,
   )
 
   if (verify) {
     n += 1
     steps.push(
-      `**${n}. Verify.** Bash \`${verify}\` — validates every plugin under \`<cwd>/.pi/extensions/\` and prints per-plugin errors with actionable hints. Read the output carefully: if it WARNs about an empty/missing dir, your plugin files went to the wrong cwd. Fix what it reports and re-run until it returns \`OK\`. Use this after EVERY plugin edit.`,
+      `**${n}. Verify.** Bash \`${verify}\` — validates every plugin under \`<cwd>/.pi/extensions/\` and prints per-plugin errors with actionable hints. Read the output: if it WARNs about an empty/missing dir, your plugin files went to the wrong cwd. Fix what it reports and re-run until it returns \`OK\`. Use this after EVERY edit.`,
     )
   }
 
@@ -107,7 +69,15 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions = {
       "",
       ...steps,
       "",
-      "For file visualizers, plugin composition, providers/bindings/catalogs, conditional registration via `setup`, or deeper server-tool patterns: read the `boring-plugin-authoring` skill from the `<location>` under `<available_skills>`.",
+      "**Common hallucinations** — these names DO NOT EXIST in boring-ui and will silently fail; do not write them:",
+      "- API factories: `createPlugin`, `defineFrontPlugin`, `defineComponent` — use `definePlugin({id, panels, commands, ...})` from `@hachej/boring-workspace/plugin`.",
+      "- Imperative method names: `registerComponent`, `addPanel`, `registerCommand` (no `Panel`), `registerTab` — the actual names are `registerPanel`, `registerPanelCommand`, `registerLeftTab`, `registerSurfaceResolver` (and you usually express these declaratively, not as method calls).",
+      "- Import paths: `@hachej/boring-pi` (it's a skills package, not for code), `@boring-ui/*`, `@hachej/pi-sdk` — use `@hachej/boring-workspace/plugin` for front and `@hachej/boring-workspace/server` for server.",
+      "- Server tool method: `handler` — use `execute`. Return shape: `{ content: [{ type: \"text\", text }] }` (NEVER a bare string).",
+      "- Manifest values: `boring.server: true` — use `false` (no server) OR a relative path string like `\"server/index.ts\"`.",
+      "- File layout: files at the package root, or `src/` / `dist/` / `lib/` subdirectories — the scaffold's layout (`front/index.tsx`, `server/index.ts`) is the only one the workspace loads.",
+      "",
+      "For file visualizers, plugin composition, providers/bindings/catalogs, conditional registration via `setup`, or deeper server-tool patterns: read the `boring-plugin-authoring` skill under `<available_skills>`.",
     ].join("\n"),
   ].join("\n\n")
 }
