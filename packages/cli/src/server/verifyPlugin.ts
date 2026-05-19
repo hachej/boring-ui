@@ -171,10 +171,12 @@ export function formatVerifyResult(result: VerifyPluginResult): string {
   const lines: string[] = []
   const failures = result.outcomes.filter((o) => !o.ok)
   if (failures.length === 0) {
-    lines.push(`OK — ${result.outcomes.length} plugin(s) verified, no errors.  (scanned ${result.extensionsDir})`)
+    lines.push(`OK — ${result.outcomes.length} plugin(s) have valid manifests + present files. (scanned ${result.extensionsDir})`)
     for (const outcome of result.outcomes) {
       lines.push(`  ✓ ${outcome.id}`)
     }
+    lines.push("")
+    lines.push("Note: this validator does NOT execute plugin code. Syntax / type / runtime errors only surface on /reload.")
   } else {
     lines.push(`FAILED — ${failures.length} of ${result.outcomes.length} plugin(s) have errors.  (scanned ${result.extensionsDir})`)
     lines.push("")
