@@ -38,13 +38,14 @@ function preflightErrorId(pluginDir: string): string {
 }
 
 function fileSignature(path: string | undefined): string {
+  // mtimeMs + size is sufficient for hot-reload change detection — every
+  // edit through the write/edit tools bumps mtime, and any meaningful
+  // content change either bumps size or mtime. Reading the whole file
+  // here was a real perf bug for 50MB+ front bundles (sync I/O on the
+  // reactor thread on every /reload).
   if (!path || !existsSync(path)) return "missing"
   const stat = statSync(path)
-  const hash = createHash("sha256")
-  hash.update(String(stat.mtimeMs))
-  hash.update(String(stat.size))
-  hash.update(readFileSync(path))
-  return hash.digest("hex")
+  return `${stat.mtimeMs}:${stat.size}`
 }
 
 function directorySignature(root: string | undefined): string {
@@ -54,8 +55,18 @@ function directorySignature(root: string | undefined): string {
   // Without this, pnpm `link:` workflows (where plugin sources live
   // behind a symlinked package root) silently never trigger reload.
   // Caps prevent runaway walks if a symlink chain re-enters itself.
+  //
+  // We hash (rel-path, mtimeMs, size) per file, NOT the file contents,
+  // because reading every file's bytes per /reload is O(total bytes) and
+  // synchronous — measurably bad for plugin dirs with built artifacts.
+  // mtime+size catches every edit through the write/edit tools.
+  //
+  // realpath of root can throw if the dir vanishes between the existsSync
+  // check above and this call (concurrent uninstall). Treat that as
+  // "missing" instead of crashing the whole reload pipeline.
   const visited = new Set<string>()
-  const rootReal = realpathSync(root)
+  let rootReal: string
+  try { rootReal = realpathSync(root) } catch { return "missing" }
   visited.add(rootReal)
   let count = 0
   const visit = (dir: string, depth: number) => {
@@ -79,7 +90,10 @@ function directorySignature(root: string | undefined): string {
         const targetStat = statSync(target)
         hash.update(rel); hash.update("symlink:"); hash.update(target)
         if (targetStat.isDirectory()) visit(target, depth + 1)
-        else if (targetStat.isFile()) hash.update(readFileSync(target))
+        else if (targetStat.isFile()) {
+          hash.update(String(targetStat.mtimeMs))
+          hash.update(String(targetStat.size))
+        }
         continue
       }
       hash.update(rel)
@@ -87,9 +101,8 @@ function directorySignature(root: string | undefined): string {
       hash.update(String(stat.size))
       if (stat.isDirectory()) {
         visit(path, depth + 1)
-      } else if (stat.isFile()) {
-        hash.update(readFileSync(path))
       }
+      // For regular files, mtime+size above is enough — no readFileSync.
     }
   }
   visit(root, 0)
@@ -248,7 +261,15 @@ export class BoringPluginAssetManager {
 
   private emit(event: BoringPluginEvent): void {
     for (const listener of [...this.listeners]) {
-      try { listener(event) } catch { /* ignore bad clients */ }
+      try {
+        listener(event)
+      } catch (error) {
+        // Don't let one bad listener block others, but DO log so SSE
+        // bugs are visible. Use stderr directly — manager.ts has no
+        // logger dependency by design.
+        const message = error instanceof Error ? error.message : String(error)
+        console.error(`[BoringPluginAssetManager] listener threw on ${event.type} for ${event.id}: ${message}`)
+      }
     }
   }
 

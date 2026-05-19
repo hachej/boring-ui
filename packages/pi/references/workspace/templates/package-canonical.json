@@ -11,8 +11,7 @@
   "private": true,
   "boring": {
     "label": "<Label>",
-    "front": "front/index.tsx",
-    "server": "server/index.ts"
+    "front": "front/index.tsx"
   },
   "pi": {
     "systemPrompt": "<Label> plugin — describe what it does so the agent knows when to use it."

@@ -30,8 +30,19 @@ export function scaffoldPlugin(opts: ScaffoldPluginOptions): ScaffoldPluginResul
   }
   const workspaceRoot = resolve(opts.workspaceRoot)
   const pluginDir = join(workspaceRoot, ".pi", "extensions", opts.name)
-  if (existsSync(pluginDir)) {
-    throw new Error(`plugin already exists at ${pluginDir}`)
+  // Create the plugin dir up-front with recursive:false on the leaf so
+  // we get EEXIST atomically — protects against two parallel scaffold
+  // runs racing on existsSync. Parent dirs (.pi/extensions/) come
+  // through mkdirSync({recursive:true}) below.
+  mkdirSync(join(workspaceRoot, ".pi", "extensions"), { recursive: true })
+  try {
+    mkdirSync(pluginDir, { recursive: false })
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === "EEXIST") {
+      throw new Error(`plugin already exists at ${pluginDir}`)
+    }
+    throw error
   }
 
   const templatesDir = opts.templatesDir ?? resolveCanonicalTemplatesDir(workspaceRoot)
