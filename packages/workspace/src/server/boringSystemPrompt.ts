@@ -23,15 +23,12 @@ export interface BuildBoringSystemPromptOptions {
    * suffers on smaller models, so always provide this in production.
    */
   scaffoldCommand?: string
-  /**
-   * CLI invocation that validates `.pi/extensions/*` manifests. Defaults
-   * to `boring-ui verify-plugin`. Set to `false` to drop the verify step.
-   */
-  verifyCommand?: string | false
+  /** CLI invocation that validates `.pi/extensions/*` manifests. */
+  verifyCommand: string
 }
 
-export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions = {}): string {
-  const verify = opts.verifyCommand === undefined ? "boring-ui verify-plugin" : opts.verifyCommand
+export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): string {
+  const verify = opts.verifyCommand
   const steps: string[] = []
   let n = 0
 
@@ -52,12 +49,10 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions = {
     `**${n}. Edit the generated files to implement what the user asked for.** Keep the imports, the \`definePlugin\` call shape, and the manifest layout from the scaffold — only change the placeholder content (default "Hello" pane, default ids/labels, sample comments) into the real implementation.`,
   )
 
-  if (verify) {
-    n += 1
-    steps.push(
-      `**${n}. Verify.** Bash \`${verify}\` — validates every plugin under \`<cwd>/.pi/extensions/\` and prints per-plugin errors with actionable hints. Read the output: if it WARNs about an empty/missing dir, your plugin files went to the wrong cwd. Fix what it reports and re-run until it returns \`OK\`. Use this after EVERY edit.`,
-    )
-  }
+  n += 1
+  steps.push(
+    `**${n}. Verify.** Bash \`${verify}\` — validates every plugin under \`<cwd>/.pi/extensions/\` and prints per-plugin errors with actionable hints. Read the output: if it WARNs about an empty/missing dir, your plugin files went to the wrong cwd. Fix what it reports and re-run until it returns \`OK\`. Use this after EVERY edit.`,
+  )
 
   n += 1
   steps.push(`**${n}. Ask the user to run \`/reload\`** to publish the change.`)

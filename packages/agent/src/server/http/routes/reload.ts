@@ -1,18 +1,15 @@
 import type { FastifyInstance } from "fastify"
 import type { AgentHarness } from "../../../shared/harness.js"
+import type { PluginRestartWarning } from "../../../shared/agentPluginEvents.js"
 
-/**
- * One per plugin that loaded successfully but whose server-side
- * surfaces (routes, agentTools) still hold pre-reload code. The
- * /api/v1/agent/reload response surfaces these so the chat UI can
- * render a "restart needed" banner without subscribing to SSE.
- *
- * Shape mirrors what the workspace's collectRestartWarnings() emits;
- * we keep it untyped here (Record-shaped) to avoid agent → workspace
- * dependency.
- */
 export interface ReloadHookResult {
-  restart_warnings?: ReadonlyArray<{ id: string; surfaces: string[]; message: string }>
+  /**
+   * One per plugin that loaded successfully but whose server-side
+   * surfaces (routes, agentTools) still hold pre-reload code. The
+   * /api/v1/agent/reload response surfaces these so the chat UI can
+   * render a "restart needed" banner without subscribing to SSE.
+   */
+  restart_warnings?: ReadonlyArray<PluginRestartWarning>
 }
 
 export interface ReloadRoutesOptions {

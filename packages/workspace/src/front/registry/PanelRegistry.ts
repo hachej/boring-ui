@@ -34,20 +34,6 @@ export class PanelRegistry {
     this.emit()
   }
 
-  unregisterByPluginId(pluginId: string): void {
-    let changed = false
-    for (const [id, panel] of this.panels) {
-      if (panel.pluginId === pluginId) {
-        this.panels.delete(id)
-        this.lazyComponentCache.delete(id)
-        this.wrapperComponentCache.delete(id)
-        this.registrationOrder = this.registrationOrder.filter((oid) => oid !== id)
-        changed = true
-      }
-    }
-    if (changed) this.emit()
-  }
-
   unregister(id: string): void {
     if (!this.panels.delete(id)) return
     this.lazyComponentCache.delete(id)
