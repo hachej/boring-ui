@@ -10,17 +10,28 @@ Traditional SaaS is built around workflows users drive by hand — buttons, form
 
 Agents change that.
 
-When software can understand intent and act, the UI collapses to three surfaces:
+When software can understand intent and act, the app collapses to three surfaces:
 
 - **Chat** — tell the agent what to do.
-- **Workbench** — inspect, steer, and refine the result.
-- **File sandbox** — the read/write substrate the agent works against.
+- **Workbench** — inspect, steer, and refine the results.
+- **Sandbox** — the file read/write substrate the agent works against.
 
-Boring UI ships those surfaces out of the box.
+That's the core. 
 
-Skills, tools, panels, and domain logic come through plugins.
+Every Boring UI app gets these three surfaces out of the box.
 
-You bring the intelligence. Boring UI brings the workspace.
+But every app is different. Different data. Different workflows. Different ways to visualize results and steer the agent.
+
+A data app needs charts. A docs app needs side-by-side previews. A code app needs diffs. The agent's skills and tools must match the domain.
+
+That's where the plugin system comes in. 
+
+Plugins let you fully customize both the agent and the workspace:
+
+- **Agent plugins** — add skills, tools, prompts, and server routes.
+- **UI plugins** — add panels, views, commands, and surface resolvers.
+
+You bring the domain logic. Boring UI brings the surfaces and the extension points to shape them.
 
 ---
 
@@ -28,14 +39,15 @@ You bring the intelligence. Boring UI brings the workspace.
 
 ![Boring UI — chat, file tree, workbench, and command palette across one shell](docs/assets/readme/demo.gif)
 
-Three surfaces in one shell:
+The core ships one shell with three surfaces:
 
-- **Chat** (centre) — you steer; the agent calls tools
-- **File tree** (right) — the sandbox the agent reads and writes
-- **Workbench** (right of file tree) — where the agent opens panels: editors, tables, catalogs, custom plugin panes
-- **Command palette** (`⌘K`) — keyboard-driven access to commands and catalogs
+- **Chat** (centre) — you steer, the agent calls tools
+- **File tree** (left) — the filesystem the agent reads and writes
+- **Workbench** (right) — where the agent opens panels: editors, tables, previews, and plugin panes
 
-Plugins extend the workbench with new pane types, commands, and catalogs. The agent decides when to open them.
+A **command palette** (`⌘K`) provides keyboard-driven access across all surfaces.
+
+That's the core. Every app starts here.
 
 ---
 
@@ -61,7 +73,9 @@ You'll see the agent open files in the workbench, render results into panels, an
 
 ## Plugin system
 
-Boring UI is a chassis, not a closed app. The shell stays the same; what runs inside changes per app, per user, per surface.
+Boring UI is a chassis, not a closed app. 
+
+The shell stays the same; what runs inside changes per app, per user, per surface.
 
 Plugins contribute UI and agent behaviour through a single `package.json` manifest. Once registered, they sit alongside the built-ins.
 
@@ -90,7 +104,7 @@ Start from [plugins/_template](plugins/_template/README.md). The exact manifest 
 
 ## Built with boring-ui
 
-[![MacroAnalyst — AI macro research, accelerated](docs/assets/readme/showcase-macro.png)](https://boring-macro.fly.dev/)
+![MacroAnalyst — AI macro research, accelerated](docs/assets/readme/showcase-macro.png)
 
 **[MacroAnalyst](https://boring-macro.fly.dev/)** — an AI analyst for macroeconomic research. Ask in plain English, get charts back in under a minute. 800,000+ economic series from FRED, BLS, BEA, and Treasury, all behind one chat and one workbench.
 
@@ -105,8 +119,8 @@ More on the same chassis in flight: `boring-accountant`, `boring-design`, `borin
 ### Packages
 
 
-| Package                    | Role                             | README                                               |
-| -------------------------- | -------------------------------- | ---------------------------------------------------- |
+| Package                    | Role                             | README                                             |
+| -------------------------- | -------------------------------- | -------------------------------------------------- |
 | `@hachej/boring-agent`     | Agent runtime, tools, chat UI    | [packages/agent](packages/agent/README.md)         |
 | `@hachej/boring-workspace` | Workbench, panels, plugin system | [packages/workspace](packages/workspace/README.md) |
 | `@hachej/boring-core`      | Auth, DB, app factory            | [packages/core](packages/core/README.md)           |
@@ -117,8 +131,8 @@ More on the same chassis in flight: `boring-accountant`, `boring-design`, `borin
 ### Plugins
 
 
-| Plugin                         | What it adds                                                              | README                                                     |
-| ------------------------------ | ------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Plugin                         | What it adds                                                              | README                                                   |
+| ------------------------------ | ------------------------------------------------------------------------- | -------------------------------------------------------- |
 | `@hachej/boring-ask-user`      | Agent-to-user question/answer surface and `ask_user` tool                 | [plugins/ask-user](plugins/ask-user/README.md)           |
 | `@hachej/boring-data-explorer` | Searchable, faceted data tables — the primitive for explorer-style panels | [plugins/data-explorer](plugins/data-explorer/README.md) |
 | `@hachej/boring-data-catalog`  | Configurable catalog tab built on `data-explorer`                         | [plugins/data-catalog](plugins/data-catalog/README.md)   |
@@ -128,8 +142,8 @@ More on the same chassis in flight: `boring-accountant`, `boring-design`, `borin
 ### Reference apps
 
 
-| App                         | Purpose                                                | README                                                             |
-| --------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------ |
+| App                         | Purpose                                                | README                                                           |
+| --------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------- |
 | `apps/full-app`             | Production-shaped reference: auth, DB, multi-workspace | [apps/full-app](apps/full-app/README.md)                         |
 | `apps/agent-playground`     | `@hachej/boring-agent` alone — no workbench, no DB     | [apps/agent-playground](apps/agent-playground/README.md)         |
 | `apps/workspace-playground` | `@hachej/boring-workspace` + plugins — no auth backend | [apps/workspace-playground](apps/workspace-playground/README.md) |

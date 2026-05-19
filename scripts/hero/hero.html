@@ -4,7 +4,10 @@
   <meta charset="utf-8" />
   <title>Boring UI hero</title>
   <link rel="preconnect" href="https://rsms.me/" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&display=swap" />
   <style>
     :root {
       /* Token mirror — values tracked against packages/workspace/src/globals.css (light theme) */
@@ -13,15 +16,17 @@
       --fg:        #171717;
       --muted:     #3F3A33;
       --hairline:  #E8E1D5;
-      --accent:    #C7591A;     /* one accent, used sparingly */
+      --accent:    #C7591A;
+      --ink:       #171717;
       --mono: ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
       --sans: "Inter", "Inter var", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      --hand: "Caveat", "Inter", sans-serif;
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: var(--bg); }
     body {
       width: 1920px;
-      height: 720px;
+      height: 900px;
       font-family: var(--sans);
       color: var(--fg);
       font-feature-settings: "ss01", "cv11", "cv02";
@@ -36,19 +41,7 @@
       padding: 0 96px;
       align-items: center;
     }
-    .text {
-      padding-top: 8px;
-    }
-    .meta-row {
-      display: flex;
-      gap: 24px;
-      margin-top: 28px;
-      font-family: var(--mono);
-      font-size: 13px;
-      color: var(--muted);
-      letter-spacing: 0.01em;
-    }
-    .meta-row span { opacity: 0.8; }
+    .text { padding-top: 8px; }
     .eyebrow {
       display: inline-flex;
       align-items: center;
@@ -74,11 +67,6 @@
       line-height: 0.94;
       margin: 0 0 32px 0;
     }
-    h1 .accent {
-      color: var(--fg);
-      font-style: italic;
-      font-weight: 500;
-    }
     p.lede {
       font-size: 24px;
       line-height: 1.55;
@@ -86,10 +74,6 @@
       margin: 0 0 40px 0;
       max-width: 480px;
       font-weight: 400;
-    }
-    p.lede b {
-      color: var(--fg);
-      font-weight: 600;
     }
     .cmd {
       display: inline-flex;
@@ -107,15 +91,28 @@
     }
     .cmd .dollar { color: var(--muted); user-select: none; }
     .cmd .pkg { font-weight: 500; }
+    .meta-row {
+      display: flex;
+      gap: 24px;
+      margin-top: 28px;
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--muted);
+      letter-spacing: 0.01em;
+    }
+
+    /* Right column: framed screenshot + annotations */
     .shot-wrap {
       position: relative;
       width: 100%;
+      height: 100%;
       display: flex;
       align-items: center;
       justify-content: center;
     }
     .shot {
       width: 100%;
+      max-height: 720px;
       height: auto;
       object-fit: contain;
       border-radius: 14px;
@@ -125,6 +122,37 @@
         0 24px 56px -28px rgba(20, 16, 8, 0.18);
       background: var(--canvas);
       display: block;
+    }
+
+    .annot {
+      position: absolute;
+      font-family: var(--hand);
+      font-weight: 700;
+      font-size: 56px;
+      color: var(--ink);
+      line-height: 1;
+      letter-spacing: -0.01em;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    .annot.top-left { top: 18px; left: 80px; }
+    .annot.bottom-right { bottom: 18px; right: 50px; }
+
+    .arrow {
+      position: absolute;
+      pointer-events: none;
+    }
+    .arrow.top-left {
+      top: 60px;
+      left: 80px;
+      width: 240px;
+      height: 150px;
+    }
+    .arrow.bottom-right {
+      bottom: 60px;
+      right: 60px;
+      width: 240px;
+      height: 150px;
     }
   </style>
 </head>
@@ -142,15 +170,35 @@
         <span class="pkg">npx&nbsp;@hachej/boring-ui-cli</span>
       </div>
       <div class="meta-row">
-        <span>MIT</span>
-        <span>·</span>
-        <span>TypeScript</span>
-        <span>·</span>
-        <span>Workspace&nbsp;+&nbsp;Agent&nbsp;+&nbsp;Plugins</span>
+        <span>MIT</span><span>·</span><span>TypeScript</span><span>·</span><span>Workspace&nbsp;+&nbsp;Agent&nbsp;+&nbsp;Plugins</span>
       </div>
     </div>
+
     <div class="shot-wrap">
       <img class="shot" src="../../docs/assets/readme/source-hero.png" alt="Boring UI workspace" />
+
+      <!-- Your Agent — top-left, arrow curves down-right into the chat hero text -->
+      <div class="annot top-left">Your Agent</div>
+      <svg class="arrow top-left" viewBox="0 0 240 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M20,8 C40,40 80,76 150,110 Q180,124 210,124"
+              stroke="#171717" stroke-width="3.5" fill="none"
+              stroke-linecap="round" stroke-linejoin="round" />
+        <!-- arrowhead -->
+        <path d="M210,124 L196,118 M210,124 L202,110"
+              stroke="#171717" stroke-width="3.5" fill="none"
+              stroke-linecap="round" />
+      </svg>
+
+      <!-- Your Workbench — bottom-right, arrow curves up-left into the workbench README -->
+      <div class="annot bottom-right">Your Workbench</div>
+      <svg class="arrow bottom-right" viewBox="0 0 240 140" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M220,132 C190,100 130,68 70,30 Q42,14 24,12"
+              stroke="#171717" stroke-width="3.5" fill="none"
+              stroke-linecap="round" stroke-linejoin="round" />
+        <path d="M24,12 L40,16 M24,12 L32,28"
+              stroke="#171717" stroke-width="3.5" fill="none"
+              stroke-linecap="round" />
+      </svg>
     </div>
   </div>
 </body>
