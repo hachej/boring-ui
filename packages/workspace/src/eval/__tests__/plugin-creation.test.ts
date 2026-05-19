@@ -32,12 +32,16 @@ const EVAL_PLUGIN_PACKAGE = join(EVAL_PLUGIN_DIR, "package.json")
 const EVAL_CSV_PLUGIN_DIR = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-csv-viz")
 const EVAL_CSV_PLUGIN_PACKAGE = join(EVAL_CSV_PLUGIN_DIR, "package.json")
 
+const EVAL_MIN_PLUGIN_DIR = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-min-tasks")
+const EVAL_MIN_PLUGIN_PACKAGE = join(EVAL_MIN_PLUGIN_DIR, "package.json")
+
 describeIf("package plugin creation + reload eval (live LLM)", () => {
   let app: FastifyInstance
 
   beforeAll(async () => {
     rmSync(EVAL_PLUGIN_DIR, { recursive: true, force: true })
     rmSync(EVAL_CSV_PLUGIN_DIR, { recursive: true, force: true })
+    rmSync(EVAL_MIN_PLUGIN_DIR, { recursive: true, force: true })
     app = await createWorkspaceAgentServer({
       workspaceRoot: WORKSPACE_PKG_ROOT,
       mode: "direct",
@@ -50,6 +54,7 @@ describeIf("package plugin creation + reload eval (live LLM)", () => {
     if (app) await app.close()
     rmSync(EVAL_PLUGIN_DIR, { recursive: true, force: true })
     rmSync(EVAL_CSV_PLUGIN_DIR, { recursive: true, force: true })
+    rmSync(EVAL_MIN_PLUGIN_DIR, { recursive: true, force: true })
   })
 
   test(
@@ -374,6 +379,92 @@ Then run /reload to verify.
       expect(recovered.statusCode).toBe(200)
 
       rmSync(pluginDir, { recursive: true, force: true })
+    },
+    600_000,
+  )
+
+  // Eval #1 from the roadmap: skill-only path. The prompt deliberately
+  // contains NO skeleton, NO file shape, NO type names — only the user
+  // intent. If the bundled boring-plugin-authoring skill is self-
+  // sufficient, the agent should read it and produce a working plugin.
+  // If this fails, the skill needs to be strengthened.
+  test(
+    "minimal prompt + bundled skill is enough to produce a working plugin",
+    async () => {
+      const result = await evalAgentPrompt({
+        app,
+        prompt: [
+          "Create a hot-reloadable boring-ui plugin under",
+          "`.pi/extensions/eval-min-tasks/` (use that exact unscoped package",
+          "name in package.json — no leading @scope) that opens a panel",
+          "showing a simple todo list (a static <ul> with 3 hard-coded items",
+          "is fine for v1).",
+          "",
+          "After writing the files, tell me to run /reload.",
+        ].join("\n"),
+        // Skill-only path: outcome > mechanism. We don't care whether
+        // the agent uses write/bash/sed — only whether the files exist
+        // and reload succeeds. expect=[] disables tool-shape assertion.
+        expect: [],
+        model: EVAL_MODEL,
+        retries: 1,
+        timeoutMs: 300_000,
+      })
+
+      // result.ok with expect=[] just means the turn completed; the real
+      // assertions are the file-on-disk + /reload checks below.
+      expect(result.ok, formatFailure(result)).toBe(true)
+      expect(existsSync(EVAL_MIN_PLUGIN_PACKAGE), "agent did not produce eval-min-tasks/package.json").toBe(true)
+
+      const packageJson = JSON.parse(readFileSync(EVAL_MIN_PLUGIN_PACKAGE, "utf8"))
+      expect(packageJson.name).toBe("eval-min-tasks")
+      const declaredFront: string | undefined = packageJson.boring?.front
+      // boring.front in package.json is authoritative. If the agent
+      // chose a custom layout (e.g. src/TodoPanel.tsx), accept it as
+      // long as the manifest declares it.
+      const candidateFronts = declaredFront
+        ? [declaredFront]
+        : [
+            "front/index.tsx", "front/index.ts",
+            "src/front/index.tsx", "src/front/index.ts",
+            "src/index.tsx", "src/index.ts",
+          ]
+      const frontPath = candidateFronts
+        .map((p) => join(EVAL_MIN_PLUGIN_DIR, p))
+        .find((p) => existsSync(p))
+      const { readdirSync } = await import("node:fs")
+      const dirListing = (): string => {
+        try {
+          return JSON.stringify(walkSync(EVAL_MIN_PLUGIN_DIR), null, 2)
+        } catch (error) {
+          return `(unreadable: ${error instanceof Error ? error.message : String(error)})`
+        }
+      }
+      function walkSync(root: string): Record<string, unknown> {
+        const out: Record<string, unknown> = {}
+        for (const entry of readdirSync(root, { withFileTypes: true })) {
+          out[entry.name] = entry.isDirectory() ? walkSync(join(root, entry.name)) : "<file>"
+        }
+        return out
+      }
+      expect(frontPath, `no front entry found (tried: ${candidateFronts.join(", ")}); dir contents:\n${dirListing()}`).toBeTruthy()
+
+      const frontSource = readFileSync(frontPath!, "utf8")
+      // Skill teaches two equivalent shapes: definePlugin OR a bare
+      // BoringFrontFactory. Accept either; reject the dead patterns.
+      expect(frontSource).toMatch(/definePlugin|BoringFrontFactory/)
+      expect(frontSource).toContain("registerPanel")
+      expect(frontSource).not.toContain("defineFrontPlugin")
+      // Loosely check the agent rendered a list-like structure.
+      expect(frontSource).toMatch(/<ul|<li|React\.createElement\(["'](ul|li)["']/)
+
+      // /reload discovers it cleanly.
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(reload.statusCode).toBe(200)
+      const list = await app.inject({ method: "GET", url: "/api/agent-plugins" })
+      const plugin = list.json().find((entry: { id: string }) => entry.id === "eval-min-tasks")
+      expect(plugin, "plugin not discovered after /reload").toBeTruthy()
+      expect(plugin.frontUrl).toContain("/@fs/")
     },
     600_000,
   )

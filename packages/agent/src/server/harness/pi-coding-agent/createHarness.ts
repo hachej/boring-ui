@@ -422,7 +422,15 @@ export function createPiCodingAgentHarness(opts: {
               ...(effectiveSkillPaths.length
                 ? { additionalSkillPaths: effectiveSkillPaths }
                 : {}),
-              ...(opts.pi?.noSkills || effectiveSkillPaths.length
+              // skillsOverride REPLACES Pi's resolved skill set, which
+              // includes skills contributed by host-declared pi packages
+              // (e.g. @hachej/boring-pi → boring-plugin-authoring). Only
+              // trigger it for the explicit `noSkills` opt-out, where the
+              // host wants a clean slate. Passing additionalSkillPaths is
+              // not, by itself, a request to throw away package skills —
+              // those should keep flowing through Pi's loader and merge
+              // with the additional paths.
+              ...(opts.pi?.noSkills
                 ? {
                     skillsOverride: () =>
                       loadSkills({
