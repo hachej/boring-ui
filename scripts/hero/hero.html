@@ -141,18 +141,19 @@
     .arrow {
       position: absolute;
       pointer-events: none;
+      overflow: visible;
     }
     .arrow.top-left {
-      top: 60px;
+      top: 56px;
       left: 80px;
-      width: 240px;
-      height: 150px;
+      width: 280px;
+      height: 170px;
     }
     .arrow.bottom-right {
-      bottom: 60px;
+      bottom: 56px;
       right: 60px;
-      width: 240px;
-      height: 150px;
+      width: 280px;
+      height: 170px;
     }
   </style>
 </head>
@@ -162,8 +163,8 @@
       <div class="eyebrow">An agent-first workspace</div>
       <h1>Boring UI</h1>
       <p class="lede">
-        Bring your agent skills. Get a UI.<br/>
-        Ask your agent to write plugins and customize the workbench to your needs.
+        Your agent writes plugins.<br/>
+        Your workbench adapts.
       </p>
       <div class="cmd">
         <span class="dollar">$</span>
@@ -179,23 +180,23 @@
 
       <!-- Your Agent — top-left, arrow curves down-right into the chat hero text -->
       <div class="annot top-left">Your Agent</div>
-      <svg class="arrow top-left" viewBox="0 0 240 130" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M20,8 C40,40 80,76 150,110 Q180,124 210,124"
+      <svg class="arrow top-left" viewBox="0 0 280 170" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M30,12 C60,50 110,96 190,140 Q220,156 244,158"
               stroke="#171717" stroke-width="3.5" fill="none"
               stroke-linecap="round" stroke-linejoin="round" />
         <!-- arrowhead -->
-        <path d="M210,124 L196,118 M210,124 L202,110"
+        <path d="M244,158 L228,152 M244,158 L234,144"
               stroke="#171717" stroke-width="3.5" fill="none"
               stroke-linecap="round" />
       </svg>
 
       <!-- Your Workbench — bottom-right, arrow curves up-left into the workbench README -->
       <div class="annot bottom-right">Your Workbench</div>
-      <svg class="arrow bottom-right" viewBox="0 0 240 140" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M220,132 C190,100 130,68 70,30 Q42,14 24,12"
+      <svg class="arrow bottom-right" viewBox="0 0 280 170" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M252,158 C220,120 150,84 80,40 Q48,20 28,16"
               stroke="#171717" stroke-width="3.5" fill="none"
               stroke-linecap="round" stroke-linejoin="round" />
-        <path d="M24,12 L40,16 M24,12 L32,28"
+        <path d="M28,16 L46,22 M28,16 L36,34"
               stroke="#171717" stroke-width="3.5" fill="none"
               stroke-linecap="round" />
       </svg>
