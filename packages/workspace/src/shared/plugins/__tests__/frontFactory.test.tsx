@@ -99,34 +99,30 @@ describe("boringFrontFactoryToPlugin", () => {
 })
 
 describe("definePlugin brand semantics (DESIGN.md §4.3 + §8)", () => {
-  it("returns a NEW wrapper that carries pluginId/pluginLabel", () => {
-    const factory: BoringFrontFactory = (api) => {
-      api.registerPanel({ id: "p", label: "P", component: TestPanel })
-    }
-    const wrapped = definePlugin("plugin-a", factory, { label: "Plugin A" })
+  it("returns a wrapper that carries pluginId/pluginLabel", () => {
+    const wrapped = definePlugin({
+      id: "plugin-a",
+      label: "Plugin A",
+      panels: [{ id: "p", label: "P", component: TestPanel }],
+    })
 
-    expect(wrapped).not.toBe(factory)
     expect(wrapped.pluginId).toBe("plugin-a")
     expect(wrapped.pluginLabel).toBe("Plugin A")
-    // Input factory is NOT mutated — it remains unbranded and reusable.
-    expect((factory as Partial<typeof wrapped>).pluginId).toBeUndefined()
-    expect((factory as Partial<typeof wrapped>).pluginLabel).toBeUndefined()
+    expect(typeof wrapped).toBe("function")
   })
 
-  it("calling definePlugin twice with the SAME id on the same factory is safe", () => {
-    const factory: BoringFrontFactory = () => undefined
-    const first = definePlugin("plugin-a", factory)
-    const second = definePlugin("plugin-a", factory)
+  it("each definePlugin call returns a fresh branded factory", () => {
+    const config = {
+      id: "plugin-a",
+      panels: [{ id: "p", label: "P", component: TestPanel }],
+    }
+    const first = definePlugin(config)
+    const second = definePlugin(config)
     expect(first.pluginId).toBe("plugin-a")
     expect(second.pluginId).toBe("plugin-a")
-  })
-
-  it("rebranding a wrapper with a different id throws", () => {
-    const factory: BoringFrontFactory = () => undefined
-    const wrapped = definePlugin("plugin-a", factory)
-    expect(() => definePlugin("plugin-b", wrapped)).toThrow(
-      /already branded as "plugin-a"/,
-    )
+    // Each call synthesizes a new internal factory; the brand wrappers
+    // are distinct function instances.
+    expect(first).not.toBe(second)
   })
 
   it("toWorkspacePlugin rejects bare factories without pluginId", () => {
@@ -137,12 +133,26 @@ describe("definePlugin brand semantics (DESIGN.md §4.3 + §8)", () => {
   })
 
   it("toWorkspacePlugin accepts a branded factory and produces outputs", () => {
-    const wrapped = definePlugin("plugin-a", (api) => {
-      api.registerPanel({ id: "p", label: "P", component: TestPanel })
+    const wrapped = definePlugin({
+      id: "plugin-a",
+      panels: [{ id: "p", label: "P", component: TestPanel }],
     })
     const plugin = toWorkspacePlugin(wrapped)
     expect(plugin.id).toBe("plugin-a")
     expect(plugin.outputs?.[0]).toMatchObject({ type: "panel" })
+  })
+
+  it("rejects the removed 3-arg form with a helpful migration message", () => {
+    // The legacy `definePlugin("id", (api) => ..., { label })` form was
+    // dropped. Callers attempting it get a runtime error pointing at
+    // the new declarative shape.
+    const factory: BoringFrontFactory = () => undefined
+    expect(() => (definePlugin as unknown as (...args: unknown[]) => unknown)("legacy", factory, { label: "L" })).toThrow(
+      /declarative config object/,
+    )
+    expect(() => (definePlugin as unknown as (...args: unknown[]) => unknown)("legacy")).toThrow(
+      /declarative config object/,
+    )
   })
 })
 
@@ -270,9 +280,14 @@ describe("intra-pluginId collision detection (DESIGN.md §6.7)", () => {
     const dataCatalogKit: BoringFrontFactory = (api) => {
       api.registerPanel({ id: "table", label: "Catalog Table", component: TestPanel })
     }
-    const wrapped = definePlugin("playground-catalog", (api) => {
-      dataExplorerKit(api)
-      dataCatalogKit(api)
+    // `setup` is the escape hatch for chaining imperative kits inside a
+    // declarative config; it surfaces the same collision detection.
+    const wrapped = definePlugin({
+      id: "playground-catalog",
+      setup: (api) => {
+        dataExplorerKit(api)
+        dataCatalogKit(api)
+      },
     })
     expect(() => toWorkspacePlugin(wrapped)).toThrow(/registers panel "table" twice/)
   })

@@ -1,11 +1,11 @@
 // CANONICAL front/index.tsx for a boring-ui plugin.
 // Copy this shape — replace <kebab-name> and <Label>.
 //
-// definePlugin accepts a DECLARATIVE config object (preferred — matches
-// the shape most JS plugin systems use). The function form
-// `definePlugin("<id>", (api) => { ... })` is also accepted for
-// backwards compatibility but the declarative form is what you'll see
-// in new code.
+// definePlugin takes a single DECLARATIVE config object. For
+// conditional registration or runtime branching that the declarative
+// fields can't express, use the optional `setup: (api) => void`
+// escape hatch — it runs LAST, after every declarative field has
+// been registered.
 
 import React from "react"
 import { definePlugin } from "@hachej/boring-workspace/plugin"
