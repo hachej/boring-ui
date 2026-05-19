@@ -6,7 +6,7 @@
 
 </div>
 
-The production reference app for boring-ui. Wires together `@hachej/boring/core` + `@hachej/boring-agent` + `@hachej/boring-workspace` into a deployable shell with Postgres, auth, workspaces, multi-user invites, email flows, and a full IDE workbench.
+The production reference app for boring-ui-v2. Wires together `@hachej/boring-core`, `@hachej/boring-agent`, and `@hachej/boring-workspace` into a deployable shell with Postgres, auth, workspaces, multi-user invites, email flows, and a full IDE workbench.
 
 ```bash
 git clone https://github.com/hachej/boring-ui.git && cd boring-ui && pnpm install && pnpm --filter full-app dev
@@ -29,7 +29,7 @@ git clone https://github.com/hachej/boring-ui.git && cd boring-ui && pnpm instal
 | **Agent workbench** | Chat, file tree, editor panels, command palette — all wired to the agent runtime |
 | **Three deployment targets** | Vercel (Fluid Compute + Firecracker VMs), Fly.io (Docker), Docker (anywhere) |
 | **Post-deploy smoke** | Validates signup → email verification → password reset → capabilities in production |
-| **Plugin-ready** | Compose workspace plugins via `WorkspaceProvider` — ask-user, data-catalog, or your own |
+| **Plugin-ready** | Compose workspace plugins via `WorkspaceAgentFront` — ask-user, data-catalog, or your own |
 
 ---
 
@@ -61,41 +61,23 @@ Open `http://localhost:5173`. You get:
 
 ## What's Inside
 
-### Server (`src/server/`)
-
-| File | Purpose |
-|------|---------|
-| `main.ts` | Production entrypoint — `createCoreApp()` + agent routes + static file serving |
-| `dev.ts` | Dev entrypoint with HMR-friendly rebuild chain |
-| `migrate.ts` | Standalone migration runner (run before first boot) |
-| `vercel-entry.ts` | Vercel Fluid Compute handler — same app, serverless topology |
-
-The server flow:
-```
-createCoreApp(config)
-  ├── Postgres DB (Drizzle)
-  ├── better-auth (sessions, email, reset)
-  ├── Core routes (/api/v1/workspaces/*, /api/v1/me, /api/v1/invites/*)
-  ├── Agent routes (registerAgentRoutes)
-  ├── Helmet + CORS + rate limits + secret redaction
-  └── Graceful shutdown
-```
-
 ### Frontend (`src/front/`)
 
-| File | Purpose |
-|------|---------|
-| `main.tsx` | Mounts `<BoringApp>` → routes → `WorkspaceProvider` → `IdeLayout` |
-
 ```tsx
-<BoringApp>
-  <Route path="/workspace/:id" element={
-    <WorkspaceProvider chatPanel={ChatPanel} workspaceId={id}>
-      <IdeLayout />
-    </WorkspaceProvider>
-  } />
-</BoringApp>
+import { CoreWorkspaceAgentFront } from '@hachej/boring-core/app/front'
+import '@hachej/boring-core/app/front/styles.css'
+
+createRoot(document.getElementById('root')!).render(
+  <CoreWorkspaceAgentFront
+    apiBaseUrl=""
+    apiTimeout={10_000}
+    persistenceEnabled
+    chatParams={{ thinkingControl: true }}
+  />,
+)
 ```
+
+`<CoreWorkspaceAgentFront>` is the one-stop front component from `@hachej/boring-core/app/front`. It bundles `<BoringApp>`, workspace routing, auth, and `<WorkspaceAgentFront>` into a single mount.
 
 ---
 
@@ -103,24 +85,25 @@ createCoreApp(config)
 
 ```
 ┌─────────────────────────────────────────────────┐
-│                  Browser (Vite/Svelte)           │
+│                  Frontend (Vite + React)         │
 │                                                  │
 │  /auth/*   /me   /workspace/:id                  │
 │  signin → workbench → chat + panels + tree      │
+│  <CoreWorkspaceAgentFront> mounts it all         │
 └──────────────────────┬──────────────────────────┘
                        │ HTTP (cookie auth)
 ┌──────────────────────▼──────────────────────────┐
 │               full-app (Fastify)                 │
 │                                                  │
 │  ┌──────────────────────────────────────────┐   │
-│  │  @hachej/boring/core                     │   │
+│  │  @hachej/boring-core                     │   │
 │  │  ├── better-auth (sessions, email)       │   │
 │  │  ├── workspace CRUD + invites + roles    │   │
 │  │  ├── capabilities aggregation            │   │
 │  │  └── config loader (TOML + env + Zod)   │   │
 │  └──────────────────────────────────────────┘   │
 │  ┌──────────────────────────────────────────┐   │
-│  │  @hachej/boring/agent                    │   │
+│  │  @hachej/boring-agent                    │   │
 │  │  ├── agent harness (pi-coding-agent)     │   │
 │  │  ├── tool catalog (bash, read, write…)   │   │
 │  │  └── chat session management             │   │
@@ -175,7 +158,7 @@ Required variables:
 ```bash
 DATABASE_URL=postgres://...
 BETTER_AUTH_SECRET=<64-char hex>
-BETTER_AUTH_URL=http://localhost:5173
+BETTER_AUTH_URL=http://localhost:3000
 WORKSPACE_SETTINGS_ENCRYPTION_KEY=<32-byte hex>
 MAIL_FROM=noreply@yourapp.dev
 MAIL_TRANSPORT_URL=console://    # dev: logs to stdout
@@ -247,8 +230,6 @@ docker build -f apps/full-app/Dockerfile -t boring-full-app .
 docker run --rm -p 3000:3000 --env-file apps/full-app/.env boring-full-app
 ```
 
-Same binary, portable to any container host.
-
 ---
 
 ## Smoke Testing
@@ -304,7 +285,6 @@ pnpm --filter full-app smoke:post-deploy
 | `PORT` | No | Server port (default 3000) |
 | `BORING_AGENT_MODE` | No | `direct`, `local`, or `vercel-sandbox` |
 | `ANTHROPIC_API_KEY` | Yes (prod) | Claude API key |
-| `INFOMANIAK_API_TOKEN` | No | Infomaniak OpenAI-compatible provider |
 | `BORING_AGENT_DEFAULT_MODEL_PROVIDER` | No | Override default provider |
 | `BORING_AGENT_DEFAULT_MODEL_ID` | No | Override default model |
 
@@ -370,7 +350,7 @@ A: Not in production. For dev, you can set `CORE_STORES=local` in the core confi
 A: `dev.ts` rebuilds all workspace packages before each run for HMR. `main.ts` is the production entrypoint that runs pre-built artifacts.
 
 **Q: How do I add custom plugins to full-app?**  
-A: Register them in the `WorkspaceProvider` plugins array. See `packages/workspace/README.md` for the plugin contract.
+A: The frontend uses `<CoreWorkspaceAgentFront>` which is a composed component. For custom plugins, import `WorkspaceAgentFront` from `@hachej/boring-workspace/app/front` and compose your own front mount with `plugins={[...]}`.
 
 **Q: Can I deploy full-app to Render or Railway?**  
 A: Yes — both support Docker + Postgres. Use the Dockerfile and set the required env vars. The app is 12-factor.

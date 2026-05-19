@@ -10,7 +10,7 @@
 The foundation package for boring-ui apps: Postgres/Drizzle database schema, email/password auth (better-auth), config loader, Fastify HTTP app factory, and React frontend shell. Every child app imports core first.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hachej/boring-ui/main/scripts/install-core.sh | bash
+pnpm add @hachej/boring-core
 ```
 
 ---
@@ -152,7 +152,7 @@ await app.listen({ port: config.port })
 import { createRoot } from "react-dom/client"
 import { BoringApp } from "@hachej/boring-core/front"
 import { Route } from "react-router-dom"
-import "@boring/core/theme.css"
+import "@hachej/boring-core/theme.css"
 
 createRoot(document.getElementById("root")!).render(
   <BoringApp>

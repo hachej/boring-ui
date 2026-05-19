@@ -9,7 +9,7 @@
 Standalone rich playground for `@hachej/boring-agent`. Chat UI + agent runtime — no auth, no database, no workbench panels. Pure agent interaction surface.
 
 ```bash
-cp apps/agent-playground/.env.example apps/agent-playground/.env.local && pnpm --filter agent-playground dev
+PNPM --filter agent-playground dev
 ```
 
 ---
@@ -18,17 +18,18 @@ cp apps/agent-playground/.env.example apps/agent-playground/.env.local && pnpm -
 
 **The Problem**: You're working on the agent runtime — tweaking tools, adjusting the chat UI, testing new models — but you don't want the overhead of auth, Postgres, workspaces, and panels. You want to change code and see it live in a chat window.
 
-**The Solution**: `agent-playground` boots the agent in isolation with a Vite dev server. It auto-rebuilds `@hachej/boring-agent` before each run so source changes propagate without manual rebuilds. One env var to start.
+**The Solution**: `agent-playground` boots the agent in isolation with a Vite dev server. The server rebuilds `@hachej/boring-agent` on each startup so source changes propagate. For true HMR (edit agent source and see instant updates), use the `dev:local` script with `BORING_USE_LOCAL_PACKAGES=1`.
 
 ### Why Use agent-playground?
 
 | Feature | What It Does |
 |---------|--------------|
 | **Zero boilerplate** | No auth, no Postgres, no workspaces — just chat and agent |
-| **Auto-rebuild on save** | Dev script rebuilds `@hachej/boring-agent` so source changes are instant |
+| **Auto-rebuild on start** | Dev script rebuilds `@hachej/boring-agent` before each run |
+| **HMR with source alias** | `pnpm --filter agent-playground dev:local` resolves agent from source for instant updates |
 | **Model override** | Set provider/model via env vars to test different LLMs |
 | **Minimal surface** | Just `ChatPanel` + `SessionToolbar` — no layouts, plugins, or side chrome |
-| **Fastest iteration** | Start coding, save, the chat updates — full loop in seconds |
+| **Fastest iteration** | Change agent code, save, the chat updates — full loop in seconds |
 
 ---
 
@@ -40,19 +41,18 @@ git clone https://github.com/hachej/boring-ui.git
 cd boring-ui && pnpm install
 
 # 2. Set your API key
-cp apps/agent-playground/.env.example apps/agent-playground/.env.local
-echo 'ANTHROPIC_API_KEY=sk-ant-...' >> apps/agent-playground/.env.local
+echo 'ANTHROPIC_API_KEY=sk-ant-...' > apps/agent-playground/.env.local
 
 # 3. Start the playground
 pnpm --filter agent-playground dev
 ```
 
-Open `http://localhost:5173` — a full-screen chat with the agent ready to go.
+Open `http://localhost:5183` — a full-screen chat with the agent ready to go.
 
 Try it out:
 ```
 list all .ts files in the current directory
-read the README.md and summarize it in 3 bullet points
+read the README and summarize it in 3 bullet points
 find every import of "react" in src/
 ```
 
@@ -77,7 +77,7 @@ find every import of "react" in src/
 │  │ [ Send ]                            │   │
 │  └─────────────────────────────────────┘   │
 │                                             │
-│  [New Chat]  [Session: abc-123 ▼]          │
+│  [New Chat]  [Session: playground ▼]       │
 └─────────────────────────────────────────────┘
 ```
 
@@ -107,13 +107,10 @@ cd boring-ui && pnpm install
 ### 1. Environment
 
 ```bash
-cp apps/agent-playground/.env.example apps/agent-playground/.env.local
+echo 'ANTHROPIC_API_KEY=sk-ant-...' > apps/agent-playground/.env.local
 ```
 
-Minimum required:
-```bash
-ANTHROPIC_API_KEY=sk-ant-...
-```
+That's the only required variable.
 
 Optional model override:
 ```bash
@@ -127,11 +124,15 @@ BORING_AGENT_DEFAULT_MODEL_ID=claude-sonnet-4-6
 pnpm --filter agent-playground dev
 ```
 
-Opens at `http://localhost:5173` (Vite default).
+Opens at `http://localhost:5183`.
 
-### 3. Change Code + See It Live
+For HMR on agent source changes (edit `packages/agent/src/` and see instant updates):
 
-Edit `packages/agent/src/front/ChatPanel.tsx` → save → the playground auto-rebuilds and HMR updates the chat UI. No manual restart needed.
+```bash
+pnpm --filter agent-playground dev:local
+```
+
+This sets `BORING_USE_LOCAL_PACKAGES=1`, which resolves `@hachej/boring-agent` imports directly from `packages/agent/src/` — no rebuild needed.
 
 ---
 
@@ -157,7 +158,8 @@ Edit `packages/agent/src/front/ChatPanel.tsx` → save → the playground auto-r
            │ fs ops + exec
 ┌──────────▼──────────────┐
 │  Your filesystem        │
-│  (agent workspace root) │
+│  (agent workspace root  │
+│   = cwd)                │
 └─────────────────────────┘
 ```
 
@@ -169,17 +171,9 @@ The playground runs an in-process Fastify server that serves the agent HTTP surf
 
 | Command | Purpose |
 |---------|---------|
-| `pnpm --filter agent-playground dev` | Start with auto-rebuild + HMR |
+| `pnpm --filter agent-playground dev` | Build agent + start server. Requires restart after agent code changes. |
+| `pnpm --filter agent-playground dev:local` | Same but with `BORING_USE_LOCAL_PACKAGES=1` — resolves agent from source for HMR. |
 | `pnpm --filter agent-playground typecheck` | TypeScript check (builds agent first) |
-
-### Dev Script Behavior
-
-The `dev` script runs:
-```bash
-pnpm --filter @hachej/boring-agent build:dev && tsx --env-file=.env.local src/server/index.ts
-```
-
-The `build:dev` step ensures agent source changes are compiled before the playground server starts. This means you can edit agent code, save, and restart the playground with the updated build — no separate `pnpm build` needed.
 
 ---
 
@@ -206,10 +200,11 @@ The `build:dev` step ensures agent source changes are compiled before the playgr
 | Workbench panels | ❌ None | ✅ Full IDE | ✅ Full IDE |
 | File tree/editor | ❌ None | ✅ Yes | ✅ Yes |
 | Auth/workspaces | ❌ None | ✅ Multi-user | ❌ None |
+| HMR on agent source | ✅ `dev:local` | ❌ No | ❌ No |
 | Best for | Agent runtime dev | Production reference | Quick demos |
 
 **When to use agent-playground:**
-- You're modifying `@hachej/boring-agent` source (tools, chat UI, harness)
+- You're modifying `@hachej/boring-agent` source and want fast HMR feedback
 - You want the fastest possible agent test loop
 - You don't need panels, auth, or database
 
@@ -225,10 +220,10 @@ The `build:dev` step ensures agent source changes are compiled before the playgr
 | Error | Cause | Fix |
 |-------|-------|-----|
 | `ANTHROPIC_API_KEY not set` | Missing env var | Create `.env.local` with `ANTHROPIC_API_KEY` |
-| Port 5173 in use | Vite default port occupied | Set `PORT=5174` or kill the other process |
+| Port 5183 in use | Vite port occupied | Set `FRONTEND_PORT=5184` or kill the other process |
 | Agent returns empty responses | Invalid API key | Check your Anthropic API key is valid and has quota |
 | Build errors on startup | Agent package not compiled | Run `pnpm --filter @hachej/boring-agent build:dev` manually first |
-| HMR not updating | Stale build artifacts | Restart the dev server (the dev script rebuilds agent each time) |
+| Agent changes not reflected | Using `dev` instead of `dev:local` | `dev` rebuilds agent once at startup. Use `dev:local` for source-alias HMR. |
 
 ---
 
@@ -247,17 +242,17 @@ The `build:dev` step ensures agent source changes are compiled before the playgr
 **Q: Why not just use `npx @hachej/boring-agent`?**  
 A: The playground gives you HMR and auto-rebuild of agent source code. `npx` uses a compiled package — to see your code changes you'd need to rebuild and reinstall. The playground is faster for active development.
 
+**Q: What's the difference between `dev` and `dev:local`?**  
+A: `dev` rebuilds `@hachej/boring-agent` once at startup, then starts the server — you must restart to see changes. `dev:local` sets `BORING_USE_LOCAL_PACKAGES=1`, which resolves agent imports directly from `packages/agent/src/` — HMR updates instantly when you save.
+
 **Q: Can I change the agent's workspace root?**  
 A: Set `BORING_AGENT_WORKSPACE_ROOT=/path/to/dir` in your `.env.local`. The agent will see that directory as its filesystem.
 
-**Q: How do I test a different model?**  
+**Q: Can I test a different model?**  
 A: Set `BORING_AGENT_DEFAULT_MODEL_PROVIDER` and `BORING_AGENT_DEFAULT_MODEL_ID` in `.env.local`. Note: only Anthropic Claude is wired in v1.
 
-**Q: Can I add plugins to the playground?**  
-A: The playground uses a bare agent runtime. To add plugins (ask-user, data-catalog), add them to the agent app creation in `src/server/index.ts` and register them in the frontend.
-
-**Q: Where are sessions stored?**  
-A: In-memory via pi-coding-agent's session manager. They're lost on restart. For persistent sessions, see `apps/full-app` which uses JSONL files + Postgres.
+**Q: How do I add plugins to the playground?**  
+A: The playground uses a bare agent runtime (`createAgentApp` in `src/server/index.ts`). Add plugins via `createAgentApp({ plugins: [...] })`.
 
 ---
 

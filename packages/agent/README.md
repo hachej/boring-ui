@@ -227,6 +227,56 @@ default_id = "claude-sonnet-4-6"
 
 ---
 
+## How @hachej/boring-agent Compares
+
+| Feature | @hachej/boring-agent | Claude Code | Aider | Continue / Copilot |
+|---------|----------------------|-------------|-------|--------------------|
+| Browser UI | ✅ Full chat + sessions | ❌ Terminal only | ❌ Terminal only | ✅ VS Code extension |
+| CLI | ✅ `npx` anywhere | ✅ `claude` CLI | ✅ `aider` CLI | ❌ IDE only |
+| Embeddable | ✅ `<ChatPanel />` React component | ❌ Not embeddable | ❌ Not embeddable | ⚠️ Extension only |
+| Sandbox modes | ✅ direct / bwrap / Firecracker VM | ❌ No sandbox | ❌ No sandbox | ❌ No sandbox |
+| Plugin system | ✅ Pi skills + tools (local mode) | ❌ MCP only | ⚠️ Custom hooks | ⚠️ MCP + prompts |
+| Self-hostable | ✅ Open-source, any host | ❌ Proprietary cloud | ⚠️ Local only | ⚠️ Partial |
+| Multi-tenant | ✅ Via `@hachej/boring-core` | ❌ Single-user | ❌ Single-user | ❌ Single-user |
+
+**When to use @hachej/boring-agent:**
+- You want a browser-based or embedded coding agent in your own app
+- You need sandboxed execution (bwrap / Firecracker) for safety
+- You're building a multi-user SaaS around an agent (`@hachej/boring-core`)
+- You want a plugin system for domain-specific tools and panels
+
+**When it might not fit:**
+- You just want a quick terminal coding assistant (use Claude Code CLI)
+- You need full MCP ecosystem support (use Claude Code or Cursor)
+- You want an editor-first experience (use Continue or Copilot)
+
+---
+
+## How @hachej/boring-agent Compares
+
+| Feature | @hachej/boring-agent | Claude Code | Aider | Continue / Copilot |
+|---------|----------------------|-------------|-------|--------------------|
+| Browser UI | ✅ Full chat + sessions | ❌ Terminal only | ❌ Terminal only | ✅ VS Code extension |
+| CLI | ✅ `npx` anywhere | ✅ `claude` CLI | ✅ `aider` CLI | ❌ IDE only |
+| Embeddable | ✅ `<ChatPanel />` React component | ❌ Not embeddable | ❌ Not embeddable | ⚠️ Extension only |
+| Sandbox modes | ✅ direct / bwrap / Firecracker VM | ❌ No sandbox | ❌ No sandbox | ❌ No sandbox |
+| Plugin system | ✅ Pi skills + tools (local mode) | ❌ MCP only | ⚠️ Custom hooks | ⚠️ MCP + prompts |
+| Self-hostable | ✅ Open-source, any host | ❌ Proprietary cloud | ⚠️ Local only | ⚠️ Partial |
+| Multi-tenant | ✅ Via `@hachej/boring-core` | ❌ Single-user | ❌ Single-user | ❌ Single-user |
+
+**When to use @hachej/boring-agent:**
+- You want a browser-based or embedded coding agent in your own app
+- You need sandboxed execution (bwrap / Firecracker) for safety
+- You're building a multi-user SaaS around an agent (`@hachej/boring-core`)
+- You want a plugin system for domain-specific tools and panels
+
+**When it might not fit:**
+- You just want a quick terminal coding assistant (use Claude Code CLI)
+- You need full MCP ecosystem support (use Claude Code or Cursor)
+- You want an editor-first experience (use Continue or Copilot)
+
+---
+
 ## Troubleshooting
 
 | Error | Cause | Fix |
@@ -272,8 +322,6 @@ A: It lets the agent programmatically open files, panels, and surfaces in the wo
 A: The server wraps the harness's event stream in a per-turn ring buffer. Disconnected clients reconnect via `GET /api/v1/agent/chat/:sessionId/:turnId?cursor=<n>`. If the turn completed, it replays from `SessionStore`.
 
 ---
-
-## About Contributions
 
 *About Contributions:* Please don't take this the wrong way, but I do not accept outside contributions for any of my projects. I simply don't have the mental bandwidth to review anything, and it's my name on the thing, so I'm responsible for any problems it causes; thus, the risk-reward is highly asymmetric from my perspective. I'd also have to worry about other "stakeholders," which seems unwise for tools I mostly make for myself for free. Feel free to submit issues, and even PRs if you want to illustrate a proposed fix, but know I won't merge them directly. Instead, I'll have Claude or Codex review submissions via `gh` and independently decide whether and how to address them. Bug reports in particular are welcome. Sorry if this offends, but I want to avoid wasted time and hurt feelings. I understand this isn't in sync with the prevailing open-source ethos that seeks community contributions, but it's the only way I can move at this velocity and keep my sanity.
 

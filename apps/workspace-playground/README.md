@@ -27,7 +27,7 @@ pnpm --filter workspace-playground dev
 | **Full workbench out of the box** | Chat, file tree, editor panels, command palette, session toolbar |
 | **Plugins from source with HMR** | `ask-user`, `data-catalog`, `data-explorer` all loaded from workspace source |
 | **Demo catalog included** | A `playgroundDataCatalog` plugin with DuckDB-backed sample data to explore |
-| **E2E test suite** | Playwright tests validate panel lifecycle and plugin contracts |
+| **E2E test suite** | Playwright tests validate panel lifecycle and plugin contract |
 | **Fast iteration** | Dev script rebuilds workspace + plugins before each run — save, see it live |
 | **No auth / no DB overhead** | Runs in-memory — no Postgres setup needed |
 
@@ -44,7 +44,7 @@ cd boring-ui && pnpm install
 pnpm --filter workspace-playground dev
 ```
 
-Open `http://localhost:5173`. You see:
+Open `http://localhost:5200`. You see:
 - **File tree** (left sidebar) — browse files in the project root
 - **Chat panel** (center) — talk to the agent
 - **Editor** (center) — opens files from the tree or chat
@@ -55,37 +55,59 @@ Open `http://localhost:5173`. You see:
 
 ## What Loads in the Playground
 
+### Built into the Shell
+
+| Surface | Source | What It Adds |
+|---------|--------|--------------|
+| **Chat** | `@hachej/boring-agent` | `<ChatPanel>` with agent runtime (passed as `chatPanel` prop) |
+| **File tree / Editor** | `@hachej/boring-workspace` | Left tab + center panel + search (built into the shell, not user-registered plugins) |
+| **Command palette** | `@hachej/boring-workspace` | `⌘K`-driven command search (built into the shell) |
+
+### Registered as Plugins
+
 | Plugin | Package | What It Adds |
 |--------|---------|--------------|
-| **Chat** | `@hachej/boring-agent` | `<ChatPanel>` with agent runtime |
-| **Filesystem** | `@hachej/boring-workspace` | File tree (left tab) + editor (center panel) + search |
-| **Command palette** | `@hachej/boring-workspace` | `⌘K`-driven command search |
-| **Ask User** | `@hachej/boring-ask-user` | `ask_user` tool + panel for agent questions |
-| **Data Catalog** | `@hachej/boring-data-catalog` | Sidebar tab with sample data sources |
-| **Data Explorer** | `@hachej/boring-data-explorer` | Faceted table component (used by catalog) |
-| **Playground Data Catalog** | Local plugin (`src/plugins/`) | Demo catalog with DuckDB fixtures and sample queries |
+| **Ask User** | `@hachej/boring-ask-user` | `ask_user` tool + questions panel (`askUserPlugin`) |
+| **Data Catalog** | Local plugin (`src/plugins/`) | Demo catalog with DuckDB-backed sample data (`playgroundDataCatalogPlugin`) |
+| **Data Explorer** | `@hachej/boring-data-explorer` | Faceted table component — used by data catalog (transitive dep, not a standalone plugin) |
+
+Registered in `src/front/App.tsx`:
+```tsx
+<WorkspaceAgentFront
+  chatPanel={ChatPanel}
+  workspaceId={projectName}
+  plugins={[playgroundDataCatalogPlugin, askUserPlugin]}
+  // ...
+/>
+```
 
 ### Adding a Plugin to the Playground
 
-Register it in `src/plugins.ts` and add your plugin's build to the dev script in `package.json`:
+1. Create your plugin:
 
-```ts
-// src/plugins.ts
-import { myPlugin } from "./plugins/my-plugin/front"
+```tsx
+// src/plugins/my-plugin/front/index.tsx
+import { defineFrontPlugin, definePanel } from "@hachej/boring-workspace"
 
-export const plugins = [
-  filesystemPlugin,
-  chatPlugin,
-  askUserPlugin,
-  dataCatalogPlugin,
-  myPlugin,  // ← add here
-]
+export const myPlugin = defineFrontPlugin({
+  id: "my-plugin",
+  label: "My Plugin",
+  outputs: [{
+    type: "panel",
+    panel: definePanel({ id: "my-widget", title: "Widget", placement: "center", component: () => import("./WidgetPane").then(m => ({ default: m.WidgetPane })) }),
+  }],
+})
 ```
 
-```json
-// package.json — add to dev script
-"dev": "pnpm --filter @hachej/boring-ask-user build && pnpm --filter my-plugin build && vite"
+2. Register it in `src/front/App.tsx` — add to the `plugins` array on `WorkspaceAgentFront`:
+
+```tsx
+import { myPlugin } from "../plugins/my-plugin/front"
+
+plugins={[playgroundDataCatalogPlugin, askUserPlugin, myPlugin]}
 ```
+
+3. For frontend-only plugins: no dev script change needed. If your plugin needs server routes or agent tools, add it to `src/server/dev.ts` plugins or pluginFactories.
 
 ---
 
@@ -114,13 +136,53 @@ export const plugins = [
 
 ---
 
+## Architecture
+
+```
+┌─────────────────────────────────────────────────┐
+│  Browser (Vite + HMR)                           │
+│                                                  │
+│  <WorkspaceAgentFront plugins={[...]}>          │
+│    ├── <IdeLayout> (Dockview chrome)             │
+│    │   ├── File tree (left tab, built-in)        │
+│    │   ├── Editor (center panel, built-in)       │
+│    │   ├── ChatPanel (injected via chatPanel)    │
+│    │   ├── Command palette (⌘K, built-in)       │
+│    │   └── Data Catalog plugin (left tab)        │
+│    └── <UiBridgeClient> (SSE + HTTP poll)        │
+└───────────────────────┬──────────────────────────┘
+                        │ HTTP (local agent)
+┌───────────────────────▼──────────────────────────┐
+│  In-process Fastify (agent runtime)              │
+│                                                  │
+│  createWorkspaceAgentServer({                    │
+│    workspaceRoot,                                │
+│    mode: "local",                                │
+│    plugins: [playgroundDataServerPlugin],        │
+│    pluginFactories: [createAskUserServerPlugin], │
+│  })                                              │
+│                                                  │
+│  ├── Harness (pi-coding-agent)                   │
+│  ├── Tools (bash, read, write, edit, find…)      │
+│  ├── SessionStore (in-memory)                    │
+│  └── UiBridge (in-memory + SSE fan-out)          │
+└──────────┬───────────────────────────────────────┘
+           │ fs ops + exec
+┌──────────▼───────────────────────────────────────┐
+│  Project filesystem                              │
+│  (default: apps/workspace-playground/workspace)  │
+│  (seeded from src/fixtures/)                     │
+└──────────────────────────────────────────────────┘
+```
+
+---
+
 ## Installation
 
 ### Prerequisites
 
 - **Node.js** ≥ 18
 - **pnpm** ≥ 8
-- **Bun** (for DuckDB fixtures in demo catalog)
 
 ### From Source
 
@@ -139,7 +201,7 @@ cd boring-ui && pnpm install
 pnpm --filter workspace-playground dev
 ```
 
-Opens at `http://localhost:5173` (Vite default).
+Opens at `http://localhost:5200`.
 
 ### 2. The Dev Script
 
@@ -153,50 +215,13 @@ pnpm --filter @hachej/boring-data-catalog build
 vite
 ```
 
-This ensures source changes propagate to the running app without manual rebuilds. Edit a plugin, save, and the workbench updates.
-
-### 3. Source Alias (HMR)
-
-Set `BORING_USE_LOCAL_PACKAGES=1` for direct source imports with Vite HMR:
+For HMR on source changes (no rebuild needed):
 
 ```bash
-BORING_USE_LOCAL_PACKAGES=1 pnpm --filter workspace-playground dev
+pnpm --filter workspace-playground dev:local
 ```
 
-This gates the Vite alias to resolve `@hachej/boring-workspace/*` and plugin imports directly from source, giving you instant hot reload — no rebuild needed for most changes.
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────┐
-│  Browser (Vite + HMR)                           │
-│                                                  │
-│  <WorkspaceProvider plugins={[...]} chatPanel={ChatPanel}>
-│    ├── <IdeLayout> (Dockview chrome)              │
-│    │   ├── FileTree plugin (left tab)             │
-│    │   ├── Editor plugin (center panel)           │
-│    │   ├── ChatPanel (injected)                   │
-│    │   ├── Command palette (⌘K)                   │
-│    │   └── Data Catalog plugin (left tab)         │
-│    └── <UiBridgeClient> (SSE + HTTP poll)   │
-└───────────────────────┬──────────────────────────┘
-                        │ HTTP (local agent)
-┌───────────────────────▼──────────────────────────┐
-│  In-process Fastify (agent runtime)              │
-│                                                  │
-│  @hachej/boring-agent (direct mode)              │
-│  ├── Harness (pi-coding-agent)                   │
-│  ├── Tools (bash, read, write, edit, find…)      │
-│  ├── SessionStore (in-memory)                    │
-│  └── UiBridge (in-memory + SSE fan-out)          │
-└──────────┬───────────────────────────────────────┘
-           │ fs ops + exec
-┌──────────▼───────────────────────────────────────┐
-│  Project filesystem (workspace root = repo)      │
-└──────────────────────────────────────────────────┘
-```
+This sets `BORING_USE_LOCAL_PACKAGES=1`, which resolves workspace + agent + plugin imports directly from source.
 
 ---
 
@@ -206,12 +231,16 @@ This gates the Vite alias to resolve `@hachej/boring-workspace/*` and plugin imp
 pnpm --filter workspace-playground test:e2e
 ```
 
-Playwright test suite that validates:
-- Panel lifecycle (open, close, resize)
-- Plugin contract (panels render from registry)
-- UI bridge commands (agent → frontend dispatch)
-- Ask-user plugin panel flow
-- Data catalog plugin surface resolution
+Playwright test suite covering:
+
+| Spec File | What It Tests |
+|-----------|---------------|
+| `cmd-palette.spec.ts` | Command palette open/close/search behavior |
+| `cmd-palette-click.spec.ts` | Click-to-execute commands from the palette |
+| `cmd-effects.spec.ts` | UI bridge command effects (openFile, openPanel, etc.) |
+| `no-auth-deps.spec.ts` | Workspace loads without auth or database dependencies |
+| `resize-persistence.spec.ts` | Layout resize state persists across reloads |
+| `visual.spec.ts` | Visual regression — no unexpected UI breakage |
 
 Use this as a sanity check after making changes to panel registry or plugin invariant lints.
 
@@ -259,9 +288,9 @@ Use this as a sanity check after making changes to panel registry or plugin inva
 
 | Command | Purpose |
 |---------|---------|
-| `pnpm --filter workspace-playground dev` | Start dev server with auto-rebuild |
+| `pnpm --filter workspace-playground dev` | Build all deps + start Vite server |
 | `pnpm --filter workspace-playground dev:local` | Same with `BORING_USE_LOCAL_PACKAGES=1` for HMR |
-| `pnpm --filter workspace-playground build` | Build all workspace packages + Vite build |
+| `pnpm --filter workspace-playground build` | Build all workspace packages + Vite production build |
 | `pnpm --filter workspace-playground test:e2e` | Run Playwright test suite |
 | `pnpm --filter workspace-playground typecheck` | TypeScript check across all workspace deps |
 
@@ -269,7 +298,7 @@ Use this as a sanity check after making changes to panel registry or plugin inva
 
 ## Demo Data Catalog
 
-The playground ships with a `playgroundDataCatalog` plugin (`src/plugins/playgroundDataCatalog/`) that demonstrates the full data catalog contract:
+The playground ships with a `playgroundDataCatalogPlugin` (`src/plugins/playgroundDataCatalog/`) that demonstrates the full data catalog contract:
 
 - **Sample tables**: `customers`, `orders`, `products` — backed by DuckDB fixtures
 - **Server adapter**: Implements `ExplorerDataSource` with DuckDB SQL queries
@@ -286,21 +315,9 @@ This is the canonical example for how a data plugin integrates: server-side data
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BORING_USE_LOCAL_PACKAGES` | `0` | Set `1` to resolve workspace packages from source for HMR |
-| `BORING_AGENT_WORKSPACE_ROOT` | Repo root | Directory the agent sees as its filesystem |
+| `BORING_USE_LOCAL_PACKAGES` | `0` | Set `1` to resolve workspace packages from source for HMR (or use `dev:local`) |
+| `BORING_AGENT_WORKSPACE_ROOT` | `apps/workspace-playground/workspace` (seeded from fixtures) | Directory the agent sees as its filesystem |
 | `ANTHROPIC_API_KEY` | (unset) | API key for agent. If absent, agent will fail on first message |
-
-### Adding Custom Plugins
-
-Each new plugin needs two files:
-
-```
-src/plugins/my-plugin/
-├── front/index.tsx    # Front plugin: defineFrontPlugin({ ... })
-└── server/index.ts    # Server plugin: defineServerPlugin({ ... })  (optional)
-```
-
-Then register in `src/plugins.ts` and add the build step to the dev script.
 
 ---
 
@@ -310,10 +327,10 @@ Then register in `src/plugins.ts` and add the build step to the dev script.
 |-------|-------|-----|
 | `workspace package not built` | Need initial build | Run `pnpm --filter @hachej/boring-workspace build` first, or use `dev` script |
 | Panel renders blank | Lazy panel threw | Check `PluginErrorBoundary` — look in browser console for stack trace |
-| HMR not updating | Source alias not active | Set `BORING_USE_LOCAL_PACKAGES=1` in dev command |
-| Catalog tab missing | Data catalog plugin not loaded | Check `src/plugins.ts` includes `dataCatalogPlugin` |
+| HMR not updating | Source alias not active | Use `dev:local` (sets `BORING_USE_LOCAL_PACKAGES=1`) |
+| Catalog tab missing | Data catalog plugin not loaded | Check `plugins` array in `src/front/App.tsx` |
 | Agent returns errors | API key not set | Set `ANTHROPIC_API_KEY` in `.env` or env |
-| E2e tests fail | App not built | Run `pnpm --filter workspace-playground build` before `test:e2e` |
+| E2E tests fail | App not built | Run `pnpm --filter workspace-playground build` before `test:e2e` |
 
 ---
 
@@ -332,20 +349,20 @@ Then register in `src/plugins.ts` and add the build step to the dev script.
 **Q: Why does the dev script rebuild so many packages?**  
 A: The playground depends on workspace-source packages. The dev script ensures all of them are compiled before Vite starts, so your workspace + agent + plugin changes propagate without manual rebuilds.
 
-**Q: What does `BORING_USE_LOCAL_PACKAGES=1` do?**  
-A: It gates Vite aliases to resolve `@hachej/boring-workspace/*` imports directly from source. This enables HMR for workspace changes — edit a file, save, the browser updates without a full rebuild.
+**Q: What does `dev:local` do differently?**  
+A: It sets `BORING_USE_LOCAL_PACKAGES=1`, which gates Vite aliases to resolve `@hachej/boring-workspace/*` and `@hachej/boring-agent/*` imports directly from source. This enables HMR — edit a file, save, the browser updates without a full rebuild.
 
 **Q: Can I use this with a real database?**  
 A: The playground is designed for in-memory dev. For database-backed testing, use `apps/full-app` with its Postgres integration.
 
 **Q: How do I test a new plugin against the playground?**  
-A: Create your plugin files under `src/plugins/my-plugin/`, register in `src/plugins.ts`, add the build step to the dev script, and run `pnpm --filter workspace-playground dev`.
+A: Create your plugin files, import them in `src/front/App.tsx` (and `src/server/dev.ts` if server-side), add to the `plugins` array, and run `pnpm --filter workspace-playground dev:local` for instant HMR.
 
 **Q: What's the difference between the demo catalog and `@hachej/boring-data-catalog`?**  
-A: The playground has both: `@hachej/boring-data-catalog` (the package) plus `playgroundDataCatalog` (a local demo plugin that wires up sample DuckDB fixtures). The demo shows how to implement the catalog data adapter.
+A: The demo (`playgroundDataCatalogPlugin`) is a local plugin that wires up sample DuckDB fixtures. It shows how to implement the catalog data adapter. Use `@hachej/boring-data-catalog`'s `createDataCatalogPlugin()` factory for production catalogs.
 
 **Q: Where do E2E test files live?**  
-A: `apps/workspace-playground/e2e/`. Run them with `pnpm --filter workspace-playground test:e2e`.
+A: `apps/workspace-playground/e2e/` with spec files for command palette, UI bridge effects, layout persistence, and visual baseline.
 
 ---
 

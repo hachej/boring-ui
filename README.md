@@ -77,7 +77,9 @@ Boring UI is a chassis, not a closed app.
 
 The shell stays the same; what runs inside changes per app, per user, per surface.
 
-Plugins contribute UI and agent behaviour through a single `package.json` manifest. Once registered, they sit alongside the built-ins.
+Plugins contribute UI and agent behaviour through a single `package.json` manifest. 
+
+Once registered, they sit alongside the built-ins.
 
 **What you can add:**
 
@@ -85,9 +87,7 @@ Plugins contribute UI and agent behaviour through a single `package.json` manife
 - **Left-tabs** — persistent sidebar surfaces (catalogs, navigators, status)
 - **Commands** — entries in the command palette
 - **Catalogs** — searchable, faceted data explorers
-- **Surface resolvers** — let the agent open your panels via typed open-requests
 - **Agent skills, tools, prompts** — what the agent can do and how it reasons
-- **Context providers** — React context wrapped around the entire workspace tree
 
 **How adaptation works:**
 
