@@ -542,13 +542,15 @@ export async function createWorkspaceAgentServer(
     ],
     systemPromptAppend: [
       workspaceFsCapability === "strong" ? buildWorkspaceContextPrompt() : undefined,
-      // scaffoldCommand intentionally NOT passed: the published
-      // @hachej/boring-ui-cli (≤ 0.1.13) doesn't yet ship the
-      // scaffold-plugin subcommand; pointing the agent at
-      // `npx @hachej/boring-ui-cli scaffold-plugin <name>` makes
-      // it hang on the deprecated CLI startup. Re-enable once a
-      // new CLI version ships.
-      buildBoringSystemPrompt(),
+      // `boring-ui` resolves via PATH (pnpm's workspace bin or the
+      // user's npx/global install). We deliberately do NOT prefix with
+      // `npx @hachej/boring-ui-cli` here — that would pull the
+      // published version, which lags the locally-installed CLI when
+      // the agent is iterating in a monorepo. Keep the bin name short.
+      buildBoringSystemPrompt({
+        scaffoldCommand: "boring-ui scaffold-plugin",
+        verifyCommand: "boring-ui verify-plugin",
+      }),
       pluginCollection.agentOptions.systemPromptAppend,
     ].filter(Boolean).join("\n\n") || undefined,
     beforeReload: async () => {
