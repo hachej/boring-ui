@@ -282,8 +282,12 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
 })
 
 describe("createWorkspaceAgentServer — plugin provisioning", () => {
-  test("materializes @hachej/boring-workspace package docs inside workspace node_modules", async () => {
-    const workspaceRoot = await makeTempDir("boring-workspace-package-docs-")
+  test("materializes the boring-plugin-authoring skill into the workspace node_modules", async () => {
+    // The system prompt is minimal (it just points at this skill); the
+    // skill itself is the doc the agent reads. provisionRuntimeWorkspace
+    // must materialize it under the workspace's node_modules so Pi can
+    // load it from there.
+    const workspaceRoot = await makeTempDir("boring-workspace-skill-")
 
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
@@ -292,12 +296,6 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     })
 
     try {
-      const docs = await readFile(
-        join(workspaceRoot, "node_modules", "@hachej", "boring-workspace", "dist", "docs", "plugins.md"),
-        "utf8",
-      )
-      expect(docs).toContain("Boring UI Plugin System")
-      expect(docs).toContain("BoringFrontFactory")
       const skill = await readFile(
         join(workspaceRoot, "node_modules", "@hachej", "boring-pi", "skills", "boring-plugin-authoring", "SKILL.md"),
         "utf8",
