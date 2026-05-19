@@ -13,7 +13,7 @@ const OUT = resolve(__dirname, "..", "docs", "assets", "readme", "hero.png")
 
 const browser = await chromium.launch({ headless: true })
 const ctx = await browser.newContext({
-  viewport: { width: 1920, height: 900 },
+  viewport: { width: 1920, height: 720 },
   deviceScaleFactor: 2,
 })
 const page = await ctx.newPage()
