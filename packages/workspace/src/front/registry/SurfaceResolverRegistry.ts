@@ -18,18 +18,6 @@ export class SurfaceResolverRegistry {
     this.emit()
   }
 
-  unregisterByPluginId(pluginId: string): void {
-    let changed = false
-    for (const [id, resolver] of this.resolvers) {
-      if (resolver.pluginId === pluginId) {
-        this.resolvers.delete(id)
-        this.registrationOrder = this.registrationOrder.filter((oid) => oid !== id)
-        changed = true
-      }
-    }
-    if (changed) this.emit()
-  }
-
   unregister(id: string): void {
     if (!this.resolvers.delete(id)) return
     this.registrationOrder = this.registrationOrder.filter((oid) => oid !== id)

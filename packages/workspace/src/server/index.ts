@@ -42,14 +42,18 @@ export { boringPluginRoutes, collectRestartWarnings } from "./agentPlugins/route
 export type { PluginReloadRebuild, PluginRestartWarning } from "./agentPlugins/routes"
 export { aggregatePluginPrompts } from "./agentPlugins/aggregatePluginPrompts"
 export { preflightBoringPlugins, readBoringPlugins } from "./agentPlugins/scan"
+// `clearPluginSignatureCache`, `PLUGIN_SIGNATURE_CACHE_FILE`, and the
+// `PluginSignatureCachePayload` type are intentionally NOT re-exported —
+// they are workspace-internal. External consumers (cli/verifyPlugin)
+// only need to read the cache (`readPluginSignatureCache`) and compute
+// signatures (`pluginFileSignature`); the workspace's own asset manager
+// owns writing + clearing the sidecar. The cli test fixture writes via
+// `writePluginSignatureCache` to seed cache state.
 export {
   pluginFileSignature,
   readPluginSignatureCache,
   writePluginSignatureCache,
-  clearPluginSignatureCache,
-  PLUGIN_SIGNATURE_CACHE_FILE,
 } from "./agentPlugins/signatureCache"
-export type { PluginSignatureCachePayload } from "./agentPlugins/signatureCache"
 export type {
   BoringPluginEvent,
   BoringPluginListEntry,

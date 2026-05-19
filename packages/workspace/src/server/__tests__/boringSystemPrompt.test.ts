@@ -68,18 +68,9 @@ describe("buildBoringSystemPrompt", () => {
   })
 
   test("without scaffoldCommand, step 1 is reading the skill", () => {
-    const prompt = buildBoringSystemPrompt()
+    const prompt = buildBoringSystemPrompt({ verifyCommand: "boring-ui verify-plugin" })
     expect(prompt).toContain("Read the `boring-plugin-authoring` skill")
     expect(prompt).not.toMatch(/\*\*1\.\s+Scaffold/)
-  })
-
-  test("verifyCommand=false drops the verify step", () => {
-    const prompt = buildBoringSystemPrompt({
-      scaffoldCommand: "boring-ui scaffold-plugin",
-      verifyCommand: false,
-    })
-    expect(prompt).not.toContain("Verify")
-    expect(prompt).not.toContain("verify-plugin")
   })
 
   test("stays under 3000 chars in the full configuration", () => {

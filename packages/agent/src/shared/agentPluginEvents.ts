@@ -10,3 +10,18 @@
  * `useAgentPluginHotReload` imports the same constant.
  */
 export const WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT = "boring-ui:agent-plugins-reloaded"
+
+/**
+ * One per plugin that loaded successfully but whose server-side surfaces
+ * (Fastify routes / agent tools) still hold pre-reload code. Shared
+ * between the agent's /reload HTTP route + the ChatPanel banner so the
+ * agent layer has ONE declaration of this wire shape. Mirrors what the
+ * workspace's `collectRestartWarnings()` emits (workspace owns the
+ * canonical `PluginRestartWarning` type; we redeclare here only because
+ * the agent layer must not depend on workspace).
+ */
+export interface PluginRestartWarning {
+  id: string
+  surfaces: string[]
+  message: string
+}

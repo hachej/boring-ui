@@ -15,18 +15,9 @@
  */
 import type { ReactElement } from "react"
 import { cn } from "../lib"
+import type { PluginRestartWarning } from "../../shared/agentPluginEvents"
 
-/**
- * One per plugin that loaded successfully but whose server-side surfaces
- * (Fastify routes / agent tools) still hold pre-reload code. Carries
- * the structured event field through to the UI so users can see WHICH
- * plugin + WHICH surfaces need the restart, not a generic warning.
- */
-export interface PluginRestartWarning {
-  id: string
-  surfaces: string[]
-  message: string
-}
+export type { PluginRestartWarning }
 
 export type PluginUpdateState =
   | { kind: "running" }
