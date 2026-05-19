@@ -47,13 +47,13 @@ npx @hachej/boring-ui-cli
 
 Starts a full agent workspace pointed at the current directory — chat, panels, file tree, command palette. No clone. No database. No setup.
 
-Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` before running — or skip the env var and the CLI prompts for login on first launch (credentials persist for future runs). More on auth: [`packages/cli`](packages/cli/README.md).
+Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` before running — or skip the env var and the CLI prompts for login on first launch (credentials persist for future runs). More on auth: [packages/cli](packages/cli/README.md).
 
 It opens at `http://localhost:5200`. Try these in chat:
 
-- _"list every TODO in this repo and open them in the editor"_
-- _"search package.json for stale dependencies, summarise in a table"_
-- _"create a markdown file called notes.md with bullet points of my open files"_
+- *"list every TODO in this repo and open them in the editor"*
+- *"search package.json for stale dependencies, summarise in a table"*
+- *"create a markdown file called notes.md with bullet points of my open files"*
 
 You'll see the agent open files in the workbench, render results into panels, and react to your follow-ups — all from the chat box, against your real directory.
 
@@ -84,7 +84,7 @@ A plugin is a regular Node package with two manifest blocks:
 
 Plugins compose. Use `derivesFrom` to extend an existing plugin instead of forking. Swap a single surface, or add a brand-new pane type. Plugins ship through npm like any other dependency — no patching, no monorepo entanglement required.
 
-Start from [`plugins/_template`](plugins/_template/README.md). The exact manifest and a working example are in [Plugin shape](#plugin-shape) below.
+Start from [plugins/_template](plugins/_template/README.md). The exact manifest and a working example are in [Plugin shape](#plugin-shape) below.
 
 ---
 
@@ -96,7 +96,7 @@ Start from [`plugins/_template`](plugins/_template/README.md). The exact manifes
 
 Production, paying customers, single codebase. Built on `@hachej/boring-core` + `@hachej/boring-agent` + `@hachej/boring-workspace` + custom domain plugins.
 
-<sub>More on the same chassis in flight: `boring-accountant`, `boring-design`, `boring-lawyer`.</sub>
+More on the same chassis in flight: `boring-accountant`, `boring-design`, `boring-lawyer`.
 
 ---
 
@@ -104,30 +104,36 @@ Production, paying customers, single codebase. Built on `@hachej/boring-core` + 
 
 ### Packages
 
-| Package | Role | README |
-|---|---|---|
-| `@hachej/boring-agent` | Agent runtime, tools, chat UI | [`packages/agent`](packages/agent/README.md) |
-| `@hachej/boring-workspace` | Workbench, panels, plugin system | [`packages/workspace`](packages/workspace/README.md) |
-| `@hachej/boring-core` | Auth, DB, app factory | [`packages/core`](packages/core/README.md) |
-| `@hachej/boring-ui-kit` | Shared UI primitives | [`packages/ui`](packages/ui/README.md) |
-| `@hachej/boring-ui-cli` | Zero-setup local entrypoint | [`packages/cli`](packages/cli/README.md) |
+
+| Package                    | Role                             | README                                               |
+| -------------------------- | -------------------------------- | ---------------------------------------------------- |
+| `@hachej/boring-agent`     | Agent runtime, tools, chat UI    | [packages/agent](packages/agent/README.md)         |
+| `@hachej/boring-workspace` | Workbench, panels, plugin system | [packages/workspace](packages/workspace/README.md) |
+| `@hachej/boring-core`      | Auth, DB, app factory            | [packages/core](packages/core/README.md)           |
+| `@hachej/boring-ui-kit`    | Shared UI primitives             | [packages/ui](packages/ui/README.md)               |
+| `@hachej/boring-ui-cli`    | Zero-setup local entrypoint      | [packages/cli](packages/cli/README.md)             |
+
 
 ### Plugins
 
-| Plugin | What it adds | README |
-|---|---|---|
-| `@hachej/boring-ask-user` | Agent-to-user question/answer surface and `ask_user` tool | [`plugins/ask-user`](plugins/ask-user/README.md) |
-| `@hachej/boring-data-explorer` | Searchable, faceted data tables — the primitive for explorer-style panels | [`plugins/data-explorer`](plugins/data-explorer/README.md) |
-| `@hachej/boring-data-catalog` | Configurable catalog tab built on `data-explorer` | [`plugins/data-catalog`](plugins/data-catalog/README.md) |
-| Plugin template | Canonical scaffold for new plugins | [`plugins/_template`](plugins/_template/README.md) |
+
+| Plugin                         | What it adds                                                              | README                                                     |
+| ------------------------------ | ------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `@hachej/boring-ask-user`      | Agent-to-user question/answer surface and `ask_user` tool                 | [plugins/ask-user](plugins/ask-user/README.md)           |
+| `@hachej/boring-data-explorer` | Searchable, faceted data tables — the primitive for explorer-style panels | [plugins/data-explorer](plugins/data-explorer/README.md) |
+| `@hachej/boring-data-catalog`  | Configurable catalog tab built on `data-explorer`                         | [plugins/data-catalog](plugins/data-catalog/README.md)   |
+| Plugin template                | Canonical scaffold for new plugins                                        | [plugins/_template](plugins/_template/README.md)         |
+
 
 ### Reference apps
 
-| App | Purpose | README |
-|---|---|---|
-| `apps/full-app` | Production-shaped reference: auth, DB, multi-workspace | [`apps/full-app`](apps/full-app/README.md) |
-| `apps/agent-playground` | `@hachej/boring-agent` alone — no workbench, no DB | [`apps/agent-playground`](apps/agent-playground/README.md) |
-| `apps/workspace-playground` | `@hachej/boring-workspace` + plugins — no auth backend | [`apps/workspace-playground`](apps/workspace-playground/README.md) |
+
+| App                         | Purpose                                                | README                                                             |
+| --------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------ |
+| `apps/full-app`             | Production-shaped reference: auth, DB, multi-workspace | [apps/full-app](apps/full-app/README.md)                         |
+| `apps/agent-playground`     | `@hachej/boring-agent` alone — no workbench, no DB     | [apps/agent-playground](apps/agent-playground/README.md)         |
+| `apps/workspace-playground` | `@hachej/boring-workspace` + plugins — no auth backend | [apps/workspace-playground](apps/workspace-playground/README.md) |
+
 
 ---
 
@@ -158,7 +164,7 @@ Plugins are standard Node packages, distributed through npm, loaded by Pi. Each 
 - `boring.server` — server side: agent tools that need backend state, HTTP routes
 - `boring.derivesFrom` — layer on top of an existing plugin
 
-Start from [`plugins/_template`](plugins/_template/README.md).
+Start from [plugins/_template](plugins/_template/README.md).
 
 ---
 
@@ -166,12 +172,14 @@ Start from [`plugins/_template`](plugins/_template/README.md).
 
 Boring UI is built around four swappable interfaces:
 
-| Interface | Owner | Responsibility |
-|---|---|---|
-| `Workspace` | `@hachej/boring-agent` | Filesystem operations |
-| `Sandbox` | `@hachej/boring-agent` | Shell execution |
-| `AgentHarness` | `@hachej/boring-agent` | Agent runtime |
-| `UiBridge` | `@hachej/boring-workspace` | Agent → workbench control |
+
+| Interface      | Owner                      | Responsibility            |
+| -------------- | -------------------------- | ------------------------- |
+| `Workspace`    | `@hachej/boring-agent`     | Filesystem operations     |
+| `Sandbox`      | `@hachej/boring-agent`     | Shell execution           |
+| `AgentHarness` | `@hachej/boring-agent`     | Agent runtime             |
+| `UiBridge`     | `@hachej/boring-workspace` | Agent → workbench control |
+
 
 Flow:
 
