@@ -135,20 +135,23 @@
 
     .annot {
       position: absolute;
-      font-family: var(--hand);
+      font-family: var(--sans);
       font-weight: 700;
-      font-size: 46px;
+      font-size: 17px;
       color: var(--ink);
-      line-height: 0.95;
-      letter-spacing: -0.005em;
+      line-height: 1.2;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
       pointer-events: none;
     }
     .annot .sub {
       display: block;
-      font-size: 38px;
-      font-weight: 600;
+      font-size: 14px;
+      font-weight: 500;
       color: #4A463E;
-      margin-top: 2px;
+      letter-spacing: 0.04em;
+      text-transform: none;
+      margin-top: 4px;
     }
     .annot.top-left  { top: 4px; left: 60px;  max-width: 460px; }
     .annot.top-right { top: 4px; right: 40px; max-width: 540px; text-align: right; }
@@ -175,10 +178,8 @@
 <body>
   <div class="hero">
     <div class="text">
-      <div class="eyebrow">An agent-native workspace</div>
       <h1>Boring UI</h1>
-      <p class="subtitle">Turn your agent into an app.</p>
-      <p class="lede">A simple workspace for complex agents.</p>
+      <p class="subtitle">Give a UI to your agent.</p>
       <div class="cmd">
         <span class="dollar">$</span>
         <span class="pkg">npx&nbsp;@hachej/boring-ui-cli</span>
@@ -193,33 +194,33 @@
 
       <!-- Both annotations at the top — arrows curve down into their halves of the screenshot -->
 
-      <!-- LEFT: agent + skills → arrow down into chat hero ("What are we building?") -->
-      <div class="annot top-left">The agent, with its skills</div>
+      <!-- LEFT: agent + skills → editorial thin line into chat hero -->
+      <div class="annot top-left">The agent<span class="sub">with your skills + prompts</span></div>
       <svg class="arrow top-left" viewBox="0 0 220 130" fill="none" xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <marker id="ah-tl" viewBox="0 0 12 12" refX="11" refY="6"
-                  markerWidth="9" markerHeight="9" orient="auto-start-reverse">
-            <path d="M0,0 L12,6 L0,12 Z" fill="#171717" />
+          <marker id="ah-tl" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 Z" fill="#171717" />
           </marker>
         </defs>
-        <path d="M30,10 C70,40 100,70 130,98 Q145,114 158,120"
-              stroke="#171717" stroke-width="3.5" fill="none"
-              stroke-linecap="round" stroke-linejoin="round"
+        <path d="M30,18 Q90,60 150,118"
+              stroke="#171717" stroke-width="1.5" fill="none"
+              stroke-linecap="round"
               marker-end="url(#ah-tl)" />
       </svg>
 
-      <!-- RIGHT: workspace under agent control → arrow down into workbench (README pane) -->
-      <div class="annot top-right">The workspace, under its control</div>
+      <!-- RIGHT: workspace under agent control → editorial thin line into workbench -->
+      <div class="annot top-right">The workspace<span class="sub">it controls and shapes as you go</span></div>
       <svg class="arrow top-right" viewBox="0 0 220 130" fill="none" xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <marker id="ah-tr" viewBox="0 0 12 12" refX="11" refY="6"
-                  markerWidth="9" markerHeight="9" orient="auto-start-reverse">
-            <path d="M0,0 L12,6 L0,12 Z" fill="#171717" />
+          <marker id="ah-tr" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 Z" fill="#171717" />
           </marker>
         </defs>
-        <path d="M190,10 C150,40 120,70 90,98 Q72,114 62,120"
-              stroke="#171717" stroke-width="3.5" fill="none"
-              stroke-linecap="round" stroke-linejoin="round"
+        <path d="M190,18 Q130,60 70,118"
+              stroke="#171717" stroke-width="1.5" fill="none"
+              stroke-linecap="round"
               marker-end="url(#ah-tr)" />
       </svg>
     </div>
