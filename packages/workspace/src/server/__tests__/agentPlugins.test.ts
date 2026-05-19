@@ -220,6 +220,46 @@ describe("boring agent plugin assets", () => {
     expect(plugin.serverPath).toBeUndefined()
   })
 
+  test("reload event sets requiresRestart when the server file changes between revisions", async () => {
+    const root = await tmp("boring-plugin-restart-")
+    // writePlugin already writes server/index.js + manifest pointing at
+    // it — perfect for this test.
+    await writePlugin(root)
+
+    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
+
+    // First load: no `previous`, so requiresRestart is omitted (the
+    // initial boot wired everything correctly).
+    const initial = await manager.load()
+    const initialLoad = initial.events.find((event) => event.type === "boring.plugin.load")
+    expect(initialLoad?.type).toBe("boring.plugin.load")
+    if (initialLoad?.type === "boring.plugin.load") {
+      expect(initialLoad.requiresRestart).toBeUndefined()
+    }
+
+    // Touch ONLY the front file → no requiresRestart on subsequent load.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await writeFile(join(root, "front", "index.tsx"), "export default function NewPane() { return null }\n", "utf8")
+    const frontOnly = await manager.load()
+    const frontEvent = frontOnly.events.find((event) => event.type === "boring.plugin.load")
+    expect(frontEvent?.type).toBe("boring.plugin.load")
+    if (frontEvent?.type === "boring.plugin.load") {
+      expect(frontEvent.requiresRestart).toBeUndefined()
+    }
+
+    // Touch the SERVER file → requiresRestart MUST be set; routes and
+    // agentTools were wired at boot and the running server still has
+    // the prior file's exports.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await writeFile(join(root, "server", "index.js"), "export default function(api) { api.get('/changed', async () => ({ ok: true })) }\n", "utf8")
+    const serverChanged = await manager.load()
+    const restartEvent = serverChanged.events.find((event) => event.type === "boring.plugin.load")
+    expect(restartEvent?.type).toBe("boring.plugin.load")
+    if (restartEvent?.type === "boring.plugin.load") {
+      expect(restartEvent.requiresRestart).toEqual(["routes", "agentTools"])
+    }
+  })
+
   test("reloads when front/shared dependencies change, not only the front entrypoint", async () => {
     const root = await tmp("boring-plugin-front-dep-")
     await writePlugin(root)

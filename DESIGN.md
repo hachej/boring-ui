@@ -288,10 +288,28 @@ that themselves (zod, etc.) — keeping the contract one function.
 | Front: panels / commands / left tabs / surface resolvers | SSE → atomic registry replace | immediately |
 | Front: providers / bindings | NOT reloaded (mounted in React tree at boot) | server restart required |
 
-If a `/reload` cycle changes a plugin whose signature includes a
-server file *and* the plugin declares `routes`, the response body
-carries a tip: `"Route handlers changed — restart server to apply."`
-Same for `agentTools` (`"new chat session required"`).
+When a `/reload` cycle changes a plugin whose server file's
+fileSignature differs from the previous revision, the SSE
+`boring.plugin.load` event carries a structured
+`requiresRestart: ('routes' | 'agentTools')[]` field. Subscribers
+(the chat UI banner, `boring-ui verify-plugin` output, etc.) render
+a "restart needed for: routes, agentTools" hint — better than the
+free-text tip the previous design relied on.
+
+```ts
+// Event shape after a server-file edit:
+{
+  type: "boring.plugin.load",
+  id: "my-plugin",
+  revision: 7,
+  boring: { ... },
+  frontUrl: "/@fs/...",
+  requiresRestart: ["routes", "agentTools"]
+}
+```
+
+First-time loads (no `previous`) and front-only edits omit the field
+(the running server still has the correct boot-time wiring).
 
 ### 4.6 Prompt-location guidance
 

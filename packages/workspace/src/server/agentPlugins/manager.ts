@@ -7,11 +7,19 @@ import type {
   BoringPluginEvent,
   BoringPluginListEntry,
   BoringServerPluginManifest,
+  PluginRestartSurface,
 } from "./types"
 
 interface LoadedPluginRecord extends BoringServerPluginManifest {
   revision: number
   signature: string
+  /**
+   * fileSignature(serverPath) captured at load time. Lets
+   * computeRequiresRestart() decide whether the server file changed
+   * between this revision and the next — without re-reading the prior
+   * file's bytes (they've been overwritten by then).
+   */
+  serverSignature?: string
 }
 
 export interface BoringPluginAssetManagerOptions {
@@ -126,6 +134,40 @@ function pluginSignature(plugin: BoringServerPluginManifest): string {
     .digest("hex")
 }
 
+/**
+ * Compare the previous + new manifest's server-side surfaces. Returns
+ * the surfaces whose changes can't be hot-reloaded (the workspace
+ * wires routes + agentTools once at boot). Cheap heuristic: any
+ * change to the server file (signature) AND server file is present
+ * in either revision = both surfaces flagged.
+ *
+ * First-time loads (no `previous`) don't set this — agentTools/routes
+ * are correctly in place from the initial boot.
+ */
+function computeRequiresRestart(
+  previous: LoadedPluginRecord | undefined,
+  next: BoringServerPluginManifest,
+): PluginRestartSurface[] {
+  if (!previous) return []
+  const prevHasServer = !!previous.serverPath
+  const nextHasServer = !!next.serverPath
+  if (!prevHasServer && !nextHasServer) return []
+  // Server added or removed mid-session — both surfaces need a restart
+  // to take effect.
+  if (prevHasServer !== nextHasServer) return ["routes", "agentTools"]
+  // Both present — we can't compare the PREVIOUS file's content (it's
+  // been overwritten). Store the serverPath's fileSignature on the
+  // record at load time and compare; for the current revision we just
+  // recompute. If the previous record carries no `serverSignature`, this
+  // is the first reload after we added the field — be conservative and
+  // flag as restart-needed so users see the prompt at least once.
+  const prevSig = previous.serverSignature
+  if (prevSig === undefined) return ["routes", "agentTools"]
+  const nextSig = fileSignature(next.serverPath)
+  if (prevSig === nextSig) return []
+  return ["routes", "agentTools"]
+}
+
 export class BoringPluginAssetManager {
   private readonly pluginDirs: string[]
   private readonly errorRoot: string
@@ -209,9 +251,22 @@ export class BoringPluginAssetManager {
         const previous = this.loaded.get(plugin.id)
         if (previous?.signature === signature) continue
         const revision = this.bumpRevision(plugin.id)
-        const record: LoadedPluginRecord = { ...plugin, revision, signature }
+        const serverSignature = plugin.serverPath ? fileSignature(plugin.serverPath) : undefined
+        const record: LoadedPluginRecord = { ...plugin, revision, signature, serverSignature }
         this.loaded.set(plugin.id, record)
         this.clearError(plugin.id)
+        // requiresRestart: only set when the server file's signature
+        // changed between revisions. The asset manager re-imports the
+        // FRONT mid-session via jiti+Vite, but server-side surfaces
+        // (Fastify routes, registered agent tools) are wired ONCE at
+        // boot — any server-file change carries stale code until the
+        // user restarts. We compute server-only signature changes by
+        // comparing the prior record's serverPath fileSignature to the
+        // current one. We emit BOTH surfaces because we can't cheaply
+        // distinguish "routes changed" from "agentTools changed" — both
+        // are wired the same way and any server-source change is
+        // suspect.
+        const requiresRestart = computeRequiresRestart(previous, plugin)
         const event: BoringPluginEvent = {
           type: "boring.plugin.load",
           id: plugin.id,
@@ -219,6 +274,7 @@ export class BoringPluginAssetManager {
           version: plugin.version,
           revision,
           ...(plugin.frontUrl ? { frontUrl: plugin.frontUrl } : {}),
+          ...(requiresRestart.length > 0 ? { requiresRestart } : {}),
         }
         events.push(event)
         this.emit(event)
