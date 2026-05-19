@@ -26,9 +26,10 @@ The scaffold writes exactly two files:
 **Workflow:**
 
 1. Run the scaffold command via the bash tool.
-2. Read the two generated files with the read tool.
+2. Read the generated files with the read tool.
 3. Edit them in place with the edit tool — do **NOT** rewrite from scratch.
-4. Tell the user to run `/reload` (the workspace picks up the new plugin).
+4. Run `boring-ui verify-plugin` via bash. Fix anything it reports and re-run until it returns `OK`.
+5. Tell the user to run `/reload` (the workspace picks up the new plugin).
 
 If the scaffold says the plugin already exists, you can read the existing
 files directly and skip step 1.
@@ -67,11 +68,11 @@ that directory:
 .pi/extensions/<name>/
 ├── package.json          # manifest (boring.front, boring.server, pi.systemPrompt, pi.extensions)
 ├── front/index.tsx       # front factory (boring.front)
-├── server/index.ts       # OPTIONAL — only if boring.server is true
+├── server/index.ts       # OPTIONAL — present when boring.server is set to "server/index.ts"
 └── agent/index.ts        # OPTIONAL — Pi extension, declared in pi.extensions
 ```
 
-Do **NOT**:
+For `.pi/extensions/<name>/` plugins (the hot-reload path this skill teaches), do **NOT**:
 
 - Put files at the package root (`index.ts`, `index.js`, `index.tsx` at the
   same level as `package.json`).
@@ -82,6 +83,19 @@ Do **NOT**:
   and no scripts.
 - Create a `tsconfig.json` or `node_modules/` inside the plugin dir.
 - Create a `README.md` unless the user asks for one.
+
+> The above rules apply to the hot-reload layout under `.pi/extensions/<name>/`. Full npm-package plugins under `plugins/<name>/` (intended for publishing — e.g. `@hachej/boring-ask-user`) DO use `src/` + `tsup` + `dist/`. See the "Choosing a layout" section below.
+
+## Choosing a layout: `.pi/extensions/<name>/` vs `plugins/<name>/`
+
+Two valid layouts, picked by intent:
+
+| Where | Build step? | When to use |
+|---|---|---|
+| `<workspace>/.pi/extensions/<name>/` | NO (Vite transforms `.tsx` on the fly, hot reload via SSE) | Local user plugins; agent-authored plugins; anything you don't intend to publish as a separate npm package. **Default for "I want a plugin".** |
+| `plugins/<name>/` (in this repo) | YES (`tsup` → `dist/`, then consuming app does `defaultPluginPackages: ["@hachej/your-plugin"]`) | Plugins shipped as installable npm packages (e.g. `@hachej/boring-ask-user`, `@hachej/boring-data-catalog`). |
+
+The rest of this skill teaches the hot-reload layout. Repo contributors building a publishable plugin start from `plugins/_template-full/` (build-based template) instead; everyone else uses `boring-ui scaffold-plugin <name>` (Step 0).
 
 ## package.json shape
 
@@ -95,7 +109,7 @@ The scaffold writes this. Customize fields but keep the structure:
   "boring": {
     "label": "<Display Label>",   // shown in panel chrome
     "front": "front/index.tsx",   // path to front factory file
-    "server": false               // true if you add server/index.ts
+    "server": false               // OR "server/index.ts" (path string) when you add a server file. NEVER the boolean true.
   },
   "pi": {
     "systemPrompt": "<1-2 sentences telling the agent when this plugin is relevant>",
@@ -189,8 +203,7 @@ recharts / chart.js dependencies.
 
 ### Server-side plugin (agent tools or HTTP routes)
 
-Add `boring.server: true` to package.json, then create `server/index.ts`.
-Two valid shapes, discriminated by arity:
+Set `boring.server: "server/index.ts"` (the path string — NEVER the boolean `true`; the manifest validator rejects `true` with `INVALID_PLUGIN_METADATA`), then create the file. Two valid shapes, discriminated by arity:
 
 ```ts
 // server/index.ts — arity-2: contributes agent tools + routes
