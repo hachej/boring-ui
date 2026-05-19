@@ -171,56 +171,57 @@ export function createDataCatalogPlugin(
     )
   }
 
-  return definePlugin(
+  const leftTab = includeLeftTab
+    ? {
+        id: leftTabId,
+        title: leftTabTitle,
+        icon: options.leftTabIcon ?? Database,
+        component: DataCatalogLeftTab,
+        source,
+        chromeless: true,
+        panelId: leftTabId,
+      }
+    : undefined
+
+  const visualizationPanel = includeVisualizationPanel
+    ? {
+        id: visualizationPanelId,
+        label: visualizationTitle,
+        icon: options.visualizationIcon ?? BarChart3,
+        component: options.visualizationComponent ?? DefaultVisualizationPanel,
+        placement: "center" as const,
+        source,
+      }
+    : undefined
+
+  const catalog: CatalogConfig | undefined = includeCatalog
+    ? {
+        id: catalogId,
+        label: catalogLabel,
+        adapter: options.adapter,
+        onSelect: (row) => onSelect(row, {}),
+      }
+    : undefined
+
+  const resolver: BoringFrontSurfaceResolverRegistration | undefined = includeSurfaceResolver
+    ? createDataCatalogSurfaceResolver({
+        id,
+        catalogId,
+        visualizationPanelId,
+        visualizationTitle,
+        panelIdPrefix: id,
+        surfaceKind,
+        surfaceResolverId: options.surfaceResolverId,
+        source,
+      })
+    : undefined
+
+  return definePlugin({
     id,
-    (api) => {
-      if (includeLeftTab) {
-        api.registerLeftTab({
-          id: leftTabId,
-          title: leftTabTitle,
-          icon: options.leftTabIcon ?? Database,
-          component: DataCatalogLeftTab,
-          source,
-          chromeless: true,
-          panelId: leftTabId,
-        })
-      }
-
-      if (includeVisualizationPanel) {
-        api.registerPanel<DataCatalogVisualizationParams>({
-          id: visualizationPanelId,
-          label: visualizationTitle,
-          icon: options.visualizationIcon ?? BarChart3,
-          component: options.visualizationComponent ?? DefaultVisualizationPanel,
-          placement: "center",
-          source,
-        })
-      }
-
-      if (includeCatalog) {
-        const catalog: CatalogConfig = {
-          id: catalogId,
-          label: catalogLabel,
-          adapter: options.adapter,
-          onSelect: (row) => onSelect(row, {}),
-        }
-        api.registerCatalog(catalog)
-      }
-
-      if (includeSurfaceResolver) {
-        const resolver: BoringFrontSurfaceResolverRegistration = createDataCatalogSurfaceResolver({
-          id,
-          catalogId,
-          visualizationPanelId,
-          visualizationTitle,
-          panelIdPrefix: id,
-          surfaceKind,
-          surfaceResolverId: options.surfaceResolverId,
-          source,
-        })
-        api.registerSurfaceResolver(resolver)
-      }
-    },
-    { label },
-  )
+    label,
+    leftTabs: leftTab ? [leftTab] : [],
+    panels: visualizationPanel ? [visualizationPanel] : [],
+    catalogs: catalog ? [catalog] : [],
+    surfaceResolvers: resolver ? [resolver] : [],
+  })
 }

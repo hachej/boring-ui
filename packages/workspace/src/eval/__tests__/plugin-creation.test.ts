@@ -480,10 +480,10 @@ Then run /reload to verify.
       expect(frontPath, `no front entry found (tried: ${candidateFronts.join(", ")}); dir contents:\n${dirListing()}`).toBeTruthy()
 
       const frontSource = readFileSync(frontPath!, "utf8")
-      // Skill teaches two equivalent shapes: definePlugin OR a bare
-      // BoringFrontFactory. Accept either; reject the dead patterns.
+      // Two equivalent shapes accepted: declarative definePlugin({panels: [...]})
+      // OR imperative definePlugin(id, (api) => api.registerPanel(...)).
       expect(frontSource).toMatch(/definePlugin|BoringFrontFactory/)
-      expect(frontSource).toContain("registerPanel")
+      expect(frontSource).toMatch(/registerPanel|panels\s*:/)
       expect(frontSource).not.toContain("defineFrontPlugin")
       // Loosely check the agent rendered a list-like structure.
       expect(frontSource).toMatch(/<ul|<li|React\.createElement\(["'](ul|li)["']/)
@@ -538,7 +538,8 @@ Then run /reload to verify.
       const frontSource = readFileSync(frontPath, "utf8")
       // The factory imports the component from a sibling file.
       expect(frontSource).toMatch(/import\s+\w+\s+from\s+["']\.\.?\//)
-      expect(frontSource).toContain("registerPanel")
+      // Either declarative (`panels: [...]`) or imperative (`registerPanel(...)`) is fine.
+      expect(frontSource).toMatch(/registerPanel|panels\s*:/)
 
       // The imported sibling file exists somewhere under the plugin dir.
       const { readdirSync, statSync: stat } = await import("node:fs")
@@ -716,7 +717,8 @@ Then run /reload to verify.
       expect(packageJson.boring?.front).toMatch(/front\/index\.tsx?$/)
 
       const frontSource = readFileSync(join(EVAL_CROSS_DIR, packageJson.boring.front), "utf8")
-      expect(frontSource).toContain("registerPanel")
+      // Either declarative or imperative is fine.
+      expect(frontSource).toMatch(/registerPanel|panels\s*:/)
       expect(frontSource).toContain("Eval Cross panel")
 
       // Server file present and shaped roughly like a server plugin.

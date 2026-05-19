@@ -209,43 +209,47 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
  * resolver (kind: ASK_USER_SURFACE_KIND) which is how the server-side
  * agent tool already triggers it.
  */
-export const askUserPlugin: BoringFrontFactoryWithId = definePlugin(
-  ASK_USER_PLUGIN_ID,
-  (api) => {
-  api.registerProvider({
-    id: `${ASK_USER_PLUGIN_ID}.provider`,
-    component: AskUserProvider,
-  })
-  api.registerPanel({
-    id: ASK_USER_PANEL_ID,
-    label: ASK_USER_PANEL_TITLE,
-    icon: HelpCircle,
-    component: QuestionsPane,
-    placement: "center",
-    source: "builtin",
-    chromeless: true,
-  })
-  api.registerSurfaceResolver({
-    id: `${ASK_USER_PLUGIN_ID}.surface`,
-    kind: ASK_USER_SURFACE_KIND,
-    source: "builtin",
-    // No inner kind guard — the workspace's surface registry already
-    // pre-filters by the top-level `kind` field before calling resolve.
-    resolve(request) {
-      const metaQuestion =
-        typeof request.meta === "object" && request.meta && "question" in request.meta
-          ? (request.meta as { question?: AskUserQuestion }).question
-          : undefined
-      return {
-        component: ASK_USER_PANEL_ID,
-        id: ASK_USER_PANEL_ID,
-        title: ASK_USER_PANEL_TITLE,
-        params: { questionId: request.target, question: metaQuestion },
-      }
+export const askUserPlugin: BoringFrontFactoryWithId = definePlugin({
+  id: ASK_USER_PLUGIN_ID,
+  label: ASK_USER_PANEL_TITLE,
+  providers: [
+    {
+      id: `${ASK_USER_PLUGIN_ID}.provider`,
+      component: AskUserProvider,
     },
-  })
-  },
-  { label: ASK_USER_PANEL_TITLE },
-)
+  ],
+  panels: [
+    {
+      id: ASK_USER_PANEL_ID,
+      label: ASK_USER_PANEL_TITLE,
+      icon: HelpCircle,
+      component: QuestionsPane,
+      placement: "center",
+      source: "builtin",
+      chromeless: true,
+    },
+  ],
+  surfaceResolvers: [
+    {
+      id: `${ASK_USER_PLUGIN_ID}.surface`,
+      kind: ASK_USER_SURFACE_KIND,
+      source: "builtin",
+      // No inner kind guard — the workspace's surface registry already
+      // pre-filters by the top-level `kind` field before calling resolve.
+      resolve(request) {
+        const metaQuestion =
+          typeof request.meta === "object" && request.meta && "question" in request.meta
+            ? (request.meta as { question?: AskUserQuestion }).question
+            : undefined
+        return {
+          component: ASK_USER_PANEL_ID,
+          id: ASK_USER_PANEL_ID,
+          title: ASK_USER_PANEL_TITLE,
+          params: { questionId: request.target, question: metaQuestion },
+        }
+      },
+    },
+  ],
+})
 
 export default askUserPlugin

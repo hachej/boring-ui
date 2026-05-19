@@ -2,34 +2,46 @@ import { describe, expect, test } from "vitest"
 import { buildBoringSystemPrompt } from "../boringSystemPrompt"
 
 describe("buildBoringSystemPrompt", () => {
-  test("inlines the canonical plugin shape and forbidden patterns", () => {
+  test("inlines the declarative canonical shape", () => {
     const prompt = buildBoringSystemPrompt()
-    // Canonical shape — the agent should not need to guess any of these:
-    expect(prompt).toContain("definePlugin")
-    expect(prompt).toContain("registerPanel")
-    expect(prompt).toContain("registerPanelCommand")
-    expect(prompt).toContain("registerLeftTab")
-    expect(prompt).toContain("registerSurfaceResolver")
+    // Canonical declarative config — the agent should not need to guess any of these:
+    expect(prompt).toContain("definePlugin({")
+    expect(prompt).toContain("panels:")
+    expect(prompt).toContain("commands:")
+    expect(prompt).toContain("leftTabs:")
+    expect(prompt).toContain("surfaceResolvers:")
+    expect(prompt).toContain("setup")
     expect(prompt).toContain("@hachej/boring-workspace/plugin")
     expect(prompt).toContain(".pi/extensions/")
     expect(prompt).toContain("front/index.tsx")
-    // Forbidden patterns we want the agent to recognize:
-    expect(prompt).toContain("createPlugin")
-    expect(prompt).toContain("registerComponent")
-    expect(prompt).toContain("defineFrontPlugin")
-    // Server-side canonical shape:
-    expect(prompt).toContain("defineServerPlugin")
-    expect(prompt).toContain("@hachej/boring-workspace/server")
-    expect(prompt).toContain("execute") // not "handler"
-    expect(prompt).toContain('content: [{ type: "text"')
-    // Skill pointer for deeper questions:
-    expect(prompt).toContain("boring-plugin-authoring")
   })
 
-  test("does not mention the scaffold command when none is provided", () => {
+  test("calls out the high-signal forbidden patterns", () => {
+    const prompt = buildBoringSystemPrompt()
+    expect(prompt).toContain("createPlugin")
+    expect(prompt).toContain("defineFrontPlugin")
+    expect(prompt).toContain("@hachej/boring-pi")
+    // Server tool common mistake:
+    expect(prompt).toContain("handler")
+    expect(prompt).toContain("execute")
+  })
+
+  test("inlines the server-side canonical shape", () => {
+    const prompt = buildBoringSystemPrompt()
+    expect(prompt).toContain("defineServerPlugin")
+    expect(prompt).toContain("@hachej/boring-workspace/server")
+    expect(prompt).toContain('content: [{ type: "text"')
+  })
+
+  test("points at the boring-plugin-authoring skill for the long tail", () => {
+    const prompt = buildBoringSystemPrompt()
+    expect(prompt).toContain("boring-plugin-authoring")
+    expect(prompt).toContain("<available_skills>")
+  })
+
+  test("does not mention scaffold-plugin when no scaffoldCommand is provided", () => {
     const prompt = buildBoringSystemPrompt()
     expect(prompt).not.toContain("Step 1 — scaffold")
-    expect(prompt).not.toContain("scaffold-plugin")
   })
 
   test("surfaces the scaffold command as Step 1 when provided", () => {
@@ -40,7 +52,7 @@ describe("buildBoringSystemPrompt", () => {
     expect(prompt).toContain("npx @hachej/boring-ui-cli scaffold-plugin <kebab-name>")
   })
 
-  test("stays under 5000 chars (templates inlined, scaffold pointer optional)", () => {
+  test("stays under 5000 chars", () => {
     const prompt = buildBoringSystemPrompt({
       scaffoldCommand: "npx @hachej/boring-ui-cli scaffold-plugin",
     })
