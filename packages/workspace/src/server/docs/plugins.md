@@ -190,17 +190,19 @@ Vite hosts must keep React singleton-safe for hook panels, e.g.
 Fastify-only front plugin loading needs a workspace-owned authenticated module
 asset endpoint/bundler.
 
-Server-side reload is separately switchable in `createWorkspaceAgentServer`:
+Server-side reload is switchable in `createWorkspaceAgentServer` via a
+single flag (defaults to `true`):
 
 ```ts
 createWorkspaceAgentServer({
-  boringPluginReload: true, // /reload refreshes Boring UI/server package assets
-  piPluginReload: true,      // package.json#pi contributions are forwarded/refreshed
+  pluginHotReload: true, // /reload re-scans plugin dirs, jiti re-imports
+                         // server entries, and refreshes Pi resources
+                         // (systemPromptDynamic + getDynamicResources).
 })
 ```
 
-Set either to `false` to keep that side static/disabled while preserving explicit
-host-supplied plugin options.
+Set to `false` to disable reload-time scan + Pi refresh while preserving
+explicit host-supplied plugin options (initial discovery still runs).
 
 ## Rules
 

@@ -323,6 +323,51 @@ describe("boring agent plugin assets", () => {
     expect(result.loaded[0].revision).toBeGreaterThanOrEqual(2)
   })
 
+  test("POST /api/boring.reload carries rebuildPlugins diagnostics in the 422 body (DESIGN.md §6)", async () => {
+    const root = await tmp("boring-plugin-reload-diagnostics-")
+    await writePlugin(root)
+    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
+    const rebuildPlugins = async () => ({
+      ok: false,
+      diagnostics: [
+        { source: "directory (/some/dir)", message: "syntax error: unexpected `{{`", pluginId: "broken" },
+      ],
+    })
+
+    const app = Fastify({ logger: false })
+    await app.register(boringPluginRoutes, { manager, rebuildPlugins })
+    try {
+      const reload = await app.inject({ method: "POST", url: "/api/boring.reload" })
+      expect(reload.statusCode).toBe(422)
+      const body = reload.json()
+      expect(body.ok).toBe(false)
+      expect(body.diagnostics).toEqual([
+        expect.objectContaining({ pluginId: "broken", message: expect.stringContaining("syntax error") }),
+      ])
+      // Healthy plugins (asset manager scan succeeded) still listed.
+      expect(body.plugins[0].id).toBe("boring-plugin-test")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("POST /api/boring.reload returns 200 when both scan and rebuild are clean", async () => {
+    const root = await tmp("boring-plugin-reload-ok-")
+    await writePlugin(root)
+    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
+    const rebuildPlugins = async () => ({ ok: true, diagnostics: [] })
+
+    const app = Fastify({ logger: false })
+    await app.register(boringPluginRoutes, { manager, rebuildPlugins })
+    try {
+      const reload = await app.inject({ method: "POST", url: "/api/boring.reload" })
+      expect(reload.statusCode).toBe(200)
+      expect(reload.json().ok).toBe(true)
+    } finally {
+      await app.close()
+    }
+  })
+
   test("writes preflight errors under a stable fallback id when plugin id cannot be derived", async () => {
     const root = await tmp("boring-plugin-preflight-fallback-id-")
     await writePlugin(root)
