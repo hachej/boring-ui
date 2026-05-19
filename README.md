@@ -59,6 +59,35 @@ You'll see the agent open files in the workbench, render results into panels, an
 
 ---
 
+## Plugin system
+
+Boring UI is a chassis, not a closed app. The shell stays the same; what runs inside changes per app, per user, per surface.
+
+Plugins contribute UI and agent behaviour through a single `package.json` manifest. Once registered, they sit alongside the built-ins.
+
+**What you can add:**
+
+- **Panels** — new panes in the workbench (tables, editors, charts, any React component)
+- **Left-tabs** — persistent sidebar surfaces (catalogs, navigators, status)
+- **Commands** — entries in the command palette
+- **Catalogs** — searchable, faceted data explorers
+- **Surface resolvers** — let the agent open your panels via typed open-requests
+- **Agent skills, tools, prompts** — what the agent can do and how it reasons
+- **Context providers** — React context wrapped around the entire workspace tree
+
+**How adaptation works:**
+
+A plugin is a regular Node package with two manifest blocks:
+
+- `pi.*` — agent side: skills, prompts, tools (loaded by [Pi](https://github.com/earendil-works/pi/tree/main))
+- `boring.*` — UI side: panels, commands, catalogs, surface resolvers, server routes
+
+Plugins compose. Use `derivesFrom` to extend an existing plugin instead of forking. Swap a single surface, or add a brand-new pane type. Plugins ship through npm like any other dependency — no patching, no monorepo entanglement required.
+
+Start from [`plugins/_template`](plugins/_template/README.md). The exact manifest and a working example are in [Plugin shape](#plugin-shape) below.
+
+---
+
 ## Built with boring-ui
 
 [![MacroAnalyst — AI macro research, accelerated](docs/assets/readme/showcase-macro.png)](https://boring-macro.fly.dev/)
