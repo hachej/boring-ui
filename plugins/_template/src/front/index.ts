@@ -6,39 +6,39 @@ import { sampleSurfaceResolver } from "./surfaceResolver"
 /**
  * Default-exported `BoringFrontFactoryWithId`. The workspace shell
  * accepts this directly in `WorkspaceProvider.plugins`; on bootstrap,
- * it calls the factory once with `api` and you register panels, panel
- * commands, left tabs, surface resolvers, catalogs, bindings, and
- * providers imperatively.
+ * it dispatches each declarative field to the corresponding
+ * `api.register*` method.
  *
- * `definePlugin(id, factory, { label? })` attaches the id/label as
- * static fields on the factory so the workspace can identify it.
+ * `definePlugin(config)` accepts a declarative config object. The
+ * function form `definePlugin(id, (api) => void, { label? })` also
+ * works for backwards compatibility but the declarative form is
+ * preferred for new plugins.
  *
  * Plugins in `.pi/extensions/<name>/` also get hot-reloaded — the
  * workspace dynamically re-imports this module and re-runs the
  * factory.
- *
- * See `@hachej/boring-workspace/plugin#BoringFrontAPI` for every
- * available `api.registerXxx(...)` method.
  */
-const samplePlugin: BoringFrontFactoryWithId = definePlugin(
-  SAMPLE_PLUGIN_ID,
-  (api) => {
-    api.registerPanel({
+const samplePlugin: BoringFrontFactoryWithId = definePlugin({
+  id: SAMPLE_PLUGIN_ID,
+  label: "Sample",
+  panels: [
+    {
       id: SAMPLE_PANEL_ID,
       label: "Sample",
       component: SamplePanel,
       placement: "center",
       source: "app",
-    })
-    api.registerPanelCommand({
+    },
+  ],
+  commands: [
+    {
       id: "sample.open",
       title: "Open Sample",
       panelId: SAMPLE_PANEL_ID,
-    })
-    api.registerSurfaceResolver(sampleSurfaceResolver)
-  },
-  { label: "Sample" },
-)
+    },
+  ],
+  surfaceResolvers: [sampleSurfaceResolver],
+})
 
 export default samplePlugin
 

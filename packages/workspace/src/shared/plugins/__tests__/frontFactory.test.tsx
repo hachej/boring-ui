@@ -146,6 +146,98 @@ describe("definePlugin brand semantics (DESIGN.md §4.3 + §8)", () => {
   })
 })
 
+describe("definePlugin declarative config form", () => {
+  it("accepts a config object with panels/commands/leftTabs/surfaceResolvers", () => {
+    const wrapped = definePlugin({
+      id: "decl",
+      label: "Declarative",
+      panels: [
+        { id: "decl.panel", label: "Decl", component: TestPanel },
+      ],
+      commands: [
+        { id: "decl.open", title: "Open Decl", panelId: "decl.panel" },
+      ],
+      leftTabs: [
+        { id: "decl.tab", title: "Decl", panelId: "decl.panel" },
+      ],
+      surfaceResolvers: [
+        { id: "decl.surface", kind: "decl.open", resolve: () => null },
+      ],
+    })
+    expect(wrapped.pluginId).toBe("decl")
+    expect(wrapped.pluginLabel).toBe("Declarative")
+
+    const plugin = toWorkspacePlugin(wrapped)
+    const types = (plugin.outputs ?? []).map((o) => o.type).sort()
+    expect(types).toEqual(["command", "left-tab", "panel", "surface-resolver"])
+  })
+
+  it("calls setup() AFTER the declarative registrations", () => {
+    const order: string[] = []
+    const wrapped = definePlugin({
+      id: "with-setup",
+      panels: [
+        {
+          id: "with-setup.panel",
+          label: "WithSetup",
+          // component captures registration order via side effect; we
+          // inspect via the output array, which preserves call order.
+          component: TestPanel,
+        },
+      ],
+      setup: (api) => {
+        order.push("setup-ran")
+        api.registerPanelCommand({
+          id: "with-setup.extra",
+          title: "Extra",
+          panelId: "with-setup.panel",
+        })
+      },
+    })
+    const plugin = toWorkspacePlugin(wrapped)
+    expect(order).toEqual(["setup-ran"])
+    const outputTypes = (plugin.outputs ?? []).map((o) => o.type)
+    // panel (declarative) before panelCommand (registered inside setup)
+    expect(outputTypes).toEqual(["panel", "command"])
+  })
+
+  it("rejects a config without an id", () => {
+    expect(() => definePlugin({ id: "", panels: [] } as never)).toThrow(/id/)
+  })
+
+  it("empty config (id only) is valid — produces zero outputs", () => {
+    const wrapped = definePlugin({ id: "empty" })
+    expect(wrapped.pluginId).toBe("empty")
+    const plugin = toWorkspacePlugin(wrapped)
+    expect(plugin.outputs ?? []).toEqual([])
+  })
+
+  it("composition via spread works (extend a base plugin's config)", () => {
+    const baseConfig = {
+      id: "base",
+      panels: [{ id: "base.panel", label: "Base", component: TestPanel }],
+      commands: [{ id: "base.open", title: "Open Base", panelId: "base.panel" }],
+    } as const
+    const extended = definePlugin({
+      ...baseConfig,
+      id: "extended",
+      commands: [
+        ...baseConfig.commands,
+        { id: "extended.extra", title: "Extra", panelId: "base.panel" },
+      ],
+    })
+    const plugin = toWorkspacePlugin(extended)
+    expect(plugin.id).toBe("extended")
+    const cmdIds = (plugin.outputs ?? [])
+      .filter((o) => o.type === "command")
+      .map((o) => {
+        const obj = o as { type: "command"; command?: { id?: string }; id?: string }
+        return obj.command?.id ?? obj.id ?? "?"
+      })
+    expect(cmdIds).toEqual(["base.open", "extended.extra"])
+  })
+})
+
 describe("intra-pluginId collision detection (DESIGN.md §6.7)", () => {
   it("throws PluginError('duplicate-id') when two register* calls land the same id", () => {
     const api = createCapturingBoringFrontAPI({ pluginId: "concrete" })

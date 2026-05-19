@@ -33,36 +33,30 @@ The scaffold writes exactly two files:
 If the scaffold says the plugin already exists, you can read the existing
 files directly and skip step 1.
 
-## The API surface (exact names — do not invent variations)
+## The API surface — `definePlugin(config)`
 
-The factory receives a `BoringFrontApi` object. Only these methods exist:
+`definePlugin` takes a declarative config object. Each `<thing>s` field
+is an array of registration objects:
 
-| Method | Purpose |
-|---|---|
-| `api.registerPanel({ id, label, component })` | Register a React component as a panel |
-| `api.registerPanelCommand({ id, title, panelId })` | Add a slash-command that opens the panel |
-| `api.registerLeftTab({ id, title, panelId })` | Add a sidebar tab |
-| `api.registerSurfaceResolver({ id, kind, resolve })` | Map a domain target → panel |
+| Field | Item shape | What it does |
+|---|---|---|
+| `panels` | `{ id, label, component }` | Register a React component as a panel |
+| `commands` | `{ id, title, panelId }` | Add a slash-command that opens a panel |
+| `leftTabs` | `{ id, title, panelId }` | Add a sidebar tab |
+| `surfaceResolvers` | `{ id, kind, resolve(request) }` | Map a domain target → panel |
+| `providers` / `bindings` / `catalogs` | (rare) | Advanced |
+| `setup` | `(api) => void` | Escape hatch — runtime branching, called LAST |
 
-**Common invented names that DO NOT EXIST and will silently fail:**
+The function form `definePlugin("id", (api) => { api.registerPanel(...) })`
+is also accepted (existing in-repo plugins use it), but the declarative
+form above is preferred for new code — it matches the shape most JS
+plugin systems use.
 
-- ❌ `api.registerComponent(...)` — use `registerPanel`
-- ❌ `api.addPanel(...)` / `api.add(...)` — use `registerPanel`
-- ❌ `api.registerCommand(...)` (with no `Panel`) — use `registerPanelCommand`
-- ❌ `api.registerTab(...)` — use `registerLeftTab`
+**Names that DO NOT EXIST and will silently fail:**
 
-The factory is **imperative**: it calls registration methods. It MUST NOT
-return an object literal:
-
-```ts
-// WRONG — the factory must not return data:
-export default definePlugin("x", () => ({ panels: [...] }))
-
-// RIGHT — the factory calls registration methods:
-export default definePlugin("x", (api) => {
-  api.registerPanel({ id: "x.panel", label: "X", component: XPane })
-})
-```
+- ❌ `createPlugin(...)` — use `definePlugin(...)`
+- ❌ `defineFrontPlugin(...)` — removed from the public API
+- ❌ inside `setup`: `api.registerComponent`, `api.addPanel`, `api.registerCommand` (no `Panel`), `api.registerTab` — use the corresponding `register*` name from the table above
 
 ## File layout (do not put files elsewhere)
 
@@ -120,36 +114,27 @@ function MyPane() {
   return <div style={{ padding: 16 }}>Hello from my-plugin</div>
 }
 
-export default definePlugin(
-  "my-plugin",               // MUST match package.json#name
-  (api) => {
-    api.registerPanel({
-      id: "my-plugin.panel",
-      label: "My Plugin",
-      component: MyPane,
-    })
-    api.registerPanelCommand({
-      id: "my-plugin.open",
-      title: "Open My Plugin",
-      panelId: "my-plugin.panel",
-    })
-    api.registerLeftTab({
-      id: "my-plugin.tab",
-      title: "My Plugin",
-      panelId: "my-plugin.panel",
-    })
-  },
-  { label: "My Plugin" },
-)
+export default definePlugin({
+  id: "my-plugin",            // MUST match package.json#name
+  label: "My Plugin",
+  panels: [
+    { id: "my-plugin.panel", label: "My Plugin", component: MyPane },
+  ],
+  commands: [
+    { id: "my-plugin.open", title: "Open My Plugin", panelId: "my-plugin.panel" },
+  ],
+  leftTabs: [
+    { id: "my-plugin.tab", title: "My Plugin", panelId: "my-plugin.panel" },
+  ],
+})
 ```
 
 Notes:
 
-- The first arg to `definePlugin` MUST match `package.json#name` (string,
-  not template literal).
+- `config.id` MUST match `package.json#name` (string, not template literal).
 - Panel/command/tab ids should be `<plugin-id>.<thing>` — convention.
 - Import React explicitly (no `globalThis.React`).
-- Do NOT use `defineFrontPlugin` (removed from the public API).
+- Do NOT use `defineFrontPlugin` or `createPlugin` (don't exist).
 
 ## Common patterns
 
@@ -173,23 +158,29 @@ function CsvPane({ params }: PaneProps<{ path: string }>) {
   return <pre>{text}</pre>
 }
 
-export default definePlugin("csv-viz", (api) => {
-  api.registerPanel({ id: "csv-viz.panel", label: "CSV", component: CsvPane })
-  api.registerSurfaceResolver({
-    id: "csv-viz.surface",
-    kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
-    resolve(request) {
-      if (!request.target.toLowerCase().endsWith(".csv")) return undefined
-      return {
-        id: `csv-viz:${request.target}`,
-        component: "csv-viz.panel",
-        title: request.target.split("/").pop() ?? request.target,
-        params: { path: request.target },
-        score: 100,
-      }
+export default definePlugin({
+  id: "csv-viz",
+  label: "CSV Viewer",
+  panels: [
+    { id: "csv-viz.panel", label: "CSV", component: CsvPane },
+  ],
+  surfaceResolvers: [
+    {
+      id: "csv-viz.surface",
+      kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
+      resolve(request) {
+        if (!request.target.toLowerCase().endsWith(".csv")) return undefined
+        return {
+          id: `csv-viz:${request.target}`,
+          component: "csv-viz.panel",
+          title: request.target.split("/").pop() ?? request.target,
+          params: { path: request.target },
+          score: 100,
+        }
+      },
     },
-  })
-}, { label: "CSV Viewer" })
+  ],
+})
 ```
 
 Read raw file bytes from `/api/v1/files/raw?path=<workspace-relative-path>`.
@@ -247,7 +238,25 @@ in `package.json#pi.extensions: ["agent/index.ts"]`.
 
 ### Extending an existing plugin (no `composePlugins` helper)
 
-There's no library function — just chain factories with the same `api`:
+Composition is JS-native — spread + concat. Plugins that export their
+config object can be extended directly:
+
+```ts
+import { definePlugin } from "@hachej/boring-workspace/plugin"
+import { baseDataCatalogConfig } from "@hachej/boring-data-catalog"
+
+export default definePlugin({
+  ...baseDataCatalogConfig({ adapter: myAdapter }),
+  id: "my-extended",
+  commands: [
+    ...baseDataCatalogConfig({ adapter: myAdapter }).commands,
+    { id: "my-extended.export", title: "Export to CSV", panelId: "my-extended-panel" },
+  ],
+})
+```
+
+If a base plugin only exposes a factory (`(api) => void`), use the
+`setup` escape hatch to call it:
 
 ```ts
 import { definePlugin } from "@hachej/boring-workspace/plugin"
@@ -255,13 +264,12 @@ import { createDataCatalogPlugin } from "@hachej/boring-data-catalog"
 
 const baseFactory = createDataCatalogPlugin({ adapter: myAdapter })
 
-export default definePlugin("my-extended", (api) => {
-  baseFactory(api)                         // base registrations
-  api.registerPanelCommand({               // your additions
-    id: "my-extended.export",
-    title: "Export to CSV",
-    panelId: "my-extended-panel",
-  })
+export default definePlugin({
+  id: "my-extended",
+  commands: [
+    { id: "my-extended.export", title: "Export to CSV", panelId: "my-extended-panel" },
+  ],
+  setup: (api) => baseFactory(api),   // runs after declarative registrations
 })
 ```
 
@@ -271,9 +279,11 @@ components), just import and render them inside your panel:
 ```tsx
 import { DataExplorer } from "@hachej/boring-data-explorer/front"
 
-api.registerPanel({
-  id: "my-thing.panel",
-  component: () => <DataExplorer adapter={myAdapter} />,
+definePlugin({
+  id: "my-thing",
+  panels: [
+    { id: "my-thing.panel", label: "My Thing", component: () => <DataExplorer adapter={myAdapter} /> },
+  ],
 })
 ```
 
