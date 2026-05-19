@@ -7,17 +7,30 @@
  * Surfaces:
  *  - "running"  — yellow-ish accent, while the /api/v1/agent/reload call
  *    is in flight.
- *  - "success"  — green-ish accent, with the reloaded plugin count and
- *    a dismiss button.
+ *  - "success"  — green-ish accent, with the reloaded plugin count, an
+ *    optional amber "restart needed" sub-banner (when the response
+ *    carried `restart_warnings`), and a dismiss button.
  *  - "error"    — red-ish accent, with the diagnostic message and a
  *    "Try again" button that re-runs `/reload`.
  */
 import type { ReactElement } from "react"
 import { cn } from "../lib"
 
+/**
+ * One per plugin that loaded successfully but whose server-side surfaces
+ * (Fastify routes / agent tools) still hold pre-reload code. Carries
+ * the structured event field through to the UI so users can see WHICH
+ * plugin + WHICH surfaces need the restart, not a generic warning.
+ */
+export interface PluginRestartWarning {
+  id: string
+  surfaces: string[]
+  message: string
+}
+
 export type PluginUpdateState =
   | { kind: "running" }
-  | { kind: "success"; reloaded: boolean }
+  | { kind: "success"; reloaded: boolean; restartWarnings?: PluginRestartWarning[] }
   | { kind: "error"; message: string }
 
 export interface PluginUpdateStatusProps {
@@ -47,6 +60,7 @@ export function PluginUpdateStatus({ state, onDismiss, onRetry }: PluginUpdateSt
   }
 
   if (state.kind === "success") {
+    const warnings = state.restartWarnings ?? []
     return (
       <div
         data-boring-plugin-update="success"
@@ -54,23 +68,51 @@ export function PluginUpdateStatus({ state, onDismiss, onRetry }: PluginUpdateSt
         aria-live="polite"
         className={cn(
           "mx-auto mb-2 w-full max-w-3xl rounded-[var(--radius-md)] border border-[oklch(0.78_0.13_148)]/40 bg-[oklch(0.95_0.05_148/0.3)]",
-          "px-3 py-2 text-xs text-foreground flex items-center gap-2",
+          "px-3 py-2 text-xs text-foreground",
         )}
       >
-        <span className="text-[oklch(0.45_0.13_148)]" aria-hidden="true">✓</span>
-        <span className="flex-1">
-          {state.reloaded
-            ? "Plugins updated."
-            : "Plugins will reload on the next message."}
-        </span>
-        <button
-          type="button"
-          onClick={onDismiss}
-          className="rounded border border-transparent px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-          aria-label="Dismiss plugin update status"
-        >
-          Dismiss
-        </button>
+        <div className="flex items-center gap-2">
+          <span className="text-[oklch(0.45_0.13_148)]" aria-hidden="true">✓</span>
+          <span className="flex-1">
+            {state.reloaded
+              ? "Plugins updated."
+              : "Plugins will reload on the next message."}
+          </span>
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="rounded border border-transparent px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label="Dismiss plugin update status"
+          >
+            Dismiss
+          </button>
+        </div>
+        {warnings.length > 0 ? (
+          <div
+            data-boring-plugin-update-restart-warning=""
+            className={cn(
+              "mt-2 rounded border border-[oklch(0.78_0.15_85)]/40 bg-[oklch(0.95_0.06_85/0.4)]",
+              "px-2 py-1.5 text-[11px] text-foreground",
+            )}
+          >
+            <div className="flex items-center gap-1.5 font-medium text-[oklch(0.48_0.15_60)]">
+              <span aria-hidden="true">⚠</span>
+              <span>
+                Restart needed for {warnings.length} plugin{warnings.length === 1 ? "" : "s"}
+              </span>
+            </div>
+            <ul className="mt-1 ml-4 list-disc text-foreground/85">
+              {warnings.map((w) => (
+                <li key={w.id}>
+                  <code className="font-mono text-[10.5px]">{w.id}</code> — {w.surfaces.join(" + ")}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-foreground/70">
+              The front bundle reloaded successfully, but routes and agent tools were wired at boot. Restart the server to pick up the new code.
+            </p>
+          </div>
+        ) : null}
       </div>
     )
   }

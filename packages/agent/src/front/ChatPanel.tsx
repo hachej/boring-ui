@@ -18,7 +18,7 @@ import { PI_AGENT_RUNTIME_CAPABILITIES } from '../shared/capabilities'
 import { builtinCommands } from './slashCommands/builtins'
 import { parseSlashCommand } from './slashCommands/parser'
 import { createCommandRegistry, type SlashCommand, type SlashCommandContext } from './slashCommands/registry'
-import { PluginUpdateStatus, type PluginUpdateState } from './composer/PluginUpdateStatus'
+import { PluginUpdateStatus, type PluginUpdateState, type PluginRestartWarning } from './composer/PluginUpdateStatus'
 import {
   type ToolRendererOverrides,
 } from './bareToolRenderers'
@@ -439,7 +439,10 @@ export function ChatPanel(props: ChatPanelProps) {
   // Low-level reload call. /reload uses the banner UX via
   // runPluginUpdate when the host has wired it, otherwise falls back
   // to reloadAgentPlugins below for inline-text feedback.
-  const callPluginReload = useCallback(async (): Promise<{ reloaded: boolean }> => {
+  const callPluginReload = useCallback(async (): Promise<{
+    reloaded: boolean
+    restartWarnings?: PluginRestartWarning[]
+  }> => {
     const res = await fetch('/api/v1/agent/reload', {
       method: 'POST',
       headers: { ...(requestHeaders ?? {}), 'content-type': 'application/json' },
@@ -449,11 +452,19 @@ export function ChatPanel(props: ChatPanelProps) {
       const payload = await res.json().catch(() => ({})) as { error?: string }
       throw new Error(payload.error || `reload failed (${res.status})`)
     }
-    const payload = await res.json().catch(() => ({})) as { reloaded?: boolean }
+    const payload = await res.json().catch(() => ({})) as {
+      reloaded?: boolean
+      restart_warnings?: PluginRestartWarning[]
+    }
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: payload }))
     }
-    return { reloaded: Boolean(payload.reloaded) }
+    return {
+      reloaded: Boolean(payload.reloaded),
+      ...(payload.restart_warnings && payload.restart_warnings.length > 0
+        ? { restartWarnings: payload.restart_warnings }
+        : {}),
+    }
   }, [requestHeaders, sessionId])
 
   const reloadAgentPlugins = useCallback(async () => {
@@ -482,9 +493,13 @@ export function ChatPanel(props: ChatPanelProps) {
     const capturedSession = activeSessionRef.current
     setPluginUpdateState({ kind: 'running' })
     try {
-      const { reloaded } = await callPluginReload()
+      const { reloaded, restartWarnings } = await callPluginReload()
       if (activeSessionRef.current !== capturedSession) return 'Plugins updated.'
-      setPluginUpdateState({ kind: 'success', reloaded })
+      setPluginUpdateState({
+        kind: 'success',
+        reloaded,
+        ...(restartWarnings && restartWarnings.length > 0 ? { restartWarnings } : {}),
+      })
       return reloaded ? 'Plugins updated.' : 'Plugins will reload on the next message.'
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Plugin update failed.'
