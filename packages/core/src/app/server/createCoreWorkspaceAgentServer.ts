@@ -12,13 +12,13 @@ import {
   collectWorkspaceAgentServerPlugins,
   provisionWorkspaceAgentServer,
   type CreateWorkspaceAgentServerOptions,
-  type WorkspaceServerPlugin,
 } from '@hachej/boring-workspace/app/server'
 import {
   createInMemoryBridge,
   createWorkspaceUiTools,
   uiRoutes,
   type UiBridge,
+  type WorkspaceServerPlugin,
 } from '@hachej/boring-workspace/server'
 import type { FastifyInstance } from 'fastify'
 import type postgres from 'postgres'
