@@ -45,13 +45,13 @@
     .eyebrow {
       display: inline-flex;
       align-items: center;
-      gap: 12px;
-      font-size: 13px;
+      gap: 14px;
+      font-size: 16px;
       letter-spacing: 0.10em;
       text-transform: uppercase;
       color: var(--accent);
       font-weight: 500;
-      margin-bottom: 32px;
+      margin-bottom: 36px;
     }
     .eyebrow::before {
       content: "";
@@ -68,23 +68,23 @@
       margin: 0 0 32px 0;
     }
     p.lede {
-      font-size: 24px;
-      line-height: 1.55;
+      font-size: 30px;
+      line-height: 1.4;
       color: var(--muted);
-      margin: 0 0 40px 0;
-      max-width: 480px;
+      margin: 0 0 44px 0;
+      max-width: 520px;
       font-weight: 400;
     }
     .cmd {
       display: inline-flex;
       align-items: center;
-      gap: 14px;
+      gap: 16px;
       font-family: var(--mono);
-      font-size: 15px;
+      font-size: 18px;
       color: var(--fg);
       background: var(--canvas);
       border: 1px solid var(--hairline);
-      padding: 12px 16px;
+      padding: 14px 20px;
       border-radius: 10px;
       box-shadow: 0 1px 0 rgba(0,0,0,0.02);
       max-width: fit-content;
@@ -111,8 +111,8 @@
       justify-content: center;
     }
     .shot {
-      width: 100%;
-      max-height: 720px;
+      width: 88%;
+      max-height: 580px;
       height: auto;
       object-fit: contain;
       border-radius: 14px;
@@ -122,6 +122,7 @@
         0 24px 56px -28px rgba(20, 16, 8, 0.18);
       background: var(--canvas);
       display: block;
+      margin-top: 60px;
     }
 
     .annot {
@@ -141,8 +142,8 @@
       color: #4A463E;
       margin-top: 2px;
     }
-    .annot.top-left { top: 8px; left: 30px; max-width: 520px; }
-    .annot.bottom-right { bottom: 8px; right: 30px; max-width: 560px; text-align: right; }
+    .annot.top-left  { top: 4px; left: 60px;  max-width: 460px; }
+    .annot.top-right { top: 4px; right: 40px; max-width: 540px; text-align: right; }
 
     .arrow {
       position: absolute;
@@ -151,26 +152,25 @@
     }
     .arrow.top-left {
       top: 100px;
-      left: 100px;
-      width: 280px;
-      height: 150px;
+      left: 220px;
+      width: 220px;
+      height: 130px;
     }
-    .arrow.bottom-right {
-      bottom: 100px;
-      right: 80px;
-      width: 280px;
-      height: 150px;
+    .arrow.top-right {
+      top: 100px;
+      right: 100px;
+      width: 220px;
+      height: 130px;
     }
   </style>
 </head>
 <body>
   <div class="hero">
     <div class="text">
-      <div class="eyebrow">An agent-first workspace</div>
+      <div class="eyebrow">An agent-native workspace</div>
       <h1>Boring UI</h1>
       <p class="lede">
-        Turn your agent into an app.<br/>
-        Give your agent a workspace.
+        A simple workspace for complex agents.
       </p>
       <div class="cmd">
         <span class="dollar">$</span>
@@ -184,34 +184,36 @@
     <div class="shot-wrap">
       <img class="shot" src="../../docs/assets/readme/source-hero.png" alt="Boring UI workspace" />
 
-      <!-- Top annotation: customizable agent → arrow into chat hero -->
-      <div class="annot top-left">A customizable agent<span class="sub">(skills + prompts)</span></div>
-      <svg class="arrow top-left" viewBox="0 0 280 170" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <!-- Both annotations at the top — arrows curve down into their halves of the screenshot -->
+
+      <!-- LEFT: agent + skills → arrow down into chat hero ("What are we building?") -->
+      <div class="annot top-left">The agent, with its skills</div>
+      <svg class="arrow top-left" viewBox="0 0 220 130" fill="none" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <marker id="ah-tl" viewBox="0 0 12 12" refX="11" refY="6"
                   markerWidth="9" markerHeight="9" orient="auto-start-reverse">
             <path d="M0,0 L12,6 L0,12 Z" fill="#171717" />
           </marker>
         </defs>
-        <path d="M30,12 C60,50 110,96 190,140 Q220,156 244,158"
+        <path d="M30,10 C70,40 100,70 130,98 Q145,114 158,120"
               stroke="#171717" stroke-width="3.5" fill="none"
               stroke-linecap="round" stroke-linejoin="round"
               marker-end="url(#ah-tl)" />
       </svg>
 
-      <!-- Bottom annotation: workspace agent controls + builds → arrow into workbench -->
-      <div class="annot bottom-right">A workspace it controls<span class="sub">and builds as you go</span></div>
-      <svg class="arrow bottom-right" viewBox="0 0 280 170" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <!-- RIGHT: workspace under agent control → arrow down into workbench (README pane) -->
+      <div class="annot top-right">The workspace, under its control</div>
+      <svg class="arrow top-right" viewBox="0 0 220 130" fill="none" xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <marker id="ah-br" viewBox="0 0 12 12" refX="11" refY="6"
+          <marker id="ah-tr" viewBox="0 0 12 12" refX="11" refY="6"
                   markerWidth="9" markerHeight="9" orient="auto-start-reverse">
             <path d="M0,0 L12,6 L0,12 Z" fill="#171717" />
           </marker>
         </defs>
-        <path d="M252,158 C220,120 150,84 80,40 Q48,20 28,16"
+        <path d="M190,10 C150,40 120,70 90,98 Q72,114 62,120"
               stroke="#171717" stroke-width="3.5" fill="none"
               stroke-linecap="round" stroke-linejoin="round"
-              marker-end="url(#ah-br)" />
+              marker-end="url(#ah-tr)" />
       </svg>
     </div>
   </div>
