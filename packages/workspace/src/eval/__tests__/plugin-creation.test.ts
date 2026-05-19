@@ -35,13 +35,30 @@ const EVAL_CSV_PLUGIN_PACKAGE = join(EVAL_CSV_PLUGIN_DIR, "package.json")
 const EVAL_MIN_PLUGIN_DIR = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-min-tasks")
 const EVAL_MIN_PLUGIN_PACKAGE = join(EVAL_MIN_PLUGIN_DIR, "package.json")
 
+const EVAL_SPLIT_DIR = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-split-files")
+const EVAL_SPLIT_PACKAGE = join(EVAL_SPLIT_DIR, "package.json")
+
+const EVAL_REFINE_DIR = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-refine")
+const EVAL_REFINE_PACKAGE = join(EVAL_REFINE_DIR, "package.json")
+const EVAL_REFINE_FRONT = join(EVAL_REFINE_DIR, "front", "index.tsx")
+
+const EVAL_CROSS_DIR = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-cross")
+const EVAL_CROSS_PACKAGE = join(EVAL_CROSS_DIR, "package.json")
+
 describeIf("package plugin creation + reload eval (live LLM)", () => {
   let app: FastifyInstance
 
+  const cleanupDirs = [
+    EVAL_PLUGIN_DIR,
+    EVAL_CSV_PLUGIN_DIR,
+    EVAL_MIN_PLUGIN_DIR,
+    EVAL_SPLIT_DIR,
+    EVAL_REFINE_DIR,
+    EVAL_CROSS_DIR,
+  ]
+
   beforeAll(async () => {
-    rmSync(EVAL_PLUGIN_DIR, { recursive: true, force: true })
-    rmSync(EVAL_CSV_PLUGIN_DIR, { recursive: true, force: true })
-    rmSync(EVAL_MIN_PLUGIN_DIR, { recursive: true, force: true })
+    for (const dir of cleanupDirs) rmSync(dir, { recursive: true, force: true })
     app = await createWorkspaceAgentServer({
       workspaceRoot: WORKSPACE_PKG_ROOT,
       mode: "direct",
@@ -52,9 +69,7 @@ describeIf("package plugin creation + reload eval (live LLM)", () => {
 
   afterAll(async () => {
     if (app) await app.close()
-    rmSync(EVAL_PLUGIN_DIR, { recursive: true, force: true })
-    rmSync(EVAL_CSV_PLUGIN_DIR, { recursive: true, force: true })
-    rmSync(EVAL_MIN_PLUGIN_DIR, { recursive: true, force: true })
+    for (const dir of cleanupDirs) rmSync(dir, { recursive: true, force: true })
   })
 
   test(
@@ -480,6 +495,255 @@ Then run /reload to verify.
       const plugin = list.json().find((entry: { id: string }) => entry.id === "eval-min-tasks")
       expect(plugin, "plugin not discovered after /reload").toBeTruthy()
       expect(plugin.frontUrl).toContain("/@fs/")
+    },
+    600_000,
+  )
+
+  // Eval #2: multi-file plugin — agent splits front into a top-level
+  // `front/index.tsx` that imports a panel component from a sibling
+  // file. Tests that the agent gets relative imports + file layout right.
+  test(
+    "agent creates a multi-file plugin with front/index.tsx + a sibling component file",
+    async () => {
+      const result = await evalAgentPrompt({
+        app,
+        prompt: [
+          "Create a hot-reloadable boring-ui plugin under `.pi/extensions/eval-split-files/`",
+          "(use that exact unscoped name in package.json — no @scope) with the panel",
+          "component implemented in a SEPARATE file from front/index.tsx.",
+          "",
+          "Specifically:",
+          "- front/index.tsx must register the panel + a panel command, but should",
+          "  IMPORT the panel component from a sibling file (your choice of name,",
+          "  e.g. `./components/Panel.tsx` or `./Panel.tsx`).",
+          "- The sibling component file should export a default React component that",
+          "  renders a simple <div> with the text 'split-files plugin works'.",
+          "",
+          "After writing the files, tell me to run /reload.",
+        ].join("\n"),
+        expect: [],
+        model: EVAL_MODEL,
+        retries: 1,
+        timeoutMs: 300_000,
+      })
+
+      expect(result.ok, formatFailure(result)).toBe(true)
+      expect(existsSync(EVAL_SPLIT_PACKAGE)).toBe(true)
+
+      const packageJson = JSON.parse(readFileSync(EVAL_SPLIT_PACKAGE, "utf8"))
+      expect(packageJson.name).toBe("eval-split-files")
+      const declaredFront: string = packageJson.boring?.front ?? "front/index.tsx"
+      const frontPath = join(EVAL_SPLIT_DIR, declaredFront)
+      expect(existsSync(frontPath), `front entry missing at ${declaredFront}`).toBe(true)
+      const frontSource = readFileSync(frontPath, "utf8")
+      // The factory imports the component from a sibling file.
+      expect(frontSource).toMatch(/import\s+\w+\s+from\s+["']\.\.?\//)
+      expect(frontSource).toContain("registerPanel")
+
+      // The imported sibling file exists somewhere under the plugin dir.
+      const { readdirSync, statSync: stat } = await import("node:fs")
+      function walk(dir: string): string[] {
+        const out: string[] = []
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const full = join(dir, entry.name)
+          if (entry.isDirectory()) out.push(...walk(full))
+          else out.push(full)
+        }
+        return out
+      }
+      const tsxFiles = walk(EVAL_SPLIT_DIR).filter((p) => p.endsWith(".tsx") && p !== frontPath)
+      expect(tsxFiles.length, "no sibling .tsx component file found").toBeGreaterThan(0)
+      const hasSplitMarker = tsxFiles.some((p) => readFileSync(p, "utf8").includes("split-files plugin works"))
+      expect(hasSplitMarker, "no sibling file contains the expected marker text").toBe(true)
+
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(reload.statusCode).toBe(200)
+      const plugin = (await app.inject({ method: "GET", url: "/api/agent-plugins" }))
+        .json()
+        .find((entry: { id: string }) => entry.id === "eval-split-files")
+      expect(plugin, "plugin not discovered after /reload").toBeTruthy()
+      expect(stat(frontPath).size).toBeGreaterThan(0)
+    },
+    600_000,
+  )
+
+  // Eval #3: iterative refinement (closed loop) — pre-write a working
+  // plugin, then ask the agent to MODIFY it (not rewrite from scratch).
+  // Tests the agent's read-then-edit discipline.
+  test(
+    "agent refines an existing plugin in place — adds a count badge to the panel header",
+    async () => {
+      // Plant a working plugin.
+      const { mkdirSync } = await import("node:fs")
+      rmSync(EVAL_REFINE_DIR, { recursive: true, force: true })
+      mkdirSync(join(EVAL_REFINE_DIR, "front"), { recursive: true })
+      writeFileSync(
+        EVAL_REFINE_PACKAGE,
+        JSON.stringify(
+          {
+            name: "eval-refine",
+            version: "0.1.0",
+            private: true,
+            boring: { label: "Eval Refine", front: "front/index.tsx", server: false },
+            pi: { systemPrompt: "Eval refine plugin." },
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      )
+      const initialFront = [
+        `import React from "react"`,
+        `import { definePlugin } from "@hachej/boring-workspace/plugin"`,
+        ``,
+        `const TODOS = ["buy milk", "walk dog", "write code"]`,
+        ``,
+        `function RefinePane() {`,
+        `  return (`,
+        `    <div style={{ padding: 16 }}>`,
+        `      <h2>Eval Refine — todos</h2>`,
+        `      <ul>{TODOS.map((t) => <li key={t}>{t}</li>)}</ul>`,
+        `    </div>`,
+        `  )`,
+        `}`,
+        ``,
+        `export default definePlugin(`,
+        `  "eval-refine",`,
+        `  (api) => {`,
+        `    api.registerPanel({ id: "eval-refine.panel", label: "Eval Refine", component: RefinePane })`,
+        `    api.registerPanelCommand({ id: "eval-refine.open", title: "Open Eval Refine", panelId: "eval-refine.panel" })`,
+        `  },`,
+        `  { label: "Eval Refine" },`,
+        `)`,
+        ``,
+      ].join("\n")
+      writeFileSync(EVAL_REFINE_FRONT, initialFront, "utf8")
+      const baseline = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(baseline.statusCode).toBe(200)
+      const baselineRevision = (await app.inject({ method: "GET", url: "/api/agent-plugins" }))
+        .json()
+        .find((entry: { id: string }) => entry.id === "eval-refine")?.revision
+      expect(baselineRevision).toEqual(expect.any(Number))
+
+      // Now ask the agent to refine.
+      const result = await evalAgentPrompt({
+        app,
+        prompt: [
+          "The plugin at `.pi/extensions/eval-refine/front/index.tsx` already exists.",
+          "Add a small count badge next to the 'Eval Refine — todos' heading",
+          "showing the number of items in the TODOS array (e.g. '— todos (3)').",
+          "Do NOT rewrite the whole file — read the existing one and apply a",
+          "minimal edit. Keep the existing exports, panel id, command id, and",
+          "definePlugin call intact.",
+          "",
+          "After editing, tell me to run /reload.",
+        ].join("\n"),
+        expect: [],
+        model: EVAL_MODEL,
+        retries: 1,
+        timeoutMs: 300_000,
+      })
+
+      expect(result.ok, formatFailure(result)).toBe(true)
+
+      // Agent must have READ the existing file (not just blindly written).
+      const readEvalRefine = result.actual
+        .filter((c) => c.tool === "read")
+        .some((c) => String(c.params.path ?? c.params.file_path ?? "").includes("eval-refine/front/index.tsx"))
+      expect(readEvalRefine, "agent did not read the existing front/index.tsx before editing").toBe(true)
+
+      const updatedFront = readFileSync(EVAL_REFINE_FRONT, "utf8")
+      // The badge / count must appear in the source.
+      expect(updatedFront).toMatch(/TODOS\.length|todos \(3\)|\{TODOS\.length\}/)
+      // Existing structure preserved.
+      expect(updatedFront).toContain("definePlugin")
+      expect(updatedFront).toContain('"eval-refine.panel"')
+      expect(updatedFront).toContain('"eval-refine.open"')
+
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(reload.statusCode).toBe(200)
+      const refreshed = (await app.inject({ method: "GET", url: "/api/agent-plugins" }))
+        .json()
+        .find((entry: { id: string }) => entry.id === "eval-refine")
+      expect(refreshed.revision).toBeGreaterThan(baselineRevision)
+    },
+    600_000,
+  )
+
+  // Eval #4: cross-concern — single plugin contributes BOTH a server-side
+  // agent tool AND a front panel. Tests that the agent gets the dual-
+  // surface plugin shape right (boring.server: true + agent_tools).
+  test(
+    "agent creates a cross-concern plugin (server tool + front panel) that reloads cleanly",
+    async () => {
+      const result = await evalAgentPrompt({
+        app,
+        prompt: [
+          "Create a hot-reloadable boring-ui plugin at `.pi/extensions/eval-cross/`",
+          "(use that exact unscoped name in package.json) that contributes BOTH:",
+          "",
+          "1. A server-side agent tool named `eval_cross_ping` that returns the",
+          "   text 'eval-cross pong' so the agent can call it.",
+          "2. A front panel that renders a simple <div> with the text",
+          "   'Eval Cross panel'.",
+          "",
+          "Files: package.json, front/index.tsx, server/index.ts.",
+          "package.json must set `boring.server: \"server/index.ts\"` (a path string,",
+          "NOT the boolean true — manifest validator rejects true) and",
+          "`boring.front: \"front/index.tsx\"`.",
+          "",
+          "After writing, tell me to run /reload.",
+        ].join("\n"),
+        expect: [],
+        model: EVAL_MODEL,
+        retries: 1,
+        timeoutMs: 300_000,
+      })
+
+      expect(result.ok, formatFailure(result)).toBe(true)
+      expect(existsSync(EVAL_CROSS_PACKAGE)).toBe(true)
+
+      const packageJson = JSON.parse(readFileSync(EVAL_CROSS_PACKAGE, "utf8"))
+      expect(packageJson.name).toBe("eval-cross")
+      // `boring.server` accepts either an explicit path string OR `true`
+      // (some agents pick one, some pick the other). It must NOT be false /
+      // missing for a cross-concern plugin.
+      const serverField = packageJson.boring?.server
+      expect(
+        serverField === true || (typeof serverField === "string" && serverField.length > 0),
+        `boring.server must indicate a server is present; got ${JSON.stringify(serverField)}`,
+      ).toBe(true)
+      expect(packageJson.boring?.front).toMatch(/front\/index\.tsx?$/)
+
+      const frontSource = readFileSync(join(EVAL_CROSS_DIR, packageJson.boring.front), "utf8")
+      expect(frontSource).toContain("registerPanel")
+      expect(frontSource).toContain("Eval Cross panel")
+
+      // Server file present and shaped roughly like a server plugin.
+      const serverPath = join(EVAL_CROSS_DIR, "server", "index.ts")
+      expect(existsSync(serverPath), "server/index.ts missing").toBe(true)
+      const serverSource = readFileSync(serverPath, "utf8")
+      // Either Shape A (defineServerPlugin + agentTools) or a function
+      // that returns a tool list. Accept both — assert on the tool name.
+      expect(serverSource).toContain("eval_cross_ping")
+      expect(serverSource).toMatch(/agentTools|defineServerPlugin|execute/)
+
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(reload.statusCode).toBe(200)
+      const pluginsList = (await app.inject({ method: "GET", url: "/api/agent-plugins" })).json()
+      const plugin = pluginsList.find((entry: { id: string }) => entry.id === "eval-cross")
+      const boringReload = await app.inject({ method: "POST", url: "/api/boring.reload", payload: {} })
+      const errMsg = boringReload.statusCode === 422
+        ? `; boring.reload errors: ${JSON.stringify(boringReload.json(), null, 2)}`
+        : ""
+      expect(
+        plugin,
+        `plugin not discovered after /reload; ids in registry: ${JSON.stringify(pluginsList.map((p: { id: string }) => p.id))}${errMsg}`,
+      ).toBeTruthy()
+      const serverFieldServed = plugin.boring?.server
+      expect(
+        serverFieldServed === true || (typeof serverFieldServed === "string" && serverFieldServed.length > 0),
+      ).toBe(true)
     },
     600_000,
   )
