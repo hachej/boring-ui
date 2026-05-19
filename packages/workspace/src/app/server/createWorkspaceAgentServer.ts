@@ -209,6 +209,27 @@ function createBoringPiPackageSource(workspaceRoot: string): WorkspacePiPackageS
   return { source, skills: ["skills/boring-plugin-authoring"] }
 }
 
+/**
+ * Direct absolute path(s) to bundled boring-pi skills.
+ *
+ * The boring-pi package source above is the canonical declarative way to
+ * register the skill, but Pi's DefaultResourceLoader skips package-resolved
+ * skills (`enabledSkills`) when `noSkills: true` is set — and boring's
+ * default agent factory does set `noSkills: true` so user-global skills
+ * (~/.agents/skills) don't leak into the agent's prompt. To keep OUR
+ * skill flowing regardless of that filter, we also push the SKILL.md
+ * path into `additionalSkillPaths`, which Pi loads via its skillsOverride
+ * even under noSkills. Belt-and-suspenders so the agent always sees the
+ * plugin-authoring skill.
+ */
+function resolveBoringPiSkillPaths(workspaceRoot: string): string[] {
+  const pkg = createBoringPiPackageSource(workspaceRoot)
+  const root = typeof pkg === "string" ? pkg : pkg?.source
+  if (!root) return []
+  const skillFile = join(root, "skills", "boring-plugin-authoring", "SKILL.md")
+  return existsSync(skillFile) ? [skillFile] : []
+}
+
 export interface WorkspaceAgentServerPluginCollection {
   provisioningContributions: WorkspaceProvisioningContribution[]
   routeContributions: WorkspaceRouteContribution[]
@@ -471,7 +492,10 @@ export async function createWorkspaceAgentServer(
   // readPackageJsonPiSnapshot) which already reads each package's
   // pi.* fields on every session/reload.
   const workspacePackagePiPackage = createBoringPiPackageSource(workspaceRoot)
-  const staticPiSkillPaths = pluginCollection.agentOptions.pi?.additionalSkillPaths ?? []
+  const staticPiSkillPaths = [
+    ...resolveBoringPiSkillPaths(workspaceRoot),
+    ...(pluginCollection.agentOptions.pi?.additionalSkillPaths ?? []),
+  ]
   const staticPiPackages = compactPiPackages([
     workspacePackagePiPackage,
     ...(pluginCollection.agentOptions.pi?.packages ?? []),

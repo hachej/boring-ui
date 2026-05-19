@@ -64,3 +64,6 @@ packages/agent/bench-results/
 # LLM eval scratch directories (plugins/CSVs created by live-LLM tests)
 packages/workspace/.pi/
 packages/workspace/*.csv
+packages/workspace/packages/
+packages/workspace/plugins/
+packages/workspace/src/plugins/eval-*/
