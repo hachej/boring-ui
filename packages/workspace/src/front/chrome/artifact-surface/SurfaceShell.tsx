@@ -231,10 +231,7 @@ export function SurfaceShell({
       return
     }
     const panelId = surfacePanelId(normalizedRequest, resolved)
-    const existing =
-      normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
-        ? findOpenFilePanel(api, normalizedRequest.target) ?? api.getPanel(panelId)
-        : api.getPanel(panelId)
+    const existing = api.getPanel(panelId)
     const closeWorkbenchOnDone = normalizedRequest.meta?.closeWorkbenchOnDone === true
     const resolvedParams = closeWorkbenchOnDone && onCloseRef.current
       ? { ...(resolved.params ?? {}), __closeWorkbenchOnDone: onCloseRef.current }
