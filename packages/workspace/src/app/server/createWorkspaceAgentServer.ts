@@ -43,11 +43,6 @@ import {
   type WorkspaceRouteContribution,
 } from "../../server/plugins/bootstrapServer"
 
-export {
-  resolveDefaultWorkspacePluginPackagePaths,
-  type ResolveDefaultWorkspacePluginPackagePathsOptions,
-} from "./defaultPluginPackages"
-
 type HostExtensionFactory = PiExtensionFactory
 
 export interface WorkspaceAgentPiOptions {
