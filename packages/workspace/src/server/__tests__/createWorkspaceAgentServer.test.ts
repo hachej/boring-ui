@@ -135,7 +135,7 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
       "/host/agent/index.ts",
     ])
     // Host-level extensionFactories flow through unchanged; plugin-level
-    // declaration has been dropped (DESIGN.md §11 deferred capability).
+    // declaration has been dropped (PLUGIN_SYSTEM.md §11 deferred capability).
     expect(result.agentOptions.pi?.extensionFactories).toEqual([hostFactory])
   })
 
@@ -413,7 +413,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     }
   })
 
-  test("POST /api/v1/agent/reload tolerates per-plugin failures (DESIGN.md §4.5)", async () => {
+  test("POST /api/v1/agent/reload tolerates per-plugin failures (PLUGIN_SYSTEM.md §4.5)", async () => {
     // beforeReload no longer throws on per-plugin scan/rebuild errors.
     // POST /api/v1/agent/reload returns 200 even when an underlying plugin
     // misbehaves; diagnostics flow through SSE + /api/agent-plugins/:id/error.

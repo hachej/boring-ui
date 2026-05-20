@@ -274,7 +274,7 @@ export function createCapturingBoringFrontAPI(options: { pluginId?: string } = {
   const leftTabs: BoringFrontLeftTabRegistration<any>[] = []
   const surfaceResolvers: BoringFrontSurfaceResolverRegistration[] = []
   const outputs: PluginOutput[] = []
-  // Intra-plugin id collision detection (DESIGN.md §6.7): two register*
+  // Intra-plugin id collision detection (PLUGIN_SYSTEM.md §6.7): two register*
   // calls in the same factory chain landing the same id are silent
   // last-write-wins in the atomic-replace path (same pluginId → no
   // collision warning from replaceByPluginId). Catch them at capture

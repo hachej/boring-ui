@@ -248,7 +248,7 @@ describeIf("package plugin creation + reload eval (live LLM) [$provider/$id]", (
       expect(baseline.statusCode).toBe(200)
 
       // Corrupt package.json — asset manager's preflight catches this on
-      // /reload. Per DESIGN.md §4.5 the agent route (/api/v1/agent/reload)
+      // /reload. Per PLUGIN_SYSTEM.md §4.5 the agent route (/api/v1/agent/reload)
       // tolerates per-plugin failures (returns 200; the diagnostic is
       // surfaced via SSE error events + the .error file). The
       // workspace-owned route (/api/boring.reload) returns 422 with the
