@@ -64,7 +64,7 @@ async function makeTempWorkspace(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'boring-agent-bash-env-'))
   tempDirs.push(dir)
   await mkdir(join(dir, '.boring-agent', 'bin'), { recursive: true })
-  await mkdir(join(dir, '.venv', 'bin'), { recursive: true })
+  await mkdir(join(dir, '.boring-agent', 'venv', 'bin'), { recursive: true })
   return dir
 }
 
@@ -124,8 +124,8 @@ describe('buildHarnessAgentTools', () => {
   test('direct bash exposes workspace bm/python/pip shims and env', async () => {
     const workspaceRoot = await makeTempWorkspace()
     await writeExecutable(join(workspaceRoot, '.boring-agent', 'bin', 'bm'), '#!/usr/bin/env bash\necho bm-shim\n')
-    await writeExecutable(join(workspaceRoot, '.venv', 'bin', 'python'), '#!/usr/bin/env bash\necho python-shim\n')
-    await writeExecutable(join(workspaceRoot, '.venv', 'bin', 'pip'), '#!/usr/bin/env bash\necho pip-shim\n')
+    await writeExecutable(join(workspaceRoot, '.boring-agent', 'venv', 'bin', 'python'), '#!/usr/bin/env bash\necho python-shim\n')
+    await writeExecutable(join(workspaceRoot, '.boring-agent', 'venv', 'bin', 'pip'), '#!/usr/bin/env bash\necho pip-shim\n')
 
     const bundle = mockBundle('direct', ['exec'], workspaceRoot)
     const tools = buildHarnessAgentTools(bundle)
@@ -145,7 +145,7 @@ describe('buildHarnessAgentTools', () => {
     expect(result.content[0].text).toContain('python-shim')
     expect(result.content[0].text).toContain('pip-shim')
     expect(result.content[0].text).toContain(workspaceRoot)
-    expect(result.content[0].text).toContain(join(workspaceRoot, '.venv'))
+    expect(result.content[0].text).toContain(join(workspaceRoot, '.boring-agent', 'venv'))
   })
 
   test('vercel-sandbox bash forwards to sandbox.exec', async () => {

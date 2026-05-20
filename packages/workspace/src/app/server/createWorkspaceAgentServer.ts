@@ -7,6 +7,8 @@
 import {
   autoDetectMode,
   createAgentApp,
+  getBoringAgentNodePackageTarget,
+  getBoringAgentRuntimePaths,
   provisionRuntimeWorkspace,
   resolveMode,
   type CreateAgentAppOptions,
@@ -140,26 +142,25 @@ const require = createRequire(import.meta.url)
 
 function boringPiRootVisibleToAgentTools(workspaceRoot: string, resolvedMode: string, provisioned: boolean): string | undefined {
   if (!provisioned) return undefined
-  if (resolvedMode === "local") return "/workspace/node_modules/@hachej/boring-pi"
-  return join(workspaceRoot, "node_modules", "@hachej", "boring-pi")
+  if (resolvedMode === "local" || resolvedMode === "vercel-sandbox") {
+    return "/workspace/.boring-agent/node/node_modules/@hachej/boring-pi"
+  }
+  return getBoringAgentNodePackageTarget(workspaceRoot, "@hachej/boring-pi")
 }
 
 function ensureBoringUiCliShim(workspaceRoot: string): boolean {
   const workspaceCliBin = join(
-    workspaceRoot,
-    "node_modules",
-    "@hachej",
-    "boring-ui-cli",
+    getBoringAgentNodePackageTarget(workspaceRoot, "@hachej/boring-ui-cli"),
     "dist",
     "index.js",
   )
   if (!existsSync(workspaceCliBin)) return false
-  const shimDir = join(workspaceRoot, ".boring-agent", "bin")
+  const shimDir = getBoringAgentRuntimePaths(workspaceRoot).bin
   mkdirSync(shimDir, { recursive: true })
   const shimPath = join(shimDir, "boring-ui")
   writeFileSync(
     shimPath,
-    `#!/usr/bin/env bash\nset -euo pipefail\nSCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"\nWORKSPACE_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"\nexport BORING_AGENT_WORKSPACE_ROOT="$WORKSPACE_ROOT"\nexec node "$WORKSPACE_ROOT/node_modules/@hachej/boring-ui-cli/dist/index.js" "$@"\n`,
+    `#!/usr/bin/env bash\nset -euo pipefail\nSCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"\nWORKSPACE_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"\nexport BORING_AGENT_WORKSPACE_ROOT="$WORKSPACE_ROOT"\nexec node "$WORKSPACE_ROOT/.boring-agent/node/node_modules/@hachej/boring-ui-cli/dist/index.js" "$@"\n`,
     "utf8",
   )
   chmodSync(shimPath, 0o755)
@@ -262,7 +263,7 @@ function createBoringUiCliPackageProvisioningContribution(): WorkspaceProvisioni
 }
 
 function createBoringPiPackageSource(workspaceRoot: string): WorkspacePiPackageSource | undefined {
-  const workspacePackageRoot = join(workspaceRoot, "node_modules", "@hachej", "boring-pi")
+  const workspacePackageRoot = getBoringAgentNodePackageTarget(workspaceRoot, "@hachej/boring-pi")
   const source = existsSync(join(workspacePackageRoot, "package.json"))
     ? workspacePackageRoot
     : resolveBoringPiPackageRoot()

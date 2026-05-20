@@ -41,6 +41,17 @@ export {
   type RuntimePythonSpec,
   type RuntimeNodePackageSpec,
 } from './workspace/provisionRuntime'
+export {
+  BORING_AGENT_DIR,
+  BORING_AGENT_LEGACY_PROVISIONING_MARKER_REL_PATH,
+  BORING_AGENT_PROVISIONING_MARKER_REL_PATH,
+  BORING_AGENT_RUNTIME_DIR_NAMES,
+  getBoringAgentNodePackageTarget,
+  getBoringAgentRuntimeDir,
+  getBoringAgentRuntimePaths,
+  type BoringAgentRuntimeDirName,
+  type BoringAgentRuntimePaths,
+} from './workspace/runtimeLayout'
 export { createVercelSandboxWorkspace } from './workspace/createVercelSandboxWorkspace'
 export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
 export { createAgentApp } from './createAgentApp'

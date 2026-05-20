@@ -5,6 +5,13 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import {
+  ensureBoringAgentRuntimeLayout,
+  getBoringAgentNodePackageTarget,
+  getBoringAgentRuntimePaths,
+  removeLegacyTopLevelVenvIfOwned,
+  writeBoringAgentOwnershipMarker,
+} from './runtimeLayout'
 
 const execFileAsync = promisify(execFile)
 const PROVISIONING_VERSION = 2
@@ -166,11 +173,7 @@ async function seedTemplates(workspaceRoot: string, contributions: Array<{ provi
 }
 
 function nodePackageTarget(workspaceRoot: string, packageName: string): string {
-  const parts = packageName.split('/').filter(Boolean)
-  if (parts.length === 0 || parts.some((part) => part === '.' || part === '..')) {
-    throw new Error(`Invalid node package name: ${packageName}`)
-  }
-  return join(workspaceRoot, 'node_modules', ...parts)
+  return getBoringAgentNodePackageTarget(workspaceRoot, packageName)
 }
 
 async function copyIfExists(source: string, target: string): Promise<boolean> {
@@ -217,11 +220,13 @@ async function ensureNodePackages(workspaceRoot: string, specs: RuntimeNodePacka
 
 async function ensurePython(workspaceRoot: string, specs: RuntimePythonSpec[]): Promise<void> {
   if (specs.length === 0) return
-  const venvPython = join(workspaceRoot, '.venv', 'bin', 'python')
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
+  const venvPython = paths.venvPython
   const uv = await commandExists('uv')
   if (!(await exists(venvPython))) {
-    if (uv) await run('uv', ['venv', '.venv'], workspaceRoot)
-    else await run('/usr/bin/python3', ['-m', 'venv', '.venv'], workspaceRoot)
+    if (uv) await run('uv', ['venv', '--allow-existing', paths.venv], workspaceRoot)
+    else await run('/usr/bin/python3', ['-m', 'venv', paths.venv], workspaceRoot)
+    await writeBoringAgentOwnershipMarker(paths.venv, '.boring-agent/venv')
   }
 
   for (const spec of specs) {
@@ -257,8 +262,9 @@ async function isRuntimeMaterialized(
   workspaceRoot: string,
   contributions: Array<{ provisioning: RuntimeProvisioningContribution }>,
 ): Promise<boolean> {
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
   const hasPython = contributions.some(({ provisioning }) => (provisioning.python ?? []).length > 0)
-  if (hasPython && !(await exists(join(workspaceRoot, '.venv', 'bin', 'python')))) return false
+  if (hasPython && !(await exists(paths.venvPython))) return false
   for (const { provisioning } of contributions) {
     for (const spec of provisioning.nodePackages ?? []) {
       if (!(await exists(join(nodePackageTarget(workspaceRoot, spec.packageName), 'package.json')))) return false
@@ -268,8 +274,9 @@ async function isRuntimeMaterialized(
 }
 
 async function writeShims(workspaceRoot: string, env: Record<string, string>): Promise<string> {
-  const shimDir = join(workspaceRoot, '.boring-agent', 'bin')
-  const venvBin = join(workspaceRoot, '.venv', 'bin')
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
+  const shimDir = paths.bin
+  const venvBin = paths.venvBin
   await mkdir(shimDir, { recursive: true })
   const exports = Object.entries(env).map(([key, value]) => {
     assertEnvKey(key)
@@ -281,7 +288,7 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 WORKSPACE_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
 export BORING_AGENT_WORKSPACE_ROOT="$WORKSPACE_ROOT"
 ${exports}
-VENV_BIN="$WORKSPACE_ROOT/.venv/bin"
+VENV_BIN="$WORKSPACE_ROOT/.boring-agent/venv/bin"
 `
 
   await writeExecutable(join(shimDir, 'python'), `${base}exec "$VENV_BIN/python" "$@"\n`)
@@ -307,6 +314,36 @@ exec "$TARGET" "$@"
   return shimDir
 }
 
+async function readProvisioningMarker(
+  markerPath: string,
+  legacyMarkerPath: string,
+): Promise<{ marker: { fingerprint?: string }, source: 'current' | 'legacy' } | null> {
+  const candidates = [
+    { path: markerPath, source: 'current' as const },
+    { path: legacyMarkerPath, source: 'legacy' as const },
+  ]
+
+  for (const candidate of candidates) {
+    if (!(await exists(candidate.path))) continue
+    try {
+      return {
+        marker: JSON.parse(await readFile(candidate.path, 'utf8')) as { fingerprint?: string },
+        source: candidate.source,
+      }
+    } catch {
+      if (candidate.source === 'current') return null
+      // corrupted legacy marker: ignore and reprovision
+    }
+  }
+
+  return null
+}
+
+async function writeProvisioningMarker(markerPath: string, hash: string): Promise<void> {
+  await mkdir(dirname(markerPath), { recursive: true })
+  await writeFile(markerPath, JSON.stringify({ v: PROVISIONING_VERSION, fingerprint: hash }, null, 2), 'utf8')
+}
+
 export async function provisionRuntimeWorkspace({
   workspaceRoot,
   contributions,
@@ -318,20 +355,20 @@ export async function provisionRuntimeWorkspace({
   }
 
   await mkdir(workspaceRoot, { recursive: true })
+  const paths = await ensureBoringAgentRuntimeLayout(workspaceRoot)
+  await removeLegacyTopLevelVenvIfOwned(workspaceRoot)
   const env = collectEnv(active)
   const hash = await fingerprint(active)
-  const markerPath = join(workspaceRoot, '.boring-agent', 'provisioning.json')
-  const binDir = join(workspaceRoot, '.boring-agent', 'bin')
+  const markerPath = paths.provisioningMarker
+  const legacyMarkerPath = paths.legacyProvisioningMarker
+  const binDir = paths.bin
 
-  if (!force && await exists(markerPath)) {
-    try {
-      const marker = JSON.parse(await readFile(markerPath, 'utf8')) as { fingerprint?: string }
-      if (marker.fingerprint === hash && await isRuntimeMaterialized(workspaceRoot, active)) {
-        await writeShims(workspaceRoot, env)
-        return { fingerprint: hash, changed: false, env, binDir }
-      }
-    } catch {
-      // corrupted marker: reprovision
+  if (!force) {
+    const markerResult = await readProvisioningMarker(markerPath, legacyMarkerPath)
+    if (markerResult?.marker.fingerprint === hash && await isRuntimeMaterialized(workspaceRoot, active)) {
+      await writeShims(workspaceRoot, env)
+      if (markerResult.source === 'legacy') await writeProvisioningMarker(markerPath, hash)
+      return { fingerprint: hash, changed: false, env, binDir }
     }
   }
 
@@ -339,7 +376,6 @@ export async function provisionRuntimeWorkspace({
   await ensureNodePackages(workspaceRoot, active.flatMap(({ provisioning }) => provisioning.nodePackages ?? []))
   await ensurePython(workspaceRoot, active.flatMap(({ provisioning }) => provisioning.python ?? []))
   const actualBinDir = await writeShims(workspaceRoot, env)
-  await mkdir(dirname(markerPath), { recursive: true })
-  await writeFile(markerPath, JSON.stringify({ v: PROVISIONING_VERSION, fingerprint: hash }, null, 2), 'utf8')
+  await writeProvisioningMarker(markerPath, hash)
   return { fingerprint: hash, changed: true, env, binDir: actualBinDir }
 }

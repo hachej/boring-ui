@@ -193,7 +193,7 @@ await provisionRuntimeWorkspace({
 Provisioning is conditional and idempotent:
 
 - no plugin provisioning contributions: no-op
-- matching `.boring-agent/provisioning.json` fingerprint: skip
+- matching `.boring-agent/state/provisioning.json` fingerprint: skip (legacy `.boring-agent/provisioning.json` is read during migration)
 - changed fingerprint or forced provisioning: run setup again
 
 ## Core snapshot records

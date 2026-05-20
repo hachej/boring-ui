@@ -122,12 +122,10 @@ describeIfBwrap('createBwrapSandbox', () => {
       'cat /workspace/.boring-agent/marker.txt',
       'printf "\\n"',
       'cat /workspace/.boring-agent/venv/marker.txt',
-      'printf "\\n"',
-      'cat /workspace/.venv/marker.txt',
     ].join(' && '))
     const output = Buffer.from(result.stdout).toString('utf-8')
 
-    expect(output).toBe('child-agent\nchild-agent-venv\nchild-venv')
+    expect(output).toBe('child-agent\nchild-agent-venv')
     expect(output).not.toContain('parent-agent')
     expect(output).not.toContain('parent-venv')
     expect(result.exitCode).toBe(0)
@@ -155,11 +153,11 @@ describeIfBwrap('createBwrapSandbox', () => {
       'printf "\\n"',
       'cat /workspace/.boring-agent/venv/marker.txt',
       'printf "\\n"',
-      'cat /workspace/.venv/marker.txt',
+      'test ! -e /workspace/.venv/marker.txt && printf "no-parent-venv"',
     ].join(' && '))
     const output = Buffer.from(result.stdout).toString('utf-8')
 
-    expect(output).toBe('child-agent\nparent-agent-venv\nparent-venv')
+    expect(output).toBe('child-agent\nparent-agent-venv\nno-parent-venv')
     expect(output).not.toContain('parent-agent\n')
     expect(result.exitCode).toBe(0)
   })
