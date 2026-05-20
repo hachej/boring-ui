@@ -3,8 +3,8 @@ import { act, render, screen, waitFor } from "@testing-library/react"
 import { renderHook } from "@testing-library/react"
 import { Suspense, type ReactNode } from "react"
 import { PanelRegistry } from "../PanelRegistry"
-import { CommandRegistry } from "../CommandRegistry"
-import { SurfaceResolverRegistry } from "../SurfaceResolverRegistry"
+import { CommandRegistry } from "../../../shared/plugins/CommandRegistry"
+import { SurfaceResolverRegistry } from "../../../shared/plugins/SurfaceResolverRegistry"
 import {
   RegistryProvider,
   useRegistry,

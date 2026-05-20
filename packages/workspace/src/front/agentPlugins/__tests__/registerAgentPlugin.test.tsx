@@ -5,8 +5,8 @@ import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promise
 import { join } from "node:path"
 import { RegistryProvider, useCatalogRegistry, useCommandRegistry, useRegistry } from "../../registry/RegistryProvider"
 import { PanelRegistry } from "../../registry/PanelRegistry"
-import { CommandRegistry } from "../../registry/CommandRegistry"
-import { SurfaceResolverRegistry } from "../../registry/SurfaceResolverRegistry"
+import { CommandRegistry } from "../../../shared/plugins/CommandRegistry"
+import { SurfaceResolverRegistry } from "../../../shared/plugins/SurfaceResolverRegistry"
 import type { BoringFrontFactory } from "../../../shared/plugins/frontFactory"
 import { useAgentPluginHotReload } from "../registerAgentPlugin"
 

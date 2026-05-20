@@ -2,9 +2,9 @@
 
 import { createContext, useContext, useMemo, useRef, type ReactNode } from "react"
 import { PanelRegistry } from "./PanelRegistry"
-import { CommandRegistry } from "./CommandRegistry"
-import { SurfaceResolverRegistry } from "./SurfaceResolverRegistry"
-import { CatalogRegistry } from "../plugin/CatalogRegistry"
+import { CommandRegistry } from "../../shared/plugins/CommandRegistry"
+import { SurfaceResolverRegistry } from "../../shared/plugins/SurfaceResolverRegistry"
+import { CatalogRegistry } from "../../shared/plugins/CatalogRegistry"
 
 interface RegistryContextValue {
   panelRegistry: PanelRegistry
