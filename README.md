@@ -63,31 +63,6 @@ In practice, a plugin is a Node package with two manifest blocks:
 - `pi.*` — agent side: skills, prompts, tools (loaded by [Pi](https://pi.dev))
 - `boring.*` — UI side: panels, commands, catalogs, surface resolvers
 
-**What you can add:**
-
-- **Panels** — arbitrary React panes in the workbench (editors, charts, tables, anything)
-- **Left tabs** — persistent sidebars (data catalogs, file navigators, status views)
-- **Commands** — entries in the command palette, triggered by user or agent
-- **Catalogs** — searchable, faceted data explorers the agent can surface
-- **Agent tools** — new capabilities the model can call, with schema-defined parameters
-- **Skills + prompts** — domain knowledge and reasoning patterns the agent follows
-
-### Existing Plugins
-
-
-| Plugin                                                                               | Description                                                                                   |
-| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| [ask-user](https://github.com/hachej/boring-ui/tree/main/plugins/ask-user)           | Agent-to-human Q&amp;A with a UI prompt                                                       |
-| [data-explorer](https://github.com/hachej/boring-ui/tree/main/plugins/data-explorer) | Searchable, faceted data tables                                                               |
-| [data-catalog](https://github.com/hachej/boring-ui/tree/main/plugins/data-catalog)   | Catalog tab built on data-explorer                                                            |
-| coming: llm-wiki                                                                     | [LLM powered second brain](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) |
-| coming: tasks                                                                        | Task tracking, Kanban boards the agent can read and update                                    |
-| coming: workflows                                                                    | Multi-step agent orchestration — chain steps, define branches, trigger sub-agents             |
-| coming: data-branch                                                                  | Fork, explore, and compare agent-generated datasets side by side in the workbench             |
-
-
-### Plugin shape
-
 Each `package.json` declares both halves:
 
 ```json
@@ -115,13 +90,35 @@ Each `package.json` declares both halves:
 
 Start from [plugins/_template](plugins/_template/README.md).
 
+**What you can add:**
+
+- **Panels** — arbitrary React panes in the workbench (editors, charts, tables, anything)
+- **Left tabs** — persistent sidebars (data catalogs, file navigators, status views)
+- **Commands** — entries in the command palette, triggered by user or agent
+- **Catalogs** — searchable, faceted data explorers the agent can surface
+- **Agent tools** — new capabilities the model can call, with schema-defined parameters
+- **Skills + prompts** — domain knowledge and reasoning patterns the agent follows
+
+### Existing Plugins
+
+
+| Plugin                                                                               | Description                                                                                   |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| [ask-user](https://github.com/hachej/boring-ui/tree/main/plugins/ask-user)           | Agent-to-human Q&amp;A with a UI prompt                                                       |
+| [data-explorer](https://github.com/hachej/boring-ui/tree/main/plugins/data-explorer) | Searchable, faceted data tables                                                               |
+| [data-catalog](https://github.com/hachej/boring-ui/tree/main/plugins/data-catalog)   | Catalog tab built on data-explorer                                                            |
+| coming: llm-wiki                                                                     | [LLM powered second brain](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) |
+| coming: tasks                                                                        | Task tracking, Kanban boards the agent can read and update                                    |
+| coming: workflows                                                                    | Multi-step agent orchestration — chain steps, define branches, trigger sub-agents             |
+| coming: data-branch                                                                  | Fork, explore, and compare agent-generated datasets side by side in the workbench             |
+
 See [Pi extensions docs](https://pi.dev/docs/latest/extensions) for the full Pi plugin surface.
 
 ---
 
 ## Built with boring-ui
 
-![MacroAnalyst — AI macro research, accelerated](https://boring-macro.fly.dev/landing/app-screenshot.png?v=8)
+<img src="https://boring-macro.fly.dev/landing/app-screenshot.png?v=8" alt="MacroAnalyst" width="640">
 
 **[MacroAnalyst](https://boring-macro.fly.dev/)** — an interactive macroeconomic analyst powered by Boring UI.
 
