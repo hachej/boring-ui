@@ -119,6 +119,7 @@ test('createAgentApp can use a custom harness factory for non-pi runtimes', asyn
   try {
     expect(harnessFactory).toHaveBeenCalledTimes(1)
     expect(harnessFactory.mock.calls[0]?.[0].cwd).toBe(workspaceRoot)
+    expect(harnessFactory.mock.calls[0]?.[0].runtimeCwd).toBe(workspaceRoot)
     expect(harnessFactory.mock.calls[0]?.[0].tools.map((tool: { name: string }) => tool.name)).toContain('custom_runtime_tool')
 
     const res = await app.inject({ method: 'POST', url: '/api/v1/agent/reload', payload: { sessionId: 'custom' } })

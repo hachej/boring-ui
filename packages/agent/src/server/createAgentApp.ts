@@ -130,6 +130,7 @@ export async function createAgentApp(
   const harness = await harnessFactory({
     tools,
     cwd: workspaceRoot,
+    runtimeCwd: runtimeBundle.runtimeContext.runtimeCwd,
     sessionNamespace: opts.sessionNamespace,
     sessionDir: opts.sessionDir,
     systemPromptAppend: opts.systemPromptAppend,

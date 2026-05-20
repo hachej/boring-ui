@@ -54,7 +54,7 @@ export { mergePiPackageSources } from "../../piPackages.js";
 export type { PiPackageSource } from "../../piPackages.js";
 
 /**
- * Pi's base system prompt ends with `Current working directory: <abs path>`.
+ * Pi's base system prompt includes `Current working directory: <abs path>`.
  * The model frequently misreads that as "you may pass this absolute path as
  * a tool argument," then trips the workspace-sandbox bounds check (e.g.
  * `find` with `path: "/home/ubuntu/.../workspace"` returns "path is outside
@@ -67,7 +67,7 @@ export type { PiPackageSource } from "../../piPackages.js";
 const WORKSPACE_PATHS_GUIDELINE = [
   "## Workspace paths",
   "",
-  "- The \"Current working directory\" above is the workspace root. Tool path arguments must be relative to it (e.g. `README.md`, `src/foo.ts`).",
+  "- The \"Current working directory\" line in this prompt is the workspace root. Tool path arguments must be relative to it (e.g. `README.md`, `src/foo.ts`).",
   "- Never pass an absolute path or a path that walks outside the workspace (no leading `/`, no `..` that escapes the root). The sandbox will reject it and the call is wasted.",
   "- For `find`/`grep`/`ls`: omit the `path` argument to search from the workspace root. Pass `path` only when you need to restrict to a subdirectory, and only as a workspace-relative path.",
   "- For `read`/`edit`/`write`: pass workspace-relative paths only.",
@@ -313,7 +313,10 @@ function basenameForAttachment(filename: string): string {
 
 export function createPiCodingAgentHarness(opts: {
   tools: AgentTool[];
+  /** Host/storage cwd used for harness-owned resources (.pi settings, attachments, plugin discovery). */
   cwd: string;
+  /** Agent-visible cwd used by Pi's system prompt and native session metadata. */
+  runtimeCwd?: string;
   /** Append-only addendum to pi's base system prompt. */
   systemPromptAppend?: string;
   /**
@@ -328,9 +331,10 @@ export function createPiCodingAgentHarness(opts: {
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
   sessionDir?: string;
 }): AgentHarness {
-  const sessionStore = new PiSessionStore(opts.cwd, {
+  const sessionStore = new PiSessionStore(opts.runtimeCwd ?? opts.cwd, {
     sessionNamespace: opts.sessionNamespace,
     sessionDir: opts.sessionDir,
+    storageCwd: opts.cwd,
   });
   const piSessions = new Map<string, PiSessionHandle>();
 
@@ -397,15 +401,17 @@ export function createPiCodingAgentHarness(opts: {
     const savedPiFile = sessionStore.loadPiSessionFileSync(sessionId);
     let sessionManager: SessionManager;
     let isNewPiSession = false;
+    const runtimeCwd = opts.runtimeCwd ?? ctx.workdir;
+    const nativeSessionDir = sessionStore.getSessionDir();
     if (savedPiFile) {
       try {
-        sessionManager = SessionManager.open(savedPiFile, undefined, opts.cwd);
+        sessionManager = SessionManager.open(savedPiFile, undefined, runtimeCwd);
       } catch {
-        sessionManager = SessionManager.create(opts.cwd);
+        sessionManager = SessionManager.create(runtimeCwd, nativeSessionDir);
         isNewPiSession = true;
       }
     } else {
-      sessionManager = SessionManager.create(opts.cwd);
+      sessionManager = SessionManager.create(runtimeCwd, nativeSessionDir);
       isNewPiSession = true;
     }
 
@@ -471,7 +477,7 @@ export function createPiCodingAgentHarness(opts: {
     await resourceLoader?.reload()
 
     const { session: piSession } = await createAgentSession({
-      cwd: ctx.workdir,
+      cwd: runtimeCwd,
       tools: [],
       customTools: adaptToolsForPi(opts.tools, input.sessionId),
       model,

@@ -4,7 +4,10 @@ import type { AgentTool } from './tool'
 
 export interface AgentHarnessFactoryInput {
   tools: AgentTool[]
+  /** Host/storage cwd used for harness-owned filesystem resources. */
   cwd: string
+  /** Agent-visible cwd used by Pi/system prompt/session metadata. */
+  runtimeCwd?: string
   systemPromptAppend?: string
   sessionNamespace?: string
   sessionDir?: string
