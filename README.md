@@ -4,54 +4,20 @@
 
 ![MIT License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 
-Boring UI is an opinionated framework for building apps around an agent.
+Boring UI is an opinionated framework for building agent-centric apps, built on [Pi](https://pi.dev).
 
-Traditional SaaS is built around workflows users drive by hand — buttons, forms, pages, dashboards.
+Traditional SaaS is built around workflows users drive by hand: buttons, forms, pages, dashboards.
 
 Agents change that.
 
-When software can understand intent and act, the app collapses to three surfaces:
+When software can understand intent and act, every app collapses to two surfaces:
 
 - **Chat** — tell the agent what to do.
 - **Workbench** — inspect, steer, and refine the results.
-- **Sandbox** — the file read/write substrate the agent works against.
 
-That's the core. 
+That's what the Boring UI core provides: a shell the agent can control and reshape.
 
-Every Boring UI app gets these three surfaces out of the box.
-
-But every app is different. Different data. Different workflows. Different ways to visualize results and steer the agent.
-
-A data app needs charts. A docs app needs side-by-side previews. A code app needs diffs. The agent's skills and tools must match the domain.
-
-That's where the plugin system comes in. 
-
-Plugins let you fully customize both the agent and the workspace:
-
-- **Agent plugins** — add skills, tools, prompts, and server routes.
-- **UI plugins** — add panels, views, commands, and surface resolvers.
-
-You bring the domain logic. Boring UI brings the surfaces and the extension points to shape them.
-
----
-
-## What it looks like
-
-![Boring UI — chat, file tree, workbench, and command palette across one shell](docs/assets/readme/demo.gif)
-
-The core ships one shell with three surfaces:
-
-- **Chat** (centre) — you steer, the agent calls tools
-- **File tree** (left) — the filesystem the agent reads and writes
-- **Workbench** (right) — where the agent opens panels: editors, tables, previews, and plugin panes
-
-A **command palette** (`⌘K`) provides keyboard-driven access across all surfaces.
-
-That's the core. Every app starts here.
-
----
-
-## Quickstart
+Give it a try:
 
 ```bash
 npx @hachej/boring-ui-cli
@@ -59,58 +25,98 @@ npx @hachej/boring-ui-cli
 
 Starts a full agent workspace pointed at the current directory — chat, panels, file tree, command palette. No clone. No database. No setup.
 
-Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` before running — or skip the env var and the CLI prompts for login on first launch (credentials persist for future runs). More on auth: [packages/cli](packages/cli/README.md).
+Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` before running. See [Pi providers](https://pi.dev/docs/latest/quickstart#configure-a-provider) for LLM setup.
 
-It opens at `http://localhost:5200`. Try these in chat:
+![Boring UI core — agent reads the README, opens it in the workbench, then writes a notes file](docs/assets/readme/demo.gif)
 
-- *"list every TODO in this repo and open them in the editor"*
-- *"search package.json for stale dependencies, summarise in a table"*
-- *"create a markdown file called notes.md with bullet points of my open files"*
-
-You'll see the agent open files in the workbench, render results into panels, and react to your follow-ups — all from the chat box, against your real directory.
+A real session: ask the agent for a summary → it opens the README in the workbench → ask it to take notes → a new `notes.md` appears in the tree. Chat in, workspace out.
 
 ---
 
-## Plugin system
+But of course every app, every workflow, every use case is different.
 
-Boring UI is a chassis, not a closed app. 
+Different data. Different visualisations. Different agent skills.
 
-The shell stays the same; what runs inside changes per app, per user, per surface.
+That's why the plugin system exists. 
 
-Plugins contribute UI and agent behaviour through a single `package.json` manifest. 
+Boring builds on Pi's plugin system and extends it with UI-aware surfaces.
 
-Once registered, they sit alongside the built-ins.
+Pi handles the agent loop (tool calling, sessions, skills, prompts). 
+
+Boring adds the workbench, panels, and commands on top. 
+
+The two halves are fully compatible — any Pi package works out of the box.
+
+In practice, a plugin is a Node package with two manifest blocks:
+
+- `pi.*` — agent side: skills, prompts, tools (loaded by [Pi](https://pi.dev))
+- `boring.*` — UI side: panels, commands, catalogs, surface resolvers
 
 **What you can add:**
 
-- **Panels** — new panes in the workbench (tables, editors, charts, any React component)
-- **Left-tabs** — persistent sidebar surfaces (catalogs, navigators, status)
-- **Commands** — entries in the command palette
-- **Catalogs** — searchable, faceted data explorers
-- **Agent skills, tools, prompts** — what the agent can do and how it reasons
+- **Panels** — arbitrary React panes in the workbench (editors, charts, tables, anything)
+- **Left tabs** — persistent sidebars (data catalogs, file navigators, status views)
+- **Commands** — entries in the command palette, triggered by user or agent
+- **Catalogs** — searchable, faceted data explorers the agent can surface
+- **Agent tools** — new capabilities the model can call, with schema-defined parameters
+- **Skills + prompts** — domain knowledge and reasoning patterns the agent follows
 
-**How adaptation works:**
+### Plugins
 
-A plugin is a regular Node package with two manifest blocks:
 
-- `pi.*` — agent side: skills, prompts, tools (loaded by [Pi](https://github.com/earendil-works/pi/tree/main))
-- `boring.*` — UI side: panels, commands, catalogs, surface resolvers, server routes
+| Plugin           | Description                                                                                   |
+| ---------------- | --------------------------------------------------------------------------------------------- |
+| ask-user         | Agent-to-human Q&amp;A with a UI prompt                                                       |
+| data-explorer    | Searchable, faceted data tables                                                               |
+| data-catalog     | Catalog tab built on data-explorer                                                            |
+| coming: llm-wiki | [LLM powered second brain](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) |
+| coming: tasks    | Task tracking, Kanban boards the agent can read and update |
+| coming: workflows| Multi-step agent orchestration — chain steps, define branches, trigger sub-agents |
 
-Plugins compose. Use `derivesFrom` to extend an existing plugin instead of forking. Swap a single surface, or add a brand-new pane type. Plugins ship through npm like any other dependency — no patching, no monorepo entanglement required.
 
-Start from [plugins/_template](plugins/_template/README.md). The exact manifest and a working example are in [Plugin shape](#plugin-shape) below.
+### Plugin shape
+
+Each `package.json` declares both halves:
+
+```json
+{
+  "name": "my-plugin",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["agent/index.ts"],
+    "skills": ["agent/skills"],
+    "prompts": ["agent/prompts"]
+  },
+  "boring": {
+    "label": "My Plugin",
+    "front": "front/index.tsx",
+    "server": "server/index.ts",
+    "derivesFrom": ["optional-parent-plugin"]
+  }
+}
+```
+
+- `pi.extensions` / `pi.skills` / `pi.prompts` — agent-side capabilities
+- `boring.front` — workbench UI: panels, commands, catalogs, surface resolvers
+- `boring.server` — server side: tools that need backend state, HTTP routes
+- `boring.derivesFrom` — layer on top of an existing plugin
+
+Start from [plugins/_template](plugins/_template/README.md).
+
+See [Pi extensions docs](https://pi.dev/docs/latest/extensions) for the full Pi plugin surface.
 
 ---
 
 ## Built with boring-ui
 
-![MacroAnalyst — AI macro research, accelerated](docs/assets/readme/showcase-macro.png)
 
-**[MacroAnalyst](https://boring-macro.fly.dev/)** — an AI analyst for macroeconomic research. Ask in plain English, get charts back in under a minute. 800,000+ economic series from FRED, BLS, BEA, and Treasury, all behind one chat and one workbench.
+| App                                                                                           | Status |
+| --------------------------------------------------------------------------------------------- | ------ |
+| [MacroAnalyst](https://boring-macro.fly.dev/) — macroeconomic research, charts from live data | Live   |
+| boring-accountant — accounting workflows                                                      | Coming |
+| boring-design — design review and iteration                                                   | Coming |
+| boring-lawyer — legal research and document review                                            | Coming |
 
-Production, paying customers, single codebase. Built on `@hachej/boring-core` + `@hachej/boring-agent` + `@hachej/boring-workspace` + custom domain plugins.
-
-More on the same chassis in flight: `boring-accountant`, `boring-design`, `boring-lawyer`.
 
 ---
 
@@ -151,37 +157,6 @@ More on the same chassis in flight: `boring-accountant`, `boring-design`, `borin
 
 ---
 
-## Plugin shape
-
-Plugins are standard Node packages, distributed through npm, loaded by Pi. Each `package.json` declares both halves of the contract:
-
-```json
-{
-  "name": "my-plugin",
-  "keywords": ["pi-package"],
-  "pi": {
-    "extensions": ["agent/index.ts"],
-    "skills": ["agent/skills"],
-    "prompts": ["agent/prompts"]
-  },
-  "boring": {
-    "label": "My Plugin",
-    "front": "front/index.tsx",
-    "server": "server/index.ts",
-    "derivesFrom": ["optional-parent-plugin"]
-  }
-}
-```
-
-- `pi.*` — agent side: skills, prompts, tools, system-prompt extensions (loaded by Pi as-is)
-- `boring.front` — workbench UI: panels, commands, catalogs, surface resolvers
-- `boring.server` — server side: agent tools that need backend state, HTTP routes
-- `boring.derivesFrom` — layer on top of an existing plugin
-
-Start from [plugins/_template](plugins/_template/README.md).
-
----
-
 ## Architecture
 
 Boring UI is built around four swappable interfaces:
@@ -215,14 +190,6 @@ Rules that follow from this shape:
 
 ---
 
-## Built on Pi
-
-Boring UI uses [Pi](https://github.com/earendil-works/pi/tree/main) as its agent harness. Pi provides the agent loop, tool calling, sessions, skills, and prompts. Boring UI adds the web chat, workbench, plugin system, sandboxed execution (`bwrap` locally, Vercel Sandboxes remotely), and the app shell on top.
-
-Agent authentication options: Pi's [Quick Start](https://github.com/badlogic/pi-mono/tree/main/packages/pi-coding-agent#quick-start) and [Providers docs](https://github.com/badlogic/pi-mono/blob/main/packages/pi-coding-agent/docs/providers.md).
-
----
-
 ## Working in the repo
 
 ```bash
@@ -253,4 +220,4 @@ pnpm --filter @hachej/boring-workspace build && pnpm --filter workspace-playgrou
 
 ## License
 
-MIT
+MIIT
