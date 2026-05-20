@@ -282,10 +282,10 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
 })
 
 describe("createWorkspaceAgentServer — plugin provisioning", () => {
-  test("materializes the boring-plugin-authoring skill into the workspace node_modules", async () => {
+  test("materializes the boring-plugin-authoring skill into the agent runtime node_modules", async () => {
     // The system prompt is minimal (it just points at this skill); the
     // skill itself is the doc the agent reads. provisionRuntimeWorkspace
-    // must materialize it under the workspace's node_modules so Pi can
+    // must materialize it under the agent runtime node_modules so Pi can
     // load it from there.
     const workspaceRoot = await makeTempDir("boring-workspace-skill-")
 
@@ -297,7 +297,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
 
     try {
       const skill = await readFile(
-        join(workspaceRoot, "node_modules", "@hachej", "boring-pi", "skills", "boring-plugin-authoring", "SKILL.md"),
+        join(workspaceRoot, ".boring-agent", "node", "node_modules", "@hachej", "boring-pi", "skills", "boring-plugin-authoring", "SKILL.md"),
         "utf8",
       )
       expect(skill).toContain("name: boring-plugin-authoring")
@@ -333,7 +333,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     })
 
     try {
-      const provisionedCli = join(workspaceRoot, "node_modules", "@hachej", "boring-ui-cli")
+      const provisionedCli = join(workspaceRoot, ".boring-agent", "node", "node_modules", "@hachej", "boring-ui-cli")
       await expect(readFile(join(provisionedCli, "package.json"), "utf8")).resolves.toContain("@hachej/boring-ui-cli")
       await expect(readFile(join(provisionedCli, "templates", "front-canonical.tsx"), "utf8")).resolves.toContain("definePlugin")
 
@@ -394,7 +394,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
         readFile(join(workspaceRoot, ".agents", "skills", "plugin-skill", "SKILL.md"), "utf8"),
       ).resolves.toContain("Provisioned skill")
       await expect(
-        readFile(join(workspaceRoot, ".boring-agent", "provisioning.json"), "utf8"),
+        readFile(join(workspaceRoot, ".boring-agent", "state", "provisioning.json"), "utf8"),
       ).resolves.toContain("sha256:")
     } finally {
       await app.close()

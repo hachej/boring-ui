@@ -1,5 +1,5 @@
 import { describe, expect, test, vi, beforeEach, afterEach } from 'vitest'
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 
 import {
@@ -14,6 +14,7 @@ import { restoreEnvForTest, setEnvForTest } from '../../../config/env'
 vi.mock('node:fs', () => ({
   existsSync: vi.fn(() => false),
   mkdirSync: vi.fn(),
+  writeFileSync: vi.fn(),
 }))
 
 vi.mock('node:child_process', () => ({
@@ -72,20 +73,20 @@ describe('buildVenvBwrapArgs', () => {
 describe('buildVenvEnv', () => {
   test('includes tier2 bin in PATH without tier1', () => {
     const env = buildVenvEnv(null, '/workspace')
-    expect(env.PATH).toContain('/workspace/.venv/bin')
-    expect(env.VIRTUAL_ENV).toBe('/workspace/.venv')
+    expect(env.PATH).toContain('/workspace/.boring-agent/venv/bin')
+    expect(env.VIRTUAL_ENV).toBe('/workspace/.boring-agent/venv')
   })
 
   test('includes both tier1 and tier2 bins when tier1 present', () => {
     const env = buildVenvEnv('/var/cache/boring-agent/venvs/abc', '/workspace')
-    expect(env.PATH).toContain('/workspace/.venv/bin')
+    expect(env.PATH).toContain('/workspace/.boring-agent/venv/bin')
     expect(env.PATH).toContain('/opt/venv/bin')
   })
 
   test('tier2 bin comes before tier1 bin in PATH', () => {
     const env = buildVenvEnv('/some/path', '/workspace')
     const parts = env.PATH.split(':')
-    const tier2Idx = parts.indexOf('/workspace/.venv/bin')
+    const tier2Idx = parts.indexOf('/workspace/.boring-agent/venv/bin')
     const tier1Idx = parts.indexOf('/opt/venv/bin')
     expect(tier2Idx).toBeLessThan(tier1Idx)
   })
@@ -94,7 +95,7 @@ describe('buildVenvEnv', () => {
     const previous = setEnvForTest('PATH', '/usr/local/bin:/usr/bin')
     try {
       const env = buildVenvEnv(null, '/workspace')
-      expect(env.PATH).toBe('/workspace/.venv/bin:/usr/local/bin:/usr/bin')
+      expect(env.PATH).toBe('/workspace/.boring-agent/venv/bin:/usr/local/bin:/usr/bin')
     } finally {
       restoreEnvForTest('PATH', previous)
     }
@@ -104,15 +105,25 @@ describe('buildVenvEnv', () => {
     const previous = setEnvForTest('PATH', undefined)
     try {
       const env = buildVenvEnv('/some/path', '/workspace')
-      expect(env.PATH).toBe('/workspace/.venv/bin:/opt/venv/bin')
+      expect(env.PATH).toBe('/workspace/.boring-agent/venv/bin:/opt/venv/bin')
     } finally {
       restoreEnvForTest('PATH', previous)
     }
   })
 
-  test('sets VIRTUAL_ENV to workspace .venv', () => {
+  test('filters old top-level .venv from host PATH', () => {
+    const previous = setEnvForTest('PATH', '/workspace/.venv/bin:/usr/bin')
+    try {
+      const env = buildVenvEnv(null, '/workspace')
+      expect(env.PATH).toBe('/workspace/.boring-agent/venv/bin:/usr/bin')
+    } finally {
+      restoreEnvForTest('PATH', previous)
+    }
+  })
+
+  test('sets VIRTUAL_ENV to workspace .boring-agent/venv', () => {
     const env = buildVenvEnv('/some/path', '/workspace')
-    expect(env.VIRTUAL_ENV).toBe('/workspace/.venv')
+    expect(env.VIRTUAL_ENV).toBe('/workspace/.boring-agent/venv')
   })
 })
 
@@ -189,10 +200,10 @@ describe('ensureTier1Venv', () => {
 describe('ensureTier2Venv', () => {
   test('returns existing venv path when already created', () => {
     vi.mocked(existsSync).mockImplementation((p) =>
-      String(p) === '/workspace/.venv/bin/python3',
+      String(p) === '/workspace/.boring-agent/venv/bin/python3',
     )
     const result = ensureTier2Venv('/workspace', null)
-    expect(result).toBe('/workspace/.venv')
+    expect(result).toBe('/workspace/.boring-agent/venv')
     expect(execFileSync).not.toHaveBeenCalled()
   })
 
@@ -204,8 +215,13 @@ describe('ensureTier2Venv', () => {
 
     expect(execFileSync).toHaveBeenCalledWith(
       'python3',
-      ['-m', 'venv', '/workspace/.venv'],
+      ['-m', 'venv', '/workspace/.boring-agent/venv'],
       expect.any(Object),
+    )
+    expect(writeFileSync).toHaveBeenCalledWith(
+      '/workspace/.boring-agent/venv/.boring-agent-owned.json',
+      expect.stringContaining('@hachej/boring-agent'),
+      'utf8',
     )
   })
 
@@ -217,7 +233,7 @@ describe('ensureTier2Venv', () => {
 
     expect(execFileSync).toHaveBeenCalledWith(
       '/opt/venv/bin/python3',
-      ['-m', 'venv', '/workspace/.venv', '--system-site-packages'],
+      ['-m', 'venv', '/workspace/.boring-agent/venv', '--system-site-packages'],
       expect.any(Object),
     )
   })

@@ -72,7 +72,7 @@ test('maps display /workspace cwd, command paths, and env to Vercel remote root'
     cwd: '/workspace/nested',
     env: {
       BORING_AGENT_WORKSPACE_ROOT: '/workspace',
-      PATH: '/workspace:/usr/bin:/workspace/.venv/bin:/workspace@tmp',
+      PATH: '/workspace:/usr/bin:/workspace/.boring-agent/venv/bin:/workspace@tmp',
     },
   })
 
@@ -82,7 +82,7 @@ test('maps display /workspace cwd, command paths, and env to Vercel remote root'
       cwd: '/vercel/sandbox/nested',
       env: {
         BORING_AGENT_WORKSPACE_ROOT: '/vercel/sandbox',
-        PATH: '/vercel/sandbox:/usr/bin:/vercel/sandbox/.venv/bin:/workspace@tmp',
+        PATH: '/vercel/sandbox:/usr/bin:/vercel/sandbox/.boring-agent/venv/bin:/workspace@tmp',
       },
     }),
   )

@@ -7,6 +7,8 @@
 import {
   autoDetectMode,
   createAgentApp,
+  getBoringAgentNodePackageTarget,
+  getBoringAgentRuntimePaths,
   provisionRuntimeWorkspace,
   resolveMode,
   type CreateAgentAppOptions,
@@ -140,10 +142,11 @@ const require = createRequire(import.meta.url)
 
 function boringPiRootVisibleToAgentTools(workspaceRoot: string, resolvedMode: string, provisioned: boolean): string | undefined {
   if (!provisioned) return undefined
-  if (resolvedMode === "local") return "/workspace/node_modules/@hachej/boring-pi"
-  return join(workspaceRoot, "node_modules", "@hachej", "boring-pi")
+  if (resolvedMode === "local" || resolvedMode === "vercel-sandbox") {
+    return "/workspace/.boring-agent/node/node_modules/@hachej/boring-pi"
+  }
+  return getBoringAgentNodePackageTarget(workspaceRoot, "@hachej/boring-pi")
 }
-
 
 
 function resolveWorkspacePackageRoot(): string {
@@ -242,7 +245,7 @@ function createBoringUiCliPackageProvisioningContribution(): WorkspaceProvisioni
 }
 
 function createBoringPiPackageSource(workspaceRoot: string): WorkspacePiPackageSource | undefined {
-  const workspacePackageRoot = join(workspaceRoot, "node_modules", "@hachej", "boring-pi")
+  const workspacePackageRoot = getBoringAgentNodePackageTarget(workspaceRoot, "@hachej/boring-pi")
   const source = existsSync(join(workspacePackageRoot, "package.json"))
     ? workspacePackageRoot
     : resolveBoringPiPackageRoot()

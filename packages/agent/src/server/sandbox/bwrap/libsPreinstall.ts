@@ -5,6 +5,7 @@ import { join } from 'node:path'
 
 import { getEnv } from '../../config/env'
 import { createLogger } from '../../logging'
+import { getBoringAgentRuntimePaths, writeBoringAgentOwnershipMarkerSync } from '../../workspace/runtimeLayout'
 
 const log = createLogger('libs-preinstall')
 
@@ -101,7 +102,7 @@ export function ensureTier1Venv(packages: string[]): string | null {
 }
 
 export function ensureTier2Venv(workspaceRoot: string, tier1Path: string | null): string {
-  const venvPath = join(workspaceRoot, '.venv')
+  const venvPath = getBoringAgentRuntimePaths(workspaceRoot).venv
 
   if (existsSync(join(venvPath, 'bin', 'python3'))) {
     log.info('tier-2 overlay venv exists', { venvPath })
@@ -120,6 +121,7 @@ export function ensureTier2Venv(workspaceRoot: string, tier1Path: string | null)
     : 'python3'
 
   execFileSync(python, args, { stdio: 'ignore', timeout: INSTALL_TIMEOUT_MS })
+  writeBoringAgentOwnershipMarkerSync(venvPath, '.boring-agent/venv')
 
   log.info('tier-2 overlay venv created', { venvPath })
   return venvPath
@@ -134,17 +136,18 @@ export function buildVenvBwrapArgs(tier1Path: string | null): string[] {
 }
 
 export function buildVenvEnv(tier1Path: string | null, workspaceRoot: string): Record<string, string> {
-  const tier2Bin = join(workspaceRoot, '.venv', 'bin')
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
+  const tier2Bin = paths.venvBin
   const tier1Bin = tier1Path ? join(SYSTEM_VENV_PATH, 'bin') : null
 
   const pathParts = [tier2Bin]
   if (tier1Bin) pathParts.push(tier1Bin)
   const hostPath = getEnv('PATH')
-  if (hostPath) pathParts.push(hostPath)
+  if (hostPath) pathParts.push(...hostPath.split(':').filter((part) => part !== paths.legacyTopLevelVenvBin))
 
   return {
     PATH: pathParts.join(':'),
-    VIRTUAL_ENV: join(workspaceRoot, '.venv'),
+    VIRTUAL_ENV: paths.venv,
   }
 }
 

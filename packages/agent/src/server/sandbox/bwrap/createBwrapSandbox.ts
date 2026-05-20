@@ -178,7 +178,6 @@ async function buildGlobalToolMounts(workspaceRoot: string): Promise<string[]> {
   }
 
   const mountedParentAgentDir = await mountIfChildLacks('.boring-agent')
-  await mountIfChildLacks('.venv')
   if (!mountedParentAgentDir) {
     await mountIfChildLacks('.boring-agent/venv')
   }
