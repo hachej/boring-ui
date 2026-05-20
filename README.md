@@ -17,29 +17,40 @@ When software can understand intent and act, every app collapses to two surfaces
 
 That's what the Boring UI core provides: a shell the agent can control and reshape.
 
-Give it a try:
+---
+
+## Table of Contents
+
+- [Give it a try](#give-it-a-try)
+- [Make it yours](#make-it-yours)
+- [Built with boring-ui](#built-with-boring-ui)
+- [Repo map](#repo-map)
+- [Architecture](#architecture)
+- [Working in the repo](#working-in-the-repo)
+
+## Give it a try
 
 ```bash
 npx @hachej/boring-ui-cli
 ```
 
-Starts a full agent workspace pointed at the current directory — chat, panels, file tree, command palette. No clone. No database. No setup.
+Starts a full agent workspace pointed at the current directory — chat, file tree, panels, command palette. No clone. No database. No setup.
 
-Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` before running. See [Pi providers](https://pi.dev/docs/latest/quickstart#configure-a-provider) for LLM setup.
+Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` before running (see [Pi providers](https://pi.dev/docs/latest/quickstart#configure-a-provider) for LLM setup).
 
-https://github.com/user-attachments/assets/c41c9020-fdf8-4031-927a-e432b99ed098
+[https://github.com/user-attachments/assets/c41c9020-fdf8-4031-927a-e432b99ed098](https://github.com/user-attachments/assets/c41c9020-fdf8-4031-927a-e432b99ed098)
 
-A real session: ask the agent for a summary → it opens the README in the workbench → ask it to take notes → a new `notes.md` appears in the tree → search for it via the command palette. Chat in, workspace out.
+A real session: ask the agent for a summary → it opens the README in the workbench → ask it to take notes → a new `notes.md` appears in the tree → search for it via the command palette. Chat in, workbench out.
 
----
+## Make it yours
 
-But of course every app, every workflow, every use case is different.
+Of course every app, every workflow, every use case is different.
 
 Different data. Different visualisations. Different agent skills.
 
-That's why the plugin system exists. 
+That's why we created a plugin system.
 
-Boring builds on Pi's plugin system and extends it with UI-aware surfaces.
+Boring builds on Pi's plugin system for agent customization (prompt, skills, tools) and extends it with UI-aware surfaces.
 
 Pi handles the agent loop (tool calling, sessions, skills, prompts). 
 
@@ -61,17 +72,18 @@ In practice, a plugin is a Node package with two manifest blocks:
 - **Agent tools** — new capabilities the model can call, with schema-defined parameters
 - **Skills + prompts** — domain knowledge and reasoning patterns the agent follows
 
-### Plugins
+### Existing Plugins
 
 
-| Plugin           | Description                                                                                   |
-| ---------------- | --------------------------------------------------------------------------------------------- |
-| ask-user         | Agent-to-human Q&amp;A with a UI prompt                                                       |
-| data-explorer    | Searchable, faceted data tables                                                               |
-| data-catalog     | Catalog tab built on data-explorer                                                            |
-| coming: llm-wiki | [LLM powered second brain](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) |
-| coming: tasks    | Task tracking, Kanban boards the agent can read and update |
-| coming: workflows| Multi-step agent orchestration — chain steps, define branches, trigger sub-agents |
+| Plugin                                                                               | Description                                                                                   |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| [ask-user](https://github.com/hachej/boring-ui/tree/main/plugins/ask-user)           | Agent-to-human Q&amp;A with a UI prompt                                                       |
+| [data-explorer](https://github.com/hachej/boring-ui/tree/main/plugins/data-explorer) | Searchable, faceted data tables                                                               |
+| [data-catalog](https://github.com/hachej/boring-ui/tree/main/plugins/data-catalog)   | Catalog tab built on data-explorer                                                            |
+| coming: llm-wiki                                                                     | [LLM powered second brain](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) |
+| coming: tasks                                                                        | Task tracking, Kanban boards the agent can read and update                                    |
+| coming: workflows                                                                    | Multi-step agent orchestration — chain steps, define branches, trigger sub-agents             |
+| coming: data-branch                                                                  | Fork, explore, and compare agent-generated datasets side by side in the workbench             |
 
 
 ### Plugin shape
@@ -109,20 +121,29 @@ See [Pi extensions docs](https://pi.dev/docs/latest/extensions) for the full Pi 
 
 ## Built with boring-ui
 
+![MacroAnalyst — AI macro research, accelerated](https://boring-macro.fly.dev/landing/app-screenshot.png?v=8)
 
-| App                                                                                           | Status |
-| --------------------------------------------------------------------------------------------- | ------ |
-| [MacroAnalyst](https://boring-macro.fly.dev/) — macroeconomic research, charts from live data | Live   |
-| boring-accountant — accounting workflows                                                      | Coming |
-| boring-design — design review and iteration                                                   | Coming |
-| boring-lawyer — legal research and document review                                            | Coming |
+**[MacroAnalyst](https://boring-macro.fly.dev/)** — an interactive macroeconomic analyst powered by Boring UI.
+
+Ask in plain English, get charts back in under a minute. Behind the scenes the agent:
+
+- Fetches live time series from a database of 800,000+ series 
+- Transforms, resamples, and joins them using Python functions it chooses and writes
+- Renders interactive decks charts in the workbench
+
+
+| App                                                | Status |
+| -------------------------------------------------- | ------ |
+| boring-accountant — accounting workflows           | Coming |
+| boring-design — design review and iteration        | Coming |
+| boring-lawyer — legal research and document review | Coming |
 
 
 ---
 
 ## Repo map
 
-### Packages
+The repo is structured in packages, each with a focused scope.
 
 
 | Package                    | Role                             | README                                             |
@@ -134,59 +155,92 @@ See [Pi extensions docs](https://pi.dev/docs/latest/extensions) for the full Pi 
 | `@hachej/boring-ui-cli`    | Zero-setup local entrypoint      | [packages/cli](packages/cli/README.md)             |
 
 
-### Plugins
+The repo also ships reference apps — drop one into any agent and it will scaffold a custom app for you in seconds.
 
 
-| Plugin                         | What it adds                                                              | README                                                   |
-| ------------------------------ | ------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `@hachej/boring-ask-user`      | Agent-to-user question/answer surface and `ask_user` tool                 | [plugins/ask-user](plugins/ask-user/README.md)           |
-| `@hachej/boring-data-explorer` | Searchable, faceted data tables — the primitive for explorer-style panels | [plugins/data-explorer](plugins/data-explorer/README.md) |
-| `@hachej/boring-data-catalog`  | Configurable catalog tab built on `data-explorer`                         | [plugins/data-catalog](plugins/data-catalog/README.md)   |
-| Plugin template                | Canonical scaffold for new plugins                                        | [plugins/_template](plugins/_template/README.md)         |
-
-
-### Reference apps
-
-
-| App                         | Purpose                                                | README                                                           |
-| --------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------- |
-| `apps/full-app`             | Production-shaped reference: auth, DB, multi-workspace | [apps/full-app](apps/full-app/README.md)                         |
-| `apps/agent-playground`     | `@hachej/boring-agent` alone — no workbench, no DB     | [apps/agent-playground](apps/agent-playground/README.md)         |
-| `apps/workspace-playground` | `@hachej/boring-workspace` + plugins — no auth backend | [apps/workspace-playground](apps/workspace-playground/README.md) |
+| App                         | Purpose                                                   | README                                                           |
+| --------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------- |
+| `apps/full-app`             | Production-shaped reference: auth, DB, multi-workspace    | [apps/full-app](apps/full-app/README.md)                         |
+| `apps/agent-playground`     | `@hachej/boring-agent` — single agent chat on top of Pi   | [apps/agent-playground](apps/agent-playground/README.md)         |
+| `apps/workspace-playground` | `@hachej/boring-workspace` — agent chat and the workbench | [apps/workspace-playground](apps/workspace-playground/README.md) |
 
 
 ---
 
 ## Architecture
 
-Boring UI is built around four swappable interfaces:
+Two layers connected by a bridge.
+
+**Frontend** is React + Vite — renders chat, file tree, and workbench. The workbench is a pane container that displays files, tables, charts, or custom plugin views.
+
+**UiBridge** is the link between frontend and backend. The agent or server posts commands (`openFile`, `openPanel`, `openSurface`) and the workbench dispatches them. This is how the agent drives the UI without touching the DOM.
+
+**Backend** is Node.js.
+
+**Agent runtime** is the Pi agent loop (`AgentHarness`). It runs natively on the backend — no VMs, no containers needed. It receives user messages, streams chat responses, delegates tool calls to a `ToolCatalog`, and manages sessions. It knows nothing about files, shells, or UI — only `AgentTool[]`.
+
+`AgentHarness` is an interface, not a hardcoded dependency. The design leaves room for swapping in a different harness later. For now, Pi is the only implementation.
+
+The agent just calls the tools — we handle where they actually run. 
+
+That's why `Workspace` and `Sandbox` exist: they abstract the execution layer so the same tools (`ls`, `read`, `write`, `exec`) work identically whether hitting the local filesystem, a Linux container, or a remote VM.
+
+### Core abstractions
 
 
-| Interface      | Owner                      | Responsibility            |
-| -------------- | -------------------------- | ------------------------- |
-| `Workspace`    | `@hachej/boring-agent`     | Filesystem operations     |
-| `Sandbox`      | `@hachej/boring-agent`     | Shell execution           |
-| `AgentHarness` | `@hachej/boring-agent`     | Agent runtime             |
-| `UiBridge`     | `@hachej/boring-workspace` | Agent → workbench control |
+| Interface      | Defined in                 | Used for                                    | Adapters                                             |
+| -------------- | -------------------------- | ------------------------------------------- | ---------------------------------------------------- |
+| `Workspace`    | `@boring/agent/shared`     | Read/write files (agent + UI filetree)      | `NodeWorkspace`, `VercelSandboxWorkspace`            |
+| `Sandbox`      | `@boring/agent/shared`     | Shell execution (agent commands)            | `DirectSandbox`, `BwrapSandbox`, `VercelSandboxExec` |
+| `UiBridge`     | `@boring/workspace/shared` | Workbench control (agent + command palette) | in-memory bridge (room for browser-side adapter)     |
+| `AgentHarness` | `@boring/agent/shared`     | Agent loop                                  | Pi (room for more)                                   |
 
 
-Flow:
+### Sandbox
 
-```text
-chat UI ─► AgentHarness ─► ToolCatalog ─► Workspace + Sandbox
+`Sandbox` abstracts isolated execution. The agent runs commands through it — the same `bash` tool works identically regardless of where the shell is:
 
-agent / server actions ─► UiBridge ─► workbench UI
 
-session history ─► SessionStore
-```
+| Sandbox            | Implementation        | When to use                         |
+| ------------------ | --------------------- | ----------------------------------- |
+| **direct**         | `child_process.exec`  | Local dev, no isolation             |
+| **bwrap**          | Linux bubblewrap      | Local dev with filesystem isolation |
+| **vercel-sandbox** | Vercel Firecracker VM | Remote sandbox                      |
 
-Rules that follow from this shape:
 
-- `Workspace` is the single filesystem interface — agent tools and frontend file routes both go through it
-- `Sandbox` is only for execution
-- `AgentHarness` doesn't know about files or shells — it only sees tools
-- Runtime modes (`direct`, `local`, `vercel-sandbox`) swap the `Workspace` + `Sandbox` pair, not the rest
-- `UiBridge` is how the agent opens files, panels, surfaces, and any other workbench UI
+### Workspace
+
+`Workspace` is the filesystem abstraction that both the agent tools and the frontend file routes consume. It defines operations — `readFile`, `writeFile`, `readdir`, `stat`, `watch` — and each adapter implements them for its target environment.
+
+Pi ships native tools for `read`, `write`, `edit`, `find`, `grep`, `ls`. In local mode they call `node:fs` directly. In remote mode we adapt them to call through the `Workspace` interface over HTTP. Same tools, same agent, different backend.
+
+
+| Workspace                  | Implementation                              |
+| -------------------------- | ------------------------------------------- |
+| **NodeWorkspace**          | Local filesystem via `node:fs`              |
+| **VercelSandboxWorkspace** | Remote filesystem over HTTP to a sandbox VM |
+
+
+Sandbox and Workspace are always created together as a pair so they share the same filesystem:
+
+
+| Mode               | Sandbox             | Workspace                |
+| ------------------ | ------------------- | ------------------------ |
+| **direct**         | `DirectSandbox`     | `NodeWorkspace`          |
+| **local**          | `BwrapSandbox`      | `NodeWorkspace`          |
+| **vercel-sandbox** | `VercelSandboxExec` | `VercelSandboxWorkspace` |
+
+
+---
+
+## Hosting
+
+The full app ships two deployment targets:
+
+- **Fly.io** — Docker container + Postgres. The `apps/full-app` Dockerfile builds the monorepo in dependency order. Run `fly launch`, set secrets (`DATABASE_URL`, `AUTH_SECRET`), deploy.
+- **Vercel** — serverless function for agent routes + edge static assets. `@boring/core` ships a `vercelEntry` and build script (`build-vercel-api.mjs`) that bundle the backend into a single Vercel Function.
+
+Both targets use the same `@boring/core` app factory (`createCoreApp`) — swap the entry point, same app.
 
 ---
 
@@ -220,4 +274,4 @@ pnpm --filter @hachej/boring-workspace build && pnpm --filter workspace-playgrou
 
 ## License
 
-MIIT
+MIT
