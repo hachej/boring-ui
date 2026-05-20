@@ -9,6 +9,7 @@ const mockPiProjection = vi.hoisted(() => ({
 const mockUseAgentChat = vi.fn()
 const mockSendMessage = vi.fn()
 const mockSetMessages = vi.fn()
+const mockScrollToBottom = vi.fn()
 
 vi.mock('../../front/hooks/useAgentChat', () => ({
   useAgentChat: (opts: unknown) => mockUseAgentChat(opts),
@@ -22,7 +23,10 @@ vi.mock('../pi/piChatProjection', () => ({
 }))
 
 vi.mock('../primitives/conversation', () => ({
-  Conversation: ({ children, ...rest }: any) => <div data-testid="conversation" role="log" {...rest}>{children}</div>,
+  Conversation: ({ children, onScrollToBottomReady, ...rest }: any) => {
+    onScrollToBottomReady?.(mockScrollToBottom)
+    return <div data-testid="conversation" role="log" {...rest}>{children}</div>
+  },
   ConversationContent: ({ children }: any) => <div data-testid="conversation-content">{children}</div>,
   ConversationScrollButton: () => <div data-testid="scroll-button" />,
 }))
@@ -88,6 +92,7 @@ beforeEach(() => {
   capturedOnSubmit = undefined
   mockPiProjection.piMessages = []
   mockPiProjection.handleData.mockReset()
+  mockScrollToBottom.mockReset()
   mockSendMessage.mockReset()
   mockSetMessages.mockReset()
   mockUseAgentChat.mockReset()
@@ -304,12 +309,36 @@ describe('ChatPanel (shadcn)', () => {
     expect(html).toContain('role="alert"')
   })
 
+  test('passive render does not force-scroll to bottom', () => {
+    renderToStaticMarkup(<ChatPanel sessionId="sess-passive-scroll" />)
+
+    expect(mockScrollToBottom).not.toHaveBeenCalled()
+  })
+
+  test('passive assistant streaming render does not force-scroll to bottom', () => {
+    mockUseAgentChat.mockReturnValue({
+      messages: [
+        { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+        { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'streaming...' }] },
+      ],
+      sendMessage: mockSendMessage,
+      setMessages: mockSetMessages,
+      status: 'streaming',
+      error: undefined,
+    })
+
+    renderToStaticMarkup(<ChatPanel sessionId="sess-passive-streaming-scroll" />)
+
+    expect(mockScrollToBottom).not.toHaveBeenCalled()
+  })
+
   test('sends message without hardcoded model so Pi can choose the default', async () => {
     renderToStaticMarkup(<ChatPanel sessionId="sess-send" />)
 
     expect(capturedOnSubmit).toBeDefined()
     await capturedOnSubmit!({ text: 'Run tests', files: [] })
 
+    expect(mockScrollToBottom).toHaveBeenCalledTimes(1)
     expect(mockSendMessage).toHaveBeenCalledWith(
       { text: 'Run tests', files: [] },
       {
@@ -320,6 +349,22 @@ describe('ChatPanel (shadcn)', () => {
         },
       },
     )
+  })
+
+  test('queued native follow-up submit while streaming scrolls immediately without starting a second send', async () => {
+    mockUseAgentChat.mockReturnValue({
+      messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+      sendMessage: mockSendMessage,
+      setMessages: mockSetMessages,
+      status: 'streaming',
+      error: undefined,
+    })
+    renderToStaticMarkup(<ChatPanel sessionId="sess-followup-scroll" />)
+
+    await capturedOnSubmit!({ text: 'Queue next', files: [] })
+
+    expect(mockScrollToBottom).toHaveBeenCalledTimes(1)
+    expect(mockSendMessage).not.toHaveBeenCalled()
   })
 
   test('keeps image attachments visible as file parts while sending binary marker only to server', async () => {

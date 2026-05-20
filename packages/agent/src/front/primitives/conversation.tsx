@@ -4,20 +4,43 @@ import { Button } from "@hachej/boring-ui-kit";
 import { cn } from "@/front/lib";
 import type { UIMessage } from "ai";
 import { ArrowDownIcon, DownloadIcon } from "lucide-react";
-import type { ComponentProps } from "react";
-import { useCallback } from "react";
+import type { ComponentProps, ReactNode } from "react";
+import { useCallback, useEffect } from "react";
 import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
 
-export type ConversationProps = ComponentProps<typeof StickToBottom>;
+export type ConversationProps = ComponentProps<typeof StickToBottom> & {
+  onScrollToBottomReady?: (scrollToBottom: () => void) => void;
+};
 
-export const Conversation = ({ className, ...props }: ConversationProps) => (
+const ConversationScrollController = ({
+  onScrollToBottomReady,
+}: Pick<ConversationProps, "onScrollToBottomReady">) => {
+  const { scrollToBottom } = useStickToBottomContext();
+
+  useEffect(() => {
+    onScrollToBottomReady?.(scrollToBottom);
+    return () => onScrollToBottomReady?.(() => {});
+  }, [onScrollToBottomReady, scrollToBottom]);
+
+  return null;
+};
+
+export const Conversation = ({
+  className,
+  children,
+  onScrollToBottomReady,
+  ...props
+}: ConversationProps) => (
   <StickToBottom
     className={cn("relative flex-1 overflow-y-hidden", className)}
     initial="smooth"
     resize="smooth"
     role="log"
     {...props}
-  />
+  >
+    <ConversationScrollController onScrollToBottomReady={onScrollToBottomReady} />
+    {children as ReactNode}
+  </StickToBottom>
 );
 
 export type ConversationContentProps = ComponentProps<
