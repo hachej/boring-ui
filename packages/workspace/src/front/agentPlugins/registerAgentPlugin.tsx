@@ -10,7 +10,7 @@ import type { PanelConfig } from "../../shared/types/panel"
 import type { SurfaceOpenRequest, SurfaceResolverConfig } from "../../shared/types/surface"
 import type { CommandConfig } from "../registry/types"
 import { useCatalogRegistry, useCommandRegistry, useRegistry, useSurfaceResolverRegistry } from "../registry/RegistryProvider"
-import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "@hachej/boring-agent/shared"
+import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "./reloadEvent"
 
 type BoringPluginEvent =
   | { type: "boring.plugin.load"; id: string; boring: BoringPackageBoringField; version: string; revision: number; frontUrl?: string }
