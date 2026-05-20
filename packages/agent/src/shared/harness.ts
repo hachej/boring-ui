@@ -30,12 +30,25 @@ export interface AgentHarness {
    * A `data-followup-consumed` chunk is emitted before the follow-up turn so
    * the client can clear its pending-message bubble immediately.
    */
-  followUp?(sessionId: string, text: string, attachments?: MessageAttachment[], displayText?: string): void | Promise<void>
+  followUp?(
+    sessionId: string,
+    text: string,
+    attachments?: MessageAttachment[],
+    displayText?: string,
+    options?: FollowUpOptions,
+  ): void | Promise<void>
 
   /**
-   * Discard any queued follow-up for this session (called by the Stop button).
+   * Discard queued follow-up(s) for this session (called by the Stop button or
+   * by a queued-message delete action). When `options` identifies a single
+   * client message, implementations should remove only that item if possible.
    */
-  clearFollowUp?(sessionId: string): void
+  clearFollowUp?(sessionId: string, options?: FollowUpOptions): void
+}
+
+export interface FollowUpOptions {
+  clientNonce?: string
+  clientSeq?: number
 }
 
 /* Resume is NOT a harness concern — see Stream resumption section.

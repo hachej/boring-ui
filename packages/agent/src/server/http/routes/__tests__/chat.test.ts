@@ -521,6 +521,7 @@ describe('POST /api/v1/agent/chat/:sessionId/followup', () => {
     })
     expect(first.statusCode).toBe(202)
     expect(followUp).toHaveBeenCalledTimes(1)
+    expect(followUp).toHaveBeenLastCalledWith('sess-seq', 'next', undefined, 'next', { clientNonce: 'nonce-1', clientSeq: 1 })
 
     const retry = await app.inject({
       method: 'POST',
@@ -538,6 +539,48 @@ describe('POST /api/v1/agent/chat/:sessionId/followup', () => {
     })
     expect(stale.statusCode).toBe(409)
     expect(followUp).toHaveBeenCalledTimes(1)
+
+    await app.close()
+  })
+
+  test('deletes one queued follow-up by client nonce', async () => {
+    const clearFollowUp = vi.fn()
+    const harness = createMockHarness()
+    harness.clearFollowUp = clearFollowUp
+    const app = await buildApp({ harness })
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/api/v1/agent/chat/sess-delete/followup?clientNonce=nonce-delete&clientSeq=7',
+    })
+
+    expect(res.statusCode).toBe(204)
+    expect(clearFollowUp).toHaveBeenCalledWith('sess-delete', { clientNonce: 'nonce-delete', clientSeq: 7 })
+
+    await app.close()
+  })
+
+  test('ignores a follow-up POST that arrives after its DELETE', async () => {
+    const followUp = vi.fn().mockResolvedValue(undefined)
+    const harness = createMockHarness()
+    harness.followUp = followUp
+    const app = await buildApp({ harness })
+
+    const deleted = await app.inject({
+      method: 'DELETE',
+      url: '/api/v1/agent/chat/sess-delete-race/followup?clientNonce=nonce-race&clientSeq=9',
+    })
+    expect(deleted.statusCode).toBe(204)
+
+    const latePost = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat/sess-delete-race/followup',
+      payload: { message: 'already deleted', clientSeq: 9, clientNonce: 'nonce-race' },
+    })
+
+    expect(latePost.statusCode).toBe(202)
+    expect(latePost.json()).toEqual({ queued: false, deleted: true })
+    expect(followUp).not.toHaveBeenCalled()
 
     await app.close()
   })

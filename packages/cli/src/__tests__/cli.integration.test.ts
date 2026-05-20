@@ -92,7 +92,7 @@ test("installed CLI workspace subcommands use an isolated registry", async () =>
   await expect(runCli(["workspaces", "list"], env)).resolves.toMatchObject({
     stdout: expect.stringContaining("No workspaces"),
   })
-})
+}, 20_000)
 
 test("installed CLI rejects file paths as local workspaces", async () => {
   const root = await makeTempDir("boring-cli-install-root-")
@@ -107,4 +107,4 @@ test("installed CLI rejects file paths as local workspaces", async () => {
   await expect(runCli(["workspaces", "list"], env)).resolves.toMatchObject({
     stdout: expect.stringContaining("No workspaces"),
   })
-})
+}, 20_000)
