@@ -197,7 +197,7 @@ Default behavior:
 
 - `id`: `deck`
 - `label`: `Deck`
-- `panelId`: `deck` by default so macro can preserve saved layouts; other consumers may use `${id}.panel`
+- `panelId`: `deck` by default for the generic package plugin; consumers with multiple deck instances may use `${id}.panel`
 - `pathPrefix`: `deck/`
 - default storage: HTTP storage under `/api/deck`
 - panel command: use plugin-agent-layer `BoringFrontPanelCommandRegistration` shape (`{ id, title, panelId }`), optionally with `run` only if a consumer needs custom behavior
@@ -218,7 +218,7 @@ export function createHttpDeckStorage(options: {
 }): DeckStorageClient
 ```
 
-This keeps the deck UI independent of macro's `/api/macro/deck` route.
+This keeps the deck UI independent of any app-specific deck route, including macro's `/api/macro/deck` compatibility route.
 
 ### 5.3 Widget injection
 
@@ -265,10 +265,7 @@ Rules:
 - Widget names must match a strict identifier regex and duplicate widget names fail during `createDeckPlugin(...)`.
 - Widget definitions are matched by exact `name`.
 
-Macro will supply:
-
-- `TimeSeries`
-- `TimeSeriesGrid`
+Domain consumers can supply their own widgets. For example, `boring-macro` can supply `TimeSeries` and `TimeSeriesGrid`, but those widget implementations stay outside the generic deck package.
 
 Potential future consumers can supply:
 
@@ -307,7 +304,7 @@ export interface DeckThemeOptions {
 }
 ```
 
-The current macro orange accent should become a theme option instead of hardcoded `.deck-root` CSS.
+App-specific visual accents should be provided through theme options instead of hardcoded `.deck-root` CSS.
 
 ## 6. Server API
 
@@ -362,7 +359,7 @@ Default route shape and HTTP compatibility contract:
 - `GET {routeBase}` with `?path=` returns `text/markdown`
 - `PUT {routeBase}` with `?path=` accepts `{ content: string }` or raw string if compatibility mode is enabled, writes markdown, and returns `{ ok: true, path, bytes }`
 - `GET {routeBase}/list` returns `{ items: string[] }`
-- errors use stable status codes and response bodies; preserve macro-compatible `400`/`404` behavior during the macro migration
+- errors use stable status codes and response bodies; app-specific compatibility routes can preserve legacy `400`/`404` behavior during consumer migrations
 
 For a default route base of `/api/deck`, handlers are:
 
@@ -426,7 +423,7 @@ Generic prompt includes:
 - keep slides concise
 - widget embeds count as slide content
 
-Macro appends widget docs for `TimeSeries` and `TimeSeriesGrid`, either in a macro-specific skill overlay or a short macro server prompt addendum.
+Domain plugins append their own widget docs either in a domain-specific skill overlay or a short server prompt addendum.
 
 ## 7. Parser design
 
@@ -536,13 +533,13 @@ Acceptance:
 
 Acceptance:
 
-- Parser tests cover current macro deck examples.
+- Parser tests cover generic deck examples plus fixtures copied from the first consumer migration.
 
 ### Phase 3 — Extract DeckPane generic UI
 
 - Move `DeckPane` into deck plugin.
 - Replace macro-specific widget rendering with registry lookup; do not copy the `TimeSeries`/`TimeSeriesGrid` renderers into `@hachej/boring-deck`.
-- Replace hardcoded `/api/macro/deck` fetches with `DeckStorageClient`.
+- Replace hardcoded app-specific deck fetches with `DeckStorageClient`.
 - Keep default HTTP storage.
 - Add minimal render tests for loading, missing deck, markdown slide, unknown widget.
 
@@ -627,17 +624,24 @@ Manual macro smoke:
 
 ## 11. Compatibility constraints
 
-- Preserve macro panel id `deck` during first consumer migration.
-- Preserve route prefix `/api/macro/deck` during first consumer migration.
-- Preserve markdown widget syntax exactly for existing macro decks.
-- Do not require users to rewrite `{{TimeSeries ...}}` embeds.
-- Do not break saved Dockview layouts by changing panel id casually.
+Generic deck package constraints:
+
+- Keep default package behavior domain-neutral: markdown decks under `deck/`, no built-in domain data widgets, no dependency on macro APIs.
+- Preserve generic widget syntax `{{WidgetName key="value"}}` so domain widgets can be moved in/out without changing deck markdown.
+- Do not break saved Dockview layouts by changing panel ids casually.
+
+First consumer migration constraints for `boring-macro`:
+
+- Preserve macro panel id `deck` during the migration.
+- Preserve route prefix `/api/macro/deck` during the migration.
+- Preserve existing macro widget syntax exactly.
+- Do not require users to rewrite existing `{{TimeSeries ...}}` embeds.
 
 ## 12. Risks and mitigations
 
 ### Risk: Deck plugin becomes too macro-specific
 
-Mitigation: generic package must not import macro series APIs. Macro widgets are injected from macro.
+Mitigation: generic package must not import macro series APIs, macro route paths, macro constants, or macro widget implementations. Domain widgets are injected by their owning app/plugin.
 
 ### Risk: Extension API freezes internals too early
 
@@ -645,7 +649,7 @@ Mitigation: expose only stable slots and widget registry first.
 
 ### Risk: Server route security regression
 
-Mitigation: write traversal corpus tests before deleting macro's existing path guard.
+Mitigation: write traversal corpus tests for the generic file storage before replacing any consumer-specific path guard.
 
 ### Risk: Duplicate markdown styling differences
 
@@ -653,7 +657,7 @@ Mitigation: snapshot or DOM tests for representative slides, plus manual visual 
 
 ### Risk: Saved macro layouts break
 
-Mitigation: keep `panelId: 'deck'` for macro integration.
+Mitigation: keep `panelId: 'deck'` for the generic default plugin and for macro's first integration unless a layout migration is explicitly added.
 
 ## 13. Open decisions
 
@@ -673,7 +677,7 @@ Mitigation: keep `panelId: 'deck'` for macro integration.
 1. Scaffold `plugins/deck` from `_template-full`.
 2. Add shared constants/types for deck panel ids, surface kind, storage contracts, widget contracts.
 3. Extract parser with tests.
-4. Port `DeckPane` minus macro widgets.
+4. Port `DeckPane` as a generic renderer only; exclude macro widgets, macro routes, and macro data imports.
 5. Implement widget registry and unknown-widget placeholder.
 6. Implement HTTP storage client.
 7. Implement file server storage and routes.
