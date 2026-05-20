@@ -53,8 +53,9 @@ export type {
   ToolExecContext,
   ToolResult,
 } from "./shared/plugins"
+export { CatalogRegistry } from "./shared/plugins/CatalogRegistry"
+export type { CatalogRegistryOptions } from "./shared/plugins/CatalogRegistry"
 export {
-  CatalogRegistry,
   useCommands,
   useActivePanels,
   useCatalogs,
@@ -62,10 +63,7 @@ export {
   PluginErrorProvider,
   usePluginErrors,
 } from "./front/plugin"
-export type {
-  CatalogRegistryOptions,
-  PluginError as PluginContributionError,
-} from "./front/plugin"
+export type { PluginError as PluginContributionError } from "./front/plugin"
 export {
   filesystemPlugin,
   emitFilesystemAgentFileChange,
