@@ -1,14 +1,40 @@
-import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
 import { isAbsolute, join, relative, resolve } from "node:path"
 import {
   isSafePluginRelativePath,
   validateBoringPluginManifest,
   type BoringPluginManifestIssue,
 } from "@hachej/boring-workspace/plugin"
-import {
-  pluginFileSignature,
-  readPluginSignatureCache,
-} from "@hachej/boring-workspace/server"
+
+interface PluginSignatureCachePayload {
+  version: 1
+  serverSignature: string | null
+  loadedAt: number
+}
+
+function pluginFileSignature(path: string | undefined): string {
+  if (!path || !existsSync(path)) return "missing"
+  const stat = statSync(path)
+  return `${stat.mtimeMs}:${stat.size}`
+}
+
+function readPluginSignatureCache(pluginRootDir: string): PluginSignatureCachePayload | null {
+  const path = join(pluginRootDir, ".boring-signature.json")
+  if (!existsSync(path)) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf8"))
+  } catch {
+    return null
+  }
+  if (!parsed || typeof parsed !== "object") return null
+  const obj = parsed as Record<string, unknown>
+  if (obj.version !== 1) return null
+  const sig = obj.serverSignature
+  if (sig !== null && typeof sig !== "string") return null
+  const loadedAt = typeof obj.loadedAt === "number" ? obj.loadedAt : 0
+  return { version: 1, serverSignature: sig, loadedAt }
+}
 
 interface VerifyPluginOptions {
   /** Workspace root containing `.pi/extensions/`. */

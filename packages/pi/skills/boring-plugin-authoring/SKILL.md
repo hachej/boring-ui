@@ -177,8 +177,7 @@ requests through your resolver:
 
 ```tsx
 import React, { useState, useEffect } from "react"
-import { definePlugin } from "@hachej/boring-workspace/plugin"
-import { WORKSPACE_OPEN_PATH_SURFACE_KIND, type PaneProps } from "@hachej/boring-workspace"
+import { definePlugin, WORKSPACE_OPEN_PATH_SURFACE_KIND, type PaneProps } from "@hachej/boring-workspace/plugin"
 
 function CsvPane({ params }: PaneProps<{ path: string }>) {
   const [text, setText] = useState("")
