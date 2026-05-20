@@ -38,7 +38,6 @@ interface PiSessionHandle {
 
 interface NativeFollowUpRequest {
   text: string;
-  attachments?: MessageAttachment[];
   displayText: string;
   clientNonce?: string;
   clientSeq?: number;
@@ -428,6 +427,16 @@ export function createPiCodingAgentHarness(opts: {
       .join("");
   }
 
+  function removeFirstMatchingOrdinal<T>(items: T[], matches: (item: T) => boolean, ordinal: number): void {
+    let seen = 0;
+    const index = items.findIndex((item) => {
+      if (!matches(item)) return false;
+      if (seen++ !== ordinal) return false;
+      return true;
+    });
+    if (index >= 0) items.splice(index, 1);
+  }
+
   function removePiQueuedFollowUp(piSession: AgentSession, text?: string, textOrdinal = 0): void {
     const session = piSession as unknown as {
       _followUpMessages?: string[];
@@ -445,56 +454,41 @@ export function createPiCodingAgentHarness(opts: {
     }
     const queuedMessages = session.agent?.followUpQueue?.messages;
     if (Array.isArray(queuedMessages)) {
-      let seen = 0;
-      const index = queuedMessages.findIndex((message) => {
-        if (userMessageText(message) !== text) return false;
-        if (seen !== textOrdinal) {
-          seen += 1;
-          return false;
-        }
-        return true;
-      });
-      if (index >= 0) queuedMessages.splice(index, 1);
+      removeFirstMatchingOrdinal(queuedMessages, (message) => userMessageText(message) === text, textOrdinal);
     }
     if (Array.isArray(session._followUpMessages)) {
-      let seen = 0;
-      const index = session._followUpMessages.findIndex((message) => {
-        if (message !== text) return false;
-        if (seen !== textOrdinal) {
-          seen += 1;
-          return false;
-        }
-        return true;
-      });
-      if (index >= 0) session._followUpMessages.splice(index, 1);
+      removeFirstMatchingOrdinal(session._followUpMessages, (message) => message === text, textOrdinal);
     }
     session._emitQueueUpdate?.();
+  }
+
+  function hasFollowUpSelector(options?: FollowUpOptions): boolean {
+    return Boolean(options?.clientNonce) || options?.clientSeq !== undefined;
+  }
+
+  function matchesFollowUpSelector(item: NativeFollowUpRequest, options?: FollowUpOptions): boolean {
+    if (!hasFollowUpSelector(options)) return true;
+    return Boolean(options?.clientNonce && item.clientNonce === options.clientNonce)
+      || (options?.clientSeq !== undefined && item.clientSeq === options.clientSeq);
   }
 
   function removeNativeFollowUp(sessionId: string, options?: FollowUpOptions): NativeFollowUpRemoval[] {
     const queue = nativeFollowUpQueues.get(sessionId);
     if (!queue?.length) {
-      if (!options?.clientNonce && options?.clientSeq === undefined) clearNativeFollowUpWork(sessionId);
+      if (!hasFollowUpSelector(options)) clearNativeFollowUpWork(sessionId);
       return [];
     }
-    if (!options?.clientNonce && options?.clientSeq === undefined) {
-      clearNativeFollowUpWork(sessionId);
-      return queue.map((request, index) => ({
-        request,
-        textOrdinal: queue.slice(0, index).filter((item) => item.text === request.text).length,
-      }));
-    }
+
     const removed: NativeFollowUpRemoval[] = [];
-    const next = queue.filter((item, index) => {
-      const matches = Boolean(options.clientNonce && item.clientNonce === options.clientNonce) || (options.clientSeq !== undefined && item.clientSeq === options.clientSeq);
-      if (matches) {
-        removed.push({
-          request: item,
-          textOrdinal: queue.slice(0, index).filter((prior) => prior.text === item.text).length,
-        });
-      }
-      return !matches;
-    });
+    const next: NativeFollowUpRequest[] = [];
+    const textCounts = new Map<string, number>();
+    for (const request of queue) {
+      const textOrdinal = textCounts.get(request.text) ?? 0;
+      textCounts.set(request.text, textOrdinal + 1);
+      if (matchesFollowUpSelector(request, options)) removed.push({ request, textOrdinal });
+      else next.push(request);
+    }
+
     if (next.length > 0) nativeFollowUpQueues.set(sessionId, next);
     else clearNativeFollowUpWork(sessionId);
     return removed;
@@ -511,7 +505,6 @@ export function createPiCodingAgentHarness(opts: {
       const queue = nativeFollowUpQueues.get(sessionId) ?? [];
       queue.push({
         text,
-        attachments: _attachments,
         displayText,
         clientNonce: options?.clientNonce,
         clientSeq: options?.clientSeq,
