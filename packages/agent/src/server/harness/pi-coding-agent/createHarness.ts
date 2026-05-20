@@ -512,6 +512,33 @@ export function createPiCodingAgentHarness(opts: {
       let piSeq = 0;
       const nextPiSeq = () => ++piSeq;
 
+      const STANDARD_VISIBLE_CHUNK_TYPES = new Set([
+        "text-start",
+        "text-delta",
+        "text-end",
+        "reasoning-start",
+        "reasoning-delta",
+        "reasoning-end",
+        "tool-input-start",
+        "tool-input-delta",
+        "tool-input-end",
+        "tool-input-available",
+        "tool-input-error",
+        "tool-approval-request",
+        "tool-output-available",
+        "tool-output-error",
+        "tool-output-denied",
+        "source-url",
+        "source-document",
+        "file",
+      ]);
+      const standardToolInputsSeen = new Set<string>();
+
+      function isStandardVisibleChunk(chunk: UIMessageChunk): boolean {
+        const type = (chunk as { type?: unknown }).type;
+        return typeof type === "string" && STANDARD_VISIBLE_CHUNK_TYPES.has(type);
+      }
+
       function namespaceInlinePartIds(input: UIMessageChunk[]): UIMessageChunk[] {
         if (inlineTurnIndex === 0) return input;
         return input.map((chunk) => {
@@ -525,6 +552,35 @@ export function createPiCodingAgentHarness(opts: {
           }
           return chunk;
         });
+      }
+
+      function filterSdkChunksForCurrentSegment(input: UIMessageChunk[]): UIMessageChunk[] {
+        const out: UIMessageChunk[] = [];
+        for (const chunk of input) {
+          const rec = chunk as unknown as { type?: string; toolCallId?: string };
+          if (inlineTurnIndex > 0 && isStandardVisibleChunk(chunk)) continue;
+
+          if (rec.type === "tool-input-available" && rec.toolCallId) {
+            standardToolInputsSeen.add(rec.toolCallId);
+            out.push(chunk);
+            continue;
+          }
+
+          if (
+            (rec.type === "tool-output-available" || rec.type === "tool-output-error" || rec.type === "tool-output-denied") &&
+            rec.toolCallId &&
+            !standardToolInputsSeen.has(rec.toolCallId)
+          ) {
+            // pi can emit tool_execution_end without a prior assistant
+            // toolcall_end in the canonical AI SDK stream. Suppress that
+            // orphan output; the data-pi side channel still carries the tool
+            // result for the pi projection/fallback path.
+            continue;
+          }
+
+          out.push(chunk);
+        }
+        return out;
       }
 
       // promptPromise tracks the active pi run. Native pi follow-up queuing
@@ -679,11 +735,7 @@ export function createPiCodingAgentHarness(opts: {
           converted = piHistoryChunks;
         } else {
           const sdkChunks = namespaceInlinePartIds(dedupStartChunks(piEventToChunks(event)));
-          const sdkChunksForTurn = sdkChunks.filter((chunk) => {
-            const t = (chunk as { type?: string }).type;
-            return t !== "text-start" && t !== "text-delta" && t !== "text-end"
-              && t !== "reasoning-start" && t !== "reasoning-delta" && t !== "reasoning-end";
-          });
+          const sdkChunksForTurn = filterSdkChunksForCurrentSegment(sdkChunks);
           converted = [...piHistoryChunks, ...sdkChunksForTurn];
         }
         for (const chunk of converted) {
