@@ -54,6 +54,11 @@ plugins/deck/
   tsconfig.json
   tsup.config.ts
   vitest.config.ts
+
+  skills/
+    deck-authoring/
+      SKILL.md
+
   src/
     front/
       index.tsx
@@ -79,7 +84,7 @@ plugins/deck/
 
 Package metadata should follow the soon-to-merge plugin-agent-layer split between **plugin kits** and **manifest-loadable plugins**.
 
-`@hachej/boring-deck` is a **plugin kit**, matching `@hachej/boring-data-catalog`: it exports builders that consumers call with app-specific storage/widgets/theme. Because options are required for a useful deck, the kit should not itself be listed directly in `defaultPluginPackages` and should not claim a default `package.json#boring` entry.
+`@hachej/boring-deck` is a **plugin kit**, matching `@hachej/boring-data-catalog`: it exports builders that consumers call with app-specific storage/widgets/theme. Because options are required for a useful deck, the kit should not claim a default `package.json#boring` front/server entry. It may still ship a static `pi.skills` contribution for reusable agent instructions, because that skill explains deck authoring and does not imply a runnable UI/server plugin.
 
 ```json
 {
@@ -89,7 +94,10 @@ Package metadata should follow the soon-to-merge plugin-agent-layer split betwee
   "private": true,
   "license": "MIT",
   "description": "Plugin BUILDER for Boring workspace markdown decks. Consumers call createDeckPlugin/createDeckServerPlugin with storage and widget options; wrap in an app-local plugin module for defaultPluginPackages.",
-  "files": ["dist"],
+  "files": ["dist", "skills"],
+  "pi": {
+    "skills": ["skills/deck-authoring"]
+  },
   "exports": {
     ".": { "types": "./dist/front/index.d.ts", "import": "./dist/front/index.js" },
     "./front": { "types": "./dist/front/index.d.ts", "import": "./dist/front/index.js" },
@@ -116,12 +124,13 @@ A concrete app/local wrapper can be manifest-loadable and may include:
     "server": "dist/server/index.js"
   },
   "pi": {
-    "systemPrompt": "Use deck markdown files for concise, slide-based presentations."
+    "skills": ["skills/deck-authoring"],
+    "systemPrompt": "Use the deck-authoring skill for slide structure. Macro deck widgets include TimeSeries and TimeSeriesGrid."
   }
 }
 ```
 
-That wrapper default-exports the built front factory and server factory after binding storage/widget options. This keeps package discovery compatible with the plugin-agent-layer without pretending the generic kit has enough defaults to run safely by itself.
+That wrapper default-exports the built front factory and server factory after binding storage/widget options. It can either reference the generic deck skill if packaged locally, or provide an app-specific `skills/deck-authoring/SKILL.md` that imports/copies the generic guidance and appends widget syntax. This keeps package discovery compatible with the plugin-agent-layer without pretending the generic kit has enough front/server defaults to run safely by itself.
 
 ## 4.1 Alignment with plugin-agent-layer
 
@@ -132,7 +141,7 @@ The implementation must target the authoring/runtime shape in `~/projects/boring
 - Consumers pass the returned factory directly to `WorkspaceProvider.plugins`; tests normalize with `toWorkspacePlugin(...)` where needed.
 - Server builders import from `@hachej/boring-workspace/server` and return `WorkspaceServerPlugin` produced by `defineServerPlugin({ id, label, routes, systemPrompt, preservedUiStateKeys })`.
 - Manifest/directory loading calls a server default export as `(options, ctx)` and supports async factories. Any wrapper package intended for `defaultPluginPackages` should default-export such a factory and use `ctx.workspaceRoot` for default file roots when appropriate.
-- Directory-source packages should declare explicit `package.json#boring.front` / `boring.server` entries. Builder kits should omit those fields unless they ship a concrete default plugin.
+- Directory-source packages should declare explicit `package.json#boring.front` / `boring.server` entries. Builder kits should omit `boring` unless they ship a concrete default plugin; `pi.skills` is allowed for static agent documentation.
 - Server route edits still require host restart; do not promise hot reload for routes beyond the plugin-agent-layer contract.
 
 ## 5. Frontend API
@@ -376,9 +385,21 @@ Security requirements:
 - Reject symlink escapes for reads and writes, including symlinked parent directories.
 - Do not follow arbitrary user-controlled absolute paths.
 
-### 6.3 Prompt contribution
+### 6.3 Agent guidance: system prompt plus deck-authoring skill
 
-Move generic deck authoring rules into `@hachej/boring-deck/server`:
+Ship a small reusable Pi skill at `skills/deck-authoring/SKILL.md`. The skill should explain the markdown deck format in enough detail that the agent can author decks without overloading every server prompt.
+
+Skill scope:
+
+- deck files live under the configured deck path, usually `deck/*.md`
+- `---` on its own line splits slides
+- optional frontmatter title
+- concise slide-writing rubric
+- widget syntax `{{WidgetName key="value"}}`
+- generic widget sizing/layout conventions
+- warning to preserve existing custom widget syntax supplied by the host app
+
+Keep `systemPrompt` short and use it to point the agent at the skill and the current route/path conventions. Move generic deck authoring rules into `@hachej/boring-deck/server`:
 
 ```ts
 export function createDeckSystemPrompt(options?: {
@@ -389,15 +410,13 @@ export function createDeckSystemPrompt(options?: {
 
 Generic prompt includes:
 
+- use the `deck-authoring` skill for detailed deck-writing rules
 - write decks as markdown under `deck/`
 - split slides with `---`
 - keep slides concise
-- no walls of text
-- chart/widget embeds count as slide content
-- avoid nested lists
-- frontmatter title behavior
+- widget embeds count as slide content
 
-Macro appends widget docs for `TimeSeries` and `TimeSeriesGrid`.
+Macro appends widget docs for `TimeSeries` and `TimeSeriesGrid`, either in a macro-specific skill overlay or a short macro server prompt addendum.
 
 ## 7. Parser design
 
@@ -477,19 +496,20 @@ Macro should prefer returning two unique `WorkspaceServerPlugin` entries from ap
 ### Phase 0 — Re-sync against plugin-agent-layer
 
 - Confirm imports and public types against `~/projects/boring-ui-v2-plugin-agent-layer` before implementation starts.
-- Treat `@hachej/boring-deck` as a plugin kit, not a direct `defaultPluginPackages` package.
+- Treat `@hachej/boring-deck` as a front/server plugin kit, not a direct runnable `defaultPluginPackages` UI/server package; it may still expose `pi.skills` for reusable deck-authoring guidance.
 - Add any package scripts/invariant checks needed so `plugins/deck/src` is covered by workspace plugin invariants.
 
 Acceptance:
 
-- Plan and implementation references use `definePlugin`, `BoringFrontFactoryWithId`, `defineServerPlugin`, `WorkspaceServerPlugin`, and manifest wrapper semantics matching plugin-agent-layer.
+- Plan and implementation references use `definePlugin`, `BoringFrontFactoryWithId`, `defineServerPlugin`, `WorkspaceServerPlugin`, `pi.skills`, and manifest wrapper semantics matching plugin-agent-layer.
 
 ### Phase 1 — Create generic deck package shell
 
 - Copy `plugins/_template-full` to `plugins/deck` as a starting point.
 - Rename package to `@hachej/boring-deck`.
-- Remove template `package.json#boring`/`pi` fields because this package is a plugin kit, not a concrete manifest-loadable plugin.
+- Remove template `package.json#boring` fields because this package is a plugin kit, not a concrete manifest-loadable UI/server plugin; keep/add `pi.skills` for static deck-authoring guidance.
 - Add `front`, `server`, `shared` exports.
+- Add `skills/deck-authoring/SKILL.md` and include `skills` in package files.
 - Add workspace/package scripts and tsup entries.
 - Add package to `pnpm-workspace.yaml` if needed.
 
@@ -557,9 +577,10 @@ Acceptance:
 - Existing deck markdown with `TimeSeries` and `TimeSeriesGrid` renders unchanged.
 - Existing `/api/macro/deck` route contract remains compatible.
 
-### Phase 7 — Docs and examples
+### Phase 7 — Docs, skill, and examples
 
 - `plugins/deck/README.md`
+- `plugins/deck/skills/deck-authoring/SKILL.md`
 - Update root README plugin table.
 - Add example deck plugin usage.
 - Document widget injection and component slots.
