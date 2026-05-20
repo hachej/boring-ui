@@ -2,12 +2,23 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ToolPart } from '../../front/toolRenderers'
 
+const mockPiProjection = vi.hoisted(() => ({
+  piMessages: [] as any[],
+  handleData: vi.fn(),
+}))
 const mockUseAgentChat = vi.fn()
 const mockSendMessage = vi.fn()
 const mockSetMessages = vi.fn()
 
 vi.mock('../../front/hooks/useAgentChat', () => ({
   useAgentChat: (opts: unknown) => mockUseAgentChat(opts),
+}))
+
+vi.mock('../pi/piChatProjection', () => ({
+  usePiChatProjection: () => ({
+    piMessages: mockPiProjection.piMessages,
+    handleData: mockPiProjection.handleData,
+  }),
 }))
 
 vi.mock('../primitives/conversation', () => ({
@@ -75,6 +86,8 @@ function withLocalStorage(values: Record<string, string>, fn: () => void): void 
 
 beforeEach(() => {
   capturedOnSubmit = undefined
+  mockPiProjection.piMessages = []
+  mockPiProjection.handleData.mockReset()
   mockSendMessage.mockReset()
   mockSetMessages.mockReset()
   mockUseAgentChat.mockReset()
@@ -759,6 +772,169 @@ describe('ChatPanel (shadcn)', () => {
         { body: expect.objectContaining({ thinkingLevel: 'medium' }) },
       )
       vi.unstubAllGlobals()
+    })
+
+    test('prefers AI SDK visible messages for a normal stream even when pi projection exists', () => {
+      mockPiProjection.piMessages = [
+        {
+          id: 'pi-a1',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'PI_PROJECTION_TEXT' }],
+        },
+      ]
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          {
+            id: 'sdk-a1',
+            role: 'assistant',
+            parts: [
+              { type: 'data-pi-message-start', data: { messageId: 'pi-a1', role: 'assistant' } } as any,
+              { type: 'text', text: 'SDK_VISIBLE_TEXT' },
+            ],
+          },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'streaming',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-sdk-visible" />)
+      expect(html).toContain('SDK_VISIBLE_TEXT')
+      expect(html).not.toContain('PI_PROJECTION_TEXT')
+    })
+
+    test('does not render pi projection from data-pi-message-start alone before standard text arrives', () => {
+      mockPiProjection.piMessages = [
+        {
+          id: 'pi-a1',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'PI_SHOULD_NOT_FLASH' }],
+        },
+      ]
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          {
+            id: 'sdk-a1',
+            role: 'assistant',
+            parts: [
+              { type: 'data-pi-message-start', data: { messageId: 'pi-a1', role: 'assistant' } } as any,
+            ],
+          },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'streaming',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-no-pi-flap" />)
+      expect(html).not.toContain('PI_SHOULD_NOT_FLASH')
+    })
+
+    test('does not render pi projection from early data-pi text before standard text arrives', () => {
+      mockPiProjection.piMessages = [
+        {
+          id: 'pi-a1',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'PI_TEXT_DELTA_SHOULD_NOT_FLASH' }],
+        },
+      ]
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          {
+            id: 'sdk-a1',
+            role: 'assistant',
+            parts: [
+              { type: 'data-pi-message-start', data: { messageId: 'pi-a1', role: 'assistant' } } as any,
+              { type: 'data-pi-text-delta', data: { messageId: 'pi-a1', partId: '0', delta: 'early' } } as any,
+            ],
+          },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'streaming',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-no-pi-delta-flap" />)
+      expect(html).not.toContain('PI_TEXT_DELTA_SHOULD_NOT_FLASH')
+    })
+
+    test('keeps AI SDK segment 0 stable and appends pi-projected queued tail', () => {
+      mockPiProjection.piMessages = [
+        {
+          id: 'pi-a1',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'PI_SEGMENT_ZERO_COPY' }],
+        },
+        {
+          id: 'pi-u2',
+          role: 'user',
+          parts: [{ type: 'text', text: 'QUEUED_USER_TEXT' }],
+        },
+        {
+          id: 'pi-a2',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'QUEUED_ASSISTANT_TEXT' }],
+        },
+      ]
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          {
+            id: 'sdk-a1',
+            role: 'assistant',
+            parts: [
+              { type: 'data-pi-message-start', data: { messageId: 'pi-a1', role: 'assistant' } } as any,
+              { type: 'text', text: 'SDK_SEGMENT_ZERO_TEXT' },
+              { type: 'data-followup-consumed', data: { text: 'queued question' } } as any,
+              { type: 'data-pi-message-start', data: { messageId: 'pi-u2', role: 'user', text: 'queued question' } } as any,
+              { type: 'data-pi-message-start', data: { messageId: 'pi-a2', role: 'assistant' } } as any,
+            ],
+          },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'streaming',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-queued-tail" />)
+      expect(html).toContain('SDK_SEGMENT_ZERO_TEXT')
+      expect(html).toContain('QUEUED_USER_TEXT')
+      expect(html).toContain('QUEUED_ASSISTANT_TEXT')
+      expect(html).not.toContain('PI_SEGMENT_ZERO_COPY')
+      expect(html.indexOf('SDK_SEGMENT_ZERO_TEXT')).toBeLessThan(html.indexOf('QUEUED_USER_TEXT'))
+      expect(html.indexOf('QUEUED_USER_TEXT')).toBeLessThan(html.indexOf('QUEUED_ASSISTANT_TEXT'))
+    })
+
+    test('falls back to pi projection for persisted data-pi-only history', () => {
+      mockPiProjection.piMessages = [
+        {
+          id: 'pi-legacy-a1',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'LEGACY_PI_TEXT' }],
+        },
+      ]
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          {
+            id: 'legacy-envelope',
+            role: 'assistant',
+            parts: [
+              { type: 'data-pi-message-start', data: { messageId: 'pi-legacy-a1', role: 'assistant' } } as any,
+              { type: 'data-pi-message-end', data: { messageId: 'pi-legacy-a1', role: 'assistant', text: 'LEGACY_PI_TEXT' } } as any,
+            ],
+          },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-legacy-pi" />)
+      expect(html).toContain('LEGACY_PI_TEXT')
     })
 
     test('consecutive tools stay in one collapsed group across non-rendered data parts', () => {
