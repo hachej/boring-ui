@@ -124,13 +124,18 @@ export function ModelSelect({
         data-boring-agent=""
         className="w-[min(90vw,260px)] rounded-xl border-border/60 bg-popover p-1 shadow-xl"
       >
-        {menuOptions.length > 8 && (
-          <CommandInput
-            placeholder="Search models…"
-            className="h-8 border-0 text-[13px] focus:ring-0"
-          />
-        )}
         <Command>
+          {/* CommandInput MUST be inside <Command> — it calls useCommand()
+              to subscribe to the cmdk store the Command provider creates.
+              Rendered outside, the context is undefined and .subscribe()
+              throws ("can't access property 'subscribe' …"). Only manifests
+              with >8 options, which is how it sat undetected. */}
+          {menuOptions.length > 8 && (
+            <CommandInput
+              placeholder="Search models…"
+              className="h-8 border-0 text-[13px] focus:ring-0"
+            />
+          )}
           <CommandList className="max-h-[300px] p-0.5">
             <CommandEmpty className="py-4 text-center text-[13px] text-muted-foreground">
               No models found

@@ -89,10 +89,13 @@ export function rebuildPiMessagesFromDataParts(sourceMessages: UIMessage[]): UIM
     } else if (part.type === 'data-pi-message-end' && data.role === 'assistant') {
       const msg = ensureMessage(messageId, 'assistant')
       const text = typeof data.text === 'string' ? data.text : ''
-      // Check for the specific partId (not just any text part) to avoid
-      // adding duplicate text when a different partId already has content.
-      const partId = typeof data.partId === 'string' ? data.partId : '0'
-      if (text && !(msg.parts ?? []).some((p) => p.type === 'text' && (p as { id?: string }).id === partId && p.text)) {
+      // data-pi-message-end carries the message's full text as a fallback for
+      // when no text-end was emitted. It has no partId, so we cannot match
+      // it against the streamed text part by id (pi's contentIndex for the
+      // text block is usually >0 when the message also has reasoning/tool
+      // blocks before it). Skip if any text part already holds content —
+      // text-end has already deposited it.
+      if (text && !(msg.parts ?? []).some((p) => p.type === 'text' && p.text)) {
         msg.parts = [...(msg.parts ?? []), { type: 'text' as const, text }]
       }
     }
@@ -257,9 +260,12 @@ export function usePiChatProjection({
       },
       'data-pi-message-end': (d) => {
         const text = typeof d.text === 'string' ? d.text : ''
-        const partId = typeof d.partId === 'string' ? d.partId : '0'
         if (!text) return
-        updatePiMessages((items) => items.map((item) => item.id === piMessageId && !(item.parts ?? []).some((p) => p.type === 'text' && (p as { id?: string }).id === partId && p.text)
+        // Fallback emission: only append if no text part has content yet.
+        // pi numbers content blocks across types, so the text block's partId
+        // (e.g. "1" after a reasoning block at "0") would never match the
+        // partId-less message-end, producing duplicate text bubbles.
+        updatePiMessages((items) => items.map((item) => item.id === piMessageId && !(item.parts ?? []).some((p) => p.type === 'text' && p.text)
           ? { ...item, parts: [...(item.parts ?? []), { type: 'text' as const, text }] }
           : item))
       },

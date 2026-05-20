@@ -1,7 +1,12 @@
 import type { FileUIPart, UIMessage } from 'ai'
 import { isToolUIPart } from 'ai'
 import { motion } from 'motion/react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+
+// Lazy import so the DebugDrawer chunk (~10kb + its tab subcomponents that fetch
+// /api/v1/agent/sessions/:id/system-prompt) only loads when a host opts into
+// debug={true}. Consumer UIs that never enable debug pay zero bundle cost.
+const DebugDrawer = lazy(() => import('./DebugDrawer').then((m) => ({ default: m.DebugDrawer })))
 import { MentionPicker } from './primitives/mention-picker'
 import { SlashCommandPicker } from './primitives/slash-command-picker'
 import { useAgentChat } from './hooks/useAgentChat'
@@ -137,6 +142,13 @@ export interface ChatPanelProps {
    * future renderer can consume it without a prop drill.
    */
   onOpenArtifact?: OpenArtifactHandler
+  /**
+   * Enable the admin debug drawer — system prompt, raw messages JSON, and
+   * session activity. Intended for development and ops; keep off in
+   * production consumer UIs. The drawer chunk is lazy-loaded so this prop
+   * is zero-cost when off.
+   */
+  debug?: boolean
   /** Generic host-provided blockers that prevent starting a new user turn. */
   composerBlockers?: ComposerBlocker[]
   /** Called when the user presses Stop in the composer. */
@@ -160,10 +172,12 @@ export function ChatPanel(props: ChatPanelProps) {
     onData,
     requestHeaders,
     onOpenArtifact,
+    debug = false,
     composerBlockers = [],
     onComposerStop,
     onComposerBlockerAction,
   } = props
+  const [debugWidth, setDebugWidth] = useState(440)
   const capabilities = PI_AGENT_RUNTIME_CAPABILITIES
   const piDataHandlerRef = useRef<(part: unknown) => void>(() => {})
   const followUpDataHandlerRef = useRef<(part: unknown) => void>(() => {})
@@ -416,7 +430,7 @@ export function ChatPanel(props: ChatPanelProps) {
       data-boring-agent-part="chat"
       className={cn(
         "flex h-full min-h-0 overflow-hidden text-foreground antialiased",
-        "flex-col",
+        debug ? "flex-row" : "flex-col",
         chrome
           ? "bg-[color:var(--canvas)] text-[13px]"
           : "bg-transparent text-[13px]",
@@ -952,6 +966,17 @@ export function ChatPanel(props: ChatPanelProps) {
       </div>
       </div>
       </div>
+      {debug && (
+        <Suspense fallback={null}>
+          <DebugDrawer
+            sessionId={sessionId}
+            messages={displayMessages}
+            requestHeaders={requestHeaders}
+            width={debugWidth}
+            onWidthChange={setDebugWidth}
+          />
+        </Suspense>
+      )}
     </div>
     </ArtifactOpenProvider>
   )
