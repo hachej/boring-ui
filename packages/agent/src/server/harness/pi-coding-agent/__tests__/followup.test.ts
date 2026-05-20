@@ -44,6 +44,16 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
     inMemory: () => ({ find: vi.fn(), getAvailable: () => [] }),
     create: () => ({ find: vi.fn(), getAvailable: () => [], hasConfiguredAuth: () => true, isUsingOAuth: () => false }),
   },
+  // createHarness now always builds a DefaultResourceLoader (workspace-paths
+  // guideline). Stub the pi-side lookups it needs.
+  getAgentDir: () => "/tmp/test-agent-dir",
+  DefaultResourceLoader: class {
+    constructor(_opts: unknown) {}
+    async reload() { /* no-op */ }
+  },
+  SettingsManager: {
+    create: () => ({ getResolvedSettings: () => ({}), loadAllSettings: vi.fn() }),
+  },
 }));
 
 import { createPiCodingAgentHarness } from "../createHarness.js";

@@ -59,6 +59,19 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
   }),
   SessionManager: { inMemory: () => ({}), create: () => ({ getSessionFile: () => null }), open: () => ({ getSessionFile: () => null }) },
   AuthStorage: { inMemory: () => ({}), create: () => ({}) },
+  // createHarness always builds a DefaultResourceLoader now so it can inject
+  // the workspace-paths system-prompt guideline. Stub the lookups it needs.
+  getAgentDir: () => "/tmp/test-agent-dir",
+  DefaultResourceLoader: class {
+    constructor(_opts: unknown) {}
+    async reload() { /* no-op */ }
+  },
+  SettingsManager: {
+    create: () => ({
+      getResolvedSettings: () => ({}),
+      loadAllSettings: vi.fn(),
+    }),
+  },
   ModelRegistry: {
     inMemory: () => ({
       find: mockFindModel,

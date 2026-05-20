@@ -10,6 +10,9 @@ import {
   ERROR_CODE_INTERNAL,
   ERROR_CODE_VALIDATION_ERROR,
 } from '../middleware'
+import { createLogger } from '../../logging'
+
+const log = createLogger('boring/workspace-settings')
 
 interface PathValidationLike {
   reason?: string
@@ -107,7 +110,16 @@ function parseWorkspaceSettings(raw: string): BoringWorkspaceSettings {
           : DEFAULT_MARKDOWN_IMAGE_UPLOAD_DIR,
       },
     }
-  } catch {
+  } catch (err) {
+    // A corrupted .boring/settings would otherwise silently reset to
+    // defaults on the next PUT — any other settings present in the file
+    // (future fields, user overrides) get clobbered. Surface to logs so
+    // someone notices before a recovery overwrite happens. Behavior
+    // intentionally still returns defaults: PUT is the recovery path,
+    // and failing GET would block the editor from booting.
+    log.warn('failed to parse .boring/settings — falling back to defaults', {
+      error: err instanceof Error ? err.message : String(err),
+    })
     return defaultWorkspaceSettings()
   }
 }
@@ -348,9 +360,19 @@ export function fileRoutes(
             await workspace.writeBinaryFile(path, bytes)
             return await workspace.stat(path)
           })()
-      const sourcePath = typeof body.sourcePath === 'string' && !body.sourcePath.includes('\0')
-        ? body.sourcePath
-        : null
+      // Cap sourcePath length — it only narrows the relative URL the client
+      // sees and shouldn't be more than a few hundred chars. Without a cap,
+      // a malicious or malformed client could push a multi-megabyte string
+      // through the upload route and back into every markdown image link.
+      const MAX_SOURCE_PATH = 1024
+      const rawSourcePath = body.sourcePath
+      const sourcePath =
+        typeof rawSourcePath === 'string' &&
+        rawSourcePath.length > 0 &&
+        rawSourcePath.length <= MAX_SOURCE_PATH &&
+        !rawSourcePath.includes('\0')
+          ? rawSourcePath
+          : null
       return {
         ok: true,
         path,

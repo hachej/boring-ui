@@ -262,6 +262,53 @@ describe('file routes (NodeWorkspace integration)', () => {
     await expect(readFile(join(workspaceRoot, '.boring', 'settings'), 'utf8')).resolves.toContain('.boring/uploads')
   })
 
+  // REGRESSION: a corrupted .boring/settings file used to silently return
+  // defaults, and the next PUT would clobber the corrupted file with merged
+  // defaults — any salvageable content was lost without warning. Now logs
+  // a warning while still returning defaults (so the editor can still boot
+  // and PUT can recover).
+  test('GET /api/v1/workspace-settings warns on corrupted settings (does not throw)', async () => {
+    const { app, workspaceRoot } = await createTestApp()
+    const { writeFile, mkdir } = await import('fs/promises')
+    await mkdir(join(workspaceRoot, '.boring'), { recursive: true })
+    await writeFile(join(workspaceRoot, '.boring', 'settings'), '{not-json-at-all', 'utf8')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const res = await app.inject({ method: 'GET', url: '/api/v1/workspace-settings' })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().settings.markdown.imageUploadDir).toBe('assets/images')
+    // Logger emits a single stringified JSON entry. Check it carries our
+    // warning so a future change that drops the warning gets caught.
+    const warnEntries = warn.mock.calls.map((c) => String(c[0] ?? ''))
+    expect(warnEntries.some((entry) =>
+      entry.includes('boring/workspace-settings') &&
+      entry.includes('failed to parse .boring/settings'),
+    )).toBe(true)
+    warn.mockRestore()
+  })
+
+  // REGRESSION: sourcePath was previously unbounded — a multi-MB string in
+  // the body would be echoed back in markdownUrl on every image upload and
+  // burned into every markdown image link in the document. Now capped.
+  test('POST /api/v1/files/upload ignores absurdly-long sourcePath (no echo amplification)', async () => {
+    const { app } = await createTestApp()
+    const tinyPng = Buffer.from([137, 80, 78, 71])
+    const huge = 'x'.repeat(2048) // > 1024 cap
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files/upload',
+      payload: {
+        filename: 'pic.png',
+        contentType: 'image/png',
+        contentBase64: tinyPng.toString('base64'),
+        sourcePath: huge,
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    // sourcePath is dropped (treated as null) so markdownUrl falls back to
+    // the absolute workspace path, not the giant string echoed back.
+    expect(res.json().markdownUrl).not.toContain('x'.repeat(100))
+  })
+
   test('POST /api/v1/files/move renames files', async () => {
     const { app } = await createTestApp()
 

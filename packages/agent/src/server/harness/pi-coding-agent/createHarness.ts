@@ -39,6 +39,30 @@ interface PiSessionHandle {
 export { mergePiPackageSources } from "../../piPackages.js";
 export type { PiPackageSource } from "../../piPackages.js";
 
+/**
+ * Pi's base system prompt ends with `Current working directory: <abs path>`.
+ * The model frequently misreads that as "you may pass this absolute path as
+ * a tool argument," then trips the workspace-sandbox bounds check (e.g.
+ * `find` with `path: "/home/ubuntu/.../workspace"` returns "path is outside
+ * workspace" because the resolver compares against a parent directory).
+ *
+ * This addendum tells the model exactly how to interpret the cwd line and
+ * how to call find/read/edit/write without burning a roundtrip on a bound-
+ * check rejection.
+ */
+const WORKSPACE_PATHS_GUIDELINE = [
+  "## Workspace paths",
+  "",
+  "- The \"Current working directory\" above is the workspace root. Tool path arguments must be relative to it (e.g. `README.md`, `src/foo.ts`).",
+  "- Never pass an absolute path or a path that walks outside the workspace (no leading `/`, no `..` that escapes the root). The sandbox will reject it and the call is wasted.",
+  "- For `find`/`grep`/`ls`: omit the `path` argument to search from the workspace root. Pass `path` only when you need to restrict to a subdirectory, and only as a workspace-relative path.",
+  "- For `read`/`edit`/`write`: pass workspace-relative paths only.",
+].join("\n");
+
+function composeSystemPromptAppend(hostAppend: string | undefined): string {
+  return [WORKSPACE_PATHS_GUIDELINE, hostAppend?.trim()].filter(Boolean).join("\n\n");
+}
+
 export interface PiResourceLoaderOptions {
   noContextFiles?: boolean;
   noSkills?: boolean;
@@ -308,41 +332,32 @@ export function createPiCodingAgentHarness(opts: {
     const model = resolvedModel ?? resolveDefaultModel(modelRegistry);
 
     // Hosts may extend pi's base prompt and/or isolate resource discovery.
-    // We keep pi's default system prompt, but can disable ambient AGENTS.md
-    // and global skill discovery while injecting explicit local skill paths.
-    const resourceLoader =
-      opts.systemPromptAppend ||
-      opts.resourceLoaderOptions?.noContextFiles ||
-      opts.resourceLoaderOptions?.noSkills ||
-      (opts.resourceLoaderOptions?.additionalSkillPaths?.length ?? 0) > 0 ||
-      (opts.resourceLoaderOptions?.piPackages?.length ?? 0) > 0
-        ? (() => {
-            const agentDir = getAgentDir()
-            const additionalSkillPaths =
-              opts.resourceLoaderOptions?.additionalSkillPaths ?? []
-            const piPackages = opts.resourceLoaderOptions?.piPackages ?? []
-            const settingsManager = createResourceSettingsManager(
-              ctx.workdir,
-              agentDir,
-              piPackages,
-            )
-            return new DefaultResourceLoader({
-              cwd: ctx.workdir,
-              agentDir,
-              settingsManager,
-              ...(opts.systemPromptAppend
-                ? { appendSystemPromptOverride: (base: string[]) => [...base, opts.systemPromptAppend!] }
-                : {}),
-              ...(opts.resourceLoaderOptions?.noContextFiles
-                ? { noContextFiles: true }
-                : {}),
-              ...(opts.resourceLoaderOptions?.noSkills ? { noSkills: true } : {}),
-              ...(additionalSkillPaths.length
-                ? { additionalSkillPaths }
-                : {}),
-            })
-          })()
-        : undefined;
+    // We keep pi's default system prompt but always tack on a workspace-paths
+    // guideline (relative-paths only) on top of whatever the host supplied —
+    // pi's cwd line otherwise lures the model into passing absolute paths
+    // that fail the workspace bounds check. Hosts can also disable ambient
+    // AGENTS.md / global skill discovery while injecting explicit skill paths.
+    const composedSystemPromptAppend = composeSystemPromptAppend(opts.systemPromptAppend)
+    const agentDir = getAgentDir()
+    const additionalSkillPaths =
+      opts.resourceLoaderOptions?.additionalSkillPaths ?? []
+    const piPackages = opts.resourceLoaderOptions?.piPackages ?? []
+    const settingsManager = createResourceSettingsManager(
+      ctx.workdir,
+      agentDir,
+      piPackages,
+    )
+    const resourceLoader = new DefaultResourceLoader({
+      cwd: ctx.workdir,
+      agentDir,
+      settingsManager,
+      appendSystemPromptOverride: (base: string[]) => [...base, composedSystemPromptAppend],
+      ...(opts.resourceLoaderOptions?.noContextFiles
+        ? { noContextFiles: true }
+        : {}),
+      ...(opts.resourceLoaderOptions?.noSkills ? { noSkills: true } : {}),
+      ...(additionalSkillPaths.length ? { additionalSkillPaths } : {}),
+    })
 
     await resourceLoader?.reload()
 
