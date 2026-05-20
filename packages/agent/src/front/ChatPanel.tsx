@@ -290,6 +290,7 @@ export function ChatPanel(props: ChatPanelProps) {
   } = props
   const [debugWidth, setDebugWidth] = useState(440)
   const capabilities = PI_AGENT_RUNTIME_CAPABILITIES
+  const scrollToBottomRef = useRef<() => void>(() => {})
   const piDataHandlerRef = useRef<(part: unknown) => void>(() => {})
   const followUpDataHandlerRef = useRef<(part: unknown) => void>(() => {})
 
@@ -448,6 +449,7 @@ export function ChatPanel(props: ChatPanelProps) {
         const skillMessage = parsed.args
           ? `skill: ${parsed.name}\n\n${parsed.args}`
           : `skill: ${parsed.name}`
+        scrollToBottomRef.current()
         void sendMessage(
           { text, files },
           { body: { sessionId, message: skillMessage, ...modelPayload(model), attachments: [] } },
@@ -511,6 +513,7 @@ export function ChatPanel(props: ChatPanelProps) {
     }
 
     if (isStreaming && capabilities.nativeFollowUp) {
+      scrollToBottomRef.current()
       queueFollowUp({
         text,
         files: files ?? [],
@@ -519,6 +522,8 @@ export function ChatPanel(props: ChatPanelProps) {
       })
       return
     }
+
+    scrollToBottomRef.current()
 
     // Fire-and-forget the send so handleSubmit returns as soon as the
     // payload is built. PromptInput clears attachments + text only after
@@ -595,7 +600,14 @@ export function ChatPanel(props: ChatPanelProps) {
           transition={{ duration: 1.4, ease: [0.65, 0, 0.35, 1], repeat: isStreaming ? Infinity : 0 }}
         />
       </div>
-      <Conversation className="flex-1" aria-label="Agent conversation" aria-live="polite">
+      <Conversation
+        className="flex-1"
+        aria-label="Agent conversation"
+        aria-live="polite"
+        onScrollToBottomReady={(scrollToBottom) => {
+          scrollToBottomRef.current = scrollToBottom
+        }}
+      >
         <ConversationContent className={cn(
           "mx-auto flex w-full flex-col gap-6",
           chrome ? "max-w-3xl px-6 py-8" : "max-w-[680px] px-4 py-4",
