@@ -9,7 +9,7 @@ function runProbe(cwd: string, env: Record<string, string> = {}) {
   const script = [
     'printf "pwd=%s\\n" "$(pwd)"',
     'printf "PWD=%s\\n" "$PWD"',
-    `${JSON.stringify(process.execPath)} -e 'console.log("nodeCwd=" + process.cwd())'`,
+    `${JSON.stringify(process.execPath)} -e 'process.stdout.write("nodeCwd=" + process.cwd() + "\\n")'`,
     'printf ok > rel.txt',
     'printf "rel=%s\\n" "$(cat rel.txt)"',
   ].join('\n')
