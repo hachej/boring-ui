@@ -67,12 +67,18 @@ function hasBearerAuth(headers: Record<string, string> | undefined): boolean {
   return /^Bearer\s+\S+/i.test(getAuthHeader(headers, "authorization") ?? "")
 }
 
-export function appendFrontImportRevision(frontUrl: string, revision: number): string {
-  return `${frontUrl}${frontUrl.includes("?") ? "&" : "?"}v=${revision}`
+export function appendFrontImportRevision(frontUrl: string, revision: number, cacheBust?: string | number): string {
+  const withRevision = `${frontUrl}${frontUrl.includes("?") ? "&" : "?"}v=${revision}`
+  return cacheBust === undefined ? withRevision : `${withRevision}&t=${encodeURIComponent(String(cacheBust))}`
 }
 
 async function defaultImportFront(frontUrl: string, revision: number): Promise<{ default?: BoringFrontFactory }> {
-  return await import(/* @vite-ignore */ appendFrontImportRevision(frontUrl, revision)) as { default?: BoringFrontFactory }
+  // Vite's browser module graph can retain stale dynamically imported
+  // .pi extension modules across dev-server restarts or repeated plugin
+  // revisions. Add a per-import salt so /reload always asks Vite for a
+  // fresh transform instead of reusing an old React-Refresh-instrumented
+  // module that may carry a stale hook dispatcher.
+  return await import(/* @vite-ignore */ appendFrontImportRevision(frontUrl, revision, Date.now())) as { default?: BoringFrontFactory }
 }
 
 async function captureFrontFactory(pluginId: string, frontUrl: string, revision: number, importFront: RegisterAgentPluginOptions["importFront"] = defaultImportFront): Promise<CapturedBoringFrontRegistrations> {
