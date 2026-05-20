@@ -6,16 +6,18 @@ export {
   createWorkspaceAgentServer,
   provisionWorkspaceAgentServer,
   readWorkspacePluginPackagePiSnapshot,
-  resolveDefaultWorkspacePluginPackagePaths,
   type CollectWorkspaceAgentServerPluginsOptions,
   type CreateWorkspaceAgentServerOptions,
-  type ResolveDefaultWorkspacePluginPackagePathsOptions,
   type WorkspaceAgentPiOptions,
   type WorkspaceAgentServerPluginCollection,
   type WorkspaceAgentServerPluginContext,
   type WorkspacePluginPackagePiSnapshot,
   type WorkspacePluginEntry,
 } from "./createWorkspaceAgentServer"
+export {
+  resolveDefaultWorkspacePluginPackagePaths,
+  type ResolveDefaultWorkspacePluginPackagePathsOptions,
+} from "./defaultPluginPackages"
 export {
   hasDirServerPlugin,
   resolveOnePluginEntry,
