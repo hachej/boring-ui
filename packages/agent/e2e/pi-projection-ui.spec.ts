@@ -9,6 +9,56 @@ function encodeUiStream(chunks: unknown[]): string {
 }
 
 test.describe('pi projection UI regressions', () => {
+  test('does not duplicate normal AI SDK turns in the browser UI', async ({ browserPage }) => {
+    let postCount = 0
+    await browserPage.route('**/api/v1/agent/chat', async (route) => {
+      if (route.request().method() !== 'POST') return route.fallback()
+      postCount += 1
+      const turn = postCount
+      const userText = turn === 1 ? 'hi-e2e-dedupe' : 'second-e2e-dedupe'
+      const assistantText = turn === 1 ? 'ASSISTANT_E2E_DEDUPE_ONE' : 'ASSISTANT_E2E_DEDUPE_TWO'
+      const chunks = [
+        { type: 'start', messageId: `sdk-a${turn}` },
+        { type: 'data-pi-message-start', data: { seq: turn * 10 + 1, messageId: `pi-u${turn}`, role: 'user', text: userText } },
+        { type: 'data-pi-message-end', data: { seq: turn * 10 + 2, messageId: `pi-u${turn}`, role: 'user', text: userText } },
+        { type: 'data-pi-message-start', data: { seq: turn * 10 + 3, messageId: `pi-a${turn}`, role: 'assistant' } },
+        { type: 'data-pi-text-start', data: { seq: turn * 10 + 4, messageId: `pi-a${turn}`, partId: '0' } },
+        { type: 'data-pi-text-delta', data: { seq: turn * 10 + 5, messageId: `pi-a${turn}`, partId: '0', delta: assistantText } },
+        { type: 'data-pi-text-end', data: { seq: turn * 10 + 6, messageId: `pi-a${turn}`, partId: '0' } },
+        { type: 'data-pi-message-end', data: { seq: turn * 10 + 7, messageId: `pi-a${turn}`, role: 'assistant', text: assistantText } },
+        { type: 'start-step' },
+        { type: 'text-start', id: `sdk-t${turn}` },
+        { type: 'text-delta', id: `sdk-t${turn}`, delta: assistantText },
+        { type: 'text-end', id: `sdk-t${turn}` },
+        { type: 'finish-step' },
+        { type: 'finish', finishReason: 'stop' },
+      ]
+      await route.fulfill({
+        status: 200,
+        headers: {
+          'content-type': 'text/event-stream; charset=utf-8',
+          'cache-control': 'no-cache',
+        },
+        body: encodeUiStream(chunks),
+      })
+    })
+
+    const conversation = browserPage.getByLabel('Agent conversation')
+    const composer = browserPage.locator('[data-boring-agent-part="composer-input"]')
+    await composer.fill('hi-e2e-dedupe')
+    await browserPage.locator('button[aria-label="Submit"]').click()
+    await expect(conversation.getByText('ASSISTANT_E2E_DEDUPE_ONE')).toBeVisible({ timeout: 10_000 })
+
+    await composer.fill('second-e2e-dedupe')
+    await browserPage.locator('button[aria-label="Submit"]').click()
+    await expect(conversation.getByText('ASSISTANT_E2E_DEDUPE_TWO')).toBeVisible({ timeout: 10_000 })
+
+    await expect(conversation.locator('[data-boring-agent-message-role="user"]')).toHaveCount(2)
+    await expect(conversation.locator('[data-boring-agent-message-role="assistant"]')).toHaveCount(2)
+    await expect(conversation.locator('[data-boring-agent-message-role="assistant"]').filter({ hasText: 'ASSISTANT_E2E_DEDUPE_ONE' })).toHaveCount(1)
+    await expect(conversation.locator('[data-boring-agent-message-role="assistant"]').filter({ hasText: 'ASSISTANT_E2E_DEDUPE_TWO' })).toHaveCount(1)
+  })
+
   test('renders pi-projected tool and reasoning parts in the browser UI', async ({ browserPage }) => {
     await browserPage.evaluate(() => {
       localStorage.setItem('boring-agent:composer:show-thoughts', '1')
