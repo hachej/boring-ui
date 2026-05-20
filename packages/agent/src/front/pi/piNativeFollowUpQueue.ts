@@ -261,6 +261,20 @@ export function usePiNativeFollowUpQueue({
     setProjectedFollowUps([])
   }, [status, updatePendingMessages])
 
+  const deleteFollowUp = useCallback((id: string) => {
+    const pending = pendingMessagesRef.current.find((item) => item.id === id)
+    updatePendingMessages((items) => items.filter((item) => item.id !== id))
+    updateProjectedFollowUps((items) => items.filter((item) => item.id !== id))
+    if (!pending) return
+    const params = new URLSearchParams()
+    params.set('clientNonce', pending.clientNonce)
+    params.set('clientSeq', String(pending.clientSeq))
+    fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/followup?${params.toString()}`, {
+      method: 'DELETE',
+      headers: requestHeaders,
+    }).catch(() => {})
+  }, [sessionId, requestHeaders, updatePendingMessages, updateProjectedFollowUps])
+
   const clearFollowUps = useCallback(() => {
     clearLocal()
     fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/followup`, {
@@ -297,6 +311,7 @@ export function usePiNativeFollowUpQueue({
     projectedTailMessages,
     projectedStatusById,
     queueFollowUp,
+    deleteFollowUp,
     handleData,
     clearFollowUps,
     stopAndClearFollowUps,
