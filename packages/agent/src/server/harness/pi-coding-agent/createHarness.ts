@@ -626,18 +626,10 @@ export function createPiCodingAgentHarness(opts: {
         "reasoning-start",
         "reasoning-delta",
         "reasoning-end",
-        "tool-input-start",
-        "tool-input-delta",
-        "tool-input-end",
         "tool-input-available",
         "tool-input-error",
-        "tool-approval-request",
         "tool-output-available",
         "tool-output-error",
-        "tool-output-denied",
-        "source-url",
-        "source-document",
-        "file",
       ]);
       const standardToolInputsSeen = new Set<string>();
 
