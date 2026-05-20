@@ -15,6 +15,7 @@ The extracted plugin must be reusable by future apps, while still allowing `bori
 
 - Do not move macro data/catalog/query logic into `@hachej/boring-deck`.
 - Do not hardcode FRED, ClickHouse, `TimeSeries`, or `TimeSeriesGrid` into the generic deck plugin.
+- Keep macro-specific `TimeSeries` and `TimeSeriesGrid` widget implementations in `boring-macro`; the deck plugin only provides the widget registry/host.
 - Do not require manifest/defaultPluginPackages loading for the first migration; direct static composition remains acceptable.
 - Do not make every internal component overrideable immediately. Provide stable extension points only.
 
@@ -29,7 +30,7 @@ The source feature to extract currently spans:
   - edit / preview / present modes
   - presenter navigation
   - markdown rendering styles
-  - macro-specific `TimeSeries` and `TimeSeriesGrid` widget rendering
+  - currently co-located macro-specific `TimeSeries` and `TimeSeriesGrid` widget rendering, which should **not** be extracted into the generic package and should instead become `boring-macro` widget definitions
 - `src/plugins/macro/front/routes/StandaloneDeckRoute.tsx`
 - `src/plugins/macro/front/surfaceResolver.ts`
   - resolver for `workspace.open.path` targeting `deck/*.md`
@@ -530,7 +531,7 @@ Acceptance:
 ### Phase 3 — Extract DeckPane generic UI
 
 - Move `DeckPane` into deck plugin.
-- Replace macro-specific widget rendering with registry lookup.
+- Replace macro-specific widget rendering with registry lookup; do not copy the `TimeSeries`/`TimeSeriesGrid` renderers into `@hachej/boring-deck`.
 - Replace hardcoded `/api/macro/deck` fetches with `DeckStorageClient`.
 - Keep default HTTP storage.
 - Add minimal render tests for loading, missing deck, markdown slide, unknown widget.
