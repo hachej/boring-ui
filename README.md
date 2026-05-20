@@ -31,19 +31,19 @@ Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` before running. See [Pi providers](h
 
 A real session: ask the agent for a summary → it opens the README in the workbench → ask it to take notes → a new `notes.md` appears in the tree → search for it via the command palette. Chat in, workspace out.
 
-Play the focused demos inline with GitHub's video controls.
+Click any preview to play the full-size MP4 in your browser.
 
 **Agent opens files** — Read · render · explain
 
-<video src="https://github.com/hachej/boring-ui/raw/main/docs/assets/readme/demo-open.mp4" poster="docs/assets/readme/demo-open.gif" width="100%" controls muted playsinline preload="metadata"></video>
+<a href="https://cdn.jsdelivr.net/gh/hachej/boring-ui@main/docs/assets/readme/demo-open.mp4"><img src="docs/assets/readme/demo-open.gif" alt="Agent opens files in the workbench" width="100%"></a>
 
 **Agent edits files** — Write · diff · save
 
-<video src="https://github.com/hachej/boring-ui/raw/main/docs/assets/readme/demo-edit.mp4" poster="docs/assets/readme/demo-edit.gif" width="100%" controls muted playsinline preload="metadata"></video>
+<a href="https://cdn.jsdelivr.net/gh/hachej/boring-ui@main/docs/assets/readme/demo-edit.mp4"><img src="docs/assets/readme/demo-edit.gif" alt="Agent edits files and saves changes" width="100%"></a>
 
 **Command palette** — ⌘K · search · jump
 
-<video src="https://github.com/hachej/boring-ui/raw/main/docs/assets/readme/demo-palette.mp4" poster="docs/assets/readme/demo-palette.gif" width="100%" controls muted playsinline preload="metadata"></video>
+<a href="https://cdn.jsdelivr.net/gh/hachej/boring-ui@main/docs/assets/readme/demo-palette.mp4"><img src="docs/assets/readme/demo-palette.gif" alt="Command palette search and jump" width="100%"></a>
 
 ---
 
