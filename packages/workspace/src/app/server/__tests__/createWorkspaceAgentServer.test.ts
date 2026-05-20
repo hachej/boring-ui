@@ -163,7 +163,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
 
   test("pluginHotReload=false uses boot-time package Pi snapshot without dynamic refresh", async () => {
     // The previous boringPluginReload + piPluginReload pair collapsed
-    // to a single pluginHotReload flag (DESIGN.md §4.7) because the
+    // to a single pluginHotReload flag (PLUGIN_SYSTEM.md §4.7) because the
     // useful matrix had only two states.
     const workspaceRoot = await makeTempDir("boring-workspace-plugin-hotreload-off-")
     await writeHotPlugin(workspaceRoot, "one.ts")
@@ -655,7 +655,7 @@ describe("beforeReload triggers directory-source re-resolve", () => {
     expect(result?.diagnostics?.length).toBeGreaterThan(0)
   })
 
-  test("dir-source plugin re-resolve failure is tolerated; beforeReload does NOT throw (DESIGN.md §4.5 partial-failure tolerance)", async () => {
+  test("dir-source plugin re-resolve failure is tolerated; beforeReload does NOT throw (PLUGIN_SYSTEM.md §4.5 partial-failure tolerance)", async () => {
     const dir = await makeTempDir("phase5-bad-")
     await mkdir(join(dir, "src", "server"), { recursive: true })
     await writeFile(

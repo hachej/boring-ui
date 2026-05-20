@@ -5,8 +5,13 @@ Older implementation plans live in `docs/plans/archive/`.
 
 ## Current References
 
+- `PLUGIN_SYSTEM.md` - end-to-end spec for the plugin / agent layer:
+  package manifest fields, public API for front + server authoring,
+  hot-reload coverage table, prompt-location guidance, and the
+  implementation-phase history. Normative for plugin behavior; code
+  cites it as `Per PLUGIN_SYSTEM.md §X`. (Previously at repo root as
+  `DESIGN.md`.)
 - `INTERFACES.md` - package boundaries and public abstractions.
-- `PLUGIN_STRUCTURE.md` - plugin folder shape and invariant scans.
 - `plans/PLUGIN_OUTPUTS_ISOLATION_PLAN.md` - latest plugin ownership plan.
 - `plans/UI_BRIDGE_OWNERSHIP_REFACTOR.md` - UI bridge ownership decision.
 - `plans/archive/` - superseded implementation plans.

@@ -111,7 +111,7 @@ describe("Reload edge cases — directory-source { spec: { dir } }", () => {
   })
 
   test("plugin removed between reloads: subsequent reload tolerates missing dir without throwing", async () => {
-    // Per DESIGN.md §4.5: per-plugin failures (including a missing dir
+    // Per PLUGIN_SYSTEM.md §4.5: per-plugin failures (including a missing dir
     // on rebuild) do NOT abort the reload. Diagnostics surface via
     // SSE error events + the POST response body; not by throwing.
     const dir = await makeTempDir("edge-removed-")
@@ -160,7 +160,7 @@ describe("Reload edge cases — directory-source { spec: { dir } }", () => {
   })
 
   test("syntax error in the new module body: reload tolerates, prior state intact", async () => {
-    // Per DESIGN.md §4.5: per-plugin failures must not abort the reload.
+    // Per PLUGIN_SYSTEM.md §4.5: per-plugin failures must not abort the reload.
     // Healthy plugins still pick up edits; the failed plugin's
     // diagnostic surfaces via the rebuild result's diagnostics array
     // (the asset manager + SSE channel carry the same info).
@@ -312,7 +312,7 @@ describe("Reload edge cases — discovered package plugins (.pi/extensions/*)", 
   })
 
   test("malformed package.json: boot succeeds; /reload tolerates the bad plugin (diagnostic via SSE error event + .error file)", async () => {
-    // Per DESIGN.md §4.5: per-plugin failures don't abort the reload.
+    // Per PLUGIN_SYSTEM.md §4.5: per-plugin failures don't abort the reload.
     // The malformed package.json surfaces via SSE + .error files, not by
     // throwing out of beforeReload.
     const host = await makeTempDir("edge-bad-pkg-")
@@ -338,7 +338,7 @@ describe("Reload edge cases — discovered package plugins (.pi/extensions/*)", 
   })
 
   test("two plugins with the same name: boot succeeds; /reload tolerates the duplicate (diagnostic via SSE)", async () => {
-    // Per DESIGN.md §4.5: misconfiguration surfaces via diagnostic
+    // Per PLUGIN_SYSTEM.md §4.5: misconfiguration surfaces via diagnostic
     // channels, not by aborting the reload.
     const host = await makeTempDir("edge-dup-id-")
     const dirA = join(host, ".pi", "extensions", "alpha")

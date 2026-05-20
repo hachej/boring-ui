@@ -331,7 +331,7 @@ describe("boring agent plugin assets", () => {
   })
 
   test("scans plugins, emits load events, and serves /api/agent-plugins", async () => {
-    // Per DESIGN.md Gotcha #4: asset manager is scan + hash + emit only.
+    // Per PLUGIN_SYSTEM.md Gotcha #4: asset manager is scan + hash + emit only.
     // Server module instantiation lives in pluginEntryResolver, not here.
     const root = await tmp("boring-plugin-manager-")
     await writePlugin(root)
@@ -378,7 +378,7 @@ describe("boring agent plugin assets", () => {
     expect(result.loaded[0].revision).toBeGreaterThanOrEqual(2)
   })
 
-  test("POST /api/boring.reload carries rebuildPlugins diagnostics in the 422 body (DESIGN.md §6)", async () => {
+  test("POST /api/boring.reload carries rebuildPlugins diagnostics in the 422 body (PLUGIN_SYSTEM.md §6)", async () => {
     const root = await tmp("boring-plugin-reload-diagnostics-")
     await writePlugin(root)
     const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
@@ -551,7 +551,7 @@ describe("boring agent plugin assets", () => {
   })
 
   test("manifest preflight errors persist between reloads until the manifest is fixed", async () => {
-    // Per DESIGN.md §4.5: preflight failures don't break previously loaded
+    // Per PLUGIN_SYSTEM.md §4.5: preflight failures don't break previously loaded
     // plugins; the asset manager keeps emitting error events until the
     // manifest is fixed.
     const root = await tmp("boring-plugin-error-persist-")
