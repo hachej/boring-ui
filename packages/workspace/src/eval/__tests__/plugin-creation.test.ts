@@ -112,7 +112,7 @@ describeIf("package plugin creation + reload eval (live LLM) [$provider/$id]", (
       // /reload discovers the plugin — the headline test point.
       const reloadOne = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
       expect(reloadOne.statusCode).toBe(200)
-      const pluginOne = (await app.inject({ method: "GET", url: "/api/agent-plugins" }))
+      const pluginOne = (await app.inject({ method: "GET", url: "/api/v1/agent-plugins" }))
         .json()
         .find((plugin: { id: string }) => plugin.id === "eval-task-list")
       expect(pluginOne, "plugin not discovered after /reload").toBeTruthy()
@@ -130,7 +130,7 @@ describeIf("package plugin creation + reload eval (live LLM) [$provider/$id]", (
       writeFileSync(frontPath, `${frontBefore}\n// eval scenario A: front edit\n`, "utf8")
       const reloadFront = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
       expect(reloadFront.statusCode).toBe(200)
-      const pluginAfterFront = (await app.inject({ method: "GET", url: "/api/agent-plugins" }))
+      const pluginAfterFront = (await app.inject({ method: "GET", url: "/api/v1/agent-plugins" }))
         .json()
         .find((plugin: { id: string }) => plugin.id === "eval-task-list")
       expect(pluginAfterFront.revision).toBeGreaterThan(pluginOne.revision)
@@ -144,7 +144,7 @@ describeIf("package plugin creation + reload eval (live LLM) [$provider/$id]", (
       writeFileSync(EVAL_PLUGIN_PACKAGE, JSON.stringify(packageJson, null, 2), "utf8")
       const reloadAgent = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
       expect(reloadAgent.statusCode).toBe(200)
-      const pluginAfterAgent = (await app.inject({ method: "GET", url: "/api/agent-plugins" }))
+      const pluginAfterAgent = (await app.inject({ method: "GET", url: "/api/v1/agent-plugins" }))
         .json()
         .find((plugin: { id: string }) => plugin.id === "eval-task-list")
       expect(pluginAfterAgent.pi?.systemPrompt).toContain("EVAL-SCENARIO-B-MARKER")
@@ -201,6 +201,17 @@ describeIf("package plugin creation + reload eval (live LLM) [$provider/$id]", (
       ).toMatch(/<table|createElement\(["']table["']/)
       // User-observable: SVG chart (NOT a chart library).
       expect(frontSource, "user asked for a chart; no <svg> found").toMatch(/<svg|createElement\(["']svg["']/)
+      // User-observable routing: clicking/opening a .csv from the file
+      // tree must route into this plugin, not merely register a manual
+      // panel. This caught the playground failure where the generated
+      // plugin displayed a test panel but never handled CSV file opens.
+      expect(
+        frontSource,
+        "CSV file-open integration requires a surface resolver",
+      ).toMatch(/surfaceResolvers|registerSurfaceResolver/)
+      expect(frontSource, "CSV resolver must handle workspace.open.path requests").toContain("WORKSPACE_OPEN_PATH_SURFACE_KIND")
+      expect(frontSource, "CSV panel must fetch raw file contents").toContain("/api/v1/files/raw")
+      expect(frontSource, "CSV resolver must match .csv paths").toMatch(/\.csv/)
       // User explicitly said "no chart libraries" — verify.
       expect(frontSource).not.toContain("recharts")
       expect(frontSource).not.toContain('from "d3"')
@@ -208,7 +219,7 @@ describeIf("package plugin creation + reload eval (live LLM) [$provider/$id]", (
 
       const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
       expect(reload.statusCode).toBe(200)
-      const list = await app.inject({ method: "GET", url: "/api/agent-plugins" })
+      const list = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
       const plugin = list.json().find((entry: { id: string }) => entry.id === "eval-csv-viz")
       expect(plugin).toBeTruthy()
       expect(plugin.revision).toEqual(expect.any(Number))
@@ -397,7 +408,7 @@ Then run /reload to verify.
       // /reload discovers it cleanly.
       const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
       expect(reload.statusCode).toBe(200)
-      const list = await app.inject({ method: "GET", url: "/api/agent-plugins" })
+      const list = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
       const plugin = list.json().find((entry: { id: string }) => entry.id === "eval-min-tasks")
       expect(plugin, "plugin not discovered after /reload").toBeTruthy()
       expect(plugin.frontUrl).toContain("/@fs/")
@@ -463,7 +474,7 @@ Then run /reload to verify.
 
       const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
       expect(reload.statusCode).toBe(200)
-      const plugin = (await app.inject({ method: "GET", url: "/api/agent-plugins" }))
+      const plugin = (await app.inject({ method: "GET", url: "/api/v1/agent-plugins" }))
         .json()
         .find((entry: { id: string }) => entry.id === "eval-split-files")
       expect(plugin, "plugin not discovered after /reload").toBeTruthy()
@@ -525,7 +536,7 @@ Then run /reload to verify.
       writeFileSync(EVAL_REFINE_FRONT, initialFront, "utf8")
       const baseline = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
       expect(baseline.statusCode).toBe(200)
-      const baselineRevision = (await app.inject({ method: "GET", url: "/api/agent-plugins" }))
+      const baselineRevision = (await app.inject({ method: "GET", url: "/api/v1/agent-plugins" }))
         .json()
         .find((entry: { id: string }) => entry.id === "eval-refine")?.revision
       expect(baselineRevision).toEqual(expect.any(Number))
@@ -567,7 +578,7 @@ Then run /reload to verify.
 
       const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
       expect(reload.statusCode).toBe(200)
-      const refreshed = (await app.inject({ method: "GET", url: "/api/agent-plugins" }))
+      const refreshed = (await app.inject({ method: "GET", url: "/api/v1/agent-plugins" }))
         .json()
         .find((entry: { id: string }) => entry.id === "eval-refine")
       expect(refreshed.revision).toBeGreaterThan(baselineRevision)
@@ -639,7 +650,7 @@ Then run /reload to verify.
 
       const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
       expect(reload.statusCode).toBe(200)
-      const pluginsList = (await app.inject({ method: "GET", url: "/api/agent-plugins" })).json()
+      const pluginsList = (await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })).json()
       const plugin = pluginsList.find((entry: { id: string }) => entry.id === "eval-cross")
       expect(
         plugin,
