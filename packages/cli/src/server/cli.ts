@@ -4,7 +4,6 @@ import { existsSync } from "node:fs"
 import { createRequire } from "node:module"
 import { basename, isAbsolute, join, resolve } from "node:path"
 import { parseArgs } from "node:util"
-import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "./localWorkspaces.js"
 import { scaffoldPlugin } from "./scaffoldPlugin.js"
 import { findHintForError, formatVerifyResult, verifyPlugin } from "./verifyPlugin.js"
@@ -124,7 +123,12 @@ const AUTH_GUIDE = [
   "",
 ].join("\n")
 
-function checkAuth(): number {
+async function checkAuth(): Promise<number> {
+  // Keep pi-coding-agent out of the CLI's top-level module graph so
+  // lightweight subcommands (`scaffold-plugin`, `verify-plugin`) still run
+  // from the workspace-local provisioned CLI copy, which intentionally does
+  // not materialize the whole dependency tree.
+  const { AuthStorage, ModelRegistry } = await import("@mariozechner/pi-coding-agent")
   const authStorage = AuthStorage.create()
   const registry = ModelRegistry.create(authStorage)
   return registry.getAvailable().length
@@ -140,7 +144,7 @@ async function startFolderMode(opts: {
 }) {
   const workspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT ?? resolve(opts.folderArg ?? process.cwd())
   const projectName = basename(resolve(workspaceRoot)) || "workspace"
-  const modelCount = checkAuth()
+  const modelCount = await checkAuth()
 
   console.log(`\n${projectName}`)
   console.log(`  workspace  ${workspaceRoot}`)
@@ -280,7 +284,7 @@ async function startWorkspacesMode(opts: {
   console.log(`  port       ${opts.port}`)
   console.log(`  host       ${opts.host}`)
   console.log(`\n  ${initialUrl}\n`)
-  if (checkAuth() === 0) console.log(AUTH_GUIDE)
+  if ((await checkAuth()) === 0) console.log(AUTH_GUIDE)
   openBrowser(initialUrl)
 }
 

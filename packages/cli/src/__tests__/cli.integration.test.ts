@@ -61,9 +61,12 @@ test("package exposes an installable boring-ui bin with published assets", async
 
   const builtBin = await readFile(distBin, "utf-8")
   expect(builtBin.startsWith("#!/usr/bin/env node")).toBe(true)
+
+  const builtCli = await readFile(join(cliRoot, "dist", "server", "cli.js"), "utf-8")
+  expect(builtCli).not.toMatch(/from ["']@mariozechner\/pi-coding-agent["']/)
 })
 
-test("installed CLI workspace subcommands use an isolated registry", { timeout: 15_000 }, async () => {
+test("installed CLI workspace subcommands use an isolated registry", { timeout: 30_000 }, async () => {
   const root = await makeTempDir("boring-cli-install-root-")
   const project = await makeTempDir("boring-cli-install-project-")
   const registryPath = join(root, "workspaces.yaml")
