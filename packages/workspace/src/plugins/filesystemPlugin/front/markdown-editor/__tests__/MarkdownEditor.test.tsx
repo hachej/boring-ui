@@ -478,6 +478,44 @@ describe("MarkdownEditor", () => {
       vi.unstubAllGlobals()
     })
 
+    // REGRESSION: pasting the SAME image twice produces two image nodes with
+    // identical data URLs. The original implementation matched the swap by
+    // `src === dataUrl`, so the first upload's swap walked the doc and
+    // updated BOTH nodes to its returned URL — the second uploaded file was
+    // never referenced in the markdown. Fixed by tagging each insertion with
+    // a unique `pendingUploadId` and matching the swap by that id.
+    it("Image paste twice (same file): each insertion gets its own uploaded URL", async () => {
+      const onChange = vi.fn()
+      let callCount = 0
+      const fetchSpy = vi.fn().mockImplementation(() => {
+        callCount += 1
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ markdownUrl: `../assets/images/pasted-${callCount}.png` }),
+        })
+      })
+      vi.stubGlobal("fetch", fetchSpy)
+      render(
+        <MarkdownEditor content="Hello" onChange={onChange} documentPath="deck/briefing.md" />,
+      )
+      await ready()
+      const editorEl = document.querySelector("[contenteditable='true']") as HTMLElement
+      const makeFile = () =>
+        new File([new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" })], "p.png", { type: "image/png" })
+      // Same file pasted twice, back-to-back. Identical bytes → identical dataUrl.
+      fireEvent.paste(editorEl, { clipboardData: { files: [makeFile()], items: [], getData: vi.fn(() => "") } })
+      fireEvent.paste(editorEl, { clipboardData: { files: [makeFile()], items: [], getData: vi.fn(() => "") } })
+      await waitFor(() => {
+        expect(fetchSpy).toHaveBeenCalledTimes(2)
+        const md = lastCall(onChange) ?? ""
+        // Both uploaded URLs MUST be present in the final markdown — pre-fix,
+        // both image refs collapsed to the same (first) URL.
+        expect(md).toContain("pasted-1.png")
+        expect(md).toContain("pasted-2.png")
+      })
+      vi.unstubAllGlobals()
+    })
+
     it("Image upload: ignores non-image files (no setImage call)", async () => {
       const onChange = vi.fn()
       render(<MarkdownEditor content="Hello" onChange={onChange} />)

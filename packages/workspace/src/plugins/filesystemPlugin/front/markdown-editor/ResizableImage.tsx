@@ -129,6 +129,16 @@ export const ResizableImage = Image.extend<any>({
           return { "data-align": align }
         },
       },
+      // Transient marker used by MarkdownEditor.insertImageRef to find THIS
+      // specific inserted image when its background upload completes, even
+      // if the user pasted the same file twice (which produces two image
+      // nodes with identical `src` data URLs). Never serialized to HTML or
+      // markdown — purely in-memory state for the swap.
+      pendingUploadId: {
+        default: null,
+        parseHTML: () => null,
+        renderHTML: () => ({}),
+      },
     }
   },
 
