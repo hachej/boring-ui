@@ -357,6 +357,26 @@ describe("usePiChatProjection (live handleData stream)", () => {
     expect(result.current.piMessages).toEqual([])
   })
 
+  it("does not rebuild from AI SDK data envelopes while streaming (live deltas stay smooth)", () => {
+    const envelope = makeMessage("env", "assistant", [
+      dataStart("a-env", "assistant"),
+      textStart("a-env", "0"),
+      textDelta("a-env", "0", "partial"),
+      textEnd("a-env", "0", "partial then final snapshot"),
+      dataEnd("a-env", "assistant", "partial then final snapshot"),
+    ])
+    const { result, rerender } = renderHook(
+      ({ messages, status }) => usePiChatProjection({ ...baseProps, messages, status }),
+      { initialProps: { messages: [] as UIMessage[], status: "streaming" } },
+    )
+
+    rerender({ messages: [envelope], status: "streaming" })
+    expect(result.current.piMessages).toEqual([])
+
+    rerender({ messages: [envelope], status: "ready" })
+    expect(firstTextPart(result.current.piMessages[0])).toBe("partial")
+  })
+
   it("handleData with unknown type is a no-op (forward compatibility)", () => {
     const { result } = renderHook(() => usePiChatProjection({ ...baseProps, status: "streaming" }))
     act(() => {
