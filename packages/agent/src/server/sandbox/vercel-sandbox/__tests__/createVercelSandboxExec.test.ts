@@ -46,6 +46,26 @@ test('exec echo returns hi newline', async () => {
   expect(onMutation).toHaveBeenCalledTimes(1)
 })
 
+test('default Vercel exec cwd/env use /workspace runtime with safe system PATH', async () => {
+  const runCommand = mockRunCommand('', '')
+  const sandbox = { runCommand } as unknown as VercelSandbox
+  const adapter = createVercelSandboxExec(sandbox)
+
+  await adapter.exec('command -v sh')
+
+  expect(runCommand).toHaveBeenCalledWith(
+    expect.objectContaining({
+      cwd: '/workspace',
+      env: expect.objectContaining({
+        BORING_AGENT_WORKSPACE_ROOT: '/workspace',
+        HOME: '/workspace',
+        VIRTUAL_ENV: '/workspace/.boring-agent/venv',
+        PATH: '/workspace/.boring-agent/bin:/workspace/.boring-agent/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+      }),
+    }),
+  )
+})
+
 test('workspace writes are visible through exec on same sandbox handle', async () => {
   const harness = await createMockVercelSandboxHarness()
   const workspace = createVercelSandboxWorkspace(harness.sandbox)
@@ -54,7 +74,7 @@ test('workspace writes are visible through exec on same sandbox handle', async (
   try {
     await workspace.writeFile('shared/hello.txt', 'hello-from-workspace')
 
-    const result = await adapter.exec('cat /vercel/sandbox/shared/hello.txt')
+    const result = await adapter.exec('cat /workspace/shared/hello.txt')
 
     expect(decoder.decode(result.stdout)).toBe('hello-from-workspace')
     expect(result.exitCode).toBe(0)
@@ -63,26 +83,34 @@ test('workspace writes are visible through exec on same sandbox handle', async (
   }
 })
 
-test('maps display /workspace cwd, command paths, and env to Vercel remote root', async () => {
+test('keeps display /workspace command strings while forcing managed env prefixes', async () => {
   const runCommand = mockRunCommand('', '')
   const sandbox = { runCommand } as unknown as VercelSandbox
   const adapter = createVercelSandboxExec(sandbox)
 
-  await adapter.exec('mkdir -p /workspace/deck && echo /workspace2 /workspace-old /workspace.backup /workspace@tmp /workspace', {
+  const command = 'mkdir -p /workspace/deck && echo /workspace2 /workspace-old /workspace.backup /workspace@tmp /workspace'
+  await adapter.exec(command, {
     cwd: '/workspace/nested',
     env: {
-      BORING_AGENT_WORKSPACE_ROOT: '/workspace',
-      PATH: '/workspace:/usr/bin:/workspace/.boring-agent/venv/bin:/workspace@tmp',
+      BORING_AGENT_WORKSPACE_ROOT: '/plugin-root',
+      BORING_MACRO_API_URL: 'https://api.example.test/workspace',
+      HOME: '/plugin-home',
+      PATH: '/plugin/bin:/workspace/.boring-agent/bin:/usr/bin',
+      PYTHONHOME: '/plugin-python-home',
+      VIRTUAL_ENV: '/plugin-venv',
     },
   })
 
   expect(runCommand).toHaveBeenCalledWith(
     expect.objectContaining({
-      args: ['-c', 'mkdir -p /vercel/sandbox/deck && echo /workspace2 /workspace-old /workspace.backup /workspace@tmp /vercel/sandbox'],
-      cwd: '/vercel/sandbox/nested',
+      args: ['-c', command],
+      cwd: '/workspace/nested',
       env: {
-        BORING_AGENT_WORKSPACE_ROOT: '/vercel/sandbox',
-        PATH: '/vercel/sandbox:/usr/bin:/vercel/sandbox/.boring-agent/venv/bin:/workspace@tmp',
+        BORING_AGENT_WORKSPACE_ROOT: '/workspace',
+        BORING_MACRO_API_URL: 'https://api.example.test/workspace',
+        HOME: '/workspace',
+        PATH: '/workspace/.boring-agent/bin:/workspace/.boring-agent/venv/bin:/plugin/bin:/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/sbin:/bin',
+        VIRTUAL_ENV: '/workspace/.boring-agent/venv',
       },
     }),
   )

@@ -64,6 +64,52 @@ test('workspace python env ignores old top-level .venv for agent runtime tools',
   expect(env.VIRTUAL_ENV).toBe('/workspace/.boring-agent/venv')
 })
 
+test('workspace python env forces runtime roots before plugin PATH additions', () => {
+  const env = withWorkspacePythonEnv({
+    workspaceRoot: '/workspace',
+    env: {
+      BORING_AGENT_WORKSPACE_ROOT: '/evil',
+      HOME: '/evil-home',
+      PATH: '/plugin/bin:/workspace/.boring-agent/bin:/usr/bin',
+      PYTHONHOME: '/evil-python-home',
+      VIRTUAL_ENV: '/evil-venv',
+    },
+  })
+
+  expect(env.BORING_AGENT_WORKSPACE_ROOT).toBe('/workspace')
+  expect(env.HOME).toBe('/workspace')
+  expect(env.VIRTUAL_ENV).toBe('/workspace/.boring-agent/venv')
+  expect(env.PYTHONHOME).toBeUndefined()
+  expect(env.PATH?.split(':')).toEqual([
+    '/workspace/.boring-agent/bin',
+    '/workspace/.boring-agent/venv/bin',
+    '/plugin/bin',
+    '/usr/bin',
+  ])
+})
+
+test('provisioning rejects plugin env overrides for managed runtime keys', async () => {
+  const workspaceRoot = await makeTempDir('boring-runtime-reserved-env-')
+
+  await expect(provisionRuntimeWorkspace({
+    workspaceRoot,
+    contributions: [
+      {
+        id: 'bad-env',
+        provisioning: {
+          python: [
+            {
+              id: 'bad-python',
+              projectFile: join(workspaceRoot, 'pyproject.toml'),
+              env: { VIRTUAL_ENV: '/plugin-venv' },
+            },
+          ],
+        },
+      },
+    ],
+  })).rejects.toThrow('Provisioning env key VIRTUAL_ENV is reserved')
+})
+
 test('unowned top-level .venv is left in place during runtime layout migration', async () => {
   const workspaceRoot = await makeTempDir('boring-runtime-unowned-venv-')
   const oldVenv = join(workspaceRoot, '.venv')

@@ -123,3 +123,32 @@ test('exec caps output at maxOutputBytes and marks truncated', async () => {
   expect(result.truncated).toBe(true)
   expect(result.stdout.length + result.stderr.length).toBeLessThanOrEqual(256)
 })
+
+test('exec forces managed env roots and appends plugin PATH after runtime bins', async () => {
+  const { sandbox, workspaceRoot } = await initSandbox()
+
+  const result = await sandbox.exec(
+    'printf "%s\\n%s\\n%s\\n%s\\n%s" "$BORING_AGENT_WORKSPACE_ROOT" "$HOME" "$VIRTUAL_ENV" "$PYTHONHOME" "$PATH"',
+    {
+      env: {
+        BORING_AGENT_WORKSPACE_ROOT: '/plugin-root',
+        HOME: '/plugin-home',
+        PATH: '/plugin/bin:/usr/bin',
+        PYTHONHOME: '/plugin-python-home',
+        VIRTUAL_ENV: '/plugin-venv',
+      },
+    },
+  )
+
+  const [root, home, venv, pythonHome, pathValue] = Buffer.from(result.stdout).toString('utf-8').split('\n')
+  expect(root).toBe(workspaceRoot)
+  expect(home).toBe(workspaceRoot)
+  expect(venv).toBe(join(workspaceRoot, '.boring-agent', 'venv'))
+  expect(pythonHome).toBe('')
+  expect(pathValue.split(':').slice(0, 4)).toEqual([
+    join(workspaceRoot, '.boring-agent', 'bin'),
+    join(workspaceRoot, '.boring-agent', 'venv', 'bin'),
+    '/plugin/bin',
+    '/usr/bin',
+  ])
+})

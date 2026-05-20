@@ -63,6 +63,13 @@ function toPath(value: string | URL): string {
   return value instanceof URL ? fileURLToPath(value) : value
 }
 
+function envValueToString(value: string | URL): string {
+  if (!(value instanceof URL)) return value
+  if (value.protocol === 'file:') return fileURLToPath(value)
+  if (value.protocol === 'http:' || value.protocol === 'https:') return value.toString()
+  return value.toString()
+}
+
 async function exists(path: string): Promise<boolean> {
   try {
     await access(path, constants.F_OK)
@@ -148,12 +155,22 @@ async function fingerprint(contributions: Array<{ id: string; provisioning: Runt
   return `sha256:${hash.digest('hex')}`
 }
 
+const RESERVED_PLUGIN_ENV_KEYS = new Set([
+  'BORING_AGENT_WORKSPACE_ROOT',
+  'VIRTUAL_ENV',
+  'HOME',
+  'PYTHONHOME',
+])
+
 function collectEnv(contributions: Array<{ provisioning: RuntimeProvisioningContribution }>): Record<string, string> {
   const env: Record<string, string> = {}
   for (const { provisioning } of contributions) {
     for (const spec of provisioning.python ?? []) {
       for (const [key, value] of Object.entries(spec.env ?? {}) as Array<[string, string | URL]>) {
-        env[key] = toPath(value)
+        if (RESERVED_PLUGIN_ENV_KEYS.has(key)) {
+          throw new Error(`Provisioning env key ${key} is reserved by boring-agent runtime`)
+        }
+        env[key] = envValueToString(value)
       }
     }
   }
@@ -278,17 +295,23 @@ async function writeShims(workspaceRoot: string, env: Record<string, string>): P
   const shimDir = paths.bin
   const venvBin = paths.venvBin
   await mkdir(shimDir, { recursive: true })
-  const exports = Object.entries(env).map(([key, value]) => {
+  const pluginPath = env.PATH
+  const exports = Object.entries(env).filter(([key]) => key !== 'PATH').map(([key, value]) => {
     assertEnvKey(key)
     return `export ${key}=${bashSingleQuote(value)}`
   }).join('\n')
+  const pluginPathExport = pluginPath
+    ? `PLUGIN_PATH=${bashSingleQuote(pluginPath)}\nexport PATH="$WORKSPACE_ROOT/.boring-agent/bin:$VENV_BIN:$PLUGIN_PATH\${PATH:+:$PATH}"`
+    : `export PATH="$WORKSPACE_ROOT/.boring-agent/bin:$VENV_BIN\${PATH:+:$PATH}"`
   const base = `#!/usr/bin/env bash
 set -euo pipefail
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 WORKSPACE_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
 export BORING_AGENT_WORKSPACE_ROOT="$WORKSPACE_ROOT"
-${exports}
+export VIRTUAL_ENV="$WORKSPACE_ROOT/.boring-agent/venv"
 VENV_BIN="$WORKSPACE_ROOT/.boring-agent/venv/bin"
+${pluginPathExport}
+${exports}
 `
 
   await writeExecutable(join(shimDir, 'python'), `${base}exec "$VENV_BIN/python" "$@"\n`)

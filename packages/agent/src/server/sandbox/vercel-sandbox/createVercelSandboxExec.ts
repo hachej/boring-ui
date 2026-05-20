@@ -4,13 +4,14 @@ import type { Sandbox as VercelSandbox } from '@vercel/sandbox'
 import type { ExecResult, Sandbox } from '../../../shared/sandbox'
 import {
   invalidateVercelSandboxWorkspaceMetadataCache,
-  VERCEL_SANDBOX_REMOTE_ROOT,
   VERCEL_SANDBOX_RUNTIME_CONTEXT,
   VERCEL_SANDBOX_WORKSPACE_ROOT,
 } from '../../workspace/createVercelSandboxWorkspace'
+import { withWorkspacePythonEnv } from '../workspacePythonEnv'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_MAX_OUTPUT_BYTES = 1_048_576
+const VERCEL_SANDBOX_DEFAULT_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 
 interface CaptureState {
   totalBytes: number
@@ -66,45 +67,16 @@ function timeoutResult(durationMs: number): ExecResult {
   }
 }
 
-function toRemotePath(value: string): string {
-  if (value === VERCEL_SANDBOX_WORKSPACE_ROOT) return VERCEL_SANDBOX_REMOTE_ROOT
-  if (value.startsWith(`${VERCEL_SANDBOX_WORKSPACE_ROOT}/`)) {
-    return `${VERCEL_SANDBOX_REMOTE_ROOT}${value.slice(VERCEL_SANDBOX_WORKSPACE_ROOT.length)}`
+function toRemoteEnv(env: Record<string, string> | undefined): Record<string, string> {
+  const baseEnv = {
+    ...(env ?? {}),
+    PATH: env?.PATH ? `${env.PATH}:${VERCEL_SANDBOX_DEFAULT_PATH}` : VERCEL_SANDBOX_DEFAULT_PATH,
   }
-  return value
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-const WORKSPACE_ALIAS_PREFIX_BOUNDARY = String.raw`(^|[\s"'=:;,\[({<>&|])`
-const WORKSPACE_ALIAS_SUFFIX_BOUNDARY = String.raw`(?=/|$|[\s"'=:;,)\]}> &|])`
-const WORKSPACE_ALIAS_PATTERN = new RegExp(
-  `${WORKSPACE_ALIAS_PREFIX_BOUNDARY}${escapeRegExp(VERCEL_SANDBOX_WORKSPACE_ROOT)}${WORKSPACE_ALIAS_SUFFIX_BOUNDARY}`,
-  'g',
-)
-
-function replaceWorkspaceAliases(value: string): string {
-  return value.replace(
-    WORKSPACE_ALIAS_PATTERN,
-    (_match, prefix: string) => `${prefix}${VERCEL_SANDBOX_REMOTE_ROOT}`,
-  )
-}
-
-function toRemoteCwd(cwd: string | undefined): string | undefined {
-  if (!cwd) return cwd
-  return toRemotePath(cwd)
-}
-
-function toRemoteCommand(command: string): string {
-  return replaceWorkspaceAliases(command)
-}
-
-function toRemoteEnv(env: Record<string, string> | undefined): Record<string, string> | undefined {
-  if (!env) return undefined
   return Object.fromEntries(
-    Object.entries(env).map(([key, value]) => [key, replaceWorkspaceAliases(toRemotePath(value))]),
+    Object.entries(withWorkspacePythonEnv({
+      workspaceRoot: VERCEL_SANDBOX_WORKSPACE_ROOT,
+      env: baseEnv,
+    })).filter((entry): entry is [string, string] => entry[1] != null),
   )
 }
 
@@ -164,8 +136,8 @@ export function createVercelSandboxExec(
 
         const result = await sandbox.runCommand({
           cmd: 'sh',
-          args: ['-c', toRemoteCommand(cmd)],
-          cwd: toRemoteCwd(opts?.cwd),
+          args: ['-c', cmd],
+          cwd: opts?.cwd ?? VERCEL_SANDBOX_WORKSPACE_ROOT,
           env: toRemoteEnv(opts?.env),
           signal: controller.signal,
           stdout: createStreamWritable(stdoutCollector, captureState, opts?.onStdout),

@@ -16,13 +16,15 @@ import {
   VERCEL_SANDBOX_WORKSPACE_ROOT,
 } from '../../workspace/createVercelSandboxWorkspace'
 
+const VERCEL_SANDBOX_LEGACY_ROOT = '/vercel/sandbox'
+
 function rootAliases(workspace: Workspace): string[] {
   const aliases = [workspace.root]
-  // Accept the Vercel SDK's internal root as a backwards-compatible input
-  // alias, but never display it back to the model/user.
-  if (workspace.root === VERCEL_SANDBOX_WORKSPACE_ROOT) aliases.push(VERCEL_SANDBOX_REMOTE_ROOT)
-  if (workspace.root === VERCEL_SANDBOX_REMOTE_ROOT) aliases.push(VERCEL_SANDBOX_WORKSPACE_ROOT)
-  return aliases
+  // Accept the Vercel SDK's former internal root as a backwards-compatible
+  // input alias, but never display it back to the model/user.
+  if (workspace.root === VERCEL_SANDBOX_WORKSPACE_ROOT) aliases.push(VERCEL_SANDBOX_LEGACY_ROOT)
+  if (workspace.root === VERCEL_SANDBOX_LEGACY_ROOT) aliases.push(VERCEL_SANDBOX_WORKSPACE_ROOT)
+  return Array.from(new Set(aliases))
 }
 
 function isOutsideWorkspaceRel(rel: string): boolean {
@@ -114,23 +116,23 @@ export function vercelEditOps(workspace: Workspace): EditOperations {
 }
 
 function toRemotePath(value: string): string {
-  if (value === VERCEL_SANDBOX_WORKSPACE_ROOT) return VERCEL_SANDBOX_REMOTE_ROOT
-  if (value.startsWith(`${VERCEL_SANDBOX_WORKSPACE_ROOT}/`)) {
-    return `${VERCEL_SANDBOX_REMOTE_ROOT}${value.slice(VERCEL_SANDBOX_WORKSPACE_ROOT.length)}`
+  if (value === VERCEL_SANDBOX_LEGACY_ROOT) return VERCEL_SANDBOX_REMOTE_ROOT
+  if (value.startsWith(`${VERCEL_SANDBOX_LEGACY_ROOT}/`)) {
+    return `${VERCEL_SANDBOX_REMOTE_ROOT}${value.slice(VERCEL_SANDBOX_LEGACY_ROOT.length)}`
   }
   return value
 }
 
 function toRuntimePath(value: string): string {
-  if (value === VERCEL_SANDBOX_REMOTE_ROOT) return VERCEL_SANDBOX_WORKSPACE_ROOT
-  if (value.startsWith(`${VERCEL_SANDBOX_REMOTE_ROOT}/`)) {
-    return `${VERCEL_SANDBOX_WORKSPACE_ROOT}${value.slice(VERCEL_SANDBOX_REMOTE_ROOT.length)}`
+  if (value === VERCEL_SANDBOX_LEGACY_ROOT) return VERCEL_SANDBOX_WORKSPACE_ROOT
+  if (value.startsWith(`${VERCEL_SANDBOX_LEGACY_ROOT}/`)) {
+    return `${VERCEL_SANDBOX_WORKSPACE_ROOT}${value.slice(VERCEL_SANDBOX_LEGACY_ROOT.length)}`
   }
   return value
 }
 
 function sanitizeRuntimeText(value: string): string {
-  return value.replaceAll(VERCEL_SANDBOX_REMOTE_ROOT, VERCEL_SANDBOX_WORKSPACE_ROOT)
+  return value.replaceAll(VERCEL_SANDBOX_LEGACY_ROOT, VERCEL_SANDBOX_WORKSPACE_ROOT)
 }
 
 function findPredicate(pattern: string): string {

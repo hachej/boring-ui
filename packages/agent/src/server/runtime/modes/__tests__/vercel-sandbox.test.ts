@@ -215,7 +215,7 @@ test('mode accepts VERCEL_TOKEN fallback and creates working bundle with shared 
     })
     await bundle.workspace.writeFile('shared/hello.txt', 'hello-from-mode')
 
-    const result = await bundle.sandbox.exec('cat /vercel/sandbox/shared/hello.txt')
+    const result = await bundle.sandbox.exec('cat /workspace/shared/hello.txt')
 
     expect(bundle.runtimeContext.runtimeCwd).toBe('/workspace')
     expect(bundle.workspace.root).toBe('/workspace')
@@ -231,7 +231,7 @@ test('mode accepts VERCEL_TOKEN fallback and creates working bundle with shared 
       persistent: true,
       snapshotExpiration: 0,
     }))
-    expect(mkdirSpy).toHaveBeenCalledWith('/vercel/sandbox', { recursive: true })
+    expect(mkdirSpy).toHaveBeenCalledWith('/workspace', { recursive: true })
     expect(logger.info).toHaveBeenCalledWith(
       '[vercel-sandbox:mode] auth resolved',
       { source: 'VERCEL_TOKEN', hasProjectId: false, timeoutMs: null },
