@@ -166,6 +166,7 @@ describe("appendFrontImportRevision", () => {
   test("cache-busts dynamic imports with plugin revision", () => {
     expect(appendFrontImportRevision("/@fs/plugin/front/index.tsx", 2)).toBe("/@fs/plugin/front/index.tsx?v=2")
     expect(appendFrontImportRevision("/@fs/plugin/front/index.tsx?raw", 3)).toBe("/@fs/plugin/front/index.tsx?raw&v=3")
+    expect(appendFrontImportRevision("/@fs/plugin/front/index.tsx", 4, "boot-1")).toBe("/@fs/plugin/front/index.tsx?v=4&t=boot-1")
   })
 })
 
