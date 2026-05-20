@@ -60,6 +60,7 @@ function Playground() {
               chrome={chrome}
               thinkingControl={thinkingControl}
               suggestions={suggestions === 'none' ? [] : undefined}
+              debug={true}
               className="h-full"
             />
           ) : (
