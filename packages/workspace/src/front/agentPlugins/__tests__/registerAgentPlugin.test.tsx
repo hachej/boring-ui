@@ -8,7 +8,7 @@ import { PanelRegistry } from "../../registry/PanelRegistry"
 import { CommandRegistry } from "../../../shared/plugins/CommandRegistry"
 import { SurfaceResolverRegistry } from "../../../shared/plugins/SurfaceResolverRegistry"
 import type { BoringFrontFactory } from "../../../shared/plugins/frontFactory"
-import { useAgentPluginHotReload } from "../registerAgentPlugin"
+import { appendFrontImportRevision, useAgentPluginHotReload } from "../registerAgentPlugin"
 
 class MockEventSource {
   static instances: MockEventSource[] = []
@@ -162,6 +162,13 @@ function Harness({ apiBaseUrl = "" }: { apiBaseUrl?: string }) {
   )
 }
 
+describe("appendFrontImportRevision", () => {
+  test("cache-busts dynamic imports with plugin revision", () => {
+    expect(appendFrontImportRevision("/@fs/plugin/front/index.tsx", 2)).toBe("/@fs/plugin/front/index.tsx?v=2")
+    expect(appendFrontImportRevision("/@fs/plugin/front/index.tsx?raw", 3)).toBe("/@fs/plugin/front/index.tsx?raw&v=3")
+  })
+})
+
 describe("useAgentPluginHotReload", () => {
   test("imports plugin front modules from SSE load events and remounts updated panes by revision", async () => {
     const dir = await makeTempDir("boring-front-hot-reload-")
@@ -210,6 +217,74 @@ describe("useAgentPluginHotReload", () => {
     })
 
     expect(screen.getByTestId("hot-pane")).toHaveTextContent("version two")
+  })
+
+  test("rejects hot-loaded plugin output that collides with a built-in panel id", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+    const importFront = async (): Promise<{ default: BoringFrontFactory }> => ({
+      default(api) {
+        api.registerPanel({
+          id: "csv-viewer",
+          label: "Hot CSV Viewer",
+          component: function HotCsvViewer() {
+            return React.createElement("div", { "data-testid": "hot-csv-viewer" }, "hot csv viewer")
+          },
+        })
+      },
+    })
+
+    function CollisionHarness() {
+      const panelRegistry = React.useMemo(() => {
+        const registry = new PanelRegistry()
+        registry.register("csv-viewer", {
+          title: "Built-in CSV Viewer",
+          component: function BuiltinCsvViewer() {
+            return React.createElement("div", { "data-testid": "builtin-csv-viewer" }, "builtin csv viewer")
+          },
+        })
+        return registry
+      }, [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <PaneRenderer id="csv-viewer" />
+          <PanelIds />
+        </RegistryProvider>
+      )
+    }
+
+    try {
+      render(<CollisionHarness />)
+      expect(screen.getByTestId("builtin-csv-viewer")).toHaveTextContent("builtin csv viewer")
+      expect(screen.getByTestId("panel-ids")).toHaveTextContent("csv-viewer")
+
+      MockEventSource.instances[0].dispatch("boring.plugin.load", {
+        type: "boring.plugin.load",
+        id: "csv-plugin",
+        version: "1.0.0",
+        revision: 1,
+        frontUrl: "/@fs/csv-plugin.tsx",
+        boring: { front: "front/index.tsx" },
+      })
+
+      await waitFor(() => {
+        expect(consoleError.mock.calls.some((call) => call.some((part) => String(part).includes("PLUGIN_OUTPUT_ID_COLLISION")))).toBe(true)
+      })
+      expect(consoleError.mock.calls.some((call) => call.some((part) => String(part).includes('plugin "csv-plugin"')))).toBe(true)
+      expect(consoleError.mock.calls.some((call) => call.some((part) => String(part).includes('panel "csv-viewer"')))).toBe(true)
+      expect(consoleError.mock.calls.some((call) => call.some((part) => String(part).includes('"system/builtin"')))).toBe(true)
+      expect(screen.getByTestId("builtin-csv-viewer")).toHaveTextContent("builtin csv viewer")
+      expect(screen.queryByTestId("hot-csv-viewer")).not.toBeInTheDocument()
+      expect(screen.getByTestId("panel-ids")).toHaveTextContent("csv-viewer")
+    } finally {
+      consoleError.mockRestore()
+    }
   })
 
   test("supports hook-based panel components from hot-loaded front factories", async () => {

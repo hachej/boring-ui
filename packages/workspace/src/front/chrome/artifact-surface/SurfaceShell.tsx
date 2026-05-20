@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { DockviewApi } from "dockview-react"
 import { ChevronRight, FolderTree } from "lucide-react"
 import { Button, IconButton } from "@hachej/boring-ui-kit"
@@ -156,6 +156,11 @@ export function SurfaceShell({
   // name (real bug we hit when the agent dispatched openPanel for a panel
   // the host hadn't registered).
   const panelRegistry = useRegistry()
+  const panelRegistrySnapshot = useSyncExternalStore(
+    panelRegistry.subscribe,
+    panelRegistry.getSnapshot,
+    panelRegistry.getSnapshot,
+  )
   const surfaceResolverRegistry = useSurfaceResolverRegistry()
   const panelRegistryRef = useRef(panelRegistry)
   panelRegistryRef.current = panelRegistry
@@ -163,14 +168,14 @@ export function SurfaceShell({
   surfaceResolverRegistryRef.current = surfaceResolverRegistry
   const allowedPanels = useMemo(() => {
     const ids = new Set<string>()
-    for (const panel of panelRegistry.list()) {
+    for (const panel of panelRegistrySnapshot) {
       if (panel.placement === "center") ids.add(panel.id)
     }
     for (const id of extraPanels ?? []) {
       ids.add(id)
     }
     return [...ids]
-  }, [extraPanels, panelRegistry])
+  }, [extraPanels, panelRegistrySnapshot])
 
   const openFileSync = useCallback((path: string) => {
     const api = apiRef.current

@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react"
+import { Suspense, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react"
 import { MenuIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PinIcon } from "lucide-react"
 import { DockviewShell } from "../dock"
 import type { LayoutConfig } from "../dock"
@@ -88,7 +88,12 @@ export function ResponsiveDockviewShell({
     return `${effectiveLayout.version}:${composition}:${groupsKey}`
   }, [effectiveLayout, showInlineSidebar])
 
-  const components = useMemo(() => registry.getComponents(), [registry])
+  const registrySnapshot = useSyncExternalStore(
+    registry.subscribe,
+    registry.getSnapshot,
+    registry.getSnapshot,
+  )
+  const components = useMemo(() => registry.getComponents(), [registry, registrySnapshot])
   const SidebarPanel = sidebarPanelId ? components[sidebarPanelId] : null
   const sidebarTitle = sidebarPanelId
     ? (registry.get(sidebarPanelId)?.title ?? "Sidebar")
