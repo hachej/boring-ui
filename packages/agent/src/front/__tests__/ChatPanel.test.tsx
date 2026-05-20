@@ -976,14 +976,9 @@ describe('ChatPanel (shadcn)', () => {
       expect((html.match(/Used /g) ?? []).length).toBe(1)
     })
 
-    test('assistant tool fragments coalesce so adjacent calls share one collapsed group', () => {
+    test('normal AI SDK assistant messages are not coalesced even when adjacent to tool messages', () => {
       mockUseAgentChat.mockReturnValue({
         messages: [
-          {
-            id: 'a-text-before',
-            role: 'assistant',
-            parts: [{ type: 'text', text: 'BEFORE_TOOLS' }],
-          },
           {
             id: 'a-tool-1',
             role: 'assistant',
@@ -998,6 +993,11 @@ describe('ChatPanel (shadcn)', () => {
             ],
           },
           {
+            id: 'a-text-after-tool',
+            role: 'assistant',
+            parts: [{ type: 'text', text: 'SEPARATE_ASSISTANT_MESSAGE' }],
+          },
+          {
             id: 'a-tool-2',
             role: 'assistant',
             parts: [
@@ -1010,10 +1010,68 @@ describe('ChatPanel (shadcn)', () => {
               },
             ],
           },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-sdk-no-tool-coalesce" />)
+      expect(html).toContain('SEPARATE_ASSISTANT_MESSAGE')
+      expect((html.match(/data-testid="message"/g) ?? []).length).toBe(3)
+      expect((html.match(/Used command/g) ?? []).length).toBe(2)
+      expect(html).not.toContain('Used command ×2')
+    })
+
+    test('pi projection fallback still coalesces assistant tool fragments into one collapsed group', () => {
+      mockPiProjection.piMessages = [
+        {
+          id: 'pi-text-before',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'BEFORE_TOOLS' }],
+        },
+        {
+          id: 'pi-tool-1',
+          role: 'assistant',
+          parts: [
+            {
+              type: 'tool-bash',
+              toolCallId: 'CMD1',
+              state: 'output-available',
+              input: { command: 'ls' },
+              output: { text: 'ok' },
+            },
+          ],
+        },
+        {
+          id: 'pi-tool-2',
+          role: 'assistant',
+          parts: [
+            {
+              type: 'tool-bash',
+              toolCallId: 'CMD2',
+              state: 'output-available',
+              input: { command: 'pwd' },
+              output: { text: 'ok' },
+            },
+          ],
+        },
+        {
+          id: 'pi-text-after',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'AFTER_TOOLS' }],
+        },
+      ]
+      mockUseAgentChat.mockReturnValue({
+        messages: [
           {
-            id: 'a-text-after',
+            id: 'pi-envelope',
             role: 'assistant',
-            parts: [{ type: 'text', text: 'AFTER_TOOLS' }],
+            parts: [
+              { type: 'data-pi-message-start', data: { messageId: 'pi-tool-1', role: 'assistant' } } as any,
+              { type: 'data-pi-tool-call-end', data: { messageId: 'pi-tool-1', toolCallId: 'CMD1', toolName: 'bash', input: { command: 'ls' } } } as any,
+            ],
           },
         ],
         sendMessage: mockSendMessage,
@@ -1022,7 +1080,7 @@ describe('ChatPanel (shadcn)', () => {
         error: undefined,
       })
 
-      const html = renderToStaticMarkup(<ChatPanel sessionId="s-tool-fragments" />)
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-pi-tool-fragments" />)
       expect(html).toContain('BEFORE_TOOLS')
       expect(html).toContain('AFTER_TOOLS')
       expect(html).toContain('Used command ×2')
