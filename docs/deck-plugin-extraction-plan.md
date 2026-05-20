@@ -1,6 +1,6 @@
 # Deck Plugin Extraction Plan
 
-Status: draft plan  
+Status: draft plan — aligned to `feat/plugin-agent-layer-rebased-main` plugin authoring/runtime shape  
 Target worktree: `/home/ubuntu/projects/boring-ui-v2-deck-plugin-plan`  
 Target package: `plugins/deck` / `@hachej/boring-deck`  
 Primary consumer: `boring-macro` deck generation and presentation UI
@@ -59,7 +59,6 @@ plugins/deck/
       index.tsx
       DeckPane.tsx
       StandaloneDeckRoute.tsx
-      parser.ts
       storage.ts
       widgets.tsx
       components.tsx
@@ -72,38 +71,69 @@ plugins/deck/
       __tests__/
     shared/
       constants.ts
+      parser.ts
       types.ts
       index.ts
     test-setup.ts
 ```
 
-Package metadata:
+Package metadata should follow the soon-to-merge plugin-agent-layer split between **plugin kits** and **manifest-loadable plugins**.
+
+`@hachej/boring-deck` is a **plugin kit**, matching `@hachej/boring-data-catalog`: it exports builders that consumers call with app-specific storage/widgets/theme. Because options are required for a useful deck, the kit should not itself be listed directly in `defaultPluginPackages` and should not claim a default `package.json#boring` entry.
 
 ```json
 {
   "name": "@hachej/boring-deck",
-  "version": "0.1.13",
+  "version": "0.1.17",
   "type": "module",
   "private": true,
-  "boring": {
-    "label": "Deck",
-    "front": "dist/front/index.js",
-    "server": "dist/server/index.js"
-  },
-  "pi": {
-    "systemPrompt": "Use deck markdown files for concise, slide-based presentations."
-  },
+  "license": "MIT",
+  "description": "Plugin BUILDER for Boring workspace markdown decks. Consumers call createDeckPlugin/createDeckServerPlugin with storage and widget options; wrap in an app-local plugin module for defaultPluginPackages.",
+  "files": ["dist"],
   "exports": {
     ".": { "types": "./dist/front/index.d.ts", "import": "./dist/front/index.js" },
     "./front": { "types": "./dist/front/index.d.ts", "import": "./dist/front/index.js" },
     "./server": { "types": "./dist/server/index.d.ts", "import": "./dist/server/index.js" },
     "./shared": { "types": "./dist/shared/index.d.ts", "import": "./dist/shared/index.js" },
     "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "peerDependencies": {
+    "@hachej/boring-workspace": "workspace:*",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
   }
 }
 ```
 
-Like `@hachej/boring-data-catalog`, this should primarily be a plugin builder. Direct default exports may exist for simple file-backed decks, but the important API is configurable.
+A concrete app/local wrapper can be manifest-loadable and may include:
+
+```json
+{
+  "boring": {
+    "label": "Macro Deck",
+    "front": "dist/front/index.js",
+    "server": "dist/server/index.js"
+  },
+  "pi": {
+    "systemPrompt": "Use deck markdown files for concise, slide-based presentations."
+  }
+}
+```
+
+That wrapper default-exports the built front factory and server factory after binding storage/widget options. This keeps package discovery compatible with the plugin-agent-layer without pretending the generic kit has enough defaults to run safely by itself.
+
+## 4.1 Alignment with plugin-agent-layer
+
+The implementation must target the authoring/runtime shape in `~/projects/boring-ui-v2-plugin-agent-layer`:
+
+- Front builders import from `@hachej/boring-workspace/plugin` and return `BoringFrontFactoryWithId` produced by `definePlugin({ id, label, panels, commands, surfaceResolvers, setup? })`.
+- Front `setup` remains synchronous. `createDeckPlugin` must not require async front bootstrap.
+- Consumers pass the returned factory directly to `WorkspaceProvider.plugins`; tests normalize with `toWorkspacePlugin(...)` where needed.
+- Server builders import from `@hachej/boring-workspace/server` and return `WorkspaceServerPlugin` produced by `defineServerPlugin({ id, label, routes, systemPrompt, preservedUiStateKeys })`.
+- Manifest/directory loading calls a server default export as `(options, ctx)` and supports async factories. Any wrapper package intended for `defaultPluginPackages` should default-export such a factory and use `ctx.workspaceRoot` for default file roots when appropriate.
+- Directory-source packages should declare explicit `package.json#boring.front` / `boring.server` entries. Builder kits should omit those fields unless they ship a concrete default plugin.
+- Server route edits still require host restart; do not promise hot reload for routes beyond the plugin-agent-layer contract.
 
 ## 5. Frontend API
 
@@ -134,14 +164,35 @@ export interface CreateDeckPluginOptions {
 export function createDeckPlugin(options?: CreateDeckPluginOptions): BoringFrontFactoryWithId
 ```
 
+Implementation shape:
+
+```ts
+import { definePlugin, type BoringFrontFactoryWithId } from '@hachej/boring-workspace/plugin'
+
+export function createDeckPlugin(options: CreateDeckPluginOptions = {}): BoringFrontFactoryWithId {
+  const id = options.id ?? 'deck'
+  const label = options.label ?? 'Deck'
+  const panelId = options.panelId ?? 'deck'
+  const source = options.source ?? 'app'
+
+  return definePlugin({
+    id,
+    label,
+    panels: options.includePanel === false ? [] : [{ id: panelId, label, component: DeckPane, placement: 'center', source }],
+    commands: options.includeCommand === false ? [] : [{ id: options.commandId ?? `${id}.open`, title: `Open ${label}`, panelId }],
+    surfaceResolvers: options.includeSurfaceResolver === false ? [] : [createDeckSurfaceResolver({ id, panelId, pathPrefix: options.pathPrefix ?? 'deck/' })],
+  })
+}
+```
+
 Default behavior:
 
 - `id`: `deck`
 - `label`: `Deck`
-- `panelId`: `${id}.panel` or `deck`
+- `panelId`: `deck` by default so macro can preserve saved layouts; other consumers may use `${id}.panel`
 - `pathPrefix`: `deck/`
 - default storage: HTTP storage under `/api/deck`
-- panel command: open default deck path
+- panel command: use plugin-agent-layer `BoringFrontPanelCommandRegistration` shape (`{ id, title, panelId }`), optionally with `run` only if a consumer needs custom behavior
 - surface resolver: open `workspace.open.path` for markdown files under `pathPrefix`
 
 ### 5.2 Storage client injection
@@ -183,16 +234,27 @@ export interface DeckWidgetDefinition<TAttrs = Record<string, string>> {
 export interface DeckWidgetRenderProps<TAttrs> {
   attrs: TAttrs
   rawAttrs: Record<string, string>
-  compact?: boolean
-  openSurface?: (request: SurfaceOpenRequest) => void
+  context: DeckRuntimeContext
+}
+
+export interface DeckRuntimeContext {
+  path?: string
+  deckTitle?: string
+  slideIndex: number
+  slideCount: number
+  mode: 'read' | 'edit' | 'present'
+  compact: boolean
+  openSurface(request: SurfaceOpenRequest): void
+  openPanel?(params: { id: string; component: string; params?: Record<string, unknown> }): void
 }
 ```
 
 Rules:
 
 - Unknown widgets render a visible non-fatal placeholder.
-- Widget parsing failures render a visible placeholder with error details in dev/test.
-- Widget renderers must not block deck parsing.
+- Widget parsing failures render a visible placeholder with error details in dev/test only.
+- Widget renderers are wrapped in a deck-owned error boundary; one bad widget must not blank the slide or deck.
+- Widget names must match a strict identifier regex and duplicate widget names fail during `createDeckPlugin(...)`.
 - Widget definitions are matched by exact `name`.
 
 Macro will supply:
@@ -251,16 +313,37 @@ export interface CreateDeckServerPluginOptions {
   storage: DeckServerStorage
   systemPrompt?: string
   preservedUiStateKeys?: string[]
+  preHandler?: unknown
+  readOnly?: boolean
+  maxContentBytes?: number
+  allowedContentTypes?: string[]
 }
 
 export function createDeckServerPlugin(options: CreateDeckServerPluginOptions): WorkspaceServerPlugin
 ```
 
-Default route shape:
+Implementation shape:
 
-- `GET {routeBase}` with `?path=` returns markdown
-- `PUT {routeBase}` with `?path=` writes markdown
-- `GET {routeBase}/list` lists markdown deck files
+```ts
+import { defineServerPlugin, type WorkspaceServerPlugin } from '@hachej/boring-workspace/server'
+
+export function createDeckServerPlugin(options: CreateDeckServerPluginOptions): WorkspaceServerPlugin {
+  return defineServerPlugin({
+    id: options.id ?? 'deck',
+    label: options.label ?? 'Deck',
+    routes: createDeckRoutes(options),
+    systemPrompt: options.systemPrompt ?? createDeckSystemPrompt(),
+    preservedUiStateKeys: options.preservedUiStateKeys,
+  })
+}
+```
+
+Default route shape and HTTP compatibility contract:
+
+- `GET {routeBase}` with `?path=` returns `text/markdown`
+- `PUT {routeBase}` with `?path=` accepts `{ content: string }` or raw string if compatibility mode is enabled, writes markdown, and returns `{ ok: true, path, bytes }`
+- `GET {routeBase}/list` returns `{ items: string[] }`
+- errors use stable status codes and response bodies; preserve macro-compatible `400`/`404` behavior during the macro migration
 
 For a default route base of `/api/deck`, handlers are:
 
@@ -286,9 +369,11 @@ export function createFileDeckStorage(options: {
 
 Security requirements:
 
-- Prevent path traversal with `path.resolve` containment checks.
-- Reject null bytes and backslash traversal forms.
+- Centralize path canonicalization in a shared `normalizeDeckPath(path, { pathPrefix, allowedExtensions })` helper used by the HTTP client, server routes, file storage, and surface resolver.
+- Prevent path traversal with `path.resolve` containment checks and `realpath`/`lstat` checks for existing paths.
+- Reject absolute paths, drive-letter paths, UNC paths, null bytes, backslash traversal forms, encoded traversal, and empty paths.
 - Only allow `.md` writes by default.
+- Reject symlink escapes for reads and writes, including symlinked parent directories.
 - Do not follow arbitrary user-controlled absolute paths.
 
 ### 6.3 Prompt contribution
@@ -316,7 +401,7 @@ Macro appends widget docs for `TimeSeries` and `TimeSeriesGrid`.
 
 ## 7. Parser design
 
-Extract parser from current `DeckPane.tsx` into pure tested helpers:
+Extract parser from current `DeckPane.tsx` into `src/shared/parser.ts` as pure tested helpers. The shared parser must not import React, DOM APIs, `node:*`, or front/server modules:
 
 ```ts
 export interface ParsedDeck {
@@ -370,7 +455,7 @@ const macroDeckPlugin = createDeckPlugin({
 })
 ```
 
-Macro front plugin calls the deck factory inside `setup(api)` or directly composes by invoking the factory.
+Macro front plugin should prefer direct static composition if the host accepts multiple factories. If macro needs to remain one factory, it can use the plugin-agent-layer `definePlugin({ id, setup(api) { deckFactory(api) } })` escape hatch synchronously; do not invent a separate composition abstraction.
 
 Server:
 
@@ -385,19 +470,25 @@ const deckPlugin = createDeckServerPlugin({
 })
 ```
 
-Macro can either:
-
-1. compose `deckPlugin` into its existing `makeMacroServerPlugin` result, or
-2. return two server plugins from app boot.
-
-Prefer option 2 if the app composition path accepts multiple plugins cleanly. Prefer option 1 only if macro wants one package-level server entry.
+Macro should prefer returning two unique `WorkspaceServerPlugin` entries from app boot: the macro data/tool plugin and the `boring-macro-deck` route/prompt plugin. If a single macro server entry is required, merge explicitly by concatenating prompts, unioning `preservedUiStateKeys`, and registering both route functions; do not reuse plugin ids because plugin-agent-layer rejects duplicate ids.
 
 ## 9. Migration phases
 
+### Phase 0 — Re-sync against plugin-agent-layer
+
+- Confirm imports and public types against `~/projects/boring-ui-v2-plugin-agent-layer` before implementation starts.
+- Treat `@hachej/boring-deck` as a plugin kit, not a direct `defaultPluginPackages` package.
+- Add any package scripts/invariant checks needed so `plugins/deck/src` is covered by workspace plugin invariants.
+
+Acceptance:
+
+- Plan and implementation references use `definePlugin`, `BoringFrontFactoryWithId`, `defineServerPlugin`, `WorkspaceServerPlugin`, and manifest wrapper semantics matching plugin-agent-layer.
+
 ### Phase 1 — Create generic deck package shell
 
-- Copy `plugins/_template-full` to `plugins/deck`.
+- Copy `plugins/_template-full` to `plugins/deck` as a starting point.
 - Rename package to `@hachej/boring-deck`.
+- Remove template `package.json#boring`/`pi` fields because this package is a plugin kit, not a concrete manifest-loadable plugin.
 - Add `front`, `server`, `shared` exports.
 - Add workspace/package scripts and tsup entries.
 - Add package to `pnpm-workspace.yaml` if needed.
@@ -409,7 +500,7 @@ Acceptance:
 
 ### Phase 2 — Extract pure parser and types
 
-- Move frontmatter parsing, slide splitting, widget parsing into `src/front/parser.ts` or `src/shared/parser.ts` if server-safe.
+- Move frontmatter parsing, slide splitting, widget parsing into `src/shared/parser.ts`.
 - Add focused parser unit tests.
 
 Acceptance:
