@@ -93,6 +93,85 @@ function hasToolPart(message: UIMessage): boolean {
   return (message.parts ?? []).some((part) => isToolUIPart(part))
 }
 
+function dataPartType(part: UIMessage['parts'][number]): string | null {
+  const type = (part as { type?: unknown }).type
+  return typeof type === 'string' && type.startsWith('data-') ? type : null
+}
+
+function hasStandardVisibleAssistantParts(messages: UIMessage[]): boolean {
+  return messages.some((message) =>
+    message.role === 'assistant' &&
+    (message.parts ?? []).some((part) => {
+      if (isTextPart(part)) return !isBlankTextPart(part)
+      if (isToolUIPart(part)) return true
+      const reasoning = getReasoningPart(part)
+      return Boolean(reasoning?.text.trim())
+    }),
+  )
+}
+
+function hasVisibleMessageContent(message: UIMessage): boolean {
+  return (message.parts ?? []).some((part) => {
+    if (isTextPart(part)) return !isBlankTextPart(part)
+    if (isFilePart(part)) return true
+    if (isToolUIPart(part)) return true
+    const reasoning = getReasoningPart(part)
+    return Boolean(reasoning?.text.trim())
+  })
+}
+
+function hasPiVisibleDataParts(messages: UIMessage[]): boolean {
+  return messages.some((message) =>
+    (message.parts ?? []).some((part) => {
+      const type = dataPartType(part)
+      if (!type?.startsWith('data-pi-')) return false
+      if (
+        type === 'data-pi-text-delta' ||
+        type === 'data-pi-text-end' ||
+        type === 'data-pi-reasoning-delta' ||
+        type === 'data-pi-tool-call-end' ||
+        type === 'data-pi-tool-result'
+      ) return true
+      if (type !== 'data-pi-message-end') return false
+      const data = (part as { data?: Record<string, unknown> }).data
+      return data?.role === 'assistant' && typeof data.text === 'string' && data.text.length > 0
+    }),
+  )
+}
+
+function getQueuedPiTail(messages: UIMessage[], piMessages: UIMessage[]): UIMessage[] {
+  if (piMessages.length === 0) return []
+
+  const queuedIds = new Set<string>()
+  const piStartRecords: Array<{ id: string; role: 'user' | 'assistant' }> = []
+  let afterFollowUp = false
+
+  for (const message of messages) {
+    for (const part of message.parts ?? []) {
+      const type = dataPartType(part)
+      if (type === 'data-followup-consumed') afterFollowUp = true
+      if (type !== 'data-pi-message-start') continue
+      const data = (part as { data?: Record<string, unknown> }).data
+      const id = typeof data?.messageId === 'string' ? data.messageId : undefined
+      const role = data?.role === 'user' || data?.role === 'assistant' ? data.role : undefined
+      if (!id || !role) continue
+      piStartRecords.push({ id, role })
+      if (afterFollowUp) queuedIds.add(id)
+    }
+  }
+
+  if (queuedIds.size === 0) {
+    const firstAssistantIndex = piStartRecords.findIndex((record) => record.role === 'assistant')
+    const hasLaterAssistant = firstAssistantIndex >= 0 && piStartRecords.slice(firstAssistantIndex + 1).some((record) => record.role === 'assistant')
+    if (hasLaterAssistant) {
+      for (const record of piStartRecords.slice(firstAssistantIndex + 1)) queuedIds.add(record.id)
+    }
+  }
+
+  if (queuedIds.size === 0) return []
+  return piMessages.filter((message) => queuedIds.has(message.id) && hasVisibleMessageContent(message))
+}
+
 function coalesceAssistantToolFragments(messages: UIMessage[]): UIMessage[] {
   const coalesced: UIMessage[] = []
 
@@ -278,10 +357,23 @@ export function ChatPanel(props: ChatPanelProps) {
 
   const displayMessages = useMemo(() => {
     const waitingTail = projectedTailMessages.filter((message) => projectedStatusById.get(message.id) === 'queued')
-    return piMessages.length > 0
-      ? [...piMessages, ...waitingTail]
-      : [...messages, ...projectedTailMessages]
-  }, [messages, piMessages, projectedTailMessages, projectedStatusById])
+    const queuedPiTail = getQueuedPiTail(messages, piMessages)
+    const sdkHasVisibleAssistant = hasStandardVisibleAssistantParts(messages)
+
+    if (sdkHasVisibleAssistant) {
+      return [...messages, ...queuedPiTail, ...waitingTail]
+    }
+
+    if (piMessages.length > 0 && queuedPiTail.length > 0) {
+      return [...piMessages, ...waitingTail]
+    }
+
+    if (piMessages.length > 0 && status === 'ready' && hasPiVisibleDataParts(messages)) {
+      return [...piMessages, ...waitingTail]
+    }
+
+    return [...messages, ...waitingTail]
+  }, [messages, piMessages, projectedTailMessages, projectedStatusById, status])
   const renderMessages = useMemo(
     () => coalesceAssistantToolFragments(displayMessages),
     [displayMessages],
