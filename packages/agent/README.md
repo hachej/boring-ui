@@ -227,56 +227,6 @@ default_id = "claude-sonnet-4-6"
 
 ---
 
-## How @hachej/boring-agent Compares
-
-| Feature | @hachej/boring-agent | Claude Code | Aider | Continue / Copilot |
-|---------|----------------------|-------------|-------|--------------------|
-| Browser UI | ✅ Full chat + sessions | ❌ Terminal only | ❌ Terminal only | ✅ VS Code extension |
-| CLI | ✅ `npx` anywhere | ✅ `claude` CLI | ✅ `aider` CLI | ❌ IDE only |
-| Embeddable | ✅ `<ChatPanel />` React component | ❌ Not embeddable | ❌ Not embeddable | ⚠️ Extension only |
-| Sandbox modes | ✅ direct / bwrap / Firecracker VM | ❌ No sandbox | ❌ No sandbox | ❌ No sandbox |
-| Plugin system | ✅ Pi skills + tools (local mode) | ❌ MCP only | ⚠️ Custom hooks | ⚠️ MCP + prompts |
-| Self-hostable | ✅ Open-source, any host | ❌ Proprietary cloud | ⚠️ Local only | ⚠️ Partial |
-| Multi-tenant | ✅ Via `@hachej/boring-core` | ❌ Single-user | ❌ Single-user | ❌ Single-user |
-
-**When to use @hachej/boring-agent:**
-- You want a browser-based or embedded coding agent in your own app
-- You need sandboxed execution (bwrap / Firecracker) for safety
-- You're building a multi-user SaaS around an agent (`@hachej/boring-core`)
-- You want a plugin system for domain-specific tools and panels
-
-**When it might not fit:**
-- You just want a quick terminal coding assistant (use Claude Code CLI)
-- You need full MCP ecosystem support (use Claude Code or Cursor)
-- You want an editor-first experience (use Continue or Copilot)
-
----
-
-## How @hachej/boring-agent Compares
-
-| Feature | @hachej/boring-agent | Claude Code | Aider | Continue / Copilot |
-|---------|----------------------|-------------|-------|--------------------|
-| Browser UI | ✅ Full chat + sessions | ❌ Terminal only | ❌ Terminal only | ✅ VS Code extension |
-| CLI | ✅ `npx` anywhere | ✅ `claude` CLI | ✅ `aider` CLI | ❌ IDE only |
-| Embeddable | ✅ `<ChatPanel />` React component | ❌ Not embeddable | ❌ Not embeddable | ⚠️ Extension only |
-| Sandbox modes | ✅ direct / bwrap / Firecracker VM | ❌ No sandbox | ❌ No sandbox | ❌ No sandbox |
-| Plugin system | ✅ Pi skills + tools (local mode) | ❌ MCP only | ⚠️ Custom hooks | ⚠️ MCP + prompts |
-| Self-hostable | ✅ Open-source, any host | ❌ Proprietary cloud | ⚠️ Local only | ⚠️ Partial |
-| Multi-tenant | ✅ Via `@hachej/boring-core` | ❌ Single-user | ❌ Single-user | ❌ Single-user |
-
-**When to use @hachej/boring-agent:**
-- You want a browser-based or embedded coding agent in your own app
-- You need sandboxed execution (bwrap / Firecracker) for safety
-- You're building a multi-user SaaS around an agent (`@hachej/boring-core`)
-- You want a plugin system for domain-specific tools and panels
-
-**When it might not fit:**
-- You just want a quick terminal coding assistant (use Claude Code CLI)
-- You need full MCP ecosystem support (use Claude Code or Cursor)
-- You want an editor-first experience (use Continue or Copilot)
-
----
-
 ## Troubleshooting
 
 | Error | Cause | Fix |

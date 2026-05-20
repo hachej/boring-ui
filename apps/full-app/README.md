@@ -310,7 +310,7 @@ pnpm --filter full-app smoke:post-deploy
 - You just want to try the agent quickly (use `npx @hachej/boring-ui-cli`)
 - You only need the workbench (use `apps/workspace-playground`)
 - You only need the agent (use `apps/agent-playground`)
-- You want to build your own auth/workspace stack from scratch (import `@boring/core` subpaths directly)
+- You want to build your own auth/workspace stack from scratch (import `@hachej/boring-core` subpaths directly)
 
 ---
 

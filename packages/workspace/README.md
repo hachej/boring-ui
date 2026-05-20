@@ -10,7 +10,7 @@
 Plugin system, panel registry, Dockview-based IDE layout, and typed agent-to-browser bridge for boring-ui apps. Everything the user touches — chat, files, catalogs, custom panes — composes here.
 
 ```bash
-curl -o setup-workspace.sh https://raw.githubusercontent.com/hachej/boring-ui/main/scripts/setup-workspace.sh && bash setup-workspace.sh
+pnpm add @hachej/boring-workspace
 ```
 
 ---
