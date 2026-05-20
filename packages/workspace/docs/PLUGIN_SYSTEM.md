@@ -107,9 +107,12 @@ asset manager initial scan emits SSE events → routes registered.
 re-hashes and bumps revisions → `rebuildServerPlugins` jiti
 re-imports → `systemPromptDynamic` + `getDynamicResources` refresh
 Pi → SSE pushes load events with new revisions → front
-dynamic-imports `<frontUrl>?v=<rev>` and replaces per registry.
-Per-plugin failures emit error events but do not abort the rest of
-the reload.
+dynamic-imports `<frontUrl>?v=<rev>&t=<salt>` and replaces per
+registry. The extra salt is intentional: Vite/browser module graphs can
+otherwise reuse stale dynamically imported `.pi/extensions` modules
+across dev-server restarts or same-revision retries, producing React
+hook-dispatcher failures. Per-plugin failures emit error events but do
+not abort the rest of the reload.
 
 ### Subpath exports
 
@@ -441,7 +444,7 @@ EventSource client uses `withCredentials: true` so auth cookies flow
 cross-origin. On `req.raw.on("close" | "error", …)`: unsubscribe +
 clear heartbeat interval.
 
-### 5.5 Revision-based front dedup
+### 5.5 Revision-based front dedup + import cache busting
 
 Two refs guard the registry against stale / duplicated events:
 
@@ -453,6 +456,20 @@ Re-check both before commit (newer event may have arrived during
 `await import()`). On disposed unmount, clear `latestRequestedRef`.
 Server-only plugins (no `frontUrl`) skip the import but still update
 `lastSeenRef`.
+
+The browser import URL is revision-based **and** per-import salted:
+
+```ts
+import(`${frontUrl}${sep}v=${revision}&t=${Date.now()}`)
+```
+
+`v=<revision>` expresses plugin identity for normal reload semantics;
+`t=<salt>` protects dev sessions from stale Vite modules after Vite
+re-optimizes dependencies, after a dev-server restart, or after a
+failed import retries the same revision. Without the salt, a user can
+see `Invalid hook call` / `resolveDispatcher() is null` even though the
+plugin code obeys the Rules of Hooks, because the old module still
+captures a stale React dispatcher.
 
 ### 5.6 Resolution conventions (manifest-first + dev-source-first fallback)
 
@@ -513,6 +530,56 @@ same factory chain landing the same output id throw
 `replaceByPluginId` cannot detect (same pluginId → silent
 last-write-wins).
 
+### 5.8 Vite host contract for `.pi/extensions` front hot reload
+
+Hot-loaded `.pi/extensions/<id>/front/index.tsx` modules are **runtime
+plugin assets**, not normal app source. The app must let `/reload` own
+their update lifecycle.
+
+A Vite host that enables front plugin hot reload must:
+
+1. **Enable the bridge explicitly when consuming built workspace dist.**
+   Source builds can default from `import.meta.env.DEV`, but an app that
+   imports `@hachej/boring-workspace/app/front` from built `dist` must
+   pass `frontPluginHotReload="vite"` (or equivalent) so the SSE client
+   mounts.
+2. **Keep React singleton-safe.** Alias and dedupe `react`, `react-dom`,
+   `react-dom/client`, `react/jsx-runtime`, and
+   `react/jsx-dev-runtime` to the host app's React copy. Hook panels are
+   valid only when the plugin, workspace, and renderer share one React
+   instance.
+3. **Do not let Vite HMR own `.pi/extensions`.** Add a Vite plugin whose
+   `handleHotUpdate(ctx)` returns `[]` for files under
+   `/workspace/.pi/extensions/`. Otherwise Vite may full-page reload or
+   partially refresh a dynamic plugin module before `/reload` runs.
+4. **Exclude `.pi/extensions` from React Refresh instrumentation.** The
+   runtime import/reload bridge is the refresh boundary. React Refresh
+   wrappers around dynamically imported plugin panels can leave stale
+   hook dispatchers after edits and trigger `Invalid hook call` /
+   `resolveDispatcher() is null`.
+5. **Use lightweight plugin imports.** Front plugin examples should
+   import authoring APIs from `@hachej/boring-workspace/plugin`, not the
+   root workspace package. Root imports pull the large workspace bundle
+   and its peer dependencies into the runtime plugin transform.
+6. **After changing the Vite host config, hard-refresh existing tabs
+   once.** That is the only expected browser refresh; normal plugin
+   edits should then flow through `/reload` without a page reload.
+
+Minimal playground-style config:
+
+```ts
+react({
+  exclude: [/workspace\/\.pi\/extensions\//],
+})
+
+{
+  name: "boring-runtime-extension-hmr-boundary",
+  handleHotUpdate(ctx) {
+    if (ctx.file.includes("/workspace/.pi/extensions/")) return []
+  },
+}
+```
+
 ---
 
 ## 6. Gotchas
@@ -540,6 +607,11 @@ last-write-wins).
 21. **Single-flight `load()` coalescing** protects against `/reload` spam.
 22. **Server-only plugins are valid.** `boring.front: false` (or absent) skips front import path. The SSE consumer must handle `frontUrl?: undefined` cleanly.
 23. **Missing `export default` on server entry gives a clear error.** The resolver names the file path + the named exports it saw.
+24. **Runtime plugin edits are not Vite HMR.** `.pi/extensions` source updates are user-triggered through `/reload`; Vite `handleHotUpdate` should suppress HMR for those files.
+25. **React Refresh must not wrap runtime plugin modules.** Exclude `.pi/extensions` from `@vitejs/plugin-react` refresh instrumentation or hook panels can fail with `Invalid hook call` after edits.
+26. **Dist-consuming dev apps must opt into front hot reload.** If `WorkspaceProvider` comes from built `dist`, `import.meta.env.DEV` was evaluated at workspace build time; pass `frontPluginHotReload="vite"` explicitly in the playground/dev shell.
+27. **Import from `/plugin`, not `/`.** Hot-loaded front modules should import `definePlugin`, `PaneProps`, and surface constants from `@hachej/boring-workspace/plugin`; root imports can pull peer deps like `lucide-react`/`zod` into the runtime transform and fail in provisioned workspaces.
+28. **Use surface resolvers for file visualizers.** A panel alone adds a left tab/command, but file-tree opens route through `workspace.open.path`; register a resolver with a higher `score` than the built-in filesystem fallback.
 
 ---
 
@@ -569,8 +641,11 @@ last-write-wins).
 | Plugin id collision across packages | `bootstrapServer` throws on duplicate; preflight detects across dirs; both source files in error |
 | Intra-pluginId output collision in factory-chained kits | Detected at capture in `createCapturingBoringFrontAPI`; throws with kind + id |
 | Path-shape attacks in manifest paths | Manifest validation rejects unsafe paths; runtime `realpathSync` containment for declared entry only (not a sandbox) |
-| Browser holds prior front URL | Cache-bust `?v=<rev>` per revision |
+| Browser holds prior front URL | Cache-bust `?v=<rev>&t=<salt>` per import |
 | pnpm `link:` workflow not reloading | `directorySignature` follows symlinks once via `realpathSync` with cycle detection |
 | `routes` edits not landing silently | Banner surfaces "restart required" tip when reloaded plugin has `routes` |
 | `agentTools` edits not picked up in current session | Banner surfaces "new chat session required" tip |
+| Vite HMR reloads the page on `.pi/extensions` edits | Host `handleHotUpdate` returns `[]` for runtime plugin files; `/reload` owns updates |
+| React hook panels fail after runtime plugin edits | Host excludes `.pi/extensions` from React Refresh and aliases/dedupes React singleton |
+| Hot plugin imports pull missing peer deps | Authoring docs require `@hachej/boring-workspace/plugin` imports, not root package imports |
 | Server-side resource leak across reloads (DB pools, intervals) | No lifecycle hook yet; restart the workspace process to recover. A `dispose()` lifecycle is a known future extension when plugins routinely hold disposable resources. |
