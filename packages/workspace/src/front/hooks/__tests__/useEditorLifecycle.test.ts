@@ -94,14 +94,15 @@ describe("auto-save debounce", () => {
     expect(adapter.save).toHaveBeenCalledOnce()
   })
 
-  it("rapid changes within 1000ms produce only one save", async () => {
+  it("rapid changes within the debounce window produce only one save", async () => {
     const adapter = createAdapter()
     const { result } = renderHook(() =>
       useEditorLifecycle("/a.ts", { adapter, panelId: "p1" }),
     )
     act(() => result.current.markDirty())
     act(() => {
-      vi.advanceTimersByTime(500)
+      // Stay strictly inside AUTO_SAVE_DELAY (250ms) so the timer hasn't fired yet.
+      vi.advanceTimersByTime(100)
     })
     act(() => result.current.markDirty())
     await act(async () => {
@@ -325,5 +326,177 @@ describe("bus emissions", () => {
     })
 
     expect(end).toHaveBeenCalledWith({ panelId: "p10" })
+  })
+})
+
+// External-mtime (SSE-echo) behavior — the area that produced the
+// "banner stuck after Overwrite" and "banner re-raised by own-save echo"
+// bugs. Previously zero coverage despite being the most race-prone path.
+describe("external-mtime detection (shouldSync vs externalChangeWhileDirty)", () => {
+  it("does NOT trigger sync on first serverMtime arrival (just anchors baseline)", () => {
+    const adapter = createAdapter({ isDirty: vi.fn(() => false) })
+    const { result } = renderHook(
+      ({ serverMtime }) =>
+        useEditorLifecycle("/a.ts", { adapter, panelId: "p1", serverMtime }),
+      { initialProps: { serverMtime: 1000 as number | null } },
+    )
+    expect(result.current.shouldSync).toBe(false)
+    expect(result.current.externalChangeWhileDirty).toBe(false)
+  })
+
+  it("triggers shouldSync when serverMtime changes while NOT dirty", () => {
+    const adapter = createAdapter({ isDirty: vi.fn(() => false) })
+    const { result, rerender } = renderHook(
+      ({ serverMtime }) =>
+        useEditorLifecycle("/a.ts", { adapter, panelId: "p1", serverMtime }),
+      { initialProps: { serverMtime: 1000 as number | null } },
+    )
+    // Anchor at 1000, then bump to 2000 with no recent save and no dirty state.
+    act(() => {
+      vi.advanceTimersByTime(4000) // pass the STALE_SUPPRESSION window
+    })
+    rerender({ serverMtime: 2000 })
+    expect(result.current.shouldSync).toBe(true)
+    expect(result.current.externalChangeWhileDirty).toBe(false)
+  })
+
+  it("triggers externalChangeWhileDirty when serverMtime changes while DIRTY", () => {
+    const adapter = createAdapter({ isDirty: vi.fn(() => true) })
+    const { result, rerender } = renderHook(
+      ({ serverMtime }) =>
+        useEditorLifecycle("/a.ts", { adapter, panelId: "p1", serverMtime }),
+      { initialProps: { serverMtime: 1000 as number | null } },
+    )
+    act(() => {
+      result.current.markDirty()
+      vi.advanceTimersByTime(4000)
+    })
+    rerender({ serverMtime: 2000 })
+    expect(result.current.externalChangeWhileDirty).toBe(true)
+    expect(result.current.shouldSync).toBe(false)
+  })
+
+  // REGRESSION: a successful save echoes back via SSE within
+  // STALE_SUPPRESSION_MS. The lifecycle must absorb it silently, NOT
+  // mistake it for an external change. Pre-fix, this re-raised the banner
+  // a second time even though the user just saved.
+  it("absorbs serverMtime echo within STALE_SUPPRESSION_MS of our own save (no false banner)", async () => {
+    let savedMtime = 1000
+    const adapter = createAdapter({
+      isDirty: vi.fn(() => true),
+      save: vi.fn(async () => {
+        savedMtime = 2000
+      }),
+    })
+    const { result, rerender } = renderHook(
+      ({ serverMtime }) =>
+        useEditorLifecycle("/a.ts", { adapter, panelId: "p1", serverMtime }),
+      { initialProps: { serverMtime: 1000 as number | null } },
+    )
+    act(() => result.current.markDirty())
+    await act(async () => {
+      await result.current.flushSave()
+    })
+    // notifySaved is what the host adapter would call after a successful
+    // write — sync the lifecycle's lastKnownMtimeRef to the new value.
+    act(() => result.current.notifySaved(savedMtime))
+    // Now SSE echoes back the new mtime within the 3s suppression window.
+    rerender({ serverMtime: savedMtime })
+    expect(result.current.shouldSync).toBe(false)
+    expect(result.current.externalChangeWhileDirty).toBe(false)
+  })
+
+  // REGRESSION: notifySaved clears externalChangeWhileDirty so a banner
+  // that fired in flight does NOT persist after the save lands.
+  it("notifySaved clears externalChangeWhileDirty (banner clears post-save)", () => {
+    const adapter = createAdapter({ isDirty: vi.fn(() => true) })
+    const { result, rerender } = renderHook(
+      ({ serverMtime }) =>
+        useEditorLifecycle("/a.ts", { adapter, panelId: "p1", serverMtime }),
+      { initialProps: { serverMtime: 1000 as number | null } },
+    )
+    act(() => {
+      result.current.markDirty()
+      vi.advanceTimersByTime(4000)
+    })
+    rerender({ serverMtime: 2000 })
+    expect(result.current.externalChangeWhileDirty).toBe(true)
+    act(() => result.current.notifySaved(2000))
+    expect(result.current.externalChangeWhileDirty).toBe(false)
+  })
+
+  it("ackSync resets shouldSync (host has applied the external change)", () => {
+    const adapter = createAdapter({ isDirty: vi.fn(() => false) })
+    const { result, rerender } = renderHook(
+      ({ serverMtime }) =>
+        useEditorLifecycle("/a.ts", { adapter, panelId: "p1", serverMtime }),
+      { initialProps: { serverMtime: 1000 as number | null } },
+    )
+    act(() => vi.advanceTimersByTime(4000))
+    rerender({ serverMtime: 2000 })
+    expect(result.current.shouldSync).toBe(true)
+    act(() => result.current.ackSync())
+    expect(result.current.shouldSync).toBe(false)
+  })
+
+  it("ackExternalChange resets externalChangeWhileDirty (host has shown the banner)", () => {
+    const adapter = createAdapter({ isDirty: vi.fn(() => true) })
+    const { result, rerender } = renderHook(
+      ({ serverMtime }) =>
+        useEditorLifecycle("/a.ts", { adapter, panelId: "p1", serverMtime }),
+      { initialProps: { serverMtime: 1000 as number | null } },
+    )
+    act(() => {
+      result.current.markDirty()
+      vi.advanceTimersByTime(4000)
+    })
+    rerender({ serverMtime: 2000 })
+    expect(result.current.externalChangeWhileDirty).toBe(true)
+    act(() => result.current.ackExternalChange())
+    expect(result.current.externalChangeWhileDirty).toBe(false)
+  })
+
+  // REGRESSION: a hung save (network drop, stuck mutation) used to never
+  // emit saveEnd. The tab spinner + dirty marker stayed forever and
+  // `saveInFlightRef` cached the hung promise so future save attempts
+  // returned it instead of trying again. Now a watchdog (30s) trips,
+  // saveEnd emits so the spinner clears, and dirty stays true so the next
+  // keystroke triggers a fresh save attempt.
+  it("hung save (never-resolving adapter) trips the watchdog and clears the tab spinner", async () => {
+    const adapter = createAdapter({
+      // Never resolves — mimics fetch hung on a dead connection.
+      save: vi.fn(() => new Promise<void>(() => {})),
+    })
+    const end = vi.fn()
+    events.on(workspaceEvents.editorSaveEnd, end)
+
+    const { result } = renderHook(() =>
+      useEditorLifecycle("/a.ts", { adapter, panelId: "p-hang" }),
+    )
+    act(() => result.current.markDirty())
+    let flushPromise: Promise<unknown> | undefined
+    act(() => { flushPromise = result.current.flushSave() })
+    expect(result.current.isSaving).toBe(true)
+
+    await act(async () => {
+      vi.advanceTimersByTime(30_000)
+      await flushPromise
+    })
+
+    expect(end).toHaveBeenCalledWith({ panelId: "p-hang" })
+    expect(result.current.isSaving).toBe(false)
+    expect(result.current.isDirty).toBe(true) // user's edits preserved
+  })
+
+  it("repeated serverMtime equal to lastKnown is a no-op (no spurious sync)", () => {
+    const adapter = createAdapter({ isDirty: vi.fn(() => false) })
+    const { result, rerender } = renderHook(
+      ({ serverMtime }) =>
+        useEditorLifecycle("/a.ts", { adapter, panelId: "p1", serverMtime }),
+      { initialProps: { serverMtime: 1000 as number | null } },
+    )
+    rerender({ serverMtime: 1000 })
+    rerender({ serverMtime: 1000 })
+    expect(result.current.shouldSync).toBe(false)
   })
 })
