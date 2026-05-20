@@ -40,9 +40,8 @@ export default definePlugin({
   commands: [
     { id: "my-plugin.open", title: "Open My Panel", panelId: "my-plugin.panel" },
   ],
-  leftTabs: [
-    { id: "my-plugin.tab", title: "My Plugin", panelId: "my-plugin.panel" },
-  ],
+  // Optional only for persistent sidebar navigation/catalogs:
+  // leftTabs: [{ id: "my-plugin.tab", title: "My Plugin", panelId: "my-plugin.panel" }],
 })
 ```
 
