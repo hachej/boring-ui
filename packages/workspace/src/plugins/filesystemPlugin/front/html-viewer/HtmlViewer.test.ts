@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { prepareHtmlPreviewDocument, resolveHtmlPreviewAssetPath, rewriteCssAssetUrls } from "./HtmlViewer"
+import { prepareHtmlPreviewDocument, rawFileUrlFor, resolveHtmlPreviewAssetPath, rewriteCssAssetUrls } from "./HtmlViewer"
 
 describe("HtmlViewer asset rewriting", () => {
   it("resolves relative preview assets from the HTML file directory", () => {
@@ -13,6 +13,13 @@ describe("HtmlViewer asset rewriting", () => {
   it("rewrites CSS url() references to raw file URLs", () => {
     expect(rewriteCssAssetUrls("body{background:url('../img/bg.png#hero')}", "pages/css/site.css", ""))
       .toBe("body{background:url('/api/v1/files/raw?path=pages%2Fimg%2Fbg.png#hero')}")
+  })
+
+  it("adds workspace id to raw URLs for browser asset loads in CLI workspaces mode", () => {
+    expect(rawFileUrlFor("", "docs/assets/readme/hero.png", "boring-ui-v2-36cd3172"))
+      .toBe("/api/v1/files/raw?path=docs%2Fassets%2Freadme%2Fhero.png&workspaceId=boring-ui-v2-36cd3172")
+    expect(rewriteCssAssetUrls("body{background:url('../img/bg.png')}", "pages/css/site.css", "", "ws-1"))
+      .toBe("body{background:url('/api/v1/files/raw?path=pages%2Fimg%2Fbg.png&workspaceId=ws-1')}")
   })
 
   it("inlines linked stylesheets and rewrites stylesheet-relative assets", async () => {

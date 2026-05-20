@@ -65,40 +65,42 @@ export function resolveHtmlPreviewAssetPath(sourcePath: string, assetUrl: string
   return normalized.join("/")
 }
 
-export function rawFileUrlFor(base: string, path: string): string {
-  return apiUrl(base, `/api/v1/files/raw?path=${encodeURIComponent(path)}`)
+export function rawFileUrlFor(base: string, path: string, workspaceRequestId?: string | null): string {
+  const params = new URLSearchParams({ path })
+  if (workspaceRequestId) params.set("workspaceId", workspaceRequestId)
+  return apiUrl(base, `/api/v1/files/raw?${params.toString()}`)
 }
 
-function previewAssetUrl(base: string, sourcePath: string, assetUrl: string): string {
+function previewAssetUrl(base: string, sourcePath: string, assetUrl: string, workspaceRequestId?: string | null): string {
   const resolvedPath = resolveHtmlPreviewAssetPath(sourcePath, assetUrl)
   if (!resolvedPath) return assetUrl
 
   const { suffix } = splitUrlSuffix(assetUrl.trim())
   const hashIndex = suffix.indexOf("#")
   const hash = hashIndex === -1 ? "" : suffix.slice(hashIndex)
-  return `${rawFileUrlFor(base, resolvedPath)}${hash}`
+  return `${rawFileUrlFor(base, resolvedPath, workspaceRequestId)}${hash}`
 }
 
-export function rewriteCssAssetUrls(css: string, sourcePath: string, base: string): string {
+export function rewriteCssAssetUrls(css: string, sourcePath: string, base: string, workspaceRequestId?: string | null): string {
   return css
     .replace(/url\(\s*(["']?)([^"')]+)\1\s*\)/gi, (_match, quote: string, url: string) => {
-      return `url(${quote}${previewAssetUrl(base, sourcePath, url)}${quote})`
+      return `url(${quote}${previewAssetUrl(base, sourcePath, url, workspaceRequestId)}${quote})`
     })
     .replace(/@import\s+(url\(\s*)?(["'])([^"']+)\2\s*\)?/gi, (match, urlPrefix: string | undefined, quote: string, url: string) => {
-      const rewritten = previewAssetUrl(base, sourcePath, url)
+      const rewritten = previewAssetUrl(base, sourcePath, url, workspaceRequestId)
       if (urlPrefix) return `@import ${urlPrefix}${quote}${rewritten}${quote})`
       return match.replace(`${quote}${url}${quote}`, `${quote}${rewritten}${quote}`)
     })
 }
 
-function rewriteSrcSet(value: string, sourcePath: string, base: string): string {
+function rewriteSrcSet(value: string, sourcePath: string, base: string, workspaceRequestId?: string | null): string {
   return value
     .split(",")
     .map((entry) => {
       const trimmed = entry.trim()
       const [url, ...descriptor] = trimmed.split(/\s+/)
       if (!url) return entry
-      return [previewAssetUrl(base, sourcePath, url), ...descriptor].join(" ")
+      return [previewAssetUrl(base, sourcePath, url, workspaceRequestId), ...descriptor].join(" ")
     })
     .join(", ")
 }
@@ -118,9 +120,10 @@ export async function prepareHtmlPreviewDocument(options: {
   path: string
   apiBaseUrl: string
   headers: Record<string, string>
+  workspaceRequestId?: string | null
   signal: AbortSignal
 }): Promise<string> {
-  const { html, path, apiBaseUrl, headers, signal } = options
+  const { html, path, apiBaseUrl, headers, workspaceRequestId, signal } = options
   const doc = new DOMParser().parseFromString(html, "text/html")
 
   await Promise.all(
@@ -131,25 +134,25 @@ export async function prepareHtmlPreviewDocument(options: {
       if (!stylesheetPath) return
 
       try {
-        const css = await fetchText(rawFileUrlFor(apiBaseUrl, stylesheetPath), headers, signal)
+        const css = await fetchText(rawFileUrlFor(apiBaseUrl, stylesheetPath, workspaceRequestId), headers, signal)
         const style = doc.createElement("style")
         style.setAttribute("data-boring-html-viewer-href", href)
-        style.textContent = rewriteCssAssetUrls(css, stylesheetPath, apiBaseUrl)
+        style.textContent = rewriteCssAssetUrls(css, stylesheetPath, apiBaseUrl, workspaceRequestId)
         link.replaceWith(style)
       } catch {
-        link.setAttribute("href", previewAssetUrl(apiBaseUrl, path, href))
+        link.setAttribute("href", previewAssetUrl(apiBaseUrl, path, href, workspaceRequestId))
       }
     }),
   )
 
   for (const style of Array.from(doc.querySelectorAll<HTMLStyleElement>("style"))) {
     if (style.hasAttribute("data-boring-html-viewer-href")) continue
-    style.textContent = rewriteCssAssetUrls(style.textContent ?? "", path, apiBaseUrl)
+    style.textContent = rewriteCssAssetUrls(style.textContent ?? "", path, apiBaseUrl, workspaceRequestId)
   }
 
   for (const element of Array.from(doc.querySelectorAll<HTMLElement>("[style]"))) {
     const style = element.getAttribute("style")
-    if (style) element.setAttribute("style", rewriteCssAssetUrls(style, path, apiBaseUrl))
+    if (style) element.setAttribute("style", rewriteCssAssetUrls(style, path, apiBaseUrl, workspaceRequestId))
   }
 
   const assetAttributes = [
@@ -168,13 +171,13 @@ export async function prepareHtmlPreviewDocument(options: {
   for (const [selector, attribute] of assetAttributes) {
     for (const element of Array.from(doc.querySelectorAll<HTMLElement>(`${selector}[${attribute}]`))) {
       const value = element.getAttribute(attribute)
-      if (value) element.setAttribute(attribute, previewAssetUrl(apiBaseUrl, path, value))
+      if (value) element.setAttribute(attribute, previewAssetUrl(apiBaseUrl, path, value, workspaceRequestId))
     }
   }
 
   for (const element of Array.from(doc.querySelectorAll<HTMLElement>("[srcset]"))) {
     const srcset = element.getAttribute("srcset")
-    if (srcset) element.setAttribute("srcset", rewriteSrcSet(srcset, path, apiBaseUrl))
+    if (srcset) element.setAttribute("srcset", rewriteSrcSet(srcset, path, apiBaseUrl, workspaceRequestId))
   }
 
   return `<!doctype html>\n${doc.documentElement.outerHTML}`
@@ -188,8 +191,8 @@ export function HtmlViewer({ path, className }: HtmlViewerProps) {
   const [loading, setLoading] = useState(true)
 
   const rawUrl = useMemo(
-    () => rawFileUrlFor(apiBaseUrl, path),
-    [apiBaseUrl, path],
+    () => rawFileUrlFor(apiBaseUrl, path, workspaceRequestId),
+    [apiBaseUrl, path, workspaceRequestId],
   )
 
   useEffect(() => {
@@ -208,6 +211,7 @@ export function HtmlViewer({ path, className }: HtmlViewerProps) {
           path,
           apiBaseUrl,
           headers,
+          workspaceRequestId,
           signal: controller.signal,
         }))
       })

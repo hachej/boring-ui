@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
-import { MarkdownEditor, sanitizeHtml, isSafeUrl } from "../MarkdownEditor"
+import { MarkdownEditor, sanitizeHtml, isSafeUrl, rawFileUrlForMarkdownImage } from "../MarkdownEditor"
 
 describe("MarkdownEditor", () => {
   beforeEach(() => {
@@ -12,6 +12,17 @@ describe("MarkdownEditor", () => {
     await waitFor(() => {
       expect(screen.getByText("Hello world")).toBeInTheDocument()
     })
+  })
+
+  it("adds workspace id to resolved markdown image raw URLs for headerless browser loads", () => {
+    expect(
+      rawFileUrlForMarkdownImage(
+        "docs/assets/readme/hero.png",
+        "README.md",
+        "",
+        "boring-ui-v2-36cd3172",
+      ),
+    ).toBe("/api/v1/files/raw?path=docs%2Fassets%2Freadme%2Fhero.png&workspaceId=boring-ui-v2-36cd3172")
   })
 
   it("renders markdown tables", async () => {

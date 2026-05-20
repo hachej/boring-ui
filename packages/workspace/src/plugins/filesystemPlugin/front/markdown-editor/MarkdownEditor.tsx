@@ -17,7 +17,7 @@ import { TableRow } from "@tiptap/extension-table-row"
 import { TableHeader } from "@tiptap/extension-table-header"
 import { TableCell } from "@tiptap/extension-table-cell"
 import { ResizableImage } from "./ResizableImage"
-import { useApiBaseUrl } from "../data/DataProvider"
+import { useApiBaseUrl, useWorkspaceRequestId } from "../data/DataProvider"
 import { useFileUpload } from "../data/useFileUpload"
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight"
 import { common, createLowlight } from "lowlight"
@@ -95,11 +95,18 @@ function normalizeRelativeImagePath(src: string, documentPath?: string): string 
   return `${out.join("/")}${suffix}`
 }
 
-function rawFileUrlForMarkdownImage(src: string, documentPath: string | undefined, apiBaseUrl: string): string {
+export function rawFileUrlForMarkdownImage(
+  src: string,
+  documentPath: string | undefined,
+  apiBaseUrl: string,
+  workspaceRequestId?: string | null,
+): string {
   if (!src || isExternalImageSrc(src)) return src
   const path = normalizeRelativeImagePath(src, documentPath)
   const base = apiBaseUrl.replace(/\/$/, "")
-  return `${base}/api/v1/files/raw?path=${encodeURIComponent(path)}`
+  const params = new URLSearchParams({ path })
+  if (workspaceRequestId) params.set("workspaceId", workspaceRequestId)
+  return `${base}/api/v1/files/raw?${params.toString()}`
 }
 
 const baseExtensions = [
@@ -414,13 +421,14 @@ export function MarkdownEditor({
   documentPath,
 }: MarkdownEditorProps) {
   const apiBaseUrl = useApiBaseUrl()
+  const workspaceRequestId = useWorkspaceRequestId()
   const { upload, uploading } = useFileUpload()
   const [rawMode, setRawMode] = useState(false)
   const editorExtensions = useMemo(() => {
     const imageExtension = ResizableImage.configure({
       inline: false,
       allowBase64: true,
-      resolveSrc: (src: string) => rawFileUrlForMarkdownImage(src, documentPath, apiBaseUrl),
+      resolveSrc: (src: string) => rawFileUrlForMarkdownImage(src, documentPath, apiBaseUrl, workspaceRequestId),
     })
     const configured = baseExtensions.map((extension) => extension.name === "image" ? imageExtension : extension)
     return placeholder
@@ -429,7 +437,7 @@ export function MarkdownEditor({
           Placeholder.configure({ placeholder }),
         ]
       : configured
-  }, [apiBaseUrl, documentPath, placeholder])
+  }, [apiBaseUrl, documentPath, placeholder, workspaceRequestId])
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
   const suppressChangeRef = useRef(false)
