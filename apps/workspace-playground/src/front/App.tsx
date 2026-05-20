@@ -76,6 +76,7 @@ export function WorkspaceShell() {
       providerStorageKey="boring-ui-v2:layout:playground"
       appTitle={showcase ? "Boring" : projectName}
       defaultSessionTitle={showcase ? "New session" : projectName}
+      frontPluginHotReload="vite"
       useSessions={showcase ? undefined : useAgentSessions}
       sessions={sessions}
       activeSessionId={showcase ? SHOWCASE_SESSION_ID : undefined}

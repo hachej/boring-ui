@@ -137,6 +137,43 @@ describe("SurfaceShell", () => {
     }))
   })
 
+  it("routes openSurface path requests through the latest resolver before stale file tabs", async () => {
+    let surface: SurfaceShellApi | undefined
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("editor", { title: "Editor", placement: "center", component: () => null })
+    panelRegistry.register("hot-csv.panel", { title: "Hot CSV", placement: "center", component: () => null })
+    const surfaceResolverRegistry = new SurfaceResolverRegistry()
+    surfaceResolverRegistry.register("filesystem", {
+      source: "builtin",
+      resolve: (request) => request.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
+        ? { id: `file:${request.target}`, component: "editor", params: { path: request.target }, score: 0 }
+        : undefined,
+    })
+    surfaceResolverRegistry.register("hot-csv.surface", {
+      source: "plugin",
+      resolve: (request) => request.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND && request.target.endsWith(".csv")
+        ? { id: `hot-csv:${request.target}`, component: "hot-csv.panel", params: { path: request.target }, score: 100 }
+        : undefined,
+    })
+    mockGetPanel = vi.fn((id: string) => id === "file:data.csv"
+      ? { api: { setActive: vi.fn(), updateParameters: vi.fn() } }
+      : undefined,
+    )
+
+    renderSurface("workspace-a", { onReady: (api) => { surface = api } }, panelRegistry, surfaceResolverRegistry)
+    await waitFor(() => expect(surface).toBeDefined())
+
+    act(() => {
+      surface?.openSurface({ kind: WORKSPACE_OPEN_PATH_SURFACE_KIND, target: "data.csv" })
+    })
+
+    expect(mockAddPanel).toHaveBeenCalledWith(expect.objectContaining({
+      id: "hot-csv:data.csv",
+      component: "hot-csv.panel",
+      params: { path: "data.csv" },
+    }))
+  })
+
   it("exposes an API command to close the workbench left pane", async () => {
     let surface: SurfaceShellApi | undefined
     renderSurface("workspace-a", {
