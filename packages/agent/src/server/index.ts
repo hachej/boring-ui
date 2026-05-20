@@ -28,6 +28,10 @@ export {
 } from './sandbox/vercel-sandbox/deploymentSnapshot'
 export type { VercelDeploymentSnapshotOptions } from './sandbox/vercel-sandbox/deploymentSnapshot'
 export { createNodeWorkspace } from './workspace/createNodeWorkspace'
+// Exposed so consumers (and integration tests in dependent packages) can
+// mount the file-routes plugin onto a standalone Fastify without booting
+// the whole agent app. Used by workspace's FetchClient ↔ server contract tests.
+export { fileRoutes } from './http/routes/file'
 export {
   provisionRuntimeWorkspace,
   type ProvisionRuntimeWorkspaceOptions,

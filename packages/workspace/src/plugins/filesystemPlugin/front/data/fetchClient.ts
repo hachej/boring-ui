@@ -23,7 +23,20 @@ export class FetchClient {
 
   constructor(opts: FetchClientOptions) {
     this.baseUrl = opts.apiBaseUrl.replace(/\/$/, "")
-    this.headers = { "Content-Type": "application/json", ...opts.authHeaders }
+    // Auth headers always go on; Content-Type is added per-request only when
+    // there's a body. Sending `Content-Type: application/json` on a body-less
+    // DELETE made Fastify's JSON parser reject with FST_ERR_CTP_EMPTY_JSON_BODY
+    // ("Body cannot be empty when content-type is set to 'application/json'") —
+    // surfaces in the UI as a generic "Delete failed HTTP 400".
+    //
+    // Defensively strip Content-Type from authHeaders too: if a host passed
+    // one in (some auth flows do), it would re-introduce the same bug on
+    // every body-less request despite the per-request fix below.
+    const sanitizedAuth: Record<string, string> = { ...opts.authHeaders }
+    for (const key of Object.keys(sanitizedAuth)) {
+      if (key.toLowerCase() === "content-type") delete sanitizedAuth[key]
+    }
+    this.headers = sanitizedAuth
     this.onAuthError = opts.onAuthError
     this.onTimeout = opts.onTimeout
     this.timeout = opts.timeout ?? DEFAULT_TIMEOUT
@@ -52,10 +65,13 @@ export class FetchClient {
       const timer = setTimeout(() => controller.abort(), effectiveTimeout)
 
       try {
+        const hasBody = body != null
         const res = await fetch(`${this.baseUrl}${path}`, {
           method,
-          headers: this.headers,
-          body: body != null ? JSON.stringify(body) : undefined,
+          headers: hasBody
+            ? { ...this.headers, "Content-Type": "application/json" }
+            : this.headers,
+          body: hasBody ? JSON.stringify(body) : undefined,
           signal: controller.signal,
         })
 
