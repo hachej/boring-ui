@@ -331,6 +331,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     const harness = await harnessFactory({
       tools,
       cwd: root,
+      runtimeCwd: runtimeBundle.runtimeContext.runtimeCwd,
       sessionNamespace: scope.sessionNamespace,
       systemPromptAppend: opts.systemPromptAppend,
     })

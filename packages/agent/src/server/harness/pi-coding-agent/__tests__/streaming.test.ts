@@ -8,10 +8,16 @@ const {
   mockSetThinkingLevel,
   mockFindModel,
   mockCreateAgentSessionConfigs,
+  mockSessionManagerCreate,
+  mockSessionManagerOpen,
+  mockResourceLoaderOptions,
 } = vi.hoisted(() => ({
   mockSubscribers: [] as Array<(event: any) => void>,
   promptHandle: { resolve: undefined as undefined | (() => void) },
   mockCreateAgentSessionConfigs: [] as any[],
+  mockSessionManagerCreate: vi.fn(() => ({ getSessionFile: () => null })),
+  mockSessionManagerOpen: vi.fn(() => ({ getSessionFile: () => null })),
+  mockResourceLoaderOptions: [] as any[],
   mockCurrentModel: {
     value: undefined as undefined | { provider: string; id: string },
   },
@@ -55,19 +61,32 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
         // harness to satisfy AgentHarness.getSystemPrompt without a route
         // round-trip through the LLM.
         get systemPrompt() {
-          return "You are a fake test agent.";
+          const append = config.resourceLoader?.getAppendSystemPrompt?.().join("\n\n");
+          return [
+            "You are a fake test agent.",
+            append,
+            "Current date: 2026-05-20",
+            `Current working directory: ${config.cwd}`,
+          ].filter(Boolean).join("\n");
         },
       },
     };
   }),
-  SessionManager: { inMemory: () => ({}), create: () => ({ getSessionFile: () => null }), open: () => ({ getSessionFile: () => null }) },
+  SessionManager: { inMemory: () => ({}), create: mockSessionManagerCreate, open: mockSessionManagerOpen },
   AuthStorage: { inMemory: () => ({}), create: () => ({}) },
   // createHarness always builds a DefaultResourceLoader now so it can inject
   // the workspace-paths system-prompt guideline. Stub the lookups it needs.
   getAgentDir: () => "/tmp/test-agent-dir",
   DefaultResourceLoader: class {
-    constructor(_opts: unknown) {}
+    private opts: any;
+    constructor(opts: unknown) {
+      this.opts = opts;
+      mockResourceLoaderOptions.push(opts);
+    }
     async reload() { /* no-op */ }
+    getAppendSystemPrompt() {
+      return this.opts.appendSystemPromptOverride?.([]) ?? [];
+    }
   },
   SettingsManager: {
     create: () => ({
@@ -100,15 +119,18 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockSubscribers.length = 0;
   mockCreateAgentSessionConfigs.length = 0;
+  mockResourceLoaderOptions.length = 0;
   promptHandle.resolve = undefined;
   mockCurrentModel.value = undefined;
 });
 
 describe("streaming concurrency", () => {
-  it("uses runtime cwd for Pi agent prompt while preserving harness storage cwd", async () => {
+  it("uses runtime cwd for Pi prompt/session metadata while preserving harness storage cwd", async () => {
     const harness = createPiCodingAgentHarness({
       tools: [],
       cwd: "/tmp/host-storage-root",
+      runtimeCwd: "/workspace",
+      sessionDir: "/tmp/pi-session-storage",
     });
 
     const iter = harness.sendMessage(
@@ -122,7 +144,16 @@ describe("streaming concurrency", () => {
     const firstRead = reader.next();
     await new Promise((r) => setTimeout(r, 5));
 
+    expect(mockResourceLoaderOptions[0]?.cwd).toBe("/tmp/host-storage-root");
+    expect(mockSessionManagerCreate).toHaveBeenCalledWith("/workspace", "/tmp/pi-session-storage");
     expect(mockCreateAgentSessionConfigs[0]?.cwd).toBe("/workspace");
+
+    const systemPrompt = harness.getSystemPrompt?.("sess-runtime-cwd") ?? "";
+    expect(systemPrompt).toContain('The "Current working directory" line in this prompt is the workspace root.');
+    expect(systemPrompt.split("\n").filter((line) => line.startsWith("Current working directory: "))).toEqual([
+      "Current working directory: /workspace",
+    ]);
+    expect(systemPrompt).not.toContain("/tmp/host-storage-root");
 
     emitPiEvent({ type: "agent_end" });
     promptHandle.resolve?.();
@@ -715,7 +746,7 @@ describe("getSystemPrompt", () => {
     // Yield once so the harness completes getOrCreatePiSession.
     await new Promise((r) => setTimeout(r, 10));
 
-    expect(harness.getSystemPrompt?.("sess-sysprompt")).toBe(
+    expect(harness.getSystemPrompt?.("sess-sysprompt")).toContain(
       "You are a fake test agent.",
     );
     expect(harness.getSystemPrompt?.("different-session")).toBeUndefined();

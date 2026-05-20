@@ -366,6 +366,15 @@ describe("PiSessionStore", () => {
     expect(() => new PiSessionStore("/tmp", { sessionNamespace: "../bad" })).toThrow("session namespace");
   });
 
+  it("can store session files under host cwd while writing runtime cwd in session header", async () => {
+    const store = new PiSessionStore("/workspace", { storageCwd: "/tmp/host-storage-root", sessionDir: tmpDir });
+    const session = await store.create(ctx, { title: "Runtime cwd" });
+
+    expect(store.getSessionDir()).toBe(tmpDir);
+    const firstLine = (await readFile(join(tmpDir, `${session.id}.jsonl`), "utf-8")).split("\n")[0];
+    expect(JSON.parse(firstLine)).toEqual(expect.objectContaining({ cwd: "/workspace" }));
+  });
+
   it("creates and lists sessions", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
     const session = await store.create(ctx, { title: "Test" });

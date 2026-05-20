@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import Fastify from 'fastify'
 
 import { registerAgentRoutes } from '../registerAgentRoutes'
@@ -423,7 +423,7 @@ test('registerAgentRoutes accepts a custom runtime adapter for pluggable sandbox
       const { createNodeWorkspace } = await import('../workspace/createNodeWorkspace')
       const { createDirectSandbox } = await import('../sandbox/direct/createDirectSandbox')
       const { createServerFileSearch } = await import('../runtime/createServerFileSearch')
-      const runtimeContext = { runtimeCwd: ctx.workspaceRoot }
+      const runtimeContext = { runtimeCwd: '/workspace' }
       const workspace = createNodeWorkspace(ctx.workspaceRoot, { runtimeContext })
       const sandbox = createDirectSandbox({ runtimeContext })
       await sandbox.init?.({ workspace, sessionId: ctx.sessionId })
@@ -431,10 +431,28 @@ test('registerAgentRoutes accepts a custom runtime adapter for pluggable sandbox
     },
   }
   const seen: string[] = []
+  const harnessFactory = vi.fn(async (input) => ({
+    id: 'custom-test-harness',
+    placement: 'server' as const,
+    sessions: {
+      async list() { return [] },
+      async create() {
+        const now = new Date().toISOString()
+        return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0 }
+      },
+      async load() {
+        const now = new Date().toISOString()
+        return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0, messages: [] }
+      },
+      async delete() {},
+    },
+    async *sendMessage() {},
+  }))
 
   await app.register(registerAgentRoutes, {
     workspaceRoot,
     runtimeModeAdapter: customAdapter,
+    harnessFactory,
     getExtraTools: ({ runtimeMode, workspaceFsCapability }) => {
       seen.push(`${runtimeMode}:${workspaceFsCapability ?? 'none'}`)
       return []
@@ -446,6 +464,9 @@ test('registerAgentRoutes accepts a custom runtime adapter for pluggable sandbox
 
   expect(res.statusCode).toBe(200)
   expect(seen).toEqual(['custom-sandbox:strong'])
+  expect(harnessFactory).toHaveBeenCalledTimes(1)
+  expect(harnessFactory.mock.calls[0]?.[0].cwd).toBe(workspaceRoot)
+  expect(harnessFactory.mock.calls[0]?.[0].runtimeCwd).toBe('/workspace')
 
   await app.close()
 })
