@@ -457,10 +457,11 @@ export function MarkdownEditor({
       typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
         ? crypto.randomUUID()
         : `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const imageOptions = { src: dataUrl, alt: file.name, pendingUploadId }
     editor
       .chain()
       .focus()
-      .setImage({ src: dataUrl, alt: file.name, pendingUploadId } as Record<string, unknown>)
+      .setImage(imageOptions)
       .run()
 
     // Upload in the background and swap the inserted node's src to the
