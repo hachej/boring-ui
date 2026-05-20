@@ -139,6 +139,83 @@ function hasPiVisibleDataParts(messages: UIMessage[]): boolean {
   )
 }
 
+function collectSdkRepresentedMessageIds(messages: UIMessage[]): Set<string> {
+  const represented = new Set<string>()
+
+  for (const message of messages) {
+    if (!hasVisibleMessageContent(message)) continue
+    represented.add(message.id)
+    for (const part of message.parts ?? []) {
+      if (dataPartType(part) !== 'data-pi-message-start') continue
+      const data = (part as { data?: Record<string, unknown> }).data
+      if (typeof data?.messageId === 'string') represented.add(data.messageId)
+    }
+  }
+
+  return represented
+}
+
+function uniqueVisiblePiMessages(messages: UIMessage[]): UIMessage[] {
+  const seen = new Set<string>()
+  const out: UIMessage[] = []
+  for (const message of messages) {
+    if (seen.has(message.id) || !hasVisibleMessageContent(message)) continue
+    seen.add(message.id)
+    out.push(message)
+  }
+  return out
+}
+
+function getUnrepresentedPiMessages(piMessages: UIMessage[], representedIds: Set<string>): UIMessage[] {
+  return uniqueVisiblePiMessages(piMessages.filter((message) => !representedIds.has(message.id)))
+}
+
+function getSettledPiAssistantIds(message: UIMessage): string[] {
+  const ids: string[] = []
+  for (const part of message.parts ?? []) {
+    if (dataPartType(part) !== 'data-pi-message-end') continue
+    const data = (part as { data?: Record<string, unknown> }).data
+    if (data?.role !== 'assistant') continue
+    if (typeof data.messageId !== 'string') continue
+    if (typeof data.text !== 'string' || data.text.length === 0) continue
+    ids.push(data.messageId)
+  }
+  return ids
+}
+
+function mergeSettledPiFallbacksInPlace(messages: UIMessage[], piMessages: UIMessage[]): UIMessage[] {
+  if (piMessages.length === 0) return messages
+  const representedIds = collectSdkRepresentedMessageIds(messages)
+  const piById = new Map(piMessages.map((message) => [message.id, message]))
+  const out: UIMessage[] = []
+  const emittedPiIds = new Set<string>()
+
+  for (const message of messages) {
+    if (hasVisibleMessageContent(message)) {
+      out.push(message)
+      continue
+    }
+
+    const fallbackMessages = getSettledPiAssistantIds(message)
+      .filter((id) => !representedIds.has(id) && !emittedPiIds.has(id))
+      .map((id) => piById.get(id))
+      .filter((item): item is UIMessage => Boolean(item && hasVisibleMessageContent(item)))
+
+    if (fallbackMessages.length === 0) {
+      const hasOnlyDataParts = (message.parts ?? []).length > 0 && (message.parts ?? []).every((part) => dataPartType(part) !== null)
+      if (!hasOnlyDataParts) out.push(message)
+      continue
+    }
+
+    for (const fallback of fallbackMessages) {
+      emittedPiIds.add(fallback.id)
+      out.push(fallback)
+    }
+  }
+
+  return out
+}
+
 function getQueuedPiTail(messages: UIMessage[], piMessages: UIMessage[]): UIMessage[] {
   if (piMessages.length === 0) return []
 
@@ -169,7 +246,7 @@ function getQueuedPiTail(messages: UIMessage[], piMessages: UIMessage[]): UIMess
   }
 
   if (queuedIds.size === 0) return []
-  return piMessages.filter((message) => queuedIds.has(message.id) && hasVisibleMessageContent(message))
+  return uniqueVisiblePiMessages(piMessages.filter((message) => queuedIds.has(message.id)))
 }
 
 function coalesceAssistantToolFragments(messages: UIMessage[]): UIMessage[] {
@@ -362,7 +439,17 @@ export function ChatPanel(props: ChatPanelProps) {
     const sdkHasVisibleAssistant = hasStandardVisibleAssistantParts(messages)
 
     if (sdkHasVisibleAssistant) {
-      return [...messages, ...coalesceAssistantToolFragments(queuedPiTail), ...waitingTail]
+      const mergedMessages = mergeSettledPiFallbacksInPlace(messages, piMessages)
+      const representedIds = collectSdkRepresentedMessageIds(mergedMessages)
+      const queuedIds = new Set(queuedPiTail.map((message) => message.id))
+      const fallbackPiTail = status === 'ready'
+        ? getUnrepresentedPiMessages(piMessages, representedIds).filter((message) => !queuedIds.has(message.id))
+        : []
+      return [
+        ...mergedMessages,
+        ...coalesceAssistantToolFragments([...queuedPiTail, ...fallbackPiTail]),
+        ...waitingTail,
+      ]
     }
 
     if (piMessages.length > 0 && queuedPiTail.length > 0) {
