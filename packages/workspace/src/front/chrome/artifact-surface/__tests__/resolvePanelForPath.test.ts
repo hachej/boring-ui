@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { normalizeSurfaceOpenRequest, resolvePanelForPath } from "../SurfaceShell"
-import { SurfaceResolverRegistry } from "../../../registry"
+import { SurfaceResolverRegistry } from "../../../../shared/plugins/SurfaceResolverRegistry"
 
 function makeRegistry(matches: Record<string, string>) {
   const registry = new SurfaceResolverRegistry()
