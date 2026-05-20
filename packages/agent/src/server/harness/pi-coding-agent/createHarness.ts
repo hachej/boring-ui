@@ -13,7 +13,7 @@ import {
   SettingsManager,
   getAgentDir,
 } from "@mariozechner/pi-coding-agent";
-import type { AgentHarness, SendMessageInput, RunContext, MessageAttachment } from "../../../shared/harness.js";
+import type { AgentHarness, SendMessageInput, RunContext, MessageAttachment, FollowUpOptions } from "../../../shared/harness.js";
 import { createLogger } from "../../logging.js";
 import type { AgentTool } from "../../../shared/tool.js";
 import type { UIMessageChunk } from "../../../shared/message.js";
@@ -34,6 +34,18 @@ interface PiSessionHandle {
   piSession: AgentSession;
   modelRegistry: ModelRegistry;
   sessionManager: SessionManager;
+}
+
+interface NativeFollowUpRequest {
+  text: string;
+  displayText: string;
+  clientNonce?: string;
+  clientSeq?: number;
+}
+
+interface NativeFollowUpRemoval {
+  request: NativeFollowUpRequest;
+  textOrdinal: number;
 }
 
 export { mergePiPackageSources } from "../../piPackages.js";
@@ -390,7 +402,7 @@ export function createPiCodingAgentHarness(opts: {
     if (!handle) return;
     handle.piSession.dispose();
     piSessions.delete(sessionId);
-    nativeFollowUpPending.delete(sessionId);
+    clearNativeFollowUpWork(sessionId);
   }
 
   const originalDelete = sessionStore.delete.bind(sessionStore);
@@ -400,22 +412,117 @@ export function createPiCodingAgentHarness(opts: {
   };
 
   const nativeFollowUpPending = new Set<string>();
+  const nativeFollowUpQueues = new Map<string, NativeFollowUpRequest[]>();
+
+  function clearNativeFollowUpWork(sessionId: string): void {
+    nativeFollowUpPending.delete(sessionId);
+    nativeFollowUpQueues.delete(sessionId);
+  }
+
+  function userMessageText(message: unknown): string {
+    const content = (message as { content?: unknown }).content;
+    if (!Array.isArray(content)) return "";
+    return content
+      .map((part) => ((part as { type?: unknown; text?: unknown }).type === "text" && typeof (part as { text?: unknown }).text === "string") ? (part as { text: string }).text : "")
+      .join("");
+  }
+
+  function removeFirstMatchingOrdinal<T>(items: T[], matches: (item: T) => boolean, ordinal: number): void {
+    let seen = 0;
+    const index = items.findIndex((item) => {
+      if (!matches(item)) return false;
+      if (seen++ !== ordinal) return false;
+      return true;
+    });
+    if (index >= 0) items.splice(index, 1);
+  }
+
+  function removePiQueuedFollowUp(piSession: AgentSession, text?: string, textOrdinal = 0): void {
+    const session = piSession as unknown as {
+      _followUpMessages?: string[];
+      _emitQueueUpdate?: () => void;
+      agent?: {
+        clearFollowUpQueue?: () => void;
+        followUpQueue?: { messages?: unknown[] };
+      };
+    };
+    if (!text) {
+      session.agent?.clearFollowUpQueue?.();
+      if (Array.isArray(session._followUpMessages)) session._followUpMessages = [];
+      session._emitQueueUpdate?.();
+      return;
+    }
+    const queuedMessages = session.agent?.followUpQueue?.messages;
+    if (Array.isArray(queuedMessages)) {
+      removeFirstMatchingOrdinal(queuedMessages, (message) => userMessageText(message) === text, textOrdinal);
+    }
+    if (Array.isArray(session._followUpMessages)) {
+      removeFirstMatchingOrdinal(session._followUpMessages, (message) => message === text, textOrdinal);
+    }
+    session._emitQueueUpdate?.();
+  }
+
+  function hasFollowUpSelector(options?: FollowUpOptions): boolean {
+    return Boolean(options?.clientNonce) || options?.clientSeq !== undefined;
+  }
+
+  function matchesFollowUpSelector(item: NativeFollowUpRequest, options?: FollowUpOptions): boolean {
+    if (!hasFollowUpSelector(options)) return true;
+    return Boolean(options?.clientNonce && item.clientNonce === options.clientNonce)
+      || (options?.clientSeq !== undefined && item.clientSeq === options.clientSeq);
+  }
+
+  function removeNativeFollowUp(sessionId: string, options?: FollowUpOptions): NativeFollowUpRemoval[] {
+    const queue = nativeFollowUpQueues.get(sessionId);
+    if (!queue?.length) {
+      if (!hasFollowUpSelector(options)) clearNativeFollowUpWork(sessionId);
+      return [];
+    }
+
+    const removed: NativeFollowUpRemoval[] = [];
+    const next: NativeFollowUpRequest[] = [];
+    const textCounts = new Map<string, number>();
+    for (const request of queue) {
+      const textOrdinal = textCounts.get(request.text) ?? 0;
+      textCounts.set(request.text, textOrdinal + 1);
+      if (matchesFollowUpSelector(request, options)) removed.push({ request, textOrdinal });
+      else next.push(request);
+    }
+
+    if (next.length > 0) nativeFollowUpQueues.set(sessionId, next);
+    else clearNativeFollowUpWork(sessionId);
+    return removed;
+  }
 
   return {
     id: "pi-coding-agent",
     placement: "server",
     sessions: sessionStore,
 
-    async followUp(sessionId: string, text: string, _attachments?: MessageAttachment[], _displayText = text): Promise<void> {
+    async followUp(sessionId: string, text: string, _attachments?: MessageAttachment[], displayText = text, options?: FollowUpOptions): Promise<void> {
       const handle = piSessions.get(sessionId);
       if (!handle) throw new Error("followup_session_not_ready");
+      const queue = nativeFollowUpQueues.get(sessionId) ?? [];
+      queue.push({
+        text,
+        displayText,
+        clientNonce: options?.clientNonce,
+        clientSeq: options?.clientSeq,
+      });
+      nativeFollowUpQueues.set(sessionId, queue);
       nativeFollowUpPending.add(sessionId);
       await handle.piSession.followUp(text);
     },
 
-    clearFollowUp(_sessionId: string): void {
-      // pi owns the follow-up queue. There is no public clear API; Stop aborts
-      // the active session, which prevents queued work from continuing.
+    clearFollowUp(sessionId: string, options?: FollowUpOptions): void {
+      const handle = piSessions.get(sessionId);
+      const removed = removeNativeFollowUp(sessionId, options);
+      if (!handle) return;
+      if (!options?.clientNonce && options?.clientSeq === undefined) {
+        removePiQueuedFollowUp(handle.piSession);
+        return;
+      }
+      for (const item of removed) removePiQueuedFollowUp(handle.piSession, item.request.text, item.textOrdinal);
     },
 
     /**
@@ -512,6 +619,25 @@ export function createPiCodingAgentHarness(opts: {
       let piSeq = 0;
       const nextPiSeq = () => ++piSeq;
 
+      const STANDARD_VISIBLE_CHUNK_TYPES = new Set([
+        "text-start",
+        "text-delta",
+        "text-end",
+        "reasoning-start",
+        "reasoning-delta",
+        "reasoning-end",
+        "tool-input-available",
+        "tool-input-error",
+        "tool-output-available",
+        "tool-output-error",
+      ]);
+      const standardToolInputsSeen = new Set<string>();
+
+      function isStandardVisibleChunk(chunk: UIMessageChunk): boolean {
+        const type = (chunk as { type?: unknown }).type;
+        return typeof type === "string" && STANDARD_VISIBLE_CHUNK_TYPES.has(type);
+      }
+
       function namespaceInlinePartIds(input: UIMessageChunk[]): UIMessageChunk[] {
         if (inlineTurnIndex === 0) return input;
         return input.map((chunk) => {
@@ -525,6 +651,35 @@ export function createPiCodingAgentHarness(opts: {
           }
           return chunk;
         });
+      }
+
+      function filterSdkChunksForCurrentSegment(input: UIMessageChunk[]): UIMessageChunk[] {
+        const out: UIMessageChunk[] = [];
+        for (const chunk of input) {
+          const rec = chunk as unknown as { type?: string; toolCallId?: string };
+          if (inlineTurnIndex > 0 && isStandardVisibleChunk(chunk)) continue;
+
+          if (rec.type === "tool-input-available" && rec.toolCallId) {
+            standardToolInputsSeen.add(rec.toolCallId);
+            out.push(chunk);
+            continue;
+          }
+
+          if (
+            (rec.type === "tool-output-available" || rec.type === "tool-output-error" || rec.type === "tool-output-denied") &&
+            rec.toolCallId &&
+            !standardToolInputsSeen.has(rec.toolCallId)
+          ) {
+            // pi can emit tool_execution_end without a prior assistant
+            // toolcall_end in the canonical AI SDK stream. Suppress that
+            // orphan output; the data-pi side channel still carries the tool
+            // result for the pi projection/fallback path.
+            continue;
+          }
+
+          out.push(chunk);
+        }
+        return out;
       }
 
       // promptPromise tracks the active pi run. Native pi follow-up queuing
@@ -673,17 +828,22 @@ export function createPiCodingAgentHarness(opts: {
             inlineTurnIndex += 1;
             sawTextChunk = false;
             currentPiAssistantMessageId = null;
-            nativeFollowUpPending.delete(input.sessionId);
+            const queue = nativeFollowUpQueues.get(input.sessionId);
+            if (queue?.length) {
+              const index = queue.findIndex((item) => item.text === text || item.displayText === text);
+              if (index >= 0) queue.splice(index, 1);
+              else queue.shift();
+              if (queue.length > 0) nativeFollowUpQueues.set(input.sessionId, queue);
+              else clearNativeFollowUpWork(input.sessionId);
+            } else {
+              nativeFollowUpPending.delete(input.sessionId);
+            }
           }
         } else if (event.type === "message_end" && (event as any).message?.role === "user") {
           converted = piHistoryChunks;
         } else {
           const sdkChunks = namespaceInlinePartIds(dedupStartChunks(piEventToChunks(event)));
-          const sdkChunksForTurn = sdkChunks.filter((chunk) => {
-            const t = (chunk as { type?: string }).type;
-            return t !== "text-start" && t !== "text-delta" && t !== "text-end"
-              && t !== "reasoning-start" && t !== "reasoning-delta" && t !== "reasoning-end";
-          });
+          const sdkChunksForTurn = filterSdkChunksForCurrentSegment(sdkChunks);
           converted = [...piHistoryChunks, ...sdkChunksForTurn];
         }
         for (const chunk of converted) {
@@ -802,7 +962,7 @@ export function createPiCodingAgentHarness(opts: {
             // do not keep the HTTP stream open forever waiting for chunks that
             // will never arrive.
             if (!done && nativeFollowUpPending.has(input.sessionId)) {
-              nativeFollowUpPending.delete(input.sessionId);
+              clearNativeFollowUpWork(input.sessionId);
               done = true;
               stopHeartbeat();
               if (wake) wake();

@@ -225,6 +225,58 @@ describe("streaming concurrency", () => {
     await reader.next();
   });
 
+  it("emits standard AI SDK text chunks for the normal first assistant turn while keeping data-pi side channel", async () => {
+    const harness = createPiCodingAgentHarness({
+      tools: [],
+      cwd: "/tmp/test-stream-standard-text",
+    });
+
+    const ctx: RunContext = {
+      abortSignal: new AbortController().signal,
+      workdir: "/tmp/test-stream-standard-text",
+    };
+
+    const iter = harness.sendMessage(
+      { sessionId: "sess-stream-standard-text", message: "x" },
+      ctx,
+    );
+    const reader = iter[Symbol.asyncIterator]();
+    const chunks: unknown[] = [];
+
+    const firstRead = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+
+    emitPiEvent({ type: "message_start", message: { id: "assistant-standard", role: "assistant" } });
+    chunks.push((await firstRead).value);
+    emitPiEvent({ type: "message_update", messageId: "assistant-standard", assistantMessageEvent: { type: "text_start", contentIndex: 0 } });
+    emitPiEvent({ type: "message_update", messageId: "assistant-standard", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "hello" } });
+    emitPiEvent({ type: "message_update", messageId: "assistant-standard", assistantMessageEvent: { type: "text_end", contentIndex: 0, content: "hello" } });
+    emitPiEvent({ type: "agent_end" });
+    promptHandle.resolve!();
+
+    for (;;) {
+      const next = await reader.next();
+      if (next.done) break;
+      chunks.push(next.value);
+    }
+
+    expect(chunks).toContainEqual(expect.objectContaining({ type: "text-start", id: "0" }));
+    expect(chunks).toContainEqual(expect.objectContaining({ type: "text-delta", id: "0", delta: "hello" }));
+    expect(chunks).toContainEqual(expect.objectContaining({ type: "text-end", id: "0" }));
+    expect(chunks).toContainEqual(expect.objectContaining({
+      type: "data-pi-text-start",
+      data: expect.objectContaining({ messageId: "assistant-standard", partId: "0" }),
+    }));
+    expect(chunks).toContainEqual(expect.objectContaining({
+      type: "data-pi-text-delta",
+      data: expect.objectContaining({ messageId: "assistant-standard", partId: "0", delta: "hello" }),
+    }));
+    expect(chunks).toContainEqual(expect.objectContaining({
+      type: "data-pi-text-end",
+      data: expect.objectContaining({ messageId: "assistant-standard", partId: "0", text: "hello" }),
+    }));
+  });
+
   it("emits a text delta when pi only provides final text on text_end", async () => {
     const harness = createPiCodingAgentHarness({
       tools: [],
@@ -275,7 +327,7 @@ describe("streaming concurrency", () => {
     }));
   });
 
-  it("emits pi tool UI chunks from tool execution events", async () => {
+  it("suppresses orphan canonical tool outputs from execution events while keeping data-pi tool side channel", async () => {
     const harness = createPiCodingAgentHarness({
       tools: [],
       cwd: "/tmp/test-stream-tool-ui",
@@ -322,6 +374,73 @@ describe("streaming concurrency", () => {
     expect(chunks).toContainEqual(expect.objectContaining({
       type: "data-pi-tool-result",
       data: expect.objectContaining({ messageId: "assistant-tools", toolCallId: "tool-1", output: { content: [{ type: "text", text: "ok" }] } }),
+    }));
+    expect(chunks).not.toContainEqual(expect.objectContaining({
+      type: "tool-output-available",
+      toolCallId: "tool-1",
+    }));
+  });
+
+  it("emits canonical tool output when a canonical tool input was seen first", async () => {
+    const harness = createPiCodingAgentHarness({
+      tools: [],
+      cwd: "/tmp/test-stream-tool-canonical",
+    });
+
+    const ctx: RunContext = {
+      abortSignal: new AbortController().signal,
+      workdir: "/tmp/test-stream-tool-canonical",
+    };
+
+    const iter = harness.sendMessage(
+      { sessionId: "sess-stream-tool-canonical", message: "list files" },
+      ctx,
+    );
+    const reader = iter[Symbol.asyncIterator]();
+    const chunks: unknown[] = [];
+
+    const firstRead = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+
+    emitPiEvent({ type: "message_start", message: { id: "assistant-tool-canonical", role: "assistant" } });
+    chunks.push((await firstRead).value);
+
+    const toolCall = reader.next();
+    emitPiEvent({
+      type: "message_update",
+      messageId: "assistant-tool-canonical",
+      assistantMessageEvent: {
+        type: "toolcall_end",
+        contentIndex: 0,
+        toolCall: { id: "tool-canonical", name: "bash", arguments: { command: "ls" } },
+      },
+    });
+    chunks.push((await toolCall).value);
+    chunks.push((await reader.next()).value);
+
+    const toolResult = reader.next();
+    emitPiEvent({ type: "tool_execution_end", toolCallId: "tool-canonical", result: { content: [{ type: "text", text: "ok" }] }, isError: false });
+    chunks.push((await toolResult).value);
+    chunks.push((await reader.next()).value);
+
+    emitPiEvent({ type: "agent_end" });
+    promptHandle.resolve!();
+    for (;;) {
+      const next = await reader.next();
+      if (next.done) break;
+      chunks.push(next.value);
+    }
+
+    expect(chunks).toContainEqual(expect.objectContaining({
+      type: "tool-input-available",
+      toolCallId: "tool-canonical",
+      toolName: "bash",
+      input: { command: "ls" },
+    }));
+    expect(chunks).toContainEqual(expect.objectContaining({
+      type: "tool-output-available",
+      toolCallId: "tool-canonical",
+      output: { content: [{ type: "text", text: "ok" }] },
     }));
   });
 

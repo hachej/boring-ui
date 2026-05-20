@@ -1,14 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockSubscribers, promptHandle, promptCalls } = vi.hoisted(() => ({
+const { mockSubscribers, promptHandle, promptCalls, mockSessions } = vi.hoisted(() => ({
   mockSubscribers: [] as Array<(event: any) => void>,
   promptHandle: { resolve: undefined as undefined | (() => void) },
   promptCalls: [] as Array<{ message: string; opts?: any }>,
+  mockSessions: [] as any[],
 }));
 
 vi.mock("@mariozechner/pi-coding-agent", () => ({
-  createAgentSession: vi.fn().mockImplementation(async () => ({
-    session: {
+  createAgentSession: vi.fn().mockImplementation(async () => {
+    const followUpQueue = { messages: [] as any[] };
+    const session: any = {
+      _followUpMessages: [] as string[],
+      _emitQueueUpdate: vi.fn(),
+      agent: {
+        followUpQueue,
+        clearFollowUpQueue: vi.fn(() => { followUpQueue.messages = []; }),
+      },
       subscribe(listener: (event: any) => void) {
         mockSubscribers.push(listener);
         return () => {
@@ -24,6 +32,8 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
       }),
       followUp: vi.fn().mockImplementation((msg: string, opts?: any) => {
         promptCalls.push({ message: msg, opts: { ...(opts ?? {}), nativeFollowUp: true } });
+        session._followUpMessages.push(msg);
+        followUpQueue.messages.push({ role: "user", content: [{ type: "text", text: msg }] });
         return Promise.resolve();
       }),
       abort: vi.fn().mockResolvedValue(undefined),
@@ -32,8 +42,10 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
       setThinkingLevel: vi.fn(),
       get model() { return undefined },
       get systemPrompt() { return "test agent" },
-    },
-  })),
+    };
+    mockSessions.push(session);
+    return { session };
+  }),
   SessionManager: {
     inMemory: () => ({}),
     create: () => ({ getSessionFile: () => null }),
@@ -72,6 +84,7 @@ beforeEach(() => {
   mockSubscribers.length = 0;
   promptHandle.resolve = undefined;
   promptCalls.length = 0;
+  mockSessions.length = 0;
 });
 
 describe("native pi follow-up integration", () => {
@@ -89,6 +102,49 @@ describe("native pi follow-up integration", () => {
 
     expect(promptCalls.map((c) => c.message)).toEqual(["first", "second visible"]);
     expect(promptCalls[1]?.opts).toMatchObject({ nativeFollowUp: true });
+
+    promptHandle.resolve?.();
+    await reader.return?.();
+  });
+
+  it("can delete a queued follow-up before pi drains it", async () => {
+    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup" });
+    const iter = harness.sendMessage({ sessionId: "sess-delete", message: "first" }, makeCtx());
+    const reader = iter[Symbol.asyncIterator]();
+
+    const boot = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
+    await boot;
+
+    await harness.followUp!("sess-delete", "delete me", undefined, "delete me", { clientNonce: "nonce-delete", clientSeq: 1 });
+    harness.clearFollowUp!("sess-delete", { clientNonce: "nonce-delete" });
+    emit({ type: "agent_end" });
+
+    expect(promptCalls.map((c) => c.message)).toEqual(["first", "delete me"]);
+    expect(mockSessions[0].agent.followUpQueue.messages).toEqual([]);
+    expect(mockSessions[0]._followUpMessages).toEqual([]);
+
+    promptHandle.resolve?.();
+    await reader.return?.();
+  });
+
+  it("deleting one duplicate-text follow-up leaves the other queued", async () => {
+    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup" });
+    const iter = harness.sendMessage({ sessionId: "sess-delete-dupe", message: "first" }, makeCtx());
+    const reader = iter[Symbol.asyncIterator]();
+
+    const boot = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
+    await boot;
+
+    await harness.followUp!("sess-delete-dupe", "same text", undefined, "same text", { clientNonce: "nonce-1", clientSeq: 1 });
+    await harness.followUp!("sess-delete-dupe", "same text", undefined, "same text", { clientNonce: "nonce-2", clientSeq: 2 });
+    harness.clearFollowUp!("sess-delete-dupe", { clientNonce: "nonce-2" });
+
+    expect(mockSessions[0].agent.followUpQueue.messages.map((msg: any) => msg.content[0].text)).toEqual(["same text"]);
+    expect(mockSessions[0]._followUpMessages).toEqual(["same text"]);
 
     promptHandle.resolve?.();
     await reader.return?.();
@@ -137,11 +193,66 @@ describe("native pi follow-up integration", () => {
     expect(chunks).toContainEqual(expect.objectContaining({ type: "start", messageId: "a2" }));
     expect(chunks).toContainEqual(expect.objectContaining({ type: "data-pi-text-start", data: expect.objectContaining({ messageId: "a2", partId: "0" }) }));
     expect(chunks).toContainEqual(expect.objectContaining({ type: "data-pi-text-delta", data: expect.objectContaining({ messageId: "a2", partId: "0", delta: "hello" }) }));
+    expect(chunks).not.toContainEqual(expect.objectContaining({ type: "text-start" }));
+    expect(chunks).not.toContainEqual(expect.objectContaining({ type: "text-delta", delta: "hello" }));
     const seqs = chunks.map((chunk) => chunk.data?.seq).filter(Boolean);
     expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
 
     promptHandle.resolve?.();
     await reader.return?.();
+  });
+
+  it("suppresses canonical visible tool chunks for queued inline turns while keeping data-pi tool side channel", async () => {
+    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup-tools" });
+    const iter = harness.sendMessage({ sessionId: "sess-followup-tools", message: "first" }, makeCtx());
+    const reader = iter[Symbol.asyncIterator]();
+    const chunks: any[] = [];
+
+    const first = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
+    chunks.push((await first).value);
+
+    emit({
+      type: "message_start",
+      message: { id: "u2", role: "user", content: [{ type: "text", text: "queued question" }] },
+    });
+    emit({ type: "message_start", message: { id: "a2", role: "assistant" } });
+    emit({
+      type: "message_update",
+      messageId: "a2",
+      assistantMessageEvent: {
+        type: "toolcall_end",
+        contentIndex: 0,
+        toolCall: { id: "tool-inline", name: "bash", arguments: { command: "pwd" } },
+      },
+    });
+    emit({
+      type: "tool_execution_end",
+      toolCallId: "tool-inline",
+      result: { content: [{ type: "text", text: "ok" }] },
+      isError: false,
+    });
+    emit({ type: "agent_end" });
+    promptHandle.resolve?.();
+
+    for (;;) {
+      const next = await reader.next();
+      if (next.done) break;
+      chunks.push(next.value);
+    }
+
+    expect(chunks).toContainEqual(expect.objectContaining({ type: "data-followup-consumed", data: { text: "queued question" } }));
+    expect(chunks).toContainEqual(expect.objectContaining({
+      type: "data-pi-tool-call-end",
+      data: expect.objectContaining({ messageId: "a2", toolCallId: "tool-inline", toolName: "bash", input: { command: "pwd" } }),
+    }));
+    expect(chunks).toContainEqual(expect.objectContaining({
+      type: "data-pi-tool-result",
+      data: expect.objectContaining({ messageId: "a2", toolCallId: "tool-inline", output: { content: [{ type: "text", text: "ok" }] } }),
+    }));
+    expect(chunks).not.toContainEqual(expect.objectContaining({ type: "tool-input-available", toolCallId: "tool-inline" }));
+    expect(chunks).not.toContainEqual(expect.objectContaining({ type: "tool-output-available", toolCallId: "tool-inline" }));
   });
 
   it("preserves snapshot-only assistant fallback after a consumed follow-up", async () => {

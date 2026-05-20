@@ -44,7 +44,7 @@ import {
   AttachmentInfo,
   AttachmentRemove,
 } from './primitives/attachments'
-import { PaperclipIcon, CopyIcon, CheckIcon, RefreshCwIcon, Loader2, AlertCircleIcon } from 'lucide-react'
+import { PaperclipIcon, CopyIcon, CheckIcon, RefreshCwIcon, Loader2, AlertCircleIcon, XIcon } from 'lucide-react'
 import {
   Button,
   IconButton,
@@ -91,6 +91,148 @@ export type ComposerBlocker = {
 
 function hasToolPart(message: UIMessage): boolean {
   return (message.parts ?? []).some((part) => isToolUIPart(part))
+}
+
+function dataPartType(part: UIMessage['parts'][number]): string | null {
+  const type = (part as { type?: unknown }).type
+  return typeof type === 'string' && type.startsWith('data-') ? type : null
+}
+
+function hasStandardVisibleAssistantParts(messages: UIMessage[]): boolean {
+  return messages.some((message) =>
+    message.role === 'assistant' &&
+    (message.parts ?? []).some((part) => {
+      if (isTextPart(part)) return !isBlankTextPart(part)
+      if (isToolUIPart(part)) return true
+      const reasoning = getReasoningPart(part)
+      return Boolean(reasoning?.text.trim())
+    }),
+  )
+}
+
+function hasVisibleMessageContent(message: UIMessage): boolean {
+  return (message.parts ?? []).some((part) => {
+    if (isTextPart(part)) return !isBlankTextPart(part)
+    if (isFilePart(part)) return true
+    if (isToolUIPart(part)) return true
+    const reasoning = getReasoningPart(part)
+    return Boolean(reasoning?.text.trim())
+  })
+}
+
+function hasPiVisibleDataParts(messages: UIMessage[]): boolean {
+  return messages.some((message) =>
+    (message.parts ?? []).some((part) => {
+      const type = dataPartType(part)
+      if (!type?.startsWith('data-pi-')) return false
+      if (
+        type === 'data-pi-text-delta' ||
+        type === 'data-pi-text-end' ||
+        type === 'data-pi-reasoning-delta' ||
+        type === 'data-pi-tool-call-end' ||
+        type === 'data-pi-tool-result'
+      ) return true
+      if (type !== 'data-pi-message-end') return false
+      const data = (part as { data?: Record<string, unknown> }).data
+      return data?.role === 'assistant' && typeof data.text === 'string' && data.text.length > 0
+    }),
+  )
+}
+
+function collectSdkRepresentedMessageIds(messages: UIMessage[]): Set<string> {
+  const represented = new Set<string>()
+
+  for (const message of messages) {
+    if (!hasVisibleMessageContent(message)) continue
+    represented.add(message.id)
+    for (const part of message.parts ?? []) {
+      if (dataPartType(part) !== 'data-pi-message-start') continue
+      const data = (part as { data?: Record<string, unknown> }).data
+      if (typeof data?.messageId === 'string') represented.add(data.messageId)
+    }
+  }
+
+  return represented
+}
+
+function uniqueVisiblePiMessages(messages: UIMessage[]): UIMessage[] {
+  const seen = new Set<string>()
+  const out: UIMessage[] = []
+  for (const message of messages) {
+    if (seen.has(message.id) || !hasVisibleMessageContent(message)) continue
+    seen.add(message.id)
+    out.push(message)
+  }
+  return out
+}
+
+function getSettledPiAssistantIds(message: UIMessage): string[] {
+  const ids: string[] = []
+  for (const part of message.parts ?? []) {
+    if (dataPartType(part) !== 'data-pi-message-end') continue
+    const data = (part as { data?: Record<string, unknown> }).data
+    if (data?.role !== 'assistant') continue
+    if (typeof data.messageId !== 'string') continue
+    if (typeof data.text !== 'string' || data.text.length === 0) continue
+    ids.push(data.messageId)
+  }
+  return ids
+}
+
+function mergeSettledPiFallbacksInPlace(messages: UIMessage[], piMessages: UIMessage[]): UIMessage[] {
+  if (piMessages.length === 0) return messages
+  const representedIds = collectSdkRepresentedMessageIds(messages)
+  const piById = new Map(piMessages.map((message) => [message.id, message]))
+  const out: UIMessage[] = []
+  const emittedPiIds = new Set<string>()
+
+  for (const message of messages) {
+    if (hasVisibleMessageContent(message)) {
+      out.push(message)
+      continue
+    }
+
+    const fallbackMessages = getSettledPiAssistantIds(message)
+      .filter((id) => !representedIds.has(id) && !emittedPiIds.has(id))
+      .map((id) => piById.get(id))
+      .filter((item): item is UIMessage => Boolean(item && hasVisibleMessageContent(item)))
+
+    if (fallbackMessages.length === 0) {
+      const hasOnlyDataParts = (message.parts ?? []).length > 0 && (message.parts ?? []).every((part) => dataPartType(part) !== null)
+      if (!hasOnlyDataParts) out.push(message)
+      continue
+    }
+
+    for (const fallback of fallbackMessages) {
+      emittedPiIds.add(fallback.id)
+      out.push(fallback)
+    }
+  }
+
+  return out
+}
+
+function getQueuedPiTail(messages: UIMessage[], piMessages: UIMessage[]): UIMessage[] {
+  if (piMessages.length === 0) return []
+
+  const queuedIds = new Set<string>()
+  let afterFollowUp = false
+
+  for (const message of messages) {
+    for (const part of message.parts ?? []) {
+      const type = dataPartType(part)
+      if (type === 'data-followup-consumed') afterFollowUp = true
+      if (type !== 'data-pi-message-start') continue
+      const data = (part as { data?: Record<string, unknown> }).data
+      const id = typeof data?.messageId === 'string' ? data.messageId : undefined
+      const role = data?.role === 'user' || data?.role === 'assistant' ? data.role : undefined
+      if (!id || !role) continue
+      if (afterFollowUp) queuedIds.add(id)
+    }
+  }
+
+  if (queuedIds.size === 0) return []
+  return uniqueVisiblePiMessages(piMessages.filter((message) => queuedIds.has(message.id)))
 }
 
 function coalesceAssistantToolFragments(messages: UIMessage[]): UIMessage[] {
@@ -211,6 +353,7 @@ export function ChatPanel(props: ChatPanelProps) {
   } = props
   const [debugWidth, setDebugWidth] = useState(440)
   const capabilities = PI_AGENT_RUNTIME_CAPABILITIES
+  const scrollToBottomRef = useRef<() => void>(() => {})
   const piDataHandlerRef = useRef<(part: unknown) => void>(() => {})
   const followUpDataHandlerRef = useRef<(part: unknown) => void>(() => {})
 
@@ -242,6 +385,7 @@ export function ChatPanel(props: ChatPanelProps) {
     projectedTailMessages,
     projectedStatusById,
     queueFollowUp,
+    deleteFollowUp,
     handleData: handleFollowUpData,
     stopAndClearFollowUps,
   } = usePiNativeFollowUpQueue({
@@ -278,14 +422,29 @@ export function ChatPanel(props: ChatPanelProps) {
 
   const displayMessages = useMemo(() => {
     const waitingTail = projectedTailMessages.filter((message) => projectedStatusById.get(message.id) === 'queued')
-    return piMessages.length > 0
-      ? [...piMessages, ...waitingTail]
-      : [...messages, ...projectedTailMessages]
-  }, [messages, piMessages, projectedTailMessages, projectedStatusById])
-  const renderMessages = useMemo(
-    () => coalesceAssistantToolFragments(displayMessages),
-    [displayMessages],
-  )
+    const queuedPiTail = getQueuedPiTail(messages, piMessages)
+    const sdkHasVisibleAssistant = hasStandardVisibleAssistantParts(messages)
+
+    if (sdkHasVisibleAssistant) {
+      const mergedMessages = mergeSettledPiFallbacksInPlace(messages, piMessages)
+      return [
+        ...mergedMessages,
+        ...coalesceAssistantToolFragments(queuedPiTail),
+        ...waitingTail,
+      ]
+    }
+
+    if (piMessages.length > 0 && queuedPiTail.length > 0) {
+      return [...coalesceAssistantToolFragments(piMessages), ...waitingTail]
+    }
+
+    if (piMessages.length > 0 && status === 'ready' && hasPiVisibleDataParts(messages)) {
+      return [...coalesceAssistantToolFragments(piMessages), ...waitingTail]
+    }
+
+    return [...messages, ...waitingTail]
+  }, [messages, piMessages, projectedTailMessages, projectedStatusById, status])
+  const renderMessages = displayMessages
 
   // Stop button: cancels stream, clears the queued follow-up, and lets host UI
   // cancel any host-level blocker that is waiting for user attention.
@@ -359,6 +518,7 @@ export function ChatPanel(props: ChatPanelProps) {
         const skillMessage = parsed.args
           ? `skill: ${parsed.name}\n\n${parsed.args}`
           : `skill: ${parsed.name}`
+        scrollToBottomRef.current()
         void sendMessage(
           { text, files },
           { body: { sessionId, message: skillMessage, ...modelPayload(model), attachments: [] } },
@@ -422,6 +582,7 @@ export function ChatPanel(props: ChatPanelProps) {
     }
 
     if (isStreaming && capabilities.nativeFollowUp) {
+      scrollToBottomRef.current()
       queueFollowUp({
         text,
         files: files ?? [],
@@ -430,6 +591,8 @@ export function ChatPanel(props: ChatPanelProps) {
       })
       return
     }
+
+    scrollToBottomRef.current()
 
     // Fire-and-forget the send so handleSubmit returns as soon as the
     // payload is built. PromptInput clears attachments + text only after
@@ -506,7 +669,14 @@ export function ChatPanel(props: ChatPanelProps) {
           transition={{ duration: 1.4, ease: [0.65, 0, 0.35, 1], repeat: isStreaming ? Infinity : 0 }}
         />
       </div>
-      <Conversation className="flex-1" aria-label="Agent conversation" aria-live="polite">
+      <Conversation
+        className="flex-1"
+        aria-label="Agent conversation"
+        aria-live="polite"
+        onScrollToBottomReady={(scrollToBottom) => {
+          scrollToBottomRef.current = scrollToBottom
+        }}
+      >
         <ConversationContent className={cn(
           "mx-auto flex w-full flex-col gap-6",
           chrome ? "max-w-3xl px-6 py-8" : "max-w-[680px] px-4 py-4",
@@ -632,8 +802,19 @@ export function ChatPanel(props: ChatPanelProps) {
                   data-waiting-follow-up={isWaitingFollowUp ? 'true' : undefined}
                 >
                   {isWaitingFollowUp && (
-                    <div className="mb-1 text-[10px] font-medium not-italic uppercase tracking-[0.16em] text-muted-foreground/70">
-                      Waiting…
+                    <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-medium not-italic uppercase tracking-[0.16em] text-muted-foreground/70">
+                      <span>Waiting…</span>
+                      <IconButton
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => deleteFollowUp(message.id)}
+                        className="-mr-1 size-5 shrink-0 text-muted-foreground/70 hover:bg-muted hover:text-foreground"
+                        aria-label="Delete queued message"
+                        title="Delete queued message"
+                      >
+                        <XIcon className="size-3" aria-hidden="true" />
+                      </IconButton>
                     </div>
                   )}
                   {fileParts.length > 0 && (

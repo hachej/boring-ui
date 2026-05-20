@@ -74,12 +74,32 @@ export function chatRoutes(
   // Evict entries when sessions are deleted via the sessionChangesTracker
   // hook below, and cap at 5000 to bound memory in long-running servers.
   const lastFollowUpBySession = new Map<string, { seq: number; nonce?: string }>()
+  const cancelledFollowUpsBySession = new Map<string, Set<string>>()
   const MAX_FOLLOWUP_CACHE = 5000
+  function followUpCancelKeys(clientNonce?: string, clientSeq?: number): string[] {
+    return [
+      clientNonce ? `nonce:${clientNonce}` : undefined,
+      clientSeq !== undefined ? `seq:${clientSeq}` : undefined,
+    ].filter((key): key is string => Boolean(key))
+  }
+  function isFollowUpCancelled(sessionId: string, clientNonce?: string, clientSeq?: number): boolean {
+    const cancelled = cancelledFollowUpsBySession.get(sessionId)
+    if (!cancelled) return false
+    return followUpCancelKeys(clientNonce, clientSeq).some((key) => cancelled.has(key))
+  }
+  function markFollowUpCancelled(sessionId: string, clientNonce?: string, clientSeq?: number): void {
+    const keys = followUpCancelKeys(clientNonce, clientSeq)
+    if (keys.length === 0) return
+    const cancelled = cancelledFollowUpsBySession.get(sessionId) ?? new Set<string>()
+    for (const key of keys) cancelled.add(key)
+    cancelledFollowUpsBySession.set(sessionId, cancelled)
+  }
   function evictFollowupCache(): void {
-    if (lastFollowUpBySession.size <= MAX_FOLLOWUP_CACHE) return
-    const keys = Array.from(lastFollowUpBySession.keys())
+    const keys = Array.from(new Set([...lastFollowUpBySession.keys(), ...cancelledFollowUpsBySession.keys()]))
+    if (keys.length <= MAX_FOLLOWUP_CACHE) return
     for (let i = 0; i < keys.length - MAX_FOLLOWUP_CACHE; i++) {
       lastFollowUpBySession.delete(keys[i])
+      cancelledFollowUpsBySession.delete(keys[i])
     }
   }
 
@@ -308,6 +328,9 @@ export function chatRoutes(
         ? body.clientSeq
         : undefined
       const clientNonce = typeof body.clientNonce === 'string' && body.clientNonce.length > 0 ? body.clientNonce : undefined
+      if (isFollowUpCancelled(sessionId, clientNonce, clientSeq)) {
+        return reply.code(202).send({ queued: false, deleted: true })
+      }
       if (clientSeq !== undefined) {
         const last = lastFollowUpBySession.get(sessionId)
         if (last !== undefined && clientSeq <= last.seq) {
@@ -331,6 +354,7 @@ export function chatRoutes(
           body.message,
           parsedAttachments.data,
           typeof body.displayText === 'string' && body.displayText.length > 0 ? body.displayText : body.message,
+          { clientNonce, clientSeq },
         )
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
@@ -354,8 +378,14 @@ export function chatRoutes(
     '/api/v1/agent/chat/:sessionId/followup',
     async (request, reply) => {
       const { sessionId } = request.params as { sessionId: string }
+      const query = request.query as { clientNonce?: unknown; clientSeq?: unknown }
+      const clientNonce = typeof query.clientNonce === 'string' && query.clientNonce.length > 0 ? query.clientNonce : undefined
+      const rawClientSeq = typeof query.clientSeq === 'string' ? Number(query.clientSeq) : query.clientSeq
+      const clientSeq = typeof rawClientSeq === 'number' && Number.isFinite(rawClientSeq) ? rawClientSeq : undefined
       const runtime = await resolveRuntime(request)
-      runtime.harness.clearFollowUp?.(sessionId)
+      markFollowUpCancelled(sessionId, clientNonce, clientSeq)
+      evictFollowupCache()
+      runtime.harness.clearFollowUp?.(sessionId, { clientNonce, clientSeq })
       return reply.code(204).send()
     },
   )
