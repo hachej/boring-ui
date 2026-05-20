@@ -31,6 +31,11 @@ Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` before running. See [Pi providers](h
 
 A real session: ask the agent for a summary → it opens the README in the workbench → ask it to take notes → a new `notes.md` appears in the tree → search for it via the command palette. Chat in, workspace out.
 
+| Agent opens files | Agent edits files | Command palette |
+|---|---|---|
+| ![Agent opens files in the workbench](docs/assets/readme/demo-open.gif) | ![Agent edits files and saves changes](docs/assets/readme/demo-edit.gif) | ![Command palette search and jump](docs/assets/readme/demo-palette.gif) |
+| Read · render · explain | Write · diff · save | ⌘K · search · jump |
+
 ---
 
 But of course every app, every workflow, every use case is different.
