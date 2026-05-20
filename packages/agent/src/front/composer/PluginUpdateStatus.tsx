@@ -13,7 +13,7 @@
  *  - "error"    — red-ish accent, with the diagnostic message and a
  *    "Try again" button that re-runs `/reload`.
  */
-import type { ReactElement } from "react"
+import { useEffect, type ReactElement } from "react"
 import { cn } from "../lib"
 import type { PluginRestartWarning } from "../../shared/agentPluginEvents"
 
@@ -34,9 +34,24 @@ export interface PluginUpdateStatusProps {
   state: PluginUpdateState | null
   onDismiss: () => void
   onRetry: () => void
+  /** Auto-dismiss clean success banners. Set to 0 to disable. */
+  successAutoDismissMs?: number
 }
 
-export function PluginUpdateStatus({ state, onDismiss, onRetry }: PluginUpdateStatusProps): ReactElement | null {
+export function PluginUpdateStatus({
+  state,
+  onDismiss,
+  onRetry,
+  successAutoDismissMs = 4000,
+}: PluginUpdateStatusProps): ReactElement | null {
+  useEffect(() => {
+    if (!state || state.kind !== "success" || successAutoDismissMs <= 0) return
+    const hasDetails = (state.restartWarnings?.length ?? 0) > 0 || (state.diagnostics?.length ?? 0) > 0
+    if (hasDetails) return
+    const timeout = window.setTimeout(onDismiss, successAutoDismissMs)
+    return () => window.clearTimeout(timeout)
+  }, [state, onDismiss, successAutoDismissMs])
+
   if (!state) return null
 
   if (state.kind === "running") {

@@ -386,17 +386,23 @@ export async function runCli(options: RunCliOptions): Promise<void> {
   })
 }
 
+function defaultWorkspaceRoot(): string {
+  return process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd()
+}
+
 function handleVerifyPluginCommand(opts: { positionals: string[] }) {
   // Usage: `boring-ui verify-plugin [<name>] [<workspace>]`
   // No name: verify every plugin under .pi/extensions/.
   // With name: verify only `.pi/extensions/<name>/`.
-  // Workspace defaults to cwd. The flag-free positional form keeps the
-  // invocation short for the agent's bash tool.
+  // Workspace defaults to BORING_AGENT_WORKSPACE_ROOT when invoked
+  // through the workspace-local shim, then cwd as a manual fallback.
+  // The flag-free positional form keeps the invocation short for the
+  // agent's bash tool.
   const maybeName = opts.positionals[1]
   const maybeWorkspace = opts.positionals[2]
   const looksLikePath = maybeName && (maybeName.includes("/") || maybeName.startsWith("."))
   const name = looksLikePath ? undefined : maybeName
-  const workspaceRoot = resolve(maybeWorkspace ?? (looksLikePath ? maybeName! : process.cwd()))
+  const workspaceRoot = resolve(maybeWorkspace ?? (looksLikePath ? maybeName! : defaultWorkspaceRoot()))
 
   const result = verifyPlugin({ workspaceRoot, ...(name ? { name } : {}) })
   console.log(formatVerifyResult(result))
@@ -424,7 +430,7 @@ function handleScaffoldPluginCommand(opts: { positionals: string[] }) {
   if (!name) {
     throw new Error("usage: boring-ui scaffold-plugin <name> [workspace]")
   }
-  const workspaceRoot = resolve(opts.positionals[2] ?? process.cwd())
+  const workspaceRoot = resolve(opts.positionals[2] ?? defaultWorkspaceRoot())
   const result = scaffoldPlugin({ name, workspaceRoot })
   console.log(`scaffolded ${name}`)
   console.log(`  dir   ${result.pluginDir}`)

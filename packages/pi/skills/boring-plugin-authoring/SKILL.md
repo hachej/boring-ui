@@ -14,13 +14,17 @@ file layout, API surface (`definePlugin`, `registerPanel`, etc.), and import
 paths are correct — the parts agents most often invent or get wrong.
 
 ```sh
-# From inside the workspace root (or pass workspace path as 2nd arg):
-boring-ui scaffold-plugin <kebab-name>
+# Always target the current workspace root. The second arg prevents writing
+# into a parent repo if your shell cwd drifts.
+boring-ui scaffold-plugin <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"
 ```
 
-The workspace agent puts `.boring-agent/bin/` on `PATH` and provides the
-`boring-ui` shim there. If you are outside the agent workspace and do not have
-that binary, use `npx @hachej/boring-ui-cli scaffold-plugin <kebab-name>`.
+The workspace agent puts `.boring-agent/bin/` on `PATH`, provides the
+`boring-ui` shim there, and exports `BORING_AGENT_WORKSPACE_ROOT`. Do not `cd`
+to a parent repo to scaffold; hot-reloadable user plugins belong under
+`$BORING_AGENT_WORKSPACE_ROOT/.pi/extensions/<name>/`. If you are outside the
+agent workspace and do not have that binary, use
+`npx @hachej/boring-ui-cli scaffold-plugin <kebab-name> <workspace-root>`.
 
 The scaffold writes the canonical hot-reload package skeleton:
 
@@ -35,7 +39,7 @@ Hot-reloadable agent behavior belongs in `pi.extensions` / `pi.skills` / `pi.sys
 1. Run the scaffold command via the bash tool.
 2. Read the generated files with the read tool.
 3. Edit them in place with the edit tool — do **NOT** rewrite from scratch.
-4. Run `boring-ui verify-plugin` via bash. Fix anything it reports and re-run until it returns `OK`.
+4. Run `boring-ui verify-plugin <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"` via bash. Fix anything it reports and re-run until it returns `OK`.
 5. Tell the user to run `/reload` for front/Pi asset changes. If you added `boring.server`, tell the user the workspace process must be statically composed with that package and restarted.
 
 If the scaffold says the plugin already exists, you can read the existing
@@ -73,6 +77,7 @@ definePlugin({
 - ❌ `createPlugin(...)` — use `definePlugin(...)`
 - ❌ `defineFrontPlugin(...)` — removed from the public API
 - ❌ inside `setup`: `api.registerComponent`, `api.addPanel`, `api.registerCommand` (no `Panel`), `api.registerTab` — use the corresponding `register*` name from the table above
+- ❌ in Pi extensions: `defineTool(...)` / `export const tools` — export a default function and call `pi.registerTool({ name, description, execute })`
 
 ## File layout (do not put files elsewhere)
 
@@ -211,6 +216,9 @@ export default definePlugin({
 ```
 
 Read raw file bytes from `/api/v1/files/raw?path=<workspace-relative-path>`.
+Use the imported `WORKSPACE_OPEN_PATH_SURFACE_KIND` constant as the resolver
+`kind` (not the string `"WORKSPACE_OPEN_PATH_SURFACE_KIND"`), and read the path
+from `request.target` (not `request.path`). Do not use `/workspace/read`.
 For charts, use plain SVG (`<rect>`, `<line>`, `<polyline>`) — do not add
 recharts / chart.js dependencies.
 

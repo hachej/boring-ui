@@ -8,7 +8,7 @@
  *   OPENROUTER_API_KEY=sk-or-v1-... pnpm --filter @hachej/boring-workspace test src/eval/__tests__/plugin-creation.test.ts
  */
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync as stat, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { evalAgentPrompt, EvalRegex } from "@hachej/boring-agent/eval"
@@ -32,52 +32,44 @@ const HAS_KEY = ENABLED_MODELS.length > 0
 const describeIf = HAS_KEY ? describe.each(ENABLED_MODELS) : describe.skip.each([{ provider: "none", id: "none" }] as Array<{ provider: string; id: string }>)
 
 const WORKSPACE_PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../")
-const EVAL_PLUGIN_DIR = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-task-list")
+const EVAL_WORKSPACE_ROOT = join(WORKSPACE_PKG_ROOT, ".eval", "plugin-creation-workspace")
+const EVAL_PLUGIN_DIR = join(EVAL_WORKSPACE_ROOT, ".pi", "extensions", "eval-task-list")
 const EVAL_PLUGIN_FRONT = join(EVAL_PLUGIN_DIR, "front", "index.tsx")
 const EVAL_PLUGIN_AGENT = join(EVAL_PLUGIN_DIR, "agent", "index.ts")
 const EVAL_PLUGIN_PACKAGE = join(EVAL_PLUGIN_DIR, "package.json")
 
-const EVAL_CSV_PLUGIN_DIR = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-csv-viz")
+const EVAL_CSV_PLUGIN_DIR = join(EVAL_WORKSPACE_ROOT, ".pi", "extensions", "eval-csv-viz")
 const EVAL_CSV_PLUGIN_PACKAGE = join(EVAL_CSV_PLUGIN_DIR, "package.json")
 
-const EVAL_MIN_PLUGIN_DIR = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-min-tasks")
+const EVAL_MIN_PLUGIN_DIR = join(EVAL_WORKSPACE_ROOT, ".pi", "extensions", "eval-min-tasks")
 const EVAL_MIN_PLUGIN_PACKAGE = join(EVAL_MIN_PLUGIN_DIR, "package.json")
 
-const EVAL_SPLIT_DIR = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-split-files")
+const EVAL_SPLIT_DIR = join(EVAL_WORKSPACE_ROOT, ".pi", "extensions", "eval-split-files")
 const EVAL_SPLIT_PACKAGE = join(EVAL_SPLIT_DIR, "package.json")
 
-const EVAL_REFINE_DIR = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-refine")
+const EVAL_REFINE_DIR = join(EVAL_WORKSPACE_ROOT, ".pi", "extensions", "eval-refine")
 const EVAL_REFINE_PACKAGE = join(EVAL_REFINE_DIR, "package.json")
 const EVAL_REFINE_FRONT = join(EVAL_REFINE_DIR, "front", "index.tsx")
 
-const EVAL_CROSS_DIR = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-cross")
+const EVAL_CROSS_DIR = join(EVAL_WORKSPACE_ROOT, ".pi", "extensions", "eval-cross")
 const EVAL_CROSS_PACKAGE = join(EVAL_CROSS_DIR, "package.json")
 
 describeIf("package plugin creation + reload eval (live LLM) [$provider/$id]", (EVAL_MODEL) => {
   let app: FastifyInstance
 
-  const cleanupDirs = [
-    EVAL_PLUGIN_DIR,
-    EVAL_CSV_PLUGIN_DIR,
-    EVAL_MIN_PLUGIN_DIR,
-    EVAL_SPLIT_DIR,
-    EVAL_REFINE_DIR,
-    EVAL_CROSS_DIR,
-  ]
-
   beforeAll(async () => {
-    for (const dir of cleanupDirs) rmSync(dir, { recursive: true, force: true })
+    rmSync(EVAL_WORKSPACE_ROOT, { recursive: true, force: true })
+    mkdirSync(EVAL_WORKSPACE_ROOT, { recursive: true })
     app = await createWorkspaceAgentServer({
-      workspaceRoot: WORKSPACE_PKG_ROOT,
+      workspaceRoot: EVAL_WORKSPACE_ROOT,
       mode: "direct",
       logger: false,
-      provisionWorkspace: false,
     })
   }, 30_000)
 
   afterAll(async () => {
     if (app) await app.close()
-    for (const dir of cleanupDirs) rmSync(dir, { recursive: true, force: true })
+    rmSync(EVAL_WORKSPACE_ROOT, { recursive: true, force: true })
   })
 
   test(
@@ -232,7 +224,7 @@ describeIf("package plugin creation + reload eval (live LLM) [$provider/$id]", (
     "agent recovers a plugin from a /reload error (malformed package.json)",
     async () => {
       // Plant a working plugin first.
-      const pluginDir = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-recover")
+      const pluginDir = join(EVAL_WORKSPACE_ROOT, ".pi", "extensions", "eval-recover")
       const pkgPath = join(pluginDir, "package.json")
       const frontPath = join(pluginDir, "front", "index.tsx")
       rmSync(pluginDir, { recursive: true, force: true })

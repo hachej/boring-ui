@@ -26,8 +26,12 @@ export default definePlugin({
   leftTabs: [
     { id: "<kebab-name>.tab", title: "<Label>", panelId: "<kebab-name>.panel" },
   ],
+  // File visualizer example: import WORKSPACE_OPEN_PATH_SURFACE_KIND from
+  // "@hachej/boring-workspace", set kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
+  // check request.target (e.g. .endsWith(".csv")), and fetch raw file bytes
+  // from /api/v1/files/raw?path=${encodeURIComponent(request.target)}.
   // surfaceResolvers: [
-  //   { id: "<kebab-name>.surface", kind: "<kebab-name>.open", resolve(req) { ... } },
+  //   { id: "<kebab-name>.surface", kind: WORKSPACE_OPEN_PATH_SURFACE_KIND, resolve(request) { ... } },
   // ],
   //
   // Escape hatch for conditional registration:
