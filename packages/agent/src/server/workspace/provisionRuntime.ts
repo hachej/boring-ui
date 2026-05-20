@@ -128,6 +128,10 @@ async function fingerprint(contributions: Array<{ id: string; provisioning: Runt
       const sourceDocsDir = join(packageRoot, 'src', 'server', 'docs')
       if (await exists(packageJson)) await hashPath(packageJson, hash)
       if (await exists(distDir)) await hashPath(distDir, hash)
+      const templatesDir = join(packageRoot, 'templates')
+      const publicDir = join(packageRoot, 'public')
+      if (await exists(templatesDir)) await hashPath(templatesDir, hash)
+      if (await exists(publicDir)) await hashPath(publicDir, hash)
       if (await exists(docsDir)) await hashPath(docsDir, hash)
       if (await exists(skillsDir)) await hashPath(skillsDir, hash)
       if (await exists(referencesDir)) await hashPath(referencesDir, hash)
@@ -191,6 +195,8 @@ async function ensureNodePackages(workspaceRoot: string, specs: RuntimeNodePacka
     }
 
     await copyIfExists(join(packageRoot, 'dist'), join(target, 'dist'))
+    await copyIfExists(join(packageRoot, 'templates'), join(target, 'templates'))
+    await copyIfExists(join(packageRoot, 'public'), join(target, 'public'))
     // Source-tree/dev fallback: make the canonical docs readable from the
     // same package path the system prompt points to, even before a package
     // build has created dist/docs. Also patches old dist directories that

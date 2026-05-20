@@ -22,8 +22,8 @@ export interface BuildBoringSystemPromptOptions {
    * production.
    */
   scaffoldCommand?: string
-  /** CLI invocation that validates `.pi/extensions/*` manifests. */
-  verifyCommand: string
+  /** CLI invocation that validates `.pi/extensions/*` manifests. Omit when unavailable. */
+  verifyCommand?: string
   /**
    * Test escape hatch. Overrides the runtime `require.resolve` of
    * `@hachej/boring-pi/package.json`:
@@ -82,13 +82,21 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): s
 
   n += 1
   steps.push(
-    `**${n}. Edit the generated files to implement what the user asked for.** Keep the imports, the \`definePlugin\` call shape, and the manifest layout from the scaffold — only change the placeholder content (default "Hello" pane, default ids/labels, sample comments) into the real implementation.`,
+    opts.scaffoldCommand
+      ? `**${n}. Edit the generated files to implement what the user asked for.** Keep the imports, the \`definePlugin\` call shape, and the manifest layout from the scaffold — only change the placeholder content (default "Hello" pane, default ids/labels, sample comments) into the real implementation.`
+      : `**${n}. Create or edit the plugin files to implement what the user asked for.** Use the boring-plugin-authoring skill as the canonical source for imports, the \`definePlugin\` call shape, and the manifest layout.`,
   )
 
   n += 1
-  steps.push(
-    `**${n}. Verify.** Bash \`${verify}\` — validates every plugin under \`<cwd>/.pi/extensions/\` and prints per-plugin errors with actionable hints. Read the output: if it WARNs about an empty/missing dir, your plugin files went to the wrong cwd. Fix what it reports and re-run until it returns \`OK\`. Use this after EVERY edit.`,
-  )
+  if (verify) {
+    steps.push(
+      `**${n}. Verify.** Bash \`${verify}\` — validates every plugin under \`<cwd>/.pi/extensions/\` and prints per-plugin errors with actionable hints. Read the output: if it WARNs about an empty/missing dir, your plugin files went to the wrong cwd. Fix what it reports and re-run until it returns \`OK\`. Use this after EVERY edit.`,
+    )
+  } else {
+    steps.push(
+      `**${n}. Verify.** The boring-ui CLI is not available in this host, so do not invent CLI commands. Validate by re-reading the manifest/front files against the boring-plugin-authoring skill, then ask the user to run \`/reload\` and inspect reload diagnostics.`,
+    )
+  }
 
   n += 1
   steps.push(`**${n}. Ask the user to run \`/reload\`** to publish the change.`)
@@ -116,6 +124,7 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): s
       "- API factories: `createPlugin`, `defineFrontPlugin`, `defineComponent` — use `definePlugin({id, panels, commands, ...})` from `@hachej/boring-workspace/plugin`.",
       "- Imperative method names: `registerComponent`, `addPanel`, `registerCommand` (no `Panel`), `registerTab` — the actual names are `registerPanel`, `registerPanelCommand`, `registerLeftTab`, `registerSurfaceResolver` (and you usually express these declaratively, not as method calls).",
       "- Import paths: `@hachej/boring-pi` (it's a skills package, not for code), `@boring-ui/*`, `@hachej/pi-sdk` — use `@hachej/boring-workspace/plugin` for front and `@hachej/boring-workspace/server` for server.",
+      "- File visualizers: if the user says a file should open from the file tree (for example `.csv`), a panel alone is not enough — add a `surfaceResolvers` entry for `WORKSPACE_OPEN_PATH_SURFACE_KIND` that maps matching paths to your panel with `{ params: { path } }`.",
       "- Server tool method: `handler` — use `execute`. Return shape: `{ content: [{ type: \"text\", text }] }` (NEVER a bare string).",
       "- Manifest values: `boring.server: true` — use `false`/omit for hot-reload user plugins, or a relative path string only for advanced boot-time/static server integration.",
       "- File layout: files at the package root, or `src/` / `dist/` / `lib/` subdirectories — the scaffold's hot-reload layout (`front/index.tsx`, optional `agent/index.ts` declared in `pi.extensions`) is the one the workspace refreshes on `/reload`.",

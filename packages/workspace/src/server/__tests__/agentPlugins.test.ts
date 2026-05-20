@@ -330,7 +330,7 @@ describe("boring agent plugin assets", () => {
     expect(aggregatePluginPrompts(manager)).toBeUndefined()
   })
 
-  test("scans plugins, emits load events, and serves /api/agent-plugins", async () => {
+  test("scans plugins, emits load events, and serves canonical /api/v1/agent-plugins with unversioned alias", async () => {
     // Per PLUGIN_SYSTEM.md Gotcha #4: asset manager is scan + hash + emit only.
     // Server module instantiation lives in pluginEntryResolver, not here.
     const root = await tmp("boring-plugin-manager-")
@@ -349,8 +349,10 @@ describe("boring agent plugin assets", () => {
     const app = Fastify({ logger: false })
     await app.register(boringPluginRoutes, { manager })
     try {
+      const versionedList = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
+      expect(versionedList.json()[0].id).toBe("boring-plugin-test")
       const list = await app.inject({ method: "GET", url: "/api/agent-plugins" })
-      expect(list.json()[0].id).toBe("boring-plugin-test")
+      expect(list.json()).toEqual(versionedList.json())
 
       // Edit a tracked file → signature bumps → next load emits a fresh event.
       await writePlugin(root, "export default { id: 'boring-plugin-test', systemPrompt: 'V2' }\n")
@@ -490,7 +492,7 @@ describe("boring agent plugin assets", () => {
     const app = Fastify({ logger: false })
     await app.register(boringPluginRoutes, { manager })
     try {
-      const response = await app.inject({ method: "GET", url: "/api/agent-plugins/..%2Foutside/error" })
+      const response = await app.inject({ method: "GET", url: "/api/v1/agent-plugins/..%2Foutside/error" })
       expect(response.statusCode).toBe(404)
       expect(response.body).not.toContain("secret")
     } finally {

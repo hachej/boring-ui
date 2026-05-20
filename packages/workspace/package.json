@@ -142,7 +142,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
-    "@hachej/boring-ask-user": "workspace:*",
+    "@boring-fixtures/default-plugin": "workspace:*",
     "@tailwindcss/postcss": "^4.0.0",
     "@tailwindcss/vite": "^4.0.0",
     "@testing-library/jest-dom": "^6.9.1",

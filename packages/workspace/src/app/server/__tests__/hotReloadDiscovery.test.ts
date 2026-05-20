@@ -29,8 +29,8 @@ describe("synthetic: asset manager discovers newly-created plugin dirs on /reloa
     if (workspaceRoot) await rm(workspaceRoot, { recursive: true, force: true })
   })
 
-  test("plugin created AFTER boot appears in /api/agent-plugins after /reload", async () => {
-    const before = await app.inject({ method: "GET", url: "/api/agent-plugins" })
+  test("plugin created AFTER boot appears in /api/v1/agent-plugins after /reload", async () => {
+    const before = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
     expect(before.json().find((p: { id: string }) => p.id === "synth-after-boot")).toBeUndefined()
 
     const pluginDir = join(workspaceRoot, ".pi", "extensions", "synth-after-boot")
@@ -46,7 +46,7 @@ describe("synthetic: asset manager discovers newly-created plugin dirs on /reloa
     const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
     expect(reload.statusCode).toBe(200)
 
-    const after = await app.inject({ method: "GET", url: "/api/agent-plugins" })
+    const after = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
     const plugin = after.json().find((p: { id: string }) => p.id === "synth-after-boot")
     expect(plugin, JSON.stringify(after.json(), null, 2)).toBeTruthy()
     expect(plugin.boring.front).toBe("front/index.tsx")
@@ -73,7 +73,7 @@ describe("synthetic: asset manager discovers newly-created plugin dirs on /reloa
         pluginHotReload: false,
       })
 
-      const listed = await disabledApp.inject({ method: "GET", url: "/api/agent-plugins" })
+      const listed = await disabledApp.inject({ method: "GET", url: "/api/v1/agent-plugins" })
       expect(listed.statusCode).toBe(200)
       expect(listed.json().find((p: { id: string }) => p.id === "static-at-boot")).toBeTruthy()
 

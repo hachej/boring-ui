@@ -789,9 +789,9 @@ importers:
         specifier: ^5.0.0
         version: 5.0.12(@types/react@19.2.14)(react@19.2.5)(use-sync-external-store@1.6.0(react@19.2.5))
     devDependencies:
-      '@hachej/boring-ask-user':
+      '@boring-fixtures/default-plugin':
         specifier: workspace:*
-        version: link:../../plugins/ask-user
+        version: link:test-fixtures/default-plugin
       '@tailwindcss/postcss':
         specifier: ^4.0.0
         version: 4.2.4
@@ -856,7 +856,9 @@ importers:
         specifier: ^2.0.0
         version: 2.1.9(@types/node@22.19.17)(jsdom@29.0.2(@noble/hashes@2.2.0))(lightningcss@1.32.0)
 
-  plugins/_template:
+  packages/workspace/test-fixtures/default-plugin: {}
+
+  plugins/_template-full:
     dependencies:
       '@hachej/boring-ui-kit':
         specifier: workspace:*

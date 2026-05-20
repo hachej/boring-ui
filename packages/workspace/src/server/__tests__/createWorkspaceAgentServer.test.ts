@@ -323,6 +323,28 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
    * skills dir, injection drops the package), the skill goes silent for
    * every CLI user. This test fails loudly before any of that ships.
    */
+  test("provisions boring-ui CLI and installs a workspace-local shim for plugin scaffolding", async () => {
+    const workspaceRoot = await makeTempDir("boring-cli-shim-")
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+    })
+
+    try {
+      const provisionedCli = join(workspaceRoot, "node_modules", "@hachej", "boring-ui-cli")
+      await expect(readFile(join(provisionedCli, "package.json"), "utf8")).resolves.toContain("@hachej/boring-ui-cli")
+      await expect(readFile(join(provisionedCli, "templates", "front-canonical.tsx"), "utf8")).resolves.toContain("definePlugin")
+
+      const shim = await readFile(join(workspaceRoot, ".boring-agent", "bin", "boring-ui"), "utf8")
+      expect(shim).toContain("$WORKSPACE_ROOT/node_modules/@hachej/boring-ui-cli/dist/index.js")
+      expect(shim).toContain("exec node")
+    } finally {
+      await app.close()
+    }
+  })
+
   test("CLI-like boot in fresh workspace auto-discovers boring-plugin-authoring skill via /api/v1/agent/skills", async () => {
     const workspaceRoot = await makeTempDir("boring-cli-skill-discovery-")
 
@@ -401,12 +423,12 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     })
 
     try {
-      const before = await app.inject({ method: "GET", url: "/api/agent-plugins" })
+      const before = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
       expect(before.json()[0].revision).toBe(1)
       await writeFile(join(pluginRoot, "front", "index.tsx"), "export default function() { return undefined }\n", "utf8")
       const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: { sessionId: "missing" } })
       expect(reload.statusCode).toBe(200)
-      const after = await app.inject({ method: "GET", url: "/api/agent-plugins" })
+      const after = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
       expect(after.json()[0].revision).toBe(2)
     } finally {
       await app.close()
@@ -416,7 +438,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
   test("POST /api/v1/agent/reload tolerates per-plugin failures (PLUGIN_SYSTEM.md §4.5)", async () => {
     // beforeReload no longer throws on per-plugin scan/rebuild errors.
     // POST /api/v1/agent/reload returns 200 even when an underlying plugin
-    // misbehaves; diagnostics flow through SSE + /api/agent-plugins/:id/error.
+    // misbehaves; diagnostics flow through SSE + /api/v1/agent-plugins/:id/error.
     const workspaceRoot = await makeTempDir("boring-workspace-agent-reload-tolerate-")
     const pluginRoot = await makeTempDir("boring-workspace-bad-plugin-")
     await mkdir(join(pluginRoot, ".pi", "extensions", "broken"), { recursive: true })
@@ -635,7 +657,7 @@ describe("createWorkspaceAgentServer — extraTools merge", () => {
 })
 
 describe("createWorkspaceAgentServer — defaultPluginPackages (standard load process)", () => {
-  test("npm-name resolves, server side loads via default export, asset manager discovers boring.front, plugin appears in /api/agent-plugins", async () => {
+  test("npm-name resolves, server side loads via default export, asset manager discovers boring.front, plugin appears in /api/v1/agent-plugins", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-default-pkg-")
 
     const app = await createWorkspaceAgentServer({
@@ -643,29 +665,29 @@ describe("createWorkspaceAgentServer — defaultPluginPackages (standard load pr
       mode: "direct",
       logger: false,
       disableDefaultFileTools: true,
-      // The real npm package — proves require.resolve + DirPluginEntry
-      // + BoringPluginAssetManager scan all wire together correctly.
-      defaultPluginPackages: ["@hachej/boring-ask-user"],
+      // Workspace-local fixture package — proves require.resolve + DirPluginEntry
+      // + BoringPluginAssetManager scan all wire together correctly without
+      // coupling this workspace test to a real plugin package like ask-user.
+      defaultPluginPackages: ["@boring-fixtures/default-plugin"],
     })
 
     try {
-      // Server-side: the package's default-exported (options, ctx) =>
-      // WorkspaceServerPlugin adapter ran. Its agentTool "ask_user"
-      // appears in the agent catalog.
+      // Server-side: the package's default-exported WorkspaceServerPlugin
+      // ran. Its agentTool "fixture_ping" appears in the agent catalog.
       const catalog = await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })
       expect(catalog.statusCode).toBe(200)
       const toolNames = (catalog.json().tools as Array<{ name: string }>).map((t) => t.name)
-      expect(toolNames).toContain("ask_user")
+      expect(toolNames).toContain("fixture_ping")
 
-      // Front-side discovery: the package appears in /api/agent-plugins
+      // Front-side discovery: the package appears in /api/v1/agent-plugins
       // with a frontUrl pointing at its boring.front entry. The
       // front-side SSE subscriber would dynamic-import this URL.
-      const plugins = await app.inject({ method: "GET", url: "/api/agent-plugins" })
+      const plugins = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
       expect(plugins.statusCode).toBe(200)
       // Plugin id is derived from package.json#name via @scope/name → scope-name
       const list = plugins.json() as Array<{ id: string; frontUrl?: string }>
-      const found = list.find((p) => p.id === "hachej-boring-ask-user")
-      expect(found, `hachej-boring-ask-user not in /api/agent-plugins; got: ${JSON.stringify(list)}`).toBeDefined()
+      const found = list.find((p) => p.id === "boring-fixtures-default-plugin")
+      expect(found, `boring-fixtures-default-plugin not in /api/v1/agent-plugins; got: ${JSON.stringify(list)}`).toBeDefined()
       expect(found?.frontUrl).toMatch(/\/@fs\//)
     } finally {
       await app.close()
@@ -680,9 +702,9 @@ describe("createWorkspaceAgentServer — defaultPluginPackages (standard load pr
         mode: "direct",
         logger: false,
         provisionWorkspace: false,
-        defaultPluginPackages: ["@hachej/boring-ask-user-typo-does-not-exist"],
+        defaultPluginPackages: ["@boring-fixtures/default-plugin-typo-does-not-exist"],
       }),
-    ).rejects.toThrow(/cannot resolve.*ask-user-typo-does-not-exist/)
+    ).rejects.toThrow(/cannot resolve.*default-plugin-typo-does-not-exist/)
   })
 
   test("throws on absolute path that has no package.json", async () => {

@@ -13,7 +13,7 @@ import {
   type PiExtensionFactory,
 } from "@hachej/boring-agent/server"
 import type { FastifyInstance } from "fastify"
-import { existsSync, readFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
@@ -138,6 +138,34 @@ export interface CreateWorkspaceAgentServerOptions
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 
+function boringPiRootVisibleToAgentTools(workspaceRoot: string, resolvedMode: string, provisioned: boolean): string | undefined {
+  if (!provisioned) return undefined
+  if (resolvedMode === "local") return "/workspace/node_modules/@hachej/boring-pi"
+  return join(workspaceRoot, "node_modules", "@hachej", "boring-pi")
+}
+
+function ensureBoringUiCliShim(workspaceRoot: string): boolean {
+  const workspaceCliBin = join(
+    workspaceRoot,
+    "node_modules",
+    "@hachej",
+    "boring-ui-cli",
+    "dist",
+    "index.js",
+  )
+  if (!existsSync(workspaceCliBin)) return false
+  const shimDir = join(workspaceRoot, ".boring-agent", "bin")
+  mkdirSync(shimDir, { recursive: true })
+  const shimPath = join(shimDir, "boring-ui")
+  writeFileSync(
+    shimPath,
+    `#!/usr/bin/env bash\nset -euo pipefail\nSCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"\nWORKSPACE_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"\nexec node "$WORKSPACE_ROOT/node_modules/@hachej/boring-ui-cli/dist/index.js" "$@"\n`,
+    "utf8",
+  )
+  chmodSync(shimPath, 0o755)
+  return true
+}
+
 function resolveWorkspacePackageRoot(): string {
   const candidates = [
     join(__dirname, ".."),
@@ -201,6 +229,36 @@ function resolveBoringPiPackageRoot(): string | null {
 
 function createBoringPiPackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
   return nodePackageContribution("boring-pi-package", "boring-pi", "@hachej/boring-pi", resolveBoringPiPackageRoot())
+}
+
+function resolveBoringUiCliPackageRoot(): string | null {
+  const workspacePackageRoot = resolveWorkspacePackageRoot()
+  const candidates = [
+    join(workspacePackageRoot, "..", "cli"),
+    join(workspacePackageRoot, "node_modules", "@hachej", "boring-ui-cli"),
+  ]
+  for (const candidate of candidates) {
+    try {
+      const pkg = JSON.parse(readFileSync(join(candidate, "package.json"), "utf8")) as { name?: string }
+      if (pkg.name === "@hachej/boring-ui-cli") return candidate
+    } catch {
+      // try next layout
+    }
+  }
+  try {
+    return dirname(require.resolve("@hachej/boring-ui-cli/package.json"))
+  } catch {
+    return null
+  }
+}
+
+function createBoringUiCliPackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
+  return nodePackageContribution(
+    "boring-ui-cli-package",
+    "boring-ui-cli",
+    "@hachej/boring-ui-cli",
+    resolveBoringUiCliPackageRoot(),
+  )
 }
 
 function createBoringPiPackageSource(workspaceRoot: string): WorkspacePiPackageSource | undefined {
@@ -278,6 +336,7 @@ export function collectWorkspaceAgentServerPlugins(
     provisioningContributions: [
       createWorkspacePackageProvisioningContribution(),
       createBoringPiPackageProvisioningContribution(),
+      createBoringUiCliPackageProvisioningContribution(),
       ...result.provisioningContributions,
     ].filter((entry): entry is WorkspaceProvisioningContribution => Boolean(entry)),
     routeContributions: result.routeContributions,
@@ -424,6 +483,7 @@ export async function createWorkspaceAgentServer(
       force: opts.workspaceProvisioning?.force,
     })
   }
+  const boringUiCliShimAvailable = ensureBoringUiCliShim(workspaceRoot)
 
   // Static Pi resources known at boot: workspace skill dir,
   // factory-supplied values, and the bundled @hachej/boring-pi skill
@@ -503,8 +563,14 @@ export async function createWorkspaceAgentServer(
       // published version, which lags the locally-installed CLI when
       // the agent is iterating in a monorepo. Keep the bin name short.
       buildBoringSystemPrompt({
-        scaffoldCommand: "boring-ui scaffold-plugin",
-        verifyCommand: "boring-ui verify-plugin",
+        ...(boringUiCliShimAvailable
+          ? { scaffoldCommand: "boring-ui scaffold-plugin", verifyCommand: "boring-ui verify-plugin" }
+          : {}),
+        boringPiRootOverride: boringPiRootVisibleToAgentTools(
+          workspaceRoot,
+          resolvedMode,
+          opts.provisionWorkspace !== false,
+        ),
       }),
       pluginCollection.agentOptions.systemPromptAppend,
       staticPluginPackagePiSnapshot.systemPromptAppend,

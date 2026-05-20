@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify"
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import type { BoringPluginAssetManager } from "./manager"
 import type { BoringPluginEvent, PluginRestartSurface } from "./types"
 
@@ -82,13 +82,19 @@ export async function boringPluginRoutes(app: FastifyInstance, opts: BoringPlugi
     })
   }
 
-  app.get("/api/agent-plugins", async () => manager.list())
+  const listPlugins = async () => manager.list()
+  // Canonical versioned route. Keep the unversioned path as a compatibility
+  // alias for older clients/tests, but all new callers should use /api/v1.
+  app.get("/api/v1/agent-plugins", listPlugins)
+  app.get("/api/agent-plugins", listPlugins)
 
-  app.get<{ Params: { id: string } }>("/api/agent-plugins/:id/error", async (request, reply) => {
+  const getPluginError = async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
     const error = manager.getError(request.params.id)
     if (error == null) return reply.status(404).send({ error: "not_found" })
     return reply.type("text/plain").send(error)
-  })
+  }
+  app.get<{ Params: { id: string } }>("/api/v1/agent-plugins/:id/error", getPluginError)
+  app.get<{ Params: { id: string } }>("/api/agent-plugins/:id/error", getPluginError)
 
   app.get("/api/v1/agent-plugins/events", async (request, reply) => {
     reply.hijack()
