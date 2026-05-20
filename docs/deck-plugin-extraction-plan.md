@@ -16,7 +16,7 @@ The extracted plugin must be reusable by future apps, while still allowing `bori
 - Do not move macro data/catalog/query logic into `@hachej/boring-deck`.
 - Do not hardcode FRED, ClickHouse, `TimeSeries`, or `TimeSeriesGrid` into the generic deck plugin.
 - Keep macro-specific `TimeSeries` and `TimeSeriesGrid` widget implementations in `boring-macro`; the deck plugin only provides the widget registry/host.
-- Do not require manifest/defaultPluginPackages loading for the first migration; direct static composition remains acceptable.
+- Do not require `boring-macro` to switch to manifest/defaultPluginPackages loading in its first migration; direct static composition remains acceptable even though `@hachej/boring-deck` itself should be manifest-loadable.
 - Do not make every internal component overrideable immediately. Provide stable extension points only.
 
 ## 3. Current source in boring-macro
@@ -83,9 +83,9 @@ plugins/deck/
     test-setup.ts
 ```
 
-Package metadata should follow the soon-to-merge plugin-agent-layer split between **plugin kits** and **manifest-loadable plugins**.
+Package metadata should follow the soon-to-merge plugin-agent-layer package.json plugin shape. `@hachej/boring-deck` should be a **manifest-loadable plugin package** with safe generic defaults **and** a builder library for consumers that need app-specific storage/widgets/theme.
 
-`@hachej/boring-deck` is a **plugin kit**, matching `@hachej/boring-data-catalog`: it exports builders that consumers call with app-specific storage/widgets/theme. Because options are required for a useful deck, the kit should not claim a default `package.json#boring` front/server entry. It may still ship a static `pi.skills` contribution for reusable agent instructions, because that skill explains deck authoring and does not imply a runnable UI/server plugin.
+The default package plugin is intentionally generic: it can open/edit markdown decks under `deck/`, includes no macro-specific widgets, and uses a file-backed server rooted at the workspace deck directory. Consumers such as `boring-macro` can still call `createDeckPlugin(...)` / `createDeckServerPlugin(...)` or provide a thin wrapper when they need `TimeSeries`/`TimeSeriesGrid` widget injection.
 
 ```json
 {
@@ -94,11 +94,17 @@ Package metadata should follow the soon-to-merge plugin-agent-layer split betwee
   "type": "module",
   "private": true,
   "license": "MIT",
-  "description": "Plugin BUILDER for Boring workspace markdown decks. Consumers call createDeckPlugin/createDeckServerPlugin with storage and widget options; wrap in an app-local plugin module for defaultPluginPackages.",
-  "files": ["dist", "skills"],
-  "pi": {
-    "skills": ["skills/deck-authoring"]
+  "description": "Manifest-loadable Boring workspace markdown deck plugin plus builders for app-specific storage, widgets, and theme.",
+  "boring": {
+    "label": "Deck",
+    "front": "dist/front/index.js",
+    "server": "dist/server/index.js"
   },
+  "pi": {
+    "skills": ["skills/deck-authoring"],
+    "systemPrompt": "Use the deck-authoring skill for markdown slide decks under deck/*.md."
+  },
+  "files": ["dist", "skills"],
   "exports": {
     ".": { "types": "./dist/front/index.d.ts", "import": "./dist/front/index.js" },
     "./front": { "types": "./dist/front/index.d.ts", "import": "./dist/front/index.js" },
@@ -115,23 +121,12 @@ Package metadata should follow the soon-to-merge plugin-agent-layer split betwee
 }
 ```
 
-A concrete app/local wrapper can be manifest-loadable and may include:
+Default exports:
 
-```json
-{
-  "boring": {
-    "label": "Macro Deck",
-    "front": "dist/front/index.js",
-    "server": "dist/server/index.js"
-  },
-  "pi": {
-    "skills": ["skills/deck-authoring"],
-    "systemPrompt": "Use the deck-authoring skill for slide structure. Macro deck widgets include TimeSeries and TimeSeriesGrid."
-  }
-}
-```
+- `src/front/index.tsx` default-exports `createDeckPlugin()` for package discovery/static loading.
+- `src/server/index.ts` default-exports `defaultDeckServerPlugin(options, ctx)` for directory-source package loading; it builds `createDeckServerPlugin(...)` with `routeBase: options.routeBase ?? '/api/deck'` and `root: options.root ?? path.join(ctx.workspaceRoot, 'deck')`.
 
-That wrapper default-exports the built front factory and server factory after binding storage/widget options. It can either reference the generic deck skill if packaged locally, or provide an app-specific `skills/deck-authoring/SKILL.md` that imports/copies the generic guidance and appends widget syntax. This keeps package discovery compatible with the plugin-agent-layer without pretending the generic kit has enough front/server defaults to run safely by itself.
+Consumer-specific wrappers remain useful but optional. `boring-macro` should use the builders to inject macro widgets and keep `/api/macro/deck` compatibility, while the generic package itself remains runnable through `package.json#boring`.
 
 ## 4.1 Alignment with plugin-agent-layer
 
@@ -141,8 +136,8 @@ The implementation must target the authoring/runtime shape in `~/projects/boring
 - Front `setup` remains synchronous. `createDeckPlugin` must not require async front bootstrap.
 - Consumers pass the returned factory directly to `WorkspaceProvider.plugins`; tests normalize with `toWorkspacePlugin(...)` where needed.
 - Server builders import from `@hachej/boring-workspace/server` and return `WorkspaceServerPlugin` produced by `defineServerPlugin({ id, label, routes, systemPrompt, preservedUiStateKeys })`.
-- Manifest/directory loading calls a server default export as `(options, ctx)` and supports async factories. Any wrapper package intended for `defaultPluginPackages` should default-export such a factory and use `ctx.workspaceRoot` for default file roots when appropriate.
-- Directory-source packages should declare explicit `package.json#boring.front` / `boring.server` entries. Builder kits should omit `boring` unless they ship a concrete default plugin; `pi.skills` is allowed for static agent documentation.
+- Manifest/directory loading calls a server default export as `(options, ctx)` and supports async factories. `@hachej/boring-deck/server` should provide that default factory and use `ctx.workspaceRoot` for its default file root.
+- Directory-source packages should declare explicit `package.json#boring.front` / `boring.server` entries. `@hachej/boring-deck` must include those fields because it is a concrete package.json plugin as well as a builder library.
 - Server route edits still require host restart; do not promise hot reload for routes beyond the plugin-agent-layer contract.
 
 ## 5. Frontend API
@@ -193,6 +188,9 @@ export function createDeckPlugin(options: CreateDeckPluginOptions = {}): BoringF
     surfaceResolvers: options.includeSurfaceResolver === false ? [] : [createDeckSurfaceResolver({ id, panelId, pathPrefix: options.pathPrefix ?? 'deck/' })],
   })
 }
+
+const deckPlugin = createDeckPlugin()
+export default deckPlugin
 ```
 
 Default behavior:
@@ -346,6 +344,17 @@ export function createDeckServerPlugin(options: CreateDeckServerPluginOptions): 
     preservedUiStateKeys: options.preservedUiStateKeys,
   })
 }
+
+export default function defaultDeckServerPlugin(
+  options?: { routeBase?: string; root?: string },
+  ctx?: { workspaceRoot: string; bridge: unknown },
+): WorkspaceServerPlugin {
+  const root = options?.root ?? join(ctx?.workspaceRoot ?? process.cwd(), 'deck')
+  return createDeckServerPlugin({
+    routeBase: options?.routeBase ?? '/api/deck',
+    storage: createFileDeckStorage({ root, stripPrefix: 'deck/' }),
+  })
+}
 ```
 
 Default route shape and HTTP compatibility contract:
@@ -497,19 +506,20 @@ Macro should prefer returning two unique `WorkspaceServerPlugin` entries from ap
 ### Phase 0 — Re-sync against plugin-agent-layer
 
 - Confirm imports and public types against `~/projects/boring-ui-v2-plugin-agent-layer` before implementation starts.
-- Treat `@hachej/boring-deck` as a front/server plugin kit, not a direct runnable `defaultPluginPackages` UI/server package; it may still expose `pi.skills` for reusable deck-authoring guidance.
+- Treat `@hachej/boring-deck` as a concrete package.json plugin with safe defaults, while still exporting builders for customized consumers such as `boring-macro`.
 - Add any package scripts/invariant checks needed so `plugins/deck/src` is covered by workspace plugin invariants.
 
 Acceptance:
 
-- Plan and implementation references use `definePlugin`, `BoringFrontFactoryWithId`, `defineServerPlugin`, `WorkspaceServerPlugin`, `pi.skills`, and manifest wrapper semantics matching plugin-agent-layer.
+- Plan and implementation references use `definePlugin`, `BoringFrontFactoryWithId`, `defineServerPlugin`, `WorkspaceServerPlugin`, `package.json#boring`, `pi.skills`, and default server factory semantics matching plugin-agent-layer.
 
 ### Phase 1 — Create generic deck package shell
 
 - Copy `plugins/_template-full` to `plugins/deck` as a starting point.
 - Rename package to `@hachej/boring-deck`.
-- Remove template `package.json#boring` fields because this package is a plugin kit, not a concrete manifest-loadable UI/server plugin; keep/add `pi.skills` for static deck-authoring guidance.
+- Keep and update template `package.json#boring` fields so `@hachej/boring-deck` is manifest-loadable; add `pi.skills` for static deck-authoring guidance.
 - Add `front`, `server`, `shared` exports.
+- Add default front export `createDeckPlugin()` and default server factory `defaultDeckServerPlugin(options, ctx)`.
 - Add `skills/deck-authoring/SKILL.md` and include `skills` in package files.
 - Add workspace/package scripts and tsup entries.
 - Add package to `pnpm-workspace.yaml` if needed.
@@ -648,7 +658,7 @@ Mitigation: keep `panelId: 'deck'` for macro integration.
 ## 13. Open decisions
 
 1. Should `@hachej/boring-deck` ship a direct default plugin, or only builders?
-   - Recommendation: ship builders; optional default export can use `/api/deck` and basic file storage.
+   - Decision: ship both. The package is manifest-loadable through `package.json#boring`, and also exports builders for customized consumers.
 2. Should parser live in `front` or `shared`?
    - Recommendation: `shared` if it has zero React/DOM deps; this enables server-side validation later.
 3. Should widget attrs support JSON values?
