@@ -361,23 +361,20 @@ export function ChatPanel(props: ChatPanelProps) {
     const sdkHasVisibleAssistant = hasStandardVisibleAssistantParts(messages)
 
     if (sdkHasVisibleAssistant) {
-      return [...messages, ...queuedPiTail, ...waitingTail]
+      return [...messages, ...coalesceAssistantToolFragments(queuedPiTail), ...waitingTail]
     }
 
     if (piMessages.length > 0 && queuedPiTail.length > 0) {
-      return [...piMessages, ...waitingTail]
+      return [...coalesceAssistantToolFragments(piMessages), ...waitingTail]
     }
 
     if (piMessages.length > 0 && status === 'ready' && hasPiVisibleDataParts(messages)) {
-      return [...piMessages, ...waitingTail]
+      return [...coalesceAssistantToolFragments(piMessages), ...waitingTail]
     }
 
     return [...messages, ...waitingTail]
   }, [messages, piMessages, projectedTailMessages, projectedStatusById, status])
-  const renderMessages = useMemo(
-    () => coalesceAssistantToolFragments(displayMessages),
-    [displayMessages],
-  )
+  const renderMessages = displayMessages
 
   // Stop button: cancels stream, clears the queued follow-up, and lets host UI
   // cancel any host-level blocker that is waiting for user attention.
