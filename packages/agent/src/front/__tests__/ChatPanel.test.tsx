@@ -988,6 +988,50 @@ describe('ChatPanel (shadcn)', () => {
       expect(html).not.toContain('PI_LATER_SHOULD_NOT_FLASH')
     })
 
+    test('does not append normal-turn pi projection after AI SDK-rendered response settles', () => {
+      mockPiProjection.piMessages = [
+        {
+          id: 'pi-u1',
+          role: 'user',
+          parts: [{ type: 'text', text: 'HI_FROM_PI_PROJECTION' }],
+        },
+        {
+          id: 'pi-a1',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'ASSISTANT_FROM_PI_PROJECTION' }],
+        },
+      ]
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          {
+            id: 'sdk-u1',
+            role: 'user',
+            parts: [{ type: 'text', text: 'hi' }],
+          },
+          {
+            id: 'sdk-a1',
+            role: 'assistant',
+            parts: [
+              { type: 'data-pi-message-start', data: { messageId: 'pi-u1', role: 'user', text: 'hi' } } as any,
+              { type: 'data-pi-message-start', data: { messageId: 'pi-a1', role: 'assistant' } } as any,
+              { type: 'text', text: 'Hey! 👋 What are we working on today?' },
+            ],
+          },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-no-normal-pi-tail" />)
+      expect(html).toContain('hi')
+      expect(html).toContain('Hey! 👋 What are we working on today?')
+      expect(html).not.toContain('HI_FROM_PI_PROJECTION')
+      expect(html).not.toContain('ASSISTANT_FROM_PI_PROJECTION')
+      expect((html.match(/data-testid="message"/g) ?? []).length).toBe(2)
+    })
+
     test('renders pi-only fallback response after prior SDK-visible history settles', () => {
       mockPiProjection.piMessages = [
         {

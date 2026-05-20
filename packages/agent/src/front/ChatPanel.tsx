@@ -166,10 +166,6 @@ function uniqueVisiblePiMessages(messages: UIMessage[]): UIMessage[] {
   return out
 }
 
-function getUnrepresentedPiMessages(piMessages: UIMessage[], representedIds: Set<string>): UIMessage[] {
-  return uniqueVisiblePiMessages(piMessages.filter((message) => !representedIds.has(message.id)))
-}
-
 function getSettledPiAssistantIds(message: UIMessage): string[] {
   const ids: string[] = []
   for (const part of message.parts ?? []) {
@@ -440,14 +436,9 @@ export function ChatPanel(props: ChatPanelProps) {
 
     if (sdkHasVisibleAssistant) {
       const mergedMessages = mergeSettledPiFallbacksInPlace(messages, piMessages)
-      const representedIds = collectSdkRepresentedMessageIds(mergedMessages)
-      const queuedIds = new Set(queuedPiTail.map((message) => message.id))
-      const fallbackPiTail = status === 'ready'
-        ? getUnrepresentedPiMessages(piMessages, representedIds).filter((message) => !queuedIds.has(message.id))
-        : []
       return [
         ...mergedMessages,
-        ...coalesceAssistantToolFragments([...queuedPiTail, ...fallbackPiTail]),
+        ...coalesceAssistantToolFragments(queuedPiTail),
         ...waitingTail,
       ]
     }
