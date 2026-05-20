@@ -7,11 +7,7 @@ export interface ScaffoldPluginOptions {
   name: string
   /** Workspace root the .pi/extensions/<name>/ folder is created under. */
   workspaceRoot: string
-  /**
-   * Optional override for the canonical templates directory. Useful for
-   * tests + when boring-pi isn't reachable from process.cwd() (resolution
-   * walks up to find @hachej/boring-pi/references/workspace/templates/).
-   */
+  /** Optional override for the canonical templates dir (test escape hatch). */
   templatesDir?: string
 }
 
@@ -45,11 +41,11 @@ export function scaffoldPlugin(opts: ScaffoldPluginOptions): ScaffoldPluginResul
     throw error
   }
 
-  const templatesDir = opts.templatesDir ?? resolveCanonicalTemplatesDir(workspaceRoot)
+  const templatesDir = opts.templatesDir ?? resolveBundledTemplatesDir()
   if (!templatesDir) {
     throw new Error(
-      "could not locate @hachej/boring-pi/references/workspace/templates/ — " +
-        "pass `templatesDir` explicitly or install @hachej/boring-pi.",
+      "could not locate bundled CLI templates — pass `templatesDir` explicitly. " +
+        "(this usually indicates a broken @hachej/boring-ui-cli install)",
     )
   }
   const tplFront = join(templatesDir, "front-canonical.tsx")
@@ -132,28 +128,15 @@ function pascalCase(name: string): string {
 }
 
 /**
- * Walk up from the workspace root (then this module's location) looking
- * for `node_modules/@hachej/boring-pi/references/workspace/templates`.
- * Returns undefined if not found.
+ * Resolve the templates dir bundled with this CLI. Both source layout
+ * (`packages/cli/src/server/scaffoldPlugin.ts` → `../../templates/`) and
+ * built layout (`packages/cli/dist/server/scaffoldPlugin.js` →
+ * `../../templates/`) walk up to the package root, then into `templates/`.
+ * Same path expression works for both because tsup's `bundle: false`
+ * preserves the source's directory depth in `dist/`.
  */
-function resolveCanonicalTemplatesDir(workspaceRoot: string): string | undefined {
-  const relPath = ["node_modules", "@hachej", "boring-pi", "references", "workspace", "templates"]
-
+function resolveBundledTemplatesDir(): string | undefined {
   const here = dirname(fileURLToPath(import.meta.url))
-  const candidates = [workspaceRoot, here]
-  for (const start of candidates) {
-    let dir = resolve(start)
-    while (true) {
-      const candidate = join(dir, ...relPath)
-      if (existsSync(candidate)) return candidate
-      const parent = dirname(dir)
-      if (parent === dir) break
-      dir = parent
-    }
-  }
-  // Last-resort: this CLI's repo layout has boring-pi as a sibling package
-  // under packages/pi/references/workspace/templates (no node_modules step).
-  const repoCandidate = join(here, "..", "..", "..", "..", "pi", "references", "workspace", "templates")
-  if (existsSync(repoCandidate)) return repoCandidate
-  return undefined
+  const candidate = resolve(here, "..", "..", "templates")
+  return existsSync(candidate) ? candidate : undefined
 }
