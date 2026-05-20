@@ -280,9 +280,16 @@ export function usePiChatProjection({
   }, [messages, status, updatePiMessages])
 
   useEffect(() => {
+    // During an active stream, `handleData` is the smooth path: it applies
+    // incremental text/tool deltas as they arrive. Rebuilding from the AI SDK
+    // message envelope while the stream is still moving can replace that live
+    // projection with a lagging/full snapshot, which reads as "a few chars…
+    // then a big jump" in the UI. Rebuild only once the turn has settled
+    // (or for already-persisted messages loaded while ready).
+    if (status !== 'ready') return
     const rebuilt = rebuildPiMessagesFromDataParts(messages)
     if (rebuilt.length > 0) updatePiMessages((current) => mergeRebuiltPiMessages(current, rebuilt))
-  }, [messages, updatePiMessages])
+  }, [messages, status, updatePiMessages])
 
   const prevPiPersistStatusRef = useRef(status)
   useEffect(() => {

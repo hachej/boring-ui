@@ -110,7 +110,10 @@ function coalesceAssistantToolFragments(messages: UIMessage[]): UIMessage[] {
 
     coalesced[coalesced.length - 1] = {
       ...previous,
-      id: `${previous.id}::${message.id}`,
+      // Keep the first fragment id stable as more stream fragments arrive.
+      // Changing the key on every appended tool/text fragment remounts the
+      // whole assistant message and makes the transcript visibly jump.
+      id: previous.id,
       parts: [...(previous.parts ?? []), ...(message.parts ?? [])],
     }
   }
