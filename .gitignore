@@ -54,6 +54,10 @@ storybook-static/
 .ntm/
 .ui-review/
 *_review.patch
+/pr-review-*.md
+/review-*.md
+/worker-*.md
+/full-pr-final-review/
 packages/agent/bench-results/
 
 # Vitest transient transpiled-config artifacts (leaked when a run is interrupted)

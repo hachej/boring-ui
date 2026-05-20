@@ -1,9 +1,9 @@
 import type { PluginOutput } from "./types"
 
-// Internal IR. Plugin authors write a BoringFrontFactory via
-// `definePlugin(id, factory)`; the capturing API translates each
-// `api.register*` call into a normalized PluginOutput in `outputs`.
-// This IR is the result of `boringFrontFactoryToPlugin`.
+// Internal IR. Plugin authors write front plugins with
+// `definePlugin({ id, ... })`; the capturing API translates each
+// declarative field / `api.register*` call into a normalized PluginOutput
+// in `outputs`. This IR is the result of `boringFrontFactoryToPlugin`.
 export interface WorkspaceFrontPlugin {
   id: string
   label?: string

@@ -1,6 +1,7 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs"
-import { join, resolve } from "node:path"
+import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs"
+import { isAbsolute, join, relative, resolve } from "node:path"
 import {
+  isSafePluginRelativePath,
   validateBoringPluginManifest,
   type BoringPluginManifestIssue,
 } from "@hachej/boring-workspace/plugin"
@@ -22,11 +23,10 @@ export interface PluginVerifyOutcome {
   ok: boolean
   errors: string[]
   /**
-   * Non-fatal informational messages — e.g. "server file changed since
-   * the workspace last loaded this plugin; a /reload will hot-swap the
-   * front but routes/agentTools stay on the previously loaded code
-   * until you restart". Does NOT flip `ok` to false; verify-plugin is
-   * about manifest validity, not freshness.
+   * Non-fatal informational messages — e.g. "this plugin declares
+   * boring.server, which is boot-time/static composition only and is
+   * not hot-registered by /reload". Does NOT flip `ok` to false;
+   * verify-plugin is about manifest validity, not activation.
    */
   warnings: string[]
 }
@@ -49,8 +49,9 @@ export interface VerifyPluginResult {
  * in the same agent turn that wrote the files.
  *
  * Does NOT execute plugin code (no jiti, no Vite). Syntax errors in
- * front/server modules only surface when the workspace's real /reload
- * runs.
+ * front/Pi modules only surface when the workspace's real /reload runs;
+ * declared `boring.server` files require static composition plus a
+ * process restart to execute.
  */
 export function verifyPlugin(opts: VerifyPluginOptions): VerifyPluginResult {
   const workspaceRoot = resolve(opts.workspaceRoot)
@@ -95,6 +96,25 @@ export function verifyPlugin(opts: VerifyPluginOptions): VerifyPluginResult {
   }
 }
 
+function isInsideRoot(rootReal: string, targetReal: string): boolean {
+  const rel = relative(rootReal, targetReal)
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))
+}
+
+function resolveExistingContainedPath(pluginDir: string, value: string, field: string): { path: string | null; error?: string } {
+  if (!isSafePluginRelativePath(value)) {
+    return { path: null, error: `${field} must be a safe relative path inside the plugin root: ${JSON.stringify(value)}` }
+  }
+  const abs = resolve(pluginDir, value)
+  if (!existsSync(abs)) return { path: null, error: `${field} points at "${value}" but that file does not exist (looked at ${abs})` }
+  const rootReal = realpathSync(pluginDir)
+  const targetReal = realpathSync(abs)
+  if (!isInsideRoot(rootReal, targetReal)) {
+    return { path: null, error: `${field} points at "${value}" but resolves outside the plugin root (looked at ${abs})` }
+  }
+  return { path: targetReal }
+}
+
 function verifySinglePlugin(pluginDir: string): PluginVerifyOutcome {
   const id = pluginDir.split(/[\\/]/).pop() ?? "<unknown>"
   const errors: string[] = []
@@ -122,30 +142,26 @@ function verifySinglePlugin(pluginDir: string): PluginVerifyOutcome {
   const manifest = result.packageJson
   const boring = manifest.boring
 
-  // boring.front file must exist if declared (else convention path is checked).
+  // Runtime scanner semantics: boring.front is optional, but when it is
+  // declared it must point at an existing file contained by the plugin root.
+  // Do not invent a front/index convention here; server/Pi-only packages are valid.
   if (boring?.front) {
-    const frontPath = join(pluginDir, boring.front)
-    if (!existsSync(frontPath)) {
-      errors.push(`boring.front points at "${boring.front}" but that file does not exist (looked at ${frontPath})`)
-    }
-  } else {
-    // Convention: front/index.tsx or front/index.ts
-    const candidates = ["front/index.tsx", "front/index.ts"]
-    const found = candidates.find((c) => existsSync(join(pluginDir, c)))
-    if (!found) {
-      errors.push(
-        `no front entry found and boring.front not declared (looked at: ${candidates.join(", ")})`,
-      )
-    }
+    const resolved = resolveExistingContainedPath(pluginDir, boring.front, "boring.front")
+    if (resolved.error) errors.push(resolved.error)
   }
 
-  // boring.server, when a string, points at a file that must exist.
+  // boring.server, when a string, points at a file that must exist and stay contained.
+  // It is intentionally NOT a hot-reload activation path for .pi/extensions user plugins.
   let serverPathAbs: string | null = null
   if (typeof boring?.server === "string") {
-    serverPathAbs = join(pluginDir, boring.server)
-    if (!existsSync(serverPathAbs)) {
-      errors.push(`boring.server points at "${boring.server}" but that file does not exist (looked at ${serverPathAbs})`)
-      serverPathAbs = null
+    const resolved = resolveExistingContainedPath(pluginDir, boring.server, "boring.server")
+    if (resolved.error) {
+      errors.push(resolved.error)
+    } else {
+      serverPathAbs = resolved.path
+      warnings.push(
+        "boring.server file is valid, but workspace server entries are boot-time/static composition only. /reload does not import or register .pi/extensions server routes/agentTools; restart the workspace with this package passed via defaultPluginPackages or explicit plugins to activate server code.",
+      )
     }
   }
 
@@ -167,15 +183,13 @@ function verifySinglePlugin(pluginDir: string): PluginVerifyOutcome {
     }
   }
 
-  // pi.extensions entries must each exist.
+  // pi.extensions entries must each exist and stay contained by the plugin root.
   const piExt = (manifest.pi as { extensions?: string[] } | undefined)?.extensions
   if (Array.isArray(piExt)) {
     for (const ext of piExt) {
       if (typeof ext !== "string") continue
-      const extPath = join(pluginDir, ext)
-      if (!existsSync(extPath)) {
-        errors.push(`pi.extensions entry "${ext}" does not exist (looked at ${extPath})`)
-      }
+      const resolved = resolveExistingContainedPath(pluginDir, ext, "pi.extensions entry")
+      if (resolved.error) errors.push(resolved.error)
     }
   }
 
@@ -219,7 +233,7 @@ export function formatVerifyResult(result: VerifyPluginResult): string {
       lines.push(`Manifests are valid, but ${n} plugin${n === 1 ? "" : "s"} need a workspace restart (NOT just /reload) to pick up server-side changes — see WARN lines above.`)
       lines.push("")
     }
-    lines.push("Note: this validator does NOT execute plugin code. Syntax / type / runtime errors only surface on /reload.")
+    lines.push("Note: this validator does NOT execute plugin code. Front/Pi syntax / type / runtime errors surface on /reload; boring.server files require static composition plus a process restart.")
   } else {
     lines.push(`FAILED — ${failures.length} of ${result.outcomes.length} plugin(s) have errors.  (scanned ${result.extensionsDir})`)
     lines.push("")
@@ -241,7 +255,7 @@ export function formatVerifyResult(result: VerifyPluginResult): string {
       }
     }
     lines.push("")
-    lines.push("Fix the errors above and run `boring-ui verify-plugin` again. Once it reports OK, ask the user to run /reload.")
+    lines.push("Fix the errors above and run `boring-ui verify-plugin` again. Once it reports OK, ask the user to run /reload for front/Pi assets; boring.server changes require static composition plus restart.")
   }
   return lines.join("\n")
 }
@@ -253,7 +267,7 @@ const COMMON_MISTAKE_HINTS: Array<{ pattern: RegExp; hint: string }> = [
   {
     pattern: /boring\.server must be a safe relative path or false/i,
     hint:
-      'Set `boring.server` to a string path like "server/index.ts", or to `false` (or omit the field). It is NOT a boolean true.',
+      'Set `boring.server` to a string path like "server/index.ts", or to `false` (or omit the field). It is NOT a boolean true. For hot-reloadable agent behavior in .pi/extensions, prefer pi.extensions instead.',
   },
   {
     pattern: /package\.json manifest must be an object/i,

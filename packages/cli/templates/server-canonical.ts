@@ -1,6 +1,8 @@
-// CANONICAL server/index.ts for a boring-ui plugin (only when
-// the plugin has a server side — agent tools and/or HTTP routes).
-// Copy this shape — replace <kebab-name> and the tool name.
+// CANONICAL server/index.ts for advanced boring-ui server integration.
+// This is boot-time/static composition only for .pi/extensions plugins:
+// /reload does NOT hot-register these routes or agent tools. Prefer
+// pi.extensions for hot-reloadable agent behavior.
+// Copy this shape only when the host will compose/restart the plugin.
 
 import { defineServerPlugin, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
 
@@ -9,7 +11,7 @@ export default function (
   ctx: { workspaceRoot: string; bridge: unknown },
 ): WorkspaceServerPlugin {
   return defineServerPlugin({
-    id: "<kebab-name>", // MUST match package.json#name
+    id: "<kebab-name>", // contribution namespace; matching package name is recommended
     agentTools: [
       {
         name: "<snake_case_tool_name>",
@@ -35,4 +37,6 @@ export default function (
 //   - package.json must set `boring.server: "server/index.ts"`
 //     (a relative path string). NOT `true` — the manifest validator
 //     rejects `true` with `INVALID_PLUGIN_METADATA`. Valid values:
-//     a path string, OR `false` (no server), OR omit (uses convention).
+//     a path string, OR `false` (no server), OR omit.
+//   - For .pi/extensions user plugins, /reload only refreshes front/Pi
+//     assets. Server entries require static composition plus restart.

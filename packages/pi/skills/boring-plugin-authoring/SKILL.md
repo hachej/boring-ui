@@ -1,6 +1,6 @@
 ---
 name: boring-plugin-authoring
-description: Create, extend, or update boring-ui workspace plugins, including hot-reloadable user plugins, app-default plugins shipped with apps, React panels, file visualizers, surface resolvers, server-side agent tools, and Pi/agent contributions. Use when the user asks to build, extend, configure, or modify a boring-ui plugin.
+description: Create, extend, or update boring-ui workspace plugins, including hot-reloadable user plugins, app-default plugins shipped with apps, React panels, file visualizers, surface resolvers, static server integrations, and Pi/agent contributions. Use when the user asks to build, extend, configure, or modify a boring-ui plugin.
 ---
 
 # Boring Plugin Authoring
@@ -18,10 +18,13 @@ paths are correct — the parts agents most often invent or get wrong.
 npx @hachej/boring-ui-cli scaffold-plugin <kebab-name>
 ```
 
-The scaffold writes exactly two files:
+The scaffold writes the canonical hot-reload package skeleton:
 
-- `.pi/extensions/<name>/package.json` — manifest with `boring.front`, `pi.systemPrompt`
-- `.pi/extensions/<name>/front/index.tsx` — `definePlugin` factory registering one panel + command + left tab
+- `.pi/extensions/<name>/package.json` — manifest with `boring.front` and `pi.systemPrompt`
+- `.pi/extensions/<name>/front/index.tsx` — `definePlugin` config registering one panel + command + left tab
+- `.pi/extensions/<name>/.gitignore` — ignores runtime verifier/signature sidecars
+
+Hot-reloadable agent behavior belongs in `pi.extensions` / `pi.skills` / `pi.systemPrompt`. The scaffold does not create `server/index.ts`: `boring.server` is advanced boot-time/static server integration and is not activated by `/reload` for `.pi/extensions` user plugins.
 
 **Workflow:**
 
@@ -29,7 +32,7 @@ The scaffold writes exactly two files:
 2. Read the generated files with the read tool.
 3. Edit them in place with the edit tool — do **NOT** rewrite from scratch.
 4. Run `boring-ui verify-plugin` via bash. Fix anything it reports and re-run until it returns `OK`.
-5. Tell the user to run `/reload` (the workspace picks up the new plugin).
+5. Tell the user to run `/reload` for front/Pi asset changes. If you added `boring.server`, tell the user the workspace process must be statically composed with that package and restarted.
 
 If the scaffold says the plugin already exists, you can read the existing
 files directly and skip step 1.
@@ -74,9 +77,8 @@ that directory:
 
 ```
 .pi/extensions/<name>/
-├── package.json          # manifest (boring.front, boring.server, pi.systemPrompt, pi.extensions)
+├── package.json          # manifest (boring.front, pi.systemPrompt, pi.extensions)
 ├── front/index.tsx       # front factory (boring.front)
-├── server/index.ts       # OPTIONAL — present when boring.server is set to "server/index.ts"
 └── agent/index.ts        # OPTIONAL — Pi extension, declared in pi.extensions
 ```
 
@@ -111,13 +113,12 @@ The scaffold writes this. Customize fields but keep the structure:
 
 ```jsonc
 {
-  "name": "<kebab-name>",         // becomes plugin id; @scope/x becomes scope-x
+  "name": "<kebab-name>",         // package discovery id; @scope/x becomes scope-x
   "version": "0.1.0",
   "private": true,
   "boring": {
     "label": "<Display Label>",   // shown in panel chrome
-    "front": "front/index.tsx",   // path to front factory file
-    "server": false               // OR "server/index.ts" (path string) when you add a server file. NEVER the boolean true.
+    "front": "front/index.tsx"    // path to front factory file
   },
   "pi": {
     "systemPrompt": "<1-2 sentences telling the agent when this plugin is relevant>",
@@ -137,7 +138,7 @@ function MyPane() {
 }
 
 export default definePlugin({
-  id: "my-plugin",            // MUST match package.json#name
+  id: "my-plugin",            // contribution namespace; matching package name is recommended
   label: "My Plugin",
   panels: [
     { id: "my-plugin.panel", label: "My Plugin", component: MyPane },
@@ -153,7 +154,7 @@ export default definePlugin({
 
 Notes:
 
-- `config.id` MUST match `package.json#name` (string, not template literal).
+- Package discovery derives an asset id from `package.json#name` (`@scope/name` becomes `scope-name`). `config.id` is the contribution namespace for front outputs. Matching the normalized package id is recommended for fully package-loaded plugins; first-party/static composition may use a shorter namespace.
 - Panel/command/tab ids should be `<plugin-id>.<thing>` — convention.
 - Import React explicitly (no `globalThis.React`).
 - Do NOT use `defineFrontPlugin` or `createPlugin` (don't exist).
@@ -209,12 +210,43 @@ Read raw file bytes from `/api/v1/files/raw?path=<workspace-relative-path>`.
 For charts, use plain SVG (`<rect>`, `<line>`, `<polyline>`) — do not add
 recharts / chart.js dependencies.
 
-### Server-side plugin (agent tools or HTTP routes)
+### Hot-reloadable agent behavior: Pi extension
 
-Set `boring.server: "server/index.ts"` (the path string — NEVER the boolean `true`; the manifest validator rejects `true` with `INVALID_PLUGIN_METADATA`), then create the file. Two valid shapes, discriminated by arity:
+For `.pi/extensions/<name>/` user plugins, agent tools belong in Pi extensions,
+not `boring.server`. Create `.pi/extensions/<name>/agent/index.ts` and declare
+it in `package.json#pi.extensions: ["agent/index.ts"]`. `/reload` refreshes this
+Pi code for subsequent agent turns.
 
 ```ts
-// server/index.ts — arity-2: contributes agent tools + routes
+// agent/index.ts — native Pi extension
+export default function extension(api: { registerTool(tool: unknown): void }) {
+  api.registerTool({
+    name: "my_tool",
+    description: "What this tool does.",
+    parameters: { type: "object", properties: {} },
+    async execute() {
+      return { content: [{ type: "text", text: "ok" }] }
+    },
+  })
+}
+```
+
+Also add or update `pi.systemPrompt` / `pi.skills` so the agent knows when to use
+the tool.
+
+### Advanced static server integration (not hot-reloadable for .pi/extensions)
+
+`boring.server: "server/index.ts"` is only for workspace server integrations
+that the host composes at boot (for example through `defaultPluginPackages` or
+explicit server plugins) and activates by restarting the process. `boring-ui
+verify-plugin` checks that the declared file is safe and present, but `/reload`
+does **not** import/register `.pi/extensions` server routes or agent tools.
+
+Only use this path when the user/host explicitly wants boot-time server routes or
+static `agentTools` and can restart:
+
+```ts
+// server/index.ts — static WorkspaceServerPlugin factory
 import { defineServerPlugin, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
 
 export default function (
@@ -223,39 +255,12 @@ export default function (
 ): WorkspaceServerPlugin {
   return defineServerPlugin({
     id: "my-plugin",
-    agentTools: [
-      {
-        name: "my_tool",
-        description: "What this tool does.",
-        parameters: { type: "object", properties: {} },
-        async execute() {
-          return { content: [{ type: "text", text: "ok" }] }
-        },
-      },
-    ],
     routes: async (app) => {
-      app.get("/my-plugin/status", async () => ({ ok: true }))
+      app.get("/my-plugin/status", async () => ({ ok: true, root: ctx.workspaceRoot }))
     },
-    systemPrompt: "Use my_tool when the user asks about …",
   })
 }
 ```
-
-```ts
-// server/index.ts — arity-1: routes only, no agent tools
-import type { BoringServerFactory } from "@hachej/boring-workspace/server"
-
-const server: BoringServerFactory = (api) => {
-  api.get("/my-plugin/health", async () => ({ ok: true }))
-}
-export default server
-```
-
-### Pi-side agent extension (rare)
-
-`.pi/extensions/<name>/agent/index.ts` runs inside the Pi agent process.
-Use for in-process state queries the agent should reach without HTTP. Declare
-in `package.json#pi.extensions: ["agent/index.ts"]`.
 
 ### Extending an existing plugin (no `composePlugins` helper)
 
@@ -320,15 +325,23 @@ await createWorkspaceAgentServer({
 })
 ```
 
-The app's front-end (`apps/<app>/src/front/App.tsx`) does **not** also list
-these in `WorkspaceProvider.plugins` — they arrive via SSE just like
-`.pi/extensions/<name>/` plugins.
+The app's front-end (`apps/<app>/src/front/App.tsx`) usually does **not** also
+list these in `WorkspaceProvider.plugins` — panel/command/catalog package fronts
+arrive via SSE like `.pi/extensions/<name>/` plugin fronts. Exception: plugins
+that register `providers` or `bindings` need static front composition for now
+(import the plugin's front export and pass it in `plugins={[...]}`) because
+dynamic provider/binding hot-load is intentionally unsupported. Server entries
+from package plugins are boot-time/static: changing `boring.server` code requires
+restarting the workspace process.
 
 ## After editing — tell the user to /reload
 
 Hot reload is driven by the user (via `/reload`), not by the agent. After
-your edits, end your message with a line telling the user to run `/reload`.
-The workspace then re-scans `.pi/extensions/` and re-imports affected files.
+front or Pi edits, end your message with a line telling the user to run
+`/reload`. The workspace then re-scans `.pi/extensions/` and refreshes front
+assets plus Pi extensions/skills/prompts. If you changed `boring.server`, say
+that `/reload` is not enough: the host must statically compose that server entry
+and restart the workspace process.
 
 ## More detail
 

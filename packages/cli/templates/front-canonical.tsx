@@ -15,7 +15,7 @@ function MyPane() {
 }
 
 export default definePlugin({
-  id: "<kebab-name>",              // MUST match package.json#name (no @scope)
+  id: "<kebab-name>",              // contribution namespace; matching package name is recommended
   label: "<Label>",
   panels: [
     { id: "<kebab-name>.panel", label: "<Label>", component: MyPane },

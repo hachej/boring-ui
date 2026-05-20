@@ -2,6 +2,12 @@ import type { FastifyInstance } from "fastify"
 import type { AgentHarness } from "../../../shared/harness.js"
 import type { PluginRestartWarning } from "../../../shared/agentPluginEvents.js"
 
+export interface ReloadHookDiagnostic {
+  source: string
+  message: string
+  pluginId?: string
+}
+
 export interface ReloadHookResult {
   /**
    * One per plugin that loaded successfully but whose server-side
@@ -10,6 +16,8 @@ export interface ReloadHookResult {
    * render a "restart needed" banner without subscribing to SSE.
    */
   restart_warnings?: ReadonlyArray<PluginRestartWarning>
+  /** Non-fatal plugin reload diagnostics to surface to the caller/UI. */
+  diagnostics?: ReadonlyArray<ReloadHookDiagnostic>
 }
 
 export interface ReloadRoutesOptions {
@@ -17,9 +25,9 @@ export interface ReloadRoutesOptions {
   defaultSessionId: string
   /**
    * Called BEFORE the harness reloads its session. Optionally returns
-   * `{ restart_warnings }` — surfaced verbatim on the /reload response
-   * so the agent + chat UI can act on them. `void` / undefined return =
-   * no warnings (backwards compatible).
+   * `{ restart_warnings, diagnostics }` — surfaced verbatim on the /reload
+   * response so the agent + chat UI can act on them. `void` / undefined
+   * return = no warnings (backwards compatible).
    */
   beforeReload?: () =>
     | void
@@ -47,11 +55,13 @@ export function reloadRoutes(
       const hookResult = await opts.beforeReload?.()
       const reloaded = await opts.harness.reloadSession(sessionId)
       const restart_warnings = hookResult?.restart_warnings
+      const diagnostics = hookResult?.diagnostics
       return {
         ok: true,
         sessionId,
         reloaded,
         ...(restart_warnings && restart_warnings.length > 0 ? { restart_warnings } : {}),
+        ...(diagnostics && diagnostics.length > 0 ? { diagnostics } : {}),
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

@@ -59,6 +59,10 @@ Locks in the "two entrances, one source of truth" model for plugin-authoring gui
 - [x] Update DECISIONS.md #17 if the migration reveals constraints that change the rationale.
   - No rationale changes needed. The two-entrance design holds: external Pi agents (npx-only flows) can install `@hachej/boring-pi` standalone; workspace installs get it transitively.
 
+## Design notes
+
+- The CLI `scaffoldPlugin({ templatesDir })` test escape hatch is intentionally retained for focused unit tests. The production path uses bundled `packages/cli/templates/`.
+
 ## Progress log
 
 - 2026-05-19: Todo created from parallel review findings.

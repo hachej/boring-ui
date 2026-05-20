@@ -70,14 +70,23 @@ export interface BoringFrontAPI {
 }
 
 export type BoringFrontFactory = (api: BoringFrontAPI) => void | Promise<void>
+export type BoringFrontSetup = (api: BoringFrontAPI) => void
+
+type RejectAsyncSetup<C> = C extends { setup?: infer Setup }
+  ? Setup extends (...args: any[]) => infer Return
+    ? Extract<Return, PromiseLike<unknown>> extends never
+      ? unknown
+      : never
+    : unknown
+  : unknown
 
 /**
  * A `BoringFrontFactory` that carries its own plugin id (and optional
  * label) as static properties. Lets the workspace shell accept a bare
- * factory in `plugins[]` without requiring the consumer to wrap it
- * with `boringFrontFactoryToPlugin(id, factory)` at the call site.
+ * factory in `plugins[]` without requiring the consumer to normalize it
+ * manually at the call site.
  *
- * Produced by `definePlugin(id, factory, options?)`.
+ * Produced by `definePlugin({ id, ... })`.
  */
 export type BoringFrontFactoryWithId = BoringFrontFactory & {
   pluginId: string
@@ -85,11 +94,10 @@ export type BoringFrontFactoryWithId = BoringFrontFactory & {
 }
 
 /**
- * Either input shape accepted by `WorkspaceProvider.plugins`:
- * - The legacy declarative `WorkspaceFrontPlugin` object (built via
- *   `defineFrontPlugin({ outputs: [...] })`).
- * - A new imperative `BoringFrontFactoryWithId` (a factory function
- *   plus `pluginId`/`pluginLabel` metadata).
+ * Input shapes accepted by `WorkspaceProvider.plugins`:
+ * - Internal/static `WorkspaceFrontPlugin` objects used by built-in plugins.
+ * - Public `BoringFrontFactoryWithId` entries produced by
+ *   `definePlugin({ id, ... })` from `@hachej/boring-workspace/plugin`.
  *
  * The shell normalizes via `toWorkspacePlugin` at the boundary.
  */
@@ -117,19 +125,19 @@ export type WorkspaceFrontPluginInput = WorkspaceFrontPlugin | BoringFrontFactor
 export interface DefinePluginConfig {
   id: string
   label?: string
-  panels?: BoringFrontPanelRegistration<any>[]
-  commands?: BoringFrontPanelCommandRegistration[]
-  leftTabs?: BoringFrontLeftTabRegistration<any>[]
-  surfaceResolvers?: BoringFrontSurfaceResolverRegistration[]
-  providers?: BoringFrontProviderRegistration[]
-  bindings?: BoringFrontBindingRegistration[]
-  catalogs?: CatalogConfig[]
+  panels?: ReadonlyArray<BoringFrontPanelRegistration<any>>
+  commands?: ReadonlyArray<BoringFrontPanelCommandRegistration>
+  leftTabs?: ReadonlyArray<BoringFrontLeftTabRegistration<any>>
+  surfaceResolvers?: ReadonlyArray<BoringFrontSurfaceResolverRegistration>
+  providers?: ReadonlyArray<BoringFrontProviderRegistration>
+  bindings?: ReadonlyArray<BoringFrontBindingRegistration>
+  catalogs?: ReadonlyArray<CatalogConfig>
   /**
    * Escape hatch for registrations that can't be expressed
    * declaratively (conditional, runtime-branched, etc.). Called LAST,
    * after every declarative field has been registered.
    */
-  setup?: BoringFrontFactory
+  setup?: BoringFrontSetup
 }
 
 /**
@@ -148,12 +156,13 @@ export interface DefinePluginConfig {
  * `WorkspaceProvider.plugins`; the workspace's bootstrap normalizes
  * it via `toWorkspacePlugin`.
  *
- * The legacy 3-arg form `definePlugin(id, factory, opts)` was removed
- * — see the soft-guard error message at call time for the rewrite
- * path. The runtime accepts factories produced elsewhere via the
- * `setup` field.
+ * Older positional signatures are not supported. The `setup` field is
+ * synchronous so statically composed plugins cannot return a Promise
+ * during provider bootstrap.
  */
-export function definePlugin(config: DefinePluginConfig): BoringFrontFactoryWithId {
+export function definePlugin<const Config extends DefinePluginConfig>(
+  config: Config & RejectAsyncSetup<Config>,
+): BoringFrontFactoryWithId {
   if (typeof config !== "object" || config === null) {
     // Soft guard for the common "I used the old form" mistake — make the
     // failure message tell the agent/dev what to switch to instead of
@@ -162,7 +171,7 @@ export function definePlugin(config: DefinePluginConfig): BoringFrontFactoryWith
       throw new Error(
         "definePlugin now takes a single declarative config object: " +
           "definePlugin({ id, label?, panels, commands, leftTabs, surfaceResolvers, setup? }). " +
-          "The legacy 3-arg form definePlugin(id, factory, opts) was removed — use the new shape.",
+          "The legacy positional form was removed — use the new shape.",
       )
     }
     throw new Error("definePlugin: expected a config object")
@@ -178,7 +187,7 @@ export function definePlugin(config: DefinePluginConfig): BoringFrontFactoryWith
     for (const provider of config.providers ?? []) api.registerProvider(provider)
     for (const binding of config.bindings ?? []) api.registerBinding(binding)
     for (const catalog of config.catalogs ?? []) api.registerCatalog(catalog)
-    if (config.setup) return config.setup(api)
+    if (config.setup) config.setup(api)
     return undefined
   }
   return brandFactoryWithPluginId(config.id, factory, { label: config.label })
@@ -217,10 +226,10 @@ function isBoringFrontFactoryWithId(input: unknown): input is BoringFrontFactory
 }
 
 /**
- * Normalize an input entry (legacy plugin object or new
+ * Normalize an input entry (internal plugin object or public
  * `BoringFrontFactoryWithId`) into a `WorkspaceFrontPlugin` ready for
- * bootstrap. Factory entries are wrapped via
- * `boringFrontFactoryToPlugin` using the attached metadata.
+ * bootstrap. Factory entries are wrapped via `boringFrontFactoryToPlugin`
+ * using the attached metadata.
  */
 export function toWorkspacePlugin(input: WorkspaceFrontPluginInput): WorkspaceFrontPlugin {
   if (isBoringFrontFactoryWithId(input)) {
@@ -231,7 +240,7 @@ export function toWorkspacePlugin(input: WorkspaceFrontPluginInput): WorkspaceFr
   if (typeof input === "function") {
     throw new Error(
       "WorkspaceProvider.plugins received a bare BoringFrontFactory without a pluginId. " +
-        "Wrap it with `definePlugin(id, factory, { label? })` before passing it in.",
+        "Wrap it with `definePlugin({ id, label?, setup: factory })` before passing it in.",
     )
   }
   return input

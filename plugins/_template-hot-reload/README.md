@@ -11,28 +11,31 @@ npx @hachej/boring-ui-cli scaffold-plugin <kebab-name>
 boring-ui scaffold-plugin <kebab-name>
 ```
 
-The scaffold writes three files into `<workspace>/.pi/extensions/<name>/`:
+The default scaffold writes front/Pi metadata only:
 
 ```
 .pi/extensions/<name>/
-├── package.json        # boring.front + boring.server + pi.systemPrompt
-├── front/index.tsx     # definePlugin({ id, label, panels, commands, ... })
-└── server/index.ts     # defineServerPlugin({ id, agentTools, systemPrompt })
-                        #   — front-only plugins delete this AND the
-                        #     `boring.server` line in package.json
+├── .gitignore
+├── package.json        # boring.front + pi.systemPrompt
+└── front/index.tsx     # definePlugin({ id, label, panels, commands, ... })
 ```
 
-After editing, bash `boring-ui verify-plugin` to validate, then ask the
-user to run `/reload` (which triggers `POST /api/v1/agent/reload`).
+It does **not** create `server/index.ts` or `package.json#boring.server`.
+Hot-reloadable agent behavior belongs in Pi resources (`pi.extensions`,
+`pi.skills`, `pi.prompts`, `pi.systemPrompt`). Server plugin integration via
+`boring.server` is static/boot-time only: add it deliberately, compose the
+package from the app server, and restart the workspace process after edits.
+
+After editing, run `boring-ui verify-plugin` to validate, then ask the user to
+run `/reload` (which triggers the agent reload path for front/Pi resources).
 
 ## Why no in-repo files
 
-The canonical source files (`front-canonical.tsx`, `server-canonical.ts`,
-`package-canonical.json`) live in the `@hachej/boring-pi` package at
-`packages/pi/references/workspace/templates/`. That's the single source
-of truth — the scaffold CLI reads from there with substitution. Keeping
-a parallel copy in `plugins/_template-hot-reload/` would just create
-drift.
+The canonical scaffold source files (`front-canonical.tsx` and
+`package-canonical.json`) live in the CLI package at `packages/cli/templates/`.
+That's the single source of truth — the scaffold CLI reads from there with
+substitution. Keeping a parallel copy in `plugins/_template-hot-reload/` would
+just create drift.
 
 ## When to use which template
 
@@ -41,5 +44,5 @@ drift.
 | Build a plugin a user can install locally without a build step | `boring-ui scaffold-plugin` (this README) |
 | Build a plugin you want to publish as an npm package (consumed via `defaultPluginPackages`) | `plugins/_template-full/` |
 
-See `packages/pi/skills/boring-plugin-authoring/SKILL.md` (the "Choosing
-a layout" section) for the full comparison.
+See `packages/pi/skills/boring-plugin-authoring/SKILL.md` (the "Choosing a
+layout" section) for the full comparison.

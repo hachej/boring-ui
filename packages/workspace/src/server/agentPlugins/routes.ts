@@ -50,33 +50,37 @@ export interface BoringPluginRoutesOptions {
    * tests that exercise the route in isolation can omit it.
    */
   rebuildPlugins?: () => Promise<PluginReloadRebuild>
+  /** Register the developer reload endpoint. Static discovery/listing remains available when false. */
+  enableReloadRoute?: boolean
 }
 
 export async function boringPluginRoutes(app: FastifyInstance, opts: BoringPluginRoutesOptions): Promise<void> {
-  const { manager, rebuildPlugins } = opts
+  const { manager, rebuildPlugins, enableReloadRoute = true } = opts
 
-  app.post("/api/boring.reload", async (_request, reply) => {
-    const scan = await manager.load()
-    const rebuild = rebuildPlugins ? await rebuildPlugins() : { ok: true, diagnostics: [] }
-    const restart_warnings = collectRestartWarnings(scan.events)
-    const hasFailures = scan.errors.length > 0 || rebuild.diagnostics.length > 0
-    if (hasFailures) {
-      return reply.status(422).send({
-        ok: false,
-        errors: scan.errors,
-        diagnostics: rebuild.diagnostics,
+  if (enableReloadRoute) {
+    app.post("/api/boring.reload", async (_request, reply) => {
+      const scan = await manager.load()
+      const rebuild = rebuildPlugins ? await rebuildPlugins() : { ok: true, diagnostics: [] }
+      const restart_warnings = collectRestartWarnings(scan.events)
+      const hasFailures = scan.errors.length > 0 || rebuild.diagnostics.length > 0
+      if (hasFailures) {
+        return reply.status(422).send({
+          ok: false,
+          errors: scan.errors,
+          diagnostics: rebuild.diagnostics,
+          plugins: scan.loaded,
+          // Even on failure, emit warnings for plugins that DID reload
+          // — partial-failure tolerance means some loaded successfully.
+          ...(restart_warnings.length > 0 ? { restart_warnings } : {}),
+        })
+      }
+      return reply.send({
+        ok: true,
         plugins: scan.loaded,
-        // Even on failure, emit warnings for plugins that DID reload
-        // — partial-failure tolerance means some loaded successfully.
         ...(restart_warnings.length > 0 ? { restart_warnings } : {}),
       })
-    }
-    return reply.send({
-      ok: true,
-      plugins: scan.loaded,
-      ...(restart_warnings.length > 0 ? { restart_warnings } : {}),
     })
-  })
+  }
 
   app.get("/api/agent-plugins", async () => manager.list())
 

@@ -433,11 +433,12 @@ function handleScaffoldPluginCommand(opts: { positionals: string[] }) {
   }
   console.log("")
   console.log("Next steps:")
-  console.log(`  1. edit front/index.tsx (and server/index.ts if you need agent tools)`)
-  console.log(`  2. bash \`boring-ui verify-plugin\` — confirms manifests + files are valid`)
-  console.log(`  3. ask the user: /reload`)
+  console.log(`  1. edit front/index.tsx for UI panels/commands/resolvers`)
+  console.log(`  2. add pi.extensions / skills for hot-reloadable agent behavior`)
+  console.log(`  3. bash \`boring-ui verify-plugin\` — confirms manifests + files are valid`)
+  console.log(`  4. ask the user: /reload`)
   console.log("")
-  console.log("Front-only plugin (no agent tools / HTTP routes)?")
-  console.log(`  Remove BOTH server/index.ts AND the \`"server": "server/index.ts"\` line`)
-  console.log(`  from package.json. \`boring-ui verify-plugin\` will catch the half-removed case.`)
+  console.log("Advanced server integration:")
+  console.log("  boring.server is boot-time/static composition only. It is NOT hot-registered")
+  console.log("  by /reload for .pi/extensions user plugins; use Pi extensions for agent tools.")
 }

@@ -18,14 +18,14 @@ pnpm --filter workspace-playground dev
 
 **The Problem**: You're building a workspace plugin (a new panel, a data catalog, a sidebar tab, a surface resolver) and you need a live workbench to test it in — but booting the full app with Postgres and auth is overkill.
 
-**The Solution**: `workspace-playground` gives you a full IDE workbench (chat, file tree, editor panels, command palette) plus pre-loaded plugins (`ask-user`, `data-catalog`, a demo catalog) — all running from source with HMR. Save a plugin file and the workbench updates.
+**The Solution**: `workspace-playground` gives you a full IDE workbench (chat, file tree, editor panels, command palette) plus pre-loaded plugins (`ask-user`, `data-catalog`, a demo catalog) — all running from source with HMR for front/Pi resources. Provider/binding plugins and server tools are composed statically by the shell.
 
 ### Why Use workspace-playground?
 
 | Feature | What It Does |
 |---------|--------------|
 | **Full workbench out of the box** | Chat, file tree, editor panels, command palette, session toolbar |
-| **Plugins from source with HMR** | `ask-user`, `data-catalog`, `data-explorer` all loaded from workspace source |
+| **Plugins from source** | `ask-user`, `data-catalog`, `data-explorer` loaded from workspace source; front/Pi package resources can hot reload |
 | **Demo catalog included** | A `playgroundDataCatalog` plugin with DuckDB-backed sample data to explore |
 | **E2E test suite** | Playwright tests validate panel lifecycle and plugin contract |
 | **Fast iteration** | Dev script rebuilds workspace + plugins before each run — save, see it live |
@@ -87,15 +87,19 @@ Registered in `src/front/App.tsx`:
 
 ```tsx
 // src/plugins/my-plugin/front/index.tsx
-import { defineFrontPlugin, definePanel } from "@hachej/boring-workspace"
+import { definePlugin } from "@hachej/boring-workspace/plugin"
 
-export const myPlugin = defineFrontPlugin({
+export const myPlugin = definePlugin({
   id: "my-plugin",
   label: "My Plugin",
-  outputs: [{
-    type: "panel",
-    panel: definePanel({ id: "my-widget", title: "Widget", placement: "center", component: () => import("./WidgetPane").then(m => ({ default: m.WidgetPane })) }),
-  }],
+  panels: [
+    {
+      id: "my-widget",
+      label: "Widget",
+      placement: "center",
+      component: () => import("./WidgetPane").then(m => ({ default: m.WidgetPane })),
+    },
+  ],
 })
 ```
 
@@ -104,10 +108,15 @@ export const myPlugin = defineFrontPlugin({
 ```tsx
 import { myPlugin } from "../plugins/my-plugin/front"
 
-plugins={[playgroundDataCatalogPlugin, askUserPlugin, myPlugin]}
+plugins={[askUserPlugin, myPlugin]}
 ```
 
-3. For frontend-only plugins: no dev script change needed. If your plugin needs server routes or agent tools, add it to `src/server/dev.ts` plugins or pluginFactories.
+Provider/binding plugins such as `askUserPlugin` need this static front
+composition for now. Panel/command/catalog-only package plugins can still be
+declared through `package.json#boring.defaultPluginPackages` and loaded over the
+hot-reload bridge.
+
+3. For panel/command/catalog-only package plugins: add the package to `package.json#boring.defaultPluginPackages` (or pass `defaultPluginPackages`) and set `appPackageJsonPath` on the server. If your plugin needs server routes or agent tools, expose an explicit `package.json#boring.server` entry or add a static server plugin in `src/server/dev.ts`, then restart the dev server.
 
 ---
 
@@ -158,8 +167,11 @@ plugins={[playgroundDataCatalogPlugin, askUserPlugin, myPlugin]}
 │  createWorkspaceAgentServer({                    │
 │    workspaceRoot,                                │
 │    mode: "local",                                │
-│    plugins: [playgroundDataServerPlugin],        │
-│    pluginFactories: [createAskUserServerPlugin], │
+│    appPackageJsonPath: ".../package.json",      │
+│    plugins: [                                   │
+│      playgroundDataServerPlugin,                │
+│      createAskUserServerPlugin({ ... }),        │
+│    ],                                           │
 │  })                                              │
 │                                                  │
 │  ├── Harness (pi-coding-agent)                   │

@@ -19,9 +19,15 @@ import type { PluginRestartWarning } from "../../shared/agentPluginEvents"
 
 export type { PluginRestartWarning }
 
+export type PluginReloadDiagnostic = {
+  source?: string
+  message?: string
+  pluginId?: string
+}
+
 export type PluginUpdateState =
   | { kind: "running" }
-  | { kind: "success"; reloaded: boolean; restartWarnings?: PluginRestartWarning[] }
+  | { kind: "success"; reloaded: boolean; restartWarnings?: PluginRestartWarning[]; diagnostics?: PluginReloadDiagnostic[] }
   | { kind: "error"; message: string }
 
 export interface PluginUpdateStatusProps {
@@ -52,6 +58,7 @@ export function PluginUpdateStatus({ state, onDismiss, onRetry }: PluginUpdateSt
 
   if (state.kind === "success") {
     const warnings = state.restartWarnings ?? []
+    const diagnostics = state.diagnostics ?? []
     return (
       <div
         data-boring-plugin-update="success"
@@ -66,8 +73,8 @@ export function PluginUpdateStatus({ state, onDismiss, onRetry }: PluginUpdateSt
           <span className="text-[oklch(0.45_0.13_148)]" aria-hidden="true">✓</span>
           <span className="flex-1">
             {state.reloaded
-              ? warnings.length > 0
-                ? "Plugins partially updated."
+              ? warnings.length > 0 || diagnostics.length > 0
+                ? "Plugins updated with warnings."
                 : "Plugins updated."
               : "Plugins will reload on the next message."}
           </span>
@@ -80,6 +87,29 @@ export function PluginUpdateStatus({ state, onDismiss, onRetry }: PluginUpdateSt
             Dismiss
           </button>
         </div>
+        {diagnostics.length > 0 ? (
+          <div
+            data-boring-plugin-update-diagnostics=""
+            className={cn(
+              "mt-2 rounded border border-[oklch(0.78_0.15_85)]/40 bg-[oklch(0.95_0.06_85/0.4)]",
+              "px-2 py-1.5 text-[11px] text-foreground",
+            )}
+          >
+            <div className="flex items-center gap-1.5 font-medium text-[oklch(0.48_0.15_60)]">
+              <span aria-hidden="true">⚠</span>
+              <span>
+                Reload diagnostics for {diagnostics.length} plugin{diagnostics.length === 1 ? "" : "s"}
+              </span>
+            </div>
+            <ul className="mt-1 ml-4 list-disc text-foreground/85">
+              {diagnostics.map((diagnostic, index) => (
+                <li key={`${diagnostic.pluginId ?? diagnostic.source ?? "plugin"}-${index}`}>
+                  <code className="font-mono text-[10.5px]">{diagnostic.pluginId ?? diagnostic.source ?? "plugin"}</code> — {diagnostic.message ?? "reload diagnostic"}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         {warnings.length > 0 ? (
           <div
             data-boring-plugin-update-restart-warning=""

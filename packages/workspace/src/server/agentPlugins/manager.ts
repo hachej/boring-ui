@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { isValidBoringPluginId } from "../../shared/plugins/manifest"
-import { preflightBoringPlugins, readBoringPlugins, type BoringPluginPreflightResult } from "./scan"
+import { preflightBoringPlugins, scanBoringPlugins, type BoringPluginPreflightResult } from "./scan"
 import {
   clearPluginSignatureCache,
   pluginFileSignature,
@@ -223,16 +223,18 @@ export class BoringPluginAssetManager {
   }
 
   private async doLoadOnce(): Promise<LoadBoringAssetsResult> {
-    const preflight = this.preflight()
-    if (!preflight.ok) return this.reportPreflightErrors(preflight)
-    const nextPlugins = readBoringPlugins(this.pluginDirs)
+    const scan = scanBoringPlugins(this.pluginDirs)
+    const nextPlugins = scan.plugins
     const nextIds = new Set(nextPlugins.map((plugin) => plugin.id))
+    const invalidPluginDirs = new Set(scan.preflight.errors.map((error) => resolve(error.pluginDir)))
     const events: BoringPluginEvent[] = []
     const errors: LoadBoringAssetsError[] = []
+    this.collectPreflightErrors(scan.preflight, events, errors)
 
     for (const id of [...this.loaded.keys()]) {
       if (nextIds.has(id)) continue
       const previous = this.loaded.get(id)
+      if (previous && invalidPluginDirs.has(resolve(previous.rootDir))) continue
       const revision = this.bumpRevision(id)
       this.loaded.delete(id)
       // Stale cache outlives the plugin — verify-plugin would otherwise
@@ -301,9 +303,11 @@ export class BoringPluginAssetManager {
     return { loaded: this.list(), events, errors }
   }
 
-  private reportPreflightErrors(preflight: BoringPluginPreflightResult): LoadBoringAssetsResult {
-    const errors: LoadBoringAssetsError[] = []
-    const events: BoringPluginEvent[] = []
+  private collectPreflightErrors(
+    preflight: BoringPluginPreflightResult,
+    events: BoringPluginEvent[],
+    errors: LoadBoringAssetsError[],
+  ): void {
     for (const error of preflight.errors) {
       const id = error.pluginId ?? preflightErrorId(error.pluginDir)
       const revision = this.bumpRevision(id)
@@ -315,7 +319,6 @@ export class BoringPluginAssetManager {
       events.push(event)
       this.emit(event)
     }
-    return { loaded: this.list(), events, errors }
   }
 
   private bumpRevision(id: string): number {

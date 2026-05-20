@@ -8,7 +8,7 @@ Agent tools should use workspace-provided UI bridge tools such as `exec_ui` to o
 
 ## Plugin reload
 
-Use `/reload` from chat to reload boring-ui plugin UI/server assets and Pi extensions, tools, skills, and prompts.
+Use `/reload` from chat to reload boring-ui plugin front assets and Pi extensions, tools, skills, and prompts. `boring.server` entries are boot-time/static composition only and require a workspace process restart.
 
 ## V2 iframe bridge
 

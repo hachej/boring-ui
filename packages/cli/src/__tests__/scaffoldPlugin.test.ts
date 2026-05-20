@@ -15,10 +15,10 @@ describe("scaffoldPlugin", () => {
     rmSync(workspaceRoot, { recursive: true, force: true })
   })
 
-  test("creates .pi/extensions/<name>/{package.json,front/index.tsx,server/index.ts,.gitignore}", () => {
+  test("creates .pi/extensions/<name>/{package.json,front/index.tsx,.gitignore}", () => {
     const result = scaffoldPlugin({ name: "my-plugin", workspaceRoot })
     expect(result.pluginDir).toBe(join(workspaceRoot, ".pi", "extensions", "my-plugin"))
-    expect(result.filesCreated).toHaveLength(4)
+    expect(result.filesCreated).toHaveLength(3)
     const gitignore = readFileSync(join(result.pluginDir, ".gitignore"), "utf8")
     expect(gitignore).toContain(".boring-signature.json")
 
@@ -29,9 +29,6 @@ describe("scaffoldPlugin", () => {
       boring: {
         label: "My Plugin",
         front: "front/index.tsx",
-        // Always include the server stub — front-only plugins delete it
-        // (the CLI's "Next steps" output explains how).
-        server: "server/index.ts",
       },
       pi: { systemPrompt: expect.stringContaining("My Plugin") },
     })
@@ -76,17 +73,12 @@ describe("scaffoldPlugin", () => {
     // The _doc_ key from the template must be stripped before writing
     // (it's a comment for human readers of the template).
     expect(pkg._doc_).toBeUndefined()
-    expect(pkg.boring.server).toBe("server/index.ts")
+    expect(pkg.boring.server).toBeUndefined()
   })
 
-  test("server stub is shape-correct and uses the plugin id", () => {
+  test("does not generate a server stub by default", () => {
     const result = scaffoldPlugin({ name: "tool-plugin", workspaceRoot })
-    const serverPath = join(result.pluginDir, "server", "index.ts")
-    const serverSource = readFileSync(serverPath, "utf8")
-    expect(serverSource).toContain('import { defineServerPlugin')
-    expect(serverSource).toContain('"@hachej/boring-workspace/server"')
-    expect(serverSource).toContain('"tool-plugin"')
-    // Sanity that we didn't leak template placeholders.
-    expect(serverSource).not.toContain("<kebab-name>")
+    expect(result.filesCreated).not.toContain(join(result.pluginDir, "server", "index.ts"))
+    expect(() => readFileSync(join(result.pluginDir, "server", "index.ts"), "utf8")).toThrow()
   })
 })

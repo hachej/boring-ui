@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
@@ -76,6 +76,37 @@ describe("verifyPlugin", () => {
     expect(joined).toMatch(/boring\.server/i)
   })
 
+  test("allows server/Pi-only plugins with no boring.front declaration", () => {
+    plant("server-pi-only", {
+      "package.json": JSON.stringify({
+        name: "server-pi-only",
+        version: "1.0.0",
+        boring: { label: "Server/Pi", server: "server/index.ts" },
+        pi: { systemPrompt: "Server/Pi only." },
+      }),
+      "server/index.ts": "export default {}",
+    })
+    const result = verifyPlugin({ workspaceRoot })
+    expect(result.ok).toBe(true)
+    expect(result.outcomes[0]).toMatchObject({ id: "server-pi-only", ok: true, errors: [] })
+    expect(result.outcomes[0].warnings[0]).toMatch(/boot-time\/static composition only/)
+    expect(result.outcomes[0].warnings[0]).toMatch(/not import or register .*server routes\/agentTools/)
+  })
+
+  test("does not treat front/index.tsx as a runtime front convention when boring.front is absent", () => {
+    plant("front-convention-only", {
+      "package.json": JSON.stringify({
+        name: "front-convention-only",
+        version: "1.0.0",
+        boring: { label: "Convention only" },
+      }),
+      "front/index.tsx": "export default {}",
+    })
+    const result = verifyPlugin({ workspaceRoot })
+    expect(result.ok).toBe(true)
+    expect(result.outcomes[0].errors).toEqual([])
+  })
+
   test("reports a missing boring.front file", () => {
     plant("missing-front", {
       "package.json": JSON.stringify({
@@ -90,6 +121,49 @@ describe("verifyPlugin", () => {
     const joined = result.outcomes[0].errors.join("\n")
     expect(joined).toContain("boring.front")
     expect(joined).toContain("front/index.tsx")
+  })
+
+  test("reports a front symlink escape", () => {
+    const outside = join(workspaceRoot, "outside")
+    mkdirSync(outside, { recursive: true })
+    writeFileSync(join(outside, "escape.tsx"), "export default {}", "utf8")
+    const dir = plant("front-escape", {
+      "package.json": JSON.stringify({
+        name: "front-escape",
+        version: "1.0.0",
+        boring: { label: "Escape", front: "front/escape.tsx" },
+      }),
+    })
+    mkdirSync(join(dir, "front"), { recursive: true })
+    symlinkSync(join(outside, "escape.tsx"), join(dir, "front", "escape.tsx"))
+
+    const result = verifyPlugin({ workspaceRoot })
+    expect(result.ok).toBe(false)
+    const joined = result.outcomes[0].errors.join("\n")
+    expect(joined).toContain("boring.front")
+    expect(joined).toMatch(/outside the plugin root/i)
+  })
+
+  test("reports pi.extension symlink escapes", () => {
+    const outside = join(workspaceRoot, "outside-pi")
+    mkdirSync(outside, { recursive: true })
+    writeFileSync(join(outside, "extension.ts"), "export default {}", "utf8")
+    const dir = plant("pi-escape", {
+      "package.json": JSON.stringify({
+        name: "pi-escape",
+        version: "1.0.0",
+        boring: { label: "Pi", server: false },
+        pi: { extensions: ["agent/extension.ts"] },
+      }),
+    })
+    mkdirSync(join(dir, "agent"), { recursive: true })
+    symlinkSync(join(outside, "extension.ts"), join(dir, "agent", "extension.ts"))
+
+    const result = verifyPlugin({ workspaceRoot })
+    expect(result.ok).toBe(false)
+    const joined = result.outcomes[0].errors.join("\n")
+    expect(joined).toContain("pi.extensions")
+    expect(joined).toMatch(/outside the plugin root/i)
   })
 
   test("reports a missing boring.server file when boring.server is a string path", () => {
@@ -107,6 +181,28 @@ describe("verifyPlugin", () => {
     const joined = result.outcomes[0].errors.join("\n")
     expect(joined).toContain("boring.server")
     expect(joined).toContain("server/index.ts")
+  })
+
+  test("reports a server symlink escape", () => {
+    const outside = join(workspaceRoot, "outside-server")
+    mkdirSync(outside, { recursive: true })
+    writeFileSync(join(outside, "server.ts"), "export default {}", "utf8")
+    const dir = plant("server-escape", {
+      "package.json": JSON.stringify({
+        name: "server-escape",
+        version: "1.0.0",
+        boring: { label: "Server escape", front: "front/index.tsx", server: "server/index.ts" },
+      }),
+      "front/index.tsx": "export default {}",
+    })
+    mkdirSync(join(dir, "server"), { recursive: true })
+    symlinkSync(join(outside, "server.ts"), join(dir, "server", "index.ts"))
+
+    const result = verifyPlugin({ workspaceRoot })
+    expect(result.ok).toBe(false)
+    const joined = result.outcomes[0].errors.join("\n")
+    expect(joined).toContain("boring.server")
+    expect(joined).toMatch(/outside the plugin root/i)
   })
 
   test("reports malformed package.json", () => {
@@ -172,9 +268,10 @@ describe("verifyPlugin", () => {
     expect(result.ok).toBe(true)
     const outcome = result.outcomes.find((o) => o.id === "drifted")!
     expect(outcome.errors).toEqual([])
-    expect(outcome.warnings).toHaveLength(1)
-    expect(outcome.warnings[0]).toMatch(/server file changed/i)
-    expect(outcome.warnings[0]).toMatch(/restart the workspace/i)
+    expect(outcome.warnings).toHaveLength(2)
+    expect(outcome.warnings[0]).toMatch(/boot-time\/static composition only/)
+    expect(outcome.warnings[1]).toMatch(/server file changed/i)
+    expect(outcome.warnings[1]).toMatch(/restart the workspace/i)
 
     const text = formatVerifyResult(result)
     expect(text).toMatch(/⚠ drifted/)
@@ -182,7 +279,7 @@ describe("verifyPlugin", () => {
     expect(text).toMatch(/restart \(NOT just \/reload\)/)
   })
 
-  test("does NOT warn when the server file's signature matches the cache (fresh /reload)", () => {
+  test("does not emit a drift warning when the server file's signature matches the cache", () => {
     const dir = plant("fresh", {
       "package.json": JSON.stringify({
         name: "fresh",
@@ -200,7 +297,8 @@ describe("verifyPlugin", () => {
     const result = verifyPlugin({ workspaceRoot })
     expect(result.ok).toBe(true)
     const outcome = result.outcomes.find((o) => o.id === "fresh")!
-    expect(outcome.warnings).toEqual([])
+    expect(outcome.warnings).toHaveLength(1)
+    expect(outcome.warnings[0]).toMatch(/boot-time\/static composition only/)
   })
 
   test("warns when the cache says no server but a server file was added (cache vs current mismatch)", () => {
@@ -218,9 +316,10 @@ describe("verifyPlugin", () => {
 
     const result = verifyPlugin({ workspaceRoot })
     const outcome = result.outcomes.find((o) => o.id === "added-server")!
-    expect(outcome.warnings).toHaveLength(1)
-    expect(outcome.warnings[0]).toMatch(/server file changed/i)
-    expect(outcome.warnings[0]).toMatch(/restart the workspace process/i)
+    expect(outcome.warnings).toHaveLength(2)
+    expect(outcome.warnings[0]).toMatch(/boot-time\/static composition only/)
+    expect(outcome.warnings[1]).toMatch(/server file changed/i)
+    expect(outcome.warnings[1]).toMatch(/restart the workspace process/i)
   })
 
   test("formatVerifyResult prints a clean OK line when all pass", () => {

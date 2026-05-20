@@ -1,9 +1,9 @@
 import React, { useSyncExternalStore } from "react"
 import { render, screen, waitFor } from "@testing-library/react"
-import { afterEach, beforeEach, describe, expect, test } from "vitest"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { RegistryProvider, useCommandRegistry, useRegistry } from "../../registry/RegistryProvider"
+import { RegistryProvider, useCatalogRegistry, useCommandRegistry, useRegistry } from "../../registry/RegistryProvider"
 import { PanelRegistry } from "../../registry/PanelRegistry"
 import { CommandRegistry } from "../../registry/CommandRegistry"
 import { SurfaceResolverRegistry } from "../../registry/SurfaceResolverRegistry"
@@ -138,6 +138,12 @@ function CommandList() {
   const registry = useCommandRegistry()
   const commands = useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot)
   return <div data-testid="command-list">{commands.map((command) => `${command.id}:${command.title}`).join(",")}</div>
+}
+
+function CatalogList() {
+  const registry = useCatalogRegistry()
+  const catalogs = useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot)
+  return <div data-testid="catalog-list">{catalogs.map((catalog) => `${catalog.id}:${catalog.label}`).join(",")}</div>
 }
 
 function Harness({ apiBaseUrl = "" }: { apiBaseUrl?: string }) {
@@ -424,6 +430,156 @@ describe("useAgentPluginHotReload", () => {
     })
     await waitFor(() => expect(screen.getByTestId("command-list")).toHaveTextContent("hot-plugin.open:Open Hot Plugin v2"))
     expect(screen.getByTestId("command-list")).not.toHaveTextContent("hot-plugin.removed")
+  })
+
+  test("updates catalog entries when plugin front registrations change", async () => {
+    const adapter = { search: async () => ({ items: [], total: 0, hasMore: false }) }
+    const importFront = async (_url: string, revision: number): Promise<{ default: BoringFrontFactory }> => ({
+      default(api) {
+        api.registerCatalog({
+          id: "hot-catalog",
+          label: revision === 1 ? "Hot Catalog" : "Hot Catalog v2",
+          adapter,
+          onSelect: () => undefined,
+        })
+        if (revision === 1) {
+          api.registerCatalog({
+            id: "removed-catalog",
+            label: "Removed Catalog",
+            adapter,
+            onSelect: () => undefined,
+          })
+        }
+      },
+    })
+
+    function CatalogHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <CatalogList />
+        </RegistryProvider>
+      )
+    }
+
+    render(<CatalogHarness />)
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl: "/@fs/front.mjs",
+      boring: { front: "./front.mjs" },
+    })
+    await waitFor(() => expect(screen.getByTestId("catalog-list")).toHaveTextContent("hot-catalog:Hot Catalog"))
+    expect(screen.getByTestId("catalog-list")).toHaveTextContent("removed-catalog:Removed Catalog")
+
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 2,
+      frontUrl: "/@fs/front.mjs",
+      boring: { front: "./front.mjs" },
+    })
+    await waitFor(() => expect(screen.getByTestId("catalog-list")).toHaveTextContent("hot-catalog:Hot Catalog v2"))
+    expect(screen.getByTestId("catalog-list")).not.toHaveTextContent("removed-catalog")
+
+    MockEventSource.instances[0].dispatch("boring.plugin.unload", {
+      type: "boring.plugin.unload",
+      id: "hot-plugin",
+      revision: 3,
+    })
+    await waitFor(() => expect(screen.getByTestId("catalog-list")).toHaveTextContent(""))
+  })
+
+  test("warns and skips provider/binding hot-load contributions instead of partially mounting panels", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const importFront = async (): Promise<{ default: BoringFrontFactory }> => ({
+      default(api) {
+        api.registerProvider({
+          id: "hot-provider",
+          component: function HotProvider({ children }: { children: React.ReactNode }) {
+            return React.createElement(React.Fragment, null, children)
+          },
+        })
+        api.registerBinding({ id: "hot-binding", component: () => null })
+        api.registerPanel({
+          id: "hot-pane",
+          label: "Hot Pane",
+          component: function HotPane() {
+            return React.createElement("div", { "data-testid": "hot-pane" }, "should not mount")
+          },
+        })
+      },
+    })
+
+    try {
+      function ProviderHarness() {
+        const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+        const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+        const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+        function Listener() {
+          useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+          return null
+        }
+        return (
+          <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+            <Listener />
+            <PaneRenderer id="hot-pane" />
+          </RegistryProvider>
+        )
+      }
+
+      render(<ProviderHarness />)
+      MockEventSource.instances[0].dispatch("boring.plugin.load", {
+        type: "boring.plugin.load",
+        id: "provider-plugin",
+        version: "1.0.0",
+        revision: 1,
+        frontUrl: "/@fs/front.mjs",
+        boring: { front: "./front.mjs" },
+      })
+
+      await waitFor(() => expect(warn).toHaveBeenCalledWith(expect.stringContaining("Dynamic provider/binding mounting is not implemented")))
+      expect(screen.getByTestId("pane-missing")).toHaveTextContent("missing")
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  test("disables bearer-auth hot reload because native EventSource cannot send auth headers", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    function Listener() {
+      useAgentPluginHotReload({
+        workspaceId: "test-workspace",
+        authHeaders: { Authorization: "Bearer dev-token" },
+      })
+      return null
+    }
+
+    try {
+      render(
+        <RegistryProvider
+          panelRegistry={new PanelRegistry()}
+          commandRegistry={new CommandRegistry()}
+          surfaceResolverRegistry={new SurfaceResolverRegistry()}
+        >
+          <Listener />
+        </RegistryProvider>,
+      )
+      expect(MockEventSource.instances).toHaveLength(0)
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("front plugin hot reload disabled"))
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   test("ignores stale slow imports when a newer revision has already landed", async () => {

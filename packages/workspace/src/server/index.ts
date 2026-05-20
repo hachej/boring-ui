@@ -41,7 +41,8 @@ export { BoringPluginAssetManager } from "./agentPlugins/manager"
 export { boringPluginRoutes, collectRestartWarnings } from "./agentPlugins/routes"
 export type { PluginReloadRebuild, PluginRestartWarning } from "./agentPlugins/routes"
 export { aggregatePluginPrompts } from "./agentPlugins/aggregatePluginPrompts"
-export { preflightBoringPlugins, readBoringPlugins } from "./agentPlugins/scan"
+export { preflightBoringPlugins, readBoringPlugins, scanBoringPlugins } from "./agentPlugins/scan"
+export type { BoringPluginScanResult } from "./agentPlugins/scan"
 // `clearPluginSignatureCache`, `PLUGIN_SIGNATURE_CACHE_FILE`, and the
 // `PluginSignatureCachePayload` type are intentionally NOT re-exported —
 // they are workspace-internal. External consumers (cli/verifyPlugin)

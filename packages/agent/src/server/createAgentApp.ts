@@ -61,9 +61,9 @@ export interface CreateAgentAppOptions {
   sessionDir?: string
   /**
    * Called BEFORE the harness reloads its session. May return a
-   * `ReloadHookResult` (with `restart_warnings`) — surfaced verbatim on
-   * the /api/v1/agent/reload response. `void` / undefined return = no
-   * warnings (backwards compatible).
+   * `ReloadHookResult` (with `restart_warnings` and/or diagnostics) —
+   * surfaced verbatim on the /api/v1/agent/reload response. `void` /
+   * undefined return = no warnings (backwards compatible).
    */
   beforeReload?: () =>
     | void

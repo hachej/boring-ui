@@ -1,18 +1,14 @@
 /**
- * Server-side rebuild on /reload. Re-resolves every entry in
- * `entries` (via jiti for dir-source entries → fresh modules) and
- * returns a diagnostics list. Failed entries do NOT abort the rest;
- * they surface as `diagnostics[]` for the caller to format into a
- * structured /reload response.
+ * Server-side reload diagnostic pass. Re-resolves every entry in
+ * `entries` (via jiti for dir-source entries → fresh modules) only to
+ * detect import/factory failures and return diagnostics. Failed entries do
+ * NOT abort the rest; they surface as `diagnostics[]` for the caller to
+ * format into a structured /reload response.
  *
- * What this rebuilds:
- *   - `{ dir, hotReload: true }` entries — their fresh systemPrompt
- *     flows through `systemPromptDynamic` and pi resources through
- *     `getDynamicResources`.
- *
- * What this does NOT rebuild (captured at session creation in the
- * harness/Fastify): static `agentTools` and free-form routes. Swaps
- * to those surfaces only land after a server restart.
+ * This deliberately does not return or install a rebuilt plugin graph. Live
+ * prompt/Pi changes come from the asset manager's `systemPromptDynamic` and
+ * `getDynamicResources` scans; static `agentTools` and free-form routes are
+ * captured at session/server creation and require process restart.
  */
 import type { WorkspaceServerPlugin } from "../../server/plugins/bootstrapServer"
 import { isDirEntry, resolveOnePluginEntry } from "./pluginEntryResolver"
@@ -27,7 +23,6 @@ export interface PluginReloadDiagnostic {
 
 export interface PluginRebuildResult {
   ok: boolean
-  plugins: WorkspaceServerPlugin[]
   diagnostics: PluginReloadDiagnostic[]
 }
 
@@ -37,13 +32,11 @@ export async function rebuildServerPlugins(opts: {
 }): Promise<PluginRebuildResult> {
   const { entries, ctx } = opts
 
-  const plugins: WorkspaceServerPlugin[] = []
   const diagnostics: PluginReloadDiagnostic[] = []
 
   for (const entry of entries) {
     try {
-      const plugin = await resolveOnePluginEntry<WorkspaceServerPlugin>(entry, ctx)
-      plugins.push(plugin)
+      await resolveOnePluginEntry<WorkspaceServerPlugin>(entry, ctx)
     } catch (error) {
       const source = isDirEntry(entry) ? `directory (${entry.dir})` : "entry"
       diagnostics.push({
@@ -53,6 +46,5 @@ export async function rebuildServerPlugins(opts: {
     }
   }
 
-  return { ok: diagnostics.length === 0, plugins, diagnostics }
+  return { ok: diagnostics.length === 0, diagnostics }
 }
-

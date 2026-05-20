@@ -53,10 +53,11 @@ function NullChatPanel(_props: WorkspaceChatPanelProps) {
 
 export type FrontPluginHotReloadMode = "vite" | false
 
-function AgentPluginHotReloadBridge(props: { apiBaseUrl: string; workspaceId?: string; mode: FrontPluginHotReloadMode }) {
+function AgentPluginHotReloadBridge(props: { apiBaseUrl: string; workspaceId?: string; mode: FrontPluginHotReloadMode; authHeaders?: Record<string, string> }) {
   useAgentPluginHotReload({
     apiBaseUrl: props.apiBaseUrl,
     workspaceId: props.workspaceId,
+    authHeaders: props.authHeaders,
     enabled: props.mode === "vite",
   })
   return null
@@ -347,10 +348,10 @@ export interface WorkspaceProviderProps {
   children: ReactNode
   chatPanel?: WorkspaceChatPanelComponent
   /**
-   * Plugin entries. Each is either a legacy `WorkspaceFrontPlugin`
-   * object (from `defineFrontPlugin`) or a new
-   * `BoringFrontFactoryWithId` (from `definePlugin(id, factory)`). The
-   * shell normalizes both via `toWorkspacePlugin` at the boundary.
+   * Plugin entries. Each is either an internal `WorkspaceFrontPlugin`
+   * object or a public `BoringFrontFactoryWithId` produced by
+   * `definePlugin({ id, ... })` from `@hachej/boring-workspace/plugin`.
+   * The shell normalizes both via `toWorkspacePlugin` at the boundary.
    */
   plugins?: WorkspaceFrontPluginInput[]
   excludeDefaults?: string[]
@@ -487,8 +488,8 @@ export function WorkspaceProvider({
     const defaultPlugins: WorkspaceFrontPlugin[] = excludedDefaults.has(filesystemPlugin.id)
       ? []
       : [filesystemPlugin]
-    // Normalize the user-provided plugins (each is either a legacy
-    // WorkspaceFrontPlugin object OR a new BoringFrontFactoryWithId).
+    // Normalize user-provided plugins (internal/static WorkspaceFrontPlugin
+    // objects or public BoringFrontFactoryWithId entries from definePlugin).
     // After normalization everything below treats them as plugin objects.
     const normalizedPlugins: WorkspaceFrontPlugin[] = (plugins ?? []).map(toWorkspacePlugin)
     const allPlugins = [...defaultPlugins, ...normalizedPlugins]
@@ -588,7 +589,7 @@ export function WorkspaceProvider({
                 apiTimeout={apiTimeout}
               >
                 <WorkspacePluginBindings plugins={pluginsWithBindings} />
-                <AgentPluginHotReloadBridge apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} mode={frontPluginHotReload} />
+                <AgentPluginHotReloadBridge apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} mode={frontPluginHotReload} authHeaders={authHeaders} />
                 <WorkspaceOpenFileBinding onOpenFile={onOpenFile} />
                 <WorkspaceCommandBindings commands={commands} />
                 <WorkspaceCatalogBindings

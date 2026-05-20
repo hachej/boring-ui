@@ -5,10 +5,11 @@ import {
   type CapturedBoringFrontRegistrations,
 } from "../../shared/plugins/frontFactory"
 import type { BoringPackageBoringField } from "../../shared/plugins/manifest"
+import type { CatalogConfig } from "../../shared/plugins/types"
 import type { PanelConfig } from "../../shared/types/panel"
 import type { SurfaceOpenRequest, SurfaceResolverConfig } from "../../shared/types/surface"
 import type { CommandConfig } from "../registry/types"
-import { useCommandRegistry, useRegistry, useSurfaceResolverRegistry } from "../registry/RegistryProvider"
+import { useCatalogRegistry, useCommandRegistry, useRegistry, useSurfaceResolverRegistry } from "../registry/RegistryProvider"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "@hachej/boring-agent/shared"
 
 type BoringPluginEvent =
@@ -20,6 +21,7 @@ export interface RegisterAgentPluginOptions {
   apiBaseUrl?: string
   workspaceId?: string
   enabled?: boolean
+  authHeaders?: Record<string, string>
   importFront?: (frontUrl: string, revision: number) => Promise<{ default?: BoringFrontFactory }>
 }
 
@@ -43,8 +45,26 @@ function resolveFrontUrl(frontUrl: string, apiBaseUrl: string | undefined): stri
   return joinUrl(apiBaseUrl, frontUrl.startsWith("/") ? frontUrl : `/${frontUrl}`)
 }
 
-function getRegistries(panels: ReturnType<typeof useRegistry>, commands: ReturnType<typeof useCommandRegistry>, surfaceResolvers: ReturnType<typeof useSurfaceResolverRegistry>) {
-  return { panels, commands, surfaceResolvers }
+function getRegistries(
+  panels: ReturnType<typeof useRegistry>,
+  commands: ReturnType<typeof useCommandRegistry>,
+  catalogs: ReturnType<typeof useCatalogRegistry>,
+  surfaceResolvers: ReturnType<typeof useSurfaceResolverRegistry>,
+) {
+  return { panels, commands, catalogs, surfaceResolvers }
+}
+
+function getAuthHeader(headers: Record<string, string> | undefined, name: string): string | undefined {
+  if (!headers) return undefined
+  const wanted = name.toLowerCase()
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === wanted) return value
+  }
+  return undefined
+}
+
+function hasBearerAuth(headers: Record<string, string> | undefined): boolean {
+  return /^Bearer\s+\S+/i.test(getAuthHeader(headers, "authorization") ?? "")
 }
 
 async function defaultImportFront(frontUrl: string, revision: number): Promise<{ default?: BoringFrontFactory }> {
@@ -61,11 +81,9 @@ async function captureFrontFactory(pluginId: string, frontUrl: string, revision:
 
 /**
  * Translate a CapturedBoringFrontRegistrations into the registry shapes
- * expected by the four atomic `replaceByPluginId` ops (panels, panel
- * commands, left tabs, surface resolvers). Providers, bindings, and
- * catalogs aren't returned by the hot front factory today — they
- * remain static-composition-only until the front asset loader grows
- * that support.
+ * expected by the atomic `replaceByPluginId` ops. Providers and bindings
+ * remain static-composition-only until the front asset loader can mount a
+ * dynamic provider subtree safely.
  */
 function buildRegistryPayloads(
   pluginId: string,
@@ -73,6 +91,7 @@ function buildRegistryPayloads(
 ): {
   panels: PanelConfig[]
   commands: CommandConfig[]
+  catalogs: CatalogConfig[]
   surfaceResolvers: SurfaceResolverConfig[]
 } {
   const panels: PanelConfig[] = []
@@ -111,6 +130,10 @@ function buildRegistryPayloads(
     run: command.run ?? (() => undefined),
     pluginId,
   }))
+  const catalogs: CatalogConfig[] = captured.catalogs.map((catalog) => ({
+    ...catalog,
+    pluginId,
+  }))
   const surfaceResolvers: SurfaceResolverConfig[] = captured.surfaceResolvers.map((resolver) => ({
     id: resolver.id ?? `${pluginId}:${resolver.kind}`,
     source: resolver.source ?? "plugin",
@@ -120,7 +143,7 @@ function buildRegistryPayloads(
       return resolver.resolve(request) ?? undefined
     },
   }))
-  return { panels, commands, surfaceResolvers }
+  return { panels, commands, catalogs, surfaceResolvers }
 }
 
 /**
@@ -131,34 +154,60 @@ function buildRegistryPayloads(
  * Pi parity: `agent-session.js:1896 reload` — rebuild over diff, single
  * observable transition per registry.
  */
+function warnUnsupportedDynamicContributions(pluginId: string, captured: CapturedBoringFrontRegistrations): void {
+  const unsupported = [
+    captured.providers.length > 0 ? `${captured.providers.length} provider(s)` : null,
+    captured.bindings.length > 0 ? `${captured.bindings.length} binding(s)` : null,
+  ].filter(Boolean).join(" and ")
+  if (!unsupported) return
+  console.warn(
+    `[boring-ui] hot-loaded plugin "${pluginId}" registered ${unsupported}. ` +
+      "Dynamic provider/binding mounting is not implemented yet, so this plugin's hot-loaded UI contributions were skipped to avoid rendering panels without their required provider tree.",
+  )
+}
+
 function commitCapturedFrontFactory(
   pluginId: string,
   captured: CapturedBoringFrontRegistrations,
   registries: ReturnType<typeof getRegistries>,
 ): void {
+  if (captured.providers.length > 0 || captured.bindings.length > 0) {
+    warnUnsupportedDynamicContributions(pluginId, captured)
+    unregisterPlugin(pluginId, registries)
+    return
+  }
   const payloads = buildRegistryPayloads(pluginId, captured)
   registries.panels.replaceByPluginId(pluginId, payloads.panels)
   registries.commands.replaceByPluginId(pluginId, payloads.commands)
+  registries.catalogs.replaceByPluginId(pluginId, payloads.catalogs)
   registries.surfaceResolvers.replaceByPluginId(pluginId, payloads.surfaceResolvers)
 }
 
 function unregisterPlugin(pluginId: string, registries: ReturnType<typeof getRegistries>): void {
   registries.panels.replaceByPluginId(pluginId, [])
   registries.commands.replaceByPluginId(pluginId, [])
+  registries.catalogs.replaceByPluginId(pluginId, [])
   registries.surfaceResolvers.replaceByPluginId(pluginId, [])
 }
 
 export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): void {
   const panels = useRegistry()
   const commands = useCommandRegistry()
+  const catalogs = useCatalogRegistry()
   const surfaceResolvers = useSurfaceResolverRegistry()
   const lastSeenRef = useRef(new Map<string, number>())
   const latestRequestedRef = useRef(new Map<string, number>())
 
   useEffect(() => {
     if (options.enabled === false || typeof EventSource === "undefined") return
+    if (hasBearerAuth(options.authHeaders)) {
+      console.warn(
+        "[boring-ui] front plugin hot reload disabled: native EventSource cannot send Authorization bearer headers, and this server does not advertise a token-query fallback for /api/v1/agent-plugins/events.",
+      )
+      return
+    }
     let disposed = false
-    const registries = getRegistries(panels, commands, surfaceResolvers)
+    const registries = getRegistries(panels, commands, catalogs, surfaceResolvers)
     const url = withWorkspaceId(joinUrl(options.apiBaseUrl ?? "", "/api/v1/agent-plugins/events"), options.workspaceId)
     const es = new EventSource(url, { withCredentials: true })
 
@@ -235,5 +284,5 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
       latestRequestedRef.current.clear()
       es.close()
     }
-  }, [options.apiBaseUrl, options.workspaceId, options.enabled, options.importFront, panels, commands, surfaceResolvers])
+  }, [options.apiBaseUrl, options.workspaceId, options.enabled, options.authHeaders, options.importFront, panels, commands, catalogs, surfaceResolvers])
 }

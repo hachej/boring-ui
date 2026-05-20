@@ -63,7 +63,7 @@ In practice, a plugin is a Node package with two manifest blocks:
 - `pi.*` — agent side: skills, prompts, tools (loaded by [Pi](https://pi.dev))
 - `boring.*` — UI side: panels, commands, catalogs, surface resolvers
 
-Plugins compose. Use `derivesFrom` to extend an existing plugin instead of forking. Swap a single surface, or add a brand-new pane type. Plugins ship through npm like any other dependency — no patching, no monorepo entanglement required.
+Plugins compose at the app shell: register multiple packages/plugins side by side, or publish a package that wraps shared primitives. Swap a single surface, or add a brand-new pane type. Plugins ship through npm like any other dependency — no patching, no monorepo entanglement required.
 
 Start from [plugins/_template-full](plugins/_template-full/README.md). The exact manifest and a working example are in [Plugin shape](#plugin-shape) below.
 
@@ -120,7 +120,9 @@ More on the same chassis in flight: `boring-accountant`, `boring-design`, `borin
 
 ## Plugin shape
 
-Plugins are standard Node packages, distributed through npm, loaded by Pi. Each `package.json` declares both halves of the contract:
+Plugins are standard Node packages. `package.json#pi` describes hot-reloadable
+agent resources, while `package.json#boring` describes workspace UI/static app
+integration:
 
 ```json
 {
@@ -129,23 +131,22 @@ Plugins are standard Node packages, distributed through npm, loaded by Pi. Each 
   "pi": {
     "extensions": ["agent/index.ts"],
     "skills": ["agent/skills"],
-    "prompts": ["agent/prompts"]
+    "prompts": ["agent/prompts"],
+    "systemPrompt": "Short agent guidance."
   },
   "boring": {
     "label": "My Plugin",
     "front": "front/index.tsx",
-    "server": "server/index.ts",
-    "derivesFrom": ["optional-parent-plugin"]
+    "server": "server/index.ts"
   }
 }
 ```
 
-- `pi.extensions` / `pi.skills` / `pi.prompts` — agent-side capabilities
-- `boring.front` — workbench UI: panels, commands, catalogs, surface resolvers
-- `boring.server` — server side: tools that need backend state, HTTP routes
-- `boring.derivesFrom` — layer on top of an existing plugin
+- `pi.*` — hot-reloadable agent resources loaded by Pi (`extensions`, `skills`, `prompts`, `systemPrompt`)
+- `boring.front` — workbench UI from `definePlugin({ ... })`: panels, commands, catalogs, surface resolvers, providers, bindings
+- `boring.server` — explicit static/boot-time server integration from `defineServerPlugin({ ... })`: agent tools that need backend state and HTTP routes. Restart the workspace server after changes.
 
-Start from [plugins/_template-full](plugins/_template-full/README.md).
+Start from [plugins/_template-full](plugins/_template-full/README.md) for publishable packages, or `boring-ui scaffold-plugin <name>` for a front/Pi hot-reloadable local plugin.
 
 **What you can add:**
 

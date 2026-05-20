@@ -162,7 +162,7 @@ describe("validateBoringPluginManifest", () => {
     expect(result.valid).toBe(true)
   })
 
-  it("rejects boring.id; package.json#name is the plugin identity", () => {
+  it("rejects boring.id; package discovery identity comes from package.json#name", () => {
     const result = validateBoringPluginManifest({
       name: "x",
       boring: { id: "filesystem", front: "front/index.tsx" },

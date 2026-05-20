@@ -575,9 +575,10 @@ Then run /reload to verify.
     600_000,
   )
 
-  // Eval #4: cross-concern — single plugin contributes BOTH a server-side
-  // agent tool AND a front panel. Tests that the agent gets the dual-
-  // surface plugin shape right (boring.server: true + agent_tools).
+  // Eval #4: cross-concern — single plugin contributes BOTH a hot-reloadable
+  // Pi agent tool AND a front panel. Static `boring.server` tools are valid for
+  // boot-time app integration, but they are not activated by `/reload` for
+  // `.pi/extensions` user plugins, so this eval requires `pi.extensions`.
   test(
     "agent creates a cross-concern plugin (server tool + front panel) that reloads cleanly",
     async () => {
@@ -586,8 +587,9 @@ Then run /reload to verify.
         prompt: [
           "Build me a plugin called `eval-cross` that does two things:",
           "1. shows me a panel with the text \"Eval Cross panel\"",
-          "2. adds an agent tool called `eval_cross_ping` that, when I call",
-          "   it from chat, returns the text \"eval-cross pong\".",
+          "2. adds a hot-reloadable Pi agent tool called `eval_cross_ping`",
+          "   declared through package.json#pi.extensions (not boring.server)",
+          "   that, when I call it from chat, returns the text \"eval-cross pong\".",
           "",
           "When you're done, ask me to run /reload.",
         ].join("\n"),
@@ -613,31 +615,27 @@ Then run /reload to verify.
       // User-observable: panel text the user asked for appears verbatim.
       expect(readFileSync(frontPath!, "utf8")).toContain("Eval Cross panel")
 
-      // The agent tool's name + return text must appear SOMEWHERE on
-      // disk under the plugin dir. Don't care whether the agent put it in
-      // `pi.extensions` (the hot-reload path) or `boring.server`'s
-      // `agentTools` (the static path) — either is valid by the new
-      // hallucinations guide, and the user only cares the tool exists.
-      const { readdirSync, statSync: stat } = await import("node:fs")
-      function walk(dir: string): string[] {
-        const out: string[] = []
-        for (const entry of readdirSync(dir, { withFileTypes: true })) {
-          const full = join(dir, entry.name)
-          if (entry.isDirectory() && entry.name !== "node_modules") out.push(...walk(full))
-          else if (entry.isFile()) out.push(full)
-        }
-        return out
-      }
-      const allFiles = walk(EVAL_CROSS_DIR).filter((p) => /\.(ts|tsx|js|mjs|cjs)$/.test(p))
-      const sources = allFiles.map((p) => readFileSync(p, "utf8"))
+      const declaredExtensions = packageJson.pi?.extensions
       expect(
-        sources.some((src) => src.includes("eval_cross_ping")),
-        "user asked for an `eval_cross_ping` tool; name not found in any plugin source",
+        Array.isArray(declaredExtensions) && declaredExtensions.length > 0,
+        "hot-reloadable tools must be declared in package.json#pi.extensions",
       ).toBe(true)
+      const extensionPath = (declaredExtensions as string[])
+        .map((p) => join(EVAL_CROSS_DIR, p))
+        .find((p) => existsSync(p))
       expect(
-        sources.some((src) => src.includes("eval-cross pong")),
-        "user asked for the tool to return `eval-cross pong`; text not found in any plugin source",
-      ).toBe(true)
+        extensionPath,
+        `no declared Pi extension file found (declared: ${JSON.stringify(declaredExtensions)})`,
+      ).toBeTruthy()
+      const extensionSource = stripComments(readFileSync(extensionPath!, "utf8"))
+      expect(
+        extensionSource,
+        "declared Pi extension does not register eval_cross_ping as a tool",
+      ).toMatch(/registerTool\s*\(\s*{[\s\S]*name\s*:\s*["']eval_cross_ping["']/)
+      expect(
+        extensionSource,
+        "declared eval_cross_ping tool does not return eval-cross pong",
+      ).toMatch(/eval_cross_ping[\s\S]*(return|text\s*:)[\s\S]*["']eval-cross pong["']/)
 
       const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
       expect(reload.statusCode).toBe(200)
@@ -657,6 +655,12 @@ function formatFailure(result: { ok: boolean; reason?: string; text?: string; ac
   const tools = result.actual.map((c) => c.tool).join(", ") || "(none)"
   const text = result.text ? `; text: ${result.text.slice(0, 500)}` : ""
   return result.reason ? `${result.reason}${text}` : `tools called: ${tools}${text}`
+}
+
+function stripComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1")
 }
 
 /**

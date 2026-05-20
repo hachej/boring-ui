@@ -5,12 +5,23 @@ export {
   collectWorkspaceAgentServerPlugins,
   createWorkspaceAgentServer,
   provisionWorkspaceAgentServer,
+  readWorkspacePluginPackagePiSnapshot,
+  resolveDefaultWorkspacePluginPackagePaths,
   type CollectWorkspaceAgentServerPluginsOptions,
   type CreateWorkspaceAgentServerOptions,
+  type ResolveDefaultWorkspacePluginPackagePathsOptions,
   type WorkspaceAgentPiOptions,
   type WorkspaceAgentServerPluginCollection,
   type WorkspaceAgentServerPluginContext,
+  type WorkspacePluginPackagePiSnapshot,
+  type WorkspacePluginEntry,
 } from "./createWorkspaceAgentServer"
+export {
+  hasDirServerPlugin,
+  resolveOnePluginEntry,
+  type DirPluginEntry,
+  type PluginResolveContext,
+} from "./pluginEntryResolver"
 export type {
   WorkspacePiPackageSource,
   WorkspaceProvisioningContribution,
