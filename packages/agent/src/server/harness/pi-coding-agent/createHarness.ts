@@ -96,16 +96,16 @@ export interface PiHarnessOptions {
   /** In-process host extensions. Use only for trusted built-ins; hot plugin code should use paths. */
   extensionFactories?: ExtensionFactory[];
   /**
-   * Optional source of dynamic Pi resources. Pi calls it on every
+   * Optional source of hot-reloadable Pi resources. Pi calls it on every
    * reloadSession() (and once at session build) and merges the result with
-   * the static fields above. Lets the workspace plugin layer contribute
+   * the static fields above. Lets the workspace plugin layer refresh
    * package.json-discovered skills/packages/extensions without mutating
    * arrays that the harness already captured.
    */
-  getDynamicResources?: () => DynamicPiResources;
+  getHotReloadableResources?: () => HotReloadablePiResources;
 }
 
-export interface DynamicPiResources {
+export interface HotReloadablePiResources {
   additionalSkillPaths?: string[];
   packages?: PiPackageSource[];
   extensionPaths?: string[];
@@ -335,14 +335,14 @@ export function createPiCodingAgentHarness(opts: {
   const piSessions = new Map<string, PiSessionHandle>();
 
   // Effective Pi resources merge static caller-supplied fields with
-  // getDynamicResources() output. Pi's DefaultResourceLoader keeps the
+  // getHotReloadableResources() output. Pi's DefaultResourceLoader keeps the
   // array references it was constructed with and re-reads them on
   // piSession.reload(), so we mutate via splice instead of replacing.
   const effectiveSkillPaths: string[] = []
   const effectivePackages: PiPackageSource[] = []
   const effectiveExtensionPaths: string[] = []
   const refreshEffectiveResources = (): void => {
-    const dynamic = opts.pi?.getDynamicResources?.() ?? {}
+    const dynamic = opts.pi?.getHotReloadableResources?.() ?? {}
     effectiveSkillPaths.splice(
       0,
       effectiveSkillPaths.length,

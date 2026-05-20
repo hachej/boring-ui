@@ -553,7 +553,7 @@ export async function createWorkspaceAgentServer(
   ]
 
   // Dynamic Pi resources discovered from package.json#pi at /reload time.
-  // Pi calls `getDynamicResources()` on every reloadSession() and merges the
+  // Pi calls `getHotReloadableResources()` on every reloadSession() and merges the
   // result with the static fields above, so the workspace never mutates
   // arrays the harness already captured.
   const staticPluginPackagePiSnapshot = pluginHotReload
@@ -572,7 +572,7 @@ export async function createWorkspaceAgentServer(
     ...staticPluginPackagePiSnapshot.extensionPaths,
   ]
 
-  const getDynamicPiResources = pluginHotReload
+  const getHotReloadablePiResources = pluginHotReload
     ? () => readWorkspacePluginPackagePiSnapshot(boringPluginDirs)
     : undefined
 
@@ -656,7 +656,7 @@ export async function createWorkspaceAgentServer(
       packages: staticPiPackages,
       extensionPaths: staticPiExtensionPaths,
       extensionFactories: pluginCollection.agentOptions.pi?.extensionFactories,
-      getDynamicResources: getDynamicPiResources,
+      getHotReloadableResources: getHotReloadablePiResources,
     },
     systemPromptDynamic: pluginHotReload
       ? () => aggregatePluginPrompts(boringAssetManager)
