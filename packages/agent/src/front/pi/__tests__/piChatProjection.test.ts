@@ -12,7 +12,7 @@
 //   - usePiChatProjection(...)                   — React hook driving the
 //     live stream into piMessages state; handleData is the hot path
 import { renderHook, act } from "@testing-library/react"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import type { UIMessage } from "ai"
 import {
   mergeRebuiltPiMessages,
@@ -355,6 +355,44 @@ describe("usePiChatProjection (live handleData stream)", () => {
     expect(result.current.piMessages).toHaveLength(1)
     rerender({ sessionId: "s-2" })
     expect(result.current.piMessages).toEqual([])
+  })
+
+  it("batches tiny live text deltas before updating React state", () => {
+    vi.useFakeTimers()
+    try {
+      const { result } = renderHook(() => usePiChatProjection({ ...baseProps, status: "streaming" }))
+      act(() => {
+        result.current.handleData({ type: "data-pi-message-start", data: { messageId: "a-batch", role: "assistant" } })
+        result.current.handleData({ type: "data-pi-text-start", data: { messageId: "a-batch", partId: "0" } })
+        result.current.handleData({ type: "data-pi-text-delta", data: { messageId: "a-batch", partId: "0", delta: "Hel" } })
+        result.current.handleData({ type: "data-pi-text-delta", data: { messageId: "a-batch", partId: "0", delta: "lo" } })
+      })
+      expect(firstTextPart(result.current.piMessages[0])).toBeUndefined()
+
+      act(() => vi.advanceTimersByTime(49))
+      expect(firstTextPart(result.current.piMessages[0])).toBeUndefined()
+
+      act(() => vi.advanceTimersByTime(1))
+      expect(firstTextPart(result.current.piMessages[0])).toBe("Hello")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("text-end flushes buffered deltas and repairs partial text with final text", () => {
+    vi.useFakeTimers()
+    try {
+      const { result } = renderHook(() => usePiChatProjection({ ...baseProps, status: "streaming" }))
+      act(() => {
+        result.current.handleData({ type: "data-pi-message-start", data: { messageId: "a-final", role: "assistant" } })
+        result.current.handleData({ type: "data-pi-text-start", data: { messageId: "a-final", partId: "0" } })
+        result.current.handleData({ type: "data-pi-text-delta", data: { messageId: "a-final", partId: "0", delta: "Hel" } })
+        result.current.handleData({ type: "data-pi-text-end", data: { messageId: "a-final", partId: "0", text: "Hello" } })
+      })
+      expect(firstTextPart(result.current.piMessages[0])).toBe("Hello")
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("does not rebuild from AI SDK data envelopes while streaming (live deltas stay smooth)", () => {

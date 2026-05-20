@@ -182,6 +182,14 @@ describe('useAgentChat', () => {
     )
   })
 
+  test('throttles AI SDK message-store updates while streaming', () => {
+    useAgentChat({ sessionId: 'sess-1' })
+
+    expect(useChat).toHaveBeenCalledWith(
+      expect.objectContaining({ experimental_throttle: 50 }),
+    )
+  })
+
   test('forwards onData callback to useChat', () => {
     const onData = vi.fn()
 

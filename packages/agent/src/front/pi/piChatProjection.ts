@@ -10,6 +10,56 @@ function asPiDataPart(part: UIMessage['parts'][number]): { type: string; data?: 
   }
 }
 
+const PI_DELTA_FLUSH_MS = 50
+
+type BufferedPiDelta = {
+  kind: 'text' | 'reasoning'
+  messageId: string
+  partId: string
+  delta: string
+}
+
+function applyBufferedTextDelta(items: UIMessage[], messageId: string, partId: string, delta: string): UIMessage[] {
+  const existing = items.some((item) => item.id === messageId) ? items : [...items, { id: messageId, role: 'assistant' as const, parts: [] }]
+  return existing.map((item) => {
+    if (item.id !== messageId) return item
+    let found = false
+    const parts = (item.parts ?? []).map((p) => {
+      if (p.type === 'text' && ((p as { id?: string }).id ?? partId) === partId) {
+        found = true
+        return { ...p, text: `${p.text}${delta}` }
+      }
+      return p
+    })
+    return { ...item, parts: (found ? parts : [...parts, { type: 'text' as const, id: partId, text: delta }]) as UIMessage['parts'] }
+  })
+}
+
+function applyBufferedReasoningDelta(items: UIMessage[], messageId: string, partId: string, delta: string): UIMessage[] {
+  const existing = items.some((item) => item.id === messageId) ? items : [...items, { id: messageId, role: 'assistant' as const, parts: [] }]
+  return existing.map((item) => {
+    if (item.id !== messageId) return item
+    let found = false
+    const parts = (item.parts ?? []).map((p) => {
+      if (p.type === 'reasoning' && (p as { id?: string }).id === partId) {
+        found = true
+        return { ...p, text: `${p.text}${delta}` }
+      }
+      return p
+    })
+    return { ...item, parts: (found ? parts : [...parts, { type: 'reasoning' as const, id: partId, text: delta }]) as UIMessage['parts'] }
+  })
+}
+
+function applyBufferedDeltas(items: UIMessage[], deltas: BufferedPiDelta[]): UIMessage[] {
+  return deltas.reduce(
+    (next, entry) => entry.kind === 'text'
+      ? applyBufferedTextDelta(next, entry.messageId, entry.partId, entry.delta)
+      : applyBufferedReasoningDelta(next, entry.messageId, entry.partId, entry.delta),
+    items,
+  )
+}
+
 export function rebuildPiMessagesFromDataParts(sourceMessages: UIMessage[]): UIMessage[] {
   const dataParts = sourceMessages.flatMap((message) => message.parts ?? []).map(asPiDataPart).filter(Boolean) as Array<{ type: string; data?: Record<string, unknown> }>
   if (dataParts.length === 0) return []
@@ -126,6 +176,8 @@ export function usePiChatProjection({
 }) {
   const [piMessages, setPiMessages] = useState<UIMessage[]>([])
   const piMessagesRef = useRef<UIMessage[]>([])
+  const bufferedDeltaRef = useRef(new Map<string, BufferedPiDelta>())
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const updatePiMessages = useCallback((updater: (items: UIMessage[]) => UIMessage[]) => {
     const next = updater(piMessagesRef.current)
@@ -133,10 +185,41 @@ export function usePiChatProjection({
     setPiMessages(next)
   }, [])
 
+  const flushBufferedDeltas = useCallback(() => {
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current)
+      flushTimerRef.current = null
+    }
+    const deltas = [...bufferedDeltaRef.current.values()]
+    if (deltas.length === 0) return
+    bufferedDeltaRef.current.clear()
+    updatePiMessages((items) => applyBufferedDeltas(items, deltas))
+  }, [updatePiMessages])
+
+  const queueBufferedDelta = useCallback((entry: BufferedPiDelta) => {
+    const key = `${entry.kind}:${entry.messageId}:${entry.partId}`
+    const existing = bufferedDeltaRef.current.get(key)
+    bufferedDeltaRef.current.set(key, existing ? { ...existing, delta: `${existing.delta}${entry.delta}` } : entry)
+    if (flushTimerRef.current) return
+    flushTimerRef.current = setTimeout(() => {
+      flushTimerRef.current = null
+      flushBufferedDeltas()
+    }, PI_DELTA_FLUSH_MS)
+  }, [flushBufferedDeltas])
+
+  useEffect(() => () => {
+    if (flushTimerRef.current) clearTimeout(flushTimerRef.current)
+  }, [])
+
   const previousSessionIdRef = useRef(sessionId)
   useEffect(() => {
     if (previousSessionIdRef.current === sessionId) return
     previousSessionIdRef.current = sessionId
+    bufferedDeltaRef.current.clear()
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current)
+      flushTimerRef.current = null
+    }
     piMessagesRef.current = []
     setPiMessages([])
   }, [sessionId])
@@ -146,6 +229,9 @@ export function usePiChatProjection({
     const data = typed.data ?? {}
     const piMessageId = typeof data.messageId === 'string' ? data.messageId : undefined
     if (!piMessageId) return
+
+    const isBufferedDelta = typed.type === 'data-pi-text-delta' || typed.type === 'data-pi-reasoning-delta'
+    if (typed.type && !isBufferedDelta) flushBufferedDeltas()
 
     // Dispatch table for data-pi-* events — each handler receives (data, updatePiMessages)
     const handlers: Record<string, (d: Record<string, unknown>) => void> = {
@@ -175,21 +261,7 @@ export function usePiChatProjection({
         const partId = typeof d.partId === 'string' ? d.partId : '0'
         const delta = typeof d.delta === 'string' ? d.delta : ''
         if (!delta) return
-        updatePiMessages((items) => {
-          const existing = items.some((item) => item.id === piMessageId) ? items : [...items, { id: piMessageId, role: 'assistant' as const, parts: [] }]
-          return existing.map((item) => {
-            if (item.id !== piMessageId) return item
-            let found = false
-            const parts = (item.parts ?? []).map((p) => {
-              if (p.type === 'text' && ((p as { id?: string }).id ?? partId) === partId) {
-                found = true
-                return { ...p, text: `${p.text}${delta}` }
-              }
-              return p
-            })
-            return { ...item, parts: (found ? parts : [...parts, { type: 'text' as const, id: partId, text: delta }]) as UIMessage['parts'] }
-          })
-        })
+        queueBufferedDelta({ kind: 'text', messageId: piMessageId, partId, delta })
       },
       'data-pi-text-end': (d) => {
         const partId = typeof d.partId === 'string' ? d.partId : '0'
@@ -203,7 +275,10 @@ export function usePiChatProjection({
             const parts = (item.parts ?? []).map((p) => {
               if (p.type === 'text' && ((p as { id?: string }).id ?? partId) === partId) {
                 found = true
-                return p.text ? p : { ...p, text }
+                const current = p.text ?? ''
+                return !current || (text.startsWith(current) && text.length > current.length)
+                  ? { ...p, text }
+                  : p
               }
               return p
             })
@@ -224,21 +299,7 @@ export function usePiChatProjection({
         const partId = typeof d.partId === 'string' ? d.partId : '0'
         const delta = typeof d.delta === 'string' ? d.delta : ''
         if (!delta) return
-        updatePiMessages((items) => {
-          const existing = items.some((item) => item.id === piMessageId) ? items : [...items, { id: piMessageId, role: 'assistant' as const, parts: [] }]
-          return existing.map((item) => {
-            if (item.id !== piMessageId) return item
-            let found = false
-            const parts = (item.parts ?? []).map((p) => {
-              if (p.type === 'reasoning' && (p as { id?: string }).id === partId) {
-                found = true
-                return { ...p, text: `${p.text}${delta}` }
-              }
-              return p
-            })
-            return { ...item, parts: (found ? parts : [...parts, { type: 'reasoning' as const, id: partId, text: delta }]) as UIMessage['parts'] }
-          })
-        })
+        queueBufferedDelta({ kind: 'reasoning', messageId: piMessageId, partId, delta })
       },
       'data-pi-tool-call-end': (d) => {
         const toolCallId = typeof d.toolCallId === 'string' ? d.toolCallId : undefined
@@ -261,17 +322,33 @@ export function usePiChatProjection({
       'data-pi-message-end': (d) => {
         const text = typeof d.text === 'string' ? d.text : ''
         if (!text) return
-        // Fallback emission: only append if no text part has content yet.
-        // pi numbers content blocks across types, so the text block's partId
-        // (e.g. "1" after a reasoning block at "0") would never match the
-        // partId-less message-end, producing duplicate text bubbles.
-        updatePiMessages((items) => items.map((item) => item.id === piMessageId && !(item.parts ?? []).some((p) => p.type === 'text' && p.text)
-          ? { ...item, parts: [...(item.parts ?? []), { type: 'text' as const, text }] }
-          : item))
+        // Fallback/final emission. Append only if no text exists; otherwise
+        // let the final full text repair a partial live stream when it is a
+        // strict extension of the current single text part. This preserves the
+        // duplicate guard for multi-part messages while recovering from missed
+        // or coalesced deltas.
+        updatePiMessages((items) => items.map((item) => {
+          if (item.id !== piMessageId) return item
+          const textParts = (item.parts ?? []).filter((p) => p.type === 'text')
+          const nonEmptyTextParts = textParts.filter((p) => p.text)
+          if (nonEmptyTextParts.length === 0) {
+            return { ...item, parts: [...(item.parts ?? []), { type: 'text' as const, text }] }
+          }
+          if (textParts.length === 1) {
+            const current = textParts[0]?.text ?? ''
+            if (text.startsWith(current) && text.length > current.length) {
+              return {
+                ...item,
+                parts: (item.parts ?? []).map((p) => p === textParts[0] ? { ...p, text } : p) as UIMessage['parts'],
+              }
+            }
+          }
+          return item
+        }))
       },
     }
     if (typed.type) handlers[typed.type]?.(data)
-  }, [updatePiMessages])
+  }, [flushBufferedDeltas, queueBufferedDelta, updatePiMessages])
 
   useEffect(() => {
     if (status !== 'ready' || piMessagesRef.current.length > 0 || messages.length === 0) return
