@@ -79,7 +79,7 @@ function ensureFrontendBuilt(publicDir: string) {
   process.exit(1)
 }
 
-async function registerStatic(app: FastifyInstance, publicDir: string) {
+export async function registerStatic(app: FastifyInstance, publicDir: string) {
   ensureFrontendBuilt(publicDir)
   const { default: fastifyStatic } = await import("@fastify/static")
   await app.register(fastifyStatic, {
