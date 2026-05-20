@@ -89,6 +89,35 @@ export type ComposerBlocker = {
   actions?: ComposerBlockerAction[]
 }
 
+function hasToolPart(message: UIMessage): boolean {
+  return (message.parts ?? []).some((part) => isToolUIPart(part))
+}
+
+function coalesceAssistantToolFragments(messages: UIMessage[]): UIMessage[] {
+  const coalesced: UIMessage[] = []
+
+  for (const message of messages) {
+    const previous = coalesced[coalesced.length - 1]
+    const shouldMerge =
+      message.role === 'assistant' &&
+      previous?.role === 'assistant' &&
+      (hasToolPart(previous) || hasToolPart(message))
+
+    if (!shouldMerge) {
+      coalesced.push(message)
+      continue
+    }
+
+    coalesced[coalesced.length - 1] = {
+      ...previous,
+      id: `${previous.id}::${message.id}`,
+      parts: [...(previous.parts ?? []), ...(message.parts ?? [])],
+    }
+  }
+
+  return coalesced
+}
+
 export interface ChatPanelProps {
   sessionId: string
   toolRenderers?: ToolRendererOverrides
@@ -250,6 +279,10 @@ export function ChatPanel(props: ChatPanelProps) {
       ? [...piMessages, ...waitingTail]
       : [...messages, ...projectedTailMessages]
   }, [messages, piMessages, projectedTailMessages, projectedStatusById])
+  const renderMessages = useMemo(
+    () => coalesceAssistantToolFragments(displayMessages),
+    [displayMessages],
+  )
 
   // Stop button: cancels stream, clears the queued follow-up, and lets host UI
   // cancel any host-level blocker that is waiting for user attention.
@@ -498,7 +531,7 @@ export function ChatPanel(props: ChatPanelProps) {
               }}
             />
           )}
-          {displayMessages.map((message, messageIndex) => {
+          {renderMessages.map((message, messageIndex) => {
             const role = message.role === 'user' || message.role === 'assistant' ? message.role : 'assistant'
             const projectedStatus = projectedStatusById.get(message.id)
             const isWaitingFollowUp = role === 'user' && projectedStatus === 'queued'
@@ -562,7 +595,7 @@ export function ChatPanel(props: ChatPanelProps) {
             // reply — regenerating an older turn would fork history in
             // ways we don't support. Restricting visibility to the tail
             // keeps the UX honest.
-            const isLastMessage = messageIndex === displayMessages.length - 1
+            const isLastMessage = messageIndex === renderMessages.length - 1
             const shouldReserveStreamingActions = isStreaming && role === 'assistant' && isLastMessage
 
             return (

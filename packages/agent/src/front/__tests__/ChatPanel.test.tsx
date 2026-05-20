@@ -800,6 +800,60 @@ describe('ChatPanel (shadcn)', () => {
       expect((html.match(/Used /g) ?? []).length).toBe(1)
     })
 
+    test('assistant tool fragments coalesce so adjacent calls share one collapsed group', () => {
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          {
+            id: 'a-text-before',
+            role: 'assistant',
+            parts: [{ type: 'text', text: 'BEFORE_TOOLS' }],
+          },
+          {
+            id: 'a-tool-1',
+            role: 'assistant',
+            parts: [
+              {
+                type: 'tool-bash',
+                toolCallId: 'CMD1',
+                state: 'output-available',
+                input: { command: 'ls' },
+                output: { text: 'ok' },
+              },
+            ],
+          },
+          {
+            id: 'a-tool-2',
+            role: 'assistant',
+            parts: [
+              {
+                type: 'tool-bash',
+                toolCallId: 'CMD2',
+                state: 'output-available',
+                input: { command: 'pwd' },
+                output: { text: 'ok' },
+              },
+            ],
+          },
+          {
+            id: 'a-text-after',
+            role: 'assistant',
+            parts: [{ type: 'text', text: 'AFTER_TOOLS' }],
+          },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-tool-fragments" />)
+      expect(html).toContain('BEFORE_TOOLS')
+      expect(html).toContain('AFTER_TOOLS')
+      expect(html).toContain('Used command ×2')
+      expect((html.match(/data-testid="message"/g) ?? []).length).toBe(1)
+      expect((html.match(/Used command/g) ?? []).length).toBe(1)
+    })
+
     test('tools are NOT pushed to the end when they appear before text in parts', () => {
       // Regression guard: the previous renderer grouped by type and rendered
       // all texts first then all tools. With that bug, a tool-then-text
