@@ -35,6 +35,11 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     id: sessionId,
     transport,
     resume: true,
+    // Match AI SDK's documented React smoothing knob: render at most every
+    // ~50ms while chunks stream instead of once per incoming chunk. This only
+    // throttles AI SDK's own messages store; pi's custom data-pi projection
+    // does its own matching delta batching in usePiChatProjection.
+    experimental_throttle: 50,
     onData: (part) => {
       // File-change invalidation is no longer done here. The host
       // (e.g. @hachej/boring-workspace's ChatCenteredShell) wires onData to
