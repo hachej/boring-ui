@@ -304,7 +304,18 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
             latestRequestedRef.current.delete(event.id)
           }
           const label = event?.id ?? "<malformed>"
+          const message = error instanceof Error ? error.message : String(error)
           console.error(`[boring-ui] failed to load plugin ${label}; keeping previous version`, error)
+          if (event) {
+            window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, {
+              detail: {
+                type: "boring.plugin.front-error",
+                id: event.id,
+                revision: event.revision,
+                message,
+              },
+            }))
+          }
         }
       })()
     }

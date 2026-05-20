@@ -98,7 +98,7 @@ test("installed CLI workspace subcommands use an isolated registry", { timeout: 
   await expect(runCli(["workspaces", "list"], env)).resolves.toMatchObject({
     stdout: expect.stringContaining("No workspaces"),
   })
-}, 20_000)
+})
 
 test("installed CLI serves built assets with browser-safe MIME types", async () => {
   const publicDir = await makeTempDir("boring-cli-static-public-")

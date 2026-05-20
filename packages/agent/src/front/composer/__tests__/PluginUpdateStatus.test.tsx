@@ -58,6 +58,31 @@ describe("PluginUpdateStatus", () => {
     expect(onDismiss).toHaveBeenCalledOnce()
   })
 
+  test("keeps success banners with browser front events visible until manually dismissed", () => {
+    vi.useFakeTimers()
+    const onDismiss = vi.fn()
+
+    const container = render(
+      <PluginUpdateStatus
+        state={{
+          kind: "success",
+          reloaded: true,
+          frontEvents: [{ source: "browser", pluginId: "csv-viewer", message: "front module loaded (revision 2)" }],
+        }}
+        onDismiss={onDismiss}
+        onRetry={vi.fn()}
+        successAutoDismissMs={2500}
+      />,
+    )
+
+    expect(container.textContent).toContain("Browser plugin modules updated")
+    expect(container.textContent).toContain("csv-viewer")
+    act(() => {
+      vi.advanceTimersByTime(10_000)
+    })
+    expect(onDismiss).not.toHaveBeenCalled()
+  })
+
   test("keeps success banners with diagnostics visible until manually dismissed", () => {
     vi.useFakeTimers()
     const onDismiss = vi.fn()

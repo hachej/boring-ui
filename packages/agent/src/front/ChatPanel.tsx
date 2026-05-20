@@ -497,6 +497,36 @@ export function ChatPanel(props: ChatPanelProps) {
     activeSessionRef.current = sessionId
     setPluginUpdateState(null)
   }, [sessionId])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onBrowserPluginReload = (event: Event) => {
+      const detail = (event as CustomEvent).detail
+      const parsed = parseBrowserPluginReloadDetail(detail)
+      if (!parsed) return
+      setPluginUpdateState((prev) => {
+        if (!prev) return prev
+        if (parsed.kind === 'error') {
+          return { kind: 'error', message: parsed.message }
+        }
+        if (prev.kind === 'error') return prev
+        const current = prev.kind === 'success'
+          ? prev
+          : { kind: 'success' as const, reloaded: true }
+        const existing = current.frontEvents ?? []
+        if (existing.some((item) => item.pluginId === parsed.diagnostic.pluginId && item.message === parsed.diagnostic.message)) {
+          return current
+        }
+        return {
+          ...current,
+          frontEvents: [...existing, parsed.diagnostic],
+        }
+      })
+    }
+    window.addEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, onBrowserPluginReload as EventListener)
+    return () => window.removeEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, onBrowserPluginReload as EventListener)
+  }, [])
+
   const runPluginUpdate = useCallback(async () => {
     const capturedSession = activeSessionRef.current
     setPluginUpdateState({ kind: 'running' })
@@ -1384,6 +1414,50 @@ function AttachmentsList() {
       ))}
     </Attachments>
   )
+}
+
+type BrowserPluginReloadParsed =
+  | { kind: 'success'; diagnostic: PluginReloadDiagnostic }
+  | { kind: 'error'; message: string }
+
+function parseBrowserPluginReloadDetail(detail: unknown): BrowserPluginReloadParsed | null {
+  if (!detail || typeof detail !== 'object') return null
+  const record = detail as { type?: unknown; id?: unknown; revision?: unknown; message?: unknown }
+  if (typeof record.type !== 'string') return null
+  const pluginId = typeof record.id === 'string' ? record.id : undefined
+  const revision = typeof record.revision === 'number' ? `revision ${record.revision}` : 'updated'
+  switch (record.type) {
+    case 'boring.plugin.load':
+      return {
+        kind: 'success',
+        diagnostic: {
+          source: 'browser front reload',
+          ...(pluginId ? { pluginId } : {}),
+          message: `front module loaded (${revision})`,
+        },
+      }
+    case 'boring.plugin.unload':
+      return {
+        kind: 'success',
+        diagnostic: {
+          source: 'browser front reload',
+          ...(pluginId ? { pluginId } : {}),
+          message: `front module unloaded (${revision})`,
+        },
+      }
+    case 'boring.plugin.error':
+    case 'boring.plugin.front-error': {
+      const message = typeof record.message === 'string' && record.message.length > 0
+        ? record.message
+        : 'browser front module failed to load'
+      return {
+        kind: 'error',
+        message: `Plugin front failed${pluginId ? ` (${pluginId})` : ''}: ${message}. Previous live version was kept.`,
+      }
+    }
+    default:
+      return null
+  }
 }
 
 function formatPluginReloadDiagnostics(diagnostics: PluginReloadDiagnostic[]): string {
