@@ -1032,6 +1032,49 @@ describe('ChatPanel (shadcn)', () => {
       expect((html.match(/data-testid="message"/g) ?? []).length).toBe(2)
     })
 
+    test('does not treat later normal assistant turns as queued pi tail without followup marker', () => {
+      mockPiProjection.piMessages = [
+        { id: 'pi-a1', role: 'assistant', parts: [{ type: 'text', text: 'PI_FIRST_ASSISTANT' }] },
+        { id: 'pi-a2', role: 'assistant', parts: [{ type: 'text', text: 'PI_SECOND_ASSISTANT' }] },
+      ]
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          {
+            id: 'sdk-a1',
+            role: 'assistant',
+            parts: [
+              { type: 'data-pi-message-start', data: { messageId: 'pi-a1', role: 'assistant' } } as any,
+              { type: 'text', text: 'SDK_FIRST_ASSISTANT' },
+            ],
+          },
+          {
+            id: 'sdk-u2',
+            role: 'user',
+            parts: [{ type: 'text', text: 'second user' }],
+          },
+          {
+            id: 'sdk-a2',
+            role: 'assistant',
+            parts: [
+              { type: 'data-pi-message-start', data: { messageId: 'pi-a2', role: 'assistant' } } as any,
+              { type: 'text', text: 'SDK_SECOND_ASSISTANT' },
+            ],
+          },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-normal-multi-turn-no-pi-tail" />)
+      expect(html).toContain('SDK_FIRST_ASSISTANT')
+      expect(html).toContain('SDK_SECOND_ASSISTANT')
+      expect(html).not.toContain('PI_FIRST_ASSISTANT')
+      expect(html).not.toContain('PI_SECOND_ASSISTANT')
+      expect((html.match(/data-testid="message"/g) ?? []).length).toBe(3)
+    })
+
     test('renders pi-only fallback response after prior SDK-visible history settles', () => {
       mockPiProjection.piMessages = [
         {

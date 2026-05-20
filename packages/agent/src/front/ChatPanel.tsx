@@ -216,7 +216,6 @@ function getQueuedPiTail(messages: UIMessage[], piMessages: UIMessage[]): UIMess
   if (piMessages.length === 0) return []
 
   const queuedIds = new Set<string>()
-  const piStartRecords: Array<{ id: string; role: 'user' | 'assistant' }> = []
   let afterFollowUp = false
 
   for (const message of messages) {
@@ -228,16 +227,7 @@ function getQueuedPiTail(messages: UIMessage[], piMessages: UIMessage[]): UIMess
       const id = typeof data?.messageId === 'string' ? data.messageId : undefined
       const role = data?.role === 'user' || data?.role === 'assistant' ? data.role : undefined
       if (!id || !role) continue
-      piStartRecords.push({ id, role })
       if (afterFollowUp) queuedIds.add(id)
-    }
-  }
-
-  if (queuedIds.size === 0) {
-    const firstAssistantIndex = piStartRecords.findIndex((record) => record.role === 'assistant')
-    const hasLaterAssistant = firstAssistantIndex >= 0 && piStartRecords.slice(firstAssistantIndex + 1).some((record) => record.role === 'assistant')
-    if (hasLaterAssistant) {
-      for (const record of piStartRecords.slice(firstAssistantIndex + 1)) queuedIds.add(record.id)
     }
   }
 
