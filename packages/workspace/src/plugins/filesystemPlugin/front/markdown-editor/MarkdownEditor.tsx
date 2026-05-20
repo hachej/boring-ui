@@ -42,6 +42,7 @@ import {
   AlignLeftIcon,
   AlignCenterIcon,
   AlignRightIcon,
+  Loader2Icon,
 } from "lucide-react"
 import { Input, Toolbar as UiToolbar, ToolbarButton as UiToolbarButton, ToolbarSeparator as UiToolbarSeparator } from "@hachej/boring-ui-kit"
 import { cn } from "../../../../front/lib/utils"
@@ -207,11 +208,13 @@ function Toolbar({
   onInsertImage,
   rawMode,
   onToggleRawMode,
+  uploading,
 }: {
   editor: Editor | null
   onInsertImage: (file: File) => Promise<void>
   rawMode: boolean
   onToggleRawMode: () => void
+  uploading: boolean
 }) {
   const setBlockAlign = (align: "left" | "center" | "right") => {
     if (!editor) return
@@ -378,6 +381,17 @@ function Toolbar({
 
       <ToolbarSeparator />
 
+      {uploading && (
+        <span
+          role="status"
+          aria-live="polite"
+          className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground/80"
+        >
+          <Loader2Icon className="h-3 w-3 animate-spin" aria-hidden />
+          Uploading…
+        </span>
+      )}
+
       <ToolbarButton
         onClick={onToggleRawMode}
         active={rawMode}
@@ -400,7 +414,7 @@ export function MarkdownEditor({
   documentPath,
 }: MarkdownEditorProps) {
   const apiBaseUrl = useApiBaseUrl()
-  const { upload } = useFileUpload()
+  const { upload, uploading } = useFileUpload()
   const [rawMode, setRawMode] = useState(false)
   const editorExtensions = useMemo(() => {
     const imageExtension = ResizableImage.configure({
@@ -426,15 +440,60 @@ export function MarkdownEditor({
   insertImageRef.current = async (file: File) => {
     const editor = editorRef.current
     if (!editor) return
+
+    // Insert with the data URL first so the image shows up instantly at the
+    // caret. Uploads can be slow; without this the paste appears to do nothing.
+    let dataUrl: string
+    try {
+      dataUrl = await readFileAsDataUrl(file)
+    } catch {
+      return
+    }
+    // Unique marker so we can find THIS specific insertion later, even when
+    // the user pastes the same file twice (two image nodes, identical data
+    // URLs). Matching by `src === dataUrl` would update both on the first
+    // upload completion and orphan the second uploaded URL.
+    const pendingUploadId =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    editor
+      .chain()
+      .focus()
+      .setImage({ src: dataUrl, alt: file.name, pendingUploadId } as Record<string, unknown>)
+      .run()
+
+    // Upload in the background and swap the inserted node's src to the
+    // persisted workspace path. On failure we leave the data URL in place so
+    // the paste is not lost.
     try {
       const { url } = await upload(file, { sourcePath: documentPath })
-      editor.chain().focus().setImage({ src: url, alt: file.name }).run()
+      const ed = editorRef.current
+      if (!ed || ed.isDestroyed) return
+      ed.commands.command(({ tr, state }) => {
+        state.doc.descendants((node, pos) => {
+          if (node.type.name === "image" && node.attrs.pendingUploadId === pendingUploadId) {
+            tr.setNodeMarkup(pos, undefined, { ...node.attrs, src: url, pendingUploadId: null })
+          }
+          return true
+        })
+        return true
+      })
     } catch {
-      // Upload failed — fall back to inline data URL so the edit is not lost.
-      try {
-        const dataUrl = await readFileAsDataUrl(file)
-        editor.chain().focus().setImage({ src: dataUrl, alt: file.name }).run()
-      } catch { /* user can retry */ }
+      // Upload failed — clear the marker so we don't leave the node in a
+      // "pending forever" state (purely cosmetic for any future feature
+      // keyed off the marker; functionally the data URL stays put).
+      const ed = editorRef.current
+      if (!ed || ed.isDestroyed) return
+      ed.commands.command(({ tr, state }) => {
+        state.doc.descendants((node, pos) => {
+          if (node.type.name === "image" && node.attrs.pendingUploadId === pendingUploadId) {
+            tr.setNodeMarkup(pos, undefined, { ...node.attrs, pendingUploadId: null })
+          }
+          return true
+        })
+        return true
+      })
     }
   }
 
@@ -492,6 +551,7 @@ export function MarkdownEditor({
           onInsertImage={(file) => insertImageRef.current(file)}
           rawMode={rawMode}
           onToggleRawMode={() => setRawMode((v) => !v)}
+          uploading={uploading}
         />
       )}
       <div className="flex-1 overflow-auto">
