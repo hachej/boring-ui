@@ -72,9 +72,10 @@ describe("@hachej/boring-workspace public API", () => {
   })
 
   describe("registry", () => {
-    it("exports PanelRegistry, CommandRegistry, CatalogRegistry, and bootstrap", () => {
+    it("exports PanelRegistry, CommandRegistry, SurfaceResolverRegistry, CatalogRegistry, and bootstrap", () => {
       expect(api.PanelRegistry).toBeDefined()
       expect(api.CommandRegistry).toBeDefined()
+      expect(api.SurfaceResolverRegistry).toBeDefined()
       expect(api.CatalogRegistry).toBeDefined()
       expect(api.bootstrap).toBeDefined()
       // composePlugins removed: with the imperative BoringFrontFactory

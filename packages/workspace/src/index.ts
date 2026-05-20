@@ -81,13 +81,13 @@ export { cn } from "./front/lib/utils"
 // Registry & panel management
 export { PanelRegistry } from "./front/registry/PanelRegistry"
 export { CommandRegistry } from "./shared/plugins/CommandRegistry"
+export { SurfaceResolverRegistry } from "./shared/plugins/SurfaceResolverRegistry"
 export {
   RegistryProvider,
   useRegistry,
   useCommandRegistry,
   useCatalogRegistry,
   useSurfaceResolverRegistry,
-  SurfaceResolverRegistry,
   WORKSPACE_OPEN_PATH_SURFACE_KIND,
 } from "./front/registry"
 export { getFileIcon } from "./front/registry"
