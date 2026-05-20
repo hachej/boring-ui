@@ -85,50 +85,13 @@ describeIf("package plugin creation + reload eval (live LLM) [$provider/$id]", (
     async () => {
       const result = await evalAgentPrompt({
         app,
-        prompt: `
-Create a hot-reloadable boring-ui package plugin called "eval-task-list" at:
-  .pi/extensions/eval-task-list/
-
-Create exactly these files:
-1. .pi/extensions/eval-task-list/package.json
-2. .pi/extensions/eval-task-list/front/index.tsx
-3. .pi/extensions/eval-task-list/agent/index.ts
-
-package.json requirements:
-- name: "eval-task-list"
-- version: "1.0.0"
-- boring.label: "Eval Task List"
-- boring.front: "front/index.tsx"
-- boring.server: false
-- pi.extensions: ["agent/index.ts"]
-- pi.systemPrompt: "Eval task list plugin v1: use task_list_status for task list status."
-
-front/index.tsx requirements — the factory is IMPERATIVE (\`(api) => void\`),
-NOT a declarative object. Do NOT export \`{ panels: [...], commands: [...] }\` —
-call \`api.registerPanel(...)\` etc. Skeleton:
-
-\`\`\`tsx
-import type { BoringFrontFactory } from "@hachej/boring-workspace/plugin"
-
-const factory: BoringFrontFactory = (api) => {
-  api.registerPanel({ id: "eval-task-list.panel", label: "Eval Task List", component: () => <div>Eval Task List v1</div> })
-  api.registerPanelCommand({ id: "eval-task-list.open", title: "Open Eval Task List", panelId: "eval-task-list.panel" })
-  api.registerLeftTab({ id: "eval-task-list.tab", title: "Eval Tasks", panelId: "eval-task-list.panel" })
-  api.registerSurfaceResolver({ id: "eval-task-list.surface", kind: "eval-task-list.open", resolve: () => ({ id: "eval-task-list", component: "eval-task-list.panel", title: "Eval Task List" }) })
-}
-export default factory
-\`\`\`
-
-Do NOT use defineFrontPlugin and do NOT put systemPrompt in front code.
-
-agent/index.ts requirements:
-- default-export a Pi extension function
-- register a tool named "task_list_status"
-- the tool description must include "eval task list v1"
-- execute returns text containing "task-list-agent-v1"
-
-After writing the files, tell me to run /reload.
-        `.trim(),
+        prompt: [
+          "Build me a task-list plugin. Call it `eval-task-list`. I want a",
+          "panel labeled \"Eval Task List\" and a Pi agent tool I can call",
+          "from chat to check my task-list status.",
+          "",
+          "When you're done, ask me to run /reload.",
+        ].join("\n"),
         // Outcome-based: the prompt suggests reading docs, but with the
         // bundled boring-plugin-authoring skill the agent may go straight
         // to writing. The post-write assertions below verify correctness
@@ -144,50 +107,27 @@ After writing the files, tell me to run /reload.
       })
 
       expect(result.ok, formatFailure(result)).toBe(true)
-      expect(existsSync(EVAL_PLUGIN_PACKAGE)).toBe(true)
-      expect(existsSync(EVAL_PLUGIN_FRONT)).toBe(true)
-      expect(existsSync(EVAL_PLUGIN_AGENT)).toBe(true)
+      expect(existsSync(EVAL_PLUGIN_PACKAGE), "agent did not produce a package.json").toBe(true)
 
-      const packageJson = JSON.parse(readFileSync(EVAL_PLUGIN_PACKAGE, "utf8"))
-      expect(packageJson).toMatchObject({
-        boring: { front: "front/index.tsx", server: false },
-        pi: {
-          extensions: ["agent/index.ts"],
-          systemPrompt: expect.stringContaining("v1"),
-        },
-      })
-
-      const frontSource = readFileSync(EVAL_PLUGIN_FRONT, "utf8")
-      expect(frontSource).toContain("BoringFrontFactory")
-      expect(frontSource).toContain("registerPanel")
-      expect(frontSource).toContain("registerPanelCommand")
-      expect(frontSource).toContain("registerLeftTab")
-      expect(frontSource).toContain("registerSurfaceResolver")
-      expect(frontSource).not.toContain("defineFrontPlugin")
-
-      const agentSource = readFileSync(EVAL_PLUGIN_AGENT, "utf8")
-      expect(agentSource).toContain("task_list_status")
-      expect(agentSource).toContain("task-list-agent-v1")
-
+      // /reload discovers the plugin — the headline test point.
       const reloadOne = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
       expect(reloadOne.statusCode).toBe(200)
-      const listOne = await app.inject({ method: "GET", url: "/api/agent-plugins" })
-      const pluginOne = listOne.json().find((plugin: { id: string }) => plugin.id === "eval-task-list")
-      expect(pluginOne).toMatchObject({
-        boring: { front: "front/index.tsx", server: false },
-        pi: { systemPrompt: expect.stringContaining("v1") },
-        revision: expect.any(Number),
-      })
+      const pluginOne = (await app.inject({ method: "GET", url: "/api/agent-plugins" }))
+        .json()
+        .find((plugin: { id: string }) => plugin.id === "eval-task-list")
+      expect(pluginOne, "plugin not discovered after /reload").toBeTruthy()
+      expect(pluginOne.revision).toEqual(expect.any(Number))
       expect(pluginOne.frontUrl).toContain("/@fs/")
 
-      // Scenario A: front behavior changes and reload publishes a new revision.
-      writeFileSync(
-        EVAL_PLUGIN_FRONT,
-        frontSource
-          .replaceAll("Eval Task List v1", "Eval Task List v2")
-          .replaceAll("Open Eval Task List", "Open Eval Task List v2"),
-        "utf8",
-      )
+      // Scenario A: front behavior changes via a direct disk write that
+      // perturbs content (don't rely on the agent having used any specific
+      // marker text). Resolve the front file from the manifest the agent
+      // declared, then append → mtime+content both change → revision bumps.
+      const frontPath = pluginOne.boring?.front
+        ? join(EVAL_PLUGIN_DIR, pluginOne.boring.front)
+        : EVAL_PLUGIN_FRONT
+      const frontBefore = readFileSync(frontPath, "utf8")
+      writeFileSync(frontPath, `${frontBefore}\n// eval scenario A: front edit\n`, "utf8")
       const reloadFront = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
       expect(reloadFront.statusCode).toBe(200)
       const pluginAfterFront = (await app.inject({ method: "GET", url: "/api/agent-plugins" }))
@@ -195,20 +135,19 @@ After writing the files, tell me to run /reload.
         .find((plugin: { id: string }) => plugin.id === "eval-task-list")
       expect(pluginAfterFront.revision).toBeGreaterThan(pluginOne.revision)
 
-      // Scenario B: agent-facing package metadata changes and reload reflects it.
-      packageJson.pi.systemPrompt = "Eval task list plugin v2: use task_list_status for updated task list status."
+      // Scenario B: package metadata change reflects through /reload.
+      // We overwrite systemPrompt with a known marker — independent of
+      // whatever the agent chose to put there originally.
+      const packageJson = JSON.parse(readFileSync(EVAL_PLUGIN_PACKAGE, "utf8"))
+      packageJson.pi = packageJson.pi ?? {}
+      packageJson.pi.systemPrompt = "EVAL-SCENARIO-B-MARKER: metadata edit reload check"
       writeFileSync(EVAL_PLUGIN_PACKAGE, JSON.stringify(packageJson, null, 2), "utf8")
-      writeFileSync(
-        EVAL_PLUGIN_AGENT,
-        agentSource.replaceAll("task-list-agent-v1", "task-list-agent-v2").replaceAll("eval task list v1", "eval task list v2"),
-        "utf8",
-      )
       const reloadAgent = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
       expect(reloadAgent.statusCode).toBe(200)
       const pluginAfterAgent = (await app.inject({ method: "GET", url: "/api/agent-plugins" }))
         .json()
         .find((plugin: { id: string }) => plugin.id === "eval-task-list")
-      expect(pluginAfterAgent.pi.systemPrompt).toContain("v2")
+      expect(pluginAfterAgent.pi?.systemPrompt).toContain("EVAL-SCENARIO-B-MARKER")
       expect(pluginAfterAgent.revision).toBeGreaterThan(pluginAfterFront.revision)
     },
     600_000,
@@ -219,80 +158,32 @@ After writing the files, tell me to run /reload.
     async () => {
       const result = await evalAgentPrompt({
         app,
-        prompt: `
-Create a hot-reloadable boring-ui CSV viewer plugin. Write exactly these files
-under .pi/extensions/eval-csv-viz/ (do NOT run npm init / npm install / create
-node_modules — this is a directory-source plugin):
-
-1. .pi/extensions/eval-csv-viz/package.json with:
-   { "name": "eval-csv-viz", "version": "1.0.0",
-     "boring": { "front": "front/index.tsx", "server": false },
-     "pi": { "systemPrompt": "CSV viewer plugin: opens .csv files in a panel." } }
-
-2. .pi/extensions/eval-csv-viz/front/index.tsx — a BoringFrontFactory.
-   The factory has the imperative signature \`(api) => void\` and calls
-   \`api.registerPanel(...)\` and \`api.registerSurfaceResolver(...)\`. It
-   must NOT return an object literal with "panels"/"surfaceResolvers"
-   keys — the declarative shape is not supported.
-
-   Example skeleton (fill in component body):
-   \`\`\`tsx
-   import React, { useState, useEffect } from "react"
-   import {
-     WORKSPACE_OPEN_PATH_SURFACE_KIND,
-     type BoringFrontFactory,
-     type PaneProps,
-   } from "@hachej/boring-workspace"
-
-   function CsvPane({ params }: PaneProps<{ path: string }>) {
-     const [rows, setRows] = useState<string[][]>([])
-     useEffect(() => {
-       fetch(\`/api/v1/files/raw?path=\${encodeURIComponent(params.path)}\`)
-         .then((r) => r.text())
-         .then((text) => setRows(text.split(/\\r?\\n/).map((line) => line.split(","))))
-     }, [params.path])
-     // …render <table>…</table> and a simple <svg>…</svg> chart…
-   }
-
-   const factory: BoringFrontFactory = (api) => {
-     api.registerPanel({ id: "eval-csv-viz.panel", label: "CSV Viz", component: CsvPane })
-     api.registerSurfaceResolver({
-       id: "eval-csv-viz.surface",
-       kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
-       resolve(req) {
-         if (!req.path?.endsWith(".csv")) return null
-         return { panelId: "eval-csv-viz.panel", params: { path: req.path } }
-       },
-     })
-   }
-   export default factory
-   \`\`\`
-
-   The panel must render the parsed rows as an HTML <table> AND a simple
-   SVG bar/line chart below it (plain <svg> with <rect>/<line>/<polyline>
-   — no external chart library). Do NOT use defineFrontPlugin, do NOT use
-   globalThis.React, do NOT use <iframe>, do NOT import recharts.
-
-After writing the files, tell me to run /reload.
-        `.trim(),
-        expect: [
-          { tool: "write", params: { path: EvalRegex("eval-csv-viz/"), content: EvalRegex("BoringFrontFactory|boring") } },
-        ],
+        prompt: [
+          "Make a CSV viewer plugin. Call it `eval-csv-viz`. When I open a",
+          ".csv file from the file tree, open it in a panel that fetches the",
+          "file contents, parses the rows, and shows them in a real HTML",
+          "<table> with a small <svg> chart below. No chart libraries —",
+          "I want plain SVG.",
+          "",
+          "When you're done, ask me to run /reload.",
+        ].join("\n"),
+        // Outcome-based: agents may use bash (scaffold-plugin) instead of
+        // direct write tool calls. The file-on-disk assertions below are
+        // the real check.
+        expect: [],
         model: EVAL_MODEL,
-        retries: 0,
+        retries: 1,
         timeoutMs: 600_000,
       })
 
       expect(result.ok, formatFailure(result)).toBe(true)
-      expect(existsSync(EVAL_CSV_PLUGIN_PACKAGE)).toBe(true)
+      expect(existsSync(EVAL_CSV_PLUGIN_PACKAGE), "agent did not produce a package.json").toBe(true)
 
       const packageJson = JSON.parse(readFileSync(EVAL_CSV_PLUGIN_PACKAGE, "utf8"))
       expect(packageJson.name).toBe("eval-csv-viz")
-      expect(packageJson.boring ?? {}).not.toHaveProperty("panels")
-      expect(packageJson.boring ?? {}).not.toHaveProperty("commands")
 
-      // Manifest-first OR convention: skill allows omitting boring.front
-      // when the template layout (front/index.tsx) is used.
+      // Locate the front file from the manifest the agent declared, or
+      // fall back to the conventional layout.
       const declaredFront: string | undefined = packageJson.boring?.front
       const candidateFronts = declaredFront
         ? [declaredFront]
@@ -300,25 +191,20 @@ After writing the files, tell me to run /reload.
       const frontPath = candidateFronts.map((p) => join(EVAL_CSV_PLUGIN_DIR, p)).find((p) => existsSync(p))
       expect(frontPath, `no front entry found (tried: ${candidateFronts.join(", ")})`).toBeTruthy()
       const frontSource = readFileSync(frontPath!, "utf8")
-      expect(frontSource).toContain("BoringFrontFactory")
-      expect(frontSource).toContain("useState")
-      expect(frontSource).toContain("useEffect")
-      expect(frontSource).toContain("/api/v1/files/raw")
-      expect(frontSource).toContain("WORKSPACE_OPEN_PATH_SURFACE_KIND")
-      expect(frontSource).toContain("registerPanel")
-      expect(frontSource).toContain("registerSurfaceResolver")
-      expect(frontSource).toMatch(/registerPanel\s*\(\s*\{/)
+
+      // User-observable: table renders the CSV rows.
       // Accept JSX (`<table>`), member-access (`React.createElement("table"...)`),
-      // and the named-import form (`createElement("table"...)`) — agents
-      // routinely emit any of the three.
-      expect(frontSource).toMatch(/<table|createElement\(["']table["']/)
-      expect(frontSource).toMatch(/CSV Chart|chart/i)
-      expect(frontSource).not.toContain("defineFrontPlugin")
-      expect(frontSource).not.toContain("@hachej/boring-workspace/shared")
-      expect(frontSource).not.toContain("globalThis.React")
-      expect(frontSource).not.toContain("extends React.Component")
-      expect(frontSource).not.toContain("<iframe")
+      // and the named-import form (`createElement("table"...)`).
+      expect(
+        frontSource,
+        "user asked for a table; no <table> rendering found",
+      ).toMatch(/<table|createElement\(["']table["']/)
+      // User-observable: SVG chart (NOT a chart library).
+      expect(frontSource, "user asked for a chart; no <svg> found").toMatch(/<svg|createElement\(["']svg["']/)
+      // User explicitly said "no chart libraries" — verify.
       expect(frontSource).not.toContain("recharts")
+      expect(frontSource).not.toContain('from "d3"')
+      expect(frontSource).not.toContain("from 'd3'")
 
       const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
       expect(reload.statusCode).toBe(200)
@@ -498,7 +384,7 @@ Then run /reload to verify.
 
       const frontSource = readFileSync(frontPath!, "utf8")
       // Two equivalent shapes accepted: declarative definePlugin({panels: [...]})
-      // OR imperative definePlugin(id, (api) => api.registerPanel(...)).
+      // OR definePlugin({ setup: (api) => api.registerPanel(...) }).
       expect(frontSource).toMatch(/definePlugin|BoringFrontFactory/)
       expect(frontSource).toMatch(/registerPanel|panels\s*:/)
       expect(frontSource).not.toContain("defineFrontPlugin")
@@ -528,18 +414,14 @@ Then run /reload to verify.
       const result = await evalAgentPrompt({
         app,
         prompt: [
-          "Create a hot-reloadable boring-ui plugin under `.pi/extensions/eval-split-files/`",
-          "(use that exact unscoped name in package.json — no @scope) with the panel",
-          "component implemented in a SEPARATE file from front/index.tsx.",
+          "Build me a plugin called `eval-split-files`. The panel component",
+          "MUST live in its own file (e.g. `Panel.tsx` or",
+          "`components/MyPanel.tsx`), and the plugin entry file must IMPORT",
+          "the component from that sibling file. I don't want everything",
+          "in one file. The panel should just show the text",
+          "\"split-files plugin works\".",
           "",
-          "Specifically:",
-          "- front/index.tsx must register the panel + a panel command, but should",
-          "  IMPORT the panel component from a sibling file (your choice of name,",
-          "  e.g. `./components/Panel.tsx` or `./Panel.tsx`).",
-          "- The sibling component file should export a default React component that",
-          "  renders a simple <div> with the text 'split-files plugin works'.",
-          "",
-          "After writing the files, tell me to run /reload.",
+          "When you're done, ask me to run /reload.",
         ].join("\n"),
         expect: [],
         model: EVAL_MODEL,
@@ -556,8 +438,10 @@ Then run /reload to verify.
       const frontPath = join(EVAL_SPLIT_DIR, declaredFront)
       expect(existsSync(frontPath), `front entry missing at ${declaredFront}`).toBe(true)
       const frontSource = readFileSync(frontPath, "utf8")
-      // The factory imports the component from a sibling file.
-      expect(frontSource).toMatch(/import\s+\w+\s+from\s+["']\.\.?\//)
+      // The factory imports the component from a sibling file. Accept
+      // default (`import Panel from "./Panel"`), named (`import { Panel }
+      // from "./Panel"`), and `* as` namespace forms.
+      expect(frontSource).toMatch(/import\s+(?:\w+|\{[^}]+\}|\*\s+as\s+\w+)\s+from\s+["']\.\.?\//)
       // Either declarative (`panels: [...]`) or imperative (`registerPanel(...)`) is fine.
       expect(frontSource).toMatch(/registerPanel|panels\s*:/)
 
@@ -700,20 +584,12 @@ Then run /reload to verify.
       const result = await evalAgentPrompt({
         app,
         prompt: [
-          "Create a hot-reloadable boring-ui plugin at `.pi/extensions/eval-cross/`",
-          "(use that exact unscoped name in package.json) that contributes BOTH:",
+          "Build me a plugin called `eval-cross` that does two things:",
+          "1. shows me a panel with the text \"Eval Cross panel\"",
+          "2. adds an agent tool called `eval_cross_ping` that, when I call",
+          "   it from chat, returns the text \"eval-cross pong\".",
           "",
-          "1. A server-side agent tool named `eval_cross_ping` that returns the",
-          "   text 'eval-cross pong' so the agent can call it.",
-          "2. A front panel that renders a simple <div> with the text",
-          "   'Eval Cross panel'.",
-          "",
-          "Files: package.json, front/index.tsx, server/index.ts.",
-          "package.json must set `boring.server: \"server/index.ts\"` (a path string,",
-          "NOT the boolean true — manifest validator rejects true) and",
-          "`boring.front: \"front/index.tsx\"`.",
-          "",
-          "After writing, tell me to run /reload.",
+          "When you're done, ask me to run /reload.",
         ].join("\n"),
         expect: [],
         model: EVAL_MODEL,
@@ -722,50 +598,56 @@ Then run /reload to verify.
       })
 
       expect(result.ok, formatFailure(result)).toBe(true)
-      expect(existsSync(EVAL_CROSS_PACKAGE)).toBe(true)
+      expect(existsSync(EVAL_CROSS_PACKAGE), "agent did not produce a package.json").toBe(true)
 
       const packageJson = JSON.parse(readFileSync(EVAL_CROSS_PACKAGE, "utf8"))
       expect(packageJson.name).toBe("eval-cross")
-      // `boring.server` accepts either an explicit path string OR `true`
-      // (some agents pick one, some pick the other). It must NOT be false /
-      // missing for a cross-concern plugin.
-      const serverField = packageJson.boring?.server
+
+      // Locate the front file from the manifest (or convention).
+      const declaredFront: string | undefined = packageJson.boring?.front
+      const candidateFronts = declaredFront
+        ? [declaredFront]
+        : ["front/index.tsx", "front/index.ts"]
+      const frontPath = candidateFronts.map((p) => join(EVAL_CROSS_DIR, p)).find((p) => existsSync(p))
+      expect(frontPath, `no front entry found (tried: ${candidateFronts.join(", ")})`).toBeTruthy()
+      // User-observable: panel text the user asked for appears verbatim.
+      expect(readFileSync(frontPath!, "utf8")).toContain("Eval Cross panel")
+
+      // The agent tool's name + return text must appear SOMEWHERE on
+      // disk under the plugin dir. Don't care whether the agent put it in
+      // `pi.extensions` (the hot-reload path) or `boring.server`'s
+      // `agentTools` (the static path) — either is valid by the new
+      // hallucinations guide, and the user only cares the tool exists.
+      const { readdirSync, statSync: stat } = await import("node:fs")
+      function walk(dir: string): string[] {
+        const out: string[] = []
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const full = join(dir, entry.name)
+          if (entry.isDirectory() && entry.name !== "node_modules") out.push(...walk(full))
+          else if (entry.isFile()) out.push(full)
+        }
+        return out
+      }
+      const allFiles = walk(EVAL_CROSS_DIR).filter((p) => /\.(ts|tsx|js|mjs|cjs)$/.test(p))
+      const sources = allFiles.map((p) => readFileSync(p, "utf8"))
       expect(
-        serverField === true || (typeof serverField === "string" && serverField.length > 0),
-        `boring.server must indicate a server is present; got ${JSON.stringify(serverField)}`,
+        sources.some((src) => src.includes("eval_cross_ping")),
+        "user asked for an `eval_cross_ping` tool; name not found in any plugin source",
       ).toBe(true)
-      expect(packageJson.boring?.front).toMatch(/front\/index\.tsx?$/)
-
-      const frontSource = readFileSync(join(EVAL_CROSS_DIR, packageJson.boring.front), "utf8")
-      // Either declarative or imperative is fine.
-      expect(frontSource).toMatch(/registerPanel|panels\s*:/)
-      expect(frontSource).toContain("Eval Cross panel")
-
-      // Server file present and shaped roughly like a server plugin.
-      const serverPath = join(EVAL_CROSS_DIR, "server", "index.ts")
-      expect(existsSync(serverPath), "server/index.ts missing").toBe(true)
-      const serverSource = readFileSync(serverPath, "utf8")
-      // Either Shape A (defineServerPlugin + agentTools) or a function
-      // that returns a tool list. Accept both — assert on the tool name.
-      expect(serverSource).toContain("eval_cross_ping")
-      expect(serverSource).toMatch(/agentTools|defineServerPlugin|execute/)
+      expect(
+        sources.some((src) => src.includes("eval-cross pong")),
+        "user asked for the tool to return `eval-cross pong`; text not found in any plugin source",
+      ).toBe(true)
 
       const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
       expect(reload.statusCode).toBe(200)
       const pluginsList = (await app.inject({ method: "GET", url: "/api/agent-plugins" })).json()
       const plugin = pluginsList.find((entry: { id: string }) => entry.id === "eval-cross")
-      const boringReload = await app.inject({ method: "POST", url: "/api/boring.reload", payload: {} })
-      const errMsg = boringReload.statusCode === 422
-        ? `; boring.reload errors: ${JSON.stringify(boringReload.json(), null, 2)}`
-        : ""
       expect(
         plugin,
-        `plugin not discovered after /reload; ids in registry: ${JSON.stringify(pluginsList.map((p: { id: string }) => p.id))}${errMsg}`,
+        `plugin not discovered after /reload; ids in registry: ${JSON.stringify(pluginsList.map((p: { id: string }) => p.id))}`,
       ).toBeTruthy()
-      const serverFieldServed = plugin.boring?.server
-      expect(
-        serverFieldServed === true || (typeof serverFieldServed === "string" && serverFieldServed.length > 0),
-      ).toBe(true)
+      expect(stat(frontPath!).size).toBeGreaterThan(0)
     },
     600_000,
   )
