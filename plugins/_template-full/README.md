@@ -8,8 +8,10 @@ aligned to match this shape — if they drift, fix them, not the template.
 
 > **Building a user plugin instead** (hot-reloadable, no build step,
 > drops into a workspace's `.pi/extensions/<name>/`)? Don't copy this
-> template. Run `boring-ui scaffold-plugin <name>` — see
-> `plugins/_template-hot-reload/README.md`.
+> template — run `boring-ui scaffold-plugin <name>` (or
+> `npx @hachej/boring-ui-cli scaffold-plugin <name>`). The CLI ships
+> its own bundled templates; there's no copy-from source in the repo
+> for the hot-reload form.
 
 ## Scaffolding a new plugin
 

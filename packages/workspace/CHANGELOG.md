@@ -264,6 +264,20 @@ Hot-reloadable chat behavior should live in `pi.extensions`, `pi.skills`,
 - Plugin-owned surface resolvers for path and domain-target routing.
 - `@hachej/boring-workspace/events` typed workspace UI events.
 - DEV-only plugin diagnostics through `PluginInspector` and plugin error boundaries.
+- **Hot-reload restart warnings.** `BoringPluginEvent.boring.plugin.load` now carries `requiresRestart?: ("routes" | "agentTools")[]` when a server file changed between revisions. `POST /api/boring.reload` includes `restart_warnings` on both 200 and 422 responses. New helper `collectRestartWarnings(events)` and type `PluginRestartWarning` exported from `@hachej/boring-workspace/server`.
+- **`.boring-signature.json` sidecar cache.** `BoringPluginAssetManager` persists each plugin's load-time server-file signature next to its source so `boring-ui verify-plugin` can detect drift between what the workspace loaded and what's currently on disk. Verify-plugin emits a `⚠ WARN:` line + suffix block when restart is needed (not just `/reload`). New exports from `/server`: `pluginFileSignature`, `readPluginSignatureCache`, `writePluginSignatureCache`. The sidecar is in `.gitignore` and shipped automatically by `boring-ui scaffold-plugin`.
+- **Pi-style docs pointer block in the system prompt.** `buildBoringSystemPrompt()` now emits a `## boring-ui plugin authoring documentation` block listing absolute paths into the installed `@hachej/boring-pi` (resolved via `require.resolve("@hachej/boring-pi/package.json")`): the SKILL.md plus the `panels.md` / `bridge.md` / `plugins.md` references. Graceful fallback points at `<available_skills>` when boring-pi is unresolvable. Per-turn token cost shrunk to ~250 vs the previous ~600 of inlined guidance; SKILL.md content is read on demand. See `docs/DECISIONS.md` #17.
+
+### Changed
+
+- `BuildBoringSystemPromptOptions.verifyCommand` narrowed from `string | false` to required `string`. No production caller passed `false`; the conditional branch and its test were dead.
+- Layer-agnostic registries `CatalogRegistry`, `CommandRegistry`, and `SurfaceResolverRegistry` moved from `src/front/` to `src/shared/plugins/`. Public exports from `@hachej/boring-workspace` (top-level + `/server`) unchanged. `PanelRegistry` stays in `front/registry/` (it depends on React `lazy` / `Suspense`).
+
+### Removed
+
+- `PanelRegistry.unregisterByPluginId(pluginId)` and `SurfaceResolverRegistry.unregisterByPluginId(pluginId)` — no production callers in this repo (the workspace uses `replaceByPluginId(pluginId, [])` for the same effect). `CommandRegistry` and `CatalogRegistry` keep their `unregisterByPluginId` methods (4 production call sites each).
+- `/server` re-exports of `clearPluginSignatureCache`, `PluginSignatureCachePayload`, and `PLUGIN_SIGNATURE_CACHE_FILE`. These were workspace-internal; the asset manager owns the writer/clearer, and cli `verify-plugin` only needs `readPluginSignatureCache` + `pluginFileSignature`.
+- `verifyPlugin.ts` un-exports `VerifyPluginOptions`, `RecognizedMistake`, and `COMMON_MISTAKE_HINTS` from the `@hachej/boring-ui-cli` server entry (no external consumer used them).
 
 ### Migration Checklist
 
