@@ -167,13 +167,14 @@ test.describe('pi projection UI regressions', () => {
     await composer.fill('List files')
     await browserPage.locator('button[aria-label="Submit"]').click()
 
-    await expect(browserPage.getByText('Found README.md.')).toBeVisible({ timeout: 10_000 })
-    await expect(browserPage.getByText('Used command')).toBeVisible({ timeout: 10_000 })
+    const conversation = browserPage.getByLabel('Agent conversation')
+    await expect(conversation.getByText('Found README.md.')).toBeVisible({ timeout: 10_000 })
+    await expect(conversation.getByText('Used command')).toBeVisible({ timeout: 10_000 })
 
-    const thoughtsTrigger = browserPage.getByText(/thoughts|thinking/).first()
+    const thoughtsTrigger = conversation.getByText(/thoughts|thinking/).first()
     await expect(thoughtsTrigger).toBeVisible({ timeout: 10_000 })
     await thoughtsTrigger.click()
-    await expect(browserPage.getByText('Need to inspect files first.')).toBeVisible({ timeout: 10_000 })
+    await expect(conversation.getByText('Need to inspect files first.')).toBeVisible({ timeout: 10_000 })
   })
 
   test('smoke: real LLM renders pi-projected tool UI', async ({ browserPage }) => {
