@@ -118,7 +118,7 @@ See [Pi extensions docs](https://pi.dev/docs/latest/extensions) for the full Pi 
 
 ## Built with boring-ui
 
-<img src="https://boring-macro.fly.dev/landing/app-screenshot.png?v=8" alt="MacroAnalyst" width="640">
+<p align="center"><img src="https://boring-macro.fly.dev/landing/app-screenshot.png?v=8" alt="MacroAnalyst" width="480"></p>
 
 **[MacroAnalyst](https://boring-macro.fly.dev/)** — an interactive macroeconomic analyst powered by Boring UI.
 
