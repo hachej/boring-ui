@@ -27,7 +27,12 @@ Starts a full agent workspace pointed at the current directory — chat, panels,
 
 Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` before running. See [Pi providers](https://pi.dev/docs/latest/quickstart#configure-a-provider) for LLM setup.
 
-![Boring UI core — agent reads the README, opens it in the workbench, then writes a notes file](docs/assets/readme/demo.gif)
+<video src="docs/assets/readme/demo.mp4"
+       autoplay loop muted playsinline
+       width="100%"
+       poster="docs/assets/readme/hero.png">
+  <a href="docs/assets/readme/demo.mp4">Watch the demo (MP4)</a>
+</video>
 
 A real session: ask the agent for a summary → it opens the README in the workbench → ask it to take notes → a new `notes.md` appears in the tree. Chat in, workspace out.
 
