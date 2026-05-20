@@ -1,4 +1,4 @@
-import { access } from 'node:fs/promises'
+import { access, stat } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path'
@@ -144,7 +144,7 @@ async function assertBwrapAvailable(): Promise<void> {
   })
 }
 
-async function dirAccessible(path: string): Promise<boolean> {
+async function pathExists(path: string): Promise<boolean> {
   try {
     await access(path, constants.F_OK)
     return true
@@ -153,16 +153,36 @@ async function dirAccessible(path: string): Promise<boolean> {
   }
 }
 
+async function dirExists(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory()
+  } catch {
+    return false
+  }
+}
+
 async function buildGlobalToolMounts(workspaceRoot: string): Promise<string[]> {
   const globalRoot = dirname(workspaceRoot)
   if (globalRoot === workspaceRoot) return []
+
   const args: string[] = []
-  if (await dirAccessible(join(globalRoot, '.boring-agent'))) {
-    args.push('--ro-bind', join(globalRoot, '.boring-agent'), `${SANDBOX_HOME}/.boring-agent`)
+  const mountIfChildLacks = async (runtimeRelPath: string): Promise<boolean> => {
+    const parentRuntimePath = join(globalRoot, runtimeRelPath)
+    const childRuntimePath = join(workspaceRoot, runtimeRelPath)
+
+    if (!(await dirExists(parentRuntimePath))) return false
+    if (await pathExists(childRuntimePath)) return false
+
+    args.push('--ro-bind', parentRuntimePath, `${SANDBOX_HOME}/${runtimeRelPath}`)
+    return true
   }
-  if (await dirAccessible(join(globalRoot, '.venv'))) {
-    args.push('--ro-bind', join(globalRoot, '.venv'), `${SANDBOX_HOME}/.venv`)
+
+  const mountedParentAgentDir = await mountIfChildLacks('.boring-agent')
+  await mountIfChildLacks('.venv')
+  if (!mountedParentAgentDir) {
+    await mountIfChildLacks('.boring-agent/venv')
   }
+
   return args
 }
 

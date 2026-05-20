@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
@@ -95,6 +95,72 @@ describeIfBwrap('createBwrapSandbox', () => {
     const result = await sandbox.exec('cat /workspace/note.txt')
 
     expect(Buffer.from(result.stdout).toString('utf-8')).toBe('hello-from-workspace')
+    expect(result.exitCode).toBe(0)
+  })
+
+  test('child runtime files are not shadowed by parent mounts', async () => {
+    const parentRoot = await mkdtemp(join(tmpdir(), 'boring-ui-bwrap-parent-'))
+    tempDirs.push(parentRoot)
+    const childRoot = join(parentRoot, 'child')
+
+    await mkdir(join(parentRoot, '.boring-agent', 'venv'), { recursive: true })
+    await mkdir(join(parentRoot, '.venv'), { recursive: true })
+    await mkdir(join(childRoot, '.boring-agent', 'venv'), { recursive: true })
+    await mkdir(join(childRoot, '.venv'), { recursive: true })
+    await writeFile(join(parentRoot, '.boring-agent', 'marker.txt'), 'parent-agent')
+    await writeFile(join(parentRoot, '.boring-agent', 'venv', 'marker.txt'), 'parent-agent-venv')
+    await writeFile(join(parentRoot, '.venv', 'marker.txt'), 'parent-venv')
+    await writeFile(join(childRoot, '.boring-agent', 'marker.txt'), 'child-agent')
+    await writeFile(join(childRoot, '.boring-agent', 'venv', 'marker.txt'), 'child-agent-venv')
+    await writeFile(join(childRoot, '.venv', 'marker.txt'), 'child-venv')
+
+    const workspace = createNodeWorkspace(childRoot)
+    const sandbox = createBwrapSandbox()
+    await sandbox.init?.({ workspace, sessionId: 'nested-shadow-check' })
+
+    const result = await sandbox.exec([
+      'cat /workspace/.boring-agent/marker.txt',
+      'printf "\\n"',
+      'cat /workspace/.boring-agent/venv/marker.txt',
+      'printf "\\n"',
+      'cat /workspace/.venv/marker.txt',
+    ].join(' && '))
+    const output = Buffer.from(result.stdout).toString('utf-8')
+
+    expect(output).toBe('child-agent\nchild-agent-venv\nchild-venv')
+    expect(output).not.toContain('parent-agent')
+    expect(output).not.toContain('parent-venv')
+    expect(result.exitCode).toBe(0)
+  })
+
+  test('parent runtime dirs are mounted only where the child lacks matching dirs', async () => {
+    const parentRoot = await mkdtemp(join(tmpdir(), 'boring-ui-bwrap-parent-runtime-'))
+    tempDirs.push(parentRoot)
+    const childRoot = join(parentRoot, 'child')
+
+    await mkdir(join(parentRoot, '.boring-agent', 'venv'), { recursive: true })
+    await mkdir(join(parentRoot, '.venv'), { recursive: true })
+    await mkdir(join(childRoot, '.boring-agent'), { recursive: true })
+    await writeFile(join(parentRoot, '.boring-agent', 'marker.txt'), 'parent-agent')
+    await writeFile(join(parentRoot, '.boring-agent', 'venv', 'marker.txt'), 'parent-agent-venv')
+    await writeFile(join(parentRoot, '.venv', 'marker.txt'), 'parent-venv')
+    await writeFile(join(childRoot, '.boring-agent', 'marker.txt'), 'child-agent')
+
+    const workspace = createNodeWorkspace(childRoot)
+    const sandbox = createBwrapSandbox()
+    await sandbox.init?.({ workspace, sessionId: 'nested-parent-runtime' })
+
+    const result = await sandbox.exec([
+      'cat /workspace/.boring-agent/marker.txt',
+      'printf "\\n"',
+      'cat /workspace/.boring-agent/venv/marker.txt',
+      'printf "\\n"',
+      'cat /workspace/.venv/marker.txt',
+    ].join(' && '))
+    const output = Buffer.from(result.stdout).toString('utf-8')
+
+    expect(output).toBe('child-agent\nparent-agent-venv\nparent-venv')
+    expect(output).not.toContain('parent-agent\n')
     expect(result.exitCode).toBe(0)
   })
 
