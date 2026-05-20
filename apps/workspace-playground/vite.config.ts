@@ -39,6 +39,17 @@ export default defineConfig({
         await startPlaygroundServer()
       },
     },
+    {
+      name: "boring-runtime-extension-hmr-boundary",
+      handleHotUpdate(ctx) {
+        // Runtime-authored plugins are reloaded through /reload + the
+        // agent-plugin SSE bridge. Letting Vite HMR handle these files causes
+        // full page reloads because dynamically imported .pi extension modules
+        // are not stable React HMR boundaries.
+        if (ctx.file.includes("/workspace/.pi/extensions/")) return []
+        return undefined
+      },
+    },
   ],
   resolve: {
     alias: [...baseResolve.alias, ...playgroundOnlyAliases],
