@@ -123,7 +123,7 @@ describe("workspace app-server plugin package helpers", () => {
 })
 
 describe("createWorkspaceAgentServer plugin runtime options", () => {
-  test("getDynamicResources reflects current package.json#pi entries", async () => {
+  test("getHotReloadableResources reflects current package.json#pi entries", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-package-pi-reload-")
     await writeHotPlugin(workspaceRoot, "one.ts")
 
@@ -139,24 +139,24 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
         pi?: {
           extensionPaths?: string[]
           additionalSkillPaths?: string[]
-          getDynamicResources?: () => { extensionPaths?: string[]; additionalSkillPaths?: string[] }
+          getHotReloadableResources?: () => { extensionPaths?: string[]; additionalSkillPaths?: string[] }
         }
       },
     ]
     // Static fields hold only host/workspace contributions, not package.json discoveries.
     expect(agentOptions.pi?.extensionPaths).not.toContain(join(workspaceRoot, ".pi", "extensions", "hot-plugin", "agent", "one.ts"))
     // Dynamic getter holds the package.json-discovered values; Pi merges them.
-    expect(agentOptions.pi?.getDynamicResources?.().extensionPaths).toContain(
+    expect(agentOptions.pi?.getHotReloadableResources?.().extensionPaths).toContain(
       join(workspaceRoot, ".pi", "extensions", "hot-plugin", "agent", "one.ts"),
     )
-    expect(agentOptions.pi?.getDynamicResources?.().additionalSkillPaths).toContain(
+    expect(agentOptions.pi?.getHotReloadableResources?.().additionalSkillPaths).toContain(
       join(workspaceRoot, ".pi", "extensions", "hot-plugin", "agent", "skills"),
     )
 
     await writeHotPlugin(workspaceRoot, "two.ts")
     await agentOptions.beforeReload?.()
 
-    const refreshed = agentOptions.pi?.getDynamicResources?.()
+    const refreshed = agentOptions.pi?.getHotReloadableResources?.()
     expect(refreshed?.extensionPaths).not.toContain(join(workspaceRoot, ".pi", "extensions", "hot-plugin", "agent", "one.ts"))
     expect(refreshed?.extensionPaths).toContain(join(workspaceRoot, ".pi", "extensions", "hot-plugin", "agent", "two.ts"))
   })
@@ -183,7 +183,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
 
     const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
       {
-        pi?: { extensionPaths?: string[]; additionalSkillPaths?: string[]; extensionFactories?: unknown[]; getDynamicResources?: unknown }
+        pi?: { extensionPaths?: string[]; additionalSkillPaths?: string[]; extensionFactories?: unknown[]; getHotReloadableResources?: unknown }
         systemPromptDynamic?: unknown
         beforeReload?: () => Promise<void>
       },
@@ -196,7 +196,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     expect(agentOptions.pi?.additionalSkillPaths).toContain(join(workspaceRoot, "host-skills"))
     expect(agentOptions.pi?.additionalSkillPaths).toContain(join(workspaceRoot, ".pi", "extensions", "hot-plugin", "agent", "skills"))
     // Dynamic Pi refresh disabled.
-    expect(agentOptions.pi?.getDynamicResources).toBeUndefined()
+    expect(agentOptions.pi?.getHotReloadableResources).toBeUndefined()
     expect(agentOptions.systemPromptDynamic).toBeUndefined()
     // beforeReload still calls user's hook; just skips scan + rebuild.
     await expect(agentOptions.beforeReload?.()).resolves.toBeUndefined()
@@ -251,7 +251,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     })
 
     const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
-      { pi?: { packages?: unknown[]; getDynamicResources?: () => { packages?: unknown[] } } },
+      { pi?: { packages?: unknown[]; getHotReloadableResources?: () => { packages?: unknown[] } } },
     ]
     // pi.packages is the STATIC set: bundled @hachej/boring-pi skill +
     // host-supplied + factory-plugin entries. The bundled skill is added
@@ -260,8 +260,8 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       expect.objectContaining({ skills: ["skills/boring-plugin-authoring"] }),
     )
     // The package.json#pi.packages discovered for the test plugin live in
-    // getDynamicResources() so hot reload can re-read them.
-    expect(agentOptions.pi?.getDynamicResources?.().packages).toEqual([
+    // getHotReloadableResources() so hot reload can re-read them.
+    expect(agentOptions.pi?.getHotReloadableResources?.().packages).toEqual([
       join(pluginRoot),
       { source: join(pluginRoot, "agent"), extensions: ["index.ts"] },
       "npm:remote-plugin",
@@ -312,7 +312,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     expect(agentOptions.pi?.packages).toContain("npm:host-pi")
   })
 
-  test("getDynamicResources reflects package.json#pi changes between calls", async () => {
+  test("getHotReloadableResources reflects package.json#pi changes between calls", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-pi-dynamic-")
     const pluginRoot = join(workspaceRoot, ".pi", "extensions", "dyn-plugin")
     await mkdir(join(pluginRoot, "front"), { recursive: true })
@@ -331,9 +331,9 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     })
 
     const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
-      { pi?: { getDynamicResources?: () => { packages?: unknown[] } } },
+      { pi?: { getHotReloadableResources?: () => { packages?: unknown[] } } },
     ]
-    expect(agentOptions.pi?.getDynamicResources?.().packages).toEqual(["npm:initial"])
+    expect(agentOptions.pi?.getHotReloadableResources?.().packages).toEqual(["npm:initial"])
 
     await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
       name: "dyn-plugin",
@@ -341,7 +341,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       boring: { front: "front/index.tsx" },
       pi: { packages: ["npm:updated"] },
     }), "utf8")
-    expect(agentOptions.pi?.getDynamicResources?.().packages).toEqual(["npm:updated"])
+    expect(agentOptions.pi?.getHotReloadableResources?.().packages).toEqual(["npm:updated"])
   })
 
   test("plugins[] accepts pre-built objects", async () => {
@@ -394,13 +394,13 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
           additionalSkillPaths?: string[]
           extensionPaths?: string[]
           packages?: unknown[]
-          getDynamicResources?: unknown
+          getHotReloadableResources?: unknown
         }
         systemPromptAppend?: string
         systemPromptDynamic?: unknown
       },
     ]
-    expect(agentOptions.pi?.getDynamicResources).toBeUndefined()
+    expect(agentOptions.pi?.getHotReloadableResources).toBeUndefined()
     expect(agentOptions.systemPromptDynamic).toBeUndefined()
     expect(agentOptions.pi?.additionalSkillPaths).toContain(join(pluginRoot, "skills"))
     expect(agentOptions.pi?.extensionPaths).toContain(join(pluginRoot, "agent", "index.ts"))
@@ -447,12 +447,12 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
 
       const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
         {
-          pi?: { getDynamicResources?: () => { additionalSkillPaths?: string[] } }
+          pi?: { getHotReloadableResources?: () => { additionalSkillPaths?: string[] } }
           systemPromptDynamic?: () => string | undefined
           systemPromptAppend?: string
         },
       ]
-      expect(agentOptions.pi?.getDynamicResources?.().additionalSkillPaths).toContain(join(pluginRoot, "skills"))
+      expect(agentOptions.pi?.getHotReloadableResources?.().additionalSkillPaths).toContain(join(pluginRoot, "skills"))
       expect(agentOptions.systemPromptDynamic?.()).toContain("FOO_PLUGIN_PROMPT")
       expect(agentOptions.systemPromptAppend).not.toContain("FOO_PLUGIN_PROMPT")
     } finally {

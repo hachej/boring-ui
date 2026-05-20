@@ -7,7 +7,7 @@
  *
  * This deliberately does not return or install a rebuilt plugin graph. Live
  * prompt/Pi changes come from the asset manager's `systemPromptDynamic` and
- * `getDynamicResources` scans; static `agentTools` and free-form routes are
+ * `getHotReloadableResources` scans; static `agentTools` and free-form routes are
  * captured at session/server creation and require process restart.
  */
 import type { WorkspaceServerPlugin } from "../../server/plugins/bootstrapServer"

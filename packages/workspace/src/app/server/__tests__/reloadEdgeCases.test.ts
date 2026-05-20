@@ -12,7 +12,7 @@
  *   - declared-but-missing file (Pi parity: loud throw)
  *   - plugin id collision
  *   - fresh systemPrompt visible via systemPromptDynamic getter
- *   - fresh package.json#pi visible via getDynamicResources
+ *   - fresh package.json#pi visible via getHotReloadableResources
  *   - syntax error → diagnostic + previous state intact
  *   - reload idempotency (no changes → no spurious side effects)
  */
@@ -254,7 +254,7 @@ describe("Reload edge cases — discovered package plugins (.pi/extensions/*)", 
     expect(second).not.toContain("VERSION_ONE")
   })
 
-  test("getDynamicResources reflects pi.extensions added between reloads", async () => {
+  test("getHotReloadableResources reflects pi.extensions added between reloads", async () => {
     const host = await makeTempDir("edge-extensions-")
     await writeDiscoveredPlugin(host, "edge-ext", { extensions: ["one.ts"] })
 
@@ -267,11 +267,11 @@ describe("Reload edge cases — discovered package plugins (.pi/extensions/*)", 
     const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
       {
         beforeReload?: () => Promise<void>
-        pi?: { getDynamicResources?: () => { extensionPaths?: string[] } }
+        pi?: { getHotReloadableResources?: () => { extensionPaths?: string[] } }
       },
     ]
 
-    const before = agentOptions.pi?.getDynamicResources?.().extensionPaths ?? []
+    const before = agentOptions.pi?.getHotReloadableResources?.().extensionPaths ?? []
     expect(before).toContain(join(host, ".pi", "extensions", "edge-ext", "agent", "one.ts"))
     expect(before).not.toContain(join(host, ".pi", "extensions", "edge-ext", "agent", "two.ts"))
 
@@ -279,7 +279,7 @@ describe("Reload edge cases — discovered package plugins (.pi/extensions/*)", 
     await writeDiscoveredPlugin(host, "edge-ext", { extensions: ["one.ts", "two.ts"] })
     await agentOptions.beforeReload?.()
 
-    const after = agentOptions.pi?.getDynamicResources?.().extensionPaths ?? []
+    const after = agentOptions.pi?.getHotReloadableResources?.().extensionPaths ?? []
     expect(after).toContain(join(host, ".pi", "extensions", "edge-ext", "agent", "one.ts"))
     expect(after).toContain(join(host, ".pi", "extensions", "edge-ext", "agent", "two.ts"))
   })
