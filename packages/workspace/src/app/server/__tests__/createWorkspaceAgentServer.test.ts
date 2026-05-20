@@ -23,8 +23,8 @@ vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
 import {
   createWorkspaceAgentServer,
   readWorkspacePluginPackagePiSnapshot,
-  resolveDefaultWorkspacePluginPackagePaths,
 } from "../createWorkspaceAgentServer"
+import { resolveDefaultWorkspacePluginPackagePaths } from "../defaultPluginPackages"
 
 const tempDirs: string[] = []
 
