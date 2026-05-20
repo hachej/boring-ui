@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "vitest"
 import { BoringPluginAssetManager } from "../agentPlugins/manager"
 import { aggregatePluginPrompts } from "../agentPlugins/aggregatePluginPrompts"
 import { boringPluginRoutes } from "../agentPlugins/routes"
-import { preflightBoringPlugins, readBoringPlugins } from "../agentPlugins/scan"
+import { preflightBoringPlugins, readBoringPlugins, scanBoringPlugins } from "../agentPlugins/scan"
 
 const tempDirs: string[] = []
 
@@ -163,6 +163,21 @@ describe("boring agent plugin assets", () => {
       pluginId: "boring-plugin-test",
       code: "INVALID_PLUGIN_METADATA",
       message: expect.stringContaining("boring.server: resolved path escapes plugin root"),
+    })
+    expect(readBoringPlugins([root])).toEqual([])
+  })
+
+  test("rejects missing explicit boring.front files", async () => {
+    const root = await tmp("boring-plugin-missing-front-")
+    await writePlugin(root)
+    await rm(join(root, "front", "index.tsx"), { force: true })
+
+    const result = preflightBoringPlugins([root])
+    expect(result.ok).toBe(false)
+    expect(result.errors[0]).toMatchObject({
+      pluginId: "boring-plugin-test",
+      code: "INVALID_PLUGIN_METADATA",
+      message: expect.stringContaining("boring.front: declared path does not exist"),
     })
     expect(readBoringPlugins([root])).toEqual([])
   })
@@ -503,6 +518,36 @@ describe("boring agent plugin assets", () => {
     })
     expect(events).toEqual(["boring.plugin.error:boring-plugin-test"])
     await expect(readFile(join(errorRoot, "boring-plugin-test", ".error"), "utf8")).resolves.toContain("boring.front")
+  })
+
+  test("preflight errors do not block valid plugin load events", async () => {
+    const valid = await tmp("boring-plugin-partial-valid-")
+    const invalid = await tmp("boring-plugin-partial-invalid-")
+    await writePlugin(valid)
+    await writePlugin(invalid)
+    const validPkg = JSON.parse(await readFile(join(valid, "package.json"), "utf8"))
+    validPkg.name = "valid-plugin"
+    await writeFile(join(valid, "package.json"), JSON.stringify(validPkg), "utf8")
+    const invalidPkg = JSON.parse(await readFile(join(invalid, "package.json"), "utf8"))
+    invalidPkg.name = "invalid-plugin"
+    invalidPkg.boring.front = "front/missing.tsx"
+    await writeFile(join(invalid, "package.json"), JSON.stringify(invalidPkg), "utf8")
+
+    const scan = scanBoringPlugins([valid, invalid])
+    expect(scan.preflight.ok).toBe(false)
+    expect(scan.plugins.map((plugin) => plugin.id)).toEqual(["valid-plugin"])
+
+    const manager = new BoringPluginAssetManager({ pluginDirs: [valid, invalid], errorRoot: join(valid, ".errors") })
+    const events: string[] = []
+    manager.subscribe((event) => events.push(`${event.type}:${event.id}`))
+    const result = await manager.load()
+
+    expect(result.loaded.map((plugin) => plugin.id)).toEqual(["valid-plugin"])
+    expect(result.errors.map((error) => error.id)).toEqual(["invalid-plugin"])
+    expect(events).toEqual([
+      "boring.plugin.error:invalid-plugin",
+      "boring.plugin.load:valid-plugin",
+    ])
   })
 
   test("manifest preflight errors persist between reloads until the manifest is fixed", async () => {

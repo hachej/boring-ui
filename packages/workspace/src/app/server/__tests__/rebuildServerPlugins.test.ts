@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, test, vi } from "vitest"
@@ -33,8 +33,6 @@ describe("rebuildServerPlugins", () => {
     })
 
     expect(result.ok).toBe(true)
-    expect(result.plugins).toHaveLength(1)
-    expect(result.plugins[0].id).toBe("rebuilt")
     expect(result.diagnostics).toEqual([])
   })
 
@@ -57,18 +55,52 @@ describe("rebuildServerPlugins", () => {
     })
 
     expect(result.ok).toBe(false)
-    expect(result.plugins).toHaveLength(1)
-    expect(result.plugins[0].id).toBe("good")
     expect(result.diagnostics).toHaveLength(1)
     expect(result.diagnostics[0].source).toBe("directory (/nonexistent)")
   })
 
-  test("pre-built objects pass through unchanged", async () => {
+  test("rejects unsafe explicit boring.server paths before import", async () => {
+    const dir = await makeTempDir("rebuild-unsafe-explicit-")
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "p", boring: { server: "../outside.js" } }),
+      "utf8",
+    )
+
+    const result = await rebuildServerPlugins({
+      entries: [{ dir, hotReload: true }],
+      ctx: { workspaceRoot: "/tmp/host", bridge: {} as never },
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.diagnostics[0]?.message).toContain("boring.server")
+    expect(result.diagnostics[0]?.message).toContain("safe relative path")
+  })
+
+  test("rejects conventional server entry symlink escapes before import", async () => {
+    const dir = await makeTempDir("rebuild-convention-symlink-")
+    const outside = await makeTempDir("rebuild-convention-outside-")
+    await mkdir(join(dir, "src"), { recursive: true })
+    await mkdir(join(outside, "server"), { recursive: true })
+    await writeFile(join(outside, "server", "index.ts"), "export default { id: 'escape' }", "utf8")
+    await symlink(join(outside, "server"), join(dir, "src", "server"), "dir")
+    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "p" }), "utf8")
+
+    const result = await rebuildServerPlugins({
+      entries: [{ dir, hotReload: true }],
+      ctx: { workspaceRoot: "/tmp/host", bridge: {} as never },
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.diagnostics[0]?.message).toContain("conventional boring.server path escapes plugin root")
+  })
+
+  test("pre-built objects are accepted without diagnostics", async () => {
     const result = await rebuildServerPlugins({
       entries: [{ id: "obj", systemPrompt: "O" }],
       ctx: { workspaceRoot: "/tmp/host", bridge: {} as never },
     })
 
-    expect(result.plugins.map((p) => p.id)).toEqual(["obj"])
+    expect(result).toEqual({ ok: true, diagnostics: [] })
   })
 })

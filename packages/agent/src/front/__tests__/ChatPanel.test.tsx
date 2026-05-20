@@ -1438,6 +1438,26 @@ describe('ChatPanel (shadcn)', () => {
       )
     })
 
+    test('/reload surfaces non-fatal diagnostics as visible command feedback', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          reloaded: true,
+          diagnostics: [{ source: 'directory (/plugin)', message: 'syntax error' }],
+        }),
+      }))
+
+      renderToStaticMarkup(<ChatPanel sessionId="sess-hr-diagnostic" />)
+      await capturedOnSubmit!({ text: '/reload', files: [] })
+
+      const updater = mockSetMessages.mock.calls.at(-1)?.[0]
+      expect(typeof updater).toBe('function')
+      const next = updater([])
+      expect(next.at(-1)?.parts?.[0]?.text).toContain('Plugins updated.')
+      expect(next.at(-1)?.parts?.[0]?.text).toContain('Warnings:')
+      expect(next.at(-1)?.parts?.[0]?.text).toContain('directory (/plugin): syntax error')
+    })
+
     test('hotReloadEnabled=false: /reload falls through as regular message (command not registered)', async () => {
       renderToStaticMarkup(<ChatPanel sessionId="sess-hr-off" hotReloadEnabled={false} />)
       await capturedOnSubmit!({ text: '/reload', files: [] })

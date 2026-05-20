@@ -149,6 +149,40 @@ test('POST /api/v1/agent/reload awaits beforeReload and aborts on failure', asyn
   }
 })
 
+test('POST /api/v1/agent/reload includes beforeReload restart warnings and diagnostics', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-reload-hook-diagnostics-')
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    beforeReload: async () => ({
+      restart_warnings: [
+        { id: 'routes-plugin', surfaces: ['routes'], message: 'restart routes' },
+      ],
+      diagnostics: [
+        { source: 'directory (/plugin)', pluginId: 'broken-plugin', message: 'syntax error' },
+      ],
+    }),
+  })
+  try {
+    const res = await app.inject({ method: 'POST', url: '/api/v1/agent/reload', payload: { sessionId: 'default' } })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({
+      ok: true,
+      sessionId: 'default',
+      reloaded: false,
+      restart_warnings: [
+        { id: 'routes-plugin', surfaces: ['routes'], message: 'restart routes' },
+      ],
+      diagnostics: [
+        { source: 'directory (/plugin)', pluginId: 'broken-plugin', message: 'syntax error' },
+      ],
+    })
+  } finally {
+    await app.close()
+  }
+})
+
 test('createAgentApp option templatePath takes precedence over env fallback', async () => {
   const parent = await makeTempDir('boring-ui-app-parent-')
   const workspaceRoot = join(parent, 'workspace')

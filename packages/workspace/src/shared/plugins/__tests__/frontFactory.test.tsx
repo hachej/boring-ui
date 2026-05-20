@@ -142,10 +142,9 @@ describe("definePlugin brand semantics (DESIGN.md §4.3 + §8)", () => {
     expect(plugin.outputs?.[0]).toMatchObject({ type: "panel" })
   })
 
-  it("rejects the removed 3-arg form with a helpful migration message", () => {
-    // The legacy `definePlugin("id", (api) => ..., { label })` form was
-    // dropped. Callers attempting it get a runtime error pointing at
-    // the new declarative shape.
+  it("rejects the removed positional form with a helpful migration message", () => {
+    // The legacy positional form was dropped. Callers attempting it get
+    // a runtime error pointing at the new declarative shape.
     const factory: BoringFrontFactory = () => undefined
     expect(() => (definePlugin as unknown as (...args: unknown[]) => unknown)("legacy", factory, { label: "L" })).toThrow(
       /declarative config object/,
@@ -180,6 +179,14 @@ describe("definePlugin declarative config form", () => {
     const plugin = toWorkspacePlugin(wrapped)
     const types = (plugin.outputs ?? []).map((o) => o.type).sort()
     expect(types).toEqual(["command", "left-tab", "panel", "surface-resolver"])
+  })
+
+  it("types setup as synchronous even though bare hot-load factories may be async", () => {
+    // @ts-expect-error setup is synchronous for statically composed definePlugin configs.
+    definePlugin({ id: "async-setup", setup: async () => undefined })
+    const maybeAsyncFactory: BoringFrontFactory = () => undefined
+    // @ts-expect-error BoringFrontFactory is async-capable; setup must be known-sync.
+    definePlugin({ id: "maybe-async-setup", setup: maybeAsyncFactory })
   })
 
   it("calls setup() AFTER the declarative registrations", () => {

@@ -117,8 +117,9 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): s
       "- Imperative method names: `registerComponent`, `addPanel`, `registerCommand` (no `Panel`), `registerTab` — the actual names are `registerPanel`, `registerPanelCommand`, `registerLeftTab`, `registerSurfaceResolver` (and you usually express these declaratively, not as method calls).",
       "- Import paths: `@hachej/boring-pi` (it's a skills package, not for code), `@boring-ui/*`, `@hachej/pi-sdk` — use `@hachej/boring-workspace/plugin` for front and `@hachej/boring-workspace/server` for server.",
       "- Server tool method: `handler` — use `execute`. Return shape: `{ content: [{ type: \"text\", text }] }` (NEVER a bare string).",
-      "- Manifest values: `boring.server: true` — use `false` (no server) OR a relative path string like `\"server/index.ts\"`.",
-      "- File layout: files at the package root, or `src/` / `dist/` / `lib/` subdirectories — the scaffold's layout (`front/index.tsx`, `server/index.ts`) is the only one the workspace loads.",
+      "- Manifest values: `boring.server: true` — use `false`/omit for hot-reload user plugins, or a relative path string only for advanced boot-time/static server integration.",
+      "- File layout: files at the package root, or `src/` / `dist/` / `lib/` subdirectories — the scaffold's hot-reload layout (`front/index.tsx`, optional `agent/index.ts` declared in `pi.extensions`) is the one the workspace refreshes on `/reload`.",
+      "- Hot-reload agent tools: do NOT put them in `.pi/extensions/<name>/server/index.ts`; use `pi.extensions` instead. `boring.server` requires static composition plus process restart.",
     ].join("\n"),
     docsBlock,
   ].join("\n\n")

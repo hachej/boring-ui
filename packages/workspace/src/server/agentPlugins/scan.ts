@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
+import { basename, dirname, join, resolve } from "node:path"
 import {
   isSafePluginRelativePath,
   isValidBoringPluginId,
@@ -8,6 +8,7 @@ import {
   type BoringPluginPackageJson,
 } from "../../shared/plugins/manifest"
 import type { BoringServerPluginManifest } from "./types"
+import { resolveContainedPluginPath } from "./pluginPaths"
 
 export interface BoringPluginPreflightIssue {
   pluginDir: string
@@ -19,6 +20,11 @@ export interface BoringPluginPreflightIssue {
 export interface BoringPluginPreflightResult {
   ok: boolean
   errors: BoringPluginPreflightIssue[]
+}
+
+export interface BoringPluginScanResult {
+  preflight: BoringPluginPreflightResult
+  plugins: BoringServerPluginManifest[]
 }
 
 interface DiscoveredBoringPluginDirs {
@@ -46,36 +52,8 @@ function hasPluginMetadata(pkg: Record<string, unknown>): boolean {
   return pkg.boring !== undefined || pkg.pi !== undefined
 }
 
-function isInsideRoot(rootReal: string, targetReal: string): boolean {
-  const rel = relative(rootReal, targetReal)
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))
-}
-
-function nearestExistingAncestor(path: string, rootDir: string): string | undefined {
-  let current = path
-  const root = resolve(rootDir)
-  while (!existsSync(current)) {
-    const parent = dirname(current)
-    if (parent === current) return undefined
-    if (!isInsideRoot(root, parent) && parent !== root) return undefined
-    current = parent
-  }
-  return current
-}
-
-function containedPluginPath(rootDir: string, value: string): string | undefined {
-  const resolved = resolve(rootDir, value)
-  const rootReal = realpathSync(rootDir)
-  const existing = nearestExistingAncestor(resolved, rootDir)
-  if (!existing) return undefined
-  const existingReal = realpathSync(existing)
-  if (!isInsideRoot(rootReal, existingReal)) return undefined
-  return existsSync(resolved) ? realpathSync(resolved) : resolved
-}
-
-function resolvePluginPath(rootDir: string, value: string | undefined): string | undefined {
-  if (!value || !isSafePluginRelativePath(value)) return undefined
-  return containedPluginPath(rootDir, value)
+function resolvePluginPath(rootDir: string, value: string | undefined, options: { mustExist?: boolean } = {}): string | undefined {
+  return resolveContainedPluginPath(rootDir, value, options)
 }
 
 function resolvePluginPaths(rootDir: string, values: string[] | undefined): string[] {
@@ -84,14 +62,29 @@ function resolvePluginPaths(rootDir: string, values: string[] | undefined): stri
     .filter((value): value is string => Boolean(value))
 }
 
-function pathContainmentIssue(rootDir: string, value: string | undefined, field: string): BoringPluginPreflightIssue | undefined {
+function pathPreflightIssue(
+  rootDir: string,
+  value: string | undefined,
+  field: string,
+  options: { mustExist?: boolean } = {},
+): BoringPluginPreflightIssue | undefined {
   if (!value || !isSafePluginRelativePath(value)) return undefined
-  if (containedPluginPath(rootDir, value)) return undefined
-  return {
-    pluginDir: rootDir,
-    code: "INVALID_PLUGIN_METADATA",
-    message: `${field}: resolved path escapes plugin root`,
+  const containedPath = resolveContainedPluginPath(rootDir, value)
+  if (!containedPath) {
+    return {
+      pluginDir: rootDir,
+      code: "INVALID_PLUGIN_METADATA",
+      message: `${field}: resolved path escapes plugin root`,
+    }
   }
+  if (options.mustExist && !existsSync(containedPath)) {
+    return {
+      pluginDir: rootDir,
+      code: "INVALID_PLUGIN_METADATA",
+      message: `${field}: declared path does not exist: ${value}`,
+    }
+  }
+  return undefined
 }
 
 function packagePathContainmentIssues(rootDir: string, pkg: BoringPluginPackageJson): BoringPluginPreflightIssue[] {
@@ -102,17 +95,17 @@ function packagePathContainmentIssues(rootDir: string, pkg: BoringPluginPackageJ
   const push = (issue: BoringPluginPreflightIssue | undefined) => {
     if (issue) issues.push({ ...issue, ...(pluginId ? { pluginId } : {}) })
   }
-  push(pathContainmentIssue(rootDir, boring?.front, "boring.front"))
+  push(pathPreflightIssue(rootDir, boring?.front, "boring.front", { mustExist: true }))
   if (boring?.server !== false) {
     if (boring?.server !== undefined) {
-      push(pathContainmentIssue(rootDir, boring.server, "boring.server"))
+      push(pathPreflightIssue(rootDir, boring.server, "boring.server"))
     } else {
-      push(pathContainmentIssue(rootDir, "server/index.ts", "boring.server"))
-      push(pathContainmentIssue(rootDir, "server/index.js", "boring.server"))
+      push(pathPreflightIssue(rootDir, "server/index.ts", "boring.server"))
+      push(pathPreflightIssue(rootDir, "server/index.js", "boring.server"))
     }
   }
-  pi?.extensions?.forEach((value, index) => push(pathContainmentIssue(rootDir, value, `pi.extensions[${index}]`)))
-  pi?.skills?.forEach((value, index) => push(pathContainmentIssue(rootDir, value, `pi.skills[${index}]`)))
+  pi?.extensions?.forEach((value, index) => push(pathPreflightIssue(rootDir, value, `pi.extensions[${index}]`)))
+  pi?.skills?.forEach((value, index) => push(pathPreflightIssue(rootDir, value, `pi.skills[${index}]`)))
   return issues
 }
 
@@ -146,17 +139,28 @@ function discoverBoringPluginDirs(pluginDirs: string[]): DiscoveredBoringPluginD
   return { dirs: [...out].sort(), missingPackageJson: [...new Set(missingPackageJson)].sort() }
 }
 
-export function preflightBoringPlugins(pluginDirs: string[]): BoringPluginPreflightResult {
+function resolveConventionalServerPath(rootDir: string): string | undefined {
+  for (const candidate of ["server/index.ts", "server/index.js"]) {
+    if (!existsSync(resolve(rootDir, candidate))) continue
+    return resolvePluginPath(rootDir, candidate)
+  }
+  return undefined
+}
+
+export function scanBoringPlugins(pluginDirs: string[]): BoringPluginScanResult {
   const errors: BoringPluginPreflightIssue[] = []
+  const plugins: BoringServerPluginManifest[] = []
   const seenIds = new Map<string, string>()
   const discovered = discoverBoringPluginDirs(pluginDirs)
+
   for (const pluginDir of discovered.missingPackageJson) {
     errors.push({ pluginDir, code: "MISSING_PACKAGE_JSON", message: "package.json is missing" })
   }
+
   for (const rootDir of discovered.dirs) {
-    let pkg: Record<string, unknown>
+    let raw: Record<string, unknown>
     try {
-      pkg = parsePackageJson(rootDir)
+      raw = parsePackageJson(rootDir)
     } catch (error) {
       errors.push({
         pluginDir: rootDir,
@@ -165,10 +169,11 @@ export function preflightBoringPlugins(pluginDirs: string[]): BoringPluginPrefli
       })
       continue
     }
-    if (!hasPluginMetadata(pkg)) continue
-    const result = validateBoringPluginManifest(pkg)
+    if (!hasPluginMetadata(raw)) continue
+
+    const result = validateBoringPluginManifest(raw)
     if (!result.valid) {
-      const pluginId = safePluginIdFromPackageJson(pkg, rootDir)
+      const pluginId = safePluginIdFromPackageJson(raw, rootDir)
       for (const issue of result.issues) {
         errors.push({
           pluginDir: rootDir,
@@ -179,13 +184,16 @@ export function preflightBoringPlugins(pluginDirs: string[]): BoringPluginPrefli
       }
       continue
     }
+
     const id = pluginIdFromPackageJson(result.packageJson, rootDir)
+    let canAddPlugin = true
     if (!isValidBoringPluginId(id)) {
       errors.push({
         pluginDir: rootDir,
         code: "INVALID_PLUGIN_METADATA",
         message: `effective plugin id "${id}" must start with a letter or number and use only letters, numbers, dot, underscore, colon, or dash`,
       })
+      canAddPlugin = false
     } else {
       const previous = seenIds.get(id)
       if (previous) {
@@ -195,44 +203,31 @@ export function preflightBoringPlugins(pluginDirs: string[]): BoringPluginPrefli
           code: "INVALID_PLUGIN_METADATA",
           message: `duplicate plugin id "${id}" also declared by ${previous}`,
         })
+        const previousPluginIndex = plugins.findIndex((plugin) => plugin.id === id)
+        if (previousPluginIndex >= 0) plugins.splice(previousPluginIndex, 1)
+        canAddPlugin = false
       } else {
         seenIds.set(id, rootDir)
       }
     }
-    errors.push(...packagePathContainmentIssues(rootDir, result.packageJson))
-  }
-  return { ok: errors.length === 0, errors }
-}
 
-function resolveConventionalServerPath(rootDir: string): string | undefined {
-  for (const candidate of ["server/index.ts", "server/index.js"]) {
-    if (!existsSync(resolve(rootDir, candidate))) continue
-    return resolvePluginPath(rootDir, candidate)
-  }
-  return undefined
-}
+    const containmentIssues = packagePathContainmentIssues(rootDir, result.packageJson)
+    if (containmentIssues.length > 0) {
+      errors.push(...containmentIssues)
+      canAddPlugin = false
+    }
+    if (!canAddPlugin) continue
 
-export function readBoringPlugins(pluginDirs: string[]): BoringServerPluginManifest[] {
-  if (!preflightBoringPlugins(pluginDirs).ok) return []
-  const plugins: BoringServerPluginManifest[] = []
-  for (const rootDir of discoverBoringPluginDirs(pluginDirs).dirs) {
-    const raw = parsePackageJson(rootDir)
-    if (!hasPluginMetadata(raw)) continue
-    const result = validateBoringPluginManifest(raw)
-    if (!result.valid) continue
-    if (packagePathContainmentIssues(rootDir, result.packageJson).length > 0) continue
     const pkg = result.packageJson
     const boring = pkg.boring ?? {}
     const pi = pkg.pi as BoringPackagePiField | undefined
-    const frontPath = resolvePluginPath(rootDir, boring.front)
+    const frontPath = resolvePluginPath(rootDir, boring.front, { mustExist: true })
     const serverPath = boring.server === false
       ? undefined
       : typeof boring.server === "string"
         ? resolvePluginPath(rootDir, boring.server)
         : resolveConventionalServerPath(rootDir)
     const version = pkg.version ?? "0.0.0"
-    const id = pluginIdFromPackageJson({ name: pkg.name }, rootDir)
-    if (!isValidBoringPluginId(id)) continue
     const extensionPaths = resolvePluginPaths(rootDir, pi?.extensions)
     const skillPaths = resolvePluginPaths(rootDir, pi?.skills)
     plugins.push({
@@ -247,7 +242,18 @@ export function readBoringPlugins(pluginDirs: string[]): BoringServerPluginManif
       ...(skillPaths.length > 0 ? { skillPaths } : {}),
     })
   }
-  return plugins
+
+  const preflight = { ok: errors.length === 0, errors }
+  return { preflight, plugins }
+}
+
+export function preflightBoringPlugins(pluginDirs: string[]): BoringPluginPreflightResult {
+  return scanBoringPlugins(pluginDirs).preflight
+}
+
+export function readBoringPlugins(pluginDirs: string[]): BoringServerPluginManifest[] {
+  const scan = scanBoringPlugins(pluginDirs)
+  return scan.preflight.ok ? scan.plugins : []
 }
 
 export function pluginRootFromExtensionPath(extensionPath: string): string {

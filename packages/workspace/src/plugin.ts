@@ -16,6 +16,7 @@ export type {
   BoringFrontAPI,
   BoringFrontFactory,
   BoringFrontFactoryWithId,
+  BoringFrontSetup,
   BoringFrontBindingRegistration,
   BoringFrontPanelRegistration,
   BoringFrontPanelCommandRegistration,

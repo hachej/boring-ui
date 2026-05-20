@@ -229,6 +229,7 @@ export function WorkspaceAgentFront<
   topBarRight,
   chatParams,
   hotReloadEnabled,
+  frontPluginHotReload,
   extraPanels,
   extraCommands,
   onOpenNav,
@@ -485,6 +486,7 @@ export function WorkspaceAgentFront<
         persistenceEnabled={persistenceEnabled}
         bridgeEndpoint={null}
         onAuthError={onAuthError}
+        frontPluginHotReload={frontPluginHotReload}
       >
         {beforeShell}
         <WorkspaceUiStateSync

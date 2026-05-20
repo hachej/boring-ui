@@ -130,7 +130,7 @@ function validateBoringField(
     return undefined
   }
   if (boring.id !== undefined) {
-    issues.push(issue("INVALID_FIELD", "boring.id", "boring.id is not supported; use package.json#name for plugin identity"))
+    issues.push(issue("INVALID_FIELD", "boring.id", "boring.id is not supported; package discovery identity comes from package.json#name"))
   }
   const front = boring.front
   if (front !== undefined && (typeof front !== "string" || !isSafePluginRelativePath(front))) {
@@ -252,4 +252,3 @@ export function validateBoringPluginManifest(
     },
   }
 }
-

@@ -5,19 +5,21 @@
  * `WorkspaceServerPlugin` by reading the plugin's `package.json` and
  * importing its server entry:
  *
- *  1. Manifest field wins (`package.json#boring.server`). Declared-but-missing
- *     fails loudly — no silent fallback.
+ *  1. Prefer an explicit manifest field (`package.json#boring.server`).
+ *     Declared-but-missing fails loudly — no silent fallback.
  *  2. Convention fallback (`dist/server/index.js`, `src/server/index.ts`)
- *     only kicks in when no manifest field is set.
+ *     is kept for existing directory-source app code only. Package authors
+ *     should declare `boring.server` and restart the host after server edits.
  *  3. `hotReload: true` uses jiti with `moduleCache: false` to re-evaluate
  *     on every call. `hotReload: false` uses regular `import()`.
  */
 import { existsSync, readFileSync } from "node:fs"
-import { resolve } from "node:path"
+import { join, resolve } from "node:path"
 import { createRequire } from "node:module"
 import { pathToFileURL } from "node:url"
-import type { WorkspaceServerPlugin } from "../../server/plugins/bootstrapServer"
+import { validateServerPlugin, type WorkspaceServerPlugin } from "../../server/plugins/bootstrapServer"
 import type { BoringPluginPackageJson } from "../../shared/plugins/manifest"
+import { resolveSafePluginEntryPath } from "../../server/agentPlugins/pluginPaths"
 
 /**
  * Directory-source entry: `{ dir, options?, hotReload? }`. Resolved via
@@ -28,6 +30,9 @@ export interface DirPluginEntry {
   options?: unknown
   hotReload?: boolean
 }
+
+type MaybePromise<T> = T | Promise<T>
+type ServerPluginFactory = (options: unknown, ctx: PluginResolveContext) => MaybePromise<WorkspaceServerPlugin>
 
 const SERVER_CONVENTIONS = ["dist/server/index.js", "src/server/index.ts"] as const
 
@@ -47,29 +52,6 @@ function readPluginPackageJson(dir: string): BoringPluginPackageJson | null {
  * - conventions fallback only when no explicit field.
  * - returns `null` if neither is present.
  */
-function resolvePluginEntryPath(
-  dir: string,
-  explicit: string | false | undefined,
-  conventions: readonly string[],
-): string | null {
-  if (explicit === false) return null
-  if (explicit) {
-    const path = resolve(dir, explicit)
-    if (!existsSync(path)) {
-      throw new Error(
-        `boring plugin entry declared but not found: ${path}\n` +
-          `  declared in: ${resolve(dir, "package.json")}#boring`,
-      )
-    }
-    return path
-  }
-  for (const candidate of conventions) {
-    const path = resolve(dir, candidate)
-    if (existsSync(path)) return path
-  }
-  return null
-}
-
 const require = createRequire(import.meta.url)
 
 let warnedJitiMissing = false
@@ -121,14 +103,35 @@ export interface PluginResolveContext {
   bridge: unknown
 }
 
+function resolveDirServerEntryPath(dir: string): string | null {
+  const rootDir = resolve(dir)
+  const pkg = readPluginPackageJson(rootDir)
+  if (!pkg) throw new Error(`boring plugin: no package.json found in ${rootDir}`)
+  return resolveSafePluginEntryPath({
+    rootDir,
+    explicit: pkg.boring?.server,
+    conventions: SERVER_CONVENTIONS,
+    field: "boring.server",
+    manifestPath: join(rootDir, "package.json"),
+  })
+}
+
+/**
+ * Returns true when a directory-source package has an importable server entry.
+ * Missing package.json, unsafe explicit entries, and declared-but-missing
+ * entries still throw — only the legitimate "front/Pi-only package" case
+ * (no manifest server and no server convention) returns false.
+ */
+export function hasDirServerPlugin(entry: DirPluginEntry): boolean {
+  return resolveDirServerEntryPath(entry.dir) !== null
+}
+
 async function resolveDirServerPlugin(
   entry: DirPluginEntry,
   ctx: PluginResolveContext,
 ): Promise<WorkspaceServerPlugin> {
   const dir = resolve(entry.dir)
-  const pkg = readPluginPackageJson(dir)
-  if (!pkg) throw new Error(`boring plugin: no package.json found in ${dir}`)
-  const serverPath = resolvePluginEntryPath(dir, pkg.boring?.server, SERVER_CONVENTIONS)
+  const serverPath = resolveDirServerEntryPath(dir)
   if (!serverPath) {
     throw new Error(
       `boring plugin: no server entry resolved for ${dir}\n` +
@@ -141,9 +144,15 @@ async function resolveDirServerPlugin(
       ? (mod as { default?: unknown }).default
       : mod
   if (typeof value === "function") {
-    return (value as (options: unknown, ctx: PluginResolveContext) => WorkspaceServerPlugin)(entry.options, ctx)
+    const plugin = await (value as ServerPluginFactory)(entry.options, ctx)
+    validateServerPlugin(plugin)
+    return plugin
   }
-  if (value && typeof value === "object") return value as WorkspaceServerPlugin
+  if (value && typeof value === "object") {
+    const plugin = value as WorkspaceServerPlugin
+    validateServerPlugin(plugin)
+    return plugin
+  }
   throw new Error(`boring plugin: ${serverPath} default export is neither a function nor a plugin object`)
 }
 

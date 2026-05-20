@@ -31,24 +31,44 @@ The primary tool for interacting with the workspace frontend. See [bridge.md](..
 
 ## Adding custom tools
 
-Custom tools are contributed via server plugins:
+For statically composed app/server integrations, contribute tools from a
+workspace server plugin:
 
 ```ts
-import { defineServerPlugin, defineTool } from '@boring/workspace/server'
+import { defineServerPlugin } from "@hachej/boring-workspace/server"
 
-const myTool = defineTool({
-  name: 'my_tool',
-  description: 'Does something useful',
-  inputSchema: z.object({ id: z.string() }),
-  execute: async ({ id }) => ({ result: `processed ${id}` }),
-})
-
-export const myServerPlugin = defineServerPlugin({
-  id: 'my-plugin',
-  tools: [myTool],
-  promptText: 'Use my_tool when the user asks to process an item.',
+export default defineServerPlugin({
+  id: "my-plugin",
+  systemPrompt: "Use my_tool when the user asks to process an item.",
+  agentTools: [
+    {
+      name: "my_tool",
+      description: "Does something useful",
+      parameters: {
+        type: "object",
+        properties: { id: { type: "string" } },
+        required: ["id"],
+        additionalProperties: false,
+      },
+      async execute(params) {
+        return {
+          content: [{ type: "text", text: `processed ${String(params.id)}` }],
+        }
+      },
+    },
+  ],
 })
 ```
+
+Expose that entry with `package.json#boring.server` or pass the plugin object to
+`createWorkspaceAgentServer({ plugins: [...] })`. This is static/boot-time
+server composition; restart the host process after changing routes or tools.
+
+For hot-reloadable chat behavior in user plugin packages, prefer Pi-native
+resources declared in `package.json#pi` (`extensions`, `skills`, `prompts`, and
+`systemPrompt`). Those participate in the `/reload` path and are the right
+place for tools/skills that should update without restarting the workspace
+server.
 
 ## Runtime modes
 

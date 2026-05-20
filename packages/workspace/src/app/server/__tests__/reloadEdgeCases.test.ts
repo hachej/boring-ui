@@ -126,7 +126,7 @@ describe("Reload edge cases — directory-source { spec: { dir } }", () => {
     })
 
     const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
-      { beforeReload?: () => Promise<void> },
+      { beforeReload?: () => Promise<{ diagnostics?: { source: string; message: string }[] } | undefined> },
     ]
 
     // First reload: clean.
@@ -135,8 +135,9 @@ describe("Reload edge cases — directory-source { spec: { dir } }", () => {
     // Delete the plugin dir entirely.
     await rm(dir, { recursive: true, force: true })
 
-    // Second reload tolerates the missing dir — no throw.
-    await expect(agentOptions.beforeReload?.()).resolves.toBeUndefined()
+    // Second reload tolerates the missing dir — no throw, diagnostics only.
+    const result = await agentOptions.beforeReload?.()
+    expect(result?.diagnostics?.[0]?.message).toContain("no package.json found")
   })
 
   test("declared-but-missing boring.server fails LOUDLY (Pi parity)", async () => {
@@ -175,23 +176,25 @@ describe("Reload edge cases — directory-source { spec: { dir } }", () => {
     })
 
     const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
-      { beforeReload?: () => Promise<void> },
+      { beforeReload?: () => Promise<{ diagnostics?: { source: string; message: string }[] } | undefined> },
     ]
 
     // Plant a syntax error.
     await writeFile(join(dir, "src", "server", "index.ts"), "this is not !!! valid {{ typescript", "utf8")
-    await expect(agentOptions.beforeReload?.()).resolves.toBeUndefined()
+    const beforeReloadResult = await agentOptions.beforeReload?.()
+    expect(beforeReloadResult?.diagnostics?.length).toBeGreaterThan(0)
 
     // Diagnostic is observable via the exposed rebuild closure (also via
-    // SSE + .error files in the full stack).
-    type Rebuild = () => Promise<{ plugins: { id: string }[]; diagnostics: { source: string; message: string }[] }>
+    // SSE + .error files in the full stack). The closure is diagnostic-only;
+    // it does not return or install a rebuilt plugin graph.
+    type Rebuild = () => Promise<{ ok: boolean; diagnostics: { source: string; message: string }[] }>
     const rebuild = (app as unknown as { __boringRebuildPlugins: Rebuild }).__boringRebuildPlugins
     const rebuildResult = await rebuild()
-    expect(rebuildResult.plugins).toHaveLength(0)
+    expect(rebuildResult.ok).toBe(false)
     expect(rebuildResult.diagnostics.length).toBeGreaterThan(0)
   })
 
-  test("reload idempotency: rebuild closure does not double-mount on repeat", async () => {
+  test("reload idempotency: diagnostic rebuild closure stays stable on repeat", async () => {
     const dir = await makeTempDir("edge-idem-")
     await writeDirPlugin(dir, "export default { id: 'p', systemPrompt: 'V1' }")
     const host = await makeTempDir("edge-idem-host-")
@@ -203,16 +206,16 @@ describe("Reload edge cases — directory-source { spec: { dir } }", () => {
       plugins: [{ dir, hotReload: true }],
     })
 
-    type Rebuild = () => Promise<{ plugins: { id: string }[] }>
+    type Rebuild = () => Promise<{ ok: boolean; diagnostics: unknown[] }>
     const rebuild = (app as unknown as { __boringRebuildPlugins: Rebuild }).__boringRebuildPlugins
 
     const first = await rebuild()
     const second = await rebuild()
     const third = await rebuild()
 
-    expect(first.plugins.map((p) => p.id)).toEqual(["p"])
-    expect(second.plugins.map((p) => p.id)).toEqual(["p"])
-    expect(third.plugins.map((p) => p.id)).toEqual(["p"])
+    expect(first).toEqual({ ok: true, diagnostics: [] })
+    expect(second).toEqual({ ok: true, diagnostics: [] })
+    expect(third).toEqual({ ok: true, diagnostics: [] })
   })
 })
 
@@ -327,9 +330,11 @@ describe("Reload edge cases — discovered package plugins (.pi/extensions/*)", 
     expect(agentServerMock.createAgentApp).toHaveBeenCalledTimes(1)
 
     const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
-      { beforeReload?: () => Promise<void> },
+      { beforeReload?: () => Promise<{ diagnostics?: Array<{ message: string }> } | undefined> },
     ]
-    await expect(agentOptions.beforeReload?.()).resolves.toBeUndefined()
+    await expect(agentOptions.beforeReload?.()).resolves.toEqual({
+      diagnostics: [expect.objectContaining({ message: expect.stringContaining("INVALID_PACKAGE_JSON") })],
+    })
   })
 
   test("two plugins with the same name: boot succeeds; /reload tolerates the duplicate (diagnostic via SSE)", async () => {
@@ -355,15 +360,17 @@ describe("Reload edge cases — discovered package plugins (.pi/extensions/*)", 
     ).resolves.toBeTruthy()
 
     const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
-      { beforeReload?: () => Promise<void> },
+      { beforeReload?: () => Promise<{ diagnostics?: Array<{ message: string }> } | undefined> },
     ]
-    await expect(agentOptions.beforeReload?.()).resolves.toBeUndefined()
+    await expect(agentOptions.beforeReload?.()).resolves.toEqual({
+      diagnostics: [expect.objectContaining({ message: expect.stringContaining("duplicate plugin id") })],
+    })
   })
 
-  test("rebuild closure called BEFORE first /reload returns the boot-time set unchanged", async () => {
+  test("rebuild closure called BEFORE first /reload is safe and diagnostic-only", async () => {
     // The closure should be safe to invoke at any point — including
     // before any /reload has happened. It re-resolves entries against
-    // the current filesystem.
+    // the current filesystem for diagnostics only.
     const dir = await makeTempDir("edge-early-")
     await writeDirPlugin(dir, "export default { id: 'p', systemPrompt: 'BOOT' }")
 
@@ -374,10 +381,10 @@ describe("Reload edge cases — discovered package plugins (.pi/extensions/*)", 
       plugins: [{ dir, hotReload: true }],
     })
 
-    type Rebuild = () => Promise<{ plugins: { id: string; systemPrompt?: string }[] }>
+    type Rebuild = () => Promise<{ ok: boolean; diagnostics: unknown[] }>
     const rebuild = (app as unknown as { __boringRebuildPlugins: Rebuild }).__boringRebuildPlugins
     const result = await rebuild()
-    expect(result.plugins[0].systemPrompt).toBe("BOOT")
+    expect(result).toEqual({ ok: true, diagnostics: [] })
   })
 })
 

@@ -18,7 +18,7 @@ import { PI_AGENT_RUNTIME_CAPABILITIES } from '../shared/capabilities'
 import { builtinCommands } from './slashCommands/builtins'
 import { parseSlashCommand } from './slashCommands/parser'
 import { createCommandRegistry, type SlashCommand, type SlashCommandContext } from './slashCommands/registry'
-import { PluginUpdateStatus, type PluginUpdateState, type PluginRestartWarning } from './composer/PluginUpdateStatus'
+import { PluginUpdateStatus, type PluginUpdateState, type PluginRestartWarning, type PluginReloadDiagnostic } from './composer/PluginUpdateStatus'
 import {
   type ToolRendererOverrides,
 } from './bareToolRenderers'
@@ -442,6 +442,7 @@ export function ChatPanel(props: ChatPanelProps) {
   const callPluginReload = useCallback(async (): Promise<{
     reloaded: boolean
     restartWarnings?: PluginRestartWarning[]
+    diagnostics?: PluginReloadDiagnostic[]
   }> => {
     const res = await fetch('/api/v1/agent/reload', {
       method: 'POST',
@@ -455,6 +456,7 @@ export function ChatPanel(props: ChatPanelProps) {
     const payload = await res.json().catch(() => ({})) as {
       reloaded?: boolean
       restart_warnings?: PluginRestartWarning[]
+      diagnostics?: PluginReloadDiagnostic[]
     }
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: payload }))
@@ -464,13 +466,19 @@ export function ChatPanel(props: ChatPanelProps) {
       ...(payload.restart_warnings && payload.restart_warnings.length > 0
         ? { restartWarnings: payload.restart_warnings }
         : {}),
+      ...(payload.diagnostics && payload.diagnostics.length > 0
+        ? { diagnostics: payload.diagnostics }
+        : {}),
     }
   }, [requestHeaders, sessionId])
 
   const reloadAgentPlugins = useCallback(async () => {
     try {
-      const { reloaded } = await callPluginReload()
-      return reloaded ? 'Agent plugins reloaded.' : 'Agent plugins will reload on the next message.'
+      const { reloaded, diagnostics } = await callPluginReload()
+      const base = reloaded ? 'Agent plugins reloaded.' : 'Agent plugins will reload on the next message.'
+      return diagnostics && diagnostics.length > 0
+        ? `${base}\n\nWarnings:\n${formatPluginReloadDiagnostics(diagnostics)}`
+        : base
     } catch (err) {
       return err instanceof Error ? err.message : 'Agent plugin reload failed.'
     }
@@ -493,14 +501,18 @@ export function ChatPanel(props: ChatPanelProps) {
     const capturedSession = activeSessionRef.current
     setPluginUpdateState({ kind: 'running' })
     try {
-      const { reloaded, restartWarnings } = await callPluginReload()
+      const { reloaded, restartWarnings, diagnostics } = await callPluginReload()
       if (activeSessionRef.current !== capturedSession) return 'Plugins updated.'
       setPluginUpdateState({
         kind: 'success',
         reloaded,
         ...(restartWarnings && restartWarnings.length > 0 ? { restartWarnings } : {}),
+        ...(diagnostics && diagnostics.length > 0 ? { diagnostics } : {}),
       })
-      return reloaded ? 'Plugins updated.' : 'Plugins will reload on the next message.'
+      const base = reloaded ? 'Plugins updated.' : 'Plugins will reload on the next message.'
+      return diagnostics && diagnostics.length > 0
+        ? `${base}\n\nWarnings:\n${formatPluginReloadDiagnostics(diagnostics)}`
+        : base
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Plugin update failed.'
       if (activeSessionRef.current !== capturedSession) return `Plugin update failed: ${message}`
@@ -1372,6 +1384,15 @@ function AttachmentsList() {
       ))}
     </Attachments>
   )
+}
+
+function formatPluginReloadDiagnostics(diagnostics: PluginReloadDiagnostic[]): string {
+  return diagnostics
+    .map((diagnostic) => {
+      const source = diagnostic.pluginId ?? diagnostic.source ?? 'plugin'
+      return `${source}: ${diagnostic.message ?? 'reload diagnostic'}`
+    })
+    .join('\n')
 }
 
 /**

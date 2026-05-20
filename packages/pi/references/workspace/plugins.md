@@ -4,8 +4,8 @@
 
 Plugins are package directories with `package.json` metadata. One package can contribute to two runtimes:
 
-- `package.json#boring` — workspace/UI discovery: label plus front and support-server entrypoints.
-- `package.json#pi` — agent/Pi assets: native Pi extensions, skills, Pi packages, short prompt context.
+- `package.json#boring` — workspace/UI discovery: label plus front entrypoint, and optional advanced static server entrypoint.
+- `package.json#pi` — hot-reloadable agent/Pi assets: native Pi extensions, skills, Pi packages, short prompt context.
 
 ## Where to put hot-reloadable plugins
 
@@ -25,8 +25,7 @@ Create the directory if it does not exist. Do **not** put new live plugins at th
   "version": "1.0.0",
   "boring": {
     "label": "Widget",
-    "front": "front/index.tsx",
-    "server": "server/index.ts"
+    "front": "front/index.tsx"
   },
   "pi": {
     "extensions": ["agent/index.ts"],
@@ -36,7 +35,7 @@ Create the directory if it does not exist. Do **not** put new live plugins at th
 }
 ```
 
-The plugin id is `package.json#name` (`@scope/name` becomes `scope-name`). There is no separate `boring.id` field.
+Package discovery derives an asset id from `package.json#name` (`@scope/name` becomes `scope-name`). There is no separate `boring.id` field. The `definePlugin({ id })` / `defineServerPlugin({ id })` value is a contribution namespace for panels, commands, routes, diagnostics, and ownership. Matching the normalized package id is recommended for fully package-loaded plugins; first-party/static composition may use a shorter namespace when the host owns that mapping.
 
 `boring` does not register panels, commands, left tabs, or surface resolvers. Those runtime UI contributions are registered by the `BoringFrontFactory` exported from `boring.front`. Agent-facing context belongs under `pi.systemPrompt` or, preferably for larger docs, `pi.skills`.
 
@@ -48,27 +47,36 @@ The plugin id is `package.json#name` (`@scope/name` becomes `scope-name`). There
 ```tsx
 import { definePlugin } from "@hachej/boring-workspace/plugin"
 
-export default definePlugin("widget", (api) => {
-  api.registerPanel({
-    id: "widget-panel",
-    label: "Widget",
-    component: () => import("./WidgetPane"),
-  })
-  api.registerPanelCommand({
-    id: "open-widget",
-    title: "Open widget",
-    panelId: "widget-panel",
-  })
-}, { label: "Widget" })
+export default definePlugin({
+  id: "widget",
+  label: "Widget",
+  panels: [
+    {
+      id: "widget-panel",
+      label: "Widget",
+      component: () => import("./WidgetPane"),
+    },
+  ],
+  commands: [
+    {
+      id: "open-widget",
+      title: "Open widget",
+      panelId: "widget-panel",
+    },
+  ],
+})
 ```
 
-`definePlugin(id, factory, { label? })` returns a `BoringFrontFactoryWithId`
-— a function with `pluginId`/`pluginLabel` static fields. The shell auto-wraps
-it. The bare `BoringFrontFactory = (api) => void | Promise<void>` type still
-exists but is internal; consumers should always use `definePlugin`.
+`definePlugin({ id, label?, panels?, commands?, setup? })` returns a
+`BoringFrontFactoryWithId` — a function with `pluginId`/`pluginLabel` static
+fields. The shell auto-wraps it. The bare `BoringFrontFactory = (api) => void | Promise<void>`
+type still exists for host/hot-load internals; consumers should always use `definePlugin`. The `definePlugin({ setup })` escape hatch is synchronous for static provider bootstrap.
 
 Front code is browser code. Do not import Node-only modules and do not define
-agent tools in front plugins. Use object-shaped registrations such as
+agent tools in front plugins. Hot-loaded package fronts currently support panels,
+commands, catalogs, left tabs, and surface resolvers; plugins that register
+providers or bindings must be statically imported by the host app and passed via
+`WorkspaceProvider.plugins` / `WorkspaceAgentFront.plugins` for now. Use object-shaped registrations such as
 `api.registerPanel({ id, label, component })` and `api.registerSurfaceResolver({
 id, kind, resolve })`. Use `registerPanelCommand`, not `registerCommand`,
 inside the factory. Hot-loaded panels are normal React function components;
@@ -93,22 +101,26 @@ function CsvPanel({ params }: PaneProps<{ path?: string }>) {
   return <div>{params?.path}</div>
 }
 
-export default definePlugin("csv-viz", (api) => {
-  api.registerPanel({ id: "csv-viz", label: "CSV Viz", component: CsvPanel })
-  api.registerSurfaceResolver({
-    id: "csv-viz-open-path",
-    kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
-    resolve(request) {
-      if (!request.target.toLowerCase().endsWith(".csv")) return undefined
-      return {
-        id: `csv-viz:${request.target}`,
-        component: "csv-viz",
-        title: request.target.split("/").pop() ?? request.target,
-        params: { path: request.target },
-        score: 100,
-      }
+export default definePlugin({
+  id: "csv-viz",
+  label: "CSV Viz",
+  panels: [{ id: "csv-viz", label: "CSV Viz", component: CsvPanel }],
+  surfaceResolvers: [
+    {
+      id: "csv-viz-open-path",
+      kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
+      resolve(request) {
+        if (!request.target.toLowerCase().endsWith(".csv")) return undefined
+        return {
+          id: `csv-viz:${request.target}`,
+          component: "csv-viz",
+          title: request.target.split("/").pop() ?? request.target,
+          params: { path: request.target },
+          score: 100,
+        }
+      },
     },
-  })
+  ],
 })
 ```
 
@@ -116,21 +128,31 @@ Use `/api/v1/files/raw` for raw text/blob bytes. `/api/v1/files` returns the
 workspace file JSON shape used by the built-in editor, and `/api/v1/fs/file` is
 not a workspace endpoint.
 
-## Server entry
+## Server entry (advanced static composition only)
 
-`boring.server` is for workspace/UI support routes only:
+Hot-reloadable `.pi/extensions` user plugins should put agent behavior in
+`pi.extensions`, `pi.skills`, and `pi.systemPrompt`. `boring.server` is for
+workspace server integrations that the host composes at boot (for example via
+`defaultPluginPackages` or explicit server plugins) and activates by restarting
+the process. `/reload` verifies and refreshes front/Pi assets; it does not import
+or register `.pi/extensions` server routes or agent tools.
+
+When a host intentionally statically composes the package, `boring.server` may point at a workspace/UI support route module:
 
 ```ts
-import type { BoringServerFactory } from "@hachej/boring-workspace/server"
+import { defineServerPlugin, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
 
-const server: BoringServerFactory = (api) => {
-  api.get("/health", async () => ({ ok: true }))
+export default function (_options: unknown, ctx: { workspaceRoot: string }): WorkspaceServerPlugin {
+  return defineServerPlugin({
+    id: "widget",
+    routes: async (app) => {
+      app.get("/health", async () => ({ ok: true, root: ctx.workspaceRoot }))
+    },
+  })
 }
-
-export default server
 ```
 
-Agent tools, skills, and prompt additions belong under `pi`, not `boring.server`.
+Hot-reloadable agent tools, skills, and prompt additions belong under `pi`, not `boring.server`.
 
 ## Pi entry
 
@@ -155,8 +177,8 @@ export default function extension(api: { registerTool(tool: unknown): void }) {
 my-plugin/
   package.json         # boring + pi metadata
   front/index.tsx      # BoringFrontFactory
-  server/index.ts      # optional BoringServerFactory for UI support routes
-  agent/index.ts       # optional native Pi extension
+  server/index.ts      # advanced static WorkspaceServerPlugin; requires host composition + restart
+  agent/index.ts       # optional native Pi extension; hot-reloadable through pi.extensions
   agent/skills/        # optional Pi skills
   shared/constants.ts  # platform-neutral constants
 ```
@@ -172,17 +194,19 @@ must keep React singleton-safe for hook panels, e.g. `resolve.dedupe` includes
 app's `node_modules`. Production Fastify-only hosts need a workspace-owned
 module asset endpoint before loading TS/TSX front plugin entries without Vite.
 
-Server-side reload is separately switchable in `createWorkspaceAgentServer`:
+Runtime reload is separately switchable in `createWorkspaceAgentServer`:
 
 ```ts
 createWorkspaceAgentServer({
-  boringPluginReload: true, // /reload refreshes Boring UI/server package assets
-  piPluginReload: true,      // package.json#pi contributions are forwarded/refreshed
+  pluginHotReload: true, // /reload refreshes front assets and dynamic pi.* snapshots
 })
 ```
 
-Set either to `false` to keep that side static/disabled while preserving explicit
-host-supplied plugin options.
+Set `pluginHotReload: false` for static production hosts. The workspace still
+takes a boot-time snapshot of discovered/default package `pi.*` resources and
+`pi.systemPrompt`; it just does not refresh them on `/reload`. Workspace server
+entries are always boot-time/static composition: restart the host process after
+changing `boring.server` code.
 
 ## Invariants
 
