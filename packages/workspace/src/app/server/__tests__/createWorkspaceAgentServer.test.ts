@@ -435,7 +435,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     })
 
     try {
-      const list = await app.inject({ method: "GET", url: "/api/agent-plugins" })
+      const list = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
       expect(list.statusCode).toBe(200)
       expect(list.json()).toEqual([
         expect.objectContaining({

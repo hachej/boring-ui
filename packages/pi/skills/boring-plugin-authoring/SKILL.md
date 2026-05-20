@@ -15,8 +15,12 @@ paths are correct — the parts agents most often invent or get wrong.
 
 ```sh
 # From inside the workspace root (or pass workspace path as 2nd arg):
-npx @hachej/boring-ui-cli scaffold-plugin <kebab-name>
+boring-ui scaffold-plugin <kebab-name>
 ```
+
+The workspace agent puts `.boring-agent/bin/` on `PATH` and provides the
+`boring-ui` shim there. If you are outside the agent workspace and do not have
+that binary, use `npx @hachej/boring-ui-cli scaffold-plugin <kebab-name>`.
 
 The scaffold writes the canonical hot-reload package skeleton:
 
