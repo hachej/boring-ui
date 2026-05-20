@@ -539,7 +539,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       const binding = await getBindingForRequest(request)
       return {
         harness: binding.harness,
-        workdir: binding.runtimeBundle.workspace.root,
+        workdir: binding.runtimeBundle.runtimeContext.runtimeCwd,
       }
     },
     sessionChangesTracker,
@@ -553,7 +553,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       const binding = await getBindingForRequest(request)
       return {
         harness: binding.harness,
-        workdir: binding.runtimeBundle.workspace.root,
+        workdir: binding.runtimeBundle.runtimeContext.runtimeCwd,
       }
     },
   })

@@ -7,7 +7,7 @@ import {
 
 import type { Sandbox } from '../../../shared/sandbox'
 import type { AgentTool, ToolResult } from '../../../shared/tool'
-import type { RuntimeBundle } from '../../runtime/mode'
+import { getRuntimeBundleStorageRoot, type RuntimeBundle } from '../../runtime/mode'
 import { buildBwrapArgs } from '../../sandbox/bwrap/buildBwrapArgs'
 import { withWorkspacePythonEnv } from '../../sandbox/workspacePythonEnv'
 import { vercelBashOps } from '../operations/vercel'
@@ -16,11 +16,12 @@ function shellEscape(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`
 }
 
-function bwrapSpawnHook(workspaceRoot: string): BashSpawnHook {
+export function bwrapSpawnHook(workspaceRoot: string): BashSpawnHook {
   const args = buildBwrapArgs(workspaceRoot)
   const bwrapPrefix = ['bwrap', ...args].map(shellEscape).join(' ')
   return (context) => ({
     ...context,
+    cwd: workspaceRoot,
     command: `${bwrapPrefix} bash -lc ${shellEscape(context.command)}`,
     env: withWorkspacePythonEnv({
       workspaceRoot,
@@ -38,18 +39,19 @@ function directSpawnHook(workspaceRoot: string): BashSpawnHook {
 }
 
 function bashOptionsForMode(bundle: RuntimeBundle): BashToolOptions {
+  const storageRoot = getRuntimeBundleStorageRoot(bundle)
   switch (bundle.sandbox.provider) {
     case 'vercel-sandbox':
       return { operations: vercelBashOps(bundle.sandbox) }
     case 'bwrap':
       return {
         operations: createLocalBashOperations(),
-        spawnHook: bwrapSpawnHook(bundle.workspace.root),
+        spawnHook: bwrapSpawnHook(storageRoot),
       }
     default:
       return {
         operations: createLocalBashOperations(),
-        spawnHook: directSpawnHook(bundle.workspace.root),
+        spawnHook: directSpawnHook(storageRoot),
       }
   }
 }

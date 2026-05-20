@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from 'vitest'
 
 import { restoreEnvForTest, setEnvForTest } from '../../../config/env'
 import { createNodeWorkspace } from '../../../workspace/createNodeWorkspace'
-import { createBwrapSandbox } from '../createBwrapSandbox'
+import { computeSandboxCwd, createBwrapSandbox } from '../createBwrapSandbox'
 
 const tempDirs: string[] = []
 const HAS_BWRAP = (() => {
@@ -32,6 +32,31 @@ async function setupSandbox() {
 
   return { sandbox, workspace, root }
 }
+
+test('local runtime surfaces expose /workspace without leaking host root', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'boring-ui-bwrap-runtime-'))
+  tempDirs.push(root)
+  const runtimeContext = { runtimeCwd: '/workspace' }
+
+  const workspace = createNodeWorkspace(root, { runtimeContext })
+  const sandbox = createBwrapSandbox({ hostWorkspaceRoot: root, runtimeContext })
+
+  expect(workspace.root).toBe('/workspace')
+  expect(workspace.runtimeContext.runtimeCwd).toBe('/workspace')
+  expect(sandbox.runtimeContext.runtimeCwd).toBe('/workspace')
+  expect(workspace.root).toBe(sandbox.runtimeContext.runtimeCwd)
+})
+
+test('computeSandboxCwd rejects runtime namespace traversal', () => {
+  const root = '/tmp/host-workspace'
+
+  expect(() => computeSandboxCwd(root, '/workspace', '/workspace/..')).toThrow(
+    'cwd must stay within workspace root',
+  )
+  expect(() => computeSandboxCwd(root, '/workspace', '/workspace/../tmp')).toThrow(
+    'cwd must stay within workspace root',
+  )
+})
 
 test('init verifies bwrap binary exists on PATH', async () => {
   const root = await mkdtemp(join(tmpdir(), 'boring-ui-bwrap-check-'))

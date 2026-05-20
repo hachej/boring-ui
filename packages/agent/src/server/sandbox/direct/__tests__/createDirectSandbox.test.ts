@@ -19,10 +19,12 @@ async function initSandbox() {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'boring-ui-direct-sandbox-'))
   tempDirs.push(workspaceRoot)
 
-  const sandbox = createDirectSandbox()
+  const runtimeContext = { runtimeCwd: workspaceRoot }
+  const sandbox = createDirectSandbox({ runtimeContext })
   await sandbox.init?.({
     workspace: {
-      root: workspaceRoot,
+      root: runtimeContext.runtimeCwd,
+      runtimeContext,
       async readFile() {
         throw new Error('not implemented in test')
       },

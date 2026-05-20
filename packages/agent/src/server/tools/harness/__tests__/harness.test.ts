@@ -7,11 +7,13 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { ExecResult, Sandbox } from '../../../../shared/sandbox'
 import type { Workspace } from '../../../../shared/workspace'
 import type { RuntimeBundle } from '../../../runtime/mode'
-import { buildHarnessAgentTools } from '../index'
+import { buildHarnessAgentTools, bwrapSpawnHook } from '../index'
 
 function mockWorkspace(root = '/workspace'): Workspace {
+  const runtimeContext = { runtimeCwd: root }
   return {
-    root,
+    root: runtimeContext.runtimeCwd,
+    runtimeContext,
     readFile: vi.fn(async () => ''),
     writeFile: vi.fn(async () => {}),
     unlink: vi.fn(async () => {}),
@@ -23,6 +25,7 @@ function mockWorkspace(root = '/workspace'): Workspace {
 }
 
 function mockSandbox(provider: string, capabilities: string[] = ['exec']): Sandbox {
+  const runtimeContext = { runtimeCwd: '/workspace' }
   const defaultResult: ExecResult = {
     stdout: new Uint8Array(),
     stderr: new Uint8Array(),
@@ -35,14 +38,18 @@ function mockSandbox(provider: string, capabilities: string[] = ['exec']): Sandb
     placement: provider === 'vercel-sandbox' ? 'remote' : 'server',
     provider,
     capabilities,
+    runtimeContext,
     exec: vi.fn(async () => defaultResult),
   }
 }
 
-function mockBundle(provider: string, capabilities?: string[], workspaceRoot = '/workspace'): RuntimeBundle {
+function mockBundle(provider: string, capabilities?: string[], workspaceRoot = '/workspace', storageRoot?: string): RuntimeBundle {
+  const runtimeContext = { runtimeCwd: workspaceRoot }
   return {
+    runtimeContext,
+    storageRoot,
     workspace: mockWorkspace(workspaceRoot),
-    sandbox: mockSandbox(provider, capabilities),
+    sandbox: { ...mockSandbox(provider, capabilities), runtimeContext },
     fileSearch: { search: vi.fn(async () => []) },
   }
 }
@@ -79,6 +86,18 @@ describe('buildHarnessAgentTools', () => {
     const tools = buildHarnessAgentTools(bundle)
 
     expect(tools.map((t) => t.name)).toEqual(['bash'])
+  })
+
+  test('bwrap spawn hook binds host storage root while runtime cwd is /workspace', async () => {
+    const workspaceRoot = await makeTempWorkspace()
+    const hook = bwrapSpawnHook(workspaceRoot)
+
+    const context = hook({ command: 'pwd', cwd: '/workspace', env: {} })
+
+    expect(context.cwd).toBe(workspaceRoot)
+    expect(context.command).toContain(`'--bind' '${workspaceRoot}' '/workspace'`)
+    expect(context.command).not.toContain(`'--bind' '/workspace' '/workspace'`)
+    expect(context.env?.BORING_AGENT_WORKSPACE_ROOT).toBe('/workspace')
   })
 
   test('vercel-sandbox mode returns bash tool', () => {

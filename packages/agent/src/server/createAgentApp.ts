@@ -169,13 +169,13 @@ export async function createAgentApp(
   await app.register(searchRoutes, { fileSearch: runtimeBundle.fileSearch })
   await app.register(chatRoutes, {
     harness,
-    workdir: runtimeBundle.workspace.root,
+    workdir: runtimeBundle.runtimeContext.runtimeCwd,
     sessionChangesTracker,
   })
   await app.register(sessionRoutes, {
     sessionStore: harness.sessions as unknown as SessionStore,
     harness,
-    workdir: runtimeBundle.workspace.root,
+    workdir: runtimeBundle.runtimeContext.runtimeCwd,
   })
   await app.register(systemPromptRoutes, { harness })
   await app.register(modelsRoutes)

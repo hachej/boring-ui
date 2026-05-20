@@ -1,8 +1,9 @@
 import { access } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { spawn } from 'node:child_process'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path'
 
+import type { WorkspaceRuntimeContext } from '../../../shared/runtime'
 import type { Sandbox } from '../../../shared/sandbox'
 import type { Workspace } from '../../../shared/workspace'
 import {
@@ -10,6 +11,7 @@ import {
   KILL_GRACE_SECONDS,
   buildBwrapArgs,
 } from './buildBwrapArgs'
+import { getNodeWorkspaceHostRoot } from '../../workspace/createNodeWorkspace'
 import { withWorkspacePythonEnv } from '../workspacePythonEnv'
 
 const DEFAULT_TIMEOUT_MS = BWRAP_TIMEOUT_SECONDS * 1_000
@@ -71,18 +73,26 @@ function terminateProcess(
   }
 }
 
-function computeSandboxCwd(workspaceRoot: string, cwd?: string): string {
-  if (!cwd) return SANDBOX_HOME
+export function computeSandboxCwd(workspaceRoot: string, runtimeCwd: string, cwd?: string): string {
+  if (!cwd) return runtimeCwd
+  const normalizedRuntimeCwd = posix.normalize(runtimeCwd).replace(/\/+$/, '') || '/'
+  if (cwd === normalizedRuntimeCwd) return normalizedRuntimeCwd
+  if (cwd.startsWith(`${normalizedRuntimeCwd}/`)) {
+    const normalizedCwd = posix.normalize(cwd)
+    if (normalizedCwd === normalizedRuntimeCwd) return normalizedRuntimeCwd
+    if (normalizedCwd.startsWith(`${normalizedRuntimeCwd}/`)) return normalizedCwd
+    throw new Error('cwd must stay within workspace root')
+  }
 
   const absoluteCwd = isAbsolute(cwd) ? cwd : resolve(workspaceRoot, cwd)
   const relPath = relative(workspaceRoot, absoluteCwd)
-  if (relPath === '') return SANDBOX_HOME
+  if (relPath === '') return normalizedRuntimeCwd
   if (relPath === '..' || relPath.startsWith(`..${sep}`)) {
     throw new Error('cwd must stay within workspace root')
   }
 
   const posixRelPath = relPath.split(sep).join('/')
-  return `${SANDBOX_HOME}/${posixRelPath}`
+  return `${normalizedRuntimeCwd}/${posixRelPath}`
 }
 
 function withSandboxCwd(baseArgs: string[], sandboxCwd: string): string[] {
@@ -156,16 +166,28 @@ async function buildGlobalToolMounts(workspaceRoot: string): Promise<string[]> {
   return args
 }
 
-export function createBwrapSandbox(): Sandbox {
+export interface CreateBwrapSandboxOptions {
+  hostWorkspaceRoot?: string
+  runtimeContext?: WorkspaceRuntimeContext
+}
+
+export function createBwrapSandbox(opts: CreateBwrapSandboxOptions = {}): Sandbox {
   let workspace: Workspace | null = null
+  let hostWorkspaceRoot = opts.hostWorkspaceRoot
+  let runtimeContext = opts.runtimeContext ?? { runtimeCwd: SANDBOX_HOME }
 
   return {
     id: 'bwrap',
     placement: 'server',
     provider: 'bwrap',
     capabilities: ['exec'],
+    get runtimeContext() {
+      return runtimeContext
+    },
     async init(ctx) {
       workspace = ctx.workspace
+      hostWorkspaceRoot = opts.hostWorkspaceRoot ?? getNodeWorkspaceHostRoot(ctx.workspace) ?? ctx.workspace.root
+      runtimeContext = opts.runtimeContext ?? { runtimeCwd: SANDBOX_HOME }
       await assertBwrapAvailable()
     },
     async exec(cmd, opts) {
@@ -176,8 +198,8 @@ export function createBwrapSandbox(): Sandbox {
       const start = Date.now()
       const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS
       const maxOutputBytes = opts?.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES
-      const workspaceRoot = workspace.root
-      const sandboxCwd = computeSandboxCwd(workspaceRoot, opts?.cwd)
+      const workspaceRoot = hostWorkspaceRoot ?? workspace.root
+      const sandboxCwd = computeSandboxCwd(workspaceRoot, runtimeContext.runtimeCwd, opts?.cwd)
       const postWorkspaceArgs = await buildGlobalToolMounts(workspaceRoot)
       const baseArgs = buildBwrapArgs(workspaceRoot, { postWorkspaceArgs })
       const args = [

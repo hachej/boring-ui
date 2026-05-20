@@ -1,6 +1,7 @@
 // @hachej/boring-agent — shared (platform-agnostic) public API
 
 export type { AgentHarness, SendMessageInput, RunContext } from './harness'
+export type { WorkspaceRuntimeContext } from './runtime'
 export type { Workspace, Entry, Stat } from './workspace'
 export type {
   Sandbox,
