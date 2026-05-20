@@ -76,19 +76,19 @@ export function chatRoutes(
   const lastFollowUpBySession = new Map<string, { seq: number; nonce?: string }>()
   const cancelledFollowUpsBySession = new Map<string, Set<string>>()
   const MAX_FOLLOWUP_CACHE = 5000
-  function followUpCancelKey(clientNonce?: string, clientSeq?: number): string | null {
-    if (clientNonce) return `nonce:${clientNonce}`
-    if (clientSeq !== undefined) return `seq:${clientSeq}`
-    return null
+  function followUpCancelKeys(clientNonce?: string, clientSeq?: number): string[] {
+    return [
+      clientNonce ? `nonce:${clientNonce}` : undefined,
+      clientSeq !== undefined ? `seq:${clientSeq}` : undefined,
+    ].filter((key): key is string => Boolean(key))
   }
   function isFollowUpCancelled(sessionId: string, clientNonce?: string, clientSeq?: number): boolean {
     const cancelled = cancelledFollowUpsBySession.get(sessionId)
     if (!cancelled) return false
-    const keys = [followUpCancelKey(clientNonce, undefined), followUpCancelKey(undefined, clientSeq)].filter(Boolean) as string[]
-    return keys.some((key) => cancelled.has(key))
+    return followUpCancelKeys(clientNonce, clientSeq).some((key) => cancelled.has(key))
   }
   function markFollowUpCancelled(sessionId: string, clientNonce?: string, clientSeq?: number): void {
-    const keys = [followUpCancelKey(clientNonce, undefined), followUpCancelKey(undefined, clientSeq)].filter(Boolean) as string[]
+    const keys = followUpCancelKeys(clientNonce, clientSeq)
     if (keys.length === 0) return
     const cancelled = cancelledFollowUpsBySession.get(sessionId) ?? new Set<string>()
     for (const key of keys) cancelled.add(key)
