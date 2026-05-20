@@ -131,6 +131,47 @@ describe("FetchClient", () => {
     expect(opts.method).toBe("DELETE")
   })
 
+  // REGRESSION: body-less requests (DELETE, GET, …) must NOT carry
+  // Content-Type: application/json. Fastify's JSON parser rejects empty
+  // bodies on that content type with FST_ERR_CTP_EMPTY_JSON_BODY ("Body
+  // cannot be empty when content-type is set to 'application/json'"), which
+  // surfaced to the user as a generic "Delete failed HTTP 400". The earlier
+  // test only checked URL + method and missed this.
+  it("DELETE does not send Content-Type header (body-less request)", async () => {
+    mockFetch.mockReturnValue(ok({ ok: true }))
+    const client = new FetchClient({ apiBaseUrl: "" })
+    await client.deleteFile("/a.ts")
+    const [, opts] = mockFetch.mock.calls[0]
+    expect(opts.body).toBeUndefined()
+    expect((opts.headers ?? {})["Content-Type"]).toBeUndefined()
+  })
+
+  // Hardening note: if a host passes Content-Type inside authHeaders (some
+  // auth wrappers do) and we didn't filter it out, every body-less DELETE
+  // would re-acquire the buggy header and 400 again, defeating the fix above.
+  it("strips Content-Type from authHeaders so body-less DELETEs never re-acquire the bug", async () => {
+    mockFetch.mockReturnValue(ok({ ok: true }))
+    const client = new FetchClient({
+      apiBaseUrl: "",
+      // Mixed-case key on purpose: the strip is case-insensitive.
+      authHeaders: { "Content-type": "application/json", Authorization: "Bearer tok" },
+    })
+    await client.deleteFile("/a.ts")
+    const headers = (mockFetch.mock.calls[0][1].headers ?? {}) as Record<string, string>
+    const ct = headers["Content-Type"] ?? headers["content-type"] ?? headers["Content-type"]
+    expect(ct).toBeUndefined()
+    expect(headers.Authorization).toBe("Bearer tok")
+  })
+
+  it("POST/PUT requests with a body still set Content-Type: application/json", async () => {
+    mockFetch.mockReturnValue(ok({ ok: true }))
+    const client = new FetchClient({ apiBaseUrl: "" })
+    await client.createDir("/src/new")
+    const [, opts] = mockFetch.mock.calls[0]
+    expect(opts.body).toBeTruthy()
+    expect((opts.headers ?? {})["Content-Type"]).toBe("application/json")
+  })
+
   it("POST /api/v1/dirs creates directory", async () => {
     mockFetch.mockReturnValue(ok({ ok: true }))
     const client = new FetchClient({ apiBaseUrl: "" })
