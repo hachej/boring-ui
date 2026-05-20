@@ -83,6 +83,14 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   const baselineMtimeRef = useRef<number | null>(null)
   // Ref so the save callback (defined before lifecycle) can call lifecycle.notifySaved.
   const notifySavedRef = useRef<((mtime: number) => void) | null>(null)
+  // Monotonic save token. Each adapter.save() call bumps this and captures
+  // its own gen; before mutating shared refs (baseline, dirty, conflict) it
+  // re-checks the current value. If a watchdog in useEditorLifecycle has
+  // abandoned the call and a newer save has already started, the late
+  // resolver finds saveGenRef has moved on and skips its mutations —
+  // otherwise it would clobber baselineMtimeRef with a stale mtime and
+  // mark a still-dirty buffer as clean.
+  const saveGenRef = useRef(0)
 
   // Conflict state
   const [conflict, setConflict] = useState<FileConflictError | null>(null)
@@ -117,12 +125,20 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
       ? {
           isDirty: () => dirtyRef.current,
           save: async () => {
+            // Capture our generation so a watchdog-abandoned-then-resumed
+            // sequence doesn't let the late writeFile mutate state that a
+            // newer save has already updated.
+            const myGen = ++saveGenRef.current
             try {
               const result = await writeFile({
                 path,
                 content: contentRef.current,
                 expectedMtimeMs: baselineMtimeRef.current ?? undefined,
               })
+              // Stale resolver: a newer save started after a watchdog timeout
+              // gave up on us. Don't touch shared state — the newer save is
+              // the source of truth.
+              if (saveGenRef.current !== myGen) return
               if (typeof result.mtimeMs === "number") {
                 baselineMtimeRef.current = result.mtimeMs
                 notifySavedRef.current?.(result.mtimeMs)
@@ -130,7 +146,22 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
               dirtyRef.current = false
               setConflict(null)
             } catch (err) {
+              // Late-resolved errors get the same guard — a stale FileConflictError
+              // (about a baseline two saves ago) should not raise the banner.
+              if (saveGenRef.current !== myGen) throw err
               if (err instanceof FileConflictError) {
+                // Show the banner so the user knows the file changed
+                // externally, but also bump the baseline to the server's
+                // current mtime. Without this, every subsequent autosave
+                // fails OCC against the same stale baseline and the
+                // user's continued typing never persists until they
+                // explicitly Overwrite. With the bump, the next autosave
+                // (triggered by the next keystroke) force-overwrites the
+                // external change — treating continued typing as
+                // implicit consent that "my edits win".
+                if (typeof err.currentMtimeMs === "number") {
+                  baselineMtimeRef.current = err.currentMtimeMs
+                }
                 setConflict(err)
                 throw err
               }
@@ -170,10 +201,13 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
 
   // Show the conflict banner immediately when the file is modified externally
   // while the editor has unsaved changes, instead of waiting for the next
-  // save to fail with a 409.
+  // save to fail with a 409. Bump the baseline at the same time so the
+  // next autosave force-overwrites the external change — matching the
+  // 409-recovery path in adapter.save above (continued typing wins).
   useEffect(() => {
     if (!lifecycle.externalChangeWhileDirty || fileData?.mtimeMs == null) return
     setConflict(new FileConflictError(path, fileData.mtimeMs, baselineMtimeRef.current))
+    baselineMtimeRef.current = fileData.mtimeMs
     lifecycle.ackExternalChange()
   }, [lifecycle.externalChangeWhileDirty, lifecycle, fileData, path])
 
@@ -204,24 +238,44 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
     contentRef.current = fileData.content
     baselineMtimeRef.current = fileData.mtimeMs ?? null
     dirtyRef.current = false
+    // Sync the lifecycle's lastKnownMtimeRef + clear externalChangeWhileDirty
+    // so a follow-up SSE for the same mtime doesn't re-raise the conflict.
+    if (typeof fileData.mtimeMs === "number") {
+      notifySavedRef.current?.(fileData.mtimeMs)
+    }
     setConflict(null)
   }, [fileData, setContentState])
 
   const onOverwrite = useCallback(async () => {
+    // Bump the save generation so any pending autosave (e.g., one that the
+    // watchdog already abandoned) cannot later resolve and undo our state
+    // mutations below.
+    const myGen = ++saveGenRef.current
     try {
-      // Use content state (not ref) to ensure we have the latest content
-      // in case the user typed after the conflict was detected
-      const contentToSave = content ?? contentRef.current
+      // Use contentRef.current — it is updated SYNCHRONOUSLY by setContent
+      // (see line above) so it always carries the latest keystrokes the
+      // user typed, including any keystrokes between conflict detection
+      // and clicking Overwrite. The React `content` state is one render
+      // behind during fast typing, so reading it first would save stale
+      // content. (Earlier comment claimed the opposite — it was wrong.)
+      const contentToSave = contentRef.current
       const result = await writeFile({ path, content: contentToSave })
+      if (saveGenRef.current !== myGen) return
       if (typeof result.mtimeMs === "number") {
         baselineMtimeRef.current = result.mtimeMs
+        // notifySaved updates the lifecycle's lastKnownMtimeRef AND clears
+        // externalChangeWhileDirty. Without it, the SSE echo of our own
+        // overwrite (carrying the new mtime) reads as another external
+        // change against the still-stale lastKnownMtimeRef, and the
+        // banner immediately reappears.
+        notifySavedRef.current?.(result.mtimeMs)
       }
       dirtyRef.current = false
       setConflict(null)
     } catch {
       // Leave conflict UI up so user can retry
     }
-  }, [path, writeFile, content])
+  }, [path, writeFile])
 
   const save = useCallback(async () => {
     if (!adapter || !dirtyRef.current) return
