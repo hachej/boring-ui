@@ -953,6 +953,125 @@ describe('ChatPanel (shadcn)', () => {
       expect(html.indexOf('QUEUED_USER_TEXT')).toBeLessThan(html.indexOf('QUEUED_ASSISTANT_TEXT'))
     })
 
+    test('does not flash pi-only current response during streaming when prior SDK history is visible', () => {
+      mockPiProjection.piMessages = [
+        {
+          id: 'pi-later-a1',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'PI_LATER_SHOULD_NOT_FLASH' }],
+        },
+      ]
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          {
+            id: 'sdk-old-a1',
+            role: 'assistant',
+            parts: [{ type: 'text', text: 'OLD_SDK_TEXT' }],
+          },
+          {
+            id: 'later-envelope',
+            role: 'assistant',
+            parts: [
+              { type: 'data-pi-message-start', data: { messageId: 'pi-later-a1', role: 'assistant' } } as any,
+              { type: 'data-pi-text-delta', data: { messageId: 'pi-later-a1', partId: '0', delta: 'early' } } as any,
+            ],
+          },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'streaming',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-prior-sdk-no-current-pi-flash" />)
+      expect(html).toContain('OLD_SDK_TEXT')
+      expect(html).not.toContain('PI_LATER_SHOULD_NOT_FLASH')
+    })
+
+    test('renders pi-only fallback response after prior SDK-visible history settles', () => {
+      mockPiProjection.piMessages = [
+        {
+          id: 'sdk-old-a1',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'OLD_SDK_TEXT' }],
+        },
+        {
+          id: 'pi-later-a1',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'PI_LATER_READY_TEXT' }],
+        },
+      ]
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          {
+            id: 'sdk-old-a1',
+            role: 'assistant',
+            parts: [{ type: 'text', text: 'OLD_SDK_TEXT' }],
+          },
+          {
+            id: 'later-envelope',
+            role: 'assistant',
+            parts: [
+              { type: 'data-pi-message-start', data: { messageId: 'pi-later-a1', role: 'assistant' } } as any,
+              { type: 'data-pi-message-end', data: { messageId: 'pi-later-a1', role: 'assistant', text: 'PI_LATER_READY_TEXT' } } as any,
+            ],
+          },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-prior-sdk-current-pi-ready" />)
+      expect(html).toContain('OLD_SDK_TEXT')
+      expect(html).toContain('PI_LATER_READY_TEXT')
+      expect((html.match(/OLD_SDK_TEXT/g) ?? []).length).toBe(1)
+    })
+
+    test('keeps settled pi-only fallback visible in order during the next stream', () => {
+      mockPiProjection.piMessages = [
+        {
+          id: 'pi-later-a1',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'PI_LATER_READY_TEXT' }],
+        },
+      ]
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          {
+            id: 'sdk-old-a1',
+            role: 'assistant',
+            parts: [{ type: 'text', text: 'OLD_SDK_TEXT' }],
+          },
+          {
+            id: 'later-envelope',
+            role: 'assistant',
+            parts: [
+              { type: 'data-pi-message-start', data: { messageId: 'pi-later-a1', role: 'assistant' } } as any,
+              { type: 'data-pi-message-end', data: { messageId: 'pi-later-a1', role: 'assistant', text: 'PI_LATER_READY_TEXT' } } as any,
+            ],
+          },
+          {
+            id: 'next-user',
+            role: 'user',
+            parts: [{ type: 'text', text: 'NEXT_USER_TEXT' }],
+          },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'streaming',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-pi-fallback-next-stream" />)
+      expect(html).toContain('OLD_SDK_TEXT')
+      expect(html).toContain('PI_LATER_READY_TEXT')
+      expect(html).toContain('NEXT_USER_TEXT')
+      expect(html.indexOf('OLD_SDK_TEXT')).toBeLessThan(html.indexOf('PI_LATER_READY_TEXT'))
+      expect(html.indexOf('PI_LATER_READY_TEXT')).toBeLessThan(html.indexOf('NEXT_USER_TEXT'))
+    })
+
     test('falls back to pi projection for persisted data-pi-only history', () => {
       mockPiProjection.piMessages = [
         {
