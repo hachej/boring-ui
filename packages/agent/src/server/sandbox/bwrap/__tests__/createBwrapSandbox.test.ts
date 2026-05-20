@@ -26,8 +26,9 @@ async function setupSandbox() {
   const root = await mkdtemp(join(tmpdir(), 'boring-ui-bwrap-sandbox-'))
   tempDirs.push(root)
 
-  const workspace = createNodeWorkspace(root)
-  const sandbox = createBwrapSandbox()
+  const runtimeContext = { runtimeCwd: '/workspace' }
+  const workspace = createNodeWorkspace(root, { runtimeContext })
+  const sandbox = createBwrapSandbox({ hostWorkspaceRoot: root, runtimeContext })
   await sandbox.init?.({ workspace, sessionId: 'session-1' })
 
   return { sandbox, workspace, root }
@@ -95,6 +96,37 @@ describeIfBwrap('createBwrapSandbox', () => {
     const result = await sandbox.exec('cat /workspace/note.txt')
 
     expect(Buffer.from(result.stdout).toString('utf-8')).toBe('hello-from-workspace')
+    expect(result.exitCode).toBe(0)
+  })
+
+  test('default cwd and PWD are /workspace and relative commands run there', async () => {
+    const { sandbox, workspace, root } = await setupSandbox()
+    await workspace.writeFile('note.txt', 'default-cwd-ok')
+
+    const result = await sandbox.exec(
+      'printf "%s\\n%s\\n" "$(pwd)" "$PWD" && cat note.txt',
+      { env: { PATH: process.env.PATH ?? '', PWD: root } },
+    )
+    const output = Buffer.from(result.stdout).toString('utf-8')
+
+    expect(output).toBe('/workspace\n/workspace\ndefault-cwd-ok')
+    expect(output).not.toContain(root)
+    expect(result.exitCode).toBe(0)
+  })
+
+  test('explicit runtime cwd sets pwd and PWD inside /workspace', async () => {
+    const { sandbox, workspace, root } = await setupSandbox()
+    await workspace.mkdir('nested', { recursive: true })
+    await workspace.writeFile('nested/file.txt', 'runtime-cwd-ok')
+
+    const result = await sandbox.exec(
+      'printf "%s\\n%s\\n" "$(pwd)" "$PWD" && cat file.txt',
+      { cwd: '/workspace/nested', env: { PATH: process.env.PATH ?? '', PWD: root } },
+    )
+    const output = Buffer.from(result.stdout).toString('utf-8')
+
+    expect(output).toBe('/workspace/nested\n/workspace/nested\nruntime-cwd-ok')
+    expect(output).not.toContain(root)
     expect(result.exitCode).toBe(0)
   })
 

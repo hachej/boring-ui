@@ -230,7 +230,10 @@ export function createBwrapSandbox(opts: CreateBwrapSandboxOptions = {}): Sandbo
 
       return await new Promise((resolve, reject) => {
         const child = spawn('bwrap', args, {
-          env: withWorkspacePythonEnv({ workspaceRoot, env: opts?.env, sandboxRoot: SANDBOX_HOME }),
+          env: {
+            ...withWorkspacePythonEnv({ workspaceRoot, env: opts?.env, sandboxRoot: SANDBOX_HOME }),
+            PWD: sandboxCwd,
+          },
           stdio: ['ignore', 'pipe', 'pipe'],
           detached: process.platform !== 'win32',
         })

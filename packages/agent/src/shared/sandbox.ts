@@ -91,6 +91,7 @@ export interface Sandbox {
 }
 
 export interface ExecOptions {
+  /** Runtime-visible cwd. Relative paths resolve from `runtimeContext.runtimeCwd`. */
   cwd?: string
   env?: Record<string, string>
   signal?: AbortSignal
