@@ -1,5 +1,6 @@
-import { execFile as execFileCallback, execFileSync } from "node:child_process"
+import { execFile as execFileCallback, execFileSync, spawn } from "node:child_process"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { promisify } from "node:util"
@@ -38,6 +39,38 @@ async function runCli(args: string[], env: Record<string, string>) {
     env: testEnv(env),
     timeout: 10_000,
   })
+}
+
+async function getFreePort(): Promise<number> {
+  return await new Promise((resolvePort, reject) => {
+    const server = createServer()
+    server.once("error", reject)
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address()
+      if (!address || typeof address === "string") {
+        server.close(() => reject(new Error("missing server port")))
+        return
+      }
+      const port = address.port
+      server.close(() => resolvePort(port))
+    })
+  })
+}
+
+async function waitForOk(url: string): Promise<Response> {
+  const deadline = Date.now() + 10_000
+  let lastError: unknown
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url)
+      if (response.ok) return response
+      lastError = new Error(`HTTP ${response.status}`)
+    } catch (error) {
+      lastError = error
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 250))
+  }
+  throw lastError instanceof Error ? lastError : new Error(`timed out waiting for ${url}`)
 }
 
 test("package exposes an installable boring-ui bin with published assets", async () => {
@@ -92,6 +125,34 @@ test("installed CLI workspace subcommands use an isolated registry", async () =>
   await expect(runCli(["workspaces", "list"], env)).resolves.toMatchObject({
     stdout: expect.stringContaining("No workspaces"),
   })
+}, 20_000)
+
+test("installed CLI serves built assets with browser-safe MIME types", async () => {
+  const project = await makeTempDir("boring-cli-static-project-")
+  const indexHtml = await readFile(join(cliRoot, "public", "index.html"), "utf-8")
+  const scriptPath = indexHtml.match(/src="\/(assets\/[^\"]+\.js)"/)?.[1]
+  const stylesheetPath = indexHtml.match(/href="\/(assets\/[^\"]+\.css)"/)?.[1]
+  if (!scriptPath || !stylesheetPath) throw new Error(`missing assets in index.html: ${indexHtml}`)
+
+  const port = await getFreePort()
+  const child = spawn(process.execPath, [distBin, project, "--host", "127.0.0.1", "--port", String(port)], {
+    cwd: cliRoot,
+    env: testEnv({ BROWSER: "none" }),
+    stdio: "ignore",
+  })
+
+  try {
+    const script = await waitForOk(`http://127.0.0.1:${port}/${scriptPath}`)
+    const stylesheet = await waitForOk(`http://127.0.0.1:${port}/${stylesheetPath}`)
+    const fallback = await waitForOk(`http://127.0.0.1:${port}/workspace/deep-link`)
+
+    expect(script.headers.get("content-type")).toContain("application/javascript")
+    expect(stylesheet.headers.get("content-type")).toContain("text/css")
+    expect(fallback.headers.get("content-type")).toContain("text/html")
+  } finally {
+    child.kill()
+    await new Promise((resolveExit) => child.once("exit", resolveExit))
+  }
 }, 20_000)
 
 test("installed CLI rejects file paths as local workspaces", async () => {
