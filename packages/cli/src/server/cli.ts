@@ -85,7 +85,6 @@ async function registerStatic(app: FastifyInstance, publicDir: string) {
   await app.register(fastifyStatic, {
     root: publicDir,
     prefix: "/",
-    wildcard: false,
   })
 
   app.setNotFoundHandler(async (req, reply) => {
