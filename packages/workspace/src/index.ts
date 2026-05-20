@@ -80,7 +80,7 @@ export { cn } from "./front/lib/utils"
 
 // Registry & panel management
 export { PanelRegistry } from "./front/registry/PanelRegistry"
-export { CommandRegistry } from "./front/registry/CommandRegistry"
+export { CommandRegistry } from "./shared/plugins/CommandRegistry"
 export {
   RegistryProvider,
   useRegistry,
