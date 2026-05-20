@@ -186,12 +186,25 @@ my-plugin/
 
 Hot-loaded front plugins currently use the Vite dev server's `/@fs/` module
 transform path. `WorkspaceProvider` therefore defaults front plugin hot-reload to
-`frontPluginHotReload="vite"` only in dev and `false` in production. Vite hosts
-must keep React singleton-safe for hook panels, e.g. `resolve.dedupe` includes
-`react` and `react-dom`, and aliases cover `react`, `react-dom`,
-`react-dom/client`, `react/jsx-runtime`, and `react/jsx-dev-runtime` to the host
-app's `node_modules`. Production Fastify-only hosts need a workspace-owned
-module asset endpoint before loading TS/TSX front plugin entries without Vite.
+`frontPluginHotReload="vite"` only in dev and `false` in production. Apps that
+consume built `@hachej/boring-workspace` dist for a dev playground should pass
+`frontPluginHotReload="vite"` explicitly; the dist bundle cannot infer the host
+app's dev mode reliably.
+
+Vite hosts must keep React singleton-safe for hook panels, e.g.
+`resolve.dedupe` includes `react` and `react-dom`, and aliases cover `react`,
+`react-dom`, `react-dom/client`, `react/jsx-runtime`, and
+`react/jsx-dev-runtime` to the host app's `node_modules`.
+
+Runtime plugin files under `.pi/extensions` are **not** normal Vite HMR
+boundaries. The host should suppress Vite HMR for those files and exclude them
+from React Refresh instrumentation; `/reload` is the update boundary. Without
+that, edits can full-page reload or leave a stale React hook dispatcher and
+surface `Invalid hook call` / `resolveDispatcher() is null` even for valid
+function components.
+
+Production Fastify-only hosts need a workspace-owned module asset endpoint
+before loading TS/TSX front plugin entries without Vite.
 
 Runtime reload is separately switchable in `createWorkspaceAgentServer`:
 

@@ -347,12 +347,17 @@ restarting the workspace process.
 
 ## After editing — tell the user to /reload
 
-Hot reload is driven by the user (via `/reload`), not by the agent. After
-front or Pi edits, end your message with a line telling the user to run
-`/reload`. The workspace then re-scans `.pi/extensions/` and refreshes front
-assets plus Pi extensions/skills/prompts. If you changed `boring.server`, say
-that `/reload` is not enough: the host must statically compose that server entry
-and restart the workspace process.
+Hot reload is driven by the user (via `/reload`), not by the agent and not by
+Vite HMR. After front or Pi edits, end your message with a line telling the user
+to run `/reload`. The workspace then re-scans `.pi/extensions/` and refreshes
+front assets plus Pi extensions/skills/prompts. If you changed `boring.server`,
+say that `/reload` is not enough: the host must statically compose that server
+entry and restart the workspace process.
+
+If the user reports a page reload, `Invalid hook call`, or
+`resolveDispatcher() is null` after editing a plugin, suspect host Vite config
+first: `.pi/extensions` files must be excluded from React Refresh and ignored by
+Vite HMR so the `/reload` bridge owns runtime plugin updates.
 
 ## More detail
 
