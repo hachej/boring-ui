@@ -3,7 +3,7 @@ import { act, render, screen, waitFor } from "@testing-library/react"
 import { SurfaceShell, type SurfaceShellApi, type SurfaceShellProps } from "../SurfaceShell"
 import { RegistryProvider } from "../../../registry"
 import { PanelRegistry } from "../../../registry/PanelRegistry"
-import { CommandRegistry } from "../../../registry/CommandRegistry"
+import { CommandRegistry } from "../../../../shared/plugins/CommandRegistry"
 
 let capturedSurfaceStorageKey: string | undefined
 

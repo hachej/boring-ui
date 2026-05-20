@@ -1,8 +1,8 @@
 import { describe, expect, test, vi } from "vitest"
-import { CommandRegistry } from "../CommandRegistry"
+import { CommandRegistry } from "../../../shared/plugins/CommandRegistry"
 import { PanelRegistry } from "../PanelRegistry"
-import { SurfaceResolverRegistry } from "../SurfaceResolverRegistry"
-import { CatalogRegistry } from "../../plugin/CatalogRegistry"
+import { SurfaceResolverRegistry } from "../../../shared/plugins/SurfaceResolverRegistry"
+import { CatalogRegistry } from "../../../shared/plugins/CatalogRegistry"
 
 describe("Phase 3 — atomic replaceByPluginId", () => {
   test("CommandRegistry: drops owned commands and registers new set in one emit", () => {

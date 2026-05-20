@@ -11,10 +11,10 @@ import {
   type ReactNode,
 } from "react"
 import { PanelRegistry } from "../registry/PanelRegistry"
-import { CommandRegistry } from "../registry/CommandRegistry"
-import { SurfaceResolverRegistry } from "../registry/SurfaceResolverRegistry"
+import { CommandRegistry } from "../../shared/plugins/CommandRegistry"
+import { SurfaceResolverRegistry } from "../../shared/plugins/SurfaceResolverRegistry"
 import { RegistryProvider, useCatalogRegistry, useCommandRegistry } from "../registry/RegistryProvider"
-import { CatalogRegistry } from "../plugin/CatalogRegistry"
+import { CatalogRegistry } from "../../shared/plugins/CatalogRegistry"
 import { PluginErrorProvider } from "../plugin/PluginErrorContext"
 import { PluginInspector } from "../plugin/PluginInspector"
 import { createWorkspaceStore } from "../store"

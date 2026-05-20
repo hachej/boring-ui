@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
-import { CommandRegistry } from "../CommandRegistry"
+import { CommandRegistry } from "../../../shared/plugins/CommandRegistry"
 import { PanelRegistry } from "../PanelRegistry"
 
 describe("CommandRegistry subscribe", () => {
