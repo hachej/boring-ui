@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify"
 import { execSync } from "node:child_process"
 import { existsSync } from "node:fs"
+import { createRequire } from "node:module"
 import { basename, isAbsolute, join, resolve } from "node:path"
 import { parseArgs } from "node:util"
 import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent"
@@ -18,6 +19,16 @@ const MODE_MAP = {
 
 type CliMode = keyof typeof MODE_MAP
 type RuntimeMode = typeof MODE_MAP[CliMode]
+
+const require = createRequire(import.meta.url)
+const CLI_VERSION = (() => {
+  try {
+    const pkg = require("../../package.json") as { version?: string }
+    return pkg.version ?? "0.0.0"
+  } catch {
+    return "0.0.0"
+  }
+})()
 
 function httpError(message: string, statusCode: number): Error & { statusCode: number } {
   const error = new Error(message) as Error & { statusCode: number }
@@ -146,6 +157,7 @@ async function startFolderMode(opts: {
   app.get("/api/v1/workspace/meta", async () => ({
     workspaceRoot,
     projectName,
+    version: CLI_VERSION,
   }))
 
   await registerStatic(app as FastifyInstance, opts.publicDir)
@@ -249,6 +261,7 @@ async function startWorkspacesMode(opts: {
   app.get("/api/v1/workspace/meta", async () => ({
     projectName: "Boring UI",
     workspacesMode: true,
+    version: CLI_VERSION,
   }))
 
   await registerStatic(app, opts.publicDir)

@@ -6,6 +6,7 @@ import { WorkspaceSwitcherControl } from "./WorkspaceSwitcherControl"
 interface WorkspaceMeta {
   projectName?: string
   workspacesMode?: boolean
+  version?: string
 }
 
 interface LocalWorkspace {
@@ -47,9 +48,24 @@ function areWorkspacesEqual(a: LocalWorkspace[], b: LocalWorkspace[]): boolean {
   })
 }
 
+export function CliVersionBadge({ version }: { version?: string | null }) {
+  const label = version?.trim()
+  if (!label) return null
+  return (
+    <span
+      aria-label={`Boring UI CLI version ${label}`}
+      title={`Boring UI CLI ${label}`}
+      className="rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[10px] font-medium leading-none tracking-tight text-muted-foreground"
+    >
+      v{label}
+    </span>
+  )
+}
+
 export function CliWorkspaceShell() {
   const [projectName, setProjectName] = useState("Workspace")
   const [workspacesMode, setWorkspacesMode] = useState(false)
+  const [cliVersion, setCliVersion] = useState<string | null>(null)
   const [workspaces, setWorkspaces] = useState<LocalWorkspace[]>([])
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
   const [metaLoaded, setMetaLoaded] = useState(false)
@@ -84,6 +100,8 @@ export function CliWorkspaceShell() {
           setProjectName(next)
           document.title = next
         }
+        const version = meta?.version?.trim()
+        if (version) setCliVersion(version)
         const isWorkspacesMode = meta?.workspacesMode === true
         setWorkspacesMode(isWorkspacesMode)
         if (isWorkspacesMode) refreshWorkspaces()
@@ -157,6 +175,7 @@ export function CliWorkspaceShell() {
         defaultSessionTitle={activeWorkspace.name}
         useSessions={useAgentSessions}
         chatParams={{ thinkingControl: true }}
+        topBarRight={<CliVersionBadge version={cliVersion} />}
         topBarLeft={
           <WorkspaceSwitcherControl
             appTitle="Boring UI"
@@ -187,6 +206,7 @@ export function CliWorkspaceShell() {
       defaultSessionTitle={projectName}
       useSessions={useAgentSessions}
       chatParams={{ thinkingControl: true }}
+      topBarRight={<CliVersionBadge version={cliVersion} />}
     />
   )
 }
