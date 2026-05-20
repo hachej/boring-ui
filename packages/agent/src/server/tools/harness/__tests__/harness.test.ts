@@ -92,12 +92,29 @@ describe('buildHarnessAgentTools', () => {
     const workspaceRoot = await makeTempWorkspace()
     const hook = bwrapSpawnHook(workspaceRoot)
 
-    const context = hook({ command: 'pwd', cwd: '/workspace', env: {} })
+    const context = hook({
+      command: 'pwd',
+      cwd: '/workspace',
+      env: {
+        BORING_AGENT_WORKSPACE_ROOT: '/plugin-root',
+        HOME: '/plugin-home',
+        PATH: '/plugin/bin:/usr/bin',
+        VIRTUAL_ENV: '/plugin-venv',
+      },
+    })
 
     expect(context.cwd).toBe(workspaceRoot)
     expect(context.command).toContain(`'--bind' '${workspaceRoot}' '/workspace'`)
     expect(context.command).not.toContain(`'--bind' '/workspace' '/workspace'`)
     expect(context.env?.BORING_AGENT_WORKSPACE_ROOT).toBe('/workspace')
+    expect(context.env?.HOME).toBe('/workspace')
+    expect(context.env?.VIRTUAL_ENV).toBe('/workspace/.boring-agent/venv')
+    expect(context.env?.PATH?.split(':').slice(0, 4)).toEqual([
+      '/workspace/.boring-agent/bin',
+      '/workspace/.boring-agent/venv/bin',
+      '/plugin/bin',
+      '/usr/bin',
+    ])
   })
 
   test('vercel-sandbox mode returns bash tool', () => {

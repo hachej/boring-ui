@@ -7,6 +7,18 @@ interface WorkspacePythonEnvOptions {
   sandboxRoot?: string
 }
 
+function appendPathParts(
+  pathParts: string[],
+  pathValue: string | undefined,
+  ignoredParts: Set<string>,
+): void {
+  if (!pathValue) return
+  for (const part of pathValue.split(':')) {
+    if (!part || ignoredParts.has(part) || pathParts.includes(part)) continue
+    pathParts.push(part)
+  }
+}
+
 export function withWorkspacePythonEnv(
   opts: WorkspacePythonEnvOptions,
 ): Record<string, string | undefined> {
@@ -16,18 +28,17 @@ export function withWorkspacePythonEnv(
   const venvRoot = paths.venv
   const venvBin = paths.venvBin
   const shimBin = paths.bin
-  const baseEnv = env ?? getEnvSnapshot()
+  const baseEnv = { ...(env ?? getEnvSnapshot()) }
   const pathParts = [shimBin, venvBin]
-  const existingPath = baseEnv.PATH
-  if (existingPath) {
-    pathParts.push(...existingPath.split(':').filter((part) => part !== paths.legacyTopLevelVenvBin))
-  }
+  appendPathParts(pathParts, baseEnv.PATH, new Set([paths.legacyTopLevelVenvBin]))
+
+  delete baseEnv.PYTHONHOME
 
   return {
     ...baseEnv,
+    HOME: runtimeRoot,
     PATH: pathParts.join(':'),
     VIRTUAL_ENV: venvRoot,
-    BORING_AGENT_WORKSPACE_ROOT:
-      baseEnv.BORING_AGENT_WORKSPACE_ROOT ?? runtimeRoot,
+    BORING_AGENT_WORKSPACE_ROOT: runtimeRoot,
   }
 }

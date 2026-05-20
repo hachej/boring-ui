@@ -12,7 +12,7 @@ import {
 } from '../vercel'
 
 function mockWorkspace(overrides: Partial<Workspace> = {}): Workspace {
-  const root = overrides.root ?? '/vercel/sandbox'
+  const root = overrides.root ?? '/workspace'
   const runtimeContext = overrides.runtimeContext ?? { runtimeCwd: root }
   return {
     root,
@@ -57,7 +57,7 @@ describe('vercelBashOps', () => {
     const onData = vi.fn()
     const signal = new AbortController().signal
 
-    await ops.exec('echo hi', '/vercel/sandbox', {
+    await ops.exec('echo hi', '/workspace', {
       onData,
       signal,
       timeout: 30,
@@ -65,7 +65,7 @@ describe('vercelBashOps', () => {
     })
 
     expect(sandbox.exec).toHaveBeenCalledWith('echo hi', {
-      cwd: '/vercel/sandbox',
+      cwd: '/workspace',
       env: { FOO: 'bar' },
       signal,
       timeoutMs: 30_000,
@@ -293,9 +293,9 @@ describe('vercelFindOps', () => {
 
     expect(files).toEqual(['/workspace/deck/labor.md'])
     const calls = (sandbox.exec as ReturnType<typeof vi.fn>).mock.calls
-    expect(calls[0][0]).toContain('/vercel/sandbox')
+    expect(calls[0][0]).toContain('/workspace')
     expect(calls[1][0]).toContain('find')
-    expect(calls[1][0]).toContain('/vercel/sandbox')
+    expect(calls[1][0]).toContain('/workspace')
   })
 
   test('glob throws on unexpected exit code without displaying Vercel internal root', async () => {

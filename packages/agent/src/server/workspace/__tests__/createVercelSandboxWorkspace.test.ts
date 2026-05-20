@@ -15,7 +15,7 @@ test('writes via workspace are visible to paired exec on same sandbox handle', a
 
     const command = await harness.sandbox.runCommand('sh', [
       '-c',
-      'cat /vercel/sandbox/shared/hello.txt',
+      'cat /workspace/shared/hello.txt',
     ])
 
     await expect(command.stdout()).resolves.toBe(
@@ -46,7 +46,7 @@ test('writeFile delegates UTF-8 bytes via sandbox.writeFiles', async () => {
 
     expect(harness.lastWriteFiles).toEqual([
       {
-        path: '/vercel/sandbox/utf8.txt',
+        path: '/workspace/utf8.txt',
         content: new Uint8Array(Buffer.from('snowman ☃', 'utf-8')),
       },
     ])

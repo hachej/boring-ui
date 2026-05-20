@@ -9,8 +9,8 @@ import type {
 } from '../../shared/workspace'
 import { validatePath } from './paths'
 
-export const VERCEL_SANDBOX_REMOTE_ROOT = '/vercel/sandbox'
 export const VERCEL_SANDBOX_WORKSPACE_ROOT = '/workspace'
+export const VERCEL_SANDBOX_REMOTE_ROOT = VERCEL_SANDBOX_WORKSPACE_ROOT
 export const VERCEL_SANDBOX_RUNTIME_CONTEXT = { runtimeCwd: VERCEL_SANDBOX_WORKSPACE_ROOT } as const
 
 type VercelSandboxCompat = VercelSandbox & {
