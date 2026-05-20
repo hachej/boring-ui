@@ -31,10 +31,19 @@ Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` before running. See [Pi providers](h
 
 A real session: ask the agent for a summary → it opens the README in the workbench → ask it to take notes → a new `notes.md` appears in the tree → search for it via the command palette. Chat in, workspace out.
 
-| Agent opens files | Agent edits files | Command palette |
-|---|---|---|
-| ![Agent opens files in the workbench](docs/assets/readme/demo-open.gif) | ![Agent edits files and saves changes](docs/assets/readme/demo-edit.gif) | ![Command palette search and jump](docs/assets/readme/demo-palette.gif) |
-| Read · render · explain | Write · diff · save | ⌘K · search · jump |
+Click any preview to open a full-size MP4.
+
+**Agent opens files** — Read · render · explain
+
+<a href="docs/assets/readme/demo-open.mp4"><img src="docs/assets/readme/demo-open.gif" alt="Agent opens files in the workbench" width="100%"></a>
+
+**Agent edits files** — Write · diff · save
+
+<a href="docs/assets/readme/demo-edit.mp4"><img src="docs/assets/readme/demo-edit.gif" alt="Agent edits files and saves changes" width="100%"></a>
+
+**Command palette** — ⌘K · search · jump
+
+<a href="docs/assets/readme/demo-palette.mp4"><img src="docs/assets/readme/demo-palette.gif" alt="Command palette search and jump" width="100%"></a>
 
 ---
 
