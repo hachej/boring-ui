@@ -44,7 +44,7 @@ import {
   AttachmentInfo,
   AttachmentRemove,
 } from './primitives/attachments'
-import { PaperclipIcon, CopyIcon, CheckIcon, RefreshCwIcon, Loader2, AlertCircleIcon } from 'lucide-react'
+import { PaperclipIcon, CopyIcon, CheckIcon, RefreshCwIcon, Loader2, AlertCircleIcon, XIcon } from 'lucide-react'
 import {
   Button,
   IconButton,
@@ -385,6 +385,7 @@ export function ChatPanel(props: ChatPanelProps) {
     projectedTailMessages,
     projectedStatusById,
     queueFollowUp,
+    deleteFollowUp,
     handleData: handleFollowUpData,
     stopAndClearFollowUps,
   } = usePiNativeFollowUpQueue({
@@ -801,8 +802,19 @@ export function ChatPanel(props: ChatPanelProps) {
                   data-waiting-follow-up={isWaitingFollowUp ? 'true' : undefined}
                 >
                   {isWaitingFollowUp && (
-                    <div className="mb-1 text-[10px] font-medium not-italic uppercase tracking-[0.16em] text-muted-foreground/70">
-                      Waiting…
+                    <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-medium not-italic uppercase tracking-[0.16em] text-muted-foreground/70">
+                      <span>Waiting…</span>
+                      <IconButton
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => deleteFollowUp(message.id)}
+                        className="-mr-1 size-5 shrink-0 text-muted-foreground/70 hover:bg-muted hover:text-foreground"
+                        aria-label="Delete queued message"
+                        title="Delete queued message"
+                      >
+                        <XIcon className="size-3" aria-hidden="true" />
+                      </IconButton>
                     </div>
                   )}
                   {fileParts.length > 0 && (

@@ -59,6 +59,79 @@ test.describe('pi projection UI regressions', () => {
     await expect(conversation.locator('[data-boring-agent-message-role="assistant"]').filter({ hasText: 'ASSISTANT_E2E_DEDUPE_TWO' })).toHaveCount(1)
   })
 
+  test('deletes a queued follow-up from the browser UI', async ({ browserPage }) => {
+    await browserPage.addInitScript(() => {
+      const originalFetch = window.fetch.bind(window)
+      const encoder = new TextEncoder()
+      let chatController: ReadableStreamDefaultController<Uint8Array> | null = null
+      ;(window as unknown as { __followupRequests: Array<{ method: string; url: string }> }).__followupRequests = []
+      ;(window as unknown as { __releaseChat: () => void }).__releaseChat = () => {
+        if (!chatController) return
+        const chunks = [
+          { type: 'text-delta', id: 'sdk-active-text', delta: 'ACTIVE_TURN_DONE' },
+          { type: 'text-end', id: 'sdk-active-text' },
+          { type: 'finish', finishReason: 'stop' },
+        ]
+        for (const chunk of chunks) chatController.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`))
+        chatController.enqueue(encoder.encode('data: [DONE]\n\n'))
+        chatController.close()
+        chatController = null
+      }
+      window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+        const method = init?.method ?? (input instanceof Request ? input.method : 'GET')
+        if (url.endsWith('/api/v1/agent/chat') && method === 'POST') {
+          const stream = new ReadableStream<Uint8Array>({
+            start(controller) {
+              chatController = controller
+              const chunks = [
+                { type: 'start', messageId: 'sdk-active' },
+                { type: 'text-start', id: 'sdk-active-text' },
+                { type: 'text-delta', id: 'sdk-active-text', delta: 'ACTIVE_TURN_STREAMING' },
+              ]
+              for (const chunk of chunks) controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`))
+            },
+          })
+          return Promise.resolve(new Response(stream, {
+            status: 200,
+            headers: {
+              'content-type': 'text/event-stream; charset=utf-8',
+              'cache-control': 'no-cache',
+            },
+          }))
+        }
+        if (url.includes('/api/v1/agent/chat/') && url.includes('/followup')) {
+          ;(window as unknown as { __followupRequests: Array<{ method: string; url: string }> }).__followupRequests.push({ method, url })
+          return Promise.resolve(new Response(method === 'DELETE' ? null : JSON.stringify({ queued: true }), {
+            status: method === 'DELETE' ? 204 : 202,
+            headers: { 'content-type': 'application/json' },
+          }))
+        }
+        return originalFetch(input, init)
+      }
+    })
+    await browserPage.reload()
+
+    const conversation = browserPage.getByLabel('Agent conversation')
+    const composer = browserPage.locator('[data-boring-agent-part="composer-input"]')
+    await composer.fill('active turn before delete')
+    await browserPage.locator('button[aria-label="Submit"]').click()
+    await expect(browserPage.getByTestId('chat-working')).toBeVisible({ timeout: 10_000 })
+
+    await composer.fill('queued message to delete')
+    await composer.press('Enter')
+    await expect(conversation.getByText('queued message to delete')).toBeVisible({ timeout: 10_000 })
+
+    await conversation.getByLabel('Delete queued message').click()
+    await expect(conversation.getByText('queued message to delete')).toHaveCount(0)
+    await expect.poll(async () => browserPage.evaluate(() => (
+      window as unknown as { __followupRequests: Array<{ method: string; url: string }> }
+    ).__followupRequests.some((req) => req.method === 'DELETE' && req.url.includes('clientNonce=')))).toBe(true)
+
+    await browserPage.evaluate(() => (window as unknown as { __releaseChat: () => void }).__releaseChat())
+    await expect(conversation.getByText(/ACTIVE_TURN_STREAMINGACTIVE_TURN_DONE|ACTIVE_TURN_DONE/)).toBeVisible({ timeout: 10_000 })
+  })
+
   test('renders pi-projected tool and reasoning parts in the browser UI', async ({ browserPage }) => {
     await browserPage.evaluate(() => {
       localStorage.setItem('boring-agent:composer:show-thoughts', '1')
