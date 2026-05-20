@@ -378,7 +378,7 @@ describe("boring agent plugin assets", () => {
     expect(result.loaded[0].revision).toBeGreaterThanOrEqual(2)
   })
 
-  test("POST /api/boring.reload carries rebuildPlugins diagnostics in the 422 body (PLUGIN_SYSTEM.md §6)", async () => {
+  test("POST /api/boring.reload carries rebuildPlugins diagnostics in the 422 body (PLUGIN_SYSTEM.md §5)", async () => {
     const root = await tmp("boring-plugin-reload-diagnostics-")
     await writePlugin(root)
     const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })

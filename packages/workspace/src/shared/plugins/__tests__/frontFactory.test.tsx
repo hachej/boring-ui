@@ -98,7 +98,7 @@ describe("boringFrontFactoryToPlugin", () => {
   })
 })
 
-describe("definePlugin brand semantics (PLUGIN_SYSTEM.md §4.3 + §8)", () => {
+describe("definePlugin brand semantics (PLUGIN_SYSTEM.md §4.3 + §7)", () => {
   it("returns a wrapper that carries pluginId/pluginLabel", () => {
     const wrapped = definePlugin({
       id: "plugin-a",
@@ -255,7 +255,7 @@ describe("definePlugin declarative config form", () => {
   })
 })
 
-describe("intra-pluginId collision detection (PLUGIN_SYSTEM.md §6.7)", () => {
+describe("intra-pluginId collision detection (PLUGIN_SYSTEM.md §5.7)", () => {
   it("throws PluginError('duplicate-id') when two register* calls land the same id", () => {
     const api = createCapturingBoringFrontAPI({ pluginId: "concrete" })
     api.registerPanel({ id: "table", label: "Table 1", component: TestPanel })

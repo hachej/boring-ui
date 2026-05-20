@@ -135,7 +135,7 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
       "/host/agent/index.ts",
     ])
     // Host-level extensionFactories flow through unchanged; plugin-level
-    // declaration has been dropped (PLUGIN_SYSTEM.md §11 deferred capability).
+    // declaration has been dropped (known limitation: no plugin-level extensionFactories field — hosts thread their own through `pi.extensionFactories`).
     expect(result.agentOptions.pi?.extensionFactories).toEqual([hostFactory])
   })
 
