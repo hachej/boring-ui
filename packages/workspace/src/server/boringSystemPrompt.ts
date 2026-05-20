@@ -1,34 +1,70 @@
+import { createRequire } from "node:module"
+import { dirname, join } from "node:path"
+
 /**
- * boring-ui system prompt — numbered TODO workflow.
+ * boring-ui system prompt — workflow steps + a Pi-style docs pointer
+ * block (per DECISIONS.md #17). The block lists absolute paths into the
+ * installed `@hachej/boring-pi` package so the agent's `read` tool can
+ * fetch the SKILL.md + reference docs on demand, without inlining their
+ * ~12-30 KB of markdown into every system prompt.
  *
- * The canonical plugin shape is NOT inlined here. Instead:
- *   - `boring-ui scaffold-plugin` writes the shape into the workspace
- *     (the agent reads the generated files to learn it).
- *   - `boring-ui verify-plugin` validates manifests + file existence
- *     and surfaces actionable hints (the closed loop).
- *   - The `boring-plugin-authoring` skill (under <available_skills>)
- *     is the longer-form reference for composition, file visualizers,
- *     etc.
- *
- * The prompt's only job is to teach the WORKFLOW + name the common
- * hallucinations that don't exist. Everything else flows from the
- * tools and the skill.
+ * `@hachej/boring-pi` is a runtime dep of `@hachej/boring-workspace`;
+ * a missing install means the host shipped without it (degraded mode),
+ * in which case we still emit the workflow + skill-by-name reference
+ * for `<available_skills>` consumers but skip the absolute paths.
  */
 export interface BuildBoringSystemPromptOptions {
   /**
    * CLI invocation that writes the canonical files (e.g.
-   * `boring-ui scaffold-plugin` or `npx @hachej/boring-ui-cli
-   * scaffold-plugin`). When unset, step 1 falls back to "read the
-   * skill" — the agent then has no canonical anchor and reliability
-   * suffers on smaller models, so always provide this in production.
+   * `boring-ui scaffold-plugin`). When unset, step 1 falls back to
+   * "read the skill" — the agent then has no canonical anchor and
+   * reliability suffers on smaller models, so always provide this in
+   * production.
    */
   scaffoldCommand?: string
   /** CLI invocation that validates `.pi/extensions/*` manifests. */
   verifyCommand: string
+  /**
+   * Test escape hatch. Overrides the runtime `require.resolve` of
+   * `@hachej/boring-pi/package.json`:
+   *   - `undefined` (default): resolve via require.resolve
+   *   - `string`: use as the boring-pi root verbatim
+   *   - `null`: force the degraded path (no resolution attempt)
+   * Production should leave unset.
+   */
+  boringPiRootOverride?: string | null
+}
+
+const require = createRequire(import.meta.url)
+
+function resolveBoringPiRoot(override: string | null | undefined): string | null {
+  if (override === null) return null
+  if (override) return override
+  try { return dirname(require.resolve("@hachej/boring-pi/package.json")) }
+  catch { return null }
+}
+
+interface DocsRef {
+  topic: string
+  path: string
+}
+
+function buildDocsRefs(boringPiRoot: string): DocsRef[] {
+  return [
+    { topic: "Workflow + how-to + full plugin authoring reference",
+      path: join(boringPiRoot, "skills/boring-plugin-authoring/SKILL.md") },
+    { topic: "Panels (registration, dockview, layout)",
+      path: join(boringPiRoot, "references/workspace/panels.md") },
+    { topic: "Bridge / UI control (get_ui_state, exec_ui)",
+      path: join(boringPiRoot, "references/workspace/bridge.md") },
+    { topic: "Server plugins (defineServerPlugin, routes, agent tools)",
+      path: join(boringPiRoot, "references/workspace/plugins.md") },
+  ]
 }
 
 export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): string {
   const verify = opts.verifyCommand
+  const boringPiRoot = resolveBoringPiRoot(opts.boringPiRootOverride)
   const steps: string[] = []
   let n = 0
 
@@ -57,6 +93,18 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): s
   n += 1
   steps.push(`**${n}. Ask the user to run \`/reload\`** to publish the change.`)
 
+  const docsBlock = boringPiRoot
+    ? [
+        "## boring-ui plugin authoring documentation",
+        "Read these only when the user asks to build, modify, or debug a workspace plugin. Use your `read` tool with the absolute path; the agent runtime guarantees these files exist on the host:",
+        ...buildDocsRefs(boringPiRoot).map((r) => `- ${r.topic}: ${r.path}`),
+        "Follow .md cross-references when present (e.g. SKILL.md may link to a reference doc — read both).",
+      ].join("\n")
+    : [
+        "## boring-ui plugin authoring documentation",
+        "The `boring-plugin-authoring` skill listed under `<available_skills>` is the authoritative reference (read its `<location>`). Additional reference docs (`panels.md`, `bridge.md`, `plugins.md`) are unavailable on this host — `@hachej/boring-pi` is not installed.",
+      ].join("\n")
+
   return [
     "You are operating inside boring-ui, an open-source workspace for building agent-powered products.",
     [
@@ -71,8 +119,7 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): s
       "- Server tool method: `handler` — use `execute`. Return shape: `{ content: [{ type: \"text\", text }] }` (NEVER a bare string).",
       "- Manifest values: `boring.server: true` — use `false` (no server) OR a relative path string like `\"server/index.ts\"`.",
       "- File layout: files at the package root, or `src/` / `dist/` / `lib/` subdirectories — the scaffold's layout (`front/index.tsx`, `server/index.ts`) is the only one the workspace loads.",
-      "",
-      "For file visualizers, plugin composition, providers/bindings/catalogs, conditional registration via `setup`, or deeper server-tool patterns: read the `boring-plugin-authoring` skill under `<available_skills>`.",
     ].join("\n"),
+    docsBlock,
   ].join("\n\n")
 }

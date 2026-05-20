@@ -69,8 +69,8 @@ describe("scaffoldPlugin", () => {
   })
 
   test("reads from canonical template files (single source of truth)", () => {
-    // Sanity: scaffold output should match what the system prompt points
-    // at — the templates in packages/pi/references/workspace/templates/.
+    // Sanity: scaffold output is read from the CLI's own bundled
+    // `templates/` dir (shipped with @hachej/boring-ui-cli).
     const result = scaffoldPlugin({ name: "share-source", workspaceRoot })
     const pkg = JSON.parse(readFileSync(join(result.pluginDir, "package.json"), "utf8"))
     // The _doc_ key from the template must be stripped before writing
