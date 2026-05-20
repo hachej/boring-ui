@@ -120,6 +120,39 @@ describe("DockviewShell", () => {
     expect(screen.queryByText("hot-one")).not.toBeInTheDocument()
   })
 
+  it("can open a panel registered after mount when allowedPanels updates", async () => {
+    const { panelRegistry, commandRegistry } = setupStoreAndRegistry()
+    let api: DockviewApi | undefined
+
+    render(
+      <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+        <DockviewShell
+          layout={{ version: "2.0", groups: [{ id: "main", position: "center", dynamic: true }] }}
+          allowedPanels={["hot-late"]}
+          onReady={(nextApi) => {
+            api = nextApi
+          }}
+        />
+      </RegistryProvider>,
+    )
+
+    await waitFor(() => expect(api).toBeDefined())
+
+    act(() => {
+      panelRegistry.register("hot-late", {
+        title: "Hot Late",
+        placement: "center",
+        component: () => <div>hot-late-panel</div>,
+      })
+    })
+
+    act(() => {
+      api!.addPanel({ id: "hot-late-instance", component: "hot-late", title: "Hot Late" })
+    })
+
+    expect(await screen.findByText("hot-late-panel")).toBeInTheDocument()
+  })
+
   it("filters components when allowedPanels is set", () => {
     const { panelRegistry, commandRegistry } = setupStoreAndRegistry()
     const onReady = vi.fn()

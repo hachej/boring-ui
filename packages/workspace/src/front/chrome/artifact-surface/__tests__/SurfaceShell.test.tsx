@@ -6,6 +6,7 @@ import { PanelRegistry } from "../../../registry/PanelRegistry"
 import { CommandRegistry } from "../../../../shared/plugins/CommandRegistry"
 
 let capturedSurfaceStorageKey: string | undefined
+let capturedAllowedPanels: string[] | undefined
 
 vi.mock("../../workbench-left/WorkbenchLeftPane", () => ({
   WorkbenchLeftPane: () => <div data-testid="mock-left-pane" />,
@@ -13,8 +14,9 @@ vi.mock("../../workbench-left/WorkbenchLeftPane", () => ({
 
 vi.mock("../ArtifactSurfacePane", async () => {
   const React = await import("react")
-  function MockArtifactSurfacePane(props: { storageKey?: string; onReady?: (api: unknown) => void }) {
+  function MockArtifactSurfacePane(props: { storageKey?: string; allowedPanels?: string[]; onReady?: (api: unknown) => void }) {
     capturedSurfaceStorageKey = props.storageKey
+    capturedAllowedPanels = props.allowedPanels
     React.useEffect(() => {
       props.onReady?.({
         panels: [],
@@ -32,9 +34,13 @@ vi.mock("../ArtifactSurfacePane", async () => {
   return { ArtifactSurfacePane: MockArtifactSurfacePane }
 })
 
-function renderSurface(storageKey?: string, props: Partial<SurfaceShellProps> = {}) {
+function renderSurface(
+  storageKey?: string,
+  props: Partial<SurfaceShellProps> = {},
+  panelRegistry = new PanelRegistry(),
+) {
   return render(
-    <RegistryProvider panelRegistry={new PanelRegistry()} commandRegistry={new CommandRegistry()}>
+    <RegistryProvider panelRegistry={panelRegistry} commandRegistry={new CommandRegistry()}>
       <SurfaceShell storageKey={storageKey} {...props} />
     </RegistryProvider>,
   )
@@ -43,6 +49,7 @@ function renderSurface(storageKey?: string, props: Partial<SurfaceShellProps> = 
 describe("SurfaceShell", () => {
   beforeEach(() => {
     capturedSurfaceStorageKey = undefined
+    capturedAllowedPanels = undefined
     localStorage.clear()
   })
 
@@ -63,6 +70,23 @@ describe("SurfaceShell", () => {
     )
 
     expect(capturedSurfaceStorageKey).toBe("workspace-b")
+  })
+
+  it("updates allowed surface panels when a hot-loaded plugin panel registers after mount", async () => {
+    const panelRegistry = new PanelRegistry()
+    renderSurface("workspace-a", {}, panelRegistry)
+
+    expect(capturedAllowedPanels).not.toContain("hot-csv.panel")
+
+    act(() => {
+      panelRegistry.register("hot-csv.panel", {
+        title: "Hot CSV",
+        placement: "center",
+        component: () => null,
+      })
+    })
+
+    await waitFor(() => expect(capturedAllowedPanels).toContain("hot-csv.panel"))
   })
 
   it("exposes an API command to close the workbench left pane", async () => {

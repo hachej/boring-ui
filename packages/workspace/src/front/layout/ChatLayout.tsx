@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react"
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from "react"
 import { IconButton, LoadingState, ResizeHandle as UiResizeHandle } from "@hachej/boring-ui-kit"
 import { cn } from "../lib/utils"
 import { dispatchUiCommand, type DispatchContext } from "../bridge"
@@ -476,7 +476,12 @@ function scheduleComposerFocus(): void {
 function PanelSlot({ id, params }: { id: string; params?: Record<string, unknown> }) {
   const registry = useRegistry()
   const { debug } = useWorkspaceContext()
-  const components = useMemo(() => registry.getComponents(), [registry])
+  const registrySnapshot = useSyncExternalStore(
+    registry.subscribe,
+    registry.getSnapshot,
+    registry.getSnapshot,
+  )
+  const components = useMemo(() => registry.getComponents(), [registry, registrySnapshot])
   const Component = components[id] as ComponentType<PaneProps<Record<string, unknown> | undefined>> | undefined
   const api = useMemo(() => createPanelApi(id), [id])
   if (!Component) return null

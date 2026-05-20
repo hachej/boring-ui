@@ -67,8 +67,12 @@ function hasBearerAuth(headers: Record<string, string> | undefined): boolean {
   return /^Bearer\s+\S+/i.test(getAuthHeader(headers, "authorization") ?? "")
 }
 
+export function appendFrontImportRevision(frontUrl: string, revision: number): string {
+  return `${frontUrl}${frontUrl.includes("?") ? "&" : "?"}v=${revision}`
+}
+
 async function defaultImportFront(frontUrl: string, revision: number): Promise<{ default?: BoringFrontFactory }> {
-  return await import(/* @vite-ignore */ `${frontUrl}${frontUrl.includes("?") ? "&" : "?"}v=${revision}`) as { default?: BoringFrontFactory }
+  return await import(/* @vite-ignore */ appendFrontImportRevision(frontUrl, revision)) as { default?: BoringFrontFactory }
 }
 
 async function captureFrontFactory(pluginId: string, frontUrl: string, revision: number, importFront: RegisterAgentPluginOptions["importFront"] = defaultImportFront): Promise<CapturedBoringFrontRegistrations> {
@@ -166,6 +170,54 @@ function warnUnsupportedDynamicContributions(pluginId: string, captured: Capture
   )
 }
 
+function ownerLabel(pluginId: string | undefined): string {
+  return pluginId ?? "system/builtin"
+}
+
+function outputCollisionError(
+  pluginId: string,
+  kind: "panel" | "command" | "catalog" | "surface-resolver",
+  id: string,
+  existingOwner: string | undefined,
+): Error {
+  const suggestedId = `${pluginId}.${kind === "panel" ? "panel" : kind}`
+  return new Error(
+    `PLUGIN_OUTPUT_ID_COLLISION: plugin "${pluginId}" tried to register ${kind} "${id}" ` +
+      `already owned by "${ownerLabel(existingOwner)}". Use a namespaced id like "${suggestedId}".`,
+  )
+}
+
+function assertNoOutputCollisions(
+  pluginId: string,
+  payloads: ReturnType<typeof buildRegistryPayloads>,
+  registries: ReturnType<typeof getRegistries>,
+): void {
+  for (const panel of payloads.panels) {
+    const existing = registries.panels.get(panel.id)
+    if (existing && existing.pluginId !== pluginId) {
+      throw outputCollisionError(pluginId, "panel", panel.id, existing.pluginId)
+    }
+  }
+  for (const command of payloads.commands) {
+    const existing = registries.commands.getCommand(command.id)
+    if (existing && existing.pluginId !== pluginId) {
+      throw outputCollisionError(pluginId, "command", command.id, existing.pluginId)
+    }
+  }
+  for (const catalog of payloads.catalogs) {
+    const existing = registries.catalogs.get(catalog.id)
+    if (existing && existing.pluginId !== pluginId) {
+      throw outputCollisionError(pluginId, "catalog", catalog.id, existing.pluginId)
+    }
+  }
+  for (const resolver of payloads.surfaceResolvers) {
+    const existing = registries.surfaceResolvers.get(resolver.id)
+    if (existing && existing.pluginId !== pluginId) {
+      throw outputCollisionError(pluginId, "surface-resolver", resolver.id, existing.pluginId)
+    }
+  }
+}
+
 function commitCapturedFrontFactory(
   pluginId: string,
   captured: CapturedBoringFrontRegistrations,
@@ -177,6 +229,7 @@ function commitCapturedFrontFactory(
     return
   }
   const payloads = buildRegistryPayloads(pluginId, captured)
+  assertNoOutputCollisions(pluginId, payloads, registries)
   registries.panels.replaceByPluginId(pluginId, payloads.panels)
   registries.commands.replaceByPluginId(pluginId, payloads.commands)
   registries.catalogs.replaceByPluginId(pluginId, payloads.catalogs)

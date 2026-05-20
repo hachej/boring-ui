@@ -53,6 +53,21 @@ function renderWithRegistry(
   )
 }
 
+function renderWithPanelRegistry(
+  ui: React.ReactElement,
+  panels: string[],
+) {
+  const { panelRegistry, commandRegistry } = setup(panels)
+  const result = render(
+    <WorkspaceProvider persistenceEnabled={false}>
+      <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+        {ui}
+      </RegistryProvider>
+    </WorkspaceProvider>,
+  )
+  return { ...result, panelRegistry }
+}
+
 function setViewport(width: number) {
   Object.defineProperty(window, "innerWidth", {
     configurable: true,
@@ -245,6 +260,27 @@ describe("IdeLayout responsive behavior", () => {
 
     await user.click(openButton)
     expect(await screen.findByText("filetree")).toBeInTheDocument()
+  })
+
+  it("updates overlay sidebar components when a panel registers after mount", async () => {
+    const user = userEvent.setup()
+    setViewport(375)
+
+    const { panelRegistry } = renderWithPanelRegistry(
+      <ResponsiveDockviewShell layout={buildIdeLayout()} />,
+      ["empty"],
+    )
+
+    await user.click(screen.getByLabelText("Open sidebar menu"))
+    expect(screen.getByText("Loading sidebar...")).toBeInTheDocument()
+
+    act(() => {
+      panelRegistry.register("filetree", { title: "filetree", lazy: false, component: DummyPanel })
+    })
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("dummy-panel")).toHaveLength(2)
+    })
   })
 
   it("auto-collapses sidebar rail on tablet and supports pin-open", async () => {
@@ -521,6 +557,23 @@ describe("ChatLayout component", () => {
     })
 
     expect(openFile).toHaveBeenCalledWith("src/App.tsx")
+  })
+
+  it("updates panel slots when a panel registers after mount", async () => {
+    const { panelRegistry } = renderWithPanelRegistry(
+      <ChatLayout center="late-panel" />,
+      ["session-list"],
+    )
+
+    expect(screen.getAllByTestId("dummy-panel")).toHaveLength(1)
+
+    act(() => {
+      panelRegistry.register("late-panel", { title: "Late Panel", lazy: false, component: DummyPanel })
+    })
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("dummy-panel")).toHaveLength(2)
+    })
   })
 
   it("passes className", () => {
