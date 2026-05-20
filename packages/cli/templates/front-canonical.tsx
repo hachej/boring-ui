@@ -27,7 +27,7 @@ export default definePlugin({
     { id: "<kebab-name>.tab", title: "<Label>", panelId: "<kebab-name>.panel" },
   ],
   // File visualizer example: import WORKSPACE_OPEN_PATH_SURFACE_KIND from
-  // "@hachej/boring-workspace", set kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
+  // "@hachej/boring-workspace/plugin", set kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
   // check request.target (e.g. .endsWith(".csv")), and fetch raw file bytes
   // from /api/v1/files/raw?path=${encodeURIComponent(request.target)}.
   // surfaceResolvers: [

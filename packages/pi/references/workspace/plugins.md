@@ -92,8 +92,7 @@ To replace the built-in viewer for files, register a panel plus a
 `workspace.open.path` surface resolver:
 
 ```tsx
-import { WORKSPACE_OPEN_PATH_SURFACE_KIND, type PaneProps } from "@hachej/boring-workspace"
-import { definePlugin } from "@hachej/boring-workspace/plugin"
+import { definePlugin, WORKSPACE_OPEN_PATH_SURFACE_KIND, type PaneProps } from "@hachej/boring-workspace/plugin"
 
 function CsvPanel({ params }: PaneProps<{ path?: string }>) {
   // Browser panels can fetch raw workspace file contents from:

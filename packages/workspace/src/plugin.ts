@@ -34,6 +34,7 @@ export {
   isSafePluginRelativePath,
   isValidBoringPluginId,
 } from "./shared/plugins/manifest"
+export { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "./shared/types/surface"
 export type {
   BoringPackageBoringField,
   BoringPackagePiField,
@@ -44,3 +45,4 @@ export type {
   BoringPluginManifestValidationResult,
   BoringPluginPackageJson,
 } from "./shared/plugins/manifest"
+export type { PaneProps } from "./shared/types/panel"
