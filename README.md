@@ -27,23 +27,9 @@ Starts a full agent workspace pointed at the current directory — chat, panels,
 
 Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` before running. See [Pi providers](https://pi.dev/docs/latest/quickstart#configure-a-provider) for LLM setup.
 
-![Boring UI core — agent reads the README, opens it in the workbench, writes a notes file, then opens the command palette](docs/assets/readme/demo.gif)
+[▶ Watch the full 39-second demo in HD (MP4)](https://cdn.jsdelivr.net/gh/hachej/boring-ui@main/docs/assets/readme/demo.mp4)
 
 A real session: ask the agent for a summary → it opens the README in the workbench → ask it to take notes → a new `notes.md` appears in the tree → search for it via the command palette. Chat in, workspace out.
-
-Click any preview to play the full-size MP4 in your browser.
-
-**Agent opens files** — Read · render · explain
-
-<a href="https://cdn.jsdelivr.net/gh/hachej/boring-ui@main/docs/assets/readme/demo-open.mp4"><img src="docs/assets/readme/demo-open.gif" alt="Agent opens files in the workbench" width="100%"></a>
-
-**Agent edits files** — Write · diff · save
-
-<a href="https://cdn.jsdelivr.net/gh/hachej/boring-ui@main/docs/assets/readme/demo-edit.mp4"><img src="docs/assets/readme/demo-edit.gif" alt="Agent edits files and saves changes" width="100%"></a>
-
-**Command palette** — ⌘K · search · jump
-
-<a href="https://cdn.jsdelivr.net/gh/hachej/boring-ui@main/docs/assets/readme/demo-palette.mp4"><img src="docs/assets/readme/demo-palette.gif" alt="Command palette search and jump" width="100%"></a>
 
 ---
 
