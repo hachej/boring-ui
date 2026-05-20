@@ -308,7 +308,10 @@ After writing the files, tell me to run /reload.
       expect(frontSource).toContain("registerPanel")
       expect(frontSource).toContain("registerSurfaceResolver")
       expect(frontSource).toMatch(/registerPanel\s*\(\s*\{/)
-      expect(frontSource).toMatch(/<table|React\.createElement\(["']table["']/)
+      // Accept JSX (`<table>`), member-access (`React.createElement("table"...)`),
+      // and the named-import form (`createElement("table"...)`) — agents
+      // routinely emit any of the three.
+      expect(frontSource).toMatch(/<table|createElement\(["']table["']/)
       expect(frontSource).toMatch(/CSV Chart|chart/i)
       expect(frontSource).not.toContain("defineFrontPlugin")
       expect(frontSource).not.toContain("@hachej/boring-workspace/shared")
@@ -500,7 +503,10 @@ Then run /reload to verify.
       expect(frontSource).toMatch(/registerPanel|panels\s*:/)
       expect(frontSource).not.toContain("defineFrontPlugin")
       // Loosely check the agent rendered a list-like structure.
-      expect(frontSource).toMatch(/<ul|<li|React\.createElement\(["'](ul|li)["']/)
+      // Accept JSX (`<ul>`, `<li>`), member-access (`React.createElement(...)`),
+      // and the named-import form (`createElement(...)`) — agents
+      // routinely emit any of the three.
+      expect(frontSource).toMatch(/<ul|<li|createElement\(["'](ul|li)["']/)
 
       // /reload discovers it cleanly.
       const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
