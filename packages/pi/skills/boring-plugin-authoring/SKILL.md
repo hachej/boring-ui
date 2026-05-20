@@ -155,9 +155,8 @@ export default definePlugin({
   commands: [
     { id: "my-plugin.open", title: "Open My Plugin", panelId: "my-plugin.panel" },
   ],
-  leftTabs: [
-    { id: "my-plugin.tab", title: "My Plugin", panelId: "my-plugin.panel" },
-  ],
+  // Optional only for persistent sidebar navigation:
+  // leftTabs: [{ id: "my-plugin.tab", title: "My Plugin", panelId: "my-plugin.panel" }],
 })
 ```
 
@@ -165,6 +164,7 @@ Notes:
 
 - Package discovery derives an asset id from `package.json#name` (`@scope/name` becomes `scope-name`). `config.id` is the contribution namespace for front outputs. Matching the normalized package id is recommended for fully package-loaded plugins; first-party/static composition may use a shorter namespace.
 - Panel/command/tab ids should be `<plugin-id>.<thing>` — convention.
+- Do not add `leftTabs` by default. A left tab is permanent sidebar navigation; use it only for catalogs or always-on tools. File visualizers should open through `surfaceResolvers`, not create sidebar tabs.
 - Import React explicitly (no `globalThis.React`).
 - Do NOT use `defineFrontPlugin` or `createPlugin` (don't exist).
 

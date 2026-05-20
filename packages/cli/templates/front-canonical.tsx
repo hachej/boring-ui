@@ -23,9 +23,12 @@ export default definePlugin({
   commands: [
     { id: "<kebab-name>.open", title: "Open <Label>", panelId: "<kebab-name>.panel" },
   ],
-  leftTabs: [
-    { id: "<kebab-name>.tab", title: "<Label>", panelId: "<kebab-name>.panel" },
-  ],
+  // Do not add leftTabs by default: left tabs are persistent sidebar
+  // navigation. Use them only for always-on tools/catalogs that deserve a
+  // permanent sidebar entry; file visualizers should use surfaceResolvers.
+  // leftTabs: [
+  //   { id: "<kebab-name>.tab", title: "<Label>", panelId: "<kebab-name>.panel" },
+  // ],
   // File visualizer example: import WORKSPACE_OPEN_PATH_SURFACE_KIND from
   // "@hachej/boring-workspace/plugin", set kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
   // check request.target (e.g. .endsWith(".csv")), and fetch raw file bytes
