@@ -184,37 +184,38 @@ export function SurfaceShell({
       return
     }
     const normalizedPath = normalizeWorkbenchPath(path)
-    const existing = findOpenFilePanel(api, normalizedPath)
-    if (existing) {
-      existing.api.setActive()
-      return
-    }
     const request: SurfaceOpenRequest = {
       kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
       target: normalizedPath,
     }
     const resolved = surfaceResolverRegistryRef.current.resolve(request)
-    if (!resolved) {
-      console.warn(`[SurfaceShell] openFile: no surface resolver matched "${normalizedPath}"`)
+    if (resolved) {
+      if (!panelRegistryRef.current.has(resolved.component)) {
+        console.warn(`[SurfaceShell] openFile: resolver returned unknown panel "${resolved.component}" for "${normalizedPath}"`)
+        return
+      }
+      const panelId = surfacePanelId(request, resolved)
+      const existingByResolvedId = api.getPanel(panelId)
+      if (existingByResolvedId) {
+        if (resolved.params) existingByResolvedId.api.updateParameters(resolved.params)
+        existingByResolvedId.api.setActive()
+        return
+      }
+      api.addPanel({
+        id: panelId,
+        component: resolved.component,
+        title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
+        params: resolved.params ?? { path: normalizedPath },
+      })
       return
     }
-    if (!panelRegistryRef.current.has(resolved.component)) {
-      console.warn(`[SurfaceShell] openFile: resolver returned unknown panel "${resolved.component}" for "${normalizedPath}"`)
+
+    const existing = findOpenFilePanel(api, normalizedPath)
+    if (existing) {
+      existing.api.setActive()
       return
     }
-    const panelId = surfacePanelId(request, resolved)
-    const existingByResolvedId = api.getPanel(panelId)
-    if (existingByResolvedId) {
-      if (resolved.params) existingByResolvedId.api.updateParameters(resolved.params)
-      existingByResolvedId.api.setActive()
-      return
-    }
-    api.addPanel({
-      id: panelId,
-      component: resolved.component,
-      title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
-      params: resolved.params ?? { path: normalizedPath },
-    })
+    console.warn(`[SurfaceShell] openFile: no surface resolver matched "${normalizedPath}"`)
   }, [])
 
   const openSurfaceSync = useCallback((request: SurfaceOpenRequest) => {
@@ -377,37 +378,40 @@ export function SurfaceShell({
         const api = apiRef.current
         if (!api) return err("not-ready", "surface not ready")
         const normalizedPath = normalizeWorkbenchPath(path)
-        const existing = findOpenFilePanel(api, normalizedPath)
-        if (existing) {
-          existing.api.setActive()
-          return ok()
-        }
         const request: SurfaceOpenRequest = {
           kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
           target: normalizedPath,
         }
         const resolved = surfaceResolverRegistryRef.current.resolve(request)
-        if (!resolved) return err("NO_SURFACE_RESOLVER", `no registered surface resolver handles ${normalizedPath}`)
-        if (!panelRegistryRef.current.has(resolved.component)) {
-          return err(
-            "NO_SURFACE_PANEL",
-            `surface resolver "${request.kind}" returned unknown panel "${resolved.component}"`,
-          )
-        }
-        const panelId = surfacePanelId(request, resolved)
-        const existingByResolvedId = api.getPanel(panelId)
-        if (existingByResolvedId) {
-          if (resolved.params) existingByResolvedId.api.updateParameters(resolved.params)
-          existingByResolvedId.api.setActive()
+        if (resolved) {
+          if (!panelRegistryRef.current.has(resolved.component)) {
+            return err(
+              "NO_SURFACE_PANEL",
+              `surface resolver "${request.kind}" returned unknown panel "${resolved.component}"`,
+            )
+          }
+          const panelId = surfacePanelId(request, resolved)
+          const existingByResolvedId = api.getPanel(panelId)
+          if (existingByResolvedId) {
+            if (resolved.params) existingByResolvedId.api.updateParameters(resolved.params)
+            existingByResolvedId.api.setActive()
+            return ok()
+          }
+          api.addPanel({
+            id: panelId,
+            component: resolved.component,
+            title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
+            params: resolved.params ?? { path: normalizedPath },
+          })
           return ok()
         }
-        api.addPanel({
-          id: panelId,
-          component: resolved.component,
-          title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
-          params: resolved.params ?? { path: normalizedPath },
-        })
-        return ok()
+
+        const existing = findOpenFilePanel(api, normalizedPath)
+        if (existing) {
+          existing.api.setActive()
+          return ok()
+        }
+        return err("NO_SURFACE_RESOLVER", `no registered surface resolver handles ${normalizedPath}`)
       } catch (error) {
         return err(
           "INVALID_SURFACE_PATH",
