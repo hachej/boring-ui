@@ -149,6 +149,29 @@ test("installed CLI scaffolds a hot-reloadable plugin", async () => {
   })
 })
 
+test("plugin CLI commands default to BORING_AGENT_WORKSPACE_ROOT", async () => {
+  const workspace = await makeTempDir("boring-cli-env-workspace-")
+  const otherCwd = await makeTempDir("boring-cli-env-other-")
+
+  await execFile(process.execPath, [distBin, "scaffold-plugin", "env-plugin"], {
+    cwd: otherCwd,
+    env: testEnv({ BORING_AGENT_WORKSPACE_ROOT: workspace }),
+    timeout: 10_000,
+  })
+
+  const pluginDir = join(workspace, ".pi", "extensions", "env-plugin")
+  const pkg = JSON.parse(await readFile(join(pluginDir, "package.json"), "utf-8")) as { name: string }
+  expect(pkg.name).toBe("env-plugin")
+
+  await expect(
+    execFile(process.execPath, [distBin, "verify-plugin", "env-plugin"], {
+      cwd: otherCwd,
+      env: testEnv({ BORING_AGENT_WORKSPACE_ROOT: workspace }),
+      timeout: 10_000,
+    }),
+  ).resolves.toMatchObject({ stdout: expect.stringContaining("✓ env-plugin") })
+})
+
 test("installed CLI rejects file paths as local workspaces", async () => {
   const root = await makeTempDir("boring-cli-install-root-")
   const fileDir = await makeTempDir("boring-cli-install-file-")

@@ -66,6 +66,7 @@ packages/agent/bench-results/
 .claude/worktrees/
 
 # LLM eval scratch directories (plugins/CSVs created by live-LLM tests)
+**/.eval/
 packages/workspace/.pi/
 packages/workspace/*.csv
 packages/workspace/packages/

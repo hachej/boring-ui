@@ -159,7 +159,7 @@ function ensureBoringUiCliShim(workspaceRoot: string): boolean {
   const shimPath = join(shimDir, "boring-ui")
   writeFileSync(
     shimPath,
-    `#!/usr/bin/env bash\nset -euo pipefail\nSCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"\nWORKSPACE_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"\nexec node "$WORKSPACE_ROOT/node_modules/@hachej/boring-ui-cli/dist/index.js" "$@"\n`,
+    `#!/usr/bin/env bash\nset -euo pipefail\nSCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"\nWORKSPACE_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"\nexport BORING_AGENT_WORKSPACE_ROOT="$WORKSPACE_ROOT"\nexec node "$WORKSPACE_ROOT/node_modules/@hachej/boring-ui-cli/dist/index.js" "$@"\n`,
     "utf8",
   )
   chmodSync(shimPath, 0o755)

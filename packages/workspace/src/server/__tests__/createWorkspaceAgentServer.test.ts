@@ -338,6 +338,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
       await expect(readFile(join(provisionedCli, "templates", "front-canonical.tsx"), "utf8")).resolves.toContain("definePlugin")
 
       const shim = await readFile(join(workspaceRoot, ".boring-agent", "bin", "boring-ui"), "utf8")
+      expect(shim).toContain('export BORING_AGENT_WORKSPACE_ROOT="$WORKSPACE_ROOT"')
       expect(shim).toContain("$WORKSPACE_ROOT/node_modules/@hachej/boring-ui-cli/dist/index.js")
       expect(shim).toContain("exec node")
     } finally {
