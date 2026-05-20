@@ -31,7 +31,14 @@ const playgroundOnlyAliases = [
 
 export default defineConfig({
   plugins: [
-    react(),
+    react({
+      // Runtime-authored plugins are loaded through the boring-ui plugin
+      // bridge, not React Refresh. Refresh instrumentation can create a
+      // second/stale hook dispatcher for dynamically imported .pi extension
+      // panels after edits, so leave these files to Vite's plain esbuild TSX
+      // transform and apply updates only after /reload.
+      exclude: [/workspace\/\.pi\/extensions\//],
+    }),
     tailwindcss(),
     {
       name: "boring-agent-backend",
