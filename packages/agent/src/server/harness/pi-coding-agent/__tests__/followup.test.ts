@@ -137,11 +137,66 @@ describe("native pi follow-up integration", () => {
     expect(chunks).toContainEqual(expect.objectContaining({ type: "start", messageId: "a2" }));
     expect(chunks).toContainEqual(expect.objectContaining({ type: "data-pi-text-start", data: expect.objectContaining({ messageId: "a2", partId: "0" }) }));
     expect(chunks).toContainEqual(expect.objectContaining({ type: "data-pi-text-delta", data: expect.objectContaining({ messageId: "a2", partId: "0", delta: "hello" }) }));
+    expect(chunks).not.toContainEqual(expect.objectContaining({ type: "text-start" }));
+    expect(chunks).not.toContainEqual(expect.objectContaining({ type: "text-delta", delta: "hello" }));
     const seqs = chunks.map((chunk) => chunk.data?.seq).filter(Boolean);
     expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
 
     promptHandle.resolve?.();
     await reader.return?.();
+  });
+
+  it("suppresses canonical visible tool chunks for queued inline turns while keeping data-pi tool side channel", async () => {
+    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup-tools" });
+    const iter = harness.sendMessage({ sessionId: "sess-followup-tools", message: "first" }, makeCtx());
+    const reader = iter[Symbol.asyncIterator]();
+    const chunks: any[] = [];
+
+    const first = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
+    chunks.push((await first).value);
+
+    emit({
+      type: "message_start",
+      message: { id: "u2", role: "user", content: [{ type: "text", text: "queued question" }] },
+    });
+    emit({ type: "message_start", message: { id: "a2", role: "assistant" } });
+    emit({
+      type: "message_update",
+      messageId: "a2",
+      assistantMessageEvent: {
+        type: "toolcall_end",
+        contentIndex: 0,
+        toolCall: { id: "tool-inline", name: "bash", arguments: { command: "pwd" } },
+      },
+    });
+    emit({
+      type: "tool_execution_end",
+      toolCallId: "tool-inline",
+      result: { content: [{ type: "text", text: "ok" }] },
+      isError: false,
+    });
+    emit({ type: "agent_end" });
+    promptHandle.resolve?.();
+
+    for (;;) {
+      const next = await reader.next();
+      if (next.done) break;
+      chunks.push(next.value);
+    }
+
+    expect(chunks).toContainEqual(expect.objectContaining({ type: "data-followup-consumed", data: { text: "queued question" } }));
+    expect(chunks).toContainEqual(expect.objectContaining({
+      type: "data-pi-tool-call-end",
+      data: expect.objectContaining({ messageId: "a2", toolCallId: "tool-inline", toolName: "bash", input: { command: "pwd" } }),
+    }));
+    expect(chunks).toContainEqual(expect.objectContaining({
+      type: "data-pi-tool-result",
+      data: expect.objectContaining({ messageId: "a2", toolCallId: "tool-inline", output: { content: [{ type: "text", text: "ok" }] } }),
+    }));
+    expect(chunks).not.toContainEqual(expect.objectContaining({ type: "tool-input-available", toolCallId: "tool-inline" }));
+    expect(chunks).not.toContainEqual(expect.objectContaining({ type: "tool-output-available", toolCallId: "tool-inline" }));
   });
 
   it("preserves snapshot-only assistant fallback after a consumed follow-up", async () => {
