@@ -27,7 +27,7 @@ export type PluginReloadDiagnostic = {
 
 export type PluginUpdateState =
   | { kind: "running" }
-  | { kind: "success"; reloaded: boolean; restartWarnings?: PluginRestartWarning[]; diagnostics?: PluginReloadDiagnostic[] }
+  | { kind: "success"; reloaded: boolean; restartWarnings?: PluginRestartWarning[]; diagnostics?: PluginReloadDiagnostic[]; frontEvents?: PluginReloadDiagnostic[] }
   | { kind: "error"; message: string }
 
 export interface PluginUpdateStatusProps {
@@ -46,7 +46,7 @@ export function PluginUpdateStatus({
 }: PluginUpdateStatusProps): ReactElement | null {
   useEffect(() => {
     if (!state || state.kind !== "success" || successAutoDismissMs <= 0) return
-    const hasDetails = (state.restartWarnings?.length ?? 0) > 0 || (state.diagnostics?.length ?? 0) > 0
+    const hasDetails = (state.restartWarnings?.length ?? 0) > 0 || (state.diagnostics?.length ?? 0) > 0 || (state.frontEvents?.length ?? 0) > 0
     if (hasDetails) return
     const timeout = window.setTimeout(onDismiss, successAutoDismissMs)
     return () => window.clearTimeout(timeout)
@@ -74,6 +74,7 @@ export function PluginUpdateStatus({
   if (state.kind === "success") {
     const warnings = state.restartWarnings ?? []
     const diagnostics = state.diagnostics ?? []
+    const frontEvents = state.frontEvents ?? []
     return (
       <div
         data-boring-plugin-update="success"
@@ -90,7 +91,9 @@ export function PluginUpdateStatus({
             {state.reloaded
               ? warnings.length > 0 || diagnostics.length > 0
                 ? "Plugins updated with warnings."
-                : "Plugins updated."
+                : frontEvents.length > 0
+                  ? "Plugins updated. Browser modules reloaded."
+                  : "Plugins updated."
               : "Plugins will reload on the next message."}
           </span>
           <button
@@ -120,6 +123,29 @@ export function PluginUpdateStatus({
               {diagnostics.map((diagnostic, index) => (
                 <li key={`${diagnostic.pluginId ?? diagnostic.source ?? "plugin"}-${index}`}>
                   <code className="font-mono text-[10.5px]">{diagnostic.pluginId ?? diagnostic.source ?? "plugin"}</code> — {diagnostic.message ?? "reload diagnostic"}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {frontEvents.length > 0 ? (
+          <div
+            data-boring-plugin-update-front-events=""
+            className={cn(
+              "mt-2 rounded border border-[oklch(0.78_0.13_148)]/35 bg-[oklch(0.95_0.05_148/0.25)]",
+              "px-2 py-1.5 text-[11px] text-foreground",
+            )}
+          >
+            <div className="flex items-center gap-1.5 font-medium text-[oklch(0.45_0.13_148)]">
+              <span aria-hidden="true">✓</span>
+              <span>
+                Browser plugin modules updated ({frontEvents.length})
+              </span>
+            </div>
+            <ul className="mt-1 ml-4 list-disc text-foreground/85">
+              {frontEvents.map((event, index) => (
+                <li key={`${event.pluginId ?? event.source ?? "plugin"}-${index}`}>
+                  <code className="font-mono text-[10.5px]">{event.pluginId ?? event.source ?? "plugin"}</code> — {event.message ?? "front module updated"}
                 </li>
               ))}
             </ul>
