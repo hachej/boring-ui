@@ -3,11 +3,14 @@ import { describe, test, expect } from 'vitest'
 import { treeRoutes } from '../tree'
 import type { Workspace, Entry, Stat } from '../../../../shared/workspace'
 
+const runtimeContext = { runtimeCwd: '/repo' }
+
 function createWorkspace(
   tree: Record<string, Entry[]>,
 ): Workspace {
   return {
-    root: '/repo',
+    root: runtimeContext.runtimeCwd,
+    runtimeContext,
     async readFile() {
       return ''
     },
@@ -197,7 +200,8 @@ describe('GET /api/v1/tree', () => {
 
   test('EPERM by error.code returns 403', async () => {
     const workspace: Workspace = {
-      root: '/repo',
+      root: runtimeContext.runtimeCwd,
+      runtimeContext,
       async readFile() { return '' },
       async writeFile() {},
       async unlink() {},
@@ -225,7 +229,8 @@ describe('GET /api/v1/tree', () => {
 
   test('ENOENT by error.code returns 404', async () => {
     const workspace: Workspace = {
-      root: '/repo',
+      root: runtimeContext.runtimeCwd,
+      runtimeContext,
       async readFile() { return '' },
       async writeFile() {},
       async unlink() {},
@@ -253,7 +258,8 @@ describe('GET /api/v1/tree', () => {
 
   test('stable status errors keep their status and code', async () => {
     const workspace: Workspace = {
-      root: '/repo',
+      root: runtimeContext.runtimeCwd,
+      runtimeContext,
       async readFile() { return '' },
       async writeFile() {},
       async unlink() {},

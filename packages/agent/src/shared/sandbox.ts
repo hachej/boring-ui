@@ -1,3 +1,4 @@
+import type { WorkspaceRuntimeContext } from './runtime'
 import type { Workspace } from './workspace'
 
 /**
@@ -51,6 +52,9 @@ export interface Sandbox {
 
   /** Capabilities this sandbox advertises (used for tool gating). */
   readonly capabilities: readonly SandboxCapability[]
+
+  /** Agent-visible runtime cwd; must match the paired Workspace root. */
+  readonly runtimeContext: WorkspaceRuntimeContext
 
   /**
    * Optional initialization hook. Some backends bind to a workspace +

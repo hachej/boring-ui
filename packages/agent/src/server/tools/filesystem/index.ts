@@ -8,7 +8,7 @@ import {
 } from '@mariozechner/pi-coding-agent'
 
 import type { AgentTool } from '../../../shared/tool'
-import type { RuntimeBundle } from '../../runtime/mode'
+import { getRuntimeBundleStorageRoot, type RuntimeBundle } from '../../runtime/mode'
 import { boundFs } from '../operations/bound'
 import {
   vercelEditOps,
@@ -82,6 +82,7 @@ function adaptPiTool<TParams extends Record<string, unknown>>(
 
 export function buildFilesystemAgentTools(bundle: RuntimeBundle): AgentTool[] {
   const cwd = bundle.workspace.root
+  const storageRoot = getRuntimeBundleStorageRoot(bundle)
 
   if (bundle.sandbox.provider === 'vercel-sandbox') {
     return [
@@ -94,7 +95,7 @@ export function buildFilesystemAgentTools(bundle: RuntimeBundle): AgentTool[] {
     ]
   }
 
-  const ops = boundFs(cwd)
+  const ops = boundFs(storageRoot, { runtimeRoot: cwd })
   return [
     adaptPiTool(createReadToolDefinition(cwd, { operations: ops.read })),
     adaptPiTool(createWriteToolDefinition(cwd, { operations: ops.write })),

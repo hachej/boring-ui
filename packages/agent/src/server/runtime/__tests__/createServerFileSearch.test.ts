@@ -7,8 +7,10 @@ import { createServerFileSearch } from '../createServerFileSearch'
 const encoder = new TextEncoder()
 
 function createWorkspace(root = '/workspace-root'): Workspace {
+  const runtimeContext = { runtimeCwd: root }
   return {
-    root,
+    root: runtimeContext.runtimeCwd,
+    runtimeContext,
     async readFile() {
       throw new Error('not used in test')
     },
@@ -41,6 +43,7 @@ function createSandbox(
     placement: 'server',
     provider: 'direct',
     capabilities: ['exec'],
+    runtimeContext: { runtimeCwd: '/workspace-root' },
     async init() {},
     exec: execImpl,
   }

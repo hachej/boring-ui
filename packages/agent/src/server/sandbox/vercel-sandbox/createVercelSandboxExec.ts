@@ -5,6 +5,7 @@ import type { ExecResult, Sandbox } from '../../../shared/sandbox'
 import {
   invalidateVercelSandboxWorkspaceMetadataCache,
   VERCEL_SANDBOX_REMOTE_ROOT,
+  VERCEL_SANDBOX_RUNTIME_CONTEXT,
   VERCEL_SANDBOX_WORKSPACE_ROOT,
 } from '../../workspace/createVercelSandboxWorkspace'
 
@@ -116,6 +117,7 @@ export function createVercelSandboxExec(
     placement: 'remote',
     provider: 'vercel-sandbox',
     capabilities: ['exec'],
+    runtimeContext: VERCEL_SANDBOX_RUNTIME_CONTEXT,
     async init() {
       // Vercel sandbox handle is already established by runtime adapter.
     },

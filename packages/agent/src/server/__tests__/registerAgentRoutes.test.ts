@@ -423,10 +423,11 @@ test('registerAgentRoutes accepts a custom runtime adapter for pluggable sandbox
       const { createNodeWorkspace } = await import('../workspace/createNodeWorkspace')
       const { createDirectSandbox } = await import('../sandbox/direct/createDirectSandbox')
       const { createServerFileSearch } = await import('../runtime/createServerFileSearch')
-      const workspace = createNodeWorkspace(ctx.workspaceRoot)
-      const sandbox = createDirectSandbox()
+      const runtimeContext = { runtimeCwd: ctx.workspaceRoot }
+      const workspace = createNodeWorkspace(ctx.workspaceRoot, { runtimeContext })
+      const sandbox = createDirectSandbox({ runtimeContext })
       await sandbox.init?.({ workspace, sessionId: ctx.sessionId })
-      return { workspace, sandbox, fileSearch: createServerFileSearch(workspace, sandbox) }
+      return { runtimeContext, workspace, sandbox, fileSearch: createServerFileSearch(workspace, sandbox) }
     },
   }
   const seen: string[] = []

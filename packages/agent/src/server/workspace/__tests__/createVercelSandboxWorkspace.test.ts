@@ -27,6 +27,16 @@ test('writes via workspace are visible to paired exec on same sandbox handle', a
   }
 })
 
+test('fallback read errors expose runtime workspace root, not Vercel internal root', async () => {
+  const workspace = createVercelSandboxWorkspace({
+    writeFiles: vi.fn(async () => {}),
+    readFileToBuffer: vi.fn(async () => null),
+  } as any)
+
+  await expect(workspace.readFile('missing.txt')).rejects.toThrow("/workspace/missing.txt")
+  await expect(workspace.readFile('missing.txt')).rejects.not.toThrow('/vercel/sandbox')
+})
+
 test('writeFile delegates UTF-8 bytes via sandbox.writeFiles', async () => {
   const harness = await createMockVercelSandboxHarness()
   const workspace = createVercelSandboxWorkspace(harness.sandbox)

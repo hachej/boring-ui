@@ -2,6 +2,7 @@ import { lstat, mkdir, readdir, readFile, rename, rmdir, stat, unlink, writeFile
 import { dirname, relative, sep } from 'node:path'
 import chokidar, { type FSWatcher } from 'chokidar'
 
+import type { WorkspaceRuntimeContext } from '../../shared/runtime'
 import type {
   Workspace,
   WorkspaceChangeEvent,
@@ -98,14 +99,27 @@ function createNodeWatcher(root: string): WorkspaceWatcher {
   }
 }
 
-export function createNodeWorkspace(root: string): Workspace {
+export interface CreateNodeWorkspaceOptions {
+  runtimeContext?: WorkspaceRuntimeContext
+}
+
+const nodeWorkspaceHostRoots = new WeakMap<Workspace, string>()
+
+export function getNodeWorkspaceHostRoot(workspace: Workspace): string | undefined {
+  return nodeWorkspaceHostRoots.get(workspace)
+}
+
+export function createNodeWorkspace(root: string, opts: CreateNodeWorkspaceOptions = {}): Workspace {
+  const runtimeContext = opts.runtimeContext ?? { runtimeCwd: root }
+
   // Lazy singleton: a single chokidar instance shared by every caller
   // of `watch()` on this workspace. Codex flagged "one watcher per
   // SSE client" as a fd leak — this avoids it.
   let cachedWatcher: WorkspaceWatcher | null = null
 
-  return {
-    root,
+  const workspace: Workspace = {
+    root: runtimeContext.runtimeCwd,
+    runtimeContext,
     fsCapability: 'strong',
     watch() {
       if (!cachedWatcher) cachedWatcher = createNodeWatcher(root)
@@ -213,4 +227,7 @@ export function createNodeWorkspace(root: string): Workspace {
       await rename(fromAbsPath, toAbsPath)
     },
   }
+
+  nodeWorkspaceHostRoots.set(workspace, root)
+  return workspace
 }

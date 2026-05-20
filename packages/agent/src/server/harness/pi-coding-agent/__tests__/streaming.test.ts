@@ -7,9 +7,11 @@ const {
   mockSetModel,
   mockSetThinkingLevel,
   mockFindModel,
+  mockCreateAgentSessionConfigs,
 } = vi.hoisted(() => ({
   mockSubscribers: [] as Array<(event: any) => void>,
   promptHandle: { resolve: undefined as undefined | (() => void) },
+  mockCreateAgentSessionConfigs: [] as any[],
   mockCurrentModel: {
     value: undefined as undefined | { provider: string; id: string },
   },
@@ -22,6 +24,7 @@ const {
 
 vi.mock("@mariozechner/pi-coding-agent", () => ({
   createAgentSession: vi.fn().mockImplementation(async (config: any) => {
+    mockCreateAgentSessionConfigs.push(config);
     mockCurrentModel.value = config.model;
     return {
       session: {
@@ -96,11 +99,40 @@ function emitPiEvent(event: any): void {
 beforeEach(() => {
   vi.clearAllMocks();
   mockSubscribers.length = 0;
+  mockCreateAgentSessionConfigs.length = 0;
   promptHandle.resolve = undefined;
   mockCurrentModel.value = undefined;
 });
 
 describe("streaming concurrency", () => {
+  it("uses runtime cwd for Pi agent prompt while preserving harness storage cwd", async () => {
+    const harness = createPiCodingAgentHarness({
+      tools: [],
+      cwd: "/tmp/host-storage-root",
+    });
+
+    const iter = harness.sendMessage(
+      { sessionId: "sess-runtime-cwd", message: "hello" },
+      {
+        abortSignal: new AbortController().signal,
+        workdir: "/workspace",
+      },
+    );
+    const reader = iter[Symbol.asyncIterator]();
+    const firstRead = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+
+    expect(mockCreateAgentSessionConfigs[0]?.cwd).toBe("/workspace");
+
+    emitPiEvent({ type: "agent_end" });
+    promptHandle.resolve?.();
+    await firstRead;
+    for (;;) {
+      const final = await reader.next();
+      if (final.done) break;
+    }
+  });
+
   // The bug we're guarding against: an earlier implementation did
   //   await piSession.prompt(input.message);
   //   while (!done) { ... yield chunks.shift() ... }

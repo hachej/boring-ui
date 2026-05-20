@@ -1,8 +1,10 @@
 import { expectTypeOf, test } from 'vitest'
+import type { WorkspaceRuntimeContext } from '../runtime'
 import type { Workspace, Entry, Stat } from '../workspace'
 
 test('checking Workspace contract', () => {
   expectTypeOf<Workspace>().toHaveProperty('root')
+  expectTypeOf<Workspace>().toHaveProperty('runtimeContext')
   expectTypeOf<Workspace>().toHaveProperty('readFile')
   expectTypeOf<Workspace>().toHaveProperty('writeFile')
   expectTypeOf<Workspace>().toHaveProperty('unlink')
@@ -12,6 +14,7 @@ test('checking Workspace contract', () => {
   expectTypeOf<Workspace>().toHaveProperty('rename')
 
   expectTypeOf<Workspace['root']>().toEqualTypeOf<string>()
+  expectTypeOf<Workspace['runtimeContext']>().toEqualTypeOf<WorkspaceRuntimeContext>()
   expectTypeOf<Workspace['readFile']>().parameters.toEqualTypeOf<[string]>()
   expectTypeOf<Workspace['readFile']>().returns.toEqualTypeOf<Promise<string>>()
   expectTypeOf<Workspace['writeFile']>().parameters.toEqualTypeOf<[string, string]>()

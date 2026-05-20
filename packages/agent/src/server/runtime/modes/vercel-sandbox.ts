@@ -19,6 +19,7 @@ import type { PeriodicSnapshotScheduler } from '../../sandbox/vercel-sandbox/per
 import {
   createVercelSandboxWorkspace,
   VERCEL_SANDBOX_REMOTE_ROOT,
+  VERCEL_SANDBOX_RUNTIME_CONTEXT,
   VERCEL_SANDBOX_WORKSPACE_ROOT,
 } from '../../workspace/createVercelSandboxWorkspace'
 import { createServerFileSearch } from '../createServerFileSearch'
@@ -335,6 +336,8 @@ export function createVercelSandboxModeAdapter(
       await sandbox.init?.({ workspace, sessionId: ctx.sessionId })
 
       return {
+        runtimeContext: VERCEL_SANDBOX_RUNTIME_CONTEXT,
+        storageRoot: ctx.workspaceRoot,
         workspace,
         sandbox,
         fileSearch: createServerFileSearch(workspace, sandbox),

@@ -13,11 +13,14 @@ export const directModeAdapter: RuntimeModeAdapter = {
     await mkdir(ctx.workspaceRoot, { recursive: true })
     await copyTemplate(ctx.templatePath, ctx.workspaceRoot)
 
-    const workspace = createNodeWorkspace(ctx.workspaceRoot)
-    const sandbox = createDirectSandbox()
+    const runtimeContext = { runtimeCwd: ctx.workspaceRoot }
+    const workspace = createNodeWorkspace(ctx.workspaceRoot, { runtimeContext })
+    const sandbox = createDirectSandbox({ runtimeContext })
     await sandbox.init?.({ workspace, sessionId: ctx.sessionId })
 
     return {
+      runtimeContext,
+      storageRoot: ctx.workspaceRoot,
       workspace,
       sandbox,
       fileSearch: createServerFileSearch(workspace, sandbox),

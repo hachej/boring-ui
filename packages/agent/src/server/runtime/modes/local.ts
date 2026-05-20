@@ -17,11 +17,17 @@ export const localModeAdapter: RuntimeModeAdapter = {
     await mkdir(ctx.workspaceRoot, { recursive: true })
     await copyTemplate(ctx.templatePath, ctx.workspaceRoot)
 
-    const workspace = createNodeWorkspace(ctx.workspaceRoot)
-    const sandbox = createBwrapSandbox()
+    const runtimeContext = { runtimeCwd: '/workspace' }
+    const workspace = createNodeWorkspace(ctx.workspaceRoot, { runtimeContext })
+    const sandbox = createBwrapSandbox({
+      hostWorkspaceRoot: ctx.workspaceRoot,
+      runtimeContext,
+    })
     await sandbox.init?.({ workspace, sessionId: ctx.sessionId })
 
     return {
+      runtimeContext,
+      storageRoot: ctx.workspaceRoot,
       workspace,
       sandbox,
       fileSearch: createServerFileSearch(workspace, sandbox),

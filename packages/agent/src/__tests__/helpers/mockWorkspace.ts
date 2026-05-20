@@ -85,8 +85,11 @@ export function mockWorkspace(initialFiles: Record<string, string> = {}): MockWo
     touch(normalized)
   }
 
+  const runtimeContext = { runtimeCwd: '/mock-workspace' }
+
   const workspace: MockWorkspace = {
-    root: '/mock-workspace',
+    root: runtimeContext.runtimeCwd,
+    runtimeContext,
     files,
     dirs,
     operations,

@@ -18,6 +18,8 @@ import {
 
 function rootAliases(workspace: Workspace): string[] {
   const aliases = [workspace.root]
+  // Accept the Vercel SDK's internal root as a backwards-compatible input
+  // alias, but never display it back to the model/user.
   if (workspace.root === VERCEL_SANDBOX_WORKSPACE_ROOT) aliases.push(VERCEL_SANDBOX_REMOTE_ROOT)
   if (workspace.root === VERCEL_SANDBOX_REMOTE_ROOT) aliases.push(VERCEL_SANDBOX_WORKSPACE_ROOT)
   return aliases
@@ -44,7 +46,7 @@ function toRelPath(workspace: Workspace, absolutePath: string): string {
   }
 
   throw new Error(
-    `path "${absolutePath}" is outside workspace; use a path relative to the workspace root or under ${rootAliases(workspace).join(' / ')}`,
+    `path "${absolutePath}" is outside workspace; use a path relative to the workspace root or under ${workspace.root}`,
   )
 }
 
@@ -117,6 +119,18 @@ function toRemotePath(value: string): string {
     return `${VERCEL_SANDBOX_REMOTE_ROOT}${value.slice(VERCEL_SANDBOX_WORKSPACE_ROOT.length)}`
   }
   return value
+}
+
+function toRuntimePath(value: string): string {
+  if (value === VERCEL_SANDBOX_REMOTE_ROOT) return VERCEL_SANDBOX_WORKSPACE_ROOT
+  if (value.startsWith(`${VERCEL_SANDBOX_REMOTE_ROOT}/`)) {
+    return `${VERCEL_SANDBOX_WORKSPACE_ROOT}${value.slice(VERCEL_SANDBOX_REMOTE_ROOT.length)}`
+  }
+  return value
+}
+
+function sanitizeRuntimeText(value: string): string {
+  return value.replaceAll(VERCEL_SANDBOX_REMOTE_ROOT, VERCEL_SANDBOX_WORKSPACE_ROOT)
 }
 
 function findPredicate(pattern: string): string {
@@ -196,12 +210,12 @@ export function vercelFindOps(sandbox: Sandbox, workspace?: Workspace): FindOper
       }
 
       if (result.exitCode !== 0 && result.exitCode !== 1) {
-        const stderr = Buffer.from(result.stderr).toString('utf-8').trim()
+        const stderr = sanitizeRuntimeText(Buffer.from(result.stderr).toString('utf-8').trim())
         throw new Error(`file search failed (exit ${result.exitCode}): ${stderr}`)
       }
 
       const stdout = Buffer.from(result.stdout).toString('utf-8')
-      return stdout.split('\n').filter(Boolean)
+      return stdout.split('\n').filter(Boolean).map(toRuntimePath)
     },
   }
 }

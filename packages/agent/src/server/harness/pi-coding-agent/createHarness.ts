@@ -399,13 +399,13 @@ export function createPiCodingAgentHarness(opts: {
     let isNewPiSession = false;
     if (savedPiFile) {
       try {
-        sessionManager = SessionManager.open(savedPiFile, undefined, ctx.workdir);
+        sessionManager = SessionManager.open(savedPiFile, undefined, opts.cwd);
       } catch {
-        sessionManager = SessionManager.create(ctx.workdir);
+        sessionManager = SessionManager.create(opts.cwd);
         isNewPiSession = true;
       }
     } else {
-      sessionManager = SessionManager.create(ctx.workdir);
+      sessionManager = SessionManager.create(opts.cwd);
       isNewPiSession = true;
     }
 
@@ -434,12 +434,12 @@ export function createPiCodingAgentHarness(opts: {
       ...(opts.pi?.extensionFactories ?? []),
     ]
     const settingsManager = createResourceSettingsManager(
-      ctx.workdir,
+      opts.cwd,
       agentDir,
       effectivePackages,
     )
     const resourceLoader = new DefaultResourceLoader({
-      cwd: ctx.workdir,
+      cwd: opts.cwd,
       agentDir,
       settingsManager,
       appendSystemPromptOverride: (base: string[]) => [...base, composedSystemPromptAppend],
@@ -459,7 +459,7 @@ export function createPiCodingAgentHarness(opts: {
         ? {
             skillsOverride: () =>
               loadSkills({
-                cwd: ctx.workdir,
+                cwd: opts.cwd,
                 agentDir,
                 skillPaths: effectiveSkillPaths,
                 includeDefaults: false,
@@ -1034,12 +1034,12 @@ export function createPiCodingAgentHarness(opts: {
             const base = basenameForAttachment(a.filename ?? "image");
             const unique = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
             const relPath = `${DEFAULT_ATTACHMENT_DIR}/${base}-${unique}.${ext}`;
-            await mkdir(join(ctx.workdir, DEFAULT_ATTACHMENT_DIR), { recursive: true });
-            await writeFile(join(ctx.workdir, relPath), bytes);
+            await mkdir(join(opts.cwd, DEFAULT_ATTACHMENT_DIR), { recursive: true });
+            await writeFile(join(opts.cwd, relPath), bytes);
             savedPaths.push(relPath);
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            log.error("attachment write failed", { workdir: ctx.workdir, error: msg });
+            log.error("attachment write failed", { workdir: opts.cwd, error: msg });
             writeErrors.push(`${a.filename ?? "image"}: ${msg}`);
           }
         }
