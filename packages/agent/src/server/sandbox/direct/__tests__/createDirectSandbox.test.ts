@@ -53,14 +53,18 @@ async function initSandbox() {
   return { sandbox, workspaceRoot }
 }
 
-test('exec captures UTF-8 output and uses workspace root as cwd', async () => {
+test('exec captures UTF-8 output and defaults cwd/env roots to workspace root', async () => {
   const { sandbox, workspaceRoot } = await initSandbox()
 
   const result = await sandbox.exec(
-    `node -e "process.stdout.write(process.cwd()); process.stderr.write('stderr-ok')"`,
+    'printf "%s\\n%s\\n%s" "$(pwd)" "$PWD" "$BORING_AGENT_WORKSPACE_ROOT"; printf "stderr-ok" >&2',
   )
 
-  expect(Buffer.from(result.stdout).toString('utf-8')).toBe(workspaceRoot)
+  const [pwd, envPwd, boringRoot] = Buffer.from(result.stdout).toString('utf-8').split('\n')
+  expect(pwd).toBe(workspaceRoot)
+  expect(envPwd).toBe(workspaceRoot)
+  expect(boringRoot).toBe(workspaceRoot)
+  expect([pwd, envPwd, boringRoot]).not.toContain('/workspace')
   expect(Buffer.from(result.stderr).toString('utf-8')).toBe('stderr-ok')
   expect(result.stdoutEncoding).toBe('utf-8')
   expect(result.stderrEncoding).toBe('utf-8')
