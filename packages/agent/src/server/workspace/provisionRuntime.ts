@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
 import { access, chmod, cp, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { basename, dirname, isAbsolute, join, posix, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { execFile } from 'node:child_process'
@@ -117,14 +117,14 @@ function envValueToString(value: string | URL, target?: ProvisionTarget, spec?: 
   if (!(value instanceof URL)) return value
   if (value.protocol === 'file:') {
     const filePath = fileURLToPath(value)
-    if (target?.runtimeMode === 'vercel-sandbox' && spec) {
+    if (target && spec) {
       const projectDir = dirname(toPath(spec.projectFile))
       const rel = relative(projectDir, filePath)
       if (rel.startsWith('..') || isAbsolute(rel)) {
-        throw new Error(`Remote provisioning env key ${key ?? '<unknown>'} points outside provisioned project: ${value.toString()}`)
+        throw new Error(`Provisioning env key ${key ?? '<unknown>'} points outside provisioned project: ${value.toString()}`)
       }
-      const remoteRel = rel ? rel.replaceAll('\\', '/') : ''
-      return `${target.runtimeCwd}/${remotePythonProjectTarget(spec)}${remoteRel ? `/${remoteRel}` : ''}`
+      const runtimeRel = rel ? rel.replaceAll('\\', '/') : ''
+      return `${target.runtimeCwd}/${remotePythonProjectTarget(spec)}${runtimeRel ? `/${runtimeRel}` : ''}`
     }
     return filePath
   }
@@ -399,15 +399,20 @@ async function sandboxCommandExists(sandbox: Sandbox, cmd: string, cwd: string):
   return result.exitCode === 0
 }
 
-async function hashPath(path: string, hash: ReturnType<typeof createHash>): Promise<void> {
+async function hashPath(
+  path: string,
+  hash: ReturnType<typeof createHash>,
+  opts: { excludeBoringAgentDir?: boolean } = {},
+): Promise<void> {
   const info = await stat(path)
   if (info.isDirectory()) {
     const entries = (await readdir(path))
       .filter((entry) => entry !== '__pycache__' && entry !== 'build' && !entry.endsWith('.egg-info'))
+      .filter((entry) => !(opts.excludeBoringAgentDir && entry === BORING_AGENT_DIR))
       .sort()
     for (const entry of entries) {
       hash.update(`dir:${entry}\n`)
-      await hashPath(join(path, entry), hash)
+      await hashPath(join(path, entry), hash, opts)
     }
     return
   }
@@ -438,7 +443,7 @@ async function fingerprint(
       hash.update(`python:${spec.id}:${projectFile}\n`)
       hash.update(JSON.stringify(spec.extraLibs ?? []))
       hash.update(JSON.stringify(Object.fromEntries(Object.entries(spec.env ?? {}).map(([k, v]) => [k, String(v)]))))
-      if (await exists(projectFile)) await hashPath(dirname(projectFile), hash)
+      if (await exists(projectFile)) await hashPath(dirname(projectFile), hash, { excludeBoringAgentDir: true })
     }
     for (const spec of provisioning.nodePackages ?? []) {
       const packageRoot = optionalPathToString(spec.packageRoot)
@@ -768,6 +773,50 @@ async function recreatePythonVenv(workspaceRoot: string): Promise<void> {
   }
 }
 
+function isSamePathOrAncestorOf(path: string, descendant: string): boolean {
+  const resolvedPath = resolve(path)
+  const resolvedDescendant = resolve(descendant)
+  return resolvedDescendant === resolvedPath || resolvedDescendant.startsWith(`${resolvedPath}${sep}`)
+}
+
+async function copyHostPythonProjectSource(source: string, target: string): Promise<void> {
+  if (isSamePathOrAncestorOf(source, target)) {
+    await mkdir(target, { recursive: true })
+    const entries = (await readdir(source)).sort()
+    for (const entry of entries) {
+      const sourcePath = join(source, entry)
+      if (isSamePathOrAncestorOf(sourcePath, target)) continue
+      await copyHostPythonProjectSource(sourcePath, join(target, entry))
+    }
+    return
+  }
+
+  const info = await stat(source)
+  if (info.isDirectory()) {
+    await mkdir(target, { recursive: true })
+    const entries = (await readdir(source)).sort()
+    for (const entry of entries) await copyHostPythonProjectSource(join(source, entry), join(target, entry))
+    return
+  }
+  if (!info.isFile()) return
+  await mkdir(dirname(target), { recursive: true })
+  await cp(source, target, { force: true })
+}
+
+async function stageHostPythonProjects(workspaceRoot: string, specs: RuntimePythonSpec[]): Promise<Array<{ spec: RuntimePythonSpec; projectDir: string }>> {
+  const staged: Array<{ spec: RuntimePythonSpec; projectDir: string }> = []
+  for (const spec of specs) {
+    const sourceDir = dirname(toPath(spec.projectFile))
+    const targetDir = join(workspaceRoot, ...remotePythonProjectTarget(spec).split('/'))
+    if (resolve(sourceDir) !== resolve(targetDir)) {
+      await rm(targetDir, { recursive: true, force: true })
+      await copyHostPythonProjectSource(sourceDir, targetDir)
+    }
+    staged.push({ spec, projectDir: targetDir })
+  }
+  return staged
+}
+
 async function ensurePython(workspaceRoot: string, specs: RuntimePythonSpec[]): Promise<void> {
   if (specs.length === 0) return
   const paths = getBoringAgentRuntimePaths(workspaceRoot)
@@ -775,10 +824,10 @@ async function ensurePython(workspaceRoot: string, specs: RuntimePythonSpec[]): 
   const env = pythonCacheEnv(paths)
   const uv = await commandExists('uv')
 
+  const stagedProjects = await stageHostPythonProjects(workspaceRoot, specs)
   await recreatePythonVenv(workspaceRoot)
 
-  for (const spec of specs) {
-    const projectDir = dirname(toPath(spec.projectFile))
+  for (const { spec, projectDir } of stagedProjects) {
     if (uv) {
       await run('uv', ['pip', 'install', '--python', venvPython, projectDir], workspaceRoot, env)
       if (spec.extraLibs?.length) {
@@ -828,6 +877,9 @@ async function isRuntimeMaterialized(
 ): Promise<boolean> {
   if (hasPythonContributions(contributions) && !(await isHostPythonUsable(workspaceRoot))) return false
   for (const { provisioning } of contributions) {
+    for (const spec of provisioning.python ?? []) {
+      if (!(await exists(join(workspaceRoot, ...remotePythonProjectTarget(spec).split('/'))))) return false
+    }
     for (const spec of provisioning.nodePackages ?? []) {
       if (!(await exists(join(nodePackageTarget(workspaceRoot, spec.packageName), 'package.json')))) return false
     }
@@ -1180,7 +1232,9 @@ async function ensureRemotePython(
   const uv = await sandboxCommandExists(sandbox, 'uv', runtimeCwd)
 
   for (const spec of specs) {
-    await copyHostPathToWorkspace(dirname(toPath(spec.projectFile)), workspace, remotePythonProjectTarget(spec))
+    const targetRel = remotePythonProjectTarget(spec)
+    await sandboxRun(sandbox, `rm -rf -- ${shellQuote(`${runtimeCwd}/${targetRel}`)}`, runtimeCwd)
+    await copyHostPathToWorkspace(dirname(toPath(spec.projectFile)), workspace, targetRel)
   }
 
   await recreateRemotePythonVenv(workspace, sandbox, runtimeCwd)
@@ -1206,6 +1260,9 @@ async function isRemoteRuntimeMaterialized(
   const hasPython = contributions.some(({ provisioning }) => (provisioning.python ?? []).length > 0)
   if (hasPython && !(await workspaceExists(workspace, `${BORING_AGENT_DIR}/venv/bin/python`))) return false
   for (const { provisioning } of contributions) {
+    for (const spec of provisioning.python ?? []) {
+      if (!(await workspaceExists(workspace, remotePythonProjectTarget(spec)))) return false
+    }
     for (const spec of provisioning.nodePackages ?? []) {
       if (!(await workspaceExists(workspace, posix.join(nodePackageTargetRel(spec.packageName), 'package.json')))) return false
     }
