@@ -1,6 +1,8 @@
+import { execFile } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
 import { afterEach, expect, test } from 'vitest'
 
 import { withWorkspacePythonEnv } from '../../sandbox/workspacePythonEnv'
@@ -10,6 +12,8 @@ import {
   getBoringAgentRuntimePaths,
   writeBoringAgentOwnershipMarker,
 } from '../runtimeLayout'
+
+const execFileAsync = promisify(execFile)
 
 const tempDirs: string[] = []
 
@@ -138,6 +142,84 @@ async function makeNodePackageRoot(packageName: string, bin?: Record<string, str
   return packageRoot
 }
 
+async function makeRunnableNodePackageRoot(packageName: string, binName: string): Promise<string> {
+  const packageRoot = await makeNodePackageRoot(packageName, { [binName]: 'dist/index.js' })
+  await mkdir(join(packageRoot, 'dist'), { recursive: true })
+  await writeFile(
+    join(packageRoot, 'dist', 'index.js'),
+    '#!/usr/bin/env node\nif (process.argv.includes("--help")) { process.stdout.write("runnable help\\n"); } else { process.stdout.write("runnable ok\\n"); }\n',
+    'utf8',
+  )
+  return packageRoot
+}
+
+test('local node packageRoot is packed installed and linked so boring-ui runs from PATH', async () => {
+  const workspaceRoot = await makeTempDir('boring-runtime-node-runnable-')
+  const packageRoot = await makeRunnableNodePackageRoot('@example/boring-ui', 'boring-ui')
+
+  const result = await provisionRuntimeWorkspace({
+    workspaceRoot,
+    contributions: [{ id: 'tool', provisioning: { nodePackages: [{ id: 'tool', packageName: '@example/boring-ui', packageRoot }] } }],
+  })
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
+
+  expect(result.binDir).toBe(paths.bin)
+  await expect(readFile(join(paths.nodeModules, '@example', 'boring-ui', 'package.json'), 'utf8')).resolves.toContain('@example/boring-ui')
+  await expect(readFile(join(paths.bin, 'boring-ui'), 'utf8')).resolves.toContain('.boring-agent/node/node_modules/@example/boring-ui/dist/index.js')
+  const { stdout } = await execFileAsync('boring-ui', ['--help'], {
+    cwd: workspaceRoot,
+    env: { ...process.env, PATH: `${paths.bin}:${process.env.PATH ?? ''}` },
+  })
+  expect(stdout).toContain('runnable help')
+}, 30_000)
+
+test('multiple local node package roots are installed together so every generated bin stays runnable', async () => {
+  const workspaceRoot = await makeTempDir('boring-runtime-node-multiple-')
+  const packageRootA = await makeRunnableNodePackageRoot('@example/boring-a', 'boring-a')
+  const packageRootB = await makeRunnableNodePackageRoot('@example/boring-b', 'boring-b')
+
+  await provisionRuntimeWorkspace({
+    workspaceRoot,
+    contributions: [{
+      id: 'tools',
+      provisioning: {
+        nodePackages: [
+          { id: 'a', packageName: '@example/boring-a', packageRoot: packageRootA },
+          { id: 'b', packageName: '@example/boring-b', packageRoot: packageRootB },
+        ],
+      },
+    }],
+  })
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
+
+  await expect(readFile(join(paths.nodeModules, '@example', 'boring-a', 'package.json'), 'utf8')).resolves.toContain('@example/boring-a')
+  await expect(readFile(join(paths.nodeModules, '@example', 'boring-b', 'package.json'), 'utf8')).resolves.toContain('@example/boring-b')
+  const env = { ...process.env, PATH: `${paths.bin}:${process.env.PATH ?? ''}` }
+  await expect(execFileAsync('boring-a', ['--help'], { cwd: workspaceRoot, env })).resolves.toMatchObject({ stdout: expect.stringContaining('runnable help') })
+  await expect(execFileAsync('boring-b', ['--help'], { cwd: workspaceRoot, env })).resolves.toMatchObject({ stdout: expect.stringContaining('runnable help') })
+}, 30_000)
+
+test('explicit node package bins link aliases and remove stale managed aliases', async () => {
+  const workspaceRoot = await makeTempDir('boring-runtime-node-alias-')
+  const packageRoot = await makeRunnableNodePackageRoot('@example/alias', 'original')
+
+  await provisionRuntimeWorkspace({
+    workspaceRoot,
+    contributions: [{ id: 'tool', provisioning: { nodePackages: [{ id: 'tool', packageName: '@example/alias', packageRoot, bins: { first: 'dist/index.js' } }] } }],
+  })
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
+  await expect(readFile(join(paths.bin, 'first'), 'utf8')).resolves.toContain('@example/alias/dist/index.js')
+
+  await provisionRuntimeWorkspace({
+    workspaceRoot,
+    force: true,
+    contributions: [{ id: 'tool', provisioning: { nodePackages: [{ id: 'tool', packageName: '@example/alias', packageRoot, bins: { second: 'dist/index.js' } }] } }],
+  })
+
+  await expect(stat(join(paths.bin, 'first'))).rejects.toThrow()
+  await expect(readFile(join(paths.bin, 'second'), 'utf8')).resolves.toContain('@example/alias/dist/index.js')
+}, 30_000)
+
 test('provisioning rejects invalid nodePackages specs clearly', async () => {
   const workspaceRoot = await makeTempDir('boring-runtime-bad-node-spec-')
   const packageRoot = await makeNodePackageRoot('@example/tool')
@@ -173,6 +255,27 @@ test('provisioning rejects invalid nodePackages specs clearly', async () => {
     }],
   })).rejects.toThrow('must be a package-relative file path')
 })
+
+test('node package fingerprint changes when package bin target outside standard dirs changes', async () => {
+  const workspaceRoot = await makeTempDir('boring-runtime-node-root-bin-')
+  const packageRoot = await makeTempDir('boring-runtime-node-root-bin-pkg-')
+  await writeFile(join(packageRoot, 'package.json'), JSON.stringify({ name: '@example/root-bin', version: '0.0.0', bin: { 'root-tool': 'cli.js' } }), 'utf8')
+  await writeFile(join(packageRoot, 'cli.js'), '#!/usr/bin/env node\nprocess.stdout.write("root v1\\n")\n', 'utf8')
+
+  const contribution = { id: 'tool', provisioning: { nodePackages: [{ id: 'tool', packageName: '@example/root-bin', packageRoot }] } }
+  const first = await provisionRuntimeWorkspace({ workspaceRoot, contributions: [contribution] })
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
+  await expect(execFileAsync('root-tool', [], { cwd: workspaceRoot, env: { ...process.env, PATH: `${paths.bin}:${process.env.PATH ?? ''}` } }))
+    .resolves.toMatchObject({ stdout: 'root v1\n' })
+
+  await writeFile(join(packageRoot, 'cli.js'), '#!/usr/bin/env node\nprocess.stdout.write("root v2\\n")\n', 'utf8')
+  const second = await provisionRuntimeWorkspace({ workspaceRoot, contributions: [contribution] })
+
+  expect(second.changed).toBe(true)
+  expect(second.fingerprint).not.toBe(first.fingerprint)
+  await expect(execFileAsync('root-tool', [], { cwd: workspaceRoot, env: { ...process.env, PATH: `${paths.bin}:${process.env.PATH ?? ''}` } }))
+    .resolves.toMatchObject({ stdout: 'root v2\n' })
+}, 30_000)
 
 test('node package fingerprint changes for source version and bin alias changes', async () => {
   const workspaceRoot = await makeTempDir('boring-runtime-node-fingerprint-')
@@ -214,7 +317,7 @@ test('node package fingerprint changes for source version and bin alias changes'
   expect(tarballChanged.fingerprint).not.toBe(sourceChanged.fingerprint)
   expect(versionChanged.fingerprint).not.toBe(tarballChanged.fingerprint)
   expect(aliasChanged.fingerprint).not.toBe(versionChanged.fingerprint)
-})
+}, 30_000)
 
 test('duplicate node package bins fail unless explicit aliases disambiguate', async () => {
   const workspaceRoot = await makeTempDir('boring-runtime-node-duplicate-bins-')
