@@ -27,7 +27,8 @@ import {
 } from './runtimeLayout'
 
 const execFileAsync = promisify(execFile)
-const PROVISIONING_VERSION = 6
+export const RUNTIME_PROVISIONING_VERSION = 6
+const PROVISIONING_VERSION = RUNTIME_PROVISIONING_VERSION
 const DEFAULT_REMOTE_TIMEOUT_MS = 5 * 60 * 1000
 const DEFAULT_REMOTE_MAX_OUTPUT_BYTES = 1024 * 1024 * 20
 const NODE_PACKAGE_LOCK_FILES = [

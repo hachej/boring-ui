@@ -25,6 +25,7 @@ import { catalogRoutes } from './http/routes/catalog'
 import { readyStatusRoutes } from './http/routes/readyStatus'
 import { reloadRoutes } from './http/routes/reload'
 import { searchRoutes } from './http/routes/search'
+import { runtimeDoctorRoutes } from './runtime/doctor'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
 
@@ -165,9 +166,15 @@ export async function createAgentApp(
     }),
   )
 
+  const version = opts.version ?? DEFAULT_VERSION
   await app.register(healthRoutes, {
-    version: opts.version ?? DEFAULT_VERSION,
+    version,
     getReadiness: () => readyTracker.getReadiness(),
+  })
+  await app.register(runtimeDoctorRoutes, {
+    version,
+    runtimeMode: resolvedMode,
+    bundle: runtimeBundle,
   })
 
   await app.register(fileRoutes, { workspace: runtimeBundle.workspace })
