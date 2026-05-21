@@ -190,12 +190,13 @@ function nodePackageContribution(
   nodePackageId: string,
   packageName: string,
   packageRoot: string | null,
+  bins?: Record<string, string>,
 ): WorkspaceProvisioningContribution | null {
   if (!packageRoot || !existsSync(join(packageRoot, "package.json"))) return null
   return {
     id: contributionId,
     provisioning: {
-      nodePackages: [{ id: nodePackageId, packageName, packageRoot }],
+      nodePackages: [{ id: nodePackageId, packageName, packageRoot, ...(bins ? { bins } : {}) }],
     },
   }
 }
@@ -261,6 +262,7 @@ function createBoringUiCliPackageProvisioningContribution(): WorkspaceProvisioni
     "boring-ui-cli",
     "@hachej/boring-ui-cli",
     resolveBoringUiCliPackageRoot(),
+    { "boring-ui": "dist/index.js" },
   )
 }
 

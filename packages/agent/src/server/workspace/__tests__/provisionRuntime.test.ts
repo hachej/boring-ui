@@ -131,3 +131,119 @@ test('owned top-level .venv is removed during runtime layout migration', async (
 
   await expect(stat(paths.legacyTopLevelVenv)).rejects.toThrow()
 })
+
+async function makeNodePackageRoot(packageName: string, bin?: Record<string, string>): Promise<string> {
+  const packageRoot = await makeTempDir('boring-runtime-node-pkg-')
+  await writeFile(join(packageRoot, 'package.json'), `${JSON.stringify({ name: packageName, version: '0.0.0', ...(bin ? { bin } : {}) })}\n`, 'utf8')
+  return packageRoot
+}
+
+test('provisioning rejects invalid nodePackages specs clearly', async () => {
+  const workspaceRoot = await makeTempDir('boring-runtime-bad-node-spec-')
+  const packageRoot = await makeNodePackageRoot('@example/tool')
+
+  await expect(provisionRuntimeWorkspace({
+    workspaceRoot,
+    contributions: [{ id: 'bad', provisioning: { nodePackages: [{ id: 'tool', packageName: 'bad/name/extra', packageRoot }] } }],
+  })).rejects.toThrow('packageName must be a valid npm package name')
+
+  await expect(provisionRuntimeWorkspace({
+    workspaceRoot,
+    contributions: [{ id: 'bad', provisioning: { nodePackages: [{ id: 'tool', packageName: '@example/tool' } as any] } }],
+  })).rejects.toThrow('must provide packageRoot for a local source or version for a registry source')
+
+  await expect(provisionRuntimeWorkspace({
+    workspaceRoot,
+    contributions: [{ id: 'bad', provisioning: { nodePackages: [{ id: 'tool', packageName: '@example/tool', packageRoot, version: '1.0.0 beta' }] } }],
+  })).rejects.toThrow('version must be a non-empty version string')
+
+  await expect(provisionRuntimeWorkspace({
+    workspaceRoot,
+    contributions: [{
+      id: 'bad',
+      provisioning: { nodePackages: [{ id: 'tool', packageName: '@example/tool', packageRoot, bins: { '../tool': 'dist/index.js' } }] },
+    }],
+  })).rejects.toThrow('must be a bin name without path separators')
+
+  await expect(provisionRuntimeWorkspace({
+    workspaceRoot,
+    contributions: [{
+      id: 'bad',
+      provisioning: { nodePackages: [{ id: 'tool', packageName: '@example/tool', packageRoot, bins: { tool: '../dist/index.js' } }] },
+    }],
+  })).rejects.toThrow('must be a package-relative file path')
+})
+
+test('node package fingerprint changes for source version and bin alias changes', async () => {
+  const workspaceRoot = await makeTempDir('boring-runtime-node-fingerprint-')
+  const packageRoot = await makeNodePackageRoot('@example/tool')
+
+  const first = await provisionRuntimeWorkspace({
+    workspaceRoot,
+    force: true,
+    contributions: [{ id: 'tool', provisioning: { nodePackages: [{ id: 'tool', packageName: '@example/tool', packageRoot, bins: { tool: 'dist/index.js' } }] } }],
+  })
+
+  await writeFile(join(packageRoot, 'package-lock.json'), '{"lockfileVersion":3}\n', 'utf8')
+  const sourceChanged = await provisionRuntimeWorkspace({
+    workspaceRoot,
+    force: true,
+    contributions: [{ id: 'tool', provisioning: { nodePackages: [{ id: 'tool', packageName: '@example/tool', packageRoot, bins: { tool: 'dist/index.js' } }] } }],
+  })
+
+  await writeFile(join(packageRoot, 'tool-0.0.0.tgz'), 'packed bytes\n', 'utf8')
+  const tarballChanged = await provisionRuntimeWorkspace({
+    workspaceRoot,
+    force: true,
+    contributions: [{ id: 'tool', provisioning: { nodePackages: [{ id: 'tool', packageName: '@example/tool', packageRoot, bins: { tool: 'dist/index.js' } }] } }],
+  })
+
+  const versionChanged = await provisionRuntimeWorkspace({
+    workspaceRoot,
+    force: true,
+    contributions: [{ id: 'tool', provisioning: { nodePackages: [{ id: 'tool', packageName: '@example/tool', version: '1.2.3', packageRoot, bins: { tool: 'dist/index.js' } }] } }],
+  })
+
+  const aliasChanged = await provisionRuntimeWorkspace({
+    workspaceRoot,
+    force: true,
+    contributions: [{ id: 'tool', provisioning: { nodePackages: [{ id: 'tool', packageName: '@example/tool', version: '1.2.3', packageRoot, bins: { renamed: 'dist/index.js' } }] } }],
+  })
+
+  expect(sourceChanged.fingerprint).not.toBe(first.fingerprint)
+  expect(tarballChanged.fingerprint).not.toBe(sourceChanged.fingerprint)
+  expect(versionChanged.fingerprint).not.toBe(tarballChanged.fingerprint)
+  expect(aliasChanged.fingerprint).not.toBe(versionChanged.fingerprint)
+})
+
+test('duplicate node package bins fail unless explicit aliases disambiguate', async () => {
+  const workspaceRoot = await makeTempDir('boring-runtime-node-duplicate-bins-')
+  const packageRootA = await makeNodePackageRoot('@example/a', { tool: 'dist/a.js' })
+  const packageRootB = await makeNodePackageRoot('@example/b', { tool: 'dist/b.js' })
+
+  await expect(provisionRuntimeWorkspace({
+    workspaceRoot,
+    contributions: [{
+      id: 'tools',
+      provisioning: {
+        nodePackages: [
+          { id: 'a', packageName: '@example/a', packageRoot: packageRootA },
+          { id: 'b', packageName: '@example/b', packageRoot: packageRootB },
+        ],
+      },
+    }],
+  })).rejects.toThrow('Duplicate node package bin "tool"')
+
+  await expect(provisionRuntimeWorkspace({
+    workspaceRoot,
+    contributions: [{
+      id: 'tools',
+      provisioning: {
+        nodePackages: [
+          { id: 'a', packageName: '@example/a', packageRoot: packageRootA, bins: { toolA: 'dist/a.js' } },
+          { id: 'b', packageName: '@example/b', packageRoot: packageRootB, bins: { toolB: 'dist/b.js' } },
+        ],
+      },
+    }],
+  })).resolves.toMatchObject({ changed: true })
+})

@@ -26,9 +26,17 @@ import {
 } from './runtimeLayout'
 
 const execFileAsync = promisify(execFile)
-const PROVISIONING_VERSION = 4
+const PROVISIONING_VERSION = 5
 const DEFAULT_REMOTE_TIMEOUT_MS = 5 * 60 * 1000
 const DEFAULT_REMOTE_MAX_OUTPUT_BYTES = 1024 * 1024 * 20
+const NODE_PACKAGE_LOCK_FILES = [
+  'package-lock.json',
+  'npm-shrinkwrap.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'bun.lock',
+  'bun.lockb',
+]
 
 export interface RuntimeTemplateContribution {
   id: string
@@ -48,10 +56,14 @@ export interface RuntimePythonSpec {
 
 export interface RuntimeNodePackageSpec {
   id: string
-  /** Package name materialized under workspaceRoot/node_modules, e.g. @boring/workspace. */
+  /** Package name materialized under .boring-agent/node/node_modules, e.g. @boring/workspace. */
   packageName: string
+  /** npm package version/dist-tag for registry-backed provisioning. */
+  version?: string
   /** Source package root. The provisioner copies the built package payload into node_modules. */
-  packageRoot: string | URL
+  packageRoot?: string | URL
+  /** Runtime bin aliases mapped to package-relative executable paths. */
+  bins?: Record<string, string>
 }
 
 export interface RuntimeProvisioningContribution {
@@ -91,6 +103,11 @@ interface ProvisionTarget {
 }
 
 function toPath(value: string | URL): string {
+  return value instanceof URL ? fileURLToPath(value) : value
+}
+
+function optionalPathToString(value: string | URL | undefined): string {
+  if (value === undefined) return ''
   return value instanceof URL ? fileURLToPath(value) : value
 }
 
@@ -134,6 +151,165 @@ async function workspaceExists(workspace: Workspace, relPath: string): Promise<b
   } catch (error) {
     if (isNotFound(error)) return false
     return false
+  }
+}
+
+function assertNonEmptyString(value: unknown, message: string): asserts value is string {
+  if (typeof value !== 'string' || value.length === 0) throw new Error(message)
+}
+
+function isFileUrl(value: unknown): value is URL {
+  return value instanceof URL && value.protocol === 'file:'
+}
+
+function assertValidPackageName(packageName: string, context: string): void {
+  if (packageName.trim() !== packageName || packageName.includes('\0') || packageName.includes('\\')) {
+    throw new Error(`${context}.packageName must be a valid npm package name`)
+  }
+  const parts = packageName.split('/')
+  const validPart = (part: string) => part.length > 0 && part !== '.' && part !== '..' && !part.includes('\0')
+  if (packageName.startsWith('@')) {
+    if (parts.length !== 2 || !parts[0].startsWith('@') || !validPart(parts[0].slice(1)) || !validPart(parts[1])) {
+      throw new Error(`${context}.packageName must be a valid scoped npm package name`)
+    }
+    return
+  }
+  if (parts.length !== 1 || !validPart(parts[0])) {
+    throw new Error(`${context}.packageName must be a valid npm package name`)
+  }
+}
+
+function assertValidPackageRoot(packageRoot: unknown, context: string): asserts packageRoot is string | URL | undefined {
+  if (packageRoot === undefined) return
+  if (typeof packageRoot === 'string') {
+    if (packageRoot.length === 0 || packageRoot.includes('\0')) {
+      throw new Error(`${context}.packageRoot must be a non-empty string or file URL when provided`)
+    }
+    return
+  }
+  if (!isFileUrl(packageRoot)) {
+    throw new Error(`${context}.packageRoot must be a non-empty string or file URL when provided`)
+  }
+}
+
+function assertValidPackageVersion(version: unknown, context: string): asserts version is string | undefined {
+  if (version === undefined) return
+  if (typeof version !== 'string' || version.length === 0 || version.trim() !== version || /[\s\0]/.test(version)) {
+    throw new Error(`${context}.version must be a non-empty version string when provided`)
+  }
+}
+
+function normalizePackageRelativePath(path: string, context: string): string {
+  if (path.length === 0 || path.includes('\0') || path.includes('\\')) {
+    throw new Error(`${context} must be a package-relative file path`)
+  }
+  const normalized = posix.normalize(path.replace(/^\.\//, ''))
+  if (normalized === '.' || normalized.startsWith('../') || normalized === '..' || posix.isAbsolute(normalized)) {
+    throw new Error(`${context} must be a package-relative file path`)
+  }
+  return normalized
+}
+
+function assertValidBinName(name: string, context: string): void {
+  if (!/^[A-Za-z0-9._-]+$/.test(name) || name === '.' || name === '..') {
+    throw new Error(`${context} must be a bin name without path separators`)
+  }
+}
+
+function normalizeBins(bins: Record<string, string> | undefined, context: string): Record<string, string> | undefined {
+  if (bins === undefined) return undefined
+  if (!bins || typeof bins !== 'object' || Array.isArray(bins)) {
+    throw new Error(`${context}.bins must be an object mapping bin names to package-relative paths when provided`)
+  }
+  const normalized: Record<string, string> = {}
+  for (const [name, target] of Object.entries(bins)) {
+    assertValidBinName(name, `${context}.bins key "${name}"`)
+    assertNonEmptyString(target, `${context}.bins.${name} must be a package-relative file path`)
+    normalized[name] = normalizePackageRelativePath(target, `${context}.bins.${name}`)
+  }
+  return normalized
+}
+
+function unscopedPackageName(packageName: string): string {
+  const parts = packageName.split('/')
+  return parts[parts.length - 1] || packageName
+}
+
+function parsePackageJsonBinNames(packageJson: unknown, spec: RuntimeNodePackageSpec, context: string): string[] {
+  const candidate = packageJson as { bin?: unknown } | null
+  const bin = candidate?.bin
+  if (bin === undefined) return []
+  if (typeof bin === 'string') {
+    normalizePackageRelativePath(bin, `${context} package.json bin`)
+    return [unscopedPackageName(spec.packageName)]
+  }
+  if (!bin || typeof bin !== 'object' || Array.isArray(bin)) {
+    throw new Error(`${context} package.json bin must be a string or object when present`)
+  }
+  const names: string[] = []
+  for (const [name, target] of Object.entries(bin)) {
+    assertValidBinName(name, `${context} package.json bin key "${name}"`)
+    assertNonEmptyString(target, `${context} package.json bin.${name} must be a package-relative file path`)
+    normalizePackageRelativePath(target, `${context} package.json bin.${name}`)
+    names.push(name)
+  }
+  return names
+}
+
+async function readNodePackageJson(packageRoot: string): Promise<unknown | null> {
+  try {
+    return JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8'))
+  } catch (error) {
+    if ((error as { code?: string }).code === 'ENOENT') return null
+    throw error
+  }
+}
+
+async function collectNodePackageBinNames(spec: RuntimeNodePackageSpec, context: string): Promise<string[]> {
+  const explicitBins = normalizeBins(spec.bins, context)
+  if (explicitBins) return Object.keys(explicitBins)
+  if (!spec.packageRoot) return []
+  const packageJson = await readNodePackageJson(toPath(spec.packageRoot))
+  if (!packageJson) return []
+  return parsePackageJsonBinNames(packageJson, spec, context)
+}
+
+export async function validateRuntimeProvisioningContributions(
+  contributions: Array<{ id: string; provisioning?: RuntimeProvisioningContribution }>,
+): Promise<void> {
+  const binOwners = new Map<string, string>()
+  for (let contributionIndex = 0; contributionIndex < contributions.length; contributionIndex++) {
+    const contribution = contributions[contributionIndex]
+    if (!contribution.provisioning) continue
+    const specs = contribution.provisioning.nodePackages
+    if (specs === undefined) continue
+    if (!Array.isArray(specs)) throw new Error(`contributions[${contributionIndex}].provisioning.nodePackages must be an array when provided`)
+    for (let specIndex = 0; specIndex < specs.length; specIndex++) {
+      const spec = specs[specIndex] as RuntimeNodePackageSpec
+      const context = `contributions[${contributionIndex}].provisioning.nodePackages[${specIndex}]`
+      if (!spec || typeof spec !== 'object') throw new Error(`${context} must be an object`)
+      assertNonEmptyString(spec.id, `${context}.id must be a non-empty string`)
+      assertNonEmptyString(spec.packageName, `${context}.packageName must be a non-empty string`)
+      assertValidPackageName(spec.packageName, context)
+      assertValidPackageVersion(spec.version, context)
+      assertValidPackageRoot(spec.packageRoot, context)
+      normalizeBins(spec.bins, context)
+      if (!spec.packageRoot && !spec.version) {
+        throw new Error(`${context} must provide packageRoot for a local source or version for a registry source`)
+      }
+      if (spec.packageRoot) {
+        const packageJson = await readNodePackageJson(toPath(spec.packageRoot))
+        if (!packageJson) throw new Error(`Node package provisioning source is missing package.json: ${toPath(spec.packageRoot)}`)
+      }
+      const owner = `${contribution.id}:${spec.id}`
+      for (const binName of await collectNodePackageBinNames(spec, context)) {
+        const previous = binOwners.get(binName)
+        if (previous) {
+          throw new Error(`Duplicate node package bin "${binName}" from ${owner} conflicts with ${previous}; set nodePackages[].bins aliases to disambiguate`)
+        }
+        binOwners.set(binName, owner)
+      }
+    }
   }
 }
 
@@ -246,8 +422,16 @@ async function fingerprint(
       if (await exists(projectFile)) await hashPath(dirname(projectFile), hash)
     }
     for (const spec of provisioning.nodePackages ?? []) {
-      const packageRoot = toPath(spec.packageRoot)
-      hash.update(`node-package:${spec.id}:${spec.packageName}:${packageRoot}\n`)
+      const packageRoot = optionalPathToString(spec.packageRoot)
+      hash.update(`${JSON.stringify({
+        type: 'node-package',
+        id: spec.id,
+        packageName: spec.packageName,
+        version: spec.version ?? '',
+        packageRoot,
+        bins: Object.fromEntries(Object.entries(normalizeBins(spec.bins, `nodePackages.${spec.id}`) ?? {}).sort(([a], [b]) => a.localeCompare(b))),
+      })}\n`)
+      if (!spec.packageRoot) continue
       const packageJson = join(packageRoot, 'package.json')
       const distDir = join(packageRoot, 'dist')
       const docsDir = join(packageRoot, 'docs')
@@ -255,6 +439,14 @@ async function fingerprint(
       const referencesDir = join(packageRoot, 'references')
       const sourceDocsDir = join(packageRoot, 'src', 'server', 'docs')
       if (await exists(packageJson)) await hashPath(packageJson, hash)
+      for (const lockFile of NODE_PACKAGE_LOCK_FILES) {
+        const lockPath = join(packageRoot, lockFile)
+        if (await exists(lockPath)) await hashPath(lockPath, hash)
+      }
+      const rootEntries = (await readdir(packageRoot).catch(() => []))
+        .filter((entry) => entry.endsWith('.tgz') || entry.endsWith('.tar.gz'))
+        .sort()
+      for (const entry of rootEntries) await hashPath(join(packageRoot, entry), hash)
       if (await exists(distDir)) await hashPath(distDir, hash)
       const templatesDir = join(packageRoot, 'templates')
       const publicDir = join(packageRoot, 'public')
@@ -330,6 +522,9 @@ async function copyIfExists(source: string, target: string): Promise<boolean> {
 
 async function ensureNodePackages(workspaceRoot: string, specs: RuntimeNodePackageSpec[]): Promise<void> {
   for (const spec of specs) {
+    if (!spec.packageRoot) {
+      throw new Error(`Registry node package provisioning is not installed yet for ${spec.packageName}@${spec.version ?? 'latest'}; provide packageRoot until registry install support is available`)
+    }
     const packageRoot = toPath(spec.packageRoot)
     const target = nodePackageTarget(workspaceRoot, spec.packageName)
     await mkdir(target, { recursive: true })
@@ -680,6 +875,9 @@ async function seedRemoteTemplates(workspace: Workspace, contributions: Array<{ 
 
 async function ensureRemoteNodePackages(workspace: Workspace, specs: RuntimeNodePackageSpec[]): Promise<void> {
   for (const spec of specs) {
+    if (!spec.packageRoot) {
+      throw new Error(`Registry node package provisioning is not installed yet for ${spec.packageName}@${spec.version ?? 'latest'}; provide packageRoot until registry install support is available`)
+    }
     const packageRoot = toPath(spec.packageRoot)
     const target = nodePackageTargetRel(spec.packageName)
     await workspace.mkdir(target, { recursive: true })
@@ -914,6 +1112,8 @@ export async function provisionRuntimeWorkspace(opts: ProvisionRuntimeWorkspaceO
   for (const contribution of opts.contributions ?? []) {
     if (contribution.provisioning) active.push({ id: contribution.id, provisioning: contribution.provisioning })
   }
+
+  await validateRuntimeProvisioningContributions(active)
 
   const target = resolveTarget(opts)
   const env = collectEnv(active, target)
