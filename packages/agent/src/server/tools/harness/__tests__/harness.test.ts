@@ -176,6 +176,28 @@ describe('buildHarnessAgentTools', () => {
     expect(result.content[0].text).toContain(join(workspaceRoot, '.boring-agent', 'venv'))
   })
 
+  test('direct model bash pwd, PWD, and workspace root env are the host workspace path', async () => {
+    const workspaceRoot = await makeTempWorkspace()
+    const bundle = mockBundle('direct', ['exec'], workspaceRoot)
+    const tools = buildHarnessAgentTools(bundle)
+    const bashTool = tools.find((t) => t.name === 'bash')!
+
+    const result = await bashTool.execute(
+      {
+        command: 'printf "%s\\n%s\\n%s" "$(pwd)" "$PWD" "$BORING_AGENT_WORKSPACE_ROOT"',
+        timeout: 10,
+      },
+      { abortSignal: new AbortController().signal, toolCallId: 'test-direct-cwd' },
+    )
+
+    const [pwd, envPwd, boringRoot] = result.content[0].text.trimEnd().split('\n').slice(-3)
+    expect(result.isError).toBe(false)
+    expect(pwd).toBe(workspaceRoot)
+    expect(envPwd).toBe(workspaceRoot)
+    expect(boringRoot).toBe(workspaceRoot)
+    expect([pwd, envPwd, boringRoot]).not.toContain('/workspace')
+  })
+
   describeIfBwrap('bwrap bash tool integration', () => {
     test('model bash pwd and PWD are /workspace', async () => {
       const workspaceRoot = await makeTempWorkspace()
