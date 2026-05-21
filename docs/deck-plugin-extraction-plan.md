@@ -156,6 +156,7 @@ export interface CreateDeckPluginOptions {
   storage?: DeckStorageClient
   storageBasePath?: string
   widgets?: DeckWidgetDefinition[]
+  markdownDirectives?: DeckMarkdownDirectiveDefinition[]
   components?: DeckComponentSlots
   markdownComponents?: MarkdownComponentOverrides
   remarkPlugins?: unknown[]
@@ -220,23 +221,57 @@ export function createHttpDeckStorage(options: {
 
 This keeps the deck UI independent of any app-specific deck route, including macro's `/api/macro/deck` compatibility route.
 
-### 5.3 Widget injection
+### 5.3 Custom markdown component and widget injection
 
-Generic deck supports custom component injection through a named widget registry.
+Generic deck supports custom component injection through a named registry. The language should support both block-like widgets and inline markdown components.
 
-Markdown syntax:
+Preferred markdown directive syntax, powered by a deck-owned `remark-directive` integration:
+
+```md
+Inline status :Badge[Preliminary]{tone="warning"} inside a paragraph.
+
+::Kpi{label="GDP" value="2.1%" tone="good"}
+
+:::Callout{tone="warning" title="Caveat"}
+This is a custom container component with markdown children.
+:::
+```
+
+Compatibility/block shorthand syntax:
 
 ```md
 {{WidgetName key="value" another="value"}}
 ```
 
+Rules of thumb:
+
+- Use directive syntax for new inline, leaf, and container components.
+- Keep `{{WidgetName ...}}` as a block/leaf shorthand and for existing consumer decks.
+- The generic package ships no domain directives by default beyond safe placeholders/examples.
+
 Types:
 
 ```ts
-export interface DeckWidgetDefinition<TAttrs = Record<string, string>> {
+export type DeckMarkdownDirectiveKind = 'text' | 'leaf' | 'container'
+
+export interface DeckMarkdownDirectiveDefinition<TAttrs = Record<string, string>> {
   name: string
+  kind: DeckMarkdownDirectiveKind
   parse?: (attrs: Record<string, string>) => TAttrs
-  render: ComponentType<DeckWidgetRenderProps<TAttrs>>
+  render: ComponentType<DeckMarkdownDirectiveRenderProps<TAttrs>>
+}
+
+export interface DeckMarkdownDirectiveRenderProps<TAttrs> {
+  attrs: TAttrs
+  rawAttrs: Record<string, string>
+  children?: ReactNode
+  text?: string
+  context: DeckRuntimeContext
+}
+
+export interface DeckWidgetDefinition<TAttrs = Record<string, string>>
+  extends Omit<DeckMarkdownDirectiveDefinition<TAttrs>, 'kind'> {
+  kind?: 'leaf'
 }
 
 export interface DeckWidgetRenderProps<TAttrs> {
@@ -259,13 +294,14 @@ export interface DeckRuntimeContext {
 
 Rules:
 
-- Unknown widgets render a visible non-fatal placeholder.
-- Widget parsing failures render a visible placeholder with error details in dev/test only.
-- Widget renderers are wrapped in a deck-owned error boundary; one bad widget must not blank the slide or deck.
-- Widget names must match a strict identifier regex and duplicate widget names fail during `createDeckPlugin(...)`.
-- Widget definitions are matched by exact `name`.
+- Unknown widgets/directives render a visible non-fatal placeholder.
+- Parser failures render a visible placeholder with error details in dev/test only.
+- Renderers are wrapped in a deck-owned error boundary; one bad custom component must not blank the slide or deck.
+- Names must match a strict identifier regex and duplicate names fail during `createDeckPlugin(...)`.
+- Definitions are matched by exact `name` and `kind`.
+- Raw HTML remains disabled by default; custom components must go through the directive/widget registry, not arbitrary HTML/MDX eval.
 
-Domain consumers can supply their own widgets. For example, `boring-macro` can supply `TimeSeries` and `TimeSeriesGrid`, but those widget implementations stay outside the generic deck package.
+Domain consumers can supply their own widgets/directives. For example, `boring-macro` can supply `TimeSeries` and `TimeSeriesGrid`, but those implementations stay outside the generic deck package.
 
 Potential future consumers can supply:
 
@@ -402,8 +438,9 @@ Skill scope:
 - `---` on its own line splits slides
 - optional frontmatter title
 - concise slide-writing rubric
-- widget syntax `{{WidgetName key="value"}}`
-- generic widget sizing/layout conventions
+- directive syntax such as `:Badge[text]{tone="info"}`, `::Kpi{value="3.2%"}`, and container directives
+- compatibility widget syntax `{{WidgetName key="value"}}`
+- generic component sizing/layout conventions
 - warning to preserve existing custom widget syntax supplied by the host app
 
 Keep `systemPrompt` short and use it to point the agent at the skill and the current route/path conventions. Move generic deck authoring rules into `@hachej/boring-deck/server`:
@@ -447,6 +484,8 @@ export type DeckSegment =
   | { type: 'widget'; name: string; attrs: Record<string, string>; raw: string }
 ```
 
+Inline and container custom components should be represented in the markdown AST through the directive plugin, not by splitting paragraph text with ad-hoc regexes. The `DeckSegment` widget path is only for slide-level compatibility shorthand such as `{{WidgetName ...}}`.
+
 Functions:
 
 ```ts
@@ -462,6 +501,10 @@ Tests:
 - widgets parsed with quoted attrs
 - unknown widgets remain structured
 - malformed widget syntax falls back to markdown or placeholder
+- text directives render inline custom components inside paragraphs
+- leaf directives render block/leaf custom components
+- container directives render custom components with markdown children
+- raw HTML/MDX eval remains disabled
 
 ## 8. Macro integration after extraction
 
@@ -678,7 +721,7 @@ Mitigation: keep `panelId: 'deck'` for the generic default plugin and for macro'
 2. Add shared constants/types for deck panel ids, surface kind, storage contracts, widget contracts.
 3. Extract parser with tests.
 4. Port `DeckPane` as a generic renderer only; exclude macro widgets, macro routes, and macro data imports.
-5. Implement widget registry and unknown-widget placeholder.
+5. Implement directive/widget registry, inline markdown component rendering, and unknown-component placeholder.
 6. Implement HTTP storage client.
 7. Implement file server storage and routes.
 8. Implement `createDeckPlugin` front builder.
