@@ -34,6 +34,7 @@ export { createNodeWorkspace } from './workspace/createNodeWorkspace'
 export { fileRoutes } from './http/routes/file'
 export {
   provisionRuntimeWorkspace,
+  validateRuntimeProvisioningContributions,
   type ProvisionRuntimeWorkspaceOptions,
   type RuntimeWorkspaceProvisioningResult,
   type RuntimeProvisioningContribution,

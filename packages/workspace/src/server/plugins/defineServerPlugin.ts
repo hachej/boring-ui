@@ -1,4 +1,5 @@
 import type { RuntimeProvisioningContribution } from "@hachej/boring-agent/server"
+import { posix } from "node:path"
 import type { FastifyPluginAsync } from "fastify"
 import type { AgentTool } from "../../shared/types/agent-tool"
 
@@ -42,6 +43,43 @@ function isUrl(value: unknown): value is URL {
 
 function isPathLike(value: unknown): value is string | URL {
   return (typeof value === "string" && value.length > 0) || isUrl(value)
+}
+
+function isFilePathLike(value: unknown): value is string | URL {
+  return (typeof value === "string" && value.length > 0 && !value.includes("\0")) || (isUrl(value) && value.protocol === "file:")
+}
+
+function validateNodePackageName(pluginId: string, index: number, packageName: string): void {
+  if (packageName.trim() !== packageName || packageName.includes("\0") || packageName.includes("\\")) {
+    fail(pluginId, `provisioning.nodePackages[${index}].packageName must be a valid npm package name`)
+  }
+  const parts = packageName.split("/")
+  const validPart = (part: string) => part.length > 0 && part !== "." && part !== ".." && !part.includes("\0")
+  if (packageName.startsWith("@")) {
+    if (parts.length !== 2 || !parts[0].startsWith("@") || !validPart(parts[0].slice(1)) || !validPart(parts[1])) {
+      fail(pluginId, `provisioning.nodePackages[${index}].packageName must be a valid scoped npm package name`)
+    }
+    return
+  }
+  if (parts.length !== 1 || !validPart(parts[0])) {
+    fail(pluginId, `provisioning.nodePackages[${index}].packageName must be a valid npm package name`)
+  }
+}
+
+function validateNodeBinName(pluginId: string, packageIndex: number, binName: string): void {
+  if (!/^[A-Za-z0-9._-]+$/.test(binName) || binName === "." || binName === "..") {
+    fail(pluginId, `provisioning.nodePackages[${packageIndex}].bins key "${binName}" must be a bin name without path separators`)
+  }
+}
+
+function validateNodeBinTarget(pluginId: string, packageIndex: number, binName: string, target: unknown): void {
+  if (typeof target !== "string" || target.length === 0 || target.includes("\0") || target.includes("\\")) {
+    fail(pluginId, `provisioning.nodePackages[${packageIndex}].bins.${binName} must be a package-relative file path`)
+  }
+  const normalized = posix.normalize(target.replace(/^\.\//, ""))
+  if (normalized === "." || normalized === ".." || normalized.startsWith("../") || normalized.startsWith("/")) {
+    fail(pluginId, `provisioning.nodePackages[${packageIndex}].bins.${binName} must be a package-relative file path`)
+  }
 }
 
 function validateAgentTool(pluginId: string, tool: unknown, index: number): void {
@@ -138,8 +176,24 @@ function validateProvisioning(
       if (!spec.packageName || typeof spec.packageName !== "string") {
         fail(pluginId, `provisioning.nodePackages[${i}].packageName must be a non-empty string`)
       }
-      if (!isPathLike(spec.packageRoot)) {
-        fail(pluginId, `provisioning.nodePackages[${i}].packageRoot must be a string or URL`)
+      validateNodePackageName(pluginId, i, spec.packageName)
+      if (spec.version !== undefined && (typeof spec.version !== "string" || spec.version.length === 0 || spec.version.trim() !== spec.version || /[\s\0]/.test(spec.version))) {
+        fail(pluginId, `provisioning.nodePackages[${i}].version must be a non-empty version string when provided`)
+      }
+      if (spec.packageRoot !== undefined && !isFilePathLike(spec.packageRoot)) {
+        fail(pluginId, `provisioning.nodePackages[${i}].packageRoot must be a non-empty string or file URL when provided`)
+      }
+      if (spec.packageRoot === undefined && spec.version === undefined) {
+        fail(pluginId, `provisioning.nodePackages[${i}] must provide packageRoot for a local source or version for a registry source`)
+      }
+      if (spec.bins !== undefined) {
+        if (!spec.bins || typeof spec.bins !== "object" || Array.isArray(spec.bins)) {
+          fail(pluginId, `provisioning.nodePackages[${i}].bins must be an object mapping bin names to package-relative paths when provided`)
+        }
+        for (const [binName, target] of Object.entries(spec.bins)) {
+          validateNodeBinName(pluginId, i, binName)
+          validateNodeBinTarget(pluginId, i, binName, target)
+        }
       }
     }
   }
