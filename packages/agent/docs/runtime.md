@@ -1,6 +1,6 @@
 > The boring-ui agent supports multiple runtime modes. Ask it to configure the right one for your deployment.
 
-# Runtime Modes
+# Runtime Modes and Provisioning
 
 The agent supports three execution modes controlling how `bash` and filesystem tools run.
 
@@ -20,6 +20,147 @@ BORING_AGENT_MODE=vercel-sandbox
 
 Defaults to `direct` when unset.
 
+## Runtime cwd contract
+
+Every adapter must preserve this invariant:
+
+```txt
+file tree root == shell cwd == model-visible cwd == BORING_AGENT_WORKSPACE_ROOT
+```
+
+The shared runtime context is intentionally small:
+
+```ts
+interface WorkspaceRuntimeContext {
+  runtimeCwd: string
+}
+```
+
+Adapter rules:
+
+- `Workspace.root` must equal `runtimeContext.runtimeCwd`.
+- `Sandbox.runtimeContext.runtimeCwd` must equal the same value.
+- Shell tools should default `cwd` to `runtimeCwd`.
+- `BORING_AGENT_WORKSPACE_ROOT` and `PWD` should be the same value seen by the model.
+- Do **not** rewrite user command strings. Adapters own cwd, env, and mounts; commands must pass through literally.
+- Generic agent/provisioning code must not depend on host storage paths or sandbox-internal roots.
+
+Mode-specific roots:
+
+- `direct`: `runtimeCwd` is the real host workspace path.
+- `local`/bwrap: `runtimeCwd` is `/workspace`; the host workspace is adapter-private.
+- `vercel-sandbox`: `runtimeCwd` is `/workspace`; `/vercel/sandbox` is adapter-private.
+
+Never expose adapter-private paths (host workspace roots for bwrap, `/vercel/sandbox` for Vercel) in model-facing prompts, tool descriptions, or observations.
+
+## `.boring-agent/` runtime layout
+
+Provisioned runtime artifacts live under the workspace-local `.boring-agent/` directory:
+
+```txt
+.boring-agent/
+  bin/       # command shims exposed on PATH: python, pip, bm, boring-ui, ...
+  node/      # npm prefix for provisioned node packages
+  venv/      # Python virtual environment
+  sdk/       # staged local SDK/package sources used for runtime-visible installs
+  state/     # provisioning marker/fingerprint and managed-bin manifests
+  cache/     # npm/pip/uv caches
+  tmp/       # staged venvs, tarballs, temp files
+  logs/      # runtime logs
+```
+
+The provisioner writes ownership markers for managed runtime directories. Do not hand-edit managed files as an app integration mechanism; declare provisioning contributions instead.
+
+### Top-level `.venv` migration
+
+Older integrations created a top-level `.venv`. The runtime now uses `.boring-agent/venv`.
+
+During provisioning, a top-level `.venv` is removed only when it is recognized as boring-agent-owned legacy runtime output. User-owned or unrecognized virtual environments are left alone. New shims and PATH entries point at `.boring-agent/venv/bin`.
+
+## Runtime provisioning
+
+Plugins and host apps can contribute runtime setup through `templateDirs[]`, `python[]`, and `nodePackages[]`. Provisioning is fingerprinted and skipped when already materialized; broken or stale runtime artifacts are lazily repaired on the next provision pass. Force reprovision by calling the provisioning API with `force: true` from host code/tests.
+
+### Template files
+
+Use `templateDirs[]` for skills, docs, seeds, starter files, and app-owned workspace content:
+
+```ts
+provisioning: {
+  templateDirs: [
+    {
+      id: 'macro-template',
+      path: new URL('./workspace-template', import.meta.url),
+      target: '.',
+    },
+  ],
+}
+```
+
+Templates are copied into the runtime workspace. They should not include generated `.boring-agent/` shims or SDK copies.
+
+### Python SDKs and CLIs
+
+Use `python[]` for local Python projects that provide console scripts:
+
+```ts
+provisioning: {
+  python: [
+    {
+      id: 'macro-sdk',
+      projectFile: new URL('./sdk/pyproject.toml', import.meta.url),
+      env: {
+        BORING_MACRO_API_URL: 'https://example.test/api',
+        BORING_MACRO_BUILTINS_ROOT: new URL('./sdk/transforms/builtins/', import.meta.url),
+      },
+    },
+  ],
+}
+```
+
+The provisioner stages each project under `.boring-agent/sdk/python/<id>`, installs it into `.boring-agent/venv`, and exposes console scripts from `.boring-agent/bin`. File URL env values must point inside the Python project and are converted to runtime-visible SDK paths.
+
+Reserved env keys (`BORING_AGENT_WORKSPACE_ROOT`, `VIRTUAL_ENV`, `HOME`, `PYTHONHOME`) cannot be set by plugins.
+
+### Node packages and CLIs
+
+Use `nodePackages[]` for npm packages or local package roots that should expose bins on PATH:
+
+```ts
+provisioning: {
+  nodePackages: [
+    {
+      id: 'boring-ui-cli',
+      packageName: '@hachej/boring-ui-cli',
+      packageRoot: new URL('../../cli', import.meta.url),
+      bins: { 'boring-ui': 'dist/index.js' },
+    },
+  ],
+}
+```
+
+Local packages are packed/installed into `.boring-agent/node`; managed bin shims are written to `.boring-agent/bin`. Multiple node packages are installed together so later packages do not prune earlier ones.
+
+## Runtime doctor and debugging
+
+Every agent app registers:
+
+```txt
+GET /api/v1/agent/runtime/doctor
+```
+
+The doctor report includes:
+
+- `runtimeCwd`, `Workspace.root`, sandbox provider/placement
+- first PATH entries
+- `BORING_AGENT_WORKSPACE_ROOT` and `VIRTUAL_ENV`
+- `.boring-agent/` artifact roots
+- Python executable/version/pip status
+- provisioning marker version/fingerprint/runtime mode
+- smoke command exit/truncation/stderr status
+
+Use it when a tool is missing from PATH, cwd looks wrong, Python is stale, or provisioning appears skipped unexpectedly. The report is diagnostic only and must not include secrets.
+
 ## vercel-sandbox
 
 Each workspace session gets its own Firecracker microVM. Files and shell state persist across turns within a session. Snapshots are taken every 10 minutes.
@@ -33,19 +174,35 @@ VERCEL_PROJECT_ID=prj_...
 ```
 
 Sandbox lifetime:
+
 ```bash
 BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS=2700000  # max 2700000ms (Vercel limit)
 BORING_AGENT_SNAPSHOT_KEEP=2                    # retained snapshots per workspace
 ```
 
+Vercel model-facing paths should be `/workspace`. Do not expose `/vercel/sandbox` in prompts or observations.
+
 ## local (bwrap)
 
-Linux only. Wraps tool execution in a `bubblewrap` sandbox. The workspace root is mounted read-write; the rest of the filesystem is read-only.
+Linux only. Wraps tool execution in a `bubblewrap` sandbox. The workspace root is mounted read-write at `/workspace`; the rest of the filesystem is read-only.
 
 ```bash
 BORING_AGENT_MODE=local
 BORING_AGENT_WORKSPACE_ROOT=/home/ubuntu/projects/my-app
 ```
+
+The host workspace path is adapter-private. Model-facing cwd, file-tree root, and `BORING_AGENT_WORKSPACE_ROOT` should all be `/workspace`.
+
+## direct
+
+Direct mode runs tools in the host workspace and is intended for trusted local development.
+
+```bash
+BORING_AGENT_MODE=direct
+BORING_AGENT_WORKSPACE_ROOT=/absolute/path/to/workspace
+```
+
+In direct mode, host paths are expected: `runtimeCwd` is the real `BORING_AGENT_WORKSPACE_ROOT`.
 
 ## Workspace root
 
