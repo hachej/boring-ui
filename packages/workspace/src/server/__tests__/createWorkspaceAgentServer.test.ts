@@ -14,6 +14,7 @@ import { afterEach, expect, test, describe } from "vitest"
 import {
   collectWorkspaceAgentServerPlugins,
   createWorkspaceAgentServer,
+  provisionWorkspaceAgentServer,
 } from "../../app/server/createWorkspaceAgentServer"
 import * as appServerApi from "../../app/server"
 import * as serverApi from "../index"
@@ -326,22 +327,23 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
   test("provisions boring-ui CLI in a fresh workspace", async () => {
     const workspaceRoot = await makeTempDir("boring-cli-shim-")
 
-    const app = await createWorkspaceAgentServer({
+    const cliContribution = collectWorkspaceAgentServerPlugins({ workspaceRoot })
+      .provisioningContributions
+      .filter((entry) => entry.id === "boring-ui-cli-package")
+    expect(cliContribution).toHaveLength(1)
+
+    await provisionWorkspaceAgentServer({
       workspaceRoot,
-      mode: "direct",
-      logger: false,
+      runtimeMode: "direct",
+      provisioningContributions: cliContribution,
     })
 
-    try {
-      const provisionedCli = join(workspaceRoot, ".boring-agent", "node", "node_modules", "@hachej", "boring-ui-cli")
-      await expect(readFile(join(provisionedCli, "package.json"), "utf8")).resolves.toContain("@hachej/boring-ui-cli")
-      await expect(readFile(join(provisionedCli, "templates", "front-canonical.tsx"), "utf8")).resolves.toContain("definePlugin")
+    const provisionedCli = join(workspaceRoot, ".boring-agent", "node", "node_modules", "@hachej", "boring-ui-cli")
+    await expect(readFile(join(provisionedCli, "package.json"), "utf8")).resolves.toContain("@hachej/boring-ui-cli")
+    await expect(readFile(join(provisionedCli, "templates", "front-canonical.tsx"), "utf8")).resolves.toContain("definePlugin")
 
-      // No shell shim anymore — scaffold/verify commands flow directly
-      // through the system prompt (boring-ui resolves via PATH).
-    } finally {
-      await app.close()
-    }
+    // No shell shim anymore — scaffold/verify commands flow directly
+    // through the system prompt (boring-ui resolves via PATH).
   })
 
   test("CLI-like boot in fresh workspace auto-discovers boring-plugin-authoring skill via /api/v1/agent/skills", async () => {
