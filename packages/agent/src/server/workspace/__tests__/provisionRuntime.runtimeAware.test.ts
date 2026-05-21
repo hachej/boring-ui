@@ -83,13 +83,13 @@ class MemoryWorkspace implements Workspace {
 
   async readFile(path: string): Promise<string> {
     const data = this.files.get(this.normalize(path))
-    if (!data) throw Object.assign(new Error('not found'), { code: 'ENOENT' })
+    if (!data) throw new Error('not found')
     return decoder.decode(data)
   }
 
   async readBinaryFile(path: string): Promise<Uint8Array> {
     const data = this.files.get(this.normalize(path))
-    if (!data) throw Object.assign(new Error('not found'), { code: 'ENOENT' })
+    if (!data) throw new Error('not found')
     return data
   }
 
@@ -111,7 +111,7 @@ class MemoryWorkspace implements Workspace {
 
   async readdir(path: string): Promise<Entry[]> {
     const normalized = this.normalize(path)
-    if (!this.dirs.has(normalized)) throw Object.assign(new Error('not found'), { code: 'ENOENT' })
+    if (!this.dirs.has(normalized)) throw new Error('not found')
     const prefix = normalized === '.' ? '' : `${normalized}/`
     const entries = new Map<string, Entry>()
     for (const dir of this.dirs) {
@@ -134,7 +134,7 @@ class MemoryWorkspace implements Workspace {
     const file = this.files.get(normalized)
     if (file) return { kind: 'file', size: file.byteLength, mtimeMs: 0 }
     if (this.dirs.has(normalized)) return { kind: 'dir', size: 0, mtimeMs: 0 }
-    throw Object.assign(new Error('not found'), { code: 'ENOENT' })
+    throw new Error('not found')
   }
 
   async mkdir(path: string): Promise<void> {
@@ -145,7 +145,7 @@ class MemoryWorkspace implements Workspace {
     const from = this.normalize(fromRelPath)
     const to = this.normalize(toRelPath)
     const file = this.files.get(from)
-    if (!file) throw Object.assign(new Error('not found'), { code: 'ENOENT' })
+    if (!file) throw new Error('not found')
     this.ensureParent(to)
     this.files.set(to, file)
     this.files.delete(from)
@@ -174,6 +174,9 @@ test('local provisioning validates provisioned artifacts through the bwrap sandb
   const packageRoot = join(workspaceRoot, 'pkg')
   await mkdir(packageRoot, { recursive: true })
   await writeFile(join(packageRoot, 'package.json'), '{"name":"@example/pkg","version":"0.0.0"}\n', 'utf8')
+  const pythonRoot = join(workspaceRoot, 'py')
+  await mkdir(pythonRoot, { recursive: true })
+  await writeFile(join(pythonRoot, 'pyproject.toml'), '[project]\nname = "local-py"\nversion = "0.0.0"\n', 'utf8')
   const sandbox = createRecordingSandbox('bwrap', 'server')
 
   await provisionRuntimeWorkspace({
@@ -186,6 +189,7 @@ test('local provisioning validates provisioned artifacts through the bwrap sandb
         id: 'pkg',
         provisioning: {
           nodePackages: [{ id: 'pkg', packageName: '@example/pkg', packageRoot }],
+          python: [{ id: 'py', projectFile: join(pythonRoot, 'pyproject.toml') }],
         },
       },
     ],
@@ -193,10 +197,12 @@ test('local provisioning validates provisioned artifacts through the bwrap sandb
 
   expect(sandbox.history.some((entry) => entry.opts?.cwd === '/workspace' && entry.cmd.includes('test -e'))).toBe(true)
   expect(sandbox.history.some((entry) => entry.cmd.includes('.boring-agent/node/node_modules/@example/pkg/package.json'))).toBe(true)
+  expect(sandbox.history.some((entry) => entry.cmd.includes('/workspace/.boring-agent/venv/bin/python'))).toBe(true)
+  expect(sandbox.history.some((entry) => entry.cmd.includes('python --version') && entry.cmd.includes('pip3 --version'))).toBe(true)
   const marker = JSON.parse(await readFile(getBoringAgentRuntimePaths(workspaceRoot).provisioningMarker, 'utf8')) as { runtimeMode?: string; runtimeCwd?: string }
   expect(marker.runtimeMode).toBe('local')
   expect(marker.runtimeCwd).toBe('/workspace')
-})
+}, 20_000)
 
 test('vercel provisioning writes runtime artifacts through the remote workspace and sandbox cwd', async () => {
   const storageRoot = await makeTempDir('boring-runtime-vercel-storage-')
@@ -245,5 +251,9 @@ test('vercel provisioning writes runtime artifacts through the remote workspace 
   expect(marker.runtimeMode).toBe('vercel-sandbox')
   expect(marker.runtimeCwd).toBe('/workspace')
   expect(sandbox.history.every((entry) => entry.opts?.cwd === '/workspace')).toBe(true)
-  await expect(stat(join(storageRoot, '.boring-agent'))).rejects.toMatchObject({ code: 'ENOENT' })
+  expect(sandbox.history.some((entry) => entry.cmd.includes('python3 -m venv --copies') && entry.cmd.includes('/workspace/.boring-agent/tmp/venv-'))).toBe(true)
+  expect(sandbox.history.some((entry) => entry.cmd.includes('uv pip install --python') && entry.cmd.includes('/workspace/.boring-agent/venv/bin/python'))).toBe(true)
+  expect(sandbox.history.some((entry) => entry.cmd.includes('/workspace/.boring-agent/venv/bin/python') && entry.cmd.includes('pip3 --version'))).toBe(true)
+  expect(sandbox.history.some((entry) => entry.cmd.includes('UV_CACHE_DIR=') && entry.cmd.includes('/workspace/.boring-agent/cache/python'))).toBe(true)
+  await expect(stat(join(storageRoot, '.boring-agent'))).rejects.toThrow()
 })

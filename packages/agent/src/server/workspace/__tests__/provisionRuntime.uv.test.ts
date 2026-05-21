@@ -30,7 +30,7 @@ function mockSuccessfulExecFile(): void {
   })
 }
 
-test('uv venv provisioning allows pre-created owned .boring-agent/venv layout dir', async () => {
+test('python provisioning stages venv creation then installs with uv into .boring-agent/venv', async () => {
   mockSuccessfulExecFile()
 
   const { provisionRuntimeWorkspace } = await import('../provisionRuntime')
@@ -64,11 +64,85 @@ test('uv venv provisioning allows pre-created owned .boring-agent/venv layout di
 
   const paths = getBoringAgentRuntimePaths(workspaceRoot)
   expect(execFileMock).toHaveBeenCalledWith(
-    'uv',
-    ['venv', '--allow-existing', paths.venv],
+    'python3',
+    ['-m', 'venv', '--copies', expect.stringContaining(`${join('.boring-agent', 'tmp', 'venv-')}`)],
     expect.objectContaining({ cwd: workspaceRoot }),
     expect.any(Function),
   )
+  expect(execFileMock).toHaveBeenCalledWith(
+    'uv',
+    ['pip', 'install', '--python', paths.venvPython, packageRoot],
+    expect.objectContaining({
+      cwd: workspaceRoot,
+      env: expect.objectContaining({
+        UV_CACHE_DIR: join(paths.cache, 'python'),
+        PIP_CACHE_DIR: join(paths.cache, 'python'),
+      }),
+    }),
+    expect.any(Function),
+  )
+  for (const cmd of ['python', 'python3', 'pip', 'pip3']) {
+    expect(execFileMock).toHaveBeenCalledWith(
+      cmd,
+      ['--version'],
+      expect.objectContaining({ env: expect.objectContaining({ PATH: expect.stringContaining(paths.bin) }) }),
+      expect.any(Function),
+    )
+  }
+})
+
+test('matching marker with broken .boring-agent/venv is rebuilt', async () => {
+  let failNextExistingPythonSmoke = false
+  mockSuccessfulExecFile()
+
+  const { provisionRuntimeWorkspace } = await import('../provisionRuntime')
+  const { getBoringAgentRuntimePaths } = await import('../runtimeLayout')
+
+  const workspaceRoot = await makeTempDir('boring-runtime-broken-venv-')
+  const packageRoot = join(workspaceRoot, 'python-package')
+  await mkdir(packageRoot, { recursive: true })
+  await writeFile(
+    join(packageRoot, 'pyproject.toml'),
+    '[project]\nname = "boring-runtime-broken-venv-test"\nversion = "0.0.0"\n',
+    'utf8',
+  )
+  const contribution = {
+    id: 'python-test',
+    provisioning: {
+      python: [
+        {
+          id: 'python-test',
+          projectFile: join(packageRoot, 'pyproject.toml'),
+        },
+      ],
+    },
+  }
+
+  await provisionRuntimeWorkspace({ workspaceRoot, contributions: [contribution] })
+
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
+  await mkdir(paths.venvBin, { recursive: true })
+  await writeFile(paths.venvPython, '#!/broken/python\n', 'utf8')
+
+  execFileMock.mockImplementation((cmd: string, args: string[], optsOrCb: unknown, maybeCb?: unknown) => {
+    const cb = typeof optsOrCb === 'function' ? optsOrCb : maybeCb
+    if (typeof cb !== 'function') throw new Error('expected execFile callback')
+    if (failNextExistingPythonSmoke && cmd === paths.venvPython && args[0] === '-c') {
+      failNextExistingPythonSmoke = false
+      cb(new Error('broken venv'), '', 'broken venv')
+      return
+    }
+    cb(null, '', '')
+  })
+  failNextExistingPythonSmoke = true
+  vi.clearAllMocks()
+
+  const result = await provisionRuntimeWorkspace({ workspaceRoot, contributions: [contribution] })
+
+  expect(result.changed).toBe(true)
+  expect(execFileMock.mock.calls.filter(([cmd, args]) => (
+    cmd === 'python3' && Array.isArray(args) && args[0] === '-m' && args[1] === 'venv' && args[2] === '--copies'
+  ))).toHaveLength(1)
 })
 
 test('provisioning env converts file URLs and preserves HTTP URLs', async () => {

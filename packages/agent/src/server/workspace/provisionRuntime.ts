@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
-import { access, chmod, cp, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { access, chmod, cp, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, posix, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFile } from 'node:child_process'
@@ -8,6 +8,7 @@ import { promisify } from 'node:util'
 import type { RuntimeModeId } from '../runtime/mode'
 import type { Sandbox } from '../../shared/sandbox'
 import type { Workspace } from '../../shared/workspace'
+import { getEnvSnapshot } from '../config/env'
 import {
   BORING_AGENT_DIR,
   BORING_AGENT_LEGACY_PROVISIONING_MARKER_REL_PATH,
@@ -25,7 +26,7 @@ import {
 } from './runtimeLayout'
 
 const execFileAsync = promisify(execFile)
-const PROVISIONING_VERSION = 3
+const PROVISIONING_VERSION = 4
 const DEFAULT_REMOTE_TIMEOUT_MS = 5 * 60 * 1000
 const DEFAULT_REMOTE_MAX_OUTPUT_BYTES = 1024 * 1024 * 20
 
@@ -159,10 +160,10 @@ async function workspaceReadJsonMarker(
   return null
 }
 
-async function run(cmd: string, args: string[], cwd: string): Promise<void> {
+async function run(cmd: string, args: string[], cwd: string, env?: Record<string, string>): Promise<void> {
   await execFileAsync(cmd, args, {
     cwd,
-    env: process.env,
+    env: env ? { ...process.env, ...env } : process.env,
     maxBuffer: 1024 * 1024 * 20,
     timeout: 5 * 60 * 1000,
   })
@@ -381,27 +382,53 @@ async function ensureNodePackages(workspaceRoot: string, specs: RuntimeNodePacka
   }
 }
 
+function pythonCacheEnv(paths: ReturnType<typeof getBoringAgentRuntimePaths>): Record<string, string> {
+  const cacheDir = join(paths.cache, 'python')
+  return {
+    UV_CACHE_DIR: cacheDir,
+    PIP_CACHE_DIR: cacheDir,
+  }
+}
+
+async function recreatePythonVenv(workspaceRoot: string): Promise<void> {
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
+  await mkdir(paths.tmp, { recursive: true })
+  await mkdir(join(paths.cache, 'python'), { recursive: true })
+  const stagedVenv = await mkdtemp(join(paths.tmp, 'venv-'))
+  const env = pythonCacheEnv(paths)
+  try {
+    // Build the interpreter tree under tmp first, then install packages only
+    // after the move so generated console-script shebangs point at
+    // .boring-agent/venv rather than a transient staging path.
+    await run('python3', ['-m', 'venv', '--copies', stagedVenv], workspaceRoot, env)
+    await rm(paths.venv, { recursive: true, force: true })
+    await rename(stagedVenv, paths.venv)
+    await writeBoringAgentOwnershipMarker(paths.venv, '.boring-agent/venv')
+  } catch (error) {
+    await rm(stagedVenv, { recursive: true, force: true }).catch(() => undefined)
+    throw error
+  }
+}
+
 async function ensurePython(workspaceRoot: string, specs: RuntimePythonSpec[]): Promise<void> {
   if (specs.length === 0) return
   const paths = getBoringAgentRuntimePaths(workspaceRoot)
   const venvPython = paths.venvPython
+  const env = pythonCacheEnv(paths)
   const uv = await commandExists('uv')
-  if (!(await exists(venvPython))) {
-    if (uv) await run('uv', ['venv', '--allow-existing', paths.venv], workspaceRoot)
-    else await run('/usr/bin/python3', ['-m', 'venv', paths.venv], workspaceRoot)
-    await writeBoringAgentOwnershipMarker(paths.venv, '.boring-agent/venv')
-  }
+
+  await recreatePythonVenv(workspaceRoot)
 
   for (const spec of specs) {
     const projectDir = dirname(toPath(spec.projectFile))
     if (uv) {
-      await run('uv', ['pip', 'install', '--python', venvPython, projectDir], workspaceRoot)
+      await run('uv', ['pip', 'install', '--python', venvPython, projectDir], workspaceRoot, env)
       if (spec.extraLibs?.length) {
-        await run('uv', ['pip', 'install', '--python', venvPython, ...spec.extraLibs], workspaceRoot)
+        await run('uv', ['pip', 'install', '--python', venvPython, ...spec.extraLibs], workspaceRoot, env)
       }
     } else {
-      await run(venvPython, ['-m', 'pip', 'install', projectDir], workspaceRoot)
-      if (spec.extraLibs?.length) await run(venvPython, ['-m', 'pip', 'install', ...spec.extraLibs], workspaceRoot)
+      await run(venvPython, ['-m', 'pip', 'install', projectDir], workspaceRoot, env)
+      if (spec.extraLibs?.length) await run(venvPython, ['-m', 'pip', 'install', ...spec.extraLibs], workspaceRoot, env)
     }
   }
 }
@@ -421,13 +448,27 @@ function assertEnvKey(key: string): void {
   }
 }
 
+function hasPythonContributions(contributions: Array<{ provisioning: RuntimeProvisioningContribution }>): boolean {
+  return contributions.some(({ provisioning }) => (provisioning.python ?? []).length > 0)
+}
+
+async function isHostPythonUsable(workspaceRoot: string): Promise<boolean> {
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
+  if (!(await exists(paths.venvPython))) return false
+  try {
+    await run(paths.venvPython, ['-c', 'import sys; raise SystemExit(0 if sys.executable else 1)'], workspaceRoot, pythonCacheEnv(paths))
+    await run(paths.venvPython, ['-m', 'pip', '--version'], workspaceRoot, pythonCacheEnv(paths))
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function isRuntimeMaterialized(
   workspaceRoot: string,
   contributions: Array<{ provisioning: RuntimeProvisioningContribution }>,
 ): Promise<boolean> {
-  const paths = getBoringAgentRuntimePaths(workspaceRoot)
-  const hasPython = contributions.some(({ provisioning }) => (provisioning.python ?? []).length > 0)
-  if (hasPython && !(await exists(paths.venvPython))) return false
+  if (hasPythonContributions(contributions) && !(await isHostPythonUsable(workspaceRoot))) return false
   for (const { provisioning } of contributions) {
     for (const spec of provisioning.nodePackages ?? []) {
       if (!(await exists(join(nodePackageTarget(workspaceRoot, spec.packageName), 'package.json')))) return false
@@ -527,6 +568,25 @@ async function writeProvisioningMarker(markerPath: string, hash: string, target:
   await writeFile(markerPath, provisioningMarkerBody(hash, target), 'utf8')
 }
 
+async function validateHostRuntime(
+  workspaceRoot: string,
+  contributions: Array<{ provisioning: RuntimeProvisioningContribution }>,
+): Promise<void> {
+  if (!hasPythonContributions(contributions)) return
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
+  const env = {
+    ...pythonCacheEnv(paths),
+    PATH: `${paths.bin}:${paths.venvBin}${getEnvSnapshot().PATH ? `:${getEnvSnapshot().PATH}` : ''}`,
+    VIRTUAL_ENV: paths.venv,
+    BORING_AGENT_WORKSPACE_ROOT: workspaceRoot,
+  }
+  await run('python', ['--version'], workspaceRoot, env)
+  await run('python3', ['--version'], workspaceRoot, env)
+  await run('pip', ['--version'], workspaceRoot, env)
+  await run('pip3', ['--version'], workspaceRoot, env)
+  await run(paths.venvPython, ['-c', 'import sys; raise SystemExit(0 if sys.executable else 1)'], workspaceRoot, env)
+}
+
 function resolveTarget(opts: ProvisionRuntimeWorkspaceOptions): ProvisionTarget {
   const runtimeCwd = opts.runtimeCwd ?? opts.workspace?.runtimeContext.runtimeCwd ?? opts.sandbox?.runtimeContext.runtimeCwd ?? opts.workspaceRoot
   const provider = opts.sandbox?.provider
@@ -555,15 +615,20 @@ async function provisionHostRuntimeWorkspace(
   await removeLegacyTopLevelVenvIfOwned(workspaceRoot)
   const markerPath = paths.provisioningMarker
   const legacyMarkerPath = paths.legacyProvisioningMarker
-  const binDir = paths.bin
 
   if (!opts.force) {
     const markerResult = await readProvisioningMarker(markerPath, legacyMarkerPath)
     if (markerResult?.marker.fingerprint === hash && await isRuntimeMaterialized(workspaceRoot, active)) {
-      await writeShims(workspaceRoot, env)
-      if (markerResult.source === 'legacy') await writeProvisioningMarker(markerPath, hash, target)
-      if (opts.sandbox && target.runtimeMode === 'local') await validateRuntimeInSandbox(opts.sandbox, target.runtimeCwd, active)
-      return { fingerprint: hash, changed: false, env, binDir }
+      const actualBinDir = await writeShims(workspaceRoot, env)
+      try {
+        await validateHostRuntime(workspaceRoot, active)
+        if (markerResult.source === 'legacy') await writeProvisioningMarker(markerPath, hash, target)
+        if (opts.sandbox && target.runtimeMode === 'local') await validateRuntimeInSandbox(opts.sandbox, target.runtimeCwd, active)
+        return { fingerprint: hash, changed: false, env, binDir: actualBinDir }
+      } catch (error) {
+        if (!hasPythonContributions(active)) throw error
+        // Matching state with a broken Python runtime is rebuilt below.
+      }
     }
   }
 
@@ -571,6 +636,7 @@ async function provisionHostRuntimeWorkspace(
   await ensureNodePackages(workspaceRoot, active.flatMap(({ provisioning }) => provisioning.nodePackages ?? []))
   await ensurePython(workspaceRoot, active.flatMap(({ provisioning }) => provisioning.python ?? []))
   const actualBinDir = await writeShims(workspaceRoot, env)
+  await validateHostRuntime(workspaceRoot, active)
   await writeProvisioningMarker(markerPath, hash, target)
   if (opts.sandbox && target.runtimeMode === 'local') await validateRuntimeInSandbox(opts.sandbox, target.runtimeCwd, active)
   return { fingerprint: hash, changed: true, env, binDir: actualBinDir }
@@ -665,6 +731,42 @@ function remotePythonProjectTarget(spec: RuntimePythonSpec): string {
   return posix.join(BORING_AGENT_DIR, 'sdk', 'python', safeId)
 }
 
+function remotePythonCachePrefix(runtimeCwd: string): string {
+  const cacheDir = `${runtimeCwd}/${BORING_AGENT_DIR}/cache/python`
+  return `UV_CACHE_DIR=${shellQuote(cacheDir)} PIP_CACHE_DIR=${shellQuote(cacheDir)}`
+}
+
+async function recreateRemotePythonVenv(
+  workspace: Workspace,
+  sandbox: Sandbox,
+  runtimeCwd: string,
+): Promise<void> {
+  const venv = `${runtimeCwd}/${BORING_AGENT_DIR}/venv`
+  const tmpName = `venv-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const stagedVenvRel = posix.join(BORING_AGENT_DIR, 'tmp', tmpName)
+  const stagedVenv = `${runtimeCwd}/${stagedVenvRel}`
+  await workspace.mkdir(posix.join(BORING_AGENT_DIR, 'cache', 'python'), { recursive: true })
+  await workspace.mkdir(posix.join(BORING_AGENT_DIR, 'tmp'), { recursive: true })
+  try {
+    // Stage the interpreter tree but install packages after the move so remote
+    // console-script shebangs reference .boring-agent/venv, not tmp.
+    await sandboxRun(sandbox, `${remotePythonCachePrefix(runtimeCwd)} python3 -m venv --copies ${shellQuote(stagedVenv)}`, runtimeCwd)
+    await sandboxRun(sandbox, `rm -rf -- ${shellQuote(venv)} && mv -- ${shellQuote(stagedVenv)} ${shellQuote(venv)}`, runtimeCwd)
+    await workspace.writeFile(
+      posix.join(BORING_AGENT_DIR, 'venv', BORING_AGENT_OWNERSHIP_MARKER_FILENAME),
+      `${JSON.stringify({
+        v: BORING_AGENT_OWNERSHIP_MARKER_VERSION,
+        owner: BORING_AGENT_OWNER,
+        path: `${BORING_AGENT_DIR}/venv`,
+        kind: 'runtime-dir',
+      }, null, 2)}\n`,
+    )
+  } catch (error) {
+    await sandboxRun(sandbox, `rm -rf -- ${shellQuote(stagedVenv)}`, runtimeCwd).catch(() => undefined)
+    throw error
+  }
+}
+
 async function ensureRemotePython(
   workspace: Workspace,
   sandbox: Sandbox,
@@ -680,21 +782,18 @@ async function ensureRemotePython(
     await copyHostPathToWorkspace(dirname(toPath(spec.projectFile)), workspace, remotePythonProjectTarget(spec))
   }
 
-  if (!(await workspaceExists(workspace, `${BORING_AGENT_DIR}/venv/bin/python`))) {
-    if (uv) await sandboxRun(sandbox, `uv venv --allow-existing ${shellQuote(venv)}`, runtimeCwd)
-    else await sandboxRun(sandbox, `/usr/bin/python3 -m venv ${shellQuote(venv)}`, runtimeCwd)
-  }
+  await recreateRemotePythonVenv(workspace, sandbox, runtimeCwd)
 
   for (const spec of specs) {
     const projectDir = `${runtimeCwd}/${remotePythonProjectTarget(spec)}`
     if (uv) {
-      await sandboxRun(sandbox, `uv pip install --python ${shellQuote(venvPython)} ${shellQuote(projectDir)}`, runtimeCwd)
+      await sandboxRun(sandbox, `${remotePythonCachePrefix(runtimeCwd)} uv pip install --python ${shellQuote(venvPython)} ${shellQuote(projectDir)}`, runtimeCwd)
       if (spec.extraLibs?.length) {
-        await sandboxRun(sandbox, `uv pip install --python ${shellQuote(venvPython)} ${spec.extraLibs.map(shellQuote).join(' ')}`, runtimeCwd)
+        await sandboxRun(sandbox, `${remotePythonCachePrefix(runtimeCwd)} uv pip install --python ${shellQuote(venvPython)} ${spec.extraLibs.map(shellQuote).join(' ')}`, runtimeCwd)
       }
     } else {
-      await sandboxRun(sandbox, `${shellQuote(venvPython)} -m pip install ${shellQuote(projectDir)}`, runtimeCwd)
-      if (spec.extraLibs?.length) await sandboxRun(sandbox, `${shellQuote(venvPython)} -m pip install ${spec.extraLibs.map(shellQuote).join(' ')}`, runtimeCwd)
+      await sandboxRun(sandbox, `${remotePythonCachePrefix(runtimeCwd)} ${shellQuote(venvPython)} -m pip install ${shellQuote(projectDir)}`, runtimeCwd)
+      if (spec.extraLibs?.length) await sandboxRun(sandbox, `${remotePythonCachePrefix(runtimeCwd)} ${shellQuote(venvPython)} -m pip install ${spec.extraLibs.map(shellQuote).join(' ')}`, runtimeCwd)
     }
   }
 }
@@ -766,7 +865,8 @@ async function validateRuntimeInSandbox(
     `${BORING_AGENT_DIR}/bin/python`,
     `${BORING_AGENT_DIR}/state/${BORING_AGENT_OWNERSHIP_MARKER_FILENAME}`,
   ]
-  if (contributions.some(({ provisioning }) => (provisioning.python ?? []).length > 0)) {
+  const hasPython = hasPythonContributions(contributions)
+  if (hasPython) {
     checks.push(`${BORING_AGENT_DIR}/venv/bin/python`)
   }
   for (const { provisioning } of contributions) {
@@ -775,6 +875,21 @@ async function validateRuntimeInSandbox(
     }
   }
   await sandboxRun(sandbox, checks.map((path) => `test -e ${shellQuote(path)}`).join(' && '), runtimeCwd)
+  if (!hasPython) return
+  const venv = `${runtimeCwd}/${BORING_AGENT_DIR}/venv`
+  const venvPython = `${venv}/bin/python`
+  const pathPrefix = `${runtimeCwd}/${BORING_AGENT_DIR}/bin:${venv}/bin`
+  await sandboxRun(sandbox, [
+    `export VIRTUAL_ENV=${shellQuote(venv)}`,
+    `export BORING_AGENT_WORKSPACE_ROOT=${shellQuote(runtimeCwd)}`,
+    `export PATH=${shellQuote(pathPrefix)}:$PATH`,
+    'python --version',
+    'python3 --version',
+    'pip --version',
+    'pip3 --version',
+    `test -x ${shellQuote(venvPython)}`,
+    `${shellQuote(venvPython)} -c 'import sys; raise SystemExit(0 if sys.executable else 1)'`,
+  ].join(' && '), runtimeCwd)
 }
 
 async function provisionRemoteRuntimeWorkspace(
@@ -797,8 +912,13 @@ async function provisionRemoteRuntimeWorkspace(
     if (markerResult?.marker.fingerprint === hash && await isRemoteRuntimeMaterialized(workspace, active)) {
       const binDir = await writeRemoteShims(workspace, sandbox, target.runtimeCwd, env)
       if (markerResult.source === 'legacy') await workspace.writeFile(markerPath, provisioningMarkerBody(hash, target))
-      await validateRuntimeInSandbox(sandbox, target.runtimeCwd, active)
-      return { fingerprint: hash, changed: false, env, binDir }
+      try {
+        await validateRuntimeInSandbox(sandbox, target.runtimeCwd, active)
+        return { fingerprint: hash, changed: false, env, binDir }
+      } catch (error) {
+        if (!hasPythonContributions(active)) throw error
+        // Matching state with a broken remote Python runtime is rebuilt below.
+      }
     }
   }
 
