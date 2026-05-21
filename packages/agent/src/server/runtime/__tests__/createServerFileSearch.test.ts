@@ -109,6 +109,11 @@ test('shell-quotes glob and applies default limit/options', async () => {
   await fileSearch.search("*'; rm -rf /")
 
   expect(receivedCmd).toContain('find . -maxdepth 10')
+  expect(receivedCmd).toContain("-path './.boring-agent'")
+  expect(receivedCmd).toContain("-path './.git'")
+  expect(receivedCmd).toContain("-path './node_modules'")
+  expect(receivedCmd).toContain('-prune -o')
+  expect(receivedCmd).toContain('-print | head -n 500')
   // The injected payload contains `/` so it routes through -ipath
   // (path-shaped). Either way, the glob is single-quoted with `'`
   // → `'\''` escape so the shell can't break out of the quoted string

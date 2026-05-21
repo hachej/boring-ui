@@ -85,6 +85,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       workspaceRoot,
       mode: "direct",
       logger: false,
+      provisionWorkspace: false,
     })
     await app.close()
     expect(capturedSystemPromptAppend).toBeDefined()
@@ -123,6 +124,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
       logger: false,
+      provisionWorkspace: false,
     })
     await app.close()
     expect(capturedSystemPromptAppend).toBeDefined()
@@ -133,7 +135,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
     const workspaceRoot = await makeTempDir("boring-wcp-docs-")
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
-      mode: "direct",
+      mode: "local",
       logger: false,
     })
     await app.close()
@@ -151,6 +153,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       workspaceRoot,
       mode: "direct",
       logger: false,
+      provisionWorkspace: false,
       plugins: [{ id: "my-plugin", systemPrompt: "Plugin capabilities here." }],
     })
     await app.close()
@@ -164,6 +167,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       workspaceRoot,
       mode: "direct",
       logger: false,
+      provisionWorkspace: false,
       plugins: [{ id: "my-plugin", systemPrompt: "Plugin capabilities here." }],
     })
     await app.close()
