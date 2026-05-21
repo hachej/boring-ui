@@ -148,6 +148,17 @@ integration:
 
 Start from [plugins/_template-full](plugins/_template-full/README.md) for publishable packages, or `boring-ui scaffold-plugin <name>` for a front/Pi hot-reloadable local plugin.
 
+### Current hot-reload compatibility
+
+| Plugin surface | Local `.pi/extensions` / CLI | App/internal package plugins | Notes |
+|---|---:|---:|---|
+| `pi.systemPrompt`, `pi.skills`, `pi.prompts`, `pi.extensions` | hot-reload via `/reload` | hot-reload when discovered as plugin package resources | Agent context updates without server restart. |
+| `boring.front` panels/commands/catalogs/surface resolvers | hot-reload via `/reload` in dev/playground | static by default; package front assets can be rediscovered in dev | Browser import failures are surfaced and previous version is kept. |
+| `boring.server` / `defineServerPlugin({ routes, agentTools })` | not hot-reloaded | boot-time only | Restart/redeploy after changes. Generated runtime plugins should omit `boring.server`. |
+| Runtime plugin frontend in packaged CLI static mode | not yet | n/a | Planned: local plugin-dev transform endpoint / embedded Vite for CLI. |
+
+Planned direction: keep app/internal plugins powerful and boot-composed, but keep generated/runtime plugins route-free. Generated plugins should use manifest-declared front surfaces plus brokered tools/RPC rather than custom backend routes.
+
 **What you can add:**
 
 - **Panels** — arbitrary React panes in the workbench (editors, charts, tables, anything)
