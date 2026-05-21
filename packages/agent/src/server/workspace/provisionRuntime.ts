@@ -224,8 +224,12 @@ function normalizeWorkspaceRelativeTarget(target: string | undefined, context: s
   return normalized === '.' ? '.' : normalized
 }
 
+function isValidBinName(name: string): boolean {
+  return /^[A-Za-z0-9._-]+$/.test(name) && name !== '.' && name !== '..'
+}
+
 function assertValidBinName(name: string, context: string): void {
-  if (!/^[A-Za-z0-9._-]+$/.test(name) || name === '.' || name === '..') {
+  if (!isValidBinName(name)) {
     throw new Error(`${context} must be a bin name without path separators`)
   }
 }
@@ -909,7 +913,7 @@ function parsePythonBinManifest(raw: string): string[] {
   try {
     const parsed = JSON.parse(raw) as { bins?: unknown }
     if (!Array.isArray(parsed.bins)) return []
-    return parsed.bins.filter((entry): entry is string => typeof entry === 'string')
+    return parsed.bins.filter((entry): entry is string => typeof entry === 'string' && isValidBinName(entry))
   } catch {
     return []
   }
