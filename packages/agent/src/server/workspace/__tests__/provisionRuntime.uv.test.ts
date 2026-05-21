@@ -71,7 +71,7 @@ test('python provisioning stages venv creation then installs with uv into .borin
   )
   expect(execFileMock).toHaveBeenCalledWith(
     'uv',
-    ['pip', 'install', '--python', paths.venvPython, packageRoot],
+    ['pip', 'install', '--python', paths.venvPython, join(paths.sdk, 'python', 'python-test')],
     expect.objectContaining({
       cwd: workspaceRoot,
       env: expect.objectContaining({
@@ -89,6 +89,48 @@ test('python provisioning stages venv creation then installs with uv into .borin
       expect.any(Function),
     )
   }
+})
+
+test('python provisioning stages a project whose pyproject is at the workspace root', async () => {
+  mockSuccessfulExecFile()
+
+  const { provisionRuntimeWorkspace } = await import('../provisionRuntime')
+  const { getBoringAgentRuntimePaths } = await import('../runtimeLayout')
+
+  const workspaceRoot = await makeTempDir('boring-runtime-root-python-')
+  await mkdir(join(workspaceRoot, 'src', 'root_project'), { recursive: true })
+  await writeFile(join(workspaceRoot, 'pyproject.toml'), '[project]\nname = "root-python-test"\nversion = "0.0.0"\n', 'utf8')
+  await writeFile(join(workspaceRoot, 'src', 'root_project', '__init__.py'), '__all__ = []\n', 'utf8')
+
+  const contribution = {
+    id: 'python-test',
+    provisioning: {
+      python: [{ id: 'python-test', projectFile: join(workspaceRoot, 'pyproject.toml') }],
+    },
+  }
+  const first = await provisionRuntimeWorkspace({
+    workspaceRoot,
+    contributions: [contribution],
+  })
+
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
+  const stagedRoot = join(paths.sdk, 'python', 'python-test')
+  await expect(readFile(join(stagedRoot, 'pyproject.toml'), 'utf8')).resolves.toContain('root-python-test')
+  await expect(readFile(join(stagedRoot, 'src', 'root_project', '__init__.py'), 'utf8')).resolves.toContain('__all__')
+  await expect(readFile(join(stagedRoot, '.boring-agent', 'state', 'provisioning.json'), 'utf8')).rejects.toThrow()
+  expect(execFileMock).toHaveBeenCalledWith(
+    'uv',
+    ['pip', 'install', '--python', paths.venvPython, stagedRoot],
+    expect.objectContaining({ cwd: workspaceRoot }),
+    expect.any(Function),
+  )
+
+  await mkdir(paths.venvBin, { recursive: true })
+  await writeFile(paths.venvPython, '#!/usr/bin/env python3\n', 'utf8')
+  vi.clearAllMocks()
+  const second = await provisionRuntimeWorkspace({ workspaceRoot, contributions: [contribution] })
+  expect(second).toMatchObject({ changed: false, fingerprint: first.fingerprint })
+  expect(execFileMock.mock.calls.some(([cmd, args]) => cmd === 'python3' && Array.isArray(args) && args[0] === '-m' && args[1] === 'venv')).toBe(false)
 })
 
 test('matching marker with broken .boring-agent/venv is rebuilt', async () => {
@@ -180,8 +222,8 @@ test('provisioning env converts file URLs and preserves HTTP URLs', async () => 
   })
 
   expect(result.env.BORING_MACRO_API_URL).toBe('https://api.example.test/workspace')
-  expect(result.env.EXAMPLE_ROOT).toBe(`${packageRoot}/`)
   const paths = getBoringAgentRuntimePaths(workspaceRoot)
+  expect(result.env.EXAMPLE_ROOT).toBe(join(paths.sdk, 'python', 'python-test'))
   const pythonShim = await readFile(join(paths.bin, 'python'), 'utf8')
   expect(pythonShim).toContain('export PATH="$WORKSPACE_ROOT/.boring-agent/bin:$VENV_BIN:$PLUGIN_PATH')
   expect(pythonShim).toContain("PLUGIN_PATH='/plugin/bin'")
