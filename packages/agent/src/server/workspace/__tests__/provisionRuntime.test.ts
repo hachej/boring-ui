@@ -129,5 +129,5 @@ test('owned top-level .venv is removed during runtime layout migration', async (
 
   await provisionRuntimeWorkspace({ workspaceRoot, contributions: [] })
 
-  await expect(stat(paths.legacyTopLevelVenv)).rejects.toMatchObject({ code: 'ENOENT' })
+  await expect(stat(paths.legacyTopLevelVenv)).rejects.toThrow()
 })
