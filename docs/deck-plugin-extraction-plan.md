@@ -66,20 +66,25 @@ plugins/deck/
       DeckPane.tsx
       StandaloneDeckRoute.tsx
       storage.ts
+      useDeckDocument.ts
       widgets.tsx
       components.tsx
+      surfaceResolver.ts
       __tests__/
     server/
       index.ts
       fileStorage.ts
+      resolveDeckPath.ts
       routes.ts
       prompt.ts
       __tests__/
     shared/
       constants.ts
       parser.ts
+      path.ts
       types.ts
       index.ts
+      __tests__/
     test-setup.ts
 ```
 
@@ -117,9 +122,17 @@ The default package plugin is intentionally generic: it can open/edit markdown d
     "@hachej/boring-workspace": "workspace:*",
     "react": "^18.0.0 || ^19.0.0",
     "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "dependencies": {
+    "@hachej/boring-ui-kit": "workspace:*",
+    "lucide-react": "^1.8.0",
+    "react-markdown": "^9.0.0 || ^10.0.0",
+    "remark-gfm": "^4.0.0"
   }
 }
 ```
+
+If the package imports CSS as a side effect, set `sideEffects` to an allow-list such as `["**/*.css"]` instead of `false`. Do not rely on consumer/apps hoisting runtime dependencies for the extracted UI.
 
 Default exports:
 
@@ -164,6 +177,11 @@ export interface CreateDeckPluginOptions {
   includeCommand?: boolean
   includeSurfaceResolver?: boolean
   surfaceResolverId?: string
+  /** Optional real command behavior. Without this, the default command should be omitted to avoid a no-op. */
+  openCommandRun?: () => void
+  /** Optional creation behavior for 404/missing decks. Macro can use this to preserve auto-create. */
+  createOnMissing?: boolean
+  defaultContent?: (path: string) => string
 }
 
 export function createDeckPlugin(options?: CreateDeckPluginOptions): BoringFrontFactoryWithId
@@ -179,13 +197,30 @@ export function createDeckPlugin(options: CreateDeckPluginOptions = {}): BoringF
   const label = options.label ?? 'Deck'
   const panelId = options.panelId ?? 'deck'
   const source = options.source ?? 'app'
+  const pathPrefix = options.pathPrefix ?? 'deck/'
+  const storage = options.storage ?? createHttpDeckStorage({ basePath: options.storageBasePath ?? '/api/deck' })
+  const widgets = validateDeckWidgets(options.widgets ?? [])
+  const DeckPaneComponent = createDeckPaneComponent({
+    storage,
+    widgets,
+    components: options.components,
+    markdownComponents: options.markdownComponents,
+    remarkPlugins: options.remarkPlugins,
+    theme: options.theme,
+    defaultPath: options.defaultPath ?? 'deck/intro.md',
+    pathPrefix,
+    createOnMissing: options.createOnMissing,
+    defaultContent: options.defaultContent,
+  })
 
   return definePlugin({
     id,
     label,
-    panels: options.includePanel === false ? [] : [{ id: panelId, label, component: DeckPane, placement: 'center', source }],
-    commands: options.includeCommand === false ? [] : [{ id: options.commandId ?? `${id}.open`, title: `Open ${label}`, panelId }],
-    surfaceResolvers: options.includeSurfaceResolver === false ? [] : [createDeckSurfaceResolver({ id, panelId, pathPrefix: options.pathPrefix ?? 'deck/' })],
+    panels: options.includePanel === false ? [] : [{ id: panelId, label, component: DeckPaneComponent, placement: 'center', source }],
+    // In the current plugin-agent-layer, `{ panelId }` alone does not open a panel.
+    // Register the default command only when real command behavior is supplied.
+    commands: options.includeCommand === false || !options.openCommandRun ? [] : [{ id: options.commandId ?? `${id}.open`, title: `Open ${label}`, panelId, run: options.openCommandRun }],
+    surfaceResolvers: options.includeSurfaceResolver === false ? [] : [createDeckSurfaceResolver({ id: options.surfaceResolverId ?? `${id}.open-path`, panelId, pathPrefix })],
   })
 }
 
@@ -200,7 +235,7 @@ Default behavior:
 - `panelId`: `deck` by default for the generic package plugin; consumers with multiple deck instances may use `${id}.panel`
 - `pathPrefix`: `deck/`
 - default storage: HTTP storage under `/api/deck`
-- panel command: use plugin-agent-layer `BoringFrontPanelCommandRegistration` shape (`{ id, title, panelId }`), optionally with `run` only if a consumer needs custom behavior
+- panel command: omitted by default unless `openCommandRun` is provided; plugin-agent-layer currently treats `{ panelId }` without `run` as no-op
 - surface resolver: open `workspace.open.path` for markdown files under `pathPrefix`
 
 ### 5.2 Storage client injection
@@ -346,6 +381,9 @@ export interface CreateDeckServerPluginOptions {
   readOnly?: boolean
   maxContentBytes?: number
   allowedContentTypes?: string[]
+  compatibilityMode?: boolean
+  includeBundledSkill?: boolean
+  piPackages?: unknown[]
 }
 
 export function createDeckServerPlugin(options: CreateDeckServerPluginOptions): WorkspaceServerPlugin
@@ -362,6 +400,10 @@ export function createDeckServerPlugin(options: CreateDeckServerPluginOptions): 
     label: options.label ?? 'Deck',
     routes: createDeckRoutes(options),
     systemPrompt: options.systemPrompt ?? createDeckSystemPrompt(),
+    piPackages: [
+      ...(options.includeBundledSkill === false ? [] : [createDeckPiPackageSource()]),
+      ...(options.piPackages ?? []),
+    ],
     preservedUiStateKeys: options.preservedUiStateKeys,
   })
 }
@@ -370,7 +412,10 @@ export default function defaultDeckServerPlugin(
   options?: { routeBase?: string; root?: string },
   ctx?: { workspaceRoot: string; bridge: unknown },
 ): WorkspaceServerPlugin {
-  const root = options?.root ?? join(ctx?.workspaceRoot ?? process.cwd(), 'deck')
+  if (!options?.root && !ctx?.workspaceRoot) {
+    throw new Error('defaultDeckServerPlugin requires options.root or ctx.workspaceRoot')
+  }
+  const root = options?.root ?? join(ctx!.workspaceRoot, 'deck')
   return createDeckServerPlugin({
     routeBase: options?.routeBase ?? '/api/deck',
     storage: createFileDeckStorage({ root, stripPrefix: 'deck/' }),
@@ -381,7 +426,7 @@ export default function defaultDeckServerPlugin(
 Default route shape and HTTP compatibility contract:
 
 - `GET {routeBase}` with `?path=` returns `text/markdown`
-- `PUT {routeBase}` with `?path=` accepts `{ content: string }` or raw string if compatibility mode is enabled, writes markdown, and returns `{ ok: true, path, bytes }`
+- `PUT {routeBase}` with `?path=` accepts `{ content: string }` by default. If `compatibilityMode: true`, also accept raw `text/plain` / `text/markdown` string bodies. Respect `readOnly`, `preHandler`, `maxContentBytes`, and `allowedContentTypes` in route tests. Successful writes return `{ ok: true, path, bytes }`.
 - `GET {routeBase}/list` returns `{ items: string[] }`
 - errors use stable status codes and response bodies; app-specific compatibility routes can preserve legacy `400`/`404` behavior during consumer migrations
 
@@ -409,11 +454,13 @@ export function createFileDeckStorage(options: {
 
 Security requirements:
 
-- Centralize path canonicalization in a shared `normalizeDeckPath(path, { pathPrefix, allowedExtensions })` helper used by the HTTP client, server routes, file storage, and surface resolver.
-- Prevent path traversal with `path.resolve` containment checks and `realpath`/`lstat` checks for existing paths.
-- Reject absolute paths, drive-letter paths, UNC paths, null bytes, backslash traversal forms, encoded traversal, and empty paths.
+- Split path handling into two layers:
+  - `src/shared/path.ts`: browser-safe lexical validation only. No `node:*`, no `Buffer`. It rejects empty paths, null bytes, absolute/drive/UNC paths, backslashes, `.`/`..` segments, encoded traversal after decode, and disallowed extensions. It returns both `{ displayPath: "deck/foo.md", storagePath: "foo.md" }` so panel params/layout ids can preserve `deck/...` while file storage uses root-relative paths.
+  - `src/server/resolveDeckPath.ts`: Node-only containment and symlink safety. It realpaths the deck root, rejects symlink roots/parents/targets, checks every existing ancestor with `lstat`, creates missing parents only below the real root, then re-checks containment before read/write.
 - Only allow `.md` writes by default.
 - Reject symlink escapes for reads and writes, including symlinked parent directories.
+- List output format is `{ items: string[] }` where items are display paths with the configured prefix (`deck/foo.md`) for consistency with surface resolver targets.
+- Allow nested decks under `deck/**/*.md`; lexical/path checks must protect traversal separately from nesting.
 - Do not follow arbitrary user-controlled absolute paths.
 
 ### 6.3 Agent guidance: system prompt plus deck-authoring skill
@@ -450,6 +497,8 @@ Generic prompt includes:
 
 Domain plugins append their own widget docs either in a domain-specific skill overlay or a short server prompt addendum.
 
+When a host loads `@hachej/boring-deck` through package discovery, `package.json#pi.skills` contributes the bundled skill. When a host imports `createDeckServerPlugin(...)` directly, the builder should also contribute the bundled skill through `piPackages` unless `includeBundledSkill: false` is set; otherwise the server prompt could reference a skill that was never loaded.
+
 ## 7. Parser design
 
 Extract parser from current `DeckPane.tsx` into `src/shared/parser.ts` as pure tested helpers. The shared parser must not import React, DOM APIs, `node:*`, or front/server modules:
@@ -464,15 +513,14 @@ export interface ParsedSlide {
   index: number
   raw: string
   segments: DeckSegment[]
-  chartOnly?: boolean
 }
 
 export type DeckSegment =
   | { type: 'markdown'; text: string }
-  | { type: 'widget'; name: string; attrs: Record<string, string>; raw: string }
+  | { type: 'widget'; name: string; attrs: Record<string, string>; raw: string; position: 'block' | 'inline' }
 ```
 
-Inline custom components should use the same `{{WidgetName ...}}` registry and be represented as widget tokens inside markdown text. Container components with markdown children are deferred until a real consumer needs directive syntax.
+Inline custom components should use the same `{{WidgetName ...}}` registry and be represented as widget tokens inside markdown text. The renderer must preserve paragraph flow: do not render inline widgets as sibling block chunks beside independently rendered markdown. Either add a remark plugin that converts moustache text nodes into custom inline nodes, or render parsed paragraph inline tokens directly. Parser must not recognize widgets inside fenced code blocks or inline code spans. Container components with markdown children are deferred until a real consumer needs directive syntax.
 
 Functions:
 
@@ -484,13 +532,16 @@ export function splitSlides(input: string): string[]
 
 Tests:
 
-- frontmatter title extracted
+- YAML frontmatter title extracted
+- legacy leading `---` plus `## title: ...` and plain first-slide `## title: ...` stay compatible
 - `---` slide split only on delimiter line
 - widgets parsed with quoted attrs
+- attr grammar is explicit: quoted strings only, strict key regex, escaped quote behavior, duplicate attr behavior, malformed widget fallback behavior
 - unknown widgets remain structured
 - malformed widget syntax falls back to markdown or placeholder
-- inline moustache widgets render custom components inside paragraphs
+- inline moustache widgets render custom components inside paragraphs and preserve surrounding text
 - block moustache widgets render custom components on their own slide line
+- widget-looking text inside fenced code and inline code is not executed
 - raw HTML/MDX eval remains disabled
 
 ## 8. Macro integration after extraction
@@ -533,95 +584,161 @@ Macro should prefer returning two unique `WorkspaceServerPlugin` entries from ap
 ### Phase 0 — Re-sync against plugin-agent-layer
 
 - Confirm imports and public types against `~/projects/boring-ui-v2-plugin-agent-layer` before implementation starts.
+- Confirm the target base has `plugins/_template-full`, `@hachej/boring-workspace/plugin`, `definePlugin`, `BoringFrontFactoryWithId`, `toWorkspacePlugin`, `package.json#boring` manifest validation, and default server factory resolver tests.
 - Treat `@hachej/boring-deck` as a concrete package.json plugin with safe defaults, while still exporting builders for customized consumers such as `boring-macro`.
 - Add any package scripts/invariant checks needed so `plugins/deck/src` is covered by workspace plugin invariants.
 
 Acceptance:
 
 - Plan and implementation references use `definePlugin`, `BoringFrontFactoryWithId`, `defineServerPlugin`, `WorkspaceServerPlugin`, `package.json#boring`, `pi.skills`, and default server factory semantics matching plugin-agent-layer.
+- Deck package work does not start against an older pre-merge API shape.
 
-### Phase 1 — Create generic deck package shell
+### Phase 1a — Scaffold package and manifest
 
 - Copy `plugins/_template-full` to `plugins/deck` as a starting point.
 - Rename package to `@hachej/boring-deck`.
 - Keep and update template `package.json#boring` fields so `@hachej/boring-deck` is manifest-loadable; add `pi.skills` for static deck-authoring guidance.
-- Add `front`, `server`, `shared` exports.
-- Add default front export `createDeckPlugin()` and default server factory `defaultDeckServerPlugin(options, ctx)`.
-- Add `skills/deck-authoring/SKILL.md` and include `skills` in package files.
-- Add workspace/package scripts and tsup entries.
-- Add package to `pnpm-workspace.yaml` if needed.
+- Add explicit runtime dependencies used by the extracted UI (`@hachej/boring-ui-kit`, `lucide-react`, `react-markdown`, `remark-gfm`) and do not add domain charting dependencies such as `recharts`.
+- Verify `pnpm-workspace.yaml` already covers `plugins/*`; only change it if the real target does not.
+- Add package scripts, tsconfig, tsup, vitest config, and test setup.
+
+Acceptance:
+
+- Manifest validation accepts `boring.front`, `boring.server`, `pi.skills`, and `pi.systemPrompt`.
+- `pnpm --filter @hachej/boring-deck build`, `typecheck`, and `test` can run against stubs.
+
+### Phase 1b — Empty public builders compile
+
+- Add stub exports in `plugins/deck/src/front/index.tsx`, `plugins/deck/src/server/index.ts`, and `plugins/deck/src/shared/index.ts`.
+- Export `createDeckPlugin`, default front plugin, `createDeckServerPlugin`, default server factory, shared constants/types.
+- Default server factory requires `options.root` or `ctx.workspaceRoot`; it must not silently fall back to `process.cwd()`.
+
+Acceptance:
+
+- `pnpm --filter @hachej/boring-deck typecheck` passes.
+- No imports from `boring-macro`, FRED, ClickHouse, `TimeSeries`, `TimeSeriesGrid`, or `recharts` exist in `plugins/deck/src`.
+
+### Phase 2 — Shared path, constants, and parser contracts
+
+- Implement `src/shared/constants.ts`, `src/shared/types.ts`, `src/shared/path.ts`, and `src/shared/parser.ts`.
+- `shared/path.ts` performs lexical validation only; no `node:*`, no DOM, no `Buffer`.
+- Decide and test list format now: return display paths such as `deck/foo.md`.
+- Allow nested decks under `deck/**/*.md`.
+- Parser output must support title/frontmatter, slides, block widget lines, and inline widget tokens without breaking paragraph flow.
+- Define attr grammar: quoted strings only, accepted key regex, escaped quote behavior, duplicate attr behavior, and malformed widget fallback behavior.
+- Add fixtures copied from current macro decks for YAML frontmatter, legacy `## title:`, leading `---`, `TimeSeries`, `TimeSeriesGrid`, chart-only slide, malformed moustache, and widget-looking code spans/fenced code.
+
+Acceptance:
+
+- Shared tests cover empty paths, `../`, encoded traversal after decode, absolute POSIX paths, Windows drive paths, UNC paths, backslashes, null bytes, bad extensions, prefix stripping, and nested decks.
+- Parser tests prove inline widgets are renderable without MDX/eval and `splitSlides` only splits delimiter lines.
+- `plugins/deck/src/shared/**` has no `node:*`, DOM, React, or `Buffer` imports.
+
+### Phase 3 — Widget registry and front storage primitives
+
+- Implement `plugins/deck/src/front/widgets.tsx` with widget validation, block/inline display handling, unknown-widget placeholder, parser failure placeholder, and deck-owned error boundary.
+- Implement `plugins/deck/src/front/storage.ts` with `DeckStorageClient`, `createHttpDeckStorage`, abort handling, headers, base path, and error mapping.
+- Add `useDeckDocument` or equivalent headless hook for load/save/autosave/reload behavior before porting visual UI.
+- Decide generic missing-deck behavior. Generic default may show empty/error; macro can set `createOnMissing` and `defaultContent` to preserve current auto-create-on-404 behavior.
+
+Acceptance:
+
+- One throwing widget does not blank the slide/deck.
+- Duplicate/invalid widget names fail during `createDeckPlugin(...)`.
+- Storage tests cover GET text, PUT JSON, optional raw-string compatibility, abort signal, non-OK errors, and no hardcoded app-specific route.
+
+### Phase 4 — Generic DeckPane UI and standalone route component
+
+- Port `DeckPane` as a generic renderer only; exclude macro widgets, macro routes, macro data imports, and charting dependencies.
+- `DeckPane` receives configured storage/widgets/slots/theme through a closure component created by `createDeckPlugin(...)`; do not use global mutable registry state.
+- Define mode precisely: panel modes are `read`/`edit`; `present` is standalone/fullscreen context if retained. Align `DeckRuntimeContext.mode` with implementation.
+- Export `StandaloneDeckRoute` as an optional component only; package plugin registration does not magically register host app routes.
+- Keep raw HTML/MDX eval disabled.
+
+Acceptance:
+
+- Render tests pass in jsdom for loading, missing deck, markdown slide, inline widget, block widget, unknown widget, widget error, slots, theme accent override, keyboard navigation, and presenter behavior.
+- Grep confirms no imports from `boring-macro`, macro data, FRED, ClickHouse, `TimeSeries`, `TimeSeriesGrid`, `recharts`, or workspace chart packages.
+
+### Phase 5 — Front plugin builder and surface resolver
+
+- Implement `createDeckPlugin(...)` with configured `DeckPaneComponent`, widgets, storage, components, markdown components, theme, default path, path prefix, and missing-deck options.
+- Register panel and surface resolver via `definePlugin(...)`.
+- Register a command only if it has real behavior (`openCommandRun` or future shell-supported open command); avoid a no-op panel command.
+- Surface resolver opens markdown paths under the configured prefix and rejects non-markdown, outside-prefix, traversal-ish, and disabled cases.
+
+Acceptance:
+
+- `toWorkspacePlugin(createDeckPlugin(...))` outputs expected panel/resolver and optional command.
+- Tests assert panel id, command id/title/panelId/run behavior, resolver id, resolver kind, source, title, params, disabled resolver, configured prefix, and negative cases.
+
+### Phase 6a — File storage security
+
+- Implement `plugins/deck/src/server/fileStorage.ts` and `plugins/deck/src/server/resolveDeckPath.ts`.
+- Use real root containment and symlink-safe ancestor/target checks.
+- Do not put Node path logic in `shared`.
+
+Acceptance:
+
+- Tests cover parent symlink, file symlink, nonexistent path under symlinked parent, absolute paths, Windows/UNC strings, null bytes, encoded traversal after route decode, extension allow-list, read/write containment, nested deck paths, and list filtering.
+
+### Phase 6b — Server routes and server plugin builder
+
+- Implement `plugins/deck/src/server/routes.ts`, `createDeckServerPlugin(...)`, default server factory, and prompt wiring.
+- Route tests cover GET markdown content type, PUT JSON, optional raw string compatibility, list, readOnly, maxContentBytes, content-type allow list, preHandler invocation, status codes, and stable error response bodies.
+- Default server factory requires `options.root` or `ctx.workspaceRoot`.
+
+Acceptance:
+
+- `plugins/deck/src/server/__tests__/fileStorage.test.ts` and `routes.test.ts` pass.
+- Route registration works with configured `routeBase` and Fastify prefix composition.
+
+### Phase 6c — Prompt, skill, and Pi resource wiring
+
+- Implement `plugins/deck/src/server/prompt.ts` and `plugins/deck/skills/deck-authoring/SKILL.md`.
+- Keep server prompt concise and point to the skill.
+- Ensure manifest loading discovers `pi.skills`.
+- Ensure direct `createDeckServerPlugin(...)` usage contributes the bundled skill through `piPackages` unless `includeBundledSkill: false` is set.
+
+Acceptance:
+
+- `createDeckSystemPrompt` tests pass.
+- Manifest validation includes `boring.front`, `boring.server`, `pi.skills`, and `pi.systemPrompt`.
+- Direct builder tests verify skill resource contribution or explicitly disabled contribution.
+
+### Phase 7 — Docs, examples, and invariant gates
+
+- Add `plugins/deck/README.md`.
+- Document manifest loading and builder/custom widget usage.
+- Update root README plugin table.
+- Add one minimal manifest-loading example and one custom widget example.
+- Add invariant/grep gates for generic boundaries.
 
 Acceptance:
 
 - `pnpm --filter @hachej/boring-deck typecheck`
 - `pnpm --filter @hachej/boring-deck test`
+- `pnpm --filter @hachej/boring-deck build`
+- `pnpm lint:workspace-plugin-invariants`
+- Grep confirms no generic deck imports from macro/domain code.
 
-### Phase 2 — Extract pure parser and types
+### Phase 8 — Rewire boring-macro in separate follow-up work
 
-- Move frontmatter parsing, slide splitting, widget parsing into `src/shared/parser.ts`.
-- Add focused parser unit tests.
+Split macro migration into separate beads/PRs:
 
-Acceptance:
-
-- Parser tests cover generic deck examples plus fixtures copied from the first consumer migration.
-
-### Phase 3 — Extract DeckPane generic UI
-
-- Move `DeckPane` into deck plugin.
-- Replace macro-specific widget rendering with registry lookup; do not copy the `TimeSeries`/`TimeSeriesGrid` renderers into `@hachej/boring-deck`.
-- Replace hardcoded app-specific deck fetches with `DeckStorageClient`.
-- Keep default HTTP storage.
-- Add minimal render tests for loading, missing deck, markdown slide, unknown widget.
-
-Acceptance:
-
-- A sample deck renders in a test without macro imports.
-- `DeckPane` has no imports from `boring-macro` or macro-specific files.
-
-### Phase 4 — Add server plugin and file storage
-
-- Implement `createDeckServerPlugin`.
-- Implement `createFileDeckStorage` with path traversal tests.
-- Move generic deck prompt rules.
-
-Acceptance:
-
-- Route tests for read/write/list.
-- Path traversal tests for `../`, absolute path, null byte, backslashes.
-
-### Phase 5 — Add plugin builder outputs
-
-- `createDeckPlugin` registers panel, command, surface resolver.
-- Use `definePlugin` from `@hachej/boring-workspace/plugin`.
-- Surface resolver opens markdown paths under configured prefix.
-
-Acceptance:
-
-- `toWorkspacePlugin(createDeckPlugin(...))` outputs expected panel/command/resolver.
-
-### Phase 6 — Rewire boring-macro to consume deck plugin
-
-- Add dependency on `@hachej/boring-deck`.
-- Create macro widget definitions for `TimeSeries` and `TimeSeriesGrid`.
-- Remove `DeckPane.tsx` from macro or reduce it to widget-only helpers.
-- Remove deck routes from macro routes and compose deck server plugin instead.
-- Keep route compatibility at `/api/macro/deck`.
-- Keep panel id compatibility as `deck` so saved layouts survive.
-- Keep surface resolver id compatibility or map old id to new resolver.
+1. Macro widget definitions: move `TimeSeries` and `TimeSeriesGrid` behavior into macro-owned widget definitions.
+2. Macro front composition: use `createDeckPlugin(...)`, preserve panel id `deck`, resolver behavior, and `/present?path=` route integration.
+3. Macro server composition: preserve `/api/macro/deck`, inject `macroConfig.deckRoot`, carry auth/localhost bypass behavior, and compose unique server plugin ids or explicit route/prompt merge.
+4. Macro compatibility/e2e gate: run existing macro deck specs and manual smoke before deleting legacy code.
 
 Acceptance:
 
 - Existing macro deck paths still open.
 - Existing deck markdown with `TimeSeries` and `TimeSeriesGrid` renders unchanged.
-- Existing `/api/macro/deck` route contract remains compatible.
-
-### Phase 7 — Docs, skill, and examples
-
-- `plugins/deck/README.md`
-- `plugins/deck/skills/deck-authoring/SKILL.md`
-- Update root README plugin table.
-- Add example deck plugin usage.
-- Document widget injection and component slots.
+- Existing `/api/macro/deck` GET/PUT/list behavior remains compatible.
+- Saved Dockview layouts still open panel id `deck`.
+- `TimeSeries` chip opens chart panel.
+- Legacy macro files are not deleted until compatibility is proven and deletion is explicitly approved.
 
 ## 10. Testing checklist
 
@@ -630,7 +747,9 @@ Deck package:
 ```bash
 pnpm --filter @hachej/boring-deck typecheck
 pnpm --filter @hachej/boring-deck test
+pnpm --filter @hachej/boring-deck build
 pnpm lint:workspace-plugin-invariants
+rg -n "boring-macro|FRED|ClickHouse|TimeSeries|TimeSeriesGrid|recharts" plugins/deck/src && false || true
 ```
 
 Macro after integration:
@@ -648,7 +767,7 @@ Manual macro smoke:
 3. Preview slides.
 4. Presenter mode next/prev works.
 5. `{{TimeSeries ids="CPIAUCSL"}}` renders.
-6. `{{TimeSeriesGrid ids="UNRATE,PAYEMS"}}` renders.
+6. `{{TimeSeriesGrid ids="UNRATE;PAYEMS" titles="Unemployment;Payrolls" columns="2"}}` renders as a grid.
 7. Click series chip opens chart panel.
 8. Agent writes `deck/labor.md`; surface resolver opens deck panel.
 
@@ -666,6 +785,7 @@ First consumer migration constraints for `boring-macro`:
 - Preserve route prefix `/api/macro/deck` during the migration.
 - Preserve existing macro widget syntax exactly.
 - Do not require users to rewrite existing `{{TimeSeries ...}}` embeds.
+- Preserve `/present?path=...`, supported title conventions, and missing-deck auto-create behavior unless explicitly changed in a separate migration.
 
 ## 12. Risks and mitigations
 
@@ -681,6 +801,14 @@ Mitigation: expose only stable slots and widget registry first.
 
 Mitigation: write traversal corpus tests for the generic file storage before replacing any consumer-specific path guard.
 
+### Risk: Inline widget support breaks markdown paragraph flow
+
+Mitigation: make inline token rendering or a moustache-aware remark transform a dedicated bead, with tests proving surrounding paragraph text, emphasis, links, code spans, and fenced code behavior.
+
+### Risk: Direct builder usage references an unloaded skill
+
+Mitigation: make bundled skill resource contribution part of `createDeckServerPlugin(...)` via `piPackages`, and test both manifest-loaded and directly composed server plugin paths.
+
 ### Risk: Duplicate markdown styling differences
 
 Mitigation: snapshot or DOM tests for representative slides, plus manual visual smoke.
@@ -689,29 +817,75 @@ Mitigation: snapshot or DOM tests for representative slides, plus manual visual 
 
 Mitigation: keep `panelId: 'deck'` for the generic default plugin and for macro's first integration unless a layout migration is explicitly added.
 
-## 13. Open decisions
+## 13. Locked decisions and deferred items
 
-1. Should `@hachej/boring-deck` ship a direct default plugin, or only builders?
-   - Decision: ship both. The package is manifest-loadable through `package.json#boring`, and also exports builders for customized consumers.
-2. Should parser live in `front` or `shared`?
-   - Recommendation: `shared` if it has zero React/DOM deps; this enables server-side validation later.
-3. Should widget attrs support JSON values?
-   - Recommendation: start with quoted string attrs only. Add JSON later if a real widget needs it.
-4. Should deck storage be workspace filesystem-backed by default?
-   - Recommendation: server plugin provides file storage; frontend default is HTTP storage.
-5. Should component slots receive plugin context (`apiBaseUrl`, auth headers)?
-   - Recommendation: yes for toolbar/empty/error slots through a `DeckRuntimeContext` prop.
+1. **Default plugin vs builders** — ship both. `@hachej/boring-deck` is manifest-loadable through `package.json#boring` and also exports builders for customized consumers.
+2. **Parser location** — parser and lexical path validation live in `shared` only if they remain browser-safe and import no React, DOM, `node:*`, or `Buffer`.
+3. **Widget syntax** — v1 canonical syntax is moustache widgets: `{{WidgetName key="value"}}`. MDX/eval is not allowed. `remark-directive`/container components are deferred until a real consumer needs markdown children inside custom components.
+4. **Widget attrs** — start with quoted string attrs only. Define key regex, escaped quote behavior, duplicate attr behavior, and malformed attr fallback before implementation.
+5. **Default storage** — frontend default is HTTP storage at `/api/deck`; server default is file storage rooted at `ctx.workspaceRoot/deck` and requires `ctx.workspaceRoot` or explicit `options.root`.
+6. **List format** — `GET /list` returns display paths with prefix (`deck/foo.md`) and supports nested `deck/**/*.md`.
+7. **Missing deck behavior** — generic default can show empty/error; macro migration can opt into current auto-create behavior with `createOnMissing`/`defaultContent`.
+8. **Command behavior** — do not register a default open command unless it has real `run` behavior or the shell adds panel-opening semantics for panel commands.
+9. **Deletion** — do not delete legacy macro deck files/routes until compatibility is proven and deletion is explicitly approved.
 
-## 14. First implementation bead/task breakdown
+## 14. Bead-ready implementation breakdown
 
-1. Scaffold `plugins/deck` from `_template-full`.
-2. Add shared constants/types for deck panel ids, surface kind, storage contracts, widget contracts.
-3. Extract parser with tests.
-4. Port `DeckPane` as a generic renderer only; exclude macro widgets, macro routes, and macro data imports.
-5. Implement moustache widget registry, inline markdown component rendering, and unknown-component placeholder.
-6. Implement HTTP storage client.
-7. Implement file server storage and routes.
-8. Implement `createDeckPlugin` front builder.
-9. Implement `createDeckServerPlugin` server builder.
-10. Add README and root package table entry.
-11. Rewire macro in a separate follow-up branch/PR.
+Each bead should include goal, exact files, dependencies, acceptance commands, fixtures, and non-goals. Avoid beads that require simultaneous edits to both `boring-ui` and `boring-macro` repos.
+
+1. **Base/API verification**
+   - Files: plan/docs only.
+   - Depends on: plugin-agent-layer branch availability.
+   - Acceptance: target branch exposes `plugins/_template-full`, `@hachej/boring-workspace/plugin`, `definePlugin`, `BoringFrontFactoryWithId`, `toWorkspacePlugin`, manifest validation, and default server factory resolver support.
+
+2. **Deck package scaffold + manifest**
+   - Files: `plugins/deck/package.json`, `tsconfig.json`, `tsup.config.ts`, `vitest.config.ts`, `src/test-setup.ts`, empty `src/**` indexes.
+   - Acceptance: package builds/types/tests against stubs; manifest contains `boring.front`, `boring.server`, `pi.skills`, `pi.systemPrompt`; no domain deps.
+
+3. **Shared constants/path/parser contracts**
+   - Files: `plugins/deck/src/shared/constants.ts`, `types.ts`, `path.ts`, `parser.ts`, shared tests.
+   - Acceptance: lexical path corpus and parser fixture corpus pass; shared imports no Node/React/DOM.
+
+4. **Widget registry + inline renderer contract**
+   - Files: `plugins/deck/src/front/widgets.tsx`, widget tests.
+   - Acceptance: block/inline moustache widgets, unknown placeholder, invalid/duplicate name rejection, parse failure placeholder, and error boundary behavior pass.
+
+5. **HTTP storage client + document state hook**
+   - Files: `plugins/deck/src/front/storage.ts`, `useDeckDocument.ts`, tests.
+   - Acceptance: GET/PUT/list, aborts, non-OK errors, optional create-on-missing, debounced save behavior, no hardcoded macro route.
+
+6. **Generic DeckPane + standalone component**
+   - Files: `plugins/deck/src/front/DeckPane.tsx`, `components.tsx`, `StandaloneDeckRoute.tsx`, render tests.
+   - Acceptance: generic markdown deck renders, slots/theme work, presenter navigation works, inline widgets preserve paragraphs, no macro/chart imports.
+
+7. **Front plugin builder + surface resolver**
+   - Files: `plugins/deck/src/front/index.tsx`, `surfaceResolver.ts`, plugin tests.
+   - Acceptance: `toWorkspacePlugin(createDeckPlugin(...))` captures configured panel/resolver/optional command; widgets/storage/theme are passed through closure component.
+
+8. **File storage security**
+   - Files: `plugins/deck/src/server/fileStorage.ts`, `resolveDeckPath.ts`, tests.
+   - Acceptance: symlink and traversal corpus passes before any consumer migration.
+
+9. **Routes + server plugin builder**
+   - Files: `plugins/deck/src/server/routes.ts`, `index.ts`, route/plugin tests.
+   - Acceptance: GET/PUT/list, readOnly, compatibilityMode, preHandler, maxContentBytes, content types, stable errors, default factory root requirements pass.
+
+10. **Prompt + skill + Pi resource wiring**
+    - Files: `plugins/deck/src/server/prompt.ts`, `plugins/deck/skills/deck-authoring/SKILL.md`, manifest tests.
+    - Acceptance: manifest-loaded and directly composed server plugin paths both make deck authoring guidance available.
+
+11. **Docs/examples/invariants**
+    - Files: `plugins/deck/README.md`, root README/plugin table, examples.
+    - Acceptance: typecheck/test/build/invariant commands pass; docs show manifest loading and custom widget injection.
+
+12. **Macro follow-up: widget extraction**
+    - Repo: `boring-macro` follow-up branch.
+    - Acceptance: macro-owned `TimeSeries`/`TimeSeriesGrid` widgets match current behavior; generic deck imports no macro code.
+
+13. **Macro follow-up: front/server composition**
+    - Repo: `boring-macro` follow-up branch.
+    - Acceptance: panel id `deck`, `/present?path=...`, `/api/macro/deck`, auth/dev bypass, missing-deck behavior, and saved layouts remain compatible.
+
+14. **Macro follow-up: compatibility gate and legacy cleanup**
+    - Repo: `boring-macro` follow-up branch.
+    - Acceptance: existing focused macro tests and manual smoke pass. Only then request explicit approval before deleting/replacing legacy deck files/routes.
