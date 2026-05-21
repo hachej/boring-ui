@@ -156,7 +156,6 @@ export interface CreateDeckPluginOptions {
   storage?: DeckStorageClient
   storageBasePath?: string
   widgets?: DeckWidgetDefinition[]
-  markdownDirectives?: DeckMarkdownDirectiveDefinition[]
   components?: DeckComponentSlots
   markdownComponents?: MarkdownComponentOverrides
   remarkPlugins?: unknown[]
@@ -223,55 +222,44 @@ This keeps the deck UI independent of any app-specific deck route, including mac
 
 ### 5.3 Custom markdown component and widget injection
 
-Generic deck supports custom component injection through a named registry. The language should support both block-like widgets and inline markdown components.
+Generic deck supports custom component injection through a named widget registry. The v1 deck language should use the existing boring-macro moustache syntax as the canonical syntax because it is simple, already deployed, and works for both block widgets and inline leaf components.
 
-Preferred markdown directive syntax, powered by a deck-owned `remark-directive` integration:
-
-```md
-Inline status :Badge[Preliminary]{tone="warning"} inside a paragraph.
-
-::Kpi{label="GDP" value="2.1%" tone="good"}
-
-:::Callout{tone="warning" title="Caveat"}
-This is a custom container component with markdown children.
-:::
-```
-
-Compatibility/block shorthand syntax:
+Canonical syntax:
 
 ```md
 {{WidgetName key="value" another="value"}}
+
+Inline status {{Badge text="Preliminary" tone="warning"}} inside a paragraph.
+
+{{Kpi label="GDP" value="2.1%" tone="good"}}
 ```
 
-Rules of thumb:
+Current boring-macro usage is exactly this family of syntax:
 
-- Use directive syntax for new inline, leaf, and container components.
-- Keep `{{WidgetName ...}}` as a block/leaf shorthand and for existing consumer decks.
-- The generic package ships no domain directives by default beyond safe placeholders/examples.
+```md
+{{TimeSeries ids="CPIAUCSL" title="Consumer Price Index"}}
+{{TimeSeriesGrid ids="UNRATE;PAYEMS" titles="Unemployment;Payrolls" columns="2"}}
+```
+
+Implementation notes:
+
+- Parse all `{{WidgetName key="value"}}` occurrences, including occurrences inside paragraphs.
+- Treat widgets on their own line as block widgets by default.
+- Treat widgets inside paragraph text as inline leaf components when the widget definition declares `display: 'inline'`.
+- Do not add MDX/eval. Do not require markdown-directive syntax for v1.
+- A future version can add `remark-directive` for container components with markdown children if a real consumer needs it.
+- The generic package ships no domain widgets by default beyond safe placeholders/examples.
 
 Types:
 
 ```ts
-export type DeckMarkdownDirectiveKind = 'text' | 'leaf' | 'container'
+export type DeckWidgetDisplay = 'block' | 'inline'
 
-export interface DeckMarkdownDirectiveDefinition<TAttrs = Record<string, string>> {
+export interface DeckWidgetDefinition<TAttrs = Record<string, string>> {
   name: string
-  kind: DeckMarkdownDirectiveKind
+  display?: DeckWidgetDisplay
   parse?: (attrs: Record<string, string>) => TAttrs
-  render: ComponentType<DeckMarkdownDirectiveRenderProps<TAttrs>>
-}
-
-export interface DeckMarkdownDirectiveRenderProps<TAttrs> {
-  attrs: TAttrs
-  rawAttrs: Record<string, string>
-  children?: ReactNode
-  text?: string
-  context: DeckRuntimeContext
-}
-
-export interface DeckWidgetDefinition<TAttrs = Record<string, string>>
-  extends Omit<DeckMarkdownDirectiveDefinition<TAttrs>, 'kind'> {
-  kind?: 'leaf'
+  render: ComponentType<DeckWidgetRenderProps<TAttrs>>
 }
 
 export interface DeckWidgetRenderProps<TAttrs> {
@@ -294,14 +282,14 @@ export interface DeckRuntimeContext {
 
 Rules:
 
-- Unknown widgets/directives render a visible non-fatal placeholder.
+- Unknown widgets render a visible non-fatal placeholder.
 - Parser failures render a visible placeholder with error details in dev/test only.
 - Renderers are wrapped in a deck-owned error boundary; one bad custom component must not blank the slide or deck.
 - Names must match a strict identifier regex and duplicate names fail during `createDeckPlugin(...)`.
-- Definitions are matched by exact `name` and `kind`.
-- Raw HTML remains disabled by default; custom components must go through the directive/widget registry, not arbitrary HTML/MDX eval.
+- Definitions are matched by exact `name`.
+- Raw HTML remains disabled by default; custom components must go through the widget registry, not arbitrary HTML/MDX eval.
 
-Domain consumers can supply their own widgets/directives. For example, `boring-macro` can supply `TimeSeries` and `TimeSeriesGrid`, but those implementations stay outside the generic deck package.
+Domain consumers can supply their own widgets. For example, `boring-macro` can supply `TimeSeries` and `TimeSeriesGrid`, but those implementations stay outside the generic deck package.
 
 Potential future consumers can supply:
 
@@ -438,8 +426,8 @@ Skill scope:
 - `---` on its own line splits slides
 - optional frontmatter title
 - concise slide-writing rubric
-- directive syntax such as `:Badge[text]{tone="info"}`, `::Kpi{value="3.2%"}`, and container directives
-- compatibility widget syntax `{{WidgetName key="value"}}`
+- canonical widget/component syntax `{{WidgetName key="value"}}`
+- inline widget usage such as `Status: {{Badge text="Draft" tone="warning"}}`
 - generic component sizing/layout conventions
 - warning to preserve existing custom widget syntax supplied by the host app
 
@@ -484,7 +472,7 @@ export type DeckSegment =
   | { type: 'widget'; name: string; attrs: Record<string, string>; raw: string }
 ```
 
-Inline and container custom components should be represented in the markdown AST through the directive plugin, not by splitting paragraph text with ad-hoc regexes. The `DeckSegment` widget path is only for slide-level compatibility shorthand such as `{{WidgetName ...}}`.
+Inline custom components should use the same `{{WidgetName ...}}` registry and be represented as widget tokens inside markdown text. Container components with markdown children are deferred until a real consumer needs directive syntax.
 
 Functions:
 
@@ -501,9 +489,8 @@ Tests:
 - widgets parsed with quoted attrs
 - unknown widgets remain structured
 - malformed widget syntax falls back to markdown or placeholder
-- text directives render inline custom components inside paragraphs
-- leaf directives render block/leaf custom components
-- container directives render custom components with markdown children
+- inline moustache widgets render custom components inside paragraphs
+- block moustache widgets render custom components on their own slide line
 - raw HTML/MDX eval remains disabled
 
 ## 8. Macro integration after extraction
@@ -721,7 +708,7 @@ Mitigation: keep `panelId: 'deck'` for the generic default plugin and for macro'
 2. Add shared constants/types for deck panel ids, surface kind, storage contracts, widget contracts.
 3. Extract parser with tests.
 4. Port `DeckPane` as a generic renderer only; exclude macro widgets, macro routes, and macro data imports.
-5. Implement directive/widget registry, inline markdown component rendering, and unknown-component placeholder.
+5. Implement moustache widget registry, inline markdown component rendering, and unknown-component placeholder.
 6. Implement HTTP storage client.
 7. Implement file server storage and routes.
 8. Implement `createDeckPlugin` front builder.
