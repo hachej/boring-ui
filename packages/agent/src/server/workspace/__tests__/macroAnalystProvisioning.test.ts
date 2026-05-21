@@ -1,5 +1,5 @@
 import { execFile, spawnSync } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, posix } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -189,6 +189,11 @@ test('MacroAnalyst bm is exposed from python[] console scripts and templates see
   ], { cwd: workspaceRoot, env })
   expect(run.stdout).toContain('wrote FYOIGDA188S_YOY2')
   await expect(readFile(join(workspaceRoot, 'artifacts', 'FYOIGDA188S_YOY2.json'), 'utf8')).resolves.toContain('FYOIGDA188S YoY 2')
+
+  await provisionRuntimeWorkspace({ workspaceRoot, force: true, contributions: [] })
+  await expect(stat(join(paths.bin, 'bm'))).rejects.toThrow()
+  await expect(stat(join(paths.bin, 'python'))).rejects.toThrow()
+  await expect(stat(join(paths.bin, 'pip'))).rejects.toThrow()
 }, 60_000)
 
 const describeIfBwrap = HAS_BWRAP ? describe : describe.skip

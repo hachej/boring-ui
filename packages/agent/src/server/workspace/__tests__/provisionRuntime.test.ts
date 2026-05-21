@@ -153,6 +153,37 @@ async function makeRunnableNodePackageRoot(packageName: string, binName: string)
   return packageRoot
 }
 
+test('template targets must stay inside the workspace', async () => {
+  const workspaceRoot = await makeTempDir('boring-runtime-template-escape-')
+  const templateRoot = await makeTempDir('boring-runtime-template-source-')
+  await writeFile(join(templateRoot, 'seed.txt'), 'seed\n', 'utf8')
+
+  await expect(provisionRuntimeWorkspace({
+    workspaceRoot,
+    contributions: [{ id: 'template', provisioning: { templateDirs: [{ id: 'escape', path: templateRoot, target: '../outside' }] } }],
+  })).rejects.toThrow('templateDirs.escape.target must stay inside the workspace')
+})
+
+test('node-only provisioning does not install broken managed python or pip shims', async () => {
+  const workspaceRoot = await makeTempDir('boring-runtime-node-only-')
+  const packageRoot = await makeRunnableNodePackageRoot('@example/boring-ui', 'boring-ui')
+
+  await provisionRuntimeWorkspace({
+    workspaceRoot,
+    contributions: [{ id: 'tool', provisioning: { nodePackages: [{ id: 'tool', packageName: '@example/boring-ui', packageRoot }] } }],
+  })
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
+
+  await expect(stat(join(paths.bin, 'python'))).rejects.toThrow()
+  await expect(stat(join(paths.bin, 'python3'))).rejects.toThrow()
+  await expect(stat(join(paths.bin, 'pip'))).rejects.toThrow()
+  await expect(stat(join(paths.bin, 'pip3'))).rejects.toThrow()
+  await expect(execFileAsync('boring-ui', ['--help'], {
+    cwd: workspaceRoot,
+    env: { ...process.env, PATH: `${paths.bin}:${process.env.PATH ?? ''}` },
+  })).resolves.toMatchObject({ stdout: expect.stringContaining('runnable help') })
+}, 30_000)
+
 test('local node packageRoot is packed installed and linked so boring-ui runs from PATH', async () => {
   const workspaceRoot = await makeTempDir('boring-runtime-node-runnable-')
   const packageRoot = await makeRunnableNodePackageRoot('@example/boring-ui', 'boring-ui')
