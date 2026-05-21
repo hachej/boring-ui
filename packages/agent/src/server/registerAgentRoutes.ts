@@ -33,6 +33,7 @@ import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
 import { readyStatusRoutes } from './http/routes/readyStatus'
 import { searchRoutes } from './http/routes/search'
+import { runtimeDoctorRoutes } from './runtime/doctor'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
 import type { AgentHarness } from '../shared/harness'
@@ -525,16 +526,22 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     }
   })
 
+  const version = opts.version ?? DEFAULT_VERSION
   const registerHealthRoute = opts.registerHealthRoute ?? true
   if (registerHealthRoute) {
     await app.register(healthRoutes, {
-      version: opts.version ?? DEFAULT_VERSION,
+      version,
       getReadiness: () => staticBinding?.readyTracker.getReadiness() ?? {
         sandboxReady: true,
         harnessReady: true,
       },
     })
   }
+  await app.register(runtimeDoctorRoutes, {
+    version,
+    runtimeMode: resolvedMode,
+    getBundle: async (request) => (await getBindingForRequest(request)).runtimeBundle,
+  })
 
   await app.register(fileRoutes, {
     getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
