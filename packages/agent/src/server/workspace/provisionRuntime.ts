@@ -212,6 +212,18 @@ function normalizePackageRelativePath(path: string, context: string): string {
   return normalized
 }
 
+function normalizeWorkspaceRelativeTarget(target: string | undefined, context: string): string {
+  if (target === undefined || target === '') return '.'
+  if (target.includes('\0') || target.includes('\\')) {
+    throw new Error(`${context}.target must be a workspace-relative path`)
+  }
+  const normalized = posix.normalize(target.replace(/^\.\//, ''))
+  if (normalized.startsWith('../') || normalized === '..' || posix.isAbsolute(normalized)) {
+    throw new Error(`${context}.target must stay inside the workspace`)
+  }
+  return normalized === '.' ? '.' : normalized
+}
+
 function assertValidBinName(name: string, context: string): void {
   if (!/^[A-Za-z0-9._-]+$/.test(name) || name === '.' || name === '..') {
     throw new Error(`${context} must be a bin name without path separators`)
@@ -435,7 +447,8 @@ async function fingerprint(
     hash.update(`plugin:${id}\n`)
     for (const template of provisioning.templateDirs ?? []) {
       const templatePath = toPath(template.path)
-      hash.update(`template:${template.id}:${template.target ?? ''}:${templatePath}\n`)
+      const target = normalizeWorkspaceRelativeTarget(template.target, `templateDirs.${template.id}`)
+      hash.update(`template:${template.id}:${target}:${templatePath}\n`)
       if (await exists(templatePath)) await hashPath(templatePath, hash)
     }
     for (const spec of provisioning.python ?? []) {
@@ -517,7 +530,8 @@ function collectEnv(
 async function seedTemplates(workspaceRoot: string, contributions: Array<{ provisioning: RuntimeProvisioningContribution }>): Promise<void> {
   for (const { provisioning } of contributions) {
     for (const template of provisioning.templateDirs ?? []) {
-      await cp(toPath(template.path), resolve(workspaceRoot, template.target ?? '.'), {
+      const target = normalizeWorkspaceRelativeTarget(template.target, `templateDirs.${template.id}`)
+      await cp(toPath(template.path), resolve(workspaceRoot, target), {
         recursive: true,
         force: false,
         errorOnExist: false,
@@ -545,6 +559,7 @@ interface NodeBinLink {
 }
 
 const NODE_BIN_MANIFEST_REL_PATH = `${BORING_AGENT_DIR}/state/node-bins.json`
+const PYTHON_BIN_MANIFEST_REL_PATH = `${BORING_AGENT_DIR}/state/python-bins.json`
 
 function nodeCacheEnv(paths: ReturnType<typeof getBoringAgentRuntimePaths>): Record<string, string> {
   return {
@@ -886,33 +901,68 @@ ${exports}
 `
 }
 
-async function writeShims(workspaceRoot: string, env: Record<string, string>): Promise<string> {
+function pythonBinManifestBody(names: string[]): string {
+  return `${JSON.stringify({ v: 1, bins: [...names].sort() }, null, 2)}\n`
+}
+
+function parsePythonBinManifest(raw: string): string[] {
+  try {
+    const parsed = JSON.parse(raw) as { bins?: unknown }
+    if (!Array.isArray(parsed.bins)) return []
+    return parsed.bins.filter((entry): entry is string => typeof entry === 'string')
+  } catch {
+    return []
+  }
+}
+
+async function writeShims(workspaceRoot: string, env: Record<string, string>, hasPython: boolean): Promise<string> {
   const paths = getBoringAgentRuntimePaths(workspaceRoot)
   const shimDir = paths.bin
   const venvBin = paths.venvBin
   await mkdir(shimDir, { recursive: true })
+  await mkdir(paths.state, { recursive: true })
   const base = buildShimBase(env)
+  const desired = new Set<string>()
 
-  await writeExecutable(join(shimDir, 'python'), `${base}exec "$VENV_BIN/python" "$@"\n`)
-  await writeExecutable(join(shimDir, 'python3'), `${base}exec "$VENV_BIN/python" "$@"\n`)
-  await writeExecutable(join(shimDir, 'pip'), `${base}exec "$VENV_BIN/python" -m pip "$@"\n`)
-  await writeExecutable(join(shimDir, 'pip3'), `${base}exec "$VENV_BIN/python" -m pip "$@"\n`)
+  const manifestPath = join(workspaceRoot, PYTHON_BIN_MANIFEST_REL_PATH)
+  if (await exists(manifestPath)) {
+    for (const name of parsePythonBinManifest(await readFile(manifestPath, 'utf8'))) {
+      if (!desired.has(name)) await rm(join(shimDir, name), { force: true }).catch(() => undefined)
+    }
+  }
+  if (!hasPython) {
+    for (const name of ['python', 'python3', 'pip', 'pip3']) await rm(join(shimDir, name), { force: true }).catch(() => undefined)
+  }
 
-  if (await exists(venvBin)) {
-    for (const entry of await readdir(venvBin)) {
-      if (['python', 'python3', 'pip', 'pip3'].includes(entry)) continue
-      const full = join(venvBin, entry)
-      const info = await stat(full).catch(() => null)
-      if (!info?.isFile()) continue
-      await writeExecutable(join(shimDir, entry), `${base}TARGET="$VENV_BIN"/${bashSingleQuote(entry)}
+  if (hasPython) {
+    desired.add('python')
+    desired.add('python3')
+    desired.add('pip')
+    desired.add('pip3')
+    await writeExecutable(join(shimDir, 'python'), `${base}exec "$VENV_BIN/python" "$@"\n`)
+    await writeExecutable(join(shimDir, 'python3'), `${base}exec "$VENV_BIN/python" "$@"\n`)
+    await writeExecutable(join(shimDir, 'pip'), `${base}exec "$VENV_BIN/python" -m pip "$@"\n`)
+    await writeExecutable(join(shimDir, 'pip3'), `${base}exec "$VENV_BIN/python" -m pip "$@"\n`)
+
+    if (await exists(venvBin)) {
+      for (const entry of await readdir(venvBin)) {
+        if (['python', 'python3', 'pip', 'pip3'].includes(entry)) continue
+        const full = join(venvBin, entry)
+        const info = await stat(full).catch(() => null)
+        if (!info?.isFile()) continue
+        desired.add(entry)
+        await writeExecutable(join(shimDir, entry), `${base}TARGET="$VENV_BIN"/${bashSingleQuote(entry)}
 SHEBANG="$(head -n 1 "$TARGET" 2>/dev/null || true)"
 case "$SHEBANG" in
   *python*) exec "$VENV_BIN/python" "$TARGET" "$@" ;;
 esac
 exec "$TARGET" "$@"
 `)
+      }
     }
   }
+
+  await writeFile(manifestPath, pythonBinManifestBody([...desired]), 'utf8')
   return shimDir
 }
 
@@ -1007,7 +1057,7 @@ async function provisionHostRuntimeWorkspace(
   if (!opts.force) {
     const markerResult = await readProvisioningMarker(markerPath, legacyMarkerPath)
     if (markerResult?.marker.fingerprint === hash && await isRuntimeMaterialized(workspaceRoot, active)) {
-      const actualBinDir = await writeShims(workspaceRoot, env)
+      const actualBinDir = await writeShims(workspaceRoot, env, hasPythonContributions(active))
       await writeHostNodeBinLinks(workspaceRoot, active.flatMap(({ provisioning }) => provisioning.nodePackages ?? []))
       try {
         await validateHostRuntime(workspaceRoot, active)
@@ -1025,7 +1075,7 @@ async function provisionHostRuntimeWorkspace(
   const nodePackageSpecs = active.flatMap(({ provisioning }) => provisioning.nodePackages ?? [])
   await ensureNodePackages(workspaceRoot, nodePackageSpecs)
   await ensurePython(workspaceRoot, active.flatMap(({ provisioning }) => provisioning.python ?? []))
-  const actualBinDir = await writeShims(workspaceRoot, env)
+  const actualBinDir = await writeShims(workspaceRoot, env, hasPythonContributions(active))
   await writeHostNodeBinLinks(workspaceRoot, nodePackageSpecs)
   await validateHostRuntime(workspaceRoot, active)
   await writeProvisioningMarker(markerPath, hash, target)
@@ -1086,7 +1136,8 @@ async function copyHostPathToWorkspace(
 async function seedRemoteTemplates(workspace: Workspace, contributions: Array<{ provisioning: RuntimeProvisioningContribution }>): Promise<void> {
   for (const { provisioning } of contributions) {
     for (const template of provisioning.templateDirs ?? []) {
-      await copyHostPathToWorkspace(toPath(template.path), workspace, template.target ?? '.')
+      const target = normalizeWorkspaceRelativeTarget(template.target, `templateDirs.${template.id}`)
+      await copyHostPathToWorkspace(toPath(template.path), workspace, target)
     }
   }
 }
@@ -1307,30 +1358,51 @@ async function writeRemoteShims(
   sandbox: Sandbox,
   runtimeCwd: string,
   env: Record<string, string>,
+  hasPython: boolean,
 ): Promise<string> {
   const shimDir = `${BORING_AGENT_DIR}/bin`
   const venvBin = `${BORING_AGENT_DIR}/venv/bin`
   await workspace.mkdir(shimDir, { recursive: true })
+  await workspace.mkdir(posix.join(BORING_AGENT_DIR, 'state'), { recursive: true })
   const base = buildShimBase(env)
+  const desired = new Set<string>()
 
-  await writeRemoteExecutable(workspace, sandbox, runtimeCwd, `${shimDir}/python`, `${base}exec "$VENV_BIN/python" "$@"\n`)
-  await writeRemoteExecutable(workspace, sandbox, runtimeCwd, `${shimDir}/python3`, `${base}exec "$VENV_BIN/python" "$@"\n`)
-  await writeRemoteExecutable(workspace, sandbox, runtimeCwd, `${shimDir}/pip`, `${base}exec "$VENV_BIN/python" -m pip "$@"\n`)
-  await writeRemoteExecutable(workspace, sandbox, runtimeCwd, `${shimDir}/pip3`, `${base}exec "$VENV_BIN/python" -m pip "$@"\n`)
+  if (await workspaceExists(workspace, PYTHON_BIN_MANIFEST_REL_PATH)) {
+    for (const name of parsePythonBinManifest(await workspace.readFile(PYTHON_BIN_MANIFEST_REL_PATH))) {
+      if (!desired.has(name)) await workspace.unlink(posix.join(shimDir, name)).catch(() => undefined)
+    }
+  }
+  if (!hasPython) {
+    for (const name of ['python', 'python3', 'pip', 'pip3']) await workspace.unlink(posix.join(shimDir, name)).catch(() => undefined)
+  }
 
-  if (await workspaceExists(workspace, venvBin)) {
-    for (const entry of await workspace.readdir(venvBin)) {
-      if (['python', 'python3', 'pip', 'pip3'].includes(entry.name) || entry.kind !== 'file') continue
-      const relPath = `${shimDir}/${entry.name}`
-      await writeRemoteExecutable(workspace, sandbox, runtimeCwd, relPath, `${base}TARGET="$VENV_BIN"/${bashSingleQuote(entry.name)}
+  if (hasPython) {
+    desired.add('python')
+    desired.add('python3')
+    desired.add('pip')
+    desired.add('pip3')
+    await writeRemoteExecutable(workspace, sandbox, runtimeCwd, `${shimDir}/python`, `${base}exec "$VENV_BIN/python" "$@"\n`)
+    await writeRemoteExecutable(workspace, sandbox, runtimeCwd, `${shimDir}/python3`, `${base}exec "$VENV_BIN/python" "$@"\n`)
+    await writeRemoteExecutable(workspace, sandbox, runtimeCwd, `${shimDir}/pip`, `${base}exec "$VENV_BIN/python" -m pip "$@"\n`)
+    await writeRemoteExecutable(workspace, sandbox, runtimeCwd, `${shimDir}/pip3`, `${base}exec "$VENV_BIN/python" -m pip "$@"\n`)
+
+    if (await workspaceExists(workspace, venvBin)) {
+      for (const entry of await workspace.readdir(venvBin)) {
+        if (['python', 'python3', 'pip', 'pip3'].includes(entry.name) || entry.kind !== 'file') continue
+        const relPath = `${shimDir}/${entry.name}`
+        desired.add(entry.name)
+        await writeRemoteExecutable(workspace, sandbox, runtimeCwd, relPath, `${base}TARGET="$VENV_BIN"/${bashSingleQuote(entry.name)}
 SHEBANG="$(head -n 1 "$TARGET" 2>/dev/null || true)"
 case "$SHEBANG" in
   *python*) exec "$VENV_BIN/python" "$TARGET" "$@" ;;
 esac
 exec "$TARGET" "$@"
 `)
+      }
     }
   }
+
+  await workspace.writeFile(PYTHON_BIN_MANIFEST_REL_PATH, pythonBinManifestBody([...desired]))
   return `${runtimeCwd}/${shimDir}`
 }
 
@@ -1341,11 +1413,11 @@ async function validateRuntimeInSandbox(
 ): Promise<void> {
   const checks = [
     `${BORING_AGENT_PROVISIONING_MARKER_REL_PATH}`,
-    `${BORING_AGENT_DIR}/bin/python`,
     `${BORING_AGENT_DIR}/state/${BORING_AGENT_OWNERSHIP_MARKER_FILENAME}`,
   ]
   const hasPython = hasPythonContributions(contributions)
   if (hasPython) {
+    checks.push(`${BORING_AGENT_DIR}/bin/python`)
     checks.push(`${BORING_AGENT_DIR}/venv/bin/python`)
   }
   for (const { provisioning } of contributions) {
@@ -1390,7 +1462,7 @@ async function provisionRemoteRuntimeWorkspace(
     const markerResult = await workspaceReadJsonMarker(workspace, markerPath, legacyMarkerPath)
     if (markerResult?.marker.fingerprint === hash && await isRemoteRuntimeMaterialized(workspace, active)) {
       const nodePackageSpecs = active.flatMap(({ provisioning }) => provisioning.nodePackages ?? [])
-      const binDir = await writeRemoteShims(workspace, sandbox, target.runtimeCwd, env)
+      const binDir = await writeRemoteShims(workspace, sandbox, target.runtimeCwd, env, hasPythonContributions(active))
       await writeRemoteNodeBinLinks(workspace, sandbox, target.runtimeCwd, nodePackageSpecs)
       if (markerResult.source === 'legacy') await workspace.writeFile(markerPath, provisioningMarkerBody(hash, target))
       try {
@@ -1407,7 +1479,7 @@ async function provisionRemoteRuntimeWorkspace(
   await seedRemoteTemplates(workspace, active)
   await ensureRemoteNodePackages(workspace, sandbox, target.runtimeCwd, opts.storageRoot ?? opts.workspaceRoot, nodePackageSpecs)
   await ensureRemotePython(workspace, sandbox, target.runtimeCwd, active.flatMap(({ provisioning }) => provisioning.python ?? []))
-  const binDir = await writeRemoteShims(workspace, sandbox, target.runtimeCwd, env)
+  const binDir = await writeRemoteShims(workspace, sandbox, target.runtimeCwd, env, hasPythonContributions(active))
   await writeRemoteNodeBinLinks(workspace, sandbox, target.runtimeCwd, nodePackageSpecs)
   await workspace.writeFile(markerPath, provisioningMarkerBody(hash, target))
   await validateRuntimeInSandbox(sandbox, target.runtimeCwd, active)

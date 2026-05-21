@@ -1,3 +1,4 @@
+import { posix } from 'node:path'
 import { Writable } from 'node:stream'
 import type { Sandbox as VercelSandbox } from '@vercel/sandbox'
 
@@ -65,6 +66,16 @@ function timeoutResult(durationMs: number): ExecResult {
     stdoutEncoding: 'utf-8',
     stderrEncoding: 'utf-8',
   }
+}
+
+function normalizeVercelCwd(cwd: string | undefined): string {
+  const requested = cwd ?? VERCEL_SANDBOX_WORKSPACE_ROOT
+  if (!posix.isAbsolute(requested)) throw new Error(`Vercel sandbox cwd must be absolute: ${requested}`)
+  const normalized = posix.normalize(requested)
+  if (normalized !== VERCEL_SANDBOX_WORKSPACE_ROOT && !normalized.startsWith(`${VERCEL_SANDBOX_WORKSPACE_ROOT}/`)) {
+    throw new Error(`Vercel sandbox cwd must stay under ${VERCEL_SANDBOX_WORKSPACE_ROOT}: ${requested}`)
+  }
+  return normalized
 }
 
 function toRemoteEnv(env: Record<string, string> | undefined): Record<string, string> {
@@ -137,7 +148,7 @@ export function createVercelSandboxExec(
         const result = await sandbox.runCommand({
           cmd: 'sh',
           args: ['-c', cmd],
-          cwd: opts?.cwd ?? VERCEL_SANDBOX_WORKSPACE_ROOT,
+          cwd: normalizeVercelCwd(opts?.cwd),
           env: toRemoteEnv(opts?.env),
           signal: controller.signal,
           stdout: createStreamWritable(stdoutCollector, captureState, opts?.onStdout),

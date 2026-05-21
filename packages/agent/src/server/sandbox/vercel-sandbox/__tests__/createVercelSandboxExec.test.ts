@@ -66,6 +66,16 @@ test('default Vercel exec cwd/env use /workspace runtime with safe system PATH',
   )
 })
 
+test('rejects explicit Vercel cwd outside the runtime workspace', async () => {
+  const runCommand = mockRunCommand('', '')
+  const sandbox = { runCommand } as unknown as VercelSandbox
+  const adapter = createVercelSandboxExec(sandbox)
+
+  await expect(adapter.exec('pwd', { cwd: '/vercel/sandbox' })).rejects.toThrow('Vercel sandbox cwd must stay under /workspace')
+  await expect(adapter.exec('pwd', { cwd: '/workspace/../vercel/sandbox' })).rejects.toThrow('Vercel sandbox cwd must stay under /workspace')
+  expect(runCommand).not.toHaveBeenCalled()
+})
+
 test('workspace writes are visible through exec on same sandbox handle', async () => {
   const harness = await createMockVercelSandboxHarness()
   const workspace = createVercelSandboxWorkspace(harness.sandbox)
