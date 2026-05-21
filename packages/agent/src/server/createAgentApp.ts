@@ -3,7 +3,7 @@ import type { AgentTool } from '../shared/tool'
 import type { AgentHarnessFactory } from '../shared/harness'
 import type { SessionStore } from '../shared/session'
 import { getEnv } from './config/env'
-import type { RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
+import type { RuntimeBundle, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createPiCodingAgentHarness } from './harness/pi-coding-agent/createHarness'
 import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
@@ -57,6 +57,12 @@ export interface CreateAgentAppOptions {
   pi?: PiHarnessOptions
   /** Optional stable namespace for file-backed session storage. */
   sessionNamespace?: string
+  /** Runtime-aware provisioning hook. Runs after Workspace/Sandbox creation and before tools/harness. */
+  runtimeProvisioner?: (ctx: {
+    workspaceRoot: string
+    runtimeMode: RuntimeModeId
+    runtimeBundle: RuntimeBundle
+  }) => Promise<void>
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
   sessionDir?: string
   /**
@@ -92,6 +98,11 @@ export async function createAgentApp(
     workspaceRoot,
     sessionId,
     templatePath,
+  })
+  await opts.runtimeProvisioner?.({
+    workspaceRoot,
+    runtimeMode: resolvedMode,
+    runtimeBundle,
   })
 
   // UI-aware tools (get_ui_state, exec_ui) and the /api/v1/ui/* routes

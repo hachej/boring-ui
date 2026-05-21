@@ -182,6 +182,13 @@ export interface RegisterAgentRoutesOptions {
   }) => string | undefined | Promise<string | undefined>
   registerHealthRoute?: boolean
   sandboxHandleStore?: SandboxHandleStore
+  /** Runtime-aware provisioning hook. Runs after Workspace/Sandbox creation and before tools/harness. */
+  provisionRuntime?: (ctx: {
+    workspaceId: string
+    workspaceRoot: string
+    runtimeMode: RuntimeModeId
+    runtimeBundle: RuntimeBundle
+  }) => Promise<void>
   getWorkspaceId?: (request: FastifyRequest) => string | Promise<string>
   getWorkspaceRoot?: (workspaceId: string, request: FastifyRequest) => string | Promise<string>
 }
@@ -276,6 +283,12 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       sessionId: workspaceId,
       workspaceId,
       templatePath: scope.templatePath,
+    })
+    await opts.provisionRuntime?.({
+      workspaceId,
+      workspaceRoot: root,
+      runtimeMode: resolvedMode,
+      runtimeBundle,
     })
 
     // UI tools (get_ui_state / exec_ui) and the /api/v1/ui/* routes moved

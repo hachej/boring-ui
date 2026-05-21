@@ -604,25 +604,36 @@ export async function createCoreWorkspaceAgentServer(
     excludeDefaults: options.excludeDefaults,
   })
 
-  const provisionedWorkspaceRoots = new Map<string, Promise<void>>()
-  const ensureWorkspaceProvisioned = (root: string): Promise<void> => {
+  const provisionedWorkspaceRuntimes = new Map<string, Promise<void>>()
+  const ensureWorkspaceProvisioned = (ctx: {
+    root: string
+    runtimeMode?: Parameters<typeof provisionWorkspaceAgentServer>[0]['runtimeMode']
+    runtimeBundle?: Parameters<typeof provisionWorkspaceAgentServer>[0]['runtimeBundle']
+  }): Promise<void> => {
     if (pluginCollection.provisioningContributions.length === 0) return Promise.resolve()
-    const resolvedRoot = path.resolve(root)
-    const existing = provisionedWorkspaceRoots.get(resolvedRoot)
+    const resolvedRoot = path.resolve(ctx.root)
+    const cacheable = ctx.runtimeBundle?.sandbox.placement !== 'remote'
+    const key = JSON.stringify([
+      resolvedRoot,
+      ctx.runtimeMode ?? null,
+      ctx.runtimeBundle?.runtimeContext.runtimeCwd ?? null,
+      ctx.runtimeBundle?.sandbox.provider ?? null,
+    ])
+    const existing = cacheable ? provisionedWorkspaceRuntimes.get(key) : undefined
     if (existing) return existing
     const pending = provisionWorkspaceAgentServer({
       workspaceRoot: resolvedRoot,
       provisioningContributions: pluginCollection.provisioningContributions,
       force: options.forceProvisioning,
+      runtimeMode: ctx.runtimeMode,
+      runtimeBundle: ctx.runtimeBundle,
     }).catch((error) => {
-      provisionedWorkspaceRoots.delete(resolvedRoot)
+      if (cacheable) provisionedWorkspaceRuntimes.delete(key)
       throw error
     })
-    provisionedWorkspaceRoots.set(resolvedRoot, pending)
+    if (cacheable) provisionedWorkspaceRuntimes.set(key, pending)
     return pending
   }
-
-  await ensureWorkspaceProvisioned(workspaceRoot)
 
   const resolveWorkspaceId = async (request: Parameters<NonNullable<RegisterAgentRoutesOptions['getWorkspaceId']>>[0]) =>
     options.getWorkspaceId
@@ -635,7 +646,6 @@ export async function createCoreWorkspaceAgentServer(
     const root = options.getWorkspaceRoot
       ? await options.getWorkspaceRoot(workspaceId, request)
       : await resolveWorkspaceRoot(workspaceRoot, workspaceId)
-    await ensureWorkspaceProvisioned(root)
     return root
   }
   const piOptionsByRoot = new Map<string, AgentPiOptions>()
@@ -680,6 +690,13 @@ export async function createCoreWorkspaceAgentServer(
     getPi: resolvePiOptions,
     sessionNamespace: options.sessionNamespace,
     getSessionNamespace: options.getSessionNamespace,
+    provisionRuntime: async (ctx) => {
+      await ensureWorkspaceProvisioned({
+        root: ctx.workspaceRoot,
+        runtimeMode: ctx.runtimeMode,
+        runtimeBundle: ctx.runtimeBundle,
+      })
+    },
     getExtraTools: async (ctx) => {
       const callerTools = options.getExtraTools ? await options.getExtraTools(ctx) : []
       return [

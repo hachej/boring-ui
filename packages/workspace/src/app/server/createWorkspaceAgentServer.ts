@@ -13,6 +13,8 @@ import {
   resolveMode,
   type CreateAgentAppOptions,
   type PiExtensionFactory,
+  type RuntimeBundle,
+  type RuntimeModeId,
 } from "@hachej/boring-agent/server"
 import type { FastifyInstance } from "fastify"
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
@@ -365,11 +367,18 @@ export async function provisionWorkspaceAgentServer(opts: {
   workspaceRoot: string
   provisioningContributions?: WorkspaceProvisioningContribution[]
   force?: boolean
+  runtimeMode?: RuntimeModeId
+  runtimeBundle?: RuntimeBundle
 }) {
   if (!opts.provisioningContributions?.length) return
 
   await provisionRuntimeWorkspace({
     workspaceRoot: opts.workspaceRoot,
+    storageRoot: opts.runtimeBundle?.storageRoot ?? opts.workspaceRoot,
+    runtimeCwd: opts.runtimeBundle?.runtimeContext.runtimeCwd,
+    runtimeMode: opts.runtimeMode,
+    workspace: opts.runtimeBundle?.workspace,
+    sandbox: opts.runtimeBundle?.sandbox,
     contributions: opts.provisioningContributions,
     force: opts.force,
   })
@@ -477,11 +486,12 @@ export async function createWorkspaceAgentServer(
   // dynamic resource getter. With hot reload disabled, the same scan is
   // snapped once at boot and merged into static Pi options.
 
-  if (opts.provisionWorkspace !== false) {
+  if (opts.provisionWorkspace !== false && resolvedMode === "direct") {
     await provisionWorkspaceAgentServer({
       workspaceRoot,
       provisioningContributions: pluginCollection.provisioningContributions,
       force: opts.workspaceProvisioning?.force,
+      runtimeMode: resolvedMode,
     })
   }
   const boringUiCliShimAvailable = ensureBoringUiCliShim(workspaceRoot)
@@ -546,6 +556,7 @@ export async function createWorkspaceAgentServer(
   const rebuildPlugins = async (): Promise<PluginRebuildResult> => {
     return rebuildServerPlugins({ entries: allPluginEntries, ctx })
   }
+  const callerRuntimeProvisioner = opts.runtimeProvisioner
 
   const app = await createAgentApp({
     ...opts,
@@ -576,6 +587,18 @@ export async function createWorkspaceAgentServer(
       pluginCollection.agentOptions.systemPromptAppend,
       staticPluginPackagePiSnapshot.systemPromptAppend,
     ].filter(Boolean).join("\n\n") || undefined,
+    runtimeProvisioner: async (provisionCtx) => {
+      if (opts.provisionWorkspace !== false && provisionCtx.runtimeMode !== "direct") {
+        await provisionWorkspaceAgentServer({
+          workspaceRoot,
+          provisioningContributions: pluginCollection.provisioningContributions,
+          force: opts.workspaceProvisioning?.force,
+          runtimeMode: provisionCtx.runtimeMode,
+          runtimeBundle: provisionCtx.runtimeBundle,
+        })
+      }
+      await callerRuntimeProvisioner?.(provisionCtx)
+    },
     beforeReload: async () => {
       // Per-plugin scan/rebuild failures are surfaced via SSE error
       // events + `.error` files (asset manager) and via the response
