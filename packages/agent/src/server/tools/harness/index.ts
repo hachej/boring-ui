@@ -1,4 +1,5 @@
 import {
+  type BashOperations,
   type BashSpawnHook,
   type BashToolOptions,
   createBashToolDefinition,
@@ -8,28 +9,8 @@ import {
 import type { Sandbox } from '../../../shared/sandbox'
 import type { AgentTool, ToolResult } from '../../../shared/tool'
 import { getRuntimeBundleStorageRoot, type RuntimeBundle } from '../../runtime/mode'
-import { buildBwrapArgs } from '../../sandbox/bwrap/buildBwrapArgs'
 import { withWorkspacePythonEnv } from '../../sandbox/workspacePythonEnv'
 import { vercelBashOps } from '../operations/vercel'
-
-function shellEscape(s: string): string {
-  return `'${s.replace(/'/g, "'\\''")}'`
-}
-
-export function bwrapSpawnHook(workspaceRoot: string): BashSpawnHook {
-  const args = buildBwrapArgs(workspaceRoot)
-  const bwrapPrefix = ['bwrap', ...args].map(shellEscape).join(' ')
-  return (context) => ({
-    ...context,
-    cwd: workspaceRoot,
-    command: `${bwrapPrefix} bash -lc ${shellEscape(context.command)}`,
-    env: withWorkspacePythonEnv({
-      workspaceRoot,
-      env: context.env,
-      sandboxRoot: '/workspace',
-    }),
-  })
-}
 
 function directSpawnHook(workspaceRoot: string): BashSpawnHook {
   return (context) => ({
@@ -38,16 +19,31 @@ function directSpawnHook(workspaceRoot: string): BashSpawnHook {
   })
 }
 
+function sandboxBashOps(sandbox: Sandbox): BashOperations {
+  return {
+    exec(command, cwd, { onData, signal, timeout, env }) {
+      const filteredEnv = env
+        ? Object.fromEntries(Object.entries(env).filter((e): e is [string, string] => e[1] != null))
+        : undefined
+      return sandbox.exec(command, {
+        cwd,
+        env: filteredEnv,
+        signal,
+        timeoutMs: timeout ? timeout * 1_000 : undefined,
+        onStdout: (chunk) => onData(Buffer.from(chunk)),
+        onStderr: (chunk) => onData(Buffer.from(chunk)),
+      }).then((result) => ({ exitCode: result.exitCode }))
+    },
+  }
+}
+
 function bashOptionsForMode(bundle: RuntimeBundle): BashToolOptions {
   const storageRoot = getRuntimeBundleStorageRoot(bundle)
   switch (bundle.sandbox.provider) {
     case 'vercel-sandbox':
       return { operations: vercelBashOps(bundle.sandbox) }
     case 'bwrap':
-      return {
-        operations: createLocalBashOperations(),
-        spawnHook: bwrapSpawnHook(storageRoot),
-      }
+      return { operations: sandboxBashOps(bundle.sandbox) }
     default:
       return {
         operations: createLocalBashOperations(),
