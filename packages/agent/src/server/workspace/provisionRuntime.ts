@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
 import { access, chmod, cp, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, join, posix, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, posix, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { tmpdir } from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { RuntimeModeId } from '../runtime/mode'
@@ -26,7 +27,7 @@ import {
 } from './runtimeLayout'
 
 const execFileAsync = promisify(execFile)
-const PROVISIONING_VERSION = 5
+const PROVISIONING_VERSION = 6
 const DEFAULT_REMOTE_TIMEOUT_MS = 5 * 60 * 1000
 const DEFAULT_REMOTE_MAX_OUTPUT_BYTES = 1024 * 1024 * 20
 const NODE_PACKAGE_LOCK_FILES = [
@@ -235,25 +236,23 @@ function unscopedPackageName(packageName: string): string {
   return parts[parts.length - 1] || packageName
 }
 
-function parsePackageJsonBinNames(packageJson: unknown, spec: RuntimeNodePackageSpec, context: string): string[] {
+function parsePackageJsonBins(packageJson: unknown, spec: RuntimeNodePackageSpec, context: string): Record<string, string> {
   const candidate = packageJson as { bin?: unknown } | null
   const bin = candidate?.bin
-  if (bin === undefined) return []
+  if (bin === undefined) return {}
   if (typeof bin === 'string') {
-    normalizePackageRelativePath(bin, `${context} package.json bin`)
-    return [unscopedPackageName(spec.packageName)]
+    return { [unscopedPackageName(spec.packageName)]: normalizePackageRelativePath(bin, `${context} package.json bin`) }
   }
   if (!bin || typeof bin !== 'object' || Array.isArray(bin)) {
     throw new Error(`${context} package.json bin must be a string or object when present`)
   }
-  const names: string[] = []
+  const bins: Record<string, string> = {}
   for (const [name, target] of Object.entries(bin)) {
     assertValidBinName(name, `${context} package.json bin key "${name}"`)
     assertNonEmptyString(target, `${context} package.json bin.${name} must be a package-relative file path`)
-    normalizePackageRelativePath(target, `${context} package.json bin.${name}`)
-    names.push(name)
+    bins[name] = normalizePackageRelativePath(target, `${context} package.json bin.${name}`)
   }
-  return names
+  return bins
 }
 
 async function readNodePackageJson(packageRoot: string): Promise<unknown | null> {
@@ -271,7 +270,16 @@ async function collectNodePackageBinNames(spec: RuntimeNodePackageSpec, context:
   if (!spec.packageRoot) return []
   const packageJson = await readNodePackageJson(toPath(spec.packageRoot))
   if (!packageJson) return []
-  return parsePackageJsonBinNames(packageJson, spec, context)
+  return Object.keys(parsePackageJsonBins(packageJson, spec, context))
+}
+
+async function collectNodePackageBinTargets(spec: RuntimeNodePackageSpec, context: string): Promise<string[]> {
+  const explicitBins = normalizeBins(spec.bins, context)
+  if (explicitBins) return Object.values(explicitBins)
+  if (!spec.packageRoot) return []
+  const packageJson = await readNodePackageJson(toPath(spec.packageRoot))
+  if (!packageJson) return []
+  return Object.values(parsePackageJsonBins(packageJson, spec, context))
 }
 
 export async function validateRuntimeProvisioningContributions(
@@ -343,6 +351,16 @@ async function run(cmd: string, args: string[], cwd: string, env?: Record<string
     maxBuffer: 1024 * 1024 * 20,
     timeout: 5 * 60 * 1000,
   })
+}
+
+async function runOutput(cmd: string, args: string[], cwd: string, env?: Record<string, string>): Promise<string> {
+  const result = await execFileAsync(cmd, args, {
+    cwd,
+    env: env ? { ...process.env, ...env } : process.env,
+    maxBuffer: 1024 * 1024 * 20,
+    timeout: 5 * 60 * 1000,
+  })
+  return String(result.stdout)
 }
 
 async function commandExists(cmd: string): Promise<boolean> {
@@ -439,6 +457,10 @@ async function fingerprint(
       const referencesDir = join(packageRoot, 'references')
       const sourceDocsDir = join(packageRoot, 'src', 'server', 'docs')
       if (await exists(packageJson)) await hashPath(packageJson, hash)
+      for (const target of await collectNodePackageBinTargets(spec, `nodePackages.${spec.id}`)) {
+        const targetPath = join(packageRoot, target)
+        if (await exists(targetPath)) await hashPath(targetPath, hash)
+      }
       for (const lockFile of NODE_PACKAGE_LOCK_FILES) {
         const lockPath = join(packageRoot, lockFile)
         if (await exists(lockPath)) await hashPath(lockPath, hash)
@@ -510,49 +532,189 @@ function nodePackageTargetRel(packageName: string): string {
   return posix.join(BORING_AGENT_DIR, 'node', 'node_modules', ...parts)
 }
 
-async function copyIfExists(source: string, target: string): Promise<boolean> {
-  if (!(await exists(source))) return false
-  await cp(source, target, {
-    recursive: true,
-    force: true,
-    errorOnExist: false,
-  })
-  return true
+interface NodeBinLink {
+  name: string
+  packageName: string
+  targetRel: string
+}
+
+const NODE_BIN_MANIFEST_REL_PATH = `${BORING_AGENT_DIR}/state/node-bins.json`
+
+function nodeCacheEnv(paths: ReturnType<typeof getBoringAgentRuntimePaths>): Record<string, string> {
+  return {
+    npm_config_cache: join(paths.cache, 'node'),
+    npm_config_update_notifier: 'false',
+  }
+}
+
+function npmInstallArgs(prefix: string, cacheDir: string, sources: string[]): string[] {
+  return [
+    'install',
+    '--prefix', prefix,
+    '--cache', cacheDir,
+    '--no-audit',
+    '--no-fund',
+    '--no-save',
+    '--install-strategy=shallow',
+    ...sources,
+  ]
+}
+
+function remoteNpmInstallCommand(prefix: string, cacheDir: string, sources: string[]): string {
+  return `npm install ${npmInstallArgs(prefix, cacheDir, sources).slice(1).map(shellQuote).join(' ')}`
+}
+
+function registryNodePackageSource(spec: RuntimeNodePackageSpec): string {
+  return `${spec.packageName}@${spec.version ?? 'latest'}`
+}
+
+function parseNpmPackOutput(stdout: string, packDestination: string): string {
+  const trimmed = stdout.trim()
+  if (!trimmed) throw new Error('npm pack did not report a tarball')
+  try {
+    const parsed = JSON.parse(trimmed) as { filename?: unknown } | Array<{ filename?: unknown }>
+    const filename = Array.isArray(parsed)
+      ? parsed.find((entry) => typeof entry.filename === 'string')?.filename
+      : parsed.filename
+    if (typeof filename === 'string' && filename.length > 0) {
+      return isAbsolute(filename) ? filename : join(packDestination, filename)
+    }
+  } catch {
+    // Older npm versions may print a plain tarball filename.
+  }
+  const filename = trimmed.split(/\r?\n/).reverse().find((line) => line.endsWith('.tgz'))
+  if (!filename) throw new Error(`npm pack did not report a tarball: ${trimmed}`)
+  return isAbsolute(filename) ? filename : join(packDestination, filename)
+}
+
+function safeNodeArtifactPrefix(spec: RuntimeNodePackageSpec): string {
+  return `${spec.id || unscopedPackageName(spec.packageName)}`.replace(/[^A-Za-z0-9._-]/g, '_') || 'node-package'
+}
+
+async function packLocalNodePackage(packageRoot: string, packDestination: string, cwd: string, cacheDir: string): Promise<string> {
+  await mkdir(packDestination, { recursive: true })
+  if (await commandExists('pnpm')) {
+    const stdout = await runOutput('pnpm', [
+      '--dir', packageRoot,
+      'pack',
+      '--pack-destination', packDestination,
+      '--json',
+    ], cwd, { npm_config_cache: cacheDir, npm_config_update_notifier: 'false' })
+    return parseNpmPackOutput(stdout, packDestination)
+  }
+  const stdout = await runOutput('npm', [
+    'pack',
+    packageRoot,
+    '--pack-destination', packDestination,
+    '--json',
+    '--cache', cacheDir,
+  ], cwd, { npm_config_cache: cacheDir, npm_config_update_notifier: 'false' })
+  return parseNpmPackOutput(stdout, packDestination)
+}
+
+async function hostNodeInstallSource(workspaceRoot: string, spec: RuntimeNodePackageSpec): Promise<string> {
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
+  const cacheDir = join(paths.cache, 'node')
+  if (!spec.packageRoot) return registryNodePackageSource(spec)
+  return await packLocalNodePackage(
+    toPath(spec.packageRoot),
+    await mkdtemp(join(paths.tmp, `${safeNodeArtifactPrefix(spec)}-`)),
+    workspaceRoot,
+    cacheDir,
+  )
+}
+
+function nodeBinShimBody(targetRel: string): string {
+  return `#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+WORKSPACE_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
+export BORING_AGENT_WORKSPACE_ROOT="$WORKSPACE_ROOT"
+export PATH="$WORKSPACE_ROOT/.boring-agent/bin:$WORKSPACE_ROOT/.boring-agent/venv/bin\${PATH:+:$PATH}"
+TARGET="$WORKSPACE_ROOT"/${bashSingleQuote(targetRel)}
+SHEBANG="$(head -n 1 "$TARGET" 2>/dev/null || true)"
+case "$SHEBANG" in
+  *node*) exec node "$TARGET" "$@" ;;
+esac
+if [ -x "$TARGET" ]; then
+  exec "$TARGET" "$@"
+fi
+exec node "$TARGET" "$@"
+`
+}
+
+function nodePackageBinLinksFromPackageJson(
+  spec: RuntimeNodePackageSpec,
+  packageJson: unknown,
+  context: string,
+): NodeBinLink[] {
+  const bins = normalizeBins(spec.bins, context) ?? parsePackageJsonBins(packageJson, spec, context)
+  return Object.entries(bins).map(([name, target]) => ({
+    name,
+    packageName: spec.packageName,
+    targetRel: posix.join(nodePackageTargetRel(spec.packageName), target),
+  }))
+}
+
+function parseNodeBinManifest(raw: string): string[] {
+  try {
+    const parsed = JSON.parse(raw) as { bins?: Array<{ name?: unknown }> }
+    if (!Array.isArray(parsed.bins)) return []
+    return parsed.bins
+      .map((entry) => entry.name)
+      .filter((name): name is string => typeof name === 'string' && /^[A-Za-z0-9._-]+$/.test(name) && name !== '.' && name !== '..')
+  } catch {
+    return []
+  }
+}
+
+function nodeBinManifestBody(links: NodeBinLink[]): string {
+  return `${JSON.stringify({
+    v: 1,
+    bins: links.map((link) => ({ name: link.name, packageName: link.packageName, targetRel: link.targetRel }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  }, null, 2)}\n`
+}
+
+async function collectHostNodeBinLinks(workspaceRoot: string, specs: RuntimeNodePackageSpec[]): Promise<NodeBinLink[]> {
+  const links: NodeBinLink[] = []
+  for (let i = 0; i < specs.length; i++) {
+    const spec = specs[i]
+    const target = nodePackageTarget(workspaceRoot, spec.packageName)
+    const packageJson = await readNodePackageJson(target) ?? (spec.packageRoot ? await readNodePackageJson(toPath(spec.packageRoot)) : null)
+    if (!packageJson) throw new Error(`Provisioned node package is missing package.json: ${target}`)
+    links.push(...nodePackageBinLinksFromPackageJson(spec, packageJson, `nodePackages.${spec.id || i}`))
+  }
+  return links
+}
+
+async function writeHostNodeBinLinks(workspaceRoot: string, specs: RuntimeNodePackageSpec[]): Promise<void> {
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
+  await mkdir(paths.bin, { recursive: true })
+  await mkdir(paths.state, { recursive: true })
+  const links = await collectHostNodeBinLinks(workspaceRoot, specs)
+  const desired = new Set(links.map((link) => link.name))
+  const manifestPath = join(workspaceRoot, NODE_BIN_MANIFEST_REL_PATH)
+  if (await exists(manifestPath)) {
+    for (const name of parseNodeBinManifest(await readFile(manifestPath, 'utf8'))) {
+      if (!desired.has(name)) await rm(join(paths.bin, name), { force: true })
+    }
+  }
+  for (const link of links) {
+    await writeExecutable(join(paths.bin, link.name), nodeBinShimBody(link.targetRel))
+  }
+  await writeFile(manifestPath, nodeBinManifestBody(links), 'utf8')
 }
 
 async function ensureNodePackages(workspaceRoot: string, specs: RuntimeNodePackageSpec[]): Promise<void> {
-  for (const spec of specs) {
-    if (!spec.packageRoot) {
-      throw new Error(`Registry node package provisioning is not installed yet for ${spec.packageName}@${spec.version ?? 'latest'}; provide packageRoot until registry install support is available`)
-    }
-    const packageRoot = toPath(spec.packageRoot)
-    const target = nodePackageTarget(workspaceRoot, spec.packageName)
-    await mkdir(target, { recursive: true })
-
-    const copiedPackageJson = await copyIfExists(join(packageRoot, 'package.json'), join(target, 'package.json'))
-    if (!copiedPackageJson) {
-      throw new Error(`Node package provisioning source is missing package.json: ${packageRoot}`)
-    }
-
-    await copyIfExists(join(packageRoot, 'dist'), join(target, 'dist'))
-    await copyIfExists(join(packageRoot, 'templates'), join(target, 'templates'))
-    await copyIfExists(join(packageRoot, 'public'), join(target, 'public'))
-    // Source-tree/dev fallback: make the canonical docs readable from the
-    // same package path the system prompt points to, even before a package
-    // build has created dist/docs. Also patches old dist directories that
-    // predate the docs asset copy step.
-    if (!(await exists(join(target, 'dist', 'docs', 'plugins.md')))) {
-      await copyIfExists(join(packageRoot, 'src', 'server', 'docs'), join(target, 'dist', 'docs'))
-    }
-    // Pi package skills use package-relative docs/ paths, matching npm
-    // installs. Materialize root docs in provisioned child workspaces too.
-    if (!(await copyIfExists(join(packageRoot, 'docs'), join(target, 'docs')))) {
-      await copyIfExists(join(packageRoot, 'src', 'server', 'docs'), join(target, 'docs'))
-    }
-    await copyIfExists(join(packageRoot, 'skills'), join(target, 'skills'))
-    await copyIfExists(join(packageRoot, 'references'), join(target, 'references'))
-    await copyIfExists(join(packageRoot, 'src', 'globals.css'), join(target, 'src', 'globals.css'))
-  }
+  if (specs.length === 0) return
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
+  const cacheDir = join(paths.cache, 'node')
+  await mkdir(paths.node, { recursive: true })
+  await mkdir(cacheDir, { recursive: true })
+  await mkdir(paths.tmp, { recursive: true })
+  const sources = await Promise.all(specs.map((spec) => hostNodeInstallSource(workspaceRoot, spec)))
+  await run('npm', npmInstallArgs(paths.node, cacheDir, sources), workspaceRoot, nodeCacheEnv(paths))
 }
 
 function pythonCacheEnv(paths: ReturnType<typeof getBoringAgentRuntimePaths>): Record<string, string> {
@@ -793,6 +955,7 @@ async function provisionHostRuntimeWorkspace(
     const markerResult = await readProvisioningMarker(markerPath, legacyMarkerPath)
     if (markerResult?.marker.fingerprint === hash && await isRuntimeMaterialized(workspaceRoot, active)) {
       const actualBinDir = await writeShims(workspaceRoot, env)
+      await writeHostNodeBinLinks(workspaceRoot, active.flatMap(({ provisioning }) => provisioning.nodePackages ?? []))
       try {
         await validateHostRuntime(workspaceRoot, active)
         if (markerResult.source === 'legacy') await writeProvisioningMarker(markerPath, hash, target)
@@ -806,9 +969,11 @@ async function provisionHostRuntimeWorkspace(
   }
 
   await seedTemplates(workspaceRoot, active)
-  await ensureNodePackages(workspaceRoot, active.flatMap(({ provisioning }) => provisioning.nodePackages ?? []))
+  const nodePackageSpecs = active.flatMap(({ provisioning }) => provisioning.nodePackages ?? [])
+  await ensureNodePackages(workspaceRoot, nodePackageSpecs)
   await ensurePython(workspaceRoot, active.flatMap(({ provisioning }) => provisioning.python ?? []))
   const actualBinDir = await writeShims(workspaceRoot, env)
+  await writeHostNodeBinLinks(workspaceRoot, nodePackageSpecs)
   await validateHostRuntime(workspaceRoot, active)
   await writeProvisioningMarker(markerPath, hash, target)
   if (opts.sandbox && target.runtimeMode === 'local') await validateRuntimeInSandbox(opts.sandbox, target.runtimeCwd, active)
@@ -873,32 +1038,69 @@ async function seedRemoteTemplates(workspace: Workspace, contributions: Array<{ 
   }
 }
 
-async function ensureRemoteNodePackages(workspace: Workspace, specs: RuntimeNodePackageSpec[]): Promise<void> {
+async function packLocalNodePackageForRemote(
+  storageRoot: string,
+  spec: RuntimeNodePackageSpec,
+): Promise<{ tarballPath: string; cleanup: () => Promise<void> }> {
+  if (!spec.packageRoot) throw new Error(`Node package ${spec.packageName} has no packageRoot to pack`)
+  const packDestination = await mkdtemp(join(tmpdir(), `${safeNodeArtifactPrefix(spec)}-`))
+  const cacheDir = await mkdtemp(join(tmpdir(), `${safeNodeArtifactPrefix(spec)}-npm-cache-`))
+  await mkdir(storageRoot, { recursive: true })
+  try {
+    const tarballPath = await packLocalNodePackage(toPath(spec.packageRoot), packDestination, storageRoot, cacheDir)
+    return {
+      tarballPath,
+      cleanup: async () => {
+        await rm(packDestination, { recursive: true, force: true })
+        await rm(cacheDir, { recursive: true, force: true })
+      },
+    }
+  } catch (error) {
+    await rm(packDestination, { recursive: true, force: true }).catch(() => undefined)
+    await rm(cacheDir, { recursive: true, force: true }).catch(() => undefined)
+    throw error
+  }
+}
+
+async function remoteNodeInstallSource(
+  workspace: Workspace,
+  storageRoot: string,
+  spec: RuntimeNodePackageSpec,
+): Promise<{ source: string; cleanup?: () => Promise<void> }> {
+  if (!spec.packageRoot) return { source: registryNodePackageSource(spec) }
+  const packed = await packLocalNodePackageForRemote(storageRoot, spec)
+  const remoteTarballRel = posix.join(BORING_AGENT_DIR, 'tmp', `${safeNodeArtifactPrefix(spec)}-${basename(packed.tarballPath)}`)
+  await copyHostPathToWorkspace(packed.tarballPath, workspace, remoteTarballRel)
+  return { source: remoteTarballRel, cleanup: packed.cleanup }
+}
+
+async function ensureRemoteNodePackages(
+  workspace: Workspace,
+  sandbox: Sandbox,
+  runtimeCwd: string,
+  storageRoot: string,
+  specs: RuntimeNodePackageSpec[],
+): Promise<void> {
+  await workspace.mkdir(posix.join(BORING_AGENT_DIR, 'cache', 'node'), { recursive: true })
+  await workspace.mkdir(posix.join(BORING_AGENT_DIR, 'tmp'), { recursive: true })
+  await workspace.mkdir(posix.join(BORING_AGENT_DIR, 'node'), { recursive: true })
+  const sources: string[] = []
+  const cleanups: Array<() => Promise<void>> = []
   for (const spec of specs) {
-    if (!spec.packageRoot) {
-      throw new Error(`Registry node package provisioning is not installed yet for ${spec.packageName}@${spec.version ?? 'latest'}; provide packageRoot until registry install support is available`)
+    const installSource = await remoteNodeInstallSource(workspace, storageRoot, spec)
+    sources.push(spec.packageRoot ? `${runtimeCwd}/${installSource.source}` : installSource.source)
+    if (installSource.cleanup) cleanups.push(installSource.cleanup)
+  }
+  try {
+    if (sources.length > 0) {
+      await sandboxRun(sandbox, remoteNpmInstallCommand(
+        `${runtimeCwd}/${BORING_AGENT_DIR}/node`,
+        `${runtimeCwd}/${BORING_AGENT_DIR}/cache/node`,
+        sources,
+      ), runtimeCwd)
     }
-    const packageRoot = toPath(spec.packageRoot)
-    const target = nodePackageTargetRel(spec.packageName)
-    await workspace.mkdir(target, { recursive: true })
-
-    const copiedPackageJson = await copyHostPathToWorkspace(join(packageRoot, 'package.json'), workspace, posix.join(target, 'package.json'))
-    if (!copiedPackageJson) {
-      throw new Error(`Node package provisioning source is missing package.json: ${packageRoot}`)
-    }
-
-    await copyHostPathToWorkspace(join(packageRoot, 'dist'), workspace, posix.join(target, 'dist'))
-    await copyHostPathToWorkspace(join(packageRoot, 'templates'), workspace, posix.join(target, 'templates'))
-    await copyHostPathToWorkspace(join(packageRoot, 'public'), workspace, posix.join(target, 'public'))
-    if (!(await workspaceExists(workspace, posix.join(target, 'dist', 'docs', 'plugins.md')))) {
-      await copyHostPathToWorkspace(join(packageRoot, 'src', 'server', 'docs'), workspace, posix.join(target, 'dist', 'docs'))
-    }
-    if (!(await copyHostPathToWorkspace(join(packageRoot, 'docs'), workspace, posix.join(target, 'docs')))) {
-      await copyHostPathToWorkspace(join(packageRoot, 'src', 'server', 'docs'), workspace, posix.join(target, 'docs'))
-    }
-    await copyHostPathToWorkspace(join(packageRoot, 'skills'), workspace, posix.join(target, 'skills'))
-    await copyHostPathToWorkspace(join(packageRoot, 'references'), workspace, posix.join(target, 'references'))
-    await copyHostPathToWorkspace(join(packageRoot, 'src', 'globals.css'), workspace, posix.join(target, 'src', 'globals.css'))
+  } finally {
+    await Promise.all(cleanups.map((cleanup) => cleanup()))
   }
 }
 
@@ -999,6 +1201,49 @@ async function writeRemoteExecutable(
   await sandboxRun(sandbox, `chmod +x ${shellQuote(`${runtimeCwd}/${relPath}`)}`, runtimeCwd)
 }
 
+async function readRemoteNodePackageJson(workspace: Workspace, spec: RuntimeNodePackageSpec): Promise<unknown | null> {
+  const installedPath = posix.join(nodePackageTargetRel(spec.packageName), 'package.json')
+  try {
+    return JSON.parse(await workspace.readFile(installedPath))
+  } catch {
+    if (!spec.packageRoot) return null
+    return await readNodePackageJson(toPath(spec.packageRoot))
+  }
+}
+
+async function collectRemoteNodeBinLinks(workspace: Workspace, specs: RuntimeNodePackageSpec[]): Promise<NodeBinLink[]> {
+  const links: NodeBinLink[] = []
+  for (let i = 0; i < specs.length; i++) {
+    const spec = specs[i]
+    const packageJson = await readRemoteNodePackageJson(workspace, spec)
+    if (!packageJson) throw new Error(`Provisioned remote node package is missing package.json: ${nodePackageTargetRel(spec.packageName)}`)
+    links.push(...nodePackageBinLinksFromPackageJson(spec, packageJson, `nodePackages.${spec.id || i}`))
+  }
+  return links
+}
+
+async function writeRemoteNodeBinLinks(
+  workspace: Workspace,
+  sandbox: Sandbox,
+  runtimeCwd: string,
+  specs: RuntimeNodePackageSpec[],
+): Promise<void> {
+  const shimDir = `${BORING_AGENT_DIR}/bin`
+  await workspace.mkdir(shimDir, { recursive: true })
+  await workspace.mkdir(posix.join(BORING_AGENT_DIR, 'state'), { recursive: true })
+  const links = await collectRemoteNodeBinLinks(workspace, specs)
+  const desired = new Set(links.map((link) => link.name))
+  if (await workspaceExists(workspace, NODE_BIN_MANIFEST_REL_PATH)) {
+    for (const name of parseNodeBinManifest(await workspace.readFile(NODE_BIN_MANIFEST_REL_PATH))) {
+      if (!desired.has(name)) await workspace.unlink(posix.join(shimDir, name)).catch(() => undefined)
+    }
+  }
+  for (const link of links) {
+    await writeRemoteExecutable(workspace, sandbox, runtimeCwd, posix.join(shimDir, link.name), nodeBinShimBody(link.targetRel))
+  }
+  await workspace.writeFile(NODE_BIN_MANIFEST_REL_PATH, nodeBinManifestBody(links))
+}
+
 async function writeRemoteShims(
   workspace: Workspace,
   sandbox: Sandbox,
@@ -1086,7 +1331,9 @@ async function provisionRemoteRuntimeWorkspace(
   if (!opts.force) {
     const markerResult = await workspaceReadJsonMarker(workspace, markerPath, legacyMarkerPath)
     if (markerResult?.marker.fingerprint === hash && await isRemoteRuntimeMaterialized(workspace, active)) {
+      const nodePackageSpecs = active.flatMap(({ provisioning }) => provisioning.nodePackages ?? [])
       const binDir = await writeRemoteShims(workspace, sandbox, target.runtimeCwd, env)
+      await writeRemoteNodeBinLinks(workspace, sandbox, target.runtimeCwd, nodePackageSpecs)
       if (markerResult.source === 'legacy') await workspace.writeFile(markerPath, provisioningMarkerBody(hash, target))
       try {
         await validateRuntimeInSandbox(sandbox, target.runtimeCwd, active)
@@ -1098,10 +1345,12 @@ async function provisionRemoteRuntimeWorkspace(
     }
   }
 
+  const nodePackageSpecs = active.flatMap(({ provisioning }) => provisioning.nodePackages ?? [])
   await seedRemoteTemplates(workspace, active)
-  await ensureRemoteNodePackages(workspace, active.flatMap(({ provisioning }) => provisioning.nodePackages ?? []))
+  await ensureRemoteNodePackages(workspace, sandbox, target.runtimeCwd, opts.storageRoot ?? opts.workspaceRoot, nodePackageSpecs)
   await ensureRemotePython(workspace, sandbox, target.runtimeCwd, active.flatMap(({ provisioning }) => provisioning.python ?? []))
   const binDir = await writeRemoteShims(workspace, sandbox, target.runtimeCwd, env)
+  await writeRemoteNodeBinLinks(workspace, sandbox, target.runtimeCwd, nodePackageSpecs)
   await workspace.writeFile(markerPath, provisioningMarkerBody(hash, target))
   await validateRuntimeInSandbox(sandbox, target.runtimeCwd, active)
   return { fingerprint: hash, changed: true, env, binDir }
