@@ -164,6 +164,20 @@ test('template targets must stay inside the workspace', async () => {
   })).rejects.toThrow('templateDirs.escape.target must stay inside the workspace')
 })
 
+test('python bin manifest cleanup ignores unsafe corrupted bin names', async () => {
+  const workspaceRoot = await makeTempDir('boring-runtime-python-manifest-')
+  const paths = await ensureBoringAgentRuntimeLayout(workspaceRoot)
+  const outside = join(workspaceRoot, 'outside.txt')
+  await writeFile(outside, 'keep\n', 'utf8')
+  await writeFile(join(paths.bin, 'python'), '# stale python shim\n', 'utf8')
+  await writeFile(join(paths.state, 'python-bins.json'), JSON.stringify({ bins: ['python', '../../outside.txt'] }), 'utf8')
+
+  await provisionRuntimeWorkspace({ workspaceRoot, force: true, contributions: [] })
+
+  await expect(stat(join(paths.bin, 'python'))).rejects.toThrow()
+  await expect(readFile(outside, 'utf8')).resolves.toBe('keep\n')
+})
+
 test('node-only provisioning does not install broken managed python or pip shims', async () => {
   const workspaceRoot = await makeTempDir('boring-runtime-node-only-')
   const packageRoot = await makeRunnableNodePackageRoot('@example/boring-ui', 'boring-ui')
