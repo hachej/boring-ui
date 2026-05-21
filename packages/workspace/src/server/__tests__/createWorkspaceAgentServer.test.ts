@@ -7,13 +7,16 @@
  * "standalone agent has NO UI bridge surface" — this file pins the inverse:
  * "workspace wrapper EXPOSES the UI bridge surface via shared instance".
  */
+import { execFile as execFileCallback } from "node:child_process"
 import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { promisify } from "node:util"
 import { afterEach, expect, test, describe } from "vitest"
 import {
   collectWorkspaceAgentServerPlugins,
   createWorkspaceAgentServer,
+  provisionWorkspaceAgentServer,
 } from "../../app/server/createWorkspaceAgentServer"
 import * as appServerApi from "../../app/server"
 import * as serverApi from "../index"
@@ -21,6 +24,8 @@ import * as serverApi from "../index"
 // Note: vercel-sandbox mode UI bridge tests live in
 // createWorkspaceAgentServer.vercel-sandbox.test.ts — they require a
 // top-level vi.mock on @hachej/boring-agent/server which would affect all tests here.
+
+const execFile = promisify(execFileCallback)
 
 const tempDirs: string[] = []
 
@@ -326,24 +331,32 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
   test("provisions boring-ui CLI and installs a workspace-local shim for plugin scaffolding", async () => {
     const workspaceRoot = await makeTempDir("boring-cli-shim-")
 
-    const app = await createWorkspaceAgentServer({
+    const cliContribution = collectWorkspaceAgentServerPlugins({ workspaceRoot })
+      .provisioningContributions
+      .filter((entry) => entry.id === "boring-ui-cli-package")
+    expect(cliContribution).toHaveLength(1)
+
+    await provisionWorkspaceAgentServer({
       workspaceRoot,
-      mode: "direct",
-      logger: false,
+      runtimeMode: "direct",
+      provisioningContributions: cliContribution,
     })
 
-    try {
-      const provisionedCli = join(workspaceRoot, ".boring-agent", "node", "node_modules", "@hachej", "boring-ui-cli")
-      await expect(readFile(join(provisionedCli, "package.json"), "utf8")).resolves.toContain("@hachej/boring-ui-cli")
-      await expect(readFile(join(provisionedCli, "templates", "front-canonical.tsx"), "utf8")).resolves.toContain("definePlugin")
+    const provisionedCli = join(workspaceRoot, ".boring-agent", "node", "node_modules", "@hachej", "boring-ui-cli")
+    await expect(readFile(join(provisionedCli, "package.json"), "utf8")).resolves.toContain("@hachej/boring-ui-cli")
+    await expect(readFile(join(provisionedCli, "templates", "front-canonical.tsx"), "utf8")).resolves.toContain("definePlugin")
 
-      const shim = await readFile(join(workspaceRoot, ".boring-agent", "bin", "boring-ui"), "utf8")
-      expect(shim).toContain('export BORING_AGENT_WORKSPACE_ROOT="$WORKSPACE_ROOT"')
-      expect(shim).toContain("$WORKSPACE_ROOT/.boring-agent/node/node_modules/@hachej/boring-ui-cli/dist/index.js")
-      expect(shim).toContain("exec node")
-    } finally {
-      await app.close()
-    }
+    const binDir = join(workspaceRoot, ".boring-agent", "bin")
+    const shim = await readFile(join(binDir, "boring-ui"), "utf8")
+    expect(shim).toContain('export BORING_AGENT_WORKSPACE_ROOT="$WORKSPACE_ROOT"')
+    expect(shim).toContain(".boring-agent/node/node_modules/@hachej/boring-ui-cli/dist/index.js")
+    expect(shim).toContain("exec node")
+
+    await expect(execFile("boring-ui", ["--help"], {
+      cwd: workspaceRoot,
+      env: { ...process.env, PATH: `${binDir}${process.env.PATH ? `:${process.env.PATH}` : ""}` },
+      timeout: 10_000,
+    })).resolves.toMatchObject({ stdout: expect.stringContaining("Usage: boring-ui") })
   })
 
   test("CLI-like boot in fresh workspace auto-discovers boring-plugin-authoring skill via /api/v1/agent/skills", async () => {

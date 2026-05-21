@@ -17,7 +17,7 @@ import {
   type RuntimeModeId,
 } from "@hachej/boring-agent/server"
 import type { FastifyInstance } from "fastify"
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
@@ -173,6 +173,7 @@ function resolveWorkspacePackageRoot(): string {
   const candidates = [
     join(__dirname, ".."),
     join(__dirname, "../../.."),
+    join(__dirname, "../../../.."),
   ]
   for (const candidate of candidates) {
     try {
@@ -190,13 +191,22 @@ function nodePackageContribution(
   nodePackageId: string,
   packageName: string,
   packageRoot: string | null,
-  bins?: Record<string, string>,
+  options: { bins?: Record<string, string>; version?: string | null } = {},
 ): WorkspaceProvisioningContribution | null {
-  if (!packageRoot || !existsSync(join(packageRoot, "package.json"))) return null
+  const resolvedPackageRoot = packageRoot && existsSync(join(packageRoot, "package.json")) ? packageRoot : null
+  const version = options.version?.trim() || null
+  if (!resolvedPackageRoot && !version) return null
   return {
     id: contributionId,
     provisioning: {
-      nodePackages: [{ id: nodePackageId, packageName, packageRoot, ...(bins ? { bins } : {}) }],
+      nodePackages: [
+        {
+          id: nodePackageId,
+          packageName,
+          ...(resolvedPackageRoot ? { packageRoot: resolvedPackageRoot } : { version: version! }),
+          ...(options.bins ? { bins: options.bins } : {}),
+        },
+      ],
     },
   }
 }
@@ -235,6 +245,15 @@ function createBoringPiPackageProvisioningContribution(): WorkspaceProvisioningC
   return nodePackageContribution("boring-pi-package", "boring-pi", "@hachej/boring-pi", resolveBoringPiPackageRoot())
 }
 
+function resolveWorkspacePackageVersion(): string | null {
+  try {
+    const pkg = JSON.parse(readFileSync(join(resolveWorkspacePackageRoot(), "package.json"), "utf8")) as { version?: string }
+    return typeof pkg.version === "string" && pkg.version.trim() ? pkg.version.trim() : null
+  } catch {
+    return null
+  }
+}
+
 function resolveBoringUiCliPackageRoot(): string | null {
   const workspacePackageRoot = resolveWorkspacePackageRoot()
   const candidates = [
@@ -256,14 +275,42 @@ function resolveBoringUiCliPackageRoot(): string | null {
   }
 }
 
-function createBoringUiCliPackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
+function prepareBoringUiCliProvisioningPackageRoot(workspaceRoot: string): string | null {
+  const sourceRoot = resolveBoringUiCliPackageRoot()
+  if (!sourceRoot || !existsSync(join(sourceRoot, "dist", "index.js")) || !existsSync(join(sourceRoot, "templates"))) {
+    return null
+  }
+  const packageRoot = join(workspaceRoot, ".boring-agent", "package-sources", "boring-ui-cli")
+  mkdirSync(packageRoot, { recursive: true })
+  cpSync(join(sourceRoot, "dist"), join(packageRoot, "dist"), { recursive: true, force: true })
+  cpSync(join(sourceRoot, "templates"), join(packageRoot, "templates"), { recursive: true, force: true })
+  writeFileSync(join(packageRoot, "package.json"), `${JSON.stringify({
+    name: "@hachej/boring-ui-cli",
+    version: resolveWorkspacePackageVersion() ?? "0.0.0",
+    type: "module",
+    bin: { "boring-ui": "./dist/index.js" },
+    files: ["dist/", "templates/"],
+  }, null, 2)}\n`, "utf8")
+  return packageRoot
+}
+
+function createBoringUiCliPackageProvisioningContribution(workspaceRoot: string): WorkspaceProvisioningContribution | null {
   return nodePackageContribution(
     "boring-ui-cli-package",
     "boring-ui-cli",
     "@hachej/boring-ui-cli",
-    resolveBoringUiCliPackageRoot(),
-    { "boring-ui": "dist/index.js" },
+    prepareBoringUiCliProvisioningPackageRoot(workspaceRoot),
+    {
+      bins: { "boring-ui": "dist/index.js" },
+      version: resolveWorkspacePackageVersion(),
+    },
   )
+}
+
+function createWorkspaceDefaultServerPlugins(workspaceRoot: string): WorkspaceServerPlugin[] {
+  return [createBoringUiCliPackageProvisioningContribution(workspaceRoot)]
+    .filter((entry): entry is WorkspaceProvisioningContribution => Boolean(entry))
+    .map((entry) => ({ id: entry.id, provisioning: entry.provisioning }))
 }
 
 function createBoringPiPackageSource(workspaceRoot: string): WorkspacePiPackageSource | undefined {
@@ -319,7 +366,7 @@ export function buildWorkspaceContextPrompt(): string {
     '## Workspace',
     '- Root: `$BORING_AGENT_WORKSPACE_ROOT` (exported into every bash invocation)',
     '- Skills: `$BORING_AGENT_WORKSPACE_ROOT/.agents/skills/`',
-    '- CLI shims (`bm`, `python`, `pip`): `$BORING_AGENT_WORKSPACE_ROOT/.boring-agent/bin/` — already on PATH, call directly',
+    '- CLI shims (`boring-ui`, `python`, `pip`): `$BORING_AGENT_WORKSPACE_ROOT/.boring-agent/bin/` — already on PATH, call directly',
   ].join('\n')
 }
 
@@ -327,8 +374,12 @@ export function collectWorkspaceAgentServerPlugins(
   opts: CollectWorkspaceAgentServerPluginsOptions = {},
 ): WorkspaceAgentServerPluginCollection {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
+  const excludedDefaults = new Set(opts.excludeDefaults ?? [])
   const result = bootstrapServer({
-    defaults: opts.defaults,
+    defaults: [
+      ...(excludedDefaults.has("boring-ui-cli-package") ? [] : createWorkspaceDefaultServerPlugins(workspaceRoot)),
+      ...(opts.defaults ?? []),
+    ],
     plugins: opts.plugins,
     excludeDefaults: opts.excludeDefaults,
   })
@@ -341,7 +392,6 @@ export function collectWorkspaceAgentServerPlugins(
     provisioningContributions: [
       createWorkspacePackageProvisioningContribution(),
       createBoringPiPackageProvisioningContribution(),
-      createBoringUiCliPackageProvisioningContribution(),
       ...result.provisioningContributions,
     ].filter((entry): entry is WorkspaceProvisioningContribution => Boolean(entry)),
     routeContributions: result.routeContributions,
@@ -496,7 +546,11 @@ export async function createWorkspaceAgentServer(
       runtimeMode: resolvedMode,
     })
   }
-  const boringUiCliShimAvailable = ensureBoringUiCliShim(workspaceRoot)
+  const boringUiCliProvisioningEnabled = pluginCollection.provisioningContributions.some(
+    (entry) => entry.id === "boring-ui-cli-package",
+  )
+  if (boringUiCliProvisioningEnabled) ensureBoringUiCliShim(workspaceRoot)
+  const boringUiCliCommandAvailable = opts.provisionWorkspace !== false && boringUiCliProvisioningEnabled
 
   // Static Pi resources known at boot: workspace skill dir,
   // factory-supplied values, and the bundled @hachej/boring-pi skill
@@ -577,7 +631,7 @@ export async function createWorkspaceAgentServer(
       // published version, which lags the locally-installed CLI when
       // the agent is iterating in a monorepo. Keep the bin name short.
       buildBoringSystemPrompt({
-        ...(boringUiCliShimAvailable
+        ...(boringUiCliCommandAvailable
           ? { scaffoldCommand: "boring-ui scaffold-plugin", verifyCommand: "boring-ui verify-plugin" }
           : {}),
         boringPiRootOverride: boringPiRootVisibleToAgentTools(
