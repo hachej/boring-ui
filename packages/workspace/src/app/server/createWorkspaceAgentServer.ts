@@ -593,6 +593,9 @@ export async function createWorkspaceAgentServer(
     return rebuildServerPlugins({ entries: allPluginEntries, ctx })
   }
   const callerRuntimeProvisioner = opts.runtimeProvisioner
+  const boringUiCliCommandAvailable = opts.provisionWorkspace !== false && pluginCollection.provisioningContributions.some(
+    (entry) => entry.id === "boring-ui-cli-package",
+  )
 
   const app = await createAgentApp({
     ...opts,
@@ -611,8 +614,9 @@ export async function createWorkspaceAgentServer(
       // published version, which lags the locally-installed CLI when
       // the agent is iterating in a monorepo. Keep the bin name short.
       buildBoringSystemPrompt({
-        scaffoldCommand: "boring-ui scaffold-plugin",
-        verifyCommand: "boring-ui verify-plugin",
+        ...(boringUiCliCommandAvailable
+          ? { scaffoldCommand: "boring-ui scaffold-plugin", verifyCommand: "boring-ui verify-plugin" }
+          : {}),
         boringPiRootOverride: boringPiRootVisibleToAgentTools(
           workspaceRoot,
           resolvedMode,

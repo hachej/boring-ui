@@ -8,6 +8,7 @@
  *   --port <n>         API port
  *   --mode <id>        Runtime mode (default: direct)
  *   --workspace <path> Workspace root
+ *   --no-gitignore    Accepted for e2e compatibility; ignored
  */
 import path from 'node:path'
 import os from 'node:os'
@@ -34,6 +35,8 @@ function parseArgs(argv: string[]): { port: number; mode: RuntimeModeId; workspa
       mode = argv[++i] as RuntimeModeId
     } else if ((arg === '--workspace' || arg === '-w') && argv[i + 1]) {
       workspaceRoot = argv[++i]!
+    } else if (arg === '--no-gitignore') {
+      // Compatibility with e2e helper flags used by older CLI variants.
     } else {
       throw new Error(`unknown argument: ${arg}`)
     }
