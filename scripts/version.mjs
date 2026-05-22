@@ -15,7 +15,6 @@ const PUBLISHABLE = [
   "packages/workspace",
   "packages/agent",
   "packages/ui",
-  "packages/pi",
   "packages/cli", // @hachej/boring-ui-cli
 ]
 
