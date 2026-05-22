@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
@@ -132,6 +132,40 @@ test('provisionRuntimeWorkspace no-ops when node package source is already mater
   })
 
   await expect(readFile(join(packageRoot, 'package.json'), 'utf-8')).resolves.toBe(
+    '{"name":"@hachej/boring-workspace"}\n',
+  )
+})
+
+test('provisionRuntimeWorkspace no-ops when node package target is a symlink to source', async () => {
+  const sourceRoot = await makeTempDir('boring-ui-runtime-package-')
+  const workspaceRoot = await makeTempDir('boring-ui-runtime-workspace-')
+  const targetRoot = join(workspaceRoot, 'node_modules', '@hachej', 'boring-workspace')
+  await mkdir(join(sourceRoot, 'dist'), { recursive: true })
+  await mkdir(join(workspaceRoot, 'node_modules', '@hachej'), { recursive: true })
+  await writeFile(join(sourceRoot, 'package.json'), '{"name":"@hachej/boring-workspace"}\n', 'utf-8')
+  await writeFile(join(sourceRoot, 'dist', 'index.js'), 'export {}\n', 'utf-8')
+  await symlink(sourceRoot, targetRoot, 'dir')
+
+  await provisionRuntimeWorkspace({
+    workspaceRoot,
+    contributions: [
+      {
+        id: 'symlinked-package-target',
+        provisioning: {
+          nodePackages: [
+            {
+              id: 'workspace',
+              packageName: '@hachej/boring-workspace',
+              packageRoot: sourceRoot,
+            },
+          ],
+        },
+      },
+    ],
+    force: true,
+  })
+
+  await expect(readFile(join(targetRoot, 'package.json'), 'utf-8')).resolves.toBe(
     '{"name":"@hachej/boring-workspace"}\n',
   )
 })
