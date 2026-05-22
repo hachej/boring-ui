@@ -146,7 +146,7 @@ integration:
 - `boring.front` — workbench UI from `definePlugin({ ... })`: panels, commands, catalogs, surface resolvers, providers, bindings
 - `boring.server` — explicit static/boot-time server integration from `defineServerPlugin({ ... })`: agent tools that need backend state and HTTP routes. Restart the workspace server after changes.
 
-Start from [plugins/_template-full](plugins/_template-full/README.md) for publishable packages, or `boring-ui scaffold-plugin <name>` for a front/Pi hot-reloadable local plugin.
+Run `boring-ui plugin create <name>` for a publishable package plugin, or start from [packages/cli/templates/plugin](packages/cli/templates/plugin/README.md). For a front/Pi hot-reloadable local plugin, run `boring-ui scaffold-plugin <name>`.
 
 ### Current hot-reload compatibility
 
@@ -181,13 +181,14 @@ Planned direction: keep app/internal plugins powerful and boot-composed, but kee
 | coming: workflows                                                                    | Multi-step agent orchestration — chain steps, define branches, trigger sub-agents             |
 | coming: data-branch                                                                  | Fork, explore, and compare agent-generated datasets side by side in the workbench             |
 
+
 See [Pi extensions docs](https://pi.dev/docs/latest/extensions) for the full Pi plugin surface.
 
 ---
 
 ## Built with boring-ui
 
-<p align="center"><img src="https://boring-macro.fly.dev/landing/app-screenshot.png?v=8" alt="MacroAnalyst" width="480"></p>
+<img src="https://boring-macro.fly.dev/landing/app-screenshot.png?v=8" alt="MacroAnalyst" width="480" />
 
 **[MacroAnalyst](https://boring-macro.fly.dev/)** — an interactive macroeconomic analyst powered by Boring UI.
 
