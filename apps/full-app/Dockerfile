@@ -22,7 +22,8 @@ RUN pnpm --filter @hachej/boring-core exec tsup --no-dts \
   && cp packages/core/src/front/theme.css packages/core/dist/front/theme.css \
   && cp packages/core/src/app/front/styles.css packages/core/dist/app/front/styles.css
 
-RUN pnpm --filter @hachej/boring-ui-kit exec tsup
+RUN pnpm --filter @hachej/boring-ui-kit exec tsup \
+  && pnpm --filter @hachej/boring-ui-kit exec node scripts/build-styles.mjs
 
 RUN pnpm --filter @hachej/boring-agent exec tsup \
   && cp packages/agent/src/front/styles/globals.css packages/agent/dist/front/styles.css
