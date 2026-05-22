@@ -19,6 +19,7 @@ const repoRoot = findRepoRoot(workspacePackageDir)
 const sourceRoots = [
   "packages/workspace/src",
   "packages/workspace/stories",
+  "packages/cli/templates/plugin/src",
   "plugins/_template-full/src",
   "apps/workspace-playground/src",
 ]
