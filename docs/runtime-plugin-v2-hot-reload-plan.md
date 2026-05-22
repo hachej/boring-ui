@@ -204,9 +204,9 @@ Long term:
 - replace `/api/macro/deck*` with workspace file APIs or a workspace path mapping;
 - keep path validation in the workspace adapter.
 
-## `_template-full` policy
+## Package-template policy
 
-`plugins/_template-full` is useful as an app/internal package example, but it
+`packages/cli/templates/plugin` is useful as an app/internal package example, but it
 should not be the main generated-plugin authoring path.
 
 Canonical authoring path:

@@ -114,7 +114,7 @@ Two valid layouts, picked by intent:
 | `<workspace>/.pi/extensions/<name>/` | NO (Vite transforms `.tsx` on the fly, hot reload via SSE) | Local user plugins; agent-authored plugins; anything you don't intend to publish as a separate npm package. **Default for "I want a plugin".** |
 | `plugins/<name>/` (in this repo) | YES (`tsup` → `dist/`, then consuming app does `defaultPluginPackages: ["@hachej/your-plugin"]`) | Plugins shipped as installable npm packages (e.g. `@hachej/boring-ask-user`, `@hachej/boring-data-catalog`). |
 
-The rest of this skill teaches the hot-reload layout. Repo contributors building a publishable plugin start from `plugins/_template-full/` (build-based template) instead; everyone else uses `boring-ui scaffold-plugin <name>` (Step 0).
+The rest of this skill teaches the hot-reload layout. Repo contributors building a publishable plugin start from `packages/cli/templates/plugin/` (build-based template) instead; everyone else uses `boring-ui scaffold-plugin <name>` (Step 0).
 
 ## package.json shape
 
