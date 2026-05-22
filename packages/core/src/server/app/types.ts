@@ -52,19 +52,19 @@ export interface WorkspaceStore {
   putWorkspaceSettings(workspaceId: string, settings: Record<string, string>): Promise<Array<{ key: string; configured: boolean; updated_at: string }>>
   getWorkspaceRuntime(workspaceId: string): Promise<WorkspaceRuntime | null>
   putWorkspaceRuntime(workspaceId: string, state: Partial<WorkspaceRuntime>): Promise<WorkspaceRuntime>
-  getWorkspaceRuntimeResource?(
+  getWorkspaceRuntimeResource(
     workspaceId: string,
     selector: WorkspaceRuntimeResourceSelector,
   ): Promise<WorkspaceRuntimeResource | null>
-  putWorkspaceRuntimeResource?(
+  putWorkspaceRuntimeResource(
     workspaceId: string,
     resource: WorkspaceRuntimeResourceInput,
   ): Promise<WorkspaceRuntimeResource>
-  deleteWorkspaceRuntimeResource?(
+  deleteWorkspaceRuntimeResource(
     workspaceId: string,
     selector: WorkspaceRuntimeResourceSelector,
   ): Promise<void>
-  listWorkspaceRuntimeResources?(
+  listWorkspaceRuntimeResources(
     workspaceId?: string,
   ): Promise<WorkspaceRuntimeResource[]>
   retryWorkspaceRuntime(workspaceId: string): Promise<WorkspaceRuntime | null>

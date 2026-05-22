@@ -323,7 +323,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
    * skills dir, injection drops the package), the skill goes silent for
    * every CLI user. This test fails loudly before any of that ships.
    */
-  test("provisions boring-ui CLI and installs a workspace-local shim for plugin scaffolding", async () => {
+  test("provisions boring-ui CLI in a fresh workspace", async () => {
     const workspaceRoot = await makeTempDir("boring-cli-shim-")
 
     const app = await createWorkspaceAgentServer({
@@ -337,10 +337,8 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
       await expect(readFile(join(provisionedCli, "package.json"), "utf8")).resolves.toContain("@hachej/boring-ui-cli")
       await expect(readFile(join(provisionedCli, "templates", "front-canonical.tsx"), "utf8")).resolves.toContain("definePlugin")
 
-      const shim = await readFile(join(workspaceRoot, ".boring-agent", "bin", "boring-ui"), "utf8")
-      expect(shim).toContain('export BORING_AGENT_WORKSPACE_ROOT="$WORKSPACE_ROOT"')
-      expect(shim).toContain("$WORKSPACE_ROOT/node_modules/@hachej/boring-ui-cli/dist/index.js")
-      expect(shim).toContain("exec node")
+      // No shell shim anymore — scaffold/verify commands flow directly
+      // through the system prompt (boring-ui resolves via PATH).
     } finally {
       await app.close()
     }

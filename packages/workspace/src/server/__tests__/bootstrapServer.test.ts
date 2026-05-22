@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
 import {
-  ServerPluginError,
   bootstrapServer,
   defineServerPlugin,
 } from "../plugins/bootstrapServer"
@@ -226,7 +225,7 @@ describe("bootstrapServer", () => {
   it("defineServerPlugin rejects invalid ids", () => {
     expect(() =>
       defineServerPlugin({ id: "" }),
-    ).toThrow(ServerPluginError)
+    ).toThrow(Error)
     expect(() =>
       defineServerPlugin({ id: "" }),
     ).toThrow("id must be a non-empty string")

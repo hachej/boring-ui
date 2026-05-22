@@ -6,11 +6,8 @@
 // ---------------------------------------------------------------------------
 
 // Plugin model. The single public way to author a plugin is
-// `definePlugin` from "@hachej/boring-workspace/plugin"; the legacy
-// `defineFrontPlugin`/`WorkspaceFrontPlugin` shape is kept INTERNAL
-// for the bootstrap pipeline (boringFrontFactoryToPlugin) but is no
-// longer part of the public API. Plugin composition is just calling
-// multiple factories with the same api (see docs).
+// `definePlugin` from "@hachej/boring-workspace/plugin". Plugin composition
+// is just calling multiple factories with the same api (see docs).
 export {
   bootstrap,
   PluginError,
@@ -36,16 +33,8 @@ export type {
   CatalogRow,
   CatalogSearchArgs,
   CatalogSearchResult,
-  PluginOutput,
-  LeftTabOutput,
   LeftTabParams,
   LeftTabComponent,
-  PanelOutput,
-  CommandOutput,
-  CatalogOutput,
-  BindingOutput,
-  ProviderOutput,
-  SurfaceResolverOutput,
   PluginProvider,
   PluginProviderProps,
   AgentTool,

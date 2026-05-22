@@ -204,16 +204,11 @@ export function WidgetPane({ params, api, containerApi }: PaneProps<Params>) {
 | `binding` | React component mounted in the provider tree |
 | `provider` | binding that also receives `apiBaseUrl`, `authHeaders`, etc. |
 
-**Composing plugins:**
+**Composing plugins (imperative API via `definePlugin`):**
 
-```ts
-import { composePlugins } from "@hachej/boring-workspace"
-
-export const myPlugin = composePlugins({
-  id: "my-plugin",
-  plugins: [panelsPlugin, catalogPlugin, surfacePlugin],
-})
-```
+See `packages/workspace/docs/PLUGIN_SYSTEM.md` for the `@hachej/boring-plugin/plugin`
+imperative `api.register*` API. Plugin outputs are now declared through
+`definePlugin({ id, ... })` instead of `composePlugins()`, which was removed.
 
 **Registering with the shell:**
 

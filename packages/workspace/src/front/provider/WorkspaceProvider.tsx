@@ -29,14 +29,10 @@ import { bootstrap } from "../../shared/plugins/bootstrap"
 import { filesystemPlugin } from "../../plugins/filesystemPlugin/front"
 import { coreWorkspacePanels } from "../registry/coreRegistrations"
 import type {
-  BindingOutput,
-  ProviderOutput,
+  PluginBinding,
+  PluginProvider,
 } from "../../shared/plugins/types"
-import type { WorkspaceFrontPlugin } from "../../shared/plugins/defineFrontPlugin"
-import {
-  toWorkspacePlugin,
-  type WorkspaceFrontPluginInput,
-} from "../../shared/plugins/frontFactory"
+import type { BoringFrontFactoryWithId, CapturedFrontPlugin } from "../../shared/plugins/frontFactory"
 import type { CommandConfig, PanelConfig } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugins/types"
 import type { WorkspaceChatPanelComponent, WorkspaceChatPanelProps } from "../chrome/chat/types"
@@ -159,7 +155,6 @@ export function useWorkspaceBridge(): WorkspaceBridgeContextValue {
 export interface RegisteredPluginMeta {
   id: string
   label?: string
-  systemPrompt?: string
 }
 
 export interface WorkspaceContextValue {
@@ -275,16 +270,14 @@ function WorkspaceCatalogBindings({
   return null
 }
 
-function WorkspacePluginBindings({ plugins }: { plugins: WorkspaceFrontPlugin[] }) {
+function WorkspacePluginBindings({ plugins }: { plugins: CapturedFrontPlugin[] }) {
   return (
     <>
-      {plugins.map((plugin) =>
-        (plugin.outputs ?? [])
-          .filter((output): output is BindingOutput => output.type === "binding")
-          .map((output) => {
-            const Binding = output.component
-            return <Binding key={`${plugin.id}:${output.id}`} />
-          }),
+      {plugins.flatMap((plugin) =>
+        plugin.registrations.bindings.map((binding) => {
+          const Binding = binding.component as PluginBinding
+          return <Binding key={`${plugin.id}:${binding.id}`} />
+        }),
       )}
     </>
   )
@@ -298,7 +291,7 @@ function WorkspacePluginProviders({
   apiTimeout,
   children,
 }: {
-  plugins: WorkspaceFrontPlugin[]
+  plugins: CapturedFrontPlugin[]
   apiBaseUrl: string
   authHeaders?: Record<string, string>
   onAuthError?: (statusCode: number) => void
@@ -306,16 +299,14 @@ function WorkspacePluginProviders({
   children: ReactNode
 }) {
   const providers = plugins.flatMap((plugin) =>
-    plugin.outputs
-      ?.filter((output): output is ProviderOutput => output.type === "provider")
-      .map((output) => ({ plugin, output })) ?? [],
+    plugin.registrations.providers.map((provider) => ({ plugin, provider })),
   )
 
-  return providers.reduceRight<ReactNode>((acc, { plugin, output }) => {
-    const Provider = output.component
+  return providers.reduceRight<ReactNode>((acc, { plugin, provider }) => {
+    const Provider = provider.component as PluginProvider
     return (
       <Provider
-        key={`${plugin.id}:provider:${output.id}`}
+        key={`${plugin.id}:provider:${provider.id}`}
         apiBaseUrl={apiBaseUrl}
         authHeaders={authHeaders}
         onAuthError={onAuthError}
@@ -348,12 +339,10 @@ export interface WorkspaceProviderProps {
   children: ReactNode
   chatPanel?: WorkspaceChatPanelComponent
   /**
-   * Plugin entries. Each is either an internal `WorkspaceFrontPlugin`
-   * object or a public `BoringFrontFactoryWithId` produced by
-   * `definePlugin({ id, ... })` from `@hachej/boring-workspace/plugin`.
-   * The shell normalizes both via `toWorkspacePlugin` at the boundary.
+   * Front plugin entries produced by `definePlugin({ id, ... })` from
+   * `@hachej/boring-workspace/plugin`.
    */
-  plugins?: WorkspaceFrontPluginInput[]
+  plugins?: BoringFrontFactoryWithId[]
   excludeDefaults?: string[]
   panels?: PanelConfig[]
   commands?: CommandConfig[]
@@ -406,7 +395,7 @@ export function WorkspaceProvider({
   onAuthError,
   onOpenFile,
   debug = false,
-  frontPluginHotReload = import.meta.env.DEV ? "vite" : false,
+  frontPluginHotReload = (typeof import.meta !== 'undefined' && import.meta.env?.DEV) ? 'vite' as const : false,
 }: WorkspaceProviderProps) {
   const storeRef = useRef<ReturnType<typeof createWorkspaceStore> | null>(null)
   if (!storeRef.current) {
@@ -485,18 +474,14 @@ export function WorkspaceProvider({
     }
 
     const excludedDefaults = new Set(excludeDefaults ?? [])
-    const defaultPlugins: WorkspaceFrontPlugin[] = excludedDefaults.has(filesystemPlugin.id)
+    const defaultPlugins: BoringFrontFactoryWithId[] = excludedDefaults.has(filesystemPlugin.pluginId)
       ? []
       : [filesystemPlugin]
-    // Normalize user-provided plugins (internal/static WorkspaceFrontPlugin
-    // objects or public BoringFrontFactoryWithId entries from definePlugin).
-    // After normalization everything below treats them as plugin objects.
-    const normalizedPlugins: WorkspaceFrontPlugin[] = (plugins ?? []).map(toWorkspacePlugin)
-    const allPlugins = [...defaultPlugins, ...normalizedPlugins]
+    const userPlugins = plugins ?? []
 
-    bootstrap({
+    const bootstrapResult = bootstrap({
       chatPanel: chatPanel ?? NullChatPanel,
-      plugins: normalizedPlugins,
+      plugins: userPlugins,
       defaults: defaultPlugins,
       excludeDefaults,
       registries: { panels: pr, commands: cr, catalogs: cat, surfaceResolvers: sr },
@@ -505,7 +490,7 @@ export function WorkspaceProvider({
     const metas: RegisteredPluginMeta[] = [
       { id: "workspace:chat-layout", label: "Layout" },
       { id: "agent:chat-layout", label: "Layout" },
-      ...allPlugins.map((p) => ({
+      ...bootstrapResult.plugins.map((p) => ({
         id: p.id,
         label: p.label,
       })),
@@ -524,7 +509,7 @@ export function WorkspaceProvider({
       catalogRegistry: cat,
       surfaceResolverRegistry: sr,
       pluginMetas: metas,
-      pluginsWithBindings: allPlugins,
+      pluginsWithBindings: bootstrapResult.plugins,
     }
   }, [capabilities, chatPanel, plugins, excludeDefaults, panels])
 
@@ -599,7 +584,7 @@ export function WorkspaceProvider({
                 <CommandPalette />
                 <Toaster />
                 {children}
-                {import.meta.env.DEV && <PluginInspector plugins={pluginMetas} />}
+                {(typeof import.meta !== 'undefined' && import.meta.env?.DEV) && <PluginInspector plugins={pluginMetas} />}
               </WorkspacePluginProviders>
             </RegistryProvider>
           </PluginErrorProvider>

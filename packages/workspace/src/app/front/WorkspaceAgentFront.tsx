@@ -9,9 +9,7 @@ import type {
   SurfaceShellSnapshot,
 } from "../../front/chrome/artifact-surface/SurfaceShell"
 import { useRegistry } from "../../front/registry"
-import type { WorkspaceFrontPlugin } from "../../shared/plugins/defineFrontPlugin"
-import { toWorkspacePlugin } from "../../shared/plugins/frontFactory"
-import type { PanelOutput, PluginOutput } from "../../shared/plugins/types"
+import { captureFrontPlugin } from "../../shared/plugins/frontFactory"
 import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
 import { readStoredBoolean, writeStoredBoolean } from "../../front/store/localStorageValues"
 import {
@@ -79,10 +77,6 @@ export interface WorkspaceAgentFrontProps<
   hotReloadEnabled?: boolean
   extraPanels?: string[]
   extraCommands?: SlashCommand[]
-}
-
-function isPanelOutput(output: PluginOutput): output is PanelOutput {
-  return output.type === "panel"
 }
 
 function shellStorageKeyFromSurfaceStorage(
@@ -376,23 +370,17 @@ export function WorkspaceAgentFront<
     surfaceOpenRef.current = false
     setSurfaceOpen(false)
   }, [setSurfaceOpen])
-  // Plugins can be either legacy WorkspaceFrontPlugin objects or new
-  // BoringFrontFactoryWithId entries; normalize before reading outputs.
-  const normalizedPlugins = useMemo(
-    () => plugins?.map(toWorkspacePlugin) ?? [],
+  const capturedPlugins = useMemo(
+    () => plugins?.map(captureFrontPlugin) ?? [],
     [plugins],
   )
-  const pluginOutputs = useMemo(
-    () => normalizedPlugins.flatMap((plugin: WorkspaceFrontPlugin) => plugin.outputs ?? []),
-    [normalizedPlugins],
-  )
   const hasLeftTabs = useMemo(
-    () => pluginOutputs.some((output) => output.type === "left-tab"),
-    [pluginOutputs],
+    () => capturedPlugins.some((plugin) => plugin.registrations.leftTabs.length > 0),
+    [capturedPlugins],
   )
   const pluginPanelIds = useMemo(
-    () => pluginOutputs.filter(isPanelOutput).map((output) => output.panel.id),
-    [pluginOutputs],
+    () => capturedPlugins.flatMap((plugin) => plugin.registrations.panels.map((panel) => panel.id)),
+    [capturedPlugins],
   )
   const shellExtraPanels = useMemo(
     () => [...(extraPanels ?? []), ...pluginPanelIds],

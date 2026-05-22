@@ -44,12 +44,13 @@ describe("validateBoringPluginManifest", () => {
     }
   })
 
-  it("strips legacy package.json#boring UI registration arrays", () => {
+  it("rejects removed package.json#boring UI registration arrays", () => {
     const result = validateBoringPluginManifest({
-      name: "legacy-ui-arrays",
+      name: "removed-ui-arrays",
       version: "1.0.0",
       boring: {
         front: "front/index.tsx",
+        outputs: [],
         panels: [{ id: "ignored", title: "Ignored" }],
         commands: [{ id: "ignored-command", title: "Ignored" }],
         leftTabs: [{ id: "ignored-tab", title: "Ignored", panelId: "ignored" }],
@@ -57,11 +58,15 @@ describe("validateBoringPluginManifest", () => {
       },
     })
 
-    expect(result.valid).toBe(true)
-    if (result.valid) {
-      expect(result.packageJson.boring).toEqual({
-        front: "front/index.tsx",
-      })
+    expect(result.valid).toBe(false)
+    if (!result.valid) {
+      expect(result.issues).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "INVALID_FIELD", field: "boring.outputs" }),
+        expect.objectContaining({ code: "INVALID_FIELD", field: "boring.panels" }),
+        expect.objectContaining({ code: "INVALID_FIELD", field: "boring.commands" }),
+        expect.objectContaining({ code: "INVALID_FIELD", field: "boring.leftTabs" }),
+        expect.objectContaining({ code: "INVALID_FIELD", field: "boring.surfaceResolvers" }),
+      ]))
     }
   })
 

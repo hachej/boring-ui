@@ -1,41 +1,16 @@
 import { describe, expect, it } from "vitest"
-import { defineFrontPlugin, PluginError } from "../defineFrontPlugin"
 
-const DummyPanel = () => null
+// The legacy front-plugin object adapter remains as an unexported internal
+// module for old migration code, but current authoring surfaces must not teach
+// or expose it. Public plugin authors use definePlugin({ ... }) from /plugin.
+describe("legacy front plugin adapter privacy", () => {
+  it("is absent from the root and /plugin public surfaces", async () => {
+    const rootApi = await import("../../../index")
+    const pluginApi = await import("../../../plugin")
 
-describe("defineFrontPlugin", () => {
-  it("accepts a plugin with no outputs", () => {
-    const plugin = defineFrontPlugin({ id: "empty", outputs: [] })
-    expect(plugin).toEqual({ id: "empty", outputs: [] })
-  })
-
-  it("accepts a plugin with valid outputs and preserves label", () => {
-    const plugin = defineFrontPlugin({
-      id: "panels",
-      label: "Panels",
-      outputs: [
-        { type: "panel", panel: { id: "p1", title: "Panel 1", component: DummyPanel } },
-        { type: "command", command: { id: "c1", title: "Cmd", run: () => {} } },
-      ],
-    })
-    expect(plugin.id).toBe("panels")
-    expect(plugin.label).toBe("Panels")
-    expect(plugin.outputs).toHaveLength(2)
-  })
-
-  it("throws when id is empty or non-string", () => {
-    expect(() => defineFrontPlugin({ id: "", outputs: [] })).toThrow(PluginError)
-    expect(() =>
-      defineFrontPlugin({ id: 42 as unknown as string, outputs: [] }),
-    ).toThrow(PluginError)
-  })
-
-  it("throws when an output has an unknown type", () => {
-    expect(() =>
-      defineFrontPlugin({
-        id: "bad",
-        outputs: [{ type: "not-a-type" } as never],
-      }),
-    ).toThrow(/outputs\[0\]/)
+    expect("defineFrontPlugin" in rootApi).toBe(false)
+    expect("WorkspaceFrontPlugin" in rootApi).toBe(false)
+    expect("defineFrontPlugin" in pluginApi).toBe(false)
+    expect("WorkspaceFrontPlugin" in pluginApi).toBe(false)
   })
 })

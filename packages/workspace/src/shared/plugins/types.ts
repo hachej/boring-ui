@@ -5,8 +5,7 @@ import type {
   ToolExecContext,
   ToolResult,
 } from "../types/agent-tool"
-import type { CommandConfig, PaneProps, PanelConfig } from "../types/panel"
-import type { SurfaceResolverConfig } from "../types/surface"
+import type { PaneProps, PanelConfig } from "../types/panel"
 
 export type {
   AgentTool,
@@ -94,58 +93,5 @@ export interface LeftTabParams {
   bridge?: unknown
   chromeless?: boolean
 }
-
-export interface LeftTabOutput<T = LeftTabParams> {
-  type: "left-tab"
-  id: string
-  title: string
-  icon?: PanelConfig<T>["icon"]
-  component: PanelConfig<T>["component"]
-  lazy?: PanelConfig<T>["lazy"]
-  requiresCapabilities?: PanelConfig<T>["requiresCapabilities"]
-  source?: PanelConfig<T>["source"]
-  chromeless?: PanelConfig<T>["chromeless"]
-}
-
-export interface PanelOutput<T = any> {
-  type: "panel"
-  panel: PanelConfig<T>
-}
-
-export interface CommandOutput {
-  type: "command"
-  command: CommandConfig
-}
-
-export interface CatalogOutput {
-  type: "catalog"
-  catalog: CatalogConfig
-}
-
-export interface BindingOutput {
-  type: "binding"
-  id: string
-  component: PluginBinding
-}
-
-export interface ProviderOutput {
-  type: "provider"
-  id: string
-  component: PluginProvider
-}
-
-export interface SurfaceResolverOutput {
-  type: "surface-resolver"
-  resolver: SurfaceResolverConfig
-}
-
-export type PluginOutput =
-  | LeftTabOutput
-  | PanelOutput
-  | CommandOutput
-  | CatalogOutput
-  | BindingOutput
-  | ProviderOutput
-  | SurfaceResolverOutput
 
 export type LeftTabComponent = ComponentType<PaneProps<LeftTabParams>>

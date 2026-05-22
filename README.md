@@ -65,7 +65,7 @@ In practice, a plugin is a Node package with two manifest blocks:
 
 Plugins compose at the app shell: register multiple packages/plugins side by side, or publish a package that wraps shared primitives. Swap a single surface, or add a brand-new pane type. Plugins ship through npm like any other dependency — no patching, no monorepo entanglement required.
 
-Start from [plugins/_template-full](plugins/_template-full/README.md). The exact manifest and a working example are in [Plugin shape](#plugin-shape) below.
+For generated/runtime plugins, use `boring-ui scaffold-plugin <name>` from the workspace-local CLI. For app/internal publishable package plugins, use [plugins/_template-full](plugins/_template-full/README.md) as a reference example. The exact manifest shape is in [Plugin shape](#plugin-shape) below.
 
 ---
 
@@ -103,7 +103,7 @@ More on the same chassis in flight: `boring-accountant`, `boring-design`, `borin
 | `@hachej/boring-ask-user`      | Agent-to-user question/answer surface and `ask_user` tool                 | [plugins/ask-user](plugins/ask-user/README.md)           |
 | `@hachej/boring-data-explorer` | Searchable, faceted data tables — the primitive for explorer-style panels | [plugins/data-explorer](plugins/data-explorer/README.md) |
 | `@hachej/boring-data-catalog`  | Configurable catalog tab built on `data-explorer`                         | [plugins/data-catalog](plugins/data-catalog/README.md)   |
-| Plugin template                | Canonical scaffold for new plugins                                        | [plugins/_template-full](plugins/_template-full/README.md)         |
+| App/internal plugin example    | Publishable package-plugin reference; generated plugins use `boring-ui scaffold-plugin` | [plugins/_template-full](plugins/_template-full/README.md)         |
 
 
 ### Reference apps

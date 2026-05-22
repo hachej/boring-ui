@@ -828,15 +828,11 @@ async function stepCreateWorkspace(
     fail(step, `expected 2xx creating workspace, got ${status} (${JSON.stringify(json)})`)
   }
 
-  // The API returns either `{ id, name, … }` (legacy shape) or
-  // `{ workspace: { id, name, … }, role }` (current shape) — normalize.
   const body = (json ?? {}) as {
-    id?: string
-    name?: string
     workspace?: { id?: string; name?: string }
   }
-  const id = body.id ?? body.workspace?.id
-  const responseName = body.name ?? body.workspace?.name
+  const id = body.workspace?.id
+  const responseName = body.workspace?.name
   if (!id) {
     fail(step, `workspace create response missing id: ${JSON.stringify(json)}`)
   }

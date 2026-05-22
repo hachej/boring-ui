@@ -5,12 +5,9 @@
  * `WorkspaceServerPlugin` by reading the plugin's `package.json` and
  * importing its server entry:
  *
- *  1. Prefer an explicit manifest field (`package.json#boring.server`).
+ *  1. Require an explicit manifest field (`package.json#boring.server`).
  *     Declared-but-missing fails loudly — no silent fallback.
- *  2. Convention fallback (`dist/server/index.js`, `src/server/index.ts`)
- *     is kept for existing directory-source app code only. Package authors
- *     should declare `boring.server` and restart the host after server edits.
- *  3. `hotReload: true` uses jiti with `moduleCache: false` to re-evaluate
+ *  2. `hotReload: true` uses jiti with `moduleCache: false` to re-evaluate
  *     on every call. `hotReload: false` uses regular `import()`.
  */
 import { existsSync, readFileSync } from "node:fs"
@@ -34,8 +31,6 @@ export interface DirPluginEntry {
 type MaybePromise<T> = T | Promise<T>
 type ServerPluginFactory = (options: unknown, ctx: PluginResolveContext) => MaybePromise<WorkspaceServerPlugin>
 
-const SERVER_CONVENTIONS = ["dist/server/index.js", "src/server/index.ts"] as const
-
 function readPluginPackageJson(dir: string): BoringPluginPackageJson | null {
   const pkgPath = resolve(dir, "package.json")
   if (!existsSync(pkgPath)) return null
@@ -47,10 +42,8 @@ function readPluginPackageJson(dir: string): BoringPluginPackageJson | null {
 }
 
 /**
- * Pi parity (`core/package-manager.js:resolveExtensionEntries`):
- * - explicit manifest field FIRST; missing-but-declared throws loudly.
- * - conventions fallback only when no explicit field.
- * - returns `null` if neither is present.
+ * Directory-source server entries are manifest-only: missing declarations mean
+ * the package is front/Pi-only, while declared-but-missing entries throw loudly.
  */
 const require = createRequire(import.meta.url)
 
@@ -110,7 +103,7 @@ function resolveDirServerEntryPath(dir: string): string | null {
   return resolveSafePluginEntryPath({
     rootDir,
     explicit: pkg.boring?.server,
-    conventions: SERVER_CONVENTIONS,
+    conventions: [],
     field: "boring.server",
     manifestPath: join(rootDir, "package.json"),
   })
@@ -120,10 +113,14 @@ function resolveDirServerEntryPath(dir: string): string | null {
  * Returns true when a directory-source package has an importable server entry.
  * Missing package.json, unsafe explicit entries, and declared-but-missing
  * entries still throw — only the legitimate "front/Pi-only package" case
- * (no manifest server and no server convention) returns false.
+ * (no manifest server) returns false.
  */
 export function hasDirServerPlugin(entry: DirPluginEntry): boolean {
-  return resolveDirServerEntryPath(entry.dir) !== null
+  const rootDir = resolve(entry.dir)
+  const pkg = readPluginPackageJson(rootDir)
+  if (!pkg) throw new Error(`boring plugin: no package.json found in ${rootDir}`)
+  if (pkg.boring?.server === undefined || pkg.boring.server === false) return false
+  return resolveDirServerEntryPath(rootDir) !== null
 }
 
 async function resolveDirServerPlugin(
@@ -135,7 +132,7 @@ async function resolveDirServerPlugin(
   if (!serverPath) {
     throw new Error(
       `boring plugin: no server entry resolved for ${dir}\n` +
-        `  set "boring.server" in package.json or add one of: ${SERVER_CONVENTIONS.join(", ")}`,
+        `  set "boring.server" in package.json to a safe relative server entry`,
     )
   }
   const mod = await importServerModule(serverPath, entry.hotReload === true)

@@ -5,7 +5,8 @@ import { SurfaceResolverRegistry } from "../SurfaceResolverRegistry"
 import type { CommandConfig } from "../../types/panel"
 import { bootstrap } from "../bootstrap"
 import { CatalogRegistry } from "../CatalogRegistry"
-import { PluginError } from "../defineFrontPlugin"
+import { PluginError } from "../errors"
+import { definePlugin } from "../frontFactory"
 import type { CatalogConfig } from "../types"
 
 const DummyPanel = () => null
@@ -51,35 +52,30 @@ describe("bootstrap", () => {
   })
 
   it("returns an empty registered list for no plugins or defaults", () => {
-    expect(
-      bootstrap({
-        chatPanel: DummyChatPanel,
-        plugins: [],
-        defaults: [],
-        registries: makeRegistries(),
-      }),
-    ).toEqual({ registered: [] })
+    const result = bootstrap({
+      chatPanel: DummyChatPanel,
+      plugins: [],
+      defaults: [],
+      registries: makeRegistries(),
+    })
+    expect(result.registered).toEqual([])
+    expect(result.plugins).toEqual([])
   })
 
-  it("normalizes plugin outputs into registries", () => {
+  it("captures front factories into registries", () => {
     const registries = makeRegistries()
 
     bootstrap({
       chatPanel: DummyChatPanel,
       plugins: [
-        {
+        definePlugin({
           id: "host",
-          outputs: [
-            { type: "left-tab", id: "files", title: "Files", component: DummyPanel, source: "app" },
-            { type: "command", command: makeCommand({ id: "output-command" }) },
-            { type: "catalog", catalog: makeCatalog({ id: "output-catalog" }) },
-            { type: "provider", id: "runtime", component: DummyPanel },
-            {
-              type: "surface-resolver",
-              resolver: { id: "surface", resolve: () => ({ component: "files" }) },
-            },
-          ],
-        },
+          leftTabs: [{ id: "files", title: "Files", component: DummyPanel, panelId: "files", source: "app" }],
+          commands: [{ id: "output-command", title: "Output Command", run: vi.fn() }],
+          catalogs: [makeCatalog({ id: "output-catalog" })],
+          providers: [{ id: "runtime", component: DummyPanel }],
+          surfaceResolvers: [{ id: "surface", kind: "surface", resolve: () => ({ component: "files" }) }],
+        }),
       ],
       defaults: [],
       registries,
@@ -105,11 +101,11 @@ describe("bootstrap", () => {
     const result = bootstrap({
       chatPanel: DummyChatPanel,
       defaults: [
-        { id: "filesystem", outputs: [{ type: "command", command: makeCommand({ id: "default-command" }) }] },
-        { id: "theme", outputs: [{ type: "command", command: makeCommand({ id: "theme-command" }) }] },
+        definePlugin({ id: "filesystem", commands: [{ id: "default-command", title: "Default", run: vi.fn() }] }),
+        definePlugin({ id: "theme", commands: [{ id: "theme-command", title: "Theme", run: vi.fn() }] }),
       ],
       plugins: [
-        { id: "host", outputs: [{ type: "command", command: makeCommand({ id: "host-command" }) }] },
+        definePlugin({ id: "host", commands: [{ id: "host-command", title: "Host", run: vi.fn() }] }),
       ],
       registries,
     })
@@ -127,8 +123,8 @@ describe("bootstrap", () => {
 
     const result = bootstrap({
       chatPanel: DummyChatPanel,
-      defaults: [{ id: "filesystem", outputs: [{ type: "command", command: makeCommand({ id: "default" }) }] }],
-      plugins: [{ id: "filesystem", outputs: [{ type: "command", command: makeCommand({ id: "host" }) }] }],
+      defaults: [definePlugin({ id: "filesystem", commands: [{ id: "default", title: "Default", run: vi.fn() }] })],
+      plugins: [definePlugin({ id: "filesystem", commands: [{ id: "host", title: "Host", run: vi.fn() }] })],
       excludeDefaults: ["filesystem"],
       registries,
     })
@@ -143,8 +139,8 @@ describe("bootstrap", () => {
     expect(() =>
       bootstrap({
         chatPanel: DummyChatPanel,
-        defaults: [{ id: "filesystem", outputs: [] }],
-        plugins: [{ id: "filesystem", outputs: [] }],
+        defaults: [definePlugin({ id: "filesystem" })],
+        plugins: [definePlugin({ id: "filesystem" })],
         registries: makeRegistries(),
       }),
     ).toThrow(PluginError)
@@ -154,7 +150,7 @@ describe("bootstrap", () => {
     const result = bootstrap({
       chatPanel: DummyChatPanel,
       defaults: [],
-      plugins: [{ id: "host", outputs: [] }],
+      plugins: [definePlugin({ id: "host" })],
       registries: makeRegistries(),
     })
     expect(result).not.toBeInstanceOf(Promise)

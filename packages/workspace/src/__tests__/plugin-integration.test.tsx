@@ -6,7 +6,7 @@ import type { ReactNode } from "react"
 import { WorkspaceProvider } from "../front/provider"
 import { useRegistry, useCommandRegistry, useCatalogRegistry } from "../front/registry"
 import { useCatalogs } from "../front/plugin/useCatalogs"
-import { defineFrontPlugin } from "../shared/plugins/defineFrontPlugin"
+import { definePlugin } from "../shared/plugins/frontFactory"
 const DummyPanel = () => null
 
 if (!Element.prototype.scrollIntoView) {
@@ -51,13 +51,11 @@ afterEach(() => {
 
 describe("WorkspaceProvider — plugin integration", () => {
   it("bootstrap runs once on mount and registers user plugin contributions", () => {
-    const testPlugin = defineFrontPlugin({
+    const testPlugin = definePlugin({
       id: "test-plugin",
       label: "Test",
-      outputs: [
-        { type: "panel", panel: { id: "test-panel", title: "Test", component: DummyPanel, source: "app" } },
-        { type: "command", command: { id: "test-cmd", title: "Test Command", run: vi.fn() } },
-      ],
+      panels: [{ id: "test-panel", label: "Test", component: DummyPanel, source: "app" }],
+      commands: [{ id: "test-cmd", title: "Test Command", run: vi.fn() }],
     })
 
     function Inspector() {
@@ -117,19 +115,16 @@ describe("WorkspaceProvider — plugin integration", () => {
   it("plugin-provided commands appear in CommandPalette and execute", async () => {
     const user = userEvent.setup()
     const run = vi.fn()
-    const plugin = defineFrontPlugin({
+    const plugin = definePlugin({
       id: "plugin-commands",
       label: "Plugin Commands",
-      outputs: [
+      commands: [
         {
-          type: "command",
-          command: {
-            id: "plugin.open-dashboard",
-            title: "Open Plugin Dashboard",
-            keywords: ["plugin-dashboard"],
-            shortcut: "⌘D",
-            run,
-          },
+          id: "plugin.open-dashboard",
+          title: "Open Plugin Dashboard",
+          keywords: ["plugin-dashboard"],
+          shortcut: "⌘D",
+          run,
         },
       ],
     })
@@ -225,11 +220,9 @@ describe("WorkspaceProvider — plugin integration", () => {
   })
 
   it("user plugin alongside defaults does not conflict", () => {
-    const customPlugin = defineFrontPlugin({
+    const customPlugin = definePlugin({
       id: "analytics",
-      outputs: [
-        { type: "panel", panel: { id: "analytics-dashboard", title: "Analytics", component: DummyPanel, source: "app" } },
-      ],
+      panels: [{ id: "analytics-dashboard", label: "Analytics", component: DummyPanel, source: "app" }],
     })
 
     function Inspector() {
@@ -292,9 +285,9 @@ describe("WorkspaceProvider — core panel registration (j9p7.25)", () => {
   })
 
   it("core panels register BEFORE plugin panels (ordering)", () => {
-    const testPlugin = defineFrontPlugin({
+    const testPlugin = definePlugin({
       id: "custom",
-      outputs: [{ type: "panel", panel: { id: "custom-panel", title: "Custom", component: DummyPanel, source: "app" } }],
+      panels: [{ id: "custom-panel", label: "Custom", component: DummyPanel, source: "app" }],
     })
 
     function Inspector() {
@@ -316,9 +309,9 @@ describe("WorkspaceProvider — core panel registration (j9p7.25)", () => {
   })
 
   it("core panels + filesystem defaults + user plugin all coexist", () => {
-    const testPlugin = defineFrontPlugin({
+    const testPlugin = definePlugin({
       id: "test",
-      outputs: [{ type: "panel", panel: { id: "test-panel", title: "Test", component: DummyPanel, source: "app" } }],
+      panels: [{ id: "test-panel", label: "Test", component: DummyPanel, source: "app" }],
     })
 
     function Inspector() {
@@ -332,7 +325,7 @@ describe("WorkspaceProvider — core panel registration (j9p7.25)", () => {
       </WorkspaceProvider>,
     )
 
-    // 4 core + 8 filesystem outputs/panels + 1 test = 13
+    // 4 core + 8 filesystem panels/left-tab + 1 test = 13
     expect(screen.getByTestId("count").textContent).toBe("13")
   })
 })

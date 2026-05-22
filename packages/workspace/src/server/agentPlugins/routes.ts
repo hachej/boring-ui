@@ -83,10 +83,7 @@ export async function boringPluginRoutes(app: FastifyInstance, opts: BoringPlugi
   }
 
   const listPlugins = async () => manager.list()
-  // Canonical versioned route. Keep the unversioned path as a compatibility
-  // alias for older clients/tests, but all new callers should use /api/v1.
   app.get("/api/v1/agent-plugins", listPlugins)
-  app.get("/api/agent-plugins", listPlugins)
 
   const getPluginError = async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
     const error = manager.getError(request.params.id)
@@ -94,7 +91,6 @@ export async function boringPluginRoutes(app: FastifyInstance, opts: BoringPlugi
     return reply.type("text/plain").send(error)
   }
   app.get<{ Params: { id: string } }>("/api/v1/agent-plugins/:id/error", getPluginError)
-  app.get<{ Params: { id: string } }>("/api/agent-plugins/:id/error", getPluginError)
 
   app.get("/api/v1/agent-plugins/events", async (request, reply) => {
     reply.hijack()

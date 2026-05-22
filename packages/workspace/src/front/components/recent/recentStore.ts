@@ -1,6 +1,5 @@
 import type { RecentEntry } from "./types"
 import type { CatalogRow } from "../../../shared/plugins/types"
-import { migrateRecent } from "./migrate"
 
 const STORAGE_KEY = "boring-ui-v2:command-palette:recent"
 const MAX_ENTRIES = 50
@@ -11,12 +10,6 @@ export function loadRecent(): RecentEntry[] {
     if (!raw) return []
     const parsed: unknown = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
-    const hasLegacy = parsed.some((e) => typeof e === "string")
-    if (hasLegacy) {
-      const migrated = migrateRecent(parsed).filter(isValidEntry).slice(0, MAX_ENTRIES)
-      saveRecent(migrated)
-      return migrated
-    }
     return parsed.filter(isValidEntry).slice(0, MAX_ENTRIES)
   } catch {
     return []

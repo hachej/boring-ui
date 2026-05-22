@@ -460,6 +460,30 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     }
   })
 
+  test("app package boring.defaultPluginPackages throws when declared server entry is missing", async () => {
+    const appRoot = await makeTempDir("boring-app-default-package-missing-server-")
+    const pluginRoot = join(appRoot, "plugins", "bad")
+    await mkdir(join(pluginRoot, "front"), { recursive: true })
+    await writeFile(join(pluginRoot, "front", "index.tsx"), "export default function Bad() { return null }\n", "utf8")
+    await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
+      name: "bad",
+      version: "1.0.0",
+      boring: { front: "front/index.tsx", server: "server/missing.ts" },
+    }), "utf8")
+    const appPackageJsonPath = join(appRoot, "package.json")
+    await writeFile(appPackageJsonPath, JSON.stringify({
+      name: "temp-app",
+      boring: { defaultPluginPackages: ["./plugins/bad"] },
+    }), "utf8")
+
+    await expect(createWorkspaceAgentServer({
+      workspaceRoot: appRoot,
+      appPackageJsonPath,
+      logger: false,
+      provisionWorkspace: false,
+    })).rejects.toThrow(/declared but not found/)
+  })
+
 })
 
 describe("directory-source plugin entries", () => {
@@ -478,10 +502,7 @@ describe("directory-source plugin entries", () => {
          }`
       : `export default { id: "dir-object", systemPrompt: "OBJECT_PROMPT" }`
     await writeFile(join(opts.dir, serverRel), body, "utf8")
-    const pkg: Record<string, unknown> = { name: "test-plugin" }
-    if (opts.serverEntry && opts.serverEntry !== "src/server/index.ts") {
-      pkg.boring = { server: opts.serverEntry }
-    }
+    const pkg: Record<string, unknown> = { name: "test-plugin", boring: { server: serverRel } }
     await writeFile(join(opts.dir, "package.json"), JSON.stringify(pkg), "utf8")
   }
 
@@ -531,7 +552,7 @@ describe("directory-source plugin entries", () => {
        }`,
       "utf8",
     )
-    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "async-plugin" }), "utf8")
+    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "async-plugin", boring: { server: "src/server/index.ts" } }), "utf8")
 
     await createWorkspaceAgentServer({
       workspaceRoot: "/tmp/phase1-async-host",
@@ -593,7 +614,7 @@ describe("beforeReload triggers directory-source re-resolve", () => {
       "export default { id: 'p5', systemPrompt: 'V1' }",
       "utf8",
     )
-    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "p5" }), "utf8")
+    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "p5", boring: { server: "src/server/index.ts" } }), "utf8")
 
     const app = await createWorkspaceAgentServer({
       workspaceRoot: await makeTempDir("phase5-host-"),
@@ -629,7 +650,7 @@ describe("beforeReload triggers directory-source re-resolve", () => {
       "export default { id: 'diagnostic-plugin', systemPrompt: 'OK' }",
       "utf8",
     )
-    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "diagnostic-plugin" }), "utf8")
+    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "diagnostic-plugin", boring: { server: "src/server/index.ts" } }), "utf8")
 
     await createWorkspaceAgentServer({
       workspaceRoot: await makeTempDir("phase5-diagnostics-host-"),
@@ -663,7 +684,7 @@ describe("beforeReload triggers directory-source re-resolve", () => {
       "export default { id: 'good', systemPrompt: 'OK' }",
       "utf8",
     )
-    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "p" }), "utf8")
+    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "p", boring: { server: "src/server/index.ts" } }), "utf8")
 
     await createWorkspaceAgentServer({
       workspaceRoot: await makeTempDir("phase5-bad-host-"),

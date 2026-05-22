@@ -2,8 +2,8 @@ import { createElement, useEffect } from "react"
 import { FolderTree } from "lucide-react"
 import "./events"
 import {
-  boringFrontFactoryToPlugin,
-  type BoringFrontFactory,
+  definePlugin,
+  type BoringFrontSetup,
 } from "../../../shared/plugins/frontFactory"
 import { postUiCommand } from "../../../front/bridge"
 import { useDataClient, useFileList } from "./data"
@@ -102,7 +102,7 @@ function FilesystemCatalogBinding() {
   return null
 }
 
-const filesystemFront: BoringFrontFactory = (api) => {
+const filesystemFront: BoringFrontSetup = (api) => {
   api.registerProvider({
     id: "filesystem-data",
     component: FilesystemDataProvider,
@@ -192,10 +192,8 @@ const filesystemFront: BoringFrontFactory = (api) => {
 
 export default filesystemFront
 
-export function createFilesystemPlugin() {
-  return boringFrontFactoryToPlugin(FILESYSTEM_PLUGIN_ID, filesystemFront, {
-    label: "Filesystem",
-  })
-}
-
-export const filesystemPlugin = createFilesystemPlugin()
+export const filesystemPlugin = definePlugin({
+  id: FILESYSTEM_PLUGIN_ID,
+  label: "Filesystem",
+  setup: filesystemFront,
+})

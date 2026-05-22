@@ -30,14 +30,10 @@ export interface WorkspaceServerPlugin {
   preservedUiStateKeys?: string[]
 }
 
-export class ServerPluginError extends Error {
-  constructor(message: string) {
-    super(message)
-  }
-}
+
 
 function fail(pluginId: string, message: string): never {
-  throw new ServerPluginError(`server plugin "${pluginId}": ${message}`)
+  throw new Error(`server plugin "${pluginId}": ${message}`)
 }
 
 function isUrl(value: unknown): value is URL {
@@ -231,5 +227,5 @@ export function validateServerPlugin(plugin: WorkspaceServerPlugin): void {
 
 export function defineServerPlugin<T extends WorkspaceServerPlugin>(plugin: T): T {
   validateServerPlugin(plugin)
-  return Object.assign({}, plugin)
+  return { ...plugin }
 }

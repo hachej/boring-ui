@@ -13,7 +13,7 @@ import {
   type PiExtensionFactory,
 } from "@hachej/boring-agent/server"
 import type { FastifyInstance } from "fastify"
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
@@ -70,9 +70,9 @@ export interface WorkspaceAgentServerPluginContext {
  * Single install entry type. Accepts:
  *  - `WorkspaceServerPlugin` — pre-built plugin object.
  *  - `{ dir, options?, hotReload? }` — directory-source plugin resolved
- *     via package.json#boring.server (manifest first; convention fallback is
- *     compatibility-only; declared-but-missing throws). hotReload uses jiti for
- *     diagnostic re-imports, while route/tool registration is still boot-time.
+ *     via explicit package.json#boring.server. Declared-but-missing throws.
+ *     hotReload uses jiti for diagnostic re-imports, while route/tool
+ *     registration is still boot-time.
  */
 export type WorkspacePluginEntry = WorkspaceServerPlugin | DirPluginEntry
 
@@ -144,27 +144,7 @@ function boringPiRootVisibleToAgentTools(workspaceRoot: string, resolvedMode: st
   return join(workspaceRoot, "node_modules", "@hachej", "boring-pi")
 }
 
-function ensureBoringUiCliShim(workspaceRoot: string): boolean {
-  const workspaceCliBin = join(
-    workspaceRoot,
-    "node_modules",
-    "@hachej",
-    "boring-ui-cli",
-    "dist",
-    "index.js",
-  )
-  if (!existsSync(workspaceCliBin)) return false
-  const shimDir = join(workspaceRoot, ".boring-agent", "bin")
-  mkdirSync(shimDir, { recursive: true })
-  const shimPath = join(shimDir, "boring-ui")
-  writeFileSync(
-    shimPath,
-    `#!/usr/bin/env bash\nset -euo pipefail\nSCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"\nWORKSPACE_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"\nexport BORING_AGENT_WORKSPACE_ROOT="$WORKSPACE_ROOT"\nexec node "$WORKSPACE_ROOT/node_modules/@hachej/boring-ui-cli/dist/index.js" "$@"\n`,
-    "utf8",
-  )
-  chmodSync(shimPath, 0o755)
-  return true
-}
+
 
 function resolveWorkspacePackageRoot(): string {
   const candidates = [
@@ -418,7 +398,12 @@ export function readWorkspacePluginPackagePiSnapshot(pluginDirs: string[]): Work
       extensionPaths: scan.plugins.flatMap((plugin) => plugin.extensionPaths ?? []),
       ...(systemPromptAppend ? { systemPromptAppend } : {}),
     }
-  } catch {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.warn(
+      '[boring-workspace] readWorkspacePluginPackagePiSnapshot failed — falling back to empty Pi snapshot:',
+      message,
+    )
     return emptyPackageJsonPiSnapshot()
   }
 }
@@ -483,8 +468,6 @@ export async function createWorkspaceAgentServer(
       force: opts.workspaceProvisioning?.force,
     })
   }
-  const boringUiCliShimAvailable = ensureBoringUiCliShim(workspaceRoot)
-
   // Static Pi resources known at boot: workspace skill dir,
   // factory-supplied values, and the bundled @hachej/boring-pi skill
   // package. When pluginHotReload is disabled, package.json#pi from
@@ -563,9 +546,8 @@ export async function createWorkspaceAgentServer(
       // published version, which lags the locally-installed CLI when
       // the agent is iterating in a monorepo. Keep the bin name short.
       buildBoringSystemPrompt({
-        ...(boringUiCliShimAvailable
-          ? { scaffoldCommand: "boring-ui scaffold-plugin", verifyCommand: "boring-ui verify-plugin" }
-          : {}),
+        scaffoldCommand: "boring-ui scaffold-plugin",
+        verifyCommand: "boring-ui verify-plugin",
         boringPiRootOverride: boringPiRootVisibleToAgentTools(
           workspaceRoot,
           resolvedMode,

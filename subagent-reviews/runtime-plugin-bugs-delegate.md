@@ -1,0 +1,18 @@
+# Runtime/plugin bug-risk review
+
+## Findings
+
+1. **File search can be swamped by generated dirs because it never prunes.**
+   `packages/agent/src/server/runtime/createServerFileSearch.ts:68-73` builds `find . -maxdepth 10 <glob> -type f | head -n N` with no `-prune` for `node_modules`, `.git`, `dist`, etc. Repro: create 500+ matching `node_modules/**/*.ts` files and one `src/App.ts`; `/api/v1/files/search?q=*.ts&limit=20` can return only dependency files because `head` truncates before app files. Recommended fix/test: add a prune expression before the match, e.g. `\( -path './node_modules' -o -path './.git' -o ... \) -prune -o ... -type f -print`, and add a unit/integration test asserting app files are returned despite many pruned matches.
+
+2. **Valid workspace filenames containing `..` are rejected by front routing.**
+   Server-side `exec_ui` path syntax only rejects `..` as a path segment (`packages/workspace/src/server/ui-control/tools/uiTools.ts:80-89`), but browser validation rejects any substring (`packages/workspace/src/front/bridge/validation.ts:10-15`) and surface routing does the same (`packages/workspace/src/front/chrome/artifact-surface/surfaceShellHelpers.ts:16-23`). Repro: create `..notes.md`; server validation accepts it, but an `openFile` UI command or surface open fails as “path traversal not allowed.” Recommended fix/test: normalize separators and reject only segments equal to `..` plus absolute/null-byte cases; add tests for `..notes.md` accepted and `a/../b` rejected in both bridge validation and `normalizeWorkbenchPath`.
+
+3. **Ask-user waiter can race timeout/abort against answer/cancel persistence.**
+   `plugins/ask-user/src/server/askUserRuntime.ts:146-153` checks `hasWaiter()`, awaits `store.answer()`, then calls `resolveAnswered()` and ignores `false`; `cancelQuestion` mirrors this at `160-166`. Meanwhile timeout/abort removes the waiter and cancels store at `190-203`. Repro with a fake store whose `answer()` waits longer than a short timeout: submit sees a waiter, timeout settles the tool as `timeout`, then submit may still persist `answered` and append an answered transcript while no waiter is resolved. Recommended fix/test: make resolution and state transition atomic from the runtime perspective (e.g. resolve waiter first with a reservation/settle token, or re-check/abort if `resolveAnswered` fails and avoid writing answered); add delayed-store race tests for submit-vs-timeout and cancel-vs-timeout.
+
+4. **Runtime template provisioning can write outside the workspace.**
+   `packages/agent/src/server/workspace/provisionRuntime.ts:156-164` copies each `template.path` to `resolve(workspaceRoot, template.target ?? '.')` without checking containment. A plugin provisioning contribution with `target: '../outside'` or an absolute target can seed files outside the intended workspace. Recommended fix/test: validate template targets as safe relative paths and assert `relative(workspaceRoot, resolvedTarget)` is not outside/absolute before `cp`; add tests rejecting `..` and absolute targets.
+
+5. **`verify-plugin` does not verify declared `pi.skills` files.**
+   The CLI verifies `boring.front`, `boring.server`, and `pi.extensions` existence/containment (`packages/cli/src/server/verifyPlugin.ts:170-223`) but never walks `manifest.pi.skills`. Repro: a plugin with `pi.skills: ["skills/missing/SKILL.md"]` reports OK, then the real reload/Pi resource load is left to fail later or silently omit the skill. Recommended fix/test: mirror the `pi.extensions` loop for `pi.skills`, using `resolveExistingContainedPath`; add a missing-skill and symlink-escape test in `packages/cli/src/__tests__/verifyPlugin.test.ts`.

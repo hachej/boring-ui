@@ -199,15 +199,10 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
  * panel rendering the pending question form, and (3) a surface
  * resolver mapping ASK_USER_SURFACE_KIND requests into the panel.
  *
- * Pass directly to `WorkspaceProvider.plugins` — the shell auto-wraps
- * `BoringFrontFactoryWithId` entries via `toWorkspacePlugin`.
+ * Pass directly to `WorkspaceProvider.plugins`.
  *
- * Legacy `outputs[]` had a fourth entry — a `command` dispatching
- * `boring:ask-user-open` via window.dispatchEvent — but nothing
- * listens for that event anywhere in the workspace, so the
- * imperative migration drops it. The panel is opened via the surface
- * resolver (kind: ASK_USER_SURFACE_KIND) which is how the server-side
- * agent tool already triggers it.
+ * The panel is opened via the surface resolver (kind: ASK_USER_SURFACE_KIND),
+ * which is how the server-side agent tool triggers it.
  */
 export const askUserPlugin: BoringFrontFactoryWithId = definePlugin({
   id: ASK_USER_PLUGIN_ID,

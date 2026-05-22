@@ -100,7 +100,6 @@ function createExecuteIsolatedCodeTool(sandbox: Sandbox): AgentTool {
         image: { type: 'string' },
         packages: { type: 'array', items: { type: 'string' } },
         sandboxId: { type: 'string' },
-        vmSize: { type: 'string', enum: ['xxs', 'xs', 's', 'm', 'l'] },
       },
       required: ['code', 'language'],
       additionalProperties: false,
@@ -131,11 +130,6 @@ function createExecuteIsolatedCodeTool(sandbox: Sandbox): AgentTool {
             ? input.packages.filter((v): v is string => typeof v === 'string')
             : undefined,
           sandboxId: typeof input.sandboxId === 'string' ? input.sandboxId : undefined,
-          vmSize:
-            input.vmSize === 'xxs' || input.vmSize === 'xs' || input.vmSize === 's' ||
-            input.vmSize === 'm' || input.vmSize === 'l'
-              ? input.vmSize
-              : undefined,
         })
         return {
           content: [{ type: 'text', text: JSON.stringify(result) }],

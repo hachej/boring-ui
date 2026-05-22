@@ -120,6 +120,8 @@ function validateStringArray(
   })
 }
 
+const REMOVED_BORING_UI_FIELDS = ["outputs", "panels", "commands", "leftTabs", "surfaceResolvers", "providers", "bindings", "catalogs"] as const
+
 function validateBoringField(
   issues: BoringPluginManifestIssue[],
   boring: unknown,
@@ -128,6 +130,15 @@ function validateBoringField(
   if (!isRecord(boring)) {
     issues.push(issue("INVALID_FIELD", "boring", "boring must be an object when provided"))
     return undefined
+  }
+  for (const field of REMOVED_BORING_UI_FIELDS) {
+    if (boring[field] !== undefined) {
+      issues.push(issue(
+        "INVALID_FIELD",
+        `boring.${field}`,
+        `boring.${field} is not supported; declare front contributions in boring.front via definePlugin({ ... })`,
+      ))
+    }
   }
   if (boring.id !== undefined) {
     issues.push(issue("INVALID_FIELD", "boring.id", "boring.id is not supported; package discovery identity comes from package.json#name"))

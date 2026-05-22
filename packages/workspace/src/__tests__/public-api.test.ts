@@ -97,7 +97,9 @@ describe("@hachej/boring-workspace public API", () => {
       expect("WorkspaceFrontPlugin" in api).toBe(false)
       const pluginApi = await import("../plugin")
       expect(pluginApi.definePlugin).toBeDefined()
-      expect(pluginApi.toWorkspacePlugin).toBeDefined()
+      expect(pluginApi.createCapturingBoringFrontAPI).toBeDefined()
+      expect("toWorkspacePlugin" in pluginApi).toBe(false)
+      expect("WorkspaceFrontPluginInput" in pluginApi).toBe(false)
     })
 
     it("exports getFileIcon utility", () => {
