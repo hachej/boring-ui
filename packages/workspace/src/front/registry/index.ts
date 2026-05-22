@@ -1,6 +1,4 @@
 export { PanelRegistry } from "./PanelRegistry"
-export { CommandRegistry } from "./CommandRegistry"
-export { SurfaceResolverRegistry } from "./SurfaceResolverRegistry"
 export {
   RegistryProvider,
   useRegistry,

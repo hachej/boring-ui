@@ -1,7 +1,7 @@
-export { composePlugins } from "./composePlugins"
-export type { ComposePluginsOptions } from "./composePlugins"
-export { defineFrontPlugin, PluginError } from "./defineFrontPlugin"
-export type { PluginErrorKind, WorkspaceFrontPlugin } from "./defineFrontPlugin"
+// Public front plugin authors should use `definePlugin({ ... })` from
+// "@hachej/boring-workspace/plugin".
+export { PluginError } from "./errors"
+export type { PluginErrorKind } from "./errors"
 export type {
   PluginBinding,
   CatalogAdapter,
@@ -14,31 +14,25 @@ export type {
   CatalogRow,
   CatalogSearchArgs,
   CatalogSearchResult,
-  PluginOutput,
-  LeftTabOutput,
   LeftTabParams,
   LeftTabComponent,
-  PanelOutput,
-  CommandOutput,
-  CatalogOutput,
-  BindingOutput,
-  ProviderOutput,
-  SurfaceResolverOutput,
   PluginProvider,
   PluginProviderProps,
   AgentTool,
   JSONSchema,
   ToolExecContext,
   ToolResult,
-  AgentToolOutput,
 } from "./types"
 export { bootstrap } from "./bootstrap"
 export type {
   BootstrapOptions,
   BootstrapResult,
-  AgentToolRegistry,
   PanelRegistryLike,
   CommandRegistryLike,
   CatalogRegistryLike,
   SurfaceResolverRegistryLike,
 } from "./bootstrap"
+
+// frontFactory and manifest exports live on the "@hachej/boring-workspace/plugin"
+// subpath. Internal callers import them directly from ./frontFactory or
+// ./manifest — no barrel re-export needed here.

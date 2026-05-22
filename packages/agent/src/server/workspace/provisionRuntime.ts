@@ -1,13 +1,13 @@
 import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
 import { access, chmod, cp, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
-const PROVISIONING_VERSION = 1
+const PROVISIONING_VERSION = 2
 
 export interface RuntimeTemplateContribution {
   id: string
@@ -25,9 +25,18 @@ export interface RuntimePythonSpec {
   env?: Record<string, string | URL>
 }
 
+export interface RuntimeNodePackageSpec {
+  id: string
+  /** Package name materialized under workspaceRoot/node_modules, e.g. @boring/workspace. */
+  packageName: string
+  /** Source package root. The provisioner copies the built package payload into node_modules. */
+  packageRoot: string | URL
+}
+
 export interface RuntimeProvisioningContribution {
   templateDirs?: RuntimeTemplateContribution[]
   python?: RuntimePythonSpec[]
+  nodePackages?: RuntimeNodePackageSpec[]
 }
 
 export interface ProvisionRuntimeWorkspaceOptions {
@@ -108,6 +117,26 @@ async function fingerprint(contributions: Array<{ id: string; provisioning: Runt
       hash.update(JSON.stringify(Object.fromEntries(Object.entries(spec.env ?? {}).map(([k, v]) => [k, String(v)]))))
       if (await exists(projectFile)) await hashPath(dirname(projectFile), hash)
     }
+    for (const spec of provisioning.nodePackages ?? []) {
+      const packageRoot = toPath(spec.packageRoot)
+      hash.update(`node-package:${spec.id}:${spec.packageName}:${packageRoot}\n`)
+      const packageJson = join(packageRoot, 'package.json')
+      const distDir = join(packageRoot, 'dist')
+      const docsDir = join(packageRoot, 'docs')
+      const skillsDir = join(packageRoot, 'skills')
+      const referencesDir = join(packageRoot, 'references')
+      const sourceDocsDir = join(packageRoot, 'src', 'server', 'docs')
+      if (await exists(packageJson)) await hashPath(packageJson, hash)
+      if (await exists(distDir)) await hashPath(distDir, hash)
+      const templatesDir = join(packageRoot, 'templates')
+      const publicDir = join(packageRoot, 'public')
+      if (await exists(templatesDir)) await hashPath(templatesDir, hash)
+      if (await exists(publicDir)) await hashPath(publicDir, hash)
+      if (await exists(docsDir)) await hashPath(docsDir, hash)
+      if (await exists(skillsDir)) await hashPath(skillsDir, hash)
+      if (await exists(referencesDir)) await hashPath(referencesDir, hash)
+      else if (!(await exists(distDir)) && await exists(sourceDocsDir)) await hashPath(sourceDocsDir, hash)
+    }
   }
   return `sha256:${hash.digest('hex')}`
 }
@@ -124,15 +153,87 @@ function collectEnv(contributions: Array<{ provisioning: RuntimeProvisioningCont
   return env
 }
 
+function resolveTemplateTarget(workspaceRoot: string, target: string | undefined): string {
+  const rawTarget = target ?? '.'
+  if (
+    rawTarget.length === 0 ||
+    rawTarget.includes('\0') ||
+    rawTarget.includes('\\') ||
+    rawTarget.startsWith('/') ||
+    rawTarget.startsWith('//') ||
+    /^[A-Za-z]:[\\/]/.test(rawTarget) ||
+    rawTarget.split('/').includes('..')
+  ) {
+    throw new Error(`Unsafe runtime template target: ${JSON.stringify(rawTarget)}. Template targets must be relative paths inside the workspace.`)
+  }
+  const root = resolve(workspaceRoot)
+  const resolved = resolve(root, rawTarget)
+  const rel = relative(root, resolved)
+  if (rel.startsWith('..') || isAbsolute(rel)) {
+    throw new Error(`Unsafe runtime template target: ${JSON.stringify(rawTarget)} resolves outside the workspace.`)
+  }
+  return resolved
+}
+
 async function seedTemplates(workspaceRoot: string, contributions: Array<{ provisioning: RuntimeProvisioningContribution }>): Promise<void> {
   for (const { provisioning } of contributions) {
     for (const template of provisioning.templateDirs ?? []) {
-      await cp(toPath(template.path), resolve(workspaceRoot, template.target ?? '.'), {
+      await cp(toPath(template.path), resolveTemplateTarget(workspaceRoot, template.target), {
         recursive: true,
         force: false,
         errorOnExist: false,
       })
     }
+  }
+}
+
+function nodePackageTarget(workspaceRoot: string, packageName: string): string {
+  const parts = packageName.split('/').filter(Boolean)
+  if (parts.length === 0 || parts.some((part) => part === '.' || part === '..')) {
+    throw new Error(`Invalid node package name: ${packageName}`)
+  }
+  return join(workspaceRoot, 'node_modules', ...parts)
+}
+
+async function copyIfExists(source: string, target: string): Promise<boolean> {
+  if (!(await exists(source))) return false
+  await cp(source, target, {
+    recursive: true,
+    force: true,
+    errorOnExist: false,
+  })
+  return true
+}
+
+async function ensureNodePackages(workspaceRoot: string, specs: RuntimeNodePackageSpec[]): Promise<void> {
+  for (const spec of specs) {
+    const packageRoot = toPath(spec.packageRoot)
+    const target = nodePackageTarget(workspaceRoot, spec.packageName)
+    await mkdir(target, { recursive: true })
+
+    const copiedPackageJson = await copyIfExists(join(packageRoot, 'package.json'), join(target, 'package.json'))
+    if (!copiedPackageJson) {
+      throw new Error(`Node package provisioning source is missing package.json: ${packageRoot}`)
+    }
+
+    await copyIfExists(join(packageRoot, 'dist'), join(target, 'dist'))
+    await copyIfExists(join(packageRoot, 'templates'), join(target, 'templates'))
+    await copyIfExists(join(packageRoot, 'public'), join(target, 'public'))
+    // Source-tree/dev fallback: make the canonical docs readable from the
+    // same package path the system prompt points to, even before a package
+    // build has created dist/docs. Also patches old dist directories that
+    // predate the docs asset copy step.
+    if (!(await exists(join(target, 'dist', 'docs', 'plugins.md')))) {
+      await copyIfExists(join(packageRoot, 'src', 'server', 'docs'), join(target, 'dist', 'docs'))
+    }
+    // Pi package skills use package-relative docs/ paths, matching npm
+    // installs. Materialize root docs in provisioned child workspaces too.
+    if (!(await copyIfExists(join(packageRoot, 'docs'), join(target, 'docs')))) {
+      await copyIfExists(join(packageRoot, 'src', 'server', 'docs'), join(target, 'docs'))
+    }
+    await copyIfExists(join(packageRoot, 'skills'), join(target, 'skills'))
+    await copyIfExists(join(packageRoot, 'references'), join(target, 'references'))
+    await copyIfExists(join(packageRoot, 'src', 'globals.css'), join(target, 'src', 'globals.css'))
   }
 }
 
@@ -180,6 +281,11 @@ async function isRuntimeMaterialized(
 ): Promise<boolean> {
   const hasPython = contributions.some(({ provisioning }) => (provisioning.python ?? []).length > 0)
   if (hasPython && !(await exists(join(workspaceRoot, '.venv', 'bin', 'python')))) return false
+  for (const { provisioning } of contributions) {
+    for (const spec of provisioning.nodePackages ?? []) {
+      if (!(await exists(join(nodePackageTarget(workspaceRoot, spec.packageName), 'package.json')))) return false
+    }
+  }
   return true
 }
 
@@ -252,6 +358,7 @@ export async function provisionRuntimeWorkspace({
   }
 
   await seedTemplates(workspaceRoot, active)
+  await ensureNodePackages(workspaceRoot, active.flatMap(({ provisioning }) => provisioning.nodePackages ?? []))
   await ensurePython(workspaceRoot, active.flatMap(({ provisioning }) => provisioning.python ?? []))
   const actualBinDir = await writeShims(workspaceRoot, env)
   await mkdir(dirname(markerPath), { recursive: true })

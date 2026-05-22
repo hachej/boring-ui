@@ -17,4 +17,23 @@ export const builtinCommands: SlashCommand[] = [
       return 'Session reset.'
     },
   },
+  {
+    name: 'reload',
+    description: 'Reload agent plugins',
+    handler(_, ctx) {
+      // Use the banner status UX when the host has wired pluginUpdate;
+      // otherwise fall back to printing the result inline in chat.
+      if (ctx.pluginUpdate) return ctx.pluginUpdate.run()
+      return ctx.reloadAgentPlugins()
+    },
+  },
+  {
+    name: 'help',
+    description: 'Show available commands',
+    handler(_, ctx) {
+      const cmds = ctx.listCommands()
+      if (cmds.length === 0) return 'No commands available.'
+      return cmds.map((c) => `/${c.name} — ${c.description}`).join('\n')
+    },
+  },
 ]

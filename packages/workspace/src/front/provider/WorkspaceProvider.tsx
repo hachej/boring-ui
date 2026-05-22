@@ -11,10 +11,10 @@ import {
   type ReactNode,
 } from "react"
 import { PanelRegistry } from "../registry/PanelRegistry"
-import { CommandRegistry } from "../registry/CommandRegistry"
-import { SurfaceResolverRegistry } from "../registry/SurfaceResolverRegistry"
+import { CommandRegistry } from "../../shared/plugins/CommandRegistry"
+import { SurfaceResolverRegistry } from "../../shared/plugins/SurfaceResolverRegistry"
 import { RegistryProvider, useCatalogRegistry, useCommandRegistry } from "../registry/RegistryProvider"
-import { CatalogRegistry } from "../plugin/CatalogRegistry"
+import { CatalogRegistry } from "../../shared/plugins/CatalogRegistry"
 import { PluginErrorProvider } from "../plugin/PluginErrorContext"
 import { PluginInspector } from "../plugin/PluginInspector"
 import { createWorkspaceStore } from "../store"
@@ -29,20 +29,33 @@ import { bootstrap } from "../../shared/plugins/bootstrap"
 import { filesystemPlugin } from "../../plugins/filesystemPlugin/front"
 import { coreWorkspacePanels } from "../registry/coreRegistrations"
 import type {
-  BindingOutput,
-  ProviderOutput,
+  PluginBinding,
+  PluginProvider,
 } from "../../shared/plugins/types"
-import type { WorkspaceFrontPlugin } from "../../shared/plugins/defineFrontPlugin"
+import type { BoringFrontFactoryWithId, CapturedFrontPlugin } from "../../shared/plugins/frontFactory"
 import type { CommandConfig, PanelConfig } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugins/types"
 import type { WorkspaceChatPanelComponent, WorkspaceChatPanelProps } from "../chrome/chat/types"
 import { WorkspaceAttentionProvider } from "../attention"
+import { useAgentPluginHotReload } from "../agentPlugins/registerAgentPlugin"
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 function NullChatPanel(_props: WorkspaceChatPanelProps) {
+  return null
+}
+
+export type FrontPluginHotReloadMode = "vite" | false
+
+function AgentPluginHotReloadBridge(props: { apiBaseUrl: string; workspaceId?: string; mode: FrontPluginHotReloadMode; authHeaders?: Record<string, string> }) {
+  useAgentPluginHotReload({
+    apiBaseUrl: props.apiBaseUrl,
+    workspaceId: props.workspaceId,
+    authHeaders: props.authHeaders,
+    enabled: props.mode === "vite",
+  })
   return null
 }
 
@@ -142,12 +155,12 @@ export function useWorkspaceBridge(): WorkspaceBridgeContextValue {
 export interface RegisteredPluginMeta {
   id: string
   label?: string
-  systemPrompt?: string
 }
 
 export interface WorkspaceContextValue {
   chatPanel: WorkspaceChatPanelComponent | null
   registeredPlugins: RegisteredPluginMeta[]
+  debug: boolean
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null)
@@ -257,24 +270,15 @@ function WorkspaceCatalogBindings({
   return null
 }
 
-function WorkspacePluginBindings({ plugins }: { plugins: WorkspaceFrontPlugin[] }) {
+function WorkspacePluginBindings({ plugins }: { plugins: CapturedFrontPlugin[] }) {
   return (
     <>
-      {plugins.map((plugin) => {
-        const outputBindings =
-          plugin.outputs?.filter(
-            (output): output is BindingOutput => output.type === "binding",
-          ) ?? []
-        return [
-          ...(plugin.bindings ?? []).map((Binding, index) => (
-            <Binding key={`${plugin.id}:binding:${index}`} />
-          )),
-          ...outputBindings.map((output) => {
-            const Binding = output.component
-            return <Binding key={`${plugin.id}:output:${output.id}`} />
-          }),
-        ]
-      })}
+      {plugins.flatMap((plugin) =>
+        plugin.registrations.bindings.map((binding) => {
+          const Binding = binding.component as PluginBinding
+          return <Binding key={`${plugin.id}:${binding.id}`} />
+        }),
+      )}
     </>
   )
 }
@@ -287,7 +291,7 @@ function WorkspacePluginProviders({
   apiTimeout,
   children,
 }: {
-  plugins: WorkspaceFrontPlugin[]
+  plugins: CapturedFrontPlugin[]
   apiBaseUrl: string
   authHeaders?: Record<string, string>
   onAuthError?: (statusCode: number) => void
@@ -295,16 +299,14 @@ function WorkspacePluginProviders({
   children: ReactNode
 }) {
   const providers = plugins.flatMap((plugin) =>
-    plugin.outputs
-      ?.filter((output): output is ProviderOutput => output.type === "provider")
-      .map((output) => ({ plugin, output })) ?? [],
+    plugin.registrations.providers.map((provider) => ({ plugin, provider })),
   )
 
-  return providers.reduceRight<ReactNode>((acc, { plugin, output }) => {
-    const Provider = output.component
+  return providers.reduceRight<ReactNode>((acc, { plugin, provider }) => {
+    const Provider = provider.component as PluginProvider
     return (
       <Provider
-        key={`${plugin.id}:provider:${output.id}`}
+        key={`${plugin.id}:provider:${provider.id}`}
         apiBaseUrl={apiBaseUrl}
         authHeaders={authHeaders}
         onAuthError={onAuthError}
@@ -336,7 +338,11 @@ function WorkspaceOpenFileBinding({ onOpenFile }: { onOpenFile?: (path: string) 
 export interface WorkspaceProviderProps {
   children: ReactNode
   chatPanel?: WorkspaceChatPanelComponent
-  plugins?: WorkspaceFrontPlugin[]
+  /**
+   * Front plugin entries produced by `definePlugin({ id, ... })` from
+   * `@hachej/boring-workspace/plugin`.
+   */
+  plugins?: BoringFrontFactoryWithId[]
   excludeDefaults?: string[]
   panels?: PanelConfig[]
   commands?: CommandConfig[]
@@ -354,6 +360,14 @@ export interface WorkspaceProviderProps {
   bridgeEndpoint?: string | null
   onAuthError?: (statusCode: number) => void
   onOpenFile?: (path: string) => void
+  debug?: boolean
+  /**
+   * Hot-load dynamically discovered front plugin modules. The current
+   * implementation relies on Vite's /@fs transform endpoint, so it defaults to
+   * dev-only. Production hosts should keep this false until they provide their
+   * own module asset endpoint.
+   */
+  frontPluginHotReload?: FrontPluginHotReloadMode
 }
 
 // ---------------------------------------------------------------------------
@@ -380,6 +394,8 @@ export function WorkspaceProvider({
   bridgeEndpoint,
   onAuthError,
   onOpenFile,
+  debug = false,
+  frontPluginHotReload = (typeof import.meta !== 'undefined' && import.meta.env?.DEV) ? 'vite' as const : false,
 }: WorkspaceProviderProps) {
   const storeRef = useRef<ReturnType<typeof createWorkspaceStore> | null>(null)
   if (!storeRef.current) {
@@ -458,14 +474,14 @@ export function WorkspaceProvider({
     }
 
     const excludedDefaults = new Set(excludeDefaults ?? [])
-    const defaultPlugins: WorkspaceFrontPlugin[] = excludedDefaults.has(filesystemPlugin.id)
+    const defaultPlugins: BoringFrontFactoryWithId[] = excludedDefaults.has(filesystemPlugin.pluginId)
       ? []
       : [filesystemPlugin]
-    const allPlugins = [...defaultPlugins, ...(plugins ?? [])]
+    const userPlugins = plugins ?? []
 
-    bootstrap({
+    const bootstrapResult = bootstrap({
       chatPanel: chatPanel ?? NullChatPanel,
-      plugins: plugins ?? [],
+      plugins: userPlugins,
       defaults: defaultPlugins,
       excludeDefaults,
       registries: { panels: pr, commands: cr, catalogs: cat, surfaceResolvers: sr },
@@ -474,10 +490,9 @@ export function WorkspaceProvider({
     const metas: RegisteredPluginMeta[] = [
       { id: "workspace:chat-layout", label: "Layout" },
       { id: "agent:chat-layout", label: "Layout" },
-      ...allPlugins.map((p) => ({
+      ...bootstrapResult.plugins.map((p) => ({
         id: p.id,
         label: p.label,
-        systemPrompt: p.systemPrompt,
       })),
     ]
 
@@ -494,7 +509,7 @@ export function WorkspaceProvider({
       catalogRegistry: cat,
       surfaceResolverRegistry: sr,
       pluginMetas: metas,
-      pluginsWithBindings: allPlugins,
+      pluginsWithBindings: bootstrapResult.plugins,
     }
   }, [capabilities, chatPanel, plugins, excludeDefaults, panels])
 
@@ -535,8 +550,8 @@ export function WorkspaceProvider({
     [bridgeConnected],
   )
   const workspaceValue = useMemo<WorkspaceContextValue>(
-    () => ({ chatPanel: chatPanel ?? null, registeredPlugins: pluginMetas }),
-    [chatPanel, pluginMetas],
+    () => ({ chatPanel: chatPanel ?? null, registeredPlugins: pluginMetas, debug }),
+    [chatPanel, pluginMetas, debug],
   )
 
   return (
@@ -559,6 +574,7 @@ export function WorkspaceProvider({
                 apiTimeout={apiTimeout}
               >
                 <WorkspacePluginBindings plugins={pluginsWithBindings} />
+                <AgentPluginHotReloadBridge apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} mode={frontPluginHotReload} authHeaders={authHeaders} />
                 <WorkspaceOpenFileBinding onOpenFile={onOpenFile} />
                 <WorkspaceCommandBindings commands={commands} />
                 <WorkspaceCatalogBindings
@@ -568,7 +584,7 @@ export function WorkspaceProvider({
                 <CommandPalette />
                 <Toaster />
                 {children}
-                {import.meta.env.DEV && <PluginInspector plugins={pluginMetas} />}
+                {(typeof import.meta !== 'undefined' && import.meta.env?.DEV) && <PluginInspector plugins={pluginMetas} />}
               </WorkspacePluginProviders>
             </RegistryProvider>
           </PluginErrorProvider>

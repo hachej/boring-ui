@@ -14,8 +14,9 @@ import { createRequire } from "node:module"
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { parseArgs } from "node:util"
-import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "./localWorkspaces.js"
+import { scaffoldPlugin } from "./scaffoldPlugin.js"
+import { findHintForError, formatVerifyResult, verifyPlugin } from "./verifyPlugin.js"
 
 export interface RunCliOptions {
   argv?: string[]
@@ -132,7 +133,12 @@ const AUTH_GUIDE = [
   "",
 ].join("\n")
 
-function checkAuth(): number {
+async function checkAuth(): Promise<number> {
+  // Keep pi-coding-agent out of the CLI's top-level module graph so
+  // lightweight subcommands (`scaffold-plugin`, `verify-plugin`) still run
+  // from the workspace-local provisioned CLI copy, which intentionally does
+  // not materialize the whole dependency tree.
+  const { AuthStorage, ModelRegistry } = await import("@mariozechner/pi-coding-agent")
   const authStorage = AuthStorage.create()
   const registry = ModelRegistry.create(authStorage)
   return registry.getAvailable().length
@@ -148,7 +154,7 @@ async function startFolderMode(opts: {
 }) {
   const workspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT ?? resolve(opts.folderArg ?? process.cwd())
   const projectName = basename(resolve(workspaceRoot)) || "workspace"
-  const modelCount = checkAuth()
+  const modelCount = await checkAuth()
 
   console.log(`\n${projectName}`)
   console.log(`  workspace  ${workspaceRoot}`)
@@ -254,7 +260,7 @@ async function startWorkspacesMode(opts: {
     getWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
     getWorkspaceRoot: async (workspaceId) => (await requireWorkspace(workspaceId)).path,
     getSessionNamespace: async ({ workspaceId }) => `local-workspace-${workspaceId}`,
-    getResourceLoaderOptions: async ({ workspaceRoot }) => ({
+    getPi: async ({ workspaceRoot }) => ({
       additionalSkillPaths: [join(workspaceRoot, ".agents", "skills")],
     }),
     getExtraTools: async ({ workspaceId, workspaceRoot, workspaceFsCapability }) => [
@@ -288,7 +294,7 @@ async function startWorkspacesMode(opts: {
   console.log(`  port       ${opts.port}`)
   console.log(`  host       ${opts.host}`)
   console.log(`\n  ${initialUrl}\n`)
-  if (checkAuth() === 0) console.log(AUTH_GUIDE)
+  if ((await checkAuth()) === 0) console.log(AUTH_GUIDE)
   openBrowser(initialUrl)
 }
 
@@ -513,8 +519,81 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     return
   }
 
+  if (positionals[0] === "scaffold-plugin") {
+    handleScaffoldPluginCommand({ positionals })
+    return
+  }
+
+  if (positionals[0] === "verify-plugin") {
+    handleVerifyPluginCommand({ positionals })
+    return
+  }
+
   await startFolderMode({
     ...base,
     folderArg: positionals[0],
   })
+}
+
+function defaultWorkspaceRoot(): string {
+  return process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd()
+}
+
+function handleVerifyPluginCommand(opts: { positionals: string[] }) {
+  // Usage: `boring-ui verify-plugin [<name>] [<workspace>]`
+  // No name: verify every plugin under .pi/extensions/.
+  // With name: verify only `.pi/extensions/<name>/`.
+  // Workspace defaults to BORING_AGENT_WORKSPACE_ROOT when invoked
+  // through the workspace-local shim, then cwd as a manual fallback.
+  // The flag-free positional form keeps the invocation short for the
+  // agent's bash tool.
+  const maybeName = opts.positionals[1]
+  const maybeWorkspace = opts.positionals[2]
+  const looksLikePath = maybeName && (maybeName.includes("/") || maybeName.startsWith("."))
+  const name = looksLikePath ? undefined : maybeName
+  const workspaceRoot = resolve(maybeWorkspace ?? (looksLikePath ? maybeName! : defaultWorkspaceRoot()))
+
+  const result = verifyPlugin({ workspaceRoot, ...(name ? { name } : {}) })
+  console.log(formatVerifyResult(result))
+  if (!result.ok) {
+    // Surface actionable hints for the well-known mistakes so the agent
+    // sees a one-line "do this instead" alongside the raw error.
+    const hints: string[] = []
+    for (const outcome of result.outcomes) {
+      for (const err of outcome.errors) {
+        const hint = findHintForError(err)
+        if (hint) hints.push(`  hint (${outcome.id}): ${hint}`)
+      }
+    }
+    if (hints.length > 0) {
+      console.log("")
+      console.log("Suggestions:")
+      for (const hint of hints) console.log(hint)
+    }
+    process.exit(1)
+  }
+}
+
+function handleScaffoldPluginCommand(opts: { positionals: string[] }) {
+  const name = opts.positionals[1]
+  if (!name) {
+    throw new Error("usage: boring-ui scaffold-plugin <name> [workspace]")
+  }
+  const workspaceRoot = resolve(opts.positionals[2] ?? defaultWorkspaceRoot())
+  const result = scaffoldPlugin({ name, workspaceRoot })
+  console.log(`scaffolded ${name}`)
+  console.log(`  dir   ${result.pluginDir}`)
+  for (const file of result.filesCreated) {
+    console.log(`  +     ${file}`)
+  }
+  console.log("")
+  console.log("Next steps:")
+  console.log(`  1. edit front/index.tsx for UI panels/commands/resolvers`)
+  console.log(`  2. add pi.extensions / skills for hot-reloadable agent behavior`)
+  console.log(`  3. bash \`boring-ui verify-plugin\` — confirms manifests + files are valid`)
+  console.log(`  4. ask the user: /reload`)
+  console.log("")
+  console.log("Advanced server integration:")
+  console.log("  boring.server is boot-time/static composition only. It is NOT hot-registered")
+  console.log("  by /reload for .pi/extensions user plugins; use Pi extensions for agent tools.")
 }

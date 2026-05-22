@@ -10,14 +10,21 @@ import {
 } from '@hachej/boring-agent/server'
 import {
   collectWorkspaceAgentServerPlugins,
+  hasDirServerPlugin,
   provisionWorkspaceAgentServer,
+  readWorkspacePluginPackagePiSnapshot,
+  resolveDefaultWorkspacePluginPackagePaths,
+  resolveOnePluginEntry,
   type CreateWorkspaceAgentServerOptions,
+  type DirPluginEntry,
+  type WorkspaceAgentServerPluginContext,
 } from '@hachej/boring-workspace/app/server'
 import {
   createInMemoryBridge,
   createWorkspaceUiTools,
   uiRoutes,
   type UiBridge,
+  type WorkspaceServerPlugin,
 } from '@hachej/boring-workspace/server'
 import type { FastifyInstance } from 'fastify'
 import type postgres from 'postgres'
@@ -94,34 +101,58 @@ export type CoreWorkspaceAgentServer = FastifyInstance & {
   workspaceStore: WorkspaceStore
 }
 
-export type CoreWorkspaceAgentServerPlugin =
-  NonNullable<CreateWorkspaceAgentServerOptions['plugins']>[number] & {
-    provisioning?: RuntimeProvisioningContribution
-  }
+export type CoreWorkspaceAgentServerPlugin = WorkspaceServerPlugin & {
+  provisioning?: RuntimeProvisioningContribution
+}
+
+export type CoreWorkspaceDirPluginEntry = Omit<DirPluginEntry, 'hotReload'> & {
+  /** Core consumes directory plugins statically; per-plugin hot reload is unsupported. */
+  hotReload?: false
+}
+
+export type CoreWorkspacePluginEntry = CoreWorkspaceAgentServerPlugin | CoreWorkspaceDirPluginEntry
 
 export interface CreateCoreWorkspaceAgentServerOptions
   extends Omit<RegisterAgentRoutesOptions, 'extraTools'> {
   appRoot?: string
   config?: CoreConfig
   loadConfigOptions?: LoadConfigOptions
-  plugins?: CoreWorkspaceAgentServerPlugin[]
+  plugins?: CoreWorkspacePluginEntry[]
   excludeDefaults?: CreateWorkspaceAgentServerOptions['excludeDefaults']
+  defaultPluginPackages?: CreateWorkspaceAgentServerOptions['defaultPluginPackages']
+  appPackageJsonPath?: CreateWorkspaceAgentServerOptions['appPackageJsonPath']
+  /** Core consumes plugins statically for now; app-level hot reload is explicitly unsupported. */
+  hotReload?: false
   forceProvisioning?: boolean
   extraTools?: RegisterAgentRoutesOptions['extraTools']
   systemPromptAppend?: string
   serveFrontend?: boolean
 }
 
-type AgentResourceLoaderOptions = RegisterAgentRoutesOptions['resourceLoaderOptions']
+type AgentPiOptions = RegisterAgentRoutesOptions['pi']
 
 function dedupeStrings(values: string[]): string[] {
   return Array.from(new Set(values))
 }
 
-function mergeResourceLoaderOptions(
-  base?: AgentResourceLoaderOptions,
-  override?: AgentResourceLoaderOptions,
-): AgentResourceLoaderOptions {
+function isDirPluginEntry(entry: unknown): entry is DirPluginEntry {
+  return typeof entry === 'object' && entry !== null && 'dir' in entry
+}
+
+function assertCoreStaticPluginEntries(entries: readonly unknown[] | undefined): void {
+  for (const entry of entries ?? []) {
+    if (isDirPluginEntry(entry) && entry.hotReload === true) {
+      throw new Error(
+        'createCoreWorkspaceAgentServer does not support hotReload yet; directory plugin entries must omit hotReload or set hotReload: false. Use createWorkspaceAgentServer for standalone hot reload.',
+      )
+    }
+  }
+}
+
+function mergePiOptions(
+  base?: AgentPiOptions,
+  override?: AgentPiOptions,
+): AgentPiOptions {
   if (!base && !override) return undefined
   return {
     ...base,
@@ -130,10 +161,34 @@ function mergeResourceLoaderOptions(
       ...(base?.additionalSkillPaths ?? []),
       ...(override?.additionalSkillPaths ?? []),
     ]),
-    piPackages: compactPiPackages([
-      ...(base?.piPackages ?? []),
-      ...(override?.piPackages ?? []),
+    packages: compactPiPackages([
+      ...(base?.packages ?? []),
+      ...(override?.packages ?? []),
     ]),
+    extensionPaths: dedupeStrings([
+      ...(base?.extensionPaths ?? []),
+      ...(override?.extensionPaths ?? []),
+    ]),
+    extensionFactories: [
+      ...(base?.extensionFactories ?? []),
+      ...(override?.extensionFactories ?? []),
+    ],
+  }
+}
+
+function createUnavailableCorePluginBridge(): UiBridge {
+  const fail = () => {
+    throw new Error(
+      'Core static server plugins do not receive a workspace-scoped UiBridge yet. Use request-scoped UI tools/routes in core, or createWorkspaceAgentServer for standalone plugin bridge support.',
+    )
+  }
+
+  return {
+    getState: fail,
+    setState: fail,
+    postCommand: fail,
+    subscribeCommands: fail,
+    drainCommands: fail,
   }
 }
 
@@ -477,6 +532,14 @@ async function registerCoreRoutes({
 export async function createCoreWorkspaceAgentServer(
   options: CreateCoreWorkspaceAgentServerOptions = {},
 ): Promise<CoreWorkspaceAgentServer> {
+  const requestedHotReload = (options as { hotReload?: unknown }).hotReload
+  if (requestedHotReload !== undefined && requestedHotReload !== false) {
+    throw new Error(
+      'createCoreWorkspaceAgentServer does not support hotReload yet; use static plugin consumption or createWorkspaceAgentServer for standalone hot reload.',
+    )
+  }
+  assertCoreStaticPluginEntries(options.plugins)
+
   const config = options.config ?? (await loadConfig({
     allowMissingSecrets: process.env.NODE_ENV !== 'production',
     ...options.loadConfigOptions,
@@ -495,11 +558,49 @@ export async function createCoreWorkspaceAgentServer(
 
   await registerAuthProxy(app)
 
+  const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths({
+    workspaceRoot,
+    appPackageJsonPath: options.appPackageJsonPath,
+    defaultPluginPackages: options.defaultPluginPackages,
+  })
+  const defaultPackagePiSnapshot = readWorkspacePluginPackagePiSnapshot(defaultPluginPackagePaths)
+  const { systemPromptAppend: defaultPackageSystemPromptAppend, ...defaultPackagePiOptions } = defaultPackagePiSnapshot
+  const staticSystemPromptAppend = [options.systemPromptAppend, defaultPackageSystemPromptAppend]
+    .filter(Boolean)
+    .join('\n\n') || undefined
+  const defaultPluginDirEntries: CoreWorkspacePluginEntry[] = defaultPluginPackagePaths
+    .map((dir) => ({ dir, hotReload: false as const }))
+    .filter((entry) => hasDirServerPlugin(entry))
+  const pluginEntries: CoreWorkspacePluginEntry[] = [
+    ...defaultPluginDirEntries,
+    ...(options.plugins ?? []),
+  ]
+  const bridges = new Map<string, UiBridge>()
+  const getUiBridge = (workspaceId: string): UiBridge => {
+    const safeWorkspaceId = validateWorkspaceIdSegment(workspaceId)
+    let bridge = bridges.get(safeWorkspaceId)
+    if (!bridge) {
+      bridge = createInMemoryBridge()
+      bridges.set(safeWorkspaceId, bridge)
+    }
+    return bridge
+  }
+  const pluginResolveContext: WorkspaceAgentServerPluginContext = {
+    workspaceRoot,
+    bridge: createUnavailableCorePluginBridge(),
+  }
+  const resolvedPlugins = await Promise.all(
+    pluginEntries.map((entry) => resolveOnePluginEntry<CoreWorkspaceAgentServerPlugin>(
+      entry,
+      pluginResolveContext,
+    )),
+  )
+
   const pluginCollection = collectWorkspaceAgentServerPlugins({
     workspaceRoot,
-    systemPromptAppend: options.systemPromptAppend,
-    resourceLoaderOptions: options.resourceLoaderOptions,
-    plugins: options.plugins,
+    systemPromptAppend: staticSystemPromptAppend,
+    pi: mergePiOptions(options.pi, defaultPackagePiOptions),
+    plugins: resolvedPlugins,
     excludeDefaults: options.excludeDefaults,
   })
 
@@ -523,16 +624,6 @@ export async function createCoreWorkspaceAgentServer(
 
   await ensureWorkspaceProvisioned(workspaceRoot)
 
-  const bridges = new Map<string, UiBridge>()
-  const getUiBridge = (workspaceId: string): UiBridge => {
-    const safeWorkspaceId = validateWorkspaceIdSegment(workspaceId)
-    let bridge = bridges.get(safeWorkspaceId)
-    if (!bridge) {
-      bridge = createInMemoryBridge()
-      bridges.set(safeWorkspaceId, bridge)
-    }
-    return bridge
-  }
   const resolveWorkspaceId = async (request: Parameters<NonNullable<RegisterAgentRoutesOptions['getWorkspaceId']>>[0]) =>
     options.getWorkspaceId
       ? await options.getWorkspaceId(request)
@@ -547,31 +638,31 @@ export async function createCoreWorkspaceAgentServer(
     await ensureWorkspaceProvisioned(root)
     return root
   }
-  const resourceLoaderOptionsByRoot = new Map<string, AgentResourceLoaderOptions>()
-  const getPluginResourceLoaderOptions = (root: string): AgentResourceLoaderOptions => {
+  const piOptionsByRoot = new Map<string, AgentPiOptions>()
+  const getPluginPiOptions = (root: string): AgentPiOptions => {
     const resolvedRoot = path.resolve(root)
-    if (resourceLoaderOptionsByRoot.has(resolvedRoot)) {
-      return resourceLoaderOptionsByRoot.get(resolvedRoot)
+    if (piOptionsByRoot.has(resolvedRoot)) {
+      return piOptionsByRoot.get(resolvedRoot)
     }
     const scopedPluginCollection = collectWorkspaceAgentServerPlugins({
       workspaceRoot: resolvedRoot,
-      systemPromptAppend: options.systemPromptAppend,
-      resourceLoaderOptions: options.resourceLoaderOptions,
-      plugins: options.plugins,
+      systemPromptAppend: staticSystemPromptAppend,
+      pi: mergePiOptions(options.pi, defaultPackagePiOptions),
+      plugins: resolvedPlugins,
       excludeDefaults: options.excludeDefaults,
     })
-    resourceLoaderOptionsByRoot.set(
+    piOptionsByRoot.set(
       resolvedRoot,
-      scopedPluginCollection.agentOptions.resourceLoaderOptions,
+      scopedPluginCollection.agentOptions.pi,
     )
-    return scopedPluginCollection.agentOptions.resourceLoaderOptions
+    return scopedPluginCollection.agentOptions.pi
   }
-  const resolveResourceLoaderOptions: NonNullable<RegisterAgentRoutesOptions['getResourceLoaderOptions']> = async (ctx) => {
-    const pluginOptions = getPluginResourceLoaderOptions(ctx.workspaceRoot)
-    const callerOptions = options.getResourceLoaderOptions
-      ? await options.getResourceLoaderOptions(ctx)
+  const resolvePiOptions: NonNullable<RegisterAgentRoutesOptions['getPi']> = async (ctx) => {
+    const pluginOptions = getPluginPiOptions(ctx.workspaceRoot)
+    const callerOptions = options.getPi
+      ? await options.getPi(ctx)
       : undefined
-    return mergeResourceLoaderOptions(pluginOptions, callerOptions)
+    return mergePiOptions(pluginOptions, callerOptions)
   }
   await app.register(registerAgentRoutes, {
     workspaceRoot,
@@ -585,8 +676,8 @@ export async function createCoreWorkspaceAgentServer(
       ...(pluginCollection.agentOptions.extraTools ?? []),
     ],
     systemPromptAppend: pluginCollection.agentOptions.systemPromptAppend,
-    resourceLoaderOptions: pluginCollection.agentOptions.resourceLoaderOptions,
-    getResourceLoaderOptions: resolveResourceLoaderOptions,
+    pi: pluginCollection.agentOptions.pi,
+    getPi: resolvePiOptions,
     sessionNamespace: options.sessionNamespace,
     getSessionNamespace: options.getSessionNamespace,
     getExtraTools: async (ctx) => {
@@ -606,6 +697,7 @@ export async function createCoreWorkspaceAgentServer(
 
   await app.register(uiRoutes, {
     getBridge: async (request) => getUiBridge(await resolveWorkspaceId(request)),
+    preserveStateKeys: pluginCollection.preservedUiStateKeys,
   })
 
   for (const { routes } of pluginCollection.routeContributions) {

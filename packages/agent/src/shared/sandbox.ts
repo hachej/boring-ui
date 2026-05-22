@@ -159,12 +159,6 @@ export interface IsolatedCodeInput {
    */
   vendorHints?: Record<string, unknown>
 
-  /**
-   * @deprecated Use `resources` instead. Vercel-specific t-shirt
-   * sizes; kept for back-compat. Backends MAY map this to their own
-   * size taxonomy or ignore it. New consumers should use `resources`.
-   */
-  vmSize?: 'xxs' | 'xs' | 's' | 'm' | 'l'
 }
 
 export interface IsolatedCodeOutput {

@@ -1,11 +1,11 @@
 import { act, renderHook } from "@testing-library/react"
 import type { ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { CommandRegistry } from "../../registry/CommandRegistry"
+import { CommandRegistry } from "../../../shared/plugins/CommandRegistry"
 import { PanelRegistry } from "../../registry/PanelRegistry"
 import { RegistryProvider, useCatalogRegistry } from "../../registry/RegistryProvider"
 import { WorkspaceProvider } from "../../provider"
-import { CatalogRegistry } from "../CatalogRegistry"
+import { CatalogRegistry } from "../../../shared/plugins/CatalogRegistry"
 import type { CatalogConfig } from "../../../shared/plugins/types"
 import { useCatalogs } from "../useCatalogs"
 

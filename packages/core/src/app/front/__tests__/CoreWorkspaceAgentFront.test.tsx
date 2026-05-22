@@ -73,4 +73,35 @@ describe('CoreWorkspaceAgentFront', () => {
       },
     })
   })
+
+  it('forces front plugin hot reload off while forwarding workspace props', async () => {
+    const { CoreWorkspaceAgentFront } = await importSubject()
+
+    render(
+      <CoreWorkspaceAgentFront
+        apiBaseUrl="/api-base"
+        defaultSurfaceOpen={false}
+        extraPanels={['demo-panel']}
+      />,
+    )
+
+    expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
+    expect(workspaceAgentProps).toMatchObject({
+      apiBaseUrl: '/api-base',
+      defaultSurfaceOpen: false,
+      extraPanels: ['demo-panel'],
+      frontPluginHotReload: false,
+      hotReloadEnabled: false,
+    })
+  })
+
+  it('fails fast if core app hot reload is requested', async () => {
+    const { CoreWorkspaceAgentFront } = await importSubject()
+
+    expect(() => render(
+      <CoreWorkspaceAgentFront
+        hotReload={true as false}
+      />,
+    )).toThrow(/does not support hotReload/)
+  })
 })

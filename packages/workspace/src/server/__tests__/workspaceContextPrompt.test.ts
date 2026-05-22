@@ -14,7 +14,6 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { buildWorkspaceContextPrompt } from "../../app/server/createWorkspaceAgentServer"
-import { buildBoringSystemPrompt } from "../boringSystemPrompt"
 import { createWorkspaceAgentServer } from "../../app/server/createWorkspaceAgentServer"
 
 // ── spy ───────────────────────────────────────────────────────────────────────
@@ -138,7 +137,12 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       logger: false,
     })
     await app.close()
-    expect(capturedSystemPromptAppend).toContain(buildBoringSystemPrompt())
+    // The production call passes scaffoldCommand + verifyCommand; assert
+    // a stable substring of the resulting prompt rather than the entire
+    // bare-args output.
+    expect(capturedSystemPromptAppend).toContain("Plugin authoring — required workflow")
+    expect(capturedSystemPromptAppend).toContain("boring-ui scaffold-plugin")
+    expect(capturedSystemPromptAppend).toContain("boring-ui verify-plugin")
   })
 
   test("plugin system prompts appear alongside workspace context in direct mode", async () => {

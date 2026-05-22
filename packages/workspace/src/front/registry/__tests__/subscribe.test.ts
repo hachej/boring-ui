@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
-import { CommandRegistry } from "../CommandRegistry"
+import { CommandRegistry } from "../../../shared/plugins/CommandRegistry"
 import { PanelRegistry } from "../PanelRegistry"
 
 describe("CommandRegistry subscribe", () => {
@@ -113,34 +113,4 @@ describe("PanelRegistry subscribe", () => {
     expect(snap2).toHaveLength(2)
   })
 
-  test("unregisterByPluginId removes only matching panels", () => {
-    const reg = new PanelRegistry()
-    reg.register("a", { title: "A", component: () => null as any, pluginId: "p1" })
-    reg.register("b", { title: "B", component: () => null as any, pluginId: "p2" })
-    reg.register("c", { title: "C", component: () => null as any })
-
-    reg.unregisterByPluginId("p1")
-
-    expect(reg.list().map((p) => p.id)).toEqual(["b", "c"])
-  })
-
-  test("unregisterByPluginId fires subscribe", () => {
-    const reg = new PanelRegistry()
-    reg.register("a", { title: "A", component: () => null as any, pluginId: "p1" })
-    const cb = vi.fn()
-    reg.subscribe(cb)
-
-    reg.unregisterByPluginId("p1")
-    expect(cb).toHaveBeenCalledTimes(1)
-  })
-
-  test("unregisterByPluginId does not fire when nothing removed", () => {
-    const reg = new PanelRegistry()
-    reg.register("a", { title: "A", component: () => null as any })
-    const cb = vi.fn()
-    reg.subscribe(cb)
-
-    reg.unregisterByPluginId("nonexistent")
-    expect(cb).not.toHaveBeenCalled()
-  })
 })

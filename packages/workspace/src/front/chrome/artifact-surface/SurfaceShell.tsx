@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { DockviewApi } from "dockview-react"
 import { ChevronRight, FolderTree } from "lucide-react"
 import { Button, IconButton } from "@hachej/boring-ui-kit"
@@ -84,6 +84,7 @@ export interface SurfaceShellProps {
    * inside THIS surface (so a host can gate panels per shell instance).
    */
   extraPanels?: string[]
+  defaultLeftTab?: string
   className?: string
 }
 
@@ -107,6 +108,7 @@ export function SurfaceShell({
   onChange,
   onClose,
   extraPanels,
+  defaultLeftTab,
   className,
 }: SurfaceShellProps) {
   // Lazy initializers read persisted state SYNCHRONOUSLY on first mount so
@@ -154,6 +156,11 @@ export function SurfaceShell({
   // name (real bug we hit when the agent dispatched openPanel for a panel
   // the host hadn't registered).
   const panelRegistry = useRegistry()
+  const panelRegistrySnapshot = useSyncExternalStore(
+    panelRegistry.subscribe,
+    panelRegistry.getSnapshot,
+    panelRegistry.getSnapshot,
+  )
   const surfaceResolverRegistry = useSurfaceResolverRegistry()
   const panelRegistryRef = useRef(panelRegistry)
   panelRegistryRef.current = panelRegistry
@@ -161,14 +168,14 @@ export function SurfaceShell({
   surfaceResolverRegistryRef.current = surfaceResolverRegistry
   const allowedPanels = useMemo(() => {
     const ids = new Set<string>()
-    for (const panel of panelRegistry.list()) {
+    for (const panel of panelRegistrySnapshot) {
       if (panel.placement === "center") ids.add(panel.id)
     }
     for (const id of extraPanels ?? []) {
       ids.add(id)
     }
     return [...ids]
-  }, [extraPanels, panelRegistry])
+  }, [extraPanels, panelRegistrySnapshot])
 
   const openFileSync = useCallback((path: string) => {
     const api = apiRef.current
@@ -177,37 +184,38 @@ export function SurfaceShell({
       return
     }
     const normalizedPath = normalizeWorkbenchPath(path)
-    const existing = findOpenFilePanel(api, normalizedPath)
-    if (existing) {
-      existing.api.setActive()
-      return
-    }
     const request: SurfaceOpenRequest = {
       kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
       target: normalizedPath,
     }
     const resolved = surfaceResolverRegistryRef.current.resolve(request)
-    if (!resolved) {
-      console.warn(`[SurfaceShell] openFile: no surface resolver matched "${normalizedPath}"`)
+    if (resolved) {
+      if (!panelRegistryRef.current.has(resolved.component)) {
+        console.warn(`[SurfaceShell] openFile: resolver returned unknown panel "${resolved.component}" for "${normalizedPath}"`)
+        return
+      }
+      const panelId = surfacePanelId(request, resolved)
+      const existingByResolvedId = api.getPanel(panelId)
+      if (existingByResolvedId) {
+        if (resolved.params) existingByResolvedId.api.updateParameters(resolved.params)
+        existingByResolvedId.api.setActive()
+        return
+      }
+      api.addPanel({
+        id: panelId,
+        component: resolved.component,
+        title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
+        params: resolved.params ?? { path: normalizedPath },
+      })
       return
     }
-    if (!panelRegistryRef.current.has(resolved.component)) {
-      console.warn(`[SurfaceShell] openFile: resolver returned unknown panel "${resolved.component}" for "${normalizedPath}"`)
+
+    const existing = findOpenFilePanel(api, normalizedPath)
+    if (existing) {
+      existing.api.setActive()
       return
     }
-    const panelId = surfacePanelId(request, resolved)
-    const existingByResolvedId = api.getPanel(panelId)
-    if (existingByResolvedId) {
-      if (resolved.params) existingByResolvedId.api.updateParameters(resolved.params)
-      existingByResolvedId.api.setActive()
-      return
-    }
-    api.addPanel({
-      id: panelId,
-      component: resolved.component,
-      title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
-      params: resolved.params ?? { path: normalizedPath },
-    })
+    console.warn(`[SurfaceShell] openFile: no surface resolver matched "${normalizedPath}"`)
   }, [])
 
   const openSurfaceSync = useCallback((request: SurfaceOpenRequest) => {
@@ -223,10 +231,7 @@ export function SurfaceShell({
       return
     }
     const panelId = surfacePanelId(normalizedRequest, resolved)
-    const existing =
-      normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
-        ? findOpenFilePanel(api, normalizedRequest.target) ?? api.getPanel(panelId)
-        : api.getPanel(panelId)
+    const existing = api.getPanel(panelId)
     const closeWorkbenchOnDone = normalizedRequest.meta?.closeWorkbenchOnDone === true
     const resolvedParams = closeWorkbenchOnDone && onCloseRef.current
       ? { ...(resolved.params ?? {}), __closeWorkbenchOnDone: onCloseRef.current }
@@ -300,6 +305,14 @@ export function SurfaceShell({
     return { openTabs, activeTab: api.activePanel?.id ?? null }
   }, [])
 
+  const localSurfaceApi = useMemo<SurfaceShellApi>(() => ({
+    openFile: openFileSync,
+    openSurface: openSurfaceSync,
+    openPanel: openPanelSync,
+    closeWorkbenchLeftPane: () => setCollapsed(true),
+    getSnapshot,
+  }), [getSnapshot, openFileSync, openPanelSync, openSurfaceSync])
+
   const getBridgeState = useCallback((): WorkspaceState => {
     const api = apiRef.current
     const panels: PanelState[] = api
@@ -339,13 +352,7 @@ export function SurfaceShell({
   const handleReady = useCallback((ready: DockviewApi) => {
     apiRef.current = ready
     setApi(ready)
-    onReadyRef.current?.({
-      openFile: openFileSync,
-      openSurface: openSurfaceSync,
-      openPanel: openPanelSync,
-      closeWorkbenchLeftPane: () => setCollapsed(true),
-      getSnapshot,
-    })
+    onReadyRef.current?.(localSurfaceApi)
     // Subscribe to dockview events so the parent gets a snapshot push on
     // every panel mutation. Disposers are intentionally not stored — the
     // dockview instance lives for the SurfaceShell's entire lifetime, and
@@ -359,7 +366,7 @@ export function SurfaceShell({
     ready.onDidActivePanelChange(emit)
     // Initial snapshot once everyone's wired up.
     emit()
-  }, [openFileSync, openSurfaceSync, openPanelSync, getSnapshot, emitBridgeState])
+  }, [localSurfaceApi, getSnapshot, emitBridgeState])
 
 
   const openFile = useCallback(
@@ -368,37 +375,40 @@ export function SurfaceShell({
         const api = apiRef.current
         if (!api) return err("not-ready", "surface not ready")
         const normalizedPath = normalizeWorkbenchPath(path)
-        const existing = findOpenFilePanel(api, normalizedPath)
-        if (existing) {
-          existing.api.setActive()
-          return ok()
-        }
         const request: SurfaceOpenRequest = {
           kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
           target: normalizedPath,
         }
         const resolved = surfaceResolverRegistryRef.current.resolve(request)
-        if (!resolved) return err("NO_SURFACE_RESOLVER", `no registered surface resolver handles ${normalizedPath}`)
-        if (!panelRegistryRef.current.has(resolved.component)) {
-          return err(
-            "NO_SURFACE_PANEL",
-            `surface resolver "${request.kind}" returned unknown panel "${resolved.component}"`,
-          )
-        }
-        const panelId = surfacePanelId(request, resolved)
-        const existingByResolvedId = api.getPanel(panelId)
-        if (existingByResolvedId) {
-          if (resolved.params) existingByResolvedId.api.updateParameters(resolved.params)
-          existingByResolvedId.api.setActive()
+        if (resolved) {
+          if (!panelRegistryRef.current.has(resolved.component)) {
+            return err(
+              "NO_SURFACE_PANEL",
+              `surface resolver "${request.kind}" returned unknown panel "${resolved.component}"`,
+            )
+          }
+          const panelId = surfacePanelId(request, resolved)
+          const existingByResolvedId = api.getPanel(panelId)
+          if (existingByResolvedId) {
+            if (resolved.params) existingByResolvedId.api.updateParameters(resolved.params)
+            existingByResolvedId.api.setActive()
+            return ok()
+          }
+          api.addPanel({
+            id: panelId,
+            component: resolved.component,
+            title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
+            params: resolved.params ?? { path: normalizedPath },
+          })
           return ok()
         }
-        api.addPanel({
-          id: panelId,
-          component: resolved.component,
-          title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
-          params: resolved.params ?? { path: normalizedPath },
-        })
-        return ok()
+
+        const existing = findOpenFilePanel(api, normalizedPath)
+        if (existing) {
+          existing.api.setActive()
+          return ok()
+        }
+        return err("NO_SURFACE_RESOLVER", `no registered surface resolver handles ${normalizedPath}`)
       } catch (error) {
         return err(
           "INVALID_SURFACE_PATH",
@@ -525,6 +535,7 @@ export function SurfaceShell({
             <WorkbenchLeftPane
               rootDir={rootDir}
               bridge={bridge}
+              defaultTab={defaultLeftTab}
               onCollapse={() => setCollapsed(true)}
             />
           </aside>

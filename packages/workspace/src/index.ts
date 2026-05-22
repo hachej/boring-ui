@@ -5,26 +5,23 @@
 // Consumers should NEVER need deep imports.
 // ---------------------------------------------------------------------------
 
-// Plugin model
+// Plugin model. The single public way to author a plugin is
+// `definePlugin` from "@hachej/boring-workspace/plugin". Plugin composition
+// is just calling multiple factories with the same api (see docs).
 export {
-  composePlugins,
-  defineFrontPlugin,
   bootstrap,
   PluginError,
 } from "./shared/plugins"
 export type {
-  ComposePluginsOptions,
   PluginErrorKind,
   BootstrapOptions,
   BootstrapResult,
-  AgentToolRegistry,
   PanelRegistryLike,
   CommandRegistryLike,
   CatalogRegistryLike,
   SurfaceResolverRegistryLike,
 } from "./shared/plugins"
 export type {
-  WorkspaceFrontPlugin,
   PluginBinding,
   CatalogAdapter,
   CatalogBadge,
@@ -36,26 +33,18 @@ export type {
   CatalogRow,
   CatalogSearchArgs,
   CatalogSearchResult,
-  PluginOutput,
-  LeftTabOutput,
   LeftTabParams,
   LeftTabComponent,
-  PanelOutput,
-  CommandOutput,
-  CatalogOutput,
-  BindingOutput,
-  ProviderOutput,
-  SurfaceResolverOutput,
   PluginProvider,
   PluginProviderProps,
   AgentTool,
   JSONSchema,
   ToolExecContext,
   ToolResult,
-  AgentToolOutput,
 } from "./shared/plugins"
+export { CatalogRegistry } from "./shared/plugins/CatalogRegistry"
+export type { CatalogRegistryOptions } from "./shared/plugins/CatalogRegistry"
 export {
-  CatalogRegistry,
   useCommands,
   useActivePanels,
   useCatalogs,
@@ -63,10 +52,7 @@ export {
   PluginErrorProvider,
   usePluginErrors,
 } from "./front/plugin"
-export type {
-  CatalogRegistryOptions,
-  PluginError as PluginContributionError,
-} from "./front/plugin"
+export type { PluginError as PluginContributionError } from "./front/plugin"
 export {
   filesystemPlugin,
   emitFilesystemAgentFileChange,
@@ -81,14 +67,14 @@ export { cn } from "./front/lib/utils"
 
 // Registry & panel management
 export { PanelRegistry } from "./front/registry/PanelRegistry"
-export { CommandRegistry } from "./front/registry/CommandRegistry"
+export { CommandRegistry } from "./shared/plugins/CommandRegistry"
+export { SurfaceResolverRegistry } from "./shared/plugins/SurfaceResolverRegistry"
 export {
   RegistryProvider,
   useRegistry,
   useCommandRegistry,
   useCatalogRegistry,
   useSurfaceResolverRegistry,
-  SurfaceResolverRegistry,
   WORKSPACE_OPEN_PATH_SURFACE_KIND,
 } from "./front/registry"
 export { getFileIcon } from "./front/registry"
@@ -301,6 +287,7 @@ export {
 } from "./front/provider"
 export type {
   WorkspaceProviderProps,
+  FrontPluginHotReloadMode,
   ThemeProviderProps,
   WorkspaceBridgeContextValue,
   WorkspaceContextValue,

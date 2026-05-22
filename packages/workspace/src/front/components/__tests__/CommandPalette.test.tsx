@@ -4,10 +4,10 @@ import userEvent from "@testing-library/user-event"
 import { CommandPalette } from "../CommandPalette"
 import { RegistryProvider } from "../../registry/RegistryProvider"
 import { PanelRegistry } from "../../registry/PanelRegistry"
-import { CommandRegistry } from "../../registry/CommandRegistry"
-import { CatalogRegistry } from "../../plugin/CatalogRegistry"
+import { CommandRegistry } from "../../../shared/plugins/CommandRegistry"
+import { CatalogRegistry } from "../../../shared/plugins/CatalogRegistry"
 import { bootstrap } from "../../../shared/plugins/bootstrap"
-import type { WorkspaceFrontPlugin } from "../../../shared/plugins/defineFrontPlugin"
+import { definePlugin } from "../../../shared/plugins/frontFactory"
 import type { CatalogConfig } from "../../../shared/plugins/types"
 import type { CatalogRow, CatalogSearchResult } from "../../../shared/plugins/types"
 import type { RecentEntry } from "../recent/types"
@@ -93,12 +93,12 @@ function createTestCatalog(
   }
 }
 
-function createTestCatalogPlugin(catalog: CatalogConfig): WorkspaceFrontPlugin {
-  return {
+function createTestCatalogPlugin(catalog: CatalogConfig) {
+  return definePlugin({
     id: TEST_CATALOG_PLUGIN_ID,
     label: "Test Catalog Plugin",
     catalogs: [catalog],
-  }
+  })
 }
 
 function registryWithCatalogPlugin(catalog: CatalogConfig): CatalogRegistry {

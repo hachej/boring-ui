@@ -68,8 +68,10 @@ export function createServerFileSearch(
       const command = [
         'find .',
         '-maxdepth 10',
+        "-path './.boring-agent' -prune -o",
         buildFindArgs(glob),
         '-type f',
+        '-print',
         `| head -n ${safeLimit}`,
       ].join(' ')
 

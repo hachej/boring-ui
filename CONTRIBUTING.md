@@ -56,25 +56,23 @@ If it fails, look at `packages/workspace/scripts/check-plugin-invariants.mjs` fo
 
 ### Plugin shape
 
-If you're adding a plugin, run:
+If you're adding a publishable plugin, run:
 
 ```bash
 pnpm --filter @hachej/boring-ui-cli build   # one-time, if not built
 pnpm --filter @hachej/boring-ui-cli boring-ui plugin create <your-name> --path plugins
 cd plugins/<your-name>
-# rename `sample` → `<your-name>` in src/, package.json, tsup, vitest
+# rename anything the scaffold did not cover
 pnpm install
 pnpm --filter @hachej/boring-<your-name> typecheck
 pnpm --filter @hachej/boring-<your-name> test
 ```
 
-Or manually copy the template:
+Or manually copy the template from [packages/cli/templates/plugin](packages/cli/templates/plugin/README.md):
 
 ```bash
 cp -R packages/cli/templates/plugin plugins/<your-name>
 ```
-
-Or start from [packages/cli/templates/plugin](packages/cli/templates/plugin/README.md).
 
 The `plugins/*` glob in `pnpm-workspace.yaml` picks new plugins up automatically.
 

@@ -16,22 +16,10 @@ const apiPort = Number(new URL(apiAddress).port)
 const apiTarget = `http://127.0.0.1:${apiPort}`
 
 const playgroundRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
-const useLocalPackages = process.env.BORING_USE_LOCAL_PACKAGES === '1'
-const packageSrc = path.resolve(playgroundRoot, '../../packages/agent/src')
-const localPackageAlias = useLocalPackages
-  ? {
-      '@hachej/boring-agent/front/styles.css': path.resolve(packageSrc, 'front/styles/globals.css'),
-      '@hachej/boring-agent/front': path.resolve(packageSrc, 'front/index.ts'),
-      '@hachej/boring-agent/shared': path.resolve(packageSrc, 'shared/index.ts'),
-      '@hachej/boring-agent/server': path.resolve(packageSrc, 'server/index.ts'),
-      '@': packageSrc,
-    }
-  : undefined
 
 const vite = await createViteServer({
   configFile: false,
   root: playgroundRoot,
-  resolve: localPackageAlias ? { alias: localPackageAlias } : undefined,
   plugins: [
     tailwindcss(),
     {

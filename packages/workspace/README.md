@@ -54,20 +54,17 @@ function App() {
 Add a panel in 8 lines:
 
 ```ts
-import { defineFrontPlugin, definePanel } from "@hachej/boring-workspace"
+import { definePlugin } from "@hachej/boring-workspace/plugin"
 
-export const myPanelPlugin = defineFrontPlugin({
+export const myPanelPlugin = definePlugin({
   id: "my-panel",
   label: "My Panel",
-  outputs: [
+  panels: [
     {
-      type: "panel",
-      panel: definePanel({
-        id: "my-widget",
-        title: "Widget",
-        placement: "center",
-        component: () => import("./WidgetPane").then(m => ({ default: m.WidgetPane })),
-      }),
+      id: "my-widget",
+      label: "Widget",
+      placement: "center",
+      component: () => import("./WidgetPane").then(m => ({ default: m.WidgetPane })),
     },
   ],
 })
@@ -153,14 +150,15 @@ UiBridgeClient receives → dispatches to FileTree plugin → expands node + foc
 
 | Import | Environment | What You Get |
 |--------|-------------|--------------|
-| `@hachej/boring-workspace` | Browser | `WorkspaceProvider`, `IdeLayout`, `defineFrontPlugin`, `definePanel`, all built-ins |
+| `@hachej/boring-workspace` | Browser | `WorkspaceProvider`, `IdeLayout`, built-in layout primitives |
+| `@hachej/boring-workspace/plugin` | Browser | `definePlugin()` and browser-safe plugin authoring types |
 | `@hachej/boring-workspace/server` | Node | `defineServerPlugin()`, server routes, UI tools, Pi package helpers |
 | `@hachej/boring-workspace/shared` | Any | `PaneProps`, `SurfaceOpenRequest`, `UiCommand`, plugin types |
 | `@hachej/boring-workspace/events` | Any | Typed event bus for bridge communication |
 | `@hachej/boring-workspace/charts` | Browser | Recharts wrappers for data visualization |
 | `@hachej/boring-workspace/testing` | Browser | Test utilities and mock providers |
 | `@hachej/boring-workspace/app/front` | Browser | App composition: `WorkspaceAgentFront` |
-| `@hachej/boring-workspace/app/server` | Node | App composition: `createWorkspaceAgentApp` |
+| `@hachej/boring-workspace/app/server` | Node | App composition: `createWorkspaceAgentServer` |
 | `@hachej/boring-workspace/globals.css` | Browser | Global CSS for the workspace chrome |
 
 ---
@@ -176,35 +174,31 @@ UiBridgeClient receives → dispatches to FileTree plugin → expands node + foc
 | `surface-resolver` | Maps `exec_ui` → panel | `openFile` → editor panel with path |
 | `binding` | React context in provider tree | Theme, auth, workspace-scoped state |
 | `provider` | Binding + `apiBaseUrl` injection | Server-side plugin config passed to front |
-| `agent-tool` | New agent tool via server plugin | `deploy`, `test`, `lint` commands |
+| `agent-tool` | Static agent tool via server plugin | `deploy`, `test`, `lint` commands |
 
 ### Writing a Plugin
 
 ```ts
-import { defineFrontPlugin, definePanel } from "@hachej/boring-workspace"
+import { definePlugin } from "@hachej/boring-workspace/plugin"
 import type { PaneProps } from "@hachej/boring-workspace"
 
-export const statusPlugin = defineFrontPlugin({
+export const statusPlugin = definePlugin({
   id: "build-status",
   label: "Build Status",
-  outputs: [
+  leftTabs: [
     {
-      type: "left-tab",
-      panel: definePanel({
-        id: "build-status-tab",
-        title: "Build",
-        placement: "left",
-        component: () => import("./StatusTab").then(m => ({ default: m.StatusTab })),
-      }),
+      id: "build-status-tab",
+      title: "Build",
+      panelId: "build-status-tab",
+      component: () => import("./StatusTab").then(m => ({ default: m.StatusTab })),
     },
+  ],
+  panels: [
     {
-      type: "panel",
-      panel: definePanel({
-        id: "build-details",
-        title: "Build Details",
-        placement: "bottom",
-        component: () => import("./BuildDetails").then(m => ({ default: m.BuildDetails })),
-      }),
+      id: "build-details",
+      label: "Build Details",
+      placement: "bottom",
+      component: () => import("./BuildDetails").then(m => ({ default: m.BuildDetails })),
     },
   ],
 })
@@ -219,14 +213,22 @@ function StatusTab({ params, api, containerApi }: PaneProps<{}>) {
 
 ### Server Plugins
 
+Server plugins are boot-time/static composition. Hot-reloadable `.pi/extensions` agent tools should use Pi extensions instead.
+
 ```ts
 import { defineServerPlugin } from "@hachej/boring-workspace/server"
 
 export const statusServerPlugin = defineServerPlugin({
   id: "build-status",
-  tools: [buildTool],           // Agent tools
-  routes: [statusRoutes],       // Fastify routes
-  provisioning: [seedBuildDir], // Environment setup
+  agentTools: [buildTool], // Agent tools
+  routes: async (app) => { // Fastify plugin function
+    app.register(statusRoutes, { prefix: "/build-status" })
+  },
+  provisioning: {
+    templateDirs: [
+      { id: "build-status-seed", path: seedBuildDir, target: "." },
+    ],
+  },
 })
 ```
 
@@ -279,7 +281,7 @@ export const statusServerPlugin = defineServerPlugin({
 | Blank panel / white screen | Lazy component threw | Check `PluginErrorBoundary` — inspect console |
 | `UiBridge not connected` | Backend not running | Verify `apiBaseUrl` and backend endpoint |
 | Commands not arriving | SSE blocked by proxy | Use `?poll=true` on `/api/v1/ui/commands/next` |
-| Plugin not loading | Missing `defineFrontPlugin` | All plugins must be wrapped in `defineFrontPlugin` |
+| Plugin not loading | Missing `definePlugin` wrapper or `boring.front` manifest entry | Package front plugins must default-export `definePlugin({ ... })` and declare `boring.front` |
 | Duplicate panel IDs | Two plugins register same ID | Rename one panel's `id` field |
 
 ---

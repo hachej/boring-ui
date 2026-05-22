@@ -2,16 +2,15 @@
 
 import { Button, EmptyState, Notice, Pane, PaneBody, PaneFooter, PaneHeader, PaneTitle } from "@hachej/boring-ui-kit"
 import {
-  defineFrontPlugin,
-  definePanel,
   UI_COMMAND_EVENT,
   useWorkspaceAttention,
   type PaneProps,
-  type PluginOutput,
   type PluginProviderProps,
-  type SurfaceResolverConfig,
-  type WorkspaceFrontPlugin,
 } from "@hachej/boring-workspace"
+import {
+  definePlugin,
+  type BoringFrontFactoryWithId,
+} from "@hachej/boring-workspace/plugin"
 import { HelpCircle, XCircle } from "lucide-react"
 import { createContext, useContext, useEffect, useMemo, useSyncExternalStore, useState } from "react"
 import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../shared/constants"
@@ -193,21 +192,59 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   </div>
 }
 
-const panel = definePanel({ id: ASK_USER_PANEL_ID, title: ASK_USER_PANEL_TITLE, icon: HelpCircle, component: QuestionsPane, placement: "center", source: "builtin", chromeless: true })
-const resolver: SurfaceResolverConfig = { id: `${ASK_USER_PLUGIN_ID}.surface`, source: "builtin", resolve(request) { if (request.kind !== ASK_USER_SURFACE_KIND) return undefined; const metaQuestion = typeof request.meta === "object" && request.meta && "question" in request.meta ? (request.meta as { question?: AskUserQuestion }).question : undefined; return { component: ASK_USER_PANEL_ID, id: ASK_USER_PANEL_ID, title: ASK_USER_PANEL_TITLE, params: { questionId: request.target, question: metaQuestion } } } }
-const outputs: PluginOutput[] = [
-  { type: "provider", id: `${ASK_USER_PLUGIN_ID}.provider`, component: AskUserProvider },
-  { type: "panel", panel },
-  { type: "surface-resolver", resolver },
-  {
-    type: "command",
-    command: {
-      id: `${ASK_USER_PLUGIN_ID}.open`,
-      title: "Open Questions",
-      run: () => window.dispatchEvent(new CustomEvent("boring:ask-user-open")),
-      when: () => sharedQuestionsStore.getPending() !== null,
+/**
+ * `BoringFrontFactoryWithId` for the ask-user plugin. Registers
+ * (1) a provider that owns the per-app questions runtime (apiBaseUrl,
+ * auth headers, in-memory pending-question store), (2) a "Questions"
+ * panel rendering the pending question form, and (3) a surface
+ * resolver mapping ASK_USER_SURFACE_KIND requests into the panel.
+ *
+ * Pass directly to `WorkspaceProvider.plugins`.
+ *
+ * The panel is opened via the surface resolver (kind: ASK_USER_SURFACE_KIND),
+ * which is how the server-side agent tool triggers it.
+ */
+export const askUserPlugin: BoringFrontFactoryWithId = definePlugin({
+  id: ASK_USER_PLUGIN_ID,
+  label: ASK_USER_PANEL_TITLE,
+  providers: [
+    {
+      id: `${ASK_USER_PLUGIN_ID}.provider`,
+      component: AskUserProvider,
     },
-  },
-]
+  ],
+  panels: [
+    {
+      id: ASK_USER_PANEL_ID,
+      label: ASK_USER_PANEL_TITLE,
+      icon: HelpCircle,
+      component: QuestionsPane,
+      placement: "center",
+      source: "builtin",
+      chromeless: true,
+    },
+  ],
+  surfaceResolvers: [
+    {
+      id: `${ASK_USER_PLUGIN_ID}.surface`,
+      kind: ASK_USER_SURFACE_KIND,
+      source: "builtin",
+      // No inner kind guard — the workspace's surface registry already
+      // pre-filters by the top-level `kind` field before calling resolve.
+      resolve(request) {
+        const metaQuestion =
+          typeof request.meta === "object" && request.meta && "question" in request.meta
+            ? (request.meta as { question?: AskUserQuestion }).question
+            : undefined
+        return {
+          component: ASK_USER_PANEL_ID,
+          id: ASK_USER_PANEL_ID,
+          title: ASK_USER_PANEL_TITLE,
+          params: { questionId: request.target, question: metaQuestion },
+        }
+      },
+    },
+  ],
+})
 
-export const askUserPlugin: WorkspaceFrontPlugin = defineFrontPlugin({ id: ASK_USER_PLUGIN_ID, label: ASK_USER_PANEL_TITLE, outputs })
+export default askUserPlugin

@@ -1,8 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node:fs"
 import { resolve } from "node:path"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
-import { createAskUserServerPlugin } from "@hachej/boring-ask-user/server"
-import { createPlaygroundDataServerPlugin } from "../plugins/playgroundDataCatalog/server"
 
 export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
 export const VITE_PORT = Number(process.env.PORT) || 5200
@@ -34,8 +32,12 @@ export async function startPlaygroundServer(): Promise<void> {
       workspaceRoot,
       mode: "local",
       logger: true,
-      plugins: [createPlaygroundDataServerPlugin({ workspaceRoot })],
-      pluginFactories: [({ bridge }) => createAskUserServerPlugin({ workspaceRoot, bridge })],
+      // App-default plugins are declared in apps/workspace-playground/
+      // package.json#boring.defaultPluginPackages — the canonical app
+      // manifest. The workspace reads them from there and flows each
+      // entry through the standard load process (asset manager scan,
+      // SSE event, front dynamic-import, jiti reload).
+      appPackageJsonPath: resolve(APP_ROOT, "package.json"),
     })
     await app.listen({ port: AGENT_API_PORT, host: "127.0.0.1" })
   })()

@@ -8,6 +8,7 @@ export default defineConfig({
     server: "src/server/index.ts",
     shared: "src/shared/index.ts",
     events: "src/front/events/index.ts",
+    plugin: "src/plugin.ts",
   },
   format: ["esm"],
   dts: {
@@ -17,6 +18,7 @@ export default defineConfig({
       server: "src/server/index.ts",
       shared: "src/shared/index.ts",
       events: "src/front/events/index.ts",
+      plugin: "src/plugin.ts",
     },
   },
   tsconfig: "tsconfig.tsup.json",
@@ -25,5 +27,14 @@ export default defineConfig({
   outDir: "dist",
   target: "es2022",
   platform: "neutral",
-  external: [...PEER_EXTERNALS, /^@boring\//, "fastify", "zod"],
+  external: [
+    ...PEER_EXTERNALS,
+    /^@boring\//,
+    "fastify",
+    "zod",
+    // Pi is a server-only dep imported by `src/app/server/`. Keep
+    // external so Node consumers resolve from their own node_modules;
+    // browser bundles never reach the server entry so it doesn't leak.
+    "@mariozechner/pi-coding-agent",
+  ],
 })

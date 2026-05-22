@@ -44,7 +44,7 @@ import { askUserPlugin } from "@hachej/boring-ask-user/front"
 // const already — no factory. Add directly to WorkspaceProvider plugins.
 ```
 
-Pass `askUserPlugin` to your `WorkspaceProvider`'s `plugins` array.
+Pass `askUserPlugin` to your `WorkspaceProvider`'s `plugins` array. This front plugin includes a provider/binding, so compose it statically in the app shell rather than relying on dynamic package hot-load.
 
 **Server (agent runtime):**
 
@@ -52,7 +52,7 @@ Pass `askUserPlugin` to your `WorkspaceProvider`'s `plugins` array.
 import { createAskUserServerPlugin } from "@hachej/boring-ask-user/server"
 
 const askUserPlugin = createAskUserServerPlugin({ workspaceRoot, bridge })
-// Add to createAgentApp plugins or pluginFactories
+// Add the returned plugin object to createWorkspaceAgentServer({ plugins: [...] })
 ```
 
 The agent now has an `ask_user` tool. The agent calls it with:
@@ -157,7 +157,7 @@ Agent calls ask_user tool
 
 | Import | Environment | What You Get |
 |--------|-------------|--------------|
-| `@hachej/boring-ask-user/front` | Browser | `askUserPlugin` const — workbench provider + panel + surface resolver + command |
+| `@hachej/boring-ask-user/front` | Browser | `askUserPlugin` const — workbench provider + panel + surface resolver |
 | `@hachej/boring-ask-user/server` | Node | `createAskUserServerPlugin()` — agent tool + HTTP routes + file store |
 | `@hachej/boring-ask-user/shared` | Any | `AskUserField`, `AskUserFormSchema`, `AskUserToolInput`, error codes, constants |
 
@@ -220,7 +220,7 @@ const plugin = createAskUserServerPlugin({
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `ask_user tool not found` | Server plugin not registered | Add `createAskUserServerPlugin()` to your agent app or pluginFactories |
+| `ask_user tool not found` | Server plugin not registered | Add `createAskUserServerPlugin({ ... })` to `createWorkspaceAgentServer({ plugins: [...] })` or another static server composition point |
 | Panel doesn't open | Front plugin not in workspace | Add `askUserPlugin` to `WorkspaceProvider` plugins array |
 | Answer not reaching agent | Bridge connection broken | Check SSE endpoint; ensure `bridge` is passed to server plugin |
 | Validation fails | User input doesn't match field schema | Check `required` fields, `options` for select fields, and `name` field keys |

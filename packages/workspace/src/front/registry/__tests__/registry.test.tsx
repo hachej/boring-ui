@@ -1,10 +1,10 @@
 import { describe, it, expect, vi } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { act, render, screen, waitFor } from "@testing-library/react"
 import { renderHook } from "@testing-library/react"
-import type { ReactNode } from "react"
+import { Suspense, type ReactNode } from "react"
 import { PanelRegistry } from "../PanelRegistry"
-import { CommandRegistry } from "../CommandRegistry"
-import { SurfaceResolverRegistry } from "../SurfaceResolverRegistry"
+import { CommandRegistry } from "../../../shared/plugins/CommandRegistry"
+import { SurfaceResolverRegistry } from "../../../shared/plugins/SurfaceResolverRegistry"
 import {
   RegistryProvider,
   useRegistry,
@@ -26,6 +26,14 @@ function DummyPanel() {
 
 function AnotherPanel() {
   return <div>another</div>
+}
+
+function LazyPanelOne() {
+  return <div>lazy-one</div>
+}
+
+function LazyPanelTwo() {
+  return <div>lazy-two</div>
 }
 
 // --- PanelRegistry ---
@@ -75,7 +83,7 @@ describe("PanelRegistry", () => {
     reg.register("lazy", { title: "Lazy", component: importer, lazy: true })
     const comps = reg.getComponents()
     expect(comps.lazy).toBeDefined()
-    expect(comps.lazy.name).toBe("WrappedPanel")
+    expect(comps.lazy.name).toMatch(/^WrappedPanel/)
   })
 
   it("getComponents wraps sync components in an error boundary", () => {
@@ -84,7 +92,99 @@ describe("PanelRegistry", () => {
     const comps = reg.getComponents()
     expect(comps.sync).toBeDefined()
     expect(comps.sync).not.toBe(DummyPanel)
-    expect(comps.sync.name).toBe("WrappedPanel")
+    expect(comps.sync.name).toMatch(/^WrappedPanel/)
+  })
+
+  it("rendered wrapped panels switch to replacement registrations", async () => {
+    const reg = new PanelRegistry()
+    reg.register("hot", { title: "Hot", component: DummyPanel })
+    const HotPanel = reg.getComponents().hot
+    render(<HotPanel />)
+    expect(screen.getByText("dummy")).toBeInTheDocument()
+
+    act(() => {
+      reg.register("hot", { title: "Hot", component: AnotherPanel })
+    })
+    expect(await screen.findByText("another")).toBeInTheDocument()
+    expect(screen.queryByText("dummy")).not.toBeInTheDocument()
+  })
+
+  it("rendered wrapped panels stop rendering after replacement requires missing capabilities", async () => {
+    const reg = new PanelRegistry()
+    reg.register("cap", { title: "Cap", component: DummyPanel })
+    const CapPanel = reg.getComponents().cap
+    render(<CapPanel />)
+    expect(screen.getByText("dummy")).toBeInTheDocument()
+
+    act(() => {
+      reg.register("cap", {
+        title: "Cap",
+        component: AnotherPanel,
+        requiresCapabilities: ["missing-capability"],
+      })
+    })
+    await waitFor(() => expect(screen.queryByText("dummy")).not.toBeInTheDocument())
+    expect(screen.queryByText("another")).not.toBeInTheDocument()
+  })
+
+  it("keeps lazy component identity stable across initial Suspense retries", async () => {
+    const reg = new PanelRegistry()
+    let resolveImport: (value: { default: typeof LazyPanelOne }) => void = () => {}
+    const importer = vi.fn(
+      () => new Promise<{ default: typeof LazyPanelOne }>((resolve) => {
+        resolveImport = resolve
+      }),
+    )
+    reg.register("stable-lazy", {
+      title: "Stable Lazy",
+      component: importer,
+      lazy: true,
+    })
+    const StableLazyPanel = reg.getComponents()["stable-lazy"]
+    const view = render(
+      <Suspense fallback={<div>loading stable lazy</div>}>
+        <StableLazyPanel tick={0} />
+      </Suspense>,
+    )
+    expect(screen.getByText("Loading…")).toBeInTheDocument()
+
+    view.rerender(
+      <Suspense fallback={<div>loading stable lazy</div>}>
+        <StableLazyPanel tick={1} />
+      </Suspense>,
+    )
+    expect(importer).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveImport({ default: LazyPanelOne })
+    })
+    expect(await screen.findByText("lazy-one")).toBeInTheDocument()
+  })
+
+  it("rendered lazy wrapped panels switch to replacement lazy importers", async () => {
+    const reg = new PanelRegistry()
+    reg.register("hot-lazy", {
+      title: "Hot Lazy",
+      component: () => Promise.resolve({ default: LazyPanelOne }),
+      lazy: true,
+    })
+    const HotLazyPanel = reg.getComponents()["hot-lazy"]
+    render(
+      <Suspense fallback={<div>loading lazy</div>}>
+        <HotLazyPanel />
+      </Suspense>,
+    )
+    expect(await screen.findByText("lazy-one")).toBeInTheDocument()
+
+    act(() => {
+      reg.register("hot-lazy", {
+        title: "Hot Lazy",
+        component: () => Promise.resolve({ default: LazyPanelTwo }),
+        lazy: true,
+      })
+    })
+    expect(await screen.findByText("lazy-two")).toBeInTheDocument()
+    expect(screen.queryByText("lazy-one")).not.toBeInTheDocument()
   })
 })
 

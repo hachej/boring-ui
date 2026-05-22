@@ -51,3 +51,4 @@ export {
 } from './capabilities'
 export type { AgentRuntimeCapabilities } from './capabilities'
 export { validateTool } from './validateTool'
+export { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from './agentPluginEvents'

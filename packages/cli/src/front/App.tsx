@@ -175,6 +175,7 @@ export function CliWorkspaceShell() {
         defaultSessionTitle={activeWorkspace.name}
         useSessions={useAgentSessions}
         chatParams={{ thinkingControl: true }}
+        frontPluginHotReload={false}
         topBarRight={<CliVersionBadge version={cliVersion} />}
         topBarLeft={
           <WorkspaceSwitcherControl
@@ -206,6 +207,7 @@ export function CliWorkspaceShell() {
       defaultSessionTitle={projectName}
       useSessions={useAgentSessions}
       chatParams={{ thinkingControl: true }}
+      frontPluginHotReload={false}
       topBarRight={<CliVersionBadge version={cliVersion} />}
     />
   )

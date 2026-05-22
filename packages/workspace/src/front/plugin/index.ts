@@ -1,5 +1,3 @@
-export { CatalogRegistry } from "./CatalogRegistry"
-export type { CatalogRegistryOptions } from "./CatalogRegistry"
 export { useCommands } from "./useCommands"
 export { useActivePanels } from "./useActivePanels"
 export { useCatalogs } from "./useCatalogs"

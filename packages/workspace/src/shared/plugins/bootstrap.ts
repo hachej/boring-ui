@@ -1,16 +1,16 @@
-import { PluginError } from "./defineFrontPlugin"
-import type { WorkspaceFrontPlugin } from "./defineFrontPlugin"
-import type {
-  AgentTool,
-  CatalogConfig,
-  PluginOutput,
-} from "./types"
+import { PluginError } from "./errors"
+import {
+  captureFrontPlugin,
+  type BoringFrontFactoryWithId,
+  type BoringFrontLeftTabRegistration,
+  type BoringFrontPanelRegistration,
+  type BoringFrontPanelCommandRegistration,
+  type BoringFrontSurfaceResolverRegistration,
+  type CapturedFrontPlugin,
+} from "./frontFactory"
+import type { CatalogConfig } from "./types"
 import type { CommandConfig, PanelRegistration } from "../types/panel"
-import type { SurfaceResolverRegistration } from "../types/surface"
-
-export interface AgentToolRegistry {
-  register(tool: AgentTool, pluginId: string): void
-}
+import type { SurfaceOpenRequest, SurfaceResolverRegistration } from "../types/surface"
 
 export interface PanelRegistryLike {
   register(id: string, config: PanelRegistration): void
@@ -30,74 +30,101 @@ export interface SurfaceResolverRegistryLike {
 
 export interface BootstrapOptions {
   chatPanel: unknown
-  plugins?: WorkspaceFrontPlugin[]
-  defaults?: WorkspaceFrontPlugin[]
+  plugins?: BoringFrontFactoryWithId[]
+  defaults?: BoringFrontFactoryWithId[]
   excludeDefaults?: string[]
   registries: {
     panels: PanelRegistryLike
     commands: CommandRegistryLike
     catalogs: CatalogRegistryLike
     surfaceResolvers?: SurfaceResolverRegistryLike
-    agentTools?: AgentToolRegistry
   }
 }
 
 export interface BootstrapResult {
   registered: string[]
-  systemPromptAppend: string
+  plugins: CapturedFrontPlugin[]
 }
 
-function registerOutput(
-  output: PluginOutput,
-  plugin: WorkspaceFrontPlugin,
+function panelRegistration(panel: BoringFrontPanelRegistration<any>, pluginId: string): PanelRegistration {
+  return {
+    title: panel.label ?? panel.id,
+    component: panel.component,
+    placement: panel.placement ?? "center",
+    source: panel.source ?? "plugin",
+    pluginId,
+    ...(panel.icon ? { icon: panel.icon } : {}),
+    ...(panel.requiresCapabilities ? { requiresCapabilities: panel.requiresCapabilities } : {}),
+    ...(panel.essential !== undefined ? { essential: panel.essential } : {}),
+    ...(panel.lazy !== undefined ? { lazy: panel.lazy } : {}),
+    ...(panel.chromeless !== undefined ? { chromeless: panel.chromeless } : {}),
+  }
+}
+
+function leftTabRegistration(tab: BoringFrontLeftTabRegistration<any>, pluginId: string): PanelRegistration {
+  return {
+    title: tab.title,
+    component: tab.component ?? (() => null),
+    placement: "left-tab",
+    source: tab.source ?? "plugin",
+    pluginId,
+    ...(tab.icon ? { icon: tab.icon } : {}),
+    ...(tab.requiresCapabilities ? { requiresCapabilities: tab.requiresCapabilities } : {}),
+    ...(tab.lazy !== undefined ? { lazy: tab.lazy } : {}),
+    ...(tab.chromeless !== undefined ? { chromeless: tab.chromeless } : {}),
+  }
+}
+
+function commandRegistration(command: BoringFrontPanelCommandRegistration, pluginId: string): CommandConfig {
+  return {
+    id: command.id,
+    title: command.title,
+    run: command.run ?? (() => undefined),
+    pluginId,
+    ...(command.keywords ? { keywords: command.keywords } : command.panelId ? { keywords: [command.panelId] } : {}),
+    ...(command.shortcut ? { shortcut: command.shortcut } : {}),
+    ...(command.when ? { when: command.when } : {}),
+  }
+}
+
+function surfaceResolverRegistration(
+  resolver: BoringFrontSurfaceResolverRegistration,
+  pluginId: string,
+): { id: string; config: SurfaceResolverRegistration } {
+  const id = resolver.id ?? `${pluginId}:${resolver.kind}`
+  return {
+    id,
+    config: {
+      source: resolver.source ?? "plugin",
+      pluginId,
+      resolve(request: SurfaceOpenRequest) {
+        if (request.kind !== resolver.kind) return undefined
+        return resolver.resolve(request) ?? undefined
+      },
+    },
+  }
+}
+
+export function registerCapturedFrontPlugin(
+  plugin: CapturedFrontPlugin,
   registries: BootstrapOptions["registries"],
 ): void {
-  const ownedOutput = output as PluginOutput & { pluginId?: string }
-  const ownerPluginId = ownedOutput.pluginId ?? plugin.id
-  switch (output.type) {
-    case "left-tab": {
-      const ownedLeftTab = output as Extract<PluginOutput, { type: "left-tab" }> & {
-        pluginId?: string
-      }
-      const { type: _type, id, pluginId: _pluginId, ...registration } = ownedLeftTab
-      registries.panels.register(id, {
-        ...registration,
-        placement: "left-tab",
-        pluginId: ownerPluginId,
-      })
-      return
-    }
-    case "panel": {
-      const { id, ...registration } = output.panel
-      registries.panels.register(id, {
-        ...registration,
-        pluginId: ownerPluginId,
-      })
-      return
-    }
-    case "command":
-      registries.commands.registerCommand({
-        ...output.command,
-        pluginId: ownerPluginId,
-      })
-      return
-    case "catalog":
-      registries.catalogs.register(output.catalog, ownerPluginId)
-      return
-    case "surface-resolver": {
-      const { id, ...registration } = output.resolver
-      registries.surfaceResolvers?.register(id, {
-        ...registration,
-        pluginId: ownerPluginId,
-      })
-      return
-    }
-    case "agent-tool":
-      registries.agentTools?.register(output.tool, ownerPluginId)
-      return
-    case "binding":
-    case "provider":
-      return
+  const { registrations } = plugin
+  for (const panel of registrations.panels) {
+    registries.panels.register(panel.id, panelRegistration(panel, plugin.id))
+  }
+  for (const tab of registrations.leftTabs) {
+    registries.panels.register(tab.id, leftTabRegistration(tab, plugin.id))
+  }
+  for (const command of registrations.panelCommands) {
+    registries.commands.registerCommand(commandRegistration(command, plugin.id))
+  }
+  for (const catalog of registrations.catalogs) {
+    registries.catalogs.register(catalog, plugin.id)
+  }
+  for (const resolver of registrations.surfaceResolvers) {
+    const { id, config } = surfaceResolverRegistration(resolver, plugin.id)
+    registries.surfaceResolvers?.register(id, config)
   }
 }
 
@@ -109,56 +136,29 @@ export function bootstrap(options: BootstrapOptions): BootstrapResult {
   const excludedDefaults = new Set(options.excludeDefaults ?? [])
   const finalPlugins = [
     ...(options.defaults ?? []).filter(
-      (plugin) => !excludedDefaults.has(plugin.id),
+      (plugin) => !excludedDefaults.has(plugin.pluginId),
     ),
     ...(options.plugins ?? []),
   ]
 
   const seenPluginIds = new Set<string>()
   for (const plugin of finalPlugins) {
-    if (seenPluginIds.has(plugin.id)) {
+    if (seenPluginIds.has(plugin.pluginId)) {
       throw new PluginError(
         "duplicate-id",
-        `plugin "${plugin.id}" registered twice`,
+        `plugin "${plugin.pluginId}" registered twice`,
       )
     }
-    seenPluginIds.add(plugin.id)
+    seenPluginIds.add(plugin.pluginId)
   }
 
-  for (const plugin of finalPlugins) {
-    for (const panel of plugin.panels ?? []) {
-      const { id, ...registration } = panel
-      options.registries.panels.register(id, {
-        ...registration,
-        pluginId: plugin.id,
-      })
-    }
-    for (const command of plugin.commands ?? []) {
-      options.registries.commands.registerCommand({
-        ...command,
-        pluginId: plugin.id,
-      })
-    }
-    for (const catalog of plugin.catalogs ?? []) {
-      options.registries.catalogs.register(catalog, plugin.id)
-    }
-    if (options.registries.agentTools) {
-      for (const tool of plugin.agentTools ?? []) {
-        options.registries.agentTools.register(tool, plugin.id)
-      }
-    }
-    for (const output of plugin.outputs ?? []) {
-      registerOutput(output, plugin, options.registries)
-    }
+  const captured = finalPlugins.map(captureFrontPlugin)
+  for (const plugin of captured) {
+    registerCapturedFrontPlugin(plugin, options.registries)
   }
-
-  const systemPromptAppend = finalPlugins
-    .filter((p) => p.systemPrompt && p.systemPrompt.trim())
-    .map((p) => p.systemPrompt!.trim())
-    .join("\n\n")
 
   return {
-    registered: finalPlugins.map((plugin) => plugin.id),
-    systemPromptAppend,
+    registered: captured.map((plugin) => plugin.id),
+    plugins: captured,
   }
 }

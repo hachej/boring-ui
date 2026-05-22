@@ -167,8 +167,9 @@ export class AskUserRuntime {
   }
 
   private async waitForAnswerWithOpen(question: AskUserQuestion, timeoutMs?: number, signal?: AbortSignal): Promise<AskUserToolResult> {
+    const pendingAnswer = this.waitForAnswer(question, timeoutMs, signal)
     void this.openQuestionSurface(question)
-    return this.waitForAnswer(question, timeoutMs, signal)
+    return pendingAnswer
   }
 
   private async openQuestionSurface(question: AskUserQuestion): Promise<void> {

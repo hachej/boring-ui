@@ -1,8 +1,8 @@
 import {
   WORKSPACE_OPEN_PATH_SURFACE_KIND,
   postUiCommand,
-  type WorkspaceFrontPlugin,
 } from "@hachej/boring-workspace"
+import type { BoringFrontFactoryWithId } from "@hachej/boring-workspace/plugin"
 import {
   createDataCatalogPlugin,
   type CreateDataCatalogPluginOptions,
@@ -83,6 +83,7 @@ function createPlaygroundDataCatalogOptions(): CreateDataCatalogPluginOptions {
   }
 }
 
-export const playgroundDataCatalogPlugin: WorkspaceFrontPlugin = createDataCatalogPlugin(
-  createPlaygroundDataCatalogOptions(),
-)
+const playgroundDataCatalogPlugin: BoringFrontFactoryWithId =
+  createDataCatalogPlugin(createPlaygroundDataCatalogOptions())
+
+export default playgroundDataCatalogPlugin

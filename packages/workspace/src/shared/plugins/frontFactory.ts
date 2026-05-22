@@ -1,0 +1,286 @@
+import type { ComponentType } from "react"
+import type { PanelConfig, PaneProps } from "../types/panel"
+import type { SurfaceOpenRequest, SurfacePanelResolution } from "../types/surface"
+import { PluginError } from "./errors"
+import type {
+  CatalogConfig,
+  LeftTabParams,
+  PluginBinding,
+  PluginProvider,
+} from "./types"
+
+export interface BoringFrontPanelRegistration<T = unknown> {
+  id: string
+  component: ComponentType<PaneProps<T>> | (() => Promise<{ default: ComponentType<PaneProps<T>> }>)
+  label?: string
+  icon?: ComponentType<{ className?: string }>
+  placement?: string
+  requiresCapabilities?: string[]
+  essential?: boolean
+  lazy?: boolean
+  chromeless?: boolean
+  source?: string
+}
+
+export interface BoringFrontPanelCommandRegistration {
+  id: string
+  title: string
+  panelId?: string
+  run?: () => void
+  keywords?: string[]
+  shortcut?: string
+  when?: () => boolean
+}
+
+export interface BoringFrontLeftTabRegistration<T = LeftTabParams> {
+  id: string
+  title: string
+  panelId: string
+  icon?: ComponentType<{ className?: string }>
+  component?: PanelConfig<T>["component"]
+  lazy?: boolean
+  chromeless?: boolean
+  requiresCapabilities?: string[]
+  source?: string
+}
+
+export interface BoringFrontProviderRegistration {
+  id: string
+  component: PluginProvider
+}
+
+export interface BoringFrontBindingRegistration {
+  id: string
+  component: PluginBinding
+}
+
+export interface BoringFrontSurfaceResolverRegistration {
+  id?: string
+  kind: string
+  source?: string
+  resolve: (request: SurfaceOpenRequest) => SurfacePanelResolution | null | undefined
+}
+
+export interface BoringFrontAPI {
+  registerProvider(registration: BoringFrontProviderRegistration): void
+  registerBinding(registration: BoringFrontBindingRegistration): void
+  registerCatalog(registration: CatalogConfig): void
+  registerPanel<T = unknown>(registration: BoringFrontPanelRegistration<T>): void
+  registerPanelCommand(registration: BoringFrontPanelCommandRegistration): void
+  registerLeftTab<T = LeftTabParams>(registration: BoringFrontLeftTabRegistration<T>): void
+  registerSurfaceResolver(registration: BoringFrontSurfaceResolverRegistration): void
+}
+
+export type BoringFrontFactory = (api: BoringFrontAPI) => void | Promise<void>
+export type BoringFrontSetup = (api: BoringFrontAPI) => void
+
+type RejectAsyncSetup<C> = C extends { setup?: infer Setup }
+  ? Setup extends (...args: any[]) => infer Return
+    ? Extract<Return, PromiseLike<unknown>> extends never
+      ? unknown
+      : never
+    : unknown
+  : unknown
+
+/**
+ * A `BoringFrontFactory` that carries its own plugin id (and optional
+ * label) as static properties. Produced by `definePlugin({ ... })` and used
+ * directly by `WorkspaceProvider.plugins`.
+ */
+export type BoringFrontFactoryWithId = BoringFrontFactory & {
+  pluginId: string
+  pluginLabel?: string
+}
+
+/**
+ * Declarative plugin config — the canonical shape for `definePlugin`.
+ */
+export interface DefinePluginConfig {
+  id: string
+  label?: string
+  panels?: ReadonlyArray<BoringFrontPanelRegistration<any>>
+  commands?: ReadonlyArray<BoringFrontPanelCommandRegistration>
+  leftTabs?: ReadonlyArray<BoringFrontLeftTabRegistration<any>>
+  surfaceResolvers?: ReadonlyArray<BoringFrontSurfaceResolverRegistration>
+  providers?: ReadonlyArray<BoringFrontProviderRegistration>
+  bindings?: ReadonlyArray<BoringFrontBindingRegistration>
+  catalogs?: ReadonlyArray<CatalogConfig>
+  /**
+   * Escape hatch for registrations that can't be expressed declaratively.
+   * Called LAST, after every declarative field has been registered.
+   */
+  setup?: BoringFrontSetup
+}
+
+/**
+ * Define a boring-ui plugin. Takes a single declarative config object and
+ * returns a branded front factory.
+ *
+ * Older positional signatures are not supported. The `setup` field is
+ * synchronous so statically composed plugins cannot return a Promise during
+ * provider bootstrap.
+ */
+export function definePlugin<const Config extends DefinePluginConfig>(
+  config: Config & RejectAsyncSetup<Config>,
+): BoringFrontFactoryWithId {
+  if (typeof config !== "object" || config === null) {
+    if (typeof config === "string" || typeof config === "function") {
+      throw new Error(
+        "definePlugin now takes a single declarative config object: " +
+          "definePlugin({ id, label?, panels, commands, leftTabs, surfaceResolvers, setup? }). " +
+          "The legacy positional form was removed — use the new shape.",
+      )
+    }
+    throw new Error("definePlugin: expected a config object")
+  }
+  if (typeof config.id !== "string" || config.id.length === 0) {
+    throw new Error("definePlugin: `id` is required and must be a non-empty string")
+  }
+  const factory: BoringFrontFactory = (api) => {
+    for (const panel of config.panels ?? []) api.registerPanel(panel)
+    for (const command of config.commands ?? []) api.registerPanelCommand(command)
+    for (const tab of config.leftTabs ?? []) api.registerLeftTab(tab)
+    for (const resolver of config.surfaceResolvers ?? []) api.registerSurfaceResolver(resolver)
+    for (const provider of config.providers ?? []) api.registerProvider(provider)
+    for (const binding of config.bindings ?? []) api.registerBinding(binding)
+    for (const catalog of config.catalogs ?? []) api.registerCatalog(catalog)
+    if (config.setup) config.setup(api)
+    return undefined
+  }
+  return brandFactoryWithPluginId(config.id, factory, { label: config.label })
+}
+
+function brandFactoryWithPluginId(
+  id: string,
+  factory: BoringFrontFactory,
+  options: { label?: string },
+): BoringFrontFactoryWithId {
+  const existing = (factory as Partial<BoringFrontFactoryWithId>).pluginId
+  if (existing !== undefined && existing !== id) {
+    throw new Error(`definePlugin: factory already branded as "${existing}", cannot rebrand as "${id}"`)
+  }
+  const wrapper = ((api) => factory(api)) as BoringFrontFactoryWithId
+  Object.defineProperty(wrapper, "pluginId", { value: id, enumerable: true })
+  if (options.label !== undefined) {
+    Object.defineProperty(wrapper, "pluginLabel", { value: options.label, enumerable: true })
+  }
+  return wrapper
+}
+
+export interface CapturedBoringFrontRegistrations {
+  providers: BoringFrontProviderRegistration[]
+  bindings: BoringFrontBindingRegistration[]
+  catalogs: CatalogConfig[]
+  panels: BoringFrontPanelRegistration<any>[]
+  panelCommands: BoringFrontPanelCommandRegistration[]
+  leftTabs: BoringFrontLeftTabRegistration<any>[]
+  surfaceResolvers: BoringFrontSurfaceResolverRegistration[]
+}
+
+export interface CapturedFrontPlugin {
+  id: string
+  label?: string
+  registrations: CapturedBoringFrontRegistrations
+}
+
+export interface CapturingBoringFrontAPIHandle extends BoringFrontAPI {
+  flush(): CapturedBoringFrontRegistrations
+}
+
+function clone<T>(items: T[]): T[] {
+  return [...items]
+}
+
+export function createCapturingBoringFrontAPI(options: { pluginId?: string } = {}): CapturingBoringFrontAPIHandle {
+  const providers: BoringFrontProviderRegistration[] = []
+  const bindings: BoringFrontBindingRegistration[] = []
+  const catalogs: CatalogConfig[] = []
+  const panels: BoringFrontPanelRegistration<any>[] = []
+  const panelCommands: BoringFrontPanelCommandRegistration[] = []
+  const leftTabs: BoringFrontLeftTabRegistration<any>[] = []
+  const surfaceResolvers: BoringFrontSurfaceResolverRegistration[] = []
+  // Intra-plugin id collision detection (PLUGIN_SYSTEM.md §5.7): two register*
+  // calls in the same factory chain landing the same id are silent
+  // last-write-wins in the atomic-replace path. Catch them at capture time.
+  const seen = new Map<string, string>()
+  const claim = (kind: string, id: string) => {
+    const key = `${kind}:${id}`
+    const prior = seen.get(key)
+    if (prior !== undefined) {
+      const owner = options.pluginId ?? "<plugin>"
+      throw new PluginError(
+        "duplicate-id",
+        `plugin "${owner}" registers ${kind} "${id}" twice (first as ${prior}, then again). ` +
+          "If you are composing kits, two of them are registering the same id — namespace one of them.",
+      )
+    }
+    seen.set(key, `${kind} "${id}"`)
+  }
+
+  return {
+    registerProvider(registration) {
+      claim("provider", registration.id)
+      providers.push(registration)
+    },
+    registerBinding(registration) {
+      claim("binding", registration.id)
+      bindings.push(registration)
+    },
+    registerCatalog(registration) {
+      claim("catalog", registration.id)
+      catalogs.push(registration)
+    },
+    registerPanel(registration) {
+      claim("panel", registration.id)
+      panels.push(registration)
+    },
+    registerPanelCommand(registration) {
+      claim("command", registration.id)
+      panelCommands.push(registration)
+    },
+    registerLeftTab(registration) {
+      claim("left-tab", registration.id)
+      leftTabs.push(registration)
+    },
+    registerSurfaceResolver(registration) {
+      const id = registration.id ?? `${options.pluginId ?? "anon"}:${registration.kind}`
+      claim("surface-resolver", id)
+      // Assign the synthetic id so downstream readers of registration.id
+      // don't get undefined when the caller omitted it.
+      if (registration.id === undefined) {
+        ;(registration as { id: string }).id = id
+      }
+      surfaceResolvers.push(registration)
+    },
+    flush() {
+      return {
+        providers: clone(providers),
+        bindings: clone(bindings),
+        catalogs: clone(catalogs),
+        panels: clone(panels),
+        panelCommands: clone(panelCommands),
+        leftTabs: clone(leftTabs),
+        surfaceResolvers: clone(surfaceResolvers),
+      }
+    },
+  }
+}
+
+export function captureFrontPlugin(plugin: BoringFrontFactoryWithId): CapturedFrontPlugin {
+  if (typeof plugin !== "function" || typeof plugin.pluginId !== "string" || plugin.pluginId.length === 0) {
+    throw new Error(
+      "WorkspaceProvider.plugins accepts plugins created by definePlugin({ id, ... }). " +
+        "Received a front plugin without a pluginId.",
+    )
+  }
+  const api = createCapturingBoringFrontAPI({ pluginId: plugin.pluginId })
+  const result = plugin(api)
+  if (result && typeof (result as Promise<void>).then === "function") {
+    throw new Error(`captureFrontPlugin(${plugin.pluginId}) requires a synchronous factory`)
+  }
+  return {
+    id: plugin.pluginId,
+    ...(plugin.pluginLabel !== undefined ? { label: plugin.pluginLabel } : {}),
+    registrations: api.flush(),
+  }
+}
