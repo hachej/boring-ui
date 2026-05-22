@@ -29,7 +29,7 @@ backend registration.
 
 ## App/internal publishable package plugin
 
-Use [`plugins/_template-full`](../../../plugins/_template-full/) as the reference
+Use [`packages/cli/templates/plugin`](../../../packages/cli/templates/plugin/) as the reference
 shape when building a trusted package composed by an app shell:
 
 ```txt
