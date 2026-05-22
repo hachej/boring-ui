@@ -10,7 +10,6 @@ import {
   type WorkspacePiPackageSource,
 } from "./piPackages"
 export {
-  ServerPluginError,
   defineServerPlugin,
   validateServerPlugin,
 } from "./defineServerPlugin"

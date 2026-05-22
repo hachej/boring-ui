@@ -4,7 +4,7 @@
  * "[cli] listening at http://..." so that e2e/helpers/backend.ts can discover
  * the browser URL.
  *
- * Accepted flags (others are silently ignored for back-compat):
+ * Accepted flags:
  *   --port <n>         API port
  *   --mode <id>        Runtime mode (default: direct)
  *   --workspace <path> Workspace root
@@ -34,6 +34,8 @@ function parseArgs(argv: string[]): { port: number; mode: RuntimeModeId; workspa
       mode = argv[++i] as RuntimeModeId
     } else if ((arg === '--workspace' || arg === '-w') && argv[i + 1]) {
       workspaceRoot = argv[++i]!
+    } else {
+      throw new Error(`unknown argument: ${arg}`)
     }
   }
 

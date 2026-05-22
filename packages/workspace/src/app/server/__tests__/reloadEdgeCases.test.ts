@@ -54,7 +54,7 @@ async function makeTempDir(prefix: string): Promise<string> {
 async function writeDirPlugin(dir: string, body: string): Promise<void> {
   await mkdir(join(dir, "src", "server"), { recursive: true })
   await writeFile(join(dir, "src", "server", "index.ts"), body, "utf8")
-  await writeFile(join(dir, "package.json"), JSON.stringify({ name: "edge-plugin" }), "utf8")
+  await writeFile(join(dir, "package.json"), JSON.stringify({ name: "edge-plugin", boring: { server: "src/server/index.ts" } }), "utf8")
 }
 
 async function writeDiscoveredPlugin(

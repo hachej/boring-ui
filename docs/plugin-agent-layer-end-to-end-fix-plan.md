@@ -148,19 +148,18 @@ The CSV viewer flow failed for several independent reasons:
 **Fixes**
 
 - Align plugin list routes with the rest of the API:
-  - canonical: `/api/v1/agent-plugins`
-  - compatibility alias: `/api/agent-plugins`
+  - canonical only: `/api/v1/agent-plugins`
 - Keep/import cache-busting locked:
   - front hot reload import must include the plugin `revision` query parameter, e.g. `import(frontUrl + ?v=<revision>)`.
   - server may expose clean `frontUrl`; the client import path is the critical cache-busting point.
 - Ensure reload diagnostics are visible:
   - `/api/v1/agent/reload` response includes plugin scan/rebuild diagnostics and restart warnings.
-  - front/plugin inspector can show failed plugin errors from `/api/v1/agent-plugins/:id/error` (with `/api/agent-plugins/:id/error` kept as a compatibility alias).
+  - front/plugin inspector can show failed plugin errors from `/api/v1/agent-plugins/:id/error`.
 
 **Tests**
 
 - Route test:
-  - `/api/v1/agent-plugins` and compatibility alias `/api/agent-plugins` return same loaded plugin list.
+  - `/api/v1/agent-plugins` returns the loaded plugin list and unversioned aliases are absent.
 - Cache-busting regression test:
   - hot reload importer receives the same `frontUrl` with increasing `revision` values after edits.
   - default import path appends `?v=<revision>` / `&v=<revision>` so browser dynamic imports do not reuse stale modules.

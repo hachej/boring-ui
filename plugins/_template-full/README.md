@@ -1,17 +1,17 @@
 # Full npm-package plugin template (`plugins/_template-full/`)
 
-Canonical, self-contained shape for **publishable npm-package plugins**
+Reference shape for **app/internal publishable npm-package plugins**
 under `plugins/*` — `tsup` builds to `dist/`, consuming apps install
 the published package and declare it in `defaultPluginPackages`. The
 existing plugins (`ask-user`, `data-explorer`, `data-catalog`) are
-aligned to match this shape — if they drift, fix them, not the template.
+aligned to match this shape.
 
-> **Building a user plugin instead** (hot-reloadable, no build step,
-> drops into a workspace's `.pi/extensions/<name>/`)? Don't copy this
-> template — run `boring-ui scaffold-plugin <name>` (or
-> `npx @hachej/boring-ui-cli scaffold-plugin <name>`). The CLI ships
-> its own bundled templates; there's no copy-from source in the repo
-> for the hot-reload form.
+> **Building a generated/runtime user plugin instead** (hot-reloadable,
+> no build step, drops into a workspace's `.pi/extensions/<name>/`)?
+> Don't copy this template and don't use `npx` from inside the agent
+> runtime — run the workspace-local `boring-ui scaffold-plugin <name>`.
+> The CLI ships its own bundled templates; there's no copy-from source in
+> the repo for the hot-reload form.
 
 ## Scaffolding a new plugin
 
@@ -38,7 +38,7 @@ plugins/<name>/
                        setupFiles: ./src/test-setup.ts
   src/
     front/
-      index.ts         createXxxPlugin() — entry, re-exports
+      index.ts         definePlugin({ ... }) — entry, re-exports
       panels.tsx
       catalogs.ts
       surfaceResolver.ts
@@ -61,7 +61,7 @@ plugins/<name>/
 - **shared/** — constants and types used by both sides. Keep it tiny.
 - **`src/test-setup.ts`** — jest-dom matchers, ResizeObserver + Range
   polyfills, testing-library cleanup. Each plugin owns its own copy;
-  keep them in sync with `plugins/_template/src/test-setup.ts` if the
+  keep them in sync with `plugins/_template-full/src/test-setup.ts` if the
   canonical setup changes. Do **not** `import
   "@testing-library/jest-dom/vitest"` instead — see the comment at the
   top of the file for the reason.

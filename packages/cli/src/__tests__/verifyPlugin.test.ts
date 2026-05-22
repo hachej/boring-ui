@@ -166,6 +166,47 @@ describe("verifyPlugin", () => {
     expect(joined).toMatch(/outside the plugin root/i)
   })
 
+  test("reports a missing pi.skills entry", () => {
+    plant("missing-skill", {
+      "package.json": JSON.stringify({
+        name: "missing-skill",
+        version: "1.0.0",
+        boring: { label: "Skill", front: "front/index.tsx" },
+        pi: { skills: ["skills/missing/SKILL.md"] },
+      }),
+      "front/index.tsx": "export default {}",
+    })
+
+    const result = verifyPlugin({ workspaceRoot })
+    expect(result.ok).toBe(false)
+    const joined = result.outcomes[0].errors.join("\n")
+    expect(joined).toContain("pi.skills")
+    expect(joined).toContain("skills/missing/SKILL.md")
+  })
+
+  test("reports pi.skills symlink escapes", () => {
+    const outside = join(workspaceRoot, "outside-skills")
+    mkdirSync(outside, { recursive: true })
+    writeFileSync(join(outside, "SKILL.md"), "# Outside", "utf8")
+    const dir = plant("skill-escape", {
+      "package.json": JSON.stringify({
+        name: "skill-escape",
+        version: "1.0.0",
+        boring: { label: "Skill", front: "front/index.tsx" },
+        pi: { skills: ["skills/escape/SKILL.md"] },
+      }),
+      "front/index.tsx": "export default {}",
+    })
+    mkdirSync(join(dir, "skills", "escape"), { recursive: true })
+    symlinkSync(join(outside, "SKILL.md"), join(dir, "skills", "escape", "SKILL.md"))
+
+    const result = verifyPlugin({ workspaceRoot })
+    expect(result.ok).toBe(false)
+    const joined = result.outcomes[0].errors.join("\n")
+    expect(joined).toContain("pi.skills")
+    expect(joined).toMatch(/outside the plugin root/i)
+  })
+
   test("reports a missing boring.server file when boring.server is a string path", () => {
     plant("missing-server", {
       "package.json": JSON.stringify({

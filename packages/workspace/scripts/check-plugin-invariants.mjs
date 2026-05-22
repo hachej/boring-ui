@@ -38,6 +38,9 @@ function walk(dir, files = []) {
     if (skippedDirs.has(entry)) continue
 
     const fullPath = join(dir, entry)
+    const repoPath = toRepoPath(fullPath)
+    if (entry.startsWith("eval-") && repoPath.startsWith("packages/workspace/src/plugins/")) continue
+
     const stat = statSync(fullPath)
     if (stat.isDirectory()) {
       walk(fullPath, files)

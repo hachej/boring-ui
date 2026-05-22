@@ -7,10 +7,9 @@
  */
 
 export {
+  captureFrontPlugin,
   createCapturingBoringFrontAPI,
-  boringFrontFactoryToPlugin,
   definePlugin,
-  toWorkspacePlugin,
 } from "./shared/plugins/frontFactory"
 export type {
   BoringFrontAPI,
@@ -26,7 +25,7 @@ export type {
   CapturedBoringFrontRegistrations,
   CapturingBoringFrontAPIHandle,
   DefinePluginConfig,
-  WorkspaceFrontPluginInput,
+  CapturedFrontPlugin,
 } from "./shared/plugins/frontFactory"
 
 export {

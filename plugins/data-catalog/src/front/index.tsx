@@ -73,7 +73,7 @@ export type {
  * can compose a subset (e.g. catalog-only without a visualization
  * panel). The returned factory carries its `pluginId` + `pluginLabel`
  * so it can be passed directly to `WorkspaceProvider.plugins` (the
- * shell auto-wraps via `toWorkspacePlugin`).
+ * shell captures via the front factory API).
  */
 export function createDataCatalogPlugin(
   options: CreateDataCatalogPluginOptions,

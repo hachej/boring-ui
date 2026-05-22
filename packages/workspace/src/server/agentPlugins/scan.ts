@@ -96,13 +96,8 @@ function packagePathContainmentIssues(rootDir: string, pkg: BoringPluginPackageJ
     if (issue) issues.push({ ...issue, ...(pluginId ? { pluginId } : {}) })
   }
   push(pathPreflightIssue(rootDir, boring?.front, "boring.front", { mustExist: true }))
-  if (boring?.server !== false) {
-    if (boring?.server !== undefined) {
-      push(pathPreflightIssue(rootDir, boring.server, "boring.server"))
-    } else {
-      push(pathPreflightIssue(rootDir, "server/index.ts", "boring.server"))
-      push(pathPreflightIssue(rootDir, "server/index.js", "boring.server"))
-    }
+  if (boring?.server !== false && boring?.server !== undefined) {
+    push(pathPreflightIssue(rootDir, boring.server, "boring.server"))
   }
   pi?.extensions?.forEach((value, index) => push(pathPreflightIssue(rootDir, value, `pi.extensions[${index}]`)))
   pi?.skills?.forEach((value, index) => push(pathPreflightIssue(rootDir, value, `pi.skills[${index}]`)))
@@ -137,14 +132,6 @@ function discoverBoringPluginDirs(pluginDirs: string[]): DiscoveredBoringPluginD
     }
   }
   return { dirs: [...out].sort(), missingPackageJson: [...new Set(missingPackageJson)].sort() }
-}
-
-function resolveConventionalServerPath(rootDir: string): string | undefined {
-  for (const candidate of ["server/index.ts", "server/index.js"]) {
-    if (!existsSync(resolve(rootDir, candidate))) continue
-    return resolvePluginPath(rootDir, candidate)
-  }
-  return undefined
 }
 
 export function scanBoringPlugins(pluginDirs: string[]): BoringPluginScanResult {
@@ -222,11 +209,9 @@ export function scanBoringPlugins(pluginDirs: string[]): BoringPluginScanResult 
     const boring = pkg.boring ?? {}
     const pi = pkg.pi as BoringPackagePiField | undefined
     const frontPath = resolvePluginPath(rootDir, boring.front, { mustExist: true })
-    const serverPath = boring.server === false
-      ? undefined
-      : typeof boring.server === "string"
-        ? resolvePluginPath(rootDir, boring.server)
-        : resolveConventionalServerPath(rootDir)
+    const serverPath = typeof boring.server === "string"
+      ? resolvePluginPath(rootDir, boring.server)
+      : undefined
     const version = pkg.version ?? "0.0.0"
     const extensionPaths = resolvePluginPaths(rootDir, pi?.extensions)
     const skillPaths = resolvePluginPaths(rootDir, pi?.skills)

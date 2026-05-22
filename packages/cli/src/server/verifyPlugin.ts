@@ -209,12 +209,21 @@ function verifySinglePlugin(pluginDir: string): PluginVerifyOutcome {
     }
   }
 
-  // pi.extensions entries must each exist and stay contained by the plugin root.
+  // pi.extensions / pi.skills entries must each exist and stay contained by the plugin root.
   const piExt = (manifest.pi as { extensions?: string[] } | undefined)?.extensions
   if (Array.isArray(piExt)) {
     for (const ext of piExt) {
       if (typeof ext !== "string") continue
       const resolved = resolveExistingContainedPath(pluginDir, ext, "pi.extensions entry")
+      if (resolved.error) errors.push(resolved.error)
+    }
+  }
+
+  const piSkills = (manifest.pi as { skills?: string[] } | undefined)?.skills
+  if (Array.isArray(piSkills)) {
+    for (const skill of piSkills) {
+      if (typeof skill !== "string") continue
+      const resolved = resolveExistingContainedPath(pluginDir, skill, "pi.skills entry")
       if (resolved.error) errors.push(resolved.error)
     }
   }

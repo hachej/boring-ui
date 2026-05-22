@@ -23,13 +23,13 @@ commands, and default workspace plugins.
 
 ## Core Contracts
 
-- Plugin outputs: `src/shared/plugins/types.ts`
-  - `panel`, `left-tab`, `command`, `catalog`, `binding`, `provider`,
-    and `surface-resolver`. Agent tools belong to Pi/server runtime paths, not
-    front plugin outputs.
+- Plugin contributions: `src/shared/plugins/frontFactory.ts`
+  - Front plugins are authored with `definePlugin({ panels, leftTabs, commands,
+    catalogs, bindings, providers, surfaceResolvers })`. Agent tools belong to
+    Pi/server runtime paths, not front plugin contributions.
 - Surface opening: `src/shared/types/surface.ts`
   - `SurfaceOpenRequest { kind, target, meta }` is resolved by plugin
-    `surface-resolver` outputs into panel openings.
+    surface resolvers into panel openings.
 - UI bridge: `src/shared/ui-bridge.ts`
   - Agents and servers post `UiCommand` values. The front-end dispatches them
     against the workspace runtime.

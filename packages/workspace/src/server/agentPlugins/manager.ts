@@ -30,6 +30,12 @@ interface LoadedPluginRecord extends BoringServerPluginManifest {
 
 export interface BoringPluginAssetManagerOptions {
   pluginDirs: string[]
+  /**
+   * Root directory for per-plugin `.error` sidecar files written by the
+   * asset manager and read by verify-plugin. Defaults to `<cwd>/.pi/extensions`.
+   * Multi-tenant / non-standard layouts MUST provide an explicit path —
+   * the default assumes workspace root equals `process.cwd()`.
+   */
   errorRoot?: string
 }
 
@@ -173,7 +179,7 @@ export class BoringPluginAssetManager {
 
   constructor(options: BoringPluginAssetManagerOptions) {
     this.pluginDirs = options.pluginDirs
-    this.errorRoot = options.errorRoot ?? join(process.cwd(), ".pi", "extensions")
+    this.errorRoot = options.errorRoot ?? join(process.cwd(), ".pi", "extensions") // callers MUST override errorRoot in non-trivial deployments
   }
 
   preflight(): BoringPluginPreflightResult {

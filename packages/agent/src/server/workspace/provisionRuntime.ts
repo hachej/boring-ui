@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
 import { access, chmod, cp, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -153,10 +153,32 @@ function collectEnv(contributions: Array<{ provisioning: RuntimeProvisioningCont
   return env
 }
 
+function resolveTemplateTarget(workspaceRoot: string, target: string | undefined): string {
+  const rawTarget = target ?? '.'
+  if (
+    rawTarget.length === 0 ||
+    rawTarget.includes('\0') ||
+    rawTarget.includes('\\') ||
+    rawTarget.startsWith('/') ||
+    rawTarget.startsWith('//') ||
+    /^[A-Za-z]:[\\/]/.test(rawTarget) ||
+    rawTarget.split('/').includes('..')
+  ) {
+    throw new Error(`Unsafe runtime template target: ${JSON.stringify(rawTarget)}. Template targets must be relative paths inside the workspace.`)
+  }
+  const root = resolve(workspaceRoot)
+  const resolved = resolve(root, rawTarget)
+  const rel = relative(root, resolved)
+  if (rel.startsWith('..') || isAbsolute(rel)) {
+    throw new Error(`Unsafe runtime template target: ${JSON.stringify(rawTarget)} resolves outside the workspace.`)
+  }
+  return resolved
+}
+
 async function seedTemplates(workspaceRoot: string, contributions: Array<{ provisioning: RuntimeProvisioningContribution }>): Promise<void> {
   for (const { provisioning } of contributions) {
     for (const template of provisioning.templateDirs ?? []) {
-      await cp(toPath(template.path), resolve(workspaceRoot, template.target ?? '.'), {
+      await cp(toPath(template.path), resolveTemplateTarget(workspaceRoot, template.target), {
         recursive: true,
         force: false,
         errorOnExist: false,

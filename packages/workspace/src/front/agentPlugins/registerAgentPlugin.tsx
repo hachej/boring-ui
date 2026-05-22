@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react"
 import {
   createCapturingBoringFrontAPI,
-  type BoringFrontFactory,
+  type BoringFrontFactoryWithId,
   type CapturedBoringFrontRegistrations,
 } from "../../shared/plugins/frontFactory"
 import type { BoringPackageBoringField } from "../../shared/plugins/manifest"
@@ -22,7 +22,7 @@ export interface RegisterAgentPluginOptions {
   workspaceId?: string
   enabled?: boolean
   authHeaders?: Record<string, string>
-  importFront?: (frontUrl: string, revision: number) => Promise<{ default?: BoringFrontFactory }>
+  importFront?: (frontUrl: string, revision: number) => Promise<{ default?: BoringFrontFactoryWithId }>
 }
 
 function joinUrl(base: string, path: string): string {
@@ -72,18 +72,44 @@ export function appendFrontImportRevision(frontUrl: string, revision: number, ca
   return cacheBust === undefined ? withRevision : `${withRevision}&t=${encodeURIComponent(String(cacheBust))}`
 }
 
-async function defaultImportFront(frontUrl: string, revision: number): Promise<{ default?: BoringFrontFactory }> {
+async function defaultImportFront(frontUrl: string, revision: number): Promise<{ default?: BoringFrontFactoryWithId }> {
   // Vite's browser module graph can retain stale dynamically imported
   // .pi extension modules across dev-server restarts or repeated plugin
   // revisions. Add a per-import salt so /reload always asks Vite for a
   // fresh transform instead of reusing an old React-Refresh-instrumented
   // module that may carry a stale hook dispatcher.
-  return await import(/* @vite-ignore */ appendFrontImportRevision(frontUrl, revision, Date.now())) as { default?: BoringFrontFactory }
+  return await import(/* @vite-ignore */ appendFrontImportRevision(frontUrl, revision, Date.now())) as { default?: BoringFrontFactoryWithId }
 }
 
-async function captureFrontFactory(pluginId: string, frontUrl: string, revision: number, importFront: RegisterAgentPluginOptions["importFront"] = defaultImportFront): Promise<CapturedBoringFrontRegistrations> {
+// Wrap the default import in a 30-second timeout so a hung asset server
+// (slow CDN, unreachable Vite dev server) doesn't block the SSE handler indefinitely.
+// Dynamic import() cannot be aborted, so we race against a timer and let the
+// import settle in the background if it loses.
+const FRONT_IMPORT_TIMEOUT_MS = 30_000
+
+async function timedImport(frontUrl: string, revision: number): Promise<{ default?: BoringFrontFactoryWithId }> {
+  let settled = false
+  const timeout = new Promise<{ default?: BoringFrontFactoryWithId }>((_, reject) => {
+    setTimeout(() => {
+      if (!settled) reject(new Error(`importFront timed out after ${FRONT_IMPORT_TIMEOUT_MS}ms (plugin asset at ${frontUrl})`))
+    }, FRONT_IMPORT_TIMEOUT_MS)
+  })
+  const result = await Promise.race([
+    import(/* @vite-ignore */ appendFrontImportRevision(frontUrl, revision, Date.now())) as Promise<{ default?: BoringFrontFactoryWithId }>,
+    timeout,
+  ])
+  settled = true
+  return result
+}
+
+async function captureFrontFactory(pluginId: string, frontUrl: string, revision: number, importFront: RegisterAgentPluginOptions["importFront"] = timedImport): Promise<CapturedBoringFrontRegistrations> {
   const mod = await importFront(frontUrl, revision)
-  if (typeof mod.default !== "function") throw new Error(`plugin ${pluginId} front module must default-export a BoringFrontFactory`)
+  if (typeof mod.default !== "function" || typeof mod.default.pluginId !== "string") {
+    throw new Error(`plugin ${pluginId} front module must default-export definePlugin({ id, ... })`)
+  }
+  if (mod.default.pluginId !== pluginId) {
+    throw new Error(`plugin ${pluginId} front module id mismatch: default export is branded as ${JSON.stringify(mod.default.pluginId)}`)
+  }
   const api = createCapturingBoringFrontAPI({ pluginId })
   await mod.default(api)
   return api.flush()
@@ -139,6 +165,9 @@ function buildRegistryPayloads(
     title: command.title,
     run: command.run ?? (() => undefined),
     pluginId,
+    ...(command.keywords ? { keywords: command.keywords } : command.panelId ? { keywords: [command.panelId] } : {}),
+    ...(command.shortcut ? { shortcut: command.shortcut } : {}),
+    ...(command.when ? { when: command.when } : {}),
   }))
   const catalogs: CatalogConfig[] = captured.catalogs.map((catalog) => ({
     ...catalog,
@@ -341,6 +370,15 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
       try {
         const event = JSON.parse(raw.data) as Extract<BoringPluginEvent, { type: "boring.plugin.error" }>
         console.error(`[boring-ui] plugin ${event.id} failed to reload: ${event.message}`)
+        // Dispatch so the plugin inspector / UI knows about the error.
+        window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, {
+          detail: {
+            type: "boring.plugin.error",
+            id: event.id,
+            revision: event.revision,
+            message: event.message,
+          },
+        }))
       } catch (error) {
         console.error("[boring-ui] failed to process plugin error event", error)
       }

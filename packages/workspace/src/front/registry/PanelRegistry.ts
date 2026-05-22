@@ -12,10 +12,14 @@ export class PanelRegistry {
   // lazy type is created inside a render that suspends before commit, React
   // can retry by calling the wrapper again and lose hook memo state, creating
   // a fresh lazy type and re-suspending forever. Cache by panel id + importer.
-  // Hot reload still swaps because replacement registrations get a new
-  // importer function reference.
+  // Hot reload invalidates caches via bumpGeneration().
   private lazyComponentCache = new Map<string, { importer: unknown; component: ComponentType<any> }>()
   private wrapperComponentCache = new Map<string, ComponentType<any>>()
+  // Generation counter — incremented on every replaceByPluginId call.
+  // Included in useMemo deps of wrapped panels so hot-reload breaks memoization
+  // even when the lazy-importer function reference is identical (same arrow
+  // in the same module, which is common for code-split panels).
+  private generation = 0
 
   constructor(capabilities: Record<string, boolean> = {}) {
     this.capabilities = new Set(
@@ -84,7 +88,12 @@ export class PanelRegistry {
       if (!this.registrationOrder.includes(id)) this.registrationOrder.push(id)
       changed = true
     }
-    if (changed) this.emit()
+    if (changed) {
+      // Bump generation so useMemo in wrapped panels breaks memoization
+      // even when the lazy-importer reference hasn't changed.
+      this.generation += 1
+      this.emit()
+    }
   }
 
   get(id: string): PanelConfig | undefined {
@@ -138,12 +147,13 @@ export class PanelRegistry {
     const WrappedPanel = function WrappedPanel(props: any) {
       useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot)
       const current = registry.get(panelId)
+      const gen = registry.generation
       // biome-ignore lint/suspicious/noExplicitAny: see comment above
       const Inner: ComponentType<any> = useMemo(() => {
         if (!current || !registry.satisfiesCapabilities(current)) return () => null
         if (current.lazy) return registry.getLazyComponent(panelId, current.component)
         return current.component as ComponentType<any>
-      }, [current?.component, current?.lazy, current?.requiresCapabilities])
+      }, [current?.component, current?.lazy, current?.requiresCapabilities, gen])
       const pluginId = current?.pluginId ?? current?.id ?? panelId
       return createElement(
         PluginErrorBoundary,

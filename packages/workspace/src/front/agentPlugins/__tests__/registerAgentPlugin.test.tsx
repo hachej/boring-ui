@@ -7,7 +7,7 @@ import { RegistryProvider, useCatalogRegistry, useCommandRegistry, useRegistry }
 import { PanelRegistry } from "../../registry/PanelRegistry"
 import { CommandRegistry } from "../../../shared/plugins/CommandRegistry"
 import { SurfaceResolverRegistry } from "../../../shared/plugins/SurfaceResolverRegistry"
-import type { BoringFrontFactory } from "../../../shared/plugins/frontFactory"
+import { definePlugin, type BoringFrontFactoryWithId, type BoringFrontSetup } from "../../../shared/plugins/frontFactory"
 import { appendFrontImportRevision, useAgentPluginHotReload } from "../registerAgentPlugin"
 
 class MockEventSource {
@@ -90,13 +90,17 @@ export default function hotPlugin(api) {
   await utimes(path, now, now)
 }
 
-async function importFrontFromDisk(frontUrl: string): Promise<{ default: BoringFrontFactory }> {
+function hotPlugin(id: string, setup: BoringFrontSetup): BoringFrontFactoryWithId {
+  return definePlugin({ id, setup })
+}
+
+async function importFrontFromDisk(frontUrl: string): Promise<{ default: BoringFrontFactoryWithId }> {
   const filePath = frontUrl.replace(/^.*\/@fs\//, "/")
   const source = await readFile(filePath, "utf8")
   const match = source.match(/HOT_TEXT:([^\n]+)/)
   const text = match?.[1]?.trim() ?? "missing"
   return {
-    default(api) {
+    default: hotPlugin("hot-plugin", (api) => {
       api.registerPanel({
         id: "hot-pane",
         label: "Hot Pane",
@@ -104,7 +108,7 @@ async function importFrontFromDisk(frontUrl: string): Promise<{ default: BoringF
           return React.createElement("div", { "data-testid": "hot-pane" }, text)
         },
       })
-    },
+    }),
   }
 }
 
@@ -222,8 +226,8 @@ describe("useAgentPluginHotReload", () => {
 
   test("rejects hot-loaded plugin output that collides with a built-in panel id", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
-    const importFront = async (): Promise<{ default: BoringFrontFactory }> => ({
-      default(api) {
+    const importFront = async (): Promise<{ default: BoringFrontFactoryWithId }> => ({
+      default: hotPlugin("csv-plugin", (api) => {
         api.registerPanel({
           id: "csv-viewer",
           label: "Hot CSV Viewer",
@@ -231,7 +235,7 @@ describe("useAgentPluginHotReload", () => {
             return React.createElement("div", { "data-testid": "hot-csv-viewer" }, "hot csv viewer")
           },
         })
-      },
+      }),
     })
 
     function CollisionHarness() {
@@ -289,8 +293,8 @@ describe("useAgentPluginHotReload", () => {
   })
 
   test("supports hook-based panel components from hot-loaded front factories", async () => {
-    const importFront = async (): Promise<{ default: BoringFrontFactory }> => ({
-      default(api) {
+    const importFront = async (): Promise<{ default: BoringFrontFactoryWithId }> => ({
+      default: hotPlugin("hot-plugin", (api) => {
         api.registerPanel({
           id: "hot-pane",
           label: "Hot Pane",
@@ -307,7 +311,7 @@ describe("useAgentPluginHotReload", () => {
             )
           },
         })
-      },
+      }),
     })
 
     function Listener() {
@@ -348,7 +352,7 @@ describe("useAgentPluginHotReload", () => {
         workspaceId: "test-workspace",
         importFront: async (url) => {
           importedUrls.push(url)
-          return { default: () => undefined }
+          return { default: hotPlugin("hot-plugin", () => undefined) }
         },
       })
       return null
@@ -376,8 +380,8 @@ describe("useAgentPluginHotReload", () => {
   })
 
   test("prunes contributions removed by a successful replacement without blanking kept panes", async () => {
-    const importFront = async (_url: string, revision: number): Promise<{ default: BoringFrontFactory }> => ({
-      default(api) {
+    const importFront = async (_url: string, revision: number): Promise<{ default: BoringFrontFactoryWithId }> => ({
+      default: hotPlugin("hot-plugin", (api) => {
         api.registerPanel({
           id: "hot-pane",
           label: "Hot Pane",
@@ -402,7 +406,7 @@ describe("useAgentPluginHotReload", () => {
             },
           })
         }
-      },
+      }),
     })
 
     function PruneHarness() {
@@ -451,8 +455,8 @@ describe("useAgentPluginHotReload", () => {
   })
 
   test("updates command palette entries when plugin front registrations change", async () => {
-    const importFront = async (_url: string, revision: number): Promise<{ default: BoringFrontFactory }> => ({
-      default(api) {
+    const importFront = async (_url: string, revision: number): Promise<{ default: BoringFrontFactoryWithId }> => ({
+      default: hotPlugin("hot-plugin", (api) => {
         api.registerPanelCommand({
           id: "hot-plugin.open",
           title: revision === 1 ? "Open Hot Plugin" : "Open Hot Plugin v2",
@@ -465,7 +469,7 @@ describe("useAgentPluginHotReload", () => {
             panelId: "removed-pane",
           })
         }
-      },
+      }),
     })
 
     function CommandHarness() {
@@ -510,8 +514,8 @@ describe("useAgentPluginHotReload", () => {
 
   test("updates catalog entries when plugin front registrations change", async () => {
     const adapter = { search: async () => ({ items: [], total: 0, hasMore: false }) }
-    const importFront = async (_url: string, revision: number): Promise<{ default: BoringFrontFactory }> => ({
-      default(api) {
+    const importFront = async (_url: string, revision: number): Promise<{ default: BoringFrontFactoryWithId }> => ({
+      default: hotPlugin("hot-plugin", (api) => {
         api.registerCatalog({
           id: "hot-catalog",
           label: revision === 1 ? "Hot Catalog" : "Hot Catalog v2",
@@ -526,7 +530,7 @@ describe("useAgentPluginHotReload", () => {
             onSelect: () => undefined,
           })
         }
-      },
+      }),
     })
 
     function CatalogHarness() {
@@ -578,8 +582,8 @@ describe("useAgentPluginHotReload", () => {
 
   test("warns and skips provider/binding hot-load contributions instead of partially mounting panels", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
-    const importFront = async (): Promise<{ default: BoringFrontFactory }> => ({
-      default(api) {
+    const importFront = async (): Promise<{ default: BoringFrontFactoryWithId }> => ({
+      default: hotPlugin("provider-plugin", (api) => {
         api.registerProvider({
           id: "hot-provider",
           component: function HotProvider({ children }: { children: React.ReactNode }) {
@@ -594,7 +598,7 @@ describe("useAgentPluginHotReload", () => {
             return React.createElement("div", { "data-testid": "hot-pane" }, "should not mount")
           },
         })
-      },
+      }),
     })
 
     try {
@@ -659,17 +663,17 @@ describe("useAgentPluginHotReload", () => {
   })
 
   test("ignores stale slow imports when a newer revision has already landed", async () => {
-    let resolveRev1: ((mod: { default: BoringFrontFactory }) => void) | undefined
-    let resolveRev2: ((mod: { default: BoringFrontFactory }) => void) | undefined
+    let resolveRev1: ((mod: { default: BoringFrontFactoryWithId }) => void) | undefined
+    let resolveRev2: ((mod: { default: BoringFrontFactoryWithId }) => void) | undefined
     const importFront = async (_url: string, revision: number) => {
-      return await new Promise<{ default: BoringFrontFactory }>((resolve) => {
+      return await new Promise<{ default: BoringFrontFactoryWithId }>((resolve) => {
         if (revision === 1) resolveRev1 = resolve
         else if (revision === 2) resolveRev2 = resolve
         else throw new Error(`unexpected revision ${revision}`)
       })
     }
-    const moduleFor = (text: string): { default: BoringFrontFactory } => ({
-      default(api) {
+    const moduleFor = (text: string): { default: BoringFrontFactoryWithId } => ({
+      default: hotPlugin("hot-plugin", (api) => {
         api.registerPanel({
           id: "hot-pane",
           label: "Hot Pane",
@@ -677,7 +681,7 @@ describe("useAgentPluginHotReload", () => {
             return React.createElement("div", { "data-testid": "hot-pane" }, text)
           },
         })
-      },
+      }),
     })
 
     function RacingHarness() {
@@ -723,9 +727,9 @@ describe("useAgentPluginHotReload", () => {
 
   test("does not let a disposed in-flight load poison reconnect for the same revision", async () => {
     let oldImportCalls = 0
-    let resolveOldImport: ((mod: { default: BoringFrontFactory }) => void) | undefined
-    const moduleFor = (text: string): { default: BoringFrontFactory } => ({
-      default(api) {
+    let resolveOldImport: ((mod: { default: BoringFrontFactoryWithId }) => void) | undefined
+    const moduleFor = (text: string): { default: BoringFrontFactoryWithId } => ({
+      default: hotPlugin("hot-plugin", (api) => {
         api.registerPanel({
           id: "hot-pane",
           label: "Hot Pane",
@@ -733,17 +737,17 @@ describe("useAgentPluginHotReload", () => {
             return React.createElement("div", { "data-testid": "hot-pane" }, text)
           },
         })
-      },
+      }),
     })
     const oldImportFront = async () => {
       oldImportCalls += 1
-      return await new Promise<{ default: BoringFrontFactory }>((resolve) => {
+      return await new Promise<{ default: BoringFrontFactoryWithId }>((resolve) => {
         resolveOldImport = resolve
       })
     }
     const newImportFront = async () => moduleFor("fresh listener")
 
-    function ReconnectHarness({ importFront }: { importFront: (frontUrl: string, revision: number) => Promise<{ default?: BoringFrontFactory }> }) {
+    function ReconnectHarness({ importFront }: { importFront: (frontUrl: string, revision: number) => Promise<{ default?: BoringFrontFactoryWithId }> }) {
       const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
       const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
       const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
@@ -789,13 +793,13 @@ describe("useAgentPluginHotReload", () => {
 
   test("retries the same revision after a failed front import", async () => {
     let failOnce = true
-    const importFront = async (): Promise<{ default?: BoringFrontFactory }> => {
+    const importFront = async (): Promise<{ default?: BoringFrontFactoryWithId }> => {
       if (failOnce) {
         failOnce = false
         return {}
       }
       return {
-        default(api) {
+        default: hotPlugin("hot-plugin", (api) => {
           api.registerPanel({
             id: "hot-pane",
             label: "Hot Pane",
@@ -803,7 +807,7 @@ describe("useAgentPluginHotReload", () => {
               return React.createElement("div", { "data-testid": "hot-pane" }, "retry recovered")
             },
           })
-        },
+        }),
       }
     }
 

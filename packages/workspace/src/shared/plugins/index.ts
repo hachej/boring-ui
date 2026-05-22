@@ -1,10 +1,7 @@
-// `defineFrontPlugin` and `WorkspaceFrontPlugin` are INTERNAL bootstrap
-// IR. They are deliberately NOT re-exported here — public consumers
-// should use `definePlugin` from "@hachej/boring-workspace/plugin". The
-// rare internal callers (the bootstrap pipeline, tests) import them
-// directly from `./defineFrontPlugin`.
-export { PluginError } from "./defineFrontPlugin"
-export type { PluginErrorKind } from "./defineFrontPlugin"
+// Public front plugin authors should use `definePlugin({ ... })` from
+// "@hachej/boring-workspace/plugin".
+export { PluginError } from "./errors"
+export type { PluginErrorKind } from "./errors"
 export type {
   PluginBinding,
   CatalogAdapter,
@@ -17,16 +14,8 @@ export type {
   CatalogRow,
   CatalogSearchArgs,
   CatalogSearchResult,
-  PluginOutput,
-  LeftTabOutput,
   LeftTabParams,
   LeftTabComponent,
-  PanelOutput,
-  CommandOutput,
-  CatalogOutput,
-  BindingOutput,
-  ProviderOutput,
-  SurfaceResolverOutput,
   PluginProvider,
   PluginProviderProps,
   AgentTool,

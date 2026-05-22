@@ -233,7 +233,7 @@ function initializeDockview(
         console.error(
           `[DockviewShell] Panel "${group.panel}" not found in registry. Available: ${registry.list().map((p) => p.id).join(", ")}`,
         )
-        if (import.meta.env.DEV) {
+        if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) {
           throw new Error(`Unknown panel ID: ${group.panel}`)
         }
         continue

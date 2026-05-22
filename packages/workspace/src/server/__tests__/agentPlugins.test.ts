@@ -146,15 +146,15 @@ describe("boring agent plugin assets", () => {
     expect(readBoringPlugins([collection])).toEqual([])
   })
 
-  test("rejects conventional server entries that resolve outside the plugin root", async () => {
-    const root = await tmp("boring-plugin-conventional-server-symlink-escape-")
+  test("rejects explicit server entries that resolve outside the plugin root", async () => {
+    const root = await tmp("boring-plugin-explicit-server-symlink-escape-")
     const outside = await tmp("boring-plugin-outside-server-target-")
     await writePlugin(root)
     await writeFile(join(outside, "server.js"), "export default function() {}\n", "utf8")
     await rm(join(root, "server", "index.js"), { force: true })
     await symlink(join(outside, "server.js"), join(root, "server", "index.js"))
     const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
-    delete pkg.boring.server
+    pkg.boring.server = "server/index.js"
     await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
 
     const result = preflightBoringPlugins([root])
@@ -330,7 +330,7 @@ describe("boring agent plugin assets", () => {
     expect(aggregatePluginPrompts(manager)).toBeUndefined()
   })
 
-  test("scans plugins, emits load events, and serves canonical /api/v1/agent-plugins with unversioned alias", async () => {
+  test("scans plugins, emits load events, and serves canonical /api/v1/agent-plugins", async () => {
     // Per PLUGIN_SYSTEM.md Gotcha #4: asset manager is scan + hash + emit only.
     // Server module instantiation lives in pluginEntryResolver, not here.
     const root = await tmp("boring-plugin-manager-")
@@ -351,8 +351,8 @@ describe("boring agent plugin assets", () => {
     try {
       const versionedList = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
       expect(versionedList.json()[0].id).toBe("boring-plugin-test")
-      const list = await app.inject({ method: "GET", url: "/api/agent-plugins" })
-      expect(list.json()).toEqual(versionedList.json())
+      const unversionedList = await app.inject({ method: "GET", url: "/api/agent-plugins" })
+      expect(unversionedList.statusCode).toBe(404)
 
       // Edit a tracked file → signature bumps → next load emits a fresh event.
       await writePlugin(root, "export default { id: 'boring-plugin-test', systemPrompt: 'V2' }\n")

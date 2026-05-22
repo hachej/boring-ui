@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
 
 import { copyTemplate } from '../provision'
+import { provisionRuntimeWorkspace } from '../provisionRuntime'
 
 const tempDirs: string[] = []
 
@@ -60,4 +61,46 @@ test('copyTemplate throws clearly when source template does not exist', async ()
   await expect(copyTemplate(missingTemplate, workspaceRoot)).rejects.toThrow(
     `Failed to copy template from "${missingTemplate}"`,
   )
+})
+
+test('provisionRuntimeWorkspace rejects template targets outside the workspace', async () => {
+  const templateRoot = await makeTempDir('boring-ui-runtime-template-')
+  const workspaceRoot = await makeTempDir('boring-ui-runtime-workspace-')
+  await writeFile(join(templateRoot, 'README.md'), '# seeded\n', 'utf-8')
+
+  await expect(
+    provisionRuntimeWorkspace({
+      workspaceRoot,
+      contributions: [
+        {
+          id: 'bad-template-target',
+          provisioning: {
+            templateDirs: [{ id: 'bad', path: templateRoot, target: '../outside' }],
+          },
+        },
+      ],
+      force: true,
+    }),
+  ).rejects.toThrow(/Unsafe runtime template target/)
+})
+
+test('provisionRuntimeWorkspace accepts relative template targets inside the workspace', async () => {
+  const templateRoot = await makeTempDir('boring-ui-runtime-template-')
+  const workspaceRoot = await makeTempDir('boring-ui-runtime-workspace-')
+  await writeFile(join(templateRoot, 'README.md'), '# seeded\n', 'utf-8')
+
+  await provisionRuntimeWorkspace({
+    workspaceRoot,
+    contributions: [
+      {
+        id: 'good-template-target',
+        provisioning: {
+          templateDirs: [{ id: 'good', path: templateRoot, target: 'seeded/plugin' }],
+        },
+      },
+    ],
+    force: true,
+  })
+
+  await expect(readFile(join(workspaceRoot, 'seeded', 'plugin', 'README.md'), 'utf-8')).resolves.toBe('# seeded\n')
 })

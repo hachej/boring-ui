@@ -52,8 +52,8 @@ test('IsolatedCodeInput/Output shapes', () => {
     code: string
     language: 'python' | 'shell'
   }>()
-  expectTypeOf<IsolatedCodeInput['vmSize']>().toEqualTypeOf<
-    'xxs' | 'xs' | 's' | 'm' | 'l' | undefined
+  expectTypeOf<IsolatedCodeInput['resources']>().toEqualTypeOf<
+    { cpuCores?: number; memoryMb?: number; gpu?: string } | undefined
   >()
   expectTypeOf<IsolatedCodeOutput['sandboxId']>().toEqualTypeOf<string>()
   expectTypeOf<IsolatedCodeOutput['exitCode']>().toEqualTypeOf<number>()

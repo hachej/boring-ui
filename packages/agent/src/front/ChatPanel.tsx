@@ -709,7 +709,7 @@ export function ChatPanel(props: ChatPanelProps) {
     // client state — that was the source of duplicated assistant text.
     if (isStreaming && files.length > 0) {
       setAttachmentNotice('Attachments can be sent after the current response finishes.')
-      throw new Error('attachments_disabled_while_streaming')
+      return
     }
 
     if (isStreaming && capabilities.nativeFollowUp) {

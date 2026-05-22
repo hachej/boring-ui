@@ -25,7 +25,7 @@ describe("rebuildServerPlugins", () => {
       "export default { id: 'rebuilt', systemPrompt: 'REBUILT_PROMPT' }",
       "utf8",
     )
-    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "p" }), "utf8")
+    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "p", boring: { server: "src/server/index.ts" } }), "utf8")
 
     const result = await rebuildServerPlugins({
       entries: [{ dir, hotReload: true }],
@@ -44,7 +44,7 @@ describe("rebuildServerPlugins", () => {
       "export default { id: 'good', systemPrompt: 'OK' }",
       "utf8",
     )
-    await writeFile(join(goodDir, "package.json"), JSON.stringify({ name: "p" }), "utf8")
+    await writeFile(join(goodDir, "package.json"), JSON.stringify({ name: "p", boring: { server: "src/server/index.ts" } }), "utf8")
 
     const result = await rebuildServerPlugins({
       entries: [
@@ -77,14 +77,14 @@ describe("rebuildServerPlugins", () => {
     expect(result.diagnostics[0]?.message).toContain("safe relative path")
   })
 
-  test("rejects conventional server entry symlink escapes before import", async () => {
-    const dir = await makeTempDir("rebuild-convention-symlink-")
-    const outside = await makeTempDir("rebuild-convention-outside-")
+  test("rejects explicit server entry symlink escapes before import", async () => {
+    const dir = await makeTempDir("rebuild-explicit-symlink-")
+    const outside = await makeTempDir("rebuild-explicit-outside-")
     await mkdir(join(dir, "src"), { recursive: true })
     await mkdir(join(outside, "server"), { recursive: true })
     await writeFile(join(outside, "server", "index.ts"), "export default { id: 'escape' }", "utf8")
     await symlink(join(outside, "server"), join(dir, "src", "server"), "dir")
-    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "p" }), "utf8")
+    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "p", boring: { server: "src/server/index.ts" } }), "utf8")
 
     const result = await rebuildServerPlugins({
       entries: [{ dir, hotReload: true }],
@@ -92,7 +92,7 @@ describe("rebuildServerPlugins", () => {
     })
 
     expect(result.ok).toBe(false)
-    expect(result.diagnostics[0]?.message).toContain("conventional boring.server path escapes plugin root")
+    expect(result.diagnostics[0]?.message).toContain("boring.server: resolved path escapes plugin root")
   })
 
   test("pre-built objects are accepted without diagnostics", async () => {

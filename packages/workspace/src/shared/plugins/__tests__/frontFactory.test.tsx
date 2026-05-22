@@ -2,13 +2,12 @@ import type { ReactNode } from "react"
 import { describe, expect, it } from "vitest"
 import type { PaneProps } from "../../types/panel"
 import {
-  boringFrontFactoryToPlugin,
+  captureFrontPlugin,
   createCapturingBoringFrontAPI,
   definePlugin,
-  toWorkspacePlugin,
   type BoringFrontFactory,
 } from "../frontFactory"
-import { PluginError } from "../defineFrontPlugin"
+import { PluginError } from "../errors"
 
 function TestPanel(_props: PaneProps): null {
   return null
@@ -41,60 +40,39 @@ describe("createCapturingBoringFrontAPI", () => {
       panelCommands: [{ id: "open-chart", title: "Open chart", panelId: "chart" }],
       leftTabs: [{ id: "macro-tab", title: "Macro", panelId: "chart" }],
       surfaceResolvers: [{ kind: "macro.open" }],
-      outputs: [
-        expect.objectContaining({ type: "provider", id: "runtime" }),
-        expect.objectContaining({ type: "binding", id: "listener" }),
-        expect.objectContaining({ type: "catalog" }),
-        expect.objectContaining({ type: "panel" }),
-        expect.objectContaining({ type: "command" }),
-        expect.objectContaining({ type: "left-tab" }),
-        expect.objectContaining({ type: "surface-resolver" }),
-      ],
     })
   })
 })
 
-describe("boringFrontFactoryToPlugin", () => {
-  it("adapts a synchronous BoringFrontFactory to WorkspaceFrontPlugin outputs", () => {
-    const factory: BoringFrontFactory = (api) => {
-      api.registerPanel({ id: "chart", label: "Chart", component: TestPanel })
-      api.registerPanelCommand({ id: "open-chart", title: "Open chart", panelId: "chart" })
-      api.registerLeftTab({ id: "macro-tab", title: "Macro", panelId: "chart", component: TestPanel })
-      api.registerSurfaceResolver({ kind: "macro.open", resolve: () => ({ component: "chart", id: "chart:CPI" }) })
-    }
+describe("captureFrontPlugin", () => {
+  it("captures a branded synchronous front factory", () => {
+    const plugin = definePlugin({
+      id: "macro",
+      label: "Macro",
+      panels: [{ id: "chart", label: "Chart", component: TestPanel }],
+      commands: [{ id: "open-chart", title: "Open chart", panelId: "chart" }],
+      leftTabs: [{ id: "macro-tab", title: "Macro", panelId: "chart", component: TestPanel }],
+      surfaceResolvers: [{ kind: "macro.open", resolve: () => ({ component: "chart", id: "chart:CPI" }) }],
+    })
 
-    const plugin = boringFrontFactoryToPlugin("macro", factory)
+    const captured = captureFrontPlugin(plugin)
 
-    expect(plugin.id).toBe("macro")
-    expect(plugin.outputs?.map((output) => output.type)).toEqual([
-      "panel",
-      "command",
-      "left-tab",
-      "surface-resolver",
-    ])
-    expect(plugin.outputs?.[0]).toMatchObject({
-      type: "panel",
-      panel: { id: "chart", title: "Chart", placement: "center", source: "plugin" },
-    })
-    expect(plugin.outputs?.[1]).toMatchObject({
-      type: "command",
-      command: { id: "open-chart", title: "Open chart", keywords: ["chart"] },
-    })
-    expect(plugin.outputs?.[2]).toMatchObject({
-      type: "left-tab",
-      id: "macro-tab",
-      title: "Macro",
-      source: "plugin",
-    })
-    expect(plugin.outputs?.[3]).toMatchObject({
-      type: "surface-resolver",
-      resolver: { id: "macro:macro.open", source: "plugin" },
-    })
+    expect(captured.id).toBe("macro")
+    expect(captured.label).toBe("Macro")
+    expect(captured.registrations.panels[0]).toMatchObject({ id: "chart", label: "Chart" })
+    expect(captured.registrations.panelCommands[0]).toMatchObject({ id: "open-chart", panelId: "chart" })
+    expect(captured.registrations.leftTabs[0]).toMatchObject({ id: "macro-tab" })
+    expect(captured.registrations.surfaceResolvers[0]).toMatchObject({ kind: "macro.open" })
   })
 
-  it("rejects async factories for bootstrap mode", () => {
-    expect(() => boringFrontFactoryToPlugin("async", async () => undefined))
-      .toThrow("requires a synchronous factory")
+  it("rejects async factories for static bootstrap mode", () => {
+    const asyncPlugin = Object.assign(async () => undefined, { pluginId: "async" })
+    expect(() => captureFrontPlugin(asyncPlugin)).toThrow("requires a synchronous factory")
+  })
+
+  it("rejects bare factories without pluginId", () => {
+    const bare: BoringFrontFactory = () => undefined
+    expect(() => captureFrontPlugin(bare as never)).toThrow(/definePlugin/)
   })
 })
 
@@ -120,31 +98,10 @@ describe("definePlugin brand semantics (PLUGIN_SYSTEM.md §4.3 + §7)", () => {
     const second = definePlugin(config)
     expect(first.pluginId).toBe("plugin-a")
     expect(second.pluginId).toBe("plugin-a")
-    // Each call synthesizes a new internal factory; the brand wrappers
-    // are distinct function instances.
     expect(first).not.toBe(second)
   })
 
-  it("toWorkspacePlugin rejects bare factories without pluginId", () => {
-    const bare: BoringFrontFactory = () => undefined
-    expect(() => toWorkspacePlugin(bare as never)).toThrow(
-      /Wrap it with `definePlugin/,
-    )
-  })
-
-  it("toWorkspacePlugin accepts a branded factory and produces outputs", () => {
-    const wrapped = definePlugin({
-      id: "plugin-a",
-      panels: [{ id: "p", label: "P", component: TestPanel }],
-    })
-    const plugin = toWorkspacePlugin(wrapped)
-    expect(plugin.id).toBe("plugin-a")
-    expect(plugin.outputs?.[0]).toMatchObject({ type: "panel" })
-  })
-
   it("rejects the removed positional form with a helpful migration message", () => {
-    // The legacy positional form was dropped. Callers attempting it get
-    // a runtime error pointing at the new declarative shape.
     const factory: BoringFrontFactory = () => undefined
     expect(() => (definePlugin as unknown as (...args: unknown[]) => unknown)("legacy", factory, { label: "L" })).toThrow(
       /declarative config object/,
@@ -160,25 +117,16 @@ describe("definePlugin declarative config form", () => {
     const wrapped = definePlugin({
       id: "decl",
       label: "Declarative",
-      panels: [
-        { id: "decl.panel", label: "Decl", component: TestPanel },
-      ],
-      commands: [
-        { id: "decl.open", title: "Open Decl", panelId: "decl.panel" },
-      ],
-      leftTabs: [
-        { id: "decl.tab", title: "Decl", panelId: "decl.panel" },
-      ],
-      surfaceResolvers: [
-        { id: "decl.surface", kind: "decl.open", resolve: () => null },
-      ],
+      panels: [{ id: "decl.panel", label: "Decl", component: TestPanel }],
+      commands: [{ id: "decl.open", title: "Open Decl", panelId: "decl.panel" }],
+      leftTabs: [{ id: "decl.tab", title: "Decl", panelId: "decl.panel" }],
+      surfaceResolvers: [{ id: "decl.surface", kind: "decl.open", resolve: () => null }],
     })
-    expect(wrapped.pluginId).toBe("decl")
-    expect(wrapped.pluginLabel).toBe("Declarative")
-
-    const plugin = toWorkspacePlugin(wrapped)
-    const types = (plugin.outputs ?? []).map((o) => o.type).sort()
-    expect(types).toEqual(["command", "left-tab", "panel", "surface-resolver"])
+    const captured = captureFrontPlugin(wrapped)
+    expect(captured.registrations.panels).toHaveLength(1)
+    expect(captured.registrations.panelCommands).toHaveLength(1)
+    expect(captured.registrations.leftTabs).toHaveLength(1)
+    expect(captured.registrations.surfaceResolvers).toHaveLength(1)
   })
 
   it("types setup as synchronous even though bare hot-load factories may be async", () => {
@@ -193,43 +141,30 @@ describe("definePlugin declarative config form", () => {
     const order: string[] = []
     const wrapped = definePlugin({
       id: "with-setup",
-      panels: [
-        {
-          id: "with-setup.panel",
-          label: "WithSetup",
-          // component captures registration order via side effect; we
-          // inspect via the output array, which preserves call order.
-          component: TestPanel,
-        },
-      ],
+      panels: [{ id: "with-setup.panel", label: "WithSetup", component: TestPanel }],
       setup: (api) => {
         order.push("setup-ran")
-        api.registerPanelCommand({
-          id: "with-setup.extra",
-          title: "Extra",
-          panelId: "with-setup.panel",
-        })
+        api.registerPanelCommand({ id: "with-setup.extra", title: "Extra", panelId: "with-setup.panel" })
       },
     })
-    const plugin = toWorkspacePlugin(wrapped)
+    const captured = captureFrontPlugin(wrapped)
     expect(order).toEqual(["setup-ran"])
-    const outputTypes = (plugin.outputs ?? []).map((o) => o.type)
-    // panel (declarative) before panelCommand (registered inside setup)
-    expect(outputTypes).toEqual(["panel", "command"])
+    expect(captured.registrations.panels.map((panel) => panel.id)).toEqual(["with-setup.panel"])
+    expect(captured.registrations.panelCommands.map((command) => command.id)).toEqual(["with-setup.extra"])
   })
 
   it("rejects a config without an id", () => {
     expect(() => definePlugin({ id: "", panels: [] } as never)).toThrow(/id/)
   })
 
-  it("empty config (id only) is valid — produces zero outputs", () => {
+  it("empty config (id only) is valid", () => {
     const wrapped = definePlugin({ id: "empty" })
-    expect(wrapped.pluginId).toBe("empty")
-    const plugin = toWorkspacePlugin(wrapped)
-    expect(plugin.outputs ?? []).toEqual([])
+    const captured = captureFrontPlugin(wrapped)
+    expect(captured.id).toBe("empty")
+    expect(captured.registrations.panels).toEqual([])
   })
 
-  it("composition via spread works (extend a base plugin's config)", () => {
+  it("composition via spread works", () => {
     const baseConfig = {
       id: "base",
       panels: [{ id: "base.panel", label: "Base", component: TestPanel }],
@@ -238,20 +173,11 @@ describe("definePlugin declarative config form", () => {
     const extended = definePlugin({
       ...baseConfig,
       id: "extended",
-      commands: [
-        ...baseConfig.commands,
-        { id: "extended.extra", title: "Extra", panelId: "base.panel" },
-      ],
+      commands: [...baseConfig.commands, { id: "extended.extra", title: "Extra", panelId: "base.panel" }],
     })
-    const plugin = toWorkspacePlugin(extended)
-    expect(plugin.id).toBe("extended")
-    const cmdIds = (plugin.outputs ?? [])
-      .filter((o) => o.type === "command")
-      .map((o) => {
-        const obj = o as { type: "command"; command?: { id?: string }; id?: string }
-        return obj.command?.id ?? obj.id ?? "?"
-      })
-    expect(cmdIds).toEqual(["base.open", "extended.extra"])
+    const captured = captureFrontPlugin(extended)
+    expect(captured.id).toBe("extended")
+    expect(captured.registrations.panelCommands.map((command) => command.id)).toEqual(["base.open", "extended.extra"])
   })
 })
 
@@ -259,9 +185,7 @@ describe("intra-pluginId collision detection (PLUGIN_SYSTEM.md §5.7)", () => {
   it("throws PluginError('duplicate-id') when two register* calls land the same id", () => {
     const api = createCapturingBoringFrontAPI({ pluginId: "concrete" })
     api.registerPanel({ id: "table", label: "Table 1", component: TestPanel })
-    expect(() =>
-      api.registerPanel({ id: "table", label: "Table 2", component: TestPanel }),
-    ).toThrow(PluginError)
+    expect(() => api.registerPanel({ id: "table", label: "Table 2", component: TestPanel })).toThrow(PluginError)
     try {
       api.registerPanel({ id: "table", label: "Table 3", component: TestPanel })
     } catch (e) {
@@ -274,21 +198,16 @@ describe("intra-pluginId collision detection (PLUGIN_SYSTEM.md §5.7)", () => {
   it("collision spans output kinds — panel and command can share the same id", () => {
     const api = createCapturingBoringFrontAPI({ pluginId: "concrete" })
     api.registerPanel({ id: "shared", label: "Pane", component: TestPanel })
-    // Different kind, same id — should NOT throw (kinds are namespaced).
-    expect(() =>
-      api.registerPanelCommand({ id: "shared", title: "Open", panelId: "shared" }),
-    ).not.toThrow()
+    expect(() => api.registerPanelCommand({ id: "shared", title: "Open", panelId: "shared" })).not.toThrow()
   })
 
-  it("catches the composition-chaining footgun: two kits both registering panel \"table\"", () => {
+  it("catches the composition-chaining footgun", () => {
     const dataExplorerKit: BoringFrontFactory = (api) => {
       api.registerPanel({ id: "table", label: "Explorer Table", component: TestPanel })
     }
     const dataCatalogKit: BoringFrontFactory = (api) => {
       api.registerPanel({ id: "table", label: "Catalog Table", component: TestPanel })
     }
-    // `setup` is the escape hatch for chaining imperative kits inside a
-    // declarative config; it surfaces the same collision detection.
     const wrapped = definePlugin({
       id: "playground-catalog",
       setup: (api) => {
@@ -296,6 +215,6 @@ describe("intra-pluginId collision detection (PLUGIN_SYSTEM.md §5.7)", () => {
         dataCatalogKit(api)
       },
     })
-    expect(() => toWorkspacePlugin(wrapped)).toThrow(/registers panel "table" twice/)
+    expect(() => captureFrontPlugin(wrapped)).toThrow(/registers panel "table" twice/)
   })
 })
