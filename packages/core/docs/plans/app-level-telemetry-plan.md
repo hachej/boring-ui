@@ -84,17 +84,11 @@ const telemetry = options.telemetry ?? createPostHogTelemetryFromEnv(process.env
 
 Child apps enable telemetry by setting env vars. They do not need to call `createPostHogTelemetryFromEnv()` manually unless they are building a custom composition.
 
-### 3.2 Escape hatch: custom sink
+### 3.2 Package seam: structural sink
 
-Advanced apps can still pass a custom sink:
+Core passes a tiny structural `TelemetrySink` into composed packages so agent/workspace remain PostHog-free. This is a package boundary seam, not a v1 provider framework.
 
-```ts
-createCoreWorkspaceAgentServer({
-  telemetry: myTelemetrySink,
-})
-```
-
-If `telemetry` is provided, core uses it and does not create the PostHog env sink.
+If a caller already has a custom sink for tests or advanced composition, it may pass `telemetry`; otherwise core uses the PostHog env helper.
 
 ### 3.3 Package boundary
 
@@ -263,33 +257,23 @@ Rules:
 - agent/workspace do not import it
 - disabled/misconfigured env returns no-op
 - capture failures and rejected promises are swallowed or logged at debug level
-- PostHog `shutdown()` is exposed through optional `telemetry.flush()` and wired into server shutdown
+- PostHog `shutdown()` is exposed through optional `telemetry.flush()`
+- wire `flush()` into server shutdown only if an existing close hook makes it a small change; otherwise defer lifecycle wiring
 
 ---
 
 ## 8. Frontend telemetry
 
-Frontend telemetry should also work from env-only setup.
+Deferred.
 
-Preferred first pass:
+V1 only emits events from server/core-composed code paths that can use the core PostHog env helper directly. Do not add runtime config, a browser telemetry endpoint, or a frontend HTTP sink in this pass.
 
-1. Core server creates the PostHog sink from env.
-2. Core exposes non-secret runtime config such as `{ telemetry: { enabled, endpoint } }`.
-3. Core exposes a small internal telemetry endpoint for browser events, only when telemetry is enabled.
-4. Core-composed frontend installs an HTTP telemetry sink only when `telemetry.enabled === true`.
-5. The server forwards those events to PostHog with the same prefix/property rule.
+If browser-originated events are needed later, add a separate bead for:
 
-This avoids requiring child apps to expose `VITE_POSTHOG_KEY` or initialize PostHog in browser code.
-
-Endpoint rules:
-
-- bounded request body
-- only known event names from this plan
-- reuse the same central property allowlist as the server PostHog sink
-- authenticated when the app is authenticated
-- telemetry endpoint failures never break UI behavior
-
-If direct browser PostHog becomes necessary later, add it as a separate bead.
+- non-secret runtime config such as `{ telemetry: { enabled, endpoint } }`
+- an authenticated telemetry endpoint
+- a small HTTP frontend sink
+- endpoint body limits, event allowlist, and property sanitization
 
 ---
 
@@ -330,9 +314,9 @@ Not allowed by default:
 - headers/cookies/tokens
 - env vars
 
-The allowlist should be enforced centrally by `sanitizeTelemetryProperties()` before any event reaches PostHog or the frontend telemetry endpoint.
+The allowlist should be enforced centrally by `sanitizeTelemetryProperties()` before any event reaches PostHog.
 
-If a future event needs richer data, add a small explicit allowlist in the same PR.
+If a future event needs richer data, add a small explicit allowlist in that future PR/bead.
 
 ---
 
@@ -342,15 +326,12 @@ If a future event needs richer data, add a small explicit allowlist in the same 
 
 - `app.opened`
 - `server.request.failed`
-- `auth.user.signed_in` if there is already a natural auth hook
 
 ### Workspace
 
 - `workspace.opened`
 - `workspace.panel.opened`
 - `workspace.command.executed`
-- `workspace.ui_command.posted`
-- `workspace.plugin.error`
 
 ### Agent
 
@@ -358,9 +339,10 @@ If a future event needs richer data, add a small explicit allowlist in the same 
 - `agent.chat.message.submitted`
 - `agent.chat.completed`
 - `agent.chat.failed`
-- `agent.tool.started`
 - `agent.tool.completed`
 - `agent.tool.failed`
+
+Defer auth hooks, browser/frontend events, UI-command events, plugin-error events, and tool-started events unless an existing hook makes them zero-touch.
 
 Keep names stable once shipped.
 
@@ -433,8 +415,9 @@ Acceptance:
 - Implement explicit opt-in via `BORING_TELEMETRY_ENABLED=true`.
 - Implement `POSTHOG_KEY`, `POSTHOG_HOST`, and `BORING_TELEMETRY_PROJECT`.
 - Add central property sanitization and project-prefix slug validation.
-- Add optional `flush()` support and wire it into server shutdown.
-- Add tests for disabled, missing key, enabled, host override, project prefix, invalid prefix, property sanitization, and flush.
+- Add optional `flush()` support on the PostHog sink.
+- Wire `flush()` into server shutdown only if an existing core close hook makes this a small change; otherwise defer lifecycle wiring.
+- Add tests for disabled, missing key, enabled, host override, project prefix, invalid prefix, and property sanitization.
 
 Acceptance:
 
@@ -443,20 +426,17 @@ Acceptance:
 - `POSTHOG_KEY` without `BORING_TELEMETRY_ENABLED=true` = no-op
 - enabled env sends prefixed event and properties
 
-### Bead 3 — core wiring and frontend bridge
+### Bead 3 — core wiring
 
 - Wire core-composed server entrypoints to resolve telemetry from `options.telemetry ?? env helper`.
 - Pass the resolved sink to workspace/agent composition.
-- Add non-secret runtime config for `telemetry.enabled` and `telemetry.endpoint`.
-- Add internal frontend telemetry endpoint if frontend events are included in this pass.
-- Add HTTP frontend sink in core-composed frontend if the endpoint is added.
+- Do not add runtime config, frontend endpoint, or frontend HTTP sink in v1.
 
 Acceptance:
 
 - child app can enable telemetry with env only
 - child app can disable telemetry by omitting env
 - custom `telemetry` option overrides env helper
-- frontend endpoint, if added, validates/drops unsafe properties
 
 ### Bead 4 — event emitters
 
@@ -494,3 +474,11 @@ Telemetry v1 is done when:
 - agent/workspace remain PostHog-free
 - no content or secret-bearing data is captured by default
 - tests cover opt-in, opt-out, prefixing, and privacy behavior
+
+Deferred after v1:
+
+- browser-originated telemetry
+- auth hook telemetry
+- plugin-error telemetry
+- UI-command telemetry
+- mandatory PostHog flush lifecycle wiring
