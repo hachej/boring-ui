@@ -1,19 +1,30 @@
 # Plugin template
 
+Shipped with `@hachej/boring-ui-cli`. Use it via:
+
+```sh
+boring-ui plugin create <your-name> --path plugins
+cd plugins/<your-name>
+pnpm install
+pnpm typecheck && pnpm test
+```
+
+Or copy manually:
+
+```sh
+cp -R packages/cli/templates/plugin plugins/<your-name>
+# rename: `sample` → `<your-name>` in src/, package.json:name,
+#         tsup entries, vitest aliases as needed
+```
+
 Canonical, self-contained shape for plugins under `plugins/*`. The
 existing plugins (`askUserPlugin`, `data-explorer`, `data-catalog`) are
 aligned to match this shape — if they drift, fix them, not the template.
 
-## Scaffolding a new plugin
+### What this does
 
-```sh
-cp -R plugins/_template plugins/<your-name>
-cd plugins/<your-name>
-# rename: `sample` → `<your-name>` in src/, package.json:name,
-#         tsup entries, vitest aliases as needed
-pnpm install
-pnpm typecheck && pnpm test
-```
+The CLI scaffolds a copy and replaces template ids, TypeScript identifiers,
+and `@hachej/boring-plugin-template` with your plugin name automatically.
 
 The plugin is automatically picked up by `pnpm-workspace.yaml`'s
 `plugins/*` glob.
@@ -52,7 +63,7 @@ plugins/<name>/
 - **shared/** — constants and types used by both sides. Keep it tiny.
 - **`src/test-setup.ts`** — jest-dom matchers, ResizeObserver + Range
   polyfills, testing-library cleanup. Each plugin owns its own copy;
-  keep them in sync with `plugins/_template/src/test-setup.ts` if the
+  keep them in sync with `packages/cli/templates/plugin/src/test-setup.ts` if the
   canonical setup changes. Do **not** `import
   "@testing-library/jest-dom/vitest"` instead — see the comment at the
   top of the file for the reason.

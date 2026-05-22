@@ -1,5 +1,5 @@
 // Vitest setup for this plugin. Each plugin owns its own copy of this
-// file; keep them in sync with plugins/_template/src/test-setup.ts when
+// file; keep them in sync with packages/cli/templates/plugin/src/test-setup.ts when
 // the canonical setup changes (rare — see the comment below).
 //
 // Extends vitest's `expect` with jest-dom matchers manually rather than

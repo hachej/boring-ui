@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "type": "module",
   "private": true,
-  "description": "Canonical self-contained plugin shape. Copy this folder to plugins/<name>/, search-and-replace `sample` ids, and align package.json fields.",
+  "description": "Canonical self-contained plugin shape for Boring UI.",
   "files": [
     "dist"
   ],

@@ -92,6 +92,14 @@ pnpm --filter @hachej/boring-ui-cli build
 npx ./packages/cli/dist/index.js
 ```
 
+### Scaffold a Plugin
+
+```bash
+boring-ui plugin create my-plugin --path plugins
+```
+
+This copies the bundled plugin template from `templates/plugin/`, renames the sample identifiers, and creates `plugins/my-plugin`.
+
 ---
 
 ## Authentication
