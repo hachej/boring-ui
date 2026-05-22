@@ -16,8 +16,9 @@ We do not need that now.
 New shape:
 
 - PostHog is the only planned provider.
-- The child app owns PostHog env vars and client creation.
-- Packages receive a tiny optional telemetry sink and default to no-op.
+- Core owns the PostHog env helper for core-composed apps.
+- Child apps enable telemetry and pass credentials with env vars; no app code is required for the common path.
+- Agent/workspace internals receive a tiny optional telemetry sink and default to no-op.
 - Shared PostHog accounts are handled with a stable project prefix/property, not routing logic.
 - No Sentry, OTLP, tenant routing, event bus, or analytics database in this pass.
 
@@ -60,6 +61,16 @@ export interface TelemetryEvent {
 Every package option that needs telemetry accepts `telemetry?: TelemetrySink`.
 If absent, it uses a no-op sink.
 
+For core-composed apps, core creates the sink from env automatically unless a custom `telemetry` sink is passed. This gives the common child-app usage:
+
+```bash
+BORING_TELEMETRY_ENABLED=true
+POSTHOG_KEY=phc_...
+BORING_TELEMETRY_PROJECT=full-app
+```
+
+No extra child-app code is required. Advanced apps can still pass `telemetry` explicitly to override the env helper.
+
 Package code emits events like:
 
 ```ts
@@ -74,7 +85,7 @@ telemetry.capture({
 })
 ```
 
-The final app decides how to build the PostHog sink from env vars.
+Core builds the default PostHog sink from env vars for core-composed apps. Advanced apps can override this by passing a custom `TelemetrySink`.
 
 ---
 
@@ -83,19 +94,21 @@ The final app decides how to build the PostHog sink from env vars.
 Use boring-ui env names for boring-ui behavior, and PostHog env names for PostHog credentials.
 
 ```bash
-# Required to send telemetry.
+# Required to send telemetry. If omitted, telemetry is no-op.
+BORING_TELEMETRY_ENABLED=true
+
+# Required when telemetry is enabled.
 POSTHOG_KEY=phc_...
 
-# Optional. Defaults in the app helper if omitted.
+# Optional. Defaults in the core helper if omitted.
 POSTHOG_HOST=https://us.i.posthog.com
-
-# Optional. If unset, telemetry is enabled when POSTHOG_KEY is set.
-BORING_TELEMETRY_ENABLED=true
 
 # Optional, but recommended when several apps share one PostHog account/project.
 # Used both as an event-name prefix and as a property.
 BORING_TELEMETRY_PROJECT=full-app
 ```
+
+Telemetry is **off by default**. If `BORING_TELEMETRY_ENABLED` is unset or set to `false`, core returns `noopTelemetry` even if other app code imports the helper.
 
 ### Project prefix rule
 
@@ -129,11 +142,12 @@ If the prefix is unset, send the raw event name.
 
 ## 4. PostHog sink helper
 
-Implement this helper in the app/example layer, not deep inside agent/workspace internals:
+Implement this helper in core's app/server layer, not inside agent/workspace internals:
 
 ```ts
+// packages/core/src/server/telemetry/posthog.ts
 export function createPostHogTelemetryFromEnv(env = process.env): TelemetrySink {
-  const enabled = env.BORING_TELEMETRY_ENABLED !== 'false' && Boolean(env.POSTHOG_KEY)
+  const enabled = env.BORING_TELEMETRY_ENABLED === 'true' && Boolean(env.POSTHOG_KEY)
 
   if (!enabled) return noopTelemetry
 
@@ -161,12 +175,15 @@ export function createPostHogTelemetryFromEnv(env = process.env): TelemetrySink 
 }
 ```
 
-Exact file location can be chosen during implementation. Preferred:
+Core-composed app entrypoints use it by default:
 
-- reusable helper: `packages/core/src/server/telemetry/posthog.ts`, if core already owns app env/config helpers
-- app-only helper: `apps/full-app/src/server/telemetry.ts`, if we want zero PostHog dependency in packages
+```ts
+const telemetry = options.telemetry ?? createPostHogTelemetryFromEnv(process.env)
+```
 
-For the first pass, prefer app-only helper unless there is a clear need to publish it.
+Child apps that want telemetry set env vars. Child apps that do not want telemetry leave `BORING_TELEMETRY_ENABLED` unset or set it to `false`.
+
+Advanced apps may still pass their own `telemetry` sink to bypass the PostHog env helper.
 
 ---
 
@@ -174,13 +191,13 @@ For the first pass, prefer app-only helper unless there is a clear need to publi
 
 ### Core
 
-Core may pass telemetry through app creation options and capture generic app/server events:
+Core owns the PostHog env helper and may pass telemetry through app creation options. Core captures generic app/server events:
 
 - `app.opened`
 - `server.request.failed`
 - `auth.user.signed_in` if auth hooks already exist naturally
 
-Core must not require PostHog env vars to boot.
+Core must not require PostHog env vars to boot. Missing env or disabled env means no-op telemetry.
 
 ### Agent
 
@@ -263,9 +280,9 @@ Rules:
 
 Keep browser telemetry simple:
 
-- app shell initializes PostHog in the browser only if a public key/config is provided
+- core-composed browser entrypoints initialize PostHog only if public telemetry env/config is explicitly enabled
 - workspace/agent front providers accept the same `TelemetrySink` shape
-- no package reads `VITE_POSTHOG_KEY` directly
+- workspace/agent packages do not read `VITE_POSTHOG_KEY` directly
 
 The app can expose config however it already exposes runtime config.
 For Vite demo apps, use:
@@ -294,17 +311,18 @@ Acceptance:
 - no `node:*` or `Buffer` in shared files
 - no telemetry call can throw into product code
 
-### Bead 2 — PostHog env helper in app/example
+### Bead 2 — core PostHog env helper
 
-- Add `createPostHogTelemetryFromEnv()` for server usage.
-- Add browser equivalent for Vite/demo usage if needed.
+- Add `createPostHogTelemetryFromEnv()` in `packages/core/src/server/telemetry/posthog.ts`.
+- Wire core-composed server entrypoints to use `options.telemetry ?? createPostHogTelemetryFromEnv(process.env)`.
+- Add browser equivalent only if a core-composed browser entrypoint needs it.
 - Support `POSTHOG_KEY`, `POSTHOG_HOST`, `BORING_TELEMETRY_ENABLED`, and `BORING_TELEMETRY_PROJECT`.
-- Wire it in `apps/full-app` or the canonical demo shell.
 
 Acceptance:
 
 - unset env = no-op
 - `BORING_TELEMETRY_ENABLED=false` = no-op even with key
+- `BORING_TELEMETRY_ENABLED=true` plus `POSTHOG_KEY` sends events
 - project prefix changes event names and adds `boringProject`
 
 ### Bead 3 — core/agent/workspace event calls
