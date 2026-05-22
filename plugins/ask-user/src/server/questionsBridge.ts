@@ -49,7 +49,11 @@ export class QuestionsBridge {
     validateAnswerValues(question.schema.fields, command.params.values)
     try {
       const status = await this.options.runtime.submitAnswer(question.questionId, question.sessionId, command.params.values)
-      if (status === "abandoned") throw new QuestionsBridgeError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, "question waiter is no longer available", 409)
+      if (status === "abandoned") {
+        const latest = await this.options.store.getByQuestionId(question.questionId)
+        if (latest?.status === "answered") return { ok: true, status: "answered" }
+        throw new QuestionsBridgeError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, "question waiter is no longer available", 409)
+      }
     } catch (error) {
       if (isCode(error, ASK_USER_ERROR_CODES.ALREADY_ANSWERED)) return { ok: true, status: "answered" }
       throw error
