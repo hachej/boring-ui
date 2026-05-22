@@ -10,7 +10,6 @@ import { provisionRuntimeWorkspace } from '../provisionRuntime'
 import {
   ensureBoringAgentRuntimeLayout,
   getBoringAgentRuntimePaths,
-  writeBoringAgentOwnershipMarker,
 } from '../runtimeLayout'
 
 const execFileAsync = promisify(execFile)
@@ -35,21 +34,6 @@ test('provisionRuntimeWorkspace writes current marker under .boring-agent/state'
   expect(result.binDir).toBe(paths.bin)
   await expect(readFile(paths.provisioningMarker, 'utf8')).resolves.toContain(result.fingerprint)
   await expect(readFile(paths.ownershipManifest, 'utf8')).resolves.toContain('.boring-agent/bin')
-})
-
-test('workspace python env ignores old top-level .venv for agent runtime tools', () => {
-  const env = withWorkspacePythonEnv({
-    workspaceRoot: '/workspace',
-    env: { PATH: '/workspace/.venv/bin:/usr/bin', VIRTUAL_ENV: '/workspace/.venv' },
-  })
-
-  expect(env.PATH?.split(':')).toEqual([
-    '/workspace/.boring-agent/bin',
-    '/workspace/.boring-agent/venv/bin',
-    '/usr/bin',
-  ])
-  expect(env.PATH).not.toContain('/workspace/.venv/bin')
-  expect(env.VIRTUAL_ENV).toBe('/workspace/.boring-agent/venv')
 })
 
 test('workspace python env forces runtime roots before plugin PATH additions', () => {
@@ -96,28 +80,6 @@ test('provisioning rejects plugin env overrides for managed runtime keys', async
       },
     ],
   })).rejects.toThrow('Provisioning env key VIRTUAL_ENV is reserved')
-})
-
-test('unowned top-level .venv is left in place during runtime layout migration', async () => {
-  const workspaceRoot = await makeTempDir('boring-runtime-unowned-venv-')
-  const oldVenv = join(workspaceRoot, '.venv')
-  await mkdir(join(oldVenv, 'bin'), { recursive: true })
-  await writeFile(join(oldVenv, 'bin', 'python'), '# user venv\n', 'utf8')
-
-  await provisionRuntimeWorkspace({ workspaceRoot, contributions: [] })
-
-  await expect(readFile(join(oldVenv, 'bin', 'python'), 'utf8')).resolves.toBe('# user venv\n')
-})
-
-test('owned top-level .venv is removed during runtime layout migration', async () => {
-  const workspaceRoot = await makeTempDir('boring-runtime-owned-venv-')
-  const paths = await ensureBoringAgentRuntimeLayout(workspaceRoot)
-  await mkdir(paths.legacyTopLevelVenv, { recursive: true })
-  await writeBoringAgentOwnershipMarker(paths.legacyTopLevelVenv, '.venv', 'legacy-runtime-dir')
-
-  await provisionRuntimeWorkspace({ workspaceRoot, contributions: [] })
-
-  await expect(stat(paths.legacyTopLevelVenv)).rejects.toThrow()
 })
 
 async function makeNodePackageRoot(packageName: string, bin?: Record<string, string>): Promise<string> {

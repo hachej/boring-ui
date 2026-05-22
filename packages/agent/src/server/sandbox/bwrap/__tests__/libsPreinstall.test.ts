@@ -111,16 +111,6 @@ describe('buildVenvEnv', () => {
     }
   })
 
-  test('filters old top-level .venv from host PATH', () => {
-    const previous = setEnvForTest('PATH', '/workspace/.venv/bin:/usr/bin')
-    try {
-      const env = buildVenvEnv(null, '/workspace')
-      expect(env.PATH).toBe('/workspace/.boring-agent/venv/bin:/usr/bin')
-    } finally {
-      restoreEnvForTest('PATH', previous)
-    }
-  })
-
   test('sets VIRTUAL_ENV to workspace .boring-agent/venv', () => {
     const env = buildVenvEnv('/some/path', '/workspace')
     expect(env.VIRTUAL_ENV).toBe('/workspace/.boring-agent/venv')

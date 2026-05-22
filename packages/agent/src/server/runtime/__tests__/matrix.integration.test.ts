@@ -330,7 +330,7 @@ describeIfBwrap('local/bwrap runtime matrix', () => {
   }, 120_000)
 })
 
-test('mocked Vercel runtime satisfies the unified cwd/PATH command matrix without legacy path leaks or command rewriting', async () => {
+test('mocked Vercel runtime satisfies the unified cwd/PATH command matrix without private path leaks or command rewriting', async () => {
   const storageRoot = await makeTempDir('boring-runtime-matrix-vercel-storage-')
   const recorder = createMockVercelSandboxRecorder()
   const client: VercelSandboxClient = {

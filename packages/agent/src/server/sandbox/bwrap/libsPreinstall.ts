@@ -143,7 +143,7 @@ export function buildVenvEnv(tier1Path: string | null, workspaceRoot: string): R
   const pathParts = [tier2Bin]
   if (tier1Bin) pathParts.push(tier1Bin)
   const hostPath = getEnv('PATH')
-  if (hostPath) pathParts.push(...hostPath.split(':').filter((part) => part !== paths.legacyTopLevelVenvBin))
+  if (hostPath) pathParts.push(...hostPath.split(':'))
 
   return {
     PATH: pathParts.join(':'),

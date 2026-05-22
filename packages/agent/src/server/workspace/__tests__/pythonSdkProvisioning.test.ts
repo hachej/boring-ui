@@ -1,15 +1,13 @@
-import { execFile, spawnSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, posix } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
-import { afterEach, describe, expect, test } from 'vitest'
+import { afterEach, expect, test } from 'vitest'
 
 import type { ExecOptions, ExecResult, Sandbox } from '../../../shared/sandbox'
 import type { Entry, Stat, Workspace } from '../../../shared/workspace'
-import { createBwrapSandbox } from '../../sandbox/bwrap/createBwrapSandbox'
-import { createNodeWorkspace } from '../createNodeWorkspace'
 import { provisionRuntimeWorkspace, type RuntimeProvisioningContribution } from '../provisionRuntime'
 import { getBoringAgentRuntimePaths } from '../runtimeLayout'
 
@@ -18,11 +16,6 @@ const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 const tempDirs: string[] = []
 const FIXTURE_API_URL = 'https://fixture.example.test/api'
-const HAS_BWRAP = (() => {
-  const result = spawnSync('bwrap', ['--version'], { stdio: 'ignore' })
-  return !result.error && result.status === 0
-})()
-
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
@@ -31,10 +24,6 @@ async function makeTempDir(prefix: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), prefix))
   tempDirs.push(dir)
   return dir
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", "'\\''")}'`
 }
 
 async function makeFixturePythonPackage(): Promise<string> {
@@ -195,45 +184,6 @@ test('python[] console scripts are exposed and templates seed skills docs and se
   await expect(stat(join(paths.bin, 'python'))).rejects.toThrow()
   await expect(stat(join(paths.bin, 'pip'))).rejects.toThrow()
 }, 60_000)
-
-const describeIfBwrap = HAS_BWRAP ? describe : describe.skip
-
-describeIfBwrap('Python SDK fixture local/bwrap provisioning', () => {
-  test('fixture-tool runs from the initial /workspace cwd with no host prefix', async () => {
-    const workspaceRoot = await makeTempDir('boring-fixture-bwrap-')
-    const { contribution } = await makeFixtureProvisioning()
-    const runtimeContext = { runtimeCwd: '/workspace' }
-    const workspace = createNodeWorkspace(workspaceRoot, { runtimeContext })
-    const sandbox = createBwrapSandbox({ hostWorkspaceRoot: workspaceRoot, runtimeContext })
-    await sandbox.init?.({ workspace, sessionId: 'fixture-bwrap' })
-
-    await provisionRuntimeWorkspace({
-      workspaceRoot,
-      runtimeMode: 'local',
-      runtimeCwd: '/workspace',
-      sandbox,
-      contributions: [contribution],
-    })
-
-    const list = await sandbox.exec('fixture-tool list', { cwd: '/workspace', timeoutMs: 30_000 })
-    const listOutput = decoder.decode(list.stdout)
-    expect(list.exitCode).toBe(0)
-    expect(listOutput).toContain('builtin:echo')
-    expect(listOutput).toContain('assets=/workspace/.boring-agent/sdk/python/boring-fixture-sdk/transforms/builtins')
-    expect(listOutput).not.toContain(workspaceRoot)
-
-    const run = await sandbox.exec([
-      'fixture-tool run',
-      '--tool builtin:echo',
-      '--input fixture-input',
-      '--output fixture-output',
-      `--title ${shellQuote('Fixture Output')}`,
-    ].join(' '), { cwd: '/workspace', timeoutMs: 30_000 })
-    expect(run.exitCode).toBe(0)
-    expect(decoder.decode(run.stdout)).toContain('wrote fixture-output')
-    await expect(readFile(join(workspaceRoot, 'artifacts', 'fixture-output.json'), 'utf8')).resolves.toContain('fixture-input')
-  }, 60_000)
-})
 
 function okResult(): ExecResult {
   return {

@@ -10,11 +10,10 @@ interface WorkspacePythonEnvOptions {
 function appendPathParts(
   pathParts: string[],
   pathValue: string | undefined,
-  ignoredParts: Set<string>,
 ): void {
   if (!pathValue) return
   for (const part of pathValue.split(':')) {
-    if (!part || ignoredParts.has(part) || pathParts.includes(part)) continue
+    if (!part || pathParts.includes(part)) continue
     pathParts.push(part)
   }
 }
@@ -30,7 +29,7 @@ export function withWorkspacePythonEnv(
   const shimBin = paths.bin
   const baseEnv = { ...(env ?? getEnvSnapshot()) }
   const pathParts = [shimBin, venvBin]
-  appendPathParts(pathParts, baseEnv.PATH, new Set([paths.legacyTopLevelVenvBin]))
+  appendPathParts(pathParts, baseEnv.PATH)
 
   delete baseEnv.PYTHONHOME
 

@@ -71,12 +71,6 @@ Provisioned runtime artifacts live under the workspace-local `.boring-agent/` di
 
 The provisioner writes ownership markers for managed runtime directories. Do not hand-edit managed files as an app integration mechanism; declare provisioning contributions instead.
 
-### Top-level `.venv` migration
-
-Older integrations created a top-level `.venv`. The runtime now uses `.boring-agent/venv`.
-
-During provisioning, a top-level `.venv` is removed only when it is recognized as boring-agent-owned legacy runtime output. User-owned or unrecognized virtual environments are left alone. New shims and PATH entries point at `.boring-agent/venv/bin`.
-
 ## Runtime provisioning
 
 Plugins and host apps can contribute runtime setup through `templateDirs[]`, `python[]`, and `nodePackages[]`. Provisioning is fingerprinted and skipped when already materialized; broken or stale runtime artifacts are lazily repaired on the next provision pass. Force reprovision by calling the provisioning API with `force: true` from host code/tests.
@@ -140,26 +134,6 @@ provisioning: {
 ```
 
 Local packages are packed/installed into `.boring-agent/node`; managed bin shims are written to `.boring-agent/bin`. Multiple node packages are installed together so later packages do not prune earlier ones.
-
-## Runtime doctor and debugging
-
-Every agent app registers:
-
-```txt
-GET /api/v1/agent/runtime/doctor
-```
-
-The doctor report includes:
-
-- `runtimeCwd`, `Workspace.root`, sandbox provider/placement
-- first PATH entries
-- `BORING_AGENT_WORKSPACE_ROOT` and `VIRTUAL_ENV`
-- `.boring-agent/` artifact roots
-- Python executable/version/pip status
-- provisioning marker version/fingerprint/runtime mode
-- smoke command exit/truncation/stderr status
-
-Use it when a tool is missing from PATH, cwd looks wrong, Python is stale, or provisioning appears skipped unexpectedly. The report is diagnostic only and must not include secrets.
 
 ## vercel-sandbox
 

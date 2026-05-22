@@ -1,5 +1,5 @@
-import { constants, mkdirSync, writeFileSync } from 'node:fs'
-import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 export const BORING_AGENT_DIR = '.boring-agent'
@@ -21,7 +21,6 @@ export const BORING_AGENT_OWNER = '@hachej/boring-agent'
 export const BORING_AGENT_OWNERSHIP_MARKER_VERSION = 1
 export const BORING_AGENT_PROVISIONING_MARKER_REL_PATH = `${BORING_AGENT_DIR}/state/provisioning.json`
 export const BORING_AGENT_OWNERSHIP_MANIFEST_REL_PATH = `${BORING_AGENT_DIR}/state/ownership.json`
-export const BORING_AGENT_LEGACY_TOP_LEVEL_VENV_REL_PATH = '.venv'
 
 export interface BoringAgentRuntimePaths {
   root: string
@@ -38,16 +37,13 @@ export interface BoringAgentRuntimePaths {
   logs: string
   provisioningMarker: string
   ownershipManifest: string
-  legacyTopLevelVenv: string
-  legacyTopLevelVenvBin: string
-  legacyTopLevelVenvOwnershipMarker: string
 }
 
 export interface BoringAgentOwnershipMarker {
   v: typeof BORING_AGENT_OWNERSHIP_MARKER_VERSION
   owner: typeof BORING_AGENT_OWNER
   path: string
-  kind: 'runtime-dir' | 'legacy-runtime-dir'
+  kind: 'runtime-dir'
 }
 
 function markerFor(path: string, kind: BoringAgentOwnershipMarker['kind']): BoringAgentOwnershipMarker {
@@ -59,21 +55,11 @@ function markerFor(path: string, kind: BoringAgentOwnershipMarker['kind']): Bori
   }
 }
 
-async function exists(path: string): Promise<boolean> {
-  try {
-    await access(path, constants.F_OK)
-    return true
-  } catch {
-    return false
-  }
-}
-
 export function getBoringAgentRuntimePaths(workspaceRoot: string): BoringAgentRuntimePaths {
   const root = join(workspaceRoot, BORING_AGENT_DIR)
   const node = join(root, 'node')
   const venv = join(root, 'venv')
   const state = join(root, 'state')
-  const legacyTopLevelVenv = join(workspaceRoot, BORING_AGENT_LEGACY_TOP_LEVEL_VENV_REL_PATH)
 
   return {
     root,
@@ -90,9 +76,6 @@ export function getBoringAgentRuntimePaths(workspaceRoot: string): BoringAgentRu
     logs: join(root, 'logs'),
     provisioningMarker: join(workspaceRoot, BORING_AGENT_PROVISIONING_MARKER_REL_PATH),
     ownershipManifest: join(workspaceRoot, BORING_AGENT_OWNERSHIP_MANIFEST_REL_PATH),
-    legacyTopLevelVenv,
-    legacyTopLevelVenvBin: join(legacyTopLevelVenv, 'bin'),
-    legacyTopLevelVenvOwnershipMarker: join(legacyTopLevelVenv, BORING_AGENT_OWNERSHIP_MARKER_FILENAME),
   }
 }
 
@@ -134,20 +117,6 @@ export function writeBoringAgentOwnershipMarkerSync(
   )
 }
 
-export async function hasBoringAgentOwnershipMarker(
-  markerPath: string,
-  expectedRelPath?: string,
-): Promise<boolean> {
-  try {
-    const marker = JSON.parse(await readFile(markerPath, 'utf8')) as Partial<BoringAgentOwnershipMarker>
-    return marker.v === BORING_AGENT_OWNERSHIP_MARKER_VERSION &&
-      marker.owner === BORING_AGENT_OWNER &&
-      (expectedRelPath === undefined || marker.path === expectedRelPath)
-  } catch {
-    return false
-  }
-}
-
 export async function ensureBoringAgentRuntimeLayout(workspaceRoot: string): Promise<BoringAgentRuntimePaths> {
   const paths = getBoringAgentRuntimePaths(workspaceRoot)
   await mkdir(paths.root, { recursive: true })
@@ -170,12 +139,3 @@ export async function ensureBoringAgentRuntimeLayout(workspaceRoot: string): Pro
   return paths
 }
 
-export async function removeLegacyTopLevelVenvIfOwned(workspaceRoot: string): Promise<boolean> {
-  const paths = getBoringAgentRuntimePaths(workspaceRoot)
-  if (!(await exists(paths.legacyTopLevelVenv))) return false
-  if (!(await hasBoringAgentOwnershipMarker(paths.legacyTopLevelVenvOwnershipMarker, BORING_AGENT_LEGACY_TOP_LEVEL_VENV_REL_PATH))) {
-    return false
-  }
-  await rm(paths.legacyTopLevelVenv, { recursive: true, force: true })
-  return true
-}

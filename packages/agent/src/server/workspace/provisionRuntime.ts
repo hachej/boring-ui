@@ -21,7 +21,6 @@ import {
   ensureBoringAgentRuntimeLayout,
   getBoringAgentNodePackageTarget,
   getBoringAgentRuntimePaths,
-  removeLegacyTopLevelVenvIfOwned,
   writeBoringAgentOwnershipMarker,
 } from './runtimeLayout'
 
@@ -1026,7 +1025,6 @@ async function provisionHostRuntimeWorkspace(
   const workspaceRoot = opts.storageRoot ?? opts.workspaceRoot
   await mkdir(workspaceRoot, { recursive: true })
   const paths = await ensureBoringAgentRuntimeLayout(workspaceRoot)
-  await removeLegacyTopLevelVenvIfOwned(workspaceRoot)
   const markerPath = paths.provisioningMarker
 
   if (!opts.force) {
