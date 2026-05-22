@@ -28,7 +28,8 @@ RUN pnpm --filter @hachej/boring-agent exec tsup \
   && cp packages/agent/src/front/styles/globals.css packages/agent/dist/front/styles.css
 
 RUN pnpm --filter @hachej/boring-workspace exec tsup --no-dts \
-  && pnpm --filter @hachej/boring-workspace exec vite build
+  && pnpm --filter @hachej/boring-workspace exec vite build \
+  && pnpm --filter @hachej/boring-workspace exec node scripts/build-workspace-css.mjs
 
 # BORING_USE_LOCAL_PACKAGES=1 lets Vite resolve @hachej/* from source so
 # Tailwind scans the actual TSX files instead of compiled dist JS. Without
