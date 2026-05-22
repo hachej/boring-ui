@@ -197,6 +197,12 @@ function okResult(): ExecResult {
   }
 }
 
+function notFound(path: string): NodeJS.ErrnoException {
+  const error = new Error(`not found: ${path}`) as NodeJS.ErrnoException
+  error.code = 'ENOENT'
+  return error
+}
+
 class MemoryWorkspace implements Workspace {
   readonly root = '/workspace'
   readonly runtimeContext = { runtimeCwd: '/workspace' }
@@ -227,14 +233,16 @@ class MemoryWorkspace implements Workspace {
   }
 
   async readFile(path: string): Promise<string> {
-    const data = this.files.get(this.normalize(path))
-    if (!data) throw new Error('not found')
+    const normalized = this.normalize(path)
+    const data = this.files.get(normalized)
+    if (!data) throw notFound(normalized)
     return decoder.decode(data)
   }
 
   async readBinaryFile(path: string): Promise<Uint8Array> {
-    const data = this.files.get(this.normalize(path))
-    if (!data) throw new Error('not found')
+    const normalized = this.normalize(path)
+    const data = this.files.get(normalized)
+    if (!data) throw notFound(normalized)
     return data
   }
 
@@ -267,7 +275,7 @@ class MemoryWorkspace implements Workspace {
 
   async readdir(path: string): Promise<Entry[]> {
     const normalized = this.normalize(path)
-    if (!this.dirs.has(normalized)) throw new Error('not found')
+    if (!this.dirs.has(normalized)) throw notFound(normalized)
     const prefix = normalized === '.' ? '' : `${normalized}/`
     const entries = new Map<string, Entry>()
     for (const dir of this.dirs) {
@@ -289,7 +297,7 @@ class MemoryWorkspace implements Workspace {
     const data = this.files.get(normalized)
     if (data) return { kind: 'file', size: data.byteLength, mtimeMs: 0 }
     if (this.dirs.has(normalized)) return { kind: 'dir', size: 0, mtimeMs: 0 }
-    throw new Error('not found')
+    throw notFound(normalized)
   }
 
   async mkdir(path: string): Promise<void> {
@@ -300,7 +308,7 @@ class MemoryWorkspace implements Workspace {
     const from = this.normalize(fromRelPath)
     const to = this.normalize(toRelPath)
     const data = this.files.get(from)
-    if (!data) throw new Error('not found')
+    if (!data) throw notFound(from)
     this.ensureParent(to)
     this.files.set(to, data)
     this.files.delete(from)

@@ -150,7 +150,7 @@ async function workspaceExists(workspace: Workspace, relPath: string): Promise<b
     return true
   } catch (error) {
     if (isNotFound(error)) return false
-    return false
+    throw error
   }
 }
 
@@ -402,6 +402,14 @@ async function sandboxCommandExists(sandbox: Sandbox, cmd: string, cwd: string):
   return result.exitCode === 0
 }
 
+function shouldSkipPythonProjectSourceEntry(entry: string): boolean {
+  return entry === BORING_AGENT_DIR || entry === '__pycache__' || entry === 'build' || entry.endsWith('.egg-info')
+}
+
+function shouldSkipHashEntry(entry: string, opts: { excludeBoringAgentDir?: boolean }): boolean {
+  return entry === '__pycache__' || entry === 'build' || entry.endsWith('.egg-info') || Boolean(opts.excludeBoringAgentDir && entry === BORING_AGENT_DIR)
+}
+
 async function hashPath(
   path: string,
   hash: ReturnType<typeof createHash>,
@@ -410,8 +418,7 @@ async function hashPath(
   const info = await stat(path)
   if (info.isDirectory()) {
     const entries = (await readdir(path))
-      .filter((entry) => entry !== '__pycache__' && entry !== 'build' && !entry.endsWith('.egg-info'))
-      .filter((entry) => !(opts.excludeBoringAgentDir && entry === BORING_AGENT_DIR))
+      .filter((entry) => !shouldSkipHashEntry(entry, opts))
       .sort()
     for (const entry of entries) {
       hash.update(`dir:${entry}\n`)
@@ -700,11 +707,21 @@ async function collectHostNodeBinLinks(workspaceRoot: string, specs: RuntimeNode
   return links
 }
 
-async function writeHostNodeBinLinks(workspaceRoot: string, specs: RuntimeNodePackageSpec[]): Promise<void> {
+async function validateHostNodeBinTargets(workspaceRoot: string, links: NodeBinLink[]): Promise<void> {
+  for (const link of links) {
+    const target = join(workspaceRoot, ...link.targetRel.split('/'))
+    if (!(await exists(target))) {
+      throw new Error(`Provisioned node bin "${link.name}" target is missing: ${link.targetRel}`)
+    }
+  }
+}
+
+async function writeHostNodeBinLinks(workspaceRoot: string, specs: RuntimeNodePackageSpec[]): Promise<NodeBinLink[]> {
   const paths = getBoringAgentRuntimePaths(workspaceRoot)
   await mkdir(paths.bin, { recursive: true })
   await mkdir(paths.state, { recursive: true })
   const links = await collectHostNodeBinLinks(workspaceRoot, specs)
+  await validateHostNodeBinTargets(workspaceRoot, links)
   const desired = new Set(links.map((link) => link.name))
   const manifestPath = join(workspaceRoot, NODE_BIN_MANIFEST_REL_PATH)
   if (await exists(manifestPath)) {
@@ -716,6 +733,7 @@ async function writeHostNodeBinLinks(workspaceRoot: string, specs: RuntimeNodePa
     await writeExecutable(join(paths.bin, link.name), nodeBinShimBody(link.targetRel))
   }
   await writeFile(manifestPath, nodeBinManifestBody(links), 'utf8')
+  return links
 }
 
 async function ensureNodePackages(workspaceRoot: string, specs: RuntimeNodePackageSpec[]): Promise<void> {
@@ -766,7 +784,7 @@ function isSamePathOrAncestorOf(path: string, descendant: string): boolean {
 async function copyHostPythonProjectSource(source: string, target: string): Promise<void> {
   if (isSamePathOrAncestorOf(source, target)) {
     await mkdir(target, { recursive: true })
-    const entries = (await readdir(source)).sort()
+    const entries = (await readdir(source)).filter((entry) => !shouldSkipPythonProjectSourceEntry(entry)).sort()
     for (const entry of entries) {
       const sourcePath = join(source, entry)
       if (isSamePathOrAncestorOf(sourcePath, target)) continue
@@ -778,7 +796,7 @@ async function copyHostPythonProjectSource(source: string, target: string): Prom
   const info = await stat(source)
   if (info.isDirectory()) {
     await mkdir(target, { recursive: true })
-    const entries = (await readdir(source)).sort()
+    const entries = (await readdir(source)).filter((entry) => !shouldSkipPythonProjectSourceEntry(entry)).sort()
     for (const entry of entries) await copyHostPythonProjectSource(join(source, entry), join(target, entry))
     return
   }
@@ -867,6 +885,12 @@ async function isRuntimeMaterialized(
     for (const spec of provisioning.nodePackages ?? []) {
       if (!(await exists(join(nodePackageTarget(workspaceRoot, spec.packageName), 'package.json')))) return false
     }
+  }
+  try {
+    await validateHostNodeBinTargets(workspaceRoot, await collectHostNodeBinLinks(workspaceRoot, contributions.flatMap(({ provisioning }) => provisioning.nodePackages ?? [])))
+  } catch (error) {
+    if (isNotFound(error)) return false
+    return false
   }
   return true
 }
@@ -1031,10 +1055,10 @@ async function provisionHostRuntimeWorkspace(
     const marker = await readProvisioningMarker(markerPath)
     if (marker?.fingerprint === hash && await isRuntimeMaterialized(workspaceRoot, active)) {
       const actualBinDir = await writeShims(workspaceRoot, env, hasPythonContributions(active))
-      await writeHostNodeBinLinks(workspaceRoot, active.flatMap(({ provisioning }) => provisioning.nodePackages ?? []))
+      const nodeBinLinks = await writeHostNodeBinLinks(workspaceRoot, active.flatMap(({ provisioning }) => provisioning.nodePackages ?? []))
       try {
         await validateHostRuntime(workspaceRoot, active)
-        if (opts.sandbox && target.runtimeMode === 'local') await validateRuntimeInSandbox(opts.sandbox, target.runtimeCwd, active)
+        if (opts.sandbox && target.runtimeMode === 'local') await validateRuntimeInSandbox(opts.sandbox, target.runtimeCwd, active, nodeBinLinks)
         return { fingerprint: hash, changed: false, env, binDir: actualBinDir }
       } catch (error) {
         if (!hasPythonContributions(active)) throw error
@@ -1048,10 +1072,10 @@ async function provisionHostRuntimeWorkspace(
   await ensureNodePackages(workspaceRoot, nodePackageSpecs)
   await ensurePython(workspaceRoot, active.flatMap(({ provisioning }) => provisioning.python ?? []))
   const actualBinDir = await writeShims(workspaceRoot, env, hasPythonContributions(active))
-  await writeHostNodeBinLinks(workspaceRoot, nodePackageSpecs)
+  const nodeBinLinks = await writeHostNodeBinLinks(workspaceRoot, nodePackageSpecs)
   await validateHostRuntime(workspaceRoot, active)
   await writeProvisioningMarker(markerPath, hash, target)
-  if (opts.sandbox && target.runtimeMode === 'local') await validateRuntimeInSandbox(opts.sandbox, target.runtimeCwd, active)
+  if (opts.sandbox && target.runtimeMode === 'local') await validateRuntimeInSandbox(opts.sandbox, target.runtimeCwd, active, nodeBinLinks)
   return { fingerprint: hash, changed: true, env, binDir: actualBinDir }
 }
 
@@ -1084,6 +1108,7 @@ async function copyHostPathToWorkspace(
   source: string,
   workspace: Workspace,
   targetRel: string,
+  opts: { shouldSkipEntry?: (entry: string) => boolean } = {},
 ): Promise<boolean> {
   const info = await stat(source).catch((error: unknown) => {
     if ((error as { code?: string }).code === 'ENOENT') return null
@@ -1092,9 +1117,9 @@ async function copyHostPathToWorkspace(
   if (!info) return false
   if (info.isDirectory()) {
     await workspace.mkdir(targetRel, { recursive: true })
-    const entries = (await readdir(source)).sort()
+    const entries = (await readdir(source)).filter((entry) => !opts.shouldSkipEntry?.(entry)).sort()
     for (const entry of entries) {
-      await copyHostPathToWorkspace(join(source, entry), workspace, posix.join(targetRel, entry))
+      await copyHostPathToWorkspace(join(source, entry), workspace, posix.join(targetRel, entry), opts)
     }
     return true
   }
@@ -1235,7 +1260,7 @@ async function ensureRemotePython(
   for (const spec of specs) {
     const targetRel = remotePythonProjectTarget(spec)
     await sandboxRun(sandbox, `rm -rf -- ${shellQuote(`${runtimeCwd}/${targetRel}`)}`, runtimeCwd)
-    await copyHostPathToWorkspace(dirname(toPath(spec.projectFile)), workspace, targetRel)
+    await copyHostPathToWorkspace(dirname(toPath(spec.projectFile)), workspace, targetRel, { shouldSkipEntry: shouldSkipPythonProjectSourceEntry })
   }
 
   await recreateRemotePythonVenv(workspace, sandbox, runtimeCwd)
@@ -1267,6 +1292,9 @@ async function isRemoteRuntimeMaterialized(
     for (const spec of provisioning.nodePackages ?? []) {
       if (!(await workspaceExists(workspace, posix.join(nodePackageTargetRel(spec.packageName), 'package.json')))) return false
     }
+  }
+  for (const link of await collectRemoteNodeBinLinks(workspace, contributions.flatMap(({ provisioning }) => provisioning.nodePackages ?? []))) {
+    if (!(await workspaceExists(workspace, link.targetRel))) return false
   }
   return true
 }
@@ -1303,16 +1331,25 @@ async function collectRemoteNodeBinLinks(workspace: Workspace, specs: RuntimeNod
   return links
 }
 
+async function validateRemoteNodeBinTargets(workspace: Workspace, links: NodeBinLink[]): Promise<void> {
+  for (const link of links) {
+    if (!(await workspaceExists(workspace, link.targetRel))) {
+      throw new Error(`Provisioned node bin "${link.name}" target is missing: ${link.targetRel}`)
+    }
+  }
+}
+
 async function writeRemoteNodeBinLinks(
   workspace: Workspace,
   sandbox: Sandbox,
   runtimeCwd: string,
   specs: RuntimeNodePackageSpec[],
-): Promise<void> {
+): Promise<NodeBinLink[]> {
   const shimDir = `${BORING_AGENT_DIR}/bin`
   await workspace.mkdir(shimDir, { recursive: true })
   await workspace.mkdir(posix.join(BORING_AGENT_DIR, 'state'), { recursive: true })
   const links = await collectRemoteNodeBinLinks(workspace, specs)
+  await validateRemoteNodeBinTargets(workspace, links)
   const desired = new Set(links.map((link) => link.name))
   if (await workspaceExists(workspace, NODE_BIN_MANIFEST_REL_PATH)) {
     for (const name of parseNodeBinManifest(await workspace.readFile(NODE_BIN_MANIFEST_REL_PATH))) {
@@ -1323,6 +1360,7 @@ async function writeRemoteNodeBinLinks(
     await writeRemoteExecutable(workspace, sandbox, runtimeCwd, posix.join(shimDir, link.name), nodeBinShimBody(link.targetRel))
   }
   await workspace.writeFile(NODE_BIN_MANIFEST_REL_PATH, nodeBinManifestBody(links))
+  return links
 }
 
 async function writeRemoteShims(
@@ -1382,6 +1420,7 @@ async function validateRuntimeInSandbox(
   sandbox: Sandbox,
   runtimeCwd: string,
   contributions: Array<{ provisioning: RuntimeProvisioningContribution }>,
+  nodeBinLinks: NodeBinLink[] = [],
 ): Promise<void> {
   const checks = [
     `${BORING_AGENT_PROVISIONING_MARKER_REL_PATH}`,
@@ -1397,6 +1436,7 @@ async function validateRuntimeInSandbox(
       checks.push(posix.join(nodePackageTargetRel(spec.packageName), 'package.json'))
     }
   }
+  for (const link of nodeBinLinks) checks.push(link.targetRel)
   await sandboxRun(sandbox, checks.map((path) => `test -e ${shellQuote(path)}`).join(' && '), runtimeCwd)
   if (!hasPython) return
   const venv = `${runtimeCwd}/${BORING_AGENT_DIR}/venv`
@@ -1434,9 +1474,9 @@ async function provisionRemoteRuntimeWorkspace(
     if (marker?.fingerprint === hash && await isRemoteRuntimeMaterialized(workspace, active)) {
       const nodePackageSpecs = active.flatMap(({ provisioning }) => provisioning.nodePackages ?? [])
       const binDir = await writeRemoteShims(workspace, sandbox, target.runtimeCwd, env, hasPythonContributions(active))
-      await writeRemoteNodeBinLinks(workspace, sandbox, target.runtimeCwd, nodePackageSpecs)
+      const nodeBinLinks = await writeRemoteNodeBinLinks(workspace, sandbox, target.runtimeCwd, nodePackageSpecs)
       try {
-        await validateRuntimeInSandbox(sandbox, target.runtimeCwd, active)
+        await validateRuntimeInSandbox(sandbox, target.runtimeCwd, active, nodeBinLinks)
         return { fingerprint: hash, changed: false, env, binDir }
       } catch (error) {
         if (!hasPythonContributions(active)) throw error
@@ -1450,9 +1490,9 @@ async function provisionRemoteRuntimeWorkspace(
   await ensureRemoteNodePackages(workspace, sandbox, target.runtimeCwd, opts.storageRoot ?? opts.workspaceRoot, nodePackageSpecs)
   await ensureRemotePython(workspace, sandbox, target.runtimeCwd, active.flatMap(({ provisioning }) => provisioning.python ?? []))
   const binDir = await writeRemoteShims(workspace, sandbox, target.runtimeCwd, env, hasPythonContributions(active))
-  await writeRemoteNodeBinLinks(workspace, sandbox, target.runtimeCwd, nodePackageSpecs)
+  const nodeBinLinks = await writeRemoteNodeBinLinks(workspace, sandbox, target.runtimeCwd, nodePackageSpecs)
   await workspace.writeFile(markerPath, provisioningMarkerBody(hash, target))
-  await validateRuntimeInSandbox(sandbox, target.runtimeCwd, active)
+  await validateRuntimeInSandbox(sandbox, target.runtimeCwd, active, nodeBinLinks)
   return { fingerprint: hash, changed: true, env, binDir }
 }
 

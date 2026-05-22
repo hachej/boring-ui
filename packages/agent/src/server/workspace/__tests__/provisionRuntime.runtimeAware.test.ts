@@ -34,7 +34,17 @@ function okResult(): ExecResult {
   }
 }
 
-function createRecordingSandbox(provider: string, placement: Sandbox['placement']): Sandbox & { history: Array<{ cmd: string; opts?: ExecOptions }> } {
+function notFound(path: string): NodeJS.ErrnoException {
+  const error = new Error(`not found: ${path}`) as NodeJS.ErrnoException
+  error.code = 'ENOENT'
+  return error
+}
+
+function createRecordingSandbox(
+  provider: string,
+  placement: Sandbox['placement'],
+  hooks: { onExec?: (cmd: string, opts?: ExecOptions) => void | Promise<void> } = {},
+): Sandbox & { history: Array<{ cmd: string; opts?: ExecOptions }> } {
   const history: Array<{ cmd: string; opts?: ExecOptions }> = []
   return {
     id: provider,
@@ -45,6 +55,7 @@ function createRecordingSandbox(provider: string, placement: Sandbox['placement'
     history,
     async exec(cmd, opts) {
       history.push({ cmd, opts: opts ? { ...opts, env: opts.env ? { ...opts.env } : undefined } : undefined })
+      await hooks.onExec?.(cmd, opts)
       return okResult()
     },
   }
@@ -82,14 +93,16 @@ class MemoryWorkspace implements Workspace {
   }
 
   async readFile(path: string): Promise<string> {
-    const data = this.files.get(this.normalize(path))
-    if (!data) throw new Error('not found')
+    const normalized = this.normalize(path)
+    const data = this.files.get(normalized)
+    if (!data) throw notFound(normalized)
     return decoder.decode(data)
   }
 
   async readBinaryFile(path: string): Promise<Uint8Array> {
-    const data = this.files.get(this.normalize(path))
-    if (!data) throw new Error('not found')
+    const normalized = this.normalize(path)
+    const data = this.files.get(normalized)
+    if (!data) throw notFound(normalized)
     return data
   }
 
@@ -111,7 +124,7 @@ class MemoryWorkspace implements Workspace {
 
   async readdir(path: string): Promise<Entry[]> {
     const normalized = this.normalize(path)
-    if (!this.dirs.has(normalized)) throw new Error('not found')
+    if (!this.dirs.has(normalized)) throw notFound(normalized)
     const prefix = normalized === '.' ? '' : `${normalized}/`
     const entries = new Map<string, Entry>()
     for (const dir of this.dirs) {
@@ -134,7 +147,7 @@ class MemoryWorkspace implements Workspace {
     const file = this.files.get(normalized)
     if (file) return { kind: 'file', size: file.byteLength, mtimeMs: 0 }
     if (this.dirs.has(normalized)) return { kind: 'dir', size: 0, mtimeMs: 0 }
-    throw new Error('not found')
+    throw notFound(normalized)
   }
 
   async mkdir(path: string): Promise<void> {
@@ -145,7 +158,7 @@ class MemoryWorkspace implements Workspace {
     const from = this.normalize(fromRelPath)
     const to = this.normalize(toRelPath)
     const file = this.files.get(from)
-    if (!file) throw new Error('not found')
+    if (!file) throw notFound(from)
     this.ensureParent(to)
     this.files.set(to, file)
     this.files.delete(from)
@@ -204,6 +217,30 @@ test('local provisioning validates provisioned artifacts through the bwrap sandb
   expect(marker.runtimeCwd).toBe('/workspace')
 }, 20_000)
 
+test('remote provisioning surfaces workspace stat failures instead of treating them as cache misses', async () => {
+  const storageRoot = await makeTempDir('boring-runtime-vercel-stat-error-')
+  const workspace = new MemoryWorkspace()
+  const stat = workspace.stat.bind(workspace)
+  workspace.stat = async (path) => {
+    if (path === '.boring-agent/state/provisioning.json') {
+      const error = new Error('remote stat failed') as NodeJS.ErrnoException
+      error.code = 'EIO'
+      throw error
+    }
+    return await stat(path)
+  }
+
+  await expect(provisionRuntimeWorkspace({
+    workspaceRoot: storageRoot,
+    storageRoot,
+    runtimeMode: 'vercel-sandbox',
+    runtimeCwd: '/workspace',
+    workspace,
+    sandbox: createRecordingSandbox('vercel-sandbox', 'remote'),
+    contributions: [],
+  })).rejects.toThrow('remote stat failed')
+})
+
 test('vercel provisioning writes runtime artifacts through the remote workspace and sandbox cwd', async () => {
   const storageRoot = await makeTempDir('boring-runtime-vercel-storage-')
   const packageRoot = await makeTempDir('boring-runtime-vercel-package-')
@@ -216,8 +253,17 @@ test('vercel provisioning writes runtime artifacts through the remote workspace 
   await mkdir(join(pythonRoot, 'data'), { recursive: true })
   await writeFile(join(pythonRoot, 'pyproject.toml'), '[project]\nname = "remote-py"\nversion = "0.0.0"\n', 'utf8')
   await writeFile(join(pythonRoot, 'data', 'config.json'), '{}\n', 'utf8')
+  await mkdir(join(pythonRoot, '.boring-agent', 'cache'), { recursive: true })
+  await writeFile(join(pythonRoot, '.boring-agent', 'cache', 'ignored.txt'), 'runtime junk\n', 'utf8')
   const workspace = new MemoryWorkspace()
-  const sandbox = createRecordingSandbox('vercel-sandbox', 'remote')
+  const sandbox = createRecordingSandbox('vercel-sandbox', 'remote', {
+    onExec: async (cmd) => {
+      if (!cmd.includes('npm install')) return
+      await workspace.mkdir('.boring-agent/node/node_modules/@example/remote/dist')
+      await workspace.writeFile('.boring-agent/node/node_modules/@example/remote/package.json', '{"name":"@example/remote","version":"0.0.0","bin":{"remote-tool":"dist/index.js"}}\n')
+      await workspace.writeFile('.boring-agent/node/node_modules/@example/remote/dist/index.js', '#!/usr/bin/env node\nprocess.stdout.write("remote\\n")\n')
+    },
+  })
 
   const result = await provisionRuntimeWorkspace({
     workspaceRoot: storageRoot,
@@ -247,6 +293,7 @@ test('vercel provisioning writes runtime artifacts through the remote workspace 
   await expect(workspace.readFile('README.md')).resolves.toBe('# remote\n')
   await expect(workspace.readFile('.boring-agent/bin/remote-tool')).resolves.toContain('.boring-agent/node/node_modules/@example/remote/dist/index.js')
   await expect(workspace.readFile('.boring-agent/sdk/python/py/pyproject.toml')).resolves.toContain('remote-py')
+  await expect(workspace.stat('.boring-agent/sdk/python/py/.boring-agent/cache/ignored.txt')).rejects.toThrow('not found')
   const marker = JSON.parse(await workspace.readFile('.boring-agent/state/provisioning.json')) as { runtimeMode?: string; runtimeCwd?: string }
   expect(marker.runtimeMode).toBe('vercel-sandbox')
   expect(marker.runtimeCwd).toBe('/workspace')

@@ -144,6 +144,16 @@ test('node-only provisioning does not install broken managed python or pip shims
   })).resolves.toMatchObject({ stdout: expect.stringContaining('runnable help') })
 }, 30_000)
 
+test('node package provisioning rejects installed packages with missing bin targets', async () => {
+  const workspaceRoot = await makeTempDir('boring-runtime-node-missing-bin-')
+  const packageRoot = await makeNodePackageRoot('@example/missing-bin', { missing: 'dist/missing.js' })
+
+  await expect(provisionRuntimeWorkspace({
+    workspaceRoot,
+    contributions: [{ id: 'tool', provisioning: { nodePackages: [{ id: 'tool', packageName: '@example/missing-bin', packageRoot }] } }],
+  })).rejects.toThrow('Provisioned node bin "missing" target is missing')
+}, 30_000)
+
 test('local node packageRoot is packed installed and linked so boring-ui runs from PATH', async () => {
   const workspaceRoot = await makeTempDir('boring-runtime-node-runnable-')
   const packageRoot = await makeRunnableNodePackageRoot('@example/boring-ui', 'boring-ui')
@@ -271,6 +281,8 @@ test('node package fingerprint changes when package bin target outside standard 
 test('node package fingerprint changes for source version and bin alias changes', async () => {
   const workspaceRoot = await makeTempDir('boring-runtime-node-fingerprint-')
   const packageRoot = await makeNodePackageRoot('@example/tool')
+  await mkdir(join(packageRoot, 'dist'), { recursive: true })
+  await writeFile(join(packageRoot, 'dist', 'index.js'), '#!/usr/bin/env node\nprocess.stdout.write("tool\\n")\n', 'utf8')
 
   const first = await provisionRuntimeWorkspace({
     workspaceRoot,
@@ -314,6 +326,10 @@ test('duplicate node package bins fail unless explicit aliases disambiguate', as
   const workspaceRoot = await makeTempDir('boring-runtime-node-duplicate-bins-')
   const packageRootA = await makeNodePackageRoot('@example/a', { tool: 'dist/a.js' })
   const packageRootB = await makeNodePackageRoot('@example/b', { tool: 'dist/b.js' })
+  await mkdir(join(packageRootA, 'dist'), { recursive: true })
+  await mkdir(join(packageRootB, 'dist'), { recursive: true })
+  await writeFile(join(packageRootA, 'dist', 'a.js'), '#!/usr/bin/env node\nprocess.stdout.write("a\\n")\n', 'utf8')
+  await writeFile(join(packageRootB, 'dist', 'b.js'), '#!/usr/bin/env node\nprocess.stdout.write("b\\n")\n', 'utf8')
 
   await expect(provisionRuntimeWorkspace({
     workspaceRoot,
