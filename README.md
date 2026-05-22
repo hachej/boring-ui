@@ -88,7 +88,7 @@ Each `package.json` declares both halves:
 - `boring.server` — server side: tools that need backend state, HTTP routes
 - `boring.derivesFrom` — layer on top of an existing plugin
 
-Start from [plugins/_template](plugins/_template/README.md).
+Run `boring-ui plugin create <name>` to scaffold one, or start from [packages/cli/templates/plugin](packages/cli/templates/plugin/README.md).
 
 **What you can add:**
 
@@ -112,13 +112,14 @@ Start from [plugins/_template](plugins/_template/README.md).
 | coming: workflows                                                                    | Multi-step agent orchestration — chain steps, define branches, trigger sub-agents             |
 | coming: data-branch                                                                  | Fork, explore, and compare agent-generated datasets side by side in the workbench             |
 
+
 See [Pi extensions docs](https://pi.dev/docs/latest/extensions) for the full Pi plugin surface.
 
 ---
 
 ## Built with boring-ui
 
-<p align="center"><img src="https://boring-macro.fly.dev/landing/app-screenshot.png?v=8" alt="MacroAnalyst" width="480"></p>
+<img src="https://boring-macro.fly.dev/landing/app-screenshot.png?v=8" alt="MacroAnalyst" width="480" />
 
 **[MacroAnalyst](https://boring-macro.fly.dev/)** — an interactive macroeconomic analyst powered by Boring UI.
 
