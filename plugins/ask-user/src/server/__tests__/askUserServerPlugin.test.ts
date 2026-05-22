@@ -26,6 +26,7 @@ function bridge(): UiBridge & { commands: UiCommand[] } {
 }
 
 const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer" }] }
+const pendingWait = { timeout: 5_000 }
 
 async function fixture() {
   const dir = await mkdtemp(join(tmpdir(), "ask-user-plugin-"))
@@ -71,7 +72,7 @@ describe("ask-user Pi tool", () => {
     await vi.waitFor(async () => {
       pending = await store.getPending("chat-session")
       expect(pending).toMatchObject({ status: "ready", title: "Need input" })
-    })
+    }, pendingWait)
     await runtime.submitAnswer(pending!.questionId, "chat-session", { answer: "ok" })
     await expect(pendingResult).resolves.toMatchObject({ details: { status: "answered" } })
     await expect(store.getPending("fallback")).resolves.toBeNull()
@@ -85,7 +86,7 @@ describe("ask-user Pi tool", () => {
     await vi.waitFor(async () => {
       pending = await store.getPending("s1")
       expect(pending).toMatchObject({ status: "ready", title: "Need input" })
-    })
+    }, pendingWait)
     await vi.waitFor(async () => {
       await runtime.submitAnswer(pending!.questionId, "s1", { answer: "ok" })
       await expect(pendingResult).resolves.toMatchObject({ details: { status: "answered" } })
