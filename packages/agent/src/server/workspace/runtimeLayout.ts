@@ -20,7 +20,6 @@ export const BORING_AGENT_OWNERSHIP_MARKER_FILENAME = '.boring-agent-owned.json'
 export const BORING_AGENT_OWNER = '@hachej/boring-agent'
 export const BORING_AGENT_OWNERSHIP_MARKER_VERSION = 1
 export const BORING_AGENT_PROVISIONING_MARKER_REL_PATH = `${BORING_AGENT_DIR}/state/provisioning.json`
-export const BORING_AGENT_LEGACY_PROVISIONING_MARKER_REL_PATH = `${BORING_AGENT_DIR}/provisioning.json`
 export const BORING_AGENT_OWNERSHIP_MANIFEST_REL_PATH = `${BORING_AGENT_DIR}/state/ownership.json`
 export const BORING_AGENT_LEGACY_TOP_LEVEL_VENV_REL_PATH = '.venv'
 
@@ -38,7 +37,6 @@ export interface BoringAgentRuntimePaths {
   tmp: string
   logs: string
   provisioningMarker: string
-  legacyProvisioningMarker: string
   ownershipManifest: string
   legacyTopLevelVenv: string
   legacyTopLevelVenvBin: string
@@ -91,7 +89,6 @@ export function getBoringAgentRuntimePaths(workspaceRoot: string): BoringAgentRu
     tmp: join(root, 'tmp'),
     logs: join(root, 'logs'),
     provisioningMarker: join(workspaceRoot, BORING_AGENT_PROVISIONING_MARKER_REL_PATH),
-    legacyProvisioningMarker: join(workspaceRoot, BORING_AGENT_LEGACY_PROVISIONING_MARKER_REL_PATH),
     ownershipManifest: join(workspaceRoot, BORING_AGENT_OWNERSHIP_MANIFEST_REL_PATH),
     legacyTopLevelVenv,
     legacyTopLevelVenvBin: join(legacyTopLevelVenv, 'bin'),

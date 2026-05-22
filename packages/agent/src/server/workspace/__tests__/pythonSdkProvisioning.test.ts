@@ -17,7 +17,7 @@ const execFileAsync = promisify(execFile)
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 const tempDirs: string[] = []
-const MACRO_API_URL = 'https://macro.example.test/api'
+const FIXTURE_API_URL = 'https://fixture.example.test/api'
 const HAS_BWRAP = (() => {
   const result = spawnSync('bwrap', ['--version'], { stdio: 'ignore' })
   return !result.error && result.status === 0
@@ -37,9 +37,9 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`
 }
 
-async function makeMacroPythonPackage(): Promise<string> {
-  const sdkRoot = await makeTempDir('boring-macro-sdk-')
-  await mkdir(join(sdkRoot, 'src', 'boring_macro_sdk'), { recursive: true })
+async function makeFixturePythonPackage(): Promise<string> {
+  const sdkRoot = await makeTempDir('boring-fixture-sdk-')
+  await mkdir(join(sdkRoot, 'src', 'boring_fixture_sdk'), { recursive: true })
   await mkdir(join(sdkRoot, 'transforms', 'builtins'), { recursive: true })
   await writeFile(
     join(sdkRoot, 'pyproject.toml'),
@@ -49,11 +49,11 @@ async function makeMacroPythonPackage(): Promise<string> {
       'build-backend = "setuptools.build_meta"',
       '',
       '[project]',
-      'name = "boring-macro-sdk"',
+      'name = "boring-fixture-sdk"',
       'version = "0.0.0"',
       '',
       '[project.scripts]',
-      'bm = "boring_macro_sdk.cli:main"',
+      'fixture-tool = "boring_fixture_sdk.cli:main"',
       '',
       '[tool.setuptools.packages.find]',
       'where = ["src"]',
@@ -61,9 +61,9 @@ async function makeMacroPythonPackage(): Promise<string> {
     ].join('\n'),
     'utf8',
   )
-  await writeFile(join(sdkRoot, 'src', 'boring_macro_sdk', '__init__.py'), '__all__ = []\n', 'utf8')
+  await writeFile(join(sdkRoot, 'src', 'boring_fixture_sdk', '__init__.py'), '__all__ = []\n', 'utf8')
   await writeFile(
-    join(sdkRoot, 'src', 'boring_macro_sdk', 'cli.py'),
+    join(sdkRoot, 'src', 'boring_fixture_sdk', 'cli.py'),
     String.raw`import argparse
 import json
 import os
@@ -71,19 +71,19 @@ from pathlib import Path
 
 
 def list_tools(_args):
-    print("builtin:yoy")
-    print(f"api={os.environ.get('BORING_MACRO_API_URL', '')}")
-    print(f"builtins={os.environ.get('BORING_MACRO_BUILTINS_ROOT', '')}")
+    print("builtin:echo")
+    print(f"api={os.environ.get('BORING_FIXTURE_API_URL', '')}")
+    print(f"assets={os.environ.get('BORING_FIXTURE_ASSETS_ROOT', '')}")
 
 
 def run_tool(args):
-    if args.tool != "builtin:yoy":
+    if args.tool != "builtin:echo":
         raise SystemExit(f"unknown tool: {args.tool}")
     workspace_root = Path(os.environ.get("BORING_AGENT_WORKSPACE_ROOT") or os.getcwd())
     output_dir = workspace_root / "artifacts"
     output_dir.mkdir(parents=True, exist_ok=True)
     payload = {
-        "api_url": os.environ.get("BORING_MACRO_API_URL", ""),
+        "api_url": os.environ.get("BORING_FIXTURE_API_URL", ""),
         "input": args.input,
         "output": args.output,
         "title": args.title,
@@ -94,7 +94,7 @@ def run_tool(args):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(prog="bm")
+    parser = argparse.ArgumentParser(prog="fixture-tool")
     subcommands = parser.add_subparsers(dest="command", required=True)
     list_parser = subcommands.add_parser("list")
     list_parser.set_defaults(func=list_tools)
@@ -109,38 +109,38 @@ def main(argv=None):
 `,
     'utf8',
   )
-  await writeFile(join(sdkRoot, 'transforms', 'builtins', 'yoy.py'), '# builtin:yoy fixture\n', 'utf8')
+  await writeFile(join(sdkRoot, 'transforms', 'builtins', 'echo.py'), '# builtin:echo fixture\n', 'utf8')
   return sdkRoot
 }
 
-async function makeMacroTemplate(): Promise<string> {
-  const templateRoot = await makeTempDir('boring-macro-template-')
-  await mkdir(join(templateRoot, '.agents', 'skills', 'macro'), { recursive: true })
+async function makeFixtureTemplate(): Promise<string> {
+  const templateRoot = await makeTempDir('boring-fixture-template-')
+  await mkdir(join(templateRoot, '.agents', 'skills', 'fixture'), { recursive: true })
   await mkdir(join(templateRoot, 'docs'), { recursive: true })
   await mkdir(join(templateRoot, 'seeds'), { recursive: true })
-  await writeFile(join(templateRoot, '.agents', 'skills', 'macro', 'SKILL.md'), '# Macro skill\n', 'utf8')
-  await writeFile(join(templateRoot, 'docs', 'macro.md'), '# Macro docs\n', 'utf8')
-  await writeFile(join(templateRoot, 'seeds', 'series.json'), '["FYOIGDA188S"]\n', 'utf8')
+  await writeFile(join(templateRoot, '.agents', 'skills', 'fixture', 'SKILL.md'), '# Fixture skill\n', 'utf8')
+  await writeFile(join(templateRoot, 'docs', 'fixture.md'), '# Fixture docs\n', 'utf8')
+  await writeFile(join(templateRoot, 'seeds', 'series.json'), '["fixture-input"]\n', 'utf8')
   return templateRoot
 }
 
-async function makeMacroProvisioning(): Promise<{ sdkRoot: string; templateRoot: string; contribution: { id: string; provisioning: RuntimeProvisioningContribution } }> {
-  const sdkRoot = await makeMacroPythonPackage()
-  const templateRoot = await makeMacroTemplate()
+async function makeFixtureProvisioning(): Promise<{ sdkRoot: string; templateRoot: string; contribution: { id: string; provisioning: RuntimeProvisioningContribution } }> {
+  const sdkRoot = await makeFixturePythonPackage()
+  const templateRoot = await makeFixtureTemplate()
   return {
     sdkRoot,
     templateRoot,
     contribution: {
-      id: 'boring-macro',
+      id: 'boring-fixture',
       provisioning: {
-        templateDirs: [{ id: 'macro-workspace-template', path: templateRoot, target: '.' }],
+        templateDirs: [{ id: 'fixture-workspace-template', path: templateRoot, target: '.' }],
         python: [
           {
-            id: 'boring-macro-sdk',
+            id: 'boring-fixture-sdk',
             projectFile: join(sdkRoot, 'pyproject.toml'),
             env: {
-              BORING_MACRO_API_URL: MACRO_API_URL,
-              BORING_MACRO_BUILTINS_ROOT: pathToFileURL(`${join(sdkRoot, 'transforms', 'builtins')}/`),
+              BORING_FIXTURE_API_URL: FIXTURE_API_URL,
+              BORING_FIXTURE_ASSETS_ROOT: pathToFileURL(`${join(sdkRoot, 'transforms', 'builtins')}/`),
             },
           },
         ],
@@ -149,15 +149,15 @@ async function makeMacroProvisioning(): Promise<{ sdkRoot: string; templateRoot:
   }
 }
 
-async function expectMacroTemplateSeeded(workspaceRoot: string): Promise<void> {
-  await expect(readFile(join(workspaceRoot, '.agents', 'skills', 'macro', 'SKILL.md'), 'utf8')).resolves.toContain('Macro skill')
-  await expect(readFile(join(workspaceRoot, 'docs', 'macro.md'), 'utf8')).resolves.toContain('Macro docs')
-  await expect(readFile(join(workspaceRoot, 'seeds', 'series.json'), 'utf8')).resolves.toContain('FYOIGDA188S')
+async function expectFixtureTemplateSeeded(workspaceRoot: string): Promise<void> {
+  await expect(readFile(join(workspaceRoot, '.agents', 'skills', 'fixture', 'SKILL.md'), 'utf8')).resolves.toContain('Fixture skill')
+  await expect(readFile(join(workspaceRoot, 'docs', 'fixture.md'), 'utf8')).resolves.toContain('Fixture docs')
+  await expect(readFile(join(workspaceRoot, 'seeds', 'series.json'), 'utf8')).resolves.toContain('fixture-input')
 }
 
-test('MacroAnalyst bm is exposed from python[] console scripts and templates seed skills docs and seeds', async () => {
-  const workspaceRoot = await makeTempDir('boring-macro-workspace-')
-  const { sdkRoot, contribution } = await makeMacroProvisioning()
+test('python[] console scripts are exposed and templates seed skills docs and seeds', async () => {
+  const workspaceRoot = await makeTempDir('boring-fixture-workspace-')
+  const { sdkRoot, contribution } = await makeFixtureProvisioning()
 
   const result = await provisionRuntimeWorkspace({
     workspaceRoot,
@@ -166,46 +166,46 @@ test('MacroAnalyst bm is exposed from python[] console scripts and templates see
     contributions: [contribution],
   })
 
-  expect(result.env.BORING_MACRO_API_URL).toBe(MACRO_API_URL)
-  await expectMacroTemplateSeeded(workspaceRoot)
+  expect(result.env.BORING_FIXTURE_API_URL).toBe(FIXTURE_API_URL)
+  await expectFixtureTemplateSeeded(workspaceRoot)
 
   const paths = getBoringAgentRuntimePaths(workspaceRoot)
-  expect(result.env.BORING_MACRO_BUILTINS_ROOT).toBe(join(paths.sdk, 'python', 'boring-macro-sdk', 'transforms', 'builtins'))
-  const bmShim = await readFile(join(paths.bin, 'bm'), 'utf8')
-  expect(bmShim).toContain('TARGET="$VENV_BIN"')
-  expect(bmShim).not.toContain(sdkRoot)
+  expect(result.env.BORING_FIXTURE_ASSETS_ROOT).toBe(join(paths.sdk, 'python', 'boring-fixture-sdk', 'transforms', 'builtins'))
+  const fixtureToolShim = await readFile(join(paths.bin, 'fixture-tool'), 'utf8')
+  expect(fixtureToolShim).toContain('TARGET="$VENV_BIN"')
+  expect(fixtureToolShim).not.toContain(sdkRoot)
 
   const env = { ...process.env, PATH: `${paths.bin}:${process.env.PATH ?? ''}` }
-  const list = await execFileAsync('bm', ['list'], { cwd: workspaceRoot, env })
-  expect(list.stdout).toContain('builtin:yoy')
-  expect(list.stdout).toContain(`api=${MACRO_API_URL}`)
+  const list = await execFileAsync('fixture-tool', ['list'], { cwd: workspaceRoot, env })
+  expect(list.stdout).toContain('builtin:echo')
+  expect(list.stdout).toContain(`api=${FIXTURE_API_URL}`)
 
-  const run = await execFileAsync('bm', [
+  const run = await execFileAsync('fixture-tool', [
     'run',
-    '--tool', 'builtin:yoy',
-    '--input', 'FYOIGDA188S',
-    '--output', 'FYOIGDA188S_YOY2',
-    '--title', 'FYOIGDA188S YoY 2',
+    '--tool', 'builtin:echo',
+    '--input', 'fixture-input',
+    '--output', 'fixture-output',
+    '--title', 'Fixture Output',
   ], { cwd: workspaceRoot, env })
-  expect(run.stdout).toContain('wrote FYOIGDA188S_YOY2')
-  await expect(readFile(join(workspaceRoot, 'artifacts', 'FYOIGDA188S_YOY2.json'), 'utf8')).resolves.toContain('FYOIGDA188S YoY 2')
+  expect(run.stdout).toContain('wrote fixture-output')
+  await expect(readFile(join(workspaceRoot, 'artifacts', 'fixture-output.json'), 'utf8')).resolves.toContain('Fixture Output')
 
   await provisionRuntimeWorkspace({ workspaceRoot, force: true, contributions: [] })
-  await expect(stat(join(paths.bin, 'bm'))).rejects.toThrow()
+  await expect(stat(join(paths.bin, 'fixture-tool'))).rejects.toThrow()
   await expect(stat(join(paths.bin, 'python'))).rejects.toThrow()
   await expect(stat(join(paths.bin, 'pip'))).rejects.toThrow()
 }, 60_000)
 
 const describeIfBwrap = HAS_BWRAP ? describe : describe.skip
 
-describeIfBwrap('MacroAnalyst local/bwrap provisioning', () => {
-  test('bm runs from the initial /workspace cwd with no host prefix', async () => {
-    const workspaceRoot = await makeTempDir('boring-macro-bwrap-')
-    const { contribution } = await makeMacroProvisioning()
+describeIfBwrap('Python SDK fixture local/bwrap provisioning', () => {
+  test('fixture-tool runs from the initial /workspace cwd with no host prefix', async () => {
+    const workspaceRoot = await makeTempDir('boring-fixture-bwrap-')
+    const { contribution } = await makeFixtureProvisioning()
     const runtimeContext = { runtimeCwd: '/workspace' }
     const workspace = createNodeWorkspace(workspaceRoot, { runtimeContext })
     const sandbox = createBwrapSandbox({ hostWorkspaceRoot: workspaceRoot, runtimeContext })
-    await sandbox.init?.({ workspace, sessionId: 'macro-bwrap' })
+    await sandbox.init?.({ workspace, sessionId: 'fixture-bwrap' })
 
     await provisionRuntimeWorkspace({
       workspaceRoot,
@@ -215,23 +215,23 @@ describeIfBwrap('MacroAnalyst local/bwrap provisioning', () => {
       contributions: [contribution],
     })
 
-    const list = await sandbox.exec('bm list', { cwd: '/workspace', timeoutMs: 30_000 })
+    const list = await sandbox.exec('fixture-tool list', { cwd: '/workspace', timeoutMs: 30_000 })
     const listOutput = decoder.decode(list.stdout)
     expect(list.exitCode).toBe(0)
-    expect(listOutput).toContain('builtin:yoy')
-    expect(listOutput).toContain('builtins=/workspace/.boring-agent/sdk/python/boring-macro-sdk/transforms/builtins')
+    expect(listOutput).toContain('builtin:echo')
+    expect(listOutput).toContain('assets=/workspace/.boring-agent/sdk/python/boring-fixture-sdk/transforms/builtins')
     expect(listOutput).not.toContain(workspaceRoot)
 
     const run = await sandbox.exec([
-      'bm run',
-      '--tool builtin:yoy',
-      '--input FYOIGDA188S',
-      '--output FYOIGDA188S_YOY2',
-      `--title ${shellQuote('FYOIGDA188S YoY 2')}`,
+      'fixture-tool run',
+      '--tool builtin:echo',
+      '--input fixture-input',
+      '--output fixture-output',
+      `--title ${shellQuote('Fixture Output')}`,
     ].join(' '), { cwd: '/workspace', timeoutMs: 30_000 })
     expect(run.exitCode).toBe(0)
-    expect(decoder.decode(run.stdout)).toContain('wrote FYOIGDA188S_YOY2')
-    await expect(readFile(join(workspaceRoot, 'artifacts', 'FYOIGDA188S_YOY2.json'), 'utf8')).resolves.toContain('FYOIGDA188S')
+    expect(decoder.decode(run.stdout)).toContain('wrote fixture-output')
+    await expect(readFile(join(workspaceRoot, 'artifacts', 'fixture-output.json'), 'utf8')).resolves.toContain('fixture-input')
   }, 60_000)
 })
 
@@ -368,22 +368,22 @@ function createMockVercelSandbox(workspace: MemoryWorkspace): Sandbox & { histor
     history,
     async exec(cmd, opts) {
       history.push({ cmd, opts: opts ? { ...opts, env: opts.env ? { ...opts.env } : undefined } : undefined })
-      if (cmd.includes('rm -rf --') && cmd.includes('/workspace/.boring-agent/sdk/python/boring-macro-sdk')) {
-        workspace.removeTree('.boring-agent/sdk/python/boring-macro-sdk')
+      if (cmd.includes('rm -rf --') && cmd.includes('/workspace/.boring-agent/sdk/python/boring-fixture-sdk')) {
+        workspace.removeTree('.boring-agent/sdk/python/boring-fixture-sdk')
       }
-      if (cmd.includes('pip install') && cmd.includes('/workspace/.boring-agent/sdk/python/boring-macro-sdk')) {
-        await workspace.writeFile('.boring-agent/venv/bin/bm', '#!/workspace/.boring-agent/venv/bin/python\n')
+      if (cmd.includes('pip install') && cmd.includes('/workspace/.boring-agent/sdk/python/boring-fixture-sdk')) {
+        await workspace.writeFile('.boring-agent/venv/bin/fixture-tool', '#!/workspace/.boring-agent/venv/bin/python\n')
       }
       return okResult()
     },
   }
 }
 
-test('MacroAnalyst Vercel provisioning uses templateDirs and remote python[] SDK paths', async () => {
-  const storageRoot = await makeTempDir('boring-macro-vercel-storage-')
-  const { sdkRoot, contribution } = await makeMacroProvisioning()
+test('vercel provisioning uses templateDirs and remote python[] SDK paths', async () => {
+  const storageRoot = await makeTempDir('boring-fixture-vercel-storage-')
+  const { sdkRoot, contribution } = await makeFixtureProvisioning()
   const workspace = new MemoryWorkspace()
-  await workspace.writeFile('.boring-agent/sdk/python/boring-macro-sdk/stale.py', '# stale source that must be cleared\n')
+  await workspace.writeFile('.boring-agent/sdk/python/boring-fixture-sdk/stale.py', '# stale source that must be cleared\n')
   const sandbox = createMockVercelSandbox(workspace)
 
   const result = await provisionRuntimeWorkspace({
@@ -397,18 +397,18 @@ test('MacroAnalyst Vercel provisioning uses templateDirs and remote python[] SDK
   })
 
   expect(result.binDir).toBe('/workspace/.boring-agent/bin')
-  expect(result.env.BORING_MACRO_API_URL).toBe(MACRO_API_URL)
-  expect(result.env.BORING_MACRO_BUILTINS_ROOT).toBe('/workspace/.boring-agent/sdk/python/boring-macro-sdk/transforms/builtins')
-  await expect(workspace.readFile('.agents/skills/macro/SKILL.md')).resolves.toContain('Macro skill')
-  await expect(workspace.readFile('docs/macro.md')).resolves.toContain('Macro docs')
-  await expect(workspace.readFile('seeds/series.json')).resolves.toContain('FYOIGDA188S')
-  await expect(workspace.readFile('.boring-agent/sdk/python/boring-macro-sdk/pyproject.toml')).resolves.toContain('boring-macro-sdk')
-  await expect(workspace.readFile('.boring-agent/sdk/python/boring-macro-sdk/stale.py')).rejects.toThrow('not found')
-  const bmShim = await workspace.readFile('.boring-agent/bin/bm')
-  expect(bmShim).toContain('TARGET="$VENV_BIN"')
-  expect(bmShim).not.toContain(sdkRoot)
+  expect(result.env.BORING_FIXTURE_API_URL).toBe(FIXTURE_API_URL)
+  expect(result.env.BORING_FIXTURE_ASSETS_ROOT).toBe('/workspace/.boring-agent/sdk/python/boring-fixture-sdk/transforms/builtins')
+  await expect(workspace.readFile('.agents/skills/fixture/SKILL.md')).resolves.toContain('Fixture skill')
+  await expect(workspace.readFile('docs/fixture.md')).resolves.toContain('Fixture docs')
+  await expect(workspace.readFile('seeds/series.json')).resolves.toContain('fixture-input')
+  await expect(workspace.readFile('.boring-agent/sdk/python/boring-fixture-sdk/pyproject.toml')).resolves.toContain('boring-fixture-sdk')
+  await expect(workspace.readFile('.boring-agent/sdk/python/boring-fixture-sdk/stale.py')).rejects.toThrow('not found')
+  const fixtureToolShim = await workspace.readFile('.boring-agent/bin/fixture-tool')
+  expect(fixtureToolShim).toContain('TARGET="$VENV_BIN"')
+  expect(fixtureToolShim).not.toContain(sdkRoot)
   expect(sandbox.history.every((entry) => entry.opts?.cwd === '/workspace')).toBe(true)
-  expect(sandbox.history.some((entry) => entry.cmd.includes('rm -rf --') && entry.cmd.includes('/workspace/.boring-agent/sdk/python/boring-macro-sdk'))).toBe(true)
+  expect(sandbox.history.some((entry) => entry.cmd.includes('rm -rf --') && entry.cmd.includes('/workspace/.boring-agent/sdk/python/boring-fixture-sdk'))).toBe(true)
   expect(sandbox.history.some((entry) => entry.cmd.includes('uv pip install --python') && entry.cmd.includes('/workspace/.boring-agent/venv/bin/python'))).toBe(true)
-  expect(sandbox.history.some((entry) => entry.cmd.includes('/workspace/.boring-agent/sdk/python/boring-macro-sdk'))).toBe(true)
+  expect(sandbox.history.some((entry) => entry.cmd.includes('/workspace/.boring-agent/sdk/python/boring-fixture-sdk'))).toBe(true)
 })

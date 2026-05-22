@@ -37,7 +37,6 @@ test('getBoringAgentRuntimePaths centralizes all runtime artifact paths under .b
   expect(paths.tmp).toBe('/workspace/.boring-agent/tmp')
   expect(paths.logs).toBe('/workspace/.boring-agent/logs')
   expect(paths.provisioningMarker).toBe('/workspace/.boring-agent/state/provisioning.json')
-  expect(paths.legacyProvisioningMarker).toBe('/workspace/.boring-agent/provisioning.json')
   expect(paths.legacyTopLevelVenv).toBe('/workspace/.venv')
   expect(paths.legacyTopLevelVenvBin).toBe('/workspace/.venv/bin')
 })

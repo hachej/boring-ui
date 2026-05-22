@@ -210,7 +210,7 @@ test('provisioning env converts file URLs and preserves HTTP URLs', async () => 
               id: 'python-test',
               projectFile,
               env: {
-                BORING_MACRO_API_URL: new URL('https://api.example.test/workspace'),
+                EXAMPLE_API_URL: new URL('https://api.example.test/workspace'),
                 EXAMPLE_ROOT: new URL(`file://${packageRoot}/`),
                 PATH: '/plugin/bin',
               },
@@ -221,7 +221,7 @@ test('provisioning env converts file URLs and preserves HTTP URLs', async () => 
     ],
   })
 
-  expect(result.env.BORING_MACRO_API_URL).toBe('https://api.example.test/workspace')
+  expect(result.env.EXAMPLE_API_URL).toBe('https://api.example.test/workspace')
   const paths = getBoringAgentRuntimePaths(workspaceRoot)
   expect(result.env.EXAMPLE_ROOT).toBe(join(paths.sdk, 'python', 'python-test'))
   const pythonShim = await readFile(join(paths.bin, 'python'), 'utf8')

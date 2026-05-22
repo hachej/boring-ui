@@ -149,9 +149,9 @@ describe('buildHarnessAgentTools', () => {
     expect(tools.map((t) => t.name)).toEqual(['bash'])
   })
 
-  test('direct bash exposes workspace bm/python/pip shims and env', async () => {
+  test('direct bash exposes workspace app/python/pip shims and env', async () => {
     const workspaceRoot = await makeTempWorkspace()
-    await writeExecutable(join(workspaceRoot, '.boring-agent', 'bin', 'bm'), '#!/usr/bin/env bash\necho bm-shim\n')
+    await writeExecutable(join(workspaceRoot, '.boring-agent', 'bin', 'app-cli'), '#!/usr/bin/env bash\necho app-cli-shim\n')
     await writeExecutable(join(workspaceRoot, '.boring-agent', 'venv', 'bin', 'python'), '#!/usr/bin/env bash\necho python-shim\n')
     await writeExecutable(join(workspaceRoot, '.boring-agent', 'venv', 'bin', 'pip'), '#!/usr/bin/env bash\necho pip-shim\n')
 
@@ -162,14 +162,14 @@ describe('buildHarnessAgentTools', () => {
     const result = await bashTool.execute(
       {
         command:
-          'bm; python; pip; printf "%s\\n%s\\n" "$BORING_AGENT_WORKSPACE_ROOT" "$VIRTUAL_ENV"',
+          'app-cli; python; pip; printf "%s\\n%s\\n" "$BORING_AGENT_WORKSPACE_ROOT" "$VIRTUAL_ENV"',
         timeout: 10,
       },
       { abortSignal: new AbortController().signal, toolCallId: 'test-direct-env' },
     )
 
     expect(result.isError).toBe(false)
-    expect(result.content[0].text).toContain('bm-shim')
+    expect(result.content[0].text).toContain('app-cli-shim')
     expect(result.content[0].text).toContain('python-shim')
     expect(result.content[0].text).toContain('pip-shim')
     expect(result.content[0].text).toContain(workspaceRoot)

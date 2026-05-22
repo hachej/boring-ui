@@ -37,22 +37,6 @@ test('provisionRuntimeWorkspace writes current marker under .boring-agent/state'
   await expect(readFile(paths.ownershipManifest, 'utf8')).resolves.toContain('.boring-agent/bin')
 })
 
-test('provisionRuntimeWorkspace reads legacy marker and migrates it to state marker', async () => {
-  const workspaceRoot = await makeTempDir('boring-runtime-legacy-marker-')
-  const first = await provisionRuntimeWorkspace({ workspaceRoot, contributions: [] })
-  const paths = getBoringAgentRuntimePaths(workspaceRoot)
-  const marker = await readFile(paths.provisioningMarker, 'utf8')
-
-  await rm(paths.provisioningMarker)
-  await writeFile(paths.legacyProvisioningMarker, marker, 'utf8')
-
-  const second = await provisionRuntimeWorkspace({ workspaceRoot, contributions: [] })
-
-  expect(second.changed).toBe(false)
-  expect(second.fingerprint).toBe(first.fingerprint)
-  await expect(readFile(paths.provisioningMarker, 'utf8')).resolves.toContain(first.fingerprint)
-})
-
 test('workspace python env ignores old top-level .venv for agent runtime tools', () => {
   const env = withWorkspacePythonEnv({
     workspaceRoot: '/workspace',

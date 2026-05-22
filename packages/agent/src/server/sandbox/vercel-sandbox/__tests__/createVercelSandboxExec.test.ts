@@ -103,7 +103,7 @@ test('keeps display /workspace command strings while forcing managed env prefixe
     cwd: '/workspace/nested',
     env: {
       BORING_AGENT_WORKSPACE_ROOT: '/plugin-root',
-      BORING_MACRO_API_URL: 'https://api.example.test/workspace',
+      EXAMPLE_API_URL: 'https://api.example.test/workspace',
       HOME: '/plugin-home',
       PATH: '/plugin/bin:/workspace/.boring-agent/bin:/usr/bin',
       PYTHONHOME: '/plugin-python-home',
@@ -117,7 +117,7 @@ test('keeps display /workspace command strings while forcing managed env prefixe
       cwd: '/workspace/nested',
       env: {
         BORING_AGENT_WORKSPACE_ROOT: '/workspace',
-        BORING_MACRO_API_URL: 'https://api.example.test/workspace',
+        EXAMPLE_API_URL: 'https://api.example.test/workspace',
         HOME: '/workspace',
         PATH: '/workspace/.boring-agent/bin:/workspace/.boring-agent/venv/bin:/plugin/bin:/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/sbin:/bin',
         VIRTUAL_ENV: '/workspace/.boring-agent/venv',

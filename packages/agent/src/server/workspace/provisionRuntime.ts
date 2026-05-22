@@ -12,7 +12,6 @@ import type { Workspace } from '../../shared/workspace'
 import { getEnvSnapshot } from '../config/env'
 import {
   BORING_AGENT_DIR,
-  BORING_AGENT_LEGACY_PROVISIONING_MARKER_REL_PATH,
   BORING_AGENT_OWNER,
   BORING_AGENT_OWNERSHIP_MANIFEST_REL_PATH,
   BORING_AGENT_OWNERSHIP_MARKER_FILENAME,
@@ -341,24 +340,13 @@ export async function validateRuntimeProvisioningContributions(
 async function workspaceReadJsonMarker(
   workspace: Workspace,
   markerPath: string,
-  legacyMarkerPath: string,
-): Promise<{ marker: { fingerprint?: string }, source: 'current' | 'legacy' } | null> {
-  const candidates = [
-    { path: markerPath, source: 'current' as const },
-    { path: legacyMarkerPath, source: 'legacy' as const },
-  ]
-  for (const candidate of candidates) {
-    if (!(await workspaceExists(workspace, candidate.path))) continue
-    try {
-      return {
-        marker: JSON.parse(await workspace.readFile(candidate.path)) as { fingerprint?: string },
-        source: candidate.source,
-      }
-    } catch {
-      if (candidate.source === 'current') return null
-    }
+): Promise<{ fingerprint?: string } | null> {
+  if (!(await workspaceExists(workspace, markerPath))) return null
+  try {
+    return JSON.parse(await workspace.readFile(markerPath)) as { fingerprint?: string }
+  } catch {
+    return null
   }
-  return null
 }
 
 async function run(cmd: string, args: string[], cwd: string, env?: Record<string, string>): Promise<void> {
@@ -970,29 +958,13 @@ exec "$TARGET" "$@"
   return shimDir
 }
 
-async function readProvisioningMarker(
-  markerPath: string,
-  legacyMarkerPath: string,
-): Promise<{ marker: { fingerprint?: string }, source: 'current' | 'legacy' } | null> {
-  const candidates = [
-    { path: markerPath, source: 'current' as const },
-    { path: legacyMarkerPath, source: 'legacy' as const },
-  ]
-
-  for (const candidate of candidates) {
-    if (!(await exists(candidate.path))) continue
-    try {
-      return {
-        marker: JSON.parse(await readFile(candidate.path, 'utf8')) as { fingerprint?: string },
-        source: candidate.source,
-      }
-    } catch {
-      if (candidate.source === 'current') return null
-      // corrupted legacy marker: ignore and reprovision
-    }
+async function readProvisioningMarker(markerPath: string): Promise<{ fingerprint?: string } | null> {
+  if (!(await exists(markerPath))) return null
+  try {
+    return JSON.parse(await readFile(markerPath, 'utf8')) as { fingerprint?: string }
+  } catch {
+    return null
   }
-
-  return null
 }
 
 function provisioningMarkerBody(hash: string, target: ProvisionTarget): string {
@@ -1056,16 +1028,14 @@ async function provisionHostRuntimeWorkspace(
   const paths = await ensureBoringAgentRuntimeLayout(workspaceRoot)
   await removeLegacyTopLevelVenvIfOwned(workspaceRoot)
   const markerPath = paths.provisioningMarker
-  const legacyMarkerPath = paths.legacyProvisioningMarker
 
   if (!opts.force) {
-    const markerResult = await readProvisioningMarker(markerPath, legacyMarkerPath)
-    if (markerResult?.marker.fingerprint === hash && await isRuntimeMaterialized(workspaceRoot, active)) {
+    const marker = await readProvisioningMarker(markerPath)
+    if (marker?.fingerprint === hash && await isRuntimeMaterialized(workspaceRoot, active)) {
       const actualBinDir = await writeShims(workspaceRoot, env, hasPythonContributions(active))
       await writeHostNodeBinLinks(workspaceRoot, active.flatMap(({ provisioning }) => provisioning.nodePackages ?? []))
       try {
         await validateHostRuntime(workspaceRoot, active)
-        if (markerResult.source === 'legacy') await writeProvisioningMarker(markerPath, hash, target)
         if (opts.sandbox && target.runtimeMode === 'local') await validateRuntimeInSandbox(opts.sandbox, target.runtimeCwd, active)
         return { fingerprint: hash, changed: false, env, binDir: actualBinDir }
       } catch (error) {
@@ -1460,15 +1430,13 @@ async function provisionRemoteRuntimeWorkspace(
 
   await ensureRemoteRuntimeLayout(workspace)
   const markerPath = BORING_AGENT_PROVISIONING_MARKER_REL_PATH
-  const legacyMarkerPath = BORING_AGENT_LEGACY_PROVISIONING_MARKER_REL_PATH
 
   if (!opts.force) {
-    const markerResult = await workspaceReadJsonMarker(workspace, markerPath, legacyMarkerPath)
-    if (markerResult?.marker.fingerprint === hash && await isRemoteRuntimeMaterialized(workspace, active)) {
+    const marker = await workspaceReadJsonMarker(workspace, markerPath)
+    if (marker?.fingerprint === hash && await isRemoteRuntimeMaterialized(workspace, active)) {
       const nodePackageSpecs = active.flatMap(({ provisioning }) => provisioning.nodePackages ?? [])
       const binDir = await writeRemoteShims(workspace, sandbox, target.runtimeCwd, env, hasPythonContributions(active))
       await writeRemoteNodeBinLinks(workspace, sandbox, target.runtimeCwd, nodePackageSpecs)
-      if (markerResult.source === 'legacy') await workspace.writeFile(markerPath, provisioningMarkerBody(hash, target))
       try {
         await validateRuntimeInSandbox(sandbox, target.runtimeCwd, active)
         return { fingerprint: hash, changed: false, env, binDir }

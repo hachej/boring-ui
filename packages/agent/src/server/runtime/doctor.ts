@@ -4,7 +4,6 @@ import type { RuntimeBundle, RuntimeModeId } from './mode'
 import type { ExecResult } from '../../shared/sandbox'
 import {
   BORING_AGENT_DIR,
-  BORING_AGENT_LEGACY_PROVISIONING_MARKER_REL_PATH,
   BORING_AGENT_PROVISIONING_MARKER_REL_PATH,
 } from '../workspace/runtimeLayout'
 import { RUNTIME_PROVISIONING_VERSION } from '../workspace/provisionRuntime'
@@ -49,7 +48,7 @@ export interface RuntimeDoctorReport {
   provisioning: {
     expectedVersion: number
     present: boolean
-    source?: 'current' | 'legacy'
+    source?: 'current'
     version?: number
     fingerprint?: string
     runtimeMode?: string
@@ -238,43 +237,35 @@ async function runSmoke(bundle: RuntimeBundle): Promise<{ smoke: RuntimeDoctorRe
 }
 
 async function readProvisioningMarker(bundle: RuntimeBundle): Promise<RuntimeDoctorReport['provisioning']> {
-  const candidates = [
-    { path: BORING_AGENT_PROVISIONING_MARKER_REL_PATH, source: 'current' as const },
-    { path: BORING_AGENT_LEGACY_PROVISIONING_MARKER_REL_PATH, source: 'legacy' as const },
-  ]
-
-  for (const candidate of candidates) {
-    try {
-      const raw = await bundle.workspace.readFile(candidate.path)
-      const marker = JSON.parse(raw) as Record<string, unknown>
+  try {
+    const raw = await bundle.workspace.readFile(BORING_AGENT_PROVISIONING_MARKER_REL_PATH)
+    const marker = JSON.parse(raw) as Record<string, unknown>
+    return {
+      expectedVersion: RUNTIME_PROVISIONING_VERSION,
+      present: true,
+      source: 'current',
+      version: typeof marker.v === 'number' ? marker.v : undefined,
+      fingerprint: typeof marker.fingerprint === 'string' ? sanitizeDiagnosticValue(marker.fingerprint) : undefined,
+      runtimeMode: typeof marker.runtimeMode === 'string' ? sanitizeDiagnosticValue(marker.runtimeMode) : undefined,
+      runtimeCwd: typeof marker.runtimeCwd === 'string' ? sanitizeDiagnosticValue(marker.runtimeCwd) : undefined,
+      sandboxProvider: typeof marker.sandboxProvider === 'string' ? sanitizeDiagnosticValue(marker.sandboxProvider) : undefined,
+    }
+  } catch (error) {
+    const code = (error as { code?: unknown } | null)?.code
+    const status = (error as { status?: unknown; statusCode?: unknown; response?: { status?: unknown } } | null)
+    const isMissing = code === 'ENOENT' || status?.status === 404 || status?.statusCode === 404 || status?.response?.status === 404
+    if (isMissing) {
       return {
         expectedVersion: RUNTIME_PROVISIONING_VERSION,
-        present: true,
-        source: candidate.source,
-        version: typeof marker.v === 'number' ? marker.v : undefined,
-        fingerprint: typeof marker.fingerprint === 'string' ? sanitizeDiagnosticValue(marker.fingerprint) : undefined,
-        runtimeMode: typeof marker.runtimeMode === 'string' ? sanitizeDiagnosticValue(marker.runtimeMode) : undefined,
-        runtimeCwd: typeof marker.runtimeCwd === 'string' ? sanitizeDiagnosticValue(marker.runtimeCwd) : undefined,
-        sandboxProvider: typeof marker.sandboxProvider === 'string' ? sanitizeDiagnosticValue(marker.sandboxProvider) : undefined,
-      }
-    } catch (error) {
-      const code = (error as { code?: unknown } | null)?.code
-      const status = (error as { status?: unknown; statusCode?: unknown; response?: { status?: unknown } } | null)
-      const isMissing = code === 'ENOENT' || status?.status === 404 || status?.statusCode === 404 || status?.response?.status === 404
-      if (!isMissing) {
-        return {
-          expectedVersion: RUNTIME_PROVISIONING_VERSION,
-          present: false,
-          source: candidate.source,
-          error: sanitizeDiagnosticValue(error instanceof Error ? error.message : String(error)),
-        }
+        present: false,
       }
     }
-  }
-
-  return {
-    expectedVersion: RUNTIME_PROVISIONING_VERSION,
-    present: false,
+    return {
+      expectedVersion: RUNTIME_PROVISIONING_VERSION,
+      present: false,
+      source: 'current',
+      error: sanitizeDiagnosticValue(error instanceof Error ? error.message : String(error)),
+    }
   }
 }
 

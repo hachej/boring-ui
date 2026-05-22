@@ -59,7 +59,7 @@ Provisioned runtime artifacts live under the workspace-local `.boring-agent/` di
 
 ```txt
 .boring-agent/
-  bin/       # command shims exposed on PATH: python, pip, bm, boring-ui, ...
+  bin/       # command shims exposed on PATH: python, pip, app CLIs, ...
   node/      # npm prefix for provisioned node packages
   venv/      # Python virtual environment
   sdk/       # staged local SDK/package sources used for runtime-visible installs
@@ -89,7 +89,7 @@ Use `templateDirs[]` for skills, docs, seeds, starter files, and app-owned works
 provisioning: {
   templateDirs: [
     {
-      id: 'macro-template',
+      id: 'app-template',
       path: new URL('./workspace-template', import.meta.url),
       target: '.',
     },
@@ -107,11 +107,11 @@ Use `python[]` for local Python projects that provide console scripts:
 provisioning: {
   python: [
     {
-      id: 'macro-sdk',
+      id: 'app-sdk',
       projectFile: new URL('./sdk/pyproject.toml', import.meta.url),
       env: {
-        BORING_MACRO_API_URL: 'https://example.test/api',
-        BORING_MACRO_BUILTINS_ROOT: new URL('./sdk/transforms/builtins/', import.meta.url),
+        APP_API_URL: 'https://example.test/api',
+        APP_ASSETS_ROOT: new URL('./sdk/assets/', import.meta.url),
       },
     },
   ],

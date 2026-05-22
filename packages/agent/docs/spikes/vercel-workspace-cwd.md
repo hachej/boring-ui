@@ -85,34 +85,12 @@ They verify:
 2. a symlink alias can make shell `pwd` logical but still leaves
    `process.cwd()` at the target path.
 
-## Live Vercel repro script
+## Live Vercel repro
 
-A live, opt-in repro script was added:
-
-```sh
-pnpm --filter @hachej/boring-agent exec tsx scripts/spike-vercel-workspace-cwd.mts
-```
-
-Required auth:
-
-- `VERCEL_OIDC_TOKEN`; or
-- `VERCEL_TOKEN`/`VERCEL_ACCESS_TOKEN` + `VERCEL_TEAM_ID` + `VERCEL_PROJECT_ID`.
-
-The probe creates a fresh short-lived sandbox, creates a real `/workspace`
-directory with `sudo install -d`, writes one file through `sandbox.writeFiles()`
-to `/workspace/sdk-write.txt`, then runs a command with `cwd: '/workspace'` and
-`PWD`/`BORING_AGENT_WORKSPACE_ROOT` set through env metadata. The user command
-text intentionally contains no `/workspace` literal. It verifies:
-
-- `pwd=/workspace`
-- `PWD=/workspace`
-- `BORING_AGENT_WORKSPACE_ROOT=/workspace`
-- `nodeCwd=/workspace`
-- relative write/read works
-- SDK absolute write to `/workspace/...` is visible from the command cwd
-
-This environment did not have Vercel auth env available, so the live repro was
-not executed here.
+The original opt-in live repro script was removed after this spike graduated
+into the runtime implementation. The checked-in verification now lives in unit
+and runtime matrix tests, so the agent package does not carry credentialed,
+one-off spike scripts.
 
 ## Follow-up for implementation bead
 

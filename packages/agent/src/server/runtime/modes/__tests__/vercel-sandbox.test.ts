@@ -409,11 +409,11 @@ test('mode recreates a stopped sandbox from snapshot without losing workspace fi
 
 test('mode seeds template files into an existing persistent sandbox', async () => {
   const templateRoot = await mkdtemp(join(tmpdir(), 'boring-ui-vercel-template-'))
-  await mkdir(join(templateRoot, '.agents', 'skills', 'macro-transform'), { recursive: true })
+  await mkdir(join(templateRoot, '.agents', 'skills', 'template-fixture'), { recursive: true })
   await mkdir(join(templateRoot, 'transforms', 'custom'), { recursive: true })
   await writeFile(
-    join(templateRoot, '.agents', 'skills', 'macro-transform', 'SKILL.md'),
-    'name: macro-transform\n',
+    join(templateRoot, '.agents', 'skills', 'template-fixture', 'SKILL.md'),
+    'name: template-fixture\n',
     'utf-8',
   )
   await writeFile(join(templateRoot, 'transforms', 'custom', '.gitkeep'), '', 'utf-8')
@@ -456,8 +456,8 @@ test('mode seeds template files into an existing persistent sandbox', async () =
       templatePath: templateRoot,
     })
 
-    await expect(bundle.workspace.readFile('.agents/skills/macro-transform/SKILL.md'))
-      .resolves.toBe('name: macro-transform\n')
+    await expect(bundle.workspace.readFile('.agents/skills/template-fixture/SKILL.md'))
+      .resolves.toBe('name: template-fixture\n')
     await expect(bundle.workspace.stat('transforms/custom/.gitkeep'))
       .resolves.toMatchObject({ kind: 'file' })
     expect(client.create).not.toHaveBeenCalled()
