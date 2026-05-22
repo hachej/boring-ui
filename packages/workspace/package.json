@@ -106,7 +106,6 @@
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.41.1",
     "@hachej/boring-agent": "workspace:*",
-    "@hachej/boring-pi": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
     "@lezer/highlight": "^1.2.3",
     "@tanstack/react-query": "^5.0.0",

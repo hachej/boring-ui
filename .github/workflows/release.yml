@@ -64,7 +64,13 @@ jobs:
           pnpm --filter @hachej/boring-ui-cli build:full
       - name: Publish
         run: |
-          for pkg in packages/ui packages/pi packages/agent packages/workspace packages/core packages/cli; do
+          for pkg in packages/ui packages/agent packages/workspace packages/core packages/cli; do
+            name=$(node -p "require('./$pkg/package.json').name")
+            version=$(node -p "require('./$pkg/package.json').version")
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "$name@$version already published; skipping"
+              continue
+            fi
             tarball=$(cd $pkg && pnpm pack 2>&1 | tail -1)
             npm publish "$pkg/$tarball" --access public --provenance
           done
