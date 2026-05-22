@@ -197,6 +197,7 @@ function nodePackageTarget(workspaceRoot: string, packageName: string): string {
 
 async function copyIfExists(source: string, target: string): Promise<boolean> {
   if (!(await exists(source))) return false
+  if (resolve(source) === resolve(target)) return true
   await cp(source, target, {
     recursive: true,
     force: true,

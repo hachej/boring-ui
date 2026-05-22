@@ -104,3 +104,34 @@ test('provisionRuntimeWorkspace accepts relative template targets inside the wor
 
   await expect(readFile(join(workspaceRoot, 'seeded', 'plugin', 'README.md'), 'utf-8')).resolves.toBe('# seeded\n')
 })
+
+test('provisionRuntimeWorkspace no-ops when node package source is already materialized target', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-runtime-workspace-')
+  const packageRoot = join(workspaceRoot, 'node_modules', '@hachej', 'boring-workspace')
+  await mkdir(join(packageRoot, 'dist'), { recursive: true })
+  await writeFile(join(packageRoot, 'package.json'), '{"name":"@hachej/boring-workspace"}\n', 'utf-8')
+  await writeFile(join(packageRoot, 'dist', 'index.js'), 'export {}\n', 'utf-8')
+
+  await provisionRuntimeWorkspace({
+    workspaceRoot,
+    contributions: [
+      {
+        id: 'same-package-target',
+        provisioning: {
+          nodePackages: [
+            {
+              id: 'workspace',
+              packageName: '@hachej/boring-workspace',
+              packageRoot,
+            },
+          ],
+        },
+      },
+    ],
+    force: true,
+  })
+
+  await expect(readFile(join(packageRoot, 'package.json'), 'utf-8')).resolves.toBe(
+    '{"name":"@hachej/boring-workspace"}\n',
+  )
+})
