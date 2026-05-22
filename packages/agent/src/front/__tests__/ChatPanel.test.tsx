@@ -1422,4 +1422,55 @@ describe('ChatPanel (shadcn)', () => {
       expect(html).not.toContain('animate-spin')
     })
   })
+
+  describe('hotReloadEnabled flag', () => {
+    test('default (true): /reload slash command routes to its handler', async () => {
+      renderToStaticMarkup(<ChatPanel sessionId="sess-hr-default" />)
+      // /reload triggers the fetch path; assert it was called rather than
+      // sending the slash text as a message.
+      await capturedOnSubmit!({ text: '/reload', files: [] })
+      // mockSendMessage should NOT have received "/reload" as text;
+      // instead the reload handler ran (which on success appends an
+      // assistant message via setMessages, not via sendMessage).
+      expect(mockSendMessage).not.toHaveBeenCalledWith(
+        expect.objectContaining({ text: '/reload' }),
+        expect.anything(),
+      )
+    })
+
+    test('/reload surfaces non-fatal diagnostics as visible command feedback', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          reloaded: true,
+          diagnostics: [{ source: 'directory (/plugin)', message: 'syntax error' }],
+        }),
+      }))
+
+      renderToStaticMarkup(<ChatPanel sessionId="sess-hr-diagnostic" />)
+      await capturedOnSubmit!({ text: '/reload', files: [] })
+
+      const updater = mockSetMessages.mock.calls.at(-1)?.[0]
+      expect(typeof updater).toBe('function')
+      const next = updater([])
+      expect(next.at(-1)?.parts?.[0]?.text).toContain('Plugins updated.')
+      expect(next.at(-1)?.parts?.[0]?.text).toContain('Warnings:')
+      expect(next.at(-1)?.parts?.[0]?.text).toContain('directory (/plugin): syntax error')
+    })
+
+    test('hotReloadEnabled=false: /reload falls through as regular message (command not registered)', async () => {
+      renderToStaticMarkup(<ChatPanel sessionId="sess-hr-off" hotReloadEnabled={false} />)
+      await capturedOnSubmit!({ text: '/reload', files: [] })
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        { text: '/reload', files: [] },
+        {
+          body: {
+            sessionId: 'sess-hr-off',
+            message: '/reload',
+            attachments: [],
+          },
+        },
+      )
+    })
+  })
 })

@@ -4,6 +4,14 @@
   "type": "module",
   "private": true,
   "description": "Ask-user plugin for Boring workspace — surfaces agent questions to the user and streams answers back.",
+  "boring": {
+    "label": "Questions",
+    "front": "dist/front/index.js",
+    "server": "dist/server/index.js"
+  },
+  "pi": {
+    "systemPrompt": "Use the ask-user tool when you need a decision, confirmation, or freeform input from the user before continuing. The user answers via the Questions panel and the tool resolves with their response."
+  },
   "files": [
     "dist"
   ],
@@ -23,7 +31,8 @@
     "./shared": {
       "types": "./dist/shared/index.d.ts",
       "import": "./dist/shared/index.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "sideEffects": false,
   "scripts": {

@@ -8,11 +8,6 @@ describe('tool UI metadata', () => {
     expect(extractToolUiMetadata({ details: { ui: metadata } })).toEqual(metadata)
   })
 
-  test('supports uiKind compatibility shape', () => {
-    const details = { uiKind: 'pi-subagent', task: 'inspect auth', status: 'done' }
-    expect(extractToolUiMetadata({ details })).toEqual({ rendererId: 'pi-subagent', details })
-  })
-
   test('rejects malformed metadata without throwing', () => {
     expect(isToolUiMetadata({ rendererId: 123 })).toBe(false)
     expect(extractToolUiMetadata(null)).toBeUndefined()

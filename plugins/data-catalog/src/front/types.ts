@@ -27,7 +27,7 @@ export interface DataCatalogSelectContext {
   bridge?: WorkspaceBridge
 }
 
-export interface CreateDataCatalogOutputsOptions {
+export interface CreateDataCatalogContributionsOptions {
   /**
    * Base contribution id. Defaults catalog id to this value and left tab /
    * visualization panel ids to derived names.
@@ -62,7 +62,7 @@ export interface CreateDataCatalogOutputsOptions {
 }
 
 export interface CreateDataCatalogPluginOptions
-  extends CreateDataCatalogOutputsOptions {
+  extends CreateDataCatalogContributionsOptions {
   pluginId?: string
 }
 

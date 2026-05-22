@@ -20,7 +20,7 @@
     "check:core-bundle-size": "pnpm --filter @hachej/boring-core run check:bundle-size",
     "ci:bundle-size": "pnpm --filter @hachej/boring-workspace run build && pnpm check:bundle-size",
     "ci:core-bundle-size": "pnpm --filter @hachej/boring-core run build && pnpm check:core-bundle-size",
-    "test": "pnpm -r run test",
+    "test": "pnpm -r --workspace-concurrency=1 run test",
     "e2e": "pnpm --filter @hachej/boring-agent run test:e2e",
     "ci": "pnpm lint && pnpm check:generated-artifacts && pnpm typecheck && pnpm test && pnpm lint:invariants && pnpm e2e",
     "clean": "pnpm -r run clean",

@@ -1,0 +1,14 @@
+{
+  "name": "@boring-fixtures/default-plugin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "boring": {
+    "label": "Default Plugin Fixture",
+    "front": "front/index.tsx",
+    "server": "server/index.ts"
+  },
+  "pi": {
+    "systemPrompt": "Test fixture. Use `fixture_ping` to verify reachability."
+  }
+}

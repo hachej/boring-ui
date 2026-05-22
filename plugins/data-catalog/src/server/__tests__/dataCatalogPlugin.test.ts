@@ -130,7 +130,7 @@ describe("data catalog server helpers", () => {
     expect(result.content[0]?.text).toBe("query is required")
   })
 
-  it("creates server plugin metadata with skill text and a tool", () => {
+  it("creates server plugin metadata wiring agentTools + skill systemPrompt", () => {
     const plugin = createDataCatalogServerPlugin({
       id: "warehouse-catalog",
       label: "warehouse catalog",
@@ -139,8 +139,8 @@ describe("data catalog server helpers", () => {
     })
 
     expect(plugin.id).toBe("warehouse-catalog")
-    expect(plugin.agentTools.map((tool) => tool.name)).toEqual(["catalog_search"])
-    expect(plugin.systemPrompt).toContain("## Data Catalog Plugin")
+    expect(plugin.agentTools).toHaveLength(1)
+    expect(plugin.agentTools[0]?.name).toBe("catalog_search")
     expect(plugin.systemPrompt).toContain("catalog_search")
   })
 

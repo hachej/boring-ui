@@ -39,13 +39,9 @@ function safeLoad(key: string, initial: () => State): State {
     const raw = localStorage.getItem(key)
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<State>
-      // Tolerate older shape `{ items, activeId }` from pre-extraction
-      // call sites — read either field name.
       const sessions = Array.isArray(parsed.sessions)
         ? parsed.sessions
-        : Array.isArray((parsed as { items?: SessionItem[] }).items)
-          ? ((parsed as { items?: SessionItem[] }).items as SessionItem[])
-          : null
+        : null
       if (sessions) {
         return { sessions, activeId: parsed.activeId ?? sessions[0]?.id ?? "" }
       }

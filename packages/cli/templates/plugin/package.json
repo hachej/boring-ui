@@ -3,7 +3,15 @@
   "version": "0.0.0",
   "type": "module",
   "private": true,
-  "description": "Canonical self-contained plugin shape for Boring UI.",
+  "description": "Reference app/internal boring-ui package-plugin example using declarative definePlugin({ ... }) front contributions plus boot-time server integration. Generated .pi/extensions plugins should use boring-ui scaffold-plugin instead.",
+  "boring": {
+    "label": "Sample",
+    "front": "dist/front/index.js",
+    "server": "dist/server/index.js"
+  },
+  "pi": {
+    "systemPrompt": "Sample plugin template \u2014 replace this prompt with a short hint telling the agent when to use your plugin's panels/tools."
+  },
   "files": [
     "dist"
   ],
@@ -23,7 +31,8 @@
     "./shared": {
       "types": "./dist/shared/index.d.ts",
       "import": "./dist/shared/index.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "sideEffects": false,
   "scripts": {

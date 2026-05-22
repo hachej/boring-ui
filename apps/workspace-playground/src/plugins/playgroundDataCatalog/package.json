@@ -1,0 +1,14 @@
+{
+  "name": "playground-data-catalog",
+  "version": "0.0.0",
+  "private": true,
+  "description": "App-internal plugin: parameterizes @hachej/boring-data-catalog with playground CSV fixtures + adds a DuckDB SQL execution server.",
+  "boring": {
+    "label": "Playground Data",
+    "front": "front/index.tsx",
+    "server": "server/index.ts"
+  },
+  "pi": {
+    "systemPrompt": "Use the Playground Data catalog left tab to browse CSV fixtures. Use the execute_sql tool for read-only SQL over the same fixtures (DuckDB-backed)."
+  }
+}

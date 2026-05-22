@@ -1,5 +1,5 @@
 import type { ExplorerItem } from "@hachej/boring-data-explorer/shared"
-import type { SurfaceResolverConfig } from "@hachej/boring-workspace"
+import type { BoringFrontSurfaceResolverRegistration } from "@hachej/boring-workspace/plugin"
 import { DATA_CATALOG_ROW_SURFACE_KIND } from "../shared/constants"
 import { dataCatalogPanelInstanceId } from "./openVisualization"
 
@@ -27,12 +27,13 @@ function stringMeta(meta: Record<string, unknown>, key: string): string | undefi
 
 export function createDataCatalogSurfaceResolver(
   options: CreateDataCatalogSurfaceResolverOptions,
-): SurfaceResolverConfig {
+): BoringFrontSurfaceResolverRegistration {
   const kind = options.surfaceKind ?? DATA_CATALOG_ROW_SURFACE_KIND
   const panelIdPrefix = options.panelIdPrefix ?? options.id
 
   return {
     id: options.surfaceResolverId ?? `${options.id}-row`,
+    kind,
     source: options.source,
     resolve(request) {
       if (request.kind !== kind) return undefined

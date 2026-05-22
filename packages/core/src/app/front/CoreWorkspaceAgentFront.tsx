@@ -19,7 +19,9 @@ const DEFAULT_WORKSPACE_ID_PARAM = 'id'
 
 export interface CoreWorkspaceAgentFrontProps<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
-> extends Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId'> {
+> extends Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'> {
+  /** Core consumes plugins statically for now; app-level hot reload is explicitly unsupported. */
+  hotReload?: false
   authPages?: CoreFrontAuthPagesOverride
   cspNonce?: string
   children?: ReactNode
@@ -94,7 +96,7 @@ function WorkspaceRoute<
   workspaceIdParam: string
   loadingFallback: ReactNode
   bootPreloadPaths?: string[]
-  workspaceProps: Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId'>
+  workspaceProps: Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'>
 }) {
   const params = useParams()
   const currentWorkspace = useCurrentWorkspace()
@@ -125,6 +127,8 @@ function WorkspaceRoute<
         workspaceId={workspaceId}
         requestHeaders={requestHeaders}
         authHeaders={authHeaders}
+        frontPluginHotReload={false}
+        hotReloadEnabled={false}
       />
     </WorkspaceBootGate>
   )
@@ -145,8 +149,14 @@ export function CoreWorkspaceAgentFront<
   topBarRight = <DefaultTopBarRight />,
   appTitle = 'Boring',
   bridgeEndpoint = '/api/v1/ui',
+  hotReload = false,
   ...workspaceProps
 }: CoreWorkspaceAgentFrontProps<TSession>) {
+  if ((hotReload as unknown) !== false) {
+    throw new Error(
+      'CoreWorkspaceAgentFront does not support hotReload yet; use static plugin consumption or WorkspaceAgentFront for standalone hot reload.',
+    )
+  }
   const resolvedLoadingFallback = loadingFallback ?? (
     <WorkspaceLoadingPage
       appTitle={appTitle}
@@ -155,7 +165,7 @@ export function CoreWorkspaceAgentFront<
     />
   )
 
-  const resolvedWorkspaceProps: Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId'> = {
+  const resolvedWorkspaceProps: Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'> = {
     ...workspaceProps,
     appTitle,
     topBarLeft,

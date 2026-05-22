@@ -2,25 +2,18 @@ import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import { resolve } from "node:path"
+import { createBoringAppViteAliases } from "@hachej/boring-core/app/vite"
 import { AGENT_API_PORT, VITE_PORT, startPlaygroundServer } from "./src/server/dev"
 
-const useLocalPackages = process.env.BORING_USE_LOCAL_PACKAGES === "1"
-const localWorkspaceAlias = useLocalPackages
-  ? {
-      react: resolve(__dirname, "node_modules/react"),
-      "react-dom": resolve(__dirname, "node_modules/react-dom"),
-      "react/jsx-runtime": resolve(__dirname, "node_modules/react/jsx-runtime.js"),
-      "@hachej/boring-workspace/globals.css": resolve(__dirname, "../../packages/workspace/src/globals.css"),
-      "@hachej/boring-workspace/shared": resolve(__dirname, "../../packages/workspace/src/shared/index.ts"),
-      "@hachej/boring-workspace/app/front": resolve(__dirname, "../../packages/workspace/src/app/front/index.ts"),
-      "@hachej/boring-workspace/app/server": resolve(__dirname, "../../packages/workspace/src/app/server/index.ts"),
-      "@hachej/boring-workspace/server": resolve(__dirname, "../../packages/workspace/src/server/index.ts"),
-      "@hachej/boring-workspace/testing": resolve(__dirname, "../../packages/workspace/src/front/testing/index.ts"),
-      "@hachej/boring-workspace": resolve(__dirname, "../../packages/workspace/src/index.ts"),
-      "@/": resolve(__dirname, "../../packages/workspace/src") + "/",
-      "@": resolve(__dirname, "../../packages/workspace/src"),
-    }
-  : undefined
+const baseResolve = createBoringAppViteAliases({ appRoot: __dirname })
+// The playground is the standalone dev surface for the workspace
+// package — its src/ contains `@/` (workspace-src-rooted) imports that
+// the standard helper doesn't cover. Add those alongside the shared
+// aliases.
+const playgroundOnlyAliases = [
+  { find: "@/", replacement: resolve(__dirname, "../../packages/workspace/src") + "/" },
+  { find: "@", replacement: resolve(__dirname, "../../packages/workspace/src") },
+]
 
 // The playground is the standalone dev surface for @hachej/boring-workspace.
 // Backend is the agent package's Fastify app — same one production uses —
@@ -38,7 +31,14 @@ const localWorkspaceAlias = useLocalPackages
 
 export default defineConfig({
   plugins: [
-    react(),
+    react({
+      // Runtime-authored plugins are loaded through the boring-ui plugin
+      // bridge, not React Refresh. Refresh instrumentation can create a
+      // second/stale hook dispatcher for dynamically imported .pi extension
+      // panels after edits, so leave these files to Vite's plain esbuild TSX
+      // transform and apply updates only after /reload.
+      exclude: [/workspace\/\.pi\/extensions\//],
+    }),
     tailwindcss(),
     {
       name: "boring-agent-backend",
@@ -46,8 +46,22 @@ export default defineConfig({
         await startPlaygroundServer()
       },
     },
+    {
+      name: "boring-runtime-extension-hmr-boundary",
+      handleHotUpdate(ctx) {
+        // Runtime-authored plugins are reloaded through /reload + the
+        // agent-plugin SSE bridge. Letting Vite HMR handle these files causes
+        // full page reloads because dynamically imported .pi extension modules
+        // are not stable React HMR boundaries.
+        if (ctx.file.includes("/workspace/.pi/extensions/")) return []
+        return undefined
+      },
+    },
   ],
-  resolve: localWorkspaceAlias ? { alias: localWorkspaceAlias } : undefined,
+  resolve: {
+    alias: [...baseResolve.alias, ...playgroundOnlyAliases],
+    dedupe: baseResolve.dedupe,
+  },
   server: {
     port: VITE_PORT,
     host: true,

@@ -28,6 +28,17 @@ const globalCommandPanel: PanelConfig = {
   placement: "center",
 }
 
+class MockEventSource {
+  static instances: MockEventSource[] = []
+  close = vi.fn()
+  addEventListener = vi.fn()
+  removeEventListener = vi.fn()
+
+  constructor(readonly url: string) {
+    MockEventSource.instances.push(this)
+  }
+}
+
 describe("WorkspaceAgentFront", () => {
   beforeEach(() => {
     localStorage.clear()
@@ -35,6 +46,21 @@ describe("WorkspaceAgentFront", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  it("forwards frontPluginHotReload to WorkspaceProvider", () => {
+    MockEventSource.instances = []
+    vi.stubGlobal("EventSource", MockEventSource)
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="hot-reload-off"
+        chatPanel={ChatPanel}
+        frontPluginHotReload={false}
+      />,
+    )
+
+    expect(MockEventSource.instances.filter((instance) => instance.url.includes("/api/v1/agent-plugins/events"))).toHaveLength(0)
   })
 
   it("opens session history immediately even when an onOpenNav observer is provided", async () => {

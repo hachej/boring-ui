@@ -54,9 +54,29 @@ storybook-static/
 .ntm/
 .ui-review/
 *_review.patch
+/pr-review-*.md
+/review-*.md
+/worker-*.md
+/full-pr-final-review/
 packages/agent/bench-results/
 
 # Vitest transient transpiled-config artifacts (leaked when a run is interrupted)
 **/vitest.config.ts.timestamp-*.mjs
 **/vitest.config.js.timestamp-*.mjs
 .claude/worktrees/
+
+# LLM eval scratch directories (plugins/CSVs created by live-LLM tests)
+**/.eval/
+packages/workspace/.pi/
+packages/workspace/*.csv
+packages/workspace/packages/
+packages/workspace/plugins/
+packages/workspace/src/plugins/eval-*/
+# Repo-root .pi/ too — when the agent's cwd resolves to the monorepo root
+# instead of the workspace package, eval scratch lands here.
+/.pi/
+
+# Per-plugin signature cache written by BoringPluginAssetManager on load —
+# read by `boring-ui verify-plugin` to detect server-file drift. Runtime
+# state, never checked in.
+**/.boring-signature.json

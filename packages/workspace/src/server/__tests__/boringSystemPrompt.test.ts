@@ -1,0 +1,137 @@
+import { describe, expect, test } from "vitest"
+import { buildBoringSystemPrompt } from "../boringSystemPrompt"
+
+// Most tests use a fixture boring-pi root so we exercise the happy
+// "docs paths emitted" path without depending on the real install layout.
+const FIXTURE_PI_ROOT = "/fake/node_modules/@hachej/boring-pi"
+
+describe("buildBoringSystemPrompt", () => {
+  test("renders a numbered TODO workflow", () => {
+    const prompt = buildBoringSystemPrompt({
+      scaffoldCommand: "boring-ui scaffold-plugin",
+      verifyCommand: "boring-ui verify-plugin",
+      boringPiRootOverride: FIXTURE_PI_ROOT,
+    })
+    expect(prompt).toMatch(/\*\*1\.\s+Scaffold/)
+    expect(prompt).toMatch(/\*\*2\.\s+Edit/)
+    expect(prompt).toMatch(/\*\*3\.\s+Verify/)
+    expect(prompt).toMatch(/\*\*4\.\s+Ask the user to run `\/reload`/)
+  })
+
+  test("includes the scaffold and verify CLI invocations", () => {
+    const prompt = buildBoringSystemPrompt({
+      scaffoldCommand: "boring-ui scaffold-plugin",
+      verifyCommand: "boring-ui verify-plugin",
+      boringPiRootOverride: FIXTURE_PI_ROOT,
+    })
+    expect(prompt).toContain("boring-ui scaffold-plugin <kebab-name>")
+    expect(prompt).toContain("boring-ui verify-plugin")
+  })
+
+  test("names every common hallucination", () => {
+    const prompt = buildBoringSystemPrompt({
+      scaffoldCommand: "boring-ui scaffold-plugin",
+      verifyCommand: "boring-ui verify-plugin",
+      boringPiRootOverride: FIXTURE_PI_ROOT,
+    })
+    // API factories:
+    expect(prompt).toContain("createPlugin")
+    expect(prompt).toContain("defineFrontPlugin")
+    // Method names:
+    expect(prompt).toContain("registerComponent")
+    expect(prompt).toContain("addPanel")
+    // Imports:
+    expect(prompt).toContain("@hachej/boring-pi")
+    expect(prompt).toContain("@hachej/pi-sdk")
+    // Server-tool method + return shape + manifest:
+    expect(prompt).toContain("handler")
+    expect(prompt).toContain("execute")
+    expect(prompt).toContain('content: [{ type: "text"')
+    expect(prompt).toContain("boring.server: true")
+  })
+
+  test("does NOT inline the canonical code blocks (scaffold owns the shape)", () => {
+    const prompt = buildBoringSystemPrompt({
+      scaffoldCommand: "boring-ui scaffold-plugin",
+      verifyCommand: "boring-ui verify-plugin",
+      boringPiRootOverride: FIXTURE_PI_ROOT,
+    })
+    // The verbose `import { definePlugin } ... export default
+    // definePlugin({ id: ..., panels: [{ id, label, component }] })`
+    // skeleton is NOT inlined. The agent reads the scaffold output for
+    // the exact shape; the prompt only names the wrong things.
+    expect(prompt).not.toContain("```tsx")
+    expect(prompt).not.toContain("```ts\n")
+    expect(prompt).not.toContain("function MyPane")
+    expect(prompt).not.toContain("defineServerPlugin({")
+  })
+
+  test("emits a pi-style docs pointer block with absolute paths into boring-pi", () => {
+    const prompt = buildBoringSystemPrompt({
+      scaffoldCommand: "boring-ui scaffold-plugin",
+      verifyCommand: "boring-ui verify-plugin",
+      boringPiRootOverride: FIXTURE_PI_ROOT,
+    })
+    // Heading + each of the 4 docs targets, with absolute paths.
+    expect(prompt).toContain("## boring-ui plugin authoring documentation")
+    expect(prompt).toContain(`${FIXTURE_PI_ROOT}/skills/boring-plugin-authoring/SKILL.md`)
+    expect(prompt).toContain(`${FIXTURE_PI_ROOT}/references/workspace/panels.md`)
+    expect(prompt).toContain(`${FIXTURE_PI_ROOT}/references/workspace/bridge.md`)
+    expect(prompt).toContain(`${FIXTURE_PI_ROOT}/references/workspace/plugins.md`)
+  })
+
+  test("docs block falls back to <available_skills> reference when boring-pi cannot be resolved", () => {
+    // Empty string isn't truthy → resolveBoringPiRoot returns null →
+    // degraded path. We pass an explicit invalid override to bypass the
+    // real require.resolve so the test is hermetic.
+    const prompt = buildBoringSystemPrompt({
+      scaffoldCommand: "boring-ui scaffold-plugin",
+      verifyCommand: "boring-ui verify-plugin",
+      boringPiRootOverride: null,
+    })
+    // Workflow + hallucinations still present.
+    expect(prompt).toMatch(/\*\*1\.\s+Scaffold/)
+    // No absolute paths emitted.
+    expect(prompt).not.toContain("/skills/boring-plugin-authoring/SKILL.md")
+    // Falls back to skill discovery via <available_skills>.
+    expect(prompt).toContain("<available_skills>")
+    expect(prompt).toContain("boring-plugin-authoring")
+  })
+
+  test("without scaffoldCommand, step 1 is reading the skill", () => {
+    const prompt = buildBoringSystemPrompt({
+      verifyCommand: "boring-ui verify-plugin",
+      boringPiRootOverride: FIXTURE_PI_ROOT,
+    })
+    expect(prompt).toContain("Read the `boring-plugin-authoring` skill")
+    expect(prompt).not.toMatch(/\*\*1\.\s+Scaffold/)
+  })
+
+  test("stays under 4000 chars in the full configuration", () => {
+    // The pi-style docs pointer block adds ~600 chars over the
+    // workflow-only prompt; absolute pnpm paths can be 100+ chars each.
+    // Keep a hard ceiling so the appendix doesn't drift back toward
+    // inlining content the agent should `read` on demand instead.
+    const prompt = buildBoringSystemPrompt({
+      scaffoldCommand: "boring-ui scaffold-plugin",
+      verifyCommand: "boring-ui verify-plugin",
+      boringPiRootOverride: FIXTURE_PI_ROOT,
+    })
+    expect(prompt.length).toBeLessThan(4000)
+  })
+
+  test("uses require.resolve to find @hachej/boring-pi when no override is provided", () => {
+    // No override → exercises the real resolver. In a workspace where
+    // boring-pi is a real dep (the case in this monorepo), absolute
+    // paths SHOULD be emitted.
+    const prompt = buildBoringSystemPrompt({
+      scaffoldCommand: "boring-ui scaffold-plugin",
+      verifyCommand: "boring-ui verify-plugin",
+    })
+    // The pointer block heading is always there.
+    expect(prompt).toContain("## boring-ui plugin authoring documentation")
+    // Path resolution succeeded → docs paths land in the prompt.
+    expect(prompt).toMatch(/skills\/boring-plugin-authoring\/SKILL\.md/)
+    expect(prompt).toMatch(/references\/workspace\/panels\.md/)
+  })
+})

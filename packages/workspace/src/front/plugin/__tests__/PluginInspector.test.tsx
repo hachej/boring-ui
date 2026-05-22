@@ -3,8 +3,8 @@ import { render, screen, fireEvent } from "@testing-library/react"
 import { PluginInspector, type PluginMeta } from "../PluginInspector"
 import { RegistryProvider } from "../../registry/RegistryProvider"
 import { PanelRegistry } from "../../registry/PanelRegistry"
-import { CommandRegistry } from "../../registry/CommandRegistry"
-import { CatalogRegistry } from "../CatalogRegistry"
+import { CommandRegistry } from "../../../shared/plugins/CommandRegistry"
+import { CatalogRegistry } from "../../../shared/plugins/CatalogRegistry"
 import { PluginErrorProvider } from "../PluginErrorContext"
 
 function DummyPanel() {

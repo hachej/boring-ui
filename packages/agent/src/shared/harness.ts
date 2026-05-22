@@ -1,5 +1,23 @@
 import type { UIMessageChunk } from './message'
 import type { SessionStore } from './session'
+import type { AgentTool } from './tool'
+
+export interface AgentHarnessFactoryInput {
+  tools: AgentTool[]
+  cwd: string
+  systemPromptAppend?: string
+  sessionNamespace?: string
+  sessionDir?: string
+  /**
+   * Optional dynamic system-prompt source. Harness calls it whenever it
+   * builds or rebuilds a session prompt and appends the returned string.
+   * Workspace plugin layer wires this so live-reloaded plugins can contribute
+   * prompt context without a workspace-injected harness extension.
+   */
+  systemPromptDynamic?: () => string | undefined | Promise<string | undefined>
+}
+
+export type AgentHarnessFactory = (input: AgentHarnessFactoryInput) => AgentHarness | Promise<AgentHarness>
 
 export interface AgentHarness {
   readonly id: string
@@ -44,6 +62,9 @@ export interface AgentHarness {
    * client message, implementations should remove only that item if possible.
    */
   clearFollowUp?(sessionId: string, options?: FollowUpOptions): void
+
+  /** Reload native agent resources/extensions for an existing session. */
+  reloadSession?: (sessionId: string) => Promise<boolean>
 }
 
 export interface FollowUpOptions {

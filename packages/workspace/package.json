@@ -53,6 +53,10 @@
       "types": "./dist/events.d.ts",
       "import": "./dist/events.js"
     },
+    "./plugin": {
+      "types": "./dist/plugin.d.ts",
+      "import": "./dist/plugin.js"
+    },
     "./globals.css": "./dist/workspace.css"
   },
   "sideEffects": [
@@ -62,7 +66,7 @@
     "dev": "vite",
     "build": "pnpm --filter @hachej/boring-ui-kit build && tsup && vite build && node ./scripts/build-workspace-css.mjs && node ./scripts/assert-build-artifacts.mjs",
     "typecheck": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-agent build && tsc --noEmit -p tsconfig.front.json && tsc --noEmit -p tsconfig.server.json",
-    "test": "vitest run",
+    "test": "pnpm --filter @hachej/boring-ui-cli build && vitest run",
     "check:bundle-size": "node ./scripts/check-bundle-size.mjs",
     "lint:plugin-invariants": "node ./scripts/check-plugin-invariants.mjs",
     "lint": "pnpm run typecheck"
@@ -102,6 +106,7 @@
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.41.1",
     "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-pi": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
     "@lezer/highlight": "^1.2.3",
     "@tanstack/react-query": "^5.0.0",
@@ -128,6 +133,7 @@
     "cmdk": "^1.1.1",
     "dockview-react": "^4.13.1",
     "fastify": "^5.3.3",
+    "jiti": "^2.6.1",
     "lowlight": "^3.3.0",
     "lucide-react": "^1.8.0",
     "react-arborist": "^3.4.0",
@@ -136,6 +142,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@boring-fixtures/default-plugin": "workspace:*",
     "@tailwindcss/postcss": "^4.0.0",
     "@tailwindcss/vite": "^4.0.0",
     "@testing-library/jest-dom": "^6.9.1",

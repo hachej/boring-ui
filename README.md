@@ -63,7 +63,66 @@ In practice, a plugin is a Node package with two manifest blocks:
 - `pi.*` — agent side: skills, prompts, tools (loaded by [Pi](https://pi.dev))
 - `boring.*` — UI side: panels, commands, catalogs, surface resolvers
 
-Each `package.json` declares both halves:
+Plugins compose at the app shell: register multiple packages/plugins side by side, or publish a package that wraps shared primitives. Swap a single surface, or add a brand-new pane type. Plugins ship through npm like any other dependency — no patching, no monorepo entanglement required.
+
+For generated/runtime plugins, use `boring-ui scaffold-plugin <name>` from the workspace-local CLI. For app/internal publishable package plugins, use [packages/cli/templates/plugin](packages/cli/templates/plugin/README.md) as a reference example. The exact manifest shape is in [Plugin shape](#plugin-shape) below.
+
+---
+
+## Built with boring-ui
+
+![MacroAnalyst — AI macro research, accelerated](docs/assets/readme/showcase-macro.png)
+
+**[MacroAnalyst](https://boring-macro.fly.dev/)** — an AI analyst for macroeconomic research. Ask in plain English, get charts back in under a minute. 800,000+ economic series from FRED, BLS, BEA, and Treasury, all behind one chat and one workbench.
+
+Production, paying customers, single codebase. Built on `@hachej/boring-core` + `@hachej/boring-agent` + `@hachej/boring-workspace` + custom domain plugins.
+
+More on the same chassis in flight: `boring-accountant`, `boring-design`, `boring-lawyer`.
+
+---
+
+## Repo map
+
+### Packages
+
+
+| Package                    | Role                             | README                                             |
+| -------------------------- | -------------------------------- | -------------------------------------------------- |
+| `@hachej/boring-agent`     | Agent runtime, tools, chat UI    | [packages/agent](packages/agent/README.md)         |
+| `@hachej/boring-workspace` | Workbench, panels, plugin system | [packages/workspace](packages/workspace/README.md) |
+| `@hachej/boring-core`      | Auth, DB, app factory            | [packages/core](packages/core/README.md)           |
+| `@hachej/boring-ui-kit`    | Shared UI primitives             | [packages/ui](packages/ui/README.md)               |
+| `@hachej/boring-ui-cli`    | Zero-setup local entrypoint      | [packages/cli](packages/cli/README.md)             |
+
+
+### Plugins
+
+
+| Plugin                         | What it adds                                                              | README                                                   |
+| ------------------------------ | ------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `@hachej/boring-ask-user`      | Agent-to-user question/answer surface and `ask_user` tool                 | [plugins/ask-user](plugins/ask-user/README.md)           |
+| `@hachej/boring-data-explorer` | Searchable, faceted data tables — the primitive for explorer-style panels | [plugins/data-explorer](plugins/data-explorer/README.md) |
+| `@hachej/boring-data-catalog`  | Configurable catalog tab built on `data-explorer`                         | [plugins/data-catalog](plugins/data-catalog/README.md)   |
+| App/internal plugin template   | Publishable package-plugin reference; generated plugins use `boring-ui scaffold-plugin` | [packages/cli/templates/plugin](packages/cli/templates/plugin/README.md) |
+
+
+### Reference apps
+
+
+| App                         | Purpose                                                | README                                                           |
+| --------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------- |
+| `apps/full-app`             | Production-shaped reference: auth, DB, multi-workspace | [apps/full-app](apps/full-app/README.md)                         |
+| `apps/agent-playground`     | `@hachej/boring-agent` alone — no workbench, no DB     | [apps/agent-playground](apps/agent-playground/README.md)         |
+| `apps/workspace-playground` | `@hachej/boring-workspace` + plugins — no auth backend | [apps/workspace-playground](apps/workspace-playground/README.md) |
+
+
+---
+
+## Plugin shape
+
+Plugins are standard Node packages. `package.json#pi` describes hot-reloadable
+agent resources, while `package.json#boring` describes workspace UI/static app
+integration:
 
 ```json
 {
@@ -72,23 +131,33 @@ Each `package.json` declares both halves:
   "pi": {
     "extensions": ["agent/index.ts"],
     "skills": ["agent/skills"],
-    "prompts": ["agent/prompts"]
+    "prompts": ["agent/prompts"],
+    "systemPrompt": "Short agent guidance."
   },
   "boring": {
     "label": "My Plugin",
     "front": "front/index.tsx",
-    "server": "server/index.ts",
-    "derivesFrom": ["optional-parent-plugin"]
+    "server": "server/index.ts"
   }
 }
 ```
 
-- `pi.extensions` / `pi.skills` / `pi.prompts` — agent-side capabilities
-- `boring.front` — workbench UI: panels, commands, catalogs, surface resolvers
-- `boring.server` — server side: tools that need backend state, HTTP routes
-- `boring.derivesFrom` — layer on top of an existing plugin
+- `pi.*` — hot-reloadable agent resources loaded by Pi (`extensions`, `skills`, `prompts`, `systemPrompt`)
+- `boring.front` — workbench UI from `definePlugin({ ... })`: panels, commands, catalogs, surface resolvers, providers, bindings
+- `boring.server` — explicit static/boot-time server integration from `defineServerPlugin({ ... })`: agent tools that need backend state and HTTP routes. Restart the workspace server after changes.
 
-Run `boring-ui plugin create <name>` to scaffold one, or start from [packages/cli/templates/plugin](packages/cli/templates/plugin/README.md).
+Run `boring-ui plugin create <name>` for a publishable package plugin, or start from [packages/cli/templates/plugin](packages/cli/templates/plugin/README.md). For a front/Pi hot-reloadable local plugin, run `boring-ui scaffold-plugin <name>`.
+
+### Current hot-reload compatibility
+
+| Plugin surface | Local `.pi/extensions` / CLI | App/internal package plugins | Notes |
+|---|---:|---:|---|
+| `pi.systemPrompt`, `pi.skills`, `pi.prompts`, `pi.extensions` | hot-reload via `/reload` | hot-reload when discovered as plugin package resources | Agent context updates without server restart. |
+| `boring.front` panels/commands/catalogs/surface resolvers | hot-reload via `/reload` in dev/playground | static by default; package front assets can be rediscovered in dev | Browser import failures are surfaced and previous version is kept. |
+| `boring.server` / `defineServerPlugin({ routes, agentTools })` | not hot-reloaded | boot-time only | Restart/redeploy after changes. Generated runtime plugins should omit `boring.server`. |
+| Runtime plugin frontend in packaged CLI static mode | not yet | n/a | Planned: local plugin-dev transform endpoint / embedded Vite for CLI. |
+
+Planned direction: keep app/internal plugins powerful and boot-composed, but keep generated/runtime plugins route-free. Generated plugins should use manifest-declared front surfaces plus brokered tools/RPC rather than custom backend routes.
 
 **What you can add:**
 

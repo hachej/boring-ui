@@ -1,6 +1,7 @@
 # Plugin template
 
-Shipped with `@hachej/boring-ui-cli`. Use it via:
+Reference shape for **app/internal publishable npm-package plugins**.
+The CLI copies this directory when you run:
 
 ```sh
 boring-ui plugin create <your-name> --path plugins
@@ -9,7 +10,7 @@ pnpm install
 pnpm typecheck && pnpm test
 ```
 
-Or copy manually:
+Or copy it manually:
 
 ```sh
 cp -R packages/cli/templates/plugin plugins/<your-name>
@@ -17,17 +18,10 @@ cp -R packages/cli/templates/plugin plugins/<your-name>
 #         tsup entries, vitest aliases as needed
 ```
 
-Canonical, self-contained shape for plugins under `plugins/*`. The
-existing plugins (`askUserPlugin`, `data-explorer`, `data-catalog`) are
-aligned to match this shape — if they drift, fix them, not the template.
-
-### What this does
-
-The CLI scaffolds a copy and replaces template ids, TypeScript identifiers,
-and `@hachej/boring-plugin-template` with your plugin name automatically.
-
-The plugin is automatically picked up by `pnpm-workspace.yaml`'s
-`plugins/*` glob.
+> **Building a generated/runtime user plugin instead** (hot-reloadable,
+> no build step, drops into a workspace's `.pi/extensions/<name>/`)?
+> Don't copy this template and don't use `npx` from inside the agent
+> runtime — run the workspace-local `boring-ui scaffold-plugin <name>`.
 
 ## Shape
 
@@ -40,14 +34,12 @@ plugins/<name>/
                        setupFiles: ./src/test-setup.ts
   src/
     front/
-      index.ts         createXxxPlugin() — entry, re-exports
+      index.ts         definePlugin({ ... }) entry and re-exports
       panels.tsx
-      catalogs.ts
       surfaceResolver.ts
-      bindings.tsx
       __tests__/xxxPlugin.test.ts
     server/
-      index.ts         createXxxServerPlugin() — agent tools, system prompt
+      index.ts         createXxxServerPlugin() and default server factory
     shared/
       constants.ts     ids, surface kinds
       types.ts         param/option types
@@ -57,21 +49,14 @@ plugins/<name>/
 ## What lives where
 
 - **front/** — anything that runs in the browser shell: panels, command
-  contributions, catalog configs, surface resolvers, bindings.
+  contributions, surface resolvers, providers, bindings.
 - **server/** — anything that runs in the agent backend: agent tools,
   system prompt fragments, server hooks.
 - **shared/** — constants and types used by both sides. Keep it tiny.
 - **`src/test-setup.ts`** — jest-dom matchers, ResizeObserver + Range
   polyfills, testing-library cleanup. Each plugin owns its own copy;
-  keep them in sync with `packages/cli/templates/plugin/src/test-setup.ts` if the
-  canonical setup changes. Do **not** `import
-  "@testing-library/jest-dom/vitest"` instead — see the comment at the
-  top of the file for the reason.
-
-## What this template intentionally does NOT have
-
-- A `testing/` entry. Add one only when other packages need stable
-  fixtures from your plugin (see `plugins/data-explorer/src/testing/`).
+  keep them in sync with `packages/cli/templates/plugin/src/test-setup.ts`
+  if the canonical setup changes.
 
 ## Invariants
 

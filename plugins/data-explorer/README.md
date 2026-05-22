@@ -29,7 +29,6 @@ git clone https://github.com/hachej/boring-ui.git && cd boring-ui && pnpm instal
 | **`<DataExplorer>` component** | Search box, faceted filters, virtualized rows, row selection, drag-and-drop payload |
 | **`useExplorerState` hook** | Manages query, facets, paging, and selection state |
 | **Adapter contract** | `search(args)` + optional `fetchFacets(args)` — implement once, plug any backend (SQL, REST, in-memory, gRPC) |
-| **`createSourcesAdapter`** | Wrap a static source list into an `ExplorerDataSource` (one component, many rows) |
 | **Agent-driven** | Rows expose a `DragPayload`; the agent can open any row via surface resolver |
 | **Headless + styled** | Use the hook alone for custom UI, or mount the full component out of the box |
 
@@ -115,20 +114,26 @@ export interface ExplorerDataSource {
 
 Implement against **any backend**. The component doesn't care whether data comes from SQL, REST, Elasticsearch, or a JSON file.
 
-### Multi-Source Adapter
+### Static Data Adapter
 
 ```tsx
-import { createSourcesAdapter, type SourceEntry } from "@hachej/boring-data-explorer"
+import type { ExplorerDataSource, ExplorerItem } from "@hachej/boring-data-explorer/shared"
 
-const entries: SourceEntry[] = [
-  { id: "customers", name: "Customers", type: "table", description: "Customer records" },
-  { id: "invoices",  name: "Invoices",  type: "table", description: "Invoice records", schema: "finance" },
+const entries: ExplorerItem[] = [
+  { id: "customers", title: "Customers", subtitle: "Customer records", leading: { code: "tbl" } },
+  { id: "invoices", title: "Invoices", subtitle: "Invoice records", leading: { code: "tbl" }, group: "finance" },
 ]
 
-const adapter = createSourcesAdapter(entries)
-// adapter is an ExplorerDataSource — pass it to <DataExplorer>
-// When at least one entry has a `schema`, the adapter also exposes fetchFacets
-// to render schema-grouped, toggleable facet sections.
+const adapter: ExplorerDataSource = {
+  async search({ query, limit, offset }) {
+    const normalized = query.trim().toLowerCase()
+    const matched = normalized
+      ? entries.filter((entry) => `${entry.title} ${entry.subtitle ?? ""}`.toLowerCase().includes(normalized))
+      : entries
+    const items = matched.slice(offset, offset + limit)
+    return { items, total: matched.length, hasMore: offset + items.length < matched.length }
+  },
+}
 ```
 
 ---
@@ -218,7 +223,7 @@ cd boring-ui/plugins/data-explorer && pnpm install && pnpm build
 | Facets empty | `fetchFacets()` not implemented | Add the optional `fetchFacets` method to your adapter |
 | Infinite loading loop | `useExplorerState` deps changing every render | Memoize your `source` object or move it outside the component |
 | Drag not working | Row has no `DragPayload` | Pass `getDragPayload` prop to `<DataExplorer>` |
-| Wrong source selected | `createSourcesAdapter` entries misconfigured | Check `SourceEntry` id and name fields |
+| Wrong source selected | Adapter returns the wrong item ids or payload | Check your adapter's `search()` mapping |
 
 ---
 
