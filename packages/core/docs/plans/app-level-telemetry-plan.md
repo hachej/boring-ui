@@ -171,6 +171,7 @@ Each package may define or import a compatible structural type:
 ```ts
 export interface TelemetrySink {
   capture(event: TelemetryEvent): void | Promise<void>
+  flush?(): void | Promise<void>
 }
 
 export interface TelemetryEvent {
@@ -195,7 +196,7 @@ And optionally:
 ```ts
 export function safeCapture(telemetry: TelemetrySink, event: TelemetryEvent): void {
   try {
-    void telemetry.capture(event)
+    void Promise.resolve(telemetry.capture(event)).catch(() => {})
   } catch {
     // telemetry must never break product behavior
   }
@@ -229,7 +230,7 @@ export function createPostHogTelemetryFromEnv(env = process.env): TelemetrySink 
     host: env.POSTHOG_HOST ?? 'https://us.i.posthog.com',
   })
 
-  const prefix = env.BORING_TELEMETRY_PROJECT?.trim() || undefined
+  const prefix = parseTelemetryProject(env.BORING_TELEMETRY_PROJECT)
 
   return {
     capture(event) {
@@ -239,23 +240,30 @@ export function createPostHogTelemetryFromEnv(env = process.env): TelemetrySink 
         distinctId: event.distinctId ?? 'anonymous',
         event: name,
         properties: {
-          ...event.properties,
+          ...sanitizeTelemetryProperties(event.properties),
           boringProject: prefix,
           eventName: event.name,
         },
       })
     },
+    async flush() {
+      await posthog.shutdown()
+    },
   }
 }
 ```
+
+`parseTelemetryProject()` accepts only a slug safe for event-name prefixing, such as `full-app` or `customer-portal`. Invalid values warn once and disable the prefix instead of sending surprising event names.
+
+`sanitizeTelemetryProperties()` is the central allowlist from this plan. It drops unknown keys before events reach PostHog, so one mistaken emitter cannot leak prompts, command output, raw paths, headers, or stack traces.
 
 Rules:
 
 - helper lives in core server code only
 - agent/workspace do not import it
 - disabled/misconfigured env returns no-op
-- capture failures are swallowed or logged at debug level
-- shutdown should flush PostHog if the SDK requires it
+- capture failures and rejected promises are swallowed or logged at debug level
+- PostHog `shutdown()` is exposed through optional `telemetry.flush()` and wired into server shutdown
 
 ---
 
@@ -266,17 +274,18 @@ Frontend telemetry should also work from env-only setup.
 Preferred first pass:
 
 1. Core server creates the PostHog sink from env.
-2. Core exposes a small internal telemetry endpoint for browser events, only when telemetry is enabled.
-3. Core-composed frontend uses an HTTP telemetry sink that posts safe events to that endpoint.
-4. The server forwards those events to PostHog with the same prefix/property rule.
+2. Core exposes non-secret runtime config such as `{ telemetry: { enabled, endpoint } }`.
+3. Core exposes a small internal telemetry endpoint for browser events, only when telemetry is enabled.
+4. Core-composed frontend installs an HTTP telemetry sink only when `telemetry.enabled === true`.
+5. The server forwards those events to PostHog with the same prefix/property rule.
 
 This avoids requiring child apps to expose `VITE_POSTHOG_KEY` or initialize PostHog in browser code.
 
 Endpoint rules:
 
 - bounded request body
-- only known event names or known prefixes
-- property allowlist/drop unsafe fields
+- only known event names from this plan
+- reuse the same central property allowlist as the server PostHog sink
 - authenticated when the app is authenticated
 - telemetry endpoint failures never break UI behavior
 
@@ -320,6 +329,8 @@ Not allowed by default:
 - raw errors
 - headers/cookies/tokens
 - env vars
+
+The allowlist should be enforced centrally by `sanitizeTelemetryProperties()` before any event reaches PostHog or the frontend telemetry endpoint.
 
 If a future event needs richer data, add a small explicit allowlist in the same PR.
 
@@ -405,9 +416,9 @@ Rules:
 
 ### Bead 1 — telemetry contract and no-op
 
-- Add `TelemetrySink`, `TelemetryEvent`, `noopTelemetry`, and safe capture helper where needed.
+- Add `TelemetrySink`, `TelemetryEvent`, optional `flush()`, `noopTelemetry`, and safe capture helper where needed.
 - Keep shared files platform-neutral.
-- Add unit tests for no-op and safe capture.
+- Add unit tests for no-op, sync throw, async rejection, and safe capture.
 
 Acceptance:
 
@@ -421,7 +432,9 @@ Acceptance:
 - Add `posthog-node` dependency to core if needed.
 - Implement explicit opt-in via `BORING_TELEMETRY_ENABLED=true`.
 - Implement `POSTHOG_KEY`, `POSTHOG_HOST`, and `BORING_TELEMETRY_PROJECT`.
-- Add tests for disabled, missing key, enabled, host override, and project prefix.
+- Add central property sanitization and project-prefix slug validation.
+- Add optional `flush()` support and wire it into server shutdown.
+- Add tests for disabled, missing key, enabled, host override, project prefix, invalid prefix, property sanitization, and flush.
 
 Acceptance:
 
@@ -434,6 +447,7 @@ Acceptance:
 
 - Wire core-composed server entrypoints to resolve telemetry from `options.telemetry ?? env helper`.
 - Pass the resolved sink to workspace/agent composition.
+- Add non-secret runtime config for `telemetry.enabled` and `telemetry.endpoint`.
 - Add internal frontend telemetry endpoint if frontend events are included in this pass.
 - Add HTTP frontend sink in core-composed frontend if the endpoint is added.
 
