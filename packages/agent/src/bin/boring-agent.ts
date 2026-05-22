@@ -10,6 +10,7 @@
  *   --workspace <path> Workspace root
  *   --dev             Accepted for legacy E2E helpers; no-op
  *   --no-open         Accepted for legacy E2E helpers; no-op
+ *   --no-gitignore    Accepted for legacy E2E helpers; no-op
  */
 import path from 'node:path'
 import os from 'node:os'
@@ -36,7 +37,7 @@ function parseArgs(argv: string[]): { port: number; mode: RuntimeModeId; workspa
       mode = argv[++i] as RuntimeModeId
     } else if ((arg === '--workspace' || arg === '-w') && argv[i + 1]) {
       workspaceRoot = argv[++i]!
-    } else if (arg === '--dev' || arg === '--no-open') {
+    } else if (arg === '--dev' || arg === '--no-open' || arg === '--no-gitignore') {
       // Legacy E2E helper flags; this bin is already a non-opening dev server.
     } else {
       throw new Error(`unknown argument: ${arg}`)
