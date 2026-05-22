@@ -92,6 +92,26 @@ function openBrowser(url: string) {
   } catch {}
 }
 
+function resolvePackageRoot(packageName: string): string | null {
+  try {
+    return dirname(require.resolve(`${packageName}/package.json`))
+  } catch {
+    return null
+  }
+}
+
+function boringPiSkillPaths(): string[] {
+  const root = resolvePackageRoot("@hachej/boring-pi")
+  if (!root) return []
+  const skill = join(root, "skills", "boring-plugin-authoring", "SKILL.md")
+  return existsSync(skill) ? [skill] : []
+}
+
+function boringPiPackageSource(): { source: string; skills: string[] } | undefined {
+  const root = resolvePackageRoot("@hachej/boring-pi")
+  return root ? { source: root, skills: ["skills/boring-plugin-authoring"] } : undefined
+}
+
 function ensureFrontendBuilt(publicDir: string) {
   if (existsSync(join(publicDir, "index.html"))) return
   console.error("\nError: boring-ui frontend not found.")
@@ -272,18 +292,50 @@ async function startWorkspacesMode(opts: {
 
   await app.register(agentServer.registerAgentRoutes, {
     mode: opts.mode,
-    systemPromptAppend: workspaceAppServer.buildWorkspaceContextPrompt(),
+    systemPromptAppend: [
+      workspaceAppServer.buildWorkspaceContextPrompt(),
+      workspaceServer.buildBoringSystemPrompt({
+        scaffoldCommand: "boring-ui scaffold-plugin",
+        verifyCommand: "boring-ui verify-plugin",
+        boringPiRootOverride: null,
+      }),
+    ].join("\n\n"),
     getWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
     getWorkspaceRoot: async (workspaceId) => (await requireWorkspace(workspaceId)).path,
     getSessionNamespace: async ({ workspaceId }) => `local-workspace-${workspaceId}`,
-    getPi: async ({ workspaceRoot }) => ({
-      additionalSkillPaths: [join(workspaceRoot, ".agents", "skills")],
-    }),
-    getExtraTools: async ({ workspaceId, workspaceRoot, workspaceFsCapability }) => [
-      ...workspaceServer.createWorkspaceUiTools(getBridge(workspaceId), {
-        workspaceRoot: workspaceFsCapability === "strong" ? workspaceRoot : undefined,
-      }),
-    ],
+    getPi: async ({ workspaceRoot }) => {
+      const collection = workspaceAppServer.collectWorkspaceAgentServerPlugins({ workspaceRoot })
+      const pi = collection.agentOptions.pi ?? {}
+      const packages = [...(pi.packages ?? [])]
+      const boringPi = boringPiPackageSource()
+      if (boringPi) packages.unshift(boringPi)
+      return {
+        ...pi,
+        additionalSkillPaths: [
+          ...boringPiSkillPaths(),
+          ...(pi.additionalSkillPaths ?? []),
+        ],
+        packages,
+      }
+    },
+    provisionRuntime: async ({ workspaceRoot, runtimeMode, runtimeBundle }) => {
+      const collection = workspaceAppServer.collectWorkspaceAgentServerPlugins({ workspaceRoot })
+      await workspaceAppServer.provisionWorkspaceAgentServer({
+        workspaceRoot,
+        runtimeMode,
+        runtimeBundle,
+        provisioningContributions: collection.provisioningContributions,
+      })
+    },
+    getExtraTools: async ({ workspaceId, workspaceRoot, workspaceFsCapability }) => {
+      const collection = workspaceAppServer.collectWorkspaceAgentServerPlugins({ workspaceRoot })
+      return [
+        ...workspaceServer.createWorkspaceUiTools(getBridge(workspaceId), {
+          workspaceRoot: workspaceFsCapability === "strong" ? workspaceRoot : undefined,
+        }),
+        ...(collection.agentOptions.extraTools ?? []),
+      ]
+    },
   })
 
   await app.register(workspaceServer.uiRoutes, {
