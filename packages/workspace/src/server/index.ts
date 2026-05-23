@@ -44,6 +44,18 @@ export type {
   WorkspaceBridgeOperationDefinition,
 } from "../shared/workspace-bridge-rpc"
 export {
+  WorkspaceBridgeRegistry,
+  createWorkspaceBridgeRegistry,
+} from "./workspaceBridge/registry"
+export type {
+  RegisterWorkspaceBridgeHandlerOptions,
+  WorkspaceBridgeCallContext,
+  WorkspaceBridgeHandler,
+  WorkspaceBridgeHandlerArgs,
+  WorkspaceBridgeRegistryLogger,
+  WorkspaceBridgeRegistryOptions,
+} from "./workspaceBridge/registry"
+export {
   bootstrapServer,
   defineServerPlugin,
   validateServerPlugin,
