@@ -47,6 +47,7 @@ export function buildUploadAgentTools(bundle: RuntimeBundle): AgentTool[] {
   return [
     {
       name: 'upload_file',
+      readinessRequirements: ['workspace-fs'],
       description:
         'Copy a workspace file into artifact storage (assets/images by default) and return its workspace-relative path. ' +
         'Use this when you want to embed an image in markdown or make a generated file accessible as a stable artifact. ' +

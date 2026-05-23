@@ -14,6 +14,7 @@
 import { renderHook, act } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import type { UIMessage } from "ai"
+import { ErrorCode } from "../../../shared/error-codes"
 import {
   mergeRebuiltPiMessages,
   rebuildPiMessagesFromDataParts,
@@ -193,6 +194,30 @@ describe("rebuildPiMessagesFromDataParts", () => {
     expect((toolParts[0] as { state?: string }).state).toBe("output-available")
   })
 
+  it("preserves structured WORKSPACE_NOT_READY tool-result details", () => {
+    const output = {
+      content: [{ type: "text", text: "Workspace is still preparing. Try again in a moment." }],
+      details: { code: ErrorCode.enum.WORKSPACE_NOT_READY, retryable: true, requirement: "workspace-fs" },
+    }
+    const messages: UIMessage[] = [
+      makeMessage("envelope", "assistant", [
+        dataStart("a-ready", "assistant"),
+        toolCallEnd("a-ready", "call-ready", "read", { path: "README.md" }),
+        toolResult("a-ready", "call-ready", output, true),
+      ]),
+    ]
+    const rebuilt = rebuildPiMessagesFromDataParts(messages)
+    const toolPart = (rebuilt[0]!.parts ?? []).find((p) =>
+      typeof p.type === "string" && p.type.startsWith("tool-"),
+    ) as { state?: string; output?: typeof output }
+    expect(toolPart.state).toBe("output-error")
+    expect(toolPart.output?.details).toEqual({
+      code: ErrorCode.enum.WORKSPACE_NOT_READY,
+      retryable: true,
+      requirement: "workspace-fs",
+    })
+  })
+
   it("marks tool-result as output-error when isError=true", () => {
     const messages: UIMessage[] = [
       makeMessage("envelope", "assistant", [
@@ -340,6 +365,24 @@ describe("usePiChatProjection (live handleData stream)", () => {
     )
     expect(toolParts).toHaveLength(1)
     expect((toolParts[0] as { state?: string }).state).toBe("output-available")
+  })
+
+  it("live projection preserves structured WORKSPACE_NOT_READY tool output", () => {
+    const { result } = renderHook(() => usePiChatProjection({ ...baseProps, status: "streaming" }))
+    const output = {
+      content: [{ type: "text", text: "Workspace is still preparing. Try again in a moment." }],
+      details: { code: ErrorCode.enum.WORKSPACE_NOT_READY, retryable: true, requirement: "workspace-fs" },
+    }
+    act(() => {
+      result.current.handleData({ type: "data-pi-message-start", data: { messageId: "a-ready", role: "assistant" } })
+      result.current.handleData({ type: "data-pi-tool-call-end", data: { messageId: "a-ready", toolCallId: "call-ready", toolName: "read", input: { path: "README.md" } } })
+      result.current.handleData({ type: "data-pi-tool-result", data: { messageId: "a-ready", toolCallId: "call-ready", output, isError: true } })
+    })
+    const toolPart = result.current.piMessages[0]?.parts?.find((part) =>
+      typeof part.type === "string" && part.type.startsWith("tool-"),
+    ) as { state?: string; output?: typeof output } | undefined
+    expect(toolPart?.state).toBe("output-error")
+    expect(toolPart?.output?.details).toEqual(output.details)
   })
 
   it("clears piMessages when sessionId changes (no cross-session bleed)", () => {

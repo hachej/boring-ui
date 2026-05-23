@@ -49,6 +49,7 @@ function adaptPiTool<TParams extends Record<string, unknown>>(
 ): AgentTool {
   return {
     name: piTool.name,
+    readinessRequirements: ['workspace-fs'],
     description: piTool.description,
     promptSnippet: piTool.promptSnippet,
     parameters: piTool.parameters as Record<string, unknown>,
@@ -90,7 +91,7 @@ export function buildFilesystemAgentTools(bundle: RuntimeBundle): AgentTool[] {
       adaptPiTool(createWriteToolDefinition(cwd, { operations: vercelWriteOps(bundle.workspace) })),
       adaptPiTool(createEditToolDefinition(cwd, { operations: vercelEditOps(bundle.workspace) })),
       adaptPiTool(createFindToolDefinition(cwd, { operations: vercelFindOps(bundle.sandbox, bundle.workspace) })),
-      vercelGrepTool(bundle.sandbox, cwd),
+      { ...vercelGrepTool(bundle.sandbox, cwd), readinessRequirements: ['workspace-fs'] },
       adaptPiTool(createLsToolDefinition(cwd, { operations: vercelLsOps(bundle.workspace) })),
     ]
   }

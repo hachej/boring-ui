@@ -55,6 +55,7 @@ function bashOptionsForMode(bundle: RuntimeBundle): BashToolOptions {
 function adaptPiTool(piTool: ReturnType<typeof createBashToolDefinition>): AgentTool {
   return {
     name: piTool.name,
+    readinessRequirements: ['sandbox-exec'],
     description: piTool.description,
     promptSnippet: piTool.promptSnippet,
     parameters: piTool.parameters as Record<string, unknown>,
@@ -89,6 +90,7 @@ function adaptPiTool(piTool: ReturnType<typeof createBashToolDefinition>): Agent
 function createExecuteIsolatedCodeTool(sandbox: Sandbox): AgentTool {
   return {
     name: 'execute_isolated_code',
+    readinessRequirements: ['sandbox-exec'],
     description: 'Execute code in an isolated sandbox environment.',
     parameters: {
       type: 'object',

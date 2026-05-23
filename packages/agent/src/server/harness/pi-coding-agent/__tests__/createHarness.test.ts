@@ -312,7 +312,7 @@ describe("adaptToolsForPi", () => {
     expect(result.content).toEqual([{ type: "text", text: "done" }]);
   });
 
-  it("throws on isError results", async () => {
+  it("returns marked details on isError results for Pi tool_result extension", async () => {
     const tool: AgentTool = {
       name: "fail",
       description: "Always fails",
@@ -326,9 +326,10 @@ describe("adaptToolsForPi", () => {
     };
 
     const [adapted] = adaptToolsForPi([tool]);
-    await expect(
-      adapted.execute("call-1", {}, undefined, undefined, {} as any),
-    ).rejects.toThrow("something broke");
+    const result = await adapted.execute("call-1", {}, undefined, undefined, {} as any);
+
+    expect(result.content).toEqual([{ type: "text", text: "something broke" }]);
+    expect(result.details).toEqual({ __boringToolError: true, details: undefined });
   });
 });
 

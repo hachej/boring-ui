@@ -323,19 +323,22 @@ function resolveWorkspaceIdFromRequest(request: { headers?: Record<string, unkno
 async function resolveAuthorizedWorkspaceId(
   request: { headers?: Record<string, unknown>; query?: unknown; user?: { id?: string } | null; log?: { error: (obj: Record<string, unknown>, msg: string) => void } },
   workspaceStore: WorkspaceStore,
+  appId: string,
 ): Promise<string> {
   const normalizedWorkspaceId = resolveWorkspaceIdFromRequest(request)
   const user = request.user
   if (!user?.id) throw httpError('authentication required', 401)
 
-  let member = false
   try {
-    member = await workspaceStore.isMember(normalizedWorkspaceId, user.id)
+    const workspace = await workspaceStore.get(normalizedWorkspaceId)
+    if (!workspace || workspace.appId !== appId) throw httpError('workspace not found', 404)
+    const member = await workspaceStore.isMember(normalizedWorkspaceId, user.id)
+    if (!member) throw httpError('workspace access denied', 403)
   } catch (error) {
+    if (error instanceof Error && 'statusCode' in error) throw error
     request.log?.error({ err: error, workspaceId: normalizedWorkspaceId }, 'workspace access check failed')
     throw httpError('workspace access check failed', 500)
   }
-  if (!member) throw httpError('workspace access denied', 403)
   return normalizedWorkspaceId
 }
 
@@ -678,7 +681,7 @@ export async function createCoreWorkspaceAgentServer(
   const resolveWorkspaceId = async (request: Parameters<NonNullable<RegisterAgentRoutesOptions['getWorkspaceId']>>[0]) =>
     options.getWorkspaceId
       ? await options.getWorkspaceId(request)
-      : await resolveAuthorizedWorkspaceId(request, workspaceStore)
+      : await resolveAuthorizedWorkspaceId(request, workspaceStore, app.config.appId)
   const resolveRoot = async (
     workspaceId: string,
     request: Parameters<NonNullable<RegisterAgentRoutesOptions['getWorkspaceRoot']>>[1],

@@ -74,8 +74,14 @@ describe('tool adapter telemetry', () => {
       },
     })
 
-    await expect(executeAdapted(tool, recorder.telemetry)).rejects.toThrow('secret stderr output')
+    const result = await executeAdapted(tool, recorder.telemetry)
 
+    expect(result.content).toEqual([{ type: 'text', text: 'secret stderr output' }])
+    expect(result.details).toMatchObject({
+      __boringToolError: true,
+      code: ErrorCode.enum.WORKSPACE_NOT_READY,
+      command: 'cat .env',
+    })
     expect(recorder.events).toHaveLength(1)
     expect(recorder.events[0]).toEqual({
       name: 'agent.tool.failed',

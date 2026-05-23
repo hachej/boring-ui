@@ -1,10 +1,13 @@
 export type JSONSchema = Record<string, unknown>
 
+export type ToolReadinessRequirement = 'workspace-fs' | 'sandbox-exec' | 'ui-bridge'
+
 export interface AgentTool {
   name: string
   description: string
   /** Optional one-line prompt entry. Pi-built tools should preserve pi's snippet verbatim. */
   promptSnippet?: string
+  readinessRequirements?: ToolReadinessRequirement[]
   parameters: JSONSchema
   execute(
     params: Record<string, unknown>,

@@ -196,12 +196,35 @@ describe('GET /api/v1/workspaces', () => {
     expect(res.json().workspaces).toHaveLength(2)
   })
 
-  it('excludes workspaces where caller is not a member', async () => {
+  it('creates a default workspace record when caller has none', async () => {
+    const res = await inject('GET', '/api/v1/workspaces', OWNER_ID)
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.workspaces).toHaveLength(1)
+    expect(body.workspaces[0].name).toBe('My Workspace')
+    expect(body.workspaces[0].isDefault).toBe(true)
+    expect(members.get(body.workspaces[0].id)?.get(OWNER_ID)).toBe('owner')
+  })
+
+  it('default workspace creation on list is idempotent', async () => {
+    const first = await inject('GET', '/api/v1/workspaces', OWNER_ID)
+    const second = await inject('GET', '/api/v1/workspaces', OWNER_ID)
+
+    expect(first.statusCode).toBe(200)
+    expect(second.statusCode).toBe(200)
+    expect(second.json().workspaces).toHaveLength(1)
+    expect(second.json().workspaces[0].id).toBe(first.json().workspaces[0].id)
+  })
+
+  it('excludes workspaces where caller is not a member and creates caller default', async () => {
     seedWorkspaceWithMembers('Private', EDITOR_ID)
 
     const res = await inject('GET', '/api/v1/workspaces', OWNER_ID)
     expect(res.statusCode).toBe(200)
-    expect(res.json().workspaces).toHaveLength(0)
+    const body = res.json()
+    expect(body.workspaces).toHaveLength(1)
+    expect(body.workspaces[0].createdBy).toBe(OWNER_ID)
+    expect(body.workspaces[0].name).toBe('My Workspace')
   })
 })
 

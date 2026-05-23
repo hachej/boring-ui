@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ToolPart } from '../../front/toolRenderers'
@@ -51,7 +53,8 @@ vi.mock('../primitives/attachments', () => ({
   AttachmentRemove: () => <div />,
 }))
 
-let capturedOnSubmit: ((input: { text: string; files: unknown[] }) => void) | undefined
+let capturedOnSubmit: ((input: { text: string; files: unknown[] }) => false | void | Promise<false | void>) | undefined
+let capturedTextareaProps: Record<string, unknown> | undefined
 
 const mockUseAttachments = vi.fn()
 
@@ -60,7 +63,10 @@ vi.mock('../primitives/prompt-input', () => ({
     capturedOnSubmit = onSubmit
     return <div data-testid="prompt-input">{children}</div>
   },
-  PromptInputTextarea: () => <div data-testid="prompt-textarea" />,
+  PromptInputTextarea: (props: any) => {
+    capturedTextareaProps = props
+    return <textarea data-testid="prompt-textarea" defaultValue={props.defaultValue} />
+  },
   PromptInputFooter: ({ children }: any) => <div data-testid="prompt-footer">{children}</div>,
   PromptInputSubmit: ({ status }: any) => <div data-testid="prompt-submit" data-status={status} />,
   usePromptInputAttachments: (...args: unknown[]) => mockUseAttachments(...args),
@@ -90,6 +96,7 @@ function withLocalStorage(values: Record<string, string>, fn: () => void): void 
 
 beforeEach(() => {
   capturedOnSubmit = undefined
+  capturedTextareaProps = undefined
   mockPiProjection.piMessages = []
   mockPiProjection.handleData.mockReset()
   mockScrollToBottom.mockReset()
@@ -351,6 +358,82 @@ describe('ChatPanel (shadcn)', () => {
     )
   })
 
+  test('passes initialDraft to composer without auto-sending', () => {
+    const onDraftRestored = vi.fn()
+
+    renderToStaticMarkup(
+      <ChatPanel
+        sessionId="sess-draft"
+        initialDraft="restore this draft"
+        onDraftRestored={onDraftRestored}
+      />,
+    )
+
+    expect(capturedTextareaProps?.defaultValue).toBe('restore this draft')
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(onDraftRestored).not.toHaveBeenCalled()
+  })
+
+  test('onBeforeSubmit cancels normal submit before agent send', async () => {
+    const onBeforeSubmit = vi.fn().mockReturnValue(false)
+    renderToStaticMarkup(
+      <ChatPanel sessionId="sess-before" onBeforeSubmit={onBeforeSubmit} />,
+    )
+
+    const result = await capturedOnSubmit!({ text: 'Please wait', files: [] })
+
+    expect(result).toBe(false)
+    expect(onBeforeSubmit).toHaveBeenCalledWith(
+      'Please wait',
+      { files: [], sessionId: 'sess-before', source: 'composer' },
+    )
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockScrollToBottom).not.toHaveBeenCalled()
+  })
+
+  test('onBeforeSubmit runs before slash commands and can cancel side effects', async () => {
+    const onBeforeSubmit = vi.fn().mockResolvedValue(false)
+    const customHandler = vi.fn()
+    renderToStaticMarkup(
+      <ChatPanel
+        sessionId="sess-before-slash"
+        onBeforeSubmit={onBeforeSubmit}
+        extraCommands={[{ name: 'greet', description: 'Say hello', handler: customHandler }]}
+      />,
+    )
+
+    const result = await capturedOnSubmit!({ text: '/greet world', files: [] })
+
+    expect(result).toBe(false)
+    expect(onBeforeSubmit).toHaveBeenCalledWith(
+      '/greet world',
+      { files: [], sessionId: 'sess-before-slash', source: 'composer' },
+    )
+    expect(customHandler).not.toHaveBeenCalled()
+    expect(mockSendMessage).not.toHaveBeenCalled()
+  })
+
+  test('empty-state suggestion uses onBeforeSubmit before sending', async () => {
+    const onBeforeSubmit = vi.fn().mockReturnValue(false)
+    render(
+      <ChatPanel
+        sessionId="sess-suggestion-before"
+        onBeforeSubmit={onBeforeSubmit}
+        suggestions={[{ label: 'Try it', prompt: 'Try this prompt' }]}
+      />,
+    )
+
+    fireEvent.click(screen.getByText('Try it'))
+
+    await waitFor(() => {
+      expect(onBeforeSubmit).toHaveBeenCalledWith(
+        'Try this prompt',
+        { files: [], sessionId: 'sess-suggestion-before', source: 'suggestion' },
+      )
+    })
+    expect(mockSendMessage).not.toHaveBeenCalled()
+  })
+
   test('queued native follow-up submit while streaming scrolls immediately without starting a second send', async () => {
     mockUseAgentChat.mockReturnValue({
       messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
@@ -601,6 +684,13 @@ describe('ChatPanel (shadcn)', () => {
     renderToStaticMarkup(<ChatPanel sessionId="test-session-42" />)
     expect(mockUseAgentChat).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: 'test-session-42' }),
+    )
+  })
+
+  test('can disable initial chat history hydration', () => {
+    renderToStaticMarkup(<ChatPanel sessionId="test-session-43" hydrateMessages={false} />)
+    expect(mockUseAgentChat).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'test-session-43', hydrateMessages: false }),
     )
   })
 

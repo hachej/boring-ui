@@ -37,6 +37,9 @@ export interface CoreFrontProps {
   children?: ReactNode
   authPages?: CoreFrontAuthPagesOverride
   cspNonce?: string
+  workspaceRoute?: string
+  workspaceIdParam?: string
+  publicPaths?: string[]
 }
 
 const CSP_NONCE_META_NAME = 'boring-csp-nonce'
@@ -63,7 +66,7 @@ function createDefaultQueryClient(): QueryClient {
   })
 }
 
-export function CoreFront({ children, authPages, cspNonce }: CoreFrontProps) {
+export function CoreFront({ children, authPages, cspNonce, workspaceRoute, workspaceIdParam, publicPaths }: CoreFrontProps) {
   const queryClient = useMemo(createDefaultQueryClient, [])
   const resolvedCspNonce = useMemo(
     () => cspNonce ?? readCspNonceFromDom(),
@@ -86,7 +89,7 @@ export function CoreFront({ children, authPages, cspNonce }: CoreFrontProps) {
               <AuthProvider queryClient={queryClient}>
                 <UserIdentityProvider>
                   <BrowserRouter>
-                    <WorkspaceAuthProvider>
+                    <WorkspaceAuthProvider workspaceRoute={workspaceRoute} workspaceIdParam={workspaceIdParam}>
                       <TopBarSlotProvider slot={<UserMenu />}>
                         <Helmet>
                           {resolvedCspNonce ? (
@@ -102,7 +105,7 @@ export function CoreFront({ children, authPages, cspNonce }: CoreFrontProps) {
                             </>
                           ) : null}
                         </Helmet>
-                        <AuthGate publicPaths={['/invites']}>
+                        <AuthGate publicPaths={['/invites', ...(publicPaths ?? [])]}>
                           <Suspense fallback={null}>
                             <Routes>
                               <Route path={routes.signin} element={<SignInPage />} />

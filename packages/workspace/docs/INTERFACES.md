@@ -21,6 +21,12 @@ commands, and default workspace plugins.
   `WorkspaceAgentFront` and `createWorkspaceAgentServer`, where workspace app
   code may compose with documented `@hachej/boring-agent/server` APIs.
 
+## Chat-first workspace boot
+
+The default core-composed workspace route is chat-first after identity match: `WorkspaceAgentFront` mounts immediately, while `WorkspaceBackgroundBoot` warms tree/session/runtime readiness in the background. `WorkspaceBootGate` remains available for shells that want blocking boot.
+
+Workbench surfaces are locally gated by warmup state. File tree/editor/plugin/left-tab surfaces do not mount while the current workspace is preparing or failed; chat remains visible. See [`packages/core/docs/CHAT_FIRST_WORKSPACE_BOOT.md`](../../core/docs/CHAT_FIRST_WORKSPACE_BOOT.md) for the product contract and stable readiness errors.
+
 ## Core Contracts
 
 - Plugin contributions: `src/shared/plugins/frontFactory.ts`

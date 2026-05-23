@@ -20,7 +20,7 @@ import { createLogger } from "../../logging.js";
 import type { AgentTool } from "../../../shared/tool.js";
 import type { TelemetrySink } from "../../../shared/telemetry.js";
 import type { UIMessageChunk } from "../../../shared/message.js";
-import { adaptToolsForPi } from "./tool-adapter.js";
+import { adaptToolsForPi, unmarkToolResultErrorDetails } from "./tool-adapter.js";
 import { piEventToChunks } from "./stream-adapter.js";
 import { PiSessionStore } from "./sessions.js";
 import { createSessionTitleScheduler } from "./sessionTitle.js";
@@ -122,6 +122,19 @@ function buildDynamicPromptExtension(
       const extra = (await source())?.trim()
       if (!extra) return
       return { systemPrompt: `${event.systemPrompt}\n\n${extra}` }
+    })
+  }
+}
+
+function buildToolErrorResultExtension(): ExtensionFactory {
+  return (pi) => {
+    pi.on("tool_result", async (event) => {
+      const marked = unmarkToolResultErrorDetails((event as { details?: unknown }).details)
+      if (!marked.isMarked) return
+      return {
+        details: marked.details,
+        isError: true,
+      }
     })
   }
 }
@@ -438,7 +451,9 @@ export function createPiCodingAgentHarness(opts: {
       ? buildDynamicPromptExtension(opts.systemPromptDynamic)
       : undefined
     const agentDir = getAgentDir()
+    const toolErrorResultExtension = buildToolErrorResultExtension()
     const extensionFactories = [
+      toolErrorResultExtension,
       ...(dynamicPromptExtension ? [dynamicPromptExtension] : []),
       ...(opts.pi?.extensionFactories ?? []),
     ]
