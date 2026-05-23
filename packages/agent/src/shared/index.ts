@@ -23,6 +23,8 @@ export type {
 } from './session'
 export type { UIMessage, UIMessageChunk } from './message'
 export type { FileSearch } from './file-search'
+export type { TelemetryEvent, TelemetrySink } from './telemetry'
+export { noopTelemetry, safeCapture } from './telemetry'
 export type {
   SandboxHandleRecord,
   SandboxHandleStore,
