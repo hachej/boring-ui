@@ -29,6 +29,7 @@ import {
 import type { FastifyInstance } from 'fastify'
 import type postgres from 'postgres'
 import type { CoreConfig } from '../../shared/types.js'
+import type { TelemetrySink } from '../../shared/telemetry.js'
 import {
   authHook,
   createAuth,
@@ -54,6 +55,7 @@ import {
 } from '../../server/db/index.js'
 import { loadConfig, type LoadConfigOptions } from '../../server/config/index.js'
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
+import { createPostHogTelemetryFromEnv } from '../../server/telemetry/posthog.js'
 
 const MIME_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
@@ -127,6 +129,8 @@ export interface CreateCoreWorkspaceAgentServerOptions
   extraTools?: RegisterAgentRoutesOptions['extraTools']
   systemPromptAppend?: string
   serveFrontend?: boolean
+  /** Optional best-effort telemetry sink. Defaults to core's PostHog env helper. */
+  telemetry?: TelemetrySink
 }
 
 type AgentPiOptions = RegisterAgentRoutesOptions['pi']
@@ -549,6 +553,13 @@ export async function createCoreWorkspaceAgentServer(
   const serveFrontend =
     options.serveFrontend ?? (process.env.NODE_ENV !== 'development' && Boolean(appRoot))
   const workspaceRoot = options.workspaceRoot ?? process.cwd()
+  const telemetrySource = options.telemetry
+    ? 'custom'
+    : process.env.BORING_TELEMETRY_ENABLED === 'true' && process.env.POSTHOG_KEY
+      ? 'posthog-env'
+      : 'noop-env'
+  const telemetry = options.telemetry ?? createPostHogTelemetryFromEnv(process.env)
+  app.log.debug({ telemetry: { source: telemetrySource } }, 'resolved telemetry sink')
 
   await registerCoreRoutes({ app, sql, db, userStore, workspaceStore })
 
@@ -693,6 +704,7 @@ export async function createCoreWorkspaceAgentServer(
     getWorkspaceId: resolveWorkspaceId,
     getWorkspaceRoot: resolveRoot,
     registerHealthRoute: options.registerHealthRoute ?? false,
+    telemetry,
   })
 
   await app.register(uiRoutes, {

@@ -4,6 +4,7 @@ import type { AgentTool } from '../shared/tool'
 import type { AgentHarnessFactory } from '../shared/harness'
 import type { SessionStore } from '../shared/session'
 import type { SandboxHandleStore } from '../shared/sandbox-handle-store'
+import type { TelemetrySink } from '../shared/telemetry'
 import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
 import { getEnv } from './config/env'
 import type { RuntimeBundle, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
@@ -175,6 +176,8 @@ export interface RegisterAgentRoutesOptions {
     request?: FastifyRequest
   }) => PiHarnessOptions | undefined | Promise<PiHarnessOptions | undefined>
   sessionNamespace?: string
+  /** Optional best-effort telemetry sink supplied by an embedding host. */
+  telemetry?: TelemetrySink
   getSessionNamespace?: (ctx: {
     workspaceId: string
     workspaceRoot: string
@@ -333,6 +336,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       cwd: root,
       sessionNamespace: scope.sessionNamespace,
       systemPromptAppend: opts.systemPromptAppend,
+      telemetry: opts.telemetry,
     })
     const readyTracker = new ReadyStatusTracker({
       sandboxReady: resolvedMode !== 'vercel-sandbox',
