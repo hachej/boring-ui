@@ -85,6 +85,12 @@ test('createAgentApp falls back to BORING_AGENT_TEMPLATE_PATH', async () => {
 test('createAgentApp can use a custom harness factory for non-pi runtimes', async () => {
   const workspaceRoot = await makeTempDir('boring-ui-custom-harness-')
   const reloadSession = vi.fn(async () => true)
+  const telemetryEvents: Array<{ name: string; properties?: Record<string, unknown> }> = []
+  const telemetry = {
+    capture(event: { name: string; properties?: Record<string, unknown> }) {
+      telemetryEvents.push(event)
+    },
+  }
   const harnessFactory = vi.fn(async (input) => ({
     id: 'custom-test-harness',
     placement: 'server' as const,
@@ -109,6 +115,7 @@ test('createAgentApp can use a custom harness factory for non-pi runtimes', asyn
     mode: 'direct',
     logger: false,
     harnessFactory,
+    telemetry,
     extraTools: [{
       name: 'custom_runtime_tool',
       description: 'Provided to harness factory.',
@@ -119,7 +126,21 @@ test('createAgentApp can use a custom harness factory for non-pi runtimes', asyn
   try {
     expect(harnessFactory).toHaveBeenCalledTimes(1)
     expect(harnessFactory.mock.calls[0]?.[0].cwd).toBe(workspaceRoot)
+    expect(harnessFactory.mock.calls[0]?.[0].telemetry).toBe(telemetry)
     expect(harnessFactory.mock.calls[0]?.[0].tools.map((tool: { name: string }) => tool.name)).toContain('custom_runtime_tool')
+
+    const chatRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      payload: { sessionId: 'custom', message: 'secret prompt must not be captured' },
+    })
+    expect(chatRes.statusCode).toBe(200)
+    expect(telemetryEvents.map((event) => event.name)).toEqual([
+      'agent.chat.started',
+      'agent.chat.message.submitted',
+      'agent.chat.completed',
+    ])
+    expect(JSON.stringify(telemetryEvents)).not.toContain('secret prompt')
 
     const res = await app.inject({ method: 'POST', url: '/api/v1/agent/reload', payload: { sessionId: 'custom' } })
     expect(res.statusCode).toBe(200)

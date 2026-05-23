@@ -29,7 +29,8 @@ import {
 import type { FastifyInstance } from 'fastify'
 import type postgres from 'postgres'
 import type { CoreConfig } from '../../shared/types.js'
-import type { TelemetrySink } from '../../shared/telemetry.js'
+import { ERROR_CODES } from '../../shared/errors.js'
+import { safeCapture, type TelemetrySink } from '../../shared/telemetry.js'
 import {
   authHook,
   createAuth,
@@ -394,9 +395,31 @@ async function registerAuthProxy(app: CoreWorkspaceAgentServer) {
   })
 }
 
+function captureAppOpened(telemetry: TelemetrySink, requestId: string): void {
+  safeCapture(telemetry, {
+    name: 'app.opened',
+    properties: { requestId },
+  })
+}
+
+function registerTelemetryHooks(app: CoreWorkspaceAgentServer, telemetry: TelemetrySink): void {
+  app.addHook('onResponse', async (request, reply) => {
+    if (reply.statusCode < 500) return
+    safeCapture(telemetry, {
+      name: 'server.request.failed',
+      properties: {
+        requestId: request.id,
+        status: reply.statusCode,
+        errorCode: ERROR_CODES.INTERNAL_ERROR,
+      },
+    })
+  })
+}
+
 async function registerFrontendAuthPages(
   app: CoreWorkspaceAgentServer,
   appRoot: string,
+  telemetry: TelemetrySink,
 ) {
   const frontDistDir = path.resolve(appRoot, 'dist/front')
   const indexPath = path.resolve(frontDistDir, 'index.html')
@@ -411,6 +434,7 @@ async function registerFrontendAuthPages(
         }
       }
       const html = await readFile(indexPath, 'utf-8')
+      captureAppOpened(telemetry, request.id)
       reply.type('text/html; charset=utf-8')
       return reply.send(injectCspNonceIntoHtml(html, request.cspNonce))
     })
@@ -420,6 +444,7 @@ async function registerFrontendAuthPages(
 async function registerFrontendFallback(
   app: CoreWorkspaceAgentServer,
   appRoot: string,
+  telemetry: TelemetrySink,
 ) {
   const frontDistDir = path.resolve(appRoot, 'dist/front')
   const indexPath = path.resolve(frontDistDir, 'index.html')
@@ -434,6 +459,7 @@ async function registerFrontendFallback(
     }
 
     const html = await readFile(indexPath, 'utf-8')
+    captureAppOpened(telemetry, request.id)
     reply.type('text/html; charset=utf-8')
     return reply.send(injectCspNonceIntoHtml(html, request.cspNonce))
   })
@@ -465,6 +491,7 @@ async function registerFrontendFallback(
     }
 
     const html = await readFile(indexPath, 'utf-8')
+    captureAppOpened(telemetry, request.id)
     reply.type('text/html; charset=utf-8')
     return reply.send(injectCspNonceIntoHtml(html, request.cspNonce))
   })
@@ -561,10 +588,12 @@ export async function createCoreWorkspaceAgentServer(
   const telemetry = options.telemetry ?? createPostHogTelemetryFromEnv(process.env)
   app.log.debug({ telemetry: { source: telemetrySource } }, 'resolved telemetry sink')
 
+  registerTelemetryHooks(app, telemetry)
+
   await registerCoreRoutes({ app, sql, db, userStore, workspaceStore })
 
   if (serveFrontend && appRoot) {
-    await registerFrontendAuthPages(app, appRoot)
+    await registerFrontendAuthPages(app, appRoot, telemetry)
   }
 
   await registerAuthProxy(app)
@@ -717,7 +746,7 @@ export async function createCoreWorkspaceAgentServer(
   }
 
   if (serveFrontend && appRoot) {
-    await registerFrontendFallback(app, appRoot)
+    await registerFrontendFallback(app, appRoot, telemetry)
   }
 
   return app
