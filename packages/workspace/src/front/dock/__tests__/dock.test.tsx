@@ -5,7 +5,7 @@ import { ShadcnTab } from "../ShadcnTab"
 import { PanelChrome, createLifecycleApi } from "../PanelChrome"
 import { RegistryProvider } from "../../registry"
 import { PanelRegistry } from "../../registry/PanelRegistry"
-import { CommandRegistry } from "../../registry/CommandRegistry"
+import { CommandRegistry } from "../../../shared/plugins/CommandRegistry"
 import { bindStore } from "../../store/selectors"
 import { createWorkspaceStore } from "../../store"
 import { events, workspaceEvents } from "../../events"
@@ -14,6 +14,14 @@ import type { DockviewApi } from "dockview-react"
 
 function DummyPanel() {
   return <div data-testid="dummy-panel">Panel content</div>
+}
+
+function HotPanelOne() {
+  return <div>hot-one</div>
+}
+
+function HotPanelTwo() {
+  return <div>hot-two</div>
 }
 
 function setupStoreAndRegistry() {
@@ -85,6 +93,64 @@ describe("DockviewShell", () => {
     expect(onReady).toHaveBeenCalledWith(expect.objectContaining({
       addPanel: expect.any(Function),
     }))
+  })
+
+  it("hot-swaps an already-mounted panel when its registry entry is replaced", async () => {
+    const { panelRegistry, commandRegistry } = setupStoreAndRegistry()
+    panelRegistry.register("hot", { title: "Hot", component: HotPanelOne })
+
+    render(
+      <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+        <DockviewShell
+          layout={{
+            version: "2.0",
+            groups: [{ id: "main", position: "center", panel: "hot" }],
+          }}
+        />
+      </RegistryProvider>,
+    )
+
+    expect(await screen.findByText("hot-one")).toBeInTheDocument()
+
+    act(() => {
+      panelRegistry.register("hot", { title: "Hot", component: HotPanelTwo })
+    })
+
+    expect(await screen.findByText("hot-two")).toBeInTheDocument()
+    expect(screen.queryByText("hot-one")).not.toBeInTheDocument()
+  })
+
+  it("can open a panel registered after mount when allowedPanels updates", async () => {
+    const { panelRegistry, commandRegistry } = setupStoreAndRegistry()
+    let api: DockviewApi | undefined
+
+    render(
+      <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+        <DockviewShell
+          layout={{ version: "2.0", groups: [{ id: "main", position: "center", dynamic: true }] }}
+          allowedPanels={["hot-late"]}
+          onReady={(nextApi) => {
+            api = nextApi
+          }}
+        />
+      </RegistryProvider>,
+    )
+
+    await waitFor(() => expect(api).toBeDefined())
+
+    act(() => {
+      panelRegistry.register("hot-late", {
+        title: "Hot Late",
+        placement: "center",
+        component: () => <div>hot-late-panel</div>,
+      })
+    })
+
+    act(() => {
+      api!.addPanel({ id: "hot-late-instance", component: "hot-late", title: "Hot Late" })
+    })
+
+    expect(await screen.findByText("hot-late-panel")).toBeInTheDocument()
   })
 
   it("filters components when allowedPanels is set", () => {

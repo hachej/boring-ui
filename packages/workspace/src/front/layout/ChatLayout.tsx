@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react"
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from "react"
 import { IconButton, LoadingState, ResizeHandle as UiResizeHandle } from "@hachej/boring-ui-kit"
 import { cn } from "../lib/utils"
 import { dispatchUiCommand, type DispatchContext } from "../bridge"
@@ -10,6 +10,7 @@ import { useCommandRegistry, useRegistry } from "../registry"
 import type { PaneProps } from "../registry/types"
 import { readStoredNumber, writeStoredNumber } from "../store/localStorageValues"
 import type { ChatLayoutProps } from "./types"
+import { useWorkspaceContext } from "../provider"
 
 export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
   const {
@@ -474,14 +475,20 @@ function scheduleComposerFocus(): void {
 
 function PanelSlot({ id, params }: { id: string; params?: Record<string, unknown> }) {
   const registry = useRegistry()
-  const components = useMemo(() => registry.getComponents(), [registry])
+  const { debug } = useWorkspaceContext()
+  const registrySnapshot = useSyncExternalStore(
+    registry.subscribe,
+    registry.getSnapshot,
+    registry.getSnapshot,
+  )
+  const components = useMemo(() => registry.getComponents(), [registry, registrySnapshot])
   const Component = components[id] as ComponentType<PaneProps<Record<string, unknown> | undefined>> | undefined
   const api = useMemo(() => createPanelApi(id), [id])
   if (!Component) return null
   return (
     <Suspense fallback={<LoadingState centered />}>
       <Component
-        params={params}
+        params={{ ...params, debug }}
         api={api as PaneProps["api"]}
         containerApi={{} as PaneProps["containerApi"]}
       />

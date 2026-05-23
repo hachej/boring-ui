@@ -3,7 +3,9 @@ import { ChatPanel, useSessions as useAgentSessions } from "@hachej/boring-agent
 import { WorkspaceAgentFront } from "@hachej/boring-workspace/app/front"
 import { askUserPlugin } from "@hachej/boring-ask-user/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
-import { playgroundDataCatalogPlugin } from "../plugins/playgroundDataCatalog/front"
+// Most plugin packages are declared in package.json#boring.defaultPluginPackages.
+// Provider/binding plugins need static front composition for now because the
+// hot-load bridge intentionally skips dynamic provider/binding registration.
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
@@ -69,16 +71,17 @@ export function WorkspaceShell() {
     <WorkspaceAgentFront
       chatPanel={ChatPanel}
       workspaceId={showcase ? "playground" : projectName}
-      plugins={[playgroundDataCatalogPlugin, askUserPlugin]}
       apiBaseUrl=""
       persistenceEnabled
       providerStorageKey="boring-ui-v2:layout:playground"
       appTitle={showcase ? "Boring" : projectName}
       defaultSessionTitle={showcase ? "New session" : projectName}
+      frontPluginHotReload="vite"
       useSessions={showcase ? undefined : useAgentSessions}
       sessions={sessions}
       activeSessionId={showcase ? SHOWCASE_SESSION_ID : undefined}
       onActiveSessionIdChange={handleActiveSessionIdChange}
+      plugins={[askUserPlugin]}
       chatParams={{ thinkingControl: true }}
     />
   )

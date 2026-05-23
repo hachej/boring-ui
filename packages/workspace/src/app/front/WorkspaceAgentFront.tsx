@@ -9,8 +9,7 @@ import type {
   SurfaceShellSnapshot,
 } from "../../front/chrome/artifact-surface/SurfaceShell"
 import { useRegistry } from "../../front/registry"
-import type { WorkspaceFrontPlugin } from "../../shared/plugins"
-import type { PanelOutput, PluginOutput } from "../../shared/plugins/types"
+import { captureFrontPlugin } from "../../shared/plugins/frontFactory"
 import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
 import { readStoredBoolean, writeStoredBoolean } from "../../front/store/localStorageValues"
 import {
@@ -58,6 +57,8 @@ export interface WorkspaceAgentFrontProps<
   afterShell?: ReactNode
   appTitle?: string
   defaultSessionTitle?: string
+  defaultSurfaceOpen?: boolean
+  defaultWorkbenchLeftTab?: string
   topBarLeft?: ReactNode
   topBarRight?: ReactNode
   sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number }>
@@ -67,12 +68,15 @@ export interface WorkspaceAgentFrontProps<
   onDeleteSession?: (id: string) => void
   onActiveSessionIdChange?: (sessionId: string) => void
   chatParams?: Record<string, unknown>
+  /**
+   * Forward to ChatPanel — when `false`, the `/reload` slash command is
+   * hidden and the PluginUpdateStatus banner above the composer is
+   * suppressed. Production apps that don't ship live plugin editing
+   * should pass `false`. Defaults to `true` (dev/playground default).
+   */
+  hotReloadEnabled?: boolean
   extraPanels?: string[]
   extraCommands?: SlashCommand[]
-}
-
-function isPanelOutput(output: PluginOutput): output is PanelOutput {
-  return output.type === "panel"
 }
 
 function shellStorageKeyFromSurfaceStorage(
@@ -213,9 +217,13 @@ export function WorkspaceAgentFront<
   onActiveSessionIdChange,
   appTitle = "Boring",
   defaultSessionTitle = "New session",
+  defaultSurfaceOpen,
+  defaultWorkbenchLeftTab,
   topBarLeft,
   topBarRight,
   chatParams,
+  hotReloadEnabled,
+  frontPluginHotReload,
   extraPanels,
   extraCommands,
   onOpenNav,
@@ -289,7 +297,7 @@ export function WorkspaceAgentFront<
     // layout JSON at the same ":surface" suffix). Writing "1"/"0" to the same
     // key corrupts the JSON and drops the persisted workbench layout on reload.
     `${shellStorageKey}:workbenchOpen`,
-    false,
+    defaultSurfaceOpen ?? false,
     shellPersistenceEnabled,
   )
   const [workbenchLeftOpen, setWorkbenchLeftOpen] = useStoredBooleanState(
@@ -362,17 +370,17 @@ export function WorkspaceAgentFront<
     surfaceOpenRef.current = false
     setSurfaceOpen(false)
   }, [setSurfaceOpen])
-  const pluginOutputs = useMemo(
-    () => plugins?.flatMap((plugin: WorkspaceFrontPlugin) => plugin.outputs ?? []) ?? [],
+  const capturedPlugins = useMemo(
+    () => plugins?.map(captureFrontPlugin) ?? [],
     [plugins],
   )
   const hasLeftTabs = useMemo(
-    () => pluginOutputs.some((output) => output.type === "left-tab"),
-    [pluginOutputs],
+    () => capturedPlugins.some((plugin) => plugin.registrations.leftTabs.length > 0),
+    [capturedPlugins],
   )
   const pluginPanelIds = useMemo(
-    () => pluginOutputs.filter(isPanelOutput).map((output) => output.panel.id),
-    [pluginOutputs],
+    () => capturedPlugins.flatMap((plugin) => plugin.registrations.panels.map((panel) => panel.id)),
+    [capturedPlugins],
   )
   const shellExtraPanels = useMemo(
     () => [...(extraPanels ?? []), ...pluginPanelIds],
@@ -411,26 +419,30 @@ export function WorkspaceAgentFront<
       openWorkbench,
       closeWorkbench,
       extraCommands,
+      // Forward the explicit prop when set. Omitting the key (when undefined)
+      // lets ChatPanel apply its own default (true) and avoids overriding a
+      // value passed through chatParams.
+      ...(hotReloadEnabled !== undefined ? { hotReloadEnabled } : {}),
     }),
-    [chatParams, chatSessionId, requestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench, extraCommands],
+    [chatParams, chatSessionId, requestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench, extraCommands, hotReloadEnabled],
   )
 
   const surfaceParams = useMemo<SurfaceShellProps>(() => ({
     storageKey: resolvedSurfaceStorageKey,
+    defaultLeftTab: defaultWorkbenchLeftTab,
     extraPanels: shellExtraPanels,
     onReady: handleSurfaceReady,
     onChange: handleSurfaceChange,
     onClose: closeWorkbench,
   }), [
     closeWorkbench,
+    defaultWorkbenchLeftTab,
     handleSurfaceChange,
     handleSurfaceReady,
     resolvedSurfaceStorageKey,
     shellExtraPanels,
     setSurfaceOpen,
   ])
-
-  const workspaceAgentPlugins = plugins
 
   const openCommandPalette = () => {
     document.dispatchEvent(new KeyboardEvent("keydown", {
@@ -449,7 +461,7 @@ export function WorkspaceAgentFront<
         panels={panels}
         commands={commands}
         catalogs={catalogs}
-        plugins={workspaceAgentPlugins}
+        plugins={plugins}
         excludeDefaults={excludeDefaults}
         capabilities={capabilities}
         apiBaseUrl={apiBaseUrl}
@@ -462,6 +474,7 @@ export function WorkspaceAgentFront<
         persistenceEnabled={persistenceEnabled}
         bridgeEndpoint={null}
         onAuthError={onAuthError}
+        frontPluginHotReload={frontPluginHotReload}
       >
         {beforeShell}
         <WorkspaceUiStateSync
@@ -496,9 +509,11 @@ export function WorkspaceAgentFront<
             surface={surfaceOpen ? "artifact-surface" : null}
             surfaceParams={surfaceParams as Record<string, unknown>}
             sidebar={surfaceOpen && hasLeftTabs && workbenchLeftOpen ? "workbench-left" : null}
-            sidebarParams={{
+            sidebarParams={surfaceOpen && hasLeftTabs ? {
+              ...(defaultWorkbenchLeftTab ? { defaultTab: defaultWorkbenchLeftTab } : {}),
               onClose: () => setWorkbenchLeftOpen(false),
-            }}
+              onCollapse: () => setWorkbenchLeftOpen(false),
+            } : undefined}
             storageKey={shellPersistenceEnabled ? shellStorageKey : undefined}
             onOpenNav={() => {
               setNavOpen(true)

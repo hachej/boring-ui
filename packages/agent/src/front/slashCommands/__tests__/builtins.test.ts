@@ -7,8 +7,8 @@ function makeContext(overrides?: Partial<SlashCommandContext>): SlashCommandCont
     sessionId: 'test-session',
     clearMessages: vi.fn(),
     resetSession: vi.fn(),
-    setModel: vi.fn().mockReturnValue(true),
     listCommands: vi.fn().mockReturnValue(builtinCommands),
+    reloadAgentPlugins: vi.fn().mockResolvedValue('Agent plugins reloaded.'),
     ...overrides,
   }
 }
@@ -55,12 +55,52 @@ describe('/reset', () => {
   })
 })
 
-describe('all 2 builtins are registered', () => {
-  test('has exactly 2 commands', () => {
-    expect(builtinCommands).toHaveLength(2)
+describe('/help', () => {
+  test('lists all commands', () => {
+    const ctx = makeContext()
+    const result = getBuiltin('help').handler('', ctx)
+    expect(result).toContain('/clear')
+    expect(result).toContain('/reset')
+    expect(result).toContain('/reload')
+    expect(result).toContain('/help')
   })
 
-  test.each(['clear', 'reset'])('includes /%s', (name) => {
+  test('returns message when no commands', () => {
+    const ctx = makeContext({ listCommands: vi.fn().mockReturnValue([]) })
+    const result = getBuiltin('help').handler('', ctx)
+    expect(result).toBe('No commands available.')
+  })
+})
+
+describe('/reload', () => {
+  test('uses pluginUpdate.run (banner UX) when the host provides it', async () => {
+    const run = vi.fn().mockResolvedValue('Plugins updated.')
+    const ctx = makeContext({ pluginUpdate: { run } })
+    const result = await getBuiltin('reload').handler('', ctx)
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(ctx.reloadAgentPlugins).not.toHaveBeenCalled()
+    expect(result).toBe('Plugins updated.')
+  })
+
+  test('falls back to inline-text reload when pluginUpdate is absent', async () => {
+    const ctx = makeContext({ pluginUpdate: undefined })
+    const result = await getBuiltin('reload').handler('', ctx)
+    expect(ctx.reloadAgentPlugins).toHaveBeenCalledOnce()
+    expect(result).toBe('Agent plugins reloaded.')
+  })
+})
+
+describe('all 4 builtins are registered', () => {
+  test('has exactly 4 commands', () => {
+    expect(builtinCommands).toHaveLength(4)
+  })
+
+  test.each(['clear', 'reset', 'reload', 'help'])('includes /%s', (name) => {
     expect(builtinCommands.find((c) => c.name === name)).toBeDefined()
+  })
+
+  test('does NOT include /model or /cost (removed)', () => {
+    expect(builtinCommands.find((c) => c.name === 'model')).toBeUndefined()
+    expect(builtinCommands.find((c) => c.name === 'cost')).toBeUndefined()
   })
 })

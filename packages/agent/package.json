@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-agent",
-  "version": "0.1.17",
+  "version": "0.1.20",
   "type": "module",
   "license": "MIT",
   "description": "Pane-embeddable coding agent. Ships direct/local/vercel-sandbox execution modes behind one interface.",
@@ -37,7 +37,8 @@
     "**/*.css"
   ],
   "files": [
-    "dist"
+    "dist",
+    "docs"
   ],
   "scripts": {
     "build": "pnpm --filter @hachej/boring-ui-kit build && tsup && node ./scripts/build-front-css.mjs && pnpm run build:assert",

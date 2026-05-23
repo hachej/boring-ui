@@ -1,4 +1,4 @@
-import { createElement, lazy, Suspense, type ComponentType } from "react"
+import { Suspense, createElement, lazy, useMemo, useSyncExternalStore, type ComponentType } from "react"
 import type { PanelConfig, PanelRegistration } from "./types"
 import { PluginErrorBoundary } from "../plugin/PluginErrorBoundary"
 
@@ -8,6 +8,18 @@ export class PanelRegistry {
   private capabilities: Set<string>
   private listeners = new Set<() => void>()
   private snapshotCache: readonly PanelConfig[] | null = null
+  // React.lazy types must be stable across initial Suspense retries. If a
+  // lazy type is created inside a render that suspends before commit, React
+  // can retry by calling the wrapper again and lose hook memo state, creating
+  // a fresh lazy type and re-suspending forever. Cache by panel id + importer.
+  // Hot reload invalidates caches via bumpGeneration().
+  private lazyComponentCache = new Map<string, { importer: unknown; component: ComponentType<any> }>()
+  private wrapperComponentCache = new Map<string, ComponentType<any>>()
+  // Generation counter — incremented on every replaceByPluginId call.
+  // Included in useMemo deps of wrapped panels so hot-reload breaks memoization
+  // even when the lazy-importer function reference is identical (same arrow
+  // in the same module, which is common for code-split panels).
+  private generation = 0
 
   constructor(capabilities: Record<string, boolean> = {}) {
     this.capabilities = new Set(
@@ -18,31 +30,70 @@ export class PanelRegistry {
   }
 
   register(id: string, config: PanelRegistration): void {
-    // Auto-detect lazy: a real import factory is a zero-arg function whose
-    // source contains `import(` — a keyword that survives minification.
-    // Zero-arg React components like `() => <Panel />` don't match and stay eager.
-    const isFactory =
-      typeof config.component === "function" &&
-      config.component.length === 0 &&
-      /\bimport\s*\(/.test(config.component.toString())
     const existed = this.panels.has(id)
-    this.panels.set(id, { ...config, id, lazy: config.lazy ?? isFactory } as PanelConfig)
+    this.panels.set(id, { ...config, id } as PanelConfig)
     if (!existed) {
       this.registrationOrder.push(id)
     }
     this.emit()
   }
 
-  unregisterByPluginId(pluginId: string): void {
-    let changed = false
+  unregister(id: string): void {
+    if (!this.panels.delete(id)) return
+    this.lazyComponentCache.delete(id)
+    this.wrapperComponentCache.delete(id)
+    this.registrationOrder = this.registrationOrder.filter((oid) => oid !== id)
+    this.emit()
+  }
+
+  /**
+   * Atomic replace: unregister all panels owned by `pluginId`, then register
+   * the new set, in one emit cycle. Subscribers see exactly one intermediate
+   * state — never an empty registry between unregister and re-register.
+   *
+   * Collision policy: a new registration whose id is already owned by a
+   * DIFFERENT pluginId is skipped with a warning. Preserves cross-plugin
+   * isolation during reload — a renamed plugin can't silently steal another
+   * plugin's panel id. Teardown + rebuild as a single observable transition,
+   * driven by the front-side SSE reload subscriber.
+   */
+  replaceByPluginId(pluginId: string, panels: PanelConfig[]): void {
+    const ownedIds = new Set<string>()
     for (const [id, panel] of this.panels) {
-      if (panel.pluginId === pluginId) {
-        this.panels.delete(id)
-        this.registrationOrder = this.registrationOrder.filter((oid) => oid !== id)
-        changed = true
-      }
+      if (panel.pluginId === pluginId) ownedIds.add(id)
     }
-    if (changed) this.emit()
+    if (ownedIds.size === 0 && panels.length === 0) return
+
+    let changed = ownedIds.size > 0
+    for (const id of ownedIds) {
+      this.panels.delete(id)
+      this.lazyComponentCache.delete(id)
+      this.wrapperComponentCache.delete(id)
+    }
+    if (ownedIds.size > 0) {
+      this.registrationOrder = this.registrationOrder.filter((oid) => this.panels.has(oid))
+    }
+    for (const config of panels) {
+      const id = config.id
+      if (!id) continue
+      const existing = this.panels.get(id)
+      if (existing && existing.pluginId !== pluginId) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[PanelRegistry] plugin "${pluginId}" tried to register panel "${id}" already owned by "${existing.pluginId ?? 'system'}" — skipped`,
+        )
+        continue
+      }
+      this.panels.set(id, { ...config, id, pluginId })
+      if (!this.registrationOrder.includes(id)) this.registrationOrder.push(id)
+      changed = true
+    }
+    if (changed) {
+      // Bump generation so useMemo in wrapped panels breaks memoization
+      // even when the lazy-importer reference hasn't changed.
+      this.generation += 1
+      this.emit()
+    }
   }
 
   get(id: string): PanelConfig | undefined {
@@ -57,6 +108,10 @@ export class PanelRegistry {
     return this.filteredPanels()
   }
 
+  listAll(): PanelConfig[] {
+    return this.registrationOrder.map((id) => this.panels.get(id)!)
+  }
+
   // Loose return type: shells render panels via different paths (dockview
   // hands a typed envelope, sidebar layouts mount them naked). Type-safe
   // wiring happens at registration time via `definePanel<T>` — once a
@@ -67,29 +122,7 @@ export class PanelRegistry {
     // biome-ignore lint/suspicious/noExplicitAny: see comment above
     const result: Record<string, ComponentType<any>> = {}
     for (const panel of this.filteredPanels()) {
-      // biome-ignore lint/suspicious/noExplicitAny: see comment above
-      let Inner: ComponentType<any>
-      if (panel.lazy) {
-        Inner = lazy(
-          panel.component as () => Promise<{ default: ComponentType<unknown> }>,
-        )
-      } else {
-        Inner = panel.component as ComponentType<any>
-      }
-      const pluginId = panel.pluginId ?? panel.id
-      const panelId = panel.id
-      const isLazy = panel.lazy
-      // biome-ignore lint/suspicious/noExplicitAny: dockview props passthrough
-      result[panel.id] = function WrappedPanel(props: any) {
-        const inner = createElement(Inner, props)
-        return createElement(
-          PluginErrorBoundary,
-          { pluginId, contributionKind: "panel" as const, contributionId: panelId },
-          isLazy
-            ? createElement(Suspense, { fallback: createElement(PanelLoadingFallback) }, inner)
-            : inner,
-        )
-      }
+      result[panel.id] = this.getWrappedComponent(panel.id)
     }
     return result
   }
@@ -104,6 +137,59 @@ export class PanelRegistry {
       this.snapshotCache = this.filteredPanels()
     }
     return this.snapshotCache
+  }
+
+  private getWrappedComponent(panelId: string): ComponentType<any> {
+    const cached = this.wrapperComponentCache.get(panelId)
+    if (cached) return cached
+    const registry = this
+    // biome-ignore lint/suspicious/noExplicitAny: dockview props passthrough
+    const WrappedPanel = function WrappedPanel(props: any) {
+      useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot)
+      const current = registry.get(panelId)
+      const gen = registry.generation
+      // biome-ignore lint/suspicious/noExplicitAny: see comment above
+      const Inner: ComponentType<any> = useMemo(() => {
+        if (!current || !registry.satisfiesCapabilities(current)) return () => null
+        if (current.lazy) return registry.getLazyComponent(panelId, current.component)
+        return current.component as ComponentType<any>
+      }, [current?.component, current?.lazy, current?.requiresCapabilities, gen])
+      const pluginId = current?.pluginId ?? current?.id ?? panelId
+      return createElement(
+        PluginErrorBoundary,
+        {
+          pluginId,
+          contributionKind: "panel" as const,
+          contributionId: panelId,
+          children: createElement(
+            Suspense,
+            {
+              fallback: createElement(
+                "div",
+                { className: "flex h-full items-center justify-center text-sm text-muted-foreground" },
+                "Loading…",
+              ),
+              children: createElement(Inner, props),
+            },
+          ),
+        },
+      )
+    }
+    this.wrapperComponentCache.set(panelId, WrappedPanel)
+    return WrappedPanel
+  }
+
+  private getLazyComponent(
+    panelId: string,
+    importer: PanelConfig["component"],
+  ): ComponentType<any> {
+    const cached = this.lazyComponentCache.get(panelId)
+    if (cached?.importer === importer) return cached.component
+    const component = lazy(
+      importer as () => Promise<{ default: ComponentType<unknown> }>,
+    ) as ComponentType<any>
+    this.lazyComponentCache.set(panelId, { importer, component })
+    return component
   }
 
   private emit(): void {
@@ -121,11 +207,4 @@ export class PanelRegistry {
     if (!panel.requiresCapabilities?.length) return true
     return panel.requiresCapabilities.every((cap) => this.capabilities.has(cap))
   }
-}
-
-function PanelLoadingFallback() {
-  return createElement("div", {
-    style: { display: "flex", height: "100%", alignItems: "center", justifyContent: "center" },
-    className: "text-sm text-muted-foreground animate-pulse",
-  }, "Loading…")
 }

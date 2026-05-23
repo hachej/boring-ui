@@ -1,8 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
 import {
-  ServerPluginError,
   bootstrapServer,
-  composeServerPlugins,
   defineServerPlugin,
 } from "../plugins/bootstrapServer"
 
@@ -22,6 +20,7 @@ describe("bootstrapServer", () => {
       registered: [],
       systemPromptAppend: "",
       piPackages: [],
+      extensionPaths: [],
       agentTools: [],
       provisioningContributions: [],
       routeContributions: [],
@@ -226,7 +225,7 @@ describe("bootstrapServer", () => {
   it("defineServerPlugin rejects invalid ids", () => {
     expect(() =>
       defineServerPlugin({ id: "" }),
-    ).toThrow(ServerPluginError)
+    ).toThrow(Error)
     expect(() =>
       defineServerPlugin({ id: "" }),
     ).toThrow("id must be a non-empty string")
@@ -309,6 +308,15 @@ describe("bootstrapServer", () => {
         },
       }),
     ).toThrow("provisioning.python[0].projectFile must be a string or URL")
+
+    expect(() =>
+      defineServerPlugin({
+        id: "empty-node-package-root",
+        provisioning: {
+          nodePackages: [{ id: "workspace", packageName: "@boring/workspace", packageRoot: "" }],
+        },
+      }),
+    ).toThrow("provisioning.nodePackages[0].packageRoot must be a string or URL")
   })
 
   it("defineServerPlugin accepts valid route and provisioning contributions", () => {
@@ -328,82 +336,46 @@ describe("bootstrapServer", () => {
             env: { EXAMPLE_ROOT: new URL("file:///tmp/sdk") },
           },
         ],
+        nodePackages: [
+          {
+            id: "workspace",
+            packageName: "@boring/workspace",
+            packageRoot: new URL("file:///tmp/workspace/"),
+          },
+        ],
       },
     })
 
     expect(plugin.routes).toBe(routes)
     expect(plugin.provisioning?.templateDirs).toHaveLength(1)
+    expect(plugin.provisioning?.nodePackages).toHaveLength(1)
   })
 
-  it("composeServerPlugins omits empty optional contributions", () => {
-    const plugin = composeServerPlugins({
-      id: "empty-parent",
-      plugins: [],
+  describe("extensionPaths", () => {
+    it("defaults to empty array when no plugins", () => {
+      const result = bootstrapServer({})
+      expect(result.extensionPaths).toEqual([])
     })
 
-    expect(plugin).toEqual({ id: "empty-parent" })
-    expect("piPackages" in plugin).toBe(false)
-    expect("agentTools" in plugin).toBe(false)
+    it("collects extensionPaths from plugins", () => {
+      const result = bootstrapServer({
+        plugins: [{ id: "ext-plugin", extensionPaths: ["/plugins/ext/agent/index.ts"] }],
+      })
+      expect(result.extensionPaths).toEqual(["/plugins/ext/agent/index.ts"])
+    })
+
+    it("collects extensionPaths from multiple plugins in order", () => {
+      const result = bootstrapServer({
+        plugins: [
+          { id: "plugin-a", extensionPaths: ["/plugins/a/agent/index.ts"] },
+          { id: "plugin-b", extensionPaths: ["/plugins/b/agent/index.ts"] },
+        ],
+      })
+      expect(result.extensionPaths).toEqual([
+        "/plugins/a/agent/index.ts",
+        "/plugins/b/agent/index.ts",
+      ])
+    })
   })
 
-  it("composeServerPlugins combines child plugins before parent contributions", async () => {
-    const childTool = makeAgentTool("child_tool")
-    const parentTool = makeAgentTool("parent_tool")
-    const routeCalls: string[] = []
-    const routeApp: { register: ReturnType<typeof vi.fn> } = {
-      register: vi.fn(),
-    }
-    const register = vi.fn(async (routes) => routes(routeApp, {}))
-    routeApp.register = register
-    const childRoutes = vi.fn(async (app) => {
-      expect(app).toBe(routeApp)
-      routeCalls.push("child")
-    })
-    const parentRoutes = vi.fn(async (app) => {
-      expect(app).toBe(routeApp)
-      routeCalls.push("parent")
-    })
-    const child = defineServerPlugin({
-      id: "child",
-      piPackages: ["npm:child-pi"],
-      systemPrompt: "Child prompt",
-      agentTools: [childTool],
-      routes: childRoutes,
-      provisioning: {
-        templateDirs: [{ id: "child-template", path: new URL("file:///tmp/child/") }],
-      },
-    })
-
-    const plugin = composeServerPlugins({
-      id: "parent",
-      label: "Parent",
-      plugins: [child],
-      piPackages: ["npm:parent-pi"],
-      systemPrompt: "Parent prompt",
-      agentTools: [parentTool],
-      routes: parentRoutes,
-      provisioning: {
-        python: [{ id: "parent-sdk", projectFile: new URL("file:///tmp/sdk/pyproject.toml") }],
-      },
-    })
-
-    expect(plugin.id).toBe("parent")
-    expect(plugin.label).toBe("Parent")
-    expect(plugin.piPackages).toEqual(["npm:child-pi", "npm:parent-pi"])
-    expect(plugin.systemPrompt).toBe("Child prompt\n\nParent prompt")
-    expect(plugin.agentTools?.map((tool) => tool.name)).toEqual([
-      "child_tool",
-      "parent_tool",
-    ])
-    expect(plugin.provisioning?.templateDirs?.map((entry) => entry.id)).toEqual([
-      "child-template",
-    ])
-    expect(plugin.provisioning?.python?.map((entry) => entry.id)).toEqual([
-      "parent-sdk",
-    ])
-
-    await plugin.routes?.(routeApp as any, {})
-    expect(register).toHaveBeenCalledTimes(2)
-    expect(routeCalls).toEqual(["child", "parent"])
-  })
 })

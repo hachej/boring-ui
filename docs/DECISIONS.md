@@ -257,6 +257,15 @@ Each decision has four fields:
 | **Rationale** | Three entry points match three execution contexts. `shared` is type-only to avoid any runtime dependency. |
 | **Re-evaluate when** | A fourth entry point is needed (e.g., `@boring/agent/worker`). |
 
+## 17. Plugin-authoring guidance delivery
+
+| Field | |
+|---|---|
+| **What** | Two complementary injection paths for plugin-authoring guidance, both sourced from `@hachej/boring-pi`. The package ships SKILL.md + reference markdown docs ONLY (no code, no templates). It is a runtime dep of `@hachej/boring-workspace` (so any workspace install pulls it in transitively) AND is installable standalone (for npx-style flows where workspace isn't present). |
+| **Why** | Agents need two kinds of help: (a) eager workflow nudges in the system prompt so smaller models don't drift, (b) a deeper how-to reference the agent can pull on demand. Different agent runtimes discover skills/docs differently; we need one source of truth that both paths can consume without per-host install dances. |
+| **Rationale** | **Entrance 1 — Pi auto-discovery:** Pi scans `node_modules/*/package.json` for `pi.skills`. `@hachej/boring-pi` declares it and ships `skills/boring-plugin-authoring/SKILL.md`. The skill appears in the agent's `<available_skills>` block with name + description + absolute `<location>` path; agent reads via its own `read` tool if relevant. Works for any Pi-driven agent, including standalone pi-coding-agent runs that never touch boring-workspace. **Entrance 2 — workspace appendix pointer block:** `packages/workspace/src/server/boringSystemPrompt.ts` generates a short pointer-block addendum (~250 tokens, NOT the full SKILL inlined) that mirrors Pi's own "Pi documentation" prompt style: a topic-to-path map referencing absolute paths into the boring-pi install. `boringSystemPrompt.ts` resolves boring-pi's install path via `require.resolve("@hachej/boring-pi/package.json")` — same pattern Pi uses for itself (`import.meta.url`-based), differing only because we resolve a dep rather than ourselves. **Why keep boring-pi as a separate package** (instead of inlining into workspace): a slim docs-only package can be installed standalone (`pnpm add @hachej/boring-pi`) by users running an external Pi agent that scaffolds via `npx @hachej/boring-ui-cli` but never installs the workspace runtime. Bundling docs into workspace would make that flow require pulling in the full UI runtime to get the skill. **Why not inline SKILL.md content into the appendix:** burns ~3K tokens per turn whether the user is touching plugins or not; the pointer-block pattern matches Pi's own design and keeps per-turn cost low. **Why not skills-only (delete the appendix):** smaller models miss skill descriptions and write plugins from training memory; the eager pointer block guarantees the agent at least KNOWS where to look. |
+| **Re-evaluate when** | A consumer needs the skill WITHOUT installing workspace AND without installing boring-pi (would justify a third delivery mechanism); OR token budget pressure forces dropping the eager pointer block; OR Pi changes its package-scanning contract for skills. |
+
 ---
 
 ## Process

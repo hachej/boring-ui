@@ -2,4 +2,5 @@ packages:
   - "packages/*"
   - "plugins/*"
   - "packages/agent/examples/*"
+  - "packages/workspace/test-fixtures/*"
   - "apps/*"

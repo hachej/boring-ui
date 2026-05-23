@@ -1,43 +1,45 @@
-# @boring/workspace Changelog
+# @hachej/boring-workspace Changelog
 
 ## [Unreleased] - Plugin Model + Declarative Layout merger
 
 Reference epic: `boring-ui-v2-j9p7`.
-Canonical migration example: `d26e1e7` (`refactor(macro): rewrite App.tsx + server/index.ts to use plugin model (j9p7.19)`) in `apps/boring-macro-v2/src/plugins/macro/`, `apps/boring-macro-v2/src/front/App.tsx`, and `apps/boring-macro-v2/src/server/index.ts`.
+
+This release locks the package/plugin split used by the v2 workspace:
+
+- Front plugin authoring uses `definePlugin({ ... })` from
+  `@hachej/boring-workspace/plugin`.
+- Server plugins use `defineServerPlugin({ ... })` from
+  `@hachej/boring-workspace/server`.
+- Package manifests use `package.json#boring.front` for workbench UI,
+  `package.json#boring.server` for boot-time/static server integration, and
+  `package.json#pi` for hot-reloadable Pi resources (extensions, skills,
+  prompts, system prompt text).
+- Runtime hosts can discover packages from `.pi/extensions/*`,
+  `defaultPluginPackages`, or `appPackageJsonPath` +
+  `package.json#boring.defaultPluginPackages`. Provider/binding front plugins
+  must still be composed statically by the app shell.
 
 ### Breaking Changes
 
-#### Legacy `DataCatalog` components and generic explorer UI removed
+#### Legacy explorer exports removed
 
 `DataCatalog`, `DataCatalogPane`, `DataExplorer`, `useExplorerState`,
-`createSourcesAdapter`, and generic explorer plugin helpers are no longer
-exported from `@boring/workspace`. Data catalog UI/plugin helpers moved to
-`@hachej/boring-data-catalog`; use `createDataCatalogPlugin()` for standalone
-catalogs or `appendDataCatalogOutputs()` inside an app/domain plugin from that
-package. Generic explorer UI moved to `@hachej/boring-data-explorer`;
-Storybook/mock adapter helpers moved to `@hachej/boring-data-explorer/testing`.
+`createSourcesAdapter`, and the generic explorer plugin helpers are no longer
+exported from `@hachej/boring-workspace`. Use
+`@hachej/boring-data-catalog` for catalog plugins and
+`@hachej/boring-data-explorer` for explorer primitives.
 
 #### `<CommandPalette>` no longer accepts file-search props
 
-`fileSearchFn` and `onOpenFile` are removed. File search is now a catalog contribution in the registry. `WorkspaceProvider` owns the stock command palette mount.
-
-Before:
-
-```tsx
-<CommandPalette
-  open={open}
-  onOpenChange={setOpen}
-  fileSearchFn={(query) => myFileSearch(query)}
-  onOpenFile={(path) => mySurface.openFile(path)}
-/>
-```
-
-After:
+`fileSearchFn` and `onOpenFile` are removed. File search is now a catalog
+contribution in the registry. `WorkspaceProvider` owns the stock command
+palette mount.
 
 ```tsx
-import { defineFrontPlugin, WorkspaceProvider } from "@boring/workspace"
+import { definePlugin } from "@hachej/boring-workspace/plugin"
+import { WorkspaceProvider } from "@hachej/boring-workspace"
 
-const filesPlugin = defineFrontPlugin({
+const filesPlugin = definePlugin({
   id: "my-files",
   label: "Files",
   catalogs: [
@@ -46,13 +48,7 @@ const filesPlugin = defineFrontPlugin({
       label: "Files",
       adapter: {
         async search({ query, limit, offset, filters, group, signal }) {
-          const paths = await myFileSearch(query, {
-            limit,
-            offset,
-            filters,
-            group,
-            signal,
-          });
+          const paths = await myFileSearch(query, { limit, offset, filters, group, signal })
           return {
             items: paths.map((path) => ({
               id: path,
@@ -61,7 +57,7 @@ const filesPlugin = defineFrontPlugin({
             })),
             total: paths.length,
             hasMore: false,
-          };
+          }
         },
       },
       onSelect: (row) => mySurface.openFile(row.id),
@@ -77,35 +73,21 @@ const filesPlugin = defineFrontPlugin({
 Migration recipe:
 
 1. Delete `fileSearchFn` and `onOpenFile` from custom `<CommandPalette>` mounts.
-2. Move the old search function into `CatalogConfig.adapter.search` and adapt its result into `SearchResult`.
-3. Move the old open-file behavior into `catalog.onSelect`.
-4. Register the catalog from a `WorkspaceFrontPlugin` passed to `<WorkspaceProvider plugins={...}>`.
+2. Move search logic into `CatalogConfig.adapter.search` and adapt results into `SearchResult`.
+3. Move open-file behavior into `catalog.onSelect`.
+4. Register the catalog from a `definePlugin({ catalogs: [...] })` front plugin.
 5. Prefer the provider-mounted command palette; only custom-mount `<CommandPalette>` inside the same registry tree.
 
 #### `<ChatCenteredShell>` is replaced by declarative layouts
 
-`ChatCenteredShell`, `ChatShellContext`, `useChatShell`, and `useChatSurface` are retired by Phase 1.5-G. Hosts migrate to Tier 1 `<ChatLayout>` or Tier 2 `<ResponsiveDockviewShell>` plus `<TopBar>`.
-
-Before:
-
-```tsx
-<WorkspaceProvider>
-  <ChatCenteredShell
-    appTitle="Macro"
-    data={dataPaneConfig}
-    extraPanels={["chart-canvas", "deck"]}
-    withCommandPalette={true}
-    chatSuggestions={macroChatSuggestions}
-  />
-</WorkspaceProvider>
-```
-
-After:
+`ChatCenteredShell`, `ChatShellContext`, `useChatShell`, and `useChatSurface`
+are retired. Hosts migrate to Tier 1 `<ChatLayout>` or Tier 2
+`<ResponsiveDockviewShell>` plus `<TopBar>`.
 
 ```tsx
-import { ChatLayout, TopBar, WorkspaceProvider } from "@boring/workspace";
-import { ChatPanel } from "@boring/agent";
-import { macroPlugin, macroChatParams } from "./plugin";
+import { ChatLayout, TopBar, WorkspaceProvider } from "@hachej/boring-workspace"
+import { ChatPanel } from "@hachej/boring-agent/front"
+import { macroPlugin, macroChatParams } from "./plugin"
 
 <WorkspaceProvider chatPanel={ChatPanel} plugins={[macroPlugin]}>
   <TopBar appTitle="Macro" />
@@ -117,204 +99,202 @@ import { macroPlugin, macroChatParams } from "./plugin";
     surface="artifact-surface"
     surfaceParams={{ allowedPanels: ["chart-canvas", "deck"] }}
   />
-</WorkspaceProvider>;
+</WorkspaceProvider>
 ```
 
 Migration recipe:
 
-1. Replace `ChatCenteredShell` with `ChatLayout` for stock chat/workbench chrome, or `ResponsiveDockviewShell` when you need custom group layout.
-2. Pass `chatPanel={ChatPanel}` to `WorkspaceProvider`; do not import `@boring/agent` from inside `@boring/workspace`.
-3. Move `data: DataPaneConfig` to a plugin-owned data catalog plugin, using `createDataCatalogPlugin({ adapter })` for standalone catalogs or `appendDataCatalogOutputs(...)` from `@hachej/boring-data-catalog` inside an app/domain plugin.
-4. Move `extraPanels` to the declarative surface gate (`allowedPanels`) or omit it when every registered panel is allowed in that shell. In Tier 1 layouts this travels through `surfaceParams` to the surface panel that reads the gate.
+1. Replace `ChatCenteredShell` with `ChatLayout` for stock chat/workbench chrome, or `ResponsiveDockviewShell` for custom group layouts.
+2. Pass `chatPanel={ChatPanel}` to `WorkspaceProvider`; workspace base UI stays agent-injected.
+3. Move catalog tabs to plugin outputs.
+4. Move extra panel gates to layout/surface params.
 5. Delete `withCommandPalette`; `WorkspaceProvider` mounts the registry-backed command palette.
-
-`chatSuggestions` is now the chat panel's `suggestions` prop. Pass it through the host's chat panel params/plugin factory, or directly as `<ChatPanel suggestions={...} />` when you mount the panel yourself.
 
 #### `WorkbenchLeftPane` tab extension moves to the registry
 
-Direct `WorkbenchLeftPane` data props are no longer the extension target for app-specific tabs. The compatibility props may still compile during the transition, but new tab content must be registered as panels with `placement: "left-tab"` so defaults, plugins, and `excludeDefaults` all flow through one registry path.
-
-Before:
-
-```tsx
-<WorkbenchLeftPane data={dataPaneConfig} dataSources={staticSources} />
-```
-
-After:
+New tab content must be registered as plugin panels with
+`placement: "left-tab"`.
 
 ```tsx
-import { DataExplorer } from "@hachej/boring-data-explorer/front";
-import { defineFrontPlugin } from "@boring/workspace";
+import { definePlugin } from "@hachej/boring-workspace/plugin"
 
-const macroSeriesTab = {
-  type: "left-tab",
-  id: "macro-series",
-  title: "Series",
-  component: () => <DataExplorer adapter={macroAdapter} groupBy="frequency" />,
-} as const;
-
-export const macroPlugin = defineFrontPlugin({
+export const macroPlugin = definePlugin({
   id: "boring-macro",
   label: "Macro",
-  outputs: [macroSeriesTab],
-});
+  leftTabs: [
+    {
+      id: "macro-series",
+      title: "Series",
+      panelId: "macro-series",
+      component: () => import("./SeriesTab").then((m) => ({ default: m.SeriesTab })),
+    },
+  ],
+})
 ```
-
-Migration recipe:
-
-1. Stop adding new tab content directly to `WorkbenchLeftPane` props.
-2. Wrap each left-pane tab as a `left-tab` plugin output.
-3. Register those outputs from a host/plugin passed to `WorkspaceProvider`.
-4. Use `excludeDefaults: ["filesystem"]` to remove the default Files tab.
-5. Keep tab-specific state inside the panel component or its adapter, not in `WorkbenchLeftPane` props.
 
 #### `excludeDefaults` now controls workspace UI only
 
-`excludeDefaults: ["filesystem"]` removes default workspace UI contributions: the Files tab, file catalog, and editor panels. It does not remove LLM file tools.
-
-Before:
-
-```tsx
-<WorkspaceProvider excludeDefaults={["filesystem"]} />
-```
-
-After:
-
-```tsx
-<WorkspaceProvider excludeDefaults={["filesystem"]} />;
-
-createAgentApp({
-  disableDefaultFileTools: true,
-});
-```
-
-`disableDefaultFileTools` is the standalone `createAgentApp` option for this layer. Route-level wrappers that embed agent internals should be audited separately before documenting the same opt-out there.
-
-Migration recipe:
-
-1. Use `excludeDefaults` only when you want to hide default workspace UI.
-2. Use `disableDefaultFileTools: true` on `createAgentApp` when you want to remove LLM file operations.
-3. Set both flags for a truly file-free host.
-4. Audit embedded agent-route paths separately; route helpers may not expose the tool opt-out yet.
-5. Keep plugin `agentTools` for host-specific tools, not default filesystem tools.
+`excludeDefaults: ["filesystem"]` removes default workspace UI
+contributions: the Files tab, file catalog, and editor panels. It does not
+remove LLM file tools. Use `createAgentApp({ disableDefaultFileTools: true })`
+for the standalone agent layer when tool removal is required.
 
 #### Workspace internals moved under `front/`, `server/`, `shared/`, and `plugins/`
 
-The public barrel import stays stable. Deep imports into internal paths can break after the Step 0 source reorg.
+Use package barrels and documented subpaths:
 
-Before:
+- `@hachej/boring-workspace`
+- `@hachej/boring-workspace/plugin`
+- `@hachej/boring-workspace/server`
+- `@hachej/boring-workspace/shared`
+- `@hachej/boring-workspace/events`
+- `@hachej/boring-workspace/app/front`
+- `@hachej/boring-workspace/app/server`
 
-```ts
-import { Button } from "@boring/ui";
-import { ChatCenteredShell } from "@boring/workspace/components/chat";
-```
+Do not import from `src/front/**`, `src/server/**`, or `src/shared/**` from
+outside the package.
 
-After:
+#### Plugin entrypoints are split between front, server, and Pi
 
-```ts
-import { ChatLayout, defineFrontPlugin, WorkspaceProvider } from "@boring/workspace";
-import { Button } from "@boring/ui";
-```
+A package plugin may declare any combination of:
 
-Migration recipe:
-
-1. Replace deep imports with `@boring/workspace` barrel exports where possible.
-2. Use documented package subpaths only, such as `@boring/workspace/events`, `@boring/workspace/shared`, and `@boring/ui`.
-3. Do not import from `src/front/**`, `src/server/**`, or `src/shared/**` from outside the package.
-4. Treat undocumented paths as private implementation details.
-5. Add a package-level typecheck after import cleanup.
-
-#### Plugin entrypoints are split between client and server
-
-Distributed plugins and inline app plugins now follow the same shape: client
-contributions in `index.tsx`; server-side tool composition in `server/index.ts`.
-
-Before:
-
-```ts
-export const macroClientPlugin = defineFrontPlugin({
-  id: "boring-macro",
-  label: "Macro",
-  outputs,
-});
-```
-
-After:
-
-```ts
-// src/plugins/macro/front/index.tsx
-export const macroClientPlugin = defineFrontPlugin({
-  id: "boring-macro",
-  label: "Macro",
-  outputs,
-});
-
-// src/plugins/macro/server/index.ts
-export function makeMacroServerPlugin(tools: AgentTool[]) {
-  return defineServerPlugin({
-    id: "boring-macro",
-    label: "Macro",
-    agentTools: tools,
-  });
+```json
+{
+  "name": "my-plugin",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["agent/index.ts"],
+    "skills": ["agent/skills"],
+    "prompts": ["agent/prompts"],
+    "systemPrompt": "Short hot-reloadable guidance."
+  },
+  "boring": {
+    "label": "My Plugin",
+    "front": "front/index.tsx",
+    "server": "server/index.ts"
+  }
 }
 ```
 
-Migration recipe:
+Front entry:
 
-1. Keep React components, panels, commands, catalogs, and chat suggestions in the client entrypoint.
-2. Keep `AgentTool[]`, credentials, route factories, and Node-only dependencies in the server entrypoint.
-3. Reuse the same plugin `id` in both halves so prompts and diagnostics line up.
-4. Pass client plugins to `<WorkspaceProvider plugins={...}>`.
-5. Pass server plugins to `createWorkspaceAgentServer({ plugins })` or the app shell's server composition point.
+```tsx
+import { definePlugin } from "@hachej/boring-workspace/plugin"
+
+export default definePlugin({
+  id: "my-plugin",
+  label: "My Plugin",
+  panels: [
+    {
+      id: "my-plugin.panel",
+      label: "My Panel",
+      placement: "center",
+      component: () => import("./Panel").then((m) => ({ default: m.Panel })),
+    },
+  ],
+  commands: [{ id: "my-plugin.open", title: "Open My Panel", panelId: "my-plugin.panel" }],
+})
+```
+
+Server entry:
+
+```ts
+import { defineServerPlugin } from "@hachej/boring-workspace/server"
+
+export default defineServerPlugin({
+  id: "my-plugin",
+  label: "My Plugin",
+  systemPrompt: "Use my_tool when the user asks to process an item.",
+  agentTools: [
+    {
+      name: "my_tool",
+      description: "Does something useful",
+      parameters: {
+        type: "object",
+        properties: { id: { type: "string" } },
+        required: ["id"],
+        additionalProperties: false,
+      },
+      async execute(params) {
+        return { content: [{ type: "text", text: `processed ${String(params.id)}` }] }
+      },
+    },
+  ],
+})
+```
+
+`boring.server` is static/boot-time integration for app hosts. Changes to
+server plugins require a process restart to update route/tool registration.
+Hot-reloadable chat behavior should live in `pi.extensions`, `pi.skills`,
+`pi.prompts`, or `pi.systemPrompt`.
 
 ### Additive Plugin Contract Change
 
-The plugin contract is split into front and server halves:
+`definePlugin({ ... })` accepts declarative front contributions:
 
-```ts
-type WorkspaceFrontPlugin = {
-  id: string;
-  label?: string;
-  outputs?: PluginOutput[];
-};
+- `panels`
+- `leftTabs`
+- `commands`
+- `catalogs`
+- `surfaceResolvers`
+- `bindings`
+- `providers`
+- optional synchronous `setup(api)`
 
-type WorkspaceServerPlugin = {
-  id: string;
-  label?: string;
-  systemPrompt?: string;
-  agentTools?: AgentTool[];
-  provisioning?: RuntimeProvisioningContribution;
-  routes?: FastifyPluginAsync;
-};
-```
+`defineServerPlugin({ ... })` accepts server contributions:
 
-`systemPrompt` is additive. Existing plugins continue to work without it. When present, bootstrap includes plugin prompts before app-level `createAgentApp` prompt additions.
+- `systemPrompt`
+- `agentTools`
+- `routes`
+- `provisioning`
+- `preservedUiStateKeys`
+- Pi package/resource declarations for static host composition
 
 ### Added
 
-- `defineFrontPlugin()` and `defineServerPlugin()` for explicit front/server plugin halves.
+- `definePlugin({ ... })` from `@hachej/boring-workspace/plugin` for public front plugin authoring.
+- `defineServerPlugin({ ... })` from `@hachej/boring-workspace/server` for server-side composition.
 - `WorkspaceProvider` support for `plugins` and `excludeDefaults`.
-- `createWorkspaceAgentServer({ plugins })` for server-side tool composition.
+- `createWorkspaceAgentServer({ plugins, defaultPluginPackages, appPackageJsonPath })` for server-side composition and package discovery.
 - Tier 1 layouts: `ChatLayout`, `IdeLayout`, `buildChatLayout`, and `buildIdeLayout`.
 - Tier 2 shell primitives: `TopBar` and `ResponsiveDockviewShell`.
-- Registry-driven workbench tabs via `placement: "left-tab"` panels.
-- `@hachej/boring-data-catalog` provides `createDataCatalogPlugin()` / `appendDataCatalogOutputs()` for reusable data catalog tabs backed by an `ExplorerAdapter`.
+- Registry-driven workbench tabs via left-tab plugin outputs.
+- `@hachej/boring-data-catalog` catalog helpers and `@hachej/boring-data-explorer` explorer primitives.
 - Polymorphic Recent entries for catalogs and commands.
 - Plugin-owned surface resolvers for path and domain-target routing.
-- `@boring/workspace/events` package subpath for typed workspace UI events.
+- `@hachej/boring-workspace/events` typed workspace UI events.
 - DEV-only plugin diagnostics through `PluginInspector` and plugin error boundaries.
+- **Hot-reload restart warnings.** `BoringPluginEvent.boring.plugin.load` now carries `requiresRestart?: ("routes" | "agentTools")[]` when a server file changed between revisions. `POST /api/boring.reload` includes `restart_warnings` on both 200 and 422 responses. New helper `collectRestartWarnings(events)` and type `PluginRestartWarning` exported from `@hachej/boring-workspace/server`.
+- **`.boring-signature.json` sidecar cache.** `BoringPluginAssetManager` persists each plugin's load-time server-file signature next to its source so `boring-ui verify-plugin` can detect drift between what the workspace loaded and what's currently on disk. Verify-plugin emits a `⚠ WARN:` line + suffix block when restart is needed (not just `/reload`). New exports from `/server`: `pluginFileSignature`, `readPluginSignatureCache`, `writePluginSignatureCache`. The sidecar is in `.gitignore` and shipped automatically by `boring-ui scaffold-plugin`.
+- **Pi-style docs pointer block in the system prompt.** `buildBoringSystemPrompt()` now emits a `## boring-ui plugin authoring documentation` block listing absolute paths into the installed `@hachej/boring-pi` (resolved via `require.resolve("@hachej/boring-pi/package.json")`): the SKILL.md plus the `panels.md` / `bridge.md` / `plugins.md` references. Graceful fallback points at `<available_skills>` when boring-pi is unresolvable. Per-turn token cost shrunk to ~250 vs the previous ~600 of inlined guidance; SKILL.md content is read on demand. See `docs/DECISIONS.md` #17.
+
+### Changed
+
+- `BuildBoringSystemPromptOptions.verifyCommand` narrowed from `string | false` to required `string`. No production caller passed `false`; the conditional branch and its test were dead.
+- Layer-agnostic registries `CatalogRegistry`, `CommandRegistry`, and `SurfaceResolverRegistry` moved from `src/front/` to `src/shared/plugins/`. Public exports from `@hachej/boring-workspace` (top-level + `/server`) unchanged. `PanelRegistry` stays in `front/registry/` (it depends on React `lazy` / `Suspense`).
+
+### Removed
+
+- `PanelRegistry.unregisterByPluginId(pluginId)` and `SurfaceResolverRegistry.unregisterByPluginId(pluginId)` — no production callers in this repo (the workspace uses `replaceByPluginId(pluginId, [])` for the same effect). `CommandRegistry` and `CatalogRegistry` keep their `unregisterByPluginId` methods (4 production call sites each).
+- `/server` re-exports of `clearPluginSignatureCache`, `PluginSignatureCachePayload`, and `PLUGIN_SIGNATURE_CACHE_FILE`. These were workspace-internal; the asset manager owns the writer/clearer, and cli `verify-plugin` only needs `readPluginSignatureCache` + `pluginFileSignature`.
+- `verifyPlugin.ts` un-exports `VerifyPluginOptions`, `RecognizedMistake`, and `COMMON_MISTAKE_HINTS` from the `@hachej/boring-ui-cli` server entry (no external consumer used them).
 
 ### Migration Checklist
 
 1. Replace direct `CommandPalette` file-search props with catalog contributions.
 2. Replace `ChatCenteredShell` with `ChatLayout` or `ResponsiveDockviewShell`.
-3. Convert left-pane tabs to plugin panels with `placement: "left-tab"`.
-4. Split plugin client/server entrypoints when tools or Node-only code are involved.
-5. Audit `excludeDefaults` call sites and add `disableDefaultFileTools` where tool removal is required.
-6. Remove undocumented deep imports into `@boring/workspace` internals.
-7. Use the boring-macro migration in `d26e1e7` as the worked example for app-side plugin extraction.
-8. Run package typecheck and the host app e2e suite after migration.
+3. Convert left-pane tabs to plugin panels with `leftTabs` or `placement: "left-tab"`.
+4. Split front and server entrypoints when tools, routes, credentials, or Node-only code are involved.
+5. Put hot-reloadable agent behavior in Pi resources; use `boring.server` only for static app/server composition.
+6. Prefer explicit `package.json#boring.server` for server integration; restart the workspace process after server plugin edits.
+7. Use `defaultPluginPackages` or `appPackageJsonPath` for app-default package discovery.
+8. Statically compose provider/binding plugins in the shell until dynamic mounting support exists.
+9. Audit `excludeDefaults` call sites and add `disableDefaultFileTools` where tool removal is required.
+10. Remove undocumented deep imports into workspace internals.
+11. Run package typecheck and the host app e2e suite after migration.
 
 ### Versioning Note
 
-This should ship as a pre-1.0 minor bump unless maintainers decide this is the compatibility baseline for `1.0`. The release is breaking for hosts that use removed props, `ChatCenteredShell`, or undocumented deep imports.
+This should ship as a pre-1.0 minor bump unless maintainers decide this is the
+compatibility baseline for `1.0`. The release is breaking for hosts that use
+removed props, retired layouts, or undocumented deep imports.

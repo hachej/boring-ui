@@ -1,0 +1,16 @@
+{
+  "name": "@hachej/boring-pi",
+  "version": "0.1.13",
+  "type": "module",
+  "license": "MIT",
+  "description": "Pi skills and agent-facing references for boring-ui.",
+  "files": [
+    "skills",
+    "references"
+  ],
+  "pi": {
+    "skills": [
+      "skills"
+    ]
+  }
+}

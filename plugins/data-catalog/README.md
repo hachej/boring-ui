@@ -20,7 +20,7 @@ git clone https://github.com/hachej/boring-ui.git && cd boring-ui && pnpm instal
 
 **The Problem**: You have a data source (customers, invoices, time series, whatever) and you want users to browse it from a sidebar tab, click rows to open detail visualizations, and let the agent open specific rows programmatically. But wiring up a catalog tab + explorer panel + surface resolver + agent tool is repetitive.
 
-**The Solution**: `@hachej/boring-data-catalog` gives you a one-call plugin factory: pass in an `ExplorerDataSource` adapter and configure labels, facets, and behavior. It produces a left tab, a visualization panel, a catalog, and a surface resolver — all wired up.
+**The Solution**: `@hachej/boring-data-catalog` gives you a one-call plugin factory: pass in an `ExplorerDataSource` adapter and configure labels, facets, and behavior. It contributes a left tab, a visualization panel, a catalog, and a surface resolver — all wired up.
 
 ### Why Use @hachej/boring-data-catalog?
 
@@ -31,7 +31,7 @@ git clone https://github.com/hachej/boring-ui.git && cd boring-ui && pnpm instal
 | **Surface resolver** | Agent can open a specific row via `openSurface` with `DATA_CATALOG_ROW_SURFACE_KIND` |
 | **Agent tool** | Server plugin ships a `search_catalog` tool the agent uses to find rows before opening them |
 | **Pre-wired with data-explorer** | Search + facets + drag-out behavior comes for free |
-| **Customizable** | Swap the visualization component, customize facets/groupBy/onSelect, or pick which outputs to include |
+| **Customizable** | Swap the visualization component, customize facets/groupBy/onSelect, or pick which contributions to include |
 
 ---
 
@@ -89,11 +89,11 @@ openSurface({ kind: DATA_CATALOG_ROW_SURFACE_KIND, target: row.id, meta: { catal
 
 ---
 
-## What It Produces
+## What It Contributes
 
-One call to `createDataCatalogPlugin()` produces four outputs:
+One call to `createDataCatalogPlugin()` contributes four front registrations:
 
-| Output | What | Toggle |
+| Contribution | What | Toggle |
 |--------|------|--------|
 | **Left tab** | Sidebar tab with searchable, faceted table | `includeLeftTab` (default: true) |
 | **Visualization panel** | Center panel for exploring a selected row's context | `includeVisualizationPanel` (default: true) |
@@ -273,7 +273,7 @@ cd boring-ui/plugins/data-catalog && pnpm install && pnpm build
 ## FAQ
 
 **Q: How do I use multiple data sources?**  
-A: Call `createDataCatalogPlugin()` once per data source, each with a different `id`, `label`, and `adapter`. Or use `createSourcesAdapter(SourceEntry[])` from data-explorer to wrap a static source list.
+A: Call `createDataCatalogPlugin()` once per data source, each with a different `id`, `label`, and `adapter`. For a static source list, implement a small `ExplorerDataSource` whose `search()` filters and slices an in-memory `ExplorerItem[]`.
 
 **Q: How does the agent open a specific row?**  
 A: The catalog registers a surface resolver. The agent uses the UI bridge `openSurface` command: `{ kind: DATA_CATALOG_ROW_SURFACE_KIND, target: row.id, meta: { catalogId, row } }`.

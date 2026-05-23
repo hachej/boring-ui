@@ -213,7 +213,7 @@ Instead, build a CLI workspaces server on the lower-level route seams and reusab
   - use `getWorkspaceId(request)` to extract the opaque registry id
   - use `getWorkspaceRoot(workspaceId, request)` to resolve id → registered absolute path
   - use `getSessionNamespace(ctx)` to force collision-proof session storage keyed by registry id/hash
-  - use `getResourceLoaderOptions(ctx)` for per-workspace `.agents/skills` and other resource paths
+  - use `getPi(ctx)` for per-workspace `.agents/skills` and other Pi adapter resource paths
   - use `getExtraTools(ctx)` to add workspace UI tools for that workspace
 - local CLI helpers for safe `x-boring-workspace-id` parsing and `workspaceId -> UiBridge` caching
 - `uiRoutes()` from `@hachej/boring-workspace/server`
@@ -242,9 +242,9 @@ await app.register(registerAgentRoutes, {
     return entry.path
   },
   getSessionNamespace: async ({ workspaceId }) => `local-workspace-${workspaceId}`,
-  // Usually omit getResourceLoaderOptions here. Pi package/plugin management
-  // is resolved from ~/.pi/agent/settings.json + <workspaceRoot>/.pi/settings.json.
-  // Only pass this hook for host-owned, non-user-managed resource overrides.
+  // Usually omit getPi here. Pi package/plugin management is resolved from
+  // ~/.pi/agent/settings.json + <workspaceRoot>/.pi/settings.json. Only pass
+  // this hook for host-owned, non-user-managed resource overrides.
   getExtraTools: async ({ workspaceId, workspaceRoot }) =>
     createWorkspaceUiTools(bridges.get(workspaceId), { workspaceRoot }),
 })
