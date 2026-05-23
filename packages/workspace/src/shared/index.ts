@@ -12,6 +12,28 @@
  * - `plugins/` — shared plugin internals used by the public `/plugin` subpath and bootstrap
  */
 export type { WorkspaceBridge, UiState, UiCommand, CommandResult } from "./ui-bridge"
+export {
+  WorkspaceBridgeErrorCode,
+  createWorkspaceBridgeError,
+} from "./workspace-bridge-rpc"
+export type {
+  BridgeActorAttribution,
+  BridgeActorKind,
+  BridgeAuditCategory,
+  BridgeAuthContext,
+  BridgeCallerClass,
+  BridgeIdempotencyPolicy,
+  BridgeRedactedActorRef,
+  WorkspaceBridgeAuditContext,
+  WorkspaceBridgeCallFailure,
+  WorkspaceBridgeCallRequest,
+  WorkspaceBridgeCallResponse,
+  WorkspaceBridgeCallSuccess,
+  WorkspaceBridgeError,
+  WorkspaceBridgeFileAssetPointer,
+  WorkspaceBridgeJsonValue,
+  WorkspaceBridgeOperationDefinition,
+} from "./workspace-bridge-rpc"
 export type { PanelConfig, CommandConfig, PaneProps, PanelRegistration } from "./types/panel"
 export type {
   SurfaceOpenRequest,

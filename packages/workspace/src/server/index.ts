@@ -22,6 +22,28 @@ export {
 } from "./ui-control/tools/uiTools"
 export type { WorkspaceBridge, UiState, UiCommand, CommandResult } from "../shared/ui-bridge"
 export {
+  WorkspaceBridgeErrorCode,
+  createWorkspaceBridgeError,
+} from "../shared/workspace-bridge-rpc"
+export type {
+  BridgeActorAttribution,
+  BridgeActorKind,
+  BridgeAuditCategory,
+  BridgeAuthContext,
+  BridgeCallerClass,
+  BridgeIdempotencyPolicy,
+  BridgeRedactedActorRef,
+  WorkspaceBridgeAuditContext,
+  WorkspaceBridgeCallFailure,
+  WorkspaceBridgeCallRequest,
+  WorkspaceBridgeCallResponse,
+  WorkspaceBridgeCallSuccess,
+  WorkspaceBridgeError,
+  WorkspaceBridgeFileAssetPointer,
+  WorkspaceBridgeJsonValue,
+  WorkspaceBridgeOperationDefinition,
+} from "../shared/workspace-bridge-rpc"
+export {
   bootstrapServer,
   defineServerPlugin,
   validateServerPlugin,

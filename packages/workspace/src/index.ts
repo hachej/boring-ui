@@ -250,6 +250,28 @@ export {
   expandToFileSchema,
   MAX_PANELS,
 } from "./front/bridge"
+export {
+  WorkspaceBridgeErrorCode,
+  createWorkspaceBridgeError,
+} from "./shared/workspace-bridge-rpc"
+export type {
+  BridgeActorAttribution,
+  BridgeActorKind,
+  BridgeAuditCategory,
+  BridgeAuthContext,
+  BridgeCallerClass,
+  BridgeIdempotencyPolicy,
+  BridgeRedactedActorRef,
+  WorkspaceBridgeAuditContext,
+  WorkspaceBridgeCallFailure,
+  WorkspaceBridgeCallRequest,
+  WorkspaceBridgeCallResponse,
+  WorkspaceBridgeCallSuccess,
+  WorkspaceBridgeError,
+  WorkspaceBridgeFileAssetPointer,
+  WorkspaceBridgeJsonValue,
+  WorkspaceBridgeOperationDefinition,
+} from "./shared/workspace-bridge-rpc"
 
 // shadcn UI primitives
 
