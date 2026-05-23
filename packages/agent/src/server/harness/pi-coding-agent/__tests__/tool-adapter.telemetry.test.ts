@@ -69,7 +69,7 @@ describe('tool adapter telemetry', () => {
         return {
           isError: true,
           content: [{ type: 'text', text: 'secret stderr output' }],
-          details: { code: ErrorCode.enum.WORKSPACE_NOT_READY, command: 'cat .env' },
+          details: { code: ErrorCode.enum.TOOL_EXECUTION_ERROR, command: 'cat .env' },
         }
       },
     })
@@ -84,7 +84,7 @@ describe('tool adapter telemetry', () => {
         sessionId: 'sess-tool',
         status: 'error',
         durationMs: expect.any(Number),
-        errorCode: ErrorCode.enum.WORKSPACE_NOT_READY,
+        errorCode: ErrorCode.enum.TOOL_EXECUTION_ERROR,
       },
     })
     const serialized = JSON.stringify(recorder.events)
