@@ -1,5 +1,6 @@
 import type { UIMessageChunk } from './message'
 import type { SessionStore } from './session'
+import type { TelemetrySink } from './telemetry'
 import type { AgentTool } from './tool'
 
 export interface AgentHarnessFactoryInput {
@@ -18,6 +19,8 @@ export interface AgentHarnessFactoryInput {
    * prompt context without a workspace-injected harness extension.
    */
   systemPromptDynamic?: () => string | undefined | Promise<string | undefined>
+  /** Host-provided telemetry sink. Optional and best-effort; harnesses may ignore it. */
+  telemetry?: TelemetrySink
 }
 
 export type AgentHarnessFactory = (input: AgentHarnessFactoryInput) => AgentHarness | Promise<AgentHarness>
