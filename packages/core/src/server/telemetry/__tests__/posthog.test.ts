@@ -30,6 +30,7 @@ vi.mock('posthog-node', () => ({
 import {
   createPostHogTelemetryFromEnv,
   parseTelemetryProject,
+  sanitizeTelemetryDistinctId,
   sanitizeTelemetryProperties,
 } from '../posthog'
 
@@ -158,7 +159,31 @@ describe('createPostHogTelemetryFromEnv', () => {
     expect(String(warn.mock.calls[0]?.[0])).not.toContain('../bad project')
   })
 
-  it('swallows PostHog capture failures', () => {
+  it('falls back to anonymous for unsafe distinct ids', () => {
+    const telemetry = createPostHogTelemetryFromEnv(
+      env({ BORING_TELEMETRY_ENABLED: 'true', POSTHOG_KEY: 'phc_secret' }),
+    )
+
+    telemetry.capture({ name: 'app.opened', distinctId: 'user@example.com' })
+
+    expect(posthogMock.clients[0]?.capture).toHaveBeenCalledWith({
+      distinctId: 'anonymous',
+      event: 'app.opened',
+      properties: { eventName: 'app.opened' },
+    })
+  })
+
+  it('drops unsafe event names without sending to PostHog', () => {
+    const telemetry = createPostHogTelemetryFromEnv(
+      env({ BORING_TELEMETRY_ENABLED: 'true', POSTHOG_KEY: 'phc_secret' }),
+    )
+
+    telemetry.capture({ name: 'secret.token./tmp/private' })
+
+    expect(posthogMock.clients[0]?.capture).not.toHaveBeenCalled()
+  })
+
+  it('swallows PostHog capture failures', async () => {
     const telemetry = createPostHogTelemetryFromEnv(
       env({ BORING_TELEMETRY_ENABLED: 'true', POSTHOG_KEY: 'phc_secret' }),
     )
@@ -167,6 +192,10 @@ describe('createPostHogTelemetryFromEnv', () => {
     })
 
     expect(() => telemetry.capture({ name: 'server.request.failed' })).not.toThrow()
+
+    posthogMock.clients[0]!.capture.mockRejectedValueOnce(new Error('network still down'))
+    expect(() => telemetry.capture({ name: 'server.request.failed' })).not.toThrow()
+    await Promise.resolve()
   })
 
   it('flushes via PostHog shutdown when requested', async () => {
@@ -195,6 +224,16 @@ describe('parseTelemetryProject', () => {
     expect(parseTelemetryProject('../escape')).toBeUndefined()
 
     expect(warn).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('sanitizeTelemetryDistinctId', () => {
+  it('keeps safe ids and falls back for emails, tokens, and paths', () => {
+    expect(sanitizeTelemetryDistinctId('user_123')).toBe('user_123')
+    expect(sanitizeTelemetryDistinctId('user@example.com')).toBe('anonymous')
+    expect(sanitizeTelemetryDistinctId('Bearer secret-token')).toBe('anonymous')
+    expect(sanitizeTelemetryDistinctId('/tmp/private-path')).toBe('anonymous')
+    expect(sanitizeTelemetryDistinctId(undefined)).toBe('anonymous')
   })
 })
 
@@ -242,6 +281,29 @@ describe('sanitizeTelemetryProperties', () => {
       errorCode: 'WORKSPACE_NOT_READY',
       packageName: '@hachej/boring-core',
       packageVersion: '0.1.0',
+    })
+  })
+
+  it('drops suspicious strings even on allowlisted keys', () => {
+    expect(
+      sanitizeTelemetryProperties({
+        requestId: '/tmp/private-path',
+        sessionId: 'Bearer secret-token',
+        workspaceId: 'sk_live_abc123',
+        toolName: 'ghp_abc123',
+        modelProvider: 'anthropic',
+        errorCode: 'SECRET_TOKEN',
+        packageName: '@hachej/boring-core',
+      }),
+    ).toEqual({
+      modelProvider: 'anthropic',
+      packageName: '@hachej/boring-core',
+    })
+  })
+
+  it('keeps lower-case stable core error codes', () => {
+    expect(sanitizeTelemetryProperties({ errorCode: 'internal_error' })).toEqual({
+      errorCode: 'internal_error',
     })
   })
 
