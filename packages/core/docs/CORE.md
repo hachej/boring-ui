@@ -326,6 +326,88 @@ invite_ttl_days = 7
 | `BODY_LIMIT_BYTES` | no | Override Fastify body limit (default `16777216` / 16MB). |
 | `SESSION_TTL_SECONDS` | no | Session cookie max-age (default `60*60*24*30` / 30 days, matches v1). |
 | `SESSION_COOKIE_SECURE` | no | Force `Secure` cookie flag (default `true` when `BETTER_AUTH_URL` is https). |
+| `BORING_TELEMETRY_ENABLED` | no | Explicit opt-in for PostHog telemetry. Must be `true`; unset/`false` means no-op telemetry. |
+| `POSTHOG_KEY` | when telemetry enabled | PostHog project key. `POSTHOG_KEY` alone does **not** enable telemetry. |
+| `POSTHOG_HOST` | no | PostHog host override. Defaults to `https://us.i.posthog.com`. |
+| `BORING_TELEMETRY_PROJECT` | no | Lowercase slug used as an event-name prefix and `boringProject` property when multiple boring-ui apps share one PostHog account/project. |
+
+### PostHog telemetry (v1)
+
+Core-composed apps get PostHog telemetry from env vars only. Core owns the PostHog helper and resolves telemetry inside `createCoreWorkspaceAgentServer`; child apps do not need to import or initialize PostHog for the common path.
+
+Enable telemetry:
+
+```bash
+BORING_TELEMETRY_ENABLED=true
+POSTHOG_KEY=phc_...
+# Optional. Defaults to https://us.i.posthog.com
+POSTHOG_HOST=https://us.i.posthog.com
+# Optional. Useful when several apps share one PostHog account/project.
+BORING_TELEMETRY_PROJECT=full-app
+```
+
+Disable telemetry:
+
+```bash
+# Either omit BORING_TELEMETRY_ENABLED, or set it explicitly:
+BORING_TELEMETRY_ENABLED=false
+```
+
+`POSTHOG_KEY` by itself is ignored. This keeps telemetry off by default and prevents accidental capture when a secret exists in the environment.
+
+When `BORING_TELEMETRY_PROJECT=full-app`, event names are prefixed and the raw event name is preserved in properties:
+
+```txt
+full-app.app.opened
+full-app.agent.chat.started
+full-app.agent.tool.completed
+```
+
+```ts
+{
+  boringProject: 'full-app',
+  eventName: 'agent.chat.started'
+}
+```
+
+Implemented v1 events:
+
+| Area | Events |
+|---|---|
+| Core | `app.opened`, `server.request.failed` |
+| Agent chat | `agent.chat.started`, `agent.chat.message.submitted`, `agent.chat.completed`, `agent.chat.failed` |
+| Agent tools | `agent.tool.completed`, `agent.tool.failed` |
+
+Allowed event properties are intentionally low-cardinality operational metadata only:
+
+- `workspaceId`
+- `sessionId`
+- `requestId`
+- `runtimeMode`
+- `modelProvider`
+- `toolName`
+- `panelId`
+- `commandId`
+- `status`
+- `durationMs`
+- `errorCode`
+- `packageName`
+- `packageVersion`
+
+Privacy exclusions: v1 does not capture prompts, assistant output, file contents, command strings, stdout/stderr, raw file paths, raw errors, stack traces, headers, cookies, tokens, full env dumps, or secret values. Core sanitizes properties before sending to PostHog, and telemetry failures are best-effort only: they do not break app, chat, or tool flows.
+
+Package boundary: agent/workspace remain PostHog-free. Core passes a tiny structural telemetry sink into composed agent code; `@hachej/boring-agent` standalone remains no-op unless an embedder explicitly provides a sink.
+
+Deferred scope: browser-originated telemetry, direct browser PostHog setup, workspace frontend events (`workspace.opened`, `workspace.panel.opened`, `workspace.command.executed`), auth hook telemetry, plugin-error telemetry, UI-command telemetry, tool-started events, Sentry, OpenTelemetry/OTLP, routing/multi-account selection, and mandatory lifecycle flush wiring are not shipped in v1.
+
+Focused validation commands:
+
+```bash
+pnpm --filter @hachej/boring-core test src/shared/__tests__/telemetry.test.ts src/server/telemetry/__tests__/posthog.test.ts src/app/server/__tests__/createCoreWorkspaceAgentServer.telemetry.test.ts src/app/server/__tests__/createCoreWorkspaceAgentServer.telemetry-smoke.test.ts
+pnpm --filter @hachej/boring-agent test src/shared/__tests__/telemetry.test.ts src/server/http/routes/__tests__/chat.test.ts src/server/harness/pi-coding-agent/__tests__/tool-adapter.telemetry.test.ts src/server/__tests__/createAgentApp.test.ts
+pnpm --filter @hachej/boring-workspace test src/shared/__tests__/telemetry.test.ts
+pnpm lint:invariants
+```
 
 ### `CoreConfig` type
 
