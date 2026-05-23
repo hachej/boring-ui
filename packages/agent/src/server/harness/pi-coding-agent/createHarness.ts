@@ -18,6 +18,7 @@ import {
 import type { AgentHarness, SendMessageInput, RunContext, MessageAttachment, FollowUpOptions } from "../../../shared/harness.js";
 import { createLogger } from "../../logging.js";
 import type { AgentTool } from "../../../shared/tool.js";
+import type { TelemetrySink } from "../../../shared/telemetry.js";
 import type { UIMessageChunk } from "../../../shared/message.js";
 import { adaptToolsForPi } from "./tool-adapter.js";
 import { piEventToChunks } from "./stream-adapter.js";
@@ -330,6 +331,8 @@ export function createPiCodingAgentHarness(opts: {
   sessionNamespace?: string;
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
   sessionDir?: string;
+  /** Optional best-effort telemetry sink supplied by an embedding host. */
+  telemetry?: TelemetrySink;
 }): AgentHarness {
   const sessionStore = new PiSessionStore(opts.runtimeCwd ?? opts.cwd, {
     sessionNamespace: opts.sessionNamespace,
@@ -479,7 +482,7 @@ export function createPiCodingAgentHarness(opts: {
     const { session: piSession } = await createAgentSession({
       cwd: runtimeCwd,
       tools: [],
-      customTools: adaptToolsForPi(opts.tools, input.sessionId),
+      customTools: adaptToolsForPi(opts.tools, input.sessionId, opts.telemetry),
       model,
       thinkingLevel: input.thinkingLevel ?? "off",
       sessionManager,

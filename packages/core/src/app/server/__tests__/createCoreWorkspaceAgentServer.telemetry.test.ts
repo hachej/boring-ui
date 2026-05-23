@@ -1,6 +1,10 @@
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import Fastify from 'fastify'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { ERROR_CODES } from '../../../shared/errors.js'
 import type { TelemetrySink } from '../../../shared/telemetry.js'
 import type { CoreConfig } from '../../../shared/types.js'
 
@@ -134,6 +138,14 @@ function resetTelemetryEnv(): void {
   delete process.env.BORING_TELEMETRY_PROJECT
 }
 
+async function createBuiltFrontendRoot(): Promise<string> {
+  const appRoot = await mkdtemp(join(tmpdir(), 'boring-core-telemetry-'))
+  const frontDir = join(appRoot, 'dist', 'front')
+  await mkdir(frontDir, { recursive: true })
+  await writeFile(join(frontDir, 'index.html'), '<!doctype html><html><body>app</body></html>')
+  return appRoot
+}
+
 describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
   beforeEach(() => {
     resetTelemetryEnv()
@@ -218,6 +230,73 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
         { telemetry: { source: 'noop-env' } },
         'resolved telemetry sink',
       ])
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('emits app.opened when the server shell is served without raw URL data', async () => {
+    const capture = vi.fn()
+    const app = await createCoreWorkspaceAgentServer({
+      appRoot: await createBuiltFrontendRoot(),
+      serveFrontend: true,
+      telemetry: { capture },
+    })
+    try {
+      const res = await app.inject({ method: 'GET', url: '/workspace/private-path?token=secret' })
+
+      expect(res.statusCode).toBe(200)
+      expect(capture).toHaveBeenCalledWith({
+        name: 'app.opened',
+        properties: { requestId: expect.any(String) },
+      })
+      expect(JSON.stringify(capture.mock.calls)).not.toContain('private-path')
+      expect(JSON.stringify(capture.mock.calls)).not.toContain('secret')
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('emits server.request.failed with stable metadata only', async () => {
+    const capture = vi.fn()
+    const app = await createCoreWorkspaceAgentServer({ serveFrontend: false, telemetry: { capture } })
+    app.get('/boom/private-path', async () => {
+      throw new Error('raw secret failure with /tmp/private-path')
+    })
+    try {
+      const res = await app.inject({ method: 'GET', url: '/boom/private-path?cookie=secret' })
+
+      expect(res.statusCode).toBe(500)
+      expect(capture).toHaveBeenCalledWith({
+        name: 'server.request.failed',
+        properties: {
+          requestId: expect.any(String),
+          status: 500,
+          errorCode: ERROR_CODES.INTERNAL_ERROR,
+        },
+      })
+      expect(JSON.stringify(capture.mock.calls)).not.toContain('private-path')
+      expect(JSON.stringify(capture.mock.calls)).not.toContain('secret')
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('keeps serving the shell when telemetry capture fails', async () => {
+    const app = await createCoreWorkspaceAgentServer({
+      appRoot: await createBuiltFrontendRoot(),
+      serveFrontend: true,
+      telemetry: {
+        capture() {
+          throw new Error('telemetry sink down')
+        },
+      },
+    })
+    try {
+      const res = await app.inject({ method: 'GET', url: '/' })
+
+      expect(res.statusCode).toBe(200)
+      expect(res.body).toContain('<!doctype html>')
     } finally {
       await app.close()
     }

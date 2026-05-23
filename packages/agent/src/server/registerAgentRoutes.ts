@@ -561,6 +561,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       }
     },
     sessionChangesTracker,
+    telemetry: opts.telemetry,
   })
   await app.register(sessionRoutes, {
     getSessionStore: async (request) => {

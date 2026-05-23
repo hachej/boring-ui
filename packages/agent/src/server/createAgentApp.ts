@@ -187,6 +187,7 @@ export async function createAgentApp(
     harness,
     workdir: runtimeBundle.runtimeContext.runtimeCwd,
     sessionChangesTracker,
+    telemetry: opts.telemetry,
   })
   await app.register(sessionRoutes, {
     sessionStore: harness.sessions as unknown as SessionStore,
