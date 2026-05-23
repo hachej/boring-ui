@@ -390,7 +390,7 @@ export function WorkspaceAgentFront<
   const chatSessionId = resolvedActiveId ?? resolvedSessions[0]?.id ?? "default"
 
   useEffect(() => {
-    // postUiCommand also emits a browser CustomEvent so app/plugin bundles
+    // emitUiEffect also emits a browser CustomEvent so app/plugin bundles
     // loaded through different module graphs can still reach this shell.
     const handler = (event: Event) => {
       const command = (event as CustomEvent).detail

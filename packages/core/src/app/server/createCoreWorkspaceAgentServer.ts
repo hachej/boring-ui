@@ -24,7 +24,7 @@ import {
   createInMemoryBridge,
   createWorkspaceUiTools,
   uiRoutes,
-  type UiBridge,
+  type WorkspaceBridge,
   type WorkspaceServerPlugin,
 } from '@hachej/boring-workspace/server'
 import type { FastifyInstance } from 'fastify'
@@ -186,17 +186,17 @@ function mergePiOptions(
   }
 }
 
-function createUnavailableCorePluginBridge(): UiBridge {
+function createUnavailableCorePluginBridge(): WorkspaceBridge {
   const fail = () => {
     throw new Error(
-      'Core static server plugins do not receive a workspace-scoped UiBridge yet. Use request-scoped UI tools/routes in core, or createWorkspaceAgentServer for standalone plugin bridge support.',
+      'Core static server plugins do not receive a workspace-scoped WorkspaceBridge yet. Use request-scoped UI tools/routes in core, or createWorkspaceAgentServer for standalone plugin bridge support.',
     )
   }
 
   return {
     getState: fail,
     setState: fail,
-    postCommand: fail,
+    emitUiEffect: fail,
     subscribeCommands: fail,
     drainCommands: fail,
   }
@@ -624,8 +624,8 @@ export async function createCoreWorkspaceAgentServer(
     ...defaultPluginDirEntries,
     ...(options.plugins ?? []),
   ]
-  const bridges = new Map<string, UiBridge>()
-  const getUiBridge = (workspaceId: string): UiBridge => {
+  const bridges = new Map<string, WorkspaceBridge>()
+  const getWorkspaceBridge = (workspaceId: string): WorkspaceBridge => {
     const safeWorkspaceId = validateWorkspaceIdSegment(workspaceId)
     let bridge = bridges.get(safeWorkspaceId)
     if (!bridge) {
@@ -712,7 +712,7 @@ export async function createCoreWorkspaceAgentServer(
       const callerTools = options.getExtraTools ? await options.getExtraTools(ctx) : []
       return [
         ...callerTools,
-        ...createWorkspaceUiTools(getUiBridge(ctx.workspaceId), {
+        ...createWorkspaceUiTools(getWorkspaceBridge(ctx.workspaceId), {
           workspaceRoot: ctx.workspaceFsCapability === 'strong' ? ctx.workspaceRoot : undefined,
         }),
       ]
@@ -743,7 +743,7 @@ export async function createCoreWorkspaceAgentServer(
   })
 
   await app.register(uiRoutes, {
-    getBridge: async (request) => getUiBridge(await resolveWorkspaceId(request)),
+    getBridge: async (request) => getWorkspaceBridge(await resolveWorkspaceId(request)),
     preserveStateKeys: pluginCollection.preservedUiStateKeys,
   })
 

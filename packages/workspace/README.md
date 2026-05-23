@@ -106,7 +106,7 @@ WorkspaceProvider
   │     ├── registry.getComponents() → lazy-wrapped panels
   │     └── DockviewReact (layout chrome)
   │
-  ├── UiBridgeClient
+  ├── WorkspaceBridgeClient
   │     ├── SSE command stream
   │     └── HTTP poll fallback
   │
@@ -118,7 +118,7 @@ WorkspaceProvider
 ```
 Agent Backend                    Frontend
 ──────────────                   ────────
-  POST /api/v1/ui/commands  ──►  UiBridge dispatches
+  POST /api/v1/ui/commands  ──►  WorkspaceBridge dispatches
   { kind, params }             │  ├── openFile
                                │  ├── openPanel
                                │  └── showNotification
@@ -132,7 +132,7 @@ POST /api/v1/ui/commands
 
 ↓
 
-UiBridgeClient receives → dispatches to FileTree plugin → expands node + focuses editor
+WorkspaceBridgeClient receives → dispatches to FileTree plugin → expands node + focuses editor
 ```
 
 ### Built-in Plugins
@@ -257,7 +257,7 @@ export const statusServerPlugin = defineServerPlugin({
 |---------|--------------------------|-----------------|---------------|
 | Panel layout | ✅ Dockview, drag/drop/split | ✅ Tabbed | ⚠️ Build yourself |
 | Plugin system | ✅ Panels + tabs + commands + catalogs | ✅ Extension API | ❌ DIY |
-| Agent bridge | ✅ Typed UiBridge pubsub | ❌ Not agent-native | ❌ DIY |
+| Agent bridge | ✅ Typed WorkspaceBridge pubsub | ❌ Not agent-native | ❌ DIY |
 | Code splitting | ✅ Auto-detects lazy factories | ⚠️ Require-based | ⚠️ Manual |
 | Setup time | ✅ ~10 lines | ❌ Heavy framework | ❌ Weeks |
 
@@ -279,7 +279,7 @@ export const statusServerPlugin = defineServerPlugin({
 |-------|-------|-----|
 | `Panel not found: <id>` | Plugin not registered | Check `plugins` prop on `WorkspaceProvider` |
 | Blank panel / white screen | Lazy component threw | Check `PluginErrorBoundary` — inspect console |
-| `UiBridge not connected` | Backend not running | Verify `apiBaseUrl` and backend endpoint |
+| `WorkspaceBridge not connected` | Backend not running | Verify `apiBaseUrl` and backend endpoint |
 | Commands not arriving | SSE blocked by proxy | Use `?poll=true` on `/api/v1/ui/commands/next` |
 | Plugin not loading | Missing `definePlugin` wrapper or `boring.front` manifest entry | Package front plugins must default-export `definePlugin({ ... })` and declare `boring.front` |
 | Duplicate panel IDs | Two plugins register same ID | Rename one panel's `id` field |

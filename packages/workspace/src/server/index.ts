@@ -20,7 +20,7 @@ export {
   createExecUiTool,
   createWorkspaceUiTools,
 } from "./ui-control/tools/uiTools"
-export type { UiBridge, UiState, UiCommand, CommandResult } from "../shared/ui-bridge"
+export type { WorkspaceBridge, UiState, UiCommand, CommandResult } from "../shared/ui-bridge"
 export {
   bootstrapServer,
   defineServerPlugin,

@@ -30,7 +30,7 @@ Concrete migrations:
 ## Non-goals
 
 - Do not create a generic route proxy such as `bridge.call('/api/anything')`.
-- Do not keep backward-compatible aliases for the UI side-effect rename. This plan intentionally replaces `postCommand` with `emitUiEffect`.
+- Do not keep backward-compatible aliases for the UI side-effect rename. This plan intentionally replaces `emitUiEffect` with `emitUiEffect`.
 - Do not couple `@hachej/boring-agent` to workspace. Agent may expose generic runtime env/context seams; workspace/core inject workspace bridge specifics.
 
 ## Core idea
@@ -52,22 +52,22 @@ UI side effects caused by RPC handlers must still flow through `emitUiEffect`; `
 
 ## Naming and invariant migration
 
-The UI side-effect API is named `emitUiEffect`, not `postCommand`.
+The UI side-effect API is named `emitUiEffect`, not `emitUiEffect`.
 
 This is a deliberate hard rename:
 
 - `emitUiEffect` means "tell the UI to do something".
 - `call` means "invoke a host capability and receive a response".
-- No deprecated `postCommand` alias should be kept in the final implementation.
+- No deprecated `emitUiEffect` alias should be kept in the final implementation.
 - Migration work must update call sites and tests in the same focused phase that introduces `WorkspaceBridge.emitUiEffect`.
 
-This plan intentionally changes a current architectural invariant. Current `AGENTS.md` still names `UiBridge.postCommand` as the single UI dispatch source. The implementation must update `AGENTS.md`, invariant-lint rules, docs, and tests in the same phase that introduces `WorkspaceBridge.emitUiEffect`.
+This plan intentionally changes a current architectural invariant. Current `AGENTS.md` still names `WorkspaceBridge.emitUiEffect` as the single UI dispatch source. The implementation must update `AGENTS.md`, invariant-lint rules, docs, and tests in the same phase that introduces `WorkspaceBridge.emitUiEffect`.
 
 Required end state:
 
 - `WorkspaceBridge.emitUiEffect` is the single dispatch source for UI effects.
 - `WorkspaceBridge.call` is never used as a UI-command transport.
-- No deprecated `postCommand` alias remains in public APIs or invariant docs.
+- No deprecated `emitUiEffect` alias remains in public APIs or invariant docs.
 - Chat-stream `data-ui-command` parts remain display-only derivatives of emitted UI effects.
 - Historical/archive docs may mention old names only if clearly archival.
 
@@ -948,7 +948,7 @@ Each phase must include tests with detailed, token-redacted logs. The final secu
 | Area                          | Required tests                                                                                         |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------ |
 | Shared contracts              | typecheck front/shared/server; no node imports in shared; no value imports from agent                  |
-| Rename/invariants             | no public `postCommand` alias; AGENTS/invariant docs updated; UI effects still work                    |
+| Rename/invariants             | no public `emitUiEffect` alias; AGENTS/invariant docs updated; UI effects still work                    |
 | Registry                      | success, unknown op, duplicate op, schema failure, timeout, input/output size limit                    |
 | Tokens                        | valid, expired, wrong audience, workspace/session/plugin mismatch, redaction                           |
 | Out-of-process HTTP transport | browser auth, runtime bearer, caller allowlist, CSRF/origin, no-cache, CORS default-deny               |
@@ -997,7 +997,7 @@ Goal: rename the UI side-effect API with minimal semantic change before RPC chur
 Scope:
 
 - Introduce/rename to `WorkspaceBridge.emitUiEffect` as the single UI side-effect API.
-- Replace `UiBridge.postCommand`, `postUiCommand`, and old canonical language where they represent the same concept.
+- Replace `WorkspaceBridge.emitUiEffect`, `emitUiEffect`, and old canonical language where they represent the same concept.
 - Do not add RPC yet.
 - Do not export compatibility aliases.
 - Preserve chat-stream `data-ui-command` as display-only derivative.
@@ -1005,7 +1005,7 @@ Scope:
 
 Acceptance:
 
-- `rg "postCommand|postUiCommand|UiBridge\.postCommand"` returns no canonical API uses; any remaining historical docs are explicitly archival.
+- `rg "emitUiEffect|emitUiEffect|WorkspaceBridge\.emitUiEffect"` returns no canonical API uses; any remaining historical docs are explicitly archival.
 - AGENTS/invariant text says `WorkspaceBridge.emitUiEffect` is the single UI side-effect dispatch source.
 - Existing UI open-panel/focus-file/toast tests pass under the new name.
 - Workspace front/server typechecks pass.

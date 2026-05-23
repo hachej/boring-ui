@@ -21,8 +21,8 @@ Passing `hotReload: true` fails fast. Directory plugin entries must also omit `h
 
 Use standalone `createWorkspaceAgentServer()` when plugin hot reload, plugin SSE, and `/reload` asset-manager behavior are required.
 
-## UiBridge limitation
+## WorkspaceBridge limitation
 
-Core is multi-workspace. Static server plugin factories are resolved at boot, before a request workspace is known, so core does not provide a generic plugin-context `UiBridge` yet. Request-scoped agent UI tools and `/api/v1/ui` routes continue to use the correct per-workspace bridge.
+Core is multi-workspace. Static server plugin factories are resolved at boot, before a request workspace is known, so core does not provide a generic plugin-context `WorkspaceBridge` yet. Request-scoped agent UI tools and `/api/v1/ui` routes continue to use the correct per-workspace bridge.
 
 A future parity pass can add a request/workspace-scoped plugin bridge contract for core.

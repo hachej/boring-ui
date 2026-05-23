@@ -623,7 +623,7 @@ describe("createBridgeClient", () => {
       client.disconnect()
     })
 
-    it("resets agent command depth when a poll command dispatch fails", async () => {
+    it("resets agent command depth when a poll UI effect dispatch fails", async () => {
       fetchMock
         .mockResolvedValueOnce({
           status: 200,
@@ -737,7 +737,7 @@ describe("createBridgeClient", () => {
     })
   })
 
-  describe("command dispatch coverage", () => {
+  describe("UI effect dispatch coverage", () => {
     it("dispatches navigateToLine", async () => {
       const { client, bridge } = createClient()
       client.connect()

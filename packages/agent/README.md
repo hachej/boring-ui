@@ -104,7 +104,7 @@ mode behavior.
 **Two layers, clear boundary:**
 
 - **Layer 1 (Core runtime):** `AgentHarness` · `Catalog` · `Workspace` · `Sandbox` — interfaces locked; adapters swap per mode.
-- **Layer 2 (Integration):** `SessionStore` · `UiBridge` · `Provisioning` — replaceable plumbing, independent evolution.
+- **Layer 2 (Integration):** `SessionStore` · `WorkspaceBridge` · `Provisioning` — replaceable plumbing, independent evolution.
 
 ### Execution Modes
 

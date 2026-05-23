@@ -1,5 +1,5 @@
 import type {
-  UiBridge,
+  WorkspaceBridge,
   UiState,
   UiCommand,
   CommandResult,
@@ -9,7 +9,7 @@ type AnnotatedCommand = UiCommand & { seq: number };
 type CommandHandler = (cmd: AnnotatedCommand) => void;
 const MAX_PENDING_COMMANDS = 1_000;
 
-export function createInMemoryBridge(): UiBridge {
+export function createInMemoryBridge(): WorkspaceBridge {
   let state: UiState | null = null;
   let nextSeq = 1;
   const subscribers = new Set<CommandHandler>();
@@ -31,7 +31,7 @@ export function createInMemoryBridge(): UiBridge {
       state = s;
     },
 
-    async postCommand(cmd: UiCommand): Promise<CommandResult> {
+    async emitUiEffect(cmd: UiCommand): Promise<CommandResult> {
       const seq = nextSeq++;
       const annotated: AnnotatedCommand = { ...cmd, seq };
       if (subscribers.size === 0) enqueuePending(annotated);

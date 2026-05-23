@@ -5,7 +5,7 @@ import {
   definePlugin,
   type BoringFrontSetup,
 } from "../../../shared/plugins/frontFactory"
-import { postUiCommand } from "../../../front/bridge"
+import { emitUiEffect } from "../../../front/bridge"
 import { useDataClient, useFileList } from "./data"
 import { DataProvider } from "./data/DataProvider"
 import { useCatalogRegistry } from "../../../front/registry"
@@ -86,7 +86,7 @@ function FilesystemCatalogBinding() {
     const catalog = createFilesCatalog({
       client,
       onSelect: (path) => {
-        postUiCommand({ kind: "openFile", params: { path } })
+        emitUiEffect({ kind: "openFile", params: { path } })
       },
     })
 

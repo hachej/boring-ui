@@ -12,7 +12,7 @@ import { join } from "node:path"
 import { afterEach, beforeEach, expect, test, describe } from "vitest"
 import { createExecUiTool, createWorkspaceUiTools } from "../ui-control/tools/uiTools"
 import { createInMemoryBridge } from "../bridge/createInMemoryBridge"
-import type { UiBridge } from "../../shared/ui-bridge"
+import type { WorkspaceBridge } from "../../shared/ui-bridge"
 
 const FAKE_CTX = {
   abortSignal: new AbortController().signal,
@@ -21,7 +21,7 @@ const FAKE_CTX = {
 
 describe("createExecUiTool — path validation", () => {
   let workspaceRoot: string
-  let bridge: UiBridge
+  let bridge: WorkspaceBridge
 
   beforeEach(async () => {
     workspaceRoot = await mkdtemp(join(tmpdir(), "uitools-pathval-"))
@@ -243,7 +243,7 @@ describe("createExecUiTool — path validation", () => {
 
 describe("createExecUiTool — auto state verification", () => {
   let workspaceRoot: string
-  let bridge: UiBridge
+  let bridge: WorkspaceBridge
 
   beforeEach(async () => {
     workspaceRoot = await mkdtemp(join(tmpdir(), "uitools-verify-"))

@@ -225,7 +225,7 @@ export type {
 // Bridge
 export { createBridge } from "./front/bridge"
 export { createBridgeClient } from "./front/bridge"
-export { postUiCommand, UI_COMMAND_EVENT } from "./front/bridge"
+export { emitUiEffect, UI_COMMAND_EVENT } from "./front/bridge"
 export type {
   BridgeClient,
   BridgeClientOptions,

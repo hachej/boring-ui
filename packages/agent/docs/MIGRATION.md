@@ -41,7 +41,7 @@ surface mode-agnostic so later adapter swaps are non-breaking.
 
 - No `node:*` imports in `src/shared/**`.
 - No `Buffer` in shared contracts (`Uint8Array` only).
-- Keep UI commands flowing through `UiBridge.postCommand`.
+- Keep UI commands flowing through `WorkspaceBridge.emitUiEffect`.
 - Keep session/tool/workspace behavior aligned with `@boring/agent/shared`.
 
 ## References

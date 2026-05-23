@@ -26,7 +26,7 @@ See also: [DECISIONS.md](./DECISIONS.md) (locked decisions), [REVIEW_DECISIONS.m
 1. `@boring/workspace` has **zero imports** from `@boring/agent`.
 2. `@boring/agent` has **zero imports** from `@boring/workspace`.
 3. The app shell imports from both and wires them via `createWorkspaceAgentServer` (server) + `WorkspaceAgentFront` / `WorkspaceProvider` (frontend).
-4. Shared types (`UiBridge`, `UiCommand`, `CommandResult`) live in `@boring/workspace/shared` and are re-exported from `@boring/workspace/server`.
+4. Shared types (`WorkspaceBridge`, `UiCommand`, `CommandResult`) live in `@boring/workspace/shared` and are re-exported from `@boring/workspace/server`.
 
 **App-shell wiring example (plugin-based — recommended):**
 
@@ -139,9 +139,9 @@ These are exported by `@boring/agent` for the app shell to compose into `Workspa
 - Workspace can override at any scope via the `data-boring-agent` attribute on the panel container.
 - No CSS-in-JS runtime; no Tailwind dependency from agent side.
 
-### 4. UiBridge Semantics
+### 4. WorkspaceBridge Semantics
 
-- **Command dispatch**: single source via `UiBridge.postCommand()`. Agent tools call this; workspace receives via SSE through the workspace/app-shell hosted `/api/v1/ui/*` bridge.
+- **UI effect dispatch**: single source via `WorkspaceBridge.emitUiEffect()`. Agent tools call this; workspace receives via SSE through the workspace/app-shell hosted `/api/v1/ui/*` bridge.
 - **State ownership**: workspace PUTs state after applying changes. Agent reads state via `get_ui_state` tool.
 - **Seq numbering**: monotonically increasing per command. Same `seq` appears in SSE event and POST response.
 - **Display parts**: `data-ui-command` message parts are display-only in the chat stream. Workspace must NOT dispatch from these; SSE is the authoritative dispatch channel.

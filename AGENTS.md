@@ -115,7 +115,7 @@ Design implication today: every interface that might need DB-backing in the futu
 **Build principles — apply these to every bead:**
 
 - **Composable** — every user-facing feature ships as a trio: default component + primitives + headless hook. Consumers pick the level they want; we never force a layout or a shell.
-- **Modular + short** — small interfaces, single-responsibility files, load-bearing seams (Harness / Catalog / Workspace / Sandbox / SessionStore / UiBridge). 
+- **Modular + short** — small interfaces, single-responsibility files, load-bearing seams (Harness / Catalog / Workspace / Sandbox / SessionStore / WorkspaceBridge). 
 - **Easy to maintain** — platform-agnostic shared contracts (`Uint8Array` not `Buffer`, no `node:*` in `src/shared/**`). Adapters own platform specifics. Swapping an adapter = swap one file.
 - **Ship fast, accept known risk** — if a risk is enumerated in the spec's Risks section, we don't pre-engineer mitigations. We add them reactively when a user hits them.
 - **Port over re-research** — the old boring-ui has battle-hardened path validators, bwrap flags, fileRoutes. Port verbatim where possible.
@@ -157,7 +157,7 @@ These must hold in all code. Grep-enforced in CI (see beads tagged `invariant-li
 3. **Routes + tools receive `Workspace` as a parameter** — never a path or root-dir. Centralized adapter resolution via `resolveMode()`.
 4. **Path validation is the adapter's job** — consumers pass user paths; adapters reject `../` / absolute / symlink-escape.
 5. **Workspace + Sandbox swap as a paired `RuntimeModeAdapter`** — they must share a filesystem substrate. Mixed pairings = split-brain.
-6. **`UiBridge.postCommand` is the single dispatch source** — chat-stream `data-ui-command` parts are display-only derivatives.
+6. **`WorkspaceBridge.emitUiEffect` is the single dispatch source** — chat-stream `data-ui-command` parts are display-only derivatives.
 7. **Workspace base front/shared code has ZERO value imports from `@hachej/boring-agent`** — package-neutral workspace UI keeps agent injected. `@hachej/boring-workspace/app/front` may import documented `@hachej/boring-agent/front` APIs for default app composition, and `@hachej/boring-workspace/app/server` may import documented `@hachej/boring-agent/server` APIs.
 8. **Every error has a stable code** from the canonical error-codes enum (one import site, no raw string codes).
 9. **Pi-tools migration stays locked** — `bash`/`read`/`write`/`edit`/`find`/`grep`/`ls` flow through pi factories plus Operations adapters. Custom AgentTools require Principle 3 justification from epic `boring-ui-v2-uhwx`.
@@ -293,7 +293,7 @@ imperative `api.register*` API. Plugin outputs are now declared through
 
 **Bridge / UI commands:**
 
-The workspace has a typed pubsub bus (`events`, `postUiCommand`) for communication between the agent backend and the frontend. Use `events.on(workspaceEvents.xxx, handler)` on the front, and `postUiCommand(...)` from the server-side plugin to trigger panel opens, file navigation, etc.
+The workspace has a typed pubsub bus (`events`, `emitUiEffect`) for communication between the agent backend and the frontend. Use `events.on(workspaceEvents.xxx, handler)` on the front, and `emitUiEffect(...)` from the server-side plugin to trigger panel opens, file navigation, etc.
 
 **Surface resolver:**
 

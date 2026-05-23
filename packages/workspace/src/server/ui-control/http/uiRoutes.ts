@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z, type ZodSchema } from "zod";
-import type { UiBridge, UiCommand } from "../../../shared/ui-bridge";
+import type { WorkspaceBridge, UiCommand } from "../../../shared/ui-bridge";
 
 const UI_BRIDGE_PROTOCOL_VERSION = 1;
 const HEARTBEAT_MS = 15_000;
@@ -10,7 +10,7 @@ const setStateBodySchema = z.object({
   causedBy: z.enum(["user", "agent", "restore"]).optional(),
 });
 
-const postCommandBodySchema = z.object({
+const emitUiEffectBodySchema = z.object({
   kind: z.string().min(1),
   params: z.record(z.unknown()).default({}),
 });
@@ -39,8 +39,8 @@ function createBodyValidator<T>(schema: ZodSchema<T>) {
 }
 
 export interface UiRoutesOptions {
-  bridge?: UiBridge;
-  getBridge?: (request: FastifyRequest) => UiBridge | Promise<UiBridge>;
+  bridge?: WorkspaceBridge;
+  getBridge?: (request: FastifyRequest) => WorkspaceBridge | Promise<WorkspaceBridge>;
   /**
    * Server/plugin-owned state slots preserved across browser full-state PUTs.
    * Browser UI snapshots are replace-style for normal workspace state, but
@@ -56,8 +56,8 @@ export function uiRoutes(
 ): void {
   const fallbackBridge = opts.bridge;
   const validateSetState = createBodyValidator(setStateBodySchema);
-  const validatePostCommand = createBodyValidator(postCommandBodySchema);
-  const resolveBridge = async (request: FastifyRequest): Promise<UiBridge> => {
+  const validateEmitUiEffect = createBodyValidator(emitUiEffectBodySchema);
+  const resolveBridge = async (request: FastifyRequest): Promise<WorkspaceBridge> => {
     if (opts.getBridge) return await opts.getBridge(request);
     if (fallbackBridge) return fallbackBridge;
     throw new Error("uiRoutes requires bridge or getBridge");
@@ -93,12 +93,12 @@ export function uiRoutes(
 
   app.post(
     "/api/v1/ui/commands",
-    { preHandler: validatePostCommand },
+    { preHandler: validateEmitUiEffect },
     async (request) => {
-      const body = request.body as z.infer<typeof postCommandBodySchema>;
+      const body = request.body as z.infer<typeof emitUiEffectBodySchema>;
       const bridge = await resolveBridge(request);
       const cmd: UiCommand = { kind: body.kind, params: body.params };
-      return await bridge.postCommand(cmd);
+      return await bridge.emitUiEffect(cmd);
     },
   );
 
@@ -124,7 +124,7 @@ export function uiRoutes(
 
     // Drain any commands queued BEFORE this subscriber connected. Without
     // this, a command posted in the gap between page-reload and EventSource-
-    // reconnect is silently dropped: postCommand broadcasts to the (empty)
+    // reconnect is silently dropped: emitUiEffect broadcasts to the (empty)
     // subscriber set, the message lands in pendingCommands, and the next
     // subscriber only sees future broadcasts. Tests that bootClean → POST
     // openPanel hit this race when Vite is cold.

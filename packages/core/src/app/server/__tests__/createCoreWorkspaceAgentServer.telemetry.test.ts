@@ -62,7 +62,7 @@ vi.mock('@hachej/boring-workspace/server', () => ({
   createInMemoryBridge: () => ({
     drainCommands: vi.fn(),
     getState: vi.fn(),
-    postCommand: vi.fn(),
+    emitUiEffect: vi.fn(),
     setState: vi.fn(),
     subscribeCommands: vi.fn(),
   }),

@@ -287,7 +287,7 @@ Acceptance:
 - `WorkspaceProvider` tests for default plugin inclusion/exclusion.
 - `WorkbenchLeftPane` tests for generic left-tab hosting.
 - Filesystem plugin tests for Files tab, catalog search, and open-file
-  command dispatch.
+  UI effect dispatch.
 - Artifact surface tests for surface resolver resolution and host override.
 - Browser smoke: command palette Files search opens the selected file in
   the workbench with Enter.

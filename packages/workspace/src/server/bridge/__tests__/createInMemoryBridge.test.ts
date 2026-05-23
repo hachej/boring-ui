@@ -22,12 +22,12 @@ describe("createInMemoryBridge", () => {
     expect(await bridge.getState()).toEqual({ v: 2 });
   });
 
-  it("postCommand returns monotonically increasing seq", async () => {
+  it("emitUiEffect returns monotonically increasing seq", async () => {
     const bridge = createInMemoryBridge();
     const cmd: UiCommand = { kind: "openFile", params: { path: "/a.ts" } };
-    const r1 = await bridge.postCommand(cmd);
-    const r2 = await bridge.postCommand(cmd);
-    const r3 = await bridge.postCommand(cmd);
+    const r1 = await bridge.emitUiEffect(cmd);
+    const r2 = await bridge.emitUiEffect(cmd);
+    const r3 = await bridge.emitUiEffect(cmd);
     expect(r1.seq).toBe(1);
     expect(r2.seq).toBe(2);
     expect(r3.seq).toBe(3);
@@ -39,8 +39,8 @@ describe("createInMemoryBridge", () => {
     const received: Array<UiCommand & { seq: number }> = [];
     bridge.subscribeCommands((cmd) => received.push(cmd));
 
-    await bridge.postCommand({ kind: "openFile", params: { path: "/a.ts" } });
-    await bridge.postCommand({
+    await bridge.emitUiEffect({ kind: "openFile", params: { path: "/a.ts" } });
+    await bridge.emitUiEffect({
       kind: "showNotification",
       params: { msg: "hello" },
     });
@@ -59,7 +59,7 @@ describe("createInMemoryBridge", () => {
     bridge.subscribeCommands((cmd) => r1.push(cmd.seq));
     bridge.subscribeCommands((cmd) => r2.push(cmd.seq));
 
-    await bridge.postCommand({ kind: "openFile", params: { path: "/b.ts" } });
+    await bridge.emitUiEffect({ kind: "openFile", params: { path: "/b.ts" } });
 
     expect(r1).toEqual([1]);
     expect(r2).toEqual([1]);
@@ -70,9 +70,9 @@ describe("createInMemoryBridge", () => {
     const received: number[] = [];
     const unsub = bridge.subscribeCommands((cmd) => received.push(cmd.seq));
 
-    await bridge.postCommand({ kind: "openFile", params: { path: "/a.ts" } });
+    await bridge.emitUiEffect({ kind: "openFile", params: { path: "/a.ts" } });
     unsub();
-    await bridge.postCommand({ kind: "openFile", params: { path: "/b.ts" } });
+    await bridge.emitUiEffect({ kind: "openFile", params: { path: "/b.ts" } });
 
     expect(received).toEqual([1]);
   });
@@ -86,19 +86,19 @@ describe("createInMemoryBridge", () => {
 
   it("no commands delivered before subscription", async () => {
     const bridge = createInMemoryBridge();
-    await bridge.postCommand({ kind: "openFile", params: { path: "/a.ts" } });
+    await bridge.emitUiEffect({ kind: "openFile", params: { path: "/a.ts" } });
 
     const received: number[] = [];
     bridge.subscribeCommands((cmd) => received.push(cmd.seq));
 
-    await bridge.postCommand({ kind: "openFile", params: { path: "/b.ts" } });
+    await bridge.emitUiEffect({ kind: "openFile", params: { path: "/b.ts" } });
     expect(received).toEqual([2]);
   });
 
   it("drainCommands returns queued commands in order", async () => {
     const bridge = createInMemoryBridge();
-    await bridge.postCommand({ kind: "openFile", params: { path: "/a.ts" } });
-    await bridge.postCommand({
+    await bridge.emitUiEffect({ kind: "openFile", params: { path: "/a.ts" } });
+    await bridge.emitUiEffect({
       kind: "showNotification",
       params: { msg: "hello" },
     });
@@ -115,7 +115,7 @@ describe("createInMemoryBridge", () => {
     const received: Array<UiCommand & { seq: number }> = [];
     bridge.subscribeCommands((cmd) => received.push(cmd));
 
-    await bridge.postCommand({ kind: "openFile", params: { path: "/live.ts" } });
+    await bridge.emitUiEffect({ kind: "openFile", params: { path: "/live.ts" } });
 
     expect(received).toEqual([
       { kind: "openFile", params: { path: "/live.ts" }, seq: 1 },
@@ -126,10 +126,10 @@ describe("createInMemoryBridge", () => {
   it("queues commands again after the last live subscriber disconnects", async () => {
     const bridge = createInMemoryBridge();
     const unsub = bridge.subscribeCommands(() => {});
-    await bridge.postCommand({ kind: "openFile", params: { path: "/live.ts" } });
+    await bridge.emitUiEffect({ kind: "openFile", params: { path: "/live.ts" } });
     unsub();
 
-    await bridge.postCommand({ kind: "openFile", params: { path: "/queued.ts" } });
+    await bridge.emitUiEffect({ kind: "openFile", params: { path: "/queued.ts" } });
 
     expect(await bridge.drainCommands?.()).toEqual([
       { kind: "openFile", params: { path: "/queued.ts" }, seq: 2 },
@@ -138,7 +138,7 @@ describe("createInMemoryBridge", () => {
 
   it("drainCommands empties queue after read", async () => {
     const bridge = createInMemoryBridge();
-    await bridge.postCommand({ kind: "openFile", params: { path: "/a.ts" } });
+    await bridge.emitUiEffect({ kind: "openFile", params: { path: "/a.ts" } });
 
     const firstDrain = await bridge.drainCommands?.();
     const secondDrain = await bridge.drainCommands?.();
@@ -150,7 +150,7 @@ describe("createInMemoryBridge", () => {
   it("drain queue is bounded to the most recent 1000 commands", async () => {
     const bridge = createInMemoryBridge();
     for (let i = 0; i < 1_005; i++) {
-      await bridge.postCommand({
+      await bridge.emitUiEffect({
         kind: "openFile",
         params: { path: `/f-${i}.ts` },
       });
@@ -166,11 +166,11 @@ describe("createInMemoryBridge", () => {
     const b1 = createInMemoryBridge();
     const b2 = createInMemoryBridge();
 
-    const r1 = await b1.postCommand({
+    const r1 = await b1.emitUiEffect({
       kind: "openFile",
       params: { path: "/a.ts" },
     });
-    const r2 = await b2.postCommand({
+    const r2 = await b2.emitUiEffect({
       kind: "openFile",
       params: { path: "/b.ts" },
     });

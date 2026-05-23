@@ -76,7 +76,7 @@ v1 mixed chat, layout, sandboxing, and deploy concerns into a single product sha
 - routes and tools receive `Workspace`, not a root path
 - path validation belongs to adapters
 - workspace and sandbox swap as a paired runtime mode adapter
-- `UiBridge.postCommand` is the single dispatch source
+- `WorkspaceBridge.emitUiEffect` is the single dispatch source
 - workspace base front/shared code has zero value imports from `@boring/agent`
 - every error has a stable code
 

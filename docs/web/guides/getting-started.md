@@ -51,7 +51,7 @@ Important examples:
 
 - shared code stays platform-agnostic
 - workspace and sandbox must share the same filesystem substrate
-- `UiBridge.postCommand` is the dispatch source
+- `WorkspaceBridge.emitUiEffect` is the dispatch source
 - workspace base code must not value-import agent
 
 ## Next steps

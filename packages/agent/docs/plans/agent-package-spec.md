@@ -81,7 +81,7 @@ The package has **two layers**. Treat the boundary as load-bearing.
 
 ### Layer 2 — Integration services (3 replaceable plumbing pieces)
 
-**SessionStore · UiBridge · WorkspaceProvisioning.** Plumbing that connects the runtime to a host app. Each is an interface in `shared/` with a default impl; consumers inject alternatives via `createAgentApp({ sessionStore, uiBridge, ... })`. Evolving a service impl (or adding a new one) doesn't touch Layer 1.
+**SessionStore · WorkspaceBridge · WorkspaceProvisioning.** Plumbing that connects the runtime to a host app. Each is an interface in `shared/` with a default impl; consumers inject alternatives via `createAgentApp({ sessionStore, workspaceBridge, ... })`. Evolving a service impl (or adding a new one) doesn't touch Layer 1.
 
 *(Pi plugins are a separate concern — user-installable catalog extensions that add tools at load time. They live alongside Layer 1 tools, not as their own layer. See the Plugin compat section.)*
 
@@ -329,7 +329,7 @@ export interface ToolResult {
 export interface CatalogDeps {
   workspace: Workspace
   sandbox: Sandbox
-  uiBridge?: UiBridge          // optional; when present, catalog includes get_ui_state + exec_ui tools
+  workspaceBridge?: WorkspaceBridge          // optional; when present, catalog includes get_ui_state + exec_ui tools
   fileSearch?: FileSearch      // optional; used by routes but not exposed as an agent tool
 }
 
@@ -349,7 +349,7 @@ const tools: AgentTool[] = [
 - **7 standard pi tools always:** `bash`, `read`, `write`, `edit`, `find`, `grep`, `ls`.
 - **Operations adapters own backend behavior:** local/direct use `boundFs` and local bash ops; Vercel mode swaps in Vercel-backed Operations.
 - **Custom AgentTools stay exceptional:** `execute_isolated_code` is capability-gated; `vercelGrepTool` exists only because pi's grep Operations seam cannot redirect its `rg` spawn into the remote VM while keeping pi's name, description, and schema.
-- **2 UI bridge tools when `uiBridge` is wired** (default in v1):
+- **2 UI bridge tools when `workspaceBridge` is wired** (default in v1):
   - `get_ui_state()` → returns current UI state blob
   - `exec_ui({ kind, params })` → generic dispatcher; kinds enumerated in tool description (`openFile`, `openPanel`, `showNotification`, extensible)
 
@@ -493,7 +493,7 @@ Sandbox takes a `Workspace` in `init()` so exec `cwd` defaults to the workspace 
 | `resolveSandboxHandle()` — Vercel lifecycle (create/get/resume) + in-process cache | ~100 |
 | `SandboxHandleStore` interface + `FileHandleStore` default impl (~/.config/boring-agent/sandboxes.json) | ~60 |
 | Fastify routes (`/api/v1/files` GET/POST/DELETE, `/files/move`, `/dirs`, `/tree`, `/stat`, `/files/search`, `/agent/chat`, `/agent/sessions` list+create+detail+delete, `/ui/*` bridge) | ~330 |
-| `UiBridge` interface + in-memory impl + SSE fan-out | ~150 |
+| `WorkspaceBridge` interface + in-memory impl + SSE fan-out | ~150 |
 | UI agent tools (`get_ui_state`, `exec_ui` dispatcher) | ~60 |
 | `<ChatPanel />`, `<SessionToolbar />`, `useAgentChat`, `useSessions` (list/create/switch/delete) | ~240 |
 | `<ModelPicker />` + `<ThinkingToggle />` inside `<Composer />` | ~80 |
@@ -537,7 +537,7 @@ packages/agent/
     │   ├── catalog.ts                (ToolCatalog type + deps only)
     │   ├── session.ts                (SessionStore interface + types)
     │   ├── sandbox-handle-store.ts   (SandboxHandleStore interface — file default, swappable for DB)
-    │   ├── ui-bridge.ts              (UiBridge interface: state KV + command queue)
+    │   ├── ui-bridge.ts              (WorkspaceBridge interface: state KV + command queue)
     │   ├── message.ts                (UIMessage extension type)
     │   └── index.ts
     ├── server/
@@ -584,7 +584,7 @@ packages/agent/
     │   │   │   └── vercel.ts              (Vercel Sandbox-backed fs/bash Operations)
     │   │   └── vercelGrepTool.ts          (custom AgentTool preserving pi grep schema)
     │   ├── ui-bridge/
-    │   │   ├── createInMemoryBridge.ts    (in-memory UiBridge impl)
+    │   │   ├── createInMemoryBridge.ts    (in-memory WorkspaceBridge impl)
     │   │   └── sseCommandStream.ts        (SSE fan-out helper)
     │   ├── http/
     │   │   └── routes/
@@ -780,10 +780,10 @@ The bridge carries two orthogonal flows between workspace (frontend) and agent (
 ### Interface (`src/shared/ui-bridge.ts`)
 
 ```ts
-export interface UiBridge {
+export interface WorkspaceBridge {
   getState(): Promise<UiState | null>
   setState(state: UiState): Promise<void>
-  postCommand(cmd: UiCommand): Promise<CommandResult>
+  emitUiEffect(cmd: UiCommand): Promise<CommandResult>
   subscribeCommands(handler: (cmd: UiCommand & { seq: number }) => void): () => void
 }
 
@@ -821,7 +821,7 @@ Just two tools — kept minimal on purpose:
 | Tool | Does | Bridge call |
 |---|---|---|
 | `get_ui_state` | Returns current UI state as JSON | `bridge.getState()` |
-| `exec_ui({ kind, params })` | Generic dispatcher for UI commands | `bridge.postCommand({ kind, params })` |
+| `exec_ui({ kind, params })` | Generic dispatcher for UI commands | `bridge.emitUiEffect({ kind, params })` |
 
 The `exec_ui` tool has the command kinds enumerated in its `parameters.properties.kind.enum`:
 ```
@@ -839,11 +839,11 @@ Total agent-visible tools in v1: **6** (`bash, read, write, edit, get_ui_state, 
 
 ### Command transport — single dispatch channel
 
-`UiBridge` is the **single command transport**. One queue, one ordering model, one ack model.
+`WorkspaceBridge` is the **single command transport**. One queue, one ordering model, one ack model.
 
-Chat-stream `data-ui-command` parts are **display-only derivatives** of bridge-dispatched commands — never their own dispatch source. Dispatch flows only through `UiBridge.postCommand` → SSE → workspace Zustand store.
+Chat-stream `data-ui-command` parts are **display-only derivatives** of bridge-dispatched commands — never their own dispatch source. Dispatch flows only through `WorkspaceBridge.emitUiEffect` → SSE → workspace Zustand store.
 
-Concretely, the `exec_ui` handler: (1) calls `bridge.postCommand(cmd)` and awaits `{ seq, status }`; (2) emits a `data-ui-command` part into the chat stream carrying that same `seq`. The frontend:
+Concretely, the `exec_ui` handler: (1) calls `bridge.emitUiEffect(cmd)` and awaits `{ seq, status }`; (2) emits a `data-ui-command` part into the chat stream carrying that same `seq`. The frontend:
 - On `data-ui-command` part: render a compact message card only (no dispatch). The `seq` ties the card to the already-delivered command.
 - On SSE command: dispatch via Zustand (actually opens file, etc.).
 
@@ -1120,7 +1120,7 @@ The agent package alone is a legitimate standalone product — you can ship to u
 
 ### `RuntimeModeAdapter` — one contract per mode
 
-Each mode is a single module exporting a `RuntimeModeAdapter`. The adapter produces the full runtime bundle (workspace, sandbox, fileSearch, optional uiBridge pass-through) for that mode. Pairing invariant is enforced by construction — you can't build a mismatched pair because each adapter owns all pieces.
+Each mode is a single module exporting a `RuntimeModeAdapter`. The adapter produces the full runtime bundle (workspace, sandbox, fileSearch, optional workspaceBridge pass-through) for that mode. Pairing invariant is enforced by construction — you can't build a mismatched pair because each adapter owns all pieces.
 
 ```ts
 // src/shared/runtime.ts
@@ -1140,7 +1140,7 @@ export interface RuntimeBundle {
   workspace: Workspace
   sandbox: Sandbox
   fileSearch: FileSearch
-  uiBridge?: UiBridge            // pass-through; set by createAgentApp, same for all modes
+  workspaceBridge?: WorkspaceBridge            // pass-through; set by createAgentApp, same for all modes
 }
 ```
 
@@ -1374,11 +1374,11 @@ Load-bearing contracts that must be reliable before polish. If these aren't soli
 - [x] **Stream resumption:** `StreamBufferStore` tracks active turns; `GET /api/v1/agent/chat/:sessionId/stream?cursor=<n>` replays from cursor. X-Turn-Id header returned.
 - [x] Abort handling (`AbortController` in chat route → pi `abortSignal` → sandbox exec cancellation).
 - [x] SSE channel: backend emits `data-file-changed` events → frontend `useFileChangeStream` invalidates React Query cache.
-- [x] **UI bridge** (`UiBridge` interface + in-memory impl):
+- [x] **UI bridge** (`WorkspaceBridge` interface + in-memory impl):
   - `GET/PUT /api/v1/ui/state` — opaque state KV keyed by workspaceId
   - `POST /api/v1/ui/commands` — agent posts UI command with seq numbering
   - `GET /api/v1/ui/commands/next` (SSE) — workspace subscribes to command stream (poll=true variant also supported)
-  - Agent tools `get_ui_state` + `exec_ui` wired as host-provided tools when `uiBridge` is provided
+  - Agent tools `get_ui_state` + `exec_ui` wired as host-provided tools when `workspaceBridge` is provided
 - [x] `copyTemplate()` — sync template copy on workspace create. `createAgentApp({ templatePath })` + `BORING_AGENT_TEMPLATE_PATH` env fallback. Idempotency via `.boring-agent/provisioned` marker.
 
 **Gate:** session CRUD + resume + UI bridge are reliable in both modes. Reliability bar > polish bar for this milestone.

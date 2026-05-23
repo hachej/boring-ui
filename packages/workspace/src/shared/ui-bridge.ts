@@ -1,7 +1,7 @@
-export interface UiBridge {
+export interface WorkspaceBridge {
   getState(): Promise<UiState | null>
   setState(state: UiState): Promise<void>
-  postCommand(cmd: UiCommand): Promise<CommandResult>
+  emitUiEffect(cmd: UiCommand): Promise<CommandResult>
   subscribeCommands(handler: (cmd: UiCommand & { seq: number }) => void): () => void
   drainCommands?(): Promise<Array<UiCommand & { seq: number }>>
 }

@@ -690,7 +690,7 @@ Possible later ops:
 
 - `plugin.rpc`
 - `ui.openPanel`
-- `ui.postCommand`
+- `ui.emitUiEffect`
 - `selection.get`
 
 Every op checks:
@@ -829,7 +829,7 @@ important boundary is trust and lifecycle:
 
 `ask-user` currently has a bespoke plugin route for browser answer submission.
 That route is not a data API; it is UI control flow between browser and a
-server-side waiting tool. The better long-term home is the host UiBridge/control
+server-side waiting tool. The better long-term home is the host WorkspaceBridge/control
 plane: browser posts a generic UI action such as `ask-user.answer`, the host
 dispatches to the trusted ask-user runtime, and the tool waiter resolves.
 

@@ -35,7 +35,7 @@ Current contract files:
 - `workspace.ts` — platform-agnostic filesystem contract.
 - `sandbox.ts` — command execution contract.
 - `session.ts` — `SessionStore` and session models.
-- `ui-bridge.ts` — `UiBridge`, `UiCommand`, `CommandResult`.
+- `ui-bridge.ts` — `WorkspaceBridge`, `UiCommand`, `CommandResult`.
 - `catalog.ts`, `file-search.ts`, `message.ts`, `sandbox-handle-store.ts`.
 
 These files are the source of truth for TypeScript interfaces while higher-level
