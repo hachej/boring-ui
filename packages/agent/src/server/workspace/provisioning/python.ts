@@ -2,6 +2,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { getBoringAgentRuntimeEnv, type BoringAgentRuntimePaths } from '../runtimeLayout'
+import { ErrorCode, toProvisioningError } from './errors'
 import {
   createPythonRuntimeFingerprint,
   createRuntimeFingerprint,
@@ -52,19 +53,33 @@ export async function ensureUv(options: {
     }
   } catch {
     if (!options.uvStandaloneSource) {
-      throw new Error('uv is required for Python runtime provisioning; install uv or provide a standalone uv binary')
+      throw toProvisioningError(
+        ErrorCode.enum.PROVISIONING_UV_BOOTSTRAP_FAILED,
+        'uv-bootstrap',
+        new Error('uv is required for Python runtime provisioning; install uv or provide a standalone uv binary'),
+        { runtime: 'python' },
+      )
     }
   }
 
-  await options.adapter.workspaceFs.mkdir('.boring-agent/sdk/uv/bin')
-  await options.adapter.workspaceFs.copyFromHost(options.uvStandaloneSource, UV_BIN_REL)
-  const uvBin = join(options.runtimeLayout.uvBin, 'uv')
-  await options.adapter.exec('chmod', ['+x', uvBin], { cwd: options.runtimeLayout.workspaceRoot })
+  try {
+    await options.adapter.workspaceFs.mkdir('.boring-agent/sdk/uv/bin')
+    await options.adapter.workspaceFs.copyFromHost(options.uvStandaloneSource, UV_BIN_REL)
+    const uvBin = join(options.runtimeLayout.uvBin, 'uv')
+    await options.adapter.exec('chmod', ['+x', uvBin], { cwd: options.runtimeLayout.workspaceRoot })
 
-  return {
-    uvBin,
-    uvVersion: await commandOutput(options.adapter, uvBin, ['--version']) || 'uv unknown',
-    installedWorkspaceUv: true,
+    return {
+      uvBin,
+      uvVersion: await commandOutput(options.adapter, uvBin, ['--version']) || 'uv unknown',
+      installedWorkspaceUv: true,
+    }
+  } catch (error) {
+    throw toProvisioningError(
+      ErrorCode.enum.PROVISIONING_UV_BOOTSTRAP_FAILED,
+      'uv-bootstrap',
+      error,
+      { runtime: 'python' },
+    )
   }
 }
 
@@ -155,29 +170,38 @@ export async function ensurePythonRuntime(options: {
     fingerprint,
     install: async () => {
       await options.adapter.workspaceFs.rm(VENV_REL)
-      await options.adapter.exec(uv.uvBin, ['venv', options.runtimeLayout.venv], {
-        cwd: options.runtimeLayout.workspaceRoot,
-        env: getBoringAgentRuntimeEnv(
-          options.runtimeLayout,
-          options.adapter.getRuntimeCacheRoot(),
-        ),
-      })
-      await options.adapter.exec(uv.uvBin, [
-        'pip',
-        'install',
-        '--python',
-        options.runtimeLayout.venvPython,
-        ...installSources,
-      ], {
-        cwd: options.runtimeLayout.workspaceRoot,
-        env: {
-          ...getBoringAgentRuntimeEnv(
+      try {
+        await options.adapter.exec(uv.uvBin, ['venv', options.runtimeLayout.venv], {
+          cwd: options.runtimeLayout.workspaceRoot,
+          env: getBoringAgentRuntimeEnv(
             options.runtimeLayout,
             options.adapter.getRuntimeCacheRoot(),
           ),
-          ...env,
-        },
-      })
+        })
+        await options.adapter.exec(uv.uvBin, [
+          'pip',
+          'install',
+          '--python',
+          options.runtimeLayout.venvPython,
+          ...installSources,
+        ], {
+          cwd: options.runtimeLayout.workspaceRoot,
+          env: {
+            ...getBoringAgentRuntimeEnv(
+              options.runtimeLayout,
+              options.adapter.getRuntimeCacheRoot(),
+            ),
+            ...env,
+          },
+        })
+      } catch (error) {
+        throw toProvisioningError(
+          ErrorCode.enum.PROVISIONING_UV_INSTALL_FAILED,
+          'python-packages',
+          error,
+          { runtime: 'python', packageIds: options.packages.map((pkg) => pkg.id) },
+        )
+      }
     },
   })
 

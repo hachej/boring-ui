@@ -1,4 +1,5 @@
 import type { BoringAgentRuntimePaths } from '../runtimeLayout'
+import type { ProvisioningLogger } from './errors'
 
 export interface PluginSkillSource {
   name: string
@@ -86,4 +87,5 @@ export interface ProvisionWorkspaceRuntimeOptions {
   }>
   adapter: WorkspaceProvisioningAdapter
   runtimeLayout: BoringAgentRuntimePaths
+  logger?: ProvisioningLogger
 }

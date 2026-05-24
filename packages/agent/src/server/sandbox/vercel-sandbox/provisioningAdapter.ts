@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import type { BoringAgentRuntimePaths } from '../../workspace/runtimeLayout'
+import { ErrorCode, toProvisioningError } from '../../workspace/provisioning/errors'
 import type {
   WorkspaceProvisioningAdapter,
   WorkspaceProvisioningExecResult,
@@ -60,14 +61,23 @@ export function createVercelProvisioningAdapter(
       if (!(await options.workspaceFs.exists(workspaceRel))) {
         const artifactDir = await mkdtemp(join(tmpdir(), 'boring-agent-vercel-artifact-'))
         const outputPath = join(artifactDir, name)
-        await options.prepareArtifact({
-          kind: opts.kind,
-          id: opts.id,
-          fingerprint: opts.fingerprint,
-          source,
-          outputPath,
-        })
-        await options.workspaceFs.copyFromHost(outputPath, workspaceRel)
+        try {
+          await options.prepareArtifact({
+            kind: opts.kind,
+            id: opts.id,
+            fingerprint: opts.fingerprint,
+            source,
+            outputPath,
+          })
+          await options.workspaceFs.copyFromHost(outputPath, workspaceRel)
+        } catch (error) {
+          throw toProvisioningError(
+            ErrorCode.enum.PROVISIONING_ARTIFACT_FAILED,
+            'adapter-artifact',
+            error,
+            { runtime: opts.kind, id: opts.id, artifact: workspaceRel },
+          )
+        }
       }
 
       return runtimePath
