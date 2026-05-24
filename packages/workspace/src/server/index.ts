@@ -68,6 +68,8 @@ export {
   createLocalCliBridgeAuthPolicy,
   createTrustedServerBridgeAuthPolicy,
 } from "./workspaceBridge/authPolicy"
+export { workspaceBridgeHttpRoutes } from "./workspaceBridge/httpRoutes"
+export type { WorkspaceBridgeHttpRoutesOptions } from "./workspaceBridge/httpRoutes"
 export {
   FileWorkspaceBridgeIdempotencyStore,
   InMemoryWorkspaceBridgeIdempotencyStore,
