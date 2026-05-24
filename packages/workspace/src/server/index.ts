@@ -131,6 +131,16 @@ export type {
   TrustedDomainBridgeHandlerPolicy,
   TrustedDomainBridgeHandlerRegistration,
 } from "./workspaceBridge/trustedDomainHandler"
+export { PendingQuestionRuntime } from "./humanInput/pendingQuestionRuntime"
+export { InMemoryPendingQuestionStore, PendingQuestionStoreError, PENDING_QUESTION_ERROR_CODES } from "./humanInput/pendingQuestionStore"
+export type {
+  PendingQuestionAnswer,
+  PendingQuestionCancelReason,
+  PendingQuestionRecord,
+  PendingQuestionStatus,
+  PendingQuestionStore,
+  PendingQuestionTranscriptEvent,
+} from "./humanInput/pendingQuestionStore"
 export {
   bootstrapServer,
   defineServerPlugin,
