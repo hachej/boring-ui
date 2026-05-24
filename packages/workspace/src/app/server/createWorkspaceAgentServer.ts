@@ -295,8 +295,9 @@ export function buildWorkspaceContextPrompt(): string {
   return [
     '## Workspace',
     '- Root: `$BORING_AGENT_WORKSPACE_ROOT` (exported into every bash invocation)',
-    '- Skills: `$BORING_AGENT_WORKSPACE_ROOT/.agents/skills/`',
-    '- CLI shims (`bm`, `python`, `pip`): `$BORING_AGENT_WORKSPACE_ROOT/.boring-agent/bin/` — already on PATH, call directly',
+    '- Generated plugin skills: `$BORING_AGENT_WORKSPACE_ROOT/.boring-agent/skills/` — readable with normal file tools',
+    '- User workspace skills: `$BORING_AGENT_WORKSPACE_ROOT/.agents/skills/`',
+    '- Runtime CLIs (`boring-ui`, `bm`, `python`, `pip`, `uv`) come from `.boring-agent/node`, `.boring-agent/venv`, and `.boring-agent/sdk/uv` and are already on PATH',
   ].join('\n')
 }
 

@@ -16,7 +16,31 @@ function shellEscape(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`
 }
 
-function bwrapSpawnHook(workspaceRoot: string): BashSpawnHook {
+export interface HarnessRuntimeProvisioningOptions {
+  env?: Record<string, string>
+  pathEntries?: string[]
+}
+
+function mergeRuntimeEnv(
+  runtime: HarnessRuntimeProvisioningOptions | undefined,
+  commandEnv: Record<string, string | undefined> | undefined,
+): Record<string, string | undefined> | undefined {
+  if (!runtime?.env && !runtime?.pathEntries?.length) return commandEnv
+  const merged: Record<string, string | undefined> = {
+    ...(runtime.env ?? {}),
+    ...(commandEnv ?? {}),
+  }
+  const pathParts = [...(runtime.pathEntries ?? [])]
+  if (runtime.env?.PATH) pathParts.push(runtime.env.PATH)
+  if (commandEnv?.PATH) pathParts.push(commandEnv.PATH)
+  if (pathParts.length > 0) merged.PATH = pathParts.join(':')
+  return merged
+}
+
+function bwrapSpawnHook(
+  workspaceRoot: string,
+  runtime?: HarnessRuntimeProvisioningOptions,
+): BashSpawnHook {
   const args = buildBwrapArgs(workspaceRoot)
   const bwrapPrefix = ['bwrap', ...args].map(shellEscape).join(' ')
   return (context) => ({
@@ -24,32 +48,41 @@ function bwrapSpawnHook(workspaceRoot: string): BashSpawnHook {
     command: `${bwrapPrefix} bash -lc ${shellEscape(context.command)}`,
     env: withWorkspacePythonEnv({
       workspaceRoot,
-      env: context.env,
+      env: mergeRuntimeEnv(runtime, context.env),
       sandboxRoot: '/workspace',
     }),
   })
 }
 
-function directSpawnHook(workspaceRoot: string): BashSpawnHook {
+function directSpawnHook(
+  workspaceRoot: string,
+  runtime?: HarnessRuntimeProvisioningOptions,
+): BashSpawnHook {
   return (context) => ({
     ...context,
-    env: withWorkspacePythonEnv({ workspaceRoot, env: context.env }),
+    env: withWorkspacePythonEnv({
+      workspaceRoot,
+      env: mergeRuntimeEnv(runtime, context.env),
+    }),
   })
 }
 
-function bashOptionsForMode(bundle: RuntimeBundle): BashToolOptions {
+function bashOptionsForMode(
+  bundle: RuntimeBundle,
+  runtime?: HarnessRuntimeProvisioningOptions,
+): BashToolOptions {
   switch (bundle.sandbox.provider) {
     case 'vercel-sandbox':
       return { operations: vercelBashOps(bundle.sandbox) }
     case 'bwrap':
       return {
         operations: createLocalBashOperations(),
-        spawnHook: bwrapSpawnHook(bundle.workspace.root),
+        spawnHook: bwrapSpawnHook(bundle.workspace.root, runtime),
       }
     default:
       return {
         operations: createLocalBashOperations(),
-        spawnHook: directSpawnHook(bundle.workspace.root),
+        spawnHook: directSpawnHook(bundle.workspace.root, runtime),
       }
   }
 }
@@ -146,9 +179,12 @@ function createExecuteIsolatedCodeTool(sandbox: Sandbox): AgentTool {
   }
 }
 
-export function buildHarnessAgentTools(bundle: RuntimeBundle): AgentTool[] {
+export function buildHarnessAgentTools(
+  bundle: RuntimeBundle,
+  runtime?: HarnessRuntimeProvisioningOptions,
+): AgentTool[] {
   const tools: AgentTool[] = [
-    adaptPiTool(createBashToolDefinition(bundle.workspace.root, bashOptionsForMode(bundle))),
+    adaptPiTool(createBashToolDefinition(bundle.workspace.root, bashOptionsForMode(bundle, runtime))),
   ]
 
   if (bundle.sandbox.capabilities.includes('isolated-code')) {
