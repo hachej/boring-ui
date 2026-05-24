@@ -115,6 +115,7 @@ More on the same chassis in flight: `boring-accountant`, `boring-design`, `borin
 | `apps/agent-playground`     | `@hachej/boring-agent` alone — no workbench, no DB     | [apps/agent-playground](apps/agent-playground/README.md)         |
 | `apps/workspace-playground` | `@hachej/boring-workspace` + plugins — no auth backend | [apps/workspace-playground](apps/workspace-playground/README.md) |
 
+Legacy/frozen gap: the old v1 `apps/agent-frontend` browser-agent app remains on the old `boring-ui` repo until a v2 browser harness lands. v2 has direct/local/vercel server runtimes; OPFS/lightningfs browser runtime migration is intentionally blocked for v1.x.
 
 ---
 
