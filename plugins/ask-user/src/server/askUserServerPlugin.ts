@@ -1,6 +1,6 @@
 import { join } from "node:path"
 import type { FastifyPluginAsync } from "fastify"
-import { defineServerPlugin, type UiBridge, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
+import { defineServerPlugin, type WorkspaceBridge, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
 import { ASK_USER_PLUGIN_ID, ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import { AskUserRuntime } from "./askUserRuntime"
 import { FileAskUserStore, type AskUserStore } from "./askUserStore"
@@ -10,7 +10,7 @@ import { questionsRoutes, type QuestionsRoutesOptions } from "./questionsRoutes"
 
 export type AskUserServerPluginOptions = {
   workspaceRoot?: string
-  bridge?: UiBridge
+  bridge?: WorkspaceBridge
   runtime?: AskUserRuntime
   store?: AskUserStore
   sessionId?: string | (() => string)

@@ -1,0 +1,86 @@
+import { describe, expect, it, vi } from "vitest"
+import { HUMAN_INPUT_OPS, WorkspaceBridgeErrorCode } from "@hachej/boring-workspace/server"
+import { createAskUserPiExtensionFactory, createWorkspaceBridgeClient, type AskUserWorkspaceBridgeContext } from "../index"
+
+const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer" }] }
+
+function captureTool(ctx?: AskUserWorkspaceBridgeContext) {
+  const tools: Array<{ name: string; execute: (toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown> }> = []
+  createAskUserPiExtensionFactory(ctx)({ registerTool: (tool) => tools.push(tool) })
+  return tools[0]!
+}
+
+describe("ask-user Pi extension", () => {
+  it("registers ask_user and returns a stable diagnostic when bridge context is unavailable", async () => {
+    const tool = captureTool()
+    expect(tool.name).toBe("ask_user")
+    await expect(tool.execute("call-1", { title: "Need input", schema })).resolves.toMatchObject({
+      isError: true,
+      details: { code: "ASK_USER_RUNTIME_UNAVAILABLE" },
+    })
+  })
+
+  it("rejects invalid input locally before calling bridge", async () => {
+    const callHumanInputRequest = vi.fn()
+    const tool = captureTool({ sessionId: "session-1", callHumanInputRequest })
+    await expect(tool.execute("call-1", {})).resolves.toMatchObject({ isError: true })
+    expect(callHumanInputRequest).not.toHaveBeenCalled()
+  })
+
+  it("calls human-input request with tool and session ids and maps answer result", async () => {
+    const logger = { warn: vi.fn(), debug: vi.fn(), error: vi.fn() }
+    const callHumanInputRequest = vi.fn(async () => ({
+      ok: true as const,
+      op: HUMAN_INPUT_OPS.request,
+      requestId: "call-1",
+      output: {
+        status: "answered" as const,
+        answer: { questionId: "q1", sessionId: "session-1", values: { answer: "redacted-in-logs" }, answeredAt: "2026-01-01T00:00:00.000Z" },
+      },
+    }))
+    const tool = captureTool({ sessionId: () => "session-1", callHumanInputRequest, logger })
+    await expect(tool.execute("call-1", { title: "Need input", context: "ctx", schema, timeoutMs: 10_000 })).resolves.toMatchObject({
+      details: { status: "answered", answer: { values: { answer: "redacted-in-logs" } } },
+    })
+    expect(callHumanInputRequest).toHaveBeenCalledWith({
+      requestId: "call-1",
+      toolCallId: "call-1",
+      sessionId: "session-1",
+      title: "Need input",
+      context: "ctx",
+      schema,
+      timeoutMs: 10_000,
+    }, undefined)
+    expect(JSON.stringify(logger.debug.mock.calls)).toContain("ask_user bridge request")
+    expect(JSON.stringify(logger.debug.mock.calls)).not.toContain("redacted-in-logs")
+  })
+
+  it("passes cancellation signal through to the bridge client", async () => {
+    const controller = new AbortController()
+    const callHumanInputRequest = vi.fn(async () => ({
+      ok: true as const,
+      op: HUMAN_INPUT_OPS.request,
+      requestId: "call-1",
+      output: { status: "cancelled" as const, questionId: "q1", sessionId: "session-1", reason: "aborted" as const },
+    }))
+    const client = createWorkspaceBridgeClient({ sessionId: "session-1", callHumanInputRequest })
+    await expect(client.request("call-1", { title: "Need input", schema }, controller.signal)).resolves.toMatchObject({ status: "cancelled", reason: "aborted" })
+    expect((callHumanInputRequest.mock.calls as unknown[][])[0]?.[1]).toBe(controller.signal)
+  })
+
+  it("maps bridge failures to runtime_unavailable without leaking payloads", async () => {
+    const logger = { warn: vi.fn(), debug: vi.fn(), error: vi.fn() }
+    const callHumanInputRequest = vi.fn(async () => ({
+      ok: false as const,
+      op: HUMAN_INPUT_OPS.request,
+      requestId: "call-1",
+      error: { code: WorkspaceBridgeErrorCode.CapabilityDenied, message: "denied" },
+    }))
+    const tool = captureTool({ sessionId: "session-1", callHumanInputRequest, logger })
+    await expect(tool.execute("call-1", { title: "Need input", schema })).resolves.toMatchObject({
+      isError: true,
+      details: { status: "cancelled", reason: "runtime_unavailable" },
+    })
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("Need input")
+  })
+})

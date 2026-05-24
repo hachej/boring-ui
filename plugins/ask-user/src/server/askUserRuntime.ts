@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
 import { AskUserFormSchemaSchema } from "../shared/schema"
 import { ASK_USER_SURFACE_KIND } from "../shared/constants"
-import type { UiBridge } from "@hachej/boring-workspace/server"
+import type { WorkspaceBridge } from "@hachej/boring-workspace/server"
 import type {
   AskUserAnswer,
   AskUserCancelReason,
@@ -94,7 +94,7 @@ export type AskUserRuntimeOptions = {
     perSessionPerMinute?: number
     perPrincipalPerHour?: number
   }
-  uiBridge?: UiBridge
+  uiBridge?: WorkspaceBridge
 }
 
 export class AskUserRuntime {
@@ -104,7 +104,7 @@ export class AskUserRuntime {
   private readonly now: () => Date
   private readonly perSessionPerMinute: number
   private readonly perPrincipalPerHour: number
-  private readonly uiBridge?: UiBridge
+  private readonly uiBridge?: WorkspaceBridge
   private readonly sessionBuckets = new Map<string, RateLimitBucket>()
   private readonly principalBuckets = new Map<string, RateLimitBucket>()
 
@@ -175,7 +175,7 @@ export class AskUserRuntime {
   private async openQuestionSurface(question: AskUserQuestion): Promise<void> {
     if (!this.uiBridge) return
     try {
-      await this.uiBridge.postCommand({ kind: "openSurface", params: { kind: ASK_USER_SURFACE_KIND, target: question.questionId, meta: { question } } })
+      await this.uiBridge.emitUiEffect({ kind: "openSurface", params: { kind: ASK_USER_SURFACE_KIND, target: question.questionId, meta: { question } } })
     } catch {
       // Opening the pane is best-effort. The pending question is already persisted
       // and published via UI state, so a stale/disconnected browser can refresh and answer.

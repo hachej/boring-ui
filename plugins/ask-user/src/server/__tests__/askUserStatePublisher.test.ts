@@ -6,16 +6,16 @@ import { ASK_USER_UI_STATE_SLOTS } from "../../shared/constants"
 import { FileAskUserStore } from "../askUserStore"
 import { AskUserRuntime } from "../askUserRuntime"
 import { AskUserStatePublisher } from "../askUserStatePublisher"
-import type { UiBridge, UiCommand, UiState } from "@hachej/boring-workspace/server"
+import type { WorkspaceBridge, UiCommand, UiState } from "@hachej/boring-workspace/server"
 
-function bridge(): UiBridge & { commands: UiCommand[] } {
+function bridge(): WorkspaceBridge & { commands: UiCommand[] } {
   let state: UiState | null = null
   const commands: UiCommand[] = []
   return {
     commands,
     async getState() { return state },
     async setState(next) { state = next },
-    async postCommand(cmd) { commands.push(cmd); return { seq: commands.length, status: "ok" } },
+    async emitUiEffect(cmd) { commands.push(cmd); return { seq: commands.length, status: "ok" } },
     subscribeCommands() { return () => undefined },
   }
 }
@@ -95,7 +95,7 @@ describe("ask-user UI open", () => {
   it("keeps pending question alive when openSurface dispatch fails", async () => {
     const store = await makeStore()
     const ui = bridge()
-    ui.postCommand = async () => { throw new Error("disconnected") }
+    ui.emitUiEffect = async () => { throw new Error("disconnected") }
     const runtime = new AskUserRuntime({ store, uiBridge: ui })
     const pending = runtime.ask({ sessionId: "s1", title: "T", schema })
     const question = await waitForPending(store, "s1")

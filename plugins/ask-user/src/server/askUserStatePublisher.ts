@@ -1,6 +1,6 @@
 import { ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import type { AskUserQuestion } from "../shared/types"
-import type { UiBridge, UiState } from "@hachej/boring-workspace/server"
+import type { WorkspaceBridge, UiState } from "@hachej/boring-workspace/server"
 import type { AskUserStore, AskUserStoreChange } from "./askUserStore"
 
 export type AskUserPendingState = {
@@ -12,7 +12,7 @@ export class AskUserStatePublisher {
 
   constructor(
     private readonly store: AskUserStore,
-    private readonly bridge: UiBridge,
+    private readonly bridge: WorkspaceBridge,
   ) {}
 
   start(): () => void {

@@ -9,16 +9,16 @@ import { AskUserRuntime } from "../askUserRuntime"
 import { AskUserStatePublisher } from "../askUserStatePublisher"
 import { createAskUserTool } from "../createAskUserTool"
 import { questionsRoutes } from "../questionsRoutes"
-import type { UiBridge, UiCommand, UiState } from "@hachej/boring-workspace/server"
+import type { WorkspaceBridge, UiCommand, UiState } from "@hachej/boring-workspace/server"
 
-function createBridge(): UiBridge & { commands: UiCommand[] } {
+function createBridge(): WorkspaceBridge & { commands: UiCommand[] } {
   let state: UiState | null = null
   const commands: UiCommand[] = []
   return {
     commands,
     async getState() { return state },
     async setState(next) { state = next },
-    async postCommand(cmd) { commands.push(cmd); return { seq: commands.length, status: "ok" } },
+    async emitUiEffect(cmd) { commands.push(cmd); return { seq: commands.length, status: "ok" } },
     subscribeCommands() { return () => undefined },
   }
 }

@@ -1,5 +1,5 @@
 import type { ExplorerItem } from "@hachej/boring-data-explorer/shared"
-import { postUiCommand } from "@hachej/boring-workspace"
+import { emitUiEffect } from "@hachej/boring-workspace"
 import type { OpenDataCatalogVisualizationOptions } from "./types"
 import { DATA_CATALOG_ROW_SURFACE_KIND } from "../shared/constants"
 
@@ -45,7 +45,7 @@ export function openDataCatalogVisualization(
     catalogId: options.catalogId,
     ...(options.title ? { title: options.title } : {}),
   }
-  postUiCommand({
+  emitUiEffect({
     kind: "openSurface",
     params: {
       kind: options.surfaceKind ?? DATA_CATALOG_ROW_SURFACE_KIND,

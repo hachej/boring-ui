@@ -11,16 +11,16 @@ import { FileAskUserStore } from "../askUserStore"
 import { AskUserRuntime } from "../askUserRuntime"
 import { createAskUserTool } from "../createAskUserTool"
 import { createAskUserServerPlugin } from "../askUserServerPlugin"
-import type { UiBridge, UiCommand, UiState } from "@hachej/boring-workspace/server"
+import type { WorkspaceBridge, UiCommand, UiState } from "@hachej/boring-workspace/server"
 
-function bridge(): UiBridge & { commands: UiCommand[] } {
+function bridge(): WorkspaceBridge & { commands: UiCommand[] } {
   let state: UiState | null = null
   const commands: UiCommand[] = []
   return {
     commands,
     async getState() { return state },
     async setState(next) { state = next },
-    async postCommand(cmd) { commands.push(cmd); return { seq: commands.length, status: "ok" } },
+    async emitUiEffect(cmd) { commands.push(cmd); return { seq: commands.length, status: "ok" } },
     subscribeCommands() { return () => undefined },
   }
 }
