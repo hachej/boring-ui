@@ -14,6 +14,7 @@ type PiToolDefinition = {
   label: string
   description: string
   promptSnippet?: string
+  promptGuidelines?: string[]
   parameters: Record<string, unknown>
   execute(toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal): Promise<ToolResultPayload>
 }
@@ -50,6 +51,16 @@ export interface AskUserWorkspaceBridgeClient {
 
 export type AskUserPiExtensionFactory = (pi: PiToolRegistrar) => void
 
+export const ASK_USER_PROMPT_SNIPPET = "Use `ask_user` for material decisions that require the user's judgement. Ask one focused question with schema: { wireVersion: 1, fields: [...] }; do not roleplay the answer in chat."
+
+export const ASK_USER_PROMPT_GUIDELINES = [
+  "Use ask_user only at a real decision boundary: user-visible architecture, schema/API/deploy/security blast radius, costly-to-undo migrations, destructive/data-loss/prod changes, unclear requirements that materially change implementation, or preference-dependent tradeoffs with no repo convention.",
+  "Do not ask for trivial choices or questions already answered by user instructions, AGENTS.md, existing code, tests, or repo conventions; proceed and state the assumption instead.",
+  "Before asking, gather enough evidence to synthesize the options and consequences. Ask one focused question with actionable choices; use at most two questions if the first is cancelled or still ambiguous.",
+  "Prefer radio/select for mutually exclusive choices, multiselect for independent toggles, textarea for freeform context, and checkbox for confirmation. Always use schema.wireVersion = 1 with explicit fields.",
+  "After the user answers, commit the decision and continue. Reopen ask_user only when new information creates a materially new ambiguity.",
+]
+
 export function createWorkspaceBridgeClient(ctx: AskUserWorkspaceBridgeContext): AskUserWorkspaceBridgeClient {
   return {
     async request(toolCallId, input, signal) {
@@ -81,7 +92,8 @@ export function createAskUserPiExtensionFactory(ctx?: AskUserWorkspaceBridgeCont
       name: "ask_user",
       label: "Ask user",
       description: "Ask the user a blocking structured question in the Workspace Questions pane.",
-      promptSnippet: "Use `ask_user` when you need a missing user decision before continuing. Pass schema: { wireVersion: 1, fields: [...] }.",
+      promptSnippet: ASK_USER_PROMPT_SNIPPET,
+      promptGuidelines: ASK_USER_PROMPT_GUIDELINES,
       parameters: askUserToolParameters,
       async execute(toolCallId, params, signal) {
         const parsed = validateAskUserToolInput(params)

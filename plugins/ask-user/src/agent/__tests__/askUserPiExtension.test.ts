@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest"
 import { HUMAN_INPUT_OPS, WorkspaceBridgeErrorCode } from "@hachej/boring-workspace/server"
-import { createAskUserPiExtensionFactory, createWorkspaceBridgeClient, type AskUserWorkspaceBridgeContext } from "../index"
+import { ASK_USER_PROMPT_GUIDELINES, ASK_USER_PROMPT_SNIPPET, createAskUserPiExtensionFactory, createWorkspaceBridgeClient, type AskUserWorkspaceBridgeContext } from "../index"
 
 const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer" }] }
 
 function captureTool(ctx?: AskUserWorkspaceBridgeContext) {
-  const tools: Array<{ name: string; execute: (toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown> }> = []
+  const tools: Array<{ name: string; promptSnippet?: string; promptGuidelines?: string[]; execute: (toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown> }> = []
   createAskUserPiExtensionFactory(ctx)({ registerTool: (tool) => tools.push(tool) })
   return tools[0]!
 }
@@ -14,6 +14,11 @@ describe("ask-user Pi extension", () => {
   it("registers ask_user and returns a stable diagnostic when bridge context is unavailable", async () => {
     const tool = captureTool()
     expect(tool.name).toBe("ask_user")
+    expect(tool.promptSnippet).toBe(ASK_USER_PROMPT_SNIPPET)
+    expect(tool.promptGuidelines).toEqual(ASK_USER_PROMPT_GUIDELINES)
+    expect(tool.promptGuidelines?.join("\n")).toContain("Do not ask for trivial choices")
+    expect(tool.promptGuidelines?.join("\n")).toContain("repo conventions")
+    expect(tool.promptGuidelines?.join("\n")).toContain("radio/select")
     await expect(tool.execute("call-1", { title: "Need input", schema })).resolves.toMatchObject({
       isError: true,
       details: { code: "ASK_USER_RUNTIME_UNAVAILABLE" },
