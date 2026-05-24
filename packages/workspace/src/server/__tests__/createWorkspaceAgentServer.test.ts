@@ -36,6 +36,55 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir
 }
 
+describe("createWorkspaceAgentServer — runtime provisioning reload", () => {
+  test("/reload recopies plugin skills into .boring-agent/skills", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-runtime-reload-")
+    const skillDir = join(workspaceRoot, "plugin-source", "skills", "macro-transform")
+    await mkdir(skillDir, { recursive: true })
+    const skillFile = join(skillDir, "SKILL.md")
+    await writeFile(skillFile, "# Version 1\n")
+    const harnessFactory = async () => ({
+      id: "test-harness",
+      placement: "server" as const,
+      sessions: {
+        async list() { return [] },
+        async create() {
+          const now = new Date().toISOString()
+          return { id: "default", title: "Default", createdAt: now, updatedAt: now, turnCount: 0 }
+        },
+        async load() {
+          const now = new Date().toISOString()
+          return { id: "default", title: "Default", createdAt: now, updatedAt: now, turnCount: 0, messages: [] }
+        },
+        async delete() {},
+      },
+      reloadSession: async () => true,
+      async *sendMessage() {},
+    })
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      harnessFactory,
+      plugins: [serverApi.defineServerPlugin({
+        id: "boring-macro",
+        skills: [{ name: "macro-transform", source: skillDir }],
+      })],
+    })
+    try {
+      const mirrored = join(workspaceRoot, ".boring-agent", "skills", "boring-macro", "macro-transform", "SKILL.md")
+      await expect(readFile(mirrored, "utf8")).resolves.toBe("# Version 1\n")
+      await writeFile(skillFile, "# Version 2\n")
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: { sessionId: "default" } })
+      expect(reload.statusCode).toBe(200)
+      await expect(readFile(mirrored, "utf8")).resolves.toBe("# Version 2\n")
+    } finally {
+      await app.close()
+    }
+  })
+})
+
 describe("createWorkspaceAgentServer — plugin wiring", () => {
   test("registers pre-built plugin routes and tools", async () => {
     const app = await createWorkspaceAgentServer({
