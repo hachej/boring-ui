@@ -39,8 +39,6 @@ export async function mirrorPluginSkills(options: {
   adapter: WorkspaceProvisioningAdapter
   runtimeLayout: BoringAgentRuntimePaths
 }): Promise<MirrorPluginSkillsResult> {
-  const generatedSkillsExisted = await options.adapter.workspaceFs.exists(GENERATED_SKILLS_REL)
-
   await options.adapter.workspaceFs.rm(GENERATED_SKILLS_REL)
   await options.adapter.workspaceFs.mkdir(GENERATED_SKILLS_REL)
 
@@ -71,7 +69,7 @@ export async function mirrorPluginSkills(options: {
   }
 
   return {
-    changed: generatedSkillsExisted || copiedSkillCount > 0,
+    changed: copiedSkillCount > 0,
     skillPaths: getProvisionedSkillPaths(options.runtimeLayout),
   }
 }
