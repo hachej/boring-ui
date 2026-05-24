@@ -153,6 +153,42 @@ describe('buildHarnessAgentTools', () => {
     expect(result.content[0].text).toContain('/runtime/base')
   })
 
+  test('vercel-sandbox bash forwards to sandbox.exec with dynamic runtime env', async () => {
+    const bundle = mockBundle('vercel-sandbox')
+    let macroUrl = 'http://macro-v1'
+    const tools = buildHarnessAgentTools(bundle, {
+      getCurrent: () => ({
+        env: { BORING_MACRO_API_URL: macroUrl, PATH: '/runtime/base' },
+        pathEntries: ['/workspace/.boring-agent/venv/bin'],
+      }),
+    })
+    const bashTool = tools.find((t) => t.name === 'bash')!
+
+    await bashTool.execute(
+      { command: 'echo hello', timeout: 10 },
+      { abortSignal: new AbortController().signal, toolCallId: 'test-1' },
+    )
+
+    const firstExecOptions = vi.mocked(bundle.sandbox.exec).mock.calls[0][1]
+    if (!firstExecOptions) throw new Error('missing sandbox exec options')
+    expect(firstExecOptions).toEqual(expect.objectContaining({
+      timeoutMs: 10_000,
+      env: expect.objectContaining({ BORING_MACRO_API_URL: 'http://macro-v1' }),
+    }))
+    expect(firstExecOptions.env?.PATH).toBe('/workspace/.boring-agent/venv/bin:/runtime/base:/usr/local/bin:/usr/bin:/bin')
+    expect(firstExecOptions.env).not.toHaveProperty('VAULT_TOKEN')
+    expect(firstExecOptions.env).not.toHaveProperty('ANTHROPIC_API_KEY')
+
+    macroUrl = 'http://macro-v2'
+    await bashTool.execute(
+      { command: 'echo again', timeout: 10 },
+      { abortSignal: new AbortController().signal, toolCallId: 'test-1b' },
+    )
+    expect(bundle.sandbox.exec).toHaveBeenLastCalledWith('echo again', expect.objectContaining({
+      env: expect.objectContaining({ BORING_MACRO_API_URL: 'http://macro-v2' }),
+    }))
+  })
+
   test('vercel-sandbox bash forwards to sandbox.exec', async () => {
     const bundle = mockBundle('vercel-sandbox')
     const tools = buildHarnessAgentTools(bundle)

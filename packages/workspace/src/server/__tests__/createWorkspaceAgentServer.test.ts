@@ -331,11 +331,11 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
 })
 
 describe("createWorkspaceAgentServer — plugin provisioning", () => {
-  test("materializes the boring-plugin-authoring skill into the workspace node_modules", async () => {
+  test("materializes the boring-plugin-authoring skill into the workspace-local runtime", async () => {
     // The system prompt is minimal (it just points at this skill); the
-    // skill itself is the doc the agent reads. provisionRuntimeWorkspace
-    // must materialize it under the workspace's node_modules so Pi can
-    // load it from there.
+    // skill itself is the doc the agent reads. The runtime provisioner
+    // must materialize it under .boring-agent/node so Pi can load it
+    // without writing generated packages into the user workspace root.
     const workspaceRoot = await makeTempDir("boring-workspace-skill-")
 
     const app = await createWorkspaceAgentServer({
@@ -346,7 +346,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
 
     try {
       const skill = await readFile(
-        join(workspaceRoot, "node_modules", "@hachej", "boring-pi", "skills", "boring-plugin-authoring", "SKILL.md"),
+        join(workspaceRoot, ".boring-agent", "node", "node_modules", "@hachej", "boring-pi", "skills", "boring-plugin-authoring", "SKILL.md"),
         "utf8",
       )
       expect(skill).toContain("name: boring-plugin-authoring")
@@ -362,7 +362,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
    * we exercise is:
    *
    *   require.resolve("@hachej/boring-pi/package.json")  // CLI process
-   *     ↓ provisionRuntime copies skills/ into <workspaceRoot>/node_modules/
+   *     ↓ runtime provisioning installs skills under .boring-agent/node/
    *     ↓ createBoringPiPackageSource emits the package source
    *     ↓ createResourceSettingsManager injects it into Pi's project settings
    *     ↓ Pi indexes package.json#pi.skills
@@ -382,7 +382,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     })
 
     try {
-      const provisionedCli = join(workspaceRoot, "node_modules", "@hachej", "boring-ui-cli")
+      const provisionedCli = join(workspaceRoot, ".boring-agent", "node", "node_modules", "@hachej", "boring-ui-cli")
       await expect(readFile(join(provisionedCli, "package.json"), "utf8")).resolves.toContain("@hachej/boring-ui-cli")
       await expect(readFile(join(provisionedCli, "templates", "front-canonical.tsx"), "utf8")).resolves.toContain("definePlugin")
 
@@ -443,8 +443,8 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
         readFile(join(workspaceRoot, ".agents", "skills", "plugin-skill", "SKILL.md"), "utf8"),
       ).resolves.toContain("Provisioned skill")
       await expect(
-        readFile(join(workspaceRoot, ".boring-agent", "provisioning.json"), "utf8"),
-      ).resolves.toContain("sha256:")
+        readFile(join(workspaceRoot, ".boring-agent", ".gitignore"), "utf8"),
+      ).resolves.toBe("*\n")
     } finally {
       await app.close()
     }

@@ -64,9 +64,11 @@ test('direct adapter exec defaults cwd, merges env, and keeps args with spaces i
   const adapter = createDirectProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot))
   const script = `require('fs').writeFileSync(process.env.OUT, JSON.stringify({ cwd: process.cwd(), arg: process.argv[1], env: process.env.TEST_ENV }))`
 
-  await adapter.exec(process.execPath, ['-e', script, 'hello world'], {
+  const result = await adapter.exec(process.execPath, ['-e', `${script}; process.stdout.write('ok')`, 'hello world'], {
     env: { OUT: outputPath, TEST_ENV: 'from-test' },
   })
+
+  expect(result?.stdout).toBe('ok')
 
   await expect(readFile(outputPath, 'utf8').then(JSON.parse)).resolves.toEqual({
     cwd: workspaceRoot,
@@ -97,6 +99,7 @@ test('local adapter maps workspace-contained package roots to /workspace and ext
   const calls: Array<{ command: string; args: string[]; env: Record<string, string> }> = []
   const adapter = createLocalProvisioningAdapter(paths, async (command, args, opts) => {
     calls.push({ command, args, env: opts.env })
+    return { stdout: 'local ok\n' }
   })
 
   await expect(adapter.resolveInstallSource(join(workspaceRoot, 'packages', 'plugin'), {
@@ -112,9 +115,11 @@ test('local adapter maps workspace-contained package roots to /workspace and ext
   })
   expect(externalInstallSource).toBe('/mnt/boring-agent-sources/python-macro sdk-abcdef')
 
-  await adapter.exec('python', ['-c', 'print("hello world")', 'arg with spaces'], {
+  const execResult = await adapter.exec('python', ['-c', 'print("hello world")', 'arg with spaces'], {
     env: { VIRTUAL_ENV: paths.venv },
   })
+
+  expect(execResult?.stdout).toBe('local ok\n')
 
   expect(calls).toHaveLength(1)
   expect(calls[0].command).toBe('bwrap')

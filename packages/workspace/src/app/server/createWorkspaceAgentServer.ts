@@ -317,14 +317,21 @@ export function collectWorkspaceAgentServerPlugins(
   const callerPiPackages = opts.pi?.packages ?? []
   const callerExtensionPaths = opts.pi?.extensionPaths ?? []
 
+  const builtinProvisioningContributions = [
+    createWorkspacePackageProvisioningContribution(),
+    createBoringPiPackageProvisioningContribution(),
+    createBoringUiCliPackageProvisioningContribution(),
+  ].filter((entry): entry is WorkspaceProvisioningContribution => Boolean(entry))
+
   return {
     provisioningContributions: [
-      createWorkspacePackageProvisioningContribution(),
-      createBoringPiPackageProvisioningContribution(),
-      createBoringUiCliPackageProvisioningContribution(),
+      ...builtinProvisioningContributions,
       ...result.provisioningContributions,
-    ].filter((entry): entry is WorkspaceProvisioningContribution => Boolean(entry)),
-    runtimePlugins: result.runtimePlugins,
+    ],
+    runtimePlugins: [
+      ...builtinProvisioningContributions,
+      ...result.runtimePlugins,
+    ],
     routeContributions: result.routeContributions,
     preservedUiStateKeys: result.preservedUiStateKeys,
     agentOptions: {
@@ -508,13 +515,6 @@ export async function createWorkspaceAgentServer(
   // dynamic resource getter. With hot reload disabled, the same scan is
   // snapped once at boot and merged into static Pi options.
 
-  if (opts.provisionWorkspace !== false) {
-    await provisionWorkspaceAgentServer({
-      workspaceRoot,
-      provisioningContributions: pluginCollection.provisioningContributions,
-      force: opts.workspaceProvisioning?.force,
-    })
-  }
   // Static Pi resources known at boot: workspace skill dir,
   // factory-supplied values, and the bundled @hachej/boring-pi skill
   // package. When pluginHotReload is disabled, package.json#pi from
@@ -664,6 +664,7 @@ export async function createWorkspaceAgentServer(
       }
     },
     runtimeProvisioning: currentRuntimeProvisioning,
+    getRuntimeProvisioning: () => currentRuntimeProvisioning,
     pi: {
       ...pluginCollection.agentOptions.pi,
       additionalSkillPaths: staticPiSkillPaths,

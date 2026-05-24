@@ -176,7 +176,7 @@ export function createDirectProvisioningAdapter(
   return {
     mode: 'direct',
     async exec(command, args, opts) {
-      await runner(command, args, defaultExecOptions(paths, opts))
+      return await runner(command, args, defaultExecOptions(paths, opts))
     },
     async resolveInstallSource(source) {
       return sourceToPath(source)
@@ -205,7 +205,7 @@ export function createLocalProvisioningAdapter(
           ...[...sourceMounts.entries()].flatMap(([host, sandbox]) => ['--ro-bind', host, sandbox]),
         ],
       })
-      await runner('bwrap', [
+      return await runner('bwrap', [
         ...bwrapArgs,
         command,
         ...args,

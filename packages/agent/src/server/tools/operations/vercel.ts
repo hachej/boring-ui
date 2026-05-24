@@ -48,11 +48,14 @@ function toRelPath(workspace: Workspace, absolutePath: string): string {
   )
 }
 
-export function vercelBashOps(sandbox: Sandbox): BashOperations {
+export function vercelBashOps(sandbox: Sandbox, opts: {
+  mergeEnv?: (env: Record<string, string | undefined> | undefined) => Record<string, string | undefined> | undefined
+} = {}): BashOperations {
   return {
     exec(command, cwd, { onData, signal, timeout, env }) {
-      const filteredEnv = env
-        ? Object.fromEntries(Object.entries(env).filter((e): e is [string, string] => e[1] != null))
+      const effectiveEnv = opts.mergeEnv ? opts.mergeEnv(env) : env
+      const filteredEnv = effectiveEnv
+        ? Object.fromEntries(Object.entries(effectiveEnv).filter((e): e is [string, string] => e[1] != null))
         : undefined
       return sandbox.exec(command, {
         cwd,
