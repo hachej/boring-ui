@@ -158,7 +158,7 @@ describe('sanitizeTelemetryProperties', () => {
         commandId: 'open',
         status: 'ok',
         durationMs: 42,
-        errorCode: 'WORKSPACE_NOT_READY',
+        errorCode: 'internal_error',
         packageName: '@hachej/boring-core',
         packageVersion: '0.1.0',
         invalidDuration: Number.NaN,
@@ -185,7 +185,7 @@ describe('sanitizeTelemetryProperties', () => {
       commandId: 'open',
       status: 'ok',
       durationMs: 42,
-      errorCode: 'WORKSPACE_NOT_READY',
+      errorCode: 'internal_error',
       packageName: '@hachej/boring-core',
       packageVersion: '0.1.0',
     })
