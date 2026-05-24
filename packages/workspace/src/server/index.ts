@@ -117,6 +117,15 @@ export type {
   WorkspaceBridgeRuntimeTokenClaims,
 } from "./workspaceBridge/runtimeToken"
 export {
+  createWorkspaceBridgeRuntimeEnvContribution,
+  resolveBridgeCallUrl,
+} from "./workspaceBridge/runtimeEnv"
+export type {
+  CreateWorkspaceBridgeRuntimeEnvContributionOptions,
+  WorkspaceBridgeRuntimeEnvDisabledReason,
+  WorkspaceBridgeRuntimeEnvOptions,
+} from "./workspaceBridge/runtimeEnv"
+export {
   bootstrapServer,
   defineServerPlugin,
   validateServerPlugin,

@@ -85,7 +85,8 @@ export {
   PI_PACKAGE_RESOURCE_FILTERS,
 } from './piPackages'
 export { registerAgentRoutes } from './registerAgentRoutes'
-export type { RegisterAgentRoutesOptions, RuntimeEnvContribution, RuntimeEnvContributionContext } from './registerAgentRoutes'
+export type { RegisterAgentRoutesOptions } from './registerAgentRoutes'
+export type { RuntimeEnvContribution, RuntimeEnvContributionContext } from './runtimeEnvContributions'
 export { createLogger } from './logging'
 export type { Logger, LogFields } from './logging'
 export type {

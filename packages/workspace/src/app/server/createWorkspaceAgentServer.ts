@@ -41,10 +41,12 @@ import {
   createLocalCliBridgeAuthPolicy,
   createWorkspaceBridgeRegistry,
   InMemoryWorkspaceBridgeIdempotencyStore,
+  createWorkspaceBridgeRuntimeEnvContribution,
   workspaceBridgeHttpRoutes,
   type WorkspaceBridgeHandler,
   type WorkspaceBridgeOperationDefinition,
   type WorkspaceBridgeRegistry,
+  type WorkspaceBridgeRuntimeEnvOptions,
 } from "../../server"
 import {
   bootstrapServer,
@@ -153,6 +155,7 @@ export interface CreateWorkspaceAgentServerOptions
       definition: WorkspaceBridgeOperationDefinition
       handler: WorkspaceBridgeHandler
     }>
+    runtimeEnv?: WorkspaceBridgeRuntimeEnvOptions
   }
 }
 
@@ -632,11 +635,26 @@ export async function createWorkspaceAgentServer(
   const rebuildPlugins = async (): Promise<PluginRebuildResult> => {
     return rebuildServerPlugins({ entries: allPluginEntries, ctx })
   }
+  const callerRuntimeProvisioner = opts.runtimeProvisioner
+  const boringUiCliCommandAvailable = opts.provisionWorkspace !== false && pluginCollection.provisioningContributions.some(
+    (entry) => entry.id === "boring-ui-cli-package",
+  )
+  const workspaceBridgeRuntimeEnvContribution = createWorkspaceBridgeRuntimeEnvContribution({
+    workspaceId: "default",
+    runtimeMode: resolvedMode,
+    registry: workspaceBridgeRegistry,
+    runtimeTokenSecret: opts.workspaceBridge?.runtimeTokenSecret,
+    runtimeEnv: opts.workspaceBridge?.runtimeEnv,
+  })
 
   const app = await createAgentApp({
     ...opts,
     mode: resolvedMode,
     workspaceRoot,
+    runtimeEnvContributions: [
+      ...(opts.runtimeEnvContributions ?? []),
+      ...(workspaceBridgeRuntimeEnvContribution ? [workspaceBridgeRuntimeEnvContribution] : []),
+    ],
     extraTools: [
       ...(opts.extraTools ?? []),
       ...uiTools,

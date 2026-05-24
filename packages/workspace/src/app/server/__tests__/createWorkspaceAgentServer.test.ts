@@ -767,4 +767,65 @@ describe("createWorkspaceAgentServer — WorkspaceBridge RPC composition", () =>
     await appA.close()
     await appB.close()
   })
+
+  test.each(["direct", "local"] as const)("injects WorkspaceBridge runtime env for %s when configured", async (mode) => {
+    const { createTestBridgeOperationDefinition } = await import("../../../server/workspaceBridge/testing/harness")
+    const definition = createTestBridgeOperationDefinition({
+      op: `test.v1.runtime-env.${mode}`,
+      callerClassesAllowed: ["runtime"],
+      requiredCapabilities: ["test:runtime-env"],
+    })
+    mockCreateAgentAppOnce(async () => Fastify())
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir(`bridge-runtime-env-${mode}-`),
+      mode,
+      provisionWorkspace: false,
+      workspaceBridge: {
+        runtimeTokenSecret: "12345678901234567890123456789012",
+        runtimeEnv: {
+          bridgeUrl: "http://localhost:7777",
+          allowInsecureHttp: true,
+          sessionId: `session-${mode}`,
+        },
+        handlers: [{ definition, handler: () => ({ ok: true }) }],
+      },
+    })
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls.at(-1) as unknown as [{
+      runtimeEnvContributions?: Array<{ id: string; getEnv: () => Promise<Record<string, string>> | Record<string, string> }>
+    }]
+    const env = await agentOptions.runtimeEnvContributions?.find((entry) => entry.id === "workspace-bridge-runtime-env")?.getEnv()
+
+    expect(env).toMatchObject({
+      BORING_WORKSPACE_BRIDGE_URL: "http://localhost:7777/api/v1/workspace-bridge/call",
+      BORING_WORKSPACE_ID: "default",
+      BORING_AGENT_SESSION_ID: `session-${mode}`,
+    })
+    expect(env?.BORING_WORKSPACE_BRIDGE_TOKEN).toEqual(expect.any(String))
+    expect(JSON.stringify({ tokenPresent: Boolean(env?.BORING_WORKSPACE_BRIDGE_TOKEN) })).not.toContain(env!.BORING_WORKSPACE_BRIDGE_TOKEN)
+    await app.close()
+  })
+
+  test("disables WorkspaceBridge runtime env for vercel sandbox without public HTTPS URL", async () => {
+    mockCreateAgentAppOnce(async () => Fastify())
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("bridge-runtime-env-vercel-"),
+      mode: "vercel-sandbox",
+      provisionWorkspace: false,
+      workspaceBridge: {
+        runtimeTokenSecret: "12345678901234567890123456789012",
+        runtimeEnv: { bridgeUrl: "http://localhost:7777", allowInsecureHttp: true },
+      },
+    })
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls.at(-1) as unknown as [{
+      runtimeEnvContributions?: Array<{ id: string; getEnv: () => Promise<Record<string, string>> | Record<string, string> }>
+    }]
+    const env = await agentOptions.runtimeEnvContributions?.find((entry) => entry.id === "workspace-bridge-runtime-env")?.getEnv()
+
+    expect(env).toEqual({ BORING_WORKSPACE_BRIDGE_DISABLED: "remote-bridge-url-must-be-https" })
+    expect(JSON.stringify(env)).not.toContain("12345678901234567890123456789012")
+    await app.close()
+  })
+
 })

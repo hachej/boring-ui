@@ -1,4 +1,5 @@
 import {
+  type BashOperations,
   type BashSpawnHook,
   type BashToolOptions,
   createBashToolDefinition,
@@ -74,6 +75,19 @@ function directSpawnHook(
 
 const VERCEL_SAFE_DEFAULT_PATH = '/vercel/runtimes/node24/bin:/vercel/runtimes/node22/bin:/usr/local/bin:/usr/bin:/bin'
 
+function localBashOperationsWithRuntimeEnv(bundle: RuntimeBundle): BashOperations {
+  const local = createLocalBashOperations()
+  return {
+    async exec(command, cwd, options) {
+      const runtimeEnv = await bundle.getRuntimeEnv?.()
+      return local.exec(command, cwd, {
+        ...options,
+        env: { ...(options.env ?? {}), ...(runtimeEnv ?? {}) },
+      })
+    },
+  }
+}
+
 function bashOptionsForMode(
   bundle: RuntimeBundle,
   runtime?: HarnessRuntimeProvisioningOptions,
@@ -95,7 +109,7 @@ function bashOptionsForMode(
       }
     default:
       return {
-        operations: createLocalBashOperations(),
+        operations: localBashOperationsWithRuntimeEnv(bundle),
         spawnHook: directSpawnHook(bundle.workspace.root, runtime),
       }
   }

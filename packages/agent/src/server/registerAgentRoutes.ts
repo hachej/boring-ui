@@ -5,11 +5,9 @@ import type { AgentHarnessFactory } from '../shared/harness'
 import type { SessionStore } from '../shared/session'
 import type { SandboxHandleStore } from '../shared/sandbox-handle-store'
 import type { TelemetrySink } from '../shared/telemetry'
-import { safeCapture } from '../shared/telemetry'
 import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
 import { getEnv } from './config/env'
 import type { RuntimeBundle, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
-import type { ExecOptions, Sandbox } from '../shared/sandbox'
 import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from './workspace/runtimeLayout'
 import { VERCEL_SANDBOX_WORKSPACE_ROOT } from './workspace/createVercelSandboxWorkspace'
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningResult } from './workspace/provisioning'
@@ -42,6 +40,7 @@ import type { ReloadHookResult } from './http/routes/reload'
 import { searchRoutes } from './http/routes/search'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
+import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runtimeEnvContributions'
 import type { AgentHarness } from '../shared/harness'
 
 const DEFAULT_VERSION = '0.1.0-dev'
@@ -80,18 +79,6 @@ function getAvailableModelProviders(): string[] {
   ).sort((a, b) => a.localeCompare(b))
 }
 
-export interface RuntimeEnvContributionContext {
-  workspaceId: string
-  workspaceRoot: string
-  runtimeMode: RuntimeModeId
-  runtimeBundle: RuntimeBundle
-}
-
-export interface RuntimeEnvContribution {
-  id: string
-  getEnv(ctx: RuntimeEnvContributionContext): Record<string, string> | Promise<Record<string, string>>
-}
-
 interface RuntimeBinding {
   runtimeBundle: RuntimeBundle
   runtimeProvisioning?: WorkspaceProvisioningResult
@@ -113,37 +100,6 @@ interface RuntimeScope {
 interface SkillScope {
   root: string
   pi?: PiHarnessOptions
-}
-
-function withRuntimeEnvContributions(
-  runtimeBundle: RuntimeBundle,
-  baseContext: RuntimeEnvContributionContext,
-  contributions: RuntimeEnvContribution[],
-  telemetry?: TelemetrySink,
-): RuntimeBundle {
-  const sandbox: Sandbox = {
-    ...runtimeBundle.sandbox,
-    exec: async (cmd: string, execOpts: ExecOptions = {}) => {
-      const contributedEnv: Record<string, string> = {}
-      for (const contribution of contributions) {
-        Object.assign(contributedEnv, await contribution.getEnv(baseContext))
-      }
-      if (telemetry) {
-        safeCapture(telemetry, {
-          name: 'agent.runtime.env_contributed',
-          properties: {
-            runtimeMode: baseContext.runtimeMode,
-            contributionIds: contributions.map((contribution) => contribution.id),
-          },
-        })
-      }
-      return runtimeBundle.sandbox.exec(cmd, {
-        ...execOpts,
-        env: { ...contributedEnv, ...(execOpts.env ?? {}) },
-      })
-    },
-  }
-  return { ...runtimeBundle, sandbox }
 }
 
 function selectRuntimeModeAdapter(

@@ -34,4 +34,6 @@ export interface RuntimeBundle {
   workspace: Workspace
   sandbox: Sandbox
   fileSearch: FileSearch
+  /** Optional per-execution runtime env provider for local/direct operations that do not call Sandbox.exec. */
+  getRuntimeEnv?: () => Promise<Record<string, string>>
 }
