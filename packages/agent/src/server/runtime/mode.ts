@@ -1,6 +1,8 @@
 import type { FileSearch } from '../../shared/file-search'
 import type { Sandbox } from '../../shared/sandbox'
 import type { Workspace } from '../../shared/workspace'
+import type { BoringAgentRuntimePaths } from '../workspace/runtimeLayout'
+import type { WorkspaceProvisioningAdapter } from '../workspace/provisioning'
 
 export type BuiltinRuntimeModeId = 'direct' | 'local' | 'vercel-sandbox'
 export type RuntimeModeId = BuiltinRuntimeModeId | (string & {})
@@ -14,6 +16,7 @@ export interface RuntimeModeAdapter {
    */
   readonly workspaceFsCapability?: Workspace['fsCapability']
   create(ctx: ModeContext): Promise<RuntimeBundle>
+  createProvisioningAdapter?(runtimeLayout: BoringAgentRuntimePaths): WorkspaceProvisioningAdapter
   dispose?(): Promise<void>
 }
 

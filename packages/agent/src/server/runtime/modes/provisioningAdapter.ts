@@ -1,0 +1,232 @@
+import { spawn } from 'node:child_process'
+import { cp, lstat, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import type { BoringAgentRuntimePaths } from '../../workspace/runtimeLayout'
+import type { WorkspaceProvisioningAdapter } from '../../workspace/provisioning'
+import {
+  assertRealPathWithinWorkspace,
+  validatePath,
+} from '../../workspace/paths'
+import { buildBwrapArgs } from '../../sandbox/bwrap/buildBwrapArgs'
+
+const LOCAL_SANDBOX_WORKSPACE_ROOT = '/workspace'
+
+interface ExecOptions {
+  cwd?: string
+  env?: Record<string, string>
+  timeoutMs?: number
+}
+
+type CommandRunner = (command: string, args: string[], opts: Required<ExecOptions>) => Promise<void>
+
+function sourceToPath(source: string | URL): string {
+  return source instanceof URL ? fileURLToPath(source) : source
+}
+
+async function assertExistingInsideWorkspace(root: string, relPath: string): Promise<string | null> {
+  const absPath = validatePath(root, relPath)
+  try {
+    await assertRealPathWithinWorkspace(root, absPath)
+    return absPath
+  } catch (error: unknown) {
+    if ((error as { code?: string }).code === 'ENOENT') return null
+    throw error
+  }
+}
+
+async function prepareWritablePath(root: string, relPath: string): Promise<string> {
+  const absPath = validatePath(root, relPath)
+  await mkdir(dirname(absPath), { recursive: true })
+  await assertRealPathWithinWorkspace(root, dirname(absPath))
+
+  try {
+    const targetStat = await lstat(absPath)
+    if (targetStat.isSymbolicLink()) {
+      throw Object.assign(new Error('Target path is a symlink'), {
+        statusCode: 400,
+        reason: 'symlink-escape',
+        requestedPath: relPath,
+      })
+    }
+  } catch (error: unknown) {
+    if ((error as { code?: string }).code !== 'ENOENT') throw error
+  }
+
+  return absPath
+}
+
+async function spawnCommand(command: string, args: string[], opts: Required<ExecOptions>): Promise<void> {
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    const child = spawn(command, args, {
+      cwd: opts.cwd,
+      env: { ...process.env, ...opts.env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: false,
+      windowsHide: true,
+    })
+
+    const stderr: Buffer[] = []
+    let timeout: NodeJS.Timeout | null = null
+    let settled = false
+
+    const settle = (error?: Error): void => {
+      if (settled) return
+      settled = true
+      if (timeout) clearTimeout(timeout)
+      if (error) rejectPromise(error)
+      else resolvePromise()
+    }
+
+    child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk))
+    child.on('error', settle)
+    child.on('close', (code) => {
+      if (code === 0) {
+        settle()
+        return
+      }
+      const message = Buffer.concat(stderr).toString('utf8').trim()
+      settle(new Error(`Command failed (${command}) with exit code ${code ?? 'unknown'}${message ? `: ${message}` : ''}`))
+    })
+
+    timeout = setTimeout(() => {
+      child.kill('SIGTERM')
+      settle(new Error(`Command timed out after ${opts.timeoutMs}ms: ${command}`))
+    }, opts.timeoutMs)
+  })
+}
+
+function defaultExecOptions(paths: BoringAgentRuntimePaths, opts?: ExecOptions): Required<ExecOptions> {
+  return {
+    cwd: opts?.cwd ?? paths.workspaceRoot,
+    env: opts?.env ?? {},
+    timeoutMs: opts?.timeoutMs ?? 120_000,
+  }
+}
+
+function mapWorkspacePathToLocalSandbox(paths: BoringAgentRuntimePaths, value: string): string {
+  const absolute = isAbsolute(value) ? value : resolve(paths.workspaceRoot, value)
+  const relPath = relative(paths.workspaceRoot, absolute)
+  if (relPath === '') return LOCAL_SANDBOX_WORKSPACE_ROOT
+  if (relPath === '..' || relPath.startsWith(`..${sep}`)) return value
+  return `${LOCAL_SANDBOX_WORKSPACE_ROOT}/${relPath.split(sep).join('/')}`
+}
+
+function mapEnvToLocalSandbox(paths: BoringAgentRuntimePaths, env: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(env).map(([key, value]) => [
+      key,
+      value.startsWith(paths.workspaceRoot)
+        ? mapWorkspacePathToLocalSandbox(paths, value)
+        : value,
+    ]),
+  )
+}
+
+function createWorkspaceFs(workspaceRoot: string): WorkspaceProvisioningAdapter['workspaceFs'] {
+  return {
+    async exists(workspaceRelativePath) {
+      const absPath = await assertExistingInsideWorkspace(workspaceRoot, workspaceRelativePath)
+      if (!absPath) return false
+      await lstat(absPath)
+      return true
+    },
+    async rm(workspaceRelativePath) {
+      const absPath = await assertExistingInsideWorkspace(workspaceRoot, workspaceRelativePath)
+      if (!absPath) return
+      await rm(absPath, { recursive: true, force: true })
+    },
+    async mkdir(workspaceRelativePath) {
+      const absPath = validatePath(workspaceRoot, workspaceRelativePath)
+      await mkdir(absPath, { recursive: true })
+      await assertRealPathWithinWorkspace(workspaceRoot, absPath)
+    },
+    async writeText(workspaceRelativePath, content) {
+      const absPath = await prepareWritablePath(workspaceRoot, workspaceRelativePath)
+      await writeFile(absPath, content, 'utf8')
+    },
+    async readText(workspaceRelativePath) {
+      const absPath = await assertExistingInsideWorkspace(workspaceRoot, workspaceRelativePath)
+      if (!absPath) return null
+      return await readFile(absPath, 'utf8')
+    },
+    async copyFromHost(hostSourcePath, workspaceRelativeTarget) {
+      const sourcePath = sourceToPath(hostSourcePath)
+      const absTarget = await prepareWritablePath(workspaceRoot, workspaceRelativeTarget)
+      const sourceStat = await stat(sourcePath)
+      await cp(sourcePath, absTarget, {
+        recursive: sourceStat.isDirectory(),
+        force: false,
+        errorOnExist: true,
+      })
+    },
+  }
+}
+
+export function createDirectProvisioningAdapter(
+  paths: BoringAgentRuntimePaths,
+  runner: CommandRunner = spawnCommand,
+): WorkspaceProvisioningAdapter {
+  return {
+    mode: 'direct',
+    async exec(command, args, opts) {
+      await runner(command, args, defaultExecOptions(paths, opts))
+    },
+    async resolveInstallSource(source) {
+      return sourceToPath(source)
+    },
+    workspaceFs: createWorkspaceFs(paths.workspaceRoot),
+    getRuntimeCacheRoot() {
+      return paths.cache
+    },
+  }
+}
+
+export function createLocalProvisioningAdapter(
+  paths: BoringAgentRuntimePaths,
+  runner: CommandRunner = spawnCommand,
+): WorkspaceProvisioningAdapter {
+  const sourceMounts = new Map<string, string>()
+
+  return {
+    mode: 'local',
+    async exec(command, args, opts) {
+      const execOpts = defaultExecOptions(paths, opts)
+      const bwrapArgs = buildBwrapArgs(paths.workspaceRoot, {
+        extraArgs: [
+          '--dir', '/mnt',
+          '--dir', '/mnt/boring-agent-sources',
+          ...[...sourceMounts.entries()].flatMap(([host, sandbox]) => ['--ro-bind', host, sandbox]),
+        ],
+      })
+      await runner('bwrap', [
+        ...bwrapArgs,
+        command,
+        ...args,
+      ], {
+        ...execOpts,
+        cwd: paths.workspaceRoot,
+        env: mapEnvToLocalSandbox(paths, execOpts.env),
+      })
+    },
+    async resolveInstallSource(source, opts) {
+      const hostPath = sourceToPath(source)
+      const realWorkspaceRoot = await realpath(paths.workspaceRoot)
+      const realSource = await realpath(hostPath)
+      const relPath = relative(realWorkspaceRoot, realSource)
+      if (relPath === '') return LOCAL_SANDBOX_WORKSPACE_ROOT
+      if (!relPath.startsWith('..') && !isAbsolute(relPath)) {
+        return `${LOCAL_SANDBOX_WORKSPACE_ROOT}/${relPath.split(sep).join('/')}`
+      }
+
+      const mountPath = `/mnt/boring-agent-sources/${opts.kind}-${opts.id}-${opts.fingerprint.replace(/^sha256:/, '')}`
+      sourceMounts.set(realSource, mountPath)
+      return mountPath
+    },
+    workspaceFs: createWorkspaceFs(paths.workspaceRoot),
+    getRuntimeCacheRoot() {
+      return paths.cache
+    },
+  }
+}
