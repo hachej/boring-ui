@@ -5,10 +5,12 @@ import { createServerFileSearch } from '../createServerFileSearch'
 import { createBwrapSandbox } from '../../sandbox/bwrap/createBwrapSandbox'
 import { createNodeWorkspace } from '../../workspace/createNodeWorkspace'
 import { copyTemplate } from '../../workspace/provision'
+import { createLocalProvisioningAdapter } from './provisioningAdapter'
 
 export const localModeAdapter: RuntimeModeAdapter = {
   id: 'local',
   workspaceFsCapability: 'strong',
+  createProvisioningAdapter: createLocalProvisioningAdapter,
   async create(ctx) {
     if (process.platform !== 'linux') {
       throw new Error('local mode requires Linux with bubblewrap')

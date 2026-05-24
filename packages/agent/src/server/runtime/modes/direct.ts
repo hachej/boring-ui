@@ -5,10 +5,12 @@ import { createServerFileSearch } from '../createServerFileSearch'
 import { createDirectSandbox } from '../../sandbox/direct/createDirectSandbox'
 import { createNodeWorkspace } from '../../workspace/createNodeWorkspace'
 import { copyTemplate } from '../../workspace/provision'
+import { createDirectProvisioningAdapter } from './provisioningAdapter'
 
 export const directModeAdapter: RuntimeModeAdapter = {
   id: 'direct',
   workspaceFsCapability: 'strong',
+  createProvisioningAdapter: createDirectProvisioningAdapter,
   async create(ctx) {
     await mkdir(ctx.workspaceRoot, { recursive: true })
     await copyTemplate(ctx.templatePath, ctx.workspaceRoot)
