@@ -5,9 +5,11 @@ import type { AgentHarnessFactory } from '../shared/harness'
 import type { SessionStore } from '../shared/session'
 import type { SandboxHandleStore } from '../shared/sandbox-handle-store'
 import type { TelemetrySink } from '../shared/telemetry'
+import { safeCapture } from '../shared/telemetry'
 import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
 import { getEnv } from './config/env'
 import type { RuntimeBundle, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
+import type { ExecOptions, Sandbox } from '../shared/sandbox'
 import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from './workspace/runtimeLayout'
 import { VERCEL_SANDBOX_WORKSPACE_ROOT } from './workspace/createVercelSandboxWorkspace'
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningResult } from './workspace/provisioning'
@@ -78,6 +80,18 @@ function getAvailableModelProviders(): string[] {
   ).sort((a, b) => a.localeCompare(b))
 }
 
+export interface RuntimeEnvContributionContext {
+  workspaceId: string
+  workspaceRoot: string
+  runtimeMode: RuntimeModeId
+  runtimeBundle: RuntimeBundle
+}
+
+export interface RuntimeEnvContribution {
+  id: string
+  getEnv(ctx: RuntimeEnvContributionContext): Record<string, string> | Promise<Record<string, string>>
+}
+
 interface RuntimeBinding {
   runtimeBundle: RuntimeBundle
   runtimeProvisioning?: WorkspaceProvisioningResult
@@ -99,6 +113,37 @@ interface RuntimeScope {
 interface SkillScope {
   root: string
   pi?: PiHarnessOptions
+}
+
+function withRuntimeEnvContributions(
+  runtimeBundle: RuntimeBundle,
+  baseContext: RuntimeEnvContributionContext,
+  contributions: RuntimeEnvContribution[],
+  telemetry?: TelemetrySink,
+): RuntimeBundle {
+  const sandbox: Sandbox = {
+    ...runtimeBundle.sandbox,
+    exec: async (cmd: string, execOpts: ExecOptions = {}) => {
+      const contributedEnv: Record<string, string> = {}
+      for (const contribution of contributions) {
+        Object.assign(contributedEnv, await contribution.getEnv(baseContext))
+      }
+      if (telemetry) {
+        safeCapture(telemetry, {
+          name: 'agent.runtime.env_contributed',
+          properties: {
+            runtimeMode: baseContext.runtimeMode,
+            contributionIds: contributions.map((contribution) => contribution.id),
+          },
+        })
+      }
+      return runtimeBundle.sandbox.exec(cmd, {
+        ...execOpts,
+        env: { ...contributedEnv, ...(execOpts.env ?? {}) },
+      })
+    },
+  }
+  return { ...runtimeBundle, sandbox }
 }
 
 function selectRuntimeModeAdapter(
@@ -193,6 +238,8 @@ export interface RegisterAgentRoutesOptions {
   sandboxHandleStore?: SandboxHandleStore
   getWorkspaceId?: (request: FastifyRequest) => string | Promise<string>
   getWorkspaceRoot?: (workspaceId: string, request: FastifyRequest) => string | Promise<string>
+  /** Generic runtime env contributors. Agent stays workspace-neutral; hosts decide env names/values. */
+  runtimeEnvContributions?: RuntimeEnvContribution[]
   /**
    * Optional runtime reconciliation hook. Callers own plugin discovery and may
    * call provisionWorkspaceRuntime() with the normalized structural inputs.
@@ -336,8 +383,15 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       telemetry: opts.telemetry,
     }
     let runtimeProvisioning = await runRuntimeProvisioning(workspaceId, scope, request)
-
-    const runtimeBundle = await modeAdapter.create(modeCtx)
+    let runtimeBundle = await modeAdapter.create(modeCtx)
+    if (opts.runtimeEnvContributions && opts.runtimeEnvContributions.length > 0) {
+      runtimeBundle = withRuntimeEnvContributions(runtimeBundle, {
+        workspaceId,
+        workspaceRoot: root,
+        runtimeMode: resolvedMode,
+        runtimeBundle,
+      }, opts.runtimeEnvContributions, opts.telemetry)
+    }
 
     // UI tools (get_ui_state / exec_ui) and the /api/v1/ui/* routes moved
     // to @hachej/boring-workspace. Hosts that want them register uiRoutes

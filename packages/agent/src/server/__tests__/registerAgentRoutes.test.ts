@@ -804,3 +804,70 @@ test('registerAgentRoutes does NOT expose /api/v1/ui/* (moved to @hachej/boring-
 
   await app.close()
 })
+
+
+test('runtimeEnvContributions merge generic host env into sandbox exec without workspace imports', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-runtime-env-contrib-')
+  const app = Fastify({ logger: false })
+  const execCalls: Array<Record<string, string> | undefined> = []
+  const telemetryEvents: unknown[] = []
+  const customAdapter: RuntimeModeAdapter = {
+    id: 'custom-env-sandbox',
+    workspaceFsCapability: 'strong',
+    async create(ctx) {
+      const { createNodeWorkspace } = await import('../workspace/createNodeWorkspace')
+      const { createServerFileSearch } = await import('../runtime/createServerFileSearch')
+      const runtimeContext = { runtimeCwd: '/workspace' }
+      const workspace = createNodeWorkspace(ctx.workspaceRoot, { runtimeContext })
+      const sandbox = {
+        id: 'env-sandbox',
+        placement: 'server' as const,
+        provider: 'bwrap',
+        capabilities: ['exec'],
+        runtimeContext,
+        async exec(_cmd: string, opts?: { env?: Record<string, string> }) {
+          execCalls.push(opts?.env)
+          return { stdout: new TextEncoder().encode('ok'), stderr: new Uint8Array(), exitCode: 0, durationMs: 1, truncated: false }
+        },
+      }
+      return { runtimeContext, workspace, sandbox, fileSearch: createServerFileSearch(workspace, sandbox) }
+    },
+  }
+  let capturedTools: import('../../shared/tool').AgentTool[] = []
+  const harnessFactory = vi.fn(async (input) => {
+    capturedTools = input.tools
+    return {
+      id: 'runtime-env-test-harness',
+      placement: 'server' as const,
+      sessions: {
+        async list() { return [] },
+        async create() { const now = new Date().toISOString(); return { id: 's', title: 'S', createdAt: now, updatedAt: now, turnCount: 0 } },
+        async load() { const now = new Date().toISOString(); return { id: 's', title: 'S', createdAt: now, updatedAt: now, turnCount: 0, messages: [] } },
+        async delete() {},
+      },
+      async *sendMessage() {},
+    }
+  })
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    runtimeModeAdapter: customAdapter,
+    harnessFactory,
+    telemetry: { capture: (event) => { telemetryEvents.push(event) } },
+    runtimeEnvContributions: [{ id: 'generic-test', getEnv: () => ({ GENERIC_TEST_ENV: 'yes' }) }],
+  })
+  await app.ready()
+  await capturedTools.find((tool) => tool.name === 'bash')!.execute(
+    { command: 'echo ok' },
+    { abortSignal: new AbortController().signal, toolCallId: 'tool-env' },
+  )
+
+  expect(execCalls[0]).toMatchObject({ GENERIC_TEST_ENV: 'yes' })
+  expect(telemetryEvents).toContainEqual(expect.objectContaining({
+    name: 'agent.runtime.env_contributed',
+    properties: expect.objectContaining({ contributionIds: ['generic-test'] }),
+  }))
+  expect(JSON.stringify(telemetryEvents)).not.toContain('yes')
+  expect(JSON.stringify(telemetryEvents)).not.toContain('GENERIC_TEST_ENV')
+  await app.close()
+})
