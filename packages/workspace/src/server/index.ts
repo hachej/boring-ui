@@ -120,11 +120,17 @@ export {
   createWorkspaceBridgeRuntimeEnvContribution,
   resolveBridgeCallUrl,
 } from "./workspaceBridge/runtimeEnv"
+export { defineTrustedDomainBridgeHandler } from "./workspaceBridge/trustedDomainHandler"
 export type {
   CreateWorkspaceBridgeRuntimeEnvContributionOptions,
   WorkspaceBridgeRuntimeEnvDisabledReason,
   WorkspaceBridgeRuntimeEnvOptions,
 } from "./workspaceBridge/runtimeEnv"
+export type {
+  TrustedDomainBridgeHandlerOptions,
+  TrustedDomainBridgeHandlerPolicy,
+  TrustedDomainBridgeHandlerRegistration,
+} from "./workspaceBridge/trustedDomainHandler"
 export {
   bootstrapServer,
   defineServerPlugin,
