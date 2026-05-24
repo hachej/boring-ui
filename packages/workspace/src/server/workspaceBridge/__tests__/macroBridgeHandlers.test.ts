@@ -177,5 +177,22 @@ describe("Macro WorkspaceBridge handlers", () => {
   test("SQL guard rejects raw writes before service execution", () => {
     expect(() => guardMacroSqlQuery({ sql: "update series set value = 1" })).toThrow(expect.objectContaining({ code: WorkspaceBridgeErrorCode.InvalidRequest }))
     expect(() => guardMacroSqlQuery({ query: "with x as (select 1) select * from x" })).not.toThrow()
+    expect(() => guardMacroSqlQuery({ sql: "describe series_catalog" })).not.toThrow()
+    expect(() => guardMacroSqlQuery({ sql: "show tables" })).not.toThrow()
+  })
+
+  test("rejects non-string file-asset raw URLs", async () => {
+    const registry = createWorkspaceBridgeRegistry()
+    const service = createService()
+    vi.mocked(service.seriesData).mockResolvedValue({ rows: ["x".repeat(1024)] })
+    registerMacroBridgeHandlers(registry, {
+      service,
+      inlineOutputMaxBytes: 1,
+      fileAssetWriter: { writeMacroOutput: () => ({ kind: "file-asset", path: "generated/macro/out.json", contentType: "application/json", rawUrl: 123 } as unknown as WorkspaceBridgeFileAssetPointer) },
+    })
+    await expect(registry.call(
+      { op: MACRO_BRIDGE_OPS.seriesData, input: { seriesId: "BIG" }, requestId: "req_bad_raw_url" },
+      context(["macro:series.data"], "runtime"),
+    )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.InvalidRequest } })
   })
 })

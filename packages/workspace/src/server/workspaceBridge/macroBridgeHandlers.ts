@@ -89,7 +89,7 @@ const DEFAULT_MAX_OUTPUT_BYTES = 2 * 1024 * 1024
 const DEFAULT_SQL_MAX_ROWS = 1_000
 const DEFAULT_SQL_MAX_BYTES = 2 * 1024 * 1024
 const DEFAULT_SQL_TIMEOUT_MS = 5_000
-const READ_ONLY_SQL_START = /^(select|with|explain)\b/i
+const READ_ONLY_SQL_START = /^(select|with|explain|describe|show|desc)\b/i
 const WRITE_OR_ADMIN_SQL = /\b(insert|update|delete|drop|alter|create|truncate|merge|grant|revoke|copy|call|execute|vacuum|analyze|attach|detach)\b/i
 
 export function registerMacroBridgeHandlers(
@@ -172,7 +172,7 @@ function withMacroOutputFallback(
 function validateFileAssetPointer(pointer: WorkspaceBridgeFileAssetPointer): WorkspaceBridgeFileAssetPointer {
   if (!pointer || pointer.kind !== "file-asset" || typeof pointer.path !== "string") throw invalidFileAsset("macro file-asset writer returned an invalid pointer")
   if (pointer.path.startsWith("/") || pointer.path.split("/").includes("..")) throw invalidFileAsset("macro file-asset path must be workspace-relative")
-  if (pointer.rawUrl && !pointer.rawUrl.startsWith("/api/v1/files/raw?")) throw invalidFileAsset("macro file-asset rawUrl must use the existing raw-file route")
+  if (pointer.rawUrl !== undefined && (typeof pointer.rawUrl !== "string" || !pointer.rawUrl.startsWith("/api/v1/files/raw?"))) throw invalidFileAsset("macro file-asset rawUrl must use the existing raw-file route")
   return pointer
 }
 
