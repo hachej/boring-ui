@@ -8,6 +8,13 @@ import {
   type WorkspaceBridgeOperationDefinition,
 } from "../../shared/workspace-bridge-rpc"
 import type { WorkspaceBridge, UiCommand, CommandResult } from "../../shared/ui-bridge"
+import {
+  auditOutcomeForError,
+  createWorkspaceBridgeRateLimitKey,
+  type RateLimitPolicy,
+  type WorkspaceBridgeAuditSink,
+  type WorkspaceBridgeAuditEvent,
+} from "./audit"
 
 export interface WorkspaceBridgeCallContext extends BridgeAuthContext {
   requestId?: string
@@ -41,6 +48,8 @@ export interface WorkspaceBridgeRegistryLogger {
 
 export interface WorkspaceBridgeRegistryOptions {
   logger?: WorkspaceBridgeRegistryLogger
+  auditSink?: WorkspaceBridgeAuditSink
+  rateLimitPolicy?: RateLimitPolicy
 }
 
 interface RegisteredOperation {
@@ -56,9 +65,13 @@ interface SchemaResult {
 export class WorkspaceBridgeRegistry {
   private readonly handlers = new Map<string, RegisteredOperation>()
   private readonly logger?: WorkspaceBridgeRegistryLogger
+  private readonly auditSink?: WorkspaceBridgeAuditSink
+  private readonly rateLimitPolicy?: RateLimitPolicy
 
   constructor(options: WorkspaceBridgeRegistryOptions = {}) {
     this.logger = options.logger
+    this.auditSink = options.auditSink
+    this.rateLimitPolicy = options.rateLimitPolicy
   }
 
   registerHandler<TInput, TOutput>(
@@ -98,12 +111,17 @@ export class WorkspaceBridgeRegistry {
     }
 
     const { definition, handler } = registered
+    const startedAt = Date.now()
     const logBase = {
       requestId,
       op: request.op,
       callerClass: context.callerClass,
       workspaceId: context.workspaceId,
       sessionId: context.sessionId,
+      pluginId: context.pluginId,
+      tokenId: context.tokenId,
+      capabilities: context.capabilities,
+      actor: context.actor,
     }
 
     if (!definition.callerClassesAllowed.includes(context.callerClass)) {
@@ -116,6 +134,30 @@ export class WorkspaceBridgeRegistry {
         ...logBase,
         missingCapability,
       })
+    }
+
+    if (this.rateLimitPolicy) {
+      const decision = await this.rateLimitPolicy.check({
+        key: createWorkspaceBridgeRateLimitKey({
+          workspaceId: context.workspaceId,
+          sessionId: context.sessionId,
+          principalId: context.actor.performedBy?.id,
+          pluginId: context.pluginId,
+          runtimeId: context.tokenId,
+          callerClass: context.callerClass,
+          op: request.op,
+        }),
+        workspaceId: context.workspaceId,
+        sessionId: context.sessionId,
+        principalId: context.actor.performedBy?.id,
+        pluginId: context.pluginId,
+        runtimeId: context.tokenId,
+        callerClass: context.callerClass,
+        op: request.op,
+      })
+      if (!decision.allowed) {
+        return this.failure(request.op, requestId, WorkspaceBridgeErrorCode.RateLimited, "Bridge caller is rate limited", logBase, startedAt, "denied")
+      }
     }
 
     const inputBytes = measureJsonBytes(request.input)
@@ -193,7 +235,9 @@ export class WorkspaceBridgeRegistry {
       }
 
       this.logger?.info?.("workspace bridge call completed", logBase)
-      return { ok: true, op: request.op, requestId, output: output as TOutput }
+      const response = { ok: true as const, op: request.op, requestId, output: output as TOutput }
+      void this.emitAudit({ definition, context, requestId, outcome: "success", startedAt, inputBytes, outputBytes })
+      return response
     } catch (err) {
       if (controller.signal.aborted && controller.signal.reason === "timeout") {
         return this.failure(request.op, requestId, WorkspaceBridgeErrorCode.Timeout, "Bridge handler timed out", logBase)
@@ -215,6 +259,8 @@ export class WorkspaceBridgeRegistry {
     code: WorkspaceBridgeErrorCode,
     message: string,
     logFields?: Record<string, unknown>,
+    startedAt?: number,
+    rateLimitDecision?: "allowed" | "denied",
   ): WorkspaceBridgeCallResponse<never> {
     const error = createWorkspaceBridgeError(code, message)
     this.logger?.warn?.("workspace bridge call rejected", {
@@ -223,7 +269,52 @@ export class WorkspaceBridgeRegistry {
       requestId,
       errorCode: code,
     })
+    if (logFields && "callerClass" in logFields && "workspaceId" in logFields) {
+      void this.emitAudit({
+        definition: this.handlers.get(op)?.definition,
+        context: logFields as unknown as WorkspaceBridgeCallContext,
+        requestId,
+        outcome: auditOutcomeForError(code),
+        error,
+        startedAt,
+        rateLimitDecision,
+      })
+    }
     return { ok: false, op, requestId, error }
+  }
+
+  private async emitAudit(args: {
+    definition?: WorkspaceBridgeOperationDefinition
+    context: WorkspaceBridgeCallContext
+    requestId: string
+    outcome: WorkspaceBridgeAuditEvent["outcome"]
+    error?: WorkspaceBridgeError
+    startedAt?: number
+    inputBytes?: number
+    outputBytes?: number
+    rateLimitDecision?: "allowed" | "denied"
+  }): Promise<void> {
+    if (!this.auditSink || !args.definition) return
+    await this.auditSink.emit({
+      requestId: args.requestId,
+      op: args.definition.op,
+      workspaceId: args.context.workspaceId,
+      sessionId: args.context.sessionId,
+      callerClass: args.context.callerClass,
+      actorKind: args.context.actor.actorKind,
+      performedBy: args.context.actor.performedBy,
+      onBehalfOf: args.context.actor.onBehalfOf,
+      pluginId: args.context.pluginId,
+      runtimeId: args.context.tokenId,
+      capabilities: args.context.capabilities,
+      capabilityDecision: args.error?.code === WorkspaceBridgeErrorCode.CapabilityDenied ? "denied" : "allowed",
+      rateLimitDecision: args.rateLimitDecision ?? "allowed",
+      outcome: args.outcome,
+      error: args.error,
+      durationMs: args.startedAt ? Date.now() - args.startedAt : undefined,
+      inputBytes: args.inputBytes,
+      outputBytes: args.outputBytes,
+    })
   }
 }
 

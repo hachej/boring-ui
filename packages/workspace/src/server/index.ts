@@ -56,6 +56,14 @@ export type {
   WorkspaceBridgeRegistryOptions,
 } from "./workspaceBridge/registry"
 export {
+  InMemoryWorkspaceBridgeAuditSink,
+  SimpleWorkspaceBridgeRateLimitPolicy,
+  auditOutcomeForError,
+  createWorkspaceBridgeRateLimitKey,
+  redactValue,
+  redactWorkspaceBridgeAuditEvent,
+} from "./workspaceBridge/audit"
+export {
   createBrowserBridgeAuthPolicy,
   createLocalCliBridgeAuthPolicy,
   createTrustedServerBridgeAuthPolicy,
@@ -67,6 +75,14 @@ export {
   runWithWorkspaceBridgeIdempotency,
   stableStringify,
 } from "./workspaceBridge/idempotency"
+export type {
+  RateLimitDecision,
+  RateLimitPolicy,
+  WorkspaceBridgeAuditEvent,
+  WorkspaceBridgeAuditOutcome,
+  WorkspaceBridgeAuditSink,
+  WorkspaceBridgeRateLimitInput,
+} from "./workspaceBridge/audit"
 export type {
   BridgeAuthPolicy,
   BridgeAuthPolicyInput,
