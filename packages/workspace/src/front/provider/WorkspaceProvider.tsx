@@ -290,6 +290,7 @@ function WorkspacePluginProviders({
   authHeaders,
   onAuthError,
   apiTimeout,
+  activeSessionId,
   children,
 }: {
   plugins: CapturedFrontPlugin[]
@@ -297,6 +298,7 @@ function WorkspacePluginProviders({
   authHeaders?: Record<string, string>
   onAuthError?: (statusCode: number) => void
   apiTimeout?: number
+  activeSessionId?: string | null
   children: ReactNode
 }) {
   const providers = plugins.flatMap((plugin) =>
@@ -312,6 +314,7 @@ function WorkspacePluginProviders({
         authHeaders={authHeaders}
         onAuthError={onAuthError}
         apiTimeout={apiTimeout}
+        activeSessionId={activeSessionId}
       >
         {acc}
       </Provider>
@@ -353,6 +356,8 @@ export interface WorkspaceProviderProps {
   authHeaders?: Record<string, string>
   /** Per-request timeout for the data layer's FetchClient, in ms. */
   apiTimeout?: number
+  /** Active chat/session scope shared with plugin providers that need session-scoped data. */
+  activeSessionId?: string | null
   defaultTheme?: "light" | "dark" | undefined
   onThemeChange?: (theme: "light" | "dark") => void
   workspaceId?: string
@@ -388,6 +393,7 @@ export function WorkspaceProvider({
   apiBaseUrl = "",
   authHeaders,
   apiTimeout,
+  activeSessionId,
   defaultTheme,
   onThemeChange,
   workspaceId,
@@ -576,6 +582,7 @@ export function WorkspaceProvider({
                 authHeaders={authHeaders}
                 onAuthError={onAuthError}
                 apiTimeout={apiTimeout}
+                activeSessionId={activeSessionId}
               >
                 <WorkspacePluginBindings plugins={pluginsWithBindings} />
                 <AgentPluginHotReloadBridge apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} mode={frontPluginHotReload} authHeaders={authHeaders} />

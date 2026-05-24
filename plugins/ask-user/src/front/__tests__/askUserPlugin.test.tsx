@@ -1,7 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { captureFrontPlugin } from "@hachej/boring-workspace/plugin"
-import { ASK_USER_UI_STATE_SLOTS } from "../../shared/constants"
 import type { AskUserQuestion } from "../../shared/types"
 import { askUserPlugin } from "../index"
 
@@ -34,9 +33,12 @@ afterEach(() => {
 
 describe("askUserPlugin front shell", () => {
   it("reads pending question, submits with token/session, and closes ephemeral pane", async () => {
-    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
-      if (String(url).endsWith("/api/v1/ui/state")) return Response.json({ [ASK_USER_UI_STATE_SLOTS.PENDING]: { question } })
-      if (String(url).endsWith("/api/v1/questions/commands")) return Response.json({ ok: true, status: "answered" })
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call")) {
+        const body = JSON.parse(String(init?.body ?? "{}"))
+        if (body.op === "human-input.v1.pending") return Response.json({ ok: true, output: { pending: question } })
+        if (body.op === "human-input.v1.answer") return Response.json({ ok: true, output: { status: "answered" } })
+      }
       return Response.json({})
     })
     vi.stubGlobal("fetch", fetchMock)
@@ -56,18 +58,17 @@ describe("askUserPlugin front shell", () => {
 
     await waitFor(() => expect(close).toHaveBeenCalled())
     expect(closeWorkbench).toHaveBeenCalled()
-    const submitCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith("/api/v1/questions/commands") && String(init?.body).includes("questions.submit"))
+    const submitCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.answer"))
     expect(JSON.parse(String(submitCall![1]!.body))).toMatchObject({
-      kind: "questions.submit",
-      params: { questionId: "q1", sessionId: "default", answerToken: "secret", values: { choice: "A" } },
+      op: "human-input.v1.answer",
+      input: { questionId: "q1", sessionId: "default", nonce: "secret", values: { choice: "A" } },
     })
+    expect(String(submitCall![1]!.headers)).not.toContain("Bearer")
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/api/v1/questions/commands"))).toBe(false)
   })
 
   it("renders question from openSurface metadata even before pending-state poll catches up", async () => {
-    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
-      if (String(url).endsWith("/api/v1/ui/state")) return Response.json({})
-      return Response.json({})
-    })
+    const fetchMock = vi.fn(async () => Response.json({ ok: true, output: { pending: null } }))
     vi.stubGlobal("fetch", fetchMock)
     const Provider = getProvider()
     const Panel = getPanel()
@@ -77,17 +78,21 @@ describe("askUserPlugin front shell", () => {
   })
 
   it("composer stop cancels pending question even when pane is closed", async () => {
-    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
-      if (String(url).endsWith("/api/v1/ui/state")) return Response.json({ [ASK_USER_UI_STATE_SLOTS.PENDING]: { question } })
-      if (String(url).endsWith("/api/v1/questions/commands")) return Response.json({ ok: true, status: "cancelled" })
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call")) {
+        const body = JSON.parse(String(init?.body ?? "{}"))
+        if (body.op === "human-input.v1.pending") return Response.json({ ok: true, output: { pending: question } })
+        if (body.op === "human-input.v1.cancel") return Response.json({ ok: true, output: { status: "cancelled" } })
+      }
       return Response.json({})
     })
     vi.stubGlobal("fetch", fetchMock)
     const Provider = getProvider()
     render(<Provider apiBaseUrl=""><div>child</div></Provider>)
-    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/api/v1/ui/state"))).toBe(true))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.pending"))).toBe(true))
     window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: "default" } }))
-    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/questions/commands") && String(init?.body).includes("questions.cancel"))).toBe(true))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.cancel"))).toBe(true))
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/api/v1/questions/commands"))).toBe(false)
   })
 
   it("registers surface resolver and no-topbar panel output", () => {
@@ -96,6 +101,7 @@ describe("askUserPlugin front shell", () => {
     expect(panel.id).toBe("ask-user.questions")
     expect(panel.chromeless).toBe(true)
     expect(resolver.resolve({ kind: "questions", target: "q1", meta: { question } })).toMatchObject({ component: "ask-user.questions", id: "ask-user.questions", params: { questionId: "q1", question } })
+    expect(capturedPlugin.registrations.surfaceResolvers[1]!.resolve({ kind: "human-input", target: "q1", meta: { question: { ...question, status: "pending", nonce: "secret", payload: { title: question.title, context: question.context, schema: question.schema } } } })).toMatchObject({ component: "ask-user.questions", params: { question: { answerToken: "secret", status: "ready" } } })
   })
 
   it("carries pluginId + pluginLabel metadata (definePlugin contract)", () => {

@@ -472,6 +472,7 @@ export function WorkspaceAgentFront<
         apiBaseUrl={apiBaseUrl}
         authHeaders={resolvedAuthHeaders}
         apiTimeout={apiTimeout}
+        activeSessionId={chatSessionId}
         defaultTheme={defaultTheme}
         onThemeChange={onThemeChange}
         workspaceId={workspaceId}
