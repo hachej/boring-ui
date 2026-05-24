@@ -9,6 +9,7 @@ export {
   writeFingerprintAfterSuccessfulInstall,
 } from './fingerprint'
 export { provisionWorkspaceRuntime } from './provisionWorkspaceRuntime'
+export { getProvisionedSkillPaths, mirrorPluginSkills } from './skills'
 export type {
   PluginSkillSource,
   ProvisionWorkspaceRuntimeOptions,
