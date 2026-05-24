@@ -11,6 +11,7 @@ import {
   provisionRuntimeWorkspace,
   provisionWorkspaceRuntime,
   resolveMode,
+  VERCEL_SANDBOX_WORKSPACE_ROOT,
   type CreateAgentAppOptions,
   type PiExtensionFactory,
   type ProvisionWorkspaceRuntimeOptions,
@@ -575,14 +576,21 @@ export async function createWorkspaceAgentServer(
     ...readWorkspacePluginPackageRuntimePlugins(boringPluginDirs),
   ])
   let currentRuntimeProvisioning = opts.runtimeProvisioning
+  const runtimeWorkspaceRoot = resolvedMode === "vercel-sandbox"
+    ? VERCEL_SANDBOX_WORKSPACE_ROOT
+    : workspaceRoot
+  const runtimeLayout = getBoringAgentRuntimePaths(runtimeWorkspaceRoot)
   const runRuntimeProvisioning = async () => {
     if (opts.provisionWorkspace === false) return currentRuntimeProvisioning
-    const adapter = modeAdapter.createProvisioningAdapter?.(getBoringAgentRuntimePaths(workspaceRoot))
+    const adapter = modeAdapter.createProvisioningAdapter?.(runtimeLayout, {
+      workspaceRoot,
+      sessionId: opts.sessionId ?? "default",
+    })
     if (!adapter) return currentRuntimeProvisioning
     currentRuntimeProvisioning = await provisionWorkspaceRuntime({
       plugins: buildRuntimeProvisioningPlugins(),
       adapter,
-      runtimeLayout: getBoringAgentRuntimePaths(workspaceRoot),
+      runtimeLayout,
     })
     return currentRuntimeProvisioning
   }

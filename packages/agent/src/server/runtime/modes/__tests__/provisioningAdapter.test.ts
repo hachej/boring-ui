@@ -115,7 +115,7 @@ test('local adapter maps workspace-contained package roots to /workspace and ext
   })
   expect(externalInstallSource).toBe('/mnt/boring-agent-sources/python-macro sdk-abcdef')
 
-  const execResult = await adapter.exec('python', ['-c', 'print("hello world")', 'arg with spaces'], {
+  const execResult = await adapter.exec(join(paths.venvBin, 'python'), ['-c', 'print("hello world")', 'arg with spaces', paths.venv], {
     env: { VIRTUAL_ENV: paths.venv },
   })
 
@@ -126,6 +126,12 @@ test('local adapter maps workspace-contained package roots to /workspace and ext
   expect(calls[0].args).toContain('--ro-bind')
   expect(calls[0].args).toContain(externalRoot)
   expect(calls[0].args).toContain(externalInstallSource)
-  expect(calls[0].args.slice(-4)).toEqual(['python', '-c', 'print("hello world")', 'arg with spaces'])
+  expect(calls[0].args.slice(-5)).toEqual([
+    '/workspace/.boring-agent/venv/bin/python',
+    '-c',
+    'print("hello world")',
+    'arg with spaces',
+    '/workspace/.boring-agent/venv',
+  ])
   expect(calls[0].env.VIRTUAL_ENV).toBe('/workspace/.boring-agent/venv')
 })

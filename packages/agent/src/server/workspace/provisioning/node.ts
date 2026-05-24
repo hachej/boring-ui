@@ -65,9 +65,12 @@ function nodeInstallSource(spec: RuntimeNodePackageSpec): string {
 }
 
 function expectedNodeOutputs(paths: BoringAgentRuntimePaths, packages: RuntimeNodePackageSpec[]): string[] {
-  return packages.flatMap((pkg) =>
-    (pkg.expectedBins ?? []).map((bin) => join(paths.nodeBin, bin)),
-  )
+  return [
+    join(paths.node, 'package-lock.json'),
+    ...packages.flatMap((pkg) =>
+      (pkg.expectedBins ?? []).map((bin) => join(paths.nodeBin, bin)),
+    ),
+  ]
 }
 
 function toWorkspaceRel(paths: BoringAgentRuntimePaths, absolutePath: string): string {
