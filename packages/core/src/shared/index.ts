@@ -22,3 +22,6 @@ export {
   ConfigValidationError,
 } from './errors.js'
 export type { ErrorCode } from './errors.js'
+
+export { noopTelemetry, safeCapture } from './telemetry.js'
+export type { TelemetryEvent, TelemetrySink } from './telemetry.js'
