@@ -36,12 +36,19 @@ export {
   provisionRuntimeWorkspace,
   type ProvisionRuntimeWorkspaceOptions,
   type RuntimeWorkspaceProvisioningResult,
-  type RuntimeProvisioningContribution,
-  type RuntimeTemplateContribution,
-  type RuntimePythonSpec,
-  type RuntimeNodePackageSpec,
 } from './workspace/provisionRuntime'
 export { createVercelSandboxWorkspace } from './workspace/createVercelSandboxWorkspace'
+export { provisionWorkspaceRuntime } from './workspace/provisioning'
+export type {
+  PluginSkillSource,
+  ProvisionWorkspaceRuntimeOptions,
+  RuntimeNodePackageSpec,
+  RuntimeProvisioningContribution,
+  RuntimePythonSpec,
+  RuntimeTemplateContribution,
+  WorkspaceProvisioningAdapter,
+  WorkspaceProvisioningResult,
+} from './workspace/provisioning'
 export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
 export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'
