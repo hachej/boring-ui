@@ -38,6 +38,15 @@ import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
 import { createWorkspaceUiTools } from "../../server/ui-control/tools/uiTools"
 import { uiRoutes } from "../../server/ui-control/http/uiRoutes"
 import {
+  createLocalCliBridgeAuthPolicy,
+  createWorkspaceBridgeRegistry,
+  InMemoryWorkspaceBridgeIdempotencyStore,
+  workspaceBridgeHttpRoutes,
+  type WorkspaceBridgeHandler,
+  type WorkspaceBridgeOperationDefinition,
+  type WorkspaceBridgeRegistry,
+} from "../../server"
+import {
   bootstrapServer,
   compactPiPackages,
   type ServerBootstrapOptions,
@@ -137,6 +146,14 @@ export interface CreateWorkspaceAgentServerOptions
    * instead of inside the server boot path.
    */
   appPackageJsonPath?: string
+  workspaceBridge?: {
+    registry?: WorkspaceBridgeRegistry
+    runtimeTokenSecret?: string
+    handlers?: Array<{
+      definition: WorkspaceBridgeOperationDefinition
+      handler: WorkspaceBridgeHandler
+    }>
+  }
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -479,6 +496,10 @@ export async function createWorkspaceAgentServer(
 ): Promise<FastifyInstance> {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const bridge = createInMemoryBridge()
+  const workspaceBridgeRegistry = opts.workspaceBridge?.registry ?? createWorkspaceBridgeRegistry()
+  for (const entry of opts.workspaceBridge?.handlers ?? []) {
+    workspaceBridgeRegistry.registerHandler(entry.definition, entry.handler)
+  }
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
   const workspaceFsCapability = modeAdapter.workspaceFsCapability ?? "best-effort"
@@ -697,6 +718,17 @@ export async function createWorkspaceAgentServer(
   })
   await boringAssetManager.load()
   await app.register(uiRoutes, { bridge, preserveStateKeys: pluginCollection.preservedUiStateKeys })
+  await app.register(workspaceBridgeHttpRoutes, {
+    registry: workspaceBridgeRegistry,
+    runtimeTokenSecret: opts.workspaceBridge?.runtimeTokenSecret,
+    idempotencyStore: new InMemoryWorkspaceBridgeIdempotencyStore(),
+    browserAuthPolicy: createLocalCliBridgeAuthPolicy({
+      workspaceId: "default",
+      capabilities: workspaceBridgeRegistry.listDefinitions().flatMap((definition) => [...definition.requiredCapabilities]),
+    }),
+  })
+  ;(app as FastifyInstance & { __boringWorkspaceBridgeRegistry?: WorkspaceBridgeRegistry }).__boringWorkspaceBridgeRegistry =
+    workspaceBridgeRegistry
   await app.register(boringPluginRoutes, {
     manager: boringAssetManager,
     rebuildPlugins,

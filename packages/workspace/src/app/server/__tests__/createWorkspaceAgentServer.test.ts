@@ -720,3 +720,51 @@ describe("beforeReload triggers directory-source re-resolve", () => {
     await expect(agentOptions.beforeReload?.()).resolves.not.toThrow()
   })
 })
+
+
+describe("createWorkspaceAgentServer — WorkspaceBridge RPC composition", () => {
+  test("registers a demo handler and calls it through HTTP without shared singleton state", async () => {
+    const { createTestBridgeOperationDefinition } = await import("../../../server/workspaceBridge/testing/harness")
+    const workspaceA = { root: await makeTempDir("bridge-compose-a-") }
+    const workspaceB = { root: await makeTempDir("bridge-compose-b-") }
+    const definition = createTestBridgeOperationDefinition<{ value: string }, { value: string }>({
+      op: "test.v1.composed",
+      callerClassesAllowed: ["browser"],
+      requiredCapabilities: ["test:composed"],
+    })
+    mockCreateAgentAppOnce(async () => Fastify())
+    const appA = await createWorkspaceAgentServer({
+      workspaceRoot: workspaceA.root,
+      provisionWorkspace: false,
+      workspaceBridge: { handlers: [{ definition, handler: ({ input }) => ({ value: `a:${(input as { value: string }).value}` }) }] },
+    })
+    mockCreateAgentAppOnce(async () => Fastify())
+    const appB = await createWorkspaceAgentServer({
+      workspaceRoot: workspaceB.root,
+      provisionWorkspace: false,
+      workspaceBridge: { handlers: [{ definition, handler: ({ input }) => ({ value: `b:${(input as { value: string }).value}` }) }] },
+    })
+
+    const callA = await appA.inject({
+      method: "POST",
+      url: "/api/v1/workspace-bridge/call",
+      headers: { "content-type": "application/json" },
+      payload: { op: "test.v1.composed", input: { value: "one" } },
+    })
+    const callB = await appB.inject({
+      method: "POST",
+      url: "/api/v1/workspace-bridge/call",
+      headers: { "content-type": "application/json" },
+      payload: { op: "test.v1.composed", input: { value: "one" } },
+    })
+
+    expect(callA.statusCode).toBe(200)
+    expect(callB.statusCode).toBe(200)
+    expect(callA.json()).toMatchObject({ ok: true, output: { value: "a:one" } })
+    expect(callB.json()).toMatchObject({ ok: true, output: { value: "b:one" } })
+    expect((appA as any).__boringWorkspaceBridgeRegistry).not.toBe((appB as any).__boringWorkspaceBridgeRegistry)
+
+    await appA.close()
+    await appB.close()
+  })
+})
