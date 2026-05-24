@@ -171,9 +171,26 @@ function withMacroOutputFallback(
 
 function validateFileAssetPointer(pointer: WorkspaceBridgeFileAssetPointer): WorkspaceBridgeFileAssetPointer {
   if (!pointer || pointer.kind !== "file-asset" || typeof pointer.path !== "string") throw invalidFileAsset("macro file-asset writer returned an invalid pointer")
-  if (pointer.path.startsWith("/") || pointer.path.split("/").includes("..")) throw invalidFileAsset("macro file-asset path must be workspace-relative")
-  if (pointer.rawUrl !== undefined && (typeof pointer.rawUrl !== "string" || !pointer.rawUrl.startsWith("/api/v1/files/raw?"))) throw invalidFileAsset("macro file-asset rawUrl must use the existing raw-file route")
+  if (!pointer.path || pointer.path.includes("\0") || pointer.path.includes("\\") || pointer.path.startsWith("/") || pointer.path.split("/").includes("..")) {
+    throw invalidFileAsset("macro file-asset path must be workspace-relative")
+  }
+  if (pointer.rawUrl !== undefined) validateRawFileUrl(pointer.rawUrl, pointer.path)
   return pointer
+}
+
+function validateRawFileUrl(rawUrl: unknown, path: string): void {
+  if (typeof rawUrl !== "string" || !rawUrl.startsWith("/api/v1/files/raw?")) {
+    throw invalidFileAsset("macro file-asset rawUrl must use the existing raw-file route")
+  }
+  let parsed: URL
+  try {
+    parsed = new URL(rawUrl, "http://workspace.local")
+  } catch {
+    throw invalidFileAsset("macro file-asset rawUrl must be a valid raw-file URL")
+  }
+  if (parsed.pathname !== "/api/v1/files/raw" || parsed.searchParams.get("path") !== path) {
+    throw invalidFileAsset("macro file-asset rawUrl path must match the generated asset path")
+  }
 }
 
 function serviceContext(op: MacroBridgeOp, context: Parameters<WorkspaceBridgeHandler>[0]["context"], signal?: AbortSignal): MacroBridgeServiceContext {
