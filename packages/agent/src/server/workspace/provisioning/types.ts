@@ -43,6 +43,11 @@ export interface WorkspaceProvisioningResult {
   skillPaths: string[]
 }
 
+export interface WorkspaceProvisioningExecResult {
+  stdout?: string
+  stderr?: string
+}
+
 export interface WorkspaceProvisioningAdapter {
   mode: 'direct' | 'local' | 'vercel-sandbox'
 
@@ -50,7 +55,7 @@ export interface WorkspaceProvisioningAdapter {
     cwd?: string
     env?: Record<string, string>
     timeoutMs?: number
-  }): Promise<void>
+  }): Promise<WorkspaceProvisioningExecResult | void>
 
   resolveInstallSource(source: string | URL, opts: {
     kind: 'node' | 'python'
