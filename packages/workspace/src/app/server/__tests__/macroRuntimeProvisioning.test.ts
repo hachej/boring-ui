@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { tmpdir } from "node:os"
 import { afterEach, describe, expect, test, vi } from "vitest"
@@ -26,6 +26,17 @@ async function tempDir(prefix: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), prefix))
   tempDirs.push(dir)
   return dir
+}
+
+async function treeSummary(root: string, dir = root, prefix = ""): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+  const out: string[] = []
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    const rel = join(prefix, entry.name)
+    out.push(entry.isDirectory() ? `${rel}/` : rel)
+    if (entry.isDirectory()) out.push(...await treeSummary(root, join(dir, entry.name), rel))
+  }
+  return out
 }
 
 async function createMacroPackage(): Promise<{ root: string; pyproject: string; template: string }> {
@@ -131,6 +142,7 @@ describe("macro package/runtime split", () => {
   test("package metadata owns Pi resources while trusted server plugin owns provisioning/routes/tools", async () => {
     const macro = await createMacroPackage()
     const workspaceRoot = await tempDir("boring-macro-workspace-")
+    const homeRoot = await tempDir("boring-macro-home-")
     await mkdir(join(workspaceRoot, "deck"), { recursive: true })
     await writeFile(join(workspaceRoot, "deck", "intro.md"), "# User intro\n")
     const routes = vi.fn()
@@ -157,11 +169,21 @@ describe("macro package/runtime split", () => {
     const runtimePlugins = mergeRuntimePlugins([...packageRuntimePlugins, ...boot.runtimePlugins])
     const paths = getBoringAgentRuntimePaths(workspaceRoot)
     const commands: Array<{ command: string; args: string[]; env?: Record<string, string> }> = []
-    const result = await provisionWorkspaceRuntime({
-      plugins: runtimePlugins,
-      adapter: fakeAdapter(workspaceRoot, commands),
-      runtimeLayout: paths,
-    })
+    const oldHome = process.env.HOME
+    const oldUserProfile = process.env.USERPROFILE
+    process.env.HOME = homeRoot
+    process.env.USERPROFILE = homeRoot
+    let result: Awaited<ReturnType<typeof provisionWorkspaceRuntime>> | undefined
+    try {
+      result = await provisionWorkspaceRuntime({
+        plugins: runtimePlugins,
+        adapter: fakeAdapter(workspaceRoot, commands),
+        runtimeLayout: paths,
+      })
+    } finally {
+      process.env.HOME = oldHome
+      process.env.USERPROFILE = oldUserProfile
+    }
 
     expect(packageRuntimePlugins[0].skills?.map((skill) => skill.name)).toEqual(["macro-transform", "macro-deck"])
     expect(piSnapshot.systemPromptAppend).toContain("Use macro_search")
@@ -175,8 +197,17 @@ describe("macro package/runtime split", () => {
     await expect(readFile(join(paths.venvBin, "bm"), "utf8")).resolves.toContain("python")
     await expect(readFile(join(workspaceRoot, "deck", "intro.md"), "utf8")).resolves.toBe("# User intro\n")
     await expect(readFile(join(workspaceRoot, "transforms", "custom", ".gitkeep"), "utf8")).resolves.toBe("")
-    expect(result.env.BORING_MACRO_API_URL).toBe("http://macro.local")
-    expect(result.pathEntries).toContain(paths.venvBin)
-    expect(commands.find((command) => command.args[0] === "pip")?.env?.BORING_MACRO_API_URL).toBe("http://macro.local")
+    expect(result).toBeDefined()
+    const diagnostics = JSON.stringify({
+      workspaceRoot,
+      boringAgentTree: await treeSummary(join(workspaceRoot, ".boring-agent")),
+      expectedPathEntries: result?.pathEntries,
+      skillPaths: [join(paths.skills, "boring-macro", "macro-transform")],
+      installCommands: commands,
+    }, null, 2)
+    expect(result?.env.BORING_MACRO_API_URL, diagnostics).toBe("http://macro.local")
+    expect(result?.pathEntries, diagnostics).toContain(paths.venvBin)
+    expect(commands.find((command) => command.args[0] === "pip")?.env?.BORING_MACRO_API_URL, diagnostics).toBe("http://macro.local")
+    await expect(readFile(join(homeRoot, ".boring-agent", ".gitignore"), "utf8"), diagnostics).rejects.toThrow()
   })
 })
