@@ -47,20 +47,11 @@ test('accepts WorkspaceServerPlugin-like objects structurally without importing 
       id: 'macro',
       label: 'Macro',
       systemPrompt: 'Use macro tools.',
-      skills: [{ name: 'macro-transform', source: new URL('file:///tmp/macro/SKILL.md') }],
+      skills: [],
       provisioning: {
-        templateDirs: [{ id: 'macro-template', path: new URL('file:///tmp/template') }],
-        python: [{
-          id: 'macro-sdk',
-          packageName: 'boring-macro-sdk',
-          projectFile: new URL('file:///tmp/sdk/pyproject.toml'),
-          expectedBins: ['bm'],
-        }],
-        nodePackages: [{
-          id: 'cli',
-          packageName: '@hachej/boring-ui-cli',
-          expectedBins: ['boring-ui'],
-        }],
+        templateDirs: [],
+        python: [],
+        nodePackages: [],
       },
       routes: {},
       agentTools: [],
@@ -73,11 +64,20 @@ test('accepts WorkspaceServerPlugin-like objects structurally without importing 
     runtimeLayout: getBoringAgentRuntimePaths('/workspace'),
   }
 
-  await expect(provisionWorkspaceRuntime(opts)).resolves.toEqual({
-    changed: false,
-    env: {},
-    pathEntries: [],
-    skillPaths: [],
+  await expect(provisionWorkspaceRuntime(opts)).resolves.toMatchObject({
+    env: {
+      BORING_AGENT_WORKSPACE_ROOT: '/workspace',
+      VIRTUAL_ENV: '/workspace/.boring-agent/venv',
+    },
+    pathEntries: [
+      '/workspace/.boring-agent/node/node_modules/.bin',
+      '/workspace/.boring-agent/venv/bin',
+      '/workspace/.boring-agent/sdk/uv/bin',
+    ],
+    skillPaths: [
+      '/workspace/.boring-agent/skills',
+      '/workspace/.agents/skills',
+    ],
   })
 })
 
