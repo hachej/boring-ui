@@ -1,3 +1,13 @@
+export {
+  createNodeRuntimeFingerprint,
+  createPythonRuntimeFingerprint,
+  createRuntimeFingerprint,
+  isValidFingerprint,
+  readFingerprint,
+  shouldInstallRuntime,
+  writeFingerprint,
+  writeFingerprintAfterSuccessfulInstall,
+} from './fingerprint'
 export { provisionWorkspaceRuntime } from './provisionWorkspaceRuntime'
 export type {
   PluginSkillSource,
