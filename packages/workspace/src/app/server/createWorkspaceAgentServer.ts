@@ -7,7 +7,9 @@
 import {
   autoDetectMode,
   createAgentApp,
+  getBoringAgentRuntimePaths,
   provisionRuntimeWorkspace,
+  provisionWorkspaceRuntime,
   resolveMode,
   type CreateAgentAppOptions,
   type PiExtensionFactory,
@@ -382,6 +384,25 @@ export interface WorkspacePluginPackagePiSnapshot {
 
 export type WorkspaceRuntimeProvisioningPlugin = ProvisionWorkspaceRuntimeOptions["plugins"][number]
 
+function mergeRuntimeProvisioningPlugins(
+  plugins: WorkspaceRuntimeProvisioningPlugin[],
+): WorkspaceRuntimeProvisioningPlugin[] {
+  const byId = new Map<string, WorkspaceRuntimeProvisioningPlugin>()
+  for (const plugin of plugins) {
+    const current = byId.get(plugin.id) ?? { id: plugin.id }
+    byId.set(plugin.id, {
+      id: plugin.id,
+      skills: [...(current.skills ?? []), ...(plugin.skills ?? [])],
+      provisioning: {
+        templateDirs: [...(current.provisioning?.templateDirs ?? []), ...(plugin.provisioning?.templateDirs ?? [])],
+        python: [...(current.provisioning?.python ?? []), ...(plugin.provisioning?.python ?? [])],
+        nodePackages: [...(current.provisioning?.nodePackages ?? []), ...(plugin.provisioning?.nodePackages ?? [])],
+      },
+    })
+  }
+  return [...byId.values()]
+}
+
 function emptyPackageJsonPiSnapshot(): WorkspacePluginPackagePiSnapshot {
   return { additionalSkillPaths: [], packages: [], extensionPaths: [] }
 }
@@ -441,9 +462,8 @@ export async function createWorkspaceAgentServer(
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const bridge = createInMemoryBridge()
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
-  const workspaceFsCapability = opts.runtimeModeAdapter
-    ? opts.runtimeModeAdapter.workspaceFsCapability ?? "best-effort"
-    : resolveMode(resolvedMode).workspaceFsCapability ?? "best-effort"
+  const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
+  const workspaceFsCapability = modeAdapter.workspaceFsCapability ?? "best-effort"
   const validateUiPaths = opts.validateUiPaths ?? workspaceFsCapability === "strong"
   const uiTools = createWorkspaceUiTools(bridge, {
     workspaceRoot: validateUiPaths ? workspaceRoot : undefined,
@@ -550,6 +570,24 @@ export async function createWorkspaceAgentServer(
     errorRoot: join(workspaceRoot, ".pi", "extensions"),
   })
 
+  const buildRuntimeProvisioningPlugins = () => mergeRuntimeProvisioningPlugins([
+    ...pluginCollection.runtimePlugins,
+    ...readWorkspacePluginPackageRuntimePlugins(boringPluginDirs),
+  ])
+  let currentRuntimeProvisioning = opts.runtimeProvisioning
+  const runRuntimeProvisioning = async () => {
+    if (opts.provisionWorkspace === false) return currentRuntimeProvisioning
+    const adapter = modeAdapter.createProvisioningAdapter?.(getBoringAgentRuntimePaths(workspaceRoot))
+    if (!adapter) return currentRuntimeProvisioning
+    currentRuntimeProvisioning = await provisionWorkspaceRuntime({
+      plugins: buildRuntimeProvisioningPlugins(),
+      adapter,
+      runtimeLayout: getBoringAgentRuntimePaths(workspaceRoot),
+    })
+    return currentRuntimeProvisioning
+  }
+  await runRuntimeProvisioning()
+
   // Rebuild closure created BEFORE createAgentApp so beforeReload can
   // call it.
   const rebuildPlugins = async (): Promise<PluginRebuildResult> => {
@@ -605,6 +643,7 @@ export async function createWorkspaceAgentServer(
         const rebuild = await rebuildPlugins()
         diagnostics = [...scanDiagnostics, ...rebuild.diagnostics]
       }
+      await runRuntimeProvisioning()
       const callerResult = await opts.beforeReload?.()
       const callerRestartWarnings = callerResult && typeof callerResult === "object"
         ? callerResult.restart_warnings ?? []
@@ -624,6 +663,7 @@ export async function createWorkspaceAgentServer(
         ...(mergedDiagnostics.length > 0 ? { diagnostics: mergedDiagnostics } : {}),
       }
     },
+    runtimeProvisioning: currentRuntimeProvisioning,
     pi: {
       ...pluginCollection.agentOptions.pi,
       additionalSkillPaths: staticPiSkillPaths,
