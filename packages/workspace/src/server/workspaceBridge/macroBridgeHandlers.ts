@@ -4,6 +4,7 @@ import {
   createWorkspaceBridgeError,
   type BridgeActorAttribution,
   type BridgeCallerClass,
+  type WorkspaceBridgeFileAssetPointer,
   type WorkspaceBridgeJsonValue,
   type WorkspaceBridgeOperationDefinition,
 } from "../../shared/workspace-bridge-rpc"
@@ -48,6 +49,19 @@ export interface MacroBridgeHandlersOptions {
   service: MacroBridgeDataService
   owner?: string
   sqlDefaults?: MacroSqlGuardDefaults
+  fileAssetWriter?: MacroFileAssetWriter
+  inlineOutputMaxBytes?: number
+}
+
+export interface MacroFileAssetWriter {
+  writeMacroOutput(input: MacroFileAssetWriteInput): WorkspaceBridgeFileAssetPointer | Promise<WorkspaceBridgeFileAssetPointer>
+}
+
+export interface MacroFileAssetWriteInput {
+  op: MacroBridgeOp
+  output: MacroBridgeOutput
+  context: MacroBridgeServiceContext
+  contentType: "application/json"
 }
 
 export interface RegisteredMacroBridgeHandlers {
@@ -84,13 +98,13 @@ export function registerMacroBridgeHandlers(
 ): RegisteredMacroBridgeHandlers {
   const owner = options.owner ?? DEFAULT_OWNER
   const registrations = [
-    macroRegistration(MACRO_BRIDGE_OPS.catalogSearch, owner, ["browser", "runtime", "server"], ["macro:catalog.search"], ({ input, context, signal }) => options.service.catalogSearch(input as MacroBridgeInput, serviceContext(MACRO_BRIDGE_OPS.catalogSearch, context, signal))),
-    macroRegistration(MACRO_BRIDGE_OPS.facetsList, owner, ["browser", "runtime", "server"], ["macro:facets.list"], ({ input, context, signal }) => options.service.facetsList(input as MacroBridgeInput, serviceContext(MACRO_BRIDGE_OPS.facetsList, context, signal))),
-    macroRegistration(MACRO_BRIDGE_OPS.seriesMetadata, owner, ["browser", "runtime", "server"], ["macro:series.metadata"], ({ input, context, signal }) => options.service.seriesMetadata(input as MacroBridgeInput, serviceContext(MACRO_BRIDGE_OPS.seriesMetadata, context, signal))),
-    macroRegistration(MACRO_BRIDGE_OPS.seriesData, owner, ["browser", "runtime", "server"], ["macro:series.data"], ({ input, context, signal }) => options.service.seriesData(input as MacroBridgeInput, serviceContext(MACRO_BRIDGE_OPS.seriesData, context, signal))),
-    macroRegistration(MACRO_BRIDGE_OPS.seriesLineage, owner, ["browser", "runtime", "server"], ["macro:series.lineage"], ({ input, context, signal }) => options.service.seriesLineage(input as MacroBridgeInput, serviceContext(MACRO_BRIDGE_OPS.seriesLineage, context, signal))),
-    macroRegistration(MACRO_BRIDGE_OPS.sqlQuery, owner, ["browser", "runtime", "server"], ["macro:sql.query"], ({ input, context, signal }) => options.service.sqlQuery(guardMacroSqlQuery(input as MacroSqlQueryInput, options.sqlDefaults), serviceContext(MACRO_BRIDGE_OPS.sqlQuery, context, signal)), { timeoutMs: options.sqlDefaults?.timeoutMs ?? DEFAULT_SQL_TIMEOUT_MS }),
-    macroRegistration(MACRO_BRIDGE_OPS.transformPersist, owner, ["runtime", "server"], ["macro:transform.persist"], ({ input, context, signal }) => options.service.transformPersist(input as MacroBridgeInput, serviceContext(MACRO_BRIDGE_OPS.transformPersist, context, signal)), { idempotencyPolicy: "required" }),
+    macroRegistration(MACRO_BRIDGE_OPS.catalogSearch, owner, ["browser", "runtime", "server"], ["macro:catalog.search"], withMacroOutputFallback(options, MACRO_BRIDGE_OPS.catalogSearch, ({ input, context, signal }) => options.service.catalogSearch(input as MacroBridgeInput, serviceContext(MACRO_BRIDGE_OPS.catalogSearch, context, signal)))),
+    macroRegistration(MACRO_BRIDGE_OPS.facetsList, owner, ["browser", "runtime", "server"], ["macro:facets.list"], withMacroOutputFallback(options, MACRO_BRIDGE_OPS.facetsList, ({ input, context, signal }) => options.service.facetsList(input as MacroBridgeInput, serviceContext(MACRO_BRIDGE_OPS.facetsList, context, signal)))),
+    macroRegistration(MACRO_BRIDGE_OPS.seriesMetadata, owner, ["browser", "runtime", "server"], ["macro:series.metadata"], withMacroOutputFallback(options, MACRO_BRIDGE_OPS.seriesMetadata, ({ input, context, signal }) => options.service.seriesMetadata(input as MacroBridgeInput, serviceContext(MACRO_BRIDGE_OPS.seriesMetadata, context, signal)))),
+    macroRegistration(MACRO_BRIDGE_OPS.seriesData, owner, ["browser", "runtime", "server"], ["macro:series.data"], withMacroOutputFallback(options, MACRO_BRIDGE_OPS.seriesData, ({ input, context, signal }) => options.service.seriesData(input as MacroBridgeInput, serviceContext(MACRO_BRIDGE_OPS.seriesData, context, signal)))),
+    macroRegistration(MACRO_BRIDGE_OPS.seriesLineage, owner, ["browser", "runtime", "server"], ["macro:series.lineage"], withMacroOutputFallback(options, MACRO_BRIDGE_OPS.seriesLineage, ({ input, context, signal }) => options.service.seriesLineage(input as MacroBridgeInput, serviceContext(MACRO_BRIDGE_OPS.seriesLineage, context, signal)))),
+    macroRegistration(MACRO_BRIDGE_OPS.sqlQuery, owner, ["browser", "runtime", "server"], ["macro:sql.query"], withMacroOutputFallback(options, MACRO_BRIDGE_OPS.sqlQuery, ({ input, context, signal }) => options.service.sqlQuery(guardMacroSqlQuery(input as MacroSqlQueryInput, options.sqlDefaults), serviceContext(MACRO_BRIDGE_OPS.sqlQuery, context, signal))), { timeoutMs: options.sqlDefaults?.timeoutMs ?? DEFAULT_SQL_TIMEOUT_MS }),
+    macroRegistration(MACRO_BRIDGE_OPS.transformPersist, owner, ["runtime", "server"], ["macro:transform.persist"], withMacroOutputFallback(options, MACRO_BRIDGE_OPS.transformPersist, ({ input, context, signal }) => options.service.transformPersist(input as MacroBridgeInput, serviceContext(MACRO_BRIDGE_OPS.transformPersist, context, signal))), { idempotencyPolicy: "required" }),
   ]
   for (const registration of registrations) registry.registerHandler(registration.definition, registration.handler)
   return { definitions: registrations.map((registration) => registration.definition) }
@@ -136,6 +150,32 @@ function macroRegistration(
   })
 }
 
+function withMacroOutputFallback(
+  options: MacroBridgeHandlersOptions,
+  op: MacroBridgeOp,
+  handler: WorkspaceBridgeHandler,
+): WorkspaceBridgeHandler {
+  return async (args) => {
+    const output = await handler(args)
+    const inlineMax = options.inlineOutputMaxBytes ?? DEFAULT_MAX_OUTPUT_BYTES
+    if (measureJsonBytes(output) <= inlineMax || !options.fileAssetWriter) return output
+    const pointer = await options.fileAssetWriter.writeMacroOutput({
+      op,
+      output: output as MacroBridgeOutput,
+      context: serviceContext(op, args.context, args.signal),
+      contentType: "application/json",
+    })
+    return validateFileAssetPointer(pointer)
+  }
+}
+
+function validateFileAssetPointer(pointer: WorkspaceBridgeFileAssetPointer): WorkspaceBridgeFileAssetPointer {
+  if (!pointer || pointer.kind !== "file-asset" || typeof pointer.path !== "string") throw invalidFileAsset("macro file-asset writer returned an invalid pointer")
+  if (pointer.path.startsWith("/") || pointer.path.split("/").includes("..")) throw invalidFileAsset("macro file-asset path must be workspace-relative")
+  if (pointer.rawUrl && !pointer.rawUrl.startsWith("/api/v1/files/raw?")) throw invalidFileAsset("macro file-asset rawUrl must use the existing raw-file route")
+  return pointer
+}
+
 function serviceContext(op: MacroBridgeOp, context: Parameters<WorkspaceBridgeHandler>[0]["context"], signal?: AbortSignal): MacroBridgeServiceContext {
   return {
     op,
@@ -148,6 +188,10 @@ function serviceContext(op: MacroBridgeOp, context: Parameters<WorkspaceBridgeHa
   }
 }
 
+function measureJsonBytes(value: unknown): number {
+  try { return new TextEncoder().encode(JSON.stringify(value)).byteLength } catch { return Number.POSITIVE_INFINITY }
+}
+
 function boundedPositiveInteger(value: unknown, fallback: number, ceiling: number, name: string): number {
   if (value === undefined || value === null) return fallback
   if (!Number.isInteger(value) || (value as number) <= 0) throw invalidSql(`macro.v1.sql.query ${name} must be a positive integer`)
@@ -155,5 +199,9 @@ function boundedPositiveInteger(value: unknown, fallback: number, ceiling: numbe
 }
 
 function invalidSql(message: string): never {
+  throw createWorkspaceBridgeError(WorkspaceBridgeErrorCode.InvalidRequest, message)
+}
+
+function invalidFileAsset(message: string): never {
   throw createWorkspaceBridgeError(WorkspaceBridgeErrorCode.InvalidRequest, message)
 }

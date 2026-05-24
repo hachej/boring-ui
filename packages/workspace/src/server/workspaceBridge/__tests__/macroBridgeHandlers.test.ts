@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
-import { WorkspaceBridgeErrorCode } from "../../../shared/workspace-bridge-rpc"
+import { WorkspaceBridgeErrorCode, type WorkspaceBridgeFileAssetPointer } from "../../../shared/workspace-bridge-rpc"
 import { createWorkspaceBridgeRegistry, type WorkspaceBridgeCallContext } from "../registry"
 import { InMemoryWorkspaceBridgeAuditSink } from "../audit"
 import { MACRO_BRIDGE_OPS, guardMacroSqlQuery, registerMacroBridgeHandlers, type MacroBridgeDataService } from "../macroBridgeHandlers"
@@ -102,6 +102,76 @@ describe("Macro WorkspaceBridge handlers", () => {
       { op: MACRO_BRIDGE_OPS.transformPersist, input: { transformId: "tx1" }, requestId: "req_runtime" },
       context(["macro:transform.persist"], "runtime"),
     )).resolves.toMatchObject({ ok: true, output: { transformId: "tx1", persisted: true } })
+  })
+
+  test("rejects oversized direct responses when no file-asset writer is configured", async () => {
+    const registry = createWorkspaceBridgeRegistry()
+    const service = createService()
+    vi.mocked(service.seriesData).mockResolvedValue({ rows: ["x".repeat(2 * 1024 * 1024)] })
+    registerMacroBridgeHandlers(registry, { service })
+
+    await expect(registry.call(
+      { op: MACRO_BRIDGE_OPS.seriesData, input: { seriesId: "BIG" }, requestId: "req_big" },
+      context(["macro:series.data"], "runtime"),
+    )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.OutputTooLarge } })
+  })
+
+  test("returns a workspace-relative file-asset pointer for large macro output", async () => {
+    const registry = createWorkspaceBridgeRegistry()
+    const service = createService()
+    const bigOutput = { rows: Array.from({ length: 50 }, (_, i) => ({ id: i, value: "secret-payload".repeat(20) })) }
+    vi.mocked(service.seriesData).mockResolvedValue(bigOutput)
+    const writes: Array<{ output: unknown; pointer: WorkspaceBridgeFileAssetPointer }> = []
+    registerMacroBridgeHandlers(registry, {
+      service,
+      inlineOutputMaxBytes: 256,
+      fileAssetWriter: {
+        writeMacroOutput: async ({ output, contentType }) => {
+          const pointer: WorkspaceBridgeFileAssetPointer = {
+            kind: "file-asset",
+            path: "generated/macro/series-data.json",
+            contentType,
+            byteLength: JSON.stringify(output).length,
+            rawUrl: "/api/v1/files/raw?path=generated%2Fmacro%2Fseries-data.json",
+          }
+          writes.push({ output, pointer })
+          return pointer
+        },
+      },
+    })
+
+    const result = await registry.call(
+      { op: MACRO_BRIDGE_OPS.seriesData, input: { seriesId: "BIG" }, requestId: "req_asset" },
+      context(["macro:series.data"], "runtime"),
+    )
+
+    expect(result).toMatchObject({
+      ok: true,
+      output: {
+        kind: "file-asset",
+        path: "generated/macro/series-data.json",
+        contentType: "application/json",
+        rawUrl: "/api/v1/files/raw?path=generated%2Fmacro%2Fseries-data.json",
+      },
+    })
+    expect(writes).toHaveLength(1)
+    expect(JSON.stringify(result)).not.toContain("secret-payload")
+    expect(JSON.stringify(result)).not.toContain("/home/")
+  })
+
+  test("rejects unsafe generated file-asset paths", async () => {
+    const registry = createWorkspaceBridgeRegistry()
+    const service = createService()
+    vi.mocked(service.seriesData).mockResolvedValue({ rows: ["x".repeat(1024)] })
+    registerMacroBridgeHandlers(registry, {
+      service,
+      inlineOutputMaxBytes: 1,
+      fileAssetWriter: { writeMacroOutput: () => ({ kind: "file-asset", path: "/home/ubuntu/leak.json", contentType: "application/json" }) },
+    })
+    await expect(registry.call(
+      { op: MACRO_BRIDGE_OPS.seriesData, input: { seriesId: "BIG" }, requestId: "req_bad_asset" },
+      context(["macro:series.data"], "runtime"),
+    )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.InvalidRequest } })
   })
 
   test("SQL guard rejects raw writes before service execution", () => {

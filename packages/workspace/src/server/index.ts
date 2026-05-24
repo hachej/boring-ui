@@ -131,6 +131,8 @@ export type {
   MacroBridgeDataService,
   MacroBridgeHandlersOptions,
   MacroBridgeInput,
+  MacroFileAssetWriteInput,
+  MacroFileAssetWriter,
   MacroBridgeOp,
   MacroBridgeOutput,
   MacroBridgeServiceContext,
