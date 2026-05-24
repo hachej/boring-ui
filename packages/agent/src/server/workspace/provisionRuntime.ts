@@ -239,11 +239,11 @@ async function ensureNodePackages(workspaceRoot: string, specs: RuntimeNodePacka
 
 async function ensurePython(workspaceRoot: string, specs: RuntimePythonSpec[]): Promise<void> {
   if (specs.length === 0) return
-  const venvPython = join(workspaceRoot, '.venv', 'bin', 'python')
+  const venvPython = join(workspaceRoot, '.boring-agent', 'venv', 'bin', 'python')
   const uv = await commandExists('uv')
   if (!(await exists(venvPython))) {
-    if (uv) await run('uv', ['venv', '.venv'], workspaceRoot)
-    else await run('/usr/bin/python3', ['-m', 'venv', '.venv'], workspaceRoot)
+    if (uv) await run('uv', ['venv', '.boring-agent/venv'], workspaceRoot)
+    else await run('/usr/bin/python3', ['-m', 'venv', '.boring-agent/venv'], workspaceRoot)
   }
 
   for (const spec of specs) {
@@ -280,7 +280,7 @@ async function isRuntimeMaterialized(
   contributions: Array<{ provisioning: RuntimeProvisioningContribution }>,
 ): Promise<boolean> {
   const hasPython = contributions.some(({ provisioning }) => (provisioning.python ?? []).length > 0)
-  if (hasPython && !(await exists(join(workspaceRoot, '.venv', 'bin', 'python')))) return false
+  if (hasPython && !(await exists(join(workspaceRoot, '.boring-agent', 'venv', 'bin', 'python')))) return false
   for (const { provisioning } of contributions) {
     for (const spec of provisioning.nodePackages ?? []) {
       if (!(await exists(join(nodePackageTarget(workspaceRoot, spec.packageName), 'package.json')))) return false
@@ -291,7 +291,7 @@ async function isRuntimeMaterialized(
 
 async function writeShims(workspaceRoot: string, env: Record<string, string>): Promise<string> {
   const shimDir = join(workspaceRoot, '.boring-agent', 'bin')
-  const venvBin = join(workspaceRoot, '.venv', 'bin')
+  const venvBin = join(workspaceRoot, '.boring-agent', 'venv', 'bin')
   await mkdir(shimDir, { recursive: true })
   const exports = Object.entries(env).map(([key, value]) => {
     assertEnvKey(key)
@@ -303,7 +303,7 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 WORKSPACE_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
 export BORING_AGENT_WORKSPACE_ROOT="$WORKSPACE_ROOT"
 ${exports}
-VENV_BIN="$WORKSPACE_ROOT/.venv/bin"
+VENV_BIN="$WORKSPACE_ROOT/.boring-agent/venv/bin"
 `
 
   await writeExecutable(join(shimDir, 'python'), `${base}exec "$VENV_BIN/python" "$@"\n`)
