@@ -806,6 +806,55 @@ describe("createWorkspaceAgentServer — WorkspaceBridge RPC composition", () =>
     await app.close()
   })
 
+
+
+  test("creates an isolated pending-question runtime per workspace server", async () => {
+    mockCreateAgentAppOnce(async () => Fastify())
+    const appA = await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("human-input-compose-a-"),
+      provisionWorkspace: false,
+    })
+    mockCreateAgentAppOnce(async () => Fastify())
+    const appB = await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("human-input-compose-b-"),
+      provisionWorkspace: false,
+    })
+
+    const runtimeA = (appA as any).__boringPendingQuestionRuntime
+    const runtimeB = (appB as any).__boringPendingQuestionRuntime
+    expect(runtimeA).toBeTruthy()
+    expect(runtimeB).toBeTruthy()
+    expect(runtimeA).not.toBe(runtimeB)
+
+    const question = await runtimeA.createPending({ requestId: "req-a", sessionId: "sess-a", actor: { actorKind: "agent", performedBy: { label: "agent" } } })
+    const wait = runtimeA.wait(question, new AbortController().signal)
+    await runtimeA.abandonServerRestart()
+    await expect(wait).resolves.toMatchObject({ status: "cancelled", reason: "server_restart" })
+    await expect(runtimeB.abandonServerRestart()).resolves.toEqual([])
+
+    await appA.close()
+    await appB.close()
+  })
+
+  test("uses an injected pending-question runtime and abandons stale pending on server start", async () => {
+    const { PendingQuestionRuntime, InMemoryPendingQuestionStore } = await import("../../../server")
+    const store = new InMemoryPendingQuestionStore()
+    const runtime = new PendingQuestionRuntime(store)
+    const stale = await runtime.createPending({ requestId: "stale", sessionId: "sess-stale" })
+
+    mockCreateAgentAppOnce(async () => Fastify())
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("human-input-compose-injected-"),
+      provisionWorkspace: false,
+      humanInput: { pendingQuestionRuntime: runtime },
+    })
+
+    expect((app as any).__boringPendingQuestionRuntime).toBe(runtime)
+    await expect(store.getByQuestionId(stale.questionId)).resolves.toMatchObject({ status: "abandoned" })
+    await app.close()
+  })
+
+
   test("disables WorkspaceBridge runtime env for vercel sandbox without public HTTPS URL", async () => {
     mockCreateAgentAppOnce(async () => Fastify())
     const app = await createWorkspaceAgentServer({

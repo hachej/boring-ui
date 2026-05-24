@@ -43,6 +43,9 @@ import {
   InMemoryWorkspaceBridgeIdempotencyStore,
   createWorkspaceBridgeRuntimeEnvContribution,
   workspaceBridgeHttpRoutes,
+  PendingQuestionRuntime,
+  InMemoryPendingQuestionStore,
+  type PendingQuestionStore,
   type WorkspaceBridgeHandler,
   type WorkspaceBridgeOperationDefinition,
   type WorkspaceBridgeRegistry,
@@ -148,6 +151,10 @@ export interface CreateWorkspaceAgentServerOptions
    * instead of inside the server boot path.
    */
   appPackageJsonPath?: string
+  humanInput?: {
+    pendingQuestionStore?: PendingQuestionStore
+    pendingQuestionRuntime?: PendingQuestionRuntime
+  }
   workspaceBridge?: {
     registry?: WorkspaceBridgeRegistry
     runtimeTokenSecret?: string
@@ -499,6 +506,10 @@ export async function createWorkspaceAgentServer(
 ): Promise<FastifyInstance> {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const bridge = createInMemoryBridge()
+  const pendingQuestionRuntime = opts.humanInput?.pendingQuestionRuntime ?? new PendingQuestionRuntime(
+    opts.humanInput?.pendingQuestionStore ?? new InMemoryPendingQuestionStore(),
+  )
+  await pendingQuestionRuntime.abandonServerRestart()
   const workspaceBridgeRegistry = opts.workspaceBridge?.registry ?? createWorkspaceBridgeRegistry()
   for (const entry of opts.workspaceBridge?.handlers ?? []) {
     workspaceBridgeRegistry.registerHandler(entry.definition, entry.handler)
@@ -747,6 +758,8 @@ export async function createWorkspaceAgentServer(
   })
   ;(app as FastifyInstance & { __boringWorkspaceBridgeRegistry?: WorkspaceBridgeRegistry }).__boringWorkspaceBridgeRegistry =
     workspaceBridgeRegistry
+  ;(app as FastifyInstance & { __boringPendingQuestionRuntime?: PendingQuestionRuntime }).__boringPendingQuestionRuntime =
+    pendingQuestionRuntime
   await app.register(boringPluginRoutes, {
     manager: boringAssetManager,
     rebuildPlugins,
