@@ -56,6 +56,22 @@ export type {
   WorkspaceBridgeRegistryOptions,
 } from "./workspaceBridge/registry"
 export {
+  createBrowserBridgeAuthPolicy,
+  createLocalCliBridgeAuthPolicy,
+  createTrustedServerBridgeAuthPolicy,
+} from "./workspaceBridge/authPolicy"
+export type {
+  BridgeAuthPolicy,
+  BridgeAuthPolicyInput,
+  BridgeAuthPolicyRequestLike,
+  BridgeAuthResolution,
+  BridgePrincipal,
+  BridgeWorkspaceGrant,
+  BrowserBridgeAuthPolicyOptions,
+  LocalCliBridgeAuthPolicyOptions,
+  TrustedServerBridgeAuthPolicyOptions,
+} from "./workspaceBridge/authPolicy"
+export {
   WORKSPACE_BRIDGE_TOKEN_AUDIENCE,
   mintWorkspaceBridgeRuntimeToken,
   runtimeClaimsToBridgeAuthContext,

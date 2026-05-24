@@ -1,0 +1,310 @@
+import {
+  WorkspaceBridgeErrorCode,
+  createWorkspaceBridgeError,
+  type BridgeActorAttribution,
+  type BridgeActorKind,
+  type BridgeAuthContext,
+  type BridgeCallerClass,
+  type WorkspaceBridgeOperationDefinition,
+} from "../../shared/workspace-bridge-rpc"
+
+export interface BridgePrincipal {
+  userId: string
+  email?: string
+  roles?: readonly string[]
+}
+
+export interface BridgeWorkspaceGrant {
+  allowed: boolean
+  role?: string
+  capabilities: readonly string[]
+  resourceScope?: Record<string, unknown>
+}
+
+export interface BridgeAuthPolicyRequestLike {
+  headers?: Record<string, string | string[] | undefined>
+  method?: string
+}
+
+export interface BridgeAuthPolicyInput {
+  callerClass: BridgeCallerClass
+  definition: WorkspaceBridgeOperationDefinition
+  workspaceId: string
+  sessionId?: string
+  pluginId?: string
+  request?: BridgeAuthPolicyRequestLike
+  body?: unknown
+  requiredCapabilities?: readonly string[]
+}
+
+export interface BridgeAuthResolution {
+  context: BridgeAuthContext
+  effectiveCapabilities: readonly string[]
+  resourceScope?: Record<string, unknown>
+  principal?: BridgePrincipal
+}
+
+export interface BridgeAuthPolicy {
+  resolve(input: BridgeAuthPolicyInput): Promise<BridgeAuthResolution> | BridgeAuthResolution
+}
+
+export interface BrowserBridgeAuthPolicyOptions {
+  getPrincipal(input: BridgeAuthPolicyInput): Promise<BridgePrincipal | null> | BridgePrincipal | null
+  authorizeWorkspace(input: {
+    principal: BridgePrincipal
+    workspaceId: string
+    sessionId?: string
+    definition: WorkspaceBridgeOperationDefinition
+    request?: BridgeAuthPolicyRequestLike
+  }): Promise<BridgeWorkspaceGrant> | BridgeWorkspaceGrant
+  allowedOrigins?: readonly string[]
+  requireCsrfHeader?: boolean
+  localTrustedNoAuth?: boolean
+}
+
+export interface TrustedServerBridgeAuthPolicyOptions {
+  workspaceId?: string
+  capabilities?: readonly string[]
+  actorKind: Extract<BridgeActorKind, "system" | "service">
+  performedByLabel: string
+  performedById?: string
+}
+
+export interface LocalCliBridgeAuthPolicyOptions {
+  workspaceId: string
+  capabilities?: readonly string[]
+  performedByLabel?: string
+}
+
+export function createBrowserBridgeAuthPolicy(
+  options: BrowserBridgeAuthPolicyOptions,
+): BridgeAuthPolicy {
+  return {
+    async resolve(input) {
+      if (input.callerClass !== "browser") {
+        throw createWorkspaceBridgeError(
+          WorkspaceBridgeErrorCode.CallerNotAllowed,
+          "Browser auth policy only accepts browser callers",
+        )
+      }
+      ensureCallerAllowed(input.definition, "browser")
+      ensureBrowserRequestAllowed(input, options)
+
+      if (options.localTrustedNoAuth) {
+        const capabilities = input.requiredCapabilities ?? input.definition.requiredCapabilities
+        const context = makeContext({
+          callerClass: "browser",
+          workspaceId: input.workspaceId,
+          sessionId: input.sessionId,
+          pluginId: input.pluginId,
+          capabilities,
+          actor: {
+            actorKind: "human",
+            performedBy: { label: "local-cli:user" },
+          },
+        })
+        ensureCapabilities(context.capabilities, input.requiredCapabilities ?? input.definition.requiredCapabilities)
+        return {
+          context,
+          effectiveCapabilities: context.capabilities,
+          principal: { userId: "local-cli" },
+          resourceScope: { workspaceId: input.workspaceId, sessionId: input.sessionId },
+        }
+      }
+
+      const principal = await options.getPrincipal(input)
+      if (!principal) {
+        throw createWorkspaceBridgeError(
+          WorkspaceBridgeErrorCode.AuthRequired,
+          "Browser bridge caller is not authenticated",
+        )
+      }
+
+      const grant = await options.authorizeWorkspace({
+        principal,
+        workspaceId: input.workspaceId,
+        sessionId: input.sessionId,
+        definition: input.definition,
+        request: input.request,
+      })
+      if (!grant.allowed) {
+        throw createWorkspaceBridgeError(
+          WorkspaceBridgeErrorCode.ResourceScopeDenied,
+          "Browser bridge caller is not authorized for workspace",
+        )
+      }
+
+      const capabilities = withTranscriptDebugCapability(grant.capabilities, principal.roles)
+      ensureCapabilities(capabilities, input.requiredCapabilities ?? input.definition.requiredCapabilities)
+
+      const context = makeContext({
+        callerClass: "browser",
+        workspaceId: input.workspaceId,
+        sessionId: input.sessionId,
+        pluginId: input.pluginId,
+        capabilities,
+        actor: {
+          actorKind: "human",
+          performedBy: {
+            label: principal.email ? `user:${principal.email}` : `user:${principal.userId}`,
+            id: principal.userId,
+          },
+        },
+      })
+
+      return {
+        context,
+        effectiveCapabilities: capabilities,
+        principal,
+        resourceScope: {
+          workspaceId: input.workspaceId,
+          sessionId: input.sessionId,
+          role: grant.role,
+          ...grant.resourceScope,
+        },
+      }
+    },
+  }
+}
+
+export function createTrustedServerBridgeAuthPolicy(
+  options: TrustedServerBridgeAuthPolicyOptions,
+): BridgeAuthPolicy {
+  return {
+    resolve(input) {
+      if (input.callerClass !== "server") {
+        throw createWorkspaceBridgeError(
+          WorkspaceBridgeErrorCode.CallerNotAllowed,
+          "Trusted server bridge policy only accepts server callers",
+        )
+      }
+      ensureCallerAllowed(input.definition, "server")
+      if (options.workspaceId && options.workspaceId !== input.workspaceId) {
+        throw createWorkspaceBridgeError(
+          WorkspaceBridgeErrorCode.ResourceScopeDenied,
+          "Trusted server bridge workspace mismatch",
+        )
+      }
+      const capabilities = options.capabilities ?? input.definition.requiredCapabilities
+      ensureCapabilities(capabilities, input.requiredCapabilities ?? input.definition.requiredCapabilities)
+      const context = makeContext({
+        callerClass: "server",
+        workspaceId: input.workspaceId,
+        sessionId: input.sessionId,
+        pluginId: input.pluginId,
+        capabilities,
+        actor: {
+          actorKind: options.actorKind,
+          performedBy: { label: options.performedByLabel, id: options.performedById },
+        },
+      })
+      return {
+        context,
+        effectiveCapabilities: capabilities,
+        resourceScope: { workspaceId: input.workspaceId, sessionId: input.sessionId },
+      }
+    },
+  }
+}
+
+export function createLocalCliBridgeAuthPolicy(
+  options: LocalCliBridgeAuthPolicyOptions,
+): BridgeAuthPolicy {
+  return createBrowserBridgeAuthPolicy({
+    localTrustedNoAuth: true,
+    getPrincipal: () => ({ userId: "local-cli" }),
+    authorizeWorkspace: () => ({
+      allowed: true,
+      capabilities: options.capabilities ?? [],
+      resourceScope: { workspaceId: options.workspaceId },
+    }),
+  })
+}
+
+function ensureCallerAllowed(
+  definition: WorkspaceBridgeOperationDefinition,
+  callerClass: BridgeCallerClass,
+): void {
+  if (!definition.callerClassesAllowed.includes(callerClass)) {
+    throw createWorkspaceBridgeError(
+      WorkspaceBridgeErrorCode.CallerNotAllowed,
+      "Bridge caller class is not allowed for operation",
+    )
+  }
+}
+
+function ensureCapabilities(
+  actual: readonly string[],
+  required: readonly string[],
+): void {
+  const missing = required.find((capability) => !actual.includes(capability))
+  if (missing) {
+    throw createWorkspaceBridgeError(
+      WorkspaceBridgeErrorCode.CapabilityDenied,
+      "Bridge caller is missing a required capability",
+    )
+  }
+}
+
+function ensureBrowserRequestAllowed(
+  input: BridgeAuthPolicyInput,
+  options: BrowserBridgeAuthPolicyOptions,
+): void {
+  if (options.allowedOrigins && options.allowedOrigins.length > 0) {
+    const origin = firstHeader(input.request?.headers, "origin")
+    if (!origin || !options.allowedOrigins.includes(origin)) {
+      throw createWorkspaceBridgeError(
+        WorkspaceBridgeErrorCode.AuthRequired,
+        "Browser bridge request origin is not allowed",
+      )
+    }
+  }
+  if (options.requireCsrfHeader) {
+    const csrf = firstHeader(input.request?.headers, "x-csrf-token")
+    if (!csrf) {
+      throw createWorkspaceBridgeError(
+        WorkspaceBridgeErrorCode.AuthRequired,
+        "Browser bridge request is missing CSRF proof",
+      )
+    }
+  }
+}
+
+function firstHeader(
+  headers: BridgeAuthPolicyRequestLike["headers"] | undefined,
+  name: string,
+): string | undefined {
+  if (!headers) return undefined
+  const direct = headers[name] ?? headers[name.toLowerCase()]
+  return Array.isArray(direct) ? direct[0] : direct
+}
+
+function withTranscriptDebugCapability(
+  capabilities: readonly string[],
+  roles: readonly string[] | undefined,
+): readonly string[] {
+  if (!roles?.some((role) => role === "super-admin" || role === "debug")) {
+    return capabilities
+  }
+  return Array.from(new Set([...capabilities, "human-input:transcript.read"]))
+}
+
+function makeContext(context: BridgeAuthContext): BridgeAuthContext {
+  return {
+    ...context,
+    capabilities: [...context.capabilities],
+    actor: sanitizeActor(context.actor),
+  }
+}
+
+function sanitizeActor(actor: BridgeActorAttribution): BridgeActorAttribution {
+  return {
+    actorKind: actor.actorKind,
+    performedBy: actor.performedBy
+      ? { label: actor.performedBy.label, id: actor.performedBy.id }
+      : undefined,
+    onBehalfOf: actor.onBehalfOf
+      ? { label: actor.onBehalfOf.label, id: actor.onBehalfOf.id }
+      : undefined,
+  }
+}
