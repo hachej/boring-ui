@@ -27,7 +27,7 @@ const ALLOWED_PROPERTY_KEYS = new Set([
   'packageVersion',
 ])
 
-type SafeTelemetryProperty = string | number | boolean | null
+type SafeTelemetryProperty = string | number
 
 export interface CreateDatabaseTelemetryOptions {
   appId: string
@@ -96,8 +96,14 @@ export function sanitizeTelemetryProperties(
 }
 
 function sanitizeTelemetryProperty(key: string, value: unknown): SafeTelemetryProperty | undefined {
-  if (value === null || typeof value === 'boolean') return value
-  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined
+  if (key === 'durationMs') {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0
+      ? value
+      : undefined
+  }
+  if (key === 'status' && typeof value === 'number') {
+    return Number.isInteger(value) && value >= 100 && value <= 599 ? value : undefined
+  }
   if (typeof value !== 'string') return undefined
   return sanitizeTelemetryString(key, value)
 }

@@ -214,12 +214,26 @@ describe('sanitizeTelemetryProperties', () => {
     })
   })
 
-  it('drops non-finite numbers even on allowlisted keys', () => {
+  it('drops non-finite or negative durations even on allowlisted keys', () => {
     expect(
       sanitizeTelemetryProperties({
         durationMs: Number.POSITIVE_INFINITY,
         requestId: 'request_1',
       }),
     ).toEqual({ requestId: 'request_1' })
+
+    expect(sanitizeTelemetryProperties({ durationMs: -1 })).toEqual({})
+  })
+
+  it('keeps HTTP status numbers and drops wrong types for otherwise allowlisted keys', () => {
+    expect(sanitizeTelemetryProperties({ status: 500 })).toEqual({ status: 500 })
+
+    expect(
+      sanitizeTelemetryProperties({
+        workspaceId: true,
+        status: null,
+        durationMs: '12',
+      }),
+    ).toEqual({})
   })
 })
