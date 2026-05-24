@@ -1,4 +1,11 @@
 import type { FastifyInstance } from "fastify"
+import type {
+  ProvisionWorkspaceRuntimeOptions,
+  RuntimeModeAdapter,
+  RuntimeModeId,
+  WorkspaceProvisioningAdapter,
+  WorkspaceProvisioningResult,
+} from "@hachej/boring-agent/server"
 import { execSync } from "node:child_process"
 import {
   cpSync,
@@ -32,6 +39,8 @@ type CliMode = keyof typeof MODE_MAP
 type RuntimeMode = typeof MODE_MAP[CliMode]
 
 const require = createRequire(import.meta.url)
+const CLI_PACKAGE_NAME = "@hachej/boring-ui-cli"
+
 const CLI_VERSION = (() => {
   try {
     const pkg = require("../../package.json") as { version?: string }
@@ -92,6 +101,52 @@ function openBrowser(url: string) {
       process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open"
     execSync(`${opener} ${url}`, { stdio: "ignore" })
   } catch {}
+}
+
+export function resolveBoringUiCliPackageRoot(): string {
+  const __dirname = dirname(fileURLToPath(import.meta.url))
+  return resolve(__dirname, "..", "..")
+}
+
+export function createBoringUiCliRuntimePlugin(
+  packageRoot = resolveBoringUiCliPackageRoot(),
+): ProvisionWorkspaceRuntimeOptions["plugins"][number] {
+  return {
+    id: "boring-ui-cli-runtime",
+    provisioning: {
+      nodePackages: [{
+        id: "boring-ui-cli",
+        packageName: CLI_PACKAGE_NAME,
+        packageRoot,
+        version: CLI_VERSION,
+        expectedBins: ["boring-ui"],
+      }],
+    },
+  }
+}
+
+export async function provisionCliWorkspaceRuntime(opts: {
+  workspaceRoot: string
+  mode: RuntimeModeId
+  provisionWorkspace?: boolean
+  plugins?: ProvisionWorkspaceRuntimeOptions["plugins"]
+  adapter?: WorkspaceProvisioningAdapter
+  modeAdapter?: Pick<RuntimeModeAdapter, "createProvisioningAdapter">
+}): Promise<WorkspaceProvisioningResult | undefined> {
+  if (opts.provisionWorkspace === false) return undefined
+  const agent = await import("@hachej/boring-agent/server")
+  const runtimeLayout = agent.getBoringAgentRuntimePaths(opts.workspaceRoot)
+  const adapter = opts.adapter
+    ?? opts.modeAdapter?.createProvisioningAdapter?.(runtimeLayout)
+    ?? agent.resolveMode(opts.mode).createProvisioningAdapter?.(runtimeLayout)
+  if (!adapter) {
+    throw new Error(`runtime mode ${opts.mode} does not support workspace provisioning`)
+  }
+  return await agent.provisionWorkspaceRuntime({
+    plugins: [createBoringUiCliRuntimePlugin(), ...(opts.plugins ?? [])],
+    adapter,
+    runtimeLayout,
+  })
 }
 
 function ensureFrontendBuilt(publicDir: string) {
@@ -163,11 +218,18 @@ async function startFolderMode(opts: {
   console.log(`  host       ${opts.host}`)
   if (modelCount === 0) console.log(AUTH_GUIDE)
 
+  const runtimeProvisioning = await provisionCliWorkspaceRuntime({
+    workspaceRoot,
+    mode: opts.mode,
+  })
+
   const { createWorkspaceAgentServer } = await import("@hachej/boring-workspace/app/server")
   const app = await createWorkspaceAgentServer({
     workspaceRoot,
     mode: opts.mode,
     logger: false,
+    provisionWorkspace: false,
+    runtimeProvisioning,
   })
 
   app.get("/api/v1/workspace/meta", async () => ({
@@ -260,9 +322,15 @@ async function startWorkspacesMode(opts: {
     getWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
     getWorkspaceRoot: async (workspaceId) => (await requireWorkspace(workspaceId)).path,
     getSessionNamespace: async ({ workspaceId }) => `local-workspace-${workspaceId}`,
-    getPi: async ({ workspaceRoot }) => ({
-      additionalSkillPaths: [join(workspaceRoot, ".agents", "skills")],
-    }),
+    getPi: async ({ workspaceRoot }) => {
+      const runtimeProvisioning = await provisionCliWorkspaceRuntime({
+        workspaceRoot,
+        mode: opts.mode,
+      })
+      return {
+        additionalSkillPaths: runtimeProvisioning?.skillPaths ?? [join(workspaceRoot, ".agents", "skills")],
+      }
+    },
     getExtraTools: async ({ workspaceId, workspaceRoot, workspaceFsCapability }) => [
       ...workspaceServer.createWorkspaceUiTools(getBridge(workspaceId), {
         workspaceRoot: workspaceFsCapability === "strong" ? workspaceRoot : undefined,

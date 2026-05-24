@@ -37,6 +37,11 @@ export {
   type ProvisionRuntimeWorkspaceOptions,
   type RuntimeWorkspaceProvisioningResult,
 } from './workspace/provisionRuntime'
+export {
+  getBoringAgentRuntimePaths,
+  getBoringAgentRuntimeEnv,
+  getBoringAgentPathEntries,
+} from './workspace/runtimeLayout'
 export { createVercelSandboxWorkspace } from './workspace/createVercelSandboxWorkspace'
 export {
   createVercelProvisioningAdapter,
