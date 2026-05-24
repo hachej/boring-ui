@@ -28,6 +28,7 @@ function getPanel() {
 }
 
 afterEach(() => {
+  window.localStorage.clear()
   vi.unstubAllGlobals()
 })
 
@@ -112,6 +113,30 @@ describe("askUserPlugin front shell", () => {
     expect(await screen.findByText("Choose A or B")).toBeInTheDocument()
     unmount()
     expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.cancel"))).toBe(false)
+  })
+
+  it("reopens a pending question with draft values and never calls old command routes", async () => {
+    const textQuestion: AskUserQuestion = { ...question, questionId: "draft-q", schema: { wireVersion: 1, fields: [{ type: "text", name: "answer", label: "Answer", required: true }] } }
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call")) {
+        const body = JSON.parse(String(init?.body ?? "{}"))
+        if (body.op === "human-input.v1.pending") return Response.json({ ok: true, output: { pending: textQuestion } })
+      }
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+    const Panel = getPanel()
+    const first = render(<Provider apiBaseUrl="" activeSessionId="default"><Panel params={{}} api={{ close: vi.fn() }} className="h-full" /></Provider>)
+
+    const input = await screen.findByRole("textbox", { name: /answer/i })
+    fireEvent.change(input, { target: { value: "draft answer" } })
+    expect(input).toHaveValue("draft answer")
+    first.unmount()
+
+    render(<Provider apiBaseUrl="" activeSessionId="default"><Panel params={{}} api={{ close: vi.fn() }} className="h-full" /></Provider>)
+    expect(await screen.findByRole("textbox", { name: /answer/i })).toHaveValue("draft answer")
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/api/v1/questions/commands"))).toBe(false)
   })
 
   it("explicit cancel asks before discarding dirty answers and then calls human-input.v1.cancel", async () => {

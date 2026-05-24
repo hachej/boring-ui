@@ -16,11 +16,14 @@ import { createContext, useContext, useEffect, useMemo, useSyncExternalStore, us
 import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../shared/constants"
 import type { AskUserQuestion } from "../shared/types"
 import { createQuestionsClient, normalizeQuestion, QuestionsClientError } from "./client"
-import { QuestionCancelButton, QuestionFields, QuestionForm, QuestionFormProvider, QuestionSubmitButton } from "./primitives"
+import { QuestionCancelButton, QuestionFields, QuestionForm, QuestionFormProvider, QuestionSubmitButton, type QuestionFormValues } from "./primitives"
 
 type QuestionsStore = {
   getPending(): AskUserQuestion | null
   setPending(question: AskUserQuestion | null): void
+  getDraft(question: AskUserQuestion): QuestionFormValues | undefined
+  setDraft(question: AskUserQuestion, values: QuestionFormValues): void
+  clearDraft(question: AskUserQuestion): void
   subscribe(listener: () => void): () => void
 }
 
@@ -39,6 +42,15 @@ function createQuestionsStore(): QuestionsStore {
       pending = question
       for (const listener of [...listeners]) listener()
     },
+    getDraft(question) {
+      return readQuestionDraft(question)
+    },
+    setDraft(question, values) {
+      writeQuestionDraft(question, values)
+    },
+    clearDraft(question) {
+      clearQuestionDraft(question)
+    },
     subscribe(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
@@ -50,6 +62,25 @@ function createQuestionsStore(): QuestionsStore {
 // predicate can check the pending state without React. The provider mounts
 // this same instance into its runtime context.
 const sharedQuestionsStore: QuestionsStore = createQuestionsStore()
+
+function draftKey(question: AskUserQuestion): string {
+  return `ask-user:draft:${question.sessionId}:${question.questionId}`
+}
+
+function readQuestionDraft(question: AskUserQuestion): QuestionFormValues | undefined {
+  try {
+    const raw = window.localStorage.getItem(draftKey(question))
+    return raw ? JSON.parse(raw) as QuestionFormValues : undefined
+  } catch { return undefined }
+}
+
+function writeQuestionDraft(question: AskUserQuestion, values: QuestionFormValues): void {
+  try { window.localStorage.setItem(draftKey(question), JSON.stringify(values)) } catch { /* best effort */ }
+}
+
+function clearQuestionDraft(question: AskUserQuestion): void {
+  try { window.localStorage.removeItem(draftKey(question)) } catch { /* best effort */ }
+}
 
 const QuestionsRuntimeContext = createContext<QuestionsRuntime | null>(null)
 
@@ -161,14 +192,14 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
       </PaneHeader>
       {!question ? <PaneBody className="overflow-auto p-4"><EmptyState icon={<HelpCircle className="h-5 w-5" />} title="No pending questions" description="When the agent needs a decision, the form will appear here." className="border border-dashed bg-muted/20" /></PaneBody> : null}
       {question?.status === "ready" && question.schema ? (
-        <QuestionFormProvider schema={question.schema} submitting={submitting} onSubmit={async (values) => {
+        <QuestionFormProvider schema={question.schema} submitting={submitting} initialValues={runtime.getDraft(question)} onValuesChange={(values) => runtime.setDraft(question, values)} onSubmit={async (values) => {
           setSubmitting(true); setError(null)
-          try { await client.submit(question, values); setClosedQuestionId(question.questionId); runtime.setPending(null); api.close(); params?.__closeWorkbenchOnDone?.() }
+          try { await client.submit(question, values); runtime.clearDraft(question); setClosedQuestionId(question.questionId); runtime.setPending(null); api.close(); params?.__closeWorkbenchOnDone?.() }
           catch (err) { setError(err instanceof QuestionsClientError ? err.message : String(err)) }
           finally { setSubmitting(false) }
         }} onCancel={async () => {
           setSubmitting(true); setError(null)
-          try { await client.cancel(question); setClosedQuestionId(question.questionId); runtime.setPending(null); api.close(); params?.__closeWorkbenchOnDone?.() }
+          try { await client.cancel(question); runtime.clearDraft(question); setClosedQuestionId(question.questionId); runtime.setPending(null); api.close(); params?.__closeWorkbenchOnDone?.() }
           catch (err) { setError(err instanceof QuestionsClientError ? err.message : String(err)) }
           finally { setSubmitting(false) }
         }}>
