@@ -60,6 +60,13 @@ export {
   createLocalCliBridgeAuthPolicy,
   createTrustedServerBridgeAuthPolicy,
 } from "./workspaceBridge/authPolicy"
+export {
+  FileWorkspaceBridgeIdempotencyStore,
+  InMemoryWorkspaceBridgeIdempotencyStore,
+  hashNormalizedInput,
+  runWithWorkspaceBridgeIdempotency,
+  stableStringify,
+} from "./workspaceBridge/idempotency"
 export type {
   BridgeAuthPolicy,
   BridgeAuthPolicyInput,
@@ -71,6 +78,14 @@ export type {
   LocalCliBridgeAuthPolicyOptions,
   TrustedServerBridgeAuthPolicyOptions,
 } from "./workspaceBridge/authPolicy"
+export type {
+  BeginIdempotencyOptions,
+  CompleteIdempotencyOptions,
+  IdempotencyBeginResult,
+  IdempotencyRecordStatus,
+  WorkspaceBridgeIdempotencyRecord,
+  WorkspaceBridgeIdempotencyStore,
+} from "./workspaceBridge/idempotency"
 export {
   WORKSPACE_BRIDGE_TOKEN_AUDIENCE,
   mintWorkspaceBridgeRuntimeToken,

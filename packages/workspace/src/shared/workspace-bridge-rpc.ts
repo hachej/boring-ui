@@ -110,6 +110,7 @@ export enum WorkspaceBridgeErrorCode {
   HandlerFailed = "BRIDGE_HANDLER_FAILED",
   IdempotencyRequired = "BRIDGE_IDEMPOTENCY_REQUIRED",
   IdempotencyConflict = "BRIDGE_IDEMPOTENCY_CONFLICT",
+  ReplayRejected = "BRIDGE_REPLAY_REJECTED",
   ReplayDetected = "BRIDGE_REPLAY_DETECTED",
   RateLimited = "BRIDGE_RATE_LIMITED",
   InvalidToken = "BRIDGE_INVALID_TOKEN",
