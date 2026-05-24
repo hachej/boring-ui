@@ -11,6 +11,7 @@ export {
 export { provisionWorkspaceRuntime } from './provisionWorkspaceRuntime'
 export { getProvisionedSkillPaths, mirrorPluginSkills } from './skills'
 export { ensureNodeEnv, ensureNodeRuntime } from './node'
+export { ensurePythonRuntime, ensureUv } from './python'
 export { seedWorkspaceFiles } from './workspaceFiles'
 export type {
   PluginSkillSource,
