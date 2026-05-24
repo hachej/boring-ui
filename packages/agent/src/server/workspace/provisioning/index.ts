@@ -10,6 +10,7 @@ export {
 } from './fingerprint'
 export { provisionWorkspaceRuntime } from './provisionWorkspaceRuntime'
 export { getProvisionedSkillPaths, mirrorPluginSkills } from './skills'
+export { seedWorkspaceFiles } from './workspaceFiles'
 export type {
   PluginSkillSource,
   ProvisionWorkspaceRuntimeOptions,
