@@ -29,7 +29,7 @@ export class PendingQuestionRuntime {
   private readonly waiters = new Map<string, Waiter>()
 
   constructor(
-    private readonly store: PendingQuestionStore,
+    readonly store: PendingQuestionStore,
     private readonly now: () => Date = () => new Date(),
   ) {}
 

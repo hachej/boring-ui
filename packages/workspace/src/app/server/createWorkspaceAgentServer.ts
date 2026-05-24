@@ -45,6 +45,7 @@ import {
   workspaceBridgeHttpRoutes,
   PendingQuestionRuntime,
   InMemoryPendingQuestionStore,
+  createHumanInputBridgeHandlers,
   type PendingQuestionStore,
   type WorkspaceBridgeHandler,
   type WorkspaceBridgeOperationDefinition,
@@ -506,11 +507,14 @@ export async function createWorkspaceAgentServer(
 ): Promise<FastifyInstance> {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const bridge = createInMemoryBridge()
-  const pendingQuestionRuntime = opts.humanInput?.pendingQuestionRuntime ?? new PendingQuestionRuntime(
-    opts.humanInput?.pendingQuestionStore ?? new InMemoryPendingQuestionStore(),
-  )
+  const pendingQuestionStore = opts.humanInput?.pendingQuestionStore ?? new InMemoryPendingQuestionStore()
+  const pendingQuestionRuntime = opts.humanInput?.pendingQuestionRuntime ?? new PendingQuestionRuntime(pendingQuestionStore)
+  const effectivePendingQuestionStore = pendingQuestionRuntime.store
   await pendingQuestionRuntime.abandonServerRestart()
   const workspaceBridgeRegistry = opts.workspaceBridge?.registry ?? createWorkspaceBridgeRegistry()
+  for (const entry of createHumanInputBridgeHandlers({ runtime: pendingQuestionRuntime, store: effectivePendingQuestionStore })) {
+    workspaceBridgeRegistry.registerHandler(entry.definition, entry.handler)
+  }
   for (const entry of opts.workspaceBridge?.handlers ?? []) {
     workspaceBridgeRegistry.registerHandler(entry.definition, entry.handler)
   }

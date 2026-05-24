@@ -825,6 +825,7 @@ describe("createWorkspaceAgentServer — WorkspaceBridge RPC composition", () =>
     expect(runtimeA).toBeTruthy()
     expect(runtimeB).toBeTruthy()
     expect(runtimeA).not.toBe(runtimeB)
+    expect((appA as any).__boringWorkspaceBridgeRegistry.getDefinition("human-input.v1.request")).toBeTruthy()
 
     const question = await runtimeA.createPending({ requestId: "req-a", sessionId: "sess-a", actor: { actorKind: "agent", performedBy: { label: "agent" } } })
     const wait = runtimeA.wait(question, new AbortController().signal)

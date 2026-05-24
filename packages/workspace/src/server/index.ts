@@ -131,8 +131,12 @@ export type {
   TrustedDomainBridgeHandlerPolicy,
   TrustedDomainBridgeHandlerRegistration,
 } from "./workspaceBridge/trustedDomainHandler"
+export { createHumanInputBridgeHandlers, HUMAN_INPUT_OPS } from "./humanInput/humanInputBridgeHandlers"
 export { PendingQuestionRuntime } from "./humanInput/pendingQuestionRuntime"
 export { InMemoryPendingQuestionStore, PendingQuestionStoreError, PENDING_QUESTION_ERROR_CODES } from "./humanInput/pendingQuestionStore"
+export type {
+  HumanInputBridgeHandlersOptions,
+} from "./humanInput/humanInputBridgeHandlers"
 export type {
   PendingQuestionAnswer,
   PendingQuestionCancelReason,
