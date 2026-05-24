@@ -29,9 +29,9 @@ git clone https://github.com/hachej/boring-ui.git && cd boring-ui && pnpm instal
 | **Typed form fields** | `text`, `textarea`, `select`, `multiselect`, `checkbox`, `radio`, `number` — validated with Zod |
 | **Blocking tool** | Agent calls `ask_user` and waits — resolves with `answered` or `cancelled` status |
 | **Workbench panel** | Questions pane with submit/cancel buttons, form validation, and empty state |
-| **Bridge pubsub** | SSE-based communication between agent backend and frontend panel (HTTP fallback) |
-| **File-backed store** | Persistence via `FileAskUserStore`; swap in your own `AskUserStore` for DB-backed storage |
-| **Surface resolver** | Agent opens the questions panel via `openSurface` with `ASK_USER_SURFACE_KIND` |
+| **WorkspaceBridge-backed** | Agent requests use `human-input.v1.request`; browser submit/cancel use `human-input.v1.answer` / `human-input.v1.cancel` |
+| **Workspace-owned store** | Pending questions live in the workspace `human-input` coordinator; core/cloud can inject a store later |
+| **Surface resolver** | Agent opens the questions panel via a `human-input` / Questions surface effect; refresh rehydrates from `human-input.v1.pending` |
 
 ---
 
@@ -46,14 +46,28 @@ import { askUserPlugin } from "@hachej/boring-ask-user/front"
 
 Pass `askUserPlugin` to your `WorkspaceProvider`'s `plugins` array. This front plugin includes a provider/binding, so compose it statically in the app shell rather than relying on dynamic package hot-load.
 
-**Server (agent runtime):**
+**Agent runtime:**
 
 ```ts
-import { createAskUserServerPlugin } from "@hachej/boring-ask-user/server"
+import { createAskUserPiExtensionFactory } from "@hachej/boring-ask-user/agent"
 
-const askUserPlugin = createAskUserServerPlugin({ workspaceRoot, bridge })
-// Add the returned plugin object to createWorkspaceAgentServer({ plugins: [...] })
+createWorkspaceAgentServer({
+  pi: {
+    extensionFactories: [
+      createAskUserPiExtensionFactory({
+        sessionId: () => activeSessionId,
+        callHumanInputRequest: (input, signal) => workspaceBridgeRegistry.call({
+          op: "human-input.v1.request",
+          requestId: input.requestId,
+          input,
+        }, trustedRuntimeBridgeContext(signal)),
+      }),
+    ],
+  },
+})
 ```
+
+The old `@hachej/boring-ask-user/server` route/tool surface is intentionally removed. Do not register `WorkspaceServerPlugin.agentTools` for ask-user.
 
 The agent now has an `ask_user` tool. The agent calls it with:
 
@@ -123,33 +137,34 @@ pnpm install && pnpm build
 ## Architecture
 
 ```
-Agent calls ask_user tool
+Agent calls ask_user Pi extension
          │
          ▼
 ┌─────────────────────────┐
-│   createAskUserServer   │
-│   Plugin                │
+│ human-input.v1.request  │
+│ WorkspaceBridge handler │
 │  ├── Creates question   │
-│  ├── Stores in Store    │
-│  └── Posts to UiBridge  │
+│  ├── Stores in workspace│
+│  │   human-input store  │
+│  └── Emits UI effect    │
 └───────────┬─────────────┘
-            │ SSE / HTTP
+            │ human-input surface + pending query
             ▼
 ┌─────────────────────────┐
 │  askUserPlugin (front)  │
-│  ├── Receives question  │
+│  ├── Rehydrates pending │
 │  ├── Opens panel        │
 │  ├── Renders form       │
 │  │   (schema-driven)    │
-│  └── Posts answer       │
+│  └── Calls bridge       │
 └───────────┬─────────────┘
-            │ POST /api/v1/questions/answer
+            │ human-input.v1.answer / cancel
             ▼
 ┌─────────────────────────┐
-│   Questions Bridge      │
-│  ├── Validates answer   │
-│  ├── Resolves promise    │
-│  └── Agent continues     │
+│ WorkspaceBridge runtime │
+│  ├── Validates nonce    │
+│  ├── Resolves waiter    │
+│  └── Agent continues    │
 └─────────────────────────┘
 ```
 
@@ -158,8 +173,10 @@ Agent calls ask_user tool
 | Import | Environment | What You Get |
 |--------|-------------|--------------|
 | `@hachej/boring-ask-user/front` | Browser | `askUserPlugin` const — workbench provider + panel + surface resolver |
-| `@hachej/boring-ask-user/server` | Node | `createAskUserServerPlugin()` — agent tool + HTTP routes + file store |
+| `@hachej/boring-ask-user/agent` | Node/Pi host | `createAskUserPiExtensionFactory()` — bridge-backed `ask_user` tool |
 | `@hachej/boring-ask-user/shared` | Any | `AskUserField`, `AskUserFormSchema`, `AskUserToolInput`, error codes, constants |
+
+`@hachej/boring-ask-user/server` is no longer a public export. Old `/api/v1/questions/commands` routes are historical only and must not be used in supported setups.
 
 ### AskUserStore Interface
 
@@ -179,17 +196,7 @@ interface AskUserStore {
 }
 ```
 
-The default `FileAskUserStore` persists to `${workspaceRoot}/.boring/ask-user.json`. Provide your own for DB-backed storage:
-
-```ts
-import { createAskUserServerPlugin } from "@hachej/boring-ask-user/server"
-
-const plugin = createAskUserServerPlugin({
-  workspaceRoot: "/path/to/workspace",
-  bridge,             // UiBridge for SSE pubsub
-  store: myDBStore,   // optional — default is FileAskUserStore
-})
-```
+The legacy `AskUserStore` types remain for archived server-route tests only. Supported setups use the workspace-owned pending-question store behind `human-input.v1.*`; hosts that need DB persistence should inject a pending-question store into the workspace bridge composition.
 
 ---
 
@@ -220,9 +227,9 @@ const plugin = createAskUserServerPlugin({
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `ask_user tool not found` | Server plugin not registered | Add `createAskUserServerPlugin({ ... })` to `createWorkspaceAgentServer({ plugins: [...] })` or another static server composition point |
-| Panel doesn't open | Front plugin not in workspace | Add `askUserPlugin` to `WorkspaceProvider` plugins array |
-| Answer not reaching agent | Bridge connection broken | Check SSE endpoint; ensure `bridge` is passed to server plugin |
+| `ask_user tool not found` | Pi extension factory not registered | Add `createAskUserPiExtensionFactory(...)` to the host's Pi `extensionFactories` |
+| Panel doesn't open | Front plugin not in workspace or human-input surface not emitted | Add `askUserPlugin` to `WorkspaceProvider` plugins array and verify `human-input.v1.request` succeeds |
+| Answer not reaching agent | WorkspaceBridge auth/capability/nonce problem | Check `/api/v1/workspace-bridge/call` response and browser auth headers |
 | Validation fails | User input doesn't match field schema | Check `required` fields, `options` for select fields, and `name` field keys |
 | `PENDING_EXISTS` error | Another question is pending | Cancel or answer the existing question first |
 

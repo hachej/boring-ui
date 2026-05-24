@@ -7,8 +7,7 @@
   "boring": {
     "id": "ask-user",
     "label": "Questions",
-    "front": "dist/front/index.js",
-    "server": "dist/server/index.js"
+    "front": "dist/front/index.js"
   },
   "pi": {
     "systemPrompt": "Use the ask-user tool when you need a decision, confirmation, or freeform input from the user before continuing. The user answers via the Questions panel and the tool resolves with their response."
@@ -24,10 +23,6 @@
     "./front": {
       "types": "./dist/front/index.d.ts",
       "import": "./dist/front/index.js"
-    },
-    "./server": {
-      "types": "./dist/server/index.d.ts",
-      "import": "./dist/server/index.js"
     },
     "./agent": {
       "types": "./dist/agent/index.d.ts",

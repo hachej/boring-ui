@@ -2,7 +2,7 @@ import { vi } from "vitest"
 
 vi.mock("@boring/agent/server", () => ({}))
 
-import { existsSync } from "node:fs"
+import { readFileSync } from "node:fs"
 import { mkdtemp } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -100,21 +100,19 @@ describe("ask-user Pi tool", () => {
   }, 10_000)
 })
 
-describe("createAskUserServerPlugin", () => {
-  it("exports routes and agent tool without @hachej/boring-agent ask-user APIs", async () => {
+describe("legacy ask-user server surface", () => {
+  it("fails fast instead of registering old routes or agentTools", async () => {
     const { store, runtime } = await fixture()
-    const plugin = createAskUserServerPlugin({ store, runtime, sessionId: "s1" })
-    expect(plugin.id).toBe("ask-user")
-    expect(plugin.routes).toEqual(expect.any(Function))
-    expect(plugin.agentTools).toHaveLength(1)
+    expect(() => createAskUserServerPlugin({ store, runtime, sessionId: "s1" })).toThrow(/human-input\.v1/)
   })
 
-  it("creates default runtime/store/publisher from workspaceRoot and bridge", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "ask-user-plugin-defaults-"))
-    const ui = bridge()
-    const plugin = createAskUserServerPlugin({ workspaceRoot: dir, bridge: ui })
-    expect(plugin.id).toBe("ask-user")
-    expect(plugin.agentTools).toHaveLength(1)
-    expect(existsSync(join(dir, ".boring", "ask-user.json"))).toBe(false)
+  it("is absent from the public package exports and boring server manifest", () => {
+    const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")) as {
+      exports?: Record<string, unknown>
+      boring?: Record<string, unknown>
+    }
+    expect(pkg.exports?.["./server"]).toBeUndefined()
+    expect(pkg.boring?.server).toBeUndefined()
+    expect(pkg.exports?.["./agent"]).toBeTruthy()
   })
 })

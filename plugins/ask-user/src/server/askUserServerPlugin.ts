@@ -18,32 +18,12 @@ export type AskUserServerPluginOptions = {
   onClose?: () => void
 }
 
-export function createAskUserServerPlugin(options: AskUserServerPluginOptions): WorkspaceServerPlugin {
-  const store = options.store ?? createDefaultStore(options.workspaceRoot)
-  const runtime = options.runtime ?? new AskUserRuntime({ store, uiBridge: options.bridge })
-  const stopPublisher = options.bridge ? new AskUserStatePublisher(store, options.bridge).start() : undefined
-  const routes: FastifyPluginAsync = async (app) => {
-    app.addHook("onClose", async () => {
-      stopPublisher?.()
-      options.onClose?.()
-    })
-    await app.register(questionsRoutes, { ...defaultRoutes, ...options.routes, runtime, store })
-  }
-  const askUserTool = createAskUserTool({ runtime, sessionId: options.sessionId ?? (() => "default") })
-  return defineServerPlugin({
-    id: ASK_USER_PLUGIN_ID,
-    label: "Questions",
-    systemPrompt: "When you need a blocking decision from the user, call the `ask_user` tool. Do not roleplay or simulate the form in chat; the active form appears in the Workspace Questions pane.",
-    agentTools: [{
-      name: askUserTool.name,
-      description: askUserTool.description,
-      promptSnippet: askUserTool.promptSnippet,
-      parameters: askUserTool.parameters,
-      execute(params, ctx) { return askUserTool.execute(ctx.toolCallId, params, ctx.abortSignal, ctx.sessionId) },
-    }],
-    routes,
-    preservedUiStateKeys: [ASK_USER_UI_STATE_SLOTS.PENDING],
-  })
+export function createAskUserServerPlugin(_options: AskUserServerPluginOptions): WorkspaceServerPlugin {
+  throw new Error(
+    "@hachej/boring-ask-user/server has been removed. " +
+      "Use @hachej/boring-ask-user/front with the bridge-backed @hachej/boring-ask-user/agent Pi extension; " +
+      "answers now flow through human-input.v1.* WorkspaceBridge operations.",
+  )
 }
 
 const defaultRoutes: Omit<QuestionsRoutesOptions, "runtime" | "store"> = {

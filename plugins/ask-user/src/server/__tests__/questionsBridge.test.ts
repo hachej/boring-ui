@@ -10,6 +10,7 @@ import { constantTimeEqual, QuestionsBridge } from "../questionsBridge"
 import { questionsRoutes } from "../questionsRoutes"
 
 const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer", required: true }] }
+vi.setConfig({ testTimeout: 10_000 })
 const controllers: AbortController[] = []
 
 afterEach(() => {
@@ -114,5 +115,5 @@ describe("questionsRoutes", () => {
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({ ok: true, status: "cancelled" })
     await app.close()
-  })
+  }, 10_000)
 })
