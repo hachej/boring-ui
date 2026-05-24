@@ -10,6 +10,7 @@ export {
 } from './fingerprint'
 export { provisionWorkspaceRuntime } from './provisionWorkspaceRuntime'
 export { getProvisionedSkillPaths, mirrorPluginSkills } from './skills'
+export { ensureNodeEnv, ensureNodeRuntime } from './node'
 export { seedWorkspaceFiles } from './workspaceFiles'
 export type {
   PluginSkillSource,
@@ -19,5 +20,6 @@ export type {
   RuntimePythonSpec,
   RuntimeTemplateContribution,
   WorkspaceProvisioningAdapter,
+  WorkspaceProvisioningExecResult,
   WorkspaceProvisioningResult,
 } from './types'

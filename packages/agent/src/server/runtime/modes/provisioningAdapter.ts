@@ -4,7 +4,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import type { BoringAgentRuntimePaths } from '../../workspace/runtimeLayout'
-import type { WorkspaceProvisioningAdapter } from '../../workspace/provisioning'
+import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningExecResult } from '../../workspace/provisioning'
 import {
   assertRealPathWithinWorkspace,
   validatePath,
@@ -19,7 +19,7 @@ interface ExecOptions {
   timeoutMs?: number
 }
 
-type CommandRunner = (command: string, args: string[], opts: Required<ExecOptions>) => Promise<void>
+type CommandRunner = (command: string, args: string[], opts: Required<ExecOptions>) => Promise<WorkspaceProvisioningExecResult | void>
 
 function sourceToPath(source: string | URL): string {
   return source instanceof URL ? fileURLToPath(source) : source
@@ -57,8 +57,8 @@ async function prepareWritablePath(root: string, relPath: string): Promise<strin
   return absPath
 }
 
-async function spawnCommand(command: string, args: string[], opts: Required<ExecOptions>): Promise<void> {
-  await new Promise<void>((resolvePromise, rejectPromise) => {
+async function spawnCommand(command: string, args: string[], opts: Required<ExecOptions>): Promise<WorkspaceProvisioningExecResult> {
+  return await new Promise<WorkspaceProvisioningExecResult>((resolvePromise, rejectPromise) => {
     const child = spawn(command, args, {
       cwd: opts.cwd,
       env: { ...process.env, ...opts.env },
@@ -67,6 +67,7 @@ async function spawnCommand(command: string, args: string[], opts: Required<Exec
       windowsHide: true,
     })
 
+    const stdout: Buffer[] = []
     const stderr: Buffer[] = []
     let timeout: NodeJS.Timeout | null = null
     let settled = false
@@ -76,9 +77,13 @@ async function spawnCommand(command: string, args: string[], opts: Required<Exec
       settled = true
       if (timeout) clearTimeout(timeout)
       if (error) rejectPromise(error)
-      else resolvePromise()
+      else resolvePromise({
+        stdout: Buffer.concat(stdout).toString('utf8'),
+        stderr: Buffer.concat(stderr).toString('utf8'),
+      })
     }
 
+    child.stdout?.on('data', (chunk: Buffer) => stdout.push(chunk))
     child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk))
     child.on('error', settle)
     child.on('close', (code) => {
