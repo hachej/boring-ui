@@ -1,0 +1,111 @@
+import { describe, expect, test, vi } from "vitest"
+import { WorkspaceBridgeErrorCode } from "../../../shared/workspace-bridge-rpc"
+import { createWorkspaceBridgeRegistry, type WorkspaceBridgeCallContext } from "../registry"
+import { InMemoryWorkspaceBridgeAuditSink } from "../audit"
+import { MACRO_BRIDGE_OPS, guardMacroSqlQuery, registerMacroBridgeHandlers, type MacroBridgeDataService } from "../macroBridgeHandlers"
+
+const actor = { actorKind: "agent" as const, performedBy: { label: "agent" }, onBehalfOf: { label: "human" } }
+
+function context(capabilities: string[], callerClass: WorkspaceBridgeCallContext["callerClass"] = "runtime"): WorkspaceBridgeCallContext {
+  return { callerClass, workspaceId: "workspace-1", sessionId: "session-1", capabilities, actor }
+}
+
+function createService(): MacroBridgeDataService {
+  return {
+    catalogSearch: vi.fn(async (input, ctx) => ({ rows: [{ id: "GDPC1", title: "GDP" }], input, workspaceId: ctx.workspaceId, callerClass: ctx.callerClass })),
+    facetsList: vi.fn(async () => ({ facets: [{ name: "frequency", values: ["quarterly"] }] })),
+    seriesMetadata: vi.fn(async (input) => ({ seriesId: input.seriesId, title: "GDP" })),
+    seriesData: vi.fn(async (input) => ({ seriesId: input.seriesId, points: [["2024-01-01", 1]] })),
+    seriesLineage: vi.fn(async (input) => ({ seriesId: input.seriesId, parents: [] })),
+    sqlQuery: vi.fn(async (input) => ({ rows: [{ ok: true }], sql: input.sql, maxRows: input.maxRows, maxBytes: input.maxBytes, timeoutMs: input.timeoutMs })),
+    transformPersist: vi.fn(async (input) => ({ transformId: input.transformId ?? "tx1", persisted: true })),
+  }
+}
+
+describe("Macro WorkspaceBridge handlers", () => {
+  test("registers only the required macro.v1 operations with canonical capabilities", () => {
+    const registry = createWorkspaceBridgeRegistry()
+    const registered = registerMacroBridgeHandlers(registry, { service: createService() })
+    const ops = registry.listDefinitions().map((definition) => definition.op).sort()
+
+    expect(ops).toEqual(Object.values(MACRO_BRIDGE_OPS).sort())
+    expect(ops.some((op) => op.startsWith("workspace-files.v1."))).toBe(false)
+    expect(ops).not.toContain("macro.v1.refresh")
+    expect(ops).not.toContain("macro.v1.ch-query")
+    expect(registered.definitions.find((definition) => definition.op === MACRO_BRIDGE_OPS.sqlQuery)).toMatchObject({
+      requiredCapabilities: ["macro:sql.query"],
+      auditCategory: "macro",
+    })
+    expect(registered.definitions.find((definition) => definition.op === MACRO_BRIDGE_OPS.transformPersist)).toMatchObject({
+      idempotencyPolicy: "required",
+      callerClassesAllowed: ["runtime", "server"],
+    })
+  })
+
+  test("browser and runtime calls delegate to the injected data service without /api/macro routes", async () => {
+    const service = createService()
+    const registry = createWorkspaceBridgeRegistry()
+    registerMacroBridgeHandlers(registry, { service })
+
+    const browserResult = await registry.call(
+      { op: MACRO_BRIDGE_OPS.catalogSearch, input: { query: "gdp" }, requestId: "req_catalog" },
+      context(["macro:catalog.search"], "browser"),
+    )
+    const runtimeResult = await registry.call(
+      { op: MACRO_BRIDGE_OPS.seriesData, input: { seriesId: "GDPC1" }, requestId: "req_data" },
+      context(["macro:series.data"], "runtime"),
+    )
+
+    expect(browserResult).toMatchObject({ ok: true, output: { rows: [{ id: "GDPC1" }], workspaceId: "workspace-1", callerClass: "browser" } })
+    expect(runtimeResult).toMatchObject({ ok: true, output: { seriesId: "GDPC1", points: [["2024-01-01", 1]] } })
+    expect(service.catalogSearch).toHaveBeenCalledTimes(1)
+    expect(service.seriesData).toHaveBeenCalledTimes(1)
+  })
+
+  test("guards SQL as read-only, single-statement, capped, and audited without SQL payload", async () => {
+    const auditSink = new InMemoryWorkspaceBridgeAuditSink()
+    const registry = createWorkspaceBridgeRegistry({ auditSink })
+    const service = createService()
+    registerMacroBridgeHandlers(registry, { service, sqlDefaults: { maxRows: 10, maxBytes: 512, timeoutMs: 250 } })
+
+    const ok = await registry.call(
+      { op: MACRO_BRIDGE_OPS.sqlQuery, input: { sql: " select * from series; ", maxRows: 100, maxBytes: 4096, timeoutMs: 5_000 }, requestId: "req_sql" },
+      context(["macro:sql.query"], "runtime"),
+    )
+    expect(ok).toMatchObject({ ok: true, output: { sql: "select * from series", maxRows: 10, maxBytes: 512, timeoutMs: 250 } })
+
+    await expect(registry.call(
+      { op: MACRO_BRIDGE_OPS.sqlQuery, input: { sql: "select 1; select 2" }, requestId: "req_multi" },
+      context(["macro:sql.query"], "runtime"),
+    )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.InvalidRequest } })
+    await expect(registry.call(
+      { op: MACRO_BRIDGE_OPS.sqlQuery, input: { sql: "delete from series" }, requestId: "req_write" },
+      context(["macro:sql.query"], "runtime"),
+    )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.InvalidRequest } })
+
+    expect(JSON.stringify(auditSink.events)).not.toContain("select * from series")
+    expect(JSON.stringify(auditSink.events)).not.toContain("delete from series")
+  })
+
+  test("transform.persist requires idempotency and server/runtime authority", async () => {
+    const registry = createWorkspaceBridgeRegistry()
+    const service = createService()
+    const registered = registerMacroBridgeHandlers(registry, { service })
+    const definition = registered.definitions.find((item) => item.op === MACRO_BRIDGE_OPS.transformPersist)
+
+    expect(definition?.idempotencyPolicy).toBe("required")
+    await expect(registry.call(
+      { op: MACRO_BRIDGE_OPS.transformPersist, input: { transformId: "tx1" }, requestId: "req_browser" },
+      context(["macro:transform.persist"], "browser"),
+    )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.CallerNotAllowed } })
+    await expect(registry.call(
+      { op: MACRO_BRIDGE_OPS.transformPersist, input: { transformId: "tx1" }, requestId: "req_runtime" },
+      context(["macro:transform.persist"], "runtime"),
+    )).resolves.toMatchObject({ ok: true, output: { transformId: "tx1", persisted: true } })
+  })
+
+  test("SQL guard rejects raw writes before service execution", () => {
+    expect(() => guardMacroSqlQuery({ sql: "update series set value = 1" })).toThrow(expect.objectContaining({ code: WorkspaceBridgeErrorCode.InvalidRequest }))
+    expect(() => guardMacroSqlQuery({ query: "with x as (select 1) select * from x" })).not.toThrow()
+  })
+})

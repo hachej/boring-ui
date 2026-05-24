@@ -242,11 +242,13 @@ export class WorkspaceBridgeRegistry {
       if (controller.signal.aborted && controller.signal.reason === "timeout") {
         return this.failure(request.op, requestId, WorkspaceBridgeErrorCode.Timeout, "Bridge handler timed out", logBase)
       }
+      const bridgeError = isWorkspaceBridgeError(err) ? err : undefined
       this.logger?.error?.("workspace bridge call failed", {
         ...logBase,
         errorName: err instanceof Error ? err.name : typeof err,
+        errorCode: bridgeError?.code,
       })
-      return this.failure(request.op, requestId, WorkspaceBridgeErrorCode.HandlerFailed, "Bridge handler failed", logBase)
+      return this.failure(request.op, requestId, bridgeError?.code ?? WorkspaceBridgeErrorCode.HandlerFailed, bridgeError?.message ?? "Bridge handler failed", logBase)
     } finally {
       if (timeout) clearTimeout(timeout)
       context.signal?.removeEventListener("abort", abortFromCaller)
@@ -322,6 +324,10 @@ export function createWorkspaceBridgeRegistry(
   options: WorkspaceBridgeRegistryOptions = {},
 ): WorkspaceBridgeRegistry {
   return new WorkspaceBridgeRegistry(options)
+}
+
+function isWorkspaceBridgeError(err: unknown): err is WorkspaceBridgeError {
+  return !!err && typeof err === "object" && "code" in err && "message" in err
 }
 
 function validateSchema(schema: unknown, value: unknown): SchemaResult {

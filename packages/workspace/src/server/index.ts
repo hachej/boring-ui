@@ -121,11 +121,23 @@ export {
   resolveBridgeCallUrl,
 } from "./workspaceBridge/runtimeEnv"
 export { defineTrustedDomainBridgeHandler } from "./workspaceBridge/trustedDomainHandler"
+export { MACRO_BRIDGE_OPS, guardMacroSqlQuery, registerMacroBridgeHandlers } from "./workspaceBridge/macroBridgeHandlers"
 export type {
   CreateWorkspaceBridgeRuntimeEnvContributionOptions,
   WorkspaceBridgeRuntimeEnvDisabledReason,
   WorkspaceBridgeRuntimeEnvOptions,
 } from "./workspaceBridge/runtimeEnv"
+export type {
+  MacroBridgeDataService,
+  MacroBridgeHandlersOptions,
+  MacroBridgeInput,
+  MacroBridgeOp,
+  MacroBridgeOutput,
+  MacroBridgeServiceContext,
+  MacroSqlGuardDefaults,
+  MacroSqlQueryInput,
+  RegisteredMacroBridgeHandlers,
+} from "./workspaceBridge/macroBridgeHandlers"
 export type {
   TrustedDomainBridgeHandlerOptions,
   TrustedDomainBridgeHandlerPolicy,

@@ -63,16 +63,16 @@ describe("human-input bridge handlers", () => {
     const q = await new PendingQuestionRuntime(store).createPending({ requestId: "req-nonce", sessionId: "session-1" })
 
     await expect(registry.call({ op: HUMAN_INPUT_OPS.answer, input: { questionId: q.questionId, sessionId: "session-1", values: {} } }, browserContext(["human-input:answer"])))
-      .resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.HandlerFailed } })
+      .resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.InvalidRequest } })
     await expect(registry.call({ op: HUMAN_INPUT_OPS.answer, input: { questionId: q.questionId, sessionId: "wrong", nonce: q.nonce, values: {} } }, browserContext(["human-input:answer"])))
-      .resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.HandlerFailed } })
+      .resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.InvalidRequest } })
     await expect(registry.call({ op: HUMAN_INPUT_OPS.answer, input: { questionId: q.questionId, sessionId: "session-1", nonce: "wrong", values: {} } }, browserContext(["human-input:answer"])))
-      .resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.HandlerFailed } })
+      .resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.InvalidRequest } })
 
     await expect(registry.call({ op: HUMAN_INPUT_OPS.answer, input: { questionId: q.questionId, sessionId: "session-1", nonce: q.nonce, values: { ok: true } } }, browserContext(["human-input:answer"])))
       .resolves.toMatchObject({ ok: true })
     await expect(registry.call({ op: HUMAN_INPUT_OPS.answer, input: { questionId: q.questionId, sessionId: "session-1", nonce: q.nonce, values: { ok: true } } }, browserContext(["human-input:answer"])))
-      .resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.HandlerFailed } })
+      .resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.InvalidRequest } })
   })
 
   test("pending, cancel, timeout, and transcript policy are pinned", async () => {
