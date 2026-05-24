@@ -26,6 +26,7 @@ function createFakeAdapter(workspaceRoot: string, state: FakeAdapterState): Work
         if (state.failNpmInstall) throw new Error('npm install failed')
         const prefix = args[args.indexOf('--prefix') + 1]
         await mkdir(join(prefix, 'node_modules', '.bin'), { recursive: true })
+        await writeFile(join(prefix, 'package-lock.json'), '{"lockfileVersion":3}\n')
         await writeFile(join(prefix, 'node_modules', '.bin', 'boring-ui'), '#!/usr/bin/env node\n')
       }
     },

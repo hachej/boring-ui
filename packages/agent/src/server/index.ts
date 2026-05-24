@@ -42,7 +42,10 @@ export {
   getBoringAgentRuntimeEnv,
   getBoringAgentPathEntries,
 } from './workspace/runtimeLayout'
-export { createVercelSandboxWorkspace } from './workspace/createVercelSandboxWorkspace'
+export {
+  createVercelSandboxWorkspace,
+  VERCEL_SANDBOX_WORKSPACE_ROOT,
+} from './workspace/createVercelSandboxWorkspace'
 export {
   createVercelProvisioningAdapter,
   VERCEL_PROVISIONING_CACHE_ROOT,

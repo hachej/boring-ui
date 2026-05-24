@@ -118,14 +118,15 @@ function mapWorkspacePathToLocalSandbox(paths: BoringAgentRuntimePaths, value: s
   return `${LOCAL_SANDBOX_WORKSPACE_ROOT}/${relPath.split(sep).join('/')}`
 }
 
+function mapValueToLocalSandbox(paths: BoringAgentRuntimePaths, value: string): string {
+  return value.startsWith(paths.workspaceRoot)
+    ? mapWorkspacePathToLocalSandbox(paths, value)
+    : value
+}
+
 function mapEnvToLocalSandbox(paths: BoringAgentRuntimePaths, env: Record<string, string>): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(env).map(([key, value]) => [
-      key,
-      value.startsWith(paths.workspaceRoot)
-        ? mapWorkspacePathToLocalSandbox(paths, value)
-        : value,
-    ]),
+    Object.entries(env).map(([key, value]) => [key, mapValueToLocalSandbox(paths, value)]),
   )
 }
 
@@ -207,8 +208,8 @@ export function createLocalProvisioningAdapter(
       })
       return await runner('bwrap', [
         ...bwrapArgs,
-        command,
-        ...args,
+        mapValueToLocalSandbox(paths, command),
+        ...args.map((arg) => mapValueToLocalSandbox(paths, arg)),
       ], {
         ...execOpts,
         cwd: paths.workspaceRoot,

@@ -64,6 +64,7 @@ export async function ensureUv(options: {
 
   try {
     await options.adapter.workspaceFs.mkdir('.boring-agent/sdk/uv/bin')
+    await options.adapter.workspaceFs.rm(UV_BIN_REL)
     await options.adapter.workspaceFs.copyFromHost(options.uvStandaloneSource, UV_BIN_REL)
     const uvBin = join(options.runtimeLayout.uvBin, 'uv')
     await options.adapter.exec('chmod', ['+x', uvBin], { cwd: options.runtimeLayout.workspaceRoot })
@@ -100,9 +101,12 @@ function sourceRootForPythonSpec(spec: RuntimePythonSpec): string | URL | null {
 }
 
 function expectedPythonOutputs(paths: BoringAgentRuntimePaths, packages: RuntimePythonSpec[]): string[] {
-  return packages.flatMap((pkg) =>
-    (pkg.expectedBins ?? []).map((bin) => join(paths.venvBin, bin)),
-  )
+  return [
+    paths.venvPython,
+    ...packages.flatMap((pkg) =>
+      (pkg.expectedBins ?? []).map((bin) => join(paths.venvBin, bin)),
+    ),
+  ]
 }
 
 function collectPythonEnv(packages: RuntimePythonSpec[]): Record<string, string> {

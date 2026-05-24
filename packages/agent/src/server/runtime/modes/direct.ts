@@ -10,7 +10,7 @@ import { createDirectProvisioningAdapter } from './provisioningAdapter'
 export const directModeAdapter: RuntimeModeAdapter = {
   id: 'direct',
   workspaceFsCapability: 'strong',
-  createProvisioningAdapter: createDirectProvisioningAdapter,
+  createProvisioningAdapter: (runtimeLayout) => createDirectProvisioningAdapter(runtimeLayout),
   async create(ctx) {
     await mkdir(ctx.workspaceRoot, { recursive: true })
     await copyTemplate(ctx.templatePath, ctx.workspaceRoot)

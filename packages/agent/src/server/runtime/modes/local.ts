@@ -10,7 +10,7 @@ import { createLocalProvisioningAdapter } from './provisioningAdapter'
 export const localModeAdapter: RuntimeModeAdapter = {
   id: 'local',
   workspaceFsCapability: 'strong',
-  createProvisioningAdapter: createLocalProvisioningAdapter,
+  createProvisioningAdapter: (runtimeLayout) => createLocalProvisioningAdapter(runtimeLayout),
   async create(ctx) {
     if (process.platform !== 'linux') {
       throw new Error('local mode requires Linux with bubblewrap')

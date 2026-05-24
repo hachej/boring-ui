@@ -1,8 +1,16 @@
+import { execFile } from 'node:child_process'
+import { mkdtemp, mkdir, readFile, readdir, rename, stat } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
+
 import { Sandbox as VercelSandbox } from '@vercel/sandbox'
 
 import { type SandboxHandleStore } from '../../../shared/sandbox-handle-store'
 import { getEnv } from '../../config/env'
 import { createVercelSandboxExec } from '../../sandbox/vercel-sandbox/createVercelSandboxExec'
+import { createVercelProvisioningAdapter } from '../../sandbox/vercel-sandbox/provisioningAdapter'
 import { FileHandleStore } from '../../sandbox/vercel-sandbox/FileHandleStore'
 import {
   collectFiles,
@@ -22,7 +30,9 @@ import {
   VERCEL_SANDBOX_WORKSPACE_ROOT,
 } from '../../workspace/createVercelSandboxWorkspace'
 import { createServerFileSearch } from '../createServerFileSearch'
-import type { RuntimeModeAdapter } from '../mode'
+import type { ModeContext, RuntimeModeAdapter } from '../mode'
+import type { BoringAgentRuntimePaths } from '../../workspace/runtimeLayout'
+import type { WorkspaceProvisioningAdapter } from '../../workspace/provisioning'
 
 interface ModeLogger {
   info(message: string, metadata: Record<string, unknown>): void
@@ -32,6 +42,7 @@ interface ModeLogger {
 type EnvGetter = (name: string) => string | undefined
 const ORPHAN_GUARD_MAX_IDLE_MS = 24 * 60 * 60 * 1000
 const VERCEL_SANDBOX_TIMEOUT_MS_ENV = 'BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS'
+const execFileAsync = promisify(execFile)
 
 export interface VercelSandboxModeAdapterOptions {
   store?: SandboxHandleStore
@@ -167,6 +178,160 @@ async function seedTemplateIntoVercelWorkspace(
   })
 }
 
+function provisioningSourceToPath(source: string | URL): string {
+  return source instanceof URL ? fileURLToPath(source) : source
+}
+
+async function prepareVercelProvisioningArtifact(request: {
+  kind: 'node' | 'python'
+  source: string | URL
+  outputPath: string
+}): Promise<void> {
+  const sourcePath = provisioningSourceToPath(request.source)
+  await mkdir(dirname(request.outputPath), { recursive: true })
+
+  if (request.kind === 'node') {
+    const { stdout } = await execFileAsync('npm', [
+      'pack',
+      sourcePath,
+      '--pack-destination',
+      dirname(request.outputPath),
+    ], { maxBuffer: 1024 * 1024 * 20 })
+    const packedName = stdout.trim().split(/\r?\n/).filter(Boolean).at(-1)
+    if (!packedName) throw new Error(`npm pack produced no artifact for ${sourcePath}`)
+    await rename(join(dirname(request.outputPath), packedName), request.outputPath)
+    return
+  }
+
+  await execFileAsync('tar', ['-czf', request.outputPath, '-C', sourcePath, '.'], {
+    maxBuffer: 1024 * 1024 * 20,
+  })
+}
+
+function shellSingleQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+async function copyHostPathToVercelWorkspace(options: {
+  workspace: ReturnType<typeof createVercelSandboxWorkspace>
+  source: string | URL
+  targetRel: string
+}): Promise<void> {
+  const sourcePath = provisioningSourceToPath(options.source)
+  const sourceStat = await stat(sourcePath)
+  if (sourceStat.isDirectory()) {
+    await options.workspace.mkdir(options.targetRel, { recursive: true })
+    for (const entry of await readdir(sourcePath, { withFileTypes: true })) {
+      await copyHostPathToVercelWorkspace({
+        workspace: options.workspace,
+        source: join(sourcePath, entry.name),
+        targetRel: `${options.targetRel}/${entry.name}`,
+      })
+    }
+    return
+  }
+  if (!sourceStat.isFile()) return
+
+  const bytes = new Uint8Array(await readFile(sourcePath))
+  if (options.workspace.writeBinaryFile) await options.workspace.writeBinaryFile(options.targetRel, bytes)
+  else await options.workspace.writeFile(options.targetRel, Buffer.from(bytes).toString('utf8'))
+}
+
+function isMissingWorkspacePathError(error: unknown): boolean {
+  if ((error as { code?: string }).code === 'ENOENT') return true
+  const message = error instanceof Error ? error.message : String(error)
+  return /\bENOENT\b|no such file|file not found/i.test(message)
+}
+
+function createVercelWorkspaceFs(options: {
+  workspace: ReturnType<typeof createVercelSandboxWorkspace>
+  sandbox: VercelSandboxWithRunCommand
+}): WorkspaceProvisioningAdapter['workspaceFs'] {
+  const exists = async (rel: string): Promise<boolean> => {
+    try {
+      await options.workspace.stat(rel)
+      return true
+    } catch (error: unknown) {
+      if (isMissingWorkspacePathError(error)) return false
+      throw error
+    }
+  }
+
+  return {
+    exists,
+    async rm(rel) {
+      const targetExists = await exists(rel)
+      if (!targetExists) return
+      const target = `${VERCEL_SANDBOX_REMOTE_ROOT}/${rel.replace(/^\/+/, '')}`
+      const result = await options.sandbox.runCommand({
+        cmd: 'sh',
+        args: ['-c', `rm -rf -- ${shellSingleQuote(target)}`],
+      })
+      if ((result.exitCode ?? 1) !== 0) {
+        const err = await (result.stderr?.() ?? Promise.resolve(''))
+        throw new Error(err || `failed to remove ${rel}`)
+      }
+    },
+    async mkdir(rel) {
+      await options.workspace.mkdir(rel, { recursive: true })
+    },
+    async writeText(rel, content) {
+      await options.workspace.writeFile(rel, content)
+    },
+    async readText(rel) {
+      try {
+        return await options.workspace.readFile(rel)
+      } catch (error: unknown) {
+        if (isMissingWorkspacePathError(error)) return null
+        throw error
+      }
+    },
+    async copyFromHost(source, targetRel) {
+      await copyHostPathToVercelWorkspace({ workspace: options.workspace, source, targetRel })
+    },
+  }
+}
+
+async function ensureVercelProvisioningParts(options: {
+  store: SandboxHandleStore
+  getEnvVar: EnvGetter
+  logger: ModeLogger
+  vercelClient?: VercelSandboxClient
+  runtimeLayout: BoringAgentRuntimePaths
+  ctx?: ModeContext
+  expiredSandboxPolicy?: ExpiredSandboxPolicy
+  orphanGuardMaxIdleMs?: number | null
+}): Promise<{
+  workspace: ReturnType<typeof createVercelSandboxWorkspace>
+  workspaceFs: WorkspaceProvisioningAdapter['workspaceFs']
+  sandbox: ReturnType<typeof createVercelSandboxExec>
+  sandboxHandle: VercelSandboxWithRunCommand
+}> {
+  const auth = resolveVercelAuth(options.getEnvVar)
+  const teamId = requireEnvVar('VERCEL_TEAM_ID', options.getEnvVar)
+  const projectId = options.getEnvVar('VERCEL_PROJECT_ID')?.trim()
+  const timeoutMs = readOptionalPositiveIntegerEnv(VERCEL_SANDBOX_TIMEOUT_MS_ENV, options.getEnvVar)
+  const vercelClient = options.vercelClient ?? createDefaultVercelClient({
+    token: auth.token,
+    teamId,
+    projectId,
+  }, { timeoutMs })
+  const workspaceId = options.ctx?.workspaceId ?? options.ctx?.workspaceRoot ?? options.runtimeLayout.workspaceRoot
+  const sandboxHandle = await resolveSandboxHandle(workspaceId, options.store, vercelClient, {
+    logger: options.logger,
+    maxIdleMs: options.orphanGuardMaxIdleMs === null
+      ? undefined
+      : options.orphanGuardMaxIdleMs ?? ORPHAN_GUARD_MAX_IDLE_MS,
+    expiredSandboxPolicy: options.expiredSandboxPolicy,
+  }) as VercelSandboxWithRunCommand
+  await ensureVercelWorkspaceRoot(sandboxHandle)
+  const workspace = createVercelSandboxWorkspace(sandboxHandle)
+  const workspaceFs = createVercelWorkspaceFs({ workspace, sandbox: sandboxHandle })
+  const sandbox = createVercelSandboxExec(sandboxHandle)
+  await sandbox.init?.({ workspace, sessionId: options.ctx?.sessionId ?? 'default' })
+  return { workspace, workspaceFs, sandbox, sandboxHandle }
+}
+
 async function ensureTemplateExecutables(sandbox: VercelSandboxWithRunCommand): Promise<void> {
   if (!sandbox.runCommand) return
   await sandbox.runCommand({
@@ -237,6 +402,47 @@ export function createVercelSandboxModeAdapter(
     workspaceFsCapability: 'best-effort',
     async dispose() {
       await snapshotScheduler?.shutdown()
+    },
+    createProvisioningAdapter(runtimeLayout, ctx) {
+      let partsPromise: Promise<Awaited<ReturnType<typeof ensureVercelProvisioningParts>>> | null = null
+      const getParts = () => {
+        partsPromise ??= ensureVercelProvisioningParts({
+          store,
+          getEnvVar,
+          logger,
+          vercelClient: opts.vercelClient,
+          runtimeLayout,
+          ctx,
+          expiredSandboxPolicy: opts.expiredSandboxPolicy,
+          orphanGuardMaxIdleMs: opts.orphanGuardMaxIdleMs,
+        })
+        return partsPromise
+      }
+      return createVercelProvisioningAdapter({
+        runtimeLayout,
+        workspaceFs: {
+          async exists(rel) { return await (await getParts()).workspaceFs.exists(rel) },
+          async rm(rel) { return await (await getParts()).workspaceFs.rm(rel) },
+          async mkdir(rel) { return await (await getParts()).workspaceFs.mkdir(rel) },
+          async writeText(rel, content) { return await (await getParts()).workspaceFs.writeText(rel, content) },
+          async readText(rel) { return await (await getParts()).workspaceFs.readText(rel) },
+          async copyFromHost(source, target) { return await (await getParts()).workspaceFs.copyFromHost(source, target) },
+        },
+        async exec(command, args, execOpts) {
+          const { sandbox } = await getParts()
+          const commandLine = [command, ...args].map(shellSingleQuote).join(' ')
+          const result = await sandbox.exec(commandLine, {
+            cwd: execOpts?.cwd,
+            env: execOpts?.env,
+            timeoutMs: execOpts?.timeoutMs,
+          })
+          return {
+            stdout: Buffer.from(result.stdout).toString('utf8'),
+            stderr: Buffer.from(result.stderr).toString('utf8'),
+          }
+        },
+        prepareArtifact: prepareVercelProvisioningArtifact,
+      })
     },
     async create(ctx) {
       const auth = resolveVercelAuth(getEnvVar)

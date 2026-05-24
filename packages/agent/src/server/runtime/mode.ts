@@ -16,7 +16,7 @@ export interface RuntimeModeAdapter {
    */
   readonly workspaceFsCapability?: Workspace['fsCapability']
   create(ctx: ModeContext): Promise<RuntimeBundle>
-  createProvisioningAdapter?(runtimeLayout: BoringAgentRuntimePaths): WorkspaceProvisioningAdapter
+  createProvisioningAdapter?(runtimeLayout: BoringAgentRuntimePaths, ctx?: ModeContext): WorkspaceProvisioningAdapter
   dispose?(): Promise<void>
 }
 
