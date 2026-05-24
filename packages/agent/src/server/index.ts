@@ -38,6 +38,14 @@ export {
   type RuntimeWorkspaceProvisioningResult,
 } from './workspace/provisionRuntime'
 export { createVercelSandboxWorkspace } from './workspace/createVercelSandboxWorkspace'
+export {
+  createVercelProvisioningAdapter,
+  VERCEL_PROVISIONING_CACHE_ROOT,
+} from './sandbox/vercel-sandbox/provisioningAdapter'
+export type {
+  CreateVercelProvisioningAdapterOptions,
+  VercelProvisioningArtifactRequest,
+} from './sandbox/vercel-sandbox/provisioningAdapter'
 export { provisionWorkspaceRuntime } from './workspace/provisioning'
 export type {
   PluginSkillSource,
