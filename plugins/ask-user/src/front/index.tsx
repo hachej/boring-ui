@@ -205,6 +205,9 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
  * The panel is opened via the surface resolver (kind: ASK_USER_SURFACE_KIND),
  * which is how the server-side agent tool triggers it.
  */
+export { usePendingQuestion } from "./hooks"
+export type { PendingQuestionState } from "./hooks"
+
 export const askUserPlugin: BoringFrontFactoryWithId = definePlugin({
   id: ASK_USER_PLUGIN_ID,
   label: ASK_USER_PANEL_TITLE,
