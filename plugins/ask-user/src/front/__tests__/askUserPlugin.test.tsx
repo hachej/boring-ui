@@ -49,7 +49,7 @@ describe("askUserPlugin front shell", () => {
     render(<Provider apiBaseUrl=""><Panel params={{ __closeWorkbenchOnDone: closeWorkbench }} api={{ close }} className="h-full" /></Provider>)
 
     expect(await screen.findByText("Choose A or B")).toBeInTheDocument()
-    expect(screen.queryByText(/^Questions$/)).not.toBeInTheDocument()
+    expect(screen.getByText(/^Questions$/)).toBeInTheDocument()
     const choice = screen.getByRole("radio", { name: "A" })
     fireEvent.click(choice)
     fireEvent.change(choice, { target: { checked: true } })
@@ -93,6 +93,62 @@ describe("askUserPlugin front shell", () => {
     window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: "default" } }))
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.cancel"))).toBe(true))
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/api/v1/questions/commands"))).toBe(false)
+  })
+
+  it("close without explicit cancel does not cancel the pending question", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call")) {
+        const body = JSON.parse(String(init?.body ?? "{}"))
+        if (body.op === "human-input.v1.pending") return Response.json({ ok: true, output: { pending: question } })
+        if (body.op === "human-input.v1.cancel") return Response.json({ ok: true, output: { status: "cancelled" } })
+      }
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+    const Panel = getPanel()
+    const { unmount } = render(<Provider apiBaseUrl=""><Panel params={{}} api={{ close: vi.fn() }} className="h-full" /></Provider>)
+
+    expect(await screen.findByText("Choose A or B")).toBeInTheDocument()
+    unmount()
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.cancel"))).toBe(false)
+  })
+
+  it("explicit cancel asks before discarding dirty answers and then calls human-input.v1.cancel", async () => {
+    const textQuestion: AskUserQuestion = { ...question, schema: { wireVersion: 1, fields: [{ type: "text", name: "answer", label: "Answer", required: true }] } }
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call")) {
+        const body = JSON.parse(String(init?.body ?? "{}"))
+        if (body.op === "human-input.v1.pending") return Response.json({ ok: true, output: { pending: textQuestion } })
+        if (body.op === "human-input.v1.cancel") return Response.json({ ok: true, output: { status: "cancelled" } })
+      }
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true)
+    const Provider = getProvider()
+    const Panel = getPanel()
+    render(<Provider apiBaseUrl=""><Panel params={{}} api={{ close: vi.fn() }} className="h-full" /></Provider>)
+
+    const input = await screen.findByRole("textbox", { name: /answer/i })
+    fireEvent.change(input, { target: { value: "draft" } })
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+    expect(confirm).toHaveBeenCalledWith("Discard your answer?")
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.cancel"))).toBe(false)
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.cancel"))).toBe(true))
+  })
+
+  it("renders terminal question lifecycle cards", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ ok: true, output: { pending: null } }))
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+    const Panel = getPanel()
+    for (const [status, label] of [["answered", "Question answered"], ["cancelled", "Question cancelled"], ["abandoned", "Question abandoned"], ["timed_out", "Question timed out"], ["ui_unavailable", "Question unavailable"]] as const) {
+      const { unmount } = render(<Provider apiBaseUrl=""><Panel params={{ question: { ...question, status } }} api={{ close: vi.fn() }} className="h-full" /></Provider>)
+      expect(await screen.findByText(label)).toBeInTheDocument()
+      unmount()
+    }
   })
 
   it("registers surface resolver and no-topbar panel output", () => {

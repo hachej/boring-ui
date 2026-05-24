@@ -40,7 +40,7 @@ export function normalizeQuestion(value: unknown): AskUserQuestion | null {
     questionId: raw.questionId,
     sessionId: raw.sessionId,
     ownerPrincipalId: typeof raw.ownerPrincipalId === "string" ? raw.ownerPrincipalId : "workspace-bridge",
-    status: raw.status === "pending" || raw.status === "ready" ? "ready" : raw.status === "answered" || raw.status === "cancelled" || raw.status === "abandoned" ? raw.status : "abandoned",
+    status: normalizeQuestionStatus(raw.status),
     title: typeof payload.title === "string" ? payload.title : undefined,
     context: typeof payload.context === "string" ? payload.context : undefined,
     schema,
@@ -85,6 +85,12 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
       return callBridge<QuestionsClientResult>("human-input.v1.answer", { questionId: question.questionId, sessionId: question.sessionId, nonce: question.answerToken, values }, question.sessionId)
     },
   }
+}
+
+function normalizeQuestionStatus(status: unknown): AskUserQuestion["status"] {
+  if (status === "pending" || status === "ready") return "ready"
+  if (status === "answered" || status === "cancelled" || status === "abandoned" || status === "timed_out" || status === "ui_unavailable") return status
+  return "abandoned"
 }
 
 function ensureNonce(question: AskUserQuestion): void {

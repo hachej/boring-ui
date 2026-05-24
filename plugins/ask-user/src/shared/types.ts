@@ -101,7 +101,7 @@ export type AskUserToolInput = {
   timeoutMs?: number
 }
 
-export type AskUserQuestionStatus = "ready" | "answered" | "cancelled" | "abandoned"
+export type AskUserQuestionStatus = "ready" | "answered" | "cancelled" | "abandoned" | "timed_out" | "ui_unavailable"
 
 export type AskUserQuestion = {
   questionId: string

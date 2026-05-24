@@ -156,7 +156,7 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
     <Pane className="h-full border-0 bg-background text-sm">
       <PaneHeader className="border-b bg-background/95">
         <div>
-          <PaneTitle className="flex items-center gap-2"><HelpCircle className="h-4 w-4 text-muted-foreground" /> Agent needs input</PaneTitle>
+          <PaneTitle className="flex items-center gap-2"><HelpCircle className="h-4 w-4 text-muted-foreground" /> Questions</PaneTitle>
         </div>
       </PaneHeader>
       {!question ? <PaneBody className="overflow-auto p-4"><EmptyState icon={<HelpCircle className="h-5 w-5" />} title="No pending questions" description="When the agent needs a decision, the form will appear here." className="border border-dashed bg-muted/20" /></PaneBody> : null}
@@ -176,7 +176,7 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
             <PaneBody className="overflow-auto p-4">
               <div className="space-y-4">
                 <section className="rounded-md border border-border/60 bg-muted/30 p-4">
-                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Waiting for answer</div>
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Agent needs input</div>
                   <h2 className="mt-2 text-balance text-sm font-semibold leading-5 text-foreground">{question.title ?? "Question"}</h2>
                   {question.context ? <p className="mt-2 max-w-prose text-sm leading-6 text-muted-foreground">{question.context}</p> : null}
                 </section>
@@ -188,9 +188,29 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
           </QuestionForm>
         </QuestionFormProvider>
       ) : null}
-      {question && question.status !== "ready" ? <PaneBody className="p-5"><Notice><span className="flex items-center gap-2"><XCircle className="h-4 w-4 text-muted-foreground" />Question {question.status}</span></Notice></PaneBody> : null}
+      {question && question.status !== "ready" ? <TerminalQuestionCard status={question.status} /> : null}
     </Pane>
   </div>
+}
+
+function TerminalQuestionCard({ status }: { status: AskUserQuestion["status"] }) {
+  const label = terminalQuestionLabel(status)
+  return <PaneBody className="p-5">
+    <Notice>
+      <span className="flex items-center gap-2"><XCircle className="h-4 w-4 text-muted-foreground" />{label}</span>
+    </Notice>
+  </PaneBody>
+}
+
+function terminalQuestionLabel(status: AskUserQuestion["status"]): string {
+  switch (status) {
+    case "answered": return "Question answered"
+    case "cancelled": return "Question cancelled"
+    case "timed_out": return "Question timed out"
+    case "ui_unavailable": return "Question unavailable"
+    case "abandoned": return "Question abandoned"
+    case "ready": return "Question ready"
+  }
 }
 
 /**
