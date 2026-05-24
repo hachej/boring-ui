@@ -20,7 +20,7 @@ Implementation must remain package-neutral: `@hachej/boring-agent` stays workspa
 - `emitUiEffect(effect)` is the UI side-effect lane. It may open/focus panes or emit display hints. It is never the authority for a domain mutation.
 - `call(op, input, options)` / `registerHandler(op, handler)` is the bounded host capability RPC lane.
 
-`emitUiEffect`/`emitUiEffect` are hard-renamed to `emitUiEffect`. v1 has no backward-compatible alias.
+Legacy `postCommand`/`postUiCommand` names are hard-renamed to `emitUiEffect`. v1 has no backward-compatible alias.
 
 ### 2. Caller boundary and actor attribution are separate
 
