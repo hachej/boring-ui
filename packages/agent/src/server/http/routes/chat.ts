@@ -123,7 +123,23 @@ export function chatRoutes(
       const turnId = randomUUID()
 
       request.log.info({ sessionId, turnId, model, thinkingLevel }, '[chat] start')
-      const runtime = await resolveRuntime(request)
+      let runtime: { harness: AgentHarness; workdir: string }
+      try {
+        runtime = await resolveRuntime(request)
+      } catch (err) {
+        const statusCode = (err as { statusCode?: unknown })?.statusCode
+        const stableCode = (err as { code?: unknown })?.code
+        if (typeof statusCode === 'number' && statusCode >= 400 && statusCode < 600) {
+          return reply.code(statusCode).send({
+            error: {
+              code: typeof stableCode === 'string' ? stableCode : ERROR_CODE_INTERNAL,
+              message: err instanceof Error ? err.message : 'chat route failed',
+              details: (err as { details?: unknown })?.details,
+            },
+          })
+        }
+        throw err
+      }
 
       const abortController = new AbortController()
       let streamStarted = false
@@ -201,6 +217,17 @@ export function chatRoutes(
         request.log.error({ err, sessionId }, '[chat] error')
         buf.markComplete(() => buffers.evict(sessionId, turnId))
         if (streamStarted) return
+        const statusCode = (err as { statusCode?: unknown })?.statusCode
+        const stableCode = (err as { code?: unknown })?.code
+        if (typeof statusCode === 'number' && statusCode >= 400 && statusCode < 600) {
+          return reply.code(statusCode).send({
+            error: {
+              code: typeof stableCode === 'string' ? stableCode : ERROR_CODE_INTERNAL,
+              message: err instanceof Error ? err.message : 'chat route failed',
+              details: (err as { details?: unknown })?.details,
+            },
+          })
+        }
         return reply.code(500).send({
           error: { code: ERROR_CODE_INTERNAL, message: 'internal error' },
         })

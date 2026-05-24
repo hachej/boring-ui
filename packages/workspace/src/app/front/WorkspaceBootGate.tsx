@@ -1,8 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { WorkspaceLoadingState } from "../../front/components/WorkspaceLoadingState"
-import { setPreloadedTreeEntries } from "../../plugins/filesystemPlugin/front/data/treePreloadCache"
-
-const DEFAULT_BOOT_PRELOAD_PATHS = ["/api/v1/tree?path=.", "/api/v1/agent/sessions"]
+import {
+  DEFAULT_BOOT_PRELOAD_PATHS,
+  errorMessageFromPayload,
+  preloadUrl,
+  readResponsePayload,
+  seedTreePreloadFromBody,
+  treePreloadDir,
+  workspaceRequestHeaders,
+} from "./workspacePreload"
 
 export interface WorkspaceBootGateProps {
   workspaceId: string
@@ -18,18 +24,6 @@ type WorkspaceBootState =
   | { status: "loading"; label: string }
   | { status: "ready" }
   | { status: "error"; message: string }
-
-function preloadUrl(apiBaseUrl: string | null | undefined, path: string): string {
-  if (/^https?:\/\//i.test(path)) return path
-  if (!apiBaseUrl) return path
-  return `${apiBaseUrl.replace(/\/$/, "")}/${path.replace(/^\//, "")}`
-}
-
-function treePreloadDir(path: string): string | null {
-  const url = new URL(path, "http://workspace.local")
-  if (url.pathname !== "/api/v1/tree") return null
-  return url.searchParams.get("path") ?? "."
-}
 
 export function WorkspaceBootGate({
   workspaceId,
@@ -47,7 +41,7 @@ export function WorkspaceBootGate({
 
   useEffect(() => {
     const controller = new AbortController()
-    const headers = requestHeaders ?? { "x-boring-workspace-id": workspaceId }
+    const headers = workspaceRequestHeaders(workspaceId, requestHeaders)
 
     async function fetchOk(path: string): Promise<void> {
       const response = await fetch(preloadUrl(apiBaseUrl, path), {
@@ -55,15 +49,14 @@ export function WorkspaceBootGate({
         signal: controller.signal,
       })
       if (!response.ok) {
-        const text = await response.text().catch(() => "")
-        throw new Error(text || `${path} failed with ${response.status}`)
+        const payload = await readResponsePayload(response)
+        throw new Error(errorMessageFromPayload(payload) ?? `${path} failed with ${response.status}`)
       }
 
       const dir = treePreloadDir(path)
       if (dir === null) return
       const body = await response.clone().json().catch(() => null) as { entries?: unknown } | null
-      if (!body || !Array.isArray(body.entries)) return
-      setPreloadedTreeEntries(apiBaseUrl, headers["x-boring-workspace-id"] ?? workspaceId, dir, body.entries)
+      seedTreePreloadFromBody(apiBaseUrl, headers["x-boring-workspace-id"] ?? workspaceId, path, body)
     }
 
     async function boot() {

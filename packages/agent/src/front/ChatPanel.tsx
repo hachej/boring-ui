@@ -90,6 +90,14 @@ export type ComposerBlocker = {
   actions?: ComposerBlockerAction[]
 }
 
+export type ChatSubmitSource = 'composer' | 'suggestion'
+
+export interface ChatSubmitContext {
+  files: FileUIPart[]
+  sessionId: string
+  source: ChatSubmitSource
+}
+
 function hasToolPart(message: UIMessage): boolean {
   return (message.parts ?? []).some((part) => isToolUIPart(part))
 }
@@ -317,6 +325,8 @@ export interface ChatPanelProps {
   onData?: (part: unknown) => void
   /** Headers sent with chat and chat-history requests. */
   requestHeaders?: Record<string, string>
+  /** When false, skip initial chat history/stream resume requests until the user sends. */
+  hydrateMessages?: boolean
   /**
    * Called with a file path when the user clicks the path label inside
    * a read / write / edit tool card. Hosts (e.g. @hachej/boring-workspace)
@@ -332,6 +342,15 @@ export interface ChatPanelProps {
    * is zero-cost when off.
    */
   debug?: boolean
+  /** Draft text restored into the composer on mount/update. Never auto-sent. */
+  initialDraft?: string
+  /** Called after initialDraft is applied to the composer. */
+  onDraftRestored?: () => void
+  /**
+   * Runs before any agent/model/session-history network send. Return false to
+   * cancel submission and keep the draft in the composer.
+   */
+  onBeforeSubmit?: (draft: string, ctx: ChatSubmitContext) => false | void | Promise<false | void>
   /** Generic host-provided blockers that prevent starting a new user turn. */
   composerBlockers?: ComposerBlocker[]
   /** Called when the user presses Stop in the composer. */
@@ -355,8 +374,12 @@ export function ChatPanel(props: ChatPanelProps) {
     defaultModel,
     onData,
     requestHeaders,
+    hydrateMessages,
     onOpenArtifact,
     debug = false,
+    initialDraft,
+    onDraftRestored,
+    onBeforeSubmit,
     composerBlockers = [],
     onComposerStop,
     onComposerBlockerAction,
@@ -378,6 +401,7 @@ export function ChatPanel(props: ChatPanelProps) {
     },
     requestHeaders,
     persistMessages: capabilities.aiSdkOwnsHistory,
+    hydrateMessages,
   })
 
   const { piMessages, handleData: handlePiData } = usePiChatProjection({
@@ -636,7 +660,28 @@ export function ChatPanel(props: ChatPanelProps) {
     disabled: mentionState !== null || slashQuery !== null,
   })
 
-  async function handleSubmit({ text, files }: { text: string; files: FileUIPart[] }): Promise<void> {
+  const restoredDraftRef = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (initialDraft === undefined) return
+    if (restoredDraftRef.current === initialDraft) return
+    const textarea = textareaRef.current
+    if (!textarea) return
+    textarea.value = initialDraft
+    restoredDraftRef.current = initialDraft
+    onDraftRestored?.()
+    if (initialDraft.length > 0) textarea.focus()
+  }, [initialDraft, onDraftRestored])
+
+  async function runBeforeSubmit(
+    draft: string,
+    files: FileUIPart[],
+    source: ChatSubmitSource,
+  ): Promise<boolean> {
+    const result = await onBeforeSubmit?.(draft, { files, sessionId, source })
+    return result !== false
+  }
+
+  async function handleSubmit({ text, files }: { text: string; files: FileUIPart[] }): Promise<void | false> {
     // Guard against pointless empty submits (just Enter with nothing typed
     // and no attachment). The server schema requires message.length >= 1,
     // so an empty POST returns 400 — we catch it here and keep the
@@ -646,6 +691,7 @@ export function ChatPanel(props: ChatPanelProps) {
     if (trimmed.length === 0 && (!files || files.length === 0)) {
       return
     }
+    if (!(await runBeforeSubmit(text, files ?? [], 'composer'))) return false
 
     const parsed = parseSlashCommand(text)
     if (parsed) {
@@ -821,17 +867,26 @@ export function ChatPanel(props: ChatPanelProps) {
               onSelect={(s) => {
                 const text = s.prompt ?? s.label
                 if (!text.trim()) return
-                void sendMessage(
-                  { text, files: [] },
-                  {
-                    body: {
-                      sessionId,
-                      message: text,
-                      ...modelPayload(model),
-                      attachments: [],
+                void (async () => {
+                  if (!(await runBeforeSubmit(text, [], 'suggestion'))) {
+                    if (textareaRef.current) {
+                      textareaRef.current.value = text
+                      textareaRef.current.focus()
+                    }
+                    return
+                  }
+                  void sendMessage(
+                    { text, files: [] },
+                    {
+                      body: {
+                        sessionId,
+                        message: text,
+                        ...modelPayload(model),
+                        attachments: [],
+                      },
                     },
-                  },
-                )
+                  )
+                })()
               }}
             />
           )}
@@ -1247,9 +1302,11 @@ export function ChatPanel(props: ChatPanelProps) {
           >
             <AttachmentsList />
             <PromptInputTextarea
+              defaultValue={initialDraft}
               placeholder={composerBlocked ? composerBlockerLabel : "Ask anything…"}
               disabled={composerBlocked}
               readOnly={composerBlocked}
+              ref={textareaRef}
               onChange={handleComposerChange}
               onKeyDown={handleComposerKeyDown}
               className={cn(

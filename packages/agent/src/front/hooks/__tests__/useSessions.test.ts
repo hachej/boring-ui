@@ -89,6 +89,16 @@ describe('useSessions', () => {
     expect(setSessions).toHaveBeenCalled()
   })
 
+  test('does not fetch sessions while disabled', async () => {
+    useSessions({ enabled: false })
+    const effect = effectCallbacks[0]
+    effect()
+
+    expect(mockFetch).not.toHaveBeenCalled()
+    const setLoading = stateSlots[2][1]
+    expect(setLoading).toHaveBeenCalledWith(false)
+  })
+
   test('refresh forwards requestHeaders', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,

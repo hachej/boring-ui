@@ -42,6 +42,14 @@ class MockEventSource {
 describe("WorkspaceAgentFront", () => {
   beforeEach(() => {
     localStorage.clear()
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.includes("/api/v1/agent/sessions")) return new Response(JSON.stringify([]), { status: 200 })
+      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    }))
   })
 
   afterEach(() => {
@@ -113,6 +121,103 @@ describe("WorkspaceAgentFront", () => {
       expect(screen.getByLabelText("Session browser")).toHaveAttribute("aria-hidden", "false")
       expect(screen.queryByLabelText("Surface")).not.toBeInTheDocument()
     })
+  })
+
+  it("shows workbench-local warmup overlay instead of mounting panels while preparing", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})))
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="overlay-workspace"
+        chatPanel={ChatPanel}
+        panels={[globalCommandPanel]}
+        extraPanels={[globalCommandPanel.id]}
+        defaultSurfaceOpen
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(screen.getByText("Chat panel")).toBeInTheDocument()
+    expect(screen.getByText("Preparing workspace…")).toBeInTheDocument()
+    expect(screen.queryByText("Global command panel body")).not.toBeInTheDocument()
+  })
+
+  it("does not start default remote session warmup when provisioning is disabled", async () => {
+    const onWarmup = vi.fn()
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.includes("/api/v1/agent/models")) return new Response(JSON.stringify({ models: [] }), { status: 200 })
+      if (url.includes("/api/v1/agent/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
+      return new Response(null, { status: 204 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="no-provision"
+        requestHeaders={{ "x-boring-workspace-id": "stale", "X-Boring-Workspace-Id": "stale-uppercase" }}
+        provisionWorkspace={false}
+        persistenceEnabled={false}
+        onWorkspaceWarmupStatusChange={onWarmup}
+      />,
+    )
+
+    await waitFor(() => expect(onWarmup).toHaveBeenLastCalledWith({ status: "ready" }))
+    const treeCalls = fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/v1/tree"))
+    expect(treeCalls.length).toBeGreaterThan(0)
+    for (const call of treeCalls) {
+      expect(call[1]?.headers).toMatchObject({ "x-boring-workspace-id": "no-provision" })
+      expect(call[1]?.headers).not.toHaveProperty("X-Boring-Workspace-Id")
+    }
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/sessions"))).toBe(false)
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/chat"))).toBe(false)
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/ready-status"))).toBe(false)
+  })
+
+  it("resets warmup synchronously on workspace switch before chat hydration", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const headers = init?.headers as Record<string, string> | undefined
+      const workspaceId = headers?.["x-boring-workspace-id"]
+      if (url.includes("/api/v1/tree") && workspaceId === "workspace-b") return new Promise<Response>(() => {})
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.includes("/api/v1/agent/sessions")) return new Response(JSON.stringify([{ id: `session-${workspaceId ?? "unknown"}`, title: "Session" }]), { status: 200 })
+      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agent/models")) return new Response(JSON.stringify({ models: [] }), { status: 200 })
+      if (url.includes("/api/v1/agent/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
+      return new Response(null, { status: 204 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const { rerender } = render(
+      <WorkspaceAgentFront
+        workspaceId="workspace-a"
+        requestHeaders={{ "x-boring-workspace-id": "workspace-a" }}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/sessions"))).toBe(true)
+    })
+    fetchMock.mockClear()
+
+    rerender(
+      <WorkspaceAgentFront
+        workspaceId="workspace-b"
+        requestHeaders={{ "x-boring-workspace-id": "workspace-b" }}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/tree"))).toBe(true)
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/v1/agent/sessions"))).toHaveLength(1)
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/chat"))).toBe(false)
   })
 
   it("opens the workbench when the embedded agent asks to open an artifact", async () => {

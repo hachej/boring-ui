@@ -8,6 +8,9 @@
 **Reference app:**
 - [`apps/full-app`](../../../apps/full-app/) — the canonical production-ready example (Fly.io, Postgres, Resend) and dev surface. See its [README](../../../apps/full-app/README.md) for run/deploy instructions.
 
+**Related product contract:**
+- [Chat-first auth and workspace boot](./CHAT_FIRST_WORKSPACE_BOOT.md) — public chat shell, first-Send auth, identity-only route gate, background workspace warmup, workbench-local readiness, and stable `WORKSPACE_NOT_READY` behavior.
+
 ## Table of contents
 
 1. [Goal](#goal)

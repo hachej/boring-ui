@@ -337,7 +337,7 @@ export function ChatLayout(props: ChatLayoutProps) {
               surfaceOpen ? "opacity-100" : "opacity-0",
             )}
           >
-            <PanelSlot id={surfaceId} params={props.surfaceParams} />
+            {props.surfaceOverlay ? props.surfaceOverlay : <PanelSlot id={surfaceId} params={props.surfaceParams} />}
           </div>
           {surfaceOpen ? (
             <ResizeHandle

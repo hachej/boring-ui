@@ -4,9 +4,20 @@ import { HttpError, ERROR_CODES } from '../../shared/errors.js'
 import { requireWorkspaceMember } from '../auth/requireWorkspaceMember.js'
 import { createWorkspaceBody, updateWorkspaceBody } from './__schemas__/workspaces.js'
 
+const DEFAULT_WORKSPACE_NAME = 'My Workspace'
+
 const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
   const store = app.workspaceStore
   const provisioner = app.provisioner
+
+  async function listOrCreateDefaultWorkspace(userId: string) {
+    const existing = await store.list(userId, app.config.appId)
+    if (existing.length > 0) return existing
+    const created = await store.create(userId, DEFAULT_WORKSPACE_NAME, app.config.appId, {
+      isDefault: true,
+    })
+    return [created]
+  }
 
   app.post('/api/v1/workspaces', async (request, reply) => {
     const parsed = createWorkspaceBody.safeParse(request.body)
@@ -61,7 +72,7 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
   })
 
   app.get('/api/v1/workspaces', async (request) => {
-    const workspaces = await store.list(request.user!.id, app.config.appId)
+    const workspaces = await listOrCreateDefaultWorkspace(request.user!.id)
     return { workspaces }
   })
 

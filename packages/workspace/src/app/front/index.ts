@@ -10,6 +10,11 @@ export {
   type WorkspaceBootGateProps,
 } from "./WorkspaceBootGate"
 export {
+  WorkspaceBackgroundBoot,
+  type WorkspaceBackgroundBootProps,
+} from "./WorkspaceBackgroundBoot"
+export type { WorkspaceWarmupStatus } from "./workspacePreload"
+export {
   createLocalStorageSessions,
   useLocalStorageSessions,
   type CreateLocalStorageSessionsOptions,

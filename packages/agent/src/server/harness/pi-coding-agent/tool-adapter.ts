@@ -1,6 +1,23 @@
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { AgentTool } from "../../../shared/tool.js";
 
+const BORING_TOOL_ERROR_MARKER = '__boringToolError'
+
+export function markToolResultErrorDetails(details: unknown): Record<string, unknown> {
+  return details && typeof details === 'object' && !Array.isArray(details)
+    ? { ...(details as Record<string, unknown>), [BORING_TOOL_ERROR_MARKER]: true }
+    : { [BORING_TOOL_ERROR_MARKER]: true, details }
+}
+
+export function unmarkToolResultErrorDetails(details: unknown): { isMarked: boolean; details: unknown } {
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return { isMarked: false, details }
+  const record = { ...(details as Record<string, unknown>) }
+  if (record[BORING_TOOL_ERROR_MARKER] !== true) return { isMarked: false, details }
+  delete record[BORING_TOOL_ERROR_MARKER]
+  if (Object.keys(record).length === 1 && 'details' in record) return { isMarked: true, details: record.details }
+  return { isMarked: true, details: record }
+}
+
 export function adaptToolForPi(tool: AgentTool, sessionId?: string): ToolDefinition {
   return {
     name: tool.name,
@@ -18,7 +35,10 @@ export function adaptToolForPi(tool: AgentTool, sessionId?: string): ToolDefinit
         sessionId,
       });
       if (result.isError) {
-        throw new Error(result.content.map((c) => c.text).join("\n"));
+        return {
+          content: result.content,
+          details: markToolResultErrorDetails(result.details),
+        };
       }
       return {
         content: result.content,

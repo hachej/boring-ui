@@ -77,7 +77,8 @@ export function WorkspaceShell() {
       appTitle={showcase ? "Boring" : projectName}
       defaultSessionTitle={showcase ? "New session" : projectName}
       frontPluginHotReload="vite"
-      useSessions={showcase ? undefined : useAgentSessions}
+      provisionWorkspace={!showcase}
+      useSessions={useAgentSessions}
       sessions={sessions}
       activeSessionId={showcase ? SHOWCASE_SESSION_ID : undefined}
       onActiveSessionIdChange={handleActiveSessionIdChange}

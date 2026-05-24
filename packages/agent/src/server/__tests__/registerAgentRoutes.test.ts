@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
 import Fastify from 'fastify'
 
+import { ErrorCode } from '../../shared/error-codes'
 import { registerAgentRoutes } from '../registerAgentRoutes'
 import type { RuntimeModeAdapter } from '../runtime/mode'
 
@@ -445,6 +446,124 @@ test('registerAgentRoutes accepts a custom runtime adapter for pluggable sandbox
 
   expect(res.statusCode).toBe(200)
   expect(seen).toEqual(['custom-sandbox:strong'])
+
+  await app.close()
+})
+
+test('request-scoped tree responds promptly while runtime is creating', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-readiness-tree-')
+  const app = Fastify({ logger: false })
+  const neverReadyAdapter: RuntimeModeAdapter = {
+    id: 'never-ready',
+    create: () => new Promise(() => {}),
+  }
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    runtimeModeAdapter: neverReadyAdapter,
+    getWorkspaceId: (request) => String(request.headers['x-boring-workspace-id'] ?? ''),
+    getWorkspaceRoot: () => workspaceRoot,
+  })
+  await app.ready()
+
+  const res = await Promise.race([
+    app.inject({
+      method: 'GET',
+      url: '/api/v1/tree',
+      headers: { 'x-boring-workspace-id': 'workspace-readiness' },
+    }),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('tree route hung')), 250)),
+  ])
+
+  expect(res.statusCode).toBe(503)
+  expect(res.json().error.code).toBe(ErrorCode.enum.WORKSPACE_NOT_READY)
+  expect(res.json().error.details).toMatchObject({
+    retryable: true,
+    requirement: 'workspace-fs',
+  })
+
+  await app.close()
+})
+
+test('request-scoped runtime creation failure uses stable runtime envelope', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-readiness-failed-')
+  const app = Fastify({ logger: false })
+  const failingAdapter: RuntimeModeAdapter = {
+    id: 'failing-runtime',
+    async create() {
+      const error = new Error('private runtime failure') as Error & { code: string }
+      error.code = ErrorCode.enum.WORKSPACE_NOT_READY
+      throw error
+    },
+  }
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    runtimeModeAdapter: failingAdapter,
+    getWorkspaceId: (request) => String(request.headers['x-boring-workspace-id'] ?? ''),
+    getWorkspaceRoot: () => workspaceRoot,
+  })
+  await app.ready()
+
+  const treeRes = await app.inject({
+    method: 'GET',
+    url: '/api/v1/tree',
+    headers: { 'x-boring-workspace-id': 'workspace-readiness' },
+  })
+  expect(treeRes.statusCode).toBe(503)
+  expect(treeRes.json().error).toMatchObject({
+    code: ErrorCode.enum.RUNTIME_PROVISIONING_FAILED,
+    message: 'Agent runtime failed to prepare',
+    details: { retryable: true },
+  })
+  expect(treeRes.json().error.code).not.toBe(ErrorCode.enum.WORKSPACE_NOT_READY)
+
+  const chatRes = await app.inject({
+    method: 'POST',
+    url: '/api/v1/agent/chat',
+    headers: { 'x-boring-workspace-id': 'workspace-readiness' },
+    payload: { sessionId: 's-readiness', message: 'hello' },
+  })
+  expect(chatRes.statusCode).toBe(503)
+  expect(chatRes.json().error).toMatchObject({
+    code: ErrorCode.enum.RUNTIME_PROVISIONING_FAILED,
+    message: 'Agent runtime failed to prepare',
+    details: { retryable: true },
+  })
+
+  await app.close()
+})
+
+test('request-scoped chat uses agent-runtime readiness while runtime is creating', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-readiness-chat-')
+  const app = Fastify({ logger: false })
+  const neverReadyAdapter: RuntimeModeAdapter = {
+    id: 'never-ready',
+    create: () => new Promise(() => {}),
+  }
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    runtimeModeAdapter: neverReadyAdapter,
+    getWorkspaceId: (request) => String(request.headers['x-boring-workspace-id'] ?? ''),
+    getWorkspaceRoot: () => workspaceRoot,
+  })
+  await app.ready()
+
+  const res = await Promise.race([
+    app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      headers: { 'x-boring-workspace-id': 'workspace-readiness' },
+      payload: { sessionId: 's-readiness', message: 'hello' },
+    }),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('chat route hung')), 250)),
+  ])
+
+  expect(res.statusCode).toBe(503)
+  expect(res.json().error.code).toBe(ErrorCode.enum.AGENT_RUNTIME_NOT_READY)
+  expect(res.json().error.code).not.toBe(ErrorCode.enum.WORKSPACE_NOT_READY)
+  expect(res.json().error.details).toMatchObject({ retryable: true })
 
   await app.close()
 })
