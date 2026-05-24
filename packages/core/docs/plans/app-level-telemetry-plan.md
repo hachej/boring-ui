@@ -1,285 +1,55 @@
-# PostHog Telemetry Plan for boring-ui-v2
+# Core DB Telemetry Plan for boring-ui-v2
 
-**Status:** PR 65 rewrite — simplified and coherent  
-**Primary decision:** core owns the PostHog env integration. Child apps enable telemetry with env vars only.  
-**Last updated:** 2026-05-22
+**Decision:** v1 telemetry stores sanitized server-side events in the core database. No PostHog, no browser endpoint, no external telemetry vendor.
 
----
+## Common path
 
-## 0. Summary
-
-Telemetry should be boring to use:
+Child apps that use `createCoreWorkspaceAgentServer()` enable telemetry with one env var:
 
 ```bash
 BORING_TELEMETRY_ENABLED=true
-POSTHOG_KEY=phc_...
-BORING_TELEMETRY_PROJECT=full-app
 ```
 
-That is the common path. A child app should not need to write PostHog setup code.
+If the env var is omitted or set to anything else, telemetry is a no-op. Core uses `CoreConfig.appId` as the `app_id` column, so several apps sharing one database can still filter their own events.
 
-If telemetry is not wanted, do nothing. Telemetry is off by default.
+## Boundaries
 
-```bash
-# Either omit BORING_TELEMETRY_ENABLED, or set:
-BORING_TELEMETRY_ENABLED=false
-```
+- `@hachej/boring-core` owns persistence and sanitization.
+- `@hachej/boring-agent` and `@hachej/boring-workspace` stay DB/vendor-free.
+- Agent/workspace receive only a tiny structural `TelemetrySink` with `capture()` and optional `flush()`.
+- Standalone agent remains no-op unless an embedder injects a sink.
 
-Core provides the PostHog env helper and wires it into core-composed apps. Agent and workspace stay PostHog-free and receive only a small optional telemetry sink.
+## Data model
 
----
+Table: `telemetry_events`
 
-## 1. Goals
-
-Capture simple product and reliability signals:
-
-- app opened
-- workspace opened
-- chat session started
-- user message submitted, without content
-- agent/tool run completed or failed
-- workspace panel or command used
-- server/frontend error happened, with stable error code only
-
-Support several boring-ui apps using the same PostHog account/project by adding a project prefix/property.
-
-Keep telemetry safe:
-
-- no prompts
-- no assistant output
-- no file contents
-- no command strings
-- no stdout/stderr
-- no raw paths unless explicitly allowlisted later
-- no headers/cookies/tokens/env dumps
-- no stack traces by default
-
----
-
-## 2. Non-goals
-
-Not in this pass:
-
-- Sentry
-- OpenTelemetry/OTLP
-- billing/metering
-- per-tenant PostHog routing
-- multiple PostHog accounts selected at runtime
-- database-backed analytics storage
-- content capture
-- complex consent management
-- package-level PostHog singletons inside agent/workspace
-
----
-
-## 3. Architecture decision
-
-### 3.1 Common path: env only
-
-Core-composed apps should automatically create telemetry from env:
-
-```ts
-const telemetry = options.telemetry ?? createPostHogTelemetryFromEnv(process.env)
-```
-
-Child apps enable telemetry by setting env vars. They do not need to call `createPostHogTelemetryFromEnv()` manually unless they are building a custom composition.
-
-### 3.2 Package seam: structural sink
-
-Core passes a tiny structural `TelemetrySink` into composed packages so agent/workspace remain PostHog-free. This is a package boundary seam, not a v1 provider framework.
-
-If a caller already has a custom sink for tests or advanced composition, it may pass `telemetry`; otherwise core uses the PostHog env helper.
-
-### 3.3 Package boundary
-
-- `@hachej/boring-core` owns the PostHog helper and core-composed wiring.
-- `@hachej/boring-agent` does not import PostHog or core.
-- `@hachej/boring-workspace` base code does not import PostHog or agent.
-- Agent/workspace accept a structural `TelemetrySink` and default to no-op.
-
----
-
-## 4. Env vars
-
-```bash
-# Required to enable telemetry. If unset, telemetry is off.
-BORING_TELEMETRY_ENABLED=true
-
-# Required when telemetry is enabled.
-POSTHOG_KEY=phc_...
-
-# Optional. Defaults to PostHog Cloud US unless overridden.
-POSTHOG_HOST=https://us.i.posthog.com
-
-# Optional. Recommended when several apps share one PostHog account/project.
-BORING_TELEMETRY_PROJECT=full-app
-```
-
-Behavior:
-
-| Env state | Result |
+| Column | Purpose |
 |---|---|
-| `BORING_TELEMETRY_ENABLED` unset | no-op telemetry |
-| `BORING_TELEMETRY_ENABLED=false` | no-op telemetry |
-| `BORING_TELEMETRY_ENABLED=true`, `POSTHOG_KEY` missing | no-op telemetry, with a safe warning |
-| `BORING_TELEMETRY_ENABLED=true`, `POSTHOG_KEY` set | send to PostHog |
+| `id` | row id |
+| `app_id` | `CoreConfig.appId` |
+| `event_name` | sanitized event name, e.g. `agent.chat.started` |
+| `distinct_id` | sanitized user id or `anonymous` |
+| `properties` | sanitized low-cardinality metadata JSON |
+| `created_at` | insert timestamp |
 
-Telemetry must be explicit opt-in. `POSTHOG_KEY` alone is not enough.
+Indexes:
 
----
+- `(app_id, created_at)` for app-scoped time windows
+- `event_name` for event filtering
 
-## 5. Project prefix rule
+## V1 events
 
-If `BORING_TELEMETRY_PROJECT=full-app`, core sends event names like:
+| Area | Events |
+|---|---|
+| Core | `app.opened`, `server.request.failed` |
+| Agent chat | `agent.chat.started`, `agent.chat.message.submitted`, `agent.chat.completed`, `agent.chat.failed` |
+| Agent tools | `agent.tool.completed`, `agent.tool.failed` |
 
-```txt
-full-app.app.opened
-full-app.workspace.opened
-full-app.agent.chat.started
-full-app.agent.tool.completed
-```
+Workspace browser/frontend events are deferred.
 
-Core also sends the raw event name and project as properties:
+## Allowed properties
 
-```ts
-{
-  boringProject: 'full-app',
-  eventName: 'agent.chat.started'
-}
-```
-
-Why both:
-
-- prefixed event names keep shared PostHog projects readable
-- `boringProject` makes filtering/grouping easy
-- no runtime multi-account routing needed in v1
-
-If `BORING_TELEMETRY_PROJECT` is unset, core sends the raw event name.
-
----
-
-## 6. Shared telemetry contract
-
-Each package may define or import a compatible structural type:
-
-```ts
-export interface TelemetrySink {
-  capture(event: TelemetryEvent): void | Promise<void>
-  flush?(): void | Promise<void>
-}
-
-export interface TelemetryEvent {
-  name: string
-  distinctId?: string
-  properties?: Record<string, unknown>
-}
-```
-
-No package call site should depend on PostHog types.
-
-Provide:
-
-```ts
-export const noopTelemetry: TelemetrySink = {
-  capture() {},
-}
-```
-
-And optionally:
-
-```ts
-export function safeCapture(telemetry: TelemetrySink, event: TelemetryEvent): void {
-  try {
-    void Promise.resolve(telemetry.capture(event)).catch(() => {})
-  } catch {
-    // telemetry must never break product behavior
-  }
-}
-```
-
----
-
-## 7. Core PostHog helper
-
-Location:
-
-```txt
-packages/core/src/server/telemetry/posthog.ts
-```
-
-Shape:
-
-```ts
-export function createPostHogTelemetryFromEnv(env = process.env): TelemetrySink {
-  const enabled = env.BORING_TELEMETRY_ENABLED === 'true'
-
-  if (!enabled) return noopTelemetry
-
-  if (!env.POSTHOG_KEY) {
-    // warn once, then no-op
-    return noopTelemetry
-  }
-
-  const posthog = new PostHog(env.POSTHOG_KEY, {
-    host: env.POSTHOG_HOST ?? 'https://us.i.posthog.com',
-  })
-
-  const prefix = parseTelemetryProject(env.BORING_TELEMETRY_PROJECT)
-
-  return {
-    capture(event) {
-      const name = prefix ? `${prefix}.${event.name}` : event.name
-
-      posthog.capture({
-        distinctId: event.distinctId ?? 'anonymous',
-        event: name,
-        properties: {
-          ...sanitizeTelemetryProperties(event.properties),
-          boringProject: prefix,
-          eventName: event.name,
-        },
-      })
-    },
-    async flush() {
-      await posthog.shutdown()
-    },
-  }
-}
-```
-
-`parseTelemetryProject()` accepts only a slug safe for event-name prefixing, such as `full-app` or `customer-portal`. Invalid values warn once and disable the prefix instead of sending surprising event names.
-
-`sanitizeTelemetryProperties()` is the central allowlist from this plan. It drops unknown keys before events reach PostHog, so one mistaken emitter cannot leak prompts, command output, raw paths, headers, or stack traces.
-
-Rules:
-
-- helper lives in core server code only
-- agent/workspace do not import it
-- disabled/misconfigured env returns no-op
-- capture failures and rejected promises are swallowed or logged at debug level
-- PostHog `shutdown()` is exposed through optional `telemetry.flush()`
-- wire `flush()` into server shutdown only if an existing close hook makes it a small change; otherwise defer lifecycle wiring
-
----
-
-## 8. Frontend telemetry
-
-Deferred.
-
-V1 only emits events from server/core-composed code paths that can use the core PostHog env helper directly. Do not add runtime config, a browser telemetry endpoint, or a frontend HTTP sink in this pass.
-
-If browser-originated events are needed later, add a separate bead for:
-
-- non-secret runtime config such as `{ telemetry: { enabled, endpoint } }`
-- an authenticated telemetry endpoint
-- a small HTTP frontend sink
-- endpoint body limits, event allowlist, and property sanitization
-
----
-
-## 9. Event property policy
-
-Allowed by default:
+Only these low-cardinality properties are stored:
 
 - `workspaceId`
 - `sessionId`
@@ -295,190 +65,43 @@ Allowed by default:
 - `packageName`
 - `packageVersion`
 
-Identity:
+Unknown keys are dropped.
 
-- use a safe auth/user id as `distinctId` when available
-- otherwise use `anonymous`
-- do not send emails by default
+## Privacy exclusions
 
-Not allowed by default:
+Never capture:
 
-- prompts/messages
+- prompts
 - assistant output
 - file contents
 - command strings
-- command output
+- stdout/stderr
 - raw file paths
-- stack traces
-- raw errors
+- raw errors or stack traces
 - headers/cookies/tokens
-- env vars
+- env dumps
+- secrets
 
-The allowlist should be enforced centrally by `sanitizeTelemetryProperties()` before any event reaches PostHog.
+The DB sink sanitizes event names, distinct ids, and properties centrally before insertion. Insert failures are swallowed so telemetry never changes product behavior.
 
-If a future event needs richer data, add a small explicit allowlist in that future PR/bead.
+## Deferred
 
----
-
-## 10. Initial event list
-
-### Core
-
-- `app.opened`
-- `server.request.failed`
-
-### Workspace
-
-- `workspace.opened`
-- `workspace.panel.opened`
-- `workspace.command.executed`
-
-### Agent
-
-- `agent.chat.started`
-- `agent.chat.message.submitted`
-- `agent.chat.completed`
-- `agent.chat.failed`
-- `agent.tool.completed`
-- `agent.tool.failed`
-
-Defer auth hooks, browser/frontend events, UI-command events, plugin-error events, and tool-started events unless an existing hook makes them zero-touch.
-
-Keep names stable once shipped.
-
----
-
-## 11. Package wiring
-
-### Core-composed server
-
-Core server entrypoints accept:
-
-```ts
-telemetry?: TelemetrySink
-```
-
-Then resolve:
-
-```ts
-const telemetry = options.telemetry ?? createPostHogTelemetryFromEnv(process.env)
-```
-
-Core passes the resolved sink into workspace/agent composition.
-
-### Agent standalone
-
-Agent standalone remains no-op by default. It accepts `telemetry?: TelemetrySink` for embedders.
-
-No PostHog env helper in agent for this pass.
-
-### Workspace standalone
-
-Workspace remains no-op by default. It accepts `telemetry?: TelemetrySink` in provider/server composition where needed.
-
-No PostHog env helper in workspace for this pass.
-
----
-
-## 12. Error handling
-
-Telemetry must never break user flows.
-
-Rules:
-
-- never throw from no-op or safe capture helpers
-- do not await telemetry in hot streaming paths unless already async and safe
-- swallow or debug-log sink failures
-- send stable `errorCode`, not raw stack/message by default
-- if PostHog is down, product behavior is unchanged
-
----
-
-## 13. Implementation beads
-
-### Bead 1 — telemetry contract and no-op
-
-- Add `TelemetrySink`, `TelemetryEvent`, optional `flush()`, `noopTelemetry`, and safe capture helper where needed.
-- Keep shared files platform-neutral.
-- Add unit tests for no-op, sync throw, async rejection, and safe capture.
-
-Acceptance:
-
-- no `node:*` or `Buffer` in shared files
-- telemetry capture cannot throw into product code
-- agent/workspace do not import PostHog or core
-
-### Bead 2 — core PostHog env helper
-
-- Add `packages/core/src/server/telemetry/posthog.ts`.
-- Add `posthog-node` dependency to core if needed.
-- Implement explicit opt-in via `BORING_TELEMETRY_ENABLED=true`.
-- Implement `POSTHOG_KEY`, `POSTHOG_HOST`, and `BORING_TELEMETRY_PROJECT`.
-- Add central property sanitization and project-prefix slug validation.
-- Add optional `flush()` support on the PostHog sink.
-- Wire `flush()` into server shutdown only if an existing core close hook makes this a small change; otherwise defer lifecycle wiring.
-- Add tests for disabled, missing key, enabled, host override, project prefix, invalid prefix, and property sanitization.
-
-Acceptance:
-
-- unset env = no-op
-- `BORING_TELEMETRY_ENABLED=false` = no-op
-- `POSTHOG_KEY` without `BORING_TELEMETRY_ENABLED=true` = no-op
-- enabled env sends prefixed event and properties
-
-### Bead 3 — core wiring
-
-- Wire core-composed server entrypoints to resolve telemetry from `options.telemetry ?? env helper`.
-- Pass the resolved sink to workspace/agent composition.
-- Do not add runtime config, frontend endpoint, or frontend HTTP sink in v1.
-
-Acceptance:
-
-- child app can enable telemetry with env only
-- child app can disable telemetry by omitting env
-- custom `telemetry` option overrides env helper
-
-### Bead 4 — event emitters
-
-- Add the initial core/workspace/agent event calls.
-- Use only the allowed property list.
-- Avoid hot-path awaits.
-
-Acceptance:
-
-- tests prove expected safe events are emitted
-- tests prove prompts/output/file contents/command output are not emitted
-- package boundaries remain intact
-
-### Bead 5 — docs
-
-- Document env vars.
-- Document event names.
-- Document privacy rules.
-- Add shared PostHog account example with `BORING_TELEMETRY_PROJECT`.
-
-Acceptance:
-
-- docs match implementation
-- no Sentry/OTLP/routing scope reappears
-
----
-
-## 14. Definition of done
-
-Telemetry v1 is done when:
-
-- a core-composed app can enable PostHog with env vars only
-- telemetry is off by default
-- shared PostHog accounts can use `BORING_TELEMETRY_PROJECT`
-- agent/workspace remain PostHog-free
-- no content or secret-bearing data is captured by default
-- tests cover opt-in, opt-out, prefixing, and privacy behavior
-
-Deferred after v1:
-
-- browser-originated telemetry
-- auth hook telemetry
-- plugin-error telemetry
+- Browser-originated telemetry
+- Workspace frontend events
+- Auth hook telemetry
+- Plugin-error telemetry
 - UI-command telemetry
-- mandatory PostHog flush lifecycle wiring
+- Tool-started events
+- External SaaS adapters
+- OpenTelemetry/OTLP
+- Retention/cleanup policy
+- Lifecycle flush wiring
+
+## Validation
+
+```bash
+pnpm --filter @hachej/boring-core test src/shared/__tests__/telemetry.test.ts src/server/telemetry/__tests__ src/app/server/__tests__/createCoreWorkspaceAgentServer.telemetry.test.ts src/app/server/__tests__/createCoreWorkspaceAgentServer.telemetry-smoke.test.ts
+pnpm --filter @hachej/boring-agent test src/shared/__tests__/telemetry.test.ts src/server/http/routes/__tests__/chat.test.ts src/server/harness/pi-coding-agent/__tests__/tool-adapter.telemetry.test.ts src/server/__tests__/createAgentApp.test.ts
+pnpm --filter @hachej/boring-workspace test src/shared/__tests__/telemetry.test.ts
+pnpm lint:invariants
+```

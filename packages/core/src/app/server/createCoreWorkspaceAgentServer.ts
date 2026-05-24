@@ -56,7 +56,7 @@ import {
 } from '../../server/db/index.js'
 import { loadConfig, type LoadConfigOptions } from '../../server/config/index.js'
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
-import { createPostHogTelemetryFromEnv } from '../../server/telemetry/posthog.js'
+import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
 
 const MIME_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
@@ -130,7 +130,7 @@ export interface CreateCoreWorkspaceAgentServerOptions
   extraTools?: RegisterAgentRoutesOptions['extraTools']
   systemPromptAppend?: string
   serveFrontend?: boolean
-  /** Optional best-effort telemetry sink. Defaults to core's PostHog env helper. */
+  /** Optional best-effort telemetry sink. Defaults to core's DB-backed env helper. */
   telemetry?: TelemetrySink
 }
 
@@ -582,10 +582,10 @@ export async function createCoreWorkspaceAgentServer(
   const workspaceRoot = options.workspaceRoot ?? process.cwd()
   const telemetrySource = options.telemetry
     ? 'custom'
-    : process.env.BORING_TELEMETRY_ENABLED === 'true' && process.env.POSTHOG_KEY
-      ? 'posthog-env'
+    : process.env.BORING_TELEMETRY_ENABLED === 'true'
+      ? 'db-env'
       : 'noop-env'
-  const telemetry = options.telemetry ?? createPostHogTelemetryFromEnv(process.env)
+  const telemetry = options.telemetry ?? createDatabaseTelemetryFromEnv(db, { appId: config.appId }, process.env)
   app.log.debug({ telemetry: { source: telemetrySource } }, 'resolved telemetry sink')
 
   registerTelemetryHooks(app, telemetry)

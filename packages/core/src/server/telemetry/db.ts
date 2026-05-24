@@ -1,9 +1,7 @@
-import { PostHog } from 'posthog-node'
-
 import { noopTelemetry, type TelemetryEvent, type TelemetrySink } from '../../shared/telemetry.js'
+import { telemetryEvents } from '../db/schema.js'
+import type { Database } from '../db/index.js'
 
-const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com'
-const PROJECT_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/
 const EVENT_NAME_PATTERN = /^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*){0,8}$/
 const SAFE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/
 const SAFE_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/
@@ -31,52 +29,49 @@ const ALLOWED_PROPERTY_KEYS = new Set([
 
 type SafeTelemetryProperty = string | number | boolean | null
 
-export function createPostHogTelemetryFromEnv(
+export interface CreateDatabaseTelemetryOptions {
+  appId: string
+  enabled?: boolean
+}
+
+export function createDatabaseTelemetryFromEnv(
+  db: Database,
+  options: { appId: string },
   env: NodeJS.ProcessEnv = process.env,
 ): TelemetrySink {
   if (env.BORING_TELEMETRY_ENABLED !== 'true') return noopTelemetry
+  return createDatabaseTelemetry(db, { appId: options.appId, enabled: true })
+}
 
-  const posthogKey = env.POSTHOG_KEY
-  if (!posthogKey) {
-    console.warn('PostHog telemetry is enabled but POSTHOG_KEY is missing; using noop telemetry.')
-    return noopTelemetry
-  }
-
-  const posthog = new PostHog(posthogKey, {
-    host: env.POSTHOG_HOST ?? DEFAULT_POSTHOG_HOST,
-  })
-  const project = parseTelemetryProject(env.BORING_TELEMETRY_PROJECT)
+export function createDatabaseTelemetry(
+  db: Database,
+  options: CreateDatabaseTelemetryOptions,
+): TelemetrySink {
+  if (options.enabled === false) return noopTelemetry
 
   return {
     capture(event: TelemetryEvent) {
-      const eventName = parseTelemetryEventName(event.name)
+      const eventName = sanitizeTelemetryEventName(event.name)
       if (!eventName) return
 
-      const properties = sanitizeTelemetryProperties(event.properties)
-      if (project) properties.boringProject = project
-      properties.eventName = eventName
+      const row = {
+        appId: options.appId,
+        eventName,
+        distinctId: sanitizeTelemetryDistinctId(event.distinctId),
+        properties: sanitizeTelemetryProperties(event.properties),
+      }
 
       try {
-        void Promise.resolve(posthog.capture({
-          distinctId: sanitizeTelemetryDistinctId(event.distinctId),
-          event: project ? `${project}.${eventName}` : eventName,
-          properties,
-        })).catch(() => {})
+        void Promise.resolve(db.insert(telemetryEvents).values(row)).catch(() => {})
       } catch {}
-    },
-    async flush() {
-      await Promise.resolve(posthog.shutdown())
     },
   }
 }
 
-export function parseTelemetryProject(value: string | undefined): string | undefined {
-  const project = value?.trim()
-  if (!project) return undefined
-  if (PROJECT_SLUG_PATTERN.test(project)) return project
-
-  console.warn('BORING_TELEMETRY_PROJECT must be a lowercase slug; telemetry project prefix disabled.')
-  return undefined
+export function sanitizeTelemetryEventName(value: string): string | undefined {
+  if (value.length > 128) return undefined
+  if (SUSPICIOUS_STRING_PATTERN.test(value)) return undefined
+  return EVENT_NAME_PATTERN.test(value) ? value : undefined
 }
 
 export function sanitizeTelemetryDistinctId(value: string | undefined): string {
@@ -98,12 +93,6 @@ export function sanitizeTelemetryProperties(
   }
 
   return sanitized
-}
-
-function parseTelemetryEventName(value: string): string | undefined {
-  if (value.length > 128) return undefined
-  if (SUSPICIOUS_STRING_PATTERN.test(value)) return undefined
-  return EVENT_NAME_PATTERN.test(value) ? value : undefined
 }
 
 function sanitizeTelemetryProperty(key: string, value: unknown): SafeTelemetryProperty | undefined {
