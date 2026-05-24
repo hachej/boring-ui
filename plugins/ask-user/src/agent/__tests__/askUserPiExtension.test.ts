@@ -54,6 +54,7 @@ describe("ask-user Pi extension", () => {
       title: "Need input",
       context: "ctx",
       schema,
+      payload: { title: "Need input", context: "ctx", schema },
       timeoutMs: 10_000,
     }, undefined)
     expect(JSON.stringify(logger.debug.mock.calls)).toContain("ask_user bridge request")

@@ -30,6 +30,7 @@ export interface AskUserBridgeRequestInput {
   title: string
   context?: string
   schema: AskUserToolInput["schema"]
+  payload?: unknown
   timeoutMs?: number
 }
 
@@ -73,6 +74,7 @@ export function createWorkspaceBridgeClient(ctx: AskUserWorkspaceBridgeContext):
         title: input.title,
         context: input.context,
         schema: input.schema,
+        payload: { title: input.title, context: input.context, schema: input.schema },
         timeoutMs: input.timeoutMs,
       }, signal)
       if (!response.ok) {
