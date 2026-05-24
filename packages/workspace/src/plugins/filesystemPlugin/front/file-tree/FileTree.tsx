@@ -18,6 +18,7 @@ import {
 import { getFileIcon } from "../../../../front/registry/getFileIcon"
 import { Input } from "@hachej/boring-ui-kit"
 import { cn } from "../../../../front/lib/utils"
+import { getFileTreeDndManager } from "./dndManager"
 
 export interface FileTreeNode {
   name: string
@@ -394,6 +395,7 @@ export function FileTree({
           onMove={handleMove}
           disableDrop={disableDrop}
           disableEdit={true}
+          dndManager={getFileTreeDndManager()}
         >
           {Node}
         </Tree>
