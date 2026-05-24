@@ -60,6 +60,7 @@ export type {
   RuntimePythonSpec,
   RuntimeTemplateContribution,
   WorkspaceProvisioningAdapter,
+  WorkspaceProvisioningExecResult,
   WorkspaceProvisioningResult,
 } from './workspace/provisioning'
 export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
