@@ -1,4 +1,4 @@
-import { dirname, join } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { getBoringAgentRuntimeEnv, type BoringAgentRuntimePaths } from '../runtimeLayout'
@@ -6,8 +6,7 @@ import { ErrorCode, toProvisioningError } from './errors'
 import {
   createPythonRuntimeFingerprint,
   createRuntimeFingerprint,
-  shouldInstallRuntime,
-  writeFingerprintAfterSuccessfulInstall,
+  isValidFingerprint,
 } from './fingerprint'
 import type { RuntimePythonSpec, WorkspaceProvisioningAdapter } from './types'
 
@@ -25,6 +24,7 @@ export interface EnsurePythonRuntimeResult {
 }
 
 const VENV_REL = '.boring-agent/venv'
+const VENV_FINGERPRINT_REL = `${VENV_REL}/.fingerprint`
 const UV_BIN_REL = '.boring-agent/sdk/uv/bin/uv'
 
 function sourceToPath(source: string | URL): string {
@@ -115,6 +115,27 @@ function collectPythonEnv(packages: RuntimePythonSpec[]): Record<string, string>
   return env
 }
 
+function toWorkspaceRel(paths: BoringAgentRuntimePaths, absolutePath: string): string {
+  return relative(paths.workspaceRoot, absolutePath).split(sep).join('/')
+}
+
+async function shouldInstallPythonRuntime(options: {
+  adapter: WorkspaceProvisioningAdapter
+  runtimeLayout: BoringAgentRuntimePaths
+  desiredFingerprint: string
+  expectedOutputs: string[]
+}): Promise<boolean> {
+  const currentFingerprint = (await options.adapter.workspaceFs.readText(VENV_FINGERPRINT_REL))?.trim()
+  if (!currentFingerprint || !isValidFingerprint(currentFingerprint) || currentFingerprint !== options.desiredFingerprint) {
+    return true
+  }
+
+  for (const output of options.expectedOutputs) {
+    if (!(await options.adapter.workspaceFs.exists(toWorkspaceRel(options.runtimeLayout, output)))) return true
+  }
+  return false
+}
+
 export async function ensurePythonRuntime(options: {
   adapter: WorkspaceProvisioningAdapter
   runtimeLayout: BoringAgentRuntimePaths
@@ -133,11 +154,11 @@ export async function ensurePythonRuntime(options: {
     pythonVersion,
     uvVersion: uv.uvVersion,
   })
-  const fingerprintPath = join(options.runtimeLayout.venv, '.fingerprint')
   const expectedOutputs = expectedPythonOutputs(options.runtimeLayout, options.packages)
 
-  if (!(await shouldInstallRuntime({
-    fingerprintPath,
+  if (!(await shouldInstallPythonRuntime({
+    adapter: options.adapter,
+    runtimeLayout: options.runtimeLayout,
     desiredFingerprint: fingerprint,
     expectedOutputs,
   }))) {
@@ -165,45 +186,40 @@ export async function ensurePythonRuntime(options: {
     installSources.push(...pkg.extraLibs ?? [])
   }
 
-  await writeFingerprintAfterSuccessfulInstall({
-    fingerprintPath,
-    fingerprint,
-    install: async () => {
-      await options.adapter.workspaceFs.rm(VENV_REL)
-      try {
-        await options.adapter.exec(uv.uvBin, ['venv', options.runtimeLayout.venv], {
-          cwd: options.runtimeLayout.workspaceRoot,
-          env: getBoringAgentRuntimeEnv(
-            options.runtimeLayout,
-            options.adapter.getRuntimeCacheRoot(),
-          ),
-        })
-        await options.adapter.exec(uv.uvBin, [
-          'pip',
-          'install',
-          '--python',
-          options.runtimeLayout.venvPython,
-          ...installSources,
-        ], {
-          cwd: options.runtimeLayout.workspaceRoot,
-          env: {
-            ...getBoringAgentRuntimeEnv(
-              options.runtimeLayout,
-              options.adapter.getRuntimeCacheRoot(),
-            ),
-            ...env,
-          },
-        })
-      } catch (error) {
-        throw toProvisioningError(
-          ErrorCode.enum.PROVISIONING_UV_INSTALL_FAILED,
-          'python-packages',
-          error,
-          { runtime: 'python', packageIds: options.packages.map((pkg) => pkg.id) },
-        )
-      }
-    },
-  })
+  await options.adapter.workspaceFs.rm(VENV_REL)
+  try {
+    await options.adapter.exec(uv.uvBin, ['venv', options.runtimeLayout.venv], {
+      cwd: options.runtimeLayout.workspaceRoot,
+      env: getBoringAgentRuntimeEnv(
+        options.runtimeLayout,
+        options.adapter.getRuntimeCacheRoot(),
+      ),
+    })
+    await options.adapter.exec(uv.uvBin, [
+      'pip',
+      'install',
+      '--python',
+      options.runtimeLayout.venvPython,
+      ...installSources,
+    ], {
+      cwd: options.runtimeLayout.workspaceRoot,
+      env: {
+        ...getBoringAgentRuntimeEnv(
+          options.runtimeLayout,
+          options.adapter.getRuntimeCacheRoot(),
+        ),
+        ...env,
+      },
+    })
+  } catch (error) {
+    throw toProvisioningError(
+      ErrorCode.enum.PROVISIONING_UV_INSTALL_FAILED,
+      'python-packages',
+      error,
+      { runtime: 'python', packageIds: options.packages.map((pkg) => pkg.id) },
+    )
+  }
+  await options.adapter.workspaceFs.writeText(VENV_FINGERPRINT_REL, `${fingerprint}\n`)
 
   return {
     changed: true,

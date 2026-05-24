@@ -16,22 +16,27 @@ function shellEscape(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`
 }
 
-export interface HarnessRuntimeProvisioningOptions {
+export interface HarnessRuntimeProvisioningSnapshot {
   env?: Record<string, string>
   pathEntries?: string[]
+}
+
+export interface HarnessRuntimeProvisioningOptions extends HarnessRuntimeProvisioningSnapshot {
+  getCurrent?: () => HarnessRuntimeProvisioningSnapshot | undefined
 }
 
 function mergeRuntimeEnv(
   runtime: HarnessRuntimeProvisioningOptions | undefined,
   commandEnv: Record<string, string | undefined> | undefined,
 ): Record<string, string | undefined> | undefined {
-  if (!runtime?.env && !runtime?.pathEntries?.length) return commandEnv
+  const current = runtime?.getCurrent?.() ?? runtime
+  if (!current?.env && !current?.pathEntries?.length) return commandEnv
   const merged: Record<string, string | undefined> = {
-    ...(runtime.env ?? {}),
+    ...(current.env ?? {}),
     ...(commandEnv ?? {}),
   }
-  const pathParts = [...(runtime.pathEntries ?? [])]
-  if (runtime.env?.PATH) pathParts.push(runtime.env.PATH)
+  const pathParts = [...(current.pathEntries ?? [])]
+  if (current.env?.PATH) pathParts.push(current.env.PATH)
   if (commandEnv?.PATH) pathParts.push(commandEnv.PATH)
   if (pathParts.length > 0) merged.PATH = pathParts.join(':')
   return merged
@@ -67,13 +72,22 @@ function directSpawnHook(
   })
 }
 
+const VERCEL_SAFE_DEFAULT_PATH = '/usr/local/bin:/usr/bin:/bin'
+
 function bashOptionsForMode(
   bundle: RuntimeBundle,
   runtime?: HarnessRuntimeProvisioningOptions,
 ): BashToolOptions {
   switch (bundle.sandbox.provider) {
     case 'vercel-sandbox':
-      return { operations: vercelBashOps(bundle.sandbox) }
+      return {
+        operations: vercelBashOps(bundle.sandbox, {
+          // The pi bash tool's env may include the host process env. Never
+          // forward host secrets into a remote sandbox; provide only the
+          // provisioned runtime env plus a conservative remote PATH tail.
+          mergeEnv: () => mergeRuntimeEnv(runtime, { PATH: VERCEL_SAFE_DEFAULT_PATH }),
+        }),
+      }
     case 'bwrap':
       return {
         operations: createLocalBashOperations(),

@@ -58,6 +58,8 @@ export interface CreateAgentAppOptions {
   pi?: PiHarnessOptions
   /** Optional runtime provisioning result used to wire generated PATH/env/skills into tools and Pi. */
   runtimeProvisioning?: WorkspaceProvisioningResult
+  /** Optional dynamic runtime provisioning source used after /reload refreshes generated env/PATH. */
+  getRuntimeProvisioning?: () => WorkspaceProvisioningResult | undefined
   /** Optional stable namespace for file-backed session storage. */
   sessionNamespace?: string
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
@@ -115,19 +117,22 @@ export async function createAgentApp(
     }
   }
 
+  const getRuntimeProvisioning = opts.getRuntimeProvisioning ?? (() => opts.runtimeProvisioning)
   const runtimePi: PiHarnessOptions = {
     ...opts.pi,
     additionalSkillPaths: [
-      ...(opts.runtimeProvisioning?.skillPaths ?? []),
+      ...(getRuntimeProvisioning()?.skillPaths ?? []),
       ...(opts.pi?.additionalSkillPaths ?? []),
     ],
   }
 
   const tools: AgentTool[] = [
-    ...buildHarnessAgentTools(runtimeBundle, opts.runtimeProvisioning ? {
-      env: opts.runtimeProvisioning.env,
-      pathEntries: opts.runtimeProvisioning.pathEntries,
-    } : undefined),
+    ...buildHarnessAgentTools(runtimeBundle, {
+      getCurrent: () => {
+        const current = getRuntimeProvisioning()
+        return current ? { env: current.env, pathEntries: current.pathEntries } : undefined
+      },
+    }),
     ...(opts.disableDefaultFileTools ? [] : buildFilesystemAgentTools(runtimeBundle)),
     ...(opts.extraTools ?? []),
     ...pluginTools,
@@ -198,6 +203,15 @@ export async function createAgentApp(
     additionalSkillPaths: runtimePi.additionalSkillPaths,
     piPackages: runtimePi.packages,
     noSkills: runtimePi.noSkills,
+    getAdditionalSkillPaths: () => [
+      ...(getRuntimeProvisioning()?.skillPaths ?? []),
+      ...(opts.pi?.additionalSkillPaths ?? []),
+      ...(opts.pi?.getHotReloadableResources?.().additionalSkillPaths ?? []),
+    ],
+    getPiPackages: () => [
+      ...(opts.pi?.packages ?? []),
+      ...(opts.pi?.getHotReloadableResources?.().packages ?? []),
+    ],
   })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })

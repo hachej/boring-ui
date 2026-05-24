@@ -1,12 +1,11 @@
-import { join } from 'node:path'
+import { join, relative, sep } from 'node:path'
 
 import { getBoringAgentRuntimeEnv, type BoringAgentRuntimePaths } from '../runtimeLayout'
 import { ErrorCode, toProvisioningError } from './errors'
 import {
   createNodeRuntimeFingerprint,
   createRuntimeFingerprint,
-  shouldInstallRuntime,
-  writeFingerprintAfterSuccessfulInstall,
+  isValidFingerprint,
 } from './fingerprint'
 import type { RuntimeNodePackageSpec, WorkspaceProvisioningAdapter } from './types'
 
@@ -18,6 +17,7 @@ export interface EnsureNodeRuntimeResult {
 
 const NODE_RUNTIME_REL = '.boring-agent/node'
 const NODE_PACKAGE_JSON_REL = `${NODE_RUNTIME_REL}/package.json`
+const NODE_FINGERPRINT_REL = `${NODE_RUNTIME_REL}/.fingerprint`
 
 function parseNodeMajor(version: string): number | null {
   const match = version.trim().match(/^v?(\d+)\./)
@@ -70,6 +70,27 @@ function expectedNodeOutputs(paths: BoringAgentRuntimePaths, packages: RuntimeNo
   )
 }
 
+function toWorkspaceRel(paths: BoringAgentRuntimePaths, absolutePath: string): string {
+  return relative(paths.workspaceRoot, absolutePath).split(sep).join('/')
+}
+
+async function shouldInstallNodeRuntime(options: {
+  adapter: WorkspaceProvisioningAdapter
+  runtimeLayout: BoringAgentRuntimePaths
+  desiredFingerprint: string
+  expectedOutputs: string[]
+}): Promise<boolean> {
+  const currentFingerprint = (await options.adapter.workspaceFs.readText(NODE_FINGERPRINT_REL))?.trim()
+  if (!currentFingerprint || !isValidFingerprint(currentFingerprint) || currentFingerprint !== options.desiredFingerprint) {
+    return true
+  }
+
+  for (const output of options.expectedOutputs) {
+    if (!(await options.adapter.workspaceFs.exists(toWorkspaceRel(options.runtimeLayout, output)))) return true
+  }
+  return false
+}
+
 export async function ensureNodeRuntime(options: {
   adapter: WorkspaceProvisioningAdapter
   runtimeLayout: BoringAgentRuntimePaths
@@ -84,11 +105,11 @@ export async function ensureNodeRuntime(options: {
     ...versions,
     packages: options.packages,
   })
-  const fingerprintPath = join(options.runtimeLayout.node, '.fingerprint')
   const expectedOutputs = expectedNodeOutputs(options.runtimeLayout, options.packages)
 
-  if (!(await shouldInstallRuntime({
-    fingerprintPath,
+  if (!(await shouldInstallNodeRuntime({
+    adapter: options.adapter,
+    runtimeLayout: options.runtimeLayout,
     desiredFingerprint: fingerprint,
     expectedOutputs,
   }))) {
@@ -114,39 +135,34 @@ export async function ensureNodeRuntime(options: {
     installSources.push(nodeInstallSource(pkg))
   }
 
-  await writeFingerprintAfterSuccessfulInstall({
-    fingerprintPath,
-    fingerprint,
-    install: async () => {
-      await options.adapter.workspaceFs.rm(NODE_RUNTIME_REL)
-      await options.adapter.workspaceFs.mkdir(NODE_RUNTIME_REL)
-      await options.adapter.workspaceFs.writeText(
-        NODE_PACKAGE_JSON_REL,
-        `${JSON.stringify({ name: 'boring-agent-runtime', private: true }, null, 2)}\n`,
-      )
-      try {
-        await options.adapter.exec('npm', [
-          'install',
-          '--prefix',
-          options.runtimeLayout.node,
-          ...installSources,
-        ], {
-          cwd: options.runtimeLayout.workspaceRoot,
-          env: getBoringAgentRuntimeEnv(
-            options.runtimeLayout,
-            options.adapter.getRuntimeCacheRoot(),
-          ),
-        })
-      } catch (error) {
-        throw toProvisioningError(
-          ErrorCode.enum.PROVISIONING_NPM_INSTALL_FAILED,
-          'node-packages',
-          error,
-          { runtime: 'node', packageIds: options.packages.map((pkg) => pkg.id) },
-        )
-      }
-    },
-  })
+  await options.adapter.workspaceFs.rm(NODE_RUNTIME_REL)
+  await options.adapter.workspaceFs.mkdir(NODE_RUNTIME_REL)
+  await options.adapter.workspaceFs.writeText(
+    NODE_PACKAGE_JSON_REL,
+    `${JSON.stringify({ name: 'boring-agent-runtime', private: true }, null, 2)}\n`,
+  )
+  try {
+    await options.adapter.exec('npm', [
+      'install',
+      '--prefix',
+      options.runtimeLayout.node,
+      ...installSources,
+    ], {
+      cwd: options.runtimeLayout.workspaceRoot,
+      env: getBoringAgentRuntimeEnv(
+        options.runtimeLayout,
+        options.adapter.getRuntimeCacheRoot(),
+      ),
+    })
+  } catch (error) {
+    throw toProvisioningError(
+      ErrorCode.enum.PROVISIONING_NPM_INSTALL_FAILED,
+      'node-packages',
+      error,
+      { runtime: 'node', packageIds: options.packages.map((pkg) => pkg.id) },
+    )
+  }
+  await options.adapter.workspaceFs.writeText(NODE_FINGERPRINT_REL, `${fingerprint}\n`)
 
   return {
     changed: true,
