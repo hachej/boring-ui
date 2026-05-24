@@ -7,6 +7,7 @@ import type { RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createPiCodingAgentHarness } from './harness/pi-coding-agent/createHarness'
 import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
+import type { WorkspaceProvisioningResult } from './workspace/provisioning'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { buildFilesystemAgentTools } from './tools/filesystem'
 import { buildHarnessAgentTools } from './tools/harness'
@@ -55,6 +56,8 @@ export interface CreateAgentAppOptions {
   harnessFactory?: AgentHarnessFactory
   /** Optional pi adapter/runtime knobs used by the default harness. */
   pi?: PiHarnessOptions
+  /** Optional runtime provisioning result used to wire generated PATH/env/skills into tools and Pi. */
+  runtimeProvisioning?: WorkspaceProvisioningResult
   /** Optional stable namespace for file-backed session storage. */
   sessionNamespace?: string
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
@@ -112,8 +115,19 @@ export async function createAgentApp(
     }
   }
 
+  const runtimePi: PiHarnessOptions = {
+    ...opts.pi,
+    additionalSkillPaths: [
+      ...(opts.runtimeProvisioning?.skillPaths ?? []),
+      ...(opts.pi?.additionalSkillPaths ?? []),
+    ],
+  }
+
   const tools: AgentTool[] = [
-    ...buildHarnessAgentTools(runtimeBundle),
+    ...buildHarnessAgentTools(runtimeBundle, opts.runtimeProvisioning ? {
+      env: opts.runtimeProvisioning.env,
+      pathEntries: opts.runtimeProvisioning.pathEntries,
+    } : undefined),
     ...(opts.disableDefaultFileTools ? [] : buildFilesystemAgentTools(runtimeBundle)),
     ...(opts.extraTools ?? []),
     ...pluginTools,
@@ -124,7 +138,7 @@ export async function createAgentApp(
     pi: {
       noContextFiles: true,
       noSkills: true,
-      ...opts.pi,
+      ...runtimePi,
     },
   }))
   const harness = await harnessFactory({
@@ -181,9 +195,9 @@ export async function createAgentApp(
   await app.register(modelsRoutes)
   await app.register(skillsRoutes, {
     workspaceRoot,
-    additionalSkillPaths: opts.pi?.additionalSkillPaths,
-    piPackages: opts.pi?.packages,
-    noSkills: opts.pi?.noSkills,
+    additionalSkillPaths: runtimePi.additionalSkillPaths,
+    piPackages: runtimePi.packages,
+    noSkills: runtimePi.noSkills,
   })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })
