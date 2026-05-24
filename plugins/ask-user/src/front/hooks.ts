@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import type { AskUserAnswerValue, AskUserQuestion } from "../shared/types"
+import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
 import { createQuestionsClient, QuestionsClientError, type QuestionsClientOptions } from "./client"
 
 export interface PendingQuestionState {
@@ -84,7 +85,7 @@ export function usePendingQuestion(
 function normalizeClientError(error: unknown): QuestionsClientError {
   return error instanceof QuestionsClientError
     ? error
-    : new QuestionsClientError("ASK_USER_BRIDGE_ERROR", error instanceof Error ? error.message : String(error))
+    : new QuestionsClientError(ASK_USER_ERROR_CODES.BRIDGE_ERROR, error instanceof Error ? error.message : String(error))
 }
 
 function stableHeadersKey(headers: QuestionsClientOptions["headers"]): string {

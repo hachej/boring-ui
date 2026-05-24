@@ -178,6 +178,14 @@ Agent calls ask_user Pi extension
 
 `@hachej/boring-ask-user/server` is no longer a public export. Old `/api/v1/questions/commands` routes are historical only and must not be used in supported setups.
 
+### Package-boundary invariants
+
+- `@hachej/boring-agent` has no ask-user-specific exports. The tool is added by the host through `@hachej/boring-ask-user/agent`.
+- Generic workspace shared/front/server barrels do not export ask-user contracts. Consumers opt in through `@hachej/boring-ask-user/front`, `/agent`, or `/shared`.
+- `src/shared/**` is platform-neutral and does not value-import `@hachej/boring-agent` or Pi runtime APIs.
+- There is no `pi-ask-user` wrapper dependency and no plugin-owned answer/cancel route in the supported path.
+- Ask-user error code string values are centralized in `src/shared/error-codes.ts`; callers import constants instead of raw strings.
+
 ### AskUserStore Interface
 
 ```ts
@@ -196,7 +204,7 @@ interface AskUserStore {
 }
 ```
 
-The legacy `AskUserStore` types remain for archived server-route tests only. Supported setups use the workspace-owned pending-question store behind `human-input.v1.*`; hosts that need DB persistence should inject a pending-question store into the workspace bridge composition.
+The legacy `AskUserStore` types remain for archived server-route tests only. Supported setups use the workspace-owned pending-question store behind `human-input.v1.*`; hosts that need file or DB persistence should inject a pending-question store into the workspace bridge composition. The plugin remains DB-free and store-agnostic.
 
 ---
 
@@ -257,10 +265,10 @@ A: Yes — the agent receives the typed answer values and can use them in its ne
 A: Chat responses are unstructured text. `ask_user` returns typed, validated data — `{ env: "production" }` — which the agent can use programmatically without parsing free text.
 
 **Q: Is the question store persistent?**  
-A: The default `FileAskUserStore` persists to a JSON file and survives restarts. Swap in your own `AskUserStore` for database-backed persistence.
+A: In the supported bridge path, the workspace pending-question coordinator owns persistence. The default v2 composition is in-memory; app shells can inject a file-backed or DB-backed pending-question store without changing ask-user front or agent code.
 
 **Q: What happens if the agent process restarts mid-question?**  
-A: The question stays pending in the file store. On the next agent call, the tool will find a pending question and can either resume or mark it abandoned. The front panel also refreshes on page focus to pick up any pending state.
+A: Workspace server boot marks in-flight questions `abandoned` when appropriate so the UI can render a terminal card instead of silently hanging. The front panel refreshes from `human-input.v1.pending` on page focus.
 
 ---
 
