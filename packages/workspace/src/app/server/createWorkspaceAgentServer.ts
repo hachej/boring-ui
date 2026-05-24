@@ -11,6 +11,7 @@ import {
   resolveMode,
   type CreateAgentAppOptions,
   type PiExtensionFactory,
+  type ProvisionWorkspaceRuntimeOptions,
 } from "@hachej/boring-agent/server"
 import type { FastifyInstance } from "fastify"
 import { existsSync, mkdirSync, readFileSync } from "node:fs"
@@ -274,6 +275,7 @@ function resolveBoringPiSkillPaths(workspaceRoot: string): string[] {
 
 export interface WorkspaceAgentServerPluginCollection {
   provisioningContributions: WorkspaceProvisioningContribution[]
+  runtimePlugins: WorkspaceRuntimeProvisioningPlugin[]
   routeContributions: WorkspaceRouteContribution[]
   preservedUiStateKeys: string[]
   agentOptions: Pick<
@@ -319,6 +321,7 @@ export function collectWorkspaceAgentServerPlugins(
       createBoringUiCliPackageProvisioningContribution(),
       ...result.provisioningContributions,
     ].filter((entry): entry is WorkspaceProvisioningContribution => Boolean(entry)),
+    runtimePlugins: result.runtimePlugins,
     routeContributions: result.routeContributions,
     preservedUiStateKeys: result.preservedUiStateKeys,
     agentOptions: {
@@ -349,7 +352,7 @@ export async function provisionWorkspaceAgentServer(opts: {
 
   await provisionRuntimeWorkspace({
     workspaceRoot: opts.workspaceRoot,
-    contributions: opts.provisioningContributions,
+    contributions: opts.provisioningContributions as Parameters<typeof provisionRuntimeWorkspace>[0]["contributions"],
     force: opts.force,
   })
 }
@@ -376,8 +379,31 @@ export interface WorkspacePluginPackagePiSnapshot {
   systemPromptAppend?: string
 }
 
+export type WorkspaceRuntimeProvisioningPlugin = ProvisionWorkspaceRuntimeOptions["plugins"][number]
+
 function emptyPackageJsonPiSnapshot(): WorkspacePluginPackagePiSnapshot {
   return { additionalSkillPaths: [], packages: [], extensionPaths: [] }
+}
+
+function skillNameFromResolvedPath(path: string): string {
+  const leaf = path.split(/[\\/]/).filter(Boolean).at(-1) ?? "skill"
+  if (leaf.toLowerCase() !== "skill.md") return leaf
+  return path.split(/[\\/]/).filter(Boolean).at(-2) ?? "skill"
+}
+
+export function readWorkspacePluginPackageRuntimePlugins(pluginDirs: string[]): WorkspaceRuntimeProvisioningPlugin[] {
+  const scan = scanBoringPlugins(pluginDirs)
+  return scan.plugins.map((plugin) => ({
+    id: plugin.id,
+    ...(plugin.skillPaths?.length
+      ? {
+          skills: plugin.skillPaths.map((source) => ({
+            name: skillNameFromResolvedPath(source),
+            source,
+          })),
+        }
+      : {}),
+  }))
 }
 
 function aggregatePluginSystemPromptsFromScan(scan: ReturnType<typeof scanBoringPlugins>): string | undefined {
