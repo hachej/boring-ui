@@ -1,3 +1,5 @@
+export { ErrorCode, ProvisioningError } from './errors'
+export type { ProvisioningLogger } from './errors'
 export {
   createNodeRuntimeFingerprint,
   createPythonRuntimeFingerprint,

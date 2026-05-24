@@ -5,6 +5,8 @@ import {
   getBoringAgentPathEntries,
   getBoringAgentRuntimeEnv,
 } from '../runtimeLayout'
+import { ErrorCode, logProvisioning, toProvisioningError, type ProvisioningLogger } from './errors'
+import type { ErrorCode as ErrorCodeValue } from '../../../shared/error-codes'
 import { ensureNodeRuntime } from './node'
 import { ensurePythonRuntime } from './python'
 import { mirrorPluginSkills } from './skills'
@@ -48,28 +50,89 @@ function collectPythonPackages(plugins: ProvisionWorkspaceRuntimeOptions['plugin
   return plugins.flatMap((plugin) => plugin.provisioning?.python ?? [])
 }
 
+async function runPhase<T>(options: {
+  logger: ProvisioningLogger | undefined
+  phase: string
+  code: ErrorCodeValue
+  details?: Record<string, unknown>
+  run: () => Promise<T>
+}): Promise<T> {
+  logProvisioning(options.logger, 'info', `workspace provisioning ${options.phase} started`, options.details)
+  try {
+    const result = await options.run()
+    logProvisioning(options.logger, 'info', `workspace provisioning ${options.phase} completed`, options.details)
+    return result
+  } catch (error) {
+    const provisioningError = toProvisioningError(
+      options.code,
+      options.phase,
+      error,
+      options.details,
+    )
+    logProvisioning(options.logger, 'error', `workspace provisioning ${options.phase} failed`, {
+      code: provisioningError.code,
+      ...provisioningError.details,
+    })
+    throw provisioningError
+  }
+}
+
 export async function provisionWorkspaceRuntime(
   opts: ProvisionWorkspaceRuntimeOptions,
 ): Promise<WorkspaceProvisioningResult> {
-  const layoutChanged = await ensureRuntimeLayout(opts)
-  const skills = await mirrorPluginSkills({
-    plugins: opts.plugins,
-    adapter: opts.adapter,
-    runtimeLayout: opts.runtimeLayout,
+  const logger = opts.logger
+  const pluginIds = opts.plugins.map((plugin) => plugin.id)
+  const layoutChanged = await runPhase({
+    logger,
+    phase: 'layout',
+    code: ErrorCode.enum.PROVISIONING_LAYOUT_FAILED,
+    details: { workspaceRoot: opts.runtimeLayout.workspaceRoot },
+    run: () => ensureRuntimeLayout(opts),
   })
-  const workspaceFiles = await seedWorkspaceFiles({
-    plugins: opts.plugins,
-    adapter: opts.adapter,
+  const skills = await runPhase({
+    logger,
+    phase: 'skill mirror',
+    code: ErrorCode.enum.PROVISIONING_SKILLS_FAILED,
+    details: { workspaceRoot: opts.runtimeLayout.workspaceRoot, pluginIds },
+    run: () => mirrorPluginSkills({
+      plugins: opts.plugins,
+      adapter: opts.adapter,
+      runtimeLayout: opts.runtimeLayout,
+    }),
   })
-  const node = await ensureNodeRuntime({
-    adapter: opts.adapter,
-    runtimeLayout: opts.runtimeLayout,
-    packages: collectNodePackages(opts.plugins),
+  const workspaceFiles = await runPhase({
+    logger,
+    phase: 'workspace files',
+    code: ErrorCode.enum.PROVISIONING_TEMPLATES_FAILED,
+    details: { workspaceRoot: opts.runtimeLayout.workspaceRoot, pluginIds },
+    run: () => seedWorkspaceFiles({
+      plugins: opts.plugins,
+      adapter: opts.adapter,
+    }),
   })
-  const python = await ensurePythonRuntime({
-    adapter: opts.adapter,
-    runtimeLayout: opts.runtimeLayout,
-    packages: collectPythonPackages(opts.plugins),
+  const nodePackages = collectNodePackages(opts.plugins)
+  const node = await runPhase({
+    logger,
+    phase: 'node packages',
+    code: ErrorCode.enum.PROVISIONING_NPM_INSTALL_FAILED,
+    details: { workspaceRoot: opts.runtimeLayout.workspaceRoot, packageIds: nodePackages.map((pkg) => pkg.id) },
+    run: () => ensureNodeRuntime({
+      adapter: opts.adapter,
+      runtimeLayout: opts.runtimeLayout,
+      packages: nodePackages,
+    }),
+  })
+  const pythonPackages = collectPythonPackages(opts.plugins)
+  const python = await runPhase({
+    logger,
+    phase: 'python packages',
+    code: ErrorCode.enum.PROVISIONING_UV_INSTALL_FAILED,
+    details: { workspaceRoot: opts.runtimeLayout.workspaceRoot, packageIds: pythonPackages.map((pkg) => pkg.id) },
+    run: () => ensurePythonRuntime({
+      adapter: opts.adapter,
+      runtimeLayout: opts.runtimeLayout,
+      packages: pythonPackages,
+    }),
   })
 
   return {

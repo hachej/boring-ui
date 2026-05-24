@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 
 import { getBoringAgentRuntimeEnv, type BoringAgentRuntimePaths } from '../runtimeLayout'
+import { ErrorCode, toProvisioningError } from './errors'
 import {
   createNodeRuntimeFingerprint,
   createRuntimeFingerprint,
@@ -36,17 +37,26 @@ export async function ensureNodeEnv(adapter: WorkspaceProvisioningAdapter): Prom
   nodeVersion: string
   npmVersion: string
 }> {
-  const nodeVersion = await commandOutput(adapter, 'node', ['--version'])
-  const npmVersion = await commandOutput(adapter, 'npm', ['--version'])
-  const major = parseNodeMajor(nodeVersion || process.version)
+  try {
+    const nodeVersion = await commandOutput(adapter, 'node', ['--version'])
+    const npmVersion = await commandOutput(adapter, 'npm', ['--version'])
+    const major = parseNodeMajor(nodeVersion || process.version)
 
-  if (major === null || major < 18) {
-    throw new Error(`Unsupported Node.js version for runtime provisioning: ${nodeVersion || process.version}`)
-  }
+    if (major === null || major < 18) {
+      throw new Error(`Unsupported Node.js version for runtime provisioning: ${nodeVersion || process.version}`)
+    }
 
-  return {
-    nodeVersion: nodeVersion || process.version,
-    npmVersion: npmVersion || 'unknown',
+    return {
+      nodeVersion: nodeVersion || process.version,
+      npmVersion: npmVersion || 'unknown',
+    }
+  } catch (error) {
+    throw toProvisioningError(
+      ErrorCode.enum.PROVISIONING_NODE_PREFLIGHT_FAILED,
+      'node-preflight',
+      error,
+      { runtime: 'node' },
+    )
   }
 }
 
@@ -114,18 +124,27 @@ export async function ensureNodeRuntime(options: {
         NODE_PACKAGE_JSON_REL,
         `${JSON.stringify({ name: 'boring-agent-runtime', private: true }, null, 2)}\n`,
       )
-      await options.adapter.exec('npm', [
-        'install',
-        '--prefix',
-        options.runtimeLayout.node,
-        ...installSources,
-      ], {
-        cwd: options.runtimeLayout.workspaceRoot,
-        env: getBoringAgentRuntimeEnv(
-          options.runtimeLayout,
-          options.adapter.getRuntimeCacheRoot(),
-        ),
-      })
+      try {
+        await options.adapter.exec('npm', [
+          'install',
+          '--prefix',
+          options.runtimeLayout.node,
+          ...installSources,
+        ], {
+          cwd: options.runtimeLayout.workspaceRoot,
+          env: getBoringAgentRuntimeEnv(
+            options.runtimeLayout,
+            options.adapter.getRuntimeCacheRoot(),
+          ),
+        })
+      } catch (error) {
+        throw toProvisioningError(
+          ErrorCode.enum.PROVISIONING_NPM_INSTALL_FAILED,
+          'node-packages',
+          error,
+          { runtime: 'node', packageIds: options.packages.map((pkg) => pkg.id) },
+        )
+      }
     },
   })
 
