@@ -1,4 +1,4 @@
-import type { RuntimeProvisioningContribution } from "@hachej/boring-agent/server"
+import type { ProvisionWorkspaceRuntimeOptions } from "@hachej/boring-agent/server"
 import type { FastifyPluginAsync } from "fastify"
 import type { AgentTool } from "../../shared/types/agent-tool"
 import {
@@ -23,9 +23,11 @@ export interface ServerBootstrapOptions {
   excludeDefaults?: string[]
 }
 
+export type WorkspaceRuntimeProvisioningPlugin = ProvisionWorkspaceRuntimeOptions["plugins"][number]
+
 export type WorkspaceProvisioningContribution = {
   id: string
-  provisioning: RuntimeProvisioningContribution
+  provisioning: NonNullable<WorkspaceRuntimeProvisioningPlugin["provisioning"]>
 }
 
 export type WorkspaceRouteContribution = {
@@ -39,6 +41,7 @@ export interface ServerBootstrapResult {
   piPackages: WorkspacePiPackageSource[]
   extensionPaths: string[]
   agentTools: AgentTool[]
+  runtimePlugins: WorkspaceRuntimeProvisioningPlugin[]
   provisioningContributions: WorkspaceProvisioningContribution[]
   routeContributions: WorkspaceRouteContribution[]
   preservedUiStateKeys: string[]
@@ -80,6 +83,12 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     .filter((p) => p.provisioning)
     .map((p) => ({ id: p.id, provisioning: p.provisioning! }))
 
+  const runtimePlugins = finalPlugins.map((plugin) => ({
+    id: plugin.id,
+    ...(plugin.skills ? { skills: plugin.skills } : {}),
+    ...(plugin.provisioning ? { provisioning: plugin.provisioning } : {}),
+  }))
+
   const routeContributions = finalPlugins
     .filter((p) => p.routes)
     .map((p) => ({ id: p.id, routes: p.routes! }))
@@ -92,6 +101,7 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     piPackages,
     extensionPaths,
     agentTools,
+    runtimePlugins,
     provisioningContributions,
     routeContributions,
     preservedUiStateKeys,
