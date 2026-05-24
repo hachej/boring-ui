@@ -56,6 +56,18 @@ export type {
   WorkspaceBridgeRegistryOptions,
 } from "./workspaceBridge/registry"
 export {
+  WORKSPACE_BRIDGE_TOKEN_AUDIENCE,
+  mintWorkspaceBridgeRuntimeToken,
+  runtimeClaimsToBridgeAuthContext,
+  verifyWorkspaceBridgeRuntimeToken,
+} from "./workspaceBridge/runtimeToken"
+export type {
+  MintWorkspaceBridgeRuntimeTokenOptions,
+  VerifiedWorkspaceBridgeRuntimeToken,
+  VerifyWorkspaceBridgeRuntimeTokenOptions,
+  WorkspaceBridgeRuntimeTokenClaims,
+} from "./workspaceBridge/runtimeToken"
+export {
   bootstrapServer,
   defineServerPlugin,
   validateServerPlugin,

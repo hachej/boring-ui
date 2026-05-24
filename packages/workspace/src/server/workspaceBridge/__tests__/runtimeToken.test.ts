@@ -1,0 +1,167 @@
+import { createHmac } from "node:crypto"
+import { describe, expect, it } from "vitest"
+import { WorkspaceBridgeErrorCode } from "../../../shared/workspace-bridge-rpc"
+import {
+  WORKSPACE_BRIDGE_TOKEN_AUDIENCE,
+  mintWorkspaceBridgeRuntimeToken,
+  verifyWorkspaceBridgeRuntimeToken,
+} from "../runtimeToken"
+import { assertNoSensitiveBridgeLeaks } from "../testing/harness"
+
+const SECRET = "workspace-bridge-runtime-token-secret-32bytes"
+const OTHER_SECRET = "workspace-bridge-runtime-token-secret-other"
+const NOW = Date.parse("2026-01-01T00:00:00.000Z")
+
+function mint(overrides: Partial<Parameters<typeof mintWorkspaceBridgeRuntimeToken>[0]> = {}) {
+  return mintWorkspaceBridgeRuntimeToken({
+    secret: SECRET,
+    workspaceId: "workspace-1",
+    sessionId: "session-1",
+    pluginId: "macro",
+    runtimeId: "runtime-1",
+    agentSessionId: "agent-session-1",
+    toolCallId: "tool-1",
+    capabilities: ["macro:catalog.search", "macro:series.data"],
+    bridgeOrigin: "https://bridge.example.test",
+    deploymentId: "deploy-1",
+    nowMs: NOW,
+    ttlMs: 60_000,
+    jti: "jti-1",
+    ...overrides,
+  })
+}
+
+describe("WorkspaceBridge runtime token primitives", () => {
+  it("mints and verifies a scoped runtime token", () => {
+    const token = mint()
+    const verified = verifyWorkspaceBridgeRuntimeToken(token, {
+      secret: SECRET,
+      nowMs: NOW + 1_000,
+      expectedWorkspaceId: "workspace-1",
+      expectedSessionId: "session-1",
+      expectedPluginId: "macro",
+      expectedRuntimeId: "runtime-1",
+      expectedBridgeOrigin: "https://bridge.example.test",
+      expectedDeploymentId: "deploy-1",
+      requiredCapabilities: ["macro:catalog.search"],
+    })
+
+    expect(verified.claims).toMatchObject({
+      aud: WORKSPACE_BRIDGE_TOKEN_AUDIENCE,
+      workspaceId: "workspace-1",
+      sessionId: "session-1",
+      pluginId: "macro",
+      runtimeId: "runtime-1",
+      jti: "jti-1",
+    })
+    expect(verified.authContext).toMatchObject({
+      callerClass: "runtime",
+      workspaceId: "workspace-1",
+      sessionId: "session-1",
+      pluginId: "macro",
+      tokenId: "jti-1",
+      actor: {
+        actorKind: "agent",
+        performedBy: { label: "runtime:macro", id: "agent-session-1" },
+        onBehalfOf: { label: "session:session-1" },
+      },
+    })
+  })
+
+  it("rejects expired, malformed, wrong audience, and wrong signature tokens", () => {
+    expect(() => verifyWorkspaceBridgeRuntimeToken(mint({ ttlMs: 1_000 }), {
+      secret: SECRET,
+      nowMs: NOW + 2_000,
+    })).toThrow(expect.objectContaining({ code: WorkspaceBridgeErrorCode.ExpiredToken }))
+
+    expect(() => verifyWorkspaceBridgeRuntimeToken("not.a.jwt", {
+      secret: SECRET,
+      nowMs: NOW,
+    })).toThrow(expect.objectContaining({ code: WorkspaceBridgeErrorCode.InvalidToken }))
+
+    expect(() => verifyWorkspaceBridgeRuntimeToken(mint({ secret: OTHER_SECRET }), {
+      secret: SECRET,
+      nowMs: NOW,
+    })).toThrow(expect.objectContaining({ code: WorkspaceBridgeErrorCode.InvalidToken }))
+
+    const wrongAudience = mintTamperedPayload({ aud: "other" })
+    expect(() => verifyWorkspaceBridgeRuntimeToken(wrongAudience, {
+      secret: SECRET,
+      nowMs: NOW,
+    })).toThrow(expect.objectContaining({ code: WorkspaceBridgeErrorCode.InvalidToken }))
+  })
+
+  it("rejects origin/deployment and workspace/session/plugin/runtime mismatches", () => {
+    const token = mint()
+    const cases = [
+      { expectedWorkspaceId: "workspace-2" },
+      { expectedSessionId: "session-2" },
+      { expectedPluginId: "other-plugin" },
+      { expectedRuntimeId: "runtime-2" },
+      { expectedBridgeOrigin: "https://wrong.example.test" },
+      { expectedDeploymentId: "deploy-2" },
+    ]
+
+    for (const expected of cases) {
+      expect(() => verifyWorkspaceBridgeRuntimeToken(token, {
+        secret: SECRET,
+        nowMs: NOW,
+        ...expected,
+      })).toThrow(expect.objectContaining({ code: WorkspaceBridgeErrorCode.InvalidToken }))
+    }
+  })
+
+  it("rejects missing capabilities", () => {
+    expect(() => verifyWorkspaceBridgeRuntimeToken(mint(), {
+      secret: SECRET,
+      nowMs: NOW,
+      requiredCapabilities: ["macro:sql.query"],
+    })).toThrow(expect.objectContaining({ code: WorkspaceBridgeErrorCode.CapabilityDenied }))
+  })
+
+  it("derives actor attribution from token claims, not request bodies", () => {
+    const token = mint({ pluginId: "macro-sdk", agentSessionId: "agent-999" })
+    const body = {
+      actor: { actorKind: "system", performedBy: { label: "spoofed-admin" } },
+    }
+    const verified = verifyWorkspaceBridgeRuntimeToken(token, {
+      secret: SECRET,
+      nowMs: NOW,
+    })
+
+    expect(body.actor.actorKind).toBe("system")
+    expect(verified.authContext.actor).toMatchObject({
+      actorKind: "agent",
+      performedBy: { label: "runtime:macro-sdk", id: "agent-999" },
+    })
+  })
+
+  it("does not include token values in thrown errors or diagnostics", () => {
+    const token = mint()
+    let message = ""
+    try {
+      verifyWorkspaceBridgeRuntimeToken(`${token.slice(0, -2)}xx`, {
+        secret: SECRET,
+        nowMs: NOW,
+      })
+    } catch (err) {
+      message = JSON.stringify(err)
+    }
+
+    assertNoSensitiveBridgeLeaks(message, { tokens: [token] })
+    expect(message).toContain(WorkspaceBridgeErrorCode.InvalidToken)
+    expect(message).not.toContain(token)
+  })
+})
+
+function mintTamperedPayload(overrides: Record<string, unknown>): string {
+  const token = mint()
+  const [header, payload] = token.split(".")
+  const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"))
+  const tampered = Buffer.from(JSON.stringify({ ...claims, ...overrides })).toString("base64url")
+  return `${header}.${tampered}.${sign(`${header}.${tampered}`)}`
+}
+
+function sign(value: string): string {
+  return createHmac("sha256", SECRET).update(value).digest("base64url")
+}
