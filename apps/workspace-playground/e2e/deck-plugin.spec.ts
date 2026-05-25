@@ -1,6 +1,19 @@
+import { copyFileSync, mkdirSync, readFileSync } from "node:fs"
+import { dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import { expect, test } from "@playwright/test"
 
 const STORAGE_KEY = "boring-ui-v2:layout:playground"
+const EDITED_MARKER = "Edited from playwright"
+const APP_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..")
+const SOURCE_DECK_PATH = resolve(APP_DIR, "src/fixtures/deck/intro.md")
+const WORKSPACE_ROOT = resolve(APP_DIR, "e2e/fixtures/workspace")
+const WORKSPACE_DECK_PATH = resolve(WORKSPACE_ROOT, "deck/intro.md")
+
+function resetDeckWorkspaceFile() {
+  mkdirSync(dirname(WORKSPACE_DECK_PATH), { recursive: true })
+  copyFileSync(SOURCE_DECK_PATH, WORKSPACE_DECK_PATH)
+}
 
 async function openPalette(page: import("@playwright/test").Page) {
   await page.keyboard.press("ControlOrMeta+KeyK")
@@ -19,6 +32,11 @@ async function openDeckFile(page: import("@playwright/test").Page) {
 
 test.describe("workspace-playground deck plugin", () => {
   test.beforeEach(async ({ page }) => {
+    await test.step("reset deck workspace fixture", async () => {
+      resetDeckWorkspaceFile()
+      expect(readFileSync(WORKSPACE_DECK_PATH, "utf8")).not.toContain(EDITED_MARKER)
+    })
+
     await test.step("reset persisted layout state", async () => {
       await page.goto("/")
       await page.evaluate((prefix) => {
@@ -57,10 +75,17 @@ test.describe("workspace-playground deck plugin", () => {
       const rawEditor = page.getByLabel("Raw markdown")
       await rawEditor.click()
       await rawEditor.press("End")
-      await rawEditor.type("\n\nEdited from playwright")
+      await rawEditor.type(`\n\n${EDITED_MARKER}`)
       await page.getByTestId("deck-save").click()
+
+      await test.step("save persists back to the workspace file", async () => {
+        await expect.poll(() => readFileSync(WORKSPACE_DECK_PATH, "utf8"), {
+          timeout: 10_000,
+        }).toContain(EDITED_MARKER)
+      })
+
       await page.getByTestId("deck-mode-read").click()
-      await expect(page.getByText("Edited from playwright")).toBeVisible({ timeout: 10_000 })
+      await expect(page.getByText(EDITED_MARKER)).toBeVisible({ timeout: 10_000 })
     })
 
     await test.step("present mode keeps slide navigation", async () => {

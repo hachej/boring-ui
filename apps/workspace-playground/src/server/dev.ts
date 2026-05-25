@@ -24,11 +24,11 @@ function seedFixtureEntry(srcRoot: string, destRoot: string): void {
   }
 }
 
-export function seedWorkspaceFromFixtures(): void {
-  if (!existsSync(WORKSPACE_DIR)) {
-    mkdirSync(WORKSPACE_DIR, { recursive: true })
+export function seedWorkspaceFromFixtures(workspaceRoot = WORKSPACE_DIR): void {
+  if (!existsSync(workspaceRoot)) {
+    mkdirSync(workspaceRoot, { recursive: true })
   }
-  seedFixtureEntry(FIXTURES_DIR, WORKSPACE_DIR)
+  seedFixtureEntry(FIXTURES_DIR, workspaceRoot)
 }
 
 let agentBoot: Promise<void> | null = null
@@ -36,8 +36,8 @@ let agentBoot: Promise<void> | null = null
 export async function startPlaygroundServer(): Promise<void> {
   if (agentBoot) return agentBoot
   agentBoot = (async () => {
-    seedWorkspaceFromFixtures()
     const workspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT ?? WORKSPACE_DIR
+    seedWorkspaceFromFixtures(workspaceRoot)
     console.log(`[workspace-playground] workspace root: ${workspaceRoot}`)
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
