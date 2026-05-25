@@ -100,11 +100,12 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
     const adapter = { workspaceFs: {} }
     const runtimeLayout = { workspaceRoot: '/workspace' }
     await provisionRuntime({ provisioningAdapter: adapter, runtimeLayout })
-    expect(mocks.provisionWorkspaceRuntime).toHaveBeenCalledWith({
+    expect(mocks.provisionWorkspaceRuntime).toHaveBeenCalledWith(expect.objectContaining({
       plugins: [runtimePlugin],
       adapter,
       runtimeLayout,
-    })
+      telemetry: expect.any(Object),
+    }))
   } finally {
     await app.close()
   }

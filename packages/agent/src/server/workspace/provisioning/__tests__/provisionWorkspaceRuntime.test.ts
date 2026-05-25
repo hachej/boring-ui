@@ -112,6 +112,54 @@ test('empty plugin list ensures layout, gitignore, env, pathEntries, and skill p
   expect(second.skillPaths).toEqual([paths.skills, join(paths.workspaceRoot, '.agents/skills')])
 })
 
+test('emits provisioning telemetry phase timings', async () => {
+  const workspaceRoot = await tempWorkspace()
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
+  const events: Array<{ name: string; properties?: Record<string, unknown> }> = []
+
+  const result = await provisionWorkspaceRuntime({
+    plugins: [],
+    adapter: createAdapter(workspaceRoot, { commands: [] }),
+    runtimeLayout: paths,
+    telemetry: { capture: (event) => { events.push(event) } },
+    telemetryContext: {
+      workspaceId: 'workspace_1',
+      sessionId: 'session_1',
+      requestId: 'request_1',
+      runtimeMode: 'direct',
+    },
+  })
+
+  expect(result.changed).toBe(true)
+  expect(events.map((event) => event.name)).toEqual([
+    'agent.runtime.provisioning.started',
+    'agent.runtime.provisioning.step',
+    'agent.runtime.provisioning.step',
+    'agent.runtime.provisioning.step',
+    'agent.runtime.provisioning.step',
+    'agent.runtime.provisioning.step',
+    'agent.runtime.provisioning.completed',
+  ])
+  expect(events.filter((event) => event.name === 'agent.runtime.provisioning.step').map((event) => event.properties?.phase)).toEqual([
+    'layout',
+    'skills-mirror',
+    'workspace-files',
+    'node-packages',
+    'python-packages',
+  ])
+  for (const event of events) {
+    expect(event.properties).toMatchObject({
+      workspaceId: 'workspace_1',
+      sessionId: 'session_1',
+      requestId: 'request_1',
+      runtimeMode: 'direct',
+    })
+    if (event.name.endsWith('.step') || event.name.endsWith('.completed')) {
+      expect(event.properties?.durationMs).toEqual(expect.any(Number))
+    }
+  }
+})
+
 test('handles only skills and only templates', async () => {
   const workspaceRoot = await tempWorkspace()
   const paths = getBoringAgentRuntimePaths(workspaceRoot)

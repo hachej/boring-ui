@@ -305,6 +305,8 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       sessionId: workspaceId,
       workspaceId,
       templatePath: scope.templatePath,
+      requestId: request?.id,
+      telemetry: opts.telemetry,
     }
     const runtimeLayout = getBoringAgentRuntimePaths(
       resolvedMode === 'vercel-sandbox' ? VERCEL_SANDBOX_WORKSPACE_ROOT : scope.root,
@@ -330,6 +332,8 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       sessionId: workspaceId,
       workspaceId,
       templatePath: scope.templatePath,
+      requestId: request?.id,
+      telemetry: opts.telemetry,
     }
     let runtimeProvisioning = await runRuntimeProvisioning(workspaceId, scope, request)
 

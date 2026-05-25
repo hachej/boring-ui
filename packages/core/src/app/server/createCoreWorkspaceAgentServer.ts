@@ -713,7 +713,7 @@ export async function createCoreWorkspaceAgentServer(
     sandboxHandleStore: options.sandboxHandleStore ?? new WorkspaceRuntimeSandboxHandleStore(workspaceStore),
     getWorkspaceId: resolveWorkspaceId,
     getWorkspaceRoot: resolveRoot,
-    provisionRuntime: async ({ provisioningAdapter, runtimeLayout }) => {
+    provisionRuntime: async ({ provisioningAdapter, runtimeLayout, workspaceId, request, runtimeMode }) => {
       if (!provisioningAdapter) return undefined
       return await provisionWorkspaceRuntime({
         plugins: [
@@ -722,6 +722,12 @@ export async function createCoreWorkspaceAgentServer(
         ],
         adapter: provisioningAdapter,
         runtimeLayout,
+        telemetry,
+        telemetryContext: {
+          workspaceId,
+          requestId: request?.id,
+          runtimeMode,
+        },
       })
     },
     provisionWorkspace: options.provisionWorkspace,

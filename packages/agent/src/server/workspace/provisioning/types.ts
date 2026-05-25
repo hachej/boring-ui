@@ -1,3 +1,4 @@
+import type { TelemetrySink } from '../../../shared/telemetry'
 import type { BoringAgentRuntimePaths } from '../runtimeLayout'
 import type { ProvisioningLogger } from './errors'
 
@@ -79,6 +80,13 @@ export interface WorkspaceProvisioningAdapter {
   getRuntimeCacheRoot(): string
 }
 
+export interface ProvisioningTelemetryContext {
+  workspaceId?: string
+  sessionId?: string
+  requestId?: string
+  runtimeMode?: string
+}
+
 export interface ProvisionWorkspaceRuntimeOptions {
   plugins: Array<{
     id: string
@@ -88,4 +96,6 @@ export interface ProvisionWorkspaceRuntimeOptions {
   adapter: WorkspaceProvisioningAdapter
   runtimeLayout: BoringAgentRuntimePaths
   logger?: ProvisioningLogger
+  telemetry?: TelemetrySink
+  telemetryContext?: ProvisioningTelemetryContext
 }
