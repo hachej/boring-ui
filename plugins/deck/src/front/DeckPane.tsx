@@ -143,7 +143,6 @@ interface DeckSlideContentProps {
 function DeckSlideContent({ slide, slideCount, path, mode, widgets }: DeckSlideContentProps) {
   const blocks: ReactNode[] = []
   let inlineRun: ReactNode[] = []
-  let previousInlineSegment: ParsedSlide["segments"][number] | null = null
 
   const flushInlineRun = () => {
     if (inlineRun.length === 0) return
@@ -153,7 +152,6 @@ function DeckSlideContent({ slide, slideCount, path, mode, widgets }: DeckSlideC
       </p>,
     )
     inlineRun = []
-    previousInlineSegment = null
   }
 
   slide.segments.forEach((segment, index) => {
@@ -166,13 +164,9 @@ function DeckSlideContent({ slide, slideCount, path, mode, widgets }: DeckSlideC
 
     if (segment.type === "markdown") {
       if (isInlineCompatibleMarkdown(segment.text)) {
-        if (previousInlineSegment) {
-          inlineRun.push(<span key={`inline-space-${slide.index}-${index}`}> </span>)
-        }
         inlineRun.push(
           <InlineMarkdownSegment key={`inline-markdown-${slide.index}-${index}`} text={segment.text} />,
         )
-        previousInlineSegment = segment
         return
       }
 
@@ -185,9 +179,6 @@ function DeckSlideContent({ slide, slideCount, path, mode, widgets }: DeckSlideC
     const display = widget?.display ?? segment.position
 
     if (display === "inline") {
-      if (previousInlineSegment) {
-        inlineRun.push(<span key={`inline-space-${slide.index}-${index}`}> </span>)
-      }
       inlineRun.push(
         <DeckWidgetSlot
           key={`widget-${slide.index}-${index}`}
@@ -196,7 +187,6 @@ function DeckSlideContent({ slide, slideCount, path, mode, widgets }: DeckSlideC
           context={context}
         />,
       )
-      previousInlineSegment = segment
       return
     }
 

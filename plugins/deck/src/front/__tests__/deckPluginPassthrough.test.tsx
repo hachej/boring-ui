@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 import { captureFrontPlugin } from "@hachej/boring-workspace/plugin"
 import { createDeckPlugin } from "../index"
 import type { DeckWidgetDefinition } from "../../shared"
+import * as deckParser from "../../shared/parser"
 
 describe("createDeckPlugin passthrough", () => {
   it("forwards widgets and onError into the deck panel component", () => {
@@ -24,6 +25,9 @@ describe("createDeckPlugin passthrough", () => {
       params?: { path?: string }
       content?: string
     }>
+    const parseSpy = vi.spyOn(deckParser, "parseDeckMarkdown").mockImplementation(() => {
+      throw new Error("Parse exploded")
+    })
 
     render(
       <PanelComponent
@@ -32,7 +36,15 @@ describe("createDeckPlugin passthrough", () => {
       />,
     )
 
-    expect(screen.getByText("badge:draft")).toBeInTheDocument()
-    expect(onError).not.toHaveBeenCalled()
+    expect(screen.getByTestId("deck-error-state")).toHaveTextContent("Parse exploded")
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "parse",
+        path: "deck/intro.md",
+        message: "Parse exploded",
+      }),
+    )
+
+    parseSpy.mockRestore()
   })
 })

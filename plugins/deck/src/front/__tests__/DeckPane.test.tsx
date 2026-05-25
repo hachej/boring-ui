@@ -69,7 +69,7 @@ describe("DeckPane", () => {
     expect(screen.getByText("stat:GDP")).toBeInTheDocument()
   })
 
-  it("keeps inline widgets in the same paragraph flow as surrounding markdown", () => {
+  it("keeps inline widgets in the same paragraph flow without adding spaces", () => {
     const widgets: DeckWidgetDefinition[] = [
       {
         name: "Badge",
@@ -79,12 +79,12 @@ describe("DeckPane", () => {
     ]
 
     const { container } = render(
-      <DeckPane content={`Status {{Badge text="draft"}} ready`} widgets={widgets} />,
+      <DeckPane content={`foo{{Badge text="draft"}}bar`} widgets={widgets} />,
     )
 
     const paragraphs = container.querySelectorAll("p")
     expect(paragraphs).toHaveLength(1)
-    expect(paragraphs[0]).toHaveTextContent("Status badge:draft ready")
+    expect(paragraphs[0]).toHaveTextContent("foobadge:draftbar")
     expect(within(paragraphs[0]).getByText("badge:draft")).toBeInTheDocument()
   })
 
