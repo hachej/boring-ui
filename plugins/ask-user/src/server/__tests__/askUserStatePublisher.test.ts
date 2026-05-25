@@ -32,7 +32,7 @@ async function waitForPending(store: FileAskUserStore, sessionId: string) {
     const pending = await store.getPending(sessionId)
     expect(pending).not.toBeNull()
     return pending!
-  }, { timeout: 5_000 })
+  }, { interval: 25, timeout: 5_000 })
 }
 
 describe("AskUserStatePublisher", () => {
