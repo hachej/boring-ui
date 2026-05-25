@@ -186,7 +186,7 @@ describe("askUserPlugin front shell", () => {
   })
 
   it("carries pluginId + pluginLabel metadata (definePlugin contract)", () => {
-    expect(askUserPlugin.pluginId).toBe("ask-user")
+    expect(askUserPlugin.pluginId).toBe("hachej-boring-ask-user")
     expect(askUserPlugin.pluginLabel).toBe("Questions")
   })
 })
