@@ -1,5 +1,6 @@
 import type { FileSearch } from '../../shared/file-search'
 import type { Sandbox } from '../../shared/sandbox'
+import type { TelemetrySink } from '../../shared/telemetry'
 import type { Workspace } from '../../shared/workspace'
 import type { BoringAgentRuntimePaths } from '../workspace/runtimeLayout'
 import type { WorkspaceProvisioningAdapter } from '../workspace/provisioning'
@@ -25,6 +26,8 @@ export interface ModeContext {
   sessionId: string
   workspaceId?: string
   templatePath?: string
+  requestId?: string
+  telemetry?: TelemetrySink
 }
 
 export interface RuntimeBundle {
