@@ -13,6 +13,27 @@ export interface DeckThemeOptions {
   slideClassName?: string
 }
 
+export interface ParsedDeck {
+  title?: string
+  slides: ParsedSlide[]
+}
+
+export interface ParsedSlide {
+  index: number
+  raw: string
+  segments: DeckSegment[]
+}
+
+export type DeckSegment =
+  | { type: "markdown"; text: string }
+  | {
+      type: "widget"
+      name: string
+      attrs: Record<string, string>
+      raw: string
+      position: "block" | "inline"
+    }
+
 export interface DeckWidgetRenderContext {
   path?: string
   slideIndex: number
