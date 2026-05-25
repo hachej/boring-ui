@@ -30,7 +30,7 @@ async function createDummyNodeSdkPackage(): Promise<string> {
     version: '1.0.0',
     bin: { 'dummy-sdk': 'bin/dummy-sdk.js' },
   }, null, 2))
-  await writeFile(join(root, 'bin', 'dummy-sdk.js'), '#!/usr/bin/env node\nconsole.log("dummy-sdk")\n')
+  await writeFile(join(root, 'bin', 'dummy-sdk.js'), '#!/usr/bin/env node\nprocess.stdout.write("dummy-sdk\\n")\n')
   return root
 }
 
