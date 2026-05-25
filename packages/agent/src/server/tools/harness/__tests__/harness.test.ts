@@ -56,8 +56,9 @@ afterEach(async () => {
 async function makeTempWorkspace(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'boring-agent-bash-env-'))
   tempDirs.push(dir)
-  await mkdir(join(dir, '.boring-agent', 'bin'), { recursive: true })
-  await mkdir(join(dir, '.venv', 'bin'), { recursive: true })
+  await mkdir(join(dir, '.boring-agent', 'venv', 'bin'), { recursive: true })
+  await mkdir(join(dir, '.boring-agent', 'node', 'node_modules', '.bin'), { recursive: true })
+  await mkdir(join(dir, '.boring-agent', 'sdk', 'uv', 'bin'), { recursive: true })
   return dir
 }
 
@@ -102,11 +103,11 @@ describe('buildHarnessAgentTools', () => {
     expect(tools.map((t) => t.name)).toEqual(['bash'])
   })
 
-  test('direct bash exposes workspace bm/python/pip shims and env', async () => {
+  test('direct bash exposes provisioned workspace bm/python/pip shims and env', async () => {
     const workspaceRoot = await makeTempWorkspace()
-    await writeExecutable(join(workspaceRoot, '.boring-agent', 'bin', 'bm'), '#!/usr/bin/env bash\necho bm-shim\n')
-    await writeExecutable(join(workspaceRoot, '.venv', 'bin', 'python'), '#!/usr/bin/env bash\necho python-shim\n')
-    await writeExecutable(join(workspaceRoot, '.venv', 'bin', 'pip'), '#!/usr/bin/env bash\necho pip-shim\n')
+    await writeExecutable(join(workspaceRoot, '.boring-agent', 'venv', 'bin', 'bm'), '#!/usr/bin/env bash\necho bm-shim\n')
+    await writeExecutable(join(workspaceRoot, '.boring-agent', 'venv', 'bin', 'python'), '#!/usr/bin/env bash\necho python-shim\n')
+    await writeExecutable(join(workspaceRoot, '.boring-agent', 'venv', 'bin', 'pip'), '#!/usr/bin/env bash\necho pip-shim\n')
 
     const bundle = mockBundle('direct', ['exec'], workspaceRoot)
     const tools = buildHarnessAgentTools(bundle)
@@ -126,7 +127,66 @@ describe('buildHarnessAgentTools', () => {
     expect(result.content[0].text).toContain('python-shim')
     expect(result.content[0].text).toContain('pip-shim')
     expect(result.content[0].text).toContain(workspaceRoot)
-    expect(result.content[0].text).toContain(join(workspaceRoot, '.venv'))
+    expect(result.content[0].text).toContain(join(workspaceRoot, '.boring-agent', 'venv'))
+  })
+
+  test('direct bash prefixes provisioning PATH/env while preserving caller PATH tail', async () => {
+    const workspaceRoot = await makeTempWorkspace()
+    await writeExecutable(join(workspaceRoot, '.boring-agent', 'node', 'node_modules', '.bin', 'from-runtime'), '#!/usr/bin/env bash\necho runtime-bin\n')
+
+    const bundle = mockBundle('direct', ['exec'], workspaceRoot)
+    const tools = buildHarnessAgentTools(bundle, {
+      env: { BORING_MACRO_API_URL: 'http://macro', PATH: '/runtime/base' },
+      pathEntries: [join(workspaceRoot, '.boring-agent', 'node', 'node_modules', '.bin')],
+    })
+    const bashTool = tools.find((t) => t.name === 'bash')!
+
+    const result = await bashTool.execute(
+      { command: 'from-runtime; printf "%s\\n%s" "$BORING_MACRO_API_URL" "$PATH"', timeout: 10 },
+      { abortSignal: new AbortController().signal, toolCallId: 'test-runtime-env' },
+    )
+
+    expect(result.isError).toBe(false)
+    expect(result.content[0].text).toContain('runtime-bin')
+    expect(result.content[0].text).toContain('http://macro')
+    expect(result.content[0].text).toContain(`${join(workspaceRoot, '.boring-agent', 'node', 'node_modules', '.bin')}:`)
+    expect(result.content[0].text).toContain('/runtime/base')
+  })
+
+  test('vercel-sandbox bash forwards to sandbox.exec with dynamic runtime env', async () => {
+    const bundle = mockBundle('vercel-sandbox')
+    let macroUrl = 'http://macro-v1'
+    const tools = buildHarnessAgentTools(bundle, {
+      getCurrent: () => ({
+        env: { BORING_MACRO_API_URL: macroUrl, PATH: '/runtime/base' },
+        pathEntries: ['/workspace/.boring-agent/venv/bin'],
+      }),
+    })
+    const bashTool = tools.find((t) => t.name === 'bash')!
+
+    await bashTool.execute(
+      { command: 'echo hello', timeout: 10 },
+      { abortSignal: new AbortController().signal, toolCallId: 'test-1' },
+    )
+
+    const firstExecOptions = vi.mocked(bundle.sandbox.exec).mock.calls[0][1]
+    if (!firstExecOptions) throw new Error('missing sandbox exec options')
+    expect(firstExecOptions).toEqual(expect.objectContaining({
+      timeoutMs: 10_000,
+      env: expect.objectContaining({ BORING_MACRO_API_URL: 'http://macro-v1' }),
+    }))
+    expect(firstExecOptions.env?.PATH).toBe('/workspace/.boring-agent/venv/bin:/runtime/base:/vercel/runtimes/node24/bin:/vercel/runtimes/node22/bin:/usr/local/bin:/usr/bin:/bin')
+    expect(firstExecOptions.env).not.toHaveProperty('VAULT_TOKEN')
+    expect(firstExecOptions.env).not.toHaveProperty('ANTHROPIC_API_KEY')
+
+    macroUrl = 'http://macro-v2'
+    await bashTool.execute(
+      { command: 'echo again', timeout: 10 },
+      { abortSignal: new AbortController().signal, toolCallId: 'test-1b' },
+    )
+    expect(bundle.sandbox.exec).toHaveBeenLastCalledWith('echo again', expect.objectContaining({
+      env: expect.objectContaining({ BORING_MACRO_API_URL: 'http://macro-v2' }),
+    }))
   })
 
   test('vercel-sandbox bash forwards to sandbox.exec', async () => {

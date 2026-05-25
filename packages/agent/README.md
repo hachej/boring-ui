@@ -28,6 +28,7 @@ npx @hachej/boring-agent
 | **Three execution modes** | `direct` (no isolation, macOS dev) / `local` (bwrap sandbox) / `vercel-sandbox` (Firecracker microVM) |
 | **CLI + embeddable** | `npx @hachej/boring-agent` works standalone; `<ChatPanel />` composes into any layout |
 | **7 standard tools** | `bash`, `read`, `write`, `edit`, `find`, `grep`, `ls` — ported from pi-coding-agent |
+| **Workspace-local runtime provisioning** | Generates `.boring-agent` inside the selected workspace for mirrored skills, SDKs, CLIs, and templates |
 | **Workspace-agnostic FS** | `Workspace` interface — agent tools and HTTP routes share the same filesystem view |
 | **Session management** | List, create, switch, delete sessions with streamed history hydration |
 | **UI bridge** | Agent opens files, panels, and surfaces in the workbench via typed commands |
@@ -55,6 +56,21 @@ read the README and summarize it
 find all TypeScript files that import "react"
 write a test for src/utils.ts
 ```
+
+---
+
+## Workspace-local runtime provisioning
+
+Boring UI keeps generated runtime state in the selected workspace at
+`$BORING_AGENT_WORKSPACE_ROOT/.boring-agent`. Plugin skills are mirrored to
+`.boring-agent/skills`, runtime CLIs live under `.boring-agent/node` or
+`.boring-agent/venv`, and templates seed only missing workspace files. The
+folder is generated/disposable and should not be hand-edited or committed.
+
+See [docs/runtime-provisioning.md](docs/runtime-provisioning.md) for the full
+user and plugin-author contract, including package metadata shape,
+`provisionWorkspace: false`, `/api/v1/agent/reload`, and direct/local/Vercel
+mode behavior.
 
 ---
 

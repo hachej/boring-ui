@@ -51,4 +51,12 @@ All API failures must use the response envelope:
 | `TOOL_EXECUTION_ERROR` | Tool threw or returned execution failure | 500 | report-bug | error | stable (public API) |
 | `PLUGIN_LOAD_FAILED` | Plugin failed to load/register | 500 | report-bug | error | stable (public API) |
 | `PLUGIN_NAME_COLLISION` | Plugin name collides with existing tool/plugin | 409 | user-fix | warn | stable (public API) |
+| `PROVISIONING_LAYOUT_FAILED` | Failed to create/write generated `.boring-agent` layout | 500 | report-bug | error | stable (public API) |
+| `PROVISIONING_SKILLS_FAILED` | Failed to mirror plugin skills into `.boring-agent/skills` | 500 | report-bug | error | stable (public API) |
+| `PROVISIONING_TEMPLATES_FAILED` | Failed to seed missing workspace template files | 500 | report-bug | error | stable (public API) |
+| `PROVISIONING_NODE_PREFLIGHT_FAILED` | Node/npm preflight failed before runtime package install | 500 | user-fix | error | stable (public API) |
+| `PROVISIONING_NPM_INSTALL_FAILED` | npm runtime package install failed | 500 | user-fix | error | stable (public API) |
+| `PROVISIONING_UV_BOOTSTRAP_FAILED` | uv bootstrap/preflight failed for Python runtime packages | 500 | user-fix | error | stable (public API) |
+| `PROVISIONING_UV_INSTALL_FAILED` | uv venv or uv pip install failed | 500 | user-fix | error | stable (public API) |
+| `PROVISIONING_ARTIFACT_FAILED` | Runtime-mode adapter failed to prepare/upload install artifact | 500 | retry | error | stable (public API) |
 | `INTERNAL_ERROR` | Catch-all internal failure | 500 | report-bug | error | internal (may change) |

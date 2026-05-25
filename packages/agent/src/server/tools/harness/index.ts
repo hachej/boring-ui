@@ -16,7 +16,36 @@ function shellEscape(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`
 }
 
-function bwrapSpawnHook(workspaceRoot: string): BashSpawnHook {
+export interface HarnessRuntimeProvisioningSnapshot {
+  env?: Record<string, string>
+  pathEntries?: string[]
+}
+
+export interface HarnessRuntimeProvisioningOptions extends HarnessRuntimeProvisioningSnapshot {
+  getCurrent?: () => HarnessRuntimeProvisioningSnapshot | undefined
+}
+
+function mergeRuntimeEnv(
+  runtime: HarnessRuntimeProvisioningOptions | undefined,
+  commandEnv: Record<string, string | undefined> | undefined,
+): Record<string, string | undefined> | undefined {
+  const current = runtime?.getCurrent?.() ?? runtime
+  if (!current?.env && !current?.pathEntries?.length) return commandEnv
+  const merged: Record<string, string | undefined> = {
+    ...(current.env ?? {}),
+    ...(commandEnv ?? {}),
+  }
+  const pathParts = [...(current.pathEntries ?? [])]
+  if (current.env?.PATH) pathParts.push(current.env.PATH)
+  if (commandEnv?.PATH) pathParts.push(commandEnv.PATH)
+  if (pathParts.length > 0) merged.PATH = pathParts.join(':')
+  return merged
+}
+
+function bwrapSpawnHook(
+  workspaceRoot: string,
+  runtime?: HarnessRuntimeProvisioningOptions,
+): BashSpawnHook {
   const args = buildBwrapArgs(workspaceRoot)
   const bwrapPrefix = ['bwrap', ...args].map(shellEscape).join(' ')
   return (context) => ({
@@ -24,32 +53,50 @@ function bwrapSpawnHook(workspaceRoot: string): BashSpawnHook {
     command: `${bwrapPrefix} bash -lc ${shellEscape(context.command)}`,
     env: withWorkspacePythonEnv({
       workspaceRoot,
-      env: context.env,
+      env: mergeRuntimeEnv(runtime, context.env),
       sandboxRoot: '/workspace',
     }),
   })
 }
 
-function directSpawnHook(workspaceRoot: string): BashSpawnHook {
+function directSpawnHook(
+  workspaceRoot: string,
+  runtime?: HarnessRuntimeProvisioningOptions,
+): BashSpawnHook {
   return (context) => ({
     ...context,
-    env: withWorkspacePythonEnv({ workspaceRoot, env: context.env }),
+    env: withWorkspacePythonEnv({
+      workspaceRoot,
+      env: mergeRuntimeEnv(runtime, context.env),
+    }),
   })
 }
 
-function bashOptionsForMode(bundle: RuntimeBundle): BashToolOptions {
+const VERCEL_SAFE_DEFAULT_PATH = '/vercel/runtimes/node24/bin:/vercel/runtimes/node22/bin:/usr/local/bin:/usr/bin:/bin'
+
+function bashOptionsForMode(
+  bundle: RuntimeBundle,
+  runtime?: HarnessRuntimeProvisioningOptions,
+): BashToolOptions {
   switch (bundle.sandbox.provider) {
     case 'vercel-sandbox':
-      return { operations: vercelBashOps(bundle.sandbox) }
+      return {
+        operations: vercelBashOps(bundle.sandbox, {
+          // The pi bash tool's env may include the host process env. Never
+          // forward host secrets into a remote sandbox; provide only the
+          // provisioned runtime env plus a conservative remote PATH tail.
+          mergeEnv: () => mergeRuntimeEnv(runtime, { PATH: VERCEL_SAFE_DEFAULT_PATH }),
+        }),
+      }
     case 'bwrap':
       return {
         operations: createLocalBashOperations(),
-        spawnHook: bwrapSpawnHook(bundle.workspace.root),
+        spawnHook: bwrapSpawnHook(bundle.workspace.root, runtime),
       }
     default:
       return {
         operations: createLocalBashOperations(),
-        spawnHook: directSpawnHook(bundle.workspace.root),
+        spawnHook: directSpawnHook(bundle.workspace.root, runtime),
       }
   }
 }
@@ -146,9 +193,12 @@ function createExecuteIsolatedCodeTool(sandbox: Sandbox): AgentTool {
   }
 }
 
-export function buildHarnessAgentTools(bundle: RuntimeBundle): AgentTool[] {
+export function buildHarnessAgentTools(
+  bundle: RuntimeBundle,
+  runtime?: HarnessRuntimeProvisioningOptions,
+): AgentTool[] {
   const tools: AgentTool[] = [
-    adaptPiTool(createBashToolDefinition(bundle.workspace.root, bashOptionsForMode(bundle))),
+    adaptPiTool(createBashToolDefinition(bundle.workspace.root, bashOptionsForMode(bundle, runtime))),
   ]
 
   if (bundle.sandbox.capabilities.includes('isolated-code')) {

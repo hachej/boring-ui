@@ -7,10 +7,14 @@
 import {
   autoDetectMode,
   createAgentApp,
+  getBoringAgentRuntimePaths,
   provisionRuntimeWorkspace,
+  provisionWorkspaceRuntime,
   resolveMode,
+  VERCEL_SANDBOX_WORKSPACE_ROOT,
   type CreateAgentAppOptions,
   type PiExtensionFactory,
+  type ProvisionWorkspaceRuntimeOptions,
 } from "@hachej/boring-agent/server"
 import type { FastifyInstance } from "fastify"
 import { existsSync, mkdirSync, readFileSync } from "node:fs"
@@ -274,6 +278,7 @@ function resolveBoringPiSkillPaths(workspaceRoot: string): string[] {
 
 export interface WorkspaceAgentServerPluginCollection {
   provisioningContributions: WorkspaceProvisioningContribution[]
+  runtimePlugins: WorkspaceRuntimeProvisioningInput[]
   routeContributions: WorkspaceRouteContribution[]
   preservedUiStateKeys: string[]
   agentOptions: Pick<
@@ -293,8 +298,9 @@ export function buildWorkspaceContextPrompt(): string {
   return [
     '## Workspace',
     '- Root: `$BORING_AGENT_WORKSPACE_ROOT` (exported into every bash invocation)',
-    '- Skills: `$BORING_AGENT_WORKSPACE_ROOT/.agents/skills/`',
-    '- CLI shims (`bm`, `python`, `pip`): `$BORING_AGENT_WORKSPACE_ROOT/.boring-agent/bin/` — already on PATH, call directly',
+    '- Generated plugin skills: `$BORING_AGENT_WORKSPACE_ROOT/.boring-agent/skills/` — readable with normal file tools',
+    '- User workspace skills: `$BORING_AGENT_WORKSPACE_ROOT/.agents/skills/`',
+    '- Runtime CLIs (`boring-ui`, `bm`, `python`, `pip`, `uv`) come from `.boring-agent/node`, `.boring-agent/venv`, and `.boring-agent/sdk/uv` and are already on PATH',
   ].join('\n')
 }
 
@@ -312,13 +318,21 @@ export function collectWorkspaceAgentServerPlugins(
   const callerPiPackages = opts.pi?.packages ?? []
   const callerExtensionPaths = opts.pi?.extensionPaths ?? []
 
+  const builtinProvisioningContributions = [
+    createWorkspacePackageProvisioningContribution(),
+    createBoringPiPackageProvisioningContribution(),
+    createBoringUiCliPackageProvisioningContribution(),
+  ].filter((entry): entry is WorkspaceProvisioningContribution => Boolean(entry))
+
   return {
     provisioningContributions: [
-      createWorkspacePackageProvisioningContribution(),
-      createBoringPiPackageProvisioningContribution(),
-      createBoringUiCliPackageProvisioningContribution(),
+      ...builtinProvisioningContributions,
       ...result.provisioningContributions,
-    ].filter((entry): entry is WorkspaceProvisioningContribution => Boolean(entry)),
+    ],
+    runtimePlugins: [
+      ...builtinProvisioningContributions,
+      ...result.runtimePlugins,
+    ],
     routeContributions: result.routeContributions,
     preservedUiStateKeys: result.preservedUiStateKeys,
     agentOptions: {
@@ -349,7 +363,7 @@ export async function provisionWorkspaceAgentServer(opts: {
 
   await provisionRuntimeWorkspace({
     workspaceRoot: opts.workspaceRoot,
-    contributions: opts.provisioningContributions,
+    contributions: opts.provisioningContributions as Parameters<typeof provisionRuntimeWorkspace>[0]["contributions"],
     force: opts.force,
   })
 }
@@ -376,8 +390,50 @@ export interface WorkspacePluginPackagePiSnapshot {
   systemPromptAppend?: string
 }
 
+export type WorkspaceRuntimeProvisioningInput = ProvisionWorkspaceRuntimeOptions["plugins"][number]
+
+function mergeRuntimeProvisioningInputs(
+  plugins: WorkspaceRuntimeProvisioningInput[],
+): WorkspaceRuntimeProvisioningInput[] {
+  const byId = new Map<string, WorkspaceRuntimeProvisioningInput>()
+  for (const plugin of plugins) {
+    const current = byId.get(plugin.id) ?? { id: plugin.id }
+    byId.set(plugin.id, {
+      id: plugin.id,
+      skills: [...(current.skills ?? []), ...(plugin.skills ?? [])],
+      provisioning: {
+        templateDirs: [...(current.provisioning?.templateDirs ?? []), ...(plugin.provisioning?.templateDirs ?? [])],
+        python: [...(current.provisioning?.python ?? []), ...(plugin.provisioning?.python ?? [])],
+        nodePackages: [...(current.provisioning?.nodePackages ?? []), ...(plugin.provisioning?.nodePackages ?? [])],
+      },
+    })
+  }
+  return [...byId.values()]
+}
+
 function emptyPackageJsonPiSnapshot(): WorkspacePluginPackagePiSnapshot {
   return { additionalSkillPaths: [], packages: [], extensionPaths: [] }
+}
+
+function skillNameFromResolvedPath(path: string): string {
+  const leaf = path.split(/[\\/]/).filter(Boolean).at(-1) ?? "skill"
+  if (leaf.toLowerCase() !== "skill.md") return leaf
+  return path.split(/[\\/]/).filter(Boolean).at(-2) ?? "skill"
+}
+
+export function readWorkspacePluginPackageRuntimePlugins(pluginDirs: string[]): WorkspaceRuntimeProvisioningInput[] {
+  const scan = scanBoringPlugins(pluginDirs)
+  return scan.plugins.map((plugin) => ({
+    id: plugin.id,
+    ...(plugin.skillPaths?.length
+      ? {
+          skills: plugin.skillPaths.map((source) => ({
+            name: skillNameFromResolvedPath(source),
+            source,
+          })),
+        }
+      : {}),
+  }))
 }
 
 function aggregatePluginSystemPromptsFromScan(scan: ReturnType<typeof scanBoringPlugins>): string | undefined {
@@ -414,9 +470,8 @@ export async function createWorkspaceAgentServer(
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const bridge = createInMemoryBridge()
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
-  const workspaceFsCapability = opts.runtimeModeAdapter
-    ? opts.runtimeModeAdapter.workspaceFsCapability ?? "best-effort"
-    : resolveMode(resolvedMode).workspaceFsCapability ?? "best-effort"
+  const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
+  const workspaceFsCapability = modeAdapter.workspaceFsCapability ?? "best-effort"
   const validateUiPaths = opts.validateUiPaths ?? workspaceFsCapability === "strong"
   const uiTools = createWorkspaceUiTools(bridge, {
     workspaceRoot: validateUiPaths ? workspaceRoot : undefined,
@@ -461,13 +516,6 @@ export async function createWorkspaceAgentServer(
   // dynamic resource getter. With hot reload disabled, the same scan is
   // snapped once at boot and merged into static Pi options.
 
-  if (opts.provisionWorkspace !== false) {
-    await provisionWorkspaceAgentServer({
-      workspaceRoot,
-      provisioningContributions: pluginCollection.provisioningContributions,
-      force: opts.workspaceProvisioning?.force,
-    })
-  }
   // Static Pi resources known at boot: workspace skill dir,
   // factory-supplied values, and the bundled @hachej/boring-pi skill
   // package. When pluginHotReload is disabled, package.json#pi from
@@ -522,6 +570,31 @@ export async function createWorkspaceAgentServer(
     pluginDirs: boringPluginDirs,
     errorRoot: join(workspaceRoot, ".pi", "extensions"),
   })
+
+  const buildRuntimeProvisioningInputs = () => mergeRuntimeProvisioningInputs([
+    ...pluginCollection.runtimePlugins,
+    ...readWorkspacePluginPackageRuntimePlugins(boringPluginDirs),
+  ])
+  let currentRuntimeProvisioning = opts.runtimeProvisioning
+  const runtimeWorkspaceRoot = resolvedMode === "vercel-sandbox"
+    ? VERCEL_SANDBOX_WORKSPACE_ROOT
+    : workspaceRoot
+  const runtimeLayout = getBoringAgentRuntimePaths(runtimeWorkspaceRoot)
+  const runRuntimeProvisioning = async () => {
+    if (opts.provisionWorkspace === false) return currentRuntimeProvisioning
+    const adapter = modeAdapter.createProvisioningAdapter?.(runtimeLayout, {
+      workspaceRoot,
+      sessionId: opts.sessionId ?? "default",
+    })
+    if (!adapter) return currentRuntimeProvisioning
+    currentRuntimeProvisioning = await provisionWorkspaceRuntime({
+      plugins: buildRuntimeProvisioningInputs(),
+      adapter,
+      runtimeLayout,
+    })
+    return currentRuntimeProvisioning
+  }
+  await runRuntimeProvisioning()
 
   // Rebuild closure created BEFORE createAgentApp so beforeReload can
   // call it.
@@ -578,6 +651,7 @@ export async function createWorkspaceAgentServer(
         const rebuild = await rebuildPlugins()
         diagnostics = [...scanDiagnostics, ...rebuild.diagnostics]
       }
+      await runRuntimeProvisioning()
       const callerResult = await opts.beforeReload?.()
       const callerRestartWarnings = callerResult && typeof callerResult === "object"
         ? callerResult.restart_warnings ?? []
@@ -597,6 +671,8 @@ export async function createWorkspaceAgentServer(
         ...(mergedDiagnostics.length > 0 ? { diagnostics: mergedDiagnostics } : {}),
       }
     },
+    runtimeProvisioning: currentRuntimeProvisioning,
+    getRuntimeProvisioning: () => currentRuntimeProvisioning,
     pi: {
       ...pluginCollection.agentOptions.pi,
       additionalSkillPaths: staticPiSkillPaths,

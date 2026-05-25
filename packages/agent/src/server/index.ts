@@ -36,12 +36,37 @@ export {
   provisionRuntimeWorkspace,
   type ProvisionRuntimeWorkspaceOptions,
   type RuntimeWorkspaceProvisioningResult,
-  type RuntimeProvisioningContribution,
-  type RuntimeTemplateContribution,
-  type RuntimePythonSpec,
-  type RuntimeNodePackageSpec,
 } from './workspace/provisionRuntime'
-export { createVercelSandboxWorkspace } from './workspace/createVercelSandboxWorkspace'
+export {
+  getBoringAgentRuntimePaths,
+  getBoringAgentRuntimeEnv,
+  getBoringAgentPathEntries,
+} from './workspace/runtimeLayout'
+export type { BoringAgentRuntimePaths } from './workspace/runtimeLayout'
+export {
+  createVercelSandboxWorkspace,
+  VERCEL_SANDBOX_WORKSPACE_ROOT,
+} from './workspace/createVercelSandboxWorkspace'
+export {
+  createVercelProvisioningAdapter,
+  VERCEL_PROVISIONING_CACHE_ROOT,
+} from './sandbox/vercel-sandbox/provisioningAdapter'
+export type {
+  CreateVercelProvisioningAdapterOptions,
+  VercelProvisioningArtifactRequest,
+} from './sandbox/vercel-sandbox/provisioningAdapter'
+export { provisionWorkspaceRuntime } from './workspace/provisioning'
+export type {
+  PluginSkillSource,
+  ProvisionWorkspaceRuntimeOptions,
+  RuntimeNodePackageSpec,
+  RuntimeProvisioningContribution,
+  RuntimePythonSpec,
+  RuntimeTemplateContribution,
+  WorkspaceProvisioningAdapter,
+  WorkspaceProvisioningExecResult,
+  WorkspaceProvisioningResult,
+} from './workspace/provisioning'
 export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
 export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'
