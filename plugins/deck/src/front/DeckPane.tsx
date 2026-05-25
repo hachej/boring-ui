@@ -149,6 +149,7 @@ function FileBackedDeckPane({
 }: DeckPaneProps) {
   const path = params?.path ?? ""
   const [mode, setMode] = useState<"read" | "edit" | "present">(initialMode)
+  const [slideIndex, setSlideIndex] = useState(0)
   const indexedWidgets = useMemo(() => indexDeckWidgets(widgets), [widgets])
   const {
     content,
@@ -193,6 +194,10 @@ function FileBackedDeckPane({
     setMode(initialMode)
   }, [initialMode])
 
+  useEffect(() => {
+    setSlideIndex(0)
+  }, [content, path])
+
   if (!path) {
     return (
       <DeckShell theme={theme}>
@@ -218,20 +223,24 @@ function FileBackedDeckPane({
   }
 
   const deck = parsed && parsed.ok ? parsed.deck : null
-  const slideCount = deck?.slides.length ?? 1
+  const slides = deck?.slides ?? [{ index: 0, raw: content, segments: [{ type: "markdown" as const, text: content }] }]
+  const slideCount = slides.length
+  const safeIndex = Math.min(Math.max(slideIndex, 0), Math.max(slideCount - 1, 0))
+  const currentSlide = slides[safeIndex]
   const title = deck?.title ?? fileName ?? path
+  const canNavigateSlides = mode !== "edit"
 
   return (
     <DeckShell theme={theme} presentMode={mode === "present"}>
       <DeckToolbar
         title={title}
         presentMode={mode === "present"}
-        slideIndex={0}
+        slideIndex={safeIndex}
         slideCount={slideCount}
-        canGoPrevious={false}
-        canGoNext={false}
-        onPrevious={() => undefined}
-        onNext={() => undefined}
+        canGoPrevious={canNavigateSlides && safeIndex > 0}
+        canGoNext={canNavigateSlides && safeIndex < slideCount - 1}
+        onPrevious={() => setSlideIndex((current) => Math.max(current - 1, 0))}
+        onNext={() => setSlideIndex((current) => Math.min(current + 1, slideCount - 1))}
         onTogglePresentMode={mode === "edit" ? undefined : () => setMode((current) => (current === "present" ? "read" : "present"))}
         actions={
           <>
@@ -317,7 +326,7 @@ function FileBackedDeckPane({
             data-testid="deck-slide-content"
           >
             <DeckSlideContent
-              slide={deck?.slides[0] ?? { index: 0, raw: content, segments: [{ type: "markdown", text: content }] }}
+              slide={currentSlide}
               slideCount={slideCount}
               path={path}
               mode={mode === "present" ? "present" : "read"}

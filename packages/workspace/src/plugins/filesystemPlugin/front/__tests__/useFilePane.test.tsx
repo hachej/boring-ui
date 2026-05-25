@@ -28,6 +28,7 @@ beforeEach(() => {
     data: { content: "initial", mtimeMs: 1000 },
     isLoading: false,
     error: undefined,
+    refetch: vi.fn(async () => ({ data: { content: "initial", mtimeMs: 1000 } })),
   })
   mockWriteFile.mockResolvedValue({ mtimeMs: 2000 })
 })
@@ -125,13 +126,22 @@ describe("useFilePane", () => {
   })
 
   describe("onReloadFromServer", () => {
-    it("syncs content from fileData and clears any conflict", async () => {
+    it("refetches the latest server version before syncing local content", async () => {
+      const refetch = vi.fn(async () => ({ data: { content: "server latest", mtimeMs: 3000 } }))
+      mockFileContent.mockReturnValue({
+        data: { content: "cached stale", mtimeMs: 1000 },
+        isLoading: false,
+        error: undefined,
+        refetch,
+      })
+
       const { result } = renderHook(() => useFilePane({ path: "doc.md" }), { wrapper })
       await act(async () => {})
       act(() => result.current.setContent("local edits"))
       expect(result.current.content).toBe("local edits")
       await act(async () => { await result.current.onReloadFromServer() })
-      expect(result.current.content).toBe("initial")
+      expect(refetch).toHaveBeenCalledTimes(1)
+      expect(result.current.content).toBe("server latest")
     })
   })
 

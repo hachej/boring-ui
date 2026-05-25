@@ -72,7 +72,7 @@ export interface UseFilePaneReturn {
 export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   const { path, panelId = path, initialContent = null } = options
 
-  const { data: fileData, isLoading, error } = useFileContent(path)
+  const { data: fileData, isLoading, error, refetch: refetchFileData } = useFileContent(path)
   const { mutateAsync: writeFile } = useFileWrite()
 
   // Local content state
@@ -233,18 +233,20 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   }, [setContentState, lifecycle])
 
   const onReloadFromServer = useCallback(async () => {
-    if (!fileData) return
-    setContentState(fileData.content)
-    contentRef.current = fileData.content
-    baselineMtimeRef.current = fileData.mtimeMs ?? null
+    const refreshed = await refetchFileData()
+    const next = refreshed.data ?? fileData
+    if (!next) return
+    setContentState(next.content)
+    contentRef.current = next.content
+    baselineMtimeRef.current = next.mtimeMs ?? null
     dirtyRef.current = false
     // Sync the lifecycle's lastKnownMtimeRef + clear externalChangeWhileDirty
     // so a follow-up SSE for the same mtime doesn't re-raise the conflict.
-    if (typeof fileData.mtimeMs === "number") {
-      notifySavedRef.current?.(fileData.mtimeMs)
+    if (typeof next.mtimeMs === "number") {
+      notifySavedRef.current?.(next.mtimeMs)
     }
     setConflict(null)
-  }, [fileData, setContentState])
+  }, [fileData, refetchFileData, setContentState])
 
   const onOverwrite = useCallback(async () => {
     // Bump the save generation so any pending autosave (e.g., one that the

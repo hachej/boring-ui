@@ -107,6 +107,58 @@ describe("DeckPane file-state integration", () => {
     )
   })
 
+  it("surfaces conflicts and reloads the latest server version", async () => {
+    const onError = vi.fn()
+    let getCount = 0
+    let postCount = 0
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes("/api/v1/files?") && init?.method !== "POST") {
+        getCount += 1
+        if (getCount >= 2) {
+          return jsonResponse({ content: "# Intro\n\nServer latest", mtimeMs: 2 })
+        }
+        return jsonResponse({ content: "# Intro\n\nHello", mtimeMs: 1 })
+      }
+      if (url.endsWith("/api/v1/files") && init?.method === "POST") {
+        postCount += 1
+        return jsonResponse(
+          { error: { code: "conflict", currentMtimeMs: 2, expectedMtimeMs: 1 } },
+          { status: 409, statusText: "Conflict" },
+        )
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(<DeckPane params={{ path: "deck/conflict.md" }} onError={onError} />, { wrapper: Wrapper })
+
+    await waitFor(() => expect(screen.getByTestId("deck-mode-edit")).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTestId("deck-mode-edit"))
+    fireEvent.change(screen.getByTestId("deck-markdown-editor"), {
+      target: { value: "# Intro\n\nChanged" },
+    })
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350))
+    })
+
+    await waitFor(() => expect(screen.getByTestId("deck-conflict-notice")).toBeInTheDocument())
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "conflict", path: "deck/conflict.md" }),
+    )
+
+    fireEvent.click(screen.getByTestId("deck-reload"))
+
+    await waitFor(() => expect(screen.queryByTestId("deck-conflict-notice")).not.toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.getByTestId("deck-markdown-editor")).toHaveValue("# Intro\n\nServer latest"),
+    )
+    expect(getCount).toBeGreaterThanOrEqual(2)
+    expect(postCount).toBe(1)
+  })
+
   it("surfaces conflicts and lets the user overwrite", async () => {
     const onError = vi.fn()
     let postCount = 0
@@ -160,6 +212,27 @@ describe("DeckPane file-state integration", () => {
         }),
       }),
     )
+  })
+
+  it("navigates between slides in file-backed read mode", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes("/api/v1/files?") && init?.method !== "POST") {
+        return jsonResponse({ content: "# Intro\n\nHello\n---\n## Second\n\nNext slide", mtimeMs: 1 })
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(<DeckPane params={{ path: "deck/slides.md" }} />, { wrapper: Wrapper })
+
+    await waitFor(() => expect(screen.getByText("Hello")).toBeInTheDocument())
+    expect(screen.getByText("Slide 1 of 2")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId("deck-next"))
+
+    await waitFor(() => expect(screen.getByText("Next slide")).toBeInTheDocument())
+    expect(screen.getByText("Slide 2 of 2")).toBeInTheDocument()
   })
 
   it("opens a direct deck path without touching tree/list endpoints", async () => {
