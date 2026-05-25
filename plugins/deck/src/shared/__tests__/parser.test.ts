@@ -148,14 +148,18 @@ owner: macro
 })
 
 describe("deck path helpers", () => {
-  it("normalizes windows separators", () => {
-    expect(normalizeDeckPath("deck\\intro.md")).toBe("deck/intro.md")
+  it("normalizes separators like workspace.open.path targets", () => {
+    expect(normalizeDeckPath(" deck\\intro.md ")).toBe("deck/intro.md")
+    expect(normalizeDeckPath("./briefings//weekly.md")).toBe("briefings/weekly.md")
   })
 
   it("accepts workspace-relative markdown under the configured prefix", () => {
     expect(isDeckMarkdownPath("deck/intro.md")).toBe(true)
     expect(isDeckMarkdownPath("briefings/intro.md", "briefings/")).toBe(true)
     expect(isDeckMarkdownPath("briefings/intro.md", "briefings\\")).toBe(true)
+    expect(isDeckMarkdownPath("briefings/intro.md", "./briefings")).toBe(true)
+    expect(isDeckMarkdownPath("briefings/intro.md", "briefings//")).toBe(true)
+    expect(isDeckMarkdownPath("./briefings//intro.md", "briefings//")).toBe(true)
   })
 
   it("rejects absolute paths, parent traversal, and non-markdown files", () => {

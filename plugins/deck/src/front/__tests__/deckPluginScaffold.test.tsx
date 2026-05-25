@@ -1,15 +1,53 @@
-import { describe, expect, it } from "vitest"
+import { act, render, waitFor } from "@testing-library/react"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import {
   bootstrap,
   CatalogRegistry,
   CommandRegistry,
   PanelRegistry,
+  RegistryProvider,
   SurfaceResolverRegistry,
+  WORKSPACE_OPEN_PATH_SURFACE_KIND,
 } from "@hachej/boring-workspace"
 import { captureFrontPlugin } from "@hachej/boring-workspace/plugin"
+import {
+  SurfaceShell,
+  type SurfaceShellApi,
+} from "../../../../../packages/workspace/src/front/chrome/artifact-surface/SurfaceShell"
 import deckPlugin, { createDeckPlugin } from "../index"
 
 const DummyChatPanel = () => null
+
+let mockAddPanel = vi.fn()
+let mockGetPanel: (id: string) => unknown = vi.fn(() => undefined)
+
+vi.mock("../../../../../packages/workspace/src/front/chrome/workbench-left/WorkbenchLeftPane", () => ({
+  WorkbenchLeftPane: () => <div data-testid="mock-left-pane" />,
+}))
+
+vi.mock("../../../../../packages/workspace/src/front/chrome/artifact-surface/ArtifactSurfacePane", async () => {
+  const React = await import("react")
+
+  function MockArtifactSurfacePane(props: { onReady?: (api: unknown) => void }) {
+    React.useEffect(() => {
+      props.onReady?.({
+        panels: [],
+        activePanel: null,
+        getPanel: mockGetPanel,
+        addPanel: mockAddPanel,
+        onDidAddPanel: vi.fn(() => ({ dispose: vi.fn() })),
+        onDidRemovePanel: vi.fn(() => ({ dispose: vi.fn() })),
+        onDidActivePanelChange: vi.fn(() => ({ dispose: vi.fn() })),
+      })
+    }, [props.onReady])
+
+    return <div data-testid="mock-artifact-surface" />
+  }
+
+  MockArtifactSurfacePane.defaultAllowedPanels = [] as string[]
+
+  return { ArtifactSurfacePane: MockArtifactSurfacePane }
+})
 
 function makeRegistries() {
   return {
@@ -21,6 +59,12 @@ function makeRegistries() {
 }
 
 describe("deck scaffold", () => {
+  beforeEach(() => {
+    mockAddPanel = vi.fn()
+    mockGetPanel = vi.fn(() => undefined)
+    localStorage.clear()
+  })
+
   it("exports a default front plugin factory", () => {
     expect(deckPlugin.pluginId).toBe("deck")
   })
@@ -40,8 +84,8 @@ describe("deck scaffold", () => {
     )
   })
 
-  it("normalizes Windows-style pathPrefix values before matching deck markdown", () => {
-    const captured = captureFrontPlugin(createDeckPlugin({ pathPrefix: "briefings\\" }))
+  it("normalizes configured path prefixes like workspace.open.path targets", () => {
+    const captured = captureFrontPlugin(createDeckPlugin({ pathPrefix: " ./briefings// " }))
     const resolver = captured.registrations.surfaceResolvers[0]
     if (!resolver) throw new Error("expected deck resolver")
 
@@ -64,13 +108,14 @@ describe("deck scaffold", () => {
     expect(resolver.resolve({ kind: "other.kind", target: "slides/intro.md" })).toBeNull()
   })
 
-  it("registers through workspace bootstrap and resolves workspace.open.path via the live registry", () => {
+  it("opens the deck panel through SurfaceShell workspace.open.path flow", async () => {
     const registries = makeRegistries()
+    let surface: SurfaceShellApi | undefined
 
     bootstrap({
       chatPanel: DummyChatPanel,
       defaults: [],
-      plugins: [createDeckPlugin({ pathPrefix: "briefings\\" })],
+      plugins: [createDeckPlugin({ pathPrefix: "./briefings//" })],
       registries,
     })
 
@@ -78,17 +123,31 @@ describe("deck scaffold", () => {
       expect.objectContaining({ id: "deck", title: "Deck", pluginId: "deck" }),
     )
 
-    expect(
-      registries.surfaceResolvers.resolve({ kind: "workspace.open.path", target: "briefings/weekly.md" }),
-    ).toEqual(
-      expect.objectContaining({
-        component: "deck",
-        title: "weekly.md",
-        params: { path: "briefings/weekly.md" },
-      }),
+    render(
+      <RegistryProvider
+        panelRegistry={registries.panels}
+        commandRegistry={registries.commands}
+        catalogRegistry={registries.catalogs}
+        surfaceResolverRegistry={registries.surfaceResolvers}
+      >
+        <SurfaceShell storageKey="deck-test" onReady={(api) => { surface = api }} />
+      </RegistryProvider>,
     )
-    expect(
-      registries.surfaceResolvers.resolve({ kind: "workspace.open.path", target: "deck/weekly.md" }),
-    ).toBeUndefined()
+
+    await waitFor(() => expect(surface).toBeDefined())
+
+    act(() => {
+      surface?.openSurface({
+        kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
+        target: "./briefings//weekly.md",
+      })
+    })
+
+    expect(mockAddPanel).toHaveBeenCalledWith(expect.objectContaining({
+      id: "surface:workspace.open.path:briefings/weekly.md",
+      component: "deck",
+      title: "weekly.md",
+      params: { path: "briefings/weekly.md" },
+    }))
   })
 })

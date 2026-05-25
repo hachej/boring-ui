@@ -1,5 +1,7 @@
 export function normalizeDeckPath(path: string): string {
-  return path.replace(/\\/g, "/")
+  const trimmed = path.trim().replace(/\\/g, "/")
+  const noLeadingDot = trimmed.replace(/^\.\//, "")
+  return noLeadingDot.replace(/\/+/g, "/")
 }
 
 export function isDeckMarkdownPath(path: string, pathPrefix = "deck/"): boolean {
