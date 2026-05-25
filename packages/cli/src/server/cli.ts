@@ -23,6 +23,11 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { fileURLToPath } from "node:url"
 import { parseArgs } from "node:util"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "./localWorkspaces.js"
+import {
+  createCliPluginAssetManager,
+  getGlobalPiExtensionsRoot,
+  readCliPluginPiSnapshot,
+} from "./pluginDiscovery.js"
 import { scaffoldPlugin } from "./scaffoldPlugin.js"
 import { findHintForError, formatVerifyResult, verifyPlugin } from "./verifyPlugin.js"
 
@@ -232,6 +237,7 @@ async function startFolderMode(opts: {
     logger: false,
     provisionWorkspace: false,
     runtimeProvisioning,
+    additionalBoringPluginDirs: [getGlobalPiExtensionsRoot()],
   })
 
   app.get("/api/v1/workspace/meta", async () => ({
@@ -262,6 +268,7 @@ async function startWorkspacesMode(opts: {
   const registry = createLocalWorkspaceRegistry()
   const app = fastifyModule.default({ logger: false, bodyLimit: 16 * 1024 * 1024 })
   const bridges = new Map<string, ReturnType<typeof workspaceServer.createInMemoryBridge>>()
+  const pluginManagers = new Map<string, InstanceType<typeof workspaceServer.BoringPluginAssetManager>>()
   function getBridge(workspaceId: string) {
     let bridge = bridges.get(workspaceId)
     if (!bridge) {
@@ -280,6 +287,16 @@ async function startWorkspacesMode(opts: {
 
   async function workspaceFromRequest(request: { headers?: Record<string, unknown>; query?: unknown }) {
     return await requireWorkspace(resolveWorkspaceIdFromRequest(request))
+  }
+
+  function getPluginManager(workspace: LocalWorkspace) {
+    const key = `${workspace.id}:${workspace.path}`
+    let manager = pluginManagers.get(key)
+    if (!manager) {
+      manager = createCliPluginAssetManager(workspace.path)
+      pluginManagers.set(key, manager)
+    }
+    return manager
   }
 
   app.get("/api/v1/local-workspaces", async () => ({
@@ -332,9 +349,14 @@ async function startWorkspacesMode(opts: {
         runtimeLayout,
       })
     },
-    getPi: async ({ workspaceRoot }) => ({
-      additionalSkillPaths: [join(workspaceRoot, ".agents", "skills")],
-    }),
+    getPi: async ({ workspaceRoot }) => {
+      const pluginPi = readCliPluginPiSnapshot(workspaceRoot)
+      return {
+        additionalSkillPaths: [join(workspaceRoot, ".agents", "skills"), ...pluginPi.additionalSkillPaths],
+        packages: pluginPi.packages,
+        extensionPaths: pluginPi.extensionPaths,
+      }
+    },
     getExtraTools: async ({ workspaceId, workspaceRoot, workspaceFsCapability }) => [
       ...workspaceServer.createWorkspaceUiTools(getBridge(workspaceId), {
         workspaceRoot: workspaceFsCapability === "strong" ? workspaceRoot : undefined,
@@ -344,6 +366,22 @@ async function startWorkspacesMode(opts: {
 
   await app.register(workspaceServer.uiRoutes, {
     getBridge: async (request) => getBridge((await workspaceFromRequest(request)).id),
+  })
+
+  app.get("/api/v1/agent-plugins", async (request) => {
+    const workspace = await workspaceFromRequest(request)
+    const manager = getPluginManager(workspace)
+    await manager.load()
+    return manager.list()
+  })
+  app.get("/api/v1/agent-plugins/:id/error", async (request, reply) => {
+    const workspace = await workspaceFromRequest(request)
+    const manager = getPluginManager(workspace)
+    await manager.load()
+    const { id } = request.params as { id: string }
+    const error = manager.getError(id)
+    if (error == null) return reply.code(404).send({ error: "not_found" })
+    return reply.type("text/plain").send(error)
   })
 
   app.get("/api/v1/workspace/meta", async () => ({

@@ -32,6 +32,13 @@ The scaffold writes the canonical hot-reload package skeleton:
 - `.pi/extensions/<name>/front/index.tsx` — `definePlugin` config registering one panel + command + left tab
 - `.pi/extensions/<name>/.gitignore` — ignores runtime verifier/signature sidecars
 
+**Discovery roots:**
+
+- Workspace-local boring/Pi plugins live under `$BORING_AGENT_WORKSPACE_ROOT/.pi/extensions/<name>/`
+- Global Pi plugins live under `~/.pi/agent/extensions/`
+
+This skill teaches the **workspace-local** authoring path. Do not scaffold directly into the global root unless the user explicitly asks for a globally installed plugin.
+
 Hot-reloadable agent behavior belongs in `pi.extensions` / `pi.skills` / `pi.systemPrompt`. The scaffold does not create `server/index.ts`: `boring.server` is advanced boot-time/static server integration and is not activated by `/reload` for `.pi/extensions` user plugins.
 
 **Workflow:**
@@ -111,8 +118,10 @@ Two valid layouts, picked by intent:
 
 | Where | Build step? | When to use |
 |---|---|---|
-| `<workspace>/.pi/extensions/<name>/` | NO (Vite transforms `.tsx` on the fly, hot reload via SSE) | Local user plugins; agent-authored plugins; anything you don't intend to publish as a separate npm package. **Default for "I want a plugin".** |
+| `<workspace>/.pi/extensions/<name>/` | NO (Vite transforms `.tsx` on the fly, hot reload via SSE) | Workspace-local user plugins; agent-authored plugins; anything tied to one workspace. **Default for "I want a plugin".** |
 | `plugins/<name>/` (in this repo) | YES (`tsup` → `dist/`, then consuming app does `defaultPluginPackages: ["@hachej/your-plugin"]`) | Plugins shipped as installable npm packages (e.g. `@hachej/boring-ask-user`, `@hachej/boring-data-catalog`). |
+
+Global user-installed plugins are a third case: they are **discovered** from `~/.pi/agent/extensions/`, but this skill still recommends authoring/testing them in a workspace-local `.pi/extensions/<name>/` first, then copying/installing them globally once they work.
 
 The rest of this skill teaches the hot-reload layout. Repo contributors building a publishable plugin start from `packages/cli/templates/plugin/` (build-based template) instead; everyone else uses `boring-ui scaffold-plugin <name>` (Step 0).
 

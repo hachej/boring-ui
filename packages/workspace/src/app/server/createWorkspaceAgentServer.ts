@@ -137,6 +137,8 @@ export interface CreateWorkspaceAgentServerOptions
    * instead of inside the server boot path.
    */
   appPackageJsonPath?: string
+  /** Additional plugin collection roots to scan alongside workspace .pi/extensions and package/plugin-derived roots. */
+  additionalBoringPluginDirs?: string[]
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -368,7 +370,11 @@ export async function provisionWorkspaceAgentServer(opts: {
   })
 }
 
-function collectBoringPluginDirs(workspaceRoot: string, pluginCollection: WorkspaceAgentServerPluginCollection): string[] {
+function collectBoringPluginDirs(
+  workspaceRoot: string,
+  pluginCollection: WorkspaceAgentServerPluginCollection,
+  additionalPluginDirs: string[] = [],
+): string[] {
   const extensionPaths = pluginCollection.agentOptions.pi?.extensionPaths ?? []
   const pluginRoots = extensionPaths.flatMap((path) => {
     try {
@@ -377,10 +383,11 @@ function collectBoringPluginDirs(workspaceRoot: string, pluginCollection: Worksp
       return []
     }
   })
-  return [
+  return [...new Set([
     join(workspaceRoot, ".pi", "extensions"),
     ...pluginRoots,
-  ]
+    ...additionalPluginDirs,
+  ])]
 }
 
 export interface WorkspacePluginPackagePiSnapshot {
@@ -538,7 +545,7 @@ export async function createWorkspaceAgentServer(
   // The asset manager treats each as a plugin source; SSE + jiti reload
   // works the same for all three categories.
   const boringPluginDirs = [
-    ...collectBoringPluginDirs(workspaceRoot, pluginCollection),
+    ...collectBoringPluginDirs(workspaceRoot, pluginCollection, opts.additionalBoringPluginDirs),
     ...defaultPluginPackagePaths,
   ]
 

@@ -71,7 +71,7 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): s
   if (opts.scaffoldCommand) {
     n += 1
     steps.push(
-      `**${n}. Scaffold.** Bash \`${opts.scaffoldCommand} <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"\` — writes canonical files under \`$BORING_AGENT_WORKSPACE_ROOT/.pi/extensions/<kebab-name>/\`. Read the generated \`package.json\` + \`front/index.tsx\`. Do NOT skip this or write from memory. Never \`cd\` to a parent repo or write plugins outside \`$BORING_AGENT_WORKSPACE_ROOT/.pi/extensions/\`.`,
+      `**${n}. Scaffold.** Bash \`${opts.scaffoldCommand} <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"\` — writes canonical files under \`$BORING_AGENT_WORKSPACE_ROOT/.pi/extensions/<kebab-name>/\`. Read the generated \`package.json\` + \`front/index.tsx\`. Do NOT skip this or write from memory. Stay in workspace-local \`.pi/extensions/\` unless the user explicitly asks for a global install.`,
     )
   } else {
     n += 1
@@ -114,7 +114,7 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): s
       ].join("\n")
 
   return [
-    "You are operating inside boring-ui. Workspace root: `$BORING_AGENT_WORKSPACE_ROOT`; plugin files go under `$BORING_AGENT_WORKSPACE_ROOT/.pi/extensions/<name>/`.",
+    "You are operating inside boring-ui. Workspace-local plugin files go under `$BORING_AGENT_WORKSPACE_ROOT/.pi/extensions/<name>/`. Global Pi plugins are discovered from `~/.pi/agent/extensions/`; only use that path when the user explicitly asks for a global install.",
     [
       "## Plugin authoring — required workflow",
       "",
