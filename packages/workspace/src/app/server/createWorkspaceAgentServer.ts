@@ -278,7 +278,7 @@ function resolveBoringPiSkillPaths(workspaceRoot: string): string[] {
 
 export interface WorkspaceAgentServerPluginCollection {
   provisioningContributions: WorkspaceProvisioningContribution[]
-  runtimePlugins: WorkspaceRuntimeProvisioningPlugin[]
+  runtimePlugins: WorkspaceRuntimeProvisioningInput[]
   routeContributions: WorkspaceRouteContribution[]
   preservedUiStateKeys: string[]
   agentOptions: Pick<
@@ -390,12 +390,12 @@ export interface WorkspacePluginPackagePiSnapshot {
   systemPromptAppend?: string
 }
 
-export type WorkspaceRuntimeProvisioningPlugin = ProvisionWorkspaceRuntimeOptions["plugins"][number]
+export type WorkspaceRuntimeProvisioningInput = ProvisionWorkspaceRuntimeOptions["plugins"][number]
 
-function mergeRuntimeProvisioningPlugins(
-  plugins: WorkspaceRuntimeProvisioningPlugin[],
-): WorkspaceRuntimeProvisioningPlugin[] {
-  const byId = new Map<string, WorkspaceRuntimeProvisioningPlugin>()
+function mergeRuntimeProvisioningInputs(
+  plugins: WorkspaceRuntimeProvisioningInput[],
+): WorkspaceRuntimeProvisioningInput[] {
+  const byId = new Map<string, WorkspaceRuntimeProvisioningInput>()
   for (const plugin of plugins) {
     const current = byId.get(plugin.id) ?? { id: plugin.id }
     byId.set(plugin.id, {
@@ -421,7 +421,7 @@ function skillNameFromResolvedPath(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-2) ?? "skill"
 }
 
-export function readWorkspacePluginPackageRuntimePlugins(pluginDirs: string[]): WorkspaceRuntimeProvisioningPlugin[] {
+export function readWorkspacePluginPackageRuntimePlugins(pluginDirs: string[]): WorkspaceRuntimeProvisioningInput[] {
   const scan = scanBoringPlugins(pluginDirs)
   return scan.plugins.map((plugin) => ({
     id: plugin.id,
@@ -571,7 +571,7 @@ export async function createWorkspaceAgentServer(
     errorRoot: join(workspaceRoot, ".pi", "extensions"),
   })
 
-  const buildRuntimeProvisioningPlugins = () => mergeRuntimeProvisioningPlugins([
+  const buildRuntimeProvisioningInputs = () => mergeRuntimeProvisioningInputs([
     ...pluginCollection.runtimePlugins,
     ...readWorkspacePluginPackageRuntimePlugins(boringPluginDirs),
   ])
@@ -588,7 +588,7 @@ export async function createWorkspaceAgentServer(
     })
     if (!adapter) return currentRuntimeProvisioning
     currentRuntimeProvisioning = await provisionWorkspaceRuntime({
-      plugins: buildRuntimeProvisioningPlugins(),
+      plugins: buildRuntimeProvisioningInputs(),
       adapter,
       runtimeLayout,
     })

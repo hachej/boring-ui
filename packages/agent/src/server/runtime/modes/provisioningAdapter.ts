@@ -130,6 +130,31 @@ function mapEnvToLocalSandbox(paths: BoringAgentRuntimePaths, env: Record<string
   )
 }
 
+function sanitizeInstallSourcePart(value: string): string {
+  const sanitized = value.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
+  return sanitized.length > 0 ? sanitized : 'source'
+}
+
+async function copyExternalSourceIntoWorkspace(
+  paths: BoringAgentRuntimePaths,
+  sourcePath: string,
+  opts: { kind: string; id: string; fingerprint: string },
+): Promise<string> {
+  const fingerprint = opts.fingerprint.replace(/^sha256:/, '')
+  const relTarget = `.boring-agent/tmp/${sanitizeInstallSourcePart(opts.kind)}-${sanitizeInstallSourcePart(opts.id)}-${sanitizeInstallSourcePart(fingerprint)}-source`
+  const absTarget = validatePath(paths.workspaceRoot, relTarget)
+  await rm(absTarget, { recursive: true, force: true })
+  await mkdir(dirname(absTarget), { recursive: true })
+  await assertRealPathWithinWorkspace(paths.workspaceRoot, dirname(absTarget))
+  const sourceStat = await stat(sourcePath)
+  await cp(sourcePath, absTarget, {
+    recursive: sourceStat.isDirectory(),
+    force: false,
+    errorOnExist: true,
+  })
+  return `${LOCAL_SANDBOX_WORKSPACE_ROOT}/${relTarget}`
+}
+
 function createWorkspaceFs(workspaceRoot: string): WorkspaceProvisioningAdapter['workspaceFs'] {
   return {
     async exists(workspaceRelativePath) {
@@ -226,9 +251,7 @@ export function createLocalProvisioningAdapter(
         return `${LOCAL_SANDBOX_WORKSPACE_ROOT}/${relPath.split(sep).join('/')}`
       }
 
-      const mountPath = `/mnt/boring-agent-sources/${opts.kind}-${opts.id}-${opts.fingerprint.replace(/^sha256:/, '')}`
-      sourceMounts.set(realSource, mountPath)
-      return mountPath
+      return await copyExternalSourceIntoWorkspace(paths, realSource, opts)
     },
     workspaceFs: createWorkspaceFs(paths.workspaceRoot),
     getRuntimeCacheRoot() {

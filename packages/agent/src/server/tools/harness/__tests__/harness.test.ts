@@ -175,7 +175,7 @@ describe('buildHarnessAgentTools', () => {
       timeoutMs: 10_000,
       env: expect.objectContaining({ BORING_MACRO_API_URL: 'http://macro-v1' }),
     }))
-    expect(firstExecOptions.env?.PATH).toBe('/workspace/.boring-agent/venv/bin:/runtime/base:/usr/local/bin:/usr/bin:/bin')
+    expect(firstExecOptions.env?.PATH).toBe('/workspace/.boring-agent/venv/bin:/runtime/base:/vercel/runtimes/node24/bin:/vercel/runtimes/node22/bin:/usr/local/bin:/usr/bin:/bin')
     expect(firstExecOptions.env).not.toHaveProperty('VAULT_TOKEN')
     expect(firstExecOptions.env).not.toHaveProperty('ANTHROPIC_API_KEY')
 

@@ -91,7 +91,7 @@ test('direct adapter resolveInstallSource returns runtime-visible local paths an
   expect(adapter.getRuntimeCacheRoot()).toBe(paths.cache)
 })
 
-test('local adapter maps workspace-contained package roots to /workspace and external roots to bwrap bind mounts', async () => {
+test('local adapter maps workspace-contained package roots to /workspace and copies external roots into writable workspace tmp', async () => {
   const workspaceRoot = await tempRoot('boring-local-workspace-')
   const externalRoot = await tempRoot('boring-local-external-')
   await mkdir(join(workspaceRoot, 'packages', 'plugin'), { recursive: true })
@@ -113,7 +113,7 @@ test('local adapter maps workspace-contained package roots to /workspace and ext
     id: 'macro sdk',
     fingerprint: 'sha256:abcdef',
   })
-  expect(externalInstallSource).toBe('/mnt/boring-agent-sources/python-macro sdk-abcdef')
+  expect(externalInstallSource).toBe('/workspace/.boring-agent/tmp/python-macro-sdk-abcdef-source')
 
   const execResult = await adapter.exec(join(paths.venvBin, 'python'), ['-c', 'print("hello world")', 'arg with spaces', paths.venv], {
     env: { VIRTUAL_ENV: paths.venv },
@@ -123,9 +123,8 @@ test('local adapter maps workspace-contained package roots to /workspace and ext
 
   expect(calls).toHaveLength(1)
   expect(calls[0].command).toBe('bwrap')
-  expect(calls[0].args).toContain('--ro-bind')
-  expect(calls[0].args).toContain(externalRoot)
-  expect(calls[0].args).toContain(externalInstallSource)
+  await expect(readFile(join(workspaceRoot, '.boring-agent', 'tmp', 'python-macro-sdk-abcdef-source'), 'utf8')).rejects.toThrow()
+  expect(calls[0].args).not.toContain(externalRoot)
   expect(calls[0].args.slice(-5)).toEqual([
     '/workspace/.boring-agent/venv/bin/python',
     '-c',
