@@ -42,6 +42,8 @@ interface ModeLogger {
 type EnvGetter = (name: string) => string | undefined
 const ORPHAN_GUARD_MAX_IDLE_MS = 24 * 60 * 60 * 1000
 const VERCEL_SANDBOX_TIMEOUT_MS_ENV = 'BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS'
+const VERCEL_SANDBOX_RUNTIME_ENV = 'BORING_AGENT_VERCEL_SANDBOX_RUNTIME'
+const DEFAULT_VERCEL_SANDBOX_RUNTIME = 'node24'
 const execFileAsync = promisify(execFile)
 
 export interface VercelSandboxModeAdapterOptions {
@@ -63,7 +65,7 @@ interface VercelAuthConfig {
 
 function createDefaultVercelClient(
   auth: VercelAuthConfig,
-  opts: { timeoutMs?: number } = {},
+  opts: { timeoutMs?: number; runtime?: string } = {},
 ): VercelSandboxClient {
   const credentials = {
     token: auth.token,
@@ -79,12 +81,14 @@ function createDefaultVercelClient(
       const base = {
         ...createOptions,
         ...(params?.name ? { name: params.name } : {}),
+        ...(opts.runtime ? { runtime: opts.runtime } : {}),
         persistent: params?.persistent ?? true,
         snapshotExpiration: params?.snapshotExpiration ?? 0,
       }
       if (params?.source?.type === 'snapshot') {
+        const { runtime: _runtime, ...snapshotBase } = base
         return await VercelSandbox.create({
-          ...base,
+          ...snapshotBase,
           source: { type: 'snapshot', snapshotId: params.source.snapshotId },
         })
       }
@@ -311,11 +315,12 @@ async function ensureVercelProvisioningParts(options: {
   const teamId = requireEnvVar('VERCEL_TEAM_ID', options.getEnvVar)
   const projectId = options.getEnvVar('VERCEL_PROJECT_ID')?.trim()
   const timeoutMs = readOptionalPositiveIntegerEnv(VERCEL_SANDBOX_TIMEOUT_MS_ENV, options.getEnvVar)
+  const runtime = options.getEnvVar(VERCEL_SANDBOX_RUNTIME_ENV)?.trim() || DEFAULT_VERCEL_SANDBOX_RUNTIME
   const vercelClient = options.vercelClient ?? createDefaultVercelClient({
     token: auth.token,
     teamId,
     projectId,
-  }, { timeoutMs })
+  }, { timeoutMs, runtime })
   const workspaceId = options.ctx?.workspaceId ?? options.ctx?.workspaceRoot ?? options.runtimeLayout.workspaceRoot
   const sandboxHandle = await resolveSandboxHandle(workspaceId, options.store, vercelClient, {
     logger: options.logger,
@@ -436,10 +441,12 @@ export function createVercelSandboxModeAdapter(
             env: execOpts?.env,
             timeoutMs: execOpts?.timeoutMs,
           })
-          return {
-            stdout: Buffer.from(result.stdout).toString('utf8'),
-            stderr: Buffer.from(result.stderr).toString('utf8'),
+          const stdout = Buffer.from(result.stdout).toString('utf8')
+          const stderr = Buffer.from(result.stderr).toString('utf8')
+          if (result.exitCode !== 0) {
+            throw new Error(`Command failed (${command}) with exit code ${result.exitCode}${stderr.trim() ? `: ${stderr.trim()}` : ''}`)
           }
+          return { stdout, stderr }
         },
         prepareArtifact: prepareVercelProvisioningArtifact,
       })
@@ -452,17 +459,19 @@ export function createVercelSandboxModeAdapter(
         VERCEL_SANDBOX_TIMEOUT_MS_ENV,
         getEnvVar,
       )
+      const runtime = getEnvVar(VERCEL_SANDBOX_RUNTIME_ENV)?.trim() || DEFAULT_VERCEL_SANDBOX_RUNTIME
 
       const vercelClient = opts.vercelClient ?? createDefaultVercelClient({
         token: auth.token,
         teamId,
         projectId,
-      }, { timeoutMs })
+      }, { timeoutMs, runtime })
 
       logger.info('[vercel-sandbox:mode] auth resolved', {
         source: auth.source,
         hasProjectId: Boolean(projectId),
         timeoutMs: timeoutMs ?? null,
+        runtime,
       })
 
       const workspaceId = ctx.workspaceId ?? ctx.workspaceRoot

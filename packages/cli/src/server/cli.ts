@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify"
 import type {
+  BoringAgentRuntimePaths,
   ProvisionWorkspaceRuntimeOptions,
   RuntimeModeAdapter,
   RuntimeModeId,
@@ -132,10 +133,11 @@ export async function provisionCliWorkspaceRuntime(opts: {
   plugins?: ProvisionWorkspaceRuntimeOptions["plugins"]
   adapter?: WorkspaceProvisioningAdapter
   modeAdapter?: Pick<RuntimeModeAdapter, "createProvisioningAdapter">
+  runtimeLayout?: BoringAgentRuntimePaths
 }): Promise<WorkspaceProvisioningResult | undefined> {
   if (opts.provisionWorkspace === false) return undefined
   const agent = await import("@hachej/boring-agent/server")
-  const runtimeLayout = agent.getBoringAgentRuntimePaths(opts.workspaceRoot)
+  const runtimeLayout = opts.runtimeLayout ?? agent.getBoringAgentRuntimePaths(opts.workspaceRoot)
   const adapter = opts.adapter
     ?? opts.modeAdapter?.createProvisioningAdapter?.(runtimeLayout)
     ?? agent.resolveMode(opts.mode).createProvisioningAdapter?.(runtimeLayout)
@@ -322,15 +324,17 @@ async function startWorkspacesMode(opts: {
     getWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
     getWorkspaceRoot: async (workspaceId) => (await requireWorkspace(workspaceId)).path,
     getSessionNamespace: async ({ workspaceId }) => `local-workspace-${workspaceId}`,
-    getPi: async ({ workspaceRoot }) => {
-      const runtimeProvisioning = await provisionCliWorkspaceRuntime({
+    provisionRuntime: async ({ workspaceRoot, runtimeMode, runtimeLayout, provisioningAdapter }) => {
+      return await provisionCliWorkspaceRuntime({
         workspaceRoot,
-        mode: opts.mode,
+        mode: runtimeMode,
+        adapter: provisioningAdapter,
+        runtimeLayout,
       })
-      return {
-        additionalSkillPaths: runtimeProvisioning?.skillPaths ?? [join(workspaceRoot, ".agents", "skills")],
-      }
     },
+    getPi: async ({ workspaceRoot }) => ({
+      additionalSkillPaths: [join(workspaceRoot, ".agents", "skills")],
+    }),
     getExtraTools: async ({ workspaceId, workspaceRoot, workspaceFsCapability }) => [
       ...workspaceServer.createWorkspaceUiTools(getBridge(workspaceId), {
         workspaceRoot: workspaceFsCapability === "strong" ? workspaceRoot : undefined,

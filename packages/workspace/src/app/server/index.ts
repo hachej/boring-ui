@@ -6,6 +6,7 @@ export {
   createWorkspaceAgentServer,
   provisionWorkspaceAgentServer,
   readWorkspacePluginPackagePiSnapshot,
+  readWorkspacePluginPackageRuntimePlugins,
   type CollectWorkspaceAgentServerPluginsOptions,
   type CreateWorkspaceAgentServerOptions,
   type WorkspaceAgentPiOptions,
@@ -13,6 +14,7 @@ export {
   type WorkspaceAgentServerPluginContext,
   type WorkspacePluginPackagePiSnapshot,
   type WorkspacePluginEntry,
+  type WorkspaceRuntimeProvisioningInput,
 } from "./createWorkspaceAgentServer"
 export {
   resolveDefaultWorkspacePluginPackagePaths,
@@ -28,4 +30,5 @@ export type {
   WorkspacePiPackageSource,
   WorkspaceProvisioningContribution,
   WorkspaceRouteContribution,
+  WorkspaceRuntimeProvisioningInput as ServerWorkspaceRuntimeProvisioningInput,
 } from "../../server/plugins/bootstrapServer"

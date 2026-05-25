@@ -23,11 +23,11 @@ export interface ServerBootstrapOptions {
   excludeDefaults?: string[]
 }
 
-export type WorkspaceRuntimeProvisioningPlugin = ProvisionWorkspaceRuntimeOptions["plugins"][number]
+export type WorkspaceRuntimeProvisioningInput = ProvisionWorkspaceRuntimeOptions["plugins"][number]
 
 export type WorkspaceProvisioningContribution = {
   id: string
-  provisioning: NonNullable<WorkspaceRuntimeProvisioningPlugin["provisioning"]>
+  provisioning: NonNullable<WorkspaceRuntimeProvisioningInput["provisioning"]>
 }
 
 export type WorkspaceRouteContribution = {
@@ -41,7 +41,7 @@ export interface ServerBootstrapResult {
   piPackages: WorkspacePiPackageSource[]
   extensionPaths: string[]
   agentTools: AgentTool[]
-  runtimePlugins: WorkspaceRuntimeProvisioningPlugin[]
+  runtimePlugins: WorkspaceRuntimeProvisioningInput[]
   provisioningContributions: WorkspaceProvisioningContribution[]
   routeContributions: WorkspaceRouteContribution[]
   preservedUiStateKeys: string[]

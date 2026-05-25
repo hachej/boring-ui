@@ -72,7 +72,7 @@ function directSpawnHook(
   })
 }
 
-const VERCEL_SAFE_DEFAULT_PATH = '/usr/local/bin:/usr/bin:/bin'
+const VERCEL_SAFE_DEFAULT_PATH = '/vercel/runtimes/node24/bin:/vercel/runtimes/node22/bin:/usr/local/bin:/usr/bin:/bin'
 
 function bashOptionsForMode(
   bundle: RuntimeBundle,

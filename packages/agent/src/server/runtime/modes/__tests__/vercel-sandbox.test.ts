@@ -265,7 +265,7 @@ test('mode accepts VERCEL_TOKEN fallback and creates working bundle with shared 
     expect(mkdirSpy).toHaveBeenCalledWith('/vercel/sandbox', { recursive: true })
     expect(logger.info).toHaveBeenCalledWith(
       '[vercel-sandbox:mode] auth resolved',
-      { source: 'VERCEL_TOKEN', hasProjectId: false, timeoutMs: null },
+      { source: 'VERCEL_TOKEN', hasProjectId: false, timeoutMs: null, runtime: 'node24' },
     )
     expect(logger.info).toHaveBeenCalledWith(
       '[vercel-sandbox:mode] resolved sandbox handle',
