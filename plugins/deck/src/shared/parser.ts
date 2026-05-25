@@ -228,6 +228,7 @@ function tryParseWidgetAttrs(raw: string): Record<string, string> | null {
     i += 1
 
     let value = ""
+    let closed = false
     while (i < raw.length) {
       const char = raw[i]
       if (char === "\\") {
@@ -239,11 +240,13 @@ function tryParseWidgetAttrs(raw: string): Record<string, string> | null {
       }
       if (char === '"') {
         i += 1
+        closed = true
         break
       }
       value += char
       i += 1
     }
+    if (!closed) return null
 
     attrs[key] = value
   }

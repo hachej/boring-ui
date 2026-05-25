@@ -130,6 +130,21 @@ owner: macro
   it("throws on malformed attrs", () => {
     expect(() => parseWidgetAttrs('text="Draft" broken=oops')).toThrow(/Malformed widget attrs/)
   })
+
+  it("rejects unterminated quoted attrs with a clear malformed-attrs error", () => {
+    expect(() => parseWidgetAttrs('foo="bar')).toThrow(/Malformed widget attrs/)
+  })
+
+  it("keeps widgets with unterminated attrs as markdown text", () => {
+    const parsed = parseDeckMarkdown('Before {{Badge text="Draft}} after')
+
+    expect(parsed.slides[0]?.segments).toEqual([
+      {
+        type: "markdown",
+        text: 'Before {{Badge text="Draft}} after',
+      },
+    ])
+  })
 })
 
 describe("deck path helpers", () => {
@@ -140,6 +155,7 @@ describe("deck path helpers", () => {
   it("accepts workspace-relative markdown under the configured prefix", () => {
     expect(isDeckMarkdownPath("deck/intro.md")).toBe(true)
     expect(isDeckMarkdownPath("briefings/intro.md", "briefings/")).toBe(true)
+    expect(isDeckMarkdownPath("briefings/intro.md", "briefings\\")).toBe(true)
   })
 
   it("rejects absolute paths, parent traversal, and non-markdown files", () => {

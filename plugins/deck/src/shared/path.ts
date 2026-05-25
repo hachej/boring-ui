@@ -4,7 +4,8 @@ export function normalizeDeckPath(path: string): string {
 
 export function isDeckMarkdownPath(path: string, pathPrefix = "deck/"): boolean {
   const normalized = normalizeDeckPath(path)
-  const normalizedPrefix = pathPrefix.endsWith("/") ? pathPrefix : `${pathPrefix}/`
+  const normalizedPathPrefix = normalizeDeckPath(pathPrefix)
+  const normalizedPrefix = normalizedPathPrefix.endsWith("/") ? normalizedPathPrefix : `${normalizedPathPrefix}/`
 
   if (!normalized.endsWith(".md")) return false
   if (normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized)) return false
