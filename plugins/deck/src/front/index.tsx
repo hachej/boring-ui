@@ -1,3 +1,7 @@
+import {
+  WorkspaceFilesProvider,
+  type PluginProviderProps,
+} from "@hachej/boring-workspace"
 import { definePlugin, type BoringFrontFactoryWithId } from "@hachej/boring-workspace/plugin"
 import {
   DECK_LABEL,
@@ -11,6 +15,25 @@ import { StandaloneDeckRoute } from "./StandaloneDeckRoute"
 import { createDeckSurfaceResolver, deckSurfaceResolver } from "./surfaceResolver"
 import { validateDeckWidgets } from "./widgets"
 
+function DeckFilesProvider({
+  apiBaseUrl,
+  authHeaders,
+  onAuthError,
+  apiTimeout,
+  children,
+}: PluginProviderProps) {
+  return (
+    <WorkspaceFilesProvider
+      apiBaseUrl={apiBaseUrl}
+      authHeaders={authHeaders}
+      onAuthError={onAuthError}
+      timeout={apiTimeout}
+    >
+      {children}
+    </WorkspaceFilesProvider>
+  )
+}
+
 export function createDeckPlugin(options: CreateDeckPluginOptions = {}): BoringFrontFactoryWithId {
   const pathPrefix = options.pathPrefix ?? DECK_PATH_PREFIX
   validateDeckWidgets(options.widgets ?? [])
@@ -18,6 +41,12 @@ export function createDeckPlugin(options: CreateDeckPluginOptions = {}): BoringF
   return definePlugin({
     id: DECK_PLUGIN_ID,
     label: DECK_LABEL,
+    providers: [
+      {
+        id: "deck-files",
+        component: DeckFilesProvider,
+      },
+    ],
     panels: [
       {
         id: DECK_PANEL_ID,

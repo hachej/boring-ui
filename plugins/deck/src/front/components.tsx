@@ -83,6 +83,7 @@ export interface DeckToolbarProps {
   onPrevious: () => void
   onNext: () => void
   onTogglePresentMode?: () => void
+  actions?: ReactNode
 }
 
 export function DeckToolbar({
@@ -95,6 +96,7 @@ export function DeckToolbar({
   onPrevious,
   onNext,
   onTogglePresentMode,
+  actions,
 }: DeckToolbarProps) {
   return (
     <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/60 px-3 py-2">
@@ -107,6 +109,7 @@ export function DeckToolbar({
         </div>
       </div>
       <div className="flex items-center gap-2">
+        {actions}
         <button
           type="button"
           className="rounded-md border border-border px-2 py-1 text-xs text-foreground disabled:cursor-not-allowed disabled:opacity-50"
@@ -136,6 +139,36 @@ export function DeckToolbar({
           </button>
         ) : null}
       </div>
+    </div>
+  )
+}
+
+export interface DeckNoticeProps {
+  title: string
+  description: string
+  actions?: ReactNode
+  tone?: "warning" | "error"
+  testId?: string
+}
+
+export function DeckNotice({
+  title,
+  description,
+  actions,
+  tone = "warning",
+  testId,
+}: DeckNoticeProps) {
+  return (
+    <div
+      className={cn(
+        "mx-3 mt-3 rounded-xl border p-3 text-sm",
+        tone === "error" ? "border-destructive/20 bg-destructive/5" : "border-amber-500/20 bg-amber-500/5",
+      )}
+      data-testid={testId}
+    >
+      <div className="font-medium text-foreground">{title}</div>
+      <div className="mt-1 text-muted-foreground">{description}</div>
+      {actions ? <div className="mt-3 flex items-center gap-2">{actions}</div> : null}
     </div>
   )
 }
