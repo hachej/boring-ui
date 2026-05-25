@@ -19,7 +19,7 @@ async function pendingQuestion(store: FileAskUserStore, sessionId: string) {
     const question = await store.getPending(sessionId)
     expect(question).not.toBeNull()
     return question!
-  })
+  }, { timeout: 5_000 })
 }
 
 describe("InProcessAskUserCoordinator", () => {

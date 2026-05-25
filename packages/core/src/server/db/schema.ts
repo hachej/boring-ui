@@ -268,3 +268,21 @@ export const idempotencyKeys = pgTable(
     index('idempotency_keys_created_at_idx').on(table.createdAt),
   ],
 )
+
+export const telemetryEvents = pgTable(
+  'telemetry_events',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    appId: text('app_id').notNull(),
+    eventName: text('event_name').notNull(),
+    distinctId: text('distinct_id').notNull().default('anonymous'),
+    properties: jsonb('properties').notNull().default({}),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('telemetry_events_app_created_at_idx').on(table.appId, table.createdAt),
+    index('telemetry_events_event_name_idx').on(table.eventName),
+  ],
+)

@@ -6,6 +6,8 @@ import type { UIMessageChunk } from '../sse'
 import type { AgentHarness, RunContext } from '../../../shared/harness'
 import type { SessionCtx } from '../../../shared/session'
 import type { UIMessage } from '../../../shared/message'
+import { ErrorCode } from '../../../shared/error-codes'
+import { noopTelemetry, safeCapture, type TelemetrySink } from '../../../shared/telemetry'
 import {
   createBodyValidator,
   ERROR_CODE_INTERNAL,
@@ -60,6 +62,21 @@ export interface ChatRouteOptions {
     workdir: string
   }>
   sessionChangesTracker?: SessionChangesTracker
+  telemetry?: TelemetrySink
+}
+
+function addTelemetryProperty(
+  properties: Record<string, string | number>,
+  key: string,
+  value: unknown,
+): void {
+  if (typeof value === 'string' && value) properties[key] = value
+  if (typeof value === 'number' && Number.isFinite(value)) properties[key] = value
+}
+
+function safeTelemetryErrorCode(value: unknown): string {
+  const parsed = ErrorCode.safeParse(value)
+  return parsed.success ? parsed.data : ErrorCode.enum.INTERNAL_ERROR
 }
 
 export function chatRoutes(
@@ -68,6 +85,7 @@ export function chatRoutes(
   done: (err?: Error) => void,
 ): void {
   const { sessionChangesTracker } = opts
+  const telemetry = opts.telemetry ?? noopTelemetry
   const validateBody = createBodyValidator(chatBodySchema)
   const buffers = new StreamBufferStore()
   // Track last follow-up seq/nonce per session for dedupe detection.
@@ -121,9 +139,19 @@ export function chatRoutes(
       const { sessionId, message, model, thinkingLevel, attachments } =
         request.body as ChatBody
       const turnId = randomUUID()
+      const startedAt = Date.now()
+      const telemetryProperties: Record<string, string | number> = {
+        sessionId,
+        requestId: request.id,
+      }
+      addTelemetryProperty(telemetryProperties, 'workspaceId', request.workspaceContext?.workspaceId)
+      addTelemetryProperty(telemetryProperties, 'modelProvider', model?.provider)
 
       request.log.info({ sessionId, turnId, model, thinkingLevel }, '[chat] start')
-      const runtime = await resolveRuntime(request)
+      safeCapture(telemetry, {
+        name: 'agent.chat.started',
+        properties: telemetryProperties,
+      })
 
       const abortController = new AbortController()
       let streamStarted = false
@@ -137,14 +165,18 @@ export function chatRoutes(
         }
       })
 
-      const ctx: RunContext = {
-        abortSignal: abortController.signal,
-        workdir: runtime.workdir,
-      }
-
       const buf = buffers.create(sessionId, turnId)
 
       try {
+        const runtime = await resolveRuntime(request)
+        const ctx: RunContext = {
+          abortSignal: abortController.signal,
+          workdir: runtime.workdir,
+        }
+        safeCapture(telemetry, {
+          name: 'agent.chat.message.submitted',
+          properties: telemetryProperties,
+        })
         const chunks = runtime.harness.sendMessage(
           { sessionId, message, model, thinkingLevel, attachments },
           ctx,
@@ -152,6 +184,7 @@ export function chatRoutes(
 
         const stream = createUIMessageStream({
           async execute({ writer }: { writer: { write(chunk: UIMessageChunk): void } }) {
+            let streamFailed = false
             try {
               for await (const chunk of chunks) {
                 const c = chunk as UIMessageChunk
@@ -163,7 +196,17 @@ export function chatRoutes(
                 writer.write(c)
               }
             } catch (err) {
+              streamFailed = true
               request.log.error({ err, sessionId }, '[chat] stream error')
+              safeCapture(telemetry, {
+                name: 'agent.chat.failed',
+                properties: {
+                  ...telemetryProperties,
+                  status: 'error',
+                  durationMs: Date.now() - startedAt,
+                  errorCode: ErrorCode.enum.INTERNAL_ERROR,
+                },
+              })
               const errChunk = {
                 type: 'error',
                 errorText: 'internal error',
@@ -176,6 +219,16 @@ export function chatRoutes(
               // and may arrive before markComplete's callback) sees the flag
               // and does NOT abort an already-finished stream.
               streamCompleted = true
+              if (!streamFailed) {
+                safeCapture(telemetry, {
+                  name: 'agent.chat.completed',
+                  properties: {
+                    ...telemetryProperties,
+                    status: 'ok',
+                    durationMs: Date.now() - startedAt,
+                  },
+                })
+              }
               buf.markComplete(() => buffers.evict(sessionId, turnId))
             }
           },
@@ -199,6 +252,15 @@ export function chatRoutes(
         return
       } catch (err) {
         request.log.error({ err, sessionId }, '[chat] error')
+        safeCapture(telemetry, {
+          name: 'agent.chat.failed',
+          properties: {
+            ...telemetryProperties,
+            status: 'error',
+            durationMs: Date.now() - startedAt,
+            errorCode: safeTelemetryErrorCode((err as { code?: unknown })?.code),
+          },
+        })
         buf.markComplete(() => buffers.evict(sessionId, turnId))
         if (streamStarted) return
         return reply.code(500).send({

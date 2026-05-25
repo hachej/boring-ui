@@ -30,6 +30,8 @@ import {
 import type { FastifyInstance } from 'fastify'
 import type postgres from 'postgres'
 import type { CoreConfig } from '../../shared/types.js'
+import { ERROR_CODES } from '../../shared/errors.js'
+import { safeCapture, type TelemetrySink } from '../../shared/telemetry.js'
 import {
   authHook,
   createAuth,
@@ -55,6 +57,7 @@ import {
 } from '../../server/db/index.js'
 import { loadConfig, type LoadConfigOptions } from '../../server/config/index.js'
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
+import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
 
 const MIME_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
@@ -128,6 +131,8 @@ export interface CreateCoreWorkspaceAgentServerOptions
   extraTools?: RegisterAgentRoutesOptions['extraTools']
   systemPromptAppend?: string
   serveFrontend?: boolean
+  /** Optional best-effort telemetry sink. Defaults to core's DB-backed env helper. */
+  telemetry?: TelemetrySink
 }
 
 type AgentPiOptions = RegisterAgentRoutesOptions['pi']
@@ -391,9 +396,31 @@ async function registerAuthProxy(app: CoreWorkspaceAgentServer) {
   })
 }
 
+function captureAppOpened(telemetry: TelemetrySink, requestId: string): void {
+  safeCapture(telemetry, {
+    name: 'app.opened',
+    properties: { requestId },
+  })
+}
+
+function registerTelemetryHooks(app: CoreWorkspaceAgentServer, telemetry: TelemetrySink): void {
+  app.addHook('onResponse', async (request, reply) => {
+    if (reply.statusCode < 500) return
+    safeCapture(telemetry, {
+      name: 'server.request.failed',
+      properties: {
+        requestId: request.id,
+        status: reply.statusCode,
+        errorCode: ERROR_CODES.INTERNAL_ERROR,
+      },
+    })
+  })
+}
+
 async function registerFrontendAuthPages(
   app: CoreWorkspaceAgentServer,
   appRoot: string,
+  telemetry: TelemetrySink,
 ) {
   const frontDistDir = path.resolve(appRoot, 'dist/front')
   const indexPath = path.resolve(frontDistDir, 'index.html')
@@ -408,6 +435,7 @@ async function registerFrontendAuthPages(
         }
       }
       const html = await readFile(indexPath, 'utf-8')
+      captureAppOpened(telemetry, request.id)
       reply.type('text/html; charset=utf-8')
       return reply.send(injectCspNonceIntoHtml(html, request.cspNonce))
     })
@@ -417,6 +445,7 @@ async function registerFrontendAuthPages(
 async function registerFrontendFallback(
   app: CoreWorkspaceAgentServer,
   appRoot: string,
+  telemetry: TelemetrySink,
 ) {
   const frontDistDir = path.resolve(appRoot, 'dist/front')
   const indexPath = path.resolve(frontDistDir, 'index.html')
@@ -431,6 +460,7 @@ async function registerFrontendFallback(
     }
 
     const html = await readFile(indexPath, 'utf-8')
+    captureAppOpened(telemetry, request.id)
     reply.type('text/html; charset=utf-8')
     return reply.send(injectCspNonceIntoHtml(html, request.cspNonce))
   })
@@ -462,6 +492,7 @@ async function registerFrontendFallback(
     }
 
     const html = await readFile(indexPath, 'utf-8')
+    captureAppOpened(telemetry, request.id)
     reply.type('text/html; charset=utf-8')
     return reply.send(injectCspNonceIntoHtml(html, request.cspNonce))
   })
@@ -550,11 +581,20 @@ export async function createCoreWorkspaceAgentServer(
   const serveFrontend =
     options.serveFrontend ?? (process.env.NODE_ENV !== 'development' && Boolean(appRoot))
   const workspaceRoot = options.workspaceRoot ?? process.cwd()
+  const telemetrySource = options.telemetry
+    ? 'custom'
+    : process.env.BORING_TELEMETRY_ENABLED === 'true'
+      ? 'db-env'
+      : 'noop-env'
+  const telemetry = options.telemetry ?? createDatabaseTelemetryFromEnv(db, { appId: config.appId }, process.env)
+  app.log.debug({ telemetry: { source: telemetrySource } }, 'resolved telemetry sink')
+
+  registerTelemetryHooks(app, telemetry)
 
   await registerCoreRoutes({ app, sql, db, userStore, workspaceStore })
 
   if (serveFrontend && appRoot) {
-    await registerFrontendAuthPages(app, appRoot)
+    await registerFrontendAuthPages(app, appRoot, telemetry)
   }
 
   await registerAuthProxy(app)
@@ -686,6 +726,7 @@ export async function createCoreWorkspaceAgentServer(
     },
     provisionWorkspace: options.provisionWorkspace,
     registerHealthRoute: options.registerHealthRoute ?? false,
+    telemetry,
   })
 
   await app.register(uiRoutes, {
@@ -698,7 +739,7 @@ export async function createCoreWorkspaceAgentServer(
   }
 
   if (serveFrontend && appRoot) {
-    await registerFrontendFallback(app, appRoot)
+    await registerFrontendFallback(app, appRoot, telemetry)
   }
 
   return app
