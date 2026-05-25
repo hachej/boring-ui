@@ -1,5 +1,4 @@
 import { render, screen } from "@testing-library/react"
-import type { ReactElement } from "react"
 import { describe, expect, it, vi } from "vitest"
 import { DeckWidgetSlot, indexDeckWidgets, validateDeckWidgets } from "../widgets"
 import type { DeckWidgetDefinition } from "../../shared"
@@ -159,17 +158,19 @@ describe("deck widget registry", () => {
     )
   })
 
-  it("recovers from a render failure when rerendered with healthy content", () => {
-    const renderImpl = vi.fn<() => ReactElement>()
-    renderImpl.mockImplementationOnce(() => {
-      throw new Error("Render exploded")
-    })
-    renderImpl.mockImplementation(() => <span>Recovered widget</span>)
+  it("recovers when a child component throws during React render and later becomes healthy", () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+    let shouldThrow = true
+
+    function FlakyChild() {
+      if (shouldThrow) throw new Error("Render exploded")
+      return <span>Recovered widget</span>
+    }
 
     const widgets = indexDeckWidgets([
       {
         name: "RecoveringWidget",
-        render: renderImpl,
+        render: () => <FlakyChild />,
       },
     ])
 
@@ -189,8 +190,10 @@ describe("deck widget registry", () => {
       "Render exploded: RecoveringWidget",
     )
 
+    shouldThrow = false
     rerender(<DeckWidgetSlot widgets={widgets} context={baseContext} segment={segment} />)
 
     expect(screen.getByTestId("deck-widget-block")).toHaveTextContent("Recovered widget")
+    consoleError.mockRestore()
   })
 })
