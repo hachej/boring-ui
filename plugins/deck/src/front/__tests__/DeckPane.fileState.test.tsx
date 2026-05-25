@@ -155,6 +155,11 @@ describe("DeckPane file-state integration", () => {
     await waitFor(() =>
       expect(screen.getByTestId("deck-markdown-editor")).toHaveValue("# Intro\n\nServer latest"),
     )
+
+    fireEvent.click(screen.getByTestId("deck-save"))
+
+    await act(async () => {})
+
     expect(getCount).toBeGreaterThanOrEqual(2)
     expect(postCount).toBe(1)
   })
@@ -204,6 +209,8 @@ describe("DeckPane file-state integration", () => {
     fireEvent.click(screen.getByTestId("deck-reload"))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+    await act(async () => {})
+    expect(postCount).toBe(1)
     expect(screen.getByTestId("deck-conflict-notice")).toBeInTheDocument()
     expect(screen.getByTestId("deck-markdown-editor")).toHaveValue("# Intro\n\nChanged")
 

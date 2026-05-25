@@ -21,6 +21,7 @@ export interface UseEditorLifecycleReturn {
   isSaving: boolean
   lastSavedAt: number | null
   markDirty: () => void
+  markClean: () => void
   flushSave: () => Promise<void>
   shouldSync: boolean
   ackSync: () => void
@@ -127,6 +128,14 @@ export function useEditorLifecycle(
     scheduleSave()
   }, [path, scheduleSave])
 
+  const markClean = useCallback(() => {
+    if (!path) return
+    clearTimeout(saveTimerRef.current)
+    setIsDirty(false)
+    setExternalChangeWhileDirty(false)
+    onDirtyChangeRef.current?.(path, false)
+  }, [path])
+
   const flushSave = useCallback(async () => {
     clearTimeout(saveTimerRef.current)
     if (saveInFlightRef.current) return saveInFlightRef.current
@@ -178,7 +187,16 @@ export function useEditorLifecycle(
   }, [])
 
   return {
-    isDirty, isSaving, lastSavedAt, markDirty, flushSave, shouldSync, ackSync,
-    externalChangeWhileDirty, ackExternalChange, notifySaved,
+    isDirty,
+    isSaving,
+    lastSavedAt,
+    markDirty,
+    markClean,
+    flushSave,
+    shouldSync,
+    ackSync,
+    externalChangeWhileDirty,
+    ackExternalChange,
+    notifySaved,
   }
 }

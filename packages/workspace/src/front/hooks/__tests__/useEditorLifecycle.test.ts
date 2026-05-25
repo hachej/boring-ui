@@ -62,6 +62,23 @@ describe("dirty state tracking", () => {
     expect(result.current.isDirty).toBe(false)
   })
 
+  it("markClean clears dirty state without saving", () => {
+    const onDirtyChange = vi.fn()
+    const adapter = createAdapter()
+    const { result } = renderHook(() =>
+      useEditorLifecycle("/a.ts", { adapter, panelId: "p1", onDirtyChange }),
+    )
+
+    act(() => result.current.markDirty())
+    expect(result.current.isDirty).toBe(true)
+
+    act(() => result.current.markClean())
+
+    expect(result.current.isDirty).toBe(false)
+    expect(adapter.save).not.toHaveBeenCalled()
+    expect(onDirtyChange).toHaveBeenLastCalledWith("/a.ts", false)
+  })
+
   it("does not mark dirty when path is null", () => {
     const adapter = createAdapter()
     const { result } = renderHook(() =>

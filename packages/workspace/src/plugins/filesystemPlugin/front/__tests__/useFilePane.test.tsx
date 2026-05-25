@@ -3,7 +3,7 @@
 // that's been the source of several bugs this session (banner re-raise,
 // overwrite stale content, baseline drift).
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { act, renderHook } from "@testing-library/react"
+import { act, renderHook, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ReactNode } from "react"
 import { useFilePane } from "../useFilePane"
@@ -127,7 +127,7 @@ describe("useFilePane", () => {
   })
 
   describe("onReloadFromServer", () => {
-    it("refetches the latest server version before syncing local content", async () => {
+    it("clears conflict + dirty state only after a successful refetch", async () => {
       const refetch = vi.fn(async () => ({
         status: "success" as const,
         data: { content: "server latest", mtimeMs: 3000 },
@@ -145,19 +145,23 @@ describe("useFilePane", () => {
       await act(async () => {})
       act(() => result.current.setContent("local edits"))
       expect(result.current.content).toBe("local edits")
+      expect(result.current.isDirty).toBe(true)
 
       await act(async () => {
         await result.current.flushSave()
       })
       expect(result.current.conflict).toBeInstanceOf(FileConflictError)
+      expect(result.current.isDirty).toBe(true)
 
       await act(async () => {
         await result.current.onReloadFromServer()
       })
 
       expect(refetch).toHaveBeenCalledTimes(1)
-      expect(result.current.content).toBe("server latest")
-      expect(result.current.conflict).toBeNull()
+      await waitFor(() => {
+        expect(result.current.conflict).toBeNull()
+        expect(result.current.isDirty).toBe(false)
+      })
     })
 
     it("keeps local conflict state when the refetch does not return fresh server data", async () => {

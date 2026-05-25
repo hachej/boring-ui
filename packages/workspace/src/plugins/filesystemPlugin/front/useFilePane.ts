@@ -241,13 +241,14 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
     contentRef.current = next.content
     baselineMtimeRef.current = next.mtimeMs ?? null
     dirtyRef.current = false
+    lifecycle.markClean()
     // Sync the lifecycle's lastKnownMtimeRef + clear externalChangeWhileDirty
     // so a follow-up SSE for the same mtime doesn't re-raise the conflict.
     if (typeof next.mtimeMs === "number") {
       notifySavedRef.current?.(next.mtimeMs)
     }
     setConflict(null)
-  }, [refetchFileData, setContentState])
+  }, [lifecycle, refetchFileData, setContentState])
 
   const onOverwrite = useCallback(async () => {
     // Bump the save generation so any pending autosave (e.g., one that the
