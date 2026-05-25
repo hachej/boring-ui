@@ -110,8 +110,9 @@ export interface DeckWidgetRenderContext {
 What each field means:
 - `name` must match the widget name used in markdown, for example
   `{{Badge text="draft"}}`.
-- `display` controls whether the widget renders inline with surrounding text or
-  as its own block. Omit it to use block rendering.
+- `display` overrides placement. Omit it to follow the parsed segment position:
+  inline widgets stay inline, and block-position widgets render as their own
+  block.
 - `parse` is optional. Use it to convert raw string attrs into a typed shape for
   your widget.
 - `render` receives parsed `attrs`, the original string attrs as `rawAttrs`, and
@@ -133,13 +134,18 @@ export interface DeckError {
 }
 ```
 
-`onError` receives deck-local failures without changing the canonical workspace
+`onError` receives deck-level failures without changing the canonical workspace
 file semantics:
 - `storage` — file load/save/provider failures
-- `parse` — invalid deck markdown or widget syntax
-- `render` — deck rendering failures outside a specific widget
-- `widget` — widget parse/render failures
+- `parse` — invalid deck markdown that prevents deck parsing
 - `conflict` — optimistic-concurrency overwrite/reload conflicts
+
+Notes:
+- widget parse/render failures stay local to the widget and render a visible
+  placeholder instead of calling `onError`
+- unknown widgets also render placeholders locally
+- `render` / `widget` remain part of `DeckError` for future deck-level paths,
+  but the current implementation does not emit them through `onError`
 
 ### Exported surfaces and provider requirements
 
