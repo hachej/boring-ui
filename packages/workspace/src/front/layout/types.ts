@@ -20,6 +20,7 @@ export interface ChatLayoutProps {
   storageKey?: string
   onOpenNav?: () => void
   onOpenSurface?: () => void
+  surfaceButtonBottomOffset?: number
   onOpenSidebar?: () => void
   className?: string
 }

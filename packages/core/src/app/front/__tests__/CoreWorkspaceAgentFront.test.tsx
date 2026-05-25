@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
+import { act, type ReactNode } from 'react'
 import { MemoryRouter, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ReactNode } from 'react'
 
 let currentWorkspaceId: string | null = 'workspace-a'
 let routePath = '/workspace/workspace-a'
@@ -31,13 +31,20 @@ vi.mock('../../../front/index.js', () => ({
   routes: { signin: '/auth/signin' },
   useCurrentWorkspace: () => currentWorkspaceId ? ({ id: currentWorkspaceId, name: 'Workspace A' }) : null,
   useSession: () => sessionState,
+  useSignIn: () => ({ email: vi.fn(async () => ({ data: {}, error: null })) }),
+  useSignUp: () => ({ email: vi.fn(async () => ({ data: {}, error: null })) }),
   useWorkspaceRouteStatus: () => routeStatus,
 }))
 
 vi.mock('@hachej/boring-workspace/app/front', () => ({
   WorkspaceAgentFront: (props: Record<string, unknown>) => {
     workspaceAgentProps = props
-    return <div data-testid="workspace-agent-front">Workspace agent</div>
+    return (
+      <div data-testid="workspace-agent-front">
+        <div>Workspace agent</div>
+        {props.topBarRight as ReactNode}
+      </div>
+    )
   },
 }))
 
@@ -132,7 +139,7 @@ describe('CoreWorkspaceAgentFront', () => {
     })
   })
 
-  it('renders a chat-first public shell without workspace chrome before auth', async () => {
+  it('renders the regular workspace shell with sign-in chrome before auth', async () => {
     const { CoreWorkspaceAgentFront } = await importSubject()
     sessionState = { data: null, isPending: false }
     currentWorkspaceId = null
@@ -141,14 +148,22 @@ describe('CoreWorkspaceAgentFront', () => {
     render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" appTitle="Full App" />)
 
     expect(coreFrontProps).toMatchObject({ publicPaths: ['/', '/workspace', '/w'] })
-    expect(screen.getByText('What do you want to build?')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument()
+    expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Sign in' }).length).toBeGreaterThan(0)
     expect(screen.queryByText('Switcher')).not.toBeInTheDocument()
     expect(screen.queryByText('User menu')).not.toBeInTheDocument()
-    expect(workspaceAgentProps).toBeNull()
+    expect(workspaceAgentProps).toMatchObject({
+      workspaceId: 'public',
+      provisionWorkspace: false,
+      bootPreloadPaths: [],
+      navEnabled: false,
+      defaultNavOpen: false,
+      defaultSurfaceOpen: false,
+    })
+    expect(workspaceAgentProps?.chatParams).toMatchObject({ serverResourcesEnabled: false, hydrateMessages: false })
   })
 
-  it('saves the local draft before opening chat-first sign in', async () => {
+  it('saves the local draft and opens the auth modal before chat-first submit', async () => {
     const { CoreWorkspaceAgentFront } = await importSubject()
     sessionState = { data: null, isPending: false }
     currentWorkspaceId = null
@@ -156,13 +171,15 @@ describe('CoreWorkspaceAgentFront', () => {
 
     render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" />)
 
-    fireEvent.change(screen.getByPlaceholderText(/Ask the agent/), { target: { value: 'Build a dashboard' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    await act(async () => {
+      await (workspaceAgentProps?.chatParams as { onBeforeSubmit: (draft: string) => Promise<false> | false }).onBeforeSubmit('Build a dashboard')
+    })
 
     expect(JSON.parse(window.sessionStorage.getItem('boring:pending-chat-entry') ?? '{}')).toMatchObject({
       draft: 'Build a dashboard',
       returnTo: '/',
     })
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
   it('restores a pending chat-first draft after auth reaches the workspace shell', async () => {

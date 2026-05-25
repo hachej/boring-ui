@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Navigate, Route, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { Navigate, Route, useLocation, useParams } from 'react-router-dom'
 import {
   CoreFront,
   UserMenu,
@@ -7,6 +7,8 @@ import {
   routes,
   useCurrentWorkspace,
   useSession,
+  useSignIn,
+  useSignUp,
   useWorkspaceRouteStatus,
   type CoreFrontAuthPagesOverride,
 } from '../../front/index.js'
@@ -134,79 +136,165 @@ function WorkspaceLoadingPage({
   )
 }
 
-function ChatFirstPublicShell({
-  appTitle,
-  intendedWorkspaceId,
+function readComposerDraftFromDom(): string {
+  if (typeof document === 'undefined') return ''
+  const input = document.querySelector('[data-boring-agent-part="composer-input"]') as HTMLTextAreaElement | HTMLInputElement | null
+  return input?.value ?? ''
+}
+
+function AuthCard({
+  returnTo,
+  onClose,
 }: {
-  appTitle: string
-  intendedWorkspaceId?: string
+  returnTo: string
+  onClose?: () => void
 }) {
-  const location = useLocation()
-  const navigate = useNavigate()
-  const [draft, setDraft] = useState(() => readPendingChatEntry()?.draft ?? '')
-  const returnTo = safeReturnTo(location.pathname, location.search, location.hash)
-  const saveAndSignIn = () => {
-    writePendingChatEntry({ draft, returnTo, ...(intendedWorkspaceId ? { intendedWorkspaceId } : {}) })
-    navigate(`${routes.signin}?redirect=${encodeURIComponent(returnTo)}`)
+  const signIn = useSignIn()
+  const signUp = useSignUp()
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin')
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError(null)
+    setSubmitting(true)
+    try {
+      const result = mode === 'signin'
+        ? await signIn.email({ email, password })
+        : await signUp.email({ email, password, name: name || email })
+      if (result.error) {
+        setError(result.error.message ?? `${mode === 'signin' ? 'Sign in' : 'Sign up'} failed`)
+        return
+      }
+      window.location.assign(returnTo)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `${mode === 'signin' ? 'Sign in' : 'Sign up'} failed`)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
-    <div className="flex h-screen min-h-0 flex-col bg-background text-foreground">
-      <header className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-card px-3">
-        <div className="text-sm font-semibold">{appTitle}</div>
-        <button
-          type="button"
-          className="rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted"
-          onClick={saveAndSignIn}
-        >
-          Sign in
-        </button>
-      </header>
-      <main className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(360px,520px)_1fr]">
-        <section className="flex min-h-0 flex-col border-r border-border bg-background p-4">
-          <div className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center gap-5">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Boring agent</p>
-              <h1 className="mt-2 text-2xl font-semibold">What do you want to build?</h1>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Type your first prompt. We’ll ask you to sign in before any private workspace, session, or agent call runs.
-              </p>
-            </div>
-            <form
-              className="rounded-2xl border border-border bg-card p-3 shadow-sm"
-              onSubmit={(event) => {
-                event.preventDefault()
-                if (draft.trim()) saveAndSignIn()
-              }}
-            >
-              <textarea
-                className="min-h-32 w-full resize-none rounded-xl bg-transparent p-2 text-sm outline-none placeholder:text-muted-foreground"
-                placeholder="Ask the agent to create an app, analyze a repo, or change files…"
-                value={draft}
-                onChange={(event) => setDraft(event.currentTarget.value)}
-              />
-              <div className="mt-3 flex items-center justify-between gap-3">
-                <p className="text-xs text-muted-foreground">Your draft stays local until you sign in.</p>
-                <button
-                  type="submit"
-                  className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
-                  disabled={!draft.trim()}
-                >
-                  Send
-                </button>
-              </div>
-            </form>
-          </div>
-        </section>
-        <section className="flex min-h-0 items-center justify-center bg-muted/20 p-6">
-          <div className="max-w-md rounded-2xl border border-border bg-card p-6 shadow-sm">
-            <h2 className="text-lg font-semibold">Your workspace will appear here</h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              After you send your first message and sign in, the agent can create files, open previews, and show artifacts in this area.
-            </p>
-          </div>
-        </section>
-      </main>
+    <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-4 shadow-2xl">
+      {onClose ? (
+        <div className="mb-3 flex justify-end">
+          <button type="button" className="rounded-full px-2 py-1 text-sm text-muted-foreground hover:bg-muted" onClick={onClose} aria-label="Close sign in">×</button>
+        </div>
+      ) : null}
+        <h2 id="auth-modal-title" className="text-center text-xl font-semibold">
+          {mode === 'signin' ? 'Sign in to continue' : 'Create your account'}
+        </h2>
+        <p className="mt-2 text-center text-sm text-muted-foreground">
+          Keep your draft and unlock the full workspace.
+        </p>
+        <div className="mt-4 grid grid-cols-2 rounded-xl bg-muted p-1 text-sm">
+          <button type="button" className={`rounded-lg px-3 py-2 ${mode === 'signin' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`} onClick={() => setMode('signin')}>Sign in</button>
+          <button type="button" className={`rounded-lg px-3 py-2 ${mode === 'signup' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`} onClick={() => setMode('signup')}>Sign up</button>
+        </div>
+        <form className="mt-4 space-y-2.5" onSubmit={submit}>
+          {error ? <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-2 text-sm text-destructive" role="alert">{error}</div> : null}
+          {mode === 'signup' ? (
+            <input className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-ring" placeholder="Name" value={name} onChange={(event) => setName(event.currentTarget.value)} />
+          ) : null}
+          <input className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-ring" type="email" autoComplete="email" placeholder="Email" value={email} onChange={(event) => setEmail(event.currentTarget.value)} required />
+          <input className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-ring" type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} placeholder="Password" value={password} onChange={(event) => setPassword(event.currentTarget.value)} required />
+          <button type="submit" className="w-full rounded-xl bg-primary px-3 py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-50" disabled={submitting}>
+            {submitting ? 'Please wait…' : mode === 'signin' ? 'Continue with email' : 'Create account'}
+          </button>
+        </form>
+        <p className="mt-4 text-center text-xs text-muted-foreground">By continuing, you agree to continue into your private workspace.</p>
+    </div>
+  )
+}
+
+function AuthModal({ onClose, returnTo }: { onClose: () => void; returnTo: string }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 p-4 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
+      <AuthCard returnTo={returnTo} onClose={onClose} />
+    </div>
+  )
+}
+
+function ChatFirstPublicShell<TSession extends WorkspaceAgentSession = WorkspaceAgentSession>({
+  appTitle,
+  intendedWorkspaceId,
+  workspaceProps,
+}: {
+  appTitle: string
+  intendedWorkspaceId?: string
+  workspaceProps: Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'>
+}) {
+  const location = useLocation()
+  const [modalOpen, setModalOpen] = useState(false)
+  const returnTo = safeReturnTo(location.pathname, location.search, location.hash)
+  const workspaceId = intendedWorkspaceId || 'public'
+  const openAuth = (draft = readComposerDraftFromDom()) => {
+    writePendingChatEntry({ draft, returnTo, ...(intendedWorkspaceId ? { intendedWorkspaceId } : {}) })
+    setModalOpen(true)
+  }
+  const chatParams = {
+    ...workspaceProps.chatParams,
+    serverResourcesEnabled: false,
+    hydrateMessages: false,
+    onBeforeSubmit: (draft: string) => {
+      openAuth(draft)
+      return false as const
+    },
+  }
+  return (
+    <div className="relative h-screen min-h-0">
+      <WorkspaceAgentFront
+        {...workspaceProps}
+        workspaceId={workspaceId}
+        appTitle={appTitle}
+        topBarLeft={null}
+        topBarRight={<button type="button" className="rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted" onClick={() => openAuth()}>Sign in</button>}
+        sessions={[]}
+        activeSessionId={null}
+        onSwitchSession={() => undefined}
+        onCreateSession={() => undefined}
+        onDeleteSession={() => undefined}
+        provisionWorkspace={false}
+        bootPreloadPaths={[]}
+        bridgeEndpoint={null}
+        excludeDefaults={['filesystem']}
+        plugins={[]}
+        catalogs={[]}
+        commands={[]}
+        persistenceEnabled={false}
+        navEnabled={false}
+        defaultNavOpen={false}
+        defaultSurfaceOpen={false}
+        surfaceButtonBottomOffset={420}
+        chatParams={{
+          ...chatParams,
+          emptyPlacement: 'hero',
+          composerPlaceholder: 'Describe the app, bug, or repo task you want help with…',
+          emptyState: {
+            eyebrow: 'Start here',
+            title: 'What do you want to build?',
+            description: 'Type a prompt or pick an example. Sign in on send to unlock your private workspace.',
+          },
+          suggestions: [
+            { label: 'Build an app from scratch', hint: 'Creates files, installs deps, opens a preview', prompt: 'Build a full-stack app with auth, a dashboard, and sample data.' },
+            { label: 'Understand a codebase', hint: 'Maps the repo and explains where to start', prompt: 'Explain this codebase, map the architecture, and suggest first improvements.' },
+            { label: 'Fix a bug safely', hint: 'Finds the cause, edits files, runs tests', prompt: 'Trace a bug, edit the right files, update tests, and summarize the diff.' },
+            { label: 'Prototype an interface', hint: 'Turns an idea into an interactive UI', prompt: 'Build an interactive prototype and open it in the workspace.' },
+          ],
+        }}
+        frontPluginHotReload={false}
+        hotReloadEnabled={false}
+      />
+      <aside className="pointer-events-none fixed bottom-6 right-6 z-20 w-[320px]">
+        <div className="pointer-events-auto">
+          <AuthCard returnTo={returnTo} />
+        </div>
+      </aside>
+      {modalOpen ? <AuthModal returnTo={returnTo} onClose={() => setModalOpen(false)} /> : null}
     </div>
   )
 }
@@ -221,20 +309,22 @@ function usePendingChatDraft() {
   return pending
 }
 
-function HomeRedirect({
+function HomeRedirect<TSession extends WorkspaceAgentSession = WorkspaceAgentSession>({
   loadingFallback,
   workspaceHref,
   chatEntryMode,
   appTitle,
+  workspaceProps,
 }: {
   loadingFallback: ReactNode
   workspaceHref: (workspaceId: string) => string
   chatEntryMode: ChatEntryMode
   appTitle: string
+  workspaceProps: Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'>
 }) {
   const session = useSession()
   const workspace = useCurrentWorkspace()
-  if (!session.data?.user && chatEntryMode === 'chat-first') return <ChatFirstPublicShell appTitle={appTitle} />
+  if (!session.data?.user && chatEntryMode === 'chat-first') return <ChatFirstPublicShell appTitle={appTitle} workspaceProps={workspaceProps} />
   if (!workspace) return <>{loadingFallback}</>
   return <Navigate to={workspaceHref(workspace.id)} replace />
 }
@@ -290,7 +380,7 @@ function WorkspaceRoute<
   if (!workspaceId) return <>{loadingFallback}</>
 
   if (!session.data?.user && chatEntryMode === 'chat-first') {
-    return <ChatFirstPublicShell appTitle={appTitle} intendedWorkspaceId={workspaceId} />
+    return <ChatFirstPublicShell appTitle={appTitle} intendedWorkspaceId={workspaceId} workspaceProps={workspaceProps} />
   }
 
   if (routeStatus.status === 'not-found' || routeStatus.status === 'forbidden' || routeStatus.status === 'switch-failed') {
@@ -381,6 +471,7 @@ export function CoreWorkspaceAgentFront<
             workspaceHref={workspaceHref}
             chatEntryMode={chatEntryMode}
             appTitle={appTitle}
+            workspaceProps={resolvedWorkspaceProps}
           />
         }
       />

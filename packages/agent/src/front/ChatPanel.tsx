@@ -352,6 +352,12 @@ export interface ChatPanelProps {
    * cancel submission and keep the draft in the composer.
    */
   onBeforeSubmit?: (draft: string, ctx: ChatSubmitContext) => false | void | Promise<false | void>
+  /** Disable server-backed model/skill discovery for public/local-only shells. */
+  serverResourcesEnabled?: boolean
+  /** Center the empty-state prompt/composer for public landing experiences. */
+  emptyPlacement?: 'default' | 'hero'
+  /** Placeholder shown in the composer textarea. */
+  composerPlaceholder?: string
   /** Generic host-provided blockers that prevent starting a new user turn. */
   composerBlockers?: ComposerBlocker[]
   /** Called when the user presses Stop in the composer. */
@@ -381,6 +387,9 @@ export function ChatPanel(props: ChatPanelProps) {
     initialDraft,
     onDraftRestored,
     onBeforeSubmit,
+    serverResourcesEnabled = true,
+    emptyPlacement = 'default',
+    composerPlaceholder,
     composerBlockers = [],
     onComposerStop,
     onComposerBlockerAction,
@@ -450,12 +459,13 @@ export function ChatPanel(props: ChatPanelProps) {
     },
     [extraCommands, hotReloadEnabled],
   )
-  const skillsStamp = useServerSkills({ registry, requestHeaders })
+  const skillsStamp = useServerSkills({ registry, requestHeaders, enabled: serverResourcesEnabled })
   const allCommands = useMemo(() => registry.list(), [registry, skillsStamp])
 
   const { availableModels, model, setModel } = useChatModelSelection({
     defaultModel,
     requestHeaders,
+    enabled: serverResourcesEnabled,
   })
   const { thinkingLevel, setThinkingLevel, showThoughts, setShowThoughts } =
     useThinkingSettings(thinkingControl)
@@ -605,6 +615,7 @@ export function ChatPanel(props: ChatPanelProps) {
 
     return [...messages, ...waitingTail]
   }, [messages, piMessages, projectedTailMessages, projectedStatusById, status])
+  const emptyHero = emptyPlacement === 'hero' && displayMessages.length === 0
   const renderMessages = displayMessages
 
   // Stop button: cancels stream, clears the queued follow-up, and lets host UI
@@ -829,6 +840,7 @@ export function ChatPanel(props: ChatPanelProps) {
       <div
         className={cn(
           "flex h-full min-h-0 flex-col overflow-hidden",
+          emptyHero && "justify-center",
           chrome &&
             "mx-3 my-3 rounded-xl bg-[color:var(--surface-chat)] shadow-[0_1px_0_oklch(0_0_0/0.02),0_1px_2px_-1px_oklch(0_0_0/0.04),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.6)]",
         )}
@@ -857,7 +869,7 @@ export function ChatPanel(props: ChatPanelProps) {
         />
       </div>
       <Conversation
-        className="flex-1"
+        className={emptyHero ? "max-h-[45vh] flex-none" : "flex-1"}
         aria-label="Agent conversation"
         aria-live="polite"
         onScrollToBottomReady={(scrollToBottom) => {
@@ -867,6 +879,7 @@ export function ChatPanel(props: ChatPanelProps) {
         <ConversationContent className={cn(
           "mx-auto flex w-full flex-col gap-6",
           chrome ? "max-w-3xl px-6 py-8" : "max-w-[680px] px-4 py-4",
+          emptyHero && "py-4 text-center",
         )}>
           {displayMessages.length === 0 && (
             <ChatEmptyState
@@ -874,6 +887,7 @@ export function ChatPanel(props: ChatPanelProps) {
               title={emptyState?.title}
               description={emptyState?.description}
               suggestions={suggestions}
+              className={emptyHero ? "items-center text-center [&>p]:mx-auto" : undefined}
               onSelect={(s) => {
                 const text = s.prompt ?? s.label
                 if (!text.trim()) return
@@ -1297,7 +1311,7 @@ export function ChatPanel(props: ChatPanelProps) {
             <AttachmentsList />
             <PromptInputTextarea
               defaultValue={promptInputController ? undefined : initialDraft}
-              placeholder={composerBlocked ? composerBlockerLabel : "Ask anything…"}
+              placeholder={composerBlocked ? composerBlockerLabel : composerPlaceholder ?? "Ask anything…"}
               disabled={composerBlocked}
               readOnly={composerBlocked}
               ref={textareaRef}

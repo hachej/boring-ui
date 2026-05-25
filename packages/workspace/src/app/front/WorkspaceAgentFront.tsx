@@ -62,8 +62,11 @@ export interface WorkspaceAgentFrontProps<
   afterShell?: ReactNode
   appTitle?: string
   defaultSessionTitle?: string
+  navEnabled?: boolean
+  defaultNavOpen?: boolean
   defaultSurfaceOpen?: boolean
   defaultWorkbenchLeftTab?: string
+  surfaceInitialPanels?: SurfaceShellProps["initialPanels"]
   topBarLeft?: ReactNode
   topBarRight?: ReactNode
   sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number }>
@@ -257,8 +260,11 @@ export function WorkspaceAgentFront<
   onActiveSessionIdChange,
   appTitle = "Boring",
   defaultSessionTitle = "New session",
+  navEnabled = true,
+  defaultNavOpen = true,
   defaultSurfaceOpen,
   defaultWorkbenchLeftTab,
+  surfaceInitialPanels,
   topBarLeft,
   topBarRight,
   chatParams,
@@ -271,6 +277,7 @@ export function WorkspaceAgentFront<
   onWorkspaceWarmupStatusChange,
   onOpenNav,
   onOpenSurface,
+  surfaceButtonBottomOffset,
   className,
 }: WorkspaceAgentFrontProps<TSession>) {
   const resolvedProviderStorageKey =
@@ -363,9 +370,10 @@ export function WorkspaceAgentFront<
 
   const [navOpen, setNavOpen] = useStoredBooleanState(
     `${shellStorageKey}:drawer`,
-    true,
+    defaultNavOpen,
     shellPersistenceEnabled,
   )
+  const effectiveNavOpen = navEnabled && navOpen
   const [surfaceOpen, setSurfaceOpen] = useStoredBooleanState(
     // Key must NOT match resolvedSurfaceStorageKey (which stores the dockview
     // layout JSON at the same ":surface" suffix). Writing "1"/"0" to the same
@@ -516,6 +524,7 @@ export function WorkspaceAgentFront<
   const surfaceParams = useMemo<SurfaceShellProps>(() => ({
     storageKey: resolvedSurfaceStorageKey,
     defaultLeftTab: defaultWorkbenchLeftTab,
+    initialPanels: surfaceInitialPanels,
     extraPanels: shellExtraPanels,
     onReady: handleSurfaceReady,
     onChange: handleSurfaceChange,
@@ -523,6 +532,7 @@ export function WorkspaceAgentFront<
   }), [
     closeWorkbench,
     defaultWorkbenchLeftTab,
+    surfaceInitialPanels,
     handleSurfaceChange,
     handleSurfaceReady,
     resolvedSurfaceStorageKey,
@@ -574,7 +584,7 @@ export function WorkspaceAgentFront<
         <WorkspaceUiStateSync
           bridgeEndpoint={bridgeEndpoint}
           requestHeaders={resolvedRequestHeaders}
-          navOpen={navOpen}
+          navOpen={effectiveNavOpen}
           surfaceOpen={surfaceOpen}
           snapshot={surfaceSnapshot}
         />
@@ -589,7 +599,7 @@ export function WorkspaceAgentFront<
           />
           <ChatLayout
             className={className}
-            nav={navOpen ? "session-list" : null}
+            nav={effectiveNavOpen ? "session-list" : null}
             navParams={{
               sessions: resolvedSessions,
               activeId: resolvedActiveId,
@@ -610,15 +620,16 @@ export function WorkspaceAgentFront<
               onCollapse: () => setWorkbenchLeftOpen(false),
             } : undefined}
             storageKey={shellPersistenceEnabled ? shellStorageKey : undefined}
-            onOpenNav={() => {
+            onOpenNav={navEnabled ? () => {
               setNavOpen(true)
               onOpenNav?.()
-            }}
+            } : undefined}
             onOpenSurface={() => {
               surfaceOpenRef.current = true
               setSurfaceOpen(true)
               onOpenSurface?.()
             }}
+            surfaceButtonBottomOffset={surfaceButtonBottomOffset}
             onOpenSidebar={hasLeftTabs ? () => {
               surfaceOpenRef.current = true
               setSurfaceOpen(true)
