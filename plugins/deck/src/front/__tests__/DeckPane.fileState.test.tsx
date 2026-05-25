@@ -159,6 +159,63 @@ describe("DeckPane file-state integration", () => {
     expect(postCount).toBe(1)
   })
 
+  it("keeps the local draft and conflict banner when reload does not refetch fresh server data", async () => {
+    const onError = vi.fn()
+    let getCount = 0
+    let postCount = 0
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes("/api/v1/files?") && init?.method !== "POST") {
+        getCount += 1
+        if (getCount >= 2) {
+          return jsonResponse({ error: { code: "unavailable" } }, { status: 503, statusText: "Unavailable" })
+        }
+        return jsonResponse({ content: "# Intro\n\nHello", mtimeMs: 1 })
+      }
+      if (url.endsWith("/api/v1/files") && init?.method === "POST") {
+        postCount += 1
+        if (postCount === 1) {
+          return jsonResponse(
+            { error: { code: "conflict", currentMtimeMs: 2, expectedMtimeMs: 1 } },
+            { status: 409, statusText: "Conflict" },
+          )
+        }
+        return jsonResponse({ ok: true, mtimeMs: 3 })
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(<DeckPane params={{ path: "deck/conflict.md" }} onError={onError} />, { wrapper: Wrapper })
+
+    await waitFor(() => expect(screen.getByTestId("deck-mode-edit")).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTestId("deck-mode-edit"))
+    fireEvent.change(screen.getByTestId("deck-markdown-editor"), {
+      target: { value: "# Intro\n\nChanged" },
+    })
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350))
+    })
+
+    await waitFor(() => expect(screen.getByTestId("deck-conflict-notice")).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTestId("deck-reload"))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+    expect(screen.getByTestId("deck-conflict-notice")).toBeInTheDocument()
+    expect(screen.getByTestId("deck-markdown-editor")).toHaveValue("# Intro\n\nChanged")
+
+    fireEvent.click(screen.getByTestId("deck-save"))
+
+    await waitFor(() => expect(postCount).toBe(2))
+    await waitFor(() => expect(screen.queryByTestId("deck-conflict-notice")).not.toBeInTheDocument())
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "conflict", path: "deck/conflict.md" }),
+    )
+  })
+
   it("surfaces conflicts and lets the user overwrite", async () => {
     const onError = vi.fn()
     let postCount = 0
@@ -214,7 +271,7 @@ describe("DeckPane file-state integration", () => {
     )
   })
 
-  it("navigates between slides in file-backed read mode", async () => {
+  it("navigates between slides in file-backed read and present modes", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.includes("/api/v1/files?") && init?.method !== "POST") {
@@ -233,6 +290,14 @@ describe("DeckPane file-state integration", () => {
 
     await waitFor(() => expect(screen.getByText("Next slide")).toBeInTheDocument())
     expect(screen.getByText("Slide 2 of 2")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId("deck-toggle-present"))
+    expect(screen.getByTestId("deck-shell-present")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId("deck-prev"))
+
+    await waitFor(() => expect(screen.getByText("Hello")).toBeInTheDocument())
+    expect(screen.getByText("Slide 1 of 2")).toBeInTheDocument()
   })
 
   it("opens a direct deck path without touching tree/list endpoints", async () => {

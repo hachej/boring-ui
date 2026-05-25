@@ -234,8 +234,9 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
 
   const onReloadFromServer = useCallback(async () => {
     const refreshed = await refetchFileData()
-    const next = refreshed.data ?? fileData
-    if (!next) return
+    if (refreshed.status !== "success" || refreshed.data == null) return
+
+    const next = refreshed.data
     setContentState(next.content)
     contentRef.current = next.content
     baselineMtimeRef.current = next.mtimeMs ?? null
@@ -246,7 +247,7 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
       notifySavedRef.current?.(next.mtimeMs)
     }
     setConflict(null)
-  }, [fileData, refetchFileData, setContentState])
+  }, [refetchFileData, setContentState])
 
   const onOverwrite = useCallback(async () => {
     // Bump the save generation so any pending autosave (e.g., one that the

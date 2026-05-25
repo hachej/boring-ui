@@ -7,6 +7,7 @@ import { act, renderHook } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ReactNode } from "react"
 import { useFilePane } from "../useFilePane"
+import { FileConflictError } from "../data/fetchClient"
 
 // Mock the data layer — we exercise the hook's state machine, not React Query.
 const mockWriteFile = vi.fn()
@@ -127,7 +128,10 @@ describe("useFilePane", () => {
 
   describe("onReloadFromServer", () => {
     it("refetches the latest server version before syncing local content", async () => {
-      const refetch = vi.fn(async () => ({ data: { content: "server latest", mtimeMs: 3000 } }))
+      const refetch = vi.fn(async () => ({
+        status: "success" as const,
+        data: { content: "server latest", mtimeMs: 3000 },
+      }))
       mockFileContent.mockReturnValue({
         data: { content: "cached stale", mtimeMs: 1000 },
         isLoading: false,
@@ -135,13 +139,70 @@ describe("useFilePane", () => {
         refetch,
       })
 
+      mockWriteFile.mockRejectedValueOnce(new FileConflictError("doc.md", 3000, 1000))
+
       const { result } = renderHook(() => useFilePane({ path: "doc.md" }), { wrapper })
       await act(async () => {})
       act(() => result.current.setContent("local edits"))
       expect(result.current.content).toBe("local edits")
-      await act(async () => { await result.current.onReloadFromServer() })
+
+      await act(async () => {
+        await result.current.flushSave()
+      })
+      expect(result.current.conflict).toBeInstanceOf(FileConflictError)
+
+      await act(async () => {
+        await result.current.onReloadFromServer()
+      })
+
       expect(refetch).toHaveBeenCalledTimes(1)
       expect(result.current.content).toBe("server latest")
+      expect(result.current.conflict).toBeNull()
+    })
+
+    it("keeps local conflict state when the refetch does not return fresh server data", async () => {
+      const refetchError = new Error("reload failed")
+      const refetch = vi.fn(async () => ({
+        status: "error" as const,
+        data: { content: "cached stale", mtimeMs: 1000 },
+        error: refetchError,
+      }))
+      mockFileContent.mockReturnValue({
+        data: { content: "cached stale", mtimeMs: 1000 },
+        isLoading: false,
+        error: undefined,
+        refetch,
+      })
+
+      mockWriteFile
+        .mockRejectedValueOnce(new FileConflictError("doc.md", 3000, 1000))
+        .mockResolvedValueOnce({ mtimeMs: 4000 })
+
+      const { result } = renderHook(() => useFilePane({ path: "doc.md" }), { wrapper })
+      await act(async () => {})
+      act(() => result.current.setContent("local edits"))
+
+      await act(async () => {
+        await result.current.flushSave()
+      })
+      expect(result.current.conflict).toBeInstanceOf(FileConflictError)
+      expect(result.current.content).toBe("local edits")
+
+      await act(async () => {
+        await result.current.onReloadFromServer()
+      })
+
+      expect(refetch).toHaveBeenCalledTimes(1)
+      expect(result.current.content).toBe("local edits")
+      expect(result.current.conflict).toBeInstanceOf(FileConflictError)
+
+      await act(async () => {
+        await result.current.flushSave()
+      })
+      expect(mockWriteFile).toHaveBeenCalledTimes(2)
+      expect(mockWriteFile).toHaveBeenLastCalledWith(
+        expect.objectContaining({ path: "doc.md", content: "local edits" }),
+      )
     })
   })
 
