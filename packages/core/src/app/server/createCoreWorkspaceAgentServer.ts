@@ -9,7 +9,6 @@ import {
   type RegisterAgentRoutesOptions,
   type RuntimeProvisioningContribution,
 } from '@hachej/boring-agent/server'
-import type { AgentTool } from '@hachej/boring-agent/shared'
 import {
   collectWorkspaceAgentServerPlugins,
   hasDirServerPlugin,
@@ -135,6 +134,8 @@ export type CoreWorkspaceDirPluginEntry = Omit<DirPluginEntry, 'hotReload'> & {
 
 export type CoreWorkspacePluginEntry = CoreWorkspaceAgentServerPlugin | CoreWorkspaceDirPluginEntry
 
+type CoreWorkspaceBridgeExtraTool = NonNullable<RegisterAgentRoutesOptions['extraTools']>[number]
+
 export interface CoreWorkspaceBridgeExtraToolsContext {
   workspaceId: string
   workspaceRoot: string
@@ -159,7 +160,7 @@ export interface CreateCoreWorkspaceAgentServerOptions
       handler: WorkspaceBridgeHandler
     }>
   }
-  getWorkspaceBridgeExtraTools?: (ctx: CoreWorkspaceBridgeExtraToolsContext) => AgentTool[] | Promise<AgentTool[]>
+  getWorkspaceBridgeExtraTools?: (ctx: CoreWorkspaceBridgeExtraToolsContext) => CoreWorkspaceBridgeExtraTool[] | Promise<CoreWorkspaceBridgeExtraTool[]>
   /** Core consumes plugins statically for now; app-level hot reload is explicitly unsupported. */
   hotReload?: false
   forceProvisioning?: boolean

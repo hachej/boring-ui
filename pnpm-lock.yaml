@@ -90,12 +90,18 @@ importers:
 
   apps/full-app:
     dependencies:
+      '@hachej/boring-agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
       '@hachej/boring-ask-user':
         specifier: workspace:*
         version: link:../../plugins/ask-user
       '@hachej/boring-core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@hachej/boring-workspace':
+        specifier: workspace:*
+        version: link:../../packages/workspace
       '@vercel/sandbox':
         specifier: 2.0.0-beta.14
         version: 2.0.0-beta.14

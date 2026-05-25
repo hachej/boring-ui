@@ -9,19 +9,21 @@
     ]
   },
   "scripts": {
-    "dev": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && NODE_ENV=development tsx src/server/dev.ts",
-    "build": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && tsc -p tsconfig.server.json --noCheck && vite build && node ../../packages/core/scripts/build-vercel-api.mjs",
+    "dev": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-core build && NODE_ENV=development tsx src/server/dev.ts",
+    "build": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-core build && tsc -p tsconfig.server.json --noCheck && vite build && node ../../packages/core/scripts/build-vercel-api.mjs",
     "start": "NODE_ENV=production node dist/server/main.js",
     "migrate": "tsx src/server/migrate.ts",
-    "typecheck": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && tsc --noEmit",
+    "typecheck": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-core build && tsc --noEmit",
     "lint": "pnpm run typecheck",
     "e2e": "playwright test --config e2e/playwright.config.ts",
     "e2e:smoke": "playwright test --config e2e/playwright.config.ts",
     "smoke:post-deploy": "tsx scripts/post-deploy-smoke.ts"
   },
   "dependencies": {
+    "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-ask-user": "workspace:*",
     "@hachej/boring-core": "workspace:*",
+    "@hachej/boring-workspace": "workspace:*",
     "@vercel/sandbox": "2.0.0-beta.14",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
