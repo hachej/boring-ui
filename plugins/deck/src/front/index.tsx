@@ -22,7 +22,15 @@ export function createDeckPlugin(options: CreateDeckPluginOptions = {}): BoringF
       {
         id: DECK_PANEL_ID,
         label: DECK_LABEL,
-        component: (props) => <DeckPane {...props} pathPrefix={pathPrefix} theme={options.theme} />,
+        component: (props) => (
+          <DeckPane
+            {...props}
+            pathPrefix={pathPrefix}
+            theme={options.theme}
+            widgets={options.widgets}
+            onError={options.onError}
+          />
+        ),
         placement: "center",
         source: "app",
       },

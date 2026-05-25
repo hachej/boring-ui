@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { DeckPane } from "../DeckPane"
 import { StandaloneDeckRoute } from "../StandaloneDeckRoute"
@@ -67,6 +67,25 @@ describe("DeckPane", () => {
 
     expect(screen.getByText("badge:draft")).toBeInTheDocument()
     expect(screen.getByText("stat:GDP")).toBeInTheDocument()
+  })
+
+  it("keeps inline widgets in the same paragraph flow as surrounding markdown", () => {
+    const widgets: DeckWidgetDefinition[] = [
+      {
+        name: "Badge",
+        display: "inline",
+        render: ({ attrs }) => <span>badge:{attrs.text}</span>,
+      },
+    ]
+
+    const { container } = render(
+      <DeckPane content={`Status {{Badge text="draft"}} ready`} widgets={widgets} />,
+    )
+
+    const paragraphs = container.querySelectorAll("p")
+    expect(paragraphs).toHaveLength(1)
+    expect(paragraphs[0]).toHaveTextContent("Status badge:draft ready")
+    expect(within(paragraphs[0]).getByText("badge:draft")).toBeInTheDocument()
   })
 
   it("shows a render-state error and reports parse failures via onError", () => {
