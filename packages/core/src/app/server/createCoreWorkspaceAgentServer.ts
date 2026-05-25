@@ -9,6 +9,7 @@ import {
   type RegisterAgentRoutesOptions,
   type RuntimeProvisioningContribution,
 } from '@hachej/boring-agent/server'
+import type { AgentTool } from '@hachej/boring-agent/shared'
 import {
   collectWorkspaceAgentServerPlugins,
   hasDirServerPlugin,
@@ -21,10 +22,24 @@ import {
   type WorkspaceAgentServerPluginContext,
 } from '@hachej/boring-workspace/app/server'
 import {
+  InMemoryPendingQuestionStore,
+  InMemoryWorkspaceBridgeIdempotencyStore,
+  PendingQuestionRuntime,
+  createBrowserBridgeAuthPolicy,
+  createHumanInputBridgeHandlers,
   createInMemoryBridge,
+  createWorkspaceBridgeRegistry,
   createWorkspaceUiTools,
   uiRoutes,
+  workspaceBridgeHttpRoutes,
+  type PendingQuestionStore,
   type WorkspaceBridge,
+  type WorkspaceBridgeCallRequest,
+  type WorkspaceBridgeCallResponse,
+  type WorkspaceBridgeHandler,
+  type WorkspaceBridgeIdempotencyStore,
+  type WorkspaceBridgeOperationDefinition,
+  type WorkspaceBridgeRegistry,
   type WorkspaceServerPlugin,
 } from '@hachej/boring-workspace/server'
 import type { FastifyInstance } from 'fastify'
@@ -120,6 +135,15 @@ export type CoreWorkspaceDirPluginEntry = Omit<DirPluginEntry, 'hotReload'> & {
 
 export type CoreWorkspacePluginEntry = CoreWorkspaceAgentServerPlugin | CoreWorkspaceDirPluginEntry
 
+export interface CoreWorkspaceBridgeExtraToolsContext {
+  workspaceId: string
+  workspaceRoot: string
+  callAsRuntime<TOutput = unknown>(
+    request: WorkspaceBridgeCallRequest,
+    options?: { sessionId?: string; signal?: AbortSignal },
+  ): Promise<WorkspaceBridgeCallResponse<TOutput>>
+}
+
 export interface CreateCoreWorkspaceAgentServerOptions
   extends Omit<RegisterAgentRoutesOptions, 'extraTools'> {
   appRoot?: string
@@ -129,6 +153,13 @@ export interface CreateCoreWorkspaceAgentServerOptions
   excludeDefaults?: CreateWorkspaceAgentServerOptions['excludeDefaults']
   defaultPluginPackages?: CreateWorkspaceAgentServerOptions['defaultPluginPackages']
   appPackageJsonPath?: CreateWorkspaceAgentServerOptions['appPackageJsonPath']
+  workspaceBridge?: {
+    handlers?: Array<{
+      definition: WorkspaceBridgeOperationDefinition
+      handler: WorkspaceBridgeHandler
+    }>
+  }
+  getWorkspaceBridgeExtraTools?: (ctx: CoreWorkspaceBridgeExtraToolsContext) => AgentTool[] | Promise<AgentTool[]>
   /** Core consumes plugins statically for now; app-level hot reload is explicitly unsupported. */
   hotReload?: false
   forceProvisioning?: boolean
@@ -608,7 +639,7 @@ export async function createCoreWorkspaceAgentServer(
 
   const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths({
     workspaceRoot,
-    appPackageJsonPath: options.appPackageJsonPath,
+    appPackageJsonPath: options.appPackageJsonPath ?? (appRoot ? path.join(appRoot, 'package.json') : undefined),
     defaultPluginPackages: options.defaultPluginPackages,
   })
   const defaultPackagePiSnapshot = readWorkspacePluginPackagePiSnapshot(defaultPluginPackagePaths)
@@ -633,6 +664,37 @@ export async function createCoreWorkspaceAgentServer(
       bridges.set(safeWorkspaceId, bridge)
     }
     return bridge
+  }
+  type CoreWorkspaceBridgeRuntime = {
+    registry: WorkspaceBridgeRegistry
+    pendingQuestionStore: PendingQuestionStore
+    pendingQuestionRuntime: PendingQuestionRuntime
+    idempotencyStore: WorkspaceBridgeIdempotencyStore
+  }
+  const workspaceBridgeRuntimes = new Map<string, CoreWorkspaceBridgeRuntime>()
+  const getWorkspaceBridgeRuntime = (workspaceId: string): CoreWorkspaceBridgeRuntime => {
+    const safeWorkspaceId = validateWorkspaceIdSegment(workspaceId)
+    let runtime = workspaceBridgeRuntimes.get(safeWorkspaceId)
+    if (!runtime) {
+      const registry = createWorkspaceBridgeRegistry()
+      const pendingQuestionStore = new InMemoryPendingQuestionStore()
+      const pendingQuestionRuntime = new PendingQuestionRuntime(pendingQuestionStore)
+      void pendingQuestionRuntime.abandonServerRestart()
+      for (const entry of createHumanInputBridgeHandlers({ runtime: pendingQuestionRuntime, store: pendingQuestionStore })) {
+        registry.registerHandler(entry.definition, entry.handler)
+      }
+      for (const entry of options.workspaceBridge?.handlers ?? []) {
+        registry.registerHandler(entry.definition, entry.handler)
+      }
+      runtime = {
+        registry,
+        pendingQuestionStore,
+        pendingQuestionRuntime,
+        idempotencyStore: new InMemoryWorkspaceBridgeIdempotencyStore(),
+      }
+      workspaceBridgeRuntimes.set(safeWorkspaceId, runtime)
+    }
+    return runtime
   }
   const pluginResolveContext: WorkspaceAgentServerPluginContext = {
     workspaceRoot,
@@ -710,8 +772,32 @@ export async function createCoreWorkspaceAgentServer(
     getSessionNamespace: options.getSessionNamespace,
     getExtraTools: async (ctx) => {
       const callerTools = options.getExtraTools ? await options.getExtraTools(ctx) : []
+      const bridgeRuntime = getWorkspaceBridgeRuntime(ctx.workspaceId)
+      const bridgeTools = options.getWorkspaceBridgeExtraTools
+        ? await options.getWorkspaceBridgeExtraTools({
+            workspaceId: ctx.workspaceId,
+            workspaceRoot: ctx.workspaceRoot,
+            callAsRuntime: async (request, callOptions) => {
+              const definition = bridgeRuntime.registry.getDefinition(request.op)
+              return await bridgeRuntime.registry.call(request, {
+                callerClass: 'runtime',
+                workspaceId: ctx.workspaceId,
+                sessionId: callOptions?.sessionId,
+                capabilities: definition ? [...definition.requiredCapabilities] : [],
+                actor: {
+                  actorKind: 'agent',
+                  performedBy: { label: 'agent-runtime' },
+                  onBehalfOf: { label: `workspace:${ctx.workspaceId}` },
+                },
+                signal: callOptions?.signal,
+                emitUiEffect: (cmd) => getWorkspaceBridge(ctx.workspaceId).emitUiEffect(cmd),
+              })
+            },
+          })
+        : []
       return [
         ...callerTools,
+        ...bridgeTools,
         ...createWorkspaceUiTools(getWorkspaceBridge(ctx.workspaceId), {
           workspaceRoot: ctx.workspaceFsCapability === 'strong' ? ctx.workspaceRoot : undefined,
         }),
@@ -745,6 +831,21 @@ export async function createCoreWorkspaceAgentServer(
   await app.register(uiRoutes, {
     getBridge: async (request) => getWorkspaceBridge(await resolveWorkspaceId(request)),
     preserveStateKeys: pluginCollection.preservedUiStateKeys,
+  })
+
+  await app.register(workspaceBridgeHttpRoutes, {
+    getRegistry: async (request) => getWorkspaceBridgeRuntime(await resolveWorkspaceId(request)).registry,
+    getIdempotencyStore: async (request) => getWorkspaceBridgeRuntime(await resolveWorkspaceId(request)).idempotencyStore,
+    browserAuthPolicy: createBrowserBridgeAuthPolicy({
+      getPrincipal: (input) => {
+        const user = input.request?.user as { id?: string; email?: string | null; name?: string | null } | null | undefined
+        return user?.id ? { userId: user.id, email: user.email ?? undefined } : null
+      },
+      authorizeWorkspace: async ({ principal, workspaceId, definition }) => ({
+        allowed: await workspaceStore.isMember(workspaceId, principal.userId),
+        capabilities: definition.requiredCapabilities,
+      }),
+    }),
   })
 
   for (const { routes } of pluginCollection.routeContributions) {

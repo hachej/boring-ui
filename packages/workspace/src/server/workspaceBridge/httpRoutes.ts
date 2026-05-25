@@ -21,10 +21,12 @@ const bridgeCallBodySchema = z.object({
 })
 
 export interface WorkspaceBridgeHttpRoutesOptions {
-  registry: WorkspaceBridgeRegistry
+  registry?: WorkspaceBridgeRegistry
+  getRegistry?: (request: FastifyRequest, body: WorkspaceBridgeCallRequest) => WorkspaceBridgeRegistry | Promise<WorkspaceBridgeRegistry>
   browserAuthPolicy?: BridgeAuthPolicy
   runtimeTokenSecret?: string
   idempotencyStore?: WorkspaceBridgeIdempotencyStore
+  getIdempotencyStore?: (request: FastifyRequest, body: WorkspaceBridgeCallRequest) => WorkspaceBridgeIdempotencyStore | undefined | Promise<WorkspaceBridgeIdempotencyStore | undefined>
   maxBodyBytes?: number
 }
 
@@ -51,27 +53,32 @@ export function workspaceBridgeHttpRoutes(
       return sendBridgeError(reply, 400, undefined, WorkspaceBridgeErrorCode.SchemaInvalid, "WorkspaceBridge request body is invalid")
     }
     const body: WorkspaceBridgeCallRequest = { ...parsed.data, input: parsed.data.input ?? {} }
-    const definition = opts.registry.getDefinition(body.op)
-    if (!definition) {
-      return await sendResponse(reply, await opts.registry.call(body, {
-        callerClass: "server",
-        workspaceId: "unknown",
-        capabilities: [],
-        actor: { actorKind: "system", performedBy: { label: "transport" } },
-      }))
-    }
 
-    const authHeader = firstHeader(request.headers.authorization)
     try {
+      const registry = await resolveRegistry(request, body, opts)
+      const definition = registry.getDefinition(body.op)
+      if (!definition) {
+        return await sendResponse(reply, await registry.call(body, {
+          callerClass: "server",
+          workspaceId: "unknown",
+          capabilities: [],
+          actor: { actorKind: "system", performedBy: { label: "transport" } },
+        }))
+      }
+
+      const authHeader = firstHeader(request.headers.authorization)
       const authContext = authHeader?.startsWith("Bearer ")
         ? resolveRuntimeContext(authHeader.slice("Bearer ".length), opts, definition)
         : await resolveBrowserContext(request, opts, definition, body)
+      const idempotencyStore = opts.getIdempotencyStore
+        ? await opts.getIdempotencyStore(request, body)
+        : opts.idempotencyStore
 
-      const response = await runWithWorkspaceBridgeIdempotency(opts.idempotencyStore, {
+      const response = await runWithWorkspaceBridgeIdempotency(idempotencyStore, {
         definition,
         request: body,
         auth: authContext,
-      }, async () => await opts.registry.call(body, authContext))
+      }, async () => await registry.call(body, authContext))
       return await sendResponse(reply, response)
     } catch (err) {
       const bridgeError = isBridgeError(err)
@@ -81,6 +88,18 @@ export function workspaceBridgeHttpRoutes(
     }
   })
   done()
+}
+
+async function resolveRegistry(
+  request: FastifyRequest,
+  body: WorkspaceBridgeCallRequest,
+  opts: WorkspaceBridgeHttpRoutesOptions,
+): Promise<WorkspaceBridgeRegistry> {
+  const registry = opts.getRegistry ? await opts.getRegistry(request, body) : opts.registry
+  if (!registry) {
+    throw createWorkspaceBridgeError(WorkspaceBridgeErrorCode.OpNotFound, "WorkspaceBridge registry is not configured")
+  }
+  return registry
 }
 
 function resolveRuntimeContext(
@@ -113,7 +132,7 @@ async function resolveBrowserContext(
     definition,
     workspaceId,
     sessionId,
-    request: { headers: request.headers as Record<string, string | string[] | undefined>, method: request.method },
+    request: { headers: request.headers as Record<string, string | string[] | undefined>, method: request.method, user: (request as unknown as { user?: unknown }).user },
     body,
   })).context
 }

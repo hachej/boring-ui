@@ -3,6 +3,11 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "boring": {
+    "defaultPluginPackages": [
+      "@hachej/boring-ask-user"
+    ]
+  },
   "scripts": {
     "dev": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && NODE_ENV=development tsx src/server/dev.ts",
     "build": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && tsc -p tsconfig.server.json --noCheck && vite build && node ../../packages/core/scripts/build-vercel-api.mjs",
@@ -15,6 +20,7 @@
     "smoke:post-deploy": "tsx scripts/post-deploy-smoke.ts"
   },
   "dependencies": {
+    "@hachej/boring-ask-user": "workspace:*",
     "@hachej/boring-core": "workspace:*",
     "@vercel/sandbox": "2.0.0-beta.14",
     "react": "^19.1.0",

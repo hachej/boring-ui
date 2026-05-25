@@ -24,6 +24,8 @@ export interface BridgeWorkspaceGrant {
 export interface BridgeAuthPolicyRequestLike {
   headers?: Record<string, string | string[] | undefined>
   method?: string
+  /** Host-authenticated principal attached to the Fastify request, if available. */
+  user?: unknown
 }
 
 export interface BridgeAuthPolicyInput {

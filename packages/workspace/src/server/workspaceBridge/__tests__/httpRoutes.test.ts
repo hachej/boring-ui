@@ -175,6 +175,30 @@ describe("workspaceBridgeHttpRoutes", () => {
     assertNoSensitiveBridgeLeaks(JSON.stringify(conflict.json()), { tokens: [token], hostPaths: ["/home/ubuntu/private"] })
   })
 
+  it("supports request-scoped registries for multi-workspace hosts", async () => {
+    const left = createWorkspaceBridgeRegistry()
+    left.registerHandler(createTestBridgeOperationDefinition({ op: "browser.v1.echo", callerClassesAllowed: ["browser"], requiredCapabilities: ["browser:echo"] }), () => ({ workspace: "left" }))
+    const right = createWorkspaceBridgeRegistry()
+    right.registerHandler(createTestBridgeOperationDefinition({ op: "browser.v1.echo", callerClassesAllowed: ["browser"], requiredCapabilities: ["browser:echo"] }), () => ({ workspace: "right" }))
+
+    const app = Fastify()
+    await app.register(workspaceBridgeHttpRoutes, {
+      getRegistry: (request) => request.headers["x-boring-workspace-id"] === "right" ? right : left,
+      browserAuthPolicy: createBrowserBridgeAuthPolicy({
+        getPrincipal: () => ({ userId: "user-1" }),
+        authorizeWorkspace: ({ definition }) => ({ allowed: true, capabilities: definition.requiredCapabilities }),
+      }),
+    })
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/workspace-bridge/call",
+      headers: { "content-type": "application/json", "x-boring-workspace-id": "right" },
+      payload: { op: "browser.v1.echo", input: {} },
+    })
+    expect(response.json()).toMatchObject({ ok: true, output: { workspace: "right" } })
+  })
+
   it("in-process registry calls do not require the HTTP route", async () => {
     const registry = createWorkspaceBridgeRegistry()
     registry.registerHandler(createTestBridgeOperationDefinition({ op: "human-input.v1.request" }), () => ({ questionId: "q1" }))

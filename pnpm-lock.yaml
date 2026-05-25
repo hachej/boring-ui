@@ -90,6 +90,9 @@ importers:
 
   apps/full-app:
     dependencies:
+      '@hachej/boring-ask-user':
+        specifier: workspace:*
+        version: link:../../plugins/ask-user
       '@hachej/boring-core':
         specifier: workspace:*
         version: link:../../packages/core
