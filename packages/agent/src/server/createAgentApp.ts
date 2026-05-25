@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import type { AgentTool } from '../shared/tool'
 import type { AgentHarnessFactory } from '../shared/harness'
 import type { SessionStore } from '../shared/session'
+import type { TelemetrySink } from '../shared/telemetry'
 import { getEnv } from './config/env'
 import type { RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
@@ -62,6 +63,8 @@ export interface CreateAgentAppOptions {
   getRuntimeProvisioning?: () => WorkspaceProvisioningResult | undefined
   /** Optional stable namespace for file-backed session storage. */
   sessionNamespace?: string
+  /** Optional best-effort telemetry sink supplied by an embedding host. */
+  telemetry?: TelemetrySink
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
   sessionDir?: string
   /**
@@ -153,6 +156,7 @@ export async function createAgentApp(
     sessionDir: opts.sessionDir,
     systemPromptAppend: opts.systemPromptAppend,
     systemPromptDynamic: opts.systemPromptDynamic,
+    telemetry: opts.telemetry,
   })
   const sessionChangesTracker = new InMemorySessionChangesTracker()
 
@@ -190,6 +194,7 @@ export async function createAgentApp(
     harness,
     workdir: runtimeBundle.workspace.root,
     sessionChangesTracker,
+    telemetry: opts.telemetry,
   })
   await app.register(sessionRoutes, {
     sessionStore: harness.sessions as unknown as SessionStore,

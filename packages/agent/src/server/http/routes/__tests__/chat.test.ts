@@ -4,6 +4,8 @@ import { chatRoutes, type ChatRouteOptions } from '../chat'
 import type { AgentHarness, SendMessageInput, RunContext } from '../../../../shared/harness'
 import type { UIMessageChunk } from '../../../../shared/message'
 import type { SessionStore } from '../../../../shared/session'
+import { ErrorCode } from '../../../../shared/error-codes'
+import type { TelemetrySink, TelemetryEvent } from '../../../../shared/telemetry'
 import {
   ERROR_CODE_VALIDATION_ERROR,
   ERROR_CODE_INTERNAL,
@@ -45,8 +47,21 @@ function buildApp(overrides: Partial<ChatRouteOptions> = {}) {
   app.register(chatRoutes, {
     harness: overrides.harness ?? createMockHarness(),
     workdir: overrides.workdir ?? '/tmp/test',
+    telemetry: overrides.telemetry,
   })
   return app.ready().then(() => app)
+}
+
+function createTelemetryRecorder(): { telemetry: TelemetrySink; events: TelemetryEvent[] } {
+  const events: TelemetryEvent[] = []
+  return {
+    events,
+    telemetry: {
+      capture(event) {
+        events.push(event)
+      },
+    },
+  }
 }
 
 const validBody = {
@@ -84,6 +99,95 @@ describe('POST /api/v1/agent/chat', () => {
     const body = res.body
     expect(body).toContain('data:')
     expect(body).toContain('[DONE]')
+
+    await app.close()
+  })
+
+  test('emits safe chat telemetry for submitted and completed turns', async () => {
+    const recorder = createTelemetryRecorder()
+    const app = await buildApp({ telemetry: recorder.telemetry })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      payload: {
+        sessionId: 'sess-telemetry',
+        message: 'secret user prompt must not be captured',
+        model: { provider: 'anthropic', id: 'claude-secret' },
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(recorder.events.map((event) => event.name)).toEqual([
+      'agent.chat.started',
+      'agent.chat.message.submitted',
+      'agent.chat.completed',
+    ])
+    expect(recorder.events.at(-1)?.properties).toEqual(expect.objectContaining({
+      sessionId: 'sess-telemetry',
+      requestId: expect.any(String),
+      modelProvider: 'anthropic',
+      status: 'ok',
+      durationMs: expect.any(Number),
+    }))
+    const serialized = JSON.stringify(recorder.events)
+    expect(serialized).not.toContain('secret user prompt')
+    expect(serialized).not.toContain('claude-secret')
+
+    await app.close()
+  })
+
+  test('emits safe chat failure telemetry without changing the response', async () => {
+    const recorder = createTelemetryRecorder()
+    const rawError = new Error('raw failure with /tmp/private-path and secret') as Error & { code?: string }
+    rawError.code = 'SECRET_TOKEN'
+    const harness = createMockHarness([], {
+      throwOnSend: rawError,
+    })
+    const app = await buildApp({ harness, telemetry: recorder.telemetry })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      payload: { sessionId: 'sess-failed', message: 'secret prompt' },
+    })
+
+    expect(res.statusCode).toBe(500)
+    expect(recorder.events.map((event) => event.name)).toEqual([
+      'agent.chat.started',
+      'agent.chat.message.submitted',
+      'agent.chat.failed',
+    ])
+    expect(recorder.events.at(-1)?.properties).toEqual(expect.objectContaining({
+      sessionId: 'sess-failed',
+      status: 'error',
+      durationMs: expect.any(Number),
+      errorCode: ErrorCode.enum.INTERNAL_ERROR,
+    }))
+    const serialized = JSON.stringify(recorder.events)
+    expect(serialized).not.toContain('secret prompt')
+    expect(serialized).not.toContain('private-path')
+
+    await app.close()
+  })
+
+  test('telemetry sink failures do not break chat streaming', async () => {
+    const app = await buildApp({
+      telemetry: {
+        capture() {
+          throw new Error('telemetry down')
+        },
+      },
+    })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      payload: validBody,
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toContain('[DONE]')
 
     await app.close()
   })
@@ -254,18 +358,19 @@ describe('POST /api/v1/agent/chat', () => {
     await app.close()
   })
 
-  test('emits SSE error chunk when async iterator throws mid-stream', async () => {
+  test('emits SSE error chunk and failed telemetry when async iterator throws mid-stream', async () => {
+    const recorder = createTelemetryRecorder()
     const harness = createMockHarness()
     harness.sendMessage = function () {
       return (async function* () {
         yield { type: 'start' }
         yield { type: 'text-start', id: '0' }
         yield { type: 'text-delta', id: '0', delta: 'before' }
-        throw new Error('mid-stream kaboom')
+        throw new Error('mid-stream kaboom with /tmp/private-path secret')
       })()
     }
 
-    const app = await buildApp({ harness })
+    const app = await buildApp({ harness, telemetry: recorder.telemetry })
 
     const res = await app.inject({
       method: 'POST',
@@ -275,6 +380,18 @@ describe('POST /api/v1/agent/chat', () => {
 
     expect(res.statusCode).toBe(200)
     expect(res.body).toContain('error')
+    expect(recorder.events.map((event) => event.name)).toEqual([
+      'agent.chat.started',
+      'agent.chat.message.submitted',
+      'agent.chat.failed',
+    ])
+    expect(recorder.events.at(-1)?.properties).toEqual(expect.objectContaining({
+      sessionId: 'sess-1',
+      status: 'error',
+      errorCode: ErrorCode.enum.INTERNAL_ERROR,
+      durationMs: expect.any(Number),
+    }))
+    expect(JSON.stringify(recorder.events)).not.toContain('private-path')
 
     await app.close()
   })

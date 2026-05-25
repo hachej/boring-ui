@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
-import { access, chmod, cp, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { access, chmod, cp, mkdir, readdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFile } from 'node:child_process'
@@ -197,6 +197,8 @@ function nodePackageTarget(workspaceRoot: string, packageName: string): string {
 
 async function copyIfExists(source: string, target: string): Promise<boolean> {
   if (!(await exists(source))) return false
+  if (resolve(source) === resolve(target)) return true
+  if ((await exists(target)) && (await realpath(source)) === (await realpath(target))) return true
   await cp(source, target, {
     recursive: true,
     force: true,
