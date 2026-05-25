@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react"
-import { describe, expect, it } from "vitest"
+import type { ReactElement } from "react"
+import { describe, expect, it, vi } from "vitest"
 import { DeckWidgetSlot, indexDeckWidgets, validateDeckWidgets } from "../widgets"
 import type { DeckWidgetDefinition } from "../../shared"
 
@@ -156,5 +157,40 @@ describe("deck widget registry", () => {
     expect(screen.getByTestId("deck-widget-placeholder")).toHaveTextContent(
       "Render exploded: BrokenWidget",
     )
+  })
+
+  it("recovers from a render failure when rerendered with healthy content", () => {
+    const renderImpl = vi.fn<() => ReactElement>()
+    renderImpl.mockImplementationOnce(() => {
+      throw new Error("Render exploded")
+    })
+    renderImpl.mockImplementation(() => <span>Recovered widget</span>)
+
+    const widgets = indexDeckWidgets([
+      {
+        name: "RecoveringWidget",
+        render: renderImpl,
+      },
+    ])
+
+    const segment = {
+      type: "widget" as const,
+      name: "RecoveringWidget",
+      attrs: {},
+      raw: "{{RecoveringWidget}}",
+      position: "block" as const,
+    }
+
+    const { rerender } = render(
+      <DeckWidgetSlot widgets={widgets} context={baseContext} segment={segment} />,
+    )
+
+    expect(screen.getByTestId("deck-widget-placeholder")).toHaveTextContent(
+      "Render exploded: RecoveringWidget",
+    )
+
+    rerender(<DeckWidgetSlot widgets={widgets} context={baseContext} segment={segment} />)
+
+    expect(screen.getByTestId("deck-widget-block")).toHaveTextContent("Recovered widget")
   })
 })

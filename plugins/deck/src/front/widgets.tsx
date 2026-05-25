@@ -100,6 +100,12 @@ class DeckWidgetErrorBoundary extends Component<
 
   componentDidCatch(_error: Error, _info: ErrorInfo) {}
 
+  componentDidUpdate(prevProps: Readonly<{ name: string; position: "block" | "inline"; children: ReactNode }>) {
+    if (this.state.error && prevProps.children !== this.props.children) {
+      this.setState({ error: null })
+    }
+  }
+
   render() {
     if (this.state.error) {
       return (
