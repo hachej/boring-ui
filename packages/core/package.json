@@ -66,12 +66,12 @@
     "drizzle:migrate": "drizzle-kit migrate --config drizzle.config.ts"
   },
   "dependencies": {
-    "@hachej/boring-agent": "workspace:*",
-    "@hachej/boring-ui-kit": "workspace:*",
-    "@hachej/boring-workspace": "workspace:*",
     "@fastify/cors": "^11.0.0",
     "@fastify/helmet": "^13.0.1",
     "@fastify/rate-limit": "^10.3.0",
+    "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-ui-kit": "workspace:*",
+    "@hachej/boring-workspace": "workspace:*",
     "@hookform/resolvers": "^5.2.2",
     "@react-email/components": "^1.0.12",
     "@react-email/render": "^2.0.7",
