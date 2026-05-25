@@ -9,6 +9,7 @@ const SAFE_STATUS_PATTERN = /^[a-z][a-z0-9_-]{0,31}$/
 const SAFE_ERROR_CODE_PATTERN = /^[A-Za-z][A-Za-z0-9_:-]{0,63}$/
 const SAFE_PACKAGE_NAME_PATTERN = /^(?:@[A-Za-z0-9_.-]+\/)?[A-Za-z0-9_.-]{1,96}$/
 const SAFE_PACKAGE_VERSION_PATTERN = /^v?\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/
+const SAFE_BOOLEAN_STRING_PATTERN = /^(?:true|false)$/
 const SUSPICIOUS_STRING_PATTERN = /(?:secret|token|bearer|password|api[_-]?key|private|\.env|sk[_-](?:live|test)|ghp_|github_pat_|glpat-|xox[baprs]-|AKIA|ASIA|ya29\.|eyJ|phc_|npm_)/i
 
 const ALLOWED_PROPERTY_KEYS = new Set([
@@ -23,6 +24,15 @@ const ALLOWED_PROPERTY_KEYS = new Set([
   'status',
   'durationMs',
   'errorCode',
+  'phase',
+  'runtime',
+  'pluginId',
+  'packageId',
+  'changed',
+  'nodePackageCount',
+  'pythonPackageCount',
+  'skillCount',
+  'templateDirCount',
   'packageName',
   'packageVersion',
 ])
@@ -101,6 +111,11 @@ function sanitizeTelemetryProperty(key: string, value: unknown): SafeTelemetryPr
       ? value
       : undefined
   }
+  if (key.endsWith('Count')) {
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0
+      ? value
+      : undefined
+  }
   if (key === 'status' && typeof value === 'number') {
     return Number.isInteger(value) && value >= 100 && value <= 599 ? value : undefined
   }
@@ -123,7 +138,14 @@ function sanitizeTelemetryString(key: string, value: string): string | undefined
     case 'toolName':
     case 'panelId':
     case 'commandId':
+    case 'phase':
+    case 'runtime':
       return SAFE_SLUG_PATTERN.test(value) ? value : undefined
+    case 'pluginId':
+    case 'packageId':
+      return SAFE_ID_PATTERN.test(value) ? value : undefined
+    case 'changed':
+      return SAFE_BOOLEAN_STRING_PATTERN.test(value) ? value : undefined
     case 'status':
       return SAFE_STATUS_PATTERN.test(value) ? value : undefined
     case 'errorCode':

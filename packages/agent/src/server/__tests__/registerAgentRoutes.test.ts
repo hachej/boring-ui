@@ -1,10 +1,11 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { afterEach, expect, test } from 'vitest'
+import { dirname, join } from 'node:path'
+import { afterEach, expect, test, vi } from 'vitest'
 import Fastify from 'fastify'
 
 import { registerAgentRoutes } from '../registerAgentRoutes'
+import { provisionWorkspaceRuntime } from '../workspace/provisioning'
 import type { RuntimeModeAdapter } from '../runtime/mode'
 
 const tempDirs: string[] = []
@@ -20,6 +21,181 @@ async function makeTempDir(prefix: string): Promise<string> {
   tempDirs.push(dir)
   return dir
 }
+
+async function createDummyNodeSdkPackage(): Promise<string> {
+  const root = await makeTempDir('boring-dummy-node-sdk-')
+  await mkdir(join(root, 'bin'), { recursive: true })
+  await writeFile(join(root, 'package.json'), JSON.stringify({
+    name: 'dummy-node-sdk',
+    version: '1.0.0',
+    bin: { 'dummy-sdk': 'bin/dummy-sdk.js' },
+  }, null, 2))
+  await writeFile(join(root, 'bin', 'dummy-sdk.js'), '#!/usr/bin/env node\nprocess.stdout.write("dummy-sdk\\n")\n')
+  return root
+}
+
+async function createDummySkill(): Promise<string> {
+  const root = await makeTempDir('boring-dummy-skill-')
+  await writeFile(join(root, 'SKILL.md'), '---\nname: dummy-sdk-skill\ndescription: Dummy SDK skill\n---\n# Dummy SDK\n')
+  return root
+}
+
+test('registerAgentRoutes provisions embedded runtime plugins before host app routes are ready', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-provision-')
+  const packageRoot = await createDummyNodeSdkPackage()
+  const skillRoot = await createDummySkill()
+  const app = Fastify({ logger: false })
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    provisionRuntime: async ({ provisioningAdapter, runtimeLayout }) => {
+      if (!provisioningAdapter) throw new Error('provisioning adapter required')
+      return await provisionWorkspaceRuntime({
+        adapter: provisioningAdapter,
+        runtimeLayout,
+        plugins: [{
+          id: 'dummy-sdk-plugin',
+          skills: [{ name: 'dummy-sdk-skill', source: skillRoot }],
+          provisioning: {
+            nodePackages: [{
+              id: 'dummy-sdk',
+              packageName: 'dummy-node-sdk',
+              packageRoot,
+              expectedBins: ['dummy-sdk'],
+            }],
+          },
+        }],
+      })
+    },
+  })
+  await app.ready()
+
+  try {
+    await expect(readFile(join(workspaceRoot, '.boring-agent', 'skills', 'dummy-sdk-plugin', 'dummy-sdk-skill', 'SKILL.md'), 'utf8'))
+      .resolves.toContain('Dummy SDK')
+    await expect(readFile(join(workspaceRoot, '.boring-agent', 'node', 'node_modules', '.bin', 'dummy-sdk'), 'utf8'))
+      .resolves.toContain('dummy-sdk')
+    const skills = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
+    expect(skills.statusCode).toBe(200)
+    expect(skills.json().skills.map((skill: { name: string }) => skill.name)).toContain('dummy-sdk-skill')
+  } finally {
+    await app.close()
+  }
+})
+
+test('registerAgentRoutes provisions the resolved request workspace, not the host base root', async () => {
+  const baseRoot = await makeTempDir('boring-agent-embed-base-root-')
+  const workspaceA = await makeTempDir('boring-agent-embed-workspace-a-')
+  const packageRoot = await createDummyNodeSdkPackage()
+  const app = Fastify({ logger: false })
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot: baseRoot,
+    mode: 'direct',
+    getWorkspaceId: async (request) => String(request.headers['x-boring-workspace-id'] ?? ''),
+    getWorkspaceRoot: async (workspaceId) => workspaceId === 'workspace-a' ? workspaceA : baseRoot,
+    provisionRuntime: async ({ provisioningAdapter, runtimeLayout }) => {
+      if (!provisioningAdapter) throw new Error('provisioning adapter required')
+      return await provisionWorkspaceRuntime({
+        adapter: provisioningAdapter,
+        runtimeLayout,
+        plugins: [{
+          id: 'dummy-sdk-plugin',
+          provisioning: {
+            nodePackages: [{
+              id: 'dummy-sdk',
+              packageName: 'dummy-node-sdk',
+              packageRoot,
+              expectedBins: ['dummy-sdk'],
+            }],
+          },
+        }],
+      })
+    },
+  })
+  await app.ready()
+
+  try {
+    const catalog = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/catalog',
+      headers: { 'x-boring-workspace-id': 'workspace-a' },
+    })
+    expect(catalog.statusCode).toBe(200)
+    await expect(readFile(join(workspaceA, '.boring-agent', 'node', 'node_modules', '.bin', 'dummy-sdk'), 'utf8'))
+      .resolves.toContain('dummy-sdk')
+    await expect(readFile(join(baseRoot, '.boring-agent', '.gitignore'), 'utf8')).rejects.toThrow()
+  } finally {
+    await app.close()
+  }
+})
+
+test('registerAgentRoutes reload reruns provisioning and refreshes skills scope', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-reload-provision-')
+  const skillRootV1 = join(workspaceRoot, 'generated-skills-v1', 'reload-skill-v1')
+  const skillRootV2 = join(workspaceRoot, 'generated-skills-v2', 'reload-skill-v2')
+  await mkdir(skillRootV1, { recursive: true })
+  await mkdir(skillRootV2, { recursive: true })
+  await writeFile(join(skillRootV1, 'SKILL.md'), '---\nname: reload-skill-v1\ndescription: Before reload.\n---\n')
+  await writeFile(join(skillRootV2, 'SKILL.md'), '---\nname: reload-skill-v2\ndescription: After reload.\n---\n')
+  let provisionCalls = 0
+  const reloadSession = vi.fn(async () => true)
+  const app = Fastify({ logger: false })
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    provisionRuntime: async () => {
+      provisionCalls += 1
+      return {
+        changed: true,
+        env: { BORING_AGENT_WORKSPACE_ROOT: workspaceRoot },
+        pathEntries: [],
+        skillPaths: [provisionCalls === 1 ? dirname(skillRootV1) : dirname(skillRootV2)],
+      }
+    },
+    harnessFactory: async () => ({
+      id: 'reload-test-harness',
+      placement: 'server' as const,
+      sessions: {
+        async list() { return [] },
+        async create() {
+          const now = new Date().toISOString()
+          return { id: 'reload-test', title: 'Reload', createdAt: now, updatedAt: now, turnCount: 0 }
+        },
+        async load() {
+          const now = new Date().toISOString()
+          return { id: 'reload-test', title: 'Reload', createdAt: now, updatedAt: now, turnCount: 0, messages: [] }
+        },
+        async delete() {},
+      },
+      reloadSession,
+      async *sendMessage() {},
+    }),
+  })
+  await app.ready()
+
+  try {
+    const before = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
+    expect(before.statusCode).toBe(200)
+    expect(before.json().skills.map((skill: { name: string }) => skill.name)).toContain('reload-skill-v1')
+
+    const reload = await app.inject({ method: 'POST', url: '/api/v1/agent/reload', payload: {} })
+    expect(reload.statusCode).toBe(200)
+    expect(reload.json()).toMatchObject({ ok: true, reloaded: true })
+    expect(reloadSession).toHaveBeenCalledWith('default')
+    expect(provisionCalls).toBe(2)
+
+    const after = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
+    expect(after.statusCode).toBe(200)
+    const names: string[] = after.json().skills.map((skill: { name: string }) => skill.name)
+    expect(names).toContain('reload-skill-v2')
+    expect(names).not.toContain('reload-skill-v1')
+  } finally {
+    await app.close()
+  }
+})
 
 test('registerAgentRoutes mounts catalog endpoint on host app', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-')

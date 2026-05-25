@@ -22,6 +22,7 @@ describe("bootstrapServer", () => {
       piPackages: [],
       extensionPaths: [],
       agentTools: [],
+      runtimePlugins: [],
       provisioningContributions: [],
       routeContributions: [],
       preservedUiStateKeys: [],
@@ -317,6 +318,39 @@ describe("bootstrapServer", () => {
         },
       }),
     ).toThrow("provisioning.nodePackages[0].packageRoot must be a string or URL")
+  })
+
+  it("collects structural runtime plugin input without moving provisioning into workspace", () => {
+    const skill = { name: "macro-transform", source: new URL("file:///tmp/macro/SKILL.md") }
+    const provisioning = {
+      templateDirs: [{ id: "template", path: new URL("file:///tmp/template/") }],
+      nodePackages: [{ id: "cli", packageName: "@hachej/boring-ui-cli" }],
+    }
+    const result = bootstrapServer({
+      plugins: [{
+        id: "macro",
+        skills: [skill],
+        systemPrompt: "Prompt only",
+        piPackages: ["npm:pi-web-access"],
+        extensionPaths: ["/plugins/macro/agent/index.ts"],
+        provisioning,
+      }],
+    })
+
+    expect(result.runtimePlugins).toEqual([{ id: "macro", skills: [skill], provisioning }])
+    expect(result.systemPromptAppend).toBe("Prompt only")
+    expect(result.piPackages).toEqual(["npm:pi-web-access"])
+    expect(result.extensionPaths).toEqual(["/plugins/macro/agent/index.ts"])
+    expect(result.provisioningContributions).toEqual([{ id: "macro", provisioning }])
+  })
+
+  it("defineServerPlugin rejects malformed server-owned skills", () => {
+    expect(() =>
+      defineServerPlugin({
+        id: "bad-skills",
+        skills: [{ name: "", source: new URL("file:///tmp/SKILL.md") }],
+      }),
+    ).toThrow("skills[0].name must be a non-empty string")
   })
 
   it("defineServerPlugin accepts valid route and provisioning contributions", () => {

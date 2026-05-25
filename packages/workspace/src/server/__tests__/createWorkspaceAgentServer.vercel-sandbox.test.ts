@@ -74,6 +74,7 @@ describe("createWorkspaceAgentServer — vercel-sandbox mode UI bridge", () => {
       workspaceRoot,
       mode: "vercel-sandbox",
       logger: false,
+      provisionWorkspace: false,
     })
     try {
       const res = await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })
@@ -92,6 +93,7 @@ describe("createWorkspaceAgentServer — vercel-sandbox mode UI bridge", () => {
       workspaceRoot,
       mode: "vercel-sandbox",
       logger: false,
+      provisionWorkspace: false,
     })
     try {
       const payload = {
@@ -129,6 +131,7 @@ describe("createWorkspaceAgentServer — vercel-sandbox mode UI bridge", () => {
       workspaceRoot,
       mode: "vercel-sandbox",
       logger: false,
+      provisionWorkspace: false,
     })
     try {
       const post = await app.inject({
@@ -171,6 +174,7 @@ describe("createWorkspaceAgentServer — vercel-sandbox mode UI bridge", () => {
       workspaceRoot,
       mode: "vercel-sandbox",
       logger: false,
+      provisionWorkspace: false,
     })
     await app.close()
 
@@ -191,6 +195,7 @@ describe("createWorkspaceAgentServer — vercel-sandbox mode UI bridge", () => {
       workspaceRoot,
       mode: "vercel-sandbox",
       logger: false,
+      provisionWorkspace: false,
     })
     try {
       const post = await app.inject({

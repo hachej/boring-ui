@@ -1,5 +1,9 @@
 import { join } from 'node:path'
 import { getEnvSnapshot } from '../config/env'
+import {
+  getBoringAgentPathEntries,
+  getBoringAgentRuntimePaths,
+} from '../workspace/runtimeLayout'
 
 interface WorkspacePythonEnvOptions {
   workspaceRoot: string
@@ -12,18 +16,16 @@ export function withWorkspacePythonEnv(
 ): Record<string, string | undefined> {
   const { workspaceRoot, env, sandboxRoot } = opts
   const runtimeRoot = sandboxRoot ?? workspaceRoot
-  const venvRoot = join(runtimeRoot, '.venv')
-  const venvBin = join(venvRoot, 'bin')
-  const shimBin = join(runtimeRoot, '.boring-agent', 'bin')
+  const paths = getBoringAgentRuntimePaths(runtimeRoot)
   const baseEnv = env ?? getEnvSnapshot()
-  const pathParts = [shimBin, venvBin]
+  const pathParts = getBoringAgentPathEntries(paths)
   const existingPath = baseEnv.PATH
   if (existingPath) pathParts.push(existingPath)
 
   return {
     ...baseEnv,
     PATH: pathParts.join(':'),
-    VIRTUAL_ENV: baseEnv.VIRTUAL_ENV ?? venvRoot,
+    VIRTUAL_ENV: baseEnv.VIRTUAL_ENV ?? paths.venv,
     BORING_AGENT_WORKSPACE_ROOT:
       baseEnv.BORING_AGENT_WORKSPACE_ROOT ?? runtimeRoot,
   }

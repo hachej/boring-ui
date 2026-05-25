@@ -22,7 +22,7 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir
 }
 
-test('copyTemplate copies files and writes provision marker on first call', async () => {
+test('copyTemplate copies files without a legacy provision marker', async () => {
   const templateRoot = await makeTempDir('boring-ui-template-')
   const workspaceRoot = await makeTempDir('boring-ui-workspace-')
 
@@ -37,11 +37,10 @@ test('copyTemplate copies files and writes provision marker on first call', asyn
     '{"seeded":true}\n',
   )
 
-  const marker = await readFile(join(workspaceRoot, '.boring-agent', 'provisioned'), 'utf-8')
-  expect(Number.isNaN(Date.parse(marker))).toBe(false)
+  await expect(readFile(join(workspaceRoot, '.boring-agent', 'provisioned'), 'utf-8')).rejects.toThrow()
 })
 
-test('copyTemplate no-ops when provision marker already exists', async () => {
+test('copyTemplate preserves existing workspace files without a marker', async () => {
   const templateRoot = await makeTempDir('boring-ui-template-')
   const workspaceRoot = await makeTempDir('boring-ui-workspace-')
 

@@ -1,8 +1,17 @@
+import { execFile } from 'node:child_process'
+import { mkdtemp, mkdir, readFile, readdir, rename, stat } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
+
 import { Sandbox as VercelSandbox } from '@vercel/sandbox'
 
 import { type SandboxHandleStore } from '../../../shared/sandbox-handle-store'
+import { safeCapture, type TelemetrySink } from '../../../shared/telemetry'
 import { getEnv } from '../../config/env'
 import { createVercelSandboxExec } from '../../sandbox/vercel-sandbox/createVercelSandboxExec'
+import { createVercelProvisioningAdapter } from '../../sandbox/vercel-sandbox/provisioningAdapter'
 import { FileHandleStore } from '../../sandbox/vercel-sandbox/FileHandleStore'
 import {
   collectFiles,
@@ -22,7 +31,9 @@ import {
   VERCEL_SANDBOX_WORKSPACE_ROOT,
 } from '../../workspace/createVercelSandboxWorkspace'
 import { createServerFileSearch } from '../createServerFileSearch'
-import type { RuntimeModeAdapter } from '../mode'
+import type { ModeContext, RuntimeModeAdapter } from '../mode'
+import type { BoringAgentRuntimePaths } from '../../workspace/runtimeLayout'
+import type { WorkspaceProvisioningAdapter } from '../../workspace/provisioning'
 
 interface ModeLogger {
   info(message: string, metadata: Record<string, unknown>): void
@@ -32,6 +43,9 @@ interface ModeLogger {
 type EnvGetter = (name: string) => string | undefined
 const ORPHAN_GUARD_MAX_IDLE_MS = 24 * 60 * 60 * 1000
 const VERCEL_SANDBOX_TIMEOUT_MS_ENV = 'BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS'
+const VERCEL_SANDBOX_RUNTIME_ENV = 'BORING_AGENT_VERCEL_SANDBOX_RUNTIME'
+const DEFAULT_VERCEL_SANDBOX_RUNTIME = 'node24'
+const execFileAsync = promisify(execFile)
 
 export interface VercelSandboxModeAdapterOptions {
   store?: SandboxHandleStore
@@ -50,9 +64,64 @@ interface VercelAuthConfig {
   projectId?: string
 }
 
+type SandboxSetupStatus = 'started' | 'ok' | 'error'
+
+function sandboxTelemetryProperties(
+  ctx: ModeContext | undefined,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    runtimeMode: 'vercel-sandbox',
+    workspaceId: ctx?.workspaceId,
+    sessionId: ctx?.sessionId,
+    requestId: ctx?.requestId,
+    ...extra,
+  }
+}
+
+function captureSandboxSetupEvent(
+  telemetry: TelemetrySink | undefined,
+  ctx: ModeContext | undefined,
+  name: string,
+  properties?: Record<string, unknown>,
+): void {
+  if (!telemetry) return
+  safeCapture(telemetry, {
+    name,
+    properties: sandboxTelemetryProperties(ctx, properties),
+  })
+}
+
+async function runSandboxSetupStep<T>(options: {
+  telemetry?: TelemetrySink
+  ctx?: ModeContext
+  phase: string
+  run: () => Promise<T>
+}): Promise<T> {
+  const startedAt = Date.now()
+  try {
+    const result = await options.run()
+    captureSandboxSetupEvent(options.telemetry, options.ctx, 'agent.runtime.sandbox.setup.step', {
+      phase: options.phase,
+      status: 'ok' satisfies SandboxSetupStatus,
+      durationMs: Date.now() - startedAt,
+    })
+    return result
+  } catch (error) {
+    const code = (error as { code?: unknown } | null)?.code
+    captureSandboxSetupEvent(options.telemetry, options.ctx, 'agent.runtime.sandbox.setup.step', {
+      phase: options.phase,
+      status: 'error' satisfies SandboxSetupStatus,
+      durationMs: Date.now() - startedAt,
+      ...(typeof code === 'string' ? { errorCode: code } : {}),
+    })
+    throw error
+  }
+}
+
 function createDefaultVercelClient(
   auth: VercelAuthConfig,
-  opts: { timeoutMs?: number } = {},
+  opts: { timeoutMs?: number; runtime?: string } = {},
 ): VercelSandboxClient {
   const credentials = {
     token: auth.token,
@@ -68,12 +137,14 @@ function createDefaultVercelClient(
       const base = {
         ...createOptions,
         ...(params?.name ? { name: params.name } : {}),
+        ...(opts.runtime ? { runtime: opts.runtime } : {}),
         persistent: params?.persistent ?? true,
         snapshotExpiration: params?.snapshotExpiration ?? 0,
       }
       if (params?.source?.type === 'snapshot') {
+        const { runtime: _runtime, ...snapshotBase } = base
         return await VercelSandbox.create({
-          ...base,
+          ...snapshotBase,
           source: { type: 'snapshot', snapshotId: params.source.snapshotId },
         })
       }
@@ -167,6 +238,195 @@ async function seedTemplateIntoVercelWorkspace(
   })
 }
 
+function provisioningSourceToPath(source: string | URL): string {
+  return source instanceof URL ? fileURLToPath(source) : source
+}
+
+async function prepareVercelProvisioningArtifact(request: {
+  kind: 'node' | 'python'
+  source: string | URL
+  outputPath: string
+}): Promise<void> {
+  const sourcePath = provisioningSourceToPath(request.source)
+  await mkdir(dirname(request.outputPath), { recursive: true })
+
+  if (request.kind === 'node') {
+    const { stdout } = await execFileAsync('npm', [
+      'pack',
+      sourcePath,
+      '--pack-destination',
+      dirname(request.outputPath),
+    ], { maxBuffer: 1024 * 1024 * 20 })
+    const packedName = stdout.trim().split(/\r?\n/).filter(Boolean).at(-1)
+    if (!packedName) throw new Error(`npm pack produced no artifact for ${sourcePath}`)
+    await rename(join(dirname(request.outputPath), packedName), request.outputPath)
+    return
+  }
+
+  await execFileAsync('tar', ['-czf', request.outputPath, '-C', sourcePath, '.'], {
+    maxBuffer: 1024 * 1024 * 20,
+  })
+}
+
+function shellSingleQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+async function copyHostPathToVercelWorkspace(options: {
+  workspace: ReturnType<typeof createVercelSandboxWorkspace>
+  source: string | URL
+  targetRel: string
+}): Promise<void> {
+  const sourcePath = provisioningSourceToPath(options.source)
+  const sourceStat = await stat(sourcePath)
+  if (sourceStat.isDirectory()) {
+    await options.workspace.mkdir(options.targetRel, { recursive: true })
+    for (const entry of await readdir(sourcePath, { withFileTypes: true })) {
+      await copyHostPathToVercelWorkspace({
+        workspace: options.workspace,
+        source: join(sourcePath, entry.name),
+        targetRel: `${options.targetRel}/${entry.name}`,
+      })
+    }
+    return
+  }
+  if (!sourceStat.isFile()) return
+
+  const bytes = new Uint8Array(await readFile(sourcePath))
+  if (options.workspace.writeBinaryFile) await options.workspace.writeBinaryFile(options.targetRel, bytes)
+  else await options.workspace.writeFile(options.targetRel, Buffer.from(bytes).toString('utf8'))
+}
+
+function isMissingWorkspacePathError(error: unknown): boolean {
+  if ((error as { code?: string }).code === 'ENOENT') return true
+  const message = error instanceof Error ? error.message : String(error)
+  return /\bENOENT\b|no such file|file not found/i.test(message)
+}
+
+function createVercelWorkspaceFs(options: {
+  workspace: ReturnType<typeof createVercelSandboxWorkspace>
+  sandbox: VercelSandboxWithRunCommand
+}): WorkspaceProvisioningAdapter['workspaceFs'] {
+  const exists = async (rel: string): Promise<boolean> => {
+    try {
+      await options.workspace.stat(rel)
+      return true
+    } catch (error: unknown) {
+      if (isMissingWorkspacePathError(error)) return false
+      throw error
+    }
+  }
+
+  return {
+    exists,
+    async rm(rel) {
+      const targetExists = await exists(rel)
+      if (!targetExists) return
+      const target = `${VERCEL_SANDBOX_REMOTE_ROOT}/${rel.replace(/^\/+/, '')}`
+      const result = await options.sandbox.runCommand({
+        cmd: 'sh',
+        args: ['-c', `rm -rf -- ${shellSingleQuote(target)}`],
+      })
+      if ((result.exitCode ?? 1) !== 0) {
+        const err = await (result.stderr?.() ?? Promise.resolve(''))
+        throw new Error(err || `failed to remove ${rel}`)
+      }
+    },
+    async mkdir(rel) {
+      await options.workspace.mkdir(rel, { recursive: true })
+    },
+    async writeText(rel, content) {
+      await options.workspace.writeFile(rel, content)
+    },
+    async readText(rel) {
+      try {
+        return await options.workspace.readFile(rel)
+      } catch (error: unknown) {
+        if (isMissingWorkspacePathError(error)) return null
+        throw error
+      }
+    },
+    async copyFromHost(source, targetRel) {
+      await copyHostPathToVercelWorkspace({ workspace: options.workspace, source, targetRel })
+    },
+  }
+}
+
+async function ensureVercelProvisioningParts(options: {
+  store: SandboxHandleStore
+  getEnvVar: EnvGetter
+  logger: ModeLogger
+  vercelClient?: VercelSandboxClient
+  runtimeLayout: BoringAgentRuntimePaths
+  ctx?: ModeContext
+  expiredSandboxPolicy?: ExpiredSandboxPolicy
+  orphanGuardMaxIdleMs?: number | null
+}): Promise<{
+  workspace: ReturnType<typeof createVercelSandboxWorkspace>
+  workspaceFs: WorkspaceProvisioningAdapter['workspaceFs']
+  sandbox: ReturnType<typeof createVercelSandboxExec>
+  sandboxHandle: VercelSandboxWithRunCommand
+}> {
+  const auth = resolveVercelAuth(options.getEnvVar)
+  const teamId = requireEnvVar('VERCEL_TEAM_ID', options.getEnvVar)
+  const projectId = options.getEnvVar('VERCEL_PROJECT_ID')?.trim()
+  const timeoutMs = readOptionalPositiveIntegerEnv(VERCEL_SANDBOX_TIMEOUT_MS_ENV, options.getEnvVar)
+  const runtime = options.getEnvVar(VERCEL_SANDBOX_RUNTIME_ENV)?.trim() || DEFAULT_VERCEL_SANDBOX_RUNTIME
+  const vercelClient = options.vercelClient ?? createDefaultVercelClient({
+    token: auth.token,
+    teamId,
+    projectId,
+  }, { timeoutMs, runtime })
+  const workspaceId = options.ctx?.workspaceId ?? options.ctx?.workspaceRoot ?? options.runtimeLayout.workspaceRoot
+  const telemetry = options.ctx?.telemetry
+  const totalStartedAt = Date.now()
+  captureSandboxSetupEvent(telemetry, options.ctx, 'agent.runtime.sandbox.setup.started', {
+    status: 'started',
+  })
+  try {
+    const sandboxHandle = await runSandboxSetupStep({
+      telemetry,
+      ctx: options.ctx,
+      phase: 'resolve-handle',
+      run: async () => await resolveSandboxHandle(workspaceId, options.store, vercelClient, {
+        logger: options.logger,
+        maxIdleMs: options.orphanGuardMaxIdleMs === null
+          ? undefined
+          : options.orphanGuardMaxIdleMs ?? ORPHAN_GUARD_MAX_IDLE_MS,
+        expiredSandboxPolicy: options.expiredSandboxPolicy,
+      }) as VercelSandboxWithRunCommand,
+    })
+    await runSandboxSetupStep({
+      telemetry,
+      ctx: options.ctx,
+      phase: 'ensure-workspace-root',
+      run: async () => { await ensureVercelWorkspaceRoot(sandboxHandle) },
+    })
+    const workspace = createVercelSandboxWorkspace(sandboxHandle)
+    const workspaceFs = createVercelWorkspaceFs({ workspace, sandbox: sandboxHandle })
+    const sandbox = createVercelSandboxExec(sandboxHandle)
+    await runSandboxSetupStep({
+      telemetry,
+      ctx: options.ctx,
+      phase: 'sandbox-init',
+      run: async () => { await sandbox.init?.({ workspace, sessionId: options.ctx?.sessionId ?? 'default' }) },
+    })
+    captureSandboxSetupEvent(telemetry, options.ctx, 'agent.runtime.sandbox.setup.completed', {
+      status: 'ok',
+      durationMs: Date.now() - totalStartedAt,
+    })
+    return { workspace, workspaceFs, sandbox, sandboxHandle }
+  } catch (error) {
+    const code = (error as { code?: unknown } | null)?.code
+    captureSandboxSetupEvent(telemetry, options.ctx, 'agent.runtime.sandbox.setup.failed', {
+      status: 'error',
+      durationMs: Date.now() - totalStartedAt,
+      ...(typeof code === 'string' ? { errorCode: code } : {}),
+    })
+    throw error
+  }
+}
+
 async function ensureTemplateExecutables(sandbox: VercelSandboxWithRunCommand): Promise<void> {
   if (!sandbox.runCommand) return
   await sandbox.runCommand({
@@ -238,7 +498,55 @@ export function createVercelSandboxModeAdapter(
     async dispose() {
       await snapshotScheduler?.shutdown()
     },
+    createProvisioningAdapter(runtimeLayout, ctx) {
+      let partsPromise: Promise<Awaited<ReturnType<typeof ensureVercelProvisioningParts>>> | null = null
+      const getParts = () => {
+        partsPromise ??= ensureVercelProvisioningParts({
+          store,
+          getEnvVar,
+          logger,
+          vercelClient: opts.vercelClient,
+          runtimeLayout,
+          ctx,
+          expiredSandboxPolicy: opts.expiredSandboxPolicy,
+          orphanGuardMaxIdleMs: opts.orphanGuardMaxIdleMs,
+        })
+        return partsPromise
+      }
+      return createVercelProvisioningAdapter({
+        runtimeLayout,
+        workspaceFs: {
+          async exists(rel) { return await (await getParts()).workspaceFs.exists(rel) },
+          async rm(rel) { return await (await getParts()).workspaceFs.rm(rel) },
+          async mkdir(rel) { return await (await getParts()).workspaceFs.mkdir(rel) },
+          async writeText(rel, content) { return await (await getParts()).workspaceFs.writeText(rel, content) },
+          async readText(rel) { return await (await getParts()).workspaceFs.readText(rel) },
+          async copyFromHost(source, target) { return await (await getParts()).workspaceFs.copyFromHost(source, target) },
+        },
+        async exec(command, args, execOpts) {
+          const { sandbox } = await getParts()
+          const commandLine = [command, ...args].map(shellSingleQuote).join(' ')
+          const result = await sandbox.exec(commandLine, {
+            cwd: execOpts?.cwd,
+            env: execOpts?.env,
+            timeoutMs: execOpts?.timeoutMs,
+          })
+          const stdout = Buffer.from(result.stdout).toString('utf8')
+          const stderr = Buffer.from(result.stderr).toString('utf8')
+          if (result.exitCode !== 0) {
+            throw new Error(`Command failed (${command}) with exit code ${result.exitCode}${stderr.trim() ? `: ${stderr.trim()}` : ''}`)
+          }
+          return { stdout, stderr }
+        },
+        prepareArtifact: prepareVercelProvisioningArtifact,
+      })
+    },
     async create(ctx) {
+      const telemetry = ctx.telemetry
+      const totalStartedAt = Date.now()
+      captureSandboxSetupEvent(telemetry, ctx, 'agent.runtime.sandbox.setup.started', {
+        status: 'started',
+      })
       const auth = resolveVercelAuth(getEnvVar)
       const teamId = requireEnvVar('VERCEL_TEAM_ID', getEnvVar)
       const projectId = getEnvVar('VERCEL_PROJECT_ID')?.trim()
@@ -246,98 +554,141 @@ export function createVercelSandboxModeAdapter(
         VERCEL_SANDBOX_TIMEOUT_MS_ENV,
         getEnvVar,
       )
+      const runtime = getEnvVar(VERCEL_SANDBOX_RUNTIME_ENV)?.trim() || DEFAULT_VERCEL_SANDBOX_RUNTIME
 
       const vercelClient = opts.vercelClient ?? createDefaultVercelClient({
         token: auth.token,
         teamId,
         projectId,
-      }, { timeoutMs })
+      }, { timeoutMs, runtime })
 
       logger.info('[vercel-sandbox:mode] auth resolved', {
         source: auth.source,
         hasProjectId: Boolean(projectId),
         timeoutMs: timeoutMs ?? null,
+        runtime,
       })
 
       const workspaceId = ctx.workspaceId ?? ctx.workspaceRoot
       let tarballUrl: string | undefined
 
-      if (ctx.templatePath) {
-        try {
-          const result = await packageTemplate(ctx.templatePath, opts.packageTemplateOpts)
-          tarballUrl = result.url
-          logger.info('[vercel-sandbox:mode] template packaged', {
-            hash: result.hash,
-            url: result.url,
-          })
-        } catch (error) {
-          logger.info('[vercel-sandbox:mode] template packaging failed, will use writeFiles fallback', {
-            error: error instanceof Error ? error.message : String(error),
-          })
+      try {
+        if (ctx.templatePath) {
+          try {
+            const result = await runSandboxSetupStep({
+              telemetry,
+              ctx,
+              phase: 'template-package',
+              run: async () => await packageTemplate(ctx.templatePath!, opts.packageTemplateOpts),
+            })
+            tarballUrl = result.url
+            logger.info('[vercel-sandbox:mode] template packaged', {
+              hash: result.hash,
+              url: result.url,
+            })
+          } catch (error) {
+            logger.info('[vercel-sandbox:mode] template packaging failed, will use writeFiles fallback', {
+              error: error instanceof Error ? error.message : String(error),
+            })
+          }
         }
-      }
 
-      const sandboxHandle = await resolveSandboxHandle(
-        workspaceId,
-        store,
-        vercelClient,
-        {
-          tarballUrl,
-          logger,
-          maxIdleMs: opts.orphanGuardMaxIdleMs === null
-            ? undefined
-            : opts.orphanGuardMaxIdleMs ?? ORPHAN_GUARD_MAX_IDLE_MS,
-          expiredSandboxPolicy: opts.expiredSandboxPolicy,
-        },
-      )
-
-      const sandboxId = sandboxHandle.name ?? sandboxHandle.sandboxId ?? 'unknown-sandbox'
-      logger.info('[vercel-sandbox:mode] resolved sandbox handle', {
-        workspaceId,
-        sandboxId,
-        snapshotId: sandboxHandle.currentSnapshotId ?? sandboxHandle.sourceSnapshotId ?? null,
-        tarballUrl: tarballUrl ?? null,
-      })
-
-      if (snapshotScheduler && sandboxHandle.sandboxId) {
-        snapshotScheduler.trackWorkspace({
-          workspaceId,
-          sandbox: sandboxHandle as typeof sandboxHandle & { sandboxId: string; snapshot(opts?: { signal?: AbortSignal }): Promise<{ snapshotId: string }> },
-          store,
+        const sandboxHandle = await runSandboxSetupStep({
+          telemetry,
+          ctx,
+          phase: 'resolve-handle',
+          run: async () => await resolveSandboxHandle(
+            workspaceId,
+            store,
+            vercelClient,
+            {
+              tarballUrl,
+              logger,
+              maxIdleMs: opts.orphanGuardMaxIdleMs === null
+                ? undefined
+                : opts.orphanGuardMaxIdleMs ?? ORPHAN_GUARD_MAX_IDLE_MS,
+              expiredSandboxPolicy: opts.expiredSandboxPolicy,
+            },
+          ),
         })
-      }
-      const markDirty = () => snapshotScheduler?.markDirty(workspaceId)
 
-      const workspace = createVercelSandboxWorkspace(sandboxHandle, {
-        onMutation: markDirty,
-      })
+        const sandboxId = sandboxHandle.name ?? sandboxHandle.sandboxId ?? 'unknown-sandbox'
+        logger.info('[vercel-sandbox:mode] resolved sandbox handle', {
+          workspaceId,
+          sandboxId,
+          snapshotId: sandboxHandle.currentSnapshotId ?? sandboxHandle.sourceSnapshotId ?? null,
+          tarballUrl: tarballUrl ?? null,
+        })
 
-      // Fresh Vercel sandboxes do not guarantee our logical workspace root
-      // exists. Create it before any file-tree, mkdir, or rename operation so
-      // first user actions do not fail with ENOENT/404. This bootstrap is
-      // intentionally outside Workspace.mkdir so it does not mark the user's
-      // filesystem dirty or emit a fake mkdir event.
-      await ensureVercelWorkspaceRoot(sandboxHandle)
-
-      if (ctx.templatePath) {
-        if (!tarballUrl) {
-          logger.info('[vercel-sandbox:mode] falling back to writeFiles for template', {
-            templatePath: ctx.templatePath,
+        if (snapshotScheduler && sandboxHandle.sandboxId) {
+          snapshotScheduler.trackWorkspace({
+            workspaceId,
+            sandbox: sandboxHandle as typeof sandboxHandle & { sandboxId: string; snapshot(opts?: { signal?: AbortSignal }): Promise<{ snapshotId: string }> },
+            store,
           })
         }
-        await seedTemplateIntoVercelWorkspace(workspace, ctx.templatePath, logger)
-        await ensureTemplateExecutables(sandboxHandle)
-      }
+        const markDirty = () => snapshotScheduler?.markDirty(workspaceId)
 
-      const sandbox = createVercelSandboxExec(sandboxHandle, {
-        onMutation: markDirty,
-      })
-      await sandbox.init?.({ workspace, sessionId: ctx.sessionId })
+        const workspace = createVercelSandboxWorkspace(sandboxHandle, {
+          onMutation: markDirty,
+        })
 
-      return {
-        workspace,
-        sandbox,
-        fileSearch: createServerFileSearch(workspace, sandbox),
+        // Fresh Vercel sandboxes do not guarantee our logical workspace root
+        // exists. Create it before any file-tree, mkdir, or rename operation so
+        // first user actions do not fail with ENOENT/404. This bootstrap is
+        // intentionally outside Workspace.mkdir so it does not mark the user's
+        // filesystem dirty or emit a fake mkdir event.
+        await runSandboxSetupStep({
+          telemetry,
+          ctx,
+          phase: 'ensure-workspace-root',
+          run: async () => { await ensureVercelWorkspaceRoot(sandboxHandle) },
+        })
+
+        if (ctx.templatePath) {
+          if (!tarballUrl) {
+            logger.info('[vercel-sandbox:mode] falling back to writeFiles for template', {
+              templatePath: ctx.templatePath,
+            })
+          }
+          await runSandboxSetupStep({
+            telemetry,
+            ctx,
+            phase: 'template-seed',
+            run: async () => {
+              await seedTemplateIntoVercelWorkspace(workspace, ctx.templatePath!, logger)
+              await ensureTemplateExecutables(sandboxHandle)
+            },
+          })
+        }
+
+        const sandbox = createVercelSandboxExec(sandboxHandle, {
+          onMutation: markDirty,
+        })
+        await runSandboxSetupStep({
+          telemetry,
+          ctx,
+          phase: 'sandbox-init',
+          run: async () => { await sandbox.init?.({ workspace, sessionId: ctx.sessionId }) },
+        })
+
+        captureSandboxSetupEvent(telemetry, ctx, 'agent.runtime.sandbox.setup.completed', {
+          status: 'ok',
+          durationMs: Date.now() - totalStartedAt,
+        })
+        return {
+          workspace,
+          sandbox,
+          fileSearch: createServerFileSearch(workspace, sandbox),
+        }
+      } catch (error) {
+        const code = (error as { code?: unknown } | null)?.code
+        captureSandboxSetupEvent(telemetry, ctx, 'agent.runtime.sandbox.setup.failed', {
+          status: 'error',
+          durationMs: Date.now() - totalStartedAt,
+          ...(typeof code === 'string' ? { errorCode: code } : {}),
+        })
+        throw error
       }
     },
   }

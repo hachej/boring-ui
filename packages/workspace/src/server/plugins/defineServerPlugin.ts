@@ -1,4 +1,4 @@
-import type { RuntimeProvisioningContribution } from "@hachej/boring-agent/server"
+import type { PluginSkillSource, ProvisionWorkspaceRuntimeOptions } from "@hachej/boring-agent/server"
 import type { FastifyPluginAsync } from "fastify"
 import type { AgentTool } from "../../shared/types/agent-tool"
 
@@ -6,6 +6,8 @@ import {
   PI_PACKAGE_RESOURCE_FILTERS,
   type WorkspacePiPackageSource,
 } from "./piPackages"
+
+type WorkspaceRuntimeProvisioning = NonNullable<ProvisionWorkspaceRuntimeOptions["plugins"][number]["provisioning"]>
 
 export interface WorkspaceServerPlugin {
   id: string
@@ -23,8 +25,9 @@ export interface WorkspaceServerPlugin {
    */
   extensionPaths?: string[]
   systemPrompt?: string
+  skills?: PluginSkillSource[]
   agentTools?: AgentTool[]
-  provisioning?: RuntimeProvisioningContribution
+  provisioning?: WorkspaceRuntimeProvisioning
   routes?: FastifyPluginAsync
   /** UI state keys owned by this plugin that browser state PUTs must not overwrite. */
   preservedUiStateKeys?: string[]
@@ -91,9 +94,24 @@ function validatePiPackages(pluginId: string, piPackages: unknown[]): void {
   }
 }
 
+function validateSkills(pluginId: string, skills: PluginSkillSource[]): void {
+  for (let i = 0; i < skills.length; i++) {
+    const skill = skills[i]
+    if (!skill || typeof skill !== "object") {
+      fail(pluginId, `skills[${i}] must be an object`)
+    }
+    if (!skill.name || typeof skill.name !== "string") {
+      fail(pluginId, `skills[${i}].name must be a non-empty string`)
+    }
+    if (!isPathLike(skill.source)) {
+      fail(pluginId, `skills[${i}].source must be a string or URL`)
+    }
+  }
+}
+
 function validateProvisioning(
   pluginId: string,
-  provisioning: RuntimeProvisioningContribution,
+  provisioning: WorkspaceRuntimeProvisioning,
 ): void {
   if (!provisioning || typeof provisioning !== "object") {
     fail(pluginId, "provisioning must be an object")
@@ -138,7 +156,7 @@ function validateProvisioning(
       if (!spec.packageName || typeof spec.packageName !== "string") {
         fail(pluginId, `provisioning.nodePackages[${i}].packageName must be a non-empty string`)
       }
-      if (!isPathLike(spec.packageRoot)) {
+      if (spec.packageRoot !== undefined && !isPathLike(spec.packageRoot)) {
         fail(pluginId, `provisioning.nodePackages[${i}].packageRoot must be a string or URL`)
       }
     }
@@ -205,6 +223,12 @@ export function validateServerPlugin(plugin: WorkspaceServerPlugin): void {
         fail(plugin.id, `extensionPaths[${index}] must be a non-empty string`)
       }
     })
+  }
+  if (plugin.skills !== undefined) {
+    if (!Array.isArray(plugin.skills)) {
+      fail(plugin.id, "skills must be an array when provided")
+    }
+    validateSkills(plugin.id, plugin.skills)
   }
   if (plugin.agentTools !== undefined) {
     if (!Array.isArray(plugin.agentTools)) {

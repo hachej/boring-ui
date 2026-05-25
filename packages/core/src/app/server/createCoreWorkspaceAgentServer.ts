@@ -4,6 +4,7 @@ import path from 'node:path'
 
 import {
   compactPiPackages,
+  provisionWorkspaceRuntime,
   registerAgentRoutes,
   type RegisterAgentRoutesOptions,
   type RuntimeProvisioningContribution,
@@ -11,8 +12,8 @@ import {
 import {
   collectWorkspaceAgentServerPlugins,
   hasDirServerPlugin,
-  provisionWorkspaceAgentServer,
   readWorkspacePluginPackagePiSnapshot,
+  readWorkspacePluginPackageRuntimePlugins,
   resolveDefaultWorkspacePluginPackagePaths,
   resolveOnePluginEntry,
   type CreateWorkspaceAgentServerOptions,
@@ -604,6 +605,7 @@ export async function createCoreWorkspaceAgentServer(
     defaultPluginPackages: options.defaultPluginPackages,
   })
   const defaultPackagePiSnapshot = readWorkspacePluginPackagePiSnapshot(defaultPluginPackagePaths)
+  const defaultPackageRuntimePlugins = readWorkspacePluginPackageRuntimePlugins(defaultPluginPackagePaths)
   const { systemPromptAppend: defaultPackageSystemPromptAppend, ...defaultPackagePiOptions } = defaultPackagePiSnapshot
   const staticSystemPromptAppend = [options.systemPromptAppend, defaultPackageSystemPromptAppend]
     .filter(Boolean)
@@ -644,26 +646,6 @@ export async function createCoreWorkspaceAgentServer(
     excludeDefaults: options.excludeDefaults,
   })
 
-  const provisionedWorkspaceRoots = new Map<string, Promise<void>>()
-  const ensureWorkspaceProvisioned = (root: string): Promise<void> => {
-    if (pluginCollection.provisioningContributions.length === 0) return Promise.resolve()
-    const resolvedRoot = path.resolve(root)
-    const existing = provisionedWorkspaceRoots.get(resolvedRoot)
-    if (existing) return existing
-    const pending = provisionWorkspaceAgentServer({
-      workspaceRoot: resolvedRoot,
-      provisioningContributions: pluginCollection.provisioningContributions,
-      force: options.forceProvisioning,
-    }).catch((error) => {
-      provisionedWorkspaceRoots.delete(resolvedRoot)
-      throw error
-    })
-    provisionedWorkspaceRoots.set(resolvedRoot, pending)
-    return pending
-  }
-
-  await ensureWorkspaceProvisioned(workspaceRoot)
-
   const resolveWorkspaceId = async (request: Parameters<NonNullable<RegisterAgentRoutesOptions['getWorkspaceId']>>[0]) =>
     options.getWorkspaceId
       ? await options.getWorkspaceId(request)
@@ -675,7 +657,6 @@ export async function createCoreWorkspaceAgentServer(
     const root = options.getWorkspaceRoot
       ? await options.getWorkspaceRoot(workspaceId, request)
       : await resolveWorkspaceRoot(workspaceRoot, workspaceId)
-    await ensureWorkspaceProvisioned(root)
     return root
   }
   const piOptionsByRoot = new Map<string, AgentPiOptions>()
@@ -732,6 +713,24 @@ export async function createCoreWorkspaceAgentServer(
     sandboxHandleStore: options.sandboxHandleStore ?? new WorkspaceRuntimeSandboxHandleStore(workspaceStore),
     getWorkspaceId: resolveWorkspaceId,
     getWorkspaceRoot: resolveRoot,
+    provisionRuntime: async ({ provisioningAdapter, runtimeLayout, workspaceId, request, runtimeMode }) => {
+      if (!provisioningAdapter) return undefined
+      return await provisionWorkspaceRuntime({
+        plugins: [
+          ...pluginCollection.runtimePlugins,
+          ...defaultPackageRuntimePlugins,
+        ],
+        adapter: provisioningAdapter,
+        runtimeLayout,
+        telemetry,
+        telemetryContext: {
+          workspaceId,
+          requestId: request?.id,
+          runtimeMode,
+        },
+      })
+    },
+    provisionWorkspace: options.provisionWorkspace,
     registerHealthRoute: options.registerHealthRoute ?? false,
     telemetry,
   })
