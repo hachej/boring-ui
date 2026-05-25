@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { ChatPanel, useSessions as useAgentSessions } from "@hachej/boring-agent"
+import { createDeckPlugin } from "@hachej/boring-deck/front"
+import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
 import { WorkspaceAgentFront } from "@hachej/boring-workspace/app/front"
 import { askUserPlugin } from "@hachej/boring-ask-user/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
@@ -15,6 +17,26 @@ function isShowcaseRoute(): boolean {
 interface WorkspaceMeta {
   projectName?: string
 }
+
+const playgroundDeckWidgets: DeckWidgetDefinition[] = [
+  {
+    name: "PlaygroundBadge",
+    display: "inline",
+    render: ({ attrs }) => (
+      <span className="inline-flex rounded-full border border-border/60 bg-muted px-2 py-0.5 text-xs font-medium text-foreground">
+        {attrs.text ?? "badge"}
+      </span>
+    ),
+  },
+]
+
+const playgroundDeckPlugin = createDeckPlugin({
+  widgets: playgroundDeckWidgets,
+  theme: {
+    className: "workspace-playground-deck",
+    slideClassName: "workspace-playground-deck-slide",
+  },
+})
 
 export function WorkspaceShell() {
   const showcase = useMemo(isShowcaseRoute, [])
@@ -81,7 +103,7 @@ export function WorkspaceShell() {
       sessions={sessions}
       activeSessionId={showcase ? SHOWCASE_SESSION_ID : undefined}
       onActiveSessionIdChange={handleActiveSessionIdChange}
-      plugins={[askUserPlugin]}
+      plugins={[askUserPlugin, playgroundDeckPlugin]}
       chatParams={{ thinkingControl: true }}
     />
   )
