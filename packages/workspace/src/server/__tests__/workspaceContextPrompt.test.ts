@@ -84,6 +84,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       workspaceRoot,
       mode: "direct",
       logger: false,
+      provisionWorkspace: false,
     })
     await app.close()
     expect(capturedSystemPromptAppend).toBeDefined()
@@ -96,6 +97,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       workspaceRoot,
       mode: "local",
       logger: false,
+      provisionWorkspace: false,
     })
     await app.close()
     expect(capturedSystemPromptAppend).toBeDefined()
@@ -108,6 +110,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       workspaceRoot,
       mode: "vercel-sandbox",
       logger: false,
+      provisionWorkspace: false,
       plugins: [{ id: "my-plugin", systemPrompt: "Plugin prompt only." }],
     })
     await app.close()
@@ -122,6 +125,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
       logger: false,
+      provisionWorkspace: false,
     })
     await app.close()
     expect(capturedSystemPromptAppend).toBeDefined()
@@ -134,6 +138,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       workspaceRoot,
       mode: "direct",
       logger: false,
+      provisionWorkspace: false,
     })
     await app.close()
     // The production call passes scaffoldCommand + verifyCommand; assert
@@ -150,6 +155,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       workspaceRoot,
       mode: "direct",
       logger: false,
+      provisionWorkspace: false,
       plugins: [{ id: "my-plugin", systemPrompt: "Plugin capabilities here." }],
     })
     await app.close()
@@ -163,6 +169,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       workspaceRoot,
       mode: "direct",
       logger: false,
+      provisionWorkspace: false,
       plugins: [{ id: "my-plugin", systemPrompt: "Plugin capabilities here." }],
     })
     await app.close()
@@ -178,6 +185,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       workspaceRoot,
       mode: "vercel-sandbox",
       logger: false,
+      provisionWorkspace: false,
     })
     await app.close()
     expect(capturedSystemPromptAppend).toBeDefined()
