@@ -38,6 +38,10 @@
     "./package.json": "./package.json"
   },
   "sideEffects": false,
+  "dependencies": {
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
