@@ -1,6 +1,24 @@
 import { describe, expect, it } from "vitest"
+import {
+  bootstrap,
+  CatalogRegistry,
+  CommandRegistry,
+  PanelRegistry,
+  SurfaceResolverRegistry,
+} from "@hachej/boring-workspace"
 import { captureFrontPlugin } from "@hachej/boring-workspace/plugin"
 import deckPlugin, { createDeckPlugin } from "../index"
+
+const DummyChatPanel = () => null
+
+function makeRegistries() {
+  return {
+    panels: new PanelRegistry(),
+    commands: new CommandRegistry(),
+    catalogs: new CatalogRegistry({ warnOnDuplicate: false }),
+    surfaceResolvers: new SurfaceResolverRegistry(),
+  }
+}
 
 describe("deck scaffold", () => {
   it("exports a default front plugin factory", () => {
@@ -22,16 +40,16 @@ describe("deck scaffold", () => {
     )
   })
 
-  it("resolves workspace.open.path deck markdown requests to the deck panel", () => {
-    const captured = captureFrontPlugin(createDeckPlugin())
+  it("normalizes Windows-style pathPrefix values before matching deck markdown", () => {
+    const captured = captureFrontPlugin(createDeckPlugin({ pathPrefix: "briefings\\" }))
     const resolver = captured.registrations.surfaceResolvers[0]
     if (!resolver) throw new Error("expected deck resolver")
 
-    expect(resolver.resolve({ kind: "workspace.open.path", target: "deck/intro.md" })).toEqual(
+    expect(resolver.resolve({ kind: "workspace.open.path", target: "briefings/intro.md" })).toEqual(
       expect.objectContaining({
         component: "deck",
         title: "intro.md",
-        params: { path: "deck/intro.md" },
+        params: { path: "briefings/intro.md" },
       }),
     )
   })
@@ -44,5 +62,33 @@ describe("deck scaffold", () => {
     expect(resolver.resolve({ kind: "workspace.open.path", target: "deck/intro.md" })).toBeNull()
     expect(resolver.resolve({ kind: "workspace.open.path", target: "slides/intro.txt" })).toBeNull()
     expect(resolver.resolve({ kind: "other.kind", target: "slides/intro.md" })).toBeNull()
+  })
+
+  it("registers through workspace bootstrap and resolves workspace.open.path via the live registry", () => {
+    const registries = makeRegistries()
+
+    bootstrap({
+      chatPanel: DummyChatPanel,
+      defaults: [],
+      plugins: [createDeckPlugin({ pathPrefix: "briefings\\" })],
+      registries,
+    })
+
+    expect(registries.panels.get("deck")).toEqual(
+      expect.objectContaining({ id: "deck", title: "Deck", pluginId: "deck" }),
+    )
+
+    expect(
+      registries.surfaceResolvers.resolve({ kind: "workspace.open.path", target: "briefings/weekly.md" }),
+    ).toEqual(
+      expect.objectContaining({
+        component: "deck",
+        title: "weekly.md",
+        params: { path: "briefings/weekly.md" },
+      }),
+    )
+    expect(
+      registries.surfaceResolvers.resolve({ kind: "workspace.open.path", target: "deck/weekly.md" }),
+    ).toBeUndefined()
   })
 })

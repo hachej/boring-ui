@@ -8,6 +8,7 @@ import {
   DECK_PANEL_ID,
   DECK_PATH_PREFIX,
   DECK_PLUGIN_ID,
+  normalizeDeckPath,
   type CreateDeckPluginOptions,
 } from "../shared"
 import { DeckPane } from "./DeckPane"
@@ -35,7 +36,7 @@ function DeckFilesProvider({
 }
 
 export function createDeckPlugin(options: CreateDeckPluginOptions = {}): BoringFrontFactoryWithId {
-  const pathPrefix = options.pathPrefix ?? DECK_PATH_PREFIX
+  const pathPrefix = normalizeDeckPath(options.pathPrefix ?? DECK_PATH_PREFIX)
   validateDeckWidgets(options.widgets ?? [])
 
   return definePlugin({

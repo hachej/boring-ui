@@ -1,17 +1,13 @@
 import { WORKSPACE_OPEN_PATH_SURFACE_KIND, type BoringFrontSurfaceResolverRegistration } from "@hachej/boring-workspace/plugin"
-import { DECK_PANEL_ID } from "../shared"
-
-function normalizePrefix(pathPrefix: string): string {
-  return pathPrefix.endsWith("/") ? pathPrefix : `${pathPrefix}/`
-}
+import { DECK_PANEL_ID, isDeckMarkdownPath, normalizeDeckPath } from "../shared"
 
 function basename(path: string): string {
-  const normalized = path.replace(/\\/g, "/")
+  const normalized = normalizeDeckPath(path)
   return normalized.split("/").pop() ?? path
 }
 
 export function createDeckSurfaceResolver(pathPrefix: string): BoringFrontSurfaceResolverRegistration {
-  const normalizedPrefix = normalizePrefix(pathPrefix)
+  const normalizedPrefix = normalizeDeckPath(pathPrefix)
 
   return {
     id: "deck.open-path",
@@ -19,12 +15,14 @@ export function createDeckSurfaceResolver(pathPrefix: string): BoringFrontSurfac
     source: "app",
     resolve: (request) => {
       if (request.kind !== WORKSPACE_OPEN_PATH_SURFACE_KIND) return null
-      if (!request.target.startsWith(normalizedPrefix)) return null
-      if (!request.target.endsWith(".md")) return null
+
+      const target = normalizeDeckPath(request.target)
+      if (!isDeckMarkdownPath(target, normalizedPrefix)) return null
+
       return {
         component: DECK_PANEL_ID,
-        title: basename(request.target),
-        params: { path: request.target },
+        title: basename(target),
+        params: { path: target },
         score: 100,
       }
     },
