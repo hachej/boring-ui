@@ -1253,8 +1253,8 @@ export function ChatPanel(props: ChatPanelProps) {
               onChange={handleComposerChange}
               onKeyDown={handleComposerKeyDown}
               className={cn(
-                "min-h-[48px] resize-none border-0 bg-transparent shadow-none",
-                "px-4 py-3 text-[13px] leading-[1.55] placeholder:text-muted-foreground/50",
+                "min-h-11 resize-none border-0 bg-transparent shadow-none",
+                "px-4 py-2.5 text-[13px] leading-[1.55] placeholder:text-muted-foreground/45",
                 "focus-visible:ring-0 focus-visible:ring-offset-0",
               )}
             />
@@ -1303,7 +1303,7 @@ export function ChatPanel(props: ChatPanelProps) {
                     // to earn the real estate. Becomes a Stop affordance
                     // (square icon + aria-label="Stop") while the turn
                     // streams.
-                    "h-8 w-8 shrink-0 rounded-[var(--radius-lg)]",
+                    "h-8 w-8 shrink-0 rounded-full",
                     "bg-[color:var(--accent)] text-[color:var(--accent-foreground)]",
                     "transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
                     "hover:shadow-[0_0_0_3px_oklch(from_var(--accent)_l_c_h/0.30)] hover:brightness-110 hover:scale-[1.04]",

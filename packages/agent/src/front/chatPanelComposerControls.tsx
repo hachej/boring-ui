@@ -109,13 +109,16 @@ export function ModelSelect({
           aria-label="Model"
           className={cn(
             composerActionClass,
-            "w-auto max-w-[min(52vw,200px)] px-2 text-xs font-medium",
-            open && "bg-muted/60 text-foreground",
+            // Model is the only piece of state the composer carries between
+            // turns — give it a status-pill shape so it reads as data, not
+            // another tertiary control.
+            "w-auto max-w-[min(52vw,200px)] gap-1.5 rounded-full bg-muted/40 px-2.5 text-[11.5px] font-medium text-foreground/80 hover:bg-muted/70",
+            open && "bg-muted/70 text-foreground",
           )}
         >
-          <BotIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <BotIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80" aria-hidden="true" />
           <span className="min-w-0 truncate">{triggerLabel}</span>
-          <ChevronDownIcon className="h-3 w-3 shrink-0 text-muted-foreground/60" aria-hidden="true" />
+          <ChevronDownIcon className="h-3 w-3 shrink-0 text-muted-foreground/50" aria-hidden="true" />
         </button>
       </PopoverTrigger>
       <PopoverContent
