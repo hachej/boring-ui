@@ -4,6 +4,11 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 
+const { mockUseOptionalConfig } = vi.hoisted(() => ({
+  mockUseOptionalConfig: vi.fn(),
+}))
+
+const mockSignInSocial = vi.fn()
 const mockSignUpEmail = vi.fn()
 const mockUseSession = vi.fn()
 const mockSignOut = vi.fn()
@@ -12,7 +17,7 @@ vi.mock('better-auth/react', () => ({
   createAuthClient: () => ({
     useSession: mockUseSession,
     signOut: mockSignOut,
-    signIn: { email: vi.fn(), social: vi.fn() },
+    signIn: { email: vi.fn(), social: mockSignInSocial },
     signUp: { email: mockSignUpEmail },
   }),
 }))
@@ -21,11 +26,16 @@ vi.mock('better-auth/client/plugins', () => ({
   magicLinkClient: () => ({ id: 'magic-link' }),
 }))
 
+vi.mock('../ConfigProvider.js', () => ({
+  useOptionalConfig: mockUseOptionalConfig,
+}))
+
 import { withBeadId } from '../../server/__tests__/_setup'
 import { AuthProvider } from '../auth/AuthProvider'
 import { SignUpPage } from '../auth/SignUpPage'
 
 const BEAD_ID = 'boring-ui-v2-1pas'
+const GOOGLE_BEAD_ID = 'boring-ui-v2-reorg-mip7'
 
 function Wrapper({ children }: { children: ReactNode }) {
   return <AuthProvider>{children}</AuthProvider>
@@ -34,6 +44,7 @@ function Wrapper({ children }: { children: ReactNode }) {
 beforeEach(() => {
   vi.clearAllMocks()
   mockUseSession.mockReturnValue({ data: null, isPending: false, error: null })
+  mockUseOptionalConfig.mockReturnValue({ features: { googleOauth: false } })
   mockSignOut.mockResolvedValue(undefined)
 })
 
@@ -87,12 +98,49 @@ describe('SignUpPage', () => {
   )
 
   it(
-    'forwards invite_token as x-invite-token header',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    'shows Google sign-up on the normal signup flow when enabled',
+    withBeadId(GOOGLE_BEAD_ID, async ({ assertionPassed }) => {
+      mockUseOptionalConfig.mockReturnValue({ features: { googleOauth: true } })
+
+      render(<SignUpPage />, { wrapper: Wrapper })
+
+      expect(screen.getByRole('button', { name: /continue with google/i })).toBeTruthy()
+      assertionPassed('signup-google-visible')
+    }),
+  )
+
+  it(
+    'passes the signup route as the Google OAuth error callback URL',
+    withBeadId(GOOGLE_BEAD_ID, async ({ assertionPassed }) => {
+      mockUseOptionalConfig.mockReturnValue({ features: { googleOauth: true } })
+      mockSignInSocial.mockResolvedValue({ data: null, error: null })
+
+      render(<SignUpPage />, { wrapper: Wrapper })
+
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: /continue with google/i }))
+
+      await waitFor(() =>
+        expect(mockSignInSocial).toHaveBeenCalledWith({
+          provider: 'google',
+          callbackURL: '/',
+          errorCallbackURL: '/auth/signup',
+        }),
+      )
+      assertionPassed('signup-google-error-callback')
+    }),
+  )
+
+  it(
+    'forwards invite_token as x-invite-token header and hides Google sign-up',
+    withBeadId(GOOGLE_BEAD_ID, async ({ assertionPassed }) => {
+      mockUseOptionalConfig.mockReturnValue({ features: { googleOauth: true } })
       mockSignUpEmail.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null })
       window.history.pushState({}, '', '/auth/signup?invite_token=test-token-abc')
 
       render(<SignUpPage />, { wrapper: Wrapper })
+
+      expect(screen.queryByRole('button', { name: /continue with google/i })).toBeNull()
 
       const user = userEvent.setup()
       await user.type(screen.getByLabelText(/name/i), 'Invited')
@@ -152,12 +200,36 @@ describe('SignUpPage', () => {
   )
 
   it(
+    'hides Google sign-up when google OAuth is disabled',
+    withBeadId(GOOGLE_BEAD_ID, async ({ assertionPassed }) => {
+      render(<SignUpPage />, { wrapper: Wrapper })
+
+      expect(screen.queryByRole('button', { name: /continue with google/i })).toBeNull()
+      assertionPassed('signup-google-hidden')
+    }),
+  )
+
+  it(
     'does NOT render a GitHub sign-up button',
     withBeadId(BEAD_ID, async ({ assertionPassed }) => {
       render(<SignUpPage />, { wrapper: Wrapper })
 
       expect(screen.queryByText(/github/i)).toBeNull()
       assertionPassed('signup-no-github')
+    }),
+  )
+
+  it(
+    'shows a helpful error when Google redirects back with an OAuth error',
+    withBeadId(GOOGLE_BEAD_ID, async ({ assertionPassed }) => {
+      window.history.pushState({}, '', '/auth/signup?error=access_denied&error_description=cancelled')
+
+      render(<SignUpPage />, { wrapper: Wrapper })
+
+      expect(screen.getByRole('button', { name: /^sign up$/i })).toBeTruthy()
+      expect(screen.getByLabelText(/email/i)).toBeTruthy()
+      expect(screen.getByRole('alert').textContent).toMatch(/could not complete google sign up/i)
+      assertionPassed('signup-oauth-error-query')
     }),
   )
 })

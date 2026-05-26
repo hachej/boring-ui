@@ -270,6 +270,66 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
     }
   })
 
+  it('lets auth callback routes hit the auth proxy even for browser GET requests', async () => {
+    const app = await createCoreWorkspaceAgentServer({
+      appRoot: await createBuiltFrontendRoot(),
+      serveFrontend: true,
+      telemetry: { capture: vi.fn() },
+    })
+    const handler = vi.fn(async () => new Response('handled-by-auth-proxy', {
+      status: 200,
+      headers: { 'content-type': 'text/plain; charset=utf-8' },
+    }))
+    app.auth.handler = handler as typeof app.auth.handler
+
+    try {
+      for (const url of ['/auth/callback/github', '/auth/callback/google']) {
+        const res = await app.inject({
+          method: 'GET',
+          url,
+          headers: { accept: 'text/html' },
+        })
+
+        expect(res.statusCode).toBe(200)
+        expect(res.body).toContain('handled-by-auth-proxy')
+      }
+
+      expect(handler).toHaveBeenCalledTimes(2)
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('serves SPA-only auth pages through the frontend shell for browser GET requests', async () => {
+    const app = await createCoreWorkspaceAgentServer({
+      appRoot: await createBuiltFrontendRoot(),
+      serveFrontend: true,
+      telemetry: { capture: vi.fn() },
+    })
+    const handler = vi.fn(async () => new Response('handled-by-auth-proxy', {
+      status: 200,
+      headers: { 'content-type': 'text/plain; charset=utf-8' },
+    }))
+    app.auth.handler = handler as typeof app.auth.handler
+
+    try {
+      for (const url of ['/auth/verify-email', '/auth/error?error=please_restart_the_process']) {
+        const res = await app.inject({
+          method: 'GET',
+          url,
+          headers: { accept: 'text/html' },
+        })
+
+        expect(res.statusCode).toBe(200)
+        expect(res.body).toContain('<!doctype html>')
+      }
+
+      expect(handler).not.toHaveBeenCalled()
+    } finally {
+      await app.close()
+    }
+  })
+
   it('keeps serving the shell when telemetry capture fails', async () => {
     const app = await createCoreWorkspaceAgentServer({
       appRoot: await createBuiltFrontendRoot(),

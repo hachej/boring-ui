@@ -203,11 +203,16 @@ describe('routes + routeHref', () => {
     expect(routes.forgotPassword).toBe('/auth/forgot-password')
     expect(routes.resetPassword).toBe('/auth/reset-password')
     expect(routes.verifyEmail).toBe('/auth/verify-email')
+    expect(routes.authError).toBe('/auth/error')
+    expect(routes.callbackGithub).toBe('/auth/callback/github')
+    expect(routes.callbackGoogle).toBe('/auth/callback/google')
     expect(routes.me).toBe('/me')
   })
 
   it('routeHref returns route path', () => {
     expect(routeHref('signin')).toBe('/auth/signin')
+    expect(routeHref('authError')).toBe('/auth/error')
+    expect(routeHref('callbackGoogle')).toBe('/auth/callback/google')
   })
 
   it('routeHref substitutes params', () => {
