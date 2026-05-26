@@ -105,15 +105,15 @@ export function SessionBrowser({
   return (
     <div
       data-boring-workspace-part="session-list"
-      className={cn("flex h-full min-h-0 flex-col bg-background", className)}
+      className={cn(
+        "flex h-full min-h-0 flex-col bg-[color:oklch(from_var(--background)_calc(l-0.01)_c_h)]",
+        className,
+      )}
       role="navigation"
       aria-label="Session history"
     >
-      <div
-        className="flex items-center justify-between border-b border-[color:oklch(from_var(--border)_l_c_h/0.25)] px-3"
-        style={{ height: 44 }}
-      >
-        <span className="text-[10.5px] font-medium uppercase tracking-[0.12em] text-muted-foreground/70">
+      <div className="flex h-11 items-center justify-between border-b border-border/60 px-3.5">
+        <span className="text-[12px] font-medium tracking-tight text-foreground/70">
           Sessions
         </span>
         <div className="flex items-center gap-0.5">
@@ -130,7 +130,7 @@ export function SessionBrowser({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto py-2">
+      <div className="flex-1 overflow-y-auto py-2.5">
         {sessions.length === 0 && (
           <div className="px-3 py-8 text-center text-[13px] text-muted-foreground">
             No sessions yet.
@@ -140,9 +140,10 @@ export function SessionBrowser({
         )}
 
         {groups.map((group, i) => (
-          <section key={group.key} className={cn(i > 0 && "mt-2")}>
-            <div className="px-4 pb-1 pt-2 text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
-              {group.label}
+          <section key={group.key} className={cn(i > 0 && "mt-4")}>
+            <div className="flex items-baseline justify-between gap-2 px-3.5 pb-2 pt-2 text-[11px] font-medium tracking-tight text-muted-foreground/75">
+              <span>{group.label}</span>
+              <span aria-hidden="true" className="text-[10.5px] tabular-nums text-muted-foreground/40">{group.items.length}</span>
             </div>
             <ul role="list" className="flex flex-col">
               {group.items.map((session) => (
@@ -180,9 +181,9 @@ function SessionRow({
       data-boring-workspace-part="session-row"
       data-boring-state={active ? "selected" : undefined}
       className={cn(
-        "group relative mx-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        "group relative mx-2 mt-px flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
         "cursor-pointer hover:bg-foreground/[0.04]",
-        active && "border-l-2 border-accent bg-foreground/[0.06] text-foreground",
+        active && "bg-foreground/[0.06] text-foreground",
       )}
       onClick={() => onSwitch?.(session.id)}
     >
@@ -191,7 +192,14 @@ function SessionRow({
           {session.title || "Untitled"}
         </span>
         {time && (
-          <span className="ml-1.5 text-muted-foreground/70 tabular-nums">· {time}</span>
+          <span
+            className={cn(
+              "ml-1.5 tabular-nums text-[11px]",
+              active ? "text-[color:var(--accent)]" : "text-muted-foreground/60",
+            )}
+          >
+            {time}
+          </span>
         )}
       </span>
       {onDelete && (

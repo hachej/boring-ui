@@ -676,13 +676,13 @@ function EmptyWorkbenchOverlay({
         )}
       </div>
 
-      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 pt-12 pb-10 text-center">
-        <div className="flex items-center gap-2 text-[10.5px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-          <span className="inline-block h-px w-4 bg-[color:var(--accent)]" aria-hidden="true" />
+      <div className="pointer-events-none absolute inset-0 flex flex-col items-start justify-center gap-2 px-6 pt-12 pb-10">
+        <div className="flex items-center gap-2 text-[11px] font-medium tracking-tight text-muted-foreground/75">
+          <span className="inline-block h-px w-3 bg-[color:var(--accent)]" aria-hidden="true" />
           Workbench
         </div>
         <div className="text-[15px] font-medium tracking-tight text-foreground">Nothing open yet</div>
-        <p className="max-w-[280px] text-[12.5px] leading-relaxed text-muted-foreground">
+        <p className="max-w-[280px] text-[12.5px] leading-relaxed text-muted-foreground/85">
           Open a source item, or let the agent produce an artifact here.
         </p>
         {collapsed && (
