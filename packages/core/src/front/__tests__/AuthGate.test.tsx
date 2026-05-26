@@ -218,4 +218,27 @@ describe('AuthGate', () => {
 
     expect(navigate).toHaveBeenCalledWith('/', { replace: true })
   })
+
+  it('treats workspace route patterns in publicPaths as public', () => {
+    let nowMs = 0
+    const now = () => nowMs
+    const navigate = vi.fn()
+
+    mockUseSession.mockReturnValue(makeNullSession())
+
+    render(
+      <Harness
+        location={{ pathname: '/projects/abc' }}
+        navigate={navigate}
+        now={now}
+        publicPaths={['/', '/projects/:workspaceSlug']}
+      />,
+    )
+
+    nowMs += 60_000
+    vi.advanceTimersByTime(60_000)
+
+    expect(navigate).not.toHaveBeenCalled()
+    expect(screen.getByText('Protected Content')).toBeTruthy()
+  })
 })

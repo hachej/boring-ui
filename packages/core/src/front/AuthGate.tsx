@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { ReactNode } from 'react'
+import { matchPath } from 'react-router-dom'
 import { useSession } from './auth/AuthProvider.js'
 import { routes } from './utils.js'
 
@@ -50,9 +51,12 @@ function isPublicPath(pathname: string, publicPaths: string[]): boolean {
   const normalizedPath = normalizePath(pathname)
   if (normalizedPath === '/auth' || normalizedPath.startsWith('/auth/')) return true
 
-  return publicPaths.some((candidate) => (
-    normalizedPath === candidate || normalizedPath.startsWith(`${candidate}/`)
-  ))
+  return publicPaths.some((candidate) => {
+    if (candidate.includes(':') || candidate.includes('*')) {
+      return Boolean(matchPath({ path: candidate, end: false }, normalizedPath))
+    }
+    return normalizedPath === candidate || normalizedPath.startsWith(`${candidate}/`)
+  })
 }
 
 function readSafeRedirect(search?: string): string | null {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
-import { Navigate, Route, useLocation, useParams } from 'react-router-dom'
+import { matchPath, Navigate, Route, useLocation, useParams } from 'react-router-dom'
 import {
   CoreFront,
   UserMenu,
@@ -17,11 +17,13 @@ import {
   type WorkspaceAgentFrontProps,
   type WorkspaceAgentSession,
 } from '@hachej/boring-workspace/app/front'
+import { useWorkspaceAttention } from '@hachej/boring-workspace'
 
 const DEFAULT_WORKSPACE_ROUTE = '/workspace/:id'
 const DEFAULT_WORKSPACE_ID_PARAM = 'id'
 const PENDING_CHAT_ENTRY_KEY = 'boring:pending-chat-entry'
 const PENDING_CHAT_ENTRY_TTL_MS = 24 * 60 * 60 * 1000
+const DEFAULT_CHAT_FIRST_PENDING_WORKSPACE_ID = 'pending'
 
 type ChatEntryMode = 'auth-first' | 'chat-first'
 
@@ -69,6 +71,31 @@ function readPendingChatEntry(): PendingChatEntryState | null {
   }
 }
 
+function routePatterns(route: string): string[] {
+  const normalized = route.endsWith('/*') ? route.slice(0, -2) : route
+  return [`${normalized}/*`, normalized]
+}
+
+function workspaceIdFromPath(
+  pathname: string,
+  workspaceRoute = DEFAULT_WORKSPACE_ROUTE,
+  workspaceIdParam = DEFAULT_WORKSPACE_ID_PARAM,
+): string | null {
+  const patterns = [
+    ...routePatterns(workspaceRoute),
+    '/w/:id/*',
+    '/w/:id',
+    '/workspace/:id/*',
+    '/workspace/:id',
+  ]
+  for (const pattern of patterns) {
+    const match = matchPath(pattern, pathname)
+    const id = match?.params[workspaceIdParam]?.trim() ?? match?.params.id?.trim()
+    if (id) return id
+  }
+  return null
+}
+
 function writePendingChatEntry(input: Omit<PendingChatEntryState, 'createdAt'>): void {
   const storage = browserSessionStorage()
   if (!storage) return
@@ -77,6 +104,15 @@ function writePendingChatEntry(input: Omit<PendingChatEntryState, 'createdAt'>):
 
 function clearPendingChatEntry(): void {
   browserSessionStorage()?.removeItem(PENDING_CHAT_ENTRY_KEY)
+}
+
+function pendingChatEntryMatchesLocation(
+  pending: PendingChatEntryState | null,
+  pathname: string,
+  search: string,
+  hash: string,
+): boolean {
+  return Boolean(pending && pending.returnTo === safeReturnTo(pathname, search, hash))
 }
 
 export interface CoreWorkspaceAgentFrontProps<
@@ -219,6 +255,72 @@ function AuthModal({ onClose, returnTo }: { onClose: () => void; returnTo: strin
   )
 }
 
+function ChatFirstComposerBlocker() {
+  const { addBlocker, removeBlocker } = useWorkspaceAttention()
+
+  useEffect(() => {
+    const blocker = {
+      id: 'chat-first-workspace-preparing',
+      reason: 'workspace-preparing',
+      label: 'Preparing workspace… Send will work in a moment.',
+    }
+    addBlocker(blocker)
+    return () => removeBlocker(blocker.id)
+  }, [addBlocker, removeBlocker])
+
+  return null
+}
+
+function ChatFirstAuthenticatedShell<TSession extends WorkspaceAgentSession = WorkspaceAgentSession>({
+  appTitle,
+  workspaceId,
+  initialDraft,
+  workspaceProps,
+  showComposerBlocker = true,
+}: {
+  appTitle: string
+  workspaceId: string
+  initialDraft?: string
+  workspaceProps: Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'>
+  showComposerBlocker?: boolean
+}) {
+  return (
+    <WorkspaceAgentFront
+      {...workspaceProps}
+      workspaceId={workspaceId}
+      appTitle={appTitle}
+      topBarLeft={null}
+      sessions={[]}
+      activeSessionId={null}
+      onSwitchSession={() => undefined}
+      onCreateSession={() => undefined}
+      onDeleteSession={() => undefined}
+      provisionWorkspace={false}
+      bootPreloadPaths={[]}
+      bridgeEndpoint={null}
+      excludeDefaults={['filesystem']}
+      plugins={[]}
+      catalogs={[]}
+      commands={[]}
+      persistenceEnabled={false}
+      navEnabled={false}
+      defaultNavOpen={false}
+      defaultSurfaceOpen={false}
+      beforeShell={showComposerBlocker ? <>{workspaceProps.beforeShell}<ChatFirstComposerBlocker /></> : workspaceProps.beforeShell}
+      chatParams={{
+        ...workspaceProps.chatParams,
+        composerBlockers: undefined,
+        ...(initialDraft ? { initialDraft } : {}),
+        serverResourcesEnabled: false,
+        hydrateMessages: false,
+        onBeforeSubmit: workspaceProps.chatParams?.onBeforeSubmit ?? (() => false as const),
+      }}
+      frontPluginHotReload={false}
+      hotReloadEnabled={false}
+    />
+  )
+}
+
 function ChatFirstPublicShell<TSession extends WorkspaceAgentSession = WorkspaceAgentSession>({
   appTitle,
   intendedWorkspaceId,
@@ -236,58 +338,37 @@ function ChatFirstPublicShell<TSession extends WorkspaceAgentSession = Workspace
     writePendingChatEntry({ draft, returnTo, ...(intendedWorkspaceId ? { intendedWorkspaceId } : {}) })
     setModalOpen(true)
   }
-  const chatParams = {
-    ...workspaceProps.chatParams,
-    serverResourcesEnabled: false,
-    hydrateMessages: false,
-    onBeforeSubmit: (draft: string) => {
-      openAuth(draft)
-      return false as const
-    },
-  }
   return (
     <div className="relative h-screen min-h-0">
-      <WorkspaceAgentFront
-        {...workspaceProps}
-        workspaceId={workspaceId}
+      <ChatFirstAuthenticatedShell
         appTitle={appTitle}
-        topBarLeft={null}
-        topBarRight={<button type="button" className="rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted" onClick={() => openAuth()}>Sign in</button>}
-        sessions={[]}
-        activeSessionId={null}
-        onSwitchSession={() => undefined}
-        onCreateSession={() => undefined}
-        onDeleteSession={() => undefined}
-        provisionWorkspace={false}
-        bootPreloadPaths={[]}
-        bridgeEndpoint={null}
-        excludeDefaults={['filesystem']}
-        plugins={[]}
-        catalogs={[]}
-        commands={[]}
-        persistenceEnabled={false}
-        navEnabled={false}
-        defaultNavOpen={false}
-        defaultSurfaceOpen={false}
-        surfaceButtonBottomOffset={420}
-        chatParams={{
-          ...chatParams,
-          emptyPlacement: 'hero',
-          composerPlaceholder: 'Describe the app, bug, or repo task you want help with…',
-          emptyState: {
-            eyebrow: 'Start here',
-            title: 'What do you want to build?',
-            description: 'Type a prompt or pick an example. Sign in on send to unlock your private workspace.',
+        workspaceId={workspaceId}
+        showComposerBlocker={false}
+        workspaceProps={{
+          ...workspaceProps,
+          topBarRight: <button type="button" className="rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted" onClick={() => openAuth()}>Sign in</button>,
+          surfaceButtonBottomOffset: 420,
+          chatParams: {
+            ...workspaceProps.chatParams,
+            emptyPlacement: 'hero',
+            composerPlaceholder: 'Describe the app, bug, or repo task you want help with…',
+            emptyState: {
+              eyebrow: 'Start here',
+              title: 'What do you want to build?',
+              description: 'Type a prompt or pick an example. Sign in on send to unlock your private workspace.',
+            },
+            suggestions: [
+              { label: 'Build an app from scratch', hint: 'Creates files, installs deps, opens a preview', prompt: 'Build a full-stack app with auth, a dashboard, and sample data.' },
+              { label: 'Understand a codebase', hint: 'Maps the repo and explains where to start', prompt: 'Explain this codebase, map the architecture, and suggest first improvements.' },
+              { label: 'Fix a bug safely', hint: 'Finds the cause, edits files, runs tests', prompt: 'Trace a bug, edit the right files, update tests, and summarize the diff.' },
+              { label: 'Prototype an interface', hint: 'Turns an idea into an interactive UI', prompt: 'Build an interactive prototype and open it in the workspace.' },
+            ],
+            onBeforeSubmit: (draft: string) => {
+              openAuth(draft)
+              return false as const
+            },
           },
-          suggestions: [
-            { label: 'Build an app from scratch', hint: 'Creates files, installs deps, opens a preview', prompt: 'Build a full-stack app with auth, a dashboard, and sample data.' },
-            { label: 'Understand a codebase', hint: 'Maps the repo and explains where to start', prompt: 'Explain this codebase, map the architecture, and suggest first improvements.' },
-            { label: 'Fix a bug safely', hint: 'Finds the cause, edits files, runs tests', prompt: 'Trace a bug, edit the right files, update tests, and summarize the diff.' },
-            { label: 'Prototype an interface', hint: 'Turns an idea into an interactive UI', prompt: 'Build an interactive prototype and open it in the workspace.' },
-          ],
         }}
-        frontPluginHotReload={false}
-        hotReloadEnabled={false}
       />
       <aside className="pointer-events-none fixed bottom-6 right-6 z-20 w-[320px]">
         <div className="pointer-events-auto">
@@ -301,9 +382,14 @@ function ChatFirstPublicShell<TSession extends WorkspaceAgentSession = Workspace
 
 function usePendingChatDraft() {
   const session = useSession()
-  const [pending, setPending] = useState<PendingChatEntryState | null>(null)
+  const [pending, setPending] = useState<PendingChatEntryState | null>(() => (
+    session.data?.user ? readPendingChatEntry() : null
+  ))
   useEffect(() => {
-    if (!session.data?.user) return
+    if (!session.data?.user) {
+      setPending(null)
+      return
+    }
     setPending(readPendingChatEntry())
   }, [session.data?.user])
   return pending
@@ -322,9 +408,27 @@ function HomeRedirect<TSession extends WorkspaceAgentSession = WorkspaceAgentSes
   appTitle: string
   workspaceProps: Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'>
 }) {
+  const location = useLocation()
   const session = useSession()
   const workspace = useCurrentWorkspace()
+  const pendingChatEntry = usePendingChatDraft()
+  const restorePendingDraft = pendingChatEntryMatchesLocation(
+    pendingChatEntry,
+    location.pathname,
+    location.search,
+    location.hash,
+  )
   if (!session.data?.user && chatEntryMode === 'chat-first') return <ChatFirstPublicShell appTitle={appTitle} workspaceProps={workspaceProps} />
+  if (!workspace && chatEntryMode === 'chat-first' && session.data?.user && restorePendingDraft) {
+    return (
+      <ChatFirstAuthenticatedShell
+        appTitle={appTitle}
+        workspaceId={pendingChatEntry?.intendedWorkspaceId ?? DEFAULT_CHAT_FIRST_PENDING_WORKSPACE_ID}
+        initialDraft={pendingChatEntry?.draft}
+        workspaceProps={workspaceProps}
+      />
+    )
+  }
   if (!workspace) return <>{loadingFallback}</>
   return <Navigate to={workspaceHref(workspace.id)} replace />
 }
@@ -354,6 +458,7 @@ function WorkspaceRoute<
   workspaceProps,
   chatEntryMode,
   appTitle,
+  workspaceRoute,
 }: {
   workspaceIdParam: string
   loadingFallback: ReactNode
@@ -361,13 +466,21 @@ function WorkspaceRoute<
   workspaceProps: Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'>
   chatEntryMode: ChatEntryMode
   appTitle: string
+  workspaceRoute: string
 }) {
   const params = useParams()
+  const location = useLocation()
   const session = useSession()
   const pendingChatEntry = usePendingChatDraft()
   const currentWorkspace = useCurrentWorkspace()
   const routeStatus = useWorkspaceRouteStatus()
-  const workspaceId = params[workspaceIdParam]?.trim() ?? ''
+  const workspaceId = params[workspaceIdParam]?.trim() ?? workspaceIdFromPath(location.pathname, workspaceRoute, workspaceIdParam) ?? ''
+  const restorePendingDraft = pendingChatEntryMatchesLocation(
+    pendingChatEntry,
+    location.pathname,
+    location.search,
+    location.hash,
+  )
   const requestHeaders = useMemo(
     () => ({ ...workspaceProps.requestHeaders, 'x-boring-workspace-id': workspaceId }),
     [workspaceId, workspaceProps.requestHeaders],
@@ -385,6 +498,17 @@ function WorkspaceRoute<
 
   if (routeStatus.status === 'not-found' || routeStatus.status === 'forbidden' || routeStatus.status === 'switch-failed') {
     return <WorkspaceRouteErrorPage status={routeStatus.status} message={routeStatus.message} />
+  }
+
+  if (chatEntryMode === 'chat-first' && restorePendingDraft && (routeStatus.status !== 'matched' || currentWorkspace?.id !== workspaceId)) {
+    return (
+      <ChatFirstAuthenticatedShell
+        appTitle={appTitle}
+        workspaceId={workspaceId}
+        initialDraft={pendingChatEntry?.draft}
+        workspaceProps={workspaceProps}
+      />
+    )
   }
 
   if (routeStatus.status !== 'matched' || currentWorkspace?.id !== workspaceId) return <>{loadingFallback}</>
@@ -413,6 +537,10 @@ function WorkspaceRoute<
       hotReloadEnabled={false}
     />
   )
+}
+
+function chatFirstPublicPaths(workspaceRoute: string): string[] {
+  return Array.from(new Set(['/', workspaceRoute, '/workspace/:id', '/w/:id']))
 }
 
 export function CoreWorkspaceAgentFront<
@@ -461,7 +589,7 @@ export function CoreWorkspaceAgentFront<
       cspNonce={cspNonce}
       workspaceRoute={workspaceRoute}
       workspaceIdParam={workspaceIdParam}
-      publicPaths={chatEntryMode === 'chat-first' ? ['/', '/workspace', '/w'] : undefined}
+      publicPaths={chatEntryMode === 'chat-first' ? chatFirstPublicPaths(workspaceRoute) : undefined}
     >
       <Route
         path="/"
@@ -485,6 +613,7 @@ export function CoreWorkspaceAgentFront<
             workspaceProps={resolvedWorkspaceProps}
             chatEntryMode={chatEntryMode}
             appTitle={appTitle}
+            workspaceRoute={workspaceRoute}
           />
         }
       />

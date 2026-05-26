@@ -147,7 +147,7 @@ describe('CoreWorkspaceAgentFront', () => {
 
     render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" appTitle="Full App" />)
 
-    expect(coreFrontProps).toMatchObject({ publicPaths: ['/', '/workspace', '/w'] })
+    expect(coreFrontProps).toMatchObject({ publicPaths: ['/', '/workspace/:id', '/w/:id'] })
     expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Sign in' }).length).toBeGreaterThan(0)
     expect(screen.queryByText('Switcher')).not.toBeInTheDocument()
@@ -160,6 +160,7 @@ describe('CoreWorkspaceAgentFront', () => {
       defaultNavOpen: false,
       defaultSurfaceOpen: false,
     })
+    expect(workspaceAgentProps?.beforeShell).toBeFalsy()
     expect(workspaceAgentProps?.chatParams).toMatchObject({ serverResourcesEnabled: false, hydrateMessages: false })
   })
 
@@ -193,6 +194,97 @@ describe('CoreWorkspaceAgentFront', () => {
     render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" />)
 
     expect(workspaceAgentProps?.chatParams).toMatchObject({ initialDraft: 'Restore this' })
+  })
+
+  it('keeps a lean authenticated shell on / while the default workspace resolves', async () => {
+    const { CoreWorkspaceAgentFront } = await importSubject()
+    currentWorkspaceId = null
+    routePath = '/'
+    window.sessionStorage.setItem('boring:pending-chat-entry', JSON.stringify({
+      draft: 'Keep this draft',
+      returnTo: '/',
+      intendedWorkspaceId: 'ws-pending',
+      createdAt: Date.now(),
+    }))
+
+    render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" loadingFallback={<div>Loading identity</div>} />)
+
+    expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
+    expect(screen.queryByText('Loading identity')).not.toBeInTheDocument()
+    expect(screen.getByText('User menu')).toBeInTheDocument()
+    expect(workspaceAgentProps).toMatchObject({
+      workspaceId: 'ws-pending',
+      provisionWorkspace: false,
+      bootPreloadPaths: [],
+      navEnabled: false,
+      defaultNavOpen: false,
+      defaultSurfaceOpen: false,
+    })
+    expect(workspaceAgentProps?.beforeShell).toBeTruthy()
+    expect(workspaceAgentProps?.chatParams).toMatchObject({
+      initialDraft: 'Keep this draft',
+      serverResourcesEnabled: false,
+      hydrateMessages: false,
+    })
+  })
+
+  it('keeps a lean authenticated shell on the target workspace route until identity matches', async () => {
+    const { CoreWorkspaceAgentFront } = await importSubject()
+    currentWorkspaceId = null
+    routePath = '/workspace/workspace-b'
+    routeStatus = { status: 'loading', workspaceId: 'workspace-b' }
+    window.sessionStorage.setItem('boring:pending-chat-entry', JSON.stringify({
+      draft: 'Route draft',
+      returnTo: '/workspace/workspace-b',
+      intendedWorkspaceId: 'workspace-b',
+      createdAt: Date.now(),
+    }))
+
+    render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" loadingFallback={<div>Loading identity</div>} />)
+
+    expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
+    expect(screen.queryByText('Loading identity')).not.toBeInTheDocument()
+    expect(workspaceAgentProps).toMatchObject({
+      workspaceId: 'workspace-b',
+      provisionWorkspace: false,
+      bootPreloadPaths: [],
+    })
+    expect(workspaceAgentProps?.beforeShell).toBeTruthy()
+    expect(workspaceAgentProps?.chatParams).toMatchObject({
+      initialDraft: 'Route draft',
+      serverResourcesEnabled: false,
+      hydrateMessages: false,
+    })
+  })
+
+  it('marks custom workspace routes as public in chat-first mode', async () => {
+    const { CoreWorkspaceAgentFront } = await importSubject()
+    sessionState = { data: null, isPending: false }
+    currentWorkspaceId = null
+    routePath = '/projects/project-1'
+
+    render(
+      <CoreWorkspaceAgentFront
+        chatEntryMode="chat-first"
+        workspaceRoute="/projects/:workspaceSlug"
+        workspaceIdParam="workspaceSlug"
+      />,
+    )
+
+    expect(coreFrontProps).toMatchObject({
+      publicPaths: ['/', '/projects/:workspaceSlug', '/workspace/:id', '/w/:id'],
+    })
+  })
+
+  it('keeps the loading fallback for authenticated chat-first loads without a pending draft', async () => {
+    const { CoreWorkspaceAgentFront } = await importSubject()
+    currentWorkspaceId = null
+    routePath = '/'
+
+    render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" loadingFallback={<div>Loading identity</div>} />)
+
+    expect(screen.getByText('Loading identity')).toBeInTheDocument()
+    expect(screen.queryByTestId('workspace-agent-front')).not.toBeInTheDocument()
   })
 
   it('forces front plugin hot reload off while forwarding workspace props', async () => {
