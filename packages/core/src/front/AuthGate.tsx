@@ -53,7 +53,7 @@ function isPublicPath(pathname: string, publicPaths: string[]): boolean {
 
   return publicPaths.some((candidate) => {
     if (candidate.includes(':') || candidate.includes('*')) {
-      return Boolean(matchPath({ path: candidate, end: false }, normalizedPath))
+      return Boolean(matchPath({ path: candidate, end: !candidate.includes('*') }, normalizedPath))
     }
     return normalizedPath === candidate || normalizedPath.startsWith(`${candidate}/`)
   })
