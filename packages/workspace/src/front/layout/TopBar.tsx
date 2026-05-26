@@ -36,27 +36,29 @@ export function TopBar({
     <header
       data-boring-workspace-part="topbar"
       className={cn(
-        "relative flex items-center justify-between gap-2 px-3",
-        "bg-background border-b border-[color:oklch(from_var(--border)_l_c_h/0.4)]",
+        "relative flex h-11 items-center justify-between gap-2 px-3",
+        "bg-background border-b border-border",
         className,
       )}
-      style={{ height: 40 }}
       aria-label="App top bar"
     >
-      <div className="flex min-w-0 flex-1 items-center gap-2.5">
+      <div className="flex min-w-0 flex-1 items-center gap-2.5 leading-none">
         {topBarLeft ?? (
           <>
-            <img
-              src="https://chatgpt.com/backend-api/estuary/content?id=file_000000006a4471f4b8411fcbfde271c6&ts=493962&p=fs&cid=1&sig=b406cfec61d387bdedd898858283b389f31ad2bd3eb7a358a6d1efa23e9afa83&v=0"
-              alt={appTitle}
-              className="h-6 w-6 shrink-0 rounded-md"
-            />
-            <span className="truncate text-[12px] font-medium tracking-tight text-foreground">{appTitle}</span>
-            {sessionTitle && (
+            <span
+              aria-hidden="true"
+              className="grid size-[22px] shrink-0 place-items-center rounded-sm bg-foreground text-[11px] font-semibold leading-none tracking-tight text-background"
+            >
+              {(appTitle?.[0] ?? "B").toUpperCase()}
+            </span>
+            {sessionTitle ? (
               <>
-                <span aria-hidden="true" className="text-muted-foreground/30">/</span>
-                <span className="truncate text-[12px] font-normal text-muted-foreground">{sessionTitle}</span>
+                <span className="shrink-0 text-[13px] font-medium leading-none tracking-tight text-foreground/65">{appTitle}</span>
+                <span aria-hidden="true" className="text-[13px] leading-none text-muted-foreground/45">·</span>
+                <span className="truncate text-[13px] font-medium leading-none tracking-tight text-foreground">{sessionTitle}</span>
               </>
+            ) : (
+              <span className="truncate text-[13px] font-medium leading-none tracking-tight text-foreground">{appTitle}</span>
             )}
           </>
         )}
@@ -68,13 +70,13 @@ export function TopBar({
         variant="ghost"
         size="sm"
         onClick={onCommandPalette}
-        className="group h-6 gap-1 px-1.5 text-[12px] text-muted-foreground/60 hover:bg-muted/60 hover:text-foreground focus-visible:text-foreground"
+        className="group h-7 gap-1 px-1.5 text-[12.5px] leading-none text-muted-foreground/75 hover:bg-muted/70 hover:text-foreground focus-visible:text-foreground"
         aria-label="Search catalogs and commands"
         title="Command palette (⌘K)"
       >
-        <Search className="h-3 w-3 shrink-0 opacity-70" strokeWidth={1.75} />
+        <Search className="h-3.5 w-3.5 shrink-0 opacity-80" strokeWidth={1.75} />
         <span className="font-normal tracking-tight">Search</span>
-        <Kbd className="ml-1 border-0 bg-transparent p-0 text-[10px] shadow-none group-hover:text-muted-foreground">⌘K</Kbd>
+        <Kbd className="ml-0.5 bg-muted/40 leading-none shadow-none">⌘K</Kbd>
       </Button>
 
       <div className="flex flex-1 shrink-0 items-center justify-end gap-1">
