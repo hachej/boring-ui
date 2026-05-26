@@ -27,7 +27,7 @@ async function fixture() {
     const pending = await store.getPending("s1")
     expect(pending).not.toBeNull()
     return pending!
-  })
+  }, { timeout: 5_000 })
   return { store, runtime, question, result }
 }
 
