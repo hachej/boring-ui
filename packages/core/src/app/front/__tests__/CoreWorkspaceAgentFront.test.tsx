@@ -58,6 +58,7 @@ describe('CoreWorkspaceAgentFront', () => {
       apiBaseUrl: '/api-base',
       requestHeaders: {
         existing: 'request',
+        'x-csrf-token': 'boring-ui',
         'x-boring-workspace-id': 'workspace-a',
       },
     })
@@ -65,10 +66,35 @@ describe('CoreWorkspaceAgentFront', () => {
       workspaceId: 'workspace-a',
       requestHeaders: {
         existing: 'request',
+        'x-csrf-token': 'boring-ui',
         'x-boring-workspace-id': 'workspace-a',
       },
       authHeaders: {
         existing: 'auth',
+        'x-csrf-token': 'boring-ui',
+        'x-boring-workspace-id': 'workspace-a',
+      },
+    })
+  })
+
+  it('preserves explicit csrf headers while forwarding workspace props', async () => {
+    const { CoreWorkspaceAgentFront } = await importSubject()
+
+    render(
+      <CoreWorkspaceAgentFront
+        apiBaseUrl="/api-base"
+        requestHeaders={{ 'x-csrf-token': 'custom-request' }}
+        authHeaders={{ 'x-csrf-token': 'custom-auth' }}
+      />,
+    )
+
+    expect(workspaceAgentProps).toMatchObject({
+      requestHeaders: {
+        'x-csrf-token': 'custom-request',
+        'x-boring-workspace-id': 'workspace-a',
+      },
+      authHeaders: {
+        'x-csrf-token': 'custom-auth',
         'x-boring-workspace-id': 'workspace-a',
       },
     })

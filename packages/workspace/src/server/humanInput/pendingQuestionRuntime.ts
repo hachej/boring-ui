@@ -41,6 +41,7 @@ export class PendingQuestionRuntime {
       sessionId: input.sessionId,
       toolCallId: input.toolCallId,
       actorKind: input.actor?.actorKind,
+      ownerPrincipalId: input.actor?.onBehalfOf?.id,
       status: "pending",
       nonce: randomUUID(),
       payload: input.payload,

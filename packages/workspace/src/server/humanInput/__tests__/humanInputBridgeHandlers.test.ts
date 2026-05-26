@@ -6,12 +6,12 @@ import { createHumanInputBridgeHandlers, HUMAN_INPUT_OPS } from "../humanInputBr
 import { PendingQuestionRuntime } from "../pendingQuestionRuntime"
 import { InMemoryPendingQuestionStore } from "../pendingQuestionStore"
 
-function setup() {
-  const store = new InMemoryPendingQuestionStore()
-  const runtime = new PendingQuestionRuntime(store)
+function setup(options: Partial<Parameters<typeof createHumanInputBridgeHandlers>[0]> = {}) {
+  const store = options.store ?? new InMemoryPendingQuestionStore()
+  const runtime = options.runtime ?? new PendingQuestionRuntime(store)
   const logger = createCapturedBridgeLogger({ answers: ["answer-secret"], tokens: ["runtime-token-secret"], requestPayloads: ["full-payload-secret"] })
   const registry = createWorkspaceBridgeRegistry({ logger })
-  for (const entry of createHumanInputBridgeHandlers({ runtime, store })) {
+  for (const entry of createHumanInputBridgeHandlers({ runtime, store, resolveOwnerPrincipalId: options.resolveOwnerPrincipalId })) {
     registry.registerHandler(entry.definition, entry.handler)
   }
   return { store, runtime, registry, logger }
@@ -26,12 +26,12 @@ const runtimeContext = (extraCaps: string[] = []) => createTestBridgeContext({
   actor: { actorKind: "agent", performedBy: { id: "agent-1", label: "agent" }, onBehalfOf: { id: "human-1", label: "human" } },
 })
 
-const browserContext = (extraCaps: string[] = []) => createTestBridgeContext({
+const browserContext = (extraCaps: string[] = [], principalId = "human-1") => createTestBridgeContext({
   callerClass: "browser",
   workspaceId: "workspace-1",
   sessionId: "session-1",
   capabilities: extraCaps,
-  actor: { actorKind: "human", performedBy: { id: "human-1", label: "human" } },
+  actor: { actorKind: "human", performedBy: { id: principalId, label: "human" } },
 })
 
 describe("human-input bridge handlers", () => {
@@ -90,6 +90,45 @@ describe("human-input bridge handlers", () => {
       .resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.CallerNotAllowed } })
     await expect(registry.call({ op: HUMAN_INPUT_OPS.transcript, input: { sessionId: "session-1" } }, createTestBridgeContext({ callerClass: "server", capabilities: ["human-input:transcript.read"] })))
       .resolves.toMatchObject({ ok: true, output: { events: expect.any(Array) } })
+  })
+
+  test("browser principal must own pending questions to view, answer, or cancel", async () => {
+    const { registry, store } = setup()
+    const pending = await new PendingQuestionRuntime(store).createPending({
+      requestId: "req-owner",
+      sessionId: "session-1",
+      actor: { actorKind: "agent", onBehalfOf: { id: "human-1", label: "human" } },
+    })
+
+    await expect(registry.call({ op: HUMAN_INPUT_OPS.pending, input: { sessionId: "session-1" } }, browserContext(["human-input:pending"], "human-2")))
+      .resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
+    await expect(registry.call({ op: HUMAN_INPUT_OPS.answer, input: { questionId: pending.questionId, sessionId: "session-1", nonce: pending.nonce, values: { ok: true } } }, browserContext(["human-input:answer"], "human-2")))
+      .resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
+    await expect(registry.call({ op: HUMAN_INPUT_OPS.cancel, input: { questionId: pending.questionId, sessionId: "session-1", nonce: pending.nonce, reason: "user_cancelled" } }, browserContext(["human-input:cancel"], "human-2")))
+      .resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
+  })
+
+  test("request can resolve owner principal through host callback when runtime actor lacks it", async () => {
+    const { registry, store } = setup({ resolveOwnerPrincipalId: (sessionId) => sessionId === "session-1" ? "human-1" : undefined })
+    const request = registry.call({
+      op: HUMAN_INPUT_OPS.request,
+      input: { requestId: "req-callback", sessionId: "session-1", payload: { prompt: "secret" } },
+    }, {
+      ...createTestBridgeContext({
+        callerClass: "runtime",
+        workspaceId: "workspace-1",
+        sessionId: "session-1",
+        capabilities: ["human-input:request"],
+        actor: { actorKind: "agent", performedBy: { id: "agent-1", label: "agent" } },
+      }),
+      emitUiEffect: async () => ({ seq: 1, status: "ok" }),
+    })
+
+    await viWaitFor(async () => expect(await store.getPending("session-1")).toMatchObject({ ownerPrincipalId: "human-1" }))
+    const pending = await store.getPending("session-1")
+    await expect(registry.call({ op: HUMAN_INPUT_OPS.answer, input: { questionId: pending!.questionId, sessionId: "session-1", nonce: pending!.nonce, values: { ok: true } } }, browserContext(["human-input:answer"])))
+      .resolves.toMatchObject({ ok: true })
+    await expect(request).resolves.toMatchObject({ ok: true, output: { status: "answered" } })
   })
 
   test("duplicate registration fails clearly", () => {

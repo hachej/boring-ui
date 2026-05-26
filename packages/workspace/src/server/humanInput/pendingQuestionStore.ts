@@ -7,6 +7,7 @@ export interface PendingQuestionRecord {
   sessionId: string
   toolCallId?: string
   actorKind?: "human" | "agent" | "system" | "service"
+  ownerPrincipalId?: string
   status: PendingQuestionStatus
   nonce: string
   payload?: unknown

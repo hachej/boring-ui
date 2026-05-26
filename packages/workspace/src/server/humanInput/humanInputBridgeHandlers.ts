@@ -1,7 +1,12 @@
-import { WorkspaceBridgeErrorCode, createWorkspaceBridgeError, type WorkspaceBridgeOperationDefinition } from "../../shared/workspace-bridge-rpc"
-import type { WorkspaceBridgeHandler } from "../workspaceBridge/registry"
+import {
+  WorkspaceBridgeErrorCode,
+  createWorkspaceBridgeError,
+  type BridgeActorAttribution,
+  type WorkspaceBridgeOperationDefinition,
+} from "../../shared/workspace-bridge-rpc"
+import type { WorkspaceBridgeCallContext, WorkspaceBridgeHandler } from "../workspaceBridge/registry"
 import type { PendingQuestionRuntime } from "./pendingQuestionRuntime"
-import type { PendingQuestionCancelReason, PendingQuestionStore } from "./pendingQuestionStore"
+import type { PendingQuestionCancelReason, PendingQuestionRecord, PendingQuestionStore } from "./pendingQuestionStore"
 
 export const HUMAN_INPUT_OPS = {
   request: "human-input.v1.request",
@@ -14,6 +19,10 @@ export const HUMAN_INPUT_OPS = {
 export interface HumanInputBridgeHandlersOptions {
   runtime: PendingQuestionRuntime
   store: PendingQuestionStore
+  resolveOwnerPrincipalId?: (
+    sessionId: string,
+    context: WorkspaceBridgeCallContext,
+  ) => string | undefined | Promise<string | undefined>
 }
 
 export function createHumanInputBridgeHandlers(options: HumanInputBridgeHandlersOptions): Array<{
@@ -29,15 +38,16 @@ export function createHumanInputBridgeHandlers(options: HumanInputBridgeHandlers
   ]
 }
 
-function requestHandler({ runtime }: HumanInputBridgeHandlersOptions): WorkspaceBridgeHandler {
+function requestHandler({ runtime, resolveOwnerPrincipalId }: HumanInputBridgeHandlersOptions): WorkspaceBridgeHandler {
   return async ({ input, context, signal, emitUiEffect }) => {
     const body = input as { requestId?: string; sessionId?: string; toolCallId?: string; payload?: unknown; timeoutMs?: number }
     if (!body.requestId || !body.sessionId) throw invalid("human-input request requires requestId and sessionId")
+    const ownerPrincipalId = context.actor.onBehalfOf?.id ?? await resolveOwnerPrincipalId?.(body.sessionId, context)
     const question = await runtime.createPending({
       requestId: body.requestId,
       sessionId: body.sessionId,
       toolCallId: body.toolCallId,
-      actor: context.actor,
+      actor: withOwnerPrincipalId(context.actor, ownerPrincipalId),
       payload: body.payload,
     })
     if (question.status === "pending") {
@@ -55,28 +65,30 @@ function requestHandler({ runtime }: HumanInputBridgeHandlersOptions): Workspace
 }
 
 function answerHandler({ runtime, store }: HumanInputBridgeHandlersOptions): WorkspaceBridgeHandler {
-  return async ({ input }) => {
+  return async ({ input, context }) => {
     const body = input as { questionId?: string; sessionId?: string; nonce?: string; values?: unknown }
-    const question = await requireQuestionForMutation(store, body)
+    const question = await requireQuestionForMutation(store, body, context)
     await runtime.answer(question.questionId, question.sessionId, body.nonce!, body.values)
     return { status: "answered", questionId: question.questionId, sessionId: question.sessionId }
   }
 }
 
 function cancelHandler({ runtime, store }: HumanInputBridgeHandlersOptions): WorkspaceBridgeHandler {
-  return async ({ input }) => {
+  return async ({ input, context }) => {
     const body = input as { questionId?: string; sessionId?: string; nonce?: string; reason?: PendingQuestionCancelReason }
-    const question = await requireQuestionForMutation(store, body)
+    const question = await requireQuestionForMutation(store, body, context)
     await runtime.cancel(question.questionId, body.reason ?? "user_cancelled")
     return { status: "cancelled", questionId: question.questionId, sessionId: question.sessionId, reason: body.reason ?? "user_cancelled" }
   }
 }
 
 function pendingHandler({ store }: HumanInputBridgeHandlersOptions): WorkspaceBridgeHandler {
-  return async ({ input }) => {
+  return async ({ input, context }) => {
     const body = input as { sessionId?: string }
     if (!body.sessionId) throw invalid("human-input pending requires sessionId")
-    return { pending: await store.getPending(body.sessionId) }
+    const pending = await store.getPending(body.sessionId)
+    assertQuestionOwner(context, pending)
+    return { pending }
   }
 }
 
@@ -91,10 +103,12 @@ function transcriptHandler({ store }: HumanInputBridgeHandlersOptions): Workspac
 async function requireQuestionForMutation(
   store: PendingQuestionStore,
   body: { questionId?: string; sessionId?: string; nonce?: string },
+  context: WorkspaceBridgeCallContext,
 ) {
   if (!body.questionId || !body.sessionId || !body.nonce) throw invalid("human-input mutation requires questionId, sessionId, and nonce")
   const question = await store.getByQuestionId(body.questionId)
   if (!question || question.sessionId !== body.sessionId) throw invalid("human-input question/session mismatch")
+  assertQuestionOwner(context, question)
   if (question.nonce !== body.nonce) throw invalid("human-input nonce mismatch")
   if (question.status !== "pending") throw invalid("human-input question is already finalized")
   return question
@@ -119,6 +133,34 @@ function definition(
     maxOutputBytes: 64 * 1024,
     idempotencyPolicy,
     auditCategory: "human-input",
+  }
+}
+
+function assertQuestionOwner(
+  context: WorkspaceBridgeCallContext,
+  question: PendingQuestionRecord | null,
+): void {
+  if (!question?.ownerPrincipalId || context.callerClass !== "browser") return
+  const principalId = context.actor.performedBy?.id
+  if (!principalId || principalId !== question.ownerPrincipalId) {
+    throw createWorkspaceBridgeError(
+      WorkspaceBridgeErrorCode.ResourceScopeDenied,
+      "human-input question is not owned by this browser principal",
+    )
+  }
+}
+
+function withOwnerPrincipalId(
+  actor: BridgeActorAttribution,
+  ownerPrincipalId: string | undefined,
+): BridgeActorAttribution {
+  if (!ownerPrincipalId) return actor
+  return {
+    ...actor,
+    onBehalfOf: {
+      label: actor.onBehalfOf?.label ?? `user:${ownerPrincipalId}`,
+      id: ownerPrincipalId,
+    },
   }
 }
 

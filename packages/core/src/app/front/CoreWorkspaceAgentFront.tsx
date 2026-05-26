@@ -16,6 +16,8 @@ import {
 
 const DEFAULT_WORKSPACE_ROUTE = '/workspace/:id'
 const DEFAULT_WORKSPACE_ID_PARAM = 'id'
+const CORE_CSRF_HEADER_NAME = 'x-csrf-token'
+const CORE_CSRF_HEADER_VALUE = 'boring-ui'
 
 export interface CoreWorkspaceAgentFrontProps<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
@@ -102,11 +104,19 @@ function WorkspaceRoute<
   const currentWorkspace = useCurrentWorkspace()
   const workspaceId = params[workspaceIdParam]?.trim() ?? ''
   const requestHeaders = useMemo(
-    () => ({ ...workspaceProps.requestHeaders, 'x-boring-workspace-id': workspaceId }),
+    () => ({
+      ...workspaceProps.requestHeaders,
+      [CORE_CSRF_HEADER_NAME]: workspaceProps.requestHeaders?.[CORE_CSRF_HEADER_NAME] ?? CORE_CSRF_HEADER_VALUE,
+      'x-boring-workspace-id': workspaceId,
+    }),
     [workspaceId, workspaceProps.requestHeaders],
   )
   const authHeaders = useMemo(
-    () => ({ ...workspaceProps.authHeaders, 'x-boring-workspace-id': workspaceId }),
+    () => ({
+      ...workspaceProps.authHeaders,
+      [CORE_CSRF_HEADER_NAME]: workspaceProps.authHeaders?.[CORE_CSRF_HEADER_NAME] ?? CORE_CSRF_HEADER_VALUE,
+      'x-boring-workspace-id': workspaceId,
+    }),
     [workspaceId, workspaceProps.authHeaders],
   )
 
