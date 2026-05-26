@@ -139,8 +139,10 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
         return emitResult(0, '', '')
       }
 
-      if (script.startsWith('cat ')) {
-        const targetPath = script.slice(4).trim()
+      const normalizedScript = script.replace(/^'([^']+)'\s+/, '$1 ')
+
+      if (normalizedScript.startsWith('cat ')) {
+        const targetPath = normalizedScript.slice(4).trim().replace(/^'(.*)'$/, '$1')
         try {
           const stdout = await readFile(toHostPath(hostRoot, targetPath), 'utf-8')
           return emitResult(0, stdout, '')
@@ -150,8 +152,8 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
         }
       }
 
-      if (script.startsWith('echo ')) {
-        return emitResult(0, `${script.slice(5)}\n`, '')
+      if (normalizedScript.startsWith('echo ')) {
+        return emitResult(0, `${normalizedScript.slice(5)}\n`, '')
       }
 
       if (script.startsWith('node -e ')) {

@@ -165,6 +165,7 @@ export interface CoreConfig {
     secret: string
     url: string
     github?: { clientId: string; clientSecret: string }
+    google?: { clientId: string; clientSecret: string }
     mail?: { from: string; transportUrl: string }
     sessionTtlSeconds: number
     sessionCookieSecure: boolean
@@ -172,6 +173,7 @@ export interface CoreConfig {
 
   features: {
     githubOauth: boolean
+    googleOauth: boolean
     invitesEnabled: boolean
     sendWelcomeEmail: boolean
     inviteTtlDays: number
@@ -183,7 +185,12 @@ export interface RuntimeConfig {
   appName: string
   appLogo: string | null
   apiBase: string
-  features: { githubOauth: boolean; invitesEnabled: boolean; sendWelcomeEmail: boolean }
+  features: {
+    githubOauth: boolean
+    googleOauth: boolean
+    invitesEnabled: boolean
+    sendWelcomeEmail: boolean
+  }
 }
 
 export type JsonValue =
@@ -199,11 +206,13 @@ export type CoreCapabilities = {
   features: {
     invitesEnabled: boolean
     githubOauth: boolean
+    googleOauth: boolean
     emailFlows: boolean
   }
   auth: {
     emailPassword: boolean
     github: boolean
+    google: boolean
     emailVerification: boolean
     passwordReset: boolean
     magicLink: boolean

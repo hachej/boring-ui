@@ -14,7 +14,6 @@ import { afterEach, expect, test, describe } from "vitest"
 import {
   collectWorkspaceAgentServerPlugins,
   createWorkspaceAgentServer,
-  provisionWorkspaceAgentServer,
 } from "../../app/server/createWorkspaceAgentServer"
 import * as appServerApi from "../../app/server"
 import * as serverApi from "../index"
@@ -36,6 +35,55 @@ async function makeTempDir(prefix: string): Promise<string> {
   tempDirs.push(dir)
   return dir
 }
+
+describe("createWorkspaceAgentServer — runtime provisioning reload", () => {
+  test("/reload recopies plugin skills into .boring-agent/skills", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-runtime-reload-")
+    const skillDir = join(workspaceRoot, "plugin-source", "skills", "macro-transform")
+    await mkdir(skillDir, { recursive: true })
+    const skillFile = join(skillDir, "SKILL.md")
+    await writeFile(skillFile, "# Version 1\n")
+    const harnessFactory = async () => ({
+      id: "test-harness",
+      placement: "server" as const,
+      sessions: {
+        async list() { return [] },
+        async create() {
+          const now = new Date().toISOString()
+          return { id: "default", title: "Default", createdAt: now, updatedAt: now, turnCount: 0 }
+        },
+        async load() {
+          const now = new Date().toISOString()
+          return { id: "default", title: "Default", createdAt: now, updatedAt: now, turnCount: 0, messages: [] }
+        },
+        async delete() {},
+      },
+      reloadSession: async () => true,
+      async *sendMessage() {},
+    })
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      harnessFactory,
+      plugins: [serverApi.defineServerPlugin({
+        id: "boring-macro",
+        skills: [{ name: "macro-transform", source: skillDir }],
+      })],
+    })
+    try {
+      const mirrored = join(workspaceRoot, ".boring-agent", "skills", "boring-macro", "macro-transform", "SKILL.md")
+      await expect(readFile(mirrored, "utf8")).resolves.toBe("# Version 1\n")
+      await writeFile(skillFile, "# Version 2\n")
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: { sessionId: "default" } })
+      expect(reload.statusCode).toBe(200)
+      await expect(readFile(mirrored, "utf8")).resolves.toBe("# Version 2\n")
+    } finally {
+      await app.close()
+    }
+  })
+})
 
 describe("createWorkspaceAgentServer — plugin wiring", () => {
   test("registers pre-built plugin routes and tools", async () => {
@@ -188,7 +236,6 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
       workspaceRoot,
       mode: "direct",
       logger: false,
-      provisionWorkspace: false,
     })
     try {
       const res = await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })
@@ -207,7 +254,6 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
       workspaceRoot,
       mode: "direct",
       logger: false,
-      provisionWorkspace: false,
     })
     try {
       const initial = await app.inject({ method: "GET", url: "/api/v1/ui/state" })
@@ -249,7 +295,6 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
       workspaceRoot,
       mode: "direct",
       logger: false,
-      provisionWorkspace: false,
     })
     try {
       const post = await app.inject({
@@ -286,29 +331,29 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
 })
 
 describe("createWorkspaceAgentServer — plugin provisioning", () => {
-  test("materializes the boring-plugin-authoring skill into the agent runtime node_modules", async () => {
+  test("materializes the boring-plugin-authoring skill into the workspace-local runtime", async () => {
     // The system prompt is minimal (it just points at this skill); the
-    // skill itself is the doc the agent reads. provisionRuntimeWorkspace
-    // must materialize it under the agent runtime node_modules so Pi can
-    // load it from there.
+    // skill itself is the doc the agent reads. The runtime provisioner
+    // must materialize it under .boring-agent/node so Pi can load it
+    // without writing generated packages into the user workspace root.
     const workspaceRoot = await makeTempDir("boring-workspace-skill-")
-    const piContribution = collectWorkspaceAgentServerPlugins({ workspaceRoot })
-      .provisioningContributions
-      .filter((entry) => entry.id === "boring-pi-package")
-    expect(piContribution).toHaveLength(1)
 
-    await provisionWorkspaceAgentServer({
+    const app = await createWorkspaceAgentServer({
       workspaceRoot,
-      runtimeMode: "direct",
-      provisioningContributions: piContribution,
+      mode: "direct",
+      logger: false,
     })
 
-    const skill = await readFile(
-      join(workspaceRoot, ".boring-agent", "node", "node_modules", "@hachej", "boring-pi", "skills", "boring-plugin-authoring", "SKILL.md"),
-      "utf8",
-    )
-    expect(skill).toContain("name: boring-plugin-authoring")
-    expect(skill).toContain("../../references/workspace/plugins.md")
+    try {
+      const skill = await readFile(
+        join(workspaceRoot, ".boring-agent", "node", "node_modules", "@hachej", "boring-pi", "skills", "boring-plugin-authoring", "SKILL.md"),
+        "utf8",
+      )
+      expect(skill).toContain("name: boring-plugin-authoring")
+      expect(skill).toContain("../../references/workspace/plugins.md")
+    } finally {
+      await app.close()
+    }
   })
 
   /**
@@ -317,7 +362,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
    * we exercise is:
    *
    *   require.resolve("@hachej/boring-pi/package.json")  // CLI process
-   *     ↓ provisionRuntime copies skills/ into <workspaceRoot>/node_modules/
+   *     ↓ runtime provisioning installs skills under .boring-agent/node/
    *     ↓ createBoringPiPackageSource emits the package source
    *     ↓ createResourceSettingsManager injects it into Pi's project settings
    *     ↓ Pi indexes package.json#pi.skills
@@ -330,42 +375,31 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
   test("provisions boring-ui CLI in a fresh workspace", async () => {
     const workspaceRoot = await makeTempDir("boring-cli-shim-")
 
-    const cliContribution = collectWorkspaceAgentServerPlugins({ workspaceRoot })
-      .provisioningContributions
-      .filter((entry) => entry.id === "boring-ui-cli-package")
-    expect(cliContribution).toHaveLength(1)
-
-    await provisionWorkspaceAgentServer({
+    const app = await createWorkspaceAgentServer({
       workspaceRoot,
-      runtimeMode: "direct",
-      provisioningContributions: cliContribution,
+      mode: "direct",
+      logger: false,
     })
 
-    const provisionedCli = join(workspaceRoot, ".boring-agent", "node", "node_modules", "@hachej", "boring-ui-cli")
-    await expect(readFile(join(provisionedCli, "package.json"), "utf8")).resolves.toContain("@hachej/boring-ui-cli")
-    await expect(readFile(join(provisionedCli, "templates", "front-canonical.tsx"), "utf8")).resolves.toContain("definePlugin")
+    try {
+      const provisionedCli = join(workspaceRoot, ".boring-agent", "node", "node_modules", "@hachej", "boring-ui-cli")
+      await expect(readFile(join(provisionedCli, "package.json"), "utf8")).resolves.toContain("@hachej/boring-ui-cli")
+      await expect(readFile(join(provisionedCli, "templates", "front-canonical.tsx"), "utf8")).resolves.toContain("definePlugin")
 
-    // No shell shim anymore — scaffold/verify commands flow directly
-    // through the system prompt (boring-ui resolves via PATH).
+      // No shell shim anymore — scaffold/verify commands flow directly
+      // through the system prompt (boring-ui resolves via PATH).
+    } finally {
+      await app.close()
+    }
   })
 
   test("CLI-like boot in fresh workspace auto-discovers boring-plugin-authoring skill via /api/v1/agent/skills", async () => {
     const workspaceRoot = await makeTempDir("boring-cli-skill-discovery-")
-    const piContribution = collectWorkspaceAgentServerPlugins({ workspaceRoot })
-      .provisioningContributions
-      .filter((entry) => entry.id === "boring-pi-package")
-    expect(piContribution).toHaveLength(1)
-    await provisionWorkspaceAgentServer({
-      workspaceRoot,
-      runtimeMode: "direct",
-      provisioningContributions: piContribution,
-    })
 
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "direct",
       logger: false,
-      provisionWorkspace: false,
     })
 
     try {
@@ -389,10 +423,11 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
       "utf8",
     )
 
-    await provisionWorkspaceAgentServer({
+    const app = await createWorkspaceAgentServer({
       workspaceRoot,
-      runtimeMode: "direct",
-      provisioningContributions: [
+      mode: "direct",
+      logger: false,
+      plugins: [
         {
           id: "provisioning-plugin",
           provisioning: {
@@ -402,13 +437,17 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
       ],
     })
 
-    await expect(readFile(join(workspaceRoot, "README.md"), "utf8")).resolves.toBe("# provisioned\n")
-    await expect(
-      readFile(join(workspaceRoot, ".agents", "skills", "plugin-skill", "SKILL.md"), "utf8"),
-    ).resolves.toContain("Provisioned skill")
-    await expect(
-      readFile(join(workspaceRoot, ".boring-agent", "state", "provisioning.json"), "utf8"),
-    ).resolves.toContain("sha256:")
+    try {
+      await expect(readFile(join(workspaceRoot, "README.md"), "utf8")).resolves.toBe("# provisioned\n")
+      await expect(
+        readFile(join(workspaceRoot, ".agents", "skills", "plugin-skill", "SKILL.md"), "utf8"),
+      ).resolves.toContain("Provisioned skill")
+      await expect(
+        readFile(join(workspaceRoot, ".boring-agent", ".gitignore"), "utf8"),
+      ).resolves.toBe("*\n")
+    } finally {
+      await app.close()
+    }
   })
 
   test("POST /api/v1/agent/reload reloads boring plugin assets before pi reload", async () => {
@@ -428,7 +467,6 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
       workspaceRoot,
       mode: "direct",
       logger: false,
-      provisionWorkspace: false,
       plugins: [{ id: "hot", extensionPaths: [join(pluginRoot, "agent", "index.ts")] }],
     })
 
@@ -464,7 +502,6 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
       workspaceRoot: pluginRoot,
       mode: "direct",
       logger: false,
-      provisionWorkspace: false,
     })
 
     try {
@@ -512,7 +549,6 @@ describe("createWorkspaceAgentServer — plugin model (j9p7.11)", () => {
       workspaceRoot,
       mode: "direct",
       logger: false,
-      provisionWorkspace: false,
       plugins: [
         {
           id: "route-plugin",
@@ -545,7 +581,6 @@ describe("createWorkspaceAgentServer — plugin model (j9p7.11)", () => {
       workspaceRoot,
       mode: "direct",
       logger: false,
-      provisionWorkspace: false,
       plugins: [{ id: "macro", agentTools: [domainTool] }],
     })
     try {
@@ -575,7 +610,6 @@ describe("createWorkspaceAgentServer — plugin model (j9p7.11)", () => {
       workspaceRoot,
       mode: "direct",
       logger: false,
-      provisionWorkspace: false,
       plugins: [{ id: "plugin-tools", agentTools: [domainTool] }],
     })
     try {
@@ -595,7 +629,6 @@ describe("createWorkspaceAgentServer — plugin model (j9p7.11)", () => {
       workspaceRoot,
       mode: "direct",
       logger: false,
-      provisionWorkspace: false,
       excludeDefaults: ["filesystem"],
     })
     try {
@@ -617,7 +650,6 @@ describe("createWorkspaceAgentServer — plugin model (j9p7.11)", () => {
       workspaceRoot,
       mode: "direct",
       logger: false,
-      provisionWorkspace: false,
       excludeDefaults: ["filesystem"],
     })
     try {
@@ -653,7 +685,6 @@ describe("createWorkspaceAgentServer — extraTools merge", () => {
       workspaceRoot,
       mode: "direct",
       logger: false,
-      provisionWorkspace: false,
       extraTools: [hostTool],
     })
     try {
@@ -681,7 +712,6 @@ describe("createWorkspaceAgentServer — defaultPluginPackages (standard load pr
       workspaceRoot,
       mode: "direct",
       logger: false,
-      provisionWorkspace: false,
       disableDefaultFileTools: true,
       // Workspace-local fixture package — proves require.resolve + DirPluginEntry
       // + BoringPluginAssetManager scan all wire together correctly without

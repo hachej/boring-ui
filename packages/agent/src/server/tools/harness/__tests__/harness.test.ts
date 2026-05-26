@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process'
 import { chmod, mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -8,15 +7,11 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { ExecResult, Sandbox } from '../../../../shared/sandbox'
 import type { Workspace } from '../../../../shared/workspace'
 import type { RuntimeBundle } from '../../../runtime/mode'
-import { createBwrapSandbox } from '../../../sandbox/bwrap/createBwrapSandbox'
-import { createNodeWorkspace } from '../../../workspace/createNodeWorkspace'
 import { buildHarnessAgentTools } from '../index'
 
 function mockWorkspace(root = '/workspace'): Workspace {
-  const runtimeContext = { runtimeCwd: root }
   return {
-    root: runtimeContext.runtimeCwd,
-    runtimeContext,
+    root,
     readFile: vi.fn(async () => ''),
     writeFile: vi.fn(async () => {}),
     unlink: vi.fn(async () => {}),
@@ -28,7 +23,6 @@ function mockWorkspace(root = '/workspace'): Workspace {
 }
 
 function mockSandbox(provider: string, capabilities: string[] = ['exec']): Sandbox {
-  const runtimeContext = { runtimeCwd: '/workspace' }
   const defaultResult: ExecResult = {
     stdout: new Uint8Array(),
     stderr: new Uint8Array(),
@@ -41,28 +35,19 @@ function mockSandbox(provider: string, capabilities: string[] = ['exec']): Sandb
     placement: provider === 'vercel-sandbox' ? 'remote' : 'server',
     provider,
     capabilities,
-    runtimeContext,
     exec: vi.fn(async () => defaultResult),
   }
 }
 
-function mockBundle(provider: string, capabilities?: string[], workspaceRoot = '/workspace', storageRoot?: string): RuntimeBundle {
-  const runtimeContext = { runtimeCwd: workspaceRoot }
+function mockBundle(provider: string, capabilities?: string[], workspaceRoot = '/workspace'): RuntimeBundle {
   return {
-    runtimeContext,
-    storageRoot,
     workspace: mockWorkspace(workspaceRoot),
-    sandbox: { ...mockSandbox(provider, capabilities), runtimeContext },
+    sandbox: mockSandbox(provider, capabilities),
     fileSearch: { search: vi.fn(async () => []) },
   }
 }
 
 const tempDirs: string[] = []
-const HAS_BWRAP = (() => {
-  const result = spawnSync('bwrap', ['--version'], { stdio: 'ignore' })
-  return result.status === 0
-})()
-const describeIfBwrap = HAS_BWRAP ? describe : describe.skip
 
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
@@ -71,8 +56,9 @@ afterEach(async () => {
 async function makeTempWorkspace(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'boring-agent-bash-env-'))
   tempDirs.push(dir)
-  await mkdir(join(dir, '.boring-agent', 'bin'), { recursive: true })
   await mkdir(join(dir, '.boring-agent', 'venv', 'bin'), { recursive: true })
+  await mkdir(join(dir, '.boring-agent', 'node', 'node_modules', '.bin'), { recursive: true })
+  await mkdir(join(dir, '.boring-agent', 'sdk', 'uv', 'bin'), { recursive: true })
   return dir
 }
 
@@ -96,38 +82,6 @@ describe('buildHarnessAgentTools', () => {
     expect(tools.map((t) => t.name)).toEqual(['bash'])
   })
 
-  test('bwrap bash forwards through sandbox.exec with runtime cwd', async () => {
-    const bundle = mockBundle('bwrap')
-    vi.mocked(bundle.sandbox.exec).mockImplementation(async (_command, opts) => {
-      opts?.onStdout?.(Buffer.from('/workspace\n/workspace\n'))
-      return {
-        stdout: new Uint8Array(),
-        stderr: new Uint8Array(),
-        exitCode: 0,
-        durationMs: 10,
-        truncated: false,
-      }
-    })
-    const tools = buildHarnessAgentTools(bundle)
-    const bashTool = tools.find((t) => t.name === 'bash')!
-
-    const result = await bashTool.execute(
-      { command: 'printf "%s\\n%s\\n" "$(pwd)" "$PWD"', timeout: 10 },
-      { abortSignal: new AbortController().signal, toolCallId: 'test-bwrap-sandbox-exec' },
-    )
-
-    expect(bundle.sandbox.exec).toHaveBeenCalledWith(
-      'printf "%s\\n%s\\n" "$(pwd)" "$PWD"',
-      expect.objectContaining({
-        cwd: '/workspace',
-        timeoutMs: 10_000,
-        onStdout: expect.any(Function),
-        onStderr: expect.any(Function),
-      }),
-    )
-    expect(result.content[0].text).toContain('/workspace\n/workspace')
-  })
-
   test('vercel-sandbox mode returns bash tool', () => {
     const bundle = mockBundle('vercel-sandbox')
     const tools = buildHarnessAgentTools(bundle)
@@ -149,9 +103,9 @@ describe('buildHarnessAgentTools', () => {
     expect(tools.map((t) => t.name)).toEqual(['bash'])
   })
 
-  test('direct bash exposes workspace app/python/pip shims and env', async () => {
+  test('direct bash exposes provisioned workspace bm/python/pip shims and env', async () => {
     const workspaceRoot = await makeTempWorkspace()
-    await writeExecutable(join(workspaceRoot, '.boring-agent', 'bin', 'app-cli'), '#!/usr/bin/env bash\necho app-cli-shim\n')
+    await writeExecutable(join(workspaceRoot, '.boring-agent', 'venv', 'bin', 'bm'), '#!/usr/bin/env bash\necho bm-shim\n')
     await writeExecutable(join(workspaceRoot, '.boring-agent', 'venv', 'bin', 'python'), '#!/usr/bin/env bash\necho python-shim\n')
     await writeExecutable(join(workspaceRoot, '.boring-agent', 'venv', 'bin', 'pip'), '#!/usr/bin/env bash\necho pip-shim\n')
 
@@ -162,100 +116,77 @@ describe('buildHarnessAgentTools', () => {
     const result = await bashTool.execute(
       {
         command:
-          'app-cli; python; pip; printf "%s\\n%s\\n" "$BORING_AGENT_WORKSPACE_ROOT" "$VIRTUAL_ENV"',
+          'bm; python; pip; printf "%s\\n%s\\n" "$BORING_AGENT_WORKSPACE_ROOT" "$VIRTUAL_ENV"',
         timeout: 10,
       },
       { abortSignal: new AbortController().signal, toolCallId: 'test-direct-env' },
     )
 
     expect(result.isError).toBe(false)
-    expect(result.content[0].text).toContain('app-cli-shim')
+    expect(result.content[0].text).toContain('bm-shim')
     expect(result.content[0].text).toContain('python-shim')
     expect(result.content[0].text).toContain('pip-shim')
     expect(result.content[0].text).toContain(workspaceRoot)
     expect(result.content[0].text).toContain(join(workspaceRoot, '.boring-agent', 'venv'))
   })
 
-  test('direct model bash pwd, PWD, and workspace root env are the host workspace path', async () => {
+  test('direct bash prefixes provisioning PATH/env while preserving caller PATH tail', async () => {
     const workspaceRoot = await makeTempWorkspace()
+    await writeExecutable(join(workspaceRoot, '.boring-agent', 'node', 'node_modules', '.bin', 'from-runtime'), '#!/usr/bin/env bash\necho runtime-bin\n')
+
     const bundle = mockBundle('direct', ['exec'], workspaceRoot)
-    const tools = buildHarnessAgentTools(bundle)
+    const tools = buildHarnessAgentTools(bundle, {
+      env: { BORING_MACRO_API_URL: 'http://macro', PATH: '/runtime/base' },
+      pathEntries: [join(workspaceRoot, '.boring-agent', 'node', 'node_modules', '.bin')],
+    })
     const bashTool = tools.find((t) => t.name === 'bash')!
 
     const result = await bashTool.execute(
-      {
-        command: 'printf "%s\\n%s\\n%s" "$(pwd)" "$PWD" "$BORING_AGENT_WORKSPACE_ROOT"',
-        timeout: 10,
-      },
-      { abortSignal: new AbortController().signal, toolCallId: 'test-direct-cwd' },
+      { command: 'from-runtime; printf "%s\\n%s" "$BORING_MACRO_API_URL" "$PATH"', timeout: 10 },
+      { abortSignal: new AbortController().signal, toolCallId: 'test-runtime-env' },
     )
 
-    const [pwd, envPwd, boringRoot] = result.content[0].text.trimEnd().split('\n').slice(-3)
     expect(result.isError).toBe(false)
-    expect(pwd).toBe(workspaceRoot)
-    expect(envPwd).toBe(workspaceRoot)
-    expect(boringRoot).toBe(workspaceRoot)
-    expect([pwd, envPwd, boringRoot]).not.toContain('/workspace')
+    expect(result.content[0].text).toContain('runtime-bin')
+    expect(result.content[0].text).toContain('http://macro')
+    expect(result.content[0].text).toContain(`${join(workspaceRoot, '.boring-agent', 'node', 'node_modules', '.bin')}:`)
+    expect(result.content[0].text).toContain('/runtime/base')
   })
 
-  describeIfBwrap('bwrap bash tool integration', () => {
-    test('model bash pwd and PWD are /workspace', async () => {
-      const workspaceRoot = await makeTempWorkspace()
-      const runtimeContext = { runtimeCwd: '/workspace' }
-      const workspace = createNodeWorkspace(workspaceRoot, { runtimeContext })
-      const sandbox = createBwrapSandbox({ hostWorkspaceRoot: workspaceRoot, runtimeContext })
-      await sandbox.init?.({ workspace, sessionId: 'harness-bwrap-cwd' })
-      const bundle: RuntimeBundle = {
-        runtimeContext,
-        storageRoot: workspaceRoot,
-        workspace,
-        sandbox,
-        fileSearch: { search: vi.fn(async () => []) },
-      }
-
-      const tools = buildHarnessAgentTools(bundle)
-      const bashTool = tools.find((t) => t.name === 'bash')!
-      const result = await bashTool.execute(
-        { command: 'printf "%s\\n%s\\n" "$(pwd)" "$PWD"', timeout: 10 },
-        { abortSignal: new AbortController().signal, toolCallId: 'harness-bwrap-cwd' },
-      )
-
-      expect(result.isError).toBe(false)
-      expect(result.content[0].text).toContain('/workspace\n/workspace')
-      expect(result.content[0].text).not.toContain(workspaceRoot)
+  test('vercel-sandbox bash forwards to sandbox.exec with dynamic runtime env', async () => {
+    const bundle = mockBundle('vercel-sandbox')
+    let macroUrl = 'http://macro-v1'
+    const tools = buildHarnessAgentTools(bundle, {
+      getCurrent: () => ({
+        env: { BORING_MACRO_API_URL: macroUrl, PATH: '/runtime/base' },
+        pathEntries: ['/workspace/.boring-agent/venv/bin'],
+      }),
     })
+    const bashTool = tools.find((t) => t.name === 'bash')!
 
-    test('model bash sees parent .boring-agent fallback in nested child workspace', async () => {
-      const parentRoot = await mkdtemp(join(tmpdir(), 'boring-agent-bwrap-parent-'))
-      tempDirs.push(parentRoot)
-      const childRoot = join(parentRoot, 'child')
-      await mkdir(join(parentRoot, '.boring-agent'), { recursive: true })
-      await mkdir(childRoot, { recursive: true })
-      await writeFile(join(parentRoot, '.boring-agent', 'marker.txt'), 'parent-agent-fallback')
-      const runtimeContext = { runtimeCwd: '/workspace' }
-      const workspace = createNodeWorkspace(childRoot, { runtimeContext })
-      const sandbox = createBwrapSandbox({ hostWorkspaceRoot: childRoot, runtimeContext })
-      await sandbox.init?.({ workspace, sessionId: 'harness-bwrap-parent-fallback' })
-      const bundle: RuntimeBundle = {
-        runtimeContext,
-        storageRoot: childRoot,
-        workspace,
-        sandbox,
-        fileSearch: { search: vi.fn(async () => []) },
-      }
+    await bashTool.execute(
+      { command: 'echo hello', timeout: 10 },
+      { abortSignal: new AbortController().signal, toolCallId: 'test-1' },
+    )
 
-      const tools = buildHarnessAgentTools(bundle)
-      const bashTool = tools.find((t) => t.name === 'bash')!
-      const result = await bashTool.execute(
-        { command: 'cat .boring-agent/marker.txt && printf "\\n%s\\n%s" "$(pwd)" "$PWD"', timeout: 10 },
-        { abortSignal: new AbortController().signal, toolCallId: 'harness-bwrap-parent-fallback' },
-      )
+    const firstExecOptions = vi.mocked(bundle.sandbox.exec).mock.calls[0][1]
+    if (!firstExecOptions) throw new Error('missing sandbox exec options')
+    expect(firstExecOptions).toEqual(expect.objectContaining({
+      timeoutMs: 10_000,
+      env: expect.objectContaining({ BORING_MACRO_API_URL: 'http://macro-v1' }),
+    }))
+    expect(firstExecOptions.env?.PATH).toBe('/workspace/.boring-agent/venv/bin:/runtime/base:/vercel/runtimes/node24/bin:/vercel/runtimes/node22/bin:/usr/local/bin:/usr/bin:/bin')
+    expect(firstExecOptions.env).not.toHaveProperty('VAULT_TOKEN')
+    expect(firstExecOptions.env).not.toHaveProperty('ANTHROPIC_API_KEY')
 
-      expect(result.isError).toBe(false)
-      expect(result.content[0].text).toContain('parent-agent-fallback\n/workspace\n/workspace')
-      expect(result.content[0].text).not.toContain(parentRoot)
-      expect(result.content[0].text).not.toContain(childRoot)
-    })
+    macroUrl = 'http://macro-v2'
+    await bashTool.execute(
+      { command: 'echo again', timeout: 10 },
+      { abortSignal: new AbortController().signal, toolCallId: 'test-1b' },
+    )
+    expect(bundle.sandbox.exec).toHaveBeenLastCalledWith('echo again', expect.objectContaining({
+      env: expect.objectContaining({ BORING_MACRO_API_URL: 'http://macro-v2' }),
+    }))
   })
 
   test('vercel-sandbox bash forwards to sandbox.exec', async () => {

@@ -7,6 +7,8 @@ export type { UserIdentity, UserIdentityProviderProps } from './UserIdentityProv
 export { getAuthClient } from './authClient.js'
 export type { AuthClient } from './authClient.js'
 
+export { GoogleAuthButton } from './GoogleAuthButton.js'
+export type { GoogleAuthButtonProps } from './GoogleAuthButton.js'
 export { SignInPage } from './SignInPage.js'
 export { SignUpPage } from './SignUpPage.js'
 export { ForgotPasswordPage } from './ForgotPasswordPage.js'

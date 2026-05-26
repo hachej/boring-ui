@@ -34,25 +34,39 @@ export { createNodeWorkspace } from './workspace/createNodeWorkspace'
 export { fileRoutes } from './http/routes/file'
 export {
   provisionRuntimeWorkspace,
-  validateRuntimeProvisioningContributions,
   type ProvisionRuntimeWorkspaceOptions,
   type RuntimeWorkspaceProvisioningResult,
-  type RuntimeProvisioningContribution,
-  type RuntimeTemplateContribution,
-  type RuntimePythonSpec,
-  type RuntimeNodePackageSpec,
 } from './workspace/provisionRuntime'
 export {
-  BORING_AGENT_DIR,
-  BORING_AGENT_PROVISIONING_MARKER_REL_PATH,
-  BORING_AGENT_RUNTIME_DIR_NAMES,
-  getBoringAgentNodePackageTarget,
-  getBoringAgentRuntimeDir,
   getBoringAgentRuntimePaths,
-  type BoringAgentRuntimeDirName,
-  type BoringAgentRuntimePaths,
+  getBoringAgentRuntimeEnv,
+  getBoringAgentPathEntries,
 } from './workspace/runtimeLayout'
-export { createVercelSandboxWorkspace } from './workspace/createVercelSandboxWorkspace'
+export type { BoringAgentRuntimePaths } from './workspace/runtimeLayout'
+export {
+  createVercelSandboxWorkspace,
+  VERCEL_SANDBOX_WORKSPACE_ROOT,
+} from './workspace/createVercelSandboxWorkspace'
+export {
+  createVercelProvisioningAdapter,
+  VERCEL_PROVISIONING_CACHE_ROOT,
+} from './sandbox/vercel-sandbox/provisioningAdapter'
+export type {
+  CreateVercelProvisioningAdapterOptions,
+  VercelProvisioningArtifactRequest,
+} from './sandbox/vercel-sandbox/provisioningAdapter'
+export { provisionWorkspaceRuntime } from './workspace/provisioning'
+export type {
+  PluginSkillSource,
+  ProvisionWorkspaceRuntimeOptions,
+  RuntimeNodePackageSpec,
+  RuntimeProvisioningContribution,
+  RuntimePythonSpec,
+  RuntimeTemplateContribution,
+  WorkspaceProvisioningAdapter,
+  WorkspaceProvisioningExecResult,
+  WorkspaceProvisioningResult,
+} from './workspace/provisioning'
 export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
 export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'

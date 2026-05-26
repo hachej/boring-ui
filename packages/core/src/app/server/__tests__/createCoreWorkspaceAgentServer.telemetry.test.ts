@@ -8,25 +8,6 @@ import { ERROR_CODES } from '../../../shared/errors.js'
 import type { TelemetrySink } from '../../../shared/telemetry.js'
 import type { CoreConfig } from '../../../shared/types.js'
 
-const posthogMock = vi.hoisted(() => {
-  type MockPostHogClient = {
-    capture: ReturnType<typeof vi.fn>
-    shutdown: ReturnType<typeof vi.fn>
-  }
-
-  const clients: MockPostHogClient[] = []
-  const PostHog = vi.fn(() => {
-    const client = {
-      capture: vi.fn(),
-      shutdown: vi.fn(),
-    }
-    clients.push(client)
-    return client
-  })
-
-  return { clients, PostHog }
-})
-
 const agentMock = vi.hoisted(() => ({
   registerOptions: [] as Array<Record<string, unknown>>,
 }))
@@ -35,9 +16,15 @@ const coreAppMock = vi.hoisted(() => ({
   debugLogs: [] as unknown[][],
 }))
 
-vi.mock('posthog-node', () => ({
-  PostHog: posthogMock.PostHog,
-}))
+const dbMock = vi.hoisted(() => {
+  const rows: Array<Record<string, unknown>> = []
+  const values = vi.fn((row: Record<string, unknown>) => {
+    rows.push(row)
+    return Promise.resolve()
+  })
+  const insert = vi.fn(() => ({ values }))
+  return { rows, insert, values }
+})
 
 vi.mock('@hachej/boring-agent/server', () => ({
   compactPiPackages: (packages: unknown[]) => packages,
@@ -66,6 +53,7 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
     packages: [],
     systemPromptAppend: undefined,
   }),
+  readWorkspacePluginPackageRuntimePlugins: () => [],
   resolveDefaultWorkspacePluginPackagePaths: () => [],
   resolveOnePluginEntry: async (entry: unknown) => entry,
 }))
@@ -110,7 +98,7 @@ vi.mock('../../../server/routes/index.js', () => ({
 
 vi.mock('../../../server/db/index.js', () => ({
   createDatabase: () => ({
-    db: {},
+    db: dbMock,
     sql: { end: vi.fn() },
   }),
   PostgresUserStore: class PostgresUserStore {},
@@ -119,6 +107,7 @@ vi.mock('../../../server/db/index.js', () => ({
 
 vi.mock('../../../server/config/index.js', () => ({
   loadConfig: async () => ({
+    appId: 'test-app',
     auth: { url: 'http://localhost:3000' },
     encryption: { workspaceSettingsKey: 'test-key' },
     stores: 'postgres',
@@ -133,9 +122,11 @@ const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceA
 
 function resetTelemetryEnv(): void {
   delete process.env.BORING_TELEMETRY_ENABLED
-  delete process.env.POSTHOG_KEY
-  delete process.env.POSTHOG_HOST
-  delete process.env.BORING_TELEMETRY_PROJECT
+}
+
+async function flushTelemetry(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
 }
 
 async function createBuiltFrontendRoot(): Promise<string> {
@@ -151,8 +142,9 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
     resetTelemetryEnv()
     agentMock.registerOptions.length = 0
     coreAppMock.debugLogs.length = 0
-    posthogMock.clients.length = 0
-    posthogMock.PostHog.mockClear()
+    dbMock.rows.length = 0
+    dbMock.insert.mockClear()
+    dbMock.values.mockClear()
   })
 
   afterEach(() => {
@@ -160,33 +152,32 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
     vi.clearAllMocks()
   })
 
-  it('uses the core PostHog env helper by default and passes the sink to agent routes', async () => {
+  it('uses the core DB telemetry env helper by default and passes the sink to agent routes', async () => {
     process.env.BORING_TELEMETRY_ENABLED = 'true'
-    process.env.POSTHOG_KEY = 'phc_redacted_test_key'
-    process.env.BORING_TELEMETRY_PROJECT = 'full-app'
 
     const app = await createCoreWorkspaceAgentServer({ serveFrontend: false })
     try {
       const telemetry = agentMock.registerOptions[0]?.telemetry as TelemetrySink | undefined
       telemetry?.capture({
         name: 'agent.chat.started',
+        distinctId: 'user_123',
         properties: { workspaceId: 'workspace_1', prompt: 'do not send' },
       })
+      await flushTelemetry()
 
       expect(agentMock.registerOptions, 'agent routes should be registered once').toHaveLength(1)
       expect(telemetry, 'resolved telemetry sink should be passed to agent routes').toBeDefined()
-      expect(posthogMock.PostHog, 'enabled env should construct PostHog from the core helper').toHaveBeenCalledOnce()
-      expect(posthogMock.clients[0]?.capture).toHaveBeenCalledWith({
-        distinctId: 'anonymous',
-        event: 'full-app.agent.chat.started',
-        properties: {
-          workspaceId: 'workspace_1',
-          boringProject: 'full-app',
+      expect(dbMock.rows).toEqual([
+        {
+          appId: 'test-app',
           eventName: 'agent.chat.started',
+          distinctId: 'user_123',
+          properties: { workspaceId: 'workspace_1' },
         },
-      })
+      ])
+      expect(JSON.stringify(dbMock.rows)).not.toContain('do not send')
       expect(coreAppMock.debugLogs).toContainEqual([
-        { telemetry: { source: 'posthog-env' } },
+        { telemetry: { source: 'db-env' } },
         'resolved telemetry sink',
       ])
     } finally {
@@ -194,9 +185,8 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
     }
   })
 
-  it('lets a custom telemetry sink override env helper creation', async () => {
+  it('lets a custom telemetry sink override DB helper creation', async () => {
     process.env.BORING_TELEMETRY_ENABLED = 'true'
-    process.env.POSTHOG_KEY = 'phc_redacted_test_key'
     const customTelemetry: TelemetrySink = { capture: vi.fn() }
 
     const app = await createCoreWorkspaceAgentServer({
@@ -205,7 +195,7 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
     })
     try {
       expect(agentMock.registerOptions[0]?.telemetry).toBe(customTelemetry)
-      expect(posthogMock.PostHog, 'custom sink should bypass PostHog env helper').not.toHaveBeenCalled()
+      expect(dbMock.insert, 'custom sink should bypass DB telemetry helper').not.toHaveBeenCalled()
       expect(coreAppMock.debugLogs).toContainEqual([
         { telemetry: { source: 'custom' } },
         'resolved telemetry sink',
@@ -216,16 +206,14 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
   })
 
   it('passes noop telemetry when env telemetry is disabled', async () => {
-    process.env.POSTHOG_KEY = 'phc_redacted_test_key'
-
     const app = await createCoreWorkspaceAgentServer({ serveFrontend: false })
     try {
       const telemetry = agentMock.registerOptions[0]?.telemetry as TelemetrySink | undefined
       telemetry?.capture({ name: 'app.opened' })
+      await flushTelemetry()
 
       expect(telemetry, 'disabled env still passes a safe noop sink').toBeDefined()
-      expect(posthogMock.PostHog, 'POSTHOG_KEY alone must not construct PostHog').not.toHaveBeenCalled()
-      expect(posthogMock.clients[0]?.capture).toBeUndefined()
+      expect(dbMock.rows).toEqual([])
       expect(coreAppMock.debugLogs).toContainEqual([
         { telemetry: { source: 'noop-env' } },
         'resolved telemetry sink',
@@ -277,6 +265,66 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
       })
       expect(JSON.stringify(capture.mock.calls)).not.toContain('private-path')
       expect(JSON.stringify(capture.mock.calls)).not.toContain('secret')
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('lets auth callback routes hit the auth proxy even for browser GET requests', async () => {
+    const app = await createCoreWorkspaceAgentServer({
+      appRoot: await createBuiltFrontendRoot(),
+      serveFrontend: true,
+      telemetry: { capture: vi.fn() },
+    })
+    const handler = vi.fn(async () => new Response('handled-by-auth-proxy', {
+      status: 200,
+      headers: { 'content-type': 'text/plain; charset=utf-8' },
+    }))
+    app.auth.handler = handler as typeof app.auth.handler
+
+    try {
+      for (const url of ['/auth/callback/github', '/auth/callback/google']) {
+        const res = await app.inject({
+          method: 'GET',
+          url,
+          headers: { accept: 'text/html' },
+        })
+
+        expect(res.statusCode).toBe(200)
+        expect(res.body).toContain('handled-by-auth-proxy')
+      }
+
+      expect(handler).toHaveBeenCalledTimes(2)
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('serves SPA-only auth pages through the frontend shell for browser GET requests', async () => {
+    const app = await createCoreWorkspaceAgentServer({
+      appRoot: await createBuiltFrontendRoot(),
+      serveFrontend: true,
+      telemetry: { capture: vi.fn() },
+    })
+    const handler = vi.fn(async () => new Response('handled-by-auth-proxy', {
+      status: 200,
+      headers: { 'content-type': 'text/plain; charset=utf-8' },
+    }))
+    app.auth.handler = handler as typeof app.auth.handler
+
+    try {
+      for (const url of ['/auth/verify-email', '/auth/error?error=please_restart_the_process']) {
+        const res = await app.inject({
+          method: 'GET',
+          url,
+          headers: { accept: 'text/html' },
+        })
+
+        expect(res.statusCode).toBe(200)
+        expect(res.body).toContain('<!doctype html>')
+      }
+
+      expect(handler).not.toHaveBeenCalled()
     } finally {
       await app.close()
     }

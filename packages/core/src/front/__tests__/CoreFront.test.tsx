@@ -50,7 +50,7 @@ function mockConfigEndpoint() {
     appName: 'Test App',
     appLogo: null,
     apiBase: '',
-    features: { githubOauth: false, invitesEnabled: false, sendWelcomeEmail: false },
+    features: { githubOauth: false, googleOauth: false, invitesEnabled: false, sendWelcomeEmail: false },
   }
   useMswHandler(async (input) => {
     const url =
@@ -209,7 +209,9 @@ describe('CoreFront', () => {
         { path: '/auth/forgot-password', marker: 'Forgot password' },
         { path: '/auth/reset-password', marker: 'Link expired' },
         { path: '/auth/verify-email', marker: 'Invalid verification link' },
+        { path: '/auth/error?error=please_restart_the_process', marker: 'Authentication error' },
         { path: '/auth/callback/github', marker: 'placeholder-github-callback' },
+        { path: '/auth/callback/google', marker: 'placeholder-google-callback' },
         { path: '/me', marker: 'Account settings' },
       ]
 

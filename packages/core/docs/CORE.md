@@ -8,9 +8,6 @@
 **Reference app:**
 - [`apps/full-app`](../../../apps/full-app/) — the canonical production-ready example (Fly.io, Postgres, Resend) and dev surface. See its [README](../../../apps/full-app/README.md) for run/deploy instructions.
 
-**Related product contract:**
-- [Chat-first auth and workspace boot](./CHAT_FIRST_WORKSPACE_BOOT.md) — public chat shell, first-Send auth, identity-only route gate, background workspace warmup, workbench-local readiness, and stable `WORKSPACE_NOT_READY` behavior.
-
 ## Table of contents
 
 1. [Goal](#goal)
@@ -67,9 +64,9 @@ import { Route } from 'react-router-dom'
 |---|---|
 | Package shape | **One combined package** (`@boring/core`) — no separate `@boring/cloud`. Local and real providers coexist behind interfaces. |
 | DB stack | **Drizzle + Postgres (Neon)**. SQLite fallback is a v1.x concern. |
-| Auth | **better-auth** with email/password + email verification + password reset + magic links. Drizzle adapter against the same Postgres. `AuthProvider` interface kept as a partial swap seam. **GitHub OAuth deferred to v1.x** (bundled with agent's GitHub App install — both ship together so users do "Connect GitHub" once, not twice). |
+| Auth | **better-auth** already backs core auth: email/password + email verification + password reset + magic links, with Google available as one better-auth social provider when a child app sets `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `features.google_oauth = true`. Drizzle adapter against the same Postgres. `AuthProvider` interface kept as a partial swap seam. **GitHub OAuth deferred to v1.x** (bundled with agent's GitHub App install — both ship together so users do "Connect GitHub" once, not twice). |
 | Tenancy | Port v1: **workspaces + members + invites** with owner/editor/viewer roles. Matches agent's `workspaceId` per instance. |
-| Frontend shell | `<BoringApp>` mounts **react-router v6** with a route slot. Default routes: `/auth/signin`, `/auth/signup`, `/auth/callback/github`, `/auth/verify-email`, `/auth/forgot-password`, `/auth/reset-password`, `/me`. |
+| Frontend shell | `<BoringApp>` mounts **react-router v6** with a route slot. Default user-facing routes: `/auth/signin`, `/auth/signup`, `/auth/verify-email`, `/auth/forgot-password`, `/auth/reset-password`, `/me`. Provider callback handling still lives under better-auth's backend `/auth/callback/:provider` paths; core also mounts placeholder frontend callback routes for provider flows, but those are not the main child-app-facing route contract. |
 | UI primitives | Stay in **`@boring/ui`**. Core depends on workspace for UI. |
 | Full-app wrapping | Server factory + frontend shell + config bridge + user/workspace management + auth — all four in-scope for v1. |
 
@@ -100,7 +97,7 @@ v1 had `core ← workspace ← agent`. v2 fully inverts the chain:
 ## Non-goals
 
 - SQLite / libsql support. Postgres-only in v1.
-- Social login beyond GitHub. Google/Apple/Discord are v1.x.
+- Social providers beyond the current Google child-app flow. GitHub App-linked OAuth, Apple, Discord, and any generic provider-picker UI are v1.x.
 - Billing / Stripe integration.
 - Server-side rendering. `<BoringApp>` is client-rendered only.
 - GitHub App install flow — deferred to `@boring/agent` in v1.x, when agent grows a git tool.
@@ -116,7 +113,7 @@ v1 had `core ← workspace ← agent`. v2 fully inverts the chain:
 
 ### What you get
 
-A new app depending on `@boring/core` boots with Postgres + Drizzle, better-auth (email/pw + verification + reset + magic links), session cookies, sign-in/up pages, user + workspace CRUD, `/api/v1/me`, `/api/v1/workspaces`, `/api/v1/capabilities`. (GitHub OAuth deferred to v1.x.)
+A new app depending on `@boring/core` boots with Postgres + Drizzle, better-auth (email/pw + verification + reset + magic links), session cookies, sign-in/up pages, user + workspace CRUD, `/api/v1/me`, `/api/v1/workspaces`, `/api/v1/capabilities`, and optional Google sign-in/sign-up when the child app opts in with Google credentials plus `features.google_oauth = true`. (GitHub OAuth remains deferred to v1.x.)
 
 ### 1. Install
 
@@ -134,11 +131,12 @@ pnpm add @boring/core @boring/workspace fastify react react-dom react-router-dom
 DATABASE_URL=postgres://user:pass@localhost:5432/myapp
 BETTER_AUTH_SECRET=<32-byte random hex>
 BETTER_AUTH_URL=http://localhost:3000
+CORS_ORIGINS=http://localhost:3000,http://localhost:5173
 WORKSPACE_SETTINGS_ENCRYPTION_KEY=<32-byte hex>
 MAIL_FROM=noreply@myapp.dev
 MAIL_TRANSPORT_URL=resend://re_xxxxxxxxxxxxxxxxxxxxxxxx   # default; any scheme above works
-GITHUB_CLIENT_ID=<from github oauth app>
-GITHUB_CLIENT_SECRET=<from github oauth app>
+GOOGLE_CLIENT_ID=<from google oauth web app>
+GOOGLE_CLIENT_SECRET=<from google oauth web app>
 ```
 
 `boring.app.toml`:
@@ -150,7 +148,12 @@ id = "my-app"
 [frontend.branding]
 name = "My App"
 logo = "/logo.svg"
+
+[features]
+google_oauth = true
 ```
+
+`boring.app.toml` is optional. If your child app does not already have one, create it at the repo root and add the `[features]` block there.
 
 ### 3. Migrate the DB
 
@@ -300,24 +303,26 @@ favicon = "/favicon.ico"
 default = "system"          # "light" | "dark" | "system"
 
 [features]
-github_oauth = false   # v1: deferred to v1.x
+google_oauth = false         # set true only when GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET are configured
 invites_enabled = true
 invite_ttl_days = 7
 ```
 
-`invite_ttl_days` lives in `boring.app.toml`. `sendWelcomeEmail` is env-only (`SEND_WELCOME_EMAIL=false`) but still lands under `CoreConfig.features` after config load so feature flags stay grouped in one object.
+`boring.app.toml` is optional; if a child app does not have one yet, create it at the repo root. `invite_ttl_days` lives in this file. `sendWelcomeEmail` is env-only (`SEND_WELCOME_EMAIL=false`) but still lands under `CoreConfig.features` after config load so feature flags stay grouped in one object.
 
 ### Environment variables
 
 | Var | Required | Description |
 |---|---|---|
 | `DATABASE_URL` | yes (prod) | Postgres connection string. |
-| `BETTER_AUTH_SECRET` | yes | 32-byte hex. Signs session cookies. |
-| `BETTER_AUTH_URL` | yes | Public URL of the deployment (used for OAuth callbacks). |
+| `BETTER_AUTH_SECRET` | yes | 32-byte hex. better-auth secret for the shared core auth stack; signs session cookies for email auth and Google auth alike. |
+| `BETTER_AUTH_URL` | yes | Public URL of the deployment. better-auth uses it as the base URL, and Google callback URLs must live under this exact origin. |
 | `WORKSPACE_SETTINGS_ENCRYPTION_KEY` | yes (prod) | 32-byte hex. pgcrypto key for `workspace_settings.value`. Rotating it without re-encrypting rows breaks typed decrypts of existing values, though metadata reads still succeed; see [V7 surface area](#v7-surface-area). |
 | `SEND_WELCOME_EMAIL` | no | Defaults to `true`. Set to `false` to suppress the post-signup welcome email for non-invite signups. |
 | `MAIL_FROM` | yes (prod) | Sender address for verification / reset / magic-link emails. Without it those flows are disabled. |
 | `MAIL_TRANSPORT_URL` | yes (prod) | URL scheme dispatched by core's transport parser. **Recommended default: `resend://<api-key>`** (Resend REST — no dependency on the resend npm package; core just hits `https://api.resend.com/emails`). Also supported: `smtp://user:pass@host:port`, `smtps://user:pass@host:port`, `console://` (dev-only — logs to stdout). Unknown scheme = boot-time `ConfigValidationError`. |
+| `GOOGLE_CLIENT_ID` | no | Google OAuth web client ID. Used only when `features.google_oauth = true`; otherwise Google stays hidden. |
+| `GOOGLE_CLIENT_SECRET` | no | Google OAuth web client secret. Used only when `features.google_oauth = true`; otherwise Google stays hidden. |
 | `GITHUB_CLIENT_ID` | **v1.x — not used in v1** | Reserved for when GitHub OAuth ships in v1.x alongside GitHub App install. Set if `features.github_oauth = true`. |
 | `GITHUB_CLIENT_SECRET` | **v1.x — not used in v1** | Same. |
 | `PORT` | no | Fastify port (default 3000). |
@@ -325,28 +330,44 @@ invite_ttl_days = 7
 | `STATIC_DIR` | no | Directory served at `/`. |
 | `CORE_STORES` | no | `postgres` (default) or `local`. |
 | `LOG_LEVEL` | no | pino level (default `info`). |
-| `CORS_ORIGINS` | yes (prod) | Comma-separated allowlist of origins for CORS (e.g. `https://app.example.com,https://admin.example.com`). Empty in dev = localhost auto-allow. |
+| `CORS_ORIGINS` | yes (prod) | Comma-separated allowlist of origins for CORS (e.g. `https://app.example.com,https://admin.example.com`). Core also passes these through to better-auth `trustedOrigins`, so include every browser origin that can start auth. Empty in dev = localhost auto-allow. |
 | `BODY_LIMIT_BYTES` | no | Override Fastify body limit (default `16777216` / 16MB). |
 | `SESSION_TTL_SECONDS` | no | Session cookie max-age (default `60*60*24*30` / 30 days, matches v1). |
 | `SESSION_COOKIE_SECURE` | no | Force `Secure` cookie flag (default `true` when `BETTER_AUTH_URL` is https). |
-| `BORING_TELEMETRY_ENABLED` | no | Explicit opt-in for PostHog telemetry. Must be `true`; unset/`false` means no-op telemetry. |
-| `POSTHOG_KEY` | when telemetry enabled | PostHog project key. `POSTHOG_KEY` alone does **not** enable telemetry. |
-| `POSTHOG_HOST` | no | PostHog host override. Defaults to `https://us.i.posthog.com`. |
-| `BORING_TELEMETRY_PROJECT` | no | Lowercase slug used as an event-name prefix and `boringProject` property when multiple boring-ui apps share one PostHog account/project. |
+| `BORING_TELEMETRY_ENABLED` | no | Explicit opt-in for core DB telemetry. Must be `true`; unset/`false` means no-op telemetry. |
 
-### PostHog telemetry (v1)
+### Google signup in child apps (first pass)
 
-Core-composed apps get PostHog telemetry from env vars only. Core owns the PostHog helper and resolves telemetry inside `createCoreWorkspaceAgentServer`; child apps do not need to import or initialize PostHog for the common path.
+Core auth already runs on better-auth. Google is one provider inside that existing stack, not a second auth system.
+
+Child-app setup contract:
+
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `features.google_oauth = true` in `boring.app.toml`
+
+Notes:
+
+- `boring.app.toml` is optional. If the app does not have one yet, create it and add a `[features]` block.
+- There is **no** `GOOGLE_OAUTH` env flag.
+- `BETTER_AUTH_SECRET` stays required because Google uses the same better-auth session/callback stack as email auth.
+- `BETTER_AUTH_URL` must exactly match the public app origin that owns `/auth/callback/google` (`http://localhost:3000` locally, `https://app.example.com` in prod).
+- `CORS_ORIGINS` must include the same browser origin(s) that can start auth.
+- Register these Google callback URLs exactly:
+  - local: `http://localhost:3000/auth/callback/google`
+  - prod: `https://app.example.com/auth/callback/google`
+- If the TOML flag or either Google credential is missing, core still boots and the stock auth pages simply hide the Google button.
+- Deliberate first-pass invite behavior: `/auth/signup?invite_token=...` stays email-only. Core does **not** carry invite tokens through OAuth yet.
+- Stock core auth pages pick up the Google button automatically. Branded child apps can reuse `GoogleAuthButton` from `@hachej/boring-core/front`; core does not promise a generic provider-picker UI.
+
+### Core DB telemetry (v1)
+
+Core-composed apps can store safe telemetry events in the core database with one env var. Core owns the DB-backed sink and resolves telemetry inside `createCoreWorkspaceAgentServer`; child apps do not need vendor setup code.
 
 Enable telemetry:
 
 ```bash
 BORING_TELEMETRY_ENABLED=true
-POSTHOG_KEY=phc_...
-# Optional. Defaults to https://us.i.posthog.com
-POSTHOG_HOST=https://us.i.posthog.com
-# Optional. Useful when several apps share one PostHog account/project.
-BORING_TELEMETRY_PROJECT=full-app
 ```
 
 Disable telemetry:
@@ -356,22 +377,7 @@ Disable telemetry:
 BORING_TELEMETRY_ENABLED=false
 ```
 
-`POSTHOG_KEY` by itself is ignored. This keeps telemetry off by default and prevents accidental capture when a secret exists in the environment.
-
-When `BORING_TELEMETRY_PROJECT=full-app`, event names are prefixed and the raw event name is preserved in properties:
-
-```txt
-full-app.app.opened
-full-app.agent.chat.started
-full-app.agent.tool.completed
-```
-
-```ts
-{
-  boringProject: 'full-app',
-  eventName: 'agent.chat.started'
-}
-```
+When enabled, sanitized rows are inserted into the `telemetry_events` table. `app_id` uses `CoreConfig.appId`, so multiple apps sharing one database can still be filtered without event-name prefixes.
 
 Implemented v1 events:
 
@@ -397,16 +403,16 @@ Allowed event properties are intentionally low-cardinality operational metadata 
 - `packageName`
 - `packageVersion`
 
-Privacy exclusions: v1 does not capture prompts, assistant output, file contents, command strings, stdout/stderr, raw file paths, raw errors, stack traces, headers, cookies, tokens, full env dumps, or secret values. Core sanitizes properties before sending to PostHog, and telemetry failures are best-effort only: they do not break app, chat, or tool flows.
+Privacy exclusions: v1 does not capture prompts, assistant output, file contents, command strings, stdout/stderr, raw file paths, raw errors, stack traces, headers, cookies, tokens, full env dumps, or secret values. Core sanitizes properties before inserting into the database, and telemetry failures are best-effort only: they do not break app, chat, or tool flows.
 
-Package boundary: agent/workspace remain PostHog-free. Core passes a tiny structural telemetry sink into composed agent code; `@hachej/boring-agent` standalone remains no-op unless an embedder explicitly provides a sink.
+Package boundary: agent/workspace remain storage-free. Core passes a tiny structural telemetry sink into composed agent code; `@hachej/boring-agent` standalone remains no-op unless an embedder explicitly provides a sink.
 
-Deferred scope: browser-originated telemetry, direct browser PostHog setup, workspace frontend events (`workspace.opened`, `workspace.panel.opened`, `workspace.command.executed`), auth hook telemetry, plugin-error telemetry, UI-command telemetry, tool-started events, Sentry, OpenTelemetry/OTLP, routing/multi-account selection, and mandatory lifecycle flush wiring are not shipped in v1.
+Deferred scope: browser-originated telemetry, workspace frontend events (`workspace.opened`, `workspace.panel.opened`, `workspace.command.executed`), auth hook telemetry, plugin-error telemetry, UI-command telemetry, tool-started events, external SaaS adapters, OpenTelemetry/OTLP, routing/multi-account selection, retention/cleanup policy, and mandatory lifecycle flush wiring are not shipped in v1.
 
 Focused validation commands:
 
 ```bash
-pnpm --filter @hachej/boring-core test src/shared/__tests__/telemetry.test.ts src/server/telemetry/__tests__/posthog.test.ts src/app/server/__tests__/createCoreWorkspaceAgentServer.telemetry.test.ts src/app/server/__tests__/createCoreWorkspaceAgentServer.telemetry-smoke.test.ts
+pnpm --filter @hachej/boring-core test src/shared/__tests__/telemetry.test.ts src/server/telemetry/__tests__ src/app/server/__tests__/createCoreWorkspaceAgentServer.telemetry.test.ts src/app/server/__tests__/createCoreWorkspaceAgentServer.telemetry-smoke.test.ts
 pnpm --filter @hachej/boring-agent test src/shared/__tests__/telemetry.test.ts src/server/http/routes/__tests__/chat.test.ts src/server/harness/pi-coding-agent/__tests__/tool-adapter.telemetry.test.ts src/server/__tests__/createAgentApp.test.ts
 pnpm --filter @hachej/boring-workspace test src/shared/__tests__/telemetry.test.ts
 pnpm lint:invariants
@@ -444,6 +450,7 @@ export interface CoreConfig {
     secret: string
     url: string
     github?: { clientId: string; clientSecret: string }
+    google?: { clientId: string; clientSecret: string }
     mail?: { from: string; transportUrl: string }
     sessionTtlSeconds: number    // default 60*60*24*30 (30 days, matches v1)
     sessionCookieSecure: boolean // derived from auth.url unless overridden
@@ -451,6 +458,7 @@ export interface CoreConfig {
 
   features: {
     githubOauth: boolean
+    googleOauth: boolean
     invitesEnabled: boolean
     sendWelcomeEmail: boolean   // default true; disables the post-signup welcome email when false
     inviteTtlDays: number       // default 7, validated to 1..30
@@ -468,7 +476,7 @@ export interface RuntimeConfig {
   appName: string
   appLogo: string | null
   apiBase: string
-  features: { githubOauth: boolean; invitesEnabled: boolean; sendWelcomeEmail: boolean }
+  features: { githubOauth: boolean; googleOauth: boolean; invitesEnabled: boolean; sendWelcomeEmail: boolean }
 }
 ```
 
@@ -647,6 +655,7 @@ export function SignUpPage(): JSX.Element
 export function ForgotPasswordPage(): JSX.Element
 export function ResetPasswordPage(): JSX.Element
 export function VerifyEmailPage(): JSX.Element
+export function GoogleAuthButton(props?: { callbackURL?: string }): JSX.Element
 export function UserMenu(): JSX.Element
 export function WorkspaceSwitcher(): JSX.Element
 export function ThemeToggle(): JSX.Element
@@ -753,11 +762,13 @@ export type CoreCapabilities = {
   features: {
     invitesEnabled: boolean    // from CoreConfig.features.invitesEnabled
     githubOauth: boolean       // from CoreConfig.features.githubOauth (and config.auth.github presence)
+    googleOauth: boolean       // from CoreConfig.features.googleOauth
     emailFlows: boolean        // DERIVED — true iff config.auth.mail is set (not a separate CoreConfig field)
   }
   auth: {
     emailPassword: boolean     // always true in v1
     github: boolean
+    google: boolean
     emailVerification: boolean
     passwordReset: boolean
     magicLink: boolean
@@ -851,7 +862,7 @@ Every `/api/v1/workspaces/:id/**` handler wears `requireWorkspaceMember(role?)`.
 
 ### v1 shape
 
-- **[better-auth](https://www.better-auth.com)** — email/password + email verification + password reset + magic links. (GitHub OAuth deferred to v1.x.)
+- **[better-auth](https://www.better-auth.com)** — email/password + email verification + password reset + magic links, plus Google when a child app sets `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `features.google_oauth = true`. (GitHub OAuth deferred to v1.x.)
 - **Drizzle adapter** against the same Postgres instance core uses.
 - Tables owned by better-auth: `users`, `sessions`, `accounts`, `verification_tokens`.
 - Session = signed cookie with explicit flags (match v1 contract): `HttpOnly; SameSite=Lax; Path=/; Max-Age=<SESSION_TTL_SECONDS>; Secure` (when `BETTER_AUTH_URL` is https). Auto-rotated by better-auth.
@@ -910,9 +921,14 @@ export function createAuth(config: CoreConfig, db: Database) {
       ? { sendOnSignUp: true, sendVerificationEmail: (...args) => sendVerificationEmail(mail, ...args) }
       : undefined,
     plugins: mail ? [magicLink({ sendMagicLink: (...args) => sendMagicLinkEmail(mail, ...args) })] : [],
-    socialProviders: config.auth.github
-      ? { github: { clientId: config.auth.github.clientId, clientSecret: config.auth.github.clientSecret } }
-      : {},
+    socialProviders: {
+      ...(config.auth.github
+        ? { github: { clientId: config.auth.github.clientId, clientSecret: config.auth.github.clientSecret } }
+        : {}),
+      ...(config.features.googleOauth && config.auth.google
+        ? { google: { clientId: config.auth.google.clientId, clientSecret: config.auth.google.clientSecret } }
+        : {}),
+    },
   })
 }
 ```
@@ -1074,14 +1090,14 @@ export interface BoringAppAuthPagesOverride {
 }
 ```
 
-Overridden components receive `{ onSubmit, oauthProviders, error, isPending, inviteToken? }` props (via React context); omitted overrides fall back to core's defaults.
+`authPages` overrides are plain `React.FC` route components. Core does not inject a generic `oauthProviders` prop. If a branded child app wants the shipped Google flow, import `GoogleAuthButton` from `@hachej/boring-core/front`; omitted overrides fall back to core's defaults.
 
 **Split of responsibility:** better-auth owns the **backend** for every flow below. Core ships the **UI form** that calls better-auth's client methods. Nothing in core re-implements tokens, expiry, or email sending.
 
 | Page | UX core owns | better-auth client call |
 |---|---|---|
-| `<SignInPage>` | Email/password form + "Sign in with GitHub" button + error state + "Forgot password?" link | `authClient.signIn.email()` / `authClient.signIn.social({ provider: 'github' })` |
-| `<SignUpPage>` | Email/password/name form + client-side password strength hint + post-signup "check your email" message | `authClient.signUp.email()` |
+| `<SignInPage>` | Email/password form + optional **Continue with Google** button + error state + "Forgot password?" link | `authClient.signIn.email()` / `GoogleAuthButton` → `authClient.signIn.social({ provider: 'google' })` |
+| `<SignUpPage>` | Email/password/name form + optional Google button on the normal signup path + post-signup "check your email" message. Invite-token signup stays email-only in this first pass. | `authClient.signUp.email()` / `GoogleAuthButton` → `authClient.signIn.social({ provider: 'google' })` |
 | `<VerifyEmailPage>` | Reads `?token=` from URL, calls verify, shows success/expired/invalid state, **resend-verification button with 60s cooldown** | `authClient.verifyEmail({ token })` + `authClient.sendVerificationEmail({ email })` |
 | `<ForgotPasswordPage>` | Email input form + success state ("check your inbox") + rate-limit-hit state | `authClient.forgetPassword({ email, redirectTo: '/auth/reset-password' })` |
 | `<ResetPasswordPage>` | Reads `?token=` from URL, **two password fields with client-side match check**, submit → redirect to `/auth/signin` with toast | `authClient.resetPassword({ token, newPassword })` |
@@ -1099,6 +1115,7 @@ Override via:
 ### In v1
 
 - Email + password.
+- Google OAuth on stock sign-in and normal stock sign-up when `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `features.google_oauth = true` are set.
 - ~~GitHub OAuth.~~ Deferred to v1.x (bundled with agent's GitHub App install — see §Open questions deferred).
 - Email verification (better-auth `emailVerification: { sendOnSignUp: true }`).
 - Password reset (better-auth `emailAndPassword: { sendResetPassword }`).
@@ -1108,7 +1125,7 @@ All three email flows require a mail transport. Without `MAIL_FROM` + `MAIL_TRAN
 
 ### Not in v1
 
-- Google / Apple / Discord / other OAuth providers (one-line adds in `createAuth`, unshipped).
+- Apple / Discord / other OAuth providers, plus any `GOOGLE_OAUTH`-style env flag or generic provider-picker UI.
 - 2FA / TOTP (better-auth plugin; deferred).
 - Session revocation UI (`DELETE /api/v1/me/sessions/:id`).
 - API keys (per-workspace tokens for headless access) — v1.x.

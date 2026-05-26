@@ -4,6 +4,7 @@ import path from 'node:path'
 
 import {
   compactPiPackages,
+  provisionWorkspaceRuntime,
   registerAgentRoutes,
   type RegisterAgentRoutesOptions,
   type RuntimeProvisioningContribution,
@@ -11,8 +12,8 @@ import {
 import {
   collectWorkspaceAgentServerPlugins,
   hasDirServerPlugin,
-  provisionWorkspaceAgentServer,
   readWorkspacePluginPackagePiSnapshot,
+  readWorkspacePluginPackageRuntimePlugins,
   resolveDefaultWorkspacePluginPackagePaths,
   resolveOnePluginEntry,
   type CreateWorkspaceAgentServerOptions,
@@ -56,7 +57,7 @@ import {
 } from '../../server/db/index.js'
 import { loadConfig, type LoadConfigOptions } from '../../server/config/index.js'
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
-import { createPostHogTelemetryFromEnv } from '../../server/telemetry/posthog.js'
+import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
 
 const MIME_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
@@ -81,20 +82,24 @@ const AUTH_PROXY_BLOCKED_RESPONSE_HEADERS = new Set([
 
 // Pages that are served as the SPA shell (catch-all) AND get explicit GET routes
 // so the browser can navigate directly to them without hitting the auth proxy.
-// /auth/verify-email is intentionally excluded: the auth proxy's text/html guard
-// already falls through to the catch-all for browser navigation, and the explicit
-// route would shadow the proxy for API calls (breaking headless token redemption).
 const FRONTEND_AUTH_PAGES = new Set([
   '/auth/signin',
   '/auth/signup',
   '/auth/forgot-password',
   '/auth/reset-password',
-  '/auth/callback/github',
 ])
 
-// Pages served as SPA but NOT needing an explicit GET route (auth proxy handles them).
+// Pages that still belong to the SPA for browser navigation, but must NOT get
+// explicit GET shell routes because doing so would shadow real auth proxy GETs.
+// /auth/verify-email, /auth/error, and social callback routes are in this bucket:
+// browser GETs with Accept: text/html should fall through to the catch-all shell
+// when that is the intended UX, but the proxy must still be able to handle real
+// auth GETs.
 const FRONTEND_AUTH_PAGES_SPA_ONLY = new Set([
   '/auth/verify-email',
+  '/auth/error',
+  '/auth/callback/github',
+  '/auth/callback/google',
 ])
 
 export type CoreWorkspaceAgentServer = FastifyInstance & {
@@ -130,7 +135,7 @@ export interface CreateCoreWorkspaceAgentServerOptions
   extraTools?: RegisterAgentRoutesOptions['extraTools']
   systemPromptAppend?: string
   serveFrontend?: boolean
-  /** Optional best-effort telemetry sink. Defaults to core's PostHog env helper. */
+  /** Optional best-effort telemetry sink. Defaults to core's DB-backed env helper. */
   telemetry?: TelemetrySink
 }
 
@@ -323,22 +328,19 @@ function resolveWorkspaceIdFromRequest(request: { headers?: Record<string, unkno
 async function resolveAuthorizedWorkspaceId(
   request: { headers?: Record<string, unknown>; query?: unknown; user?: { id?: string } | null; log?: { error: (obj: Record<string, unknown>, msg: string) => void } },
   workspaceStore: WorkspaceStore,
-  appId: string,
 ): Promise<string> {
   const normalizedWorkspaceId = resolveWorkspaceIdFromRequest(request)
   const user = request.user
   if (!user?.id) throw httpError('authentication required', 401)
 
+  let member = false
   try {
-    const workspace = await workspaceStore.get(normalizedWorkspaceId)
-    if (!workspace || workspace.appId !== appId) throw httpError('workspace not found', 404)
-    const member = await workspaceStore.isMember(normalizedWorkspaceId, user.id)
-    if (!member) throw httpError('workspace access denied', 403)
+    member = await workspaceStore.isMember(normalizedWorkspaceId, user.id)
   } catch (error) {
-    if (error instanceof Error && 'statusCode' in error) throw error
     request.log?.error({ err: error, workspaceId: normalizedWorkspaceId }, 'workspace access check failed')
     throw httpError('workspace access check failed', 500)
   }
+  if (!member) throw httpError('workspace access denied', 403)
   return normalizedWorkspaceId
 }
 
@@ -362,10 +364,44 @@ function shouldServeFrontend(pathname: string): boolean {
   return true
 }
 
-async function registerAuthProxy(app: CoreWorkspaceAgentServer) {
+async function serveFrontendShell(
+  request: { id: string; cspNonce?: string },
+  reply: { status: (code: number) => unknown; type: (value: string) => unknown; send: (body: unknown) => unknown },
+  indexPath: string,
+  telemetry: TelemetrySink,
+) {
+  if (!(await pathExists(indexPath))) {
+    reply.status(503)
+    return {
+      error: 'frontend_not_built',
+      message: 'Build the frontend before starting in production mode.',
+    }
+  }
+
+  const html = await readFile(indexPath, 'utf-8')
+  captureAppOpened(telemetry, request.id)
+  reply.type('text/html; charset=utf-8')
+  return reply.send(injectCspNonceIntoHtml(html, request.cspNonce))
+}
+
+async function registerAuthProxy(
+  app: CoreWorkspaceAgentServer,
+  options?: { serveSpaShell?: (request: any, reply: any) => Promise<unknown> },
+) {
   app.all('/auth/*', async (request, reply) => {
     const accept = String(request.headers?.accept ?? '')
-    if (request.method === 'GET' && accept.includes('text/html')) {
+    const pathname = request.url.split('?')[0] ?? '/'
+    const isSpaOnlyAuthPage = FRONTEND_AUTH_PAGES_SPA_ONLY.has(pathname)
+    const isExplicitShellAuthPage = FRONTEND_AUTH_PAGES.has(pathname)
+
+    if (
+      request.method === 'GET'
+      && accept.includes('text/html')
+      && (isExplicitShellAuthPage || (isSpaOnlyAuthPage && pathname !== '/auth/callback/github' && pathname !== '/auth/callback/google'))
+    ) {
+      if (options?.serveSpaShell) {
+        return options.serveSpaShell(request, reply)
+      }
       return reply.callNotFound()
     }
 
@@ -428,19 +464,7 @@ async function registerFrontendAuthPages(
   const indexPath = path.resolve(frontDistDir, 'index.html')
 
   for (const pagePath of FRONTEND_AUTH_PAGES) {
-    app.get(pagePath, async (request, reply) => {
-      if (!(await pathExists(indexPath))) {
-        reply.status(503)
-        return {
-          error: 'frontend_not_built',
-          message: 'Build the frontend before starting in production mode.',
-        }
-      }
-      const html = await readFile(indexPath, 'utf-8')
-      captureAppOpened(telemetry, request.id)
-      reply.type('text/html; charset=utf-8')
-      return reply.send(injectCspNonceIntoHtml(html, request.cspNonce))
-    })
+    app.get(pagePath, async (request, reply) => serveFrontendShell(request, reply, indexPath, telemetry))
   }
 }
 
@@ -452,20 +476,7 @@ async function registerFrontendFallback(
   const frontDistDir = path.resolve(appRoot, 'dist/front')
   const indexPath = path.resolve(frontDistDir, 'index.html')
 
-  app.get('/', async (request, reply) => {
-    if (!(await pathExists(indexPath))) {
-      reply.status(503)
-      return {
-        error: 'frontend_not_built',
-        message: 'Build the frontend before starting in production mode.',
-      }
-    }
-
-    const html = await readFile(indexPath, 'utf-8')
-    captureAppOpened(telemetry, request.id)
-    reply.type('text/html; charset=utf-8')
-    return reply.send(injectCspNonceIntoHtml(html, request.cspNonce))
-  })
+  app.get('/', async (request, reply) => serveFrontendShell(request, reply, indexPath, telemetry))
 
   app.get('/*', async (request, reply) => {
     const pathname = request.url.split('?')[0] ?? '/'
@@ -485,18 +496,7 @@ async function registerFrontendFallback(
       return reply.send(createReadStream(candidate))
     }
 
-    if (!(await pathExists(indexPath))) {
-      reply.status(503)
-      return {
-        error: 'frontend_not_built',
-        message: 'Build the frontend before starting in production mode.',
-      }
-    }
-
-    const html = await readFile(indexPath, 'utf-8')
-    captureAppOpened(telemetry, request.id)
-    reply.type('text/html; charset=utf-8')
-    return reply.send(injectCspNonceIntoHtml(html, request.cspNonce))
+    return serveFrontendShell(request, reply, indexPath, telemetry)
   })
 }
 
@@ -585,10 +585,10 @@ export async function createCoreWorkspaceAgentServer(
   const workspaceRoot = options.workspaceRoot ?? process.cwd()
   const telemetrySource = options.telemetry
     ? 'custom'
-    : process.env.BORING_TELEMETRY_ENABLED === 'true' && process.env.POSTHOG_KEY
-      ? 'posthog-env'
+    : process.env.BORING_TELEMETRY_ENABLED === 'true'
+      ? 'db-env'
       : 'noop-env'
-  const telemetry = options.telemetry ?? createPostHogTelemetryFromEnv(process.env)
+  const telemetry = options.telemetry ?? createDatabaseTelemetryFromEnv(db, { appId: config.appId }, process.env)
   app.log.debug({ telemetry: { source: telemetrySource } }, 'resolved telemetry sink')
 
   registerTelemetryHooks(app, telemetry)
@@ -599,7 +599,12 @@ export async function createCoreWorkspaceAgentServer(
     await registerFrontendAuthPages(app, appRoot, telemetry)
   }
 
-  await registerAuthProxy(app)
+  await registerAuthProxy(app, serveFrontend && appRoot
+    ? {
+        serveSpaShell: (request, reply) =>
+          serveFrontendShell(request, reply, path.resolve(appRoot, 'dist/front/index.html'), telemetry),
+      }
+    : undefined)
 
   const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths({
     workspaceRoot,
@@ -607,6 +612,7 @@ export async function createCoreWorkspaceAgentServer(
     defaultPluginPackages: options.defaultPluginPackages,
   })
   const defaultPackagePiSnapshot = readWorkspacePluginPackagePiSnapshot(defaultPluginPackagePaths)
+  const defaultPackageRuntimePlugins = readWorkspacePluginPackageRuntimePlugins(defaultPluginPackagePaths)
   const { systemPromptAppend: defaultPackageSystemPromptAppend, ...defaultPackagePiOptions } = defaultPackagePiSnapshot
   const staticSystemPromptAppend = [options.systemPromptAppend, defaultPackageSystemPromptAppend]
     .filter(Boolean)
@@ -647,41 +653,10 @@ export async function createCoreWorkspaceAgentServer(
     excludeDefaults: options.excludeDefaults,
   })
 
-  const provisionedWorkspaceRuntimes = new Map<string, Promise<void>>()
-  const ensureWorkspaceProvisioned = (ctx: {
-    root: string
-    runtimeMode?: Parameters<typeof provisionWorkspaceAgentServer>[0]['runtimeMode']
-    runtimeBundle?: Parameters<typeof provisionWorkspaceAgentServer>[0]['runtimeBundle']
-  }): Promise<void> => {
-    if (pluginCollection.provisioningContributions.length === 0) return Promise.resolve()
-    const resolvedRoot = path.resolve(ctx.root)
-    const cacheable = ctx.runtimeBundle?.sandbox.placement !== 'remote'
-    const key = JSON.stringify([
-      resolvedRoot,
-      ctx.runtimeMode ?? null,
-      ctx.runtimeBundle?.runtimeContext.runtimeCwd ?? null,
-      ctx.runtimeBundle?.sandbox.provider ?? null,
-    ])
-    const existing = cacheable ? provisionedWorkspaceRuntimes.get(key) : undefined
-    if (existing) return existing
-    const pending = provisionWorkspaceAgentServer({
-      workspaceRoot: resolvedRoot,
-      provisioningContributions: pluginCollection.provisioningContributions,
-      force: options.forceProvisioning,
-      runtimeMode: ctx.runtimeMode,
-      runtimeBundle: ctx.runtimeBundle,
-    }).catch((error) => {
-      if (cacheable) provisionedWorkspaceRuntimes.delete(key)
-      throw error
-    })
-    if (cacheable) provisionedWorkspaceRuntimes.set(key, pending)
-    return pending
-  }
-
   const resolveWorkspaceId = async (request: Parameters<NonNullable<RegisterAgentRoutesOptions['getWorkspaceId']>>[0]) =>
     options.getWorkspaceId
       ? await options.getWorkspaceId(request)
-      : await resolveAuthorizedWorkspaceId(request, workspaceStore, app.config.appId)
+      : await resolveAuthorizedWorkspaceId(request, workspaceStore)
   const resolveRoot = async (
     workspaceId: string,
     request: Parameters<NonNullable<RegisterAgentRoutesOptions['getWorkspaceRoot']>>[1],
@@ -733,13 +708,6 @@ export async function createCoreWorkspaceAgentServer(
     getPi: resolvePiOptions,
     sessionNamespace: options.sessionNamespace,
     getSessionNamespace: options.getSessionNamespace,
-    provisionRuntime: async (ctx) => {
-      await ensureWorkspaceProvisioned({
-        root: ctx.workspaceRoot,
-        runtimeMode: ctx.runtimeMode,
-        runtimeBundle: ctx.runtimeBundle,
-      })
-    },
     getExtraTools: async (ctx) => {
       const callerTools = options.getExtraTools ? await options.getExtraTools(ctx) : []
       return [
@@ -752,6 +720,24 @@ export async function createCoreWorkspaceAgentServer(
     sandboxHandleStore: options.sandboxHandleStore ?? new WorkspaceRuntimeSandboxHandleStore(workspaceStore),
     getWorkspaceId: resolveWorkspaceId,
     getWorkspaceRoot: resolveRoot,
+    provisionRuntime: async ({ provisioningAdapter, runtimeLayout, workspaceId, request, runtimeMode }) => {
+      if (!provisioningAdapter) return undefined
+      return await provisionWorkspaceRuntime({
+        plugins: [
+          ...pluginCollection.runtimePlugins,
+          ...defaultPackageRuntimePlugins,
+        ],
+        adapter: provisioningAdapter,
+        runtimeLayout,
+        telemetry,
+        telemetryContext: {
+          workspaceId,
+          requestId: request?.id,
+          runtimeMode,
+        },
+      })
+    },
+    provisionWorkspace: options.provisionWorkspace,
     registerHealthRoute: options.registerHealthRoute ?? false,
     telemetry,
   })

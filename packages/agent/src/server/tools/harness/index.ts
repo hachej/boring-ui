@@ -1,5 +1,4 @@
 import {
-  type BashOperations,
   type BashSpawnHook,
   type BashToolOptions,
   createBashToolDefinition,
@@ -8,46 +7,96 @@ import {
 
 import type { Sandbox } from '../../../shared/sandbox'
 import type { AgentTool, ToolResult } from '../../../shared/tool'
-import { getRuntimeBundleStorageRoot, type RuntimeBundle } from '../../runtime/mode'
+import type { RuntimeBundle } from '../../runtime/mode'
+import { buildBwrapArgs } from '../../sandbox/bwrap/buildBwrapArgs'
 import { withWorkspacePythonEnv } from '../../sandbox/workspacePythonEnv'
 import { vercelBashOps } from '../operations/vercel'
 
-function directSpawnHook(workspaceRoot: string): BashSpawnHook {
+function shellEscape(s: string): string {
+  return `'${s.replace(/'/g, "'\\''")}'`
+}
+
+export interface HarnessRuntimeProvisioningSnapshot {
+  env?: Record<string, string>
+  pathEntries?: string[]
+}
+
+export interface HarnessRuntimeProvisioningOptions extends HarnessRuntimeProvisioningSnapshot {
+  getCurrent?: () => HarnessRuntimeProvisioningSnapshot | undefined
+}
+
+function mergeRuntimeEnv(
+  runtime: HarnessRuntimeProvisioningOptions | undefined,
+  commandEnv: Record<string, string | undefined> | undefined,
+): Record<string, string | undefined> | undefined {
+  const current = runtime?.getCurrent?.() ?? runtime
+  if (!current?.env && !current?.pathEntries?.length) return commandEnv
+  const merged: Record<string, string | undefined> = {
+    ...(current.env ?? {}),
+    ...(commandEnv ?? {}),
+  }
+  const pathParts = [...(current.pathEntries ?? [])]
+  if (current.env?.PATH) pathParts.push(current.env.PATH)
+  if (commandEnv?.PATH) pathParts.push(commandEnv.PATH)
+  if (pathParts.length > 0) merged.PATH = pathParts.join(':')
+  return merged
+}
+
+function bwrapSpawnHook(
+  workspaceRoot: string,
+  runtime?: HarnessRuntimeProvisioningOptions,
+): BashSpawnHook {
+  const args = buildBwrapArgs(workspaceRoot)
+  const bwrapPrefix = ['bwrap', ...args].map(shellEscape).join(' ')
   return (context) => ({
     ...context,
-    env: withWorkspacePythonEnv({ workspaceRoot, env: context.env }),
+    command: `${bwrapPrefix} bash -lc ${shellEscape(context.command)}`,
+    env: withWorkspacePythonEnv({
+      workspaceRoot,
+      env: mergeRuntimeEnv(runtime, context.env),
+      sandboxRoot: '/workspace',
+    }),
   })
 }
 
-function sandboxBashOps(sandbox: Sandbox): BashOperations {
-  return {
-    exec(command, cwd, { onData, signal, timeout, env }) {
-      const filteredEnv = env
-        ? Object.fromEntries(Object.entries(env).filter((e): e is [string, string] => e[1] != null))
-        : undefined
-      return sandbox.exec(command, {
-        cwd,
-        env: filteredEnv,
-        signal,
-        timeoutMs: timeout ? timeout * 1_000 : undefined,
-        onStdout: (chunk) => onData(Buffer.from(chunk)),
-        onStderr: (chunk) => onData(Buffer.from(chunk)),
-      }).then((result) => ({ exitCode: result.exitCode }))
-    },
-  }
+function directSpawnHook(
+  workspaceRoot: string,
+  runtime?: HarnessRuntimeProvisioningOptions,
+): BashSpawnHook {
+  return (context) => ({
+    ...context,
+    env: withWorkspacePythonEnv({
+      workspaceRoot,
+      env: mergeRuntimeEnv(runtime, context.env),
+    }),
+  })
 }
 
-function bashOptionsForMode(bundle: RuntimeBundle): BashToolOptions {
-  const storageRoot = getRuntimeBundleStorageRoot(bundle)
+const VERCEL_SAFE_DEFAULT_PATH = '/vercel/runtimes/node24/bin:/vercel/runtimes/node22/bin:/usr/local/bin:/usr/bin:/bin'
+
+function bashOptionsForMode(
+  bundle: RuntimeBundle,
+  runtime?: HarnessRuntimeProvisioningOptions,
+): BashToolOptions {
   switch (bundle.sandbox.provider) {
     case 'vercel-sandbox':
-      return { operations: vercelBashOps(bundle.sandbox) }
+      return {
+        operations: vercelBashOps(bundle.sandbox, {
+          // The pi bash tool's env may include the host process env. Never
+          // forward host secrets into a remote sandbox; provide only the
+          // provisioned runtime env plus a conservative remote PATH tail.
+          mergeEnv: () => mergeRuntimeEnv(runtime, { PATH: VERCEL_SAFE_DEFAULT_PATH }),
+        }),
+      }
     case 'bwrap':
-      return { operations: sandboxBashOps(bundle.sandbox) }
+      return {
+        operations: createLocalBashOperations(),
+        spawnHook: bwrapSpawnHook(bundle.workspace.root, runtime),
+      }
     default:
       return {
         operations: createLocalBashOperations(),
-        spawnHook: directSpawnHook(storageRoot),
+        spawnHook: directSpawnHook(bundle.workspace.root, runtime),
       }
   }
 }
@@ -55,7 +104,6 @@ function bashOptionsForMode(bundle: RuntimeBundle): BashToolOptions {
 function adaptPiTool(piTool: ReturnType<typeof createBashToolDefinition>): AgentTool {
   return {
     name: piTool.name,
-    readinessRequirements: ['sandbox-exec'],
     description: piTool.description,
     promptSnippet: piTool.promptSnippet,
     parameters: piTool.parameters as Record<string, unknown>,
@@ -90,7 +138,6 @@ function adaptPiTool(piTool: ReturnType<typeof createBashToolDefinition>): Agent
 function createExecuteIsolatedCodeTool(sandbox: Sandbox): AgentTool {
   return {
     name: 'execute_isolated_code',
-    readinessRequirements: ['sandbox-exec'],
     description: 'Execute code in an isolated sandbox environment.',
     parameters: {
       type: 'object',
@@ -146,9 +193,12 @@ function createExecuteIsolatedCodeTool(sandbox: Sandbox): AgentTool {
   }
 }
 
-export function buildHarnessAgentTools(bundle: RuntimeBundle): AgentTool[] {
+export function buildHarnessAgentTools(
+  bundle: RuntimeBundle,
+  runtime?: HarnessRuntimeProvisioningOptions,
+): AgentTool[] {
   const tools: AgentTool[] = [
-    adaptPiTool(createBashToolDefinition(bundle.workspace.root, bashOptionsForMode(bundle))),
+    adaptPiTool(createBashToolDefinition(bundle.workspace.root, bashOptionsForMode(bundle, runtime))),
   ]
 
   if (bundle.sandbox.capabilities.includes('isolated-code')) {

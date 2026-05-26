@@ -82,6 +82,52 @@ test('createAgentApp falls back to BORING_AGENT_TEMPLATE_PATH', async () => {
   await expect(readFile(join(workspaceRoot, 'FROM_ENV.txt'), 'utf-8')).resolves.toBe('env-template\n')
 })
 
+test('createAgentApp wires runtime provisioning skill paths into harness and skills API', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-runtime-provisioning-')
+  const generatedSkill = join(workspaceRoot, '.boring-agent', 'skills', 'plugin', 'macro-transform')
+  await mkdir(generatedSkill, { recursive: true })
+  await writeFile(join(generatedSkill, 'SKILL.md'), '---\ndescription: Macro transform skill\n---\n# Macro transform\n')
+  const harnessFactory = vi.fn(async (input) => ({
+    id: 'custom-test-harness',
+    placement: 'server' as const,
+    sessions: {
+      async list() { return [] },
+      async create() {
+        const now = new Date().toISOString()
+        return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0 }
+      },
+      async load() {
+        const now = new Date().toISOString()
+        return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0, messages: [] }
+      },
+      async delete() {},
+    },
+    async *sendMessage() {},
+  }))
+
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    harnessFactory,
+    runtimeProvisioning: {
+      changed: false,
+      env: { BORING_AGENT_WORKSPACE_ROOT: workspaceRoot },
+      pathEntries: [join(workspaceRoot, '.boring-agent', 'node', 'node_modules', '.bin')],
+      skillPaths: [join(workspaceRoot, '.boring-agent', 'skills')],
+    },
+  })
+  try {
+    const bashTool = harnessFactory.mock.calls[0]?.[0].tools.find((tool: { name: string }) => tool.name === 'bash')
+    expect(bashTool).toBeTruthy()
+    const skills = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
+    expect(skills.statusCode).toBe(200)
+    expect(skills.json().skills.map((skill: { name: string }) => skill.name)).toContain('macro-transform')
+  } finally {
+    await app.close()
+  }
+})
+
 test('createAgentApp can use a custom harness factory for non-pi runtimes', async () => {
   const workspaceRoot = await makeTempDir('boring-ui-custom-harness-')
   const reloadSession = vi.fn(async () => true)
@@ -126,7 +172,6 @@ test('createAgentApp can use a custom harness factory for non-pi runtimes', asyn
   try {
     expect(harnessFactory).toHaveBeenCalledTimes(1)
     expect(harnessFactory.mock.calls[0]?.[0].cwd).toBe(workspaceRoot)
-    expect(harnessFactory.mock.calls[0]?.[0].runtimeCwd).toBe(workspaceRoot)
     expect(harnessFactory.mock.calls[0]?.[0].telemetry).toBe(telemetry)
     expect(harnessFactory.mock.calls[0]?.[0].tools.map((tool: { name: string }) => tool.name)).toContain('custom_runtime_tool')
 

@@ -6,41 +6,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { CoreConfig } from '../../../shared/types.js'
 
-type CapturePayload = {
+type TelemetryRow = {
+  appId: string
+  eventName: string
   distinctId: string
-  event: string
   properties?: Record<string, unknown>
 }
 
-const posthogMock = vi.hoisted(() => {
-  type MockPostHogClient = {
-    captures: CapturePayload[]
-    capture: ReturnType<typeof vi.fn>
-    shutdown: ReturnType<typeof vi.fn>
-  }
-
-  const clients: MockPostHogClient[] = []
-  const PostHog = vi.fn((_apiKey: string, _options?: Record<string, unknown>) => {
-    const client: MockPostHogClient = {
-      captures: [],
-      capture: vi.fn((payload: CapturePayload) => {
-        client.captures.push(payload)
-      }),
-      shutdown: vi.fn(),
-    }
-    clients.push(client)
-    return client
+const dbMock = vi.hoisted(() => {
+  const rows: TelemetryRow[] = []
+  const values = vi.fn((row: TelemetryRow) => {
+    rows.push(row)
+    return Promise.resolve()
   })
-
-  return { clients, PostHog }
+  const insert = vi.fn(() => ({ values }))
+  return { rows, insert, values }
 })
 
 const smokeLogs = vi.hoisted(() => ({
   entries: [] as Array<Record<string, unknown>>,
-}))
-
-vi.mock('posthog-node', () => ({
-  PostHog: posthogMock.PostHog,
 }))
 
 vi.mock('@hachej/boring-agent/server', () => ({
@@ -146,6 +130,7 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
     packages: [],
     systemPromptAppend: undefined,
   }),
+  readWorkspacePluginPackageRuntimePlugins: () => [],
   resolveDefaultWorkspacePluginPackagePaths: () => [],
   resolveOnePluginEntry: async (entry: unknown) => entry,
 }))
@@ -187,7 +172,7 @@ vi.mock('../../../server/routes/index.js', () => ({
 
 vi.mock('../../../server/db/index.js', () => ({
   createDatabase: () => ({
-    db: {},
+    db: dbMock,
     sql: { end: vi.fn() },
   }),
   PostgresUserStore: class PostgresUserStore {},
@@ -196,6 +181,7 @@ vi.mock('../../../server/db/index.js', () => ({
 
 vi.mock('../../../server/config/index.js', () => ({
   loadConfig: async () => ({
+    appId: 'test-app',
     auth: { url: 'http://localhost:3000' },
     encryption: { workspaceSettingsKey: 'test-key' },
     stores: 'postgres',
@@ -210,9 +196,11 @@ const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceA
 
 function resetTelemetryEnv(): void {
   delete process.env.BORING_TELEMETRY_ENABLED
-  delete process.env.POSTHOG_KEY
-  delete process.env.POSTHOG_HOST
-  delete process.env.BORING_TELEMETRY_PROJECT
+}
+
+async function flushTelemetry(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
 }
 
 async function createBuiltFrontendRoot(): Promise<string> {
@@ -223,23 +211,21 @@ async function createBuiltFrontendRoot(): Promise<string> {
   return appRoot
 }
 
-function currentCaptures(): CapturePayload[] {
-  return posthogMock.clients.flatMap((client) => client.captures)
+function currentRows(): TelemetryRow[] {
+  return dbMock.rows
 }
 
-function logSmoke(label: string, captures: CapturePayload[]): Record<string, unknown> {
+function logSmoke(label: string, rows: TelemetryRow[]): Record<string, unknown> {
   const summary = {
     label,
     env: {
       enabled: process.env.BORING_TELEMETRY_ENABLED ?? '<unset>',
-      hasPostHogKey: Boolean(process.env.POSTHOG_KEY),
-      host: process.env.POSTHOG_HOST ?? '<default>',
-      project: process.env.BORING_TELEMETRY_PROJECT ?? '<unset>',
+      sink: process.env.BORING_TELEMETRY_ENABLED === 'true' ? 'db' : 'noop',
     },
-    capturedCount: captures.length,
-    eventNames: captures.map((capture) => capture.event),
-    distinctIdKinds: captures.map((capture) => (capture.distinctId === 'anonymous' ? 'anonymous' : typeof capture.distinctId)),
-    sanitizedPropertyKeys: captures.map((capture) => Object.keys(capture.properties ?? {}).sort()),
+    capturedCount: rows.length,
+    eventNames: rows.map((row) => row.eventName),
+    distinctIdKinds: rows.map((row) => (row.distinctId === 'anonymous' ? 'anonymous' : typeof row.distinctId)),
+    sanitizedPropertyKeys: rows.map((row) => Object.keys(row.properties ?? {}).sort()),
   }
   smokeLogs.entries.push(summary)
   console.info('[telemetry-smoke]', JSON.stringify(summary))
@@ -248,7 +234,6 @@ function logSmoke(label: string, captures: CapturePayload[]): Record<string, unk
 
 function expectNoSensitiveTelemetryText(value: unknown): void {
   const serialized = JSON.stringify(value)
-  expect(serialized).not.toContain('phc_never_log_secret')
   expect(serialized).not.toContain('secret prompt')
   expect(serialized).not.toContain('secret assistant')
   expect(serialized).not.toContain('assistant/file content')
@@ -257,14 +242,14 @@ function expectNoSensitiveTelemetryText(value: unknown): void {
   expect(serialized).not.toContain('/tmp/private-path')
   expect(serialized).not.toContain('secret-token')
   expect(serialized).not.toContain('secret stderr')
-  expect(serialized).not.toContain('POSTHOG_KEY')
 }
 
-describe('telemetry v1 env-only e2e smoke', () => {
+describe('telemetry v1 env-only DB smoke', () => {
   beforeEach(() => {
     resetTelemetryEnv()
-    posthogMock.clients.length = 0
-    posthogMock.PostHog.mockClear()
+    dbMock.rows.length = 0
+    dbMock.insert.mockClear()
+    dbMock.values.mockClear()
     smokeLogs.entries.length = 0
   })
 
@@ -273,11 +258,8 @@ describe('telemetry v1 env-only e2e smoke', () => {
     vi.clearAllMocks()
   })
 
-  it('captures prefixed representative events from core-composed env setup with redacted logs', async () => {
+  it('captures representative events from core-composed env setup with redacted DB rows/logs', async () => {
     process.env.BORING_TELEMETRY_ENABLED = 'true'
-    process.env.POSTHOG_KEY = 'phc_never_log_secret'
-    process.env.POSTHOG_HOST = 'https://eu.i.posthog.com'
-    process.env.BORING_TELEMETRY_PROJECT = 'full-app'
 
     const app = await createCoreWorkspaceAgentServer({
       appRoot: await createBuiltFrontendRoot(),
@@ -292,31 +274,17 @@ describe('telemetry v1 env-only e2e smoke', () => {
       const chat = await app.inject({ method: 'POST', url: '/__telemetry-smoke/agent-turn' })
       const failedTurn = await app.inject({ method: 'POST', url: '/__telemetry-smoke/agent-failed-turn' })
       const serverFailure = await app.inject({ method: 'GET', url: '/__telemetry-smoke/server-failure/private-path?token=secret-token' })
+      await flushTelemetry()
 
       expect(shell.statusCode).toBe(200)
       expect(chat.statusCode).toBe(200)
       expect(failedTurn.statusCode).toBe(200)
       expect(serverFailure.statusCode).toBe(500)
 
-      const captures = currentCaptures()
-      const smokeLog = logSmoke('enabled-prefixed-core-composed', captures)
+      const rows = currentRows()
+      const smokeLog = logSmoke('enabled-db-core-composed', rows)
 
-      expect(posthogMock.PostHog).toHaveBeenCalledWith('phc_never_log_secret', {
-        host: 'https://eu.i.posthog.com',
-      })
-      expect(captures.map((capture) => capture.event)).toEqual(expect.arrayContaining([
-        'full-app.app.opened',
-        'full-app.agent.chat.started',
-        'full-app.agent.chat.message.submitted',
-        'full-app.agent.tool.completed',
-        'full-app.agent.chat.completed',
-        'full-app.agent.chat.failed',
-        'full-app.agent.tool.failed',
-        'full-app.server.request.failed',
-      ]))
-      expect(captures.every((capture) => capture.event.startsWith('full-app.'))).toBe(true)
-      expect(captures.every((capture) => capture.properties?.boringProject === 'full-app')).toBe(true)
-      expect(captures.map((capture) => capture.properties?.eventName)).toEqual(expect.arrayContaining([
+      expect(rows.map((row) => row.eventName)).toEqual(expect.arrayContaining([
         'app.opened',
         'agent.chat.started',
         'agent.chat.message.submitted',
@@ -326,33 +294,28 @@ describe('telemetry v1 env-only e2e smoke', () => {
         'agent.tool.failed',
         'server.request.failed',
       ]))
-      expect(captures.find((capture) => capture.event === 'full-app.agent.chat.started')?.properties).toEqual({
+      expect(rows.every((row) => row.appId === 'test-app')).toBe(true)
+      expect(rows.find((row) => row.eventName === 'agent.chat.started')?.properties).toEqual({
         workspaceId: 'workspace_1',
         sessionId: 'session_1',
         requestId: 'request_1',
         modelProvider: 'anthropic',
-        boringProject: 'full-app',
-        eventName: 'agent.chat.started',
       })
-      expect(captures.find((capture) => capture.event === 'full-app.agent.tool.completed')?.properties).toEqual({
+      expect(rows.find((row) => row.eventName === 'agent.tool.completed')?.properties).toEqual({
         workspaceId: 'workspace_1',
         sessionId: 'session_1',
         toolName: 'bash',
         status: 'ok',
         durationMs: 12,
-        boringProject: 'full-app',
-        eventName: 'agent.tool.completed',
       })
       expect(smokeLog).toMatchObject({
         env: {
           enabled: 'true',
-          hasPostHogKey: true,
-          host: 'https://eu.i.posthog.com',
-          project: 'full-app',
+          sink: 'db',
         },
-        capturedCount: captures.length,
+        capturedCount: rows.length,
       })
-      expectNoSensitiveTelemetryText(captures)
+      expectNoSensitiveTelemetryText(rows)
       expectNoSensitiveTelemetryText(smokeLogs.entries)
     } finally {
       await app.close()
@@ -362,10 +325,8 @@ describe('telemetry v1 env-only e2e smoke', () => {
   it.each([
     ['unset', undefined],
     ['false', 'false'],
-  ])('captures zero events when telemetry is %s even if POSTHOG_KEY is present', async (_label, enabled) => {
+  ])('captures zero events when telemetry is %s', async (_label, enabled) => {
     if (enabled) process.env.BORING_TELEMETRY_ENABLED = enabled
-    process.env.POSTHOG_KEY = 'phc_never_log_secret'
-    process.env.BORING_TELEMETRY_PROJECT = 'full-app'
 
     const app = await createCoreWorkspaceAgentServer({
       appRoot: await createBuiltFrontendRoot(),
@@ -375,17 +336,16 @@ describe('telemetry v1 env-only e2e smoke', () => {
     try {
       await app.inject({ method: 'GET', url: '/' })
       await app.inject({ method: 'POST', url: '/__telemetry-smoke/agent-turn' })
+      await flushTelemetry()
 
-      const captures = currentCaptures()
-      const smokeLog = logSmoke(`disabled-${enabled ?? 'unset'}`, captures)
+      const rows = currentRows()
+      const smokeLog = logSmoke(`disabled-${enabled ?? 'unset'}`, rows)
 
-      expect(posthogMock.PostHog).not.toHaveBeenCalled()
-      expect(captures).toHaveLength(0)
+      expect(rows).toHaveLength(0)
       expect(smokeLog).toMatchObject({
         env: {
           enabled: enabled ?? '<unset>',
-          hasPostHogKey: true,
-          project: 'full-app',
+          sink: 'noop',
         },
         capturedCount: 0,
         eventNames: [],

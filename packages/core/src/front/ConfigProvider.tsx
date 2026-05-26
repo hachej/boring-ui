@@ -86,6 +86,10 @@ export function useConfig(): RuntimeConfig {
   return ctx
 }
 
+export function useOptionalConfig(): RuntimeConfig | null {
+  return useContext(ConfigContext)
+}
+
 export function useConfigLoaded(): boolean {
   return useContext(ConfigContext) !== null
 }

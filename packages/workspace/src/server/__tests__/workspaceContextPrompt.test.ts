@@ -61,19 +61,18 @@ describe("buildWorkspaceContextPrompt — unit", () => {
     }
   })
 
-  test("contains .agents/skills — the correct skill directory", () => {
+  test("contains generated and user skill directories", () => {
     const prompt = buildWorkspaceContextPrompt()
+    expect(prompt).toContain(".boring-agent/skills")
     expect(prompt).toContain(".agents/skills")
   })
 
-  test("contains .boring-agent/bin — the shim directory", () => {
+  test("contains runtime package locations, not legacy shim locations", () => {
     const prompt = buildWorkspaceContextPrompt()
-    expect(prompt).toContain(".boring-agent/bin")
-  })
-
-  test("does NOT contain .venv/ — shim dir is on PATH, not raw venv", () => {
-    const prompt = buildWorkspaceContextPrompt()
-    expect(prompt).not.toContain(".venv/")
+    expect(prompt).toContain(".boring-agent/node")
+    expect(prompt).toContain(".boring-agent/venv")
+    expect(prompt).toContain(".boring-agent/sdk/uv")
+    expect(prompt).not.toContain(".boring-agent/bin")
   })
 })
 
@@ -98,6 +97,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       workspaceRoot,
       mode: "local",
       logger: false,
+      provisionWorkspace: false,
     })
     await app.close()
     expect(capturedSystemPromptAppend).toBeDefined()
@@ -110,6 +110,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       workspaceRoot,
       mode: "vercel-sandbox",
       logger: false,
+      provisionWorkspace: false,
       plugins: [{ id: "my-plugin", systemPrompt: "Plugin prompt only." }],
     })
     await app.close()
@@ -137,6 +138,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       workspaceRoot,
       mode: "local",
       logger: false,
+      provisionWorkspace: false,
     })
     await app.close()
     // The production call passes scaffoldCommand + verifyCommand; assert
@@ -183,6 +185,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       workspaceRoot,
       mode: "vercel-sandbox",
       logger: false,
+      provisionWorkspace: false,
     })
     await app.close()
     expect(capturedSystemPromptAppend).toBeDefined()

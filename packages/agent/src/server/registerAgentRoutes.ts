@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify'
 import { basename } from 'node:path'
-import type { AgentTool, ToolReadinessRequirement } from '../shared/tool'
+import type { AgentTool } from '../shared/tool'
 import type { AgentHarnessFactory } from '../shared/harness'
 import type { SessionStore } from '../shared/session'
 import type { SandboxHandleStore } from '../shared/sandbox-handle-store'
@@ -8,6 +8,9 @@ import type { TelemetrySink } from '../shared/telemetry'
 import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
 import { getEnv } from './config/env'
 import type { RuntimeBundle, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
+import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from './workspace/runtimeLayout'
+import { VERCEL_SANDBOX_WORKSPACE_ROOT } from './workspace/createVercelSandboxWorkspace'
+import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningResult } from './workspace/provisioning'
 import type { Workspace } from '../shared/workspace'
 import { ErrorCode } from '../shared/error-codes'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
@@ -33,6 +36,7 @@ import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
 import { readyStatusRoutes } from './http/routes/readyStatus'
+import type { ReloadHookResult } from './http/routes/reload'
 import { searchRoutes } from './http/routes/search'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
@@ -76,19 +80,12 @@ function getAvailableModelProviders(): string[] {
 
 interface RuntimeBinding {
   runtimeBundle: RuntimeBundle
+  runtimeProvisioning?: WorkspaceProvisioningResult
+  reprovision: (request?: FastifyRequest) => Promise<WorkspaceProvisioningResult | undefined>
   harness: AgentHarness
   tools: AgentTool[]
   readyTracker: ReadyStatusTracker
   lastHealthCheckMs?: number
-}
-
-interface RuntimeBindingSlot {
-  key: string
-  state: 'creating' | 'ready' | 'failed'
-  promise: Promise<RuntimeBinding>
-  readyTracker: ReadyStatusTracker
-  binding?: RuntimeBinding
-  error?: unknown
 }
 
 interface RuntimeScope {
@@ -123,7 +120,7 @@ function getRequestWorkspaceId(request: FastifyRequest): string {
 
 function isWorkspaceAgnosticAgentRequest(request: FastifyRequest): boolean {
   const pathname = request.url.split('?')[0] ?? request.url
-  return pathname === '/health' || pathname === '/ready' || pathname === '/api/v1/agent/models'
+  return pathname === '/health' || pathname === '/ready' || pathname === '/api/v1/agent/models' || pathname === '/api/v1/ready-status'
 }
 
 function extractHttpStatus(error: unknown): number | null {
@@ -152,56 +149,6 @@ function isExpiredSandboxRuntimeError(error: unknown): boolean {
 
   const message = error instanceof Error ? error.message : String(error)
   return /status code (404|410) is not ok/i.test(message)
-}
-
-function createRouteError(
-  code: ErrorCode,
-  message: string,
-  details?: Record<string, unknown>,
-  statusCode = 503,
-): Error & { statusCode: number; code: ErrorCode; details?: Record<string, unknown> } {
-  const error = new Error(message) as Error & {
-    statusCode: number
-    code: ErrorCode
-    details?: Record<string, unknown>
-  }
-  error.statusCode = statusCode
-  error.code = code
-  if (details) error.details = details
-  return error
-}
-
-function workspaceNotReady(requirement: ToolReadinessRequirement) {
-  return createRouteError(
-    ErrorCode.enum.WORKSPACE_NOT_READY,
-    'Workspace is still preparing. Try again in a moment.',
-    { code: ErrorCode.enum.WORKSPACE_NOT_READY, retryable: true, requirement },
-  )
-}
-
-function agentRuntimeNotReady() {
-  return createRouteError(
-    ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
-    'Agent runtime is still preparing. Try again in a moment.',
-    { code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY, retryable: true },
-  )
-}
-
-function agentRuntimeFailed(error: unknown) {
-  const code = (error as { code?: unknown } | null)?.code
-  const stableCode = code === ErrorCode.enum.AGENT_RUNTIME_NOT_READY ||
-    code === ErrorCode.enum.RUNTIME_PROVISIONING_FAILED ||
-    code === ErrorCode.enum.RUNTIME_PROVISIONING_LOCKED
-    ? code
-    : ErrorCode.enum.RUNTIME_PROVISIONING_FAILED
-  const message = 'Agent runtime failed to prepare'
-  const status = extractHttpStatus(error) ?? 503
-  return createRouteError(
-    stableCode,
-    message,
-    { code: stableCode, retryable: true },
-    status,
-  )
 }
 
 export interface RegisterAgentRoutesOptions {
@@ -244,15 +191,28 @@ export interface RegisterAgentRoutesOptions {
   }) => string | undefined | Promise<string | undefined>
   registerHealthRoute?: boolean
   sandboxHandleStore?: SandboxHandleStore
-  /** Runtime-aware provisioning hook. Runs after Workspace/Sandbox creation and before tools/harness. */
+  getWorkspaceId?: (request: FastifyRequest) => string | Promise<string>
+  getWorkspaceRoot?: (workspaceId: string, request: FastifyRequest) => string | Promise<string>
+  /**
+   * Optional runtime reconciliation hook. Callers own plugin discovery and may
+   * call provisionWorkspaceRuntime() with the normalized structural inputs.
+   * registerAgentRoutes only consumes the returned env/PATH/skill paths.
+   */
   provisionRuntime?: (ctx: {
     workspaceId: string
     workspaceRoot: string
     runtimeMode: RuntimeModeId
-    runtimeBundle: RuntimeBundle
-  }) => Promise<void>
-  getWorkspaceId?: (request: FastifyRequest) => string | Promise<string>
-  getWorkspaceRoot?: (workspaceId: string, request: FastifyRequest) => string | Promise<string>
+    runtimeLayout: BoringAgentRuntimePaths
+    provisioningAdapter?: WorkspaceProvisioningAdapter
+    request?: FastifyRequest
+  }) => WorkspaceProvisioningResult | undefined | Promise<WorkspaceProvisioningResult | undefined>
+  provisionWorkspace?: boolean
+  /** Optional hook called before /api/v1/agent/reload reloads the harness. */
+  beforeReload?: (ctx: {
+    workspaceId: string
+    workspaceRoot: string
+    request: FastifyRequest
+  }) => void | ReloadHookResult | undefined | Promise<void | ReloadHookResult | undefined>
 }
 
 /**
@@ -279,7 +239,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     typeof opts.getPi === 'function' ||
     typeof opts.getSessionNamespace === 'function'
   const sessionChangesTracker = new InMemorySessionChangesTracker()
-  const runtimeBindings = new Map<string, RuntimeBindingSlot>()
+  const runtimeBindings = new Map<string, Promise<RuntimeBinding>>()
   const MAX_RUNTIME_BINDINGS = 256
   function evictRuntimeBindings(): void {
     if (runtimeBindings.size <= MAX_RUNTIME_BINDINGS) return
@@ -334,35 +294,61 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     return { root, pi }
   }
 
+  async function runRuntimeProvisioning(
+    workspaceId: string,
+    scope: RuntimeScope,
+    request?: FastifyRequest,
+  ): Promise<WorkspaceProvisioningResult | undefined> {
+    if (opts.provisionWorkspace === false || !opts.provisionRuntime) return undefined
+    const modeCtx = {
+      workspaceRoot: scope.root,
+      sessionId: workspaceId,
+      workspaceId,
+      templatePath: scope.templatePath,
+      requestId: request?.id,
+      telemetry: opts.telemetry,
+    }
+    const runtimeLayout = getBoringAgentRuntimePaths(
+      resolvedMode === 'vercel-sandbox' ? VERCEL_SANDBOX_WORKSPACE_ROOT : scope.root,
+    )
+    return await opts.provisionRuntime({
+      workspaceId,
+      workspaceRoot: scope.root,
+      runtimeMode: resolvedMode,
+      runtimeLayout,
+      provisioningAdapter: modeAdapter.createProvisioningAdapter?.(runtimeLayout, modeCtx),
+      request,
+    })
+  }
+
   async function createRuntimeBinding(
     workspaceId: string,
     scope: RuntimeScope,
     request?: FastifyRequest,
   ): Promise<RuntimeBinding> {
     const root = scope.root
-    const runtimeBundle = await modeAdapter.create({
+    const modeCtx = {
       workspaceRoot: root,
       sessionId: workspaceId,
       workspaceId,
       templatePath: scope.templatePath,
-    })
-    await opts.provisionRuntime?.({
-      workspaceId,
-      workspaceRoot: root,
-      runtimeMode: resolvedMode,
-      runtimeBundle,
-    })
+      requestId: request?.id,
+      telemetry: opts.telemetry,
+    }
+    let runtimeProvisioning = await runRuntimeProvisioning(workspaceId, scope, request)
 
-    const readyTracker = new ReadyStatusTracker({
-      sandboxReady: resolvedMode !== 'vercel-sandbox',
-      harnessReady: false,
-    })
+    const runtimeBundle = await modeAdapter.create(modeCtx)
 
     // UI tools (get_ui_state / exec_ui) and the /api/v1/ui/* routes moved
     // to @hachej/boring-workspace. Hosts that want them register uiRoutes
     // alongside this plugin.
     const standardTools = [
-      ...buildHarnessAgentTools(runtimeBundle),
+      ...buildHarnessAgentTools(runtimeBundle, {
+        getCurrent: () => runtimeProvisioning ? {
+          env: runtimeProvisioning.env,
+          pathEntries: runtimeProvisioning.pathEntries,
+        } : undefined,
+      }),
       ...buildFilesystemAgentTools(runtimeBundle),
       ...buildUploadAgentTools(runtimeBundle),
     ]
@@ -399,13 +385,6 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       ],
       pluginTools,
       logger: app.log,
-      checkReadiness: (requirement) => {
-        const readiness = readyTracker.getReadiness()
-        if (requirement === 'workspace-fs') return readiness.sandboxReady
-        if (requirement === 'sandbox-exec') return readiness.sandboxReady
-        if (requirement === 'ui-bridge') return readyTracker.isReady()
-        return true
-      },
     })
     const harnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
       ...input,
@@ -413,89 +392,65 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         noContextFiles: true,
         noSkills: true,
         ...scope.pi,
+        additionalSkillPaths: [
+          ...(runtimeProvisioning?.skillPaths ?? []),
+          ...(scope.pi?.additionalSkillPaths ?? []),
+        ],
       },
     }))
     const harness = await harnessFactory({
       tools,
       cwd: root,
-      runtimeCwd: runtimeBundle.runtimeContext.runtimeCwd,
       sessionNamespace: scope.sessionNamespace,
       systemPromptAppend: opts.systemPromptAppend,
       telemetry: opts.telemetry,
     })
-    readyTracker.markHarnessReady()
+    const readyTracker = new ReadyStatusTracker({
+      sandboxReady: resolvedMode !== 'vercel-sandbox',
+      harnessReady: true,
+    })
     if (resolvedMode === 'vercel-sandbox') {
       queueMicrotask(() => readyTracker.markSandboxReady())
     }
 
     return {
       runtimeBundle,
+      runtimeProvisioning,
+      reprovision: async (reloadRequest?: FastifyRequest) => {
+        runtimeProvisioning = await runRuntimeProvisioning(workspaceId, scope, reloadRequest)
+        return runtimeProvisioning
+      },
       harness,
       tools,
       readyTracker,
     }
   }
 
-  function createRuntimeBindingSlot(
-    workspaceId: string,
-    scope: RuntimeScope,
-    request?: FastifyRequest,
-  ): RuntimeBindingSlot {
-    const slot: RuntimeBindingSlot = {
-      key: scope.key,
-      state: 'creating',
-      readyTracker: new ReadyStatusTracker({ sandboxReady: false, harnessReady: false }),
-      promise: Promise.resolve(null as never),
-    }
-    const promise = createRuntimeBinding(workspaceId, scope, request)
-      .then((binding) => {
-        if (runtimeBindings.get(scope.key) !== slot) return binding
-        slot.state = 'ready'
-        slot.binding = binding
-        binding.readyTracker.subscribe((event) => {
-          if (event.sandboxReady) slot.readyTracker.markSandboxReady()
-          if (event.harnessReady) slot.readyTracker.markHarnessReady()
-          if (event.state === 'degraded' && event.message) slot.readyTracker.markDegraded(event.message)
-        })
-        return binding
-      })
-      .catch((error) => {
-        if (runtimeBindings.get(scope.key) === slot) {
-          slot.state = 'failed'
-          slot.error = error
-          slot.readyTracker.markDegraded('Agent runtime failed to prepare')
-        }
-        throw error
-      })
-    slot.promise = promise
-    void slot.promise.catch(() => {})
-    return slot
-  }
-
-  async function getOrCreateRuntimeBindingSlot(
-    workspaceId: string,
-    request?: FastifyRequest,
-  ): Promise<{ slot: RuntimeBindingSlot; scope: RuntimeScope }> {
-    const scope = await resolveRuntimeScope(workspaceId, request)
-    const existing = runtimeBindings.get(scope.key)
-    if (existing && existing.state !== 'failed') return { slot: existing, scope }
-    if (existing?.state === 'failed') runtimeBindings.delete(scope.key)
-
-    const slot = createRuntimeBindingSlot(workspaceId, scope, request)
-    runtimeBindings.set(scope.key, slot)
-    evictRuntimeBindings()
-    return { slot, scope }
-  }
-
   async function getOrCreateRuntimeBinding(
     workspaceId: string,
     request?: FastifyRequest,
   ): Promise<RuntimeBinding> {
-    const { slot, scope } = await getOrCreateRuntimeBindingSlot(workspaceId, request)
+    const scope = await resolveRuntimeScope(workspaceId, request)
+    const existing = runtimeBindings.get(scope.key)
+    if (existing) {
+      return await ensureRuntimeBindingReady(
+        workspaceId,
+        scope,
+        await existing,
+      )
+    }
+
+    const created = createRuntimeBinding(workspaceId, scope, request)
+    runtimeBindings.set(scope.key, created)
+    evictRuntimeBindings()
     try {
-      const binding = slot.binding ?? await slot.promise
-      return await ensureRuntimeBindingReady(workspaceId, scope, binding)
+      return await ensureRuntimeBindingReady(
+        workspaceId,
+        scope,
+        await created,
+      )
     } catch (error) {
+      if (runtimeBindings.get(scope.key) === created) runtimeBindings.delete(scope.key)
       throw error
     }
   }
@@ -507,14 +462,15 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     runtimeBindings.delete(scope.key)
     evictSandboxHandleCacheForWorkspace(workspaceId)
 
-    const slot = createRuntimeBindingSlot(workspaceId, scope)
-    runtimeBindings.set(scope.key, slot)
+    const created = createRuntimeBinding(workspaceId, scope)
+    runtimeBindings.set(scope.key, created)
     evictRuntimeBindings()
     try {
-      const binding = await slot.promise
+      const binding = await created
       binding.lastHealthCheckMs = Date.now()
       return binding
     } catch (error) {
+      if (runtimeBindings.get(scope.key) === created) runtimeBindings.delete(scope.key)
       throw error
     }
   }
@@ -550,6 +506,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     }
   }
 
+  const hasRuntimeProvisioningInput = opts.provisionWorkspace !== false && Boolean(opts.provisionRuntime)
   const staticBinding = requestScopedRuntime
     ? null
     : await getOrCreateRuntimeBinding(sessionId)
@@ -567,59 +524,6 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   async function getBindingForRequest(request: FastifyRequest): Promise<RuntimeBinding> {
     if (staticBinding) return staticBinding
     return await getOrCreateRuntimeBinding(getRequestWorkspaceId(request), request)
-  }
-
-  async function waitForQuickRuntimeBinding(slot: RuntimeBindingSlot): Promise<RuntimeBinding | null> {
-    if (slot.binding) return slot.binding
-    return await Promise.race([
-      slot.promise,
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 25)),
-    ])
-  }
-
-  async function getWorkspaceBindingForRequest(
-    request: FastifyRequest,
-    requirement: ToolReadinessRequirement,
-  ): Promise<RuntimeBinding> {
-    if (staticBinding) return staticBinding
-    const workspaceId = getRequestWorkspaceId(request)
-    const { slot, scope } = await getOrCreateRuntimeBindingSlot(workspaceId, request)
-    if (slot.state === 'creating') {
-      let binding: RuntimeBinding | null
-      try {
-        binding = await waitForQuickRuntimeBinding(slot)
-      } catch (error) {
-        throw agentRuntimeFailed(error)
-      }
-      if (!binding) throw workspaceNotReady(requirement)
-      return await ensureRuntimeBindingReady(workspaceId, scope, binding)
-    }
-    if (slot.state === 'failed') throw agentRuntimeFailed(slot.error)
-    return await ensureRuntimeBindingReady(workspaceId, scope, slot.binding ?? await slot.promise)
-  }
-
-  async function getAgentRuntimeBindingForRequest(request: FastifyRequest): Promise<RuntimeBinding> {
-    if (staticBinding) return staticBinding
-    const workspaceId = getRequestWorkspaceId(request)
-    const { slot, scope } = await getOrCreateRuntimeBindingSlot(workspaceId, request)
-    if (slot.state === 'creating') {
-      let binding: RuntimeBinding | null
-      try {
-        binding = await waitForQuickRuntimeBinding(slot)
-      } catch (error) {
-        throw agentRuntimeFailed(error)
-      }
-      if (!binding) throw agentRuntimeNotReady()
-      return await ensureRuntimeBindingReady(workspaceId, scope, binding)
-    }
-    if (slot.state === 'failed') throw agentRuntimeFailed(slot.error)
-    return await ensureRuntimeBindingReady(workspaceId, scope, slot.binding ?? await slot.promise)
-  }
-
-  async function getReadyTrackerForRequest(request: FastifyRequest): Promise<ReadyStatusTracker> {
-    if (staticBinding) return staticBinding.readyTracker
-    const { slot } = await getOrCreateRuntimeBindingSlot(getRequestWorkspaceId(request), request)
-    return slot.readyTracker
   }
 
   const agentToolNames = staticBinding
@@ -684,35 +588,35 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     }
   })
 
-  const version = opts.version ?? DEFAULT_VERSION
   const registerHealthRoute = opts.registerHealthRoute ?? true
   if (registerHealthRoute) {
     await app.register(healthRoutes, {
-      version,
+      version: opts.version ?? DEFAULT_VERSION,
       getReadiness: () => staticBinding?.readyTracker.getReadiness() ?? {
         sandboxReady: true,
         harnessReady: true,
       },
     })
   }
+
   await app.register(fileRoutes, {
-    getWorkspace: async (request) => (await getWorkspaceBindingForRequest(request, 'workspace-fs')).runtimeBundle.workspace,
+    getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
   })
   await app.register(fsEventsRoutes, {
-    getWorkspace: async (request) => (await getWorkspaceBindingForRequest(request, 'workspace-fs')).runtimeBundle.workspace,
+    getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
   })
   await app.register(treeRoutes, {
-    getWorkspace: async (request) => (await getWorkspaceBindingForRequest(request, 'workspace-fs')).runtimeBundle.workspace,
+    getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
   })
   await app.register(searchRoutes, {
-    getFileSearch: async (request) => (await getWorkspaceBindingForRequest(request, 'workspace-fs')).runtimeBundle.fileSearch,
+    getFileSearch: async (request) => (await getBindingForRequest(request)).runtimeBundle.fileSearch,
   })
   await app.register(chatRoutes, {
     getRuntime: async (request) => {
-      const binding = await getAgentRuntimeBindingForRequest(request)
+      const binding = await getBindingForRequest(request)
       return {
         harness: binding.harness,
-        workdir: binding.runtimeBundle.runtimeContext.runtimeCwd,
+        workdir: binding.runtimeBundle.workspace.root,
       }
     },
     sessionChangesTracker,
@@ -720,32 +624,43 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   })
   await app.register(sessionRoutes, {
     getSessionStore: async (request) => {
-      const binding = await getAgentRuntimeBindingForRequest(request)
+      const binding = await getBindingForRequest(request)
       return binding.harness.sessions as unknown as SessionStore
     },
     getRuntime: async (request) => {
-      const binding = await getAgentRuntimeBindingForRequest(request)
+      const binding = await getBindingForRequest(request)
       return {
         harness: binding.harness,
-        workdir: binding.runtimeBundle.runtimeContext.runtimeCwd,
+        workdir: binding.runtimeBundle.workspace.root,
       }
     },
   })
   await app.register(systemPromptRoutes, {
-    getHarness: async (request) => (await getAgentRuntimeBindingForRequest(request)).harness,
+    getHarness: async (request) => (await getBindingForRequest(request)).harness,
   })
   await app.register(modelsRoutes)
   await app.register(skillsRoutes, {
     workspaceRoot,
-    additionalSkillPaths: opts.pi?.additionalSkillPaths,
+    additionalSkillPaths: [
+      ...(staticBinding?.runtimeProvisioning?.skillPaths ?? []),
+      ...(opts.pi?.additionalSkillPaths ?? []),
+    ],
     piPackages: opts.pi?.packages,
     noSkills: opts.pi?.noSkills,
     getWorkspaceRoot: staticBinding
       ? undefined
       : async (request) => (await getSkillsScopeForRequest(request)).root,
-    getAdditionalSkillPaths: staticBinding
+    getAdditionalSkillPaths: staticBinding && !hasRuntimeProvisioningInput
       ? undefined
-      : async (request) => (await getSkillsScopeForRequest(request)).pi?.additionalSkillPaths,
+      : async (request) => {
+          const scope = await getSkillsScopeForRequest(request)
+          if (!hasRuntimeProvisioningInput) return scope.pi?.additionalSkillPaths
+          const binding = await getBindingForRequest(request)
+          return [
+            ...(binding.runtimeProvisioning?.skillPaths ?? []),
+            ...(scope.pi?.additionalSkillPaths ?? []),
+          ]
+        },
     getPiPackages: staticBinding
       ? undefined
       : async (request) => (await getSkillsScopeForRequest(request)).pi?.packages,
@@ -754,12 +669,44 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       : async (request) => (await getSkillsScopeForRequest(request)).pi?.noSkills,
   })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
+  app.post<{ Body: { sessionId?: string } }>('/api/v1/agent/reload', async (request, reply) => {
+    const workspaceId = getRequestWorkspaceId(request)
+    const binding = await getBindingForRequest(request)
+    if (!binding.harness.reloadSession) {
+      return reply.status(501).send({ ok: false, error: 'Agent harness does not support reload' })
+    }
+
+    try {
+      binding.runtimeProvisioning = await binding.reprovision(request)
+      const hookResult = await opts.beforeReload?.({
+        workspaceId,
+        workspaceRoot: binding.runtimeBundle.workspace.root,
+        request,
+      })
+      const reloadSessionId = request.body?.sessionId || sessionId
+      const reloaded = await binding.harness.reloadSession(reloadSessionId)
+      const restart_warnings = hookResult?.restart_warnings
+      const diagnostics = hookResult?.diagnostics
+      return {
+        ok: true,
+        sessionId: reloadSessionId,
+        reloaded,
+        ...(restart_warnings && restart_warnings.length > 0 ? { restart_warnings } : {}),
+        ...(diagnostics && diagnostics.length > 0 ? { diagnostics } : {}),
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return reply.status(422).send({ ok: false, error: message })
+    }
+  })
   await app.register(catalogRoutes, staticBinding
     ? { tools: staticBinding.tools }
-    : { getTools: async (request) => (await getAgentRuntimeBindingForRequest(request)).tools },
+    : { getTools: async (request) => (await getBindingForRequest(request)).tools },
   )
-  await app.register(readyStatusRoutes, staticBinding
-    ? { tracker: staticBinding.readyTracker }
-    : { getTracker: getReadyTrackerForRequest },
-  )
+  await app.register(readyStatusRoutes, {
+    tracker: staticBinding?.readyTracker ?? new ReadyStatusTracker({
+      sandboxReady: true,
+      harnessReady: true,
+    }),
+  })
 }

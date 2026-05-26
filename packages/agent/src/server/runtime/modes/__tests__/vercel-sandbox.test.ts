@@ -15,6 +15,7 @@ import {
 } from '../../../sandbox/vercel-sandbox/resolveSandboxHandle'
 import type { PeriodicSnapshotScheduler } from '../../../sandbox/vercel-sandbox/periodicSnapshot'
 import { createMockVercelSandboxHarness } from '../../../workspace/__tests__/helpers/mockVercelSandbox'
+import { getBoringAgentRuntimePaths } from '../../../workspace/runtimeLayout'
 import { createVercelSandboxModeAdapter } from '../vercel-sandbox'
 
 const decoder = new TextDecoder()
@@ -178,6 +179,40 @@ test('mode rejects invalid BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS', async () => 
   ).rejects.toThrow('BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS must be a positive integer')
 })
 
+test('mode exposes a provisioning adapter backed by the same Vercel workspace substrate', async () => {
+  const harness = await createMockVercelSandboxHarness()
+  addSandboxMeta(harness.sandbox, { sandboxId: 'sb-provisioning-1' })
+  const client: VercelSandboxClient = {
+    create: vi.fn(async () => harness.sandbox),
+    get: vi.fn(),
+  }
+  const adapter = createVercelSandboxModeAdapter({
+    store: createStore(),
+    vercelClient: client,
+    getEnvVar(name) {
+      if (name === 'VERCEL_TOKEN') return 'token-1'
+      if (name === 'VERCEL_TEAM_ID') return 'team-1'
+      return undefined
+    },
+    logger: { info: vi.fn() },
+  })
+
+  const provisioning = adapter.createProvisioningAdapter?.(
+    getBoringAgentRuntimePaths('/workspace'),
+    { workspaceRoot: 'workspace-provisioning', sessionId: 'session-provisioning' },
+  )
+
+  expect(provisioning).toBeDefined()
+  await provisioning!.workspaceFs.mkdir('.boring-agent')
+  await provisioning!.workspaceFs.writeText('.boring-agent/check.txt', 'ok')
+  await expect(provisioning!.workspaceFs.readText('.boring-agent/check.txt')).resolves.toBe('ok')
+  await expect(provisioning!.workspaceFs.exists('../escape')).rejects.toThrow('Path escapes workspace root')
+  await expect(provisioning!.workspaceFs.readText('../escape')).rejects.toThrow('Path escapes workspace root')
+  const result = await provisioning!.exec('cat', ['/workspace/.boring-agent/check.txt'])
+  expect(result?.stdout).toBe('ok')
+  expect(client.create).toHaveBeenCalledTimes(1)
+})
+
 test('mode accepts VERCEL_TOKEN fallback and creates working bundle with shared workspace/exec substrate', async () => {
   const harness = await createMockVercelSandboxHarness()
   const sandboxWithMeta = harness.sandbox as unknown as {
@@ -234,7 +269,7 @@ test('mode accepts VERCEL_TOKEN fallback and creates working bundle with shared 
     expect(mkdirSpy).toHaveBeenCalledWith('/workspace', { recursive: true })
     expect(logger.info).toHaveBeenCalledWith(
       '[vercel-sandbox:mode] auth resolved',
-      { source: 'VERCEL_TOKEN', hasProjectId: false, timeoutMs: null },
+      { source: 'VERCEL_TOKEN', hasProjectId: false, timeoutMs: null, runtime: 'node24' },
     )
     expect(logger.info).toHaveBeenCalledWith(
       '[vercel-sandbox:mode] resolved sandbox handle',

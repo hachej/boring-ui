@@ -69,19 +69,13 @@ describe('tool adapter telemetry', () => {
         return {
           isError: true,
           content: [{ type: 'text', text: 'secret stderr output' }],
-          details: { code: ErrorCode.enum.WORKSPACE_NOT_READY, command: 'cat .env' },
+          details: { code: ErrorCode.enum.TOOL_EXECUTION_ERROR, command: 'cat .env' },
         }
       },
     })
 
-    const result = await executeAdapted(tool, recorder.telemetry)
+    await expect(executeAdapted(tool, recorder.telemetry)).rejects.toThrow('secret stderr output')
 
-    expect(result.content).toEqual([{ type: 'text', text: 'secret stderr output' }])
-    expect(result.details).toMatchObject({
-      __boringToolError: true,
-      code: ErrorCode.enum.WORKSPACE_NOT_READY,
-      command: 'cat .env',
-    })
     expect(recorder.events).toHaveLength(1)
     expect(recorder.events[0]).toEqual({
       name: 'agent.tool.failed',
@@ -90,7 +84,7 @@ describe('tool adapter telemetry', () => {
         sessionId: 'sess-tool',
         status: 'error',
         durationMs: expect.any(Number),
-        errorCode: ErrorCode.enum.WORKSPACE_NOT_READY,
+        errorCode: ErrorCode.enum.TOOL_EXECUTION_ERROR,
       },
     })
     const serialized = JSON.stringify(recorder.events)

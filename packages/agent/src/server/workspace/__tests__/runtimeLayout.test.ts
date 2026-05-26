@@ -1,60 +1,98 @@
-import { mkdtemp, readFile, stat } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { afterEach, expect, test } from 'vitest'
-import { rm } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
+import { expect, test } from 'vitest'
 
 import {
+  BORING_AGENT_DIR,
+  BORING_AGENT_GITIGNORE_CONTENT,
   BORING_AGENT_RUNTIME_DIR_NAMES,
-  ensureBoringAgentRuntimeLayout,
-  getBoringAgentNodePackageTarget,
+  getBoringAgentPathEntries,
+  getBoringAgentRuntimeEnv,
   getBoringAgentRuntimePaths,
 } from '../runtimeLayout'
 
-const tempDirs: string[] = []
+test('returns centralized workspace-local .boring-agent paths', () => {
+  const workspaceRoot = resolve('/tmp/example-workspace')
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
 
-afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+  expect(BORING_AGENT_DIR).toBe('.boring-agent')
+  expect(BORING_AGENT_RUNTIME_DIR_NAMES).toEqual([
+    'node',
+    'venv',
+    'sdk',
+    'skills',
+    'cache',
+    'tmp',
+  ])
+  expect(paths).toEqual({
+    workspaceRoot,
+    agentDir: join(workspaceRoot, '.boring-agent'),
+    node: join(workspaceRoot, '.boring-agent', 'node'),
+    nodeModules: join(workspaceRoot, '.boring-agent', 'node', 'node_modules'),
+    nodeBin: join(workspaceRoot, '.boring-agent', 'node', 'node_modules', '.bin'),
+    venv: join(workspaceRoot, '.boring-agent', 'venv'),
+    venvBin: join(workspaceRoot, '.boring-agent', 'venv', 'bin'),
+    venvPython: join(workspaceRoot, '.boring-agent', 'venv', 'bin', 'python'),
+    sdk: join(workspaceRoot, '.boring-agent', 'sdk'),
+    uvHome: join(workspaceRoot, '.boring-agent', 'sdk', 'uv'),
+    uvBin: join(workspaceRoot, '.boring-agent', 'sdk', 'uv', 'bin'),
+    skills: join(workspaceRoot, '.boring-agent', 'skills'),
+    cache: join(workspaceRoot, '.boring-agent', 'cache'),
+    nodeCache: join(workspaceRoot, '.boring-agent', 'cache', 'npm'),
+    uvCache: join(workspaceRoot, '.boring-agent', 'cache', 'uv'),
+    pipCache: join(workspaceRoot, '.boring-agent', 'cache', 'pip'),
+    tmp: join(workspaceRoot, '.boring-agent', 'tmp'),
+  })
 })
 
-async function makeTempDir(prefix: string): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), prefix))
-  tempDirs.push(dir)
-  return dir
-}
+test('does not include deferred state or logs directories in first-pass layout', () => {
+  const paths = getBoringAgentRuntimePaths('/tmp/example-workspace')
 
-test('getBoringAgentRuntimePaths centralizes all runtime artifact paths under .boring-agent', () => {
+  expect(BORING_AGENT_RUNTIME_DIR_NAMES).not.toContain('state')
+  expect(BORING_AGENT_RUNTIME_DIR_NAMES).not.toContain('logs')
+  expect(Object.keys(paths)).not.toContain('state')
+  expect(Object.keys(paths)).not.toContain('logs')
+  expect(Object.keys(paths)).not.toContain('provisioningState')
+  expect(Object.keys(paths)).not.toContain('skillMirrorState')
+})
+
+test('supports Vercel-style runtime-visible workspace roots', () => {
   const paths = getBoringAgentRuntimePaths('/workspace')
 
-  expect(paths.root).toBe('/workspace/.boring-agent')
-  expect(paths.bin).toBe('/workspace/.boring-agent/bin')
-  expect(paths.node).toBe('/workspace/.boring-agent/node')
-  expect(paths.nodeModules).toBe('/workspace/.boring-agent/node/node_modules')
-  expect(paths.venv).toBe('/workspace/.boring-agent/venv')
-  expect(paths.sdk).toBe('/workspace/.boring-agent/sdk')
-  expect(paths.state).toBe('/workspace/.boring-agent/state')
-  expect(paths.cache).toBe('/workspace/.boring-agent/cache')
-  expect(paths.tmp).toBe('/workspace/.boring-agent/tmp')
-  expect(paths.logs).toBe('/workspace/.boring-agent/logs')
-  expect(paths.provisioningMarker).toBe('/workspace/.boring-agent/state/provisioning.json')
+  expect(paths.workspaceRoot).toBe('/workspace')
+  expect(paths.agentDir).toBe('/workspace/.boring-agent')
+  expect(paths.skills).toBe('/workspace/.boring-agent/skills')
+  expect(paths.nodeBin).toBe('/workspace/.boring-agent/node/node_modules/.bin')
+  expect(paths.venvBin).toBe('/workspace/.boring-agent/venv/bin')
 })
 
-test('getBoringAgentNodePackageTarget places packages below .boring-agent/node/node_modules', () => {
-  expect(getBoringAgentNodePackageTarget('/workspace', '@hachej/boring-ui-cli')).toBe(
-    '/workspace/.boring-agent/node/node_modules/@hachej/boring-ui-cli',
-  )
-  expect(() => getBoringAgentNodePackageTarget('/workspace', '../escape')).toThrow('Invalid node package name')
+test('derives PATH entries and runtime env from layout and adapter cache root', () => {
+  const paths = getBoringAgentRuntimePaths('/workspace')
+  const cacheRoot = '/tmp/boring-agent-cache'
+
+  expect(getBoringAgentPathEntries(paths)).toEqual([
+    '/workspace/.boring-agent/node/node_modules/.bin',
+    '/workspace/.boring-agent/venv/bin',
+    '/workspace/.boring-agent/sdk/uv/bin',
+  ])
+  expect(getBoringAgentRuntimeEnv(paths, cacheRoot)).toEqual({
+    BORING_AGENT_WORKSPACE_ROOT: '/workspace',
+    VIRTUAL_ENV: '/workspace/.boring-agent/venv',
+    UV_CACHE_DIR: '/tmp/boring-agent-cache/uv',
+    PIP_CACHE_DIR: '/tmp/boring-agent-cache/pip',
+    npm_config_cache: '/tmp/boring-agent-cache/npm',
+  })
 })
 
-test('ensureBoringAgentRuntimeLayout creates layout dirs and ownership markers', async () => {
-  const workspaceRoot = await makeTempDir('boring-agent-layout-')
-  const paths = await ensureBoringAgentRuntimeLayout(workspaceRoot)
+test('defaults cache env to workspace-local .boring-agent/cache', () => {
+  const paths = getBoringAgentRuntimePaths('/workspace')
 
-  for (const dirName of BORING_AGENT_RUNTIME_DIR_NAMES) {
-    const dir = join(paths.root, dirName)
-    await expect(stat(dir)).resolves.toMatchObject({})
-    await expect(readFile(join(dir, '.boring-agent-owned.json'), 'utf8')).resolves.toContain('@hachej/boring-agent')
-  }
+  expect(getBoringAgentRuntimeEnv(paths)).toMatchObject({
+    UV_CACHE_DIR: '/workspace/.boring-agent/cache/uv',
+    PIP_CACHE_DIR: '/workspace/.boring-agent/cache/pip',
+    npm_config_cache: '/workspace/.boring-agent/cache/npm',
+  })
+})
 
-  await expect(readFile(paths.ownershipManifest, 'utf8')).resolves.toContain('.boring-agent/venv')
+test('provides generated .gitignore content for the runtime directory', () => {
+  expect(BORING_AGENT_GITIGNORE_CONTENT).toBe('*\n')
 })

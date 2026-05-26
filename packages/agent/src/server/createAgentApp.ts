@@ -4,10 +4,11 @@ import type { AgentHarnessFactory } from '../shared/harness'
 import type { SessionStore } from '../shared/session'
 import type { TelemetrySink } from '../shared/telemetry'
 import { getEnv } from './config/env'
-import type { RuntimeBundle, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
+import type { RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createPiCodingAgentHarness } from './harness/pi-coding-agent/createHarness'
 import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
+import type { WorkspaceProvisioningResult } from './workspace/provisioning'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { buildFilesystemAgentTools } from './tools/filesystem'
 import { buildHarnessAgentTools } from './tools/harness'
@@ -56,16 +57,14 @@ export interface CreateAgentAppOptions {
   harnessFactory?: AgentHarnessFactory
   /** Optional pi adapter/runtime knobs used by the default harness. */
   pi?: PiHarnessOptions
+  /** Optional runtime provisioning result used to wire generated PATH/env/skills into tools and Pi. */
+  runtimeProvisioning?: WorkspaceProvisioningResult
+  /** Optional dynamic runtime provisioning source used after /reload refreshes generated env/PATH. */
+  getRuntimeProvisioning?: () => WorkspaceProvisioningResult | undefined
   /** Optional stable namespace for file-backed session storage. */
   sessionNamespace?: string
   /** Optional best-effort telemetry sink supplied by an embedding host. */
   telemetry?: TelemetrySink
-  /** Runtime-aware provisioning hook. Runs after Workspace/Sandbox creation and before tools/harness. */
-  runtimeProvisioner?: (ctx: {
-    workspaceRoot: string
-    runtimeMode: RuntimeModeId
-    runtimeBundle: RuntimeBundle
-  }) => Promise<void>
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
   sessionDir?: string
   /**
@@ -102,11 +101,6 @@ export async function createAgentApp(
     sessionId,
     templatePath,
   })
-  await opts.runtimeProvisioner?.({
-    workspaceRoot,
-    runtimeMode: resolvedMode,
-    runtimeBundle,
-  })
 
   // UI-aware tools (get_ui_state, exec_ui) and the /api/v1/ui/* routes
   // are now owned by @hachej/boring-workspace. Hosts that want them call
@@ -126,8 +120,22 @@ export async function createAgentApp(
     }
   }
 
+  const getRuntimeProvisioning = opts.getRuntimeProvisioning ?? (() => opts.runtimeProvisioning)
+  const runtimePi: PiHarnessOptions = {
+    ...opts.pi,
+    additionalSkillPaths: [
+      ...(getRuntimeProvisioning()?.skillPaths ?? []),
+      ...(opts.pi?.additionalSkillPaths ?? []),
+    ],
+  }
+
   const tools: AgentTool[] = [
-    ...buildHarnessAgentTools(runtimeBundle),
+    ...buildHarnessAgentTools(runtimeBundle, {
+      getCurrent: () => {
+        const current = getRuntimeProvisioning()
+        return current ? { env: current.env, pathEntries: current.pathEntries } : undefined
+      },
+    }),
     ...(opts.disableDefaultFileTools ? [] : buildFilesystemAgentTools(runtimeBundle)),
     ...(opts.extraTools ?? []),
     ...pluginTools,
@@ -138,13 +146,12 @@ export async function createAgentApp(
     pi: {
       noContextFiles: true,
       noSkills: true,
-      ...opts.pi,
+      ...runtimePi,
     },
   }))
   const harness = await harnessFactory({
     tools,
     cwd: workspaceRoot,
-    runtimeCwd: runtimeBundle.runtimeContext.runtimeCwd,
     sessionNamespace: opts.sessionNamespace,
     sessionDir: opts.sessionDir,
     systemPromptAppend: opts.systemPromptAppend,
@@ -169,11 +176,11 @@ export async function createAgentApp(
     }),
   )
 
-  const version = opts.version ?? DEFAULT_VERSION
   await app.register(healthRoutes, {
-    version,
+    version: opts.version ?? DEFAULT_VERSION,
     getReadiness: () => readyTracker.getReadiness(),
   })
+
   await app.register(fileRoutes, { workspace: runtimeBundle.workspace })
   await app.register(fsEventsRoutes, { workspace: runtimeBundle.workspace })
   await app.register(treeRoutes, { workspace: runtimeBundle.workspace })
@@ -185,22 +192,31 @@ export async function createAgentApp(
   await app.register(searchRoutes, { fileSearch: runtimeBundle.fileSearch })
   await app.register(chatRoutes, {
     harness,
-    workdir: runtimeBundle.runtimeContext.runtimeCwd,
+    workdir: runtimeBundle.workspace.root,
     sessionChangesTracker,
     telemetry: opts.telemetry,
   })
   await app.register(sessionRoutes, {
     sessionStore: harness.sessions as unknown as SessionStore,
     harness,
-    workdir: runtimeBundle.runtimeContext.runtimeCwd,
+    workdir: runtimeBundle.workspace.root,
   })
   await app.register(systemPromptRoutes, { harness })
   await app.register(modelsRoutes)
   await app.register(skillsRoutes, {
     workspaceRoot,
-    additionalSkillPaths: opts.pi?.additionalSkillPaths,
-    piPackages: opts.pi?.packages,
-    noSkills: opts.pi?.noSkills,
+    additionalSkillPaths: runtimePi.additionalSkillPaths,
+    piPackages: runtimePi.packages,
+    noSkills: runtimePi.noSkills,
+    getAdditionalSkillPaths: () => [
+      ...(getRuntimeProvisioning()?.skillPaths ?? []),
+      ...(opts.pi?.additionalSkillPaths ?? []),
+      ...(opts.pi?.getHotReloadableResources?.().additionalSkillPaths ?? []),
+    ],
+    getPiPackages: () => [
+      ...(opts.pi?.packages ?? []),
+      ...(opts.pi?.getHotReloadableResources?.().packages ?? []),
+    ],
   })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })
