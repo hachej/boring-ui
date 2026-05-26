@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { act, renderHook, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ReactNode } from "react"
+import { events, workspaceEvents } from "../../../../front/events"
 import { useFilePane } from "../useFilePane"
 import { FileConflictError } from "../data/fetchClient"
 
@@ -14,7 +15,7 @@ const mockWriteFile = vi.fn()
 const mockFileContent = vi.fn()
 
 vi.mock("../data", () => ({
-  useFileContent: (path: string) => mockFileContent(path),
+  useFileContent: (path: string | null) => mockFileContent(path),
   useFileWrite: () => ({ mutateAsync: mockWriteFile }),
 }))
 
@@ -25,6 +26,7 @@ function wrapper({ children }: { children: ReactNode }) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  events._reset()
   mockFileContent.mockReturnValue({
     data: { content: "initial", mtimeMs: 1000 },
     isLoading: false,
@@ -210,19 +212,8 @@ describe("useFilePane", () => {
     })
   })
 
-  describe("path change resets state (internal refs only)", () => {
-    // useFilePane resets contentRef/dirtyRef/baselineMtimeRef when `path`
-    // changes (see the effect at the top of the hook). But useEditorLifecycle
-    // holds its own React `isDirty` state that has no external clear API, so
-    // `lifecycle.isDirty` (surfaced as `isDirty` here) does NOT reset on path
-    // change. The next save attempt skips silently because the adapter's
-    // `isDirty()` reads dirtyRef (which IS reset), but the tab UI shows the
-    // dot until something else clears the lifecycle state.
-    //
-    // This is a known minor bug: tab dirty-dot lingers after switching tabs
-    // mid-edit. Tracked separately; this test pins the current behavior so a
-    // future fix has to update the assertion.
-    it("internal contentRef + baselineMtimeRef reset on path change (lifecycle.isDirty does NOT — known)", async () => {
+  describe("path handling", () => {
+    it("clears the dirty state when the pane switches to a different file", async () => {
       const { result, rerender } = renderHook(
         ({ path }) => useFilePane({ path }),
         { wrapper, initialProps: { path: "a.md" } },
@@ -230,11 +221,72 @@ describe("useFilePane", () => {
       await act(async () => {})
       act(() => result.current.setContent("dirty"))
       expect(result.current.isDirty).toBe(true)
+
       rerender({ path: "b.md" })
       await act(async () => {})
-      // Current state: lifecycle.isDirty lingers. Should be `false` after
-      // the bug is fixed — flipping this assertion is the regression signal.
+
+      expect(result.current.isDirty).toBe(false)
+    })
+
+    it("ignores a stale save that resolves after the pane switches to another file", async () => {
+      let resolveFirstSave: ((value: { mtimeMs: number }) => void) | undefined
+      const starts: Array<{ panelId: string }> = []
+      const ends: Array<{ panelId: string }> = []
+      events.on(workspaceEvents.editorSaveStart, (payload) => starts.push(payload))
+      events.on(workspaceEvents.editorSaveEnd, (payload) => ends.push(payload))
+      mockFileContent.mockImplementation((path: string | null) => ({
+        data: { content: path === "b.md" ? "second" : "first", mtimeMs: path === "b.md" ? 2000 : 1000 },
+        isLoading: false,
+        error: undefined,
+        refetch: vi.fn(async () => ({ data: { content: path === "b.md" ? "second" : "first", mtimeMs: path === "b.md" ? 2000 : 1000 } })),
+      }))
+      mockWriteFile.mockImplementationOnce(() => new Promise((resolve) => {
+        resolveFirstSave = resolve
+      }))
+
+      const { result, rerender } = renderHook(
+        ({ path }) => useFilePane({ path }),
+        { wrapper, initialProps: { path: "a.md" } },
+      )
+      await act(async () => {})
+      act(() => result.current.setContent("dirty-a"))
+
+      await act(async () => {
+        void result.current.flushSave()
+        await Promise.resolve()
+      })
+
+      rerender({ path: "b.md" })
+      await act(async () => {})
+      act(() => result.current.setContent("dirty-b"))
       expect(result.current.isDirty).toBe(true)
+      expect(result.current.content).toBe("dirty-b")
+
+      await act(async () => {
+        resolveFirstSave?.({ mtimeMs: 3000 })
+        await Promise.resolve()
+      })
+
+      expect(result.current.isDirty).toBe(true)
+      expect(result.current.content).toBe("dirty-b")
+      expect(starts).toHaveLength(1)
+      expect(ends).toHaveLength(1)
+      expect(starts[0]?.panelId).toBe(ends[0]?.panelId)
+    })
+
+    it("does not query the file API when no file is selected", async () => {
+      renderHook(() => useFilePane({ path: "   " }), { wrapper })
+      await act(async () => {})
+
+      expect(mockFileContent).toHaveBeenCalledWith(null)
+      expect(mockWriteFile).not.toHaveBeenCalled()
+    })
+
+    it("preserves meaningful leading/trailing spaces in real file paths", async () => {
+      renderHook(() => useFilePane({ path: " notes.md " }), { wrapper })
+      await act(async () => {})
+
+      expect(mockFileContent).toHaveBeenCalledWith(" notes.md ")
     })
   })
 })

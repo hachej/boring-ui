@@ -40,8 +40,10 @@ vi.mock("@hachej/boring-workspace", async () => {
 import { DeckPane } from "../DeckPane"
 
 describe("DeckPane file-state wiring", () => {
-  it("wires reload, overwrite, and save controls to the canonical file-state seam", async () => {
-    render(<DeckPane params={{ path: "deck/intro.md" }} />)
+  it("wires reload, overwrite, save controls, and dirty tab titles to the canonical file-state seam", async () => {
+    const setTitle = vi.fn()
+
+    render(<DeckPane params={{ path: "deck/intro.md" }} api={{ setTitle } as any} />)
 
     fireEvent.click(screen.getByTestId("deck-mode-edit"))
     fireEvent.click(screen.getByTestId("deck-save"))
@@ -51,5 +53,12 @@ describe("DeckPane file-state wiring", () => {
     expect(flushSave).toHaveBeenCalledTimes(1)
     expect(onReloadFromServer).toHaveBeenCalledTimes(1)
     expect(onOverwrite).toHaveBeenCalledTimes(1)
+    expect(setTitle).toHaveBeenCalledWith("intro.md ●")
+  })
+
+  it("treats whitespace-only paths as no file selected", () => {
+    render(<DeckPane params={{ path: "   " }} />)
+
+    expect(screen.getByText("No deck file selected.")).toBeInTheDocument()
   })
 })

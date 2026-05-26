@@ -1,5 +1,6 @@
 import {
   WorkspaceFilesProvider,
+  useHasWorkspaceFilesProvider,
   type PluginProviderProps,
 } from "@hachej/boring-workspace"
 import { definePlugin, type BoringFrontFactoryWithId } from "@hachej/boring-workspace/plugin"
@@ -23,6 +24,12 @@ function DeckFilesProvider({
   apiTimeout,
   children,
 }: PluginProviderProps) {
+  const hasWorkspaceFilesProvider = useHasWorkspaceFilesProvider()
+
+  if (hasWorkspaceFilesProvider) {
+    return <>{children}</>
+  }
+
   return (
     <WorkspaceFilesProvider
       apiBaseUrl={apiBaseUrl}

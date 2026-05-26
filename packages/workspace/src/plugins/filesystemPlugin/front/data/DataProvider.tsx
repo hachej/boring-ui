@@ -25,6 +25,10 @@ export function useDataClient(): FetchClient {
   return ctx
 }
 
+export function useHasDataClient(): boolean {
+  return useContext(FetchClientContext) != null
+}
+
 export function useApiBaseUrl(): string {
   return useContext(ApiBaseUrlContext)
 }

@@ -26,7 +26,7 @@ import {
 } from "./components"
 import { DeckWidgetSlot, indexDeckWidgets } from "./widgets"
 
-const DEFAULT_SCAFFOLD_CONTENT = `# Deck scaffold\n\nDeck rendering shell is ready. File-state wiring lands in a follow-up bead.`
+const DEFAULT_SCAFFOLD_CONTENT = `# Deck scaffold\n\nDeck rendering shell is ready.`
 
 export interface DeckPaneProps {
   params?: { path?: string }
@@ -148,6 +148,7 @@ function FileBackedDeckPane({
   initialMode = "read",
 }: DeckPaneProps) {
   const path = params?.path ?? ""
+  const hasSelectedPath = /\S/.test(path)
   const [mode, setMode] = useState<"read" | "edit" | "present">(initialMode)
   const [slideIndex, setSlideIndex] = useState(0)
   const indexedWidgets = useMemo(() => indexDeckWidgets(widgets), [widgets])
@@ -161,7 +162,8 @@ function FileBackedDeckPane({
     onOverwrite,
     onReloadFromServer,
     setContent,
-  } = useFilePane({ path, panelId: api?.id ?? path })
+    tabTitle,
+  } = useFilePane({ path, panelId: api?.id })
   const parsed = useMemo(() => (content == null ? null : parseDeckContent(content, path)), [content, path])
 
   useEffect(() => {
@@ -198,7 +200,13 @@ function FileBackedDeckPane({
     setSlideIndex(0)
   }, [content, path])
 
-  if (!path) {
+  useEffect(() => {
+    if (api && tabTitle) {
+      api.setTitle(tabTitle)
+    }
+  }, [api, tabTitle])
+
+  if (!hasSelectedPath) {
     return (
       <DeckShell theme={theme}>
         <DeckScaffoldState>No deck file selected.</DeckScaffoldState>

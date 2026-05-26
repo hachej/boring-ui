@@ -68,6 +68,7 @@ export type {
 export {
   DataProvider as WorkspaceFilesProvider,
   useApiBaseUrl,
+  useHasDataClient as useHasWorkspaceFilesProvider,
   useWorkspaceRequestId,
 } from "./plugins/filesystemPlugin/front/data"
 // Public file-state seam for package consumers (for example future deck-like

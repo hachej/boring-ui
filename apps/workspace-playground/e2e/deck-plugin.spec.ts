@@ -20,14 +20,22 @@ async function openPalette(page: import("@playwright/test").Page) {
   await expect(page.getByRole("dialog", { name: /command palette/i })).toBeVisible({ timeout: 5_000 })
 }
 
-async function openDeckFile(page: import("@playwright/test").Page) {
-  await test.step("open deck file from the command palette", async () => {
+async function openFileFromPalette(
+  page: import("@playwright/test").Page,
+  query: string,
+  optionName: RegExp,
+) {
+  await test.step(`open ${query} from the command palette`, async () => {
     await openPalette(page)
-    await page.keyboard.type("intro")
+    await page.keyboard.type(query)
     await page.waitForTimeout(300)
-    await page.getByRole("option", { name: /intro\.md/i }).first().click()
+    await page.getByRole("option", { name: optionName }).first().click()
     await expect(page.getByRole("dialog", { name: /command palette/i })).toBeHidden({ timeout: 2_000 })
   })
+}
+
+async function openDeckFile(page: import("@playwright/test").Page) {
+  await openFileFromPalette(page, "intro", /intro\.md/i)
 }
 
 test.describe("workspace-playground deck plugin", () => {
@@ -76,14 +84,40 @@ test.describe("workspace-playground deck plugin", () => {
       await rawEditor.click()
       await rawEditor.press("End")
       await rawEditor.type(`\n\n${EDITED_MARKER}`)
-      await page.getByTestId("deck-save").click()
 
-      await test.step("save persists back to the workspace file", async () => {
+      await test.step("dirty deck updates the real workspace tab title", async () => {
+        await expect(page.locator('[title="intro.md (unsaved changes)"]')).toBeVisible({ timeout: 10_000 })
+      })
+
+      await test.step("switching files while save is in flight does not leave the deck tab stuck", async () => {
+        let releaseSave: (() => void) | undefined
+        await page.route("**/api/v1/files", async (route) => {
+          if (route.request().method() !== "POST") {
+            await route.continue()
+            return
+          }
+
+          await new Promise<void>((resolve) => {
+            releaseSave = resolve
+          })
+          await route.continue()
+        }, { times: 1 })
+
+        await page.getByTestId("deck-save").click()
+        await expect(page.getByTestId("tab-saving-spinner")).toBeVisible({ timeout: 10_000 })
+
+        await openFileFromPalette(page, "README", /README\.md/i)
+        await expect(page.getByText("Workspace Playground")).toBeVisible({ timeout: 10_000 })
+
+        releaseSave?.()
+
         await expect.poll(() => readFileSync(WORKSPACE_DECK_PATH, "utf8"), {
           timeout: 10_000,
         }).toContain(EDITED_MARKER)
+        await expect(page.getByTestId("tab-saving-spinner")).toHaveCount(0)
       })
 
+      await page.locator('[title="intro.md"]').click()
       await page.getByTestId("deck-mode-read").click()
       await expect(page.getByText(EDITED_MARKER)).toBeVisible({ timeout: 10_000 })
     })
