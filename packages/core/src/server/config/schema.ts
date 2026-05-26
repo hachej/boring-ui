@@ -65,6 +65,12 @@ export const coreConfigSchema = z.object({
         clientSecret: z.string().min(1),
       })
       .optional(),
+    google: z
+      .object({
+        clientId: z.string().min(1),
+        clientSecret: z.string().min(1),
+      })
+      .optional(),
     mail: z
       .object({
         from: z.string().min(1),
@@ -77,6 +83,7 @@ export const coreConfigSchema = z.object({
 
   features: z.object({
     githubOauth: z.boolean(),
+    googleOauth: z.boolean(),
     invitesEnabled: z.boolean(),
     sendWelcomeEmail: z.boolean(),
     inviteTtlDays: z.number().int().min(1).max(30).default(7),

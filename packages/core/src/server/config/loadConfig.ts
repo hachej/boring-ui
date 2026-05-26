@@ -26,7 +26,12 @@ interface TomlAppConfig {
     branding?: { name?: string; logo?: string; favicon?: string }
     theme?: { default?: string }
   }
-  features?: { github_oauth?: boolean; invites_enabled?: boolean; invite_ttl_days?: number }
+  features?: {
+    github_oauth?: boolean
+    google_oauth?: boolean
+    invites_enabled?: boolean
+    invite_ttl_days?: number
+  }
 }
 
 function parseRateLimitOverrides(
@@ -131,6 +136,15 @@ export async function loadConfig(
         }
       : undefined
 
+  const googleOauth = toml.features?.google_oauth === true
+  const google =
+    env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+      ? {
+          clientId: env.GOOGLE_CLIENT_ID,
+          clientSecret: env.GOOGLE_CLIENT_SECRET,
+        }
+      : undefined
+
   const mailFrom = env.MAIL_FROM
   const mailTransportUrl = env.MAIL_TRANSPORT_URL
   const mail =
@@ -173,6 +187,7 @@ export async function loadConfig(
       secret: authSecret,
       url: authUrl,
       github,
+      google,
       mail,
       sessionTtlSeconds: parseInt(
         env.SESSION_TTL_SECONDS ?? String(THIRTY_DAYS_SECONDS),
@@ -183,6 +198,7 @@ export async function loadConfig(
 
     features: {
       githubOauth: githubOauth && github !== undefined,
+      googleOauth: googleOauth && google !== undefined,
       invitesEnabled: toml.features?.invites_enabled ?? true,
       sendWelcomeEmail: env.SEND_WELCOME_EMAIL !== 'false',
       ...(toml.features?.invite_ttl_days != null && { inviteTtlDays: toml.features.invite_ttl_days }),
@@ -205,6 +221,10 @@ export function validateConfig(raw: unknown): CoreConfig {
   return result.data as CoreConfig
 }
 
+export function isGoogleOauthUsable(config: Pick<CoreConfig, 'features' | 'auth'>): boolean {
+  return config.features.googleOauth && config.auth.google !== undefined
+}
+
 export function buildRuntimeConfigPayload(config: CoreConfig): RuntimeConfig {
   return {
     appId: config.appId,
@@ -213,6 +233,7 @@ export function buildRuntimeConfigPayload(config: CoreConfig): RuntimeConfig {
     apiBase: config.auth.url,
     features: {
       githubOauth: config.features.githubOauth,
+      googleOauth: isGoogleOauthUsable(config),
       invitesEnabled: config.features.invitesEnabled,
       sendWelcomeEmail: config.features.sendWelcomeEmail,
     },

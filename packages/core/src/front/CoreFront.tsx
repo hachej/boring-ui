@@ -17,6 +17,7 @@ import { SignUpPage as DefaultSignUpPage } from './auth/SignUpPage.js'
 import { ForgotPasswordPage as DefaultForgotPasswordPage } from './auth/ForgotPasswordPage.js'
 import { ResetPasswordPage as DefaultResetPasswordPage } from './auth/ResetPasswordPage.js'
 import { VerifyEmailPage as DefaultVerifyEmailPage } from './auth/VerifyEmailPage.js'
+import { AuthErrorPage as DefaultAuthErrorPage } from './auth/AuthErrorPage.js'
 import { UserSettingsPage as DefaultUserSettingsPage } from './auth/UserSettingsPage.js'
 import { InvitesPage } from './workspace/InvitesPage.js'
 import { MembersPage } from './workspace/MembersPage.js'
@@ -30,6 +31,7 @@ export interface CoreFrontAuthPagesOverride {
   forgotPassword?: React.FC
   resetPassword?: React.FC
   verifyEmail?: React.FC
+  authError?: React.FC
   userSettings?: React.FC
 }
 
@@ -75,6 +77,7 @@ export function CoreFront({ children, authPages, cspNonce }: CoreFrontProps) {
   const ForgotPasswordPage = authPages?.forgotPassword ?? DefaultForgotPasswordPage
   const ResetPasswordPage = authPages?.resetPassword ?? DefaultResetPasswordPage
   const VerifyEmailPage = authPages?.verifyEmail ?? DefaultVerifyEmailPage
+  const AuthErrorPage = authPages?.authError ?? DefaultAuthErrorPage
   const UserSettingsPage = authPages?.userSettings ?? DefaultUserSettingsPage
 
   return (
@@ -110,7 +113,9 @@ export function CoreFront({ children, authPages, cspNonce }: CoreFrontProps) {
                               <Route path={routes.forgotPassword} element={<ForgotPasswordPage />} />
                               <Route path={routes.resetPassword} element={<ResetPasswordPage />} />
                               <Route path={routes.verifyEmail} element={<VerifyEmailPage />} />
+                              <Route path={routes.authError} element={<AuthErrorPage />} />
                               <Route path={routes.callbackGithub} element={<PlaceholderPage name="github-callback" />} />
+                              <Route path={routes.callbackGoogle} element={<PlaceholderPage name="google-callback" />} />
                               <Route path={routes.me} element={<UserSettingsPage />} />
                               <Route path={routes.workspaceMembers} element={<MembersPage />} />
                               <Route path="/workspace/:id/members" element={<MembersPage />} />

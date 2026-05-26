@@ -22,7 +22,7 @@ const VALID_CONFIG: RuntimeConfig = {
   appName: 'Test App',
   appLogo: null,
   apiBase: 'http://localhost:3000',
-  features: { githubOauth: false, invitesEnabled: true, sendWelcomeEmail: true },
+  features: { githubOauth: false, googleOauth: false, invitesEnabled: true, sendWelcomeEmail: true },
 }
 
 const FAST_BACKOFF = [0, 0, 0]
