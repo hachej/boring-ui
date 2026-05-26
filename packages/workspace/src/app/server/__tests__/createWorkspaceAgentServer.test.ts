@@ -33,6 +33,10 @@ beforeEach(() => {
   agentServerMock.provisionRuntimeWorkspace.mockClear()
 })
 
+function mockCreateAgentAppOnce(factory: () => Promise<ReturnType<typeof Fastify> | { register: (...args: any[]) => Promise<void> }>) {
+  agentServerMock.createAgentApp.mockImplementationOnce(factory as never)
+}
+
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })

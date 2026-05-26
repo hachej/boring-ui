@@ -56,6 +56,7 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
     packages: [],
     systemPromptAppend: undefined,
   }),
+  readWorkspacePluginPackageRuntimePlugins: () => [],
   resolveDefaultWorkspacePluginPackagePaths: () => [],
   resolveOnePluginEntry: async (entry: unknown) => entry,
 }))
