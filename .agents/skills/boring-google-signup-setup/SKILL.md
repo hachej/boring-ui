@@ -10,6 +10,10 @@ description: Teach a boring-ui child app how to enable Google signup with @hache
 
 ## Goal
 
+When using this skill, default to giving the user a short manual **to-do list** for the Google-side setup plus the exact app config/env changes they must make.
+
+Do **not** imply that normal Google Sign-In web OAuth client creation is cleanly supported by `gcloud`/Terraform here. Treat Google-side client creation as a manual Console task unless the user explicitly asks for a brittle browser-automation workaround.
+
 Turn on Google signup/signin for a child app with:
 
 1. Google OAuth credentials
@@ -46,6 +50,8 @@ That keeps the first pass easy to teach and hard to break.
 ## Quick path
 
 ### 1. Create Google OAuth credentials
+
+This step is currently a **manual Google Cloud Console to-do**, not a normal `gcloud` automation step for this skill.
 
 In Google Cloud Console:
 
@@ -139,6 +145,30 @@ export function MySignInPage() {
 Rule: child apps should consume core's auth helper, not rebuild `signIn.social({ provider: 'google' })` in every app.
 
 If the app does nothing special with auth pages, it should keep using the stock core pages.
+
+## What to print to the user
+
+Default output shape for this skill:
+
+1. **Google Console to-do list**
+   - create/select project
+   - configure consent screen
+   - create Web application OAuth client
+   - add local + production redirect URIs
+   - copy client ID + client secret
+2. **Child-app config to-do list**
+   - set `GOOGLE_CLIENT_ID`
+   - set `GOOGLE_CLIENT_SECRET`
+   - set `BETTER_AUTH_URL`
+   - set `CORS_ORIGINS`
+   - set `features.google_oauth = true`
+3. **Verification to-do list**
+   - check `/auth/signin`
+   - check `/auth/signup`
+   - check invite signup stays email-only
+   - test one negative case by removing one required setting
+
+Only go beyond that if the user asks for deeper implementation help.
 
 ## Verify locally
 
