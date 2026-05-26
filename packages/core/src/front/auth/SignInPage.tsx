@@ -4,6 +4,8 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Button, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle, Input, Label } from '@hachej/boring-ui-kit'
 import { useSignIn } from './AuthProvider.js'
+import { GoogleAuthButton } from './GoogleAuthButton.js'
+import { useOptionalConfig } from '../ConfigProvider.js'
 import { routes } from '../utils.js'
 
 const signInSchema = z.object({
@@ -13,10 +15,21 @@ const signInSchema = z.object({
 
 type SignInFormData = z.infer<typeof signInSchema>
 
+const DEFAULT_GOOGLE_SIGNIN_ERROR = 'We could not complete Google sign in. Please try again or continue with email.'
+
+function readGoogleAuthError(): string | null {
+  if (typeof window === 'undefined') return null
+  const error = new URLSearchParams(window.location.search).get('error')
+  return error ? DEFAULT_GOOGLE_SIGNIN_ERROR : null
+}
+
 export function SignInPage() {
   const signIn = useSignIn()
+  const config = useOptionalConfig()
   const [serverError, setServerError] = useState<string | null>(null)
+  const [oauthError, setOauthError] = useState<string | null>(() => readGoogleAuthError())
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const showGoogleAuth = config?.features.googleOauth === true
 
   const {
     register,
@@ -28,6 +41,7 @@ export function SignInPage() {
 
   async function onSubmit(data: SignInFormData) {
     setServerError(null)
+    setOauthError(null)
     setIsSubmitting(true)
     try {
       const result = await signIn.email({
@@ -53,9 +67,25 @@ export function SignInPage() {
         </CardHeader>
         <form onSubmit={handleSubmit(onSubmit)} noValidate>
           <CardContent className="space-y-4">
-            {serverError && (
+            {showGoogleAuth && (
+              <>
+                <GoogleAuthButton
+                  errorCallbackURL={routes.signin}
+                  onError={(message) => setOauthError(message || DEFAULT_GOOGLE_SIGNIN_ERROR)}
+                />
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-card px-2 text-muted-foreground">Or continue with email</span>
+                  </div>
+                </div>
+              </>
+            )}
+            {(serverError ?? oauthError) && (
               <div role="alert" className="text-sm text-destructive">
-                {serverError}
+                {serverError ?? oauthError}
               </div>
             )}
             <div className="space-y-2">

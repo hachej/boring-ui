@@ -25,6 +25,7 @@ logo = "/logo.svg"
 
 [features]
 github_oauth = false
+google_oauth = false
 invites_enabled = true
 `
 
@@ -60,6 +61,7 @@ describe('loadConfig', () => {
     expect(config.auth.sessionTtlSeconds).toBe(60 * 60 * 24 * 30)
     expect(config.auth.sessionCookieSecure).toBe(false)
     expect(config.features.githubOauth).toBe(false)
+    expect(config.features.googleOauth).toBe(false)
     expect(config.features.invitesEnabled).toBe(true)
     expect(config.bodyLimit).toBe(16 * 1024 * 1024)
     expect(config.cors.credentials).toBe(true)
@@ -236,6 +238,74 @@ describe('loadConfig', () => {
     })
   })
 
+  it('wires Google config when both GOOGLE_CLIENT_* are set', async () => {
+    const config = await loadConfig({
+      tomlPath: TOML_PATH,
+      env: {
+        ...VALID_ENV,
+        GOOGLE_CLIENT_ID: 'google-id',
+        GOOGLE_CLIENT_SECRET: 'google-secret',
+      },
+    })
+
+    expect(config.auth.google).toEqual({
+      clientId: 'google-id',
+      clientSecret: 'google-secret',
+    })
+    expect(config.features.googleOauth).toBe(false)
+  })
+
+  it('enables Google OAuth only when the TOML flag is on and both creds exist', async () => {
+    writeToml(`
+[features]
+google_oauth = true
+`)
+
+    const config = await loadConfig({
+      tomlPath: TOML_PATH,
+      env: {
+        ...VALID_ENV,
+        GOOGLE_CLIENT_ID: 'google-id',
+        GOOGLE_CLIENT_SECRET: 'google-secret',
+      },
+    })
+
+    expect(config.features.googleOauth).toBe(true)
+  })
+
+  it('keeps Google OAuth off when the TOML flag is on but creds are missing', async () => {
+    writeToml(`
+[features]
+google_oauth = true
+`)
+
+    const config = await loadConfig({
+      tomlPath: TOML_PATH,
+      env: VALID_ENV,
+    })
+
+    expect(config.auth.google).toBeUndefined()
+    expect(config.features.googleOauth).toBe(false)
+  })
+
+  it('keeps Google OAuth off when only one Google credential is present', async () => {
+    writeToml(`
+[features]
+google_oauth = true
+`)
+
+    const config = await loadConfig({
+      tomlPath: TOML_PATH,
+      env: {
+        ...VALID_ENV,
+        GOOGLE_CLIENT_ID: 'google-id',
+      },
+    })
+
+    expect(config.auth.google).toBeUndefined()
+    expect(config.features.googleOauth).toBe(false)
+  })
+
   it('uses custom PORT and HOST', async () => {
     const config = await loadConfig({
       tomlPath: TOML_PATH,
@@ -289,7 +359,7 @@ describe('validateConfig', () => {
           sessionTtlSeconds: 3600,
           sessionCookieSecure: false,
         },
-        features: { githubOauth: false, invitesEnabled: true, sendWelcomeEmail: true, inviteTtlDays: 7 },
+        features: { githubOauth: false, googleOauth: false, invitesEnabled: true, sendWelcomeEmail: true, inviteTtlDays: 7 },
       }),
     ).toThrow(ConfigValidationError)
   })
@@ -316,7 +386,7 @@ describe('validateConfig', () => {
           sessionTtlSeconds: 3600,
           sessionCookieSecure: false,
         },
-        features: { githubOauth: false, invitesEnabled: true, sendWelcomeEmail: true, inviteTtlDays: 7 },
+        features: { githubOauth: false, googleOauth: false, invitesEnabled: true, sendWelcomeEmail: true, inviteTtlDays: 7 },
       }),
     ).toThrow(ConfigValidationError)
   })
@@ -344,6 +414,7 @@ describe('buildRuntimeConfigPayload', () => {
         apiBase: 'http://localhost:3000',
         features: {
           githubOauth: false,
+          googleOauth: false,
           invitesEnabled: true,
           sendWelcomeEmail: true,
         },
@@ -355,5 +426,40 @@ describe('buildRuntimeConfigPayload', () => {
     } finally {
       rmSync(FIXTURES_DIR, { recursive: true, force: true })
     }
+  })
+
+  it('keeps googleOauth false when a manual config enables the flag without credentials', () => {
+    const runtime = buildRuntimeConfigPayload({
+      appId: 'test-app',
+      appName: 'Test App',
+      appLogo: null,
+      port: 3000,
+      host: '127.0.0.1',
+      staticDir: null,
+      databaseUrl: null,
+      stores: 'local',
+      cors: {
+        origins: ['http://localhost:3000'],
+        credentials: true,
+      },
+      bodyLimit: 1024,
+      logLevel: 'info',
+      encryption: { workspaceSettingsKey: 'a'.repeat(64) },
+      auth: {
+        secret: 's'.repeat(64),
+        url: 'http://localhost:3000',
+        sessionTtlSeconds: 3600,
+        sessionCookieSecure: false,
+      },
+      features: {
+        githubOauth: false,
+        googleOauth: true,
+        invitesEnabled: true,
+        sendWelcomeEmail: true,
+        inviteTtlDays: 7,
+      },
+    })
+
+    expect(runtime.features.googleOauth).toBe(false)
   })
 })

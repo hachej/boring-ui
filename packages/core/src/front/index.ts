@@ -33,6 +33,7 @@ export {
   UserIdentityProvider,
   useUser,
   getAuthClient,
+  GoogleAuthButton,
   SignInPage,
   SignUpPage,
   ForgotPasswordPage,
@@ -46,6 +47,7 @@ export type {
   UserIdentity,
   UserIdentityProviderProps,
   AuthClient,
+  GoogleAuthButtonProps,
 } from './auth/index.js'
 
 export {

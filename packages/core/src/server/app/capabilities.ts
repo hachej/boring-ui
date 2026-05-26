@@ -4,6 +4,7 @@ import type { CapabilitiesContributor } from './types.js'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isGoogleOauthUsable } from '../config/loadConfig.js'
 
 let cachedVersion: string | undefined
 
@@ -54,16 +55,19 @@ export function registerCapabilities(app: FastifyInstance) {
   const hasMail = !!app.config.auth.mail
 
   app.registerCapabilitiesContributor('core', () => {
+    const googleOauth = isGoogleOauthUsable(app.config)
     const core: CoreCapabilities = {
       version: getCoreVersion(),
       features: {
         invitesEnabled: app.config.features.invitesEnabled,
         githubOauth: app.config.features.githubOauth,
+        googleOauth,
         emailFlows: hasMail,
       },
       auth: {
         emailPassword: true,
         github: false,
+        google: googleOauth,
         emailVerification: hasMail,
         passwordReset: hasMail,
         magicLink: hasMail,

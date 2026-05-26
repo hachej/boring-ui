@@ -74,6 +74,7 @@ test('smoke: sign in and land on /workspace/:id', async ({ page, baseURL }) => {
         apiBase: baseURL,
         features: {
           githubOauth: false,
+          googleOauth: false,
           invitesEnabled: true,
           sendWelcomeEmail: false,
         },

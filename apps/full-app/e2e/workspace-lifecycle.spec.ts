@@ -17,6 +17,7 @@ const CONFIG = {
   apiBase: '',
   features: {
     githubOauth: false,
+    googleOauth: false,
     invitesEnabled: true,
     sendWelcomeEmail: false,
   },

@@ -115,6 +115,25 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
       })
     : undefined
 
+  const socialProviders = {
+    ...(config.auth.github
+      ? {
+          github: {
+            clientId: config.auth.github.clientId,
+            clientSecret: config.auth.github.clientSecret,
+          },
+        }
+      : {}),
+    ...(config.features.googleOauth && config.auth.google
+      ? {
+          google: {
+            clientId: config.auth.google.clientId,
+            clientSecret: config.auth.google.clientSecret,
+          },
+        }
+      : {}),
+  }
+
   return betterAuth({
     database: drizzleAdapter(db, { provider: 'pg', schema }),
     secret: config.auth.secret,
@@ -197,9 +216,7 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
       },
     },
     emailVerification: emailVerificationConfig,
-    socialProviders: config.auth.github
-      ? { github: { clientId: config.auth.github.clientId, clientSecret: config.auth.github.clientSecret } }
-      : {},
+    socialProviders,
     plugins,
   })
 }
