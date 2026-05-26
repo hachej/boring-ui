@@ -51,6 +51,7 @@ export function createTestCoreConfig(
     },
     features: {
       githubOauth: false,
+      googleOauth: false,
       invitesEnabled: true,
       sendWelcomeEmail: true,
       inviteTtlDays: 7,

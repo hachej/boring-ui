@@ -29,6 +29,7 @@ function buildValidConfig(overrides: Record<string, unknown> = {}) {
     },
     features: {
       githubOauth: false,
+      googleOauth: false,
       invitesEnabled: true,
       sendWelcomeEmail: false,
       ...overrides,
