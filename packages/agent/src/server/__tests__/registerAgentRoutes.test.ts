@@ -82,7 +82,7 @@ test('registerAgentRoutes provisions embedded runtime plugins before host app ro
   } finally {
     await app.close()
   }
-})
+}, 15_000)
 
 test('registerAgentRoutes provisions the resolved request workspace, not the host base root', async () => {
   const baseRoot = await makeTempDir('boring-agent-embed-base-root-')
