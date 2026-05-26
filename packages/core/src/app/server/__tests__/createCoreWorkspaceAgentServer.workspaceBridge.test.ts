@@ -244,6 +244,78 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
     await app.close()
   })
 
+  it('exposes bridge-aware Pi context so app shells do not need adapter tools', async () => {
+    const app = await createCoreWorkspaceAgentServer({
+      serveFrontend: false,
+      workspaceBridge: {
+        handlers: [{
+          definition: {
+            op: 'test.v1.owner',
+            version: 1,
+            owner: 'test',
+            callerClassesAllowed: ['runtime'],
+            requiredCapabilities: ['test:owner.read'],
+            inputSchema: { type: 'object' },
+            outputSchema: { type: 'object' },
+            timeoutMs: 1_000,
+            maxInputBytes: 1024,
+            maxOutputBytes: 1024,
+            idempotencyPolicy: 'none',
+            auditCategory: 'test',
+          },
+          handler: ({ context }: { context: { actor?: { onBehalfOf?: { id?: string } } } }) => ({ ownerId: context.actor?.onBehalfOf?.id ?? null }),
+        }],
+      },
+      getWorkspaceBridgePi: (ctx) => ({
+        extensionFactories: [({ registerTool }: { registerTool: (tool: { execute: (...args: unknown[]) => Promise<unknown> }) => void }) => {
+          registerTool({
+            name: 'test-owner',
+            label: 'test owner',
+            description: 'test owner bridge tool',
+            parameters: {},
+            async execute(_toolCallId, _params, _signal, _onUpdate, toolCtx: { sessionManager: { getSessionId(): string } }) {
+              const response = await ctx.callAsRuntime<{ ownerId: string | null }>({ op: 'test.v1.owner', input: {} }, {
+                sessionId: toolCtx.sessionManager.getSessionId(),
+              })
+              return { content: [{ type: 'text', text: JSON.stringify(response) }], details: response }
+            },
+          })
+        }],
+      }),
+    })
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      headers: { 'content-type': 'application/json', 'x-boring-workspace-id': 'workspace-1', 'x-test-user-id': 'user-1' },
+      payload: { sessionId: 'session-1', message: 'hi' },
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      headers: { 'content-type': 'application/json', 'x-boring-workspace-id': 'workspace-1', 'x-test-user-id': 'user-2' },
+      payload: { sessionId: 'session-1', message: 'hi again' },
+    })
+
+    const registerOpts = agentServerMock.registerOpts.at(-1)
+    const piOptions = await (registerOpts?.getPi as Function)?.({
+      workspaceId: 'workspace-1',
+      workspaceRoot: '/tmp/workspace',
+    })
+    const tools: Array<{ execute: (...args: unknown[]) => Promise<unknown> }> = []
+    piOptions.extensionFactories[0]({ registerTool: (tool: { execute: (...args: unknown[]) => Promise<unknown> }) => tools.push(tool) })
+
+    await expect(tools[0]?.execute('tool-call-1', {}, undefined, undefined, {
+      sessionManager: { getSessionId: () => 'session-1' },
+    })).resolves.toMatchObject({
+      details: {
+        ok: true,
+        output: { ownerId: 'user-2' },
+      },
+    })
+    await app.close()
+  })
+
   it('ignores read-only session hydration and lets the latest sender own future runtime bridge requests', async () => {
     const app = await createCoreWorkspaceAgentServer({
       serveFrontend: false,

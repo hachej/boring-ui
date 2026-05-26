@@ -3,7 +3,7 @@ import {
   createCoreWorkspaceAgentServer,
   startCoreWorkspaceAgentDevServer,
 } from '@hachej/boring-core/app/server'
-import { createAskUserBridgeTool } from './askUserBridgeTool'
+import { createAskUserPiExtensionFactory } from '@hachej/boring-ask-user/agent'
 
 const appRoot = resolve(import.meta.dirname, '../..')
 
@@ -12,7 +12,14 @@ startCoreWorkspaceAgentDevServer({
   buildServer: (options) => createCoreWorkspaceAgentServer({
     ...options,
     appPackageJsonPath: resolve(appRoot, 'package.json'),
-    getWorkspaceBridgeExtraTools: (ctx) => [createAskUserBridgeTool(ctx)],
+    getWorkspaceBridgePi: (ctx) => ({
+      extensionFactories: [createAskUserPiExtensionFactory({
+        callHumanInputRequest: async (input, signal) => await ctx.callAsRuntime(
+          { op: 'human-input.v1.request', requestId: input.requestId, input },
+          { sessionId: input.sessionId, signal },
+        ),
+      })],
+    }),
   }),
 }).catch((error) => {
   console.error(error)

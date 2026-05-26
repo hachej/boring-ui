@@ -5,7 +5,18 @@ import { ASK_USER_PROMPT_GUIDELINES, ASK_USER_PROMPT_SNIPPET, createAskUserPiExt
 const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer" }] }
 
 function captureTool(ctx?: AskUserWorkspaceBridgeContext) {
-  const tools: Array<{ name: string; promptSnippet?: string; promptGuidelines?: string[]; execute: (toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown> }> = []
+  const tools: Array<{
+    name: string
+    promptSnippet?: string
+    promptGuidelines?: string[]
+    execute: (
+      toolCallId: string,
+      params: Record<string, unknown>,
+      signal?: AbortSignal,
+      onUpdate?: unknown,
+      toolCtx?: { sessionManager?: { getSessionId(): string } },
+    ) => Promise<unknown>
+  }> = []
   createAskUserPiExtensionFactory(ctx)({ registerTool: (tool) => tools.push(tool) })
   return tools[0]!
 }
@@ -30,6 +41,25 @@ describe("ask-user Pi extension", () => {
     const tool = captureTool({ sessionId: "session-1", callHumanInputRequest })
     await expect(tool.execute("call-1", {})).resolves.toMatchObject({ isError: true })
     expect(callHumanInputRequest).not.toHaveBeenCalled()
+  })
+
+  it("derives session id from Pi tool context when the host only provides bridge access", async () => {
+    const callHumanInputRequest = vi.fn(async () => ({
+      ok: true as const,
+      op: HUMAN_INPUT_OPS.request,
+      requestId: "call-ctx",
+      output: {
+        status: "answered" as const,
+        answer: { questionId: "q-ctx", sessionId: "session-from-pi", values: { answer: "ctx" }, answeredAt: "2026-01-01T00:00:00.000Z" },
+      },
+    }))
+    const tool = captureTool({ callHumanInputRequest })
+    await expect(tool.execute("call-ctx", { title: "Need input", schema }, undefined, undefined, {
+      sessionManager: { getSessionId: () => "session-from-pi" },
+    })).resolves.toMatchObject({
+      details: { status: "answered", answer: { sessionId: "session-from-pi" } },
+    })
+    expect(callHumanInputRequest).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "session-from-pi" }), undefined)
   })
 
   it("calls human-input request with tool and session ids and maps answer result", async () => {

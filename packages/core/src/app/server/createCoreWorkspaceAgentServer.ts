@@ -150,6 +150,8 @@ export interface CoreWorkspaceBridgeExtraToolsContext {
   ): Promise<WorkspaceBridgeCallResponse<TOutput>>
 }
 
+export type CoreWorkspaceBridgePiContext = CoreWorkspaceBridgeExtraToolsContext
+
 export interface CreateCoreWorkspaceAgentServerOptions
   extends Omit<RegisterAgentRoutesOptions, 'extraTools'> {
   appRoot?: string
@@ -168,6 +170,7 @@ export interface CreateCoreWorkspaceAgentServerOptions
     runtimeEnv?: WorkspaceBridgeRuntimeEnvOptions
   }
   getWorkspaceBridgeExtraTools?: (ctx: CoreWorkspaceBridgeExtraToolsContext) => CoreWorkspaceBridgeExtraTool[] | Promise<CoreWorkspaceBridgeExtraTool[]>
+  getWorkspaceBridgePi?: (ctx: CoreWorkspaceBridgePiContext) => AgentPiOptions | Promise<AgentPiOptions | undefined>
   /** Core consumes plugins statically for now; app-level hot reload is explicitly unsupported. */
   hotReload?: false
   forceProvisioning?: boolean
@@ -814,12 +817,47 @@ export async function createCoreWorkspaceAgentServer(
     )
     return scopedPluginCollection.agentOptions.pi
   }
+  const callWorkspaceBridgeAsRuntime = async <TOutput = unknown>(
+    workspaceId: string,
+    request: WorkspaceBridgeCallRequest,
+    callOptions?: { sessionId?: string; signal?: AbortSignal },
+  ): Promise<WorkspaceBridgeCallResponse<TOutput>> => {
+    const bridgeRuntime = getWorkspaceBridgeRuntime(workspaceId)
+    const definition = bridgeRuntime.registry.getDefinition(request.op)
+    const ownerPrincipalId = callOptions?.sessionId
+      ? bridgeRuntime.sessionOwners.get(callOptions.sessionId)
+      : undefined
+    return await bridgeRuntime.registry.call(request, {
+      callerClass: 'runtime',
+      workspaceId,
+      sessionId: callOptions?.sessionId,
+      capabilities: definition ? [...definition.requiredCapabilities] : [],
+      actor: {
+        actorKind: 'agent',
+        performedBy: { label: 'agent-runtime' },
+        onBehalfOf: ownerPrincipalId
+          ? { id: ownerPrincipalId, label: `user:${ownerPrincipalId}` }
+          : callOptions?.sessionId
+            ? { label: `session:${callOptions.sessionId}` }
+            : { label: `workspace:${workspaceId}` },
+      },
+      signal: callOptions?.signal,
+      emitUiEffect: (cmd) => getWorkspaceBridge(workspaceId).emitUiEffect(cmd),
+    })
+  }
   const resolvePiOptions: NonNullable<RegisterAgentRoutesOptions['getPi']> = async (ctx) => {
     const pluginOptions = getPluginPiOptions(ctx.workspaceRoot)
+    const bridgePiOptions = options.getWorkspaceBridgePi
+      ? await options.getWorkspaceBridgePi({
+          workspaceId: ctx.workspaceId,
+          workspaceRoot: ctx.workspaceRoot,
+          callAsRuntime: async (request, callOptions) => await callWorkspaceBridgeAsRuntime(ctx.workspaceId, request, callOptions),
+        })
+      : undefined
     const callerOptions = options.getPi
       ? await options.getPi(ctx)
       : undefined
-    return mergePiOptions(pluginOptions, callerOptions)
+    return mergePiOptions(mergePiOptions(pluginOptions, bridgePiOptions), callerOptions)
   }
   const workspaceBridgeRuntimeEnvContribution = options.workspaceBridge?.runtimeTokenSecret || options.workspaceBridge?.runtimeEnv
     ? {
@@ -854,34 +892,11 @@ export async function createCoreWorkspaceAgentServer(
     getSessionNamespace: options.getSessionNamespace,
     getExtraTools: async (ctx) => {
       const callerTools = options.getExtraTools ? await options.getExtraTools(ctx) : []
-      const bridgeRuntime = getWorkspaceBridgeRuntime(ctx.workspaceId)
       const bridgeTools = options.getWorkspaceBridgeExtraTools
         ? await options.getWorkspaceBridgeExtraTools({
             workspaceId: ctx.workspaceId,
             workspaceRoot: ctx.workspaceRoot,
-            callAsRuntime: async (request, callOptions) => {
-              const definition = bridgeRuntime.registry.getDefinition(request.op)
-              const ownerPrincipalId = callOptions?.sessionId
-                ? bridgeRuntime.sessionOwners.get(callOptions.sessionId)
-                : undefined
-              return await bridgeRuntime.registry.call(request, {
-                callerClass: 'runtime',
-                workspaceId: ctx.workspaceId,
-                sessionId: callOptions?.sessionId,
-                capabilities: definition ? [...definition.requiredCapabilities] : [],
-                actor: {
-                  actorKind: 'agent',
-                  performedBy: { label: 'agent-runtime' },
-                  onBehalfOf: ownerPrincipalId
-                    ? { id: ownerPrincipalId, label: `user:${ownerPrincipalId}` }
-                    : callOptions?.sessionId
-                      ? { label: `session:${callOptions.sessionId}` }
-                      : { label: `workspace:${ctx.workspaceId}` },
-                },
-                signal: callOptions?.signal,
-                emitUiEffect: (cmd) => getWorkspaceBridge(ctx.workspaceId).emitUiEffect(cmd),
-              })
-            },
+            callAsRuntime: async (request, callOptions) => await callWorkspaceBridgeAsRuntime(ctx.workspaceId, request, callOptions),
           })
         : []
       return [

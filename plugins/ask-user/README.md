@@ -55,7 +55,6 @@ createWorkspaceAgentServer({
   pi: {
     extensionFactories: [
       createAskUserPiExtensionFactory({
-        sessionId: () => activeSessionId,
         callHumanInputRequest: (input, signal) => workspaceBridgeRegistry.call({
           op: "human-input.v1.request",
           requestId: input.requestId,

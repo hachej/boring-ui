@@ -878,6 +878,9 @@ importers:
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@sinclair/typebox':
+        specifier: ^0.34.49
+        version: 0.34.49
       lucide-react:
         specifier: ^1.8.0
         version: 1.8.0(react@19.2.5)

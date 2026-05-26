@@ -1,5 +1,5 @@
 import { createCoreWorkspaceAgentServer, createVercelFastifyHandler } from '@hachej/boring-core/app/server'
-import { createAskUserBridgeTool } from './askUserBridgeTool'
+import { createAskUserPiExtensionFactory } from '@hachej/boring-ask-user/agent'
 
 process.env.BORING_AGENT_MODE ??= 'vercel-sandbox'
 process.env.BORING_AGENT_WORKSPACE_ROOT ??= '/tmp/boring-workspaces'
@@ -13,6 +13,13 @@ export default createVercelFastifyHandler({
     workspaceRoot,
     appPackageJsonPath: `${appRoot}/package.json`,
     serveFrontend: true,
-    getWorkspaceBridgeExtraTools: (ctx) => [createAskUserBridgeTool(ctx)],
+    getWorkspaceBridgePi: (ctx) => ({
+      extensionFactories: [createAskUserPiExtensionFactory({
+        callHumanInputRequest: async (input, signal) => await ctx.callAsRuntime(
+          { op: 'human-input.v1.request', requestId: input.requestId, input },
+          { sessionId: input.sessionId, signal },
+        ),
+      })],
+    }),
   }),
 })
