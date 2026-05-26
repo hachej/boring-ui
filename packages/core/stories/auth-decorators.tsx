@@ -55,7 +55,7 @@ function makeMockFetch(originalFetch: typeof fetch): typeof fetch {
         appName: "Storybook App",
         appLogo: null,
         apiBase: "",
-        features: { githubOauth: false, invitesEnabled: true, sendWelcomeEmail: false },
+        features: { githubOauth: false, googleOauth: false, invitesEnabled: true, sendWelcomeEmail: false },
       })
     }
     if (url.endsWith("/api/v1/workspaces")) {
