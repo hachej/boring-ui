@@ -102,17 +102,17 @@ export async function boringPluginRoutes(app: FastifyInstance, opts: BoringPlugi
     res.setHeader("X-Accel-Buffering", "no")
     res.flushHeaders?.()
 
-    const write = (event: BoringPluginEvent) => {
+    const write = (eventName: string, payload: Record<string, unknown>) => {
       try {
-        res.write(`event: ${event.type}\n`)
-        res.write(`data: ${JSON.stringify(event)}\n\n`)
+        res.write(`event: ${eventName}\n`)
+        res.write(`data: ${JSON.stringify(payload)}\n\n`)
       } catch {
         // client gone
       }
     }
 
     for (const plugin of manager.list()) {
-      write({
+      write("boring.plugin.load", {
         type: "boring.plugin.load",
         id: plugin.id,
         boring: plugin.boring,
@@ -120,10 +120,15 @@ export async function boringPluginRoutes(app: FastifyInstance, opts: BoringPlugi
         revision: plugin.revision,
         ...(plugin.frontUrl ? { frontUrl: plugin.frontUrl } : {}),
         ...(plugin.frontTarget ? { frontTarget: plugin.frontTarget } : {}),
+        replay: true,
       })
     }
+    write("boring.plugin.replay-complete", {
+      type: "boring.plugin.replay-complete",
+      replay: true,
+    })
 
-    const unsubscribe = manager.subscribe(write)
+    const unsubscribe = manager.subscribe((event) => write(event.type, { ...event, replay: false }))
     const heartbeat = setInterval(() => {
       try { res.write(": heartbeat\n\n") } catch { /* ignore */ }
     }, 25_000)

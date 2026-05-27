@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { ChatPanel, useSessions as useAgentSessions } from "@hachej/boring-agent"
+import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "@hachej/boring-agent/shared"
 import { WorkspaceAgentFront } from "@hachej/boring-workspace/app/front"
 import { WorkspaceSwitcherControl } from "./WorkspaceSwitcherControl"
 
@@ -7,6 +8,10 @@ interface WorkspaceMeta {
   projectName?: string
   workspacesMode?: boolean
   version?: string
+  runtimePluginFrontLoadingEnabled?: boolean
+  runtimePluginTrustLabel?: string
+  runtimePluginTrustDescription?: string
+  runtimePluginDiagnosticsEnabled?: boolean
 }
 
 interface LocalWorkspace {
@@ -62,6 +67,24 @@ export function CliVersionBadge({ version }: { version?: string | null }) {
   )
 }
 
+function CliRuntimePluginBadge(props: {
+  enabled: boolean
+  loading: boolean
+  trustLabel?: string | null
+  trustDescription?: string | null
+}) {
+  if (!props.enabled) return null
+  return (
+    <span
+      aria-label={props.loading ? "Runtime plugins loading" : (props.trustLabel ?? "Runtime plugins enabled")}
+      title={props.trustDescription ?? props.trustLabel ?? "Runtime plugins enabled"}
+      className="rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[10px] font-medium leading-none tracking-tight text-muted-foreground"
+    >
+      {props.loading ? "Plugins loading…" : (props.trustLabel ?? "Runtime plugins")}
+    </span>
+  )
+}
+
 export function CliWorkspaceShell() {
   const [projectName, setProjectName] = useState("Workspace")
   const [workspacesMode, setWorkspacesMode] = useState(false)
@@ -69,6 +92,10 @@ export function CliWorkspaceShell() {
   const [workspaces, setWorkspaces] = useState<LocalWorkspace[]>([])
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
   const [metaLoaded, setMetaLoaded] = useState(false)
+  const [runtimePluginFrontLoadingEnabled, setRuntimePluginFrontLoadingEnabled] = useState(false)
+  const [runtimePluginTrustLabel, setRuntimePluginTrustLabel] = useState<string | null>(null)
+  const [runtimePluginTrustDescription, setRuntimePluginTrustDescription] = useState<string | null>(null)
+  const [runtimePluginReplayPending, setRuntimePluginReplayPending] = useState(false)
 
   const refreshWorkspaces = useCallback(() => {
     void fetch("/api/v1/local-workspaces")
@@ -103,7 +130,12 @@ export function CliWorkspaceShell() {
         const version = meta?.version?.trim()
         if (version) setCliVersion(version)
         const isWorkspacesMode = meta?.workspacesMode === true
+        const runtimePluginsEnabled = meta?.runtimePluginFrontLoadingEnabled === true
         setWorkspacesMode(isWorkspacesMode)
+        setRuntimePluginFrontLoadingEnabled(runtimePluginsEnabled)
+        setRuntimePluginTrustLabel(meta?.runtimePluginTrustLabel?.trim() || null)
+        setRuntimePluginTrustDescription(meta?.runtimePluginTrustDescription?.trim() || null)
+        setRuntimePluginReplayPending(runtimePluginsEnabled)
         if (isWorkspacesMode) refreshWorkspaces()
         setMetaLoaded(true)
       })
@@ -131,6 +163,27 @@ export function CliWorkspaceShell() {
     if (!workspacesMode || !activeWorkspaceId) return
     syncCliWorkspaceUrl(activeWorkspaceId)
   }, [activeWorkspaceId, workspacesMode])
+
+  useEffect(() => {
+    if (!runtimePluginFrontLoadingEnabled) return
+    const handleRuntimePluginEvent = (raw: Event) => {
+      const detail = (raw as CustomEvent<{ type?: string; workspaceId?: string }>).detail
+      if (!detail) return
+      if (detail.workspaceId && activeWorkspaceId && detail.workspaceId !== activeWorkspaceId) return
+      if (detail.type === "boring.plugin.replay-complete") {
+        setRuntimePluginReplayPending(false)
+      }
+    }
+    window.addEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, handleRuntimePluginEvent as EventListener)
+    return () => {
+      window.removeEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, handleRuntimePluginEvent as EventListener)
+    }
+  }, [activeWorkspaceId, runtimePluginFrontLoadingEnabled])
+
+  useEffect(() => {
+    if (!runtimePluginFrontLoadingEnabled) return
+    setRuntimePluginReplayPending(true)
+  }, [activeWorkspaceId, projectName, runtimePluginFrontLoadingEnabled])
 
   const plugins = useMemo(() => [], [])
 
@@ -175,8 +228,8 @@ export function CliWorkspaceShell() {
         defaultSessionTitle={activeWorkspace.name}
         useSessions={useAgentSessions}
         chatParams={{ thinkingControl: true }}
-        frontPluginHotReload={false}
-        topBarRight={<CliVersionBadge version={cliVersion} />}
+        frontPluginHotReload={runtimePluginFrontLoadingEnabled ? "vite" : false}
+        topBarRight={<div className="flex items-center gap-2"><CliRuntimePluginBadge enabled={runtimePluginFrontLoadingEnabled} loading={runtimePluginReplayPending} trustLabel={runtimePluginTrustLabel} trustDescription={runtimePluginTrustDescription} /><CliVersionBadge version={cliVersion} /></div>}
         topBarLeft={
           <WorkspaceSwitcherControl
             appTitle="Boring UI"
@@ -207,8 +260,8 @@ export function CliWorkspaceShell() {
       defaultSessionTitle={projectName}
       useSessions={useAgentSessions}
       chatParams={{ thinkingControl: true }}
-      frontPluginHotReload={false}
-      topBarRight={<CliVersionBadge version={cliVersion} />}
+      frontPluginHotReload={runtimePluginFrontLoadingEnabled ? "vite" : false}
+      topBarRight={<div className="flex items-center gap-2"><CliRuntimePluginBadge enabled={runtimePluginFrontLoadingEnabled} loading={runtimePluginReplayPending} trustLabel={runtimePluginTrustLabel} trustDescription={runtimePluginTrustDescription} /><CliVersionBadge version={cliVersion} /></div>}
     />
   )
 }

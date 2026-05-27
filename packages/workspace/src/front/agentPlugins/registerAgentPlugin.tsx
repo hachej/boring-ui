@@ -4,13 +4,19 @@ import {
   type BoringFrontFactoryWithId,
   type CapturedBoringFrontRegistrations,
 } from "../../shared/plugins/frontFactory"
-import type { BoringPluginEvent } from "../../shared/plugins/runtimePluginTypes"
+import type { BoringPluginEvent, BoringPluginFrontTarget } from "../../shared/plugins/runtimePluginTypes"
 import type { CatalogConfig } from "../../shared/plugins/types"
 import type { PanelConfig } from "../../shared/types/panel"
 import type { SurfaceOpenRequest, SurfaceResolverConfig } from "../../shared/types/surface"
 import type { CommandConfig } from "../registry/types"
 import { useCatalogRegistry, useCommandRegistry, useRegistry, useSurfaceResolverRegistry } from "../registry/RegistryProvider"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "./reloadEvent"
+
+type RuntimePluginBrowserEvent =
+  | (Extract<BoringPluginEvent, { type: "boring.plugin.load" }> & { workspaceId?: string; replay?: boolean })
+  | (Extract<BoringPluginEvent, { type: "boring.plugin.unload" }> & { workspaceId?: string; replay?: boolean })
+  | (Extract<BoringPluginEvent, { type: "boring.plugin.error" }> & { workspaceId?: string; replay?: boolean })
+  | { type: "boring.plugin.replay-complete"; workspaceId?: string; replay?: boolean }
 
 export interface RegisterAgentPluginOptions {
   apiBaseUrl?: string
@@ -38,6 +44,16 @@ function isAbsoluteModuleUrl(url: string): boolean {
 function resolveFrontUrl(frontUrl: string, apiBaseUrl: string | undefined): string {
   if (!apiBaseUrl || isAbsoluteModuleUrl(frontUrl)) return frontUrl
   return joinUrl(apiBaseUrl, frontUrl.startsWith("/") ? frontUrl : `/${frontUrl}`)
+}
+
+function resolveFrontEntryUrl(
+  event: Extract<RuntimePluginBrowserEvent, { type: "boring.plugin.load" }>,
+  apiBaseUrl: string | undefined,
+): string | undefined {
+  const frontTarget = event.frontTarget as BoringPluginFrontTarget | undefined
+  if (frontTarget?.entryUrl) return resolveFrontUrl(frontTarget.entryUrl, apiBaseUrl)
+  if (event.frontUrl) return resolveFrontUrl(event.frontUrl, apiBaseUrl)
+  return undefined
 }
 
 function getRegistries(
@@ -296,16 +312,18 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
 
     const handleLoad = (raw: MessageEvent) => {
       void (async () => {
-        let event: Extract<BoringPluginEvent, { type: "boring.plugin.load" }> | undefined
+        let event: Extract<RuntimePluginBrowserEvent, { type: "boring.plugin.load" }> | undefined
         try {
-          event = JSON.parse(raw.data) as Extract<BoringPluginEvent, { type: "boring.plugin.load" }>
+          event = JSON.parse(raw.data) as Extract<RuntimePluginBrowserEvent, { type: "boring.plugin.load" }>
           if (disposed) return
+          if (event.workspaceId && options.workspaceId && event.workspaceId !== options.workspaceId) return
           const lastSeen = lastSeenRef.current.get(event.id) ?? 0
           const latestRequested = latestRequestedRef.current.get(event.id) ?? 0
           if (event.revision <= Math.max(lastSeen, latestRequested)) return
           latestRequestedRef.current.set(event.id, event.revision)
-          const captured = event.frontUrl
-            ? await captureFrontFactory(event.id, resolveFrontUrl(event.frontUrl, options.apiBaseUrl), event.revision, options.importFront)
+          const frontEntryUrl = resolveFrontEntryUrl(event, options.apiBaseUrl)
+          const captured = frontEntryUrl
+            ? await captureFrontFactory(event.id, frontEntryUrl, event.revision, options.importFront)
             : null
           if (disposed) return
           if (latestRequestedRef.current.get(event.id) !== event.revision) return
@@ -347,7 +365,8 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
     const handleUnload = (raw: MessageEvent) => {
       if (disposed) return
       try {
-        const event = JSON.parse(raw.data) as Extract<BoringPluginEvent, { type: "boring.plugin.unload" }>
+        const event = JSON.parse(raw.data) as Extract<RuntimePluginBrowserEvent, { type: "boring.plugin.unload" }>
+        if (event.workspaceId && options.workspaceId && event.workspaceId !== options.workspaceId) return
         const lastSeen = lastSeenRef.current.get(event.id) ?? 0
         const latestRequested = latestRequestedRef.current.get(event.id) ?? 0
         if (event.revision <= Math.max(lastSeen, latestRequested)) return
@@ -363,7 +382,8 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
     const handleError = (raw: MessageEvent) => {
       if (disposed) return
       try {
-        const event = JSON.parse(raw.data) as Extract<BoringPluginEvent, { type: "boring.plugin.error" }>
+        const event = JSON.parse(raw.data) as Extract<RuntimePluginBrowserEvent, { type: "boring.plugin.error" }>
+        if (event.workspaceId && options.workspaceId && event.workspaceId !== options.workspaceId) return
         console.error(`[boring-ui] plugin ${event.id} failed to reload: ${event.message}`)
         // Dispatch so the plugin inspector / UI knows about the error.
         window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, {
@@ -379,9 +399,21 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
       }
     }
 
+    const handleReplayComplete = (raw: MessageEvent) => {
+      if (disposed) return
+      try {
+        const event = JSON.parse(raw.data) as Extract<RuntimePluginBrowserEvent, { type: "boring.plugin.replay-complete" }>
+        if (event.workspaceId && options.workspaceId && event.workspaceId !== options.workspaceId) return
+        window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: event }))
+      } catch (error) {
+        console.error("[boring-ui] failed to process plugin replay-complete event", error)
+      }
+    }
+
     es.addEventListener("boring.plugin.load", handleLoad as EventListener)
     es.addEventListener("boring.plugin.unload", handleUnload as EventListener)
     es.addEventListener("boring.plugin.error", handleError as EventListener)
+    es.addEventListener("boring.plugin.replay-complete", handleReplayComplete as EventListener)
     return () => {
       disposed = true
       latestRequestedRef.current.clear()
