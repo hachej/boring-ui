@@ -179,6 +179,7 @@ export function FileTreeView({
   // `path` is a synthetic id so the row can be located in the tree.
   const [editing, setEditing] = useState<DraftEditing>(null)
   const [revealPath, setRevealPath] = useState<string | null>(null)
+  const revealSeqRef = useRef(0)
   const draftSeqRef = useRef(0)
 
   const useServerSearch = (searchQuery?.trim().length ?? 0) > 0
@@ -294,8 +295,10 @@ export function FileTreeView({
     async (path: string | null) => {
       if (!path) return
       const normalizedPath = normalizeRevealPath(path)
+      const revealSeq = ++revealSeqRef.current
       setSelectedPath(normalizedPath)
       await refreshDirs(parentDirsForReveal(normalizedPath), { force: true })
+      if (revealSeqRef.current !== revealSeq) return
       setRevealPath(normalizedPath)
     },
     [refreshDirs],
