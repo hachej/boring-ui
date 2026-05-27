@@ -283,6 +283,50 @@ describe('CoreWorkspaceAgentFront', () => {
     })
   })
 
+  it('does not auto-submit a stale pending draft on a non-matching route', async () => {
+    const { CoreWorkspaceAgentFront } = await importSubject()
+    routePath = '/workspace/workspace-a'
+    routeStatus = { status: 'matched', workspaceId: 'workspace-a' }
+    currentWorkspaceId = 'workspace-a'
+    window.sessionStorage.setItem('boring:pending-chat-entry', JSON.stringify({
+      draft: 'Wrong workspace draft',
+      returnTo: '/workspace/workspace-b',
+      intendedWorkspaceId: 'workspace-b',
+      createdAt: Date.now(),
+    }))
+
+    render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" />)
+
+    expect(workspaceAgentProps?.chatParams).not.toMatchObject({
+      initialDraft: 'Wrong workspace draft',
+      autoSubmitInitialDraft: true,
+    })
+  })
+
+  it('blocks sends from the lean authenticated shell even with a host submit hook', async () => {
+    const { CoreWorkspaceAgentFront } = await importSubject()
+    const hostBeforeSubmit = vi.fn()
+    currentWorkspaceId = null
+    routePath = '/'
+    window.sessionStorage.setItem('boring:pending-chat-entry', JSON.stringify({
+      draft: 'Keep this draft',
+      returnTo: '/',
+      intendedWorkspaceId: 'ws-pending',
+      createdAt: Date.now(),
+    }))
+
+    render(
+      <CoreWorkspaceAgentFront
+        chatEntryMode="chat-first"
+        chatParams={{ onBeforeSubmit: hostBeforeSubmit }}
+      />,
+    )
+
+    const result = await (workspaceAgentProps?.chatParams as { onBeforeSubmit: (draft: string, ctx: unknown) => false | void | Promise<false | void> }).onBeforeSubmit('Do not send yet', {})
+    expect(result).toBe(false)
+    expect(hostBeforeSubmit).not.toHaveBeenCalled()
+  })
+
   it('marks custom workspace routes as public in chat-first mode', async () => {
     const { CoreWorkspaceAgentFront } = await importSubject()
     sessionState = { data: null, isPending: false }

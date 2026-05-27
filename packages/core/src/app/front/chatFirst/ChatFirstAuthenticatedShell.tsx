@@ -73,7 +73,9 @@ export function ChatFirstAuthenticatedShell<
         ...(initialDraft && autoSubmitInitialDraft ? { autoSubmitInitialDraft: true } : {}),
         serverResourcesEnabled: false,
         hydrateMessages: false,
-        onBeforeSubmit: workspaceProps.chatParams?.onBeforeSubmit ?? (() => false as const),
+        onBeforeSubmit: showComposerBlocker
+          ? (() => false as const)
+          : workspaceProps.chatParams?.onBeforeSubmit ?? (() => false as const),
       }}
       frontPluginHotReload={false}
       hotReloadEnabled={false}

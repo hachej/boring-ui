@@ -420,6 +420,51 @@ describe('ChatPanel (shadcn)', () => {
     })
   })
 
+  test('auto-submit resets when the same draft moves to a new session', async () => {
+    const { rerender } = render(
+      <ChatPanel
+        sessionId="sess-auto-draft-a"
+        initialDraft="same draft, new session"
+        autoSubmitInitialDraft
+      />,
+    )
+
+    await waitFor(() => {
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        { text: 'same draft, new session', files: [] },
+        {
+          body: {
+            sessionId: 'sess-auto-draft-a',
+            message: 'same draft, new session',
+            attachments: [],
+          },
+        },
+      )
+    })
+
+    mockSendMessage.mockClear()
+    rerender(
+      <ChatPanel
+        sessionId="sess-auto-draft-b"
+        initialDraft="same draft, new session"
+        autoSubmitInitialDraft
+      />,
+    )
+
+    await waitFor(() => {
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        { text: 'same draft, new session', files: [] },
+        {
+          body: {
+            sessionId: 'sess-auto-draft-b',
+            message: 'same draft, new session',
+            attachments: [],
+          },
+        },
+      )
+    })
+  })
+
   test('auto-submit only marks the turn settled after status returns to ready', async () => {
     const onAutoSubmitInitialDraftSettled = vi.fn()
 
@@ -1491,7 +1536,25 @@ describe('ChatPanel (shadcn)', () => {
       expect((html.match(/ADJACENT_DUPLICATE_TEXT/g) ?? []).length).toBe(1)
     })
 
-    test('keeps visible sdk user turns when ready-state pi fallback supplies the assistant text', () => {
+      test('does not render empty assistant placeholders before a visible assistant error', () => {
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          { id: 'empty-a1', role: 'assistant', parts: [] },
+          { id: 'empty-a2', role: 'assistant', parts: [] },
+          { id: 'visible-error', role: 'assistant', parts: [{ type: 'text', text: 'VISIBLE_ERROR_TEXT' }] },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-empty-assistant-placeholders" />)
+      expect((html.match(/data-from="assistant"/g) ?? []).length).toBe(1)
+      expect(html).toContain('VISIBLE_ERROR_TEXT')
+    })
+
+  test('keeps visible sdk user turns when ready-state pi fallback supplies the assistant text', () => {
       mockPiProjection.piMessages = [
         {
           id: 'pi-ready-a1',

@@ -192,6 +192,10 @@ function WorkspaceRoute<
     location.pathname,
     location.search,
     location.hash,
+  ) || (
+    pendingChatEntry?.returnTo === '/' &&
+    currentWorkspace?.id === workspaceId &&
+    (!pendingChatEntry.intendedWorkspaceId || pendingChatEntry.intendedWorkspaceId === workspaceId)
   )
   const requestHeaders = useMemo(
     () => ({ ...workspaceProps.requestHeaders, 'x-boring-workspace-id': workspaceId }),
@@ -225,10 +229,11 @@ function WorkspaceRoute<
 
   if (routeStatus.status !== 'matched' || currentWorkspace?.id !== workspaceId) return <>{loadingFallback}</>
 
+  const shouldRestorePendingDraft = restorePendingDraft && Boolean(pendingChatEntry?.draft)
   const chatParams = {
     ...workspaceProps.chatParams,
-    ...(pendingChatEntry?.draft ? { initialDraft: pendingChatEntry.draft } : {}),
-    ...(pendingChatEntry?.draft ? { autoSubmitInitialDraft: true } : {}),
+    ...(shouldRestorePendingDraft ? { initialDraft: pendingChatEntry?.draft } : {}),
+    ...(shouldRestorePendingDraft ? { autoSubmitInitialDraft: true } : {}),
     onBeforeSubmit: async (draft: string, ctx: unknown) => {
       const existing = workspaceProps.chatParams?.onBeforeSubmit as ((draft: string, ctx: unknown) => false | void | Promise<false | void>) | undefined
       const result = await existing?.(draft, ctx)

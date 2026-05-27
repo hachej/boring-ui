@@ -435,7 +435,17 @@ export function ChatPanel(props: ChatPanelProps) {
   const autoSubmittingDraftRef = useRef<string | undefined>(undefined)
   const pendingAutoSubmitUnlockRef = useRef<string | undefined>(undefined)
   const pendingAutoSubmitSettleRef = useRef<string | undefined>(undefined)
+  const activeAutoSubmitSessionRef = useRef(sessionId)
   const [acceptedAutoSubmittedDraft, setAcceptedAutoSubmittedDraft] = useState<string | undefined>(undefined)
+
+  useEffect(() => {
+    activeAutoSubmitSessionRef.current = sessionId
+    autoSubmittedDraftRef.current = undefined
+    autoSubmittingDraftRef.current = undefined
+    pendingAutoSubmitUnlockRef.current = undefined
+    pendingAutoSubmitSettleRef.current = undefined
+    setAcceptedAutoSubmittedDraft(undefined)
+  }, [sessionId])
 
   const {
     messages, sendMessage, setMessages, status, error, stop, clearError,
@@ -676,8 +686,10 @@ export function ChatPanel(props: ChatPanelProps) {
       ...baseMessages.slice(insertAt),
     ]
   }, [acceptedAutoSubmittedDraft, messages, piMessages, projectedTailMessages, projectedStatusById, sessionId, status])
-  const emptyHero = emptyPlacement === 'hero' && displayMessages.length === 0
-  const renderMessages = displayMessages
+  const renderMessages = displayMessages.filter((message) => (
+    message.role !== 'assistant' || hasVisibleMessageContent(message)
+  ))
+  const emptyHero = emptyPlacement === 'hero' && renderMessages.length === 0
 
   // Stop button: cancels stream, clears the queued follow-up, and lets host UI
   // cancel any host-level blocker that is waiting for user attention.
@@ -910,9 +922,11 @@ export function ChatPanel(props: ChatPanelProps) {
     if (!initialDraft?.trim()) return
     if (autoSubmittedDraftRef.current === initialDraft) return
     if (autoSubmittingDraftRef.current === initialDraft) return
+    const targetSessionId = sessionId
     autoSubmittingDraftRef.current = initialDraft
     void (async () => {
       const result = await handleSubmit({ text: initialDraft, files: [] }, 'composer')
+      if (activeAutoSubmitSessionRef.current !== targetSessionId) return
       autoSubmittingDraftRef.current = undefined
       if (result === false) return
       autoSubmittedDraftRef.current = initialDraft
@@ -921,7 +935,7 @@ export function ChatPanel(props: ChatPanelProps) {
       setAcceptedAutoSubmittedDraft(initialDraft)
       setComposerDraft('', false)
     })()
-  }, [autoSubmitInitialDraft, handleSubmit, initialDraft, setComposerDraft])
+  }, [autoSubmitInitialDraft, handleSubmit, initialDraft, sessionId, setComposerDraft])
 
   return (
     <ArtifactOpenProvider onOpenArtifact={onOpenArtifact}>
@@ -984,7 +998,7 @@ export function ChatPanel(props: ChatPanelProps) {
           chrome ? "max-w-3xl px-6 py-8" : "max-w-[680px] px-4 py-4",
           emptyHero && "py-4 text-center",
         )}>
-          {displayMessages.length === 0 && (
+          {renderMessages.length === 0 && (
             <ChatEmptyState
               eyebrow={emptyState?.eyebrow}
               title={emptyState?.title}
