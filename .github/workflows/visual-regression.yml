@@ -21,6 +21,9 @@ on:
 env:
   CI: true
 
+permissions:
+  contents: read
+
 concurrency:
   group: visual-regression-${{ github.ref }}
   cancel-in-progress: true
