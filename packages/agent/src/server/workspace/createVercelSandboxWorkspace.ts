@@ -209,6 +209,16 @@ export function createVercelSandboxWorkspace(
   const { emit: emitChange, watcher } = createSandboxBroadcaster()
   const remote = sandbox as VercelSandboxCompat
 
+  async function assertRealPathWithinSandboxRoot(sandboxPath: string): Promise<void> {
+    const isWithinRoot = await runJson<boolean>(
+      remote,
+      `node -e ${shellQuote(`const fs=require('fs'); const path=require('path'); const root=fs.realpathSync(process.argv[1]); const target=fs.realpathSync(process.argv[2]); const rel=path.relative(root,target); process.stdout.write(JSON.stringify(rel===''||(!rel.startsWith('..')&&!path.isAbsolute(rel))))`)} ${shellQuote(VERCEL_SANDBOX_REMOTE_ROOT)} ${shellQuote(sandboxPath)}`,
+    )
+    if (!isWithinRoot) {
+      throw Object.assign(new Error('resolved path escapes workspace root'), { code: EPERM_CODE })
+    }
+  }
+
   async function listDescendantPaths(relPath: string, sandboxPath: string): Promise<string[]> {
     if (remote.fs?.stat && remote.fs.readdir) {
       const fileStat = await remote.fs.stat(sandboxPath)
@@ -417,6 +427,7 @@ export function createVercelSandboxWorkspace(
       if (sandboxPath === VERCEL_SANDBOX_REMOTE_ROOT) {
         throw Object.assign(new Error('cannot remove workspace root'), { code: EPERM_CODE })
       }
+      await assertRealPathWithinSandboxRoot(sandboxPath)
       const descendantPaths = await listDescendantPaths(relPath, sandboxPath)
       if (remote.fs?.rm) await remote.fs.rm(sandboxPath, { recursive: true, force: false })
       else await runShell(remote, `rm -r -- ${shellQuote(sandboxPath)}`)

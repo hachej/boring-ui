@@ -473,6 +473,7 @@ export async function createWorkspaceAgentServer(
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
   const workspaceFsCapability = modeAdapter.workspaceFsCapability ?? "best-effort"
   const validateUiPaths = opts.validateUiPaths ?? workspaceFsCapability === "strong"
+  const resolveRuntimeUiPaths = opts.validateUiPaths !== false
   const ctx: WorkspaceAgentServerPluginContext = { workspaceRoot, bridge }
 
   // Resolve app-default plugin packages from two sources, merged:
@@ -611,13 +612,15 @@ export async function createWorkspaceAgentServer(
       ...(opts.extraToolFactories ?? []),
       (runtimeBundle) => createWorkspaceUiTools(bridge, {
         workspaceRoot: validateUiPaths ? workspaceRoot : undefined,
-        resolvePathKind: async (path) => {
-          try {
-            return (await runtimeBundle.workspace.stat(path)).kind
-          } catch {
-            return null
-          }
-        },
+        resolvePathKind: resolveRuntimeUiPaths
+          ? async (path) => {
+              try {
+                return (await runtimeBundle.workspace.stat(path)).kind
+              } catch {
+                return null
+              }
+            }
+          : undefined,
       }),
     ],
     systemPromptAppend: [
