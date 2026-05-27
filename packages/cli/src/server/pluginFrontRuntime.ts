@@ -265,6 +265,11 @@ function rewriteViteSupportUrls(code: string, basePath: string): string {
     })
 }
 
+function isImplicitViteSupportPath(path: string, basePath: string): boolean {
+  return path.startsWith(`${basePath}/__vite/proxy/node_modules%2F.vite%2Fdeps%2F`)
+    || path.startsWith(`${basePath}/__vite/proxy/%40id%2F`)
+}
+
 function extractMintedSupportPaths(code: string, basePath: string): string[] {
   const paths = new Set<string>()
   const escapedBasePath = basePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -740,7 +745,7 @@ export async function createPluginFrontRuntimeHost(
   }
 
   function isMintedSupportPath(path: string): boolean {
-    return (mintedSupportPathRefCounts.get(path) ?? 0) > 0
+    return isImplicitViteSupportPath(path, basePath) || (mintedSupportPathRefCounts.get(path) ?? 0) > 0
   }
 
   async function invalidateMatching(predicate: (record: ValidatedRuntimeRequest) => boolean): Promise<void> {
@@ -1029,6 +1034,15 @@ export async function createPluginFrontRuntimeHost(
         ))
         return reply.code(apiError.statusCode).send(apiError.body)
       }
+
+      const search = request.raw.url?.includes("?") ? request.raw.url.slice(request.raw.url.indexOf("?")) : ""
+      const transformed = await vite.transformRequest(`${targetPath}${normalizeSearch(search)}`)
+      if (transformed?.code) {
+        return reply
+          .type("application/javascript; charset=utf-8")
+          .send(rewriteViteSupportUrls(transformed.code, basePath))
+      }
+
       request.raw.url = targetPath
       await forwardToVite(request, reply)
     })
