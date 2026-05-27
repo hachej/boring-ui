@@ -75,7 +75,7 @@ describe("boring agent plugin assets", () => {
     expect(plugin.pi?.systemPrompt).toBe("Test plugin context")
   })
 
-  test("rejects boring.id because package.json name is the plugin id", async () => {
+  test("uses boring.id as explicit plugin id when provided", async () => {
     const root = await tmp("boring-plugin-explicit-id-")
     await writePlugin(root)
     const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
@@ -83,12 +83,8 @@ describe("boring agent plugin assets", () => {
     await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
 
     const result = preflightBoringPlugins([root])
-    expect(result.ok).toBe(false)
-    expect(result.errors[0]).toMatchObject({
-      pluginId: "boring-plugin-test",
-      code: "INVALID_PLUGIN_METADATA",
-      message: expect.stringContaining("boring.id is not supported"),
-    })
+    expect(result.ok).toBe(true)
+    expect(readBoringPlugins([root])[0]?.id).toBe("test-plugin")
   })
 
   test("rejects invalid effective ids derived from package name", async () => {
