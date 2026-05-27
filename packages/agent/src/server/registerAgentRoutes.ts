@@ -118,9 +118,13 @@ function getRequestWorkspaceId(request: FastifyRequest): string {
   return request.workspaceContext?.workspaceId ?? DEFAULT_WORKSPACE_ID
 }
 
-function isWorkspaceAgnosticAgentRequest(request: FastifyRequest): boolean {
+function isWorkspaceAgnosticAgentRequest(
+  request: FastifyRequest,
+  options?: { readyStatusWorkspaceScoped?: boolean },
+): boolean {
   const pathname = request.url.split('?')[0] ?? request.url
-  return pathname === '/health' || pathname === '/ready' || pathname === '/api/v1/agent/models' || pathname === '/api/v1/ready-status'
+  if (pathname === '/api/v1/ready-status') return !options?.readyStatusWorkspaceScoped
+  return pathname === '/health' || pathname === '/ready' || pathname === '/api/v1/agent/models'
 }
 
 function extractHttpStatus(error: unknown): number | null {
@@ -557,7 +561,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   app.addHook('onRequest', async (request, reply) => {
     const user = (request as unknown as { user?: { id: string } | null }).user
     let workspaceId = DEFAULT_WORKSPACE_ID
-    if (opts.getWorkspaceId && !isWorkspaceAgnosticAgentRequest(request)) {
+    if (opts.getWorkspaceId && !isWorkspaceAgnosticAgentRequest(request, { readyStatusWorkspaceScoped: requestScopedRuntime })) {
       try {
         workspaceId = (await opts.getWorkspaceId(request)).trim()
       } catch (error) {
@@ -703,10 +707,8 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     ? { tools: staticBinding.tools }
     : { getTools: async (request) => (await getBindingForRequest(request)).tools },
   )
-  await app.register(readyStatusRoutes, {
-    tracker: staticBinding?.readyTracker ?? new ReadyStatusTracker({
-      sandboxReady: true,
-      harnessReady: true,
-    }),
-  })
+  await app.register(readyStatusRoutes, staticBinding
+    ? { tracker: staticBinding.readyTracker }
+    : { getTracker: async (request) => (await getBindingForRequest(request)).readyTracker },
+  )
 }

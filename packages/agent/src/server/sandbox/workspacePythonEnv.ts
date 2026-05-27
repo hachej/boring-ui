@@ -25,8 +25,9 @@ export function withWorkspacePythonEnv(
   return {
     ...baseEnv,
     PATH: pathParts.join(':'),
-    VIRTUAL_ENV: baseEnv.VIRTUAL_ENV ?? paths.venv,
-    BORING_AGENT_WORKSPACE_ROOT:
-      baseEnv.BORING_AGENT_WORKSPACE_ROOT ?? runtimeRoot,
+    VIRTUAL_ENV: sandboxRoot ? paths.venv : baseEnv.VIRTUAL_ENV ?? paths.venv,
+    BORING_AGENT_WORKSPACE_ROOT: sandboxRoot
+      ? runtimeRoot
+      : baseEnv.BORING_AGENT_WORKSPACE_ROOT ?? runtimeRoot,
   }
 }

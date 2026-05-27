@@ -391,11 +391,11 @@ describe('Provisioner integration', () => {
     } as unknown as WorkspaceStore
   }
 
-  function provSeedWorkspace(name: string, ownerUserId: string) {
+  function provSeedWorkspace(name: string, ownerUserId: string, opts?: { isDefault?: boolean }) {
     const id = `ws-${pNextWsId++}`
     const ws: Workspace = {
       id, appId: APP_ID, name, createdBy: ownerUserId,
-      createdAt: new Date().toISOString(), deletedAt: null, isDefault: false,
+      createdAt: new Date().toISOString(), deletedAt: null, isDefault: opts?.isDefault ?? false,
     }
     pWorkspaces.set(id, ws)
     const wsMembers = new Map<string, MemberRole>()
@@ -447,6 +447,65 @@ describe('Provisioner integration', () => {
 
   beforeEach(() => {
     provResetState()
+  })
+
+  describe('GET /api/v1/workspaces (with provisioner)', () => {
+    it('auto-creates the default workspace through the provisioner', async () => {
+      provisionFn.mockResolvedValue({ volumePath: '/volumes/ws-default' })
+
+      const res = await provInject('GET', '/api/v1/workspaces', OWNER_ID)
+      expect(res.statusCode).toBe(200)
+
+      const workspace = res.json().workspaces[0]
+      expect(workspace).toMatchObject({ name: 'My Workspace', isDefault: true })
+      expect(provisionFn).toHaveBeenCalledOnce()
+      expect(provisionFn).toHaveBeenCalledWith(expect.objectContaining({
+        workspaceId: workspace.id,
+        workspaceName: 'My Workspace',
+        ownerId: OWNER_ID,
+        appId: APP_ID,
+      }))
+      const runtime = runtimes.get(workspace.id)
+      expect(runtime?.state).toBe('ready')
+      expect(runtime?.volumePath).toBe('/volumes/ws-default')
+    })
+
+    it('provisions an existing signup-created default workspace with missing runtime', async () => {
+      provisionFn.mockResolvedValue({ volumePath: '/volumes/signup-default' })
+      const workspace = provSeedWorkspace('My Workspace', OWNER_ID, { isDefault: true })
+
+      const res = await provInject('GET', '/api/v1/workspaces', OWNER_ID)
+      expect(res.statusCode).toBe(200)
+
+      expect(res.json().workspaces[0].id).toBe(workspace.id)
+      expect(provisionFn).toHaveBeenCalledOnce()
+      expect(provisionFn).toHaveBeenCalledWith(expect.objectContaining({
+        workspaceId: workspace.id,
+        workspaceName: 'My Workspace',
+        ownerId: OWNER_ID,
+        appId: APP_ID,
+      }))
+      const runtime = runtimes.get(workspace.id)
+      expect(runtime?.state).toBe('ready')
+      expect(runtime?.volumePath).toBe('/volumes/signup-default')
+    })
+
+    it('backfills shared default workspace runtime under the creator owner id', async () => {
+      provisionFn.mockResolvedValue({ volumePath: '/volumes/shared-default' })
+      const workspace = provSeedWorkspace('My Workspace', OWNER_ID, { isDefault: true })
+      pMembers.get(workspace.id)?.set(EDITOR_ID, 'editor')
+
+      const res = await provInject('GET', '/api/v1/workspaces', EDITOR_ID)
+      expect(res.statusCode).toBe(200)
+
+      expect(res.json().workspaces[0].id).toBe(workspace.id)
+      expect(provisionFn).toHaveBeenCalledOnce()
+      expect(provisionFn).toHaveBeenCalledWith(expect.objectContaining({
+        workspaceId: workspace.id,
+        ownerId: OWNER_ID,
+      }))
+      expect(runtimes.get(workspace.id)?.volumePath).toBe('/volumes/shared-default')
+    })
   })
 
   describe('POST /api/v1/workspaces (with provisioner)', () => {

@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync } from 'fastify'
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import fp from 'fastify-plugin'
 import { HttpError, ERROR_CODES } from '../../shared/errors.js'
 import { requireWorkspaceMember } from '../auth/requireWorkspaceMember.js'
@@ -10,12 +10,57 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
   const store = app.workspaceStore
   const provisioner = app.provisioner
 
-  async function listOrCreateDefaultWorkspace(userId: string) {
+  async function provisionWorkspace(workspace: Awaited<ReturnType<typeof store.create>>, ownerId: string, request: FastifyRequest) {
+    if (!provisioner) return
+    await store.putWorkspaceRuntime(workspace.id, { state: 'pending' })
+    try {
+      const result = await provisioner.provision({
+        workspaceId: workspace.id,
+        workspaceName: workspace.name,
+        ownerId,
+        appId: app.config.appId,
+      })
+      await store.putWorkspaceRuntime(workspace.id, {
+        state: 'ready',
+        volumePath: result.volumePath,
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      await store.putWorkspaceRuntime(workspace.id, {
+        state: 'error',
+        lastError: message,
+        lastErrorOp: 'provision',
+      })
+      request.log.error({ workspaceId: workspace.id, err }, 'workspace.provision.failed')
+      throw new HttpError({
+        status: 500,
+        code: ERROR_CODES.PROVISION_FAILED,
+        message: 'Workspace provisioning failed',
+        requestId: request.id,
+      })
+    }
+  }
+
+  async function createWorkspaceForUser(userId: string, name: string, isDefault: boolean, request: FastifyRequest) {
+    const workspace = await store.create(userId, name, app.config.appId, { isDefault })
+    await provisionWorkspace(workspace, userId, request)
+    return workspace
+  }
+
+  async function ensureDefaultWorkspaceProvisioned(workspace: Awaited<ReturnType<typeof store.create>>, request: FastifyRequest) {
+    if (!provisioner || !workspace.isDefault) return
+    const runtime = await store.getWorkspaceRuntime(workspace.id)
+    const needsProvisioning = !runtime || (runtime.state === 'ready' && !runtime.volumePath)
+    if (needsProvisioning) await provisionWorkspace(workspace, workspace.createdBy, request)
+  }
+
+  async function listOrCreateDefaultWorkspace(userId: string, request: FastifyRequest) {
     const existing = await store.list(userId, app.config.appId)
-    if (existing.length > 0) return existing
-    const created = await store.create(userId, DEFAULT_WORKSPACE_NAME, app.config.appId, {
-      isDefault: true,
-    })
+    if (existing.length > 0) {
+      await Promise.all(existing.map((workspace) => ensureDefaultWorkspaceProvisioned(workspace, request)))
+      return existing
+    }
+    const created = await createWorkspaceForUser(userId, DEFAULT_WORKSPACE_NAME, true, request)
     return [created]
   }
 
@@ -34,37 +79,7 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
     const existing = await store.list(user.id, app.config.appId)
     const isDefault = existing.length === 0
 
-    const workspace = await store.create(user.id, parsed.data.name, app.config.appId, { isDefault })
-
-    if (provisioner) {
-      await store.putWorkspaceRuntime(workspace.id, { state: 'pending' })
-      try {
-        const result = await provisioner.provision({
-          workspaceId: workspace.id,
-          workspaceName: workspace.name,
-          ownerId: user.id,
-          appId: app.config.appId,
-        })
-        await store.putWorkspaceRuntime(workspace.id, {
-          state: 'ready',
-          volumePath: result.volumePath,
-        })
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        await store.putWorkspaceRuntime(workspace.id, {
-          state: 'error',
-          lastError: message,
-          lastErrorOp: 'provision',
-        })
-        request.log.error({ workspaceId: workspace.id, err }, 'workspace.provision.failed')
-        throw new HttpError({
-          status: 500,
-          code: ERROR_CODES.PROVISION_FAILED,
-          message: 'Workspace provisioning failed',
-          requestId: request.id,
-        })
-      }
-    }
+    const workspace = await createWorkspaceForUser(user.id, parsed.data.name, isDefault, request)
 
     request.log.info({ workspaceId: workspace.id, userId: user.id }, 'workspace.create')
     reply.status(201)
@@ -72,7 +87,7 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
   })
 
   app.get('/api/v1/workspaces', async (request) => {
-    const workspaces = await listOrCreateDefaultWorkspace(request.user!.id)
+    const workspaces = await listOrCreateDefaultWorkspace(request.user!.id, request)
     return { workspaces }
   })
 

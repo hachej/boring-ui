@@ -131,6 +131,37 @@ test('registerAgentRoutes provisions the resolved request workspace, not the hos
   }
 })
 
+test('request-scoped ready-status resolves the requested workspace', async () => {
+  const baseRoot = await makeTempDir('boring-agent-ready-base-')
+  const workspaceA = await makeTempDir('boring-agent-ready-workspace-a-')
+  const getWorkspaceId = vi.fn(async (request: { headers: Record<string, unknown> }) => String(request.headers['x-boring-workspace-id'] ?? ''))
+  const getWorkspaceRoot = vi.fn(async (workspaceId: string) => workspaceId === 'workspace-a' ? workspaceA : baseRoot)
+  const app = Fastify({ logger: false })
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot: baseRoot,
+    mode: 'direct',
+    getWorkspaceId,
+    getWorkspaceRoot,
+  })
+  await app.ready()
+
+  try {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/ready-status',
+      headers: { 'x-boring-workspace-id': 'workspace-a' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toContain('"state":"ready"')
+    expect(getWorkspaceId).toHaveBeenCalledOnce()
+    expect(getWorkspaceRoot).toHaveBeenCalledWith('workspace-a', expect.anything())
+  } finally {
+    await app.close()
+  }
+})
+
 test('registerAgentRoutes reload reruns provisioning and refreshes skills scope', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-reload-provision-')
   const skillRootV1 = join(workspaceRoot, 'generated-skills-v1', 'reload-skill-v1')
