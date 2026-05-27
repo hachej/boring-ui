@@ -7,7 +7,7 @@
 - [x] Workspace root: `<workspace>/.pi/extensions/*`
 - [x] Keep `~/.boring-ui/workspaces.yaml` for CLI workspace registry
 - [x] Keep `.boring-agent/` runtime-owned
-- [ ] Front-plugin first-load rendering in stock CLI (investigated: current CLI still mounts `plugins={[]}` and `frontPluginHotReload={false}`; follow-up if initial front plugin load is required)
+- [ ] Front-plugin first-load rendering in stock CLI (tracked in `packages/cli/docs/plans/cli-native-plugin-front-loading-plan.md`; current CLI still mounts `plugins={[]}` and `frontPluginHotReload={false}`)
 - [x] No hot-reload redesign in this pass
 
 ## Implementation
