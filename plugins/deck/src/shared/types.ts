@@ -59,4 +59,5 @@ export interface CreateDeckPluginOptions {
   widgets?: DeckWidgetDefinition[]
   theme?: DeckThemeOptions
   onError?: (error: DeckError) => void
+  getPresentHref?: (path: string) => string
 }

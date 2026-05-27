@@ -117,6 +117,21 @@ describe("DeckPane", () => {
     expect(screen.getByText("bullet 120")).toBeInTheDocument()
     expect(screen.getByTestId("deck-slide-frame")).toBeInTheDocument()
   })
+
+  it("supports keyboard slide navigation outside edit mode", () => {
+    render(
+      <DeckPane
+        content={`# Intro\n\nHello deck\n---\n## Second\n\nNext slide`}
+        params={{ path: "deck/intro.md" }}
+      />,
+    )
+
+    fireEvent.keyDown(window, { key: "ArrowRight" })
+    expect(screen.getByText("Next slide")).toBeInTheDocument()
+
+    fireEvent.keyDown(window, { key: "ArrowLeft" })
+    expect(screen.getByText("Hello deck")).toBeInTheDocument()
+  })
 })
 
 describe("StandaloneDeckRoute", () => {
@@ -125,6 +140,6 @@ describe("StandaloneDeckRoute", () => {
 
     expect(screen.getByTestId("deck-shell-present")).toBeInTheDocument()
     expect(screen.getByTestId("deck-slide-content")).toHaveTextContent("Present me")
-    expect(screen.getByText("Exit present")).toBeInTheDocument()
+    expect(screen.getByLabelText("Exit present mode")).toBeInTheDocument()
   })
 })

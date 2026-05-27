@@ -4,6 +4,8 @@ import {
   useFilePane,
   type PaneProps,
 } from "@hachej/boring-workspace"
+import { Button } from "@hachej/boring-ui-kit"
+import { ExternalLink } from "lucide-react"
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -22,11 +24,52 @@ import {
   DeckScaffoldState,
   DeckShell,
   DeckSlideFrame,
+  DeckSlideRail,
   DeckToolbar,
 } from "./components"
 import { DeckWidgetSlot, indexDeckWidgets } from "./widgets"
 
 const DEFAULT_SCAFFOLD_CONTENT = `# Deck scaffold\n\nDeck rendering shell is ready.`
+
+function useDeckKeyboardNavigation({
+  enabled,
+  canGoPrevious,
+  canGoNext,
+  onPrevious,
+  onNext,
+}: {
+  enabled: boolean
+  canGoPrevious: boolean
+  canGoNext: boolean
+  onPrevious: () => void
+  onNext: () => void
+}) {
+  useEffect(() => {
+    if (!enabled) return
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+      const target = event.target as HTMLElement | null
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+        return
+      }
+
+      if ((event.key === "ArrowRight" || event.key === "PageDown") && canGoNext) {
+        event.preventDefault()
+        onNext()
+        return
+      }
+
+      if ((event.key === "ArrowLeft" || event.key === "PageUp") && canGoPrevious) {
+        event.preventDefault()
+        onPrevious()
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [enabled, canGoNext, canGoPrevious, onNext, onPrevious])
+}
 
 export interface DeckPaneProps {
   params?: { path?: string }
@@ -38,6 +81,7 @@ export interface DeckPaneProps {
   widgets?: DeckWidgetDefinition[]
   onError?: (error: DeckError) => void
   initialMode?: "read" | "edit" | "present"
+  getPresentHref?: (path: string) => string
 }
 
 export function DeckPane(props: DeckPaneProps) {
@@ -62,7 +106,7 @@ function DeckRenderedPane({
   widgets = [],
   onError,
   initialMode = "read",
-}: Omit<DeckPaneProps, "content" | "initialMode"> & {
+}: Omit<DeckPaneProps, "content" | "initialMode" | "getPresentHref"> & {
   content: string
   initialMode?: "read" | "present"
 }) {
@@ -108,17 +152,22 @@ function DeckRenderedPane({
   const title = parsed.deck.title ?? params?.path ?? "Deck"
   const presentMode = mode === "present"
 
+  useDeckKeyboardNavigation({
+    enabled: true,
+    canGoPrevious: safeIndex > 0,
+    canGoNext: safeIndex < slides.length - 1,
+    onPrevious: () => setSlideIndex((current) => Math.max(current - 1, 0)),
+    onNext: () => setSlideIndex((current) => Math.min(current + 1, slides.length - 1)),
+  })
+
   return (
     <DeckShell theme={theme} presentMode={presentMode}>
       <DeckToolbar
         title={title}
+        path={params?.path}
         presentMode={presentMode}
         slideIndex={safeIndex}
         slideCount={slides.length}
-        canGoPrevious={safeIndex > 0}
-        canGoNext={safeIndex < slides.length - 1}
-        onPrevious={() => setSlideIndex((current) => Math.max(current - 1, 0))}
-        onNext={() => setSlideIndex((current) => Math.min(current + 1, slides.length - 1))}
         onTogglePresentMode={() => setMode((current) => (current === "present" ? "read" : "present"))}
       />
       <DeckSlideFrame theme={theme}>
@@ -135,6 +184,15 @@ function DeckRenderedPane({
           />
         </article>
       </DeckSlideFrame>
+      <DeckSlideRail
+        slideIndex={safeIndex}
+        slideCount={slides.length}
+        canGoPrevious={safeIndex > 0}
+        canGoNext={safeIndex < slides.length - 1}
+        onPrevious={() => setSlideIndex((current) => Math.max(current - 1, 0))}
+        onNext={() => setSlideIndex((current) => Math.min(current + 1, slides.length - 1))}
+        onSelect={setSlideIndex}
+      />
     </DeckShell>
   )
 }
@@ -146,6 +204,7 @@ function FileBackedDeckPane({
   widgets = [],
   onError,
   initialMode = "read",
+  getPresentHref,
 }: DeckPaneProps) {
   const path = params?.path ?? ""
   const hasSelectedPath = /\S/.test(path)
@@ -157,7 +216,6 @@ function FileBackedDeckPane({
     conflict,
     error,
     fileName,
-    flushSave,
     isLoading,
     onOverwrite,
     onReloadFromServer,
@@ -206,6 +264,24 @@ function FileBackedDeckPane({
     }
   }, [api, tabTitle])
 
+  const deck = parsed && parsed.ok ? parsed.deck : null
+  const fallbackContent = content ?? ""
+  const slides = deck?.slides ?? [{ index: 0, raw: fallbackContent, segments: [{ type: "markdown" as const, text: fallbackContent }] }]
+  const slideCount = slides.length
+  const safeIndex = Math.min(Math.max(slideIndex, 0), Math.max(slideCount - 1, 0))
+  const currentSlide = slides[safeIndex]
+  const title = deck?.title ?? fileName ?? path
+  const canNavigateSlides = mode !== "edit"
+  const presentHref = getPresentHref && path ? getPresentHref(path) : null
+
+  useDeckKeyboardNavigation({
+    enabled: hasSelectedPath && !error && content != null && mode !== "edit",
+    canGoPrevious: safeIndex > 0,
+    canGoNext: safeIndex < slideCount - 1,
+    onPrevious: () => setSlideIndex((current) => Math.max(current - 1, 0)),
+    onNext: () => setSlideIndex((current) => Math.min(current + 1, slideCount - 1)),
+  })
+
   if (!hasSelectedPath) {
     return (
       <DeckShell theme={theme}>
@@ -230,53 +306,31 @@ function FileBackedDeckPane({
     )
   }
 
-  const deck = parsed && parsed.ok ? parsed.deck : null
-  const slides = deck?.slides ?? [{ index: 0, raw: content, segments: [{ type: "markdown" as const, text: content }] }]
-  const slideCount = slides.length
-  const safeIndex = Math.min(Math.max(slideIndex, 0), Math.max(slideCount - 1, 0))
-  const currentSlide = slides[safeIndex]
-  const title = deck?.title ?? fileName ?? path
-  const canNavigateSlides = mode !== "edit"
-
   return (
     <DeckShell theme={theme} presentMode={mode === "present"}>
       <DeckToolbar
         title={title}
+        path={path}
+        mode={mode === "present" ? "read" : mode}
+        onModeChange={setMode}
         presentMode={mode === "present"}
         slideIndex={safeIndex}
         slideCount={slideCount}
-        canGoPrevious={canNavigateSlides && safeIndex > 0}
-        canGoNext={canNavigateSlides && safeIndex < slideCount - 1}
-        onPrevious={() => setSlideIndex((current) => Math.max(current - 1, 0))}
-        onNext={() => setSlideIndex((current) => Math.min(current + 1, slideCount - 1))}
         onTogglePresentMode={mode === "edit" ? undefined : () => setMode((current) => (current === "present" ? "read" : "present"))}
         actions={
           <>
-            <button
-              type="button"
-              className="rounded-md border border-border px-2 py-1 text-xs text-foreground"
-              onClick={() => setMode("read")}
-              data-testid="deck-mode-read"
-            >
-              Read
-            </button>
-            <button
-              type="button"
-              className="rounded-md border border-border px-2 py-1 text-xs text-foreground"
-              onClick={() => setMode("edit")}
-              data-testid="deck-mode-edit"
-            >
-              Edit
-            </button>
-            {mode === "edit" ? (
-              <button
-                type="button"
-                className="rounded-md border border-border px-2 py-1 text-xs text-foreground"
-                onClick={() => void flushSave()}
-                data-testid="deck-save"
+            {presentHref ? (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                asChild
+                aria-label="Open in new tab"
+                title="Open deck in new tab"
               >
-                Save now
-              </button>
+                <a href={presentHref} target="_blank" rel="noopener noreferrer" data-testid="deck-open-present">
+                  <ExternalLink className="size-3.5" />
+                </a>
+              </Button>
             ) : null}
           </>
         }
@@ -288,22 +342,24 @@ function FileBackedDeckPane({
           testId="deck-conflict-notice"
           actions={
             <>
-              <button
+              <Button
                 type="button"
-                className="rounded-md border border-border px-2 py-1 text-xs text-foreground"
+                variant="outline"
+                size="xs"
                 onClick={() => void onReloadFromServer()}
                 data-testid="deck-reload"
               >
                 Reload
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className="rounded-md border border-border px-2 py-1 text-xs text-foreground"
+                variant="outline"
+                size="xs"
                 onClick={() => void onOverwrite()}
                 data-testid="deck-overwrite"
               >
                 Overwrite
-              </button>
+              </Button>
             </>
           }
         />
@@ -343,6 +399,17 @@ function FileBackedDeckPane({
           </article>
         </DeckSlideFrame>
       )}
+      {mode !== "edit" ? (
+        <DeckSlideRail
+          slideIndex={safeIndex}
+          slideCount={slideCount}
+          canGoPrevious={canNavigateSlides && safeIndex > 0}
+          canGoNext={canNavigateSlides && safeIndex < slideCount - 1}
+          onPrevious={() => setSlideIndex((current) => Math.max(current - 1, 0))}
+          onNext={() => setSlideIndex((current) => Math.min(current + 1, slideCount - 1))}
+          onSelect={setSlideIndex}
+        />
+      ) : null}
     </DeckShell>
   )
 }

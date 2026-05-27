@@ -187,10 +187,6 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   // creating a circular dependency at definition time.
   notifySavedRef.current = lifecycle.notifySaved
 
-  useEffect(() => {
-    lifecycle.markClean()
-  }, [activePath, lifecycle.markClean])
-
   // Auto-sync when an external change is detected and the editor is clean.
   // Guard with dirtyRef (synchronous) rather than lifecycle.isDirty (React
   // state) to avoid overwriting keystrokes that arrived since detection.

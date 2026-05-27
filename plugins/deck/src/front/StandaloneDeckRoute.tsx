@@ -7,9 +7,10 @@ export interface StandaloneDeckRouteProps {
   theme?: DeckThemeOptions
   widgets?: DeckWidgetDefinition[]
   onError?: (error: import("../shared").DeckError) => void
+  getPresentHref?: (path: string) => string
 }
 
-export function StandaloneDeckRoute({ path, content, theme, widgets, onError }: StandaloneDeckRouteProps) {
+export function StandaloneDeckRoute({ path, content, theme, widgets, onError, getPresentHref }: StandaloneDeckRouteProps) {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <DeckPane
@@ -18,6 +19,7 @@ export function StandaloneDeckRoute({ path, content, theme, widgets, onError }: 
         theme={theme}
         widgets={widgets}
         onError={onError}
+        getPresentHref={getPresentHref}
         initialMode="present"
       />
     </div>

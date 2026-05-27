@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest"
 
 const onReloadFromServer = vi.fn(async () => undefined)
 const onOverwrite = vi.fn(async () => undefined)
-const flushSave = vi.fn(async () => undefined)
 const setContent = vi.fn()
 
 vi.mock("@hachej/boring-workspace", async () => {
@@ -30,7 +29,7 @@ vi.mock("@hachej/boring-workspace", async () => {
       onOverwrite,
       setContent,
       save: vi.fn(async () => undefined),
-      flushSave,
+      flushSave: vi.fn(async () => undefined),
       fileName: "intro.md",
       tabTitle: "intro.md ●",
     }),
@@ -40,17 +39,15 @@ vi.mock("@hachej/boring-workspace", async () => {
 import { DeckPane } from "../DeckPane"
 
 describe("DeckPane file-state wiring", () => {
-  it("wires reload, overwrite, save controls, and dirty tab titles to the canonical file-state seam", async () => {
+  it("wires reload, overwrite, and dirty tab titles to the canonical file-state seam", async () => {
     const setTitle = vi.fn()
 
     render(<DeckPane params={{ path: "deck/intro.md" }} api={{ setTitle } as any} />)
 
     fireEvent.click(screen.getByTestId("deck-mode-edit"))
-    fireEvent.click(screen.getByTestId("deck-save"))
     fireEvent.click(screen.getByTestId("deck-reload"))
     fireEvent.click(screen.getByTestId("deck-overwrite"))
 
-    expect(flushSave).toHaveBeenCalledTimes(1)
     expect(onReloadFromServer).toHaveBeenCalledTimes(1)
     expect(onOverwrite).toHaveBeenCalledTimes(1)
     expect(setTitle).toHaveBeenCalledWith("intro.md ●")

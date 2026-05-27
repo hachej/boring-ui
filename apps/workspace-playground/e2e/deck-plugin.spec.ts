@@ -66,20 +66,33 @@ test.describe("workspace-playground deck plugin", () => {
     await test.step("deck file opens through the deck surface resolver", async () => {
       await expect(page.getByText("Welcome to the neutral consumer deck.")).toBeVisible({ timeout: 10_000 })
       await expect(page.getByText("widget-ok")).toBeVisible()
-      await expect(page.getByText("Slide 1 of 2")).toBeVisible()
+      await expect(page.getByTestId("deck-next")).toBeVisible()
     })
 
     await test.step("slide navigation works in read mode", async () => {
       await page.getByTestId("deck-next").click()
       await expect(page.getByText("Second slide")).toBeVisible()
-      await expect(page.getByText("Slide 2 of 2")).toBeVisible()
       await page.getByTestId("deck-prev").click()
-      await expect(page.getByText("Slide 1 of 2")).toBeVisible()
+      await expect(page.getByText("Welcome to the neutral consumer deck.")).toBeVisible()
     })
 
-    await test.step("edit mode supports raw markdown editing and save", async () => {
+    await test.step("edit mode supports raw markdown editing and autosave", async () => {
       await page.getByTestId("deck-mode-edit").click()
       await page.getByRole("button", { name: /^MD$/i }).click()
+
+      let releaseSave: (() => void) | undefined
+      await page.route("**/api/v1/files", async (route) => {
+        if (route.request().method() !== "POST") {
+          await route.continue()
+          return
+        }
+
+        await new Promise<void>((resolve) => {
+          releaseSave = resolve
+        })
+        await route.continue()
+      }, { times: 1 })
+
       const rawEditor = page.getByLabel("Raw markdown")
       await rawEditor.click()
       await rawEditor.press("End")
@@ -89,21 +102,7 @@ test.describe("workspace-playground deck plugin", () => {
         await expect(page.locator('[title="intro.md (unsaved changes)"]')).toBeVisible({ timeout: 10_000 })
       })
 
-      await test.step("switching files while save is in flight does not leave the deck tab stuck", async () => {
-        let releaseSave: (() => void) | undefined
-        await page.route("**/api/v1/files", async (route) => {
-          if (route.request().method() !== "POST") {
-            await route.continue()
-            return
-          }
-
-          await new Promise<void>((resolve) => {
-            releaseSave = resolve
-          })
-          await route.continue()
-        }, { times: 1 })
-
-        await page.getByTestId("deck-save").click()
+      await test.step("switching files while autosave is in flight does not leave the deck tab stuck", async () => {
         await expect(page.getByTestId("tab-saving-spinner")).toBeVisible({ timeout: 10_000 })
 
         await openFileFromPalette(page, "README", /README\.md/i)
