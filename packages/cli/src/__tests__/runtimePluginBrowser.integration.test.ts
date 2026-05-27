@@ -3,6 +3,7 @@
  *   ../../node_modules/.bin/vitest run src/__tests__/runtimePluginBrowser.integration.test.ts --reporter=dot
  */
 import { execFileSync } from "node:child_process"
+import { existsSync } from "node:fs"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
@@ -21,6 +22,16 @@ const tempDirs: string[] = []
 const openApps: FastifyInstance[] = []
 const originalHome = process.env.HOME
 const originalRegistry = process.env.BORING_UI_WORKSPACES_PATH
+
+function hasChromiumExecutable(): boolean {
+  try {
+    return existsSync(chromium.executablePath())
+  } catch {
+    return false
+  }
+}
+
+const browserTest = hasChromiumExecutable() ? test : test.skip
 
 beforeAll(() => {
   execFileSync(resolve(cliRoot, "../../node_modules/.bin/vite"), ["build", "--config", resolve(cliRoot, "vite.config.ts")], {
@@ -123,7 +134,7 @@ async function reloadViaBrowser(page: import("@playwright/test").Page, headers?:
   }, headers ?? {})
 }
 
-test("built folder mode browser path hot-loads, preserves previous-good revisions, and unloads removed fronts", { timeout: 180_000 }, async () => {
+browserTest("built folder mode browser path hot-loads, preserves previous-good revisions, and unloads removed fronts", { timeout: 180_000 }, async () => {
   const homeRoot = await makeTempDir("boring-cli-browser-folder-home-")
   const workspaceRoot = await makeTempDir("boring-cli-browser-folder-workspace-")
   process.env.HOME = homeRoot
@@ -210,7 +221,7 @@ test("built folder mode browser path hot-loads, preserves previous-good revision
   })
 })
 
-test("built workspaces mode browser path handles zero-plugin replay completion and workspace-switch races", { timeout: 180_000 }, async () => {
+browserTest("built workspaces mode browser path handles zero-plugin replay completion and workspace-switch races", { timeout: 180_000 }, async () => {
   const homeRoot = await makeTempDir("boring-cli-browser-workspaces-home-")
   const registryPath = join(await makeTempDir("boring-cli-browser-workspaces-registry-"), "workspaces.yaml")
   const workspaceA = await makeTempDir("boring-cli-browser-workspace-a-")
