@@ -23,7 +23,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22.19.0
           cache: pnpm
 
       - name: Install
@@ -50,7 +50,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22.19.0
           cache: pnpm
 
       - name: Install
@@ -74,7 +74,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22.19.0
           cache: pnpm
 
       - name: Install
@@ -109,7 +109,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22.19.0
           cache: pnpm
 
       - name: Install
@@ -150,7 +150,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22.19.0
           cache: pnpm
 
       - name: Install
@@ -191,7 +191,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22.19.0
           cache: pnpm
 
       - name: Install
@@ -216,7 +216,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22.19.0
           cache: pnpm
 
       - name: Install
