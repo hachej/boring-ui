@@ -278,23 +278,28 @@ async function startFolderMode(opts: {
   openBrowser(`http://localhost:${opts.port}`)
 }
 
-async function startWorkspacesMode(opts: {
-  publicDir: string
-  port: number
-  host: string
-  cliMode: CliMode
+export async function createWorkspacesModeApp(opts: {
   mode: RuntimeMode
-}) {
-  const [workspaceAppServer, workspaceServer, agentServer, fastifyModule] = await Promise.all([
+  registryPath?: string
+}): Promise<FastifyInstance> {
+  const [workspaceAppServer, workspaceServer, agentServer, fastifyModule, { createPluginFrontRuntimeHost }] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
     import("@hachej/boring-workspace/server"),
     import("@hachej/boring-agent/server"),
     import("fastify"),
+    import("./pluginFrontRuntime.js"),
   ])
-  const registry = createLocalWorkspaceRegistry()
+  const registry = createLocalWorkspaceRegistry(opts.registryPath)
   const app = fastifyModule.default({ logger: false, bodyLimit: 16 * 1024 * 1024 })
+  const runtimeHost = await createPluginFrontRuntimeHost()
+  await runtimeHost.registerRoutes(app)
   const bridges = new Map<string, ReturnType<typeof workspaceServer.createInMemoryBridge>>()
-  const pluginManagers = new Map<string, InstanceType<typeof workspaceServer.BoringPluginAssetManager>>()
+  const workspaceEventClosers = new Map<string, Set<() => void>>()
+  const pluginRuntimes = new Map<string, {
+    manager: InstanceType<typeof workspaceServer.BoringPluginAssetManager>
+    ensureLoaded: Promise<void>
+  }>()
+
   function getBridge(workspaceId: string) {
     let bridge = bridges.get(workspaceId)
     if (!bridge) {
@@ -315,14 +320,57 @@ async function startWorkspacesMode(opts: {
     return await requireWorkspace(resolveWorkspaceIdFromRequest(request))
   }
 
-  function getPluginManager(workspace: LocalWorkspace) {
-    const key = `${workspace.id}:${workspace.path}`
-    let manager = pluginManagers.get(key)
-    if (!manager) {
-      manager = createCliPluginAssetManager(workspace.path)
-      pluginManagers.set(key, manager)
+  function pluginRuntimeKey(workspace: LocalWorkspace): string {
+    return `${workspace.id}:${workspace.path}`
+  }
+
+  function getOrCreatePluginRuntime(workspace: LocalWorkspace) {
+    const key = pluginRuntimeKey(workspace)
+    let runtime = pluginRuntimes.get(key)
+    if (!runtime) {
+      const manager = createCliPluginAssetManager(workspace.path, {
+        frontTargetResolver: runtimeHost.createFrontTargetResolver(workspace.id),
+        includeLegacyFrontUrl: false,
+      })
+      runtime = {
+        manager,
+        ensureLoaded: manager.load().then(() => undefined),
+      }
+      pluginRuntimes.set(key, runtime)
     }
-    return manager
+    return runtime
+  }
+
+  async function getLoadedPluginRuntime(workspace: LocalWorkspace) {
+    const runtime = getOrCreatePluginRuntime(workspace)
+    await runtime.ensureLoaded
+    return runtime
+  }
+
+  async function disposeWorkspaceRuntime(workspace: LocalWorkspace): Promise<void> {
+    for (const close of workspaceEventClosers.get(workspace.id) ?? []) {
+      try { close() } catch {}
+    }
+    workspaceEventClosers.delete(workspace.id)
+    pluginRuntimes.delete(pluginRuntimeKey(workspace))
+    bridges.delete(workspace.id)
+    await runtimeHost.disposeWorkspace(workspace.id)
+  }
+
+  function reloadDiagnostics(scan: Awaited<ReturnType<InstanceType<typeof workspaceServer.BoringPluginAssetManager>["load"]>>) {
+    return scan.errors.map((error) => ({
+      source: "workspaces-plugin-manager",
+      message: error.message,
+      pluginId: error.id,
+    }))
+  }
+
+  function syncRuntimeHostFromEvents(workspaceId: string, events: Array<{ type: string; id: string; frontTarget?: unknown }>): void {
+    for (const event of events) {
+      if (event.type === "boring.plugin.unload" || (event.type === "boring.plugin.load" && !event.frontTarget)) {
+        runtimeHost.untrackPlugin(workspaceId, event.id)
+      }
+    }
   }
 
   app.get("/api/v1/local-workspaces", async () => ({
@@ -344,13 +392,14 @@ async function startWorkspacesMode(opts: {
       })
     }
   })
-  app.delete("/api/v1/local-workspaces/:id", async (request) => {
+  app.delete("/api/v1/local-workspaces/:id", async (request, reply) => {
     const { id } = request.params as { id: string }
+    const workspace = await registry.get(id)
     await registry.remove(id)
-    return { ok: true }
+    if (workspace) await disposeWorkspaceRuntime(workspace)
+    return reply.send({ ok: true })
   })
 
-  // Core-compatible read endpoints so the shared/core switcher data shape is available locally.
   app.get("/api/v1/workspaces", async () => ({
     workspaces: (await registry.list()).map(toCoreWorkspace),
   }))
@@ -375,12 +424,30 @@ async function startWorkspacesMode(opts: {
         runtimeLayout,
       })
     },
+    beforeReload: async ({ workspaceId }) => {
+      const workspace = await requireWorkspace(workspaceId)
+      const runtime = await getLoadedPluginRuntime(workspace)
+      const scan = await runtime.manager.load()
+      syncRuntimeHostFromEvents(workspaceId, scan.events)
+      return {
+        restart_warnings: workspaceServer.collectRestartWarnings(scan.events),
+        diagnostics: reloadDiagnostics(scan),
+      }
+    },
     getPi: async ({ workspaceRoot }) => {
       const pluginPi = readCliPluginPiSnapshot(workspaceRoot)
       return {
         additionalSkillPaths: [join(workspaceRoot, ".agents", "skills"), ...pluginPi.additionalSkillPaths],
         packages: pluginPi.packages,
         extensionPaths: pluginPi.extensionPaths,
+        getHotReloadableResources: () => {
+          const dynamicPi = readCliPluginPiSnapshot(workspaceRoot)
+          return {
+            additionalSkillPaths: dynamicPi.additionalSkillPaths,
+            packages: dynamicPi.packages,
+            extensionPaths: dynamicPi.extensionPaths,
+          }
+        },
       }
     },
     getExtraTools: async ({ workspaceId, workspaceRoot, workspaceFsCapability }) => [
@@ -396,25 +463,115 @@ async function startWorkspacesMode(opts: {
 
   app.get("/api/v1/agent-plugins", async (request) => {
     const workspace = await workspaceFromRequest(request)
-    const manager = getPluginManager(workspace)
-    await manager.load()
-    return manager.list()
+    const runtime = await getLoadedPluginRuntime(workspace)
+    return runtime.manager.list()
   })
   app.get("/api/v1/agent-plugins/:id/error", async (request, reply) => {
     const workspace = await workspaceFromRequest(request)
-    const manager = getPluginManager(workspace)
-    await manager.load()
+    const runtime = await getLoadedPluginRuntime(workspace)
     const { id } = request.params as { id: string }
-    const error = manager.getError(id)
+    const error = runtime.manager.getError(id)
     if (error == null) return reply.code(404).send({ error: "not_found" })
     return reply.type("text/plain").send(error)
+  })
+  app.get("/api/v1/agent-plugins/events", async (request, reply) => {
+    const workspace = await workspaceFromRequest(request)
+    const runtime = await getLoadedPluginRuntime(workspace)
+    const manager = runtime.manager
+
+    reply.hijack()
+    const res = reply.raw
+    res.statusCode = 200
+    res.setHeader("Content-Type", "text/event-stream")
+    res.setHeader("Cache-Control", "no-cache, no-transform")
+    res.setHeader("Connection", "keep-alive")
+    res.setHeader("X-Accel-Buffering", "no")
+    res.flushHeaders?.()
+
+    const write = (eventName: string, payload: Record<string, unknown>) => {
+      try {
+        res.write(`event: ${eventName}\n`)
+        res.write(`data: ${JSON.stringify(payload)}\n\n`)
+      } catch {
+        // client gone
+      }
+    }
+
+    const liveQueue: Array<{ eventName: string; payload: Record<string, unknown> }> = []
+    let replaying = true
+    const unsubscribe = manager.subscribe((event) => {
+      if (event.type === "boring.plugin.unload" || (event.type === "boring.plugin.load" && !event.frontTarget)) {
+        runtimeHost.untrackPlugin(workspace.id, event.id)
+      }
+      const payload = {
+        ...event,
+        workspaceId: workspace.id,
+        replay: false,
+      }
+      if (replaying) {
+        liveQueue.push({ eventName: event.type, payload })
+        return
+      }
+      write(event.type, payload)
+    })
+
+    for (const plugin of manager.list()) {
+      write("boring.plugin.load", {
+        type: "boring.plugin.load",
+        id: plugin.id,
+        boring: plugin.boring,
+        version: plugin.version,
+        revision: plugin.revision,
+        ...(plugin.frontTarget ? { frontTarget: plugin.frontTarget } : {}),
+        workspaceId: workspace.id,
+        replay: true,
+      })
+    }
+    write("boring.plugin.replay-complete", {
+      type: "boring.plugin.replay-complete",
+      workspaceId: workspace.id,
+      replay: true,
+    })
+    replaying = false
+    for (const event of liveQueue) write(event.eventName, event.payload)
+
+    const heartbeat = setInterval(() => {
+      try { res.write(": heartbeat\n\n") } catch { /* ignore */ }
+    }, 25_000)
+    const closeStream = () => {
+      clearInterval(heartbeat)
+      unsubscribe()
+      workspaceEventClosers.get(workspace.id)?.delete(closeStream)
+      try { res.end() } catch {}
+    }
+    const closers = workspaceEventClosers.get(workspace.id) ?? new Set<() => void>()
+    closers.add(closeStream)
+    workspaceEventClosers.set(workspace.id, closers)
+    request.raw.on("close", closeStream)
   })
 
   app.get("/api/v1/workspace/meta", async () => ({
     projectName: "Boring UI",
     workspacesMode: true,
     version: CLI_VERSION,
+    runtimePluginFrontLoadingEnabled: true,
+    runtimePluginTrustLabel: RUNTIME_PLUGIN_TRUST_LABEL,
+    runtimePluginTrustDescription: RUNTIME_PLUGIN_TRUST_DESCRIPTION,
+    runtimePluginDiagnosticsEnabled: false,
   }))
+
+  return app
+}
+
+async function startWorkspacesMode(opts: {
+  publicDir: string
+  port: number
+  host: string
+  cliMode: CliMode
+  mode: RuntimeMode
+}) {
+  const app = await createWorkspacesModeApp({ mode: opts.mode })
+  const registry = createLocalWorkspaceRegistry()
 
   await registerStatic(app, opts.publicDir)
   await app.listen({ port: opts.port, host: opts.host })
@@ -424,12 +581,15 @@ async function startWorkspacesMode(opts: {
     ? `http://localhost:${opts.port}/workspace/${encodeURIComponent(initialWorkspace.id)}`
     : `http://localhost:${opts.port}`
 
-  console.log(`\nBoring UI`)
+  console.log(`
+Boring UI`)
   console.log(`  workspaces ${registry.path}`)
   console.log(`  mode       ${opts.cliMode}`)
   console.log(`  port       ${opts.port}`)
   console.log(`  host       ${opts.host}`)
-  console.log(`\n  ${initialUrl}\n`)
+  console.log(`
+  ${initialUrl}
+`)
   if ((await checkAuth()) === 0) console.log(AUTH_GUIDE)
   openBrowser(initialUrl)
 }

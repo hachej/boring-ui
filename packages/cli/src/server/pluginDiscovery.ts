@@ -1,6 +1,9 @@
 import { homedir } from "node:os"
 import { join, resolve } from "node:path"
-import { BoringPluginAssetManager } from "@hachej/boring-workspace/server"
+import {
+  BoringPluginAssetManager,
+  type BoringPluginFrontTargetResolver,
+} from "@hachej/boring-workspace/server"
 import {
   readWorkspacePluginPackagePiSnapshot,
   type WorkspacePluginPackagePiSnapshot,
@@ -8,6 +11,8 @@ import {
 
 export interface ResolveCliBoringPluginDirsOptions {
   globalRoot?: string
+  frontTargetResolver?: BoringPluginFrontTargetResolver
+  includeLegacyFrontUrl?: boolean
 }
 
 export function getGlobalPiExtensionsRoot(options: ResolveCliBoringPluginDirsOptions = {}): string {
@@ -39,6 +44,8 @@ export function createCliPluginAssetManager(
   return new BoringPluginAssetManager({
     pluginDirs: resolveCliBoringPluginDirs(workspaceRoot, options),
     errorRoot: resolve(workspaceRoot, ".pi", "extensions"),
+    frontTargetResolver: options.frontTargetResolver,
+    includeLegacyFrontUrl: options.includeLegacyFrontUrl,
   })
 }
 
