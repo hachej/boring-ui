@@ -302,7 +302,7 @@ export function FileTreeView({
   )
 
   useEffect(() => {
-    if (!revealPath) return
+    if (!revealPath || isLoading || treeData.length === 0) return
     let clearFrame = 0
     const frame = requestAnimationFrame(() => {
       clearFrame = requestAnimationFrame(() => {
@@ -313,7 +313,7 @@ export function FileTreeView({
       cancelAnimationFrame(frame)
       cancelAnimationFrame(clearFrame)
     }
-  }, [revealPath])
+  }, [isLoading, revealPath, treeData.length])
 
   useEffect(() => {
     const activeFile = bridge?.getActiveFile?.() ?? null
