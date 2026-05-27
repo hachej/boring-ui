@@ -104,8 +104,48 @@ describe("folder mode runtime plugin wiring", () => {
         runtimePluginFrontLoadingEnabled: true,
         runtimePluginTrustLabel: "Trusted local runtime plugins",
         runtimePluginTrustDescription: expect.stringContaining("CLI-owned runtime module host"),
-        runtimePluginDiagnosticsEnabled: false,
+        runtimePluginDiagnosticsEnabled: true,
       })
+
+      const diagnostics = await app.inject({ method: "GET", url: "/api/v1/runtime-plugin-diagnostics" })
+      expect(diagnostics.statusCode).toBe(200)
+      expect(diagnostics.json()).toMatchObject({
+        workspaceId: "folder",
+        plugins: expect.arrayContaining([
+          expect.objectContaining({
+            id: "global-plugin",
+            rootDir: globalPlugin,
+            frontPath: join(globalPlugin, "front", "index.tsx"),
+            serverLoadedRevision: 1,
+            host: expect.objectContaining({
+              pluginId: "global-plugin",
+              workspaceId: "folder",
+              revision: 1,
+              entryUrl: expect.stringContaining("/api/v1/agent-plugins/runtime/folder/global-plugin/1/front/index.tsx"),
+            }),
+          }),
+        ]),
+      })
+      const globalRuntimeUrl = (diagnostics.json() as { plugins: Array<{ id: string; host?: { entryUrl?: string } }> }).plugins.find((plugin) => plugin.id === "global-plugin")?.host?.entryUrl
+      expect(globalRuntimeUrl).toBeTruthy()
+
+      const staleRuntime = await app.inject({ method: "GET", url: "/api/v1/agent-plugins/runtime/folder/global-plugin/0/front/index.tsx" })
+      expect(staleRuntime.statusCode).toBe(409)
+      const diagnosticsAfterFailure = await app.inject({ method: "GET", url: "/api/v1/runtime-plugin-diagnostics" })
+      expect(diagnosticsAfterFailure.json()).toMatchObject({
+        plugins: expect.arrayContaining([
+          expect.objectContaining({
+            id: "global-plugin",
+            host: expect.objectContaining({ lastErrorCode: "PLUGIN_RUNTIME_REVISION_MISMATCH" }),
+          }),
+        ]),
+      })
+
+      const healthyRuntime = await app.inject({ method: "GET", url: globalRuntimeUrl! })
+      expect(healthyRuntime.statusCode).toBe(200)
+      const diagnosticsAfterRecovery = await app.inject({ method: "GET", url: "/api/v1/runtime-plugin-diagnostics" })
+      const recoveredGlobal = (diagnosticsAfterRecovery.json() as { plugins: Array<{ id: string; host?: { lastErrorCode?: string } }> }).plugins.find((plugin) => plugin.id === "global-plugin")
+      expect(recoveredGlobal?.host?.lastErrorCode).toBeUndefined()
 
       const sseText = await readSsePrelude(`${address}/api/v1/agent-plugins/events`)
       expect(sseText).toContain("event: boring.plugin.load")

@@ -316,6 +316,9 @@ describe("useAgentPluginHotReload", () => {
   })
 
   test("rejects hot-loaded plugin output that collides with a built-in panel id", async () => {
+    const browserEvents: Array<Record<string, unknown>> = []
+    const listener = (event: Event) => browserEvents.push((event as CustomEvent<Record<string, unknown>>).detail)
+    window.addEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
     const importFront = async (): Promise<{ default: BoringFrontFactoryWithId }> => ({
       default: hotPlugin("csv-plugin", (api) => {
@@ -375,11 +378,19 @@ describe("useAgentPluginHotReload", () => {
       expect(consoleError.mock.calls.some((call) => call.some((part) => String(part).includes('plugin "csv-plugin"')))).toBe(true)
       expect(consoleError.mock.calls.some((call) => call.some((part) => String(part).includes('panel "csv-viewer"')))).toBe(true)
       expect(consoleError.mock.calls.some((call) => call.some((part) => String(part).includes('"system/builtin"')))).toBe(true)
+      expect(browserEvents).toContainEqual(expect.objectContaining({
+        type: "boring.plugin.front-error",
+        id: "csv-plugin",
+        revision: 1,
+        code: "PLUGIN_LOAD_FAILED",
+        stage: "register",
+      }))
       expect(screen.getByTestId("builtin-csv-viewer")).toHaveTextContent("builtin csv viewer")
       expect(screen.queryByTestId("hot-csv-viewer")).not.toBeInTheDocument()
       expect(screen.getByTestId("panel-ids")).toHaveTextContent("csv-viewer")
     } finally {
       consoleError.mockRestore()
+      window.removeEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
     }
   })
 
@@ -883,6 +894,9 @@ describe("useAgentPluginHotReload", () => {
   })
 
   test("retries the same revision after a failed front import", async () => {
+    const browserEvents: Array<Record<string, unknown>> = []
+    const listener = (event: Event) => browserEvents.push((event as CustomEvent<Record<string, unknown>>).detail)
+    window.addEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
     let failOnce = true
     const importFront = async (): Promise<{ default?: BoringFrontFactoryWithId }> => {
       if (failOnce) {
@@ -918,8 +932,9 @@ describe("useAgentPluginHotReload", () => {
       )
     }
 
-    render(<RetryHarness />)
-    const event = {
+    try {
+      render(<RetryHarness />)
+      const event = {
       type: "boring.plugin.load" as const,
       id: "hot-plugin",
       version: "1.0.0",
@@ -927,15 +942,28 @@ describe("useAgentPluginHotReload", () => {
       frontUrl: "/@fs/flaky.mjs",
       boring: { front: "./front.mjs" },
     }
-    MockEventSource.instances[0].dispatch("boring.plugin.load", event)
-    await new Promise((resolve) => setTimeout(resolve, 25))
-    expect(screen.getByTestId("pane-missing")).toHaveTextContent("missing")
+      MockEventSource.instances[0].dispatch("boring.plugin.load", event)
+      await new Promise((resolve) => setTimeout(resolve, 25))
+      expect(screen.getByTestId("pane-missing")).toHaveTextContent("missing")
+      expect(browserEvents).toContainEqual(expect.objectContaining({
+        type: "boring.plugin.front-error",
+        id: "hot-plugin",
+        revision: 1,
+        code: "PLUGIN_LOAD_FAILED",
+        stage: "import",
+      }))
 
-    MockEventSource.instances[0].dispatch("boring.plugin.load", event)
-    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("retry recovered"))
+      MockEventSource.instances[0].dispatch("boring.plugin.load", event)
+      await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("retry recovered"))
+    } finally {
+      window.removeEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
+    }
   })
 
   test("keeps the current pane live when generated plugin code has no valid default factory", async () => {
+    const browserEvents: Array<Record<string, unknown>> = []
+    const listener = (event: Event) => browserEvents.push((event as CustomEvent<Record<string, unknown>>).detail)
+    window.addEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
     const dir = await makeTempDir("boring-front-fail-keeps-old-")
     const frontPath = join(dir, "front.mjs")
     await writeFrontModule(frontPath, "stable")
@@ -961,8 +989,9 @@ describe("useAgentPluginHotReload", () => {
       )
     }
 
-    render(<FailingHarness />)
-    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+    try {
+      render(<FailingHarness />)
+      MockEventSource.instances[0].dispatch("boring.plugin.load", {
       type: "boring.plugin.load",
       id: "hot-plugin",
       version: "1.0.0",
@@ -982,19 +1011,29 @@ describe("useAgentPluginHotReload", () => {
       boring: { front: "./front.mjs" },
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 25))
-    expect(screen.getByTestId("hot-pane")).toHaveTextContent("stable")
+      await new Promise((resolve) => setTimeout(resolve, 25))
+      expect(screen.getByTestId("hot-pane")).toHaveTextContent("stable")
+      expect(browserEvents).toContainEqual(expect.objectContaining({
+        type: "boring.plugin.front-error",
+        id: "hot-plugin",
+        revision: 2,
+        code: "PLUGIN_LOAD_FAILED",
+        stage: "import",
+      }))
 
-    await writeFrontModule(frontPath, "recovered")
-    MockEventSource.instances[0].dispatch("boring.plugin.load", {
-      type: "boring.plugin.load",
-      id: "hot-plugin",
-      version: "1.0.0",
-      revision: 3,
-      frontUrl,
-      boring: { front: "./front.mjs" },
-    })
-    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("recovered"))
+      await writeFrontModule(frontPath, "recovered")
+      MockEventSource.instances[0].dispatch("boring.plugin.load", {
+        type: "boring.plugin.load",
+        id: "hot-plugin",
+        version: "1.0.0",
+        revision: 3,
+        frontUrl,
+        boring: { front: "./front.mjs" },
+      })
+      await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("recovered"))
+    } finally {
+      window.removeEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
+    }
   })
 
   test("does not register blank UI from package metadata when frontUrl is absent", async () => {

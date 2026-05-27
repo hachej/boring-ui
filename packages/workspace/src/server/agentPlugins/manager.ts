@@ -64,6 +64,15 @@ export interface LoadBoringAssetsResult {
   errors: LoadBoringAssetsError[]
 }
 
+export interface LoadedBoringPluginInspection {
+  id: string
+  version: string
+  revision: number
+  rootDir: string
+  frontPath?: string
+  frontTarget?: BoringPluginFrontTarget
+}
+
 type Listener = (event: BoringPluginEvent) => void
 
 function preflightErrorId(pluginDir: string): string {
@@ -193,6 +202,7 @@ export class BoringPluginAssetManager {
   private readonly loaded = new Map<string, LoadedPluginRecord>()
   private readonly revisions = new Map<string, number>()
   private readonly listeners = new Set<Listener>()
+  private readonly lastErrors = new Map<string, LoadBoringAssetsError>()
   private loading: Promise<LoadBoringAssetsResult> | null = null
   private reloadQueued = false
 
@@ -215,6 +225,21 @@ export class BoringPluginAssetManager {
     const path = this.errorPath(pluginId)
     if (!path || !existsSync(path)) return null
     return readFileSync(path, "utf8")
+  }
+
+  getErrors(): LoadBoringAssetsError[] {
+    return [...this.lastErrors.values()]
+  }
+
+  inspectLoaded(): LoadedBoringPluginInspection[] {
+    return [...this.loaded.values()].map((plugin) => ({
+      id: plugin.id,
+      version: plugin.version,
+      revision: plugin.revision,
+      rootDir: plugin.rootDir,
+      ...(plugin.frontPath ? { frontPath: plugin.frontPath } : {}),
+      ...(plugin.frontTarget ? { frontTarget: plugin.frontTarget } : {}),
+    }))
   }
 
   subscribe(listener: Listener): () => void {
@@ -243,6 +268,7 @@ export class BoringPluginAssetManager {
   }
 
   private async doLoadOnce(): Promise<LoadBoringAssetsResult> {
+    this.lastErrors.clear()
     const scan = scanBoringPlugins(this.pluginDirs)
     const nextPlugins = scan.plugins
     const nextIds = new Set(nextPlugins.map((plugin) => plugin.id))
@@ -257,6 +283,7 @@ export class BoringPluginAssetManager {
       if (previous && invalidPluginDirs.has(resolve(previous.rootDir))) continue
       const revision = this.bumpRevision(id)
       this.loaded.delete(id)
+      this.lastErrors.delete(id)
       // Stale cache outlives the plugin — verify-plugin would otherwise
       // compare against a serverSignature for code that's no longer
       // loaded. Best-effort: don't fail unload if rm fails.
@@ -284,6 +311,7 @@ export class BoringPluginAssetManager {
           serverSignature,
         }
         this.loaded.set(plugin.id, record)
+        this.lastErrors.delete(plugin.id)
         this.clearError(plugin.id)
         // Persist the load-time server signature so verify-plugin can
         // detect server-file drift between this load and the next user
@@ -322,7 +350,9 @@ export class BoringPluginAssetManager {
         const message = error instanceof Error ? error.stack ?? error.message : String(error)
         this.writeError(plugin.id, message)
         const event: BoringPluginEvent = { type: "boring.plugin.error", id: plugin.id, revision, message }
-        errors.push({ id: plugin.id, revision, message })
+        const loadError = { id: plugin.id, revision, message }
+        this.lastErrors.set(plugin.id, loadError)
+        errors.push(loadError)
         events.push(event)
         this.emit(event)
       }
@@ -341,6 +371,7 @@ export class BoringPluginAssetManager {
       const revision = this.bumpRevision(id)
       const message = `${error.code}: ${error.message}\n\nPlugin dir: ${error.pluginDir}`
       const loadError = { id, revision, message }
+      this.lastErrors.set(id, loadError)
       errors.push(loadError)
       this.writeError(id, message)
       const event: BoringPluginEvent = { type: "boring.plugin.error", id, revision, message }

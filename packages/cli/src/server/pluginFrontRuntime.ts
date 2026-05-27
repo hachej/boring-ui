@@ -697,7 +697,7 @@ export async function createPluginFrontRuntimeHost(
     return tracked
   }
 
-  function storeTrackedPlugin(record: TrackedPluginRecord): void {
+  function storeTrackedPlugin(record: TrackedPluginRecord, entryUrl: string): void {
     const workspacePlugins = trackedWorkspaces.get(record.workspaceId) ?? new Map<string, TrackedPluginRecord>()
     trackedWorkspaces.set(record.workspaceId, workspacePlugins)
     workspacePlugins.set(record.pluginId, record)
@@ -710,6 +710,12 @@ export async function createPluginFrontRuntimeHost(
       pluginId: record.pluginId,
       revision: record.revision,
       requestedPath: record.frontEntrySubpath,
+      details: {
+        rootDir: record.rootDir,
+        frontRootDir: record.frontRootDir,
+        sharedRootDir: record.sharedRootDir,
+        entryUrl,
+      },
     })
   }
 
@@ -1066,6 +1072,7 @@ export async function createPluginFrontRuntimeHost(
     const pluginId = ensureSafeId("plugin", args.plugin.id)
     const revision = parseRevision(args.revision)
     const frontEntrySubpath = normalizeRequestSubpath(args.frontEntrySubpath)
+    const entryUrl = buildRuntimeUrl(basePath, workspaceId, pluginId, revision, frontEntrySubpath)
     storeTrackedPlugin({
       workspaceId,
       pluginId,
@@ -1079,9 +1086,9 @@ export async function createPluginFrontRuntimeHost(
           : dirname(frontEntrySubpath),
       ),
       sharedRootDir: resolvePath(args.plugin.rootDir, "shared"),
-    })
+    }, entryUrl)
     void invalidatePlugin(workspaceId, pluginId, revision)
-    return buildRuntimeUrl(basePath, workspaceId, pluginId, revision, frontEntrySubpath)
+    return entryUrl
   }
 
   function createFrontTargetResolver(workspaceId: string): PluginFrontTargetResolver {
@@ -1102,7 +1109,25 @@ export async function createPluginFrontRuntimeHost(
   }
 
   function untrackPlugin(workspaceId: string, pluginId: string): void {
+    const tracked = trackedWorkspaces.get(workspaceId)?.get(pluginId)
     trackedWorkspaces.get(workspaceId)?.delete(pluginId)
+    emit({
+      level: "info",
+      stage: "cleanup",
+      outcome: "disposed",
+      msg: "untracked runtime plugin revision",
+      workspaceId,
+      pluginId,
+      revision: tracked?.revision,
+      requestedPath: tracked?.frontEntrySubpath,
+      details: tracked
+        ? {
+            rootDir: tracked.rootDir,
+            frontRootDir: tracked.frontRootDir,
+            sharedRootDir: tracked.sharedRootDir,
+          }
+        : undefined,
+    })
     void invalidatePlugin(workspaceId, pluginId)
   }
 

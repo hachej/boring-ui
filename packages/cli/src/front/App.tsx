@@ -3,6 +3,7 @@ import { ChatPanel, useSessions as useAgentSessions } from "@hachej/boring-agent
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "@hachej/boring-agent/shared"
 import { WorkspaceAgentFront } from "@hachej/boring-workspace/app/front"
 import { WorkspaceSwitcherControl } from "./WorkspaceSwitcherControl"
+import { RuntimePluginDiagnosticsButton } from "./runtimePluginDiagnostics"
 
 interface WorkspaceMeta {
   projectName?: string
@@ -96,6 +97,7 @@ export function CliWorkspaceShell() {
   const [runtimePluginTrustLabel, setRuntimePluginTrustLabel] = useState<string | null>(null)
   const [runtimePluginTrustDescription, setRuntimePluginTrustDescription] = useState<string | null>(null)
   const [runtimePluginReplayPending, setRuntimePluginReplayPending] = useState(false)
+  const [runtimePluginDiagnosticsEnabled, setRuntimePluginDiagnosticsEnabled] = useState(false)
 
   const refreshWorkspaces = useCallback(() => {
     void fetch("/api/v1/local-workspaces")
@@ -136,6 +138,7 @@ export function CliWorkspaceShell() {
         setRuntimePluginTrustLabel(meta?.runtimePluginTrustLabel?.trim() || null)
         setRuntimePluginTrustDescription(meta?.runtimePluginTrustDescription?.trim() || null)
         setRuntimePluginReplayPending(runtimePluginsEnabled)
+        setRuntimePluginDiagnosticsEnabled(meta?.runtimePluginDiagnosticsEnabled === true)
         if (isWorkspacesMode) refreshWorkspaces()
         setMetaLoaded(true)
       })
@@ -166,12 +169,29 @@ export function CliWorkspaceShell() {
 
   useEffect(() => {
     if (!runtimePluginFrontLoadingEnabled) return
+    let replayCompleteSeen = false
+    const pendingReplayLoads = new Set<string>()
+    const syncReplayState = () => {
+      setRuntimePluginReplayPending(!replayCompleteSeen || pendingReplayLoads.size > 0)
+    }
     const handleRuntimePluginEvent = (raw: Event) => {
-      const detail = (raw as CustomEvent<{ type?: string; workspaceId?: string }>).detail
+      const detail = (raw as CustomEvent<{ type?: string; workspaceId?: string; id?: string; revision?: number; replay?: boolean }>).detail
       if (!detail) return
       if (detail.workspaceId && activeWorkspaceId && detail.workspaceId !== activeWorkspaceId) return
+      const eventKey = detail.id && typeof detail.revision === "number" ? `${detail.id}:${detail.revision}` : null
+      if (detail.type === "boring.plugin.front-pending" && detail.replay && eventKey) {
+        pendingReplayLoads.add(eventKey)
+        syncReplayState()
+        return
+      }
+      if (detail.type === "boring.plugin.front-settled" && eventKey) {
+        pendingReplayLoads.delete(eventKey)
+        syncReplayState()
+        return
+      }
       if (detail.type === "boring.plugin.replay-complete") {
-        setRuntimePluginReplayPending(false)
+        replayCompleteSeen = true
+        syncReplayState()
       }
     }
     window.addEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, handleRuntimePluginEvent as EventListener)
@@ -229,7 +249,7 @@ export function CliWorkspaceShell() {
         useSessions={useAgentSessions}
         chatParams={{ thinkingControl: true }}
         frontPluginHotReload={runtimePluginFrontLoadingEnabled ? "vite" : false}
-        topBarRight={<div className="flex items-center gap-2"><CliRuntimePluginBadge enabled={runtimePluginFrontLoadingEnabled} loading={runtimePluginReplayPending} trustLabel={runtimePluginTrustLabel} trustDescription={runtimePluginTrustDescription} /><CliVersionBadge version={cliVersion} /></div>}
+        topBarRight={<div className="flex items-center gap-2"><CliRuntimePluginBadge enabled={runtimePluginFrontLoadingEnabled} loading={runtimePluginReplayPending} trustLabel={runtimePluginTrustLabel} trustDescription={runtimePluginTrustDescription} /><RuntimePluginDiagnosticsButton enabled={runtimePluginDiagnosticsEnabled} workspaceId={activeWorkspace.id} replayPending={runtimePluginReplayPending} /><CliVersionBadge version={cliVersion} /></div>}
         topBarLeft={
           <WorkspaceSwitcherControl
             appTitle="Boring UI"
@@ -261,7 +281,7 @@ export function CliWorkspaceShell() {
       useSessions={useAgentSessions}
       chatParams={{ thinkingControl: true }}
       frontPluginHotReload={runtimePluginFrontLoadingEnabled ? "vite" : false}
-      topBarRight={<div className="flex items-center gap-2"><CliRuntimePluginBadge enabled={runtimePluginFrontLoadingEnabled} loading={runtimePluginReplayPending} trustLabel={runtimePluginTrustLabel} trustDescription={runtimePluginTrustDescription} /><CliVersionBadge version={cliVersion} /></div>}
+      topBarRight={<div className="flex items-center gap-2"><CliRuntimePluginBadge enabled={runtimePluginFrontLoadingEnabled} loading={runtimePluginReplayPending} trustLabel={runtimePluginTrustLabel} trustDescription={runtimePluginTrustDescription} /><RuntimePluginDiagnosticsButton enabled={runtimePluginDiagnosticsEnabled} workspaceId={null} replayPending={runtimePluginReplayPending} /><CliVersionBadge version={cliVersion} /></div>}
     />
   )
 }

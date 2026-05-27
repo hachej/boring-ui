@@ -713,8 +713,14 @@ export async function createWorkspaceAgentServer(
   // Expose the rebuild closure on the Fastify instance for external
   // callers / tests. The same closure is also wired into `beforeReload`
   // above so /reload triggers it automatically.
-  ;(app as FastifyInstance & { __boringRebuildPlugins?: () => Promise<PluginRebuildResult> }).__boringRebuildPlugins =
-    rebuildPlugins
+  ;(app as FastifyInstance & {
+    __boringRebuildPlugins?: () => Promise<PluginRebuildResult>
+    __boringAssetManager?: BoringPluginAssetManager
+  }).__boringRebuildPlugins = rebuildPlugins
+  ;(app as FastifyInstance & {
+    __boringRebuildPlugins?: () => Promise<PluginRebuildResult>
+    __boringAssetManager?: BoringPluginAssetManager
+  }).__boringAssetManager = boringAssetManager
 
   return app
 }

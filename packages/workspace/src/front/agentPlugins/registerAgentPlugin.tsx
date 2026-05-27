@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react"
+import { ErrorCode } from "@hachej/boring-agent/shared"
 import {
   createCapturingBoringFrontAPI,
   type BoringFrontFactoryWithId,
@@ -313,6 +314,7 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
     const handleLoad = (raw: MessageEvent) => {
       void (async () => {
         let event: Extract<RuntimePluginBrowserEvent, { type: "boring.plugin.load" }> | undefined
+        let pendingTracked = false
         try {
           event = JSON.parse(raw.data) as Extract<RuntimePluginBrowserEvent, { type: "boring.plugin.load" }>
           if (disposed) return
@@ -322,9 +324,29 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           if (event.revision <= Math.max(lastSeen, latestRequested)) return
           latestRequestedRef.current.set(event.id, event.revision)
           const frontEntryUrl = resolveFrontEntryUrl(event, options.apiBaseUrl)
-          const captured = frontEntryUrl
-            ? await captureFrontFactory(event.id, frontEntryUrl, event.revision, options.importFront)
-            : null
+          if (frontEntryUrl) {
+            pendingTracked = true
+            window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, {
+              detail: {
+                type: "boring.plugin.front-pending",
+                id: event.id,
+                revision: event.revision,
+                workspaceId: event.workspaceId ?? options.workspaceId,
+                replay: event.replay,
+              },
+            }))
+          }
+          let captured: CapturedBoringFrontRegistrations | null = null
+          try {
+            captured = frontEntryUrl
+              ? await captureFrontFactory(event.id, frontEntryUrl, event.revision, options.importFront)
+              : null
+          } catch (error) {
+            throw {
+              stage: "import",
+              error,
+            }
+          }
           if (disposed) return
           if (latestRequestedRef.current.get(event.id) !== event.revision) return
           if (event.revision <= (lastSeenRef.current.get(event.id) ?? 0)) return
@@ -338,23 +360,53 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           // owned entries and registers the new set in a single emit.
           // Subscribers (including DockView) see exactly one
           // transition — never an intermediate empty state.
-          commitCapturedFrontFactory(event.id, captured, registries)
+          try {
+            commitCapturedFrontFactory(event.id, captured, registries)
+          } catch (error) {
+            throw {
+              stage: "register",
+              error,
+            }
+          }
           lastSeenRef.current.set(event.id, event.revision)
           window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: event }))
         } catch (error) {
           if (event && latestRequestedRef.current.get(event.id) === event.revision) {
             latestRequestedRef.current.delete(event.id)
           }
+          const stage = typeof error === "object" && error && "stage" in error && (error as { stage?: unknown }).stage === "register"
+            ? "register"
+            : "import"
+          const actualError = typeof error === "object" && error && "error" in error
+            ? (error as { error: unknown }).error
+            : error
+          if (disposed) return
           const label = event?.id ?? "<malformed>"
-          const message = error instanceof Error ? error.message : String(error)
-          console.error(`[boring-ui] failed to load plugin ${label}; keeping previous version`, error)
+          const message = actualError instanceof Error ? actualError.message : String(actualError)
+          console.error(`[boring-ui] failed to load plugin ${label}; keeping previous version`, actualError)
           if (event) {
             window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, {
               detail: {
                 type: "boring.plugin.front-error",
                 id: event.id,
                 revision: event.revision,
+                workspaceId: event.workspaceId ?? options.workspaceId,
                 message,
+                code: ErrorCode.enum.PLUGIN_LOAD_FAILED,
+                stage,
+                replay: event.replay,
+              },
+            }))
+          }
+        } finally {
+          if (pendingTracked && event) {
+            window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, {
+              detail: {
+                type: "boring.plugin.front-settled",
+                id: event.id,
+                revision: event.revision,
+                workspaceId: event.workspaceId ?? options.workspaceId,
+                replay: event.replay,
               },
             }))
           }
@@ -391,6 +443,7 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
             type: "boring.plugin.error",
             id: event.id,
             revision: event.revision,
+            workspaceId: event.workspaceId ?? options.workspaceId,
             message: event.message,
           },
         }))

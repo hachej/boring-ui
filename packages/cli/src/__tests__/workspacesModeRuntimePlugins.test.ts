@@ -150,6 +150,32 @@ describe("workspaces mode runtime plugin wiring", () => {
       expect(second.data.frontUrl).toBeUndefined()
       expect(replayComplete.data).toMatchObject({ workspaceId: registeredA.id, replay: true })
 
+      const meta = await app.inject({ method: "GET", url: "/api/v1/workspace/meta" })
+      expect(meta.json()).toMatchObject({
+        workspacesMode: true,
+        runtimePluginFrontLoadingEnabled: true,
+        runtimePluginDiagnosticsEnabled: true,
+      })
+
+      const diagnostics = await app.inject({ method: "GET", url: `/api/v1/runtime-plugin-diagnostics?workspaceId=${registeredA.id}` })
+      expect(diagnostics.statusCode).toBe(200)
+      expect(diagnostics.json()).toMatchObject({
+        workspaceId: registeredA.id,
+        plugins: expect.arrayContaining([
+          expect.objectContaining({
+            id: "global-plugin",
+            rootDir: join(homeRoot, ".pi", "agent", "extensions", "global-plugin"),
+            frontPath: join(homeRoot, ".pi", "agent", "extensions", "global-plugin", "front", "index.tsx"),
+            serverLoadedRevision: 1,
+            host: expect.objectContaining({
+              pluginId: "global-plugin",
+              workspaceId: registeredA.id,
+              revision: 1,
+            }),
+          }),
+        ]),
+      })
+
       const listA = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${registeredA.id}` })
       const pluginsA = listA.json() as Array<{ id: string; frontTarget?: { entryUrl?: string } }>
       expect(pluginsA.map((plugin) => plugin.id).sort()).toEqual(["global-plugin", "local-a"])

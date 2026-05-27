@@ -23,6 +23,11 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { fileURLToPath } from "node:url"
 import { parseArgs } from "node:util"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "./localWorkspaces.js"
+import type {
+  RuntimePluginDiagnosticsResponse,
+  RuntimePluginHostSnapshot,
+  RuntimePluginServerSnapshotEntry,
+} from "../shared/runtimePluginDiagnostics.js"
 import {
   createCliPluginAssetManager,
   getGlobalPiExtensionsRoot,
@@ -210,6 +215,127 @@ const FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID = "folder"
 const RUNTIME_PLUGIN_TRUST_LABEL = "Trusted local runtime plugins"
 const RUNTIME_PLUGIN_TRUST_DESCRIPTION = "Loads plugin UI code from trusted local Pi extension roots through the CLI-owned runtime module host."
 
+function createRuntimePluginDiagnosticsStore() {
+  const byWorkspace = new Map<string, Map<string, RuntimePluginHostSnapshot>>()
+
+  function upsert(workspaceId: string, pluginId: string): RuntimePluginHostSnapshot {
+    const workspace = byWorkspace.get(workspaceId) ?? new Map<string, RuntimePluginHostSnapshot>()
+    byWorkspace.set(workspaceId, workspace)
+    const existing = workspace.get(pluginId) ?? {
+      workspaceId,
+      pluginId,
+      recent: [],
+    }
+    workspace.set(pluginId, existing)
+    return existing
+  }
+
+  return {
+    record(diagnostic: {
+      workspaceId?: string
+      pluginId?: string
+      revision?: number
+      requestedPath?: string
+      resolvedPath?: string
+      durationMs?: number
+      stage: string
+      outcome: string
+      code?: string
+      msg: string
+      details?: Record<string, unknown>
+      level: string
+      prefix: string
+    }) {
+      if (!diagnostic.workspaceId || !diagnostic.pluginId) return
+      const entry = upsert(diagnostic.workspaceId, diagnostic.pluginId)
+      const now = Date.now()
+      entry.lastDiagnostic = diagnostic as RuntimePluginHostSnapshot["lastDiagnostic"]
+      entry.recent = [...entry.recent, diagnostic as RuntimePluginHostSnapshot["recent"][number]].slice(-12)
+      if (diagnostic.revision !== undefined) entry.revision = diagnostic.revision
+      if (diagnostic.requestedPath) entry.lastRequestedPath = diagnostic.requestedPath
+      if (diagnostic.resolvedPath) entry.lastResolvedPath = diagnostic.resolvedPath
+      const details = diagnostic.details ?? {}
+      if (typeof details.rootDir === "string") entry.rootDir = details.rootDir
+      if (typeof details.entryUrl === "string") entry.entryUrl = details.entryUrl
+      if (typeof diagnostic.requestedPath === "string") entry.frontEntrySubpath = diagnostic.requestedPath
+      if (diagnostic.stage === "track" && diagnostic.outcome === "tracked") {
+        entry.lastErrorCode = undefined
+        entry.lastErrorMessage = undefined
+        entry.lastErrorStage = undefined
+      }
+      if (diagnostic.stage === "cache") entry.lastRequestAt = now
+      if (diagnostic.stage === "transform" && diagnostic.outcome === "served") {
+        entry.lastTransformAt = now
+        entry.lastTransformDurationMs = diagnostic.durationMs
+      }
+      if (diagnostic.stage === "serve" && diagnostic.outcome === "served") {
+        entry.lastServeAt = now
+        entry.lastServeDurationMs = diagnostic.durationMs
+        entry.lastErrorCode = undefined
+        entry.lastErrorMessage = undefined
+        entry.lastErrorStage = undefined
+      }
+      if (diagnostic.outcome === "rejected") {
+        entry.lastRejectedAt = now
+        entry.lastErrorCode = diagnostic.code as RuntimePluginHostSnapshot["lastErrorCode"]
+        entry.lastErrorMessage = diagnostic.msg
+        entry.lastErrorStage = diagnostic.stage as RuntimePluginHostSnapshot["lastErrorStage"]
+      }
+      if (diagnostic.stage === "cleanup" && diagnostic.outcome === "disposed") {
+        entry.lastDisposedAt = now
+      }
+    },
+    snapshot(workspaceId: string): RuntimePluginHostSnapshot[] {
+      return [...(byWorkspace.get(workspaceId)?.values() ?? [])]
+        .map((entry) => ({ ...entry, recent: [...entry.recent] }))
+        .sort((a, b) => a.pluginId.localeCompare(b.pluginId))
+    },
+    disposeWorkspace(workspaceId: string) {
+      byWorkspace.delete(workspaceId)
+    },
+  }
+}
+
+function buildRuntimePluginDiagnosticsResponse(args: {
+  workspaceId: string
+  loaded: Array<{ id: string; version?: string; revision?: number; rootDir?: string; frontPath?: string; frontTarget?: unknown }>
+  errors: Array<{ id: string; message: string }>
+  host: RuntimePluginHostSnapshot[]
+}): RuntimePluginDiagnosticsResponse {
+  const byPlugin = new Map<string, RuntimePluginServerSnapshotEntry>()
+  for (const plugin of args.loaded) {
+    byPlugin.set(plugin.id, {
+      id: plugin.id,
+      ...(plugin.version ? { version: plugin.version } : {}),
+      ...(plugin.rootDir ? { rootDir: plugin.rootDir } : {}),
+      ...(plugin.frontPath ? { frontPath: plugin.frontPath } : {}),
+      ...(plugin.frontTarget ? { frontTarget: plugin.frontTarget as RuntimePluginServerSnapshotEntry["frontTarget"] } : {}),
+      ...(plugin.revision !== undefined ? { serverLoadedRevision: plugin.revision } : {}),
+    })
+  }
+  for (const error of args.errors) {
+    const current = byPlugin.get(error.id) ?? { id: error.id }
+    byPlugin.set(error.id, {
+      ...current,
+      serverError: error.message,
+    })
+  }
+  for (const hostEntry of args.host) {
+    const current = byPlugin.get(hostEntry.pluginId) ?? { id: hostEntry.pluginId }
+    byPlugin.set(hostEntry.pluginId, {
+      ...current,
+      ...(current.rootDir ? {} : hostEntry.rootDir ? { rootDir: hostEntry.rootDir } : {}),
+      ...(current.frontPath ? {} : hostEntry.frontEntrySubpath ? { frontPath: hostEntry.frontEntrySubpath } : {}),
+      ...(current.frontTarget ? {} : hostEntry.entryUrl ? { frontTarget: { kind: "native", entryUrl: hostEntry.entryUrl, revision: hostEntry.revision ?? 0, trust: "local-trusted-native" } } : {}),
+      host: hostEntry,
+    })
+  }
+  return {
+    workspaceId: args.workspaceId,
+    plugins: [...byPlugin.values()].sort((a, b) => a.id.localeCompare(b.id)),
+  }
+}
+
 export async function createFolderModeApp(opts: {
   workspaceRoot: string
   mode: RuntimeMode
@@ -222,7 +348,10 @@ export async function createFolderModeApp(opts: {
     import("@hachej/boring-workspace/app/server"),
     import("./pluginFrontRuntime.js"),
   ])
-  const runtimeHost = await createPluginFrontRuntimeHost()
+  const diagnosticsStore = createRuntimePluginDiagnosticsStore()
+  const runtimeHost = await createPluginFrontRuntimeHost({
+    onDiagnostic: (diagnostic) => diagnosticsStore.record(diagnostic),
+  })
   const app = await createWorkspaceAgentServer({
     workspaceRoot,
     mode: opts.mode,
@@ -234,6 +363,21 @@ export async function createFolderModeApp(opts: {
   })
   await runtimeHost.registerRoutes(app as FastifyInstance)
 
+  app.get("/api/v1/runtime-plugin-diagnostics", async () => {
+    const manager = (app as FastifyInstance & {
+      __boringAssetManager?: {
+        inspectLoaded(): Array<{ id: string; version?: string; revision?: number; rootDir?: string; frontPath?: string; frontTarget?: unknown }>
+        getErrors(): Array<{ id: string; message: string }>
+      }
+    }).__boringAssetManager
+    return buildRuntimePluginDiagnosticsResponse({
+      workspaceId: FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID,
+      loaded: manager?.inspectLoaded() ?? [],
+      errors: manager?.getErrors() ?? [],
+      host: diagnosticsStore.snapshot(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID),
+    })
+  })
+
   app.get("/api/v1/workspace/meta", async () => ({
     workspaceRoot,
     projectName,
@@ -241,7 +385,7 @@ export async function createFolderModeApp(opts: {
     runtimePluginFrontLoadingEnabled: true,
     runtimePluginTrustLabel: RUNTIME_PLUGIN_TRUST_LABEL,
     runtimePluginTrustDescription: RUNTIME_PLUGIN_TRUST_DESCRIPTION,
-    runtimePluginDiagnosticsEnabled: false,
+    runtimePluginDiagnosticsEnabled: true,
   }))
 
   return app as FastifyInstance
@@ -291,7 +435,10 @@ export async function createWorkspacesModeApp(opts: {
   ])
   const registry = createLocalWorkspaceRegistry(opts.registryPath)
   const app = fastifyModule.default({ logger: false, bodyLimit: 16 * 1024 * 1024 })
-  const runtimeHost = await createPluginFrontRuntimeHost()
+  const diagnosticsStore = createRuntimePluginDiagnosticsStore()
+  const runtimeHost = await createPluginFrontRuntimeHost({
+    onDiagnostic: (diagnostic) => diagnosticsStore.record(diagnostic),
+  })
   await runtimeHost.registerRoutes(app)
   const bridges = new Map<string, ReturnType<typeof workspaceServer.createInMemoryBridge>>()
   const workspaceEventClosers = new Map<string, Set<() => void>>()
@@ -354,6 +501,7 @@ export async function createWorkspacesModeApp(opts: {
     workspaceEventClosers.delete(workspace.id)
     pluginRuntimes.delete(pluginRuntimeKey(workspace))
     bridges.delete(workspace.id)
+    diagnosticsStore.disposeWorkspace(workspace.id)
     await runtimeHost.disposeWorkspace(workspace.id)
   }
 
@@ -461,6 +609,17 @@ export async function createWorkspacesModeApp(opts: {
     getBridge: async (request) => getBridge((await workspaceFromRequest(request)).id),
   })
 
+  app.get("/api/v1/runtime-plugin-diagnostics", async (request) => {
+    const workspace = await workspaceFromRequest(request)
+    const runtime = await getLoadedPluginRuntime(workspace)
+    return buildRuntimePluginDiagnosticsResponse({
+      workspaceId: workspace.id,
+      loaded: runtime.manager.inspectLoaded(),
+      errors: runtime.manager.getErrors(),
+      host: diagnosticsStore.snapshot(workspace.id),
+    })
+  })
+
   app.get("/api/v1/agent-plugins", async (request) => {
     const workspace = await workspaceFromRequest(request)
     const runtime = await getLoadedPluginRuntime(workspace)
@@ -557,7 +716,7 @@ export async function createWorkspacesModeApp(opts: {
     runtimePluginFrontLoadingEnabled: true,
     runtimePluginTrustLabel: RUNTIME_PLUGIN_TRUST_LABEL,
     runtimePluginTrustDescription: RUNTIME_PLUGIN_TRUST_DESCRIPTION,
-    runtimePluginDiagnosticsEnabled: false,
+    runtimePluginDiagnosticsEnabled: true,
   }))
 
   return app
