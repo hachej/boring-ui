@@ -113,7 +113,7 @@ function fileBackedParams(
   params: Record<string, unknown> | undefined,
   path: string,
 ): Record<string, unknown> {
-  return { ...(params ?? { path }), [FILE_BACKED_PARAM]: true }
+  return { ...(params ?? {}), path, [FILE_BACKED_PARAM]: true }
 }
 
 function ok(): CommandResult {
