@@ -58,6 +58,7 @@ function panelRegistration(panel: BoringFrontPanelRegistration<any>, pluginId: s
     ...(panel.essential !== undefined ? { essential: panel.essential } : {}),
     ...(panel.lazy !== undefined ? { lazy: panel.lazy } : {}),
     ...(panel.chromeless !== undefined ? { chromeless: panel.chromeless } : {}),
+    ...(panel.supportsFullPage !== undefined ? { supportsFullPage: panel.supportsFullPage } : {}),
   }
 }
 

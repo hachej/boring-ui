@@ -20,6 +20,7 @@ const PUBLISHABLE = [
   "packages/agent",
   "packages/ui",
   "packages/cli",
+  "plugins/deck",
 ]
 
 function readJson(path) {

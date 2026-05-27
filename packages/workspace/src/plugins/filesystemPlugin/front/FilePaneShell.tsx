@@ -88,7 +88,7 @@ export function FilePaneShell({
   className,
 }: FilePaneShellProps) {
   // No file selected
-  if (!path) {
+  if (!/\S/.test(path)) {
     return (
       <div className="flex h-full items-center justify-center p-6">
         <EmptyState className="min-h-0 border-0" title="No file selected" description="Choose a file from the file tree to open an editor." />

@@ -6,18 +6,20 @@
   "boring": {
     "defaultPluginPackages": [
       "@hachej/boring-ask-user",
+      "@hachej/boring-deck",
       "./src/plugins/playgroundDataCatalog"
     ]
   },
   "scripts": {
-    "dev": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-catalog build && vite",
-    "build": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-catalog build && vite build",
-    "typecheck": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-catalog build && tsc --noEmit",
-    "test:e2e": "playwright test"
+    "dev": "pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-catalog build && vite",
+    "build": "pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-catalog build && vite build",
+    "typecheck": "pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-catalog build && tsc --noEmit",
+    "test:e2e": "pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-catalog build && playwright test"
   },
   "dependencies": {
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
+    "@hachej/boring-deck": "workspace:*",
     "@hachej/boring-ask-user": "workspace:*",
     "@duckdb/node-api": "1.5.2-r.1",
     "react": "^19.0.0",

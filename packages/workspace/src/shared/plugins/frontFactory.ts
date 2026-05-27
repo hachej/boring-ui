@@ -19,6 +19,7 @@ export interface BoringFrontPanelRegistration<T = unknown> {
   essential?: boolean
   lazy?: boolean
   chromeless?: boolean
+  supportsFullPage?: boolean
   source?: string
 }
 

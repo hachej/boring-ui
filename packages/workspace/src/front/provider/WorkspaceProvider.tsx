@@ -17,6 +17,7 @@ import { RegistryProvider, useCatalogRegistry, useCommandRegistry } from "../reg
 import { CatalogRegistry } from "../../shared/plugins/CatalogRegistry"
 import { PluginErrorProvider } from "../plugin/PluginErrorContext"
 import { PluginInspector } from "../plugin/PluginInspector"
+import { FullPageBasePathProvider } from "../fullPage"
 import { createWorkspaceStore } from "../store"
 import { bindStore, useThemePreference } from "../store/selectors"
 import { createBridge } from "../bridge/createBridge"
@@ -368,6 +369,7 @@ export interface WorkspaceProviderProps {
    * own module asset endpoint.
    */
   frontPluginHotReload?: FrontPluginHotReloadMode
+  fullPageBasePath?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -396,6 +398,7 @@ export function WorkspaceProvider({
   onOpenFile,
   debug = false,
   frontPluginHotReload = (typeof import.meta !== 'undefined' && import.meta.env?.DEV) ? 'vite' as const : false,
+  fullPageBasePath,
 }: WorkspaceProviderProps) {
   const storeRef = useRef<ReturnType<typeof createWorkspaceStore> | null>(null)
   if (!storeRef.current) {
@@ -558,7 +561,8 @@ export function WorkspaceProvider({
     <WorkspaceContext.Provider value={workspaceValue}>
       <ThemeContext.Provider value={themeValue}>
         <WorkspaceBridgeContext.Provider value={bridgeValue}>
-          <WorkspaceAttentionProvider>
+          <FullPageBasePathProvider basePath={fullPageBasePath}>
+            <WorkspaceAttentionProvider>
           <PluginErrorProvider>
             <RegistryProvider
               panelRegistry={panelRegistry}
@@ -589,6 +593,7 @@ export function WorkspaceProvider({
             </RegistryProvider>
           </PluginErrorProvider>
           </WorkspaceAttentionProvider>
+          </FullPageBasePathProvider>
         </WorkspaceBridgeContext.Provider>
       </ThemeContext.Provider>
     </WorkspaceContext.Provider>

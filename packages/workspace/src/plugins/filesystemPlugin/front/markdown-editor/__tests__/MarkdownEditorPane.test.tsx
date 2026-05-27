@@ -49,6 +49,7 @@ vi.mock("../../../../../front/hooks", () => ({
     isSaving: false,
     lastSavedAt: null,
     markDirty: mockMarkDirty,
+    markClean: vi.fn(),
     flushSave: vi.fn(),
     shouldSync: mockShouldSync,
     ackSync: mockAckSync,

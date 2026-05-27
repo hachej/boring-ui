@@ -44,6 +44,7 @@ export interface PanelConfig<T = any> {
   requiresCapabilities?: string[]
   essential?: boolean
   chromeless?: boolean
+  supportsFullPage?: boolean
   /** Source: "builtin" | "app" */
   source?: string
   pluginId?: string

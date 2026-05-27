@@ -21,6 +21,7 @@ export interface UseEditorLifecycleReturn {
   isSaving: boolean
   lastSavedAt: number | null
   markDirty: () => void
+  markClean: () => void
   flushSave: () => Promise<void>
   shouldSync: boolean
   ackSync: () => void
@@ -59,6 +60,8 @@ export function useEditorLifecycle(
   const saveInFlightRef = useRef<Promise<void> | null>(null)
   const lastSaveTimeRef = useRef(0)
   const lastKnownMtimeRef = useRef<number | null>(null)
+  const lifecycleGenRef = useRef(0)
+  const previousPathRef = useRef<string | null | undefined>(undefined)
   const onDirtyChangeRef = useRef(onDirtyChange)
   onDirtyChangeRef.current = onDirtyChange
   const adapterRef = useRef(adapter)
@@ -69,7 +72,10 @@ export function useEditorLifecycle(
     if (!a || !path || !a.isDirty()) return
     if (saveInFlightRef.current) return saveInFlightRef.current
 
-    const p = (async () => {
+    const saveGen = lifecycleGenRef.current
+    let p: Promise<void> | null = null
+
+    p = (async () => {
       setIsSaving(true)
       events.emit(workspaceEvents.editorSaveStart, { panelId })
 
@@ -86,6 +92,7 @@ export function useEditorLifecycle(
           a.save().then(() => "saved" as const),
           watchdogTrip,
         ])
+        if (lifecycleGenRef.current !== saveGen) return
         if (winner === "saved") {
           lastSaveTimeRef.current = Date.now()
           setLastSavedAt(Date.now())
@@ -97,6 +104,7 @@ export function useEditorLifecycle(
         // later in the background; that's fine — its result is silently
         // discarded.
       } catch {
+        if (lifecycleGenRef.current !== saveGen) return
         // Save failed (e.g. OCC conflict). The adapter is responsible
         // for surfacing the failure to the user — we keep the dirty
         // flag set so a subsequent edit / explicit save retries.
@@ -104,11 +112,14 @@ export function useEditorLifecycle(
         // setTimeout-driven scheduleSave path.
       } finally {
         if (watchdog) clearTimeout(watchdog)
+        if (saveInFlightRef.current === p) {
+          saveInFlightRef.current = null
+        }
+        if (lifecycleGenRef.current !== saveGen) return
         // Always signal save:end so consumers (e.g. tab spinner) clear
         // their pending UI even when save throws or hits the watchdog.
         events.emit(workspaceEvents.editorSaveEnd, { panelId })
         setIsSaving(false)
-        saveInFlightRef.current = null
       }
     })()
     saveInFlightRef.current = p
@@ -126,6 +137,15 @@ export function useEditorLifecycle(
     onDirtyChangeRef.current?.(path, true)
     scheduleSave()
   }, [path, scheduleSave])
+
+  const markClean = useCallback(() => {
+    clearTimeout(saveTimerRef.current)
+    setIsDirty(false)
+    setExternalChangeWhileDirty(false)
+    if (path) {
+      onDirtyChangeRef.current?.(path, false)
+    }
+  }, [path])
 
   const flushSave = useCallback(async () => {
     clearTimeout(saveTimerRef.current)
@@ -174,11 +194,42 @@ export function useEditorLifecycle(
   }, [serverMtime, path, isDirty])
 
   useEffect(() => {
+    if (previousPathRef.current === undefined) {
+      previousPathRef.current = path
+      return
+    }
+    if (previousPathRef.current === path) return
+
+    previousPathRef.current = path
+    lifecycleGenRef.current += 1
+    clearTimeout(saveTimerRef.current)
+    if (saveInFlightRef.current) {
+      events.emit(workspaceEvents.editorSaveEnd, { panelId })
+    }
+    saveInFlightRef.current = null
+    lastKnownMtimeRef.current = null
+    lastSaveTimeRef.current = 0
+    setIsDirty(false)
+    setIsSaving(false)
+    setShouldSync(false)
+    setExternalChangeWhileDirty(false)
+  }, [path])
+
+  useEffect(() => {
     return () => clearTimeout(saveTimerRef.current)
   }, [])
 
   return {
-    isDirty, isSaving, lastSavedAt, markDirty, flushSave, shouldSync, ackSync,
-    externalChangeWhileDirty, ackExternalChange, notifySaved,
+    isDirty,
+    isSaving,
+    lastSavedAt,
+    markDirty,
+    markClean,
+    flushSave,
+    shouldSync,
+    ackSync,
+    externalChangeWhileDirty,
+    ackExternalChange,
+    notifySaved,
   }
 }

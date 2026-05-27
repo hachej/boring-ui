@@ -28,13 +28,11 @@ async function makeStore() {
 const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer" }] }
 
 async function waitForPending(store: FileAskUserStore, sessionId: string) {
-  let pending = await store.getPending(sessionId)
-  for (let i = 0; i < 40 && !pending; i += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 25))
-    pending = await store.getPending(sessionId)
-  }
-  expect(pending).not.toBeNull()
-  return pending!
+  return vi.waitFor(async () => {
+    const pending = await store.getPending(sessionId)
+    expect(pending).not.toBeNull()
+    return pending!
+  }, { timeout: 5_000 })
 }
 
 describe("AskUserStatePublisher", () => {

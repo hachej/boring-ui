@@ -62,6 +62,23 @@ describe("dirty state tracking", () => {
     expect(result.current.isDirty).toBe(false)
   })
 
+  it("markClean clears dirty state without saving", () => {
+    const onDirtyChange = vi.fn()
+    const adapter = createAdapter()
+    const { result } = renderHook(() =>
+      useEditorLifecycle("/a.ts", { adapter, panelId: "p1", onDirtyChange }),
+    )
+
+    act(() => result.current.markDirty())
+    expect(result.current.isDirty).toBe(true)
+
+    act(() => result.current.markClean())
+
+    expect(result.current.isDirty).toBe(false)
+    expect(adapter.save).not.toHaveBeenCalled()
+    expect(onDirtyChange).toHaveBeenLastCalledWith("/a.ts", false)
+  })
+
   it("does not mark dirty when path is null", () => {
     const adapter = createAdapter()
     const { result } = renderHook(() =>
@@ -326,6 +343,38 @@ describe("bus emissions", () => {
     })
 
     expect(end).toHaveBeenCalledWith({ panelId: "p10" })
+  })
+
+  it("emits save end if the path changes while a save is still in flight", async () => {
+    let resolveSave: (() => void) | undefined
+    const adapter = createAdapter({
+      save: vi.fn(() => new Promise<void>((resolve) => {
+        resolveSave = resolve
+      })),
+    })
+    const end = vi.fn()
+    events.on(workspaceEvents.editorSaveEnd, end)
+
+    const { result, rerender } = renderHook(
+      ({ path }) => useEditorLifecycle(path, { adapter, panelId: "p11" }),
+      { initialProps: { path: "/a.ts" } },
+    )
+
+    act(() => result.current.markDirty())
+    await act(async () => {
+      void result.current.flushSave()
+      await Promise.resolve()
+    })
+
+    rerender({ path: "/b.ts" })
+    expect(end).toHaveBeenCalledWith({ panelId: "p11" })
+
+    await act(async () => {
+      resolveSave?.()
+      await Promise.resolve()
+    })
+
+    expect(end).toHaveBeenCalledTimes(1)
   })
 })
 

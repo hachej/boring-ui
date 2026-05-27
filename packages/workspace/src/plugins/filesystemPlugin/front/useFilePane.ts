@@ -5,10 +5,12 @@ import { useFileContent, useFileWrite } from "./data"
 import { FileConflictError } from "./data/fetchClient"
 import { useEditorLifecycle, type EditorLifecycleAdapter } from "../../../front/hooks"
 
+let nextFallbackPanelId = 0
+
 export interface UseFilePaneOptions {
   /** The file path to load/edit. If empty/undefined, pane shows "no file selected". */
   path: string
-  /** Unique panel ID for lifecycle tracking (defaults to path). */
+  /** Unique panel ID for lifecycle tracking. Omit to use a stable per-pane fallback ID. */
   panelId?: string
   /** Initial content (optional, for draft/unsaved files). */
   initialContent?: string
@@ -70,9 +72,12 @@ export interface UseFilePaneReturn {
  * ```
  */
 export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
-  const { path, panelId = path, initialContent = null } = options
+  const { path, panelId, initialContent = null } = options
+  const activePath = /\S/.test(path) ? path : null
+  const fallbackPanelIdRef = useRef(panelId ?? `file-pane:${nextFallbackPanelId++}`)
+  const lifecyclePanelId = panelId ?? fallbackPanelIdRef.current
 
-  const { data: fileData, isLoading, error } = useFileContent(path)
+  const { data: fileData, isLoading, error, refetch: refetchFileData } = useFileContent(activePath)
   const { mutateAsync: writeFile } = useFileWrite()
 
   // Local content state
@@ -105,6 +110,7 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
       contentRef.current = initialContent ?? ""
       dirtyRef.current = false
       baselineMtimeRef.current = null
+      saveGenRef.current += 1
       setConflict(null)
       loadedPathRef.current = path
     }
@@ -121,7 +127,7 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
 
   // Editor lifecycle adapter
   const adapter: EditorLifecycleAdapter | null =
-    path && content != null
+    activePath && content != null
       ? {
           isDirty: () => dirtyRef.current,
           save: async () => {
@@ -131,7 +137,7 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
             const myGen = ++saveGenRef.current
             try {
               const result = await writeFile({
-                path,
+                path: activePath,
                 content: contentRef.current,
                 expectedMtimeMs: baselineMtimeRef.current ?? undefined,
               })
@@ -172,9 +178,9 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
         }
       : null
 
-  const lifecycle = useEditorLifecycle(path, {
+  const lifecycle = useEditorLifecycle(activePath, {
     adapter,
-    panelId,
+    panelId: lifecyclePanelId,
     serverMtime: fileData?.mtimeMs ?? null,
   })
   // Keep the ref in sync so the save callback can call notifySaved without
@@ -206,23 +212,19 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   // 409-recovery path in adapter.save above (continued typing wins).
   useEffect(() => {
     if (!lifecycle.externalChangeWhileDirty || fileData?.mtimeMs == null) return
-    setConflict(new FileConflictError(path, fileData.mtimeMs, baselineMtimeRef.current))
+    setConflict(new FileConflictError(activePath ?? path, fileData.mtimeMs, baselineMtimeRef.current))
     baselineMtimeRef.current = fileData.mtimeMs
     lifecycle.ackExternalChange()
-  }, [lifecycle.externalChangeWhileDirty, lifecycle, fileData, path])
+  }, [activePath, lifecycle.externalChangeWhileDirty, lifecycle, fileData, path])
 
   // Tab title with dirty indicator
-  const fileName = path ? (path.split("/").pop() ?? path) : ""
+  const fileName = activePath ? (activePath.split("/").pop() ?? activePath) : ""
   const [tabTitle, setTabTitle] = useState("")
 
   useEffect(() => {
     const title = fileName ? (lifecycle.isDirty ? `${fileName} ●` : fileName) : ""
     setTabTitle(title)
-    if (title && panelId) {
-      // We can't call api.setTitle here because we don't have access to it
-      // The caller should handle this separately if needed
-    }
-  }, [fileName, lifecycle.isDirty, panelId])
+  }, [fileName, lifecycle.isDirty])
 
   // Actions
   const setContent = useCallback((newContent: string) => {
@@ -233,18 +235,24 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   }, [setContentState, lifecycle])
 
   const onReloadFromServer = useCallback(async () => {
-    if (!fileData) return
-    setContentState(fileData.content)
-    contentRef.current = fileData.content
-    baselineMtimeRef.current = fileData.mtimeMs ?? null
+    if (!activePath) return
+
+    const refreshed = await refetchFileData()
+    if (refreshed.status !== "success" || refreshed.data == null) return
+
+    const next = refreshed.data
+    setContentState(next.content)
+    contentRef.current = next.content
+    baselineMtimeRef.current = next.mtimeMs ?? null
     dirtyRef.current = false
+    lifecycle.markClean()
     // Sync the lifecycle's lastKnownMtimeRef + clear externalChangeWhileDirty
     // so a follow-up SSE for the same mtime doesn't re-raise the conflict.
-    if (typeof fileData.mtimeMs === "number") {
-      notifySavedRef.current?.(fileData.mtimeMs)
+    if (typeof next.mtimeMs === "number") {
+      notifySavedRef.current?.(next.mtimeMs)
     }
     setConflict(null)
-  }, [fileData, setContentState])
+  }, [activePath, lifecycle, refetchFileData, setContentState])
 
   const onOverwrite = useCallback(async () => {
     // Bump the save generation so any pending autosave (e.g., one that the
@@ -258,8 +266,9 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
       // and clicking Overwrite. The React `content` state is one render
       // behind during fast typing, so reading it first would save stale
       // content. (Earlier comment claimed the opposite — it was wrong.)
+      if (!activePath) return
       const contentToSave = contentRef.current
-      const result = await writeFile({ path, content: contentToSave })
+      const result = await writeFile({ path: activePath, content: contentToSave })
       if (saveGenRef.current !== myGen) return
       if (typeof result.mtimeMs === "number") {
         baselineMtimeRef.current = result.mtimeMs
@@ -275,7 +284,7 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
     } catch {
       // Leave conflict UI up so user can retry
     }
-  }, [path, writeFile])
+  }, [activePath, writeFile])
 
   const save = useCallback(async () => {
     if (!adapter || !dirtyRef.current) return

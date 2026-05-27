@@ -1,6 +1,7 @@
 export {
   DataProvider,
   useDataClient,
+  useHasDataClient,
   useApiBaseUrl,
   useWorkspaceRequestId,
 } from "./DataProvider"
