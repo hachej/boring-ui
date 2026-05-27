@@ -125,8 +125,8 @@
   --boring-secondary-foreground: oklch(0.985 0 0);
   --boring-muted: oklch(0.269 0.006 285.885);
   --boring-muted-foreground: oklch(0.708 0.01 286.073);
-  --boring-accent: oklch(0.269 0.006 285.885);
-  --boring-accent-foreground: oklch(0.985 0 0);
+  --boring-accent: oklch(0.72 0.13 65);
+  --boring-accent-foreground: oklch(0.18 0.02 65);
   --boring-accent-soft: oklch(0.28 0.04 65);
   --boring-success: oklch(0.74 0.14 145);
   --boring-success-foreground: oklch(0.12 0.004 285.823);
@@ -135,7 +135,7 @@
   --boring-destructive-foreground: oklch(0.985 0 0);
   --boring-border: oklch(0.269 0.006 285.885);
   --boring-input: oklch(0.269 0.006 285.885);
-  --boring-ring: oklch(0.439 0.01 286.029);
+  --boring-ring: oklch(0.72 0.13 65);
   --boring-canvas: oklch(0.12 0.004 285.823);
   --boring-surface-chat: oklch(0.165 0.004 285.823);
   --boring-surface-workbench: oklch(0.165 0.004 285.823);
