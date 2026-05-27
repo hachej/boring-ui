@@ -2,7 +2,7 @@
   "name": "@hachej/boring-data-explorer",
   "version": "0.1.13",
   "type": "module",
-  "private": true,
+  "private": false,
   "license": "MIT",
   "description": "Data explorer plugin primitive and shared explorer contracts for Boring workspace plugins.",
   "repository": {

@@ -29,15 +29,27 @@ const playgroundOnlyAliases = [
 // without dirtying the committed fixtures. Delete the directory to
 // reset; the next boot re-seeds it.
 
+const dynamicPluginReactRefreshExclude = [
+  // Runtime/app-authored plugins are loaded through the boring-ui plugin
+  // bridge, not React Refresh. Refresh instrumentation can create a
+  // second/stale hook dispatcher for dynamically imported panels after edits,
+  // so leave these files to Vite's plain esbuild TSX transform and apply
+  // updates only after /reload.
+  /workspace\/\.pi\/extensions\//,
+  /apps\/workspace-playground\/src\/plugins\/[^/]+\/front\//,
+  /plugins\/[^/]+\/dist\/front\//,
+  // The playground consumes prebuilt workspace/agent/ui dist files. Dynamic
+  // plugin imports can pull the same dist modules through timestamped /@fs
+  // URLs; React Refresh treats those duplicate module ids as hot updates and
+  // can interrupt a hard refresh before the file tree/model/plugin requests
+  // settle. Dist bundles are already built artifacts, so don't instrument them.
+  /packages\/(workspace|agent|ui)\/dist\//,
+]
+
 export default defineConfig({
   plugins: [
     react({
-      // Runtime-authored plugins are loaded through the boring-ui plugin
-      // bridge, not React Refresh. Refresh instrumentation can create a
-      // second/stale hook dispatcher for dynamically imported .pi extension
-      // panels after edits, so leave these files to Vite's plain esbuild TSX
-      // transform and apply updates only after /reload.
-      exclude: [/workspace\/\.pi\/extensions\//],
+      exclude: dynamicPluginReactRefreshExclude,
     }),
     tailwindcss(),
     {

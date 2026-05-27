@@ -2,7 +2,7 @@
   "name": "@hachej/boring-ask-user",
   "version": "0.1.13",
   "type": "module",
-  "private": true,
+  "private": false,
   "description": "Ask-user plugin for Boring workspace — surfaces agent questions to the user and streams answers back.",
   "boring": {
     "id": "ask-user",
