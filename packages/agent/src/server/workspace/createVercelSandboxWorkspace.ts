@@ -209,6 +209,27 @@ export function createVercelSandboxWorkspace(
   const { emit: emitChange, watcher } = createSandboxBroadcaster()
   const remote = sandbox as VercelSandboxCompat
 
+  async function listDescendantPaths(relPath: string, sandboxPath: string): Promise<string[]> {
+    if (remote.fs?.stat && remote.fs.readdir) {
+      const fileStat = await remote.fs.stat(sandboxPath)
+      if (!fileStat.isDirectory()) return []
+      const entries = await remote.fs.readdir(sandboxPath, { withFileTypes: true })
+      const descendants: string[] = []
+      for (const entry of entries) {
+        const childRelPath = relPath === '.' ? entry.name : `${relPath}/${entry.name}`
+        descendants.push(childRelPath)
+        if (entry.isDirectory()) {
+          descendants.push(...await listDescendantPaths(childRelPath, `${sandboxPath}/${entry.name}`))
+        }
+      }
+      return descendants
+    }
+    return await runJson<string[]>(
+      remote,
+      `node -e ${shellQuote(`const fs=require('fs'); const path=require('path'); const root=process.argv[1]; const relRoot=process.argv[2]; function walk(abs,rel){ const s=fs.statSync(abs); if(!s.isDirectory()) return []; const out=[]; for (const entry of fs.readdirSync(abs,{withFileTypes:true})) { const childRel=rel==='.'?entry.name:rel+'/'+entry.name; out.push(childRel); if(entry.isDirectory()) out.push(...walk(path.join(abs,entry.name),childRel)); } return out; } process.stdout.write(JSON.stringify(walk(root,relRoot)))`)} ${shellQuote(sandboxPath)} ${shellQuote(relPath)}`,
+    )
+  }
+
   return {
     root: VERCEL_SANDBOX_WORKSPACE_ROOT,
     fsCapability: 'best-effort',
@@ -396,11 +417,15 @@ export function createVercelSandboxWorkspace(
       if (sandboxPath === VERCEL_SANDBOX_REMOTE_ROOT) {
         throw Object.assign(new Error('cannot remove workspace root'), { code: EPERM_CODE })
       }
+      const descendantPaths = await listDescendantPaths(relPath, sandboxPath)
       if (remote.fs?.rm) await remote.fs.rm(sandboxPath, { recursive: true, force: false })
       else await runShell(remote, `rm -r -- ${shellQuote(sandboxPath)}`)
       invalidateMetadataCache()
       workspaceOpts.onMutation?.()
       emitChange({ op: 'unlink', path: relPath })
+      for (const path of descendantPaths) {
+        emitChange({ op: 'unlink', path })
+      }
     },
     async readdir(relPath) {
       const sandboxPath = toSandboxPath(relPath)

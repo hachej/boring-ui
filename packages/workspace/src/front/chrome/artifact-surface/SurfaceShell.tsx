@@ -92,8 +92,12 @@ export interface SurfaceShellProps {
 
 const COLLAPSED_WIDTH = 40
 
-function fileBackedPath(panel: PanelState | null | undefined): string | null {
-  if (!panel?.id.startsWith("file:")) return null
+function fileBackedPath(
+  panel: PanelState | null | undefined,
+  fileBackedPanelIds: ReadonlySet<string>,
+): string | null {
+  if (!panel) return null
+  if (!panel.id.startsWith("file:") && !fileBackedPanelIds.has(panel.id)) return null
   const path = panel.params?.path
   return typeof path === "string" ? path : null
 }
@@ -157,6 +161,7 @@ export function SurfaceShell({
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
   const bridgeSelectorsRef = useRef(new Set<(state: WorkspaceState) => void>())
+  const fileBackedPanelIdsRef = useRef(new Set<string>())
   const bridgeEventHandlersRef = useRef(
     new Map<keyof BridgeEventMap, Set<(data: BridgeEventMap[keyof BridgeEventMap]) => void>>(),
   )
@@ -206,6 +211,7 @@ export function SurfaceShell({
         return
       }
       const panelId = surfacePanelId(request, resolved)
+      fileBackedPanelIdsRef.current.add(panelId)
       const existingByResolvedId = api.getPanel(panelId)
       if (existingByResolvedId) {
         if (resolved.params) existingByResolvedId.api.updateParameters(resolved.params)
@@ -242,6 +248,9 @@ export function SurfaceShell({
       return
     }
     const panelId = surfacePanelId(normalizedRequest, resolved)
+    if (normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND) {
+      fileBackedPanelIdsRef.current.add(panelId)
+    }
     const existing = api.getPanel(panelId)
     const closeWorkbenchOnDone = normalizedRequest.meta?.closeWorkbenchOnDone === true
     const resolvedParams = closeWorkbenchOnDone && onCloseRef.current
@@ -352,8 +361,9 @@ export function SurfaceShell({
         }))
       : []
     const activePanel = api?.activePanel?.id ?? null
+    const fileBackedPanelIds = fileBackedPanelIdsRef.current
     const activePanelState = panels.find((panel) => panel.id === activePanel)
-    const activeFile = fileBackedPath(activePanelState)
+    const activeFile = fileBackedPath(activePanelState, fileBackedPanelIds)
     return {
       hydrationComplete: true,
       layout: null,
@@ -364,7 +374,7 @@ export function SurfaceShell({
       activePanel,
       activeFile,
       visibleFiles: panels
-        .map(fileBackedPath)
+        .map((panel) => fileBackedPath(panel, fileBackedPanelIds))
         .filter((p): p is string => p !== null),
       dirtyFiles: {},
       notifications: [],

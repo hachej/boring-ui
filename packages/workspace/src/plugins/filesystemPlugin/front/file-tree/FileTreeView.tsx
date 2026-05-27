@@ -82,7 +82,7 @@ export interface FileTreeViewProps {
   rootDir?: string
   /** Already-debounced query. Empty/undefined means no filter. */
   searchQuery?: string
-  bridge?: Pick<WorkspaceBridge, "openFile" | "getActiveFile" | "select" | "subscribe">
+  bridge?: Pick<WorkspaceBridge, "openFile" | "getActiveFile" | "select"> & Partial<Pick<WorkspaceBridge, "subscribe">>
   /**
    * Names (or regex patterns) to hide from the tree. Defaults to
    * `DEFAULT_TREE_IGNORE` (node_modules, .git, dist, …). Pass `[]` to

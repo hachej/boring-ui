@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 
+import type { WorkspaceChangeEvent } from '../../../shared/workspace'
 import { createVercelSandboxExec } from '../../sandbox/vercel-sandbox/createVercelSandboxExec'
 import { createVercelSandboxWorkspace } from '../createVercelSandboxWorkspace'
 import { createMockVercelSandboxHarness } from './helpers/mockVercelSandbox'
@@ -145,7 +146,7 @@ test('invalidates metadata cache after write/unlink/mkdir/rename', async () => {
 
     await workspace.unlink('cache/b.txt')
     await expect(workspace.stat('cache/b.txt')).rejects.toThrow()
-    expect(statSpy).toHaveBeenCalledTimes(4)
+    expect(statSpy).toHaveBeenCalledTimes(5)
   } finally {
     await harness.cleanup()
   }
@@ -177,6 +178,32 @@ test('unlink rejects removing the workspace root', async () => {
     await expect(workspace.unlink('.')).rejects.toMatchObject({ code: EPERM_CODE })
     await expect(workspace.readFile('keep.txt')).resolves.toBe('x')
   } finally {
+    await harness.cleanup()
+  }
+})
+
+test('unlink emits descendant events for recursive folder deletes', async () => {
+  const harness = await createMockVercelSandboxHarness()
+  const workspace = createVercelSandboxWorkspace(harness.sandbox)
+  const events: WorkspaceChangeEvent[] = []
+  const unsubscribe = workspace.watch!().subscribe((event) => events.push(event))
+
+  try {
+    await workspace.mkdir('tree/nested', { recursive: true })
+    await workspace.writeFile('tree/file.txt', 'file')
+    await workspace.writeFile('tree/nested/deep.txt', 'deep')
+    events.length = 0
+
+    await workspace.unlink('tree')
+
+    expect(events.filter((event) => event.op === 'unlink').map((event) => event.path).sort()).toEqual([
+      'tree',
+      'tree/file.txt',
+      'tree/nested',
+      'tree/nested/deep.txt',
+    ])
+  } finally {
+    unsubscribe?.()
     await harness.cleanup()
   }
 })
