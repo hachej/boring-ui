@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BotIcon, BrainIcon, CheckIcon, ChevronDownIcon, EyeIcon, EyeOffIcon } from 'lucide-react'
+import { BarChart3Icon, CheckIcon, ChevronDownIcon, NotebookPenIcon } from 'lucide-react'
 import {
   Command,
   CommandEmpty,
@@ -111,12 +111,12 @@ export function ModelSelect({
             composerActionClass,
             // Model is the only piece of state the composer carries between
             // turns — give it a status-pill shape so it reads as data, not
-            // another tertiary control.
-            "w-auto max-w-[min(52vw,200px)] gap-1.5 rounded-full bg-muted/40 px-2.5 text-[11.5px] font-medium text-foreground/80 hover:bg-muted/70",
+            // another tertiary control. The label is the signal; no icon
+            // (the bot/AI glyph was decoration, not information).
+            "w-auto max-w-[min(52vw,260px)] gap-1 rounded-full bg-muted/40 px-2.5 text-[12px] font-medium text-foreground/85 hover:bg-muted/70",
             open && "bg-muted/70 text-foreground",
           )}
         >
-          <BotIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80" aria-hidden="true" />
           <span className="min-w-0 truncate">{triggerLabel}</span>
           <ChevronDownIcon className="h-3 w-3 shrink-0 text-muted-foreground/50" aria-hidden="true" />
         </button>
@@ -125,7 +125,7 @@ export function ModelSelect({
         align="start"
         sideOffset={6}
         data-boring-agent=""
-        className="w-[min(90vw,260px)] rounded-xl border-border/60 bg-popover p-1 shadow-xl"
+        className="w-[min(92vw,340px)] rounded-xl border-border/60 bg-popover p-1 shadow-xl"
       >
         <Command>
           {/* CommandInput MUST be inside <Command> — it calls useCommand()
@@ -159,17 +159,23 @@ export function ModelSelect({
                       onSelect={() => { onChange(m); setOpen(false) }}
                       className={cn(
                         "flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px]",
-                        key === currentKey && "bg-accent text-accent-foreground",
+                        // Soften cmdk's full-saturation `data-[selected=true]:bg-accent`
+                        // (keyboard-cursor focus) to a subtle warm tint so the
+                        // active row doesn't read as a saturated tile in dark mode.
+                        "data-[selected=true]:bg-[color:oklch(from_var(--accent)_l_c_h/0.15)] data-[selected=true]:text-foreground",
+                        // The user's CURRENTLY-SELECTED model gets a neutral wash +
+                        // the CheckIcon (accent is reserved for primary CTA / focus).
+                        key === currentKey && "bg-foreground/[0.06] text-foreground",
                       )}
                     >
                       <CheckIcon
                         className={cn(
                           "h-3.5 w-3.5 shrink-0",
-                          key === currentKey ? "opacity-100" : "opacity-0",
+                          key === currentKey ? "text-[color:var(--accent)] opacity-100" : "opacity-0",
                         )}
                       />
                       <span className="truncate">{label}</span>
-                      <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/70">{m.id}</span>
+                      <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/60">{m.id}</span>
                     </CommandItem>
                   )
                 })}
@@ -209,7 +215,7 @@ export function ThinkingSelect({
         {THINKING_LEVELS.map((level) => (
           <span key={level} data-value={level} hidden />
         ))}
-        <BrainIcon className="h-3.5 w-3.5" />
+        <BarChart3Icon className="h-3.5 w-3.5" />
       </SelectTrigger>
       <SelectContent position="popper" side="top" align="end" data-boring-agent="" className="w-auto min-w-0 rounded-lg border-border/70 bg-popover p-2 shadow-2xl">
         <div className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
@@ -238,7 +244,6 @@ export function ThoughtVisibilityButton({
   visible: boolean
   onToggle: () => void
 }) {
-  const Icon = visible ? EyeIcon : EyeOffIcon
   return (
     <IconButton
       type="button"
@@ -247,12 +252,22 @@ export function ThoughtVisibilityButton({
       variant="ghost"
       size="icon-sm"
       onClick={onToggle}
-      className={cn(composerActionClass, "w-8")}
+      className={cn(
+        composerActionClass,
+        "relative w-8",
+        visible && "text-foreground",
+      )}
       aria-pressed={visible}
       aria-label={visible ? "Hide thoughts" : "Show thoughts"}
       title={visible ? "Hide thoughts" : "Show thoughts"}
     >
-      <Icon className="h-3.5 w-3.5" />
+      <NotebookPenIcon className="h-3.5 w-3.5" />
+      {!visible && (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute left-1/2 top-1/2 h-[18px] w-px -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-full bg-current opacity-60"
+        />
+      )}
     </IconButton>
   )
 }
