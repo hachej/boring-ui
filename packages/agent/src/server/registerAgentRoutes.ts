@@ -611,35 +611,6 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   await app.register(searchRoutes, {
     getFileSearch: async (request) => (await getBindingForRequest(request)).runtimeBundle.fileSearch,
   })
-  app.post<{ Body: { sessionId?: string } }>('/api/v1/agent/reload', async (request, reply) => {
-    const binding = await getBindingForRequest(request)
-    if (!binding.harness.reloadSession) {
-      return reply.status(501).send({ ok: false, error: 'Agent harness does not support reload' })
-    }
-    const workspaceId = getRequestWorkspaceId(request)
-    const runtimeScope = await resolveRuntimeScope(workspaceId, request)
-    const sessionIdForReload = request.body?.sessionId || sessionId
-    try {
-      const hookResult = await opts.beforeReload?.({
-        workspaceId,
-        workspaceRoot: runtimeScope.root,
-        request,
-      })
-      const reloaded = await binding.harness.reloadSession(sessionIdForReload)
-      const restart_warnings = hookResult?.restart_warnings
-      const diagnostics = hookResult?.diagnostics
-      return {
-        ok: true,
-        sessionId: sessionIdForReload,
-        reloaded,
-        ...(restart_warnings && restart_warnings.length > 0 ? { restart_warnings } : {}),
-        ...(diagnostics && diagnostics.length > 0 ? { diagnostics } : {}),
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      return reply.status(422).send({ ok: false, error: message })
-    }
-  })
   await app.register(chatRoutes, {
     getRuntime: async (request) => {
       const binding = await getBindingForRequest(request)

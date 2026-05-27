@@ -130,7 +130,7 @@ describe("workspaces mode runtime plugin wiring", () => {
     await writePlugin(join(workspaceB, ".pi", "extensions", "local-b"), "local-b")
     const [registeredA, registeredB] = await setupRegistry([workspaceA, workspaceB], registryPath)
 
-    const app = await createWorkspacesModeApp({ mode: "direct", registryPath })
+    const app = await createWorkspacesModeApp({ mode: "direct", registryPath, provisionWorkspace: false })
     const address = await app.listen({ port: 0, host: "127.0.0.1" })
     const sse = await openSse(`${address}/api/v1/agent-plugins/events?workspaceId=${encodeURIComponent(registeredA.id)}`)
 
@@ -200,7 +200,7 @@ describe("workspaces mode runtime plugin wiring", () => {
     process.env.HOME = homeRoot
 
     const [workspace] = await setupRegistry([workspaceRoot], registryPath)
-    const app = await createWorkspacesModeApp({ mode: "direct", registryPath })
+    const app = await createWorkspacesModeApp({ mode: "direct", registryPath, provisionWorkspace: false })
     const address = await app.listen({ port: 0, host: "127.0.0.1" })
     const sse = await openSse(`${address}/api/v1/agent-plugins/events?workspaceId=${encodeURIComponent(workspace.id)}`)
 
@@ -240,7 +240,7 @@ describe("workspaces mode runtime plugin wiring", () => {
 
     await writePlugin(join(workspaceRoot, ".pi", "extensions", "evict-plugin"), "evict-plugin")
     const [workspace] = await setupRegistry([workspaceRoot], registryPath)
-    const app = await createWorkspacesModeApp({ mode: "direct", registryPath })
+    const app = await createWorkspacesModeApp({ mode: "direct", registryPath, provisionWorkspace: false })
     const address = await app.listen({ port: 0, host: "127.0.0.1" })
     const sse = await openSse(`${address}/api/v1/agent-plugins/events?workspaceId=${encodeURIComponent(workspace.id)}`)
 
@@ -271,7 +271,7 @@ describe("workspaces mode runtime plugin wiring", () => {
     const pluginRoot = join(workspaceRoot, ".pi", "extensions", "front-removed-plugin")
     await writePlugin(pluginRoot, "front-removed-plugin")
     const [workspace] = await setupRegistry([workspaceRoot], registryPath)
-    const app = await createWorkspacesModeApp({ mode: "direct", registryPath })
+    const app = await createWorkspacesModeApp({ mode: "direct", registryPath, provisionWorkspace: false })
     const address = await app.listen({ port: 0, host: "127.0.0.1" })
     const sse = await openSse(`${address}/api/v1/agent-plugins/events?workspaceId=${encodeURIComponent(workspace.id)}`)
 
@@ -313,7 +313,7 @@ describe("workspaces mode runtime plugin wiring", () => {
     const pluginRoot = join(workspaceRoot, ".pi", "extensions", "no-sse-plugin")
     await writePlugin(pluginRoot, "no-sse-plugin")
     const [workspace] = await setupRegistry([workspaceRoot], registryPath)
-    const app = await createWorkspacesModeApp({ mode: "direct", registryPath })
+    const app = await createWorkspacesModeApp({ mode: "direct", registryPath, provisionWorkspace: false })
 
     try {
       const list = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
@@ -348,7 +348,7 @@ describe("workspaces mode runtime plugin wiring", () => {
 
     await writePlugin(join(workspaceRoot, ".pi", "extensions", "live-plugin"), "live-plugin")
     const [workspace] = await setupRegistry([workspaceRoot], registryPath)
-    const app = await createWorkspacesModeApp({ mode: "direct", registryPath })
+    const app = await createWorkspacesModeApp({ mode: "direct", registryPath, provisionWorkspace: false })
     const address = await app.listen({ port: 0, host: "127.0.0.1" })
     const sse = await openSse(`${address}/api/v1/agent-plugins/events?workspaceId=${encodeURIComponent(workspace.id)}`)
 

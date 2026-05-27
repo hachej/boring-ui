@@ -425,6 +425,7 @@ async function startFolderMode(opts: {
 export async function createWorkspacesModeApp(opts: {
   mode: RuntimeMode
   registryPath?: string
+  provisionWorkspace?: boolean
 }): Promise<FastifyInstance> {
   const [workspaceAppServer, workspaceServer, agentServer, fastifyModule, { createPluginFrontRuntimeHost }] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
@@ -568,6 +569,7 @@ export async function createWorkspacesModeApp(opts: {
       return await provisionCliWorkspaceRuntime({
         workspaceRoot,
         mode: runtimeMode,
+        provisionWorkspace: opts.provisionWorkspace,
         adapter: provisioningAdapter,
         runtimeLayout,
       })
