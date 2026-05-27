@@ -43,7 +43,7 @@ export function createCliPluginAssetManager(
 ): BoringPluginAssetManager {
   return new BoringPluginAssetManager({
     pluginDirs: resolveCliBoringPluginDirs(workspaceRoot, options),
-    errorRoot: resolve(workspaceRoot, ".pi", "extensions"),
+    errorRoot: resolve(workspaceRoot, ".boring-agent", "plugin-errors"),
     frontTargetResolver: options.frontTargetResolver,
     includeLegacyFrontUrl: options.includeLegacyFrontUrl,
   })

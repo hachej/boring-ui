@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify"
 import { builtinModules } from "node:module"
-import { existsSync } from "node:fs"
+import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { readFile, realpath, stat } from "node:fs/promises"
 import { dirname, extname, isAbsolute, posix, relative, resolve as resolvePath } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -38,6 +38,7 @@ const PRIVATE_FILE_NAMES = new Set([
   ".yarnrc.yml",
 ])
 const IMPORT_RESOLVE_EXTENSIONS = ["", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".css", ".json", ".svg"]
+const RUNTIME_ASSET_EXTENSIONS = new Set([".avif", ".gif", ".ico", ".jpg", ".jpeg", ".png", ".svg", ".webp", ".woff", ".woff2"])
 const DIRECTORY_INDEX_CANDIDATES = [
   "index.ts",
   "index.tsx",
@@ -47,9 +48,134 @@ const DIRECTORY_INDEX_CANDIDATES = [
   "index.cjs",
   "index.css",
 ]
-const SAFE_SEGMENT_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/
+const SAFE_SEGMENT_RE = /^[A-Za-z0-9_][A-Za-z0-9._:-]*$/
 const RUNTIME_SINGLETON_ID_PREFIX = "\0boring-runtime-singleton:"
 const RUNTIME_SINGLETON_GLOBAL = "__BORING_RUNTIME_SINGLETONS__"
+const WORKSPACE_ROOT_SINGLETON_EXPORTS = [
+  "bootstrap",
+  "PluginError",
+  "CatalogRegistry",
+  "useCommands",
+  "useActivePanels",
+  "useCatalogs",
+  "PluginErrorBoundary",
+  "PluginErrorProvider",
+  "usePluginErrors",
+  "filesystemPlugin",
+  "emitFilesystemAgentFileChange",
+  "useAutoOpenAgentFiles",
+  "onFilesystemChanged",
+  "filesystemEvents",
+  "cn",
+  "PanelRegistry",
+  "CommandRegistry",
+  "SurfaceResolverRegistry",
+  "RegistryProvider",
+  "useRegistry",
+  "useCommandRegistry",
+  "useCatalogRegistry",
+  "useSurfaceResolverRegistry",
+  "WORKSPACE_OPEN_PATH_SURFACE_KIND",
+  "getFileIcon",
+  "DockviewShell",
+  "PanelChrome",
+  "useDockviewApi",
+  "IdeLayout",
+  "buildIdeLayout",
+  "ChatLayout",
+  "buildChatLayout",
+  "TopBar",
+  "ResponsiveDockviewShell",
+  "useEditorLifecycle",
+  "useViewportBreakpoint",
+  "useResponsiveSidebarCollapse",
+  "useArtifactPanels",
+  "useArtifactRouting",
+  "useKeyboardShortcuts",
+  "formatShortcut",
+  "CommandPalette",
+  "WorkspaceLoadingState",
+  "ArtifactSurfacePane",
+  "EmptyPane",
+  "CodeEditorPane",
+  "FileTreePane",
+  "FileTreeView",
+  "MarkdownEditorPane",
+  "definePanel",
+  "createShadcnTheme",
+  "events",
+  "useEvent",
+  "userMeta",
+  "agentMeta",
+  "emitAgentData",
+  "toast",
+  "Toaster",
+  "dismissToast",
+  "createBridge",
+  "createBridgeClient",
+  "postUiCommand",
+  "UI_COMMAND_EVENT",
+  "openFileSchema",
+  "openPanelSchema",
+  "closePanelSchema",
+  "notificationSchema",
+  "navigateToLineSchema",
+  "expandToFileSchema",
+  "MAX_PANELS",
+  "PanelErrorBoundary",
+  "CodeEditor",
+  "FileTree",
+  "MarkdownEditor",
+  "SessionList",
+  "SessionBrowser",
+  "SurfaceShell",
+  "WorkbenchLeftPane",
+  "WorkspaceProvider",
+  "ThemeProvider",
+  "useTheme",
+  "useWorkspaceBridge",
+  "useWorkspaceContext",
+  "useWorkspaceContextOptional",
+  "useWorkspaceChatPanel",
+  "useWorkspaceAttention",
+  "createWorkspaceStore",
+  "bindStore",
+  "useActiveFile",
+  "useActivePanel",
+  "useSidebarState",
+  "useSetSidebar",
+  "useOpenPanels",
+  "useDirtyFiles",
+  "useThemePreference",
+  "useHydrationComplete",
+  "useResetLayout",
+] as const
+const WORKSPACE_PLUGIN_SINGLETON_EXPORTS = [
+  "captureFrontPlugin",
+  "createCapturingBoringFrontAPI",
+  "definePlugin",
+  "validateBoringPluginManifest",
+  "isSafePluginRelativePath",
+  "isValidBoringPluginId",
+  "WORKSPACE_OPEN_PATH_SURFACE_KIND",
+] as const
+const WORKSPACE_EVENTS_SINGLETON_EXPORTS = [
+  "events",
+  "userMeta",
+  "agentMeta",
+  "remoteMeta",
+  "workspaceEvents",
+  "WORKSPACE_PLUGIN_ID",
+  "WORKSPACE_UI_COMMAND_EVENT",
+  "WORKSPACE_EDITOR_SAVE_START_EVENT",
+  "WORKSPACE_EDITOR_SAVE_END_EVENT",
+  "WORKSPACE_PANEL_UPDATE_EVENT",
+  "WORKSPACE_PANEL_CLOSE_EVENT",
+  "WORKSPACE_AGENT_DATA_EVENT",
+  "useEvent",
+  "emitAgentData",
+] as const
+
 const RUNTIME_SINGLETON_EXPORTS: Partial<Record<typeof HOST_SINGLETON_MODULES[number], readonly string[]>> = {
   react: [
     "Activity",
@@ -116,6 +242,9 @@ const RUNTIME_SINGLETON_EXPORTS: Partial<Record<typeof HOST_SINGLETON_MODULES[nu
   "react-dom/client": ["createRoot", "hydrateRoot", "version"],
   "react/jsx-runtime": ["Fragment", "jsx", "jsxs"],
   "react/jsx-dev-runtime": ["Fragment", "jsxDEV"],
+  "@hachej/boring-workspace": WORKSPACE_ROOT_SINGLETON_EXPORTS,
+  "@hachej/boring-workspace/plugin": WORKSPACE_PLUGIN_SINGLETON_EXPORTS,
+  "@hachej/boring-workspace/events": WORKSPACE_EVENTS_SINGLETON_EXPORTS,
 }
 
 export interface PluginFrontRuntimeDiagnostic {
@@ -165,7 +294,7 @@ export interface CreatePluginFrontRuntimeHostOptions {
 }
 
 export interface PluginFrontRuntimeResponse {
-  body: string
+  body: string | Uint8Array
   contentType: string
   cacheKey: string
 }
@@ -186,6 +315,7 @@ interface TrackedPluginRecord {
   frontEntrySubpath: string
   frontRootDir: string
   sharedRootDir: string
+  sourceSnapshot: Map<string, Uint8Array>
 }
 
 interface ValidatedRuntimeRequest {
@@ -271,7 +401,7 @@ function normalizeRequestSubpath(raw: string): string {
   }
   for (const segment of segments) {
     const lower = segment.toLowerCase()
-    if (segment.startsWith(".") || lower === ".ds_store" || PRIVATE_FILE_NAMES.has(segment) || lower.startsWith(".env")) {
+    if (segment.startsWith(".") || lower === "node_modules" || lower === ".ds_store" || PRIVATE_FILE_NAMES.has(lower) || lower.startsWith(".env")) {
       throw new PluginFrontRuntimeError(
         ErrorCode.enum.PLUGIN_RUNTIME_PRIVATE_FILE,
         403,
@@ -282,6 +412,17 @@ function normalizeRequestSubpath(raw: string): string {
     }
   }
   return value
+}
+
+function assertRuntimeFrontEntrySubpath(frontEntrySubpath: string): void {
+  if (frontEntrySubpath.startsWith("front/")) return
+  throw new PluginFrontRuntimeError(
+    ErrorCode.enum.PLUGIN_RUNTIME_PRIVATE_FILE,
+    403,
+    "validate",
+    "native runtime plugin fronts must live under the front/ directory",
+    { frontEntrySubpath },
+  )
 }
 
 function normalizeSearch(search: string | undefined): string {
@@ -331,7 +472,19 @@ function buildViteSingletonUrl(basePath: string, source: string): string {
 
 function optimizedDependencySingletonSource(targetPath: string): typeof HOST_SINGLETON_MODULES[number] | undefined {
   const cleanPath = targetPath.split("?")[0]
-  const fileName = cleanPath.slice(cleanPath.lastIndexOf("/") + 1)
+  const normalizedPath = cleanPath.replaceAll("\\", "/")
+  const workspaceSingletonByPath: Array<[string, typeof HOST_SINGLETON_MODULES[number]]> = [
+    ["/packages/workspace/dist/workspace.js", "@hachej/boring-workspace"],
+    ["/packages/workspace/src/index.ts", "@hachej/boring-workspace"],
+    ["/packages/workspace/dist/plugin.js", "@hachej/boring-workspace/plugin"],
+    ["/packages/workspace/src/plugin.ts", "@hachej/boring-workspace/plugin"],
+    ["/packages/workspace/dist/events.js", "@hachej/boring-workspace/events"],
+    ["/packages/workspace/src/front/events/index.ts", "@hachej/boring-workspace/events"],
+  ]
+  for (const [suffix, source] of workspaceSingletonByPath) {
+    if (normalizedPath.endsWith(suffix)) return source
+  }
+  const fileName = normalizedPath.slice(normalizedPath.lastIndexOf("/") + 1)
   const sourceByFileName: Record<string, typeof HOST_SINGLETON_MODULES[number]> = {
     "react.js": "react",
     "react-dom.js": "react-dom",
@@ -342,34 +495,57 @@ function optimizedDependencySingletonSource(targetPath: string): typeof HOST_SIN
   return sourceByFileName[fileName]
 }
 
-function rewriteViteSupportUrls(code: string, basePath: string): string {
-  return code
-    .replaceAll("/@vite/client", `${basePath}/__vite/client`)
-    .replace(/(["'])\/(?:@id|node_modules|packages)\/([^"']+)\1/g, (match, quote: string) => {
-      const originalPath = match.slice(1, -1)
-      const singletonSource = optimizedDependencySingletonSource(originalPath)
-      const rewrittenPath = singletonSource
-        ? buildViteSingletonUrl(basePath, singletonSource)
-        : buildViteProxyUrl(basePath, originalPath)
-      return `${quote}${rewrittenPath}${quote}`
+function rewriteViteSupportSpecifier(specifier: string, basePath: string): string | undefined {
+  if (specifier === "/@vite/client") return `${basePath}/__vite/client`
+  if (specifier === "/@vite/env" || specifier === "@vite/env") return `${basePath}/__vite/env`
+  if (specifier.startsWith("/@fs/") && specifier.includes("/vite/dist/client/env.mjs")) return `${basePath}/__vite/env`
+  if (!/^\/(?:@id|node_modules|packages)\//.test(specifier)) return undefined
+  const singletonSource = optimizedDependencySingletonSource(specifier)
+  return singletonSource
+    ? buildViteSingletonUrl(basePath, singletonSource)
+    : buildViteProxyUrl(basePath, specifier)
+}
+
+function rewriteViteSupportUrls(code: string, basePath: string): { code: string; mintedPaths: string[] } {
+  const sourceFile = ts.createSourceFile("runtime-plugin-output.js", code, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
+  const replacements: Array<{ start: number; end: number; value: string }> = []
+  const mintedPaths: string[] = []
+  const queueReplacement = (literal: ts.StringLiteralLike) => {
+    const rewritten = rewriteViteSupportSpecifier(literal.text, basePath)
+    if (!rewritten) return
+    replacements.push({
+      start: literal.getStart(sourceFile) + 1,
+      end: literal.getEnd() - 1,
+      value: rewritten,
     })
+    mintedPaths.push(rewritten)
+  }
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node) && ts.isStringLiteralLike(node.moduleSpecifier)) {
+      queueReplacement(node.moduleSpecifier)
+    } else if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier)) {
+      queueReplacement(node.moduleSpecifier)
+    } else if (
+      ts.isCallExpression(node)
+      && node.expression.kind === ts.SyntaxKind.ImportKeyword
+      && node.arguments.length === 1
+      && ts.isStringLiteralLike(node.arguments[0])
+    ) {
+      queueReplacement(node.arguments[0])
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  if (replacements.length === 0) return { code, mintedPaths: [] }
+  let rewritten = code
+  for (const replacement of replacements.sort((a, b) => b.start - a.start)) {
+    rewritten = `${rewritten.slice(0, replacement.start)}${replacement.value}${rewritten.slice(replacement.end)}`
+  }
+  return { code: rewritten, mintedPaths }
 }
 
 function isImplicitViteSupportPath(path: string, basePath: string): boolean {
-  return path.startsWith(`${basePath}/__vite/proxy/node_modules%2F.vite%2Fdeps%2F`)
-    || path.startsWith(`${basePath}/__vite/proxy/%40id%2F`)
-}
-
-function extractMintedSupportPaths(code: string, basePath: string): string[] {
-  const paths = new Set<string>()
-  const escapedBasePath = basePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-  const supportPattern = new RegExp(`${escapedBasePath}\\/__vite\\/(?:client|proxy\\/[^"'\\s)]+|singleton\\/[^"'\\s)]+)`, "g")
-  let match: RegExpExecArray | null
-  while ((match = supportPattern.exec(code)) !== null) {
-    const value = match[0]
-    if (value) paths.add(value)
-  }
-  return [...paths]
+  return path === `${basePath}/__vite/env`
 }
 
 async function resolveRealLike(path: string): Promise<string> {
@@ -463,6 +639,48 @@ async function resolveFileWithinPlugin(record: TrackedPluginRecord, subpath: str
   return resolvedPath
 }
 
+function snapshotRuntimeSourceFiles(pluginRoot: string): Map<string, Uint8Array> {
+  const snapshot = new Map<string, Uint8Array>()
+  const visit = (dir: string, subpathPrefix: string) => {
+    if (!existsSync(dir)) return
+    try {
+      if (lstatSync(dir).isSymbolicLink()) return
+    } catch {
+      return
+    }
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const subpath = `${subpathPrefix}/${entry.name}`
+      let normalized: string
+      try {
+        normalized = normalizeRequestSubpath(subpath)
+      } catch {
+        continue
+      }
+      const path = resolvePath(pluginRoot, normalized)
+      try {
+        if (lstatSync(path).isSymbolicLink()) continue
+      } catch {
+        continue
+      }
+      if (entry.isDirectory()) {
+        visit(path, normalized)
+        continue
+      }
+      if (!entry.isFile()) continue
+      try {
+        const stats = statSync(path)
+        if (!stats.isFile()) continue
+        snapshot.set(normalized, readFileSync(path))
+      } catch {
+        // Best-effort snapshot. Runtime validation still runs before serving.
+      }
+    }
+  }
+  visit(resolvePath(pluginRoot, "front"), "front")
+  visit(resolvePath(pluginRoot, "shared"), "shared")
+  return snapshot
+}
+
 async function resolveImportSubpath(record: TrackedPluginRecord, importerPath: string, source: string): Promise<string> {
   const relativeBase = posix.dirname(importerPath)
   const rawTarget = normalizeRequestSubpath(posix.normalize(posix.join(relativeBase, source)).replaceAll("\\", "/"))
@@ -478,21 +696,11 @@ async function resolveImportSubpath(record: TrackedPluginRecord, importerPath: s
     }
   }
 
-  let lastNotFound: PluginFrontRuntimeError | null = null
   for (const candidate of candidates) {
-    try {
-      await resolveFileWithinPlugin(record, candidate)
-      return candidate
-    } catch (error) {
-      if (error instanceof PluginFrontRuntimeError && error.code === ErrorCode.enum.PATH_NOT_FOUND) {
-        lastNotFound = error
-        continue
-      }
-      throw error
-    }
+    if (record.sourceSnapshot.has(candidate)) return candidate
   }
 
-  throw lastNotFound ?? new PluginFrontRuntimeError(ErrorCode.enum.PATH_NOT_FOUND, 404, "resolve", "plugin runtime import not found", {
+  throw new PluginFrontRuntimeError(ErrorCode.enum.PATH_NOT_FOUND, 404, "resolve", "plugin runtime import not found in tracked revision", {
     importerPath,
     source,
   })
@@ -540,6 +748,27 @@ function scriptKindForPath(path: string): ts.ScriptKind {
   return ts.ScriptKind.JS
 }
 
+function runtimeAssetContentType(path: string): string {
+  switch (extname(path).toLowerCase()) {
+    case ".avif": return "image/avif"
+    case ".gif": return "image/gif"
+    case ".ico": return "image/x-icon"
+    case ".jpg":
+    case ".jpeg": return "image/jpeg"
+    case ".png": return "image/png"
+    case ".svg": return "image/svg+xml"
+    case ".webp": return "image/webp"
+    case ".woff": return "font/woff"
+    case ".woff2": return "font/woff2"
+    default: return "application/octet-stream"
+  }
+}
+
+function runtimeAssetModuleCode(path: string, bytes: Uint8Array): string {
+  const dataUrl = `data:${runtimeAssetContentType(path)};base64,${Buffer.from(bytes).toString("base64")}`
+  return `export default ${JSON.stringify(dataUrl)};`
+}
+
 function validateSourceImports(sourceText: string, importer: string, basePath: string): void {
   const reject = (source: string) => {
     throw new PluginFrontRuntimeError(
@@ -551,8 +780,19 @@ function validateSourceImports(sourceText: string, importer: string, basePath: s
     )
   }
   const isUnsafeSpecifier = (specifier: string) => (
-    specifier.startsWith("node:") || NODE_BUILTIN_MODULES.has(specifier) || isUnsafeAbsoluteImport(specifier, basePath)
+    specifier.startsWith("node:")
+    || NODE_BUILTIN_MODULES.has(specifier)
+    || isUnsafeAbsoluteImport(specifier, basePath)
+    || (isBareImport(specifier) && !HOST_SINGLETON_MODULES.includes(specifier as typeof HOST_SINGLETON_MODULES[number]))
   )
+
+  const isImportMetaGlobCall = (expression: ts.Expression): boolean => {
+    if (!ts.isPropertyAccessExpression(expression)) return false
+    if (expression.name.text !== "glob" && expression.name.text !== "globEager") return false
+    return ts.isMetaProperty(expression.expression)
+      && expression.expression.keywordToken === ts.SyntaxKind.ImportKeyword
+      && expression.expression.name.text === "meta"
+  }
 
   const extension = extname(importer).toLowerCase()
   if (extension === ".css") {
@@ -576,6 +816,9 @@ function validateSourceImports(sourceText: string, importer: string, basePath: s
     if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier)) {
       const specifier = node.moduleSpecifier.text
       if (isUnsafeSpecifier(specifier)) reject(specifier)
+    }
+    if (ts.isCallExpression(node) && isImportMetaGlobCall(node.expression)) {
+      reject("import.meta.glob")
     }
     if (
       ts.isCallExpression(node)
@@ -711,6 +954,7 @@ export async function createPluginFrontRuntimeHost(
   const repoRoot = findWorkspaceRoot(packageRoot)
   const singletonResolve = createRuntimeSingletonResolve(repoRoot)
   const trackedWorkspaces = new Map<string, Map<string, TrackedPluginRecord>>()
+  const trackedPluginRevisions = new Map<string, Map<string, Map<number, TrackedPluginRecord>>>()
   const transformCache = new Map<string, TransformCacheEntry>()
   const mintedSupportPathsByCacheKey = new Map<string, string[]>()
   const mintedSupportPathRefCounts = new Map<string, number>()
@@ -757,13 +1001,20 @@ export async function createPluginFrontRuntimeHost(
               const code = runtimeSingletonModuleCode(source as typeof HOST_SINGLETON_MODULES[number])
               return code ? virtualSingletonId(source) : source
             }
-            return null
+            throw new PluginFrontRuntimeError(
+              ErrorCode.enum.PLUGIN_RUNTIME_UNSAFE_IMPORT,
+              400,
+              "resolve",
+              "runtime plugin fronts may only import allowlisted host singleton packages",
+              { source, importer },
+            )
           }
           if (!source.startsWith(".") && !source.startsWith("..")) return null
 
-          const tracked = getTrackedPlugin(importerContext.workspaceId, importerContext.pluginId)
+          const tracked = getTrackedPluginRevision(importerContext.workspaceId, importerContext.pluginId, importerContext.revision)
           const importedSubpath = await resolveImportSubpath(tracked, importerContext.subpath, source)
-          return buildRuntimeUrl(basePath, tracked.workspaceId, tracked.pluginId, tracked.revision, importedSubpath)
+          const url = buildRuntimeUrl(basePath, tracked.workspaceId, tracked.pluginId, importerContext.revision, importedSubpath)
+          return RUNTIME_ASSET_EXTENSIONS.has(extname(importedSubpath).toLowerCase()) ? `${url}?module` : url
         },
         async load(id) {
           const singletonSource = sourceFromVirtualSingletonId(id)
@@ -771,23 +1022,21 @@ export async function createPluginFrontRuntimeHost(
 
           const context = parseRuntimeContext(id, basePath)
           if (!context) return null
-          const tracked = getTrackedPlugin(context.workspaceId, context.pluginId)
-          if (tracked.revision !== context.revision) {
-            throw new PluginFrontRuntimeError(
-              ErrorCode.enum.PLUGIN_RUNTIME_REVISION_MISMATCH,
-              409,
-              "validate",
-              "plugin runtime request used a stale revision",
-              {
-                workspaceId: context.workspaceId,
-                pluginId: context.pluginId,
-                requestedRevision: context.revision,
-                currentRevision: tracked.revision,
-              },
-            )
+          const tracked = getTrackedPluginRevision(context.workspaceId, context.pluginId, context.revision)
+          const snapshotBytes = tracked.sourceSnapshot.get(context.subpath)
+          if (snapshotBytes === undefined) {
+            throw new PluginFrontRuntimeError(ErrorCode.enum.PATH_NOT_FOUND, 404, "validate", "plugin runtime file was not captured in this revision", {
+              workspaceId: context.workspaceId,
+              pluginId: context.pluginId,
+              requestedRevision: context.revision,
+              path: context.subpath,
+            })
           }
-          const resolvedPath = await resolveFileWithinPlugin(tracked, context.subpath)
-          const sourceText = await readFile(resolvedPath, "utf8")
+          const resolvedPath = resolvePath(tracked.rootDir, context.subpath)
+          if (RUNTIME_ASSET_EXTENSIONS.has(extname(context.subpath).toLowerCase())) {
+            return runtimeAssetModuleCode(context.subpath, snapshotBytes ?? await readFile(resolvedPath))
+          }
+          const sourceText = snapshotBytes ? Buffer.from(snapshotBytes).toString("utf8") : await readFile(resolvedPath, "utf8")
           validateSourceImports(sourceText, context.subpath, basePath)
           return sourceText
         },
@@ -815,10 +1064,36 @@ export async function createPluginFrontRuntimeHost(
     return tracked
   }
 
+  function getTrackedPluginRevision(workspaceId: string, pluginId: string, revision: number): TrackedPluginRecord {
+    const tracked = trackedPluginRevisions.get(workspaceId)?.get(pluginId)?.get(revision)
+    if (!tracked) {
+      const current = trackedWorkspaces.get(workspaceId)?.get(pluginId)
+      if (!current) {
+        throw new PluginFrontRuntimeError(ErrorCode.enum.PATH_NOT_FOUND, 404, "validate", "plugin runtime record not found", {
+          workspaceId,
+          pluginId,
+          requestedRevision: revision,
+        })
+      }
+      throw new PluginFrontRuntimeError(ErrorCode.enum.PLUGIN_RUNTIME_REVISION_MISMATCH, 409, "validate", "plugin runtime revision is no longer tracked", {
+        workspaceId,
+        pluginId,
+        requestedRevision: revision,
+        currentRevision: current.revision,
+      })
+    }
+    return tracked
+  }
+
   function storeTrackedPlugin(record: TrackedPluginRecord, entryUrl: string): void {
     const workspacePlugins = trackedWorkspaces.get(record.workspaceId) ?? new Map<string, TrackedPluginRecord>()
     trackedWorkspaces.set(record.workspaceId, workspacePlugins)
     workspacePlugins.set(record.pluginId, record)
+    const workspaceRevisions = trackedPluginRevisions.get(record.workspaceId) ?? new Map<string, Map<number, TrackedPluginRecord>>()
+    trackedPluginRevisions.set(record.workspaceId, workspaceRevisions)
+    const pluginRevisions = workspaceRevisions.get(record.pluginId) ?? new Map<number, TrackedPluginRecord>()
+    workspaceRevisions.set(record.pluginId, pluginRevisions)
+    pluginRevisions.set(record.revision, record)
     emit({
       level: "info",
       stage: "track",
@@ -882,6 +1157,7 @@ export async function createPluginFrontRuntimeHost(
           frontEntrySubpath: context.subpath,
           frontRootDir: "",
           sharedRootDir: "",
+          sourceSnapshot: new Map(),
         },
       }
       if (!predicate(validated)) continue
@@ -910,22 +1186,16 @@ export async function createPluginFrontRuntimeHost(
     const pluginId = ensureSafeId("plugin", request.pluginId)
     const revision = parseRevision(request.revision)
     const requestedPath = normalizeRequestSubpath(request.subpath)
-    const tracked = getTrackedPlugin(workspaceId, pluginId)
-    if (tracked.revision !== revision) {
-      throw new PluginFrontRuntimeError(
-        ErrorCode.enum.PLUGIN_RUNTIME_REVISION_MISMATCH,
-        409,
-        "validate",
-        "plugin runtime request used a stale revision",
-        {
-          workspaceId,
-          pluginId,
-          requestedRevision: revision,
-          currentRevision: tracked.revision,
-        },
-      )
+    const tracked = getTrackedPluginRevision(workspaceId, pluginId, revision)
+    if (!tracked.sourceSnapshot.has(requestedPath)) {
+      throw new PluginFrontRuntimeError(ErrorCode.enum.PATH_NOT_FOUND, 404, "validate", "plugin runtime file was not captured in this revision", {
+        workspaceId,
+        pluginId,
+        requestedRevision: revision,
+        path: requestedPath,
+      })
     }
-    const resolvedPath = await resolveFileWithinPlugin(tracked, requestedPath)
+    const resolvedPath = resolvePath(tracked.rootDir, requestedPath)
     const runtimeId = `${buildRuntimeUrl(basePath, workspaceId, pluginId, revision, requestedPath)}${normalizeSearch(request.search)}`
     const cacheKey = `${workspaceId}:${pluginId}:${revision}:${requestedPath}${normalizeSearch(request.search)}`
     return { workspaceId, pluginId, revision, requestedPath, resolvedPath, runtimeId, cacheKey, tracked }
@@ -997,6 +1267,19 @@ export async function createPluginFrontRuntimeHost(
       const promise = limiter.run(async () => {
         const transformStartedAt = Date.now()
         try {
+          if (RUNTIME_ASSET_EXTENSIONS.has(extname(runtimeRequest.requestedPath).toLowerCase())) {
+            const snapshotBytes = runtimeRequest.tracked.sourceSnapshot.get(runtimeRequest.requestedPath)
+            if (snapshotBytes === undefined) {
+              throw new PluginFrontRuntimeError(ErrorCode.enum.PATH_NOT_FOUND, 404, "validate", "plugin runtime file was not captured in this revision")
+            }
+            const bytes = snapshotBytes
+            const assetAsModule = new URLSearchParams((request.search ?? "").replace(/^\?/, "")).has("module")
+            return {
+              body: assetAsModule ? runtimeAssetModuleCode(runtimeRequest.requestedPath, bytes) : bytes,
+              contentType: assetAsModule ? "application/javascript; charset=utf-8" : runtimeAssetContentType(runtimeRequest.requestedPath),
+              cacheKey: runtimeRequest.cacheKey,
+            }
+          }
           const transformed = await vite.transformRequest(runtimeRequest.runtimeId)
           if (!transformed?.code) {
             throw new PluginFrontRuntimeError(
@@ -1019,10 +1302,10 @@ export async function createPluginFrontRuntimeHost(
             resolvedPath: runtimeRequest.resolvedPath,
             durationMs: Date.now() - transformStartedAt,
           })
-          const body = rewriteViteSupportUrls(transformed.code, basePath)
-          recordMintedSupportPaths(runtimeRequest.cacheKey, extractMintedSupportPaths(body, basePath))
+          const rewritten = rewriteViteSupportUrls(transformed.code, basePath)
+          recordMintedSupportPaths(runtimeRequest.cacheKey, rewritten.mintedPaths)
           return {
-            body,
+            body: rewritten.code,
             contentType: "application/javascript; charset=utf-8",
             cacheKey: runtimeRequest.cacheKey,
           }
@@ -1120,7 +1403,19 @@ export async function createPluginFrontRuntimeHost(
         ))
         return reply.code(apiError.statusCode).send(apiError.body)
       }
+      const transformed = await vite.transformRequest("/@vite/client")
+      if (transformed?.code) {
+        const rewritten = rewriteViteSupportUrls(transformed.code, basePath)
+        recordMintedSupportPaths("__vite:client", rewritten.mintedPaths)
+        return reply
+          .type("application/javascript; charset=utf-8")
+          .send(rewritten.code)
+      }
       request.raw.url = "/@vite/client"
+      await forwardToVite(request, reply)
+    })
+    app.get(`${basePath}/__vite/env`, async (request, reply) => {
+      request.raw.url = "/@vite/env"
       await forwardToVite(request, reply)
     })
     app.get(`${basePath}/__vite/singleton/*`, async (request, reply) => {
@@ -1181,9 +1476,11 @@ export async function createPluginFrontRuntimeHost(
       const search = request.raw.url?.includes("?") ? request.raw.url.slice(request.raw.url.indexOf("?")) : ""
       const transformed = await vite.transformRequest(`${targetPath}${normalizeSearch(search)}`)
       if (transformed?.code) {
+        const rewritten = rewriteViteSupportUrls(transformed.code, basePath)
+        recordMintedSupportPaths(`support:${mintedPath}`, rewritten.mintedPaths)
         return reply
           .type("application/javascript; charset=utf-8")
-          .send(rewriteViteSupportUrls(transformed.code, basePath))
+          .send(rewritten.code)
       }
 
       request.raw.url = targetPath
@@ -1205,6 +1502,7 @@ export async function createPluginFrontRuntimeHost(
 
   async function disposeWorkspace(workspaceId: string): Promise<void> {
     trackedWorkspaces.delete(workspaceId)
+    trackedPluginRevisions.delete(workspaceId)
     await invalidateMatching((entry) => entry.workspaceId === workspaceId)
   }
 
@@ -1212,6 +1510,7 @@ export async function createPluginFrontRuntimeHost(
     if (closed) return
     closed = true
     trackedWorkspaces.clear()
+    trackedPluginRevisions.clear()
     transformCache.clear()
     mintedSupportPathsByCacheKey.clear()
     mintedSupportPathRefCounts.clear()
@@ -1229,35 +1528,39 @@ export async function createPluginFrontRuntimeHost(
     const pluginId = ensureSafeId("plugin", args.plugin.id)
     const revision = parseRevision(args.revision)
     const frontEntrySubpath = normalizeRequestSubpath(args.frontEntrySubpath)
+    assertRuntimeFrontEntrySubpath(frontEntrySubpath)
     const entryUrl = buildRuntimeUrl(basePath, workspaceId, pluginId, revision, frontEntrySubpath)
+    const rootDir = resolvePath(args.plugin.rootDir)
     storeTrackedPlugin({
       workspaceId,
       pluginId,
       revision,
-      rootDir: resolvePath(args.plugin.rootDir),
+      rootDir,
       frontEntrySubpath,
       frontRootDir: resolvePath(
-        args.plugin.rootDir,
+        rootDir,
         frontEntrySubpath === "front" || frontEntrySubpath.startsWith("front/")
           ? "front"
           : dirname(frontEntrySubpath),
       ),
-      sharedRootDir: resolvePath(args.plugin.rootDir, "shared"),
+      sharedRootDir: resolvePath(rootDir, "shared"),
+      sourceSnapshot: snapshotRuntimeSourceFiles(rootDir),
     }, entryUrl)
-    void invalidatePlugin(workspaceId, pluginId, revision)
     return entryUrl
   }
 
   function createFrontTargetResolver(workspaceId: string): PluginFrontTargetResolver {
     return (plugin: BoringServerPluginManifest, context: { revision: number; frontEntrySubpath: string }) => {
       if (!plugin.frontPath) return undefined
+      const frontEntrySubpath = normalizeRequestSubpath(context.frontEntrySubpath)
+      if (!frontEntrySubpath.startsWith("front/")) return undefined
       return {
         kind: "native",
         entryUrl: trackPlugin({
           workspaceId,
           plugin,
           revision: context.revision,
-          frontEntrySubpath: context.frontEntrySubpath,
+          frontEntrySubpath,
         }),
         revision: context.revision,
         trust: "local-trusted-native",
@@ -1268,6 +1571,7 @@ export async function createPluginFrontRuntimeHost(
   function untrackPlugin(workspaceId: string, pluginId: string): void {
     const tracked = trackedWorkspaces.get(workspaceId)?.get(pluginId)
     trackedWorkspaces.get(workspaceId)?.delete(pluginId)
+    trackedPluginRevisions.get(workspaceId)?.delete(pluginId)
     emit({
       level: "info",
       stage: "cleanup",

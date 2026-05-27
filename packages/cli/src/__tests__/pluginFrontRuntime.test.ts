@@ -45,8 +45,10 @@ describe("pluginFrontRuntime", () => {
     const plugin = await writeRuntimePlugin(pluginRoot, {
       "front/index.tsx": [
         'import { definePlugin } from "@hachej/boring-workspace/plugin"',
+        'import { events } from "@hachej/boring-workspace/events"',
         'import { Panel } from "./panel"',
         'import "./styles.css"',
+        'export const eventBus = events',
         'export default definePlugin({',
         '  id: "runtime-plugin",',
         '  label: "Runtime Plugin",',
@@ -58,13 +60,16 @@ describe("pluginFrontRuntime", () => {
       ].join("\n"),
       "front/panel.tsx": [
         'import { useState } from "react"',
+        'import logo from "./logo.svg"',
         'import { label } from "../shared/message"',
+        'export const logoUrl = logo',
         'export function Panel() {',
         '  const [value] = useState(label)',
         '  return <div className="runtime-panel">{value}</div>',
         '}',
       ].join("\n"),
       "front/styles.css": ".runtime-panel { color: tomato; }\n",
+      "front/logo.svg": '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"></svg>\n',
       "shared/message.ts": 'export const label = "hello from shared"\n',
     })
 
@@ -92,6 +97,7 @@ describe("pluginFrontRuntime", () => {
       })
       expect(panel.statusCode).toBe(200)
       expect(panel.body).toContain(`${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/shared/message.ts`)
+      expect(panel.body).toContain(`${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/logo.svg?import&module`)
       expect(panel.body).toContain(`${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/singleton/react`)
       const reactSingletonPath = panel.body.match(/"(\/api\/v1\/agent-plugins\/runtime\/__vite\/singleton\/react)"/)?.[1]
       expect(reactSingletonPath).toBeTruthy()
@@ -99,6 +105,21 @@ describe("pluginFrontRuntime", () => {
       expect(reactSingleton.statusCode).toBe(200)
       expect(reactSingleton.body).toContain("export const useEffectEvent")
       expect(reactSingleton.body).toContain("export const Activity")
+
+      const logo = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/logo.svg?import&module`,
+      })
+      expect(logo.statusCode).toBe(200)
+      expect(logo.headers["content-type"]).toContain("application/javascript")
+      expect(logo.body).toContain("data:image/svg+xml;base64")
+      const rawLogo = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/logo.svg`,
+      })
+      expect(rawLogo.statusCode).toBe(200)
+      expect(rawLogo.headers["content-type"]).toContain("image/svg+xml")
+      expect(rawLogo.body).toContain("<svg")
 
       const stylesheet = await app.inject({
         method: "GET",
@@ -111,14 +132,31 @@ describe("pluginFrontRuntime", () => {
       const viteClient = await app.inject({ method: "GET", url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/client` })
       expect(viteClient.statusCode).toBe(200)
       expect(viteClient.headers["content-type"]).toContain("javascript")
+      expect(viteClient.body).toContain(`${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/env`)
+      const viteEnv = await app.inject({ method: "GET", url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/env` })
+      expect(viteEnv.statusCode).toBe(200)
+      expect(viteEnv.headers["content-type"]).toContain("javascript")
       expect((await app.inject({ method: "GET", url: "/@vite/client" })).statusCode).toBe(404)
 
-      const workspacePluginRuntimePath = entry.body.match(/"(\/api\/v1\/agent-plugins\/runtime\/__vite\/proxy\/[^"]+)"/)?.[1]
-      if (workspacePluginRuntimePath) {
-        const workspacePluginRuntime = await app.inject({ method: "GET", url: workspacePluginRuntimePath })
-        expect(workspacePluginRuntime.statusCode).toBe(200)
-      }
+      const workspaceSingletonPaths = [...entry.body.matchAll(/"(\/api\/v1\/agent-plugins\/runtime\/__vite\/singleton\/%40hachej%2Fboring-workspace(?:%2Fplugin|%2Fevents))"/g)]
+        .map((match) => match[1])
+        .sort()
+      expect(workspaceSingletonPaths).toEqual([
+        `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/singleton/%40hachej%2Fboring-workspace%2Fevents`,
+        `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/singleton/%40hachej%2Fboring-workspace%2Fplugin`,
+      ])
+      const workspacePluginSingleton = await app.inject({ method: "GET", url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/singleton/%40hachej%2Fboring-workspace%2Fplugin` })
+      expect(workspacePluginSingleton.statusCode).toBe(200)
+      expect(workspacePluginSingleton.body).toContain("export const definePlugin")
       expect((await app.inject({ method: "GET", url: "/packages/agent/src/shared/error-codes.ts" })).statusCode).toBe(404)
+
+      const underscoreWorkspaceUrl = host.trackPlugin({
+        workspaceId: "_app-1234abcd",
+        plugin,
+        revision: 1,
+        frontEntrySubpath: "front/index.tsx",
+      })
+      expect(underscoreWorkspaceUrl).toContain("/_app-1234abcd/")
 
       expect(diagnostics).toEqual(expect.arrayContaining([
         expect.objectContaining({
@@ -150,6 +188,12 @@ describe("pluginFrontRuntime", () => {
       expect(response.json()).toEqual({
         error: expect.objectContaining({ code: ErrorCode.enum.PATH_NOT_FOUND }),
       })
+
+      const traversal = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/node_modules%2F.vite%2Fdeps%2F..%2F..%2Fpackages%2Fagent%2Fsrc%2Fshared%2Ferror-codes.ts`,
+      })
+      expect(traversal.statusCode).toBe(404)
     } finally {
       await app.close()
     }
@@ -187,9 +231,9 @@ describe("pluginFrontRuntime", () => {
         method: "GET",
         url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/shared/secret.ts`,
       })
-      expect(escapedRoot.statusCode).toBe(403)
+      expect(escapedRoot.statusCode).toBe(404)
       expect(escapedRoot.json()).toEqual({
-        error: expect.objectContaining({ code: ErrorCode.enum.PATH_SYMLINK_ESCAPE }),
+        error: expect.objectContaining({ code: ErrorCode.enum.PATH_NOT_FOUND }),
       })
     } finally {
       await app.close()
@@ -202,6 +246,7 @@ describe("pluginFrontRuntime", () => {
     await writeFile(join(outsideRoot, "escape.tsx"), 'export const escaped = true\n', "utf8")
     const plugin = await writeRuntimePlugin(pluginRoot, {
       "front/index.tsx": 'export const ok = true\n',
+      "front/Package.json": '{}\n',
     })
     await symlink(join(outsideRoot, "escape.tsx"), join(pluginRoot, "front", "escape.tsx"))
 
@@ -229,13 +274,22 @@ describe("pluginFrontRuntime", () => {
         error: expect.objectContaining({ code: ErrorCode.enum.PLUGIN_RUNTIME_PRIVATE_FILE }),
       })
 
+      const casedPrivateFile = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/2/front/Package.json`,
+      })
+      expect(casedPrivateFile.statusCode).toBe(403)
+      expect(casedPrivateFile.json()).toEqual({
+        error: expect.objectContaining({ code: ErrorCode.enum.PLUGIN_RUNTIME_PRIVATE_FILE }),
+      })
+
       const symlinkEscape = await app.inject({
         method: "GET",
         url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/2/front/escape.tsx`,
       })
-      expect(symlinkEscape.statusCode).toBe(403)
+      expect(symlinkEscape.statusCode).toBe(404)
       expect(symlinkEscape.json()).toEqual({
-        error: expect.objectContaining({ code: ErrorCode.enum.PATH_SYMLINK_ESCAPE }),
+        error: expect.objectContaining({ code: ErrorCode.enum.PATH_NOT_FOUND }),
       })
 
       await expect(host.serve({
@@ -272,6 +326,28 @@ describe("pluginFrontRuntime", () => {
       const entry = await app.inject({ method: "GET", url: entryUrl })
       expect(entry.statusCode).toBe(200)
       expect(entry.body).toContain(`${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/shared-ui.tsx`)
+
+      await writeFile(join(pluginRoot, "front", "shared-ui.tsx"), 'export function Panel() { return <div>revision two</div> }\n', "utf8")
+      host.trackPlugin({
+        workspaceId: "workspace-a",
+        plugin,
+        revision: 2,
+        frontEntrySubpath: "front/nested/index.tsx",
+      })
+      await rm(join(pluginRoot, "front", "shared-ui.tsx"), { force: true })
+      const previousGoodLazyChunk = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/shared-ui.tsx`,
+      })
+      expect(previousGoodLazyChunk.statusCode).toBe(200)
+      expect(previousGoodLazyChunk.body).toContain("nested ok")
+      expect(previousGoodLazyChunk.body).not.toContain("revision two")
+      await writeFile(join(pluginRoot, "front", "late.tsx"), "export const late = true\n", "utf8")
+      const lateFileOnOldRevision = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/late.tsx`,
+      })
+      expect(lateFileOnOldRevision.statusCode).toBe(404)
     } finally {
       await app.close()
     }
@@ -306,6 +382,40 @@ describe("pluginFrontRuntime", () => {
       expect(entry.body).toContain("example")
     } finally {
       await host.close()
+    }
+  }, 20_000)
+
+  test("does not mint privileged Vite proxy URLs from plain strings", async () => {
+    const pluginRoot = await makeTempDir("plugin-front-runtime-plain-host-string-")
+    const plugin = await writeRuntimePlugin(pluginRoot, {
+      "front/index.tsx": [
+        'export const hostPath = "/packages/agent/src/server/registerAgentRoutes.ts"',
+        `export const forgedRuntimePath = "${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/packages%2Fagent%2Fsrc%2Fserver%2FregisterAgentRoutes.ts"`,
+        'export const importText = \'import "/packages/agent/src/shared/error-codes.ts"\'',
+      ].join("\n"),
+    })
+
+    const host = await createPluginFrontRuntimeHost()
+    const app = fastify({ logger: false })
+    await host.registerRoutes(app)
+    host.trackPlugin({ workspaceId: "workspace-a", plugin, revision: 1, frontEntrySubpath: "front/index.tsx" })
+
+    try {
+      const entry = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/index.tsx`,
+      })
+      expect(entry.statusCode).toBe(200)
+      expect(entry.body).toContain("/packages/agent/src/server/registerAgentRoutes.ts")
+      expect(entry.body).toContain(`${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/packages%2Fagent%2Fsrc%2Fserver%2FregisterAgentRoutes.ts`)
+
+      const forgedProxy = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/packages%2Fagent%2Fsrc%2Fserver%2FregisterAgentRoutes.ts`,
+      })
+      expect(forgedProxy.statusCode).toBe(404)
+    } finally {
+      await app.close()
     }
   }, 20_000)
 
@@ -346,6 +456,7 @@ describe("pluginFrontRuntime", () => {
     const plugin = await writeRuntimePlugin(pluginRoot, {
       "front/index.tsx": 'export const ok = true\n',
       "front/absolute.tsx": `import React from ${JSON.stringify(`file://${join(pluginRoot, "node_modules", "react", "index.js")}`)}\nexport default React\n`,
+      "front/vendored-react.tsx": 'import React from "./node_modules/react/index.js"\nexport default React\n',
       "front/computed.tsx": [
         `const target = \`${`file://${join(pluginRoot, "node_modules", "react", "index.js")}`}\``,
         'export const load = () => import(target)',
@@ -353,6 +464,10 @@ describe("pluginFrontRuntime", () => {
       "front/template.tsx": [
         'export const load = () => import(`./child`)',
       ].join("\n"),
+      "front/glob.tsx": [
+        'export const modules = import.meta.glob("/packages/agent/src/**/*.ts", { eager: true, query: "?raw" })',
+      ].join("\n"),
+      "front/server-import.tsx": 'import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"\nexport const server = createWorkspaceAgentServer\n',
       "front/child.tsx": 'export const child = true\n',
       "node_modules/react/index.js": 'export default { local: true }\n',
     })
@@ -381,6 +496,13 @@ describe("pluginFrontRuntime", () => {
         workspaceId: "workspace-a",
         pluginId: "runtime-plugin",
         revision: 1,
+        subpath: "front/vendored-react.tsx",
+      })).rejects.toMatchObject({ code: ErrorCode.enum.PLUGIN_RUNTIME_PRIVATE_FILE, statusCode: 403 })
+
+      await expect(host.serve({
+        workspaceId: "workspace-a",
+        pluginId: "runtime-plugin",
+        revision: 1,
         subpath: "front/computed.tsx",
       })).rejects.toMatchObject({ code: ErrorCode.enum.PLUGIN_RUNTIME_UNSAFE_IMPORT, statusCode: 400 })
 
@@ -390,6 +512,43 @@ describe("pluginFrontRuntime", () => {
         revision: 1,
         subpath: "front/template.tsx",
       })).rejects.toMatchObject({ code: ErrorCode.enum.PLUGIN_RUNTIME_UNSAFE_IMPORT, statusCode: 400 })
+
+      await expect(host.serve({
+        workspaceId: "workspace-a",
+        pluginId: "runtime-plugin",
+        revision: 1,
+        subpath: "front/glob.tsx",
+      })).rejects.toMatchObject({ code: ErrorCode.enum.PLUGIN_RUNTIME_UNSAFE_IMPORT, statusCode: 400 })
+
+      await expect(host.serve({
+        workspaceId: "workspace-a",
+        pluginId: "runtime-plugin",
+        revision: 1,
+        subpath: "front/server-import.tsx",
+      })).rejects.toMatchObject({ code: ErrorCode.enum.PLUGIN_RUNTIME_UNSAFE_IMPORT, statusCode: 400 })
+    } finally {
+      await host.close()
+    }
+  }, 20_000)
+
+  test("does not create native runtime targets for root-level front entries", async () => {
+    const pluginRoot = await makeTempDir("plugin-front-runtime-root-front-")
+    const plugin = await writeRuntimePlugin(pluginRoot, {
+      "index.tsx": "export default function Plugin() { return null }\n",
+    })
+    plugin.boring.front = "index.tsx"
+    plugin.frontPath = join(pluginRoot, "index.tsx")
+
+    const host = await createPluginFrontRuntimeHost()
+    try {
+      const resolver = host.createFrontTargetResolver("workspace-a")
+      expect(resolver(plugin, { revision: 1, frontEntrySubpath: "index.tsx" })).toBeUndefined()
+      expect(() => host.trackPlugin({
+        workspaceId: "workspace-a",
+        plugin,
+        revision: 1,
+        frontEntrySubpath: "index.tsx",
+      })).toThrow(/front\/ directory/)
     } finally {
       await host.close()
     }

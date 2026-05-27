@@ -682,22 +682,24 @@ describe("useAgentPluginHotReload", () => {
     await waitFor(() => expect(screen.getByTestId("catalog-list")).toHaveTextContent(""))
   })
 
-  test("warns and skips provider/binding hot-load contributions instead of partially mounting panels", async () => {
+  test("warns and preserves previous UI when a hot-load revision adds provider/binding contributions", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
-    const importFront = async (): Promise<{ default: BoringFrontFactoryWithId }> => ({
+    const importFront = async (_url: string, revision: number): Promise<{ default: BoringFrontFactoryWithId }> => ({
       default: hotPlugin("provider-plugin", (api) => {
-        api.registerProvider({
-          id: "hot-provider",
-          component: function HotProvider({ children }: { children: React.ReactNode }) {
-            return React.createElement(React.Fragment, null, children)
-          },
-        })
-        api.registerBinding({ id: "hot-binding", component: () => null })
+        if (revision > 1) {
+          api.registerProvider({
+            id: "hot-provider",
+            component: function HotProvider({ children }: { children: React.ReactNode }) {
+              return React.createElement(React.Fragment, null, children)
+            },
+          })
+          api.registerBinding({ id: "hot-binding", component: () => null })
+        }
         api.registerPanel({
           id: "hot-pane",
           label: "Hot Pane",
           component: function HotPane() {
-            return React.createElement("div", { "data-testid": "hot-pane" }, "should not mount")
+            return React.createElement("div", { "data-testid": "hot-pane" }, revision === 1 ? "version one" : "should not mount")
           },
         })
       }),
@@ -729,9 +731,19 @@ describe("useAgentPluginHotReload", () => {
         frontUrl: "/@fs/front.mjs",
         boring: { front: "./front.mjs" },
       })
+      await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version one"))
+
+      MockEventSource.instances[0].dispatch("boring.plugin.load", {
+        type: "boring.plugin.load",
+        id: "provider-plugin",
+        version: "1.0.0",
+        revision: 2,
+        frontUrl: "/@fs/front.mjs",
+        boring: { front: "./front.mjs" },
+      })
 
       await waitFor(() => expect(warn).toHaveBeenCalledWith(expect.stringContaining("Dynamic provider/binding mounting is not implemented")))
-      expect(screen.getByTestId("pane-missing")).toHaveTextContent("missing")
+      expect(screen.getByTestId("hot-pane")).toHaveTextContent("version one")
     } finally {
       warn.mockRestore()
     }

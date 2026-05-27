@@ -111,6 +111,17 @@ export async function boringPluginRoutes(app: FastifyInstance, opts: BoringPlugi
       }
     }
 
+    const liveQueue: Array<{ eventName: string; payload: Record<string, unknown> }> = []
+    let replaying = true
+    const unsubscribe = manager.subscribe((event) => {
+      const payload = { ...event, replay: false }
+      if (replaying) {
+        liveQueue.push({ eventName: event.type, payload })
+        return
+      }
+      write(event.type, payload)
+    })
+
     for (const plugin of manager.list()) {
       write("boring.plugin.load", {
         type: "boring.plugin.load",
@@ -127,8 +138,8 @@ export async function boringPluginRoutes(app: FastifyInstance, opts: BoringPlugi
       type: "boring.plugin.replay-complete",
       replay: true,
     })
-
-    const unsubscribe = manager.subscribe((event) => write(event.type, { ...event, replay: false }))
+    replaying = false
+    for (const event of liveQueue) write(event.eventName, event.payload)
     const heartbeat = setInterval(() => {
       try { res.write(": heartbeat\n\n") } catch { /* ignore */ }
     }, 25_000)

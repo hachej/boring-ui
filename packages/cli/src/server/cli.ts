@@ -32,6 +32,7 @@ import {
   createCliPluginAssetManager,
   getGlobalPiExtensionsRoot,
   readCliPluginPiSnapshot,
+  resolveCliBoringPluginDirs,
 } from "./pluginDiscovery.js"
 import { scaffoldPlugin } from "./scaffoldPlugin.js"
 import { findHintForError, formatVerifyResult, verifyPlugin } from "./verifyPlugin.js"
@@ -296,6 +297,18 @@ function createRuntimePluginDiagnosticsStore() {
   }
 }
 
+function syncRuntimeHostFromPluginEvents(
+  runtimeHost: { untrackPlugin(workspaceId: string, pluginId: string): void },
+  workspaceId: string,
+  events: Array<{ type: string; id: string; frontTarget?: unknown }>,
+): void {
+  for (const event of events) {
+    if (event.type === "boring.plugin.unload" || (event.type === "boring.plugin.load" && !event.frontTarget)) {
+      runtimeHost.untrackPlugin(workspaceId, event.id)
+    }
+  }
+}
+
 function buildRuntimePluginDiagnosticsResponse(args: {
   workspaceId: string
   loaded: Array<{ id: string; version?: string; revision?: number; rootDir?: string; frontPath?: string; frontTarget?: unknown }>
@@ -344,7 +357,7 @@ export async function createFolderModeApp(opts: {
 }): Promise<FastifyInstance> {
   const workspaceRoot = resolve(opts.workspaceRoot)
   const projectName = opts.projectName ?? (basename(workspaceRoot) || "workspace")
-  const [{ createWorkspaceAgentServer }, { createPluginFrontRuntimeHost }] = await Promise.all([
+  const [{ createWorkspaceAgentServer, readWorkspacePluginPackageRuntimePlugins }, { createPluginFrontRuntimeHost }] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
     import("./pluginFrontRuntime.js"),
   ])
@@ -352,16 +365,36 @@ export async function createFolderModeApp(opts: {
   const runtimeHost = await createPluginFrontRuntimeHost({
     onDiagnostic: (diagnostic) => diagnosticsStore.record(diagnostic),
   })
+  const runtimeProvisioning = await provisionCliWorkspaceRuntime({
+    workspaceRoot,
+    mode: opts.mode,
+    provisionWorkspace: opts.provisionWorkspace,
+    plugins: readWorkspacePluginPackageRuntimePlugins(resolveCliBoringPluginDirs(workspaceRoot)),
+  })
   const app = await createWorkspaceAgentServer({
     workspaceRoot,
     mode: opts.mode,
     logger: false,
-    provisionWorkspace: opts.provisionWorkspace,
+    provisionWorkspace: false,
+    runtimeProvisioning,
     additionalBoringPluginDirs: [getGlobalPiExtensionsRoot()],
     boringPluginFrontTargetResolver: runtimeHost.createFrontTargetResolver(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID),
     boringPluginIncludeLegacyFrontUrl: false,
   })
   await runtimeHost.registerRoutes(app as FastifyInstance)
+  const folderAssetManager = (app as FastifyInstance & {
+    __boringAssetManager?: {
+      subscribe(listener: (event: { type: string; id: string; frontTarget?: unknown }) => void): () => void
+    }
+  }).__boringAssetManager
+  const closeFolderRuntimeCleanup = folderAssetManager?.subscribe((event) => {
+    syncRuntimeHostFromPluginEvents(runtimeHost, FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID, [event])
+  })
+  if (closeFolderRuntimeCleanup) {
+    app.addHook("onClose", async () => {
+      closeFolderRuntimeCleanup()
+    })
+  }
 
   app.get("/api/v1/runtime-plugin-diagnostics", async () => {
     const manager = (app as FastifyInstance & {
@@ -447,6 +480,7 @@ export async function createWorkspacesModeApp(opts: {
     manager: InstanceType<typeof workspaceServer.BoringPluginAssetManager>
     ensureLoaded: Promise<void>
   }>()
+  const pluginPiSnapshots = new Map<string, ReturnType<typeof readCliPluginPiSnapshot>>()
 
   function getBridge(workspaceId: string) {
     let bridge = bridges.get(workspaceId)
@@ -472,6 +506,10 @@ export async function createWorkspacesModeApp(opts: {
     return `${workspace.id}:${workspace.path}`
   }
 
+  function syncLoadedPluginPiSnapshot(workspace: LocalWorkspace, manager: { inspectLoadedPiSnapshot(): ReturnType<typeof readCliPluginPiSnapshot> }): void {
+    pluginPiSnapshots.set(pluginRuntimeKey(workspace), manager.inspectLoadedPiSnapshot())
+  }
+
   function getOrCreatePluginRuntime(workspace: LocalWorkspace) {
     const key = pluginRuntimeKey(workspace)
     let runtime = pluginRuntimes.get(key)
@@ -482,7 +520,9 @@ export async function createWorkspacesModeApp(opts: {
       })
       runtime = {
         manager,
-        ensureLoaded: manager.load().then(() => undefined),
+        ensureLoaded: manager.load().then(() => {
+          syncLoadedPluginPiSnapshot(workspace, manager)
+        }),
       }
       pluginRuntimes.set(key, runtime)
     }
@@ -495,12 +535,22 @@ export async function createWorkspacesModeApp(opts: {
     return runtime
   }
 
+  function getLoadedPluginPiSnapshot(workspace: LocalWorkspace) {
+    return pluginPiSnapshots.get(pluginRuntimeKey(workspace)) ?? {
+      additionalSkillPaths: [],
+      packages: [],
+      extensionPaths: [],
+    }
+  }
+
   async function disposeWorkspaceRuntime(workspace: LocalWorkspace): Promise<void> {
     for (const close of workspaceEventClosers.get(workspace.id) ?? []) {
       try { close() } catch {}
     }
     workspaceEventClosers.delete(workspace.id)
-    pluginRuntimes.delete(pluginRuntimeKey(workspace))
+    const runtimeKey = pluginRuntimeKey(workspace)
+    pluginRuntimes.delete(runtimeKey)
+    pluginPiSnapshots.delete(runtimeKey)
     bridges.delete(workspace.id)
     diagnosticsStore.disposeWorkspace(workspace.id)
     await runtimeHost.disposeWorkspace(workspace.id)
@@ -512,14 +562,6 @@ export async function createWorkspacesModeApp(opts: {
       message: error.message,
       pluginId: error.id,
     }))
-  }
-
-  function syncRuntimeHostFromEvents(workspaceId: string, events: Array<{ type: string; id: string; frontTarget?: unknown }>): void {
-    for (const event of events) {
-      if (event.type === "boring.plugin.unload" || (event.type === "boring.plugin.load" && !event.frontTarget)) {
-        runtimeHost.untrackPlugin(workspaceId, event.id)
-      }
-    }
   }
 
   app.get("/api/v1/local-workspaces", async () => ({
@@ -562,6 +604,11 @@ export async function createWorkspacesModeApp(opts: {
   await app.register(agentServer.registerAgentRoutes, {
     mode: opts.mode,
     systemPromptAppend: workspaceAppServer.buildWorkspaceContextPrompt(),
+    getSystemPromptDynamic: async ({ workspaceId }) => {
+      const workspace = await requireWorkspace(workspaceId)
+      await getLoadedPluginRuntime(workspace)
+      return getLoadedPluginPiSnapshot(workspace).systemPromptAppend
+    },
     getWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
     getWorkspaceRoot: async (workspaceId) => (await requireWorkspace(workspaceId)).path,
     getSessionNamespace: async ({ workspaceId }) => `local-workspace-${workspaceId}`,
@@ -572,32 +619,28 @@ export async function createWorkspacesModeApp(opts: {
         provisionWorkspace: opts.provisionWorkspace,
         adapter: provisioningAdapter,
         runtimeLayout,
+        plugins: workspaceAppServer.readWorkspacePluginPackageRuntimePlugins(resolveCliBoringPluginDirs(workspaceRoot)),
       })
     },
     beforeReload: async ({ workspaceId }) => {
       const workspace = await requireWorkspace(workspaceId)
       const runtime = await getLoadedPluginRuntime(workspace)
       const scan = await runtime.manager.load()
-      syncRuntimeHostFromEvents(workspaceId, scan.events)
+      syncLoadedPluginPiSnapshot(workspace, runtime.manager)
+      syncRuntimeHostFromPluginEvents(runtimeHost, workspaceId, scan.events)
       return {
         restart_warnings: workspaceServer.collectRestartWarnings(scan.events),
         diagnostics: reloadDiagnostics(scan),
       }
     },
-    getPi: async ({ workspaceRoot }) => {
-      const pluginPi = readCliPluginPiSnapshot(workspaceRoot)
+    getPi: async ({ workspaceId, workspaceRoot }) => {
+      const workspace = await requireWorkspace(workspaceId)
+      await getLoadedPluginRuntime(workspace)
       return {
-        additionalSkillPaths: [join(workspaceRoot, ".agents", "skills"), ...pluginPi.additionalSkillPaths],
-        packages: pluginPi.packages,
-        extensionPaths: pluginPi.extensionPaths,
-        getHotReloadableResources: () => {
-          const dynamicPi = readCliPluginPiSnapshot(workspaceRoot)
-          return {
-            additionalSkillPaths: dynamicPi.additionalSkillPaths,
-            packages: dynamicPi.packages,
-            extensionPaths: dynamicPi.extensionPaths,
-          }
-        },
+        additionalSkillPaths: [join(workspaceRoot, ".agents", "skills")],
+        packages: [],
+        extensionPaths: [],
+        getHotReloadableResources: () => getLoadedPluginPiSnapshot(workspace),
       }
     },
     getExtraTools: async ({ workspaceId, workspaceRoot, workspaceFsCapability }) => [

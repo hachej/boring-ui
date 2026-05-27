@@ -16,6 +16,8 @@ import type {
   BoringServerPluginManifest,
   PluginRestartSurface,
 } from "./types"
+import { normalizeBoringPluginPiPackages } from "./piPackages"
+import { compactPiPackages, type WorkspacePiPackageSource } from "../plugins/bootstrapServer"
 
 interface LoadedPluginRecord extends BoringServerPluginManifest {
   revision: number
@@ -71,6 +73,13 @@ export interface LoadedBoringPluginInspection {
   rootDir: string
   frontPath?: string
   frontTarget?: BoringPluginFrontTarget
+}
+
+export interface LoadedBoringPluginPiSnapshot {
+  additionalSkillPaths: string[]
+  packages: WorkspacePiPackageSource[]
+  extensionPaths: string[]
+  systemPromptAppend?: string
 }
 
 type Listener = (event: BoringPluginEvent) => void
@@ -148,6 +157,15 @@ function normalizePluginSubpath(rootDir: string, path: string): string {
   return relative(rootDir, path).replaceAll("\\", "/")
 }
 
+function frontSignatureRoot(plugin: BoringServerPluginManifest): string | undefined {
+  if (!plugin.frontPath) return undefined
+  const frontRoot = join(plugin.rootDir, "front")
+  const rel = relative(frontRoot, plugin.frontPath)
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))
+    ? frontRoot
+    : dirname(plugin.frontPath)
+}
+
 function pluginSignature(plugin: BoringServerPluginManifest): string {
   return createHash("sha256")
     .update(JSON.stringify(plugin.boring))
@@ -155,7 +173,7 @@ function pluginSignature(plugin: BoringServerPluginManifest): string {
     .update(plugin.version)
     .update(plugin.frontPath ?? "")
     .update(pluginFileSignature(plugin.frontPath))
-    .update(directorySignature(plugin.frontPath ? dirname(plugin.frontPath) : undefined))
+    .update(directorySignature(frontSignatureRoot(plugin)))
     .update(directorySignature(join(plugin.rootDir, "shared")))
     .update(plugin.serverPath ?? "")
     .update(pluginFileSignature(plugin.serverPath))
@@ -240,6 +258,19 @@ export class BoringPluginAssetManager {
       ...(plugin.frontPath ? { frontPath: plugin.frontPath } : {}),
       ...(plugin.frontTarget ? { frontTarget: plugin.frontTarget } : {}),
     }))
+  }
+
+  inspectLoadedPiSnapshot(): LoadedBoringPluginPiSnapshot {
+    const plugins = [...this.loaded.values()]
+    const prompts = plugins
+      .map((plugin) => plugin.pi?.systemPrompt?.trim())
+      .filter((prompt): prompt is string => Boolean(prompt))
+    return {
+      additionalSkillPaths: plugins.flatMap((plugin) => plugin.skillPaths ?? []),
+      packages: compactPiPackages(normalizeBoringPluginPiPackages(plugins)),
+      extensionPaths: plugins.flatMap((plugin) => plugin.extensionPaths ?? []),
+      ...(prompts.length > 0 ? { systemPromptAppend: `# Loaded boring-ui plugin context\n\n${prompts.join("\n\n")}` } : {}),
+    }
   }
 
   subscribe(listener: Listener): () => void {
@@ -405,9 +436,12 @@ export class BoringPluginAssetManager {
 
   private resolveFrontTarget(plugin: BoringServerPluginManifest, revision: number): BoringPluginFrontTarget | undefined {
     if (!plugin.frontPath || !this.frontTargetResolver) return undefined
+    const frontEntrySubpath = typeof plugin.boring.front === "string"
+      ? plugin.boring.front.replace(/^\.\//, "")
+      : normalizePluginSubpath(plugin.rootDir, plugin.frontPath)
     const frontTarget = this.frontTargetResolver(plugin, {
       revision,
-      frontEntrySubpath: normalizePluginSubpath(plugin.rootDir, plugin.frontPath),
+      frontEntrySubpath,
     })
     if (!frontTarget) return undefined
     return { ...frontTarget, revision }

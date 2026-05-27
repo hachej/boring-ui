@@ -157,4 +157,40 @@ describe("folder mode runtime plugin wiring", () => {
       await app.close()
     }
   }, 20_000)
+
+  test("folder mode reload untracks runtime targets when a plugin loses its front entry", async () => {
+    const homeRoot = await makeTempDir("boring-cli-folder-front-removed-home-")
+    const workspaceRoot = await makeTempDir("boring-cli-folder-front-removed-workspace-")
+    process.env.HOME = homeRoot
+
+    const pluginRoot = join(workspaceRoot, ".pi", "extensions", "front-removed-plugin")
+    await writePlugin(pluginRoot, "front-removed-plugin")
+
+    const app = await createFolderModeApp({
+      workspaceRoot,
+      mode: "direct",
+      projectName: "Folder Workspace",
+      provisionWorkspace: false,
+    })
+
+    try {
+      const list = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
+      const [plugin] = list.json() as Array<{ frontTarget?: { entryUrl?: string } }>
+      expect(plugin?.frontTarget?.entryUrl).toBeTruthy()
+
+      await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
+        name: "front-removed-plugin",
+        version: "1.0.1",
+        boring: { label: "front-removed-plugin" },
+      }), "utf8")
+
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(reload.statusCode).toBe(200)
+
+      const runtimeAfterFrontRemoved = await app.inject({ method: "GET", url: plugin.frontTarget!.entryUrl! })
+      expect(runtimeAfterFrontRemoved.statusCode).toBe(404)
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
 })

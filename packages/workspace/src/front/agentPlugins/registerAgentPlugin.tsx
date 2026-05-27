@@ -4,7 +4,7 @@ import * as ReactDomClient from "react-dom/client"
 import * as ReactJsxDevRuntime from "react/jsx-dev-runtime"
 import * as ReactJsxRuntime from "react/jsx-runtime"
 import { useEffect, useRef } from "react"
-import { ErrorCode } from "@hachej/boring-agent/shared"
+import type { ErrorCode } from "@hachej/boring-agent/shared"
 import {
   createCapturingBoringFrontAPI,
   type BoringFrontFactoryWithId,
@@ -17,6 +17,8 @@ import type { SurfaceOpenRequest, SurfaceResolverConfig } from "../../shared/typ
 import type { CommandConfig } from "../registry/types"
 import { useCatalogRegistry, useCommandRegistry, useRegistry, useSurfaceResolverRegistry } from "../registry/RegistryProvider"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "./reloadEvent"
+
+const PLUGIN_LOAD_FAILED_CODE = "PLUGIN_LOAD_FAILED" satisfies ErrorCode
 
 declare global {
   // Native runtime plugin modules are transformed by the CLI runtime host, not
@@ -294,8 +296,7 @@ function commitCapturedFrontFactory(
 ): void {
   if (captured.providers.length > 0 || captured.bindings.length > 0) {
     warnUnsupportedDynamicContributions(pluginId, captured)
-    unregisterPlugin(pluginId, registries)
-    return
+    throw new Error(`PLUGIN_UNSUPPORTED_DYNAMIC_CONTRIBUTIONS: plugin "${pluginId}" registered provider/binding outputs that require an app restart`)
   }
   const payloads = buildRegistryPayloads(pluginId, captured)
   assertNoOutputCollisions(pluginId, payloads, registries)
@@ -414,7 +415,7 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
                 revision: event.revision,
                 workspaceId: event.workspaceId ?? options.workspaceId,
                 message,
-                code: ErrorCode.enum.PLUGIN_LOAD_FAILED,
+                code: PLUGIN_LOAD_FAILED_CODE,
                 stage,
                 replay: event.replay,
               },
@@ -491,6 +492,8 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
     es.addEventListener("boring.plugin.replay-complete", handleReplayComplete as EventListener)
     return () => {
       disposed = true
+      for (const pluginId of lastSeenRef.current.keys()) unregisterPlugin(pluginId, registries)
+      lastSeenRef.current.clear()
       latestRequestedRef.current.clear()
       es.close()
     }

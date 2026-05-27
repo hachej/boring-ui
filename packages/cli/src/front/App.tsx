@@ -6,6 +6,9 @@ import * as ReactJsxRuntime from "react/jsx-runtime"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { ChatPanel, useSessions as useAgentSessions } from "@hachej/boring-agent"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "@hachej/boring-agent/shared"
+import * as WorkspaceSingleton from "@hachej/boring-workspace"
+import * as WorkspaceEventsSingleton from "@hachej/boring-workspace/events"
+import * as WorkspacePluginSingleton from "@hachej/boring-workspace/plugin"
 import { WorkspaceAgentFront } from "@hachej/boring-workspace/app/front"
 import { WorkspaceSwitcherControl } from "./WorkspaceSwitcherControl"
 import { RuntimePluginDiagnosticsButton } from "./runtimePluginDiagnostics"
@@ -21,6 +24,9 @@ globalThis.__BORING_RUNTIME_SINGLETONS__ = {
   "react-dom/client": ReactDomClient,
   "react/jsx-dev-runtime": ReactJsxDevRuntime,
   "react/jsx-runtime": ReactJsxRuntime,
+  "@hachej/boring-workspace": WorkspaceSingleton,
+  "@hachej/boring-workspace/events": WorkspaceEventsSingleton,
+  "@hachej/boring-workspace/plugin": WorkspacePluginSingleton,
 }
 
 interface WorkspaceMeta {
@@ -224,6 +230,10 @@ export function CliWorkspaceShell() {
   }, [activeWorkspaceId, projectName, runtimePluginFrontLoadingEnabled])
 
   const plugins = useMemo(() => [], [])
+  const activeWorkspaceRequestHeaders = useMemo(
+    () => activeWorkspaceId ? { "x-boring-workspace-id": activeWorkspaceId } : null,
+    [activeWorkspaceId],
+  )
 
   if (!metaLoaded) {
     return <div className="h-screen w-screen bg-background" />
@@ -249,7 +259,7 @@ export function CliWorkspaceShell() {
       )
     }
 
-    const requestHeaders = { "x-boring-workspace-id": activeWorkspace.id }
+    const requestHeaders = activeWorkspaceRequestHeaders ?? { "x-boring-workspace-id": activeWorkspace.id }
 
     return (
       <WorkspaceAgentFront
