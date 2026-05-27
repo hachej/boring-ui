@@ -16,15 +16,15 @@
   },
   "dependencies": {
     "@hachej/boring-core": "workspace:*",
-    "@vercel/sandbox": "2.0.0-beta.14",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "@vercel/sandbox": "2.0.1",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
     "@tailwindcss/vite": "^4.0.0",
     "@types/node": "^22.15.3",
-    "@types/react": "^19.0.0",
+    "@types/react": "^19.2.15",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.0.0",
     "esbuild": "0.25.12",
