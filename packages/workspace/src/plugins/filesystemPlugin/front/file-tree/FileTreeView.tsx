@@ -295,11 +295,25 @@ export function FileTreeView({
       if (!path) return
       const normalizedPath = normalizeRevealPath(path)
       setSelectedPath(normalizedPath)
-      setRevealPath(normalizedPath)
       await refreshDirs(parentDirsForReveal(normalizedPath), { force: true })
+      setRevealPath(normalizedPath)
     },
     [refreshDirs],
   )
+
+  useEffect(() => {
+    if (!revealPath) return
+    let clearFrame = 0
+    const frame = requestAnimationFrame(() => {
+      clearFrame = requestAnimationFrame(() => {
+        setRevealPath((current) => current === revealPath ? null : current)
+      })
+    })
+    return () => {
+      cancelAnimationFrame(frame)
+      cancelAnimationFrame(clearFrame)
+    }
+  }, [revealPath])
 
   useEffect(() => {
     const activeFile = bridge?.getActiveFile?.() ?? null
