@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BarChart3Icon, CheckIcon, ChevronDownIcon, NotebookPenIcon } from 'lucide-react'
+import { CheckIcon, ChevronDownIcon, EyeIcon, EyeOffIcon } from 'lucide-react'
 import {
   Command,
   CommandEmpty,
@@ -43,6 +43,38 @@ const THINKING_LEVEL_LABELS: Record<ThinkingLevel, string> = {
   low: 'Low',
   medium: 'Med',
   high: 'High',
+}
+
+/**
+ * Three-bar level glyph for the Thinking trigger. The icon IS the data:
+ * the number of lit bars equals the active level (off=0 .. high=3). Lets
+ * the user read state without opening the popover.
+ */
+function ThinkingLevelGlyph({ level }: { level: ThinkingLevel }) {
+  const lit = level === 'off' ? 0 : level === 'low' ? 1 : level === 'medium' ? 2 : 3
+  return (
+    <svg
+      aria-hidden="true"
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      fill="none"
+      className="shrink-0"
+    >
+      {[0, 1, 2].map((i) => (
+        <rect
+          key={i}
+          x={2 + i * 4}
+          y={10 - i * 2}
+          width="2"
+          height={3 + i * 2}
+          rx="0.5"
+          fill="currentColor"
+          opacity={i < lit ? 1 : 0.25}
+        />
+      ))}
+    </svg>
+  )
 }
 
 /**
@@ -208,14 +240,22 @@ export function ThinkingSelect({
       <SelectTrigger
         data-boring-agent-part="thinking-select"
         data-boring-state={disabled ? "disabled" : undefined}
-        className={cn(composerActionClass, "w-8 px-0")}
-        aria-label="Thinking level"
+        // The auto-injected chevron (last `<span aria-hidden>`) is hidden so
+        // a 32px button isn't cramped by both icon and chevron — the popover
+        // tells the user this is interactive.
+        className={cn(
+          composerActionClass,
+          "w-8 px-0 [&>span[aria-hidden]]:hidden",
+          value !== "off" && "text-foreground",
+        )}
+        aria-label={`Thinking level: ${THINKING_LEVEL_LABELS[value]}`}
+        title={`Thinking: ${THINKING_LEVEL_LABELS[value]}`}
         data-testid="thinking-select"
       >
         {THINKING_LEVELS.map((level) => (
           <span key={level} data-value={level} hidden />
         ))}
-        <BarChart3Icon className="h-3.5 w-3.5" />
+        <ThinkingLevelGlyph level={value} />
       </SelectTrigger>
       <SelectContent position="popper" side="top" align="end" data-boring-agent="" className="w-auto min-w-0 rounded-lg border-border/70 bg-popover p-2 shadow-2xl">
         <div className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
@@ -244,6 +284,7 @@ export function ThoughtVisibilityButton({
   visible: boolean
   onToggle: () => void
 }) {
+  const Icon = visible ? EyeIcon : EyeOffIcon
   return (
     <IconButton
       type="button"
@@ -252,22 +293,12 @@ export function ThoughtVisibilityButton({
       variant="ghost"
       size="icon-sm"
       onClick={onToggle}
-      className={cn(
-        composerActionClass,
-        "relative w-8",
-        visible && "text-foreground",
-      )}
+      className={cn(composerActionClass, "w-8", visible && "text-foreground")}
       aria-pressed={visible}
       aria-label={visible ? "Hide thoughts" : "Show thoughts"}
       title={visible ? "Hide thoughts" : "Show thoughts"}
     >
-      <NotebookPenIcon className="h-3.5 w-3.5" />
-      {!visible && (
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute left-1/2 top-1/2 h-[18px] w-px -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-full bg-current opacity-60"
-        />
-      )}
+      <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
     </IconButton>
   )
 }

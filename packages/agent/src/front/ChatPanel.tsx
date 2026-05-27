@@ -1354,7 +1354,7 @@ function AttachmentButton({ disabled }: { disabled?: boolean }) {
       aria-label="Attach files"
       title={disabled ? 'Attachments are available after the current response finishes.' : 'Attach files'}
     >
-      <PaperclipIcon className="h-4 w-4" />
+      <PaperclipIcon className="h-3.5 w-3.5" strokeWidth={1.75} />
     </IconButton>
   )
 }
