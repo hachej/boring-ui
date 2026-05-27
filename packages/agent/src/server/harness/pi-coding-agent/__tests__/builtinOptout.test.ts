@@ -8,8 +8,9 @@ describe("pi built-in tools opt-out", () => {
     "utf8",
   )
 
-  it("passes tools: [] to createAgentSession to suppress pi defaults", () => {
-    expect(harnessSource).toContain("tools: []")
+  it("uses noTools: builtin to suppress pi defaults without disabling custom tools", () => {
+    expect(harnessSource).toContain('noTools: "builtin"')
+    expect(harnessSource).not.toMatch(/^\s*tools:\s*\[\],/m)
   })
 
   it("passes customTools to createAgentSession for our adapted tools", () => {
