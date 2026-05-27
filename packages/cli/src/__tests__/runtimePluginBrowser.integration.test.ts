@@ -30,7 +30,8 @@ beforeAll(() => {
 }, 300_000)
 
 afterEach(async () => {
-  process.env.HOME = originalHome
+  if (originalHome === undefined) delete process.env.HOME
+  else process.env.HOME = originalHome
   if (originalRegistry === undefined) delete process.env.BORING_UI_WORKSPACES_PATH
   else process.env.BORING_UI_WORKSPACES_PATH = originalRegistry
   await Promise.all(openApps.splice(0).map((app) => app.close()))
@@ -62,11 +63,12 @@ async function writeRuntimePlugin(root: string, options: {
     ? `await new Promise((resolve) => setTimeout(resolve, ${options.delayMs}))\n`
     : ""
   await writeFile(join(root, "front", "index.tsx"), `${options.extraImports ?? ""}
-import React from "react"
+import { useState } from "react"
 import { definePlugin } from "@hachej/boring-workspace/plugin"
 ${delayBlock}
 function RuntimePane() {
-  return <div>${JSON.stringify(options.bodyText)}</div>
+  const [value] = useState(${JSON.stringify(options.bodyText)})
+  return <div>{value}</div>
 }
 
 export default definePlugin({
@@ -137,7 +139,6 @@ test("built folder mode browser path hot-loads, preserves previous-good revision
   const app = await createLocalFolderModeApp({
     workspaceRoot,
     mode: "direct",
-    provisionWorkspace: false,
     projectName: "Folder Browser",
   })
   const address = await startApp(app)

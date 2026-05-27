@@ -1,9 +1,27 @@
+import * as React from "react"
+import * as ReactDom from "react-dom"
+import * as ReactDomClient from "react-dom/client"
+import * as ReactJsxDevRuntime from "react/jsx-dev-runtime"
+import * as ReactJsxRuntime from "react/jsx-runtime"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { ChatPanel, useSessions as useAgentSessions } from "@hachej/boring-agent"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "@hachej/boring-agent/shared"
 import { WorkspaceAgentFront } from "@hachej/boring-workspace/app/front"
 import { WorkspaceSwitcherControl } from "./WorkspaceSwitcherControl"
 import { RuntimePluginDiagnosticsButton } from "./runtimePluginDiagnostics"
+
+declare global {
+  var __BORING_RUNTIME_SINGLETONS__: Record<string, unknown> | undefined
+}
+
+globalThis.__BORING_RUNTIME_SINGLETONS__ = {
+  ...globalThis.__BORING_RUNTIME_SINGLETONS__,
+  react: React,
+  "react-dom": ReactDom,
+  "react-dom/client": ReactDomClient,
+  "react/jsx-dev-runtime": ReactJsxDevRuntime,
+  "react/jsx-runtime": ReactJsxRuntime,
+}
 
 interface WorkspaceMeta {
   projectName?: string

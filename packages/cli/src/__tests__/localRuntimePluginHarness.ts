@@ -9,7 +9,6 @@ import {
   collectRestartWarnings,
   createInMemoryBridge,
   createWorkspaceUiTools,
-  createInMemoryBridge as createBridge,
   uiRoutes,
 } from "../../../workspace/src/server/index"
 import type { LoadBoringAssetsResult } from "../../../workspace/src/server/agentPlugins/manager"
@@ -78,7 +77,6 @@ export async function createLocalFolderModeApp(opts: {
   workspaceRoot: string
   mode: "direct" | "local" | "vercel-sandbox"
   projectName?: string
-  provisionWorkspace?: boolean
 }): Promise<FastifyInstance> {
   const workspaceRoot = resolve(opts.workspaceRoot)
   const projectName = opts.projectName ?? (basename(workspaceRoot) || "workspace")
@@ -129,7 +127,7 @@ export async function createLocalWorkspacesModeApp(opts: {
   const app = fastify({ logger: false, bodyLimit: 16 * 1024 * 1024 })
   const runtimeHost = await createPluginFrontRuntimeHost()
   await runtimeHost.registerRoutes(app)
-  const bridges = new Map<string, ReturnType<typeof createBridge>>()
+  const bridges = new Map<string, ReturnType<typeof createInMemoryBridge>>()
   const workspaceEventClosers = new Map<string, Set<() => void>>()
   const pluginRuntimes = new Map<string, { manager: InstanceType<typeof BoringPluginAssetManager>; ensureLoaded: Promise<void> }>()
 

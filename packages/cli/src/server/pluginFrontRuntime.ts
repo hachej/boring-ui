@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify"
-import { builtinModules, createRequire } from "node:module"
+import { builtinModules } from "node:module"
 import { existsSync } from "node:fs"
 import { readFile, realpath, stat } from "node:fs/promises"
 import { dirname, extname, isAbsolute, posix, relative, resolve as resolvePath } from "node:path"
@@ -48,6 +48,75 @@ const DIRECTORY_INDEX_CANDIDATES = [
   "index.css",
 ]
 const SAFE_SEGMENT_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/
+const RUNTIME_SINGLETON_ID_PREFIX = "\0boring-runtime-singleton:"
+const RUNTIME_SINGLETON_GLOBAL = "__BORING_RUNTIME_SINGLETONS__"
+const RUNTIME_SINGLETON_EXPORTS: Partial<Record<typeof HOST_SINGLETON_MODULES[number], readonly string[]>> = {
+  react: [
+    "Activity",
+    "Children",
+    "Component",
+    "Fragment",
+    "Profiler",
+    "PureComponent",
+    "StrictMode",
+    "Suspense",
+    "__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE",
+    "__COMPILER_RUNTIME",
+    "act",
+    "cache",
+    "cacheSignal",
+    "captureOwnerStack",
+    "cloneElement",
+    "createContext",
+    "createElement",
+    "createRef",
+    "forwardRef",
+    "isValidElement",
+    "lazy",
+    "memo",
+    "startTransition",
+    "unstable_useCacheRefresh",
+    "use",
+    "useActionState",
+    "useCallback",
+    "useContext",
+    "useDebugValue",
+    "useDeferredValue",
+    "useEffect",
+    "useEffectEvent",
+    "useId",
+    "useImperativeHandle",
+    "useInsertionEffect",
+    "useLayoutEffect",
+    "useMemo",
+    "useOptimistic",
+    "useReducer",
+    "useRef",
+    "useState",
+    "useSyncExternalStore",
+    "useTransition",
+    "version",
+  ],
+  "react-dom": [
+    "__DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE",
+    "createPortal",
+    "flushSync",
+    "preconnect",
+    "prefetchDNS",
+    "preinit",
+    "preinitModule",
+    "preload",
+    "preloadModule",
+    "requestFormReset",
+    "unstable_batchedUpdates",
+    "useFormState",
+    "useFormStatus",
+    "version",
+  ],
+  "react-dom/client": ["createRoot", "hydrateRoot", "version"],
+  "react/jsx-runtime": ["Fragment", "jsx", "jsxs"],
+  "react/jsx-dev-runtime": ["Fragment", "jsxDEV"],
+}
 
 export interface PluginFrontRuntimeDiagnostic {
   level: "info" | "warn" | "error"
@@ -256,12 +325,33 @@ function buildViteProxyUrl(basePath: string, targetPath: string): string {
   return `${basePath}/__vite/proxy/${encodeURIComponent(targetPath.slice(1))}`
 }
 
+function buildViteSingletonUrl(basePath: string, source: string): string {
+  return `${basePath}/__vite/singleton/${encodeURIComponent(source)}`
+}
+
+function optimizedDependencySingletonSource(targetPath: string): typeof HOST_SINGLETON_MODULES[number] | undefined {
+  const cleanPath = targetPath.split("?")[0]
+  const fileName = cleanPath.slice(cleanPath.lastIndexOf("/") + 1)
+  const sourceByFileName: Record<string, typeof HOST_SINGLETON_MODULES[number]> = {
+    "react.js": "react",
+    "react-dom.js": "react-dom",
+    "react-dom_client.js": "react-dom/client",
+    "react_jsx-runtime.js": "react/jsx-runtime",
+    "react_jsx-dev-runtime.js": "react/jsx-dev-runtime",
+  }
+  return sourceByFileName[fileName]
+}
+
 function rewriteViteSupportUrls(code: string, basePath: string): string {
   return code
     .replaceAll("/@vite/client", `${basePath}/__vite/client`)
     .replace(/(["'])\/(?:@id|node_modules|packages)\/([^"']+)\1/g, (match, quote: string) => {
       const originalPath = match.slice(1, -1)
-      return `${quote}${buildViteProxyUrl(basePath, originalPath)}${quote}`
+      const singletonSource = optimizedDependencySingletonSource(originalPath)
+      const rewrittenPath = singletonSource
+        ? buildViteSingletonUrl(basePath, singletonSource)
+        : buildViteProxyUrl(basePath, originalPath)
+      return `${quote}${rewrittenPath}${quote}`
     })
 }
 
@@ -273,7 +363,7 @@ function isImplicitViteSupportPath(path: string, basePath: string): boolean {
 function extractMintedSupportPaths(code: string, basePath: string): string[] {
   const paths = new Set<string>()
   const escapedBasePath = basePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-  const supportPattern = new RegExp(`${escapedBasePath}\\/__vite\\/(?:client|proxy\\/[^"'\\s)]+)`, "g")
+  const supportPattern = new RegExp(`${escapedBasePath}\\/__vite\\/(?:client|proxy\\/[^"'\\s)]+|singleton\\/[^"'\\s)]+)`, "g")
   let match: RegExpExecArray | null
   while ((match = supportPattern.exec(code)) !== null) {
     const value = match[0]
@@ -520,16 +610,33 @@ function findWorkspaceRoot(from: string): string {
   }
 }
 
+function virtualSingletonId(source: string): string {
+  return `${RUNTIME_SINGLETON_ID_PREFIX}${source}`
+}
+
+function sourceFromVirtualSingletonId(id: string): typeof HOST_SINGLETON_MODULES[number] | undefined {
+  if (!id.startsWith(RUNTIME_SINGLETON_ID_PREFIX)) return undefined
+  const source = id.slice(RUNTIME_SINGLETON_ID_PREFIX.length)
+  return HOST_SINGLETON_MODULES.includes(source as typeof HOST_SINGLETON_MODULES[number])
+    ? source as typeof HOST_SINGLETON_MODULES[number]
+    : undefined
+}
+
+function runtimeSingletonModuleCode(source: typeof HOST_SINGLETON_MODULES[number]): string | undefined {
+  const exports = RUNTIME_SINGLETON_EXPORTS[source]
+  if (!exports) return undefined
+  const exportLines = exports.map((name) => `export const ${name} = singleton[${JSON.stringify(name)}];`)
+  return [
+    `const singletons = globalThis[${JSON.stringify(RUNTIME_SINGLETON_GLOBAL)}];`,
+    `const singleton = singletons && singletons[${JSON.stringify(source)}];`,
+    `if (!singleton) throw new Error(${JSON.stringify(`missing runtime singleton: ${source}`)});`,
+    "export default singleton;",
+    ...exportLines,
+  ].join("\n")
+}
+
 function createRuntimeSingletonResolve(repoRoot: string): { alias: Array<{ find: RegExp; replacement: string }>; dedupe: string[] } {
-  const require = createRequire(import.meta.url)
-  const reactRequire = (id: string) => require.resolve(id)
-  const alias = [
-    { find: /^react$/, replacement: reactRequire("react") },
-    { find: /^react-dom$/, replacement: reactRequire("react-dom") },
-    { find: /^react-dom\/client$/, replacement: reactRequire("react-dom/client") },
-    { find: /^react\/jsx-runtime$/, replacement: reactRequire("react/jsx-runtime") },
-    { find: /^react\/jsx-dev-runtime$/, replacement: reactRequire("react/jsx-dev-runtime") },
-  ]
+  const alias: Array<{ find: RegExp; replacement: string }> = []
   const localWorkspaceAliases = [
     ["@hachej/boring-workspace/plugin", resolvePath(repoRoot, "packages", "workspace", "dist", "plugin.js"), resolvePath(repoRoot, "packages", "workspace", "src", "plugin.ts")],
     ["@hachej/boring-workspace/events", resolvePath(repoRoot, "packages", "workspace", "dist", "events.js"), resolvePath(repoRoot, "packages", "workspace", "src", "front", "events", "index.ts")],
@@ -646,7 +753,10 @@ export async function createPluginFrontRuntimeHost(
             )
           }
           if (isBareImport(source)) {
-            if (HOST_SINGLETON_MODULES.includes(source as typeof HOST_SINGLETON_MODULES[number])) return source
+            if (HOST_SINGLETON_MODULES.includes(source as typeof HOST_SINGLETON_MODULES[number])) {
+              const code = runtimeSingletonModuleCode(source as typeof HOST_SINGLETON_MODULES[number])
+              return code ? virtualSingletonId(source) : source
+            }
             return null
           }
           if (!source.startsWith(".") && !source.startsWith("..")) return null
@@ -656,6 +766,9 @@ export async function createPluginFrontRuntimeHost(
           return buildRuntimeUrl(basePath, tracked.workspaceId, tracked.pluginId, tracked.revision, importedSubpath)
         },
         async load(id) {
+          const singletonSource = sourceFromVirtualSingletonId(id)
+          if (singletonSource) return runtimeSingletonModuleCode(singletonSource) ?? null
+
           const context = parseRuntimeContext(id, basePath)
           if (!context) return null
           const tracked = getTrackedPlugin(context.workspaceId, context.pluginId)
@@ -1009,6 +1122,36 @@ export async function createPluginFrontRuntimeHost(
       }
       request.raw.url = "/@vite/client"
       await forwardToVite(request, reply)
+    })
+    app.get(`${basePath}/__vite/singleton/*`, async (request, reply) => {
+      const { "*": encodedSource } = request.params as { "*": string }
+      const mintedPath = request.raw.url?.split("?")[0] ?? `${basePath}/__vite/singleton/${encodedSource}`
+      if (!isMintedSupportPath(mintedPath)) {
+        const apiError = toApiError(new PluginFrontRuntimeError(
+          ErrorCode.enum.PATH_NOT_FOUND,
+          404,
+          "validate",
+          "vite singleton path was not minted by a validated runtime module",
+          { targetPath: mintedPath },
+        ))
+        return reply.code(apiError.statusCode).send(apiError.body)
+      }
+      const source = decodeURIComponent(encodedSource)
+      const singletonSource = HOST_SINGLETON_MODULES.includes(source as typeof HOST_SINGLETON_MODULES[number])
+        ? source as typeof HOST_SINGLETON_MODULES[number]
+        : undefined
+      const code = singletonSource ? runtimeSingletonModuleCode(singletonSource) : undefined
+      if (!code) {
+        const apiError = toApiError(new PluginFrontRuntimeError(
+          ErrorCode.enum.PLUGIN_RUNTIME_UNSAFE_IMPORT,
+          400,
+          "validate",
+          "unsupported runtime singleton path",
+          { source },
+        ))
+        return reply.code(apiError.statusCode).send(apiError.body)
+      }
+      return reply.type("application/javascript; charset=utf-8").send(code)
     })
     app.get(`${basePath}/__vite/proxy/*`, async (request, reply) => {
       const { "*": encodedTarget } = request.params as { "*": string }

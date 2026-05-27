@@ -57,9 +57,11 @@ describe("pluginFrontRuntime", () => {
         '})',
       ].join("\n"),
       "front/panel.tsx": [
+        'import { useState } from "react"',
         'import { label } from "../shared/message"',
         'export function Panel() {',
-        '  return <div className="runtime-panel">{label}</div>',
+        '  const [value] = useState(label)',
+        '  return <div className="runtime-panel">{value}</div>',
         '}',
       ].join("\n"),
       "front/styles.css": ".runtime-panel { color: tomato; }\n",
@@ -90,6 +92,13 @@ describe("pluginFrontRuntime", () => {
       })
       expect(panel.statusCode).toBe(200)
       expect(panel.body).toContain(`${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/shared/message.ts`)
+      expect(panel.body).toContain(`${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/singleton/react`)
+      const reactSingletonPath = panel.body.match(/"(\/api\/v1\/agent-plugins\/runtime\/__vite\/singleton\/react)"/)?.[1]
+      expect(reactSingletonPath).toBeTruthy()
+      const reactSingleton = await app.inject({ method: "GET", url: reactSingletonPath! })
+      expect(reactSingleton.statusCode).toBe(200)
+      expect(reactSingleton.body).toContain("export const useEffectEvent")
+      expect(reactSingleton.body).toContain("export const Activity")
 
       const stylesheet = await app.inject({
         method: "GET",

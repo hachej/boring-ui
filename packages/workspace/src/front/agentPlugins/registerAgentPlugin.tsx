@@ -1,3 +1,8 @@
+import * as React from "react"
+import * as ReactDom from "react-dom"
+import * as ReactDomClient from "react-dom/client"
+import * as ReactJsxDevRuntime from "react/jsx-dev-runtime"
+import * as ReactJsxRuntime from "react/jsx-runtime"
 import { useEffect, useRef } from "react"
 import { ErrorCode } from "@hachej/boring-agent/shared"
 import {
@@ -12,6 +17,23 @@ import type { SurfaceOpenRequest, SurfaceResolverConfig } from "../../shared/typ
 import type { CommandConfig } from "../registry/types"
 import { useCatalogRegistry, useCommandRegistry, useRegistry, useSurfaceResolverRegistry } from "../registry/RegistryProvider"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "./reloadEvent"
+
+declare global {
+  // Native runtime plugin modules are transformed by the CLI runtime host, not
+  // bundled into the app. Keep React imports shared with the host app so plugin
+  // components can use hooks without loading a second React copy.
+  // eslint-disable-next-line no-var
+  var __BORING_RUNTIME_SINGLETONS__: Record<string, unknown> | undefined
+}
+
+globalThis.__BORING_RUNTIME_SINGLETONS__ = {
+  ...globalThis.__BORING_RUNTIME_SINGLETONS__,
+  react: React,
+  "react-dom": ReactDom,
+  "react-dom/client": ReactDomClient,
+  "react/jsx-dev-runtime": ReactJsxDevRuntime,
+  "react/jsx-runtime": ReactJsxRuntime,
+}
 
 type RuntimePluginBrowserEvent =
   | (Extract<BoringPluginEvent, { type: "boring.plugin.load" }> & { workspaceId?: string; replay?: boolean })

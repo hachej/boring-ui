@@ -106,7 +106,7 @@ function adaptPiTool(piTool: ReturnType<typeof createBashToolDefinition>): Agent
     name: piTool.name,
     description: piTool.description,
     promptSnippet: piTool.promptSnippet,
-    parameters: piTool.parameters as Record<string, unknown>,
+    parameters: piTool.parameters as unknown as Record<string, unknown>,
     async execute(params, ctx) {
       const result = await piTool.execute(
         ctx.toolCallId,
