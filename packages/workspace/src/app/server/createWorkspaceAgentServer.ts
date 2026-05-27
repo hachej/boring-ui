@@ -142,6 +142,8 @@ export interface CreateWorkspaceAgentServerOptions
   additionalBoringPluginDirs?: string[]
   /** Optional host-owned front-target override for boring plugin list/event payloads. */
   boringPluginFrontTargetResolver?: BoringPluginFrontTargetResolver
+  /** Preserve legacy `/@fs/...` frontUrl payloads alongside frontTarget. Defaults to true. */
+  boringPluginIncludeLegacyFrontUrl?: boolean
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -580,6 +582,7 @@ export async function createWorkspaceAgentServer(
     pluginDirs: boringPluginDirs,
     errorRoot: join(workspaceRoot, ".pi", "extensions"),
     frontTargetResolver: opts.boringPluginFrontTargetResolver,
+    includeLegacyFrontUrl: opts.boringPluginIncludeLegacyFrontUrl,
   })
 
   const buildRuntimeProvisioningInputs = () => mergeRuntimeProvisioningInputs([

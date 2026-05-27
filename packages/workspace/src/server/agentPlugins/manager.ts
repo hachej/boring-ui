@@ -45,6 +45,11 @@ export interface BoringPluginAssetManagerOptions {
    * payloads preserve the existing `frontUrl` (`/@fs/...`) fallback only.
    */
   frontTargetResolver?: BoringPluginFrontTargetResolver
+  /**
+   * Keep legacy `/@fs/...` frontUrl payloads alongside frontTarget. Defaults
+   * to true for back-compat; packaged CLI folder/workspaces mode can disable it.
+   */
+  includeLegacyFrontUrl?: boolean
 }
 
 export interface LoadBoringAssetsError {
@@ -184,6 +189,7 @@ export class BoringPluginAssetManager {
   private readonly pluginDirs: string[]
   private readonly errorRoot: string
   private readonly frontTargetResolver?: BoringPluginFrontTargetResolver
+  private readonly includeLegacyFrontUrl: boolean
   private readonly loaded = new Map<string, LoadedPluginRecord>()
   private readonly revisions = new Map<string, number>()
   private readonly listeners = new Set<Listener>()
@@ -194,6 +200,7 @@ export class BoringPluginAssetManager {
     this.pluginDirs = options.pluginDirs
     this.errorRoot = options.errorRoot ?? join(process.cwd(), ".pi", "extensions") // callers MUST override errorRoot in non-trivial deployments
     this.frontTargetResolver = options.frontTargetResolver
+    this.includeLegacyFrontUrl = options.includeLegacyFrontUrl ?? true
   }
 
   preflight(): BoringPluginPreflightResult {
@@ -304,7 +311,7 @@ export class BoringPluginAssetManager {
           boring: plugin.boring,
           version: plugin.version,
           revision,
-          ...(plugin.frontUrl ? { frontUrl: plugin.frontUrl } : {}),
+          ...(this.frontUrlPayload(plugin.frontUrl)),
           ...(frontTarget ? { frontTarget } : {}),
           ...(requiresRestart.length > 0 ? { requiresRestart } : {}),
         }
@@ -355,9 +362,14 @@ export class BoringPluginAssetManager {
       ...(plugin.pi ? { pi: plugin.pi } : {}),
       version: plugin.version,
       revision: plugin.revision,
-      ...(plugin.frontUrl ? { frontUrl: plugin.frontUrl } : {}),
+      ...(this.frontUrlPayload(plugin.frontUrl)),
       ...(plugin.frontTarget ? { frontTarget: plugin.frontTarget } : {}),
     }
+  }
+
+  private frontUrlPayload(frontUrl: string | undefined): Pick<BoringPluginListEntry, "frontUrl"> | Record<string, never> {
+    if (!this.includeLegacyFrontUrl || !frontUrl) return {}
+    return { frontUrl }
   }
 
   private resolveFrontTarget(plugin: BoringServerPluginManifest, revision: number): BoringPluginFrontTarget | undefined {

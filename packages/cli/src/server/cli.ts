@@ -206,6 +206,47 @@ async function checkAuth(): Promise<number> {
   return registry.getAvailable().length
 }
 
+const FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID = "folder"
+const RUNTIME_PLUGIN_TRUST_LABEL = "Trusted local runtime plugins"
+const RUNTIME_PLUGIN_TRUST_DESCRIPTION = "Loads plugin UI code from trusted local Pi extension roots through the CLI-owned runtime module host."
+
+export async function createFolderModeApp(opts: {
+  workspaceRoot: string
+  mode: RuntimeMode
+  projectName?: string
+  provisionWorkspace?: boolean
+}): Promise<FastifyInstance> {
+  const workspaceRoot = resolve(opts.workspaceRoot)
+  const projectName = opts.projectName ?? (basename(workspaceRoot) || "workspace")
+  const [{ createWorkspaceAgentServer }, { createPluginFrontRuntimeHost }] = await Promise.all([
+    import("@hachej/boring-workspace/app/server"),
+    import("./pluginFrontRuntime.js"),
+  ])
+  const runtimeHost = await createPluginFrontRuntimeHost()
+  const app = await createWorkspaceAgentServer({
+    workspaceRoot,
+    mode: opts.mode,
+    logger: false,
+    provisionWorkspace: opts.provisionWorkspace,
+    additionalBoringPluginDirs: [getGlobalPiExtensionsRoot()],
+    boringPluginFrontTargetResolver: runtimeHost.createFrontTargetResolver(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID),
+    boringPluginIncludeLegacyFrontUrl: false,
+  })
+  await runtimeHost.registerRoutes(app as FastifyInstance)
+
+  app.get("/api/v1/workspace/meta", async () => ({
+    workspaceRoot,
+    projectName,
+    version: CLI_VERSION,
+    runtimePluginFrontLoadingEnabled: true,
+    runtimePluginTrustLabel: RUNTIME_PLUGIN_TRUST_LABEL,
+    runtimePluginTrustDescription: RUNTIME_PLUGIN_TRUST_DESCRIPTION,
+    runtimePluginDiagnosticsEnabled: false,
+  }))
+
+  return app as FastifyInstance
+}
+
 async function startFolderMode(opts: {
   folderArg?: string
   publicDir: string
@@ -225,26 +266,11 @@ async function startFolderMode(opts: {
   console.log(`  host       ${opts.host}`)
   if (modelCount === 0) console.log(AUTH_GUIDE)
 
-  const runtimeProvisioning = await provisionCliWorkspaceRuntime({
+  const app = await createFolderModeApp({
     workspaceRoot,
     mode: opts.mode,
-  })
-
-  const { createWorkspaceAgentServer } = await import("@hachej/boring-workspace/app/server")
-  const app = await createWorkspaceAgentServer({
-    workspaceRoot,
-    mode: opts.mode,
-    logger: false,
-    provisionWorkspace: false,
-    runtimeProvisioning,
-    additionalBoringPluginDirs: [getGlobalPiExtensionsRoot()],
-  })
-
-  app.get("/api/v1/workspace/meta", async () => ({
-    workspaceRoot,
     projectName,
-    version: CLI_VERSION,
-  }))
+  })
 
   await registerStatic(app as FastifyInstance, opts.publicDir)
   await app.listen({ port: opts.port, host: opts.host })
