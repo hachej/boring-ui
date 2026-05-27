@@ -349,15 +349,51 @@ export function WorkspaceAgentFront<
       : hasExplicitSessionProps
         ? activeSessionId ?? null
         : localSessions.activeId
+  const requestedAutoSubmitInitialDraft = chatParams?.autoSubmitInitialDraft === true
+  const needsFreshRemoteSessionForAutoSubmit = requestedAutoSubmitInitialDraft && shouldUseRemoteSessions && !hasExplicitSessionProps
+  const [autoSubmitSessionId, setAutoSubmitSessionId] = useState<string | null | undefined>(() => (
+    needsFreshRemoteSessionForAutoSubmit ? null : undefined
+  ))
+  const autoSubmitSessionWorkspaceRef = useRef(workspaceId)
+  const autoSubmitSessionCreateRef = useRef(false)
+  useEffect(() => {
+    if (autoSubmitSessionWorkspaceRef.current !== workspaceId) {
+      autoSubmitSessionWorkspaceRef.current = workspaceId
+      autoSubmitSessionCreateRef.current = false
+      setAutoSubmitSessionId(needsFreshRemoteSessionForAutoSubmit ? null : undefined)
+      return
+    }
+    if (needsFreshRemoteSessionForAutoSubmit && autoSubmitSessionId === undefined) {
+      autoSubmitSessionCreateRef.current = false
+      setAutoSubmitSessionId(null)
+    }
+  }, [autoSubmitSessionId, needsFreshRemoteSessionForAutoSubmit, workspaceId])
+  useEffect(() => {
+    if (!sessionApi || autoSubmitSessionId !== null) return
+    if (autoSubmitSessionCreateRef.current) return
+    autoSubmitSessionCreateRef.current = true
+    void Promise.resolve(sessionApi.create({ title: defaultSessionTitle }))
+      .then((session) => {
+        if (typeof (session as { id?: unknown } | null | undefined)?.id !== "string") {
+          throw new Error("auto_submit_session_create_failed")
+        }
+        setAutoSubmitSessionId((session as { id: string }).id)
+      })
+      .catch(() => {
+        autoSubmitSessionCreateRef.current = false
+        setAutoSubmitSessionId(undefined)
+      })
+  }, [autoSubmitSessionId, defaultSessionTitle, sessionApi])
+  const effectiveActiveSessionId = autoSubmitSessionId !== undefined ? autoSubmitSessionId ?? null : resolvedActiveId
   const rawSwitch = remoteSessionsPending
     ? remoteSessionActionsUnavailable
     : sessionApi?.switch ?? onSwitchSession ?? localSessionStore.switchTo
   const resolvedSwitch = useCallback((nextSessionId: string) => {
-    if (resolvedActiveId && nextSessionId !== resolvedActiveId) {
-      window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: resolvedActiveId } }))
+    if (effectiveActiveSessionId && nextSessionId !== effectiveActiveSessionId) {
+      window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: effectiveActiveSessionId } }))
     }
     return rawSwitch(nextSessionId)
-  }, [rawSwitch, resolvedActiveId])
+  }, [effectiveActiveSessionId, rawSwitch])
   const resolvedCreate = remoteSessionsPending
     ? remoteSessionActionsUnavailable
     : sessionApi
@@ -366,7 +402,7 @@ export function WorkspaceAgentFront<
   const resolvedDelete = remoteSessionsPending
     ? remoteSessionActionsUnavailable
     : sessionApi?.delete ?? onDeleteSession ?? localSessionStore.remove
-  const resolvedSessionTitle = resolvedSessions.find((session) => session.id === resolvedActiveId)?.title ?? undefined
+  const resolvedSessionTitle = resolvedSessions.find((session) => session.id === effectiveActiveSessionId)?.title ?? undefined
 
   const [navOpen, setNavOpen] = useStoredBooleanState(
     `${shellStorageKey}:drawer`,
@@ -409,6 +445,7 @@ export function WorkspaceAgentFront<
 
   useEffect(() => {
     if (!sessionApi || sessionApi.loading) return
+    if (autoSubmitSessionId !== undefined) return
     if (sessionApi.sessions.length > 0) {
       autoCreateSessionRef.current = false
       return
@@ -418,7 +455,7 @@ export function WorkspaceAgentFront<
     void Promise.resolve(sessionApi.create({ title: defaultSessionTitle })).catch(() => {
       autoCreateSessionRef.current = false
     })
-  }, [defaultSessionTitle, sessionApi])
+  }, [autoSubmitSessionId, defaultSessionTitle, sessionApi])
 
   useEffect(() => {
     surfaceOpenRef.current = surfaceOpen
@@ -468,8 +505,22 @@ export function WorkspaceAgentFront<
     () => [...(extraPanels ?? []), ...pluginPanelIds],
     [extraPanels, pluginPanelIds],
   )
-  const chatSessionId = resolvedActiveId ?? resolvedSessions[0]?.id ?? "default"
-  const hydrateMessages = provisionWorkspace !== false && (
+  const chatSessionId = effectiveActiveSessionId ?? (autoSubmitSessionId !== undefined ? "default" : resolvedSessions[0]?.id ?? "default")
+  const [autoSubmitHydrationDisabled, setAutoSubmitHydrationDisabled] = useState(requestedAutoSubmitInitialDraft)
+  const autoSubmitHydrationWorkspaceRef = useRef(workspaceId)
+  useEffect(() => {
+    if (autoSubmitHydrationWorkspaceRef.current !== workspaceId) {
+      autoSubmitHydrationWorkspaceRef.current = workspaceId
+      setAutoSubmitHydrationDisabled(requestedAutoSubmitInitialDraft)
+      return
+    }
+    if (requestedAutoSubmitInitialDraft) {
+      setAutoSubmitHydrationDisabled(true)
+    }
+  }, [requestedAutoSubmitInitialDraft, workspaceId])
+  const autoSubmittingInitialDraft = requestedAutoSubmitInitialDraft
+  const delayAutoSubmitDraft = autoSubmittingInitialDraft && shouldUseRemoteSessions && !effectiveActiveSessionId
+  const hydrateMessages = !autoSubmitHydrationDisabled && provisionWorkspace !== false && (
     shouldUseRemoteSessions ? remoteSessionsAvailable && Boolean(resolvedActiveId) : true
   )
   const handleWorkspaceWarmupStatusChange = useCallback((status: WorkspaceWarmupStatus) => {
@@ -494,8 +545,8 @@ export function WorkspaceAgentFront<
   }, [getSurface, isWorkbenchOpen, openWorkbench])
 
   useEffect(() => {
-    if (resolvedActiveId) onActiveSessionIdChange?.(resolvedActiveId)
-  }, [resolvedActiveId, onActiveSessionIdChange])
+    if (effectiveActiveSessionId) onActiveSessionIdChange?.(effectiveActiveSessionId)
+  }, [effectiveActiveSessionId, onActiveSessionIdChange])
 
   const workbenchBlocked = workspaceWarmupStatus.status !== "ready"
   const workbenchOverlay = workbenchBlocked ? <WorkbenchWarmupOverlay status={workspaceWarmupStatus} /> : undefined
@@ -503,6 +554,7 @@ export function WorkspaceAgentFront<
   const centerParams = useMemo(
     () => ({
       ...chatParams,
+      ...(delayAutoSubmitDraft ? { autoSubmitInitialDraft: false, initialDraft: undefined } : {}),
       sessionId: chatSessionId,
       requestHeaders: resolvedRequestHeaders,
       bridgeEndpoint,
@@ -513,12 +565,19 @@ export function WorkspaceAgentFront<
       extraCommands,
       workspaceWarmupStatus,
       hydrateMessages,
+      onAutoSubmitInitialDraftSettled: () => {
+        autoSubmitSessionCreateRef.current = false
+        setAutoSubmitHydrationDisabled(false)
+        setAutoSubmitSessionId(undefined)
+        const existing = chatParams?.onAutoSubmitInitialDraftSettled
+        if (typeof existing === "function") existing()
+      },
       // Forward the explicit prop when set. Omitting the key (when undefined)
       // lets ChatPanel apply its own default (true) and avoids overriding a
       // value passed through chatParams.
       ...(hotReloadEnabled !== undefined ? { hotReloadEnabled } : {}),
     }),
-    [chatParams, chatSessionId, resolvedRequestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench, extraCommands, workspaceWarmupStatus, hydrateMessages, hotReloadEnabled],
+    [chatParams, delayAutoSubmitDraft, chatSessionId, resolvedRequestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench, extraCommands, workspaceWarmupStatus, hydrateMessages, hotReloadEnabled],
   )
 
   const surfaceParams = useMemo<SurfaceShellProps>(() => ({

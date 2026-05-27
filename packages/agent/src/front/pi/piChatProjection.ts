@@ -60,6 +60,36 @@ function applyBufferedDeltas(items: UIMessage[], deltas: BufferedPiDelta[]): UIM
   )
 }
 
+function messageVisibleText(message: UIMessage): string {
+  return (message.parts ?? [])
+    .filter((part) => part.type === 'text')
+    .map((part) => ('text' in part && typeof part.text === 'string' ? part.text : ''))
+    .join('\n')
+    .trim()
+}
+
+function dedupeAdjacentSimpleMessages(messages: UIMessage[]): UIMessage[] {
+  return messages.reduce<UIMessage[]>((acc, message) => {
+    const previous = acc[acc.length - 1]
+    const previousText = previous ? messageVisibleText(previous) : ''
+    const currentText = messageVisibleText(message)
+    const previousHasOnlyTextParts = previous ? (previous.parts ?? []).every((part) => part.type === 'text') : false
+    const currentHasOnlyTextParts = (message.parts ?? []).every((part) => part.type === 'text')
+    if (
+      previous &&
+      previous.role === message.role &&
+      previousHasOnlyTextParts &&
+      currentHasOnlyTextParts &&
+      previousText.length > 0 &&
+      previousText === currentText
+    ) {
+      return acc
+    }
+    acc.push(message)
+    return acc
+  }, [])
+}
+
 export function rebuildPiMessagesFromDataParts(sourceMessages: UIMessage[]): UIMessage[] {
   const dataParts = sourceMessages.flatMap((message) => message.parts ?? []).map(asPiDataPart).filter(Boolean) as Array<{ type: string; data?: Record<string, unknown> }>
   if (dataParts.length === 0) return []
@@ -375,8 +405,13 @@ export function usePiChatProjection({
     if (status !== 'ready') return
     if (prev !== 'streaming' && prev !== 'submitted') return
     if (!sessionId || piMessages.length === 0) return
-    const canonicalMessages = rebuildPiMessagesFromDataParts(piMessages)
-    const messagesToPersist = canonicalMessages.length > 0 ? mergeRebuiltPiMessages(piMessages, canonicalMessages) : piMessages
+    // `piMessages` is already the canonical projection built from live pi
+    // events. Persist that projection merged over the AI SDK store so local
+    // user turns survive while stale data-pi-only assistant envelopes are
+    // replaced before they can become the next hydration source of truth.
+    const messagesToPersist = dedupeAdjacentSimpleMessages(
+      mergeRebuiltPiMessages(messages, piMessages),
+    )
     const stripped = messagesToPersist.map((msg) => ({
       ...msg,
       parts: msg.parts?.filter((part: unknown) => {

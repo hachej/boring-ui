@@ -130,6 +130,14 @@ function hasVisibleMessageContent(message: UIMessage): boolean {
   })
 }
 
+function messageText(message: UIMessage): string {
+  return (message.parts ?? [])
+    .filter(isTextPart)
+    .map((part) => part.text)
+    .join('\n')
+    .trim()
+}
+
 function hasPiVisibleDataParts(messages: UIMessage[]): boolean {
   return messages.some((message) =>
     (message.parts ?? []).some((part) => {
@@ -156,7 +164,8 @@ function collectSdkRepresentedMessageIds(messages: UIMessage[]): Set<string> {
     if (!hasVisibleMessageContent(message)) continue
     represented.add(message.id)
     for (const part of message.parts ?? []) {
-      if (dataPartType(part) !== 'data-pi-message-start') continue
+      const type = dataPartType(part)
+      if (type !== 'data-pi-message-start' && type !== 'data-pi-message-end') continue
       const data = (part as { data?: Record<string, unknown> }).data
       if (typeof data?.messageId === 'string') represented.add(data.messageId)
     }
@@ -174,6 +183,20 @@ function uniqueVisiblePiMessages(messages: UIMessage[]): UIMessage[] {
     out.push(message)
   }
   return out
+}
+
+function sdkVisibleMessagesWithoutPiOnlyAssistants(messages: UIMessage[]): UIMessage[] {
+  return messages.filter((message) => {
+    if (!hasVisibleMessageContent(message)) return false
+    if (message.role !== 'assistant') return true
+    const hasVisibleAssistantPart = (message.parts ?? []).some((part) => {
+      if (isTextPart(part)) return !isBlankTextPart(part)
+      if (isToolUIPart(part)) return true
+      const reasoning = getReasoningPart(part)
+      return Boolean(reasoning?.text.trim())
+    })
+    return hasVisibleAssistantPart
+  })
 }
 
 function getSettledPiAssistantIds(message: UIMessage): string[] {
@@ -343,10 +366,16 @@ export interface ChatPanelProps {
    * is zero-cost when off.
    */
   debug?: boolean
-  /** Draft text restored into the composer on mount/update. Never auto-sent. */
+  /** Draft text restored into the composer on mount/update. */
   initialDraft?: string
+  /** Auto-submit initialDraft once after it is restored. Defaults to false. */
+  autoSubmitInitialDraft?: boolean
   /** Called after initialDraft is applied to the composer. */
   onDraftRestored?: () => void
+  /** Called after an auto-submitted initial draft is accepted for sending. */
+  onAutoSubmitInitialDraftAccepted?: () => void
+  /** Called after an auto-submitted initial draft finishes its turn. */
+  onAutoSubmitInitialDraftSettled?: () => void
   /**
    * Runs before any agent/model/session-history network send. Return false to
    * cancel submission and keep the draft in the composer.
@@ -385,7 +414,10 @@ export function ChatPanel(props: ChatPanelProps) {
     onOpenArtifact,
     debug = false,
     initialDraft,
+    autoSubmitInitialDraft = false,
     onDraftRestored,
+    onAutoSubmitInitialDraftAccepted,
+    onAutoSubmitInitialDraftSettled,
     onBeforeSubmit,
     serverResourcesEnabled = true,
     emptyPlacement = 'default',
@@ -399,6 +431,11 @@ export function ChatPanel(props: ChatPanelProps) {
   const scrollToBottomRef = useRef<() => void>(() => {})
   const piDataHandlerRef = useRef<(part: unknown) => void>(() => {})
   const followUpDataHandlerRef = useRef<(part: unknown) => void>(() => {})
+  const autoSubmittedDraftRef = useRef<string | undefined>(undefined)
+  const autoSubmittingDraftRef = useRef<string | undefined>(undefined)
+  const pendingAutoSubmitUnlockRef = useRef<string | undefined>(undefined)
+  const pendingAutoSubmitSettleRef = useRef<string | undefined>(undefined)
+  const [acceptedAutoSubmittedDraft, setAcceptedAutoSubmittedDraft] = useState<string | undefined>(undefined)
 
   const {
     messages, sendMessage, setMessages, status, error, stop, clearError,
@@ -596,25 +633,49 @@ export function ChatPanel(props: ChatPanelProps) {
     const queuedPiTail = getQueuedPiTail(messages, piMessages)
     const sdkHasVisibleAssistant = hasStandardVisibleAssistantParts(messages)
 
+    let baseMessages: UIMessage[]
     if (sdkHasVisibleAssistant) {
       const mergedMessages = mergeSettledPiFallbacksInPlace(messages, piMessages)
-      return [
+      baseMessages = [
         ...mergedMessages,
         ...coalesceAssistantToolFragments(queuedPiTail),
         ...waitingTail,
       ]
+    } else if (piMessages.length > 0 && queuedPiTail.length > 0) {
+      baseMessages = [...coalesceAssistantToolFragments(piMessages), ...waitingTail]
+    } else if (piMessages.length > 0 && status === 'ready' && hasPiVisibleDataParts(messages)) {
+      baseMessages = [
+        ...sdkVisibleMessagesWithoutPiOnlyAssistants(messages),
+        ...coalesceAssistantToolFragments(piMessages),
+        ...waitingTail,
+      ]
+    } else {
+      baseMessages = [...messages, ...waitingTail]
     }
 
-    if (piMessages.length > 0 && queuedPiTail.length > 0) {
-      return [...coalesceAssistantToolFragments(piMessages), ...waitingTail]
-    }
+    const autoSubmittedDraft = acceptedAutoSubmittedDraft?.trim()
+    if (!autoSubmittedDraft) return baseMessages
+    const hasUserTurn = baseMessages.some((message) => message.role === 'user' && messageText(message).includes(autoSubmittedDraft))
+    if (hasUserTurn) return baseMessages
 
-    if (piMessages.length > 0 && status === 'ready' && hasPiVisibleDataParts(messages)) {
-      return [...coalesceAssistantToolFragments(piMessages), ...waitingTail]
+    const syntheticUserMessage: UIMessage = {
+      id: `auto-submitted-user:${sessionId}:${autoSubmittedDraft}`,
+      role: 'user',
+      parts: [{ type: 'text', text: autoSubmittedDraft }],
     }
-
-    return [...messages, ...waitingTail]
-  }, [messages, piMessages, projectedTailMessages, projectedStatusById, status])
+    let insertAt = baseMessages.length
+    for (let index = baseMessages.length - 1; index >= 0; index -= 1) {
+      if (baseMessages[index]?.role === 'assistant') {
+        insertAt = index
+        break
+      }
+    }
+    return [
+      ...baseMessages.slice(0, insertAt),
+      syntheticUserMessage,
+      ...baseMessages.slice(insertAt),
+    ]
+  }, [acceptedAutoSubmittedDraft, messages, piMessages, projectedTailMessages, projectedStatusById, sessionId, status])
   const emptyHero = emptyPlacement === 'hero' && displayMessages.length === 0
   const renderMessages = displayMessages
 
@@ -820,6 +881,48 @@ export function ChatPanel(props: ChatPanelProps) {
     )
   }
 
+  useEffect(() => {
+    const pendingDraft = pendingAutoSubmitUnlockRef.current
+    if (!pendingDraft) return
+    const localTurnStarted =
+      status === 'submitted' ||
+      status === 'streaming' ||
+      messages.some((message) =>
+        message.role === 'user' &&
+        message.parts.some((part) => isTextPart(part) && part.text.includes(pendingDraft)),
+      )
+    if (!localTurnStarted) return
+    pendingAutoSubmitUnlockRef.current = undefined
+    onAutoSubmitInitialDraftAccepted?.()
+  }, [messages, onAutoSubmitInitialDraftAccepted, status])
+  const prevAutoSubmitStatusRef = useRef(status)
+  useEffect(() => {
+    const prev = prevAutoSubmitStatusRef.current
+    prevAutoSubmitStatusRef.current = status
+    if (!pendingAutoSubmitSettleRef.current) return
+    if (status !== 'ready') return
+    if (prev !== 'submitted' && prev !== 'streaming') return
+    pendingAutoSubmitSettleRef.current = undefined
+    onAutoSubmitInitialDraftSettled?.()
+  }, [onAutoSubmitInitialDraftSettled, status])
+  useEffect(() => {
+    if (!autoSubmitInitialDraft) return
+    if (!initialDraft?.trim()) return
+    if (autoSubmittedDraftRef.current === initialDraft) return
+    if (autoSubmittingDraftRef.current === initialDraft) return
+    autoSubmittingDraftRef.current = initialDraft
+    void (async () => {
+      const result = await handleSubmit({ text: initialDraft, files: [] }, 'composer')
+      autoSubmittingDraftRef.current = undefined
+      if (result === false) return
+      autoSubmittedDraftRef.current = initialDraft
+      pendingAutoSubmitUnlockRef.current = initialDraft
+      pendingAutoSubmitSettleRef.current = initialDraft
+      setAcceptedAutoSubmittedDraft(initialDraft)
+      setComposerDraft('', false)
+    })()
+  }, [autoSubmitInitialDraft, handleSubmit, initialDraft, setComposerDraft])
+
   return (
     <ArtifactOpenProvider onOpenArtifact={onOpenArtifact}>
     <div
@@ -917,7 +1020,16 @@ export function ChatPanel(props: ChatPanelProps) {
                 // content, otherwise one continuous thought renders as
                 // duplicate adjacent "thoughts" widgets.
                 if (!isBlankTextPart(part)) {
-                  items.push({ kind: 'part', part, key })
+                  const previous = items[items.length - 1]
+                  const duplicateAdjacentAssistantText =
+                    role === 'assistant' &&
+                    isTextPart(part) &&
+                    previous?.kind === 'part' &&
+                    isTextPart(previous.part) &&
+                    previous.part.text.trim() === part.text.trim()
+                  if (!duplicateAdjacentAssistantText) {
+                    items.push({ kind: 'part', part, key })
+                  }
                 }
                 return items
               }
@@ -952,6 +1064,16 @@ export function ChatPanel(props: ChatPanelProps) {
                 // often arrive between consecutive tool calls. They should not
                 // split one visual "Used command · read" group into multiple
                 // dropdowns.
+              } else if (item.kind === 'part' && isTextPart(item.part)) {
+                const prev = acc[acc.length - 1]
+                const duplicateAdjacentAssistantText =
+                  role === 'assistant' &&
+                  prev?.kind === 'part' &&
+                  isTextPart(prev.part) &&
+                  prev.part.text.trim() === item.part.text.trim()
+                if (!duplicateAdjacentAssistantText) {
+                  acc.push(item)
+                }
               } else {
                 acc.push(item)
               }

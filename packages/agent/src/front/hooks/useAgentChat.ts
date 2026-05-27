@@ -92,16 +92,18 @@ export function useAgentChat(opts: UseAgentChatOptions) {
       .then((res) => (res.ok ? res.json() : null))
       .then((payload: { messages?: UIMessage[] } | null) => {
         if (aborted) return
+        const localTurnStarted = statusRef.current === 'submitted' || statusRef.current === 'streaming' || messagesRef.current.length > 0
         const serverMessages = payload?.messages
         if (Array.isArray(serverMessages) && serverMessages.length > 0) {
-          setMessages(serverMessages)
+          if (!localTurnStarted) setMessages(serverMessages)
           return
         }
-        loadFromCache()
+        if (!localTurnStarted) loadFromCache()
       })
       .catch(() => {
         if (aborted) return
-        loadFromCache()
+        const localTurnStarted = statusRef.current === 'submitted' || statusRef.current === 'streaming' || messagesRef.current.length > 0
+        if (!localTurnStarted) loadFromCache()
       })
       .finally(() => {
         if (!aborted) setHydrated(true)
@@ -117,6 +119,10 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   // new session before we get a chance to read it.
   const messages = chat.messages
   const status = chat.status
+  const messagesRef = useRef(messages)
+  const statusRef = useRef(status)
+  messagesRef.current = messages
+  statusRef.current = status
   useEffect(() => {
     if (opts.persistMessages === false) return
     if (!hydrated || !cacheKey) return

@@ -358,7 +358,7 @@ describe('ChatPanel (shadcn)', () => {
     )
   })
 
-  test('passes initialDraft to composer without auto-sending', () => {
+  test('passes initialDraft to composer without auto-sending by default', () => {
     const onDraftRestored = vi.fn()
 
     renderToStaticMarkup(
@@ -372,6 +372,160 @@ describe('ChatPanel (shadcn)', () => {
     expect(capturedTextareaProps?.defaultValue).toBe('restore this draft')
     expect(mockSendMessage).not.toHaveBeenCalled()
     expect(onDraftRestored).not.toHaveBeenCalled()
+  })
+
+  test('can auto-submit initialDraft once when opted in', async () => {
+    const onAutoSubmitInitialDraftAccepted = vi.fn()
+
+    const { rerender } = render(
+      <ChatPanel
+        sessionId="sess-auto-draft"
+        initialDraft="restore and send this"
+        autoSubmitInitialDraft
+        onAutoSubmitInitialDraftAccepted={onAutoSubmitInitialDraftAccepted}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        { text: 'restore and send this', files: [] },
+        {
+          body: {
+            sessionId: 'sess-auto-draft',
+            message: 'restore and send this',
+            attachments: [],
+          },
+        },
+      )
+    })
+
+    mockUseAgentChat.mockReturnValue({
+      messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'restore and send this' }] }],
+      sendMessage: mockSendMessage,
+      setMessages: mockSetMessages,
+      status: 'submitted',
+      error: undefined,
+    })
+    rerender(
+      <ChatPanel
+        sessionId="sess-auto-draft"
+        initialDraft="restore and send this"
+        autoSubmitInitialDraft
+        onAutoSubmitInitialDraftAccepted={onAutoSubmitInitialDraftAccepted}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(onAutoSubmitInitialDraftAccepted).toHaveBeenCalledOnce()
+    })
+  })
+
+  test('auto-submit only marks the turn settled after status returns to ready', async () => {
+    const onAutoSubmitInitialDraftSettled = vi.fn()
+
+    const { rerender } = render(
+      <ChatPanel
+        sessionId="sess-auto-draft-settled"
+        initialDraft="wait for settle"
+        autoSubmitInitialDraft
+        onAutoSubmitInitialDraftSettled={onAutoSubmitInitialDraftSettled}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        { text: 'wait for settle', files: [] },
+        {
+          body: {
+            sessionId: 'sess-auto-draft-settled',
+            message: 'wait for settle',
+            attachments: [],
+          },
+        },
+      )
+    })
+
+    mockUseAgentChat.mockReturnValue({
+      messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'wait for settle' }] }],
+      sendMessage: mockSendMessage,
+      setMessages: mockSetMessages,
+      status: 'submitted',
+      error: undefined,
+    })
+    rerender(
+      <ChatPanel
+        sessionId="sess-auto-draft-settled"
+        initialDraft="wait for settle"
+        autoSubmitInitialDraft
+        onAutoSubmitInitialDraftSettled={onAutoSubmitInitialDraftSettled}
+      />,
+    )
+
+    expect(onAutoSubmitInitialDraftSettled).not.toHaveBeenCalled()
+
+    mockUseAgentChat.mockReturnValue({
+      messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'wait for settle' }] }],
+      sendMessage: mockSendMessage,
+      setMessages: mockSetMessages,
+      status: 'ready',
+      error: undefined,
+    })
+    rerender(
+      <ChatPanel
+        sessionId="sess-auto-draft-settled"
+        initialDraft="wait for settle"
+        autoSubmitInitialDraft
+        onAutoSubmitInitialDraftSettled={onAutoSubmitInitialDraftSettled}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(onAutoSubmitInitialDraftSettled).toHaveBeenCalledOnce()
+    })
+  })
+
+  test('auto-submit can retry after an onBeforeSubmit rejection', async () => {
+    const onBeforeSubmit = vi.fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(undefined)
+
+    const { rerender } = render(
+      <ChatPanel
+        sessionId="sess-auto-draft-retry"
+        initialDraft="retry me"
+        autoSubmitInitialDraft
+        onBeforeSubmit={onBeforeSubmit}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(onBeforeSubmit).toHaveBeenCalledTimes(1)
+    })
+    expect(mockSendMessage).not.toHaveBeenCalled()
+
+    rerender(
+      <ChatPanel
+        sessionId="sess-auto-draft-retry"
+        initialDraft="retry me"
+        autoSubmitInitialDraft
+        onBeforeSubmit={onBeforeSubmit}
+        className="rerender"
+      />,
+    )
+
+    await waitFor(() => {
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        { text: 'retry me', files: [] },
+        {
+          body: {
+            sessionId: 'sess-auto-draft-retry',
+            message: 'retry me',
+            attachments: [],
+          },
+        },
+      )
+    })
+    expect(onBeforeSubmit).toHaveBeenCalledTimes(2)
   })
 
   test('onBeforeSubmit cancels normal submit before agent send', async () => {
@@ -1276,6 +1430,101 @@ describe('ChatPanel (shadcn)', () => {
 
       const html = renderToStaticMarkup(<ChatPanel sessionId="s-legacy-pi" />)
       expect(html).toContain('LEGACY_PI_TEXT')
+    })
+
+    test('does not duplicate a settled assistant when sdk-visible text already carries the same pi message end marker', () => {
+      mockPiProjection.piMessages = [
+        {
+          id: 'pi-dup-a1',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'DUPLICATE_ME_NOT' }],
+        },
+      ]
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          {
+            id: 'dup-envelope',
+            role: 'assistant',
+            parts: [
+              { type: 'data-pi-message-start', data: { messageId: 'pi-dup-a1', role: 'assistant' } } as any,
+              { type: 'data-pi-message-end', data: { messageId: 'pi-dup-a1', role: 'assistant', text: 'DUPLICATE_ME_NOT' } } as any,
+            ],
+          },
+          {
+            id: 'sdk-visible-a1',
+            role: 'assistant',
+            parts: [
+              { type: 'data-pi-message-end', data: { messageId: 'pi-dup-a1', role: 'assistant', text: 'DUPLICATE_ME_NOT' } } as any,
+              { type: 'text', text: 'DUPLICATE_ME_NOT' },
+            ],
+          },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-ready-pi-no-duplicate-visible-assistant" />)
+      expect((html.match(/DUPLICATE_ME_NOT/g) ?? []).length).toBe(1)
+    })
+
+    test('does not render identical adjacent assistant text parts twice', () => {
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          {
+            id: 'sdk-dup-text-a1',
+            role: 'assistant',
+            parts: [
+              { type: 'text', text: 'ADJACENT_DUPLICATE_TEXT' },
+              { type: 'text', text: 'ADJACENT_DUPLICATE_TEXT' },
+            ],
+          },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-adjacent-assistant-text-dedupe" />)
+      expect((html.match(/ADJACENT_DUPLICATE_TEXT/g) ?? []).length).toBe(1)
+    })
+
+    test('keeps visible sdk user turns when ready-state pi fallback supplies the assistant text', () => {
+      mockPiProjection.piMessages = [
+        {
+          id: 'pi-ready-a1',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'READY_PI_TEXT' }],
+        },
+      ]
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          {
+            id: 'sdk-u1',
+            role: 'user',
+            parts: [{ type: 'text', text: 'VISIBLE_USER_TEXT' }],
+          },
+          {
+            id: 'ready-envelope',
+            role: 'assistant',
+            parts: [
+              { type: 'data-pi-message-start', data: { messageId: 'pi-ready-a1', role: 'assistant' } } as any,
+              { type: 'data-pi-message-end', data: { messageId: 'pi-ready-a1', role: 'assistant', text: 'READY_PI_TEXT' } } as any,
+            ],
+          },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-ready-pi-user-kept" />)
+      expect(html).toContain('VISIBLE_USER_TEXT')
+      expect(html).toContain('READY_PI_TEXT')
+      expect(html.indexOf('VISIBLE_USER_TEXT')).toBeLessThan(html.indexOf('READY_PI_TEXT'))
     })
 
     test('consecutive tools stay in one collapsed group across non-rendered data parts', () => {

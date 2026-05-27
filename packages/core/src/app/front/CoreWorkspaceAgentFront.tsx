@@ -1,14 +1,11 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
-import { matchPath, Navigate, Route, useLocation, useParams } from 'react-router-dom'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Navigate, Route, useLocation, useParams } from 'react-router-dom'
 import {
   CoreFront,
   UserMenu,
   WorkspaceSwitcher,
-  routes,
   useCurrentWorkspace,
   useSession,
-  useSignIn,
-  useSignUp,
   useWorkspaceRouteStatus,
   type CoreFrontAuthPagesOverride,
 } from '../../front/index.js'
@@ -17,103 +14,22 @@ import {
   type WorkspaceAgentFrontProps,
   type WorkspaceAgentSession,
 } from '@hachej/boring-workspace/app/front'
-import { useWorkspaceAttention } from '@hachej/boring-workspace'
+import { ChatFirstAuthenticatedShell } from './chatFirst/ChatFirstAuthenticatedShell.js'
+import { ChatFirstPublicShell } from './chatFirst/ChatFirstPublicShell.js'
+import {
+  clearPendingChatEntry,
+  DEFAULT_CHAT_FIRST_PENDING_WORKSPACE_ID,
+  PENDING_CHAT_ENTRY_CHANGED_EVENT,
+  pendingChatEntryMatchesLocation,
+  readPendingChatEntry,
+  type PendingChatEntryState,
+  workspaceIdFromPath,
+} from './chatFirst/pendingChatEntry.js'
 
 const DEFAULT_WORKSPACE_ROUTE = '/workspace/:id'
 const DEFAULT_WORKSPACE_ID_PARAM = 'id'
-const PENDING_CHAT_ENTRY_KEY = 'boring:pending-chat-entry'
-const PENDING_CHAT_ENTRY_TTL_MS = 24 * 60 * 60 * 1000
-const DEFAULT_CHAT_FIRST_PENDING_WORKSPACE_ID = 'pending'
 
 type ChatEntryMode = 'auth-first' | 'chat-first'
-
-interface PendingChatEntryState {
-  draft: string
-  returnTo: string
-  intendedWorkspaceId?: string
-  createdAt: number
-}
-
-function browserSessionStorage(): Storage | null {
-  try {
-    return typeof window === 'undefined' ? null : window.sessionStorage
-  } catch {
-    return null
-  }
-}
-
-function safeReturnTo(pathname: string, search: string, hash: string): string {
-  const candidate = `${pathname || '/'}${search || ''}${hash || ''}`
-  if (!candidate.startsWith('/') || candidate.startsWith('//') || /[\0\r\n<>"'`]/.test(candidate)) return '/'
-  return candidate
-}
-
-function readPendingChatEntry(): PendingChatEntryState | null {
-  const storage = browserSessionStorage()
-  if (!storage) return null
-  try {
-    const raw = storage.getItem(PENDING_CHAT_ENTRY_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<PendingChatEntryState>
-    if (typeof parsed.draft !== 'string' || typeof parsed.returnTo !== 'string' || typeof parsed.createdAt !== 'number') return null
-    if (Date.now() - parsed.createdAt > PENDING_CHAT_ENTRY_TTL_MS) {
-      storage.removeItem(PENDING_CHAT_ENTRY_KEY)
-      return null
-    }
-    return {
-      draft: parsed.draft,
-      returnTo: parsed.returnTo,
-      intendedWorkspaceId: typeof parsed.intendedWorkspaceId === 'string' ? parsed.intendedWorkspaceId : undefined,
-      createdAt: parsed.createdAt,
-    }
-  } catch {
-    return null
-  }
-}
-
-function routePatterns(route: string): string[] {
-  const normalized = route.endsWith('/*') ? route.slice(0, -2) : route
-  return [`${normalized}/*`, normalized]
-}
-
-function workspaceIdFromPath(
-  pathname: string,
-  workspaceRoute = DEFAULT_WORKSPACE_ROUTE,
-  workspaceIdParam = DEFAULT_WORKSPACE_ID_PARAM,
-): string | null {
-  const patterns = [
-    ...routePatterns(workspaceRoute),
-    '/w/:id/*',
-    '/w/:id',
-    '/workspace/:id/*',
-    '/workspace/:id',
-  ]
-  for (const pattern of patterns) {
-    const match = matchPath(pattern, pathname)
-    const id = match?.params[workspaceIdParam]?.trim() ?? match?.params.id?.trim()
-    if (id) return id
-  }
-  return null
-}
-
-function writePendingChatEntry(input: Omit<PendingChatEntryState, 'createdAt'>): void {
-  const storage = browserSessionStorage()
-  if (!storage) return
-  storage.setItem(PENDING_CHAT_ENTRY_KEY, JSON.stringify({ ...input, createdAt: Date.now() }))
-}
-
-function clearPendingChatEntry(): void {
-  browserSessionStorage()?.removeItem(PENDING_CHAT_ENTRY_KEY)
-}
-
-function pendingChatEntryMatchesLocation(
-  pending: PendingChatEntryState | null,
-  pathname: string,
-  search: string,
-  hash: string,
-): boolean {
-  return Boolean(pending && pending.returnTo === safeReturnTo(pathname, search, hash))
-}
 
 export interface CoreWorkspaceAgentFrontProps<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
@@ -172,226 +88,22 @@ function WorkspaceLoadingPage({
   )
 }
 
-function readComposerDraftFromDom(): string {
-  if (typeof document === 'undefined') return ''
-  const input = document.querySelector('[data-boring-agent-part="composer-input"]') as HTMLTextAreaElement | HTMLInputElement | null
-  return input?.value ?? ''
-}
-
-function AuthCard({
-  returnTo,
-  onClose,
-}: {
-  returnTo: string
-  onClose?: () => void
-}) {
-  const signIn = useSignIn()
-  const signUp = useSignUp()
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin')
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setError(null)
-    setSubmitting(true)
-    try {
-      const result = mode === 'signin'
-        ? await signIn.email({ email, password })
-        : await signUp.email({ email, password, name: name || email })
-      if (result.error) {
-        setError(result.error.message ?? `${mode === 'signin' ? 'Sign in' : 'Sign up'} failed`)
-        return
-      }
-      window.location.assign(returnTo)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : `${mode === 'signin' ? 'Sign in' : 'Sign up'} failed`)
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-4 shadow-2xl">
-      {onClose ? (
-        <div className="mb-3 flex justify-end">
-          <button type="button" className="rounded-full px-2 py-1 text-sm text-muted-foreground hover:bg-muted" onClick={onClose} aria-label="Close sign in">×</button>
-        </div>
-      ) : null}
-        <h2 id="auth-modal-title" className="text-center text-xl font-semibold">
-          {mode === 'signin' ? 'Sign in to continue' : 'Create your account'}
-        </h2>
-        <p className="mt-2 text-center text-sm text-muted-foreground">
-          Keep your draft and unlock the full workspace.
-        </p>
-        <div className="mt-4 grid grid-cols-2 rounded-xl bg-muted p-1 text-sm">
-          <button type="button" className={`rounded-lg px-3 py-2 ${mode === 'signin' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`} onClick={() => setMode('signin')}>Sign in</button>
-          <button type="button" className={`rounded-lg px-3 py-2 ${mode === 'signup' ? 'bg-background shadow-sm' : 'text-muted-foreground'}`} onClick={() => setMode('signup')}>Sign up</button>
-        </div>
-        <form className="mt-4 space-y-2.5" onSubmit={submit}>
-          {error ? <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-2 text-sm text-destructive" role="alert">{error}</div> : null}
-          {mode === 'signup' ? (
-            <input className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-ring" placeholder="Name" value={name} onChange={(event) => setName(event.currentTarget.value)} />
-          ) : null}
-          <input className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-ring" type="email" autoComplete="email" placeholder="Email" value={email} onChange={(event) => setEmail(event.currentTarget.value)} required />
-          <input className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-ring" type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} placeholder="Password" value={password} onChange={(event) => setPassword(event.currentTarget.value)} required />
-          <button type="submit" className="w-full rounded-xl bg-primary px-3 py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-50" disabled={submitting}>
-            {submitting ? 'Please wait…' : mode === 'signin' ? 'Continue with email' : 'Create account'}
-          </button>
-        </form>
-        <p className="mt-4 text-center text-xs text-muted-foreground">By continuing, you agree to continue into your private workspace.</p>
-    </div>
-  )
-}
-
-function AuthModal({ onClose, returnTo }: { onClose: () => void; returnTo: string }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 p-4 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
-      <AuthCard returnTo={returnTo} onClose={onClose} />
-    </div>
-  )
-}
-
-function ChatFirstComposerBlocker() {
-  const { addBlocker, removeBlocker } = useWorkspaceAttention()
-
-  useEffect(() => {
-    const blocker = {
-      id: 'chat-first-workspace-preparing',
-      reason: 'workspace-preparing',
-      label: 'Preparing workspace… Send will work in a moment.',
-    }
-    addBlocker(blocker)
-    return () => removeBlocker(blocker.id)
-  }, [addBlocker, removeBlocker])
-
-  return null
-}
-
-function ChatFirstAuthenticatedShell<TSession extends WorkspaceAgentSession = WorkspaceAgentSession>({
-  appTitle,
-  workspaceId,
-  initialDraft,
-  workspaceProps,
-  showComposerBlocker = true,
-}: {
-  appTitle: string
-  workspaceId: string
-  initialDraft?: string
-  workspaceProps: Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'>
-  showComposerBlocker?: boolean
-}) {
-  return (
-    <WorkspaceAgentFront
-      {...workspaceProps}
-      workspaceId={workspaceId}
-      appTitle={appTitle}
-      topBarLeft={null}
-      sessions={[]}
-      activeSessionId={null}
-      onSwitchSession={() => undefined}
-      onCreateSession={() => undefined}
-      onDeleteSession={() => undefined}
-      provisionWorkspace={false}
-      bootPreloadPaths={[]}
-      bridgeEndpoint={null}
-      excludeDefaults={['filesystem']}
-      plugins={[]}
-      catalogs={[]}
-      commands={[]}
-      persistenceEnabled={false}
-      navEnabled={false}
-      defaultNavOpen={false}
-      defaultSurfaceOpen={false}
-      beforeShell={showComposerBlocker ? <>{workspaceProps.beforeShell}<ChatFirstComposerBlocker /></> : workspaceProps.beforeShell}
-      chatParams={{
-        ...workspaceProps.chatParams,
-        composerBlockers: undefined,
-        ...(initialDraft ? { initialDraft } : {}),
-        serverResourcesEnabled: false,
-        hydrateMessages: false,
-        onBeforeSubmit: workspaceProps.chatParams?.onBeforeSubmit ?? (() => false as const),
-      }}
-      frontPluginHotReload={false}
-      hotReloadEnabled={false}
-    />
-  )
-}
-
-function ChatFirstPublicShell<TSession extends WorkspaceAgentSession = WorkspaceAgentSession>({
-  appTitle,
-  intendedWorkspaceId,
-  workspaceProps,
-}: {
-  appTitle: string
-  intendedWorkspaceId?: string
-  workspaceProps: Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'>
-}) {
-  const location = useLocation()
-  const [modalOpen, setModalOpen] = useState(false)
-  const returnTo = safeReturnTo(location.pathname, location.search, location.hash)
-  const workspaceId = intendedWorkspaceId || 'public'
-  const openAuth = (draft = readComposerDraftFromDom()) => {
-    writePendingChatEntry({ draft, returnTo, ...(intendedWorkspaceId ? { intendedWorkspaceId } : {}) })
-    setModalOpen(true)
-  }
-  return (
-    <div className="relative h-screen min-h-0">
-      <ChatFirstAuthenticatedShell
-        appTitle={appTitle}
-        workspaceId={workspaceId}
-        showComposerBlocker={false}
-        workspaceProps={{
-          ...workspaceProps,
-          topBarRight: <button type="button" className="rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted" onClick={() => openAuth()}>Sign in</button>,
-          surfaceButtonBottomOffset: 420,
-          chatParams: {
-            ...workspaceProps.chatParams,
-            emptyPlacement: 'hero',
-            composerPlaceholder: 'Describe the app, bug, or repo task you want help with…',
-            emptyState: {
-              eyebrow: 'Start here',
-              title: 'What do you want to build?',
-              description: 'Type a prompt or pick an example. Sign in on send to unlock your private workspace.',
-            },
-            suggestions: [
-              { label: 'Build an app from scratch', hint: 'Creates files, installs deps, opens a preview', prompt: 'Build a full-stack app with auth, a dashboard, and sample data.' },
-              { label: 'Understand a codebase', hint: 'Maps the repo and explains where to start', prompt: 'Explain this codebase, map the architecture, and suggest first improvements.' },
-              { label: 'Fix a bug safely', hint: 'Finds the cause, edits files, runs tests', prompt: 'Trace a bug, edit the right files, update tests, and summarize the diff.' },
-              { label: 'Prototype an interface', hint: 'Turns an idea into an interactive UI', prompt: 'Build an interactive prototype and open it in the workspace.' },
-            ],
-            onBeforeSubmit: (draft: string) => {
-              openAuth(draft)
-              return false as const
-            },
-          },
-        }}
-      />
-      <aside className="pointer-events-none fixed bottom-6 right-6 z-20 w-[320px]">
-        <div className="pointer-events-auto">
-          <AuthCard returnTo={returnTo} />
-        </div>
-      </aside>
-      {modalOpen ? <AuthModal returnTo={returnTo} onClose={() => setModalOpen(false)} /> : null}
-    </div>
-  )
-}
-
 function usePendingChatDraft() {
   const session = useSession()
+  const userId = session.data?.user?.id ?? null
   const [pending, setPending] = useState<PendingChatEntryState | null>(() => (
-    session.data?.user ? readPendingChatEntry() : null
+    userId ? readPendingChatEntry() : null
   ))
   useEffect(() => {
-    if (!session.data?.user) {
+    if (!userId) {
       setPending(null)
       return
     }
     setPending(readPendingChatEntry())
-  }, [session.data?.user])
+    const syncPending = () => setPending(readPendingChatEntry())
+    globalThis.addEventListener?.(PENDING_CHAT_ENTRY_CHANGED_EVENT, syncPending)
+    return () => globalThis.removeEventListener?.(PENDING_CHAT_ENTRY_CHANGED_EVENT, syncPending)
+  }, [userId])
   return pending
 }
 
@@ -516,6 +228,7 @@ function WorkspaceRoute<
   const chatParams = {
     ...workspaceProps.chatParams,
     ...(pendingChatEntry?.draft ? { initialDraft: pendingChatEntry.draft } : {}),
+    ...(pendingChatEntry?.draft ? { autoSubmitInitialDraft: true } : {}),
     onBeforeSubmit: async (draft: string, ctx: unknown) => {
       const existing = workspaceProps.chatParams?.onBeforeSubmit as ((draft: string, ctx: unknown) => false | void | Promise<false | void>) | undefined
       const result = await existing?.(draft, ctx)

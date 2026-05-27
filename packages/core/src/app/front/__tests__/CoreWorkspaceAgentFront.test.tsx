@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { act, type ReactNode } from 'react'
 import { MemoryRouter, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -16,6 +16,7 @@ let sessionState: { data: { user: { id: string } } | null; isPending: boolean } 
   data: { user: { id: 'user-1' } },
   isPending: false,
 }
+let unstableSessionObject = false
 
 vi.mock('../../../front/index.js', () => ({
   CoreFront: ({ children, ...props }: { children?: ReactNode }) => {
@@ -28,9 +29,11 @@ vi.mock('../../../front/index.js', () => ({
   },
   UserMenu: () => <div>User menu</div>,
   WorkspaceSwitcher: () => <div>Switcher</div>,
-  routes: { signin: '/auth/signin' },
+  routes: { signin: '/auth/signin', forgotPassword: '/auth/forgot-password' },
   useCurrentWorkspace: () => currentWorkspaceId ? ({ id: currentWorkspaceId, name: 'Workspace A' }) : null,
-  useSession: () => sessionState,
+  useSession: () => unstableSessionObject && sessionState.data
+    ? { data: { user: { ...sessionState.data.user } }, isPending: sessionState.isPending }
+    : sessionState,
   useSignIn: () => ({ email: vi.fn(async () => ({ data: {}, error: null })) }),
   useSignUp: () => ({ email: vi.fn(async () => ({ data: {}, error: null })) }),
   useWorkspaceRouteStatus: () => routeStatus,
@@ -60,6 +63,7 @@ describe('CoreWorkspaceAgentFront', () => {
     workspaceAgentProps = null
     coreFrontProps = null
     sessionState = { data: { user: { id: 'user-1' } }, isPending: false }
+    unstableSessionObject = false
     window.sessionStorage.clear()
   })
 
@@ -180,7 +184,11 @@ describe('CoreWorkspaceAgentFront', () => {
       draft: 'Build a dashboard',
       returnTo: '/',
     })
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toBeInTheDocument()
+    expect(within(dialog).getByRole('link', { name: 'Forgot password?' }).getAttribute('href')).toBe(
+      '/auth/forgot-password?redirect=%2F',
+    )
   })
 
   it('restores a pending chat-first draft after auth reaches the workspace shell', async () => {
@@ -193,7 +201,7 @@ describe('CoreWorkspaceAgentFront', () => {
 
     render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" />)
 
-    expect(workspaceAgentProps?.chatParams).toMatchObject({ initialDraft: 'Restore this' })
+    expect(workspaceAgentProps?.chatParams).toMatchObject({ initialDraft: 'Restore this', autoSubmitInitialDraft: true })
   })
 
   it('keeps a lean authenticated shell on / while the default workspace resolves', async () => {
@@ -226,6 +234,24 @@ describe('CoreWorkspaceAgentFront', () => {
       serverResourcesEnabled: false,
       hydrateMessages: false,
     })
+  })
+
+  it('does not loop when the session hook returns a fresh user object each render', async () => {
+    const { CoreWorkspaceAgentFront } = await importSubject()
+    currentWorkspaceId = null
+    routePath = '/'
+    unstableSessionObject = true
+    window.sessionStorage.setItem('boring:pending-chat-entry', JSON.stringify({
+      draft: 'Keep this draft',
+      returnTo: '/',
+      intendedWorkspaceId: 'ws-pending',
+      createdAt: Date.now(),
+    }))
+
+    render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" loadingFallback={<div>Loading identity</div>} />)
+
+    expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
+    expect(workspaceAgentProps?.chatParams).toMatchObject({ initialDraft: 'Keep this draft' })
   })
 
   it('keeps a lean authenticated shell on the target workspace route until identity matches', async () => {

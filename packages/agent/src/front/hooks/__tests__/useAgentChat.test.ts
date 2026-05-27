@@ -234,4 +234,27 @@ describe('useAgentChat', () => {
     )
     expect(mockSetMessages).toHaveBeenCalledWith(hydratedMessages)
   })
+
+  test('does not let late hydration overwrite an in-flight local turn', async () => {
+    vi.mocked(useChat).mockReturnValueOnce({
+      messages: [{ id: 'local-u1', role: 'user', parts: [{ type: 'text', text: 'new draft' }] }],
+      sendMessage: vi.fn(),
+      status: 'submitted',
+      error: undefined,
+      stop: vi.fn(),
+      setMessages: mockSetMessages,
+    } as ReturnType<typeof useChat>)
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        messages: [{ id: 'server-old', role: 'assistant', parts: [{ type: 'text', text: 'old server state' }] }],
+      }),
+    })
+
+    useAgentChat({ sessionId: 'sess-race' })
+    await flushPromises()
+
+    expect(mockFetch).toHaveBeenCalledWith('/api/v1/agent/chat/sess-race/messages')
+    expect(mockSetMessages).not.toHaveBeenCalled()
+  })
 })

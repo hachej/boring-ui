@@ -12,7 +12,7 @@
 //   - usePiChatProjection(...)                   — React hook driving the
 //     live stream into piMessages state; handleData is the hot path
 import { renderHook, act } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { UIMessage } from "ai"
 import { ErrorCode } from "../../../shared/error-codes"
 import {
@@ -81,6 +81,10 @@ function firstTextPart(msg: UIMessage | undefined): string | undefined {
   }) as { text?: string } | undefined
   return t?.text
 }
+
+beforeEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe("rebuildPiMessagesFromDataParts", () => {
   it("returns [] when no data-pi-* parts are present", () => {
@@ -456,6 +460,65 @@ describe("usePiChatProjection (live handleData stream)", () => {
 
     rerender({ messages: [envelope], status: "ready" })
     expect(firstTextPart(result.current.piMessages[0])).toBe("partial")
+  })
+
+  it("persists canonical pi history instead of raw assistant-only envelopes after a turn settles", () => {
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const userTurn = makeMessage("u-1", "user", [
+      { type: "text", text: "draft after sign-in" } as UIMessage["parts"][number],
+    ])
+    const assistantEnvelope = makeMessage("env-1", "assistant", [
+      dataStart("a-1", "assistant"),
+      textStart("a-1", "0"),
+      textEnd("a-1", "0", "assistant reply"),
+      dataEnd("a-1", "assistant", "assistant reply"),
+    ])
+
+    const { result, rerender } = renderHook(
+      ({ messages, status }) => usePiChatProjection({
+        messages,
+        status,
+        sessionId: "sess-persist",
+      }),
+      {
+        initialProps: {
+          messages: [userTurn, assistantEnvelope] as UIMessage[],
+          status: "streaming",
+        },
+      },
+    )
+
+    act(() => {
+      result.current.handleData({ type: "data-pi-message-start", data: { messageId: "a-1", role: "assistant" } })
+      result.current.handleData({ type: "data-pi-text-start", data: { messageId: "a-1", partId: "0" } })
+      result.current.handleData({ type: "data-pi-text-end", data: { messageId: "a-1", partId: "0", text: "assistant reply" } })
+    })
+
+    rerender({
+      messages: [userTurn, assistantEnvelope],
+      status: "ready",
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [input, init] = fetchMock.mock.calls[0] as [RequestInfo | URL, RequestInit | undefined]
+    expect(init?.method).toBe("PUT")
+    expect(String(input)).toBe("/api/v1/agent/chat/sess-persist/messages")
+    expect(JSON.parse(String(init?.body))).toEqual({
+      messages: [
+        {
+          id: "u-1",
+          role: "user",
+          parts: [{ type: "text", text: "draft after sign-in" }],
+        },
+        {
+          id: "a-1",
+          role: "assistant",
+          parts: [{ type: "text", text: "assistant reply" }],
+        },
+      ],
+    })
   })
 
   it("handleData with unknown type is a no-op (forward compatibility)", () => {

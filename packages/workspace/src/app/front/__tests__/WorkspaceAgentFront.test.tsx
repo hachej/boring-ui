@@ -1,10 +1,18 @@
-import { render, screen, waitFor } from "@testing-library/react"
+import { act, render, screen, waitFor } from "@testing-library/react"
+import { useState } from "react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { UI_COMMAND_EVENT, type UiCommand } from "../../../front/bridge"
 import type { WorkspaceChatPanelProps } from "../../../front/chrome/chat/types"
 import type { PanelConfig } from "../../../front/registry/types"
 import { WorkspaceAgentFront } from "../WorkspaceAgentFront"
+
+type CapturedChatPanelProps = WorkspaceChatPanelProps & {
+  initialDraft?: string
+  autoSubmitInitialDraft?: boolean
+  hydrateMessages?: boolean
+  onAutoSubmitInitialDraftSettled?: () => void
+}
 
 function ChatPanel(props: WorkspaceChatPanelProps) {
   return (
@@ -173,6 +181,115 @@ describe("WorkspaceAgentFront", () => {
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/sessions"))).toBe(false)
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/chat"))).toBe(false)
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/ready-status"))).toBe(false)
+  })
+
+  it("creates a fresh remote session for auth-return auto-submit instead of reusing the old active session", async () => {
+    let capturedChatProps: unknown
+    const getCapturedChatProps = () => capturedChatProps as CapturedChatPanelProps | undefined
+    const seenSessionIds: string[] = []
+    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
+      capturedChatProps = props
+      seenSessionIds.push(props.sessionId)
+      return <div>Captured chat panel</div>
+    }
+    const createSession = vi.fn()
+    const useSessions = () => {
+      const [sessions, setSessions] = useState([{ id: "sess-old", title: "Old session" }])
+      const [activeSessionId, setActiveSessionId] = useState<string | null>("sess-old")
+      return {
+        sessions,
+        loading: false,
+        error: undefined,
+        activeSessionId,
+        activeSession: sessions.find((session) => session.id === activeSessionId) ?? null,
+        switch: vi.fn(),
+        create: async () => {
+          createSession()
+          const session = { id: "sess-fresh", title: "Fresh session" }
+          setSessions((current) => [session, ...current])
+          setActiveSessionId(session.id)
+          return session
+        },
+        delete: vi.fn(),
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="auth-return-fresh-session"
+        chatPanel={CapturingChatPanel}
+        useSessions={useSessions}
+        chatParams={{ initialDraft: "restore and send", autoSubmitInitialDraft: true }}
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(getCapturedChatProps()?.sessionId).toBe("default")
+    expect(getCapturedChatProps()?.initialDraft).toBeUndefined()
+    expect(getCapturedChatProps()?.autoSubmitInitialDraft).toBe(false)
+
+    await waitFor(() => {
+      expect(createSession).toHaveBeenCalledOnce()
+    })
+    await waitFor(() => {
+      expect(getCapturedChatProps()?.sessionId).toBe("sess-fresh")
+    })
+
+    expect(getCapturedChatProps()?.initialDraft).toBe("restore and send")
+    expect(getCapturedChatProps()?.autoSubmitInitialDraft).toBe(true)
+    expect(seenSessionIds).not.toContain("sess-old")
+  })
+
+  it("keeps hydration disabled after auth-return auto-submit props clear until the chat explicitly unlocks it", async () => {
+    let capturedChatProps: unknown
+    const getCapturedChatProps = () => capturedChatProps as CapturedChatPanelProps | undefined
+    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
+      capturedChatProps = props
+      return <div>Captured chat panel</div>
+    }
+    const useSessions = () => ({
+      sessions: [{ id: "sess-auth-return", title: "Auth return" }],
+      loading: false,
+      error: undefined,
+      activeSessionId: "sess-auth-return",
+      activeSession: { id: "sess-auth-return", title: "Auth return" },
+      switch: vi.fn(),
+      create: vi.fn(),
+      delete: vi.fn(),
+    })
+
+    const { rerender } = render(
+      <WorkspaceAgentFront
+        workspaceId="auth-return-lock"
+        chatPanel={CapturingChatPanel}
+        useSessions={useSessions}
+        chatParams={{ initialDraft: "restore and send", autoSubmitInitialDraft: true }}
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(getCapturedChatProps()?.hydrateMessages).toBe(false)
+
+    rerender(
+      <WorkspaceAgentFront
+        workspaceId="auth-return-lock"
+        chatPanel={CapturingChatPanel}
+        useSessions={useSessions}
+        chatParams={{}}
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(getCapturedChatProps()?.hydrateMessages).toBe(false)
+
+    act(() => {
+      const onSettled = getCapturedChatProps()?.onAutoSubmitInitialDraftSettled
+      onSettled?.()
+    })
+
+    await waitFor(() => {
+      expect(getCapturedChatProps()?.hydrateMessages).toBe(true)
+    })
   })
 
   it("resets warmup synchronously on workspace switch before chat hydration", async () => {
