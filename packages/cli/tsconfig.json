@@ -8,7 +8,14 @@
     "strict": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "@hachej/boring-agent/shared": ["../agent/src/shared/index.ts"],
+      "@hachej/boring-agent/server": ["../agent/src/server/index.ts"],
+      "@hachej/boring-workspace": ["../workspace/src/index.ts"],
+      "@hachej/boring-workspace/server": ["../workspace/src/server/index.ts"],
+      "@hachej/boring-workspace/app/server": ["../workspace/src/app/server/index.ts"]
+    }
   },
   "include": ["src/**/*", "scripts/**/*"],
   "exclude": ["node_modules", "dist", "public"]
