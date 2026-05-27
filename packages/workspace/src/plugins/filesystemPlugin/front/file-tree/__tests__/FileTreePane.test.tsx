@@ -347,7 +347,7 @@ describe("FileTreePane", () => {
     await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
     await waitFor(() => expect(bridge.subscribe).toHaveBeenCalled())
 
-    act(() => expandHandler?.({ path: "./src//" }))
+    act(() => expandHandler?.({ path: "/src//" }))
 
     await waitFor(() => {
       expect(screen.getByTestId("file-tree")).toHaveAttribute("data-selected", "src")

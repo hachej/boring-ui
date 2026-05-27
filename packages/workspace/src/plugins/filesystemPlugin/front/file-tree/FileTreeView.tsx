@@ -95,7 +95,7 @@ export interface FileTreeViewProps {
 }
 
 function normalizeRevealPath(path: string): string {
-  const normalized = path.trim().replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/\/+/g, "/")
+  const normalized = path.trim().replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/^\/+/, "").replace(/\/+/g, "/")
   const withoutTrailingSlash = normalized.replace(/\/+$/, "")
   return withoutTrailingSlash || "."
 }
