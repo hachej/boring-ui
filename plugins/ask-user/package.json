@@ -5,6 +5,7 @@
   "private": true,
   "description": "Ask-user plugin for Boring workspace — surfaces agent questions to the user and streams answers back.",
   "boring": {
+    "id": "ask-user",
     "label": "Questions",
     "front": "dist/front/index.js",
     "server": "dist/server/index.js"

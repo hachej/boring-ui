@@ -32,7 +32,9 @@ interface DiscoveredBoringPluginDirs {
   missingPackageJson: string[]
 }
 
-function pluginIdFromPackageJson(pkg: { name?: string }, rootDir: string): string {
+function pluginIdFromPackageJson(pkg: { name?: string; boring?: { id?: string } }, rootDir: string): string {
+  const explicitId = typeof pkg.boring?.id === "string" && pkg.boring.id.trim() ? pkg.boring.id.trim() : undefined
+  if (explicitId) return explicitId
   const name = typeof pkg.name === "string" && pkg.name.trim() ? pkg.name.trim() : undefined
   // Split on / OR \\ so the fallback id works on Windows (basename of
   // C:\path\to\plugin should be "plugin", not the full path).
@@ -40,7 +42,7 @@ function pluginIdFromPackageJson(pkg: { name?: string }, rootDir: string): strin
 }
 
 function safePluginIdFromPackageJson(pkg: BoringPluginPackageJson | Record<string, unknown>, rootDir: string): string | undefined {
-  const id = pluginIdFromPackageJson(pkg as { name?: string }, rootDir)
+  const id = pluginIdFromPackageJson(pkg as { name?: string; boring?: { id?: string } }, rootDir)
   return isValidBoringPluginId(id) ? id : undefined
 }
 

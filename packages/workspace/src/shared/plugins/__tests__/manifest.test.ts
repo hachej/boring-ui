@@ -167,14 +167,25 @@ describe("validateBoringPluginManifest", () => {
     expect(result.valid).toBe(true)
   })
 
-  it("rejects boring.id; package discovery identity comes from package.json#name", () => {
+  it("accepts boring.id as an explicit package discovery identity", () => {
     const result = validateBoringPluginManifest({
       name: "x",
       boring: { id: "filesystem", front: "front/index.tsx" },
     })
+    expect(result.valid).toBe(true)
+    if (result.valid) {
+      expect(result.packageJson.boring?.id).toBe("filesystem")
+    }
+  })
+
+  it("rejects invalid boring.id", () => {
+    const result = validateBoringPluginManifest({
+      name: "x",
+      boring: { id: "bad plugin", front: "front/index.tsx" },
+    })
     expect(result.valid).toBe(false)
     if (!result.valid) {
-      expect(result.issues).toContainEqual(expect.objectContaining({ code: "INVALID_FIELD", field: "boring.id" }))
+      expect(result.issues).toContainEqual(expect.objectContaining({ code: "INVALID_ID", field: "boring.id" }))
     }
   })
 })
