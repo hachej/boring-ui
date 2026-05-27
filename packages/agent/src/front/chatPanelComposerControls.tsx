@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BotIcon, BrainIcon, CheckIcon, ChevronDownIcon, EyeIcon, EyeOffIcon } from 'lucide-react'
+import { CheckIcon, ChevronDownIcon, EyeIcon, EyeOffIcon } from 'lucide-react'
 import {
   Command,
   CommandEmpty,
@@ -43,6 +43,38 @@ const THINKING_LEVEL_LABELS: Record<ThinkingLevel, string> = {
   low: 'Low',
   medium: 'Med',
   high: 'High',
+}
+
+/**
+ * Three-bar level glyph for the Thinking trigger. The icon IS the data:
+ * the number of lit bars equals the active level (off=0 .. high=3). Lets
+ * the user read state without opening the popover.
+ */
+function ThinkingLevelGlyph({ level }: { level: ThinkingLevel }) {
+  const lit = level === 'off' ? 0 : level === 'low' ? 1 : level === 'medium' ? 2 : 3
+  return (
+    <svg
+      aria-hidden="true"
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      fill="none"
+      className="shrink-0"
+    >
+      {[0, 1, 2].map((i) => (
+        <rect
+          key={i}
+          x={2 + i * 4}
+          y={10 - i * 2}
+          width="2"
+          height={3 + i * 2}
+          rx="0.5"
+          fill="currentColor"
+          opacity={i < lit ? 1 : 0.25}
+        />
+      ))}
+    </svg>
+  )
 }
 
 /**
@@ -109,20 +141,23 @@ export function ModelSelect({
           aria-label="Model"
           className={cn(
             composerActionClass,
-            "w-auto max-w-[min(52vw,200px)] px-2 text-xs font-medium",
-            open && "bg-muted/60 text-foreground",
+            // Model is the only piece of state the composer carries between
+            // turns — give it a status-pill shape so it reads as data, not
+            // another tertiary control. The label is the signal; no icon
+            // (the bot/AI glyph was decoration, not information).
+            "w-auto max-w-[min(52vw,260px)] gap-1 rounded-full bg-muted/40 px-2.5 text-[12px] font-medium text-foreground/85 hover:bg-muted/70",
+            open && "bg-muted/70 text-foreground",
           )}
         >
-          <BotIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span className="min-w-0 truncate">{triggerLabel}</span>
-          <ChevronDownIcon className="h-3 w-3 shrink-0 text-muted-foreground/60" aria-hidden="true" />
+          <ChevronDownIcon className="h-3 w-3 shrink-0 text-muted-foreground/50" aria-hidden="true" />
         </button>
       </PopoverTrigger>
       <PopoverContent
         align="start"
         sideOffset={6}
         data-boring-agent=""
-        className="w-[min(90vw,260px)] rounded-xl border-border/60 bg-popover p-1 shadow-xl"
+        className="w-[min(92vw,340px)] rounded-xl border-border/60 bg-popover p-1 shadow-xl"
       >
         <Command>
           {/* CommandInput MUST be inside <Command> — it calls useCommand()
@@ -156,17 +191,23 @@ export function ModelSelect({
                       onSelect={() => { onChange(m); setOpen(false) }}
                       className={cn(
                         "flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px]",
-                        key === currentKey && "bg-accent text-accent-foreground",
+                        // Soften cmdk's full-saturation `data-[selected=true]:bg-accent`
+                        // (keyboard-cursor focus) to a subtle warm tint so the
+                        // active row doesn't read as a saturated tile in dark mode.
+                        "data-[selected=true]:bg-[color:oklch(from_var(--accent)_l_c_h/0.15)] data-[selected=true]:text-foreground",
+                        // The user's CURRENTLY-SELECTED model gets a neutral wash +
+                        // the CheckIcon (accent is reserved for primary CTA / focus).
+                        key === currentKey && "bg-foreground/[0.06] text-foreground",
                       )}
                     >
                       <CheckIcon
                         className={cn(
                           "h-3.5 w-3.5 shrink-0",
-                          key === currentKey ? "opacity-100" : "opacity-0",
+                          key === currentKey ? "text-[color:var(--accent)] opacity-100" : "opacity-0",
                         )}
                       />
                       <span className="truncate">{label}</span>
-                      <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/70">{m.id}</span>
+                      <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/60">{m.id}</span>
                     </CommandItem>
                   )
                 })}
@@ -199,14 +240,22 @@ export function ThinkingSelect({
       <SelectTrigger
         data-boring-agent-part="thinking-select"
         data-boring-state={disabled ? "disabled" : undefined}
-        className={cn(composerActionClass, "w-8 px-0")}
-        aria-label="Thinking level"
+        // The auto-injected chevron (last `<span aria-hidden>`) is hidden so
+        // a 32px button isn't cramped by both icon and chevron — the popover
+        // tells the user this is interactive.
+        className={cn(
+          composerActionClass,
+          "w-8 px-0 [&>span[aria-hidden]]:hidden",
+          value !== "off" && "text-foreground",
+        )}
+        aria-label={`Thinking level: ${THINKING_LEVEL_LABELS[value]}`}
+        title={`Thinking: ${THINKING_LEVEL_LABELS[value]}`}
         data-testid="thinking-select"
       >
         {THINKING_LEVELS.map((level) => (
           <span key={level} data-value={level} hidden />
         ))}
-        <BrainIcon className="h-3.5 w-3.5" />
+        <ThinkingLevelGlyph level={value} />
       </SelectTrigger>
       <SelectContent position="popper" side="top" align="end" data-boring-agent="" className="w-auto min-w-0 rounded-lg border-border/70 bg-popover p-2 shadow-2xl">
         <div className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
@@ -244,12 +293,12 @@ export function ThoughtVisibilityButton({
       variant="ghost"
       size="icon-sm"
       onClick={onToggle}
-      className={cn(composerActionClass, "w-8")}
+      className={cn(composerActionClass, "w-8", visible && "text-foreground")}
       aria-pressed={visible}
       aria-label={visible ? "Hide thoughts" : "Show thoughts"}
       title={visible ? "Hide thoughts" : "Show thoughts"}
     >
-      <Icon className="h-3.5 w-3.5" />
+      <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
     </IconButton>
   )
 }
