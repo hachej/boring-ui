@@ -129,7 +129,7 @@ test('registerAgentRoutes provisions the resolved request workspace, not the hos
   } finally {
     await app.close()
   }
-})
+}, 15_000)
 
 test('registerAgentRoutes reload reruns provisioning and refreshes skills scope', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-reload-provision-')

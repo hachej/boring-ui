@@ -3,7 +3,7 @@
   "name": "boring-ui-v2",
   "type": "module",
   "scripts": {
-    "build": "pnpm -r run build",
+    "build": "pnpm -r --workspace-concurrency=1 run build",
     "dev": "pnpm -r run dev",
     "storybook": "pnpm --filter @hachej/boring-ui-kit build && storybook dev -p 6006",
     "storybook:build": "pnpm --filter @hachej/boring-ui-kit build && storybook build",

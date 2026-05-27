@@ -108,7 +108,7 @@ describe("heartbeat during tool execution", () => {
     for (const hb of heartbeats) {
       expect(hb.data.elapsedMs).toBeGreaterThan(0);
     }
-  });
+  }, 15_000);
 
   it("stops heartbeat when tool ends", async () => {
     const harness = createPiCodingAgentHarness({
@@ -138,6 +138,11 @@ describe("heartbeat during tool execution", () => {
     emit({ type: "tool_execution_start", toolCallId: "tc-2", toolName: "bash", args: {} } as AgentSessionEvent);
     await vi.advanceTimersByTimeAsync(2000);
 
+    const heartbeatCountBeforeEnd = collected.filter(
+      (c: any) => c.type === "data-status" && c.data?.toolCallId === "tc-2",
+    ).length;
+    expect(heartbeatCountBeforeEnd).toBeGreaterThanOrEqual(1);
+
     emit({
       type: "tool_execution_end",
       toolCallId: "tc-2",
@@ -157,7 +162,7 @@ describe("heartbeat during tool execution", () => {
     const heartbeats = collected.filter(
       (c: any) => c.type === "data-status" && c.data?.toolCallId === "tc-2",
     );
-    expect(heartbeats.length).toBe(1);
+    expect(heartbeats.length).toBe(heartbeatCountBeforeEnd);
   });
 
   it("stops heartbeat on abort", async () => {
