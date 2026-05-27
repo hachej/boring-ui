@@ -23,10 +23,13 @@ import { PluginErrorBoundary } from "../../plugin/PluginErrorBoundary"
 
 export type WorkbenchLeftTabId = string
 
+const FILES_LEFT_TAB_ID = "files"
+
 export interface WorkbenchLeftPaneProps {
   rootDir?: string
   bridge?: WorkspaceBridge
   defaultTab?: WorkbenchLeftTabId
+  revealFileTreeRequest?: { path: string; seq: number } | null
   onCollapse?: () => void
   className?: string
 }
@@ -35,6 +38,7 @@ export function WorkbenchLeftPane({
   rootDir = "",
   bridge,
   defaultTab,
+  revealFileTreeRequest,
   onCollapse,
   className,
 }: WorkbenchLeftPaneProps) {
@@ -84,6 +88,13 @@ export function WorkbenchLeftPane({
       setTab(tabs[0]!.id)
     }
   }, [tab, tabs])
+
+  useEffect(() => {
+    if (!revealFileTreeRequest) return
+    if (tabs.some((entry) => entry.id === FILES_LEFT_TAB_ID)) {
+      setTab(FILES_LEFT_TAB_ID)
+    }
+  }, [revealFileTreeRequest, tabs])
 
   const toggleSearch = useCallback(() => {
     setSearchOpen((s) => {

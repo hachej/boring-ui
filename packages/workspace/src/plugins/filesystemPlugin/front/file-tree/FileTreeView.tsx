@@ -94,8 +94,14 @@ export interface FileTreeViewProps {
   className?: string
 }
 
+function normalizeRevealPath(path: string): string {
+  const normalized = path.trim().replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/\/+/g, "/")
+  const withoutTrailingSlash = normalized.replace(/\/+$/, "")
+  return withoutTrailingSlash || "."
+}
+
 function parentDirsForReveal(path: string): string[] {
-  const parts = path.split("/").filter(Boolean)
+  const parts = normalizeRevealPath(path).split("/").filter(Boolean)
   const dirs: string[] = []
   for (let i = 1; i < parts.length; i++) {
     dirs.push(parts.slice(0, i).join("/"))
@@ -287,9 +293,10 @@ export function FileTreeView({
   const revealTreePath = useCallback(
     async (path: string | null) => {
       if (!path) return
-      setSelectedPath(path)
-      setRevealPath(path)
-      await refreshDirs(parentDirsForReveal(path), { force: true })
+      const normalizedPath = normalizeRevealPath(path)
+      setSelectedPath(normalizedPath)
+      setRevealPath(normalizedPath)
+      await refreshDirs(parentDirsForReveal(normalizedPath), { force: true })
     },
     [refreshDirs],
   )

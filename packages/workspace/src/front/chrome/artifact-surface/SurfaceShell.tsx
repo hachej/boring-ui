@@ -154,6 +154,7 @@ export function SurfaceShell({
   const containerRef = useRef<HTMLDivElement | null>(null)
   const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const [api, setApi] = useState<DockviewApi | null>(null)
+  const [fileTreeRevealRequest, setFileTreeRevealRequest] = useState<{ path: string; seq: number } | null>(null)
   const onReadyRef = useRef(onReady)
   onReadyRef.current = onReady
   const onChangeRef = useRef(onChange)
@@ -341,6 +342,7 @@ export function SurfaceShell({
   const expandToFileSync = useCallback((path: string) => {
     const normalizedPath = normalizeWorkbenchPath(path)
     pendingTreeExpandRef.current = normalizedPath
+    setFileTreeRevealRequest((prev) => ({ path: normalizedPath, seq: (prev?.seq ?? 0) + 1 }))
     setCollapsed(false)
     if (emitBridgeEvent("tree:expand", { path: normalizedPath })) {
       pendingTreeExpandRef.current = null
@@ -598,6 +600,7 @@ export function SurfaceShell({
               rootDir={rootDir}
               bridge={bridge}
               defaultTab={defaultLeftTab}
+              revealFileTreeRequest={fileTreeRevealRequest}
               onCollapse={() => setCollapsed(true)}
             />
           </aside>
