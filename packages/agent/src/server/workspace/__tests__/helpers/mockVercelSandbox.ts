@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, readdir, rename, rm, stat, writeFile, realpath } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, readdir, rename, rm, stat, writeFile, realpath, lstat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative } from 'node:path'
 import type { Writable } from 'node:stream'
@@ -165,6 +165,9 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
 
         try {
           const hostPath = toHostPath(hostRoot, pathArg)
+          if (script.includes('lstatSync')) {
+            return emitResult(0, JSON.stringify((await lstat(hostPath)).isSymbolicLink()), '')
+          }
           if (script.includes('realpathSync')) {
             const targetMatch = script.match(/\s'(\/vercel\/sandbox[^']*)'\s'(\/vercel\/sandbox[^']*)'$/)
             const rootPath = await realpath(toHostPath(hostRoot, targetMatch?.[1] ?? VERCEL_SANDBOX_ROOT))

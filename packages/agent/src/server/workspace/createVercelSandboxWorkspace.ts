@@ -219,6 +219,13 @@ export function createVercelSandboxWorkspace(
     }
   }
 
+  async function isSandboxSymlink(sandboxPath: string): Promise<boolean> {
+    return await runJson<boolean>(
+      remote,
+      `node -e ${shellQuote(`const fs=require('fs'); process.stdout.write(JSON.stringify(fs.lstatSync(process.argv[1]).isSymbolicLink()))`)} ${shellQuote(sandboxPath)}`,
+    )
+  }
+
   async function listDescendantPaths(relPath: string, sandboxPath: string): Promise<string[]> {
     if (remote.fs?.stat && remote.fs.readdir) {
       const fileStat = await remote.fs.stat(sandboxPath)
@@ -428,7 +435,9 @@ export function createVercelSandboxWorkspace(
         throw Object.assign(new Error('cannot remove workspace root'), { code: EPERM_CODE })
       }
       await assertRealPathWithinSandboxRoot(sandboxPath)
-      const descendantPaths = await listDescendantPaths(relPath, sandboxPath)
+      const descendantPaths = await isSandboxSymlink(sandboxPath)
+        ? []
+        : await listDescendantPaths(relPath, sandboxPath)
       if (remote.fs?.rm) await remote.fs.rm(sandboxPath, { recursive: true, force: false })
       else await runShell(remote, `rm -r -- ${shellQuote(sandboxPath)}`)
       invalidateMetadataCache()
