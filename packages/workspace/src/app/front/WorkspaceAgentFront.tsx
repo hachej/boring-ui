@@ -208,6 +208,7 @@ export function WorkspaceAgentFront<
   onThemeChange,
   persistenceEnabled,
   bridgeEndpoint,
+  fullPageBasePath,
   onAuthError,
   sessions,
   activeSessionId,
@@ -426,6 +427,10 @@ export function WorkspaceAgentFront<
     }),
     [chatParams, chatSessionId, requestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench, extraCommands, hotReloadEnabled],
   )
+  const resolvedAuthHeaders = useMemo(() => {
+    if (!authHeaders && Object.keys(requestHeaders).length === 0) return undefined
+    return { ...requestHeaders, ...authHeaders }
+  }, [authHeaders, requestHeaders])
 
   const surfaceParams = useMemo<SurfaceShellProps>(() => ({
     storageKey: resolvedSurfaceStorageKey,
@@ -465,7 +470,7 @@ export function WorkspaceAgentFront<
         excludeDefaults={excludeDefaults}
         capabilities={capabilities}
         apiBaseUrl={apiBaseUrl}
-        authHeaders={authHeaders}
+        authHeaders={resolvedAuthHeaders}
         apiTimeout={apiTimeout}
         defaultTheme={defaultTheme}
         onThemeChange={onThemeChange}
@@ -475,6 +480,7 @@ export function WorkspaceAgentFront<
         bridgeEndpoint={null}
         onAuthError={onAuthError}
         frontPluginHotReload={frontPluginHotReload}
+        fullPageBasePath={fullPageBasePath}
       >
         {beforeShell}
         <WorkspaceUiStateSync

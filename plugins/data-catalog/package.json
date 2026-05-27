@@ -2,7 +2,7 @@
   "name": "@hachej/boring-data-catalog",
   "version": "0.1.13",
   "type": "module",
-  "private": true,
+  "private": false,
   "license": "MIT",
   "description": "Plugin BUILDER for Boring workspace data catalogs. Consumers call `createDataCatalogPlugin(options)` to bind their own adapter/facets and get a configured BoringFrontFactoryWithId. NOT a direct `defaultPluginPackages` entry (no default export, options required) \u2014 wrap in an app-local plugin module that default-exports the built factory, then list that wrapper in `defaultPluginPackages`.",
   "repository": {

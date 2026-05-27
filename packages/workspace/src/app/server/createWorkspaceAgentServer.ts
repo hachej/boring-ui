@@ -421,6 +421,14 @@ function skillNameFromResolvedPath(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-2) ?? "skill"
 }
 
+function skillPathForPiLoader(path: string): string {
+  return existsSync(join(path, "SKILL.md")) ? dirname(path) : path
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)]
+}
+
 export function readWorkspacePluginPackageRuntimePlugins(pluginDirs: string[]): WorkspaceRuntimeProvisioningInput[] {
   const scan = scanBoringPlugins(pluginDirs)
   return scan.plugins.map((plugin) => ({
@@ -449,7 +457,9 @@ export function readWorkspacePluginPackagePiSnapshot(pluginDirs: string[]): Work
     const scan = scanBoringPlugins(pluginDirs)
     const systemPromptAppend = aggregatePluginSystemPromptsFromScan(scan)
     return {
-      additionalSkillPaths: scan.plugins.flatMap((plugin) => plugin.skillPaths ?? []),
+      additionalSkillPaths: uniqueStrings(
+        scan.plugins.flatMap((plugin) => plugin.skillPaths ?? []).map(skillPathForPiLoader),
+      ),
       packages: compactPiPackages(normalizeBoringPluginPiPackages(scan.plugins)),
       extensionPaths: scan.plugins.flatMap((plugin) => plugin.extensionPaths ?? []),
       ...(systemPromptAppend ? { systemPromptAppend } : {}),

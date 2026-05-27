@@ -12,6 +12,7 @@ COPY apps/full-app/package.json apps/full-app/package.json
 RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
+ENV NODE_OPTIONS=--max-old-space-size=4096
 COPY packages/ packages/
 COPY apps/full-app/ apps/full-app/
 

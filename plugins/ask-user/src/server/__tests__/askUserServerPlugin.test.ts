@@ -35,6 +35,12 @@ async function fixture() {
   return { store, runtime }
 }
 
+async function waitForRuntimeWaiter(runtime: AskUserRuntime, questionId: string) {
+  await vi.waitFor(() => {
+    expect(runtime.coordinator.hasWaiter(questionId)).toBe(true)
+  }, pendingWait)
+}
+
 describe("ask-user Pi tool", () => {
   it("registers one ask_user tool and rejects invalid input immediately", async () => {
     const { runtime } = await fixture()
@@ -73,6 +79,7 @@ describe("ask-user Pi tool", () => {
       pending = await store.getPending("chat-session")
       expect(pending).toMatchObject({ status: "ready", title: "Need input" })
     }, pendingWait)
+    await waitForRuntimeWaiter(runtime, pending!.questionId)
     await runtime.submitAnswer(pending!.questionId, "chat-session", { answer: "ok" })
     await expect(pendingResult).resolves.toMatchObject({ details: { status: "answered" } })
     await expect(store.getPending("fallback")).resolves.toBeNull()
@@ -87,10 +94,9 @@ describe("ask-user Pi tool", () => {
       pending = await store.getPending("s1")
       expect(pending).toMatchObject({ status: "ready", title: "Need input" })
     }, pendingWait)
-    await vi.waitFor(async () => {
-      await runtime.submitAnswer(pending!.questionId, "s1", { answer: "ok" })
-      await expect(pendingResult).resolves.toMatchObject({ details: { status: "answered" } })
-    })
+    await waitForRuntimeWaiter(runtime, pending!.questionId)
+    await runtime.submitAnswer(pending!.questionId, "s1", { answer: "ok" })
+    await expect(pendingResult).resolves.toMatchObject({ details: { status: "answered" } })
   })
 })
 
