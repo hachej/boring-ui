@@ -1,6 +1,6 @@
 import { render, renderHook, screen, waitFor } from "@testing-library/react"
 import { useEffect, type ReactNode } from "react"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import {
   buildFullPagePanelHref,
   useFullPagePanelHref,
@@ -13,6 +13,7 @@ import {
   FULL_PAGE_PANEL_INVALID_PARAMS_JSON,
   FULL_PAGE_PANEL_MISSING_COMPONENT,
   FULL_PAGE_PANEL_NOT_SUPPORTED,
+  FULL_PAGE_PANEL_RENDER_FAILED,
   parseFullPagePanelLocation,
   WorkspaceFullPagePanel,
 } from "../index"
@@ -43,6 +44,15 @@ const dockOnlyPanel: PanelConfig = {
   id: "dock-only",
   title: "Dock Only",
   component: () => <div>dock only</div>,
+}
+
+const crashingPanel: PanelConfig = {
+  id: "crashy",
+  title: "Crashy",
+  component: (_props: PaneProps) => {
+    throw new Error("boom")
+  },
+  supportsFullPage: true,
 }
 
 describe("full-page panel helpers", () => {
@@ -113,5 +123,26 @@ describe("WorkspaceFullPagePanel", () => {
     )
 
     expect(screen.getByTestId("full-page-error-state")).toHaveAttribute("data-full-page-error-code", FULL_PAGE_PANEL_NOT_SUPPORTED)
+  })
+
+  it("surfaces a stable full-page render error when the panel crashes", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    try {
+      render(
+        <WorkspaceProvider persistenceEnabled={false} panels={[crashingPanel]}>
+          <WorkspaceFullPagePanel componentId="crashy" />
+        </WorkspaceProvider>,
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId("full-page-error-state")).toHaveAttribute(
+          "data-full-page-error-code",
+          FULL_PAGE_PANEL_RENDER_FAILED,
+        )
+      })
+    } finally {
+      errorSpy.mockRestore()
+    }
   })
 })

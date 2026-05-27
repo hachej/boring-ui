@@ -157,6 +157,9 @@ importers:
       '@hachej/boring-data-explorer':
         specifier: workspace:*
         version: link:../../plugins/data-explorer
+      '@hachej/boring-deck':
+        specifier: workspace:*
+        version: link:../../plugins/deck
       '@hachej/boring-workspace':
         specifier: workspace:*
         version: link:../../packages/workspace
@@ -1019,6 +1022,12 @@ importers:
 
   plugins/deck:
     dependencies:
+      '@hachej/boring-ui-kit':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      lucide-react:
+        specifier: ^1.8.0
+        version: 1.8.0(react@19.2.5)
       react-markdown:
         specifier: ^10.1.0
         version: 10.1.0(@types/react@19.2.14)(react@19.2.5)

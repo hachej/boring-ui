@@ -3,10 +3,12 @@
 import { ErrorState } from "@hachej/boring-ui-kit"
 import { useLayoutEffect, useMemo } from "react"
 import { PanelRenderModeProvider } from "../../front/fullPage"
+import { usePluginErrors } from "../../front/plugin"
 import { useRegistry } from "../../front/registry"
 import type { PaneProps } from "../../front/registry"
 import {
   FULL_PAGE_PANEL_NOT_SUPPORTED,
+  FULL_PAGE_PANEL_RENDER_FAILED,
   FULL_PAGE_PANEL_UNKNOWN_COMPONENT,
   type WorkspaceFullPageRouteErrorCode,
 } from "./fullPageRouteErrors"
@@ -113,6 +115,7 @@ function FullPagePanelError({ code, title, description }: { code: WorkspaceFullP
 
 export function WorkspaceFullPagePanel({ componentId, params = {} }: WorkspaceFullPagePanelProps) {
   const registry = useRegistry()
+  const { errors } = usePluginErrors()
   const panel = registry.get(componentId)
   const WrappedComponent = registry.getComponents()[componentId]
 
@@ -126,6 +129,22 @@ export function WorkspaceFullPagePanel({ componentId, params = {} }: WorkspaceFu
     containerApi: createFullPageContainerApi(),
     className: "h-full",
   }), [componentId, params])
+
+  const panelRenderError = useMemo(() => {
+    if (!panel) return null
+    const pluginId = panel.pluginId ?? panel.id
+    for (let index = errors.length - 1; index >= 0; index -= 1) {
+      const error = errors[index]
+      if (
+        error.contributionKind === "panel" &&
+        error.contributionId === componentId &&
+        error.pluginId === pluginId
+      ) {
+        return error
+      }
+    }
+    return null
+  }, [componentId, errors, panel])
 
   if (!panel) {
     return (
@@ -147,6 +166,16 @@ export function WorkspaceFullPagePanel({ componentId, params = {} }: WorkspaceFu
     )
   }
 
+  if (panelRenderError) {
+    return (
+      <FullPagePanelError
+        code={FULL_PAGE_PANEL_RENDER_FAILED}
+        title="Panel failed to render"
+        description={`Panel "${componentId}" crashed while rendering in full-page mode: ${panelRenderError.error.message}`}
+      />
+    )
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <PanelRenderModeProvider mode="full-page">
@@ -155,3 +184,4 @@ export function WorkspaceFullPagePanel({ componentId, params = {} }: WorkspaceFu
     </div>
   )
 }
+
