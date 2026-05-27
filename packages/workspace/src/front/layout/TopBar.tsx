@@ -70,7 +70,7 @@ export function TopBar({
         variant="ghost"
         size="sm"
         onClick={onCommandPalette}
-        className="group h-7 gap-1 px-1.5 text-[12.5px] leading-none text-muted-foreground/75 hover:bg-muted/70 hover:text-foreground focus-visible:text-foreground"
+        className="group h-7 gap-1.5 px-2 text-[13px] leading-none text-muted-foreground/75 hover:bg-muted/70 hover:text-foreground focus-visible:text-foreground"
         aria-label="Search catalogs and commands"
         title="Command palette (⌘K)"
       >
