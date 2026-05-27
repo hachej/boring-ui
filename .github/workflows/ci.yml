@@ -274,6 +274,7 @@ jobs:
           pnpm --filter @hachej/boring-agent build
           pnpm --filter @hachej/boring-workspace build
           pnpm --filter @hachej/boring-core build
+          pnpm --filter @hachej/boring-deck build
           pnpm --filter @hachej/boring-ui-cli build:full
           pnpm --filter @hachej/boring-ask-user build
           pnpm --filter @hachej/boring-data-explorer build
@@ -283,7 +284,7 @@ jobs:
 
       - name: Publish packages with ci dist-tag
         run: |
-          for pkg in packages/ui packages/agent packages/workspace packages/core packages/cli plugins/ask-user plugins/data-explorer plugins/data-catalog; do
+          for pkg in packages/ui packages/agent packages/workspace packages/core packages/cli plugins/deck plugins/ask-user plugins/data-explorer plugins/data-catalog; do
             tarball=$(cd $pkg && pnpm pack 2>&1 | tail -1)
             if ! npm publish "$pkg/$tarball" --access public --tag ci --provenance; then
               echo "::warning::CI package publish failed for $pkg; continuing because release publishing is handled by release.yml"

@@ -208,6 +208,7 @@ export function WorkspaceAgentFront<
   onThemeChange,
   persistenceEnabled,
   bridgeEndpoint,
+  fullPageBasePath,
   onAuthError,
   sessions,
   activeSessionId,
@@ -479,6 +480,7 @@ export function WorkspaceAgentFront<
         bridgeEndpoint={null}
         onAuthError={onAuthError}
         frontPluginHotReload={frontPluginHotReload}
+        fullPageBasePath={fullPageBasePath}
       >
         {beforeShell}
         <WorkspaceUiStateSync

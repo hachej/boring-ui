@@ -138,6 +138,13 @@ describe("@hachej/boring-workspace public API", () => {
       expect(api.useViewportBreakpoint).toBeDefined()
       expect(api.useResponsiveSidebarCollapse).toBeDefined()
     })
+
+    it("exports full-page panel helpers", () => {
+      expect(api.buildFullPagePanelHref).toBeDefined()
+      expect(api.useFullPagePanelHref).toBeDefined()
+      expect(api.usePanelRenderMode).toBeDefined()
+      expect(api.useIsFullPagePanel).toBeDefined()
+    })
   })
 
   describe("provider", () => {
