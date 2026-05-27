@@ -33,17 +33,17 @@
     "node": ">=20"
   },
   "devDependencies": {
-    "@playwright/test": "^1.59.1",
-    "@storybook/addon-a11y": "^8.6.14",
+    "@playwright/test": "^1.60.0",
+    "@storybook/addon-a11y": "^10.4.1",
     "@storybook/addon-essentials": "^8.6.14",
-    "@storybook/addon-viewport": "^8.6.14",
-    "@storybook/react": "^8.6.14",
-    "@storybook/react-vite": "^8.6.14",
-    "@tailwindcss/vite": "^4.1.14",
-    "axe-core": "^4.11.3",
+    "@storybook/addon-viewport": "^9.0.8",
+    "@storybook/react": "^10.4.1",
+    "@storybook/react-vite": "^10.4.1",
+    "@tailwindcss/vite": "^4.3.0",
+    "axe-core": "^4.11.4",
     "http-server": "^14.1.1",
-    "storybook": "^8.6.14",
-    "typescript": "^5.4.0"
+    "storybook": "^10.4.1",
+    "typescript": "^6.0.3"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
