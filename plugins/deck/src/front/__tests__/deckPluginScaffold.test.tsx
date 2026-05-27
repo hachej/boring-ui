@@ -76,7 +76,7 @@ describe("deck scaffold", () => {
     expect(captured.registrations.providers[0]?.id).toBe("deck-files")
     expect(captured.registrations.panels).toHaveLength(1)
     expect(captured.registrations.panels[0]).toEqual(
-      expect.objectContaining({ id: "deck", label: "Deck", placement: "center", source: "app" }),
+      expect.objectContaining({ id: "deck", label: "Deck", placement: "center", source: "app", supportsFullPage: true }),
     )
     expect(captured.registrations.surfaceResolvers).toHaveLength(1)
     expect(captured.registrations.surfaceResolvers[0]).toEqual(

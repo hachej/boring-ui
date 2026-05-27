@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { ChatPanel, useSessions as useAgentSessions } from "@hachej/boring-agent"
 import { createDeckPlugin } from "@hachej/boring-deck/front"
 import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
-import { WorkspaceAgentFront } from "@hachej/boring-workspace/app/front"
+import { WorkspaceProvider } from "@hachej/boring-workspace"
+import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation } from "@hachej/boring-workspace/app/front"
 import { askUserPlugin } from "@hachej/boring-ask-user/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
 // Most plugin packages are declared in package.json#boring.defaultPluginPackages.
@@ -12,6 +13,11 @@ import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
   return new URLSearchParams(window.location.search).get("showcase") === "1"
+}
+
+function isFullPageRoute(): boolean {
+  if (typeof window === "undefined") return false
+  return window.location.pathname === "/full-page" || window.location.pathname === "/full-page/"
 }
 
 interface WorkspaceMeta {
@@ -38,10 +44,42 @@ const playgroundDeckPlugin = createDeckPlugin({
   },
 })
 
+const workspacePlugins = [askUserPlugin, playgroundDeckPlugin]
+
+function WorkspaceFullPageShell() {
+  const parsed = parseFullPagePanelLocation(window.location.search)
+
+  if (!parsed.componentId || parsed.error) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-6">
+        <div className="w-full max-w-lg rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-sm text-foreground">
+          <div className="font-medium">Invalid full-page panel route</div>
+          <div className="mt-1 text-muted-foreground">
+            {parsed.error?.message ?? "Missing full-page panel component."}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <WorkspaceProvider
+      apiBaseUrl=""
+      plugins={workspacePlugins}
+      persistenceEnabled
+      workspaceId="playground-full-page"
+      fullPageBasePath="/full-page"
+    >
+      <WorkspaceFullPagePanel componentId={parsed.componentId} params={parsed.params} />
+    </WorkspaceProvider>
+  )
+}
+
 export function WorkspaceShell() {
   const showcase = useMemo(isShowcaseRoute, [])
+  const fullPage = useMemo(isFullPageRoute, [])
   const [projectName, setProjectName] = useState("Workspace")
-  const [metaLoaded, setMetaLoaded] = useState(showcase)
+  const [metaLoaded, setMetaLoaded] = useState(showcase || fullPage)
 
   const sessions = useMemo(
     () =>
@@ -64,7 +102,7 @@ export function WorkspaceShell() {
   )
 
   useEffect(() => {
-    if (showcase) return
+    if (showcase || fullPage) return
     let cancelled = false
     void fetch("/api/v1/workspace/meta")
       .then(async (res) => res.ok ? await res.json() as WorkspaceMeta : null)
@@ -81,9 +119,13 @@ export function WorkspaceShell() {
         if (!cancelled) setMetaLoaded(true)
       })
     return () => { cancelled = true }
-  }, [showcase])
+  }, [showcase, fullPage])
 
   if (showcase) seedShowcase(SHOWCASE_SESSION_ID)
+
+  if (fullPage) {
+    return <WorkspaceFullPageShell />
+  }
 
   if (!metaLoaded) {
     return <div className="h-screen w-screen bg-background" />
@@ -99,11 +141,12 @@ export function WorkspaceShell() {
       appTitle={showcase ? "Boring" : projectName}
       defaultSessionTitle={showcase ? "New session" : projectName}
       frontPluginHotReload="vite"
+      fullPageBasePath="/full-page"
       useSessions={showcase ? undefined : useAgentSessions}
       sessions={sessions}
       activeSessionId={showcase ? SHOWCASE_SESSION_ID : undefined}
       onActiveSessionIdChange={handleActiveSessionIdChange}
-      plugins={[askUserPlugin, playgroundDeckPlugin]}
+      plugins={workspacePlugins}
       chatParams={{ thinkingControl: true }}
     />
   )

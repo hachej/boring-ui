@@ -2,6 +2,8 @@ import {
   cn,
   MarkdownEditor,
   useFilePane,
+  useFullPagePanelHref,
+  useIsFullPagePanel,
   type PaneProps,
 } from "@hachej/boring-workspace"
 import { Button } from "@hachej/boring-ui-kit"
@@ -9,13 +11,14 @@ import { ExternalLink } from "lucide-react"
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import type {
-  DeckError,
-  DeckSegment,
-  DeckThemeOptions,
-  DeckWidgetDefinition,
-  ParsedDeck,
-  ParsedSlide,
+import {
+  DECK_PANEL_ID,
+  type DeckError,
+  type DeckSegment,
+  type DeckThemeOptions,
+  type DeckWidgetDefinition,
+  type ParsedDeck,
+  type ParsedSlide,
 } from "../shared"
 import * as deckParser from "../shared/parser"
 import {
@@ -110,7 +113,9 @@ function DeckRenderedPane({
   content: string
   initialMode?: "read" | "present"
 }) {
-  const [mode, setMode] = useState<"read" | "present">(initialMode)
+  const isFullPagePanel = useIsFullPagePanel()
+  const resolvedInitialMode = isFullPagePanel ? "present" : initialMode
+  const [mode, setMode] = useState<"read" | "present">(resolvedInitialMode)
   const [slideIndex, setSlideIndex] = useState(0)
   const indexedWidgets = useMemo(() => indexDeckWidgets(widgets), [widgets])
   const parsed = useMemo(() => parseDeckContent(content, params?.path), [content, params?.path])
@@ -120,8 +125,8 @@ function DeckRenderedPane({
   }, [onError, parsed])
 
   useEffect(() => {
-    setMode(initialMode)
-  }, [initialMode])
+    setMode(resolvedInitialMode)
+  }, [resolvedInitialMode])
 
   useEffect(() => {
     setSlideIndex(0)
@@ -208,7 +213,9 @@ function FileBackedDeckPane({
 }: DeckPaneProps) {
   const path = params?.path ?? ""
   const hasSelectedPath = /\S/.test(path)
-  const [mode, setMode] = useState<"read" | "edit" | "present">(initialMode)
+  const isFullPagePanel = useIsFullPagePanel()
+  const resolvedInitialMode = isFullPagePanel ? "present" : initialMode
+  const [mode, setMode] = useState<"read" | "edit" | "present">(resolvedInitialMode)
   const [slideIndex, setSlideIndex] = useState(0)
   const indexedWidgets = useMemo(() => indexDeckWidgets(widgets), [widgets])
   const {
@@ -251,8 +258,8 @@ function FileBackedDeckPane({
   }, [onError, parsed])
 
   useEffect(() => {
-    setMode(initialMode)
-  }, [initialMode])
+    setMode(resolvedInitialMode)
+  }, [resolvedInitialMode])
 
   useEffect(() => {
     setSlideIndex(0)
@@ -272,7 +279,13 @@ function FileBackedDeckPane({
   const currentSlide = slides[safeIndex]
   const title = deck?.title ?? fileName ?? path
   const canNavigateSlides = mode !== "edit"
-  const presentHref = getPresentHref && path ? getPresentHref(path) : null
+  const fullPageHref = useFullPagePanelHref({
+    componentId: DECK_PANEL_ID,
+    params: path ? { path } : undefined,
+  })
+  const presentHref = isFullPagePanel
+    ? null
+    : (path ? (getPresentHref?.(path) ?? fullPageHref) : null)
 
   useDeckKeyboardNavigation({
     enabled: hasSelectedPath && !error && content != null && mode !== "edit",
@@ -312,7 +325,7 @@ function FileBackedDeckPane({
         title={title}
         path={path}
         mode={mode === "present" ? "read" : mode}
-        onModeChange={setMode}
+        onModeChange={isFullPagePanel ? undefined : setMode}
         presentMode={mode === "present"}
         slideIndex={safeIndex}
         slideCount={slideCount}

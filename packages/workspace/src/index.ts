@@ -137,6 +137,13 @@ export {
   type UseEditorLifecycleOptions,
   type UseEditorLifecycleReturn,
 } from "./front/hooks"
+export {
+  buildFullPagePanelHref,
+  useFullPagePanelHref,
+  usePanelRenderMode,
+  useIsFullPagePanel,
+} from "./front/fullPage"
+export type { BuildFullPagePanelHrefInput, PanelRenderMode } from "./front/fullPage"
 export { useViewportBreakpoint } from "./front/hooks"
 export {
   useResponsiveSidebarCollapse,

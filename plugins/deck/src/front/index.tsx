@@ -66,11 +66,11 @@ export function createDeckPlugin(options: CreateDeckPluginOptions = {}): BoringF
             theme={options.theme}
             widgets={options.widgets}
             onError={options.onError}
-            getPresentHref={options.getPresentHref}
           />
         ),
         placement: "center",
         source: "app",
+        supportsFullPage: true,
       },
     ],
     surfaceResolvers: [createDeckSurfaceResolver(pathPrefix)],

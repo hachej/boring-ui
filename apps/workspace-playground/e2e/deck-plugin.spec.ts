@@ -76,6 +76,17 @@ test.describe("workspace-playground deck plugin", () => {
       await expect(page.getByText("Welcome to the neutral consumer deck.")).toBeVisible()
     })
 
+    await test.step("open in new tab uses the generic full-page route", async () => {
+      const popupPromise = page.waitForEvent("popup")
+      await page.getByTestId("deck-open-present").click()
+      const popup = await popupPromise
+      await expect(popup.getByTestId("deck-shell-present")).toBeVisible({ timeout: 10_000 })
+      await expect(popup.getByText("Welcome to the neutral consumer deck.")).toBeVisible({ timeout: 10_000 })
+      await popup.keyboard.press("ArrowRight")
+      await expect(popup.getByText("Second slide")).toBeVisible({ timeout: 10_000 })
+      await popup.close()
+    })
+
     await test.step("edit mode supports raw markdown editing and autosave", async () => {
       await page.getByTestId("deck-mode-edit").click()
       await page.getByRole("button", { name: /^MD$/i }).click()
