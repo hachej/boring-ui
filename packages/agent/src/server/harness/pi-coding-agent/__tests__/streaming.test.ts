@@ -194,7 +194,21 @@ describe("streaming concurrency", () => {
     const firstReadPromise = reader.next();
     await new Promise((r) => setTimeout(r, 5));
 
-    emitPiEvent({ type: "agent_end", messages: [], willRetry: true });
+    emitPiEvent({
+      type: "message_update",
+      assistantMessageEvent: {
+        type: "error",
+        reason: "error",
+        error: { stopReason: "error", errorMessage: "provider returned error: 503" },
+      },
+    });
+    emitPiEvent({
+      type: "agent_end",
+      messages: [
+        { role: "assistant", stopReason: "error", errorMessage: "provider returned error: 503" },
+      ],
+      willRetry: true,
+    });
     emitPiEvent({
       type: "message_update",
       assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "retry response" },
@@ -202,6 +216,8 @@ describe("streaming concurrency", () => {
 
     const firstRead = await firstReadPromise;
     expect(firstRead.done).toBe(false);
+    expect((firstRead.value as any).type).not.toBe("error");
+    expect((firstRead.value as any).type).not.toBe("finish");
 
     emitPiEvent({ type: "agent_end", messages: [], willRetry: false });
     promptHandle.resolve!();

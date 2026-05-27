@@ -728,6 +728,7 @@ export function createPiCodingAgentHarness(opts: {
       let sawTextChunk = false;
       let inlineTurnIndex = 0;
       let currentPiAssistantMessageId: string | null = null;
+      let pendingTerminalErrorChunks: UIMessageChunk[] = [];
       const messageIdsWithStreamedReasoning = new Set<string>();
       let piSeq = 0;
       const nextPiSeq = () => ++piSeq;
@@ -956,7 +957,19 @@ export function createPiCodingAgentHarness(opts: {
           converted = piHistoryChunks;
         } else {
           const sdkChunks = namespaceInlinePartIds(dedupStartChunks(piEventToChunks(event)));
-          const sdkChunksForTurn = filterSdkChunksForCurrentSegment(sdkChunks);
+          const shouldBufferTerminalError = event.type === "message_update"
+            && (event as { assistantMessageEvent?: { type?: unknown } }).assistantMessageEvent?.type === "error";
+          const visibleSdkChunks = shouldBufferTerminalError
+            ? sdkChunks.filter((chunk) => {
+                const type = (chunk as { type?: unknown }).type;
+                if (type === "error" || type === "finish") {
+                  pendingTerminalErrorChunks.push(chunk);
+                  return false;
+                }
+                return true;
+              })
+            : sdkChunks;
+          const sdkChunksForTurn = filterSdkChunksForCurrentSegment(visibleSdkChunks);
           converted = [...piHistoryChunks, ...sdkChunksForTurn];
         }
         for (const chunk of converted) {
@@ -972,7 +985,14 @@ export function createPiCodingAgentHarness(opts: {
         chunks.push(...converted);
 
         if (event.type === "agent_end") {
-          if (!sawTextChunk) {
+          const willRetry = Boolean((event as { willRetry?: boolean }).willRetry);
+          if (willRetry) {
+            pendingTerminalErrorChunks = [];
+          } else if (pendingTerminalErrorChunks.length > 0) {
+            chunks.push(...pendingTerminalErrorChunks);
+            pendingTerminalErrorChunks = [];
+            sawTextChunk = true;
+          } else if (!sawTextChunk) {
             const { role, text, errorText } = extractAssistantMessageText(
               findLastAssistantMessage(
                 (event as unknown as { messages?: unknown }).messages,
@@ -992,7 +1012,7 @@ export function createPiCodingAgentHarness(opts: {
             }
           }
 
-          if ((event as { willRetry?: boolean }).willRetry) {
+          if (willRetry) {
             // Pi 0.75+ can emit agent_end for a failed attempt while it is
             // about to auto-retry. Keep the HTTP stream open so retry chunks
             // are delivered instead of accumulating after the generator exits.
