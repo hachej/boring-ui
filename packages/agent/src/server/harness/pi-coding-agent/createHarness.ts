@@ -988,6 +988,9 @@ export function createPiCodingAgentHarness(opts: {
           const willRetry = Boolean((event as { willRetry?: boolean }).willRetry);
           if (willRetry) {
             pendingTerminalErrorChunks = [];
+            sawTextChunk = false;
+            currentPiAssistantMessageId = null;
+            messageIdsWithStreamedReasoning.clear();
           } else if (pendingTerminalErrorChunks.length > 0) {
             chunks.push(...pendingTerminalErrorChunks);
             pendingTerminalErrorChunks = [];
