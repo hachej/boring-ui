@@ -65,11 +65,13 @@ describe('useCapabilities hook', () => {
           features: {
             invitesEnabled: true,
             githubOauth: false,
+            googleOauth: false,
             emailFlows: true,
           },
           auth: {
             emailPassword: true,
             github: false,
+            google: false,
             emailVerification: true,
             passwordReset: true,
             magicLink: true,

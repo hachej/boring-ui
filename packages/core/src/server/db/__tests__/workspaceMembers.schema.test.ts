@@ -25,13 +25,17 @@ const BASE_CONFIG: CoreConfig = {
     sessionTtlSeconds: 3600,
     sessionCookieSecure: false,
   },
-  features: { githubOauth: false, invitesEnabled: true, sendWelcomeEmail: true, inviteTtlDays: 7 },
+  features: { githubOauth: false, googleOauth: false, invitesEnabled: true, sendWelcomeEmail: true, inviteTtlDays: 7 },
 }
 
+const runId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+const ownerEmail = `members-owner-${runId}@example.com`
+const memberEmail = `members-user-${runId}@example.com`
+
 let sql: postgres.Sql
-let ownerId: string
-let memberId: string
-let workspaceId: string
+let ownerId: string | undefined
+let memberId: string | undefined
+let workspaceId: string | undefined
 
 beforeAll(async () => {
   await runMigrations(BASE_CONFIG)
@@ -39,21 +43,21 @@ beforeAll(async () => {
 
   const [owner] = await sql`
     INSERT INTO users (name, email, email_verified)
-    VALUES ('Members Owner', 'members-owner@example.com', true)
+    VALUES ('Members Owner', ${ownerEmail}, true)
     RETURNING id
   `
   ownerId = owner.id
 
   const [member] = await sql`
     INSERT INTO users (name, email, email_verified)
-    VALUES ('Members User', 'members-user@example.com', true)
+    VALUES ('Members User', ${memberEmail}, true)
     RETURNING id
   `
   memberId = member.id
 
   const [workspace] = await sql`
     INSERT INTO workspaces (app_id, name, created_by)
-    VALUES ('members-app', 'Members Test Workspace', ${ownerId})
+    VALUES ('members-app', 'Members Test Workspace', ${ownerId!})
     RETURNING id
   `
   workspaceId = workspace.id
@@ -61,9 +65,17 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!sql) return
-  await sql`DELETE FROM workspace_members WHERE workspace_id = ${workspaceId}`
-  await sql`DELETE FROM workspaces WHERE id = ${workspaceId}`
-  await sql`DELETE FROM users WHERE id IN (${ownerId}, ${memberId})`
+  if (workspaceId) {
+    const currentWorkspaceId = workspaceId
+    await sql`DELETE FROM workspace_members WHERE workspace_id = ${currentWorkspaceId}`
+    await sql`DELETE FROM workspaces WHERE id = ${currentWorkspaceId}`
+  }
+  if (ownerId || memberId) {
+    const userIds = [ownerId, memberId].filter((value): value is string => Boolean(value))
+    if (userIds.length > 0) {
+      await sql`DELETE FROM users WHERE id IN ${sql(userIds)}`
+    }
+  }
   await sql.end()
 })
 
@@ -71,21 +83,21 @@ describe('workspace_members schema', () => {
   it('RESTRICT FK blocks deleting a user with active memberships', async () => {
     await sql`
       INSERT INTO workspace_members (workspace_id, user_id, role)
-      VALUES (${workspaceId}, ${memberId}, 'editor')
+      VALUES (${workspaceId!}, ${memberId!}, 'editor')
     `
 
     await expect(
-      sql`DELETE FROM users WHERE id = ${memberId}`,
+      sql`DELETE FROM users WHERE id = ${memberId!}`,
     ).rejects.toThrow(/foreign key|violates/)
 
-    await sql`DELETE FROM workspace_members WHERE workspace_id = ${workspaceId} AND user_id = ${memberId}`
+    await sql`DELETE FROM workspace_members WHERE workspace_id = ${workspaceId!} AND user_id = ${memberId!}`
   })
 
   it('role CHECK rejects invalid role values', async () => {
     await expect(
       sql`
         INSERT INTO workspace_members (workspace_id, user_id, role)
-        VALUES (${workspaceId}, ${memberId}, 'admin')
+        VALUES (${workspaceId!}, ${memberId!}, 'admin')
       `,
     ).rejects.toThrow(/check|violates/)
   })

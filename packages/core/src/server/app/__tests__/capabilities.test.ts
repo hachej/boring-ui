@@ -30,7 +30,7 @@ const TEST_CONFIG: CoreConfig = {
     sessionCookieSecure: false,
     mail: { from: 'noreply@test.dev', transportUrl: 'console://' },
   },
-  features: { githubOauth: false, invitesEnabled: true, sendWelcomeEmail: true, inviteTtlDays: 7 },
+  features: { githubOauth: false, googleOauth: false, invitesEnabled: true, sendWelcomeEmail: true, inviteTtlDays: 7 },
 }
 
 let app: Awaited<ReturnType<typeof createCoreApp>> | null = null
@@ -55,10 +55,11 @@ describe('capabilities contributor API', () => {
     expect(body.core.version).toBe(CORE_PACKAGE_VERSION.version)
     expect(body.core.features.invitesEnabled).toBe(true)
     expect(body.core.features.githubOauth).toBe(false)
+    expect(body.core.features.googleOauth).toBe(false)
     expect(body.core.features.emailFlows).toBe(true)
   })
 
-  it('core.auth.github is false in v1', async () => {
+  it('keeps github false and defaults google auth availability to false', async () => {
     app = await createCoreApp(TEST_CONFIG, { manageShutdown: false })
     await app.ready()
 
@@ -66,10 +67,75 @@ describe('capabilities contributor API', () => {
     const body = JSON.parse(res.body)
 
     expect(body.core.auth.github).toBe(false)
+    expect(body.core.auth.google).toBe(false)
     expect(body.core.auth.emailPassword).toBe(true)
     expect(body.core.auth.emailVerification).toBe(true)
     expect(body.core.auth.passwordReset).toBe(true)
     expect(body.core.auth.magicLink).toBe(true)
+  })
+
+  it('keeps core.auth.google false when Google credentials exist but the feature is off', async () => {
+    const configuredGoogle: CoreConfig = {
+      ...TEST_CONFIG,
+      auth: {
+        ...TEST_CONFIG.auth,
+        google: {
+          clientId: 'google-client-id',
+          clientSecret: 'google-client-secret',
+        },
+      },
+    }
+    app = await createCoreApp(configuredGoogle, { manageShutdown: false })
+    await app.ready()
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/capabilities' })
+    const body = JSON.parse(res.body)
+
+    expect(body.core.features.googleOauth).toBe(false)
+    expect(body.core.auth.google).toBe(false)
+  })
+
+  it('keeps Google unavailable when the feature is on but credentials are missing', async () => {
+    const enabledGoogleWithoutCreds: CoreConfig = {
+      ...TEST_CONFIG,
+      features: {
+        ...TEST_CONFIG.features,
+        googleOauth: true,
+      },
+    }
+    app = await createCoreApp(enabledGoogleWithoutCreds, { manageShutdown: false })
+    await app.ready()
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/capabilities' })
+    const body = JSON.parse(res.body)
+
+    expect(body.core.features.googleOauth).toBe(false)
+    expect(body.core.auth.google).toBe(false)
+  })
+
+  it('reports core.auth.google true when Google auth is usable now', async () => {
+    const enabledGoogle: CoreConfig = {
+      ...TEST_CONFIG,
+      auth: {
+        ...TEST_CONFIG.auth,
+        google: {
+          clientId: 'google-client-id',
+          clientSecret: 'google-client-secret',
+        },
+      },
+      features: {
+        ...TEST_CONFIG.features,
+        googleOauth: true,
+      },
+    }
+    app = await createCoreApp(enabledGoogle, { manageShutdown: false })
+    await app.ready()
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/capabilities' })
+    const body = JSON.parse(res.body)
+
+    expect(body.core.features.googleOauth).toBe(true)
+    expect(body.core.auth.google).toBe(true)
   })
 
   it('emailFlows and auth booleans are false when mail not configured', async () => {

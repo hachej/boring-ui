@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Google Signup Child App Plan</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1020;
+      --panel: #121a2b;
+      --panel-2: #0f1727;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --line: #283548;
+      --accent: #7dd3fc;
+      --accent-2: #86efac;
+      --warn: #fbbf24;
+      --danger: #fca5a5;
+      --code: #111827;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, #0b1020, #111827 320px, #0b1020);
+      color: var(--text);
+    }
+    a { color: inherit; }
+    code {
+      background: var(--code);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: .12rem .35rem;
+      font: .92em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      color: #bae6fd;
+    }
+    pre {
+      margin: 0;
+      overflow: auto;
+      background: #0a1220;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: 0 12px 36px rgba(0,0,0,.18);
+    }
+    pre code { background: transparent; border: 0; padding: 0; }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 40px 24px 96px;
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      gap: 28px;
+    }
+    nav {
+      position: sticky;
+      top: 18px;
+      align-self: start;
+      background: rgba(15,23,39,.9);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 18px;
+      backdrop-filter: blur(10px);
+    }
+    nav h2 {
+      margin: 0 0 10px;
+      font-size: .95rem;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    nav ol { margin: 0; padding-left: 1.2rem; }
+    nav li { margin: .35rem 0; color: var(--muted); }
+    nav a { text-decoration: none; }
+    article { min-width: 0; }
+    .eyebrow {
+      color: var(--accent);
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      font-size: .78rem;
+      margin-bottom: 14px;
+    }
+    h1 {
+      margin: 0 0 14px;
+      font-size: clamp(2.2rem, 5vw, 4.4rem);
+      line-height: .95;
+      letter-spacing: -.06em;
+    }
+    h2 {
+      margin-top: 54px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      font-size: 1.7rem;
+      letter-spacing: -.03em;
+    }
+    h3 { margin-top: 28px; font-size: 1.18rem; }
+    p, li { color: #d9dee8; }
+    ul, ol { padding-left: 1.35rem; }
+    li { margin: .28rem 0; }
+    .meta { color: var(--muted); margin-bottom: 28px; }
+    .card, .callout {
+      background: rgba(18,26,43,.78);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 20px;
+      margin: 20px 0;
+    }
+    .summary-grid, .review-grid, .decision-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+      margin: 18px 0;
+    }
+    .mini {
+      background: rgba(15,23,39,.92);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px;
+    }
+    .mini h4 {
+      margin: 0 0 8px;
+      font-size: .95rem;
+      color: var(--accent);
+      letter-spacing: .02em;
+    }
+    .badge {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: .85rem;
+      margin-right: 8px;
+      margin-bottom: 8px;
+      background: rgba(15,23,39,.9);
+    }
+    .good { color: var(--accent-2); }
+    .warn { color: var(--warn); }
+    .danger { color: var(--danger); }
+    .checklist li { margin: .55rem 0; }
+    .section-note {
+      color: var(--muted);
+      font-size: .98rem;
+      margin-top: -6px;
+    }
+    .footer {
+      margin-top: 56px;
+      color: var(--muted);
+      font-size: .95rem;
+    }
+    @media (max-width: 960px) {
+      main { grid-template-columns: 1fr; }
+      nav { position: static; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <nav>
+      <h2>Review map</h2>
+      <ol>
+        <li><a href="#summary">Executive summary</a></li>
+        <li><a href="#core-idea">Core idea</a></li>
+        <li><a href="#locked">Locked decisions</a></li>
+        <li><a href="#workflows">User workflows</a></li>
+        <li><a href="#implementation">Implementation</a></li>
+        <li><a href="#exact">Exact implementation</a></li>
+        <li><a href="#tasks">Task groups</a></li>
+        <li><a href="#acceptance">Acceptance</a></li>
+        <li><a href="#risks">Risks</a></li>
+        <li><a href="#review-questions">Review questions</a></li>
+      </ol>
+    </nav>
+
+    <article>
+      <div class="eyebrow">Boring UI auth plan</div>
+      <h1>Google Signup for Any Child App</h1>
+      <p class="meta">
+        Status: <code>review ready</code> · Scope: <code>@hachej/boring-core</code> + child-app docs/skill ·
+        Source: <code>docs/plans/google-signup-child-app-plan.md</code>
+      </p>
+
+      <section id="summary">
+        <div class="card"><strong>Goal:</strong> make Google signup/signin a near-zero-code opt-in for child apps using the existing core auth stack.</div>
+        <div class="summary-grid">
+          <div class="mini"><h4>What this is</h4><ul><li>better-auth already powers core auth</li><li>Google is one better-auth social provider</li><li>core remains the auth owner</li></ul></div>
+          <div class="mini"><h4>What ships</h4><ul><li>Google config in core</li><li><code>features.google_oauth = true</code></li><li><code>socialProviders.google</code></li><li><code>GoogleAuthButton</code></li><li>Google callback route</li></ul></div>
+          <div class="mini"><h4>What stays small</h4><ul><li>no second auth system</li><li>no <code>GOOGLE_OAUTH</code> env flag</li><li>no generic provider UI</li><li>no invite OAuth state carry</li></ul></div>
+        </div>
+      </section>
+
+      <section id="core-idea">
+        <h2>Core idea</h2>
+        <p><code>@hachej/boring-core</code> already owns auth.</p>
+        <p>Google should be added as <strong>one social provider inside the existing better-auth provider</strong>, not as a second provider system.</p>
+        <ul>
+          <li>no separate auth architecture</li>
+          <li>no custom token/session model</li>
+          <li>no app-specific Google wiring in each child app</li>
+          <li>no forked auth pages required for normal usage</li>
+        </ul>
+      </section>
+
+      <section id="goal">
+        <h2>Goal</h2>
+        <p>A stock child app should only need:</p>
+        <ul>
+          <li><code>GOOGLE_CLIENT_ID</code></li>
+          <li><code>GOOGLE_CLIENT_SECRET</code></li>
+          <li><code>features.google_oauth = true</code></li>
+        </ul>
+        <p>Then core should provide Google on stock sign-in, Google on normal stock sign-up, callback handling through the existing auth stack, and one reusable <code>GoogleAuthButton</code> for branded child apps.</p>
+      </section>
+
+      <section id="why">
+        <h2>Why this matters</h2>
+        <ul>
+          <li>child apps can enable Google with a tiny config delta</li>
+          <li>core remains the canonical auth owner</li>
+          <li>branded child apps reuse one small primitive instead of re-learning better-auth</li>
+          <li>we avoid auth drift across child apps</li>
+        </ul>
+      </section>
+
+      <section id="workflows">
+        <h2>User workflows</h2>
+        <h3>Workflow A — stock child app</h3>
+        <ol>
+          <li>operator sets <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code></li>
+          <li>operator sets <code>features.google_oauth = true</code></li>
+          <li>user visits <code>/auth/signin</code></li>
+          <li>user sees <strong>Continue with Google</strong></li>
+          <li>user signs in and lands back in the app authenticated</li>
+        </ol>
+
+        <h3>Workflow B — stock signup page</h3>
+        <ol>
+          <li>user visits <code>/auth/signup</code></li>
+          <li>user sees Google plus the existing email form</li>
+          <li>user can choose Google or email signup</li>
+          <li>existing email signup behavior stays unchanged</li>
+        </ol>
+
+        <h3>Workflow C — invite signup</h3>
+        <ol>
+          <li>invited user lands on <code>/auth/signup?invite_token=...</code></li>
+          <li>user sees the existing email signup flow only</li>
+          <li>user completes the existing invite-aware email path</li>
+        </ol>
+        <div class="callout"><strong>First-pass simplification:</strong> choose correctness over OAuth state-carry complexity.</div>
+
+        <h3>Workflow D — branded child app</h3>
+        <ol>
+          <li>child app overrides core auth pages</li>
+          <li>child app imports <code>GoogleAuthButton</code> from core</li>
+          <li>child app keeps its own branding/layout while reusing core OAuth behavior</li>
+        </ol>
+      </section>
+
+      <section id="non-goals">
+        <h2>Non-goals for this first pass</h2>
+        <div>
+          <span class="badge">no generic social-provider registry</span>
+          <span class="badge">no second auth provider abstraction</span>
+          <span class="badge">no invite-token carry across OAuth redirects</span>
+          <span class="badge">no Google One Tap</span>
+          <span class="badge">no provider-specific landing-page config</span>
+          <span class="badge">no auth override API redesign</span>
+        </div>
+      </section>
+
+      <section id="locked">
+        <h2>Locked decisions in this draft</h2>
+        <p class="section-note">These are the simplifications this plan asks the reviewer to approve.</p>
+        <div class="decision-grid">
+          <div class="mini"><h4>Provider model</h4><p>Google comes through better-auth inside the existing core auth stack. No separate auth system.</p></div>
+          <div class="mini"><h4>Config shape</h4><p>No <code>GOOGLE_OAUTH</code> env flag. One app-level TOML flag plus credentials.</p></div>
+          <div class="mini"><h4>Invite flow</h4><p>Invite signup stays email-only. No OAuth invite-token carry in v1.</p></div>
+          <div class="mini"><h4>Front-end seam</h4><p>Ship <code>GoogleAuthButton</code>, not a generic provider UI.</p></div>
+          <div class="mini"><h4>Routing scope</h4><p>Add an explicit Google callback route. No callback-routing refactor.</p></div>
+          <div class="mini"><h4>Failure mode</h4><p>Missing credentials disable Google cleanly. App still boots.</p></div>
+        </div>
+      </section>
+
+      <section id="implementation">
+        <h2>Proposed implementation</h2>
+
+        <h3>1. Config surface</h3>
+        <ul>
+          <li>env: <code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code></li>
+          <li>TOML: <code>features.google_oauth = true</code></li>
+          <li>types: add <code>auth.google</code>, <code>features.googleOauth</code>, runtime/capability fields</li>
+        </ul>
+        <div class="callout"><strong>Rule:</strong> Google resolves on only when the TOML flag is true and both credentials exist.</div>
+
+        <h3>2. better-auth wiring</h3>
+        <pre><code>socialProviders: {
+  ...(config.auth.github ? { github: {...} } : {}),
+  ...(config.auth.google ? { google: {...} } : {}),
+}</code></pre>
+        <p>Do not add provider-specific custom logic beyond the minimum better-auth config needed for Google.</p>
+
+        <h3>3. Front-end auth UX</h3>
+        <ul>
+          <li>ship one helper: <code>GoogleAuthButton</code></li>
+          <li>visibility driven by <code>useConfig()</code></li>
+          <li>internally calls <code>authClient.signIn.social({ provider: 'google', callbackURL: '/' })</code></li>
+          <li>optional <code>callbackURL</code> prop is acceptable; default stays <code>'/'</code></li>
+          <li>show on stock sign-in and normal stock sign-up</li>
+          <li>hide on sign-up pages with <code>invite_token</code></li>
+        </ul>
+
+        <h3>4. Callback-route audit</h3>
+        <ul>
+          <li>audit route map / front utils</li>
+          <li>audit <code>CoreFront</code> route registration</li>
+          <li>audit server-side auth-page allowlist/public-page handling</li>
+          <li>audit the SPA-shell auth-page allowlist in <code>createCoreWorkspaceAgentServer.ts</code></li>
+          <li>add route tests for <code>/auth/callback/google</code></li>
+        </ul>
+        <div class="callout"><strong>Important:</strong> core's better-auth base path is <code>/auth</code>, not <code>/api/auth</code>. So <code>/auth/callback/google</code> is a real auth callback path in this app.</div>
+        <div class="callout"><strong>Scope rule:</strong> add the explicit Google callback path everywhere needed. Do not generalize callback routing yet.</div>
+
+        <h3>5. Child-app override seam</h3>
+        <p>Export <code>GoogleAuthButton</code> from <code>@hachej/boring-core/front</code>. Do not ship a generic provider UI in v1.</p>
+
+        <h3>6. Docs + skill</h3>
+        <ul>
+          <li>update core docs with Google signup env + redirect URI setup</li>
+          <li>update child-app setup skill</li>
+          <li>document callback URLs:</li>
+        </ul>
+        <pre><code>local: http://localhost:3000/auth/callback/google
+prod:  https://&lt;app-domain&gt;/auth/callback/google</code></pre>
+      </section>
+
+      <section id="exact">
+        <h2>What exactly must be implemented</h2>
+        <ol class="checklist">
+          <li><strong>Core config</strong> — add <code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code>, <code>features.google_oauth = true</code>, and teach <code>TomlAppConfig.features</code> to read <code>google_oauth</code>.</li>
+          <li><strong>better-auth wiring</strong> — pass <code>socialProviders.google</code> into the existing core auth setup.</li>
+          <li><strong>Capabilities/runtime flags</strong> — expose <code>features.googleOauth</code> and <code>core.auth.google</code>, and update <code>buildRuntimeConfigPayload()</code> so the frontend actually receives the flag.</li>
+          <li><strong>Reusable front-end primitive</strong> — add <code>GoogleAuthButton</code> that calls <code>authClient.signIn.social({ provider: 'google', callbackURL: '/' })</code>.</li>
+          <li><strong>Stock auth pages</strong> — use it on stock sign-in and normal stock sign-up; hide it for invite-token signup.</li>
+          <li><strong>Callback route</strong> — add <code>/auth/callback/google</code>, treat it like a public auth callback route, and update the SPA-shell auth-page allowlist in <code>createCoreWorkspaceAgentServer.ts</code>.</li>
+          <li><strong>Docs + skill</strong> — update <code>CORE.md</code> and the child-app setup skill; document <code>BETTER_AUTH_URL</code>, <code>CORS_ORIGINS</code>, and callback URLs.</li>
+          <li><strong>Tests</strong> — config, auth wiring, callback route, visible/hidden button behavior, and existing email auth still passing.</li>
+        </ol>
+      </section>
+
+      <section id="tasks">
+        <h2>Implementation task groups</h2>
+        <div class="review-grid">
+          <div class="mini"><h4>1. Config + shared types</h4><p>Add <code>auth.google</code>, <code>features.googleOauth</code>, capability fields, <code>TomlAppConfig.features.google_oauth</code>, and update <code>buildRuntimeConfigPayload()</code>.</p><p><strong>Verify:</strong> config tests cover enabled + disabled cases.</p></div>
+          <div class="mini"><h4>2. Server auth wiring</h4><p>Extend <code>createAuth()</code>; update capabilities so Google means usable now.</p><p><strong>Verify:</strong> auth creation + capabilities tests.</p></div>
+          <div class="mini"><h4>3. Callback-route audit</h4><p>Add <code>/auth/callback/google</code>; update <code>createCoreWorkspaceAgentServer.ts</code>; ensure it is mounted/public where needed.</p><p><strong>Verify:</strong> route tests for callback path.</p></div>
+          <div class="mini"><h4>4. Front-end auth UX</h4><p>Add <code>GoogleAuthButton</code>; use it on stock pages; hide it for invite signup.</p><p><strong>Verify:</strong> visible/hidden states + click behavior.</p></div>
+          <div class="mini"><h4>5. Docs + child-app teaching</h4><p>Update <code>CORE.md</code> and setup skill; include <code>BETTER_AUTH_URL</code> + <code>CORS_ORIGINS</code> callouts.</p><p><strong>Verify:</strong> docs match shipped names and API.</p></div>
+        </div>
+      </section>
+
+      <section id="acceptance">
+        <h2>Acceptance criteria</h2>
+        <h3>Product</h3>
+        <ul class="checklist">
+          <li>child app can enable Google signup without forking core auth pages</li>
+          <li>default sign-in shows Google when enabled</li>
+          <li>default sign-up shows Google for normal signup flow</li>
+          <li>invite-token sign-up stays email-only</li>
+          <li>Google is absent when feature/credentials are missing</li>
+          <li>custom child-app auth pages can import <code>GoogleAuthButton</code></li>
+        </ul>
+
+        <h3>Technical</h3>
+        <ul class="checklist">
+          <li>config validation covers Google env + flag resolution</li>
+          <li>better-auth receives Google provider config only when valid</li>
+          <li><code>/api/v1/config</code> exposes <code>features.googleOauth</code></li>
+          <li><code>/api/v1/capabilities</code> exposes Google auth availability</li>
+          <li><code>core.auth.google</code> means usable now, not merely configured</li>
+          <li><code>/auth/callback/google</code> is mounted and public as an auth callback route</li>
+          <li>existing GitHub behavior keeps working</li>
+        </ul>
+
+        <h3>Tests</h3>
+        <ol class="checklist">
+          <li><code>loadConfig</code> resolves <code>googleOauth</code> when TOML flag + creds are present</li>
+          <li><code>loadConfig</code> keeps <code>googleOauth=false</code> when creds are incomplete</li>
+          <li><code>createAuth</code> includes Google provider when configured</li>
+          <li><code>CoreFront</code> mounts <code>/auth/callback/google</code></li>
+          <li><code>SignInPage</code> renders Google only when enabled</li>
+          <li><code>SignUpPage</code> renders Google only for normal signup flow</li>
+          <li><code>SignUpPage</code> hides Google when <code>invite_token</code> is present</li>
+          <li>clicking Google calls <code>signIn.social({ provider: 'google' ... })</code></li>
+          <li>existing email sign-in/sign-up tests still pass</li>
+        </ol>
+      </section>
+
+      <section id="risks">
+        <h2>Risks / watchouts</h2>
+        <ul>
+          <li><span class="warn"><strong>Docs drift:</strong></span> docs still describe social auth as deferred / GitHub-specific in several places</li>
+          <li><span class="danger"><strong>Callback mismatch:</strong></span> Google will fail if <code>BETTER_AUTH_URL</code> is wrong</li>
+          <li><span class="warn"><strong>Invite flow complexity:</strong></span> do not invent OAuth state carry in this first pass</li>
+          <li><span class="warn"><strong>Capability ambiguity:</strong></span> define <code>core.auth.google</code> as usable now</li>
+          <li><span class="good"><strong>Over-design guardrail:</strong></span> do not build a generic provider framework yet</li>
+        </ul>
+      </section>
+
+      <section id="review-questions">
+        <h2>Review questions</h2>
+        <div class="card">
+          <ol class="checklist">
+            <li><strong>Provider model:</strong> approve treating Google as one better-auth social provider inside the existing core auth stack?</li>
+            <li><strong>Config shape:</strong> approve TOML flag + credentials, with no separate <code>GOOGLE_OAUTH</code> env flag?</li>
+            <li><strong>Invite behavior:</strong> approve hiding Google on invite-token signup instead of solving OAuth state carry now?</li>
+            <li><strong>Front-end seam:</strong> approve shipping only <code>GoogleAuthButton</code> in v1?</li>
+            <li><strong>Routing scope:</strong> approve adding an explicit Google callback path instead of generalizing callback routing now?</li>
+            <li><strong>Redirect default:</strong> approve defaulting the Google button callback to <code>'/'</code> for the first pass?</li>
+          </ol>
+          <p><strong>If the answer to all six is yes, this plan is ready to implement.</strong></p>
+        </div>
+      </section>
+
+      <section id="later">
+        <h2>Nice-to-have later, not in this first pass</h2>
+        <ul>
+          <li>generic <code>socialProviders</code> runtime type</li>
+          <li>GitHub + Google unified provider list</li>
+          <li>Google One Tap</li>
+          <li>provider icons/theme slots</li>
+          <li>provider-specific callback / landing route config</li>
+        </ul>
+      </section>
+
+      <p class="footer">Generated as a review-friendly HTML companion to the markdown plan.</p>
+    </article>
+  </main>
+</body>
+</html>

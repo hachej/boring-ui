@@ -118,7 +118,9 @@ export type RouteMap = {
   forgotPassword: '/auth/forgot-password'
   resetPassword: '/auth/reset-password'
   verifyEmail: '/auth/verify-email'
+  authError: '/auth/error'
   callbackGithub: '/auth/callback/github'
+  callbackGoogle: '/auth/callback/google'
   me: '/me'
   workspaceMembers: '/w/:id/members'
   workspaceInvites: '/w/:id/invites'
@@ -132,7 +134,9 @@ export const routes: RouteMap = {
   forgotPassword: '/auth/forgot-password',
   resetPassword: '/auth/reset-password',
   verifyEmail: '/auth/verify-email',
+  authError: '/auth/error',
   callbackGithub: '/auth/callback/github',
+  callbackGoogle: '/auth/callback/google',
   me: '/me',
   workspaceMembers: '/w/:id/members',
   workspaceInvites: '/w/:id/invites',
