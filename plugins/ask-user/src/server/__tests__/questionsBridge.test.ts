@@ -28,6 +28,9 @@ async function fixture() {
     expect(pending).not.toBeNull()
     return pending!
   }, { timeout: 5_000 })
+  await vi.waitFor(() => {
+    expect(runtime.coordinator.hasWaiter(question.questionId)).toBe(true)
+  }, { timeout: 5_000 })
   return { store, runtime, question, result }
 }
 
