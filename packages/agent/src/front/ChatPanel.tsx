@@ -436,10 +436,12 @@ export function ChatPanel(props: ChatPanelProps) {
   const pendingAutoSubmitUnlockRef = useRef<string | undefined>(undefined)
   const pendingAutoSubmitSettleRef = useRef<string | undefined>(undefined)
   const activeAutoSubmitSessionRef = useRef(sessionId)
+  const liveSessionIdRef = useRef(sessionId)
+  liveSessionIdRef.current = sessionId
+  activeAutoSubmitSessionRef.current = sessionId
   const [acceptedAutoSubmittedDraft, setAcceptedAutoSubmittedDraft] = useState<string | undefined>(undefined)
 
   useEffect(() => {
-    activeAutoSubmitSessionRef.current = sessionId
     autoSubmittedDraftRef.current = undefined
     autoSubmittingDraftRef.current = undefined
     pendingAutoSubmitUnlockRef.current = undefined
@@ -786,6 +788,7 @@ export function ChatPanel(props: ChatPanelProps) {
       return
     }
     if (!(await runBeforeSubmit(text, files ?? [], source))) return false
+    if (liveSessionIdRef.current !== sessionId) return false
 
     const parsed = parseSlashCommand(text)
     if (parsed) {
@@ -840,6 +843,7 @@ export function ChatPanel(props: ChatPanelProps) {
       files: files ?? [],
       mentionedFiles,
     })
+    if (liveSessionIdRef.current !== sessionId) return false
     clearMentionedFiles()
 
     // Queue the message if the agent is currently streaming. The server-side

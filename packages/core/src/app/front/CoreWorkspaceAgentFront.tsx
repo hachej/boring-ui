@@ -187,15 +187,17 @@ function WorkspaceRoute<
   const currentWorkspace = useCurrentWorkspace()
   const routeStatus = useWorkspaceRouteStatus()
   const workspaceId = params[workspaceIdParam]?.trim() ?? workspaceIdFromPath(location.pathname, workspaceRoute, workspaceIdParam) ?? ''
-  const restorePendingDraft = pendingChatEntryMatchesLocation(
-    pendingChatEntry,
-    location.pathname,
-    location.search,
-    location.hash,
-  ) || (
-    pendingChatEntry?.returnTo === '/' &&
-    currentWorkspace?.id === workspaceId &&
-    (!pendingChatEntry.intendedWorkspaceId || pendingChatEntry.intendedWorkspaceId === workspaceId)
+  const pendingDraftTargetsWorkspace = !pendingChatEntry?.intendedWorkspaceId || pendingChatEntry.intendedWorkspaceId === workspaceId
+  const restorePendingDraft = pendingDraftTargetsWorkspace && (
+    pendingChatEntryMatchesLocation(
+      pendingChatEntry,
+      location.pathname,
+      location.search,
+      location.hash,
+    ) || (
+      pendingChatEntry?.returnTo === '/' &&
+      currentWorkspace?.id === workspaceId
+    )
   )
   const requestHeaders = useMemo(
     () => ({ ...workspaceProps.requestHeaders, 'x-boring-workspace-id': workspaceId }),

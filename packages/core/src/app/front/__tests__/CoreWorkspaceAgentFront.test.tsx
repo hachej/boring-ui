@@ -303,6 +303,26 @@ describe('CoreWorkspaceAgentFront', () => {
     })
   })
 
+  it('does not restore a pending draft when intended workspace disagrees with the matched route', async () => {
+    const { CoreWorkspaceAgentFront } = await importSubject()
+    routePath = '/workspace/workspace-a'
+    routeStatus = { status: 'matched', workspaceId: 'workspace-a' }
+    currentWorkspaceId = 'workspace-a'
+    window.sessionStorage.setItem('boring:pending-chat-entry', JSON.stringify({
+      draft: 'Mismatched intended workspace',
+      returnTo: '/workspace/workspace-a',
+      intendedWorkspaceId: 'workspace-b',
+      createdAt: Date.now(),
+    }))
+
+    render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" />)
+
+    expect(workspaceAgentProps?.chatParams).not.toMatchObject({
+      initialDraft: 'Mismatched intended workspace',
+      autoSubmitInitialDraft: true,
+    })
+  })
+
   it('blocks sends from the lean authenticated shell even with a host submit hook', async () => {
     const { CoreWorkspaceAgentFront } = await importSubject()
     const hostBeforeSubmit = vi.fn()

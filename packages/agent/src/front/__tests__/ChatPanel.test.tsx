@@ -420,6 +420,32 @@ describe('ChatPanel (shadcn)', () => {
     })
   })
 
+  test('auto-submit does not send a stale draft after session changes while submit is awaiting', async () => {
+    let releaseBeforeSubmit: (() => void) | undefined
+    const onBeforeSubmit = vi.fn(() => new Promise<void>((resolve) => {
+      releaseBeforeSubmit = resolve
+    }))
+
+    const { rerender } = render(
+      <ChatPanel
+        sessionId="sess-auto-draft-stale-a"
+        initialDraft="do not send stale"
+        autoSubmitInitialDraft
+        onBeforeSubmit={onBeforeSubmit}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(onBeforeSubmit).toHaveBeenCalledOnce()
+    })
+
+    rerender(<ChatPanel sessionId="sess-auto-draft-stale-b" />)
+    releaseBeforeSubmit?.()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(mockSendMessage).not.toHaveBeenCalled()
+  })
+
   test('auto-submit resets when the same draft moves to a new session', async () => {
     const { rerender } = render(
       <ChatPanel
