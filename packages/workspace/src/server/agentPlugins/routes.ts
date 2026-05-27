@@ -119,6 +119,7 @@ export async function boringPluginRoutes(app: FastifyInstance, opts: BoringPlugi
         version: plugin.version,
         revision: plugin.revision,
         ...(plugin.frontUrl ? { frontUrl: plugin.frontUrl } : {}),
+        ...(plugin.frontTarget ? { frontTarget: plugin.frontTarget } : {}),
       })
     }
 

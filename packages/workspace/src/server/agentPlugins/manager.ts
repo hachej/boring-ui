@@ -10,6 +10,8 @@ import {
 } from "./signatureCache"
 import type {
   BoringPluginEvent,
+  BoringPluginFrontTarget,
+  BoringPluginFrontTargetResolver,
   BoringPluginListEntry,
   BoringServerPluginManifest,
   PluginRestartSurface,
@@ -18,6 +20,7 @@ import type {
 interface LoadedPluginRecord extends BoringServerPluginManifest {
   revision: number
   signature: string
+  frontTarget?: BoringPluginFrontTarget
   /**
    * pluginFileSignature(serverPath) captured at load time, or `null` when
    * the plugin has no server entry. Lets computeRequiresRestart() decide
@@ -37,6 +40,11 @@ export interface BoringPluginAssetManagerOptions {
    * the default assumes workspace root equals `process.cwd()`.
    */
   errorRoot?: string
+  /**
+   * Optional host-owned runtime front-target resolver. When omitted, list/event
+   * payloads preserve the existing `frontUrl` (`/@fs/...`) fallback only.
+   */
+  frontTargetResolver?: BoringPluginFrontTargetResolver
 }
 
 export interface LoadBoringAssetsError {
@@ -122,6 +130,10 @@ function directorySignature(root: string | undefined): string {
   return hash.digest("hex")
 }
 
+function normalizePluginSubpath(rootDir: string, path: string): string {
+  return relative(rootDir, path).replaceAll("\\", "/")
+}
+
 function pluginSignature(plugin: BoringServerPluginManifest): string {
   return createHash("sha256")
     .update(JSON.stringify(plugin.boring))
@@ -171,6 +183,7 @@ function computeRequiresRestart(
 export class BoringPluginAssetManager {
   private readonly pluginDirs: string[]
   private readonly errorRoot: string
+  private readonly frontTargetResolver?: BoringPluginFrontTargetResolver
   private readonly loaded = new Map<string, LoadedPluginRecord>()
   private readonly revisions = new Map<string, number>()
   private readonly listeners = new Set<Listener>()
@@ -180,6 +193,7 @@ export class BoringPluginAssetManager {
   constructor(options: BoringPluginAssetManagerOptions) {
     this.pluginDirs = options.pluginDirs
     this.errorRoot = options.errorRoot ?? join(process.cwd(), ".pi", "extensions") // callers MUST override errorRoot in non-trivial deployments
+    this.frontTargetResolver = options.frontTargetResolver
   }
 
   preflight(): BoringPluginPreflightResult {
@@ -187,14 +201,7 @@ export class BoringPluginAssetManager {
   }
 
   list(): BoringPluginListEntry[] {
-    return [...this.loaded.values()].map((plugin) => ({
-      id: plugin.id,
-      boring: plugin.boring,
-      ...(plugin.pi ? { pi: plugin.pi } : {}),
-      version: plugin.version,
-      revision: plugin.revision,
-      ...(plugin.frontUrl ? { frontUrl: plugin.frontUrl } : {}),
-    }))
+    return [...this.loaded.values()].map((plugin) => this.toListEntry(plugin))
   }
 
   getError(pluginId: string): string | null {
@@ -260,8 +267,15 @@ export class BoringPluginAssetManager {
         const previous = this.loaded.get(plugin.id)
         if (previous?.signature === signature) continue
         const revision = this.bumpRevision(plugin.id)
+        const frontTarget = this.resolveFrontTarget(plugin, revision)
         const serverSignature = plugin.serverPath ? pluginFileSignature(plugin.serverPath) : null
-        const record: LoadedPluginRecord = { ...plugin, revision, signature, serverSignature }
+        const record: LoadedPluginRecord = {
+          ...plugin,
+          revision,
+          signature,
+          ...(frontTarget ? { frontTarget } : {}),
+          serverSignature,
+        }
         this.loaded.set(plugin.id, record)
         this.clearError(plugin.id)
         // Persist the load-time server signature so verify-plugin can
@@ -291,6 +305,7 @@ export class BoringPluginAssetManager {
           version: plugin.version,
           revision,
           ...(plugin.frontUrl ? { frontUrl: plugin.frontUrl } : {}),
+          ...(frontTarget ? { frontTarget } : {}),
           ...(requiresRestart.length > 0 ? { requiresRestart } : {}),
         }
         events.push(event)
@@ -331,6 +346,28 @@ export class BoringPluginAssetManager {
     const next = (this.revisions.get(id) ?? 0) + 1
     this.revisions.set(id, next)
     return next
+  }
+
+  private toListEntry(plugin: LoadedPluginRecord): BoringPluginListEntry {
+    return {
+      id: plugin.id,
+      boring: plugin.boring,
+      ...(plugin.pi ? { pi: plugin.pi } : {}),
+      version: plugin.version,
+      revision: plugin.revision,
+      ...(plugin.frontUrl ? { frontUrl: plugin.frontUrl } : {}),
+      ...(plugin.frontTarget ? { frontTarget: plugin.frontTarget } : {}),
+    }
+  }
+
+  private resolveFrontTarget(plugin: BoringServerPluginManifest, revision: number): BoringPluginFrontTarget | undefined {
+    if (!plugin.frontPath || !this.frontTargetResolver) return undefined
+    const frontTarget = this.frontTargetResolver(plugin, {
+      revision,
+      frontEntrySubpath: normalizePluginSubpath(plugin.rootDir, plugin.frontPath),
+    })
+    if (!frontTarget) return undefined
+    return { ...frontTarget, revision }
   }
 
   private emit(event: BoringPluginEvent): void {

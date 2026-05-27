@@ -23,6 +23,7 @@ import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
 import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
 import { BoringPluginAssetManager } from "../../server/agentPlugins/manager"
+import type { BoringPluginFrontTargetResolver } from "../../server/agentPlugins/types"
 import { boringPluginRoutes, collectRestartWarnings } from "../../server/agentPlugins/routes"
 import { aggregatePluginPrompts } from "../../server/agentPlugins/aggregatePluginPrompts"
 import { normalizeBoringPluginPiPackages } from "../../server/agentPlugins/piPackages"
@@ -139,6 +140,8 @@ export interface CreateWorkspaceAgentServerOptions
   appPackageJsonPath?: string
   /** Additional plugin collection roots to scan alongside workspace .pi/extensions and package/plugin-derived roots. */
   additionalBoringPluginDirs?: string[]
+  /** Optional host-owned front-target override for boring plugin list/event payloads. */
+  boringPluginFrontTargetResolver?: BoringPluginFrontTargetResolver
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -576,6 +579,7 @@ export async function createWorkspaceAgentServer(
   const boringAssetManager = new BoringPluginAssetManager({
     pluginDirs: boringPluginDirs,
     errorRoot: join(workspaceRoot, ".pi", "extensions"),
+    frontTargetResolver: opts.boringPluginFrontTargetResolver,
   })
 
   const buildRuntimeProvisioningInputs = () => mergeRuntimeProvisioningInputs([

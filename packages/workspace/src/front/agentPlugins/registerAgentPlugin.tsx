@@ -4,18 +4,13 @@ import {
   type BoringFrontFactoryWithId,
   type CapturedBoringFrontRegistrations,
 } from "../../shared/plugins/frontFactory"
-import type { BoringPackageBoringField } from "../../shared/plugins/manifest"
+import type { BoringPluginEvent } from "../../shared/plugins/runtimePluginTypes"
 import type { CatalogConfig } from "../../shared/plugins/types"
 import type { PanelConfig } from "../../shared/types/panel"
 import type { SurfaceOpenRequest, SurfaceResolverConfig } from "../../shared/types/surface"
 import type { CommandConfig } from "../registry/types"
 import { useCatalogRegistry, useCommandRegistry, useRegistry, useSurfaceResolverRegistry } from "../registry/RegistryProvider"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "./reloadEvent"
-
-type BoringPluginEvent =
-  | { type: "boring.plugin.load"; id: string; boring: BoringPackageBoringField; version: string; revision: number; frontUrl?: string }
-  | { type: "boring.plugin.unload"; id: string; revision: number }
-  | { type: "boring.plugin.error"; id: string; revision: number; message: string }
 
 export interface RegisterAgentPluginOptions {
   apiBaseUrl?: string

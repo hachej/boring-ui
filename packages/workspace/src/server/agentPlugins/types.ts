@@ -2,6 +2,13 @@ import type {
   BoringPackageBoringField,
   BoringPackagePiField,
 } from "../../shared/plugins/manifest"
+import type {
+  BoringPluginEvent as SharedBoringPluginEvent,
+  BoringPluginFrontTarget as SharedBoringPluginFrontTarget,
+  BoringPluginListEntry as SharedBoringPluginListEntry,
+  BoringPluginNativeFrontTarget as SharedBoringPluginNativeFrontTarget,
+  BoringPluginNativeFrontTargetTrust as SharedBoringPluginNativeFrontTargetTrust,
+} from "../../shared/plugins/runtimePluginTypes"
 
 export interface BoringServerPluginManifest {
   id: string
@@ -10,11 +17,28 @@ export interface BoringServerPluginManifest {
   boring: BoringPackageBoringField
   pi?: BoringPackagePiField
   frontPath?: string
+  /** Legacy Vite-dev browser import fallback (`/@fs/...`). */
   frontUrl?: string
   serverPath?: string
   extensionPaths?: string[]
   skillPaths?: string[]
 }
+
+export type BoringPluginNativeFrontTargetTrust = SharedBoringPluginNativeFrontTargetTrust
+export type BoringPluginNativeFrontTarget = SharedBoringPluginNativeFrontTarget
+export type BoringPluginFrontTarget = SharedBoringPluginFrontTarget
+export type BoringPluginListEntry = SharedBoringPluginListEntry
+
+export interface BoringPluginFrontTargetResolverContext {
+  revision: number
+  /** Plugin-root-relative front entry path normalized for URL-like consumers. */
+  frontEntrySubpath: string
+}
+
+export type BoringPluginFrontTargetResolver = (
+  plugin: BoringServerPluginManifest,
+  context: BoringPluginFrontTargetResolverContext,
+) => BoringPluginFrontTarget | undefined
 
 /**
  * Surfaces whose changes the hot-reload pipeline can't re-load mid-
@@ -35,13 +59,7 @@ export interface BoringServerPluginManifest {
 export type PluginRestartSurface = "routes" | "agentTools"
 
 export type BoringPluginEvent =
-  | {
-      type: "boring.plugin.load"
-      id: string
-      boring: BoringPackageBoringField
-      version: string
-      revision: number
-      frontUrl?: string
+  | (Extract<SharedBoringPluginEvent, { type: "boring.plugin.load" }> & {
       /**
        * Non-empty when the plugin loaded but one or more server-side
        * surfaces still hold pre-load code. UI consumers should render
@@ -49,15 +67,6 @@ export type BoringPluginEvent =
        * live.
        */
       requiresRestart?: PluginRestartSurface[]
-    }
-  | { type: "boring.plugin.unload"; id: string; revision: number }
-  | { type: "boring.plugin.error"; id: string; revision: number; message: string }
-
-export interface BoringPluginListEntry {
-  id: string
-  boring: BoringPackageBoringField
-  pi?: BoringPackagePiField
-  version: string
-  revision: number
-  frontUrl?: string
-}
+    })
+  | Extract<SharedBoringPluginEvent, { type: "boring.plugin.unload" }>
+  | Extract<SharedBoringPluginEvent, { type: "boring.plugin.error" }>
