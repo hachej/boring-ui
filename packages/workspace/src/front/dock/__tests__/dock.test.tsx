@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen, waitFor, act } from "@testing-library/react"
+import { render, screen, waitFor, act, fireEvent } from "@testing-library/react"
 import { DockviewShell, useDockviewApi, DockviewApiContext } from "../DockviewShell"
 import { ShadcnTab } from "../ShadcnTab"
 import { PanelChrome, createLifecycleApi } from "../PanelChrome"
@@ -416,6 +416,90 @@ describe("ShadcnTab", () => {
     render(<ShadcnTab api={mockApi as any} containerApi={{} as any} params={{}} tabLocation={"header" as any} />)
 
     expect(screen.getByText("fallback-id")).toBeInTheDocument()
+  })
+
+  it("close other tabs closes siblings but keeps the clicked tab", async () => {
+    const currentApi = {
+      title: "Current",
+      id: "tab-current",
+      close: vi.fn(),
+      setActive: vi.fn(),
+    }
+    const siblingApi = { title: "Sibling", id: "tab-sibling", close: vi.fn() }
+    const otherGroupApi = { title: "Other", id: "tab-other", close: vi.fn() }
+    ;(currentApi as any).group = { panels: [{ api: currentApi }, { api: siblingApi }] }
+
+    render(
+      <ShadcnTab
+        api={currentApi as any}
+        containerApi={{ panels: [{ api: currentApi }, { api: siblingApi }, { api: otherGroupApi }] } as any}
+        params={{}}
+        tabLocation={"header" as any}
+      />,
+    )
+
+    fireEvent.contextMenu(screen.getByTitle("Current"))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close other tabs" }))
+
+    expect(currentApi.setActive).toHaveBeenCalled()
+    expect(currentApi.close).not.toHaveBeenCalled()
+    expect(siblingApi.close).toHaveBeenCalledTimes(1)
+    expect(otherGroupApi.close).not.toHaveBeenCalled()
+  })
+
+  it("close other tabs falls back to container panels when group panels are unavailable", () => {
+    const currentApi = { title: "Current", id: "tab-current", close: vi.fn() }
+    const siblingApi = { title: "Sibling", id: "tab-sibling", close: vi.fn() }
+
+    render(
+      <ShadcnTab
+        api={currentApi as any}
+        containerApi={{ panels: [{ api: currentApi }, { api: siblingApi }] } as any}
+        params={{}}
+        tabLocation={"header" as any}
+      />,
+    )
+
+    fireEvent.contextMenu(screen.getByTitle("Current"))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close other tabs" }))
+
+    expect(currentApi.close).not.toHaveBeenCalled()
+    expect(siblingApi.close).toHaveBeenCalledTimes(1)
+  })
+
+  it("close other tabs snapshots siblings before closing mutable panel arrays", () => {
+    const panels: Array<{ api: { id: string; close: ReturnType<typeof vi.fn> } }> = []
+    const currentApi = { title: "Current", id: "tab-current", close: vi.fn() }
+    const siblingA = {
+      api: {
+        id: "tab-a",
+        close: vi.fn(() => panels.splice(1, 1)),
+      },
+    }
+    const siblingB = {
+      api: {
+        id: "tab-b",
+        close: vi.fn(() => panels.splice(1, 1)),
+      },
+    }
+    panels.push({ api: currentApi }, siblingA, siblingB)
+    ;(currentApi as any).group = { panels }
+
+    render(
+      <ShadcnTab
+        api={currentApi as any}
+        containerApi={{ panels } as any}
+        params={{}}
+        tabLocation={"header" as any}
+      />,
+    )
+
+    fireEvent.contextMenu(screen.getByTitle("Current"))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close other tabs" }))
+
+    expect(currentApi.close).not.toHaveBeenCalled()
+    expect(siblingA.api.close).toHaveBeenCalledTimes(1)
+    expect(siblingB.api.close).toHaveBeenCalledTimes(1)
   })
 
   it("shows a saving spinner while save start is in flight, hides on save end", async () => {

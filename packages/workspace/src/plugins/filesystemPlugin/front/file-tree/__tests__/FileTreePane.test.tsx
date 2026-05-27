@@ -98,6 +98,8 @@ vi.mock("../FileTree", () => {
       searchQuery,
       editing,
       pendingPaths,
+      selectedPath,
+      revealPath,
       onSelect,
       onContextMenu,
       onSubmitEdit,
@@ -108,6 +110,8 @@ vi.mock("../FileTree", () => {
       searchQuery?: string
       editing?: EditingArg
       pendingPaths?: PendingArg
+      selectedPath?: string | null
+      revealPath?: string | null
       onSelect?: (p: string) => void
       onContextMenu?: (e: React.MouseEvent, n: Node) => void
       onSubmitEdit?: (p: string, v: string) => void
@@ -118,6 +122,8 @@ vi.mock("../FileTree", () => {
         data-testid="file-tree"
         data-search={searchQuery ?? ""}
         data-pending-count={pendingPaths?.size ?? 0}
+        data-selected={selectedPath ?? ""}
+        data-reveal={revealPath ?? ""}
       >
         {files.map((f) =>
           renderNode(
@@ -300,6 +306,56 @@ describe("FileTreePane", () => {
     expect(bridge.openFile).toHaveBeenCalledWith("index.ts", { mode: "edit" })
   })
 
+  it("reveals active file-backed tabs in the tree", async () => {
+    mockGetTree.mockResolvedValue([])
+    let activeFileHandler: ((path: string | null) => void) | null = null
+    const bridge = {
+      getActiveFile: () => null,
+      openFile: vi.fn().mockResolvedValue({ seq: 1, status: "ok" }),
+      select: vi.fn((_selector, handler) => {
+        activeFileHandler = handler
+        return vi.fn()
+      }),
+    }
+
+    render(<FileTreePane bridge={bridge as any} />, { wrapper })
+    await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+    await waitFor(() => expect(bridge.select).toHaveBeenCalled())
+
+    act(() => activeFileHandler?.("src/nested/deep.ts"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("file-tree")).toHaveAttribute("data-selected", "src/nested/deep.ts")
+      expect(screen.getByTestId("file-tree")).toHaveAttribute("data-reveal", "src/nested/deep.ts")
+    })
+    expect(mockGetTree).toHaveBeenCalledWith("src")
+    expect(mockGetTree).toHaveBeenCalledWith("src/nested")
+  })
+
+  it("tree expand bridge events reveal folders without opening an editor", async () => {
+    let expandHandler: ((payload: { path: string }) => void) | null = null
+    const bridge = {
+      getActiveFile: () => null,
+      openFile: vi.fn().mockResolvedValue({ seq: 1, status: "ok" }),
+      subscribe: vi.fn((event, handler) => {
+        if (event === "tree:expand") expandHandler = handler
+        return vi.fn()
+      }),
+    }
+
+    render(<FileTreePane bridge={bridge as any} />, { wrapper })
+    await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+    await waitFor(() => expect(bridge.subscribe).toHaveBeenCalled())
+
+    act(() => expandHandler?.({ path: "src" }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("file-tree")).toHaveAttribute("data-selected", "src")
+      expect(screen.getByTestId("file-tree")).toHaveAttribute("data-reveal", "src")
+    })
+    expect(bridge.openFile).not.toHaveBeenCalled()
+  })
+
   it("right-click opens context menu with actions", async () => {
     render(<FileTreePane />, { wrapper })
 
@@ -367,6 +423,26 @@ describe("FileTreePane", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete" }))
     await waitFor(() => {
       expect(mockDeleteFile).toHaveBeenCalledWith({ path: "index.ts" })
+    })
+  })
+
+  it("delete confirm supports folders", async () => {
+    mockDeleteFile.mockResolvedValue(undefined)
+    render(<FileTreePane />, { wrapper })
+
+    await waitFor(() => {
+      expect(screen.getByText("src")).toBeInTheDocument()
+    })
+
+    fireEvent.contextMenu(screen.getByText("src"))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }))
+    await waitFor(() => {
+      expect(screen.getByText("Delete src?")).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }))
+    await waitFor(() => {
+      expect(mockDeleteFile).toHaveBeenCalledWith({ path: "src" })
     })
   })
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import type { IDockviewPanelHeaderProps } from "dockview-react"
 import { X, Loader2 } from "lucide-react"
 import { getFileIcon } from "../registry/getFileIcon"
@@ -6,9 +6,43 @@ import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../lib/utils"
 import { useEvent, workspaceEvents } from "../events"
 
+type ClosablePanelApi = {
+  id?: string
+  close?: () => void
+  setActive?: () => void
+}
+
+type ClosablePanel = ClosablePanelApi | { api?: ClosablePanelApi; id?: string }
+
+type ClosablePanelSnapshot = {
+  id?: string
+  close?: () => void
+}
+
+function panelApi(panel: ClosablePanel): ClosablePanelApi {
+  return "api" in panel && panel.api ? panel.api : panel
+}
+
+function panelSnapshot(panel: ClosablePanel): ClosablePanelSnapshot {
+  const api = panelApi(panel)
+  return {
+    id: api.id ?? ("id" in panel ? panel.id : undefined),
+    close: api.close ? () => api.close?.() : undefined,
+  }
+}
+
+function siblingPanels(props: IDockviewPanelHeaderProps): ClosablePanel[] {
+  const groupPanels = (props.api as { group?: { panels?: ClosablePanel[] } }).group?.panels
+  if (Array.isArray(groupPanels)) return groupPanels
+  const containerPanels = (props.containerApi as { panels?: ClosablePanel[] }).panels
+  return Array.isArray(containerPanels) ? containerPanels : []
+}
+
 export function ShadcnTab(props: IDockviewPanelHeaderProps) {
   const { api } = props
   const [title, setTitle] = useState(api.title ?? api.id)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const sync = () => setTitle(api.title ?? api.id)
@@ -16,6 +50,17 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
     const sub = api.onDidTitleChange?.(sync)
     return () => sub?.dispose?.()
   }, [api])
+
+  useEffect(() => {
+    if (!menu) return
+    function onPointerDown(e: PointerEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenu(null)
+      }
+    }
+    document.addEventListener("pointerdown", onPointerDown)
+    return () => document.removeEventListener("pointerdown", onPointerDown)
+  }, [menu])
 
   const isDirty = title.endsWith(" ●")
   const displayTitle = isDirty ? title.slice(0, -2) : title
@@ -37,6 +82,16 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
     api.close()
   }
 
+  const handleCloseOthers = () => {
+    setMenu(null)
+    api.setActive?.()
+    const siblings = siblingPanels(props).map(panelSnapshot)
+    for (const sibling of siblings) {
+      if (sibling.id === api.id) continue
+      sibling.close?.()
+    }
+  }
+
   return (
     <div
       className={cn(
@@ -45,6 +100,11 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
         "cursor-pointer transition-colors",
       )}
       title={isDirty ? `${displayTitle} (unsaved changes)` : displayTitle}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setMenu({ x: e.clientX, y: e.clientY })
+      }}
     >
       {isSaving ? (
         <Loader2
@@ -87,6 +147,24 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
       >
         <X className="h-3 w-3" strokeWidth={2.25} />
       </IconButton>
+      {menu ? (
+        <div
+          ref={menuRef}
+          role="menu"
+          className="fixed z-50 min-w-[10rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+          style={{ left: menu.x, top: menu.y }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground"
+            onClick={handleCloseOthers}
+          >
+            Close other tabs
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }

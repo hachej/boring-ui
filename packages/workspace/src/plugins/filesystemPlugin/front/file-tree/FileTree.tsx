@@ -271,10 +271,17 @@ export function FileTree({
 
   useEffect(() => {
     if (!revealPath) return
-    const frame = requestAnimationFrame(() => {
-      void treeRef.current?.scrollTo(revealPath)
+    let scrollFrame = 0
+    const openFrame = requestAnimationFrame(() => {
+      treeRef.current?.openParents(revealPath)
+      scrollFrame = requestAnimationFrame(() => {
+        void treeRef.current?.scrollTo(revealPath)
+      })
     })
-    return () => cancelAnimationFrame(frame)
+    return () => {
+      cancelAnimationFrame(openFrame)
+      cancelAnimationFrame(scrollFrame)
+    }
   }, [files, revealPath])
 
   const selection = useMemo(

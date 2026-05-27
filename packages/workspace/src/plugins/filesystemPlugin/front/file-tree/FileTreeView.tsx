@@ -82,7 +82,7 @@ export interface FileTreeViewProps {
   rootDir?: string
   /** Already-debounced query. Empty/undefined means no filter. */
   searchQuery?: string
-  bridge?: Pick<WorkspaceBridge, "openFile" | "getActiveFile" | "select">
+  bridge?: Pick<WorkspaceBridge, "openFile" | "getActiveFile" | "select" | "subscribe">
   /**
    * Names (or regex patterns) to hide from the tree. Defaults to
    * `DEFAULT_TREE_IGNORE` (node_modules, .git, dist, …). Pass `[]` to
@@ -92,6 +92,15 @@ export interface FileTreeViewProps {
   ignoreNames?: ReadonlyArray<string | RegExp>
   /** Forwarded to the inner <FileTree>. */
   className?: string
+}
+
+function parentDirsForReveal(path: string): string[] {
+  const parts = path.split("/").filter(Boolean)
+  const dirs: string[] = []
+  for (let i = 1; i < parts.length; i++) {
+    dirs.push(parts.slice(0, i).join("/"))
+  }
+  return dirs
 }
 
 /**
@@ -184,14 +193,6 @@ export function FileTreeView({
   }, [ctxMenu])
 
   useEffect(() => {
-    setSelectedPath(bridge?.getActiveFile?.() ?? null)
-    if (!bridge?.select) return
-    return bridge.select((state) => state.activeFile, (path) => {
-      setSelectedPath(path)
-    })
-  }, [bridge])
-
-  useEffect(() => {
     const el = containerRef.current
     if (!el) return
     const ro = new ResizeObserver(([entry]) => {
@@ -282,6 +283,40 @@ export function FileTreeView({
     },
     [dataClient, rootDir, ignoreNames],
   )
+
+  const revealTreePath = useCallback(
+    async (path: string | null) => {
+      if (!path) return
+      setSelectedPath(path)
+      setRevealPath(path)
+      await refreshDirs(parentDirsForReveal(path), { force: true })
+    },
+    [refreshDirs],
+  )
+
+  useEffect(() => {
+    const activeFile = bridge?.getActiveFile?.() ?? null
+    if (activeFile) void revealTreePath(activeFile)
+    const unsubscribers: Array<() => void> = []
+    if (bridge?.select) {
+      unsubscribers.push(
+        bridge.select((state) => state.activeFile, (path) => {
+          if (path) void revealTreePath(path)
+          else setSelectedPath(null)
+        }),
+      )
+    }
+    if (bridge?.subscribe) {
+      unsubscribers.push(
+        bridge.subscribe("tree:expand", ({ path }) => {
+          void revealTreePath(path)
+        }),
+      )
+    }
+    return () => {
+      for (const unsubscribe of unsubscribers) unsubscribe()
+    }
+  }, [bridge, revealTreePath])
 
   const addOptimisticEntry = useCallback((dir: string, entry: FileEntry) => {
     setOptimisticEntries((prev) => {
@@ -508,6 +543,17 @@ export function FileTreeView({
     try {
       await deleteFile({ path: target.path })
       removeOptimisticEntry(parentDir(target.path), target.path)
+      if (target.kind === "dir") {
+        setExpandedChildren((prev) => {
+          const next = new Map(prev)
+          for (const dir of next.keys()) {
+            if (dir === target.path || dir.startsWith(`${target.path}/`)) {
+              next.delete(dir)
+            }
+          }
+          return next
+        })
+      }
       await refreshDirs([parentDir(target.path)])
       toast.success({ title: "Deleted", description: target.path })
     } catch (err) {

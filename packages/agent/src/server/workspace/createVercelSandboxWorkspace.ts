@@ -33,6 +33,7 @@ type VercelSandboxCompat = VercelSandbox & {
     stderr?: () => Promise<string>
   }>
 }
+const EPERM_CODE = 'EPERM'
 const CACHE_TTL_MS = 15_000
 const CACHE_MAX_ENTRIES = 512
 const MAX_INLINE_WRITE_BYTES = 128 * 1024
@@ -392,8 +393,11 @@ export function createVercelSandboxWorkspace(
     },
     async unlink(relPath) {
       const sandboxPath = toSandboxPath(relPath)
-      if (remote.fs?.rm) await remote.fs.rm(sandboxPath, { recursive: false, force: false })
-      else await runShell(remote, `rm -- ${shellQuote(sandboxPath)}`)
+      if (sandboxPath === VERCEL_SANDBOX_REMOTE_ROOT) {
+        throw Object.assign(new Error('cannot remove workspace root'), { code: EPERM_CODE })
+      }
+      if (remote.fs?.rm) await remote.fs.rm(sandboxPath, { recursive: true, force: false })
+      else await runShell(remote, `rm -r -- ${shellQuote(sandboxPath)}`)
       invalidateMetadataCache()
       workspaceOpts.onMutation?.()
       emitChange({ op: 'unlink', path: relPath })

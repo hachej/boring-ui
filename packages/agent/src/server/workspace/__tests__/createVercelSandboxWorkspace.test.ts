@@ -4,6 +4,8 @@ import { createVercelSandboxExec } from '../../sandbox/vercel-sandbox/createVerc
 import { createVercelSandboxWorkspace } from '../createVercelSandboxWorkspace'
 import { createMockVercelSandboxHarness } from './helpers/mockVercelSandbox'
 
+const EPERM_CODE = 'EPERM'
+
 test('writes via workspace are visible to paired exec on same sandbox handle', async () => {
   const harness = await createMockVercelSandboxHarness()
   const workspace = createVercelSandboxWorkspace(harness.sandbox)
@@ -144,6 +146,36 @@ test('invalidates metadata cache after write/unlink/mkdir/rename', async () => {
     await workspace.unlink('cache/b.txt')
     await expect(workspace.stat('cache/b.txt')).rejects.toThrow()
     expect(statSpy).toHaveBeenCalledTimes(4)
+  } finally {
+    await harness.cleanup()
+  }
+})
+
+test('unlink removes folders recursively', async () => {
+  const harness = await createMockVercelSandboxHarness()
+  const workspace = createVercelSandboxWorkspace(harness.sandbox)
+
+  try {
+    await workspace.mkdir('tree/nested', { recursive: true })
+    await workspace.writeFile('tree/nested/deep.txt', 'deep')
+    await workspace.unlink('tree')
+
+    await expect(workspace.stat('tree')).rejects.toThrow()
+    await expect(workspace.readFile('tree/nested/deep.txt')).rejects.toThrow()
+  } finally {
+    await harness.cleanup()
+  }
+})
+
+test('unlink rejects removing the workspace root', async () => {
+  const harness = await createMockVercelSandboxHarness()
+  const workspace = createVercelSandboxWorkspace(harness.sandbox)
+
+  try {
+    await workspace.writeFile('keep.txt', 'x')
+
+    await expect(workspace.unlink('.')).rejects.toMatchObject({ code: EPERM_CODE })
+    await expect(workspace.readFile('keep.txt')).resolves.toBe('x')
   } finally {
     await harness.cleanup()
   }
