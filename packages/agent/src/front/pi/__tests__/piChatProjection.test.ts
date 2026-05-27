@@ -314,6 +314,28 @@ describe("mergeRebuiltPiMessages", () => {
     expect(merged[0]!.id).toBe("u-1")
     expect(merged[1]!.id).toBe("a-1")
   })
+
+  it("skips rebuilt pi user messages that are already represented by SDK user turns", () => {
+    const sdkUser = makeMessage("sdk-u-1", "user", [{ type: "text", text: "same prompt" } as UIMessage["parts"][number]])
+    const piUser = makeMessage("pi-u-1", "user", [{ type: "text", text: "same prompt" } as UIMessage["parts"][number]])
+    const assistantRebuilt = makeMessage("a-1", "assistant", [
+      { type: "text", text: "reply" } as UIMessage["parts"][number],
+    ])
+
+    const merged = mergeRebuiltPiMessages([sdkUser], [piUser, assistantRebuilt])
+
+    expect(merged.map((message) => message.id)).toEqual(["sdk-u-1", "a-1"])
+  })
+
+  it("keeps a rebuilt user when it replaces an SDK user with the same id", () => {
+    const sdkUser = makeMessage("u-same", "user", [{ type: "text", text: "same prompt" } as UIMessage["parts"][number]])
+    const piUser = makeMessage("u-same", "user", [{ type: "text", text: "same prompt" } as UIMessage["parts"][number]])
+
+    const merged = mergeRebuiltPiMessages([sdkUser], [piUser])
+
+    expect(merged.map((message) => message.id)).toEqual(["u-same"])
+    expect(firstTextPart(merged[0])).toBe("same prompt")
+  })
 })
 
 describe("usePiChatProjection (live handleData stream)", () => {
@@ -460,6 +482,55 @@ describe("usePiChatProjection (live handleData stream)", () => {
 
     rerender({ messages: [envelope], status: "ready" })
     expect(firstTextPart(result.current.piMessages[0])).toBe("partial")
+  })
+
+  it("preserves repeated same-text SDK user turns when persisting", () => {
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const firstUserTurn = makeMessage("u-1", "user", [
+      { type: "text", text: "retry" } as UIMessage["parts"][number],
+    ])
+    const secondUserTurn = makeMessage("u-2", "user", [
+      { type: "text", text: "retry" } as UIMessage["parts"][number],
+    ])
+    const assistant = makeMessage("a-1", "assistant", [
+      { type: "text", text: "assistant reply" } as UIMessage["parts"][number],
+    ])
+
+    const { result, rerender } = renderHook(
+      ({ messages, status }) => usePiChatProjection({
+        messages,
+        status,
+        sessionId: "sess-repeat-users",
+      }),
+      {
+        initialProps: {
+          messages: [firstUserTurn, secondUserTurn, assistant] as UIMessage[],
+          status: "streaming",
+        },
+      },
+    )
+
+    act(() => {
+      result.current.handleData({ type: "data-pi-message-start", data: { messageId: "a-1", role: "assistant" } })
+      result.current.handleData({ type: "data-pi-text-end", data: { messageId: "a-1", partId: "0", text: "assistant reply" } })
+    })
+
+    rerender({
+      messages: [firstUserTurn, secondUserTurn, assistant],
+      status: "ready",
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [, init] = fetchMock.mock.calls[0] as [RequestInfo | URL, RequestInit | undefined]
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      messages: [
+        { id: "u-1", role: "user", parts: [{ type: "text", text: "retry" }] },
+        { id: "u-2", role: "user", parts: [{ type: "text", text: "retry" }] },
+        { id: "a-1", role: "assistant", parts: [{ type: "text", text: "assistant reply" }] },
+      ],
+    })
   })
 
   it("persists canonical pi history instead of raw assistant-only envelopes after a turn settles", () => {

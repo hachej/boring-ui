@@ -68,26 +68,16 @@ function messageVisibleText(message: UIMessage): string {
     .trim()
 }
 
-function dedupeAdjacentSimpleMessages(messages: UIMessage[]): UIMessage[] {
-  return messages.reduce<UIMessage[]>((acc, message) => {
-    const previous = acc[acc.length - 1]
-    const previousText = previous ? messageVisibleText(previous) : ''
-    const currentText = messageVisibleText(message)
-    const previousHasOnlyTextParts = previous ? (previous.parts ?? []).every((part) => part.type === 'text') : false
-    const currentHasOnlyTextParts = (message.parts ?? []).every((part) => part.type === 'text')
-    if (
-      previous &&
-      previous.role === message.role &&
-      previousHasOnlyTextParts &&
-      currentHasOnlyTextParts &&
-      previousText.length > 0 &&
-      previousText === currentText
-    ) {
-      return acc
-    }
-    acc.push(message)
-    return acc
-  }, [])
+function countExistingSdkUserTexts(messages: UIMessage[]): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const message of messages) {
+    if (message.role !== 'user') continue
+    if ((message.parts ?? []).some((part) => typeof part.type === 'string' && part.type.startsWith('data-pi-'))) continue
+    const text = messageVisibleText(message)
+    if (!text) continue
+    counts.set(text, (counts.get(text) ?? 0) + 1)
+  }
+  return counts
 }
 
 export function rebuildPiMessagesFromDataParts(sourceMessages: UIMessage[]): UIMessage[] {
@@ -190,7 +180,16 @@ export function mergeRebuiltPiMessages(existing: UIMessage[], rebuilt: UIMessage
     if (rebuiltIds.has(message.id)) return false
     return !(message.parts ?? []).some((part) => typeof part.type === 'string' && part.type.startsWith('data-pi-'))
   })
-  return [...preserved, ...rebuilt]
+  const sdkUserTextCounts = countExistingSdkUserTexts(preserved)
+  const rebuiltMissingFromSdk = rebuilt.filter((message) => {
+    if (message.role !== 'user') return true
+    const text = messageVisibleText(message)
+    const alreadyRepresentedCount = text ? sdkUserTextCounts.get(text) ?? 0 : 0
+    if (alreadyRepresentedCount <= 0) return true
+    sdkUserTextCounts.set(text, alreadyRepresentedCount - 1)
+    return false
+  })
+  return [...preserved, ...rebuiltMissingFromSdk]
 }
 
 export function usePiChatProjection({
@@ -409,9 +408,7 @@ export function usePiChatProjection({
     // events. Persist that projection merged over the AI SDK store so local
     // user turns survive while stale data-pi-only assistant envelopes are
     // replaced before they can become the next hydration source of truth.
-    const messagesToPersist = dedupeAdjacentSimpleMessages(
-      mergeRebuiltPiMessages(messages, piMessages),
-    )
+    const messagesToPersist = mergeRebuiltPiMessages(messages, piMessages)
     const stripped = messagesToPersist.map((msg) => ({
       ...msg,
       parts: msg.parts?.filter((part: unknown) => {
