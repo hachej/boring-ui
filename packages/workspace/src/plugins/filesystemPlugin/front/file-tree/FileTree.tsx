@@ -58,6 +58,8 @@ export interface FileTreeProps {
   onCollapse?: (path: string) => void
   onContextMenu?: (event: React.MouseEvent, node: FileTreeNode) => void
   onDragDrop?: (sourcePath: string, targetDirPath: string) => void
+  /** Called after a reveal request has opened parents and scheduled scrolling. */
+  onRevealHandled?: (path: string) => void
   /** Called when the user presses Enter on an inline-edit input. */
   onSubmitEdit?: (path: string, value: string) => void
   /** Called when the user presses Esc or blurs without submitting. */
@@ -256,6 +258,7 @@ export function FileTree({
   onContextMenu,
   onSubmitEdit,
   onCancelEdit,
+  onRevealHandled,
   onDragDrop,
   className,
 }: FileTreeProps) {
@@ -276,13 +279,14 @@ export function FileTree({
       treeRef.current?.openParents(revealPath)
       scrollFrame = requestAnimationFrame(() => {
         void treeRef.current?.scrollTo(revealPath)
+        onRevealHandled?.(revealPath)
       })
     })
     return () => {
       cancelAnimationFrame(openFrame)
       cancelAnimationFrame(scrollFrame)
     }
-  }, [files, revealPath])
+  }, [files, onRevealHandled, revealPath])
 
   const selection = useMemo(
     () => (selectedPath ? selectedPath : undefined),

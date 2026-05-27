@@ -304,19 +304,9 @@ export function FileTreeView({
     [refreshDirs],
   )
 
-  useEffect(() => {
-    if (!revealPath || isLoading || treeData.length === 0) return
-    let clearFrame = 0
-    const frame = requestAnimationFrame(() => {
-      clearFrame = requestAnimationFrame(() => {
-        setRevealPath((current) => current === revealPath ? null : current)
-      })
-    })
-    return () => {
-      cancelAnimationFrame(frame)
-      cancelAnimationFrame(clearFrame)
-    }
-  }, [isLoading, revealPath, treeData.length])
+  const handleRevealHandled = useCallback((path: string) => {
+    setRevealPath((current) => current === path ? null : current)
+  }, [])
 
   useEffect(() => {
     const activeFile = bridge?.getActiveFile?.() ?? null
@@ -651,6 +641,7 @@ export function FileTreeView({
                   : null
               }
               revealPath={revealPath}
+              onRevealHandled={handleRevealHandled}
               pendingPaths={pendingPaths}
               onSelect={handleSelect}
               onExpand={handleExpand}
