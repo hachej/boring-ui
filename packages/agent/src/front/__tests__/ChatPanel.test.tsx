@@ -757,7 +757,7 @@ describe('ChatPanel (shadcn)', () => {
     test('thinking control hidden by default (opt-in)', () => {
       const html = renderToStaticMarkup(<ChatPanel sessionId="s-no-think" />)
       // None of the four level labels should appear when the control is off.
-      expect(html).not.toContain('lucide-brain')
+      expect(html).not.toContain('data-boring-agent-part="thinking-select"')
       expect(html).not.toContain('data-value="off"')
       expect(html).not.toContain('data-value="high"')
     })
@@ -771,8 +771,9 @@ describe('ChatPanel (shadcn)', () => {
       expect(html).toContain('data-value="low"')
       expect(html).toContain('data-value="medium"')
       expect(html).toContain('data-value="high"')
-      // BrainIcon rendered alongside the trigger.
-      expect(html).toContain('lucide-brain')
+      // Trigger marker is the stable contract (the inline level glyph
+      // replaced BrainIcon, so don't assert on lucide-* class names).
+      expect(html).toContain('data-boring-agent-part="thinking-select"')
     })
 
     test('thinkingLevel is sent in body when thinkingControl is enabled', async () => {
