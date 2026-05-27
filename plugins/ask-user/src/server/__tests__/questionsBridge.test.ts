@@ -78,7 +78,7 @@ describe("QuestionsBridge", () => {
   })
 
   it("first submit wins concurrent duplicate tabs", async () => {
-    const { store, runtime, question } = await fixture()
+    const { store, runtime, question, result } = await fixture()
     const bridge = new QuestionsBridge({ store, runtime, getAuthContext: () => ({ sessionId: "s1", principalId: "p1" }) })
     const [first, second] = await Promise.allSettled([
       bridge.handle({ kind: "questions.submit", params: { questionId: question.questionId, sessionId: "s1", answerToken: question.answerToken, values: { answer: "a" } } }),
@@ -86,10 +86,11 @@ describe("QuestionsBridge", () => {
     ])
     expect(first.status).toBe("fulfilled")
     expect(second.status).toBe("fulfilled")
+    await expect(result).resolves.toMatchObject({ status: "answered" })
     await expect(store.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "answered" })
     const answers = await store.getTranscriptEventsForQuestion(question.questionId)
     expect(answers.filter((event) => event.type === "answered")).toHaveLength(1)
-  })
+  }, 15_000)
 
 })
 
