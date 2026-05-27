@@ -58,8 +58,22 @@ export {
   emitFilesystemAgentFileChange,
   useAutoOpenAgentFiles,
   onFilesystemChanged,
+  useFilePane,
 } from "./plugins/filesystemPlugin/front"
-export type { UseAutoOpenAgentFilesOptions } from "./plugins/filesystemPlugin/front"
+export type {
+  UseAutoOpenAgentFilesOptions,
+  UseFilePaneOptions,
+  UseFilePaneReturn,
+} from "./plugins/filesystemPlugin/front"
+export {
+  DataProvider as WorkspaceFilesProvider,
+  useApiBaseUrl,
+  useHasDataClient as useHasWorkspaceFilesProvider,
+  useWorkspaceRequestId,
+} from "./plugins/filesystemPlugin/front/data"
+// Public file-state seam for package consumers (for example future deck-like
+// plugins). Hooks from this seam must run under `WorkspaceFilesProvider`, or a
+// provider that reproduces the same filesystem data contexts.
 export { filesystemEvents } from "./plugins/filesystemPlugin/shared/events"
 export type { FilesystemEventMap, FilesystemEventMeta } from "./plugins/filesystemPlugin/shared/events"
 // Utility
@@ -123,6 +137,13 @@ export {
   type UseEditorLifecycleOptions,
   type UseEditorLifecycleReturn,
 } from "./front/hooks"
+export {
+  buildFullPagePanelHref,
+  useFullPagePanelHref,
+  usePanelRenderMode,
+  useIsFullPagePanel,
+} from "./front/fullPage"
+export type { BuildFullPagePanelHrefInput, PanelRenderMode } from "./front/fullPage"
 export { useViewportBreakpoint } from "./front/hooks"
 export {
   useResponsiveSidebarCollapse,

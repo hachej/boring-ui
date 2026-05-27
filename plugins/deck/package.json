@@ -1,0 +1,78 @@
+{
+  "name": "@hachej/boring-deck",
+  "version": "0.1.20",
+  "type": "module",
+  "license": "MIT",
+  "description": "Front-only markdown deck plugin scaffold for Boring workspace.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hachej/boring-ui"
+  },
+  "homepage": "https://github.com/hachej/boring-ui",
+  "boring": {
+    "label": "Deck",
+    "front": "dist/front/index.js"
+  },
+  "pi": {
+    "skills": [
+      "skills/deck-authoring"
+    ],
+    "systemPrompt": "Deck files live under deck/*.md. When the user asks to open a deck, create or locate the deck markdown file, then call exec_ui with { kind: 'openSurface', params: { kind: 'workspace.open.path', target: '<deck/path.md>' } }. Use the deck-authoring skill when writing or editing deck content."
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./front": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./shared": {
+      "types": "./dist/shared/index.d.ts",
+      "import": "./dist/shared/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "dependencies": {
+    "@hachej/boring-ui-kit": "workspace:*",
+    "lucide-react": "^1.8.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "pnpm run typecheck",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "peerDependencies": {
+    "@hachej/boring-workspace": "workspace:*",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "devDependencies": {
+    "@hachej/boring-workspace": "workspace:*",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "jsdom": "^29.0.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^3.1.3"
+  }
+}
