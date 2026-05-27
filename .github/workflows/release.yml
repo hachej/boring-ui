@@ -61,10 +61,11 @@ jobs:
           pnpm --filter @hachej/boring-agent build
           pnpm --filter @hachej/boring-workspace build
           pnpm --filter @hachej/boring-core build
+          pnpm --filter @hachej/boring-deck build
           pnpm --filter @hachej/boring-ui-cli build:full
       - name: Publish
         run: |
-          for pkg in packages/ui packages/agent packages/workspace packages/core packages/cli; do
+          for pkg in packages/ui packages/agent packages/workspace packages/core packages/cli plugins/deck; do
             name=$(node -p "require('./$pkg/package.json').name")
             version=$(node -p "require('./$pkg/package.json').version")
             if npm view "$name@$version" version >/dev/null 2>&1; then

@@ -74,10 +74,16 @@ function useDeckKeyboardNavigation({
   }, [enabled, canGoNext, canGoPrevious, onNext, onPrevious])
 }
 
+export interface DeckPaneParams {
+  path?: string
+  controls?: "hidden" | "visible"
+  showControls?: boolean
+}
+
 export interface DeckPaneProps {
-  params?: { path?: string }
-  api?: PaneProps<{ path?: string }>["api"]
-  containerApi?: PaneProps<{ path?: string }> ["containerApi"]
+  params?: DeckPaneParams
+  api?: PaneProps<DeckPaneParams>["api"]
+  containerApi?: PaneProps<DeckPaneParams>["containerApi"]
   content?: string
   pathPrefix?: string
   theme?: DeckThemeOptions
@@ -156,6 +162,11 @@ function DeckRenderedPane({
   const currentSlide = slides[safeIndex]
   const title = parsed.deck.title ?? params?.path ?? "Deck"
   const presentMode = mode === "present"
+  const hidePresentationControls = shouldHidePresentationControls({
+    isFullPagePanel,
+    params,
+    presentMode,
+  })
 
   useDeckKeyboardNavigation({
     enabled: true,
@@ -167,14 +178,16 @@ function DeckRenderedPane({
 
   return (
     <DeckShell theme={theme} presentMode={presentMode}>
-      <DeckToolbar
-        title={title}
-        path={params?.path}
-        presentMode={presentMode}
-        slideIndex={safeIndex}
-        slideCount={slides.length}
-        onTogglePresentMode={() => setMode((current) => (current === "present" ? "read" : "present"))}
-      />
+      {!hidePresentationControls ? (
+        <DeckToolbar
+          title={title}
+          path={params?.path}
+          presentMode={presentMode}
+          slideIndex={safeIndex}
+          slideCount={slides.length}
+          onTogglePresentMode={() => setMode((current) => (current === "present" ? "read" : "present"))}
+        />
+      ) : null}
       <DeckSlideFrame theme={theme}>
         <article
           className={cn("prose prose-slate max-w-none dark:prose-invert", presentMode && "text-base")}
@@ -189,15 +202,17 @@ function DeckRenderedPane({
           />
         </article>
       </DeckSlideFrame>
-      <DeckSlideRail
-        slideIndex={safeIndex}
-        slideCount={slides.length}
-        canGoPrevious={safeIndex > 0}
-        canGoNext={safeIndex < slides.length - 1}
-        onPrevious={() => setSlideIndex((current) => Math.max(current - 1, 0))}
-        onNext={() => setSlideIndex((current) => Math.min(current + 1, slides.length - 1))}
-        onSelect={setSlideIndex}
-      />
+      {!hidePresentationControls ? (
+        <DeckSlideRail
+          slideIndex={safeIndex}
+          slideCount={slides.length}
+          canGoPrevious={safeIndex > 0}
+          canGoNext={safeIndex < slides.length - 1}
+          onPrevious={() => setSlideIndex((current) => Math.max(current - 1, 0))}
+          onNext={() => setSlideIndex((current) => Math.min(current + 1, slides.length - 1))}
+          onSelect={setSlideIndex}
+        />
+      ) : null}
     </DeckShell>
   )
 }
@@ -286,6 +301,11 @@ function FileBackedDeckPane({
   const presentHref = isFullPagePanel
     ? null
     : (path ? (getPresentHref?.(path) ?? fullPageHref) : null)
+  const hidePresentationControls = shouldHidePresentationControls({
+    isFullPagePanel,
+    params,
+    presentMode: mode === "present",
+  })
 
   useDeckKeyboardNavigation({
     enabled: hasSelectedPath && !error && content != null && mode !== "edit",
@@ -321,33 +341,35 @@ function FileBackedDeckPane({
 
   return (
     <DeckShell theme={theme} presentMode={mode === "present"}>
-      <DeckToolbar
-        title={title}
-        path={path}
-        mode={mode === "present" ? "read" : mode}
-        onModeChange={isFullPagePanel ? undefined : setMode}
-        presentMode={mode === "present"}
-        slideIndex={safeIndex}
-        slideCount={slideCount}
-        onTogglePresentMode={mode === "edit" ? undefined : () => setMode((current) => (current === "present" ? "read" : "present"))}
-        actions={
-          <>
-            {presentHref ? (
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                asChild
-                aria-label="Open in new tab"
-                title="Open deck in new tab"
-              >
-                <a href={presentHref} target="_blank" rel="noopener noreferrer" data-testid="deck-open-present">
-                  <ExternalLink className="size-3.5" />
-                </a>
-              </Button>
-            ) : null}
-          </>
-        }
-      />
+      {!hidePresentationControls ? (
+        <DeckToolbar
+          title={title}
+          path={path}
+          mode={mode === "present" ? "read" : mode}
+          onModeChange={isFullPagePanel ? undefined : setMode}
+          presentMode={mode === "present"}
+          slideIndex={safeIndex}
+          slideCount={slideCount}
+          onTogglePresentMode={mode === "edit" ? undefined : () => setMode((current) => (current === "present" ? "read" : "present"))}
+          actions={
+            <>
+              {presentHref ? (
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  asChild
+                  aria-label="Open in new tab"
+                  title="Open deck in new tab"
+                >
+                  <a href={presentHref} target="_blank" rel="noopener noreferrer" data-testid="deck-open-present">
+                    <ExternalLink className="size-3.5" />
+                  </a>
+                </Button>
+              ) : null}
+            </>
+          }
+        />
+      ) : null}
       {conflict ? (
         <DeckNotice
           title="Deck changed on disk"
@@ -412,7 +434,7 @@ function FileBackedDeckPane({
           </article>
         </DeckSlideFrame>
       )}
-      {mode !== "edit" ? (
+      {mode !== "edit" && !hidePresentationControls ? (
         <DeckSlideRail
           slideIndex={safeIndex}
           slideCount={slideCount}
@@ -425,6 +447,21 @@ function FileBackedDeckPane({
       ) : null}
     </DeckShell>
   )
+}
+
+function shouldHidePresentationControls({
+  isFullPagePanel,
+  params,
+  presentMode,
+}: {
+  isFullPagePanel: boolean
+  params?: DeckPaneParams
+  presentMode: boolean
+}): boolean {
+  if (!presentMode) return false
+  if (params?.showControls === true || params?.controls === "visible") return false
+  if (params?.showControls === false || params?.controls === "hidden") return true
+  return isFullPagePanel
 }
 
 interface DeckSlideContentProps {

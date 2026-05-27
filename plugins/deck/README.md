@@ -10,9 +10,11 @@ files.
 v1 includes:
 - one deck panel
 - read / edit / present flows
+- clean full-page presentation mode with keyboard navigation
 - `workspace.open.path` resolution for deck markdown paths
 - generic widget injection for app-owned components
 - one bundled Pi skill at `skills/deck-authoring/`
+- Pi system prompt guidance for opening decks through `exec_ui openSurface`
 
 ## Intentionally out of scope
 
@@ -82,6 +84,8 @@ Rules:
 - default `pathPrefix = "deck/"`
 - panel + surface resolver are built in
 - no built-in command in v1
+- full-page presentation hides deck controls by default; pass panel params
+  `{ controls: "visible" }` to opt controls back in
 
 ### Widget API
 
@@ -236,13 +240,19 @@ Theme customization is intentionally small:
 Use normal app/workspace CSS tokens and classes for colors/typography rather
 than deck-specific color/font props.
 
-## Skill
+## Skill and agent UI opening
 
 The bundled `deck-authoring` skill teaches:
 - where deck files live
 - how to split slides
 - how to keep slides concise
 - widget syntax and host-widget preservation rules
+- how to open a deck through `exec_ui`:
+  `{ kind: "openSurface", params: { kind: "workspace.open.path", target: "deck/intro.md" } }`
+
+For the Pi prompt/skill to be active in an app, include `@hachej/boring-deck`
+in the app's `package.json#boring.defaultPluginPackages` or otherwise pass its
+`package.json#pi` contributions to `createWorkspaceAgentApp()`.
 
 ## Validation
 

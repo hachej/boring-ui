@@ -2,7 +2,6 @@
   "name": "@hachej/boring-deck",
   "version": "0.1.20",
   "type": "module",
-  "private": true,
   "license": "MIT",
   "description": "Front-only markdown deck plugin scaffold for Boring workspace.",
   "repository": {
@@ -15,12 +14,18 @@
     "front": "dist/front/index.js"
   },
   "pi": {
-    "skills": ["skills/deck-authoring"],
-    "systemPrompt": "Use the deck-authoring skill for markdown slide decks under deck/*.md."
+    "skills": [
+      "skills/deck-authoring"
+    ],
+    "systemPrompt": "Deck files live under deck/*.md. When the user asks to open a deck, create or locate the deck markdown file, then call exec_ui with { kind: 'openSurface', params: { kind: 'workspace.open.path', target: '<deck/path.md>' } }. Use the deck-authoring skill when writing or editing deck content."
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "files": [
     "dist",
-    "skills"
+    "skills",
+    "README.md"
   ],
   "exports": {
     ".": {

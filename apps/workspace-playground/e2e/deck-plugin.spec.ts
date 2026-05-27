@@ -82,6 +82,7 @@ test.describe("workspace-playground deck plugin", () => {
       const popup = await popupPromise
       await expect(popup.getByTestId("deck-shell-present")).toBeVisible({ timeout: 10_000 })
       await expect(popup.getByText("Welcome to the neutral consumer deck.")).toBeVisible({ timeout: 10_000 })
+      await expect(popup.getByTestId("deck-next")).toHaveCount(0)
       await popup.keyboard.press("ArrowRight")
       await expect(popup.getByText("Second slide")).toBeVisible({ timeout: 10_000 })
       await popup.close()

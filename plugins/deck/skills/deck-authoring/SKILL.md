@@ -1,13 +1,33 @@
+---
+description: Author, edit, or open markdown slide decks in Boring workspaces.
+---
+
 # deck-authoring
 
 Use this skill when authoring or editing markdown slide decks for
 `@hachej/boring-deck`.
 
-## File location
+## File location and opening decks
 
 - deck files live under `deck/*.md` by default
 - the host app may configure a different prefix, but you should preserve the
   existing project convention you see in the workspace
+- when the user says “open me a deck” or asks to view a deck, do not say you
+  lack UI tools if `exec_ui` is available; create or locate the deck markdown
+  file, then call:
+
+```json
+{
+  "kind": "openSurface",
+  "params": {
+    "kind": "workspace.open.path",
+    "target": "deck/intro.md"
+  }
+}
+```
+
+- use the exact deck path as `target`; the deck plugin's surface resolver opens
+  matching markdown paths in the deck panel
 
 ## Slide structure
 
