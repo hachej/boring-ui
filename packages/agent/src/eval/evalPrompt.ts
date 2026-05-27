@@ -26,6 +26,7 @@ interface CapturedStream {
   toolCalls: ToolCall[]
   text: string
   usage?: { input: number; output: number }
+  errorText?: string
 }
 
 export async function evalAgentPrompt(opts: EvalPromptOptions): Promise<EvalResult> {
@@ -57,6 +58,19 @@ export async function evalAgentPrompt(opts: EvalPromptOptions): Promise<EvalResu
         text: "",
         attempts,
         reason: `transport: ${err instanceof Error ? err.message : String(err)}`,
+      }
+      if (attempts > maxRetries) return lastResult
+      continue
+    }
+
+    if (captured.errorText) {
+      lastResult = {
+        ok: false,
+        actual: captured.toolCalls,
+        text: captured.text,
+        usage: captured.usage,
+        attempts,
+        reason: `stream: ${captured.errorText}`,
       }
       if (attempts > maxRetries) return lastResult
       continue
@@ -188,11 +202,13 @@ async function runOnce(
  * - `tool-input-available`: { toolName, input } → ToolCall
  * - `text-delta`: { delta } → accumulate into text buffer
  * - `data-usage`: { data: { input, output } } → usage totals
+ * - `error`: provider/harness stream errors → fail with visible reason
  * - `[DONE]` sentinel marks end of stream
  */
 function parseSseStream(body: string): CapturedStream {
   const toolCalls: ToolCall[] = []
   const textParts: string[] = []
+  const errorParts: string[] = []
   let usage: CapturedStream["usage"] | undefined
 
   for (const line of body.split("\n")) {
@@ -227,10 +243,30 @@ function parseSseStream(body: string): CapturedStream {
           usage = { input: obj.input, output: obj.output }
         }
       }
+    } else if (type === "error") {
+      const text = stringifyStreamError(chunk)
+      if (text) errorParts.push(text)
     }
   }
 
-  return { toolCalls, text: textParts.join(""), usage }
+  return {
+    toolCalls,
+    text: textParts.join(""),
+    usage,
+    errorText: errorParts.length ? errorParts.join("\n") : undefined,
+  }
+}
+
+function stringifyStreamError(chunk: Record<string, unknown>): string {
+  for (const key of ["errorText", "message", "error"]) {
+    const value = chunk[key]
+    if (typeof value === "string" && value.trim()) return value
+    if (value && typeof value === "object") {
+      const message = (value as Record<string, unknown>).message
+      if (typeof message === "string" && message.trim()) return message
+    }
+  }
+  return "unknown stream error"
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {

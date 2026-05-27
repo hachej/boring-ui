@@ -21,11 +21,15 @@ import { createWorkspaceAgentServer } from "../../app/server/createWorkspaceAgen
 // provider eval claim in the PR description was vacuous. Now each
 // provider becomes its own describe.each row, so CI runs the whole
 // suite under each model.
-const ENABLED_MODELS = (
+const FORCED_EVAL_MODEL = process.env.BORING_EVAL_MODEL_PROVIDER && process.env.BORING_EVAL_MODEL_ID
+  ? [{ provider: process.env.BORING_EVAL_MODEL_PROVIDER, id: process.env.BORING_EVAL_MODEL_ID }]
+  : null
+
+const ENABLED_MODELS = FORCED_EVAL_MODEL ?? (
   [
     process.env.GEMINI_API_KEY ? ({ provider: "google", id: "gemini-2.5-flash" } as const) : null,
     process.env.ANTHROPIC_API_KEY ? ({ provider: "anthropic", id: "claude-sonnet-4-6" } as const) : null,
-    process.env.OPENROUTER_API_KEY ? ({ provider: "openrouter", id: "qwen/qwen3.6-plus" } as const) : null,
+    process.env.OPENROUTER_API_KEY ? ({ provider: "openrouter", id: process.env.BORING_EVAL_OPENROUTER_MODEL ?? "qwen/qwen3.6-plus" } as const) : null,
   ].filter(Boolean) as Array<{ provider: string; id: string }>
 )
 const HAS_KEY = ENABLED_MODELS.length > 0

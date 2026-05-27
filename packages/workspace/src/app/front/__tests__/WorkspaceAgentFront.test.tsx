@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { UI_COMMAND_EVENT, type UiCommand } from "../../../front/bridge"
 import type { WorkspaceChatPanelProps } from "../../../front/chrome/chat/types"
 import type { PanelConfig } from "../../../front/registry/types"
+import { definePlugin } from "../../../shared/plugins/frontFactory"
+import type { PluginProviderProps } from "../../../shared/plugins/types"
 import { WorkspaceAgentFront } from "../WorkspaceAgentFront"
 
 function ChatPanel(props: WorkspaceChatPanelProps) {
@@ -214,6 +216,34 @@ describe("WorkspaceAgentFront", () => {
     })
     await waitFor(() => {
       expect(screen.getByText("Global command panel body")).toBeInTheDocument()
+    })
+  })
+
+  it("forwards request headers to workspace plugin providers by default", async () => {
+    const observed: Array<Record<string, string> | undefined> = []
+    function ProbeProvider({ authHeaders, children }: PluginProviderProps) {
+      observed.push(authHeaders)
+      return <>{children}</>
+    }
+    const probePlugin = definePlugin({
+      id: "request-header-probe",
+      setup(api) {
+        api.registerProvider({ id: "probe", component: ProbeProvider })
+      },
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="provider-headers"
+        chatPanel={ChatPanel}
+        requestHeaders={{ "x-boring-workspace-id": "provider-headers" }}
+        plugins={[probePlugin]}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(observed).toContainEqual({ "x-boring-workspace-id": "provider-headers" })
     })
   })
 

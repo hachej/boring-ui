@@ -260,7 +260,11 @@ function commitCapturedFrontFactory(
 ): void {
   if (captured.providers.length > 0 || captured.bindings.length > 0) {
     warnUnsupportedDynamicContributions(pluginId, captured)
-    unregisterPlugin(pluginId, registries)
+    // Provider/binding contributions require mounting in the provider tree,
+    // which hot reload cannot do safely yet. Keep any existing static or
+    // previously-loaded registrations instead of unregistering the plugin:
+    // package defaults like ask-user are statically composed and dynamic
+    // discovery is only an optional refresh path for them.
     return
   }
   const payloads = buildRegistryPayloads(pluginId, captured)

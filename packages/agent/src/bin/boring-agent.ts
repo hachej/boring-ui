@@ -104,7 +104,7 @@ async function startFrontend(apiPort: number): Promise<string> {
       },
     },
     logLevel: 'silent',
-  })
+  } as any)
 
   await vite.listen()
 

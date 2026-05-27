@@ -203,7 +203,7 @@ describe("Pi SessionEntry → UIMessage conformance", () => {
       ],
       [
         "agent_end",
-        { type: "agent_end", messages: [] } as AgentSessionEvent,
+        { type: "agent_end", messages: [], willRetry: false } as AgentSessionEvent,
       ],
       [
         "turn_start",

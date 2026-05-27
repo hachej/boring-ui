@@ -95,7 +95,7 @@ describe("heartbeat during tool execution", () => {
       isError: false,
     } as AgentSessionEvent);
 
-    emit({ type: "agent_end", messages: [] } as AgentSessionEvent);
+    emit({ type: "agent_end", messages: [], willRetry: false } as AgentSessionEvent);
     promptResolve!();
 
     await vi.advanceTimersByTimeAsync(0);
@@ -153,7 +153,7 @@ describe("heartbeat during tool execution", () => {
 
     await vi.advanceTimersByTimeAsync(4000);
 
-    emit({ type: "agent_end", messages: [] } as AgentSessionEvent);
+    emit({ type: "agent_end", messages: [], willRetry: false } as AgentSessionEvent);
     promptResolve!();
 
     await vi.advanceTimersByTimeAsync(0);

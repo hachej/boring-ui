@@ -182,7 +182,7 @@ export function vercelGrepTool(sandbox: Sandbox, workspaceRoot?: string): AgentT
     name: PI_GREP_TOOL.name,
     description: PI_GREP_TOOL.description,
     promptSnippet: PI_GREP_TOOL.promptSnippet,
-    parameters: PI_GREP_TOOL.parameters as Record<string, unknown>,
+    parameters: PI_GREP_TOOL.parameters as unknown as Record<string, unknown>,
     async execute(input, ctx: ToolExecContext): Promise<ToolResult> {
       const params = input as Record<string, unknown>
       if (ctx.abortSignal.aborted) {
