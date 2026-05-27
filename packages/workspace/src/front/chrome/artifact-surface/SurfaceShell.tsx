@@ -91,18 +91,31 @@ export interface SurfaceShellProps {
 }
 
 const COLLAPSED_WIDTH = 40
+const FILE_BACKED_PARAM = "__boringFileBacked"
 
 function fileBackedPath(
   panel: PanelState | null | undefined,
   fileBackedPanelIds: ReadonlySet<string>,
 ): string | null {
   if (!panel) return null
-  if (!panel.id.startsWith("file:") && !fileBackedPanelIds.has(panel.id)) return null
+  if (
+    !panel.id.startsWith("file:") &&
+    !panel.id.startsWith(`surface:${WORKSPACE_OPEN_PATH_SURFACE_KIND}:`) &&
+    !fileBackedPanelIds.has(panel.id) &&
+    panel.params?.[FILE_BACKED_PARAM] !== true
+  ) return null
   const path = panel.params?.path
   return typeof path === "string" ? path : null
 }
 
 let seqCounter = 0
+function fileBackedParams(
+  params: Record<string, unknown> | undefined,
+  path: string,
+): Record<string, unknown> {
+  return { ...(params ?? { path }), [FILE_BACKED_PARAM]: true }
+}
+
 function ok(): CommandResult {
   return { seq: ++seqCounter, status: "ok" }
 }
@@ -215,8 +228,9 @@ export function SurfaceShell({
       const panelId = surfacePanelId(request, resolved)
       fileBackedPanelIdsRef.current.add(panelId)
       const existingByResolvedId = api.getPanel(panelId)
+      const params = fileBackedParams(resolved.params, normalizedPath)
       if (existingByResolvedId) {
-        if (resolved.params) existingByResolvedId.api.updateParameters(resolved.params)
+        existingByResolvedId.api.updateParameters(params)
         existingByResolvedId.api.setActive()
         return
       }
@@ -224,7 +238,7 @@ export function SurfaceShell({
         id: panelId,
         component: resolved.component,
         title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
-        params: resolved.params ?? { path: normalizedPath },
+        params,
       })
       return
     }
@@ -255,9 +269,12 @@ export function SurfaceShell({
     }
     const existing = api.getPanel(panelId)
     const closeWorkbenchOnDone = normalizedRequest.meta?.closeWorkbenchOnDone === true
-    const resolvedParams = closeWorkbenchOnDone && onCloseRef.current
-      ? { ...(resolved.params ?? {}), __closeWorkbenchOnDone: onCloseRef.current }
+    const baseParams = normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
+      ? fileBackedParams(resolved.params, normalizedRequest.target)
       : resolved.params
+    const resolvedParams = closeWorkbenchOnDone && onCloseRef.current
+      ? { ...(baseParams ?? {}), __closeWorkbenchOnDone: onCloseRef.current }
+      : baseParams
     if (existing) {
       if (resolvedParams) existing.api.updateParameters(resolvedParams)
       existing.api.setActive()
@@ -435,9 +452,10 @@ export function SurfaceShell({
           }
           const panelId = surfacePanelId(request, resolved)
           fileBackedPanelIdsRef.current.add(panelId)
+          const params = fileBackedParams(resolved.params, normalizedPath)
           const existingByResolvedId = api.getPanel(panelId)
           if (existingByResolvedId) {
-            if (resolved.params) existingByResolvedId.api.updateParameters(resolved.params)
+            existingByResolvedId.api.updateParameters(params)
             existingByResolvedId.api.setActive()
             return ok()
           }
@@ -445,7 +463,7 @@ export function SurfaceShell({
             id: panelId,
             component: resolved.component,
             title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
-            params: resolved.params ?? { path: normalizedPath },
+            params,
           })
           return ok()
         }

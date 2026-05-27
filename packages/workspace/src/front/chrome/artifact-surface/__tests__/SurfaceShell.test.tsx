@@ -133,7 +133,7 @@ describe("SurfaceShell", () => {
     expect(mockAddPanel).toHaveBeenCalledWith(expect.objectContaining({
       id: "hot-csv:data.csv",
       component: "hot-csv.panel",
-      params: { path: "data.csv" },
+      params: expect.objectContaining({ path: "data.csv" }),
     }))
   })
 
@@ -170,7 +170,7 @@ describe("SurfaceShell", () => {
     expect(mockAddPanel).toHaveBeenCalledWith(expect.objectContaining({
       id: "hot-csv:data.csv",
       component: "hot-csv.panel",
-      params: { path: "data.csv" },
+      params: expect.objectContaining({ path: "data.csv" }),
     }))
   })
 
