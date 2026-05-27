@@ -5,6 +5,14 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    ignore:
+      # Zod 4 has breaking type changes (ZodError API, safeParse return shape)
+      # that require code migration. Tracked separately — see issue.
+      - dependency-name: "zod"
+        update-types: ["version-update:semver-major"]
+      # tailwind-merge 3 is a major with breaking API changes; pin to v2.
+      - dependency-name: "tailwind-merge"
+        update-types: ["version-update:semver-major"]
     groups:
       production-dependencies:
         dependency-type: "production"
