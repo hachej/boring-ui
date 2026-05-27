@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   routes,
   useSignIn,
@@ -12,6 +13,7 @@ export function AuthCard({
   returnTo: string
   onClose?: () => void
 }) {
+  const navigate = useNavigate()
   const signIn = useSignIn()
   const signUp = useSignUp()
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
@@ -34,7 +36,8 @@ export function AuthCard({
         setError(result.error.message ?? `${mode === 'signin' ? 'Sign in' : 'Sign up'} failed`)
         return
       }
-      window.location.assign(returnTo)
+      onClose?.()
+      navigate(returnTo, { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : `${mode === 'signin' ? 'Sign in' : 'Sign up'} failed`)
     } finally {

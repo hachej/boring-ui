@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { act, type ReactNode } from 'react'
 import { MemoryRouter, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -17,6 +18,14 @@ let sessionState: { data: { user: { id: string } } | null; isPending: boolean } 
   isPending: false,
 }
 let unstableSessionObject = false
+const signInEmailMock = vi.fn(async () => ({ data: {}, error: null }))
+const signUpEmailMock = vi.fn(async () => ({ data: {}, error: null }))
+const navigateMock = vi.hoisted(() => vi.fn())
+
+vi.mock('react-router-dom', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-router-dom')>()
+  return { ...actual, useNavigate: () => navigateMock }
+})
 
 vi.mock('../../../front/index.js', () => ({
   CoreFront: ({ children, ...props }: { children?: ReactNode }) => {
@@ -34,8 +43,8 @@ vi.mock('../../../front/index.js', () => ({
   useSession: () => unstableSessionObject && sessionState.data
     ? { data: { user: { ...sessionState.data.user } }, isPending: sessionState.isPending }
     : sessionState,
-  useSignIn: () => ({ email: vi.fn(async () => ({ data: {}, error: null })) }),
-  useSignUp: () => ({ email: vi.fn(async () => ({ data: {}, error: null })) }),
+  useSignIn: () => ({ email: signInEmailMock }),
+  useSignUp: () => ({ email: signUpEmailMock }),
   useWorkspaceRouteStatus: () => routeStatus,
 }))
 
@@ -64,6 +73,9 @@ describe('CoreWorkspaceAgentFront', () => {
     coreFrontProps = null
     sessionState = { data: { user: { id: 'user-1' } }, isPending: false }
     unstableSessionObject = false
+    signInEmailMock.mockClear()
+    signUpEmailMock.mockClear()
+    navigateMock.mockClear()
     window.sessionStorage.clear()
   })
 
@@ -166,6 +178,20 @@ describe('CoreWorkspaceAgentFront', () => {
     })
     expect(workspaceAgentProps?.beforeShell).toBeFalsy()
     expect(workspaceAgentProps?.chatParams).toMatchObject({ serverResourcesEnabled: false, hydrateMessages: false })
+  })
+
+  it('signs in from the chat-first auth card without a hard browser reload', async () => {
+    const { CoreWorkspaceAgentFront } = await importSubject()
+    sessionState = { data: null, isPending: false }
+    currentWorkspaceId = null
+    routePath = '/'
+    render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" />)
+    await userEvent.type(screen.getByPlaceholderText('Email'), 'test@example.com')
+    await userEvent.type(screen.getByPlaceholderText('Password'), 'BoringUi!123')
+    await userEvent.click(screen.getByRole('button', { name: 'Continue with email' }))
+
+    expect(signInEmailMock).toHaveBeenCalledWith({ email: 'test@example.com', password: 'BoringUi!123' })
+    expect(navigateMock).toHaveBeenCalledWith('/', { replace: true })
   })
 
   it('saves the local draft and opens the auth modal before chat-first submit', async () => {
