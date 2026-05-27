@@ -162,6 +162,7 @@ export function SurfaceShell({
   onCloseRef.current = onClose
   const bridgeSelectorsRef = useRef(new Set<(state: WorkspaceState) => void>())
   const fileBackedPanelIdsRef = useRef(new Set<string>())
+  const pendingTreeExpandRef = useRef<string | null>(null)
   const bridgeEventHandlersRef = useRef(
     new Map<keyof BridgeEventMap, Set<(data: BridgeEventMap[keyof BridgeEventMap]) => void>>(),
   )
@@ -328,18 +329,22 @@ export function SurfaceShell({
   const emitBridgeEvent = useCallback(<K extends keyof BridgeEventMap>(
     event: K,
     data: BridgeEventMap[K],
-  ) => {
+  ): boolean => {
     const handlers = bridgeEventHandlersRef.current.get(event)
-    if (!handlers) return
+    if (!handlers || handlers.size === 0) return false
     for (const handler of [...handlers]) {
       handler(data)
     }
+    return true
   }, [])
 
   const expandToFileSync = useCallback((path: string) => {
     const normalizedPath = normalizeWorkbenchPath(path)
+    pendingTreeExpandRef.current = normalizedPath
     setCollapsed(false)
-    emitBridgeEvent("tree:expand", { path: normalizedPath })
+    if (emitBridgeEvent("tree:expand", { path: normalizedPath })) {
+      pendingTreeExpandRef.current = null
+    }
   }, [emitBridgeEvent])
 
   const localSurfaceApi = useMemo<SurfaceShellApi>(() => ({
@@ -427,6 +432,7 @@ export function SurfaceShell({
             )
           }
           const panelId = surfacePanelId(request, resolved)
+          fileBackedPanelIdsRef.current.add(panelId)
           const existingByResolvedId = api.getPanel(panelId)
           if (existingByResolvedId) {
             if (resolved.params) existingByResolvedId.api.updateParameters(resolved.params)
@@ -479,13 +485,17 @@ export function SurfaceShell({
       },
       markDirty: () => {},
       markClean: () => {},
-      subscribe: (event, handler) => {
+      subscribe: <K extends keyof BridgeEventMap>(event: K, handler: (data: BridgeEventMap[K]) => void) => {
         let handlers = bridgeEventHandlersRef.current.get(event)
         if (!handlers) {
           handlers = new Set()
           bridgeEventHandlersRef.current.set(event, handlers)
         }
         handlers.add(handler as (data: BridgeEventMap[keyof BridgeEventMap]) => void)
+        if (event === "tree:expand" && pendingTreeExpandRef.current) {
+          handler({ path: pendingTreeExpandRef.current } as BridgeEventMap[K])
+          pendingTreeExpandRef.current = null
+        }
         return () => {
           handlers?.delete(handler as (data: BridgeEventMap[keyof BridgeEventMap]) => void)
         }
