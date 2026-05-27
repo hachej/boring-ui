@@ -523,7 +523,7 @@ describe("usePiChatProjection (live handleData stream)", () => {
     })
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    const [, init] = fetchMock.mock.calls[0] as [RequestInfo | URL, RequestInit | undefined]
+    const [, init] = fetchMock.mock.calls[0] as unknown as [RequestInfo | URL, RequestInit | undefined]
     expect(JSON.parse(String(init?.body))).toMatchObject({
       messages: [
         { id: "u-1", role: "user", parts: [{ type: "text", text: "retry" }] },
@@ -573,7 +573,7 @@ describe("usePiChatProjection (live handleData stream)", () => {
     })
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    const [input, init] = fetchMock.mock.calls[0] as [RequestInfo | URL, RequestInit | undefined]
+    const [input, init] = fetchMock.mock.calls[0] as unknown as [RequestInfo | URL, RequestInit | undefined]
     expect(init?.method).toBe("PUT")
     expect(String(input)).toBe("/api/v1/agent/chat/sess-persist/messages")
     expect(JSON.parse(String(init?.body))).toEqual({

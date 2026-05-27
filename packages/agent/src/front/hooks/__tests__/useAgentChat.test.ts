@@ -13,6 +13,7 @@ const mockStorageSetItem = vi.fn()
 
 vi.mock('@ai-sdk/react', () => ({
   useChat: vi.fn(() => ({
+    id: 'mock-chat',
     messages: [],
     sendMessage: vi.fn(),
     status: 'ready' as const,
@@ -237,13 +238,14 @@ describe('useAgentChat', () => {
 
   test('does not let late hydration overwrite an in-flight local turn', async () => {
     vi.mocked(useChat).mockReturnValueOnce({
+      id: 'mock-chat',
       messages: [{ id: 'local-u1', role: 'user', parts: [{ type: 'text', text: 'new draft' }] }],
       sendMessage: vi.fn(),
       status: 'submitted',
       error: undefined,
       stop: vi.fn(),
       setMessages: mockSetMessages,
-    } as ReturnType<typeof useChat>)
+    } as unknown as ReturnType<typeof useChat>)
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
