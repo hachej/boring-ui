@@ -175,6 +175,43 @@ describe("streaming concurrency", () => {
     }
   });
 
+  it("keeps the stream open across pi auto-retry agent_end events", async () => {
+    const harness = createPiCodingAgentHarness({
+      tools: [],
+      cwd: "/tmp/test-stream-retry",
+    });
+
+    const ctx: RunContext = {
+      abortSignal: new AbortController().signal,
+      workdir: "/tmp/test-stream-retry",
+    };
+    const input: SendMessageInput = {
+      sessionId: "sess-stream-retry",
+      message: "hello",
+    };
+
+    const reader = harness.sendMessage(input, ctx)[Symbol.asyncIterator]();
+    const firstReadPromise = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+
+    emitPiEvent({ type: "agent_end", messages: [], willRetry: true });
+    emitPiEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "retry response" },
+    });
+
+    const firstRead = await firstReadPromise;
+    expect(firstRead.done).toBe(false);
+
+    emitPiEvent({ type: "agent_end", messages: [], willRetry: false });
+    promptHandle.resolve!();
+
+    for (;;) {
+      const final = await reader.next();
+      if (final.done) break;
+    }
+  });
+
   it("does not buffer chunks until prompt() resolves", async () => {
     // Stronger form of the previous test: emit N chunks before the
     // generator is read, then read N times — each read should advance.

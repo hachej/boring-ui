@@ -992,7 +992,11 @@ export function createPiCodingAgentHarness(opts: {
             }
           }
 
-          if (nativeFollowUpPending.has(input.sessionId) && !ctx.abortSignal.aborted) {
+          if ((event as { willRetry?: boolean }).willRetry) {
+            // Pi 0.75+ can emit agent_end for a failed attempt while it is
+            // about to auto-retry. Keep the HTTP stream open so retry chunks
+            // are delivered instead of accumulating after the generator exits.
+          } else if (nativeFollowUpPending.has(input.sessionId) && !ctx.abortSignal.aborted) {
             // Pi native follow-up was queued but its user message has not been
             // emitted yet. Keep this HTTP stream open; the queued user
             // message_start will clear the pending flag and produce the
