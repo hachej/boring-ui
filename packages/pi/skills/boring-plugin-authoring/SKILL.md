@@ -19,9 +19,12 @@ paths are correct — the parts agents most often invent or get wrong.
 boring-ui scaffold-plugin <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"
 ```
 
-The workspace agent puts `.boring-agent/bin/` on `PATH`, provides the
-`boring-ui` shim there, and exports `BORING_AGENT_WORKSPACE_ROOT`. Do not `cd`
-to a parent repo to scaffold; hot-reloadable user plugins belong under
+The workspace agent puts the provisioned Node bin directory on `PATH` (for
+local/bwrap this is `/workspace/.boring-agent/node/node_modules/.bin`), provides
+the `boring-ui` command there, and exports `BORING_AGENT_WORKSPACE_ROOT`. Use
+`$BORING_AGENT_WORKSPACE_ROOT` instead of host paths such as `/home/...`; in
+sandboxed modes the runtime-visible workspace is `/workspace`. Do not `cd` to a
+parent repo to scaffold; hot-reloadable user plugins belong under
 `$BORING_AGENT_WORKSPACE_ROOT/.pi/extensions/<name>/`. If you are outside the
 agent workspace and do not have that binary, use
 `npx @hachej/boring-ui-cli scaffold-plugin <kebab-name> <workspace-root>`.

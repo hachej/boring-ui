@@ -7,7 +7,7 @@ import {
 
 import type { Sandbox } from '../../../shared/sandbox'
 import type { AgentTool, ToolResult } from '../../../shared/tool'
-import type { RuntimeBundle } from '../../runtime/mode'
+import { getRuntimeBundleStorageRoot, type RuntimeBundle } from '../../runtime/mode'
 import { buildBwrapArgs } from '../../sandbox/bwrap/buildBwrapArgs'
 import { withWorkspacePythonEnv } from '../../sandbox/workspacePythonEnv'
 import { vercelBashOps } from '../operations/vercel'
@@ -78,6 +78,7 @@ function bashOptionsForMode(
   bundle: RuntimeBundle,
   runtime?: HarnessRuntimeProvisioningOptions,
 ): BashToolOptions {
+  const storageRoot = getRuntimeBundleStorageRoot(bundle)
   switch (bundle.sandbox.provider) {
     case 'vercel-sandbox':
       return {
@@ -91,12 +92,12 @@ function bashOptionsForMode(
     case 'bwrap':
       return {
         operations: createLocalBashOperations(),
-        spawnHook: bwrapSpawnHook(bundle.workspace.root, runtime),
+        spawnHook: bwrapSpawnHook(storageRoot, runtime),
       }
     default:
       return {
         operations: createLocalBashOperations(),
-        spawnHook: directSpawnHook(bundle.workspace.root, runtime),
+        spawnHook: directSpawnHook(storageRoot, runtime),
       }
   }
 }
