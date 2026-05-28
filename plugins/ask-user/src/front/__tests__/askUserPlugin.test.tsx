@@ -62,8 +62,10 @@ describe("askUserPlugin front shell", () => {
     const submitCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.answer"))
     expect(JSON.parse(String(submitCall![1]!.body))).toMatchObject({
       op: "human-input.v1.answer",
+      idempotencyKey: expect.stringMatching(/^ask-user-idem:/),
       input: { questionId: "q1", sessionId: "default", nonce: "secret", values: { choice: "A" } },
     })
+    expect(JSON.parse(String(submitCall![1]!.body)).idempotencyKey).not.toBe("secret")
     expect(String(submitCall![1]!.headers)).not.toContain("Bearer")
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/api/v1/questions/commands"))).toBe(false)
   })
@@ -93,6 +95,13 @@ describe("askUserPlugin front shell", () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.pending"))).toBe(true))
     window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: "default" } }))
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.cancel"))).toBe(true))
+    const cancelCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.cancel"))
+    expect(JSON.parse(String(cancelCall![1]!.body))).toMatchObject({
+      op: "human-input.v1.cancel",
+      idempotencyKey: expect.stringMatching(/^ask-user-idem:/),
+      input: { questionId: "q1", sessionId: "default", nonce: "secret", reason: "user_cancelled" },
+    })
+    expect(JSON.parse(String(cancelCall![1]!.body)).idempotencyKey).not.toBe("secret")
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/api/v1/questions/commands"))).toBe(false)
   })
 
@@ -162,6 +171,13 @@ describe("askUserPlugin front shell", () => {
     expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.cancel"))).toBe(false)
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.cancel"))).toBe(true))
+    const cancelCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.cancel"))
+    expect(JSON.parse(String(cancelCall![1]!.body))).toMatchObject({
+      op: "human-input.v1.cancel",
+      idempotencyKey: expect.stringMatching(/^ask-user-idem:/),
+      input: { questionId: "q1", sessionId: "default", nonce: "secret", reason: "user_cancelled" },
+    })
+    expect(JSON.parse(String(cancelCall![1]!.body)).idempotencyKey).not.toBe("secret")
   })
 
   it("renders terminal question lifecycle cards", async () => {

@@ -31,10 +31,12 @@ import {
   createWorkspaceBridgeRegistry,
   createWorkspaceBridgeRuntimeEnvContribution,
   createWorkspaceUiTools,
+  runWithWorkspaceBridgeIdempotency,
   uiRoutes,
   verifyWorkspaceBridgeRuntimeToken,
   workspaceBridgeHttpRoutes,
   type PendingQuestionStore,
+  type UiCommand,
   type WorkspaceBridge,
   type WorkspaceBridgeCallRequest,
   type WorkspaceBridgeCallResponse,
@@ -824,16 +826,33 @@ export async function createCoreWorkspaceAgentServer(
   ): Promise<WorkspaceBridgeCallResponse<TOutput>> => {
     const bridgeRuntime = getWorkspaceBridgeRuntime(workspaceId)
     const definition = bridgeRuntime.registry.getDefinition(request.op)
+    if (!definition) {
+      return await bridgeRuntime.registry.call(request, {
+        callerClass: 'runtime',
+        workspaceId,
+        sessionId: callOptions?.sessionId,
+        capabilities: [],
+        actor: {
+          actorKind: 'agent',
+          performedBy: { label: 'agent-runtime' },
+          onBehalfOf: callOptions?.sessionId
+            ? { label: `session:${callOptions.sessionId}` }
+            : { label: `workspace:${workspaceId}` },
+        },
+        signal: callOptions?.signal,
+        emitUiEffect: (cmd) => getWorkspaceBridge(workspaceId).emitUiEffect(cmd),
+      })
+    }
     const ownerPrincipalId = callOptions?.sessionId
       ? bridgeRuntime.sessionOwners.get(callOptions.sessionId)
       : undefined
-    return await bridgeRuntime.registry.call(request, {
-      callerClass: 'runtime',
+    const authContext = {
+      callerClass: 'runtime' as const,
       workspaceId,
       sessionId: callOptions?.sessionId,
-      capabilities: definition ? [...definition.requiredCapabilities] : [],
+      capabilities: [...definition.requiredCapabilities],
       actor: {
-        actorKind: 'agent',
+        actorKind: 'agent' as const,
         performedBy: { label: 'agent-runtime' },
         onBehalfOf: ownerPrincipalId
           ? { id: ownerPrincipalId, label: `user:${ownerPrincipalId}` }
@@ -842,8 +861,13 @@ export async function createCoreWorkspaceAgentServer(
             : { label: `workspace:${workspaceId}` },
       },
       signal: callOptions?.signal,
-      emitUiEffect: (cmd) => getWorkspaceBridge(workspaceId).emitUiEffect(cmd),
-    })
+      emitUiEffect: (cmd: UiCommand) => getWorkspaceBridge(workspaceId).emitUiEffect(cmd),
+    }
+    return await runWithWorkspaceBridgeIdempotency(bridgeRuntime.idempotencyStore, {
+      definition,
+      request,
+      auth: authContext,
+    }, async () => await bridgeRuntime.registry.call(request, authContext))
   }
   const resolvePiOptions: NonNullable<RegisterAgentRoutesOptions['getPi']> = async (ctx) => {
     const pluginOptions = getPluginPiOptions(ctx.workspaceRoot)

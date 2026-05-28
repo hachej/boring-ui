@@ -34,8 +34,10 @@ describe("usePendingQuestion", () => {
     const submitCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.answer"))
     expect(JSON.parse(String(submitCall![1]!.body))).toMatchObject({
       op: "human-input.v1.answer",
+      idempotencyKey: expect.stringMatching(/^ask-user-idem:/),
       input: { questionId: "q1", sessionId: "s1", nonce: "nonce-secret", values: { answer: "redacted-answer" } },
     })
+    expect(JSON.parse(String(submitCall![1]!.body)).idempotencyKey).not.toBe("nonce-secret")
     expect(JSON.stringify(submitCall![1]!.headers)).not.toContain("Bearer")
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/api/v1/questions/commands"))).toBe(false)
   })

@@ -31,8 +31,8 @@ export function createHumanInputBridgeHandlers(options: HumanInputBridgeHandlers
 }> {
   return [
     { definition: definition(HUMAN_INPUT_OPS.request, ["runtime", "server"], ["human-input:request"], "request-id"), handler: requestHandler(options) },
-    { definition: definition(HUMAN_INPUT_OPS.answer, ["browser", "server"], ["human-input:answer"], "none"), handler: answerHandler(options) },
-    { definition: definition(HUMAN_INPUT_OPS.cancel, ["browser", "server"], ["human-input:cancel"], "none"), handler: cancelHandler(options) },
+    { definition: definition(HUMAN_INPUT_OPS.answer, ["browser", "server"], ["human-input:answer"], "required"), handler: answerHandler(options) },
+    { definition: definition(HUMAN_INPUT_OPS.cancel, ["browser", "server"], ["human-input:cancel"], "required"), handler: cancelHandler(options) },
     { definition: definition(HUMAN_INPUT_OPS.pending, ["browser", "server"], ["human-input:pending"], "none"), handler: pendingHandler(options) },
     { definition: definition(HUMAN_INPUT_OPS.transcript, ["server"], ["human-input:transcript.read"], "none"), handler: transcriptHandler(options) },
   ]

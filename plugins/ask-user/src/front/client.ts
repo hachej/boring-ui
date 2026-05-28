@@ -51,7 +51,12 @@ export function normalizeQuestion(value: unknown): AskUserQuestion | null {
 }
 
 export function createQuestionsClient(options: QuestionsClientOptions = {}) {
-  async function callBridge<T>(op: string, input: Record<string, unknown>, sessionId?: string): Promise<T> {
+  async function callBridge<T>(
+    op: string,
+    input: Record<string, unknown>,
+    sessionId?: string,
+    idempotencyKey?: string,
+  ): Promise<T> {
     const response = await fetch(`${options.apiBaseUrl ?? ""}/api/v1/workspace-bridge/call`, {
       method: "POST",
       headers: {
@@ -59,7 +64,7 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
         ...(sessionId ? { "x-boring-session-id": sessionId } : {}),
         ...(options.headers ?? {}),
       },
-      body: JSON.stringify({ op, input }),
+      body: JSON.stringify({ op, input, ...(idempotencyKey ? { idempotencyKey } : {}) }),
     })
     const payload = await response.json().catch(() => ({})) as BridgeResponse<T> & { error?: { code?: string; message?: string } }
     if (!response.ok || !payload.ok) {
@@ -73,18 +78,50 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
       const output = await callBridge<{ pending: PendingQuestionRecord | null }>("human-input.v1.pending", { sessionId }, sessionId)
       return normalizeQuestion(output.pending)
     },
-    cancel(question: AskUserQuestion) {
+    async cancel(question: AskUserQuestion) {
       ensureNonce(question)
-      return callBridge<QuestionsClientResult>("human-input.v1.cancel", { questionId: question.questionId, sessionId: question.sessionId, nonce: question.answerToken, reason: "user_cancelled" }, question.sessionId)
+      return await callBridge<QuestionsClientResult>(
+        "human-input.v1.cancel",
+        { questionId: question.questionId, sessionId: question.sessionId, nonce: question.answerToken, reason: "user_cancelled" },
+        question.sessionId,
+        await deriveIdempotencyKey("human-input.v1.cancel", {
+          questionId: question.questionId,
+          sessionId: question.sessionId,
+          nonce: question.answerToken,
+          reason: "user_cancelled",
+        }),
+      )
     },
-    submit(question: AskUserQuestion, values: Record<string, AskUserAnswerValue>) {
+    async submit(question: AskUserQuestion, values: Record<string, AskUserAnswerValue>) {
       ensureNonce(question)
       if (!question.schema) throw new QuestionsClientError(ASK_USER_ERROR_CODES.QUESTION_NOT_READY, "Question is not ready")
       const validation = validateQuestionValues(question.schema, values as QuestionFormValues)
       if (!validation.valid) throw new QuestionsClientError(ASK_USER_ERROR_CODES.ANSWER_INVALID, firstValidationMessage(validation))
-      return callBridge<QuestionsClientResult>("human-input.v1.answer", { questionId: question.questionId, sessionId: question.sessionId, nonce: question.answerToken, values }, question.sessionId)
+      return await callBridge<QuestionsClientResult>(
+        "human-input.v1.answer",
+        { questionId: question.questionId, sessionId: question.sessionId, nonce: question.answerToken, values },
+        question.sessionId,
+        await deriveIdempotencyKey("human-input.v1.answer", {
+          questionId: question.questionId,
+          sessionId: question.sessionId,
+          nonce: question.answerToken,
+          values,
+        }),
+      )
     },
   }
+}
+
+async function deriveIdempotencyKey(op: string, inputValue: Record<string, unknown>): Promise<string> {
+  const input = new TextEncoder().encode(`${op}:${stableStringify(inputValue)}`)
+  const digest = await crypto.subtle.digest("SHA-256", input)
+  return `ask-user-idem:${Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("")}`
+}
+
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`
+  return `{${Object.keys(value as Record<string, unknown>).sort().map((key) => `${JSON.stringify(key)}:${stableStringify((value as Record<string, unknown>)[key])}`).join(",")}}`
 }
 
 function normalizeQuestionStatus(status: unknown): AskUserQuestion["status"] {

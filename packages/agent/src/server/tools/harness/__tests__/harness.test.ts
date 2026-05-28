@@ -44,6 +44,7 @@ function mockBundle(provider: string, capabilities?: string[], workspaceRoot = '
     workspace: mockWorkspace(workspaceRoot),
     sandbox: mockSandbox(provider, capabilities),
     fileSearch: { search: vi.fn(async () => []) },
+    getRuntimeEnv: vi.fn(async () => ({})),
   }
 }
 
@@ -151,6 +152,42 @@ describe('buildHarnessAgentTools', () => {
     expect(result.content[0].text).toContain('http://macro')
     expect(result.content[0].text).toContain(`${join(workspaceRoot, '.boring-agent', 'node', 'node_modules', '.bin')}:`)
     expect(result.content[0].text).toContain('/runtime/base')
+  })
+
+  test('bash redacts runtime bridge tokens from output and details', async () => {
+    const workspaceRoot = await makeTempWorkspace()
+    await writeExecutable(join(workspaceRoot, '.boring-agent', 'venv', 'bin', 'print-token'), '#!/usr/bin/env bash\nprintf "%s" "$BORING_WORKSPACE_BRIDGE_TOKEN"\n')
+
+    const bundle = mockBundle('direct', ['exec'], workspaceRoot)
+    bundle.getRuntimeEnv = vi.fn(async () => ({ BORING_WORKSPACE_BRIDGE_TOKEN: 'bridge-token-secret' }))
+    const tools = buildHarnessAgentTools(bundle)
+    const bashTool = tools.find((t) => t.name === 'bash')!
+
+    const result = await bashTool.execute(
+      { command: 'print-token', timeout: 10 },
+      { abortSignal: new AbortController().signal, toolCallId: 'test-redaction' },
+    )
+
+    expect(result.content[0].text).toContain('[REDACTED]')
+    expect(result.content[0].text).not.toContain('bridge-token-secret')
+    expect(JSON.stringify(result)).not.toContain('bridge-token-secret')
+  })
+
+  test('bash redacts runtime bridge tokens from failed output', async () => {
+    const workspaceRoot = await makeTempWorkspace()
+    const bundle = mockBundle('direct', ['exec'], workspaceRoot)
+    bundle.getRuntimeEnv = vi.fn(async () => ({ BORING_WORKSPACE_BRIDGE_TOKEN: 'bridge-token-secret' }))
+    const tools = buildHarnessAgentTools(bundle)
+    const bashTool = tools.find((t) => t.name === 'bash')!
+
+    const result = await bashTool.execute(
+      { command: 'printf %s "$BORING_WORKSPACE_BRIDGE_TOKEN"; exit 1', timeout: 10 },
+      { abortSignal: new AbortController().signal, toolCallId: 'test-redaction-fail' },
+    )
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('[REDACTED]')
+    expect(result.content[0].text).not.toContain('bridge-token-secret')
   })
 
   test('vercel-sandbox bash forwards to sandbox.exec with dynamic runtime env', async () => {

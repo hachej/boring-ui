@@ -1,3 +1,4 @@
+import type { ExtensionAPI, ToolDefinition } from "@mariozechner/pi-coding-agent"
 import { describe, expect, it, vi } from "vitest"
 import { HUMAN_INPUT_OPS, WorkspaceBridgeErrorCode } from "@hachej/boring-workspace/server"
 import { ASK_USER_PROMPT_GUIDELINES, ASK_USER_PROMPT_SNIPPET, createAskUserPiExtensionFactory, createWorkspaceBridgeClient, type AskUserWorkspaceBridgeContext } from "../index"
@@ -17,7 +18,7 @@ function captureTool(ctx?: AskUserWorkspaceBridgeContext) {
       toolCtx?: { sessionManager?: { getSessionId(): string } },
     ) => Promise<unknown>
   }> = []
-  createAskUserPiExtensionFactory(ctx)({ registerTool: (tool) => tools.push(tool) })
+  createAskUserPiExtensionFactory(ctx)({ registerTool: (tool: ToolDefinition) => tools.push(tool as unknown as typeof tools[number]) } as unknown as ExtensionAPI)
   return tools[0]!
 }
 

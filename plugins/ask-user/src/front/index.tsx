@@ -167,6 +167,10 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   const [submitting, setSubmitting] = useState(false)
   const paramQuestion = params?.question
   const question = pending ?? (paramQuestion?.questionId === closedQuestionId ? null : paramQuestion) ?? null
+  const initialDraft = useMemo(
+    () => question ? runtime.getDraft(question) : undefined,
+    [runtime, question?.questionId, question?.sessionId],
+  )
   const client = useMemo(() => createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }), [runtime.apiBaseUrl, runtime.authHeaders])
   useEffect(() => {
     const onStop = (event: Event) => {
@@ -192,7 +196,7 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
       </PaneHeader>
       {!question ? <PaneBody className="overflow-auto p-4"><EmptyState icon={<HelpCircle className="h-5 w-5" />} title="No pending questions" description="When the agent needs a decision, the form will appear here." className="border border-dashed bg-muted/20" /></PaneBody> : null}
       {question?.status === "ready" && question.schema ? (
-        <QuestionFormProvider schema={question.schema} submitting={submitting} initialValues={runtime.getDraft(question)} onValuesChange={(values) => runtime.setDraft(question, values)} onSubmit={async (values) => {
+        <QuestionFormProvider schema={question.schema} submitting={submitting} initialValues={initialDraft} onValuesChange={(values) => runtime.setDraft(question, values)} onSubmit={async (values) => {
           setSubmitting(true); setError(null)
           try { await client.submit(question, values); runtime.clearDraft(question); setClosedQuestionId(question.questionId); runtime.setPending(null); api.close(); params?.__closeWorkbenchOnDone?.() }
           catch (err) { setError(err instanceof QuestionsClientError ? err.message : String(err)) }

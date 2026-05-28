@@ -7,6 +7,7 @@ const BRIDGE_CALL_PATH = "/api/v1/workspace-bridge/call"
 export type WorkspaceBridgeRuntimeEnvDisabledReason =
   | "bridge-url-missing"
   | "runtime-token-secret-missing"
+  | "runtime-capabilities-missing"
   | "remote-bridge-url-must-be-https"
   | "remote-bridge-url-must-not-be-localhost"
   | "bridge-url-invalid"
@@ -18,7 +19,7 @@ export interface WorkspaceBridgeRuntimeEnvOptions {
   bridgeUrl?: string
   /** Allow plain HTTP for local/dev endpoints. Remote runtimes still require HTTPS. */
   allowInsecureHttp?: boolean
-  /** Override token capability scope. Defaults to all registered operation capabilities. */
+  /** Required explicit runtime token capability scope. */
   capabilities?: readonly string[]
   /** Runtime token TTL. Defaults to the token primitive default. */
   tokenTtlMs?: number
@@ -43,13 +44,14 @@ export function createWorkspaceBridgeRuntimeEnvContribution(
   if (!enabled) return undefined
 
   const bridgeUrl = resolveBridgeCallUrl(options.runtimeEnv?.bridgeUrl)
+  const capabilities = options.runtimeEnv?.capabilities
   const disabledReason = validateRuntimeBridgeUrl({
     bridgeUrl,
     runtimeMode: options.runtimeMode,
     allowInsecureHttp: options.runtimeEnv?.allowInsecureHttp,
     hasRuntimeTokenSecret: Boolean(options.runtimeTokenSecret),
+    hasCapabilities: Array.isArray(capabilities) && capabilities.length > 0,
   })
-  const capabilities = options.runtimeEnv?.capabilities ?? collectRuntimeCapabilities(options.registry)
 
   return {
     id: "workspace-bridge-runtime-env",
@@ -62,7 +64,7 @@ export function createWorkspaceBridgeRuntimeEnvContribution(
         workspaceId: options.workspaceId,
         sessionId: options.runtimeEnv?.sessionId,
         runtimeId: options.runtimeMode,
-        capabilities,
+        capabilities: capabilities!,
         bridgeOrigin: originOf(bridgeUrl!),
         deploymentId: options.runtimeEnv?.deploymentId,
         ttlMs: options.runtimeEnv?.tokenTtlMs,
@@ -95,9 +97,11 @@ function validateRuntimeBridgeUrl(options: {
   runtimeMode: RuntimeModeId
   allowInsecureHttp?: boolean
   hasRuntimeTokenSecret: boolean
+  hasCapabilities: boolean
 }): WorkspaceBridgeRuntimeEnvDisabledReason | undefined {
   if (!options.bridgeUrl) return "bridge-url-missing"
   if (!options.hasRuntimeTokenSecret) return "runtime-token-secret-missing"
+  if (!options.hasCapabilities) return "runtime-capabilities-missing"
   let url: URL
   try {
     url = new URL(options.bridgeUrl)
@@ -111,10 +115,6 @@ function validateRuntimeBridgeUrl(options: {
   if (url.protocol === "http:" && !options.allowInsecureHttp && !isLocalhost) return "remote-bridge-url-must-be-https"
   if (url.protocol !== "http:" && url.protocol !== "https:") return "bridge-url-invalid"
   return undefined
-}
-
-function collectRuntimeCapabilities(registry: WorkspaceBridgeRegistry): string[] {
-  return Array.from(new Set(registry.listDefinitions().flatMap((definition) => [...definition.requiredCapabilities]))).sort()
 }
 
 function originOf(url: string): string {

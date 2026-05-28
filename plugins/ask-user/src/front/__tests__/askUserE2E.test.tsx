@@ -1,3 +1,4 @@
+import type { ExtensionAPI, ToolDefinition } from "@mariozechner/pi-coding-agent"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { captureFrontPlugin } from "@hachej/boring-workspace/plugin"
@@ -61,7 +62,10 @@ describe("ask-user front + Pi extension + human-input bridge e2e", () => {
       return Response.json(response, { status: response.ok ? 200 : 400 })
     }))
 
-    const tools: Array<{ name: string; execute: (toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown> }> = []
+    const tools: Array<{
+      name: string
+      execute: (toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal, onUpdate?: unknown, toolCtx?: unknown) => Promise<unknown>
+    }> = []
     createAskUserPiExtensionFactory({
       sessionId: "session-1",
       logger: { debug: (message, meta) => redactedLogs.push(`${message} ${JSON.stringify(meta)}`), warn: vi.fn(), error: vi.fn() },
@@ -73,12 +77,12 @@ describe("ask-user front + Pi extension + human-input bridge e2e", () => {
         }
         return await registry.call({ op: HUMAN_INPUT_OPS.request, requestId: input.requestId, input }, { ...runtimeContext(emitUiEffect), signal })
       },
-    })({ registerTool: (tool) => { redactedLogs.push(`extension registration ${tool.name}`); tools.push(tool) } })
+    })({ registerTool: (tool: ToolDefinition) => { redactedLogs.push(`extension registration ${tool.name}`); tools.push(tool as unknown as typeof tools[number]) } } as unknown as ExtensionAPI)
 
     const tool = tools.find((candidate) => candidate.name === "ask_user")!
     expect(tool).toBeTruthy()
     redactedLogs.push("tool call ask_user")
-    const resultPromise = tool.execute("tool-call-1", { title: "Need input", context: "Do not log the answer", schema })
+    const resultPromise = tool.execute("tool-call-1", { title: "Need input", context: "Do not log the answer", schema }, undefined, undefined, undefined)
     await waitFor(async () => expect(await store.getPending("session-1")).toBeTruthy())
     redactedLogs.push("pending question observed")
 

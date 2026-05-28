@@ -818,11 +818,11 @@ test('runtimeEnvContributions merge generic host env into sandbox exec without w
       const { createNodeWorkspace } = await import('../workspace/createNodeWorkspace')
       const { createServerFileSearch } = await import('../runtime/createServerFileSearch')
       const runtimeContext = { runtimeCwd: '/workspace' }
-      const workspace = createNodeWorkspace(ctx.workspaceRoot, { runtimeContext })
+      const workspace = createNodeWorkspace(ctx.workspaceRoot)
       const sandbox = {
         id: 'env-sandbox',
         placement: 'server' as const,
-        provider: 'bwrap',
+        provider: 'vercel-sandbox',
         capabilities: ['exec'],
         runtimeContext,
         async exec(_cmd: string, opts?: { env?: Record<string, string> }) {

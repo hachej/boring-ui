@@ -1,3 +1,4 @@
+import type { ExtensionAPI, ToolDefinition } from "@mariozechner/pi-coding-agent"
 import { describe, expect, it, vi } from "vitest"
 import {
   createHumanInputBridgeHandlers,
@@ -11,7 +12,16 @@ import {
 import { createAskUserPiExtensionFactory } from "../index"
 
 const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer", required: true }] }
-type Tool = { name: string; execute(toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal): Promise<any> }
+type Tool = {
+  name: string
+  execute(
+    toolCallId: string,
+    params: Record<string, unknown>,
+    signal?: AbortSignal,
+    onUpdate?: unknown,
+    toolCtx?: unknown,
+  ): Promise<any>
+}
 type RuntimeMode = "direct" | "local" | "vercel-sandbox"
 
 function makeContext(callerClass: WorkspaceBridgeCallContext["callerClass"], capabilities: string[], mode: RuntimeMode, extra: Partial<WorkspaceBridgeCallContext> = {}): WorkspaceBridgeCallContext {
@@ -42,7 +52,7 @@ function setup(mode: RuntimeMode, emitUiEffect?: WorkspaceBridgeCallContext["emi
       logs.push(`${mode}:bridge request:${JSON.stringify(redact({ requestId: input.requestId, toolCallId: input.toolCallId, sessionId: input.sessionId, callerClass: "runtime", actorKind: "agent" }))}`)
       return await registry.call({ op: HUMAN_INPUT_OPS.request, requestId: input.requestId, input }, makeContext("runtime", ["human-input:request"], mode, { signal, emitUiEffect }))
     },
-  })({ registerTool: (tool) => { logs.push(`${mode}:extension registration:${tool.name}`); tools.push(tool) } })
+  })({ registerTool: (tool: ToolDefinition) => { logs.push(`${mode}:extension registration:${tool.name}`); tools.push(tool as unknown as Tool) } } as unknown as ExtensionAPI)
   return { registry, store, pendingRuntime, logs, tool: tools[0]! }
 }
 
@@ -66,7 +76,7 @@ describe("ask-user bridge integration across runtime modes", () => {
         logs.push(`${mode}:ui effect:${JSON.stringify({ kind: effect.kind, surface: (effect as any).params?.kind })}`)
         return { seq: 1, status: "ok" }
       })
-      const resultPromise = tool.execute(`tool-${mode}`, { title: `Question ${mode}`, schema })
+      const resultPromise = tool.execute(`tool-${mode}`, { title: `Question ${mode}`, schema }, undefined, undefined, undefined)
       const pending = await waitForPending(store, `session-${mode}`)
       logs.push(`${mode}:pending question:${JSON.stringify({ requestId: pending.requestId, toolCallId: pending.toolCallId, questionId: pending.questionId, sessionId: pending.sessionId, actorKind: pending.actorKind })}`)
       const answer = await registry.call({ op: HUMAN_INPUT_OPS.answer, input: { questionId: pending.questionId, sessionId: pending.sessionId, nonce: pending.nonce, values: { answer: "secret answer" } } }, makeContext("browser", ["human-input:answer"], mode))
@@ -91,26 +101,26 @@ describe("ask-user bridge integration across runtime modes", () => {
 
   it("covers UI unavailable, timeout, abort, cancellation, transcript policy, and tab race", async () => {
     const unavailable = setup("direct", async () => { throw new Error("ui unavailable") })
-    await expect(unavailable.tool.execute("tool-ui", { title: "UI", schema })).resolves.toMatchObject({ isError: true, details: { status: "cancelled", reason: "runtime_unavailable" } })
+    await expect(unavailable.tool.execute("tool-ui", { title: "UI", schema }, undefined, undefined, undefined)).resolves.toMatchObject({ isError: true, details: { status: "cancelled", reason: "runtime_unavailable" } })
 
     const timed = setup("local", async () => ({ seq: 1, status: "ok" }))
-    await expect(timed.tool.execute("tool-timeout", { title: "Timeout", schema, timeoutMs: 1_000 })).resolves.toMatchObject({ isError: true, details: { status: "cancelled", reason: "timeout" } })
+    await expect(timed.tool.execute("tool-timeout", { title: "Timeout", schema, timeoutMs: 1_000 }, undefined, undefined, undefined)).resolves.toMatchObject({ isError: true, details: { status: "cancelled", reason: "timeout" } })
 
     const aborted = setup("vercel-sandbox", async () => ({ seq: 1, status: "ok" }))
     const controller = new AbortController()
-    const abortedPromise = aborted.tool.execute("tool-abort", { title: "Abort", schema }, controller.signal)
+    const abortedPromise = aborted.tool.execute("tool-abort", { title: "Abort", schema }, controller.signal, undefined, undefined)
     await waitForPending(aborted.store, "session-vercel-sandbox")
     controller.abort()
     await expect(abortedPromise).resolves.toMatchObject({ isError: true, details: { status: "cancelled", reason: "aborted" } })
 
     const cancelled = setup("direct", async () => ({ seq: 1, status: "ok" }))
-    const cancelledPromise = cancelled.tool.execute("tool-cancel", { title: "Cancel", schema })
+    const cancelledPromise = cancelled.tool.execute("tool-cancel", { title: "Cancel", schema }, undefined, undefined, undefined)
     const cancelPending = await waitForPending(cancelled.store, "session-direct")
     await expect(cancelled.registry.call({ op: HUMAN_INPUT_OPS.cancel, input: { questionId: cancelPending.questionId, sessionId: cancelPending.sessionId, nonce: cancelPending.nonce, reason: "user_cancelled" } }, makeContext("browser", ["human-input:cancel"], "direct"))).resolves.toMatchObject({ ok: true })
     await expect(cancelledPromise).resolves.toMatchObject({ isError: true, details: { status: "cancelled", reason: "user_cancelled" } })
 
     const raced = setup("local", async () => ({ seq: 1, status: "ok" }))
-    const racedPromise = raced.tool.execute("tool-race", { title: "Race", schema })
+    const racedPromise = raced.tool.execute("tool-race", { title: "Race", schema }, undefined, undefined, undefined)
     const racePending = await waitForPending(raced.store, "session-local")
     const first = await raced.registry.call({ op: HUMAN_INPUT_OPS.answer, input: { questionId: racePending.questionId, sessionId: racePending.sessionId, nonce: racePending.nonce, values: { answer: "first secret" } } }, makeContext("browser", ["human-input:answer"], "local"))
     const second = await raced.registry.call({ op: HUMAN_INPUT_OPS.answer, input: { questionId: racePending.questionId, sessionId: racePending.sessionId, nonce: racePending.nonce, values: { answer: "second secret" } } }, makeContext("browser", ["human-input:answer"], "local"))
@@ -123,7 +133,7 @@ describe("ask-user bridge integration across runtime modes", () => {
 
   it("returns runtime unavailable when no explicit bridge context is provided", async () => {
     const tools: Tool[] = []
-    createAskUserPiExtensionFactory()({ registerTool: (tool) => tools.push(tool) })
-    await expect(tools[0]!.execute("tool-no-context", { title: "No context", schema })).resolves.toMatchObject({ isError: true, details: { code: "ASK_USER_RUNTIME_UNAVAILABLE" } })
+    createAskUserPiExtensionFactory()({ registerTool: (tool: ToolDefinition) => tools.push(tool as unknown as Tool) } as unknown as ExtensionAPI)
+    await expect(tools[0]!.execute("tool-no-context", { title: "No context", schema }, undefined, undefined, undefined)).resolves.toMatchObject({ isError: true, details: { code: "ASK_USER_RUNTIME_UNAVAILABLE" } })
   })
 })

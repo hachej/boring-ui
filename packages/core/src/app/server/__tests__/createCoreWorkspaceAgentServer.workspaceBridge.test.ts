@@ -1,3 +1,5 @@
+import type { ExtensionAPI, ExtensionFactory, ToolDefinition } from '@mariozechner/pi-coding-agent'
+import { Type } from '@sinclair/typebox'
 import Fastify from 'fastify'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -10,6 +12,7 @@ const workspaceServerMock = vi.hoisted(() => ({
   runtimeEnvCalls: [] as Array<Record<string, unknown>>,
   httpRouteOpts: [] as Array<Record<string, unknown>>,
   runtimeTokenVerifications: [] as string[],
+  idempotencyCalls: [] as Array<Record<string, unknown>>,
 }))
 
 vi.mock('@hachej/boring-agent/server', () => ({
@@ -105,6 +108,18 @@ vi.mock('@hachej/boring-workspace/server', () => ({
     }
   }),
   createWorkspaceUiTools: () => [],
+  runWithWorkspaceBridgeIdempotency: vi.fn(async (_store: unknown, options: Record<string, any>, execute: () => Promise<unknown>) => {
+    workspaceServerMock.idempotencyCalls.push(options)
+    if (options.definition?.idempotencyPolicy === 'required' && !options.request?.idempotencyKey) {
+      return {
+        ok: false,
+        op: options.request?.op ?? options.definition?.op,
+        requestId: options.request?.requestId,
+        error: { code: 'BRIDGE_IDEMPOTENCY_REQUIRED', message: 'WorkspaceBridge operation requires an idempotency key' },
+      }
+    }
+    return await execute()
+  }),
   InMemoryPendingQuestionStore: class InMemoryPendingQuestionStore {
     async getPending() {
       return null
@@ -191,6 +206,7 @@ afterEach(() => {
   workspaceServerMock.runtimeEnvCalls.length = 0
   workspaceServerMock.httpRouteOpts.length = 0
   workspaceServerMock.runtimeTokenVerifications.length = 0
+  workspaceServerMock.idempotencyCalls.length = 0
 })
 
 describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
@@ -201,6 +217,7 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
         runtimeTokenSecret: '12345678901234567890123456789012',
         runtimeEnv: {
           bridgeUrl: 'https://bridge.test',
+          capabilities: ['test:runtime-env'],
         },
       },
     })
@@ -226,7 +243,7 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
       workspaceId: 'workspace-1',
       runtimeMode: 'direct',
       runtimeTokenSecret: '12345678901234567890123456789012',
-      runtimeEnv: { bridgeUrl: 'https://bridge.test' },
+      runtimeEnv: { bridgeUrl: 'https://bridge.test', capabilities: ['test:runtime-env'] },
     })
     expect(workspaceServerMock.httpRouteOpts.at(-1)).toMatchObject({
       runtimeTokenSecret: '12345678901234567890123456789012',
@@ -267,20 +284,20 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
         }],
       },
       getWorkspaceBridgePi: (ctx) => ({
-        extensionFactories: [({ registerTool }: { registerTool: (tool: { execute: (...args: unknown[]) => Promise<unknown> }) => void }) => {
-          registerTool({
+        extensionFactories: [((pi: ExtensionAPI) => {
+          pi.registerTool({
             name: 'test-owner',
             label: 'test owner',
             description: 'test owner bridge tool',
-            parameters: {},
-            async execute(_toolCallId, _params, _signal, _onUpdate, toolCtx: { sessionManager: { getSessionId(): string } }) {
+            parameters: Type.Object({}),
+            async execute(_toolCallId, _params, _signal, _onUpdate, toolCtx) {
               const response = await ctx.callAsRuntime<{ ownerId: string | null }>({ op: 'test.v1.owner', input: {} }, {
                 sessionId: toolCtx.sessionManager.getSessionId(),
               })
               return { content: [{ type: 'text', text: JSON.stringify(response) }], details: response }
             },
           })
-        }],
+        }) satisfies ExtensionFactory],
       }),
     })
 
@@ -302,16 +319,75 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
       workspaceId: 'workspace-1',
       workspaceRoot: '/tmp/workspace',
     })
-    const tools: Array<{ execute: (...args: unknown[]) => Promise<unknown> }> = []
-    piOptions.extensionFactories[0]({ registerTool: (tool: { execute: (...args: unknown[]) => Promise<unknown> }) => tools.push(tool) })
+    const tools: ToolDefinition[] = []
+    await piOptions.extensionFactories[0]({ registerTool: (tool: ToolDefinition) => tools.push(tool) } as unknown as ExtensionAPI)
 
     await expect(tools[0]?.execute('tool-call-1', {}, undefined, undefined, {
       sessionManager: { getSessionId: () => 'session-1' },
-    })).resolves.toMatchObject({
+    } as never)).resolves.toMatchObject({
       details: {
         ok: true,
         output: { ownerId: 'user-2' },
       },
+    })
+    await app.close()
+  })
+
+  it('routes bridge-aware Pi runtime calls through idempotency enforcement', async () => {
+    const app = await createCoreWorkspaceAgentServer({
+      serveFrontend: false,
+      workspaceBridge: {
+        handlers: [{
+          definition: {
+            op: 'test.v1.persist',
+            version: 1,
+            owner: 'test',
+            callerClassesAllowed: ['runtime'],
+            requiredCapabilities: ['test:persist'],
+            inputSchema: { type: 'object' },
+            outputSchema: { type: 'object' },
+            timeoutMs: 1_000,
+            maxInputBytes: 1024,
+            maxOutputBytes: 1024,
+            idempotencyPolicy: 'required',
+            auditCategory: 'test',
+          },
+          handler: () => ({ persisted: true }),
+        }],
+      },
+      getWorkspaceBridgePi: (ctx) => ({
+        extensionFactories: [((pi: ExtensionAPI) => {
+          pi.registerTool({
+            name: 'test-persist',
+            label: 'test persist',
+            description: 'test persist bridge tool',
+            parameters: Type.Object({}),
+            async execute() {
+              return {
+                details: await ctx.callAsRuntime({ op: 'test.v1.persist', input: {} }),
+                content: [{ type: 'text', text: 'ok' }],
+              }
+            },
+          })
+        }) satisfies ExtensionFactory],
+      }),
+    })
+
+    const registerOpts = agentServerMock.registerOpts.at(-1)
+    const piOptions = await (registerOpts?.getPi as Function)?.({
+      workspaceId: 'workspace-1',
+      workspaceRoot: '/tmp/workspace',
+    })
+    const tools: ToolDefinition[] = []
+    await piOptions.extensionFactories[0]({ registerTool: (tool: ToolDefinition) => tools.push(tool) } as unknown as ExtensionAPI)
+
+    await expect(tools[0]?.execute('tool-call-1', {}, undefined, undefined, {} as never)).resolves.toMatchObject({
+      details: { ok: false, error: { code: 'BRIDGE_IDEMPOTENCY_REQUIRED' } },
+    })
+    expect(workspaceServerMock.idempotencyCalls.at(-1)).toMatchObject({
+      definition: { op: 'test.v1.persist', idempotencyPolicy: 'required' },
+      request: { op: 'test.v1.persist', input: {} },
+      auth: { workspaceId: 'workspace-1' },
     })
     await app.close()
   })

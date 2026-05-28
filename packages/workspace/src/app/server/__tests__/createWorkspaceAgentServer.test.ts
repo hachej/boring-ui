@@ -789,6 +789,7 @@ describe("createWorkspaceAgentServer — WorkspaceBridge RPC composition", () =>
         runtimeEnv: {
           bridgeUrl: "http://localhost:7777",
           allowInsecureHttp: true,
+          capabilities: ["test:runtime-env"],
           sessionId: `session-${mode}`,
         },
         handlers: [{ definition, handler: () => ({ ok: true }) }],
@@ -811,6 +812,30 @@ describe("createWorkspaceAgentServer — WorkspaceBridge RPC composition", () =>
   })
 
 
+
+  test("disables WorkspaceBridge runtime env when capabilities are omitted", async () => {
+    mockCreateAgentAppOnce(async () => Fastify())
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("bridge-runtime-env-missing-caps-"),
+      mode: "direct",
+      provisionWorkspace: false,
+      workspaceBridge: {
+        runtimeTokenSecret: "12345678901234567890123456789012",
+        runtimeEnv: {
+          bridgeUrl: "http://localhost:7777",
+          allowInsecureHttp: true,
+        },
+      },
+    })
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls.at(-1) as unknown as [{
+      runtimeEnvContributions?: Array<{ id: string; getEnv: () => Promise<Record<string, string>> | Record<string, string> }>
+    }]
+    const env = await agentOptions.runtimeEnvContributions?.find((entry) => entry.id === "workspace-bridge-runtime-env")?.getEnv()
+
+    expect(env).toEqual({ BORING_WORKSPACE_BRIDGE_DISABLED: "runtime-capabilities-missing" })
+    await app.close()
+  })
 
   test("creates an isolated pending-question runtime per workspace server", async () => {
     mockCreateAgentAppOnce(async () => Fastify())
@@ -868,7 +893,7 @@ describe("createWorkspaceAgentServer — WorkspaceBridge RPC composition", () =>
       provisionWorkspace: false,
       workspaceBridge: {
         runtimeTokenSecret: "12345678901234567890123456789012",
-        runtimeEnv: { bridgeUrl: "http://localhost:7777", allowInsecureHttp: true },
+        runtimeEnv: { bridgeUrl: "http://localhost:7777", allowInsecureHttp: true, capabilities: ["test:runtime-env"] },
       },
     })
 
