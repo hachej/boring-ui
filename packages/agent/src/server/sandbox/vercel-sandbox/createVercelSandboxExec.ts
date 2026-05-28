@@ -12,7 +12,7 @@ import { withWorkspacePythonEnv } from '../workspacePythonEnv'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_MAX_OUTPUT_BYTES = 1_048_576
-const VERCEL_SANDBOX_DEFAULT_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+const VERCEL_SANDBOX_DEFAULT_PATH = '/vercel/runtimes/node24/bin:/vercel/runtimes/node22/bin:/vercel/runtimes/python/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 
 interface CaptureState {
   totalBytes: number

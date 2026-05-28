@@ -38,7 +38,8 @@ function artifactExtension(kind: 'node' | 'python'): '.tgz' | '.tar.gz' {
 function artifactName(kind: 'node' | 'python', id: string, fingerprint: string): string {
   const safeId = id.replace(/[^A-Za-z0-9._-]/g, '-')
   const safeFingerprint = fingerprint.replace(/^sha256:/, '')
-  return `${safeId}-${safeFingerprint}${artifactExtension(kind)}`
+  const formatVersion = kind === 'node' ? 'pnpm-pack-v2' : 'v1'
+  return `${safeId}-${formatVersion}-${safeFingerprint}${artifactExtension(kind)}`
 }
 
 export function createVercelProvisioningAdapter(

@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, readdir, rename, stat } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
@@ -251,15 +251,17 @@ async function prepareVercelProvisioningArtifact(request: {
   await mkdir(dirname(request.outputPath), { recursive: true })
 
   if (request.kind === 'node') {
-    const { stdout } = await execFileAsync('npm', [
-      'pack',
+    const { stdout } = await execFileAsync('pnpm', [
+      '--dir',
       sourcePath,
+      'pack',
       '--pack-destination',
       dirname(request.outputPath),
     ], { maxBuffer: 1024 * 1024 * 20 })
     const packedName = stdout.trim().split(/\r?\n/).filter(Boolean).at(-1)
-    if (!packedName) throw new Error(`npm pack produced no artifact for ${sourcePath}`)
-    await rename(join(dirname(request.outputPath), packedName), request.outputPath)
+    if (!packedName) throw new Error(`pnpm pack produced no artifact for ${sourcePath}`)
+    const packedPath = isAbsolute(packedName) ? packedName : join(dirname(request.outputPath), packedName)
+    await rename(packedPath, request.outputPath)
     return
   }
 
