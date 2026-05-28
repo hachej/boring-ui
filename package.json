@@ -36,17 +36,17 @@
     "node": ">=22.19.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.59.1",
+    "@playwright/test": "^1.60.0",
     "@storybook/addon-a11y": "^8.6.14",
     "@storybook/addon-essentials": "^8.6.14",
     "@storybook/addon-viewport": "^8.6.14",
     "@storybook/react": "^8.6.14",
     "@storybook/react-vite": "^8.6.14",
-    "@tailwindcss/vite": "^4.1.14",
-    "axe-core": "^4.11.3",
+    "@tailwindcss/vite": "^4.3.0",
+    "axe-core": "^4.11.4",
     "http-server": "^14.1.1",
     "storybook": "^8.6.14",
-    "typescript": "^5.4.0"
+    "typescript": "^6.0.3"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
