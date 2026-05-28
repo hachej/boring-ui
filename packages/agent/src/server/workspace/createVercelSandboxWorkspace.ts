@@ -82,11 +82,33 @@ function mapSandboxStat(fileStat: VercelSandboxStat): Stat {
   }
 }
 
+async function lstatWithoutSymlinkComponents(
+  sandbox: VercelSandbox,
+  sandboxPath: string,
+): Promise<Awaited<ReturnType<VercelSandbox['fs']['lstat']>>> {
+  const suffix = sandboxPath === VERCEL_SANDBOX_REMOTE_ROOT
+    ? ''
+    : sandboxPath.slice(VERCEL_SANDBOX_REMOTE_ROOT.length + 1)
+  const parts = suffix.split('/').filter(Boolean)
+  let current = VERCEL_SANDBOX_REMOTE_ROOT
+  let currentStat = await sandbox.fs.lstat(current)
+  for (const part of parts) {
+    current = `${current}/${part}`
+    currentStat = await sandbox.fs.lstat(current)
+    if (currentStat.isSymbolicLink()) {
+      const error = new Error(`ELOOP: symbolic link not allowed, scandir '${sandboxPath}'`) as NodeJS.ErrnoException
+      error.code = 'ELOOP'
+      throw error
+    }
+  }
+  return currentStat
+}
+
 async function readSandboxDirectoryEntries(
   sandbox: VercelSandbox,
   sandboxPath: string,
 ): Promise<Entry[]> {
-  const directoryStat = await sandbox.fs.stat(sandboxPath)
+  const directoryStat = await lstatWithoutSymlinkComponents(sandbox, sandboxPath)
   if (!directoryStat.isDirectory()) {
     const error = new Error(`ENOTDIR: not a directory, scandir '${sandboxPath}'`) as NodeJS.ErrnoException
     error.code = 'ENOTDIR'
@@ -94,7 +116,6 @@ async function readSandboxDirectoryEntries(
   }
 
   const result = await sandbox.runCommand('find', [
-    '-H',
     sandboxPath,
     '-maxdepth',
     '1',

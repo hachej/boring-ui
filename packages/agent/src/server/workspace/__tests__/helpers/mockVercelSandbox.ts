@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { lstat, mkdtemp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import type { Writable } from 'node:stream'
@@ -16,6 +16,7 @@ interface WriteInput {
 export interface MockVercelSandboxHarness {
   sandbox: VercelSandbox
   cleanup(): Promise<void>
+  hostRoot: string
   lastWriteFiles: Array<{ path: string; content: Uint8Array }>
 }
 
@@ -64,6 +65,9 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
       },
       async stat(pathInput: string) {
         return await stat(toHostPath(hostRoot, pathInput))
+      },
+      async lstat(pathInput: string) {
+        return await lstat(toHostPath(hostRoot, pathInput))
       },
       async mkdir(pathInput: string, opts?: { recursive?: boolean }) {
         return await mkdir(toHostPath(hostRoot, pathInput), opts)
@@ -144,8 +148,8 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
         return emitResult(0, '', '')
       }
 
-      if (command === 'find' && commandArgs[0] === '-H' && commandArgs[2] === '-maxdepth' && commandArgs[6] === '-printf') {
-        const pathArg = commandArgs[1]
+      if (command === 'find' && commandArgs[1] === '-maxdepth' && commandArgs[5] === '-printf') {
+        const pathArg = commandArgs[0]
         if (!pathArg) return emitResult(127, '', `unsupported mock command: ${script}`)
 
         try {
@@ -215,6 +219,7 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
 
   return {
     sandbox,
+    hostRoot,
     lastWriteFiles,
     async cleanup() {
       await rm(hostRoot, { recursive: true, force: true })

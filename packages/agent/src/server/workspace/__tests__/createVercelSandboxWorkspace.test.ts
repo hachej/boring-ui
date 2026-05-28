@@ -1,3 +1,6 @@
+import { symlink } from 'node:fs/promises'
+import { join } from 'node:path'
+
 import { expect, test, vi } from 'vitest'
 
 import { createVercelSandboxExec } from '../../sandbox/vercel-sandbox/createVercelSandboxExec'
@@ -100,6 +103,7 @@ test('small write mutations are recorded before post-write stat', async () => {
 test('reuses stat/readdir cache entries inside ttl and refreshes after expiry', async () => {
   const harness = await createMockVercelSandboxHarness()
   const statSpy = vi.spyOn((harness.sandbox as any).fs, 'stat')
+  const lstatSpy = vi.spyOn((harness.sandbox as any).fs, 'lstat')
   const readdirSpy = vi.spyOn((harness.sandbox as any).fs, 'readdir')
   const runSpy = vi.spyOn(harness.sandbox, 'runCommand')
   const workspace = createVercelSandboxWorkspace(harness.sandbox)
@@ -116,13 +120,15 @@ test('reuses stat/readdir cache entries inside ttl and refreshes after expiry', 
 
     await workspace.readdir('cache')
     await workspace.readdir('cache')
+    expect(lstatSpy).toHaveBeenCalledTimes(2)
     expect(readdirSpy).not.toHaveBeenCalled()
     expect(runSpy).toHaveBeenCalledTimes(1)
 
     nowSpy.mockReturnValue(15_001)
     await workspace.stat('cache/a.txt')
     await workspace.readdir('cache')
-    expect(statSpy).toHaveBeenCalledTimes(4)
+    expect(statSpy).toHaveBeenCalledTimes(2)
+    expect(lstatSpy).toHaveBeenCalledTimes(4)
     expect(readdirSpy).not.toHaveBeenCalled()
     expect(runSpy).toHaveBeenCalledTimes(2)
   } finally {
@@ -157,6 +163,23 @@ test('readdir rejects regular file paths', async () => {
     await workspace.writeFile('file.txt', 'hello')
 
     await expect(workspace.readdir('file.txt')).rejects.toMatchObject({ code: 'ENOTDIR' })
+  } finally {
+    await harness.cleanup()
+  }
+})
+
+test('readdir rejects symlink roots and ancestors', async () => {
+  const harness = await createMockVercelSandboxHarness()
+  const workspace = createVercelSandboxWorkspace(harness.sandbox)
+
+  try {
+    await workspace.mkdir('target', { recursive: true })
+    await workspace.writeFile('target/a.txt', 'hello')
+    await symlink(join(harness.hostRoot, 'target'), join(harness.hostRoot, 'link'), 'dir')
+    await symlink('/', join(harness.hostRoot, 'escape'), 'dir')
+
+    await expect(workspace.readdir('link')).rejects.toMatchObject({ code: 'ELOOP' })
+    await expect(workspace.readdir('escape/tmp')).rejects.toMatchObject({ code: 'ELOOP' })
   } finally {
     await harness.cleanup()
   }
