@@ -537,6 +537,39 @@ describe("WorkspaceAgentFront", () => {
     })
   })
 
+  it("adds workspace id to request headers when host omits them", async () => {
+    const observedProviders: Array<Record<string, string> | undefined> = []
+    const observedSessions: Array<Record<string, string>> = []
+    function ProbeProvider({ authHeaders, children }: PluginProviderProps) {
+      observedProviders.push(authHeaders)
+      return <>{children}</>
+    }
+    const probePlugin = definePlugin({
+      id: "implicit-header-probe",
+      setup(api) {
+        api.registerProvider({ id: "probe", component: ProbeProvider })
+      },
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="implicit-scope"
+        chatPanel={ChatPanel}
+        useSessions={({ requestHeaders }) => {
+          observedSessions.push(requestHeaders)
+          return { sessions: [], loading: false, create: vi.fn(), switch: vi.fn(), delete: vi.fn() }
+        }}
+        plugins={[probePlugin]}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(observedProviders).toContainEqual({ "x-boring-workspace-id": "implicit-scope" })
+    })
+    expect(observedSessions).toContainEqual({ "x-boring-workspace-id": "implicit-scope" })
+  })
+
   it("pushes current shell state to the UI bridge state endpoint", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input)
