@@ -6,7 +6,7 @@
   "description": "Rich standalone playground for @hachej/boring-agent.",
   "scripts": {
     "dev": "pnpm --filter @hachej/boring-agent build:dev && tsx --env-file=.env.local src/server/index.ts",
-    "typecheck": "pnpm --filter @hachej/boring-agent build && tsc --noEmit"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@hachej/boring-agent": "workspace:*",

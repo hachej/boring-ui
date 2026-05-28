@@ -64,9 +64,9 @@
   ],
   "scripts": {
     "dev": "vite",
-    "build": "pnpm --filter @hachej/boring-ui-kit build && tsup && vite build && node ./scripts/build-workspace-css.mjs && node ./scripts/assert-build-artifacts.mjs",
-    "typecheck": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-agent build && tsc --noEmit -p tsconfig.front.json && tsc --noEmit -p tsconfig.server.json",
-    "test": "pnpm --filter @hachej/boring-ui-cli build && vitest run",
+    "build": "tsup && vite build && node ./scripts/build-workspace-css.mjs && node ./scripts/assert-build-artifacts.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.front.json && tsc --noEmit -p tsconfig.server.json",
+    "test": "vitest run",
     "check:bundle-size": "node ./scripts/check-bundle-size.mjs",
     "lint:plugin-invariants": "node ./scripts/check-plugin-invariants.mjs",
     "lint": "pnpm run typecheck"
