@@ -132,7 +132,7 @@ jobs:
           - name: core
             command: pnpm --filter @hachej/boring-core... --workspace-concurrency=4 run build && pnpm --filter @hachej/boring-core run test
           - name: rest
-            command: pnpm -r --filter @hachej/boring-ui-cli... --filter @hachej/boring-ask-user... --filter @hachej/boring-data-catalog... --filter @hachej/boring-deck... --workspace-concurrency=4 run build && pnpm -r --filter @hachej/boring-ui-kit --filter @hachej/boring-ui-cli --filter @hachej/boring-ask-user --filter @hachej/boring-data-explorer --filter @hachej/boring-data-catalog --filter @hachej/boring-deck --workspace-concurrency=4 run test
+            command: pnpm -r --filter @hachej/boring-core... --filter @hachej/boring-ui-cli... --filter @hachej/boring-ask-user... --filter @hachej/boring-data-catalog... --filter @hachej/boring-deck... --workspace-concurrency=4 run build && pnpm -r --filter @hachej/boring-ui-kit --filter @hachej/boring-ui-cli --filter @hachej/boring-ask-user --filter @hachej/boring-data-explorer --filter @hachej/boring-data-catalog --filter @hachej/boring-deck --workspace-concurrency=4 run test
     services:
       postgres:
         image: postgres:16
