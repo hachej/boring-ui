@@ -485,12 +485,6 @@ export async function createWorkspacesModeApp(opts: {
   registryPath?: string
   provisionWorkspace?: boolean
 }): Promise<FastifyInstance> {
-  console.log(`\nBoring UI`)
-  console.log(`  mode       ${opts.cliMode}`)
-  console.log(`  port       ${opts.port}`)
-  console.log(`  host       ${opts.host}`)
-  console.log(`\n  starting http://localhost:${opts.port} …`)
-
   const [workspaceAppServer, workspaceServer, agentServer, fastifyModule, { createPluginFrontRuntimeHost }] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
     import("@hachej/boring-workspace/server"),
