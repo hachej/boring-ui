@@ -323,6 +323,7 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
   const surfaceResolvers = useSurfaceResolverRegistry()
   const lastSeenRef = useRef(new Map<string, number>())
   const latestRequestedRef = useRef(new Map<string, number>())
+  const replaySeenRef = useRef(new Set<string>())
 
   useEffect(() => {
     if (options.enabled === false || typeof EventSource === "undefined") return
@@ -345,6 +346,7 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           event = JSON.parse(raw.data) as Extract<RuntimePluginBrowserEvent, { type: "boring.plugin.load" }>
           if (disposed) return
           if (event.workspaceId && options.workspaceId && event.workspaceId !== options.workspaceId) return
+          if (event.replay) replaySeenRef.current.add(event.id)
           const lastSeen = lastSeenRef.current.get(event.id) ?? 0
           const latestRequested = latestRequestedRef.current.get(event.id) ?? 0
           if (event.revision <= Math.max(lastSeen, latestRequested)) return
@@ -483,6 +485,23 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
       try {
         const event = JSON.parse(raw.data) as Extract<RuntimePluginBrowserEvent, { type: "boring.plugin.replay-complete" }>
         if (event.workspaceId && options.workspaceId && event.workspaceId !== options.workspaceId) return
+        const replaySeen = replaySeenRef.current
+        for (const [pluginId, revision] of lastSeenRef.current.entries()) {
+          if (replaySeen.has(pluginId)) continue
+          unregisterPlugin(pluginId, registries)
+          lastSeenRef.current.delete(pluginId)
+          latestRequestedRef.current.delete(pluginId)
+          window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, {
+            detail: {
+              type: "boring.plugin.unload",
+              id: pluginId,
+              revision: revision + 1,
+              workspaceId: event.workspaceId ?? options.workspaceId,
+              replay: true,
+            },
+          }))
+        }
+        replaySeen.clear()
         window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: event }))
       } catch (error) {
         console.error("[boring-ui] failed to process plugin replay-complete event", error)
@@ -498,6 +517,7 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
       for (const pluginId of lastSeenRef.current.keys()) unregisterPlugin(pluginId, registries)
       lastSeenRef.current.clear()
       latestRequestedRef.current.clear()
+      replaySeenRef.current.clear()
       es.close()
     }
   }, [options.apiBaseUrl, options.workspaceId, options.enabled, options.authHeaders, options.importFront, panels, commands, catalogs, surfaceResolvers])

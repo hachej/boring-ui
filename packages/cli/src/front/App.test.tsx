@@ -30,6 +30,12 @@ vi.mock("./WorkspaceSwitcherControl", () => ({
 describe("CliWorkspaceShell", () => {
   const originalFetch = globalThis.fetch
 
+  test("publishes JSX runtime singletons for runtime plugin fronts", () => {
+    const singletons = globalThis.__BORING_RUNTIME_SINGLETONS__ as Record<string, Record<string, unknown>> | undefined
+    expect(typeof singletons?.["react/jsx-runtime"]?.jsx).toBe("function")
+    expect(typeof singletons?.["react/jsx-dev-runtime"]?.jsxDEV).toBe("function")
+  })
+
   beforeEach(() => {
     workspaceAgentFrontSpy.mockClear()
   })

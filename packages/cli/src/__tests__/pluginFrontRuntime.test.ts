@@ -8,6 +8,7 @@ import type { BoringServerPluginManifest } from "@hachej/boring-workspace/server
 import {
   createPluginFrontRuntimeHost,
   PLUGIN_FRONT_RUNTIME_BASE_PATH,
+  __testingRuntimeSingletonModuleCode,
   type PluginFrontRuntimeDiagnostic,
 } from "../server/pluginFrontRuntime"
 
@@ -521,6 +522,9 @@ describe("pluginFrontRuntime", () => {
         "@hachej/boring-workspace",
         "@hachej/boring-workspace/plugin",
       ]))
+      const jsxDevSingletonCode = __testingRuntimeSingletonModuleCode("react/jsx-dev-runtime") ?? ""
+      expect(jsxDevSingletonCode).toContain("export default normalized")
+      expect(jsxDevSingletonCode).toContain("export const jsxDEV = normalized")
 
       await expect(host.serve({
         workspaceId: "workspace-a",

@@ -112,6 +112,19 @@ function useStoredBooleanState(
 
 const EMPTY_HEADERS: Record<string, string> = {}
 
+function scopedWorkspaceHeaders(
+  workspaceId: string,
+  headers: Record<string, string>,
+): Record<string, string> {
+  if (
+    headers["x-boring-workspace-id"] != null ||
+    headers["X-Boring-Workspace-Id"] != null
+  ) {
+    return headers
+  }
+  return { "x-boring-workspace-id": workspaceId, ...headers }
+}
+
 const emptySurfaceSnapshot: SurfaceShellSnapshot = {
   openTabs: [],
   activeTab: null,
@@ -247,12 +260,16 @@ export function WorkspaceAgentFront<
     [resolvedSessionStorageKey],
   )
   const localSessions = useLocalStorageSessions(localSessionStore)
+  const scopedRequestHeaders = useMemo(
+    () => scopedWorkspaceHeaders(workspaceId, requestHeaders),
+    [workspaceId, requestHeaders],
+  )
   const chatPanel = (chatPanelProp ?? DefaultChatPanel) as ComponentType<WorkspaceChatPanelProps>
   const useSessions = (useSessionsProp ?? (chatPanelProp ? undefined : useDefaultAgentSessions)) as
     | UseWorkspaceAgentSessions<TSession>
     | undefined
   const sessionApi = useSessions?.({
-    requestHeaders,
+    requestHeaders: scopedRequestHeaders,
     storageKey: resolvedSessionStorageKey,
   })
   const hasExplicitSessionProps =
@@ -413,7 +430,7 @@ export function WorkspaceAgentFront<
     () => ({
       ...chatParams,
       sessionId: chatSessionId,
-      requestHeaders,
+      requestHeaders: scopedRequestHeaders,
       bridgeEndpoint,
       getSurface,
       isWorkbenchOpen,
@@ -425,12 +442,12 @@ export function WorkspaceAgentFront<
       // value passed through chatParams.
       ...(hotReloadEnabled !== undefined ? { hotReloadEnabled } : {}),
     }),
-    [chatParams, chatSessionId, requestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench, extraCommands, hotReloadEnabled],
+    [chatParams, chatSessionId, scopedRequestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench, extraCommands, hotReloadEnabled],
   )
   const resolvedAuthHeaders = useMemo(() => {
-    if (!authHeaders && Object.keys(requestHeaders).length === 0) return undefined
-    return { ...requestHeaders, ...authHeaders }
-  }, [authHeaders, requestHeaders])
+    if (!authHeaders && Object.keys(scopedRequestHeaders).length === 0) return undefined
+    return { ...scopedRequestHeaders, ...authHeaders }
+  }, [authHeaders, scopedRequestHeaders])
 
   const surfaceParams = useMemo<SurfaceShellProps>(() => ({
     storageKey: resolvedSurfaceStorageKey,
@@ -485,7 +502,7 @@ export function WorkspaceAgentFront<
         {beforeShell}
         <WorkspaceUiStateSync
           bridgeEndpoint={bridgeEndpoint}
-          requestHeaders={requestHeaders}
+          requestHeaders={scopedRequestHeaders}
           navOpen={navOpen}
           surfaceOpen={surfaceOpen}
           snapshot={surfaceSnapshot}

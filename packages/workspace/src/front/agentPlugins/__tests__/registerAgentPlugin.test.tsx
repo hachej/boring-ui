@@ -688,6 +688,61 @@ describe("useAgentPluginHotReload", () => {
     await waitFor(() => expect(screen.getByTestId("catalog-list")).toHaveTextContent(""))
   })
 
+  test("unloads plugins missing from a replay snapshot", async () => {
+    const importFront = async (): Promise<{ default: BoringFrontFactoryWithId }> => ({
+      default: hotPlugin("hot-plugin", (api) => {
+        api.registerPanel({
+          id: "hot-pane",
+          label: "Hot Pane",
+          component: function HotPane() {
+            return React.createElement("div", { "data-testid": "hot-pane" }, "loaded")
+          },
+        })
+      }),
+    })
+
+    function Listener() {
+      useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+      return null
+    }
+
+    function ReplayHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      return (
+        <RegistryProvider
+          panelRegistry={panelRegistry}
+          commandRegistry={commandRegistry}
+          surfaceResolverRegistry={surfaceResolverRegistry}
+        >
+          <Listener />
+          <PaneRenderer id="hot-pane" />
+          <PanelIds />
+        </RegistryProvider>
+      )
+    }
+
+    render(<ReplayHarness />)
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl: "/@fs/front.mjs",
+      boring: { front: "./front.mjs" },
+    })
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("loaded"))
+
+    MockEventSource.instances[0].dispatch("boring.plugin.replay-complete", {
+      type: "boring.plugin.replay-complete",
+      replay: true,
+    })
+
+    await waitFor(() => expect(screen.getByTestId("pane-missing")).toBeInTheDocument())
+    expect(screen.getByTestId("panel-ids")).toHaveTextContent("")
+  })
+
   test("warns and preserves previous UI when a hot-load revision adds provider/binding contributions", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
     const importFront = async (_url: string, revision: number): Promise<{ default: BoringFrontFactoryWithId }> => ({

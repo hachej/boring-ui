@@ -173,6 +173,8 @@ test("installed CLI scaffolds a hot-reloadable plugin", async () => {
   const front = await readFile(join(pluginDir, "front", "index.tsx"), "utf-8")
   expect(front).toContain("definePlugin")
   expect(front).toContain('"demo-plugin"')
+  expect(front).toContain("useApiBaseUrl/useWorkspaceRequestId")
+  expect(front).toContain("x-boring-workspace-id")
 
   await expect(runCli(["scaffold-plugin", "BadName"], {})).rejects.toMatchObject({
     stderr: expect.stringContaining("kebab-case"),

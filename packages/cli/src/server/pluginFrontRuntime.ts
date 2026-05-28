@@ -874,17 +874,43 @@ function sourceFromVirtualSingletonId(id: string): typeof HOST_SINGLETON_MODULES
     : undefined
 }
 
+function runtimeSingletonExportExpression(source: typeof HOST_SINGLETON_MODULES[number], name: string): string {
+  const key = JSON.stringify(name)
+  if (source === "react/jsx-dev-runtime") {
+    if (name === "Fragment") return `(singleton[${key}] ?? singleton.default?.[${key}] ?? singletons?.react?.Fragment)`
+    if (name === "jsxDEV") {
+      return `(singleton[${key}] ?? singleton.default?.[${key}] ?? ((type, props, key) => singletons.react.createElement(type, key === undefined ? props : { ...props, key })))`
+    }
+  }
+  if (source === "react/jsx-runtime") {
+    if (name === "Fragment") return `(singleton[${key}] ?? singleton.default?.[${key}] ?? singletons?.react?.Fragment)`
+    if (name === "jsx" || name === "jsxs") {
+      return `(singleton[${key}] ?? singleton.default?.[${key}] ?? ((type, props, key) => singletons.react.createElement(type, key === undefined ? props : { ...props, key })))`
+    }
+  }
+  return `singleton[${key}]`
+}
+
 function runtimeSingletonModuleCode(source: typeof HOST_SINGLETON_MODULES[number]): string | undefined {
   const exports = RUNTIME_SINGLETON_EXPORTS[source]
   if (!exports) return undefined
-  const exportLines = exports.map((name) => `export const ${name} = singleton[${JSON.stringify(name)}];`)
+  const exportLines = exports.map((name) => `export const ${name} = normalized[${JSON.stringify(name)}];`)
+  const normalizedAssignments = exports.map((name) => `  ${JSON.stringify(name)}: ${runtimeSingletonExportExpression(source, name)},`)
   return [
     `const singletons = globalThis[${JSON.stringify(RUNTIME_SINGLETON_GLOBAL)}];`,
     `const singleton = singletons && singletons[${JSON.stringify(source)}];`,
     `if (!singleton) throw new Error(${JSON.stringify(`missing runtime singleton: ${source}`)});`,
-    "export default singleton;",
+    "const normalized = {",
+    "  ...singleton,",
+    ...normalizedAssignments,
+    "};",
+    "export default normalized;",
     ...exportLines,
   ].join("\n")
+}
+
+export function __testingRuntimeSingletonModuleCode(source: typeof HOST_SINGLETON_MODULES[number]): string | undefined {
+  return runtimeSingletonModuleCode(source)
 }
 
 function createRuntimeSingletonResolve(repoRoot: string): { alias: Array<{ find: RegExp; replacement: string }>; dedupe: string[] } {

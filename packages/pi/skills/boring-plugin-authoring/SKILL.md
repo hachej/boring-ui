@@ -192,14 +192,23 @@ requests through your resolver:
 ```tsx
 import React, { useState, useEffect } from "react"
 import { definePlugin, WORKSPACE_OPEN_PATH_SURFACE_KIND, type PaneProps } from "@hachej/boring-workspace/plugin"
+import { useApiBaseUrl, useWorkspaceRequestId } from "@hachej/boring-workspace"
 
 function CsvPane({ params }: PaneProps<{ path: string }>) {
+  const apiBaseUrl = useApiBaseUrl()
+  const workspaceRequestId = useWorkspaceRequestId()
   const [text, setText] = useState("")
   useEffect(() => {
-    fetch(`/api/v1/files/raw?path=${encodeURIComponent(params.path)}`)
+    const base = apiBaseUrl.replace(/\/$/, "")
+    const headers: Record<string, string> = {}
+    if (workspaceRequestId) headers["x-boring-workspace-id"] = workspaceRequestId
+    fetch(`${base}/api/v1/files/raw?path=${encodeURIComponent(params.path)}`, {
+      credentials: "include",
+      headers,
+    })
       .then((r) => r.text())
       .then(setText)
-  }, [params.path])
+  }, [apiBaseUrl, params.path, workspaceRequestId])
   return <pre>{text}</pre>
 }
 
@@ -229,9 +238,12 @@ export default definePlugin({
 ```
 
 Read raw file bytes from `/api/v1/files/raw?path=<workspace-relative-path>`.
-Use the imported `WORKSPACE_OPEN_PATH_SURFACE_KIND` constant as the resolver
-`kind` (not the string `"WORKSPACE_OPEN_PATH_SURFACE_KIND"`), and read the path
-from `request.target` (not `request.path`). Do not use `/workspace/read`.
+Inside panels, build the URL with `useApiBaseUrl()` and pass
+`x-boring-workspace-id` from `useWorkspaceRequestId()` when present; CLI
+workspaces mode requires that workspace scope. Use the imported
+`WORKSPACE_OPEN_PATH_SURFACE_KIND` constant as the resolver `kind` (not the
+string `"WORKSPACE_OPEN_PATH_SURFACE_KIND"`), and read the path from
+`request.target` (not `request.path`). Do not use `/workspace/read`.
 For charts, use plain SVG (`<rect>`, `<line>`, `<polyline>`) — do not add
 recharts / chart.js dependencies.
 
