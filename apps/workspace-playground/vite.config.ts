@@ -33,6 +33,11 @@ const playgroundOnlyAliases = [
 // without dirtying the committed fixtures. Delete the directory to
 // reset; the next boot re-seeds it.
 
+function isRuntimeExtensionPath(file: string): boolean {
+  const normalized = file.replaceAll("\\", "/")
+  return /(^|\/)workspace\/\.pi\/extensions\//.test(normalized)
+}
+
 const dynamicPluginReactRefreshExclude = [
   // Runtime/app-authored plugins are loaded through the boring-ui plugin
   // bridge, not React Refresh. Refresh instrumentation can create a
@@ -69,7 +74,7 @@ export default defineConfig({
         // agent-plugin SSE bridge. Letting Vite HMR handle these files causes
         // full page reloads because dynamically imported .pi extension modules
         // are not stable React HMR boundaries.
-        if (ctx.file.includes("/workspace/.pi/extensions/")) return []
+        if (isRuntimeExtensionPath(ctx.file)) return []
         return undefined
       },
     },

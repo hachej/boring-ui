@@ -3,9 +3,9 @@ import { dirname, join } from "node:path"
 
 /**
  * boring-ui system prompt — workflow steps + a Pi-style docs pointer
- * block (per DECISIONS.md #17). The block lists absolute paths into the
- * installed `@hachej/boring-pi` package so the agent's `read` tool can
- * fetch the SKILL.md + reference docs on demand, without inlining their
+ * block (per DECISIONS.md #17). The block lists workspace-readable paths
+ * into the installed `@hachej/boring-pi` package so the agent's `read` tool
+ * can fetch the SKILL.md + reference docs on demand, without inlining their
  * ~12-30 KB of markdown into every system prompt.
  *
  * `@hachej/boring-pi` is a runtime dep of `@hachej/boring-workspace`;
@@ -104,7 +104,7 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): s
   const docsBlock = boringPiRoot
     ? [
         "## boring-ui plugin authoring documentation",
-        "Read these only when the user asks to build, modify, or debug a workspace plugin. Use your `read` tool with the absolute path; the agent runtime guarantees these files exist on the host:",
+        "Read these only when the user asks to build, modify, or debug a workspace plugin. Use your `read` tool with these workspace-relative paths; the agent runtime guarantees they exist inside `$BORING_AGENT_WORKSPACE_ROOT`:",
         ...buildDocsRefs(boringPiRoot).map((r) => `- ${r.topic}: ${r.path}`),
         "Follow .md cross-references when present (e.g. SKILL.md may link to a reference doc — read both).",
       ].join("\n")

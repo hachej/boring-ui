@@ -46,5 +46,15 @@ export interface RuntimeBundle {
 }
 
 export function getRuntimeBundleStorageRoot(bundle: RuntimeBundle): string {
-  return bundle.storageRoot ?? getNodeWorkspaceHostRoot(bundle.workspace) ?? bundle.workspace.root
+  const hostRoot = bundle.storageRoot ?? getNodeWorkspaceHostRoot(bundle.workspace)
+  if (hostRoot) return hostRoot
+
+  // vercel-sandbox: no host filesystem — tools use workspace methods instead.
+  if (bundle.sandbox.provider === 'vercel-sandbox') return bundle.workspace.root
+
+  throw new Error(
+    'RuntimeBundle.storageRoot is required for host-filesystem tools. ' +
+    'Mode adapters must set storageRoot to the host workspace path. ' +
+    `Got workspace.root=${bundle.workspace.root}, sandbox.provider=${bundle.sandbox.provider}`,
+  )
 }

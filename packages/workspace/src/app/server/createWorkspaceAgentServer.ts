@@ -143,9 +143,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 
 function boringPiRootVisibleToAgentTools(workspaceRoot: string, resolvedMode: string, provisioned: boolean): string | undefined {
+  void workspaceRoot
+  void resolvedMode
   if (!provisioned) return undefined
-  if (resolvedMode === "local") return "/workspace/node_modules/@hachej/boring-pi"
-  return join(workspaceRoot, "node_modules", "@hachej", "boring-pi")
+  // Sandbox-rooted absolute path is unambiguous regardless of agent cwd
+  // changes. Avoid host paths (they leak /home/... and are rejected by
+  // the sandbox) and avoid bare relative paths (they break on `cd`).
+  return "/workspace/.boring-agent/node/node_modules/@hachej/boring-pi"
 }
 
 
@@ -292,7 +296,9 @@ function createBoringUiCliPackageProvisioningContribution(): WorkspaceProvisioni
     "boring-ui-cli-package",
     "boring-ui-cli",
     "@hachej/boring-ui-cli",
-    readPackageVersion(packageRoot) ?? readPackageVersion(resolveWorkspacePackageRoot()),
+    packageRoot === join(resolveWorkspacePackageRoot(), "..", "cli")
+      ? undefined
+      : readPackageVersion(packageRoot) ?? readPackageVersion(resolveWorkspacePackageRoot()),
     ["boring-ui"],
   )
 }

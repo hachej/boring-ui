@@ -66,13 +66,13 @@ describe("buildBoringSystemPrompt", () => {
     expect(prompt).not.toContain("defineServerPlugin({")
   })
 
-  test("emits a pi-style docs pointer block with absolute paths into boring-pi", () => {
+  test("emits a pi-style docs pointer block with workspace-readable paths into boring-pi", () => {
     const prompt = buildBoringSystemPrompt({
       scaffoldCommand: "boring-ui scaffold-plugin",
       verifyCommand: "boring-ui verify-plugin",
       boringPiRootOverride: FIXTURE_PI_ROOT,
     })
-    // Heading + each of the 4 docs targets, with absolute paths.
+    // Heading + each of the 4 docs targets.
     expect(prompt).toContain("## boring-ui plugin authoring documentation")
     expect(prompt).toContain(`${FIXTURE_PI_ROOT}/skills/boring-plugin-authoring/SKILL.md`)
     expect(prompt).toContain(`${FIXTURE_PI_ROOT}/references/workspace/panels.md`)
@@ -91,8 +91,8 @@ describe("buildBoringSystemPrompt", () => {
     })
     // Workflow + hallucinations still present.
     expect(prompt).toMatch(/\*\*1\.\s+Scaffold/)
-    // No absolute paths emitted.
-    expect(prompt).not.toContain("/skills/boring-plugin-authoring/SKILL.md")
+    // No docs paths emitted.
+    expect(prompt).not.toContain("skills/boring-plugin-authoring/SKILL.md")
     // Falls back to skill discovery via <available_skills>.
     expect(prompt).toContain("<available_skills>")
     expect(prompt).toContain("boring-plugin-authoring")
@@ -122,7 +122,7 @@ describe("buildBoringSystemPrompt", () => {
 
   test("uses require.resolve to find @hachej/boring-pi when no override is provided", () => {
     // No override → exercises the real resolver. In a workspace where
-    // boring-pi is a real dep (the case in this monorepo), absolute
+    // boring-pi is a real dep (the case in this monorepo), docs
     // paths SHOULD be emitted.
     const prompt = buildBoringSystemPrompt({
       scaffoldCommand: "boring-ui scaffold-plugin",

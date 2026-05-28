@@ -78,6 +78,7 @@ function bashOptionsForMode(
   bundle: RuntimeBundle,
   runtime?: HarnessRuntimeProvisioningOptions,
 ): BashToolOptions {
+  const storageRoot = getRuntimeBundleStorageRoot(bundle)
   switch (bundle.sandbox.provider) {
     case 'vercel-sandbox':
       return {
@@ -91,12 +92,12 @@ function bashOptionsForMode(
     case 'bwrap':
       return {
         operations: createLocalBashOperations(),
-        spawnHook: bwrapSpawnHook(getRuntimeBundleStorageRoot(bundle), runtime),
+        spawnHook: bwrapSpawnHook(storageRoot, runtime),
       }
     default:
       return {
         operations: createLocalBashOperations(),
-        spawnHook: directSpawnHook(bundle.workspace.root, runtime),
+        spawnHook: directSpawnHook(storageRoot, runtime),
       }
   }
 }

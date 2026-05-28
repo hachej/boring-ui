@@ -61,7 +61,12 @@ describe("createWorkspaceAgentServer — runtime provisioning packages", () => {
         packageName: "@hachej/boring-ui-cli",
         expectedBins: ["boring-ui"],
       })
-      expect(cli?.version).toMatch(/^\d+\.\d+\.\d+/)
+      // In a monorepo layout the CLI package root resolves locally,
+      // so published provisioning omits the version (npm picks latest).
+      // Outside a monorepo, the published version is pinned.
+      if (cli?.version !== undefined) {
+        expect(cli.version).toMatch(/^\d+\.\d+\.\d+/)
+      }
       expect(cli).not.toHaveProperty("packageRoot")
     } finally {
       if (previous === undefined) delete process.env.BORING_USE_LOCAL_PACKAGES
