@@ -470,6 +470,19 @@ describe('Provisioner integration', () => {
       expect(runtime?.volumePath).toBe('/volumes/ws-default')
     })
 
+    it('provision failure while auto-creating default workspace returns HTTP 500', async () => {
+      provisionFn.mockRejectedValue(new Error('disk full'))
+
+      const res = await provInject('GET', '/api/v1/workspaces', OWNER_ID)
+      expect(res.statusCode).toBe(500)
+      expect(res.json().code).toBe('provision_failed')
+
+      const runtime = runtimes.get('ws-1')
+      expect(runtime?.state).toBe('error')
+      expect(runtime?.lastError).toBe('disk full')
+      expect(runtime?.lastErrorOp).toBe('provision')
+    })
+
     it('provisions an existing signup-created default workspace with missing runtime', async () => {
       provisionFn.mockResolvedValue({ volumePath: '/volumes/signup-default' })
       const workspace = provSeedWorkspace('My Workspace', OWNER_ID, { isDefault: true })
