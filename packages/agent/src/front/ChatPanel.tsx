@@ -4,6 +4,7 @@ import { motion } from 'motion/react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from '../shared/agentPluginEvents'
+import { ErrorCode } from '../shared/error-codes'
 
 // Lazy import so the DebugDrawer chunk (~10kb + its tab subcomponents that fetch
 // /api/v1/agent/sessions/:id/system-prompt) only loads when a host opts into
@@ -256,17 +257,17 @@ function composerNoticeForWarmup(status: ChatPanelWorkspaceWarmupStatus | undefi
     return {
       title: 'Workspace setup failed.',
       detail: status.message ?? 'Reload the workspace and try again.',
-      code: 'RUNTIME_PROVISIONING_FAILED',
+      code: ErrorCode.enum.RUNTIME_PROVISIONING_FAILED,
     }
   }
   return {
     title: 'Preparing workspace…',
-    code: 'AGENT_RUNTIME_NOT_READY',
+    code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
   }
 }
 
 function isComposerRuntimeNotice(error: { code?: string } | null | undefined): boolean {
-  return error?.code === 'AGENT_RUNTIME_NOT_READY' || error?.code === 'RUNTIME_PROVISIONING_FAILED'
+  return error?.code === ErrorCode.enum.AGENT_RUNTIME_NOT_READY || error?.code === ErrorCode.enum.RUNTIME_PROVISIONING_FAILED
 }
 
 function getQueuedPiTail(messages: UIMessage[], piMessages: UIMessage[]): UIMessage[] {
@@ -1393,7 +1394,7 @@ export function ChatPanel(props: ChatPanelProps) {
             )}
           >
             <div className="flex items-start gap-2">
-              {composerStatusNotice.code === 'AGENT_RUNTIME_NOT_READY' ? (
+              {composerStatusNotice.code === ErrorCode.enum.AGENT_RUNTIME_NOT_READY ? (
                 <Loader2 aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 animate-spin text-muted-foreground" />
               ) : (
                 <AlertCircleIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-destructive" />

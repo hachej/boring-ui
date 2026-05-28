@@ -7,6 +7,7 @@ import Fastify from 'fastify'
 import { registerAgentRoutes } from '../registerAgentRoutes'
 import { provisionWorkspaceRuntime } from '../workspace/provisioning'
 import type { RuntimeModeAdapter } from '../runtime/mode'
+import { ErrorCode } from '../../shared/error-codes'
 
 const tempDirs: string[] = []
 
@@ -177,7 +178,7 @@ test('chat returns runtime-not-ready while request-scoped provisioning is pendin
     expect(res.statusCode).toBe(503)
     expect(res.json()).toMatchObject({
       error: {
-        code: 'AGENT_RUNTIME_NOT_READY',
+        code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
         details: { workspaceId: 'workspace-a', retryable: true },
       },
     })

@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ToolPart } from '../../front/toolRenderers'
+import { ErrorCode } from '../../shared/error-codes'
 
 const mockPiProjection = vi.hoisted(() => ({
   piMessages: [] as any[],
@@ -321,7 +322,7 @@ describe('ChatPanel (shadcn)', () => {
       messages: [],
       sendMessage: mockSendMessage,
       status: 'error',
-      error: new Error(JSON.stringify({ error: { code: 'AGENT_RUNTIME_NOT_READY', message: 'Agent runtime is still preparing.' } })),
+      error: new Error(JSON.stringify({ error: { code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY, message: 'Agent runtime is still preparing.' } })),
     })
 
     render(<ChatPanel sessionId="sess-runtime-not-ready" />)

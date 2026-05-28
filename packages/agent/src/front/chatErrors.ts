@@ -1,3 +1,5 @@
+import { ErrorCode } from '../shared/error-codes'
+
 /**
  * Turn whatever AI SDK dumped into error.message into something readable.
  * We try three shapes:
@@ -33,13 +35,13 @@ export function friendlyError(err: Error): FriendlyError {
         detail: `${label} ${message?.toLowerCase() ?? 'failed validation'}.`,
       }
     }
-    if (code === 'AGENT_RUNTIME_NOT_READY') {
+    if (code === ErrorCode.enum.AGENT_RUNTIME_NOT_READY) {
       return {
         title: 'Preparing workspace…',
         code,
       }
     }
-    if (code === 'RUNTIME_PROVISIONING_FAILED') {
+    if (code === ErrorCode.enum.RUNTIME_PROVISIONING_FAILED) {
       return {
         title: 'Workspace setup failed.',
         detail: message ?? 'Reload the workspace and try again.',
