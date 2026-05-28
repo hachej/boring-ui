@@ -271,6 +271,7 @@ describe('WorkspaceSwitcher', () => {
               name: 'My App',
               isDefault: false,
             },
+            role: 'owner',
           },
         },
       })
@@ -290,6 +291,10 @@ describe('WorkspaceSwitcher', () => {
 
       await waitFor(() => {
         expect(mockNavigate).toHaveBeenCalledWith('/workspace/ws-new')
+      })
+      expect(queryClient.getQueryData(['workspace', 'ws-new'])).toMatchObject({
+        workspace: { id: 'ws-new', name: 'My App' },
+        role: 'owner',
       })
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['workspaces'] })
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['workspace', 'ws-new'] })

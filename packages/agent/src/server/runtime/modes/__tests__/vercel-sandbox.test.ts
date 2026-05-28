@@ -250,9 +250,13 @@ test('mode accepts VERCEL_TOKEN fallback and creates working bundle with shared 
     })
     await bundle.workspace.writeFile('shared/hello.txt', 'hello-from-mode')
 
-    const result = await bundle.sandbox.exec('cat /vercel/sandbox/shared/hello.txt')
+    const result = await bundle.sandbox.exec('cat /workspace/shared/hello.txt')
 
+    expect(bundle.runtimeContext!.runtimeCwd).toBe('/workspace')
     expect(bundle.workspace.root).toBe('/workspace')
+    expect(bundle.workspace.runtimeContext.runtimeCwd).toBe('/workspace')
+    expect(bundle.sandbox.runtimeContext.runtimeCwd).toBe('/workspace')
+    expect(bundle.workspace.root).toBe(bundle.sandbox.runtimeContext.runtimeCwd)
     expect(bundle.sandbox.id).toBe('vercel-sandbox')
     expect(decoder.decode(result.stdout)).toBe('hello-from-mode')
     expect(result.exitCode).toBe(0)
@@ -262,7 +266,7 @@ test('mode accepts VERCEL_TOKEN fallback and creates working bundle with shared 
       persistent: true,
       snapshotExpiration: 0,
     }))
-    expect(mkdirSpy).toHaveBeenCalledWith('/vercel/sandbox', { recursive: true })
+    expect(mkdirSpy).toHaveBeenCalledWith('/workspace', { recursive: true })
     expect(logger.info).toHaveBeenCalledWith(
       '[vercel-sandbox:mode] auth resolved',
       { source: 'VERCEL_TOKEN', hasProjectId: false, timeoutMs: null, runtime: 'node24' },
@@ -440,11 +444,11 @@ test('mode recreates a stopped sandbox from snapshot without losing workspace fi
 
 test('mode seeds template files into an existing persistent sandbox', async () => {
   const templateRoot = await mkdtemp(join(tmpdir(), 'boring-ui-vercel-template-'))
-  await mkdir(join(templateRoot, '.agents', 'skills', 'macro-transform'), { recursive: true })
+  await mkdir(join(templateRoot, '.agents', 'skills', 'template-fixture'), { recursive: true })
   await mkdir(join(templateRoot, 'transforms', 'custom'), { recursive: true })
   await writeFile(
-    join(templateRoot, '.agents', 'skills', 'macro-transform', 'SKILL.md'),
-    'name: macro-transform\n',
+    join(templateRoot, '.agents', 'skills', 'template-fixture', 'SKILL.md'),
+    'name: template-fixture\n',
     'utf-8',
   )
   await writeFile(join(templateRoot, 'transforms', 'custom', '.gitkeep'), '', 'utf-8')
@@ -487,8 +491,8 @@ test('mode seeds template files into an existing persistent sandbox', async () =
       templatePath: templateRoot,
     })
 
-    await expect(bundle.workspace.readFile('.agents/skills/macro-transform/SKILL.md'))
-      .resolves.toBe('name: macro-transform\n')
+    await expect(bundle.workspace.readFile('.agents/skills/template-fixture/SKILL.md'))
+      .resolves.toBe('name: template-fixture\n')
     await expect(bundle.workspace.stat('transforms/custom/.gitkeep'))
       .resolves.toMatchObject({ kind: 'file' })
     expect(client.create).not.toHaveBeenCalled()

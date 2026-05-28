@@ -48,6 +48,8 @@ function sessionDirForNamespace(namespace: string): string {
 export interface PiSessionStoreOptions {
   sessionDir?: string;
   sessionNamespace?: string;
+  /** Host/storage cwd used only to derive the default file-backed session directory. */
+  storageCwd?: string;
 }
 
 export class PiSessionStore implements SessionStore {
@@ -63,7 +65,11 @@ export class PiSessionStore implements SessionStore {
     this.sessionDir = options?.sessionDir
       ?? (options?.sessionNamespace
         ? sessionDirForNamespace(options.sessionNamespace)
-        : defaultSessionDir(cwd));
+        : defaultSessionDir(options?.storageCwd ?? cwd));
+  }
+
+  getSessionDir(): string {
+    return this.sessionDir;
   }
 
   async list(ctx: SessionCtx): Promise<SessionSummary[]> {

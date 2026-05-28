@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 import type { AgentTool } from '../../../shared/tool'
-import type { RuntimeBundle } from '../../runtime/mode'
+import { getRuntimeBundleStorageRoot, type RuntimeBundle } from '../../runtime/mode'
 
 const DEFAULT_UPLOAD_DIR = 'assets/images'
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
@@ -42,11 +42,12 @@ function basenameForUpload(filename: string): string {
 
 export function buildUploadAgentTools(bundle: RuntimeBundle): AgentTool[] {
   const { workspace } = bundle
-  const cwd = workspace.root
+  const storageRoot = getRuntimeBundleStorageRoot(bundle)
 
   return [
     {
       name: 'upload_file',
+      readinessRequirements: ['workspace-fs'],
       description:
         'Copy a workspace file into artifact storage (assets/images by default) and return its workspace-relative path. ' +
         'Use this when you want to embed an image in markdown or make a generated file accessible as a stable artifact. ' +
@@ -83,7 +84,9 @@ export function buildUploadAgentTools(bundle: RuntimeBundle): AgentTool[] {
           : DEFAULT_UPLOAD_DIR
 
         try {
-          const bytes = await readFile(join(cwd, filePath))
+          const bytes = workspace.readBinaryFile
+            ? Buffer.from(await workspace.readBinaryFile(filePath))
+            : await readFile(join(storageRoot, filePath))
           if (bytes.byteLength === 0 || bytes.byteLength > MAX_UPLOAD_BYTES) {
             return {
               content: [{ type: 'text', text: `file must be between 1 byte and ${MAX_UPLOAD_BYTES} bytes` }],

@@ -1,12 +1,13 @@
 import { expectTypeOf, test } from 'vitest'
 
-import type { AgentTool, JSONSchema, ToolExecContext, ToolResult } from '../tool'
+import type { AgentTool, JSONSchema, ToolExecContext, ToolReadinessRequirement, ToolResult } from '../tool'
 
 test('AgentTool contract', () => {
   expectTypeOf<AgentTool>().toEqualTypeOf<{
     name: string
     description: string
     promptSnippet?: string
+    readinessRequirements?: ToolReadinessRequirement[]
     parameters: JSONSchema
     execute: (
       params: Record<string, unknown>,

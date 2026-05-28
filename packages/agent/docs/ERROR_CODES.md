@@ -33,6 +33,10 @@ All API failures must use the response envelope:
 | `PATH_NOT_FOUND` | Read/stat/load targets missing path | 404 | user-fix | warn | stable (public API) |
 | `PATH_NOT_WRITABLE` | Path parent missing or write denied | 403 | user-fix | warn | stable (public API) |
 | `WORKSPACE_UNINITIALIZED` | Workspace adapter/store not initialized yet | 503 | retry | warn | stable (public API) |
+| `WORKSPACE_NOT_READY` | Workspace substrate (`workspace-fs`, `sandbox-exec`, or `ui-bridge`) is still preparing | 503 | retry | warn | stable (public API) |
+| `AGENT_RUNTIME_NOT_READY` | Selected workspace agent runtime is still preparing | 503 | retry | warn | stable (public API) |
+| `RUNTIME_PROVISIONING_FAILED` | Agent runtime provisioning failed before runtime became ready | 503 | retry/report | error | stable (public API) |
+| `RUNTIME_PROVISIONING_LOCKED` | Agent runtime provisioning is locked by another reconciler | 423 | retry | warn | stable (public API) |
 | `BWRAP_UNAVAILABLE` | `bwrap` binary not found | 500 | report-bug | error | stable (public API) |
 | `BWRAP_TIMEOUT` | Sandbox command exceeded timeout | 408 | retry | warn | stable (public API) |
 | `OUTPUT_TRUNCATED` | Max output bytes reached; output was clipped | 200 | user-fix | warn | stable (public API) |

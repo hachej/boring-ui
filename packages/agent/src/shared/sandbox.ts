@@ -1,3 +1,4 @@
+import type { WorkspaceRuntimeContext } from './runtime'
 import type { Workspace } from './workspace'
 
 /**
@@ -52,6 +53,9 @@ export interface Sandbox {
   /** Capabilities this sandbox advertises (used for tool gating). */
   readonly capabilities: readonly SandboxCapability[]
 
+  /** Agent-visible runtime cwd; must match the paired Workspace root. */
+  readonly runtimeContext: WorkspaceRuntimeContext
+
   /**
    * Optional initialization hook. Some backends bind to a workspace +
    * session at construction (Vercel: snapshot warm-up; Bwrap: bind
@@ -87,6 +91,7 @@ export interface Sandbox {
 }
 
 export interface ExecOptions {
+  /** Runtime-visible cwd. Relative paths resolve from `runtimeContext.runtimeCwd`. */
   cwd?: string
   env?: Record<string, string>
   signal?: AbortSignal

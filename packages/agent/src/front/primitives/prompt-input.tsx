@@ -325,7 +325,7 @@ export type PromptInputProps = Omit<
   onSubmit: (
     message: PromptInputMessage,
     event: FormEvent<HTMLFormElement>
-  ) => void | Promise<void>;
+  ) => false | void | Promise<false | void>;
   /** When provided, files are uploaded to the server immediately on add and the
    * attachment URL is replaced with the stable server path before submit. */
   onUploadFile?: (file: File) => Promise<{ url: string }>;
@@ -699,7 +699,9 @@ export const PromptInput = ({
       if (files.some((f) => f.status === 'uploading')) return;
 
       // Reset form immediately after capturing text to avoid race condition
-      // where user input during async blob conversion would be lost
+      // where user input during async blob conversion would be lost. If a host
+      // intercepts and cancels the submit (return false), restore the captured
+      // draft below instead of clearing it.
       if (!usingProvider) {
         form.reset();
       }
@@ -717,28 +719,27 @@ export const PromptInput = ({
           })
         );
 
-        const result = onSubmit({ files: convertedFiles, text }, event);
-
-        // Handle both sync and async onSubmit
-        if (result instanceof Promise) {
-          try {
-            await result;
-            clear();
-            if (usingProvider) {
-              controller.textInput.clear();
-            }
-          } catch {
-            // Don't clear on error - user may want to retry
-          }
-        } else {
-          // Sync function completed without throwing, clear inputs
-          clear();
+        const result = await onSubmit({ files: convertedFiles, text }, event);
+        if (result === false) {
           if (usingProvider) {
-            controller.textInput.clear();
+            controller.textInput.setInput(text);
+          } else {
+            const textInput = form.elements.namedItem("message") as HTMLTextAreaElement | HTMLInputElement | null;
+            if (textInput) textInput.value = text;
           }
+          return;
+        }
+
+        clear();
+        if (usingProvider) {
+          controller.textInput.clear();
         }
       } catch {
         // Don't clear on error - user may want to retry
+        if (!usingProvider) {
+          const textInput = form.elements.namedItem("message") as HTMLTextAreaElement | HTMLInputElement | null;
+          if (textInput && textInput.value === "") textInput.value = text;
+        }
       }
     },
     [usingProvider, controller, files, onSubmit, clear]

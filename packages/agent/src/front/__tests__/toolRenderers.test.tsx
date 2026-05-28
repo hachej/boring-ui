@@ -13,6 +13,7 @@
  */
 import { describe, test, expect } from "vitest"
 import { renderToStaticMarkup } from "react-dom/server"
+import { ErrorCode } from "../../shared/error-codes"
 import { shadcnDefaultToolRenderers } from "../toolRenderers"
 import type { ToolPart } from "../../front/toolRenderers"
 import { buildFilesystemAgentTools } from "../../server/tools/filesystem"
@@ -28,9 +29,12 @@ function makePart(overrides: Partial<ToolPart> & { toolName: string }): ToolPart
 }
 
 function mockBundle(provider: string): RuntimeBundle {
+  const runtimeContext = { runtimeCwd: "/workspace" }
   return {
+    runtimeContext,
     workspace: {
-      root: "/workspace",
+      root: runtimeContext.runtimeCwd,
+      runtimeContext,
       readFile: async () => "",
       writeFile: async () => {},
       unlink: async () => {},
@@ -44,6 +48,7 @@ function mockBundle(provider: string): RuntimeBundle {
       placement: provider === "vercel-sandbox" ? "remote" : "server",
       provider,
       capabilities: ["exec"],
+      runtimeContext,
       exec: async () => ({
         stdout: new Uint8Array(),
         stderr: new Uint8Array(),
@@ -68,6 +73,41 @@ describe("shadcn filesystem renderer coverage", () => {
       expect(missing).toEqual([])
     },
   )
+})
+
+describe("workspace readiness tool status", () => {
+  test.each([
+    ["read", "workspace-fs", "Files are still loading."],
+    ["bash", "sandbox-exec", "Sandbox is still waking."],
+    ["exec_ui", "ui-bridge", "Workspace UI is still connecting."],
+  ])("renders friendly retryable status for %s/%s", (toolName, requirement, copy) => {
+    const part = makePart({
+      toolName,
+      state: "output-error",
+      output: {
+        content: [{ type: "text", text: "raw provider status 503 should be hidden" }],
+        details: { code: ErrorCode.enum.WORKSPACE_NOT_READY, retryable: true, requirement },
+      },
+      errorText: "raw provider status 503 should be hidden",
+    })
+    const renderer = shadcnDefaultToolRenderers[toolName] ?? shadcnDefaultToolRenderers.__fallback!
+    const html = renderToStaticMarkup(<>{renderer(part)}</>)
+    expect(html).toContain(copy)
+    expect(html).not.toContain("raw provider status 503 should be hidden")
+  })
+
+  test("does not treat agent runtime readiness as workspace substrate readiness", () => {
+    const part = makePart({
+      toolName: "read",
+      state: "output-error",
+      output: {
+        details: { code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY, retryable: true },
+      },
+      errorText: "Preparing agent",
+    })
+    const html = renderToStaticMarkup(<>{shadcnDefaultToolRenderers.read!(part)}</>)
+    expect(html).not.toContain("Files are still loading.")
+  })
 })
 
 describe("shadcn exec_ui renderer", () => {

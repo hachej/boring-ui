@@ -3,6 +3,23 @@ import type { AgentTool, ToolResult } from "../../../shared/tool.js";
 import { noopTelemetry, safeCapture, type TelemetrySink } from "../../../shared/telemetry.js";
 import { ErrorCode } from "../../../shared/error-codes.js";
 
+const BORING_TOOL_ERROR_MARKER = '__boringToolError'
+
+export function markToolResultErrorDetails(details: unknown): Record<string, unknown> {
+  return details && typeof details === 'object' && !Array.isArray(details)
+    ? { ...(details as Record<string, unknown>), [BORING_TOOL_ERROR_MARKER]: true }
+    : { [BORING_TOOL_ERROR_MARKER]: true, details }
+}
+
+export function unmarkToolResultErrorDetails(details: unknown): { isMarked: boolean; details: unknown } {
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return { isMarked: false, details }
+  const record = { ...(details as Record<string, unknown>) }
+  if (record[BORING_TOOL_ERROR_MARKER] !== true) return { isMarked: false, details }
+  delete record[BORING_TOOL_ERROR_MARKER]
+  if (Object.keys(record).length === 1 && 'details' in record) return { isMarked: true, details: record.details }
+  return { isMarked: true, details: record }
+}
+
 function toolTelemetryProperties(
   toolName: string,
   sessionId: string | undefined,
@@ -56,7 +73,10 @@ export function adaptToolForPi(tool: AgentTool, sessionId?: string, telemetry: T
         });
         if (result.isError) {
           emittedFailure = true;
-          throw new Error(result.content.map((c) => c.text).join("\n"));
+          return {
+            content: result.content,
+            details: markToolResultErrorDetails(result.details),
+          };
         }
         return {
           content: result.content,

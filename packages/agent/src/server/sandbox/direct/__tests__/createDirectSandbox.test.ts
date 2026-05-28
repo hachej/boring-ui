@@ -19,10 +19,12 @@ async function initSandbox() {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'boring-ui-direct-sandbox-'))
   tempDirs.push(workspaceRoot)
 
-  const sandbox = createDirectSandbox()
+  const runtimeContext = { runtimeCwd: workspaceRoot }
+  const sandbox = createDirectSandbox({ runtimeContext })
   await sandbox.init?.({
     workspace: {
-      root: workspaceRoot,
+      root: runtimeContext.runtimeCwd,
+      runtimeContext,
       async readFile() {
         throw new Error('not implemented in test')
       },
@@ -51,14 +53,18 @@ async function initSandbox() {
   return { sandbox, workspaceRoot }
 }
 
-test('exec captures UTF-8 output and uses workspace root as cwd', async () => {
+test('exec captures UTF-8 output and defaults cwd/env roots to workspace root', async () => {
   const { sandbox, workspaceRoot } = await initSandbox()
 
   const result = await sandbox.exec(
-    `node -e "process.stdout.write(process.cwd()); process.stderr.write('stderr-ok')"`,
+    'printf "%s\\n%s\\n%s" "$(pwd)" "$PWD" "$BORING_AGENT_WORKSPACE_ROOT"; printf "stderr-ok" >&2',
   )
 
-  expect(Buffer.from(result.stdout).toString('utf-8')).toBe(workspaceRoot)
+  const [pwd, envPwd, boringRoot] = Buffer.from(result.stdout).toString('utf-8').split('\n')
+  expect(pwd).toBe(workspaceRoot)
+  expect(envPwd).toBe(workspaceRoot)
+  expect(boringRoot).toBe(workspaceRoot)
+  expect([pwd, envPwd, boringRoot]).not.toContain('/workspace')
   expect(Buffer.from(result.stderr).toString('utf-8')).toBe('stderr-ok')
   expect(result.stdoutEncoding).toBe('utf-8')
   expect(result.stderrEncoding).toBe('utf-8')
@@ -120,4 +126,34 @@ test('exec caps output at maxOutputBytes and marks truncated', async () => {
 
   expect(result.truncated).toBe(true)
   expect(result.stdout.length + result.stderr.length).toBeLessThanOrEqual(256)
+})
+
+test('exec forces managed env roots and appends plugin PATH after runtime bins', async () => {
+  const { sandbox, workspaceRoot } = await initSandbox()
+
+  const result = await sandbox.exec(
+    'printf "%s\\n%s\\n%s\\n%s\\n%s" "$BORING_AGENT_WORKSPACE_ROOT" "$HOME" "$VIRTUAL_ENV" "$PYTHONHOME" "$PATH"',
+    {
+      env: {
+        BORING_AGENT_WORKSPACE_ROOT: '/plugin-root',
+        HOME: '/plugin-home',
+        PATH: '/plugin/bin:/usr/bin',
+        PYTHONHOME: '/plugin-python-home',
+        VIRTUAL_ENV: '/plugin-venv',
+      },
+    },
+  )
+
+  const [root, home, venv, pythonHome, pathValue] = Buffer.from(result.stdout).toString('utf-8').split('\n')
+  expect(root).toBe(workspaceRoot)
+  expect(home).toBe(workspaceRoot)
+  expect(venv).toBe(join(workspaceRoot, '.boring-agent', 'venv'))
+  expect(pythonHome).toBe('')
+  expect(pathValue.split(':').slice(0, 5)).toEqual([
+    join(workspaceRoot, '.boring-agent', 'node', 'node_modules', '.bin'),
+    join(workspaceRoot, '.boring-agent', 'venv', 'bin'),
+    join(workspaceRoot, '.boring-agent', 'sdk', 'uv', 'bin'),
+    '/plugin/bin',
+    '/usr/bin',
+  ])
 })

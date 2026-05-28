@@ -18,8 +18,9 @@ export {
   WorkspaceAuthProvider,
   useCurrentWorkspace,
   useWorkspaceRole,
+  useWorkspaceRouteStatus,
 } from './WorkspaceAuthProvider.js'
-export type { WorkspaceAuthProviderProps } from './WorkspaceAuthProvider.js'
+export type { WorkspaceAuthProviderProps, WorkspaceRouteStatus } from './WorkspaceAuthProvider.js'
 
 export {
   AuthProvider,

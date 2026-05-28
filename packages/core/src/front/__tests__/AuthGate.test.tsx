@@ -218,4 +218,51 @@ describe('AuthGate', () => {
 
     expect(navigate).toHaveBeenCalledWith('/', { replace: true })
   })
+
+  it('treats workspace route patterns in publicPaths as public', () => {
+    let nowMs = 0
+    const now = () => nowMs
+    const navigate = vi.fn()
+
+    mockUseSession.mockReturnValue(makeNullSession())
+
+    render(
+      <Harness
+        location={{ pathname: '/projects/abc' }}
+        navigate={navigate}
+        now={now}
+        publicPaths={['/', '/projects/:workspaceSlug']}
+      />,
+    )
+
+    nowMs += 60_000
+    vi.advanceTimersByTime(60_000)
+
+    expect(navigate).not.toHaveBeenCalled()
+    expect(screen.getByText('Protected Content')).toBeTruthy()
+  })
+
+  it('does not treat nested paths under a public workspace route as public by default', () => {
+    let nowMs = 0
+    const now = () => nowMs
+    const navigate = vi.fn()
+
+    mockUseSession.mockReturnValue(makeNullSession())
+
+    render(
+      <Harness
+        location={{ pathname: '/projects/abc/settings' }}
+        navigate={navigate}
+        now={now}
+        publicPaths={['/', '/projects/:workspaceSlug']}
+      />,
+    )
+
+    nowMs += 60_000
+    vi.advanceTimersByTime(60_000)
+
+    expect(navigate).toHaveBeenCalledWith('/auth/signin?redirect=%2Fprojects%2Fabc%2Fsettings', {
+      replace: true,
+    })
+  })
 })

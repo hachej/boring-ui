@@ -23,6 +23,7 @@ function createSandbox(): Sandbox {
     placement: 'remote',
     provider: 'vercel-sandbox',
     capabilities: ['exec'],
+    runtimeContext: { runtimeCwd: '/workspace' },
     exec: vi.fn(async () => execResult()),
   }
 }

@@ -31,6 +31,7 @@ import {
 } from './primitives/artifact'
 import { CopyIcon, DownloadIcon } from 'lucide-react'
 import { cn } from './lib'
+import { getWorkspaceNotReadyStatus } from './workspaceReadinessStatus'
 
 export type { ToolPart, ToolRenderer, ToolRendererOverrides }
 
@@ -119,6 +120,21 @@ function PathLabel({ path }: { path: string }) {
   )
 }
 
+function renderWorkspaceNotReady(part: ToolPart): ReactNode | null {
+  const status = getWorkspaceNotReadyStatus(part.output)
+  if (!status) return null
+  return (
+    <Tool>
+      <ToolHeader title={`${part.toolName} · ${status.message}`} {...toHeaderProps(part)} />
+      <ToolContent>
+        <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+          {status.message} Try again in a moment.
+        </div>
+      </ToolContent>
+    </Tool>
+  )
+}
+
 function pathTitle(prefix: string, path: string): ReactNode {
   return (
     <span className="flex min-w-0 items-center gap-1.5">
@@ -132,6 +148,8 @@ function pathTitle(prefix: string, path: string): ReactNode {
 // ---- bash ----
 
 function renderBash(part: ToolPart): ReactNode {
+  const readiness = renderWorkspaceNotReady(part)
+  if (readiness) return readiness
   const input = asRecord(part.input)
   const output = asRecord(part.output)
   const command = typeof input.command === 'string' ? input.command : ''
@@ -171,6 +189,8 @@ function renderBash(part: ToolPart): ReactNode {
 // ---- read ----
 
 function renderRead(part: ToolPart): ReactNode {
+  const readiness = renderWorkspaceNotReady(part)
+  if (readiness) return readiness
   const input = asRecord(part.input)
   const output = asRecord(part.output)
   const path = typeof input.path === 'string' ? input.path : ''
@@ -202,6 +222,8 @@ function renderRead(part: ToolPart): ReactNode {
 // + copy actions, matching the Vercel artifact pattern.
 
 function renderWrite(part: ToolPart): ReactNode {
+  const readiness = renderWorkspaceNotReady(part)
+  if (readiness) return readiness
   const input = asRecord(part.input)
   const path = typeof input.path === 'string' ? input.path : ''
   const content = typeof input.content === 'string' ? input.content : ''
@@ -269,6 +291,8 @@ function renderWrite(part: ToolPart): ReactNode {
 // ---- edit ----
 
 function renderEdit(part: ToolPart): ReactNode {
+  const readiness = renderWorkspaceNotReady(part)
+  if (readiness) return readiness
   const input = asRecord(part.input)
   const path = typeof input.path === 'string' ? input.path : ''
   const oldString = typeof input.oldString === 'string' ? input.oldString : ''
@@ -306,6 +330,8 @@ function renderEdit(part: ToolPart): ReactNode {
 // ---- find / grep / ls ----
 
 function renderSearchLike(toolName: 'find' | 'grep' | 'ls', part: ToolPart): ReactNode {
+  const readiness = renderWorkspaceNotReady(part)
+  if (readiness) return readiness
   const input = asRecord(part.input)
   const SearchLikeIcon = toolName === 'find' || toolName === 'grep' ? SearchIcon : FileTextIcon
   const pattern = typeof input.pattern === 'string' ? input.pattern : ''
@@ -360,6 +386,8 @@ function extractParamTokens(value: unknown, depth = 0): string[] {
 }
 
 function renderExecUi(part: ToolPart): ReactNode {
+  const readiness = renderWorkspaceNotReady(part)
+  if (readiness) return readiness
   const input = asRecord(part.input)
   const kind = typeof input.kind === 'string' ? input.kind : '(empty)'
   const tokens = extractParamTokens(input.params)
@@ -418,6 +446,8 @@ function renderExecUi(part: ToolPart): ReactNode {
 // ---- fallback ----
 
 function renderFallback(part: ToolPart): ReactNode {
+  const readiness = renderWorkspaceNotReady(part)
+  if (readiness) return readiness
   return (
     <Tool>
       <ToolHeader title={part.toolName} {...toHeaderProps(part)} />

@@ -42,18 +42,23 @@ export function mockSandbox(
   const history: Array<{ cmd: string; opts?: ExecOptions }> = []
   const queue: QueuedResult[] = []
   let workspace: Workspace | null = null
+  let runtimeContext = { runtimeCwd: '/mock-workspace' }
 
   return {
     id: 'mock',
     placement: 'server',
     provider: 'mock',
     capabilities,
+    get runtimeContext() {
+      return runtimeContext
+    },
     history,
     queueResult(result) {
       queue.push(result)
     },
     async init(ctx) {
       workspace = ctx.workspace
+      runtimeContext = ctx.workspace.runtimeContext
     },
     async exec(cmd, opts) {
       if (!workspace) {

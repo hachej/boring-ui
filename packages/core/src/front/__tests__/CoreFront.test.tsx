@@ -249,6 +249,32 @@ describe('CoreFront', () => {
   )
 
   it(
+    'redirects authenticated auth pages through the router without a document reload',
+    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      setupAll()
+      mockUseSession.mockReturnValue({
+        data: {
+          user: {
+            id: 'user-1',
+            email: 'test@test.dev',
+            name: 'Tester',
+            image: null,
+          },
+        },
+        isPending: false,
+        error: null,
+      })
+      window.history.pushState({}, '', '/auth/signin?redirect=%2Fme')
+
+      render(<CoreFront />)
+
+      await waitFor(() => expect(window.location.pathname).toBe('/me'))
+      expect(window.location.search).toBe('')
+      assertionPassed('auth-redirect-router-navigation')
+    }),
+  )
+
+  it(
     'provides UserMenu through the top bar slot context',
     withBeadId(BEAD_ID, async ({ assertionPassed }) => {
       setupAll()

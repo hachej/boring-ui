@@ -156,6 +156,7 @@ export async function ensureNodeRuntime(options: {
         options.runtimeLayout,
         options.adapter.getRuntimeCacheRoot(),
       ),
+      timeoutMs: 300_000,
     })
   } catch (error) {
     throw toProvisioningError(

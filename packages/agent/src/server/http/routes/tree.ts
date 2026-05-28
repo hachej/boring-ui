@@ -141,6 +141,7 @@ export function treeRoutes(
             error: {
               code: typeof stableCode === 'string' ? stableCode : ERROR_CODE_INTERNAL,
               message,
+              details: (err as { details?: unknown })?.details,
             },
           })
         }

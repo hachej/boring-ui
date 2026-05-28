@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
 
+import type { WorkspaceRuntimeContext } from '../../../shared/runtime'
 import type { Sandbox } from '../../../shared/sandbox'
 import type { Workspace } from '../../../shared/workspace'
 import { withWorkspacePythonEnv } from '../workspacePythonEnv'
@@ -64,16 +65,25 @@ function terminateProcess(
   }
 }
 
-export function createDirectSandbox(): Sandbox {
+export interface CreateDirectSandboxOptions {
+  runtimeContext?: WorkspaceRuntimeContext
+}
+
+export function createDirectSandbox(opts: CreateDirectSandboxOptions = {}): Sandbox {
   let workspace: Workspace | null = null
+  let runtimeContext = opts.runtimeContext ?? { runtimeCwd: process.cwd() }
 
   return {
     id: 'direct',
     placement: 'server',
     provider: 'direct',
     capabilities: ['exec'],
+    get runtimeContext() {
+      return runtimeContext
+    },
     async init(ctx) {
       workspace = ctx.workspace
+      runtimeContext = opts.runtimeContext ?? ctx.workspace.runtimeContext
     },
     async exec(cmd, opts) {
       if (!workspace) {
@@ -83,7 +93,7 @@ export function createDirectSandbox(): Sandbox {
       const start = Date.now()
       const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS
       const maxOutputBytes = opts?.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES
-      const workspaceRoot = workspace.root
+      const workspaceRoot = runtimeContext.runtimeCwd
       const cwd = opts?.cwd ?? workspaceRoot
 
       return await new Promise((resolve, reject) => {

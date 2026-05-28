@@ -18,7 +18,7 @@ test('writes via workspace are visible to paired exec on same sandbox handle', a
 
     const command = await harness.sandbox.runCommand('sh', [
       '-c',
-      'cat /vercel/sandbox/shared/hello.txt',
+      'cat /workspace/shared/hello.txt',
     ])
 
     await expect(command.stdout()).resolves.toBe(
@@ -30,6 +30,16 @@ test('writes via workspace are visible to paired exec on same sandbox handle', a
   }
 })
 
+test('fallback read errors expose runtime workspace root, not Vercel internal root', async () => {
+  const workspace = createVercelSandboxWorkspace({
+    writeFiles: vi.fn(async () => {}),
+    readFileToBuffer: vi.fn(async () => null),
+  } as any)
+
+  await expect(workspace.readFile('missing.txt')).rejects.toThrow("/workspace/missing.txt")
+  await expect(workspace.readFile('missing.txt')).rejects.not.toThrow('/vercel/sandbox')
+})
+
 test('writeFile delegates UTF-8 bytes via sandbox.writeFiles', async () => {
   const harness = await createMockVercelSandboxHarness()
   const workspace = createVercelSandboxWorkspace(harness.sandbox)
@@ -39,7 +49,7 @@ test('writeFile delegates UTF-8 bytes via sandbox.writeFiles', async () => {
 
     expect(harness.lastWriteFiles).toEqual([
       {
-        path: '/vercel/sandbox/utf8.txt',
+        path: '/workspace/utf8.txt',
         content: new Uint8Array(Buffer.from('snowman ☃', 'utf-8')),
       },
     ])

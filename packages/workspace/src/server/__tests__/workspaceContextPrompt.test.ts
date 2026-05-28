@@ -136,7 +136,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
     const workspaceRoot = await makeTempDir("boring-wcp-docs-")
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
-      mode: "direct",
+      mode: "local",
       logger: false,
       provisionWorkspace: false,
     })

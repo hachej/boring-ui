@@ -1,6 +1,6 @@
 import { constants } from 'node:fs'
 import { access, lstat, mkdir, readFile, readdir, readlink, realpath, stat, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
 import type {
   EditOperations,
@@ -18,6 +18,11 @@ export interface BoundFs {
   find: FindOperations
   grep: GrepOperations
   ls: LsOperations
+}
+
+export interface BoundFsOptions {
+  /** Agent-visible root that pi tools may pass back as absolute paths. */
+  runtimeRoot?: string
 }
 
 function toPosixPath(value: string): string {
@@ -176,50 +181,78 @@ async function assertWithinWorkspace(workspaceRoot: string, absPath: string): Pr
   }
 }
 
-export function boundFs(workspaceRoot: string): BoundFs {
+export function boundFs(workspaceRoot: string, opts: BoundFsOptions = {}): BoundFs {
+  const runtimeRoot = opts.runtimeRoot ? opts.runtimeRoot.replace(/\/+$/, '') || '/' : undefined
+  const shouldMapRuntimeRoot = Boolean(runtimeRoot && runtimeRoot !== workspaceRoot)
+
+  const toStoragePath = (absolutePath: string): string => {
+    if (!shouldMapRuntimeRoot || !runtimeRoot) return absolutePath
+    const normalized = toPosixPath(absolutePath)
+    if (normalized === runtimeRoot) return workspaceRoot
+    if (normalized.startsWith(`${runtimeRoot}/`)) {
+      return join(workspaceRoot, ...normalized.slice(runtimeRoot.length + 1).split('/'))
+    }
+    return absolutePath
+  }
+
+  const toRuntimePath = (absolutePath: string): string => {
+    if (!shouldMapRuntimeRoot || !runtimeRoot) return absolutePath
+    const rel = relative(workspaceRoot, absolutePath)
+    if (rel === '') return runtimeRoot
+    if (rel.startsWith('..') || isAbsolute(rel)) return absolutePath
+    return `${runtimeRoot}/${toPosixPath(rel)}`
+  }
   const read: ReadOperations = {
     async readFile(absolutePath: string): Promise<Buffer> {
-      await assertWithinWorkspace(workspaceRoot, absolutePath)
-      return await readFile(absolutePath)
+      const storagePath = toStoragePath(absolutePath)
+      await assertWithinWorkspace(workspaceRoot, storagePath)
+      return await readFile(storagePath)
     },
     async access(absolutePath: string): Promise<void> {
-      await assertWithinWorkspace(workspaceRoot, absolutePath)
-      await access(absolutePath, constants.R_OK)
+      const storagePath = toStoragePath(absolutePath)
+      await assertWithinWorkspace(workspaceRoot, storagePath)
+      await access(storagePath, constants.R_OK)
     },
   }
 
   const write: WriteOperations = {
     async writeFile(absolutePath: string, content: string): Promise<void> {
-      await assertWithinWorkspace(workspaceRoot, absolutePath)
-      await mkdir(dirname(absolutePath), { recursive: true })
-      await writeFile(absolutePath, content)
+      const storagePath = toStoragePath(absolutePath)
+      await assertWithinWorkspace(workspaceRoot, storagePath)
+      await mkdir(dirname(storagePath), { recursive: true })
+      await writeFile(storagePath, content)
     },
     async mkdir(dir: string): Promise<void> {
-      await assertWithinWorkspace(workspaceRoot, dir)
-      await mkdir(dir, { recursive: true })
+      const storagePath = toStoragePath(dir)
+      await assertWithinWorkspace(workspaceRoot, storagePath)
+      await mkdir(storagePath, { recursive: true })
     },
   }
 
   const edit: EditOperations = {
     async readFile(absolutePath: string): Promise<Buffer> {
-      await assertWithinWorkspace(workspaceRoot, absolutePath)
-      return await readFile(absolutePath)
+      const storagePath = toStoragePath(absolutePath)
+      await assertWithinWorkspace(workspaceRoot, storagePath)
+      return await readFile(storagePath)
     },
     async writeFile(absolutePath: string, content: string): Promise<void> {
-      await assertWithinWorkspace(workspaceRoot, absolutePath)
-      await writeFile(absolutePath, content)
+      const storagePath = toStoragePath(absolutePath)
+      await assertWithinWorkspace(workspaceRoot, storagePath)
+      await writeFile(storagePath, content)
     },
     async access(absolutePath: string): Promise<void> {
-      await assertWithinWorkspace(workspaceRoot, absolutePath)
-      await access(absolutePath, constants.R_OK | constants.W_OK)
+      const storagePath = toStoragePath(absolutePath)
+      await assertWithinWorkspace(workspaceRoot, storagePath)
+      await access(storagePath, constants.R_OK | constants.W_OK)
     },
   }
 
   const find: FindOperations = {
     async exists(absolutePath: string): Promise<boolean> {
-      await assertWithinWorkspace(workspaceRoot, absolutePath)
+      const storagePath = toStoragePath(absolutePath)
+      await assertWithinWorkspace(workspaceRoot, storagePath)
       try {
-        await stat(absolutePath)
+        await stat(storagePath)
         return true
       } catch (err: unknown) {
         if ((err as { code?: string }).code === 'ENOENT') return false
@@ -227,41 +260,47 @@ export function boundFs(workspaceRoot: string): BoundFs {
       }
     },
     async glob(pattern: string, cwd: string, options: { ignore: string[]; limit: number }): Promise<string[]> {
-      await assertWithinWorkspace(workspaceRoot, cwd)
+      const storageCwd = toStoragePath(cwd)
+      await assertWithinWorkspace(workspaceRoot, storageCwd)
       const matches: string[] = []
-      await walkMatches(cwd, cwd, pattern, options.ignore, options.limit, matches)
-      return matches
+      await walkMatches(storageCwd, storageCwd, pattern, options.ignore, options.limit, matches)
+      return matches.map(toRuntimePath)
     },
   }
 
   const grep: GrepOperations = {
     async isDirectory(absolutePath: string): Promise<boolean> {
-      await assertWithinWorkspace(workspaceRoot, absolutePath)
-      return (await stat(absolutePath)).isDirectory()
+      const storagePath = toStoragePath(absolutePath)
+      await assertWithinWorkspace(workspaceRoot, storagePath)
+      return (await stat(storagePath)).isDirectory()
     },
     async readFile(absolutePath: string): Promise<string> {
-      await assertWithinWorkspace(workspaceRoot, absolutePath)
-      return await readFile(absolutePath, 'utf8')
+      const storagePath = toStoragePath(absolutePath)
+      await assertWithinWorkspace(workspaceRoot, storagePath)
+      return await readFile(storagePath, 'utf8')
     },
   }
 
   const ls: LsOperations = {
     async exists(absolutePath: string): Promise<boolean> {
+      const storagePath = toStoragePath(absolutePath)
       try {
-        await assertWithinWorkspace(workspaceRoot, absolutePath)
-        await stat(absolutePath)
+        await assertWithinWorkspace(workspaceRoot, storagePath)
+        await stat(storagePath)
         return true
       } catch {
         return false
       }
     },
     async stat(absolutePath: string) {
-      await assertWithinWorkspace(workspaceRoot, absolutePath)
-      return await stat(absolutePath)
+      const storagePath = toStoragePath(absolutePath)
+      await assertWithinWorkspace(workspaceRoot, storagePath)
+      return await stat(storagePath)
     },
     async readdir(absolutePath: string): Promise<string[]> {
-      await assertWithinWorkspace(workspaceRoot, absolutePath)
-      return await readdir(absolutePath)
+      const storagePath = toStoragePath(absolutePath)
+      await assertWithinWorkspace(workspaceRoot, storagePath)
+      return await readdir(storagePath)
     },
   }
 

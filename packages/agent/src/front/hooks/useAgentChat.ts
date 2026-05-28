@@ -10,10 +10,12 @@ export type UseAgentChatOptions = Pick<
   onData?: (part: unknown) => void
   requestHeaders?: Record<string, string>
   persistMessages?: boolean
+  hydrateMessages?: boolean
 }
 
 export function useAgentChat(opts: UseAgentChatOptions) {
   const { sessionId } = opts
+  const hydrateMessages = opts.hydrateMessages ?? true
   const optsRef = useRef(opts)
   optsRef.current = opts
 
@@ -34,7 +36,7 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   const chat = useChat({
     id: sessionId,
     transport,
-    resume: true,
+    resume: hydrateMessages,
     // Match AI SDK's documented React smoothing knob: render at most every
     // ~50ms while chunks stream instead of once per incoming chunk. This only
     // throttles AI SDK's own messages store; pi's custom data-pi projection
@@ -63,6 +65,10 @@ export function useAgentChat(opts: UseAgentChatOptions) {
 
   useEffect(() => {
     if (!sessionId || !cacheKey) return
+    if (!hydrateMessages) {
+      setHydrated(true)
+      return
+    }
     let aborted = false
     setHydrated(false)
 
@@ -86,23 +92,25 @@ export function useAgentChat(opts: UseAgentChatOptions) {
       .then((res) => (res.ok ? res.json() : null))
       .then((payload: { messages?: UIMessage[] } | null) => {
         if (aborted) return
+        const localTurnStarted = statusRef.current === 'submitted' || statusRef.current === 'streaming' || messagesRef.current.length > 0
         const serverMessages = payload?.messages
         if (Array.isArray(serverMessages) && serverMessages.length > 0) {
-          setMessages(serverMessages)
+          if (!localTurnStarted) setMessages(serverMessages)
           return
         }
-        loadFromCache()
+        if (!localTurnStarted) loadFromCache()
       })
       .catch(() => {
         if (aborted) return
-        loadFromCache()
+        const localTurnStarted = statusRef.current === 'submitted' || statusRef.current === 'streaming' || messagesRef.current.length > 0
+        if (!localTurnStarted) loadFromCache()
       })
       .finally(() => {
         if (!aborted) setHydrated(true)
       })
 
     return () => { aborted = true }
-  }, [sessionId, cacheKey, setMessages])
+  }, [hydrateMessages, sessionId, cacheKey, setMessages])
 
   // Mirror messages → localStorage whenever they change. Gated on `hydrated`
   // so the initial empty state never overwrites a previously-cached history.
@@ -111,6 +119,10 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   // new session before we get a chance to read it.
   const messages = chat.messages
   const status = chat.status
+  const messagesRef = useRef(messages)
+  const statusRef = useRef(status)
+  messagesRef.current = messages
+  statusRef.current = status
   useEffect(() => {
     if (opts.persistMessages === false) return
     if (!hydrated || !cacheKey) return

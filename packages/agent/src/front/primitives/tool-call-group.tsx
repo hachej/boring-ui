@@ -9,6 +9,7 @@ import { extractToolUiMetadata } from '../../shared/tool-ui'
 import { resolveToolRenderer, type ToolPart, type ToolRendererOverrides } from '../bareToolRenderers'
 import { cn } from '../lib'
 import { Shimmer } from './shimmer'
+import { getWorkspaceNotReadyStatus } from '../workspaceReadinessStatus'
 
 export type GroupedToolEntry = { part: UIMessage['parts'][number]; key: string }
 
@@ -61,10 +62,15 @@ export const ToolCallGroup = memo(({ tools, mergedToolRenderers }: ToolCallGroup
     return isSettledState((part as unknown as ToolPart).state)
   })
 
+  const workspaceNotReady = tools.map(({ part }) => {
+    if (!isToolUIPart(part)) return null
+    return getWorkspaceNotReadyStatus((part as unknown as ToolPart).output)
+  }).find(Boolean)
+
   const hasError = tools.some(({ part }) => {
     if (!isToolUIPart(part)) return false
     return (part as unknown as ToolPart).state === 'output-error'
-  })
+  }) && !workspaceNotReady
 
   // Always start collapsed — the header is the live status.
   // User expands only when they want to inspect individual calls.
@@ -97,7 +103,9 @@ export const ToolCallGroup = memo(({ tools, mergedToolRenderers }: ToolCallGroup
             isOpen && 'rotate-180',
           )}
         />
-        {!isSettled ? (
+        {workspaceNotReady ? (
+          <span>{workspaceNotReady.message}</span>
+        ) : !isSettled ? (
           <Shimmer as="span" duration={1.5}>
             {title}
           </Shimmer>

@@ -8,6 +8,7 @@ createRoot(document.getElementById('root')!).render(
     apiBaseUrl=""
     apiTimeout={10_000}
     persistenceEnabled
+    chatEntryMode="chat-first"
     chatParams={{ thinkingControl: true }}
   />,
 )

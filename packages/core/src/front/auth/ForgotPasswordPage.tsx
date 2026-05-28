@@ -16,6 +16,10 @@ export function ForgotPasswordPage() {
   const forgetPassword = useForgetPassword()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const redirect = typeof window === 'undefined'
+    ? null
+    : new URLSearchParams(window.location.search).get('redirect')
+  const signinHref = redirect ? `${routes.signin}?redirect=${encodeURIComponent(redirect)}` : routes.signin
 
   const {
     register,
@@ -48,7 +52,7 @@ export function ForgotPasswordPage() {
             </CardDescription>
           </CardHeader>
           <CardFooter>
-            <a href={routes.signin} className="text-sm text-muted-foreground hover:underline">
+            <a href={signinHref} className="text-sm text-muted-foreground hover:underline">
               Back to sign in
             </a>
           </CardFooter>
@@ -86,7 +90,7 @@ export function ForgotPasswordPage() {
             <Button type="submit" className="w-full" disabled={isSubmitting}>
               {isSubmitting ? 'Sending…' : 'Send reset link'}
             </Button>
-            <a href={routes.signin} className="text-sm text-muted-foreground hover:underline">
+            <a href={signinHref} className="text-sm text-muted-foreground hover:underline">
               Back to sign in
             </a>
           </CardFooter>

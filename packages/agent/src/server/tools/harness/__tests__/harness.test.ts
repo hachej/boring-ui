@@ -10,8 +10,10 @@ import type { RuntimeBundle } from '../../../runtime/mode'
 import { buildHarnessAgentTools } from '../index'
 
 function mockWorkspace(root = '/workspace'): Workspace {
+  const runtimeContext = { runtimeCwd: root }
   return {
     root,
+    runtimeContext,
     readFile: vi.fn(async () => ''),
     writeFile: vi.fn(async () => {}),
     unlink: vi.fn(async () => {}),
@@ -35,6 +37,7 @@ function mockSandbox(provider: string, capabilities: string[] = ['exec']): Sandb
     placement: provider === 'vercel-sandbox' ? 'remote' : 'server',
     provider,
     capabilities,
+    runtimeContext: { runtimeCwd: '/workspace' },
     exec: vi.fn(async () => defaultResult),
   }
 }

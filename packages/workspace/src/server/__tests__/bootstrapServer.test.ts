@@ -74,6 +74,22 @@ describe("bootstrapServer", () => {
     expect(result.agentTools).toHaveLength(1)
   })
 
+  it("collects node package provisioning contributions from defaults and plugins in order", () => {
+    const result = bootstrapServer({
+      defaults: [{
+        id: "default-runtime",
+        provisioning: { nodePackages: [{ id: "default-cli", packageName: "@example/default-cli", version: "1.0.0" }] },
+      }],
+      plugins: [{
+        id: "plugin-runtime",
+        provisioning: { nodePackages: [{ id: "plugin-cli", packageName: "@example/plugin-cli", version: "2.0.0", expectedBins: ["plugin"] }] },
+      }],
+    })
+
+    expect(result.provisioningContributions.map((entry) => entry.id)).toEqual(["default-runtime", "plugin-runtime"])
+    expect(result.provisioningContributions.flatMap((entry) => entry.provisioning.nodePackages ?? []).map((spec) => spec.id)).toEqual(["default-cli", "plugin-cli"])
+  })
+
   it("throws on duplicate plugin ids", () => {
     expect(() =>
       bootstrapServer({
@@ -318,6 +334,15 @@ describe("bootstrapServer", () => {
         },
       }),
     ).toThrow("provisioning.nodePackages[0].packageRoot must be a string or URL")
+
+    expect(() =>
+      defineServerPlugin({
+        id: "registry-node-package",
+        provisioning: {
+          nodePackages: [{ id: "workspace", packageName: "@boring/workspace" }],
+        },
+      }),
+    ).not.toThrow()
   })
 
   it("collects structural runtime plugin input without moving provisioning into workspace", () => {
@@ -374,7 +399,9 @@ describe("bootstrapServer", () => {
           {
             id: "workspace",
             packageName: "@boring/workspace",
+            version: "1.2.3",
             packageRoot: new URL("file:///tmp/workspace/"),
+            bins: { "boring-workspace": "dist/index.js" },
           },
         ],
       },

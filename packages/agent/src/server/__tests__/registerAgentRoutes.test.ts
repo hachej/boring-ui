@@ -7,6 +7,7 @@ import Fastify from 'fastify'
 import { registerAgentRoutes } from '../registerAgentRoutes'
 import { provisionWorkspaceRuntime } from '../workspace/provisioning'
 import type { RuntimeModeAdapter } from '../runtime/mode'
+import { ErrorCode } from '../../shared/error-codes'
 
 const tempDirs: string[] = []
 
@@ -130,6 +131,98 @@ test('registerAgentRoutes provisions the resolved request workspace, not the hos
     await app.close()
   }
 }, 15_000)
+
+test('chat returns runtime-not-ready while request-scoped provisioning is pending', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-chat-pending-provision-')
+  const app = Fastify({ logger: false })
+  const provisionStarted = vi.fn()
+  let resolveProvision: (() => void) | undefined
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    getWorkspaceId: () => 'workspace-a',
+    getWorkspaceRoot: () => workspaceRoot,
+    provisionRuntime: async () => {
+      provisionStarted()
+      await new Promise<void>((resolve) => { resolveProvision = resolve })
+      return { changed: false, env: {}, pathEntries: [], skillPaths: [] }
+    },
+    harnessFactory: async () => ({
+      id: 'pending-provision-test-harness',
+      placement: 'server' as const,
+      sessions: {
+        async list() { return [] },
+        async create() {
+          const now = new Date().toISOString()
+          return { id: 's1', title: 'Test', createdAt: now, updatedAt: now, turnCount: 0 }
+        },
+        async load() {
+          const now = new Date().toISOString()
+          return { id: 's1', title: 'Test', createdAt: now, updatedAt: now, turnCount: 0, messages: [] }
+        },
+        async delete() {},
+      },
+      async *sendMessage() {},
+    }),
+  })
+  await app.ready()
+
+  try {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      payload: { sessionId: 's1', message: 'hello' },
+    })
+
+    expect(res.statusCode).toBe(503)
+    expect(res.json()).toMatchObject({
+      error: {
+        code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
+        details: { workspaceId: 'workspace-a', retryable: true },
+      },
+    })
+    expect(provisionStarted).toHaveBeenCalledOnce()
+
+    resolveProvision?.()
+    const catalog = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
+    expect(catalog.statusCode).toBe(200)
+  } finally {
+    resolveProvision?.()
+    await app.close()
+  }
+})
+
+test('request-scoped ready-status resolves the requested workspace', async () => {
+  const baseRoot = await makeTempDir('boring-agent-ready-base-')
+  const workspaceA = await makeTempDir('boring-agent-ready-workspace-a-')
+  const getWorkspaceId = vi.fn(async (request: { headers: Record<string, unknown> }) => String(request.headers['x-boring-workspace-id'] ?? ''))
+  const getWorkspaceRoot = vi.fn(async (workspaceId: string) => workspaceId === 'workspace-a' ? workspaceA : baseRoot)
+  const app = Fastify({ logger: false })
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot: baseRoot,
+    mode: 'direct',
+    getWorkspaceId,
+    getWorkspaceRoot,
+  })
+  await app.ready()
+
+  try {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/ready-status',
+      headers: { 'x-boring-workspace-id': 'workspace-a' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toContain('"state":"ready"')
+    expect(getWorkspaceId).toHaveBeenCalledOnce()
+    expect(getWorkspaceRoot).toHaveBeenCalledWith('workspace-a', expect.anything())
+  } finally {
+    await app.close()
+  }
+})
 
 test('registerAgentRoutes reload reruns provisioning and refreshes skills scope', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-reload-provision-')

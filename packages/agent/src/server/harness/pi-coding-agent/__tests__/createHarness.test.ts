@@ -312,7 +312,7 @@ describe("adaptToolsForPi", () => {
     expect(result.content).toEqual([{ type: "text", text: "done" }]);
   });
 
-  it("throws on isError results", async () => {
+  it("returns marked details on isError results for Pi tool_result extension", async () => {
     const tool: AgentTool = {
       name: "fail",
       description: "Always fails",
@@ -326,9 +326,10 @@ describe("adaptToolsForPi", () => {
     };
 
     const [adapted] = adaptToolsForPi([tool]);
-    await expect(
-      adapted.execute("call-1", {}, undefined, undefined, {} as any),
-    ).rejects.toThrow("something broke");
+    const result = await adapted.execute("call-1", {}, undefined, undefined, {} as any);
+
+    expect(result.content).toEqual([{ type: "text", text: "something broke" }]);
+    expect(result.details).toEqual({ __boringToolError: true, details: undefined });
   });
 });
 
@@ -364,6 +365,15 @@ describe("PiSessionStore", () => {
 
   it("rejects unsafe session namespaces", () => {
     expect(() => new PiSessionStore("/tmp", { sessionNamespace: "../bad" })).toThrow("session namespace");
+  });
+
+  it("can store session files under host cwd while writing runtime cwd in session header", async () => {
+    const store = new PiSessionStore("/workspace", { storageCwd: "/tmp/host-storage-root", sessionDir: tmpDir });
+    const session = await store.create(ctx, { title: "Runtime cwd" });
+
+    expect(store.getSessionDir()).toBe(tmpDir);
+    const firstLine = (await readFile(join(tmpDir, `${session.id}.jsonl`), "utf-8")).split("\n")[0];
+    expect(JSON.parse(firstLine)).toEqual(expect.objectContaining({ cwd: "/workspace" }));
   });
 
   it("creates and lists sessions", async () => {

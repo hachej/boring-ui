@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 
-const mockForgetPassword = vi.fn()
+const mockFetch = vi.fn()
 const mockUseSession = vi.fn()
 const mockSignOut = vi.fn()
 
@@ -14,7 +14,7 @@ vi.mock('better-auth/react', () => ({
     signOut: mockSignOut,
     signIn: { email: vi.fn(), social: vi.fn() },
     signUp: { email: vi.fn() },
-    forgetPassword: mockForgetPassword,
+    forgetPassword: vi.fn(),
     resetPassword: vi.fn(),
   }),
 }))
@@ -37,14 +37,31 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockUseSession.mockReturnValue({ data: null, isPending: false, error: null })
   mockSignOut.mockResolvedValue(undefined)
-  mockForgetPassword.mockResolvedValue({ data: null, error: null })
+  vi.stubGlobal('fetch', mockFetch)
+  mockFetch.mockResolvedValue({ ok: true, json: async () => ({ ok: true }) })
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+  window.history.pushState({}, '', '/')
 })
 
 describe('ForgotPasswordPage', () => {
+  it(
+    'preserves redirect when linking back to sign in',
+    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      window.history.pushState({}, '', '/auth/forgot-password?redirect=%2Fworkspace%2Fabc')
+
+      render(<ForgotPasswordPage />, { wrapper: Wrapper })
+
+      expect(screen.getByText(/back to sign in/i).closest('a')?.getAttribute('href')).toBe(
+        '/auth/signin?redirect=%2Fworkspace%2Fabc',
+      )
+      assertionPassed('forgot-back-link-preserves-redirect')
+    }),
+  )
+
   it(
     'shows success state for any email (no enumeration)',
     withBeadId(BEAD_ID, async ({ assertionPassed }) => {
@@ -57,9 +74,14 @@ describe('ForgotPasswordPage', () => {
       await waitFor(() =>
         expect(screen.getAllByText(/check your inbox/i).length).toBeGreaterThan(0),
       )
-      expect(mockForgetPassword).toHaveBeenCalledWith({
-        email: 'unknown@example.com',
-        redirectTo: '/auth/reset-password',
+      expect(mockFetch).toHaveBeenCalledWith('/auth/request-password-reset', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          email: 'unknown@example.com',
+          redirectTo: '/auth/reset-password',
+        }),
       })
       assertionPassed('forgot-no-enumeration')
     }),
@@ -68,7 +90,7 @@ describe('ForgotPasswordPage', () => {
   it(
     'shows success even when server throws (no enumeration)',
     withBeadId(BEAD_ID, async ({ assertionPassed }) => {
-      mockForgetPassword.mockRejectedValue(new Error('Server error'))
+      mockFetch.mockRejectedValue(new Error('Server error'))
 
       render(<ForgotPasswordPage />, { wrapper: Wrapper })
 
@@ -95,7 +117,7 @@ describe('ForgotPasswordPage', () => {
       await waitFor(() =>
         expect(screen.getByText(/valid email/i)).toBeTruthy(),
       )
-      expect(mockForgetPassword).not.toHaveBeenCalled()
+      expect(mockFetch).not.toHaveBeenCalled()
       assertionPassed('forgot-client-validation')
     }),
   )

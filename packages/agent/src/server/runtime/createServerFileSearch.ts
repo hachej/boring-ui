@@ -68,7 +68,7 @@ export function createServerFileSearch(
       const command = [
         'find .',
         '-maxdepth 10',
-        "-path './.boring-agent' -prune -o",
+        "\\( -path './.boring-agent' -o -path './.git' -o -path './node_modules' \\) -prune -o",
         buildFindArgs(glob),
         '-type f',
         '-print',

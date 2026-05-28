@@ -23,7 +23,7 @@ import { Check, ChevronsUpDown, LayoutGrid, Plus, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { z } from 'zod'
 
-import { type Workspace } from '../../shared/types.js'
+import { type MemberRole, type Workspace } from '../../shared/types.js'
 import {
   WORKSPACES_QUERY_KEY,
   useCurrentWorkspace,
@@ -148,18 +148,21 @@ export function WorkspaceSwitcher({
     setIsSubmitting(true)
 
     try {
-      const data = await apiFetchJson<{ workspace: Workspace }>('/api/v1/workspaces', {
+      const data = await apiFetchJson<{ workspace: Workspace; role: MemberRole }>('/api/v1/workspaces', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ name: parsed.data.name }),
       })
 
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY }),
-        queryClient.invalidateQueries({ queryKey: workspaceQueryKey(data.workspace.id) }),
-      ])
+      queryClient.setQueryData(workspaceQueryKey(data.workspace.id), data)
+      queryClient.setQueryData<Workspace[]>(WORKSPACES_QUERY_KEY, (current = []) => {
+        if (current.some((workspace) => workspace.id === data.workspace.id)) return current
+        return [...current, data.workspace]
+      })
       onModalChange(false)
       navigate(hrefForWorkspace(workspacePathPrefix, data.workspace.id))
+      void queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY })
+      void queryClient.invalidateQueries({ queryKey: workspaceQueryKey(data.workspace.id) })
     } catch (error) {
       const detail = getHttpErrorDetail(error)
       if (typeof detail.status === 'number' && detail.status >= 400 && detail.status < 500) {

@@ -1,5 +1,7 @@
 export type JSONSchema = Record<string, unknown>
 
+export type ToolReadinessRequirement = 'workspace-fs' | 'sandbox-exec' | 'ui-bridge'
+
 export interface ToolExecContext {
   abortSignal: AbortSignal
   toolCallId: string
@@ -23,6 +25,7 @@ export interface AgentTool {
   name: string
   description: string
   promptSnippet?: string
+  readinessRequirements?: ToolReadinessRequirement[]
   parameters: JSONSchema
   execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult>
 }

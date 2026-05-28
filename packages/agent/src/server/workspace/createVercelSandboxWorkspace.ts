@@ -9,8 +9,9 @@ import type {
 } from '../../shared/workspace'
 import { validatePath } from './paths'
 
-export const VERCEL_SANDBOX_REMOTE_ROOT = '/vercel/sandbox'
 export const VERCEL_SANDBOX_WORKSPACE_ROOT = '/workspace'
+export const VERCEL_SANDBOX_REMOTE_ROOT = VERCEL_SANDBOX_WORKSPACE_ROOT
+export const VERCEL_SANDBOX_RUNTIME_CONTEXT = { runtimeCwd: VERCEL_SANDBOX_WORKSPACE_ROOT } as const
 
 type VercelSandboxCompat = VercelSandbox & {
   fs?: {
@@ -248,7 +249,8 @@ export function createVercelSandboxWorkspace(
   }
 
   return {
-    root: VERCEL_SANDBOX_WORKSPACE_ROOT,
+    root: VERCEL_SANDBOX_RUNTIME_CONTEXT.runtimeCwd,
+    runtimeContext: VERCEL_SANDBOX_RUNTIME_CONTEXT,
     fsCapability: 'best-effort',
     watch() {
       return watcher
@@ -263,7 +265,7 @@ export function createVercelSandboxWorkspace(
       }
       const content = await remote.readFileToBuffer?.({ path: sandboxPath })
       if (!content) {
-        const err = new Error(`ENOENT: file not found, open '${sandboxPath}'`) as NodeJS.ErrnoException
+        const err = new Error(`ENOENT: file not found, open '${validatePath(VERCEL_SANDBOX_WORKSPACE_ROOT, relPath)}'`) as NodeJS.ErrnoException
         err.code = 'ENOENT'
         throw err
       }
@@ -277,7 +279,7 @@ export function createVercelSandboxWorkspace(
       }
       const content = await remote.readFileToBuffer?.({ path: sandboxPath })
       if (!content) {
-        const err = new Error(`ENOENT: file not found, open '${sandboxPath}'`) as NodeJS.ErrnoException
+        const err = new Error(`ENOENT: file not found, open '${validatePath(VERCEL_SANDBOX_WORKSPACE_ROOT, relPath)}'`) as NodeJS.ErrnoException
         err.code = 'ENOENT'
         throw err
       }

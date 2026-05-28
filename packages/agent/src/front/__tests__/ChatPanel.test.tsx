@@ -1,6 +1,9 @@
+// @vitest-environment jsdom
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ToolPart } from '../../front/toolRenderers'
+import { ErrorCode } from '../../shared/error-codes'
 
 const mockPiProjection = vi.hoisted(() => ({
   piMessages: [] as any[],
@@ -51,7 +54,8 @@ vi.mock('../primitives/attachments', () => ({
   AttachmentRemove: () => <div />,
 }))
 
-let capturedOnSubmit: ((input: { text: string; files: unknown[] }) => void) | undefined
+let capturedOnSubmit: ((input: { text: string; files: unknown[] }) => false | void | Promise<false | void>) | undefined
+let capturedTextareaProps: Record<string, unknown> | undefined
 
 const mockUseAttachments = vi.fn()
 
@@ -60,7 +64,10 @@ vi.mock('../primitives/prompt-input', () => ({
     capturedOnSubmit = onSubmit
     return <div data-testid="prompt-input">{children}</div>
   },
-  PromptInputTextarea: () => <div data-testid="prompt-textarea" />,
+  PromptInputTextarea: (props: any) => {
+    capturedTextareaProps = props
+    return <textarea data-testid="prompt-textarea" defaultValue={props.defaultValue} />
+  },
   PromptInputFooter: ({ children }: any) => <div data-testid="prompt-footer">{children}</div>,
   PromptInputSubmit: ({ status }: any) => <div data-testid="prompt-submit" data-status={status} />,
   usePromptInputAttachments: (...args: unknown[]) => mockUseAttachments(...args),
@@ -90,6 +97,7 @@ function withLocalStorage(values: Record<string, string>, fn: () => void): void 
 
 beforeEach(() => {
   capturedOnSubmit = undefined
+  capturedTextareaProps = undefined
   mockPiProjection.piMessages = []
   mockPiProjection.handleData.mockReset()
   mockScrollToBottom.mockReset()
@@ -309,6 +317,42 @@ describe('ChatPanel (shadcn)', () => {
     expect(html).toContain('role="alert"')
   })
 
+  test('renders runtime readiness errors above the composer instead of as assistant messages', () => {
+    mockUseAgentChat.mockReturnValue({
+      messages: [],
+      sendMessage: mockSendMessage,
+      status: 'error',
+      error: new Error(JSON.stringify({ error: { code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY, message: 'Agent runtime is still preparing.' } })),
+    })
+
+    render(<ChatPanel sessionId="sess-runtime-not-ready" />)
+
+    expect(screen.getByTestId('chat-composer-runtime-notice').textContent).toContain('Preparing workspace')
+    expect(screen.getByTestId('chat-composer-runtime-notice').textContent).not.toContain('Your message is still in the composer')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  test('keeps the draft local while workspace warmup is preparing', async () => {
+    render(
+      <ChatPanel
+        sessionId="sess-warmup"
+        workspaceWarmupStatus={{ status: 'preparing' }}
+      />,
+    )
+
+    let result: false | void = undefined
+    await act(async () => {
+      result = await capturedOnSubmit!({ text: 'Run tests', files: [] })
+    })
+
+    expect(result).toBe(false)
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-composer-runtime-notice').textContent).toContain('Preparing workspace')
+    })
+    expect(screen.getAllByText('Preparing workspace…')).toHaveLength(1)
+  })
+
   test('passive render does not force-scroll to bottom', () => {
     renderToStaticMarkup(<ChatPanel sessionId="sess-passive-scroll" />)
 
@@ -349,6 +393,307 @@ describe('ChatPanel (shadcn)', () => {
         },
       },
     )
+  })
+
+  test('passes initialDraft to composer without auto-sending by default', () => {
+    const onDraftRestored = vi.fn()
+
+    renderToStaticMarkup(
+      <ChatPanel
+        sessionId="sess-draft"
+        initialDraft="restore this draft"
+        onDraftRestored={onDraftRestored}
+      />,
+    )
+
+    expect(capturedTextareaProps?.defaultValue).toBe('restore this draft')
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(onDraftRestored).not.toHaveBeenCalled()
+  })
+
+  test('can auto-submit initialDraft once when opted in', async () => {
+    const onAutoSubmitInitialDraftAccepted = vi.fn()
+
+    const { rerender } = render(
+      <ChatPanel
+        sessionId="sess-auto-draft"
+        initialDraft="restore and send this"
+        autoSubmitInitialDraft
+        onAutoSubmitInitialDraftAccepted={onAutoSubmitInitialDraftAccepted}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        { text: 'restore and send this', files: [] },
+        {
+          body: {
+            sessionId: 'sess-auto-draft',
+            message: 'restore and send this',
+            attachments: [],
+          },
+        },
+      )
+    })
+
+    mockUseAgentChat.mockReturnValue({
+      messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'restore and send this' }] }],
+      sendMessage: mockSendMessage,
+      setMessages: mockSetMessages,
+      status: 'submitted',
+      error: undefined,
+    })
+    rerender(
+      <ChatPanel
+        sessionId="sess-auto-draft"
+        initialDraft="restore and send this"
+        autoSubmitInitialDraft
+        onAutoSubmitInitialDraftAccepted={onAutoSubmitInitialDraftAccepted}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(onAutoSubmitInitialDraftAccepted).toHaveBeenCalledOnce()
+    })
+  })
+
+  test('auto-submit does not send a stale draft after session changes while submit is awaiting', async () => {
+    let releaseBeforeSubmit: (() => void) | undefined
+    const onBeforeSubmit = vi.fn(() => new Promise<void>((resolve) => {
+      releaseBeforeSubmit = resolve
+    }))
+
+    const { rerender } = render(
+      <ChatPanel
+        sessionId="sess-auto-draft-stale-a"
+        initialDraft="do not send stale"
+        autoSubmitInitialDraft
+        onBeforeSubmit={onBeforeSubmit}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(onBeforeSubmit).toHaveBeenCalledOnce()
+    })
+
+    rerender(<ChatPanel sessionId="sess-auto-draft-stale-b" />)
+    releaseBeforeSubmit?.()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(mockSendMessage).not.toHaveBeenCalled()
+  })
+
+  test('auto-submit resets when the same draft moves to a new session', async () => {
+    const { rerender } = render(
+      <ChatPanel
+        sessionId="sess-auto-draft-a"
+        initialDraft="same draft, new session"
+        autoSubmitInitialDraft
+      />,
+    )
+
+    await waitFor(() => {
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        { text: 'same draft, new session', files: [] },
+        {
+          body: {
+            sessionId: 'sess-auto-draft-a',
+            message: 'same draft, new session',
+            attachments: [],
+          },
+        },
+      )
+    })
+
+    mockSendMessage.mockClear()
+    rerender(
+      <ChatPanel
+        sessionId="sess-auto-draft-b"
+        initialDraft="same draft, new session"
+        autoSubmitInitialDraft
+      />,
+    )
+
+    await waitFor(() => {
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        { text: 'same draft, new session', files: [] },
+        {
+          body: {
+            sessionId: 'sess-auto-draft-b',
+            message: 'same draft, new session',
+            attachments: [],
+          },
+        },
+      )
+    })
+  })
+
+  test('auto-submit only marks the turn settled after status returns to ready', async () => {
+    const onAutoSubmitInitialDraftSettled = vi.fn()
+
+    const { rerender } = render(
+      <ChatPanel
+        sessionId="sess-auto-draft-settled"
+        initialDraft="wait for settle"
+        autoSubmitInitialDraft
+        onAutoSubmitInitialDraftSettled={onAutoSubmitInitialDraftSettled}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        { text: 'wait for settle', files: [] },
+        {
+          body: {
+            sessionId: 'sess-auto-draft-settled',
+            message: 'wait for settle',
+            attachments: [],
+          },
+        },
+      )
+    })
+
+    mockUseAgentChat.mockReturnValue({
+      messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'wait for settle' }] }],
+      sendMessage: mockSendMessage,
+      setMessages: mockSetMessages,
+      status: 'submitted',
+      error: undefined,
+    })
+    rerender(
+      <ChatPanel
+        sessionId="sess-auto-draft-settled"
+        initialDraft="wait for settle"
+        autoSubmitInitialDraft
+        onAutoSubmitInitialDraftSettled={onAutoSubmitInitialDraftSettled}
+      />,
+    )
+
+    expect(onAutoSubmitInitialDraftSettled).not.toHaveBeenCalled()
+
+    mockUseAgentChat.mockReturnValue({
+      messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'wait for settle' }] }],
+      sendMessage: mockSendMessage,
+      setMessages: mockSetMessages,
+      status: 'ready',
+      error: undefined,
+    })
+    rerender(
+      <ChatPanel
+        sessionId="sess-auto-draft-settled"
+        initialDraft="wait for settle"
+        autoSubmitInitialDraft
+        onAutoSubmitInitialDraftSettled={onAutoSubmitInitialDraftSettled}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(onAutoSubmitInitialDraftSettled).toHaveBeenCalledOnce()
+    })
+  })
+
+  test('auto-submit can retry after an onBeforeSubmit rejection', async () => {
+    const onBeforeSubmit = vi.fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(undefined)
+
+    const { rerender } = render(
+      <ChatPanel
+        sessionId="sess-auto-draft-retry"
+        initialDraft="retry me"
+        autoSubmitInitialDraft
+        onBeforeSubmit={onBeforeSubmit}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(onBeforeSubmit).toHaveBeenCalledTimes(1)
+    })
+    expect(mockSendMessage).not.toHaveBeenCalled()
+
+    rerender(
+      <ChatPanel
+        sessionId="sess-auto-draft-retry"
+        initialDraft="retry me"
+        autoSubmitInitialDraft
+        onBeforeSubmit={onBeforeSubmit}
+        className="rerender"
+      />,
+    )
+
+    await waitFor(() => {
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        { text: 'retry me', files: [] },
+        {
+          body: {
+            sessionId: 'sess-auto-draft-retry',
+            message: 'retry me',
+            attachments: [],
+          },
+        },
+      )
+    })
+    expect(onBeforeSubmit).toHaveBeenCalledTimes(2)
+  })
+
+  test('onBeforeSubmit cancels normal submit before agent send', async () => {
+    const onBeforeSubmit = vi.fn().mockReturnValue(false)
+    renderToStaticMarkup(
+      <ChatPanel sessionId="sess-before" onBeforeSubmit={onBeforeSubmit} />,
+    )
+
+    const result = await capturedOnSubmit!({ text: 'Please wait', files: [] })
+
+    expect(result).toBe(false)
+    expect(onBeforeSubmit).toHaveBeenCalledWith(
+      'Please wait',
+      { files: [], sessionId: 'sess-before', source: 'composer' },
+    )
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockScrollToBottom).not.toHaveBeenCalled()
+  })
+
+  test('onBeforeSubmit runs before slash commands and can cancel side effects', async () => {
+    const onBeforeSubmit = vi.fn().mockResolvedValue(false)
+    const customHandler = vi.fn()
+    renderToStaticMarkup(
+      <ChatPanel
+        sessionId="sess-before-slash"
+        onBeforeSubmit={onBeforeSubmit}
+        extraCommands={[{ name: 'greet', description: 'Say hello', handler: customHandler }]}
+      />,
+    )
+
+    const result = await capturedOnSubmit!({ text: '/greet world', files: [] })
+
+    expect(result).toBe(false)
+    expect(onBeforeSubmit).toHaveBeenCalledWith(
+      '/greet world',
+      { files: [], sessionId: 'sess-before-slash', source: 'composer' },
+    )
+    expect(customHandler).not.toHaveBeenCalled()
+    expect(mockSendMessage).not.toHaveBeenCalled()
+  })
+
+  test('empty-state suggestion uses onBeforeSubmit before sending', async () => {
+    const onBeforeSubmit = vi.fn().mockReturnValue(false)
+    render(
+      <ChatPanel
+        sessionId="sess-suggestion-before"
+        onBeforeSubmit={onBeforeSubmit}
+        suggestions={[{ label: 'Try it', prompt: 'Try this prompt' }]}
+      />,
+    )
+
+    fireEvent.click(screen.getByText('Try it'))
+
+    await waitFor(() => {
+      expect(onBeforeSubmit).toHaveBeenCalledWith(
+        'Try this prompt',
+        { files: [], sessionId: 'sess-suggestion-before', source: 'suggestion' },
+      )
+    })
+    expect(mockSendMessage).not.toHaveBeenCalled()
   })
 
   test('queued native follow-up submit while streaming scrolls immediately without starting a second send', async () => {
@@ -601,6 +946,13 @@ describe('ChatPanel (shadcn)', () => {
     renderToStaticMarkup(<ChatPanel sessionId="test-session-42" />)
     expect(mockUseAgentChat).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: 'test-session-42' }),
+    )
+  })
+
+  test('can disable initial chat history hydration', () => {
+    renderToStaticMarkup(<ChatPanel sessionId="test-session-43" hydrateMessages={false} />)
+    expect(mockUseAgentChat).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'test-session-43', hydrateMessages: false }),
     )
   })
 
@@ -1187,6 +1539,119 @@ describe('ChatPanel (shadcn)', () => {
 
       const html = renderToStaticMarkup(<ChatPanel sessionId="s-legacy-pi" />)
       expect(html).toContain('LEGACY_PI_TEXT')
+    })
+
+    test('does not duplicate a settled assistant when sdk-visible text already carries the same pi message end marker', () => {
+      mockPiProjection.piMessages = [
+        {
+          id: 'pi-dup-a1',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'DUPLICATE_ME_NOT' }],
+        },
+      ]
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          {
+            id: 'dup-envelope',
+            role: 'assistant',
+            parts: [
+              { type: 'data-pi-message-start', data: { messageId: 'pi-dup-a1', role: 'assistant' } } as any,
+              { type: 'data-pi-message-end', data: { messageId: 'pi-dup-a1', role: 'assistant', text: 'DUPLICATE_ME_NOT' } } as any,
+            ],
+          },
+          {
+            id: 'sdk-visible-a1',
+            role: 'assistant',
+            parts: [
+              { type: 'data-pi-message-end', data: { messageId: 'pi-dup-a1', role: 'assistant', text: 'DUPLICATE_ME_NOT' } } as any,
+              { type: 'text', text: 'DUPLICATE_ME_NOT' },
+            ],
+          },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-ready-pi-no-duplicate-visible-assistant" />)
+      expect((html.match(/DUPLICATE_ME_NOT/g) ?? []).length).toBe(1)
+    })
+
+    test('does not render identical adjacent assistant text parts twice', () => {
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          {
+            id: 'sdk-dup-text-a1',
+            role: 'assistant',
+            parts: [
+              { type: 'text', text: 'ADJACENT_DUPLICATE_TEXT' },
+              { type: 'text', text: 'ADJACENT_DUPLICATE_TEXT' },
+            ],
+          },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-adjacent-assistant-text-dedupe" />)
+      expect((html.match(/ADJACENT_DUPLICATE_TEXT/g) ?? []).length).toBe(1)
+    })
+
+      test('does not render empty assistant placeholders before a visible assistant error', () => {
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          { id: 'empty-a1', role: 'assistant', parts: [] },
+          { id: 'empty-a2', role: 'assistant', parts: [] },
+          { id: 'visible-error', role: 'assistant', parts: [{ type: 'text', text: 'VISIBLE_ERROR_TEXT' }] },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-empty-assistant-placeholders" />)
+      expect((html.match(/data-from="assistant"/g) ?? []).length).toBe(1)
+      expect(html).toContain('VISIBLE_ERROR_TEXT')
+    })
+
+  test('keeps visible sdk user turns when ready-state pi fallback supplies the assistant text', () => {
+      mockPiProjection.piMessages = [
+        {
+          id: 'pi-ready-a1',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'READY_PI_TEXT' }],
+        },
+      ]
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          {
+            id: 'sdk-u1',
+            role: 'user',
+            parts: [{ type: 'text', text: 'VISIBLE_USER_TEXT' }],
+          },
+          {
+            id: 'ready-envelope',
+            role: 'assistant',
+            parts: [
+              { type: 'data-pi-message-start', data: { messageId: 'pi-ready-a1', role: 'assistant' } } as any,
+              { type: 'data-pi-message-end', data: { messageId: 'pi-ready-a1', role: 'assistant', text: 'READY_PI_TEXT' } } as any,
+            ],
+          },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-ready-pi-user-kept" />)
+      expect(html).toContain('VISIBLE_USER_TEXT')
+      expect(html).toContain('READY_PI_TEXT')
+      expect(html.indexOf('VISIBLE_USER_TEXT')).toBeLessThan(html.indexOf('READY_PI_TEXT'))
     })
 
     test('consecutive tools stay in one collapsed group across non-rendered data parts', () => {

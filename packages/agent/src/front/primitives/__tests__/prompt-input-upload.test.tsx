@@ -29,7 +29,7 @@ function AttachmentStatus() {
 
 interface HarnessProps {
   onUploadFile?: (f: File) => Promise<{ url: string }>
-  onSubmit?: (v: { text: string; files: unknown[] }) => void
+  onSubmit?: (v: { text: string; files: unknown[] }) => false | void | Promise<false | void>
 }
 
 function Harness({ onUploadFile, onSubmit }: HarnessProps) {
@@ -135,5 +135,23 @@ describe('PromptInput — upload flow', () => {
     fireEvent.submit(form)
 
     expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('preserves composer text when onSubmit returns false', async () => {
+    const onSubmit = vi.fn().mockReturnValue(false)
+
+    render(<Harness onSubmit={onSubmit} />)
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'keep this draft' } })
+    fireEvent.submit(textarea.closest('form')!)
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        { text: 'keep this draft', files: [] },
+        expect.anything(),
+      )
+    })
+    expect(textarea.value).toBe('keep this draft')
   })
 })

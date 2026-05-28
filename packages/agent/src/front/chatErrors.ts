@@ -1,3 +1,5 @@
+import { ErrorCode } from '../shared/error-codes'
+
 /**
  * Turn whatever AI SDK dumped into error.message into something readable.
  * We try three shapes:
@@ -10,6 +12,7 @@
 export interface FriendlyError {
   title: string
   detail?: string
+  code?: string
 }
 
 export function friendlyError(err: Error): FriendlyError {
@@ -32,10 +35,23 @@ export function friendlyError(err: Error): FriendlyError {
         detail: `${label} ${message?.toLowerCase() ?? 'failed validation'}.`,
       }
     }
-    if (code === 'internal' || code === 'internal_error') {
-      return { title: 'The server hit an internal error.', detail: message }
+    if (code === ErrorCode.enum.AGENT_RUNTIME_NOT_READY) {
+      return {
+        title: 'Preparing workspace…',
+        code,
+      }
     }
-    return { title: message ?? 'Something went wrong.', detail: code }
+    if (code === ErrorCode.enum.RUNTIME_PROVISIONING_FAILED) {
+      return {
+        title: 'Workspace setup failed.',
+        detail: message ?? 'Reload the workspace and try again.',
+        code,
+      }
+    }
+    if (code === 'internal' || code === 'internal_error') {
+      return { title: 'The server hit an internal error.', detail: message, code }
+    }
+    return { title: message ?? 'Something went wrong.', detail: code, code }
   } catch {
     return { title: raw }
   }

@@ -43,6 +43,12 @@ async function runCli(args: string[], env: Record<string, string>) {
 }
 
 
+test("installed boring-ui --help exits without starting a workspace", async () => {
+  await expect(runCli(["--help"], {})).resolves.toMatchObject({
+    stdout: expect.stringContaining("Usage: boring-ui"),
+  })
+})
+
 test("package exposes an installable boring-ui bin with published assets", async () => {
   const packageJson = JSON.parse(await readFile(join(cliRoot, "package.json"), "utf-8")) as {
     bin?: Record<string, string>

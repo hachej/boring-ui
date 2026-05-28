@@ -41,6 +41,7 @@ function createSandbox(result: ExecResult): Sandbox {
     placement: 'remote',
     provider: 'vercel-sandbox',
     capabilities: ['exec'],
+    runtimeContext: { runtimeCwd: '/workspace' },
     exec: vi.fn().mockResolvedValue(result),
   }
 }

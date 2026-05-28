@@ -1,4 +1,5 @@
-import type { AgentTool } from '../../shared/tool'
+import type { AgentTool, ToolReadinessRequirement } from '../../shared/tool'
+import { withReadinessRequirements, wrapToolForReadiness, type ToolReadinessCheck } from './toolReadiness'
 
 export interface PluginToolRegistration {
   pluginName: string
@@ -14,6 +15,7 @@ export interface MergeToolsOptions {
   extraTools?: AgentTool[]
   pluginTools?: PluginToolRegistration[]
   logger?: ToolCollisionLogger
+  checkReadiness?: ToolReadinessCheck
 }
 
 function setLastRegistered(
@@ -47,9 +49,12 @@ export function mergeTools(options: MergeToolsOptions): AgentTool[] {
           `[catalog] Tool "${tool.name}" overridden by plugin ${plugin.pluginName}`,
         )
       }
-      setLastRegistered(merged, tool)
+      const pluginTool = tool.readinessRequirements === undefined
+        ? withReadinessRequirements(tool, ['workspace-fs'] satisfies ToolReadinessRequirement[])
+        : tool
+      setLastRegistered(merged, pluginTool)
     }
   }
 
-  return [...merged.values()]
+  return [...merged.values()].map((tool) => wrapToolForReadiness(tool, options.checkReadiness))
 }

@@ -11,9 +11,11 @@ import {
 export function useChatModelSelection({
   defaultModel,
   requestHeaders,
+  enabled = true,
 }: {
   defaultModel?: ModelSelection
   requestHeaders?: Record<string, string>
+  enabled?: boolean
 }) {
   const initialModelState = useMemo(readStoredModelState, [])
   const [model, setModelState] = useState<ModelSelection | null>(
@@ -47,6 +49,7 @@ export function useChatModelSelection({
   // Fetch the live list from pi's ModelRegistry so the dropdown reflects
   // what the server actually has auth for, not a hardcoded alias set.
   useEffect(() => {
+    if (!enabled) return
     let aborted = false
     fetch('/api/v1/agent/models', { headers: requestHeaders })
       .then((res) => (res.ok ? res.json() : null))
@@ -71,7 +74,7 @@ export function useChatModelSelection({
       })
       .catch(() => { /* offline — leave list empty, fall back to raw id text */ })
     return () => { aborted = true }
-  }, [requestHeaders])
+  }, [enabled, requestHeaders])
 
   // Optional integration hook for host slash commands. Accepts explicit
   // provider-qualified selections only ({ provider, id } or "provider:id");

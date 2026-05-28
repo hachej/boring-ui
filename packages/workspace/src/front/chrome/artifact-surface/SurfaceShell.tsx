@@ -87,6 +87,7 @@ export interface SurfaceShellProps {
    */
   extraPanels?: string[]
   defaultLeftTab?: string
+  initialPanels?: Array<{ id: string; component: string; title?: string; params?: Record<string, unknown> }>
   className?: string
 }
 
@@ -138,6 +139,7 @@ export function SurfaceShell({
   onClose,
   extraPanels,
   defaultLeftTab,
+  initialPanels,
   className,
 }: SurfaceShellProps) {
   // Lazy initializers read persisted state SYNCHRONOUSLY on first mount so
@@ -416,9 +418,18 @@ export function SurfaceShell({
     }
   }, [getBridgeState])
 
+  const initializedPanelsRef = useRef(false)
   const handleReady = useCallback((ready: DockviewApi) => {
     apiRef.current = ready
     setApi(ready)
+    if (!initializedPanelsRef.current) {
+      initializedPanelsRef.current = true
+      for (const panel of initialPanels ?? []) {
+        if (!ready.getPanel(panel.id)) {
+          ready.addPanel({ id: panel.id, component: panel.component, title: panel.title, params: panel.params })
+        }
+      }
+    }
     onReadyRef.current?.(localSurfaceApi)
     // Subscribe to dockview events so the parent gets a snapshot push on
     // every panel mutation. Disposers are intentionally not stored — the
