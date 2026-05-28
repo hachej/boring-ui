@@ -57,6 +57,11 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
       async readdir(pathInput: string, opts: { withFileTypes: true }) {
         return await readdir(toHostPath(hostRoot, pathInput), opts)
       },
+      async writeFile(pathInput: string, data: Buffer | Uint8Array | string) {
+        const hostPath = toHostPath(hostRoot, pathInput)
+        await mkdir(dirname(hostPath), { recursive: true })
+        await writeFile(hostPath, data)
+      },
       async stat(pathInput: string) {
         return await stat(toHostPath(hostRoot, pathInput))
       },

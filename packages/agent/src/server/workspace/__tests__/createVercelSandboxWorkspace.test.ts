@@ -64,18 +64,39 @@ test('optimized read/write with stat helpers return content and metadata', async
   }
 })
 
-test('optimized small writes return stat in a single sandbox command', async () => {
+test('optimized small writes use the @vercel/sandbox fs API', async () => {
   const harness = await createMockVercelSandboxHarness()
   const runSpy = vi.spyOn(harness.sandbox, 'runCommand')
   const writeFilesSpy = vi.spyOn(harness.sandbox, 'writeFiles')
+  const fsWriteSpy = vi.spyOn((harness.sandbox as any).fs, 'writeFile')
   const workspace = createVercelSandboxWorkspace(harness.sandbox)
 
   try {
     await workspace.writeFileWithStat?.('single-call.txt', 'hello')
 
-    expect(runSpy).toHaveBeenCalledTimes(1)
+    expect(fsWriteSpy).toHaveBeenCalledTimes(1)
+    expect(runSpy).not.toHaveBeenCalled()
     expect(writeFilesSpy).not.toHaveBeenCalled()
   } finally {
+    await harness.cleanup()
+  }
+})
+
+test('small write mutations are recorded before post-write stat', async () => {
+  const harness = await createMockVercelSandboxHarness()
+  const onMutation = vi.fn()
+  const statSpy = vi.spyOn((harness.sandbox as any).fs, 'stat')
+  const workspace = createVercelSandboxWorkspace(harness.sandbox, { onMutation })
+
+  try {
+    statSpy.mockRejectedValueOnce(new Error('stat unavailable'))
+
+    await expect(workspace.writeFileWithStat?.('stat-fail.txt', 'hello')).rejects.toThrow('stat unavailable')
+
+    await expect(workspace.readFile('stat-fail.txt')).resolves.toBe('hello')
+    expect(onMutation).toHaveBeenCalledTimes(1)
+  } finally {
+    statSpy.mockRestore()
     await harness.cleanup()
   }
 })

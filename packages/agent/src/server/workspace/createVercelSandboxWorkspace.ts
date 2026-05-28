@@ -12,26 +12,10 @@ import { validatePath } from './paths'
 export const VERCEL_SANDBOX_REMOTE_ROOT = '/vercel/sandbox'
 export const VERCEL_SANDBOX_WORKSPACE_ROOT = '/workspace'
 
-type VercelSandboxCompat = Omit<VercelSandbox, 'fs'> & {
-  fs?: {
-    readFile(path: string, encoding?: BufferEncoding): Promise<string | Uint8Array | Buffer>
-    readdir(path: string, opts: { withFileTypes: true }): Promise<Array<{ name: string; isDirectory(): boolean }>>
-    stat(path: string): Promise<{ size: number; mtimeMs: number; isDirectory(): boolean }>
-    mkdir(path: string, opts?: { recursive?: boolean }): Promise<unknown>
-    rename(from: string, to: string): Promise<unknown>
-    rm(path: string, opts?: { recursive?: boolean; force?: boolean }): Promise<unknown>
-  }
-  readFileToBuffer?(file: { path: string; cwd?: string }, opts?: { signal?: AbortSignal }): Promise<Buffer | null>
-  mkDir?(path: string, opts?: { signal?: AbortSignal }): Promise<void>
-  runCommand(params: {
-    cmd: string
-    args?: string[]
-    cwd?: string
-  }): Promise<{
-    exitCode?: number
-    stdout?: () => Promise<string>
-    stderr?: () => Promise<string>
-  }>
+type VercelSandboxStat = {
+  size: number
+  mtimeMs: number
+  isDirectory(): boolean
 }
 const CACHE_TTL_MS = 15_000
 const CACHE_MAX_ENTRIES = 512
@@ -90,27 +74,11 @@ function cloneEntries(entries: Entry[]): Entry[] {
   return entries.map((entry) => ({ name: entry.name, kind: entry.kind }))
 }
 
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`
-}
-
-async function runJson<T>(sandbox: VercelSandboxCompat, script: string): Promise<T> {
-  const result = await sandbox.runCommand({ cmd: 'sh', args: ['-c', script] })
-  const [out, err] = await Promise.all([
-    result.stdout?.() ?? Promise.resolve(''),
-    result.stderr?.() ?? Promise.resolve(''),
-  ])
-  if ((result.exitCode ?? 1) !== 0) {
-    throw new Error(err || `sandbox command failed with exit code ${result.exitCode}`)
-  }
-  return JSON.parse(out) as T
-}
-
-async function runShell(sandbox: VercelSandboxCompat, script: string): Promise<void> {
-  const result = await sandbox.runCommand({ cmd: 'sh', args: ['-c', script] })
-  if ((result.exitCode ?? 1) !== 0) {
-    const err = await (result.stderr?.() ?? Promise.resolve(''))
-    throw new Error(err || `sandbox command failed with exit code ${result.exitCode}`)
+function mapSandboxStat(fileStat: VercelSandboxStat): Stat {
+  return {
+    size: fileStat.size,
+    mtimeMs: fileStat.mtimeMs,
+    kind: fileStat.isDirectory() ? 'dir' : 'file',
   }
 }
 
@@ -206,7 +174,7 @@ export function createVercelSandboxWorkspace(
   registerMetadataInvalidator(sandbox, invalidateMetadataCache)
 
   const { emit: emitChange, watcher } = createSandboxBroadcaster()
-  const remote = sandbox as VercelSandboxCompat
+  const remote = sandbox
 
   return {
     root: VERCEL_SANDBOX_WORKSPACE_ROOT,
@@ -217,31 +185,11 @@ export function createVercelSandboxWorkspace(
     invalidateMetadataCache,
     async readFile(relPath) {
       const sandboxPath = toSandboxPath(relPath)
-      if (remote.fs?.readFile) {
-        const content = await remote.fs.readFile(sandboxPath, 'utf8')
-        if (typeof content === 'string') return content
-        return Buffer.from(content).toString('utf-8')
-      }
-      const content = await remote.readFileToBuffer?.({ path: sandboxPath })
-      if (!content) {
-        const err = new Error(`ENOENT: file not found, open '${sandboxPath}'`) as NodeJS.ErrnoException
-        err.code = 'ENOENT'
-        throw err
-      }
-      return Buffer.from(content).toString('utf-8')
+      return await remote.fs.readFile(sandboxPath, 'utf8')
     },
     async readBinaryFile(relPath) {
       const sandboxPath = toSandboxPath(relPath)
-      if (remote.fs?.readFile) {
-        const content = await remote.fs.readFile(sandboxPath)
-        return new Uint8Array(Buffer.from(content))
-      }
-      const content = await remote.readFileToBuffer?.({ path: sandboxPath })
-      if (!content) {
-        const err = new Error(`ENOENT: file not found, open '${sandboxPath}'`) as NodeJS.ErrnoException
-        err.code = 'ENOENT'
-        throw err
-      }
+      const content = await remote.fs.readFile(sandboxPath)
       return new Uint8Array(Buffer.from(content))
     },
     async writeFile(relPath, data) {
@@ -271,40 +219,18 @@ export function createVercelSandboxWorkspace(
     async readFileWithStat(relPath) {
       const sandboxPath = toSandboxPath(relPath)
       const cachedStat = statCache.get(sandboxPath)
-      if (remote.fs?.readFile) {
-        if (cachedStat) {
-          const content = await remote.fs.readFile(sandboxPath, 'utf8')
-          return {
-            content: typeof content === 'string' ? content : Buffer.from(content).toString('utf-8'),
-            stat: cloneStat(cachedStat),
-          }
-        }
-
-        const [content, fileStat] = await Promise.all([
-          remote.fs.readFile(sandboxPath, 'utf8'),
-          remote.fs.stat(sandboxPath),
-        ])
-        const stat: Stat = {
-          size: fileStat.size,
-          mtimeMs: fileStat.mtimeMs,
-          kind: fileStat.isDirectory() ? 'dir' : 'file',
-        }
-        statCache.set(sandboxPath, stat)
-        return {
-          content: typeof content === 'string' ? content : Buffer.from(content).toString('utf-8'),
-          stat: cloneStat(stat),
-        }
+      if (cachedStat) {
+        const content = await remote.fs.readFile(sandboxPath, 'utf8')
+        return { content, stat: cloneStat(cachedStat) }
       }
 
-      const version = metadataVersion
-      const result = await runJson<{ content: string; stat: Stat }>(
-        remote,
-        `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const s=fs.statSync(p); const content=fs.readFileSync(p,'utf8'); process.stdout.write(JSON.stringify({content,stat:{size:s.size,mtimeMs:s.mtimeMs,kind:s.isDirectory()?'dir':'file'}}))`)} ${shellQuote(sandboxPath)}`,
-      )
-      if (metadataVersion === version) {
-        statCache.set(sandboxPath, result.stat)
-      }
-      return { content: result.content, stat: cloneStat(result.stat) }
+      const [content, fileStat] = await Promise.all([
+        remote.fs.readFile(sandboxPath, 'utf8'),
+        remote.fs.stat(sandboxPath),
+      ])
+      const stat = mapSandboxStat(fileStat)
+      statCache.set(sandboxPath, stat)
+      return { content, stat: cloneStat(stat) }
     },
     async writeFileWithStat(relPath, data) {
       const sandboxPath = toSandboxPath(relPath)
@@ -319,32 +245,17 @@ export function createVercelSandboxWorkspace(
         ])
         invalidateMetadataCache()
         workspaceOpts.onMutation?.()
-        const writtenStat = remote.fs?.stat
-          ? await (async (): Promise<Stat> => {
-              const fileStat = await remote.fs!.stat(sandboxPath)
-              return {
-                size: fileStat.size,
-                mtimeMs: fileStat.mtimeMs,
-                kind: fileStat.isDirectory() ? 'dir' : 'file',
-              }
-            })()
-          : await runJson<Stat>(
-              remote,
-              `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const s=fs.statSync(p); process.stdout.write(JSON.stringify({size:s.size,mtimeMs:s.mtimeMs,kind:s.isDirectory()?'dir':'file'}))`)} ${shellQuote(sandboxPath)}`,
-            )
+        const writtenStat = mapSandboxStat(await remote.fs.stat(sandboxPath))
         statCache.set(sandboxPath, writtenStat)
         emitChange({ op: 'write', path: relPath, mtimeMs: writtenStat.mtimeMs })
         return cloneStat(writtenStat)
       }
 
-      const encoded = payload.toString('base64')
-      const writtenStat = await runJson<Stat>(
-        remote,
-        `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const data=Buffer.from(process.argv[2],'base64'); fs.writeFileSync(p,data); const s=fs.statSync(p); process.stdout.write(JSON.stringify({size:s.size,mtimeMs:s.mtimeMs,kind:s.isDirectory()?'dir':'file'}))`)} ${shellQuote(sandboxPath)} ${shellQuote(encoded)}`,
-      )
+      await remote.fs.writeFile(sandboxPath, payload)
       invalidateMetadataCache()
-      statCache.set(sandboxPath, writtenStat)
       workspaceOpts.onMutation?.()
+      const writtenStat = mapSandboxStat(await remote.fs.stat(sandboxPath))
+      statCache.set(sandboxPath, writtenStat)
       emitChange({ op: 'write', path: relPath, mtimeMs: writtenStat.mtimeMs })
       return cloneStat(writtenStat)
     },
@@ -361,39 +272,23 @@ export function createVercelSandboxWorkspace(
         ])
         invalidateMetadataCache()
         workspaceOpts.onMutation?.()
-        const writtenStat = remote.fs?.stat
-          ? await (async (): Promise<Stat> => {
-              const fileStat = await remote.fs!.stat(sandboxPath)
-              return {
-                size: fileStat.size,
-                mtimeMs: fileStat.mtimeMs,
-                kind: fileStat.isDirectory() ? 'dir' : 'file',
-              }
-            })()
-          : await runJson<Stat>(
-              remote,
-              `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const s=fs.statSync(p); process.stdout.write(JSON.stringify({size:s.size,mtimeMs:s.mtimeMs,kind:s.isDirectory()?'dir':'file'}))`)} ${shellQuote(sandboxPath)}`,
-            )
+        const writtenStat = mapSandboxStat(await remote.fs.stat(sandboxPath))
         statCache.set(sandboxPath, writtenStat)
         emitChange({ op: 'write', path: relPath, mtimeMs: writtenStat.mtimeMs })
         return cloneStat(writtenStat)
       }
 
-      const encoded = payload.toString('base64')
-      const writtenStat = await runJson<Stat>(
-        remote,
-        `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const data=Buffer.from(process.argv[2],'base64'); fs.writeFileSync(p,data); const s=fs.statSync(p); process.stdout.write(JSON.stringify({size:s.size,mtimeMs:s.mtimeMs,kind:s.isDirectory()?'dir':'file'}))`)} ${shellQuote(sandboxPath)} ${shellQuote(encoded)}`,
-      )
+      await remote.fs.writeFile(sandboxPath, payload)
       invalidateMetadataCache()
-      statCache.set(sandboxPath, writtenStat)
       workspaceOpts.onMutation?.()
+      const writtenStat = mapSandboxStat(await remote.fs.stat(sandboxPath))
+      statCache.set(sandboxPath, writtenStat)
       emitChange({ op: 'write', path: relPath, mtimeMs: writtenStat.mtimeMs })
       return cloneStat(writtenStat)
     },
     async unlink(relPath) {
       const sandboxPath = toSandboxPath(relPath)
-      if (remote.fs?.rm) await remote.fs.rm(sandboxPath, { recursive: false, force: false })
-      else await runShell(remote, `rm -- ${shellQuote(sandboxPath)}`)
+      await remote.fs.rm(sandboxPath, { recursive: false, force: false })
       invalidateMetadataCache()
       workspaceOpts.onMutation?.()
       emitChange({ op: 'unlink', path: relPath })
@@ -404,15 +299,10 @@ export function createVercelSandboxWorkspace(
       if (cached) return cloneEntries(cached)
 
       const version = metadataVersion
-      const mappedEntries: Entry[] = remote.fs?.readdir
-        ? (await remote.fs.readdir(sandboxPath, { withFileTypes: true })).map((entry): Entry => ({
-            name: entry.name,
-            kind: entry.isDirectory() ? 'dir' : 'file',
-          }))
-        : await runJson<Entry[]>(
-            remote,
-            `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const entries=fs.readdirSync(p,{withFileTypes:true}).map((e)=>({name:e.name,kind:e.isDirectory()?'dir':'file'})); process.stdout.write(JSON.stringify(entries))`)} ${shellQuote(sandboxPath)}`,
-          )
+      const mappedEntries: Entry[] = (await remote.fs.readdir(sandboxPath, { withFileTypes: true })).map((entry): Entry => ({
+        name: entry.name,
+        kind: entry.isDirectory() ? 'dir' : 'file',
+      }))
 
       if (metadataVersion === version) {
         readdirCache.set(sandboxPath, mappedEntries)
@@ -425,20 +315,7 @@ export function createVercelSandboxWorkspace(
       if (cached) return cloneStat(cached)
 
       const version = metadataVersion
-      let mappedStat: Stat
-      if (remote.fs?.stat) {
-        const fileStat = await remote.fs.stat(sandboxPath)
-        mappedStat = {
-          size: fileStat.size,
-          mtimeMs: fileStat.mtimeMs,
-          kind: fileStat.isDirectory() ? 'dir' : 'file',
-        }
-      } else {
-        mappedStat = await runJson<Stat>(
-          remote,
-          `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const s=fs.statSync(p); process.stdout.write(JSON.stringify({size:s.size,mtimeMs:s.mtimeMs,kind:s.isDirectory()?'dir':'file'}))`)} ${shellQuote(sandboxPath)}`,
-        )
-      }
+      const mappedStat = mapSandboxStat(await remote.fs.stat(sandboxPath))
       if (metadataVersion === version) {
         statCache.set(sandboxPath, mappedStat)
       }
@@ -446,10 +323,7 @@ export function createVercelSandboxWorkspace(
     },
     async mkdir(relPath, opts) {
       const sandboxPath = toSandboxPath(relPath)
-      if (remote.fs?.mkdir) await remote.fs.mkdir(sandboxPath, { recursive: opts?.recursive ?? false })
-      else if (opts?.recursive) await runShell(remote, `mkdir -p -- ${shellQuote(sandboxPath)}`)
-      else if (remote.mkDir) await remote.mkDir(sandboxPath)
-      else await runShell(remote, `mkdir -- ${shellQuote(sandboxPath)}`)
+      await remote.fs.mkdir(sandboxPath, { recursive: opts?.recursive ?? false })
       invalidateMetadataCache()
       workspaceOpts.onMutation?.()
       emitChange({ op: 'mkdir', path: relPath })
@@ -457,8 +331,7 @@ export function createVercelSandboxWorkspace(
     async rename(fromRelPath, toRelPath) {
       const fromSandboxPath = toSandboxPath(fromRelPath)
       const toSandboxAbsolutePath = toSandboxPath(toRelPath)
-      if (remote.fs?.rename) await remote.fs.rename(fromSandboxPath, toSandboxAbsolutePath)
-      else await runShell(remote, `mv -- ${shellQuote(fromSandboxPath)} ${shellQuote(toSandboxAbsolutePath)}`)
+      await remote.fs.rename(fromSandboxPath, toSandboxAbsolutePath)
       invalidateMetadataCache()
       workspaceOpts.onMutation?.()
       emitChange({ op: 'rename', path: toRelPath, oldPath: fromRelPath })
