@@ -185,6 +185,41 @@ test('readdir rejects symlink roots and ancestors', async () => {
   }
 })
 
+test('unlink rejects workspace root removal', async () => {
+  const harness = await createMockVercelSandboxHarness()
+  const workspace = createVercelSandboxWorkspace(harness.sandbox)
+
+  try {
+    await expect(workspace.unlink('.')).rejects.toMatchObject({ code: 'EINVAL' })
+  } finally {
+    await harness.cleanup()
+  }
+})
+
+test('unlink removes empty directories and rejects non-empty directories', async () => {
+  const harness = await createMockVercelSandboxHarness()
+  const workspace = createVercelSandboxWorkspace(harness.sandbox)
+
+  try {
+    await workspace.mkdir('empty', { recursive: true })
+    await workspace.unlink('empty')
+    await expect(workspace.stat('empty')).rejects.toThrow()
+
+    await workspace.mkdir('non-empty', { recursive: true })
+    await workspace.writeFile('non-empty/a.txt', 'hello')
+    await expect(workspace.unlink('non-empty')).rejects.toThrow()
+    await expect(workspace.stat('non-empty')).resolves.toMatchObject({ kind: 'dir' })
+
+    await workspace.mkdir('target-for-link', { recursive: true })
+    await symlink(join(harness.hostRoot, 'target-for-link'), join(harness.hostRoot, 'delete-link'), 'dir')
+    await workspace.unlink('delete-link')
+    await expect(workspace.stat('delete-link')).rejects.toThrow()
+    await expect(workspace.stat('target-for-link')).resolves.toMatchObject({ kind: 'dir' })
+  } finally {
+    await harness.cleanup()
+  }
+})
+
 test('invalidates metadata cache after write/unlink/mkdir/rename', async () => {
   const harness = await createMockVercelSandboxHarness()
   const statSpy = vi.spyOn((harness.sandbox as any).fs, 'stat')

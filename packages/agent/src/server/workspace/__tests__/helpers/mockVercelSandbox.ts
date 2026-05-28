@@ -1,4 +1,4 @@
-import { lstat, mkdtemp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { lstat, mkdtemp, mkdir, readFile, readdir, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import type { Writable } from 'node:stream'
@@ -83,6 +83,9 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
         opts?: { recursive?: boolean; force?: boolean },
       ) {
         await rm(toHostPath(hostRoot, pathInput), opts)
+      },
+      async rmdir(pathInput: string) {
+        await rmdir(toHostPath(hostRoot, pathInput))
       },
     },
     async writeFiles(files: WriteInput[]) {

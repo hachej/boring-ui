@@ -85,6 +85,7 @@ function mapSandboxStat(fileStat: VercelSandboxStat): Stat {
 async function lstatWithoutSymlinkComponents(
   sandbox: VercelSandbox,
   sandboxPath: string,
+  opts: { allowLeafSymlink?: boolean } = {},
 ): Promise<Awaited<ReturnType<VercelSandbox['fs']['lstat']>>> {
   const suffix = sandboxPath === VERCEL_SANDBOX_REMOTE_ROOT
     ? ''
@@ -92,10 +93,11 @@ async function lstatWithoutSymlinkComponents(
   const parts = suffix.split('/').filter(Boolean)
   let current = VERCEL_SANDBOX_REMOTE_ROOT
   let currentStat = await sandbox.fs.lstat(current)
-  for (const part of parts) {
-    current = `${current}/${part}`
+  for (let i = 0; i < parts.length; i += 1) {
+    current = `${current}/${parts[i]}`
     currentStat = await sandbox.fs.lstat(current)
-    if (currentStat.isSymbolicLink()) {
+    const isLeaf = i === parts.length - 1
+    if (currentStat.isSymbolicLink() && !(opts.allowLeafSymlink && isLeaf)) {
       const error = new Error(`ELOOP: symbolic link not allowed, scandir '${sandboxPath}'`) as NodeJS.ErrnoException
       error.code = 'ELOOP'
       throw error
@@ -347,7 +349,14 @@ export function createVercelSandboxWorkspace(
     },
     async unlink(relPath) {
       const sandboxPath = toSandboxPath(relPath)
-      await remote.fs.rm(sandboxPath, { recursive: false, force: false })
+      if (sandboxPath === VERCEL_SANDBOX_REMOTE_ROOT) {
+        const error = new Error(`EINVAL: cannot remove workspace root, unlink '${sandboxPath}'`) as NodeJS.ErrnoException
+        error.code = 'EINVAL'
+        throw error
+      }
+      const pathStat = await lstatWithoutSymlinkComponents(remote, sandboxPath, { allowLeafSymlink: true })
+      if (pathStat.isDirectory()) await remote.fs.rmdir(sandboxPath)
+      else await remote.fs.rm(sandboxPath, { recursive: false, force: false })
       invalidateMetadataCache()
       workspaceOpts.onMutation?.()
       emitChange({ op: 'unlink', path: relPath })
