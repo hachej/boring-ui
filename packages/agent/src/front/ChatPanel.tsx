@@ -1405,7 +1405,7 @@ export function ChatPanel(props: ChatPanelProps) {
             </div>
           </div>
         )}
-        {composerBlocked && (
+        {composerBlocked && !workspaceWarmupBlocked && (
           <div
             role="status"
             aria-live="polite"

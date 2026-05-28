@@ -349,6 +349,7 @@ describe('ChatPanel (shadcn)', () => {
     await waitFor(() => {
       expect(screen.getByTestId('chat-composer-runtime-notice').textContent).toContain('Preparing workspace')
     })
+    expect(screen.getAllByText('Preparing workspace…')).toHaveLength(1)
   })
 
   test('passive render does not force-scroll to bottom', () => {
