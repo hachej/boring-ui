@@ -92,6 +92,7 @@ export interface SurfaceShellProps {
 
 const COLLAPSED_WIDTH = 40
 const FILE_BACKED_PARAM = "__boringFileBacked"
+const WORKSPACE_ROOT_PARAM = "__workspaceRoot"
 
 function fileBackedPath(
   panel: PanelState | null | undefined,
@@ -112,11 +113,13 @@ let seqCounter = 0
 function fileBackedParams(
   params: Record<string, unknown> | undefined,
   path: string,
+  workspaceRoot?: string,
 ): Record<string, unknown> {
   return {
     ...(params ?? {}),
     path: typeof params?.path === "string" ? params.path : path,
     [FILE_BACKED_PARAM]: true,
+    ...(workspaceRoot ? { [WORKSPACE_ROOT_PARAM]: workspaceRoot } : {}),
   }
 }
 
@@ -232,7 +235,7 @@ export function SurfaceShell({
       const panelId = surfacePanelId(request, resolved)
       fileBackedPanelIdsRef.current.add(panelId)
       const existingByResolvedId = api.getPanel(panelId)
-      const params = fileBackedParams(resolved.params, normalizedPath)
+      const params = fileBackedParams(resolved.params, normalizedPath, rootDir)
       if (existingByResolvedId) {
         existingByResolvedId.api.updateParameters(params)
         existingByResolvedId.api.setActive()
@@ -253,7 +256,7 @@ export function SurfaceShell({
       return
     }
     console.warn(`[SurfaceShell] openFile: no surface resolver matched "${normalizedPath}"`)
-  }, [])
+  }, [rootDir])
 
   const openSurfaceSync = useCallback((request: SurfaceOpenRequest) => {
     const api = apiRef.current
@@ -274,7 +277,7 @@ export function SurfaceShell({
     const existing = api.getPanel(panelId)
     const closeWorkbenchOnDone = normalizedRequest.meta?.closeWorkbenchOnDone === true
     const baseParams = normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
-      ? fileBackedParams(resolved.params, normalizedRequest.target)
+      ? fileBackedParams(resolved.params, normalizedRequest.target, rootDir)
       : resolved.params
     const resolvedParams = closeWorkbenchOnDone && onCloseRef.current
       ? { ...(baseParams ?? {}), __closeWorkbenchOnDone: onCloseRef.current }
@@ -298,7 +301,7 @@ export function SurfaceShell({
       title: resolved.title ?? normalizedRequest.target,
       params: resolvedParams,
     })
-  }, [])
+  }, [rootDir])
 
   const openPanelSync = useCallback((config: OpenPanelConfig) => {
     const api = apiRef.current
@@ -456,7 +459,7 @@ export function SurfaceShell({
           }
           const panelId = surfacePanelId(request, resolved)
           fileBackedPanelIdsRef.current.add(panelId)
-          const params = fileBackedParams(resolved.params, normalizedPath)
+          const params = fileBackedParams(resolved.params, normalizedPath, rootDir)
           const existingByResolvedId = api.getPanel(panelId)
           if (existingByResolvedId) {
             existingByResolvedId.api.updateParameters(params)
@@ -485,7 +488,7 @@ export function SurfaceShell({
         )
       }
     },
-    [],
+    [rootDir],
   )
 
   const bridge = useMemo<WorkspaceBridge>(() => {

@@ -57,6 +57,7 @@ export interface WorkspaceAgentFrontProps<
   afterShell?: ReactNode
   appTitle?: string
   defaultSessionTitle?: string
+  workspaceRoot?: string
   defaultSurfaceOpen?: boolean
   defaultWorkbenchLeftTab?: string
   topBarLeft?: ReactNode
@@ -218,6 +219,7 @@ export function WorkspaceAgentFront<
   onActiveSessionIdChange,
   appTitle = "Boring",
   defaultSessionTitle = "New session",
+  workspaceRoot,
   defaultSurfaceOpen,
   defaultWorkbenchLeftTab,
   topBarLeft,
@@ -436,6 +438,7 @@ export function WorkspaceAgentFront<
     storageKey: resolvedSurfaceStorageKey,
     defaultLeftTab: defaultWorkbenchLeftTab,
     extraPanels: shellExtraPanels,
+    rootDir: workspaceRoot,
     onReady: handleSurfaceReady,
     onChange: handleSurfaceChange,
     onClose: closeWorkbench,
@@ -446,7 +449,7 @@ export function WorkspaceAgentFront<
     handleSurfaceReady,
     resolvedSurfaceStorageKey,
     shellExtraPanels,
-    setSurfaceOpen,
+    workspaceRoot,
   ])
 
   const openCommandPalette = () => {

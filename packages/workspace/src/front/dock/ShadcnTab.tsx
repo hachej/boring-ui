@@ -20,6 +20,8 @@ type ClosablePanelSnapshot = {
   close?: () => void
 }
 
+const WORKSPACE_ROOT_PARAM = "__workspaceRoot"
+
 function panelApi(panel: ClosablePanel): ClosablePanelApi {
   return "api" in panel && panel.api ? panel.api : panel
 }
@@ -37,6 +39,46 @@ function siblingPanels(props: IDockviewPanelHeaderProps): ClosablePanel[] {
   if (Array.isArray(groupPanels)) return groupPanels
   const containerPanels = (props.containerApi as { panels?: ClosablePanel[] }).panels
   return Array.isArray(containerPanels) ? containerPanels : []
+}
+
+function readStringParam(params: unknown, key: string): string | null {
+  if (!params || typeof params !== "object") return null
+  const value = (params as Record<string, unknown>)[key]
+  return typeof value === "string" && value.length > 0 ? value : null
+}
+
+function absoluteWorkspacePath(workspaceRoot: string | null, filePath: string | null): string | null {
+  if (!filePath) return null
+  if (filePath.startsWith("/")) return filePath
+  if (!workspaceRoot) return null
+  return `${workspaceRoot.replace(/\/+$/, "")}/${filePath.replace(/^\/+/, "")}`
+}
+
+async function copyText(text: string): Promise<void> {
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return
+    } catch {
+      // Browser can reject when the page is not focused; fall through to legacy copy.
+    }
+  }
+  if (typeof document === "undefined") throw new Error("Clipboard not available")
+  const textarea = document.createElement("textarea")
+  textarea.value = text
+  textarea.setAttribute("readonly", "")
+  textarea.style.position = "fixed"
+  textarea.style.left = "-9999px"
+  document.body.appendChild(textarea)
+  let ok = false
+  try {
+    textarea.focus()
+    textarea.select()
+    ok = document.execCommand?.("copy") ?? false
+  } finally {
+    textarea.remove()
+  }
+  if (!ok) throw new Error("Clipboard not available")
 }
 
 export function ShadcnTab(props: IDockviewPanelHeaderProps) {
@@ -66,6 +108,12 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
   const isDirty = title.endsWith(" ●")
   const displayTitle = isDirty ? title.slice(0, -2) : title
   const Icon = getFileIcon(displayTitle)
+  const filePath = readStringParam(props.params, "path")
+  const workspaceRoot = readStringParam(props.params, WORKSPACE_ROOT_PARAM)
+  const absolutePath = absoluteWorkspacePath(workspaceRoot, filePath)
+  const otherTabs = siblingPanels(props)
+    .map(panelSnapshot)
+    .filter((sibling) => sibling.id !== api.id && sibling.close)
 
   // Subscribe to editor save lifecycle keyed by panelId. The badge
   // flips on at save:start and off at save:end (regardless of ok).
@@ -84,19 +132,21 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
   }
 
   const openContextMenu = (e: React.MouseEvent | React.PointerEvent) => {
+    if (!filePath && otherTabs.length === 0) return
     e.preventDefault()
     e.stopPropagation()
     setMenu({ x: e.clientX, y: e.clientY })
   }
 
+  const handleCopy = (text: string) => {
+    setMenu(null)
+    void copyText(text)
+  }
+
   const handleCloseOthers = () => {
     setMenu(null)
     api.setActive?.()
-    const siblings = siblingPanels(props).map(panelSnapshot)
-    for (const sibling of siblings) {
-      if (sibling.id === api.id) continue
-      sibling.close?.()
-    }
+    for (const sibling of otherTabs) sibling.close?.()
   }
 
   const contextMenu =
@@ -113,14 +163,36 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
               e.stopPropagation()
             }}
           >
-            <button
-              type="button"
-              role="menuitem"
-              className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground"
-              onClick={handleCloseOthers}
-            >
-              Close other tabs
-            </button>
+            {filePath ? (
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground"
+                onClick={() => handleCopy(filePath)}
+              >
+                Copy path
+              </button>
+            ) : null}
+            {absolutePath ? (
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground"
+                onClick={() => handleCopy(absolutePath)}
+              >
+                Copy absolute path
+              </button>
+            ) : null}
+            {otherTabs.length > 0 ? (
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground"
+                onClick={handleCloseOthers}
+              >
+                Close other tabs
+              </button>
+            ) : null}
           </div>,
           document.body,
         )

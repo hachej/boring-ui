@@ -50,6 +50,10 @@ export async function startPlaygroundServer(): Promise<void> {
       // SSE event, front dynamic-import, jiti reload).
       appPackageJsonPath: resolve(APP_ROOT, "package.json"),
     })
+    app.get("/api/v1/workspace/meta", async () => ({
+      workspaceRoot,
+      projectName: workspaceRoot.split(/[\\/]/).filter(Boolean).pop() ?? "Workspace",
+    }))
     await app.listen({ port: AGENT_API_PORT, host: "127.0.0.1" })
   })()
   return agentBoot

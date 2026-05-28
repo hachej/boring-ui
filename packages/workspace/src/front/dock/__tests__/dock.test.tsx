@@ -393,6 +393,10 @@ describe("DockviewShell — multi-group layout", () => {
 })
 
 describe("ShadcnTab", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it("renders tab title and close button", () => {
     const mockApi = {
       title: "My Tab",
@@ -465,6 +469,81 @@ describe("ShadcnTab", () => {
 
     expect(currentApi.close).not.toHaveBeenCalled()
     expect(siblingApi.close).toHaveBeenCalledTimes(1)
+  })
+
+  it("shows copy path actions and hides close-other when there are no other tabs", () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    })
+    const currentApi = { title: "App.tsx", id: "tab-current", close: vi.fn() }
+
+    render(
+      <ShadcnTab
+        api={currentApi as any}
+        containerApi={{ panels: [{ api: currentApi }] } as any}
+        params={{ path: "src/App.tsx", __workspaceRoot: "/workspace/demo" }}
+        tabLocation={"header" as any}
+      />,
+    )
+
+    fireEvent.contextMenu(screen.getByTitle("App.tsx"))
+
+    expect(screen.getByRole("menuitem", { name: "Copy path" })).toBeInTheDocument()
+    expect(screen.getByRole("menuitem", { name: "Copy absolute path" })).toBeInTheDocument()
+    expect(screen.queryByRole("menuitem", { name: "Close other tabs" })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy absolute path" }))
+    expect(writeText).toHaveBeenCalledWith("/workspace/demo/src/App.tsx")
+  })
+
+  it("omits copy absolute path when the workspace root is unavailable", () => {
+    const currentApi = { title: "App.tsx", id: "tab-current", close: vi.fn() }
+
+    render(
+      <ShadcnTab
+        api={currentApi as any}
+        containerApi={{ panels: [{ api: currentApi }] } as any}
+        params={{ path: "src/App.tsx" }}
+        tabLocation={"header" as any}
+      />,
+    )
+
+    fireEvent.contextMenu(screen.getByTitle("App.tsx"))
+
+    expect(screen.getByRole("menuitem", { name: "Copy path" })).toBeInTheDocument()
+    expect(screen.queryByRole("menuitem", { name: "Copy absolute path" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("menuitem", { name: "Close other tabs" })).not.toBeInTheDocument()
+  })
+
+  it("falls back to legacy clipboard copy when writeText rejects", async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error("not focused"))
+    const execCommand = vi.fn().mockReturnValue(true)
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    })
+    Object.defineProperty(document, "execCommand", {
+      value: execCommand,
+      configurable: true,
+    })
+    const currentApi = { title: "App.tsx", id: "tab-current", close: vi.fn() }
+
+    render(
+      <ShadcnTab
+        api={currentApi as any}
+        containerApi={{ panels: [{ api: currentApi }] } as any}
+        params={{ path: "src/App.tsx" }}
+        tabLocation={"header" as any}
+      />,
+    )
+
+    fireEvent.contextMenu(screen.getByTitle("App.tsx"))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy path" }))
+
+    await waitFor(() => expect(execCommand).toHaveBeenCalledWith("copy"))
+    expect(writeText).toHaveBeenCalledWith("src/App.tsx")
   })
 
   it("close other tabs falls back to container panels when group panels are unavailable", () => {
