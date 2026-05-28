@@ -129,13 +129,6 @@ describe("pluginFrontRuntime", () => {
       expect(stylesheet.headers["content-type"]).toContain("application/javascript")
 
       expect(stylesheet.body).toContain(`${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/client`)
-      const viteClient = await app.inject({ method: "GET", url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/client` })
-      expect(viteClient.statusCode).toBe(200)
-      expect(viteClient.headers["content-type"]).toContain("javascript")
-      expect(viteClient.body).toContain(`${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/env`)
-      const viteEnv = await app.inject({ method: "GET", url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/env` })
-      expect(viteEnv.statusCode).toBe(200)
-      expect(viteEnv.headers["content-type"]).toContain("javascript")
       expect((await app.inject({ method: "GET", url: "/@vite/client" })).statusCode).toBe(404)
 
       const workspaceSingletonPaths = [...entry.body.matchAll(/"(\/api\/v1\/agent-plugins\/runtime\/__vite\/singleton\/%40hachej%2Fboring-workspace(?:%2Fplugin|%2Fevents))"/g)]
@@ -173,6 +166,44 @@ describe("pluginFrontRuntime", () => {
       await app.close()
     }
   }, 60_000)
+
+  test("serves minted Vite client/env support routes without the full runtime graph", async () => {
+    const pluginRoot = await makeTempDir("plugin-front-runtime-vite-support-")
+    const plugin = await writeRuntimePlugin(pluginRoot, {
+      "front/index.tsx": 'import "./styles.css"\nexport const ok = true\n',
+      "front/styles.css": ".runtime-panel { color: tomato; }\n",
+    })
+
+    const host = await createPluginFrontRuntimeHost()
+    const app = fastify({ logger: false })
+    await host.registerRoutes(app)
+    host.trackPlugin({
+      workspaceId: "workspace-a",
+      plugin,
+      revision: 1,
+      frontEntrySubpath: "front/index.tsx",
+    })
+
+    try {
+      const stylesheet = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/styles.css?import`,
+      })
+      expect(stylesheet.statusCode).toBe(200)
+      expect(stylesheet.body).toContain(`${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/client`)
+
+      const viteClient = await app.inject({ method: "GET", url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/client` })
+      expect(viteClient.statusCode).toBe(200)
+      expect(viteClient.headers["content-type"]).toContain("javascript")
+      expect(viteClient.body).toContain(`${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/env`)
+
+      const viteEnv = await app.inject({ method: "GET", url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/env` })
+      expect(viteEnv.statusCode).toBe(200)
+      expect(viteEnv.headers["content-type"]).toContain("javascript")
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
 
   test("rejects direct __vite proxy access that was never minted by a validated runtime request", async () => {
     const host = await createPluginFrontRuntimeHost()
