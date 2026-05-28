@@ -183,7 +183,6 @@ function createAgentRuntimeNotReadyError(workspaceId: string): Error {
 
 function createRuntimeProvisioningFailedError(workspaceId: string, cause: unknown): Error {
   const causeCode = (cause as { code?: unknown } | null)?.code
-  const details = (cause as { details?: unknown } | null)?.details
   return createHttpError(
     ErrorCode.enum.RUNTIME_PROVISIONING_FAILED,
     'Agent runtime provisioning failed. Reload the workspace and try again.',
@@ -191,7 +190,6 @@ function createRuntimeProvisioningFailedError(workspaceId: string, cause: unknow
       workspaceId,
       retryable: true,
       ...(typeof causeCode === 'string' ? { causeCode } : {}),
-      ...(details && typeof details === 'object' ? { causeDetails: details } : {}),
     },
   )
 }
@@ -506,21 +504,20 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       if (options.failIfPending && existing.state === 'pending') {
         throw createAgentRuntimeNotReadyError(workspaceId)
       }
-      if (options.failIfPending && existing.state === 'failed') {
-        throw createRuntimeProvisioningFailedError(workspaceId, existing.error)
+      if (existing.state === 'failed') {
+        if (options.failIfPending) throw createRuntimeProvisioningFailedError(workspaceId, existing.error)
+        runtimeBindings.delete(scope.key)
+      } else {
+        return await ensureRuntimeBindingReady(
+          workspaceId,
+          scope,
+          await existing.promise,
+        )
       }
-      return await ensureRuntimeBindingReady(
-        workspaceId,
-        scope,
-        await existing.promise,
-      )
     }
 
     const created = createRuntimeBindingEntry(workspaceId, scope, request)
     runtimeBindings.set(scope.key, created)
-    created.promise.catch(() => {
-      if (runtimeBindings.get(scope.key) === created) runtimeBindings.delete(scope.key)
-    })
     evictRuntimeBindings()
     if (options.failIfPending) {
       throw createAgentRuntimeNotReadyError(workspaceId)

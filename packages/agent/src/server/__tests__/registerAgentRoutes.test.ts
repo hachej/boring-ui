@@ -210,7 +210,12 @@ test('failed request-scoped provisioning can be retried by a later request', asy
     getWorkspaceRoot: () => workspaceRoot,
     provisionRuntime: async () => {
       provisionCalls += 1
-      if (provisionCalls === 1) throw new Error('temporary provisioning failure')
+      if (provisionCalls === 1) {
+        const error = new Error('temporary provisioning failure') as Error & { code: string; details: Record<string, unknown> }
+        error.code = ErrorCode.enum.RUNTIME_PROVISIONING_FAILED
+        error.details = { workspaceRoot }
+        throw error
+      }
       return { changed: false, env: {}, pathEntries: [], skillPaths: [] }
     },
   })
@@ -222,6 +227,16 @@ test('failed request-scoped provisioning can be retried by a later request', asy
     expect(first.json().error.code).toBe(ErrorCode.enum.AGENT_RUNTIME_NOT_READY)
 
     await vi.waitFor(() => expect(provisionCalls).toBe(1))
+
+    const failedWarmup = await app.inject({ method: 'GET', url: '/api/v1/tree?path=.' })
+    expect(failedWarmup.statusCode).toBe(503)
+    expect(failedWarmup.json()).toMatchObject({
+      error: {
+        code: ErrorCode.enum.RUNTIME_PROVISIONING_FAILED,
+        details: { workspaceId: 'workspace-retry', retryable: true },
+      },
+    })
+    expect(JSON.stringify(failedWarmup.json())).not.toContain(workspaceRoot)
 
     const second = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
     expect(second.statusCode).toBe(200)
