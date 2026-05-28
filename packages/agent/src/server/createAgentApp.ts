@@ -4,7 +4,7 @@ import type { AgentHarnessFactory } from '../shared/harness'
 import type { SessionStore } from '../shared/session'
 import type { TelemetrySink } from '../shared/telemetry'
 import { getEnv } from './config/env'
-import type { RuntimeBundle, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
+import type { RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createPiCodingAgentHarness } from './harness/pi-coding-agent/createHarness'
 import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
@@ -33,8 +33,6 @@ import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
 
-export type RuntimeToolFactory = (runtimeBundle: RuntimeBundle) => AgentTool[] | Promise<AgentTool[]>
-
 export interface CreateAgentAppOptions {
   workspaceRoot?: string
   sessionId?: string
@@ -46,8 +44,6 @@ export interface CreateAgentAppOptions {
   version?: string
   logger?: boolean
   extraTools?: AgentTool[]
-  /** Optional tool factories that need access to the resolved runtime bundle. */
-  extraToolFactories?: RuntimeToolFactory[]
   /** When true, omit the six filesystem tools (read/write/edit/find/grep/ls). */
   disableDefaultFileTools?: boolean
   /**
@@ -133,10 +129,6 @@ export async function createAgentApp(
     ],
   }
 
-  const runtimeExtraTools = (await Promise.all(
-    (opts.extraToolFactories ?? []).map((factory) => factory(runtimeBundle)),
-  )).flat()
-
   const tools: AgentTool[] = [
     ...buildHarnessAgentTools(runtimeBundle, {
       getCurrent: () => {
@@ -146,7 +138,6 @@ export async function createAgentApp(
     }),
     ...(opts.disableDefaultFileTools ? [] : buildFilesystemAgentTools(runtimeBundle)),
     ...(opts.extraTools ?? []),
-    ...runtimeExtraTools,
     ...pluginTools,
   ]
 
