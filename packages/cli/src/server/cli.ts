@@ -186,7 +186,7 @@ const HELP_TEXT = [
   "Options:",
   "  -p, --port <port>       HTTP port (default: 5200)",
   "      --host <host>       Listen host (default: 0.0.0.0)",
-  "  -m, --mode <mode>       local-sandbox or local (default: local-sandbox)",
+  "  -m, --mode <mode>       local-sandbox or local (default: local)",
   "  -h, --help              Show this help",
 ].join("\n")
 
@@ -581,12 +581,28 @@ export async function runCli(options: RunCliOptions): Promise<void> {
 
   const port = Number(args.port ?? process.env.PORT) || 5200
   const host = (args.host as string | undefined) ?? process.env.HOST ?? "0.0.0.0"
-  const rawMode = (args.mode as string | undefined) ?? process.env.BORING_MODE ?? "local-sandbox"
-  if (!(rawMode in MODE_MAP)) {
-    throw new Error(`invalid --mode "${rawMode}". Valid options: ${Object.keys(MODE_MAP).join(", ")}`)
+  const rawMode = (args.mode as string | undefined) ?? process.env.BORING_MODE
+  let cliMode: CliMode
+  let mode: RuntimeMode
+  if (rawMode) {
+    if (!(rawMode in MODE_MAP)) {
+      throw new Error(`invalid --mode "${rawMode}". Valid options: ${Object.keys(MODE_MAP).join(", ")}`)
+    }
+    cliMode = rawMode as CliMode
+    mode = MODE_MAP[cliMode]
+  } else {
+    // Auto-detect: use autoDetectMode() from @hachej/boring-agent/server.
+    // On Linux with bwrap → local-sandbox (bwrap); everywhere else → local (direct).
+    const agent = await import("@hachej/boring-agent/server")
+    const detected = agent.autoDetectMode()
+    if (detected === "local") {
+      cliMode = "local-sandbox"
+      mode = "local"
+    } else {
+      cliMode = "local"
+      mode = "direct"
+    }
   }
-  const cliMode = rawMode as CliMode
-  const mode = MODE_MAP[cliMode]
 
   const base = {
     publicDir: options.publicDir,
