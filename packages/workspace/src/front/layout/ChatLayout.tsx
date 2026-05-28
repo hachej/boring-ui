@@ -338,7 +338,24 @@ export function ChatLayout(props: ChatLayoutProps) {
               surfaceOpen ? "opacity-100" : "opacity-0",
             )}
           >
-            {props.surfaceOverlay ? props.surfaceOverlay : <PanelSlot id={surfaceId} params={props.surfaceParams} />}
+            {props.surfaceOverlay ? (
+              <div className="relative h-full min-h-0">
+                {props.surfaceOverlay}
+                {closeSurface ? (
+                  <IconButton
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={closeSurface}
+                    className="absolute right-3 top-3 z-20 rounded-full bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:bg-muted hover:text-foreground"
+                    aria-label="Close workbench"
+                    title="Close workbench (⌘2)"
+                  >
+                    <span aria-hidden="true">›</span>
+                  </IconButton>
+                ) : null}
+              </div>
+            ) : <PanelSlot id={surfaceId} params={props.surfaceParams} />}
           </div>
           {surfaceOpen ? (
             <ResizeHandle

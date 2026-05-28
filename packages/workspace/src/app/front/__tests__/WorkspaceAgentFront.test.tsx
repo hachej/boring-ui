@@ -148,15 +148,16 @@ describe("WorkspaceAgentFront", () => {
 
     expect(screen.getByText("Chat panel")).toBeInTheDocument()
     expect(screen.getByText("Preparing workspace…")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Close workbench" })).toBeInTheDocument()
     expect(screen.queryByText("Global command panel body")).not.toBeInTheDocument()
   })
 
-  it("hides the workbench open rail while workspace warmup is preparing", async () => {
+  it("keeps the workbench open rail available while workspace warmup is preparing", async () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})))
 
     render(
       <WorkspaceAgentFront
-        workspaceId="prepare-no-workbench-toggle"
+        workspaceId="prepare-workbench-toggle"
         chatPanel={ChatPanel}
         panels={[globalCommandPanel]}
         extraPanels={[globalCommandPanel.id]}
@@ -165,7 +166,7 @@ describe("WorkspaceAgentFront", () => {
     )
 
     expect(screen.getByText("Preparing workspace…")).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Workbench" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Workbench" })).toBeInTheDocument()
   })
 
   it("does not start default remote session warmup when provisioning is disabled", async () => {

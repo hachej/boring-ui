@@ -684,7 +684,7 @@ export function WorkspaceAgentFront<
               setNavOpen(true)
               onOpenNav?.()
             } : undefined}
-            onOpenSurface={workbenchBlocked ? undefined : () => {
+            onOpenSurface={() => {
               surfaceOpenRef.current = true
               setSurfaceOpen(true)
               onOpenSurface?.()
