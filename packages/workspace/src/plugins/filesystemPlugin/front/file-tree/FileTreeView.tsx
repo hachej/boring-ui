@@ -299,12 +299,12 @@ export function FileTreeView({
       const normalizedPath = normalizeRevealPath(path)
       const revealSeq = ++revealSeqRef.current
       setSelectedPath(normalizedPath)
-      await refreshDirs(parentDirsForReveal(normalizedPath), { force: true })
+      const dirsToRefresh = options?.refreshTargetDir
+        ? [...parentDirsForReveal(normalizedPath), normalizedPath]
+        : parentDirsForReveal(normalizedPath)
+      await refreshDirs([...new Set(dirsToRefresh)], { force: true })
       if (revealSeqRef.current !== revealSeq) return
       setRevealPath(normalizedPath)
-      if (options?.refreshTargetDir) {
-        void refreshDirs([normalizedPath], { force: true })
-      }
     },
     [refreshDirs],
   )
