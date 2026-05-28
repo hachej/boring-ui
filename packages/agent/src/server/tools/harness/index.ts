@@ -162,7 +162,7 @@ function adaptPiTool(
     name: template.name,
     description: template.description,
     promptSnippet: template.promptSnippet,
-    parameters: template.parameters as Record<string, unknown>,
+    parameters: template.parameters as unknown as Record<string, unknown>,
     async execute(params, ctx) {
       const runtimeEnv = await bundle.getRuntimeEnv?.()
       const secrets = runtimeSecretValues(runtimeEnv)
