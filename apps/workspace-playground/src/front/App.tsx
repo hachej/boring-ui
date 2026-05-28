@@ -142,6 +142,7 @@ export function WorkspaceShell() {
       defaultSessionTitle={showcase ? "New session" : projectName}
       frontPluginHotReload="vite"
       fullPageBasePath="/full-page"
+      provisionWorkspace={!showcase}
       useSessions={showcase ? undefined : useAgentSessions}
       sessions={sessions}
       activeSessionId={showcase ? SHOWCASE_SESSION_ID : undefined}

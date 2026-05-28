@@ -20,7 +20,7 @@ import { createLogger } from "../../logging.js";
 import type { AgentTool } from "../../../shared/tool.js";
 import type { TelemetrySink } from "../../../shared/telemetry.js";
 import type { UIMessageChunk } from "../../../shared/message.js";
-import { adaptToolsForPi } from "./tool-adapter.js";
+import { adaptToolsForPi, unmarkToolResultErrorDetails } from "./tool-adapter.js";
 import { piEventToChunks } from "./stream-adapter.js";
 import { PiSessionStore } from "./sessions.js";
 import { createSessionTitleScheduler } from "./sessionTitle.js";
@@ -55,7 +55,7 @@ export { mergePiPackageSources } from "../../piPackages.js";
 export type { PiPackageSource } from "../../piPackages.js";
 
 /**
- * Pi's base system prompt ends with `Current working directory: <abs path>`.
+ * Pi's base system prompt includes `Current working directory: <abs path>`.
  * The model frequently misreads that as "you may pass this absolute path as
  * a tool argument," then trips the workspace-sandbox bounds check (e.g.
  * `find` with `path: "/home/ubuntu/.../workspace"` returns "path is outside
@@ -68,7 +68,7 @@ export type { PiPackageSource } from "../../piPackages.js";
 const WORKSPACE_PATHS_GUIDELINE = [
   "## Workspace paths",
   "",
-  "- The \"Current working directory\" above is the workspace root. Tool path arguments must be relative to it (e.g. `README.md`, `src/foo.ts`).",
+  "- The \"Current working directory\" line in this prompt is the workspace root. Tool path arguments must be relative to it (e.g. `README.md`, `src/foo.ts`).",
   "- Never pass an absolute path or a path that walks outside the workspace (no leading `/`, no `..` that escapes the root). The sandbox will reject it and the call is wasted.",
   "- For `find`/`grep`/`ls`: omit the `path` argument to search from the workspace root. Pass `path` only when you need to restrict to a subdirectory, and only as a workspace-relative path.",
   "- For `read`/`edit`/`write`: pass workspace-relative paths only.",
@@ -122,6 +122,19 @@ function buildDynamicPromptExtension(
       const extra = (await source())?.trim()
       if (!extra) return
       return { systemPrompt: `${event.systemPrompt}\n\n${extra}` }
+    })
+  }
+}
+
+function buildToolErrorResultExtension(): ExtensionFactory {
+  return (pi) => {
+    pi.on("tool_result", async (event) => {
+      const marked = unmarkToolResultErrorDetails((event as { details?: unknown }).details)
+      if (!marked.isMarked) return
+      return {
+        details: marked.details,
+        isError: true,
+      }
     })
   }
 }
@@ -314,7 +327,10 @@ function basenameForAttachment(filename: string): string {
 
 export function createPiCodingAgentHarness(opts: {
   tools: AgentTool[];
+  /** Host/storage cwd used for harness-owned resources (.pi settings, attachments, plugin discovery). */
   cwd: string;
+  /** Agent-visible cwd used by Pi's system prompt and native session metadata. */
+  runtimeCwd?: string;
   /** Append-only addendum to pi's base system prompt. */
   systemPromptAppend?: string;
   /**
@@ -331,9 +347,10 @@ export function createPiCodingAgentHarness(opts: {
   /** Optional best-effort telemetry sink supplied by an embedding host. */
   telemetry?: TelemetrySink;
 }): AgentHarness {
-  const sessionStore = new PiSessionStore(opts.cwd, {
+  const sessionStore = new PiSessionStore(opts.runtimeCwd ?? opts.cwd, {
     sessionNamespace: opts.sessionNamespace,
     sessionDir: opts.sessionDir,
+    storageCwd: opts.cwd,
   });
   const piSessions = new Map<string, PiSessionHandle>();
 
@@ -400,15 +417,17 @@ export function createPiCodingAgentHarness(opts: {
     const savedPiFile = sessionStore.loadPiSessionFileSync(sessionId);
     let sessionManager: SessionManager;
     let isNewPiSession = false;
+    const runtimeCwd = opts.runtimeCwd ?? ctx.workdir;
+    const nativeSessionDir = sessionStore.getSessionDir();
     if (savedPiFile) {
       try {
-        sessionManager = SessionManager.open(savedPiFile, undefined, ctx.workdir);
+        sessionManager = SessionManager.open(savedPiFile, undefined, runtimeCwd);
       } catch {
-        sessionManager = SessionManager.create(ctx.workdir);
+        sessionManager = SessionManager.create(runtimeCwd, nativeSessionDir);
         isNewPiSession = true;
       }
     } else {
-      sessionManager = SessionManager.create(ctx.workdir);
+      sessionManager = SessionManager.create(runtimeCwd, nativeSessionDir);
       isNewPiSession = true;
     }
 
@@ -432,17 +451,19 @@ export function createPiCodingAgentHarness(opts: {
       ? buildDynamicPromptExtension(opts.systemPromptDynamic)
       : undefined
     const agentDir = getAgentDir()
+    const toolErrorResultExtension = buildToolErrorResultExtension()
     const extensionFactories = [
+      toolErrorResultExtension,
       ...(dynamicPromptExtension ? [dynamicPromptExtension] : []),
       ...(opts.pi?.extensionFactories ?? []),
     ]
     const settingsManager = createResourceSettingsManager(
-      ctx.workdir,
+      opts.cwd,
       agentDir,
       effectivePackages,
     )
     const resourceLoader = new DefaultResourceLoader({
-      cwd: ctx.workdir,
+      cwd: opts.cwd,
       agentDir,
       settingsManager,
       appendSystemPromptOverride: (base: string[]) => [...base, composedSystemPromptAppend],
@@ -462,7 +483,7 @@ export function createPiCodingAgentHarness(opts: {
         ? {
             skillsOverride: () =>
               loadSkills({
-                cwd: ctx.workdir,
+                cwd: opts.cwd,
                 agentDir,
                 skillPaths: effectiveSkillPaths,
                 includeDefaults: false,
@@ -474,7 +495,7 @@ export function createPiCodingAgentHarness(opts: {
     await resourceLoader?.reload()
 
     const { session: piSession } = await createAgentSession({
-      cwd: ctx.workdir,
+      cwd: runtimeCwd,
       // Suppress Pi's built-in filesystem/shell tools while keeping Boring's
       // adapted tool catalog active. Passing `tools: []` is an allowlist of
       // zero tools in Pi v0.75+, which disables customTools too.
@@ -1067,12 +1088,12 @@ export function createPiCodingAgentHarness(opts: {
             const base = basenameForAttachment(a.filename ?? "image");
             const unique = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
             const relPath = `${DEFAULT_ATTACHMENT_DIR}/${base}-${unique}.${ext}`;
-            await mkdir(join(ctx.workdir, DEFAULT_ATTACHMENT_DIR), { recursive: true });
-            await writeFile(join(ctx.workdir, relPath), bytes);
+            await mkdir(join(opts.cwd, DEFAULT_ATTACHMENT_DIR), { recursive: true });
+            await writeFile(join(opts.cwd, relPath), bytes);
             savedPaths.push(relPath);
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            log.error("attachment write failed", { workdir: ctx.workdir, error: msg });
+            log.error("attachment write failed", { workdir: opts.cwd, error: msg });
             writeErrors.push(`${a.filename ?? "image"}: ${msg}`);
           }
         }

@@ -8,7 +8,7 @@ import {
 } from '@mariozechner/pi-coding-agent'
 
 import type { AgentTool } from '../../../shared/tool'
-import type { RuntimeBundle } from '../../runtime/mode'
+import { getRuntimeBundleStorageRoot, type RuntimeBundle } from '../../runtime/mode'
 import { boundFs } from '../operations/bound'
 import {
   vercelEditOps,
@@ -49,6 +49,7 @@ function adaptPiTool<TParams extends Record<string, unknown>>(
 ): AgentTool {
   return {
     name: piTool.name,
+    readinessRequirements: ['workspace-fs'],
     description: piTool.description,
     promptSnippet: piTool.promptSnippet,
     parameters: piTool.parameters as Record<string, unknown>,
@@ -82,6 +83,7 @@ function adaptPiTool<TParams extends Record<string, unknown>>(
 
 export function buildFilesystemAgentTools(bundle: RuntimeBundle): AgentTool[] {
   const cwd = bundle.workspace.root
+  const storageRoot = getRuntimeBundleStorageRoot(bundle)
 
   if (bundle.sandbox.provider === 'vercel-sandbox') {
     return [
@@ -89,12 +91,12 @@ export function buildFilesystemAgentTools(bundle: RuntimeBundle): AgentTool[] {
       adaptPiTool(createWriteToolDefinition(cwd, { operations: vercelWriteOps(bundle.workspace) })),
       adaptPiTool(createEditToolDefinition(cwd, { operations: vercelEditOps(bundle.workspace) })),
       adaptPiTool(createFindToolDefinition(cwd, { operations: vercelFindOps(bundle.sandbox, bundle.workspace) })),
-      vercelGrepTool(bundle.sandbox, cwd),
+      { ...vercelGrepTool(bundle.sandbox, cwd), readinessRequirements: ['workspace-fs'] },
       adaptPiTool(createLsToolDefinition(cwd, { operations: vercelLsOps(bundle.workspace) })),
     ]
   }
 
-  const ops = boundFs(cwd)
+  const ops = boundFs(storageRoot, { runtimeRoot: cwd })
   return [
     adaptPiTool(createReadToolDefinition(cwd, { operations: ops.read })),
     adaptPiTool(createWriteToolDefinition(cwd, { operations: ops.write })),

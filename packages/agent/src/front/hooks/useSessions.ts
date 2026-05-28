@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import type { SessionSummary } from '../../shared/session'
 
 const API_BASE = '/api/v1/agent/sessions'
@@ -7,6 +7,8 @@ const STORAGE_KEY = 'boring-agent:activeSessionId'
 export interface UseSessionsOptions {
   requestHeaders?: Record<string, string>
   storageKey?: string
+  enabled?: boolean
+  refreshKey?: unknown
 }
 
 export interface UseSessionsResult {
@@ -35,6 +37,10 @@ function persistId(storageKey: string, id: string | undefined): void {
   } catch {}
 }
 
+function headersScopeKey(headers: Record<string, string> | undefined): string {
+  return JSON.stringify(Object.entries(headers ?? {}).sort(([a], [b]) => a.localeCompare(b)))
+}
+
 function requestInit(
   headers: Record<string, string> | undefined,
 ): RequestInit | undefined {
@@ -54,22 +60,46 @@ async function fetchSessions(
 export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
   const storageKey = opts.storageKey ?? STORAGE_KEY
   const requestHeaders = opts.requestHeaders
+  const enabled = opts.enabled ?? true
+  const refreshKey = opts.refreshKey
+  const scopeKey = useMemo(
+    () => `${storageKey}\n${headersScopeKey(requestHeaders)}`,
+    [requestHeaders, storageKey],
+  )
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>(
     () => readPersistedId(storageKey),
   )
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | undefined>()
+  const [loaded, setLoaded] = useState(false)
   const versionRef = useRef(0)
+  const loadedScopeRef = useRef(scopeKey)
 
   const refresh = useCallback(async () => {
     const v = ++versionRef.current
+    if (!enabled) {
+      setSessions([])
+      setActiveSessionId(undefined)
+      setError(undefined)
+      setLoaded(false)
+      setLoading(false)
+      return
+    }
+    setLoaded(false)
+    setLoading(true)
     try {
       const data = await fetchSessions(requestHeaders)
       if (v === versionRef.current) {
+        const replacingLoadedScope = loadedScopeRef.current !== scopeKey
+        loadedScopeRef.current = scopeKey
+        const persisted = readPersistedId(storageKey)
+        setError(undefined)
+        setLoaded(true)
         setSessions(data)
         setActiveSessionId((prev) => {
-          if (prev && data.some((session) => session.id === prev)) return prev
+          const preferred = replacingLoadedScope ? persisted : (prev ?? persisted)
+          if (preferred && data.some((session) => session.id === preferred)) return preferred
           const next = data[0]?.id
           persistId(storageKey, next)
           return next
@@ -78,18 +108,34 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
       }
     } catch (err) {
       if (v === versionRef.current) {
+        const replacingLoadedScope = loadedScopeRef.current !== scopeKey
+        loadedScopeRef.current = scopeKey
+        if (replacingLoadedScope) {
+          setSessions([])
+          setActiveSessionId(undefined)
+        }
+        setLoaded(true)
         setError(err instanceof Error ? err : new Error(String(err)))
         setLoading(false)
       }
     }
-  }, [requestHeaders, storageKey])
+  }, [enabled, requestHeaders, scopeKey, storageKey])
 
   useEffect(() => {
+    if (!enabled) {
+      setSessions([])
+      setActiveSessionId(undefined)
+      setError(undefined)
+      setLoaded(false)
+      setLoading(false)
+      return
+    }
     void refresh()
-  }, [refresh])
+  }, [enabled, refresh, refreshKey, scopeKey])
 
   const create = useCallback(
     async (init?: { title?: string }): Promise<SessionSummary> => {
+      if (!enabled) throw new Error('Sessions are disabled')
       const res = await fetch(API_BASE, {
         method: 'POST',
         headers: { ...requestHeaders, 'Content-Type': 'application/json' },
@@ -107,7 +153,7 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
       void refresh()
       return session
     },
-    [refresh, requestHeaders, storageKey],
+    [enabled, refresh, requestHeaders, storageKey],
   )
 
   const switchSession = useCallback((id: string) => {
@@ -117,6 +163,7 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
 
   const deleteSession = useCallback(
     async (id: string): Promise<void> => {
+      if (!enabled) throw new Error('Sessions are disabled')
       setSessions((prev) => prev.filter((s) => s.id !== id))
       setActiveSessionId((prev) => {
         if (prev === id) {
@@ -142,14 +189,18 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
       }
       void refresh()
     },
-    [refresh, requestHeaders, storageKey],
+    [enabled, refresh, requestHeaders, storageKey],
   )
 
+  const scopeMatches = loadedScopeRef.current === scopeKey
+  const visibleSessions = enabled && scopeMatches ? sessions : []
+  const visibleActiveSessionId = enabled && scopeMatches ? activeSessionId : undefined
+
   return {
-    sessions,
-    activeSession: sessions.find((s) => s.id === activeSessionId),
-    activeSessionId,
-    loading,
+    sessions: visibleSessions,
+    activeSession: visibleSessions.find((s) => s.id === visibleActiveSessionId),
+    activeSessionId: visibleActiveSessionId,
+    loading: enabled ? !scopeMatches || loading || !loaded : false,
     error,
     create,
     switch: switchSession,

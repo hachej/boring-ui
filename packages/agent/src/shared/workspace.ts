@@ -1,5 +1,9 @@
+import type { WorkspaceRuntimeContext } from './runtime'
+
 export interface Workspace {
+  /** Agent-visible workspace root; must match runtimeContext.runtimeCwd. */
   readonly root: string
+  readonly runtimeContext: WorkspaceRuntimeContext
   readFile(relPath: string): Promise<string>
   /** Optional binary read operation for media/document previews. */
   readBinaryFile?(relPath: string): Promise<Uint8Array>

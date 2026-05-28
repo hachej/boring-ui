@@ -12,8 +12,11 @@ import {
 } from '../vercel'
 
 function mockWorkspace(overrides: Partial<Workspace> = {}): Workspace {
+  const root = overrides.root ?? '/workspace'
+  const runtimeContext = overrides.runtimeContext ?? { runtimeCwd: root }
   return {
-    root: '/vercel/sandbox',
+    root,
+    runtimeContext,
     readFile: vi.fn(async () => 'file-content'),
     writeFile: vi.fn(async () => {}),
     unlink: vi.fn(async () => {}),
@@ -29,6 +32,7 @@ function mockWorkspace(overrides: Partial<Workspace> = {}): Workspace {
 }
 
 function mockSandbox(execResult: Partial<ExecResult> = {}): Sandbox {
+  const runtimeContext = { runtimeCwd: '/workspace' }
   const defaultResult: ExecResult = {
     stdout: new Uint8Array(),
     stderr: new Uint8Array(),
@@ -41,6 +45,7 @@ function mockSandbox(execResult: Partial<ExecResult> = {}): Sandbox {
     placement: 'remote',
     provider: 'vercel-sandbox',
     capabilities: ['exec'],
+    runtimeContext,
     exec: vi.fn(async () => ({ ...defaultResult, ...execResult })),
   }
 }
@@ -52,7 +57,7 @@ describe('vercelBashOps', () => {
     const onData = vi.fn()
     const signal = new AbortController().signal
 
-    await ops.exec('echo hi', '/vercel/sandbox', {
+    await ops.exec('echo hi', '/workspace', {
       onData,
       signal,
       timeout: 30,
@@ -60,7 +65,7 @@ describe('vercelBashOps', () => {
     })
 
     expect(sandbox.exec).toHaveBeenCalledWith('echo hi', {
-      cwd: '/vercel/sandbox',
+      cwd: '/workspace',
       env: { FOO: 'bar' },
       signal,
       timeoutMs: 30_000,
@@ -75,6 +80,7 @@ describe('vercelBashOps', () => {
       placement: 'remote',
       provider: 'vercel-sandbox',
       capabilities: ['exec'],
+      runtimeContext: { runtimeCwd: '/workspace' },
       async exec(_cmd, opts) {
         opts?.onStdout?.(new Uint8Array(Buffer.from('out-chunk')))
         opts?.onStderr?.(new Uint8Array(Buffer.from('err-chunk')))
@@ -122,11 +128,12 @@ describe('vercelReadOps', () => {
     expect(buf.toString()).toBe('file-content')
   })
 
-  test('rejects path outside workspace', async () => {
-    const workspace = mockWorkspace()
+  test('rejects path outside workspace without displaying Vercel internal root', async () => {
+    const workspace = mockWorkspace({ root: '/workspace' })
     const ops = vercelReadOps(workspace)
 
     await expect(ops.readFile('/etc/passwd')).rejects.toThrow('is outside workspace')
+    await expect(ops.readFile('/etc/passwd')).rejects.not.toThrow('/vercel/sandbox')
   })
 
   test('accepts in-workspace filenames that merely start with dotdot', async () => {
@@ -246,7 +253,7 @@ describe('vercelFindOps', () => {
 
     const files = await ops.glob('*.ts', '/vercel/sandbox/src', { ignore: ['node_modules'], limit: 100 })
 
-    expect(files).toEqual(['/vercel/sandbox/src/a.ts', '/vercel/sandbox/src/b.ts'])
+    expect(files).toEqual(['/workspace/src/a.ts', '/workspace/src/b.ts'])
     const execCall = (sandbox.exec as ReturnType<typeof vi.fn>).mock.calls[0][0] as string
     expect(execCall).toContain('fd')
     expect(execCall).toContain('--glob')
@@ -284,19 +291,22 @@ describe('vercelFindOps', () => {
 
     const files = await ops.glob('**/labor.md', '/workspace', { ignore: ['node_modules'], limit: 10 })
 
-    expect(files).toEqual(['/vercel/sandbox/deck/labor.md'])
+    expect(files).toEqual(['/workspace/deck/labor.md'])
     const calls = (sandbox.exec as ReturnType<typeof vi.fn>).mock.calls
-    expect(calls[0][0]).toContain('/vercel/sandbox')
+    expect(calls[0][0]).toContain('/workspace')
     expect(calls[1][0]).toContain('find')
-    expect(calls[1][0]).toContain('/vercel/sandbox')
+    expect(calls[1][0]).toContain('/workspace')
   })
 
-  test('glob throws on unexpected exit code', async () => {
-    const stderr = Buffer.from('fd: error')
+  test('glob throws on unexpected exit code without displaying Vercel internal root', async () => {
+    const stderr = Buffer.from('fd: /vercel/sandbox/private: permission denied')
     const sandbox = mockSandbox({ exitCode: 2, stderr: new Uint8Array(stderr) })
     const ops = vercelFindOps(sandbox)
 
-    await expect(ops.glob('*', '/cwd', { ignore: [], limit: 10 })).rejects.toThrow('file search failed (exit 2)')
+    await expect(ops.glob('*', '/workspace', { ignore: [], limit: 10 })).rejects.toThrow(
+      'fd: /workspace/private: permission denied',
+    )
+    await expect(ops.glob('*', '/workspace', { ignore: [], limit: 10 })).rejects.not.toThrow('/vercel/sandbox')
   })
 
   test('glob does not fallback for unrelated command-not-found text', async () => {

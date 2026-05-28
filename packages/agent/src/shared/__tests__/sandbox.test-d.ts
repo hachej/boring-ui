@@ -1,4 +1,5 @@
 import { expectTypeOf, test } from 'vitest'
+import type { WorkspaceRuntimeContext } from '../runtime'
 import type { Sandbox, SandboxCapability, ExecOptions, ExecResult, IsolatedCodeInput, IsolatedCodeOutput } from '../sandbox'
 
 test('checking Sandbox contract', () => {
@@ -6,6 +7,7 @@ test('checking Sandbox contract', () => {
   expectTypeOf<Sandbox>().toHaveProperty('placement')
   expectTypeOf<Sandbox>().toHaveProperty('provider')
   expectTypeOf<Sandbox>().toHaveProperty('capabilities')
+  expectTypeOf<Sandbox>().toHaveProperty('runtimeContext')
   expectTypeOf<Sandbox>().toHaveProperty('init')
   expectTypeOf<Sandbox>().toHaveProperty('exec')
 
@@ -13,6 +15,7 @@ test('checking Sandbox contract', () => {
   expectTypeOf<Sandbox['placement']>().toEqualTypeOf<'server' | 'remote' | 'browser'>()
   expectTypeOf<Sandbox['provider']>().toEqualTypeOf<string>()
   expectTypeOf<Sandbox['capabilities']>().toEqualTypeOf<readonly SandboxCapability[]>()
+  expectTypeOf<Sandbox['runtimeContext']>().toEqualTypeOf<WorkspaceRuntimeContext>()
   expectTypeOf<Sandbox['exec']>().toBeFunction()
 })
 

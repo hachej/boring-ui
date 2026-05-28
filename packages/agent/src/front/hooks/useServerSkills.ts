@@ -4,9 +4,11 @@ import type { CommandRegistry } from '../slashCommands/registry'
 export function useServerSkills({
   registry,
   requestHeaders,
+  enabled = true,
 }: {
   registry: CommandRegistry
   requestHeaders?: Record<string, string>
+  enabled?: boolean
 }): number {
   // Bumped when server skills are added to registry so the picker re-renders.
   const [skillsStamp, setSkillsStamp] = useState(0)
@@ -15,6 +17,7 @@ export function useServerSkills({
   // host apps needing to hardcode them in extraCommands. Server skills never
   // overwrite builtins or host-provided extraCommands (first-write wins).
   useEffect(() => {
+    if (!enabled) return
     let aborted = false
     fetch('/api/v1/agent/skills', { headers: requestHeaders })
       .then((res) => (res.ok ? res.json() : null))
@@ -31,7 +34,7 @@ export function useServerSkills({
       })
       .catch(() => {})
     return () => { aborted = true }
-  }, [requestHeaders, registry])
+  }, [enabled, requestHeaders, registry])
 
   return skillsStamp
 }
