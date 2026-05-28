@@ -293,7 +293,10 @@ describe("DeckPane file-state integration", () => {
     await waitFor(() => expect(screen.getByText("Hello")).toBeInTheDocument())
     expect(screen.getByText("Slide 1 of 2")).toBeInTheDocument()
 
-    fireEvent.click(screen.getByTestId("deck-next"))
+    await waitFor(() => expect(screen.getByTestId("deck-next")).not.toBeDisabled())
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("deck-next"))
+    })
 
     await waitFor(() => expect(screen.getByText("Next slide")).toBeInTheDocument())
     expect(screen.getByText("Slide 2 of 2")).toBeInTheDocument()
