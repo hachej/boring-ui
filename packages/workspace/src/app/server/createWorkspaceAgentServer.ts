@@ -668,13 +668,13 @@ export async function createWorkspaceAgentServer(
       adapter,
       runtimeLayout,
     })
-    currentRuntimeProvisioning = {
+    currentRuntimeProvisioning = provisioned ? {
       ...provisioned,
       env: {
         ...provisioned.env,
         BORING_AGENT_WORKSPACE_LOCAL_PLUGIN_ROOTS: workspaceFsCapability === "strong" ? "1" : "0",
       },
-    }
+    } : currentRuntimeProvisioning
     return currentRuntimeProvisioning
   }
   await runRuntimeProvisioning()

@@ -9,7 +9,7 @@ const agentServerMock = vi.hoisted(() => ({
     register: vi.fn(async () => {}),
   })),
   provisionRuntimeWorkspace: vi.fn(async () => {}),
-  provisionWorkspaceRuntime: vi.fn(async () => ({ env: {} })),
+  provisionWorkspaceRuntime: vi.fn(async () => undefined),
 }))
 
 vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
