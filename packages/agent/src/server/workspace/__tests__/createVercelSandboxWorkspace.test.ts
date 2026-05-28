@@ -9,6 +9,8 @@ import { createVercelSandboxWorkspace } from '../createVercelSandboxWorkspace'
 import { createMockVercelSandboxHarness } from './helpers/mockVercelSandbox'
 
 const EPERM_CODE = 'EPERM'
+const ENOTDIR_CODE = 'ENOTDIR'
+const ELOOP_CODE = 'ELOOP'
 
 test('writes via workspace are visible to paired exec on same sandbox handle', async () => {
   const harness = await createMockVercelSandboxHarness()
@@ -165,7 +167,7 @@ test('readdir rejects regular file paths', async () => {
   try {
     await workspace.writeFile('file.txt', 'hello')
 
-    await expect(workspace.readdir('file.txt')).rejects.toMatchObject({ code: 'ENOTDIR' })
+    await expect(workspace.readdir('file.txt')).rejects.toMatchObject({ code: ENOTDIR_CODE })
   } finally {
     await harness.cleanup()
   }
@@ -181,8 +183,8 @@ test('readdir rejects symlink roots and ancestors', async () => {
     await symlink(join(harness.hostRoot, 'target'), join(harness.hostRoot, 'link'), 'dir')
     await symlink('/', join(harness.hostRoot, 'escape'), 'dir')
 
-    await expect(workspace.readdir('link')).rejects.toMatchObject({ code: 'ELOOP' })
-    await expect(workspace.readdir('escape/tmp')).rejects.toMatchObject({ code: 'ELOOP' })
+    await expect(workspace.readdir('link')).rejects.toMatchObject({ code: ELOOP_CODE })
+    await expect(workspace.readdir('escape/tmp')).rejects.toMatchObject({ code: ELOOP_CODE })
   } finally {
     await harness.cleanup()
   }
