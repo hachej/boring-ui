@@ -15,7 +15,7 @@ import {
   type WorkspaceAgentSession,
 } from '@hachej/boring-workspace/app/front'
 import { ChatFirstAuthenticatedShell } from './chatFirst/ChatFirstAuthenticatedShell.js'
-import { ChatFirstPublicShell } from './chatFirst/ChatFirstPublicShell.js'
+import { ChatFirstPublicShell, type ChatFirstPublicShellOptions } from './chatFirst/ChatFirstPublicShell.js'
 import {
   clearPendingChatEntry,
   DEFAULT_CHAT_FIRST_PENDING_WORKSPACE_ID,
@@ -37,6 +37,7 @@ export interface CoreWorkspaceAgentFrontProps<
   /** Core consumes plugins statically for now; app-level hot reload is explicitly unsupported. */
   hotReload?: false
   chatEntryMode?: ChatEntryMode
+  chatFirstPublicShell?: ChatFirstPublicShellOptions
   authPages?: CoreFrontAuthPagesOverride
   cspNonce?: string
   children?: ReactNode
@@ -113,12 +114,14 @@ function HomeRedirect<TSession extends WorkspaceAgentSession = WorkspaceAgentSes
   chatEntryMode,
   appTitle,
   workspaceProps,
+  chatFirstPublicShell,
 }: {
   loadingFallback: ReactNode
   workspaceHref: (workspaceId: string) => string
   chatEntryMode: ChatEntryMode
   appTitle: string
   workspaceProps: Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'>
+  chatFirstPublicShell?: ChatFirstPublicShellOptions
 }) {
   const location = useLocation()
   const session = useSession()
@@ -130,7 +133,7 @@ function HomeRedirect<TSession extends WorkspaceAgentSession = WorkspaceAgentSes
     location.search,
     location.hash,
   )
-  if (!session.data?.user && chatEntryMode === 'chat-first') return <ChatFirstPublicShell appTitle={appTitle} workspaceProps={workspaceProps} />
+  if (!session.data?.user && chatEntryMode === 'chat-first') return <ChatFirstPublicShell appTitle={appTitle} publicShell={chatFirstPublicShell} workspaceProps={workspaceProps} />
   if (!workspace && chatEntryMode === 'chat-first' && session.data?.user && restorePendingDraft) {
     return (
       <ChatFirstAuthenticatedShell
@@ -171,6 +174,7 @@ function WorkspaceRoute<
   chatEntryMode,
   appTitle,
   workspaceRoute,
+  chatFirstPublicShell,
 }: {
   workspaceIdParam: string
   loadingFallback: ReactNode
@@ -179,6 +183,7 @@ function WorkspaceRoute<
   chatEntryMode: ChatEntryMode
   appTitle: string
   workspaceRoute: string
+  chatFirstPublicShell?: ChatFirstPublicShellOptions
 }) {
   const params = useParams()
   const location = useLocation()
@@ -211,7 +216,7 @@ function WorkspaceRoute<
   if (!workspaceId) return <>{loadingFallback}</>
 
   if (!session.data?.user && chatEntryMode === 'chat-first') {
-    return <ChatFirstPublicShell appTitle={appTitle} intendedWorkspaceId={workspaceId} workspaceProps={workspaceProps} />
+    return <ChatFirstPublicShell appTitle={appTitle} intendedWorkspaceId={workspaceId} publicShell={chatFirstPublicShell} workspaceProps={workspaceProps} />
   }
 
   if (routeStatus.status === 'not-found' || routeStatus.status === 'forbidden' || routeStatus.status === 'switch-failed') {
@@ -280,6 +285,7 @@ export function CoreWorkspaceAgentFront<
   bridgeEndpoint = '/api/v1/ui',
   hotReload = false,
   chatEntryMode = 'auth-first',
+  chatFirstPublicShell,
   ...workspaceProps
 }: CoreWorkspaceAgentFrontProps<TSession>) {
   if ((hotReload as unknown) !== false) {
@@ -320,6 +326,7 @@ export function CoreWorkspaceAgentFront<
             chatEntryMode={chatEntryMode}
             appTitle={appTitle}
             workspaceProps={resolvedWorkspaceProps}
+            chatFirstPublicShell={chatFirstPublicShell}
           />
         }
       />
@@ -334,6 +341,7 @@ export function CoreWorkspaceAgentFront<
             chatEntryMode={chatEntryMode}
             appTitle={appTitle}
             workspaceRoute={workspaceRoute}
+            chatFirstPublicShell={chatFirstPublicShell}
           />
         }
       />

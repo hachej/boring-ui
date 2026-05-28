@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useLocation } from 'react-router-dom'
+import type { ChatSuggestion } from '@hachej/boring-agent/front'
 import type {
   WorkspaceAgentFrontProps,
   WorkspaceAgentSession,
@@ -8,6 +9,29 @@ import { AuthCard } from './AuthCard.js'
 import { AuthModal } from './AuthModal.js'
 import { ChatFirstAuthenticatedShell } from './ChatFirstAuthenticatedShell.js'
 import { safeReturnTo, writePendingChatEntry } from './pendingChatEntry.js'
+
+export interface ChatFirstPublicShellOptions {
+  composerPlaceholder?: string
+  emptyState?: {
+    eyebrow?: string
+    title?: string
+    description?: string
+  }
+  suggestions?: ChatSuggestion[]
+}
+
+const defaultPublicEmptyState = {
+  eyebrow: 'Start here',
+  title: 'What do you want to build?',
+  description: 'Type a prompt or pick an example. Sign in on send to unlock your private workspace.',
+}
+
+const defaultPublicSuggestions: ChatSuggestion[] = [
+  { label: 'Build an app from scratch', hint: 'Creates files, installs deps, opens a preview', prompt: 'Build a full-stack app with auth, a dashboard, and sample data.' },
+  { label: 'Understand a codebase', hint: 'Maps the repo and explains where to start', prompt: 'Explain this codebase, map the architecture, and suggest first improvements.' },
+  { label: 'Fix a bug safely', hint: 'Finds the cause, edits files, runs tests', prompt: 'Trace a bug, edit the right files, update tests, and summarize the diff.' },
+  { label: 'Prototype an interface', hint: 'Turns an idea into an interactive UI', prompt: 'Build an interactive prototype and open it in the workspace.' },
+]
 
 function readComposerDraftFromDom(): string {
   if (typeof document === 'undefined') return ''
@@ -20,10 +44,12 @@ export function ChatFirstPublicShell<
 >({
   appTitle,
   intendedWorkspaceId,
+  publicShell,
   workspaceProps,
 }: {
   appTitle: string
   intendedWorkspaceId?: string
+  publicShell?: ChatFirstPublicShellOptions
   workspaceProps: Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'>
 }) {
   const location = useLocation()
@@ -48,18 +74,12 @@ export function ChatFirstPublicShell<
           chatParams: {
             ...workspaceProps.chatParams,
             emptyPlacement: 'hero',
-            composerPlaceholder: 'Describe the app, bug, or repo task you want help with…',
+            composerPlaceholder: publicShell?.composerPlaceholder ?? 'Describe the app, bug, or repo task you want help with…',
             emptyState: {
-              eyebrow: 'Start here',
-              title: 'What do you want to build?',
-              description: 'Type a prompt or pick an example. Sign in on send to unlock your private workspace.',
+              ...defaultPublicEmptyState,
+              ...publicShell?.emptyState,
             },
-            suggestions: [
-              { label: 'Build an app from scratch', hint: 'Creates files, installs deps, opens a preview', prompt: 'Build a full-stack app with auth, a dashboard, and sample data.' },
-              { label: 'Understand a codebase', hint: 'Maps the repo and explains where to start', prompt: 'Explain this codebase, map the architecture, and suggest first improvements.' },
-              { label: 'Fix a bug safely', hint: 'Finds the cause, edits files, runs tests', prompt: 'Trace a bug, edit the right files, update tests, and summarize the diff.' },
-              { label: 'Prototype an interface', hint: 'Turns an idea into an interactive UI', prompt: 'Build an interactive prototype and open it in the workspace.' },
-            ],
+            suggestions: publicShell?.suggestions ?? defaultPublicSuggestions,
             onBeforeSubmit: (draft: string) => {
               openAuth(draft)
               return false as const
