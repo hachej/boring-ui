@@ -51,7 +51,7 @@
   },
   "dependencies": {
     "@hachej/boring-ui-kit": "workspace:*",
-    "lucide-react": "^1.8.0",
+    "lucide-react": "^1.16.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
@@ -59,13 +59,13 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^22.0.0",
-    "@types/react": "^19.0.0",
+    "@types/react": "^19.2.15",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.0.0",
     "fastify": "^5.3.3",
     "jsdom": "^29.0.2",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
     "tsup": "^8.4.0",
     "typescript": "~5.9.3",
     "vitest": "^3.1.3"
