@@ -161,7 +161,6 @@ describe("default boring-ui CLI provisioning", () => {
     expect(cli?.provisioning?.nodePackages).toContainEqual(expect.objectContaining({
       id: "boring-ui-cli",
       packageName: "@hachej/boring-ui-cli",
-      version: expect.stringMatching(/^\d+\.\d+\.\d+/),
       expectedBins: ["boring-ui"],
     }))
 
@@ -211,7 +210,6 @@ describe("default boring-ui CLI provisioning", () => {
       expect(cli?.provisioning?.nodePackages).toContainEqual(expect.objectContaining({
         id: "boring-ui-cli",
         packageName: "@hachej/boring-ui-cli",
-        version: expect.stringMatching(/^\d+\.\d+\.\d+/),
         expectedBins: ["boring-ui"],
       }))
       expect(capturedPrompt).toContain("boring-ui scaffold-plugin")

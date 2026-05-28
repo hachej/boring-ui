@@ -65,7 +65,7 @@ function mockBundle(provider: string, root = '/workspace', storageRoot?: string)
   const runtimeContext = { runtimeCwd: root }
   return {
     runtimeContext,
-    storageRoot,
+    storageRoot: storageRoot ?? (provider === 'vercel-sandbox' ? undefined : root),
     workspace: mockWorkspace(root),
     sandbox: { ...mockSandbox(provider), runtimeContext },
     fileSearch: mockFileSearch(),

@@ -526,14 +526,14 @@ describe("WorkspaceAgentFront", () => {
       <WorkspaceAgentFront
         workspaceId="provider-headers"
         chatPanel={ChatPanel}
-        requestHeaders={{ "x-boring-workspace-id": "provider-headers" }}
+        requestHeaders={{ "x-boring-workspace-id": "stale", authorization: "Bearer request-token" }}
         plugins={[probePlugin]}
         persistenceEnabled={false}
       />,
     )
 
     await waitFor(() => {
-      expect(observed).toContainEqual({ "x-boring-workspace-id": "provider-headers" })
+      expect(observed).toContainEqual({ "x-boring-workspace-id": "provider-headers", authorization: "Bearer request-token" })
     })
   })
 
