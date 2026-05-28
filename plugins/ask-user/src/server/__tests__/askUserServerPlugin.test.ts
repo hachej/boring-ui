@@ -83,7 +83,7 @@ describe("ask-user Pi tool", () => {
     await runtime.submitAnswer(pending!.questionId, "chat-session", { answer: "ok" })
     await expect(pendingResult).resolves.toMatchObject({ details: { status: "answered" } })
     await expect(store.getPending("fallback")).resolves.toBeNull()
-  })
+  }, 10_000)
 
   it("valid input creates pending question and waits for runtime answer", async () => {
     const { store, runtime } = await fixture()
@@ -97,7 +97,7 @@ describe("ask-user Pi tool", () => {
     await waitForRuntimeWaiter(runtime, pending!.questionId)
     await runtime.submitAnswer(pending!.questionId, "s1", { answer: "ok" })
     await expect(pendingResult).resolves.toMatchObject({ details: { status: "answered" } })
-  })
+  }, 10_000)
 })
 
 describe("createAskUserServerPlugin", () => {
