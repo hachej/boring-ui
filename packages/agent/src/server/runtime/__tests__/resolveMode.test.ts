@@ -40,7 +40,7 @@ test('resolveMode("direct") returns NodeWorkspace + DirectSandbox with shared su
   const ctx = await makeContext()
   const bundle = await resolveMode('direct').create(ctx)
 
-  expect(bundle.runtimeContext.runtimeCwd).toBe(ctx.workspaceRoot)
+  expect(bundle.runtimeContext!.runtimeCwd).toBe(ctx.workspaceRoot)
   expect(bundle.workspace.root).toBe(ctx.workspaceRoot)
   expect(bundle.workspace.runtimeContext.runtimeCwd).toBe(ctx.workspaceRoot)
   expect(bundle.sandbox.runtimeContext.runtimeCwd).toBe(ctx.workspaceRoot)
@@ -72,7 +72,7 @@ test('resolveMode("local") returns NodeWorkspace + BwrapSandbox or errors gracef
   }
 
   const bundle = await resolveMode('local').create(ctx)
-  expect(bundle.runtimeContext.runtimeCwd).toBe('/workspace')
+  expect(bundle.runtimeContext!.runtimeCwd).toBe('/workspace')
   expect(bundle.workspace.root).toBe('/workspace')
   expect(bundle.workspace.runtimeContext.runtimeCwd).toBe('/workspace')
   expect(bundle.sandbox.runtimeContext.runtimeCwd).toBe('/workspace')

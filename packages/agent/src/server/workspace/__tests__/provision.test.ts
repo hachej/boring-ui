@@ -80,7 +80,7 @@ test('provisionRuntimeWorkspace rejects template targets outside the workspace',
       ],
       force: true,
     }),
-  ).rejects.toThrow('templateDirs.bad.target must stay inside the workspace')
+  ).rejects.toThrow('Unsafe runtime template target')
 })
 
 test('provisionRuntimeWorkspace accepts relative template targets inside the workspace', async () => {

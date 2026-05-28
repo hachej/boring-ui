@@ -149,9 +149,10 @@ test('exec forces managed env roots and appends plugin PATH after runtime bins',
   expect(home).toBe(workspaceRoot)
   expect(venv).toBe(join(workspaceRoot, '.boring-agent', 'venv'))
   expect(pythonHome).toBe('')
-  expect(pathValue.split(':').slice(0, 4)).toEqual([
-    join(workspaceRoot, '.boring-agent', 'bin'),
+  expect(pathValue.split(':').slice(0, 5)).toEqual([
+    join(workspaceRoot, '.boring-agent', 'node', 'node_modules', '.bin'),
     join(workspaceRoot, '.boring-agent', 'venv', 'bin'),
+    join(workspaceRoot, '.boring-agent', 'sdk', 'uv', 'bin'),
     '/plugin/bin',
     '/usr/bin',
   ])

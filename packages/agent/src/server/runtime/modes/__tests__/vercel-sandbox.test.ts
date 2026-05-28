@@ -252,7 +252,7 @@ test('mode accepts VERCEL_TOKEN fallback and creates working bundle with shared 
 
     const result = await bundle.sandbox.exec('cat /workspace/shared/hello.txt')
 
-    expect(bundle.runtimeContext.runtimeCwd).toBe('/workspace')
+    expect(bundle.runtimeContext!.runtimeCwd).toBe('/workspace')
     expect(bundle.workspace.root).toBe('/workspace')
     expect(bundle.workspace.runtimeContext.runtimeCwd).toBe('/workspace')
     expect(bundle.sandbox.runtimeContext.runtimeCwd).toBe('/workspace')

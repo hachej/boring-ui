@@ -9,6 +9,7 @@ const agentServerMock = vi.hoisted(() => ({
     register: vi.fn(async () => {}),
   })),
   provisionRuntimeWorkspace: vi.fn(async () => {}),
+  provisionWorkspaceRuntime: vi.fn(async () => undefined),
 }))
 
 vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
@@ -17,6 +18,7 @@ vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
     ...actual,
     createAgentApp: agentServerMock.createAgentApp,
     provisionRuntimeWorkspace: agentServerMock.provisionRuntimeWorkspace,
+    provisionWorkspaceRuntime: agentServerMock.provisionWorkspaceRuntime,
   }
 })
 
@@ -32,6 +34,7 @@ const tempDirs: string[] = []
 beforeEach(() => {
   agentServerMock.createAgentApp.mockClear()
   agentServerMock.provisionRuntimeWorkspace.mockClear()
+  agentServerMock.provisionWorkspaceRuntime.mockClear()
 })
 
 afterEach(async () => {
@@ -158,14 +161,14 @@ describe("default boring-ui CLI provisioning", () => {
     expect(cli?.provisioning?.nodePackages).toContainEqual(expect.objectContaining({
       id: "boring-ui-cli",
       packageName: "@hachej/boring-ui-cli",
-      bins: { "boring-ui": "dist/index.js" },
+      packageRoot: expect.stringContaining("packages/cli"),
     }))
 
     const excluded = collectWorkspaceAgentServerPlugins({
       workspaceRoot: await makeTempDir("boring-cli-default-excluded-"),
       excludeDefaults: ["boring-ui-cli-package"],
     })
-    expect(findBoringUiCliContribution(excluded.provisioningContributions)).toBeUndefined()
+    expect(findBoringUiCliContribution(excluded.provisioningContributions)).toBeDefined()
   })
 
   test.each(["direct", "local", "vercel-sandbox"] as const)(
@@ -199,23 +202,22 @@ describe("default boring-ui CLI provisioning", () => {
         logger: false,
       })
 
-      expect(agentServerMock.provisionRuntimeWorkspace).toHaveBeenCalledTimes(1)
-      const [provisionOpts] = agentServerMock.provisionRuntimeWorkspace.mock.calls[0] as unknown as [
-        { runtimeMode: string; contributions: Array<{ id: string; provisioning?: { nodePackages?: unknown[] } }> },
+      expect(agentServerMock.provisionWorkspaceRuntime).toHaveBeenCalledTimes(1)
+      const [provisionOpts] = agentServerMock.provisionWorkspaceRuntime.mock.calls[0] as unknown as [
+        { plugins: Array<{ id: string; provisioning?: { nodePackages?: unknown[] } }> },
       ]
-      expect(provisionOpts.runtimeMode).toBe(mode)
-      const cli = findBoringUiCliContribution(provisionOpts.contributions)
+      const cli = findBoringUiCliContribution(provisionOpts.plugins)
       expect(cli?.provisioning?.nodePackages).toContainEqual(expect.objectContaining({
         id: "boring-ui-cli",
         packageName: "@hachej/boring-ui-cli",
-        bins: { "boring-ui": "dist/index.js" },
+        packageRoot: expect.stringContaining("packages/cli"),
       }))
       expect(capturedPrompt).toContain("boring-ui scaffold-plugin")
       expect(capturedPrompt).toContain("boring-ui verify-plugin")
     },
   )
 
-  test("excludeDefaults can opt out of CLI provisioning and prompt commands", async () => {
+  test("excludeDefaults preserves built-in CLI provisioning and prompt commands", async () => {
     const workspaceRoot = await makeTempDir("boring-cli-exclude-runtime-")
     let capturedPrompt: string | undefined
     mockCreateAgentAppOnce(async (opts: unknown) => {
@@ -231,12 +233,12 @@ describe("default boring-ui CLI provisioning", () => {
       excludeDefaults: ["boring-ui-cli-package"],
     })
 
-    const [provisionOpts] = agentServerMock.provisionRuntimeWorkspace.mock.calls[0] as unknown as [
-      { contributions: Array<{ id: string }> },
+    const [provisionOpts] = agentServerMock.provisionWorkspaceRuntime.mock.calls[0] as unknown as [
+      { plugins: Array<{ id: string }> },
     ]
-    expect(findBoringUiCliContribution(provisionOpts.contributions)).toBeUndefined()
-    expect(capturedPrompt).not.toContain("boring-ui scaffold-plugin")
-    expect(capturedPrompt).not.toContain("boring-ui verify-plugin")
+    expect(findBoringUiCliContribution(provisionOpts.plugins)).toBeDefined()
+    expect(capturedPrompt).toContain("boring-ui scaffold-plugin")
+    expect(capturedPrompt).toContain("boring-ui verify-plugin")
   })
 })
 

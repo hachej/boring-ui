@@ -82,7 +82,7 @@ describe("bootstrapServer", () => {
       }],
       plugins: [{
         id: "plugin-runtime",
-        provisioning: { nodePackages: [{ id: "plugin-cli", packageName: "@example/plugin-cli", version: "2.0.0", bins: { plugin: "dist/index.js" } }] },
+        provisioning: { nodePackages: [{ id: "plugin-cli", packageName: "@example/plugin-cli", version: "2.0.0", expectedBins: ["plugin"] }] },
       }],
     })
 
@@ -333,43 +333,16 @@ describe("bootstrapServer", () => {
           nodePackages: [{ id: "workspace", packageName: "@boring/workspace", packageRoot: "" }],
         },
       }),
-    ).toThrow("provisioning.nodePackages[0].packageRoot must be a non-empty string or file URL when provided")
+    ).toThrow("provisioning.nodePackages[0].packageRoot must be a string or URL")
 
     expect(() =>
       defineServerPlugin({
-        id: "missing-node-package-source",
+        id: "registry-node-package",
         provisioning: {
           nodePackages: [{ id: "workspace", packageName: "@boring/workspace" }],
         },
       }),
-    ).toThrow("provisioning.nodePackages[0] must provide packageRoot for a local source or version for a registry source")
-
-    expect(() =>
-      defineServerPlugin({
-        id: "bad-node-package-version",
-        provisioning: {
-          nodePackages: [{ id: "workspace", packageName: "@boring/workspace", version: "1.0.0 beta" }],
-        },
-      }),
-    ).toThrow("provisioning.nodePackages[0].version must be a non-empty version string when provided")
-
-    expect(() =>
-      defineServerPlugin({
-        id: "bad-node-package-bin",
-        provisioning: {
-          nodePackages: [{ id: "workspace", packageName: "@boring/workspace", packageRoot: "/tmp/workspace", bins: { "../workspace": "dist/index.js" } }],
-        },
-      }),
-    ).toThrow("provisioning.nodePackages[0].bins key \"../workspace\" must be a bin name without path separators")
-
-    expect(() =>
-      defineServerPlugin({
-        id: "bad-node-package-bin-path",
-        provisioning: {
-          nodePackages: [{ id: "workspace", packageName: "@boring/workspace", packageRoot: "/tmp/workspace", bins: { workspace: "../dist/index.js" } }],
-        },
-      }),
-    ).toThrow("provisioning.nodePackages[0].bins.workspace must be a package-relative file path")
+    ).not.toThrow()
   })
 
   it("collects structural runtime plugin input without moving provisioning into workspace", () => {

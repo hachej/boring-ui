@@ -680,6 +680,7 @@ export function createVercelSandboxModeAdapter(
           workspace,
           sandbox,
           fileSearch: createServerFileSearch(workspace, sandbox),
+          runtimeContext: workspace.runtimeContext,
         }
       } catch (error) {
         const code = (error as { code?: unknown } | null)?.code

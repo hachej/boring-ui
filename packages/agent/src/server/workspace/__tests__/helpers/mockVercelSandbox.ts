@@ -135,7 +135,7 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
         }
       }
 
-      if (script.includes('install -d') && script.includes('/workspace')) {
+      if ((script.includes('install -d') || script.includes('mkdir -p')) && script.includes('/workspace')) {
         return emitResult(0, '', '')
       }
 
