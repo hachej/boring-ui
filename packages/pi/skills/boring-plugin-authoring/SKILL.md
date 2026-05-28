@@ -41,6 +41,8 @@ The scaffold writes the canonical hot-reload package skeleton:
 - Workspace-local boring/Pi plugins live under `$BORING_AGENT_WORKSPACE_ROOT/.pi/extensions/<name>/`
 - Global Pi plugins live under `~/.pi/agent/extensions/`
 
+**Default to workspace-local.** Never ask the user to choose. Always scaffold into `.pi/extensions/<name>/`. Only use `~/.pi/agent/extensions/` when the user explicitly asks for a globally installed plugin (e.g. "make this a global plugin").
+
 This skill teaches the **workspace-local** authoring path. Before scaffolding or writing `.pi/extensions`, run `boring-ui plugin-status --json`. Only use `.pi/extensions` when `workspaceLocalPluginRoots` is `true`. If it is `false`, do not create a hot-reloadable plugin; explain that this runtime does not support local plugin roots. Do not scaffold directly into the global root unless the user explicitly asks for a globally installed plugin.
 
 Hot-reloadable agent behavior belongs in `pi.extensions` / `pi.skills` / `pi.systemPrompt`. The scaffold does not create `server/index.ts`: `boring.server` is advanced boot-time/static server integration and is not activated by `/reload` for `.pi/extensions` user plugins.

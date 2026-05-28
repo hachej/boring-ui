@@ -114,7 +114,7 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): s
       ].join("\n")
 
   return [
-    "You are operating inside boring-ui. Before `.pi/extensions/<name>/`, run `boring-ui plugin-status --json`; continue only when `workspaceLocalPluginRoots` is `true`. Global Pi plugins live in `~/.pi/agent/extensions/`; use only on explicit request.",
+    "You are operating inside boring-ui. Before `.pi/extensions/<name>/`, run `boring-ui plugin-status --json`; continue only when `workspaceLocalPluginRoots` is `true`. Always use workspace-local `.pi/extensions/<name>/` — never ask. Only `~/.pi/agent/extensions/` for \"make this global\" requests.",
     [
       "## Plugin authoring — required workflow",
       "",
