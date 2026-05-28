@@ -1,6 +1,6 @@
-import { Suspense, useMemo } from 'react'
+import { Suspense, useCallback, useMemo } from 'react'
 import type { ReactNode } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Helmet, HelmetProvider } from 'react-helmet-async'
 
@@ -68,6 +68,31 @@ function createDefaultQueryClient(): QueryClient {
   })
 }
 
+function RouterAuthGate({ children, publicPaths }: { children: ReactNode; publicPaths?: string[] }) {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const authLocation = useMemo(
+    () => ({ pathname: location.pathname, search: location.search, hash: location.hash }),
+    [location.hash, location.pathname, location.search],
+  )
+  const navigateWithinRouter = useCallback(
+    (to: string, options?: { replace?: boolean }) => {
+      navigate(to, { replace: options?.replace })
+    },
+    [navigate],
+  )
+
+  return (
+    <AuthGate
+      location={authLocation}
+      navigate={navigateWithinRouter}
+      publicPaths={publicPaths}
+    >
+      {children}
+    </AuthGate>
+  )
+}
+
 export function CoreFront({ children, authPages, cspNonce, workspaceRoute, workspaceIdParam, publicPaths }: CoreFrontProps) {
   const queryClient = useMemo(createDefaultQueryClient, [])
   const resolvedCspNonce = useMemo(
@@ -108,7 +133,7 @@ export function CoreFront({ children, authPages, cspNonce, workspaceRoute, works
                             </>
                           ) : null}
                         </Helmet>
-                        <AuthGate publicPaths={['/invites', ...(publicPaths ?? [])]}>
+                        <RouterAuthGate publicPaths={['/invites', ...(publicPaths ?? [])]}>
                           <Suspense fallback={null}>
                             <Routes>
                               <Route path={routes.signin} element={<SignInPage />} />
@@ -130,7 +155,7 @@ export function CoreFront({ children, authPages, cspNonce, workspaceRoute, works
                               {children}
                             </Routes>
                           </Suspense>
-                        </AuthGate>
+                        </RouterAuthGate>
                       </TopBarSlotProvider>
                     </WorkspaceAuthProvider>
                   </BrowserRouter>
