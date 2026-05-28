@@ -6,6 +6,7 @@ import { getFileIcon } from "../registry/getFileIcon"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../lib/utils"
 import { useEvent, workspaceEvents } from "../events"
+import { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "../../shared/types/surface"
 
 type ClosablePanelApi = {
   id?: string
@@ -43,6 +44,20 @@ function readStringParam(params: unknown, key: string): string | null {
   if (!params || typeof params !== "object") return null
   const value = (params as Record<string, unknown>)[key]
   return typeof value === "string" && value.length > 0 ? value : null
+}
+
+function readPathFromPanelId(id: string | undefined): string | null {
+  if (!id) return null
+  if (id.startsWith("file:")) {
+    const path = id.slice("file:".length)
+    return path.length > 0 ? path : null
+  }
+  const surfacePrefix = `surface:${WORKSPACE_OPEN_PATH_SURFACE_KIND}:`
+  if (id.startsWith(surfacePrefix)) {
+    const path = id.slice(surfacePrefix.length)
+    return path.length > 0 ? path : null
+  }
+  return null
 }
 
 async function copyText(text: string): Promise<void> {
@@ -99,7 +114,7 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
   const isDirty = title.endsWith(" ●")
   const displayTitle = isDirty ? title.slice(0, -2) : title
   const Icon = getFileIcon(displayTitle)
-  const filePath = readStringParam(props.params, "path")
+  const filePath = readStringParam(props.params, "path") ?? readPathFromPanelId(api.id)
   const otherTabs = siblingPanels(props)
     .map(panelSnapshot)
     .filter((sibling) => sibling.id !== api.id && sibling.close)
