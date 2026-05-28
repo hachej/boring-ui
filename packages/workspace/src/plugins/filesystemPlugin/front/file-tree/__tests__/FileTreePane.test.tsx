@@ -330,6 +330,7 @@ describe("FileTreePane", () => {
     })
     expect(mockGetTree).toHaveBeenCalledWith("src")
     expect(mockGetTree).toHaveBeenCalledWith("src/nested")
+    expect(mockGetTree).not.toHaveBeenCalledWith("src/nested/deep.ts")
   })
 
   it("tree expand bridge events reveal folders without opening an editor", async () => {
@@ -353,6 +354,30 @@ describe("FileTreePane", () => {
       expect(screen.getByTestId("file-tree")).toHaveAttribute("data-selected", "src")
       expect(screen.getByTestId("file-tree")).toHaveAttribute("data-reveal", "src")
     })
+    expect(bridge.openFile).not.toHaveBeenCalled()
+  })
+
+  it("reveals folder requests forwarded through left-tab params", async () => {
+    const bridge = {
+      getActiveFile: () => null,
+      openFile: vi.fn().mockResolvedValue({ seq: 1, status: "ok" }),
+    }
+
+    render(
+      <FileTreePane
+        params={{
+          bridge,
+          revealFileTreeRequest: { path: "/src//", seq: 1 },
+        }}
+      />,
+      { wrapper },
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("file-tree")).toHaveAttribute("data-selected", "src")
+      expect(screen.getByTestId("file-tree")).toHaveAttribute("data-reveal", "src")
+    })
+    expect(mockGetTree).toHaveBeenCalledWith("src")
     expect(bridge.openFile).not.toHaveBeenCalled()
   })
 

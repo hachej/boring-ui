@@ -121,8 +121,9 @@ export function WorkbenchLeftPane({
       query: debouncedQuery,
       searchQuery: debouncedQuery || undefined,
       chromeless: true,
+      revealFileTreeRequest,
     }),
-    [bridge, debouncedQuery, rootDir],
+    [bridge, debouncedQuery, revealFileTreeRequest, rootDir],
   )
 
   return (
