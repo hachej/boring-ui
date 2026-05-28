@@ -71,6 +71,21 @@ describe("ask-user Pi tool", { timeout: 15_000 }, () => {
   })
 
   it("uses tool execution session id when the harness provides one", async () => {
+    const runtime = {
+      ask: vi.fn().mockResolvedValue({
+        status: "answered",
+        questionId: "q1",
+        sessionId: "chat-session",
+        answer: { questionId: "q1", sessionId: "chat-session", values: { answer: "ok" }, submittedAt: new Date().toISOString() },
+      }),
+    } as unknown as AskUserRuntime
+    const tool = createAskUserTool({ runtime, sessionId: "fallback" })
+
+    await expect(tool.execute("call", { title: "Need input", schema, timeoutMs: 60_000 }, undefined, "chat-session")).resolves.toMatchObject({ details: { status: "answered" } })
+    expect(runtime.ask).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "chat-session" }), undefined)
+  })
+
+  it("persists tool execution session id when the harness provides one", async () => {
     const { store, runtime } = await fixture()
     const tool = createAskUserTool({ runtime, sessionId: "fallback" })
     const pendingResult = tool.execute("call", { title: "Need input", schema, timeoutMs: 60_000 }, undefined, "chat-session")
