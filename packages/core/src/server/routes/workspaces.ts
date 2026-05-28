@@ -9,6 +9,7 @@ const DEFAULT_WORKSPACE_NAME = 'My Workspace'
 const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
   const store = app.workspaceStore
   const provisioner = app.provisioner
+  const defaultWorkspaceCreates = new Map<string, Promise<Awaited<ReturnType<typeof store.list>>>>()
 
   async function provisionWorkspace(workspace: Awaited<ReturnType<typeof store.create>>, ownerId: string, request: FastifyRequest) {
     if (!provisioner) return
@@ -60,8 +61,28 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
       await Promise.all(existing.map((workspace) => ensureDefaultWorkspaceProvisioned(workspace, request)))
       return existing
     }
-    const created = await createWorkspaceForUser(userId, DEFAULT_WORKSPACE_NAME, true, request)
-    return [created]
+
+    const createKey = `${app.config.appId}:${userId}`
+    const inFlight = defaultWorkspaceCreates.get(createKey)
+    if (inFlight) return await inFlight
+
+    const createPromise = (async () => {
+      try {
+        const created = await createWorkspaceForUser(userId, DEFAULT_WORKSPACE_NAME, true, request)
+        return [created]
+      } catch (error) {
+        if (error instanceof HttpError) throw error
+        const racedExisting = await store.list(userId, app.config.appId)
+        if (racedExisting.length > 0) return racedExisting
+        throw error
+      }
+    })()
+    defaultWorkspaceCreates.set(createKey, createPromise)
+    try {
+      return await createPromise
+    } finally {
+      if (defaultWorkspaceCreates.get(createKey) === createPromise) defaultWorkspaceCreates.delete(createKey)
+    }
   }
 
   app.post('/api/v1/workspaces', async (request, reply) => {

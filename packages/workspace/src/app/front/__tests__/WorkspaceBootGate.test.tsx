@@ -55,11 +55,15 @@ describe("WorkspaceBootGate", () => {
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/ready-status"))).toBe(false)
   })
 
-  it("refetches retryable preparing paths after ready status completes", async () => {
+  it("keeps refetching retryable preparing paths after ready status completes", async () => {
+    let sessionCalls = 0
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.includes("/api/v1/agent/sessions") && fetchMock.mock.calls.filter(([callInput]) => String(callInput).includes("/api/v1/agent/sessions")).length === 1) {
-        return new Response(JSON.stringify({ error: { code: "AGENT_RUNTIME_NOT_READY", retryable: true } }), { status: 503 })
+      if (url.includes("/api/v1/agent/sessions")) {
+        sessionCalls += 1
+        if (sessionCalls <= 2) {
+          return new Response(JSON.stringify({ error: { code: "AGENT_RUNTIME_NOT_READY", retryable: true } }), { status: 503 })
+        }
       }
       if (url.includes("/api/v1/ready-status")) {
         return new Response('data: {"state":"ready"}\n\n', { status: 200 })
@@ -76,9 +80,9 @@ describe("WorkspaceBootGate", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Workspace ready")).toBeInTheDocument()
-    })
+    }, { timeout: 2_500 })
 
-    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/v1/agent/sessions"))).toHaveLength(2)
+    expect(sessionCalls).toBe(3)
   })
 
   it("renders an error fallback when preload fails", async () => {

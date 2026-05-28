@@ -297,8 +297,8 @@ export function WorkspaceAgentFront<
     [requestHeaders, workspaceId],
   )
   const resolvedAuthHeaders = useMemo(
-    () => workspaceRequestHeaders(workspaceId, authHeaders ?? EMPTY_HEADERS),
-    [authHeaders, workspaceId],
+    () => workspaceRequestHeaders(workspaceId, { ...(requestHeaders ?? EMPTY_HEADERS), ...(authHeaders ?? EMPTY_HEADERS) }),
+    [authHeaders, requestHeaders, workspaceId],
   )
   const localSessionStore = useMemo(
     () => createLocalStorageSessions({ storageKey: resolvedSessionStorageKey }),

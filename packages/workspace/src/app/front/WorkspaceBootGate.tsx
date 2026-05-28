@@ -25,10 +25,35 @@ export interface WorkspaceBootGateProps {
   children: ReactNode
 }
 
+const PREPARING_RETRY_DELAY_MS = 500
+
 type WorkspaceBootState =
   | { status: "loading"; label: string }
   | { status: "ready" }
   | { status: "error"; message: string }
+
+function sleepUntilRetry(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let timeout: ReturnType<typeof globalThis.setTimeout> | undefined
+    const cleanup = () => {
+      if (timeout) globalThis.clearTimeout(timeout)
+      signal.removeEventListener("abort", onAbort)
+    }
+    const onAbort = () => {
+      cleanup()
+      reject(new DOMException("Workspace boot aborted", "AbortError"))
+    }
+    if (signal.aborted) {
+      onAbort()
+      return
+    }
+    timeout = globalThis.setTimeout(() => {
+      cleanup()
+      resolve()
+    }, PREPARING_RETRY_DELAY_MS)
+    signal.addEventListener("abort", onAbort, { once: true })
+  })
+}
 
 export function WorkspaceBootGate({
   workspaceId,
@@ -78,13 +103,12 @@ export function WorkspaceBootGate({
         const paths = resolveBootPreloadPaths(preloadPaths, provisionWorkspace)
         let results = await Promise.all(paths.map(async (path) => ({ path, status: await fetchOk(path) })))
         let preparingPaths = results.filter((result) => result.status === "preparing").map((result) => result.path)
-        if (preparingPaths.length > 0 && paths.some(isReadyStatusPath)) {
+        while (preparingPaths.length > 0) {
+          setState({ status: "loading", label: "Workspace is still preparing" })
+          await sleepUntilRetry(controller.signal)
+          if (controller.signal.aborted) return
           results = await Promise.all(preparingPaths.map(async (path) => ({ path, status: await fetchOk(path) })))
           preparingPaths = results.filter((result) => result.status === "preparing").map((result) => result.path)
-        }
-        if (preparingPaths.length > 0) {
-          setState({ status: "loading", label: "Workspace is still preparing" })
-          return
         }
         if (!controller.signal.aborted) setState({ status: "ready" })
       } catch (error) {

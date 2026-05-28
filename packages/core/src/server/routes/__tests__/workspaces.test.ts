@@ -216,6 +216,20 @@ describe('GET /api/v1/workspaces', () => {
     expect(second.json().workspaces[0].id).toBe(first.json().workspaces[0].id)
   })
 
+  it('default workspace creation on list is concurrency-safe', async () => {
+    const [first, second] = await Promise.all([
+      inject('GET', '/api/v1/workspaces', OWNER_ID),
+      inject('GET', '/api/v1/workspaces', OWNER_ID),
+    ])
+
+    expect(first.statusCode).toBe(200)
+    expect(second.statusCode).toBe(200)
+    expect(first.json().workspaces).toHaveLength(1)
+    expect(second.json().workspaces).toHaveLength(1)
+    expect(first.json().workspaces[0].id).toBe(second.json().workspaces[0].id)
+    expect([...workspaces.values()].filter((workspace) => workspace.createdBy === OWNER_ID)).toHaveLength(1)
+  })
+
   it('excludes workspaces where caller is not a member and creates caller default', async () => {
     seedWorkspaceWithMembers('Private', EDITOR_ID)
 
@@ -468,6 +482,19 @@ describe('Provisioner integration', () => {
       const runtime = runtimes.get(workspace.id)
       expect(runtime?.state).toBe('ready')
       expect(runtime?.volumePath).toBe('/volumes/ws-default')
+    })
+
+    it('provision failure while auto-creating default workspace returns HTTP 500', async () => {
+      provisionFn.mockRejectedValue(new Error('disk full'))
+
+      const res = await provInject('GET', '/api/v1/workspaces', OWNER_ID)
+      expect(res.statusCode).toBe(500)
+      expect(res.json().code).toBe('provision_failed')
+
+      const runtime = runtimes.get('ws-1')
+      expect(runtime?.state).toBe('error')
+      expect(runtime?.lastError).toBe('disk full')
+      expect(runtime?.lastErrorOp).toBe('provision')
     })
 
     it('provisions an existing signup-created default workspace with missing runtime', async () => {
