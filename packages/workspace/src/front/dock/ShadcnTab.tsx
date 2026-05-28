@@ -83,6 +83,12 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
     api.close()
   }
 
+  const openContextMenu = (e: React.MouseEvent | React.PointerEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setMenu({ x: e.clientX, y: e.clientY })
+  }
+
   const handleCloseOthers = () => {
     setMenu(null)
     api.setActive?.()
@@ -129,11 +135,10 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
           "cursor-pointer transition-colors",
         )}
         title={isDirty ? `${displayTitle} (unsaved changes)` : displayTitle}
-        onContextMenu={(e) => {
-          e.preventDefault()
-          e.stopPropagation()
-          setMenu({ x: e.clientX, y: e.clientY })
+        onPointerDown={(e) => {
+          if (e.button === 2) openContextMenu(e)
         }}
+        onContextMenu={openContextMenu}
       >
         {isSaving ? (
           <Loader2

@@ -447,6 +447,26 @@ describe("ShadcnTab", () => {
     expect(otherGroupApi.close).not.toHaveBeenCalled()
   })
 
+  it("opens close-other menu on right-button pointer down", () => {
+    const currentApi = { title: "Current", id: "tab-current", close: vi.fn() }
+    const siblingApi = { title: "Sibling", id: "tab-sibling", close: vi.fn() }
+
+    render(
+      <ShadcnTab
+        api={currentApi as any}
+        containerApi={{ panels: [{ api: currentApi }, { api: siblingApi }] } as any}
+        params={{}}
+        tabLocation={"header" as any}
+      />,
+    )
+
+    fireEvent.pointerDown(screen.getByTitle("Current"), { button: 2, clientX: 42, clientY: 24 })
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close other tabs" }))
+
+    expect(currentApi.close).not.toHaveBeenCalled()
+    expect(siblingApi.close).toHaveBeenCalledTimes(1)
+  })
+
   it("close other tabs falls back to container panels when group panels are unavailable", () => {
     const currentApi = { title: "Current", id: "tab-current", close: vi.fn() }
     const siblingApi = { title: "Sibling", id: "tab-sibling", close: vi.fn() }
