@@ -498,6 +498,56 @@ describe("ShadcnTab", () => {
     expect(writeText).toHaveBeenCalledWith("src/App.tsx")
   })
 
+  it("copies path from file-backed panel id when tab params are missing", () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    })
+    const currentApi = { title: "App.tsx", id: "file:src/App.tsx", close: vi.fn() }
+
+    render(
+      <ShadcnTab
+        api={currentApi as any}
+        containerApi={{ panels: [{ api: currentApi }] } as any}
+        params={{}}
+        tabLocation={"header" as any}
+      />,
+    )
+
+    fireEvent.contextMenu(screen.getByTitle("App.tsx"))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy path" }))
+
+    expect(writeText).toHaveBeenCalledWith("src/App.tsx")
+  })
+
+  it("copies path from workspace surface panel id when tab params are missing", () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    })
+    const currentApi = {
+      title: "App.tsx",
+      id: "surface:workspace.open.path:src/App.tsx",
+      close: vi.fn(),
+    }
+
+    render(
+      <ShadcnTab
+        api={currentApi as any}
+        containerApi={{ panels: [{ api: currentApi }] } as any}
+        params={{}}
+        tabLocation={"header" as any}
+      />,
+    )
+
+    fireEvent.contextMenu(screen.getByTitle("App.tsx"))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy path" }))
+
+    expect(writeText).toHaveBeenCalledWith("src/App.tsx")
+  })
+
   it("falls back to legacy clipboard copy when writeText rejects", async () => {
     const writeText = vi.fn().mockRejectedValue(new Error("not focused"))
     const execCommand = vi.fn().mockReturnValue(true)
