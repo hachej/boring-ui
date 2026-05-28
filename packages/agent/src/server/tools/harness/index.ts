@@ -7,7 +7,7 @@ import {
 
 import type { Sandbox } from '../../../shared/sandbox'
 import type { AgentTool, ToolResult } from '../../../shared/tool'
-import type { RuntimeBundle } from '../../runtime/mode'
+import { getRuntimeBundleStorageRoot, type RuntimeBundle } from '../../runtime/mode'
 import { buildBwrapArgs } from '../../sandbox/bwrap/buildBwrapArgs'
 import { withWorkspacePythonEnv } from '../../sandbox/workspacePythonEnv'
 import { vercelBashOps } from '../operations/vercel'
@@ -91,7 +91,7 @@ function bashOptionsForMode(
     case 'bwrap':
       return {
         operations: createLocalBashOperations(),
-        spawnHook: bwrapSpawnHook(bundle.workspace.root, runtime),
+        spawnHook: bwrapSpawnHook(getRuntimeBundleStorageRoot(bundle), runtime),
       }
     default:
       return {
