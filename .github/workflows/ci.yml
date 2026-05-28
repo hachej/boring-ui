@@ -182,6 +182,20 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
+  unit-summary:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: unit
+    if: always()
+    steps:
+      - name: Verify unit test shards
+        run: |
+          if [ "${{ needs.unit.result }}" != "success" ]; then
+            echo "Unit test shards result: ${{ needs.unit.result }}"
+            exit 1
+          fi
+          echo "All unit test shards passed."
+
   invariants:
     name: Invariants
     runs-on: ubuntu-latest
@@ -242,7 +256,7 @@ jobs:
 
   publish-ci:
     name: Publish CI packages to npm
-    needs: [lint, typecheck, bundle-budget, core-bundle-budget, unit, invariants, e2e]
+    needs: [lint, typecheck, bundle-budget, core-bundle-budget, unit-summary, invariants, e2e]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
@@ -294,7 +308,7 @@ jobs:
 
   deploy:
     name: Deploy to Fly.io
-    needs: [lint, typecheck, unit, invariants, e2e]
+    needs: [lint, typecheck, unit-summary, invariants, e2e]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
