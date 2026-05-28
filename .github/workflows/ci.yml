@@ -130,16 +130,20 @@ jobs:
         include:
           - name: agent
             command: pnpm --filter @hachej/boring-agent... --workspace-concurrency=4 run build && pnpm --filter @hachej/boring-agent run test
-          - name: workspace
-            command: pnpm --filter @hachej/boring-workspace... --workspace-concurrency=4 run build && pnpm --filter @hachej/boring-workspace run test
+          - name: workspace-1
+            command: pnpm --filter @hachej/boring-workspace... --workspace-concurrency=4 run build && pnpm --filter @hachej/boring-workspace exec vitest run --shard=1/2
+          - name: workspace-2
+            command: pnpm --filter @hachej/boring-workspace... --workspace-concurrency=4 run build && pnpm --filter @hachej/boring-workspace exec vitest run --shard=2/2
           - name: core-1
             command: pnpm --filter @hachej/boring-core... --workspace-concurrency=4 run build && pnpm --filter @hachej/boring-core exec vitest run --no-file-parallelism --shard=1/3
           - name: core-2
             command: pnpm --filter @hachej/boring-core... --workspace-concurrency=4 run build && pnpm --filter @hachej/boring-core exec vitest run --no-file-parallelism --shard=2/3
           - name: core-3
             command: pnpm --filter @hachej/boring-core... --workspace-concurrency=4 run build && pnpm --filter @hachej/boring-core exec vitest run --no-file-parallelism --shard=3/3
-          - name: rest
-            command: pnpm -r --filter @hachej/boring-core... --filter @hachej/boring-ui-cli... --filter @hachej/boring-ask-user... --filter @hachej/boring-data-catalog... --filter @hachej/boring-deck... --workspace-concurrency=4 run build && pnpm -r --filter @hachej/boring-ui-kit --filter @hachej/boring-ui-cli --filter @hachej/boring-ask-user --filter @hachej/boring-data-explorer --filter @hachej/boring-data-catalog --filter @hachej/boring-deck --workspace-concurrency=4 run test
+          - name: rest-cli
+            command: pnpm -r --filter @hachej/boring-core... --filter @hachej/boring-ui-cli... --workspace-concurrency=4 run build && pnpm -r --filter @hachej/boring-ui-kit --filter @hachej/boring-ui-cli --workspace-concurrency=4 run test
+          - name: rest-plugins
+            command: pnpm -r --filter @hachej/boring-ask-user... --filter @hachej/boring-data-catalog... --filter @hachej/boring-deck... --workspace-concurrency=4 run build && pnpm -r --filter @hachej/boring-ask-user --filter @hachej/boring-data-explorer --filter @hachej/boring-data-catalog --filter @hachej/boring-deck --workspace-concurrency=4 run test
     services:
       postgres:
         image: postgres:16
