@@ -277,9 +277,11 @@ export function FileTree({
     let scrollFrame = 0
     const openFrame = requestAnimationFrame(() => {
       const tree = treeRef.current
-      tree?.openParents(revealPath)
-      const node = tree?.get(revealPath)
-      if (node?.isInternal) node.open()
+      if (!tree) return
+      tree.openParents(revealPath)
+      const node = tree.get(revealPath)
+      if (!node) return
+      if (node.isInternal) node.open()
       scrollFrame = requestAnimationFrame(() => {
         void treeRef.current?.scrollTo(revealPath)
         onRevealHandled?.(revealPath)
