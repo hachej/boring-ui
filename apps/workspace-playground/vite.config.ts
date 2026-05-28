@@ -11,6 +11,10 @@ const baseResolve = createBoringAppViteAliases({ appRoot: __dirname })
 // the standard helper doesn't cover. Add those alongside the shared
 // aliases.
 const playgroundOnlyAliases = [
+  // Keep app code importing the public package CSS subpath, but point the
+  // playground's local monorepo dev server at the built CSS artifact so Vite
+  // serves it as text/css instead of falling back through HTML history.
+  { find: "@hachej/boring-workspace/globals.css", replacement: resolve(__dirname, "../../packages/workspace/dist/workspace.css") },
   { find: "@/", replacement: resolve(__dirname, "../../packages/workspace/src") + "/" },
   { find: "@", replacement: resolve(__dirname, "../../packages/workspace/src") },
 ]

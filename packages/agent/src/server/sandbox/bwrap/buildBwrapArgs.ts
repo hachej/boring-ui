@@ -17,6 +17,13 @@ export const RO_BIND_DIRS = [
   '/etc/ca-certificates',
 ]
 
+export const RO_BIND_TRY_DIRS = [
+  // Ubuntu/systemd commonly makes /etc/resolv.conf a symlink to this
+  // directory. The sandbox already shares the network namespace, but DNS
+  // still fails if the symlink target is hidden by the tmpfs root.
+  '/run/systemd/resolve',
+]
+
 function validateWorkspaceRoot(workspaceRoot: string): void {
   if (workspaceRoot.length === 0) {
     throw new Error('workspaceRoot must not be empty')
@@ -65,6 +72,10 @@ export function buildBwrapArgs(workspaceRoot: string, options?: BwrapArgsOptions
 
   for (const dir of RO_BIND_DIRS) {
     args.push('--ro-bind', dir, dir)
+  }
+
+  for (const dir of RO_BIND_TRY_DIRS) {
+    args.push('--ro-bind-try', dir, dir)
   }
 
   if (options?.extraArgs) {
