@@ -195,6 +195,7 @@ vi.mock('../../../server/db/index.js', () => ({
 vi.mock('../../../server/config/index.js', () => ({
   loadConfig: async () => ({
     appId: 'test-app',
+    cors: { origins: ['http://localhost:3000'], credentials: true },
     auth: { url: 'http://localhost:3000' },
     encryption: { workspaceSettingsKey: 'test-key' },
     stores: 'postgres',
