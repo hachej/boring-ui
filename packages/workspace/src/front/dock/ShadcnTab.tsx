@@ -20,8 +20,6 @@ type ClosablePanelSnapshot = {
   close?: () => void
 }
 
-const WORKSPACE_ROOT_PARAM = "__workspaceRoot"
-
 function panelApi(panel: ClosablePanel): ClosablePanelApi {
   return "api" in panel && panel.api ? panel.api : panel
 }
@@ -45,13 +43,6 @@ function readStringParam(params: unknown, key: string): string | null {
   if (!params || typeof params !== "object") return null
   const value = (params as Record<string, unknown>)[key]
   return typeof value === "string" && value.length > 0 ? value : null
-}
-
-function absoluteWorkspacePath(workspaceRoot: string | null, filePath: string | null): string | null {
-  if (!filePath) return null
-  if (filePath.startsWith("/")) return filePath
-  if (!workspaceRoot) return null
-  return `${workspaceRoot.replace(/\/+$/, "")}/${filePath.replace(/^\/+/, "")}`
 }
 
 async function copyText(text: string): Promise<void> {
@@ -109,8 +100,6 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
   const displayTitle = isDirty ? title.slice(0, -2) : title
   const Icon = getFileIcon(displayTitle)
   const filePath = readStringParam(props.params, "path")
-  const workspaceRoot = readStringParam(props.params, WORKSPACE_ROOT_PARAM)
-  const absolutePath = absoluteWorkspacePath(workspaceRoot, filePath)
   const otherTabs = siblingPanels(props)
     .map(panelSnapshot)
     .filter((sibling) => sibling.id !== api.id && sibling.close)
@@ -171,16 +160,6 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
                 onClick={() => handleCopy(filePath)}
               >
                 Copy path
-              </button>
-            ) : null}
-            {absolutePath ? (
-              <button
-                type="button"
-                role="menuitem"
-                className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground"
-                onClick={() => handleCopy(absolutePath)}
-              >
-                Copy absolute path
               </button>
             ) : null}
             {otherTabs.length > 0 ? (

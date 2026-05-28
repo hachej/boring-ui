@@ -22,7 +22,6 @@ function isFullPageRoute(): boolean {
 
 interface WorkspaceMeta {
   projectName?: string
-  workspaceRoot?: string
 }
 
 const playgroundDeckWidgets: DeckWidgetDefinition[] = [
@@ -80,7 +79,6 @@ export function WorkspaceShell() {
   const showcase = useMemo(isShowcaseRoute, [])
   const fullPage = useMemo(isFullPageRoute, [])
   const [projectName, setProjectName] = useState("Workspace")
-  const [workspaceRoot, setWorkspaceRoot] = useState<string | undefined>()
   const [metaLoaded, setMetaLoaded] = useState(showcase || fullPage)
 
   const sessions = useMemo(
@@ -115,7 +113,6 @@ export function WorkspaceShell() {
           setProjectName(next)
           document.title = next
         }
-        setWorkspaceRoot(meta?.workspaceRoot?.trim() || undefined)
         setMetaLoaded(true)
       })
       .catch(() => {
@@ -143,7 +140,6 @@ export function WorkspaceShell() {
       providerStorageKey="boring-ui-v2:layout:playground"
       appTitle={showcase ? "Boring" : projectName}
       defaultSessionTitle={showcase ? "New session" : projectName}
-      workspaceRoot={workspaceRoot}
       frontPluginHotReload="vite"
       fullPageBasePath="/full-page"
       useSessions={showcase ? undefined : useAgentSessions}
