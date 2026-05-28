@@ -63,16 +63,16 @@ test('node and python install sources become workspace-visible artifacts without
     kind: 'node',
     id: 'macro cli',
     fingerprint: 'sha256:abcdef',
-  })).resolves.toBe('/workspace/.boring-agent/tmp/macro-cli-abcdef.tgz')
+  })).resolves.toBe('/workspace/.boring-agent/tmp/macro-cli-pnpm-pack-v2-abcdef.tgz')
   await expect(adapter.resolveInstallSource(sourceRoot, {
     kind: 'python',
     id: 'macro-sdk',
     fingerprint: 'sha256:123456',
-  })).resolves.toBe('/workspace/.boring-agent/tmp/macro-sdk-123456.tar.gz')
+  })).resolves.toBe('/workspace/.boring-agent/tmp/macro-sdk-v1-123456.tar.gz')
 
   expect(prepared.map((item) => item.kind)).toEqual(['node', 'python'])
-  expect(state.files.get('.boring-agent/tmp/macro-cli-abcdef.tgz')).toContain('node artifact')
-  expect(state.files.get('.boring-agent/tmp/macro-sdk-123456.tar.gz')).toContain('python artifact')
+  expect(state.files.get('.boring-agent/tmp/macro-cli-pnpm-pack-v2-abcdef.tgz')).toContain('node artifact')
+  expect(state.files.get('.boring-agent/tmp/macro-sdk-v1-123456.tar.gz')).toContain('python artifact')
 
   const sourceEntries = await readdir(sourceRoot)
   expect(sourceEntries).toEqual(['package.json'])
@@ -81,7 +81,7 @@ test('node and python install sources become workspace-visible artifacts without
 test('unchanged artifact fingerprint avoids repack and reupload', async () => {
   const sourceRoot = await sourcePackage()
   const state: FakeWorkspaceState = {
-    files: new Map([['.boring-agent/tmp/cli-abcdef.tgz', 'cached artifact\n']]),
+    files: new Map([['.boring-agent/tmp/cli-pnpm-pack-v2-abcdef.tgz', 'cached artifact\n']]),
     copied: [],
   }
   let prepareCount = 0
@@ -101,7 +101,7 @@ test('unchanged artifact fingerprint avoids repack and reupload', async () => {
     fingerprint: 'sha256:abcdef',
   })
 
-  expect(source).toBe('/workspace/.boring-agent/tmp/cli-abcdef.tgz')
+  expect(source).toBe('/workspace/.boring-agent/tmp/cli-pnpm-pack-v2-abcdef.tgz')
   expect(prepareCount).toBe(0)
   expect(state.copied).toEqual([])
 })

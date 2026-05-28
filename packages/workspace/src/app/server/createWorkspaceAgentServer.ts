@@ -173,6 +173,16 @@ function resolveWorkspacePackageRoot(): string {
   return join(__dirname, "../../..")
 }
 
+function readPackageVersion(packageRoot: string | null): string | undefined {
+  if (!packageRoot) return undefined
+  try {
+    const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as { version?: unknown }
+    return typeof pkg.version === "string" && pkg.version.length > 0 ? pkg.version : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function nodePackageContribution(
   contributionId: string,
   nodePackageId: string,
@@ -186,6 +196,32 @@ function nodePackageContribution(
       nodePackages: [{ id: nodePackageId, packageName, packageRoot }],
     },
   }
+}
+
+function publishedNodePackageContribution(
+  contributionId: string,
+  nodePackageId: string,
+  packageName: string,
+  version?: string,
+  expectedBins?: string[],
+): WorkspaceProvisioningContribution {
+  return {
+    id: contributionId,
+    provisioning: {
+      nodePackages: [
+        {
+          id: nodePackageId,
+          packageName,
+          ...(version ? { version } : {}),
+          ...(expectedBins ? { expectedBins } : {}),
+        },
+      ],
+    },
+  }
+}
+
+function useLocalPackageProvisioning(): boolean {
+  return process.env.BORING_USE_LOCAL_PACKAGES === "1"
 }
 
 function createWorkspacePackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
@@ -244,11 +280,27 @@ function resolveBoringUiCliPackageRoot(): string | null {
 }
 
 function createBoringUiCliPackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
-  return nodePackageContribution(
+  const packageRoot = resolveBoringUiCliPackageRoot()
+  if (useLocalPackageProvisioning()) {
+    return nodePackageContribution(
+      "boring-ui-cli-package",
+      "boring-ui-cli",
+      "@hachej/boring-ui-cli",
+      packageRoot,
+    )
+  }
+
+  // Default to the published CLI package, not a local folder install. npm
+  // installs local folders as symlinks; inside local/bwrap those symlinks can
+  // resolve into host-only monorepo paths and make `boring-ui verify-plugin`
+  // unable to import @hachej/boring-workspace. Published installs are real
+  // node_modules copies and stay self-contained inside the workspace runtime.
+  return publishedNodePackageContribution(
     "boring-ui-cli-package",
     "boring-ui-cli",
     "@hachej/boring-ui-cli",
-    resolveBoringUiCliPackageRoot(),
+    readPackageVersion(packageRoot) ?? readPackageVersion(resolveWorkspacePackageRoot()),
+    ["boring-ui"],
   )
 }
 

@@ -37,6 +37,50 @@ describe("WorkspaceBootGate", () => {
     )
   })
 
+  it("skips agent runtime warmup when provisioning is disabled", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response(null, { status: 204 }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <WorkspaceBootGate workspaceId="w1" provisionWorkspace={false}>
+        <div>Workspace ready</div>
+      </WorkspaceBootGate>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Workspace ready")).toBeInTheDocument()
+    })
+
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/sessions"))).toBe(false)
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/ready-status"))).toBe(false)
+  })
+
+  it("refetches retryable preparing paths after ready status completes", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes("/api/v1/agent/sessions") && fetchMock.mock.calls.filter(([callInput]) => String(callInput).includes("/api/v1/agent/sessions")).length === 1) {
+        return new Response(JSON.stringify({ error: { code: "AGENT_RUNTIME_NOT_READY", retryable: true } }), { status: 503 })
+      }
+      if (url.includes("/api/v1/ready-status")) {
+        return new Response('data: {"state":"ready"}\n\n', { status: 200 })
+      }
+      return new Response(null, { status: 204 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <WorkspaceBootGate workspaceId="w1">
+        <div>Workspace ready</div>
+      </WorkspaceBootGate>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Workspace ready")).toBeInTheDocument()
+    })
+
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/v1/agent/sessions"))).toHaveLength(2)
+  })
+
   it("renders an error fallback when preload fails", async () => {
     vi.stubGlobal(
       "fetch",

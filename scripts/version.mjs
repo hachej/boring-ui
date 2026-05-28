@@ -16,6 +16,10 @@ const PUBLISHABLE = [
   "packages/agent",
   "packages/ui",
   "packages/cli", // @hachej/boring-ui-cli
+  "plugins/deck",
+  "plugins/ask-user",
+  "plugins/data-explorer",
+  "plugins/data-catalog",
 ]
 
 function readJson(path) {

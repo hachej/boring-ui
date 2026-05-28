@@ -16,6 +16,12 @@ export const ErrorCode = z.enum([
   'PATH_NOT_FOUND',
   'PATH_NOT_WRITABLE',
   'WORKSPACE_UNINITIALIZED',
+  'WORKSPACE_NOT_READY',
+
+  // Agent runtime / provisioning
+  'AGENT_RUNTIME_NOT_READY',
+  'RUNTIME_PROVISIONING_FAILED',
+  'RUNTIME_PROVISIONING_LOCKED',
 
   // Sandbox / exec
   'BWRAP_UNAVAILABLE',

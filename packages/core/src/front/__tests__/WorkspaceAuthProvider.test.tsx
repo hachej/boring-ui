@@ -3,7 +3,30 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const mockSessionState = vi.hoisted(() => ({
+  current: {
+    data: {
+      user: {
+        id: 'user-1',
+        email: 'user-1@test.dev',
+        name: null,
+        emailVerified: true,
+        image: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+      expiresAt: '2026-01-02T00:00:00.000Z',
+    },
+    isPending: false,
+    error: null,
+  } as any,
+}))
+
+vi.mock('../auth/AuthProvider', () => ({
+  useSession: () => mockSessionState.current,
+}))
 
 import { withBeadId } from '../../server/__tests__/_setup'
 import type { MemberRole, Workspace } from '../../shared/types'
@@ -133,11 +156,111 @@ function mockDeferredWorkspaceDetail(
   })
 }
 
+beforeEach(() => {
+  mockSessionState.current = {
+    data: {
+      user: {
+        id: 'user-1',
+        email: 'user-1@test.dev',
+        name: null,
+        emailVerified: true,
+        image: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+      expiresAt: '2026-01-02T00:00:00.000Z',
+    },
+    isPending: false,
+    error: null,
+  }
+})
+
+function setUnauthenticatedSession() {
+  mockSessionState.current = { data: null, isPending: false, error: null }
+}
+
+function setPendingSession() {
+  mockSessionState.current = { data: null, isPending: true, error: null }
+}
+
+function waitOneTick() {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
 afterEach(() => {
   vi.restoreAllMocks()
 })
 
 describe('WorkspaceAuthProvider', () => {
+  it(
+    'does not fetch workspace list or detail before auth resolves',
+    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      const qc = createQueryClient()
+      let workspaceRequests = 0
+      setUnauthenticatedSession()
+
+      useMswHandler(async (input) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url
+        if (url.includes('/api/v1/workspaces')) {
+          workspaceRequests += 1
+          return new Response(JSON.stringify({ workspaces: [WS_1] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        return undefined
+      })
+
+      renderWithRouter(`/workspace/${WS_1.id}`, qc)
+      await waitOneTick()
+
+      expect(screen.getByTestId('ws-name').textContent).toBe('none')
+      expect(screen.getByTestId('ws-role').textContent).toBe('none')
+      expect(workspaceRequests).toBe(0)
+      assertionPassed('no-workspace-fetch-before-auth')
+      qc.clear()
+    }),
+  )
+
+  it(
+    'does not fetch workspace list while session is pending',
+    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      const qc = createQueryClient()
+      let workspaceRequests = 0
+      setPendingSession()
+
+      useMswHandler(async (input) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url
+        if (url.includes('/api/v1/workspaces')) {
+          workspaceRequests += 1
+          return new Response(JSON.stringify({ workspaces: [WS_1] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        return undefined
+      })
+
+      renderWithRouter('/', qc)
+      await waitOneTick()
+
+      expect(screen.getByTestId('ws-name').textContent).toBe('none')
+      expect(workspaceRequests).toBe(0)
+      assertionPassed('no-workspace-fetch-while-session-pending')
+      qc.clear()
+    }),
+  )
+
   it(
     'resolves workspace by route param :id',
     withBeadId(BEAD_ID, async ({ assertionPassed }) => {

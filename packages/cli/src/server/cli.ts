@@ -34,8 +34,6 @@ import {
   readCliPluginPiSnapshot,
   resolveCliBoringPluginDirs,
 } from "./pluginDiscovery.js"
-import { scaffoldPlugin } from "./scaffoldPlugin.js"
-import { findHintForError, formatVerifyResult, verifyPlugin } from "./verifyPlugin.js"
 
 export interface RunCliOptions {
   argv?: string[]
@@ -191,6 +189,24 @@ export async function registerStatic(app: FastifyInstance, publicDir: string) {
     return reply.sendFile("index.html", publicDir)
   })
 }
+
+const HELP_TEXT = [
+  "Usage: boring-ui [workspace] [options]",
+  "",
+  "Commands:",
+  "  boring-ui [workspace]                 Start the workspace UI for a folder",
+  "  boring-ui workspaces <subcommand>     Manage saved local workspaces",
+  "  boring-ui scaffold-plugin <name> [workspace]",
+  "                                       Scaffold a hot-reloadable plugin",
+  "  boring-ui verify-plugin [name] [workspace]",
+  "                                       Validate plugin manifests/files",
+  "",
+  "Options:",
+  "  -p, --port <port>       HTTP port (default: 5200)",
+  "      --host <host>       Listen host (default: 0.0.0.0)",
+  "  -m, --mode <mode>       local-sandbox or local (default: local-sandbox)",
+  "  -h, --help              Show this help",
+].join("\n")
 
 const AUTH_GUIDE = [
   "",
@@ -995,10 +1011,16 @@ export async function runCli(options: RunCliOptions): Promise<void> {
       name: { type: "string", short: "n" },
       path: { type: "string" as const },
       json: { type: "boolean" as const },
+      help: { type: "boolean", short: "h" },
     },
     allowPositionals: true,
     strict: false,
   })
+
+  if (args.help) {
+    console.log(HELP_TEXT)
+    return
+  }
 
   const port = Number(args.port ?? process.env.PORT) || 5200
   const host = (args.host as string | undefined) ?? process.env.HOST ?? "0.0.0.0"
@@ -1040,12 +1062,12 @@ export async function runCli(options: RunCliOptions): Promise<void> {
   }
 
   if (positionals[0] === "scaffold-plugin") {
-    handleScaffoldPluginCommand({ positionals })
+    await handleScaffoldPluginCommand({ positionals })
     return
   }
 
   if (positionals[0] === "verify-plugin") {
-    handleVerifyPluginCommand({ positionals })
+    await handleVerifyPluginCommand({ positionals })
     return
   }
 
@@ -1090,7 +1112,7 @@ function handlePluginStatusCommand(opts: { json: boolean }) {
     : `workspace-local plugin roots disabled: ${status.reason}`)
 }
 
-function handleVerifyPluginCommand(opts: { positionals: string[] }) {
+async function handleVerifyPluginCommand(opts: { positionals: string[] }) {
   // Usage: `boring-ui verify-plugin [<name>] [<workspace>]`
   // No name: verify every plugin under .pi/extensions/.
   // With name: verify only `.pi/extensions/<name>/`.
@@ -1104,6 +1126,7 @@ function handleVerifyPluginCommand(opts: { positionals: string[] }) {
   const name = looksLikePath ? undefined : maybeName
   const workspaceRoot = resolve(maybeWorkspace ?? (looksLikePath ? maybeName! : defaultWorkspaceRoot()))
 
+  const { findHintForError, formatVerifyResult, verifyPlugin } = await import("./verifyPlugin.js")
   const result = verifyPlugin({ workspaceRoot, ...(name ? { name } : {}) })
   console.log(formatVerifyResult(result))
   if (!result.ok) {
@@ -1125,7 +1148,7 @@ function handleVerifyPluginCommand(opts: { positionals: string[] }) {
   }
 }
 
-function handleScaffoldPluginCommand(opts: { positionals: string[] }) {
+async function handleScaffoldPluginCommand(opts: { positionals: string[] }) {
   const name = opts.positionals[1]
   if (!name) {
     throw new Error("usage: boring-ui scaffold-plugin <name> [workspace]")
@@ -1135,6 +1158,7 @@ function handleScaffoldPluginCommand(opts: { positionals: string[] }) {
     throw new Error(`${status.reason} Do not scaffold into .pi/extensions in this runtime.`)
   }
   const workspaceRoot = resolve(opts.positionals[2] ?? defaultWorkspaceRoot())
+  const { scaffoldPlugin } = await import("./scaffoldPlugin.js")
   const result = scaffoldPlugin({ name, workspaceRoot })
   console.log(`scaffolded ${name}`)
   console.log(`  dir   ${result.pluginDir}`)

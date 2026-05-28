@@ -5,13 +5,11 @@ import * as ReactJsxDevRuntime from "react/jsx-dev-runtime"
 import * as ReactJsxRuntime from "react/jsx-runtime"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { ChatPanel, useSessions as useAgentSessions } from "@hachej/boring-agent"
-import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "@hachej/boring-agent/shared"
 import * as WorkspaceSingleton from "@hachej/boring-workspace"
 import * as WorkspaceEventsSingleton from "@hachej/boring-workspace/events"
 import * as WorkspacePluginSingleton from "@hachej/boring-workspace/plugin"
 import { WorkspaceAgentFront } from "@hachej/boring-workspace/app/front"
 import { WorkspaceSwitcherControl } from "./WorkspaceSwitcherControl"
-import { RuntimePluginDiagnosticsButton } from "./runtimePluginDiagnostics"
 
 declare global {
   var __BORING_RUNTIME_SINGLETONS__: Record<string, unknown> | undefined
@@ -34,9 +32,6 @@ interface WorkspaceMeta {
   workspacesMode?: boolean
   version?: string
   runtimePluginFrontLoadingEnabled?: boolean
-  runtimePluginTrustLabel?: string
-  runtimePluginTrustDescription?: string
-  runtimePluginDiagnosticsEnabled?: boolean
 }
 
 interface LocalWorkspace {
@@ -92,24 +87,6 @@ export function CliVersionBadge({ version }: { version?: string | null }) {
   )
 }
 
-function CliRuntimePluginBadge(props: {
-  enabled: boolean
-  loading: boolean
-  trustLabel?: string | null
-  trustDescription?: string | null
-}) {
-  if (!props.enabled) return null
-  return (
-    <span
-      aria-label={props.loading ? "Runtime plugins loading" : (props.trustLabel ?? "Runtime plugins enabled")}
-      title={props.trustDescription ?? props.trustLabel ?? "Runtime plugins enabled"}
-      className="rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[10px] font-medium leading-none tracking-tight text-muted-foreground"
-    >
-      {props.loading ? "Plugins loading…" : (props.trustLabel ?? "Runtime plugins")}
-    </span>
-  )
-}
-
 export function CliWorkspaceShell() {
   const [projectName, setProjectName] = useState("Workspace")
   const [workspacesMode, setWorkspacesMode] = useState(false)
@@ -118,10 +95,6 @@ export function CliWorkspaceShell() {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
   const [metaLoaded, setMetaLoaded] = useState(false)
   const [runtimePluginFrontLoadingEnabled, setRuntimePluginFrontLoadingEnabled] = useState(false)
-  const [runtimePluginTrustLabel, setRuntimePluginTrustLabel] = useState<string | null>(null)
-  const [runtimePluginTrustDescription, setRuntimePluginTrustDescription] = useState<string | null>(null)
-  const [runtimePluginReplayPending, setRuntimePluginReplayPending] = useState(false)
-  const [runtimePluginDiagnosticsEnabled, setRuntimePluginDiagnosticsEnabled] = useState(false)
 
   const refreshWorkspaces = useCallback(() => {
     void fetch("/api/v1/local-workspaces")
@@ -159,10 +132,6 @@ export function CliWorkspaceShell() {
         const runtimePluginsEnabled = meta?.runtimePluginFrontLoadingEnabled === true
         setWorkspacesMode(isWorkspacesMode)
         setRuntimePluginFrontLoadingEnabled(runtimePluginsEnabled)
-        setRuntimePluginTrustLabel(meta?.runtimePluginTrustLabel?.trim() || null)
-        setRuntimePluginTrustDescription(meta?.runtimePluginTrustDescription?.trim() || null)
-        setRuntimePluginReplayPending(runtimePluginsEnabled)
-        setRuntimePluginDiagnosticsEnabled(meta?.runtimePluginDiagnosticsEnabled === true)
         if (isWorkspacesMode) refreshWorkspaces()
         setMetaLoaded(true)
       })
@@ -190,44 +159,6 @@ export function CliWorkspaceShell() {
     if (!workspacesMode || !activeWorkspaceId) return
     syncCliWorkspaceUrl(activeWorkspaceId)
   }, [activeWorkspaceId, workspacesMode])
-
-  useEffect(() => {
-    if (!runtimePluginFrontLoadingEnabled) return
-    let replayCompleteSeen = false
-    const pendingReplayLoads = new Set<string>()
-    const syncReplayState = () => {
-      setRuntimePluginReplayPending(!replayCompleteSeen || pendingReplayLoads.size > 0)
-    }
-    const handleRuntimePluginEvent = (raw: Event) => {
-      const detail = (raw as CustomEvent<{ type?: string; workspaceId?: string; id?: string; revision?: number; replay?: boolean }>).detail
-      if (!detail) return
-      if (detail.workspaceId && activeWorkspaceId && detail.workspaceId !== activeWorkspaceId) return
-      const eventKey = detail.id && typeof detail.revision === "number" ? `${detail.id}:${detail.revision}` : null
-      if (detail.type === "boring.plugin.front-pending" && detail.replay && eventKey) {
-        pendingReplayLoads.add(eventKey)
-        syncReplayState()
-        return
-      }
-      if (detail.type === "boring.plugin.front-settled" && eventKey) {
-        pendingReplayLoads.delete(eventKey)
-        syncReplayState()
-        return
-      }
-      if (detail.type === "boring.plugin.replay-complete") {
-        replayCompleteSeen = true
-        syncReplayState()
-      }
-    }
-    window.addEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, handleRuntimePluginEvent as EventListener)
-    return () => {
-      window.removeEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, handleRuntimePluginEvent as EventListener)
-    }
-  }, [activeWorkspaceId, runtimePluginFrontLoadingEnabled])
-
-  useEffect(() => {
-    if (!runtimePluginFrontLoadingEnabled) return
-    setRuntimePluginReplayPending(true)
-  }, [activeWorkspaceId, projectName, runtimePluginFrontLoadingEnabled])
 
   const plugins = useMemo(() => [], [])
   const activeWorkspaceRequestHeaders = useMemo(
@@ -277,7 +208,7 @@ export function CliWorkspaceShell() {
         useSessions={useAgentSessions}
         chatParams={{ thinkingControl: true }}
         frontPluginHotReload={runtimePluginFrontLoadingEnabled ? "vite" : false}
-        topBarRight={<div className="flex items-center gap-2"><CliRuntimePluginBadge enabled={runtimePluginFrontLoadingEnabled} loading={runtimePluginReplayPending} trustLabel={runtimePluginTrustLabel} trustDescription={runtimePluginTrustDescription} /><RuntimePluginDiagnosticsButton enabled={runtimePluginDiagnosticsEnabled} workspaceId={activeWorkspace.id} replayPending={runtimePluginReplayPending} /><CliVersionBadge version={cliVersion} /></div>}
+        topBarRight={<CliVersionBadge version={cliVersion} />}
         topBarLeft={
           <WorkspaceSwitcherControl
             appTitle="Boring UI"
@@ -309,7 +240,7 @@ export function CliWorkspaceShell() {
       useSessions={useAgentSessions}
       chatParams={{ thinkingControl: true }}
       frontPluginHotReload={runtimePluginFrontLoadingEnabled ? "vite" : false}
-      topBarRight={<div className="flex items-center gap-2"><CliRuntimePluginBadge enabled={runtimePluginFrontLoadingEnabled} loading={runtimePluginReplayPending} trustLabel={runtimePluginTrustLabel} trustDescription={runtimePluginTrustDescription} /><RuntimePluginDiagnosticsButton enabled={runtimePluginDiagnosticsEnabled} workspaceId={null} replayPending={runtimePluginReplayPending} /><CliVersionBadge version={cliVersion} /></div>}
+      topBarRight={<CliVersionBadge version={cliVersion} />}
     />
   )
 }

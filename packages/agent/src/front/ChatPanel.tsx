@@ -4,6 +4,7 @@ import { motion } from 'motion/react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from '../shared/agentPluginEvents'
+import { ErrorCode } from '../shared/error-codes'
 
 // Lazy import so the DebugDrawer chunk (~10kb + its tab subcomponents that fetch
 // /api/v1/agent/sessions/:id/system-prompt) only loads when a host opts into
@@ -40,6 +41,7 @@ import {
   PromptInputSubmit,
   usePromptInputAttachments,
 } from './primitives/prompt-input'
+import { useOptionalPromptInputController } from './primitives/prompt-input-context'
 import {
   Attachments,
   Attachment,
@@ -90,6 +92,19 @@ export type ComposerBlocker = {
   actions?: ComposerBlockerAction[]
 }
 
+export type ChatPanelWorkspaceWarmupStatus =
+  | { status: 'preparing'; requirement?: 'workspace-fs' | 'sandbox-exec' | 'ui-bridge'; message?: string }
+  | { status: 'ready' }
+  | { status: 'failed'; requirement?: 'workspace-fs' | 'sandbox-exec' | 'ui-bridge'; message?: string }
+
+export type ChatSubmitSource = 'composer' | 'suggestion'
+
+export interface ChatSubmitContext {
+  files: FileUIPart[]
+  sessionId: string
+  source: ChatSubmitSource
+}
+
 function hasToolPart(message: UIMessage): boolean {
   return (message.parts ?? []).some((part) => isToolUIPart(part))
 }
@@ -121,6 +136,14 @@ function hasVisibleMessageContent(message: UIMessage): boolean {
   })
 }
 
+function messageText(message: UIMessage): string {
+  return (message.parts ?? [])
+    .filter(isTextPart)
+    .map((part) => part.text)
+    .join('\n')
+    .trim()
+}
+
 function hasPiVisibleDataParts(messages: UIMessage[]): boolean {
   return messages.some((message) =>
     (message.parts ?? []).some((part) => {
@@ -147,7 +170,8 @@ function collectSdkRepresentedMessageIds(messages: UIMessage[]): Set<string> {
     if (!hasVisibleMessageContent(message)) continue
     represented.add(message.id)
     for (const part of message.parts ?? []) {
-      if (dataPartType(part) !== 'data-pi-message-start') continue
+      const type = dataPartType(part)
+      if (type !== 'data-pi-message-start' && type !== 'data-pi-message-end') continue
       const data = (part as { data?: Record<string, unknown> }).data
       if (typeof data?.messageId === 'string') represented.add(data.messageId)
     }
@@ -165,6 +189,20 @@ function uniqueVisiblePiMessages(messages: UIMessage[]): UIMessage[] {
     out.push(message)
   }
   return out
+}
+
+function sdkVisibleMessagesWithoutPiOnlyAssistants(messages: UIMessage[]): UIMessage[] {
+  return messages.filter((message) => {
+    if (!hasVisibleMessageContent(message)) return false
+    if (message.role !== 'assistant') return true
+    const hasVisibleAssistantPart = (message.parts ?? []).some((part) => {
+      if (isTextPart(part)) return !isBlankTextPart(part)
+      if (isToolUIPart(part)) return true
+      const reasoning = getReasoningPart(part)
+      return Boolean(reasoning?.text.trim())
+    })
+    return hasVisibleAssistantPart
+  })
 }
 
 function getSettledPiAssistantIds(message: UIMessage): string[] {
@@ -211,6 +249,25 @@ function mergeSettledPiFallbacksInPlace(messages: UIMessage[], piMessages: UIMes
   }
 
   return out
+}
+
+function composerNoticeForWarmup(status: ChatPanelWorkspaceWarmupStatus | undefined): { title: string; detail?: string; code?: string } | null {
+  if (!status || status.status === 'ready') return null
+  if (status.status === 'failed') {
+    return {
+      title: 'Workspace setup failed.',
+      detail: status.message ?? 'Reload the workspace and try again.',
+      code: ErrorCode.enum.RUNTIME_PROVISIONING_FAILED,
+    }
+  }
+  return {
+    title: 'Preparing workspace…',
+    code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
+  }
+}
+
+function isComposerRuntimeNotice(error: { code?: string } | null | undefined): boolean {
+  return error?.code === ErrorCode.enum.AGENT_RUNTIME_NOT_READY || error?.code === ErrorCode.enum.RUNTIME_PROVISIONING_FAILED
 }
 
 function getQueuedPiTail(messages: UIMessage[], piMessages: UIMessage[]): UIMessage[] {
@@ -317,6 +374,8 @@ export interface ChatPanelProps {
   onData?: (part: unknown) => void
   /** Headers sent with chat and chat-history requests. */
   requestHeaders?: Record<string, string>
+  /** When false, skip initial chat history/stream resume requests until the user sends. */
+  hydrateMessages?: boolean
   /**
    * Called with a file path when the user clicks the path label inside
    * a read / write / edit tool card. Hosts (e.g. @hachej/boring-workspace)
@@ -332,6 +391,29 @@ export interface ChatPanelProps {
    * is zero-cost when off.
    */
   debug?: boolean
+  /** Draft text restored into the composer on mount/update. */
+  initialDraft?: string
+  /** Auto-submit initialDraft once after it is restored. Defaults to false. */
+  autoSubmitInitialDraft?: boolean
+  /** Called after initialDraft is applied to the composer. */
+  onDraftRestored?: () => void
+  /** Called after an auto-submitted initial draft is accepted for sending. */
+  onAutoSubmitInitialDraftAccepted?: () => void
+  /** Called after an auto-submitted initial draft finishes its turn. */
+  onAutoSubmitInitialDraftSettled?: () => void
+  /**
+   * Runs before any agent/model/session-history network send. Return false to
+   * cancel submission and keep the draft in the composer.
+   */
+  onBeforeSubmit?: (draft: string, ctx: ChatSubmitContext) => false | void | Promise<false | void>
+  /** Disable server-backed model/skill discovery for public/local-only shells. */
+  serverResourcesEnabled?: boolean
+  /** Center the empty-state prompt/composer for public landing experiences. */
+  emptyPlacement?: 'default' | 'hero'
+  /** Placeholder shown in the composer textarea. */
+  composerPlaceholder?: string
+  /** Current workspace warmup state. Preparing/failed states keep submits local so drafts are not lost. */
+  workspaceWarmupStatus?: ChatPanelWorkspaceWarmupStatus
   /** Generic host-provided blockers that prevent starting a new user turn. */
   composerBlockers?: ComposerBlocker[]
   /** Called when the user presses Stop in the composer. */
@@ -355,8 +437,19 @@ export function ChatPanel(props: ChatPanelProps) {
     defaultModel,
     onData,
     requestHeaders,
+    hydrateMessages,
     onOpenArtifact,
     debug = false,
+    initialDraft,
+    autoSubmitInitialDraft = false,
+    onDraftRestored,
+    onAutoSubmitInitialDraftAccepted,
+    onAutoSubmitInitialDraftSettled,
+    onBeforeSubmit,
+    serverResourcesEnabled = true,
+    emptyPlacement = 'default',
+    composerPlaceholder,
+    workspaceWarmupStatus,
     composerBlockers = [],
     onComposerStop,
     onComposerBlockerAction,
@@ -366,6 +459,24 @@ export function ChatPanel(props: ChatPanelProps) {
   const scrollToBottomRef = useRef<() => void>(() => {})
   const piDataHandlerRef = useRef<(part: unknown) => void>(() => {})
   const followUpDataHandlerRef = useRef<(part: unknown) => void>(() => {})
+  const autoSubmittedDraftRef = useRef<string | undefined>(undefined)
+  const autoSubmittingDraftRef = useRef<string | undefined>(undefined)
+  const pendingAutoSubmitUnlockRef = useRef<string | undefined>(undefined)
+  const pendingAutoSubmitSettleRef = useRef<string | undefined>(undefined)
+  const activeAutoSubmitSessionRef = useRef(sessionId)
+  const liveSessionIdRef = useRef(sessionId)
+  liveSessionIdRef.current = sessionId
+  activeAutoSubmitSessionRef.current = sessionId
+  const [acceptedAutoSubmittedDraft, setAcceptedAutoSubmittedDraft] = useState<string | undefined>(undefined)
+  const [composerRuntimeNotice, setComposerRuntimeNotice] = useState<{ title: string; detail?: string; code?: string } | null>(null)
+
+  useEffect(() => {
+    autoSubmittedDraftRef.current = undefined
+    autoSubmittingDraftRef.current = undefined
+    pendingAutoSubmitUnlockRef.current = undefined
+    pendingAutoSubmitSettleRef.current = undefined
+    setAcceptedAutoSubmittedDraft(undefined)
+  }, [sessionId])
 
   const {
     messages, sendMessage, setMessages, status, error, stop, clearError,
@@ -378,6 +489,7 @@ export function ChatPanel(props: ChatPanelProps) {
     },
     requestHeaders,
     persistMessages: capabilities.aiSdkOwnsHistory,
+    hydrateMessages,
   })
 
   const { piMessages, handleData: handlePiData } = usePiChatProjection({
@@ -409,9 +521,16 @@ export function ChatPanel(props: ChatPanelProps) {
   }, [handleFollowUpData])
 
   const mergedToolRenderers = mergeShadcnToolRenderers(toolRenderers)
-  const composerBlocked = composerBlockers.length > 0
+  const friendlyChatError = error ? friendlyError(error) : null
+  const runtimeErrorNotice = isComposerRuntimeNotice(friendlyChatError) ? friendlyChatError : null
+  const warmupNotice = composerNoticeForWarmup(workspaceWarmupStatus)
+  const composerStatusNotice = composerRuntimeNotice ?? runtimeErrorNotice ?? warmupNotice
+  const workspaceWarmupBlocked = Boolean(warmupNotice)
+  const composerBlocked = workspaceWarmupBlocked || composerBlockers.length > 0
   const primaryComposerBlocker = composerBlockers[0]
-  const composerBlockerLabel = primaryComposerBlocker?.label ?? 'Complete the pending workspace action to continue.'
+  const composerBlockerLabel = workspaceWarmupBlocked
+    ? (warmupNotice?.title ?? 'Preparing workspace…')
+    : primaryComposerBlocker?.label ?? 'Complete the pending workspace action to continue.'
 
   const registry = useMemo(
     () => {
@@ -425,12 +544,13 @@ export function ChatPanel(props: ChatPanelProps) {
     },
     [extraCommands, hotReloadEnabled],
   )
-  const skillsStamp = useServerSkills({ registry, requestHeaders })
+  const skillsStamp = useServerSkills({ registry, requestHeaders, enabled: serverResourcesEnabled })
   const allCommands = useMemo(() => registry.list(), [registry, skillsStamp])
 
   const { availableModels, model, setModel } = useChatModelSelection({
     defaultModel,
     requestHeaders,
+    enabled: serverResourcesEnabled,
   })
   const { thinkingLevel, setThinkingLevel, showThoughts, setShowThoughts } =
     useThinkingSettings(thinkingControl)
@@ -561,26 +681,53 @@ export function ChatPanel(props: ChatPanelProps) {
     const queuedPiTail = getQueuedPiTail(messages, piMessages)
     const sdkHasVisibleAssistant = hasStandardVisibleAssistantParts(messages)
 
+    let baseMessages: UIMessage[]
     if (sdkHasVisibleAssistant) {
       const mergedMessages = mergeSettledPiFallbacksInPlace(messages, piMessages)
-      return [
+      baseMessages = [
         ...mergedMessages,
         ...coalesceAssistantToolFragments(queuedPiTail),
         ...waitingTail,
       ]
+    } else if (piMessages.length > 0 && queuedPiTail.length > 0) {
+      baseMessages = [...coalesceAssistantToolFragments(piMessages), ...waitingTail]
+    } else if (piMessages.length > 0 && status === 'ready' && hasPiVisibleDataParts(messages)) {
+      baseMessages = [
+        ...sdkVisibleMessagesWithoutPiOnlyAssistants(messages),
+        ...coalesceAssistantToolFragments(piMessages),
+        ...waitingTail,
+      ]
+    } else {
+      baseMessages = [...messages, ...waitingTail]
     }
 
-    if (piMessages.length > 0 && queuedPiTail.length > 0) {
-      return [...coalesceAssistantToolFragments(piMessages), ...waitingTail]
-    }
+    const autoSubmittedDraft = acceptedAutoSubmittedDraft?.trim()
+    if (!autoSubmittedDraft) return baseMessages
+    const hasUserTurn = baseMessages.some((message) => message.role === 'user' && messageText(message).includes(autoSubmittedDraft))
+    if (hasUserTurn) return baseMessages
 
-    if (piMessages.length > 0 && status === 'ready' && hasPiVisibleDataParts(messages)) {
-      return [...coalesceAssistantToolFragments(piMessages), ...waitingTail]
+    const syntheticUserMessage: UIMessage = {
+      id: `auto-submitted-user:${sessionId}:${autoSubmittedDraft}`,
+      role: 'user',
+      parts: [{ type: 'text', text: autoSubmittedDraft }],
     }
-
-    return [...messages, ...waitingTail]
-  }, [messages, piMessages, projectedTailMessages, projectedStatusById, status])
-  const renderMessages = displayMessages
+    let insertAt = baseMessages.length
+    for (let index = baseMessages.length - 1; index >= 0; index -= 1) {
+      if (baseMessages[index]?.role === 'assistant') {
+        insertAt = index
+        break
+      }
+    }
+    return [
+      ...baseMessages.slice(0, insertAt),
+      syntheticUserMessage,
+      ...baseMessages.slice(insertAt),
+    ]
+  }, [acceptedAutoSubmittedDraft, messages, piMessages, projectedTailMessages, projectedStatusById, sessionId, status])
+  const renderMessages = displayMessages.filter((message) => (
+    message.role !== 'assistant' || hasVisibleMessageContent(message)
+  ))
+  const emptyHero = emptyPlacement === 'hero' && renderMessages.length === 0
 
   // Stop button: cancels stream, clears the queued follow-up, and lets host UI
   // cancel any host-level blocker that is waiting for user attention.
@@ -618,6 +765,14 @@ export function ChatPanel(props: ChatPanelProps) {
     [messages],
   )
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const promptInputController = useOptionalPromptInputController()
+  const setComposerDraft = useCallback((draft: string, focus = true) => {
+    promptInputController?.textInput.setInput(draft)
+    if (textareaRef.current) {
+      textareaRef.current.value = draft
+      if (focus) textareaRef.current.focus()
+    }
+  }, [promptInputController])
   const {
     mentionState,
     slashQuery,
@@ -636,16 +791,44 @@ export function ChatPanel(props: ChatPanelProps) {
     disabled: mentionState !== null || slashQuery !== null,
   })
 
-  async function handleSubmit({ text, files }: { text: string; files: FileUIPart[] }): Promise<void> {
+  const restoredDraftRef = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (initialDraft === undefined) return
+    if (restoredDraftRef.current === initialDraft) return
+    if (!promptInputController && !textareaRef.current) return
+    setComposerDraft(initialDraft, initialDraft.length > 0)
+    restoredDraftRef.current = initialDraft
+    onDraftRestored?.()
+  }, [initialDraft, onDraftRestored, promptInputController, setComposerDraft])
+
+  async function runBeforeSubmit(
+    draft: string,
+    files: FileUIPart[],
+    source: ChatSubmitSource,
+  ): Promise<boolean> {
+    const result = await onBeforeSubmit?.(draft, { files, sessionId, source })
+    return result !== false
+  }
+
+  async function handleSubmit(
+    { text, files }: { text: string; files: FileUIPart[] },
+    source: ChatSubmitSource = 'composer',
+  ): Promise<void | false> {
     // Guard against pointless empty submits (just Enter with nothing typed
     // and no attachment). The server schema requires message.length >= 1,
     // so an empty POST returns 400 — we catch it here and keep the
     // composer in place with focus for the user to type.
-    if (composerBlocked) return
+    if (composerBlocked) {
+      if (warmupNotice) setComposerRuntimeNotice(warmupNotice)
+      return false
+    }
     const trimmed = text.trim()
     if (trimmed.length === 0 && (!files || files.length === 0)) {
       return
     }
+    setComposerRuntimeNotice(null)
+    if (!(await runBeforeSubmit(text, files ?? [], source))) return false
+    if (liveSessionIdRef.current !== sessionId) return false
 
     const parsed = parseSlashCommand(text)
     if (parsed) {
@@ -700,6 +883,7 @@ export function ChatPanel(props: ChatPanelProps) {
       files: files ?? [],
       mentionedFiles,
     })
+    if (liveSessionIdRef.current !== sessionId) return false
     clearMentionedFiles()
 
     // Queue the message if the agent is currently streaming. The server-side
@@ -753,6 +937,54 @@ export function ChatPanel(props: ChatPanelProps) {
     )
   }
 
+  useEffect(() => {
+    const pendingDraft = pendingAutoSubmitUnlockRef.current
+    if (!pendingDraft) return
+    const localTurnStarted =
+      status === 'submitted' ||
+      status === 'streaming' ||
+      messages.some((message) =>
+        message.role === 'user' &&
+        message.parts.some((part) => isTextPart(part) && part.text.includes(pendingDraft)),
+      )
+    if (!localTurnStarted) return
+    pendingAutoSubmitUnlockRef.current = undefined
+    onAutoSubmitInitialDraftAccepted?.()
+  }, [messages, onAutoSubmitInitialDraftAccepted, status])
+  const prevAutoSubmitStatusRef = useRef(status)
+  useEffect(() => {
+    const prev = prevAutoSubmitStatusRef.current
+    prevAutoSubmitStatusRef.current = status
+    if (!pendingAutoSubmitSettleRef.current) return
+    if (status !== 'ready') return
+    if (prev !== 'submitted' && prev !== 'streaming') return
+    pendingAutoSubmitSettleRef.current = undefined
+    onAutoSubmitInitialDraftSettled?.()
+  }, [onAutoSubmitInitialDraftSettled, status])
+  useEffect(() => {
+    if (workspaceWarmupStatus?.status === 'ready') setComposerRuntimeNotice(null)
+  }, [workspaceWarmupStatus?.status])
+
+  useEffect(() => {
+    if (!autoSubmitInitialDraft) return
+    if (!initialDraft?.trim()) return
+    if (autoSubmittedDraftRef.current === initialDraft) return
+    if (autoSubmittingDraftRef.current === initialDraft) return
+    const targetSessionId = sessionId
+    autoSubmittingDraftRef.current = initialDraft
+    void (async () => {
+      const result = await handleSubmit({ text: initialDraft, files: [] }, 'composer')
+      if (activeAutoSubmitSessionRef.current !== targetSessionId) return
+      autoSubmittingDraftRef.current = undefined
+      if (result === false) return
+      autoSubmittedDraftRef.current = initialDraft
+      pendingAutoSubmitUnlockRef.current = initialDraft
+      pendingAutoSubmitSettleRef.current = initialDraft
+      setAcceptedAutoSubmittedDraft(initialDraft)
+      setComposerDraft('', false)
+    })()
+  }, [autoSubmitInitialDraft, handleSubmit, initialDraft, sessionId, setComposerDraft])
+
   return (
     <ArtifactOpenProvider onOpenArtifact={onOpenArtifact}>
     <div
@@ -773,6 +1005,7 @@ export function ChatPanel(props: ChatPanelProps) {
       <div
         className={cn(
           "flex h-full min-h-0 flex-col overflow-hidden",
+          emptyHero && "justify-center",
           chrome &&
             "mx-3 my-3 rounded-xl bg-[color:var(--surface-chat)] shadow-[0_1px_0_oklch(0_0_0/0.02),0_1px_2px_-1px_oklch(0_0_0/0.04),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.6)]",
         )}
@@ -801,7 +1034,7 @@ export function ChatPanel(props: ChatPanelProps) {
         />
       </div>
       <Conversation
-        className="flex-1"
+        className={emptyHero ? "max-h-[45vh] flex-none" : "flex-1"}
         aria-label="Agent conversation"
         aria-live="polite"
         onScrollToBottomReady={(scrollToBottom) => {
@@ -811,27 +1044,22 @@ export function ChatPanel(props: ChatPanelProps) {
         <ConversationContent className={cn(
           "mx-auto flex w-full flex-col gap-6",
           chrome ? "max-w-3xl px-6 py-8" : "max-w-[680px] px-4 py-4",
+          emptyHero && "py-4 text-center",
         )}>
-          {displayMessages.length === 0 && (
+          {renderMessages.length === 0 && (
             <ChatEmptyState
               eyebrow={emptyState?.eyebrow}
               title={emptyState?.title}
               description={emptyState?.description}
               suggestions={suggestions}
+              className={emptyHero ? "items-center text-center [&>p]:mx-auto" : undefined}
               onSelect={(s) => {
                 const text = s.prompt ?? s.label
                 if (!text.trim()) return
-                void sendMessage(
-                  { text, files: [] },
-                  {
-                    body: {
-                      sessionId,
-                      message: text,
-                      ...modelPayload(model),
-                      attachments: [],
-                    },
-                  },
-                )
+                void (async () => {
+                  const submitted = await handleSubmit({ text, files: [] }, 'suggestion')
+                  if (submitted === false) setComposerDraft(text)
+                })()
               }}
             />
           )}
@@ -854,7 +1082,16 @@ export function ChatPanel(props: ChatPanelProps) {
                 // content, otherwise one continuous thought renders as
                 // duplicate adjacent "thoughts" widgets.
                 if (!isBlankTextPart(part)) {
-                  items.push({ kind: 'part', part, key })
+                  const previous = items[items.length - 1]
+                  const duplicateAdjacentAssistantText =
+                    role === 'assistant' &&
+                    isTextPart(part) &&
+                    previous?.kind === 'part' &&
+                    isTextPart(previous.part) &&
+                    previous.part.text.trim() === part.text.trim()
+                  if (!duplicateAdjacentAssistantText) {
+                    items.push({ kind: 'part', part, key })
+                  }
                 }
                 return items
               }
@@ -889,6 +1126,16 @@ export function ChatPanel(props: ChatPanelProps) {
                 // often arrive between consecutive tool calls. They should not
                 // split one visual "Used command · read" group into multiple
                 // dropdowns.
+              } else if (item.kind === 'part' && isTextPart(item.part)) {
+                const prev = acc[acc.length - 1]
+                const duplicateAdjacentAssistantText =
+                  role === 'assistant' &&
+                  prev?.kind === 'part' &&
+                  isTextPart(prev.part) &&
+                  prev.part.text.trim() === item.part.text.trim()
+                if (!duplicateAdjacentAssistantText) {
+                  acc.push(item)
+                }
               } else {
                 acc.push(item)
               }
@@ -1068,8 +1315,8 @@ export function ChatPanel(props: ChatPanelProps) {
             )
           })}
           {(() => {
-            if (!error) return null
-            const friendly = friendlyError(error)
+            if (!friendlyChatError || isComposerRuntimeNotice(friendlyChatError)) return null
+            const friendly = friendlyChatError
             return (
               <Message from="assistant" className="!max-w-full">
                 <MessageContent className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3">
@@ -1136,7 +1383,30 @@ export function ChatPanel(props: ChatPanelProps) {
             <span>Working…</span>
           </div>
         </div>
-        {composerBlocked && (
+        {composerStatusNotice && (
+          <div
+            data-testid="chat-composer-runtime-notice"
+            role="status"
+            aria-live="polite"
+            className={cn(
+              "mx-auto mb-2 w-full max-w-3xl rounded-[var(--radius-md)] border border-accent/40 bg-[color:var(--accent-soft)]",
+              "px-3 py-2 text-xs text-foreground",
+            )}
+          >
+            <div className="flex items-start gap-2">
+              {composerStatusNotice.code === ErrorCode.enum.AGENT_RUNTIME_NOT_READY ? (
+                <Loader2 aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 animate-spin text-muted-foreground" />
+              ) : (
+                <AlertCircleIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-destructive" />
+              )}
+              <div className="min-w-0">
+                <div className="font-medium">{composerStatusNotice.title}</div>
+                {composerStatusNotice.detail && <div className="mt-0.5 text-muted-foreground">{composerStatusNotice.detail}</div>}
+              </div>
+            </div>
+          </div>
+        )}
+        {composerBlocked && !workspaceWarmupBlocked && (
           <div
             role="status"
             aria-live="polite"
@@ -1223,7 +1493,7 @@ export function ChatPanel(props: ChatPanelProps) {
         >
           <PromptInput
             data-boring-state={status}
-            onSubmit={handleSubmit}
+            onSubmit={(message) => handleSubmit(message)}
             multiple
             // Guard rails for the attachments pipeline. The server schema
             // caps `attachments` at 20 entries; we match that client-side and
@@ -1247,9 +1517,11 @@ export function ChatPanel(props: ChatPanelProps) {
           >
             <AttachmentsList />
             <PromptInputTextarea
-              placeholder={composerBlocked ? composerBlockerLabel : "Ask anything…"}
+              defaultValue={promptInputController ? undefined : initialDraft}
+              placeholder={composerBlocked ? composerBlockerLabel : composerPlaceholder ?? "Ask anything…"}
               disabled={composerBlocked}
               readOnly={composerBlocked}
+              ref={textareaRef}
               onChange={handleComposerChange}
               onKeyDown={handleComposerKeyDown}
               className={cn(

@@ -15,6 +15,7 @@ export interface ChatPanelHostShellProps {
   getSurface?: () => SurfaceShellApi | null
   isWorkbenchOpen?: () => boolean
   openWorkbench?: () => void
+  openWorkbenchSources?: () => void
   closeWorkbench?: () => void
 }
 
@@ -39,6 +40,7 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
     getSurface,
     isWorkbenchOpen,
     openWorkbench,
+    openWorkbenchSources,
     closeWorkbench,
     bridgeEndpoint,
     ...chatPanelProps
@@ -49,12 +51,12 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
       if (getSurface && isWorkbenchOpen && openWorkbench) {
         dispatchUiCommand(
           { kind: "openFile", params: { path } },
-          { surface: getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench },
+          { surface: getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench },
         )
       }
       props.onOpenArtifact?.(path)
     },
-    [getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench, props.onOpenArtifact],
+    [getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, props.onOpenArtifact],
   )
 
   const uiWorkspaceId = workspaceIdFromHeaders(chatPanelProps.requestHeaders)
@@ -69,10 +71,11 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
         surface: getSurface,
         isWorkbenchOpen,
         openWorkbench,
+        openWorkbenchSources,
         closeWorkbench,
       },
     })
-  }, [bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench, uiWorkspaceId])
+  }, [bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, uiWorkspaceId])
 
   const handleComposerStop = useCallback(() => {
     window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: chatPanelProps.sessionId } }))
@@ -89,11 +92,11 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
       if (getSurface && isWorkbenchOpen && openWorkbench) {
         dispatchUiCommand(
           { kind: "openSurface", params: { kind: blocker.surfaceKind, target: blocker.target, meta: {} } },
-          { surface: getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench },
+          { surface: getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench },
         )
       }
     },
-    [chatPanelProps.sessionId, closeWorkbench, getSurface, isWorkbenchOpen, openWorkbench],
+    [chatPanelProps.sessionId, closeWorkbench, getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources],
   )
 
   const handleData = useCallback(
