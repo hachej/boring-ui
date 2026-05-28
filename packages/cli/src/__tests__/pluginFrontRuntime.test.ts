@@ -195,7 +195,13 @@ describe("pluginFrontRuntime", () => {
       const viteClient = await app.inject({ method: "GET", url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/client` })
       expect(viteClient.statusCode).toBe(200)
       expect(viteClient.headers["content-type"]).toContain("javascript")
-      expect(viteClient.body).toContain(`${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/env`)
+      expect(viteClient.body).not.toContain("/@vite/env")
+      expect(viteClient.body).not.toContain("/@fs/")
+      const envSupportPath = viteClient.body.match(new RegExp(`"(${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/(?:env|proxy/[^"']*env\\.mjs))"`))?.[1]
+      expect(envSupportPath).toBeTruthy()
+      const mintedEnv = await app.inject({ method: "GET", url: envSupportPath! })
+      expect(mintedEnv.statusCode).toBe(200)
+      expect(mintedEnv.headers["content-type"]).toContain("javascript")
 
       const viteEnv = await app.inject({ method: "GET", url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/env` })
       expect(viteEnv.statusCode).toBe(200)

@@ -1,10 +1,31 @@
 import { resolve } from "node:path"
-import { defineConfig } from "vitest/config"
+import { configDefaults, defineConfig } from "vitest/config"
 
 const root = __dirname
 const repoRoot = resolve(root, "..", "..")
 
 export default defineConfig({
+  test: {
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "cli",
+          exclude: [...configDefaults.exclude, "src/__tests__/pluginFrontRuntime.test.ts"],
+          sequence: { groupOrder: 0 },
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "runtime-host",
+          include: ["src/__tests__/pluginFrontRuntime.test.ts"],
+          fileParallelism: false,
+          sequence: { groupOrder: 1 },
+        },
+      },
+    ],
+  },
   resolve: {
     alias: [
       { find: /^@hachej\/boring-agent\/shared$/, replacement: resolve(repoRoot, "packages/agent/src/shared/index.ts") },
