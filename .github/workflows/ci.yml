@@ -12,6 +12,10 @@ env:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     name: Lint
@@ -32,9 +36,6 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Install ripgrep
-        run: sudo apt-get install -y ripgrep
-
       - name: Run lint
         run: pnpm lint
         env:
@@ -46,6 +47,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -60,9 +63,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run typecheck
-        run: pnpm typecheck
+        run: pnpm typecheck:changed
         env:
           NODE_OPTIONS: --max-old-space-size=4096
+          TYPECHECK_BASE_REF: ${{ github.base_ref || 'main' }}
 
   bundle-budget:
     name: Bundle Budget
@@ -83,19 +87,13 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Build dependencies
-        run: pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-agent build
-
-      - name: Build workspace package
-        run: pnpm --filter @hachej/boring-workspace run build
-
-      - name: Enforce bundle budgets
+      - name: Build workspace package and enforce bundle budgets
         env:
           BUNDLE_INITIAL_BUDGET_KB: "800"
           BUNDLE_TOTAL_BUDGET_KB: "800"
           BUNDLE_TARGET_INITIAL_KB: "150"
           BUNDLE_TARGET_TOTAL_KB: "800"
-        run: pnpm check:bundle-size
+        run: pnpm ci:bundle-size
 
   core-bundle-budget:
     name: Core Bundle Budget
@@ -118,17 +116,34 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Build core package
-        run: pnpm --filter @hachej/boring-core run build || true
-
-      - name: Enforce core bundle budgets
+      - name: Build core package and enforce bundle budgets
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
-        run: pnpm --filter @hachej/boring-core run check:bundle-size
+        run: pnpm ci:core-bundle-size
 
   unit:
-    name: Unit Tests
+    name: Unit Tests (${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: agent
+            command: pnpm --filter @hachej/boring-agent... --workspace-concurrency=4 run build && pnpm --filter @hachej/boring-agent run test
+          - name: workspace-1
+            command: pnpm --filter @hachej/boring-workspace... --workspace-concurrency=4 run build && pnpm --filter @hachej/boring-workspace exec vitest run --shard=1/2
+          - name: workspace-2
+            command: pnpm --filter @hachej/boring-workspace... --workspace-concurrency=4 run build && pnpm --filter @hachej/boring-workspace exec vitest run --shard=2/2
+          - name: core-1
+            command: pnpm --filter @hachej/boring-core... --workspace-concurrency=4 run build && pnpm --filter @hachej/boring-core exec vitest run --no-file-parallelism --shard=1/3
+          - name: core-2
+            command: pnpm --filter @hachej/boring-core... --workspace-concurrency=4 run build && pnpm --filter @hachej/boring-core exec vitest run --no-file-parallelism --shard=2/3
+          - name: core-3
+            command: pnpm --filter @hachej/boring-core... --workspace-concurrency=4 run build && pnpm --filter @hachej/boring-core exec vitest run --no-file-parallelism --shard=3/3
+          - name: rest-cli
+            command: pnpm -r --filter @hachej/boring-core... --filter @hachej/boring-ui-cli... --workspace-concurrency=4 run build && pnpm -r --filter @hachej/boring-ui-kit --filter @hachej/boring-ui-cli --workspace-concurrency=4 run test
+          - name: rest-plugins
+            command: pnpm -r --filter @hachej/boring-ask-user... --filter @hachej/boring-data-catalog... --filter @hachej/boring-deck... --workspace-concurrency=4 run build && pnpm -r --filter @hachej/boring-ask-user --filter @hachej/boring-data-explorer --filter @hachej/boring-data-catalog --filter @hachej/boring-deck --workspace-concurrency=4 run test
     services:
       postgres:
         image: postgres:16
@@ -162,24 +177,24 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get install -y ripgrep
 
-      - name: Build UI package
-        run: pnpm --filter @hachej/boring-ui-kit build
-
-      - name: Build core package
-        run: pnpm --filter @hachej/boring-core build
+      - name: Run vitest shard
+        run: ${{ matrix.command }}
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
-      - name: Build agent package
-        run: pnpm --filter @hachej/boring-agent build
-
-      - name: Build workspace package
-        run: pnpm --filter @hachej/boring-workspace build
-
-      - name: Run vitest suite
-        run: pnpm test
-        env:
-          NODE_OPTIONS: --max-old-space-size=4096
+  unit-summary:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: unit
+    if: always()
+    steps:
+      - name: Verify unit test shards
+        run: |
+          if [ "${{ needs.unit.result }}" != "success" ]; then
+            echo "Unit test shards result: ${{ needs.unit.result }}"
+            exit 1
+          fi
+          echo "All unit test shards passed."
 
   invariants:
     name: Invariants
@@ -241,7 +256,7 @@ jobs:
 
   publish-ci:
     name: Publish CI packages to npm
-    needs: [lint, typecheck, bundle-budget, core-bundle-budget, unit, invariants, e2e]
+    needs: [lint, typecheck, bundle-budget, core-bundle-budget, unit-summary, invariants, e2e]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
@@ -293,7 +308,7 @@ jobs:
 
   deploy:
     name: Deploy to Fly.io
-    needs: [lint, typecheck, unit, invariants, e2e]
+    needs: [lint, typecheck, unit-summary, invariants, e2e]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:

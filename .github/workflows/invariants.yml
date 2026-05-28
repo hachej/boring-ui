@@ -35,7 +35,7 @@ jobs:
         run: pnpm lint:invariants
 
       - name: Build agent package and assert dist artifacts
-        run: pnpm --dir packages/agent build
+        run: pnpm --filter @hachej/boring-agent... --workspace-concurrency=4 run build
 
       - name: Assert agent has zero runtime imports from core
         run: pnpm check:agent-isolation

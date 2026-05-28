@@ -16,8 +16,8 @@
     "build": "tsup",
     "build:front": "vite build",
     "build:full": "node scripts/build-full.mjs",
-    "typecheck": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && tsc --noEmit",
-    "test": "pnpm --filter @hachej/boring-ui-kit build && vitest run"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@hachej/boring-agent": "workspace:*",

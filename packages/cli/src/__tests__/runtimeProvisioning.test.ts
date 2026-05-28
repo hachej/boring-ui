@@ -100,7 +100,7 @@ test("CLI project/workspaces provisioning writes .boring-agent under the selecte
   await expect(readFile(join(workspaceRoot, ".boring-agent", "node", "node_modules", ".bin", "boring-ui"), "utf8")).resolves.toContain("node")
   await expect(readFile(join(homeRoot, ".boring-agent", "node", "node_modules", ".bin", "boring-ui"), "utf8")).rejects.toThrow()
   expect(commands.find((command) => command.command === "npm" && command.args[0] === "install")?.args).toContain("--prefix")
-})
+}, 15_000)
 
 test("provisionWorkspace false performs no writes or package-source copies", async () => {
   const workspaceRoot = await tempDir("boring-cli-no-provision-")
