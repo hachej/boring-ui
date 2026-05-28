@@ -367,8 +367,14 @@ export function WorkspaceAgentFront<
     surfaceOpenRef.current = true
     setSurfaceOpen(true)
   }, [setSurfaceOpen])
+  const openWorkbenchSources = useCallback(() => {
+    surfaceOpenRef.current = true
+    setSurfaceOpen(true)
+    setWorkbenchLeftOpen(true)
+  }, [setSurfaceOpen, setWorkbenchLeftOpen])
   const closeWorkbench = useCallback(() => {
     surfaceOpenRef.current = false
+    surfaceRef.current = null
     setSurfaceOpen(false)
   }, [setSurfaceOpen])
   const capturedPlugins = useMemo(
@@ -399,11 +405,12 @@ export function WorkspaceAgentFront<
         surface: getSurface,
         isWorkbenchOpen,
         openWorkbench,
+        openWorkbenchSources,
       })
     }
     globalThis.addEventListener?.(UI_COMMAND_EVENT, handler)
     return () => globalThis.removeEventListener?.(UI_COMMAND_EVENT, handler)
-  }, [getSurface, isWorkbenchOpen, openWorkbench])
+  }, [getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources])
 
   useEffect(() => {
     if (resolvedActiveId) onActiveSessionIdChange?.(resolvedActiveId)
@@ -418,6 +425,7 @@ export function WorkspaceAgentFront<
       getSurface,
       isWorkbenchOpen,
       openWorkbench,
+      openWorkbenchSources,
       closeWorkbench,
       extraCommands,
       // Forward the explicit prop when set. Omitting the key (when undefined)
@@ -425,7 +433,7 @@ export function WorkspaceAgentFront<
       // value passed through chatParams.
       ...(hotReloadEnabled !== undefined ? { hotReloadEnabled } : {}),
     }),
-    [chatParams, chatSessionId, requestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench, extraCommands, hotReloadEnabled],
+    [chatParams, chatSessionId, requestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, extraCommands, hotReloadEnabled],
   )
   const resolvedAuthHeaders = useMemo(() => {
     if (!authHeaders && Object.keys(requestHeaders).length === 0) return undefined

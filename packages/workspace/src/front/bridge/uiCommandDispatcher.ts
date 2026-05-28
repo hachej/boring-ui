@@ -20,6 +20,8 @@ export interface DispatchContext {
   isWorkbenchOpen: () => boolean
   /** Toggle the workbench pane open. Must be a no-op when already open. */
   openWorkbench: () => void
+  /** Open the workbench sources/file-tree pane. Must be a no-op when already open. */
+  openWorkbenchSources?: () => void
   /** Close the workbench pane when a command opened it only for an ephemeral task. */
   closeWorkbench?: () => void
 }
@@ -169,6 +171,7 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
       if (!path) return
       const wasClosed = !ctx.isWorkbenchOpen()
       if (wasClosed) ctx.openWorkbench()
+      ctx.openWorkbenchSources?.()
       const run = (surface: SurfaceShellApi) => {
         try {
           surface.expandToFile(path)
