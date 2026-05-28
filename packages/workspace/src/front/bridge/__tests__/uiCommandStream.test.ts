@@ -6,20 +6,24 @@ function fakeSurface(): SurfaceShellApi & {
   __opened: string[]
   __surfaces: unknown[]
   __panels: unknown[]
+  __expanded: string[]
   __leftClosed: number
 } {
   const opened: string[] = []
   const surfaces: unknown[] = []
   const panels: unknown[] = []
+  const expanded: string[] = []
   const surface: SurfaceShellApi & {
     __opened: string[]
     __surfaces: unknown[]
     __panels: unknown[]
+    __expanded: string[]
     __leftClosed: number
   } = {
     openFile: (p: string) => opened.push(p),
     openSurface: (request: unknown) => surfaces.push(request),
     openPanel: (cfg: unknown) => panels.push(cfg),
+    expandToFile: (path: string) => expanded.push(path),
     closeWorkbenchLeftPane: () => {
       surface.__leftClosed += 1
     },
@@ -27,6 +31,7 @@ function fakeSurface(): SurfaceShellApi & {
     __opened: opened,
     __surfaces: surfaces,
     __panels: panels,
+    __expanded: expanded,
     __leftClosed: 0,
   }
   return surface

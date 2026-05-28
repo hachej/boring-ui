@@ -6,20 +6,24 @@ function fakeSurface(): SurfaceShellApi & {
   __opened: string[]
   __surfaces: unknown[]
   __panels: unknown[]
+  __expanded: string[]
   __leftClosed: number
 } {
   const opened: string[] = []
   const surfaces: unknown[] = []
   const panels: unknown[] = []
+  const expanded: string[] = []
   const surface: SurfaceShellApi & {
     __opened: string[]
     __surfaces: unknown[]
     __panels: unknown[]
+    __expanded: string[]
     __leftClosed: number
   } = {
     openFile: (path: string) => opened.push(path),
     openSurface: (request: unknown) => surfaces.push(request),
     openPanel: (cfg: unknown) => panels.push(cfg),
+    expandToFile: (path: string) => expanded.push(path),
     closeWorkbenchLeftPane: () => {
       surface.__leftClosed += 1
     },
@@ -27,6 +31,7 @@ function fakeSurface(): SurfaceShellApi & {
     __opened: opened,
     __surfaces: surfaces,
     __panels: panels,
+    __expanded: expanded,
     __leftClosed: 0,
   }
   return surface
@@ -179,6 +184,28 @@ describe("dispatchUiCommand", () => {
     dispatchUiCommand({ kind: "openPanel", params: { id: "logs" } }, c)
     dispatchUiCommand({ kind: "openPanel", params: { component: "log-viewer" } }, c)
     expect(c.__surface.__panels).toEqual([])
+  })
+
+  it("expandToFile reveals a tree path without opening a file", () => {
+    const openWorkbenchSources = vi.fn()
+    const c = ctx({ openWorkbenchSources })
+    dispatchUiCommand({ kind: "expandToFile", params: { path: "src" } }, c)
+    expect(openWorkbenchSources).toHaveBeenCalledOnce()
+    expect(c.__surface.__expanded).toEqual(["src"])
+    expect(c.__surface.__opened).toEqual([])
+  })
+
+  it("expandToFile opens the workbench and sources when closed", () => {
+    const raf = vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => { cb(0); return 0 })
+    const surface = fakeSurface()
+    const openWorkbenchSources = vi.fn()
+    let open = false
+    const c = ctx({ isWorkbenchOpen: () => open, openWorkbench: () => { open = true }, openWorkbenchSources }, surface)
+    dispatchUiCommand({ kind: "expandToFile", params: { path: "src" } }, c)
+    expect(open).toBe(true)
+    expect(openWorkbenchSources).toHaveBeenCalledOnce()
+    expect(c.__surface.__expanded).toEqual(["src"])
+    raf.mockRestore()
   })
 
   it("closeWorkbenchLeftPane closes the workbench left pane", () => {

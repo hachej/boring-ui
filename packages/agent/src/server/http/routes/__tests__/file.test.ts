@@ -1,5 +1,5 @@
 import Fastify, { type FastifyInstance } from 'fastify'
-import { mkdtemp, readFile, rm, writeFile } from 'fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
@@ -61,6 +61,40 @@ describe('file routes (NodeWorkspace integration)', () => {
     })
     expect(deleteRes.statusCode).toBe(200)
     expect(deleteRes.json()).toEqual({ ok: true })
+  })
+
+  test('DELETE /api/v1/files removes folders recursively', async () => {
+    const { app, workspaceRoot } = await createTestApp()
+    await mkdir(join(workspaceRoot, 'src/nested'), { recursive: true })
+    await writeFile(join(workspaceRoot, 'src/nested/deep.txt'), 'deep')
+
+    const deleteRes = await app.inject({
+      method: 'DELETE',
+      url: '/api/v1/files?path=src',
+    })
+    expect(deleteRes.statusCode).toBe(200)
+    expect(deleteRes.json()).toEqual({ ok: true })
+
+    const readRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files?path=src/nested/deep.txt',
+    })
+    expect(readRes.statusCode).toBe(404)
+
+    await expect(stat(join(workspaceRoot, 'src'))).rejects.toThrow()
+  })
+
+  test('DELETE /api/v1/files rejects removing the workspace root', async () => {
+    const { app, workspaceRoot } = await createTestApp()
+    await writeFile(join(workspaceRoot, 'keep.txt'), 'x')
+
+    const deleteRes = await app.inject({
+      method: 'DELETE',
+      url: '/api/v1/files?path=.',
+    })
+    expect(deleteRes.statusCode).toBe(403)
+
+    await expect(readFile(join(workspaceRoot, 'keep.txt'), 'utf8')).resolves.toBe('x')
   })
 
   test('POST /api/v1/files with createDirs writes nested files', async () => {

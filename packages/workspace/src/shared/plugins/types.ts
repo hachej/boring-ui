@@ -92,6 +92,7 @@ export interface LeftTabParams {
   searchQuery?: string
   bridge?: unknown
   chromeless?: boolean
+  revealFileTreeRequest?: { path: string; seq: number } | null
 }
 
 export type LeftTabComponent = ComponentType<PaneProps<LeftTabParams>>

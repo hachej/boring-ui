@@ -31,6 +31,7 @@ export const workspaceEvents = {
 export type WorkspacePanelMatch =
   | { id: string }
   | { param: string; value: unknown }
+  | { paramPrefix: string; value: string }
 
 /**
  * Discriminated origin metadata. Encoded as a union (rather than a

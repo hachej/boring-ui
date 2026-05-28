@@ -534,6 +534,7 @@ describe("ChatLayout component", () => {
       openSurface: vi.fn(),
       openPanel: vi.fn(),
       closeWorkbenchLeftPane: vi.fn(),
+      expandToFile: vi.fn(),
       getSnapshot: () => ({ openTabs: [], activeTab: null }),
     }
 

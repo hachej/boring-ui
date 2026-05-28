@@ -120,6 +120,7 @@ describe("ChatPanelHost", () => {
       openSurface,
       openPanel: vi.fn(),
       closeWorkbenchLeftPane: vi.fn(),
+      expandToFile: vi.fn(),
       getSnapshot: () => ({ openTabs: [], activeTab: null }),
     }
     render(
@@ -141,6 +142,7 @@ describe("ChatPanelHost", () => {
       openSurface: vi.fn(),
       openPanel: vi.fn(),
       closeWorkbenchLeftPane: vi.fn(),
+      expandToFile: vi.fn(),
       getSnapshot: () => ({ openTabs: [], activeTab: null }),
     }
     const rafQueue: FrameRequestCallback[] = []

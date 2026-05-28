@@ -17,6 +17,8 @@ afterEach(async () => {
   )
 })
 
+const EPERM_CODE = 'EPERM'
+
 const REASONS: PathRejectReason[] = [
   'path-escape',
   'absolute-path',
@@ -90,14 +92,25 @@ test('readdir returns only name and kind fields', async () => {
   }
 })
 
-test('unlink supports empty dir and rejects non-empty dir', async () => {
+test('unlink supports empty and non-empty directories recursively', async () => {
   const { root, workspace } = await setupWorkspace()
   await workspace.mkdir('empty', { recursive: false })
   await workspace.unlink('empty')
 
-  await mkdir(join(root, 'non-empty'))
+  await mkdir(join(root, 'non-empty', 'nested'), { recursive: true })
   await workspace.writeFile('non-empty/file.txt', 'x')
-  await expect(workspace.unlink('non-empty')).rejects.toThrow()
+  await workspace.writeFile('non-empty/nested/deep.txt', 'y')
+  await workspace.unlink('non-empty')
+  await expect(workspace.stat('non-empty')).rejects.toThrow()
+  await expect(workspace.readFile('non-empty/nested/deep.txt')).rejects.toThrow()
+})
+
+test('unlink rejects removing the workspace root', async () => {
+  const { workspace } = await setupWorkspace()
+  await workspace.writeFile('keep.txt', 'x')
+
+  await expect(workspace.unlink('.')).rejects.toMatchObject({ code: EPERM_CODE })
+  await expect(workspace.readFile('keep.txt')).resolves.toBe('x')
 })
 
 test('path traversal vectors are rejected with categorized reasons', async () => {

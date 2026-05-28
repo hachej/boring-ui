@@ -209,4 +209,25 @@ describe("FileTree", () => {
       expect(screen.getByText("child.ts")).toBeInTheDocument()
     })
   })
+
+  it("keeps a reveal request pending until the target node exists", async () => {
+    const onRevealHandled = vi.fn()
+    const { rerender } = render(
+      <FileTree files={[]} height={200} revealPath="deck" onRevealHandled={onRevealHandled} />,
+    )
+
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    expect(onRevealHandled).not.toHaveBeenCalled()
+
+    rerender(
+      <FileTree
+        files={[{ name: "deck", kind: "dir", path: "deck", children: [] }]}
+        height={200}
+        revealPath="deck"
+        onRevealHandled={onRevealHandled}
+      />,
+    )
+
+    await waitFor(() => expect(onRevealHandled).toHaveBeenCalledWith("deck"))
+  })
 })

@@ -92,6 +92,7 @@ describe("FilesystemFilePanelBinding", () => {
         match: [
           { id: "file:src/dead.ts" },
           { param: "path", value: "src/dead.ts" },
+          { paramPrefix: "path", value: "src/dead.ts/" },
         ],
       }),
     )

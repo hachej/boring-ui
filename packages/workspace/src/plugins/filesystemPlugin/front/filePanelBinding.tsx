@@ -22,7 +22,11 @@ export function FilesystemFilePanelBinding() {
     const offDeleted = events.on(filesystemEvents.deleted, ({ path, ...meta }) => {
       events.emit(workspaceEvents.panelClose, {
         ...meta,
-        match: [{ id: `file:${path}` }, { param: "path", value: path }],
+        match: [
+          { id: `file:${path}` },
+          { param: "path", value: path },
+          { paramPrefix: "path", value: `${path}/` },
+        ],
       })
     })
 
