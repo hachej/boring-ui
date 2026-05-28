@@ -9,6 +9,8 @@
  */
 
 export interface BoringPackageBoringField {
+  /** Optional stable plugin id. Defaults to package.json#name normalized for package discovery. */
+  id?: string
   /** Browser entry that default-exports a BoringFrontFactory. */
   front?: string
   /** Workspace/UI support server entry. Set false to disable convention lookup. */
@@ -140,8 +142,8 @@ function validateBoringField(
       ))
     }
   }
-  if (boring.id !== undefined) {
-    issues.push(issue("INVALID_FIELD", "boring.id", "boring.id is not supported; package discovery identity comes from package.json#name"))
+  if (boring.id !== undefined && (typeof boring.id !== "string" || !isValidBoringPluginId(boring.id))) {
+    issues.push(issue("INVALID_ID", "boring.id", "boring.id must start with a letter or number and use only letters, numbers, dot, underscore, colon, or dash"))
   }
   const front = boring.front
   if (front !== undefined && (typeof front !== "string" || !isSafePluginRelativePath(front))) {
@@ -155,6 +157,7 @@ function validateBoringField(
     issues.push(issue("INVALID_FIELD", "boring.label", "boring.label must be a string when provided"))
   }
   return {
+    ...(typeof boring.id === "string" ? { id: boring.id } : {}),
     ...(typeof boring.front === "string" ? { front: boring.front } : {}),
     ...(typeof boring.server === "string" || boring.server === false ? { server: boring.server } : {}),
     ...(typeof boring.label === "string" ? { label: boring.label } : {}),

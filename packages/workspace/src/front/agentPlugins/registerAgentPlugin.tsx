@@ -296,6 +296,9 @@ function commitCapturedFrontFactory(
 ): void {
   if (captured.providers.length > 0 || captured.bindings.length > 0) {
     warnUnsupportedDynamicContributions(pluginId, captured)
+    // Provider/binding contributions require mounting in the provider tree,
+    // which hot reload cannot do safely yet. Throw so the caller preserves any
+    // existing static or previously-loaded registrations.
     throw new Error(`PLUGIN_UNSUPPORTED_DYNAMIC_CONTRIBUTIONS: plugin "${pluginId}" registered provider/binding outputs that require an app restart`)
   }
   const payloads = buildRegistryPayloads(pluginId, captured)

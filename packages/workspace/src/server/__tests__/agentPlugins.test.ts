@@ -174,7 +174,7 @@ describe("boring agent plugin assets", () => {
     expect(plugin.pi?.systemPrompt).toBe("Test plugin context")
   })
 
-  test("rejects boring.id because package.json name is the plugin id", async () => {
+  test("uses boring.id as explicit plugin id when provided", async () => {
     const root = await tmp("boring-plugin-explicit-id-")
     await writePlugin(root)
     const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
@@ -182,12 +182,8 @@ describe("boring agent plugin assets", () => {
     await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
 
     const result = preflightBoringPlugins([root])
-    expect(result.ok).toBe(false)
-    expect(result.errors[0]).toMatchObject({
-      pluginId: "boring-plugin-test",
-      code: "INVALID_PLUGIN_METADATA",
-      message: expect.stringContaining("boring.id is not supported"),
-    })
+    expect(result.ok).toBe(true)
+    expect(readBoringPlugins([root])[0]?.id).toBe("test-plugin")
   })
 
   test("rejects invalid effective ids derived from package name", async () => {
@@ -452,6 +448,11 @@ describe("boring agent plugin assets", () => {
     const validRoot = await tmp("boring-plugin-pi-snapshot-valid-")
     const invalidRoot = await tmp("boring-plugin-pi-snapshot-invalid-")
     await writePlugin(validRoot)
+    await mkdir(join(validRoot, "skills", "deck-authoring"), { recursive: true })
+    await writeFile(join(validRoot, "skills", "deck-authoring", "SKILL.md"), "# Deck authoring\n", "utf8")
+    const validPkg = JSON.parse(await readFile(join(validRoot, "package.json"), "utf8"))
+    validPkg.pi.skills = ["skills/deck-authoring"]
+    await writeFile(join(validRoot, "package.json"), JSON.stringify(validPkg), "utf8")
     await mkdir(invalidRoot, { recursive: true })
     await writeFile(join(invalidRoot, "package.json"), JSON.stringify({
       name: "broken-plugin",
@@ -467,6 +468,8 @@ describe("boring agent plugin assets", () => {
     const snapshot = manager.inspectLoadedPiSnapshot()
     expect(snapshot.systemPromptAppend).toContain("Test plugin context")
     expect(snapshot.systemPromptAppend).not.toContain("Broken plugin context")
+    expect(snapshot.additionalSkillPaths).toContain(join(validRoot, "skills"))
+    expect(snapshot.additionalSkillPaths).not.toContain(join(validRoot, "skills", "deck-authoring"))
   })
 
   test("aggregatePluginPrompts returns undefined when no plugin contributes a prompt", async () => {

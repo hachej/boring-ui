@@ -246,7 +246,7 @@ describe("piEventToChunks — full mapping table", () => {
   });
 
   it("agent_end → empty (handled by consumer)", () => {
-    const r = piEventToChunks({ type: "agent_end", messages: [] } as AgentSessionEvent);
+    const r = piEventToChunks({ type: "agent_end", messages: [], willRetry: false } as AgentSessionEvent);
     expect(r).toEqual([]);
   });
 });

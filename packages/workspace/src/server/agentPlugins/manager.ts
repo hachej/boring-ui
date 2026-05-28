@@ -19,6 +19,10 @@ import type {
 import { normalizeBoringPluginPiPackages } from "./piPackages"
 import { compactPiPackages, type WorkspacePiPackageSource } from "../plugins/bootstrapServer"
 
+function skillPathForPiLoader(path: string): string {
+  return existsSync(join(path, "SKILL.md")) ? dirname(path) : path
+}
+
 interface LoadedPluginRecord extends BoringServerPluginManifest {
   revision: number
   signature: string
@@ -266,7 +270,7 @@ export class BoringPluginAssetManager {
       .map((plugin) => plugin.pi?.systemPrompt?.trim())
       .filter((prompt): prompt is string => Boolean(prompt))
     return {
-      additionalSkillPaths: plugins.flatMap((plugin) => plugin.skillPaths ?? []),
+      additionalSkillPaths: [...new Set(plugins.flatMap((plugin) => plugin.skillPaths ?? []).map(skillPathForPiLoader))],
       packages: compactPiPackages(normalizeBoringPluginPiPackages(plugins)),
       extensionPaths: plugins.flatMap((plugin) => plugin.extensionPaths ?? []),
       ...(prompts.length > 0 ? { systemPromptAppend: `# Loaded boring-ui plugin context\n\n${prompts.join("\n\n")}` } : {}),

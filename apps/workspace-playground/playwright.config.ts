@@ -1,4 +1,9 @@
 import { defineConfig } from "@playwright/test"
+import { dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
+
+const APP_DIR = dirname(fileURLToPath(import.meta.url))
+const E2E_WORKSPACE_ROOT = resolve(APP_DIR, "e2e/fixtures/workspace")
 
 export default defineConfig({
   testDir: "../..",
@@ -31,9 +36,9 @@ export default defineConfig({
     // boring-macro-v2 also binds 5210. The vite proxy reads that env
     // var and forwards /api/v1/agent + /api/v1/ui to the right
     // backend.
-    command: "PORT=5380 AGENT_API_PORT=5390 pnpm dev",
+    command: `cd ${APP_DIR} && PORT=5380 AGENT_API_PORT=5390 BORING_AGENT_WORKSPACE_ROOT=${E2E_WORKSPACE_ROOT} pnpm exec vite`,
     port: 5380,
     reuseExistingServer: !process.env.CI,
-    timeout: 150_000,
+    timeout: 300_000,
   },
 })

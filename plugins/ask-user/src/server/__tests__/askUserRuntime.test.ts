@@ -3,7 +3,7 @@ import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { describe, expect, it, vi } from "vitest"
 import { ASK_USER_ERROR_CODES } from "../../shared/error-codes"
-import type { AskUserFormSchema } from "../../shared/types"
+import type { AskUserFormSchema, AskUserQuestion } from "../../shared/types"
 import { FileAskUserStore } from "../askUserStore"
 import { AskUserRuntime, InProcessAskUserCoordinator, requireAskUserRuntime } from "../askUserRuntime"
 
@@ -20,6 +20,21 @@ async function pendingQuestion(store: FileAskUserStore, sessionId: string) {
     expect(question).not.toBeNull()
     return question!
   }, { timeout: 5_000 })
+}
+
+function makeQuestion(overrides: Partial<AskUserQuestion> = {}): AskUserQuestion {
+  const now = new Date().toISOString()
+  return {
+    questionId: "q1",
+    sessionId: "s1",
+    ownerPrincipalId: "anonymous",
+    status: "ready",
+    schema,
+    answerToken: "token",
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  }
 }
 
 describe("InProcessAskUserCoordinator", () => {
@@ -96,9 +111,9 @@ describe("AskUserRuntime", () => {
 
   it("abandons if submit/cancel discovers a missing waiter", async () => {
     const store = await makeStore()
-    const runtime = new AskUserRuntime({ store })
-    void runtime.ask({ sessionId: "s1", schema })
-    const question = await pendingQuestion(store, "s1")
+    const question = makeQuestion()
+    await store.createPending(question)
+
     const restarted = new AskUserRuntime({ store })
     await restarted.submitAnswer(question.questionId, "s1", {})
     await expect(store.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "abandoned" })

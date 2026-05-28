@@ -475,7 +475,10 @@ export function createPiCodingAgentHarness(opts: {
 
     const { session: piSession } = await createAgentSession({
       cwd: ctx.workdir,
-      tools: [],
+      // Suppress Pi's built-in filesystem/shell tools while keeping Boring's
+      // adapted tool catalog active. Passing `tools: []` is an allowlist of
+      // zero tools in Pi v0.75+, which disables customTools too.
+      noTools: "builtin",
       customTools: adaptToolsForPi(opts.tools, input.sessionId, opts.telemetry),
       model,
       thinkingLevel: input.thinkingLevel ?? "off",
@@ -725,6 +728,7 @@ export function createPiCodingAgentHarness(opts: {
       let sawTextChunk = false;
       let inlineTurnIndex = 0;
       let currentPiAssistantMessageId: string | null = null;
+      let pendingTerminalErrorChunks: UIMessageChunk[] = [];
       const messageIdsWithStreamedReasoning = new Set<string>();
       let piSeq = 0;
       const nextPiSeq = () => ++piSeq;
@@ -953,7 +957,19 @@ export function createPiCodingAgentHarness(opts: {
           converted = piHistoryChunks;
         } else {
           const sdkChunks = namespaceInlinePartIds(dedupStartChunks(piEventToChunks(event)));
-          const sdkChunksForTurn = filterSdkChunksForCurrentSegment(sdkChunks);
+          const shouldBufferTerminalError = event.type === "message_update"
+            && (event as { assistantMessageEvent?: { type?: unknown } }).assistantMessageEvent?.type === "error";
+          const visibleSdkChunks = shouldBufferTerminalError
+            ? sdkChunks.filter((chunk) => {
+                const type = (chunk as { type?: unknown }).type;
+                if (type === "error" || type === "finish") {
+                  pendingTerminalErrorChunks.push(chunk);
+                  return false;
+                }
+                return true;
+              })
+            : sdkChunks;
+          const sdkChunksForTurn = filterSdkChunksForCurrentSegment(visibleSdkChunks);
           converted = [...piHistoryChunks, ...sdkChunksForTurn];
         }
         for (const chunk of converted) {
@@ -969,7 +985,17 @@ export function createPiCodingAgentHarness(opts: {
         chunks.push(...converted);
 
         if (event.type === "agent_end") {
-          if (!sawTextChunk) {
+          const willRetry = Boolean((event as { willRetry?: boolean }).willRetry);
+          if (willRetry) {
+            pendingTerminalErrorChunks = [];
+            sawTextChunk = false;
+            currentPiAssistantMessageId = null;
+            messageIdsWithStreamedReasoning.clear();
+          } else if (pendingTerminalErrorChunks.length > 0) {
+            chunks.push(...pendingTerminalErrorChunks);
+            pendingTerminalErrorChunks = [];
+            sawTextChunk = true;
+          } else if (!sawTextChunk) {
             const { role, text, errorText } = extractAssistantMessageText(
               findLastAssistantMessage(
                 (event as unknown as { messages?: unknown }).messages,
@@ -989,7 +1015,11 @@ export function createPiCodingAgentHarness(opts: {
             }
           }
 
-          if (nativeFollowUpPending.has(input.sessionId) && !ctx.abortSignal.aborted) {
+          if (willRetry) {
+            // Pi 0.75+ can emit agent_end for a failed attempt while it is
+            // about to auto-retry. Keep the HTTP stream open so retry chunks
+            // are delivered instead of accumulating after the generator exits.
+          } else if (nativeFollowUpPending.has(input.sessionId) && !ctx.abortSignal.aborted) {
             // Pi native follow-up was queued but its user message has not been
             // emitted yet. Keep this HTTP stream open; the queued user
             // message_start will clear the pending flag and produce the
