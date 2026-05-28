@@ -4,7 +4,6 @@ import type {
   WorkspaceAgentFrontProps,
   WorkspaceAgentSession,
 } from '@hachej/boring-workspace/app/front'
-import { AuthCard } from './AuthCard.js'
 import { AuthModal } from './AuthModal.js'
 import { ChatFirstAuthenticatedShell } from './ChatFirstAuthenticatedShell.js'
 import { safeReturnTo, writePendingChatEntry } from './pendingChatEntry.js'
@@ -43,7 +42,7 @@ export function ChatFirstPublicShell<
         workspaceProps={{
           ...workspaceProps,
           topBarRight: <button type="button" className="rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted" onClick={() => openAuth()}>Sign in</button>,
-          className: `${workspaceProps.className ?? ''} lg:pr-[336px]`.trim(),
+          className: workspaceProps.className,
           surfaceButtonBottomOffset: 456,
           chatParams: {
             ...workspaceProps.chatParams,
@@ -67,11 +66,6 @@ export function ChatFirstPublicShell<
           },
         }}
       />
-      <aside className="pointer-events-none fixed bottom-6 right-6 z-20 w-[320px]">
-        <div className="pointer-events-auto">
-          <AuthCard returnTo={returnTo} />
-        </div>
-      </aside>
       {modalOpen ? <AuthModal returnTo={returnTo} onClose={() => setModalOpen(false)} /> : null}
     </div>
   )

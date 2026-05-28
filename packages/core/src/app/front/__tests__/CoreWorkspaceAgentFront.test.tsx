@@ -180,15 +180,18 @@ describe('CoreWorkspaceAgentFront', () => {
     expect(workspaceAgentProps?.chatParams).toMatchObject({ serverResourcesEnabled: false, hydrateMessages: false })
   })
 
-  it('signs in from the chat-first auth card without a hard browser reload', async () => {
+  it('signs in from the chat-first auth overlay without a hard browser reload', async () => {
     const { CoreWorkspaceAgentFront } = await importSubject()
     sessionState = { data: null, isPending: false }
     currentWorkspaceId = null
     routePath = '/'
     render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" />)
-    await userEvent.type(screen.getByPlaceholderText('Email'), 'test@example.com')
-    await userEvent.type(screen.getByPlaceholderText('Password'), 'BoringUi!123')
-    await userEvent.click(screen.getByRole('button', { name: 'Continue with email' }))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+    const dialog = screen.getByRole('dialog')
+    await userEvent.type(within(dialog).getByPlaceholderText('Email'), 'test@example.com')
+    await userEvent.type(within(dialog).getByPlaceholderText('Password'), 'BoringUi!123')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Continue with email' }))
 
     expect(signInEmailMock).toHaveBeenCalledWith({ email: 'test@example.com', password: 'BoringUi!123' })
     expect(navigateMock).toHaveBeenCalledWith('/', { replace: true })
@@ -212,6 +215,7 @@ describe('CoreWorkspaceAgentFront', () => {
     })
     const dialog = screen.getByRole('dialog')
     expect(dialog).toBeInTheDocument()
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
     expect(within(dialog).getByRole('link', { name: 'Forgot password?' }).getAttribute('href')).toBe(
       '/auth/forgot-password?redirect=%2F',
     )

@@ -81,7 +81,7 @@ describe("WorkspaceAgentFront", () => {
     expect(MockEventSource.instances.filter((instance) => instance.url.includes("/api/v1/agent-plugins/events"))).toHaveLength(0)
   })
 
-  it("opens session history immediately even when an onOpenNav observer is provided", async () => {
+  it("keeps session history closed by default and opens it from the rail button", async () => {
     const user = userEvent.setup()
     const onOpenNav = vi.fn()
 
@@ -93,7 +93,6 @@ describe("WorkspaceAgentFront", () => {
       />,
     )
 
-    await user.click(screen.getByRole("button", { name: "Close sessions" }))
     expect(screen.getByLabelText("Session browser")).toHaveAttribute("aria-hidden", "true")
 
     await user.click(screen.getByRole("button", { name: "Sessions" }))
@@ -150,6 +149,23 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByText("Chat panel")).toBeInTheDocument()
     expect(screen.getByText("Preparing workspace…")).toBeInTheDocument()
     expect(screen.queryByText("Global command panel body")).not.toBeInTheDocument()
+  })
+
+  it("hides the workbench open rail while workspace warmup is preparing", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})))
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="prepare-no-workbench-toggle"
+        chatPanel={ChatPanel}
+        panels={[globalCommandPanel]}
+        extraPanels={[globalCommandPanel.id]}
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(screen.getByText("Preparing workspace…")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Workbench" })).not.toBeInTheDocument()
   })
 
   it("does not start default remote session warmup when provisioning is disabled", async () => {
@@ -570,7 +586,7 @@ describe("WorkspaceAgentFront", () => {
     })
     expect(body.causedBy).toBe("user")
     expect(body.state).toMatchObject({
-      drawerOpen: true,
+      drawerOpen: false,
       workbenchOpen: false,
       openTabs: [],
       activeTab: null,

@@ -262,7 +262,7 @@ export function WorkspaceAgentFront<
   appTitle = "Boring",
   defaultSessionTitle = "New session",
   navEnabled = true,
-  defaultNavOpen = true,
+  defaultNavOpen = false,
   defaultSurfaceOpen,
   defaultWorkbenchLeftTab,
   surfaceInitialPanels,
@@ -684,7 +684,7 @@ export function WorkspaceAgentFront<
               setNavOpen(true)
               onOpenNav?.()
             } : undefined}
-            onOpenSurface={() => {
+            onOpenSurface={workbenchBlocked ? undefined : () => {
               surfaceOpenRef.current = true
               setSurfaceOpen(true)
               onOpenSurface?.()
