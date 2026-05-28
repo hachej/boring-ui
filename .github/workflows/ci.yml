@@ -12,6 +12,10 @@ env:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     name: Lint
@@ -31,9 +35,6 @@ jobs:
 
       - name: Install
         run: pnpm install --frozen-lockfile
-
-      - name: Install ripgrep
-        run: sudo apt-get install -y ripgrep
 
       - name: Run lint
         run: pnpm lint
@@ -83,19 +84,13 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Build dependencies
-        run: pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-agent build
-
-      - name: Build workspace package
-        run: pnpm --filter @hachej/boring-workspace run build
-
-      - name: Enforce bundle budgets
+      - name: Build workspace package and enforce bundle budgets
         env:
           BUNDLE_INITIAL_BUDGET_KB: "800"
           BUNDLE_TOTAL_BUDGET_KB: "800"
           BUNDLE_TARGET_INITIAL_KB: "150"
           BUNDLE_TARGET_TOTAL_KB: "800"
-        run: pnpm check:bundle-size
+        run: pnpm ci:bundle-size
 
   core-bundle-budget:
     name: Core Bundle Budget
@@ -118,17 +113,26 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Build core package
-        run: pnpm --filter @hachej/boring-core run build || true
-
-      - name: Enforce core bundle budgets
+      - name: Build core package and enforce bundle budgets
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
-        run: pnpm --filter @hachej/boring-core run check:bundle-size
+        run: pnpm ci:core-bundle-size
 
   unit:
-    name: Unit Tests
+    name: Unit Tests (${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: agent
+            command: pnpm --filter @hachej/boring-agent... --workspace-concurrency=4 run build && pnpm --filter @hachej/boring-agent run test
+          - name: workspace
+            command: pnpm --filter @hachej/boring-workspace... --workspace-concurrency=4 run build && pnpm --filter @hachej/boring-workspace run test
+          - name: core
+            command: pnpm --filter @hachej/boring-core... --workspace-concurrency=4 run build && pnpm --filter @hachej/boring-core run test
+          - name: rest
+            command: pnpm -r --filter @hachej/boring-ui-cli... --filter @hachej/boring-ask-user... --filter @hachej/boring-data-catalog... --filter @hachej/boring-deck... --workspace-concurrency=4 run build && pnpm -r --filter @hachej/boring-ui-kit --filter @hachej/boring-ui-cli --filter @hachej/boring-ask-user --filter @hachej/boring-data-explorer --filter @hachej/boring-data-catalog --filter @hachej/boring-deck --workspace-concurrency=4 run test
     services:
       postgres:
         image: postgres:16
@@ -162,22 +166,8 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get install -y ripgrep
 
-      - name: Build UI package
-        run: pnpm --filter @hachej/boring-ui-kit build
-
-      - name: Build core package
-        run: pnpm --filter @hachej/boring-core build
-        env:
-          NODE_OPTIONS: --max-old-space-size=4096
-
-      - name: Build agent package
-        run: pnpm --filter @hachej/boring-agent build
-
-      - name: Build workspace package
-        run: pnpm --filter @hachej/boring-workspace build
-
-      - name: Run vitest suite
-        run: pnpm test
+      - name: Run vitest shard
+        run: ${{ matrix.command }}
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
