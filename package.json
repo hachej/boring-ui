@@ -14,6 +14,7 @@
     "lint:invariants": "pnpm --dir packages/agent run lint:invariants && pnpm lint:workspace-plugin-invariants",
     "lint:workspace-plugin-invariants": "pnpm --filter @hachej/boring-workspace run lint:plugin-invariants",
     "audit:imports": "pnpm tsx scripts/audit-imports.ts",
+    "audit:publish-manifests": "node scripts/audit-publish-manifests.mjs",
     "check:generated-artifacts": "pnpm tsx scripts/check-generated-artifacts.ts",
     "check:agent-isolation": "pnpm --filter @hachej/boring-agent run check:isolation",
     "check:bundle-size": "pnpm --filter @hachej/boring-workspace run check:bundle-size",
