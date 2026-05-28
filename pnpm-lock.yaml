@@ -872,9 +872,6 @@ importers:
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../../packages/ui
-      fastify:
-        specifier: ^5.3.3
-        version: 5.8.5
       lucide-react:
         specifier: ^1.8.0
         version: 1.8.0(react@19.2.5)
@@ -903,6 +900,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^4.0.0
         version: 4.7.0(vite@6.4.2(@types/node@22.19.17)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0))
+      fastify:
+        specifier: ^5.3.3
+        version: 5.8.5
       jsdom:
         specifier: ^29.0.2
         version: 29.0.2(@noble/hashes@2.2.0)
