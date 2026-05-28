@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-data-catalog",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -34,9 +34,9 @@
   },
   "sideEffects": false,
   "scripts": {
-    "build": "pnpm --filter @hachej/boring-data-explorer build && pnpm --filter @hachej/boring-workspace build && tsup",
-    "typecheck": "pnpm --filter @hachej/boring-data-explorer build && pnpm --filter @hachej/boring-workspace build && tsc --noEmit",
-    "test": "pnpm --filter @hachej/boring-data-explorer build && pnpm --filter @hachej/boring-workspace build && vitest run --passWithNoTests",
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
     "lint": "pnpm run typecheck",
     "clean": "rm -rf dist .tsbuildinfo"
   },

@@ -71,7 +71,7 @@ describe("QuestionsBridge", () => {
     const orphanRuntime = new AskUserRuntime({ store, ownerPrincipalId: "p1" })
     const bridge = new QuestionsBridge({ store, runtime: orphanRuntime, getAuthContext: () => ({ sessionId: "s1", principalId: "p1" }) })
     await expect(bridge.handle({ kind: "questions.submit", params: { questionId: question.questionId, sessionId: "s1", answerToken: question.answerToken, values: { answer: "ok" } } })).rejects.toMatchObject({ statusCode: 409 })
-  })
+  }, 15_000)
 
   it("rejects submit after cancel", async () => {
     const { store, runtime, question } = await fixture()

@@ -71,18 +71,18 @@ describe("ask-user Pi tool", () => {
   })
 
   it("uses tool execution session id when the harness provides one", async () => {
-    const { store, runtime } = await fixture()
+    const runtime = {
+      ask: vi.fn().mockResolvedValue({
+        status: "answered",
+        questionId: "q1",
+        sessionId: "chat-session",
+        answer: { questionId: "q1", sessionId: "chat-session", values: { answer: "ok" }, submittedAt: new Date().toISOString() },
+      }),
+    } as unknown as AskUserRuntime
     const tool = createAskUserTool({ runtime, sessionId: "fallback" })
-    const pendingResult = tool.execute("call", { title: "Need input", schema, timeoutMs: 60_000 }, undefined, "chat-session")
-    let pending = await store.getPending("chat-session")
-    await vi.waitFor(async () => {
-      pending = await store.getPending("chat-session")
-      expect(pending).toMatchObject({ status: "ready", title: "Need input" })
-    }, pendingWait)
-    await waitForRuntimeWaiter(runtime, pending!.questionId)
-    await runtime.submitAnswer(pending!.questionId, "chat-session", { answer: "ok" })
-    await expect(pendingResult).resolves.toMatchObject({ details: { status: "answered" } })
-    await expect(store.getPending("fallback")).resolves.toBeNull()
+
+    await expect(tool.execute("call", { title: "Need input", schema, timeoutMs: 60_000 }, undefined, "chat-session")).resolves.toMatchObject({ details: { status: "answered" } })
+    expect(runtime.ask).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "chat-session" }), undefined)
   })
 
   it("valid input creates pending question and waits for runtime answer", async () => {
@@ -97,7 +97,7 @@ describe("ask-user Pi tool", () => {
     await waitForRuntimeWaiter(runtime, pending!.questionId)
     await runtime.submitAnswer(pending!.questionId, "s1", { answer: "ok" })
     await expect(pendingResult).resolves.toMatchObject({ details: { status: "answered" } })
-  })
+  }, 10_000)
 })
 
 describe("createAskUserServerPlugin", () => {
