@@ -12,9 +12,9 @@
   },
   "scripts": {
     "dev": "pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-catalog build && vite",
-    "build": "vite build",
+    "build": "pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-catalog build && vite build",
     "typecheck": "tsc --noEmit",
-    "test:e2e": "playwright test"
+    "test:e2e": "pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-catalog build && playwright test"
   },
   "dependencies": {
     "@hachej/boring-agent": "workspace:*",
