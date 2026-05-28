@@ -29,11 +29,11 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 22.19.0
           cache: pnpm
       - run: sudo apt-get install -y ripgrep
       - run: pnpm install --frozen-lockfile
@@ -47,9 +47,9 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: pnpm
@@ -61,10 +61,14 @@ jobs:
           pnpm --filter @hachej/boring-agent build
           pnpm --filter @hachej/boring-workspace build
           pnpm --filter @hachej/boring-core build
+          pnpm --filter @hachej/boring-deck build
           pnpm --filter @hachej/boring-ui-cli build:full
+          pnpm --filter @hachej/boring-ask-user build
+          pnpm --filter @hachej/boring-data-explorer build
+          pnpm --filter @hachej/boring-data-catalog build
       - name: Publish
         run: |
-          for pkg in packages/ui packages/agent packages/workspace packages/core packages/cli; do
+          for pkg in packages/ui packages/agent packages/workspace packages/core packages/cli plugins/deck plugins/ask-user plugins/data-explorer plugins/data-catalog; do
             name=$(node -p "require('./$pkg/package.json').name")
             version=$(node -p "require('./$pkg/package.json').version")
             if npm view "$name@$version" version >/dev/null 2>&1; then

@@ -99,6 +99,22 @@ describe("workspace app-server plugin package helpers", () => {
     expect(snapshot.extensionPaths).toContain(join(explicitPluginRoot, "agent", "index.ts"))
   })
 
+  test("Pi snapshot converts single-skill package paths into loader roots", async () => {
+    const appRoot = await makeTempDir("boring-app-helper-single-skill-package-")
+    const pluginRoot = join(appRoot, "plugins", "deck")
+    await mkdir(join(pluginRoot, "skills", "deck-authoring"), { recursive: true })
+    await writeFile(join(pluginRoot, "skills", "deck-authoring", "SKILL.md"), "# deck-authoring\n", "utf8")
+    await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
+      name: "deck",
+      pi: { skills: ["skills/deck-authoring"] },
+    }), "utf8")
+
+    const snapshot = readWorkspacePluginPackagePiSnapshot([pluginRoot])
+
+    expect(snapshot.additionalSkillPaths).toContain(join(pluginRoot, "skills"))
+    expect(snapshot.additionalSkillPaths).not.toContain(join(pluginRoot, "skills", "deck-authoring"))
+  })
+
   test("Pi snapshot keeps valid plugin resources when another plugin has preflight errors", async () => {
     const workspaceRoot = await makeTempDir("boring-pi-snapshot-partial-")
     const validRoot = join(workspaceRoot, "valid")

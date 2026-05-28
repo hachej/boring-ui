@@ -1,3 +1,4 @@
+import { Kbd } from '@hachej/boring-ui-kit'
 import { cn } from './lib'
 
 /**
@@ -6,15 +7,15 @@ import { cn } from './lib'
  */
 export function KbdHints() {
   return (
-    <kbd
+    <Kbd
       aria-hidden="true"
+      title="Shift + Enter for newline"
       className={cn(
-        "hidden h-5 items-center gap-0.5 rounded-[var(--radius-sm)] border border-border/50",
-        "bg-background/50 px-1.5 font-mono text-[10px] text-muted-foreground/40",
+        "hidden gap-0.5 border-border/60 bg-muted/40 leading-none shadow-none",
         "sm:inline-flex",
       )}
     >
       <span className="not-mono text-[9px]">⇧</span>↵
-    </kbd>
+    </Kbd>
   )
 }

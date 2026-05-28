@@ -170,7 +170,7 @@ describe("piEventToChunks AI SDK contract", () => {
 
       { type: "message_end", message: fakeMsg } as AgentSessionEvent,
       { type: "agent_start" } as AgentSessionEvent,
-      { type: "agent_end", messages: [] } as AgentSessionEvent,
+      { type: "agent_end", messages: [], willRetry: false } as AgentSessionEvent,
       { type: "turn_start" } as AgentSessionEvent,
       { type: "turn_end" } as AgentSessionEvent,
       { type: "queue_update" } as AgentSessionEvent,

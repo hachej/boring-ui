@@ -160,15 +160,18 @@ run_check \
   "Preserve promptSnippet verbatim; do not prepend dash/backtick wrappers." \
   "src/server/harness"
 
-# pi-coding-agent must use an exact version pin (no ^, ~, >=, etc.)
+# pi-coding-agent must use an exact version pin (no ^, ~, >=, etc.).
+# npm aliases are allowed only when the aliased target also carries an exact pin.
 # Rationale: single-maintainer v0.x with no semver guarantee.
 if [[ -f "$ROOT_DIR/package.json" ]]; then
   pi_version="$(grep -oP '"@mariozechner/pi-coding-agent"\s*:\s*"\K[^"]+' "$ROOT_DIR/package.json" || true)"
-  if [[ -n "$pi_version" && ! "$pi_version" =~ ^[0-9] ]]; then
+  exact_version_re='^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$'
+  exact_alias_re='^npm:(@[^/[:space:]@]+/)?[^@[:space:]]+@[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$'
+  if [[ -n "$pi_version" && ! "$pi_version" =~ $exact_version_re && ! "$pi_version" =~ $exact_alias_re ]]; then
     failures=1
-    echo "$PREFIX ERR package.json: @mariozechner/pi-coding-agent uses range \"$pi_version\""
-    echo "  Invariant: pi-coding-agent must be pinned to an exact version (no ^/~/>=)"
-    echo "  Fix: Pin exact version, e.g. \"0.67.68\". See upgrade protocol in packages/agent/scripts/pi-sdk-canary.sh."
+    echo "$PREFIX ERR package.json: @mariozechner/pi-coding-agent uses non-exact spec \"$pi_version\""
+    echo "  Invariant: pi-coding-agent must be pinned to an exact version (no ^/~/>=), including npm aliases."
+    echo "  Fix: Pin exact version, e.g. \"0.67.68\" or \"npm:@earendil-works/pi-coding-agent@0.75.5\". See upgrade protocol in packages/agent/scripts/pi-sdk-canary.sh."
   fi
 fi
 

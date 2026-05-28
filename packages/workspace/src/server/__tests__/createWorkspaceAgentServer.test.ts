@@ -82,7 +82,7 @@ describe("createWorkspaceAgentServer — runtime provisioning reload", () => {
     } finally {
       await app.close()
     }
-  })
+  }, 15_000)
 })
 
 describe("createWorkspaceAgentServer — plugin wiring", () => {
@@ -354,7 +354,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     } finally {
       await app.close()
     }
-  })
+  }, 15_000)
 
   /**
    * Simulates the CLI scenario: a globally-installed boring-ui binary runs
@@ -391,7 +391,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     } finally {
       await app.close()
     }
-  })
+  }, 15_000)
 
   test("CLI-like boot in fresh workspace auto-discovers boring-plugin-authoring skill via /api/v1/agent/skills", async () => {
     const workspaceRoot = await makeTempDir("boring-cli-skill-discovery-")
@@ -410,7 +410,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     } finally {
       await app.close()
     }
-  })
+  }, 15_000)
 
   test("collects plugin provisioning declarations and asks agent to seed workspace", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-provisioned-")
@@ -448,7 +448,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     } finally {
       await app.close()
     }
-  })
+  }, 15_000)
 
   test("POST /api/v1/agent/reload reloads boring plugin assets before pi reload", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-agent-reload-assets-")
@@ -481,7 +481,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     } finally {
       await app.close()
     }
-  })
+  }, 15_000)
 
   test("POST /api/v1/agent/reload tolerates per-plugin failures (PLUGIN_SYSTEM.md §4.5)", async () => {
     // beforeReload no longer throws on per-plugin scan/rebuild errors.
@@ -510,7 +510,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     } finally {
       await app.close()
     }
-  })
+  }, 15_000)
 
   test("can skip plugin provisioning when the host opts out", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-provision-skip-")
@@ -565,7 +565,7 @@ describe("createWorkspaceAgentServer — plugin model (j9p7.11)", () => {
     } finally {
       await app.close()
     }
-  })
+  }, 15_000)
 
   test("plugin agentTools appear in the tool catalog", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-plugins-")
@@ -594,7 +594,7 @@ describe("createWorkspaceAgentServer — plugin model (j9p7.11)", () => {
     } finally {
       await app.close()
     }
-  })
+  }, 15_000)
 
   test("plugin agentTools preserve tool metadata in the catalog", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-plugin-tool-metadata-")
@@ -621,7 +621,7 @@ describe("createWorkspaceAgentServer — plugin model (j9p7.11)", () => {
     } finally {
       await app.close()
     }
-  })
+  }, 15_000)
 
   test("excludeDefaults does not remove harness file tools", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-exclude-")

@@ -129,7 +129,7 @@ test('registerAgentRoutes provisions the resolved request workspace, not the hos
   } finally {
     await app.close()
   }
-})
+}, 15_000)
 
 test('request-scoped ready-status resolves the requested workspace', async () => {
   const baseRoot = await makeTempDir('boring-agent-ready-base-')

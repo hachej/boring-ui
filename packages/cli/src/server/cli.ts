@@ -198,7 +198,7 @@ const AUTH_GUIDE = [
   "  sign in to a subscription (Claude Pro/Max, ChatGPT Plus, Copilot):",
   "",
   "       pi                                    # if installed globally",
-  "       npx @mariozechner/pi-coding-agent     # otherwise",
+  "       npx @earendil-works/pi-coding-agent  # otherwise",
   "",
   "  Then at pi's prompt:  /login",
   "",

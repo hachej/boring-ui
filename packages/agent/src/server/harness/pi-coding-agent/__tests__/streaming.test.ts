@@ -238,6 +238,107 @@ describe("streaming concurrency", () => {
     }
   });
 
+  it("keeps the stream open across pi auto-retry agent_end events", async () => {
+    const harness = createPiCodingAgentHarness({
+      tools: [],
+      cwd: "/tmp/test-stream-retry",
+    });
+
+    const ctx: RunContext = {
+      abortSignal: new AbortController().signal,
+      workdir: "/tmp/test-stream-retry",
+    };
+    const input: SendMessageInput = {
+      sessionId: "sess-stream-retry",
+      message: "hello",
+    };
+
+    const reader = harness.sendMessage(input, ctx)[Symbol.asyncIterator]();
+    const firstReadPromise = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+
+    emitPiEvent({
+      type: "message_update",
+      assistantMessageEvent: {
+        type: "error",
+        reason: "error",
+        error: { stopReason: "error", errorMessage: "provider returned error: 503" },
+      },
+    });
+    emitPiEvent({
+      type: "agent_end",
+      messages: [
+        { role: "assistant", stopReason: "error", errorMessage: "provider returned error: 503" },
+      ],
+      willRetry: true,
+    });
+    emitPiEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "retry response" },
+    });
+
+    const firstRead = await firstReadPromise;
+    expect(firstRead.done).toBe(false);
+    expect((firstRead.value as any).type).not.toBe("error");
+    expect((firstRead.value as any).type).not.toBe("finish");
+
+    emitPiEvent({ type: "agent_end", messages: [], willRetry: false });
+    promptHandle.resolve!();
+
+    for (;;) {
+      const final = await reader.next();
+      if (final.done) break;
+    }
+  });
+
+  it("emits final snapshot text after pi auto-retry even without retry text deltas", async () => {
+    const harness = createPiCodingAgentHarness({
+      tools: [],
+      cwd: "/tmp/test-stream-retry-final",
+    });
+
+    const ctx: RunContext = {
+      abortSignal: new AbortController().signal,
+      workdir: "/tmp/test-stream-retry-final",
+    };
+    const reader = harness.sendMessage({ sessionId: "sess-stream-retry-final", message: "hello" }, ctx)[Symbol.asyncIterator]();
+    const firstReadPromise = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+
+    emitPiEvent({
+      type: "message_update",
+      assistantMessageEvent: {
+        type: "error",
+        reason: "error",
+        error: { stopReason: "error", errorMessage: "provider returned error: 503" },
+      },
+    });
+    emitPiEvent({
+      type: "agent_end",
+      messages: [{ role: "assistant", stopReason: "error", errorMessage: "provider returned error: 503" }],
+      willRetry: true,
+    });
+    emitPiEvent({
+      type: "agent_end",
+      messages: [{ role: "assistant", content: [{ type: "text", text: "final retry answer" }] }],
+      willRetry: false,
+    });
+    promptHandle.resolve!();
+
+    const first = await firstReadPromise;
+    expect(first.done).toBe(false);
+    const chunks = [first.value];
+    for (;;) {
+      const next = await reader.next();
+      if (next.done) break;
+      chunks.push(next.value);
+    }
+    expect(chunks).toContainEqual(expect.objectContaining({
+      type: "data-pi-message-end",
+      data: expect.objectContaining({ text: "final retry answer" }),
+    }));
+  });
+
   it("does not buffer chunks until prompt() resolves", async () => {
     // Stronger form of the previous test: emit N chunks before the
     // generator is read, then read N times — each read should advance.

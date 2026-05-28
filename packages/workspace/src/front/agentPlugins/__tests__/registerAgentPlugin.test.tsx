@@ -3,7 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { RegistryProvider, useCatalogRegistry, useCommandRegistry, useRegistry } from "../../registry/RegistryProvider"
+import { RegistryProvider, useCatalogRegistry, useCommandRegistry, useRegistry, useSurfaceResolverRegistry } from "../../registry/RegistryProvider"
 import { PanelRegistry } from "../../registry/PanelRegistry"
 import { CommandRegistry } from "../../../shared/plugins/CommandRegistry"
 import { SurfaceResolverRegistry } from "../../../shared/plugins/SurfaceResolverRegistry"
@@ -148,6 +148,12 @@ function CatalogList() {
   const registry = useCatalogRegistry()
   const catalogs = useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot)
   return <div data-testid="catalog-list">{catalogs.map((catalog) => `${catalog.id}:${catalog.label}`).join(",")}</div>
+}
+
+function ResolverIds() {
+  const registry = useSurfaceResolverRegistry()
+  useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot)
+  return <div data-testid="resolver-ids">{registry.list().map((resolver) => resolver.id).join(",")}</div>
 }
 
 function Harness({ apiBaseUrl = "" }: { apiBaseUrl?: string }) {
@@ -603,9 +609,28 @@ describe("useAgentPluginHotReload", () => {
 
     try {
       function ProviderHarness() {
-        const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+        const panelRegistry = React.useMemo(() => {
+          const registry = new PanelRegistry()
+          registry.register("hot-pane", {
+            title: "Static Pane",
+            placement: "center",
+            pluginId: "provider-plugin",
+            component: function StaticPane() {
+              return React.createElement("div", { "data-testid": "static-pane" }, "static stays mounted")
+            },
+          })
+          return registry
+        }, [])
         const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
-        const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+        const surfaceResolverRegistry = React.useMemo(() => {
+          const registry = new SurfaceResolverRegistry()
+          registry.register("provider-plugin.surface", {
+            source: "builtin",
+            pluginId: "provider-plugin",
+            resolve: () => undefined,
+          })
+          return registry
+        }, [])
         function Listener() {
           useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
           return null
@@ -614,6 +639,7 @@ describe("useAgentPluginHotReload", () => {
           <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
             <Listener />
             <PaneRenderer id="hot-pane" />
+            <ResolverIds />
           </RegistryProvider>
         )
       }
@@ -629,7 +655,8 @@ describe("useAgentPluginHotReload", () => {
       })
 
       await waitFor(() => expect(warn).toHaveBeenCalledWith(expect.stringContaining("Dynamic provider/binding mounting is not implemented")))
-      expect(screen.getByTestId("pane-missing")).toHaveTextContent("missing")
+      expect(screen.getByTestId("static-pane")).toHaveTextContent("static stays mounted")
+      expect(screen.getByTestId("resolver-ids")).toHaveTextContent("provider-plugin.surface")
     } finally {
       warn.mockRestore()
     }
