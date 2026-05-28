@@ -161,7 +161,8 @@ describe("default boring-ui CLI provisioning", () => {
     expect(cli?.provisioning?.nodePackages).toContainEqual(expect.objectContaining({
       id: "boring-ui-cli",
       packageName: "@hachej/boring-ui-cli",
-      packageRoot: expect.stringContaining("packages/cli"),
+      version: expect.stringMatching(/^\d+\.\d+\.\d+/),
+      expectedBins: ["boring-ui"],
     }))
 
     const excluded = collectWorkspaceAgentServerPlugins({
@@ -210,7 +211,8 @@ describe("default boring-ui CLI provisioning", () => {
       expect(cli?.provisioning?.nodePackages).toContainEqual(expect.objectContaining({
         id: "boring-ui-cli",
         packageName: "@hachej/boring-ui-cli",
-        packageRoot: expect.stringContaining("packages/cli"),
+        version: expect.stringMatching(/^\d+\.\d+\.\d+/),
+        expectedBins: ["boring-ui"],
       }))
       expect(capturedPrompt).toContain("boring-ui scaffold-plugin")
       expect(capturedPrompt).toContain("boring-ui verify-plugin")

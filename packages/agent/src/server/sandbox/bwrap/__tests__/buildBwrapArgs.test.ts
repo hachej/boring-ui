@@ -4,6 +4,7 @@ import {
   BWRAP_TIMEOUT_SECONDS,
   KILL_GRACE_SECONDS,
   RO_BIND_DIRS,
+  RO_BIND_TRY_DIRS,
   buildBwrapArgs,
 } from '../buildBwrapArgs'
 
@@ -147,6 +148,11 @@ test('--unshare-all is hardcoded and not derived from RO_BIND_DIRS', () => {
   expect(buildBwrapArgs('/tmp/workspace')).toContain('--unshare-all')
 })
 
-test('output never uses --bind-try', () => {
-  expect(buildBwrapArgs('/tmp/workspace')).not.toContain('--bind-try')
+test('uses optional read-only binds only for resolver runtime dirs', () => {
+  const args = buildBwrapArgs('/tmp/workspace')
+
+  expect(args).not.toContain('--bind-try')
+  for (const dir of RO_BIND_TRY_DIRS) {
+    expect(findTupleIndex(args, ['--ro-bind-try', dir, dir])).toBeGreaterThanOrEqual(0)
+  }
 })
