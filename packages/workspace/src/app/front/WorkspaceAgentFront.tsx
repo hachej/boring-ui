@@ -486,8 +486,14 @@ export function WorkspaceAgentFront<
     surfaceOpenRef.current = true
     setSurfaceOpen(true)
   }, [setSurfaceOpen])
+  const openWorkbenchSources = useCallback(() => {
+    surfaceOpenRef.current = true
+    setSurfaceOpen(true)
+    setWorkbenchLeftOpen(true)
+  }, [setSurfaceOpen, setWorkbenchLeftOpen])
   const closeWorkbench = useCallback(() => {
     surfaceOpenRef.current = false
+    surfaceRef.current = null
     setSurfaceOpen(false)
   }, [setSurfaceOpen])
   const capturedPlugins = useMemo(
@@ -539,11 +545,12 @@ export function WorkspaceAgentFront<
         surface: getSurface,
         isWorkbenchOpen,
         openWorkbench,
+        openWorkbenchSources,
       })
     }
     globalThis.addEventListener?.(UI_COMMAND_EVENT, handler)
     return () => globalThis.removeEventListener?.(UI_COMMAND_EVENT, handler)
-  }, [getSurface, isWorkbenchOpen, openWorkbench])
+  }, [getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources])
 
   useEffect(() => {
     if (effectiveActiveSessionId) onActiveSessionIdChange?.(effectiveActiveSessionId)
@@ -562,6 +569,7 @@ export function WorkspaceAgentFront<
       getSurface,
       isWorkbenchOpen,
       openWorkbench,
+      openWorkbenchSources,
       closeWorkbench,
       extraCommands,
       workspaceWarmupStatus,
@@ -578,7 +586,7 @@ export function WorkspaceAgentFront<
       // value passed through chatParams.
       ...(hotReloadEnabled !== undefined ? { hotReloadEnabled } : {}),
     }),
-    [chatParams, delayAutoSubmitDraft, chatSessionId, resolvedRequestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench, extraCommands, workspaceWarmupStatus, hydrateMessages, hotReloadEnabled],
+    [chatParams, delayAutoSubmitDraft, chatSessionId, resolvedRequestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, extraCommands, workspaceWarmupStatus, hydrateMessages, hotReloadEnabled],
   )
   const surfaceParams = useMemo<SurfaceShellProps>(() => ({
     storageKey: resolvedSurfaceStorageKey,

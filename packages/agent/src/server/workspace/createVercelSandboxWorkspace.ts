@@ -34,6 +34,7 @@ type VercelSandboxCompat = VercelSandbox & {
     stderr?: () => Promise<string>
   }>
 }
+const EPERM_CODE = 'EPERM'
 const CACHE_TTL_MS = 15_000
 const CACHE_MAX_ENTRIES = 512
 const MAX_INLINE_WRITE_BYTES = 128 * 1024
@@ -208,6 +209,44 @@ export function createVercelSandboxWorkspace(
 
   const { emit: emitChange, watcher } = createSandboxBroadcaster()
   const remote = sandbox as VercelSandboxCompat
+
+  async function assertRealPathWithinSandboxRoot(sandboxPath: string): Promise<void> {
+    const isWithinRoot = await runJson<boolean>(
+      remote,
+      `node -e ${shellQuote(`const fs=require('fs'); const path=require('path'); const root=fs.realpathSync(process.argv[1]); const target=fs.realpathSync(process.argv[2]); const rel=path.relative(root,target); process.stdout.write(JSON.stringify(rel===''||(!rel.startsWith('..')&&!path.isAbsolute(rel))))`)} ${shellQuote(VERCEL_SANDBOX_REMOTE_ROOT)} ${shellQuote(sandboxPath)}`,
+    )
+    if (!isWithinRoot) {
+      throw Object.assign(new Error('resolved path escapes workspace root'), { code: EPERM_CODE })
+    }
+  }
+
+  async function isSandboxSymlink(sandboxPath: string): Promise<boolean> {
+    return await runJson<boolean>(
+      remote,
+      `node -e ${shellQuote(`const fs=require('fs'); process.stdout.write(JSON.stringify(fs.lstatSync(process.argv[1]).isSymbolicLink()))`)} ${shellQuote(sandboxPath)}`,
+    )
+  }
+
+  async function listDescendantPaths(relPath: string, sandboxPath: string): Promise<string[]> {
+    if (remote.fs?.stat && remote.fs.readdir) {
+      const fileStat = await remote.fs.stat(sandboxPath)
+      if (!fileStat.isDirectory()) return []
+      const entries = await remote.fs.readdir(sandboxPath, { withFileTypes: true })
+      const descendants: string[] = []
+      for (const entry of entries) {
+        const childRelPath = relPath === '.' ? entry.name : `${relPath}/${entry.name}`
+        descendants.push(childRelPath)
+        if (entry.isDirectory()) {
+          descendants.push(...await listDescendantPaths(childRelPath, `${sandboxPath}/${entry.name}`))
+        }
+      }
+      return descendants
+    }
+    return await runJson<string[]>(
+      remote,
+      `node -e ${shellQuote(`const fs=require('fs'); const path=require('path'); const root=process.argv[1]; const relRoot=process.argv[2]; function walk(abs,rel){ const s=fs.statSync(abs); if(!s.isDirectory()) return []; const out=[]; for (const entry of fs.readdirSync(abs,{withFileTypes:true})) { const childRel=rel==='.'?entry.name:rel+'/'+entry.name; out.push(childRel); if(entry.isDirectory()) out.push(...walk(path.join(abs,entry.name),childRel)); } return out; } process.stdout.write(JSON.stringify(walk(root,relRoot)))`)} ${shellQuote(sandboxPath)} ${shellQuote(relPath)}`,
+    )
+  }
 
   return {
     root: VERCEL_SANDBOX_RUNTIME_CONTEXT.runtimeCwd,
@@ -394,11 +433,21 @@ export function createVercelSandboxWorkspace(
     },
     async unlink(relPath) {
       const sandboxPath = toSandboxPath(relPath)
-      if (remote.fs?.rm) await remote.fs.rm(sandboxPath, { recursive: false, force: false })
-      else await runShell(remote, `rm -- ${shellQuote(sandboxPath)}`)
+      if (sandboxPath === VERCEL_SANDBOX_REMOTE_ROOT) {
+        throw Object.assign(new Error('cannot remove workspace root'), { code: EPERM_CODE })
+      }
+      await assertRealPathWithinSandboxRoot(sandboxPath)
+      const descendantPaths = await isSandboxSymlink(sandboxPath)
+        ? []
+        : await listDescendantPaths(relPath, sandboxPath)
+      if (remote.fs?.rm) await remote.fs.rm(sandboxPath, { recursive: true, force: false })
+      else await runShell(remote, `rm -r -- ${shellQuote(sandboxPath)}`)
       invalidateMetadataCache()
       workspaceOpts.onMutation?.()
       emitChange({ op: 'unlink', path: relPath })
+      for (const path of descendantPaths) {
+        emitChange({ op: 'unlink', path })
+      }
     },
     async readdir(relPath) {
       const sandboxPath = toSandboxPath(relPath)

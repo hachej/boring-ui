@@ -1,5 +1,5 @@
-import { lstat, mkdir, readdir, readFile, rename, rmdir, stat, unlink, writeFile } from 'node:fs/promises'
-import { dirname, relative, sep } from 'node:path'
+import { lstat, mkdir, readdir, readFile, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
+import { dirname, relative, resolve, sep } from 'node:path'
 import chokidar, { type FSWatcher } from 'chokidar'
 
 import type { WorkspaceRuntimeContext } from '../../shared/runtime'
@@ -14,6 +14,8 @@ import {
   ensureWritableWorkspacePath,
   validatePath,
 } from './paths'
+
+const EPERM_CODE = 'EPERM'
 
 const DEFAULT_WATCH_IGNORES = [
   'node_modules',
@@ -178,9 +180,12 @@ export function createNodeWorkspace(root: string, opts: CreateNodeWorkspaceOptio
     },
     async unlink(relPath) {
       const absPath = await ensureExistingWorkspacePath(root, relPath)
+      if (absPath === resolve(root)) {
+        throw Object.assign(new Error('cannot remove workspace root'), { code: EPERM_CODE })
+      }
       const pathStat = await lstat(absPath)
       if (pathStat.isDirectory()) {
-        await rmdir(absPath)
+        await rm(absPath, { recursive: true, force: false })
         return
       }
       await unlink(absPath)

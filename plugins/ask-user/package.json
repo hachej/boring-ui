@@ -3,7 +3,13 @@
   "version": "0.1.14",
   "type": "module",
   "private": false,
+  "license": "MIT",
   "description": "Ask-user plugin for Boring workspace — surfaces agent questions to the user and streams answers back.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hachej/boring-ui"
+  },
+  "homepage": "https://github.com/hachej/boring-ui",
   "boring": {
     "id": "ask-user",
     "label": "Questions",
@@ -37,9 +43,9 @@
   },
   "sideEffects": false,
   "scripts": {
-    "build": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-workspace build && tsup",
-    "typecheck": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-workspace build && tsc --noEmit",
-    "test": "pnpm --filter @hachej/boring-ui-kit build && vitest run",
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "lint": "pnpm run typecheck",
     "clean": "rm -rf dist .tsbuildinfo"
   },
