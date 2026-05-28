@@ -144,6 +144,22 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
         return emitResult(0, '', '')
       }
 
+      if (command === 'find' && commandArgs[0] === '-H' && commandArgs[2] === '-maxdepth' && commandArgs[6] === '-printf') {
+        const pathArg = commandArgs[1]
+        if (!pathArg) return emitResult(127, '', `unsupported mock command: ${script}`)
+
+        try {
+          const hostPath = toHostPath(hostRoot, pathArg)
+          const entries = (await readdir(hostPath, { withFileTypes: true }))
+            .map((entry) => `${entry.name}\0${entry.isDirectory() ? 'd' : 'f'}\0`)
+            .join('')
+          return emitResult(0, entries, '')
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error)
+          return emitResult(1, '', message)
+        }
+      }
+
       const normalizedScript = script.replace(/^'([^']+)'\s+/, '$1 ')
 
       if (normalizedScript.startsWith('cat ')) {

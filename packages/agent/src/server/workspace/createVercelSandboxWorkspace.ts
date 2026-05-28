@@ -82,6 +82,44 @@ function mapSandboxStat(fileStat: VercelSandboxStat): Stat {
   }
 }
 
+async function readSandboxDirectoryEntries(
+  sandbox: VercelSandbox,
+  sandboxPath: string,
+): Promise<Entry[]> {
+  const directoryStat = await sandbox.fs.stat(sandboxPath)
+  if (!directoryStat.isDirectory()) {
+    const error = new Error(`ENOTDIR: not a directory, scandir '${sandboxPath}'`) as NodeJS.ErrnoException
+    error.code = 'ENOTDIR'
+    throw error
+  }
+
+  const result = await sandbox.runCommand('find', [
+    '-H',
+    sandboxPath,
+    '-maxdepth',
+    '1',
+    '-mindepth',
+    '1',
+    '-printf',
+    '%f\\0%y\\0',
+  ])
+  const [out, err] = await Promise.all([result.stdout(), result.stderr()])
+  if (result.exitCode !== 0) {
+    const error = new Error(err || `sandbox command failed with exit code ${result.exitCode}`) as NodeJS.ErrnoException
+    if (err.includes('No such file or directory')) error.code = 'ENOENT'
+    throw error
+  }
+
+  const parts = out.split('\0')
+  const entries: Entry[] = []
+  for (let i = 0; i < parts.length - 1; i += 2) {
+    const name = parts[i]
+    if (!name) continue
+    entries.push({ name, kind: parts[i + 1] === 'd' ? 'dir' : 'file' })
+  }
+  return entries
+}
+
 function registerMetadataInvalidator(
   sandbox: VercelSandbox,
   invalidate: () => void,
@@ -299,10 +337,7 @@ export function createVercelSandboxWorkspace(
       if (cached) return cloneEntries(cached)
 
       const version = metadataVersion
-      const mappedEntries: Entry[] = (await remote.fs.readdir(sandboxPath, { withFileTypes: true })).map((entry): Entry => ({
-        name: entry.name,
-        kind: entry.isDirectory() ? 'dir' : 'file',
-      }))
+      const mappedEntries = await readSandboxDirectoryEntries(remote, sandboxPath)
 
       if (metadataVersion === version) {
         readdirCache.set(sandboxPath, mappedEntries)
