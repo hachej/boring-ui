@@ -182,6 +182,7 @@ export function FileTreeView({
   const [editing, setEditing] = useState<DraftEditing>(null)
   const [revealPath, setRevealPath] = useState<string | null>(null)
   const revealSeqRef = useRef(0)
+  const explicitRevealSeqRef = useRef(0)
   const draftSeqRef = useRef(0)
 
   const useServerSearch = (searchQuery?.trim().length ?? 0) > 0
@@ -313,34 +314,49 @@ export function FileTreeView({
     setRevealPath((current) => current === path ? null : current)
   }, [])
 
+  const revealExplicitTreePath = useCallback(
+    async (path: string) => {
+      const seq = ++explicitRevealSeqRef.current
+      try {
+        await revealTreePath(path, { refreshTargetDir: true })
+      } finally {
+        if (explicitRevealSeqRef.current === seq) explicitRevealSeqRef.current = 0
+      }
+    },
+    [revealTreePath],
+  )
+
   useEffect(() => {
     if (!revealFileTreeRequest) return
-    void revealTreePath(revealFileTreeRequest.path, { refreshTargetDir: true })
-  }, [revealFileTreeRequest, revealTreePath])
+    void revealExplicitTreePath(revealFileTreeRequest.path)
+  }, [revealFileTreeRequest, revealExplicitTreePath])
 
   useEffect(() => {
     const activeFile = bridge?.getActiveFile?.() ?? null
-    if (activeFile) void revealTreePath(activeFile)
+    if (activeFile && explicitRevealSeqRef.current === 0) void revealTreePath(activeFile)
     const unsubscribers: Array<() => void> = []
     if (bridge?.select) {
       unsubscribers.push(
         bridge.select((state) => state.activeFile, (path) => {
-          if (path) void revealTreePath(path)
-          else setSelectedPath(null)
+          if (path) {
+            if (explicitRevealSeqRef.current === 0) void revealTreePath(path)
+          } else {
+            setSelectedPath(null)
+          }
         }),
       )
     }
     if (bridge?.subscribe) {
       unsubscribers.push(
         bridge.subscribe("tree:expand", ({ path }) => {
-          void revealTreePath(path, { refreshTargetDir: true })
+          void revealExplicitTreePath(path)
         }),
       )
     }
     return () => {
       for (const unsubscribe of unsubscribers) unsubscribe()
     }
-  }, [bridge, revealTreePath])
+  }, [bridge, revealExplicitTreePath, revealTreePath])
 
   const addOptimisticEntry = useCallback((dir: string, entry: FileEntry) => {
     setOptimisticEntries((prev) => {

@@ -381,6 +381,30 @@ describe("FileTreePane", () => {
     expect(bridge.openFile).not.toHaveBeenCalled()
   })
 
+  it("keeps explicit folder reveal ahead of active-file reveal when sources remount", async () => {
+    const bridge = {
+      getActiveFile: () => "index.ts",
+      openFile: vi.fn().mockResolvedValue({ seq: 1, status: "ok" }),
+    }
+
+    render(
+      <FileTreePane
+        params={{
+          bridge,
+          revealFileTreeRequest: { path: "src", seq: 1 },
+        }}
+      />,
+      { wrapper },
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("file-tree")).toHaveAttribute("data-selected", "src")
+      expect(screen.getByTestId("file-tree")).toHaveAttribute("data-reveal", "src")
+    })
+    expect(screen.getByTestId("file-tree")).not.toHaveAttribute("data-selected", "index.ts")
+    expect(bridge.openFile).not.toHaveBeenCalled()
+  })
+
   it("right-click opens context menu with actions", async () => {
     render(<FileTreePane />, { wrapper })
 
