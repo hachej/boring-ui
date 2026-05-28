@@ -58,6 +58,18 @@ async function assertConsumerSafeCss(rel) {
   }
 }
 
+async function assertNoDockviewCssSideEffect(rel) {
+  const sourceText = await readFile(path.resolve(packageRoot, rel), "utf8")
+  const pattern = /dockview-react\/dist\/styles\/dockview\.css/
+  if (pattern.test(sourceText)) {
+    console.error(
+      `assert-build-artifacts: ${rel} imports dockview's raw CSS. ` +
+        "dist/workspace.css already bundles it; JS side effects break SSR consumers.",
+    )
+    process.exit(1)
+  }
+}
+
 if (missing.length > 0) {
   console.error(
     `assert-build-artifacts: missing ${missing.length} required artifact(s):`,
@@ -71,6 +83,7 @@ if (missing.length > 0) {
 }
 
 await assertConsumerSafeCss("dist/workspace.css")
+await assertNoDockviewCssSideEffect("dist/workspace.js")
 
 console.log(
   `assert-build-artifacts: all ${requiredFiles.length} artifacts present`,

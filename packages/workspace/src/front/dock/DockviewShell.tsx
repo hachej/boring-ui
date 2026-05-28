@@ -16,7 +16,6 @@ import {
   type IDockviewPanelHeaderProps,
   type IDockviewPanelProps,
 } from "dockview-react"
-import "dockview-react/dist/styles/dockview.css"
 import "./dockview-overrides.css"
 import { useRegistry } from "../registry"
 import { useHydrationComplete } from "../store/selectors"
