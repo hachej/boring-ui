@@ -71,6 +71,7 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
         const created = await createWorkspaceForUser(userId, DEFAULT_WORKSPACE_NAME, true, request)
         return [created]
       } catch (error) {
+        if (error instanceof HttpError) throw error
         const racedExisting = await store.list(userId, app.config.appId)
         if (racedExisting.length > 0) return racedExisting
         throw error
