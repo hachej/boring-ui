@@ -438,7 +438,7 @@ export function WorkspaceAgentFront<
     storageKey: resolvedSurfaceStorageKey,
     defaultLeftTab: defaultWorkbenchLeftTab,
     extraPanels: shellExtraPanels,
-    rootDir: workspaceRoot,
+    workspaceRoot,
     onReady: handleSurfaceReady,
     onChange: handleSurfaceChange,
     onClose: closeWorkbench,
