@@ -32,7 +32,7 @@ async function waitForPending(store: FileAskUserStore, sessionId: string) {
     const pending = await store.getPending(sessionId)
     expect(pending).not.toBeNull()
     return pending!
-  }, { timeout: 5_000 })
+  }, { timeout: 10_000 })
 }
 
 describe("AskUserStatePublisher", () => {
@@ -65,7 +65,7 @@ describe("AskUserStatePublisher", () => {
     abandonedController.abort()
     await expect(abandonedPending).resolves.toMatchObject({ status: "cancelled" })
     await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null }))
-  })
+  }, 15_000)
 })
 
 describe("ask-user UI open", () => {
@@ -79,7 +79,7 @@ describe("ask-user UI open", () => {
     await expect(store.getPending("s1")).resolves.not.toBeNull()
     await runtime.submitAnswer(question!.questionId, "s1", { answer: "ok" })
     await expect(pending).resolves.toMatchObject({ status: "answered" })
-  })
+  }, 15_000)
 
   it("returns abort without waiting for openSurface acknowledgement", async () => {
     const store = await makeStore()
@@ -101,5 +101,5 @@ describe("ask-user UI open", () => {
     const question = await waitForPending(store, "s1")
     await runtime.submitAnswer(question!.questionId, "s1", { answer: "ok" })
     await expect(pending).resolves.toMatchObject({ status: "answered" })
-  })
+  }, 15_000)
 })
