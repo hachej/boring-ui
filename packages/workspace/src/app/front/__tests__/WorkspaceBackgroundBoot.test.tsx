@@ -101,14 +101,14 @@ it("keeps retryable AGENT_RUNTIME_NOT_READY as preparing", async () => {
   })
 })
 
-it("retries transient runtime-preparing warmup after ready-status completes", async () => {
+it("keeps polling transient runtime-preparing warmup after ready-status completes", async () => {
   const onStatusChange = vi.fn()
   let sessionCalls = 0
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
     if (url.includes("/api/v1/agent/sessions")) {
       sessionCalls += 1
-      if (sessionCalls === 1) {
+      if (sessionCalls <= 2) {
         return json({
           error: {
             code: "AGENT_RUNTIME_NOT_READY",
@@ -130,8 +130,8 @@ it("retries transient runtime-preparing warmup after ready-status completes", as
     />,
   )
 
-  await waitFor(() => expect(onStatusChange).toHaveBeenLastCalledWith({ status: "ready" }))
-  expect(sessionCalls).toBe(2)
+  await waitFor(() => expect(onStatusChange).toHaveBeenLastCalledWith({ status: "ready" }), { timeout: 2_500 })
+  expect(sessionCalls).toBe(3)
 })
 
 it("reports degraded ready-status SSE as failed", async () => {

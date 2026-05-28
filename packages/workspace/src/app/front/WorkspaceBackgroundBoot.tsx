@@ -13,6 +13,8 @@ import {
   type WorkspaceWarmupStatus,
 } from "./workspacePreload"
 
+const PREPARING_RETRY_DELAY_MS = 500
+
 export interface WorkspaceBackgroundBootProps {
   workspaceId: string
   requestHeaders?: Record<string, string>
@@ -20,6 +22,29 @@ export interface WorkspaceBackgroundBootProps {
   preloadPaths?: string[]
   provisionWorkspace?: boolean
   onStatusChange?: (status: WorkspaceWarmupStatus) => void
+}
+
+function sleepUntilRetry(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let timeout: ReturnType<typeof globalThis.setTimeout> | undefined
+    const cleanup = () => {
+      if (timeout) globalThis.clearTimeout(timeout)
+      signal.removeEventListener("abort", onAbort)
+    }
+    const onAbort = () => {
+      cleanup()
+      reject(new DOMException("Warmup aborted", "AbortError"))
+    }
+    if (signal.aborted) {
+      onAbort()
+      return
+    }
+    timeout = globalThis.setTimeout(() => {
+      cleanup()
+      resolve()
+    }, PREPARING_RETRY_DELAY_MS)
+    signal.addEventListener("abort", onAbort, { once: true })
+  })
 }
 
 async function fetchWarmupPath({
@@ -81,7 +106,7 @@ export function WorkspaceBackgroundBoot({
         let results = await Promise.all(paths.map(async (path) => ({ path, result: await warmupPath(path) })))
         if (stale || controller.signal.aborted) return
         let preparingItems = results.filter((item) => item.result.status === "preparing")
-        if (preparingItems.length > 0) {
+        while (preparingItems.length > 0) {
           let requirement: "workspace-fs" | "sandbox-exec" | "ui-bridge" | undefined
           for (const item of preparingItems) {
             if (item.result.status === "preparing" && item.result.requirement) {
@@ -90,12 +115,11 @@ export function WorkspaceBackgroundBoot({
             }
           }
           onStatusChange?.({ status: "preparing", message: "Workspace is still preparing", ...(requirement ? { requirement } : {}) })
-          if (paths.some(isReadyStatusPath)) {
-            results = await Promise.all(preparingItems.map(async (item) => ({ path: item.path, result: await warmupPath(item.path) })))
-            if (stale || controller.signal.aborted) return
-            preparingItems = results.filter((item) => item.result.status === "preparing")
-          }
-          if (preparingItems.length > 0) return
+          await sleepUntilRetry(controller.signal)
+          if (stale || controller.signal.aborted) return
+          results = await Promise.all(preparingItems.map(async (item) => ({ path: item.path, result: await warmupPath(item.path) })))
+          if (stale || controller.signal.aborted) return
+          preparingItems = results.filter((item) => item.result.status === "preparing")
         }
         onStatusChange?.({ status: "ready" })
       } catch (error) {
