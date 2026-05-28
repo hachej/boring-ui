@@ -32,6 +32,7 @@ function mockBundle(provider: string): RuntimeBundle {
   const runtimeContext = { runtimeCwd: "/workspace" }
   return {
     runtimeContext,
+    storageRoot: provider === "vercel-sandbox" ? undefined : runtimeContext.runtimeCwd,
     workspace: {
       root: runtimeContext.runtimeCwd,
       runtimeContext,
