@@ -10,6 +10,7 @@
 export interface FriendlyError {
   title: string
   detail?: string
+  code?: string
 }
 
 export function friendlyError(err: Error): FriendlyError {
@@ -32,10 +33,24 @@ export function friendlyError(err: Error): FriendlyError {
         detail: `${label} ${message?.toLowerCase() ?? 'failed validation'}.`,
       }
     }
-    if (code === 'internal' || code === 'internal_error') {
-      return { title: 'The server hit an internal error.', detail: message }
+    if (code === 'AGENT_RUNTIME_NOT_READY') {
+      return {
+        title: 'Preparing agent…',
+        detail: 'Your message is still in the composer. Try again in a moment.',
+        code,
+      }
     }
-    return { title: message ?? 'Something went wrong.', detail: code }
+    if (code === 'RUNTIME_PROVISIONING_FAILED') {
+      return {
+        title: 'Unable to prepare agent.',
+        detail: message ?? 'Reload the workspace and try again.',
+        code,
+      }
+    }
+    if (code === 'internal' || code === 'internal_error') {
+      return { title: 'The server hit an internal error.', detail: message, code }
+    }
+    return { title: message ?? 'Something went wrong.', detail: code, code }
   } catch {
     return { title: raw }
   }

@@ -91,6 +91,11 @@ export type ComposerBlocker = {
   actions?: ComposerBlockerAction[]
 }
 
+export type ChatPanelWorkspaceWarmupStatus =
+  | { status: 'preparing'; requirement?: 'workspace-fs' | 'sandbox-exec' | 'ui-bridge'; message?: string }
+  | { status: 'ready' }
+  | { status: 'failed'; requirement?: 'workspace-fs' | 'sandbox-exec' | 'ui-bridge'; message?: string }
+
 export type ChatSubmitSource = 'composer' | 'suggestion'
 
 export interface ChatSubmitContext {
@@ -245,6 +250,33 @@ function mergeSettledPiFallbacksInPlace(messages: UIMessage[], piMessages: UIMes
   return out
 }
 
+function composerNoticeForWarmup(status: ChatPanelWorkspaceWarmupStatus | undefined): { title: string; detail?: string; code?: string } | null {
+  if (!status || status.status === 'ready') return null
+  if (status.status === 'failed') {
+    return {
+      title: 'Unable to prepare workspace.',
+      detail: status.message ?? 'Reload the workspace and try again.',
+      code: 'RUNTIME_PROVISIONING_FAILED',
+    }
+  }
+  const title = status.requirement === 'workspace-fs'
+    ? 'Preparing files…'
+    : status.requirement === 'sandbox-exec'
+      ? 'Waking sandbox…'
+      : status.requirement === 'ui-bridge'
+        ? 'Connecting workspace UI…'
+        : 'Preparing agent…'
+  return {
+    title,
+    detail: 'Your message is still in the composer. Try again in a moment.',
+    code: 'AGENT_RUNTIME_NOT_READY',
+  }
+}
+
+function isComposerRuntimeNotice(error: { code?: string } | null | undefined): boolean {
+  return error?.code === 'AGENT_RUNTIME_NOT_READY' || error?.code === 'RUNTIME_PROVISIONING_FAILED'
+}
+
 function getQueuedPiTail(messages: UIMessage[], piMessages: UIMessage[]): UIMessage[] {
   if (piMessages.length === 0) return []
 
@@ -387,6 +419,8 @@ export interface ChatPanelProps {
   emptyPlacement?: 'default' | 'hero'
   /** Placeholder shown in the composer textarea. */
   composerPlaceholder?: string
+  /** Current workspace warmup state. Preparing/failed states keep submits local so drafts are not lost. */
+  workspaceWarmupStatus?: ChatPanelWorkspaceWarmupStatus
   /** Generic host-provided blockers that prevent starting a new user turn. */
   composerBlockers?: ComposerBlocker[]
   /** Called when the user presses Stop in the composer. */
@@ -422,6 +456,7 @@ export function ChatPanel(props: ChatPanelProps) {
     serverResourcesEnabled = true,
     emptyPlacement = 'default',
     composerPlaceholder,
+    workspaceWarmupStatus,
     composerBlockers = [],
     onComposerStop,
     onComposerBlockerAction,
@@ -440,6 +475,7 @@ export function ChatPanel(props: ChatPanelProps) {
   liveSessionIdRef.current = sessionId
   activeAutoSubmitSessionRef.current = sessionId
   const [acceptedAutoSubmittedDraft, setAcceptedAutoSubmittedDraft] = useState<string | undefined>(undefined)
+  const [composerRuntimeNotice, setComposerRuntimeNotice] = useState<{ title: string; detail?: string; code?: string } | null>(null)
 
   useEffect(() => {
     autoSubmittedDraftRef.current = undefined
@@ -492,6 +528,9 @@ export function ChatPanel(props: ChatPanelProps) {
   }, [handleFollowUpData])
 
   const mergedToolRenderers = mergeShadcnToolRenderers(toolRenderers)
+  const friendlyChatError = error ? friendlyError(error) : null
+  const runtimeErrorNotice = isComposerRuntimeNotice(friendlyChatError) ? friendlyChatError : null
+  const composerStatusNotice = composerRuntimeNotice ?? runtimeErrorNotice
   const composerBlocked = composerBlockers.length > 0
   const primaryComposerBlocker = composerBlockers[0]
   const composerBlockerLabel = primaryComposerBlocker?.label ?? 'Complete the pending workspace action to continue.'
@@ -787,6 +826,12 @@ export function ChatPanel(props: ChatPanelProps) {
     if (trimmed.length === 0 && (!files || files.length === 0)) {
       return
     }
+    const warmupNotice = composerNoticeForWarmup(workspaceWarmupStatus)
+    if (warmupNotice) {
+      setComposerRuntimeNotice(warmupNotice)
+      return false
+    }
+    setComposerRuntimeNotice(null)
     if (!(await runBeforeSubmit(text, files ?? [], source))) return false
     if (liveSessionIdRef.current !== sessionId) return false
 
@@ -921,6 +966,10 @@ export function ChatPanel(props: ChatPanelProps) {
     pendingAutoSubmitSettleRef.current = undefined
     onAutoSubmitInitialDraftSettled?.()
   }, [onAutoSubmitInitialDraftSettled, status])
+  useEffect(() => {
+    if (workspaceWarmupStatus?.status === 'ready') setComposerRuntimeNotice(null)
+  }, [workspaceWarmupStatus?.status])
+
   useEffect(() => {
     if (!autoSubmitInitialDraft) return
     if (!initialDraft?.trim()) return
@@ -1271,8 +1320,8 @@ export function ChatPanel(props: ChatPanelProps) {
             )
           })}
           {(() => {
-            if (!error) return null
-            const friendly = friendlyError(error)
+            if (!friendlyChatError || isComposerRuntimeNotice(friendlyChatError)) return null
+            const friendly = friendlyChatError
             return (
               <Message from="assistant" className="!max-w-full">
                 <MessageContent className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3">
@@ -1339,6 +1388,29 @@ export function ChatPanel(props: ChatPanelProps) {
             <span>Working…</span>
           </div>
         </div>
+        {composerStatusNotice && (
+          <div
+            data-testid="chat-composer-runtime-notice"
+            role="status"
+            aria-live="polite"
+            className={cn(
+              "mx-auto mb-2 w-full max-w-3xl rounded-[var(--radius-md)] border border-accent/40 bg-[color:var(--accent-soft)]",
+              "px-3 py-2 text-xs text-foreground",
+            )}
+          >
+            <div className="flex items-start gap-2">
+              {composerStatusNotice.code === 'AGENT_RUNTIME_NOT_READY' ? (
+                <Loader2 aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 animate-spin text-muted-foreground" />
+              ) : (
+                <AlertCircleIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-destructive" />
+              )}
+              <div className="min-w-0">
+                <div className="font-medium">{composerStatusNotice.title}</div>
+                {composerStatusNotice.detail && <div className="mt-0.5 text-muted-foreground">{composerStatusNotice.detail}</div>}
+              </div>
+            </div>
+          </div>
+        )}
         {composerBlocked && (
           <div
             role="status"

@@ -88,6 +88,12 @@ interface RuntimeBinding {
   lastHealthCheckMs?: number
 }
 
+interface RuntimeBindingEntry {
+  promise: Promise<RuntimeBinding>
+  state: 'pending' | 'ready' | 'failed'
+  error?: unknown
+}
+
 interface RuntimeScope {
   root: string
   key: string
@@ -153,6 +159,41 @@ function isExpiredSandboxRuntimeError(error: unknown): boolean {
 
   const message = error instanceof Error ? error.message : String(error)
   return /status code (404|410) is not ok/i.test(message)
+}
+
+function createHttpError(
+  code: typeof ErrorCode.enum[keyof typeof ErrorCode.enum],
+  message: string,
+  details: Record<string, unknown> = {},
+): Error & { code: string; statusCode: number; details: Record<string, unknown> } {
+  const error = new Error(message) as Error & { code: string; statusCode: number; details: Record<string, unknown> }
+  error.code = code
+  error.statusCode = 503
+  error.details = details
+  return error
+}
+
+function createAgentRuntimeNotReadyError(workspaceId: string): Error {
+  return createHttpError(
+    ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
+    'Agent runtime is still preparing. Try again in a moment.',
+    { workspaceId, retryable: true },
+  )
+}
+
+function createRuntimeProvisioningFailedError(workspaceId: string, cause: unknown): Error {
+  const causeCode = (cause as { code?: unknown } | null)?.code
+  const details = (cause as { details?: unknown } | null)?.details
+  return createHttpError(
+    ErrorCode.enum.RUNTIME_PROVISIONING_FAILED,
+    'Agent runtime provisioning failed. Reload the workspace and try again.',
+    {
+      workspaceId,
+      retryable: true,
+      ...(typeof causeCode === 'string' ? { causeCode } : {}),
+      ...(details && typeof details === 'object' ? { causeDetails: details } : {}),
+    },
+  )
 }
 
 export interface RegisterAgentRoutesOptions {
@@ -243,7 +284,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     typeof opts.getPi === 'function' ||
     typeof opts.getSessionNamespace === 'function'
   const sessionChangesTracker = new InMemorySessionChangesTracker()
-  const runtimeBindings = new Map<string, Promise<RuntimeBinding>>()
+  const runtimeBindings = new Map<string, RuntimeBindingEntry>()
   const MAX_RUNTIME_BINDINGS = 256
   function evictRuntimeBindings(): void {
     if (runtimeBindings.size <= MAX_RUNTIME_BINDINGS) return
@@ -430,28 +471,62 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     }
   }
 
+  function createRuntimeBindingEntry(
+    workspaceId: string,
+    scope: RuntimeScope,
+    request?: FastifyRequest,
+  ): RuntimeBindingEntry {
+    const entry: RuntimeBindingEntry = {
+      state: 'pending',
+      promise: Promise.resolve(null as unknown as RuntimeBinding),
+    }
+    entry.promise = createRuntimeBinding(workspaceId, scope, request).then(
+      (binding) => {
+        entry.state = 'ready'
+        return binding
+      },
+      (error) => {
+        entry.state = 'failed'
+        entry.error = error
+        throw error
+      },
+    )
+    entry.promise.catch(() => {})
+    return entry
+  }
+
   async function getOrCreateRuntimeBinding(
     workspaceId: string,
     request?: FastifyRequest,
+    options: { failIfPending?: boolean } = {},
   ): Promise<RuntimeBinding> {
     const scope = await resolveRuntimeScope(workspaceId, request)
     const existing = runtimeBindings.get(scope.key)
     if (existing) {
+      if (options.failIfPending && existing.state === 'pending') {
+        throw createAgentRuntimeNotReadyError(workspaceId)
+      }
+      if (options.failIfPending && existing.state === 'failed') {
+        throw createRuntimeProvisioningFailedError(workspaceId, existing.error)
+      }
       return await ensureRuntimeBindingReady(
         workspaceId,
         scope,
-        await existing,
+        await existing.promise,
       )
     }
 
-    const created = createRuntimeBinding(workspaceId, scope, request)
+    const created = createRuntimeBindingEntry(workspaceId, scope, request)
     runtimeBindings.set(scope.key, created)
     evictRuntimeBindings()
+    if (options.failIfPending) {
+      throw createAgentRuntimeNotReadyError(workspaceId)
+    }
     try {
       return await ensureRuntimeBindingReady(
         workspaceId,
         scope,
-        await created,
+        await created.promise,
       )
     } catch (error) {
       if (runtimeBindings.get(scope.key) === created) runtimeBindings.delete(scope.key)
@@ -466,11 +541,11 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     runtimeBindings.delete(scope.key)
     evictSandboxHandleCacheForWorkspace(workspaceId)
 
-    const created = createRuntimeBinding(workspaceId, scope)
+    const created = createRuntimeBindingEntry(workspaceId, scope)
     runtimeBindings.set(scope.key, created)
     evictRuntimeBindings()
     try {
-      const binding = await created
+      const binding = await created.promise
       binding.lastHealthCheckMs = Date.now()
       return binding
     } catch (error) {
@@ -525,9 +600,12 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     return promise
   }
 
-  async function getBindingForRequest(request: FastifyRequest): Promise<RuntimeBinding> {
+  async function getBindingForRequest(
+    request: FastifyRequest,
+    options: { failIfPending?: boolean } = {},
+  ): Promise<RuntimeBinding> {
     if (staticBinding) return staticBinding
-    return await getOrCreateRuntimeBinding(getRequestWorkspaceId(request), request)
+    return await getOrCreateRuntimeBinding(getRequestWorkspaceId(request), request, options)
   }
 
   const agentToolNames = staticBinding
@@ -617,7 +695,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   })
   await app.register(chatRoutes, {
     getRuntime: async (request) => {
-      const binding = await getBindingForRequest(request)
+      const binding = await getBindingForRequest(request, { failIfPending: hasRuntimeProvisioningInput })
       return {
         harness: binding.harness,
         workdir: binding.runtimeBundle.workspace.root,

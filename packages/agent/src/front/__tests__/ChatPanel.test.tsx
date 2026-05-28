@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ToolPart } from '../../front/toolRenderers'
@@ -314,6 +314,40 @@ describe('ChatPanel (shadcn)', () => {
 
     expect(html).toContain('Something went wrong')
     expect(html).toContain('role="alert"')
+  })
+
+  test('renders runtime readiness errors above the composer instead of as assistant messages', () => {
+    mockUseAgentChat.mockReturnValue({
+      messages: [],
+      sendMessage: mockSendMessage,
+      status: 'error',
+      error: new Error(JSON.stringify({ error: { code: 'AGENT_RUNTIME_NOT_READY', message: 'Agent runtime is still preparing.' } })),
+    })
+
+    render(<ChatPanel sessionId="sess-runtime-not-ready" />)
+
+    expect(screen.getByTestId('chat-composer-runtime-notice').textContent).toContain('Preparing agent')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  test('keeps the draft local while workspace warmup is preparing', async () => {
+    render(
+      <ChatPanel
+        sessionId="sess-warmup"
+        workspaceWarmupStatus={{ status: 'preparing' }}
+      />,
+    )
+
+    let result: false | void = undefined
+    await act(async () => {
+      result = await capturedOnSubmit!({ text: 'Run tests', files: [] })
+    })
+
+    expect(result).toBe(false)
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-composer-runtime-notice').textContent).toContain('Preparing agent')
+    })
   })
 
   test('passive render does not force-scroll to bottom', () => {
