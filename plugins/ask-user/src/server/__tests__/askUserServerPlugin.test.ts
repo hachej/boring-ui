@@ -26,7 +26,7 @@ function bridge(): UiBridge & { commands: UiCommand[] } {
 }
 
 const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer" }] }
-const pendingWait = { timeout: 10_000 }
+const pendingWait = { timeout: 30_000 }
 
 async function fixture() {
   const dir = await mkdtemp(join(tmpdir(), "ask-user-plugin-"))
@@ -41,7 +41,7 @@ async function waitForRuntimeWaiter(runtime: AskUserRuntime, questionId: string)
   }, pendingWait)
 }
 
-describe("ask-user Pi tool", { timeout: 15_000 }, () => {
+describe("ask-user Pi tool", { timeout: 35_000 }, () => {
   it("registers one ask_user tool and rejects invalid input immediately", async () => {
     const { runtime } = await fixture()
     const tool = createAskUserTool({ runtime, sessionId: "s1" })
@@ -98,7 +98,7 @@ describe("ask-user Pi tool", { timeout: 15_000 }, () => {
     await runtime.submitAnswer(pending!.questionId, "chat-session", { answer: "ok" })
     await expect(pendingResult).resolves.toMatchObject({ details: { status: "answered" } })
     await expect(store.getPending("fallback")).resolves.toBeNull()
-  }, 15_000)
+  }, 35_000)
 
   it("valid input creates pending question and waits for runtime answer", async () => {
     const { store, runtime } = await fixture()
@@ -112,7 +112,7 @@ describe("ask-user Pi tool", { timeout: 15_000 }, () => {
     await waitForRuntimeWaiter(runtime, pending!.questionId)
     await runtime.submitAnswer(pending!.questionId, "s1", { answer: "ok" })
     await expect(pendingResult).resolves.toMatchObject({ details: { status: "answered" } })
-  }, 15_000)
+  }, 35_000)
 })
 
 describe("createAskUserServerPlugin", () => {

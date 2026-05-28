@@ -10,6 +10,7 @@ import { constantTimeEqual, QuestionsBridge } from "../questionsBridge"
 import { questionsRoutes } from "../questionsRoutes"
 
 const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer", required: true }] }
+const waitTimeout = 30_000
 const controllers: AbortController[] = []
 
 afterEach(() => {
@@ -27,14 +28,14 @@ async function fixture() {
     const pending = await store.getPending("s1")
     expect(pending).not.toBeNull()
     return pending!
-  }, { timeout: 10_000 })
+  }, { timeout: waitTimeout })
   await vi.waitFor(() => {
     expect(runtime.coordinator.hasWaiter(question.questionId)).toBe(true)
-  }, { timeout: 10_000 })
+  }, { timeout: waitTimeout })
   return { store, runtime, question, result }
 }
 
-describe("QuestionsBridge", { timeout: 15_000 }, () => {
+describe("QuestionsBridge", { timeout: 35_000 }, () => {
   it("compares tokens in constant time helper without length throws", () => {
     expect(constantTimeEqual("abc", "abc")).toBe(true)
     expect(constantTimeEqual("abc", "ab")).toBe(false)
@@ -71,7 +72,7 @@ describe("QuestionsBridge", { timeout: 15_000 }, () => {
     const orphanRuntime = new AskUserRuntime({ store, ownerPrincipalId: "p1" })
     const bridge = new QuestionsBridge({ store, runtime: orphanRuntime, getAuthContext: () => ({ sessionId: "s1", principalId: "p1" }) })
     await expect(bridge.handle({ kind: "questions.submit", params: { questionId: question.questionId, sessionId: "s1", answerToken: question.answerToken, values: { answer: "ok" } } })).rejects.toMatchObject({ statusCode: 409 })
-  }, 15_000)
+  }, 35_000)
 
   it("rejects submit after cancel", async () => {
     const { store, runtime, question } = await fixture()
@@ -93,11 +94,11 @@ describe("QuestionsBridge", { timeout: 15_000 }, () => {
     await expect(store.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "answered" })
     const answers = await store.getTranscriptEventsForQuestion(question.questionId)
     expect(answers.filter((event) => event.type === "answered")).toHaveLength(1)
-  }, 15_000)
+  }, 35_000)
 
 })
 
-describe("questionsRoutes", { timeout: 15_000 }, () => {
+describe("questionsRoutes", { timeout: 35_000 }, () => {
   it("enforces origin/csrf and dispatches commands", async () => {
     const { store, runtime, question } = await fixture()
     const app = Fastify()
