@@ -180,6 +180,42 @@ describe('CoreWorkspaceAgentFront', () => {
     expect(workspaceAgentProps?.chatParams).toMatchObject({ serverResourcesEnabled: false, hydrateMessages: false })
   })
 
+  it('allows apps to customize the public chat-first shell copy', async () => {
+    const { CoreWorkspaceAgentFront } = await importSubject()
+    sessionState = { data: null, isPending: false }
+    currentWorkspaceId = null
+    routePath = '/'
+
+    render(
+      <CoreWorkspaceAgentFront
+        chatEntryMode="chat-first"
+        chatFirstPublicShell={{
+          composerPlaceholder: 'Ask about macro data…',
+          emptyState: {
+            eyebrow: 'Macro analyst',
+            title: 'What macro signal should we inspect?',
+            description: 'Search FRED, plot indicators, or draft a deck.',
+          },
+          suggestions: [
+            { label: 'Search series', hint: 'Find FRED data', prompt: 'Find CPI and unemployment series.' },
+          ],
+        }}
+      />,
+    )
+
+    expect(workspaceAgentProps?.chatParams).toMatchObject({
+      composerPlaceholder: 'Ask about macro data…',
+      emptyState: {
+        eyebrow: 'Macro analyst',
+        title: 'What macro signal should we inspect?',
+        description: 'Search FRED, plot indicators, or draft a deck.',
+      },
+      suggestions: [
+        { label: 'Search series', hint: 'Find FRED data', prompt: 'Find CPI and unemployment series.' },
+      ],
+    })
+  })
+
   it('signs in from the chat-first auth overlay without a hard browser reload', async () => {
     const { CoreWorkspaceAgentFront } = await importSubject()
     sessionState = { data: null, isPending: false }
