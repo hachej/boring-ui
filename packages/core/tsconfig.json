@@ -16,6 +16,7 @@
       "@hachej/boring-core/app/server": ["src/app/server/index.ts"],
       "@hachej/boring-core/app/front": ["src/app/front/index.ts"],
       "@hachej/boring-core/app/vite": ["src/app/vite/index.ts"],
+      "@hachej/boring-workspace": ["../workspace/src/index.ts"],
       "@hachej/boring-workspace/app/front": ["../workspace/src/app/front/index.ts"],
       "@hachej/boring-workspace/app/server": ["../workspace/src/app/server/index.ts"],
       "@hachej/boring-workspace/server": ["../workspace/src/server/index.ts"],

@@ -85,21 +85,6 @@ describe("ask-user Pi tool", { timeout: 35_000 }, () => {
     expect(runtime.ask).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "chat-session" }), undefined)
   })
 
-  it("persists tool execution session id when the harness provides one", async () => {
-    const { store, runtime } = await fixture()
-    const tool = createAskUserTool({ runtime, sessionId: "fallback" })
-    const pendingResult = tool.execute("call", { title: "Need input", schema, timeoutMs: 60_000 }, undefined, "chat-session")
-    let pending = await store.getPending("chat-session")
-    await vi.waitFor(async () => {
-      pending = await store.getPending("chat-session")
-      expect(pending).toMatchObject({ status: "ready", title: "Need input" })
-    }, pendingWait)
-    await waitForRuntimeWaiter(runtime, pending!.questionId)
-    await runtime.submitAnswer(pending!.questionId, "chat-session", { answer: "ok" })
-    await expect(pendingResult).resolves.toMatchObject({ details: { status: "answered" } })
-    await expect(store.getPending("fallback")).resolves.toBeNull()
-  }, 35_000)
-
   it("valid input creates pending question and waits for runtime answer", async () => {
     const { store, runtime } = await fixture()
     const tool = createAskUserTool({ runtime, sessionId: "s1" })

@@ -16,6 +16,8 @@ import {
   createLocalStorageSessions,
   useLocalStorageSessions,
 } from "./localStorageSessions"
+import { WorkspaceBackgroundBoot } from "./WorkspaceBackgroundBoot"
+import { workspaceRequestHeaders, type WorkspaceWarmupStatus } from "./workspacePreload"
 
 export interface WorkspaceAgentSession {
   id: string
@@ -28,6 +30,7 @@ export interface WorkspaceAgentSessionsApi<
 > {
   sessions: TSession[]
   loading: boolean
+  error?: Error | null
   activeSessionId?: string | null
   activeSession?: TSession | null
   switch: (id: string) => void
@@ -40,6 +43,8 @@ export type UseWorkspaceAgentSessions<
 > = (options: {
   requestHeaders: Record<string, string>
   storageKey: string
+  enabled?: boolean
+  refreshKey?: unknown
 }) => WorkspaceAgentSessionsApi<TSession>
 
 export interface WorkspaceAgentFrontProps<
@@ -57,8 +62,11 @@ export interface WorkspaceAgentFrontProps<
   afterShell?: ReactNode
   appTitle?: string
   defaultSessionTitle?: string
+  navEnabled?: boolean
+  defaultNavOpen?: boolean
   defaultSurfaceOpen?: boolean
   defaultWorkbenchLeftTab?: string
+  surfaceInitialPanels?: SurfaceShellProps["initialPanels"]
   topBarLeft?: ReactNode
   topBarRight?: ReactNode
   sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number }>
@@ -77,6 +85,9 @@ export interface WorkspaceAgentFrontProps<
   hotReloadEnabled?: boolean
   extraPanels?: string[]
   extraCommands?: SlashCommand[]
+  provisionWorkspace?: boolean
+  bootPreloadPaths?: string[]
+  onWorkspaceWarmupStatusChange?: (status: WorkspaceWarmupStatus) => void
 }
 
 function shellStorageKeyFromSurfaceStorage(
@@ -111,10 +122,42 @@ function useStoredBooleanState(
 }
 
 const EMPTY_HEADERS: Record<string, string> = {}
+const PREPARING_WARMUP_STATUS: WorkspaceWarmupStatus = { status: "preparing" }
 
 const emptySurfaceSnapshot: SurfaceShellSnapshot = {
   openTabs: [],
   activeTab: null,
+}
+
+function WorkbenchWarmupOverlay({ status }: { status: WorkspaceWarmupStatus }) {
+  const requirement = status.status === "ready" ? undefined : status.requirement
+  const preparing = status.status !== "failed"
+  const title = preparing
+    ? requirement === "workspace-fs"
+      ? "Preparing files…"
+      : requirement === "sandbox-exec"
+        ? "Waking sandbox…"
+        : requirement === "ui-bridge"
+          ? "Connecting workspace UI…"
+          : "Preparing workspace…"
+    : "Workspace workbench failed"
+  const description = status.status === "failed"
+    ? status.message
+    : "Chat is ready while files, tools, and workspace panels finish warming up."
+  return (
+    <div className="flex h-full min-h-0 items-center justify-center bg-background px-6 text-center">
+      <div className="max-w-sm rounded-2xl border border-border bg-card p-5 shadow-sm">
+        {preparing ? (
+          <div className="mx-auto mb-3 h-7 w-7 rounded-full border-2 border-muted-foreground/20 border-t-foreground animate-spin" aria-hidden="true" />
+        ) : null}
+        <div className="text-sm font-semibold text-foreground">{title}</div>
+        <p className="mt-2 text-sm text-muted-foreground">{description}</p>
+        {status.status === "failed" ? (
+          <p className="mt-3 text-xs text-muted-foreground">Reload the workspace to retry.</p>
+        ) : null}
+      </div>
+    </div>
+  )
 }
 
 function uiEndpointBase(endpoint: string | null | undefined): string {
@@ -189,7 +232,7 @@ export function WorkspaceAgentFront<
   workspaceId,
   chatPanel: chatPanelProp,
   useSessions: useSessionsProp,
-  requestHeaders = EMPTY_HEADERS,
+  requestHeaders,
   sessionStorageKey,
   providerStorageKey,
   surfaceStorageKey,
@@ -218,8 +261,11 @@ export function WorkspaceAgentFront<
   onActiveSessionIdChange,
   appTitle = "Boring",
   defaultSessionTitle = "New session",
+  navEnabled = true,
+  defaultNavOpen = false,
   defaultSurfaceOpen,
   defaultWorkbenchLeftTab,
+  surfaceInitialPanels,
   topBarLeft,
   topBarRight,
   chatParams,
@@ -227,8 +273,12 @@ export function WorkspaceAgentFront<
   frontPluginHotReload,
   extraPanels,
   extraCommands,
+  provisionWorkspace,
+  bootPreloadPaths,
+  onWorkspaceWarmupStatusChange,
   onOpenNav,
   onOpenSurface,
+  surfaceButtonBottomOffset,
   className,
 }: WorkspaceAgentFrontProps<TSession>) {
   const resolvedProviderStorageKey =
@@ -242,19 +292,40 @@ export function WorkspaceAgentFront<
   const shellPersistenceEnabled = persistenceEnabled !== false
   const resolvedSessionStorageKey =
     sessionStorageKey ?? `boring-workspace:sessions:${workspaceId}`
+  const resolvedRequestHeaders = useMemo(
+    () => workspaceRequestHeaders(workspaceId, requestHeaders ?? EMPTY_HEADERS),
+    [requestHeaders, workspaceId],
+  )
+  const resolvedAuthHeaders = useMemo(
+    () => workspaceRequestHeaders(workspaceId, authHeaders ?? EMPTY_HEADERS),
+    [authHeaders, workspaceId],
+  )
   const localSessionStore = useMemo(
     () => createLocalStorageSessions({ storageKey: resolvedSessionStorageKey }),
     [resolvedSessionStorageKey],
   )
   const localSessions = useLocalStorageSessions(localSessionStore)
+  const [workspaceWarmupState, setWorkspaceWarmupState] = useState<{ workspaceId: string; status: WorkspaceWarmupStatus }>(() => ({
+    workspaceId,
+    status: PREPARING_WARMUP_STATUS,
+  }))
+  const workspaceWarmupStatus = workspaceWarmupState.workspaceId === workspaceId
+    ? workspaceWarmupState.status
+    : PREPARING_WARMUP_STATUS
   const chatPanel = (chatPanelProp ?? DefaultChatPanel) as ComponentType<WorkspaceChatPanelProps>
-  const useSessions = (useSessionsProp ?? (chatPanelProp ? undefined : useDefaultAgentSessions)) as
-    | UseWorkspaceAgentSessions<TSession>
-    | undefined
-  const sessionApi = useSessions?.({
-    requestHeaders,
+  const useSessions = (useSessionsProp ?? useDefaultAgentSessions) as UseWorkspaceAgentSessions<TSession>
+  const shouldUseRemoteSessions = !chatPanelProp || Boolean(useSessionsProp)
+  const remoteSessionHookEnabled = shouldUseRemoteSessions && provisionWorkspace !== false
+  const remoteSessionActionsUnavailable = () => undefined
+  const remoteSessionApi = useSessions({
+    requestHeaders: resolvedRequestHeaders,
     storageKey: resolvedSessionStorageKey,
+    enabled: remoteSessionHookEnabled,
+    refreshKey: workspaceWarmupStatus.status === "ready" ? "workspace-ready" : undefined,
   })
+  const remoteSessionsAvailable = remoteSessionHookEnabled && !remoteSessionApi.loading && !remoteSessionApi.error
+  const remoteSessionsPending = remoteSessionHookEnabled && !remoteSessionsAvailable
+  const sessionApi = shouldUseRemoteSessions && remoteSessionsAvailable ? remoteSessionApi : undefined
   const hasExplicitSessionProps =
     sessions !== undefined ||
     activeSessionId !== undefined ||
@@ -267,32 +338,79 @@ export function WorkspaceAgentFront<
   }))
   const resolvedSessions = sessionApi
     ? sessionItems ?? []
-    : hasExplicitSessionProps
-      ? sessions ?? []
-      : localSessions.sessions
+    : remoteSessionsPending
+      ? []
+      : hasExplicitSessionProps
+        ? sessions ?? []
+        : localSessions.sessions
   const resolvedActiveId = sessionApi
     ? sessionApi.activeSessionId ?? null
-    : hasExplicitSessionProps
-      ? activeSessionId ?? null
-      : localSessions.activeId
-  const rawSwitch = sessionApi?.switch ?? onSwitchSession ?? localSessionStore.switchTo
+    : remoteSessionsPending
+      ? null
+      : hasExplicitSessionProps
+        ? activeSessionId ?? null
+        : localSessions.activeId
+  const requestedAutoSubmitInitialDraft = chatParams?.autoSubmitInitialDraft === true
+  const needsFreshRemoteSessionForAutoSubmit = requestedAutoSubmitInitialDraft && shouldUseRemoteSessions && !hasExplicitSessionProps
+  const [autoSubmitSessionId, setAutoSubmitSessionId] = useState<string | null | undefined>(() => (
+    needsFreshRemoteSessionForAutoSubmit ? null : undefined
+  ))
+  const autoSubmitSessionWorkspaceRef = useRef(workspaceId)
+  const autoSubmitSessionCreateRef = useRef(false)
+  useEffect(() => {
+    if (autoSubmitSessionWorkspaceRef.current !== workspaceId) {
+      autoSubmitSessionWorkspaceRef.current = workspaceId
+      autoSubmitSessionCreateRef.current = false
+      setAutoSubmitSessionId(needsFreshRemoteSessionForAutoSubmit ? null : undefined)
+      return
+    }
+    if (needsFreshRemoteSessionForAutoSubmit && autoSubmitSessionId === undefined) {
+      autoSubmitSessionCreateRef.current = false
+      setAutoSubmitSessionId(null)
+    }
+  }, [autoSubmitSessionId, needsFreshRemoteSessionForAutoSubmit, workspaceId])
+  useEffect(() => {
+    if (!sessionApi || autoSubmitSessionId !== null) return
+    if (autoSubmitSessionCreateRef.current) return
+    autoSubmitSessionCreateRef.current = true
+    void Promise.resolve(sessionApi.create({ title: defaultSessionTitle }))
+      .then((session) => {
+        if (typeof (session as { id?: unknown } | null | undefined)?.id !== "string") {
+          throw new Error("auto_submit_session_create_failed")
+        }
+        setAutoSubmitSessionId((session as { id: string }).id)
+      })
+      .catch(() => {
+        autoSubmitSessionCreateRef.current = false
+        setAutoSubmitSessionId(undefined)
+      })
+  }, [autoSubmitSessionId, defaultSessionTitle, sessionApi])
+  const effectiveActiveSessionId = autoSubmitSessionId !== undefined ? autoSubmitSessionId ?? null : resolvedActiveId
+  const rawSwitch = remoteSessionsPending
+    ? remoteSessionActionsUnavailable
+    : sessionApi?.switch ?? onSwitchSession ?? localSessionStore.switchTo
   const resolvedSwitch = useCallback((nextSessionId: string) => {
-    if (resolvedActiveId && nextSessionId !== resolvedActiveId) {
-      window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: resolvedActiveId } }))
+    if (effectiveActiveSessionId && nextSessionId !== effectiveActiveSessionId) {
+      window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: effectiveActiveSessionId } }))
     }
     return rawSwitch(nextSessionId)
-  }, [rawSwitch, resolvedActiveId])
-  const resolvedCreate = sessionApi
-    ? () => sessionApi.create()
-    : onCreateSession ?? localSessionStore.create
-  const resolvedDelete = sessionApi?.delete ?? onDeleteSession ?? localSessionStore.remove
-  const resolvedSessionTitle = resolvedSessions.find((session) => session.id === resolvedActiveId)?.title ?? undefined
+  }, [effectiveActiveSessionId, rawSwitch])
+  const resolvedCreate = remoteSessionsPending
+    ? remoteSessionActionsUnavailable
+    : sessionApi
+      ? () => sessionApi.create()
+      : onCreateSession ?? localSessionStore.create
+  const resolvedDelete = remoteSessionsPending
+    ? remoteSessionActionsUnavailable
+    : sessionApi?.delete ?? onDeleteSession ?? localSessionStore.remove
+  const resolvedSessionTitle = resolvedSessions.find((session) => session.id === effectiveActiveSessionId)?.title ?? undefined
 
   const [navOpen, setNavOpen] = useStoredBooleanState(
     `${shellStorageKey}:drawer`,
-    true,
+    defaultNavOpen,
     shellPersistenceEnabled,
   )
+  const effectiveNavOpen = navEnabled && navOpen
   const [surfaceOpen, setSurfaceOpen] = useStoredBooleanState(
     // Key must NOT match resolvedSurfaceStorageKey (which stores the dockview
     // layout JSON at the same ":surface" suffix). Writing "1"/"0" to the same
@@ -328,6 +446,7 @@ export function WorkspaceAgentFront<
 
   useEffect(() => {
     if (!sessionApi || sessionApi.loading) return
+    if (autoSubmitSessionId !== undefined) return
     if (sessionApi.sessions.length > 0) {
       autoCreateSessionRef.current = false
       return
@@ -337,7 +456,7 @@ export function WorkspaceAgentFront<
     void Promise.resolve(sessionApi.create({ title: defaultSessionTitle })).catch(() => {
       autoCreateSessionRef.current = false
     })
-  }, [defaultSessionTitle, sessionApi])
+  }, [autoSubmitSessionId, defaultSessionTitle, sessionApi])
 
   useEffect(() => {
     surfaceOpenRef.current = surfaceOpen
@@ -367,8 +486,14 @@ export function WorkspaceAgentFront<
     surfaceOpenRef.current = true
     setSurfaceOpen(true)
   }, [setSurfaceOpen])
+  const openWorkbenchSources = useCallback(() => {
+    surfaceOpenRef.current = true
+    setSurfaceOpen(true)
+    setWorkbenchLeftOpen(true)
+  }, [setSurfaceOpen, setWorkbenchLeftOpen])
   const closeWorkbench = useCallback(() => {
     surfaceOpenRef.current = false
+    surfaceRef.current = null
     setSurfaceOpen(false)
   }, [setSurfaceOpen])
   const capturedPlugins = useMemo(
@@ -387,7 +512,28 @@ export function WorkspaceAgentFront<
     () => [...(extraPanels ?? []), ...pluginPanelIds],
     [extraPanels, pluginPanelIds],
   )
-  const chatSessionId = resolvedActiveId ?? resolvedSessions[0]?.id ?? "default"
+  const chatSessionId = effectiveActiveSessionId ?? (autoSubmitSessionId !== undefined ? "default" : resolvedSessions[0]?.id ?? "default")
+  const [autoSubmitHydrationDisabled, setAutoSubmitHydrationDisabled] = useState(requestedAutoSubmitInitialDraft)
+  const autoSubmitHydrationWorkspaceRef = useRef(workspaceId)
+  useEffect(() => {
+    if (autoSubmitHydrationWorkspaceRef.current !== workspaceId) {
+      autoSubmitHydrationWorkspaceRef.current = workspaceId
+      setAutoSubmitHydrationDisabled(requestedAutoSubmitInitialDraft)
+      return
+    }
+    if (requestedAutoSubmitInitialDraft) {
+      setAutoSubmitHydrationDisabled(true)
+    }
+  }, [requestedAutoSubmitInitialDraft, workspaceId])
+  const autoSubmittingInitialDraft = requestedAutoSubmitInitialDraft
+  const delayAutoSubmitDraft = autoSubmittingInitialDraft && shouldUseRemoteSessions && !effectiveActiveSessionId
+  const hydrateMessages = !autoSubmitHydrationDisabled && provisionWorkspace !== false && (
+    shouldUseRemoteSessions ? remoteSessionsAvailable && Boolean(resolvedActiveId) : true
+  )
+  const handleWorkspaceWarmupStatusChange = useCallback((status: WorkspaceWarmupStatus) => {
+    setWorkspaceWarmupState({ workspaceId, status })
+    onWorkspaceWarmupStatusChange?.(status)
+  }, [onWorkspaceWarmupStatusChange, workspaceId])
 
   useEffect(() => {
     // postUiCommand also emits a browser CustomEvent so app/plugin bundles
@@ -399,42 +545,53 @@ export function WorkspaceAgentFront<
         surface: getSurface,
         isWorkbenchOpen,
         openWorkbench,
+        openWorkbenchSources,
       })
     }
     globalThis.addEventListener?.(UI_COMMAND_EVENT, handler)
     return () => globalThis.removeEventListener?.(UI_COMMAND_EVENT, handler)
-  }, [getSurface, isWorkbenchOpen, openWorkbench])
+  }, [getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources])
 
   useEffect(() => {
-    if (resolvedActiveId) onActiveSessionIdChange?.(resolvedActiveId)
-  }, [resolvedActiveId, onActiveSessionIdChange])
+    if (effectiveActiveSessionId) onActiveSessionIdChange?.(effectiveActiveSessionId)
+  }, [effectiveActiveSessionId, onActiveSessionIdChange])
+
+  const workbenchBlocked = workspaceWarmupStatus.status !== "ready"
+  const workbenchOverlay = workbenchBlocked ? <WorkbenchWarmupOverlay status={workspaceWarmupStatus} /> : undefined
 
   const centerParams = useMemo(
     () => ({
       ...chatParams,
+      ...(delayAutoSubmitDraft ? { autoSubmitInitialDraft: false, initialDraft: undefined } : {}),
       sessionId: chatSessionId,
-      requestHeaders,
+      requestHeaders: resolvedRequestHeaders,
       bridgeEndpoint,
       getSurface,
       isWorkbenchOpen,
       openWorkbench,
+      openWorkbenchSources,
       closeWorkbench,
       extraCommands,
+      workspaceWarmupStatus,
+      hydrateMessages,
+      onAutoSubmitInitialDraftSettled: () => {
+        autoSubmitSessionCreateRef.current = false
+        setAutoSubmitHydrationDisabled(false)
+        setAutoSubmitSessionId(undefined)
+        const existing = chatParams?.onAutoSubmitInitialDraftSettled
+        if (typeof existing === "function") existing()
+      },
       // Forward the explicit prop when set. Omitting the key (when undefined)
       // lets ChatPanel apply its own default (true) and avoids overriding a
       // value passed through chatParams.
       ...(hotReloadEnabled !== undefined ? { hotReloadEnabled } : {}),
     }),
-    [chatParams, chatSessionId, requestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench, extraCommands, hotReloadEnabled],
+    [chatParams, delayAutoSubmitDraft, chatSessionId, resolvedRequestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, extraCommands, workspaceWarmupStatus, hydrateMessages, hotReloadEnabled],
   )
-  const resolvedAuthHeaders = useMemo(() => {
-    if (!authHeaders && Object.keys(requestHeaders).length === 0) return undefined
-    return { ...requestHeaders, ...authHeaders }
-  }, [authHeaders, requestHeaders])
-
   const surfaceParams = useMemo<SurfaceShellProps>(() => ({
     storageKey: resolvedSurfaceStorageKey,
     defaultLeftTab: defaultWorkbenchLeftTab,
+    initialPanels: surfaceInitialPanels,
     extraPanels: shellExtraPanels,
     onReady: handleSurfaceReady,
     onChange: handleSurfaceChange,
@@ -442,6 +599,7 @@ export function WorkspaceAgentFront<
   }), [
     closeWorkbench,
     defaultWorkbenchLeftTab,
+    surfaceInitialPanels,
     handleSurfaceChange,
     handleSurfaceReady,
     resolvedSurfaceStorageKey,
@@ -483,10 +641,18 @@ export function WorkspaceAgentFront<
         fullPageBasePath={fullPageBasePath}
       >
         {beforeShell}
+        <WorkspaceBackgroundBoot
+          workspaceId={workspaceId}
+          requestHeaders={resolvedRequestHeaders}
+          apiBaseUrl={apiBaseUrl}
+          preloadPaths={bootPreloadPaths}
+          provisionWorkspace={provisionWorkspace}
+          onStatusChange={handleWorkspaceWarmupStatusChange}
+        />
         <WorkspaceUiStateSync
           bridgeEndpoint={bridgeEndpoint}
-          requestHeaders={requestHeaders}
-          navOpen={navOpen}
+          requestHeaders={resolvedRequestHeaders}
+          navOpen={effectiveNavOpen}
           surfaceOpen={surfaceOpen}
           snapshot={surfaceSnapshot}
         />
@@ -501,7 +667,7 @@ export function WorkspaceAgentFront<
           />
           <ChatLayout
             className={className}
-            nav={navOpen ? "session-list" : null}
+            nav={effectiveNavOpen ? "session-list" : null}
             navParams={{
               sessions: resolvedSessions,
               activeId: resolvedActiveId,
@@ -514,22 +680,24 @@ export function WorkspaceAgentFront<
             centerParams={centerParams}
             surface={surfaceOpen ? "artifact-surface" : null}
             surfaceParams={surfaceParams as Record<string, unknown>}
-            sidebar={surfaceOpen && hasLeftTabs && workbenchLeftOpen ? "workbench-left" : null}
-            sidebarParams={surfaceOpen && hasLeftTabs ? {
+            surfaceOverlay={workbenchOverlay}
+            sidebar={surfaceOpen && !workbenchBlocked && hasLeftTabs && workbenchLeftOpen ? "workbench-left" : null}
+            sidebarParams={surfaceOpen && !workbenchBlocked && hasLeftTabs ? {
               ...(defaultWorkbenchLeftTab ? { defaultTab: defaultWorkbenchLeftTab } : {}),
               onClose: () => setWorkbenchLeftOpen(false),
               onCollapse: () => setWorkbenchLeftOpen(false),
             } : undefined}
             storageKey={shellPersistenceEnabled ? shellStorageKey : undefined}
-            onOpenNav={() => {
+            onOpenNav={navEnabled ? () => {
               setNavOpen(true)
               onOpenNav?.()
-            }}
+            } : undefined}
             onOpenSurface={() => {
               surfaceOpenRef.current = true
               setSurfaceOpen(true)
               onOpenSurface?.()
             }}
+            surfaceButtonBottomOffset={surfaceButtonBottomOffset}
             onOpenSidebar={hasLeftTabs ? () => {
               surfaceOpenRef.current = true
               setSurfaceOpen(true)

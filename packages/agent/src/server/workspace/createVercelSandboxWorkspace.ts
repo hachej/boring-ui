@@ -9,18 +9,21 @@ import type {
 } from '../../shared/workspace'
 import { validatePath } from './paths'
 
-export const VERCEL_SANDBOX_REMOTE_ROOT = '/vercel/sandbox'
 export const VERCEL_SANDBOX_WORKSPACE_ROOT = '/workspace'
+export const VERCEL_SANDBOX_REMOTE_ROOT = VERCEL_SANDBOX_WORKSPACE_ROOT
+export const VERCEL_SANDBOX_RUNTIME_CONTEXT = { runtimeCwd: VERCEL_SANDBOX_WORKSPACE_ROOT } as const
+
+const EPERM_CODE = 'EPERM'
+const CACHE_TTL_MS = 15_000
+const CACHE_MAX_ENTRIES = 512
+const MAX_INLINE_WRITE_BYTES = 128 * 1024
+const metadataInvalidators = new WeakMap<VercelSandbox, Set<() => void>>()
 
 type VercelSandboxStat = {
   size: number
   mtimeMs: number
   isDirectory(): boolean
 }
-const CACHE_TTL_MS = 15_000
-const CACHE_MAX_ENTRIES = 512
-const MAX_INLINE_WRITE_BYTES = 128 * 1024
-const metadataInvalidators = new WeakMap<VercelSandbox, Set<() => void>>()
 
 function toSandboxPath(relPath: string): string {
   return validatePath(VERCEL_SANDBOX_REMOTE_ROOT, relPath)
@@ -173,18 +176,6 @@ export interface VercelSandboxWorkspaceOptions {
   onMutation?: () => void
 }
 
-/**
- * Internal change-event broadcaster. The sandbox runtime can't run
- * chokidar against the remote container, so we surface "events" from
- * the only thing the server can observe: its own write paths
- * (writeFile / unlink / rename / mkdir below). External mutations
- * inside the sandbox aren't visible — sandbox is single-tenant by
- * design, so this is acceptable.
- *
- * From the client's POV the SSE channel looks identical to the Node
- * impl: it emits `WorkspaceChangeEvent`s, the client doesn't care
- * which production source generated them.
- */
 function createSandboxBroadcaster(): {
   emit: (e: WorkspaceChangeEvent) => void
   watcher: WorkspaceWatcher
@@ -237,8 +228,22 @@ export function createVercelSandboxWorkspace(
   const { emit: emitChange, watcher } = createSandboxBroadcaster()
   const remote = sandbox
 
+  async function listDescendantPaths(relPath: string, sandboxPath: string): Promise<string[]> {
+    const entries = await readSandboxDirectoryEntries(remote, sandboxPath)
+    const descendants: string[] = []
+    for (const entry of entries) {
+      const childRelPath = relPath === '.' ? entry.name : `${relPath}/${entry.name}`
+      descendants.push(childRelPath)
+      if (entry.kind === 'dir') {
+        descendants.push(...await listDescendantPaths(childRelPath, `${sandboxPath}/${entry.name}`))
+      }
+    }
+    return descendants
+  }
+
   return {
-    root: VERCEL_SANDBOX_WORKSPACE_ROOT,
+    root: VERCEL_SANDBOX_RUNTIME_CONTEXT.runtimeCwd,
+    runtimeContext: VERCEL_SANDBOX_RUNTIME_CONTEXT,
     fsCapability: 'best-effort',
     watch() {
       return watcher
@@ -350,16 +355,19 @@ export function createVercelSandboxWorkspace(
     async unlink(relPath) {
       const sandboxPath = toSandboxPath(relPath)
       if (sandboxPath === VERCEL_SANDBOX_REMOTE_ROOT) {
-        const error = new Error(`EINVAL: cannot remove workspace root, unlink '${sandboxPath}'`) as NodeJS.ErrnoException
-        error.code = 'EINVAL'
-        throw error
+        throw Object.assign(new Error('cannot remove workspace root'), { code: EPERM_CODE })
       }
       const pathStat = await lstatWithoutSymlinkComponents(remote, sandboxPath, { allowLeafSymlink: true })
-      if (pathStat.isDirectory()) await remote.fs.rmdir(sandboxPath)
-      else await remote.fs.rm(sandboxPath, { recursive: false, force: false })
+      const descendantPaths = pathStat.isSymbolicLink() || !pathStat.isDirectory()
+        ? []
+        : await listDescendantPaths(relPath, sandboxPath)
+      await remote.fs.rm(sandboxPath, { recursive: pathStat.isDirectory(), force: false })
       invalidateMetadataCache()
       workspaceOpts.onMutation?.()
       emitChange({ op: 'unlink', path: relPath })
+      for (const path of descendantPaths) {
+        emitChange({ op: 'unlink', path })
+      }
     },
     async readdir(relPath) {
       const sandboxPath = toSandboxPath(relPath)

@@ -1,3 +1,5 @@
+import type { ReactNode } from "react"
+
 export interface IdeLayoutProps {
   sidebar?: string
   center?: string
@@ -12,11 +14,13 @@ export interface ChatLayoutProps {
   centerParams?: Record<string, unknown>
   surface?: string | null
   surfaceParams?: Record<string, unknown>
+  surfaceOverlay?: ReactNode
   sidebar?: string | null
   sidebarParams?: Record<string, unknown>
   storageKey?: string
   onOpenNav?: () => void
   onOpenSurface?: () => void
+  surfaceButtonBottomOffset?: number
   onOpenSidebar?: () => void
   className?: string
 }

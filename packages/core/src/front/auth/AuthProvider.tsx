@@ -2,7 +2,7 @@ import { createContext, useContext, useCallback, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { getAuthClient } from './authClient.js'
 import type { AuthClient } from './authClient.js'
-import { routes } from '../utils.js'
+import { buildApiUrl, routes } from '../utils.js'
 import type { SessionState, User } from '../../shared/types.js'
 
 export interface AuthProviderProps {
@@ -103,12 +103,24 @@ export function useSignUp() {
 }
 
 export function useForgetPassword() {
-  const { client } = useAuthContext()
-  // better-auth maps /request-password-reset → forgetPassword via path-to-object proxy
-  return (client as any).forgetPassword as (opts: {
+  useAuthContext()
+  return async (opts: {
     email: string
     redirectTo: string
-  }) => Promise<{ data: unknown; error: unknown }>
+  }) => {
+    const endpoint = buildApiUrl('/auth/request-password-reset')
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(opts),
+    })
+    const data = await response.json().catch(() => null)
+    if (!response.ok) {
+      return { data: null, error: data ?? { status: response.status, message: 'Request failed' } }
+    }
+    return { data, error: null }
+  }
 }
 
 export function useResetPassword() {

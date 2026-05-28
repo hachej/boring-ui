@@ -89,6 +89,7 @@
     "nodemailer": "^8.0.9",
     "pino": "^10.3.1",
     "postgres": "^3.4.9",
+    "posthog-node": "^5.35.1",
     "react-helmet-async": "^3.0.0",
     "react-hook-form": "^7.76.1",
     "react-router-dom": "^7.15.1",

@@ -189,6 +189,13 @@ export function createMockApiFetch(
     if (method === "DELETE" && pathname.endsWith("/api/v1/files")) {
       const path = parsePathParam(url)
       files.delete(path)
+      for (const filePath of [...files.keys()]) {
+        if (filePath.startsWith(`${path}/`)) files.delete(filePath)
+      }
+      for (const dirPath of [...directories]) {
+        if (dirPath === path || dirPath.startsWith(`${path}/`)) directories.delete(dirPath)
+      }
+      directories.add(".")
       return jsonResponse({ ok: true })
     }
 

@@ -40,7 +40,11 @@ test('resolveMode("direct") returns NodeWorkspace + DirectSandbox with shared su
   const ctx = await makeContext()
   const bundle = await resolveMode('direct').create(ctx)
 
+  expect(bundle.runtimeContext!.runtimeCwd).toBe(ctx.workspaceRoot)
   expect(bundle.workspace.root).toBe(ctx.workspaceRoot)
+  expect(bundle.workspace.runtimeContext.runtimeCwd).toBe(ctx.workspaceRoot)
+  expect(bundle.sandbox.runtimeContext.runtimeCwd).toBe(ctx.workspaceRoot)
+  expect(bundle.workspace.root).toBe(bundle.sandbox.runtimeContext.runtimeCwd)
   expect(bundle.sandbox.id).toBe('direct')
 
   await bundle.workspace.writeFile('direct.txt', 'direct-mode-ok')
@@ -68,7 +72,11 @@ test('resolveMode("local") returns NodeWorkspace + BwrapSandbox or errors gracef
   }
 
   const bundle = await resolveMode('local').create(ctx)
-  expect(bundle.workspace.root).toBe(ctx.workspaceRoot)
+  expect(bundle.runtimeContext!.runtimeCwd).toBe('/workspace')
+  expect(bundle.workspace.root).toBe('/workspace')
+  expect(bundle.workspace.runtimeContext.runtimeCwd).toBe('/workspace')
+  expect(bundle.sandbox.runtimeContext.runtimeCwd).toBe('/workspace')
+  expect(bundle.workspace.root).toBe(bundle.sandbox.runtimeContext.runtimeCwd)
   expect(bundle.sandbox.id).toBe('bwrap')
 
   await bundle.workspace.writeFile('local.txt', 'local-mode-ok')

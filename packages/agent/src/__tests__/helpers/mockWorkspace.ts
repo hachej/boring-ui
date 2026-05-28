@@ -4,7 +4,6 @@ const ENOENT = 'ENOENT'
 const EEXIST = 'EEXIST'
 const EISDIR = 'EISDIR'
 const ENOTDIR = 'ENOTDIR'
-const ENOTEMPTY = 'ENOTEMPTY'
 const EPERM = 'EPERM'
 
 function createFsError(code: string, message: string): Error & { code: string } {
@@ -85,8 +84,11 @@ export function mockWorkspace(initialFiles: Record<string, string> = {}): MockWo
     touch(normalized)
   }
 
+  const runtimeContext = { runtimeCwd: '/mock-workspace' }
+
   const workspace: MockWorkspace = {
-    root: '/mock-workspace',
+    root: runtimeContext.runtimeCwd,
+    runtimeContext,
     files,
     dirs,
     operations,
@@ -124,12 +126,12 @@ export function mockWorkspace(initialFiles: Record<string, string> = {}): MockWo
       if (path === '.') {
         throw createFsError(EPERM, 'EPERM: cannot remove workspace root')
       }
-      const hasChildren = [...dirs].some((entry) => entry !== path && entry.startsWith(`${path}/`))
-        || [...files.keys()].some((entry) => entry.startsWith(`${path}/`))
-      if (hasChildren) {
-        throw createFsError(ENOTEMPTY, `ENOTEMPTY: ${path}`)
+      for (const entry of [...dirs]) {
+        if (entry === path || entry.startsWith(`${path}/`)) dirs.delete(entry)
       }
-      dirs.delete(path)
+      for (const entry of [...files.keys()]) {
+        if (entry.startsWith(`${path}/`)) files.delete(entry)
+      }
       operations.push(`unlink:dir:${path}`)
     },
     async readdir(relPath) {

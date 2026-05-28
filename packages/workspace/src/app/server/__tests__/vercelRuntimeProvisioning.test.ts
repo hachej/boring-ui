@@ -100,8 +100,10 @@ function createFakeVercelMode(state: {
   installs: number
 }): RuntimeModeAdapter {
   const workspaceRoot = "/workspace"
+  const runtimeContext = { runtimeCwd: workspaceRoot }
   const workspace: Workspace = {
     root: workspaceRoot,
+    runtimeContext,
     fsCapability: "best-effort",
     async readFile(rel) { return state.files.get(rel) ?? "" },
     async writeFile(rel, data) { state.files.set(rel, data) },
@@ -120,6 +122,7 @@ function createFakeVercelMode(state: {
     placement: "remote",
     provider: "vercel-sandbox",
     capabilities: ["exec"],
+    runtimeContext,
     async exec() {
       return { stdout: new Uint8Array(), stderr: new Uint8Array(), exitCode: 0, durationMs: 1, truncated: false }
     },

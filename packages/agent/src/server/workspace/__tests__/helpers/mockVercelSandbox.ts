@@ -1,12 +1,12 @@
-import { lstat, mkdtemp, mkdir, readFile, readdir, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
+import { lstat, mkdtemp, mkdir, readFile, readdir, realpath, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join, relative } from 'node:path'
+import { dirname, isAbsolute, join, relative } from 'node:path'
 import type { Writable } from 'node:stream'
 
 import type { Sandbox as VercelSandbox } from '@vercel/sandbox'
 
-const VERCEL_SANDBOX_ROOT = '/vercel/sandbox'
-const VERCEL_WORKSPACE_ALIAS = '/workspace'
+const VERCEL_SANDBOX_ROOT = '/workspace'
+const VERCEL_LEGACY_SANDBOX_ROOT = '/vercel/sandbox'
 
 interface WriteInput {
   path: string
@@ -29,10 +29,10 @@ function toSandboxAbsolutePath(pathInput: string): string {
 
 function toHostPath(hostRoot: string, sandboxPath: string): string {
   const absoluteSandboxPath = toSandboxAbsolutePath(sandboxPath)
-  const canonicalPath = absoluteSandboxPath === VERCEL_WORKSPACE_ALIAS
+  const canonicalPath = absoluteSandboxPath === VERCEL_LEGACY_SANDBOX_ROOT
     ? VERCEL_SANDBOX_ROOT
-    : absoluteSandboxPath.startsWith(`${VERCEL_WORKSPACE_ALIAS}/`)
-      ? `${VERCEL_SANDBOX_ROOT}${absoluteSandboxPath.slice(VERCEL_WORKSPACE_ALIAS.length)}`
+    : absoluteSandboxPath.startsWith(`${VERCEL_LEGACY_SANDBOX_ROOT}/`)
+      ? `${VERCEL_SANDBOX_ROOT}${absoluteSandboxPath.slice(VERCEL_LEGACY_SANDBOX_ROOT.length)}`
       : absoluteSandboxPath
   const relPath = relative(VERCEL_SANDBOX_ROOT, canonicalPath)
   if (relPath === '') return hostRoot
@@ -147,7 +147,7 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
         }
       }
 
-      if (script === 'mkdir -p /vercel/sandbox && (ln -sfn /vercel/sandbox /workspace 2>/dev/null || true)') {
+      if ((script.includes('install -d') || script.includes('mkdir -p')) && script.includes('/workspace')) {
         return emitResult(0, '', '')
       }
 
@@ -185,14 +185,24 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
       }
 
       if (script.startsWith('node -e ')) {
-        const writeMatch = script.match(/\s'(\/vercel\/sandbox[^']*)'\s'([^']*)'$/)
-        const readOrStatMatch = script.match(/\s'(\/vercel\/sandbox[^']*)'$/)
+        const writeMatch = script.match(/\s'((?:\/workspace|\/vercel\/sandbox)[^']*)'\s'([^']*)'$/)
+        const readOrStatMatch = script.match(/\s'((?:\/workspace|\/vercel\/sandbox)[^']*)'$/)
         const pathArg = writeMatch?.[1] ?? readOrStatMatch?.[1]
         const dataArg = writeMatch?.[2]
         if (!pathArg) return emitResult(127, '', `unsupported mock command: ${script}`)
 
         try {
           const hostPath = toHostPath(hostRoot, pathArg)
+          if (script.includes('lstatSync')) {
+            return emitResult(0, JSON.stringify((await lstat(hostPath)).isSymbolicLink()), '')
+          }
+          if (script.includes('realpathSync')) {
+            const targetMatch = script.match(/\s'(\/vercel\/sandbox[^']*)'\s'(\/vercel\/sandbox[^']*)'$/)
+            const rootPath = await realpath(toHostPath(hostRoot, targetMatch?.[1] ?? VERCEL_SANDBOX_ROOT))
+            const targetPath = await realpath(toHostPath(hostRoot, targetMatch?.[2] ?? pathArg))
+            const rel = relative(rootPath, targetPath)
+            return emitResult(0, JSON.stringify(rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))), '')
+          }
           if (script.includes('fs.writeFileSync')) {
             await mkdir(dirname(hostPath), { recursive: true })
             await writeFile(hostPath, Buffer.from(dataArg ?? '', 'base64'))

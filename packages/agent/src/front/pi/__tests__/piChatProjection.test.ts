@@ -12,8 +12,9 @@
 //   - usePiChatProjection(...)                   — React hook driving the
 //     live stream into piMessages state; handleData is the hot path
 import { renderHook, act } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { UIMessage } from "ai"
+import { ErrorCode } from "../../../shared/error-codes"
 import {
   mergeRebuiltPiMessages,
   rebuildPiMessagesFromDataParts,
@@ -80,6 +81,10 @@ function firstTextPart(msg: UIMessage | undefined): string | undefined {
   }) as { text?: string } | undefined
   return t?.text
 }
+
+beforeEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe("rebuildPiMessagesFromDataParts", () => {
   it("returns [] when no data-pi-* parts are present", () => {
@@ -193,6 +198,30 @@ describe("rebuildPiMessagesFromDataParts", () => {
     expect((toolParts[0] as { state?: string }).state).toBe("output-available")
   })
 
+  it("preserves structured WORKSPACE_NOT_READY tool-result details", () => {
+    const output = {
+      content: [{ type: "text", text: "Workspace is still preparing. Try again in a moment." }],
+      details: { code: ErrorCode.enum.WORKSPACE_NOT_READY, retryable: true, requirement: "workspace-fs" },
+    }
+    const messages: UIMessage[] = [
+      makeMessage("envelope", "assistant", [
+        dataStart("a-ready", "assistant"),
+        toolCallEnd("a-ready", "call-ready", "read", { path: "README.md" }),
+        toolResult("a-ready", "call-ready", output, true),
+      ]),
+    ]
+    const rebuilt = rebuildPiMessagesFromDataParts(messages)
+    const toolPart = (rebuilt[0]!.parts ?? []).find((p) =>
+      typeof p.type === "string" && p.type.startsWith("tool-"),
+    ) as { state?: string; output?: typeof output }
+    expect(toolPart.state).toBe("output-error")
+    expect(toolPart.output?.details).toEqual({
+      code: ErrorCode.enum.WORKSPACE_NOT_READY,
+      retryable: true,
+      requirement: "workspace-fs",
+    })
+  })
+
   it("marks tool-result as output-error when isError=true", () => {
     const messages: UIMessage[] = [
       makeMessage("envelope", "assistant", [
@@ -285,6 +314,28 @@ describe("mergeRebuiltPiMessages", () => {
     expect(merged[0]!.id).toBe("u-1")
     expect(merged[1]!.id).toBe("a-1")
   })
+
+  it("skips rebuilt pi user messages that are already represented by SDK user turns", () => {
+    const sdkUser = makeMessage("sdk-u-1", "user", [{ type: "text", text: "same prompt" } as UIMessage["parts"][number]])
+    const piUser = makeMessage("pi-u-1", "user", [{ type: "text", text: "same prompt" } as UIMessage["parts"][number]])
+    const assistantRebuilt = makeMessage("a-1", "assistant", [
+      { type: "text", text: "reply" } as UIMessage["parts"][number],
+    ])
+
+    const merged = mergeRebuiltPiMessages([sdkUser], [piUser, assistantRebuilt])
+
+    expect(merged.map((message) => message.id)).toEqual(["sdk-u-1", "a-1"])
+  })
+
+  it("keeps a rebuilt user when it replaces an SDK user with the same id", () => {
+    const sdkUser = makeMessage("u-same", "user", [{ type: "text", text: "same prompt" } as UIMessage["parts"][number]])
+    const piUser = makeMessage("u-same", "user", [{ type: "text", text: "same prompt" } as UIMessage["parts"][number]])
+
+    const merged = mergeRebuiltPiMessages([sdkUser], [piUser])
+
+    expect(merged.map((message) => message.id)).toEqual(["u-same"])
+    expect(firstTextPart(merged[0])).toBe("same prompt")
+  })
 })
 
 describe("usePiChatProjection (live handleData stream)", () => {
@@ -340,6 +391,24 @@ describe("usePiChatProjection (live handleData stream)", () => {
     )
     expect(toolParts).toHaveLength(1)
     expect((toolParts[0] as { state?: string }).state).toBe("output-available")
+  })
+
+  it("live projection preserves structured WORKSPACE_NOT_READY tool output", () => {
+    const { result } = renderHook(() => usePiChatProjection({ ...baseProps, status: "streaming" }))
+    const output = {
+      content: [{ type: "text", text: "Workspace is still preparing. Try again in a moment." }],
+      details: { code: ErrorCode.enum.WORKSPACE_NOT_READY, retryable: true, requirement: "workspace-fs" },
+    }
+    act(() => {
+      result.current.handleData({ type: "data-pi-message-start", data: { messageId: "a-ready", role: "assistant" } })
+      result.current.handleData({ type: "data-pi-tool-call-end", data: { messageId: "a-ready", toolCallId: "call-ready", toolName: "read", input: { path: "README.md" } } })
+      result.current.handleData({ type: "data-pi-tool-result", data: { messageId: "a-ready", toolCallId: "call-ready", output, isError: true } })
+    })
+    const toolPart = result.current.piMessages[0]?.parts?.find((part) =>
+      typeof part.type === "string" && part.type.startsWith("tool-"),
+    ) as { state?: string; output?: typeof output } | undefined
+    expect(toolPart?.state).toBe("output-error")
+    expect(toolPart?.output?.details).toEqual(output.details)
   })
 
   it("clears piMessages when sessionId changes (no cross-session bleed)", () => {
@@ -413,6 +482,114 @@ describe("usePiChatProjection (live handleData stream)", () => {
 
     rerender({ messages: [envelope], status: "ready" })
     expect(firstTextPart(result.current.piMessages[0])).toBe("partial")
+  })
+
+  it("preserves repeated same-text SDK user turns when persisting", () => {
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const firstUserTurn = makeMessage("u-1", "user", [
+      { type: "text", text: "retry" } as UIMessage["parts"][number],
+    ])
+    const secondUserTurn = makeMessage("u-2", "user", [
+      { type: "text", text: "retry" } as UIMessage["parts"][number],
+    ])
+    const assistant = makeMessage("a-1", "assistant", [
+      { type: "text", text: "assistant reply" } as UIMessage["parts"][number],
+    ])
+
+    const { result, rerender } = renderHook(
+      ({ messages, status }) => usePiChatProjection({
+        messages,
+        status,
+        sessionId: "sess-repeat-users",
+      }),
+      {
+        initialProps: {
+          messages: [firstUserTurn, secondUserTurn, assistant] as UIMessage[],
+          status: "streaming",
+        },
+      },
+    )
+
+    act(() => {
+      result.current.handleData({ type: "data-pi-message-start", data: { messageId: "a-1", role: "assistant" } })
+      result.current.handleData({ type: "data-pi-text-end", data: { messageId: "a-1", partId: "0", text: "assistant reply" } })
+    })
+
+    rerender({
+      messages: [firstUserTurn, secondUserTurn, assistant],
+      status: "ready",
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [, init] = fetchMock.mock.calls[0] as unknown as [RequestInfo | URL, RequestInit | undefined]
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      messages: [
+        { id: "u-1", role: "user", parts: [{ type: "text", text: "retry" }] },
+        { id: "u-2", role: "user", parts: [{ type: "text", text: "retry" }] },
+        { id: "a-1", role: "assistant", parts: [{ type: "text", text: "assistant reply" }] },
+      ],
+    })
+  })
+
+  it("persists canonical pi history instead of raw assistant-only envelopes after a turn settles", () => {
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const userTurn = makeMessage("u-1", "user", [
+      { type: "text", text: "draft after sign-in" } as UIMessage["parts"][number],
+    ])
+    const assistantEnvelope = makeMessage("env-1", "assistant", [
+      dataStart("a-1", "assistant"),
+      textStart("a-1", "0"),
+      textEnd("a-1", "0", "assistant reply"),
+      dataEnd("a-1", "assistant", "assistant reply"),
+    ])
+
+    const { result, rerender } = renderHook(
+      ({ messages, status }) => usePiChatProjection({
+        messages,
+        status,
+        sessionId: "sess-persist",
+      }),
+      {
+        initialProps: {
+          messages: [userTurn, assistantEnvelope] as UIMessage[],
+          status: "streaming",
+        },
+      },
+    )
+
+    act(() => {
+      result.current.handleData({ type: "data-pi-message-start", data: { messageId: "a-1", role: "assistant" } })
+      result.current.handleData({ type: "data-pi-text-start", data: { messageId: "a-1", partId: "0" } })
+      result.current.handleData({ type: "data-pi-text-end", data: { messageId: "a-1", partId: "0", text: "assistant reply" } })
+    })
+
+    rerender({
+      messages: [userTurn, assistantEnvelope],
+      status: "ready",
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [input, init] = fetchMock.mock.calls[0] as unknown as [RequestInfo | URL, RequestInit | undefined]
+    expect(init?.method).toBe("PUT")
+    expect(String(input)).toBe("/api/v1/agent/chat/sess-persist/messages")
+    expect(JSON.parse(String(init?.body))).toEqual({
+      messages: [
+        {
+          id: "u-1",
+          role: "user",
+          parts: [{ type: "text", text: "draft after sign-in" }],
+        },
+        {
+          id: "a-1",
+          role: "assistant",
+          parts: [{ type: "text", text: "assistant reply" }],
+        },
+      ],
+    })
   })
 
   it("handleData with unknown type is a no-op (forward compatibility)", () => {

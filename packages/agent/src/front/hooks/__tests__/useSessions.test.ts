@@ -23,9 +23,13 @@ vi.mock('react', async () => {
       callbackFns.push(fn)
       return fn
     },
+    useMemo: <T>(fn: () => T) => fn(),
     useRef: (initial: unknown) => {
-      versionStore.current = initial as number
-      return versionStore
+      if (typeof initial === 'number') {
+        versionStore.current = initial
+        return versionStore
+      }
+      return { current: initial }
     },
   }
 })
@@ -87,6 +91,16 @@ describe('useSessions', () => {
     expect(mockFetch).toHaveBeenCalledWith('/api/v1/agent/sessions')
     const setSessions = stateSlots[0][1]
     expect(setSessions).toHaveBeenCalled()
+  })
+
+  test('does not fetch sessions while disabled', async () => {
+    useSessions({ enabled: false })
+    const effect = effectCallbacks[0]
+    effect()
+
+    expect(mockFetch).not.toHaveBeenCalled()
+    const setLoading = stateSlots[2][1]
+    expect(setLoading).toHaveBeenCalledWith(false)
   })
 
   test('refresh forwards requestHeaders', async () => {
