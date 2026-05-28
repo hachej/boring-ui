@@ -66,6 +66,8 @@ jobs:
           pnpm --filter @hachej/boring-ask-user build
           pnpm --filter @hachej/boring-data-explorer build
           pnpm --filter @hachej/boring-data-catalog build
+      - name: Audit publish manifests
+        run: pnpm audit:publish-manifests
       - name: Publish
         run: |
           for pkg in packages/ui packages/agent packages/workspace packages/core packages/cli plugins/deck plugins/ask-user plugins/data-explorer plugins/data-catalog; do
