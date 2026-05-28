@@ -6,7 +6,7 @@ import { ChevronRight, FolderTree } from "lucide-react"
 import { Button, IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { ArtifactSurfacePane } from "./ArtifactSurfacePane"
-import type { WorkspaceBridge, CommandResult } from "../../bridge/types"
+import type { WorkspaceBridge, CommandResult, BridgeEventMap } from "../../bridge/types"
 import type { WorkspaceState, PanelState } from "../../store/types"
 import { WorkbenchLeftPane } from "../workbench-left/WorkbenchLeftPane"
 import { useRegistry, useSurfaceResolverRegistry } from "../../registry"
@@ -56,6 +56,8 @@ export interface SurfaceShellApi {
   openPanel: (config: OpenPanelConfig) => void
   /** Hide the workbench's left sources/files pane while leaving the workbench open. */
   closeWorkbenchLeftPane: () => void
+  /** Reveal/select a file-tree path without opening an editor pane. */
+  expandToFile: (path: string) => void
   /** Current snapshot of open tabs + active tab. */
   getSnapshot: () => SurfaceShellSnapshot
 }
@@ -89,8 +91,35 @@ export interface SurfaceShellProps {
 }
 
 const COLLAPSED_WIDTH = 40
+const FILE_BACKED_PARAM = "__boringFileBacked"
+
+function fileBackedPath(
+  panel: PanelState | null | undefined,
+  fileBackedPanelIds: ReadonlySet<string>,
+): string | null {
+  if (!panel) return null
+  if (
+    !panel.id.startsWith("file:") &&
+    !panel.id.startsWith(`surface:${WORKSPACE_OPEN_PATH_SURFACE_KIND}:`) &&
+    !fileBackedPanelIds.has(panel.id) &&
+    panel.params?.[FILE_BACKED_PARAM] !== true
+  ) return null
+  const path = panel.params?.path
+  return typeof path === "string" ? path : null
+}
 
 let seqCounter = 0
+function fileBackedParams(
+  params: Record<string, unknown> | undefined,
+  path: string,
+): Record<string, unknown> {
+  return {
+    ...(params ?? {}),
+    path: typeof params?.path === "string" ? params.path : path,
+    [FILE_BACKED_PARAM]: true,
+  }
+}
+
 function ok(): CommandResult {
   return { seq: ++seqCounter, status: "ok" }
 }
@@ -142,6 +171,7 @@ export function SurfaceShell({
   const containerRef = useRef<HTMLDivElement | null>(null)
   const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const [api, setApi] = useState<DockviewApi | null>(null)
+  const [fileTreeRevealRequest, setFileTreeRevealRequest] = useState<{ path: string; seq: number } | null>(null)
   const onReadyRef = useRef(onReady)
   onReadyRef.current = onReady
   const onChangeRef = useRef(onChange)
@@ -149,6 +179,11 @@ export function SurfaceShell({
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
   const bridgeSelectorsRef = useRef(new Set<(state: WorkspaceState) => void>())
+  const fileBackedPanelIdsRef = useRef(new Set<string>())
+  const pendingTreeExpandRef = useRef<string | null>(null)
+  const bridgeEventHandlersRef = useRef(
+    new Map<keyof BridgeEventMap, Set<(data: BridgeEventMap[keyof BridgeEventMap]) => void>>(),
+  )
 
   // Read of the panel registry — used to validate `openPanel({component})`
   // against what's actually registered. Without this check, dockview's
@@ -195,9 +230,11 @@ export function SurfaceShell({
         return
       }
       const panelId = surfacePanelId(request, resolved)
+      fileBackedPanelIdsRef.current.add(panelId)
       const existingByResolvedId = api.getPanel(panelId)
+      const params = fileBackedParams(resolved.params, normalizedPath)
       if (existingByResolvedId) {
-        if (resolved.params) existingByResolvedId.api.updateParameters(resolved.params)
+        existingByResolvedId.api.updateParameters(params)
         existingByResolvedId.api.setActive()
         return
       }
@@ -205,7 +242,7 @@ export function SurfaceShell({
         id: panelId,
         component: resolved.component,
         title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
-        params: resolved.params ?? { path: normalizedPath },
+        params,
       })
       return
     }
@@ -231,11 +268,17 @@ export function SurfaceShell({
       return
     }
     const panelId = surfacePanelId(normalizedRequest, resolved)
+    if (normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND) {
+      fileBackedPanelIdsRef.current.add(panelId)
+    }
     const existing = api.getPanel(panelId)
     const closeWorkbenchOnDone = normalizedRequest.meta?.closeWorkbenchOnDone === true
-    const resolvedParams = closeWorkbenchOnDone && onCloseRef.current
-      ? { ...(resolved.params ?? {}), __closeWorkbenchOnDone: onCloseRef.current }
+    const baseParams = normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
+      ? fileBackedParams(resolved.params, normalizedRequest.target)
       : resolved.params
+    const resolvedParams = closeWorkbenchOnDone && onCloseRef.current
+      ? { ...(baseParams ?? {}), __closeWorkbenchOnDone: onCloseRef.current }
+      : baseParams
     if (existing) {
       if (resolvedParams) existing.api.updateParameters(resolvedParams)
       existing.api.setActive()
@@ -305,13 +348,36 @@ export function SurfaceShell({
     return { openTabs, activeTab: api.activePanel?.id ?? null }
   }, [])
 
+  const emitBridgeEvent = useCallback(<K extends keyof BridgeEventMap>(
+    event: K,
+    data: BridgeEventMap[K],
+  ): boolean => {
+    const handlers = bridgeEventHandlersRef.current.get(event)
+    if (!handlers || handlers.size === 0) return false
+    for (const handler of [...handlers]) {
+      handler(data)
+    }
+    return true
+  }, [])
+
+  const expandToFileSync = useCallback((path: string) => {
+    const normalizedPath = normalizeWorkbenchPath(path)
+    pendingTreeExpandRef.current = normalizedPath
+    setFileTreeRevealRequest((prev) => ({ path: normalizedPath, seq: (prev?.seq ?? 0) + 1 }))
+    setCollapsed(false)
+    if (emitBridgeEvent("tree:expand", { path: normalizedPath })) {
+      pendingTreeExpandRef.current = null
+    }
+  }, [emitBridgeEvent])
+
   const localSurfaceApi = useMemo<SurfaceShellApi>(() => ({
     openFile: openFileSync,
     openSurface: openSurfaceSync,
     openPanel: openPanelSync,
     closeWorkbenchLeftPane: () => setCollapsed(true),
+    expandToFile: expandToFileSync,
     getSnapshot,
-  }), [getSnapshot, openFileSync, openPanelSync, openSurfaceSync])
+  }), [expandToFileSync, getSnapshot, openFileSync, openPanelSync, openSurfaceSync])
 
   const getBridgeState = useCallback((): WorkspaceState => {
     const api = apiRef.current
@@ -323,8 +389,9 @@ export function SurfaceShell({
         }))
       : []
     const activePanel = api?.activePanel?.id ?? null
-    const activeParams = (api?.activePanel?.params as Record<string, unknown> | undefined) ?? undefined
-    const activeFile = typeof activeParams?.path === "string" ? activeParams.path : null
+    const fileBackedPanelIds = fileBackedPanelIdsRef.current
+    const activePanelState = panels.find((panel) => panel.id === activePanel)
+    const activeFile = fileBackedPath(activePanelState, fileBackedPanelIds)
     return {
       hydrationComplete: true,
       layout: null,
@@ -335,8 +402,8 @@ export function SurfaceShell({
       activePanel,
       activeFile,
       visibleFiles: panels
-        .map((p) => p.params?.path)
-        .filter((p): p is string => typeof p === "string"),
+        .map((panel) => fileBackedPath(panel, fileBackedPanelIds))
+        .filter((p): p is string => p !== null),
       dirtyFiles: {},
       notifications: [],
     }
@@ -388,9 +455,11 @@ export function SurfaceShell({
             )
           }
           const panelId = surfacePanelId(request, resolved)
+          fileBackedPanelIdsRef.current.add(panelId)
+          const params = fileBackedParams(resolved.params, normalizedPath)
           const existingByResolvedId = api.getPanel(panelId)
           if (existingByResolvedId) {
-            if (resolved.params) existingByResolvedId.api.updateParameters(resolved.params)
+            existingByResolvedId.api.updateParameters(params)
             existingByResolvedId.api.setActive()
             return ok()
           }
@@ -398,7 +467,7 @@ export function SurfaceShell({
             id: panelId,
             component: resolved.component,
             title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
-            params: resolved.params ?? { path: normalizedPath },
+            params,
           })
           return ok()
         }
@@ -434,10 +503,27 @@ export function SurfaceShell({
       },
       showNotification: async () => ok(),
       navigateToLine: async () => ok(),
-      expandToFile: async () => ok(),
+      expandToFile: async (path) => {
+        expandToFileSync(path)
+        return ok()
+      },
       markDirty: () => {},
       markClean: () => {},
-      subscribe: () => () => {},
+      subscribe: <K extends keyof BridgeEventMap>(event: K, handler: (data: BridgeEventMap[K]) => void) => {
+        let handlers = bridgeEventHandlersRef.current.get(event)
+        if (!handlers) {
+          handlers = new Set()
+          bridgeEventHandlersRef.current.set(event, handlers)
+        }
+        handlers.add(handler as (data: BridgeEventMap[keyof BridgeEventMap]) => void)
+        if (event === "tree:expand" && pendingTreeExpandRef.current) {
+          handler({ path: pendingTreeExpandRef.current } as BridgeEventMap[K])
+          pendingTreeExpandRef.current = null
+        }
+        return () => {
+          handlers?.delete(handler as (data: BridgeEventMap[keyof BridgeEventMap]) => void)
+        }
+      },
       select: (selector, handler) => {
         const wrapped = (state: WorkspaceState) => handler(selector(state))
         bridgeSelectorsRef.current.add(wrapped)
@@ -447,7 +533,7 @@ export function SurfaceShell({
         }
       },
     }
-  }, [openFile, getBridgeState])
+  }, [expandToFileSync, openFile, getBridgeState])
 
   const startDrag = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -536,6 +622,7 @@ export function SurfaceShell({
               rootDir={rootDir}
               bridge={bridge}
               defaultTab={defaultLeftTab}
+              revealFileTreeRequest={fileTreeRevealRequest}
               onCollapse={() => setCollapsed(true)}
             />
           </aside>

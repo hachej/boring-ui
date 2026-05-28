@@ -39,7 +39,12 @@ function matchesPanel(
   match: WorkspacePanelMatch,
 ): boolean {
   if ("id" in match) return panel.id === match.id
-  return (panel.params as Record<string, unknown> | undefined)?.[match.param] === match.value
+  const params = panel.params as Record<string, unknown> | undefined
+  if ("paramPrefix" in match) {
+    const value = params?.[match.paramPrefix]
+    return typeof value === "string" && value.startsWith(match.value)
+  }
+  return params?.[match.param] === match.value
 }
 
 function findMatchingPanels(

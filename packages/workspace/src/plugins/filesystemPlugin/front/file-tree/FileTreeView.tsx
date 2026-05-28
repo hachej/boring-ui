@@ -82,7 +82,8 @@ export interface FileTreeViewProps {
   rootDir?: string
   /** Already-debounced query. Empty/undefined means no filter. */
   searchQuery?: string
-  bridge?: Pick<WorkspaceBridge, "openFile" | "getActiveFile" | "select">
+  bridge?: Pick<WorkspaceBridge, "openFile" | "getActiveFile" | "select"> & Partial<Pick<WorkspaceBridge, "subscribe">>
+  revealFileTreeRequest?: { path: string; seq: number } | null
   /**
    * Names (or regex patterns) to hide from the tree. Defaults to
    * `DEFAULT_TREE_IGNORE` (node_modules, .git, dist, …). Pass `[]` to
@@ -92,6 +93,21 @@ export interface FileTreeViewProps {
   ignoreNames?: ReadonlyArray<string | RegExp>
   /** Forwarded to the inner <FileTree>. */
   className?: string
+}
+
+function normalizeRevealPath(path: string): string {
+  const normalized = path.trim().replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/^\/+/, "").replace(/\/+/g, "/")
+  const withoutTrailingSlash = normalized.replace(/\/+$/, "")
+  return withoutTrailingSlash || "."
+}
+
+function parentDirsForReveal(path: string): string[] {
+  const parts = normalizeRevealPath(path).split("/").filter(Boolean)
+  const dirs: string[] = []
+  for (let i = 1; i < parts.length; i++) {
+    dirs.push(parts.slice(0, i).join("/"))
+  }
+  return dirs
 }
 
 /**
@@ -109,6 +125,7 @@ export function FileTreeView({
   rootDir = ".",
   searchQuery,
   bridge,
+  revealFileTreeRequest,
   ignoreNames = DEFAULT_TREE_IGNORE,
   className,
 }: FileTreeViewProps) {
@@ -164,6 +181,8 @@ export function FileTreeView({
   // `path` is a synthetic id so the row can be located in the tree.
   const [editing, setEditing] = useState<DraftEditing>(null)
   const [revealPath, setRevealPath] = useState<string | null>(null)
+  const revealSeqRef = useRef(0)
+  const explicitRevealSeqRef = useRef(0)
   const draftSeqRef = useRef(0)
 
   const useServerSearch = (searchQuery?.trim().length ?? 0) > 0
@@ -182,14 +201,6 @@ export function FileTreeView({
     document.addEventListener("pointerdown", onPointerDown)
     return () => document.removeEventListener("pointerdown", onPointerDown)
   }, [ctxMenu])
-
-  useEffect(() => {
-    setSelectedPath(bridge?.getActiveFile?.() ?? null)
-    if (!bridge?.select) return
-    return bridge.select((state) => state.activeFile, (path) => {
-      setSelectedPath(path)
-    })
-  }, [bridge])
 
   useEffect(() => {
     const el = containerRef.current
@@ -282,6 +293,70 @@ export function FileTreeView({
     },
     [dataClient, rootDir, ignoreNames],
   )
+
+  const revealTreePath = useCallback(
+    async (path: string | null, options?: { refreshTargetDir?: boolean }) => {
+      if (!path) return
+      const normalizedPath = normalizeRevealPath(path)
+      const revealSeq = ++revealSeqRef.current
+      setSelectedPath(normalizedPath)
+      const dirsToRefresh = options?.refreshTargetDir
+        ? [...parentDirsForReveal(normalizedPath), normalizedPath]
+        : parentDirsForReveal(normalizedPath)
+      await refreshDirs([...new Set(dirsToRefresh)], { force: true })
+      if (revealSeqRef.current !== revealSeq) return
+      setRevealPath(normalizedPath)
+    },
+    [refreshDirs],
+  )
+
+  const handleRevealHandled = useCallback((path: string) => {
+    setRevealPath((current) => current === path ? null : current)
+  }, [])
+
+  const revealExplicitTreePath = useCallback(
+    async (path: string) => {
+      const seq = ++explicitRevealSeqRef.current
+      try {
+        await revealTreePath(path, { refreshTargetDir: true })
+      } finally {
+        if (explicitRevealSeqRef.current === seq) explicitRevealSeqRef.current = 0
+      }
+    },
+    [revealTreePath],
+  )
+
+  useEffect(() => {
+    if (!revealFileTreeRequest) return
+    void revealExplicitTreePath(revealFileTreeRequest.path)
+  }, [revealFileTreeRequest, revealExplicitTreePath])
+
+  useEffect(() => {
+    const activeFile = bridge?.getActiveFile?.() ?? null
+    if (activeFile && explicitRevealSeqRef.current === 0) void revealTreePath(activeFile)
+    const unsubscribers: Array<() => void> = []
+    if (bridge?.select) {
+      unsubscribers.push(
+        bridge.select((state) => state.activeFile, (path) => {
+          if (path) {
+            if (explicitRevealSeqRef.current === 0) void revealTreePath(path)
+          } else {
+            setSelectedPath(null)
+          }
+        }),
+      )
+    }
+    if (bridge?.subscribe) {
+      unsubscribers.push(
+        bridge.subscribe("tree:expand", ({ path }) => {
+          void revealExplicitTreePath(path)
+        }),
+      )
+    }
+    return () => {
+      for (const unsubscribe of unsubscribers) unsubscribe()
+    }
+  }, [bridge, revealExplicitTreePath, revealTreePath])
 
   const addOptimisticEntry = useCallback((dir: string, entry: FileEntry) => {
     setOptimisticEntries((prev) => {
@@ -508,6 +583,17 @@ export function FileTreeView({
     try {
       await deleteFile({ path: target.path })
       removeOptimisticEntry(parentDir(target.path), target.path)
+      if (target.kind === "dir") {
+        setExpandedChildren((prev) => {
+          const next = new Map(prev)
+          for (const dir of next.keys()) {
+            if (dir === target.path || dir.startsWith(`${target.path}/`)) {
+              next.delete(dir)
+            }
+          }
+          return next
+        })
+      }
       await refreshDirs([parentDir(target.path)])
       toast.success({ title: "Deleted", description: target.path })
     } catch (err) {
@@ -581,6 +667,7 @@ export function FileTreeView({
                   : null
               }
               revealPath={revealPath}
+              onRevealHandled={handleRevealHandled}
               pendingPaths={pendingPaths}
               onSelect={handleSelect}
               onExpand={handleExpand}
@@ -665,6 +752,7 @@ export interface FileTreePaneParams extends LeftTabParams {
   query?: string
   bridge?: unknown
   chromeless?: boolean
+  revealFileTreeRequest?: { path: string; seq: number } | null
 }
 
 export interface FileTreePaneProps extends Partial<PaneProps<FileTreePaneParams>> {
@@ -694,6 +782,7 @@ export function FileTreePane({
   const effectiveRootDir = params?.rootDir ?? rootDir
   const effectiveBridge = (params?.bridge as WorkspaceBridge | undefined) ?? bridge
   const effectiveChromeless = params?.chromeless ?? chromeless
+  const effectiveRevealRequest = params?.revealFileTreeRequest ?? null
   const externalSearchQuery =
     params?.searchQuery ?? params?.query ?? controlledSearchQuery
   const effectivePanelApi = panelApi ?? api
@@ -718,6 +807,7 @@ export function FileTreePane({
         rootDir={effectiveRootDir}
         searchQuery={effectiveSearchQuery}
         bridge={effectiveBridge}
+        revealFileTreeRequest={effectiveRevealRequest}
         className={cn("px-1 pt-1 [&_[role=treeitem]]:!indent-0", className)}
       />
     )
@@ -740,6 +830,7 @@ export function FileTreePane({
             rootDir={effectiveRootDir}
             searchQuery={effectiveSearchQuery}
             bridge={effectiveBridge}
+            revealFileTreeRequest={effectiveRevealRequest}
             className={className}
           />
         </div>
