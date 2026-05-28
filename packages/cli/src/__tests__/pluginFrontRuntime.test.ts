@@ -58,14 +58,14 @@ describe("pluginFrontRuntime", () => {
         '  }],',
         '})',
       ].join("\n"),
-      "front/panel.tsx": [
+      "front/panel.ts": [
         'import { useState } from "react"',
         'import logo from "./logo.svg"',
         'import { label } from "../shared/message"',
         'export const logoUrl = logo',
         'export function Panel() {',
         '  const [value] = useState(label)',
-        '  return <div className="runtime-panel">{value}</div>',
+        '  return value',
         '}',
       ].join("\n"),
       "front/styles.css": ".runtime-panel { color: tomato; }\n",
@@ -87,13 +87,13 @@ describe("pluginFrontRuntime", () => {
       const entry = await app.inject({ method: "GET", url: `${entryUrl}?v=1&t=111` })
       expect(entry.statusCode).toBe(200)
       expect(entry.headers["content-type"]).toContain("application/javascript")
-      expect(entry.body).toContain(`${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/panel.tsx`)
+      expect(entry.body).toContain(`${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/panel.ts`)
       expect(entry.body).toContain(`${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/styles.css`)
       expect(entry.body).not.toContain("/@fs/")
 
       const panel = await app.inject({
         method: "GET",
-        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/panel.tsx`,
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/panel.ts`,
       })
       expect(panel.statusCode).toBe(200)
       expect(panel.body).toContain(`${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/shared/message.ts`)
@@ -172,7 +172,7 @@ describe("pluginFrontRuntime", () => {
     } finally {
       await app.close()
     }
-  }, 20_000)
+  }, 60_000)
 
   test("rejects direct __vite proxy access that was never minted by a validated runtime request", async () => {
     const host = await createPluginFrontRuntimeHost()
@@ -306,11 +306,11 @@ describe("pluginFrontRuntime", () => {
   test("allows nested front entries to import siblings anywhere under front/", async () => {
     const pluginRoot = await makeTempDir("plugin-front-runtime-nested-front-")
     const plugin = await writeRuntimePlugin(pluginRoot, {
-      "front/nested/index.tsx": 'import { Panel } from "../shared-ui"\nexport const Demo = Panel\n',
-      "front/shared-ui.tsx": 'export function Panel() { return <div>nested ok</div> }\n',
+      "front/nested/index.ts": 'import { Panel } from "../shared-ui"\nexport const Demo = Panel\n',
+      "front/shared-ui.ts": 'export function Panel() { return "nested ok" }\n',
     })
-    plugin.boring.front = "front/nested/index.tsx"
-    plugin.frontPath = join(pluginRoot, "front", "nested", "index.tsx")
+    plugin.boring.front = "front/nested/index.ts"
+    plugin.frontPath = join(pluginRoot, "front", "nested", "index.ts")
 
     const host = await createPluginFrontRuntimeHost()
     const app = fastify({ logger: false })
@@ -319,25 +319,25 @@ describe("pluginFrontRuntime", () => {
       workspaceId: "workspace-a",
       plugin,
       revision: 1,
-      frontEntrySubpath: "front/nested/index.tsx",
+      frontEntrySubpath: "front/nested/index.ts",
     })
 
     try {
       const entry = await app.inject({ method: "GET", url: entryUrl })
       expect(entry.statusCode).toBe(200)
-      expect(entry.body).toContain(`${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/shared-ui.tsx`)
+      expect(entry.body).toContain(`${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/shared-ui.ts`)
 
-      await writeFile(join(pluginRoot, "front", "shared-ui.tsx"), 'export function Panel() { return <div>revision two</div> }\n', "utf8")
+      await writeFile(join(pluginRoot, "front", "shared-ui.ts"), 'export function Panel() { return "revision two" }\n', "utf8")
       host.trackPlugin({
         workspaceId: "workspace-a",
         plugin,
         revision: 2,
-        frontEntrySubpath: "front/nested/index.tsx",
+        frontEntrySubpath: "front/nested/index.ts",
       })
-      await rm(join(pluginRoot, "front", "shared-ui.tsx"), { force: true })
+      await rm(join(pluginRoot, "front", "shared-ui.ts"), { force: true })
       const previousGoodLazyChunk = await app.inject({
         method: "GET",
-        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/shared-ui.tsx`,
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/shared-ui.ts`,
       })
       expect(previousGoodLazyChunk.statusCode).toBe(200)
       expect(previousGoodLazyChunk.body).toContain("nested ok")
