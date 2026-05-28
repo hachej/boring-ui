@@ -101,7 +101,12 @@ function closure(seeds, graph) {
 }
 
 const checkNames = closure(changedNames, dependentsByName)
-const buildNames = closure(checkNames, depsByName)
+const buildNames = new Set(
+  [...closure(checkNames, depsByName)].filter((name) => {
+    const workspace = workspaceByName.get(name)
+    return workspace && !workspace.rel.startsWith('apps/')
+  }),
+)
 
 function filters(names) {
   return [...names].sort().flatMap((name) => ['--filter', name])
@@ -109,7 +114,7 @@ function filters(names) {
 
 console.log(`typecheck-changed: changed=${[...changedNames].sort().join(', ')}`)
 console.log(`typecheck-changed: checking changed packages + dependents=${[...checkNames].sort().join(', ')}`)
-console.log(`typecheck-changed: prebuilding check set + dependencies=${[...buildNames].sort().join(', ')}`)
+console.log(`typecheck-changed: prebuilding package/plugin dependencies=${[...buildNames].sort().join(', ')}`)
 
-run('pnpm', ['-r', ...filters(buildNames), `--workspace-concurrency=${concurrency}`, 'run', 'build'])
+if (buildNames.size > 0) run('pnpm', ['-r', ...filters(buildNames), `--workspace-concurrency=${concurrency}`, 'run', 'build'])
 run('pnpm', ['-r', ...filters(checkNames), `--workspace-concurrency=${concurrency}`, 'run', 'typecheck'])
