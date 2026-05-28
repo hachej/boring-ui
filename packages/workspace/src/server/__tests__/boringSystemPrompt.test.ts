@@ -12,7 +12,7 @@ describe("buildBoringSystemPrompt", () => {
       verifyCommand: "boring-ui verify-plugin",
       boringPiRootOverride: FIXTURE_PI_ROOT,
     })
-    expect(prompt).toMatch(/\*\*1\.\s+Scaffold/)
+    expect(prompt).toMatch(/\*\*1\.\s+Check plugin-root support/)
     expect(prompt).toMatch(/\*\*2\.\s+Edit/)
     expect(prompt).toMatch(/\*\*3\.\s+Verify/)
     expect(prompt).toMatch(/\*\*4\.\s+Ask the user to run `\/reload`/)
@@ -24,6 +24,7 @@ describe("buildBoringSystemPrompt", () => {
       verifyCommand: "boring-ui verify-plugin",
       boringPiRootOverride: FIXTURE_PI_ROOT,
     })
+    expect(prompt).toContain("boring-ui plugin-status --json")
     expect(prompt).toContain("boring-ui scaffold-plugin <kebab-name>")
     expect(prompt).toContain("boring-ui verify-plugin")
   })
@@ -90,9 +91,9 @@ describe("buildBoringSystemPrompt", () => {
       boringPiRootOverride: null,
     })
     // Workflow + hallucinations still present.
-    expect(prompt).toMatch(/\*\*1\.\s+Scaffold/)
-    // No docs paths emitted.
-    expect(prompt).not.toContain("skills/boring-plugin-authoring/SKILL.md")
+    expect(prompt).toMatch(/\*\*1\.\s+Check plugin-root support/)
+    // No absolute paths emitted.
+    expect(prompt).not.toContain("/skills/boring-plugin-authoring/SKILL.md")
     // Falls back to skill discovery via <available_skills>.
     expect(prompt).toContain("<available_skills>")
     expect(prompt).toContain("boring-plugin-authoring")
@@ -104,7 +105,7 @@ describe("buildBoringSystemPrompt", () => {
       boringPiRootOverride: FIXTURE_PI_ROOT,
     })
     expect(prompt).toContain("Read the `boring-plugin-authoring` skill")
-    expect(prompt).not.toMatch(/\*\*1\.\s+Scaffold/)
+    expect(prompt).not.toMatch(/\*\*1\.\s+Check plugin-root support/)
   })
 
   test("stays under 4000 chars in the full configuration", () => {

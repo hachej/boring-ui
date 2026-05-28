@@ -56,6 +56,105 @@ describe("boring agent plugin assets", () => {
     expect(plugins[0].serverPath).toBe(join(root, "server", "index.js"))
   })
 
+  test("manager keeps /@fs frontUrl fallback when no frontTargetResolver is supplied", async () => {
+    const root = await tmp("boring-plugin-front-fallback-")
+    await writePlugin(root)
+
+    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
+    const result = await manager.load()
+    const loadEvent = result.events.find((event) => event.type === "boring.plugin.load")
+
+    expect(result.loaded).toEqual([
+      expect.objectContaining({
+        id: "boring-plugin-test",
+        revision: 1,
+        frontUrl: expect.stringContaining("/@fs/"),
+      }),
+    ])
+    expect(result.loaded[0]).not.toHaveProperty("frontTarget")
+    expect(loadEvent).toEqual(expect.objectContaining({
+      type: "boring.plugin.load",
+      id: "boring-plugin-test",
+      revision: 1,
+      frontUrl: expect.stringContaining("/@fs/"),
+    }))
+    expect(loadEvent).not.toHaveProperty("frontTarget")
+  })
+
+  test("manager emits revision-addressed native frontTarget payloads when a resolver is supplied", async () => {
+    const root = await tmp("boring-plugin-front-target-")
+    await writePlugin(root)
+
+    const manager = new BoringPluginAssetManager({
+      pluginDirs: [root],
+      errorRoot: join(root, ".errors"),
+      frontTargetResolver(plugin, { revision, frontEntrySubpath }) {
+        return {
+          kind: "native",
+          entryUrl: `/api/v1/agent-plugins/runtime/${plugin.id}/${revision}/${frontEntrySubpath}`,
+          revision,
+          trust: "local-trusted-native",
+        }
+      },
+    })
+
+    const first = await manager.load()
+    const firstLoadEvent = first.events.find((event) => event.type === "boring.plugin.load")
+    expect(first.loaded[0]).toMatchObject({
+      id: "boring-plugin-test",
+      revision: 1,
+      frontUrl: expect.stringContaining("/@fs/"),
+      frontTarget: {
+        kind: "native",
+        entryUrl: "/api/v1/agent-plugins/runtime/boring-plugin-test/1/front/index.tsx",
+        revision: 1,
+        trust: "local-trusted-native",
+      },
+    })
+    expect(firstLoadEvent).toMatchObject({
+      type: "boring.plugin.load",
+      id: "boring-plugin-test",
+      revision: 1,
+      frontTarget: {
+        kind: "native",
+        entryUrl: "/api/v1/agent-plugins/runtime/boring-plugin-test/1/front/index.tsx",
+        revision: 1,
+        trust: "local-trusted-native",
+      },
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await writeFile(join(root, "front", "index.tsx"), "export default function RuntimeTargetV2() { return null }\n", "utf8")
+    const second = await manager.load()
+    expect(second.loaded[0]).toMatchObject({
+      revision: 2,
+      frontTarget: {
+        kind: "native",
+        entryUrl: "/api/v1/agent-plugins/runtime/boring-plugin-test/2/front/index.tsx",
+        revision: 2,
+        trust: "local-trusted-native",
+      },
+    })
+
+    const app = Fastify({ logger: false })
+    await app.register(boringPluginRoutes, { manager })
+    try {
+      const list = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
+      expect(list.json()[0]).toMatchObject({
+        id: "boring-plugin-test",
+        revision: 2,
+        frontTarget: {
+          kind: "native",
+          entryUrl: "/api/v1/agent-plugins/runtime/boring-plugin-test/2/front/index.tsx",
+          revision: 2,
+          trust: "local-trusted-native",
+        },
+      })
+    } finally {
+      await app.close()
+    }
+  })
+
   test("scans package manifests with pi fields for agent contributions", async () => {
     const root = await tmp("boring-plugin-pi-scan-")
     await writePlugin(root)
@@ -161,6 +260,34 @@ describe("boring agent plugin assets", () => {
       message: expect.stringContaining("boring.server: resolved path escapes plugin root"),
     })
     expect(readBoringPlugins([root])).toEqual([])
+  })
+
+  test("native front target uses manifest front path for symlinked plugin roots", async () => {
+    const realRoot = await tmp("boring-plugin-real-root-")
+    const linkRoot = await tmp("boring-plugin-link-parent-")
+    const linkedPlugin = join(linkRoot, "linked-plugin")
+    await writePlugin(realRoot)
+    await symlink(realRoot, linkedPlugin)
+
+    const manager = new BoringPluginAssetManager({
+      pluginDirs: [linkedPlugin],
+      errorRoot: join(linkRoot, ".errors"),
+      frontTargetResolver(plugin, { revision, frontEntrySubpath }) {
+        return {
+          kind: "native",
+          trust: "local-trusted-native",
+          revision,
+          entryUrl: `/runtime/${plugin.id}/${revision}/${frontEntrySubpath}`,
+        }
+      },
+      includeLegacyFrontUrl: false,
+    })
+
+    const result = await manager.load()
+    expect(result.errors).toEqual([])
+    expect(result.loaded[0]).toMatchObject({
+      frontTarget: { entryUrl: "/runtime/boring-plugin-test/1/front/index.tsx" },
+    })
   })
 
   test("rejects missing explicit boring.front files", async () => {
@@ -274,6 +401,11 @@ describe("boring agent plugin assets", () => {
   test("reloads when front/shared dependencies change, not only the front entrypoint", async () => {
     const root = await tmp("boring-plugin-front-dep-")
     await writePlugin(root)
+    await mkdir(join(root, "front", "nested"), { recursive: true })
+    const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
+    pkg.boring.front = "front/nested/index.tsx"
+    await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
+    await writeFile(join(root, "front", "nested", "index.tsx"), "import '../panel'\nexport default function Plugin() { return null }\n", "utf8")
     await mkdir(join(root, "shared"), { recursive: true })
     await writeFile(join(root, "front", "panel.tsx"), "export const label = 'one'\n", "utf8")
     await writeFile(join(root, "shared", "constants.ts"), "export const label = 'one'\n", "utf8")
@@ -310,6 +442,34 @@ describe("boring agent plugin assets", () => {
     const updated = aggregatePluginPrompts(manager)
     expect(updated).toContain("Updated plugin context")
     expect(updated).not.toContain("Test plugin context")
+  })
+
+  test("loaded Pi snapshot keeps healthy plugins when another plugin fails", async () => {
+    const validRoot = await tmp("boring-plugin-pi-snapshot-valid-")
+    const invalidRoot = await tmp("boring-plugin-pi-snapshot-invalid-")
+    await writePlugin(validRoot)
+    await mkdir(join(validRoot, "skills", "deck-authoring"), { recursive: true })
+    await writeFile(join(validRoot, "skills", "deck-authoring", "SKILL.md"), "# Deck authoring\n", "utf8")
+    const validPkg = JSON.parse(await readFile(join(validRoot, "package.json"), "utf8"))
+    validPkg.pi.skills = ["skills/deck-authoring"]
+    await writeFile(join(validRoot, "package.json"), JSON.stringify(validPkg), "utf8")
+    await mkdir(invalidRoot, { recursive: true })
+    await writeFile(join(invalidRoot, "package.json"), JSON.stringify({
+      name: "broken-plugin",
+      version: "1.0.0",
+      boring: { front: "front/missing.tsx" },
+      pi: { systemPrompt: "Broken plugin context" },
+    }), "utf8")
+
+    const manager = new BoringPluginAssetManager({ pluginDirs: [validRoot, invalidRoot], errorRoot: join(validRoot, ".errors") })
+    const scan = await manager.load()
+    expect(scan.errors).toEqual([expect.objectContaining({ id: "broken-plugin" })])
+
+    const snapshot = manager.inspectLoadedPiSnapshot()
+    expect(snapshot.systemPromptAppend).toContain("Test plugin context")
+    expect(snapshot.systemPromptAppend).not.toContain("Broken plugin context")
+    expect(snapshot.additionalSkillPaths).toContain(join(validRoot, "skills"))
+    expect(snapshot.additionalSkillPaths).not.toContain(join(validRoot, "skills", "deck-authoring"))
   })
 
   test("aggregatePluginPrompts returns undefined when no plugin contributes a prompt", async () => {

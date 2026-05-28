@@ -376,6 +376,20 @@ export interface WorkspaceProviderProps {
 // WorkspaceProvider
 // ---------------------------------------------------------------------------
 
+function scopedAuthHeaders(
+  workspaceId: string | undefined,
+  authHeaders: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (!workspaceId) return authHeaders
+  if (
+    authHeaders?.["x-boring-workspace-id"] != null ||
+    authHeaders?.["X-Boring-Workspace-Id"] != null
+  ) {
+    return authHeaders
+  }
+  return { "x-boring-workspace-id": workspaceId, ...authHeaders }
+}
+
 export function WorkspaceProvider({
   children,
   chatPanel,
@@ -546,6 +560,11 @@ export function WorkspaceProvider({
     [themeSetTheme, themeToggleTheme],
   )
 
+  const resolvedAuthHeaders = useMemo(
+    () => scopedAuthHeaders(workspaceId, authHeaders),
+    [authHeaders, workspaceId],
+  )
+
   const [bridgeConnected, setBridgeConnected] = useState(false)
 
   const bridgeValue = useMemo<WorkspaceBridgeContextValue>(
@@ -573,12 +592,12 @@ export function WorkspaceProvider({
               <WorkspacePluginProviders
                 plugins={pluginsWithBindings}
                 apiBaseUrl={apiBaseUrl}
-                authHeaders={authHeaders}
+                authHeaders={resolvedAuthHeaders}
                 onAuthError={onAuthError}
                 apiTimeout={apiTimeout}
               >
                 <WorkspacePluginBindings plugins={pluginsWithBindings} />
-                <AgentPluginHotReloadBridge apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} mode={frontPluginHotReload} authHeaders={authHeaders} />
+                <AgentPluginHotReloadBridge apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} mode={frontPluginHotReload} authHeaders={resolvedAuthHeaders} />
                 <WorkspaceOpenFileBinding onOpenFile={onOpenFile} />
                 <WorkspaceCommandBindings commands={commands} />
                 <WorkspaceCatalogBindings

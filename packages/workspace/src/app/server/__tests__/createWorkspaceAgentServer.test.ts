@@ -580,6 +580,94 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     }
   })
 
+  test("additionalBoringPluginDirs discovers front/Pi-only plugins from an extra global root", async () => {
+    const workspaceRoot = await makeTempDir("boring-extra-plugin-root-workspace-")
+    const globalRoot = await makeTempDir("boring-extra-plugin-root-global-")
+    const pluginRoot = join(globalRoot, "global-plugin")
+    await mkdir(join(pluginRoot, "front"), { recursive: true })
+    await mkdir(join(pluginRoot, "agent", "skills"), { recursive: true })
+    await writeFile(join(pluginRoot, "front", "index.tsx"), "export default function GlobalPlugin() { return null }\n", "utf8")
+    await writeFile(join(pluginRoot, "agent", "index.ts"), "export default function extension() {}\n", "utf8")
+    await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
+      name: "global-plugin",
+      version: "1.0.0",
+      boring: { front: "front/index.tsx" },
+      pi: { systemPrompt: "GLOBAL_PLUGIN_PROMPT", skills: ["agent/skills"], extensions: ["agent/index.ts"] },
+    }), "utf8")
+
+    agentServerMock.createAgentApp.mockImplementationOnce(async () => Fastify({ logger: false }) as never)
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      logger: false,
+      provisionWorkspace: false,
+      additionalBoringPluginDirs: [globalRoot],
+    })
+
+    try {
+      const list = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
+      expect(list.statusCode).toBe(200)
+      expect(list.json()).toEqual([
+        expect.objectContaining({
+          id: "global-plugin",
+          boring: expect.objectContaining({ front: "front/index.tsx" }),
+          pi: expect.objectContaining({ systemPrompt: "GLOBAL_PLUGIN_PROMPT" }),
+        }),
+      ])
+
+      const [agentOptions] = agentServerMock.createAgentApp.mock.calls.at(-1) as unknown as [
+        {
+          pi?: { getHotReloadableResources?: () => { additionalSkillPaths?: string[]; extensionPaths?: string[] } }
+          systemPromptDynamic?: () => string | undefined
+        },
+      ]
+      expect(agentOptions.pi?.getHotReloadableResources?.().additionalSkillPaths).toContain(join(pluginRoot, "agent", "skills"))
+      expect(agentOptions.pi?.getHotReloadableResources?.().extensionPaths).toContain(join(pluginRoot, "agent", "index.ts"))
+      expect(agentOptions.systemPromptDynamic?.()).toContain("GLOBAL_PLUGIN_PROMPT")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("boringPluginFrontTargetResolver customizes plugin list payloads without changing discovery", async () => {
+    const workspaceRoot = await makeTempDir("boring-front-target-resolver-workspace-")
+    await writeHotPlugin(workspaceRoot, "index.ts")
+
+    agentServerMock.createAgentApp.mockImplementationOnce(async () => Fastify({ logger: false }) as never)
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      logger: false,
+      provisionWorkspace: false,
+      boringPluginFrontTargetResolver(plugin, { revision, frontEntrySubpath }) {
+        return {
+          kind: "native",
+          entryUrl: `/runtime/${plugin.id}/${revision}/${frontEntrySubpath}`,
+          revision,
+          trust: "local-trusted-native",
+        }
+      },
+    })
+
+    try {
+      const list = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
+      expect(list.statusCode).toBe(200)
+      expect(list.json()).toEqual([
+        expect.objectContaining({
+          id: "hot-plugin",
+          boring: expect.objectContaining({ front: "front/index.tsx" }),
+          frontUrl: expect.stringContaining("/@fs/"),
+          frontTarget: {
+            kind: "native",
+            entryUrl: "/runtime/hot-plugin/1/front/index.tsx",
+            revision: 1,
+            trust: "local-trusted-native",
+          },
+        }),
+      ])
+    } finally {
+      await app.close()
+    }
+  })
+
   test("app package boring.defaultPluginPackages throws when declared server entry is missing", async () => {
     const appRoot = await makeTempDir("boring-app-default-package-missing-server-")
     const pluginRoot = join(appRoot, "plugins", "bad")

@@ -23,6 +23,7 @@ import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
 import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
 import { BoringPluginAssetManager } from "../../server/agentPlugins/manager"
+import type { BoringPluginFrontTargetResolver } from "../../server/agentPlugins/types"
 import { boringPluginRoutes, collectRestartWarnings } from "../../server/agentPlugins/routes"
 import { aggregatePluginPrompts } from "../../server/agentPlugins/aggregatePluginPrompts"
 import { normalizeBoringPluginPiPackages } from "../../server/agentPlugins/piPackages"
@@ -137,6 +138,12 @@ export interface CreateWorkspaceAgentServerOptions
    * instead of inside the server boot path.
    */
   appPackageJsonPath?: string
+  /** Additional plugin collection roots to scan alongside workspace .pi/extensions and package/plugin-derived roots. */
+  additionalBoringPluginDirs?: string[]
+  /** Optional host-owned front-target override for boring plugin list/event payloads. */
+  boringPluginFrontTargetResolver?: BoringPluginFrontTargetResolver
+  /** Preserve legacy `/@fs/...` frontUrl payloads alongside frontTarget. Defaults to true. */
+  boringPluginIncludeLegacyFrontUrl?: boolean
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -426,7 +433,11 @@ export async function provisionWorkspaceAgentServer(opts: {
   })
 }
 
-function collectBoringPluginDirs(workspaceRoot: string, pluginCollection: WorkspaceAgentServerPluginCollection): string[] {
+function collectBoringPluginDirs(
+  workspaceRoot: string,
+  pluginCollection: WorkspaceAgentServerPluginCollection,
+  additionalPluginDirs: string[] = [],
+): string[] {
   const extensionPaths = pluginCollection.agentOptions.pi?.extensionPaths ?? []
   const pluginRoots = extensionPaths.flatMap((path) => {
     try {
@@ -435,10 +446,11 @@ function collectBoringPluginDirs(workspaceRoot: string, pluginCollection: Worksp
       return []
     }
   })
-  return [
+  return [...new Set([
     join(workspaceRoot, ".pi", "extensions"),
     ...pluginRoots,
-  ]
+    ...additionalPluginDirs,
+  ])]
 }
 
 export interface WorkspacePluginPackagePiSnapshot {
@@ -606,7 +618,7 @@ export async function createWorkspaceAgentServer(
   // The asset manager treats each as a plugin source; SSE + jiti reload
   // works the same for all three categories.
   const boringPluginDirs = [
-    ...collectBoringPluginDirs(workspaceRoot, pluginCollection),
+    ...collectBoringPluginDirs(workspaceRoot, pluginCollection, opts.additionalBoringPluginDirs),
     ...defaultPluginPackagePaths,
   ]
 
@@ -637,6 +649,8 @@ export async function createWorkspaceAgentServer(
   const boringAssetManager = new BoringPluginAssetManager({
     pluginDirs: boringPluginDirs,
     errorRoot: join(workspaceRoot, ".pi", "extensions"),
+    frontTargetResolver: opts.boringPluginFrontTargetResolver,
+    includeLegacyFrontUrl: opts.boringPluginIncludeLegacyFrontUrl,
   })
 
   const buildRuntimeProvisioningInputs = () => mergeRuntimeProvisioningInputs([
@@ -655,11 +669,18 @@ export async function createWorkspaceAgentServer(
       sessionId: opts.sessionId ?? "default",
     })
     if (!adapter) return currentRuntimeProvisioning
-    currentRuntimeProvisioning = await provisionWorkspaceRuntime({
+    const provisioned = await provisionWorkspaceRuntime({
       plugins: buildRuntimeProvisioningInputs(),
       adapter,
       runtimeLayout,
     })
+    currentRuntimeProvisioning = provisioned ? {
+      ...provisioned,
+      env: {
+        ...provisioned.env,
+        BORING_AGENT_WORKSPACE_LOCAL_PLUGIN_ROOTS: workspaceFsCapability === "strong" ? "1" : "0",
+      },
+    } : currentRuntimeProvisioning
     return currentRuntimeProvisioning
   }
   await runRuntimeProvisioning()
@@ -767,8 +788,14 @@ export async function createWorkspaceAgentServer(
   // Expose the rebuild closure on the Fastify instance for external
   // callers / tests. The same closure is also wired into `beforeReload`
   // above so /reload triggers it automatically.
-  ;(app as FastifyInstance & { __boringRebuildPlugins?: () => Promise<PluginRebuildResult> }).__boringRebuildPlugins =
-    rebuildPlugins
+  ;(app as FastifyInstance & {
+    __boringRebuildPlugins?: () => Promise<PluginRebuildResult>
+    __boringAssetManager?: BoringPluginAssetManager
+  }).__boringRebuildPlugins = rebuildPlugins
+  ;(app as FastifyInstance & {
+    __boringRebuildPlugins?: () => Promise<PluginRebuildResult>
+    __boringAssetManager?: BoringPluginAssetManager
+  }).__boringAssetManager = boringAssetManager
 
   return app
 }

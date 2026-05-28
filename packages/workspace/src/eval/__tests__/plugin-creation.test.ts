@@ -207,6 +207,8 @@ describeIf("package plugin creation + reload eval (live LLM) [$provider/$id]", (
       ).toMatch(/surfaceResolvers|registerSurfaceResolver/)
       expect(frontSource, "CSV resolver must handle workspace.open.path requests").toContain("WORKSPACE_OPEN_PATH_SURFACE_KIND")
       expect(frontSource, "CSV panel must fetch raw file contents").toContain("/api/v1/files/raw")
+      expect(frontSource, "CSV panel must honor configured API base URL").toContain("useApiBaseUrl")
+      expect(frontSource, "CSV panel must pass CLI workspace scope when fetching files").toMatch(/useWorkspaceRequestId|x-boring-workspace-id/)
       expect(frontSource, "CSV resolver must match .csv paths").toMatch(/\.csv/)
       // User explicitly said "no chart libraries" — verify.
       expect(frontSource).not.toContain("recharts")

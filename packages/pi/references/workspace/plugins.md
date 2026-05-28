@@ -93,10 +93,14 @@ To replace the built-in viewer for files, register a panel plus a
 
 ```tsx
 import { definePlugin, WORKSPACE_OPEN_PATH_SURFACE_KIND, type PaneProps } from "@hachej/boring-workspace/plugin"
+import { useApiBaseUrl, useWorkspaceRequestId } from "@hachej/boring-workspace"
 
 function CsvPanel({ params }: PaneProps<{ path?: string }>) {
-  // Browser panels can fetch raw workspace file contents from:
-  // GET /api/v1/files/raw?path=<workspace-relative-path>
+  const apiBaseUrl = useApiBaseUrl()
+  const workspaceRequestId = useWorkspaceRequestId()
+  // Browser panels fetch raw workspace file contents from:
+  // `${apiBaseUrl}/api/v1/files/raw?path=<workspace-relative-path>`
+  // Include `x-boring-workspace-id: workspaceRequestId` when present.
   return <div>{params?.path}</div>
 }
 
@@ -123,9 +127,11 @@ export default definePlugin({
 })
 ```
 
-Use `/api/v1/files/raw` for raw text/blob bytes. `/api/v1/files` returns the
-workspace file JSON shape used by the built-in editor, and `/api/v1/fs/file` is
-not a workspace endpoint.
+Use `/api/v1/files/raw` for raw text/blob bytes. Build the URL with
+`useApiBaseUrl()` and pass `x-boring-workspace-id` from
+`useWorkspaceRequestId()` when present; CLI workspaces mode requires that
+workspace scope. `/api/v1/files` returns the workspace file JSON shape used by
+the built-in editor, and `/api/v1/fs/file` is not a workspace endpoint.
 
 ## Server entry (advanced static composition only)
 

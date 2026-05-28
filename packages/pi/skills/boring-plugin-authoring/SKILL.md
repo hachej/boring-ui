@@ -14,8 +14,12 @@ file layout, API surface (`definePlugin`, `registerPanel`, etc.), and import
 paths are correct — the parts agents most often invent or get wrong.
 
 ```sh
-# Always target the current workspace root. The second arg prevents writing
-# into a parent repo if your shell cwd drifts.
+# First check whether this runtime supports workspace-local plugin roots.
+boring-ui plugin-status --json
+
+# Only run this when workspaceLocalPluginRoots is true. Always target the
+# current workspace root. The second arg prevents writing into a parent repo
+# if your shell cwd drifts.
 boring-ui scaffold-plugin <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"
 ```
 
@@ -35,18 +39,28 @@ The scaffold writes the canonical hot-reload package skeleton:
 - `.pi/extensions/<name>/front/index.tsx` — `definePlugin` config registering one panel + command + left tab
 - `.pi/extensions/<name>/.gitignore` — ignores runtime verifier/signature sidecars
 
+**Discovery roots:**
+
+- Workspace-local boring/Pi plugins live under `$BORING_AGENT_WORKSPACE_ROOT/.pi/extensions/<name>/`
+- Global Pi plugins live under `~/.pi/agent/extensions/`
+
+**Default to workspace-local.** Never ask the user to choose. Always scaffold into `.pi/extensions/<name>/`. Only use `~/.pi/agent/extensions/` when the user explicitly asks for a globally installed plugin (e.g. "make this a global plugin").
+
+This skill teaches the **workspace-local** authoring path. Before scaffolding or writing `.pi/extensions`, run `boring-ui plugin-status --json`. Only use `.pi/extensions` when `workspaceLocalPluginRoots` is `true`. If it is `false`, do not create a hot-reloadable plugin; explain that this runtime does not support local plugin roots. Do not scaffold directly into the global root unless the user explicitly asks for a globally installed plugin.
+
 Hot-reloadable agent behavior belongs in `pi.extensions` / `pi.skills` / `pi.systemPrompt`. The scaffold does not create `server/index.ts`: `boring.server` is advanced boot-time/static server integration and is not activated by `/reload` for `.pi/extensions` user plugins.
 
 **Workflow:**
 
-1. Run the scaffold command via the bash tool.
-2. Read the generated files with the read tool.
-3. Edit them in place with the edit tool — do **NOT** rewrite from scratch.
-4. Run `boring-ui verify-plugin <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"` via bash. Fix anything it reports and re-run until it returns `OK`.
-5. Tell the user to run `/reload` for front/Pi asset changes. If you added `boring.server`, tell the user the workspace process must be statically composed with that package and restarted.
+1. Run `boring-ui plugin-status --json` via the bash tool and stop if `workspaceLocalPluginRoots` is `false`.
+2. Run the scaffold command via the bash tool.
+3. Read the generated files with the read tool.
+4. Edit them in place with the edit tool — do **NOT** rewrite from scratch.
+5. Run `boring-ui verify-plugin <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"` via bash. Fix anything it reports and re-run until it returns `OK`.
+6. Tell the user to run `/reload` for front/Pi asset changes. If you added `boring.server`, tell the user the workspace process must be statically composed with that package and restarted.
 
 If the scaffold says the plugin already exists, you can read the existing
-files directly and skip step 1.
+files directly and skip the scaffold step.
 
 ## The API surface — `definePlugin(config)`
 
@@ -114,8 +128,10 @@ Two valid layouts, picked by intent:
 
 | Where | Build step? | When to use |
 |---|---|---|
-| `<workspace>/.pi/extensions/<name>/` | NO (Vite transforms `.tsx` on the fly, hot reload via SSE) | Local user plugins; agent-authored plugins; anything you don't intend to publish as a separate npm package. **Default for "I want a plugin".** |
+| `<workspace>/.pi/extensions/<name>/` | NO (Vite transforms `.tsx` on the fly, hot reload via SSE) | Workspace-local user plugins; agent-authored plugins; anything tied to one workspace. **Default for "I want a plugin".** |
 | `plugins/<name>/` (in this repo) | YES (`tsup` → `dist/`, then consuming app does `defaultPluginPackages: ["@hachej/your-plugin"]`) | Plugins shipped as installable npm packages (e.g. `@hachej/boring-ask-user`, `@hachej/boring-data-catalog`). |
+
+Global user-installed plugins are a third case: they are **discovered** from `~/.pi/agent/extensions/`, but this skill still recommends authoring/testing them in a workspace-local `.pi/extensions/<name>/` first, then copying/installing them globally once they work.
 
 The rest of this skill teaches the hot-reload layout. Repo contributors building a publishable plugin start from `packages/cli/templates/plugin/` (build-based template) instead; everyone else uses `boring-ui scaffold-plugin <name>` (Step 0).
 
@@ -181,14 +197,23 @@ requests through your resolver:
 ```tsx
 import React, { useState, useEffect } from "react"
 import { definePlugin, WORKSPACE_OPEN_PATH_SURFACE_KIND, type PaneProps } from "@hachej/boring-workspace/plugin"
+import { useApiBaseUrl, useWorkspaceRequestId } from "@hachej/boring-workspace"
 
 function CsvPane({ params }: PaneProps<{ path: string }>) {
+  const apiBaseUrl = useApiBaseUrl()
+  const workspaceRequestId = useWorkspaceRequestId()
   const [text, setText] = useState("")
   useEffect(() => {
-    fetch(`/api/v1/files/raw?path=${encodeURIComponent(params.path)}`)
+    const base = apiBaseUrl.replace(/\/$/, "")
+    const headers: Record<string, string> = {}
+    if (workspaceRequestId) headers["x-boring-workspace-id"] = workspaceRequestId
+    fetch(`${base}/api/v1/files/raw?path=${encodeURIComponent(params.path)}`, {
+      credentials: "include",
+      headers,
+    })
       .then((r) => r.text())
       .then(setText)
-  }, [params.path])
+  }, [apiBaseUrl, params.path, workspaceRequestId])
   return <pre>{text}</pre>
 }
 
@@ -218,9 +243,12 @@ export default definePlugin({
 ```
 
 Read raw file bytes from `/api/v1/files/raw?path=<workspace-relative-path>`.
-Use the imported `WORKSPACE_OPEN_PATH_SURFACE_KIND` constant as the resolver
-`kind` (not the string `"WORKSPACE_OPEN_PATH_SURFACE_KIND"`), and read the path
-from `request.target` (not `request.path`). Do not use `/workspace/read`.
+Inside panels, build the URL with `useApiBaseUrl()` and pass
+`x-boring-workspace-id` from `useWorkspaceRequestId()` when present; CLI
+workspaces mode requires that workspace scope. Use the imported
+`WORKSPACE_OPEN_PATH_SURFACE_KIND` constant as the resolver `kind` (not the
+string `"WORKSPACE_OPEN_PATH_SURFACE_KIND"`), and read the path from
+`request.target` (not `request.path`). Do not use `/workspace/read`.
 For charts, use plain SVG (`<rect>`, `<line>`, `<polyline>`) — do not add
 recharts / chart.js dependencies.
 

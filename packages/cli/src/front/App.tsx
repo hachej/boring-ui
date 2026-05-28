@@ -1,12 +1,37 @@
+import * as React from "react"
+import * as ReactDom from "react-dom"
+import * as ReactDomClient from "react-dom/client"
+import * as ReactJsxDevRuntime from "react/jsx-dev-runtime"
+import * as ReactJsxRuntime from "react/jsx-runtime"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { ChatPanel, useSessions as useAgentSessions } from "@hachej/boring-agent"
+import * as WorkspaceSingleton from "@hachej/boring-workspace"
+import * as WorkspaceEventsSingleton from "@hachej/boring-workspace/events"
+import * as WorkspacePluginSingleton from "@hachej/boring-workspace/plugin"
 import { WorkspaceAgentFront } from "@hachej/boring-workspace/app/front"
 import { WorkspaceSwitcherControl } from "./WorkspaceSwitcherControl"
+
+declare global {
+  var __BORING_RUNTIME_SINGLETONS__: Record<string, unknown> | undefined
+}
+
+globalThis.__BORING_RUNTIME_SINGLETONS__ = {
+  ...globalThis.__BORING_RUNTIME_SINGLETONS__,
+  react: React,
+  "react-dom": ReactDom,
+  "react-dom/client": ReactDomClient,
+  "react/jsx-dev-runtime": ReactJsxDevRuntime,
+  "react/jsx-runtime": ReactJsxRuntime,
+  "@hachej/boring-workspace": WorkspaceSingleton,
+  "@hachej/boring-workspace/events": WorkspaceEventsSingleton,
+  "@hachej/boring-workspace/plugin": WorkspacePluginSingleton,
+}
 
 interface WorkspaceMeta {
   projectName?: string
   workspacesMode?: boolean
   version?: string
+  runtimePluginFrontLoadingEnabled?: boolean
 }
 
 interface LocalWorkspace {
@@ -69,6 +94,7 @@ export function CliWorkspaceShell() {
   const [workspaces, setWorkspaces] = useState<LocalWorkspace[]>([])
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
   const [metaLoaded, setMetaLoaded] = useState(false)
+  const [runtimePluginFrontLoadingEnabled, setRuntimePluginFrontLoadingEnabled] = useState(false)
 
   const refreshWorkspaces = useCallback(() => {
     void fetch("/api/v1/local-workspaces")
@@ -103,7 +129,9 @@ export function CliWorkspaceShell() {
         const version = meta?.version?.trim()
         if (version) setCliVersion(version)
         const isWorkspacesMode = meta?.workspacesMode === true
+        const runtimePluginsEnabled = meta?.runtimePluginFrontLoadingEnabled === true
         setWorkspacesMode(isWorkspacesMode)
+        setRuntimePluginFrontLoadingEnabled(runtimePluginsEnabled)
         if (isWorkspacesMode) refreshWorkspaces()
         setMetaLoaded(true)
       })
@@ -133,6 +161,10 @@ export function CliWorkspaceShell() {
   }, [activeWorkspaceId, workspacesMode])
 
   const plugins = useMemo(() => [], [])
+  const activeWorkspaceRequestHeaders = useMemo(
+    () => activeWorkspaceId ? { "x-boring-workspace-id": activeWorkspaceId } : null,
+    [activeWorkspaceId],
+  )
 
   if (!metaLoaded) {
     return <div className="h-screen w-screen bg-background" />
@@ -158,7 +190,7 @@ export function CliWorkspaceShell() {
       )
     }
 
-    const requestHeaders = { "x-boring-workspace-id": activeWorkspace.id }
+    const requestHeaders = activeWorkspaceRequestHeaders ?? { "x-boring-workspace-id": activeWorkspace.id }
 
     return (
       <WorkspaceAgentFront
@@ -175,7 +207,7 @@ export function CliWorkspaceShell() {
         defaultSessionTitle={activeWorkspace.name}
         useSessions={useAgentSessions}
         chatParams={{ thinkingControl: true }}
-        frontPluginHotReload={false}
+        frontPluginHotReload={runtimePluginFrontLoadingEnabled ? "vite" : false}
         topBarRight={<CliVersionBadge version={cliVersion} />}
         topBarLeft={
           <WorkspaceSwitcherControl
@@ -207,7 +239,7 @@ export function CliWorkspaceShell() {
       defaultSessionTitle={projectName}
       useSessions={useAgentSessions}
       chatParams={{ thinkingControl: true }}
-      frontPluginHotReload={false}
+      frontPluginHotReload={runtimePluginFrontLoadingEnabled ? "vite" : false}
       topBarRight={<CliVersionBadge version={cliVersion} />}
     />
   )

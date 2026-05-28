@@ -50,6 +50,8 @@ export async function evalAgentPrompt(opts: EvalPromptOptions): Promise<EvalResu
         systemPrompt: opts.systemPrompt,
         model,
         timeoutMs,
+        headers: opts.headers,
+        query: opts.query,
       })
     } catch (err) {
       lastResult = {
@@ -136,18 +138,23 @@ interface RunOnceOpts {
   systemPrompt?: string
   model: { provider: string; id: string }
   timeoutMs: number
+  headers?: Record<string, string>
+  query?: Record<string, string | number | boolean | undefined>
 }
 
 async function runOnce(
   app: FastifyInstance,
   opts: RunOnceOpts,
 ): Promise<CapturedStream> {
+  const querySuffix = formatQuerySuffix(opts.query)
+
   // Register the session so the harness has somewhere to attach the turn.
   // Some harness impls auto-create on chat.send; pre-creating is safe in
   // both cases and lets the cleanup DELETE find a real row.
   await app.inject({
     method: "POST",
-    url: "/api/v1/agent/sessions",
+    url: `/api/v1/agent/sessions${querySuffix}`,
+    headers: opts.headers,
     payload: { id: opts.sessionId },
   })
 
@@ -165,7 +172,8 @@ async function runOnce(
     res = await withTimeout(
       app.inject({
         method: "POST",
-        url: "/api/v1/agent/chat",
+        url: `/api/v1/agent/chat${querySuffix}`,
+        headers: opts.headers,
         payload: {
           sessionId: opts.sessionId,
           message: userMessage,
@@ -181,7 +189,8 @@ async function runOnce(
     void app
       .inject({
         method: "DELETE",
-        url: `/api/v1/agent/sessions/${encodeURIComponent(opts.sessionId)}`,
+        url: `/api/v1/agent/sessions/${encodeURIComponent(opts.sessionId)}${querySuffix}`,
+        headers: opts.headers,
       })
       .catch(() => {})
   }
@@ -193,6 +202,17 @@ async function runOnce(
   }
 
   return parseSseStream(res.body)
+}
+
+function formatQuerySuffix(query: RunOnceOpts["query"]): string {
+  if (!query) return ""
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined) continue
+    params.set(key, String(value))
+  }
+  const encoded = params.toString()
+  return encoded ? `?${encoded}` : ""
 }
 
 /**

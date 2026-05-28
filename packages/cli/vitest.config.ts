@@ -1,0 +1,50 @@
+import { resolve } from "node:path"
+import { configDefaults, defineConfig } from "vitest/config"
+
+const root = __dirname
+const repoRoot = resolve(root, "..", "..")
+
+export default defineConfig({
+  test: {
+    server: {
+      deps: {
+        inline: [/^@hachej\/boring-(agent|workspace)(\/.*)?$/],
+      },
+    },
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "cli",
+          exclude: [...configDefaults.exclude, "src/__tests__/pluginFrontRuntime.test.ts"],
+          sequence: { groupOrder: 0 },
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "runtime-host",
+          include: ["src/__tests__/pluginFrontRuntime.test.ts"],
+          fileParallelism: false,
+          sequence: { groupOrder: 1 },
+        },
+      },
+    ],
+  },
+  resolve: {
+    alias: [
+      { find: /^@hachej\/boring-agent\/shared$/, replacement: resolve(repoRoot, "packages/agent/src/shared/index.ts") },
+      { find: /^@hachej\/boring-agent\/front$/, replacement: resolve(repoRoot, "packages/agent/src/front/index.ts") },
+      { find: /^@hachej\/boring-agent\/server$/, replacement: resolve(repoRoot, "packages/agent/src/server/index.ts") },
+      { find: /^@hachej\/boring-agent\/eval$/, replacement: resolve(repoRoot, "packages/agent/src/eval/index.ts") },
+      { find: /^@hachej\/boring-agent$/, replacement: resolve(repoRoot, "packages/agent/src/front/index.ts") },
+      { find: /^@\/(.*)$/, replacement: resolve(repoRoot, "packages/agent/src/$1") },
+      { find: /^@hachej\/boring-workspace\/server$/, replacement: resolve(repoRoot, "packages/workspace/src/server/index.ts") },
+      { find: /^@hachej\/boring-workspace\/plugin$/, replacement: resolve(repoRoot, "packages/workspace/src/plugin.ts") },
+      { find: /^@hachej\/boring-workspace\/events$/, replacement: resolve(repoRoot, "packages/workspace/src/front/events/index.ts") },
+      { find: /^@hachej\/boring-workspace\/app\/front$/, replacement: resolve(repoRoot, "packages/workspace/src/app/front/index.ts") },
+      { find: /^@hachej\/boring-workspace\/app\/server$/, replacement: resolve(repoRoot, "packages/workspace/src/app/server/index.ts") },
+      { find: /^@hachej\/boring-workspace$/, replacement: resolve(repoRoot, "packages/workspace/src/index.ts") },
+    ],
+  },
+})

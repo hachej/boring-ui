@@ -9,6 +9,7 @@ import { CommandRegistry } from "../../../shared/plugins/CommandRegistry"
 import { SurfaceResolverRegistry } from "../../../shared/plugins/SurfaceResolverRegistry"
 import { definePlugin, type BoringFrontFactoryWithId, type BoringFrontSetup } from "../../../shared/plugins/frontFactory"
 import { appendFrontImportRevision, useAgentPluginHotReload } from "../registerAgentPlugin"
+import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../reloadEvent"
 
 class MockEventSource {
   static instances: MockEventSource[] = []
@@ -230,7 +231,100 @@ describe("useAgentPluginHotReload", () => {
     expect(screen.getByTestId("hot-pane")).toHaveTextContent("version two")
   })
 
+  test("prefers frontTarget.entryUrl over legacy frontUrl payloads", async () => {
+    const importFront = vi.fn(async () => ({
+      default: hotPlugin("hot-plugin", (api) => {
+        api.registerPanel({
+          id: "hot-pane",
+          label: "Hot Pane",
+          component: function HotPane() {
+            return React.createElement("div", { "data-testid": "hot-pane" }, "front target")
+          },
+        })
+      }),
+    }))
+
+    function FrontTargetHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <PaneRenderer id="hot-pane" />
+        </RegistryProvider>
+      )
+    }
+
+    render(<FrontTargetHarness />)
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl: "/@fs/legacy-front.mjs",
+      frontTarget: { kind: "native", entryUrl: "/runtime/front-target.mjs", revision: 1, trust: "local-trusted-native" },
+      boring: { front: "./front.mjs" },
+    })
+
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("front target"))
+    expect(importFront).toHaveBeenCalledWith("/runtime/front-target.mjs", 1)
+  })
+
+  test("ignores plugin events for the wrong workspace and dispatches replay-complete for the active one", async () => {
+    const replayEvents: Array<{ type?: string; workspaceId?: string }> = []
+    const listener = (event: Event) => replayEvents.push((event as CustomEvent<{ type?: string; workspaceId?: string }>).detail)
+    window.addEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
+
+    function WorkspaceScopedHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "active-workspace", importFront: importFrontFromDisk })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <PaneRenderer id="hot-pane" />
+        </RegistryProvider>
+      )
+    }
+
+    try {
+      render(<WorkspaceScopedHarness />)
+      MockEventSource.instances[0].dispatch("boring.plugin.load", {
+        type: "boring.plugin.load",
+        id: "hot-plugin",
+        version: "1.0.0",
+        revision: 1,
+        workspaceId: "other-workspace",
+        frontTarget: { kind: "native", entryUrl: "/runtime/ignored.mjs", revision: 1, trust: "local-trusted-native" },
+        boring: { front: "./front.mjs" },
+      })
+      await new Promise((resolve) => setTimeout(resolve, 25))
+      expect(screen.getByTestId("pane-missing")).toHaveTextContent("missing")
+
+      MockEventSource.instances[0].dispatch("boring.plugin.replay-complete", {
+        type: "boring.plugin.replay-complete",
+        workspaceId: "active-workspace",
+        replay: true,
+      })
+      await waitFor(() => expect(replayEvents).toContainEqual(expect.objectContaining({ type: "boring.plugin.replay-complete", workspaceId: "active-workspace" })))
+    } finally {
+      window.removeEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
+    }
+  })
+
   test("rejects hot-loaded plugin output that collides with a built-in panel id", async () => {
+    const browserEvents: Array<Record<string, unknown>> = []
+    const listener = (event: Event) => browserEvents.push((event as CustomEvent<Record<string, unknown>>).detail)
+    window.addEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
     const importFront = async (): Promise<{ default: BoringFrontFactoryWithId }> => ({
       default: hotPlugin("csv-plugin", (api) => {
@@ -290,11 +384,19 @@ describe("useAgentPluginHotReload", () => {
       expect(consoleError.mock.calls.some((call) => call.some((part) => String(part).includes('plugin "csv-plugin"')))).toBe(true)
       expect(consoleError.mock.calls.some((call) => call.some((part) => String(part).includes('panel "csv-viewer"')))).toBe(true)
       expect(consoleError.mock.calls.some((call) => call.some((part) => String(part).includes('"system/builtin"')))).toBe(true)
+      expect(browserEvents).toContainEqual(expect.objectContaining({
+        type: "boring.plugin.front-error",
+        id: "csv-plugin",
+        revision: 1,
+        code: "PLUGIN_LOAD_FAILED",
+        stage: "register",
+      }))
       expect(screen.getByTestId("builtin-csv-viewer")).toHaveTextContent("builtin csv viewer")
       expect(screen.queryByTestId("hot-csv-viewer")).not.toBeInTheDocument()
       expect(screen.getByTestId("panel-ids")).toHaveTextContent("csv-viewer")
     } finally {
       consoleError.mockRestore()
+      window.removeEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
     }
   })
 
@@ -586,22 +688,79 @@ describe("useAgentPluginHotReload", () => {
     await waitFor(() => expect(screen.getByTestId("catalog-list")).toHaveTextContent(""))
   })
 
-  test("warns and skips provider/binding hot-load contributions instead of partially mounting panels", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+  test("unloads plugins missing from a replay snapshot", async () => {
     const importFront = async (): Promise<{ default: BoringFrontFactoryWithId }> => ({
-      default: hotPlugin("provider-plugin", (api) => {
-        api.registerProvider({
-          id: "hot-provider",
-          component: function HotProvider({ children }: { children: React.ReactNode }) {
-            return React.createElement(React.Fragment, null, children)
-          },
-        })
-        api.registerBinding({ id: "hot-binding", component: () => null })
+      default: hotPlugin("hot-plugin", (api) => {
         api.registerPanel({
           id: "hot-pane",
           label: "Hot Pane",
           component: function HotPane() {
-            return React.createElement("div", { "data-testid": "hot-pane" }, "should not mount")
+            return React.createElement("div", { "data-testid": "hot-pane" }, "loaded")
+          },
+        })
+      }),
+    })
+
+    function Listener() {
+      useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+      return null
+    }
+
+    function ReplayHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      return (
+        <RegistryProvider
+          panelRegistry={panelRegistry}
+          commandRegistry={commandRegistry}
+          surfaceResolverRegistry={surfaceResolverRegistry}
+        >
+          <Listener />
+          <PaneRenderer id="hot-pane" />
+          <PanelIds />
+        </RegistryProvider>
+      )
+    }
+
+    render(<ReplayHarness />)
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl: "/@fs/front.mjs",
+      boring: { front: "./front.mjs" },
+    })
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("loaded"))
+
+    MockEventSource.instances[0].dispatch("boring.plugin.replay-complete", {
+      type: "boring.plugin.replay-complete",
+      replay: true,
+    })
+
+    await waitFor(() => expect(screen.getByTestId("pane-missing")).toBeInTheDocument())
+    expect(screen.getByTestId("panel-ids")).toHaveTextContent("")
+  })
+
+  test("warns and preserves previous UI when a hot-load revision adds provider/binding contributions", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const importFront = async (_url: string, revision: number): Promise<{ default: BoringFrontFactoryWithId }> => ({
+      default: hotPlugin("provider-plugin", (api) => {
+        if (revision > 1) {
+          api.registerProvider({
+            id: "hot-provider",
+            component: function HotProvider({ children }: { children: React.ReactNode }) {
+              return React.createElement(React.Fragment, null, children)
+            },
+          })
+          api.registerBinding({ id: "hot-binding", component: () => null })
+        }
+        api.registerPanel({
+          id: "hot-pane",
+          label: "Hot Pane",
+          component: function HotPane() {
+            return React.createElement("div", { "data-testid": "hot-pane" }, revision === 1 ? "version one" : "should not mount")
           },
         })
       }),
@@ -653,10 +812,19 @@ describe("useAgentPluginHotReload", () => {
         frontUrl: "/@fs/front.mjs",
         boring: { front: "./front.mjs" },
       })
+      await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version one"))
+
+      MockEventSource.instances[0].dispatch("boring.plugin.load", {
+        type: "boring.plugin.load",
+        id: "provider-plugin",
+        version: "1.0.0",
+        revision: 2,
+        frontUrl: "/@fs/front.mjs",
+        boring: { front: "./front.mjs" },
+      })
 
       await waitFor(() => expect(warn).toHaveBeenCalledWith(expect.stringContaining("Dynamic provider/binding mounting is not implemented")))
-      expect(screen.getByTestId("static-pane")).toHaveTextContent("static stays mounted")
-      expect(screen.getByTestId("resolver-ids")).toHaveTextContent("provider-plugin.surface")
+      expect(screen.getByTestId("hot-pane")).toHaveTextContent("version one")
     } finally {
       warn.mockRestore()
     }
@@ -819,6 +987,9 @@ describe("useAgentPluginHotReload", () => {
   })
 
   test("retries the same revision after a failed front import", async () => {
+    const browserEvents: Array<Record<string, unknown>> = []
+    const listener = (event: Event) => browserEvents.push((event as CustomEvent<Record<string, unknown>>).detail)
+    window.addEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
     let failOnce = true
     const importFront = async (): Promise<{ default?: BoringFrontFactoryWithId }> => {
       if (failOnce) {
@@ -854,8 +1025,9 @@ describe("useAgentPluginHotReload", () => {
       )
     }
 
-    render(<RetryHarness />)
-    const event = {
+    try {
+      render(<RetryHarness />)
+      const event = {
       type: "boring.plugin.load" as const,
       id: "hot-plugin",
       version: "1.0.0",
@@ -863,15 +1035,28 @@ describe("useAgentPluginHotReload", () => {
       frontUrl: "/@fs/flaky.mjs",
       boring: { front: "./front.mjs" },
     }
-    MockEventSource.instances[0].dispatch("boring.plugin.load", event)
-    await new Promise((resolve) => setTimeout(resolve, 25))
-    expect(screen.getByTestId("pane-missing")).toHaveTextContent("missing")
+      MockEventSource.instances[0].dispatch("boring.plugin.load", event)
+      await new Promise((resolve) => setTimeout(resolve, 25))
+      expect(screen.getByTestId("pane-missing")).toHaveTextContent("missing")
+      expect(browserEvents).toContainEqual(expect.objectContaining({
+        type: "boring.plugin.front-error",
+        id: "hot-plugin",
+        revision: 1,
+        code: "PLUGIN_LOAD_FAILED",
+        stage: "import",
+      }))
 
-    MockEventSource.instances[0].dispatch("boring.plugin.load", event)
-    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("retry recovered"))
+      MockEventSource.instances[0].dispatch("boring.plugin.load", event)
+      await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("retry recovered"))
+    } finally {
+      window.removeEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
+    }
   })
 
   test("keeps the current pane live when generated plugin code has no valid default factory", async () => {
+    const browserEvents: Array<Record<string, unknown>> = []
+    const listener = (event: Event) => browserEvents.push((event as CustomEvent<Record<string, unknown>>).detail)
+    window.addEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
     const dir = await makeTempDir("boring-front-fail-keeps-old-")
     const frontPath = join(dir, "front.mjs")
     await writeFrontModule(frontPath, "stable")
@@ -897,8 +1082,9 @@ describe("useAgentPluginHotReload", () => {
       )
     }
 
-    render(<FailingHarness />)
-    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+    try {
+      render(<FailingHarness />)
+      MockEventSource.instances[0].dispatch("boring.plugin.load", {
       type: "boring.plugin.load",
       id: "hot-plugin",
       version: "1.0.0",
@@ -918,19 +1104,29 @@ describe("useAgentPluginHotReload", () => {
       boring: { front: "./front.mjs" },
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 25))
-    expect(screen.getByTestId("hot-pane")).toHaveTextContent("stable")
+      await new Promise((resolve) => setTimeout(resolve, 25))
+      expect(screen.getByTestId("hot-pane")).toHaveTextContent("stable")
+      expect(browserEvents).toContainEqual(expect.objectContaining({
+        type: "boring.plugin.front-error",
+        id: "hot-plugin",
+        revision: 2,
+        code: "PLUGIN_LOAD_FAILED",
+        stage: "import",
+      }))
 
-    await writeFrontModule(frontPath, "recovered")
-    MockEventSource.instances[0].dispatch("boring.plugin.load", {
-      type: "boring.plugin.load",
-      id: "hot-plugin",
-      version: "1.0.0",
-      revision: 3,
-      frontUrl,
-      boring: { front: "./front.mjs" },
-    })
-    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("recovered"))
+      await writeFrontModule(frontPath, "recovered")
+      MockEventSource.instances[0].dispatch("boring.plugin.load", {
+        type: "boring.plugin.load",
+        id: "hot-plugin",
+        version: "1.0.0",
+        revision: 3,
+        frontUrl,
+        boring: { front: "./front.mjs" },
+      })
+      await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("recovered"))
+    } finally {
+      window.removeEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
+    }
   })
 
   test("does not register blank UI from package metadata when frontUrl is absent", async () => {

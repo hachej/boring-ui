@@ -215,6 +215,12 @@ export interface RegisterAgentRoutesOptions {
     workspaceFsCapability?: Workspace['fsCapability']
   }) => AgentTool[] | Promise<AgentTool[]>
   systemPromptAppend?: string
+  /** Optional dynamic system-prompt source forwarded to the harness. */
+  systemPromptDynamic?: () => string | undefined | Promise<string | undefined>
+  getSystemPromptDynamic?: (ctx: {
+    workspaceId: string
+    workspaceRoot: string
+  }) => string | undefined | Promise<string | undefined>
   /** Override the default pi-backed harness with a custom agent runtime. */
   harnessFactory?: AgentHarnessFactory
   /** Optional pi adapter/runtime knobs used by the default harness. */
@@ -280,7 +286,8 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     typeof opts.getWorkspaceRoot === 'function' ||
     typeof opts.getTemplatePath === 'function' ||
     typeof opts.getPi === 'function' ||
-    typeof opts.getSessionNamespace === 'function'
+    typeof opts.getSessionNamespace === 'function' ||
+    typeof opts.getSystemPromptDynamic === 'function'
   const sessionChangesTracker = new InMemorySessionChangesTracker()
   const runtimeBindings = new Map<string, RuntimeBindingEntry>()
   const MAX_RUNTIME_BINDINGS = 256
@@ -334,7 +341,25 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     const pi = opts.getPi
       ? await opts.getPi({ workspaceId, workspaceRoot: root, request })
       : opts.pi
-    return { root, pi }
+    const hot = pi?.getHotReloadableResources?.()
+    return {
+      root,
+      pi: hot ? {
+        ...pi,
+        additionalSkillPaths: [
+          ...(pi?.additionalSkillPaths ?? []),
+          ...(hot.additionalSkillPaths ?? []),
+        ],
+        packages: [
+          ...(pi?.packages ?? []),
+          ...(hot.packages ?? []),
+        ],
+        extensionPaths: [
+          ...(pi?.extensionPaths ?? []),
+          ...(hot.extensionPaths ?? []),
+        ],
+      } : pi,
+    }
   }
 
   async function runRuntimeProvisioning(
@@ -446,6 +471,9 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       cwd: root,
       sessionNamespace: scope.sessionNamespace,
       systemPromptAppend: opts.systemPromptAppend,
+      systemPromptDynamic: opts.getSystemPromptDynamic
+        ? () => opts.getSystemPromptDynamic?.({ workspaceId, workspaceRoot: root })
+        : opts.systemPromptDynamic,
       telemetry: opts.telemetry,
     })
     const readyTracker = new ReadyStatusTracker({
