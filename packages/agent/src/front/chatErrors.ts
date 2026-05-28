@@ -35,14 +35,13 @@ export function friendlyError(err: Error): FriendlyError {
     }
     if (code === 'AGENT_RUNTIME_NOT_READY') {
       return {
-        title: 'Preparing agent…',
-        detail: 'Your message is still in the composer. Try again in a moment.',
+        title: 'Preparing workspace…',
         code,
       }
     }
     if (code === 'RUNTIME_PROVISIONING_FAILED') {
       return {
-        title: 'Unable to prepare agent.',
+        title: 'Workspace setup failed.',
         detail: message ?? 'Reload the workspace and try again.',
         code,
       }

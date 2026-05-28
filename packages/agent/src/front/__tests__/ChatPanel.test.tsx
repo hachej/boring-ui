@@ -326,7 +326,8 @@ describe('ChatPanel (shadcn)', () => {
 
     render(<ChatPanel sessionId="sess-runtime-not-ready" />)
 
-    expect(screen.getByTestId('chat-composer-runtime-notice').textContent).toContain('Preparing agent')
+    expect(screen.getByTestId('chat-composer-runtime-notice').textContent).toContain('Preparing workspace')
+    expect(screen.getByTestId('chat-composer-runtime-notice').textContent).not.toContain('Your message is still in the composer')
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
@@ -346,7 +347,7 @@ describe('ChatPanel (shadcn)', () => {
     expect(result).toBe(false)
     expect(mockSendMessage).not.toHaveBeenCalled()
     await waitFor(() => {
-      expect(screen.getByTestId('chat-composer-runtime-notice').textContent).toContain('Preparing agent')
+      expect(screen.getByTestId('chat-composer-runtime-notice').textContent).toContain('Preparing workspace')
     })
   })
 

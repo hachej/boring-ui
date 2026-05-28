@@ -254,21 +254,13 @@ function composerNoticeForWarmup(status: ChatPanelWorkspaceWarmupStatus | undefi
   if (!status || status.status === 'ready') return null
   if (status.status === 'failed') {
     return {
-      title: 'Unable to prepare workspace.',
+      title: 'Workspace setup failed.',
       detail: status.message ?? 'Reload the workspace and try again.',
       code: 'RUNTIME_PROVISIONING_FAILED',
     }
   }
-  const title = status.requirement === 'workspace-fs'
-    ? 'Preparing files…'
-    : status.requirement === 'sandbox-exec'
-      ? 'Waking sandbox…'
-      : status.requirement === 'ui-bridge'
-        ? 'Connecting workspace UI…'
-        : 'Preparing agent…'
   return {
-    title,
-    detail: 'Your message is still in the composer. Try again in a moment.',
+    title: 'Preparing workspace…',
     code: 'AGENT_RUNTIME_NOT_READY',
   }
 }
@@ -530,10 +522,14 @@ export function ChatPanel(props: ChatPanelProps) {
   const mergedToolRenderers = mergeShadcnToolRenderers(toolRenderers)
   const friendlyChatError = error ? friendlyError(error) : null
   const runtimeErrorNotice = isComposerRuntimeNotice(friendlyChatError) ? friendlyChatError : null
-  const composerStatusNotice = composerRuntimeNotice ?? runtimeErrorNotice
-  const composerBlocked = composerBlockers.length > 0
+  const warmupNotice = composerNoticeForWarmup(workspaceWarmupStatus)
+  const composerStatusNotice = composerRuntimeNotice ?? runtimeErrorNotice ?? warmupNotice
+  const workspaceWarmupBlocked = Boolean(warmupNotice)
+  const composerBlocked = workspaceWarmupBlocked || composerBlockers.length > 0
   const primaryComposerBlocker = composerBlockers[0]
-  const composerBlockerLabel = primaryComposerBlocker?.label ?? 'Complete the pending workspace action to continue.'
+  const composerBlockerLabel = workspaceWarmupBlocked
+    ? (warmupNotice?.title ?? 'Preparing workspace…')
+    : primaryComposerBlocker?.label ?? 'Complete the pending workspace action to continue.'
 
   const registry = useMemo(
     () => {
@@ -821,15 +817,13 @@ export function ChatPanel(props: ChatPanelProps) {
     // and no attachment). The server schema requires message.length >= 1,
     // so an empty POST returns 400 — we catch it here and keep the
     // composer in place with focus for the user to type.
-    if (composerBlocked) return
+    if (composerBlocked) {
+      if (warmupNotice) setComposerRuntimeNotice(warmupNotice)
+      return false
+    }
     const trimmed = text.trim()
     if (trimmed.length === 0 && (!files || files.length === 0)) {
       return
-    }
-    const warmupNotice = composerNoticeForWarmup(workspaceWarmupStatus)
-    if (warmupNotice) {
-      setComposerRuntimeNotice(warmupNotice)
-      return false
     }
     setComposerRuntimeNotice(null)
     if (!(await runBeforeSubmit(text, files ?? [], source))) return false
