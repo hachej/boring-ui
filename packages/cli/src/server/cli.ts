@@ -229,12 +229,14 @@ async function startFolderMode(opts: {
   const projectName = basename(resolve(workspaceRoot)) || "workspace"
   const modelCount = await checkAuth()
 
+  const url = `http://localhost:${opts.port}`
   console.log(`\n${projectName}`)
   console.log(`  workspace  ${workspaceRoot}`)
   console.log(`  mode       ${opts.cliMode}`)
   console.log(`  port       ${opts.port}`)
   console.log(`  host       ${opts.host}`)
   if (modelCount === 0) console.log(AUTH_GUIDE)
+  console.log(`\n  starting ${url} …`)
 
   const runtimeProvisioning = await provisionCliWorkspaceRuntime({
     workspaceRoot,
@@ -258,8 +260,8 @@ async function startFolderMode(opts: {
 
   await registerStatic(app as FastifyInstance, opts.publicDir)
   await app.listen({ port: opts.port, host: opts.host })
-  console.log(`\n  http://localhost:${opts.port}\n`)
-  openBrowser(`http://localhost:${opts.port}`)
+  console.log(`  ${url}  ready\n`)
+  openBrowser(url)
 }
 
 async function startWorkspacesMode(opts: {
@@ -269,6 +271,12 @@ async function startWorkspacesMode(opts: {
   cliMode: CliMode
   mode: RuntimeMode
 }) {
+  console.log(`\nBoring UI`)
+  console.log(`  mode       ${opts.cliMode}`)
+  console.log(`  port       ${opts.port}`)
+  console.log(`  host       ${opts.host}`)
+  console.log(`\n  starting http://localhost:${opts.port} …`)
+
   const [workspaceAppServer, workspaceServer, agentServer, fastifyModule] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
     import("@hachej/boring-workspace/server"),
@@ -376,12 +384,8 @@ async function startWorkspacesMode(opts: {
     ? `http://localhost:${opts.port}/workspace/${encodeURIComponent(initialWorkspace.id)}`
     : `http://localhost:${opts.port}`
 
-  console.log(`\nBoring UI`)
   console.log(`  workspaces ${registry.path}`)
-  console.log(`  mode       ${opts.cliMode}`)
-  console.log(`  port       ${opts.port}`)
-  console.log(`  host       ${opts.host}`)
-  console.log(`\n  ${initialUrl}\n`)
+  console.log(`  ${initialUrl}  ready\n`)
   if ((await checkAuth()) === 0) console.log(AUTH_GUIDE)
   openBrowser(initialUrl)
 }
