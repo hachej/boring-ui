@@ -1,4 +1,4 @@
-import { Suspense, useMemo } from 'react'
+import { Suspense, useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -65,6 +65,27 @@ function createDefaultQueryClient(): QueryClient {
   })
 }
 
+function CspNonceScript({ nonce }: { nonce?: string }) {
+  useEffect(() => {
+    if (!nonce || typeof document === 'undefined') return
+
+    const selector = 'script[data-boring-csp-nonce="true"]'
+    const script = document.createElement('script')
+    script.type = 'application/json'
+    script.setAttribute('nonce', nonce)
+    script.dataset.boringCspNonce = 'true'
+    script.textContent = JSON.stringify({ nonce })
+    document.head.querySelector(selector)?.remove()
+    document.head.appendChild(script)
+
+    return () => {
+      script.remove()
+    }
+  }, [nonce])
+
+  return null
+}
+
 export function CoreFront({ children, authPages, cspNonce }: CoreFrontProps) {
   const queryClient = useMemo(createDefaultQueryClient, [])
   const resolvedCspNonce = useMemo(
@@ -93,18 +114,10 @@ export function CoreFront({ children, authPages, cspNonce }: CoreFrontProps) {
                       <TopBarSlotProvider slot={<UserMenu />}>
                         <Helmet>
                           {resolvedCspNonce ? (
-                            <>
-                              <meta name={CSP_NONCE_META_NAME} content={resolvedCspNonce} />
-                              <script
-                                type="application/json"
-                                nonce={resolvedCspNonce}
-                                data-boring-csp-nonce="true"
-                              >
-                                {JSON.stringify({ nonce: resolvedCspNonce })}
-                              </script>
-                            </>
+                            <meta name={CSP_NONCE_META_NAME} content={resolvedCspNonce} />
                           ) : null}
                         </Helmet>
+                        <CspNonceScript nonce={resolvedCspNonce} />
                         <AuthGate publicPaths={['/invites']}>
                           <Suspense fallback={null}>
                             <Routes>

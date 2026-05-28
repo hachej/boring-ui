@@ -12,7 +12,7 @@ import { validatePath } from './paths'
 export const VERCEL_SANDBOX_REMOTE_ROOT = '/vercel/sandbox'
 export const VERCEL_SANDBOX_WORKSPACE_ROOT = '/workspace'
 
-type VercelSandboxCompat = VercelSandbox & {
+type VercelSandboxCompat = Omit<VercelSandbox, 'fs'> & {
   fs?: {
     readFile(path: string, encoding?: BufferEncoding): Promise<string | Uint8Array | Buffer>
     readdir(path: string, opts: { withFileTypes: true }): Promise<Array<{ name: string; isDirectory(): boolean }>>
