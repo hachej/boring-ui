@@ -67,14 +67,16 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
     if (inFlight) return await inFlight
 
     const createPromise = (async () => {
+      let created: Awaited<ReturnType<typeof store.create>>
       try {
-        const created = await createWorkspaceForUser(userId, DEFAULT_WORKSPACE_NAME, true, request)
-        return [created]
+        created = await store.create(userId, DEFAULT_WORKSPACE_NAME, app.config.appId, { isDefault: true })
       } catch (error) {
         const racedExisting = await store.list(userId, app.config.appId)
         if (racedExisting.length > 0) return racedExisting
         throw error
       }
+      await provisionWorkspace(created, userId, request)
+      return [created]
     })()
     defaultWorkspaceCreates.set(createKey, createPromise)
     try {
