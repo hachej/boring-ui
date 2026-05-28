@@ -518,6 +518,9 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
 
     const created = createRuntimeBindingEntry(workspaceId, scope, request)
     runtimeBindings.set(scope.key, created)
+    created.promise.catch(() => {
+      if (runtimeBindings.get(scope.key) === created) runtimeBindings.delete(scope.key)
+    })
     evictRuntimeBindings()
     if (options.failIfPending) {
       throw createAgentRuntimeNotReadyError(workspaceId)
@@ -543,6 +546,9 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
 
     const created = createRuntimeBindingEntry(workspaceId, scope)
     runtimeBindings.set(scope.key, created)
+    created.promise.catch(() => {
+      if (runtimeBindings.get(scope.key) === created) runtimeBindings.delete(scope.key)
+    })
     evictRuntimeBindings()
     try {
       const binding = await created.promise
@@ -682,16 +688,16 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   }
 
   await app.register(fileRoutes, {
-    getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
+    getWorkspace: async (request) => (await getBindingForRequest(request, { failIfPending: hasRuntimeProvisioningInput })).runtimeBundle.workspace,
   })
   await app.register(fsEventsRoutes, {
-    getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
+    getWorkspace: async (request) => (await getBindingForRequest(request, { failIfPending: hasRuntimeProvisioningInput })).runtimeBundle.workspace,
   })
   await app.register(treeRoutes, {
-    getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
+    getWorkspace: async (request) => (await getBindingForRequest(request, { failIfPending: hasRuntimeProvisioningInput })).runtimeBundle.workspace,
   })
   await app.register(searchRoutes, {
-    getFileSearch: async (request) => (await getBindingForRequest(request)).runtimeBundle.fileSearch,
+    getFileSearch: async (request) => (await getBindingForRequest(request, { failIfPending: hasRuntimeProvisioningInput })).runtimeBundle.fileSearch,
   })
   await app.register(chatRoutes, {
     getRuntime: async (request) => {
@@ -706,11 +712,11 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   })
   await app.register(sessionRoutes, {
     getSessionStore: async (request) => {
-      const binding = await getBindingForRequest(request)
+      const binding = await getBindingForRequest(request, { failIfPending: hasRuntimeProvisioningInput })
       return binding.harness.sessions as unknown as SessionStore
     },
     getRuntime: async (request) => {
-      const binding = await getBindingForRequest(request)
+      const binding = await getBindingForRequest(request, { failIfPending: hasRuntimeProvisioningInput })
       return {
         harness: binding.harness,
         workdir: binding.runtimeBundle.workspace.root,
@@ -718,7 +724,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     },
   })
   await app.register(systemPromptRoutes, {
-    getHarness: async (request) => (await getBindingForRequest(request)).harness,
+    getHarness: async (request) => (await getBindingForRequest(request, { failIfPending: hasRuntimeProvisioningInput })).harness,
   })
   await app.register(modelsRoutes)
   await app.register(skillsRoutes, {
@@ -787,6 +793,6 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   )
   await app.register(readyStatusRoutes, staticBinding
     ? { tracker: staticBinding.readyTracker }
-    : { getTracker: async (request) => (await getBindingForRequest(request)).readyTracker },
+    : { getTracker: async (request) => (await getBindingForRequest(request, { failIfPending: hasRuntimeProvisioningInput })).readyTracker },
   )
 }

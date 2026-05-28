@@ -132,7 +132,7 @@ test('registerAgentRoutes provisions the resolved request workspace, not the hos
   }
 }, 15_000)
 
-test('chat returns runtime-not-ready while request-scoped provisioning is pending', async () => {
+test('agent routes return runtime-not-ready while request-scoped provisioning is pending', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-chat-pending-provision-')
   const app = Fastify({ logger: false })
   const provisionStarted = vi.fn()
@@ -169,19 +169,24 @@ test('chat returns runtime-not-ready while request-scoped provisioning is pendin
   await app.ready()
 
   try {
-    const res = await app.inject({
+    const chat = await app.inject({
       method: 'POST',
       url: '/api/v1/agent/chat',
       payload: { sessionId: 's1', message: 'hello' },
     })
+    const tree = await app.inject({ method: 'GET', url: '/api/v1/tree?path=.' })
+    const sessions = await app.inject({ method: 'GET', url: '/api/v1/agent/sessions' })
+    const ready = await app.inject({ method: 'GET', url: '/api/v1/ready-status' })
 
-    expect(res.statusCode).toBe(503)
-    expect(res.json()).toMatchObject({
-      error: {
-        code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
-        details: { workspaceId: 'workspace-a', retryable: true },
-      },
-    })
+    for (const res of [chat, tree, sessions, ready]) {
+      expect(res.statusCode).toBe(503)
+      expect(res.json()).toMatchObject({
+        error: {
+          code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
+          details: { workspaceId: 'workspace-a', retryable: true },
+        },
+      })
+    }
     expect(provisionStarted).toHaveBeenCalledOnce()
 
     resolveProvision?.()
@@ -189,6 +194,39 @@ test('chat returns runtime-not-ready while request-scoped provisioning is pendin
     expect(catalog.statusCode).toBe(200)
   } finally {
     resolveProvision?.()
+    await app.close()
+  }
+})
+
+test('failed request-scoped provisioning can be retried by a later request', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-chat-retry-provision-')
+  const app = Fastify({ logger: false })
+  let provisionCalls = 0
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    getWorkspaceId: () => 'workspace-retry',
+    getWorkspaceRoot: () => workspaceRoot,
+    provisionRuntime: async () => {
+      provisionCalls += 1
+      if (provisionCalls === 1) throw new Error('temporary provisioning failure')
+      return { changed: false, env: {}, pathEntries: [], skillPaths: [] }
+    },
+  })
+  await app.ready()
+
+  try {
+    const first = await app.inject({ method: 'GET', url: '/api/v1/tree?path=.' })
+    expect(first.statusCode).toBe(503)
+    expect(first.json().error.code).toBe(ErrorCode.enum.AGENT_RUNTIME_NOT_READY)
+
+    await vi.waitFor(() => expect(provisionCalls).toBe(1))
+
+    const second = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
+    expect(second.statusCode).toBe(200)
+    expect(provisionCalls).toBe(2)
+  } finally {
     await app.close()
   }
 })

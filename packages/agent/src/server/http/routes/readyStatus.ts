@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { ReadyStatusTracker } from '../../sandbox/vercel-sandbox/readyStatus'
+import { ERROR_CODE_INTERNAL } from '../middleware'
 
 export interface ReadyStatusRouteOptions {
   tracker?: ReadyStatusTracker
@@ -12,7 +13,22 @@ export function readyStatusRoutes(
   done: (err?: Error) => void,
 ): void {
   app.get('/api/v1/ready-status', async (request, reply) => {
-    const tracker = opts.getTracker ? await opts.getTracker(request) : opts.tracker
+    let tracker: ReadyStatusTracker | undefined
+    try {
+      tracker = opts.getTracker ? await opts.getTracker(request) : opts.tracker
+    } catch (err) {
+      const statusCode = (err as { statusCode?: unknown })?.statusCode
+      if (typeof statusCode === 'number' && statusCode >= 400 && statusCode < 600) {
+        return reply.code(statusCode).send({
+          error: {
+            code: typeof (err as { code?: unknown }).code === 'string' ? (err as { code: string }).code : ERROR_CODE_INTERNAL,
+            message: err instanceof Error ? err.message : 'ready-status failed',
+            details: (err as { details?: unknown }).details,
+          },
+        })
+      }
+      throw err
+    }
     if (!tracker) throw new Error('ready-status route requires tracker or getTracker')
 
     reply.raw.writeHead(200, {
