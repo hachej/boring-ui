@@ -155,11 +155,18 @@ export async function provisionCliWorkspaceRuntime(opts: {
   if (!adapter) {
     throw new Error(`runtime mode ${opts.mode} does not support workspace provisioning`)
   }
-  return await agent.provisionWorkspaceRuntime({
+  const result = await agent.provisionWorkspaceRuntime({
     plugins: [createBoringUiCliRuntimePlugin(), ...(opts.plugins ?? [])],
     adapter,
     runtimeLayout,
   })
+  return {
+    ...result,
+    env: {
+      ...result.env,
+      BORING_AGENT_WORKSPACE_LOCAL_PLUGIN_ROOTS: opts.mode === "direct" || opts.mode === "local" ? "1" : "0",
+    },
+  }
 }
 
 function ensureFrontendBuilt(publicDir: string) {
@@ -481,6 +488,7 @@ export async function createWorkspacesModeApp(opts: {
     ensureLoaded: Promise<void>
   }>()
   const pluginPiSnapshots = new Map<string, ReturnType<typeof readCliPluginPiSnapshot>>()
+  const runtimeProvisioningByWorkspace = new Map<string, WorkspaceProvisioningResult | undefined>()
 
   function getBridge(workspaceId: string) {
     let bridge = bridges.get(workspaceId)
@@ -551,6 +559,7 @@ export async function createWorkspacesModeApp(opts: {
     const runtimeKey = pluginRuntimeKey(workspace)
     pluginRuntimes.delete(runtimeKey)
     pluginPiSnapshots.delete(runtimeKey)
+    runtimeProvisioningByWorkspace.delete(workspace.id)
     bridges.delete(workspace.id)
     diagnosticsStore.disposeWorkspace(workspace.id)
     await runtimeHost.disposeWorkspace(workspace.id)
@@ -612,8 +621,11 @@ export async function createWorkspacesModeApp(opts: {
     getWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
     getWorkspaceRoot: async (workspaceId) => (await requireWorkspace(workspaceId)).path,
     getSessionNamespace: async ({ workspaceId }) => `local-workspace-${workspaceId}`,
-    provisionRuntime: async ({ workspaceRoot, runtimeMode, runtimeLayout, provisioningAdapter }) => {
-      return await provisionCliWorkspaceRuntime({
+    provisionRuntime: async ({ workspaceId, workspaceRoot, runtimeMode, runtimeLayout, provisioningAdapter }) => {
+      if (runtimeProvisioningByWorkspace.has(workspaceId)) {
+        return runtimeProvisioningByWorkspace.get(workspaceId)
+      }
+      const provisioned = await provisionCliWorkspaceRuntime({
         workspaceRoot,
         mode: runtimeMode,
         provisionWorkspace: opts.provisionWorkspace,
@@ -621,6 +633,8 @@ export async function createWorkspacesModeApp(opts: {
         runtimeLayout,
         plugins: workspaceAppServer.readWorkspacePluginPackageRuntimePlugins(resolveCliBoringPluginDirs(workspaceRoot)),
       })
+      runtimeProvisioningByWorkspace.set(workspaceId, provisioned)
+      return provisioned
     },
     beforeReload: async ({ workspaceId }) => {
       const workspace = await requireWorkspace(workspaceId)
@@ -980,6 +994,7 @@ export async function runCli(options: RunCliOptions): Promise<void> {
       mode: { type: "string", short: "m" },
       name: { type: "string", short: "n" },
       path: { type: "string" as const },
+      json: { type: "boolean" as const },
     },
     allowPositionals: true,
     strict: false,
@@ -1019,6 +1034,11 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     return
   }
 
+  if (positionals[0] === "plugin-status") {
+    handlePluginStatusCommand({ json: args.json === true })
+    return
+  }
+
   if (positionals[0] === "scaffold-plugin") {
     handleScaffoldPluginCommand({ positionals })
     return
@@ -1037,6 +1057,37 @@ export async function runCli(options: RunCliOptions): Promise<void> {
 
 function defaultWorkspaceRoot(): string {
   return process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd()
+}
+
+function workspaceLocalPluginRootsEnabled(): boolean {
+  const raw = process.env.BORING_AGENT_WORKSPACE_LOCAL_PLUGIN_ROOTS
+  if (raw == null || raw.trim() === "") return true
+  return !["0", "false", "no", "off"].includes(raw.trim().toLowerCase())
+}
+
+function buildPluginStatus() {
+  const workspaceRoot = resolve(defaultWorkspaceRoot())
+  const enabled = workspaceLocalPluginRootsEnabled()
+  return {
+    workspaceLocalPluginRoots: enabled,
+    workspaceRoot,
+    extensionsDir: join(workspaceRoot, ".pi", "extensions"),
+    reloadSupported: enabled,
+    ...(enabled ? {} : {
+      reason: "This runtime writes to a remote sandbox; host-side plugin discovery cannot load .pi/extensions from there.",
+    }),
+  }
+}
+
+function handlePluginStatusCommand(opts: { json: boolean }) {
+  const status = buildPluginStatus()
+  if (opts.json) {
+    console.log(JSON.stringify(status, null, 2))
+    return
+  }
+  console.log(status.workspaceLocalPluginRoots
+    ? `workspace-local plugin roots enabled: ${status.extensionsDir}`
+    : `workspace-local plugin roots disabled: ${status.reason}`)
 }
 
 function handleVerifyPluginCommand(opts: { positionals: string[] }) {
@@ -1078,6 +1129,10 @@ function handleScaffoldPluginCommand(opts: { positionals: string[] }) {
   const name = opts.positionals[1]
   if (!name) {
     throw new Error("usage: boring-ui scaffold-plugin <name> [workspace]")
+  }
+  const status = buildPluginStatus()
+  if (!status.workspaceLocalPluginRoots) {
+    throw new Error(`${status.reason} Do not scaffold into .pi/extensions in this runtime.`)
   }
   const workspaceRoot = resolve(opts.positionals[2] ?? defaultWorkspaceRoot())
   const result = scaffoldPlugin({ name, workspaceRoot })

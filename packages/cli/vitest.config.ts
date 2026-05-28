@@ -6,6 +6,11 @@ const repoRoot = resolve(root, "..", "..")
 
 export default defineConfig({
   test: {
+    server: {
+      deps: {
+        inline: [/^@hachej\/boring-(agent|workspace)(\/.*)?$/],
+      },
+    },
     projects: [
       {
         extends: true,
@@ -31,6 +36,7 @@ export default defineConfig({
       { find: /^@hachej\/boring-agent\/shared$/, replacement: resolve(repoRoot, "packages/agent/src/shared/index.ts") },
       { find: /^@hachej\/boring-agent\/front$/, replacement: resolve(repoRoot, "packages/agent/src/front/index.ts") },
       { find: /^@hachej\/boring-agent\/server$/, replacement: resolve(repoRoot, "packages/agent/src/server/index.ts") },
+      { find: /^@hachej\/boring-agent\/eval$/, replacement: resolve(repoRoot, "packages/agent/src/eval/index.ts") },
       { find: /^@hachej\/boring-agent$/, replacement: resolve(repoRoot, "packages/agent/src/front/index.ts") },
       { find: /^@\/(.*)$/, replacement: resolve(repoRoot, "packages/agent/src/$1") },
       { find: /^@hachej\/boring-workspace\/server$/, replacement: resolve(repoRoot, "packages/workspace/src/server/index.ts") },

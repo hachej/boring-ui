@@ -611,11 +611,18 @@ export async function createWorkspaceAgentServer(
       sessionId: opts.sessionId ?? "default",
     })
     if (!adapter) return currentRuntimeProvisioning
-    currentRuntimeProvisioning = await provisionWorkspaceRuntime({
+    const provisioned = await provisionWorkspaceRuntime({
       plugins: buildRuntimeProvisioningInputs(),
       adapter,
       runtimeLayout,
     })
+    currentRuntimeProvisioning = {
+      ...provisioned,
+      env: {
+        ...provisioned.env,
+        BORING_AGENT_WORKSPACE_LOCAL_PLUGIN_ROOTS: workspaceFsCapability === "strong" ? "1" : "0",
+      },
+    }
     return currentRuntimeProvisioning
   }
   await runRuntimeProvisioning()

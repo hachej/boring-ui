@@ -100,6 +100,10 @@ export interface EvalPromptOptions {
   systemPrompt?: string
   /** Override the chat session id (defaults to a fresh uuid). */
   sessionId?: string
+  /** Optional headers sent to session/chat requests (e.g. workspace scoping). */
+  headers?: Record<string, string>
+  /** Optional query params appended to session/chat requests (e.g. workspaceId). */
+  query?: Record<string, string | number | boolean | undefined>
   /** Per-call timeout in ms. Defaults to 30_000. */
   timeoutMs?: number
   /** Per-prompt retry count. Default: 0. */
