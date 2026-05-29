@@ -28,7 +28,7 @@ test('buildDeploymentSnapshotRecipe can opt out of uv setup', () => {
   })
 })
 
-test('Node-family runtimes get pip+uv bootstrap with explicit UV_BIN (no bare uv)', () => {
+test('Node-family runtimes install uv via the standalone curl installer (no pip/dnf)', () => {
   for (const runtime of ['node22', 'node24', 'node26', 'NODE24']) {
     const recipe = buildDeploymentSnapshotRecipe({ runtime, setupCommands: ['echo extra'] })
     // Detailed logging so a failure shows exactly which runtime + commands diverged.
@@ -37,17 +37,17 @@ test('Node-family runtimes get pip+uv bootstrap with explicit UV_BIN (no bare uv
       'echo extra',
     ])
     const joined = (recipe.setupCommands ?? []).join('\n')
-    expect(joined, `runtime=${runtime} must install python3-pip via sudo dnf`).toContain(
-      'sudo dnf install -y python3-pip',
-    )
-    expect(joined, `runtime=${runtime} must install uv with --user`).toContain(
-      'python3 -m pip install --user --upgrade uv',
+    expect(joined, `runtime=${runtime} must install uv via the curl installer`).toContain(
+      'curl -LsSf https://astral.sh/uv/install.sh',
     )
     expect(joined, `runtime=${runtime} must verify the explicit UV_BIN`).toContain(
       `${VERCEL_UV_BIN} --version`,
     )
-    // Invariant: the Node bootstrap verifies uv via the explicit UV_BIN, never
-    // the bare `uv --version` (correctness must not depend on PATH propagation).
+    // The whole point: uv-via-curl needs NO system pip/dnf detour (verified live:
+    // ~1.3s vs ~15.6s; the dnf step alone was ~13s). And it must not verify via
+    // bare `uv` (correctness must not depend on PATH propagation).
+    expect(joined, `runtime=${runtime} must not require dnf`).not.toContain('dnf')
+    expect(joined, `runtime=${runtime} must not require pip install`).not.toContain('pip install')
     expect(recipe.setupCommands, `runtime=${runtime} must not verify via bare uv`).not.toContain(
       'uv --version',
     )
