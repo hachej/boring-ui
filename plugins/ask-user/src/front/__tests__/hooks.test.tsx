@@ -9,7 +9,7 @@ const question: AskUserQuestion = {
   ownerPrincipalId: "workspace-bridge",
   status: "ready",
   title: "Pick",
-  answerToken: "nonce-secret",
+  nonce: "nonce-secret",
   createdAt: new Date(0).toISOString(),
   updatedAt: new Date(0).toISOString(),
   schema: { wireVersion: 1, fields: [{ type: "text", name: "answer", label: "Answer", required: true }] },
@@ -57,7 +57,7 @@ describe("usePendingQuestion", () => {
   })
 
   it("shows stable missing nonce and bridge errors", async () => {
-    const noNonce = { ...question, answerToken: "" }
+    const noNonce = { ...question, nonce: "" }
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? "{}"))
       if (body.op === "human-input.v1.pending") return Response.json({ ok: true, output: { pending: noNonce } })

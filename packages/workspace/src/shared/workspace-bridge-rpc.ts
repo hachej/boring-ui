@@ -37,15 +37,6 @@ export type BridgeIdempotencyPolicy =
   | "none"
   | "required"
   | "request-id"
-  | "tool-call-id"
-
-export type BridgeAuditCategory =
-  | "ui-effect"
-  | "human-input"
-  | "macro"
-  | "runtime-sdk"
-  | "system"
-  | (string & {})
 
 export interface WorkspaceBridgeOperationDefinition<
   TInput = unknown,
@@ -62,7 +53,6 @@ export interface WorkspaceBridgeOperationDefinition<
   maxInputBytes: number
   maxOutputBytes: number
   idempotencyPolicy: BridgeIdempotencyPolicy
-  auditCategory: BridgeAuditCategory
   /** Type anchors only; no runtime value should be supplied. */
   readonly __inputType?: TInput
   readonly __outputType?: TOutput
@@ -73,7 +63,6 @@ export interface WorkspaceBridgeCallRequest<TInput = unknown> {
   input: TInput
   requestId?: string
   idempotencyKey?: string
-  resourceScope?: Record<string, unknown>
 }
 
 export interface WorkspaceBridgeCallSuccess<TOutput = unknown> {
@@ -147,13 +136,3 @@ export type WorkspaceBridgeJsonValue =
   | WorkspaceBridgeJsonValue[]
   | { [key: string]: WorkspaceBridgeJsonValue }
 
-export interface WorkspaceBridgeAuditContext {
-  requestId: string
-  op: string
-  workspaceId: string
-  sessionId?: string
-  callerClass: BridgeCallerClass
-  actor: BridgeActorAttribution
-  auditCategory: BridgeAuditCategory
-  resourceScope?: Record<string, unknown>
-}

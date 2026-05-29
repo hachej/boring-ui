@@ -3,7 +3,6 @@ import {
   ASK_USER_FIELD_NAME_PATTERN,
   ASK_USER_RESERVED_FIELD_NAMES,
   ASK_USER_SCHEMA_LIMITS,
-  ASK_USER_COMMAND_KINDS,
 } from "./constants"
 
 const isoStringSchema = z.string().min(1)
@@ -266,37 +265,6 @@ export const AskUserAnswerSchema = z
     submittedAt: isoStringSchema,
   })
   .strict()
-
-const commandParamsBase = {
-  questionId: z.string().min(1),
-  sessionId: z.string().min(1),
-}
-
-export const QuestionsSubmitCommandSchema = z
-  .object({
-    kind: z.literal(ASK_USER_COMMAND_KINDS.SUBMIT),
-    params: z
-      .object({
-        ...commandParamsBase,
-        answerToken: z.string().min(1),
-        values: z.record(fieldNameSchema, AskUserAnswerValueSchema),
-      })
-      .strict(),
-  })
-  .strict()
-
-export const QuestionsCancelCommandSchema = z
-  .object({
-    kind: z.literal(ASK_USER_COMMAND_KINDS.CANCEL),
-    params: z.object({ ...commandParamsBase, answerToken: z.string().min(1) }).strict(),
-  })
-  .strict()
-
-
-export const QuestionsCommandSchema = z.discriminatedUnion("kind", [
-  QuestionsSubmitCommandSchema,
-  QuestionsCancelCommandSchema,
-])
 
 export function serializedSize(value: unknown): number {
   return new TextEncoder().encode(JSON.stringify(value)).length

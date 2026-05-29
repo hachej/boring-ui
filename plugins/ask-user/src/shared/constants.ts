@@ -5,15 +5,6 @@ export const ASK_USER_PANEL_ID = "ask-user.questions" as const
 export const ASK_USER_PANEL_TITLE = "Questions" as const
 export const ASK_USER_SURFACE_KIND = "questions" as const
 
-export const ASK_USER_COMMAND_KINDS = {
-  SUBMIT: "questions.submit",
-  CANCEL: "questions.cancel",
-} as const
-
-export const ASK_USER_UI_STATE_SLOTS = {
-  PENDING: "questions.pending",
-} as const
-
 export const ASK_USER_SCHEMA_LIMITS = {
   maxFields: 8,
   maxOptionsPerField: 50,

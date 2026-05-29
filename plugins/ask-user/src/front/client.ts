@@ -23,13 +23,6 @@ type BridgeResponse<T> =
   | { ok: true; output: T }
   | { ok: false; error?: { code?: string; message?: string } }
 
-export function readPendingQuestionFromState(state: Record<string, unknown> | null | undefined): AskUserQuestion | null {
-  const slot = state?.["questions.pending"]
-  if (!slot || typeof slot !== "object") return null
-  const question = (slot as { question?: unknown }).question
-  return normalizeQuestion(question)
-}
-
 export function normalizeQuestion(value: unknown): AskUserQuestion | null {
   if (!value || typeof value !== "object") return null
   const raw = value as Record<string, unknown>
@@ -44,7 +37,7 @@ export function normalizeQuestion(value: unknown): AskUserQuestion | null {
     title: typeof payload.title === "string" ? payload.title : undefined,
     context: typeof payload.context === "string" ? payload.context : undefined,
     schema,
-    answerToken: typeof raw.answerToken === "string" ? raw.answerToken : typeof raw.nonce === "string" ? raw.nonce : "",
+    nonce: typeof raw.nonce === "string" ? raw.nonce : "",
     createdAt: typeof raw.createdAt === "string" ? raw.createdAt : new Date(0).toISOString(),
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : new Date(0).toISOString(),
   }
@@ -82,12 +75,12 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
       ensureNonce(question)
       return await callBridge<QuestionsClientResult>(
         "human-input.v1.cancel",
-        { questionId: question.questionId, sessionId: question.sessionId, nonce: question.answerToken, reason: "user_cancelled" },
+        { questionId: question.questionId, sessionId: question.sessionId, nonce: question.nonce, reason: "user_cancelled" },
         question.sessionId,
         await deriveIdempotencyKey("human-input.v1.cancel", {
           questionId: question.questionId,
           sessionId: question.sessionId,
-          nonce: question.answerToken,
+          nonce: question.nonce,
           reason: "user_cancelled",
         }),
       )
@@ -99,12 +92,12 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
       if (!validation.valid) throw new QuestionsClientError(ASK_USER_ERROR_CODES.ANSWER_INVALID, firstValidationMessage(validation))
       return await callBridge<QuestionsClientResult>(
         "human-input.v1.answer",
-        { questionId: question.questionId, sessionId: question.sessionId, nonce: question.answerToken, values },
+        { questionId: question.questionId, sessionId: question.sessionId, nonce: question.nonce, values },
         question.sessionId,
         await deriveIdempotencyKey("human-input.v1.answer", {
           questionId: question.questionId,
           sessionId: question.sessionId,
-          nonce: question.answerToken,
+          nonce: question.nonce,
           values,
         }),
       )
@@ -131,7 +124,7 @@ function normalizeQuestionStatus(status: unknown): AskUserQuestion["status"] {
 }
 
 function ensureNonce(question: AskUserQuestion): void {
-  if (!question.answerToken) throw new QuestionsClientError(ASK_USER_ERROR_CODES.QUESTION_NOT_READY, "Question nonce is missing")
+  if (!question.nonce) throw new QuestionsClientError(ASK_USER_ERROR_CODES.QUESTION_NOT_READY, "Question nonce is missing")
 }
 
 function firstValidationMessage(validation: QuestionValidationResult): string {

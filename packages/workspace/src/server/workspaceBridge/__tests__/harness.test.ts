@@ -7,9 +7,7 @@ import {
   createCapturedBridgeLogger,
   createFakeBridgeAuthPolicy,
   createFakeClock,
-  createFakeRateLimiter,
   createTestActor,
-  createTestAuditContext,
   createTestBridgeContext,
   createTestBridgeOperationDefinition,
   createTestFileAssetPointer,
@@ -104,30 +102,17 @@ describe("WorkspaceBridge test harness", () => {
     expect(text).toContain(BRIDGE_TEST_REDACTION)
   })
 
-  it("supports sample operation, audit, clock, rate-limit, and file-asset fixtures", () => {
+  it("supports sample operation, clock, and file-asset fixtures", () => {
     const op = createTestBridgeOperationDefinition({
       op: "macro.v1.catalog.search",
       callerClassesAllowed: ["browser", "runtime", "server"],
       requiredCapabilities: ["macro:catalog.search"],
-      auditCategory: "macro",
-    })
-    const audit = createTestAuditContext({
-      op: op.op,
-      callerClass: "runtime",
-      actor: createTestActor("agent"),
-      auditCategory: "macro",
     })
     const clock = createFakeClock()
-    const limiter = createFakeRateLimiter(true)
     const asset = createTestFileAssetPointer({ path: "generated/macro/catalog.json" })
 
     expect(op.requiredCapabilities).toEqual(["macro:catalog.search"])
-    expect(audit).toMatchObject({ op: "macro.v1.catalog.search", callerClass: "runtime" })
     expect(clock.advanceMs(1_000).toISOString()).toBe("2026-01-01T00:00:01.000Z")
-    expect(limiter.check("runtime:macro.v1.catalog.search")).toEqual({
-      key: "runtime:macro.v1.catalog.search",
-      allowed: true,
-    })
     expect(asset).toMatchObject({ kind: "file-asset", path: "generated/macro/catalog.json" })
   })
 

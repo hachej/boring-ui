@@ -132,7 +132,6 @@ function definition(
     maxInputBytes: 64 * 1024,
     maxOutputBytes: 64 * 1024,
     idempotencyPolicy,
-    auditCategory: "human-input",
   }
 }
 

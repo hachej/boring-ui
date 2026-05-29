@@ -1,5 +1,3 @@
-import type { ASK_USER_COMMAND_KINDS } from "./constants"
-
 export type AskUserOption = {
   value: string
   label: string
@@ -111,7 +109,7 @@ export type AskUserQuestion = {
   title?: string
   context?: string
   schema?: AskUserFormSchema
-  answerToken: string
+  nonce: string
   createdAt: string
   updatedAt: string
 }
@@ -143,56 +141,3 @@ export type AskUserToolResult =
       reason: AskUserCancelReason
     }
 
-export type QuestionsSubmitCommand = {
-  kind: typeof ASK_USER_COMMAND_KINDS.SUBMIT
-  params: {
-    questionId: string
-    sessionId: string
-    answerToken: string
-    values: Record<string, AskUserAnswerValue>
-  }
-}
-
-export type QuestionsCancelCommand = {
-  kind: typeof ASK_USER_COMMAND_KINDS.CANCEL
-  params: {
-    questionId: string
-    sessionId: string
-    answerToken: string
-  }
-}
-
-
-export type QuestionsCommand = QuestionsSubmitCommand | QuestionsCancelCommand
-
-export type AskUserTranscriptEvent =
-  | {
-      type: "created"
-      question: AskUserQuestion
-      at: string
-    }
-  | {
-      type: "ready"
-      questionId: string
-      sessionId: string
-      schema: AskUserFormSchema
-      at: string
-    }
-  | {
-      type: "answered"
-      answer: AskUserAnswer
-      at: string
-    }
-  | {
-      type: "cancelled"
-      questionId: string
-      sessionId: string
-      reason: AskUserCancelReason
-      at: string
-    }
-  | {
-      type: "abandoned"
-      questionId: string
-      sessionId: string
-      at: string
-    }

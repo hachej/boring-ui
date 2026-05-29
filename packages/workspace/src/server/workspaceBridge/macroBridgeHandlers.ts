@@ -145,7 +145,6 @@ function macroRegistration(
     maxInputBytes: 64 * 1024,
     maxOutputBytes: overrides.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES,
     idempotencyPolicy: overrides.idempotencyPolicy ?? "none",
-    auditCategory: "macro",
     handler,
   })
 }

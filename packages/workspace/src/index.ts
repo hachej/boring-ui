@@ -257,12 +257,10 @@ export {
 export type {
   BridgeActorAttribution,
   BridgeActorKind,
-  BridgeAuditCategory,
   BridgeAuthContext,
   BridgeCallerClass,
   BridgeIdempotencyPolicy,
   BridgeRedactedActorRef,
-  WorkspaceBridgeAuditContext,
   WorkspaceBridgeCallFailure,
   WorkspaceBridgeCallRequest,
   WorkspaceBridgeCallResponse,

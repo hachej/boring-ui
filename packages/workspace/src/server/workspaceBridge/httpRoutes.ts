@@ -17,7 +17,6 @@ const bridgeCallBodySchema = z.object({
   input: z.unknown().default({}),
   requestId: z.string().optional(),
   idempotencyKey: z.string().optional(),
-  resourceScope: z.record(z.unknown()).optional(),
 })
 
 export interface WorkspaceBridgeHttpRoutesOptions {

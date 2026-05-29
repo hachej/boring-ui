@@ -33,7 +33,6 @@ describe("Macro WorkspaceBridge handlers", () => {
     expect(ops).not.toContain("macro.v1.ch-query")
     expect(registered.definitions.find((definition) => definition.op === MACRO_BRIDGE_OPS.sqlQuery)).toMatchObject({
       requiredCapabilities: ["macro:sql.query"],
-      auditCategory: "macro",
     })
     expect(registered.definitions.find((definition) => definition.op === MACRO_BRIDGE_OPS.transformPersist)).toMatchObject({
       idempotencyPolicy: "required",

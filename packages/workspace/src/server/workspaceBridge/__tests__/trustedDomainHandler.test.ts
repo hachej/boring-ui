@@ -15,7 +15,6 @@ describe("defineTrustedDomainBridgeHandler", () => {
       inputSchema: { type: "object" },
       outputSchema: { type: "object" },
       maxOutputBytes: 1024,
-      auditCategory: "system",
       handler: ({ input }) => ({ value: input.value }),
     })
     const registry = new WorkspaceBridgeRegistry()
@@ -37,7 +36,6 @@ describe("defineTrustedDomainBridgeHandler", () => {
       requiredCapabilities: [],
       inputSchema: { type: "object" },
       maxOutputBytes: 1024,
-      auditCategory: "system",
       handler: () => ({}),
     })).toThrow(expect.objectContaining({ code: WorkspaceBridgeErrorCode.InvalidRequest }))
   })
@@ -51,7 +49,6 @@ describe("defineTrustedDomainBridgeHandler", () => {
       requiredCapabilities: [],
       inputSchema: { type: "object" },
       maxOutputBytes: 1024,
-      auditCategory: "system",
       handler: () => ({}),
     })).toThrow(/versioned/)
   })
@@ -65,7 +62,6 @@ describe("defineTrustedDomainBridgeHandler", () => {
       requiredCapabilities: [],
       inputSchema: { type: "object" },
       maxOutputBytes: 1024,
-      auditCategory: "system",
       handler: () => ({}),
     })).toThrow(/reserved prefix/)
   })
@@ -79,7 +75,6 @@ describe("defineTrustedDomainBridgeHandler", () => {
       requiredCapabilities: [],
       inputSchema: { type: "object" },
       maxOutputBytes: 8,
-      auditCategory: "system",
       handler: () => ({ value: "this output is too large" }),
     })
     const registry = new WorkspaceBridgeRegistry()

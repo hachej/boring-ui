@@ -7,7 +7,7 @@ const question = {
   status: "ready",
   title: "Choose A or B",
   context: "Please select one option.",
-  answerToken: "secret-e2e",
+  nonce: "secret-e2e",
   createdAt: new Date(0).toISOString(),
   updatedAt: new Date(0).toISOString(),
   schema: {

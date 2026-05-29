@@ -4,7 +4,6 @@ import {
   type BridgeActorAttribution,
   type BridgeAuthContext,
   type BridgeCallerClass,
-  type WorkspaceBridgeAuditContext,
   type WorkspaceBridgeFileAssetPointer,
   type WorkspaceBridgeOperationDefinition,
 } from "../../../shared/workspace-bridge-rpc"
@@ -147,7 +146,6 @@ export function createTestBridgeOperationDefinition<TInput = unknown, TOutput = 
     maxInputBytes: overrides.maxInputBytes ?? 8_192,
     maxOutputBytes: overrides.maxOutputBytes ?? 8_192,
     idempotencyPolicy: overrides.idempotencyPolicy ?? "none",
-    auditCategory: overrides.auditCategory ?? "system",
   }
 }
 
@@ -228,27 +226,6 @@ export function assertNoSensitiveBridgeLeaks(
   }
 }
 
-export function createTestAuditContext(
-  overrides: Partial<WorkspaceBridgeAuditContext> = {},
-): WorkspaceBridgeAuditContext {
-  const auth = createTestBridgeContext({
-    callerClass: overrides.callerClass,
-    workspaceId: overrides.workspaceId,
-    sessionId: overrides.sessionId,
-    actor: overrides.actor,
-  })
-  return {
-    requestId: overrides.requestId ?? "req-test",
-    op: overrides.op ?? "test.v1.echo",
-    workspaceId: overrides.workspaceId ?? auth.workspaceId,
-    sessionId: overrides.sessionId ?? auth.sessionId,
-    callerClass: overrides.callerClass ?? auth.callerClass,
-    actor: overrides.actor ?? auth.actor,
-    auditCategory: overrides.auditCategory ?? "system",
-    resourceScope: overrides.resourceScope,
-  }
-}
-
 export function createFakeClock(now = "2026-01-01T00:00:00.000Z") {
   let current = new Date(now).getTime()
   return {
@@ -257,18 +234,6 @@ export function createFakeClock(now = "2026-01-01T00:00:00.000Z") {
     advanceMs: (ms: number) => {
       current += ms
       return new Date(current)
-    },
-  }
-}
-
-export function createFakeRateLimiter(allow = true) {
-  const decisions: Array<{ key: string; allowed: boolean }> = []
-  return {
-    decisions,
-    check: (key: string) => {
-      const decision = { key, allowed: allow }
-      decisions.push(decision)
-      return decision
     },
   }
 }

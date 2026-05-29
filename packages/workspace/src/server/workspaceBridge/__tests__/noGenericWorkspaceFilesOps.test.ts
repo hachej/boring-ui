@@ -24,7 +24,6 @@ describe("WorkspaceBridge v1 no generic workspace-files API guardrail", () => {
       requiredCapabilities: ["files:read"],
       inputSchema: { type: "object" },
       maxOutputBytes: 1024,
-      auditCategory: "system",
       handler: () => ({ content: "not allowed" }),
     })).toThrow(expect.objectContaining({ code: WorkspaceBridgeErrorCode.InvalidRequest }))
   })

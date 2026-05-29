@@ -1,7 +1,6 @@
 import {
   WorkspaceBridgeErrorCode,
   createWorkspaceBridgeError,
-  type BridgeAuditCategory,
   type BridgeCallerClass,
   type BridgeIdempotencyPolicy,
   type WorkspaceBridgeOperationDefinition,
@@ -30,7 +29,6 @@ export interface TrustedDomainBridgeHandlerOptions<TInput = unknown, TOutput = u
   maxInputBytes?: number
   maxOutputBytes: number
   idempotencyPolicy?: BridgeIdempotencyPolicy
-  auditCategory: BridgeAuditCategory
   handler: WorkspaceBridgeHandler<TInput, TOutput>
   policy?: TrustedDomainBridgeHandlerPolicy
 }
@@ -64,13 +62,12 @@ export function defineTrustedDomainBridgeHandler<TInput = unknown, TOutput = unk
       maxInputBytes: options.maxInputBytes ?? 64 * 1024,
       maxOutputBytes: options.maxOutputBytes,
       idempotencyPolicy: options.idempotencyPolicy ?? "none",
-      auditCategory: options.auditCategory,
     },
     handler: options.handler,
   }
 }
 
-function validateTrustedDomainMetadata(options: TrustedDomainBridgeHandlerOptions<any, any>): void {
+function validateTrustedDomainMetadata<TInput, TOutput>(options: TrustedDomainBridgeHandlerOptions<TInput, TOutput>): void {
   if (!options || typeof options !== "object") {
     throw invalid("Trusted domain bridge handler metadata is required")
   }
@@ -82,7 +79,6 @@ function validateTrustedDomainMetadata(options: TrustedDomainBridgeHandlerOption
   }
   if (!Array.isArray(options.requiredCapabilities)) throw invalid("Trusted domain bridge handler requiredCapabilities is required")
   if (options.inputSchema === undefined) throw invalid("Trusted domain bridge handler inputSchema is required")
-  if (!options.auditCategory) throw invalid("Trusted domain bridge handler auditCategory is required")
   if (typeof options.handler !== "function") throw invalid("Trusted domain bridge handler function is required")
   if (!Number.isFinite(options.maxOutputBytes) || options.maxOutputBytes <= 0) {
     throw invalid("Trusted domain bridge handler maxOutputBytes must be positive")

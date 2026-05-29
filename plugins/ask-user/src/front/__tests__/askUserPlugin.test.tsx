@@ -13,7 +13,7 @@ const question: AskUserQuestion = {
   status: "ready",
   title: "Choose A or B",
   context: "Pick one.",
-  answerToken: "secret",
+  nonce: "secret",
   createdAt: new Date(0).toISOString(),
   updatedAt: new Date(0).toISOString(),
   schema: { wireVersion: 1, fields: [{ type: "radio", name: "choice", label: "Choose one", required: true, options: [{ value: "A", label: "A" }, { value: "B", label: "B" }] }] },
@@ -198,7 +198,7 @@ describe("askUserPlugin front shell", () => {
     expect(panel.id).toBe("ask-user.questions")
     expect(panel.chromeless).toBe(true)
     expect(resolver.resolve({ kind: "questions", target: "q1", meta: { question } })).toMatchObject({ component: "ask-user.questions", id: "ask-user.questions", params: { questionId: "q1", question } })
-    expect(capturedPlugin.registrations.surfaceResolvers[1]!.resolve({ kind: "human-input", target: "q1", meta: { question: { ...question, status: "pending", nonce: "secret", payload: { title: question.title, context: question.context, schema: question.schema } } } })).toMatchObject({ component: "ask-user.questions", params: { question: { answerToken: "secret", status: "ready" } } })
+    expect(capturedPlugin.registrations.surfaceResolvers[1]!.resolve({ kind: "human-input", target: "q1", meta: { question: { ...question, status: "pending", nonce: "secret", payload: { title: question.title, context: question.context, schema: question.schema } } } })).toMatchObject({ component: "ask-user.questions", params: { question: { nonce: "secret", status: "ready" } } })
   })
 
   it("carries pluginId + pluginLabel metadata (definePlugin contract)", () => {

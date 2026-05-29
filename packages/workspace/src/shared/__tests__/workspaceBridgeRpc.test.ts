@@ -32,7 +32,6 @@ describe("WorkspaceBridge RPC shared contracts", () => {
       maxInputBytes: 16_384,
       maxOutputBytes: 262_144,
       idempotencyPolicy: "none",
-      auditCategory: "macro",
     } satisfies WorkspaceBridgeOperationDefinition<Input, Output>
 
     const request = {

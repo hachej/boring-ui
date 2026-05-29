@@ -35,7 +35,7 @@ describe("WorkspaceBridgeClient", () => {
     })
   })
 
-  test("serializes idempotencyKey and resourceScope", async () => {
+  test("serializes idempotencyKey", async () => {
     const fetchMock = makeFetch({ ok: true, output: { persisted: true } })
     const client = new WorkspaceBridgeClient({
       url: "https://example.test/api/v1/workspace-bridge/call",
@@ -45,7 +45,6 @@ describe("WorkspaceBridgeClient", () => {
 
     await client.call("macro.v1.transform.persist", { id: "t1" }, {
       idempotencyKey: "idem-1",
-      resourceScope: { workspaceId: "w1" },
     })
 
     const body = JSON.parse((fetchMock.mock.calls[0]?.[1] as RequestInit).body as string)
@@ -53,7 +52,6 @@ describe("WorkspaceBridgeClient", () => {
       op: "macro.v1.transform.persist",
       input: { id: "t1" },
       idempotencyKey: "idem-1",
-      resourceScope: { workspaceId: "w1" },
     })
   })
 

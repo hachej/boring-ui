@@ -170,10 +170,6 @@ function semanticKey<TInput>(options: BeginIdempotencyOptions<TInput>): string |
   if (options.definition.idempotencyPolicy === "none") return "none"
   if (options.definition.idempotencyPolicy === "required") return options.request.idempotencyKey
   if (options.definition.idempotencyPolicy === "request-id") return options.request.requestId ?? options.request.idempotencyKey
-  if (options.definition.idempotencyPolicy === "tool-call-id") {
-    const input = options.request.input
-    return getStringProperty(input, "toolCallId") ?? options.request.idempotencyKey ?? options.request.requestId
-  }
   return undefined
 }
 
@@ -213,10 +209,4 @@ function replayRejectedError(): WorkspaceBridgeError {
 
 function hashString(value: string): string {
   return createHash("sha256").update(value).digest("hex")
-}
-
-function getStringProperty(value: unknown, key: string): string | undefined {
-  return value && typeof value === "object" && typeof (value as Record<string, unknown>)[key] === "string"
-    ? (value as Record<string, string>)[key]
-    : undefined
 }

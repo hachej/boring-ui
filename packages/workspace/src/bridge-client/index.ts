@@ -17,7 +17,6 @@ export interface WorkspaceBridgeClientOptions {
 export interface WorkspaceBridgeClientCallOptions {
   requestId?: string
   idempotencyKey?: string
-  resourceScope?: Record<string, unknown>
 }
 
 export class WorkspaceBridgeClientConfigError extends Error {
@@ -79,7 +78,6 @@ export class WorkspaceBridgeClient {
       input,
       ...(options.requestId ? { requestId: options.requestId } : {}),
       ...(options.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
-      ...(options.resourceScope ? { resourceScope: options.resourceScope } : {}),
     }
     const response = await this.fetchImpl(this.url, {
       method: "POST",
