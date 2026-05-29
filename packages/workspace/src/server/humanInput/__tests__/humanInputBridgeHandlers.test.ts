@@ -60,7 +60,7 @@ describe("human-input bridge handlers", () => {
 
   test("nonce, session, and one-shot answer validation are pinned", async () => {
     const { registry, store } = setup()
-    const q = await new PendingQuestionRuntime(store).createPending({ requestId: "req-nonce", sessionId: "session-1" })
+    const q = await new PendingQuestionRuntime(store).createPending({ requestId: "req-nonce", sessionId: "session-1", actor: { actorKind: "agent", onBehalfOf: { id: "human-1", label: "human" } } })
 
     await expect(registry.call({ op: HUMAN_INPUT_OPS.answer, input: { questionId: q.questionId, sessionId: "session-1", values: {} } }, browserContext(["human-input:answer"])))
       .resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.InvalidRequest } })
@@ -77,7 +77,7 @@ describe("human-input bridge handlers", () => {
 
   test("pending, cancel, timeout, and transcript policy are pinned", async () => {
     const { registry, store } = setup()
-    const pending = await new PendingQuestionRuntime(store).createPending({ requestId: "req-cancel", sessionId: "session-1" })
+    const pending = await new PendingQuestionRuntime(store).createPending({ requestId: "req-cancel", sessionId: "session-1", actor: { actorKind: "agent", onBehalfOf: { id: "human-1", label: "human" } } })
     await expect(registry.call({ op: HUMAN_INPUT_OPS.pending, input: { sessionId: "session-1" } }, browserContext(["human-input:pending"])))
       .resolves.toMatchObject({ ok: true, output: { pending: { questionId: pending.questionId, nonce: pending.nonce } } })
     await expect(registry.call({ op: HUMAN_INPUT_OPS.cancel, input: { questionId: pending.questionId, sessionId: "session-1", nonce: pending.nonce, reason: "user_cancelled" } }, browserContext(["human-input:cancel"])))
@@ -106,6 +106,35 @@ describe("human-input bridge handlers", () => {
       .resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
     await expect(registry.call({ op: HUMAN_INPUT_OPS.cancel, input: { questionId: pending.questionId, sessionId: "session-1", nonce: pending.nonce, reason: "user_cancelled" } }, browserContext(["human-input:cancel"], "human-2")))
       .resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
+  })
+
+  test("owner-less questions fail closed for authenticated browsers but stay open for local no-auth", async () => {
+    const { registry, store } = setup()
+    const pending = await new PendingQuestionRuntime(store).createPending({
+      requestId: "req-noowner",
+      sessionId: "session-1",
+      actor: { actorKind: "agent" }, // no onBehalfOf.id and no resolver -> no recorded owner
+    })
+    expect(pending.ownerPrincipalId).toBeFalsy()
+
+    // Authenticated (multi-tenant) browser carries a principal id -> must be rejected.
+    await expect(registry.call(
+      { op: HUMAN_INPUT_OPS.answer, input: { questionId: pending.questionId, sessionId: "session-1", nonce: pending.nonce, values: { ok: true } } },
+      browserContext(["human-input:answer"], "human-2"),
+    )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
+
+    // Local no-auth browser has no principal id -> stays permissive (single-user trusted-local).
+    const localBrowser = createTestBridgeContext({
+      callerClass: "browser",
+      workspaceId: "workspace-1",
+      sessionId: "session-1",
+      capabilities: ["human-input:answer"],
+      actor: { actorKind: "human", performedBy: { label: "local-cli:user" } },
+    })
+    await expect(registry.call(
+      { op: HUMAN_INPUT_OPS.answer, input: { questionId: pending.questionId, sessionId: "session-1", nonce: pending.nonce, values: { ok: true } } },
+      localBrowser,
+    )).resolves.toMatchObject({ ok: true })
   })
 
   test("request can resolve owner principal through host callback when runtime actor lacks it", async () => {

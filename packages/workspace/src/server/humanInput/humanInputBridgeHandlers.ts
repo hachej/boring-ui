@@ -139,8 +139,21 @@ function assertQuestionOwner(
   context: WorkspaceBridgeCallContext,
   question: PendingQuestionRecord | null,
 ): void {
-  if (!question?.ownerPrincipalId || context.callerClass !== "browser") return
+  if (!question || context.callerClass !== "browser") return
   const principalId = context.actor.performedBy?.id
+  if (!question.ownerPrincipalId) {
+    // Fail closed in authenticated (multi-tenant) contexts: an owner-less
+    // question must not be answerable/cancelable/readable by an arbitrary
+    // workspace member. Local no-auth mode carries no principal id, so it stays
+    // permissive (single-user, trusted-local).
+    if (principalId) {
+      throw createWorkspaceBridgeError(
+        WorkspaceBridgeErrorCode.ResourceScopeDenied,
+        "human-input question has no recorded owner",
+      )
+    }
+    return
+  }
   if (!principalId || principalId !== question.ownerPrincipalId) {
     throw createWorkspaceBridgeError(
       WorkspaceBridgeErrorCode.ResourceScopeDenied,

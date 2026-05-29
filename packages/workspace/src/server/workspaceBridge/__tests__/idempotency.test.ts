@@ -91,6 +91,26 @@ describe("WorkspaceBridge idempotency primitives", () => {
     })
   })
 
+  it("does not cache failed responses: same key retries re-execute", async () => {
+    const store = new InMemoryWorkspaceBridgeIdempotencyStore()
+    const request = { op: requiredDefinition.op, input: { value: "a" }, idempotencyKey: "idem-fail" }
+    let calls = 0
+    const execute = async (): Promise<WorkspaceBridgeCallResponse<{ ok: boolean }>> => {
+      calls += 1
+      return calls === 1
+        ? { ok: false, op: requiredDefinition.op, requestId: "req-fail", error: { code: WorkspaceBridgeErrorCode.HandlerFailed, message: "transient" } }
+        : { ok: true, op: requiredDefinition.op, requestId: "req-ok", output: { ok: true } }
+    }
+
+    const first = await runWithWorkspaceBridgeIdempotency(store, { definition: requiredDefinition, request, auth, nowMs }, execute)
+    expect(first).toMatchObject({ ok: false })
+
+    // Same key + same payload must re-execute (the failure was released, not cached).
+    const second = await runWithWorkspaceBridgeIdempotency(store, { definition: requiredDefinition, request, auth, nowMs: nowMs + 100 }, execute)
+    expect(second).toMatchObject({ ok: true, output: { ok: true } })
+    expect(calls).toBe(2)
+  })
+
   it("normalizes input hashing independent of object key order", () => {
     expect(hashNormalizedInput({ a: 1, b: { c: 2, d: 3 } })).toBe(
       hashNormalizedInput({ b: { d: 3, c: 2 }, a: 1 }),
