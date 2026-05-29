@@ -32,7 +32,7 @@ after the `niche-explorer` factory plugin repeatedly hit undocumented runtime li
 | 2. Scaffold / file layout | agent-generation; CLI `scaffold-plugin` | ✓ |
 | 3a. Author front (`definePlugin`, panels, leftTabs, surfaces, catalog) | front-factory-migration, agent-generation; authoring SKILL | ✓ |
 | 3b. **Dependency model** (what a front may import) | local-dev-and-rpc *(proposal)* vs allowlist *(canonical)* | ✗ **conflict — decision #1** |
-| 4. **Data access / display** (files/DBs) | runtime-plugin-local-dev-and-rpc § Principle 3 / Track A (`data.v1.*`, DuckDB) | ⏳ designed; **unblocked — ship first** (independent of decision #1) |
+| 4. **Data access / display / update + nav** (files/DBs) | runtime-plugin-local-dev-and-rpc § Principle 2–3 / Track A (`data.v1.query`+`mutate`, DuckDB; `WorkspaceLink` nav) | ⏳ designed; **unblocked — ship first** (independent of decision #1) |
 | 5. Server capability / RPC (no plugin routes) | workspace-bridge-rpc, hot-reload | ✓ |
 | 6. Agent behavior (Pi extensions, tools, generated plugins) | agent-generation, hot-reload, trust-modes | ✓ |
 | 7. Hot reload / iteration | hot-reload | ✓ |

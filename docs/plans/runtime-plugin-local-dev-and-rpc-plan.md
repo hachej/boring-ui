@@ -17,8 +17,9 @@ A **simple but robust** runtime plugin system for CLI mode, with three propertie
 
 1. **Authoring feels like local Vite dev** — declare a `package.json`, `npm install` any
    dependency, plain `import`, save-and-see hot reload via `/reload`.
-2. **A clean, shared data-access path** so a plugin can display data from local files/DBs
-   **without creating its own server routes** — it calls one host-provided capability.
+2. **A clean, route-free path for panes to display *and update* data, and to navigate the
+   workspace** (open files / surfaces / panes) — via host capabilities + UI effects, **never a
+   plugin-owned route**. (Update example: tagging transactions from a pane.)
 3. **The agent can self-test a plugin pane and read back errors** — so it iterates on a
    plugin without a human loading the browser to report what broke.
 
@@ -140,6 +141,24 @@ Either way the plugin owns no routes; the data path is shared, not reinvented pe
 Arbitrary *custom* plugin server logic (a plugin's own compute/handlers) is **out of scope
 here** → the bridge epic's sandbox-backed-handler work.
 
+### Navigation = UI effects, not routes or `<a href>`
+
+A pane navigates the workspace by **emitting a UI effect** on the bridge's `emitUiEffect` lane —
+never by browser navigation or a plugin route. Effects reuse the existing schemas:
+
+```txt
+openFile        # open/focus a workspace file
+openSurface     # open a registered surface (e.g. a record by id — a niche slug)
+openPanel       # open/focus a panel
+navigateToLine  # jump to a line in an open file
+```
+
+Provide a `<WorkspaceLink to={effect}>` helper (from `@hachej/boring-workspace`, allowlisted)
+that renders a real `<a>` for affordance (hover, copy, middle-click) but intercepts the click
+and calls `emitUiEffect`, so navigation stays in-app and deep links resolve through
+`surfaceResolvers`. Front-only, route-free, unblocked (`postUiCommand`/`emitUiEffect` are
+already exported). The niche-explorer catalog→detail open is this pattern today.
+
 ---
 
 ## Principle 3 — Clean data access path (`data.v1.query`)
@@ -189,15 +208,38 @@ natively and `ATTACH`es local `sqlite`/`duckdb` — one engine, one SQL dialect,
 code. The structured query compiles to read-only DuckDB SQL (`SELECT … WHERE … ORDER … LIMIT`,
 `count(*)` for total, `GROUP BY` for facets) behind the existing `execute_sql` guard.
 
+### Writes (constrained — e.g. transaction tagging)
+
+Reads are the MVP, but real panes also write — tagging a transaction, editing a field. Add a
+**separate, constrained mutation op** (not arbitrary SQL):
+
+```txt
+data.v1.mutate   # {source, op: "update"|"insert"|"upsert", key, set, idempotencyKey} -> {changed}
+
+# tagging example:
+data.v1.mutate { source: "txns", op: "update", key: { id: "t_123" }, set: { tags: ["rent"] } }
+```
+
+- **Writable sources only:** `sqlite` / `duckdb` (transactional). `json`/`csv`/`parquet` stay
+  read-only in v1 — whole-file rewrite / columnar-immutable are not safe write targets.
+- **Separate capability** `data:write:<source>`, granted independently of read.
+- **Idempotent:** every mutation carries an idempotency key (reuse the bridge idempotency
+  policy) so a double-submit can't double-apply.
+- **Single-writer (CLI):** the host is the only writer, serialized through the data endpoint —
+  robust for one user/process. Concurrent multi-writer is the Quack/DuckLake future, not v1.
+- **Structured + audited:** `op`/`key`/`set` only (no raw SQL); writes audited like reads.
+
 ### Boundaries / security
 
 - Plugins reference sources by `name` only — never raw paths.
-- File sources are path-validated and workspace-confined; read-only.
+- File sources are path-validated and workspace-confined.
+- Reads are read-only; mutations go only through capability-gated `data.v1.mutate` on writable sources.
 
 ### Future (non-goals here)
 
-Remote DBs (DuckDB `ATTACH` postgres/mysql + host-side secrets), writes, and a shared-writable
-workspace DB via [Quack](https://duckdb.org/2026/05/12/quack-remote-protocol) /
+Remote DBs (DuckDB `ATTACH` postgres/mysql + host-side secrets), writes to file-format sources
+(json/parquet), and a **multi-writer / shared-writable** workspace DB via
+[Quack](https://duckdb.org/2026/05/12/quack-remote-protocol) /
 [DuckLake](https://www.definite.app/blog/duckdb-quack-ducklake-catalog) (beta; stable target
 DuckDB v2.0, fall 2026). If adopted, the **host stays the only Quack client** — never hand a DB
 token to browser/plugin code. Spike first: can `@duckdb/node-api` act as a Quack client?
@@ -262,11 +304,15 @@ already-allowlisted `@hachej/boring-workspace`. Works under today's import rules
   (structured, read-only), exposed as `POST /api/v1/data/query`. (`data.v1.schema` optional in v1.)
 - **A2.** `createBridgeDataSource(source)` helper in `@hachej/boring-workspace` → drop-in
   `ExplorerDataSource`.
-- **A3.** Migrate `niche-explorer` off its bundled blob to the data capability (proves it).
+- **A3.** Migrate `niche-explorer` off its bundled blob to the data capability (proves read).
+- **A4.** `<WorkspaceLink>` nav helper in `@hachej/boring-workspace` over `emitUiEffect`
+  (openFile / openSurface / openPanel / navigateToLine).
+- **A5.** Constrained writes: `data.v1.mutate` (update/insert/upsert by key, idempotent,
+  capability-gated) for `sqlite`/`duckdb` sources — e.g. transaction tagging. Reads ship first.
 - *Later:* move the transport behind the bridge `call` lane when the epic lands — no
   plugin-facing change.
 
-→ delivers **"clean route-free data path."**
+→ delivers **"route-free data display, update, and in-app navigation."**
 
 ### Track B — Import-any-dep + hot reload (gated on decision #1)
 
@@ -315,6 +361,9 @@ delivers the authoring half once decision #1 lands.
 5. Track C layer 3: how does the self-test reliably detect **"mounted vs blank"**? A render
    with no error but no content is the hard case (observed with `niche-explorer`). Likely needs
    plugin panes to emit a ready/error signal the harness can wait on, rather than DOM heuristics.
+6. `data.v1.mutate` write engine for `sqlite`: DuckDB's sqlite-extension DML vs a native writer
+   (`better-sqlite3`)? Prefer not to introduce a second engine if DuckDB's writes are sound;
+   confirm before committing (`.duckdb` writes are native to DuckDB).
 
 ## Reference points in code
 
