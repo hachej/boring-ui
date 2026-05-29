@@ -90,7 +90,13 @@ const DEFAULT_SQL_MAX_ROWS = 1_000
 const DEFAULT_SQL_MAX_BYTES = 2 * 1024 * 1024
 const DEFAULT_SQL_TIMEOUT_MS = 5_000
 const READ_ONLY_SQL_START = /^(select|with|explain|describe|show|desc)\b/i
-const WRITE_OR_ADMIN_SQL = /\b(insert|update|delete|drop|alter|create|truncate|merge|grant|revoke|copy|call|execute|vacuum|analyze|attach|detach)\b/i
+// `into` blocks `SELECT ... INTO new_table` (a write that begins with SELECT).
+const WRITE_OR_ADMIN_SQL = /\b(insert|update|delete|drop|alter|create|truncate|merge|grant|revoke|copy|call|execute|vacuum|analyze|attach|detach|into)\b/i
+// File/network table functions let a pure SELECT read local files or reach out
+// over the network (SSRF/exfiltration), e.g. `SELECT * FROM read_csv('http://x')`.
+// This denylist is defense-in-depth only: the injected data service backend MUST
+// also run with a read-only role and file/extension functions disabled.
+const FILE_OR_NETWORK_SQL_FN = /\b(read_csv|read_csv_auto|read_parquet|read_json|read_json_auto|read_text|read_blob|parquet_scan|iceberg_scan|delta_scan|glob)\s*\(/i
 
 export function registerMacroBridgeHandlers(
   registry: WorkspaceBridgeRegistry,
@@ -118,6 +124,9 @@ export function guardMacroSqlQuery(input: MacroSqlQueryInput, defaults: MacroSql
   if (withoutTrailingSemicolon.includes(";")) throw invalidSql("macro.v1.sql.query rejects multi-statement SQL")
   if (!READ_ONLY_SQL_START.test(withoutTrailingSemicolon) || WRITE_OR_ADMIN_SQL.test(withoutTrailingSemicolon)) {
     throw invalidSql("macro.v1.sql.query allows read-only SQL only")
+  }
+  if (FILE_OR_NETWORK_SQL_FN.test(withoutTrailingSemicolon)) {
+    throw invalidSql("macro.v1.sql.query rejects file/network table functions")
   }
   const maxRows = boundedPositiveInteger(input.maxRows, defaults.maxRows ?? DEFAULT_SQL_MAX_ROWS, defaults.maxRows ?? DEFAULT_SQL_MAX_ROWS, "maxRows")
   const maxBytes = boundedPositiveInteger(input.maxBytes, defaults.maxBytes ?? DEFAULT_SQL_MAX_BYTES, defaults.maxBytes ?? DEFAULT_SQL_MAX_BYTES, "maxBytes")

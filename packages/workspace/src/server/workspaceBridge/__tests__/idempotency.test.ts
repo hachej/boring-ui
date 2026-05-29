@@ -97,7 +97,7 @@ describe("WorkspaceBridge idempotency primitives", () => {
     )
   })
 
-  it("allows exactly one concurrent one-shot answer/cancel execution", async () => {
+  it("allows exactly one concurrent execution for the same answer/cancel key", async () => {
     const store = new InMemoryWorkspaceBridgeIdempotencyStore()
     const request = {
       op: answerDefinition.op,
@@ -106,8 +106,8 @@ describe("WorkspaceBridge idempotency primitives", () => {
       idempotencyKey: "answer-key",
     }
     const [a, b] = await Promise.all([
-      store.begin({ definition: answerDefinition, request, auth, nowMs, oneShot: true }),
-      store.begin({ definition: answerDefinition, request, auth, nowMs, oneShot: true }),
+      store.begin({ definition: answerDefinition, request, auth, nowMs }),
+      store.begin({ definition: answerDefinition, request, auth, nowMs }),
     ])
 
     expect([a.action, b.action].sort()).toEqual(["execute", "replay"])

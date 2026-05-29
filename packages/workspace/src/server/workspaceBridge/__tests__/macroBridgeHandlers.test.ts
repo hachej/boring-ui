@@ -81,6 +81,15 @@ describe("Macro WorkspaceBridge handlers", () => {
     )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.InvalidRequest } })
   })
 
+  test("guardMacroSqlQuery rejects SELECT...INTO and file/network table functions", () => {
+    // Effectful statements that still begin with an allowed keyword.
+    expect(() => guardMacroSqlQuery({ sql: "select * into new_table from series" })).toThrow()
+    expect(() => guardMacroSqlQuery({ sql: "select * from read_csv('http://attacker/x.csv')" })).toThrow()
+    expect(() => guardMacroSqlQuery({ sql: "select * from read_parquet('/etc/passwd')" })).toThrow()
+    // A plain read-only SELECT still passes.
+    expect(guardMacroSqlQuery({ sql: "select id from series" }).sql).toBe("select id from series")
+  })
+
   test("transform.persist requires idempotency and server/runtime authority", async () => {
     const registry = createWorkspaceBridgeRegistry()
     const service = createService()

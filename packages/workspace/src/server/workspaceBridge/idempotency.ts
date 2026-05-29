@@ -32,7 +32,6 @@ export interface BeginIdempotencyOptions<TInput = unknown> {
   auth: Pick<BridgeAuthContext, "workspaceId" | "sessionId" | "pluginId" | "tokenId">
   nowMs?: number
   ttlMs?: number
-  oneShot?: boolean
 }
 
 export interface CompleteIdempotencyOptions<TOutput = unknown> {
