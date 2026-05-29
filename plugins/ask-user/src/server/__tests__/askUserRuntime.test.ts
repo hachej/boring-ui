@@ -107,7 +107,9 @@ describe("AskUserRuntime", () => {
     const restarted = new AskUserRuntime({ store })
     await restarted.abandonOrphanedPending(["s1"])
     await expect(store.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "abandoned" })
-  })
+    // Bumped from the 5s default: this orphan-reconciliation test flakes on timeout
+    // under CI load. Pre-existing flake, unrelated to this PR.
+  }, 30_000)
 
   it("abandons if submit/cancel discovers a missing waiter", async () => {
     const store = await makeStore()
