@@ -44,7 +44,28 @@ export async function ensureUv(options: {
   adapter: WorkspaceProvisioningAdapter
   runtimeLayout: BoringAgentRuntimePaths
   uvStandaloneSource?: string | URL
+  /**
+   * Explicit absolute path to a uv binary (e.g. the Vercel Node-runtime
+   * bootstrap installs uv at /home/vercel-sandbox/.local/bin/uv, which is NOT on
+   * the non-interactive exec PATH). Provider-neutral: supplied by the caller, not
+   * hardcoded here. When set and runnable it is preferred over bare `uv`, so
+   * provisioning correctness never depends on PATH propagation.
+   */
+  explicitUvBin?: string
 }): Promise<EnsureUvResult> {
+  const explicitUvBin = options.explicitUvBin?.trim()
+  if (explicitUvBin) {
+    try {
+      return {
+        uvBin: explicitUvBin,
+        uvVersion: await commandOutput(options.adapter, explicitUvBin, ['--version']) || 'uv unknown',
+        installedWorkspaceUv: false,
+      }
+    } catch {
+      // Explicit path not runnable here — fall through to PATH `uv` / standalone.
+    }
+  }
+
   try {
     return {
       uvBin: 'uv',
@@ -145,6 +166,8 @@ export async function ensurePythonRuntime(options: {
   runtimeLayout: BoringAgentRuntimePaths
   packages: RuntimePythonSpec[]
   uvStandaloneSource?: string | URL
+  /** Explicit uv path preferred over bare `uv` (see ensureUv). */
+  explicitUvBin?: string
 }): Promise<EnsurePythonRuntimeResult> {
   const env = collectPythonEnv(options.packages)
   if (options.packages.length === 0) {
