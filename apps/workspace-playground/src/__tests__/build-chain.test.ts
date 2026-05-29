@@ -52,39 +52,32 @@ describe("workspace-playground build chain", () => {
   const pkg = readJson(join(playgroundDir, "package.json"))
   const scripts = pkg.scripts as Record<string, string>
   const workspacePackages = buildWorkspacePackageMap()
-  // Only workspace packages can satisfy a `build` step; @hachej deps that are
-  // NOT workspace packages (none today) would be external and irrelevant here.
-  const buildScripts = ["dev", "build", "test:e2e"].filter((name) => scripts[name]?.includes("--filter"))
+  const built = new Set(extractBuildChain(scripts["build:deps"] ?? ""))
 
-  it("has build scripts to validate", () => {
-    expect(buildScripts.length).toBeGreaterThan(0)
+  // Build order among @hachej packages is irrelevant: tsup externalizes
+  // workspace deps, so their imports only resolve at vite serve-time, after
+  // every `&&`-chained build has completed. The invariant that actually
+  // prevents the regression (a plugin's dist importing a dep whose dist was
+  // never produced) is PRESENCE — every workspace dependency of every built
+  // package must itself be built somewhere in build:deps before vite runs.
+  it("builds every workspace dependency of each built package", () => {
+    expect(built.size, "build:deps must compile at least one workspace package").toBeGreaterThan(0)
+    const missing: string[] = []
+    for (const builtPkg of built) {
+      const deps = workspacePackages.get(builtPkg)
+      if (!deps) continue // not a workspace package we can introspect
+      for (const dep of deps) {
+        if (!workspacePackages.has(dep)) continue // external dep, not built here
+        if (!built.has(dep)) {
+          missing.push(`"${builtPkg}" depends on "${dep}", which is never built in build:deps`)
+        }
+      }
+    }
+    expect(missing, missing.join("\n")).toEqual([])
   })
 
-  for (const scriptName of buildScripts) {
-    describe(`${scriptName} script`, () => {
-      const chain = extractBuildChain(scripts[scriptName])
-      const built = new Set(chain)
-
-      // Build order among @hachej packages is irrelevant: tsup externalizes
-      // workspace deps, so their imports only resolve at vite serve-time, after
-      // every `&&`-chained build has completed. The invariant that actually
-      // prevents the regression (a plugin's dist importing a dep whose dist was
-      // never produced) is PRESENCE — every workspace dependency of every built
-      // package must itself be built somewhere in the chain before vite runs.
-      it("builds every workspace dependency of each built package", () => {
-        const missing: string[] = []
-        for (const builtPkg of chain) {
-          const deps = workspacePackages.get(builtPkg)
-          if (!deps) continue // not a workspace package we can introspect
-          for (const dep of deps) {
-            if (!workspacePackages.has(dep)) continue // external dep, not built here
-            if (!built.has(dep)) {
-              missing.push(`"${builtPkg}" depends on "${dep}", which is never built in the ${scriptName} chain`)
-            }
-          }
-        }
-        expect(missing, missing.join("\n")).toEqual([])
-      })
-    })
-  }
+  // The serving scripts must actually run build:deps, or the chain above is dead.
+  it.each(["dev", "build", "test:e2e"])("%s runs build:deps before serving", (name) => {
+    expect(scripts[name] ?? "").toContain("build:deps")
+  })
 })
