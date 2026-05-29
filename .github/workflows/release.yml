@@ -1,81 +1,45 @@
 name: Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      force_ci:
-        description: "Publish even if latest CI for this SHA is not green"
-        required: false
-        default: false
-        type: boolean
+  release:
+    types: [published]
 
 permissions:
   contents: read
-  actions: read
   id-token: write
 
 jobs:
-  preflight:
-    name: Verify release preconditions
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Require main branch
-        run: |
-          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
-            echo "Release must run from main; got ${{ github.ref }}"
-            exit 1
-          fi
-      - name: Require green CI for this SHA unless forced
-        env:
-          GH_TOKEN: ${{ github.token }}
-          FORCE_CI: ${{ inputs.force_ci }}
-          SHA: ${{ github.sha }}
-        run: |
-          if [ "$FORCE_CI" = "true" ]; then
-            echo "force_ci=true; skipping CI gate for $SHA"
-            exit 0
-          fi
-
-          run_id=$(gh run list \
-            --workflow CI \
-            --branch main \
-            --commit "$SHA" \
-            --event push \
-            --status completed \
-            --json databaseId,conclusion \
-            --jq '[.[] | select(.conclusion == "success")] | first | .databaseId // empty')
-
-          if [ -z "$run_id" ]; then
-            echo "No successful completed CI run found for $SHA on main."
-            echo "Wait for CI, or rerun this workflow with force_ci=true."
-            exit 1
-          fi
-
-          echo "Found green CI run $run_id for $SHA"
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22.19.0
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Check package versions are aligned
-        run: node scripts/version.mjs --check
-
   publish:
     name: Publish to npm
-    needs: preflight
     runs-on: ubuntu-latest
     environment: release
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
       - uses: pnpm/action-setup@v6
+
       - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: pnpm
           registry-url: "https://registry.npmjs.org"
+
       - run: pnpm install --frozen-lockfile
+
+      - name: Verify tag matches package versions
+        run: |
+          tag="${{ github.event.release.tag_name }}"
+          expected="${tag#v}"
+          actual=$(node -p "require('./packages/cli/package.json').version")
+          if [ "$expected" != "$actual" ]; then
+            echo "Tag $tag (=> $expected) does not match package version $actual"
+            echo "Bump packages with: node scripts/version.mjs <patch|minor|major>"
+            exit 1
+          fi
+          node scripts/version.mjs --check
+
       - name: Build publishable packages
         run: |
           pnpm -r \
@@ -90,8 +54,10 @@ jobs:
             --workspace-concurrency=4 \
             run build
           pnpm --filter @hachej/boring-ui-cli build:full
+
       - name: Audit publish manifests
         run: pnpm audit:publish-manifests
+
       - name: Publish
         run: |
           for pkg in packages/ui packages/agent packages/workspace packages/core packages/cli plugins/deck plugins/ask-user plugins/data-explorer plugins/data-catalog; do
