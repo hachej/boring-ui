@@ -152,6 +152,83 @@ the same isolated workspace it already owns.
 
 ---
 
+## Principle 3 — Generic data access (`data.v1.*`)
+
+The most common reason a plugin needs server logic is to **display data**, and that data lives
+in heterogeneous places: local JSON / CSV / Parquet files, a local DuckDB or SQLite file, or a
+remote DB (Postgres/MySQL/…). Today each plugin re-solves this badly — bundling the whole
+dataset into the front, or fetching the whole file and filtering client-side. That is data
+shipping, not querying. This is the concrete realization of the `data.v1.query` capability the
+WorkspaceBridge plan gestured at and deferred — a **source-agnostic query capability built on
+Principle 2's RPC**, so any plugin queries any source the same way without owning a route,
+importing a DB driver, or seeing credentials.
+
+### Shape — "named source + query → rows"
+
+A plugin references a **source by name** and sends a **query**; the host resolves and executes
+it. Source descriptors are host-owned (declared by app composition), never exposed to
+plugin/browser code:
+
+```txt
+{ name: "niches",    kind: "json",     path: "apps/.../niche-explorer-data.json" }
+{ name: "events",    kind: "parquet",  path: "data/events/*.parquet" }   # globs ok
+{ name: "app",       kind: "sqlite",   path: "app.db" }
+{ name: "warehouse", kind: "postgres", connectionRef: "secret://wh" }    # creds host-side
+```
+
+### Operations
+
+```txt
+data.v1.query     # structured ({source, query, filters, group, limit, offset}) OR guarded {source, sql}
+data.v1.facets    # {source, filters} -> value/count per facet key (server-side facet counts)
+data.v1.schema    # {source} -> columns + types (lets a generic UI render a table/grid with no plugin code)
+```
+
+Output is bounded (`{ columns, rows, total?, hasMore? }`); honors `maxRows`/`maxOutputBytes`/
+`timeoutMs`; read-only guard (`SELECT`/`WITH`/`SHOW`/`DESCRIBE`/`EXPLAIN` only). The structured
+contract mirrors the data-explorer `ExplorerDataSource` (`search`/`fetchFacets`), so a front
+helper `createBridgeDataSource(source)` is a drop-in `ExplorerDataSource` for
+`DataExplorer`/data-catalog catalogs — the niche-explorer's exact need.
+
+### Engine: DuckDB (in-process now; Quack/DuckLake as a future concurrent mode)
+
+DuckDB is the universal executor — one SQL dialect federates files (`read_json_auto`/
+`read_csv_auto`/`read_parquet`, globs), local DBs (`ATTACH … (TYPE sqlite)`), and remote DBs
+(`ATTACH … (TYPE postgres|mysql)`). A pluggable `Connector` covers anything DuckDB can't reach.
+`@duckdb/node-api` is already a workspace-playground dependency. How DuckDB runs is an
+implementation detail behind the contract:
+
+| Mode | When | Status |
+| --- | --- | --- |
+| in-process DuckDB (`@duckdb/node-api`) over files | read-only queries (the common case) | stable — build on this |
+| [Quack](https://duckdb.org/2026/05/12/quack-remote-protocol) client-server + [DuckLake](https://www.definite.app/blog/duckdb-quack-ducklake-catalog) | concurrent **writers** / a shared workspace DB across processes/agents | **beta**, stable target DuckDB v2.0 (fall 2026) — defer |
+
+Quack note: the **host is always the only Quack client**. Quack lets browser DuckDB-Wasm connect
+directly with a token — do **not** do that; it hands a DB token to untrusted plugin code and
+bypasses capability scoping. Open spike before relying on Quack: confirm `@duckdb/node-api` can
+act as a Quack *client* (docs are DuckDB↔DuckDB / Wasm).
+
+### Boundaries / security
+
+- Plugins reference sources by `name` only — never raw paths or credentials.
+- Capability grants gate which sources a caller may query (e.g. `data:query:niches`).
+- Path-validated (workspace-confined) for file sources; connection secrets resolved host-side.
+- Read-only in v1; writes (and Quack's multi-writer mode) are a later phase.
+- Transport is bridge RPC (Principle 2) — `bridge.call("data.v1.query", …)`; no route, no DB
+  driver, no credentials in the browser.
+
+### Data-access phases (fold into the Phasing list below)
+
+- **A** — `data.v1.query`/`facets`/`schema` via in-process DuckDB over local
+  json/csv/parquet/sqlite; `createBridgeDataSource` front helper; migrate niche-explorer off its
+  bundled blob to prove the contract.
+- **B** — remote DB connectors (DuckDB `ATTACH` postgres/mysql) + host-side connection/secret
+  registry + capability scoping.
+- **C** — scale: pagination + file-asset fallback, `schema`-driven generic `<DataGrid>`, result
+  caching, and re-evaluate Quack/DuckLake for writable/shared sources once stable.
+
+---
+
 ## Phasing
 
 1. **Externals contract + tests.** Pin the exact externalized set; add a test that fails on
