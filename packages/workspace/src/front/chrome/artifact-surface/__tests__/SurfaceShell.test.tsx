@@ -174,6 +174,21 @@ describe("SurfaceShell", () => {
     }))
   })
 
+  it("renders a reachable close-workbench button as an overlay regardless of tab state", async () => {
+    // Regression: the close action used to live in dockview's right-header
+    // slot, which gets squeezed/hidden when exactly one tab is open. It is now
+    // an always-rendered overlay, so it must be present even with zero panels.
+    renderSurface("workspace-a", { onClose: vi.fn() })
+
+    expect(await screen.findByRole("button", { name: "Close workbench" })).toBeInTheDocument()
+  })
+
+  it("omits the close-workbench button when no onClose handler is provided", () => {
+    renderSurface("workspace-a")
+
+    expect(screen.queryByRole("button", { name: "Close workbench" })).not.toBeInTheDocument()
+  })
+
   it("exposes an API command to close the workbench left pane", async () => {
     let surface: SurfaceShellApi | undefined
     renderSurface("workspace-a", {

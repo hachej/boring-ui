@@ -669,32 +669,32 @@ export function SurfaceShell({
             storageKey={storageKey}
             onReady={handleReady}
             allowedPanels={allowedPanels}
-            rightHeaderActions={onClose ? () => <WorkbenchCloseAction onClose={onClose} /> : undefined}
           />
         </div>
-        {/* Show-sources button — overlaid into the tab strip so it is always reachable,
-            even for existing groups created before collapse (dockview only wires
-            prefixHeaderActions on group creation). */}
-        {collapsed && (
-          <div className="pointer-events-none absolute left-0 top-0 z-20 flex items-center" style={{ height: 44 }}>
-            <IconButton
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              onClick={() => setCollapsed(false)}
-              className="pointer-events-auto ml-2"
-              aria-label="Show sources"
-              title="Show sources"
-            >
-              <FolderTree className="h-4 w-4" strokeWidth={1.75} />
-            </IconButton>
+        {/* Header overlays — always reachable, including existing/single-tab
+            dockview groups where header action slots can be squeezed/hidden. */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between" style={{ height: 44 }}>
+          <div>
+            {collapsed && (
+              <IconButton
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => setCollapsed(false)}
+                className="pointer-events-auto ml-2"
+                aria-label="Show sources"
+                title="Show sources"
+              >
+                <FolderTree className="h-4 w-4" strokeWidth={1.75} />
+              </IconButton>
+            )}
           </div>
-        )}
+          {onClose && <WorkbenchCloseAction onClose={onClose} />}
+        </div>
         <EmptyWorkbenchOverlay
           api={api}
           collapsed={collapsed}
           onExpandFiles={() => setCollapsed(false)}
-          onClose={onClose}
         />
       </div>
     </div>
@@ -708,7 +708,7 @@ function WorkbenchCloseAction({ onClose }: { onClose: () => void }) {
       variant="ghost"
       size="icon-xs"
       onClick={onClose}
-      className="mx-1"
+      className="pointer-events-auto mx-1"
       aria-label="Close workbench"
       title="Close workbench (⌘2)"
     >
@@ -721,12 +721,10 @@ function EmptyWorkbenchOverlay({
   api,
   collapsed,
   onExpandFiles,
-  onClose,
 }: {
   api: DockviewApi | null
   collapsed: boolean
   onExpandFiles: () => void
-  onClose?: () => void
 }) {
   const [empty, setEmpty] = useState(true)
   useEffect(() => {
@@ -759,19 +757,6 @@ function EmptyWorkbenchOverlay({
           </IconButton>
         )}
         <div className="flex-1" />
-        {onClose && (
-          <IconButton
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            onClick={onClose}
-            className="pointer-events-auto mx-1"
-            aria-label="Close workbench"
-            title="Close workbench (⌘2)"
-          >
-            <ChevronRight className="h-4 w-4" strokeWidth={1.75} />
-          </IconButton>
-        )}
       </div>
 
       <div className="pointer-events-none absolute inset-0 flex flex-col items-start justify-center gap-2 px-6 pt-12 pb-10">

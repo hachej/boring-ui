@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
-import { MarkdownEditor, sanitizeHtml, isSafeUrl, rawFileUrlForMarkdownImage } from "../MarkdownEditor"
+import { MarkdownEditor, sanitizeHtml, isSafeUrl, rawFileUrlForMarkdownImage, isUserEditedChange } from "../MarkdownEditor"
 
 describe("MarkdownEditor", () => {
   beforeEach(() => {
@@ -11,6 +11,39 @@ describe("MarkdownEditor", () => {
     render(<MarkdownEditor content="Hello world" />)
     await waitFor(() => {
       expect(screen.getByText("Hello world")).toBeInTheDocument()
+    })
+  })
+
+  it("keeps the editor full-height with an internally-scrolling content region", async () => {
+    // Regression: without min-h-0 on the flex root + scroll region, long
+    // markdown stretches the whole dockview chain (observed ~16k px) instead
+    // of scrolling internally. Guard the flex/overflow contract.
+    const { container } = render(<MarkdownEditor content="Hello world" />)
+    await waitFor(() => expect(screen.getByText("Hello world")).toBeInTheDocument())
+
+    const root = container.firstElementChild as HTMLElement
+    expect(root.className).toContain("h-full")
+    expect(root.className).toContain("min-h-0")
+
+    const scrollRegion = container.querySelector(".overflow-auto") as HTMLElement
+    expect(scrollRegion).toBeTruthy()
+    expect(scrollRegion.className).toContain("min-h-0")
+    expect(scrollRegion.className).toContain("flex-1")
+  })
+
+  describe("isUserEditedChange", () => {
+    // Regression: an editor that emits an empty document while unfocused is a
+    // spurious init/remount/re-parent artifact, not a user clearing the file.
+    // Propagating it let autosave overwrite a real markdown file with "".
+    it("drops an empty emission from an unfocused editor", () => {
+      expect(isUserEditedChange("", false)).toBe(false)
+    })
+    it("keeps an empty emission while the editor is focused (user cleared it)", () => {
+      expect(isUserEditedChange("", true)).toBe(true)
+    })
+    it("keeps non-empty emissions regardless of focus", () => {
+      expect(isUserEditedChange("hello", false)).toBe(true)
+      expect(isUserEditedChange("hello", true)).toBe(true)
     })
   })
 
