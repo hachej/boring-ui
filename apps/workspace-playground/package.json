@@ -11,10 +11,12 @@
     ]
   },
   "scripts": {
-    "dev": "pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-catalog build && vite",
-    "build": "pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-catalog build && vite build",
+    "build:deps": "pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-explorer build && pnpm --filter @hachej/boring-data-catalog build",
+    "dev": "pnpm run build:deps && vite",
+    "build": "pnpm run build:deps && vite build",
     "typecheck": "tsc --noEmit",
-    "test:e2e": "pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-catalog build && playwright test"
+    "test": "vitest run",
+    "test:e2e": "pnpm run build:deps && playwright test"
   },
   "dependencies": {
     "@hachej/boring-agent": "workspace:*",

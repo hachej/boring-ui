@@ -152,6 +152,26 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.queryByText("Global command panel body")).not.toBeInTheDocument()
   })
 
+  it("does not publish empty tabs while an open workbench is still preparing", async () => {
+    const fetchMock = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) => new Promise<Response>(() => {}))
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="preparing-state"
+        chatPanel={ChatPanel}
+        defaultSurfaceOpen
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(screen.getByText("Preparing workspace…")).toBeInTheDocument()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(
+      fetchMock.mock.calls.some(([input]) => String(input).endsWith("/api/v1/ui/state")),
+    ).toBe(false)
+  })
+
   it("keeps the workbench open rail available while workspace warmup is preparing", async () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})))
 

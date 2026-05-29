@@ -183,12 +183,14 @@ function WorkspaceUiStateSync({
   requestHeaders,
   navOpen,
   surfaceOpen,
+  surfaceReady,
   snapshot,
 }: {
   bridgeEndpoint?: string | null
   requestHeaders: Record<string, string>
   navOpen: boolean
   surfaceOpen: boolean
+  surfaceReady: boolean
   snapshot: SurfaceShellSnapshot
 }) {
   const panelRegistry = useRegistry()
@@ -196,6 +198,11 @@ function WorkspaceUiStateSync({
 
   useEffect(() => {
     if (bridgeEndpoint === null) return
+    // Do not publish a placeholder empty tab snapshot while the workbench
+    // is mounted/opening but Dockview has not called onReady yet. That
+    // replace-style PUT would clobber the bridge's last known openTabs and
+    // make agent verification think every tab disappeared.
+    if (surfaceOpen && !surfaceReady) return
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
@@ -221,7 +228,7 @@ function WorkspaceUiStateSync({
     return () => {
       controller.abort()
     }
-  }, [bridgeEndpoint, navOpen, panelRegistry, requestHeaders, snapshot, surfaceOpen])
+  }, [bridgeEndpoint, navOpen, panelRegistry, requestHeaders, snapshot, surfaceOpen, surfaceReady])
 
   return null
 }
@@ -419,6 +426,7 @@ export function WorkspaceAgentFront<
     defaultSurfaceOpen ?? false,
     shellPersistenceEnabled,
   )
+  const [surfaceReady, setSurfaceReady] = useState(false)
   const [workbenchLeftOpen, setWorkbenchLeftOpen] = useStoredBooleanState(
     `${shellStorageKey}:workbenchLeftOpen`,
     true,
@@ -445,6 +453,10 @@ export function WorkspaceAgentFront<
   }, [workspaceId])
 
   useEffect(() => {
+    setSurfaceReady(false)
+  }, [resolvedSurfaceStorageKey])
+
+  useEffect(() => {
     if (!sessionApi || sessionApi.loading) return
     if (autoSubmitSessionId !== undefined) return
     if (sessionApi.sessions.length > 0) {
@@ -464,6 +476,7 @@ export function WorkspaceAgentFront<
 
   const handleSurfaceReady = useCallback((api: SurfaceShellApi) => {
     surfaceRef.current = { key: resolvedSurfaceStorageKey, api }
+    setSurfaceReady(true)
     setSurfaceSnapshotState({
       key: resolvedSurfaceStorageKey,
       snapshot: api.getSnapshot(),
@@ -494,6 +507,7 @@ export function WorkspaceAgentFront<
   const closeWorkbench = useCallback(() => {
     surfaceOpenRef.current = false
     surfaceRef.current = null
+    setSurfaceReady(false)
     setSurfaceOpen(false)
   }, [setSurfaceOpen])
   const capturedPlugins = useMemo(
@@ -654,6 +668,7 @@ export function WorkspaceAgentFront<
           requestHeaders={resolvedRequestHeaders}
           navOpen={effectiveNavOpen}
           surfaceOpen={surfaceOpen}
+          surfaceReady={surfaceReady}
           snapshot={surfaceSnapshot}
         />
         <div className="flex h-full min-h-0 flex-col">
