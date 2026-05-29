@@ -1,54 +1,76 @@
-# Runtime Plugin DX: Workspace-Built Deps + Route-Free Capability RPC
+# Runtime Plugin DX (CLI): hot-reload, importable deps, route-free data access
 
 ## Status
 
 Proposal / design north star. Not started. Captures the architecture converged on while
-shipping the `niche-explorer` factory plugin. Sibling to and partially extends
-`[workspace-bridge-rpc-plan.md](./workspace-bridge-rpc-plan.md)`.
+shipping the `niche-explorer` factory plugin. **Scoped to CLI mode**; remote/hosted concerns
+are explicit non-goals (below). Sibling to [workspace-bridge-rpc-plan.md](./workspace-bridge-rpc-plan.md).
+
+> **Pending decision:** Principle 1 (workspace-built deps) is **open decision #1** in
+> [plugin-system-roadmap.md](./plugin-system-roadmap.md) — it conflicts with the allowlist
+> model assumed by the canonical trust-modes / agent-generation / hot-reload plans. This
+> document argues the case; it is not yet ratified.
+
+## Goal
+
+A **simple but robust** runtime plugin system for CLI mode, with two properties:
+
+1. **Authoring feels like local Vite dev** — declare a `package.json`, `npm install` any
+   dependency, plain `import`, save-and-see hot reload via `/reload`.
+2. **A clean, shared data-access path** so a plugin can display data from local files/DBs
+   **without creating its own server routes** — it calls one host-provided capability.
+
+## Non-goals (deliberately out of this plan)
+
+- **Remote / Vercel sandbox build path** — CLI-local only here; remote is a later plan.
+- **Full capability-RPC bridge + sandbox-backed handlers for arbitrary custom server logic**
+  → owned by the [workspace-bridge-rpc-plan](./workspace-bridge-rpc-plan.md) epic
+  (`boring-ui-v2-reorg-14a9`). This plan needs only the *data* capability.
+- **Remote DBs (Postgres/MySQL), Quack, DuckLake, writes** → future (see "Future" in §Data access).
+- **Raw-SQL query arm** → deferred; structured queries only in v1.
+- **Hosted/iframe plugin model and trust tiers beyond CLI-local** → trust-modes plan.
 
 ## Problem
 
 Two limits surfaced while building real runtime (`.pi/extensions/<name>/`) plugins:
 
-1. **The host-singleton import allowlist does not scale.** Runtime plugin fronts are
-ransformed on the fly by the CLI host (`packages/cli/src/server/pluginFrontRuntime.ts`)
-nd may only import an allowlisted set of bare specifiers
-`HOST_SINGLETON_MODULES`: React + `@hachej/boring-workspace{,/plugin,/events}`).
-ny other bare import (`@hachej/boring-data-explorer`, `sql.js`, `duckdb-wasm`, `d3`, …)
-s rejected at `resolveId` (line ~1039: *"runtime plugin fronts may only import
-llowlisted host singleton packages"*). You cannot hand-maintain an allowlist of every
-ibrary a plugin might want. This is the wall `niche-explorer` hit when it tried to use
-DataExplorer`.
-2. **Plugin-owned backend routes are the wrong primitive.** A `boring.server` Fastify route
-s unstructured, unscoped transport that every plugin reinvents. The
-workspace-bridge-rpc-plan` already argues for removing plugin routes in favour of
-apability-scoped RPC, but it explicitly **defers** generated/runtime-plugin handlers —
-o a runtime plugin still has no first-class way to do custom server-side work.
+1. **The host-singleton import allowlist does not scale.** Runtime fronts are transformed on
+   the fly by the CLI host (`packages/cli/src/server/pluginFrontRuntime.ts`) and may import
+   only an allowlisted set (`HOST_SINGLETON_MODULES`: React + `@hachej/boring-workspace{,/plugin,/events}`).
+   Any other bare import (`@hachej/boring-data-explorer`, `sql.js`, `d3`, …) is rejected at
+   `resolveId` (~line 1039). You can't hand-maintain an allowlist of every library — this is
+   the wall `niche-explorer` hit using `DataExplorer`.
+2. **Per-plugin backend routes are the wrong primitive.** A `boring.server` Fastify route is
+   unstructured, unscoped transport that every plugin reinvents — and for data display it
+   means each plugin ships its own DB wiring. There should be **one** clean data path, not N.
 
 ## Key enabling insight
 
-**The workspace is already isolated.** The agent already installs and executes arbitrary
-code in the workspace sandbox, and already serves arbitrary front `.tsx` that runs in the
-workspace UI origin. Therefore:
+**The workspace is already isolated.** The agent already installs and runs arbitrary code in
+the workspace, and already serves arbitrary plugin `.tsx` into the workspace UI origin. So
+bundling a plugin's *own* dependencies from inside the workspace crosses **no new trust
+boundary** — it removes any supply-chain argument for the allowlist.
 
-- Resolving + bundling a plugin's *own* dependencies from inside the workspace crosses **no
-new server-side trust boundary** — it is the same sandbox the agent already runs in.
-- The bundled plugin JS runs in the workspace page origin, which is **already true today**;
-bundling deps adds third-party code by volume, not a new capability tier.
+But supply chain was never the canonical plans' main reason. trust-modes / agent-generation
+keep the allowlist mostly to **avoid bundler + React-dedupe complexity** and to **stay
+portable across local and hosted runtimes**. Those are the real objections, and they're
+mechanical, not security:
 
-This neutralizes the supply-chain objection that justified the singleton allowlist. The only
-*real* reasons left are mechanical (no build step, browsers can't resolve bare specifiers,
-single-React requirement) — and all three are solvable.
+- *no build step* → add the workspace build (Principle 1);
+- *browsers can't resolve bare specifiers* → the bundler resolves them at build time;
+- *single-React requirement* → preserved by the externals contract;
+- *hosted portability* → out of scope here (CLI-only); revisit when remote builds are planned.
+
+Whether the added install/bundle machinery is worth it vs. keeping the allowlist is exactly
+**decision #1**. This section argues *for* building deps in CLI mode; it is not a ruling.
 
 ## North star
 
 > **Authoring a runtime plugin should feel like local dev of a small Vite library** — a real
 > `package.json`, `npm install` any dep, plain `import`, save-and-see HMR — **where React and
-> the workspace SDK are host-provided peers (externalized), the host runs the toolchain inside
-> the isolated workspace, and the output mounts as a module into the shared UI.**
-
-This collapses today's two plugin shapes: "trusted package vs runtime plugin" becomes purely
-*where it is loaded from and what server authority it gets*, **not** *what it is allowed to import*.
+> the workspace SDK are host-provided peers (externalized), the CLI host runs the toolchain in
+> the workspace, and the output mounts as a module into the shared UI.** Data comes from one
+> host capability, not a plugin-owned route.
 
 ---
 
@@ -64,210 +86,176 @@ react, react-dom, react-dom/client, react/jsx-runtime, react/jsx-dev-runtime
 @hachej/boring-workspace, @hachej/boring-workspace/plugin, @hachej/boring-workspace/events
 ```
 
-**Everything else** the plugin declares in its `package.json` `dependencies`, installs into the
-workspace, and `import`s normally. The bundler resolves + bundles those leaf deps; it
-externalizes only the contract above.
+**Everything else** the plugin declares in its `package.json` `dependencies`; the bundler
+resolves + bundles those leaf deps and externalizes only the contract above.
 
 ### Mechanism
 
 In `pluginFrontRuntime.ts` `resolveId`, replace the "throw on non-allowlisted bare import"
-branch with: resolve the specifier from the **workspace's `node_modules`** and let the existing
-Vite instance bundle/serve it. Keep the `virtualSingletonId` path for the externals contract.
-The Vite server already exists (`createServer`, `react()` plugin, `root: repoRoot`) — the change
-is to *allow* node_modules resolution for leaf deps instead of refusing it.
+branch with: resolve the specifier from the **workspace's `node_modules`** and let the
+existing Vite instance bundle/serve it. Keep the `virtualSingletonId` path for the externals
+contract. The Vite server already exists (`createServer`, `react()` plugin) — the change is to
+*allow* node_modules resolution for leaf deps instead of refusing it.
 
 ### Install / cache flow ("allow installing")
 
 - Plugin manifest declares `dependencies` (normal `package.json`).
-- Host installs them into a plugin-scoped (or workspace-scoped) `node_modules` before/at load,
-with a lockfile + content-addressed cache so reloads don't reinstall.
+- Host installs them into a plugin- or workspace-scoped `node_modules` at load, with a
+  lockfile + content-addressed cache so reloads don't reinstall.
 - Configure Vite `optimizeDeps` so installed deps are pre-bundled → fast HMR after first install.
 
-### Remote-sandbox story
-
-For `direct`/`local`/`bwrap` the install+build runs on the host's real fs. For the Vercel
-(remote) sandbox, install+build runs **inside the sandbox** and the bundle is streamed out —
-slower cold start, same model.
-
-### Build cost (answer to "is build long?")
+### Build cost
 
 The bundle step is **not** the cost — esbuild/Vite bundles a small plugin + a few deps in tens
-to low-hundreds of ms, cached.
-
-
-| Cost                                   | Magnitude                       | Frequency                 |
-| -------------------------------------- | ------------------------------- | ------------------------- |
-| `install` of a **new** dep             | seconds (network-bound)         | once per dep, then cached |
-| Warm re-bundle on `/reload`            | sub-second → ~1–2s w/ dep graph | every reload              |
-| First browser load of a heavy wasm dep | bundle-size bound               | once per session          |
-
-
-After the one-time install, `/reload` stays hot-reload-grade.
+to low-hundreds of ms, cached. The one-time `install` of a new dep is seconds (network-bound),
+then cached. After that, `/reload` stays hot-reload-grade.
 
 ### Risks
 
-- **Externals must be exact** — the single biggest correctness risk. Mis-externalizing yields
-duplicate React / mismatched workspace instances and subtle, nasty bugs. Needs a test that
-asserts the contract.
-- Bundle size for heavy deps (duckdb-wasm) — first-load concern.
+- **Externals must be exact** — the biggest correctness risk (mis-externalizing → duplicate
+  React / mismatched workspace instances). Needs a test that asserts the contract (Track B, B1).
+- Bundle size for heavy deps — a first-load concern; mitigated because data now comes from the
+  host data capability (Principle 3), not a front-bundled engine.
 - Install latency / reproducibility — needs lockfile + cache.
-- Needs a package manager in the workspace (present for direct/local; in-sandbox for remote).
 
 ---
 
-## Principle 2 — No plugin backend routes; capability RPC only
+## Principle 2 — Plugins never create routes; the host provides capabilities
 
-Plugins never register Fastify routes. They use the WorkspaceBridge two-lane model:
+A plugin does **not** register Fastify routes. Anything it needs from the server is a
+**host-provided capability** it *calls*. In v1 the only capability a plugin needs is **data
+access** (Principle 3).
 
-- `**emitUiEffect**` — one-way UI events (open pane, focus file, toast).
-- `**call(op, input)**` — request/response RPC to a registered, capability-scoped handler.
+**Transport — v1 is a single host-owned endpoint:**
 
-A route is *transport*; the bridge replaces transport with scoped, validated, audited,
-idempotent RPC that works uniformly for in-process, browser, and sandbox callers. But the
-bridge changes *where logic is registered and how it is invoked* — not whether it exists.
+- **v1:** the host provides one endpoint (`POST /api/v1/data/query`) — *the host owns it, not
+  the plugin*. Available now, no dependency on the bridge epic. This is the simple, robust path.
+- **Later:** when the WorkspaceBridge `call` lane lands, the same op moves behind
+  `bridge.call("data.v1.query", …)` (capability-scoped, audited) with **no change to the
+  plugin-facing contract** (`createBridgeDataSource` hides the transport).
 
-### Handler-placement rule
-
-
-| Plugin needs…                                                                  | Where it runs             | How it's reached                              |
-| ------------------------------------------------------------------------------ | ------------------------- | --------------------------------------------- |
-| an existing host capability (files, ask-user, macro…)                          | host (already trusted)    | `bridge.call(existing op)`                    |
-| pure data/compute (parse JSON, even SQLite via bundled `sql.js`/`duckdb-wasm`) | **the front**             | nothing — local, enabled by Principle 1       |
-| custom server compute (own DB/schema, secret-bearing API)                      | **the workspace sandbox** | `bridge.call` → host proxies into the sandbox |
-| host-process Fastify routes                                                    | —                         | ❌ removed                                     |
-
-
-The critical consequence of Principle 1: once a runtime plugin can bundle deps, most "needs a
-server" cases (including reading/querying SQLite via `sql.js` or `duckdb-wasm`) become
-**front-only**, so "no routes" holds for them by elimination.
-
-### The gap to close
-
-Custom plugin server logic via RPC — the *sandbox-backed handler* row — does **not** exist
-today. The `workspace-bridge-rpc-plan` ships only host-owned `human-input.*`/`macro.*` ops and
-forbids runtime plugins registering host-process handlers. The new work item is a
-**manifest-declared, sandbox-executed RPC handler** the bridge can route to, so a runtime
-plugin gets server logic *without a host route* and *without host-process trust* — running in
-the same isolated workspace it already owns.
+Either way the plugin owns no routes; the data path is shared, not reinvented per plugin.
+Arbitrary *custom* plugin server logic (a plugin's own compute/handlers) is **out of scope
+here** → the bridge epic's sandbox-backed-handler work.
 
 ---
 
-## Principle 3 — Generic data access (`data.v1.*`)
+## Principle 3 — Clean data access path (`data.v1.query`)
 
-The most common reason a plugin needs server logic is to **display data**, and that data lives
-in heterogeneous places: local JSON / CSV / Parquet files, a local DuckDB or SQLite file, or a
-remote DB (Postgres/MySQL/…). Today each plugin re-solves this badly — bundling the whole
-dataset into the front, or fetching the whole file and filtering client-side. That is data
-shipping, not querying. This is the concrete realization of the `data.v1.query` capability the
-WorkspaceBridge plan gestured at and deferred — a **source-agnostic query capability built on
-Principle 2's RPC**, so any plugin queries any source the same way without owning a route,
-importing a DB driver, or seeing credentials.
+One host-owned, source-agnostic query capability, so every plugin displays data the same way:
+no per-plugin route, no DB driver in the plugin, and **no dataset bundled into the front**
+(the anti-pattern `niche-explorer` currently uses).
 
-### Shape — "named source + query → rows"
+### Shape — "named source + structured query → rows"
 
-A plugin references a **source by name** and sends a **query**; the host resolves and executes
-it. Source descriptors are host-owned (declared by app composition), never exposed to
-plugin/browser code:
+A plugin references a **source by name** and sends a **structured query**; the host resolves
+and executes it. Source descriptors are host-owned (declared by app composition), never
+exposed to plugin/browser code:
 
 ```txt
-{ name: "niches",    kind: "json",     path: "apps/.../niche-explorer-data.json" }
-{ name: "events",    kind: "parquet",  path: "data/events/*.parquet" }   # globs ok
-{ name: "app",       kind: "sqlite",   path: "app.db" }
-{ name: "warehouse", kind: "postgres", connectionRef: "secret://wh" }    # creds host-side
+{ name: "niches", kind: "json",    path: "apps/.../niche-explorer-data.json" }
+{ name: "events", kind: "parquet", path: "data/events/*.parquet" }   # globs ok
+{ name: "app",    kind: "sqlite",  path: "app.db" }
 ```
+
+v1 source kinds are **local files only**: `json`, `csv`, `parquet`, `sqlite`, `duckdb`.
 
 ### Operations
 
 ```txt
-data.v1.query     # structured ({source, query, filters, group, limit, offset}) OR guarded {source, sql}
-data.v1.facets    # {source, filters} -> value/count per facet key (server-side facet counts)
-data.v1.schema    # {source} -> columns + types (lets a generic UI render a table/grid with no plugin code)
+data.v1.query    # {source, query, filters, group, limit, offset} -> {columns, rows, total, hasMore}
+data.v1.facets   # {source, filters} -> value/count per facet key (server-side facet counts)
+data.v1.schema   # {source} -> columns + types (a generic table/grid can render with no plugin code)
 ```
 
-Output is bounded (`{ columns, rows, total?, hasMore? }`); honors `maxRows`/`maxOutputBytes`/
-`timeoutMs`; read-only guard (`SELECT`/`WITH`/`SHOW`/`DESCRIBE`/`EXPLAIN` only). The structured
+Structured only in v1 (no raw-SQL arm — that would break source-agnosticism and complicate the
+guard). Output is bounded (`maxRows`/`maxOutputBytes`/`timeoutMs`), read-only. The structured
 contract mirrors the data-explorer `ExplorerDataSource` (`search`/`fetchFacets`), so a front
-helper `createBridgeDataSource(source)` is a drop-in `ExplorerDataSource` for
+helper `createBridgeDataSource(source)` is a **drop-in `ExplorerDataSource`** for
 `DataExplorer`/data-catalog catalogs — the niche-explorer's exact need.
 
-### Engine: DuckDB (in-process now; Quack/DuckLake as a future concurrent mode)
+**This path is independent of decision #1.** `createBridgeDataSource` ships from
+`@hachej/boring-workspace` (already on the import allowlist), and `data.v1.query` is a host
+capability — so a plugin gets clean, route-free data access **under today's import rules**,
+with no workspace-built-deps change. Data access (Track A) and import-any-dep (Track B) are
+separable; only Track B waits on decision #1.
 
-DuckDB is the universal executor — one SQL dialect federates files (`read_json_auto`/
-`read_csv_auto`/`read_parquet`, globs), local DBs (`ATTACH … (TYPE sqlite)`), and remote DBs
-(`ATTACH … (TYPE postgres|mysql)`). A pluggable `Connector` covers anything DuckDB can't reach.
-`@duckdb/node-api` is already a workspace-playground dependency. How DuckDB runs is an
-implementation detail behind the contract:
+### Engine: in-process DuckDB
 
-| Mode | When | Status |
-| --- | --- | --- |
-| in-process DuckDB (`@duckdb/node-api`) over files | read-only queries (the common case) | stable — build on this |
-| [Quack](https://duckdb.org/2026/05/12/quack-remote-protocol) client-server + [DuckLake](https://www.definite.app/blog/duckdb-quack-ducklake-catalog) | concurrent **writers** / a shared workspace DB across processes/agents | **beta**, stable target DuckDB v2.0 (fall 2026) — defer |
-
-Quack note: the **host is always the only Quack client**. Quack lets browser DuckDB-Wasm connect
-directly with a token — do **not** do that; it hands a DB token to untrusted plugin code and
-bypasses capability scoping. Open spike before relying on Quack: confirm `@duckdb/node-api` can
-act as a Quack *client* (docs are DuckDB↔DuckDB / Wasm).
+`@duckdb/node-api` (already a workspace-playground dependency) reads `json`/`csv`/`parquet`
+natively and `ATTACH`es local `sqlite`/`duckdb` — one engine, one SQL dialect, no per-source
+code. The structured query compiles to read-only DuckDB SQL (`SELECT … WHERE … ORDER … LIMIT`,
+`count(*)` for total, `GROUP BY` for facets) behind the existing `execute_sql` guard.
 
 ### Boundaries / security
 
-- Plugins reference sources by `name` only — never raw paths or credentials.
-- Capability grants gate which sources a caller may query (e.g. `data:query:niches`).
-- Path-validated (workspace-confined) for file sources; connection secrets resolved host-side.
-- Read-only in v1; writes (and Quack's multi-writer mode) are a later phase.
-- Transport is bridge RPC (Principle 2) — `bridge.call("data.v1.query", …)`; no route, no DB
-  driver, no credentials in the browser.
+- Plugins reference sources by `name` only — never raw paths.
+- File sources are path-validated and workspace-confined; read-only.
 
-### Data-access phases (fold into the Phasing list below)
+### Future (non-goals here)
 
-- **A** — `data.v1.query`/`facets`/`schema` via in-process DuckDB over local
-  json/csv/parquet/sqlite; `createBridgeDataSource` front helper; migrate niche-explorer off its
-  bundled blob to prove the contract.
-- **B** — remote DB connectors (DuckDB `ATTACH` postgres/mysql) + host-side connection/secret
-  registry + capability scoping.
-- **C** — scale: pagination + file-asset fallback, `schema`-driven generic `<DataGrid>`, result
-  caching, and re-evaluate Quack/DuckLake for writable/shared sources once stable.
+Remote DBs (DuckDB `ATTACH` postgres/mysql + host-side secrets), writes, and a shared-writable
+workspace DB via [Quack](https://duckdb.org/2026/05/12/quack-remote-protocol) /
+[DuckLake](https://www.definite.app/blog/duckdb-quack-ducklake-catalog) (beta; stable target
+DuckDB v2.0, fall 2026). If adopted, the **host stays the only Quack client** — never hand a DB
+token to browser/plugin code. Spike first: can `@duckdb/node-api` act as a Quack client?
 
 ---
 
-## Phasing
+## Phasing — two independent tracks
 
-1. **Externals contract + tests.** Pin the exact externalized set; add a test that fails on
-uplicate React / non-singleton workspace import. (Prereq for everything; no behavior change.)
-2. **Workspace dep resolution (Principle 1 core).** `resolveId` resolves non-allowlisted bare
-mports from workspace `node_modules` + bundles; externalize the contract. Behind a flag.
-3. **Install + cache mechanism.** Manifest `dependencies` → workspace install, lockfile, cache,
-optimizeDeps`. Make` /reload` re-bundle.
-4. **Remote-sandbox build path.** Install/build inside the Vercel sandbox; stream the bundle.
-5. **Sandbox-backed RPC handler (Principle 2 gap).** Manifest-declared handler executed in the
-orkspace sandbox, invoked via `bridge.call`; capability-scoped, schema-validated, audited.
-6. **Remove `boring.server` route affordance for plugins** (or fail-fast) once 1–5 cover the
-eal use cases; migrate any examples. Update authoring skill + docs (the current authoring
-anual wrongly tells runtime plugins to import `@hachej/boring-data-explorer`).
+The goal's two halves have **different dependencies**, so they ship independently. (Track A
+realizes Principles 2–3; Track B realizes Principle 1.)
 
-Phases 1–4 deliver "local-dev-feel front with any deps." Phase 5 delivers "route-free custom
-server logic." Phase 6 makes it the only supported shape.
+### Track A — Clean data access (unblocked; ship first)
 
-## Relationship to the WorkspaceBridge RPC plan
+Independent of decision #1: needs only a host op + a front helper exported from the
+already-allowlisted `@hachej/boring-workspace`. Works under today's import rules.
 
-- Reuses its bridge lanes, capability/op registry, auth, idempotency, and audit.
-- Extends its explicitly-deferred "generated/runtime plugin RPC" with the sandbox-backed handler.
-- Consistent with its "no generic `workspace-files.v1.*` op" stance: file *bytes* keep using the
-existing `/api/v1/files/raw`; this plan does not add a generic file RPC.
+- **A1.** Host `data.v1.query` + `data.v1.facets` over local files via in-process DuckDB
+  (structured, read-only), exposed as `POST /api/v1/data/query`. (`data.v1.schema` optional in v1.)
+- **A2.** `createBridgeDataSource(source)` helper in `@hachej/boring-workspace` → drop-in
+  `ExplorerDataSource`.
+- **A3.** Migrate `niche-explorer` off its bundled blob to the data capability (proves it).
+- *Later:* move the transport behind the bridge `call` lane when the epic lands — no
+  plugin-facing change.
+
+→ delivers **"clean route-free data path."**
+
+### Track B — Import-any-dep + hot reload (gated on decision #1)
+
+- **B1.** Externals contract + dedupe test (fails on duplicate React / non-singleton workspace).
+  No behavior change.
+- **B2.** `resolveId` resolves non-allowlisted bare imports from the workspace `node_modules`
+  and bundles them; externalize the contract. Behind a flag.
+- **B3.** Manifest `dependencies` → workspace install, lockfile, cache, `optimizeDeps`;
+  `/reload` re-bundles.
+
+→ delivers **"import any dep + hot reload."**
+
+Track A delivers the data half today; Track B delivers the authoring half once decision #1 lands.
+
+## Relationship to other plans
+
+- **Bridge epic (`reorg-14a9`):** provides the `call` lane this plan's data capability rides on
+  when present; until then a single host endpoint serves it. Custom/sandbox handlers are the
+  bridge epic's concern, not this plan's.
+- **trust-modes / agent-generation:** own hosted + trust concerns (non-goals here).
+- **Roadmap decision #1** (deps vs allowlist) gates **Track B only**; Track A is independent.
 
 ## Open questions
 
-1. Install scope: per-plugin `node_modules` vs a shared workspace `node_modules` (dedupe vs isolation)?
-2. Package manager + lockfile strategy in-workspace (npm vs pnpm; offline cache)?
-3. Sandbox-handler execution model: long-lived worker vs per-call `executeIsolatedCode`?
-4. Bundle-size budget / lazy-loading policy for heavy wasm deps.
-5. Do we still gate any front capability by trust, or is the front fully democratized and only
-he sandbox-handler/secret access gated?
+1. Install scope: per-plugin vs shared workspace `node_modules` (dedupe vs isolation)?
+2. Package manager + lockfile in-workspace (npm vs pnpm; offline cache)?
+3. When to migrate `data.v1` transport from the v1 host endpoint to the bridge `call` lane —
+   what's the trigger (epic milestone, multi-caller need)?
+4. Bundle-size budget for heavy front deps (now rarer, since data goes through `data.v1`).
 
 ## Reference points in code
 
 - `packages/cli/src/server/pluginFrontRuntime.ts` — `HOST_SINGLETON_MODULES` (allowlist),
-`RUNTIME_SINGLETON_EXPORTS`, the `resolveId` reject branch (~1039), the Vite `createServer`.
+  `RUNTIME_SINGLETON_EXPORTS`, the `resolveId` reject branch (~1039), the Vite `createServer`.
 - `packages/workspace/src/front/agentPlugins/registerAgentPlugin.tsx` and
-`packages/cli/src/front/App.tsx` — where `__BORING_RUNTIME_SINGLETONS__` is populated.
+  `packages/cli/src/front/App.tsx` — where `__BORING_RUNTIME_SINGLETONS__` is populated.
 - `apps/workspace-playground/src/plugins/playgroundDataCatalog/` — app-package plugin that
-already imports data-catalog/DuckDB freely (the "trusted package" shape this plan generalizes).
+  already imports data-catalog/DuckDB freely (the "trusted package" shape this generalizes).
