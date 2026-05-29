@@ -100,6 +100,7 @@ test('installs fake boring-ui bin with npm --prefix and dummy package.json', asy
     'install',
     '--prefix',
     paths.node,
+    '--install-links',
     '@hachej/boring-ui-cli@0.1.0',
   ])
   expect(npmInstall?.cwd).toBe(paths.workspaceRoot)
