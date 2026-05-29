@@ -9,7 +9,7 @@ import { Sandbox as VercelSandbox } from '@vercel/sandbox'
 
 import { type SandboxHandleStore } from '../../../shared/sandbox-handle-store'
 import { safeCapture, type TelemetrySink } from '../../../shared/telemetry'
-import { getEnv } from '../../config/env'
+import { getEnv, setEnvDefault } from '../../config/env'
 import { createVercelSandboxExec } from '../../sandbox/vercel-sandbox/createVercelSandboxExec'
 import { createVercelProvisioningAdapter } from '../../sandbox/vercel-sandbox/provisioningAdapter'
 import { isNodeFamilyRuntime, uvSetupCommandsForRuntime, VERCEL_UV_BIN } from '../../sandbox/snapshots/deploymentSnapshot'
@@ -221,9 +221,10 @@ async function ensureVercelRuntimePrimitives(
   }
   // Provisioning invokes uv by explicit path (correctness must not depend on the
   // non-interactive exec PATH). Default BORING_AGENT_UV_BIN to where the Node
-  // bootstrap installs uv; an explicit deploy-config value still wins.
-  if (isNodeFamilyRuntime(runtime) && !getEnv('BORING_AGENT_UV_BIN')) {
-    process.env.BORING_AGENT_UV_BIN = VERCEL_UV_BIN
+  // bootstrap installs uv; an explicit deploy-config value still wins. Routed
+  // through config/env so we never touch process.env directly (invariant).
+  if (isNodeFamilyRuntime(runtime)) {
+    setEnvDefault('BORING_AGENT_UV_BIN', VERCEL_UV_BIN)
   }
 }
 
