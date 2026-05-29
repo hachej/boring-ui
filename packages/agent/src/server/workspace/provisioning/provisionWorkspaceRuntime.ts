@@ -210,6 +210,10 @@ export async function provisionWorkspaceRuntime(
         adapter: opts.adapter,
         runtimeLayout: opts.runtimeLayout,
         packages: pythonPackages,
+        // Provider-neutral seam: a deploy/provider (e.g. Vercel Node runtime) may
+        // export the explicit uv path since it is not on the non-interactive exec
+        // PATH. Unset for direct/local — they fall back to bare `uv`.
+        explicitUvBin: process.env.BORING_AGENT_UV_BIN?.trim() || undefined,
       }),
     })
 
