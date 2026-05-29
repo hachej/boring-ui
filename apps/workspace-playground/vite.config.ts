@@ -15,6 +15,15 @@ const playgroundOnlyAliases = [
   // playground's local monorepo dev server at the built CSS artifact so Vite
   // serves it as text/css instead of falling back through HTML history.
   { find: "@hachej/boring-workspace/globals.css", replacement: resolve(__dirname, "../../packages/workspace/dist/workspace.css") },
+  // Cover subpath imports from runtime extensions (e.g. boring-ui-factory
+  // .pi/extensions) that land through Vite's /@fs/ resolver.
+  { find: "@hachej/boring-workspace/plugin", replacement: resolve(__dirname, "../../packages/workspace/dist/plugin.js") },
+  { find: "@hachej/boring-workspace/events", replacement: resolve(__dirname, "../../packages/workspace/dist/events.js") },
+  { find: "@hachej/boring-workspace/shared", replacement: resolve(__dirname, "../../packages/workspace/dist/shared.js") },
+  { find: "@hachej/boring-workspace/app/front", replacement: resolve(__dirname, "../../packages/workspace/dist/app-front.js") },
+  { find: "@hachej/boring-workspace/app/server", replacement: resolve(__dirname, "../../packages/workspace/dist/app-server.js") },
+  { find: "@hachej/boring-workspace/server", replacement: resolve(__dirname, "../../packages/workspace/dist/server.js") },
+  { find: "@hachej/boring-workspace", replacement: resolve(__dirname, "../../packages/workspace/dist/workspace.js") },
   { find: "@/", replacement: resolve(__dirname, "../../packages/workspace/src") + "/" },
   { find: "@", replacement: resolve(__dirname, "../../packages/workspace/src") },
 ]
