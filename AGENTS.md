@@ -422,7 +422,7 @@ Agent token is read-only for `secret/agent/*` and `secret/shared/*`.
 
 Two axes — **where it is** and **where it is in the process**. Tag every issue with one `status:`, plus the `package:`/`plugin:` labels it touches.
 
-`**status:` — where it is in the process** (exactly one; moves left→right):
+**`status:` — where it is in the process** (exactly one; moves left→right):
 
 
 | Label                   | Meaning                                      |
@@ -435,8 +435,8 @@ Two axes — **where it is** and **where it is in the process**. Tag every issue
 
 `to-plan → to-plan-review → to-code → to-code-review → (closed)`
 
-`**package:` — where it is** (zero or more, blue): `core` · `agent` · `workspace` · `ui` · `cli` · `pi`
-`**plugin:` — where it is** (zero or more, green): `ask-user` · `data-catalog` · `data-explorer` · `deck`
+**`package:` — where it is** (zero or more, blue): `core` · `agent` · `workspace` · `ui` · `cli` · `pi`
+**`plugin:` — where it is** (zero or more, green): `ask-user` · `data-catalog` · `data-explorer` · `deck`
 
 Legacy kind-of-work labels (`bug`, `feature`, `enhancement`, `refactor`, `architecture`, `story`) are optional/loose — the two axes above are what we tag on consistently. Create labels with the `hachej` gh login (the Vault `boringdata-agent` token is read-only on the repo).
 
