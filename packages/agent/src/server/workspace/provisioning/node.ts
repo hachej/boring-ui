@@ -149,6 +149,12 @@ export async function ensureNodeRuntime(options: {
       'install',
       '--prefix',
       options.runtimeLayout.node,
+      // Copy file: deps as actual packages instead of symlinking to their
+      // canonical location. Without this, npm 7+ symlinks the runtime's
+      // node_modules entry back to the original packageRoot (e.g. a global
+      // npm install outside the workspace), and the agent's symlink-escape
+      // guard correctly rejects the resulting node_modules/.bin/* link.
+      '--install-links',
       ...installSources,
     ], {
       cwd: options.runtimeLayout.workspaceRoot,
