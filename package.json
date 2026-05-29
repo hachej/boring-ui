@@ -28,6 +28,10 @@
     "version:patch": "node scripts/version.mjs patch",
     "version:minor": "node scripts/version.mjs minor",
     "version:major": "node scripts/version.mjs major",
+    "version:check": "node scripts/version.mjs --check",
+    "release:patch": "node scripts/release.mjs patch",
+    "release:minor": "node scripts/release.mjs minor",
+    "release:major": "node scripts/release.mjs major",
     "build:packages": "pnpm -r --filter './packages/*' --filter './plugins/*' --workspace-concurrency=4 run build",
     "typecheck:changed": "node scripts/typecheck-changed-workspaces.mjs"
   },
