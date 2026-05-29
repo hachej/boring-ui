@@ -163,41 +163,6 @@ describe("WorkspaceBridgeRegistry", () => {
     expect(logs).not.toContain("secret-token")
   })
 
-  it("does not leak foreign error codes/messages; canonical bridge errors pass through", async () => {
-    const registry = createWorkspaceBridgeRegistry()
-    // Foreign error shaped like {code,message} (e.g. Node ENOENT, store errors)
-    // must NOT be surfaced verbatim — it maps to a generic HANDLER_FAILED.
-    registry.registerHandler(
-      createTestBridgeOperationDefinition({ op: "test.v1.foreign" }),
-      () => {
-        throw { code: "ENOENT", message: "/host/secret/path not found" }
-      },
-    )
-    // A genuinely canonical bridge error thrown by a handler still passes through.
-    registry.registerHandler(
-      createTestBridgeOperationDefinition({ op: "test.v1.canonical" }),
-      () => {
-        throw { code: WorkspaceBridgeErrorCode.CapabilityDenied, message: "denied" }
-      },
-    )
-
-    const foreign = await registry.call(
-      { op: "test.v1.foreign", input: {}, requestId: "req_foreign" },
-      createTestBridgeContext(),
-    )
-    expect(foreign).toMatchObject({
-      ok: false,
-      error: { code: WorkspaceBridgeErrorCode.HandlerFailed, message: "Bridge handler failed" },
-    })
-    expect(JSON.stringify(foreign)).not.toContain("ENOENT")
-    expect(JSON.stringify(foreign)).not.toContain("/host/secret/path")
-
-    await expect(registry.call(
-      { op: "test.v1.canonical", input: {}, requestId: "req_canonical" },
-      createTestBridgeContext(),
-    )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.CapabilityDenied } })
-  })
-
   it("passes emitUiEffect to handlers without treating UI effects as RPC output", async () => {
     const registry = createWorkspaceBridgeRegistry()
     const emitUiEffect = vi.fn(async () => ({ seq: 1, status: "ok" as const }))

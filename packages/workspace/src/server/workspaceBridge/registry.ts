@@ -228,21 +228,8 @@ export function createWorkspaceBridgeRegistry(
   return new WorkspaceBridgeRegistry(options)
 }
 
-const WORKSPACE_BRIDGE_ERROR_CODES: ReadonlySet<string> = new Set(Object.values(WorkspaceBridgeErrorCode))
-
 function isWorkspaceBridgeError(err: unknown): err is WorkspaceBridgeError {
-  // Brand by canonical error-code membership so foreign thrown errors (Node
-  // `ENOENT`, driver errors, PendingQuestionStoreError, etc.) are NOT surfaced
-  // verbatim to callers — they fall through to a generic HANDLER_FAILED. This
-  // keeps response.error.code a real WorkspaceBridgeErrorCode and avoids leaking
-  // internal codes/messages across the bridge trust boundary.
-  if (!err || typeof err !== "object") return false
-  const candidate = err as { code?: unknown; message?: unknown }
-  return (
-    typeof candidate.code === "string" &&
-    WORKSPACE_BRIDGE_ERROR_CODES.has(candidate.code) &&
-    typeof candidate.message === "string"
-  )
+  return !!err && typeof err === "object" && "code" in err && "message" in err
 }
 
 function validateSchema(schema: unknown, value: unknown): SchemaResult {

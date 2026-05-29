@@ -48,12 +48,6 @@ export interface WorkspaceBridgeIdempotencyStore {
     options: BeginIdempotencyOptions<TInput>,
   ): Promise<IdempotencyBeginResult<TOutput>>
   complete<TOutput = unknown>(options: CompleteIdempotencyOptions<TOutput>): Promise<void>
-  /**
-   * Release a pending record so the same key can be retried. Used when a
-   * mutation fails transiently: caching the failure would otherwise block
-   * legitimate same-key retries until the record's TTL expires.
-   */
-  release(scopeKey: string, inputHash: string): Promise<void>
   gc(nowMs?: number): Promise<number>
 }
 
@@ -88,11 +82,6 @@ export class InMemoryWorkspaceBridgeIdempotencyStore implements WorkspaceBridgeI
       updatedAt: new Date(nowMs).toISOString(),
       expiresAt: new Date(nowMs + (options.ttlMs ?? DEFAULT_IDEMPOTENCY_TTL_MS)).toISOString(),
     })
-  }
-
-  async release(scopeKey: string, inputHash: string): Promise<void> {
-    const existing = this.records.get(scopeKey)
-    if (existing && existing.inputHash === inputHash) this.records.delete(scopeKey)
   }
 
   async gc(nowMs = Date.now()): Promise<number> {
@@ -141,20 +130,13 @@ export async function runWithWorkspaceBridgeIdempotency<TInput, TOutput>(
     }
   }
   const response = await execute()
-  if (response.ok) {
-    await store.complete({
-      scopeKey: begin.scopeKey,
-      inputHash: begin.inputHash,
-      response,
-      nowMs: options.nowMs,
-      ttlMs: options.ttlMs,
-    })
-  } else {
-    // Do not memoize failures: release the key so a retry with the same
-    // idempotency key can re-execute instead of replaying the cached failure
-    // for the record's TTL. A deterministic failure simply fails again.
-    await store.release(begin.scopeKey, begin.inputHash)
-  }
+  await store.complete({
+    scopeKey: begin.scopeKey,
+    inputHash: begin.inputHash,
+    response,
+    nowMs: options.nowMs,
+    ttlMs: options.ttlMs,
+  })
   return response
 }
 
