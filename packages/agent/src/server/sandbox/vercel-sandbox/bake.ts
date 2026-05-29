@@ -107,7 +107,9 @@ function shellQuote(value: string): string {
 function makeInstallCommand(binary: 'dnf' | 'pip', packages: string[]): string {
   const quoted = packages.map(shellQuote).join(' ')
   if (binary === 'dnf') {
-    return `dnf install -y ${quoted}`
+    // The Vercel sandbox runs as the unprivileged `vercel-sandbox` user; dnf
+    // requires sudo. (Astral `uv` is NOT available via dnf — installed via pip.)
+    return `sudo dnf install -y ${quoted}`
   }
   return `python3 -m pip install ${quoted}`
 }
