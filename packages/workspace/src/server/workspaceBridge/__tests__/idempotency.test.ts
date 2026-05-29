@@ -1,10 +1,6 @@
-import { mkdtemp, readFile, readdir } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { WorkspaceBridgeErrorCode, type WorkspaceBridgeCallResponse } from "../../../shared/workspace-bridge-rpc"
 import {
-  FileWorkspaceBridgeIdempotencyStore,
   InMemoryWorkspaceBridgeIdempotencyStore,
   hashNormalizedInput,
   runWithWorkspaceBridgeIdempotency,
@@ -128,7 +124,7 @@ describe("WorkspaceBridge idempotency primitives", () => {
     })
 
     expect(await store.gc(nowMs + 11)).toBe(1)
-    expect(store.snapshot()).toHaveLength(0)
+    expect(await store.gc(nowMs + 12)).toBe(0)
   })
 
   it("disables required mutations with a stable diagnostic when no atomic store exists", async () => {
@@ -145,27 +141,4 @@ describe("WorkspaceBridge idempotency primitives", () => {
     })
   })
 
-  it("file-backed store uses locked atomic writes and never stores bearer token values", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "bridge-idem-"))
-    const store = new FileWorkspaceBridgeIdempotencyStore(dir)
-    const token = "bearer-secret-token"
-    const request = {
-      op: requiredDefinition.op,
-      input: { value: "file" },
-      requestId: "req-file",
-      idempotencyKey: "idem-file",
-    }
-    const [a, b] = await Promise.all([
-      store.begin({ definition: requiredDefinition, request, auth: { ...auth, tokenId: token }, nowMs }),
-      store.begin({ definition: requiredDefinition, request, auth: { ...auth, tokenId: token }, nowMs }),
-    ])
-    expect([a.action, b.action].sort()).toEqual(["execute", "replay"])
-
-    const files = await readdir(dir)
-    expect(files).toHaveLength(1)
-    const contents = await readFile(join(dir, files[0]), "utf8")
-    expect(contents).not.toContain(token)
-    expect(contents).not.toContain("bearer")
-    expect(contents).toContain("pending")
-  })
 })

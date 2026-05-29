@@ -1,7 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 import { WorkspaceBridgeErrorCode, type WorkspaceBridgeFileAssetPointer } from "../../../shared/workspace-bridge-rpc"
 import { createWorkspaceBridgeRegistry, type WorkspaceBridgeCallContext } from "../registry"
-import { InMemoryWorkspaceBridgeAuditSink } from "../audit"
 import { MACRO_BRIDGE_OPS, guardMacroSqlQuery, registerMacroBridgeHandlers, type MacroBridgeDataService } from "../macroBridgeHandlers"
 
 const actor = { actorKind: "agent" as const, performedBy: { label: "agent" }, onBehalfOf: { label: "human" } }
@@ -62,9 +61,8 @@ describe("Macro WorkspaceBridge handlers", () => {
     expect(service.seriesData).toHaveBeenCalledTimes(1)
   })
 
-  test("guards SQL as read-only, single-statement, capped, and audited without SQL payload", async () => {
-    const auditSink = new InMemoryWorkspaceBridgeAuditSink()
-    const registry = createWorkspaceBridgeRegistry({ auditSink })
+  test("guards SQL as read-only, single-statement, and capped", async () => {
+    const registry = createWorkspaceBridgeRegistry()
     const service = createService()
     registerMacroBridgeHandlers(registry, { service, sqlDefaults: { maxRows: 10, maxBytes: 512, timeoutMs: 250 } })
 
@@ -82,9 +80,6 @@ describe("Macro WorkspaceBridge handlers", () => {
       { op: MACRO_BRIDGE_OPS.sqlQuery, input: { sql: "delete from series" }, requestId: "req_write" },
       context(["macro:sql.query"], "runtime"),
     )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.InvalidRequest } })
-
-    expect(JSON.stringify(auditSink.events)).not.toContain("select * from series")
-    expect(JSON.stringify(auditSink.events)).not.toContain("delete from series")
   })
 
   test("transform.persist requires idempotency and server/runtime authority", async () => {

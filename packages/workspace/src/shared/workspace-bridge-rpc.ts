@@ -56,7 +56,6 @@ export interface WorkspaceBridgeOperationDefinition<
   owner: string
   callerClassesAllowed: readonly BridgeCallerClass[]
   requiredCapabilities: readonly string[]
-  resourceScopeSchema?: unknown
   inputSchema: unknown
   outputSchema?: unknown
   timeoutMs: number
@@ -111,13 +110,9 @@ export enum WorkspaceBridgeErrorCode {
   IdempotencyRequired = "BRIDGE_IDEMPOTENCY_REQUIRED",
   IdempotencyConflict = "BRIDGE_IDEMPOTENCY_CONFLICT",
   ReplayRejected = "BRIDGE_REPLAY_REJECTED",
-  ReplayDetected = "BRIDGE_REPLAY_DETECTED",
-  RateLimited = "BRIDGE_RATE_LIMITED",
   InvalidToken = "BRIDGE_INVALID_TOKEN",
   ExpiredToken = "BRIDGE_EXPIRED_TOKEN",
   InvalidRequest = "BRIDGE_INVALID_REQUEST",
-  TranscriptForbidden = "BRIDGE_TRANSCRIPT_FORBIDDEN",
-  UiUnavailable = "BRIDGE_UI_UNAVAILABLE",
   UnsupportedRuntime = "BRIDGE_UNSUPPORTED_RUNTIME",
 }
 

@@ -8,17 +8,9 @@ import {
   type WorkspaceBridgeOperationDefinition,
 } from "../../shared/workspace-bridge-rpc"
 import type { WorkspaceBridge, UiCommand, CommandResult } from "../../shared/ui-bridge"
-import {
-  auditOutcomeForError,
-  createWorkspaceBridgeRateLimitKey,
-  type RateLimitPolicy,
-  type WorkspaceBridgeAuditSink,
-  type WorkspaceBridgeAuditEvent,
-} from "./audit"
 
 export interface WorkspaceBridgeCallContext extends BridgeAuthContext {
   requestId?: string
-  resourceScope?: Record<string, unknown>
   signal?: AbortSignal
   emitUiEffect?: (cmd: UiCommand) => Promise<CommandResult>
 }
@@ -48,8 +40,6 @@ export interface WorkspaceBridgeRegistryLogger {
 
 export interface WorkspaceBridgeRegistryOptions {
   logger?: WorkspaceBridgeRegistryLogger
-  auditSink?: WorkspaceBridgeAuditSink
-  rateLimitPolicy?: RateLimitPolicy
 }
 
 interface RegisteredOperation {
@@ -65,13 +55,9 @@ interface SchemaResult {
 export class WorkspaceBridgeRegistry {
   private readonly handlers = new Map<string, RegisteredOperation>()
   private readonly logger?: WorkspaceBridgeRegistryLogger
-  private readonly auditSink?: WorkspaceBridgeAuditSink
-  private readonly rateLimitPolicy?: RateLimitPolicy
 
   constructor(options: WorkspaceBridgeRegistryOptions = {}) {
     this.logger = options.logger
-    this.auditSink = options.auditSink
-    this.rateLimitPolicy = options.rateLimitPolicy
   }
 
   registerHandler<TInput, TOutput>(
@@ -111,7 +97,6 @@ export class WorkspaceBridgeRegistry {
     }
 
     const { definition, handler } = registered
-    const startedAt = Date.now()
     const logBase = {
       requestId,
       op: request.op,
@@ -136,30 +121,6 @@ export class WorkspaceBridgeRegistry {
       })
     }
 
-    if (this.rateLimitPolicy) {
-      const decision = await this.rateLimitPolicy.check({
-        key: createWorkspaceBridgeRateLimitKey({
-          workspaceId: context.workspaceId,
-          sessionId: context.sessionId,
-          principalId: context.actor.performedBy?.id,
-          pluginId: context.pluginId,
-          runtimeId: context.tokenId,
-          callerClass: context.callerClass,
-          op: request.op,
-        }),
-        workspaceId: context.workspaceId,
-        sessionId: context.sessionId,
-        principalId: context.actor.performedBy?.id,
-        pluginId: context.pluginId,
-        runtimeId: context.tokenId,
-        callerClass: context.callerClass,
-        op: request.op,
-      })
-      if (!decision.allowed) {
-        return this.failure(request.op, requestId, WorkspaceBridgeErrorCode.RateLimited, "Bridge caller is rate limited", logBase, startedAt, "denied")
-      }
-    }
-
     const inputBytes = measureJsonBytes(request.input)
     if (inputBytes > definition.maxInputBytes) {
       return this.failure(request.op, requestId, WorkspaceBridgeErrorCode.InputTooLarge, "Bridge input exceeds operation limit", {
@@ -175,16 +136,6 @@ export class WorkspaceBridgeRegistry {
         ...logBase,
         schemaMessage: inputValidation.message,
       })
-    }
-
-    if (definition.resourceScopeSchema) {
-      const scopeValidation = validateSchema(definition.resourceScopeSchema, request.resourceScope ?? context.resourceScope)
-      if (!scopeValidation.success) {
-        return this.failure(request.op, requestId, WorkspaceBridgeErrorCode.ResourceScopeDenied, "Bridge resource scope failed validation", {
-          ...logBase,
-          schemaMessage: scopeValidation.message,
-        })
-      }
     }
 
     const controller = new AbortController()
@@ -235,9 +186,7 @@ export class WorkspaceBridgeRegistry {
       }
 
       this.logger?.info?.("workspace bridge call completed", logBase)
-      const response = { ok: true as const, op: request.op, requestId, output: output as TOutput }
-      void this.emitAudit({ definition, context, requestId, outcome: "success", startedAt, inputBytes, outputBytes })
-      return response
+      return { ok: true as const, op: request.op, requestId, output: output as TOutput }
     } catch (err) {
       if (controller.signal.aborted && controller.signal.reason === "timeout") {
         return this.failure(request.op, requestId, WorkspaceBridgeErrorCode.Timeout, "Bridge handler timed out", logBase)
@@ -261,8 +210,6 @@ export class WorkspaceBridgeRegistry {
     code: WorkspaceBridgeErrorCode,
     message: string,
     logFields?: Record<string, unknown>,
-    startedAt?: number,
-    rateLimitDecision?: "allowed" | "denied",
   ): WorkspaceBridgeCallResponse<never> {
     const error = createWorkspaceBridgeError(code, message)
     this.logger?.warn?.("workspace bridge call rejected", {
@@ -271,52 +218,7 @@ export class WorkspaceBridgeRegistry {
       requestId,
       errorCode: code,
     })
-    if (logFields && "callerClass" in logFields && "workspaceId" in logFields) {
-      void this.emitAudit({
-        definition: this.handlers.get(op)?.definition,
-        context: logFields as unknown as WorkspaceBridgeCallContext,
-        requestId,
-        outcome: auditOutcomeForError(code),
-        error,
-        startedAt,
-        rateLimitDecision,
-      })
-    }
     return { ok: false, op, requestId, error }
-  }
-
-  private async emitAudit(args: {
-    definition?: WorkspaceBridgeOperationDefinition
-    context: WorkspaceBridgeCallContext
-    requestId: string
-    outcome: WorkspaceBridgeAuditEvent["outcome"]
-    error?: WorkspaceBridgeError
-    startedAt?: number
-    inputBytes?: number
-    outputBytes?: number
-    rateLimitDecision?: "allowed" | "denied"
-  }): Promise<void> {
-    if (!this.auditSink || !args.definition) return
-    await this.auditSink.emit({
-      requestId: args.requestId,
-      op: args.definition.op,
-      workspaceId: args.context.workspaceId,
-      sessionId: args.context.sessionId,
-      callerClass: args.context.callerClass,
-      actorKind: args.context.actor.actorKind,
-      performedBy: args.context.actor.performedBy,
-      onBehalfOf: args.context.actor.onBehalfOf,
-      pluginId: args.context.pluginId,
-      runtimeId: args.context.tokenId,
-      capabilities: args.context.capabilities,
-      capabilityDecision: args.error?.code === WorkspaceBridgeErrorCode.CapabilityDenied ? "denied" : "allowed",
-      rateLimitDecision: args.rateLimitDecision ?? "allowed",
-      outcome: args.outcome,
-      error: args.error,
-      durationMs: args.startedAt ? Date.now() - args.startedAt : undefined,
-      inputBytes: args.inputBytes,
-      outputBytes: args.outputBytes,
-    })
   }
 }
 
@@ -335,37 +237,6 @@ function validateSchema(schema: unknown, value: unknown): SchemaResult {
   if (typeof schema === "object" && schema !== null && "safeParse" in schema) {
     const result = (schema as { safeParse: (value: unknown) => { success: boolean; error?: { message?: string } } }).safeParse(value)
     return result.success ? { success: true } : { success: false, message: result.error?.message }
-  }
-  if (typeof schema === "object" && schema !== null && "parse" in schema) {
-    try {
-      ;(schema as { parse: (value: unknown) => unknown }).parse(value)
-      return { success: true }
-    } catch (err) {
-      return { success: false, message: err instanceof Error ? err.message : "schema parse failed" }
-    }
-  }
-  if (isSimpleJsonSchema(schema)) return validateSimpleJsonSchema(schema, value)
-  return { success: true }
-}
-
-function isSimpleJsonSchema(schema: unknown): schema is { type?: string; required?: string[] } {
-  return typeof schema === "object" && schema !== null && ("type" in schema || "required" in schema)
-}
-
-function validateSimpleJsonSchema(schema: { type?: string; required?: string[] }, value: unknown): SchemaResult {
-  if (schema.type === "object" && (typeof value !== "object" || value === null || Array.isArray(value))) {
-    return { success: false, message: "expected object" }
-  }
-  if (schema.type === "string" && typeof value !== "string") {
-    return { success: false, message: "expected string" }
-  }
-  if (schema.type === "number" && typeof value !== "number") {
-    return { success: false, message: "expected number" }
-  }
-  if (schema.required && typeof value === "object" && value !== null) {
-    const record = value as Record<string, unknown>
-    const missing = schema.required.find((key) => !(key in record))
-    if (missing) return { success: false, message: `missing required field: ${missing}` }
   }
   return { success: true }
 }

@@ -3,7 +3,6 @@ import { WorkspaceBridgeErrorCode } from "../../../shared/workspace-bridge-rpc"
 import {
   createBrowserBridgeAuthPolicy,
   createLocalCliBridgeAuthPolicy,
-  createTrustedServerBridgeAuthPolicy,
   type BridgePrincipal,
 } from "../authPolicy"
 import { createTestBridgeOperationDefinition } from "../testing/harness"
@@ -131,26 +130,6 @@ describe("BridgeAuthPolicy adapters", () => {
     expect(resolved.context.actor).toMatchObject({
       actorKind: "human",
       performedBy: { id: "user-1" },
-    })
-  })
-
-  it("supports trusted server system/service callers explicitly", async () => {
-    const policy = createTrustedServerBridgeAuthPolicy({
-      actorKind: "service",
-      performedByLabel: "service:workspace-host",
-      capabilities: ["human-input:transcript.read"],
-    })
-
-    const resolved = await policy.resolve({
-      callerClass: "server",
-      definition: transcriptOp,
-      workspaceId: "workspace-1",
-    })
-
-    expect(resolved.context).toMatchObject({
-      callerClass: "server",
-      actor: { actorKind: "service", performedBy: { label: "service:workspace-host" } },
-      capabilities: ["human-input:transcript.read"],
     })
   })
 

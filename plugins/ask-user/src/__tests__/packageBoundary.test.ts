@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 
 const here = dirname(fileURLToPath(import.meta.url))
-const pluginRoot = resolve(here, "../../..")
+const pluginRoot = resolve(here, "../..")
 const repoRoot = resolve(pluginRoot, "../..")
 
 function readJson(path: string) {

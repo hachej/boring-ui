@@ -156,7 +156,6 @@ function statusForBridgeError(code: WorkspaceBridgeErrorCode): number {
   if (code === WorkspaceBridgeErrorCode.AuthRequired || code === WorkspaceBridgeErrorCode.InvalidToken || code === WorkspaceBridgeErrorCode.ExpiredToken) return 401
   if (code === WorkspaceBridgeErrorCode.CallerNotAllowed || code === WorkspaceBridgeErrorCode.CapabilityDenied || code === WorkspaceBridgeErrorCode.ResourceScopeDenied) return 403
   if (code === WorkspaceBridgeErrorCode.OpNotFound) return 404
-  if (code === WorkspaceBridgeErrorCode.RateLimited) return 429
   if (code === WorkspaceBridgeErrorCode.InputTooLarge || code === WorkspaceBridgeErrorCode.OutputTooLarge) return 413
   return 400
 }

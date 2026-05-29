@@ -2,7 +2,6 @@ import {
   WorkspaceBridgeErrorCode,
   createWorkspaceBridgeError,
   type BridgeActorAttribution,
-  type BridgeActorKind,
   type BridgeAuthContext,
   type BridgeCallerClass,
   type WorkspaceBridgeOperationDefinition,
@@ -64,18 +63,9 @@ export interface BrowserBridgeAuthPolicyOptions {
   localTrustedNoAuth?: boolean
 }
 
-export interface TrustedServerBridgeAuthPolicyOptions {
-  workspaceId?: string
-  capabilities?: readonly string[]
-  actorKind: Extract<BridgeActorKind, "system" | "service">
-  performedByLabel: string
-  performedById?: string
-}
-
 export interface LocalCliBridgeAuthPolicyOptions {
   workspaceId: string
   capabilities?: readonly string[]
-  performedByLabel?: string
 }
 
 export function createBrowserBridgeAuthPolicy(
@@ -164,46 +154,6 @@ export function createBrowserBridgeAuthPolicy(
           role: grant.role,
           ...grant.resourceScope,
         },
-      }
-    },
-  }
-}
-
-export function createTrustedServerBridgeAuthPolicy(
-  options: TrustedServerBridgeAuthPolicyOptions,
-): BridgeAuthPolicy {
-  return {
-    resolve(input) {
-      if (input.callerClass !== "server") {
-        throw createWorkspaceBridgeError(
-          WorkspaceBridgeErrorCode.CallerNotAllowed,
-          "Trusted server bridge policy only accepts server callers",
-        )
-      }
-      ensureCallerAllowed(input.definition, "server")
-      if (options.workspaceId && options.workspaceId !== input.workspaceId) {
-        throw createWorkspaceBridgeError(
-          WorkspaceBridgeErrorCode.ResourceScopeDenied,
-          "Trusted server bridge workspace mismatch",
-        )
-      }
-      const capabilities = options.capabilities ?? input.definition.requiredCapabilities
-      ensureCapabilities(capabilities, input.requiredCapabilities ?? input.definition.requiredCapabilities)
-      const context = makeContext({
-        callerClass: "server",
-        workspaceId: input.workspaceId,
-        sessionId: input.sessionId,
-        pluginId: input.pluginId,
-        capabilities,
-        actor: {
-          actorKind: options.actorKind,
-          performedBy: { label: options.performedByLabel, id: options.performedById },
-        },
-      })
-      return {
-        context,
-        effectiveCapabilities: capabilities,
-        resourceScope: { workspaceId: input.workspaceId, sessionId: input.sessionId },
       }
     },
   }

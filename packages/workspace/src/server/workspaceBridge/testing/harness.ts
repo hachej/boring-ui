@@ -141,7 +141,6 @@ export function createTestBridgeOperationDefinition<TInput = unknown, TOutput = 
     owner: overrides.owner ?? "test",
     callerClassesAllowed: overrides.callerClassesAllowed ?? ["server"],
     requiredCapabilities: overrides.requiredCapabilities ?? [],
-    resourceScopeSchema: overrides.resourceScopeSchema,
     inputSchema: overrides.inputSchema ?? { type: "object" },
     outputSchema: overrides.outputSchema ?? { type: "object" },
     timeoutMs: overrides.timeoutMs ?? 1_000,

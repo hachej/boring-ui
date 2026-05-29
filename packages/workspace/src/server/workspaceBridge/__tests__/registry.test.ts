@@ -52,14 +52,13 @@ describe("WorkspaceBridgeRegistry", () => {
     )
   })
 
-  it("validates caller classes, capabilities, and resource scope", async () => {
+  it("validates caller classes and capabilities", async () => {
     const registry = createWorkspaceBridgeRegistry()
     registry.registerHandler(
       createTestBridgeOperationDefinition({
         op: "macro.v1.series.data",
         callerClassesAllowed: ["runtime"],
         requiredCapabilities: ["macro:series.data"],
-        resourceScopeSchema: z.object({ seriesId: z.string() }),
       }),
       () => ({ rows: [] }),
     )
@@ -73,11 +72,6 @@ describe("WorkspaceBridgeRegistry", () => {
       { op: "macro.v1.series.data", input: {}, requestId: "req_cap" },
       createTestBridgeContext({ callerClass: "runtime", capabilities: [] }),
     )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.CapabilityDenied } })
-
-    await expect(registry.call(
-      { op: "macro.v1.series.data", input: {}, requestId: "req_scope", resourceScope: { wrong: true } },
-      createTestBridgeContext({ callerClass: "runtime", capabilities: ["macro:series.data"] }),
-    )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
   })
 
   it("validates input/output schemas and input/output size limits", async () => {

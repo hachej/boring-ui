@@ -1,6 +1,4 @@
-import { createHash, randomUUID } from "node:crypto"
-import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises"
-import { dirname, join } from "node:path"
+import { createHash } from "node:crypto"
 import {
   WorkspaceBridgeErrorCode,
   createWorkspaceBridgeError,
@@ -97,106 +95,6 @@ export class InMemoryWorkspaceBridgeIdempotencyStore implements WorkspaceBridgeI
     return removed
   }
 
-  snapshot(): WorkspaceBridgeIdempotencyRecord[] {
-    return Array.from(this.records.values())
-  }
-}
-
-export class FileWorkspaceBridgeIdempotencyStore implements WorkspaceBridgeIdempotencyStore {
-  private readonly dir: string
-  private readonly locks = new Map<string, Promise<unknown>>()
-
-  constructor(dir: string) {
-    this.dir = dir
-  }
-
-  async begin<TInput, TOutput>(
-    options: BeginIdempotencyOptions<TInput>,
-  ): Promise<IdempotencyBeginResult<TOutput>> {
-    const prepared = prepareIdempotency(options)
-    if ("error" in prepared) return { action: "reject", error: prepared.error }
-    return this.withKeyLock(prepared.scopeKey, async () => {
-      const nowMs = options.nowMs ?? Date.now()
-      const existing = await this.readRecord(prepared.scopeKey)
-      if (existing && Date.parse(existing.expiresAt) > nowMs) {
-        if (existing.inputHash !== prepared.inputHash) {
-          return { action: "reject", error: replayRejectedError() }
-        }
-        return { action: "replay", record: existing as WorkspaceBridgeIdempotencyRecord<TOutput> }
-      }
-      await this.writeRecord(createPendingRecord(prepared.scopeKey, prepared.inputHash, nowMs, options.ttlMs))
-      return { action: "execute", scopeKey: prepared.scopeKey, inputHash: prepared.inputHash }
-    })
-  }
-
-  async complete<TOutput>(options: CompleteIdempotencyOptions<TOutput>): Promise<void> {
-    await this.withKeyLock(options.scopeKey, async () => {
-      const existing = await this.readRecord(options.scopeKey)
-      if (!existing || existing.inputHash !== options.inputHash) return
-      const nowMs = options.nowMs ?? Date.now()
-      await this.writeRecord({
-        ...existing,
-        status: options.response.ok ? "completed" : "failed",
-        response: options.response,
-        updatedAt: new Date(nowMs).toISOString(),
-        expiresAt: new Date(nowMs + (options.ttlMs ?? DEFAULT_IDEMPOTENCY_TTL_MS)).toISOString(),
-      })
-    })
-  }
-
-  async gc(nowMs = Date.now()): Promise<number> {
-    await mkdir(this.dir, { recursive: true })
-    const files = await readdir(this.dir)
-    let removed = 0
-    for (const file of files) {
-      if (!file.endsWith(".json")) continue
-      const path = join(this.dir, file)
-      try {
-        const record = JSON.parse(await readFile(path, "utf8")) as WorkspaceBridgeIdempotencyRecord
-        if (Date.parse(record.expiresAt) <= nowMs) {
-          await unlink(path)
-          removed++
-        }
-      } catch {
-        // Ignore corrupt files here; later implementation may quarantine.
-      }
-    }
-    return removed
-  }
-
-  private async readRecord(scopeKey: string): Promise<WorkspaceBridgeIdempotencyRecord | null> {
-    try {
-      return JSON.parse(await readFile(this.recordPath(scopeKey), "utf8")) as WorkspaceBridgeIdempotencyRecord
-    } catch {
-      return null
-    }
-  }
-
-  private async writeRecord(record: WorkspaceBridgeIdempotencyRecord): Promise<void> {
-    const path = this.recordPath(record.scopeKey)
-    await mkdir(dirname(path), { recursive: true })
-    const tmp = `${path}.${randomUUID()}.tmp`
-    await writeFile(tmp, `${JSON.stringify(record)}\n`, "utf8")
-    await rename(tmp, path)
-  }
-
-  private recordPath(scopeKey: string): string {
-    return join(this.dir, `${hashString(scopeKey)}.json`)
-  }
-
-  private async withKeyLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const previous = this.locks.get(key) ?? Promise.resolve()
-    let release!: () => void
-    const next = new Promise<void>((resolve) => { release = resolve })
-    this.locks.set(key, previous.then(() => next, () => next))
-    await previous.catch(() => undefined)
-    try {
-      return await fn()
-    } finally {
-      release()
-      if (this.locks.get(key) === next) this.locks.delete(key)
-    }
-  }
 }
 
 export async function runWithWorkspaceBridgeIdempotency<TInput, TOutput>(
