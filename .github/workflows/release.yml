@@ -1,49 +1,70 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
+    inputs:
+      force_ci:
+        description: "Publish even if latest CI for this SHA is not green"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
+  actions: read
   id-token: write
 
 jobs:
-  ci:
-    name: CI
+  preflight:
+    name: Verify release preconditions
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: boring_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - uses: actions/checkout@v6
+      - name: Require main branch
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "Release must run from main; got ${{ github.ref }}"
+            exit 1
+          fi
+      - name: Require green CI for this SHA unless forced
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE_CI: ${{ inputs.force_ci }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [ "$FORCE_CI" = "true" ]; then
+            echo "force_ci=true; skipping CI gate for $SHA"
+            exit 0
+          fi
+
+          run_id=$(gh run list \
+            --workflow CI \
+            --branch main \
+            --commit "$SHA" \
+            --event push \
+            --status completed \
+            --json databaseId,conclusion \
+            --jq '[.[] | select(.conclusion == "success")] | first | .databaseId // empty')
+
+          if [ -z "$run_id" ]; then
+            echo "No successful completed CI run found for $SHA on main."
+            echo "Wait for CI, or rerun this workflow with force_ci=true."
+            exit 1
+          fi
+
+          echo "Found green CI run $run_id for $SHA"
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
           node-version: 22.19.0
           cache: pnpm
-      - run: sudo apt-get install -y ripgrep
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint && pnpm typecheck && pnpm test && pnpm lint:invariants
-        env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/boring_test
+      - name: Check package versions are aligned
+        run: node scripts/version.mjs --check
 
   publish:
     name: Publish to npm
-    needs: ci
+    needs: preflight
     runs-on: ubuntu-latest
     environment: release
     steps:
@@ -57,15 +78,18 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build publishable packages
         run: |
-          pnpm --filter @hachej/boring-ui-kit build
-          pnpm --filter @hachej/boring-agent build
-          pnpm --filter @hachej/boring-workspace build
-          pnpm --filter @hachej/boring-core build
-          pnpm --filter @hachej/boring-deck build
+          pnpm -r \
+            --filter @hachej/boring-ui-kit \
+            --filter @hachej/boring-agent \
+            --filter @hachej/boring-workspace \
+            --filter @hachej/boring-core \
+            --filter @hachej/boring-deck \
+            --filter @hachej/boring-ask-user \
+            --filter @hachej/boring-data-explorer \
+            --filter @hachej/boring-data-catalog \
+            --workspace-concurrency=4 \
+            run build
           pnpm --filter @hachej/boring-ui-cli build:full
-          pnpm --filter @hachej/boring-ask-user build
-          pnpm --filter @hachej/boring-data-explorer build
-          pnpm --filter @hachej/boring-data-catalog build
       - name: Audit publish manifests
         run: pnpm audit:publish-manifests
       - name: Publish
