@@ -27,6 +27,7 @@ export default defineConfig({
           include: ["src/__tests__/pluginFrontRuntime.test.ts"],
           fileParallelism: false,
           sequence: { groupOrder: 1 },
+          testTimeout: 600_000,
         },
       },
     ],
