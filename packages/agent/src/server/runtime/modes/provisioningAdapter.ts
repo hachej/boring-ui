@@ -25,10 +25,22 @@ function sourceToPath(source: string | URL): string {
   return source instanceof URL ? fileURLToPath(source) : source
 }
 
-async function assertExistingInsideWorkspace(root: string, relPath: string): Promise<string | null> {
+async function assertExistingInsideWorkspace(
+  root: string,
+  relPath: string,
+  enforceSymlinkBoundary: boolean,
+): Promise<string | null> {
   const absPath = validatePath(root, relPath)
   try {
-    await assertRealPathWithinWorkspace(root, absPath)
+    if (enforceSymlinkBoundary) {
+      await assertRealPathWithinWorkspace(root, absPath)
+    } else {
+      // Direct mode has no sandbox boundary; a lexical validatePath() is
+      // enough. Skip the realpath check so npm-created bin symlinks pointing
+      // at the host's npm-global install (e.g. boring-ui) don't trip the
+      // sandbox guard during the post-install output existence probe.
+      await lstat(absPath)
+    }
     return absPath
   } catch (error: unknown) {
     if ((error as { code?: string }).code === 'ENOENT') return null
@@ -36,10 +48,16 @@ async function assertExistingInsideWorkspace(root: string, relPath: string): Pro
   }
 }
 
-async function prepareWritablePath(root: string, relPath: string): Promise<string> {
+async function prepareWritablePath(
+  root: string,
+  relPath: string,
+  enforceSymlinkBoundary: boolean,
+): Promise<string> {
   const absPath = validatePath(root, relPath)
   await mkdir(dirname(absPath), { recursive: true })
-  await assertRealPathWithinWorkspace(root, dirname(absPath))
+  if (enforceSymlinkBoundary) {
+    await assertRealPathWithinWorkspace(root, dirname(absPath))
+  }
 
   try {
     const targetStat = await lstat(absPath)
@@ -155,36 +173,42 @@ async function copyExternalSourceIntoWorkspace(
   return `${LOCAL_SANDBOX_WORKSPACE_ROOT}/${relTarget}`
 }
 
-function createWorkspaceFs(workspaceRoot: string): WorkspaceProvisioningAdapter['workspaceFs'] {
+function createWorkspaceFs(
+  workspaceRoot: string,
+  opts: { enforceSymlinkBoundary: boolean },
+): WorkspaceProvisioningAdapter['workspaceFs'] {
+  const { enforceSymlinkBoundary } = opts
   return {
     async exists(workspaceRelativePath) {
-      const absPath = await assertExistingInsideWorkspace(workspaceRoot, workspaceRelativePath)
+      const absPath = await assertExistingInsideWorkspace(workspaceRoot, workspaceRelativePath, enforceSymlinkBoundary)
       if (!absPath) return false
       await lstat(absPath)
       return true
     },
     async rm(workspaceRelativePath) {
-      const absPath = await assertExistingInsideWorkspace(workspaceRoot, workspaceRelativePath)
+      const absPath = await assertExistingInsideWorkspace(workspaceRoot, workspaceRelativePath, enforceSymlinkBoundary)
       if (!absPath) return
       await rm(absPath, { recursive: true, force: true })
     },
     async mkdir(workspaceRelativePath) {
       const absPath = validatePath(workspaceRoot, workspaceRelativePath)
       await mkdir(absPath, { recursive: true })
-      await assertRealPathWithinWorkspace(workspaceRoot, absPath)
+      if (enforceSymlinkBoundary) {
+        await assertRealPathWithinWorkspace(workspaceRoot, absPath)
+      }
     },
     async writeText(workspaceRelativePath, content) {
-      const absPath = await prepareWritablePath(workspaceRoot, workspaceRelativePath)
+      const absPath = await prepareWritablePath(workspaceRoot, workspaceRelativePath, enforceSymlinkBoundary)
       await writeFile(absPath, content, 'utf8')
     },
     async readText(workspaceRelativePath) {
-      const absPath = await assertExistingInsideWorkspace(workspaceRoot, workspaceRelativePath)
+      const absPath = await assertExistingInsideWorkspace(workspaceRoot, workspaceRelativePath, enforceSymlinkBoundary)
       if (!absPath) return null
       return await readFile(absPath, 'utf8')
     },
     async copyFromHost(hostSourcePath, workspaceRelativeTarget) {
       const sourcePath = sourceToPath(hostSourcePath)
-      const absTarget = await prepareWritablePath(workspaceRoot, workspaceRelativeTarget)
+      const absTarget = await prepareWritablePath(workspaceRoot, workspaceRelativeTarget, enforceSymlinkBoundary)
       const sourceStat = await stat(sourcePath)
       await cp(sourcePath, absTarget, {
         recursive: sourceStat.isDirectory(),
@@ -207,7 +231,7 @@ export function createDirectProvisioningAdapter(
     async resolveInstallSource(source) {
       return sourceToPath(source)
     },
-    workspaceFs: createWorkspaceFs(paths.workspaceRoot),
+    workspaceFs: createWorkspaceFs(paths.workspaceRoot, { enforceSymlinkBoundary: false }),
     getRuntimeCacheRoot() {
       return paths.cache
     },
@@ -253,7 +277,7 @@ export function createLocalProvisioningAdapter(
 
       return await copyExternalSourceIntoWorkspace(paths, realSource, opts)
     },
-    workspaceFs: createWorkspaceFs(paths.workspaceRoot),
+    workspaceFs: createWorkspaceFs(paths.workspaceRoot, { enforceSymlinkBoundary: true }),
     getRuntimeCacheRoot() {
       return paths.cache
     },

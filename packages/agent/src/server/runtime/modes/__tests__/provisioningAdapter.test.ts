@@ -45,17 +45,29 @@ test('direct adapter workspaceFs handles missing rm, recursive mkdir, writeText,
   await expect(adapter.workspaceFs.readText('a/b/c/missing.txt')).resolves.toBeNull()
 })
 
-test('direct adapter rejects unsafe relative paths and symlink escapes', async () => {
+test('direct adapter rejects lexically unsafe relative paths', async () => {
+  const workspaceRoot = await tempRoot('boring-direct-workspace-')
+  const adapter = createDirectProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot))
+
+  await expect(adapter.workspaceFs.exists('../escape')).rejects.toMatchObject({ reason: 'path-escape' })
+  await expect(adapter.workspaceFs.exists('/absolute')).rejects.toMatchObject({ reason: 'absolute-path' })
+  await expect(adapter.workspaceFs.exists('bad\0path')).rejects.toMatchObject({ reason: 'null-byte' })
+})
+
+test('direct adapter does not enforce realpath/symlink-escape (no sandbox boundary)', async () => {
+  // Direct mode runs on the host without an OS-level sandbox, so a realpath
+  // check on workspaceFs reads is pure ceremony — and it false-positives on
+  // npm-created bin symlinks that point at the host's npm-global install
+  // (e.g. boring-ui), aborting provisioning. The lexical validatePath() above
+  // still rejects malicious relative inputs; we only drop the symlink-escape
+  // probe. Sandbox modes (local/bwrap, vercel-sandbox) keep the strict check.
   const workspaceRoot = await tempRoot('boring-direct-workspace-')
   const outsideRoot = await tempRoot('boring-direct-outside-')
   await writeFile(join(outsideRoot, 'secret.txt'), 'secret\n')
   await symlink(join(outsideRoot, 'secret.txt'), join(workspaceRoot, 'link-out'))
   const adapter = createDirectProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot))
 
-  await expect(adapter.workspaceFs.exists('../escape')).rejects.toMatchObject({ reason: 'path-escape' })
-  await expect(adapter.workspaceFs.exists('/absolute')).rejects.toMatchObject({ reason: 'absolute-path' })
-  await expect(adapter.workspaceFs.exists('bad\0path')).rejects.toMatchObject({ reason: 'null-byte' })
-  await expect(adapter.workspaceFs.readText('link-out')).rejects.toMatchObject({ reason: 'symlink-escape' })
+  await expect(adapter.workspaceFs.readText('link-out')).resolves.toBe('secret\n')
 })
 
 test('direct adapter exec defaults cwd, merges env, and keeps args with spaces intact', async () => {
