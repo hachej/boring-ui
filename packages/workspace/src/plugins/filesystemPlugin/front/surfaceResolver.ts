@@ -7,7 +7,6 @@ import { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "../../../shared/types/surface"
 import {
   CODE_EDITOR_PANEL_ID,
   CSV_VIEWER_PANEL_ID,
-  EMPTY_FILE_PANEL_ID,
   FILESYSTEM_SURFACE_RESOLVER_ID,
   HTML_VIEWER_PANEL_ID,
   IMAGE_VIEWER_PANEL_ID,
@@ -53,7 +52,9 @@ const handlers: FilesystemSurfaceHandler[] = [
     patterns: ["**/*.html", "**/*.htm"],
   },
   {
-    component: EMPTY_FILE_PANEL_ID,
+    // Unknown file types fall back to the code editor — it can render any text
+    // file, which is more useful than a "no editor available" placeholder.
+    component: CODE_EDITOR_PANEL_ID,
     fallback: true,
   },
 ]

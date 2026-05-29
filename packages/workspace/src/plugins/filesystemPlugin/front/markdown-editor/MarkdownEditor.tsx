@@ -80,6 +80,21 @@ function isExternalImageSrc(src: string): boolean {
   return /^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(src)
 }
 
+/**
+ * Decide whether a TipTap `onUpdate` emission is a genuine user edit worth
+ * propagating to `onChange`.
+ *
+ * TipTap fires `onUpdate` not only for typed input but also while the editor
+ * settles on init / remount / DOM re-parent, which can momentarily report an
+ * empty document right after non-empty content was loaded. Emptying a document
+ * is only ever a user action when the editor is focused (it requires keyboard
+ * input), so an empty emission from an unfocused editor is a spurious artifact.
+ * Dropping it prevents autosave from overwriting a real file with "".
+ */
+export function isUserEditedChange(nextContent: string, editorFocused: boolean): boolean {
+  return !(nextContent === "" && !editorFocused)
+}
+
 function normalizeRelativeImagePath(src: string, documentPath?: string): string {
   const match = src.match(/^([^?#]*)([?#].*)?$/)
   const pathPart = match?.[1] ?? src
@@ -531,9 +546,10 @@ export function MarkdownEditor({
       },
     },
     onUpdate: ({ editor: e }) => {
-      if (!suppressChangeRef.current) {
-        onChangeRef.current?.(e.getMarkdown?.() ?? e.getHTML())
-      }
+      if (suppressChangeRef.current) return
+      const next = e.getMarkdown?.() ?? e.getHTML()
+      if (!isUserEditedChange(next, e.isFocused)) return
+      onChangeRef.current?.(next)
     },
   })
   editorRef.current = editor
@@ -553,7 +569,7 @@ export function MarkdownEditor({
   }, [editor, content])
 
   return (
-    <div className={cn("flex h-full flex-col overflow-hidden", className)}>
+    <div className={cn("flex h-full min-h-0 flex-col overflow-hidden", className)}>
       {!readOnly && (
         <Toolbar
           editor={editor}
@@ -563,7 +579,7 @@ export function MarkdownEditor({
           uploading={uploading}
         />
       )}
-      <div className="flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto">
         {rawMode && !readOnly ? (
           <textarea
             aria-label="Raw markdown"
