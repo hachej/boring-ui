@@ -17,13 +17,16 @@ export const UV_SETUP_COMMANDS = [
 
 /**
  * uv setup for Node-family runtimes (Vercel `node22`/`node24`/`node26`), which
- * ship node/npm/pnpm + Amazon Linux `python3` but NO `pip` and NO Astral `uv`
- * (`dnf install uv` resolves to libuv, not Astral uv). So: install `python3-pip`
- * via `sudo dnf`, install uv with `--user`, and verify the explicit UV_BIN.
+ * ship node/npm/pnpm + Amazon Linux `python3` but NO `pip` and NO Astral `uv`.
+ *
+ * Install uv via the Astral standalone installer (`curl … | sh`), which lands a
+ * prebuilt binary at `$HOME/.local/bin/uv` and needs NEITHER `pip` NOR `dnf`.
+ * Verified live on node24: ~1.3s vs ~15.6s for the old `dnf install python3-pip`
+ * + `pip install --user uv` path (the `dnf` step alone was ~13s). Provisioning
+ * uses uv exclusively, so no system `pip3` is required at all.
  */
 export const NODE_UV_SETUP_COMMANDS = [
-  'command -v pip3 >/dev/null 2>&1 || sudo dnf install -y python3-pip',
-  `[ -x ${VERCEL_UV_BIN} ] || python3 -m pip install --user --upgrade uv`,
+  `[ -x ${VERCEL_UV_BIN} ] || curl -LsSf https://astral.sh/uv/install.sh | sh`,
   `${VERCEL_UV_BIN} --version`,
 ] as const
 
