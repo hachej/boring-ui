@@ -1,4 +1,6 @@
+import { readFile } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { getBoringAgentRuntimeEnv, type BoringAgentRuntimePaths } from '../runtimeLayout'
 import { ErrorCode, toProvisioningError } from './errors'
@@ -62,6 +64,42 @@ export async function ensureNodeEnv(adapter: WorkspaceProvisioningAdapter): Prom
 
 function nodeInstallSource(spec: RuntimeNodePackageSpec): string {
   return spec.version ? `${spec.packageName}@${spec.version}` : spec.packageName
+}
+
+function packageRootToHostPath(packageRoot: string | URL): string {
+  return packageRoot instanceof URL ? fileURLToPath(packageRoot) : packageRoot
+}
+
+async function packageJsonHasWorkspaceDeps(packageRoot: string | URL): Promise<boolean> {
+  const root = packageRootToHostPath(packageRoot)
+  let raw: string
+  try {
+    raw = await readFile(join(root, 'package.json'), 'utf8')
+  } catch {
+    return false
+  }
+  let pkg: Record<string, unknown>
+  try {
+    pkg = JSON.parse(raw) as Record<string, unknown>
+  } catch {
+    return false
+  }
+  for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+    const deps = pkg[field] as Record<string, string> | undefined
+    if (!deps) continue
+    for (const value of Object.values(deps)) {
+      if (typeof value === 'string' && value.startsWith('workspace:')) return true
+    }
+  }
+  return false
+}
+
+async function anyPackageHasWorkspaceDeps(packages: RuntimeNodePackageSpec[]): Promise<boolean> {
+  for (const pkg of packages) {
+    if (!pkg.packageRoot) continue
+    if (await packageJsonHasWorkspaceDeps(pkg.packageRoot)) return true
+  }
+  return false
 }
 
 function expectedNodeOutputs(paths: BoringAgentRuntimePaths, packages: RuntimeNodePackageSpec[]): string[] {
@@ -145,6 +183,7 @@ export async function ensureNodeRuntime(options: {
     `${JSON.stringify({ name: 'boring-agent-runtime', private: true }, null, 2)}\n`,
   )
   try {
+    const useInstallLinks = !(await anyPackageHasWorkspaceDeps(options.packages))
     await options.adapter.exec('npm', [
       'install',
       '--prefix',
@@ -154,7 +193,11 @@ export async function ensureNodeRuntime(options: {
       // node_modules entry back to the original packageRoot (e.g. a global
       // npm install outside the workspace), and the agent's symlink-escape
       // guard correctly rejects the resulting node_modules/.bin/* link.
-      '--install-links',
+      // Skipped when any source carries `workspace:*` deps — npm rejects
+      // those with EUNSUPPORTEDPROTOCOL once `--install-links` forces
+      // resolution. Pnpm-monorepo sources fall back to the previous symlink
+      // behaviour in that case.
+      ...(useInstallLinks ? ['--install-links'] : []),
       ...installSources,
     ], {
       cwd: options.runtimeLayout.workspaceRoot,
