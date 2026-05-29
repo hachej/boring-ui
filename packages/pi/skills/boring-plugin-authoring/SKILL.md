@@ -187,6 +187,43 @@ Notes:
 - Import React explicitly (no `globalThis.React`).
 - Do NOT use `defineFrontPlugin` or `createPlugin` (don't exist).
 
+## Runtime plugin constraints (`.pi/extensions/`) — read before importing or using hooks
+
+These are hard limits of the hot-reload host (`pluginFrontRuntime.ts`). They do **not**
+apply to app/internal **package** plugins under `plugins/<name>/` (those are bundled by the
+app's real build and may import anything).
+
+1. **Imports are allowlisted.** A runtime front may import ONLY:
+   `react` / `react-dom` / `react/jsx-runtime`, and
+   `@hachej/boring-workspace` / `@hachej/boring-workspace/plugin` / `@hachej/boring-workspace/events`,
+   plus its own relative files (`./foo`). Any other bare import —
+   `@hachej/boring-data-explorer`, `@hachej/boring-data-catalog`, `@hachej/boring-ui-kit`,
+   `sql.js`, `recharts`, … — is **rejected by the transform** and the module fails to load
+   ("error loading dynamically imported module"). There is no `npm install` for runtime
+   plugins. The data-catalog / `DataExplorer` examples lower down are **package-plugin only**.
+
+2. **Do not call `@hachej/boring-workspace` React hooks** (`useApiBaseUrl`,
+   `useWorkspaceRequestId`, `useCommands`, `useCatalogs`, …) from a runtime front — observed to
+   crash with `can't access property "useContext", ReactSharedInternals.H is null` (dual-React
+   dispatcher). Plain `react` hooks (`useState`/`useEffect`/`useMemo`) are fine. Derive context
+   without workspace hooks:
+   - workspace id → parse `window.location.pathname` (`/workspace/<id>`);
+   - file requests → relative URL + `x-boring-workspace-id` header (CLI **workspaces mode
+     requires it**, else `HTTP 400`).
+
+3. **Prefer bundling static data over fetching.** For a read-only dataset, write a relative
+   `./data.ts` (`export const DATA = { ... }`) and `import` it — no fetch, no workspace-id, no
+   400s. Fetch `/api/v1/files/raw` only when the data is genuinely dynamic.
+
+4. **A `leftTab` needs a `component`.** `{ id, title, panelId }` alone renders an **empty**
+   pane: the host renders `tab.component` (falling back to `() => null`) and ignores `panelId`.
+
+5. **Catalog pattern (list in rail → detail in center).** Don't cram a master-detail into a
+   narrow left tab. Make the left tab a compact, searchable list; on row click call
+   `postUiCommand({ kind: "openSurface", params: { kind: MY_SURFACE_KIND, target: id, meta } })`;
+   register a `surfaceResolvers` entry for `MY_SURFACE_KIND` that returns a center panel with
+   `params`. (`postUiCommand` is a plain function from `@hachej/boring-workspace` — safe, not a hook.)
+
 ## Common patterns
 
 ### File visualizer (opens files in your panel)
@@ -197,23 +234,28 @@ requests through your resolver:
 ```tsx
 import React, { useState, useEffect } from "react"
 import { definePlugin, WORKSPACE_OPEN_PATH_SURFACE_KIND, type PaneProps } from "@hachej/boring-workspace/plugin"
-import { useApiBaseUrl, useWorkspaceRequestId } from "@hachej/boring-workspace"
+
+// Hook-free workspace id. Do NOT use useWorkspaceRequestId/useApiBaseUrl in a
+// runtime plugin (dual-React crash — see "Runtime plugin constraints" above).
+function workspaceId(): string | null {
+  if (typeof window === "undefined") return null
+  const m = window.location.pathname.match(/\/workspace\/([^/?#]+)/)
+  return m ? decodeURIComponent(m[1]) : null
+}
 
 function CsvPane({ params }: PaneProps<{ path: string }>) {
-  const apiBaseUrl = useApiBaseUrl()
-  const workspaceRequestId = useWorkspaceRequestId()
   const [text, setText] = useState("")
   useEffect(() => {
-    const base = apiBaseUrl.replace(/\/$/, "")
     const headers: Record<string, string> = {}
-    if (workspaceRequestId) headers["x-boring-workspace-id"] = workspaceRequestId
-    fetch(`${base}/api/v1/files/raw?path=${encodeURIComponent(params.path)}`, {
+    const ws = workspaceId()
+    if (ws) headers["x-boring-workspace-id"] = ws  // required in CLI workspaces mode (else HTTP 400)
+    fetch(`/api/v1/files/raw?path=${encodeURIComponent(params.path)}`, {
       credentials: "include",
       headers,
     })
       .then((r) => r.text())
       .then(setText)
-  }, [apiBaseUrl, params.path, workspaceRequestId])
+  }, [params.path])
   return <pre>{text}</pre>
 }
 
@@ -243,9 +285,10 @@ export default definePlugin({
 ```
 
 Read raw file bytes from `/api/v1/files/raw?path=<workspace-relative-path>`.
-Inside panels, build the URL with `useApiBaseUrl()` and pass
-`x-boring-workspace-id` from `useWorkspaceRequestId()` when present; CLI
-workspaces mode requires that workspace scope. Use the imported
+In a **runtime plugin**, use a relative URL and pass `x-boring-workspace-id`
+derived from `window.location` (helper above) — CLI workspaces mode requires that
+scope (else `HTTP 400`); do **not** use the `useApiBaseUrl()`/`useWorkspaceRequestId()`
+hooks here (dual-React crash). Package plugins may use those hooks. Use the imported
 `WORKSPACE_OPEN_PATH_SURFACE_KIND` constant as the resolver `kind` (not the
 string `"WORKSPACE_OPEN_PATH_SURFACE_KIND"`), and read the path from
 `request.target` (not `request.path`). Do not use `/workspace/read`.
@@ -342,7 +385,9 @@ export default definePlugin({
 ```
 
 For component reuse (e.g. `@hachej/boring-data-explorer` exports React
-components), just import and render them inside your panel:
+components), just import and render them inside your panel — **package plugins
+only; this import fails in a runtime `.pi/extensions` plugin** (not allowlisted —
+see "Runtime plugin constraints" above):
 
 ```tsx
 import { DataExplorer } from "@hachej/boring-data-explorer/front"

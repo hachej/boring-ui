@@ -189,6 +189,7 @@ This is the shortest path from idea to production-safe plugin.
 - use `defineServerPlugin({ ... })` for trusted server-side contributions
 - keep `src/shared/**` browser-safe if you add shared code
 - do not add `boring.server` to runtime `.pi/extensions` plugins
+- runtime `.pi/extensions` fronts: import only React + `@hachej/boring-workspace*` (no `boring-data-explorer`/`boring-ui-kit`/npm); never call `@hachej/boring-workspace` React hooks (dual-React crash); a `leftTab` needs a `component`; prefer bundling static data. See "Runtime plugin constraints" in `packages/pi/skills/boring-plugin-authoring/SKILL.md`.
 - do not promise `/reload` will apply trusted server-route changes
 - do not deep-import undocumented workspace internals
 
