@@ -89,7 +89,7 @@ test('bake executes end-to-end and caches snapshot id', async () => {
   })
   expect(client.create).toHaveBeenCalledWith({ runtime: 'python3.13' })
   expect(sandbox.scripts).toEqual([
-    `dnf install -y 'jq' 'ripgrep'`,
+    `sudo dnf install -y 'jq' 'ripgrep'`,
     `python3 -m pip install 'numpy' 'pandas'`,
   ])
   expect(sandbox.snapshot).toHaveBeenCalledTimes(1)
