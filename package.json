@@ -17,6 +17,7 @@
     "audit:publish-manifests": "node scripts/audit-publish-manifests.mjs",
     "check:generated-artifacts": "pnpm tsx scripts/check-generated-artifacts.ts",
     "check:agent-isolation": "pnpm --filter @hachej/boring-agent run check:isolation",
+    "check:action-pins": "bash scripts/check-action-pins.sh",
     "check:bundle-size": "pnpm --filter @hachej/boring-workspace run check:bundle-size",
     "check:core-bundle-size": "pnpm --filter @hachej/boring-core run check:bundle-size",
     "ci:bundle-size": "pnpm --filter @hachej/boring-workspace... --workspace-concurrency=4 run build && pnpm check:bundle-size",
