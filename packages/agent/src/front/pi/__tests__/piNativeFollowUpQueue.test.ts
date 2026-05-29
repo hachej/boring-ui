@@ -68,4 +68,32 @@ describe('usePiNativeFollowUpQueue', () => {
       expect.objectContaining({ method: 'DELETE' }),
     )
   })
+
+  it('queue state survives a stop call until explicitly cleared', async () => {
+    const { result } = renderHook(() => usePiNativeFollowUpQueue({
+      sessionId: 'sess-stop-keeps-queue',
+      status: 'streaming',
+      stop,
+    }))
+
+    act(() => {
+      result.current.queueFollowUp({
+        text: 'keep this queued message',
+        files: [],
+        serverMessage: 'keep this queued message',
+        attachments: [],
+      })
+    })
+
+    expect(result.current.pendingMessages).toHaveLength(1)
+    expect(result.current.projectedFollowUps).toHaveLength(1)
+
+    act(() => {
+      result.current.clearFollowUps()
+    })
+
+    expect(result.current.pendingMessages).toHaveLength(0)
+    expect(result.current.projectedFollowUps).toHaveLength(0)
+    expect(stop).not.toHaveBeenCalled()
+  })
 })

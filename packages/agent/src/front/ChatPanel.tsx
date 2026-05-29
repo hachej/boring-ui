@@ -509,7 +509,6 @@ export function ChatPanel(props: ChatPanelProps) {
     queueFollowUp,
     deleteFollowUp,
     handleData: handleFollowUpData,
-    stopAndClearFollowUps,
   } = usePiNativeFollowUpQueue({
     sessionId,
     status,
@@ -729,12 +728,12 @@ export function ChatPanel(props: ChatPanelProps) {
   ))
   const emptyHero = emptyPlacement === 'hero' && renderMessages.length === 0
 
-  // Stop button: cancels stream, clears the queued follow-up, and lets host UI
-  // cancel any host-level blocker that is waiting for user attention.
+  // Stop button: interrupt the active stream but keep the queued follow-up so
+  // it can auto-send next, matching keyboard interrupt behavior.
   const handleStop = useCallback(() => {
     onComposerStop?.()
-    stopAndClearFollowUps()
-  }, [onComposerStop, stopAndClearFollowUps])
+    stop()
+  }, [onComposerStop, stop])
 
   // Escape: interrupts the stream but keeps the queued message — it auto-sends next.
   // Same behaviour as pi's keyboard interrupt: "stop this, do my follow-up instead."
