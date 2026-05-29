@@ -152,7 +152,49 @@ async function copyExternalSourceIntoWorkspace(
     force: false,
     errorOnExist: true,
   })
+  if (sourceStat.isDirectory()) {
+    await stripWorkspaceProtocolDeps(absTarget)
+  }
   return `${LOCAL_SANDBOX_WORKSPACE_ROOT}/${relTarget}`
+}
+
+/**
+ * When the source is a pnpm-monorepo package, its package.json may carry
+ * `workspace:*` dependency values that npm rejects with EUNSUPPORTEDPROTOCOL
+ * once `--install-links` forces actual resolution. The source's node_modules
+ * is already copied alongside the package files, so dropping these entries
+ * is safe: npm sees no unmet deps and skips fetching, while the runtime
+ * still finds them under the copied node_modules tree.
+ */
+async function stripWorkspaceProtocolDeps(packageDir: string): Promise<void> {
+  const pkgJsonPath = `${packageDir}/package.json`
+  let raw: string
+  try {
+    raw = await readFile(pkgJsonPath, 'utf8')
+  } catch {
+    return
+  }
+  let pkg: Record<string, unknown>
+  try {
+    pkg = JSON.parse(raw) as Record<string, unknown>
+  } catch {
+    return
+  }
+  let mutated = false
+  for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+    const deps = pkg[field] as Record<string, string> | undefined
+    if (!deps) continue
+    for (const [name, value] of Object.entries(deps)) {
+      if (typeof value === 'string' && value.startsWith('workspace:')) {
+        delete deps[name]
+        mutated = true
+      }
+    }
+    if (Object.keys(deps).length === 0) delete pkg[field]
+  }
+  if (mutated) {
+    await writeFile(pkgJsonPath, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8')
+  }
 }
 
 function createWorkspaceFs(workspaceRoot: string): WorkspaceProvisioningAdapter['workspaceFs'] {
