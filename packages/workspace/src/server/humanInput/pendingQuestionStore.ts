@@ -46,7 +46,6 @@ export interface PendingQuestionStore {
   answer(questionId: string, answer: PendingQuestionAnswer): Promise<void>
   cancel(questionId: string, reason: PendingQuestionCancelReason): Promise<void>
   markTimedOut(questionId: string): Promise<void>
-  markAbandoned(questionId: string, reason?: PendingQuestionCancelReason): Promise<void>
   abandonPendingForServerRestart(): Promise<string[]>
   appendTranscriptEvent(event: PendingQuestionTranscriptEvent): Promise<void>
   listTranscriptEvents(sessionId: string): Promise<PendingQuestionTranscriptEvent[]>
@@ -131,10 +130,6 @@ export class InMemoryPendingQuestionStore implements PendingQuestionStore {
 
   async markTimedOut(questionId: string): Promise<void> {
     this.finalize(questionId, "timed_out")
-  }
-
-  async markAbandoned(questionId: string): Promise<void> {
-    this.finalize(questionId, "abandoned")
   }
 
   async abandonPendingForServerRestart(): Promise<string[]> {

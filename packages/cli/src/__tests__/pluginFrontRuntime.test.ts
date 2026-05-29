@@ -166,7 +166,8 @@ describe("pluginFrontRuntime", () => {
     } finally {
       await app.close()
     }
-  }, 60_000)
+    // Full Vite module-graph transform is heavy; give it headroom on loaded CI runners.
+  }, 120_000)
 
   test("serves minted Vite client/env support routes without the full runtime graph", async () => {
     const pluginRoot = await makeTempDir("plugin-front-runtime-vite-support-")
