@@ -37,7 +37,7 @@ after the `niche-explorer` factory plugin repeatedly hit undocumented runtime li
 | 6. Agent behavior (Pi extensions, tools, generated plugins) | agent-generation, hot-reload, trust-modes | ✓ |
 | 7. Hot reload / iteration | hot-reload | ✓ |
 | 8. Front-factory migration | front-factory-migration | ✓ narrow |
-| 9. Verify / ship / deploy | agent-generation, end-to-end-fix; CLI `verify-plugin`; app-setup SKILL | ✓ |
+| 9. Verify / ship / deploy | agent-generation, end-to-end-fix; CLI `verify-plugin`; app-setup SKILL. **Agent self-test of a pane → runtime-plugin-local-dev § Principle 4 / Track C** (the missing rung between `verify-plugin` and a human) | ◐ static covered; pane self-test designed |
 
 Authoring conventions + the hard runtime limits live in
 `packages/pi/skills/boring-plugin-authoring/SKILL.md` (import allowlist, no workspace React

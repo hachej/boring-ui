@@ -13,12 +13,14 @@ are explicit non-goals (below). Sibling to [workspace-bridge-rpc-plan.md](./work
 
 ## Goal
 
-A **simple but robust** runtime plugin system for CLI mode, with two properties:
+A **simple but robust** runtime plugin system for CLI mode, with three properties:
 
 1. **Authoring feels like local Vite dev** — declare a `package.json`, `npm install` any
    dependency, plain `import`, save-and-see hot reload via `/reload`.
 2. **A clean, shared data-access path** so a plugin can display data from local files/DBs
    **without creating its own server routes** — it calls one host-provided capability.
+3. **The agent can self-test a plugin pane and read back errors** — so it iterates on a
+   plugin without a human loading the browser to report what broke.
 
 ## Non-goals (deliberately out of this plan)
 
@@ -202,10 +204,54 @@ token to browser/plugin code. Spike first: can `@duckdb/node-api` act as a Quack
 
 ---
 
-## Phasing — two independent tracks
+## Principle 4 — The agent self-tests the pane and reads back errors
 
-The goal's two halves have **different dependencies**, so they ship independently. (Track A
-realizes Principles 2–3; Track B realizes Principle 1.)
+Today a runtime-plugin error only surfaces when a human opens the browser and reports it. This
+session's `niche-explorer` cost ~10 reload cycles because every failure was invisible to the
+agent: a non-allowlisted import **rejected** at transform, a **dual-React `ReactSharedInternals.H
+is null`** crash, a **blank pane**, a file-fetch **400**. The agent must close its own loop.
+`verify-plugin` only checks the manifest + files ("does NOT execute plugin code") — there's a
+missing rung between that and a human eyeballing the UI.
+
+Three layers, cheapest first — reuse what exists, add the missing reporting:
+
+1. **Server-side load/transform diagnostics (exists).** `/reload` returns structured
+   diagnostics; `/api/v1/agent-plugins/:id/error` and `/api/v1/agent-plugins/events` report
+   load/transform failures. Catches manifest errors, **non-allowlisted imports** (the
+   data-explorer reject), and syntax/transform errors. The agent reads these after reload — no
+   browser needed.
+2. **Pane runtime-error reporting (new, lightweight).** Wrap each plugin pane in the host's
+   error boundary + a scoped `window.onerror`/`unhandledrejection` listener, and route caught
+   render-time errors to the **same** `:id/error` store. Catches crashes the server can't see
+   (the dual-React null-dispatcher). Bonus: it also helps a human session, not just self-test.
+3. **Headless render self-test (new, heavier; the active check).** Load the plugin's
+   pane/surface headlessly (the e2e Playwright/chromium already in the repo), open it via the
+   plugin's command/surface, and capture: module-load errors, `console.error`/`pageerror`,
+   **whether the pane actually mounted vs stayed blank**, and **failed network requests** (the
+   data 400). Returns a structured verdict. This is the only layer that catches
+   "no error but renders nothing / no data."
+
+Surface as one agent-invokable check, e.g. `boring-ui test-plugin <name>`:
+
+```txt
+test-plugin <name> -> {
+  ok: boolean,
+  loadErrors:     [...],   # layer 1
+  runtimeErrors:  [...],   # layer 2 (redacted)
+  mounted:        boolean, # layer 3
+  failedRequests: [...],   # layer 3 (status + redacted url)
+}
+```
+
+Redaction follows the bridge rules (no tokens, file contents, host paths, full payloads).
+**Scope:** CLI-local headless render only; hosted/iframe self-test is a non-goal here.
+
+---
+
+## Phasing — independent tracks
+
+The goal's parts have **different dependencies**, so they ship independently. (Track A realizes
+Principles 2–3; Track B realizes Principle 1; Track C realizes Principle 4.)
 
 ### Track A — Clean data access (unblocked; ship first)
 
@@ -233,15 +279,31 @@ already-allowlisted `@hachej/boring-workspace`. Works under today's import rules
 
 → delivers **"import any dep + hot reload."**
 
-Track A delivers the data half today; Track B delivers the authoring half once decision #1 lands.
+### Track C — Agent self-test loop (unblocked)
+
+Independent of decision #1; reuses existing reload diagnostics + the repo's e2e headless browser.
+
+- **C1.** Expose layer-1 reload/load diagnostics as an agent-readable result.
+- **C2.** Pane error boundary + scoped `window.onerror` → route runtime errors to the
+  `:id/error` store (layer 2).
+- **C3.** `boring-ui test-plugin <name>`: reload, headless-mount the pane, return the structured
+  `{ ok, loadErrors, runtimeErrors, mounted, failedRequests }` verdict; wire into the authoring loop.
+
+→ delivers **"agent self-tests the pane and reads back errors."**
+
+Track A delivers the data half today; Track C makes the loop self-correcting today; Track B
+delivers the authoring half once decision #1 lands.
 
 ## Relationship to other plans
 
 - **Bridge epic (`reorg-14a9`):** provides the `call` lane this plan's data capability rides on
   when present; until then a single host endpoint serves it. Custom/sandbox handlers are the
   bridge epic's concern, not this plan's.
-- **trust-modes / agent-generation:** own hosted + trust concerns (non-goals here).
-- **Roadmap decision #1** (deps vs allowlist) gates **Track B only**; Track A is independent.
+- **trust-modes / agent-generation:** own hosted + trust concerns (non-goals here). Track C's
+  headless self-test should **reuse the existing e2e Playwright/eval harness**, not a parallel
+  one — agent-generation/end-to-end-fix already drive Playwright; Track C adds a per-plugin
+  pane-mount check on top.
+- **Roadmap decision #1** (deps vs allowlist) gates **Track B only**; Tracks A and C are independent.
 
 ## Open questions
 
@@ -250,6 +312,9 @@ Track A delivers the data half today; Track B delivers the authoring half once d
 3. When to migrate `data.v1` transport from the v1 host endpoint to the bridge `call` lane —
    what's the trigger (epic milestone, multi-caller need)?
 4. Bundle-size budget for heavy front deps (now rarer, since data goes through `data.v1`).
+5. Track C layer 3: how does the self-test reliably detect **"mounted vs blank"**? A render
+   with no error but no content is the hard case (observed with `niche-explorer`). Likely needs
+   plugin panes to emit a ready/error signal the harness can wait on, rather than DOM heuristics.
 
 ## Reference points in code
 
