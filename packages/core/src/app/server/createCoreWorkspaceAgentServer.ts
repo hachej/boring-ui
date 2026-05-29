@@ -640,7 +640,8 @@ export async function createCoreWorkspaceAgentServer(
   const appRoot = options.appRoot
   const serveFrontend =
     options.serveFrontend ?? (process.env.NODE_ENV !== 'development' && Boolean(appRoot))
-  const workspaceRoot = options.workspaceRoot ?? process.cwd()
+  const pluginWorkspaceRoot = process.cwd()
+  const workspaceRoot = options.workspaceRoot ?? process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd()
   const telemetrySource = options.telemetry
     ? 'custom'
     : process.env.BORING_TELEMETRY_ENABLED === 'true'
@@ -665,7 +666,7 @@ export async function createCoreWorkspaceAgentServer(
     : undefined)
 
   const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths({
-    workspaceRoot,
+    workspaceRoot: pluginWorkspaceRoot,
     appPackageJsonPath: options.appPackageJsonPath ?? (appRoot ? path.join(appRoot, 'package.json') : undefined),
     defaultPluginPackages: options.defaultPluginPackages,
   })
@@ -731,7 +732,7 @@ export async function createCoreWorkspaceAgentServer(
     return runtime
   }
   const pluginResolveContext: WorkspaceAgentServerPluginContext = {
-    workspaceRoot,
+    workspaceRoot: pluginWorkspaceRoot,
     bridge: createUnavailableCorePluginBridge(),
   }
   const resolvedPlugins = await Promise.all(
@@ -742,7 +743,7 @@ export async function createCoreWorkspaceAgentServer(
   )
 
   const pluginCollection = collectWorkspaceAgentServerPlugins({
-    workspaceRoot,
+    workspaceRoot: pluginWorkspaceRoot,
     systemPromptAppend: staticSystemPromptAppend,
     pi: mergePiOptions(options.pi, defaultPackagePiOptions),
     plugins: resolvedPlugins,

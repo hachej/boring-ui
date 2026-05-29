@@ -1,34 +1,58 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { WorkspaceLoadingState } from "../../front/components/WorkspaceLoadingState"
-import { setPreloadedTreeEntries } from "../../plugins/filesystemPlugin/front/data/treePreloadCache"
-
-const DEFAULT_BOOT_PRELOAD_PATHS = ["/api/v1/tree?path=.", "/api/v1/agent/sessions"]
+import {
+  DEFAULT_BOOT_PRELOAD_PATHS,
+  errorMessageFromPayload,
+  isReadyStatusPath,
+  parseReadyStatusSse,
+  parseRetryableWarmupPreparing,
+  preloadUrl,
+  readResponsePayload,
+  resolveBootPreloadPaths,
+  seedTreePreloadFromBody,
+  treePreloadDir,
+  workspaceRequestHeaders,
+} from "./workspacePreload"
 
 export interface WorkspaceBootGateProps {
   workspaceId: string
   requestHeaders?: Record<string, string>
   apiBaseUrl?: string | null
   preloadPaths?: string[]
+  provisionWorkspace?: boolean
   loadingFallback?: ReactNode | ((status: string) => ReactNode)
   errorFallback?: ReactNode | ((message: string) => ReactNode)
   children: ReactNode
 }
+
+const PREPARING_RETRY_DELAY_MS = 500
 
 type WorkspaceBootState =
   | { status: "loading"; label: string }
   | { status: "ready" }
   | { status: "error"; message: string }
 
-function preloadUrl(apiBaseUrl: string | null | undefined, path: string): string {
-  if (/^https?:\/\//i.test(path)) return path
-  if (!apiBaseUrl) return path
-  return `${apiBaseUrl.replace(/\/$/, "")}/${path.replace(/^\//, "")}`
-}
-
-function treePreloadDir(path: string): string | null {
-  const url = new URL(path, "http://workspace.local")
-  if (url.pathname !== "/api/v1/tree") return null
-  return url.searchParams.get("path") ?? "."
+function sleepUntilRetry(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let timeout: ReturnType<typeof globalThis.setTimeout> | undefined
+    const cleanup = () => {
+      if (timeout) globalThis.clearTimeout(timeout)
+      signal.removeEventListener("abort", onAbort)
+    }
+    const onAbort = () => {
+      cleanup()
+      reject(new DOMException("Workspace boot aborted", "AbortError"))
+    }
+    if (signal.aborted) {
+      onAbort()
+      return
+    }
+    timeout = globalThis.setTimeout(() => {
+      cleanup()
+      resolve()
+    }, PREPARING_RETRY_DELAY_MS)
+    signal.addEventListener("abort", onAbort, { once: true })
+  })
 }
 
 export function WorkspaceBootGate({
@@ -36,6 +60,7 @@ export function WorkspaceBootGate({
   requestHeaders,
   apiBaseUrl,
   preloadPaths = DEFAULT_BOOT_PRELOAD_PATHS,
+  provisionWorkspace = true,
   loadingFallback,
   errorFallback,
   children,
@@ -47,29 +72,44 @@ export function WorkspaceBootGate({
 
   useEffect(() => {
     const controller = new AbortController()
-    const headers = requestHeaders ?? { "x-boring-workspace-id": workspaceId }
+    const headers = workspaceRequestHeaders(workspaceId, requestHeaders)
 
-    async function fetchOk(path: string): Promise<void> {
+    async function fetchOk(path: string): Promise<"ready" | "preparing"> {
       const response = await fetch(preloadUrl(apiBaseUrl, path), {
         headers,
         signal: controller.signal,
       })
+      const payload = await readResponsePayload(response)
       if (!response.ok) {
-        const text = await response.text().catch(() => "")
-        throw new Error(text || `${path} failed with ${response.status}`)
+        if (parseRetryableWarmupPreparing(payload)) return "preparing"
+        throw new Error(errorMessageFromPayload(payload) ?? `${path} failed with ${response.status}`)
+      }
+
+      if (isReadyStatusPath(path)) {
+        const readyStatus = parseReadyStatusSse(payload)
+        if (readyStatus?.state === "degraded") throw new Error(readyStatus.message ?? "Workspace failed to prepare")
       }
 
       const dir = treePreloadDir(path)
-      if (dir === null) return
-      const body = await response.clone().json().catch(() => null) as { entries?: unknown } | null
-      if (!body || !Array.isArray(body.entries)) return
-      setPreloadedTreeEntries(apiBaseUrl, headers["x-boring-workspace-id"] ?? workspaceId, dir, body.entries)
+      if (dir !== null && payload && typeof payload === "object") {
+        seedTreePreloadFromBody(apiBaseUrl, headers["x-boring-workspace-id"] ?? workspaceId, path, payload as { entries?: unknown })
+      }
+      return "ready"
     }
 
     async function boot() {
       setState({ status: "loading", label: "Waking workspace runtime" })
       try {
-        await Promise.all(preloadPaths.map(fetchOk))
+        const paths = resolveBootPreloadPaths(preloadPaths, provisionWorkspace)
+        let results = await Promise.all(paths.map(async (path) => ({ path, status: await fetchOk(path) })))
+        let preparingPaths = results.filter((result) => result.status === "preparing").map((result) => result.path)
+        while (preparingPaths.length > 0) {
+          setState({ status: "loading", label: "Workspace is still preparing" })
+          await sleepUntilRetry(controller.signal)
+          if (controller.signal.aborted) return
+          results = await Promise.all(preparingPaths.map(async (path) => ({ path, status: await fetchOk(path) })))
+          preparingPaths = results.filter((result) => result.status === "preparing").map((result) => result.path)
+        }
         if (!controller.signal.aborted) setState({ status: "ready" })
       } catch (error) {
         if (controller.signal.aborted) return
@@ -82,7 +122,7 @@ export function WorkspaceBootGate({
 
     void boot()
     return () => controller.abort()
-  }, [apiBaseUrl, preloadPaths, requestHeaders, workspaceId])
+  }, [apiBaseUrl, preloadPaths, provisionWorkspace, requestHeaders, workspaceId])
 
   if (state.status === "ready") return <>{children}</>
 

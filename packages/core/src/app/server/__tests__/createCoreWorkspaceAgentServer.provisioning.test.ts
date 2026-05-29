@@ -122,3 +122,42 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
     await app.close()
   }
 })
+
+test('core/full-app composition honors BORING_AGENT_WORKSPACE_ROOT for workspace provisioning while keeping plugin collection rooted at cwd', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [],
+    provisioningContributions: [],
+    agentOptions: {
+      extraTools: [],
+      pi: { additionalSkillPaths: [], packages: [] },
+      systemPromptAppend: undefined,
+    },
+    preservedUiStateKeys: [],
+    routeContributions: [],
+  })
+
+  const previous = process.env.BORING_AGENT_WORKSPACE_ROOT
+  process.env.BORING_AGENT_WORKSPACE_ROOT = '/tmp/from-env-workspaces'
+
+  try {
+    const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+    const app = await createCoreWorkspaceAgentServer({
+      config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+      serveFrontend: false,
+      registerHealthRoute: false,
+    })
+
+    try {
+      const options = (mocks.registerAgentRoutes as any).mock.calls.at(-1)?.[1] as Record<string, unknown>
+      expect(options.workspaceRoot).toBe('/tmp/from-env-workspaces')
+      expect(mocks.collectWorkspaceAgentServerPlugins).toHaveBeenCalledWith(expect.objectContaining({
+        workspaceRoot: process.cwd(),
+      }))
+    } finally {
+      await app.close()
+    }
+  } finally {
+    if (previous === undefined) delete process.env.BORING_AGENT_WORKSPACE_ROOT
+    else process.env.BORING_AGENT_WORKSPACE_ROOT = previous
+  }
+})

@@ -16,6 +16,10 @@ const PUBLISHABLE = [
   "packages/agent",
   "packages/ui",
   "packages/cli", // @hachej/boring-ui-cli
+  "plugins/deck",
+  "plugins/ask-user",
+  "plugins/data-explorer",
+  "plugins/data-catalog",
 ]
 
 function readJson(path) {
@@ -33,15 +37,36 @@ function bumpVersion(version, type) {
   return `${major}.${minor}.${patch + 1}`
 }
 
-const type = process.argv[2] ?? "patch"
-if (!["patch", "minor", "major"].includes(type)) {
-  console.error(`Unknown bump type: ${type}. Use patch, minor, or major.`)
+function readPublishableVersions() {
+  return PUBLISHABLE.map((pkg) => {
+    const json = readJson(resolve(root, pkg, "package.json"))
+    return { dir: pkg, name: json.name, version: json.version }
+  })
+}
+
+function assertAlignedVersions() {
+  const versions = readPublishableVersions()
+  const unique = new Set(versions.map((pkg) => pkg.version))
+  if (unique.size === 1) return versions[0].version
+
+  console.error("Publishable package versions are not aligned:")
+  for (const pkg of versions) console.error(`  ${pkg.name} (${pkg.dir}) ${pkg.version}`)
   process.exit(1)
 }
 
-// Read current version from first publishable package
-const firstPkg = readJson(resolve(root, PUBLISHABLE[0], "package.json"))
-const current = firstPkg.version
+if (process.argv[2] === "--check") {
+  const current = assertAlignedVersions()
+  console.log(`Publishable package versions are aligned at ${current}`)
+  process.exit(0)
+}
+
+const type = process.argv[2] ?? "patch"
+if (!["patch", "minor", "major"].includes(type)) {
+  console.error(`Unknown bump type: ${type}. Use patch, minor, major, or --check.`)
+  process.exit(1)
+}
+
+const current = assertAlignedVersions()
 const next = bumpVersion(current, type)
 
 console.log(`${current} → ${next} (${type})`)

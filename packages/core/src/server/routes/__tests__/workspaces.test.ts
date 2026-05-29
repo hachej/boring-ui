@@ -196,12 +196,49 @@ describe('GET /api/v1/workspaces', () => {
     expect(res.json().workspaces).toHaveLength(2)
   })
 
-  it('excludes workspaces where caller is not a member', async () => {
+  it('creates a default workspace record when caller has none', async () => {
+    const res = await inject('GET', '/api/v1/workspaces', OWNER_ID)
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.workspaces).toHaveLength(1)
+    expect(body.workspaces[0].name).toBe('My Workspace')
+    expect(body.workspaces[0].isDefault).toBe(true)
+    expect(members.get(body.workspaces[0].id)?.get(OWNER_ID)).toBe('owner')
+  })
+
+  it('default workspace creation on list is idempotent', async () => {
+    const first = await inject('GET', '/api/v1/workspaces', OWNER_ID)
+    const second = await inject('GET', '/api/v1/workspaces', OWNER_ID)
+
+    expect(first.statusCode).toBe(200)
+    expect(second.statusCode).toBe(200)
+    expect(second.json().workspaces).toHaveLength(1)
+    expect(second.json().workspaces[0].id).toBe(first.json().workspaces[0].id)
+  })
+
+  it('default workspace creation on list is concurrency-safe', async () => {
+    const [first, second] = await Promise.all([
+      inject('GET', '/api/v1/workspaces', OWNER_ID),
+      inject('GET', '/api/v1/workspaces', OWNER_ID),
+    ])
+
+    expect(first.statusCode).toBe(200)
+    expect(second.statusCode).toBe(200)
+    expect(first.json().workspaces).toHaveLength(1)
+    expect(second.json().workspaces).toHaveLength(1)
+    expect(first.json().workspaces[0].id).toBe(second.json().workspaces[0].id)
+    expect([...workspaces.values()].filter((workspace) => workspace.createdBy === OWNER_ID)).toHaveLength(1)
+  })
+
+  it('excludes workspaces where caller is not a member and creates caller default', async () => {
     seedWorkspaceWithMembers('Private', EDITOR_ID)
 
     const res = await inject('GET', '/api/v1/workspaces', OWNER_ID)
     expect(res.statusCode).toBe(200)
-    expect(res.json().workspaces).toHaveLength(0)
+    const body = res.json()
+    expect(body.workspaces).toHaveLength(1)
+    expect(body.workspaces[0].createdBy).toBe(OWNER_ID)
+    expect(body.workspaces[0].name).toBe('My Workspace')
   })
 })
 
@@ -368,11 +405,11 @@ describe('Provisioner integration', () => {
     } as unknown as WorkspaceStore
   }
 
-  function provSeedWorkspace(name: string, ownerUserId: string) {
+  function provSeedWorkspace(name: string, ownerUserId: string, opts?: { isDefault?: boolean }) {
     const id = `ws-${pNextWsId++}`
     const ws: Workspace = {
       id, appId: APP_ID, name, createdBy: ownerUserId,
-      createdAt: new Date().toISOString(), deletedAt: null, isDefault: false,
+      createdAt: new Date().toISOString(), deletedAt: null, isDefault: opts?.isDefault ?? false,
     }
     pWorkspaces.set(id, ws)
     const wsMembers = new Map<string, MemberRole>()
@@ -424,6 +461,78 @@ describe('Provisioner integration', () => {
 
   beforeEach(() => {
     provResetState()
+  })
+
+  describe('GET /api/v1/workspaces (with provisioner)', () => {
+    it('auto-creates the default workspace through the provisioner', async () => {
+      provisionFn.mockResolvedValue({ volumePath: '/volumes/ws-default' })
+
+      const res = await provInject('GET', '/api/v1/workspaces', OWNER_ID)
+      expect(res.statusCode).toBe(200)
+
+      const workspace = res.json().workspaces[0]
+      expect(workspace).toMatchObject({ name: 'My Workspace', isDefault: true })
+      expect(provisionFn).toHaveBeenCalledOnce()
+      expect(provisionFn).toHaveBeenCalledWith(expect.objectContaining({
+        workspaceId: workspace.id,
+        workspaceName: 'My Workspace',
+        ownerId: OWNER_ID,
+        appId: APP_ID,
+      }))
+      const runtime = runtimes.get(workspace.id)
+      expect(runtime?.state).toBe('ready')
+      expect(runtime?.volumePath).toBe('/volumes/ws-default')
+    })
+
+    it('provision failure while auto-creating default workspace returns HTTP 500', async () => {
+      provisionFn.mockRejectedValue(new Error('disk full'))
+
+      const res = await provInject('GET', '/api/v1/workspaces', OWNER_ID)
+      expect(res.statusCode).toBe(500)
+      expect(res.json().code).toBe('provision_failed')
+
+      const runtime = runtimes.get('ws-1')
+      expect(runtime?.state).toBe('error')
+      expect(runtime?.lastError).toBe('disk full')
+      expect(runtime?.lastErrorOp).toBe('provision')
+    })
+
+    it('provisions an existing signup-created default workspace with missing runtime', async () => {
+      provisionFn.mockResolvedValue({ volumePath: '/volumes/signup-default' })
+      const workspace = provSeedWorkspace('My Workspace', OWNER_ID, { isDefault: true })
+
+      const res = await provInject('GET', '/api/v1/workspaces', OWNER_ID)
+      expect(res.statusCode).toBe(200)
+
+      expect(res.json().workspaces[0].id).toBe(workspace.id)
+      expect(provisionFn).toHaveBeenCalledOnce()
+      expect(provisionFn).toHaveBeenCalledWith(expect.objectContaining({
+        workspaceId: workspace.id,
+        workspaceName: 'My Workspace',
+        ownerId: OWNER_ID,
+        appId: APP_ID,
+      }))
+      const runtime = runtimes.get(workspace.id)
+      expect(runtime?.state).toBe('ready')
+      expect(runtime?.volumePath).toBe('/volumes/signup-default')
+    })
+
+    it('backfills shared default workspace runtime under the creator owner id', async () => {
+      provisionFn.mockResolvedValue({ volumePath: '/volumes/shared-default' })
+      const workspace = provSeedWorkspace('My Workspace', OWNER_ID, { isDefault: true })
+      pMembers.get(workspace.id)?.set(EDITOR_ID, 'editor')
+
+      const res = await provInject('GET', '/api/v1/workspaces', EDITOR_ID)
+      expect(res.statusCode).toBe(200)
+
+      expect(res.json().workspaces[0].id).toBe(workspace.id)
+      expect(provisionFn).toHaveBeenCalledOnce()
+      expect(provisionFn).toHaveBeenCalledWith(expect.objectContaining({
+        workspaceId: workspace.id,
+        ownerId: OWNER_ID,
+      }))
+      expect(runtimes.get(workspace.id)?.volumePath).toBe('/volumes/shared-default')
+    })
   })
 
   describe('POST /api/v1/workspaces (with provisioner)', () => {

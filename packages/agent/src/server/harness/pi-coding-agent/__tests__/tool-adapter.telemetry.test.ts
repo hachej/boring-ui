@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { ErrorCode } from '../../../../shared/error-codes'
 import type { AgentTool } from '../../../../shared/tool'
 import type { TelemetryEvent, TelemetrySink } from '../../../../shared/telemetry'
-import { adaptToolForPi } from '../tool-adapter'
+import { adaptToolForPi, unmarkToolResultErrorDetails } from '../tool-adapter'
 
 function createTelemetryRecorder(): { telemetry: TelemetrySink; events: TelemetryEvent[] } {
   const events: TelemetryEvent[] = []
@@ -74,7 +74,14 @@ describe('tool adapter telemetry', () => {
       },
     })
 
-    await expect(executeAdapted(tool, recorder.telemetry)).rejects.toThrow('secret stderr output')
+    const result = await executeAdapted(tool, recorder.telemetry)
+    const unmarked = unmarkToolResultErrorDetails(result.details)
+
+    expect(result.content).toEqual([{ type: 'text', text: 'secret stderr output' }])
+    expect(unmarked).toEqual({
+      isMarked: true,
+      details: { code: ErrorCode.enum.TOOL_EXECUTION_ERROR, command: 'cat .env' },
+    })
 
     expect(recorder.events).toHaveLength(1)
     expect(recorder.events[0]).toEqual({

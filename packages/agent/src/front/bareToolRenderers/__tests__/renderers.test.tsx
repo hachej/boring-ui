@@ -19,9 +19,13 @@ function makePart(overrides: Partial<ToolPart> & { toolName: string }): ToolPart
 }
 
 function mockBundle(provider: string): RuntimeBundle {
+  const runtimeContext = { runtimeCwd: '/workspace' }
   return {
+    runtimeContext,
+    storageRoot: provider === 'vercel-sandbox' ? undefined : runtimeContext.runtimeCwd,
     workspace: {
-      root: '/workspace',
+      root: runtimeContext.runtimeCwd,
+      runtimeContext,
       readFile: async () => '',
       writeFile: async () => {},
       unlink: async () => {},
@@ -35,6 +39,7 @@ function mockBundle(provider: string): RuntimeBundle {
       placement: provider === 'vercel-sandbox' ? 'remote' : 'server',
       provider,
       capabilities: ['exec'],
+      runtimeContext,
       exec: async () => ({
         stdout: new Uint8Array(),
         stderr: new Uint8Array(),

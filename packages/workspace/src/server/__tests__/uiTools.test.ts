@@ -45,6 +45,32 @@ describe("createExecUiTool — path validation", () => {
     expect(result.isError).toBeFalsy()
   })
 
+  test("openFile on a folder posts expandToFile instead of opening an editor tab", async () => {
+    const tool = createExecUiTool(bridge, { workspaceRoot })
+    const result = await tool.execute(
+      { kind: "openFile", params: { path: "src" } },
+      FAKE_CTX,
+    )
+    expect(result.isError).toBeFalsy()
+    await expect(bridge.drainCommands!()).resolves.toEqual([
+      expect.objectContaining({ kind: "expandToFile", params: { path: "src" } }),
+    ])
+  })
+
+  test("openFile on a folder uses the runtime path kind resolver without a host workspace root", async () => {
+    const tool = createExecUiTool(bridge, {
+      resolvePathKind: async (path) => path === "src" ? "dir" : null,
+    })
+    const result = await tool.execute(
+      { kind: "openFile", params: { path: "src" } },
+      FAKE_CTX,
+    )
+    expect(result.isError).toBeFalsy()
+    await expect(bridge.drainCommands!()).resolves.toEqual([
+      expect.objectContaining({ kind: "expandToFile", params: { path: "src" } }),
+    ])
+  })
+
   test("openFile returns error when path does not exist", async () => {
     const tool = createExecUiTool(bridge, { workspaceRoot })
     const result = await tool.execute(

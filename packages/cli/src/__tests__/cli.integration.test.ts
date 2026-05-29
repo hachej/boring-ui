@@ -43,6 +43,12 @@ async function runCli(args: string[], env: Record<string, string>) {
 }
 
 
+test("installed boring-ui --help exits without starting a workspace", async () => {
+  await expect(runCli(["--help"], {})).resolves.toMatchObject({
+    stdout: expect.stringContaining("Usage: boring-ui"),
+  })
+})
+
 test("package exposes an installable boring-ui bin with published assets", async () => {
   const packageJson = JSON.parse(await readFile(join(cliRoot, "package.json"), "utf-8")) as {
     bin?: Record<string, string>
@@ -129,6 +135,33 @@ test("installed CLI serves built assets with browser-safe MIME types", async () 
   }
 }, 20_000)
 
+test("installed CLI reports plugin-root support and refuses scaffold when disabled", async () => {
+  const workspace = await makeTempDir("boring-cli-plugin-status-")
+  const enabled = await runCli(["plugin-status", "--json"], { BORING_AGENT_WORKSPACE_ROOT: workspace })
+  expect(JSON.parse(enabled.stdout)).toMatchObject({
+    workspaceLocalPluginRoots: true,
+    workspaceRoot: workspace,
+    extensionsDir: join(workspace, ".pi", "extensions"),
+    reloadSupported: true,
+  })
+
+  const disabled = await runCli(["plugin-status", "--json"], {
+    BORING_AGENT_WORKSPACE_ROOT: workspace,
+    BORING_AGENT_WORKSPACE_LOCAL_PLUGIN_ROOTS: "0",
+  })
+  expect(JSON.parse(disabled.stdout)).toMatchObject({
+    workspaceLocalPluginRoots: false,
+    reloadSupported: false,
+    reason: expect.stringContaining("remote sandbox"),
+  })
+
+  await expect(runCli(["scaffold-plugin", "blocked-plugin", workspace], {
+    BORING_AGENT_WORKSPACE_LOCAL_PLUGIN_ROOTS: "0",
+  })).rejects.toMatchObject({
+    stderr: expect.stringContaining("Do not scaffold into .pi/extensions"),
+  })
+}, 20_000)
+
 test("installed CLI scaffolds a hot-reloadable plugin", async () => {
   const workspace = await makeTempDir("boring-cli-scaffold-")
   const result = await runCli(["scaffold-plugin", "demo-plugin", workspace], {})
@@ -146,6 +179,8 @@ test("installed CLI scaffolds a hot-reloadable plugin", async () => {
   const front = await readFile(join(pluginDir, "front", "index.tsx"), "utf-8")
   expect(front).toContain("definePlugin")
   expect(front).toContain('"demo-plugin"')
+  expect(front).toContain("useApiBaseUrl/useWorkspaceRequestId")
+  expect(front).toContain("x-boring-workspace-id")
 
   await expect(runCli(["scaffold-plugin", "BadName"], {})).rejects.toMatchObject({
     stderr: expect.stringContaining("kebab-case"),

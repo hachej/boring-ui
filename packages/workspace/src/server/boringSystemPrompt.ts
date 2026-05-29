@@ -3,9 +3,9 @@ import { dirname, join } from "node:path"
 
 /**
  * boring-ui system prompt — workflow steps + a Pi-style docs pointer
- * block (per DECISIONS.md #17). The block lists absolute paths into the
- * installed `@hachej/boring-pi` package so the agent's `read` tool can
- * fetch the SKILL.md + reference docs on demand, without inlining their
+ * block (per DECISIONS.md #17). The block lists workspace-readable paths
+ * into the installed `@hachej/boring-pi` package so the agent's `read` tool
+ * can fetch the SKILL.md + reference docs on demand, without inlining their
  * ~12-30 KB of markdown into every system prompt.
  *
  * `@hachej/boring-pi` is a runtime dep of `@hachej/boring-workspace`;
@@ -71,7 +71,7 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): s
   if (opts.scaffoldCommand) {
     n += 1
     steps.push(
-      `**${n}. Scaffold.** Bash \`${opts.scaffoldCommand} <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"\` — writes canonical files under \`$BORING_AGENT_WORKSPACE_ROOT/.pi/extensions/<kebab-name>/\`. Read the generated \`package.json\` + \`front/index.tsx\`. Do NOT skip this or write from memory. Never \`cd\` to a parent repo or write plugins outside \`$BORING_AGENT_WORKSPACE_ROOT/.pi/extensions/\`.`,
+      `**${n}. Check plugin-root support, then scaffold.** Bash \`boring-ui plugin-status --json\`; continue only if \`workspaceLocalPluginRoots\` is \`true\`. Then bash \`${opts.scaffoldCommand} <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"\`. Read generated \`package.json\` + \`front/index.tsx\`; do NOT write from memory.`,
     )
   } else {
     n += 1
@@ -104,7 +104,7 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): s
   const docsBlock = boringPiRoot
     ? [
         "## boring-ui plugin authoring documentation",
-        "Read these only when the user asks to build, modify, or debug a workspace plugin. Use your `read` tool with the absolute path; the agent runtime guarantees these files exist on the host:",
+        "Read these only when the user asks to build, modify, or debug a workspace plugin. Use your `read` tool with these workspace-relative paths; the agent runtime guarantees they exist inside `$BORING_AGENT_WORKSPACE_ROOT`:",
         ...buildDocsRefs(boringPiRoot).map((r) => `- ${r.topic}: ${r.path}`),
         "Follow .md cross-references when present (e.g. SKILL.md may link to a reference doc — read both).",
       ].join("\n")
@@ -114,7 +114,7 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): s
       ].join("\n")
 
   return [
-    "You are operating inside boring-ui. Workspace root: `$BORING_AGENT_WORKSPACE_ROOT`; plugin files go under `$BORING_AGENT_WORKSPACE_ROOT/.pi/extensions/<name>/`.",
+    "You are operating inside boring-ui. Before `.pi/extensions/<name>/`, run `boring-ui plugin-status --json`; continue only when `workspaceLocalPluginRoots` is `true`. Default to `.pi/extensions/<name>/`. Global `~/.pi/agent/extensions/` only for explicit requests.",
     [
       "## Plugin authoring — required workflow",
       "",
@@ -124,7 +124,7 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): s
       "- API factories: `createPlugin`, `defineFrontPlugin`, `defineComponent` — use `definePlugin({id, panels, commands, ...})` from `@hachej/boring-workspace/plugin`.",
       "- Imperative method names: `registerComponent`, `addPanel`, `registerCommand` (no `Panel`), `registerTab` — the actual names are `registerPanel`, `registerPanelCommand`, `registerLeftTab`, `registerSurfaceResolver` (and you usually express these declaratively, not as method calls).",
       "- Import paths: `@hachej/boring-pi` (it's a skills package, not for code), `@boring-ui/*`, `@hachej/pi-sdk` — use `@hachej/boring-workspace/plugin` for front and `@hachej/boring-workspace/server` for server.",
-      "- File visualizers: for `.csv`/file-tree opens, import `WORKSPACE_OPEN_PATH_SURFACE_KIND` (and `PaneProps`) from `@hachej/boring-workspace/plugin`, read `request.target`, and fetch `/api/v1/files/raw?path=${encodeURIComponent(request.target)}`. Never import these from the root package, use `/workspace/read`, or string kind `\"WORKSPACE_OPEN_PATH_SURFACE_KIND\"`.",
+      "- File visualizers: import `WORKSPACE_OPEN_PATH_SURFACE_KIND`/`PaneProps` from `@hachej/boring-workspace/plugin`; import `useApiBaseUrl`/`useWorkspaceRequestId` from `@hachej/boring-workspace`; read `request.target`; fetch `${apiBaseUrl}/api/v1/files/raw?...` with `credentials: \"include\"` and `x-boring-workspace-id` when present. Never use `/workspace/read` or string kind `\"WORKSPACE_OPEN_PATH_SURFACE_KIND\"`.",
       "- Pi extension tools: `defineTool` and `export const tools` do NOT exist. Export `default function (pi) { pi.registerTool({ name, description, execute }) }`.",
       "- Server/Pi tool method: `handler` — use `execute`. Return shape: `{ content: [{ type: \"text\", text }] }` (NEVER a bare string).",
       "- Manifest values: `boring.server: true` — use `false`/omit for hot-reload user plugins, or a relative path string only for advanced boot-time/static server integration.",

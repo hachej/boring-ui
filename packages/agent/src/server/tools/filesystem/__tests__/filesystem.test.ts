@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -18,8 +18,10 @@ function logStep(step: string, details: Record<string, unknown> = {}): void {
 }
 
 function mockWorkspace(root = '/workspace'): Workspace {
+  const runtimeContext = { runtimeCwd: root }
   return {
-    root,
+    root: runtimeContext.runtimeCwd,
+    runtimeContext,
     readFile: vi.fn(async () => ''),
     writeFile: vi.fn(async () => {}),
     unlink: vi.fn(async () => {}),
@@ -44,11 +46,13 @@ function makeExecResult(overrides: Partial<ExecResult> = {}): ExecResult {
 }
 
 function mockSandbox(provider: string): Sandbox {
+  const runtimeContext = { runtimeCwd: '/workspace' }
   return {
     id: `mock-${provider}`,
     placement: provider === 'vercel-sandbox' ? 'remote' : 'server',
     provider,
     capabilities: ['exec'],
+    runtimeContext,
     exec: vi.fn(async () => makeExecResult()),
   }
 }
@@ -57,10 +61,13 @@ function mockFileSearch(): FileSearch {
   return { search: vi.fn(async () => []) }
 }
 
-function mockBundle(provider: string, root = '/workspace'): RuntimeBundle {
+function mockBundle(provider: string, root = '/workspace', storageRoot?: string): RuntimeBundle {
+  const runtimeContext = { runtimeCwd: root }
   return {
+    runtimeContext,
+    storageRoot: storageRoot ?? (provider === 'vercel-sandbox' ? undefined : root),
     workspace: mockWorkspace(root),
-    sandbox: mockSandbox(provider),
+    sandbox: { ...mockSandbox(provider), runtimeContext },
     fileSearch: mockFileSearch(),
   }
 }
@@ -122,6 +129,26 @@ describe('buildFilesystemAgentTools', () => {
       false,
       false,
     ])
+  })
+
+  test('local bwrap filesystem tools use host storage root while runtime cwd is /workspace', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'filesystem-tools-local-'))
+    try {
+      await writeFile(join(workspaceRoot, 'hello.txt'), 'hello from host root', 'utf8')
+      const tools = buildFilesystemAgentTools(mockBundle('bwrap', '/workspace', workspaceRoot))
+      const read = tools.find((tool) => tool.name === 'read')
+      expect(read).toBeDefined()
+
+      const result = await read!.execute(
+        { path: 'hello.txt' },
+        { abortSignal: new AbortController().signal, toolCallId: 'read-local-host-root' },
+      )
+
+      expect(result.isError).toBe(false)
+      expect(result.content[0].text).toContain('hello from host root')
+    } finally {
+      await rm(workspaceRoot, { recursive: true, force: true })
+    }
   })
 
   test('direct find rejects absolute paths outside the workspace', async () => {

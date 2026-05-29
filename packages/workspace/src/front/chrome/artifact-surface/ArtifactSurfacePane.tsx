@@ -94,10 +94,11 @@ export function ArtifactSurfacePane({
   // DockviewShell below, this remounts dockview and runs fromJSON on the
   // new payload — without that, dockview consumes persistedLayout once on
   // its initial onReady and ignores subsequent changes.
+  const allowedPanelsKey = allowedPanels?.slice().sort().join("\u0000") ?? "*"
   const internalPersisted = useMemo(() => {
     if (callerControlled) return undefined
     return readStoredLayout(storageKey, allowedPanels ? new Set(allowedPanels) : undefined)
-  }, [callerControlled, storageKey, allowedPanels])
+  }, [allowedPanels, callerControlled, storageKey])
 
   const handleLayoutChange = useCallback(
     (layout: SerializedLayout) => {
@@ -127,7 +128,7 @@ export function ArtifactSurfacePane({
         // dockview only consumes persistedLayout on initial onReady, and
         // writes after a key swap would otherwise land under the new key
         // with the old layout.
-        key={`${storageKey}:${callerControlled ? "ext" : "auto"}`}
+        key={`${storageKey}:${callerControlled ? "ext" : "auto"}:${allowedPanelsKey}`}
         layout={SURFACE_LAYOUT}
         persistedLayout={persistedLayout ?? internalPersisted}
         onLayoutChange={handleLayoutChange}

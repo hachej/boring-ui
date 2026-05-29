@@ -10,7 +10,7 @@
  * registers these factories), or pass the result of `createWorkspaceUiTools`
  * via `createAgentApp({ extraTools })` if they prefer hand-wiring.
  */
-import { access } from "node:fs/promises"
+import { stat } from "node:fs/promises"
 import { resolve, isAbsolute, relative, win32 } from "node:path"
 import type { AgentTool, ToolResult } from "../../../shared/types/agent-tool"
 import type { WorkspaceBridge, UiCommand, UiState } from "../../../shared/ui-bridge"
@@ -34,6 +34,13 @@ export interface ExecUiToolOptions {
    * but existence is left to the frontend/remote filesystem.
    */
   workspaceRoot?: string
+  /**
+   * Optional workspace-backed stat hook for modes where the host path is not
+   * directly stat-able (for example remote sandboxes). When provided, path-
+   * bearing UI commands can still reject missing paths and convert folders to
+   * file-tree reveal commands.
+   */
+  resolvePathKind?: (relPath: string) => Promise<"file" | "dir" | null>
   /**
    * After dispatching a state-changing command (openFile, openPanel,
    * openSurface, closePanel), wait this many ms before the first state
@@ -89,10 +96,10 @@ function validatePathSyntax(
   return { ok: true }
 }
 
-async function validatePath(
+async function validateExistingPath(
   workspaceRoot: string,
   relPath: string,
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+): Promise<{ ok: true; kind: "file" | "dir" } | { ok: false; reason: string }> {
   const syntax = validatePathSyntax(relPath, workspaceRoot)
   if (!syntax.ok) return syntax
   const resolved = resolve(workspaceRoot, relPath)
@@ -104,8 +111,8 @@ async function validatePath(
     }
   }
   try {
-    await access(resolved)
-    return { ok: true }
+    const fileStat = await stat(resolved)
+    return { ok: true, kind: fileStat.isDirectory() ? "dir" : "file" }
   } catch {
     return {
       ok: false,
@@ -117,6 +124,7 @@ async function validatePath(
 export function createGetUiStateTool(workspaceBridge: WorkspaceBridge): AgentTool {
   return {
     name: "get_ui_state",
+    readinessRequirements: ["ui-bridge"],
     description: [
       "Read the current workspace UI state. Returns a JSON object with:",
       "- workbenchOpen (boolean): is the right-side workbench pane visible?",
@@ -185,12 +193,13 @@ export function createExecUiTool(
   workspaceBridge: WorkspaceBridge,
   opts: ExecUiToolOptions = {},
 ): AgentTool {
-  const { workspaceRoot } = opts
+  const { workspaceRoot, resolvePathKind } = opts
   const verifyDelayMs = opts.verifyDelayMs ?? 200
   const verifyRetries = opts.verifyRetries ?? 2
   const verifyIntervalMs = opts.verifyIntervalMs ?? 200
   return {
     name: "exec_ui",
+    readinessRequirements: ["ui-bridge"],
     description: [
       "Execute a UI command in the workspace. Use this to open files, panels,",
       "navigate to lines, or show notifications.",
@@ -224,6 +233,8 @@ export function createExecUiTool(
       "                 returned — don't give up and don't switch to the read",
       "                 tool. Repeat until openFile succeeds or no candidate",
       "                 is found.",
+      "                 If the path is a folder, openFile reveals/selects it in",
+      "                 the file tree instead of opening an editor tab.",
       "                 Example: {kind:'openFile', params:{path:'README.md'}}",
       "",
       "  openPanel    params: { id: string, component: string,",
@@ -324,6 +335,8 @@ export function createExecUiTool(
       // malformed path. In remote modes workspaceRoot may be omitted because
       // the host cannot stat the microVM filesystem; still enforce relative,
       // non-traversing paths, and only stat-check when a local root is known.
+      let effectiveKind = kind
+
       if (PATH_BEARING_KINDS.has(kind)) {
         const relPath = getPathParam(kind, cmdParams)
         if (!relPath) {
@@ -334,15 +347,26 @@ export function createExecUiTool(
         const syntax = validatePathSyntax(relPath, workspaceRoot)
         if (!syntax.ok) return makeError(syntax.reason)
         if (workspaceRoot) {
-          const check = await validatePath(workspaceRoot, relPath)
+          const check = await validateExistingPath(workspaceRoot, relPath)
           if (!check.ok) {
             return makeError(check.reason)
+          }
+          if (kind === "openFile" && check.kind === "dir") {
+            effectiveKind = "expandToFile"
+          }
+        } else if (resolvePathKind) {
+          const pathKind = await resolvePathKind(relPath)
+          if (!pathKind) {
+            return makeError(`file not found at "${relPath}". Try find or grep to locate the file before retrying openFile.`)
+          }
+          if (kind === "openFile" && pathKind === "dir") {
+            effectiveKind = "expandToFile"
           }
         }
       }
 
       try {
-        const command: UiCommand = { kind, params: cmdParams }
+        const command: UiCommand = { kind: effectiveKind, params: cmdParams }
         const result = await workspaceBridge.emitUiEffect(command)
         if (result.status === "error") {
           return {
@@ -356,11 +380,11 @@ export function createExecUiTool(
         // (pushed back via PUT /api/v1/ui/state after dockview fires
         // onDidAddPanel/onDidRemovePanel). Retry up to verifyRetries times so
         // slow renders or network jitter don't produce stale snapshots.
-        if (verifyDelayMs > 0 && VERIFIABLE_KINDS.has(kind)) {
+        if (verifyDelayMs > 0 && VERIFIABLE_KINDS.has(effectiveKind)) {
           await new Promise<void>((r) => setTimeout(r, verifyDelayMs))
           let uiState = await workspaceBridge.getState()
           for (let i = 0; i < verifyRetries; i++) {
-            if (isVerified(kind, cmdParams, uiState)) break
+            if (isVerified(effectiveKind, cmdParams, uiState)) break
             await new Promise<void>((r) => setTimeout(r, verifyIntervalMs))
             uiState = await workspaceBridge.getState()
           }

@@ -17,8 +17,10 @@ afterEach(async () => {
 function makeStubWorkspace(opts: {
   watch?: () => WorkspaceWatcher
 } = {}): Workspace {
+  const runtimeContext = { runtimeCwd: '/tmp/stub' }
   return {
-    root: '/tmp/stub',
+    root: runtimeContext.runtimeCwd,
+    runtimeContext,
     readFile: async () => '',
     writeFile: async () => {},
     unlink: async () => {},

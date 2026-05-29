@@ -18,6 +18,8 @@ export interface WorkspaceChatPanelProps {
   isWorkbenchOpen?: () => boolean
   /** Opens the visible workbench surface before dispatching a command. */
   openWorkbench?: () => void
+  /** Opens the visible workbench sources/file-tree pane before dispatching a reveal. */
+  openWorkbenchSources?: () => void
   /** Closes the visible workbench surface after an ephemeral command finishes. */
   closeWorkbench?: () => void
   /** Generic workspace blockers that should prevent submitting new chat turns. */

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { ErrorCode } from '../../../shared/error-codes'
 import type { AgentTool } from '../../../shared/tool'
 import { mergeTools } from '../mergeTools'
 
@@ -42,10 +43,39 @@ describe('mergeTools', () => {
 
     const bashTools = tools.filter((tool) => tool.name === 'bash')
     expect(bashTools).toHaveLength(1)
-    expect(bashTools[0]).toBe(pluginBash)
+    expect(bashTools[0]).toMatchObject({ name: pluginBash.name, description: pluginBash.description })
     expect(warn).toHaveBeenCalledWith(
       '[catalog] Tool "bash" overridden by plugin shell-override',
     )
+  })
+
+  it('wraps plugin tools with conservative workspace readiness by default', async () => {
+    const pluginTool = makeTool('plugin_default')
+    const tools = mergeTools({
+      standardTools: [],
+      pluginTools: [{ pluginName: 'plugin', tools: [pluginTool] }],
+      checkReadiness: () => false,
+    })
+
+    expect(tools[0]?.readinessRequirements).toEqual(['workspace-fs'])
+    const result = await tools[0]!.execute({}, { toolCallId: 'call', abortSignal: new AbortController().signal })
+    expect(result).toMatchObject({
+      isError: true,
+      details: { code: ErrorCode.enum.WORKSPACE_NOT_READY, retryable: true, requirement: 'workspace-fs' },
+    })
+    expect(result.content[0]?.text).toBe('Workspace is still preparing. Try again in a moment.')
+  })
+
+  it('does not block tools that explicitly opt out of readiness requirements', async () => {
+    const pluginTool = { ...makeTool('plugin_metadata'), readinessRequirements: [] }
+    const tools = mergeTools({
+      standardTools: [],
+      pluginTools: [{ pluginName: 'plugin', tools: [pluginTool] }],
+      checkReadiness: () => false,
+    })
+
+    const result = await tools[0]!.execute({}, { toolCallId: 'call', abortSignal: new AbortController().signal })
+    expect(result.content[0]?.text).toBe('plugin_metadata')
   })
 
   it('uses later plugin when two plugins register the same tool name', () => {
@@ -64,7 +94,7 @@ describe('mergeTools', () => {
 
     const dupTools = tools.filter((tool) => tool.name === 'dup_tool')
     expect(dupTools).toHaveLength(1)
-    expect(dupTools[0]).toBe(pluginSecond)
+    expect(dupTools[0]).toMatchObject({ name: pluginSecond.name, description: pluginSecond.description })
     expect(warn).toHaveBeenCalledWith(
       '[catalog] Tool "dup_tool" overridden by plugin plugin-b',
     )

@@ -20,6 +20,8 @@ export interface DispatchContext {
   isWorkbenchOpen: () => boolean
   /** Toggle the workbench pane open. Must be a no-op when already open. */
   openWorkbench: () => void
+  /** Open the workbench sources/file-tree pane. Must be a no-op when already open. */
+  openWorkbenchSources?: () => void
   /** Close the workbench pane when a command opened it only for an ephemeral task. */
   closeWorkbench?: () => void
 }
@@ -83,8 +85,8 @@ function runWhenSurfaceReady(
  * + a context with the surface handle and returns nothing. Unknown kinds
  * are silently ignored — the agent and frontend can drift on supported
  * commands without breaking the chat. Known-but-unhandled kinds
- * (navigateToLine, expandToFile, showNotification, closePanel) are
- * accepted-but-no-op so the contract surface stays additive.
+ * (navigateToLine, showNotification, closePanel) are accepted-but-no-op
+ * so the contract surface stays additive.
  */
 export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
   if (!KNOWN_KINDS.has(cmd.kind)) return
@@ -156,6 +158,27 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
           // eslint-disable-next-line no-console -- intentional dev signal
           console.warn(
             `[uiCommandDispatcher] openPanel dispatch failed:`,
+            err instanceof Error ? err.message : err,
+          )
+        }
+      }
+      if (wasClosed) requestAnimationFrame(() => requestAnimationFrame(() => runWhenSurfaceReady(ctx, run)))
+      else runWhenSurfaceReady(ctx, run)
+      return
+    }
+    case "expandToFile": {
+      const path = strParam(cmd.params, "path")
+      if (!path) return
+      const wasClosed = !ctx.isWorkbenchOpen()
+      if (wasClosed) ctx.openWorkbench()
+      ctx.openWorkbenchSources?.()
+      const run = (surface: SurfaceShellApi) => {
+        try {
+          surface.expandToFile(path)
+        } catch (err) {
+          // eslint-disable-next-line no-console -- intentional dev signal
+          console.warn(
+            `[uiCommandDispatcher] expandToFile dispatch failed:`,
             err instanceof Error ? err.message : err,
           )
         }

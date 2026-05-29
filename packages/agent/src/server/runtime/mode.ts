@@ -1,7 +1,9 @@
 import type { FileSearch } from '../../shared/file-search'
+import type { WorkspaceRuntimeContext } from '../../shared/runtime'
 import type { Sandbox } from '../../shared/sandbox'
 import type { TelemetrySink } from '../../shared/telemetry'
 import type { Workspace } from '../../shared/workspace'
+import { getNodeWorkspaceHostRoot } from '../workspace/createNodeWorkspace'
 import type { BoringAgentRuntimePaths } from '../workspace/runtimeLayout'
 import type { WorkspaceProvisioningAdapter } from '../workspace/provisioning'
 
@@ -31,9 +33,30 @@ export interface ModeContext {
 }
 
 export interface RuntimeBundle {
+  runtimeContext?: WorkspaceRuntimeContext
+  /**
+   * Server-private host/storage root for host-side filesystem work. Do not use
+   * this as the agent-visible cwd; Workspace.root remains the public runtime
+   * namespace shown to tools/model.
+   */
+  storageRoot?: string
   workspace: Workspace
   sandbox: Sandbox
   fileSearch: FileSearch
   /** Optional per-execution runtime env provider for local/direct operations that do not call Sandbox.exec. */
   getRuntimeEnv?: () => Promise<Record<string, string>>
+}
+
+export function getRuntimeBundleStorageRoot(bundle: RuntimeBundle): string {
+  const hostRoot = bundle.storageRoot ?? getNodeWorkspaceHostRoot(bundle.workspace)
+  if (hostRoot) return hostRoot
+
+  // vercel-sandbox: no host filesystem — tools use workspace methods instead.
+  if (bundle.sandbox.provider === 'vercel-sandbox') return bundle.workspace.root
+
+  throw new Error(
+    'RuntimeBundle.storageRoot is required for host-filesystem tools. ' +
+    'Mode adapters must set storageRoot to the host workspace path. ' +
+    `Got workspace.root=${bundle.workspace.root}, sandbox.provider=${bundle.sandbox.provider}`,
+  )
 }

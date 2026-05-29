@@ -1,8 +1,11 @@
 import { expect, test, vi } from 'vitest'
 
+import type { WorkspaceChangeEvent } from '../../../shared/workspace'
 import { createVercelSandboxExec } from '../../sandbox/vercel-sandbox/createVercelSandboxExec'
 import { createVercelSandboxWorkspace } from '../createVercelSandboxWorkspace'
 import { createMockVercelSandboxHarness } from './helpers/mockVercelSandbox'
+
+const EPERM_CODE = 'EPERM'
 
 test('writes via workspace are visible to paired exec on same sandbox handle', async () => {
   const harness = await createMockVercelSandboxHarness()
@@ -15,7 +18,7 @@ test('writes via workspace are visible to paired exec on same sandbox handle', a
 
     const command = await harness.sandbox.runCommand('sh', [
       '-c',
-      'cat /vercel/sandbox/shared/hello.txt',
+      'cat /workspace/shared/hello.txt',
     ])
 
     await expect(command.stdout()).resolves.toBe(
@@ -27,6 +30,16 @@ test('writes via workspace are visible to paired exec on same sandbox handle', a
   }
 })
 
+test('fallback read errors expose runtime workspace root, not Vercel internal root', async () => {
+  const workspace = createVercelSandboxWorkspace({
+    writeFiles: vi.fn(async () => {}),
+    readFileToBuffer: vi.fn(async () => null),
+  } as any)
+
+  await expect(workspace.readFile('missing.txt')).rejects.toThrow("/workspace/missing.txt")
+  await expect(workspace.readFile('missing.txt')).rejects.not.toThrow('/vercel/sandbox')
+})
+
 test('writeFile delegates UTF-8 bytes via sandbox.writeFiles', async () => {
   const harness = await createMockVercelSandboxHarness()
   const workspace = createVercelSandboxWorkspace(harness.sandbox)
@@ -36,7 +49,7 @@ test('writeFile delegates UTF-8 bytes via sandbox.writeFiles', async () => {
 
     expect(harness.lastWriteFiles).toEqual([
       {
-        path: '/vercel/sandbox/utf8.txt',
+        path: '/workspace/utf8.txt',
         content: new Uint8Array(Buffer.from('snowman ☃', 'utf-8')),
       },
     ])
@@ -143,8 +156,64 @@ test('invalidates metadata cache after write/unlink/mkdir/rename', async () => {
 
     await workspace.unlink('cache/b.txt')
     await expect(workspace.stat('cache/b.txt')).rejects.toThrow()
-    expect(statSpy).toHaveBeenCalledTimes(4)
+    expect(statSpy).toHaveBeenCalledTimes(5)
   } finally {
+    await harness.cleanup()
+  }
+})
+
+test('unlink removes folders recursively', async () => {
+  const harness = await createMockVercelSandboxHarness()
+  const workspace = createVercelSandboxWorkspace(harness.sandbox)
+
+  try {
+    await workspace.mkdir('tree/nested', { recursive: true })
+    await workspace.writeFile('tree/nested/deep.txt', 'deep')
+    await workspace.unlink('tree')
+
+    await expect(workspace.stat('tree')).rejects.toThrow()
+    await expect(workspace.readFile('tree/nested/deep.txt')).rejects.toThrow()
+  } finally {
+    await harness.cleanup()
+  }
+})
+
+test('unlink rejects removing the workspace root', async () => {
+  const harness = await createMockVercelSandboxHarness()
+  const workspace = createVercelSandboxWorkspace(harness.sandbox)
+
+  try {
+    await workspace.writeFile('keep.txt', 'x')
+
+    await expect(workspace.unlink('.')).rejects.toMatchObject({ code: EPERM_CODE })
+    await expect(workspace.readFile('keep.txt')).resolves.toBe('x')
+  } finally {
+    await harness.cleanup()
+  }
+})
+
+test('unlink emits descendant events for recursive folder deletes', async () => {
+  const harness = await createMockVercelSandboxHarness()
+  const workspace = createVercelSandboxWorkspace(harness.sandbox)
+  const events: WorkspaceChangeEvent[] = []
+  const unsubscribe = workspace.watch!().subscribe((event) => events.push(event))
+
+  try {
+    await workspace.mkdir('tree/nested', { recursive: true })
+    await workspace.writeFile('tree/file.txt', 'file')
+    await workspace.writeFile('tree/nested/deep.txt', 'deep')
+    events.length = 0
+
+    await workspace.unlink('tree')
+
+    expect(events.filter((event) => event.op === 'unlink').map((event) => event.path).sort()).toEqual([
+      'tree',
+      'tree/file.txt',
+      'tree/nested',
+      'tree/nested/deep.txt',
+    ])
+  } finally {
+    unsubscribe?.()
     await harness.cleanup()
   }
 })

@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-data-explorer",
-  "version": "0.1.14",
+  "version": "0.1.29",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -35,8 +35,8 @@
   "sideEffects": false,
   "scripts": {
     "build": "tsup",
-    "typecheck": "pnpm --filter @hachej/boring-ui-kit build && tsc --noEmit",
-    "test": "pnpm --filter @hachej/boring-ui-kit build && vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
     "lint": "pnpm run typecheck",
     "clean": "rm -rf dist .tsbuildinfo"
   },

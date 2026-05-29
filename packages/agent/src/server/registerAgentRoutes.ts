@@ -89,6 +89,12 @@ interface RuntimeBinding {
   lastHealthCheckMs?: number
 }
 
+interface RuntimeBindingEntry {
+  promise: Promise<RuntimeBinding>
+  state: 'pending' | 'ready' | 'failed'
+  error?: unknown
+}
+
 interface RuntimeScope {
   root: string
   key: string
@@ -119,9 +125,13 @@ function getRequestWorkspaceId(request: FastifyRequest): string {
   return request.workspaceContext?.workspaceId ?? DEFAULT_WORKSPACE_ID
 }
 
-function isWorkspaceAgnosticAgentRequest(request: FastifyRequest): boolean {
+function isWorkspaceAgnosticAgentRequest(
+  request: FastifyRequest,
+  options?: { readyStatusWorkspaceScoped?: boolean },
+): boolean {
   const pathname = request.url.split('?')[0] ?? request.url
-  return pathname === '/health' || pathname === '/ready' || pathname === '/api/v1/agent/models' || pathname === '/api/v1/ready-status'
+  if (pathname === '/api/v1/ready-status') return !options?.readyStatusWorkspaceScoped
+  return pathname === '/health' || pathname === '/ready' || pathname === '/api/v1/agent/models'
 }
 
 function extractHttpStatus(error: unknown): number | null {
@@ -152,6 +162,39 @@ function isExpiredSandboxRuntimeError(error: unknown): boolean {
   return /status code (404|410) is not ok/i.test(message)
 }
 
+function createHttpError(
+  code: typeof ErrorCode.enum[keyof typeof ErrorCode.enum],
+  message: string,
+  details: Record<string, unknown> = {},
+): Error & { code: string; statusCode: number; details: Record<string, unknown> } {
+  const error = new Error(message) as Error & { code: string; statusCode: number; details: Record<string, unknown> }
+  error.code = code
+  error.statusCode = 503
+  error.details = details
+  return error
+}
+
+function createAgentRuntimeNotReadyError(workspaceId: string): Error {
+  return createHttpError(
+    ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
+    'Agent runtime is still preparing. Try again in a moment.',
+    { workspaceId, retryable: true },
+  )
+}
+
+function createRuntimeProvisioningFailedError(workspaceId: string, cause: unknown): Error {
+  const causeCode = (cause as { code?: unknown } | null)?.code
+  return createHttpError(
+    ErrorCode.enum.RUNTIME_PROVISIONING_FAILED,
+    'Agent runtime provisioning failed. Reload the workspace and try again.',
+    {
+      workspaceId,
+      retryable: true,
+      ...(typeof causeCode === 'string' ? { causeCode } : {}),
+    },
+  )
+}
+
 export interface RegisterAgentRoutesOptions {
   workspaceRoot?: string
   sessionId?: string
@@ -173,6 +216,12 @@ export interface RegisterAgentRoutesOptions {
     workspaceFsCapability?: Workspace['fsCapability']
   }) => AgentTool[] | Promise<AgentTool[]>
   systemPromptAppend?: string
+  /** Optional dynamic system-prompt source forwarded to the harness. */
+  systemPromptDynamic?: () => string | undefined | Promise<string | undefined>
+  getSystemPromptDynamic?: (ctx: {
+    workspaceId: string
+    workspaceRoot: string
+  }) => string | undefined | Promise<string | undefined>
   /** Override the default pi-backed harness with a custom agent runtime. */
   harnessFactory?: AgentHarnessFactory
   /** Optional pi adapter/runtime knobs used by the default harness. */
@@ -240,9 +289,10 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     typeof opts.getWorkspaceRoot === 'function' ||
     typeof opts.getTemplatePath === 'function' ||
     typeof opts.getPi === 'function' ||
-    typeof opts.getSessionNamespace === 'function'
+    typeof opts.getSessionNamespace === 'function' ||
+    typeof opts.getSystemPromptDynamic === 'function'
   const sessionChangesTracker = new InMemorySessionChangesTracker()
-  const runtimeBindings = new Map<string, Promise<RuntimeBinding>>()
+  const runtimeBindings = new Map<string, RuntimeBindingEntry>()
   const MAX_RUNTIME_BINDINGS = 256
   function evictRuntimeBindings(): void {
     if (runtimeBindings.size <= MAX_RUNTIME_BINDINGS) return
@@ -294,7 +344,25 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     const pi = opts.getPi
       ? await opts.getPi({ workspaceId, workspaceRoot: root, request })
       : opts.pi
-    return { root, pi }
+    const hot = pi?.getHotReloadableResources?.()
+    return {
+      root,
+      pi: hot ? {
+        ...pi,
+        additionalSkillPaths: [
+          ...(pi?.additionalSkillPaths ?? []),
+          ...(hot.additionalSkillPaths ?? []),
+        ],
+        packages: [
+          ...(pi?.packages ?? []),
+          ...(hot.packages ?? []),
+        ],
+        extensionPaths: [
+          ...(pi?.extensionPaths ?? []),
+          ...(hot.extensionPaths ?? []),
+        ],
+      } : pi,
+    }
   }
 
   async function runRuntimeProvisioning(
@@ -413,6 +481,9 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       cwd: root,
       sessionNamespace: scope.sessionNamespace,
       systemPromptAppend: opts.systemPromptAppend,
+      systemPromptDynamic: opts.getSystemPromptDynamic
+        ? () => opts.getSystemPromptDynamic?.({ workspaceId, workspaceRoot: root })
+        : opts.systemPromptDynamic,
       telemetry: opts.telemetry,
     })
     const readyTracker = new ReadyStatusTracker({
@@ -436,28 +507,64 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     }
   }
 
+  function createRuntimeBindingEntry(
+    workspaceId: string,
+    scope: RuntimeScope,
+    request?: FastifyRequest,
+  ): RuntimeBindingEntry {
+    const entry: RuntimeBindingEntry = {
+      state: 'pending',
+      promise: Promise.resolve(null as unknown as RuntimeBinding),
+    }
+    entry.promise = createRuntimeBinding(workspaceId, scope, request).then(
+      (binding) => {
+        entry.state = 'ready'
+        return binding
+      },
+      (error) => {
+        entry.state = 'failed'
+        entry.error = error
+        throw error
+      },
+    )
+    entry.promise.catch(() => {})
+    return entry
+  }
+
   async function getOrCreateRuntimeBinding(
     workspaceId: string,
     request?: FastifyRequest,
+    options: { failIfPending?: boolean } = {},
   ): Promise<RuntimeBinding> {
     const scope = await resolveRuntimeScope(workspaceId, request)
     const existing = runtimeBindings.get(scope.key)
     if (existing) {
-      return await ensureRuntimeBindingReady(
-        workspaceId,
-        scope,
-        await existing,
-      )
+      if (options.failIfPending && existing.state === 'pending') {
+        throw createAgentRuntimeNotReadyError(workspaceId)
+      }
+      if (existing.state === 'failed') {
+        if (options.failIfPending) throw createRuntimeProvisioningFailedError(workspaceId, existing.error)
+        runtimeBindings.delete(scope.key)
+      } else {
+        return await ensureRuntimeBindingReady(
+          workspaceId,
+          scope,
+          await existing.promise,
+        )
+      }
     }
 
-    const created = createRuntimeBinding(workspaceId, scope, request)
+    const created = createRuntimeBindingEntry(workspaceId, scope, request)
     runtimeBindings.set(scope.key, created)
     evictRuntimeBindings()
+    if (options.failIfPending) {
+      throw createAgentRuntimeNotReadyError(workspaceId)
+    }
     try {
       return await ensureRuntimeBindingReady(
         workspaceId,
         scope,
-        await created,
+        await created.promise,
       )
     } catch (error) {
       if (runtimeBindings.get(scope.key) === created) runtimeBindings.delete(scope.key)
@@ -472,11 +579,11 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     runtimeBindings.delete(scope.key)
     evictSandboxHandleCacheForWorkspace(workspaceId)
 
-    const created = createRuntimeBinding(workspaceId, scope)
+    const created = createRuntimeBindingEntry(workspaceId, scope)
     runtimeBindings.set(scope.key, created)
     evictRuntimeBindings()
     try {
-      const binding = await created
+      const binding = await created.promise
       binding.lastHealthCheckMs = Date.now()
       return binding
     } catch (error) {
@@ -531,9 +638,12 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     return promise
   }
 
-  async function getBindingForRequest(request: FastifyRequest): Promise<RuntimeBinding> {
+  async function getBindingForRequest(
+    request: FastifyRequest,
+    options: { failIfPending?: boolean } = {},
+  ): Promise<RuntimeBinding> {
     if (staticBinding) return staticBinding
-    return await getOrCreateRuntimeBinding(getRequestWorkspaceId(request), request)
+    return await getOrCreateRuntimeBinding(getRequestWorkspaceId(request), request, options)
   }
 
   const agentToolNames = staticBinding
@@ -567,7 +677,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   app.addHook('onRequest', async (request, reply) => {
     const user = (request as unknown as { user?: { id: string } | null }).user
     let workspaceId = DEFAULT_WORKSPACE_ID
-    if (opts.getWorkspaceId && !isWorkspaceAgnosticAgentRequest(request)) {
+    if (opts.getWorkspaceId && !isWorkspaceAgnosticAgentRequest(request, { readyStatusWorkspaceScoped: requestScopedRuntime })) {
       try {
         workspaceId = (await opts.getWorkspaceId(request)).trim()
       } catch (error) {
@@ -623,7 +733,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   })
   await app.register(chatRoutes, {
     getRuntime: async (request) => {
-      const binding = await getBindingForRequest(request)
+      const binding = await getBindingForRequest(request, { failIfPending: hasRuntimeProvisioningInput })
       return {
         harness: binding.harness,
         workdir: binding.runtimeBundle.workspace.root,
@@ -713,10 +823,8 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     ? { tools: staticBinding.tools }
     : { getTools: async (request) => (await getBindingForRequest(request)).tools },
   )
-  await app.register(readyStatusRoutes, {
-    tracker: staticBinding?.readyTracker ?? new ReadyStatusTracker({
-      sandboxReady: true,
-      harnessReady: true,
-    }),
-  })
+  await app.register(readyStatusRoutes, staticBinding
+    ? { tracker: staticBinding.readyTracker }
+    : { getTracker: async (request) => (await getBindingForRequest(request)).readyTracker },
+  )
 }

@@ -9,7 +9,7 @@ import {
 
 import type { Sandbox } from '../../../shared/sandbox'
 import type { AgentTool, ToolResult } from '../../../shared/tool'
-import type { RuntimeBundle } from '../../runtime/mode'
+import { getRuntimeBundleStorageRoot, type RuntimeBundle } from '../../runtime/mode'
 import { buildBwrapArgs } from '../../sandbox/bwrap/buildBwrapArgs'
 import { withWorkspacePythonEnv } from '../../sandbox/workspacePythonEnv'
 import { vercelBashOps } from '../operations/vercel'
@@ -105,6 +105,7 @@ function bashOptionsForMode(
   runtime?: HarnessRuntimeProvisioningOptions,
   executionRuntimeEnv?: Record<string, string>,
 ): BashToolOptions {
+  const storageRoot = getRuntimeBundleStorageRoot(bundle)
   switch (bundle.sandbox.provider) {
     case 'vercel-sandbox':
       return {
@@ -123,12 +124,12 @@ function bashOptionsForMode(
         // command runs, so bridge runtime env reaches local Linux sandboxed
         // commands without relying on provisioning PATH/env alone.
         operations: localBashOperationsWithRuntimeEnv(bundle),
-        spawnHook: bwrapSpawnHook(bundle.workspace.root, runtime),
+        spawnHook: bwrapSpawnHook(storageRoot, runtime),
       }
     default:
       return {
         operations: localBashOperationsWithRuntimeEnv(bundle),
-        spawnHook: directSpawnHook(bundle.workspace.root, runtime),
+        spawnHook: directSpawnHook(storageRoot, runtime),
       }
   }
 }

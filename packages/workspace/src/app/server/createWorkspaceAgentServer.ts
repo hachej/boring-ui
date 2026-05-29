@@ -23,6 +23,7 @@ import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
 import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
 import { BoringPluginAssetManager } from "../../server/agentPlugins/manager"
+import type { BoringPluginFrontTargetResolver } from "../../server/agentPlugins/types"
 import { boringPluginRoutes, collectRestartWarnings } from "../../server/agentPlugins/routes"
 import { aggregatePluginPrompts } from "../../server/agentPlugins/aggregatePluginPrompts"
 import { normalizeBoringPluginPiPackages } from "../../server/agentPlugins/piPackages"
@@ -165,15 +166,25 @@ export interface CreateWorkspaceAgentServerOptions
     }>
     runtimeEnv?: WorkspaceBridgeRuntimeEnvOptions
   }
+  /** Additional plugin collection roots to scan alongside workspace .pi/extensions and package/plugin-derived roots. */
+  additionalBoringPluginDirs?: string[]
+  /** Optional host-owned front-target override for boring plugin list/event payloads. */
+  boringPluginFrontTargetResolver?: BoringPluginFrontTargetResolver
+  /** Preserve legacy `/@fs/...` frontUrl payloads alongside frontTarget. Defaults to true. */
+  boringPluginIncludeLegacyFrontUrl?: boolean
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 
 function boringPiRootVisibleToAgentTools(workspaceRoot: string, resolvedMode: string, provisioned: boolean): string | undefined {
+  void workspaceRoot
+  void resolvedMode
   if (!provisioned) return undefined
-  if (resolvedMode === "local") return "/workspace/node_modules/@hachej/boring-pi"
-  return join(workspaceRoot, "node_modules", "@hachej", "boring-pi")
+  // Sandbox-rooted absolute path is unambiguous regardless of agent cwd
+  // changes. Avoid host paths (they leak /home/... and are rejected by
+  // the sandbox) and avoid bare relative paths (they break on `cd`).
+  return "/workspace/.boring-agent/node/node_modules/@hachej/boring-pi"
 }
 
 
@@ -194,6 +205,16 @@ function resolveWorkspacePackageRoot(): string {
   return join(__dirname, "../../..")
 }
 
+function readPackageVersion(packageRoot: string | null): string | undefined {
+  if (!packageRoot) return undefined
+  try {
+    const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as { version?: unknown }
+    return typeof pkg.version === "string" && pkg.version.length > 0 ? pkg.version : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function nodePackageContribution(
   contributionId: string,
   nodePackageId: string,
@@ -207,6 +228,32 @@ function nodePackageContribution(
       nodePackages: [{ id: nodePackageId, packageName, packageRoot }],
     },
   }
+}
+
+function publishedNodePackageContribution(
+  contributionId: string,
+  nodePackageId: string,
+  packageName: string,
+  version?: string,
+  expectedBins?: string[],
+): WorkspaceProvisioningContribution {
+  return {
+    id: contributionId,
+    provisioning: {
+      nodePackages: [
+        {
+          id: nodePackageId,
+          packageName,
+          ...(version ? { version } : {}),
+          ...(expectedBins ? { expectedBins } : {}),
+        },
+      ],
+    },
+  }
+}
+
+function useLocalPackageProvisioning(): boolean {
+  return process.env.BORING_USE_LOCAL_PACKAGES === "1"
 }
 
 function createWorkspacePackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
@@ -265,11 +312,29 @@ function resolveBoringUiCliPackageRoot(): string | null {
 }
 
 function createBoringUiCliPackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
-  return nodePackageContribution(
+  const packageRoot = resolveBoringUiCliPackageRoot()
+  if (useLocalPackageProvisioning()) {
+    return nodePackageContribution(
+      "boring-ui-cli-package",
+      "boring-ui-cli",
+      "@hachej/boring-ui-cli",
+      packageRoot,
+    )
+  }
+
+  // Default to the published CLI package, not a local folder install. npm
+  // installs local folders as symlinks; inside local/bwrap those symlinks can
+  // resolve into host-only monorepo paths and make `boring-ui verify-plugin`
+  // unable to import @hachej/boring-workspace. Published installs are real
+  // node_modules copies and stay self-contained inside the workspace runtime.
+  return publishedNodePackageContribution(
     "boring-ui-cli-package",
     "boring-ui-cli",
     "@hachej/boring-ui-cli",
-    resolveBoringUiCliPackageRoot(),
+    packageRoot === join(resolveWorkspacePackageRoot(), "..", "cli")
+      ? undefined
+      : readPackageVersion(packageRoot) ?? readPackageVersion(resolveWorkspacePackageRoot()),
+    ["boring-ui"],
   )
 }
 
@@ -396,7 +461,11 @@ export async function provisionWorkspaceAgentServer(opts: {
   })
 }
 
-function collectBoringPluginDirs(workspaceRoot: string, pluginCollection: WorkspaceAgentServerPluginCollection): string[] {
+function collectBoringPluginDirs(
+  workspaceRoot: string,
+  pluginCollection: WorkspaceAgentServerPluginCollection,
+  additionalPluginDirs: string[] = [],
+): string[] {
   const extensionPaths = pluginCollection.agentOptions.pi?.extensionPaths ?? []
   const pluginRoots = extensionPaths.flatMap((path) => {
     try {
@@ -405,10 +474,11 @@ function collectBoringPluginDirs(workspaceRoot: string, pluginCollection: Worksp
       return []
     }
   })
-  return [
+  return [...new Set([
     join(workspaceRoot, ".pi", "extensions"),
     ...pluginRoots,
-  ]
+    ...additionalPluginDirs,
+  ])]
 }
 
 export interface WorkspacePluginPackagePiSnapshot {
@@ -587,7 +657,7 @@ export async function createWorkspaceAgentServer(
   // The asset manager treats each as a plugin source; SSE + jiti reload
   // works the same for all three categories.
   const boringPluginDirs = [
-    ...collectBoringPluginDirs(workspaceRoot, pluginCollection),
+    ...collectBoringPluginDirs(workspaceRoot, pluginCollection, opts.additionalBoringPluginDirs),
     ...defaultPluginPackagePaths,
   ]
 
@@ -618,6 +688,8 @@ export async function createWorkspaceAgentServer(
   const boringAssetManager = new BoringPluginAssetManager({
     pluginDirs: boringPluginDirs,
     errorRoot: join(workspaceRoot, ".pi", "extensions"),
+    frontTargetResolver: opts.boringPluginFrontTargetResolver,
+    includeLegacyFrontUrl: opts.boringPluginIncludeLegacyFrontUrl,
   })
 
   const buildRuntimeProvisioningInputs = () => mergeRuntimeProvisioningInputs([
@@ -636,11 +708,18 @@ export async function createWorkspaceAgentServer(
       sessionId: opts.sessionId ?? "default",
     })
     if (!adapter) return currentRuntimeProvisioning
-    currentRuntimeProvisioning = await provisionWorkspaceRuntime({
+    const provisioned = await provisionWorkspaceRuntime({
       plugins: buildRuntimeProvisioningInputs(),
       adapter,
       runtimeLayout,
     })
+    currentRuntimeProvisioning = provisioned ? {
+      ...provisioned,
+      env: {
+        ...provisioned.env,
+        BORING_AGENT_WORKSPACE_LOCAL_PLUGIN_ROOTS: workspaceFsCapability === "strong" ? "1" : "0",
+      },
+    } : currentRuntimeProvisioning
     return currentRuntimeProvisioning
   }
   await runRuntimeProvisioning()
@@ -776,8 +855,14 @@ export async function createWorkspaceAgentServer(
   // Expose the rebuild closure on the Fastify instance for external
   // callers / tests. The same closure is also wired into `beforeReload`
   // above so /reload triggers it automatically.
-  ;(app as FastifyInstance & { __boringRebuildPlugins?: () => Promise<PluginRebuildResult> }).__boringRebuildPlugins =
-    rebuildPlugins
+  ;(app as FastifyInstance & {
+    __boringRebuildPlugins?: () => Promise<PluginRebuildResult>
+    __boringAssetManager?: BoringPluginAssetManager
+  }).__boringRebuildPlugins = rebuildPlugins
+  ;(app as FastifyInstance & {
+    __boringRebuildPlugins?: () => Promise<PluginRebuildResult>
+    __boringAssetManager?: BoringPluginAssetManager
+  }).__boringAssetManager = boringAssetManager
 
   return app
 }

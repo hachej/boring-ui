@@ -96,6 +96,7 @@ export function ChatLayout(props: ChatLayoutProps) {
   const uiSurface = getFunction<() => SurfaceShellApi | null>(props.centerParams, "getSurface")
   const uiIsWorkbenchOpen = getFunction<() => boolean>(props.centerParams, "isWorkbenchOpen")
   const uiOpenWorkbench = getFunction<() => void>(props.centerParams, "openWorkbench")
+  const uiOpenWorkbenchSources = getFunction<() => void>(props.centerParams, "openWorkbenchSources")
   const uiCloseWorkbench = getFunction<() => void>(props.centerParams, "closeWorkbench")
   const closeNav = getCallback(props.navParams, "onClose")
   const closeSurface = getCallback(props.surfaceParams, "onClose")
@@ -238,12 +239,13 @@ export function ChatLayout(props: ChatLayoutProps) {
       surface: uiSurface,
       isWorkbenchOpen: uiIsWorkbenchOpen,
       openWorkbench: uiOpenWorkbench,
+      openWorkbenchSources: uiOpenWorkbenchSources,
       closeWorkbench: uiCloseWorkbench,
     }
     return events.on(workspaceEvents.uiCommand, ({ command }) => {
       dispatchUiCommand(command, ctx)
     })
-  }, [uiSurface, uiIsWorkbenchOpen, uiOpenWorkbench, uiCloseWorkbench])
+  }, [uiSurface, uiIsWorkbenchOpen, uiOpenWorkbench, uiOpenWorkbenchSources, uiCloseWorkbench])
 
   return (
     <div
@@ -308,6 +310,7 @@ export function ChatLayout(props: ChatLayoutProps) {
             onClick={props.onOpenSurface}
             label="Workbench"
             hint="⌘2"
+            bottomOffset={props.surfaceButtonBottomOffset}
           />
         ) : null}
       </main>
@@ -337,7 +340,24 @@ export function ChatLayout(props: ChatLayoutProps) {
               surfaceOpen ? "opacity-100" : "opacity-0",
             )}
           >
-            <PanelSlot id={surfaceId} params={props.surfaceParams} />
+            {props.surfaceOverlay ? (
+              <div className="relative h-full min-h-0">
+                {props.surfaceOverlay}
+                {closeSurface ? (
+                  <IconButton
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={closeSurface}
+                    className="absolute right-3 top-3 z-20 rounded-full bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:bg-muted hover:text-foreground"
+                    aria-label="Close workbench"
+                    title="Close workbench (⌘2)"
+                  >
+                    <span aria-hidden="true">›</span>
+                  </IconButton>
+                ) : null}
+              </div>
+            ) : <PanelSlot id={surfaceId} params={props.surfaceParams} />}
           </div>
           {surfaceOpen ? (
             <ResizeHandle
@@ -524,13 +544,16 @@ function FloatingEdgeButton({
   onClick,
   label,
   hint,
+  bottomOffset,
 }: {
   side: "left" | "right"
   icon: "sessions" | "workbench"
   onClick: () => void
   label: string
   hint?: string
+  bottomOffset?: number
 }) {
+  const dockToBottom = side === "right" && bottomOffset !== undefined
   return (
     <IconButton
       type="button"
@@ -540,12 +563,14 @@ function FloatingEdgeButton({
       aria-label={label}
       title={hint ? `${label} (${hint})` : label}
       className={cn(
-        "absolute top-1/2 z-30 h-9 w-9 -translate-y-1/2 gap-0.5 rounded-lg bg-background text-muted-foreground",
+        "absolute z-30 h-9 w-9 gap-0.5 rounded-lg bg-background text-muted-foreground",
         side === "left" ? "left-2" : "right-2",
+        dockToBottom ? "hover:-translate-y-0.5" : "top-1/2 -translate-y-1/2 hover:-translate-y-[calc(50%+1px)]",
         "shadow-[0_1px_2px_-1px_oklch(0_0_0/0.08),0_2px_8px_-4px_oklch(0_0_0/0.10),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.7)]",
-        "hover:-translate-y-[calc(50%+1px)] hover:bg-muted/60 hover:text-foreground hover:shadow-[0_2px_4px_-1px_oklch(0_0_0/0.08),0_4px_12px_-4px_oklch(0_0_0/0.10),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.9)]",
+        "hover:bg-muted/60 hover:text-foreground hover:shadow-[0_2px_4px_-1px_oklch(0_0_0/0.08),0_4px_12px_-4px_oklch(0_0_0/0.10),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.9)]",
         "focus-visible:ring-ring/40",
       )}
+      style={dockToBottom ? { bottom: bottomOffset } : undefined}
     >
       {icon === "sessions" ? (
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">

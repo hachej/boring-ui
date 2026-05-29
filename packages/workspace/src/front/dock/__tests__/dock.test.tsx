@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen, waitFor, act } from "@testing-library/react"
+import { render, screen, waitFor, act, fireEvent } from "@testing-library/react"
 import { DockviewShell, useDockviewApi, DockviewApiContext } from "../DockviewShell"
 import { ShadcnTab } from "../ShadcnTab"
 import { PanelChrome, createLifecycleApi } from "../PanelChrome"
@@ -393,6 +393,10 @@ describe("DockviewShell — multi-group layout", () => {
 })
 
 describe("ShadcnTab", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it("renders tab title and close button", () => {
     const mockApi = {
       title: "My Tab",
@@ -416,6 +420,216 @@ describe("ShadcnTab", () => {
     render(<ShadcnTab api={mockApi as any} containerApi={{} as any} params={{}} tabLocation={"header" as any} />)
 
     expect(screen.getByText("fallback-id")).toBeInTheDocument()
+  })
+
+  it("close other tabs closes siblings but keeps the clicked tab", async () => {
+    const currentApi = {
+      title: "Current",
+      id: "tab-current",
+      close: vi.fn(),
+      setActive: vi.fn(),
+    }
+    const siblingApi = { title: "Sibling", id: "tab-sibling", close: vi.fn() }
+    const otherGroupApi = { title: "Other", id: "tab-other", close: vi.fn() }
+    ;(currentApi as any).group = { panels: [{ api: currentApi }, { api: siblingApi }] }
+
+    render(
+      <ShadcnTab
+        api={currentApi as any}
+        containerApi={{ panels: [{ api: currentApi }, { api: siblingApi }, { api: otherGroupApi }] } as any}
+        params={{}}
+        tabLocation={"header" as any}
+      />,
+    )
+
+    fireEvent.contextMenu(screen.getByTitle("Current"))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close other tabs" }))
+
+    expect(currentApi.setActive).toHaveBeenCalled()
+    expect(currentApi.close).not.toHaveBeenCalled()
+    expect(siblingApi.close).toHaveBeenCalledTimes(1)
+    expect(otherGroupApi.close).not.toHaveBeenCalled()
+  })
+
+  it("opens close-other menu on right-button pointer down", () => {
+    const currentApi = { title: "Current", id: "tab-current", close: vi.fn() }
+    const siblingApi = { title: "Sibling", id: "tab-sibling", close: vi.fn() }
+
+    render(
+      <ShadcnTab
+        api={currentApi as any}
+        containerApi={{ panels: [{ api: currentApi }, { api: siblingApi }] } as any}
+        params={{}}
+        tabLocation={"header" as any}
+      />,
+    )
+
+    fireEvent.pointerDown(screen.getByTitle("Current"), { button: 2, clientX: 42, clientY: 24 })
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close other tabs" }))
+
+    expect(currentApi.close).not.toHaveBeenCalled()
+    expect(siblingApi.close).toHaveBeenCalledTimes(1)
+  })
+
+  it("shows copy path and hides close-other when there are no other tabs", () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    })
+    const currentApi = { title: "App.tsx", id: "tab-current", close: vi.fn() }
+
+    render(
+      <ShadcnTab
+        api={currentApi as any}
+        containerApi={{ panels: [{ api: currentApi }] } as any}
+        params={{ path: "src/App.tsx" }}
+        tabLocation={"header" as any}
+      />,
+    )
+
+    fireEvent.contextMenu(screen.getByTitle("App.tsx"))
+
+    expect(screen.getByRole("menuitem", { name: "Copy path" })).toBeInTheDocument()
+    expect(screen.queryByRole("menuitem", { name: "Copy absolute path" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("menuitem", { name: "Close other tabs" })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy path" }))
+    expect(writeText).toHaveBeenCalledWith("src/App.tsx")
+  })
+
+  it("copies path from file-backed panel id when tab params are missing", () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    })
+    const currentApi = { title: "App.tsx", id: "file:src/App.tsx", close: vi.fn() }
+
+    render(
+      <ShadcnTab
+        api={currentApi as any}
+        containerApi={{ panels: [{ api: currentApi }] } as any}
+        params={{}}
+        tabLocation={"header" as any}
+      />,
+    )
+
+    fireEvent.contextMenu(screen.getByTitle("App.tsx"))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy path" }))
+
+    expect(writeText).toHaveBeenCalledWith("src/App.tsx")
+  })
+
+  it("copies path from workspace surface panel id when tab params are missing", () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    })
+    const currentApi = {
+      title: "App.tsx",
+      id: "surface:workspace.open.path:src/App.tsx",
+      close: vi.fn(),
+    }
+
+    render(
+      <ShadcnTab
+        api={currentApi as any}
+        containerApi={{ panels: [{ api: currentApi }] } as any}
+        params={{}}
+        tabLocation={"header" as any}
+      />,
+    )
+
+    fireEvent.contextMenu(screen.getByTitle("App.tsx"))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy path" }))
+
+    expect(writeText).toHaveBeenCalledWith("src/App.tsx")
+  })
+
+  it("falls back to legacy clipboard copy when writeText rejects", async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error("not focused"))
+    const execCommand = vi.fn().mockReturnValue(true)
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    })
+    Object.defineProperty(document, "execCommand", {
+      value: execCommand,
+      configurable: true,
+    })
+    const currentApi = { title: "App.tsx", id: "tab-current", close: vi.fn() }
+
+    render(
+      <ShadcnTab
+        api={currentApi as any}
+        containerApi={{ panels: [{ api: currentApi }] } as any}
+        params={{ path: "src/App.tsx" }}
+        tabLocation={"header" as any}
+      />,
+    )
+
+    fireEvent.contextMenu(screen.getByTitle("App.tsx"))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy path" }))
+
+    await waitFor(() => expect(execCommand).toHaveBeenCalledWith("copy"))
+    expect(writeText).toHaveBeenCalledWith("src/App.tsx")
+  })
+
+  it("close other tabs falls back to container panels when group panels are unavailable", () => {
+    const currentApi = { title: "Current", id: "tab-current", close: vi.fn() }
+    const siblingApi = { title: "Sibling", id: "tab-sibling", close: vi.fn() }
+
+    render(
+      <ShadcnTab
+        api={currentApi as any}
+        containerApi={{ panels: [{ api: currentApi }, { api: siblingApi }] } as any}
+        params={{}}
+        tabLocation={"header" as any}
+      />,
+    )
+
+    fireEvent.contextMenu(screen.getByTitle("Current"))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close other tabs" }))
+
+    expect(currentApi.close).not.toHaveBeenCalled()
+    expect(siblingApi.close).toHaveBeenCalledTimes(1)
+  })
+
+  it("close other tabs snapshots siblings before closing mutable panel arrays", () => {
+    const panels: Array<{ api: { id: string; close: ReturnType<typeof vi.fn> } }> = []
+    const currentApi = { title: "Current", id: "tab-current", close: vi.fn() }
+    const siblingA = {
+      api: {
+        id: "tab-a",
+        close: vi.fn(() => panels.splice(1, 1)),
+      },
+    }
+    const siblingB = {
+      api: {
+        id: "tab-b",
+        close: vi.fn(() => panels.splice(1, 1)),
+      },
+    }
+    panels.push({ api: currentApi }, siblingA, siblingB)
+    ;(currentApi as any).group = { panels }
+
+    render(
+      <ShadcnTab
+        api={currentApi as any}
+        containerApi={{ panels } as any}
+        params={{}}
+        tabLocation={"header" as any}
+      />,
+    )
+
+    fireEvent.contextMenu(screen.getByTitle("Current"))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close other tabs" }))
+
+    expect(currentApi.close).not.toHaveBeenCalled()
+    expect(siblingA.api.close).toHaveBeenCalledTimes(1)
+    expect(siblingB.api.close).toHaveBeenCalledTimes(1)
   })
 
   it("shows a saving spinner while save start is in flight, hides on save end", async () => {

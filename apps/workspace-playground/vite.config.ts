@@ -11,6 +11,10 @@ const baseResolve = createBoringAppViteAliases({ appRoot: __dirname })
 // the standard helper doesn't cover. Add those alongside the shared
 // aliases.
 const playgroundOnlyAliases = [
+  // Keep app code importing the public package CSS subpath, but point the
+  // playground's local monorepo dev server at the built CSS artifact so Vite
+  // serves it as text/css instead of falling back through HTML history.
+  { find: "@hachej/boring-workspace/globals.css", replacement: resolve(__dirname, "../../packages/workspace/dist/workspace.css") },
   { find: "@/", replacement: resolve(__dirname, "../../packages/workspace/src") + "/" },
   { find: "@", replacement: resolve(__dirname, "../../packages/workspace/src") },
 ]
@@ -28,6 +32,11 @@ const playgroundOnlyAliases = [
 // so a fresh clone has demo content. Agent edits land in `workspace/`
 // without dirtying the committed fixtures. Delete the directory to
 // reset; the next boot re-seeds it.
+
+function isRuntimeExtensionPath(file: string): boolean {
+  const normalized = file.replaceAll("\\", "/")
+  return /(^|\/)workspace\/\.pi\/extensions\//.test(normalized)
+}
 
 const dynamicPluginReactRefreshExclude = [
   // Runtime/app-authored plugins are loaded through the boring-ui plugin
@@ -65,7 +74,7 @@ export default defineConfig({
         // agent-plugin SSE bridge. Letting Vite HMR handle these files causes
         // full page reloads because dynamically imported .pi extension modules
         // are not stable React HMR boundaries.
-        if (ctx.file.includes("/workspace/.pi/extensions/")) return []
+        if (isRuntimeExtensionPath(ctx.file)) return []
         return undefined
       },
     },

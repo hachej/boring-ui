@@ -147,7 +147,7 @@ describe("deck scaffold", () => {
       id: "surface:workspace.open.path:briefings/weekly.md",
       component: "deck",
       title: "weekly.md",
-      params: { path: "briefings/weekly.md" },
+      params: expect.objectContaining({ path: "briefings/weekly.md" }),
     }))
   })
 })

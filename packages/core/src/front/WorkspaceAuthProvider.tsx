@@ -2,7 +2,8 @@ import { createContext, useContext } from 'react'
 import type { ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { matchPath, useLocation, useParams } from 'react-router-dom'
-import { apiFetchJson } from './utils.js'
+import { useSession } from './auth/AuthProvider.js'
+import { apiFetchJson, getHttpErrorDetail } from './utils.js'
 import type { MemberRole, Workspace } from '../shared/types.js'
 
 type WorkspaceDetail = {
@@ -10,18 +11,31 @@ type WorkspaceDetail = {
   role: MemberRole
 }
 
+export type WorkspaceRouteStatus =
+  | { status: 'idle'; workspaceId: string | null }
+  | { status: 'loading'; workspaceId: string | null }
+  | { status: 'matched'; workspaceId: string; workspace: Workspace }
+  | { status: 'mismatched'; workspaceId: string; currentWorkspaceId: string | null }
+  | { status: 'not-found'; workspaceId: string; message: string }
+  | { status: 'forbidden'; workspaceId: string; message: string }
+  | { status: 'switch-failed'; workspaceId: string; message: string }
+
 interface WorkspaceContextValue {
   workspace: Workspace | null
   role: MemberRole | null
+  routeStatus: WorkspaceRouteStatus
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue>({
   workspace: null,
   role: null,
+  routeStatus: { status: 'idle', workspaceId: null },
 })
 
 export interface WorkspaceAuthProviderProps {
   children: ReactNode
+  workspaceRoute?: string
+  workspaceIdParam?: string
 }
 
 export const WORKSPACES_QUERY_KEY = ['workspaces'] as const
@@ -41,26 +55,58 @@ async function fetchWorkspace(workspaceId: string): Promise<WorkspaceDetail> {
   )
 }
 
-function workspaceIdFromPath(pathname: string): string | null {
-  const match =
-    matchPath('/w/:id/*', pathname) ??
-    matchPath('/w/:id', pathname) ??
-    matchPath('/workspace/:id/*', pathname) ??
-    matchPath('/workspace/:id', pathname)
-
-  const id = match?.params.id?.trim()
-  return id ? id : null
+function routePatterns(route: string): string[] {
+  const normalized = route.endsWith('/*') ? route.slice(0, -2) : route
+  return [`${normalized}/*`, normalized]
 }
 
-export function WorkspaceAuthProvider({ children }: WorkspaceAuthProviderProps) {
+function workspaceIdFromPath(
+  pathname: string,
+  workspaceRoute = '/workspace/:id',
+  workspaceIdParam = 'id',
+): string | null {
+  const patterns = [
+    ...routePatterns(workspaceRoute),
+    '/w/:id/*',
+    '/w/:id',
+    '/workspace/:id/*',
+    '/workspace/:id',
+  ]
+  for (const pattern of patterns) {
+    const match = matchPath(pattern, pathname)
+    const id = match?.params[workspaceIdParam]?.trim() ?? match?.params.id?.trim()
+    if (id) return id
+  }
+  return null
+}
+
+function routeStatusFromError(workspaceId: string, error: unknown): WorkspaceRouteStatus {
+  const detail = getHttpErrorDetail(error)
+  if (detail.status === 404 || detail.code === 'not_found') {
+    return { status: 'not-found', workspaceId, message: detail.message }
+  }
+  if (detail.status === 403 || detail.code === 'forbidden' || detail.code === 'not_member') {
+    return { status: 'forbidden', workspaceId, message: detail.message }
+  }
+  return { status: 'switch-failed', workspaceId, message: detail.message }
+}
+
+export function WorkspaceAuthProvider({
+  children,
+  workspaceRoute,
+  workspaceIdParam,
+}: WorkspaceAuthProviderProps) {
   const { id } = useParams<{ id: string }>()
   const location = useLocation()
   const queryClient = useQueryClient()
-  const routeWorkspaceId = id?.trim() ? id : workspaceIdFromPath(location.pathname)
+  const routeWorkspaceId = id?.trim() ? id : workspaceIdFromPath(location.pathname, workspaceRoute, workspaceIdParam)
+  const session = useSession()
+  const isAuthenticated = Boolean(session.data?.user)
 
   const workspacesQuery = useQuery({
     queryKey: WORKSPACES_QUERY_KEY,
     queryFn: fetchWorkspaces,
+    enabled: isAuthenticated,
   })
 
   const defaultWorkspace =
@@ -82,15 +128,23 @@ export function WorkspaceAuthProvider({ children }: WorkspaceAuthProviderProps) 
       }
       return fetchWorkspace(resolvedId)
     },
-    enabled: resolvedId !== null,
+    enabled: isAuthenticated && resolvedId !== null,
   })
 
   const detail = detailQuery.data ?? cachedDetail ?? null
   const workspace = detailQuery.isError ? null : detail?.workspace ?? null
   const role = detailQuery.isError ? null : detail?.role ?? null
+  const routeStatus: WorkspaceRouteStatus = (() => {
+    if (!isAuthenticated) return { status: 'idle', workspaceId: routeWorkspaceId }
+    if (routeWorkspaceId === null) return { status: 'idle', workspaceId: null }
+    if (detailQuery.isError) return routeStatusFromError(routeWorkspaceId, detailQuery.error)
+    if (detailQuery.isPending && !detail) return { status: 'loading', workspaceId: routeWorkspaceId }
+    if (workspace?.id === routeWorkspaceId) return { status: 'matched', workspaceId: routeWorkspaceId, workspace }
+    return { status: 'mismatched', workspaceId: routeWorkspaceId, currentWorkspaceId: workspace?.id ?? null }
+  })()
 
   return (
-    <WorkspaceContext.Provider value={{ workspace, role }}>
+    <WorkspaceContext.Provider value={{ workspace, role, routeStatus }}>
       {children}
     </WorkspaceContext.Provider>
   )
@@ -102,4 +156,8 @@ export function useCurrentWorkspace(): Workspace | null {
 
 export function useWorkspaceRole(): MemberRole | null {
   return useContext(WorkspaceContext).role
+}
+
+export function useWorkspaceRouteStatus(): WorkspaceRouteStatus {
+  return useContext(WorkspaceContext).routeStatus
 }

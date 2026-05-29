@@ -13,6 +13,8 @@ interface FakeAdapterState {
   resolved: Array<{ source: string | URL; kind: string; id: string; fingerprint: string }>
   systemUv?: boolean
   failPipInstall?: boolean
+  /** Exact command path whose `--version` should fail (simulates a non-runnable explicit uv). */
+  failUvBin?: string
 }
 
 function createFakeAdapter(workspaceRoot: string, state: FakeAdapterState): WorkspaceProvisioningAdapter {
@@ -22,6 +24,9 @@ function createFakeAdapter(workspaceRoot: string, state: FakeAdapterState): Work
     async exec(command, args, opts): Promise<WorkspaceProvisioningExecResult | void> {
       state.commands.push({ command, args, cwd: opts?.cwd, env: opts?.env })
       if (command === 'python3' && args[0] === '--version') return { stdout: 'Python 3.12.1\n' }
+      if (state.failUvBin && command === state.failUvBin && args[0] === '--version') {
+        throw new Error(`explicit uv not runnable: ${command}`)
+      }
       if (command === 'uv' && args[0] === '--version') {
         if (!state.systemUv) throw new Error('uv missing')
         return { stdout: 'uv 0.5.0\n' }
@@ -92,6 +97,65 @@ async function fakePyprojectRoot(prefix = 'boring macro sdk-'): Promise<{ root: 
   await writeFile(pyproject, '[project]\nname = "boring-macro-sdk"\n')
   return { root, pyproject }
 }
+
+const VERCEL_UV = '/home/vercel-sandbox/.local/bin/uv'
+
+test('ensureUv prefers explicitUvBin over bare uv (PATH-independence)', async () => {
+  const workspaceRoot = await tempWorkspace()
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
+  // systemUv:false => bare `uv` would THROW. The explicit path must be used instead,
+  // proving provisioning does not depend on uv being on the exec PATH.
+  const state: FakeAdapterState = { commands: [], resolved: [], systemUv: false }
+
+  const uv = await ensureUv({
+    adapter: createFakeAdapter(workspaceRoot, state),
+    runtimeLayout: paths,
+    explicitUvBin: VERCEL_UV,
+  })
+
+  expect(uv.uvBin, 'must resolve to the explicit UV_BIN').toBe(VERCEL_UV)
+  expect(uv.installedWorkspaceUv).toBe(false)
+  const queriedExplicit = state.commands.some(
+    (c) => c.command === VERCEL_UV && c.args[0] === '--version',
+  )
+  expect(queriedExplicit, 'explicit UV_BIN must be probed for --version').toBe(true)
+  // It must NOT have invoked bare `uv` (which would have thrown).
+  expect(state.commands.some((c) => c.command === 'uv'), 'must not invoke bare uv').toBe(false)
+})
+
+test('ensureUv falls back to bare uv when explicitUvBin is not runnable', async () => {
+  const workspaceRoot = await tempWorkspace()
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
+  const state: FakeAdapterState = { commands: [], resolved: [], systemUv: true, failUvBin: '/bad/uv' }
+
+  const uv = await ensureUv({
+    adapter: createFakeAdapter(workspaceRoot, state),
+    runtimeLayout: paths,
+    explicitUvBin: '/bad/uv',
+  })
+
+  expect(uv.uvBin, 'falls back to PATH uv when explicit path is broken').toBe('uv')
+})
+
+test('ensurePythonRuntime runs venv + pip via explicit UV_BIN when PATH uv is absent', async () => {
+  const workspaceRoot = await tempWorkspace()
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
+  const { pyproject } = await fakePyprojectRoot()
+  const state: FakeAdapterState = { commands: [], resolved: [], systemUv: false } // no PATH uv
+
+  const result = await ensurePythonRuntime({
+    adapter: createFakeAdapter(workspaceRoot, state),
+    runtimeLayout: paths,
+    explicitUvBin: VERCEL_UV,
+    packages: [{ id: 'macro-sdk', packageName: 'boring-macro-sdk', projectFile: pyproject, expectedBins: ['bm'] }],
+  })
+
+  expect(result.changed).toBe(true)
+  const venvCmd = state.commands.find((c) => c.args[0] === 'venv')
+  const pipCmd = state.commands.find((c) => c.args[0] === 'pip' && c.args[1] === 'install')
+  expect(venvCmd?.command, 'uv venv must run via explicit UV_BIN').toBe(VERCEL_UV)
+  expect(pipCmd?.command, 'uv pip install must run via explicit UV_BIN').toBe(VERCEL_UV)
+})
 
 test('installs fake bm bin into final venv with uv venv and uv pip install', async () => {
   const workspaceRoot = await tempWorkspace()

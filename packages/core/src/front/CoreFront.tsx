@@ -1,6 +1,6 @@
-import { Suspense, useMemo } from 'react'
+import { Suspense, useCallback, useMemo } from 'react'
 import type { ReactNode } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Helmet, HelmetProvider } from 'react-helmet-async'
 
@@ -39,6 +39,9 @@ export interface CoreFrontProps {
   children?: ReactNode
   authPages?: CoreFrontAuthPagesOverride
   cspNonce?: string
+  workspaceRoute?: string
+  workspaceIdParam?: string
+  publicPaths?: string[]
 }
 
 const CSP_NONCE_META_NAME = 'boring-csp-nonce'
@@ -65,7 +68,32 @@ function createDefaultQueryClient(): QueryClient {
   })
 }
 
-export function CoreFront({ children, authPages, cspNonce }: CoreFrontProps) {
+function RouterAuthGate({ children, publicPaths }: { children: ReactNode; publicPaths?: string[] }) {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const authLocation = useMemo(
+    () => ({ pathname: location.pathname, search: location.search, hash: location.hash }),
+    [location.hash, location.pathname, location.search],
+  )
+  const navigateWithinRouter = useCallback(
+    (to: string, options?: { replace?: boolean }) => {
+      navigate(to, { replace: options?.replace })
+    },
+    [navigate],
+  )
+
+  return (
+    <AuthGate
+      location={authLocation}
+      navigate={navigateWithinRouter}
+      publicPaths={publicPaths}
+    >
+      {children}
+    </AuthGate>
+  )
+}
+
+export function CoreFront({ children, authPages, cspNonce, workspaceRoute, workspaceIdParam, publicPaths }: CoreFrontProps) {
   const queryClient = useMemo(createDefaultQueryClient, [])
   const resolvedCspNonce = useMemo(
     () => cspNonce ?? readCspNonceFromDom(),
@@ -89,7 +117,7 @@ export function CoreFront({ children, authPages, cspNonce }: CoreFrontProps) {
               <AuthProvider queryClient={queryClient}>
                 <UserIdentityProvider>
                   <BrowserRouter>
-                    <WorkspaceAuthProvider>
+                    <WorkspaceAuthProvider workspaceRoute={workspaceRoute} workspaceIdParam={workspaceIdParam}>
                       <TopBarSlotProvider slot={<UserMenu />}>
                         <Helmet>
                           {resolvedCspNonce ? (
@@ -105,7 +133,7 @@ export function CoreFront({ children, authPages, cspNonce }: CoreFrontProps) {
                             </>
                           ) : null}
                         </Helmet>
-                        <AuthGate publicPaths={['/invites']}>
+                        <RouterAuthGate publicPaths={['/invites', ...(publicPaths ?? [])]}>
                           <Suspense fallback={null}>
                             <Routes>
                               <Route path={routes.signin} element={<SignInPage />} />
@@ -127,7 +155,7 @@ export function CoreFront({ children, authPages, cspNonce }: CoreFrontProps) {
                               {children}
                             </Routes>
                           </Suspense>
-                        </AuthGate>
+                        </RouterAuthGate>
                       </TopBarSlotProvider>
                     </WorkspaceAuthProvider>
                   </BrowserRouter>

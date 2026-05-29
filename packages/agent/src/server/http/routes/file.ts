@@ -72,6 +72,18 @@ function classifyError(
     })
   }
 
+  const statusCode = (err as { statusCode?: unknown })?.statusCode
+  const stableCode = (err as { code?: unknown })?.code
+  if (typeof statusCode === 'number' && statusCode >= 400 && statusCode < 600) {
+    return reply.code(statusCode).send({
+      error: {
+        code: typeof stableCode === 'string' ? stableCode : ERROR_CODE_INTERNAL,
+        message,
+        details: (err as { details?: unknown })?.details,
+      },
+    })
+  }
+
   return reply.code(500).send({
     error: { code: ERROR_CODE_INTERNAL, message },
   })

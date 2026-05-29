@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { chmod, mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -10,8 +11,10 @@ import type { RuntimeBundle } from '../../../runtime/mode'
 import { buildHarnessAgentTools } from '../index'
 
 function mockWorkspace(root = '/workspace'): Workspace {
+  const runtimeContext = { runtimeCwd: root }
   return {
     root,
+    runtimeContext,
     readFile: vi.fn(async () => ''),
     writeFile: vi.fn(async () => {}),
     unlink: vi.fn(async () => {}),
@@ -35,6 +38,7 @@ function mockSandbox(provider: string, capabilities: string[] = ['exec']): Sandb
     placement: provider === 'vercel-sandbox' ? 'remote' : 'server',
     provider,
     capabilities,
+    runtimeContext: { runtimeCwd: '/workspace' },
     exec: vi.fn(async () => defaultResult),
   }
 }
@@ -45,7 +49,13 @@ function mockBundle(provider: string, capabilities?: string[], workspaceRoot = '
     sandbox: mockSandbox(provider, capabilities),
     fileSearch: { search: vi.fn(async () => []) },
     getRuntimeEnv: vi.fn(async () => ({})),
+    storageRoot: workspaceRoot,
   }
+}
+
+function hasBwrap(): boolean {
+  if (process.platform !== 'linux') return false
+  return spawnSync('bwrap', ['--version'], { stdio: 'ignore' }).status === 0
 }
 
 const tempDirs: string[] = []
@@ -188,6 +198,31 @@ describe('buildHarnessAgentTools', () => {
     expect(result.isError).toBe(true)
     expect(result.content[0].text).toContain('[REDACTED]')
     expect(result.content[0].text).not.toContain('bridge-token-secret')
+  })
+
+  test('bwrap bash mounts storage root while exposing runtime cwd', async () => {
+    if (!hasBwrap()) return
+    const storageRoot = await makeTempWorkspace()
+    await writeFile(join(storageRoot, 'marker.txt'), 'mounted\n', 'utf8')
+    const bundle: RuntimeBundle = {
+      storageRoot,
+      workspace: mockWorkspace('/workspace'),
+      sandbox: mockSandbox('bwrap'),
+      fileSearch: { search: vi.fn(async () => []) },
+    }
+    const tools = buildHarnessAgentTools(bundle, {
+      pathEntries: ['/workspace/.boring-agent/node/node_modules/.bin'],
+    })
+    const bashTool = tools.find((t) => t.name === 'bash')!
+
+    const result = await bashTool.execute(
+      { command: 'pwd; cat marker.txt; test -d .boring-agent && printf "%s" "$BORING_AGENT_WORKSPACE_ROOT"', timeout: 10 },
+      { abortSignal: new AbortController().signal, toolCallId: 'test-bwrap-storage-root' },
+    )
+
+    expect(result.isError).toBe(false)
+    expect(result.content[0].text).toContain('/workspace')
+    expect(result.content[0].text).toContain('mounted')
   })
 
   test('vercel-sandbox bash forwards to sandbox.exec with dynamic runtime env', async () => {

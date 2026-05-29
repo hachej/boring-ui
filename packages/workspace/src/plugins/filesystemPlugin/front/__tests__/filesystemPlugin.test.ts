@@ -80,9 +80,9 @@ describe("filesystemPlugin", () => {
     )
   })
 
-  it("surface resolver falls back for unsupported paths", () => {
+  it("surface resolver falls back to the code editor for unsupported paths", () => {
     expect(resolver.resolve({ kind: "workspace.open.path", target: "blob.bin" })).toEqual(
-      expect.objectContaining({ component: "empty-file-panel" }),
+      expect.objectContaining({ component: "code-editor" }),
     )
   })
 

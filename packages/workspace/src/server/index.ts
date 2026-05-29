@@ -194,6 +194,11 @@ export {
 } from "./agentPlugins/signatureCache"
 export type {
   BoringPluginEvent,
+  BoringPluginFrontTarget,
+  BoringPluginFrontTargetResolver,
+  BoringPluginFrontTargetResolverContext,
+  BoringPluginNativeFrontTarget,
+  BoringPluginNativeFrontTargetTrust,
   BoringPluginListEntry,
   BoringServerPluginManifest,
 } from "./agentPlugins/types"

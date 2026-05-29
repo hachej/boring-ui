@@ -10,6 +10,7 @@ createRoot(document.getElementById('root')!).render(
     apiTimeout={10_000}
     persistenceEnabled
     plugins={[askUserPlugin]}
+    chatEntryMode="chat-first"
     chatParams={{ thinkingControl: true }}
   />,
 )

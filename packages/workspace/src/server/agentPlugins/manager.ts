@@ -10,14 +10,23 @@ import {
 } from "./signatureCache"
 import type {
   BoringPluginEvent,
+  BoringPluginFrontTarget,
+  BoringPluginFrontTargetResolver,
   BoringPluginListEntry,
   BoringServerPluginManifest,
   PluginRestartSurface,
 } from "./types"
+import { normalizeBoringPluginPiPackages } from "./piPackages"
+import { compactPiPackages, type WorkspacePiPackageSource } from "../plugins/bootstrapServer"
+
+function skillPathForPiLoader(path: string): string {
+  return existsSync(join(path, "SKILL.md")) ? dirname(path) : path
+}
 
 interface LoadedPluginRecord extends BoringServerPluginManifest {
   revision: number
   signature: string
+  frontTarget?: BoringPluginFrontTarget
   /**
    * pluginFileSignature(serverPath) captured at load time, or `null` when
    * the plugin has no server entry. Lets computeRequiresRestart() decide
@@ -37,6 +46,16 @@ export interface BoringPluginAssetManagerOptions {
    * the default assumes workspace root equals `process.cwd()`.
    */
   errorRoot?: string
+  /**
+   * Optional host-owned runtime front-target resolver. When omitted, list/event
+   * payloads preserve the existing `frontUrl` (`/@fs/...`) fallback only.
+   */
+  frontTargetResolver?: BoringPluginFrontTargetResolver
+  /**
+   * Keep legacy `/@fs/...` frontUrl payloads alongside frontTarget. Defaults
+   * to true for back-compat; packaged CLI folder/workspaces mode can disable it.
+   */
+  includeLegacyFrontUrl?: boolean
 }
 
 export interface LoadBoringAssetsError {
@@ -49,6 +68,22 @@ export interface LoadBoringAssetsResult {
   loaded: BoringPluginListEntry[]
   events: BoringPluginEvent[]
   errors: LoadBoringAssetsError[]
+}
+
+export interface LoadedBoringPluginInspection {
+  id: string
+  version: string
+  revision: number
+  rootDir: string
+  frontPath?: string
+  frontTarget?: BoringPluginFrontTarget
+}
+
+export interface LoadedBoringPluginPiSnapshot {
+  additionalSkillPaths: string[]
+  packages: WorkspacePiPackageSource[]
+  extensionPaths: string[]
+  systemPromptAppend?: string
 }
 
 type Listener = (event: BoringPluginEvent) => void
@@ -122,6 +157,19 @@ function directorySignature(root: string | undefined): string {
   return hash.digest("hex")
 }
 
+function normalizePluginSubpath(rootDir: string, path: string): string {
+  return relative(rootDir, path).replaceAll("\\", "/")
+}
+
+function frontSignatureRoot(plugin: BoringServerPluginManifest): string | undefined {
+  if (!plugin.frontPath) return undefined
+  const frontRoot = join(plugin.rootDir, "front")
+  const rel = relative(frontRoot, plugin.frontPath)
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))
+    ? frontRoot
+    : dirname(plugin.frontPath)
+}
+
 function pluginSignature(plugin: BoringServerPluginManifest): string {
   return createHash("sha256")
     .update(JSON.stringify(plugin.boring))
@@ -129,7 +177,7 @@ function pluginSignature(plugin: BoringServerPluginManifest): string {
     .update(plugin.version)
     .update(plugin.frontPath ?? "")
     .update(pluginFileSignature(plugin.frontPath))
-    .update(directorySignature(plugin.frontPath ? dirname(plugin.frontPath) : undefined))
+    .update(directorySignature(frontSignatureRoot(plugin)))
     .update(directorySignature(join(plugin.rootDir, "shared")))
     .update(plugin.serverPath ?? "")
     .update(pluginFileSignature(plugin.serverPath))
@@ -171,15 +219,20 @@ function computeRequiresRestart(
 export class BoringPluginAssetManager {
   private readonly pluginDirs: string[]
   private readonly errorRoot: string
+  private readonly frontTargetResolver?: BoringPluginFrontTargetResolver
+  private readonly includeLegacyFrontUrl: boolean
   private readonly loaded = new Map<string, LoadedPluginRecord>()
   private readonly revisions = new Map<string, number>()
   private readonly listeners = new Set<Listener>()
+  private readonly lastErrors = new Map<string, LoadBoringAssetsError>()
   private loading: Promise<LoadBoringAssetsResult> | null = null
   private reloadQueued = false
 
   constructor(options: BoringPluginAssetManagerOptions) {
     this.pluginDirs = options.pluginDirs
     this.errorRoot = options.errorRoot ?? join(process.cwd(), ".pi", "extensions") // callers MUST override errorRoot in non-trivial deployments
+    this.frontTargetResolver = options.frontTargetResolver
+    this.includeLegacyFrontUrl = options.includeLegacyFrontUrl ?? true
   }
 
   preflight(): BoringPluginPreflightResult {
@@ -187,20 +240,41 @@ export class BoringPluginAssetManager {
   }
 
   list(): BoringPluginListEntry[] {
-    return [...this.loaded.values()].map((plugin) => ({
-      id: plugin.id,
-      boring: plugin.boring,
-      ...(plugin.pi ? { pi: plugin.pi } : {}),
-      version: plugin.version,
-      revision: plugin.revision,
-      ...(plugin.frontUrl ? { frontUrl: plugin.frontUrl } : {}),
-    }))
+    return [...this.loaded.values()].map((plugin) => this.toListEntry(plugin))
   }
 
   getError(pluginId: string): string | null {
     const path = this.errorPath(pluginId)
     if (!path || !existsSync(path)) return null
     return readFileSync(path, "utf8")
+  }
+
+  getErrors(): LoadBoringAssetsError[] {
+    return [...this.lastErrors.values()]
+  }
+
+  inspectLoaded(): LoadedBoringPluginInspection[] {
+    return [...this.loaded.values()].map((plugin) => ({
+      id: plugin.id,
+      version: plugin.version,
+      revision: plugin.revision,
+      rootDir: plugin.rootDir,
+      ...(plugin.frontPath ? { frontPath: plugin.frontPath } : {}),
+      ...(plugin.frontTarget ? { frontTarget: plugin.frontTarget } : {}),
+    }))
+  }
+
+  inspectLoadedPiSnapshot(): LoadedBoringPluginPiSnapshot {
+    const plugins = [...this.loaded.values()]
+    const prompts = plugins
+      .map((plugin) => plugin.pi?.systemPrompt?.trim())
+      .filter((prompt): prompt is string => Boolean(prompt))
+    return {
+      additionalSkillPaths: [...new Set(plugins.flatMap((plugin) => plugin.skillPaths ?? []).map(skillPathForPiLoader))],
+      packages: compactPiPackages(normalizeBoringPluginPiPackages(plugins)),
+      extensionPaths: plugins.flatMap((plugin) => plugin.extensionPaths ?? []),
+      ...(prompts.length > 0 ? { systemPromptAppend: `# Loaded boring-ui plugin context\n\n${prompts.join("\n\n")}` } : {}),
+    }
   }
 
   subscribe(listener: Listener): () => void {
@@ -229,6 +303,7 @@ export class BoringPluginAssetManager {
   }
 
   private async doLoadOnce(): Promise<LoadBoringAssetsResult> {
+    this.lastErrors.clear()
     const scan = scanBoringPlugins(this.pluginDirs)
     const nextPlugins = scan.plugins
     const nextIds = new Set(nextPlugins.map((plugin) => plugin.id))
@@ -243,6 +318,7 @@ export class BoringPluginAssetManager {
       if (previous && invalidPluginDirs.has(resolve(previous.rootDir))) continue
       const revision = this.bumpRevision(id)
       this.loaded.delete(id)
+      this.lastErrors.delete(id)
       // Stale cache outlives the plugin — verify-plugin would otherwise
       // compare against a serverSignature for code that's no longer
       // loaded. Best-effort: don't fail unload if rm fails.
@@ -260,9 +336,17 @@ export class BoringPluginAssetManager {
         const previous = this.loaded.get(plugin.id)
         if (previous?.signature === signature) continue
         const revision = this.bumpRevision(plugin.id)
+        const frontTarget = this.resolveFrontTarget(plugin, revision)
         const serverSignature = plugin.serverPath ? pluginFileSignature(plugin.serverPath) : null
-        const record: LoadedPluginRecord = { ...plugin, revision, signature, serverSignature }
+        const record: LoadedPluginRecord = {
+          ...plugin,
+          revision,
+          signature,
+          ...(frontTarget ? { frontTarget } : {}),
+          serverSignature,
+        }
         this.loaded.set(plugin.id, record)
+        this.lastErrors.delete(plugin.id)
         this.clearError(plugin.id)
         // Persist the load-time server signature so verify-plugin can
         // detect server-file drift between this load and the next user
@@ -290,7 +374,8 @@ export class BoringPluginAssetManager {
           boring: plugin.boring,
           version: plugin.version,
           revision,
-          ...(plugin.frontUrl ? { frontUrl: plugin.frontUrl } : {}),
+          ...(this.frontUrlPayload(plugin.frontUrl)),
+          ...(frontTarget ? { frontTarget } : {}),
           ...(requiresRestart.length > 0 ? { requiresRestart } : {}),
         }
         events.push(event)
@@ -300,7 +385,9 @@ export class BoringPluginAssetManager {
         const message = error instanceof Error ? error.stack ?? error.message : String(error)
         this.writeError(plugin.id, message)
         const event: BoringPluginEvent = { type: "boring.plugin.error", id: plugin.id, revision, message }
-        errors.push({ id: plugin.id, revision, message })
+        const loadError = { id: plugin.id, revision, message }
+        this.lastErrors.set(plugin.id, loadError)
+        errors.push(loadError)
         events.push(event)
         this.emit(event)
       }
@@ -319,6 +406,7 @@ export class BoringPluginAssetManager {
       const revision = this.bumpRevision(id)
       const message = `${error.code}: ${error.message}\n\nPlugin dir: ${error.pluginDir}`
       const loadError = { id, revision, message }
+      this.lastErrors.set(id, loadError)
       errors.push(loadError)
       this.writeError(id, message)
       const event: BoringPluginEvent = { type: "boring.plugin.error", id, revision, message }
@@ -331,6 +419,36 @@ export class BoringPluginAssetManager {
     const next = (this.revisions.get(id) ?? 0) + 1
     this.revisions.set(id, next)
     return next
+  }
+
+  private toListEntry(plugin: LoadedPluginRecord): BoringPluginListEntry {
+    return {
+      id: plugin.id,
+      boring: plugin.boring,
+      ...(plugin.pi ? { pi: plugin.pi } : {}),
+      version: plugin.version,
+      revision: plugin.revision,
+      ...(this.frontUrlPayload(plugin.frontUrl)),
+      ...(plugin.frontTarget ? { frontTarget: plugin.frontTarget } : {}),
+    }
+  }
+
+  private frontUrlPayload(frontUrl: string | undefined): Pick<BoringPluginListEntry, "frontUrl"> | Record<string, never> {
+    if (!this.includeLegacyFrontUrl || !frontUrl) return {}
+    return { frontUrl }
+  }
+
+  private resolveFrontTarget(plugin: BoringServerPluginManifest, revision: number): BoringPluginFrontTarget | undefined {
+    if (!plugin.frontPath || !this.frontTargetResolver) return undefined
+    const frontEntrySubpath = typeof plugin.boring.front === "string"
+      ? plugin.boring.front.replace(/^\.\//, "")
+      : normalizePluginSubpath(plugin.rootDir, plugin.frontPath)
+    const frontTarget = this.frontTargetResolver(plugin, {
+      revision,
+      frontEntrySubpath,
+    })
+    if (!frontTarget) return undefined
+    return { ...frontTarget, revision }
   }
 
   private emit(event: BoringPluginEvent): void {

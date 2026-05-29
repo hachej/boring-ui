@@ -170,6 +170,19 @@ function isNotFoundError(err: unknown): boolean {
 }
 
 function classifySessionError(err: unknown, reply: FastifyReply): FastifyReply {
+  const statusCode = (err as { statusCode?: unknown })?.statusCode
+  const stableCode = (err as { code?: unknown })?.code
+  if (typeof statusCode === 'number' && statusCode >= 400 && statusCode < 600) {
+    const message = err instanceof Error ? err.message : 'session route failed'
+    return reply.code(statusCode).send({
+      error: {
+        code: typeof stableCode === 'string' ? stableCode : ERROR_CODE_INTERNAL,
+        message,
+        details: (err as { details?: unknown })?.details,
+      },
+    })
+  }
+
   if (isNotFoundError(err)) {
     return reply.code(404).send({
       error: {

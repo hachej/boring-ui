@@ -10,7 +10,7 @@
 import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, expect, test, describe } from "vitest"
+import { afterEach, beforeEach, expect, test, describe } from "vitest"
 import {
   collectWorkspaceAgentServerPlugins,
   createWorkspaceAgentServer,
@@ -23,8 +23,16 @@ import * as serverApi from "../index"
 // top-level vi.mock on @hachej/boring-agent/server which would affect all tests here.
 
 const tempDirs: string[] = []
+const originalUseLocalPackages = process.env.BORING_USE_LOCAL_PACKAGES
+
+beforeEach(() => {
+  process.env.BORING_USE_LOCAL_PACKAGES = "1"
+})
 
 afterEach(async () => {
+  if (originalUseLocalPackages === undefined) delete process.env.BORING_USE_LOCAL_PACKAGES
+  else process.env.BORING_USE_LOCAL_PACKAGES = originalUseLocalPackages
+
   await Promise.all(
     tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
   )
@@ -35,6 +43,54 @@ async function makeTempDir(prefix: string): Promise<string> {
   tempDirs.push(dir)
   return dir
 }
+
+function getProvisionedNodePackage(collection: ReturnType<typeof collectWorkspaceAgentServerPlugins>, id: string) {
+  return collection.runtimePlugins
+    .flatMap((plugin) => plugin.provisioning?.nodePackages ?? [])
+    .find((pkg) => pkg.id === id)
+}
+
+describe("createWorkspaceAgentServer — runtime provisioning packages", () => {
+  test("uses published boring-ui CLI by default to avoid local-folder symlink installs", () => {
+    const previous = process.env.BORING_USE_LOCAL_PACKAGES
+    delete process.env.BORING_USE_LOCAL_PACKAGES
+    try {
+      const cli = getProvisionedNodePackage(collectWorkspaceAgentServerPlugins(), "boring-ui-cli")
+      expect(cli).toMatchObject({
+        id: "boring-ui-cli",
+        packageName: "@hachej/boring-ui-cli",
+        expectedBins: ["boring-ui"],
+      })
+      // In a monorepo layout the CLI package root resolves locally,
+      // so published provisioning omits the version (npm picks latest).
+      // Outside a monorepo, the published version is pinned.
+      if (cli?.version !== undefined) {
+        expect(cli.version).toMatch(/^\d+\.\d+\.\d+/)
+      }
+      expect(cli).not.toHaveProperty("packageRoot")
+    } finally {
+      if (previous === undefined) delete process.env.BORING_USE_LOCAL_PACKAGES
+      else process.env.BORING_USE_LOCAL_PACKAGES = previous
+    }
+  })
+
+  test("keeps local CLI package provisioning behind BORING_USE_LOCAL_PACKAGES", () => {
+    const previous = process.env.BORING_USE_LOCAL_PACKAGES
+    process.env.BORING_USE_LOCAL_PACKAGES = "1"
+    try {
+      const cli = getProvisionedNodePackage(collectWorkspaceAgentServerPlugins(), "boring-ui-cli")
+      expect(cli).toMatchObject({
+        id: "boring-ui-cli",
+        packageName: "@hachej/boring-ui-cli",
+      })
+      expect(typeof cli?.packageRoot).toBe("string")
+      expect(cli).not.toHaveProperty("version")
+    } finally {
+      if (previous === undefined) delete process.env.BORING_USE_LOCAL_PACKAGES
+      else process.env.BORING_USE_LOCAL_PACKAGES = previous
+    }
+  })
+})
 
 describe("createWorkspaceAgentServer — runtime provisioning reload", () => {
   test("/reload recopies plugin skills into .boring-agent/skills", async () => {

@@ -7,7 +7,7 @@ import {
   useTheme,
   useWorkspaceBridge,
 } from "../front/provider"
-import { useApiBaseUrl, useDataClient } from "../plugins/filesystemPlugin/front/data"
+import { useApiBaseUrl, useDataClient, useWorkspaceRequestId } from "../plugins/filesystemPlugin/front/data"
 import { useRegistry, useCommandRegistry, useCatalogRegistry } from "../front/registry"
 import { useCatalogs } from "../front/plugin/useCatalogs"
 import { useCommands } from "../front/plugin/useCommands"
@@ -176,6 +176,16 @@ describe("WorkspaceProvider — context composition", () => {
   it("exposes apiBaseUrl via useApiBaseUrl", () => {
     const { result } = renderHook(() => useApiBaseUrl(), { wrapper })
     expect(result.current).toBe("")
+  })
+
+  it("scopes filesystem requests from workspaceId by default", () => {
+    const scopedWrapper = ({ children }: { children: ReactNode }) => (
+      <WorkspaceProvider workspaceId="workspace-scope" persistenceEnabled={false}>
+        {children}
+      </WorkspaceProvider>
+    )
+    const { result } = renderHook(() => useWorkspaceRequestId(), { wrapper: scopedWrapper })
+    expect(result.current).toBe("workspace-scope")
   })
 })
 
