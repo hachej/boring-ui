@@ -27,6 +27,7 @@ These guidelines bias toward caution over speed. For trivial tasks, use judgment
 **Don't assume. Don't hide confusion. Surface tradeoffs.**
 
 Before implementing:
+
 - State your assumptions explicitly. If uncertain, ask.
 - If multiple interpretations exist, present them — don't pick silently.
 - If a simpler approach exists, say so. Push back when warranted.
@@ -49,12 +50,14 @@ Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, sim
 **Touch only what you must. Clean up only your own mess.**
 
 When editing existing code:
+
 - Don't "improve" adjacent code, comments, or formatting.
 - Don't refactor things that aren't broken.
 - Match existing style, even if you'd do it differently.
 - If you notice unrelated dead code, mention it — don't delete it.
 
 When your changes create orphans:
+
 - Remove imports/variables/functions that YOUR changes made unused.
 - Don't remove pre-existing dead code unless asked.
 
@@ -65,6 +68,7 @@ The test: every changed line should trace directly to the user's request.
 **Define success criteria. Loop until verified.**
 
 Transform tasks into verifiable goals:
+
 - "Add validation" → "Write tests for invalid inputs, then make them pass"
 - "Fix the bug" → "Write a test that reproduces it, then make it pass"
 - "Refactor X" → "Ensure tests pass before and after"
@@ -85,16 +89,18 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
 
 **boring-ui-v2** is a greenfield monorepo building **three publishable packages**:
 
-- **`@hachej/boring-core`** — canonical app shell: DB (Postgres/Drizzle), auth (better-auth), config, HTTP app factory (Fastify), and frontend provider stack (`<BoringApp>`). Every child app imports core first. See [`packages/core/docs/CORE.md`](packages/core/docs/CORE.md) for the full spec.
-- **`@hachej/boring-agent`** — pane-embeddable coding agent. Ships 3 execution modes behind one mental model: `direct` (no isolation, macOS/Windows dev) / `local` (bwrap on Linux) / `vercel-sandbox` (Firecracker microVM). Also ships as a first-class CLI (`npx @hachej/boring-agent`), zero setup, zero deploy.
-- **`@hachej/boring-workspace`** — workspace UI and bridge package. Front code composes injected chat, plugin-owned left tabs/editors/catalogs, DockView layouts, and the UI bridge client. Server/app code exports workspace bridge routes/tools and `createWorkspaceAgentApp()` for shells that compose `@hachej/boring-agent/server`.
+- `**@hachej/boring-core**` — canonical app shell: DB (Postgres/Drizzle), auth (better-auth), config, HTTP app factory (Fastify), and frontend provider stack (`<BoringApp>`). Every child app imports core first. See `[packages/core/docs/CORE.md](packages/core/docs/CORE.md)` for the full spec.
+- `**@hachej/boring-agent**` — pane-embeddable coding agent. Ships 3 execution modes behind one mental model: `direct` (no isolation, macOS/Windows dev) / `local` (bwrap on Linux) / `vercel-sandbox` (Firecracker microVM). Also ships as a first-class CLI (`npx @hachej/boring-agent`), zero setup, zero deploy.
+- `**@hachej/boring-workspace**` — workspace UI and bridge package. Front code composes injected chat, plugin-owned left tabs/editors/catalogs, DockView layouts, and the UI bridge client. Server/app code exports workspace bridge routes/tools and `createWorkspaceAgentApp()` for shells that compose `@hachej/boring-agent/server`.
 
 **Dependency graph (inverted — core at the bottom):**
+
 ```
   apps/*  →  @hachej/boring-workspace  →  @hachej/boring-core
     │              ↑
     └──────→  @hachej/boring-agent  (standalone OK — zero core imports at runtime)
 ```
+
 `@hachej/boring-core` owns persistence and identity. `@hachej/boring-agent` and `@hachej/boring-workspace` stay DB-free; core injects stores via `createCoreApp` options. Agent can also boot standalone (`createAgentApp`) with zero core dependency.
 
 The three packages are designed to be composed by a final **app shell** (the end user's app). See `packages/agent/docs/plans/agent-package-spec.md`, `packages/workspace/docs/INTERFACES.md`, and `packages/core/docs/CORE.md` for current package boundaries.
@@ -103,12 +109,12 @@ The three packages are designed to be composed by a final **app shell** (the end
 
 v1 boring-ui tangled chat, layout, sandboxing, and deploy concerns into a single repo. v2 untangles them on purpose:
 
-- **`@hachej/boring-agent` is a product by itself** — `npx @hachej/boring-agent` is a legitimate standalone tool. Users who want "Claude Code in a browser against my repo" don't need layouts or panels or git UI.
-- **`@hachej/boring-workspace` owns workspace UI contracts** — layouts, plugin registries, catalogs, surface resolvers, and the UI bridge. Base front/shared code stays agent-free; `@hachej/boring-workspace/app/*` may provide batteries-included composition with `@hachej/boring-agent`.
+- `**@hachej/boring-agent` is a product by itself** — `npx @hachej/boring-agent` is a legitimate standalone tool. Users who want "Claude Code in a browser against my repo" don't need layouts or panels or git UI.
+- `**@hachej/boring-workspace` owns workspace UI contracts** — layouts, plugin registries, catalogs, surface resolvers, and the UI bridge. Base front/shared code stays agent-free; `@hachej/boring-workspace/app/*` may provide batteries-included composition with `@hachej/boring-agent`.
 
 **Future packages (not yet implemented, but shape current decisions):**
 
-- **`@boring/cloud`** — deployment + multi-tenancy. Multi-workspace provisioning, per-user/per-tenant workspace lifecycle, Fly/Modal/Vercel orchestration, billing integration, multi-tenant auth. Kept OUT of agent + workspace so self-hosters don't carry cloud weight.
+- `**@boring/cloud**` — deployment + multi-tenancy. Multi-workspace provisioning, per-user/per-tenant workspace lifecycle, Fly/Modal/Vercel orchestration, billing integration, multi-tenant auth. Kept OUT of agent + workspace so self-hosters don't carry cloud weight.
 
 Design implication today: every interface that might need DB-backing in the future (`SessionStore`, `SandboxHandleStore`, etc.) ships with a file-based default in v2 + an injection seam (`createAgentApp({ sessionStore, sandboxHandleStore })`) so core/cloud can swap in DB impls without touching agent/workspace internals.
 
@@ -119,7 +125,6 @@ Design implication today: every interface that might need DB-backing in the futu
 - **Easy to maintain** — platform-agnostic shared contracts (`Uint8Array` not `Buffer`, no `node:*` in `src/shared/**`). Adapters own platform specifics. Swapping an adapter = swap one file.
 - **Ship fast, accept known risk** — if a risk is enumerated in the spec's Risks section, we don't pre-engineer mitigations. We add them reactively when a user hits them.
 - **Port over re-research** — the old boring-ui has battle-hardened path validators, bwrap flags, fileRoutes. Port verbatim where possible.
-
 
 ### Target stack (per spec — not yet installed)
 
@@ -136,13 +141,15 @@ Packages live in `packages/`. App fixtures and demos live in `apps/`. Do not add
 
 ## Where to Find What
 
-| What | Where |
-|---|---|
-| Agent package spec (canonical design) | `packages/agent/docs/plans/agent-package-spec.md` |
-| Workspace package interfaces | `packages/workspace/docs/INTERFACES.md` |
-| Workspace package history | `packages/workspace/docs/plans/archive/WORKSPACE_V2_PLAN.md` |
-| Execution plan (all tasks, decisions, risks, tests) | `.beads/` — `br ready`, `br show <id>` |
-| Old boring-ui (reference for porting — don't re-research) | `/home/ubuntu/projects/boring-ui/` |
+
+| What                                                      | Where                                                        |
+| --------------------------------------------------------- | ------------------------------------------------------------ |
+| Agent package spec (canonical design)                     | `packages/agent/docs/plans/agent-package-spec.md`            |
+| Workspace package interfaces                              | `packages/workspace/docs/INTERFACES.md`                      |
+| Workspace package history                                 | `packages/workspace/docs/plans/archive/WORKSPACE_V2_PLAN.md` |
+| Execution plan (all tasks, decisions, risks, tests)       | `.beads/` — `br ready`, `br show <id>`                       |
+| Old boring-ui (reference for porting — don't re-research) | `/home/ubuntu/projects/boring-ui/`                           |
+
 
 The agent spec has a "Reference files from the old boring-ui" section (§Reference files) mapping each port task → the exact file to port from. **Port and adapt — no blind research.**
 
@@ -157,7 +164,7 @@ These must hold in all code. Grep-enforced in CI (see beads tagged `invariant-li
 3. **Routes + tools receive `Workspace` as a parameter** — never a path or root-dir. Centralized adapter resolution via `resolveMode()`.
 4. **Path validation is the adapter's job** — consumers pass user paths; adapters reject `../` / absolute / symlink-escape.
 5. **Workspace + Sandbox swap as a paired `RuntimeModeAdapter`** — they must share a filesystem substrate. Mixed pairings = split-brain.
-6. **`UiBridge.postCommand` is the single dispatch source** — chat-stream `data-ui-command` parts are display-only derivatives.
+6. `**UiBridge.postCommand` is the single dispatch source** — chat-stream `data-ui-command` parts are display-only derivatives.
 7. **Workspace base front/shared code has ZERO value imports from `@hachej/boring-agent`** — package-neutral workspace UI keeps agent injected. `@hachej/boring-workspace/app/front` may import documented `@hachej/boring-agent/front` APIs for default app composition, and `@hachej/boring-workspace/app/server` may import documented `@hachej/boring-agent/server` APIs.
 8. **Every error has a stable code** from the canonical error-codes enum (one import site, no raw string codes).
 9. **Pi-tools migration stays locked** — `bash`/`read`/`write`/`edit`/`find`/`grep`/`ls` flow through pi factories plus Operations adapters. Custom AgentTools require Principle 3 justification from epic `boring-ui-v2-uhwx`.
@@ -214,7 +221,7 @@ pnpm --filter @hachej/boring-workspace build && pnpm --filter workspace-playgrou
 
 ### Plugin system — code patterns
 
-The user-facing intro is in [`README.md#plugin-system`](README.md#plugin-system). Canonical structure for new plugins is in [`packages/workspace/docs/PLUGIN_STRUCTURE.md`](packages/workspace/docs/PLUGIN_STRUCTURE.md). The code patterns you'll write most often:
+The user-facing intro is in `[README.md#plugin-system](README.md#plugin-system)`. Canonical structure for new plugins is in `[packages/workspace/docs/PLUGIN_STRUCTURE.md](packages/workspace/docs/PLUGIN_STRUCTURE.md)`. The code patterns you'll write most often:
 
 **Minimal plugin:**
 
@@ -257,15 +264,17 @@ export function WidgetPane({ params, api, containerApi }: PaneProps<Params>) {
 
 **Output types:**
 
-| type | contributes |
-|---|---|
-| `panel` | center/right/bottom pane opened programmatically |
-| `left-tab` | persistent tab in the left sidebar |
-| `command` | command palette entry |
-| `catalog` | searchable, faceted data-explorer tab |
-| `surface-resolver` | maps `SurfaceOpenRequest` kind → panel id |
-| `binding` | React component mounted in the provider tree |
-| `provider` | binding that also receives `apiBaseUrl`, `authHeaders`, etc. |
+
+| type               | contributes                                                  |
+| ------------------ | ------------------------------------------------------------ |
+| `panel`            | center/right/bottom pane opened programmatically             |
+| `left-tab`         | persistent tab in the left sidebar                           |
+| `command`          | command palette entry                                        |
+| `catalog`          | searchable, faceted data-explorer tab                        |
+| `surface-resolver` | maps `SurfaceOpenRequest` kind → panel id                    |
+| `binding`          | React component mounted in the provider tree                 |
+| `provider`         | binding that also receives `apiBaseUrl`, `authHeaders`, etc. |
+
 
 **Composing plugins (imperative API via `definePlugin`):**
 
@@ -316,15 +325,17 @@ Each package has its own `tsconfig.json`. Workspace has separate `tsconfig.front
 
 ## 0. Tools you have
 
-| Tool | Purpose | Key commands |
-|---|---|---|
-| `br` | Issue tracking — source of truth for work state | `br ready`, `br show <id>`, `br update <id> -s <status>`, `br close <id>`, `br sync --flush-only` |
-| `bv` | Triage sidecar. **Only `--robot-*` flags** (bare `bv` is TUI). | `bv --robot-next`, `bv --robot-triage`, `bv --robot-plan`, `bv --robot-alerts` |
-| `git` | Atomic commits per bead | `git status`, `git diff --staged`, `git add`, `git commit` |
-| `cc -p "<prompt>"` | Ask Claude Code for review (codex agents use this) | non-interactive print mode |
-| `cod exec "<prompt>"` | Ask Codex for review (claude-code agents use this) | non-interactive exec mode |
-| MCP Agent Mail | Peer coordination, file reservations | `register_agent`, `send_message`, `fetch_inbox`, `file_reservation_paths` |
-| `vault kv get/list` | Read-only access to `secret/agent/*` + `secret/shared/*` | `vault kv get -field=api_key secret/agent/anthropic` |
+
+| Tool                  | Purpose                                                        | Key commands                                                                                      |
+| --------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `br`                  | Issue tracking — source of truth for work state                | `br ready`, `br show <id>`, `br update <id> -s <status>`, `br close <id>`, `br sync --flush-only` |
+| `bv`                  | Triage sidecar. **Only `--robot-*` flags** (bare `bv` is TUI). | `bv --robot-next`, `bv --robot-triage`, `bv --robot-plan`, `bv --robot-alerts`                    |
+| `git`                 | Atomic commits per bead                                        | `git status`, `git diff --staged`, `git add`, `git commit`                                        |
+| `cc -p "<prompt>"`    | Ask Claude Code for review (codex agents use this)             | non-interactive print mode                                                                        |
+| `cod exec "<prompt>"` | Ask Codex for review (claude-code agents use this)             | non-interactive exec mode                                                                         |
+| MCP Agent Mail        | Peer coordination, file reservations                           | `register_agent`, `send_message`, `fetch_inbox`, `file_reservation_paths`                         |
+| `vault kv get/list`   | Read-only access to `secret/agent/*` + `secret/shared/*`       | `vault kv get -field=api_key secret/agent/anthropic`                                              |
+
 
 **Hard rules:** never launch bare `bv`; never edit `.beads/*.jsonl` by hand; never commit secrets; use MCP tools natively (not HTTP wrappers).
 
@@ -332,11 +343,12 @@ Each package has its own `tsconfig.json`. Workspace has separate `tsconfig.front
 
 1. **Read this file end-to-end** (even if you read it last session — context drifts after compaction).
 2. **Register with Agent Mail + catch up on inbox:**
-   ```
+  ```
    ensure_project(project_key="boring-ui-v2")
    register_agent(project_key="boring-ui-v2", program="claude-code" | "codex", model="<your model>")
    fetch_inbox(project_key="boring-ui-v2")
-   ```
+  ```
+
    If first time this session, broadcast an intro message.
 3. **Skim the relevant spec** (agent or workspace).
 4. **Pick a bead:** `bv --robot-next` (preferred) or `br ready`.
@@ -368,6 +380,7 @@ Verdicts: **ship** → commit + close. **revise** → fix + re-request (cap 3 ro
 ## 4. Commit + close
 
 **Commit style** (matches `git log --oneline` on `main`):
+
 ```
 <type>(<scope>): <subject>
 
@@ -375,6 +388,7 @@ Verdicts: **ship** → commit + close. **revise** → fix + re-request (cap 3 ro
 
 Co-Authored-By: <agent-name> <noreply@anthropic.com>
 ```
+
 - **Types:** `feat` / `fix` / `docs` / `chore` / `refactor` / `test` / `polish`.
 - **Scopes:** `plan` / `beads` / `agent` / `workspace`.
 - **Reference bead ID** in subject or body: `fix(agent): path helpers reject null-byte vectors (boring-ui-v2-tx7)`.
@@ -401,7 +415,30 @@ export GITHUB_TOKEN=$(vault kv get -field=token secret/agent/boringdata-agent)
 vault kv list secret/agent/           # agent-scoped secrets
 vault kv list secret/agent/app/       # per-app secrets
 ```
+
 Agent token is read-only for `secret/agent/*` and `secret/shared/*`.
+
+## 7. GitHub issue labels
+
+Two axes — **where it is** and **where it is in the process**. Tag every issue with one `status:`, plus the `package:`/`plugin:` labels it touches.
+
+`**status:` — where it is in the process** (exactly one; moves left→right):
+
+
+| Label                   | Meaning                                      |
+| ----------------------- | -------------------------------------------- |
+| `status:to-plan`        | Needs a plan written                         |
+| `status:to-plan-review` | Plan written, awaiting review                |
+| `status:to-code`        | Plan approved — ready to implement           |
+| `status:to-code-review` | Implementation done, diff/PR awaiting review |
+
+
+`to-plan → to-plan-review → to-code → to-code-review → (closed)`
+
+`**package:` — where it is** (zero or more, blue): `core` · `agent` · `workspace` · `ui` · `cli` · `pi`
+`**plugin:` — where it is** (zero or more, green): `ask-user` · `data-catalog` · `data-explorer` · `deck`
+
+Legacy kind-of-work labels (`bug`, `feature`, `enhancement`, `refactor`, `architecture`, `story`) are optional/loose — the two axes above are what we tag on consistently. Create labels with the `hachej` gh login (the Vault `boringdata-agent` token is read-only on the repo).
 
 ---
 
