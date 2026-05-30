@@ -9,9 +9,10 @@ import { Sandbox as VercelSandbox } from '@vercel/sandbox'
 
 import { type SandboxHandleStore } from '../../../shared/sandbox-handle-store'
 import { safeCapture, type TelemetrySink } from '../../../shared/telemetry'
-import { getEnv } from '../../config/env'
+import { getEnv, setEnvDefault } from '../../config/env'
 import { createVercelSandboxExec } from '../../sandbox/vercel-sandbox/createVercelSandboxExec'
 import { createVercelProvisioningAdapter } from '../../sandbox/vercel-sandbox/provisioningAdapter'
+import { isNodeFamilyRuntime, uvSetupCommandsForRuntime, VERCEL_UV_BIN } from '../../sandbox/snapshots/deploymentSnapshot'
 import { FileHandleStore } from '../../sandbox/vercel-sandbox/FileHandleStore'
 import {
   collectFiles,
@@ -196,6 +197,34 @@ async function ensureVercelWorkspaceRoot(sandbox: VercelSandboxWithRunCommand): 
   })
   if ((result.exitCode ?? 1) !== 0) {
     throw new Error(`failed to initialize ${VERCEL_SANDBOX_REMOTE_ROOT} (exit ${result.exitCode ?? 'unknown'})`)
+  }
+}
+
+/**
+ * Install/verify the low-level runtime primitives provisioning needs (Layer A).
+ * Vercel `node*` runtimes ship node/npm/pnpm + python3 but NO pip/uv, so this
+ * installs Astral uv via its standalone installer (no pip/dnf — ~1.3s). It is
+ * idempotent (skips when uv is already present) and runs on the SAME sandbox
+ * provisioning will use, so `provisionWorkspaceRuntime()` finds uv at the
+ * explicit `VERCEL_UV_BIN`. Without this, a fresh (no-snapshot) workspace cannot
+ * provision the Python runtime at all.
+ */
+async function ensureVercelRuntimePrimitives(
+  sandbox: VercelSandboxWithRunCommand,
+  runtime: string | undefined,
+): Promise<void> {
+  if (!sandbox.runCommand) return
+  const script = uvSetupCommandsForRuntime(runtime).join(' && ')
+  const result = await sandbox.runCommand({ cmd: 'sh', args: ['-c', script] })
+  if ((result.exitCode ?? 1) !== 0) {
+    throw new Error(`runtime bootstrap (uv) failed (exit ${result.exitCode ?? 'unknown'})`)
+  }
+  // Provisioning invokes uv by explicit path (correctness must not depend on the
+  // non-interactive exec PATH). Default BORING_AGENT_UV_BIN to where the Node
+  // bootstrap installs uv; an explicit deploy-config value still wins. Routed
+  // through config/env so we never touch process.env directly (invariant).
+  if (isNodeFamilyRuntime(runtime)) {
+    setEnvDefault('BORING_AGENT_UV_BIN', VERCEL_UV_BIN)
   }
 }
 
@@ -403,6 +432,12 @@ async function ensureVercelProvisioningParts(options: {
       ctx: options.ctx,
       phase: 'ensure-workspace-root',
       run: async () => { await ensureVercelWorkspaceRoot(sandboxHandle) },
+    })
+    await runSandboxSetupStep({
+      telemetry,
+      ctx: options.ctx,
+      phase: 'runtime-bootstrap',
+      run: async () => { await ensureVercelRuntimePrimitives(sandboxHandle, runtime) },
     })
     const workspace = createVercelSandboxWorkspace(sandboxHandle)
     const workspaceFs = createVercelWorkspaceFs({ workspace, sandbox: sandboxHandle })
