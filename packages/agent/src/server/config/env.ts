@@ -6,6 +6,18 @@ export function getEnvSnapshot(): Record<string, string | undefined> {
   return { ...process.env }
 }
 
+/**
+ * Set an env var only when it is currently unset, returning whether it was
+ * applied. Lets providers seed a sensible default (e.g. the Vercel uv path) that
+ * an explicit deploy-config value still overrides. Centralized here so the rest
+ * of the codebase never touches `process.env` directly (grep-enforced invariant).
+ */
+export function setEnvDefault(name: string, value: string): boolean {
+  if (process.env[name] !== undefined) return false
+  process.env[name] = value
+  return true
+}
+
 export function setEnvForTest(name: string, value: string | undefined): string | undefined {
   const previous = process.env[name]
   if (typeof value === 'string') {

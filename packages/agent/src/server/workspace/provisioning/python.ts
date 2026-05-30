@@ -56,11 +56,18 @@ export async function ensureUv(options: {
   const explicitUvBin = options.explicitUvBin?.trim()
   if (explicitUvBin) {
     try {
-      return {
-        uvBin: explicitUvBin,
-        uvVersion: await commandOutput(options.adapter, explicitUvBin, ['--version']) || 'uv unknown',
-        installedWorkspaceUv: false,
+      const uvVersion = await commandOutput(options.adapter, explicitUvBin, ['--version']) || 'uv unknown'
+      // Provisioning uses the explicit path directly, but the agent's interactive
+      // shell PATH (getBoringAgentPathEntries) only includes runtimeLayout.uvBin.
+      // Symlink the explicit binary in so the model can run `uv` by name too.
+      try {
+        await options.adapter.exec('mkdir', ['-p', options.runtimeLayout.uvBin], { cwd: options.runtimeLayout.workspaceRoot })
+        await options.adapter.exec('ln', ['-sf', explicitUvBin, join(options.runtimeLayout.uvBin, 'uv')], { cwd: options.runtimeLayout.workspaceRoot })
+      } catch {
+        // Best effort: provisioning still works via the explicit path even if the
+        // PATH symlink can't be created.
       }
+      return { uvBin: explicitUvBin, uvVersion, installedWorkspaceUv: false }
     } catch {
       // Explicit path not runnable here — fall through to PATH `uv` / standalone.
     }

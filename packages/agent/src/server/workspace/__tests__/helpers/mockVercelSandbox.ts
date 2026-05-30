@@ -139,6 +139,11 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
         return emitResult(0, '', '')
       }
 
+      // uv runtime bootstrap (Layer A): simulate uv installing/verifying successfully.
+      if (script.includes('astral.sh/uv/install') || script.includes('.local/bin/uv --version')) {
+        return emitResult(0, 'uv 0.0.0\n', '')
+      }
+
       const normalizedScript = script.replace(/^'([^']+)'\s+/, '$1 ')
 
       if (normalizedScript.startsWith('cat ')) {

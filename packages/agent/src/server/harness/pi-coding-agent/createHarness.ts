@@ -74,8 +74,25 @@ const WORKSPACE_PATHS_GUIDELINE = [
   "- For `read`/`edit`/`write`: pass workspace-relative paths only.",
 ].join("\n");
 
+/**
+ * The boring-agent runtime provisions Python via Astral `uv` (see workspace
+ * provisioning). Tell the model how to use it so it doesn't fall back to bare
+ * `pip` or assume `uv` is missing. Lives here (runtime package) because it
+ * describes the standard runtime environment, not any single app/plugin.
+ */
+const PYTHON_RUNTIME_GUIDELINE = [
+  "## Python runtime",
+  "",
+  "- Python 3 and the Astral `uv` package manager are available on PATH.",
+  "- Run scripts with `python3`.",
+  "- Install/manage packages with `uv pip install <pkg>` (fast; targets the workspace venv at `.boring-agent/venv`). `uv` is the canonical package manager here — don't assume only `pip`.",
+  "- Create venvs with `uv venv` if needed.",
+].join("\n");
+
 function composeSystemPromptAppend(hostAppend: string | undefined): string {
-  return [WORKSPACE_PATHS_GUIDELINE, hostAppend?.trim()].filter(Boolean).join("\n\n");
+  return [WORKSPACE_PATHS_GUIDELINE, PYTHON_RUNTIME_GUIDELINE, hostAppend?.trim()]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export interface PiHarnessOptions {
