@@ -1,12 +1,24 @@
 import { execFile } from 'node:child_process'
-import { mkdir, rename } from 'node:fs/promises'
+import { mkdir, mkdtemp, rename } from 'node:fs/promises'
 import { dirname, isAbsolute, join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+
+import { ErrorCode, toProvisioningError } from './errors'
+import type { WorkspaceProvisioningAdapter } from './types'
 
 const execFileAsync = promisify(execFile)
 
 export type ProvisioningArtifactKind = 'node' | 'python'
+
+export interface ProvisioningArtifactRequest {
+  kind: ProvisioningArtifactKind
+  id: string
+  fingerprint: string
+  source: string | URL
+  outputPath: string
+}
 
 /**
  * Provider-neutral materialization of an external install source into a
@@ -64,4 +76,43 @@ export function provisioningArtifactName(
   const safeFingerprint = fingerprint.replace(/^sha256:/, '')
   const formatVersion = kind === 'node' ? 'pnpm-pack-v2' : 'v1'
   return `${safeId}-${formatVersion}-${safeFingerprint}${artifactExtension(kind)}`
+}
+
+/**
+ * The single materialization algorithm shared by every sandboxed mode (local
+ * bwrap, vercel-sandbox): ensure the content-addressed artifact exists under
+ * `.boring-agent/tmp/` in the workspace — packing it from `source` into a host
+ * temp dir and copying it in only when absent — then return the runtime-visible
+ * path. `prepareArtifact` is injected so each mode supplies its own packer (and
+ * tests can stub it); `runtimeTmpDir` is the only per-mode value (the sandbox's
+ * view of `.boring-agent/tmp`).
+ */
+export async function resolveArtifactInstallSource(args: {
+  workspaceFs: Pick<WorkspaceProvisioningAdapter['workspaceFs'], 'exists' | 'copyFromHost'>
+  prepareArtifact: (request: ProvisioningArtifactRequest) => Promise<void>
+  runtimeTmpDir: string
+  source: string | URL
+  opts: { kind: ProvisioningArtifactKind; id: string; fingerprint: string }
+}): Promise<string> {
+  const { kind, id, fingerprint } = args.opts
+  const name = provisioningArtifactName(kind, id, fingerprint)
+  const workspaceRel = `.boring-agent/tmp/${name}`
+
+  if (!(await args.workspaceFs.exists(workspaceRel))) {
+    const artifactDir = await mkdtemp(join(tmpdir(), 'boring-agent-artifact-'))
+    const outputPath = join(artifactDir, name)
+    try {
+      await args.prepareArtifact({ kind, id, fingerprint, source: args.source, outputPath })
+      await args.workspaceFs.copyFromHost(outputPath, workspaceRel)
+    } catch (error) {
+      throw toProvisioningError(
+        ErrorCode.enum.PROVISIONING_ARTIFACT_FAILED,
+        'adapter-artifact',
+        error,
+        { runtime: kind, id, artifact: workspaceRel },
+      )
+    }
+  }
+
+  return `${args.runtimeTmpDir}/${name}`
 }

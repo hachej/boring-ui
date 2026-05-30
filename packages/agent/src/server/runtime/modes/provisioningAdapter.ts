@@ -11,7 +11,7 @@ import {
 } from '../../workspace/paths'
 import {
   packProvisioningArtifact,
-  provisioningArtifactName,
+  resolveArtifactInstallSource,
 } from '../../workspace/provisioning/packArtifact'
 import { buildBwrapArgs } from '../../sandbox/bwrap/buildBwrapArgs'
 
@@ -152,37 +152,6 @@ function mapEnvToLocalSandbox(paths: BoringAgentRuntimePaths, env: Record<string
   )
 }
 
-async function pathExists(absPath: string): Promise<boolean> {
-  try {
-    await stat(absPath)
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function packExternalSourceIntoWorkspace(
-  paths: BoringAgentRuntimePaths,
-  sourcePath: string,
-  opts: { kind: 'node' | 'python'; id: string; fingerprint: string },
-): Promise<string> {
-  // Materialize an external install source as a self-contained tarball inside
-  // the workspace — the SAME process the vercel-sandbox adapter uses. `npm
-  // install <.tgz>` / `uv pip install <.tar.gz>` then EXTRACT a real copy into
-  // .boring-agent/node|venv, so the install leaves no directory symlink that
-  // escapes the workspace root (and would be invisible inside the bwrap mount).
-  const relTarget = `.boring-agent/tmp/${provisioningArtifactName(opts.kind, opts.id, opts.fingerprint)}`
-  const absTarget = validatePath(paths.workspaceRoot, relTarget)
-  await mkdir(dirname(absTarget), { recursive: true })
-  await assertRealPathWithinWorkspace(paths.workspaceRoot, dirname(absTarget))
-  // The artifact name is content-addressed by fingerprint, so an existing
-  // tarball already holds the right bytes — reuse it across reruns.
-  if (!(await pathExists(absTarget))) {
-    await packProvisioningArtifact({ kind: opts.kind, source: sourcePath, outputPath: absTarget })
-  }
-  return `${LOCAL_SANDBOX_WORKSPACE_ROOT}/${relTarget}`
-}
-
 function createWorkspaceFs(
   workspaceRoot: string,
   opts: { enforceSymlinkBoundary: boolean },
@@ -253,6 +222,7 @@ export function createLocalProvisioningAdapter(
   runner: CommandRunner = spawnCommand,
 ): WorkspaceProvisioningAdapter {
   const sourceMounts = new Map<string, string>()
+  const workspaceFs = createWorkspaceFs(paths.workspaceRoot, { enforceSymlinkBoundary: true })
 
   return {
     mode: 'local',
@@ -285,9 +255,19 @@ export function createLocalProvisioningAdapter(
         return `${LOCAL_SANDBOX_WORKSPACE_ROOT}/${relPath.split(sep).join('/')}`
       }
 
-      return await packExternalSourceIntoWorkspace(paths, realSource, opts)
+      // External source: pack it into a self-contained in-workspace tarball via
+      // the SAME path the vercel-sandbox mode uses, so `npm install <.tgz>` /
+      // `uv pip install <.tar.gz>` extract a real copy and leave no directory
+      // symlink escaping the workspace (and invisible inside the bwrap mount).
+      return await resolveArtifactInstallSource({
+        workspaceFs,
+        prepareArtifact: packProvisioningArtifact,
+        runtimeTmpDir: `${LOCAL_SANDBOX_WORKSPACE_ROOT}/.boring-agent/tmp`,
+        source: realSource,
+        opts,
+      })
     },
-    workspaceFs: createWorkspaceFs(paths.workspaceRoot, { enforceSymlinkBoundary: true }),
+    workspaceFs,
     getRuntimeCacheRoot() {
       return paths.cache
     },
