@@ -164,7 +164,7 @@ test('artifact preparation receives non-source temp output path for useful failu
     fingerprint: 'sha256:feedface',
   })
 
-  expect(outputPath).toContain('boring-agent-vercel-artifact-')
+  expect(outputPath).toContain('boring-agent-artifact-')
   expect(outputPath).not.toContain(sourceRoot)
   await expect(stat(dirname(outputPath))).resolves.toBeTruthy()
 })

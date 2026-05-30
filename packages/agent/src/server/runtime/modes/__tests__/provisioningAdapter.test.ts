@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, stat, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { expect, test } from 'vitest'
@@ -103,7 +103,7 @@ test('direct adapter resolveInstallSource returns runtime-visible local paths an
   expect(adapter.getRuntimeCacheRoot()).toBe(paths.cache)
 })
 
-test('local adapter maps workspace-contained package roots to /workspace and copies external roots into writable workspace tmp', async () => {
+test('local adapter maps workspace-contained package roots to /workspace and packs external roots into an in-workspace tarball', async () => {
   const workspaceRoot = await tempRoot('boring-local-workspace-')
   const externalRoot = await tempRoot('boring-local-external-')
   await mkdir(join(workspaceRoot, 'packages', 'plugin'), { recursive: true })
@@ -114,18 +114,26 @@ test('local adapter maps workspace-contained package roots to /workspace and cop
     return { stdout: 'local ok\n' }
   })
 
+  // A package root already inside the workspace is visible in the bwrap mount,
+  // so it maps straight to its /workspace path (no packing needed).
   await expect(adapter.resolveInstallSource(join(workspaceRoot, 'packages', 'plugin'), {
     kind: 'node',
     id: 'plugin',
     fingerprint: 'sha256:111',
   })).resolves.toBe('/workspace/packages/plugin')
 
+  // An EXTERNAL root is packed to a self-contained tarball inside the
+  // workspace — the same process the vercel-sandbox adapter uses — so
+  // `uv pip install <.tar.gz>` extracts a real copy with no escaping symlink.
   const externalInstallSource = await adapter.resolveInstallSource(externalRoot, {
     kind: 'python',
     id: 'macro sdk',
     fingerprint: 'sha256:abcdef',
   })
-  expect(externalInstallSource).toBe('/workspace/.boring-agent/tmp/python-macro-sdk-abcdef-source')
+  expect(externalInstallSource).toBe('/workspace/.boring-agent/tmp/macro-sdk-v1-abcdef.tar.gz')
+  // The tarball was actually produced inside the workspace (no symlink hop).
+  const tarballStat = await stat(join(workspaceRoot, '.boring-agent', 'tmp', 'macro-sdk-v1-abcdef.tar.gz'))
+  expect(tarballStat.isFile()).toBe(true)
 
   const execResult = await adapter.exec(join(paths.venvBin, 'python'), ['-c', 'print("hello world")', 'arg with spaces', paths.venv], {
     env: { VIRTUAL_ENV: paths.venv },
@@ -135,7 +143,6 @@ test('local adapter maps workspace-contained package roots to /workspace and cop
 
   expect(calls).toHaveLength(1)
   expect(calls[0].command).toBe('bwrap')
-  await expect(readFile(join(workspaceRoot, '.boring-agent', 'tmp', 'python-macro-sdk-abcdef-source'), 'utf8')).rejects.toThrow()
   expect(calls[0].args).not.toContain(externalRoot)
   expect(calls[0].args.slice(-5)).toEqual([
     '/workspace/.boring-agent/venv/bin/python',
@@ -145,4 +152,28 @@ test('local adapter maps workspace-contained package roots to /workspace and cop
     '/workspace/.boring-agent/venv',
   ])
   expect(calls[0].env.VIRTUAL_ENV).toBe('/workspace/.boring-agent/venv')
+})
+
+test('local adapter packs an external NODE source to an in-workspace .tgz so npm extracts a copy (no escaping symlink)', async () => {
+  // The CLI's global install dir is external to the workspace. Packing it to a
+  // tarball means `npm install <.tgz>` extracts a real copy into
+  // .boring-agent/node rather than symlinking out to the host's npm-global —
+  // which is exactly what tripped the realpath guard in bwrap mode.
+  const workspaceRoot = await tempRoot('boring-local-nodepack-ws-')
+  const externalCli = await tempRoot('boring-local-nodepack-cli-')
+  await writeFile(
+    join(externalCli, 'package.json'),
+    `${JSON.stringify({ name: 'fake-cli', version: '1.0.0', bin: { 'fake-cli': 'index.js' } })}\n`,
+  )
+  await writeFile(join(externalCli, 'index.js'), 'module.exports = {}\n')
+  const adapter = createLocalProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot))
+
+  const installSource = await adapter.resolveInstallSource(externalCli, {
+    kind: 'node',
+    id: 'fake-cli',
+    fingerprint: 'sha256:deadbeef',
+  })
+  expect(installSource).toBe('/workspace/.boring-agent/tmp/fake-cli-pnpm-pack-v2-deadbeef.tgz')
+  const tarballStat = await stat(join(workspaceRoot, '.boring-agent', 'tmp', 'fake-cli-pnpm-pack-v2-deadbeef.tgz'))
+  expect(tarballStat.isFile()).toBe(true)
 })
