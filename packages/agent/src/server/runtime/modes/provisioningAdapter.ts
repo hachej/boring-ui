@@ -9,6 +9,10 @@ import {
   assertRealPathWithinWorkspace,
   validatePath,
 } from '../../workspace/paths'
+import {
+  packProvisioningArtifact,
+  provisioningArtifactName,
+} from '../../workspace/provisioning/packArtifact'
 import { buildBwrapArgs } from '../../sandbox/bwrap/buildBwrapArgs'
 
 const LOCAL_SANDBOX_WORKSPACE_ROOT = '/workspace'
@@ -148,28 +152,34 @@ function mapEnvToLocalSandbox(paths: BoringAgentRuntimePaths, env: Record<string
   )
 }
 
-function sanitizeInstallSourcePart(value: string): string {
-  const sanitized = value.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
-  return sanitized.length > 0 ? sanitized : 'source'
+async function pathExists(absPath: string): Promise<boolean> {
+  try {
+    await stat(absPath)
+    return true
+  } catch {
+    return false
+  }
 }
 
-async function copyExternalSourceIntoWorkspace(
+async function packExternalSourceIntoWorkspace(
   paths: BoringAgentRuntimePaths,
   sourcePath: string,
-  opts: { kind: string; id: string; fingerprint: string },
+  opts: { kind: 'node' | 'python'; id: string; fingerprint: string },
 ): Promise<string> {
-  const fingerprint = opts.fingerprint.replace(/^sha256:/, '')
-  const relTarget = `.boring-agent/tmp/${sanitizeInstallSourcePart(opts.kind)}-${sanitizeInstallSourcePart(opts.id)}-${sanitizeInstallSourcePart(fingerprint)}-source`
+  // Materialize an external install source as a self-contained tarball inside
+  // the workspace — the SAME process the vercel-sandbox adapter uses. `npm
+  // install <.tgz>` / `uv pip install <.tar.gz>` then EXTRACT a real copy into
+  // .boring-agent/node|venv, so the install leaves no directory symlink that
+  // escapes the workspace root (and would be invisible inside the bwrap mount).
+  const relTarget = `.boring-agent/tmp/${provisioningArtifactName(opts.kind, opts.id, opts.fingerprint)}`
   const absTarget = validatePath(paths.workspaceRoot, relTarget)
-  await rm(absTarget, { recursive: true, force: true })
   await mkdir(dirname(absTarget), { recursive: true })
   await assertRealPathWithinWorkspace(paths.workspaceRoot, dirname(absTarget))
-  const sourceStat = await stat(sourcePath)
-  await cp(sourcePath, absTarget, {
-    recursive: sourceStat.isDirectory(),
-    force: false,
-    errorOnExist: true,
-  })
+  // The artifact name is content-addressed by fingerprint, so an existing
+  // tarball already holds the right bytes — reuse it across reruns.
+  if (!(await pathExists(absTarget))) {
+    await packProvisioningArtifact({ kind: opts.kind, source: sourcePath, outputPath: absTarget })
+  }
   return `${LOCAL_SANDBOX_WORKSPACE_ROOT}/${relTarget}`
 }
 
@@ -275,7 +285,7 @@ export function createLocalProvisioningAdapter(
         return `${LOCAL_SANDBOX_WORKSPACE_ROOT}/${relPath.split(sep).join('/')}`
       }
 
-      return await copyExternalSourceIntoWorkspace(paths, realSource, opts)
+      return await packExternalSourceIntoWorkspace(paths, realSource, opts)
     },
     workspaceFs: createWorkspaceFs(paths.workspaceRoot, { enforceSymlinkBoundary: true }),
     getRuntimeCacheRoot() {

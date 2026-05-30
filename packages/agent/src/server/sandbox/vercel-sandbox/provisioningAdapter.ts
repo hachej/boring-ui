@@ -8,6 +8,7 @@ import type {
   WorkspaceProvisioningAdapter,
   WorkspaceProvisioningExecResult,
 } from '../../workspace/provisioning'
+import { provisioningArtifactName } from '../../workspace/provisioning/packArtifact'
 
 export const VERCEL_PROVISIONING_CACHE_ROOT = '/tmp/boring-agent-cache'
 
@@ -31,17 +32,6 @@ export interface CreateVercelProvisioningAdapterOptions {
   cacheRoot?: string
 }
 
-function artifactExtension(kind: 'node' | 'python'): '.tgz' | '.tar.gz' {
-  return kind === 'node' ? '.tgz' : '.tar.gz'
-}
-
-function artifactName(kind: 'node' | 'python', id: string, fingerprint: string): string {
-  const safeId = id.replace(/[^A-Za-z0-9._-]/g, '-')
-  const safeFingerprint = fingerprint.replace(/^sha256:/, '')
-  const formatVersion = kind === 'node' ? 'pnpm-pack-v2' : 'v1'
-  return `${safeId}-${formatVersion}-${safeFingerprint}${artifactExtension(kind)}`
-}
-
 export function createVercelProvisioningAdapter(
   options: CreateVercelProvisioningAdapterOptions,
 ): WorkspaceProvisioningAdapter {
@@ -55,7 +45,7 @@ export function createVercelProvisioningAdapter(
       })
     },
     async resolveInstallSource(source, opts) {
-      const name = artifactName(opts.kind, opts.id, opts.fingerprint)
+      const name = provisioningArtifactName(opts.kind, opts.id, opts.fingerprint)
       const workspaceRel = `.boring-agent/tmp/${name}`
       const runtimePath = `${options.runtimeLayout.tmp}/${name}`
 

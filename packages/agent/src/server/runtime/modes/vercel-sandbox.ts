@@ -1,9 +1,7 @@
-import { execFile } from 'node:child_process'
-import { mkdtemp, mkdir, readFile, readdir, rename, stat } from 'node:fs/promises'
-import { dirname, isAbsolute, join } from 'node:path'
+import { mkdtemp, mkdir, readFile, readdir, stat } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { promisify } from 'node:util'
 
 import { Sandbox as VercelSandbox } from '@vercel/sandbox'
 
@@ -12,6 +10,7 @@ import { safeCapture, type TelemetrySink } from '../../../shared/telemetry'
 import { getEnv, setEnvDefault } from '../../config/env'
 import { createVercelSandboxExec } from '../../sandbox/vercel-sandbox/createVercelSandboxExec'
 import { createVercelProvisioningAdapter } from '../../sandbox/vercel-sandbox/provisioningAdapter'
+import { packProvisioningArtifact } from '../../workspace/provisioning/packArtifact'
 import { isNodeFamilyRuntime, uvSetupCommandsForRuntime, VERCEL_UV_BIN } from '../../sandbox/snapshots/deploymentSnapshot'
 import { FileHandleStore } from '../../sandbox/vercel-sandbox/FileHandleStore'
 import {
@@ -46,7 +45,6 @@ const ORPHAN_GUARD_MAX_IDLE_MS = 24 * 60 * 60 * 1000
 const VERCEL_SANDBOX_TIMEOUT_MS_ENV = 'BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS'
 const VERCEL_SANDBOX_RUNTIME_ENV = 'BORING_AGENT_VERCEL_SANDBOX_RUNTIME'
 const DEFAULT_VERCEL_SANDBOX_RUNTIME = 'node24'
-const execFileAsync = promisify(execFile)
 
 export interface VercelSandboxModeAdapterOptions {
   store?: SandboxHandleStore
@@ -269,34 +267,6 @@ async function seedTemplateIntoVercelWorkspace(
 
 function provisioningSourceToPath(source: string | URL): string {
   return source instanceof URL ? fileURLToPath(source) : source
-}
-
-async function prepareVercelProvisioningArtifact(request: {
-  kind: 'node' | 'python'
-  source: string | URL
-  outputPath: string
-}): Promise<void> {
-  const sourcePath = provisioningSourceToPath(request.source)
-  await mkdir(dirname(request.outputPath), { recursive: true })
-
-  if (request.kind === 'node') {
-    const { stdout } = await execFileAsync('pnpm', [
-      '--dir',
-      sourcePath,
-      'pack',
-      '--pack-destination',
-      dirname(request.outputPath),
-    ], { maxBuffer: 1024 * 1024 * 20 })
-    const packedName = stdout.trim().split(/\r?\n/).filter(Boolean).at(-1)
-    if (!packedName) throw new Error(`pnpm pack produced no artifact for ${sourcePath}`)
-    const packedPath = isAbsolute(packedName) ? packedName : join(dirname(request.outputPath), packedName)
-    await rename(packedPath, request.outputPath)
-    return
-  }
-
-  await execFileAsync('tar', ['-czf', request.outputPath, '-C', sourcePath, '.'], {
-    maxBuffer: 1024 * 1024 * 20,
-  })
 }
 
 function shellSingleQuote(value: string): string {
@@ -575,7 +545,7 @@ export function createVercelSandboxModeAdapter(
           }
           return { stdout, stderr }
         },
-        prepareArtifact: prepareVercelProvisioningArtifact,
+        prepareArtifact: packProvisioningArtifact,
       })
     },
     async create(ctx) {
