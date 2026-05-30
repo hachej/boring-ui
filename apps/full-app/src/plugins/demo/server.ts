@@ -2,11 +2,10 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { CoreWorkspaceAgentServerPlugin } from "@hachej/boring-core/app/server"
 
-// demo-sdk lives at the app root (apps/full-app/demo-sdk). This file runs from
-// src/plugins/demo (dev/tsx) or dist/plugins/demo (build) — both three levels
-// under the app root.
+// The plugin owns its SDK: the Python package lives alongside this file at
+// ./sdk (apps/full-app/src/plugins/demo/sdk).
 const here = dirname(fileURLToPath(import.meta.url))
-const demoSdkRoot = join(here, "..", "..", "..", "demo-sdk")
+const demoSdkRoot = join(here, "sdk")
 
 /**
  * Backend half of the demo plugin: provisions the dummy `democli` Python SDK into
