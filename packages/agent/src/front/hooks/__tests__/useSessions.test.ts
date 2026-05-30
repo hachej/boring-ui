@@ -118,6 +118,73 @@ describe('useSessions', () => {
     })
   })
 
+  test('retries transient 503s without surfacing an error, then loads sessions', async () => {
+    vi.useFakeTimers()
+    try {
+      // First three calls 503 ("runtime still preparing"), then success.
+      mockFetch
+        .mockResolvedValueOnce({ ok: false, status: 503 })
+        .mockResolvedValueOnce({ ok: false, status: 503 })
+        .mockResolvedValueOnce({ ok: false, status: 503 })
+        .mockResolvedValueOnce({ ok: true, json: async () => [{ id: 's1', title: 'First' }] })
+
+      useSessions()
+      const refreshFn = callbackFns[0]
+      const setError = stateSlots[3][1]
+      const setSessions = stateSlots[0][1]
+
+      const promise = refreshFn()
+      // Drain the backoff timers + microtasks between retries.
+      await vi.runAllTimersAsync()
+      await promise
+
+      // It retried past the 503s and eventually fetched successfully.
+      expect(mockFetch).toHaveBeenCalledTimes(4)
+      expect(setSessions).toHaveBeenCalledWith([{ id: 's1', title: 'First' }])
+      // No terminal error was surfaced (only setError(undefined) on success).
+      const setErrorMock = setError as unknown as ReturnType<typeof vi.fn>
+      const sawTruthyError = setErrorMock.mock.calls.some((call: unknown[]) => Boolean(call[0]))
+      expect(sawTruthyError).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('does not retry a non-503 failure (no infinite retry on a real 500)', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 500 })
+
+    useSessions()
+    const refreshFn = callbackFns[0]
+    await refreshFn()
+
+    // A 500 is terminal: exactly one fetch, error surfaced.
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    const setError = stateSlots[3][1]
+    expect(setError).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('500') }))
+  })
+
+  test('gives up after the bounded retry budget on a persistent 503', async () => {
+    vi.useFakeTimers()
+    try {
+      mockFetch.mockResolvedValue({ ok: false, status: 503 })
+
+      useSessions()
+      const refreshFn = callbackFns[0]
+      const setError = stateSlots[3][1]
+
+      const promise = refreshFn()
+      await vi.runAllTimersAsync()
+      await promise
+
+      // Bounded: MAX_SESSIONS_RETRIES (8) retries => 9 total attempts, not infinite.
+      expect(mockFetch).toHaveBeenCalledTimes(9)
+      // After exhausting the budget the 503 surfaces as a terminal error.
+      expect(setError).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('preparing') }))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   test('refresh skips stale responses via version counter', async () => {
     let resolveFetch!: (v: unknown) => void
     mockFetch.mockReturnValueOnce(
