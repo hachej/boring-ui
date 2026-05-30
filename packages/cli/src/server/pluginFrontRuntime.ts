@@ -122,7 +122,7 @@ const WORKSPACE_ROOT_SINGLETON_EXPORTS = [
   "dismissToast",
   "createBridge",
   "createBridgeClient",
-  "postUiCommand",
+  "emitUiEffect",
   "UI_COMMAND_EVENT",
   "openFileSchema",
   "openPanelSchema",
