@@ -454,6 +454,13 @@ already-allowlisted `@hachej/boring-workspace`. Works under today's import rules
   bundles them; externalize the contract. Behind a flag.
 - **B3.** Manifest `dependencies` → workspace install, lockfile, cache, `optimizeDeps`;
   `/reload` re-bundles.
+- **B4.** **Update the authoring + build skills** (`packages/pi/skills/boring-plugin-authoring/SKILL.md`,
+  `.agents/skills/boring-plugin-build/SKILL.md`): replace the import-allowlist guidance with
+  workspace-built-deps + `data.v1` (allowlist guidance is superseded). **Keep the timeless
+  footguns**: no `@hachej/boring-workspace` React hooks (dual-React `ReactSharedInternals.H` crash);
+  a `leftTab` needs a `component`; CLI workspaces-mode needs the `x-boring-workspace-id` header; the
+  catalog pattern. *(The skills are deliberately **not** edited ahead of execution — the allowlist
+  guidance would contradict this plan until Tracks A/B land.)*
 
 → delivers **"import any dep + hot reload."**
 
