@@ -64,20 +64,8 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
   resolveOnePluginEntry: async (entry: unknown) => entry,
 }))
 
-vi.mock('@hachej/boring-workspace/server', () => ({
-  createBrowserBridgeAuthPolicy: vi.fn((opts: Record<string, unknown>) => {
-    workspaceServerMock.browserAuthPolicyOptions.push(opts)
-    return vi.fn()
-  }),
-  createHumanInputBridgeHandlers: () => [],
-  createInMemoryBridge: () => ({
-    drainCommands: vi.fn(),
-    getState: vi.fn(),
-    emitUiEffect: vi.fn(),
-    setState: vi.fn(),
-    subscribeCommands: vi.fn(),
-  }),
-  createWorkspaceBridgeRegistry: () => {
+vi.mock('@hachej/boring-workspace/server', () => {
+  const makeRegistry = () => {
     const handlers = new Map<string, { definition: Record<string, unknown>; handler: (args: Record<string, unknown>) => unknown | Promise<unknown> }>()
     return {
       registerHandler: vi.fn((definition: Record<string, unknown>, handler: (args: Record<string, unknown>) => unknown | Promise<unknown>) => {
@@ -94,6 +82,29 @@ vi.mock('@hachej/boring-workspace/server', () => ({
           output: await registered.handler({ input: request.input, context }),
         }
       }),
+    }
+  }
+  return {
+  createBrowserBridgeAuthPolicy: vi.fn((opts: Record<string, unknown>) => {
+    workspaceServerMock.browserAuthPolicyOptions.push(opts)
+    return vi.fn()
+  }),
+  createInMemoryBridge: () => ({
+    drainCommands: vi.fn(),
+    getState: vi.fn(),
+    emitUiEffect: vi.fn(),
+    setState: vi.fn(),
+    subscribeCommands: vi.fn(),
+  }),
+  createWorkspaceBridgeRuntimeCore: (opts?: { handlers?: ReadonlyArray<{ definition: Record<string, unknown>; handler: (args: Record<string, unknown>) => unknown | Promise<unknown> }> }) => {
+    const registry = makeRegistry()
+    for (const entry of opts?.handlers ?? []) {
+      registry.registerHandler(entry.definition, entry.handler)
+    }
+    return {
+      registry,
+      pendingQuestionStore: { async getPending() { return null } },
+      pendingQuestionRuntime: { abandonServerRestart: vi.fn() },
     }
   },
   createWorkspaceBridgeRuntimeEnvContribution: vi.fn((opts: Record<string, unknown>) => {
@@ -120,15 +131,7 @@ vi.mock('@hachej/boring-workspace/server', () => ({
     }
     return await execute()
   }),
-  InMemoryPendingQuestionStore: class InMemoryPendingQuestionStore {
-    async getPending() {
-      return null
-    }
-  },
   InMemoryWorkspaceBridgeIdempotencyStore: class InMemoryWorkspaceBridgeIdempotencyStore {},
-  PendingQuestionRuntime: class PendingQuestionRuntime {
-    abandonServerRestart = vi.fn()
-  },
   uiRoutes: async () => {},
   verifyWorkspaceBridgeRuntimeToken: vi.fn((token: string) => {
     workspaceServerMock.runtimeTokenVerifications.push(token)
@@ -137,7 +140,8 @@ vi.mock('@hachej/boring-workspace/server', () => ({
   workspaceBridgeHttpRoutes: async (_app: unknown, opts: Record<string, unknown>) => {
     workspaceServerMock.httpRouteOpts.push(opts)
   },
-}))
+  }
+})
 
 vi.mock('../../../server/auth/index.js', () => ({
   authHook: async () => {},

@@ -17,13 +17,8 @@ function mint(overrides: Partial<Parameters<typeof mintWorkspaceBridgeRuntimeTok
     secret: SECRET,
     workspaceId: "workspace-1",
     sessionId: "session-1",
-    pluginId: "macro",
     runtimeId: "runtime-1",
-    agentSessionId: "agent-session-1",
-    toolCallId: "tool-1",
     capabilities: ["macro:catalog.search", "macro:series.data"],
-    bridgeOrigin: "https://bridge.example.test",
-    deploymentId: "deploy-1",
     nowMs: NOW,
     ttlMs: 60_000,
     jti: "jti-1",
@@ -37,12 +32,6 @@ describe("WorkspaceBridge runtime token primitives", () => {
     const verified = verifyWorkspaceBridgeRuntimeToken(token, {
       secret: SECRET,
       nowMs: NOW + 1_000,
-      expectedWorkspaceId: "workspace-1",
-      expectedSessionId: "session-1",
-      expectedPluginId: "macro",
-      expectedRuntimeId: "runtime-1",
-      expectedBridgeOrigin: "https://bridge.example.test",
-      expectedDeploymentId: "deploy-1",
       requiredCapabilities: ["macro:catalog.search"],
     })
 
@@ -50,7 +39,6 @@ describe("WorkspaceBridge runtime token primitives", () => {
       aud: WORKSPACE_BRIDGE_TOKEN_AUDIENCE,
       workspaceId: "workspace-1",
       sessionId: "session-1",
-      pluginId: "macro",
       runtimeId: "runtime-1",
       jti: "jti-1",
     })
@@ -58,11 +46,10 @@ describe("WorkspaceBridge runtime token primitives", () => {
       callerClass: "runtime",
       workspaceId: "workspace-1",
       sessionId: "session-1",
-      pluginId: "macro",
       tokenId: "jti-1",
       actor: {
         actorKind: "agent",
-        performedBy: { label: "runtime:macro", id: "agent-session-1" },
+        performedBy: { label: "runtime:runtime-1", id: "runtime-1" },
         onBehalfOf: { label: "session:session-1" },
       },
     })
@@ -91,26 +78,6 @@ describe("WorkspaceBridge runtime token primitives", () => {
     })).toThrow(expect.objectContaining({ code: WorkspaceBridgeErrorCode.InvalidToken }))
   })
 
-  it("rejects origin/deployment and workspace/session/plugin/runtime mismatches", () => {
-    const token = mint()
-    const cases = [
-      { expectedWorkspaceId: "workspace-2" },
-      { expectedSessionId: "session-2" },
-      { expectedPluginId: "other-plugin" },
-      { expectedRuntimeId: "runtime-2" },
-      { expectedBridgeOrigin: "https://wrong.example.test" },
-      { expectedDeploymentId: "deploy-2" },
-    ]
-
-    for (const expected of cases) {
-      expect(() => verifyWorkspaceBridgeRuntimeToken(token, {
-        secret: SECRET,
-        nowMs: NOW,
-        ...expected,
-      })).toThrow(expect.objectContaining({ code: WorkspaceBridgeErrorCode.InvalidToken }))
-    }
-  })
-
   it("rejects missing capabilities", () => {
     expect(() => verifyWorkspaceBridgeRuntimeToken(mint(), {
       secret: SECRET,
@@ -120,7 +87,7 @@ describe("WorkspaceBridge runtime token primitives", () => {
   })
 
   it("derives actor attribution from token claims, not request bodies", () => {
-    const token = mint({ pluginId: "macro-sdk", agentSessionId: "agent-999" })
+    const token = mint({ runtimeId: "macro-sdk" })
     const body = {
       actor: { actorKind: "system", performedBy: { label: "spoofed-admin" } },
     }
@@ -132,7 +99,7 @@ describe("WorkspaceBridge runtime token primitives", () => {
     expect(body.actor.actorKind).toBe("system")
     expect(verified.authContext.actor).toMatchObject({
       actorKind: "agent",
-      performedBy: { label: "runtime:macro-sdk", id: "agent-999" },
+      performedBy: { label: "runtime:macro-sdk", id: "macro-sdk" },
     })
   })
 

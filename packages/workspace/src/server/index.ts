@@ -124,6 +124,8 @@ export type {
   TrustedDomainBridgeHandlerPolicy,
   TrustedDomainBridgeHandlerRegistration,
 } from "./workspaceBridge/trustedDomainHandler"
+export { createWorkspaceBridgeRuntimeCore } from "./workspaceBridge/runtimeCore"
+export type { WorkspaceBridgeRuntimeCore, WorkspaceBridgeRuntimeCoreOptions } from "./workspaceBridge/runtimeCore"
 export { createHumanInputBridgeHandlers, HUMAN_INPUT_OPS } from "./humanInput/humanInputBridgeHandlers"
 export { PendingQuestionRuntime } from "./humanInput/pendingQuestionRuntime"
 export { InMemoryPendingQuestionStore, PendingQuestionStoreError, PENDING_QUESTION_ERROR_CODES } from "./humanInput/pendingQuestionStore"

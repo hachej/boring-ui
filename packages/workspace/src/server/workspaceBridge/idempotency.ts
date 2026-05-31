@@ -9,7 +9,7 @@ import {
   type WorkspaceBridgeOperationDefinition,
 } from "../../shared/workspace-bridge-rpc"
 
-export type IdempotencyRecordStatus = "pending" | "completed" | "failed"
+export type IdempotencyRecordStatus = "pending" | "completed"
 
 export interface WorkspaceBridgeIdempotencyRecord<TOutput = unknown> {
   scopeKey: string
@@ -82,7 +82,9 @@ export class InMemoryWorkspaceBridgeIdempotencyStore implements WorkspaceBridgeI
     const nowMs = options.nowMs ?? Date.now()
     this.records.set(options.scopeKey, {
       ...existing,
-      status: options.response.ok ? "completed" : "failed",
+      // Only successful responses are completed; failures release the key
+      // (see runWithWorkspaceBridgeIdempotency), so there is no "failed" record.
+      status: "completed",
       response: options.response,
       updatedAt: new Date(nowMs).toISOString(),
       expiresAt: new Date(nowMs + (options.ttlMs ?? DEFAULT_IDEMPOTENCY_TTL_MS)).toISOString(),

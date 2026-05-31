@@ -22,31 +22,17 @@ import {
   type WorkspaceAgentServerPluginContext,
 } from '@hachej/boring-workspace/app/server'
 import {
-  InMemoryPendingQuestionStore,
-  InMemoryWorkspaceBridgeIdempotencyStore,
-  PendingQuestionRuntime,
-  createBrowserBridgeAuthPolicy,
-  createHumanInputBridgeHandlers,
-  createInMemoryBridge,
-  createWorkspaceBridgeRegistry,
-  createWorkspaceBridgeRuntimeEnvContribution,
   createWorkspaceUiTools,
-  runWithWorkspaceBridgeIdempotency,
   uiRoutes,
-  verifyWorkspaceBridgeRuntimeToken,
-  workspaceBridgeHttpRoutes,
-  type PendingQuestionStore,
-  type UiCommand,
   type WorkspaceBridge,
   type WorkspaceBridgeCallRequest,
   type WorkspaceBridgeCallResponse,
   type WorkspaceBridgeHandler,
-  type WorkspaceBridgeIdempotencyStore,
   type WorkspaceBridgeOperationDefinition,
-  type WorkspaceBridgeRegistry,
   type WorkspaceBridgeRuntimeEnvOptions,
   type WorkspaceServerPlugin,
 } from '@hachej/boring-workspace/server'
+import { createCoreWorkspaceBridge } from './coreWorkspaceBridge.js'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type postgres from 'postgres'
 import type { CoreConfig } from '../../shared/types.js'
@@ -121,7 +107,6 @@ const FRONTEND_AUTH_PAGES_SPA_ONLY = new Set([
   '/auth/callback/github',
   '/auth/callback/google',
 ])
-const MAX_SESSION_OWNER_CACHE = 5_000
 
 export type CoreWorkspaceAgentServer = FastifyInstance & {
   auth: BetterAuthInstance
@@ -683,54 +668,6 @@ export async function createCoreWorkspaceAgentServer(
     ...defaultPluginDirEntries,
     ...(options.plugins ?? []),
   ]
-  const bridges = new Map<string, WorkspaceBridge>()
-  const getWorkspaceBridge = (workspaceId: string): WorkspaceBridge => {
-    const safeWorkspaceId = validateWorkspaceIdSegment(workspaceId)
-    let bridge = bridges.get(safeWorkspaceId)
-    if (!bridge) {
-      bridge = createInMemoryBridge()
-      bridges.set(safeWorkspaceId, bridge)
-    }
-    return bridge
-  }
-  type CoreWorkspaceBridgeRuntime = {
-    registry: WorkspaceBridgeRegistry
-    pendingQuestionStore: PendingQuestionStore
-    pendingQuestionRuntime: PendingQuestionRuntime
-    idempotencyStore: WorkspaceBridgeIdempotencyStore
-    sessionOwners: Map<string, string>
-  }
-  const workspaceBridgeRuntimes = new Map<string, CoreWorkspaceBridgeRuntime>()
-  const getWorkspaceBridgeRuntime = (workspaceId: string): CoreWorkspaceBridgeRuntime => {
-    const safeWorkspaceId = validateWorkspaceIdSegment(workspaceId)
-    let runtime = workspaceBridgeRuntimes.get(safeWorkspaceId)
-    if (!runtime) {
-      const registry = createWorkspaceBridgeRegistry()
-      const pendingQuestionStore = new InMemoryPendingQuestionStore()
-      const pendingQuestionRuntime = new PendingQuestionRuntime(pendingQuestionStore)
-      const sessionOwners = new Map<string, string>()
-      void pendingQuestionRuntime.abandonServerRestart()
-      for (const entry of createHumanInputBridgeHandlers({
-        runtime: pendingQuestionRuntime,
-        store: pendingQuestionStore,
-        resolveOwnerPrincipalId: (sessionId) => sessionOwners.get(sessionId),
-      })) {
-        registry.registerHandler(entry.definition, entry.handler)
-      }
-      for (const entry of options.workspaceBridge?.handlers ?? []) {
-        registry.registerHandler(entry.definition, entry.handler)
-      }
-      runtime = {
-        registry,
-        pendingQuestionStore,
-        pendingQuestionRuntime,
-        idempotencyStore: new InMemoryWorkspaceBridgeIdempotencyStore(),
-        sessionOwners,
-      }
-      workspaceBridgeRuntimes.set(safeWorkspaceId, runtime)
-    }
-    return runtime
-  }
   const pluginResolveContext: WorkspaceAgentServerPluginContext = {
     workspaceRoot: pluginWorkspaceRoot,
     bridge: createUnavailableCorePluginBridge(),
@@ -763,43 +700,16 @@ export async function createCoreWorkspaceAgentServer(
       : await resolveWorkspaceRoot(workspaceRoot, workspaceId)
     return root
   }
-  const resolveBridgeWorkspaceId = async (request: FastifyRequest): Promise<string> => {
-    const authHeader = request.headers.authorization
-    if (options.workspaceBridge?.runtimeTokenSecret && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
-      return verifyWorkspaceBridgeRuntimeToken(authHeader.slice('Bearer '.length), {
-        secret: options.workspaceBridge.runtimeTokenSecret,
-      }).authContext.workspaceId
-    }
-    return await resolveWorkspaceId(request)
-  }
-  const rememberBridgeSessionOwner = async (request: FastifyRequest): Promise<void> => {
-    const user = request.user as { id?: string } | null | undefined
-    if (!user?.id) return
-    const sessionId = agentSessionIdFromRequest(request)
-    if (!sessionId) return
-    const workspaceId = await resolveWorkspaceId(request)
-    const runtime = getWorkspaceBridgeRuntime(workspaceId)
-    const pending = await runtime.pendingQuestionStore.getPending(sessionId)
-    const pendingOwnerId = pending?.ownerPrincipalId
-    if (pendingOwnerId && pendingOwnerId !== user.id) return
-    runtime.sessionOwners.delete(sessionId)
-    runtime.sessionOwners.set(sessionId, user.id)
-    let scanned = 0
-    while (runtime.sessionOwners.size > MAX_SESSION_OWNER_CACHE && scanned < runtime.sessionOwners.size) {
-      const oldest = runtime.sessionOwners.keys().next().value
-      if (!oldest) break
-      const ownerId = runtime.sessionOwners.get(oldest)
-      const oldestPending = await runtime.pendingQuestionStore.getPending(oldest)
-      runtime.sessionOwners.delete(oldest)
-      if (oldestPending) {
-        runtime.sessionOwners.set(oldest, ownerId ?? user.id)
-        scanned += 1
-        continue
-      }
-    }
-  }
+  const coreBridge = createCoreWorkspaceBridge({
+    workspaceBridge: options.workspaceBridge,
+    resolveWorkspaceId,
+    workspaceStore,
+    corsOrigins: app.config.cors.origins,
+    validateWorkspaceId: validateWorkspaceIdSegment,
+    agentSessionId: agentSessionIdFromRequest,
+  })
   app.addHook('preHandler', async (request) => {
-    await rememberBridgeSessionOwner(request)
+    await coreBridge.rememberSessionOwner(request)
   })
   const piOptionsByRoot = new Map<string, AgentPiOptions>()
   const getPluginPiOptions = (root: string): AgentPiOptions => {
@@ -820,63 +730,13 @@ export async function createCoreWorkspaceAgentServer(
     )
     return scopedPluginCollection.agentOptions.pi
   }
-  const callWorkspaceBridgeAsRuntime = async <TOutput = unknown>(
-    workspaceId: string,
-    request: WorkspaceBridgeCallRequest,
-    callOptions?: { sessionId?: string; signal?: AbortSignal },
-  ): Promise<WorkspaceBridgeCallResponse<TOutput>> => {
-    const bridgeRuntime = getWorkspaceBridgeRuntime(workspaceId)
-    const definition = bridgeRuntime.registry.getDefinition(request.op)
-    if (!definition) {
-      return await bridgeRuntime.registry.call(request, {
-        callerClass: 'runtime',
-        workspaceId,
-        sessionId: callOptions?.sessionId,
-        capabilities: [],
-        actor: {
-          actorKind: 'agent',
-          performedBy: { label: 'agent-runtime' },
-          onBehalfOf: callOptions?.sessionId
-            ? { label: `session:${callOptions.sessionId}` }
-            : { label: `workspace:${workspaceId}` },
-        },
-        signal: callOptions?.signal,
-        emitUiEffect: (cmd) => getWorkspaceBridge(workspaceId).emitUiEffect(cmd),
-      })
-    }
-    const ownerPrincipalId = callOptions?.sessionId
-      ? bridgeRuntime.sessionOwners.get(callOptions.sessionId)
-      : undefined
-    const authContext = {
-      callerClass: 'runtime' as const,
-      workspaceId,
-      sessionId: callOptions?.sessionId,
-      capabilities: [...definition.requiredCapabilities],
-      actor: {
-        actorKind: 'agent' as const,
-        performedBy: { label: 'agent-runtime' },
-        onBehalfOf: ownerPrincipalId
-          ? { id: ownerPrincipalId, label: `user:${ownerPrincipalId}` }
-          : callOptions?.sessionId
-            ? { label: `session:${callOptions.sessionId}` }
-            : { label: `workspace:${workspaceId}` },
-      },
-      signal: callOptions?.signal,
-      emitUiEffect: (cmd: UiCommand) => getWorkspaceBridge(workspaceId).emitUiEffect(cmd),
-    }
-    return await runWithWorkspaceBridgeIdempotency(bridgeRuntime.idempotencyStore, {
-      definition,
-      request,
-      auth: authContext,
-    }, async () => await bridgeRuntime.registry.call(request, authContext))
-  }
   const resolvePiOptions: NonNullable<RegisterAgentRoutesOptions['getPi']> = async (ctx) => {
     const pluginOptions = getPluginPiOptions(ctx.workspaceRoot)
     const bridgePiOptions = options.getWorkspaceBridgePi
       ? await options.getWorkspaceBridgePi({
           workspaceId: ctx.workspaceId,
           workspaceRoot: ctx.workspaceRoot,
-          callAsRuntime: async (request, callOptions) => await callWorkspaceBridgeAsRuntime(ctx.workspaceId, request, callOptions),
+          callAsRuntime: async (request, callOptions) => await coreBridge.callAsRuntime(ctx.workspaceId, request, callOptions),
         })
       : undefined
     const callerOptions = options.getPi
@@ -884,21 +744,6 @@ export async function createCoreWorkspaceAgentServer(
       : undefined
     return mergePiOptions(mergePiOptions(pluginOptions, bridgePiOptions), callerOptions)
   }
-  const workspaceBridgeRuntimeEnvContribution = options.workspaceBridge?.runtimeTokenSecret || options.workspaceBridge?.runtimeEnv
-    ? {
-        id: 'workspace-bridge-runtime-env',
-        getEnv: async (ctx: RuntimeEnvContributionContext) => {
-          const contribution = createWorkspaceBridgeRuntimeEnvContribution({
-            workspaceId: ctx.workspaceId,
-            runtimeMode: ctx.runtimeMode!,
-            registry: getWorkspaceBridgeRuntime(ctx.workspaceId).registry,
-            runtimeTokenSecret: options.workspaceBridge?.runtimeTokenSecret,
-            runtimeEnv: options.workspaceBridge?.runtimeEnv,
-          })
-          return contribution ? await contribution.getEnv(ctx) : {}
-        },
-      }
-    : undefined
   await app.register(registerAgentRoutes, {
     workspaceRoot,
     sessionId: options.sessionId,
@@ -921,13 +766,13 @@ export async function createCoreWorkspaceAgentServer(
         ? await options.getWorkspaceBridgeExtraTools({
             workspaceId: ctx.workspaceId,
             workspaceRoot: ctx.workspaceRoot,
-            callAsRuntime: async (request, callOptions) => await callWorkspaceBridgeAsRuntime(ctx.workspaceId, request, callOptions),
+            callAsRuntime: async (request, callOptions) => await coreBridge.callAsRuntime(ctx.workspaceId, request, callOptions),
           })
         : []
       return [
         ...callerTools,
         ...bridgeTools,
-        ...createWorkspaceUiTools(getWorkspaceBridge(ctx.workspaceId), {
+        ...createWorkspaceUiTools(coreBridge.getBridge(ctx.workspaceId), {
           workspaceRoot: ctx.workspaceFsCapability === 'strong' ? ctx.workspaceRoot : undefined,
         }),
       ]
@@ -957,32 +802,16 @@ export async function createCoreWorkspaceAgentServer(
     telemetry,
     runtimeEnvContributions: [
       ...(options.runtimeEnvContributions ?? []),
-      ...(workspaceBridgeRuntimeEnvContribution ? [workspaceBridgeRuntimeEnvContribution] : []),
+      ...(coreBridge.runtimeEnvContribution ? [coreBridge.runtimeEnvContribution] : []),
     ],
   })
 
   await app.register(uiRoutes, {
-    getBridge: async (request) => getWorkspaceBridge(await resolveWorkspaceId(request)),
+    getBridge: async (request) => coreBridge.getBridge(await resolveWorkspaceId(request)),
     preserveStateKeys: pluginCollection.preservedUiStateKeys,
   })
 
-  await app.register(workspaceBridgeHttpRoutes, {
-    getRegistry: async (request) => getWorkspaceBridgeRuntime(await resolveBridgeWorkspaceId(request)).registry,
-    getIdempotencyStore: async (request) => getWorkspaceBridgeRuntime(await resolveBridgeWorkspaceId(request)).idempotencyStore,
-    runtimeTokenSecret: options.workspaceBridge?.runtimeTokenSecret,
-    browserAuthPolicy: createBrowserBridgeAuthPolicy({
-      getPrincipal: (input) => {
-        const user = input.request?.user as { id?: string; email?: string | null; name?: string | null } | null | undefined
-        return user?.id ? { userId: user.id, email: user.email ?? undefined } : null
-      },
-      authorizeWorkspace: async ({ principal, workspaceId, definition }) => ({
-        allowed: await workspaceStore.isMember(workspaceId, principal.userId),
-        capabilities: definition.requiredCapabilities,
-      }),
-      allowedOrigins: app.config.cors.origins,
-      requireCsrfHeader: true,
-    }),
-  })
+  await coreBridge.registerHttpRoutes(app)
 
   for (const { routes } of pluginCollection.routeContributions) {
     await app.register(routes)

@@ -12,13 +12,8 @@ export interface WorkspaceBridgeRuntimeTokenClaims {
   aud: typeof WORKSPACE_BRIDGE_TOKEN_AUDIENCE
   workspaceId: string
   sessionId?: string
-  pluginId?: string
   runtimeId?: string
-  agentSessionId?: string
-  toolCallId?: string
   capabilities: readonly string[]
-  bridgeOrigin?: string
-  deploymentId?: string
   iat: number
   exp: number
   jti: string
@@ -28,13 +23,8 @@ export interface MintWorkspaceBridgeRuntimeTokenOptions {
   secret: string
   workspaceId: string
   sessionId?: string
-  pluginId?: string
   runtimeId?: string
-  agentSessionId?: string
-  toolCallId?: string
   capabilities: readonly string[]
-  bridgeOrigin?: string
-  deploymentId?: string
   ttlMs?: number
   nowMs?: number
   jti?: string
@@ -43,12 +33,6 @@ export interface MintWorkspaceBridgeRuntimeTokenOptions {
 export interface VerifyWorkspaceBridgeRuntimeTokenOptions {
   secret: string
   nowMs?: number
-  expectedWorkspaceId?: string
-  expectedSessionId?: string
-  expectedPluginId?: string
-  expectedRuntimeId?: string
-  expectedBridgeOrigin?: string
-  expectedDeploymentId?: string
   requiredCapabilities?: readonly string[]
 }
 
@@ -67,13 +51,8 @@ export function mintWorkspaceBridgeRuntimeToken(
     aud: WORKSPACE_BRIDGE_TOKEN_AUDIENCE,
     workspaceId: options.workspaceId,
     sessionId: options.sessionId,
-    pluginId: options.pluginId,
     runtimeId: options.runtimeId,
-    agentSessionId: options.agentSessionId,
-    toolCallId: options.toolCallId,
     capabilities: [...options.capabilities],
-    bridgeOrigin: options.bridgeOrigin,
-    deploymentId: options.deploymentId,
     iat: Math.floor(nowMs / 1000),
     exp: Math.floor((nowMs + ttlMs) / 1000),
     jti: options.jti ?? randomUUID(),
@@ -98,13 +77,6 @@ export function verifyWorkspaceBridgeRuntimeToken(
     throw bridgeTokenError(WorkspaceBridgeErrorCode.InvalidToken, "Runtime bridge token is not valid yet")
   }
 
-  expectClaim("workspaceId", claims.workspaceId, options.expectedWorkspaceId)
-  expectClaim("sessionId", claims.sessionId, options.expectedSessionId)
-  expectClaim("pluginId", claims.pluginId, options.expectedPluginId)
-  expectClaim("runtimeId", claims.runtimeId, options.expectedRuntimeId)
-  expectClaim("bridgeOrigin", claims.bridgeOrigin, options.expectedBridgeOrigin)
-  expectClaim("deploymentId", claims.deploymentId, options.expectedDeploymentId)
-
   const missingCapability = (options.requiredCapabilities ?? []).find(
     (capability) => !claims.capabilities.includes(capability),
   )
@@ -125,19 +97,14 @@ export function runtimeClaimsToBridgeAuthContext(
     callerClass: "runtime",
     workspaceId: claims.workspaceId,
     sessionId: claims.sessionId,
-    pluginId: claims.pluginId,
     capabilities: claims.capabilities,
     tokenId: claims.jti,
     expiresAt: new Date(claims.exp * 1000).toISOString(),
     actor: {
       actorKind: "agent",
       performedBy: {
-        label: claims.pluginId
-          ? `runtime:${claims.pluginId}`
-          : claims.runtimeId
-            ? `runtime:${claims.runtimeId}`
-            : "runtime:agent",
-        id: claims.agentSessionId ?? claims.runtimeId,
+        label: claims.runtimeId ? `runtime:${claims.runtimeId}` : "runtime:agent",
+        id: claims.runtimeId,
       },
       onBehalfOf: claims.sessionId ? { label: `session:${claims.sessionId}` } : undefined,
     },
@@ -198,26 +165,11 @@ function parseClaims(payload: unknown): WorkspaceBridgeRuntimeTokenClaims {
     aud: claims.aud as typeof WORKSPACE_BRIDGE_TOKEN_AUDIENCE,
     workspaceId: claims.workspaceId,
     sessionId: optionalString(claims.sessionId),
-    pluginId: optionalString(claims.pluginId),
     runtimeId: optionalString(claims.runtimeId),
-    agentSessionId: optionalString(claims.agentSessionId),
-    toolCallId: optionalString(claims.toolCallId),
     capabilities: [...claims.capabilities] as string[],
-    bridgeOrigin: optionalString(claims.bridgeOrigin),
-    deploymentId: optionalString(claims.deploymentId),
     iat: claims.iat,
     exp: claims.exp,
     jti: claims.jti,
-  }
-}
-
-function expectClaim(
-  name: string,
-  actual: string | undefined,
-  expected: string | undefined,
-): void {
-  if (expected !== undefined && actual !== expected) {
-    throw bridgeTokenError(WorkspaceBridgeErrorCode.InvalidToken, `Runtime bridge token ${name} mismatch`)
   }
 }
 

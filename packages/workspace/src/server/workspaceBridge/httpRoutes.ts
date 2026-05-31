@@ -57,12 +57,7 @@ export function workspaceBridgeHttpRoutes(
       const registry = await resolveRegistry(request, body, opts)
       const definition = registry.getDefinition(body.op)
       if (!definition) {
-        return await sendResponse(reply, await registry.call(body, {
-          callerClass: "server",
-          workspaceId: "unknown",
-          capabilities: [],
-          actor: { actorKind: "system", performedBy: { label: "transport" } },
-        }))
+        return sendBridgeError(reply, statusForBridgeError(WorkspaceBridgeErrorCode.OpNotFound), body.requestId, WorkspaceBridgeErrorCode.OpNotFound, "WorkspaceBridge operation is not registered")
       }
 
       const authHeader = firstHeader(request.headers.authorization)

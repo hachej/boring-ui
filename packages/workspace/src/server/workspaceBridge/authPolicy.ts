@@ -60,7 +60,6 @@ export interface BrowserBridgeAuthPolicyOptions {
   }): Promise<BridgeWorkspaceGrant> | BridgeWorkspaceGrant
   allowedOrigins?: readonly string[]
   requireCsrfHeader?: boolean
-  localTrustedNoAuth?: boolean
 }
 
 export interface LocalCliBridgeAuthPolicyOptions {
@@ -81,28 +80,6 @@ export function createBrowserBridgeAuthPolicy(
       }
       ensureCallerAllowed(input.definition, "browser")
       ensureBrowserRequestAllowed(input, options)
-
-      if (options.localTrustedNoAuth) {
-        const capabilities = input.requiredCapabilities ?? input.definition.requiredCapabilities
-        const context = makeContext({
-          callerClass: "browser",
-          workspaceId: input.workspaceId,
-          sessionId: input.sessionId,
-          pluginId: input.pluginId,
-          capabilities,
-          actor: {
-            actorKind: "human",
-            performedBy: { label: "local-cli:user" },
-          },
-        })
-        ensureCapabilities(context.capabilities, input.requiredCapabilities ?? input.definition.requiredCapabilities)
-        return {
-          context,
-          effectiveCapabilities: context.capabilities,
-          principal: { userId: "local-cli" },
-          resourceScope: { workspaceId: input.workspaceId, sessionId: input.sessionId },
-        }
-      }
 
       const principal = await options.getPrincipal(input)
       if (!principal) {
@@ -162,15 +139,35 @@ export function createBrowserBridgeAuthPolicy(
 export function createLocalCliBridgeAuthPolicy(
   options: LocalCliBridgeAuthPolicyOptions,
 ): BridgeAuthPolicy {
-  return createBrowserBridgeAuthPolicy({
-    localTrustedNoAuth: true,
-    getPrincipal: () => ({ userId: "local-cli" }),
-    authorizeWorkspace: () => ({
-      allowed: true,
-      capabilities: options.capabilities ?? [],
-      resourceScope: { workspaceId: options.workspaceId },
-    }),
-  })
+  // Trusted local/dev only: no Better Auth / core DB. Grants the configured
+  // capabilities (defaulting to the op's own) to a fixed local-cli principal.
+  return {
+    resolve(input) {
+      if (input.callerClass !== "browser") {
+        throw createWorkspaceBridgeError(
+          WorkspaceBridgeErrorCode.CallerNotAllowed,
+          "Local CLI auth policy only accepts browser callers",
+        )
+      }
+      ensureCallerAllowed(input.definition, "browser")
+      const capabilities = options.capabilities ?? input.definition.requiredCapabilities
+      ensureCapabilities(capabilities, input.requiredCapabilities ?? input.definition.requiredCapabilities)
+      const context = makeContext({
+        callerClass: "browser",
+        workspaceId: input.workspaceId,
+        sessionId: input.sessionId,
+        pluginId: input.pluginId,
+        capabilities,
+        actor: { actorKind: "human", performedBy: { label: "local-cli:user" } },
+      })
+      return {
+        context,
+        effectiveCapabilities: capabilities,
+        principal: { userId: "local-cli" },
+        resourceScope: { workspaceId: input.workspaceId, sessionId: input.sessionId },
+      }
+    },
+  }
 }
 
 function ensureCallerAllowed(

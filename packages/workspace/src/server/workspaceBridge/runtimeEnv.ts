@@ -25,8 +25,6 @@ export interface WorkspaceBridgeRuntimeEnvOptions {
   tokenTtlMs?: number
   /** Optional audit/session claim. */
   sessionId?: string
-  /** Optional deployment binding claim. */
-  deploymentId?: string
 }
 
 export interface CreateWorkspaceBridgeRuntimeEnvContributionOptions {
@@ -65,8 +63,6 @@ export function createWorkspaceBridgeRuntimeEnvContribution(
         sessionId: options.runtimeEnv?.sessionId,
         runtimeId: options.runtimeMode,
         capabilities: capabilities!,
-        bridgeOrigin: originOf(bridgeUrl!),
-        deploymentId: options.runtimeEnv?.deploymentId,
         ttlMs: options.runtimeEnv?.tokenTtlMs,
       })
       return {
@@ -115,8 +111,4 @@ function validateRuntimeBridgeUrl(options: {
   if (url.protocol === "http:" && !options.allowInsecureHttp && !isLocalhost) return "remote-bridge-url-must-be-https"
   if (url.protocol !== "http:" && url.protocol !== "https:") return "bridge-url-invalid"
   return undefined
-}
-
-function originOf(url: string): string {
-  return new URL(url).origin
 }

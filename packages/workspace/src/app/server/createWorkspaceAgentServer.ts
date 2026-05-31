@@ -40,13 +40,11 @@ import { createWorkspaceUiTools } from "../../server/ui-control/tools/uiTools"
 import { uiRoutes } from "../../server/ui-control/http/uiRoutes"
 import {
   createLocalCliBridgeAuthPolicy,
-  createWorkspaceBridgeRegistry,
+  createWorkspaceBridgeRuntimeCore,
   InMemoryWorkspaceBridgeIdempotencyStore,
   createWorkspaceBridgeRuntimeEnvContribution,
   workspaceBridgeHttpRoutes,
   PendingQuestionRuntime,
-  InMemoryPendingQuestionStore,
-  createHumanInputBridgeHandlers,
   type PendingQuestionStore,
   type WorkspaceBridgeHandler,
   type WorkspaceBridgeOperationDefinition,
@@ -577,17 +575,16 @@ export async function createWorkspaceAgentServer(
 ): Promise<FastifyInstance> {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const bridge = createInMemoryBridge()
-  const pendingQuestionStore = opts.humanInput?.pendingQuestionStore ?? new InMemoryPendingQuestionStore()
-  const pendingQuestionRuntime = opts.humanInput?.pendingQuestionRuntime ?? new PendingQuestionRuntime(pendingQuestionStore)
-  const effectivePendingQuestionStore = pendingQuestionRuntime.store
-  await pendingQuestionRuntime.abandonServerRestart()
-  const workspaceBridgeRegistry = opts.workspaceBridge?.registry ?? createWorkspaceBridgeRegistry()
-  for (const entry of createHumanInputBridgeHandlers({ runtime: pendingQuestionRuntime, store: effectivePendingQuestionStore })) {
-    workspaceBridgeRegistry.registerHandler(entry.definition, entry.handler)
-  }
-  for (const entry of opts.workspaceBridge?.handlers ?? []) {
-    workspaceBridgeRegistry.registerHandler(entry.definition, entry.handler)
-  }
+  const {
+    registry: workspaceBridgeRegistry,
+    pendingQuestionStore: effectivePendingQuestionStore,
+    pendingQuestionRuntime,
+  } = createWorkspaceBridgeRuntimeCore({
+    registry: opts.workspaceBridge?.registry,
+    pendingQuestionStore: opts.humanInput?.pendingQuestionStore,
+    pendingQuestionRuntime: opts.humanInput?.pendingQuestionRuntime,
+    handlers: opts.workspaceBridge?.handlers,
+  })
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
   const workspaceFsCapability = modeAdapter.workspaceFsCapability ?? "best-effort"
@@ -839,10 +836,21 @@ export async function createWorkspaceAgentServer(
       capabilities: workspaceBridgeRegistry.listDefinitions().flatMap((definition) => [...definition.requiredCapabilities]),
     }),
   })
-  ;(app as FastifyInstance & { __boringWorkspaceBridgeRegistry?: WorkspaceBridgeRegistry }).__boringWorkspaceBridgeRegistry =
-    workspaceBridgeRegistry
-  ;(app as FastifyInstance & { __boringPendingQuestionRuntime?: PendingQuestionRuntime }).__boringPendingQuestionRuntime =
-    pendingQuestionRuntime
+  // Internal handles exposed on the Fastify instance for external callers /
+  // tests (e.g. the CLI reads __boringAssetManager). The rebuild closure is
+  // also wired into `beforeReload` so /reload triggers it automatically.
+  interface BoringWorkspaceInternals {
+    __boringWorkspaceBridgeRegistry?: WorkspaceBridgeRegistry
+    __boringPendingQuestionRuntime?: PendingQuestionRuntime
+    __boringRebuildPlugins?: () => Promise<PluginRebuildResult>
+    __boringAssetManager?: BoringPluginAssetManager
+  }
+  const internals = app as FastifyInstance & BoringWorkspaceInternals
+  internals.__boringWorkspaceBridgeRegistry = workspaceBridgeRegistry
+  internals.__boringPendingQuestionRuntime = pendingQuestionRuntime
+  internals.__boringRebuildPlugins = rebuildPlugins
+  internals.__boringAssetManager = boringAssetManager
+
   await app.register(boringPluginRoutes, {
     manager: boringAssetManager,
     rebuildPlugins,
@@ -851,18 +859,6 @@ export async function createWorkspaceAgentServer(
   for (const { routes } of pluginCollection.routeContributions) {
     await app.register(routes)
   }
-
-  // Expose the rebuild closure on the Fastify instance for external
-  // callers / tests. The same closure is also wired into `beforeReload`
-  // above so /reload triggers it automatically.
-  ;(app as FastifyInstance & {
-    __boringRebuildPlugins?: () => Promise<PluginRebuildResult>
-    __boringAssetManager?: BoringPluginAssetManager
-  }).__boringRebuildPlugins = rebuildPlugins
-  ;(app as FastifyInstance & {
-    __boringRebuildPlugins?: () => Promise<PluginRebuildResult>
-    __boringAssetManager?: BoringPluginAssetManager
-  }).__boringAssetManager = boringAssetManager
 
   return app
 }
