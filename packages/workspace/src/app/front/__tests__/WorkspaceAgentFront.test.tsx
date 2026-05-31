@@ -50,12 +50,27 @@ class MockEventSource {
 }
 
 describe("WorkspaceAgentFront", () => {
+  // Number of consecutive HTTP 503 ("Agent runtime is still preparing")
+  // responses the sessions GET should return before succeeding. Default 0 so
+  // every existing test keeps the original behavior; the cold-start regression
+  // test below sets it to a small N for its single render.
+  let sessionsFailuresRemaining = 0
+
   beforeEach(() => {
     localStorage.clear()
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    sessionsFailuresRemaining = 0
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/sessions")) return new Response(JSON.stringify([]), { status: 200 })
+      if (url.includes("/api/v1/agent/sessions")) {
+        // Only the cold-start GET race is simulated; POST/DELETE pass through.
+        const method = init?.method ?? "GET"
+        if (method === "GET" && sessionsFailuresRemaining > 0) {
+          sessionsFailuresRemaining -= 1
+          return new Response(null, { status: 503 })
+        }
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
       if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
       if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
       return new Response(null, { status: 204 })
@@ -673,6 +688,66 @@ describe("WorkspaceAgentFront", () => {
     expect(observed).toHaveBeenCalledWith(expect.objectContaining({ detail: { sessionId: "s1" } }))
 
     window.removeEventListener("boring:workspace-composer-stop", observed)
+  })
+
+  it("recovers the session chat after transient cold-start 503s without any remount", async () => {
+    // Reproduces the "empty chat after page reload until you switch workspace
+    // away and back" bug. On a fresh load the sessions GET returns 503 ("Agent
+    // runtime is still preparing") for the first few calls during warmup. The
+    // pre-fix useSessions latched that 503 into a terminal error and rendered an
+    // empty chat (default "New session" title, no loaded session) with no retry,
+    // so chat stayed empty until a full remount (only a workspace switch did
+    // that, via key={activeWorkspace.id}). The fix retries transient 503s with
+    // backoff while staying in loading state. This test mounts ONCE — no
+    // remount, no key change, no workspace switch — and asserts the real session
+    // loaded from the eventual 200 shows up.
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.includes("/api/v1/agent/sessions")) {
+        const method = init?.method ?? "GET"
+        if (method === "GET" && sessionsFailuresRemaining > 0) {
+          sessionsFailuresRemaining -= 1
+          return new Response(null, { status: 503 })
+        }
+        if (method === "GET") return new Response(JSON.stringify([{ id: "s1", title: "Existing" }]), { status: 200 })
+      }
+      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agent/chat")) return new Response(JSON.stringify({ messages: [] }), { status: 200 })
+      if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    // First two cold-start session GETs fail with 503 (backoff ~0.25s + ~0.5s),
+    // then the third returns the existing session. Kept to 2 so total real-timer
+    // backoff stays sub-second.
+    sessionsFailuresRemaining = 2
+
+    const user = userEvent.setup()
+    render(
+      <WorkspaceAgentFront
+        workspaceId="cold-start-503"
+        requestHeaders={{ "x-boring-workspace-id": "cold-start-503" }}
+        persistenceEnabled={false}
+      />,
+    )
+
+    // The existing session must surface after the retries succeed — proving the
+    // chat recovered on the same mount. Open the session browser and assert the
+    // real session is shown (it appears as both the TopBar session title and the
+    // session-browser row). Against the pre-fix latched-error behavior the chat
+    // stays empty: the TopBar shows the "New session" fallback and no row exists,
+    // so zero "Existing" elements are found and this fails.
+    await user.click(screen.getByRole("button", { name: "Sessions" }))
+    await waitFor(() => {
+      expect(screen.getAllByText("Existing").length).toBeGreaterThan(0)
+    }, { timeout: 4000 })
+
+    // And the chat must NOT have given up by auto-creating a brand-new empty
+    // session as if none existed (no POST to the sessions endpoint).
+    expect(fetchMock.mock.calls.some(([input, init]) =>
+      String(input).includes("/api/v1/agent/sessions") && (init?.method ?? "GET") === "POST",
+    )).toBe(false)
   })
 
   it("creates the first remote session when a sessions hook loads empty", async () => {
