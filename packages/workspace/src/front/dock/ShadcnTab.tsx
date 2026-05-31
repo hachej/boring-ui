@@ -196,7 +196,7 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
     <Fragment>
       <div
         className={cn(
-          "group relative flex h-full w-full min-w-0 items-center gap-1.5 pl-2.5 pr-7 select-none",
+          "group relative flex h-full w-full min-w-0 items-center gap-2 px-3 select-none",
           "text-[12.5px] leading-none tracking-tight",
           "cursor-pointer transition-colors",
         )}
@@ -223,30 +223,32 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
           />
         )}
         <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{displayTitle}</span>
-        {isDirty ? (
-          <span
-            aria-hidden="true"
+        <div className="flex shrink-0 items-center gap-1">
+          {isDirty ? (
+            <span
+              aria-hidden="true"
+              className={cn(
+                "h-1.5 w-1.5 shrink-0 rounded-full bg-foreground/35",
+                "[.dv-active-tab_&]:bg-foreground/45 [.active-tab_&]:bg-foreground/45",
+              )}
+            />
+          ) : null}
+          <IconButton
+            type="button"
+            variant="ghost"
+            size="icon-xs"
             className={cn(
-              "mr-1 h-1.5 w-1.5 shrink-0 rounded-full bg-foreground/35",
-              "[.dv-active-tab_&]:bg-foreground/45 [.active-tab_&]:bg-foreground/45",
+              "h-5 w-5 shrink-0 text-muted-foreground/80 opacity-0",
+              "focus-visible:opacity-100 group-hover:opacity-100",
+              "[.dv-active-tab_&]:opacity-55 [.active-tab_&]:opacity-55",
+              "[.dv-active-tab_&]:hover:opacity-100 [.active-tab_&]:hover:opacity-100",
             )}
-          />
-        ) : null}
-        <IconButton
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          className={cn(
-            "absolute right-1 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground opacity-0",
-            "focus-visible:opacity-100 group-hover:opacity-100",
-            "[.dv-active-tab_&]:opacity-50 [.active-tab_&]:opacity-50",
-            "[.dv-active-tab_&]:hover:opacity-100 [.active-tab_&]:hover:opacity-100",
-          )}
-          onClick={handleClose}
-          aria-label={`Close ${displayTitle}`}
-        >
-          <X className="h-3 w-3" strokeWidth={2.25} />
-        </IconButton>
+            onClick={handleClose}
+            aria-label={`Close ${displayTitle}`}
+          >
+            <X className="h-3 w-3" strokeWidth={2.25} />
+          </IconButton>
+        </div>
       </div>
       {contextMenu}
     </Fragment>

@@ -34,8 +34,8 @@
 .dv-shell .tabs-and-actions-container {
   background-color: var(--background) !important;
   border-bottom: 1px solid oklch(from var(--border) l c h / 0.4);
-  padding: 8px 6px 0 6px;
-  gap: 2px;
+  padding: 6px 8px 0 8px;
+  gap: 4px;
   align-items: flex-end;
 }
 
@@ -43,6 +43,9 @@
 .dv-shell .tab-container {
   background-color: transparent !important;
   gap: 4px;
+  align-self: stretch;
+  display: flex;
+  align-items: flex-end;
 }
 
 /* Workbench-specific tab strip height — matches WorkbenchLeftPane header for consistency */
@@ -66,15 +69,15 @@
   color: var(--muted-foreground) !important;
   background-color: transparent !important;
   border: 1px solid transparent;
-  border-top-left-radius: 7px;
-  border-top-right-radius: 7px;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
   transition: color 0.18s cubic-bezier(0.22, 1, 0.36, 1),
     background-color 0.18s cubic-bezier(0.22, 1, 0.36, 1),
     border-color 0.18s cubic-bezier(0.22, 1, 0.36, 1);
   min-width: 120px;
   max-width: 220px;
   padding: 0;
-  height: 32px;
+  height: 34px;
   align-self: end;
   font-size: 12.5px;
   letter-spacing: -0.01em;
@@ -178,6 +181,8 @@
   color: var(--muted-foreground);
   display: flex;
   align-items: center;
+  align-self: stretch;
+  padding-bottom: 3px;
 }
 
 .dv-shell .right-actions-container:hover,
