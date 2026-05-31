@@ -1,8 +1,9 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from "react"
 import { IconButton, LoadingState, ResizeHandle as UiResizeHandle } from "@hachej/boring-ui-kit"
+import { ChevronLeft, ChevronRight, MessageSquare } from "lucide-react"
 import { cn } from "../lib/utils"
 import { dispatchUiCommand, type DispatchContext } from "../bridge"
-import { events, workspaceEvents } from "../events"
+import { events, useEvent, workspaceEvents } from "../events"
 import { useKeyboardShortcuts, type ShortcutBinding } from "../hooks/useKeyboardShortcuts"
 import type { SurfaceShellApi } from "../chrome/artifact-surface/SurfaceShell"
 import type { LayoutConfig, GroupConfig } from "../dock"
@@ -10,7 +11,7 @@ import { useCommandRegistry, useRegistry } from "../registry"
 import type { PaneProps } from "../registry/types"
 import { readStoredNumber, writeStoredNumber } from "../store/localStorageValues"
 import type { ChatLayoutProps } from "./types"
-import { useWorkspaceContext } from "../provider"
+import { useWorkspaceAttention, useWorkspaceContext } from "../provider"
 
 export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
   const {
@@ -43,6 +44,8 @@ export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
     panel: center,
     params: centerParams,
     hideHeader: true,
+    collapsible: true,
+    collapsedWidth: 40,
   })
 
   if (sidebar) {
@@ -89,6 +92,12 @@ export function ChatLayout(props: ChatLayoutProps) {
     props.storageKey ? `${props.storageKey}:surfaceWidth` : undefined,
     680,
   )
+  const [chatCollapsed, setChatCollapsed] = useStoredBooleanState(
+    props.storageKey ? `${props.storageKey}:chatCollapsed` : undefined,
+    false,
+  )
+  const [chatRailPulse, setChatRailPulse] = useState(false)
+  const { blockers } = useWorkspaceAttention()
   const commandRegistry = useCommandRegistry()
   const effectiveNavWidth = clamp(navWidth, 200, 360)
   const surfaceMax = Math.max(480, Math.floor(viewport * 0.72))
@@ -128,11 +137,17 @@ export function ChatLayout(props: ChatLayoutProps) {
     props.onOpenSidebar?.()
   }, [closeSidebar, props.onOpenSidebar, sidebarOpen])
   const focusChat = useCallback(() => {
+    if (chatCollapsed) setChatCollapsed(false)
     if (navOpen) closeNav?.()
     if (surfaceOpen) closeSurface?.()
     focusAgentComposer()
     scheduleComposerFocus()
-  }, [closeNav, closeSurface, navOpen, surfaceOpen])
+  }, [chatCollapsed, closeNav, closeSurface, navOpen, setChatCollapsed, surfaceOpen])
+
+  const toggleChatCollapsed = useCallback(() => {
+    setChatCollapsed((current) => !current)
+    setChatRailPulse(false)
+  }, [setChatCollapsed])
 
   useKeyboardShortcuts({
     shortcuts: useMemo(() => {
@@ -148,9 +163,10 @@ export function ChatLayout(props: ChatLayoutProps) {
       }
       if (centerId === "chat") {
         shortcuts.push({ key: "Escape", allowInEditable: true, handler: focusChat })
+        shortcuts.push({ key: "\\", mod: true, allowInEditable: true, handler: toggleChatCollapsed })
       }
       return shortcuts
-    }, [canControlNav, canControlSidebar, canControlSurface, centerId, focusChat, toggleNav, toggleSidebar, toggleSurface]),
+    }, [canControlNav, canControlSidebar, canControlSurface, centerId, focusChat, toggleChatCollapsed, toggleNav, toggleSidebar, toggleSurface]),
   })
 
   useEffect(() => {
@@ -247,6 +263,22 @@ export function ChatLayout(props: ChatLayoutProps) {
     })
   }, [uiSurface, uiIsWorkbenchOpen, uiOpenWorkbench, uiOpenWorkbenchSources, uiCloseWorkbench])
 
+  useEvent(workspaceEvents.agentData, () => {
+    if (chatCollapsed) setChatRailPulse(true)
+  })
+
+  useEffect(() => {
+    if (!chatCollapsed) {
+      setChatRailPulse(false)
+      return
+    }
+    if (blockers.length > 0) {
+      setChatCollapsed(false)
+      setChatRailPulse(false)
+      scheduleComposerFocus()
+    }
+  }, [blockers.length, chatCollapsed, setChatCollapsed])
+
   return (
     <div
       data-boring-workspace=""
@@ -291,28 +323,77 @@ export function ChatLayout(props: ChatLayoutProps) {
       <main
         data-boring-workspace-part="chat-stage"
         aria-label="Chat stage"
-        className="relative h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-background"
+        className="relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-background"
       >
-        <PanelSlot id={centerId} params={props.centerParams} />
-        {!navOpen && props.onOpenNav ? (
-          <FloatingEdgeButton
-            side="left"
-            icon="sessions"
-            onClick={props.onOpenNav}
-            label="Sessions"
-            hint="⌘1"
-          />
-        ) : null}
-        {!surfaceOpen && props.onOpenSurface ? (
-          <FloatingEdgeButton
-            side="right"
-            icon="workbench"
-            onClick={props.onOpenSurface}
-            label="Workbench"
-            hint="⌘2"
-            bottomOffset={props.surfaceButtonBottomOffset}
-          />
-        ) : null}
+        <section
+          data-boring-workspace-part="chat-panel"
+          data-boring-state={chatCollapsed ? "collapsed" : "expanded"}
+          aria-label={chatCollapsed ? "Collapsed chat" : "Chat"}
+          className={cn(
+            "relative h-full min-h-0 shrink-0 overflow-hidden bg-background",
+            "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+            !chatCollapsed && "border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
+          )}
+          style={{
+            width: chatCollapsed ? 40 : undefined,
+            minWidth: chatCollapsed ? 40 : undefined,
+            maxWidth: chatCollapsed ? 40 : undefined,
+          }}
+        >
+          {!chatCollapsed ? (
+            <>
+              <PanelSlot id={centerId} params={props.centerParams} />
+              <IconButton
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                onClick={toggleChatCollapsed}
+                className="absolute right-2 top-2 z-20"
+                aria-label="Collapse chat"
+                title="Collapse chat (⌘\\)"
+              >
+                <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
+              </IconButton>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={toggleChatCollapsed}
+              className="flex h-full w-full flex-col items-center justify-start gap-2 border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)] bg-background px-1 py-2 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+              aria-label="Expand chat"
+              title="Expand chat (⌘\\)"
+            >
+              <ChevronRight className="h-4 w-4" strokeWidth={1.75} />
+              <div className="relative flex items-center justify-center">
+                <MessageSquare className="h-4 w-4" strokeWidth={1.75} />
+                {(chatRailPulse || blockers.length > 0) ? (
+                  <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[color:var(--accent)]" aria-hidden="true" />
+                ) : null}
+              </div>
+            </button>
+          )}
+        </section>
+        <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
+          {!navOpen && props.onOpenNav ? (
+            <FloatingEdgeButton
+              side="left"
+              icon="sessions"
+              onClick={props.onOpenNav}
+              label="Sessions"
+              hint="⌘1"
+            />
+          ) : null}
+          {!surfaceOpen && props.onOpenSurface ? (
+            <FloatingEdgeButton
+              side="right"
+              icon="workbench"
+              onClick={props.onOpenSurface}
+              label="Workbench"
+              hint="⌘2"
+              bottomOffset={props.surfaceButtonBottomOffset}
+            />
+          ) : null}
+        </div>
       </main>
 
       {surfaceConfigured ? (
@@ -377,6 +458,7 @@ function clamp(n: number, min: number, max: number): number {
 }
 
 type StoredNumberUpdate = number | ((previous: number) => number)
+type StoredBooleanUpdate = boolean | ((previous: boolean) => boolean)
 
 function useStoredNumberState(
   key: string | undefined,
@@ -395,6 +477,40 @@ function useStoredNumberState(
       setValue((previous) => {
         const resolved = typeof next === "function" ? next(previous) : next
         if (key) writeStoredNumber(key, resolved)
+        return resolved
+      })
+    },
+    [key],
+  )
+
+  return [value, setStoredValue]
+}
+
+function useStoredBooleanState(
+  key: string | undefined,
+  fallback: boolean,
+): [boolean, (next: StoredBooleanUpdate) => void] {
+  const [value, setValue] = useState(() => {
+    if (!key || typeof window === "undefined") return fallback
+    return window.localStorage.getItem(key) === "1"
+  })
+
+  useEffect(() => {
+    if (!key || typeof window === "undefined") {
+      setValue(fallback)
+      return
+    }
+    const stored = window.localStorage.getItem(key)
+    setValue(stored == null ? fallback : stored === "1")
+  }, [key, fallback])
+
+  const setStoredValue = useCallback(
+    (next: StoredBooleanUpdate) => {
+      setValue((previous) => {
+        const resolved = typeof next === "function" ? next(previous) : next
+        if (key && typeof window !== "undefined") {
+          window.localStorage.setItem(key, resolved ? "1" : "0")
+        }
         return resolved
       })
     },
