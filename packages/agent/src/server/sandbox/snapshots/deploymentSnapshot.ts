@@ -1,8 +1,8 @@
 /**
- * Authoritative uv path installed by the Vercel Node-runtime bootstrap. `uv`
- * lands in the per-user bin (`pip install --user`), which is NOT on PATH for
- * non-interactive provisioning exec — so internal callers must use this explicit
- * path, never bare `uv`.
+ * Authoritative uv path installed by the Vercel Node-runtime bootstrap (the
+ * Astral standalone installer drops the binary in `$HOME/.local/bin`). That dir
+ * is NOT on PATH for non-interactive provisioning exec, so internal callers must
+ * invoke uv via this explicit path, never bare `uv`.
  */
 export const VERCEL_UV_BIN = '/home/vercel-sandbox/.local/bin/uv'
 
@@ -31,7 +31,7 @@ export const NODE_UV_SETUP_COMMANDS = [
 ] as const
 
 /** Vercel Node-family runtime selectors lack pip/uv and need NODE_UV_SETUP_COMMANDS. */
-function isNodeFamilyRuntime(runtime: string | undefined): boolean {
+export function isNodeFamilyRuntime(runtime: string | undefined): boolean {
   return typeof runtime === 'string' && /^node/i.test(runtime.trim())
 }
 

@@ -1,13 +1,18 @@
 import { resolve } from 'node:path'
-import { createCoreWorkspaceAgentServer } from '@hachej/boring-core/app/server'
+import {
+  appRootFromImportMeta,
+  createCoreWorkspaceAgentServer,
+} from '@hachej/boring-core/app/server'
 import { createAskUserPiExtensionFactory } from '@hachej/boring-ask-user/agent'
+import { demoServerPlugin } from '../plugins/demo/server'
 
 async function main(): Promise<void> {
-  const appRoot = resolve(import.meta.dirname, '../..')
+  const appRoot = appRootFromImportMeta(import.meta.url, 2)
   const app = await createCoreWorkspaceAgentServer({
     appRoot,
     appPackageJsonPath: resolve(appRoot, 'package.json'),
     serveFrontend: true,
+    plugins: [demoServerPlugin],
     getWorkspaceBridgePi: (ctx) => ({
       extensionFactories: [createAskUserPiExtensionFactory({
         callHumanInputRequest: async (input, signal) => await ctx.callAsRuntime(
