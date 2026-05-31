@@ -9,8 +9,8 @@ are explicit non-goals (below). Sibling to [workspace-bridge-rpc-plan.md](./work
 > **Pending decision:** Principle 1 (workspace-built deps) is **open decision #1** in
 > [plugin-system-roadmap.md](./plugin-system-roadmap.md) — it conflicts with the allowlist
 > model assumed by the canonical trust-modes / agent-generation / hot-reload plans. This
-> document argues the case and gives a recommendation (see "Decision #1 — recommendation");
-> it is not yet ratified.
+> document argues the case and the recommendation is **accepted** (see "Decision #1"): CLI
+> plugins may `npm install` arbitrary deps. Track B stays flagged (B2) until greenlight criteria pass.
 
 ## Goal
 
@@ -102,6 +102,12 @@ Vite instance bundle/serve it. The Vite server already exists (`createServer`, `
 externals contract is injected as rollup `external` entries that resolve to the existing
 `virtualSingletonId` modules, so React/workspace stay the host's single shared instances and are
 **never bundled**.
+
+**One resolution path, not a mode branch.** Always *resolve-from-`node_modules` + externalize the
+contract*. The "allowlist" stops being a code path and becomes simply *what is installed*: hosted
+ships only the contract in `node_modules`; CLI additionally installs the plugin's declared deps.
+So a future hosted mode adds **no `mode === "cli"` fork** in `resolveId` — it just ships a smaller
+install set. (An unresolved bare import still fails — now as a normal "not installed" error.)
 
 ### Install / cache flow ("allow installing")
 
@@ -231,11 +237,13 @@ the deferred raw-SQL arm. Structured input cannot inject SQL.
 
 ### Writes (constrained — e.g. transaction tagging)
 
-Reads are the MVP, but real panes also write — tagging a transaction, editing a field. Add a
-**separate, constrained mutation op** (not arbitrary SQL):
+Reads are the MVP, but real panes also write — tagging a transaction, editing a field. For
+writable data the **`sqlite`/`duckdb` source is the primary store** (source of truth for both
+reads and writes); `json`/`csv`/`parquet` remain read-only inputs. Add a **separate, constrained
+mutation op** (not arbitrary SQL):
 
 ```txt
-data.v1.mutate   # {source, op: "update"|"insert"|"upsert", key, set, idempotencyKey} -> {changed, idempotentReplay}
+data.v1.mutate   # {source, op, key, set, expectedVersion?, idempotencyKey} -> {changed, idempotentReplay, version}
 
 # tagging example:
 data.v1.mutate { source: "txns", op: "update", key: { id: "t_123" }, set: { tags: ["rent"] } }
@@ -244,10 +252,16 @@ data.v1.mutate { source: "txns", op: "update", key: { id: "t_123" }, set: { tags
 - **Writable sources only:** `sqlite` / `duckdb` (transactional). `json`/`csv`/`parquet` stay
   read-only in v1 — whole-file rewrite / columnar-immutable are not safe write targets.
 - **Separate capability** `data:write:<source>`, granted independently of read.
-- **Idempotent:** every mutation carries an idempotency key (reuse the bridge idempotency policy)
-  so a double-submit can't double-apply.
-- **Single-writer (CLI):** the host is the only writer, serialized through the data endpoint —
-  robust for one user/process. Concurrent multi-writer is the Quack/DuckLake future, not v1.
+- **Idempotent:** every mutation carries an idempotency key. The v1 transport is the host
+  endpoint (not the bridge yet), so the key store is **host-side** — a small table keyed by
+  `(source, idempotencyKey)` holding the prior result; a replay returns it
+  (`idempotentReplay: true`) without re-applying.
+- **Concurrency — optimistic, in v1 (not deferred):** an agent and a human can write at the same
+  time, so serializing requests at the host is not enough (stale-read clobber). Every
+  `update`/`upsert` carries an **`expectedVersion`** (a per-row `rev`/`updatedAt`); the host
+  rejects a stale write with `WRITE_CONFLICT`, and the caller re-reads + retries. A shared
+  *physical* multi-writer DB across processes is still the Quack/DuckLake future; this is logical
+  concurrency control over one DB.
 - **Structured + audited:** `op`/`key`/`set` only (no raw SQL); writes audited like reads.
 
 ### Boundaries / security
@@ -259,7 +273,7 @@ data.v1.mutate { source: "txns", op: "update", key: { id: "t_123" }, set: { tags
 ### Future (non-goals here)
 
 Remote DBs (DuckDB `ATTACH` postgres/mysql + host-side secrets), writes to file-format sources
-(json/parquet), and a **multi-writer / shared-writable** workspace DB via
+(json/parquet), and a **shared physical multi-writer** DB across processes via
 [Quack](https://duckdb.org/2026/05/12/quack-remote-protocol) /
 [DuckLake](https://www.definite.app/blog/duckdb-quack-ducklake-catalog) (beta; stable target
 DuckDB v2.0, fall 2026). If adopted, the **host stays the only Quack client** — never hand a DB
@@ -301,9 +315,13 @@ from the error boundary. `test-plugin` waits for `ready | error | timeout`. A bl
 pane stays `loading` → reported as a **timeout failure, not a false pass** — this is what makes
 "mounted vs blank" reliable.
 
-Surface as one agent-invokable check, e.g. `boring-ui test-plugin <name>` → `SelfTestResult`
-(see Contracts). Redaction follows the bridge rules (no tokens, file contents, host paths, full
-payloads). **Scope:** CLI-local headless render only; hosted/iframe self-test is a non-goal here.
+**One health channel.** All three layers write to a single host-side store (`:id/health` +
+`:id/error`): layer 1 on reload, layer 2 from the pane error boundary + the `data-boring-pane`
+signal, layer 3 from the pane's own reporting of failed fetches. So `boring-ui test-plugin <name>`
+is a **thin orchestrator** — reload → open the pane → poll `:id/health` until
+`ready | error | timeout` — returning `SelfTestResult` (see Contracts). It does **not** parse
+console/DOM itself; the pane and host report structured state, which also serves a human session.
+Redaction follows the bridge rules. **Scope:** CLI-local; hosted/iframe self-test is a non-goal here.
 
 ---
 
@@ -323,14 +341,16 @@ interface SourceDescriptor {
   facetable?: string[]         // columns offered to data.v1.facets / the UI
   writable?: boolean           // gates data.v1.mutate; only sqlite/duckdb may be true
 }
-// App composition registers sources + per-plugin grants (host side):
-declare function registerDataSources(defs: SourceDescriptor[]): void
-declare function grantDataAccess(pluginId: string, grants: {
-  read?: string[]              // source names, or ["*"]
-  write?: string[]             // source names (must be writable)
-}): void
+// App composition wires sources + grants on a host object — NO module-global registry
+// (mirrors how the bridge plan injects via composition; keeps multi-workspace isolation clean):
+interface DataHost {
+  registerSources(defs: SourceDescriptor[]): void
+  grant(pluginId: string, g: { read?: string[]; write?: string[] }): void  // names or ["*"]; write ⊆ writable
+}
 
 // ---- data.v1.query / facets / schema (read) ----
+// Field-for-field the data-explorer SearchArgs shape (+ a rows-level `sort`), so
+// createBridgeDataSource is a near-identity adapter on the request side (one vocabulary).
 interface QueryArgs {
   source: string
   query?: string                          // free-text search (ILIKE across text columns)
@@ -356,9 +376,10 @@ interface MutateArgs {
   op: "update" | "insert" | "upsert"
   key?: Record<string, unknown>           // required for update/upsert
   set: Record<string, unknown>
+  expectedVersion?: string | number       // optimistic concurrency; mismatch -> WRITE_CONFLICT
   idempotencyKey: string                  // required; dedupes double-submit
 }
-interface MutateResult { changed: number; idempotentReplay: boolean }
+interface MutateResult { changed: number; idempotentReplay: boolean; version: string | number }
 
 // ---- stable error contract (returned, never thrown across the boundary) ----
 type DataErrorCode =
@@ -373,20 +394,24 @@ declare function createBridgeDataSource(opts: {
   source: string
   rowToItem: (row: Record<string, unknown>) => import("@hachej/boring-data-explorer/shared").ExplorerItem
 }): import("@hachej/boring-data-explorer/shared").ExplorerDataSource
-// Navigation (Principle 2): renders <a>, intercepts click -> emitUiEffect
-declare function WorkspaceLink(props: {
-  to: { kind: "openFile" | "openSurface" | "openPanel" | "navigateToLine"; [k: string]: unknown }
-  children: React.ReactNode
-}): JSX.Element
+// Navigation (Principle 2): renders <a>, intercepts click -> emitUiEffect.
+// `to` is a discriminated union of the real effect payloads (no `[k]: unknown`):
+type NavEffect =
+  | { kind: "openFile"; path: string }
+  | { kind: "openSurface"; surface: string; target: string; meta?: Record<string, unknown> }
+  | { kind: "openPanel"; panelId: string }
+  | { kind: "navigateToLine"; path: string; line: number }
+declare function WorkspaceLink(props: { to: NavEffect; children: React.ReactNode }): JSX.Element
 
-// ---- self-test verdict (Track C) ----
-interface SelfTestResult {
-  ok: boolean
-  loadErrors: DataError[] | string[]      // layer 1
-  runtimeErrors: string[]                  // layer 2 (redacted)
-  mounted: boolean                         // layer 3 (pane reached data-boring-pane="ready")
-  failedRequests: { status: number; url: string }[]  // layer 3 (url redacted)
+// ---- self-test (Track C) ----
+// Layers 1–3 all write to ONE host-side health store; test-plugin triggers a mount then polls it.
+interface PluginHealthEvent { layer: 1 | 2 | 3; code?: string; message: string }  // one error shape
+interface PluginHealth {
+  state: "loading" | "ready" | "error"               // from the data-boring-pane signal
+  errors: PluginHealthEvent[]                          // redacted
+  failedRequests: { status: number; url: string }[]   // url redacted
 }
+type SelfTestResult = PluginHealth & { ok: boolean }   // ok = state === "ready" && errors.length === 0
 ```
 
 Notes: `data.v1.schema.facetable` feeds the front facet popover (the front no longer hard-codes
@@ -414,7 +439,8 @@ already-allowlisted `@hachej/boring-workspace`. Works under today's import rules
 - **A4.** `<WorkspaceLink>` nav helper in `@hachej/boring-workspace` over `emitUiEffect`
   (openFile / openSurface / openPanel / navigateToLine).
 - **A5.** Constrained writes: `data.v1.mutate` (update/insert/upsert by key, idempotent,
-  capability-gated) for `sqlite`/`duckdb` sources — e.g. transaction tagging. Reads ship first.
+  **optimistic-concurrency via `expectedVersion`→`WRITE_CONFLICT`**, capability-gated) for
+  `sqlite`/`duckdb` primary-store sources — e.g. transaction tagging. Reads ship first.
 - *Later:* move the transport behind the bridge `call` lane when the epic lands — no
   plugin-facing change.
 
@@ -436,10 +462,11 @@ already-allowlisted `@hachej/boring-workspace`. Works under today's import rules
 Independent of decision #1; reuses existing reload diagnostics + the repo's e2e headless browser.
 
 - **C1.** Expose layer-1 reload/load diagnostics as an agent-readable result.
-- **C2.** Pane error boundary + scoped `window.onerror` + `data-boring-pane` lifecycle signal →
-  route runtime errors to the `:id/error` store (layer 2).
-- **C3.** `boring-ui test-plugin <name>`: reload, headless-mount the pane, wait for
-  `ready|error|timeout`, return the `SelfTestResult`; wire into the authoring loop.
+- **C2.** Pane error boundary + scoped `window.onerror` + `data-boring-pane` lifecycle signal +
+  failed-fetch reporting → **one host-side `:id/health` store** (layers 2–3 report here).
+- **C3.** `boring-ui test-plugin <name>`: reload → open the pane → **poll `:id/health`** until
+  `ready|error|timeout` → return `SelfTestResult`. Thin orchestrator (no bespoke console/DOM
+  assertions); reuses the e2e headless browser only to trigger the mount. Wire into the loop.
 
 → delivers **"agent self-tests the pane and reads back errors."**
 
@@ -471,8 +498,9 @@ workspace package, so package plugins benefit too.
 - **A4** — `<WorkspaceLink>` opens file/surface/panel via `emitUiEffect`; middle-click/copy
   behave like a link; **no route registered**.
 - **A5** — `data.v1.mutate` update-by-key persists to a sqlite source; same `idempotencyKey`
-  twice → `idempotentReplay:true` and one change; write to a non-writable source →
-  `READONLY_SOURCE`; missing grant → `CAPABILITY_DENIED`.
+  twice → `idempotentReplay:true` and one change; a stale `expectedVersion` → `WRITE_CONFLICT`
+  (concurrent agent+human); non-writable source → `READONLY_SOURCE`; missing grant →
+  `CAPABILITY_DENIED`.
 - **B1** — a test fails if a plugin bundle contains a second React or workspace instance.
 - **B2** — a plugin importing a non-allowlisted dep (e.g. `dayjs`) loads and renders (flag on).
 - **B3** — adding a dep to `package.json` + `/reload` installs once (cached after) and re-bundles;
@@ -495,9 +523,10 @@ workspace package, so package plugins benefit too.
   pane-mount check on top.
 - **Roadmap decision #1** (deps vs allowlist) gates **Track B only**; Tracks A and C are independent.
 
-## Decision #1 — recommendation
+## Decision #1 — accepted
 
-**Recommend adopting workspace-built deps for CLI mode.** Rationale: (a) the allowlist
+**Accepted: adopt workspace-built deps for CLI mode — plugins may `npm install` arbitrary
+dependencies.** Rationale: (a) the allowlist
 demonstrably blocks real plugins (`niche-explorer` could not use `DataExplorer`); (b) workspace
 isolation removes the security objection; (c) the two mechanical objections are mitigated — the
 externals contract + the B1 dedupe test preserve single-React, and CLI portability is the only
@@ -537,8 +566,9 @@ hosted-mode subset — the two are mode-scoped and can coexist. Ship Track B beh
 3. `data.v1.mutate` write engine for `sqlite`: DuckDB's sqlite-extension DML vs a native writer
    (`better-sqlite3`)? Avoid a second engine if DuckDB's writes are sound (`.duckdb` writes are
    native). Confirm before A5.
-4. `WRITE_CONFLICT` semantics: optimistic concurrency via an expected-version/mtime check (like
-   the existing `/api/v1/files` `expectedMtimeMs`), or last-write-wins in single-writer CLI?
+4. `expectedVersion` source for `data.v1.mutate`: a dedicated per-row `rev` column vs reusing
+   `updatedAt`/rowid — which must sources expose? (The concurrency *model* is decided: optimistic,
+   `WRITE_CONFLICT` on mismatch — agent + human may write concurrently.)
 
 *(Resolved during refinement: install scope → shared workspace `node_modules`; package manager →
 workspace's pnpm/npm; "mounted vs blank" → `data-boring-pane` lifecycle signal.)*
