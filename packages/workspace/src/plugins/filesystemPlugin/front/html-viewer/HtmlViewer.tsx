@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
-import { ErrorState, Spinner } from "@hachej/boring-ui-kit"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { ErrorState, IconButton, Spinner } from "@hachej/boring-ui-kit"
+import { RefreshCcw } from "lucide-react"
 import { cn } from "../../../../front/lib/utils"
 import { useApiBaseUrl, useWorkspaceRequestId } from "../data/DataProvider"
 
@@ -194,6 +195,11 @@ export function HtmlViewer({ path, className }: HtmlViewerProps) {
     () => rawFileUrlFor(apiBaseUrl, path, workspaceRequestId),
     [apiBaseUrl, path, workspaceRequestId],
   )
+  const [reloadKey, setReloadKey] = useState(0)
+
+  const refresh = useCallback(() => {
+    setReloadKey((current) => current + 1)
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -224,7 +230,7 @@ export function HtmlViewer({ path, className }: HtmlViewerProps) {
       })
 
     return () => controller.abort()
-  }, [apiBaseUrl, path, rawUrl, workspaceRequestId])
+  }, [apiBaseUrl, path, rawUrl, workspaceRequestId, reloadKey])
 
   if (!path) {
     return (
@@ -257,14 +263,27 @@ export function HtmlViewer({ path, className }: HtmlViewerProps) {
         <div className="min-w-0 truncate text-xs font-medium text-muted-foreground" title={path}>
           {filename(path)}
         </div>
-        <a
-          href={rawUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          Open raw
-        </a>
+        <div className="flex items-center gap-1">
+          <IconButton
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={refresh}
+            aria-label="Refresh preview"
+            title="Refresh preview"
+          >
+            <RefreshCcw className="h-3.5 w-3.5" strokeWidth={1.75} />
+          </IconButton>
+          <a
+            href={rawUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            Open raw
+          </a>
+        </div>
       </div>
       <iframe
         srcDoc={html}
