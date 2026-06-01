@@ -10,7 +10,6 @@ import {
   workspaceBridgeHttpRoutes,
   type PendingQuestionRuntime,
   type PendingQuestionStore,
-  type RuntimeEnvContributionContext,
   type UiCommand,
   type WorkspaceBridge,
   type WorkspaceBridgeCallRequest,
@@ -21,7 +20,7 @@ import {
   type WorkspaceBridgeRegistry,
   type WorkspaceBridgeRuntimeEnvOptions,
 } from '@hachej/boring-workspace/server'
-import type { RuntimeEnvContribution } from '@hachej/boring-agent/server'
+import type { RuntimeEnvContribution, RuntimeEnvContributionContext } from '@hachej/boring-agent/server'
 
 const MAX_SESSION_OWNER_CACHE = 5_000
 
