@@ -209,11 +209,19 @@ contract mirrors the data-explorer `ExplorerDataSource` (`search`/`fetchFacets`)
 helper `createBridgeDataSource(source)` is a **drop-in `ExplorerDataSource`** for
 `DataExplorer`/data-catalog catalogs — the niche-explorer's exact need.
 
-**This path is independent of decision #1.** `createBridgeDataSource` ships from
-`@hachej/boring-workspace` (already on the import allowlist), and `data.v1.query` is a host
-capability — so a plugin gets clean, route-free data access **under today's import rules**, with
-no workspace-built-deps change. Data access (Track A) and import-any-dep (Track B) are separable;
-only Track B waits on decision #1.
+**The data *capability* is independent of decision #1** — `createBridgeDataSource` and
+`data.v1.query` both ship from the allowlisted `@hachej/boring-workspace`, so a plugin gets clean,
+route-free data access **under today's import rules**, no workspace-built-deps change.
+
+**Caveat — the rendering layer is not.** A runtime plugin that wants to render with
+`<DataExplorer>` still needs `@hachej/boring-data-explorer`, which is **not** allowlisted (it's
+the wall niche-explorer hit). So within Track A:
+
+- a plugin using `createBridgeDataSource` + **its own** components (hand-rolled list/table) is
+  fully independent of decision #1 — and that is how **A3 migrates niche-explorer** (it already
+  has a hand-rolled catalog; only the data source changes);
+- a plugin that wants the shared `<DataExplorer>` component needs Track B (or to be an app/internal
+  package). The data path doesn't change — only who supplies the table UI.
 
 ### Engine: in-process DuckDB
 
@@ -243,11 +251,14 @@ reads and writes); `json`/`csv`/`parquet` remain read-only inputs. Add a **separ
 mutation op** (not arbitrary SQL):
 
 ```txt
-data.v1.mutate   # {source, op, key, set, expectedVersion?, idempotencyKey} -> {changed, idempotentReplay, version}
+data.v1.mutate   # {source, op, key, set, expectedVersion, idempotencyKey} -> {changed, idempotentReplay, version}
 
 # tagging example:
-data.v1.mutate { source: "txns", op: "update", key: { id: "t_123" }, set: { tags: ["rent"] } }
+data.v1.mutate { source: "txns", op: "update", key: { id: "t_123" }, set: { tags: ["rent"] }, expectedVersion: 7 }
 ```
+
+v1 ops are **`update` + `upsert` only** (keyed by `key`). `insert` is deferred — no tagging/edit
+flow needs it, and dropping it removes a "which columns are required" validation path.
 
 - **Writable sources only:** `sqlite` / `duckdb` (transactional). `json`/`csv`/`parquet` stay
   read-only in v1 — whole-file rewrite / columnar-immutable are not safe write targets.
@@ -257,11 +268,13 @@ data.v1.mutate { source: "txns", op: "update", key: { id: "t_123" }, set: { tags
   `(source, idempotencyKey)` holding the prior result; a replay returns it
   (`idempotentReplay: true`) without re-applying.
 - **Concurrency — optimistic, in v1 (not deferred):** an agent and a human can write at the same
-  time, so serializing requests at the host is not enough (stale-read clobber). Every
-  `update`/`upsert` carries an **`expectedVersion`** (a per-row `rev`/`updatedAt`); the host
-  rejects a stale write with `WRITE_CONFLICT`, and the caller re-reads + retries. A shared
-  *physical* multi-writer DB across processes is still the Quack/DuckLake future; this is logical
-  concurrency control over one DB.
+  time, so serializing requests at the host is not enough (stale-read clobber). `expectedVersion`
+  is therefore **required** on `update`/`upsert` (the safety check can't be opt-out, or callers
+  silently regress to last-write-wins). **Closed loop:** every `QueryResult` row carries a
+  host-maintained `_version`; the caller sends it back as `expectedVersion`; a mismatch returns
+  `WRITE_CONFLICT` (re-read + retry). The version lives in a per-source column the host owns (see
+  open question — `rev` vs `updatedAt`). A shared *physical* multi-writer DB across processes is
+  still the Quack/DuckLake future; this is logical concurrency control over one DB.
 - **Structured + audited:** `op`/`key`/`set` only (no raw SQL); writes audited like reads.
 
 ### Boundaries / security
@@ -362,7 +375,7 @@ interface QueryArgs {
 }
 interface QueryResult {
   columns: { name: string; type: string }[]
-  rows: Record<string, unknown>[]
+  rows: Record<string, unknown>[]   // each row from a writable source carries `_version` (see mutate)
   total: number
   hasMore: boolean
 }
@@ -373,15 +386,17 @@ interface SchemaResult { columns: { name: string; type: string }[]; facetable: s
 // ---- data.v1.mutate (write; writable sources only) ----
 interface MutateArgs {
   source: string
-  op: "update" | "insert" | "upsert"
-  key?: Record<string, unknown>           // required for update/upsert
+  op: "update" | "upsert"                 // insert deferred (no v1 use case)
+  key: Record<string, unknown>            // required
   set: Record<string, unknown>
-  expectedVersion?: string | number       // optimistic concurrency; mismatch -> WRITE_CONFLICT
+  expectedVersion: string | number        // REQUIRED — the `_version` from the row you read
   idempotencyKey: string                  // required; dedupes double-submit
 }
 interface MutateResult { changed: number; idempotentReplay: boolean; version: string | number }
 
 // ---- stable error contract (returned, never thrown across the boundary) ----
+// DECISION (#4): these should be sourced from the bridge plan's canonical error-code module,
+// not a forked enum — listed here only to pin the v1 set. Merge before implementation.
 type DataErrorCode =
   | "SOURCE_NOT_FOUND" | "SOURCE_UNREADABLE" | "QUERY_INVALID"
   | "OUTPUT_TOO_LARGE" | "CAPABILITY_DENIED" | "READONLY_SOURCE"
@@ -389,10 +404,12 @@ type DataErrorCode =
 interface DataError { code: DataErrorCode; message: string }   // redacted: no paths/secrets/payloads
 
 // ---- front helpers (from @hachej/boring-workspace; allowlisted) ----
-// Drop-in ExplorerDataSource for DataExplorer/data-catalog:
+// Drop-in ExplorerDataSource for DataExplorer/data-catalog.
+// rowToItem is OPTIONAL: default maps via data.v1.schema (title = first text col, etc.);
+// override only for custom badges/columns — so "no plugin code" holds for the common case.
 declare function createBridgeDataSource(opts: {
   source: string
-  rowToItem: (row: Record<string, unknown>) => import("@hachej/boring-data-explorer/shared").ExplorerItem
+  rowToItem?: (row: Record<string, unknown>) => import("@hachej/boring-data-explorer/shared").ExplorerItem
 }): import("@hachej/boring-data-explorer/shared").ExplorerDataSource
 // Navigation (Principle 2): renders <a>, intercepts click -> emitUiEffect.
 // `to` is a discriminated union of the real effect payloads (no `[k]: unknown`):
@@ -498,10 +515,12 @@ workspace package, so package plugins benefit too.
 - **A1** — `data.v1.query`/`facets` over a json + a sqlite source return correct
   `rows`/`total`/facets; the per-source view is cached and recreated on `mtimeMs` change;
   exceeding `maxRows` returns `OUTPUT_TOO_LARGE`.
-- **A2** — `createBridgeDataSource` drives `<DataExplorer>` (search + facet filter + pagination)
-  against A1 with **no plugin-side DB code**.
-- **A3** — niche-explorer renders catalog + detail from `data.v1.query` (no bundled
-  `niche-data.ts`); `/reload` clean and `test-plugin` green.
+- **A2** — `createBridgeDataSource` drives search + facet filter + pagination against A1 with
+  **no plugin-side DB code** (verified against a hand-rolled list and, where available as a
+  package plugin, `<DataExplorer>`).
+- **A3** — niche-explorer renders catalog + detail from `data.v1.query` using its **hand-rolled
+  list** (no `DataExplorer` import → stays within the allowlist, independent of decision #1); no
+  bundled `niche-data.ts`; `/reload` clean and `test-plugin` green.
 - **A4** — `<WorkspaceLink>` opens file/surface/panel via `emitUiEffect`; middle-click/copy
   behave like a link; **no route registered**.
 - **A5** — `data.v1.mutate` update-by-key persists to a sqlite source; same `idempotencyKey`
@@ -573,9 +592,13 @@ hosted-mode subset — the two are mode-scoped and can coexist. Ship Track B beh
 3. `data.v1.mutate` write engine for `sqlite`: DuckDB's sqlite-extension DML vs a native writer
    (`better-sqlite3`)? Avoid a second engine if DuckDB's writes are sound (`.duckdb` writes are
    native). Confirm before A5.
-4. `expectedVersion` source for `data.v1.mutate`: a dedicated per-row `rev` column vs reusing
-   `updatedAt`/rowid — which must sources expose? (The concurrency *model* is decided: optimistic,
-   `WRITE_CONFLICT` on mismatch — agent + human may write concurrently.)
+4. `_version` source for `data.v1.mutate`: a dedicated per-row `rev` column vs reusing
+   `updatedAt`/rowid — what must writable sources expose? (The concurrency *model* is decided:
+   optimistic, `expectedVersion` required, `WRITE_CONFLICT` on mismatch.)
+5. Error codes (review #4): host these in the bridge plan's canonical error-code module rather
+   than the `DataErrorCode` enum pinned in Contracts — confirm the merge point.
+6. `createBridgeDataSource` default `rowToItem` (review #5): is a schema-driven default
+   (title = first text column) good enough for the common case, with override for custom badges?
 
 *(Resolved during refinement: install scope → shared workspace `node_modules`; package manager →
 workspace's pnpm/npm; "mounted vs blank" → `data-boring-pane` lifecycle signal.)*
