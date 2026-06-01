@@ -10,7 +10,7 @@ import { PanelRegistry } from "../../registry/PanelRegistry"
 import { CommandRegistry } from "../../../shared/plugins/CommandRegistry"
 import { bindStore } from "../../store/selectors"
 import { createWorkspaceStore } from "../../store"
-import { WorkspaceProvider } from "../../provider"
+import { WorkspaceProvider, useWorkspaceAttention } from "../../provider"
 import type { SurfaceShellApi } from "../../chrome/artifact-surface/SurfaceShell"
 
 // Verify barrel exports work
@@ -538,10 +538,10 @@ describe("ChatLayout component", () => {
     const chatPanel = screen.getByLabelText("Chat")
     expect(chatPanel).toHaveAttribute("data-boring-state", "expanded")
 
-    fireShortcut("\\", { metaKey: true })
+    act(() => fireShortcut("\\", { metaKey: true }))
     expect(screen.getByLabelText("Collapsed chat")).toHaveAttribute("data-boring-state", "collapsed")
 
-    fireShortcut("\\", { metaKey: true })
+    act(() => fireShortcut("\\", { metaKey: true }))
     expect(screen.getByLabelText("Chat")).toHaveAttribute("data-boring-state", "expanded")
   })
 
@@ -551,19 +551,19 @@ describe("ChatLayout component", () => {
       ["chat", "session-list"],
     )
 
-    fireShortcut("\\", { metaKey: true })
+    act(() => fireShortcut("\\", { metaKey: true }))
     expect(screen.getByRole("button", { name: "Expand chat" })).toBeInTheDocument()
   })
 
-  it("auto-expands the chat panel when a blocker appears while collapsed", () => {
+  it("auto-expands the chat panel when a blocker appears while collapsed", async () => {
     function Host() {
-      const { addBlocker } = require("../../provider").useWorkspaceAttention()
+      const { addBlocker } = useWorkspaceAttention()
       return (
         <>
           <ChatLayout center="chat" storageKey="chat-layout-blocker" />
           <button
             type="button"
-            onClick={() => addBlocker({ id: "b1", label: "Approve", kind: "prompt" })}
+            onClick={() => addBlocker({ id: "b1", reason: "Approve", label: "Approve" })}
           >
             Add blocker
           </button>
@@ -574,11 +574,13 @@ describe("ChatLayout component", () => {
     const user = userEvent.setup()
     renderWithRegistry(<Host />, ["chat", "session-list"])
 
-    fireShortcut("\\", { metaKey: true })
+    act(() => fireShortcut("\\", { metaKey: true }))
     expect(screen.getByLabelText("Collapsed chat")).toHaveAttribute("data-boring-state", "collapsed")
 
-    user.click(screen.getByRole("button", { name: "Add blocker" }))
-    expect(screen.getByLabelText("Chat")).toHaveAttribute("data-boring-state", "expanded")
+    await user.click(screen.getByRole("button", { name: "Add blocker" }))
+    await waitFor(() =>
+      expect(screen.getByLabelText("Chat")).toHaveAttribute("data-boring-state", "expanded"),
+    )
   })
 
   it("dispatches plugin UI commands through the workbench contract", () => {
