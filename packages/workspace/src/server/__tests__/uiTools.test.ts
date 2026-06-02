@@ -107,7 +107,7 @@ describe("createExecUiTool — path validation", () => {
     expect(result.isError).toBeFalsy()
   })
 
-  test("openFile rejects absolute paths", async () => {
+  test("openFile rejects absolute paths by default", async () => {
     const tool = createExecUiTool(bridge, { workspaceRoot })
     for (const path of ["/etc/passwd", "C:\\Users\\me\\secret.txt", "\\\\server\\share\\secret.txt"]) {
       const result = await tool.execute(
@@ -119,6 +119,25 @@ describe("createExecUiTool — path validation", () => {
       if (text?.type === "text") {
         expect(text.text).toMatch(/absolute/)
       }
+    }
+  })
+
+  test("openFile accepts absolute paths outside workspace when explicitly enabled", async () => {
+    const outsideDir = await mkdtemp(join(tmpdir(), "uitools-pathval-outside-"))
+    try {
+      const outsideFile = join(outsideDir, "outside.md")
+      await writeFile(outsideFile, "# outside\n")
+      const tool = createExecUiTool(bridge, {
+        workspaceRoot,
+        allowOutsideWorkspaceAbsolutePaths: true,
+      })
+      const result = await tool.execute(
+        { kind: "openFile", params: { path: outsideFile } },
+        FAKE_CTX,
+      )
+      expect(result.isError).toBeFalsy()
+    } finally {
+      await rm(outsideDir, { recursive: true, force: true })
     }
   })
 
@@ -255,6 +274,17 @@ describe("createExecUiTool — path validation", () => {
       const text = result.content[0]
       if (text?.type === "text") expect(text.text).toMatch(/absolute/)
     }
+  })
+
+  test("navigateToLine keeps sandbox boundary checks for absolute paths by default", async () => {
+    const tool = createExecUiTool(bridge, { workspaceRoot })
+    const result = await tool.execute(
+      { kind: "navigateToLine", params: { file: "/etc/passwd", line: 1 } },
+      FAKE_CTX,
+    )
+    expect(result.isError).toBe(true)
+    const text = result.content[0]
+    if (text?.type === "text") expect(text.text).toMatch(/absolute/)
   })
 
   test("createWorkspaceUiTools forwards workspaceRoot to exec_ui", async () => {

@@ -37,12 +37,14 @@ vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
 // Captures the workspaceRoot that createWorkspaceUiTools receives so we can
 // assert exec_ui is created without host-side path validation in vercel-sandbox.
 let capturedUiWorkspaceRoot: string | undefined | "not-called"
+let capturedAllowOutsideWorkspaceAbsolutePaths: boolean | undefined | "not-called"
 vi.mock("../ui-control/tools/uiTools", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../ui-control/tools/uiTools")>()
   return {
     ...mod,
     createWorkspaceUiTools: (bridge: UiBridge, opts?: ExecUiToolOptions) => {
       capturedUiWorkspaceRoot = opts?.workspaceRoot
+      capturedAllowOutsideWorkspaceAbsolutePaths = opts?.allowOutsideWorkspaceAbsolutePaths
       return mod.createWorkspaceUiTools(bridge, opts)
     },
   }
@@ -53,6 +55,7 @@ const tempDirs: string[] = []
 beforeEach(() => {
   capturedAgentWorkspaceRoot = undefined
   capturedUiWorkspaceRoot = "not-called"
+  capturedAllowOutsideWorkspaceAbsolutePaths = "not-called"
 })
 
 afterEach(async () => {
@@ -184,6 +187,7 @@ describe("createWorkspaceAgentServer — vercel-sandbox mode UI bridge", () => {
     // exec_ui receives NO workspaceRoot — host-side path validation is disabled
     // so VM-produced files (e.g. "agent-output/chart.svg") are not rejected.
     expect(capturedUiWorkspaceRoot).toBeUndefined()
+    expect(capturedAllowOutsideWorkspaceAbsolutePaths).toBe(false)
   })
 
   test("bridge is shared: POST /api/v1/ui/commands drains the same queue as the exec_ui tool", async () => {

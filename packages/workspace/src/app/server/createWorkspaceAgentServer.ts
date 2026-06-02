@@ -555,6 +555,7 @@ export async function createWorkspaceAgentServer(
   const validateUiPaths = opts.validateUiPaths ?? workspaceFsCapability === "strong"
   const uiTools = createWorkspaceUiTools(bridge, {
     workspaceRoot: validateUiPaths ? workspaceRoot : undefined,
+    allowOutsideWorkspaceAbsolutePaths: resolvedMode === "direct",
   })
   const ctx: WorkspaceAgentServerPluginContext = { workspaceRoot, bridge }
 

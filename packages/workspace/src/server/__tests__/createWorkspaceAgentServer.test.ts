@@ -304,6 +304,39 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
     }
   })
 
+  test("direct mode config enables outside-workspace absolute paths for exec_ui", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-uitools-direct-")
+    const { createInMemoryBridge } = await import("../bridge/createInMemoryBridge")
+    const { createExecUiTool } = await import("../ui-control/tools/uiTools")
+    const outsideRoot = await makeTempDir("boring-workspace-uitools-outside-")
+    const outsidePath = join(outsideRoot, "outside.ts")
+    await writeFile(outsidePath, "export const outside = true\n")
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      provisionWorkspace: false,
+    })
+    try {
+      await app.close()
+      const tool = createExecUiTool(createInMemoryBridge(), {
+        workspaceRoot,
+        allowOutsideWorkspaceAbsolutePaths: true,
+      })
+      const result = await tool.execute(
+        { kind: "openFile", params: { path: outsidePath } },
+        {
+          abortSignal: new AbortController().signal,
+          toolCallId: "direct-open-outside",
+        },
+      )
+      expect(result.isError).toBeFalsy()
+    } finally {
+      await app.close()
+    }
+  })
+
   test("PUT /api/v1/ui/state is round-tripped by GET", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-roundtrip-")
     const app = await createWorkspaceAgentServer({

@@ -35,6 +35,13 @@ export interface ExecUiToolOptions {
    */
   workspaceRoot?: string
   /**
+   * Direct/no-sandbox mode intentionally has host filesystem access. When
+   * enabled, absolute paths are allowed for openFile/navigateToLine/
+   * expandToFile and are stat-checked directly on the host instead of being
+   * rejected as outside-workspace. Sandboxed modes must leave this off.
+   */
+  allowOutsideWorkspaceAbsolutePaths?: boolean
+  /**
    * Optional workspace-backed stat hook for modes where the host path is not
    * directly stat-able (for example remote sandboxes). When provided, path-
    * bearing UI commands can still reject missing paths and convert folders to
@@ -76,9 +83,11 @@ function isOutsideWorkspaceRel(rel: string): boolean {
 function validatePathSyntax(
   relPath: string,
   workspaceRoot?: string,
+  allowOutsideWorkspaceAbsolutePaths = false,
 ): { ok: true } | { ok: false; reason: string } {
   const rootHint = workspaceRoot ? ` (${workspaceRoot})` : ""
   if (isPathAbsolute(relPath)) {
+    if (allowOutsideWorkspaceAbsolutePaths) return { ok: true }
     return {
       ok: false,
       reason: `path "${relPath}" is absolute — pass a path relative to the workspace root${rootHint}.`,
@@ -99,15 +108,18 @@ function validatePathSyntax(
 async function validateExistingPath(
   workspaceRoot: string,
   relPath: string,
+  allowOutsideWorkspaceAbsolutePaths = false,
 ): Promise<{ ok: true; kind: "file" | "dir" } | { ok: false; reason: string }> {
-  const syntax = validatePathSyntax(relPath, workspaceRoot)
+  const syntax = validatePathSyntax(relPath, workspaceRoot, allowOutsideWorkspaceAbsolutePaths)
   if (!syntax.ok) return syntax
-  const resolved = resolve(workspaceRoot, relPath)
-  const rel = relative(workspaceRoot, resolved)
-  if (isOutsideWorkspaceRel(rel)) {
-    return {
-      ok: false,
-      reason: `path "${relPath}" escapes the workspace root (${workspaceRoot}).`,
+  const resolved = isPathAbsolute(relPath) ? relPath : resolve(workspaceRoot, relPath)
+  if (!allowOutsideWorkspaceAbsolutePaths || !isPathAbsolute(relPath)) {
+    const rel = relative(workspaceRoot, resolved)
+    if (isOutsideWorkspaceRel(rel)) {
+      return {
+        ok: false,
+        reason: `path "${relPath}" escapes the workspace root (${workspaceRoot}).`,
+      }
     }
   }
   try {
@@ -193,7 +205,7 @@ export function createExecUiTool(
   uiBridge: UiBridge,
   opts: ExecUiToolOptions = {},
 ): AgentTool {
-  const { workspaceRoot, resolvePathKind } = opts
+  const { workspaceRoot, resolvePathKind, allowOutsideWorkspaceAbsolutePaths = false } = opts
   const verifyDelayMs = opts.verifyDelayMs ?? 200
   const verifyRetries = opts.verifyRetries ?? 2
   const verifyIntervalMs = opts.verifyIntervalMs ?? 200
@@ -344,10 +356,14 @@ export function createExecUiTool(
             `${kind}: ${kind === "navigateToLine" ? "file" : "path"} param is required`,
           )
         }
-        const syntax = validatePathSyntax(relPath, workspaceRoot)
+        const syntax = validatePathSyntax(relPath, workspaceRoot, allowOutsideWorkspaceAbsolutePaths)
         if (!syntax.ok) return makeError(syntax.reason)
         if (workspaceRoot) {
-          const check = await validateExistingPath(workspaceRoot, relPath)
+          const check = await validateExistingPath(
+            workspaceRoot,
+            relPath,
+            allowOutsideWorkspaceAbsolutePaths,
+          )
           if (!check.ok) {
             return makeError(check.reason)
           }
