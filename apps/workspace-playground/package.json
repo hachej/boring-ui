@@ -16,7 +16,8 @@
     "build": "pnpm run build:deps && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "pnpm run build:deps && playwright test"
+    "test:e2e": "pnpm run build:deps && playwright test",
+    "smoke:bridge": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && tsx scripts/bridge-e2e.ts"
   },
   "dependencies": {
     "@hachej/boring-agent": "workspace:*",
@@ -37,6 +38,7 @@
     "@vitejs/plugin-react": "^4.0.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.4.0",
+    "tsx": "^4.21.0",
     "vitest": "^4.1.2",
     "vite": "^6.0.0"
   }
