@@ -672,8 +672,15 @@ export function SurfaceShell({
           />
         </div>
         {/* Header overlays — always reachable, including existing/single-tab
-            dockview groups where header action slots can be squeezed/hidden. */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between" style={{ height: 44 }}>
+            dockview groups where header action slots can be squeezed/hidden.
+            zIndex must beat dockview's "open tabs" overflow popover (built by
+            PopupService at --dv-overlay-z-index 999, sometimes doubled to ~1998)
+            so the close-workspace control on the right edge is never covered by
+            an open dropdown menu. */}
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between"
+          style={{ height: 44, zIndex: 2000 }}
+        >
           <div>
             {collapsed && (
               <IconButton

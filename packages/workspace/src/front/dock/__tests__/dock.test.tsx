@@ -410,6 +410,42 @@ describe("ShadcnTab", () => {
     expect(screen.getByLabelText("Close My Tab")).toBeInTheDocument()
   })
 
+  it("closes the panel from the overflow dropdown without re-activating it", () => {
+    // Reproduce dockview's overflow popover row: the tab is wrapped in an
+    // element with a NATIVE bubble-phase click listener that re-activates the
+    // panel (and dockview also tears the popover down). Closing via the X must
+    // call api.close() and must NOT let that native listener re-activate the
+    // just-closed panel.
+    const mockApi = {
+      title: "Overflow Tab",
+      id: "tab-overflow",
+      close: vi.fn(),
+      setActive: vi.fn(),
+    }
+    const wrapper = document.createElement("div")
+    const wrapperClick = vi.fn(() => mockApi.setActive())
+    wrapper.addEventListener("click", wrapperClick)
+    document.body.appendChild(wrapper)
+
+    render(
+      <ShadcnTab
+        api={mockApi as any}
+        containerApi={{} as any}
+        params={{}}
+        tabLocation={"headerOverflow" as any}
+      />,
+      { container: wrapper },
+    )
+
+    fireEvent.click(screen.getByLabelText("Close Overflow Tab"))
+
+    expect(mockApi.close).toHaveBeenCalledTimes(1)
+    expect(mockApi.setActive).not.toHaveBeenCalled()
+    expect(wrapperClick).not.toHaveBeenCalled()
+
+    document.body.removeChild(wrapper)
+  })
+
   it("falls back to id when title is undefined", () => {
     const mockApi = {
       title: undefined,

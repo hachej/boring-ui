@@ -34,8 +34,8 @@
 .dv-shell .tabs-and-actions-container {
   background-color: var(--background) !important;
   border-bottom: 1px solid oklch(from var(--border) l c h / 0.4);
-  padding: 8px 6px 0 6px;
-  gap: 2px;
+  padding: 6px 8px 0 8px;
+  gap: 4px;
   align-items: flex-end;
 }
 
@@ -43,6 +43,9 @@
 .dv-shell .tab-container {
   background-color: transparent !important;
   gap: 4px;
+  align-self: stretch;
+  display: flex;
+  align-items: flex-end;
 }
 
 /* Workbench-specific tab strip height — matches WorkbenchLeftPane header for consistency */
@@ -60,21 +63,33 @@
   padding-left: 44px !important;
 }
 
+/* The workbench renders a "close workspace" control as an absolute overlay on
+   the right edge of the tab strip (see SurfaceShell's WorkbenchCloseAction:
+   a 24px icon button + 4px margins each side = ~32px wide, vertically centred
+   in the 44px bar). Reserve room at the right of the tab strip so dockview's
+   built-in "open tabs" overflow dropdown trigger (the ⌄ chevron at the end of
+   the tab row) sits clearly LEFT of that control with a visible gap, instead of
+   tucking right under it. 32px control + ~8px gap + the chevron's own width. */
+.workbench-dockview .dv-tabs-and-actions-container,
+.workbench-dockview .tabs-and-actions-container {
+  padding-right: 44px !important;
+}
+
 /* Tab base — pill-style, rounded top */
 .dv-shell .dv-tab,
 .dv-shell .tab {
   color: var(--muted-foreground) !important;
   background-color: transparent !important;
   border: 1px solid transparent;
-  border-top-left-radius: 7px;
-  border-top-right-radius: 7px;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
   transition: color 0.18s cubic-bezier(0.22, 1, 0.36, 1),
     background-color 0.18s cubic-bezier(0.22, 1, 0.36, 1),
     border-color 0.18s cubic-bezier(0.22, 1, 0.36, 1);
   min-width: 120px;
   max-width: 220px;
   padding: 0;
-  height: 32px;
+  height: 34px;
   align-self: end;
   font-size: 12.5px;
   letter-spacing: -0.01em;
@@ -178,6 +193,11 @@
   color: var(--muted-foreground);
   display: flex;
   align-items: center;
+  align-self: stretch;
+  /* No bottom padding: the overflow (⌄) trigger lives here and must stay
+     vertically centred in the tab strip so it lines up with the absolutely
+     positioned close-workspace control on the right edge. A bottom pad pushed
+     the chevron up and out of alignment with that control (regression). */
 }
 
 .dv-shell .right-actions-container:hover,
