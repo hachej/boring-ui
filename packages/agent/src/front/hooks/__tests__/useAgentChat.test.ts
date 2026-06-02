@@ -240,6 +240,24 @@ describe('useAgentChat', () => {
     )
   })
 
+  test('shows an active resumed session as submitted while the SDK reconnects', () => {
+    mockChatStatus = 'ready'
+    mockStorageGetItem.mockImplementation((key: string) => {
+      if (key === 'boring-agent:messages:sess-1') {
+        return JSON.stringify([
+          { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+          { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'partial answer' }] },
+        ])
+      }
+      if (key === 'boring-agent:status:sess-1') return 'active'
+      return null
+    })
+
+    const result = useAgentChat({ sessionId: 'sess-1' })
+
+    expect(result.status).toBe('submitted')
+  })
+
   test('marks stale SDK streaming state ready in the cached session status', () => {
     mockChatStatus = 'streaming'
     mockStorageGetItem.mockReturnValueOnce(JSON.stringify([

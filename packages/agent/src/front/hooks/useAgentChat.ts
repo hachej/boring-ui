@@ -356,7 +356,11 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   const rawStatus = chat.status
   const rawStatusActive = rawStatus === 'submitted' || rawStatus === 'streaming'
   const knownActiveTurn = localTurnActive || shouldResume
-  const status = rawStatusActive && !knownActiveTurn ? 'ready' : rawStatus
+  const status = rawStatusActive && !knownActiveTurn
+    ? 'ready'
+    : knownActiveTurn && rawStatus === 'ready'
+      ? 'submitted'
+      : rawStatus
   const statusRef = useRef(status)
   statusRef.current = status
   const prevRawStatusRef = useRef(rawStatus)
@@ -372,7 +376,7 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   useEffect(() => {
     if (!statusKey) return
     try {
-        if (knownActiveTurn) {
+      if (knownActiveTurn) {
         globalThis.localStorage?.setItem(statusKey, 'active')
       } else if (rawStatus === 'ready' || rawStatus === 'error' || rawStatusActive) {
         globalThis.localStorage?.setItem(statusKey, 'ready')
