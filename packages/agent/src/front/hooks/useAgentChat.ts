@@ -43,6 +43,29 @@ function messageContentKey(message: UIMessage): string {
   return `${normalized.role}:${JSON.stringify(normalized.parts ?? [])}`
 }
 
+function assistantVisibleText(message: UIMessage): string | null {
+  if (message.role !== 'assistant') return null
+  const text = (message.parts ?? [])
+    .map((part) => {
+      const candidate = part as Record<string, unknown>
+      return candidate.type === 'text' && typeof candidate.text === 'string' ? candidate.text : ''
+    })
+    .join('')
+    .trim()
+  return text || null
+}
+
+function dedupeAdjacentAssistantMessages(messages: UIMessage[]): UIMessage[] {
+  const deduped: UIMessage[] = []
+  for (const message of messages) {
+    const previous = deduped[deduped.length - 1]
+    const currentText = assistantVisibleText(message)
+    if (currentText && previous && assistantVisibleText(previous) === currentText) continue
+    deduped.push(message)
+  }
+  return deduped
+}
+
 function mergeMessages(base: UIMessage[], tail: UIMessage[], opts?: { dedupePendingAgainstStable?: boolean }): UIMessage[] {
   const seenIds = new Set<string>()
   const seenContent = new Set<string>()
@@ -79,7 +102,7 @@ function mergeMessages(base: UIMessage[], tail: UIMessage[], opts?: { dedupePend
     }
     merged.push(message)
   }
-  return merged
+  return dedupeAdjacentAssistantMessages(merged)
 }
 
 function sameMessageOrder(a: UIMessage[], b: UIMessage[]): boolean {
@@ -402,7 +425,7 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     // Only save when messages actually changed (not on every render).
     // The `messages` dependency already handles this, but we also skip
     // saves during hydration to avoid overwriting with partial state.
-    writeCachedMessages(cacheKey, messages)
+    writeCachedMessages(cacheKey, mergeMessages([], messages))
   }, [opts.persistMessages, hydrated, cacheKey, messages])
 
   // When the stream ends (stop or natural completion), settle any tool parts
@@ -456,7 +479,8 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     // Strip data URLs from attachment parts before persisting — they can be
     // several MB each and bloat the JSONL session file. The UI already
     // rendered the image; history only needs provenance (filename, mediaType).
-    const stripped = messages.map((msg) => ({
+    const persistedMessages = mergeMessages([], messages)
+    const stripped = persistedMessages.map((msg) => ({
       ...msg,
       parts: msg.parts?.map((part: unknown) => {
         const p = part as Record<string, unknown>

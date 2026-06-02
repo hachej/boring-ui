@@ -455,6 +455,36 @@ describe('useAgentChat', () => {
     expect(mockSetMessages).toHaveBeenCalledWith(hydratedMessages)
   })
 
+  test('dedupes duplicate assistant text from cached snapshots during hydration', async () => {
+    const serverUser = { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'yo respond me in 10 s' }] }
+    const serverAssistant = {
+      id: 'a1',
+      role: 'assistant',
+      parts: [
+        { type: 'reasoning', text: '', state: 'done' },
+        { type: 'text', text: 'yo — responding now ✅', state: 'done' },
+      ],
+    }
+    const duplicateAssistant = {
+      id: 'assistant-1780433653864',
+      role: 'assistant',
+      parts: [
+        { type: 'reasoning', id: '0', text: '' },
+        { type: 'text', text: 'yo — responding now ✅' },
+      ],
+    }
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ messages: [serverUser, serverAssistant] }),
+    })
+    mockStorageGetItem.mockReturnValue(JSON.stringify([serverUser, serverAssistant, duplicateAssistant]))
+
+    useAgentChat({ sessionId: 'sess-duplicate-assistant' })
+    await flushPromises()
+
+    expect(mockSetMessages).toHaveBeenCalledWith([serverUser, serverAssistant])
+  })
+
   test('merges cached in-flight user message with stale server history on reload', async () => {
     const serverOld = { id: 'server-old', role: 'assistant', parts: [{ type: 'text', text: 'old server state' }] }
     const cachedLocalUser = { id: 'local-u1', role: 'user', parts: [{ type: 'text', text: 'new message while running' }] }

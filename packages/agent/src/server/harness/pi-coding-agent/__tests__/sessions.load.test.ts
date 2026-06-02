@@ -73,6 +73,16 @@ describe("PiSessionStore.load fallback transcript reconstruction", () => {
         timestamp: "2026-06-02T00:00:03.000Z",
         path: nativePath,
       },
+      {
+        type: "ui_snapshot",
+        id: "snapshot-1",
+        timestamp: "2026-06-02T00:00:04.000Z",
+        messages: [
+          { id: "u1", role: "user", parts: [{ type: "text", text: "linked prompt" }] },
+          { id: "a1", role: "assistant", parts: [{ type: "text", text: "same answer", state: "done" }] },
+          { id: "assistant-123", role: "assistant", parts: [{ type: "reasoning", text: "" }, { type: "text", text: "same answer" }] },
+        ],
+      },
     ];
     await writeFile(nativePath, `${nativeLines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
     await writeFile(boringPath, `${boringLines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
@@ -90,7 +100,8 @@ describe("PiSessionStore.load fallback transcript reconstruction", () => {
     const detail = await store.load(ctx, boringSessionId);
     expect(detail.id).toBe(boringSessionId);
     expect(detail.turnCount).toBe(1);
-    expect(detail.messages.map((message) => message.role)).toEqual(["user"]);
+    expect(detail.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(detail.messages.filter((message) => message.role === "assistant")).toHaveLength(1);
 
     await store.delete(ctx, boringSessionId);
     await expect(store.list(ctx)).resolves.toEqual([]);

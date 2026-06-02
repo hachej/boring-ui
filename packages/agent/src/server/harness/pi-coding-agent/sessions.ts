@@ -186,7 +186,7 @@ export class PiSessionStore implements SessionStore {
       type: "ui_snapshot",
       id: randomUUID(),
       timestamp: new Date().toISOString(),
-      messages,
+      messages: dedupeAdjacentAssistantMessages(messages),
     });
     await appendFile(filepath, entry + "\n");
   }
@@ -396,8 +396,31 @@ export class PiSessionStore implements SessionStore {
   }
 }
 
+function assistantVisibleText(message: UIMessage): string | null {
+  if (message.role !== "assistant") return null;
+  const text = (message.parts ?? [])
+    .map((part) => {
+      const candidate = part as Record<string, unknown>;
+      return candidate.type === "text" && typeof candidate.text === "string" ? candidate.text : "";
+    })
+    .join("")
+    .trim();
+  return text || null;
+}
+
 function dropEmptyAssistantMessages(messages: UIMessage[]): UIMessage[] {
   return messages.filter((message) => !(message.role === "assistant" && (!message.parts || message.parts.length === 0)));
+}
+
+function dedupeAdjacentAssistantMessages(messages: UIMessage[]): UIMessage[] {
+  const deduped: UIMessage[] = [];
+  for (const message of dropEmptyAssistantMessages(messages)) {
+    const previous = deduped[deduped.length - 1];
+    const currentText = assistantVisibleText(message);
+    if (currentText && previous && assistantVisibleText(previous) === currentText) continue;
+    deduped.push(message);
+  }
+  return deduped;
 }
 
 function extractPiSessionFilePath(entries: (SessionHeader | SessionEntry)[]): string | null {
@@ -416,7 +439,7 @@ function extractLatestUiSnapshot(entries: (SessionHeader | SessionEntry)[]): UIM
   for (const e of entries) {
     const rec = e as { type?: string; messages?: unknown };
     if (rec.type === "ui_snapshot" && Array.isArray(rec.messages)) {
-      latest = rec.messages as UIMessage[];
+      latest = dedupeAdjacentAssistantMessages(rec.messages as UIMessage[]);
     }
   }
   return latest;
