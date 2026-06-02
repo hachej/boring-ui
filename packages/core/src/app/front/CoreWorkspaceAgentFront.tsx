@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Navigate, Route, useLocation, useParams } from 'react-router-dom'
 import {
   CoreFront,
-  ThemeToggle,
   UserMenu,
   WorkspaceSwitcher,
   useCurrentWorkspace,
@@ -50,12 +49,9 @@ export interface CoreWorkspaceAgentFrontProps<
 }
 
 function DefaultTopBarRight() {
-  return (
-    <div className="flex items-center gap-2">
-      <ThemeToggle />
-      <UserMenu />
-    </div>
-  )
+  // Theme switching lives in the UserMenu for the full app, so no separate
+  // top-bar toggle here (that's only for standalone hosts like the playground).
+  return <UserMenu />
 }
 
 function WorkspaceLoadingPage({
@@ -266,6 +262,7 @@ function WorkspaceRoute<
       bootPreloadPaths={bootPreloadPaths}
       frontPluginHotReload={false}
       hotReloadEnabled={false}
+      showThemeToggle={false}
     />
   )
 }
