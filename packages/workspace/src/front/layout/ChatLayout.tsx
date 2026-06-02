@@ -1,6 +1,6 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from "react"
 import { IconButton, LoadingState, ResizeHandle as UiResizeHandle } from "@hachej/boring-ui-kit"
-import { ChevronLeft, ChevronRight, MessageSquare } from "lucide-react"
+import { ChevronLeft, MessageSquare } from "lucide-react"
 import { cn } from "../lib/utils"
 import { dispatchUiCommand, type DispatchContext } from "../bridge"
 import { events, useEvent, workspaceEvents } from "../events"
@@ -44,8 +44,6 @@ export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
     panel: center,
     params: centerParams,
     hideHeader: true,
-    collapsible: true,
-    collapsedWidth: 40,
   })
 
   if (sidebar) {
@@ -329,16 +327,14 @@ export function ChatLayout(props: ChatLayoutProps) {
           data-boring-workspace-part="chat-panel"
           data-boring-state={chatCollapsed ? "collapsed" : "expanded"}
           aria-label={chatCollapsed ? "Collapsed chat" : "Chat"}
+          aria-hidden={chatCollapsed}
           className={cn(
-            "relative h-full min-h-0 shrink-0 overflow-hidden bg-background",
-            "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-            !chatCollapsed && "border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
+            "relative h-full min-h-0 min-w-0 overflow-hidden bg-background",
+            "transition-[width,min-width,max-width,flex-basis] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+            chatCollapsed
+              ? "w-0 min-w-0 flex-[0_0_0px]"
+              : "flex-1 border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
           )}
-          style={{
-            width: chatCollapsed ? 40 : undefined,
-            minWidth: chatCollapsed ? 40 : undefined,
-            maxWidth: chatCollapsed ? 40 : undefined,
-          }}
         >
           {!chatCollapsed ? (
             <>
@@ -355,23 +351,7 @@ export function ChatLayout(props: ChatLayoutProps) {
                 <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
               </IconButton>
             </>
-          ) : (
-            <button
-              type="button"
-              onClick={toggleChatCollapsed}
-              className="flex h-full w-full flex-col items-center justify-start gap-2 border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)] bg-background px-1 py-2 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-              aria-label="Expand chat"
-              title="Expand chat (⌘\\)"
-            >
-              <ChevronRight className="h-4 w-4" strokeWidth={1.75} />
-              <div className="relative flex items-center justify-center">
-                <MessageSquare className="h-4 w-4" strokeWidth={1.75} />
-                {(chatRailPulse || blockers.length > 0) ? (
-                  <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[color:var(--accent)]" aria-hidden="true" />
-                ) : null}
-              </div>
-            </button>
-          )}
+          ) : null}
         </section>
         <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
           {!navOpen && props.onOpenNav ? (
@@ -381,6 +361,17 @@ export function ChatLayout(props: ChatLayoutProps) {
               onClick={props.onOpenNav}
               label="Sessions"
               hint="⌘1"
+            />
+          ) : null}
+          {chatCollapsed ? (
+            <FloatingEdgeButton
+              side="left"
+              icon="chat"
+              onClick={toggleChatCollapsed}
+              label="Expand chat"
+              hint="⌘\\"
+              stackIndex={!navOpen && props.onOpenNav ? 1 : 0}
+              pulse={chatRailPulse || blockers.length > 0}
             />
           ) : null}
           {!surfaceOpen && props.onOpenSurface ? (
@@ -661,15 +652,23 @@ function FloatingEdgeButton({
   label,
   hint,
   bottomOffset,
+  stackIndex = 0,
+  pulse = false,
 }: {
   side: "left" | "right"
-  icon: "sessions" | "workbench"
+  icon: "sessions" | "workbench" | "chat"
   onClick: () => void
   label: string
   hint?: string
   bottomOffset?: number
+  // Stack offset for multiple buttons sharing the same vertical edge anchor.
+  // Each step lifts the button by one button-height + gap above the previous.
+  stackIndex?: number
+  pulse?: boolean
 }) {
   const dockToBottom = side === "right" && bottomOffset !== undefined
+  // Buttons are h-9 (36px); stack them with a 8px gap so they never overlap.
+  const stackOffset = stackIndex * 44
   return (
     <IconButton
       type="button"
@@ -681,18 +680,29 @@ function FloatingEdgeButton({
       className={cn(
         "absolute z-30 h-9 w-9 gap-0.5 rounded-lg bg-background text-muted-foreground",
         side === "left" ? "left-2" : "right-2",
-        dockToBottom ? "hover:-translate-y-0.5" : "top-1/2 -translate-y-1/2 hover:-translate-y-[calc(50%+1px)]",
+        dockToBottom ? "hover:-translate-y-0.5" : "top-1/2 hover:-translate-y-[1px]",
         "shadow-[0_1px_2px_-1px_oklch(0_0_0/0.08),0_2px_8px_-4px_oklch(0_0_0/0.10),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.7)]",
         "hover:bg-muted/60 hover:text-foreground hover:shadow-[0_2px_4px_-1px_oklch(0_0_0/0.08),0_4px_12px_-4px_oklch(0_0_0/0.10),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.9)]",
         "focus-visible:ring-ring/40",
       )}
-      style={dockToBottom ? { bottom: bottomOffset } : undefined}
+      style={
+        dockToBottom
+          ? { bottom: bottomOffset }
+          : { transform: `translateY(calc(-50% - ${stackOffset}px))` }
+      }
     >
       {icon === "sessions" ? (
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
           <path d="M12 7v5l3.2 2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
+      ) : icon === "chat" ? (
+        <span className="relative flex items-center justify-center">
+          <MessageSquare className="h-[15px] w-[15px]" strokeWidth={1.8} aria-hidden="true" />
+          {pulse ? (
+            <span className="absolute -right-1.5 -top-1.5 h-2 w-2 rounded-full bg-[color:var(--accent)]" aria-hidden="true" />
+          ) : null}
+        </span>
       ) : (
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M3 7.5 A1.5 1.5 0 0 1 4.5 6 h4 l2 2 h9 A1.5 1.5 0 0 1 21 9.5 V17.5 A1.5 1.5 0 0 1 19.5 19 H4.5 A1.5 1.5 0 0 1 3 17.5 Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
