@@ -1,6 +1,6 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from "react"
 import { IconButton, LoadingState, ResizeHandle as UiResizeHandle } from "@hachej/boring-ui-kit"
-import { ChevronLeft, MessageSquare } from "lucide-react"
+import { MessageSquare, PanelLeftClose } from "lucide-react"
 import { cn } from "../lib/utils"
 import { dispatchUiCommand, type DispatchContext } from "../bridge"
 import { events, useEvent, workspaceEvents } from "../events"
@@ -357,7 +357,9 @@ export function ChatLayout(props: ChatLayoutProps) {
           aria-hidden={chatCollapsed}
           className={cn(
             "relative h-full min-h-0 min-w-0 overflow-hidden bg-background",
-            "transition-[width,min-width,max-width,flex-basis] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+            // Animate flex-grow (not just width) so the chat slides open/closed
+            // like the fixed-width nav/workbench panes instead of snapping.
+            "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
             chatCollapsed
               ? "w-0 min-w-0 flex-[0_0_0px]"
               : "flex-1 border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
@@ -382,7 +384,7 @@ export function ChatLayout(props: ChatLayoutProps) {
               aria-label="Collapse chat"
               title="Collapse chat (⌘\\)"
             >
-              <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
+              <PanelLeftClose className="h-4 w-4" strokeWidth={1.75} />
             </IconButton>
           ) : null}
         </main>
@@ -398,7 +400,7 @@ export function ChatLayout(props: ChatLayoutProps) {
               // When chat is collapsed the workbench grows to fill the freed
               // space (full width); otherwise it's a fixed-width side panel.
               chatCollapsed && surfaceOpen ? "min-w-0 flex-1" : "shrink-0",
-              "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+              "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
               surfaceOpen && "border-l border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
             )}
             style={

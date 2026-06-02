@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { DockviewApi } from "dockview-react"
-import { ChevronRight, FolderTree } from "lucide-react"
+import { FolderTree, PanelRightClose } from "lucide-react"
 import { Button, IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { ArtifactSurfacePane } from "./ArtifactSurfacePane"
@@ -712,7 +712,7 @@ function WorkbenchCloseAction({ onClose }: { onClose: () => void }) {
       aria-label="Close workbench"
       title="Close workbench (⌘2)"
     >
-      <ChevronRight className="h-4 w-4" strokeWidth={1.75} />
+      <PanelRightClose className="h-4 w-4" strokeWidth={1.75} />
     </IconButton>
   )
 }
