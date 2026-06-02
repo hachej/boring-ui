@@ -296,6 +296,18 @@ export function ChatLayout(props: ChatLayoutProps) {
     }
   }, [activeSessionId, chatCollapsed, setChatCollapsed])
 
+  // Never leave a blank middle: if the workbench is closed while the chat is
+  // collapsed, re-open the chat. Mirror of "collapsing the chat opens the
+  // workbench" so at least one of the two is always visible.
+  const prevSurfaceOpenRef = useRef(surfaceOpen)
+  useEffect(() => {
+    const prevOpen = prevSurfaceOpenRef.current
+    prevSurfaceOpenRef.current = surfaceOpen
+    if (prevOpen && !surfaceOpen && chatCollapsed) {
+      setChatCollapsed(false)
+    }
+  }, [surfaceOpen, chatCollapsed, setChatCollapsed])
+
   return (
     <div
       data-boring-workspace=""
