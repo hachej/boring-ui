@@ -87,8 +87,28 @@ async function copyText(text: string): Promise<void> {
   if (!ok) throw new Error("Clipboard not available")
 }
 
+// Dockview renders the same tab component in two places: the normal tab strip
+// (tabLocation "header") and the "open tabs" overflow dropdown popover
+// (tabLocation "headerOverflow"). The overflow popover is a one-shot DOM
+// snapshot built by dockview's PopupService — it does NOT re-render when the
+// panel list changes. So closing a tab from inside the dropdown removes the
+// panel via api.close(), but the popover keeps showing the stale row until it
+// is dismissed and re-opened. After closing from the overflow location we
+// dismiss the popover so its next open rebuilds from the current panels.
+function dismissOverflowPopover(): void {
+  if (typeof document === "undefined") return
+  // PopupService closes when it sees a pointerdown anywhere outside the popover
+  // wrapper. Dispatch one on <body> (which is never inside the popover) so the
+  // stale list tears down.
+  document.body.dispatchEvent(
+    new PointerEvent("pointerdown", { bubbles: true, cancelable: true }),
+  )
+}
+
 export function ShadcnTab(props: IDockviewPanelHeaderProps) {
   const { api } = props
+  const isOverflow =
+    (props as { tabLocation?: string }).tabLocation === "headerOverflow"
   const [title, setTitle] = useState(api.title ?? api.id)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -131,8 +151,30 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
   })
 
   const handleClose = (e: React.MouseEvent) => {
+    e.preventDefault()
     e.stopPropagation()
+    if (isOverflow) {
+      // The overflow popover wraps each row in a NATIVE click listener (added by
+      // dockview on the row wrapper, an ancestor of this button) that runs
+      // `popupService.close()` then `panel.api.setActive()`. React's
+      // `stopPropagation` only stops React's synthetic bubbling, not that native
+      // listener — and because the wrapper sits below React's root delegate, its
+      // bubble listener would otherwise fire first, tear down the popover (which
+      // contains this button), and re-activate the panel we're trying to close.
+      //
+      // We therefore bind this handler on the CAPTURE phase (see the button's
+      // onClickCapture below): React's root capture listener runs before any
+      // bubble-phase listener, so we get here first. stopImmediatePropagation on
+      // the native event then prevents the click from ever reaching the wrapper's
+      // bubble listener, so the just-closed panel is not re-activated.
+      e.nativeEvent.stopImmediatePropagation()
+    }
     api.close()
+    // In the overflow dropdown the popover is a static DOM snapshot built by
+    // dockview's PopupService; it does not re-render when the panel list
+    // changes. Dismiss it so the closed tab doesn't linger in the list (it
+    // rebuilds from the current panels on next open).
+    if (isOverflow) dismissOverflowPopover()
   }
 
   const openContextMenu = (e: React.MouseEvent | React.PointerEvent) => {
@@ -243,7 +285,11 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
               "[.dv-active-tab_&]:opacity-55 [.active-tab_&]:opacity-55",
               "[.dv-active-tab_&]:hover:opacity-100 [.active-tab_&]:hover:opacity-100",
             )}
-            onClick={handleClose}
+            {...(isOverflow
+              ? // In the overflow popover, intercept on capture so we run before
+                // dockview's native row click listener (see handleClose).
+                { onClickCapture: handleClose }
+              : { onClick: handleClose })}
             aria-label={`Close ${displayTitle}`}
           >
             <X className="h-3 w-3" strokeWidth={2.25} />
