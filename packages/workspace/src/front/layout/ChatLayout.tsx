@@ -318,13 +318,9 @@ export function ChatLayout(props: ChatLayoutProps) {
         ) : null}
       </aside>
 
-      <main
-        data-boring-workspace-part="chat-stage"
-        aria-label="Chat stage"
-        className="relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-background"
-      >
-        <section
-          data-boring-workspace-part="chat-panel"
+      <div className="relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
+        <main
+          data-boring-workspace-part="chat-stage"
           data-boring-state={chatCollapsed ? "collapsed" : "expanded"}
           aria-label={chatCollapsed ? "Collapsed chat" : "Chat"}
           aria-hidden={chatCollapsed}
@@ -352,94 +348,100 @@ export function ChatLayout(props: ChatLayoutProps) {
               </IconButton>
             </>
           ) : null}
-        </section>
-        <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
-          {!navOpen && props.onOpenNav ? (
-            <FloatingEdgeButton
-              side="left"
-              icon="sessions"
-              onClick={props.onOpenNav}
-              label="Sessions"
-              hint="⌘1"
-            />
-          ) : null}
-          {chatCollapsed ? (
-            <FloatingEdgeButton
-              side="left"
-              icon="chat"
-              onClick={toggleChatCollapsed}
-              label="Expand chat"
-              hint="⌘\\"
-              stackIndex={!navOpen && props.onOpenNav ? 1 : 0}
-              pulse={chatRailPulse || blockers.length > 0}
-            />
-          ) : null}
-          {!surfaceOpen && props.onOpenSurface ? (
-            <FloatingEdgeButton
-              side="right"
-              icon="workbench"
-              onClick={props.onOpenSurface}
-              label="Workbench"
-              hint="⌘2"
-              bottomOffset={props.surfaceButtonBottomOffset}
-            />
-          ) : null}
-        </div>
-      </main>
+        </main>
 
-      {surfaceConfigured ? (
-        <aside
-          data-boring-workspace-part="workbench"
-          data-boring-state={surfaceOpen ? "expanded" : "collapsed"}
-          aria-label={surfaceOpen ? "Surface" : undefined}
-          aria-hidden={!surfaceOpen}
-          className={cn(
-            "relative h-full min-h-0 shrink-0 overflow-hidden bg-background",
-            "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-            surfaceOpen && "border-l border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
-          )}
-          style={{
-            width: surfaceOpen ? effectiveSurfaceWidth : 0,
-            minWidth: surfaceOpen ? effectiveSurfaceWidth : 0,
-            maxWidth: surfaceOpen ? effectiveSurfaceWidth : 0,
-            willChange: "width",
-          }}
-        >
-          <div
+        {surfaceConfigured ? (
+          <aside
+            data-boring-workspace-part="workbench"
+            data-boring-state={surfaceOpen ? "expanded" : "collapsed"}
+            aria-label={surfaceOpen ? "Surface" : undefined}
+            aria-hidden={!surfaceOpen}
             className={cn(
-              "h-full min-h-0 overflow-hidden",
-              "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-              surfaceOpen ? "opacity-100" : "opacity-0",
+              "relative h-full min-h-0 overflow-hidden bg-background",
+              // When chat is collapsed the workbench grows to fill the freed
+              // space (full width); otherwise it's a fixed-width side panel.
+              chatCollapsed && surfaceOpen ? "min-w-0 flex-1" : "shrink-0",
+              "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+              surfaceOpen && "border-l border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
             )}
+            style={
+              chatCollapsed && surfaceOpen
+                ? { willChange: "width" }
+                : {
+                    width: surfaceOpen ? effectiveSurfaceWidth : 0,
+                    minWidth: surfaceOpen ? effectiveSurfaceWidth : 0,
+                    maxWidth: surfaceOpen ? effectiveSurfaceWidth : 0,
+                    willChange: "width",
+                  }
+            }
           >
-            {props.surfaceOverlay ? (
-              <div className="relative h-full min-h-0">
-                {props.surfaceOverlay}
-                {closeSurface ? (
-                  <IconButton
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={closeSurface}
-                    className="absolute right-3 top-3 z-20 rounded-full bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:bg-muted hover:text-foreground"
-                    aria-label="Close workbench"
-                    title="Close workbench (⌘2)"
-                  >
-                    <span aria-hidden="true">›</span>
-                  </IconButton>
-                ) : null}
-              </div>
-            ) : <PanelSlot id={surfaceId} params={props.surfaceParams} />}
-          </div>
-          {surfaceOpen ? (
-            <ResizeHandle
-              side="surface-left"
-              ariaLabel="Resize workbench"
-              onResize={(delta) => setSurfaceWidth((w) => clamp(w - delta, 480, surfaceMax))}
-            />
-          ) : null}
-        </aside>
-      ) : null}
+            <div
+              className={cn(
+                "h-full min-h-0 overflow-hidden",
+                "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+                surfaceOpen ? "opacity-100" : "opacity-0",
+              )}
+            >
+              {props.surfaceOverlay ? (
+                <div className="relative h-full min-h-0">
+                  {props.surfaceOverlay}
+                  {closeSurface ? (
+                    <IconButton
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={closeSurface}
+                      className="absolute right-3 top-3 z-20 rounded-full bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:bg-muted hover:text-foreground"
+                      aria-label="Close workbench"
+                      title="Close workbench (⌘2)"
+                    >
+                      <span aria-hidden="true">›</span>
+                    </IconButton>
+                  ) : null}
+                </div>
+              ) : <PanelSlot id={surfaceId} params={props.surfaceParams} />}
+            </div>
+            {surfaceOpen && !chatCollapsed ? (
+              <ResizeHandle
+                side="surface-left"
+                ariaLabel="Resize workbench"
+                onResize={(delta) => setSurfaceWidth((w) => clamp(w - delta, 480, surfaceMax))}
+              />
+            ) : null}
+          </aside>
+        ) : null}
+
+        {!navOpen && props.onOpenNav ? (
+          <FloatingEdgeButton
+            side="left"
+            icon="sessions"
+            onClick={props.onOpenNav}
+            label="Sessions"
+            hint="⌘1"
+          />
+        ) : null}
+        {chatCollapsed ? (
+          <FloatingEdgeButton
+            side="left"
+            icon="chat"
+            onClick={toggleChatCollapsed}
+            label="Expand chat"
+            hint="⌘\\"
+            stackIndex={!navOpen && props.onOpenNav ? 1 : 0}
+            pulse={chatRailPulse || blockers.length > 0}
+          />
+        ) : null}
+        {!surfaceOpen && props.onOpenSurface ? (
+          <FloatingEdgeButton
+            side="right"
+            icon="workbench"
+            onClick={props.onOpenSurface}
+            label="Workbench"
+            hint="⌘2"
+            bottomOffset={props.surfaceButtonBottomOffset}
+          />
+        ) : null}
+      </div>
     </div>
   )
 }
