@@ -143,9 +143,15 @@ export function ChatLayout(props: ChatLayoutProps) {
   }, [chatCollapsed, closeNav, closeSurface, navOpen, setChatCollapsed, surfaceOpen])
 
   const toggleChatCollapsed = useCallback(() => {
-    setChatCollapsed((current) => !current)
+    setChatCollapsed((current) => {
+      const next = !current
+      // Collapsing the chat opens the workbench so the freed space is filled
+      // instead of leaving an empty canvas.
+      if (next && !surfaceOpen) props.onOpenSurface?.()
+      return next
+    })
     setChatRailPulse(false)
-  }, [setChatCollapsed])
+  }, [setChatCollapsed, surfaceOpen, props.onOpenSurface])
 
   useKeyboardShortcuts({
     shortcuts: useMemo(() => {
@@ -430,39 +436,41 @@ export function ChatLayout(props: ChatLayoutProps) {
           </aside>
         ) : null}
 
-        {!navOpen && props.onOpenNav ? (
-          <FloatingEdgeButton
-            side="left"
-            icon="sessions"
-            onClick={props.onOpenNav}
-            label="Sessions"
-            hint="⌘1"
-          />
-        ) : null}
-        {chatCollapsed ? (
-          <FloatingEdgeButton
-            side="left"
-            icon="chat"
-            onClick={toggleChatCollapsed}
-            label="Expand chat"
-            hint="⌘\\"
-            // Fixed slot above the Sessions button so it doesn't shift when the
-            // session drawer opens/closes (the Sessions button comes/goes).
-            stackIndex={1}
-            pulse={chatRailPulse || blockers.length > 0}
-          />
-        ) : null}
-        {!surfaceOpen && props.onOpenSurface ? (
-          <FloatingEdgeButton
-            side="right"
-            icon="workbench"
-            onClick={props.onOpenSurface}
-            label="Workbench"
-            hint="⌘2"
-            bottomOffset={props.surfaceButtonBottomOffset}
-          />
-        ) : null}
       </div>
+
+      {!navOpen && props.onOpenNav ? (
+        <FloatingEdgeButton
+          side="left"
+          icon="sessions"
+          onClick={props.onOpenNav}
+          label="Sessions"
+          hint="⌘1"
+        />
+      ) : null}
+      {chatCollapsed ? (
+        <FloatingEdgeButton
+          side="left"
+          icon="chat"
+          onClick={toggleChatCollapsed}
+          label="Expand chat"
+          hint="⌘\\"
+          // Anchored to the shell's left edge (not the content region) so it
+          // stays pinned to the left even when the session drawer is open and
+          // pushes the content rightward.
+          stackIndex={1}
+          pulse={chatRailPulse || blockers.length > 0}
+        />
+      ) : null}
+      {!surfaceOpen && props.onOpenSurface ? (
+        <FloatingEdgeButton
+          side="right"
+          icon="workbench"
+          onClick={props.onOpenSurface}
+          label="Workbench"
+          hint="⌘2"
+          bottomOffset={props.surfaceButtonBottomOffset}
+        />
+      ) : null}
     </div>
   )
 }
