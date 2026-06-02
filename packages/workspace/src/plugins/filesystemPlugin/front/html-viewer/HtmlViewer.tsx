@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { ErrorState, IconButton, Spinner } from "@hachej/boring-ui-kit"
-import { RefreshCcw } from "lucide-react"
+import { ExternalLink, RefreshCcw } from "lucide-react"
 import { cn } from "../../../../front/lib/utils"
 import { useApiBaseUrl, useWorkspaceRequestId } from "../data/DataProvider"
 
@@ -275,14 +275,18 @@ export function HtmlViewer({ path, className }: HtmlViewerProps) {
           >
             <RefreshCcw className="h-3.5 w-3.5" strokeWidth={1.75} />
           </IconButton>
-          <a
-            href={rawUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          <IconButton
+            asChild
+            variant="ghost"
+            size="icon-xs"
+            className="text-muted-foreground hover:text-foreground"
+            aria-label="Open raw in new tab"
+            title="Open raw in new tab"
           >
-            Open raw
-          </a>
+            <a href={rawUrl} target="_blank" rel="noreferrer">
+              <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.75} />
+            </a>
+          </IconButton>
         </div>
       </div>
       <iframe
