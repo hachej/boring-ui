@@ -43,17 +43,36 @@ function messageContentKey(message: UIMessage): string {
   return `${normalized.role}:${JSON.stringify(normalized.parts ?? [])}`
 }
 
-function mergeMessages(base: UIMessage[], tail: UIMessage[]): UIMessage[] {
+function mergeMessages(base: UIMessage[], tail: UIMessage[], opts?: { dedupePendingAgainstStable?: boolean }): UIMessage[] {
   const seenIds = new Set<string>()
   const seenContent = new Set<string>()
+  const stableContent = new Set<string>()
+  const pendingUserContent = new Map<string, number>()
   const merged: UIMessage[] = []
   for (const rawMessage of [...base, ...tail]) {
     const message = normalizeMessage(rawMessage)
     const id = typeof message.id === 'string' ? message.id : undefined
     const contentKey = messageContentKey(message)
+    const pendingUser = id?.startsWith('pending-user:') === true
     if (id) {
       if (seenIds.has(id)) continue
+      if (pendingUser && (seenContent.has(contentKey) || (opts?.dedupePendingAgainstStable !== false && stableContent.has(contentKey)))) continue
+      if (!pendingUser) {
+        const pendingIndex = pendingUserContent.get(contentKey)
+        if (pendingIndex !== undefined) {
+          merged[pendingIndex] = message
+          seenIds.add(id)
+          seenContent.add(contentKey)
+          pendingUserContent.delete(contentKey)
+          continue
+        }
+      }
       seenIds.add(id)
+      if (pendingUser) {
+        pendingUserContent.set(contentKey, merged.length)
+      } else {
+        stableContent.add(contentKey)
+      }
     } else {
       if (seenContent.has(contentKey)) continue
       seenContent.add(contentKey)
@@ -68,6 +87,58 @@ function sameMessageOrder(a: UIMessage[], b: UIMessage[]): boolean {
   return a.every((message, index) => {
     const other = b[index]
     return message.id === other?.id && JSON.stringify(message.parts ?? []) === JSON.stringify(other?.parts ?? [])
+  })
+}
+
+function sameMessageIdentityOrContent(a: UIMessage | undefined, b: UIMessage | undefined): boolean {
+  if (!a || !b) return false
+  if (typeof a.id === 'string' && typeof b.id === 'string' && a.id === b.id) return true
+  return messageContentKey(a) === messageContentKey(b)
+}
+
+function mergeHydratedMessages(serverMessages: UIMessage[], cachedMessages: UIMessage[]): UIMessage[] {
+  if (serverMessages.length === 0) return mergeMessages([], cachedMessages)
+  if (cachedMessages.length === 0) return mergeMessages([], serverMessages)
+  let commonPrefix = 0
+  while (
+    commonPrefix < serverMessages.length
+    && commonPrefix < cachedMessages.length
+    && sameMessageIdentityOrContent(serverMessages[commonPrefix], cachedMessages[commonPrefix])
+  ) {
+    commonPrefix += 1
+  }
+  if (commonPrefix > 0 && commonPrefix < cachedMessages.length && commonPrefix < serverMessages.length) {
+    return mergeMessages(serverMessages.slice(0, commonPrefix), [
+      ...cachedMessages.slice(commonPrefix),
+      ...serverMessages.slice(commonPrefix),
+    ])
+  }
+  const firstCached = cachedMessages[0]
+  const serverHasUser = serverMessages.some((message) => message.role === 'user')
+  if (
+    commonPrefix === 0
+    && !serverHasUser
+    && firstCached?.role === 'user'
+    && typeof firstCached.id === 'string'
+    && firstCached.id.startsWith('pending-user:')
+    && serverMessages[0]?.role === 'assistant'
+  ) {
+    return mergeMessages([], [...cachedMessages, ...serverMessages])
+  }
+  return mergeMessages(serverMessages, cachedMessages)
+}
+
+function messagesLookSettled(messages: UIMessage[]): boolean {
+  const last = messages[messages.length - 1]
+  if (last?.role !== 'assistant') return false
+  return !last.parts?.some((part) => {
+    const candidate = part as Record<string, unknown>
+    return typeof candidate.type === 'string'
+      && candidate.type.startsWith('tool-')
+      && candidate.state !== 'output-available'
+      && candidate.state !== 'output-error'
+      && candidate.state !== 'output-denied'
+      && candidate.state !== 'approval-responded'
   })
 }
 
@@ -107,6 +178,23 @@ function cachedStatusNeedsResume(statusKey: string): boolean {
   }
 }
 
+function optimisticUserMessageFromSendArgs(args: unknown[]): UIMessage | null {
+  const input = args[0] as { text?: unknown } | undefined
+  const text = typeof input?.text === 'string' ? input.text : ''
+  if (!text.trim()) return null
+  return {
+    id: `pending-user:${Date.now()}:${Math.random().toString(36).slice(2)}`,
+    role: 'user',
+    parts: [{ type: 'text', text }],
+  } as UIMessage
+}
+
+function writeCachedMessages(cacheKey: string, messages: UIMessage[]): void {
+  try {
+    globalThis.localStorage?.setItem(cacheKey, JSON.stringify(messages))
+  } catch { /* quota exceeded: drop cache silently */ }
+}
+
 export function useAgentChat(opts: UseAgentChatOptions) {
   const { sessionId } = opts
   const hydrateMessages = opts.hydrateMessages ?? true
@@ -115,12 +203,14 @@ export function useAgentChat(opts: UseAgentChatOptions) {
 
   const cacheKey = sessionId ? `boring-agent:messages:${sessionId}` : null
   const statusKey = sessionId ? `boring-agent:status:${sessionId}` : null
+  const [settledResumeKey, setSettledResumeKey] = useState<string | null>(null)
   const shouldResume = useMemo(
     () => hydrateMessages && Boolean(
       cacheKey
+      && settledResumeKey !== cacheKey
       && (cachedMessagesNeedResume(cacheKey) || (statusKey ? cachedStatusNeedsResume(statusKey) : false)),
     ),
-    [cacheKey, hydrateMessages, statusKey],
+    [cacheKey, hydrateMessages, settledResumeKey, statusKey],
   )
 
   const transport = useMemo(
@@ -156,11 +246,30 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     },
   })
 
+  const messages = chat.messages
+  const messagesRef = useRef(messages)
+  messagesRef.current = messages
+
   const [localTurnActive, setLocalTurnActive] = useState(false)
   const sendMessage = useCallback((...args: Parameters<typeof chat.sendMessage>) => {
     setLocalTurnActive(true)
+    setSettledResumeKey((current) => (current === cacheKey ? null : current))
+    if (cacheKey) {
+      const optimisticUser = optimisticUserMessageFromSendArgs(args)
+      if (optimisticUser) {
+        const cachedMessages = readCachedMessages(cacheKey)
+        const base = messagesRef.current.length > 0 ? messagesRef.current : cachedMessages
+        const next = mergeMessages(base, [optimisticUser], { dedupePendingAgainstStable: false })
+        writeCachedMessages(cacheKey, next)
+      }
+    }
+    if (statusKey) {
+      try {
+        globalThis.localStorage?.setItem(statusKey, 'active')
+      } catch { /* quota exceeded: drop status cache silently */ }
+    }
     return chat.sendMessage(...args)
-  }, [chat.sendMessage])
+  }, [cacheKey, chat.sendMessage, statusKey])
 
   // Hydrate history on mount / session change. Priority:
   //  1. Server /messages endpoint (authoritative if the harness persists sessions)
@@ -184,9 +293,26 @@ export function useAgentChat(opts: UseAgentChatOptions) {
 
     const hydrateMerged = (serverMessages: UIMessage[], cachedMessages: UIMessage[]) => {
       const current = messagesRef.current
-      const fromServerAndCache = mergeMessages(serverMessages, cachedMessages)
+      const fromServerAndCache = mergeHydratedMessages(serverMessages, cachedMessages)
       const next = current.length > 0 ? mergeMessages(fromServerAndCache, current) : fromServerAndCache
-      if (next.length > 0) setMessages(next)
+      if (next.length > 0) {
+        setMessages(next)
+        const serverLatest = serverMessages[serverMessages.length - 1]
+        const nextLatest = next[next.length - 1]
+        const authoritativeSettledServerTail = Boolean(
+          serverLatest
+          && sameMessageIdentityOrContent(serverLatest, nextLatest)
+          && messagesLookSettled(next),
+        )
+        if (authoritativeSettledServerTail) {
+          setSettledResumeKey(cacheKey)
+          if (statusKey) {
+            try {
+              globalThis.localStorage?.setItem(statusKey, 'ready')
+            } catch { /* quota exceeded: drop status cache silently */ }
+          }
+        }
+      }
     }
 
     const loadFromCache = () => {
@@ -220,21 +346,18 @@ export function useAgentChat(opts: UseAgentChatOptions) {
       })
 
     return () => { aborted = true }
-  }, [hydrateMessages, sessionId, cacheKey, setMessages])
+  }, [hydrateMessages, sessionId, cacheKey, setMessages, statusKey])
 
   // Mirror messages → localStorage whenever they change. Gated on `hydrated`
   // so the initial empty state never overwrites a previously-cached history.
   // Also skip empty messages: when sessionId changes, useChat resets to []
   // before hydration runs, and saving [] would wipe the previous cache for the
   // new session before we get a chance to read it.
-  const messages = chat.messages
   const rawStatus = chat.status
   const rawStatusActive = rawStatus === 'submitted' || rawStatus === 'streaming'
   const knownActiveTurn = localTurnActive || shouldResume
   const status = rawStatusActive && !knownActiveTurn ? 'ready' : rawStatus
-  const messagesRef = useRef(messages)
   const statusRef = useRef(status)
-  messagesRef.current = messages
   statusRef.current = status
   const prevRawStatusRef = useRef(rawStatus)
   useEffect(() => {
@@ -249,9 +372,9 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   useEffect(() => {
     if (!statusKey) return
     try {
-      if (rawStatusActive && knownActiveTurn) {
+        if (knownActiveTurn) {
         globalThis.localStorage?.setItem(statusKey, 'active')
-      } else if (rawStatus === 'ready' || rawStatus === 'error' || (rawStatusActive && !knownActiveTurn)) {
+      } else if (rawStatus === 'ready' || rawStatus === 'error' || rawStatusActive) {
         globalThis.localStorage?.setItem(statusKey, 'ready')
       }
     } catch { /* quota exceeded: drop status cache silently */ }
@@ -269,9 +392,7 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     // Only save when messages actually changed (not on every render).
     // The `messages` dependency already handles this, but we also skip
     // saves during hydration to avoid overwriting with partial state.
-    try {
-      globalThis.localStorage?.setItem(cacheKey, JSON.stringify(messages))
-    } catch { /* quota exceeded: drop cache silently */ }
+    writeCachedMessages(cacheKey, messages)
   }, [opts.persistMessages, hydrated, cacheKey, messages])
 
   // When the stream ends (stop or natural completion), settle any tool parts

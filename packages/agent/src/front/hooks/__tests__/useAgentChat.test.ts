@@ -260,6 +260,110 @@ describe('useAgentChat', () => {
     )
   })
 
+  test('caches the submitted user message synchronously before the stream starts', () => {
+    mockStorageGetItem.mockReturnValue(JSON.stringify([]))
+    const result = useAgentChat({ sessionId: 'sess-1' })
+    mockStorageSetItem.mockClear()
+
+    result.sendMessage({ text: 'message before switch', files: [] })
+
+    const messagesWrite = mockStorageSetItem.mock.calls.find(([key]) => key === 'boring-agent:messages:sess-1')
+    expect(messagesWrite).toBeDefined()
+    const cached = JSON.parse(messagesWrite?.[1] as string)
+    expect(cached).toEqual([
+      expect.objectContaining({
+        id: expect.stringMatching(/^pending-user:/),
+        role: 'user',
+        parts: [{ type: 'text', text: 'message before switch' }],
+      }),
+    ])
+    expect(mockStorageSetItem).toHaveBeenCalledWith('boring-agent:status:sess-1', 'active')
+    expect(mockUseStateSetter).toHaveBeenCalledWith(expect.any(Function))
+  })
+
+  test('preserves a new optimistic user message even when it repeats an earlier prompt', () => {
+    mockStorageGetItem.mockReturnValue(JSON.stringify([
+      { id: 'u-old', role: 'user', parts: [{ type: 'text', text: 'same prompt' }] },
+      { id: 'a-old', role: 'assistant', parts: [{ type: 'text', text: 'old answer' }] },
+    ]))
+    const result = useAgentChat({ sessionId: 'sess-repeat' })
+    mockStorageSetItem.mockClear()
+
+    result.sendMessage({ text: 'same prompt', files: [] })
+
+    const messagesWrite = mockStorageSetItem.mock.calls.find(([key]) => key === 'boring-agent:messages:sess-repeat')
+    const cached = JSON.parse(messagesWrite?.[1] as string)
+    expect(cached).toHaveLength(3)
+    expect(cached[2]).toEqual(expect.objectContaining({
+      id: expect.stringMatching(/^pending-user:/),
+      role: 'user',
+      parts: [{ type: 'text', text: 'same prompt' }],
+    }))
+  })
+
+  test('keeps an active partial assistant cache resumable when server history is stale', async () => {
+    const cachedUser = { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'run long thing' }] }
+    const partialAssistant = { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'partial answer' }] }
+    mockChatStatus = 'streaming'
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ messages: [] }),
+    })
+    mockStorageGetItem.mockImplementation((key: string) => {
+      if (key === 'boring-agent:messages:sess-1') return JSON.stringify([cachedUser, partialAssistant])
+      if (key === 'boring-agent:status:sess-1') return 'active'
+      return null
+    })
+
+    const result = useAgentChat({ sessionId: 'sess-1' })
+    await flushPromises()
+
+    expect(result.status).toBe('streaming')
+    expect(useChat).toHaveBeenCalledWith(expect.objectContaining({ resume: true }))
+    expect(mockStorageSetItem).not.toHaveBeenCalledWith('boring-agent:status:sess-1', 'ready')
+  })
+
+  test('places an optimistic pending user before the completed server assistant response', async () => {
+    const pendingUser = { id: 'pending-user:123', role: 'user', parts: [{ type: 'text', text: 'message while switching' }] }
+    const serverAssistant = { id: 'server-a1', role: 'assistant', parts: [{ type: 'text', text: 'done' }] }
+    mockChatStatus = 'streaming'
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ messages: [serverAssistant] }),
+    })
+    mockStorageGetItem.mockImplementation((key: string) => {
+      if (key === 'boring-agent:messages:sess-1') return JSON.stringify([pendingUser])
+      if (key === 'boring-agent:status:sess-1') return 'active'
+      return null
+    })
+
+    useAgentChat({ sessionId: 'sess-1' })
+    await flushPromises()
+
+    expect(mockSetMessages).toHaveBeenCalledWith([pendingUser, serverAssistant])
+    expect(mockStorageSetItem).toHaveBeenCalledWith('boring-agent:status:sess-1', 'ready')
+    expect(mockUseStateSetter).toHaveBeenCalledWith('boring-agent:messages:sess-1')
+  })
+
+  test('replaces an optimistic pending user message with the server copy when both exist', async () => {
+    const serverUser = { id: 'server-u1', role: 'user', parts: [{ type: 'text', text: 'same message' }] }
+    const serverAssistant = { id: 'server-a1', role: 'assistant', parts: [{ type: 'text', text: 'done' }] }
+    const pendingUser = { id: 'pending-user:123', role: 'user', parts: [{ type: 'text', text: 'same message' }] }
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ messages: [serverUser, serverAssistant] }),
+    })
+    mockStorageGetItem.mockImplementation((key: string) => {
+      if (key === 'boring-agent:messages:sess-1') return JSON.stringify([pendingUser])
+      return null
+    })
+
+    useAgentChat({ sessionId: 'sess-1' })
+    await flushPromises()
+
+    expect(mockSetMessages).toHaveBeenCalledWith([serverUser, serverAssistant])
+  })
+
   test('forwards onData callback to useChat', () => {
     const onData = vi.fn()
 
