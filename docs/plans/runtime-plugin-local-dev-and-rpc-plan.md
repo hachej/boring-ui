@@ -17,21 +17,23 @@ challenge them, not re-derive them.
 ## TL;DR (read this first)
 
 A plugin author (human or agent) should be able to build a workspace plugin the way you'd build
-a small local web app, and the plugin should be able to **show data, edit data, link around the
-workspace, and check its own health** — without standing up any backend of its own.
+a small local web app, and the plugin should be able to **show data, edit data, navigate, take
+action, and check its own health** — without standing up any backend of its own.
 
-Concretely, four capabilities:
+Concretely, five capabilities:
 
 1. **Author like local Vite dev** — a normal `package.json`, `npm install` any library, plain
    `import`, save → hot reload (`/reload`).
 2. **Show & edit data with one shared path** — query/update a file or DB through a single
    host-provided capability; the plugin never writes its own server route or DB code.
 3. **Navigate the workspace** — a link in a pane opens a file/record/panel, in-app.
-4. **Self-test** — the agent loads its own pane headlessly and reads back errors, instead of a
+4. **Take action** — a button can *do* something (merge a PR, deploy) by **asking the agent** to
+   run it — no plugin backend, no new exec surface.
+5. **Self-test** — the agent loads its own pane headlessly and reads back errors, instead of a
    human opening the browser to report what broke.
 
 Everything is **CLI-local** and leans on machinery that already exists (the CLI's Vite server,
-the `/reload` pipeline, DuckDB in the playground, the bridge's UI-effect lane).
+the `/reload` pipeline, DuckDB in the playground, the bridge's UI-effect lane, the chat composer).
 
 ---
 
@@ -54,7 +56,7 @@ agent self-test, this plan is proven.
 
 ## Goal
 
-A **simple but robust** runtime plugin system for CLI mode, with the four TL;DR properties.
+A **simple but robust** runtime plugin system for CLI mode, with the five TL;DR properties.
 "Simple but robust" is the explicit bias: prefer fewer moving parts; reuse what exists; don't
 build for hosted/remote scale we don't yet need.
 
@@ -324,6 +326,74 @@ console/DOM itself. CLI-local only; hosted self-test is a non-goal.
 
 ---
 
+## Principle 5 — Panes take action by *asking the agent*
+
+**Goal:** a button in a pane can *do something* — merge a PR, deploy, run a script — not just
+display data. (Principle 3 covers reading/editing local data; this covers acting on the world.)
+
+### Why "ask the agent", not a direct exec endpoint
+
+The front (browser) has no shell and no credentials — only the agent (server-side, in the
+workspace) does. The tempting design is a direct "front button → host runs the command" endpoint.
+We deliberately **do not** do that in v1, for a reason that two independent design reviews
+converged on:
+
+- **front-vs-agent is not a real security boundary.** The agent already runs arbitrary `bash`
+  unsandboxed on the host (`tools/harness/index.ts`), and in local mode the server binds
+  `0.0.0.0` with **no auth and no CSRF** (`cli.ts`, `middleware.ts`). So a direct exec endpoint
+  adds no capability that isn't already reachable one chat message away — gating the front while
+  the chat is open is theater.
+- The honest control is the **server perimeter** (bind `127.0.0.1` / require a token), which is a
+  separate, larger decision (see "Deferred: fast deterministic actions").
+- The one actor that's both untrusted *and* inside the front origin is **plugin code itself**
+  (often agent-generated, unreviewed). A direct exec endpoint hands that code RCE; asking the
+  agent does not.
+
+So v1 takes the path that needs **no new exec surface, no new perimeter, no per-action
+capability**: the button **fills the agent chat and lets the agent run it** — exactly what the
+user would do by typing.
+
+```
+[pane button "Merge PR 126"]
+      → requestAgentTurn("Merge PR 126", { autoSubmit })
+      → composer receives the text → agent reads, reasons, runs `gh pr merge 126`, reports back
+```
+
+### What this buys (and the tradeoff)
+
+- **Zero new attack surface** — reuses the existing chat path; the agent stays the sole executor.
+- **Generic** — one mechanism for GitHub / deploys / file ops / anything the agent can do; no
+  capability-per-action.
+- **Judgment + audit for free** — the agent can confirm ("checks are failing — merge anyway?"),
+  chain ("merge, delete branch, comment"), and every action lands in the transcript.
+- **Tradeoff (accept with eyes open):** this is an **ask**, not a fast deterministic button. It
+  goes through the LLM → seconds + token cost, and non-deterministic (the model may confirm or
+  adjust). That's a *good* bias for judgment actions (you *want* a beat before a merge) and a
+  poor fit for high-frequency one-click verbs — which are deferred (below).
+
+### Mechanism (substrate already exists)
+
+`ChatPanel` already supports `initialDraft` + `autoSubmitInitialDraft` (`ChatPanel.tsx:395`), and
+`useWorkspaceChatPanel` is already allowlisted for plugin fronts. The only gap is a clean,
+allowlisted helper so a pane doesn't reach into internals:
+
+- **`requestAgentTurn(text, opts?)`** exported from `@hachej/boring-workspace` → sets the composer
+  draft and (if `opts.autoSubmit`) submits it.
+- **Default = prefill, not auto-submit.** The button fills the composer; the user presses enter.
+  This preserves the "human in the loop" property that makes the whole approach safe (a buggy
+  plugin can't silently drive the agent). `autoSubmit` is opt-in per button, and when used carries
+  a light rate-limit/confirm so untrusted plugin code can't spam turns.
+
+### Deferred: fast deterministic actions (not in v1)
+
+If one-click, instant, no-LLM verbs are later needed (rapid-fire merge/approve), the path is a
+**guarded action endpoint** that reuses the agent's tool `execute()` — gated by (a) the server
+perimeter (`127.0.0.1` default / token), (b) a per-tool `frontInvokable` opt-in (never `bash`),
+and (c) typed params. This is the bridge epic's "action capability" tier and is **explicitly out
+of v1** — Principle 5's ask-the-agent path covers the need without it.
+
+---
+
 ## Contracts (v1)
 
 The integration surface, pinned so the three tracks can be built independently. Platform-neutral
@@ -403,6 +473,13 @@ type NavEffect =
   | { kind: "navigateToLine"; path: string; line: number }
 declare function WorkspaceLink(props: { to: NavEffect; children: React.ReactNode }): JSX.Element
 
+// ---- actions (Principle 5): a pane asks the agent to do something ----
+// Fills the chat composer; default prefill (user presses enter), autoSubmit opt-in (rate-limited).
+declare function requestAgentTurn(
+  text: string,
+  opts?: { autoSubmit?: boolean }
+): void
+
 // ---- self-test (Track C) ----
 interface PluginHealthEvent { layer: 1 | 2 | 3; code?: string; message: string }  // one error shape
 interface PluginHealth {
@@ -443,10 +520,11 @@ Recorded so a reviewer can push back without re-deriving. Each has a fallback.
 
 ---
 
-## Phasing — three independent tracks
+## Phasing — four independent tracks
 
 Different dependencies → ship independently. Track A realizes Principles 2–3; Track B realizes
-Principle 1; Track C realizes Principle 4. **Only Track B is gated on D1**; A and C are unblocked.
+Principle 1; Track C realizes Principle 4; Track D realizes Principle 5. **Only Track B is gated
+on D1**; A, C, and D are unblocked.
 
 ### Track A — Clean data access (unblocked; ship first)
 
@@ -489,6 +567,26 @@ Principle 1; Track C realizes Principle 4. **Only Track B is gated on D1**; A an
 
 → **"agent self-tests the pane and reads back errors."**
 
+### Track D — Pane → agent actions (unblocked)
+
+Realizes Principle 5. Independent of D1; the composer substrate already exists.
+
+- **D1t.** `requestAgentTurn(text, opts?)` helper in `@hachej/boring-workspace`, allowlisted for
+  plugin fronts, wired to the existing `ChatPanel` `initialDraft` / `autoSubmitInitialDraft` path
+  (via `useWorkspaceChatPanel`). Default **prefill**; `autoSubmit` opt-in.
+- **D2t.** Guardrail for `autoSubmit`: rate-limit / de-dupe so plugin code can't spam turns; a
+  prefill never needs it (the human presses enter).
+- **D3t.** **Update the plugin skills — "how a plugin takes action."** Add a section to
+  `packages/pi/skills/boring-plugin-authoring/SKILL.md` (+ a pointer in the build skill): a pane
+  *acts* via `requestAgentTurn` (ask-the-agent), **not** by `fetch`-ing a backend or running
+  commands; show the GitHub-button example; state the prefill-default / autoSubmit-opt-in rule and
+  the "judgment+audit, but LLM-mediated (seconds, non-deterministic)" tradeoff. *(Unlike B4 this
+  is safe to write at execution time — it adds new guidance and contradicts nothing current.)*
+- **D4t.** Worked example: a "Merge PR" button in a sample/PR-manager plugin →
+  `requestAgentTurn("Merge PR {n}")`; agent runs `gh pr merge`.
+
+→ **"a pane button can ask the agent to act — no plugin backend, no new exec surface."**
+
 ### Dependency graph
 
 ```
@@ -497,9 +595,11 @@ Track A:  A1 ── A2 ── A3            read MVP (niche-explorer migrated)
                  └── A5             writes — needs A1 engine + a writable source
 Track B:  B1 ── B2 ── B3 ── B4      gated on D1
 Track C:  C1 ── C2 ── C3            C3 needs the pane-state signal from C2
+Track D:  D1t ── D2t ── D3t        actions — independent; substrate (composer) exists
+                  └── D4t           worked example
 ```
 
-No cross-track dependency for A/C; B is independent. A2 ships in the workspace package, so
+No cross-track dependency for A/C/D; B is independent. A2 + D1t ship in the workspace package, so
 app/internal package plugins benefit too.
 
 ### Acceptance criteria (per task — bead-ready)
@@ -528,6 +628,12 @@ app/internal package plugins benefit too.
   `data-boring-pane="error"`.
 - **C3** — `test-plugin <name>` returns `SelfTestResult` and catches a seeded crash, a seeded
   `400`, and a stuck-blank pane (timeout, not false pass).
+- **D1t** — `requestAgentTurn("hi")` prefills the composer; with `{autoSubmit:true}` it submits a
+  turn; reaches the agent via the existing chat path (no new endpoint).
+- **D2t** — rapid `autoSubmit` calls are rate-limited/de-duped; prefill is unthrottled.
+- **D3t** — authoring skill documents "take action via `requestAgentTurn`, not a backend"; the
+  GitHub-button example is present; the prefill/autoSubmit + tradeoff notes are stated.
+- **D4t** — a "Merge PR" button triggers an agent turn that runs `gh pr merge` (worked example).
 
 ---
 
