@@ -163,6 +163,13 @@ async function shouldInstallPythonRuntime(options: {
   }
 
   for (const output of options.expectedOutputs) {
+    // The venv interpreter (`bin/python`) is a symlink to the system Python,
+    // which resolves outside the workspace. Direct-mode's workspace filesystem
+    // intentionally rejects out-of-workspace symlinks, so probing it with
+    // exists() reports every previously-created venv as missing and forces a
+    // needless reinstall. The fingerprint plus the package bin checks already
+    // tell us whether the runtime is usable, so skip the interpreter symlink.
+    if (output === options.runtimeLayout.venvPython) continue
     if (!(await options.adapter.workspaceFs.exists(toWorkspaceRel(options.runtimeLayout, output)))) return true
   }
   return false
