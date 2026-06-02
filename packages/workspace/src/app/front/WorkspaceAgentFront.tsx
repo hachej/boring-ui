@@ -23,6 +23,7 @@ export interface WorkspaceAgentSession {
   id: string
   title?: string | null
   updatedAt?: string | number
+  turnCount?: number
 }
 
 export interface WorkspaceAgentSessionsApi<
@@ -76,7 +77,7 @@ export interface WorkspaceAgentFrontProps<
    * UserMenu) should set this to false to avoid a duplicate control.
    */
   showThemeToggle?: boolean
-  sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number }>
+  sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number; turnCount?: number }>
   activeSessionId?: string | null
   onSwitchSession?: (id: string) => void
   onCreateSession?: () => void
@@ -95,6 +96,10 @@ export interface WorkspaceAgentFrontProps<
   provisionWorkspace?: boolean
   bootPreloadPaths?: string[]
   onWorkspaceWarmupStatusChange?: (status: WorkspaceWarmupStatus) => void
+}
+
+function isAutoCreatedEmptySession(session: WorkspaceAgentSession | null | undefined, defaultSessionTitle: string): boolean {
+  return Boolean(session && session.title === defaultSessionTitle && session.turnCount === 0)
 }
 
 function shellStorageKeyFromSurfaceStorage(
@@ -507,7 +512,19 @@ export function WorkspaceAgentFront<
   const resolvedCreate = remoteSessionsPending
     ? remoteSessionActionsUnavailable
     : sessionApi
-      ? () => sessionApi.create()
+      ? () => {
+          const emptyAutoSession = activeRemoteSessions.find((session) => (
+            session.id === effectiveActiveSessionId
+            && isAutoCreatedEmptySession(session, defaultSessionTitle)
+          ))
+          const created = sessionApi.create()
+          if (emptyAutoSession) {
+            void Promise.resolve(created)
+              .then(() => sessionApi.delete(emptyAutoSession.id))
+              .catch(() => {})
+          }
+          return created
+        }
       : onCreateSession ?? localSessionStore.create
   const rawDelete = remoteSessionsPending
     ? remoteSessionActionsUnavailable

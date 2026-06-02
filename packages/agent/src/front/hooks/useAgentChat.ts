@@ -153,8 +153,7 @@ function readCachedMessages(cacheKey: string): UIMessage[] {
   }
 }
 
-function cachedMessagesNeedResume(cacheKey: string): boolean {
-  const cachedMessages = readCachedMessages(cacheKey)
+function messagesNeedResume(cachedMessages: UIMessage[]): boolean {
   const last = cachedMessages[cachedMessages.length - 1]
   if (!last) return false
   if (last.role === 'user') return true
@@ -168,6 +167,10 @@ function cachedMessagesNeedResume(cacheKey: string): boolean {
     }
     return false
   }))
+}
+
+function cachedMessagesNeedResume(cacheKey: string): boolean {
+  return messagesNeedResume(readCachedMessages(cacheKey))
 }
 
 function cachedStatusNeedsResume(statusKey: string): boolean {
@@ -298,11 +301,14 @@ export function useAgentChat(opts: UseAgentChatOptions) {
       if (next.length > 0) {
         setMessages(next)
         const serverLatest = serverMessages[serverMessages.length - 1]
-        const nextLatest = next[next.length - 1]
+        const cachedLatest = cachedMessages[cachedMessages.length - 1]
+        const serverCoversCachedTail = !messagesNeedResume(cachedMessages)
+          || (serverLatest && cachedLatest && sameMessageIdentityOrContent(serverLatest, cachedLatest))
+          || serverMessages.length >= cachedMessages.length
         const authoritativeSettledServerTail = Boolean(
           serverLatest
-          && sameMessageIdentityOrContent(serverLatest, nextLatest)
-          && messagesLookSettled(next),
+          && serverCoversCachedTail
+          && messagesLookSettled(serverMessages),
         )
         if (authoritativeSettledServerTail) {
           setSettledResumeKey(cacheKey)

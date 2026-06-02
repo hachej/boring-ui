@@ -341,6 +341,34 @@ describe('useAgentChat', () => {
     expect(mockStorageSetItem).not.toHaveBeenCalledWith('boring-agent:status:sess-1', 'ready')
   })
 
+  test('clears an active marker when settled server history supersedes a partial cache', async () => {
+    const cachedUser = { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'run long thing' }] }
+    const partialAssistant = { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'partial answer' }] }
+    const serverUser = { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'run long thing' }] }
+    const serverTool = {
+      id: 'a1',
+      role: 'assistant',
+      parts: [{ type: 'tool-bash', state: 'output-available', input: {}, output: [] }],
+    }
+    const serverDone = { id: 'a2', role: 'assistant', parts: [{ type: 'text', text: 'Done.' }] }
+    mockChatStatus = 'streaming'
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ messages: [serverUser, serverTool, serverDone] }),
+    })
+    mockStorageGetItem.mockImplementation((key: string) => {
+      if (key === 'boring-agent:messages:sess-1') return JSON.stringify([cachedUser, partialAssistant])
+      if (key === 'boring-agent:status:sess-1') return 'active'
+      return null
+    })
+
+    useAgentChat({ sessionId: 'sess-1' })
+    await flushPromises()
+
+    expect(mockStorageSetItem).toHaveBeenCalledWith('boring-agent:status:sess-1', 'ready')
+    expect(mockUseStateSetter).toHaveBeenCalledWith('boring-agent:messages:sess-1')
+  })
+
   test('places an optimistic pending user before the completed server assistant response', async () => {
     const pendingUser = { id: 'pending-user:123', role: 'user', parts: [{ type: 'text', text: 'message while switching' }] }
     const serverAssistant = { id: 'server-a1', role: 'assistant', parts: [{ type: 'text', text: 'done' }] }

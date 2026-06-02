@@ -644,6 +644,50 @@ describe("WorkspaceAgentFront", () => {
     })
   })
 
+  it("removes the empty auto-created default when the user manually creates a chat", async () => {
+    const create = vi.fn(async () => ({ id: "manual", title: "New session", updatedAt: Date.now(), turnCount: 0 }))
+    const deleted = vi.fn()
+
+    function useSessionsWithAutoDefault() {
+      const [sessions, setSessions] = useState([
+        { id: "auto", title: "Project", updatedAt: Date.now(), turnCount: 0 },
+      ])
+      return {
+        sessions,
+        activeSessionId: sessions[0]?.id ?? null,
+        activeSession: sessions[0] ?? null,
+        loading: false,
+        create: async () => {
+          const session = await create()
+          setSessions((prev) => [session, ...prev])
+          return session
+        },
+        switch: vi.fn(),
+        delete: (id: string) => {
+          deleted(id)
+          setSessions((prev) => prev.filter((session) => session.id !== id))
+        },
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="manual-create"
+        chatPanel={ChatPanel}
+        useSessions={useSessionsWithAutoDefault}
+        defaultSessionTitle="Project"
+        persistenceEnabled={false}
+      />,
+    )
+
+    fireEvent.click(screen.getAllByRole("button", { name: "New chat" })[0])
+
+    await waitFor(() => {
+      expect(create).toHaveBeenCalledOnce()
+      expect(deleted).toHaveBeenCalledWith("auto")
+    })
+  })
+
   it("does not auto-create a replacement after the user deletes the last remote session", async () => {
     vi.useFakeTimers()
     const create = vi.fn(async () => ({ id: "created", title: "Created" }))

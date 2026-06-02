@@ -32,6 +32,70 @@ describe("PiSessionStore.load fallback transcript reconstruction", () => {
     await rm(tmpDir, { recursive: true, force: true });
   });
 
+  it("lists a linked Pi transcript only under the Boring session id", async () => {
+    const boringSessionId = "boring-session";
+    const nativeSessionId = "native-session";
+    const nativePath = join(tmpDir, `2026-06-02_${nativeSessionId}.jsonl`);
+    const boringPath = join(tmpDir, `${boringSessionId}.jsonl`);
+    const nativeLines = [
+      {
+        type: "session",
+        version: 1,
+        id: nativeSessionId,
+        timestamp: "2026-06-02T00:00:01.000Z",
+        cwd: "/workspace",
+      },
+      {
+        type: "message",
+        id: "m-user-1",
+        parentId: null,
+        timestamp: "2026-06-02T00:00:02.000Z",
+        message: { role: "user", content: [{ type: "text", text: "linked prompt" }] },
+      },
+      {
+        type: "message",
+        id: "m-assistant-empty",
+        parentId: "m-user-1",
+        timestamp: "2026-06-02T00:00:03.000Z",
+        message: { role: "assistant", content: [] },
+      },
+    ];
+    const boringLines = [
+      {
+        type: "session",
+        version: 1,
+        id: boringSessionId,
+        timestamp: "2026-06-02T00:00:00.000Z",
+        cwd: "/workspace",
+      },
+      {
+        type: "pi_session_file",
+        timestamp: "2026-06-02T00:00:03.000Z",
+        path: nativePath,
+      },
+    ];
+    await writeFile(nativePath, `${nativeLines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+    await writeFile(boringPath, `${boringLines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+
+    const store = new PiSessionStore("/workspace", tmpDir);
+    const summaries = await store.list(ctx);
+
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toEqual(expect.objectContaining({
+      id: boringSessionId,
+      title: "linked prompt",
+      turnCount: 1,
+    }));
+
+    const detail = await store.load(ctx, boringSessionId);
+    expect(detail.id).toBe(boringSessionId);
+    expect(detail.turnCount).toBe(1);
+    expect(detail.messages.map((message) => message.role)).toEqual(["user"]);
+
+    await store.delete(ctx, boringSessionId);
+    await expect(store.list(ctx)).resolves.toEqual([]);
+  });
+
   it("rebuilds the full transcript from message entries when no ui snapshot exists", async () => {
     const sessionId = "sess-compacted-no-snapshot";
     const filepath = join(tmpDir, `${sessionId}.jsonl`);
