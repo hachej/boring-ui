@@ -259,10 +259,7 @@ export function HtmlViewer({ path, className }: HtmlViewerProps) {
 
   return (
     <div className={cn("flex h-full min-h-0 flex-col bg-background", className)}>
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/60 px-3 py-2">
-        <div className="min-w-0 truncate text-xs font-medium text-muted-foreground" title={path}>
-          {filename(path)}
-        </div>
+      <div className="flex shrink-0 items-center justify-end gap-3 border-b border-border/60 px-3 py-2">
         <div className="flex items-center gap-1">
           <IconButton
             type="button"
