@@ -20,10 +20,11 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fastify/compress": "^8.3.1",
+    "@fastify/static": "^9.1.1",
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
-    "@fastify/static": "^9.1.1",
     "@vitejs/plugin-react": "^4.0.0",
     "fastify": "^5.4.0",
     "lucide-react": "^1.8.0",

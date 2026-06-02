@@ -50,6 +50,12 @@ export interface WorkspaceProvisioningExecResult {
   stderr?: string
 }
 
+export interface ResolveInstallSourceOpts {
+  kind: 'node' | 'python'
+  id: string
+  fingerprint: string
+}
+
 export interface WorkspaceProvisioningAdapter {
   mode: 'direct' | 'local' | 'vercel-sandbox'
 
@@ -59,11 +65,7 @@ export interface WorkspaceProvisioningAdapter {
     timeoutMs?: number
   }): Promise<WorkspaceProvisioningExecResult | void>
 
-  resolveInstallSource(source: string | URL, opts: {
-    kind: 'node' | 'python'
-    id: string
-    fingerprint: string
-  }): Promise<string>
+  resolveInstallSource(source: string | URL, opts: ResolveInstallSourceOpts): Promise<string>
 
   workspaceFs: {
     exists(workspaceRelativePath: string): Promise<boolean>
