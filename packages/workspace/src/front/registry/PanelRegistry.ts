@@ -2,6 +2,20 @@ import { Suspense, createElement, lazy, useMemo, useSyncExternalStore, type Comp
 import type { PanelConfig, PanelRegistration } from "./types"
 import { PluginErrorBoundary } from "../plugin/PluginErrorBoundary"
 
+export function panelSelfTestAttributes(args: {
+  pluginId: string
+  panelId: string
+  panelInstanceId?: string
+  pluginRevision?: number
+}): Record<string, string> {
+  return {
+    "data-boring-plugin-id": args.pluginId,
+    "data-boring-panel-component-id": args.panelId,
+    ...(args.panelInstanceId ? { "data-boring-panel-instance-id": args.panelInstanceId } : {}),
+    ...(args.pluginRevision !== undefined ? { "data-boring-plugin-revision": String(args.pluginRevision) } : {}),
+  }
+}
+
 export class PanelRegistry {
   private panels = new Map<string, PanelConfig>()
   private registrationOrder: string[] = []
@@ -155,24 +169,36 @@ export class PanelRegistry {
         return current.component as ComponentType<any>
       }, [current?.component, current?.lazy, current?.requiresCapabilities, gen])
       const pluginId = current?.pluginId ?? current?.id ?? panelId
+      const pluginRevision = current?.pluginRevision
+      const panelInstanceId = typeof props?.api?.id === "string" ? props.api.id : undefined
       return createElement(
-        PluginErrorBoundary,
+        "div",
         {
-          pluginId,
-          contributionKind: "panel" as const,
-          contributionId: panelId,
-          children: createElement(
-            Suspense,
-            {
-              fallback: createElement(
-                "div",
-                { className: "flex h-full items-center justify-center text-sm text-muted-foreground" },
-                "Loading…",
-              ),
-              children: createElement(Inner, props),
-            },
-          ),
+          className: "h-full min-h-0",
+          ...panelSelfTestAttributes({ pluginId, panelId, panelInstanceId, pluginRevision }),
         },
+        createElement(
+          PluginErrorBoundary,
+          {
+            pluginId,
+            contributionKind: "panel" as const,
+            contributionId: panelId,
+            children: createElement(
+              Suspense,
+              {
+                fallback: createElement(
+                  "div",
+                  {
+                    className: "flex h-full items-center justify-center text-sm text-muted-foreground",
+                    "data-boring-plugin-suspense-fallback": "true",
+                  },
+                  "Loading…",
+                ),
+                children: createElement(Inner, props),
+              },
+            ),
+          },
+        ),
       )
     }
     this.wrapperComponentCache.set(panelId, WrappedPanel)

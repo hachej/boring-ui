@@ -28,6 +28,7 @@
     "@vitejs/plugin-react": "^4.0.0",
     "fastify": "^5.4.0",
     "lucide-react": "^1.8.0",
+    "playwright": "^1.59.1",
     "typescript": "^5.8.3",
     "vite": "^6.0.0"
   },

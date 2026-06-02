@@ -48,6 +48,8 @@ export interface PanelConfig<T = any> {
   /** Source: "builtin" | "app" */
   source?: string
   pluginId?: string
+  /** Runtime plugin revision for hot-loaded plugin panels. Static panels omit it. */
+  pluginRevision?: number
   /**
    * Whether to wrap the component with React.lazy + Suspense. Omit to let
    * the registry auto-detect: zero-arg functions (factories) are treated as

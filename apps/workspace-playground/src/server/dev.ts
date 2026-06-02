@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node:fs"
-import { dirname, resolve } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 
 export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
@@ -38,6 +38,7 @@ export async function startPlaygroundServer(): Promise<void> {
   agentBoot = (async () => {
     const workspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT ?? WORKSPACE_DIR
     seedWorkspaceFromFixtures(workspaceRoot)
+    const selfTestUrl = `http://127.0.0.1:${VITE_PORT}`
     console.log(`[workspace-playground] workspace root: ${workspaceRoot}`)
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
@@ -49,6 +50,10 @@ export async function startPlaygroundServer(): Promise<void> {
       // entry through the standard load process (asset manager scan,
       // SSE event, front dynamic-import, jiti reload).
       appPackageJsonPath: resolve(APP_ROOT, "package.json"),
+      runtimeEnv: {
+        BORING_UI_SELF_TEST_URL: selfTestUrl,
+        PLAYWRIGHT_BROWSERS_PATH: join(workspaceRoot, ".boring-agent", "playwright-browsers"),
+      },
     })
     await app.listen({ port: AGENT_API_PORT, host: "127.0.0.1" })
   })()

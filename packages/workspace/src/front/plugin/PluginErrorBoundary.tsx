@@ -40,11 +40,18 @@ export class PluginErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.error) {
       return (
-        <ErrorChip
-          pluginId={this.props.pluginId}
-          message={this.state.error.message}
-          kind={this.props.contributionKind}
-        />
+        <div
+          data-boring-plugin-error-boundary="true"
+          data-boring-plugin-id={this.props.pluginId}
+          data-boring-contribution-kind={this.props.contributionKind}
+          data-boring-contribution-id={this.props.contributionId}
+        >
+          <ErrorChip
+            pluginId={this.props.pluginId}
+            message={this.state.error.message}
+            kind={this.props.contributionKind}
+          />
+        </div>
       )
     }
     return this.props.children

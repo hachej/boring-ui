@@ -159,6 +159,7 @@ async function captureFrontFactory(pluginId: string, frontUrl: string, revision:
  */
 function buildRegistryPayloads(
   pluginId: string,
+  revision: number,
   captured: CapturedBoringFrontRegistrations,
 ): {
   panels: PanelConfig[]
@@ -175,6 +176,7 @@ function buildRegistryPayloads(
       placement: panel.placement ?? "center",
       source: panel.source ?? "plugin",
       pluginId,
+      pluginRevision: revision,
       ...(panel.icon ? { icon: panel.icon } : {}),
       ...(panel.requiresCapabilities ? { requiresCapabilities: panel.requiresCapabilities } : {}),
       ...(panel.essential !== undefined ? { essential: panel.essential } : {}),
@@ -190,6 +192,7 @@ function buildRegistryPayloads(
       placement: "left-tab",
       source: tab.source ?? "plugin",
       pluginId,
+      pluginRevision: revision,
       ...(tab.icon ? { icon: tab.icon } : {}),
       ...(tab.requiresCapabilities ? { requiresCapabilities: tab.requiresCapabilities } : {}),
       ...(tab.lazy !== undefined ? { lazy: tab.lazy } : {}),
@@ -291,6 +294,7 @@ function assertNoOutputCollisions(
 
 function commitCapturedFrontFactory(
   pluginId: string,
+  revision: number,
   captured: CapturedBoringFrontRegistrations,
   registries: ReturnType<typeof getRegistries>,
 ): void {
@@ -301,7 +305,7 @@ function commitCapturedFrontFactory(
     // existing static or previously-loaded registrations.
     throw new Error(`PLUGIN_UNSUPPORTED_DYNAMIC_CONTRIBUTIONS: plugin "${pluginId}" registered provider/binding outputs that require an app restart`)
   }
-  const payloads = buildRegistryPayloads(pluginId, captured)
+  const payloads = buildRegistryPayloads(pluginId, revision, captured)
   assertNoOutputCollisions(pluginId, payloads, registries)
   registries.panels.replaceByPluginId(pluginId, payloads.panels)
   registries.commands.replaceByPluginId(pluginId, payloads.commands)
@@ -389,7 +393,7 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           // Subscribers (including DockView) see exactly one
           // transition — never an intermediate empty state.
           try {
-            commitCapturedFrontFactory(event.id, captured, registries)
+            commitCapturedFrontFactory(event.id, event.revision, captured, registries)
           } catch (error) {
             throw {
               stage: "register",

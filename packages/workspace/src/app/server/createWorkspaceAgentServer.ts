@@ -142,6 +142,8 @@ export interface CreateWorkspaceAgentServerOptions
   additionalBoringPluginDirs?: string[]
   /** Optional host-owned front-target override for boring plugin list/event payloads. */
   boringPluginFrontTargetResolver?: BoringPluginFrontTargetResolver
+  /** Extra host-provided env vars for provisioned agent/runtime commands. */
+  runtimeEnv?: Record<string, string>
   /** Preserve legacy `/@fs/...` frontUrl payloads alongside frontTarget. Defaults to true. */
   boringPluginIncludeLegacyFrontUrl?: boolean
 }
@@ -159,7 +161,25 @@ function boringPiRootVisibleToAgentTools(workspaceRoot: string, resolvedMode: st
   return "/workspace/.boring-agent/node/node_modules/@hachej/boring-pi"
 }
 
+const RESERVED_RUNTIME_ENV_KEYS = new Set([
+  "BORING_AGENT_WORKSPACE_ROOT",
+  "VIRTUAL_ENV",
+  "HOME",
+  "PYTHONHOME",
+  "PATH",
+  "UV_CACHE_DIR",
+  "PIP_CACHE_DIR",
+  "npm_config_cache",
+])
 
+function validateRuntimeEnv(env: Record<string, string> | undefined): Record<string, string> | undefined {
+  if (!env) return undefined
+  const reserved = Object.keys(env).filter((key) => RESERVED_RUNTIME_ENV_KEYS.has(key))
+  if (reserved.length > 0) {
+    throw new Error(`runtimeEnv cannot override reserved runtime keys: ${reserved.join(", ")}`)
+  }
+  return env
+}
 
 function resolveWorkspacePackageRoot(): string {
   const candidates = [
@@ -679,6 +699,7 @@ export async function createWorkspaceAgentServer(
       env: {
         ...provisioned.env,
         BORING_AGENT_WORKSPACE_LOCAL_PLUGIN_ROOTS: workspaceFsCapability === "strong" ? "1" : "0",
+        ...(validateRuntimeEnv(opts.runtimeEnv) ?? {}),
       },
     } : currentRuntimeProvisioning
     return currentRuntimeProvisioning

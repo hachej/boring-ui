@@ -143,6 +143,7 @@ export async function provisionCliWorkspaceRuntime(opts: {
   adapter?: WorkspaceProvisioningAdapter
   modeAdapter?: Pick<RuntimeModeAdapter, "createProvisioningAdapter">
   runtimeLayout?: BoringAgentRuntimePaths
+  selfTestUrl?: string
 }): Promise<WorkspaceProvisioningResult | undefined> {
   if (opts.provisionWorkspace === false) return undefined
   const agent = await import("@hachej/boring-agent/server")
@@ -163,6 +164,8 @@ export async function provisionCliWorkspaceRuntime(opts: {
     env: {
       ...result.env,
       BORING_AGENT_WORKSPACE_LOCAL_PLUGIN_ROOTS: opts.mode === "direct" || opts.mode === "local" ? "1" : "0",
+      PLAYWRIGHT_BROWSERS_PATH: join(result.env.BORING_AGENT_WORKSPACE_ROOT ?? runtimeLayout.workspaceRoot, ".boring-agent", "playwright-browsers"),
+      ...(opts.selfTestUrl ? { BORING_UI_SELF_TEST_URL: opts.selfTestUrl } : {}),
     },
   }
 }
@@ -206,6 +209,8 @@ const HELP_TEXT = [
   "                                       Scaffold a hot-reloadable plugin",
   "  boring-ui verify-plugin [name] [workspace]",
   "                                       Validate plugin manifests/files",
+  "  boring-ui test-plugin <name> [--url <url>]",
+  "                                       Headlessly reload and render-test a plugin panel",
   "",
   "Options:",
   "  -p, --port <port>       HTTP port (default: 5200)",
@@ -383,6 +388,7 @@ export async function createFolderModeApp(opts: {
   mode: RuntimeMode
   projectName?: string
   provisionWorkspace?: boolean
+  selfTestUrl?: string
 }): Promise<FastifyInstance> {
   const workspaceRoot = resolve(opts.workspaceRoot)
   const projectName = opts.projectName ?? (basename(workspaceRoot) || "workspace")
@@ -399,6 +405,7 @@ export async function createFolderModeApp(opts: {
     mode: opts.mode,
     provisionWorkspace: opts.provisionWorkspace,
     plugins: readWorkspacePluginPackageRuntimePlugins(resolveCliBoringPluginDirs(workspaceRoot)),
+    selfTestUrl: opts.selfTestUrl,
   })
   const app = await createWorkspaceAgentServer({
     workspaceRoot,
@@ -466,6 +473,7 @@ async function startFolderMode(opts: {
   const modelCount = await checkAuth()
 
   const url = `http://localhost:${opts.port}`
+  const selfTestUrl = `http://127.0.0.1:${opts.port}`
   console.log(`\n${projectName}`)
   console.log(`  workspace  ${workspaceRoot}`)
   console.log(`  mode       ${opts.cliMode}`)
@@ -478,6 +486,7 @@ async function startFolderMode(opts: {
     workspaceRoot,
     mode: opts.mode,
     projectName,
+    selfTestUrl,
   })
 
   await registerStatic(app as FastifyInstance, opts.publicDir)
@@ -490,6 +499,7 @@ export async function createWorkspacesModeApp(opts: {
   mode: RuntimeMode
   registryPath?: string
   provisionWorkspace?: boolean
+  selfTestUrl?: string
 }): Promise<FastifyInstance> {
   const [workspaceAppServer, workspaceServer, agentServer, fastifyModule, { createPluginFrontRuntimeHost }] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
@@ -656,9 +666,17 @@ export async function createWorkspacesModeApp(opts: {
         adapter: provisioningAdapter,
         runtimeLayout,
         plugins: workspaceAppServer.readWorkspacePluginPackageRuntimePlugins(resolveCliBoringPluginDirs(workspaceRoot)),
+        selfTestUrl: opts.selfTestUrl,
       })
-      runtimeProvisioningByWorkspace.set(workspaceId, provisioned)
-      return provisioned
+      const scopedProvisioning = provisioned ? {
+        ...provisioned,
+        env: {
+          ...provisioned.env,
+          BORING_UI_WORKSPACE_ID: workspaceId,
+        },
+      } : provisioned
+      runtimeProvisioningByWorkspace.set(workspaceId, scopedProvisioning)
+      return scopedProvisioning
     },
     beforeReload: async ({ workspaceId }) => {
       const workspace = await requireWorkspace(workspaceId)
@@ -812,7 +830,8 @@ async function startWorkspacesMode(opts: {
   cliMode: CliMode
   mode: RuntimeMode
 }) {
-  const app = await createWorkspacesModeApp({ mode: opts.mode })
+  const selfTestUrl = `http://127.0.0.1:${opts.port}`
+  const app = await createWorkspacesModeApp({ mode: opts.mode, selfTestUrl })
   const registry = createLocalWorkspaceRegistry()
 
   await registerStatic(app, opts.publicDir)
@@ -1011,6 +1030,10 @@ export async function runCli(options: RunCliOptions): Promise<void> {
       mode: { type: "string", short: "m" },
       name: { type: "string", short: "n" },
       path: { type: "string" as const },
+      url: { type: "string" as const },
+      workspace: { type: "string" as const },
+      "panel-id": { type: "string" as const },
+      "timeout-ms": { type: "string" as const },
       json: { type: "boolean" as const },
       help: { type: "boolean", short: "h" },
     },
@@ -1081,6 +1104,20 @@ export async function runCli(options: RunCliOptions): Promise<void> {
 
   if (positionals[0] === "verify-plugin") {
     await handleVerifyPluginCommand({ positionals })
+    return
+  }
+
+  if (positionals[0] === "test-plugin") {
+    await handleTestPluginCommand({
+      positionals,
+      args: {
+        url: args.url as string | undefined,
+        workspace: args.workspace as string | undefined,
+        panelId: args["panel-id"] as string | undefined,
+        timeoutMs: args["timeout-ms"] as string | undefined,
+        json: args.json === true,
+      },
+    })
     return
   }
 
@@ -1161,6 +1198,34 @@ async function handleVerifyPluginCommand(opts: { positionals: string[] }) {
   }
 }
 
+async function handleTestPluginCommand(opts: {
+  positionals: string[]
+  args: {
+    url?: string
+    workspace?: string
+    panelId?: string
+    timeoutMs?: string
+    json: boolean
+  }
+}) {
+  const name = opts.positionals[1]
+  if (!name) throw new Error("usage: boring-ui test-plugin <name> [--url <local-server-url>] [--workspace <id>] [--panel-id <id>] [--timeout-ms <ms>] [--json]")
+  const timeoutMs = opts.args.timeoutMs === undefined ? undefined : Number(opts.args.timeoutMs)
+  if (timeoutMs !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
+    throw new Error("--timeout-ms must be a positive number")
+  }
+  const { formatSelfTestResult, runPluginSelfTest } = await import("./testPlugin.js")
+  const result = await runPluginSelfTest({
+    pluginId: name,
+    url: opts.args.url,
+    ...(opts.args.workspace ? { workspaceId: opts.args.workspace } : {}),
+    ...(opts.args.panelId ? { panelId: opts.args.panelId } : {}),
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+  })
+  console.log(opts.args.json ? JSON.stringify(result, null, 2) : formatSelfTestResult(result))
+  if (!result.ok) process.exit(1)
+}
+
 async function handleScaffoldPluginCommand(opts: { positionals: string[] }) {
   const name = opts.positionals[1]
   if (!name) {
@@ -1183,7 +1248,8 @@ async function handleScaffoldPluginCommand(opts: { positionals: string[] }) {
   console.log(`  1. edit front/index.tsx for UI panels/commands/resolvers`)
   console.log(`  2. add pi.extensions / skills for hot-reloadable agent behavior`)
   console.log(`  3. bash \`boring-ui verify-plugin\` — confirms manifests + files are valid`)
-  console.log(`  4. ask the user: /reload`)
+  console.log(`  4. if the UI is running, bash \`boring-ui test-plugin <name>\` — catches browser render/import/network failures`)
+  console.log(`  5. ask the user: /reload`)
   console.log("")
   console.log("Advanced server integration:")
   console.log("  boring.server is boot-time/static composition only. It is NOT hot-registered")

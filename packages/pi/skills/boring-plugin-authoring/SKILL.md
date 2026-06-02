@@ -57,7 +57,8 @@ Hot-reloadable agent behavior belongs in `pi.extensions` / `pi.skills` / `pi.sys
 3. Read the generated files with the read tool.
 4. Edit them in place with the edit tool — do **NOT** rewrite from scratch.
 5. Run `boring-ui verify-plugin <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"` via bash. Fix anything it reports and re-run until it returns `OK`.
-6. Tell the user to run `/reload` for front/Pi asset changes. If you added `boring.server`, tell the user the workspace process must be statically composed with that package and restarted.
+6. If the workspace UI is already running, run `boring-ui test-plugin <kebab-name>` via bash. It infers the URL from `BORING_UI_SELF_TEST_URL`, `BORING_UI_URL`, `BORING_WORKSPACE_URL`, `PORT`, then `http://127.0.0.1:5200`; it infers workspaces-mode scope from `BORING_UI_WORKSPACE_ID`, `BORING_WORKSPACE_ID`, or `BORING_AGENT_WORKSPACE_ID`. Pass `--url <url>` / `--workspace <id>` only when inference is wrong. Add `--panel-id <id>` if the plugin's main panel is not `<kebab-name>.panel`. On first run, it may lazily install Playwright Chromium into `.boring-agent/playwright-browsers`. Fix render/import/network failures and re-run until it returns `OK`.
+7. Tell the user to run `/reload` for front/Pi asset changes. If you added `boring.server`, tell the user the workspace process must be statically composed with that package and restarted.
 
 If the scaffold says the plugin already exists, you can read the existing
 files directly and skip the scaffold step.
