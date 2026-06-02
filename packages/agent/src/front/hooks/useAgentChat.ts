@@ -13,6 +13,64 @@ export type UseAgentChatOptions = Pick<
   hydrateMessages?: boolean
 }
 
+function collapseExactRepeatedText(text: string): string {
+  const maxCopies = Math.min(20, Math.floor(text.length / 8))
+  for (let copies = maxCopies; copies >= 2; copies--) {
+    if (text.length % copies !== 0) continue
+    const unit = text.slice(0, text.length / copies)
+    if (unit.length < 8) continue
+    if (unit.repeat(copies) === text) return unit
+  }
+  return text
+}
+
+function normalizeMessage(message: UIMessage): UIMessage {
+  if (message.role !== 'assistant') return message
+  let changed = false
+  const parts = message.parts?.map((part) => {
+    const candidate = part as Record<string, unknown>
+    if (candidate.type !== 'text' || typeof candidate.text !== 'string') return part
+    const text = collapseExactRepeatedText(candidate.text)
+    if (text === candidate.text) return part
+    changed = true
+    return { ...candidate, text } as typeof part
+  })
+  return changed ? { ...message, parts } : message
+}
+
+function messageContentKey(message: UIMessage): string {
+  const normalized = normalizeMessage(message)
+  return `${normalized.role}:${JSON.stringify(normalized.parts ?? [])}`
+}
+
+function mergeMessages(base: UIMessage[], tail: UIMessage[]): UIMessage[] {
+  const seenIds = new Set<string>()
+  const seenContent = new Set<string>()
+  const merged: UIMessage[] = []
+  for (const rawMessage of [...base, ...tail]) {
+    const message = normalizeMessage(rawMessage)
+    const id = typeof message.id === 'string' ? message.id : undefined
+    const contentKey = messageContentKey(message)
+    if (id) {
+      if (seenIds.has(id)) continue
+      seenIds.add(id)
+    } else {
+      if (seenContent.has(contentKey)) continue
+      seenContent.add(contentKey)
+    }
+    merged.push(message)
+  }
+  return merged
+}
+
+function sameMessageOrder(a: UIMessage[], b: UIMessage[]): boolean {
+  if (a.length !== b.length) return false
+  return a.every((message, index) => {
+    const other = b[index]
+    return message.id === other?.id && JSON.stringify(message.parts ?? []) === JSON.stringify(other?.parts ?? [])
+  })
+}
+
 export function useAgentChat(opts: UseAgentChatOptions) {
   const { sessionId } = opts
   const hydrateMessages = opts.hydrateMessages ?? true
@@ -61,26 +119,39 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   // cached history before hydration has a chance to restore it.
   const setMessages = chat.setMessages
   const cacheKey = sessionId ? `boring-agent:messages:${sessionId}` : null
-  const [hydrated, setHydrated] = useState(false)
+  const [hydratedKey, setHydratedKey] = useState<string | null>(null)
+  const hydrated = !hydrateMessages || !sessionId || !cacheKey || hydratedKey === cacheKey
 
   useEffect(() => {
     if (!sessionId || !cacheKey) return
     if (!hydrateMessages) {
-      setHydrated(true)
+      setHydratedKey(cacheKey)
       return
     }
     let aborted = false
-    setHydrated(false)
+    setHydratedKey(null)
 
-    const loadFromCache = () => {
+    const readCachedMessages = (): UIMessage[] => {
       try {
         const cached = globalThis.localStorage?.getItem(cacheKey)
-        if (!cached) return
+        if (!cached) return []
         const parsed = JSON.parse(cached)
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setMessages(parsed as UIMessage[])
-        }
-      } catch { /* ignore parse errors */ }
+        return Array.isArray(parsed) ? parsed as UIMessage[] : []
+      } catch {
+        return []
+      }
+    }
+
+    const hydrateMerged = (serverMessages: UIMessage[], cachedMessages: UIMessage[]) => {
+      const current = messagesRef.current
+      const fromServerAndCache = mergeMessages(serverMessages, cachedMessages)
+      const next = current.length > 0 ? mergeMessages(fromServerAndCache, current) : fromServerAndCache
+      if (next.length > 0) setMessages(next)
+    }
+
+    const loadFromCache = () => {
+      const cachedMessages = readCachedMessages()
+      if (cachedMessages.length > 0) hydrateMerged([], cachedMessages)
     }
 
     const fetchOpts = optsRef.current.requestHeaders
@@ -92,21 +163,20 @@ export function useAgentChat(opts: UseAgentChatOptions) {
       .then((res) => (res.ok ? res.json() : null))
       .then((payload: { messages?: UIMessage[] } | null) => {
         if (aborted) return
-        const localTurnStarted = statusRef.current === 'submitted' || statusRef.current === 'streaming' || messagesRef.current.length > 0
         const serverMessages = payload?.messages
+        const cachedMessages = readCachedMessages()
         if (Array.isArray(serverMessages) && serverMessages.length > 0) {
-          if (!localTurnStarted) setMessages(serverMessages)
+          hydrateMerged(serverMessages, cachedMessages)
           return
         }
-        if (!localTurnStarted) loadFromCache()
+        if (cachedMessages.length > 0) hydrateMerged([], cachedMessages)
       })
       .catch(() => {
         if (aborted) return
-        const localTurnStarted = statusRef.current === 'submitted' || statusRef.current === 'streaming' || messagesRef.current.length > 0
-        if (!localTurnStarted) loadFromCache()
+        loadFromCache()
       })
       .finally(() => {
-        if (!aborted) setHydrated(true)
+        if (!aborted) setHydratedKey(cacheKey)
       })
 
     return () => { aborted = true }
@@ -123,6 +193,12 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   const statusRef = useRef(status)
   messagesRef.current = messages
   statusRef.current = status
+  useEffect(() => {
+    if (messages.length === 0) return
+    const deduped = mergeMessages([], messages)
+    if (!sameMessageOrder(messages, deduped)) setMessages(deduped)
+  }, [messages, setMessages])
+
   useEffect(() => {
     if (opts.persistMessages === false) return
     if (!hydrated || !cacheKey) return
@@ -206,5 +282,5 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     }).catch(() => { /* best-effort, ignore failures */ })
   }, [opts.persistMessages, sessionId, status, messages])
 
-  return chat
+  return { ...chat, hydrated, hydratingMessages: hydrateMessages && Boolean(sessionId) && !hydrated }
 }

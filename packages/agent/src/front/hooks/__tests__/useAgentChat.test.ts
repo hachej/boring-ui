@@ -164,6 +164,12 @@ describe('useAgentChat', () => {
     expect(result).toHaveProperty('stop')
   })
 
+  test('marks the current session as hydrating until its own history load completes', () => {
+    const result = useAgentChat({ sessionId: 'sess-1' })
+
+    expect(result.hydratingMessages).toBe(true)
+  })
+
   test('passes transport instance to useChat', () => {
     useAgentChat({ sessionId: 'sess-1' })
 
@@ -236,7 +242,44 @@ describe('useAgentChat', () => {
     expect(mockSetMessages).toHaveBeenCalledWith(hydratedMessages)
   })
 
-  test('does not let late hydration overwrite an in-flight local turn', async () => {
+  test('merges cached in-flight user message with stale server history on reload', async () => {
+    const serverOld = { id: 'server-old', role: 'assistant', parts: [{ type: 'text', text: 'old server state' }] }
+    const cachedLocalUser = { id: 'local-u1', role: 'user', parts: [{ type: 'text', text: 'new message while running' }] }
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ messages: [serverOld] }),
+    })
+    mockStorageGetItem.mockReturnValueOnce(JSON.stringify([serverOld, cachedLocalUser]))
+
+    useAgentChat({ sessionId: 'sess-running-reload' })
+    await flushPromises()
+
+    expect(mockFetch).toHaveBeenCalledWith('/api/v1/agent/chat/sess-running-reload/messages')
+    expect(mockStorageGetItem).toHaveBeenCalledWith('boring-agent:messages:sess-running-reload')
+    expect(mockSetMessages).toHaveBeenCalledWith([serverOld, cachedLocalUser])
+  })
+
+  test('does not collapse repeated user messages with distinct ids', async () => {
+    vi.mocked(useChat).mockReturnValueOnce({
+      id: 'mock-chat',
+      messages: [
+        { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'retry this' }] },
+        { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'retry this' }] },
+      ],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: undefined,
+      stop: vi.fn(),
+      setMessages: mockSetMessages,
+    } as unknown as ReturnType<typeof useChat>)
+
+    useAgentChat({ sessionId: 'sess-repeat', hydrateMessages: false })
+    await flushPromises()
+
+    expect(mockSetMessages).not.toHaveBeenCalled()
+  })
+
+  test('merges late hydration with an in-flight local turn', async () => {
     vi.mocked(useChat).mockReturnValueOnce({
       id: 'mock-chat',
       messages: [{ id: 'local-u1', role: 'user', parts: [{ type: 'text', text: 'new draft' }] }],
@@ -257,6 +300,9 @@ describe('useAgentChat', () => {
     await flushPromises()
 
     expect(mockFetch).toHaveBeenCalledWith('/api/v1/agent/chat/sess-race/messages')
-    expect(mockSetMessages).not.toHaveBeenCalled()
+    expect(mockSetMessages).toHaveBeenCalledWith([
+      { id: 'server-old', role: 'assistant', parts: [{ type: 'text', text: 'old server state' }] },
+      { id: 'local-u1', role: 'user', parts: [{ type: 'text', text: 'new draft' }] },
+    ])
   })
 })

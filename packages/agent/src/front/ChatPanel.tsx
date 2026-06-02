@@ -479,7 +479,7 @@ export function ChatPanel(props: ChatPanelProps) {
   }, [sessionId])
 
   const {
-    messages, sendMessage, setMessages, status, error, stop, clearError,
+    messages, sendMessage, setMessages, status, error, stop, clearError, hydratingMessages,
   } = useAgentChat({
     sessionId,
     onData: (part) => {
@@ -727,7 +727,7 @@ export function ChatPanel(props: ChatPanelProps) {
   const renderMessages = displayMessages.filter((message) => (
     message.role !== 'assistant' || hasVisibleMessageContent(message)
   ))
-  const emptyHero = emptyPlacement === 'hero' && renderMessages.length === 0
+  const emptyHero = emptyPlacement === 'hero' && renderMessages.length === 0 && !hydratingMessages
 
   // Stop button: cancels stream, clears the queued follow-up, and lets host UI
   // cancel any host-level blocker that is waiting for user attention.
@@ -1046,7 +1046,13 @@ export function ChatPanel(props: ChatPanelProps) {
           chrome ? "max-w-3xl px-6 py-8" : "max-w-[680px] px-4 py-4",
           emptyHero && "py-4 text-center",
         )}>
-          {renderMessages.length === 0 && (
+          {renderMessages.length === 0 && hydratingMessages && (
+            <div className="flex items-center gap-2 rounded-xl border border-border bg-card/70 px-4 py-3 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Restoring chat…
+            </div>
+          )}
+          {renderMessages.length === 0 && !hydratingMessages && (
             <ChatEmptyState
               eyebrow={emptyState?.eyebrow}
               title={emptyState?.title}

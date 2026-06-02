@@ -407,6 +407,78 @@ describe("WorkspaceAgentFront", () => {
     resolveWorkspaceBTree?.(new Response(JSON.stringify({ entries: [] }), { status: 200 }))
   })
 
+  it("uses the workspace's persisted active chat while session list refreshes", async () => {
+    localStorage.setItem("boring-workspace:sessions:workspace-b", "persisted-workspace-b")
+    let workspaceBLoading = true
+    const useSessions = ({ requestHeaders }: { requestHeaders: Record<string, string> }) => {
+      const workspaceId = requestHeaders["x-boring-workspace-id"]
+      if (workspaceId === "workspace-b" && workspaceBLoading) {
+        const staleWorkspaceASession = { id: "session-workspace-a", title: "Stale workspace A" }
+        return {
+          sessions: [staleWorkspaceASession],
+          loading: true,
+          activeSessionId: staleWorkspaceASession.id,
+          activeSession: staleWorkspaceASession,
+          switch: vi.fn(),
+          create: vi.fn(),
+          delete: vi.fn(),
+        }
+      }
+      const session = { id: `session-${workspaceId}`, title: `Session ${workspaceId}` }
+      return {
+        sessions: [session],
+        loading: false,
+        activeSessionId: session.id,
+        activeSession: session,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+    const SessionChatPanel = (props: WorkspaceChatPanelProps) => <div>Chat session {props.sessionId}</div>
+
+    const { rerender } = render(
+      <WorkspaceAgentFront
+        workspaceId="workspace-a"
+        requestHeaders={{ "x-boring-workspace-id": "workspace-a" }}
+        chatPanel={SessionChatPanel}
+        useSessions={useSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(await screen.findByText("Chat session session-workspace-a")).toBeInTheDocument()
+
+    rerender(
+      <WorkspaceAgentFront
+        workspaceId="workspace-b"
+        requestHeaders={{ "x-boring-workspace-id": "workspace-b" }}
+        chatPanel={SessionChatPanel}
+        useSessions={useSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(screen.getByText("Chat session persisted-workspace-b")).toBeInTheDocument()
+    expect(screen.queryByText("No sessions yet.")).not.toBeInTheDocument()
+    expect(screen.queryByText("Stale workspace A")).not.toBeInTheDocument()
+
+    workspaceBLoading = false
+    rerender(
+      <WorkspaceAgentFront
+        workspaceId="workspace-b"
+        requestHeaders={{ "x-boring-workspace-id": "workspace-b" }}
+        chatPanel={SessionChatPanel}
+        useSessions={useSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Chat session session-workspace-b")).toBeInTheDocument()
+    })
+  })
+
   it("does not expose stale sessions when session refresh fails after workspace switch", async () => {
     let resolveWorkspaceBTree: ((response: Response) => void) | undefined
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -738,7 +810,7 @@ describe("WorkspaceAgentFront", () => {
     // session-browser row). Against the pre-fix latched-error behavior the chat
     // stays empty: the TopBar shows the "New session" fallback and no row exists,
     // so zero "Existing" elements are found and this fails.
-    await user.click(screen.getByRole("button", { name: "Sessions" }))
+    await user.click(await screen.findByRole("button", { name: "Sessions" }, { timeout: 4000 }))
     await waitFor(() => {
       expect(screen.getAllByText("Existing").length).toBeGreaterThan(0)
     }, { timeout: 4000 })
@@ -774,6 +846,6 @@ describe("WorkspaceAgentFront", () => {
 
     await waitFor(() => {
       expect(createSession).toHaveBeenCalledWith({ title: "Fresh session" })
-    })
+    }, { timeout: 3000 })
   })
 })

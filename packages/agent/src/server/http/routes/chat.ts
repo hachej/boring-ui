@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { createUIMessageStream, pipeUIMessageStreamToResponse } from '../sse'
 import type { UIMessageChunk } from '../sse'
 import type { AgentHarness, RunContext } from '../../../shared/harness'
-import type { SessionCtx } from '../../../shared/session'
+import type { SessionCtx, SessionStore } from '../../../shared/session'
 import type { UIMessage } from '../../../shared/message'
 import { ErrorCode } from '../../../shared/error-codes'
 import { noopTelemetry, safeCapture, type TelemetrySink } from '../../../shared/telemetry'
@@ -57,10 +57,12 @@ type ChatBody = z.infer<typeof chatBodySchema>
 export interface ChatRouteOptions {
   harness?: AgentHarness
   workdir?: string
+  sessionStore?: SessionStore
   getRuntime?: (request: FastifyRequest) => Promise<{
     harness: AgentHarness
     workdir: string
   }>
+  getSessionStore?: (request: FastifyRequest) => Promise<SessionStore>
   sessionChangesTracker?: SessionChangesTracker
   telemetry?: TelemetrySink
 }
@@ -130,6 +132,13 @@ export function chatRoutes(
       return { harness: opts.harness, workdir: opts.workdir }
     }
     throw new Error('chat route requires harness/workdir or getRuntime')
+  }
+
+  async function resolveSessionStore(request: FastifyRequest): Promise<SessionStore> {
+    if (opts.getSessionStore) return await opts.getSessionStore(request)
+    if (opts.sessionStore) return opts.sessionStore
+    const runtime = await resolveRuntime(request)
+    return runtime.harness.sessions as unknown as SessionStore
   }
 
   app.post(
@@ -364,8 +373,8 @@ export function chatRoutes(
         workspaceId: request.workspaceContext?.workspaceId ?? 'default',
       }
       try {
-        const runtime = await resolveRuntime(request)
-        const detail = await runtime.harness.sessions.load(ctx, sessionId)
+        const store = await resolveSessionStore(request)
+        const detail = await store.load(ctx, sessionId)
         const messages = Array.isArray(detail?.messages) ? detail.messages : []
         return reply.code(200).send({ messages })
       } catch {
@@ -478,9 +487,9 @@ export function chatRoutes(
         workspaceId: request.workspaceContext?.workspaceId ?? 'default',
       }
       try {
-        const runtime = await resolveRuntime(request)
-        if (runtime.harness.sessions.saveMessages) {
-          await runtime.harness.sessions.saveMessages(ctx, sessionId, projectPiDataMessages(body.messages))
+        const store = await resolveSessionStore(request)
+        if (store.saveMessages) {
+          await store.saveMessages(ctx, sessionId, projectPiDataMessages(body.messages))
         }
         return reply.code(204).send()
       } catch {

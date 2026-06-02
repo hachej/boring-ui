@@ -193,6 +193,7 @@ export async function createAgentApp(
   await app.register(chatRoutes, {
     harness,
     workdir: runtimeBundle.workspace.root,
+    sessionStore: harness.sessions as unknown as SessionStore,
     sessionChangesTracker,
     telemetry: opts.telemetry,
   })
