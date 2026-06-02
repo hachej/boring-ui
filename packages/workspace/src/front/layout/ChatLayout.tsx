@@ -277,6 +277,19 @@ export function ChatLayout(props: ChatLayoutProps) {
     }
   }, [blockers.length, chatCollapsed, setChatCollapsed])
 
+  // Switching to a different session re-opens the chat if it was collapsed, so
+  // the newly selected conversation is visible. Skips the initial mount (only
+  // reacts to an actual change of the active session id).
+  const activeSessionId = props.centerParams?.sessionId as string | undefined
+  const prevSessionIdRef = useRef(activeSessionId)
+  useEffect(() => {
+    const prev = prevSessionIdRef.current
+    prevSessionIdRef.current = activeSessionId
+    if (prev !== undefined && activeSessionId !== undefined && activeSessionId !== prev && chatCollapsed) {
+      setChatCollapsed(false)
+    }
+  }, [activeSessionId, chatCollapsed, setChatCollapsed])
+
   return (
     <div
       data-boring-workspace=""
@@ -332,21 +345,27 @@ export function ChatLayout(props: ChatLayoutProps) {
               : "flex-1 border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
           )}
         >
+          <div
+            className={cn(
+              "h-full min-h-0 overflow-hidden",
+              "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+              chatCollapsed ? "opacity-0" : "opacity-100",
+            )}
+          >
+            <PanelSlot id={centerId} params={props.centerParams} />
+          </div>
           {!chatCollapsed ? (
-            <>
-              <PanelSlot id={centerId} params={props.centerParams} />
-              <IconButton
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                onClick={toggleChatCollapsed}
-                className="absolute right-2 top-2 z-20"
-                aria-label="Collapse chat"
-                title="Collapse chat (⌘\\)"
-              >
-                <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
-              </IconButton>
-            </>
+            <IconButton
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              onClick={toggleChatCollapsed}
+              className="absolute right-2 top-2 z-20"
+              aria-label="Collapse chat"
+              title="Collapse chat (⌘\\)"
+            >
+              <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
+            </IconButton>
           ) : null}
         </main>
 
@@ -427,7 +446,9 @@ export function ChatLayout(props: ChatLayoutProps) {
             onClick={toggleChatCollapsed}
             label="Expand chat"
             hint="⌘\\"
-            stackIndex={!navOpen && props.onOpenNav ? 1 : 0}
+            // Fixed slot above the Sessions button so it doesn't shift when the
+            // session drawer opens/closes (the Sessions button comes/goes).
+            stackIndex={1}
             pulse={chatRailPulse || blockers.length > 0}
           />
         ) : null}
