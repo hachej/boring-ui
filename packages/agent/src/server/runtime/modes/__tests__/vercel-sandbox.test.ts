@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { lstat, mkdir, mkdtemp, readlink, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test, vi } from 'vitest'
@@ -16,7 +17,7 @@ import {
 import type { PeriodicSnapshotScheduler } from '../../../sandbox/vercel-sandbox/periodicSnapshot'
 import { createMockVercelSandboxHarness } from '../../../workspace/__tests__/helpers/mockVercelSandbox'
 import { getBoringAgentRuntimePaths } from '../../../workspace/runtimeLayout'
-import { createVercelSandboxModeAdapter } from '../vercel-sandbox'
+import { buildWorkspaceRootSetupScript, createVercelSandboxModeAdapter } from '../vercel-sandbox'
 
 const decoder = new TextDecoder()
 
@@ -503,4 +504,40 @@ test('mode seeds template files into an existing persistent sandbox', async () =
   } finally {
     await harness.cleanup()
   }
+})
+
+test('buildWorkspaceRootSetupScript leaves the root a real dir when remote and workspace paths match', async () => {
+  const base = await mkdtemp(join(tmpdir(), 'boring-ws-root-'))
+  const root = join(base, 'workspace')
+
+  execFileSync('sh', ['-c', buildWorkspaceRootSetupScript(root, root)])
+
+  // No self-referential symlink: the root is a plain directory.
+  expect((await lstat(root)).isDirectory()).toBe(true)
+  expect((await lstat(root)).isSymbolicLink()).toBe(false)
+})
+
+test('buildWorkspaceRootSetupScript clears a stale self-symlink and recreates a real dir', async () => {
+  const base = await mkdtemp(join(tmpdir(), 'boring-ws-root-'))
+  const remote = join(base, 'remote')
+  const root = join(base, 'workspace')
+  // Simulate the broken state left by the old command: a symlink at the root.
+  await mkdir(remote, { recursive: true })
+  await symlink(remote, root)
+
+  execFileSync('sh', ['-c', buildWorkspaceRootSetupScript(root, root)])
+
+  expect((await lstat(root)).isSymbolicLink()).toBe(false)
+  expect((await lstat(root)).isDirectory()).toBe(true)
+})
+
+test('buildWorkspaceRootSetupScript symlinks the workspace to a distinct remote root', async () => {
+  const base = await mkdtemp(join(tmpdir(), 'boring-ws-root-'))
+  const remote = join(base, 'remote')
+  const root = join(base, 'workspace')
+
+  execFileSync('sh', ['-c', buildWorkspaceRootSetupScript(remote, root)])
+
+  expect((await lstat(root)).isSymbolicLink()).toBe(true)
+  expect(await readlink(root)).toBe(remote)
 })
