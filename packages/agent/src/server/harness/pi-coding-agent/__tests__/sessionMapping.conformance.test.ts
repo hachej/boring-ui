@@ -102,6 +102,32 @@ describe("Pi SessionEntry → UIMessage conformance", () => {
     expect(writeTool.errorText).toContain("permission denied");
   });
 
+  // Regression: reloading the browser used to visually duplicate chat history
+  // because reconstructed UIMessage ids were generated with randomUUID(), so
+  // every GET /messages returned identical content with fresh ids. The client
+  // dedups by id, so unstable ids defeated dedup and the history stacked on
+  // each reload. Reconstructed ids must be DETERMINISTIC across loads.
+  it("PiSessionStore.load() returns stable message ids across repeated loads", async () => {
+    await cp(
+      FIXTURE_PATH,
+      join(tmpDir, "fixture-session-001.jsonl"),
+    );
+
+    const store = new PiSessionStore("/tmp/test-workspace", tmpDir);
+    const first = await store.load({ workspaceId: "test" }, "fixture-session-001");
+    const second = await store.load({ workspaceId: "test" }, "fixture-session-001");
+
+    const firstIds = first.messages.map((m) => m.id);
+    const secondIds = second.messages.map((m) => m.id);
+
+    // Sanity: there are real reconstructed messages to compare.
+    expect(firstIds.length).toBeGreaterThan(0);
+    // Ids must be identical between the two independent loads.
+    expect(secondIds).toEqual(firstIds);
+    // And every id must be defined/non-empty (no accidental undefined).
+    expect(firstIds.every((id) => typeof id === "string" && id.length > 0)).toBe(true);
+  });
+
   it("stream adapter handles all pi event types without crashing", () => {
     const eventTypes: Array<[string, AgentSessionEvent]> = [
       [

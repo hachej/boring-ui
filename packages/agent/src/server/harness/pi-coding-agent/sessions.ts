@@ -152,6 +152,7 @@ export class PiSessionStore implements SessionStore {
       sessionEntries
         .filter((entry): entry is SessionMessageEntry => entry.type === "message")
         .map((entry) => entry.message),
+      sessionId,
     );
 
     const title = extractTitle(sessionEntries) ?? "New session";
@@ -383,7 +384,24 @@ function safeParseEntries(
   }
 }
 
-function piMessagesToUIMessages(messages: unknown[]): UIMessage[] {
+// Reconstructed message ids must be DETERMINISTIC across repeated loads of the
+// same session file. If they were random (randomUUID), every GET /messages
+// would return identical content but fresh ids, defeating the client's
+// merge-by-id dedup and causing chat history to visually duplicate/stack on
+// each browser reload. Derive a stable id from the session id + the message's
+// position in the reconstructed list.
+function reconstructedMessageId(
+  sessionId: string | undefined,
+  role: string,
+  index: number,
+): string {
+  return sessionId ? `${sessionId}-${role}-${index}` : `${role}-${index}`;
+}
+
+function piMessagesToUIMessages(
+  messages: unknown[],
+  sessionId?: string,
+): UIMessage[] {
   const result: UIMessage[] = [];
   let currentAssistant: UIMessage | null = null;
 
@@ -406,7 +424,7 @@ function piMessagesToUIMessages(messages: unknown[]): UIMessage[] {
               : "";
 
         result.push({
-          id: randomUUID(),
+          id: reconstructedMessageId(sessionId, "user", result.length),
           role: "user",
           parts: [{ type: "text", text }],
         } as UIMessage);
@@ -448,7 +466,7 @@ function piMessagesToUIMessages(messages: unknown[]): UIMessage[] {
           }
         }
         const uiMsg = {
-          id: randomUUID(),
+          id: reconstructedMessageId(sessionId, "assistant", result.length),
           role: "assistant",
           parts,
         } as UIMessage;
