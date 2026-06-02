@@ -415,8 +415,12 @@ export function ChatLayout(props: ChatLayoutProps) {
             <div
               className={cn(
                 "h-full min-h-0 overflow-hidden",
-                "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+                "transition-[opacity,padding] duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
                 surfaceOpen ? "opacity-100" : "opacity-0",
+                // When the chat is collapsed the workbench fills the full width
+                // and the left-edge "expand chat" float button would sit on top
+                // of the filetree — inset the content to leave a clear gutter.
+                chatCollapsed && surfaceOpen && !navOpen && "pl-14",
               )}
             >
               {props.surfaceOverlay ? (
