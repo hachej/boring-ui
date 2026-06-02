@@ -179,7 +179,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
     expect(contextIdx).toBeLessThan(pluginIdx)
   })
 
-  test("vercel-sandbox omits workspace context even with default app prompts", async () => {
+  test("vercel-sandbox omits workspace context and plugin-authoring guidance", async () => {
     const workspaceRoot = await makeTempDir("boring-wcp-vs-undef-")
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
@@ -188,7 +188,10 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       provisionWorkspace: false,
     })
     await app.close()
-    expect(capturedSystemPromptAppend).toBeDefined()
-    expect(capturedSystemPromptAppend).not.toContain(buildWorkspaceContextPrompt())
+    // Remote sandboxes get neither the local workspace context prompt nor the
+    // plugin-authoring guidance (no plugin creation there), so with no app
+    // plugins the workspace appendix is empty.
+    expect(capturedSystemPromptAppend ?? "").not.toContain(buildWorkspaceContextPrompt())
+    expect(capturedSystemPromptAppend ?? "").not.toContain("boring-ui scaffold-plugin")
   })
 })

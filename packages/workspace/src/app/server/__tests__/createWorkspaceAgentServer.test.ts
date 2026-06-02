@@ -172,7 +172,7 @@ describe("default boring-ui CLI provisioning", () => {
   })
 
   test.each(["direct", "local", "vercel-sandbox"] as const)(
-    "mode %s receives the default CLI provisioning and prompt commands",
+    "mode %s provisions plugin-authoring tooling only for local runtimes (remote sandboxes skip it)",
     async (mode) => {
       const workspaceRoot = await makeTempDir(`boring-cli-${mode}-`)
       let capturedPrompt: string | undefined
@@ -207,13 +207,21 @@ describe("default boring-ui CLI provisioning", () => {
         { plugins: Array<{ id: string; provisioning?: { nodePackages?: unknown[] } }> },
       ]
       const cli = findBoringUiCliContribution(provisionOpts.plugins)
-      expect(cli?.provisioning?.nodePackages).toContainEqual(expect.objectContaining({
-        id: "boring-ui-cli",
-        packageName: "@hachej/boring-ui-cli",
-        expectedBins: ["boring-ui"],
-      }))
-      expect(capturedPrompt).toContain("boring-ui scaffold-plugin")
-      expect(capturedPrompt).toContain("boring-ui verify-plugin")
+      if (mode === "vercel-sandbox") {
+        // Remote sandboxes don't author plugins → no CLI/workspace install and
+        // no `boring-ui scaffold-plugin` guidance.
+        expect(cli).toBeUndefined()
+        expect(capturedPrompt ?? "").not.toContain("boring-ui scaffold-plugin")
+        expect(capturedPrompt ?? "").not.toContain("boring-ui verify-plugin")
+      } else {
+        expect(cli?.provisioning?.nodePackages).toContainEqual(expect.objectContaining({
+          id: "boring-ui-cli",
+          packageName: "@hachej/boring-ui-cli",
+          expectedBins: ["boring-ui"],
+        }))
+        expect(capturedPrompt).toContain("boring-ui scaffold-plugin")
+        expect(capturedPrompt).toContain("boring-ui verify-plugin")
+      }
     },
   )
 

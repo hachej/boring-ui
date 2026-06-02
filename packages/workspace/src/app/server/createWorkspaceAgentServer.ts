@@ -357,6 +357,15 @@ export interface CollectWorkspaceAgentServerPluginsOptions
   workspaceRoot?: string
   systemPromptAppend?: string
   pi?: WorkspaceAgentPiOptions
+  /**
+   * Whether to provision the boring plugin-authoring runtime
+   * (`@hachej/boring-ui-cli` + `@hachej/boring-workspace` + `@hachej/boring-pi`)
+   * into the workspace. Plugin creation is a local-dev feature, so this is
+   * turned OFF for remote-sandbox runtimes (e.g. vercel-sandbox) — installing
+   * the CLI's full dependency tree (~hundreds of MB) into a remote sandbox that
+   * never authors plugins is pure cold-start cost. Defaults to true.
+   */
+  installPluginAuthoring?: boolean
 }
 
 export function buildWorkspaceContextPrompt(): string {
@@ -383,11 +392,18 @@ export function collectWorkspaceAgentServerPlugins(
   const callerPiPackages = opts.pi?.packages ?? []
   const callerExtensionPaths = opts.pi?.extensionPaths ?? []
 
-  const builtinProvisioningContributions = [
-    createWorkspacePackageProvisioningContribution(),
-    createBoringPiPackageProvisioningContribution(),
-    createBoringUiCliPackageProvisioningContribution(),
-  ].filter((entry): entry is WorkspaceProvisioningContribution => Boolean(entry))
+  // Plugin-authoring runtime (CLI + workspace validator + pi authoring skill)
+  // is only provisioned for local runtimes. Remote sandboxes don't author
+  // plugins, so they skip these installs entirely — avoiding the CLI's full
+  // ~hundreds-of-MB dependency tree on every cold workspace boot.
+  const builtinProvisioningContributions = (opts.installPluginAuthoring === false
+    ? []
+    : [
+        createWorkspacePackageProvisioningContribution(),
+        createBoringPiPackageProvisioningContribution(),
+        createBoringUiCliPackageProvisioningContribution(),
+      ]
+  ).filter((entry): entry is WorkspaceProvisioningContribution => Boolean(entry))
 
   return {
     provisioningContributions: [
@@ -586,9 +602,13 @@ export async function createWorkspaceAgentServer(
   const resolvedPlugins = await Promise.all(
     allPluginEntries.map((entry) => resolveOnePluginEntry<WorkspaceServerPlugin>(entry, ctx)),
   )
+  // Remote-sandbox runtimes (vercel-sandbox → "best-effort") don't author
+  // plugins; only local runtimes ("strong") get the plugin-authoring tooling.
+  const installPluginAuthoring = workspaceFsCapability === "strong"
   const pluginCollection = collectWorkspaceAgentServerPlugins({
     ...opts,
     plugins: resolvedPlugins,
+    installPluginAuthoring,
   })
 
   // Note: defaultPluginPackagePaths land in `boringPluginDirs` below.
@@ -602,9 +622,11 @@ export async function createWorkspaceAgentServer(
   // discovered/default plugin packages is snapped once at boot and merged
   // here so production/static hosts keep the same app-default agent context
   // without a dynamic refresh hook.
-  const workspacePackagePiPackage = createBoringPiPackageSource(workspaceRoot)
+  const workspacePackagePiPackage = installPluginAuthoring
+    ? createBoringPiPackageSource(workspaceRoot)
+    : undefined
   const baseStaticPiSkillPaths = [
-    ...resolveBoringPiSkillPaths(workspaceRoot),
+    ...(installPluginAuthoring ? resolveBoringPiSkillPaths(workspaceRoot) : []),
     ...(pluginCollection.agentOptions.pi?.additionalSkillPaths ?? []),
   ]
   const baseStaticPiPackages = [
@@ -707,15 +729,20 @@ export async function createWorkspaceAgentServer(
       // `npx @hachej/boring-ui-cli` here — that would pull the
       // published version, which lags the locally-installed CLI when
       // the agent is iterating in a monorepo. Keep the bin name short.
-      buildBoringSystemPrompt({
-        scaffoldCommand: "boring-ui scaffold-plugin",
-        verifyCommand: "boring-ui verify-plugin",
-        boringPiRootOverride: boringPiRootVisibleToAgentTools(
-          workspaceRoot,
-          resolvedMode,
-          opts.provisionWorkspace !== false,
-        ),
-      }),
+      // Plugin-authoring guidance only when the tooling is actually installed
+      // (local runtimes). Remote sandboxes don't author plugins, so we don't
+      // tell the agent to run `boring-ui scaffold-plugin` (the bin isn't there).
+      installPluginAuthoring
+        ? buildBoringSystemPrompt({
+            scaffoldCommand: "boring-ui scaffold-plugin",
+            verifyCommand: "boring-ui verify-plugin",
+            boringPiRootOverride: boringPiRootVisibleToAgentTools(
+              workspaceRoot,
+              resolvedMode,
+              opts.provisionWorkspace !== false,
+            ),
+          })
+        : undefined,
       pluginCollection.agentOptions.systemPromptAppend,
       staticPluginPackagePiSnapshot.systemPromptAppend,
     ].filter(Boolean).join("\n\n") || undefined,
