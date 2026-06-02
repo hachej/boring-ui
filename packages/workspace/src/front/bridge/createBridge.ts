@@ -23,6 +23,12 @@ type StoreApi = {
 
 type EventHandler = (data: unknown) => void
 
+function panelComponentForPath(path: string): string {
+  const normalized = path.toLowerCase()
+  if (normalized.endsWith(".md") || normalized.endsWith(".mdx")) return "markdown-editor"
+  return "editor"
+}
+
 export function createBridge(store: StoreApi): WorkspaceBridge {
   let seq = 0
   const listeners = new Map<string, Set<EventHandler>>()
@@ -92,7 +98,11 @@ export function createBridge(store: StoreApi): WorkspaceBridge {
       }
 
       state.openFile(path, panelId)
-      state.openPanel({ id: panelId, component: "editor", params: { path, mode } })
+      state.openPanel({
+        id: panelId,
+        component: panelComponentForPath(path),
+        params: { path, mode },
+      })
       emit("file:opened", { path, mode })
       emit("panel:opened", { panelId, params: { path, mode } })
       return ok()

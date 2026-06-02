@@ -81,6 +81,17 @@ describe("createBridge", () => {
       expect(store.state.openFile).toHaveBeenCalledWith("/a.ts", "file:/a.ts")
     })
 
+    it("opens markdown files in the markdown editor even when not coming from filetree", async () => {
+      const bridge = createBridge(store)
+      const result = await bridge.openFile("/notes/outside.md")
+      expect(result.status).toBe("ok")
+      expect(store.state.openPanel).toHaveBeenCalledWith({
+        id: "file:/notes/outside.md",
+        component: "markdown-editor",
+        params: { path: "/notes/outside.md", mode: "edit" },
+      })
+    })
+
     it("rejects path traversal", async () => {
       const bridge = createBridge(store)
       const result = await bridge.openFile("../etc/passwd")
