@@ -176,6 +176,12 @@ function ensureFrontendBuilt(publicDir: string) {
 
 export async function registerStatic(app: FastifyInstance, publicDir: string) {
   ensureFrontendBuilt(publicDir)
+  // Compress responses (gzip/brotli) before serving static assets. The front
+  // bundle is multi-MB uncompressed; over a remote/tailscale link that raw
+  // transfer dominates first-load time. Compression cuts it ~3-4x. Registered
+  // before @fastify/static so its onSend hook wraps the file streams.
+  const { default: fastifyCompress } = await import("@fastify/compress")
+  await app.register(fastifyCompress, { global: true, encodings: ["br", "gzip"], threshold: 1024 })
   const { default: fastifyStatic } = await import("@fastify/static")
   await app.register(fastifyStatic, {
     root: publicDir,
@@ -1029,17 +1035,13 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     cliMode = rawMode as CliMode
     mode = MODE_MAP[cliMode]
   } else {
-    // Auto-detect: use autoDetectMode() from @hachej/boring-agent/server.
-    // On Linux with bwrap → local-sandbox (bwrap); everywhere else → local (direct).
-    const agent = await import("@hachej/boring-agent/server")
-    const detected = agent.autoDetectMode()
-    if (detected === "local") {
-      cliMode = "local-sandbox"
-      mode = "local"
-    } else {
-      cliMode = "local"
-      mode = "direct"
-    }
+    // Default to direct (no sandbox) on every platform — including Linux with
+    // bwrap available. Direct mode boots ~instantly (no pack/extract, no
+    // sandbox spin-up); bwrap isolation is opt-in via `--mode local-sandbox`,
+    // since its per-workspace first-boot provisioning cost should only be paid
+    // when the caller explicitly wants the isolation (and accepts the wait).
+    cliMode = "local"
+    mode = "direct"
   }
 
   const base = {
