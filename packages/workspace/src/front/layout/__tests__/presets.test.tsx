@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { act, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { useEffect } from "react"
 import userEvent from "@testing-library/user-event"
 import { buildIdeLayout } from "../IdeLayout"
 import { buildChatLayout } from "../ChatLayout"
@@ -25,6 +26,22 @@ import {
 
 function DummyPanel() {
   return <div data-testid="dummy-panel">panel</div>
+}
+
+function StreamingChatPanel() {
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return
+      const target = e.target instanceof HTMLElement ? e.target : null
+      if (target?.closest('[role="dialog"], [role="menu"], [role="listbox"]')) return
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    window.addEventListener("keydown", onKeyDown, { capture: true })
+    return () => window.removeEventListener("keydown", onKeyDown, { capture: true })
+  }, [])
+
+  return <div data-boring-agent-part="chat" tabIndex={0}>streaming chat</div>
 }
 
 function setup(panels: string[]) {
@@ -504,6 +521,36 @@ describe("ChatLayout component", () => {
 
     expect(closeNav).toHaveBeenCalledTimes(2)
     expect(closeSurface).toHaveBeenCalledTimes(2)
+  })
+
+  it("lets active chat Escape stop streaming before shell close shortcuts run", () => {
+    const closeNav = vi.fn()
+    const closeSurface = vi.fn()
+    const { panelRegistry, commandRegistry } = setup(["chat", "session-list", "artifact-surface"])
+    panelRegistry.register("chat", { title: "chat", lazy: false, component: StreamingChatPanel })
+
+    render(
+      <WorkspaceProvider persistenceEnabled={false}>
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+          <ChatLayout
+            nav="session-list"
+            navParams={{ onClose: closeNav }}
+            surface="artifact-surface"
+            surfaceParams={{ onClose: closeSurface }}
+          />
+        </RegistryProvider>
+      </WorkspaceProvider>,
+    )
+
+    const root = document.querySelector('[data-boring-agent-part="chat"]')
+    expect(root).toBeTruthy()
+
+    act(() => {
+      fireEvent.keyDown(root ?? document.body, { key: "Escape", bubbles: true, cancelable: true })
+    })
+
+    expect(closeNav).not.toHaveBeenCalled()
+    expect(closeSurface).not.toHaveBeenCalled()
   })
 
   it("opens hidden shell panes with the shell keyboard shortcuts", () => {

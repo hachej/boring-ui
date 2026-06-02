@@ -12,6 +12,7 @@ const mockPiProjection = vi.hoisted(() => ({
 const mockUseAgentChat = vi.fn()
 const mockSendMessage = vi.fn()
 const mockSetMessages = vi.fn()
+const mockStop = vi.fn()
 const mockScrollToBottom = vi.fn()
 
 vi.mock('../../front/hooks/useAgentChat', () => ({
@@ -103,6 +104,7 @@ beforeEach(() => {
   mockScrollToBottom.mockReset()
   mockSendMessage.mockReset()
   mockSetMessages.mockReset()
+  mockStop.mockReset()
   mockUseAgentChat.mockReset()
   mockUseAttachments.mockReset()
   mockUseAttachments.mockReturnValue({
@@ -114,6 +116,7 @@ beforeEach(() => {
     messages: [],
     sendMessage: mockSendMessage,
     setMessages: mockSetMessages,
+    stop: mockStop,
     status: 'ready',
     error: undefined,
   })
@@ -961,12 +964,67 @@ describe('ChatPanel (shadcn)', () => {
       messages: [],
       sendMessage: mockSendMessage,
       setMessages: mockSetMessages,
+      stop: mockStop,
       status: 'streaming',
       error: undefined,
     })
 
     const html = renderToStaticMarkup(<ChatPanel sessionId="sess-stream" />)
     expect(html).toContain('data-status="streaming"')
+  })
+
+  test('Escape stops active streaming from a workspace target', () => {
+    mockUseAgentChat.mockReturnValue({
+      messages: [],
+      sendMessage: mockSendMessage,
+      setMessages: mockSetMessages,
+      stop: mockStop,
+      status: 'streaming',
+      error: undefined,
+    })
+
+    render(
+      <div>
+        <button type="button">workspace target</button>
+        <ChatPanel sessionId="sess-stream-esc" />
+      </div>,
+    )
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'workspace target' }), {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    })
+
+    expect(mockStop).toHaveBeenCalledOnce()
+  })
+
+  test('Escape does not steal dialog-owned dismissal while streaming', () => {
+    mockUseAgentChat.mockReturnValue({
+      messages: [],
+      sendMessage: mockSendMessage,
+      setMessages: mockSetMessages,
+      stop: mockStop,
+      status: 'streaming',
+      error: undefined,
+    })
+
+    render(
+      <div>
+        <div role="dialog">
+          <button type="button">dialog target</button>
+        </div>
+        <ChatPanel sessionId="sess-stream-dialog" />
+      </div>,
+    )
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'dialog target' }), {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    })
+
+    expect(mockStop).not.toHaveBeenCalled()
   })
 
   describe('busy indicators', () => {
