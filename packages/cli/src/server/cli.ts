@@ -1029,17 +1029,13 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     cliMode = rawMode as CliMode
     mode = MODE_MAP[cliMode]
   } else {
-    // Auto-detect: use autoDetectMode() from @hachej/boring-agent/server.
-    // On Linux with bwrap → local-sandbox (bwrap); everywhere else → local (direct).
-    const agent = await import("@hachej/boring-agent/server")
-    const detected = agent.autoDetectMode()
-    if (detected === "local") {
-      cliMode = "local-sandbox"
-      mode = "local"
-    } else {
-      cliMode = "local"
-      mode = "direct"
-    }
+    // Default to direct (no sandbox) on every platform — including Linux with
+    // bwrap available. Direct mode boots ~instantly (no pack/extract, no
+    // sandbox spin-up); bwrap isolation is opt-in via `--mode local-sandbox`,
+    // since its per-workspace first-boot provisioning cost should only be paid
+    // when the caller explicitly wants the isolation (and accepts the wait).
+    cliMode = "local"
+    mode = "direct"
   }
 
   const base = {
