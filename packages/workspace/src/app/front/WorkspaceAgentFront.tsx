@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
 import { ChatPanel as DefaultChatPanel, useSessions as useDefaultAgentSessions, type SlashCommand } from "@hachej/boring-agent/front"
 import { WorkspaceProvider, type WorkspaceProviderProps } from "../../front/provider/WorkspaceProvider"
-import { ChatLayout, TopBar, type ChatLayoutProps } from "../../front/layout"
+import { ChatLayout, TopBar, ThemeToggle, type ChatLayoutProps } from "../../front/layout"
 import type { WorkspaceChatPanelProps } from "../../front/chrome/chat/types"
 import type {
   SurfaceShellApi,
@@ -678,7 +678,12 @@ export function WorkspaceAgentFront<
             onCommandPalette={openCommandPalette}
             onNewChat={resolvedCreate}
             topBarLeft={topBarLeft}
-            topBarRight={topBarRight}
+            topBarRight={
+              <>
+                <ThemeToggle />
+                {topBarRight}
+              </>
+            }
           />
           <ChatLayout
             className={className}

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Navigate, Route, useLocation, useParams } from 'react-router-dom'
 import {
   CoreFront,
+  ThemeToggle,
   UserMenu,
   WorkspaceSwitcher,
   useCurrentWorkspace,
@@ -49,7 +50,12 @@ export interface CoreWorkspaceAgentFrontProps<
 }
 
 function DefaultTopBarRight() {
-  return <UserMenu />
+  return (
+    <div className="flex items-center gap-2">
+      <ThemeToggle />
+      <UserMenu />
+    </div>
+  )
 }
 
 function WorkspaceLoadingPage({

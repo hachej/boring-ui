@@ -101,24 +101,31 @@ export function ChatEmptyState({
   return (
     <div
       data-boring-agent-part="empty-state"
+      style={{
+        ["--chat-empty-eyebrow-color" as string]: "var(--muted-foreground)",
+        ["--chat-empty-title-color" as string]: "var(--foreground)",
+        ["--chat-empty-description-color" as string]: "var(--muted-foreground)",
+        ["--chat-empty-card-hover" as string]: "var(--accent-soft)",
+        ["--chat-empty-accent" as string]: "var(--accent)",
+      }}
       className={cn(
         "mx-auto flex w-full max-w-[640px] flex-col px-2 pt-12 pb-4",
         className,
       )}
     >
       {eyebrow && (
-        <div className="flex items-center gap-2 text-[10.5px] font-medium uppercase tracking-[0.16em] text-muted-foreground dark:text-zinc-300">
-          <span className="inline-block h-px w-4 bg-[color:var(--accent)]" aria-hidden="true" />
+        <div className="flex items-center gap-2 text-[10.5px] font-medium uppercase tracking-[0.16em] text-[color:var(--chat-empty-eyebrow-color)]">
+          <span className="inline-block h-px w-4 bg-[color:var(--chat-empty-accent)]" aria-hidden="true" />
           {eyebrow}
         </div>
       )}
       {title && (
-        <h3 className="mt-3 text-[34px] font-medium leading-[1.05] tracking-[-0.02em] text-foreground dark:text-zinc-50">
+        <h3 className="mt-3 text-[34px] font-medium leading-[1.05] tracking-[-0.02em] text-[color:var(--chat-empty-title-color)]">
           {title}
         </h3>
       )}
       {description && (
-        <p className="mt-3 max-w-[440px] text-[14px] leading-relaxed text-muted-foreground dark:text-zinc-300">
+        <p className="mt-3 max-w-[440px] text-[14px] leading-relaxed text-[color:var(--chat-empty-description-color)]">
           {description}
         </p>
       )}
@@ -142,11 +149,11 @@ export function ChatEmptyState({
                   }
                   onSelect?.(suggestion)
                 }}
-                className="group h-auto justify-start gap-3 rounded-none bg-background px-4 py-3.5 text-left hover:bg-[color:var(--accent-soft)] focus-visible:bg-[color:var(--accent-soft)]"
+                className="group h-auto justify-start gap-3 rounded-none bg-background px-4 py-3.5 text-left hover:bg-[color:var(--chat-empty-card-hover)] focus-visible:bg-[color:var(--chat-empty-card-hover)]"
               >
                 {Icon && (
                   <Icon
-                    className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-[color:var(--accent)]"
+                    className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-[color:var(--chat-empty-accent)]"
                     strokeWidth={1.75}
                   />
                 )}
@@ -163,7 +170,7 @@ export function ChatEmptyState({
                 <ArrowUpRight
                   className={cn(
                     "mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
-                    "group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100 group-hover:text-[color:var(--accent)]",
+                    "group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100 group-hover:text-[color:var(--chat-empty-accent)]",
                   )}
                   strokeWidth={2}
                 />
