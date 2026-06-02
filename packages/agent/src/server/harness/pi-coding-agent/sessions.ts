@@ -14,7 +14,6 @@ import { join, basename } from "node:path";
 import { homedir } from "node:os";
 import {
   parseSessionEntries,
-  buildSessionContext,
   type SessionEntry,
   type SessionHeader,
   type SessionMessageEntry,
@@ -145,12 +144,14 @@ export class PiSessionStore implements SessionStore {
     const fileStat = await fsStat(filepath);
 
     // Prefer a persisted UI snapshot if available — these are written by
-    // the client after each turn and survive server restarts. Fall back to
-    // reconstructing from pi's native message format (which is empty when
-    // SessionManager.inMemory() is used, so the fallback is mostly a no-op).
+    // the client after each turn and survive server restarts. When no
+    // snapshot exists, rebuild the UI transcript from every persisted message
+    // entry in file order rather than pi's compacted LLM working context.
     const uiSnapshot = extractLatestUiSnapshot(fileEntries);
     const messages = uiSnapshot ?? piMessagesToUIMessages(
-      buildSessionContext(sessionEntries).messages,
+      sessionEntries
+        .filter((entry): entry is SessionMessageEntry => entry.type === "message")
+        .map((entry) => entry.message),
     );
 
     const title = extractTitle(sessionEntries) ?? "New session";
