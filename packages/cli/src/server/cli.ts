@@ -176,6 +176,12 @@ function ensureFrontendBuilt(publicDir: string) {
 
 export async function registerStatic(app: FastifyInstance, publicDir: string) {
   ensureFrontendBuilt(publicDir)
+  // Compress responses (gzip/brotli) before serving static assets. The front
+  // bundle is multi-MB uncompressed; over a remote/tailscale link that raw
+  // transfer dominates first-load time. Compression cuts it ~3-4x. Registered
+  // before @fastify/static so its onSend hook wraps the file streams.
+  const { default: fastifyCompress } = await import("@fastify/compress")
+  await app.register(fastifyCompress, { global: true, encodings: ["br", "gzip"], threshold: 1024 })
   const { default: fastifyStatic } = await import("@fastify/static")
   await app.register(fastifyStatic, {
     root: publicDir,
