@@ -1363,32 +1363,33 @@ export function ChatPanel(props: ChatPanelProps) {
       </Conversation>
 
       <div className={cn(chrome ? "px-4 pb-4 pt-2 sm:px-6 sm:pb-5" : "px-3 pb-3 pt-1")}>
-        {/* Working… badge — collapses to 0 height when idle so it doesn't waste
-            vertical space. Height transition preserves layout stability. */}
-        <div
-          className={cn(
-            "mx-auto w-full overflow-hidden transition-all duration-300",
-            chrome ? "max-w-3xl" : "max-w-[680px]",
-            isStreaming ? "mb-2 max-h-8" : "max-h-0",
-          )}
-        >
+        {/* Working… badge. Unmount when idle so restored completed chats do not
+            expose stale live-region text to screen readers or text extraction. */}
+        {isStreaming && (
           <div
-            data-testid="chat-working"
-            role="status"
-            aria-live="polite"
             className={cn(
-              "inline-flex items-center gap-2 rounded-full border border-border/50 bg-background/85 px-2.5 py-1 text-[12px] text-muted-foreground/75 shadow-sm backdrop-blur",
+              "mx-auto mb-2 w-full overflow-hidden transition-all duration-300 max-h-8",
+              chrome ? "max-w-3xl" : "max-w-[680px]",
             )}
           >
-            <motion.span
-              aria-hidden="true"
-              className="inline-block size-1.5 rounded-full bg-[color:var(--accent)]"
-              animate={{ opacity: [0.35, 1, 0.35] }}
-              transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
-            />
-            <span>Working…</span>
+            <div
+              data-testid="chat-working"
+              role="status"
+              aria-live="polite"
+              className={cn(
+                "inline-flex items-center gap-2 rounded-full border border-border/50 bg-background/85 px-2.5 py-1 text-[12px] text-muted-foreground/75 shadow-sm backdrop-blur",
+              )}
+            >
+              <motion.span
+                aria-hidden="true"
+                className="inline-block size-1.5 rounded-full bg-[color:var(--accent)]"
+                animate={{ opacity: [0.35, 1, 0.35] }}
+                transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+              />
+              <span>Working…</span>
+            </div>
           </div>
-        </div>
+        )}
         {composerStatusNotice && (
           <div
             data-testid="chat-composer-runtime-notice"
