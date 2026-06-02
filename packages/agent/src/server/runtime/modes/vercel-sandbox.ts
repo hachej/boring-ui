@@ -171,6 +171,23 @@ type VercelSandboxWithRunCommand = VercelSandbox & {
   runCommand?: (params: { cmd: string; args?: string[] }) => Promise<{ exitCode?: number }>
 }
 
+/**
+ * Build the shell snippet that ensures the workspace root exists in the sandbox.
+ *
+ * When `remoteRoot` and `workspaceRoot` are the same path (the default), linking
+ * one to the other would create a self-referential symlink (or a nested
+ * `workspace/workspace`), so the symlink is only created when they differ. Any
+ * stale symlink left at the workspace root by an earlier buggy run is cleared
+ * first so the root is always a real directory.
+ */
+export function buildWorkspaceRootSetupScript(remoteRoot: string, workspaceRoot: string): string {
+  return [
+    `if [ -L ${workspaceRoot} ]; then rm -f ${workspaceRoot}; fi`,
+    `mkdir -p ${remoteRoot}`,
+    `if [ ${remoteRoot} != ${workspaceRoot} ]; then ln -sfn ${remoteRoot} ${workspaceRoot} 2>/dev/null || true; fi`,
+  ].join('; ')
+}
+
 async function ensureVercelWorkspaceRoot(sandbox: VercelSandboxWithRunCommand): Promise<void> {
   let rootCreated = false
   if (sandbox.fs?.mkdir) {
@@ -190,7 +207,7 @@ async function ensureVercelWorkspaceRoot(sandbox: VercelSandboxWithRunCommand): 
   }
   const result = await sandbox.runCommand({
     cmd: 'sh',
-    args: ['-c', `mkdir -p ${VERCEL_SANDBOX_REMOTE_ROOT} && (ln -sfn ${VERCEL_SANDBOX_REMOTE_ROOT} ${VERCEL_SANDBOX_WORKSPACE_ROOT} 2>/dev/null || true)`],
+    args: ['-c', buildWorkspaceRootSetupScript(VERCEL_SANDBOX_REMOTE_ROOT, VERCEL_SANDBOX_WORKSPACE_ROOT)],
   })
   if ((result.exitCode ?? 1) !== 0) {
     throw new Error(`failed to initialize ${VERCEL_SANDBOX_REMOTE_ROOT} (exit ${result.exitCode ?? 'unknown'})`)
