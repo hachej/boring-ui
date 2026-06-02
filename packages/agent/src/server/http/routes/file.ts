@@ -22,6 +22,14 @@ interface PathValidationLike {
 const BORING_SETTINGS_PATH = '.boring/settings'
 const DEFAULT_MARKDOWN_IMAGE_UPLOAD_DIR = 'assets/images'
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+const MAX_RECORD_FILE_BYTES = 2 * 1024 * 1024
+const MAX_RECORD_ROWS_SCANNED = 10_000
+const MAX_RECORD_ROWS_RETURNED = 100
+const DEFAULT_RECORD_ROWS_RETURNED = 50
+const MAX_RECORD_OUTPUT_BYTES = 512 * 1024
+const MAX_RECORD_QUERY_LENGTH = 256
+const MAX_RECORD_COLUMNS = 100
+const MAX_RECORD_COLUMN_SAMPLE_ROWS = 100
 
 interface BoringWorkspaceSettings {
   markdown?: {
@@ -201,6 +209,249 @@ function contentTypeForPath(path: string): string {
   }
 }
 
+type FileRecordsFormat = 'json-array' | 'ndjson' | 'csv'
+
+type FileRecord = Record<string, unknown>
+
+interface FileRecordsRequest {
+  path: string
+  offset: number
+  limit: number
+  q: string | null
+}
+
+interface FileRecordsResult {
+  source: { kind: 'file'; path: string; format: FileRecordsFormat }
+  path: string
+  format: FileRecordsFormat
+  columns: { name: string; type: string }[]
+  rows: FileRecord[]
+  total: number
+  hasMore: boolean
+  offset: number
+  limit: number
+  mtimeMs?: number
+}
+
+function sendValidationError(reply: FastifyReply, message: string, field?: string): FastifyReply {
+  return reply.code(400).send({
+    error: { code: ERROR_CODE_VALIDATION_ERROR, message, ...(field ? { field } : {}) },
+  })
+}
+
+function firstQueryValue(value: unknown): unknown {
+  return Array.isArray(value) ? value[0] : value
+}
+
+function parseNonNegativeInteger(value: unknown, field: string, fallback: number, reply: FastifyReply, max = MAX_RECORD_ROWS_SCANNED): number | null {
+  const raw = firstQueryValue(value)
+  if (raw === undefined) return fallback
+  const text = typeof raw === 'number' ? String(raw) : typeof raw === 'string' ? raw.trim() : ''
+  if (!/^\d+$/.test(text)) {
+    sendValidationError(reply, `${field} must be a non-negative integer`, field)
+    return null
+  }
+  const parsed = Number(text)
+  if (!Number.isSafeInteger(parsed) || parsed > max) {
+    sendValidationError(reply, `${field} is too large`, field)
+    return null
+  }
+  return parsed
+}
+
+function parseLimit(value: unknown, reply: FastifyReply): number | null {
+  const raw = firstQueryValue(value)
+  if (raw === undefined) return DEFAULT_RECORD_ROWS_RETURNED
+  const text = typeof raw === 'number' ? String(raw) : typeof raw === 'string' ? raw.trim() : ''
+  if (!/^\d+$/.test(text) || Number(text) < 1) {
+    sendValidationError(reply, 'limit must be a positive integer', 'limit')
+    return null
+  }
+  return Math.min(Number(text), MAX_RECORD_ROWS_RETURNED)
+}
+
+function parseFileRecordsRequest(query: Record<string, unknown>, reply: FastifyReply): FileRecordsRequest | null {
+  const path = requireStringParam(firstQueryValue(query.path), 'path', reply)
+  if (path === null) return null
+  const recordSet = firstQueryValue(query.recordSet)
+  if (recordSet !== undefined && String(recordSet).trim() !== '') {
+    sendValidationError(reply, 'recordSet is not supported for file records in v1', 'recordSet')
+    return null
+  }
+  const offset = parseNonNegativeInteger(query.offset, 'offset', 0, reply)
+  if (offset === null) return null
+  const limit = parseLimit(query.limit, reply)
+  if (limit === null) return null
+  const rawQ = firstQueryValue(query.q)
+  const q = typeof rawQ === 'string' ? rawQ.trim() : rawQ === undefined ? '' : String(rawQ).trim()
+  if (q.length > MAX_RECORD_QUERY_LENGTH) {
+    sendValidationError(reply, 'q is too long', 'q')
+    return null
+  }
+  return { path, offset, limit, q: q ? q.toLowerCase() : null }
+}
+
+function detectRecordsFormat(path: string, content: string): FileRecordsFormat | null {
+  const ext = extname(path).toLowerCase()
+  if (ext === '.ndjson' || ext === '.jsonl') return 'ndjson'
+  if (ext === '.csv') return 'csv'
+  if (ext === '.json') return 'json-array'
+  const trimmed = content.trimStart()
+  if (trimmed.startsWith('[')) return 'json-array'
+  if (trimmed.startsWith('{')) return 'ndjson'
+  return null
+}
+
+function normalizeRecord(row: unknown): FileRecord {
+  if (row && typeof row === 'object' && !Array.isArray(row)) return row as FileRecord
+  return { value: row }
+}
+
+function scalarMatches(value: unknown, q: string): boolean {
+  if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') return false
+  return String(value).toLowerCase().includes(q)
+}
+
+function recordMatches(record: FileRecord, q: string | null): boolean {
+  if (!q) return true
+  return Object.values(record).some((value) => scalarMatches(value, q))
+}
+
+function inferValueType(value: unknown): string {
+  if (value === null || value === undefined) return 'null'
+  if (Array.isArray(value)) return 'array'
+  return typeof value
+}
+
+function inferColumns(rows: FileRecord[]): { name: string; type: string }[] {
+  const typesByName = new Map<string, Set<string>>()
+  for (const row of rows.slice(0, MAX_RECORD_COLUMN_SAMPLE_ROWS)) {
+    for (const [name, value] of Object.entries(row)) {
+      if (!typesByName.has(name)) {
+        if (typesByName.size >= MAX_RECORD_COLUMNS) continue
+        typesByName.set(name, new Set())
+      }
+      typesByName.get(name)?.add(inferValueType(value))
+    }
+  }
+  return [...typesByName.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, types]) => ({ name, type: types.size === 1 ? [...types][0] ?? 'unknown' : 'mixed' }))
+}
+
+function parseJsonArrayRecords(content: string): FileRecord[] {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(content)
+  } catch {
+    throw new Error('malformed JSON records file')
+  }
+  if (!Array.isArray(parsed)) throw new Error('JSON records file must contain an array')
+  if (parsed.length > MAX_RECORD_ROWS_SCANNED) throw new Error('record scan limit exceeded')
+  return parsed.map(normalizeRecord)
+}
+
+function parseNdjsonRecords(content: string): FileRecord[] {
+  const rows: FileRecord[] = []
+  for (const line of content.split(/\r?\n/)) {
+    if (!line.trim()) continue
+    if (rows.length >= MAX_RECORD_ROWS_SCANNED) throw new Error('record scan limit exceeded')
+    try {
+      rows.push(normalizeRecord(JSON.parse(line)))
+    } catch {
+      throw new Error('malformed NDJSON records file')
+    }
+  }
+  return rows
+}
+
+function parseCsvRows(content: string): string[][] {
+  const rows: string[][] = []
+  let row: string[] = []
+  let current = ''
+  let quoted = false
+  for (let i = 0; i < content.length; i += 1) {
+    const char = content[i]
+    if (char === '"') {
+      if (quoted && content[i + 1] === '"') {
+        current += '"'
+        i += 1
+      } else {
+        quoted = !quoted
+      }
+      continue
+    }
+    if (char === ',' && !quoted) {
+      row.push(current)
+      current = ''
+      continue
+    }
+    if ((char === '\n' || char === '\r') && !quoted) {
+      if (char === '\r' && content[i + 1] === '\n') i += 1
+      row.push(current)
+      if (row.some((value) => value.length > 0)) rows.push(row)
+      row = []
+      current = ''
+      continue
+    }
+    current += char
+  }
+  if (quoted) throw new Error('malformed CSV records file')
+  row.push(current)
+  if (row.some((value) => value.length > 0)) rows.push(row)
+  return rows
+}
+
+function parseCsvRecords(content: string): FileRecord[] {
+  const parsedRows = parseCsvRows(content)
+  if (parsedRows.length === 0) return []
+  const headers = (parsedRows[0] ?? []).map((header) => header.trim())
+  if (headers.some((header) => !header)) throw new Error('CSV records file must have a non-empty header row')
+  const rows: FileRecord[] = []
+  for (const values of parsedRows.slice(1)) {
+    if (rows.length >= MAX_RECORD_ROWS_SCANNED) throw new Error('record scan limit exceeded')
+    const row: FileRecord = {}
+    for (const [index, header] of headers.entries()) row[header] = values[index] ?? ''
+    rows.push(row)
+  }
+  return rows
+}
+
+function buildFileRecordsResult(args: {
+  path: string
+  content: string
+  mtimeMs?: number
+  offset: number
+  limit: number
+  q: string | null
+}): FileRecordsResult {
+  const format = detectRecordsFormat(args.path, args.content)
+  if (!format) throw new Error('unsupported records file format')
+  const allRows = format === 'json-array'
+    ? parseJsonArrayRecords(args.content)
+    : format === 'ndjson'
+      ? parseNdjsonRecords(args.content)
+      : parseCsvRecords(args.content)
+  const matching = allRows.filter((row) => recordMatches(row, args.q))
+  const rows = matching.slice(args.offset, args.offset + args.limit)
+  const result: FileRecordsResult = {
+    source: { kind: 'file', path: args.path, format },
+    path: args.path,
+    format,
+    columns: inferColumns(matching),
+    rows,
+    total: matching.length,
+    hasMore: args.offset + rows.length < matching.length,
+    offset: args.offset,
+    limit: args.limit,
+    mtimeMs: args.mtimeMs,
+  }
+  if (Buffer.byteLength(JSON.stringify(result), 'utf8') > MAX_RECORD_OUTPUT_BYTES) {
+    throw new Error('record output limit exceeded')
+  }
+  return result
+}
+
 export function fileRoutes(
   app: FastifyInstance,
   opts: {
@@ -240,6 +491,48 @@ export function fileRoutes(
         .header('cache-control', 'no-store')
         .send(Buffer.from(bytes))
     } catch (err) {
+      return classifyError(err, reply, 'file')
+    }
+  })
+
+  app.get('/api/v1/files/records', async (request, reply) => {
+    const parsed = parseFileRecordsRequest(request.query as Record<string, unknown>, reply)
+    if (parsed === null) return
+
+    try {
+      const workspace = await resolveWorkspace(request)
+      const stat = await workspace.stat(parsed.path)
+      if (stat.kind !== 'file') {
+        return sendValidationError(reply, 'path is not a file', 'path')
+      }
+      if (stat.size > MAX_RECORD_FILE_BYTES) {
+        return sendValidationError(reply, 'records file is too large', 'path')
+      }
+      const content = await workspace.readFile(parsed.path)
+      if (Buffer.byteLength(content, 'utf8') > MAX_RECORD_FILE_BYTES) {
+        return sendValidationError(reply, 'records file is too large', 'path')
+      }
+      return buildFileRecordsResult({
+        path: parsed.path,
+        content,
+        mtimeMs: stat.mtimeMs,
+        offset: parsed.offset,
+        limit: parsed.limit,
+        q: parsed.q,
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (
+        message.includes('records file')
+        || message.includes('record scan')
+        || message.includes('record output')
+        || message.includes('malformed')
+        || message.includes('unsupported records')
+        || message.includes('CSV records')
+        || message.includes('JSON records')
+      ) {
+        return sendValidationError(reply, message)
+      }
       return classifyError(err, reply, 'file')
     }
   })
