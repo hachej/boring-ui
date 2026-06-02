@@ -159,10 +159,29 @@ function createWorkspaceFs(
   const { enforceSymlinkBoundary } = opts
   return {
     async exists(workspaceRelativePath) {
-      const absPath = await assertExistingInsideWorkspace(workspaceRoot, workspaceRelativePath, enforceSymlinkBoundary)
-      if (!absPath) return false
-      await lstat(absPath)
-      return true
+      // Existence is a target-reachability check used by provisioning's
+      // skip-vs-reinstall probe, not a content read — so it does NOT enforce
+      // the realpath boundary. That lets an in-workspace bin shim pointing at
+      // the host's npm-global install (e.g.
+      // .boring-agent/node/node_modules/.bin/boring-ui) report as present
+      // instead of tripping the sandbox guard and aborting provisioning. The
+      // lexical validatePath() still rejects ../ escapes, and a boolean
+      // reachability check leaks no out-of-sandbox content, so this stays safe
+      // in sandbox modes (local/bwrap, vercel-sandbox) too. Content ops below
+      // keep the strict realpath boundary via enforceSymlinkBoundary.
+      //
+      // Use stat() (follows symlinks), not lstat(): a dangling shim — e.g. the
+      // global CLI was moved/uninstalled — must report missing so the probe
+      // reinstalls and self-heals, rather than skipping forever and bricking
+      // the workspace on a broken link.
+      const absPath = validatePath(workspaceRoot, workspaceRelativePath)
+      try {
+        await stat(absPath)
+        return true
+      } catch (error: unknown) {
+        if ((error as { code?: string }).code === 'ENOENT') return false
+        throw error
+      }
     },
     async rm(workspaceRelativePath) {
       const absPath = await assertExistingInsideWorkspace(workspaceRoot, workspaceRelativePath, enforceSymlinkBoundary)

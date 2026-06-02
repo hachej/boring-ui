@@ -103,6 +103,50 @@ test('direct adapter resolveInstallSource returns runtime-visible local paths an
   expect(adapter.getRuntimeCacheRoot()).toBe(paths.cache)
 })
 
+test('local adapter exists() treats an out-of-workspace bin symlink as present (no realpath-escape throw)', async () => {
+  // Repro of the CLI-mode slow-load bug: provisioning's skip-vs-reinstall
+  // probe (shouldInstallNodeRuntime) calls workspaceFs.exists() on expected
+  // outputs, one of which is .bin/boring-ui — an npm-created shim that
+  // realpath-resolves to the host's global @hachej/boring-ui-cli install,
+  // outside the workspace. In local (bwrap) mode the realpath guard used to
+  // throw symlink-escape here, breaking the fingerprint short-circuit and
+  // crash-looping provisioning on every boot. exists() must report present.
+  const workspaceRoot = await tempRoot('boring-local-exists-')
+  const outsideRoot = await tempRoot('boring-local-outside-')
+  await writeFile(join(outsideRoot, 'cli.js'), 'module.exports = {}\n')
+  await mkdir(join(workspaceRoot, '.boring-agent', 'node', 'node_modules', '.bin'), { recursive: true })
+  await symlink(
+    join(outsideRoot, 'cli.js'),
+    join(workspaceRoot, '.boring-agent', 'node', 'node_modules', '.bin', 'boring-ui'),
+  )
+  const adapter = createLocalProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot))
+
+  await expect(
+    adapter.workspaceFs.exists('.boring-agent/node/node_modules/.bin/boring-ui'),
+  ).resolves.toBe(true)
+  await expect(adapter.workspaceFs.exists('.boring-agent/node/node_modules/.bin/missing')).resolves.toBe(false)
+  // Lexical guard is still enforced — a ../ escape in the path argument rejects.
+  await expect(adapter.workspaceFs.exists('../escape')).rejects.toMatchObject({ reason: 'path-escape' })
+})
+
+test('local adapter exists() reports a dangling out-of-workspace symlink as missing (self-heals reinstall)', async () => {
+  // exists() follows the link (stat, not lstat): if the host's global CLI is
+  // moved/uninstalled the in-workspace shim dangles, and the skip-vs-reinstall
+  // probe must see it as missing so provisioning reinstalls instead of skipping
+  // forever and bricking the workspace on a broken link.
+  const workspaceRoot = await tempRoot('boring-local-dangling-')
+  await mkdir(join(workspaceRoot, '.boring-agent', 'node', 'node_modules', '.bin'), { recursive: true })
+  await symlink(
+    join(workspaceRoot, 'does-not-exist', 'cli.js'),
+    join(workspaceRoot, '.boring-agent', 'node', 'node_modules', '.bin', 'boring-ui'),
+  )
+  const adapter = createLocalProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot))
+
+  await expect(
+    adapter.workspaceFs.exists('.boring-agent/node/node_modules/.bin/boring-ui'),
+  ).resolves.toBe(false)
+})
+
 test('local adapter maps workspace-contained package roots to /workspace and packs external roots into an in-workspace tarball', async () => {
   const workspaceRoot = await tempRoot('boring-local-workspace-')
   const externalRoot = await tempRoot('boring-local-external-')
