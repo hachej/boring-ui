@@ -81,7 +81,7 @@ export interface WorkspaceAgentFrontProps<
   onSwitchSession?: (id: string) => void
   onCreateSession?: () => void
   onDeleteSession?: (id: string) => void
-  onActiveSessionIdChange?: (sessionId: string) => void
+  onActiveSessionIdChange?: (sessionId: string | null) => void
   chatParams?: Record<string, unknown>
   /**
    * Forward to ChatPanel — when `false`, the `/reload` slash command is
@@ -503,14 +503,21 @@ export function WorkspaceAgentFront<
     }
     return rawSwitch(nextSessionId)
   }, [effectiveActiveSessionId, rawSwitch])
+  const suppressEmptyAutoCreateRef = useRef(false)
   const resolvedCreate = remoteSessionsPending
     ? remoteSessionActionsUnavailable
     : sessionApi
       ? () => sessionApi.create()
       : onCreateSession ?? localSessionStore.create
-  const resolvedDelete = remoteSessionsPending
+  const rawDelete = remoteSessionsPending
     ? remoteSessionActionsUnavailable
     : sessionApi?.delete ?? onDeleteSession ?? localSessionStore.remove
+  const resolvedDelete = useCallback((id: string) => {
+    if (sessionApi && activeRemoteSessions.length <= 1) {
+      suppressEmptyAutoCreateRef.current = true
+    }
+    return rawDelete(id)
+  }, [activeRemoteSessions.length, rawDelete, sessionApi])
   const resolvedSessionTitle = resolvedSessions.find((session) => session.id === effectiveActiveSessionId)?.title ?? undefined
 
   const [navOpen, setNavOpen] = useStoredBooleanState(
@@ -551,6 +558,7 @@ export function WorkspaceAgentFront<
 
   useEffect(() => {
     autoCreateSessionRef.current = false
+    suppressEmptyAutoCreateRef.current = false
   }, [workspaceId])
 
   useEffect(() => {
@@ -563,8 +571,10 @@ export function WorkspaceAgentFront<
     if (autoSubmitSessionId !== undefined) return
     if (activeRemoteSessions.length > 0) {
       autoCreateSessionRef.current = false
+      suppressEmptyAutoCreateRef.current = false
       return
     }
+    if (suppressEmptyAutoCreateRef.current) return
     if (autoCreateSessionRef.current) return
     autoCreateSessionRef.current = true
     void Promise.resolve(sessionApi.create({ title: defaultSessionTitle })).catch(() => {
@@ -669,8 +679,9 @@ export function WorkspaceAgentFront<
   }, [getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources])
 
   useEffect(() => {
-    if (effectiveActiveSessionId) onActiveSessionIdChange?.(effectiveActiveSessionId)
-  }, [effectiveActiveSessionId, onActiveSessionIdChange])
+    if (remoteSessionsPending) return
+    onActiveSessionIdChange?.(effectiveActiveSessionId ?? null)
+  }, [effectiveActiveSessionId, onActiveSessionIdChange, remoteSessionsPending])
 
   const workbenchBlocked = workspaceWarmupStatus.status !== "ready"
   const workbenchOverlay = workbenchBlocked ? <WorkbenchWarmupOverlay status={workspaceWarmupStatus} /> : undefined

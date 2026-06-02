@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { useState } from "react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -642,6 +642,49 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => {
       expect(observed).toContainEqual({ "x-boring-workspace-id": "provider-headers", authorization: "Bearer request-token" })
     })
+  })
+
+  it("does not auto-create a replacement after the user deletes the last remote session", async () => {
+    vi.useFakeTimers()
+    const create = vi.fn(async () => ({ id: "created", title: "Created" }))
+    const deleted = vi.fn()
+
+    function useDeletingSessions() {
+      const [sessionIds, setSessionIds] = useState(["only"])
+      const sessions = sessionIds.map((id) => ({ id, title: "Only session", updatedAt: Date.now() }))
+      return {
+        sessions,
+        activeSessionId: sessions[0]?.id ?? null,
+        activeSession: sessions[0] ?? null,
+        loading: false,
+        create,
+        switch: vi.fn(),
+        delete: (id: string) => {
+          deleted(id)
+          setSessionIds((prev) => prev.filter((sessionId) => sessionId !== id))
+        },
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="delete-last"
+        chatPanel={ChatPanel}
+        useSessions={useDeletingSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Sessions" }))
+    fireEvent.click(screen.getByLabelText("Delete Only session"))
+
+    expect(deleted).toHaveBeenCalledWith("only")
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2500)
+    })
+
+    expect(create).not.toHaveBeenCalled()
+    vi.useRealTimers()
   })
 
   it("adds workspace id to request headers when host omits them", async () => {

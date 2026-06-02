@@ -181,7 +181,7 @@ export function CliWorkspaceShell() {
     return useAgentSessions(nextOpts)
   }, [urlSessionId])
 
-  const handleActiveSessionIdChange = useCallback((sessionId: string) => {
+  const handleActiveSessionIdChange = useCallback((sessionId: string | null) => {
     setUrlSessionId((current) => current === sessionId ? current : sessionId)
   }, [])
 
