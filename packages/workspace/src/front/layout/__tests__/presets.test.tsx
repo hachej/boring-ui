@@ -10,7 +10,7 @@ import { PanelRegistry } from "../../registry/PanelRegistry"
 import { CommandRegistry } from "../../../shared/plugins/CommandRegistry"
 import { bindStore } from "../../store/selectors"
 import { createWorkspaceStore } from "../../store"
-import { WorkspaceProvider } from "../../provider"
+import { WorkspaceProvider, useWorkspaceAttention } from "../../provider"
 import type { SurfaceShellApi } from "../../chrome/artifact-surface/SurfaceShell"
 
 // Verify barrel exports work
@@ -166,6 +166,9 @@ describe("buildChatLayout", () => {
     expect(center.position).toBe("center")
     expect(center.panel).toBe("chat")
     expect(center.hideHeader).toBe(true)
+    // Collapse is handled by the live flex ChatLayout component, not dock config.
+    expect(center.collapsible).toBeUndefined()
+    expect(center.collapsedWidth).toBeUndefined()
   })
 
   it("passes panel params through to layout groups", () => {
@@ -525,6 +528,89 @@ describe("ChatLayout component", () => {
 
     expect(openNav).toHaveBeenCalledOnce()
     expect(openSurface).toHaveBeenCalledOnce()
+  })
+
+  it("collapses and re-expands the chat panel with the keyboard shortcut", () => {
+    renderWithRegistry(
+      <ChatLayout center="chat" storageKey="chat-layout-test" />,
+      ["chat", "session-list"],
+    )
+
+    const chatPanel = screen.getByLabelText("Chat")
+    expect(chatPanel).toHaveAttribute("data-boring-state", "expanded")
+
+    act(() => fireShortcut("\\", { metaKey: true }))
+    expect(screen.getByLabelText("Collapsed chat")).toHaveAttribute("data-boring-state", "collapsed")
+
+    act(() => fireShortcut("\\", { metaKey: true }))
+    expect(screen.getByLabelText("Chat")).toHaveAttribute("data-boring-state", "expanded")
+  })
+
+  it("collapses the chat to zero width and shows a floating expand button", () => {
+    renderWithRegistry(
+      <ChatLayout center="chat" storageKey="chat-layout-rail" />,
+      ["chat", "session-list"],
+    )
+
+    expect(screen.queryByRole("button", { name: "Expand chat" })).not.toBeInTheDocument()
+
+    act(() => fireShortcut("\\", { metaKey: true }))
+
+    // The chat panel collapses to zero width (no 40px rail) ...
+    const collapsed = screen.getByLabelText("Collapsed chat")
+    expect(collapsed).toHaveAttribute("data-boring-state", "collapsed")
+    expect(collapsed).toHaveAttribute("aria-hidden", "true")
+    // ... and re-opening is a floating left-edge button.
+    expect(screen.getByRole("button", { name: "Expand chat" })).toBeInTheDocument()
+
+    act(() => fireShortcut("\\", { metaKey: true }))
+    expect(screen.queryByRole("button", { name: "Expand chat" })).not.toBeInTheDocument()
+    expect(screen.getByLabelText("Chat")).toHaveAttribute("data-boring-state", "expanded")
+  })
+
+  it("stacks the floating expand-chat button above the sessions button on the left edge", () => {
+    renderWithRegistry(
+      <ChatLayout center="chat" nav={null} onOpenNav={vi.fn()} storageKey="chat-layout-stack" />,
+      ["chat", "session-list"],
+    )
+
+    act(() => fireShortcut("\\", { metaKey: true }))
+
+    const sessionsButton = screen.getByRole("button", { name: "Sessions" })
+    const chatButton = screen.getByRole("button", { name: "Expand chat" })
+    // Both anchor to the left edge and are vertically offset so they never overlap.
+    expect(sessionsButton.className).toContain("left-2")
+    expect(chatButton.className).toContain("left-2")
+    expect(sessionsButton.style.transform).toContain("translateY(calc(-50% - 0px))")
+    expect(chatButton.style.transform).toContain("translateY(calc(-50% - 44px))")
+  })
+
+  it("auto-expands the chat panel when a blocker appears while collapsed", async () => {
+    function Host() {
+      const { addBlocker } = useWorkspaceAttention()
+      return (
+        <>
+          <ChatLayout center="chat" storageKey="chat-layout-blocker" />
+          <button
+            type="button"
+            onClick={() => addBlocker({ id: "b1", reason: "Approve", label: "Approve" })}
+          >
+            Add blocker
+          </button>
+        </>
+      )
+    }
+
+    const user = userEvent.setup()
+    renderWithRegistry(<Host />, ["chat", "session-list"])
+
+    act(() => fireShortcut("\\", { metaKey: true }))
+    expect(screen.getByLabelText("Collapsed chat")).toHaveAttribute("data-boring-state", "collapsed")
+
+    await user.click(screen.getByRole("button", { name: "Add blocker" }))
+    await waitFor(() =>
+      expect(screen.getByLabelText("Chat")).toHaveAttribute("data-boring-state", "expanded"),
+    )
   })
 
   it("dispatches plugin UI commands through the workbench contract", () => {
