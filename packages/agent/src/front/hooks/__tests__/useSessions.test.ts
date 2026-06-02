@@ -71,6 +71,12 @@ describe('useSessions', () => {
     expect(result.error).toBeUndefined()
   })
 
+  test('uses an initial active session id when provided', () => {
+    useSessions({ initialActiveSessionId: 'session-from-url' })
+
+    expect(stateSlots[1][0]).toBe('session-from-url')
+  })
+
   test('effect calls refresh on mount', () => {
     useSessions()
     expect(effectCallbacks).toHaveLength(1)

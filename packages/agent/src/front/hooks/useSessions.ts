@@ -9,6 +9,7 @@ export interface UseSessionsOptions {
   storageKey?: string
   enabled?: boolean
   refreshKey?: unknown
+  initialActiveSessionId?: string
 }
 
 export interface UseSessionsResult {
@@ -88,13 +89,14 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
   const requestHeaders = opts.requestHeaders
   const enabled = opts.enabled ?? true
   const refreshKey = opts.refreshKey
+  const initialActiveSessionId = opts.initialActiveSessionId
   const scopeKey = useMemo(
     () => `${storageKey}\n${headersScopeKey(requestHeaders)}`,
     [requestHeaders, storageKey],
   )
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>(
-    () => readPersistedId(storageKey),
+    () => initialActiveSessionId ?? readPersistedId(storageKey),
   )
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | undefined>()
@@ -145,7 +147,7 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
       if (isCurrent() && data) {
         const replacingLoadedScope = loadedScopeRef.current !== scopeKey
         loadedScopeRef.current = scopeKey
-        const persisted = readPersistedId(storageKey)
+        const persisted = initialActiveSessionId ?? readPersistedId(storageKey)
         setError(undefined)
         setLoaded(true)
         setSessions(data)
@@ -171,7 +173,7 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
         setLoading(false)
       }
     }
-  }, [enabled, requestHeaders, scopeKey, storageKey])
+  }, [enabled, initialActiveSessionId, requestHeaders, scopeKey, storageKey])
 
   useEffect(() => {
     mountedRef.current = true
