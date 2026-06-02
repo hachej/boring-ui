@@ -1,6 +1,6 @@
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, type UIMessage } from 'ai'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { SendMessageInput } from '../../shared/harness'
 
 export type UseAgentChatOptions = Pick<
@@ -71,11 +71,57 @@ function sameMessageOrder(a: UIMessage[], b: UIMessage[]): boolean {
   })
 }
 
+function readCachedMessages(cacheKey: string): UIMessage[] {
+  try {
+    const cached = globalThis.localStorage?.getItem(cacheKey)
+    if (!cached) return []
+    const parsed = JSON.parse(cached)
+    return Array.isArray(parsed) ? parsed as UIMessage[] : []
+  } catch {
+    return []
+  }
+}
+
+function cachedMessagesNeedResume(cacheKey: string): boolean {
+  const cachedMessages = readCachedMessages(cacheKey)
+  const last = cachedMessages[cachedMessages.length - 1]
+  if (!last) return false
+  if (last.role === 'user') return true
+  return Boolean(last.parts?.some((part) => {
+    const candidate = part as Record<string, unknown>
+    if (typeof candidate.type === 'string' && candidate.type.startsWith('tool-')) {
+      return candidate.state !== 'output-available'
+        && candidate.state !== 'output-error'
+        && candidate.state !== 'output-denied'
+        && candidate.state !== 'approval-responded'
+    }
+    return false
+  }))
+}
+
+function cachedStatusNeedsResume(statusKey: string): boolean {
+  try {
+    return globalThis.localStorage?.getItem(statusKey) === 'active'
+  } catch {
+    return false
+  }
+}
+
 export function useAgentChat(opts: UseAgentChatOptions) {
   const { sessionId } = opts
   const hydrateMessages = opts.hydrateMessages ?? true
   const optsRef = useRef(opts)
   optsRef.current = opts
+
+  const cacheKey = sessionId ? `boring-agent:messages:${sessionId}` : null
+  const statusKey = sessionId ? `boring-agent:status:${sessionId}` : null
+  const shouldResume = useMemo(
+    () => hydrateMessages && Boolean(
+      cacheKey
+      && (cachedMessagesNeedResume(cacheKey) || (statusKey ? cachedStatusNeedsResume(statusKey) : false)),
+    ),
+    [cacheKey, hydrateMessages, statusKey],
+  )
 
   const transport = useMemo(
     () =>
@@ -94,7 +140,7 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   const chat = useChat({
     id: sessionId,
     transport,
-    resume: hydrateMessages,
+    resume: shouldResume,
     // Match AI SDK's documented React smoothing knob: render at most every
     // ~50ms while chunks stream instead of once per incoming chunk. This only
     // throttles AI SDK's own messages store; pi's custom data-pi projection
@@ -110,6 +156,12 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     },
   })
 
+  const [localTurnActive, setLocalTurnActive] = useState(false)
+  const sendMessage = useCallback((...args: Parameters<typeof chat.sendMessage>) => {
+    setLocalTurnActive(true)
+    return chat.sendMessage(...args)
+  }, [chat.sendMessage])
+
   // Hydrate history on mount / session change. Priority:
   //  1. Server /messages endpoint (authoritative if the harness persists sessions)
   //  2. localStorage cache (fallback when pi-coding-agent uses SessionManager.inMemory)
@@ -118,7 +170,6 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   // effect fires first on mount with an empty messages array and wipes the
   // cached history before hydration has a chance to restore it.
   const setMessages = chat.setMessages
-  const cacheKey = sessionId ? `boring-agent:messages:${sessionId}` : null
   const [hydratedKey, setHydratedKey] = useState<string | null>(null)
   const hydrated = !hydrateMessages || !sessionId || !cacheKey || hydratedKey === cacheKey
 
@@ -131,17 +182,6 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     let aborted = false
     setHydratedKey(null)
 
-    const readCachedMessages = (): UIMessage[] => {
-      try {
-        const cached = globalThis.localStorage?.getItem(cacheKey)
-        if (!cached) return []
-        const parsed = JSON.parse(cached)
-        return Array.isArray(parsed) ? parsed as UIMessage[] : []
-      } catch {
-        return []
-      }
-    }
-
     const hydrateMerged = (serverMessages: UIMessage[], cachedMessages: UIMessage[]) => {
       const current = messagesRef.current
       const fromServerAndCache = mergeMessages(serverMessages, cachedMessages)
@@ -150,7 +190,7 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     }
 
     const loadFromCache = () => {
-      const cachedMessages = readCachedMessages()
+      const cachedMessages = readCachedMessages(cacheKey)
       if (cachedMessages.length > 0) hydrateMerged([], cachedMessages)
     }
 
@@ -164,7 +204,7 @@ export function useAgentChat(opts: UseAgentChatOptions) {
       .then((payload: { messages?: UIMessage[] } | null) => {
         if (aborted) return
         const serverMessages = payload?.messages
-        const cachedMessages = readCachedMessages()
+        const cachedMessages = readCachedMessages(cacheKey)
         if (Array.isArray(serverMessages) && serverMessages.length > 0) {
           hydrateMerged(serverMessages, cachedMessages)
           return
@@ -188,11 +228,34 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   // before hydration runs, and saving [] would wipe the previous cache for the
   // new session before we get a chance to read it.
   const messages = chat.messages
-  const status = chat.status
+  const rawStatus = chat.status
+  const rawStatusActive = rawStatus === 'submitted' || rawStatus === 'streaming'
+  const knownActiveTurn = localTurnActive || shouldResume
+  const status = rawStatusActive && !knownActiveTurn ? 'ready' : rawStatus
   const messagesRef = useRef(messages)
   const statusRef = useRef(status)
   messagesRef.current = messages
   statusRef.current = status
+  const prevRawStatusRef = useRef(rawStatus)
+  useEffect(() => {
+    const prev = prevRawStatusRef.current
+    prevRawStatusRef.current = rawStatus
+    const prevActive = prev === 'submitted' || prev === 'streaming'
+    if (prevActive && (rawStatus === 'ready' || rawStatus === 'error')) {
+      setLocalTurnActive(false)
+    }
+  }, [rawStatus, sessionId])
+
+  useEffect(() => {
+    if (!statusKey) return
+    try {
+      if (rawStatusActive && knownActiveTurn) {
+        globalThis.localStorage?.setItem(statusKey, 'active')
+      } else if (rawStatus === 'ready' || rawStatus === 'error' || (rawStatusActive && !knownActiveTurn)) {
+        globalThis.localStorage?.setItem(statusKey, 'ready')
+      }
+    } catch { /* quota exceeded: drop status cache silently */ }
+  }, [knownActiveTurn, rawStatus, rawStatusActive, statusKey])
   useEffect(() => {
     if (messages.length === 0) return
     const deduped = mergeMessages([], messages)
@@ -282,5 +345,5 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     }).catch(() => { /* best-effort, ignore failures */ })
   }, [opts.persistMessages, sessionId, status, messages])
 
-  return { ...chat, hydrated, hydratingMessages: hydrateMessages && Boolean(sessionId) && !hydrated }
+  return { ...chat, sendMessage, status, hydrated, hydratingMessages: hydrateMessages && Boolean(sessionId) && !hydrated }
 }

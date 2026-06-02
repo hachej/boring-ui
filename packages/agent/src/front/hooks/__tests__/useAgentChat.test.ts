@@ -10,13 +10,14 @@ const mockUseStateSetter = vi.fn()
 const mockFetch = vi.fn()
 const mockStorageGetItem = vi.fn()
 const mockStorageSetItem = vi.fn()
+let mockChatStatus: 'ready' | 'submitted' | 'streaming' | 'error' = 'ready'
 
 vi.mock('@ai-sdk/react', () => ({
   useChat: vi.fn(() => ({
     id: 'mock-chat',
     messages: [],
     sendMessage: vi.fn(),
-    status: 'ready' as const,
+    status: mockChatStatus,
     error: undefined,
     stop: vi.fn(),
     setMessages: mockSetMessages,
@@ -35,6 +36,7 @@ vi.mock('react', async () => {
   return {
     ...actual,
     useMemo: <T>(fn: () => T) => fn(),
+    useCallback: <T extends (...args: never[]) => unknown>(fn: T) => fn,
     useRef: (initial: unknown) => {
       const ref = { current: initial }
       allRefs.push(ref)
@@ -78,6 +80,7 @@ beforeEach(() => {
   mockStorageGetItem.mockReset()
   mockStorageSetItem.mockReset()
   mockFetch.mockReset()
+  mockChatStatus = 'ready'
   mockFetch.mockResolvedValue({
     ok: false,
     json: async () => null,
@@ -181,12 +184,72 @@ describe('useAgentChat', () => {
     })
   })
 
-  test('enables resume on useChat', () => {
+  test('does not resume completed cached histories on mount', () => {
+    mockStorageGetItem.mockReturnValueOnce(JSON.stringify([
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+      { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'done' }] },
+    ]))
+
+    useAgentChat({ sessionId: 'sess-1' })
+
+    expect(useChat).toHaveBeenCalledWith(
+      expect.objectContaining({ resume: false }),
+    )
+  })
+
+  test('treats stale SDK streaming state as ready for completed cached histories', () => {
+    mockChatStatus = 'streaming'
+    mockStorageGetItem.mockReturnValueOnce(JSON.stringify([
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+      { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'done' }] },
+    ]))
+
+    const result = useAgentChat({ sessionId: 'sess-1' })
+
+    expect(result.status).toBe('ready')
+  })
+
+  test('resumes when cached history ends with an in-flight user message', () => {
+    mockStorageGetItem.mockReturnValueOnce(JSON.stringify([
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'keep going' }] },
+    ]))
+
     useAgentChat({ sessionId: 'sess-1' })
 
     expect(useChat).toHaveBeenCalledWith(
       expect.objectContaining({ resume: true }),
     )
+  })
+
+  test('resumes partial assistant text when the cached session status is active', () => {
+    mockStorageGetItem.mockImplementation((key: string) => {
+      if (key === 'boring-agent:messages:sess-1') {
+        return JSON.stringify([
+          { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+          { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'partial answer' }] },
+        ])
+      }
+      if (key === 'boring-agent:status:sess-1') return 'active'
+      return null
+    })
+
+    useAgentChat({ sessionId: 'sess-1' })
+
+    expect(useChat).toHaveBeenCalledWith(
+      expect.objectContaining({ resume: true }),
+    )
+  })
+
+  test('marks stale SDK streaming state ready in the cached session status', () => {
+    mockChatStatus = 'streaming'
+    mockStorageGetItem.mockReturnValueOnce(JSON.stringify([
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+      { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'done' }] },
+    ]))
+
+    useAgentChat({ sessionId: 'sess-1' })
+
+    expect(mockStorageSetItem).toHaveBeenCalledWith('boring-agent:status:sess-1', 'ready')
   })
 
   test('throttles AI SDK message-store updates while streaming', () => {
@@ -249,7 +312,7 @@ describe('useAgentChat', () => {
       ok: true,
       json: async () => ({ messages: [serverOld] }),
     })
-    mockStorageGetItem.mockReturnValueOnce(JSON.stringify([serverOld, cachedLocalUser]))
+    mockStorageGetItem.mockReturnValue(JSON.stringify([serverOld, cachedLocalUser]))
 
     useAgentChat({ sessionId: 'sess-running-reload' })
     await flushPromises()
