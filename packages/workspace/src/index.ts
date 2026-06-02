@@ -67,9 +67,16 @@ export type {
 } from "./plugins/filesystemPlugin/front"
 export {
   DataProvider as WorkspaceFilesProvider,
+  readFileRecords,
   useApiBaseUrl,
   useHasDataClient as useHasWorkspaceFilesProvider,
   useWorkspaceRequestId,
+} from "./plugins/filesystemPlugin/front/data"
+export type {
+  FileRecordsFormat,
+  FileRecordsResult,
+  FileRecordsSource,
+  ReadFileRecordsOptions,
 } from "./plugins/filesystemPlugin/front/data"
 // Public file-state seam for package consumers (for example future deck-like
 // plugins). Hooks from this seam must run under `WorkspaceFilesProvider`, or a
