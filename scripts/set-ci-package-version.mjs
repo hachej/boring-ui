@@ -16,6 +16,7 @@ const dryRun = process.argv.includes("--dry-run")
 
 const PUBLISHABLE = [
   "packages/core",
+  "packages/plugin-cli",
   "packages/workspace",
   "packages/agent",
   "packages/ui",

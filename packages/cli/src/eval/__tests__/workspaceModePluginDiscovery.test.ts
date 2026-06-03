@@ -56,14 +56,14 @@ describeIf("CLI workspaces-mode plugin discovery eval (live LLM) [$provider/$id]
         query: { workspaceId: workspace.id },
         prompt: [
           "Create a hot-reloadable boring-ui plugin named `eval-cli-detect`.",
-          "First run `boring-ui plugin-status --json` and only continue if workspaceLocalPluginRoots is true.",
-          "Then scaffold it with `boring-ui scaffold-plugin eval-cli-detect \"$BORING_AGENT_WORKSPACE_ROOT\"`.",
+          "First run `boring-ui-plugin status --json` and only continue if workspaceLocalPluginRoots is true.",
+          "Then scaffold it with `boring-ui-plugin scaffold eval-cli-detect \"$BORING_AGENT_WORKSPACE_ROOT\"`.",
           "Keep the generated panel simple; it just needs to show the text `Eval CLI Detect`.",
           "When done, ask me to run /reload.",
         ].join("\n"),
         expect: [
-          { tool: "bash", params: { command: EvalRegex("plugin-status\\s+--json") } },
-          { tool: "bash", params: { command: EvalRegex("scaffold-plugin\\s+eval-cli-detect") } },
+          { tool: "bash", params: { command: EvalRegex("boring-ui-plugin\\s+status\\s+--json") } },
+          { tool: "bash", params: { command: EvalRegex("boring-ui-plugin\\s+scaffold\\s+eval-cli-detect") } },
         ],
         model: EVAL_MODEL,
         retries: 1,

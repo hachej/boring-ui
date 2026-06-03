@@ -141,7 +141,7 @@ jobs:
           - name: core-3
             command: pnpm --filter @hachej/boring-core... --workspace-concurrency=4 run build && pnpm --filter @hachej/boring-core exec vitest run --no-file-parallelism --shard=3/3
           - name: rest-cli
-            command: pnpm -r --filter @hachej/boring-core... --filter @hachej/boring-ui-cli... --workspace-concurrency=4 run build && pnpm -r --filter @hachej/boring-ui-kit --filter @hachej/boring-ui-cli --workspace-concurrency=4 run test
+            command: pnpm -r --filter @hachej/boring-core... --filter @hachej/boring-ui-cli... --workspace-concurrency=4 run build && pnpm -r --filter @hachej/boring-ui-kit --filter @hachej/boring-ui-plugin-cli --filter @hachej/boring-ui-cli --workspace-concurrency=4 run test
           - name: rest-plugins
             command: pnpm -r --filter @hachej/boring-ask-user... --filter @hachej/boring-data-catalog... --filter @hachej/boring-deck... --workspace-concurrency=4 run build && pnpm -r --filter @hachej/boring-ask-user --filter @hachej/boring-data-explorer --filter @hachej/boring-data-catalog --filter @hachej/boring-deck --workspace-concurrency=4 run test
     services:
@@ -287,6 +287,7 @@ jobs:
         run: |
           pnpm --filter @hachej/boring-ui-kit build
           pnpm --filter @hachej/boring-agent build
+          pnpm --filter @hachej/boring-ui-plugin-cli build
           pnpm --filter @hachej/boring-workspace build
           pnpm --filter @hachej/boring-core build
           pnpm --filter @hachej/boring-deck build
@@ -299,7 +300,7 @@ jobs:
 
       - name: Publish packages with ci dist-tag
         run: |
-          for pkg in packages/ui packages/agent packages/workspace packages/core packages/cli plugins/deck plugins/ask-user plugins/data-explorer plugins/data-catalog; do
+          for pkg in packages/ui packages/agent packages/plugin-cli packages/workspace packages/core packages/cli plugins/deck plugins/ask-user plugins/data-explorer plugins/data-catalog; do
             tarball=$(cd $pkg && pnpm pack 2>&1 | tail -1)
             if ! npm publish "$pkg/$tarball" --access public --tag ci --provenance; then
               echo "::warning::CI package publish failed for $pkg; continuing because release publishing is handled by release.yml"

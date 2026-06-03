@@ -27,7 +27,7 @@ For future generated/hosted runtime-plugin architecture, see the repo-level
 | Term | Definition |
 | --- | --- |
 | **App/internal plugin** | Trusted package composed by the app at boot. May export `boring.server`, Fastify routes, agent tools, providers, catalogs, and domain APIs. Server changes require restart/redeploy. |
-| **Runtime/generated plugin** | Workspace-local plugin under `.pi/extensions/<id>/`, usually produced by `boring-ui scaffold-plugin`. It is hot-loaded for front/Pi resources, but must not rely on dynamic backend routes. |
+| **Runtime/generated plugin** | Workspace-local plugin under `.pi/extensions/<id>/`, usually produced by `boring-ui-plugin scaffold`. It is hot-loaded for front/Pi resources, but must not rely on dynamic backend routes. |
 | **Boring plugin package** | Node package with `package.json#boring` and/or `package.json#pi`. App-default packages are declared in `package.json#boring.defaultPluginPackages` or passed to `createWorkspaceAgentServer`. |
 | **Boring front factory** | Default export of `boring.front`: `(api: BoringFrontAPI) => void | Promise<void>`. Usually created with `definePlugin({ ... })`. |
 | **Workspace server plugin** | Trusted boot-time server contribution returned by `defineServerPlugin({ ... })` or a compatible object. May include routes, tools, system prompt, Pi resources, and provisioning. |
@@ -57,8 +57,8 @@ For future generated/hosted runtime-plugin architecture, see the repo-level
 1. Agent/user runs the workspace-local CLI:
 
    ```bash
-   boring-ui scaffold-plugin <name>
-   boring-ui verify-plugin <name>
+   boring-ui-plugin scaffold <name>
+   boring-ui-plugin verify <name>
    ```
 
 2. The plugin lives under `.pi/extensions/<name>/`.
@@ -234,8 +234,8 @@ write/read `.error` state, and keep their previous live UI where possible.
 Generated plugin authoring uses the provisioned workspace-local CLI:
 
 ```bash
-boring-ui scaffold-plugin <name>
-boring-ui verify-plugin <name>
+boring-ui-plugin scaffold <name>
+boring-ui-plugin verify <name>
 ```
 
 Do not teach agents to copy `packages/cli/templates/plugin` for generated runtime

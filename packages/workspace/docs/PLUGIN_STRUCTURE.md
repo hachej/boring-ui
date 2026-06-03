@@ -10,8 +10,8 @@ architecture, see the repo-level
 Use the workspace-local CLI from inside the agent/runtime workspace:
 
 ```bash
-boring-ui scaffold-plugin <name>
-boring-ui verify-plugin <name>
+boring-ui-plugin scaffold <name>
+boring-ui-plugin verify <name>
 ```
 
 Default shape:

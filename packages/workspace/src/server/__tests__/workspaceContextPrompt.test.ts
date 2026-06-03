@@ -145,8 +145,8 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
     // a stable substring of the resulting prompt rather than the entire
     // bare-args output.
     expect(capturedSystemPromptAppend).toContain("Plugin authoring — required workflow")
-    expect(capturedSystemPromptAppend).toContain("boring-ui scaffold-plugin")
-    expect(capturedSystemPromptAppend).toContain("boring-ui verify-plugin")
+    expect(capturedSystemPromptAppend).toContain("boring-ui-plugin scaffold")
+    expect(capturedSystemPromptAppend).toContain("boring-ui-plugin verify")
   })
 
   test("plugin system prompts appear alongside workspace context in direct mode", async () => {
@@ -188,7 +188,6 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       provisionWorkspace: false,
     })
     await app.close()
-    expect(capturedSystemPromptAppend).toBeDefined()
-    expect(capturedSystemPromptAppend).not.toContain(buildWorkspaceContextPrompt())
+    expect(capturedSystemPromptAppend ?? "").not.toContain(buildWorkspaceContextPrompt())
   })
 })

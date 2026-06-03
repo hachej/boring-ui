@@ -55,11 +55,11 @@ describe("createWorkspaceAgentServer — runtime provisioning packages", () => {
     const previous = process.env.BORING_USE_LOCAL_PACKAGES
     delete process.env.BORING_USE_LOCAL_PACKAGES
     try {
-      const cli = getProvisionedNodePackage(collectWorkspaceAgentServerPlugins(), "boring-ui-cli")
+      const cli = getProvisionedNodePackage(collectWorkspaceAgentServerPlugins(), "boring-ui-plugin-cli")
       expect(cli).toMatchObject({
-        id: "boring-ui-cli",
-        packageName: "@hachej/boring-ui-cli",
-        expectedBins: ["boring-ui"],
+        id: "boring-ui-plugin-cli",
+        packageName: "@hachej/boring-ui-plugin-cli",
+        expectedBins: ["boring-ui-plugin"],
       })
       // In a monorepo layout the CLI package root resolves locally,
       // so published provisioning omits the version (npm picks latest).
@@ -74,17 +74,23 @@ describe("createWorkspaceAgentServer — runtime provisioning packages", () => {
     }
   })
 
-  test("keeps local CLI package provisioning behind BORING_USE_LOCAL_PACKAGES", () => {
+  test("keeps local CLI package provisioning behind BORING_USE_LOCAL_PACKAGES when a built package exists", () => {
     const previous = process.env.BORING_USE_LOCAL_PACKAGES
     process.env.BORING_USE_LOCAL_PACKAGES = "1"
     try {
-      const cli = getProvisionedNodePackage(collectWorkspaceAgentServerPlugins(), "boring-ui-cli")
+      const cli = getProvisionedNodePackage(collectWorkspaceAgentServerPlugins(), "boring-ui-plugin-cli")
       expect(cli).toMatchObject({
-        id: "boring-ui-cli",
-        packageName: "@hachej/boring-ui-cli",
+        id: "boring-ui-plugin-cli",
+        packageName: "@hachej/boring-ui-plugin-cli",
       })
-      expect(typeof cli?.packageRoot).toBe("string")
-      expect(cli).not.toHaveProperty("version")
+      // Local source installs require built dist/bin.js. Fresh CI checkouts may
+      // run workspace tests before plugin-cli is built, so provisioning falls
+      // back to the published package instead of installing a broken source dir.
+      if (cli?.packageRoot) {
+        expect(cli).not.toHaveProperty("version")
+      } else {
+        expect(cli?.version).toMatch(/^\d+\.\d+\.\d+/)
+      }
     } finally {
       if (previous === undefined) delete process.env.BORING_USE_LOCAL_PACKAGES
       else process.env.BORING_USE_LOCAL_PACKAGES = previous
@@ -438,12 +444,13 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     })
 
     try {
-      const provisionedCli = join(workspaceRoot, ".boring-agent", "node", "node_modules", "@hachej", "boring-ui-cli")
-      await expect(readFile(join(provisionedCli, "package.json"), "utf8")).resolves.toContain("@hachej/boring-ui-cli")
+      const provisionedCli = join(workspaceRoot, ".boring-agent", "node", "node_modules", "@hachej", "boring-ui-plugin-cli")
+      await expect(readFile(join(provisionedCli, "package.json"), "utf8")).resolves.toContain("@hachej/boring-ui-plugin-cli")
       await expect(readFile(join(provisionedCli, "templates", "front-canonical.tsx"), "utf8")).resolves.toContain("definePlugin")
+      await expect(readFile(join(workspaceRoot, ".boring-agent", "node", "node_modules", ".bin", "boring-ui-plugin"), "utf8")).resolves.toContain("node")
 
-      // No shell shim anymore — scaffold/verify commands flow directly
-      // through the system prompt (boring-ui resolves via PATH).
+      // No shell shim or full boring-ui CLI — plugin authoring uses the
+      // dedicated boring-ui-plugin workspace setup command on PATH.
     } finally {
       await app.close()
     }

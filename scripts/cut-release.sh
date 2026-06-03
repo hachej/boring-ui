@@ -46,6 +46,7 @@ pnpm audit:publish-manifests
 
 git add \
   packages/core/package.json \
+  packages/plugin-cli/package.json \
   packages/workspace/package.json \
   packages/agent/package.json \
   packages/ui/package.json \

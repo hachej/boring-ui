@@ -12,6 +12,7 @@ const root = resolve(__dirname, "..")
 
 const PUBLISHABLE = [
   "packages/core",
+  "packages/plugin-cli", // @hachej/boring-ui-plugin-cli
   "packages/workspace",
   "packages/agent",
   "packages/ui",
