@@ -156,6 +156,7 @@ describe("default boring-ui CLI provisioning", () => {
   test("collector exposes the CLI package through default/exclude mechanisms", async () => {
     const included = collectWorkspaceAgentServerPlugins({
       workspaceRoot: await makeTempDir("boring-cli-default-"),
+      installPluginAuthoring: true,
     })
     const cli = findBoringUiCliContribution(included.provisioningContributions)
     expect(cli?.provisioning?.nodePackages).toContainEqual(expect.objectContaining({
@@ -167,16 +168,24 @@ describe("default boring-ui CLI provisioning", () => {
     const excluded = collectWorkspaceAgentServerPlugins({
       workspaceRoot: await makeTempDir("boring-cli-default-excluded-"),
       excludeDefaults: ["boring-ui-plugin-cli-package"],
+      installPluginAuthoring: true,
     })
     expect(findBoringUiCliContribution(excluded.provisioningContributions)).toBeUndefined()
+
+    const disabled = collectWorkspaceAgentServerPlugins({
+      workspaceRoot: await makeTempDir("boring-cli-default-disabled-"),
+      installPluginAuthoring: false,
+    })
+    expect(findBoringUiCliContribution(disabled.provisioningContributions)).toBeUndefined()
   })
 
   test.each([
-    { mode: "direct" as const, shouldProvisionCli: false },
-    { mode: "local" as const, shouldProvisionCli: true },
+    { mode: "direct" as const, installPluginAuthoring: undefined, shouldProvisionCli: false, shouldPrompt: true },
+    { mode: "local" as const, installPluginAuthoring: undefined, shouldProvisionCli: true, shouldPrompt: true },
+    { mode: "local" as const, installPluginAuthoring: false, shouldProvisionCli: false, shouldPrompt: false },
   ])(
     "mode $mode handles default plugin CLI provisioning and prompt commands",
-    async ({ mode, shouldProvisionCli }) => {
+    async ({ mode, installPluginAuthoring, shouldProvisionCli, shouldPrompt }) => {
       const workspaceRoot = await makeTempDir(`boring-cli-${mode}-`)
       let capturedPrompt: string | undefined
       mockCreateAgentAppOnce(async (opts: unknown) => {
@@ -203,6 +212,7 @@ describe("default boring-ui CLI provisioning", () => {
         workspaceRoot,
         mode,
         logger: false,
+        ...(installPluginAuthoring === undefined ? {} : { installPluginAuthoring }),
       })
 
       expect(agentServerMock.provisionWorkspaceRuntime).toHaveBeenCalledTimes(1)
@@ -219,8 +229,13 @@ describe("default boring-ui CLI provisioning", () => {
       } else {
         expect(cli).toBeUndefined()
       }
-      expect(capturedPrompt).toContain("boring-ui-plugin scaffold")
-      expect(capturedPrompt).toContain("boring-ui-plugin verify")
+      if (shouldPrompt) {
+        expect(capturedPrompt).toContain("boring-ui-plugin scaffold")
+        expect(capturedPrompt).toContain("boring-ui-plugin verify")
+      } else {
+        expect(capturedPrompt ?? "").not.toContain("boring-ui-plugin scaffold")
+        expect(capturedPrompt ?? "").not.toContain("boring-ui-plugin verify")
+      }
     },
   )
 
