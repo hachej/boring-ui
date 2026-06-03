@@ -12,6 +12,7 @@ import {
 import {
   collectWorkspaceAgentServerPlugins,
   hasDirServerPlugin,
+  omitPluginAuthoringProvisioning,
   readWorkspacePluginPackagePiSnapshot,
   readWorkspacePluginPackageRuntimePlugins,
   resolveDefaultWorkspacePluginPackagePaths,
@@ -723,11 +724,14 @@ export async function createCoreWorkspaceAgentServer(
     getWorkspaceRoot: resolveRoot,
     provisionRuntime: async ({ provisioningAdapter, runtimeLayout, workspaceId, request, runtimeMode }) => {
       if (!provisioningAdapter) return undefined
+      const runtimePlugins = [
+        ...pluginCollection.runtimePlugins,
+        ...defaultPackageRuntimePlugins,
+      ]
       return await provisionWorkspaceRuntime({
-        plugins: [
-          ...pluginCollection.runtimePlugins,
-          ...defaultPackageRuntimePlugins,
-        ],
+        plugins: runtimeMode === 'direct'
+          ? omitPluginAuthoringProvisioning(runtimePlugins)
+          : runtimePlugins,
         adapter: provisioningAdapter,
         runtimeLayout,
         telemetry,

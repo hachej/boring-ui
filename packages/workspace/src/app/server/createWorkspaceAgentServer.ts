@@ -239,7 +239,13 @@ function resolveBoringUiPluginCliPackageRoot(): string | null {
   }
 }
 
-const PLUGIN_AUTHORING_PROVISIONING_IDS = new Set(["boring-ui-plugin-cli-package"])
+export const PLUGIN_AUTHORING_PROVISIONING_IDS = new Set(["boring-ui-plugin-cli-package"])
+
+export function omitPluginAuthoringProvisioning(
+  plugins: WorkspaceRuntimeProvisioningInput[],
+): WorkspaceRuntimeProvisioningInput[] {
+  return plugins.filter((plugin) => !PLUGIN_AUTHORING_PROVISIONING_IDS.has(plugin.id))
+}
 
 function createBoringUiPluginCliPackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
   const packageRoot = useLocalPackageProvisioning() ? resolveBoringUiPluginCliPackageRoot() : null
@@ -608,8 +614,8 @@ export async function createWorkspaceAgentServer(
       ...pluginCollection.runtimePlugins,
       ...readWorkspacePluginPackageRuntimePlugins(boringPluginDirs),
     ])
-    if (workspaceFsCapability === "strong") return inputs
-    return inputs.filter((plugin) => !PLUGIN_AUTHORING_PROVISIONING_IDS.has(plugin.id))
+    if (resolvedMode === "direct") return omitPluginAuthoringProvisioning(inputs)
+    return inputs
   }
   let currentRuntimeProvisioning = opts.runtimeProvisioning
   const runtimeWorkspaceRoot = resolvedMode === "vercel-sandbox"

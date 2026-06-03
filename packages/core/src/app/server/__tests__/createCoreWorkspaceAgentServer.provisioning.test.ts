@@ -1,5 +1,5 @@
 import Fastify from 'fastify'
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 import { createTestCoreConfig } from '../../../server/__tests__/createTestApp.js'
 
 const mocks = vi.hoisted(() => ({
@@ -18,6 +18,7 @@ vi.mock('@hachej/boring-agent/server', () => ({
 vi.mock('@hachej/boring-workspace/app/server', () => ({
   collectWorkspaceAgentServerPlugins: mocks.collectWorkspaceAgentServerPlugins,
   hasDirServerPlugin: () => false,
+  omitPluginAuthoringProvisioning: (plugins: Array<{ id: string }>) => plugins.filter((plugin) => plugin.id !== 'boring-ui-plugin-cli-package'),
   readWorkspacePluginPackagePiSnapshot: () => ({
     additionalSkillPaths: [],
     packages: [],
@@ -44,6 +45,11 @@ vi.mock('../../../server/auth/index.js', () => ({
   authHook: async () => {},
   createAuth: () => ({ handler: vi.fn(async () => new Response(null, { status: 404 })) }),
 }))
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  mocks.provisionWorkspaceRuntime.mockResolvedValue({ changed: false, env: {}, pathEntries: [], skillPaths: [] })
+})
 
 vi.mock('../../../server/routes/index.js', () => ({
   registerInviteRoutes: async () => {},
@@ -105,6 +111,51 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
       adapter,
       runtimeLayout,
       telemetry: expect.any(Object),
+    }))
+  } finally {
+    await app.close()
+  }
+})
+
+test('core/full-app direct mode skips built-in plugin CLI provisioning', async () => {
+  const pluginCli = {
+    id: 'boring-ui-plugin-cli-package',
+    provisioning: { nodePackages: [{ packageName: '@hachej/boring-ui-plugin-cli' }] },
+  }
+  const runtimePlugin = {
+    id: 'workspace-runtime-plugin',
+    provisioning: { python: [] },
+  }
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [pluginCli, runtimePlugin],
+    provisioningContributions: [],
+    agentOptions: {
+      extraTools: [],
+      pi: { additionalSkillPaths: [], packages: [] },
+      systemPromptAppend: undefined,
+    },
+    preservedUiStateKeys: [],
+    routeContributions: [],
+  })
+
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    workspaceRoot: '/tmp/full-app-workspaces',
+    serveFrontend: false,
+    registerHealthRoute: false,
+  })
+
+  try {
+    const options = (mocks.registerAgentRoutes as any).mock.calls[0]?.[1] as Record<string, unknown>
+    const provisionRuntime = options.provisionRuntime as (ctx: Record<string, unknown>) => Promise<unknown>
+    const adapter = { workspaceFs: {} }
+    const runtimeLayout = { workspaceRoot: '/workspace' }
+    await provisionRuntime({ provisioningAdapter: adapter, runtimeLayout, runtimeMode: 'direct' })
+    expect(mocks.provisionWorkspaceRuntime).toHaveBeenCalledWith(expect.objectContaining({
+      plugins: [runtimePlugin],
+      adapter,
+      runtimeLayout,
     }))
   } finally {
     await app.close()
