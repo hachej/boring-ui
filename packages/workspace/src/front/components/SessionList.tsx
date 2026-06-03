@@ -148,6 +148,34 @@ export function SessionList({
   )
 }
 
+async function copyText(text: string): Promise<boolean> {
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      // Fall through to legacy copy for HTTP dev URLs or unfocused pages.
+    }
+  }
+
+  if (typeof document === "undefined") return false
+  const textarea = document.createElement("textarea")
+  textarea.value = text
+  textarea.setAttribute("readonly", "")
+  textarea.style.position = "fixed"
+  textarea.style.opacity = "0"
+  textarea.style.pointerEvents = "none"
+  document.body.appendChild(textarea)
+  textarea.select()
+  try {
+    return document.execCommand?.("copy") ?? false
+  } catch {
+    return false
+  } finally {
+    document.body.removeChild(textarea)
+  }
+}
+
 function SessionRow({
   session,
   isActive,
@@ -170,9 +198,8 @@ function SessionRow({
   const [copied, setCopied] = useState(false)
   const copySessionId = useCallback((event: MouseEvent) => {
     event.stopPropagation()
-    const writeText = navigator.clipboard?.writeText?.bind(navigator.clipboard)
-    if (!writeText) return
-    void writeText(session.id).then(() => {
+    void copyText(session.id).then((ok) => {
+      if (!ok) return
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1200)
     })

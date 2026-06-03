@@ -55,6 +55,7 @@ import {
   IconButton,
 } from '@hachej/boring-ui-kit'
 import { cn } from './lib'
+import { copyTextToClipboard } from './clipboard'
 import { friendlyError } from './chatErrors'
 import { getReasoningPart, isBlankTextPart, isFilePart, isTextPart, type ReasoningPartView } from './chatMessageParts'
 import { useComposerHistory } from './useComposerHistory'
@@ -1832,37 +1833,6 @@ function regenerateLastTurn({
  * accessibility hidden, so the transcript does not jump when the working
  * state settles and the controls fade in.
  */
-async function copyTextToClipboard(text: string): Promise<boolean> {
-  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text)
-      return true
-    } catch {
-      /* fall through to legacy fallback */
-    }
-  }
-
-  // Fallback for non-secure contexts (HTTP dev URLs etc.) or browsers where
-  // the async Clipboard API is unavailable. document.execCommand('copy') is
-  // deprecated but still broadly supported and works off a temporary textarea.
-  if (typeof document === 'undefined') return false
-  const ta = document.createElement('textarea')
-  ta.value = text
-  ta.setAttribute('readonly', '')
-  ta.style.position = 'fixed'
-  ta.style.opacity = '0'
-  ta.style.pointerEvents = 'none'
-  document.body.appendChild(ta)
-  ta.select()
-  try {
-    return document.execCommand('copy')
-  } catch {
-    return false
-  } finally {
-    document.body.removeChild(ta)
-  }
-}
-
 function MessageActionsBar({
   text,
   canRegenerate,

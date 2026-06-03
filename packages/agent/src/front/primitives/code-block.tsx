@@ -8,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@hachej/boring-ui-kit";
+import { copyTextToClipboard } from "@/front/clipboard";
 import { cn } from "@/front/lib";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import type { ComponentProps, CSSProperties, HTMLAttributes } from "react";
@@ -479,22 +480,22 @@ export const CodeBlockCopyButton = ({
       return;
     }
 
-    try {
-      if (!isCopied) {
-        if (!navigator?.clipboard?.writeText) {
-          throw new Error("Clipboard API not available");
-        }
-        await navigator.clipboard.writeText(code);
-        setIsCopied(true);
-        onCopy?.();
-        timeoutRef.current = window.setTimeout(
-          () => setIsCopied(false),
-          timeout
-        );
-      }
-    } catch (error) {
-      onError?.(error as Error);
+    if (isCopied) {
+      return;
     }
+
+    const copied = await copyTextToClipboard(code);
+    if (!copied) {
+      onError?.(new Error("Clipboard API not available"));
+      return;
+    }
+
+    setIsCopied(true);
+    onCopy?.();
+    timeoutRef.current = window.setTimeout(
+      () => setIsCopied(false),
+      timeout
+    );
   }, [code, onCopy, onError, timeout, isCopied]);
 
   useEffect(
