@@ -22,7 +22,7 @@ and get one machine-readable verdict for that pane:
 ready | loading | error | missing | timeout | no-browser-connected
 ```
 
-Default `boring-ui test-plugin <name>` should use the **live workspace browser as
+Default `boring-ui-plugin test <name>` should use the **live workspace browser as
 the render oracle**, not Playwright.
 
 ## Current plugin-system fit
@@ -257,12 +257,12 @@ Do not block this V1 on PR71. Keep the status model close enough that migration 
 
 ### Layer 4 — CLI default runner over live UI
 
-`boring-ui test-plugin <name>` lives in the CLI but does not launch Playwright by default.
+`boring-ui-plugin test <name>` lives in the slim plugin CLI but does not launch Playwright by default.
 
 Command shape:
 
 ```txt
-boring-ui test-plugin <name> \
+boring-ui-plugin test <name> \
   [--url <local-server-url>] \
   [--workspace <id>] \
   [--panel-id <registered-panel-id>] \
@@ -331,7 +331,7 @@ Important sequencing detail:
 - If the status endpoint reports no browser connected, stop quickly with a clear error:
 
 ```txt
-NO_BROWSER_CONNECTED: open the workspace UI, then rerun boring-ui test-plugin niche-explorer
+NO_BROWSER_CONNECTED: open the workspace UI, then rerun boring-ui-plugin test niche-explorer
 ```
 
 - Do not silently start a nested `boring-ui` server from inside the agent runtime.
@@ -352,7 +352,7 @@ If retained later, it should:
 ## Command contract
 
 ```txt
-boring-ui test-plugin <name> [--workspace <id>] [--url <local-server-url>] [--panel-id <id>] [--timeout-ms <ms>] [--json]
+boring-ui-plugin test <name> [--workspace <id>] [--url <local-server-url>] [--panel-id <id>] [--timeout-ms <ms>] [--json]
 ```
 
 Default mode requires an already-running workspace UI with at least one browser tab connected.
@@ -365,7 +365,7 @@ Default mode requires an already-running workspace UI with at least one browser 
 - **H4.** Add stable error-boundary marker/status callback to `PluginErrorBoundary` fallback; ensure error suppresses/overrides ready.
 - **H5.** Add UI-owned in-memory pane-status store + `/api/v1/ui/panels/status` routes.
 - **H6.** Add browser liveness via existing UI control touch points; return `NO_BROWSER_CONNECTED` clearly when no live workspace browser can report status.
-- **H7.** Add `boring-ui test-plugin` runner that uses reload + existing `/api/v1/ui/commands` `openPanel` + pane-status polling/retry.
+- **H7.** Add `boring-ui-plugin test` runner that uses reload + existing `/api/v1/ui/commands` `openPanel` + pane-status polling/retry.
 - **H8.** Keep Playwright as deferred/optional CI mode only; remove it from default acceptance.
 
 ## Acceptance

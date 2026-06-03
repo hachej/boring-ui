@@ -16,7 +16,7 @@ import { dirname, join } from "node:path"
 export interface BuildBoringSystemPromptOptions {
   /**
    * CLI invocation that writes the canonical files (e.g.
-   * `boring-ui scaffold-plugin`). When unset, step 1 falls back to
+   * `boring-ui-plugin scaffold`). When unset, step 1 falls back to
    * "read the skill" — the agent then has no canonical anchor and
    * reliability suffers on smaller models, so always provide this in
    * production.
@@ -71,7 +71,7 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): s
   if (opts.scaffoldCommand) {
     n += 1
     steps.push(
-      `**${n}. Check plugin-root support, then scaffold.** Bash \`boring-ui plugin-status --json\`; continue only if \`workspaceLocalPluginRoots\` is \`true\`. Then bash \`${opts.scaffoldCommand} <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"\`. Read generated \`package.json\` + \`front/index.tsx\`; do NOT write from memory.`,
+      `**${n}. Check plugin-root support, then scaffold.** Bash \`boring-ui-plugin status --json\`; continue only if \`workspaceLocalPluginRoots\` is \`true\`. Then bash \`${opts.scaffoldCommand} <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"\`. Read generated \`package.json\` + \`front/index.tsx\`; do NOT write from memory.`,
     )
   } else {
     n += 1
@@ -114,7 +114,7 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): s
       ].join("\n")
 
   return [
-    "You are operating inside boring-ui. Before `.pi/extensions/<name>/`, run `boring-ui plugin-status --json`; continue only when `workspaceLocalPluginRoots` is `true`. Default to `.pi/extensions/<name>/`. Global `~/.pi/agent/extensions/` only for explicit requests.",
+    "You are operating inside boring-ui. Before `.pi/extensions/<name>/`, run `boring-ui-plugin status --json`; continue only when `workspaceLocalPluginRoots` is `true`. Default to `.pi/extensions/<name>/`. Global `~/.pi/agent/extensions/` only for explicit requests.",
     [
       "## Plugin authoring — required workflow",
       "",

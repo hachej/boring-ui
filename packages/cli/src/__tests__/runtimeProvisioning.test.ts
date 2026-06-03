@@ -32,7 +32,7 @@ function fakeAdapter(workspaceRoot: string, commands: Array<{ command: string; a
       if (command === "npm" && args[0] === "install") {
         const prefix = args[args.indexOf("--prefix") + 1]
         await mkdir(join(prefix, "node_modules", ".bin"), { recursive: true })
-        await writeFile(join(prefix, "node_modules", ".bin", "boring-ui"), "#!/usr/bin/env node\n")
+        await writeFile(join(prefix, "node_modules", ".bin", "boring-ui-plugin"), "#!/usr/bin/env node\n")
       }
     },
     async resolveInstallSource(source) {
@@ -68,18 +68,17 @@ function fakeAdapter(workspaceRoot: string, commands: Array<{ command: string; a
   }
 }
 
-test("CLI default runtime package is a structural plugin-like object", () => {
-  const plugin = createBoringUiCliRuntimePlugin("/tmp/cli package")
+test("CLI default runtime package installs the slim plugin CLI", () => {
+  const plugin = createBoringUiCliRuntimePlugin()
 
   expect(plugin).toEqual({
-    id: "boring-ui-cli-runtime",
+    id: "boring-ui-plugin-cli-runtime",
     provisioning: {
       nodePackages: [{
-        id: "boring-ui-cli",
-        packageName: "@hachej/boring-ui-cli",
-        packageRoot: "/tmp/cli package",
+        id: "boring-ui-plugin-cli",
+        packageName: "@hachej/boring-ui-plugin-cli",
         version: expect.any(String),
-        expectedBins: ["boring-ui"],
+        expectedBins: ["boring-ui-plugin"],
       }],
     },
   })
@@ -97,8 +96,8 @@ test("CLI project/workspaces provisioning writes .boring-agent under the selecte
   })
 
   expect(result?.pathEntries).toContain(join(workspaceRoot, ".boring-agent", "node", "node_modules", ".bin"))
-  await expect(readFile(join(workspaceRoot, ".boring-agent", "node", "node_modules", ".bin", "boring-ui"), "utf8")).resolves.toContain("node")
-  await expect(readFile(join(homeRoot, ".boring-agent", "node", "node_modules", ".bin", "boring-ui"), "utf8")).rejects.toThrow()
+  await expect(readFile(join(workspaceRoot, ".boring-agent", "node", "node_modules", ".bin", "boring-ui-plugin"), "utf8")).resolves.toContain("node")
+  await expect(readFile(join(homeRoot, ".boring-agent", "node", "node_modules", ".bin", "boring-ui-plugin"), "utf8")).rejects.toThrow()
   expect(commands.find((command) => command.command === "npm" && command.args[0] === "install")?.args).toContain("--prefix")
 }, 15_000)
 

@@ -49,7 +49,7 @@ type CliMode = keyof typeof MODE_MAP
 type RuntimeMode = typeof MODE_MAP[CliMode]
 
 const require = createRequire(import.meta.url)
-const CLI_PACKAGE_NAME = "@hachej/boring-ui-cli"
+const PLUGIN_CLI_PACKAGE_NAME = "@hachej/boring-ui-plugin-cli"
 
 const CLI_VERSION = (() => {
   try {
@@ -118,18 +118,33 @@ export function resolveBoringUiCliPackageRoot(): string {
   return resolve(__dirname, "..", "..")
 }
 
-export function createBoringUiCliRuntimePlugin(
-  packageRoot = resolveBoringUiCliPackageRoot(),
-): ProvisionWorkspaceRuntimeOptions["plugins"][number] {
+function isUsableBoringUiPluginCliPackageRoot(candidate: string): boolean {
+  try {
+    const pkg = JSON.parse(readFileSync(join(candidate, "package.json"), "utf8")) as { name?: string }
+    return pkg.name === PLUGIN_CLI_PACKAGE_NAME
+      && existsSync(join(candidate, "dist", "bin.js"))
+  } catch {
+    return false
+  }
+}
+
+export function resolveBoringUiPluginCliPackageRoot(): string | null {
+  const cliRoot = resolveBoringUiCliPackageRoot()
+  const candidate = resolve(cliRoot, "..", "plugin-cli")
+  return isUsableBoringUiPluginCliPackageRoot(candidate) ? candidate : null
+}
+
+export function createBoringUiCliRuntimePlugin(): ProvisionWorkspaceRuntimeOptions["plugins"][number] {
+  const useLocal = process.env.BORING_USE_LOCAL_PACKAGES === "1"
+  const packageRoot = useLocal ? resolveBoringUiPluginCliPackageRoot() : null
   return {
-    id: "boring-ui-cli-runtime",
+    id: "boring-ui-plugin-cli-runtime",
     provisioning: {
       nodePackages: [{
-        id: "boring-ui-cli",
-        packageName: CLI_PACKAGE_NAME,
-        packageRoot,
-        version: CLI_VERSION,
-        expectedBins: ["boring-ui"],
+        id: "boring-ui-plugin-cli",
+        packageName: PLUGIN_CLI_PACKAGE_NAME,
+        ...(packageRoot ? { packageRoot } : { version: CLI_VERSION }),
+        expectedBins: ["boring-ui-plugin"],
       }],
     },
   }
