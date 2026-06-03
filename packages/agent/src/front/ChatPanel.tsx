@@ -747,13 +747,16 @@ export function ChatPanel(props: ChatPanelProps) {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || !isStreaming) return
-      const tag = (e.target as HTMLElement)?.tagName
+      const target = e.target instanceof HTMLElement ? e.target : null
+      const tag = target?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      if (target?.closest('[role="dialog"], [role="menu"], [role="listbox"]')) return
       e.preventDefault()
+      e.stopPropagation()
       handleInterrupt()
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    window.addEventListener('keydown', onKeyDown, { capture: true })
+    return () => window.removeEventListener('keydown', onKeyDown, { capture: true })
   }, [isStreaming, handleInterrupt])
 
   // Compose-history navigation (↑/↓ like a terminal)
