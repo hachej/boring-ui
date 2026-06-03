@@ -259,7 +259,7 @@ describe('useAgentChat', () => {
     )
   })
 
-  test('shows an active resumed session as submitted while the SDK reconnects', () => {
+  test('keeps an active resumed session ready while chat history hydrates', () => {
     mockChatStatus = 'ready'
     mockStorageGetItem.mockImplementation((key: string) => {
       if (key === 'boring-agent:messages:sess-1') {
@@ -274,7 +274,8 @@ describe('useAgentChat', () => {
 
     const result = useAgentChat({ sessionId: 'sess-1' })
 
-    expect(result.status).toBe('submitted')
+    expect(result.status).toBe('ready')
+    expect(result.hydratingMessages).toBe(true)
   })
 
   test('marks stale SDK streaming state ready in the cached session status', () => {
@@ -355,7 +356,8 @@ describe('useAgentChat', () => {
     const result = useAgentChat({ sessionId: 'sess-1' })
     await flushPromises()
 
-    expect(result.status).toBe('streaming')
+    expect(result.status).toBe('ready')
+    expect(result.hydratingMessages).toBe(true)
     expect(useChat).toHaveBeenCalledWith(expect.objectContaining({ resume: true }))
     expect(mockStorageSetItem).not.toHaveBeenCalledWith('boring-agent:status:sess-1', 'ready')
   })

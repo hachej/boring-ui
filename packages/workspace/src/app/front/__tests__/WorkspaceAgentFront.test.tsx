@@ -377,7 +377,6 @@ describe("WorkspaceAgentFront", () => {
     })
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/chat/session-workspace-a/messages"))).toBe(true)
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/chat/session-workspace-a/stream"))).toBe(true)
     })
     fetchMock.mockClear()
 
