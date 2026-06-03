@@ -301,9 +301,10 @@ function commitCapturedFrontFactory(
   if (captured.providers.length > 0 || captured.bindings.length > 0) {
     warnUnsupportedDynamicContributions(pluginId, captured)
     // Provider/binding contributions require mounting in the provider tree,
-    // which hot reload cannot do safely yet. Throw so the caller preserves any
-    // existing static or previously-loaded registrations.
-    throw new Error(`PLUGIN_UNSUPPORTED_DYNAMIC_CONTRIBUTIONS: plugin "${pluginId}" registered provider/binding outputs that require an app restart`)
+    // which hot reload cannot do safely yet. Keep any provider/binding from the
+    // statically mounted app, but still refresh hot-swappable panel/command/
+    // catalog/resolver outputs. If a newly-added panel depends on an unmounted
+    // provider, the panel render self-test reports that concrete render error.
   }
   const payloads = buildRegistryPayloads(pluginId, revision, captured)
   assertNoOutputCollisions(pluginId, payloads, registries)
