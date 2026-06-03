@@ -27,6 +27,7 @@ import type {
   SessionDetail,
 } from "../../../shared/session.js";
 import type { UIMessage } from "../../../shared/message.js";
+import { dropEmptyAssistantUiMessages, sanitizeUiMessages } from "../../../shared/message-sanitizer.js";
 
 function defaultSessionDir(cwd: string): string {
   const safePath = `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
@@ -159,7 +160,7 @@ export class PiSessionStore implements SessionStore {
     // entry in file order rather than pi's compacted LLM working context.
     const uiSnapshot = extractLatestUiSnapshot(fileEntries);
     const transcriptEntries = linkedEntries.length > 0 ? linkedEntries : sessionEntries;
-    const messages = uiSnapshot ?? dropEmptyAssistantMessages(piMessagesToUIMessages(
+    const messages = uiSnapshot ?? dropEmptyAssistantUiMessages(piMessagesToUIMessages(
       transcriptEntries
         .filter((entry): entry is SessionMessageEntry => entry.type === "message")
         .map((entry) => entry.message),
@@ -186,7 +187,7 @@ export class PiSessionStore implements SessionStore {
       type: "ui_snapshot",
       id: randomUUID(),
       timestamp: new Date().toISOString(),
-      messages: dedupeAdjacentAssistantMessages(messages),
+      messages: sanitizeUiMessages(messages, { dropEmptyAssistantMessages: true }),
     });
     await appendFile(filepath, entry + "\n");
   }
@@ -396,95 +397,6 @@ export class PiSessionStore implements SessionStore {
   }
 }
 
-function collapseExactRepeatedText(text: string): string {
-  const maxCopies = Math.min(20, Math.floor(text.length / 4));
-  for (let copies = maxCopies; copies >= 2; copies--) {
-    if (text.length % copies !== 0) continue;
-    const unit = text.slice(0, text.length / copies);
-    if (unit.length < 4) continue;
-    if (unit.repeat(copies) === text) return unit;
-  }
-  return text;
-}
-
-function normalizeAssistantMessage(message: UIMessage): UIMessage {
-  if (message.role !== "assistant") return message;
-  let changed = false;
-  const parts: UIMessage["parts"] = [];
-  for (const part of message.parts ?? []) {
-    const candidate = part as Record<string, unknown>;
-    if (candidate.type !== "text" || typeof candidate.text !== "string") {
-      parts.push(part);
-      continue;
-    }
-    const text = collapseExactRepeatedText(candidate.text);
-    const previous = parts[parts.length - 1] as Record<string, unknown> | undefined;
-    if (previous?.type === "text" && previous.text === text) {
-      changed = true;
-      continue;
-    }
-    if (text !== candidate.text) changed = true;
-    parts.push(text === candidate.text ? part : ({ ...candidate, text } as typeof part));
-  }
-  return changed ? { ...message, parts } : message;
-}
-
-function assistantVisibleText(message: UIMessage): string | null {
-  if (message.role !== "assistant") return null;
-  const text = (message.parts ?? [])
-    .map((part) => {
-      const candidate = part as Record<string, unknown>;
-      return candidate.type === "text" && typeof candidate.text === "string" ? candidate.text : "";
-    })
-    .join("")
-    .trim();
-  return text || null;
-}
-
-function dropEmptyAssistantMessages(messages: UIMessage[]): UIMessage[] {
-  return messages.filter((message) => !(message.role === "assistant" && (!message.parts || message.parts.length === 0)));
-}
-
-function visibleUserText(message: UIMessage): string | null {
-  if (message.role !== "user") return null;
-  const text = (message.parts ?? [])
-    .map((part) => {
-      const candidate = part as Record<string, unknown>;
-      return candidate.type === "text" && typeof candidate.text === "string" ? candidate.text : "";
-    })
-    .join("")
-    .trim();
-  return text || null;
-}
-
-function isTransientUserId(id: string): boolean {
-  return /^user-\d+$/.test(id);
-}
-
-function dedupeDuplicateStableUsers(messages: UIMessage[]): UIMessage[] {
-  const seenText = new Set<string>();
-  return messages.filter((message) => {
-    const text = visibleUserText(message);
-    const id = typeof message.id === "string" ? message.id : "";
-    if (!text || id.startsWith("pending-user:")) return true;
-    if (seenText.has(text) && isTransientUserId(id)) return false;
-    seenText.add(text);
-    return true;
-  });
-}
-
-function dedupeAdjacentAssistantMessages(messages: UIMessage[]): UIMessage[] {
-  const deduped: UIMessage[] = [];
-  for (const rawMessage of dedupeDuplicateStableUsers(dropEmptyAssistantMessages(messages))) {
-    const message = normalizeAssistantMessage(rawMessage);
-    const previous = deduped[deduped.length - 1];
-    const currentText = assistantVisibleText(message);
-    if (currentText && previous && assistantVisibleText(previous) === currentText) continue;
-    deduped.push(message);
-  }
-  return deduped;
-}
-
 function extractPiSessionFilePath(entries: (SessionHeader | SessionEntry)[]): string | null {
   let piFilePath: string | null = null;
   for (const e of entries) {
@@ -501,7 +413,7 @@ function extractLatestUiSnapshot(entries: (SessionHeader | SessionEntry)[]): UIM
   for (const e of entries) {
     const rec = e as { type?: string; messages?: unknown };
     if (rec.type === "ui_snapshot" && Array.isArray(rec.messages)) {
-      latest = dedupeAdjacentAssistantMessages(rec.messages as UIMessage[]);
+      latest = sanitizeUiMessages(rec.messages as UIMessage[], { dropEmptyAssistantMessages: true });
     }
   }
   return latest;

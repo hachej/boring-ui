@@ -2,6 +2,7 @@ import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, type UIMessage } from 'ai'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { SendMessageInput } from '../../shared/harness'
+import { sanitizeUiMessage, sanitizeUiMessages, uiMessageContentKey } from '../../shared/message-sanitizer'
 
 export type UseAgentChatOptions = Pick<
   SendMessageInput,
@@ -13,95 +14,6 @@ export type UseAgentChatOptions = Pick<
   hydrateMessages?: boolean
 }
 
-function collapseExactRepeatedText(text: string): string {
-  const maxCopies = Math.min(20, Math.floor(text.length / 4))
-  for (let copies = maxCopies; copies >= 2; copies--) {
-    if (text.length % copies !== 0) continue
-    const unit = text.slice(0, text.length / copies)
-    if (unit.length < 4) continue
-    if (unit.repeat(copies) === text) return unit
-  }
-  return text
-}
-
-function normalizeMessage(message: UIMessage): UIMessage {
-  if (message.role !== 'assistant') return message
-  let changed = false
-  const parts: UIMessage['parts'] = []
-  for (const part of message.parts ?? []) {
-    const candidate = part as Record<string, unknown>
-    if (candidate.type !== 'text' || typeof candidate.text !== 'string') {
-      parts.push(part)
-      continue
-    }
-    const text = collapseExactRepeatedText(candidate.text)
-    const previous = parts[parts.length - 1] as Record<string, unknown> | undefined
-    if (previous?.type === 'text' && previous.text === text) {
-      changed = true
-      continue
-    }
-    if (text !== candidate.text) changed = true
-    parts.push(text === candidate.text ? part : ({ ...candidate, text } as typeof part))
-  }
-  return changed ? { ...message, parts } : message
-}
-
-function messageContentKey(message: UIMessage): string {
-  const normalized = normalizeMessage(message)
-  return `${normalized.role}:${JSON.stringify(normalized.parts ?? [])}`
-}
-
-function assistantVisibleText(message: UIMessage): string | null {
-  if (message.role !== 'assistant') return null
-  const text = (message.parts ?? [])
-    .map((part) => {
-      const candidate = part as Record<string, unknown>
-      return candidate.type === 'text' && typeof candidate.text === 'string' ? candidate.text : ''
-    })
-    .join('')
-    .trim()
-  return text || null
-}
-
-function dedupeAdjacentAssistantMessages(messages: UIMessage[]): UIMessage[] {
-  const deduped: UIMessage[] = []
-  for (const message of messages) {
-    const previous = deduped[deduped.length - 1]
-    const currentText = assistantVisibleText(message)
-    if (currentText && previous && assistantVisibleText(previous) === currentText) continue
-    deduped.push(message)
-  }
-  return deduped
-}
-
-function visibleUserText(message: UIMessage): string | null {
-  if (message.role !== 'user') return null
-  const text = (message.parts ?? [])
-    .map((part) => {
-      const candidate = part as Record<string, unknown>
-      return candidate.type === 'text' && typeof candidate.text === 'string' ? candidate.text : ''
-    })
-    .join('')
-    .trim()
-  return text || null
-}
-
-function isTransientUserId(id: string): boolean {
-  return /^user-\d+$/.test(id)
-}
-
-function dedupeDuplicateStableUsers(messages: UIMessage[]): UIMessage[] {
-  const seenText = new Set<string>()
-  return messages.filter((message) => {
-    const text = visibleUserText(message)
-    const id = typeof message.id === 'string' ? message.id : ''
-    if (!text || id.startsWith('pending-user:')) return true
-    if (seenText.has(text) && isTransientUserId(id)) return false
-    seenText.add(text)
-    return true
-  })
-}
-
 function mergeMessages(base: UIMessage[], tail: UIMessage[], opts?: { dedupePendingAgainstStable?: boolean }): UIMessage[] {
   const seenIds = new Set<string>()
   const seenContent = new Set<string>()
@@ -109,9 +21,9 @@ function mergeMessages(base: UIMessage[], tail: UIMessage[], opts?: { dedupePend
   const pendingUserContent = new Map<string, number>()
   const merged: UIMessage[] = []
   for (const rawMessage of [...base, ...tail]) {
-    const message = normalizeMessage(rawMessage)
+    const message = sanitizeUiMessage(rawMessage)
     const id = typeof message.id === 'string' ? message.id : undefined
-    const contentKey = messageContentKey(message)
+    const contentKey = uiMessageContentKey(message)
     const pendingUser = id?.startsWith('pending-user:') === true
     if (id) {
       if (seenIds.has(id)) continue
@@ -138,7 +50,7 @@ function mergeMessages(base: UIMessage[], tail: UIMessage[], opts?: { dedupePend
     }
     merged.push(message)
   }
-  return dedupeAdjacentAssistantMessages(dedupeDuplicateStableUsers(merged))
+  return sanitizeUiMessages(merged)
 }
 
 function sameMessageOrder(a: UIMessage[], b: UIMessage[]): boolean {
@@ -152,7 +64,7 @@ function sameMessageOrder(a: UIMessage[], b: UIMessage[]): boolean {
 function sameMessageIdentityOrContent(a: UIMessage | undefined, b: UIMessage | undefined): boolean {
   if (!a || !b) return false
   if (typeof a.id === 'string' && typeof b.id === 'string' && a.id === b.id) return true
-  return messageContentKey(a) === messageContentKey(b)
+  return uiMessageContentKey(a) === uiMessageContentKey(b)
 }
 
 function mergeHydratedMessages(serverMessages: UIMessage[], cachedMessages: UIMessage[]): UIMessage[] {
