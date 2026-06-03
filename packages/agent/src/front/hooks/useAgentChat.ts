@@ -272,7 +272,8 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     },
   })
 
-  const messages = chat.messages
+  const rawMessages = chat.messages
+  const messages = useMemo(() => mergeMessages([], rawMessages), [rawMessages])
   const messagesRef = useRef(messages)
   messagesRef.current = messages
 
@@ -385,11 +386,14 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   const rawStatus = chat.status
   const rawStatusActive = rawStatus === 'submitted' || rawStatus === 'streaming'
   const knownActiveTurn = localTurnActive || shouldResume
-  const status = rawStatusActive && !knownActiveTurn
+  const hydratingWithoutMessages = hydrateMessages && Boolean(sessionId) && !hydrated && messages.length === 0
+  const status = hydratingWithoutMessages
     ? 'ready'
-    : knownActiveTurn && rawStatus === 'ready'
-      ? 'submitted'
-      : rawStatus
+    : rawStatusActive && !knownActiveTurn
+      ? 'ready'
+      : knownActiveTurn && rawStatus === 'ready'
+        ? 'submitted'
+        : rawStatus
   const statusRef = useRef(status)
   statusRef.current = status
   const prevRawStatusRef = useRef(rawStatus)
@@ -414,9 +418,9 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   }, [knownActiveTurn, rawStatus, rawStatusActive, statusKey])
   useEffect(() => {
     if (messages.length === 0) return
-    const deduped = mergeMessages([], messages)
-    if (!sameMessageOrder(messages, deduped)) setMessages(deduped)
-  }, [messages, setMessages])
+    const deduped = mergeMessages([], rawMessages)
+    if (!sameMessageOrder(rawMessages, deduped)) setMessages(deduped)
+  }, [rawMessages, messages.length, setMessages])
 
   useEffect(() => {
     if (opts.persistMessages === false) return
@@ -500,5 +504,5 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     }).catch(() => { /* best-effort, ignore failures */ })
   }, [opts.persistMessages, sessionId, status, messages])
 
-  return { ...chat, sendMessage, status, hydrated, hydratingMessages: hydrateMessages && Boolean(sessionId) && !hydrated }
+  return { ...chat, messages, sendMessage, status, hydrated, hydratingMessages: hydrateMessages && Boolean(sessionId) && !hydrated }
 }

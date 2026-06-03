@@ -455,6 +455,52 @@ describe('useAgentChat', () => {
     expect(mockSetMessages).toHaveBeenCalledWith(hydratedMessages)
   })
 
+  test('returns sanitized messages immediately when AI SDK state contains duplicate assistant text', async () => {
+    const user = { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'yo respond me in 10 s' }] }
+    const assistant = {
+      id: 'a1',
+      role: 'assistant',
+      parts: [
+        { type: 'reasoning', text: '', state: 'done' },
+        { type: 'text', text: 'yo — responding now ✅', state: 'done' },
+      ],
+    }
+    const duplicateAssistant = {
+      id: 'assistant-1780433653864',
+      role: 'assistant',
+      parts: [
+        { type: 'reasoning', id: '0', text: '' },
+        { type: 'text', text: 'yo — responding now ✅' },
+      ],
+    }
+    vi.mocked(useChat).mockReturnValueOnce({
+      id: 'mock-chat',
+      messages: [user, assistant, duplicateAssistant],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: undefined,
+      stop: vi.fn(),
+      setMessages: mockSetMessages,
+    } as unknown as ReturnType<typeof useChat>)
+
+    const result = useAgentChat({ sessionId: 'sess-duplicate-render', hydrateMessages: false })
+
+    expect(result.messages).toEqual([user, assistant])
+    expect(mockSetMessages).toHaveBeenCalledWith([user, assistant])
+  })
+
+  test('does not show working while restoring an active marker before messages hydrate', () => {
+    mockStorageGetItem.mockImplementation((key: string) => {
+      if (key === 'boring-agent:status:sess-restoring') return 'active'
+      return null
+    })
+
+    const result = useAgentChat({ sessionId: 'sess-restoring' })
+
+    expect(result.hydratingMessages).toBe(true)
+    expect(result.status).toBe('ready')
+  })
+
   test('dedupes duplicate assistant text from cached snapshots during hydration', async () => {
     const serverUser = { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'yo respond me in 10 s' }] }
     const serverAssistant = {
