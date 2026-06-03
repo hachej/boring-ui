@@ -302,7 +302,7 @@ export function formatSelfTestResult(result: SelfTestResult): string {
   for (const item of result.reloadErrors) lines.push(`  reload   ${item.code}: ${item.message}`)
   if (result.pane.error) lines.push(`  pane     ${result.pane.error.code}: ${result.pane.error.message}`)
   if (result.pane.state === "no-browser-connected") {
-    lines.push(`  hint     open the workspace UI, then rerun boring-ui test-plugin ${result.pluginId}`)
+    lines.push(`  hint     open the workspace UI, then rerun boring-ui-plugin test ${result.pluginId}`)
   }
   return lines.join("\n")
 }
