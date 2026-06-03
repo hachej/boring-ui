@@ -8,6 +8,7 @@ export default defineConfig({
     "src/server/pluginDiscovery.ts",
     "src/server/pluginFrontRuntime.ts",
     "src/server/scaffoldPlugin.ts",
+    "src/server/testPlugin.ts",
     "src/server/verifyPlugin.ts",
   ],
   format: ["esm"],

@@ -57,7 +57,8 @@ Hot-reloadable agent behavior belongs in `pi.extensions` / `pi.skills` / `pi.sys
 3. Read the generated files with the read tool.
 4. Edit them in place with the edit tool — do **NOT** rewrite from scratch.
 5. Run `boring-ui verify-plugin <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"` via bash. Fix anything it reports and re-run until it returns `OK`.
-6. Tell the user to run `/reload` for front/Pi asset changes. If you added `boring.server`, tell the user the workspace process must be statically composed with that package and restarted.
+6. If the workspace UI is open, run `boring-ui test-plugin <kebab-name>` via bash. Add `--workspace <id>` in workspaces mode and `--panel-id <id>` if the plugin's main panel is not `<kebab-name>.panel`. Fix render failures and re-run until it returns `OK`. If it reports `NO_BROWSER_CONNECTED`, ask the user to open the workspace UI and rerun.
+7. Tell the user to run `/reload` for front/Pi asset changes. If you added `boring.server`, tell the user the workspace process must be statically composed with that package and restarted.
 
 If the scaffold says the plugin already exists, you can read the existing
 files directly and skip the scaffold step.

@@ -744,6 +744,7 @@ export async function createCoreWorkspaceAgentServer(
   })
 
   await app.register(uiRoutes, {
+    getWorkspaceId: resolveWorkspaceId,
     getBridge: async (request) => getUiBridge(await resolveWorkspaceId(request)),
     preserveStateKeys: pluginCollection.preservedUiStateKeys,
   })
