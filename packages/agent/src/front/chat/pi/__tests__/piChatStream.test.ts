@@ -167,9 +167,17 @@ describe('replay/gap recovery helpers', () => {
   it('maps replay_gap and cursor_ahead 409 responses to /state rehydrate recovery', () => {
     const gap = parsePiChatReplayRangeError(409, { error: { code: PI_CHAT_REPLAY_GAP_CODE, message: 'too old', details: { latestSeq: 42 } } })
     const ahead = parsePiChatReplayRangeError(409, { error: { code: PI_CHAT_CURSOR_AHEAD_CODE, message: 'ahead', latestSeq: 43 } })
+    const stableRouteGap = parsePiChatReplayRangeError(409, {
+      error: {
+        code: ErrorCode.enum.CURSOR_OUT_OF_RANGE,
+        message: PI_CHAT_REPLAY_GAP_CODE,
+        details: { reason: PI_CHAT_REPLAY_GAP_CODE, latestSeq: 44 },
+      },
+    })
 
     expect(gap).toEqual({ type: 'replay_gap', latestSeq: 42 })
     expect(ahead).toEqual({ type: 'cursor_ahead', latestSeq: 43 })
+    expect(stableRouteGap).toEqual({ type: 'replay_gap', latestSeq: 44 })
     expect(gap && replayRangeErrorToRecovery(gap)).toEqual({ action: 'rehydrate-state', reason: 'replay_gap', latestSeq: 42 })
     expect(ahead && replayRangeErrorToRecovery(ahead)).toEqual({ action: 'rehydrate-state', reason: 'cursor_ahead', latestSeq: 43 })
 

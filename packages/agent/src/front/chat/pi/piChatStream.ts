@@ -145,11 +145,18 @@ export function parsePiChatReplayRangeError(status: number, body: unknown): PiCh
   if (status !== 409 || typeof body !== 'object' || body === null) return null
   const record = body as Record<string, unknown>
   const payload = typeof record.error === 'object' && record.error !== null ? (record.error as Record<string, unknown>) : record
-  const code = payload.code
-  if (code !== PI_CHAT_REPLAY_GAP_CODE && code !== PI_CHAT_CURSOR_AHEAD_CODE) return null
+  const details = typeof payload.details === 'object' && payload.details !== null ? payload.details as Record<string, unknown> : undefined
+  const reason = payload.code === PI_CHAT_REPLAY_GAP_CODE || payload.code === PI_CHAT_CURSOR_AHEAD_CODE
+    ? payload.code
+    : payload.message === PI_CHAT_REPLAY_GAP_CODE || payload.message === PI_CHAT_CURSOR_AHEAD_CODE
+      ? payload.message
+      : details?.reason === PI_CHAT_REPLAY_GAP_CODE || details?.reason === PI_CHAT_CURSOR_AHEAD_CODE
+        ? details.reason
+        : undefined
+  if (reason !== PI_CHAT_REPLAY_GAP_CODE && reason !== PI_CHAT_CURSOR_AHEAD_CODE) return null
   const latestSeq = readLatestSeq(payload) ?? readLatestSeq(record)
   if (latestSeq === undefined) return null
-  return { type: code, latestSeq }
+  return { type: reason, latestSeq }
 }
 
 export function replayRangeErrorToRecovery(error: PiChatReplayRangeError): PiChatReplayRecovery {

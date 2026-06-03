@@ -1,0 +1,171 @@
+"use client"
+
+import type { KeyboardEvent, ReactNode } from 'react'
+import { memo, useCallback } from 'react'
+import { AlertCircleIcon, ListRestartIcon } from 'lucide-react'
+import { TooltipProvider } from '@hachej/boring-ui-kit'
+import type { PiChatStatus, QueuedUserMessage } from '../../../shared/chat'
+import { cn } from '../../lib'
+import {
+  PromptInput,
+  PromptInputActionAddAttachments,
+  PromptInputActionMenu,
+  PromptInputActionMenuContent,
+  PromptInputActionMenuTrigger,
+  PromptInputFooter,
+  PromptInputSubmit,
+  PromptInputTextarea,
+  PromptInputTools,
+  type PromptInputMessage,
+  type PromptInputProps,
+} from '../../primitives/prompt-input'
+import { PromptInputButton } from '../../primitives/prompt-input-wrappers'
+
+export interface ComposerSendPayload {
+  text: string
+  files: PromptInputMessage['files']
+}
+
+export interface ComposerBarProps extends Omit<PromptInputProps, 'children' | 'onSubmit'> {
+  status: PiChatStatus
+  value?: string
+  defaultValue?: string
+  placeholder?: string
+  disabled?: boolean
+  queuePreview?: QueuedUserMessage[]
+  commandError?: string
+  leftControls?: ReactNode
+  rightControls?: ReactNode
+  onValueChange?: (value: string) => void
+  onSend: (payload: ComposerSendPayload) => false | void | Promise<false | void>
+  onStop?: () => void
+  onEditQueued?: (followUps: QueuedUserMessage[]) => void
+  onEscape?: () => void
+}
+
+export const ComposerBar = memo(({
+  status,
+  value,
+  defaultValue,
+  placeholder = 'Message the agent…',
+  disabled = false,
+  queuePreview = [],
+  commandError,
+  leftControls,
+  rightControls,
+  onValueChange,
+  onSend,
+  onStop,
+  onEditQueued,
+  onEscape,
+  className,
+  ...promptInputProps
+}: ComposerBarProps) => {
+  const isBusy = status === 'submitted' || status === 'streaming' || status === 'aborting'
+  const submitStatus = toPromptSubmitStatus(status)
+
+  const handleSubmit = useCallback((input: PromptInputMessage) => {
+    const text = input.text.trim()
+    if (!text && input.files.length === 0) return false
+    return onSend({ text, files: input.files })
+  }, [onSend])
+
+  const handleKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== 'Escape') return
+    if (!onEscape && !(isBusy && onStop)) return
+    event.preventDefault()
+    if (isBusy && onStop) onStop()
+    else onEscape?.()
+  }, [isBusy, onEscape, onStop])
+
+  return (
+    <TooltipProvider>
+      <div data-boring-agent-part="composer-bar" className={cn('border-t bg-background/95 p-3', className)}>
+      <QueuedFollowUpsPreview followUps={queuePreview} onEditQueued={onEditQueued} />
+      {commandError ? (
+        <div
+          role="alert"
+          data-boring-agent-part="composer-command-error"
+          className="mb-2 flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+        >
+          <AlertCircleIcon className="size-4 shrink-0" aria-hidden="true" />
+          <span>{commandError}</span>
+        </div>
+      ) : null}
+      <PromptInput onSubmit={handleSubmit} className="relative" {...promptInputProps}>
+        <PromptInputTextarea
+          value={value}
+          defaultValue={defaultValue}
+          onChange={(event) => onValueChange?.(event.currentTarget.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          disabled={disabled}
+          aria-label="Agent prompt"
+        />
+        <PromptInputFooter data-boring-agent-part="composer-footer">
+          <PromptInputTools>
+            <PromptInputActionMenu>
+              <PromptInputActionMenuTrigger aria-label="Add attachment" disabled={disabled} />
+              <PromptInputActionMenuContent>
+                <PromptInputActionAddAttachments />
+              </PromptInputActionMenuContent>
+            </PromptInputActionMenu>
+            {leftControls}
+          </PromptInputTools>
+          <PromptInputTools>
+            {rightControls}
+            <PromptInputSubmit
+              status={submitStatus}
+              onStop={onStop}
+              disabled={disabled || (status === 'hydrating' && !onStop)}
+              data-boring-agent-part="composer-submit"
+            />
+          </PromptInputTools>
+        </PromptInputFooter>
+        </PromptInput>
+      </div>
+    </TooltipProvider>
+  )
+})
+
+ComposerBar.displayName = 'ComposerBar'
+
+function toPromptSubmitStatus(status: PiChatStatus): 'ready' | 'submitted' | 'streaming' | 'error' {
+  if (status === 'submitted' || status === 'hydrating') return 'submitted'
+  if (status === 'streaming' || status === 'aborting') return 'streaming'
+  if (status === 'error') return 'error'
+  return 'ready'
+}
+
+interface QueuedFollowUpsPreviewProps {
+  followUps: QueuedUserMessage[]
+  onEditQueued?: (followUps: QueuedUserMessage[]) => void
+}
+
+function QueuedFollowUpsPreview({ followUps, onEditQueued }: QueuedFollowUpsPreviewProps) {
+  if (followUps.length === 0) return null
+  return (
+    <div
+      data-boring-agent-part="composer-queue-preview"
+      className="mb-2 flex items-start justify-between gap-3 rounded-md border border-dashed border-border/70 bg-muted/35 px-3 py-2 text-sm"
+    >
+      <div className="min-w-0 text-muted-foreground">
+        <div className="font-medium text-foreground">{followUps.length} queued follow-up{followUps.length === 1 ? '' : 's'}</div>
+        <div className="truncate" data-boring-agent-part="composer-queue-preview-text">
+          {followUps.map((followUp) => followUp.displayText).join(' · ')}
+        </div>
+      </div>
+      {onEditQueued ? (
+        <PromptInputButton
+          type="button"
+          tooltip="Edit queued follow-ups"
+          onClick={() => onEditQueued(followUps)}
+          aria-label="Edit queued follow-ups"
+        >
+          <ListRestartIcon className="size-4" />
+          <span>Edit queued</span>
+        </PromptInputButton>
+      ) : null}
+    </div>
+  )
+}
