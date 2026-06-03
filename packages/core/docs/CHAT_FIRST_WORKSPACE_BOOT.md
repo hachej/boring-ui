@@ -102,6 +102,21 @@ Friendly chat/tool copy:
 
 Agent runtime/provisioning readiness is separate and must not be labeled `WORKSPACE_NOT_READY`. Runtime preparation uses `AGENT_RUNTIME_NOT_READY`; provisioning failures use `RUNTIME_PROVISIONING_FAILED` or `RUNTIME_PROVISIONING_LOCKED`.
 
-## Runtime provisioning boundary
+## Capability readiness and runtime provisioning boundary
 
-The browser does not implement package-manager or `.boring-agent` reconciliation logic and does not assume an async package update/status endpoint. Runtime provisioning is server-side and synchronous before declaring the agent runtime ready. Product UI only treats the agent runtime as preparing, ready, or failed.
+Agent readiness is capability-scoped, not one global blocker:
+
+1. **Chat ready** — the model stream/harness can start. This does not require `.boring-agent`, `bm`, pandas, or macro SDK installs.
+2. **Workspace/files ready** — workspace root, seeded starter/template files, and file tools are safe. This does not require Python macro dependencies.
+3. **Runtime dependencies ready** — `.boring-agent`, uv, venv, `bm`, macro Python SDK, pandas/requests/numpy, node/python package contributions, and runtime-provisioned skills are reconciled.
+
+The browser does not implement package-manager or `.boring-agent` reconciliation logic. Server-side provisioning/fingerprints remain the correctness source; background provisioning and future seed bundles are scheduling/latency optimizations only.
+
+Tool execution reuses existing agent readiness seams:
+
+- `ToolReadinessRequirement`
+- `wrapToolForReadiness()`
+- `mergeTools({ checkReadiness })`
+- backward-compatible `/api/v1/ready-status`
+
+`WORKSPACE_NOT_READY` remains reserved for workspace substrate readiness (`workspace-fs`, `sandbox-exec`, `ui-bridge`). Runtime dependency preparation returns `AGENT_RUNTIME_NOT_READY`; runtime dependency failure returns `RUNTIME_PROVISIONING_FAILED`.

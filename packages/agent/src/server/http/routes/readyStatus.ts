@@ -15,12 +15,29 @@ export function readyStatusRoutes(
     const tracker = opts.getTracker ? await opts.getTracker(request) : opts.tracker
     if (!tracker) throw new Error('ready-status route requires tracker or getTracker')
 
+    const initial = tracker.getReadiness()
+    const initialEvent = {
+      state: tracker.state,
+      sandboxReady: initial.sandboxReady,
+      harnessReady: initial.harnessReady,
+      capabilities: initial.capabilities,
+      message: initial.degradedReason,
+      timestamp: new Date().toISOString(),
+    }
+    const initialRuntimePending = initialEvent.capabilities.runtimeDependencies.state === 'preparing'
+    if (initialEvent.state === 'degraded' || (initialEvent.state === 'ready' && !initialRuntimePending)) {
+      return reply
+        .type('text/event-stream')
+        .headers({ 'Cache-Control': 'no-cache' })
+        .send(`:\n\nevent: status\ndata: ${JSON.stringify(initialEvent)}\n\n`)
+    }
+
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
     })
-    reply.raw.write(':\n\n')
+    reply.raw.write(`:\n\nevent: status\ndata: ${JSON.stringify(initialEvent)}\n\n`)
 
     let closed = false
     let unsubscribe: (() => void) | null = null
@@ -31,14 +48,18 @@ export function readyStatusRoutes(
       reply.raw.end()
     }
 
+    request.raw.on('close', closeStream)
+    reply.hijack()
+
     unsubscribe = tracker.subscribe((event) => {
       if (closed) return
       reply.raw.write(`event: status\ndata: ${JSON.stringify(event)}\n\n`)
-      if (event.state === 'ready' || event.state === 'degraded') closeStream()
+      const runtimePending = event.capabilities.runtimeDependencies.state === 'preparing'
+      if (event.state === 'degraded' || (event.state === 'ready' && !runtimePending)) {
+        queueMicrotask(closeStream)
+      }
     })
 
-    request.raw.on('close', closeStream)
-    reply.hijack()
     return reply
   })
 

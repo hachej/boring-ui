@@ -1,6 +1,11 @@
 export type JSONSchema = Record<string, unknown>
 
-export type ToolReadinessRequirement = 'workspace-fs' | 'sandbox-exec' | 'ui-bridge'
+export type ToolReadinessRequirement =
+  | 'workspace-fs'
+  | 'sandbox-exec'
+  | 'ui-bridge'
+  | 'runtime-dependencies'
+  | `runtime:${string}`
 
 export interface AgentTool {
   name: string

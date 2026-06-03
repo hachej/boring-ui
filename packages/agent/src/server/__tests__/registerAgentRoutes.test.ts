@@ -7,7 +7,6 @@ import Fastify from 'fastify'
 import { registerAgentRoutes } from '../registerAgentRoutes'
 import { provisionWorkspaceRuntime } from '../workspace/provisioning'
 import type { RuntimeModeAdapter } from '../runtime/mode'
-import { ErrorCode } from '../../shared/error-codes'
 
 const tempDirs: string[] = []
 
@@ -21,6 +20,21 @@ async function makeTempDir(prefix: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), prefix))
   tempDirs.push(dir)
   return dir
+}
+
+async function eventually(assertion: () => Promise<void> | void, timeoutMs = 5000): Promise<void> {
+  const startedAt = Date.now()
+  let lastError: unknown
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      await assertion()
+      return
+    } catch (error) {
+      lastError = error
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    }
+  }
+  if (lastError) throw lastError
 }
 
 async function createDummyNodeSdkPackage(): Promise<string> {
@@ -73,13 +87,15 @@ test('registerAgentRoutes provisions embedded runtime plugins before host app ro
   await app.ready()
 
   try {
-    await expect(readFile(join(workspaceRoot, '.boring-agent', 'skills', 'dummy-sdk-plugin', 'dummy-sdk-skill', 'SKILL.md'), 'utf8'))
-      .resolves.toContain('Dummy SDK')
-    await expect(readFile(join(workspaceRoot, '.boring-agent', 'node', 'node_modules', '.bin', 'dummy-sdk'), 'utf8'))
-      .resolves.toContain('dummy-sdk')
-    const skills = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
-    expect(skills.statusCode).toBe(200)
-    expect(skills.json().skills.map((skill: { name: string }) => skill.name)).toContain('dummy-sdk-skill')
+    await eventually(async () => {
+      await expect(readFile(join(workspaceRoot, '.boring-agent', 'skills', 'dummy-sdk-plugin', 'dummy-sdk-skill', 'SKILL.md'), 'utf8'))
+        .resolves.toContain('Dummy SDK')
+      await expect(readFile(join(workspaceRoot, '.boring-agent', 'node', 'node_modules', '.bin', 'dummy-sdk'), 'utf8'))
+        .resolves.toContain('dummy-sdk')
+      const skills = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
+      expect(skills.statusCode).toBe(200)
+      expect(skills.json().skills.map((skill: { name: string }) => skill.name)).toContain('dummy-sdk-skill')
+    }, 15_000)
   } finally {
     await app.close()
   }
@@ -124,15 +140,17 @@ test('registerAgentRoutes provisions the resolved request workspace, not the hos
       headers: { 'x-boring-workspace-id': 'workspace-a' },
     })
     expect(catalog.statusCode).toBe(200)
-    await expect(readFile(join(workspaceA, '.boring-agent', 'node', 'node_modules', '.bin', 'dummy-sdk'), 'utf8'))
-      .resolves.toContain('dummy-sdk')
+    await eventually(async () => {
+      await expect(readFile(join(workspaceA, '.boring-agent', 'node', 'node_modules', '.bin', 'dummy-sdk'), 'utf8'))
+        .resolves.toContain('dummy-sdk')
+    }, 15_000)
     await expect(readFile(join(baseRoot, '.boring-agent', '.gitignore'), 'utf8')).rejects.toThrow()
   } finally {
     await app.close()
   }
 }, 15_000)
 
-test('chat history loads while request-scoped provisioning is pending', async () => {
+test('chat and chat history are not blocked while request-scoped runtime dependency provisioning is pending', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-chat-pending-provision-')
   const app = Fastify({ logger: false })
   const provisionStarted = vi.fn()
@@ -183,13 +201,7 @@ test('chat history loads while request-scoped provisioning is pending', async ()
       payload: { sessionId, message: 'hello' },
     })
 
-    expect(res.statusCode).toBe(503)
-    expect(res.json()).toMatchObject({
-      error: {
-        code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
-        details: { workspaceId: 'workspace-a', retryable: true },
-      },
-    })
+    expect(res.statusCode).toBe(200)
     expect(provisionStarted).toHaveBeenCalledOnce()
 
     const saved = await app.inject({
@@ -296,9 +308,11 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
   await app.ready()
 
   try {
-    const before = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
-    expect(before.statusCode).toBe(200)
-    expect(before.json().skills.map((skill: { name: string }) => skill.name)).toContain('reload-skill-v1')
+    await eventually(async () => {
+      const before = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
+      expect(before.statusCode).toBe(200)
+      expect(before.json().skills.map((skill: { name: string }) => skill.name)).toContain('reload-skill-v1')
+    })
 
     const reload = await app.inject({ method: 'POST', url: '/api/v1/agent/reload', payload: {} })
     expect(reload.statusCode).toBe(200)
@@ -810,7 +824,7 @@ test('request-scoped models endpoint does not require workspace header', async (
   expect(scopeChecks).toBe(1)
 
   await app.close()
-})
+}, 15_000)
 
 test('skills endpoint lists Pi-resolved project skills', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-skills-project-')

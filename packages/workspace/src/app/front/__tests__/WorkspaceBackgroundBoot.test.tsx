@@ -134,6 +134,121 @@ it("keeps polling transient runtime-preparing warmup after ready-status complete
   expect(sessionCalls).toBe(3)
 })
 
+it("treats ready chat/workspace capabilities as warm before runtime dependencies finish", async () => {
+  const onStatusChange = vi.fn()
+  const encoder = new TextEncoder()
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.includes("/api/v1/ready-status")) {
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(
+            'event: status\ndata: {"state":"ready","capabilities":{"chat":{"state":"ready"},"workspace":{"state":"ready"},"runtimeDependencies":{"state":"preparing"}}}\n\n',
+          ))
+        },
+      }), { status: 200, headers: { "Content-Type": "text/event-stream" } })
+    }
+    if (url.includes("/api/v1/agent/sessions")) return json([])
+    return json({ entries: [] })
+  }))
+
+  render(
+    <WorkspaceBackgroundBoot
+      workspaceId="w-runtime-deps-background"
+      requestHeaders={{ "x-boring-workspace-id": "w-runtime-deps-background" }}
+      onStatusChange={onStatusChange}
+    />,
+  )
+
+  await waitFor(() => expect(onStatusChange).toHaveBeenLastCalledWith({
+    status: "ready",
+    runtimeDependencies: { state: "preparing" },
+  }))
+})
+
+it("preserves runtime dependency status while other warmup paths are retrying", async () => {
+  const onStatusChange = vi.fn()
+  let treeCalls = 0
+  let readyStatusCalls = 0
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.includes("/api/v1/ready-status")) {
+      readyStatusCalls += 1
+      const runtimeState = readyStatusCalls === 1 ? "preparing" : "ready"
+      return new Response(
+        `event: status\ndata: {"state":"ready","capabilities":{"chat":{"state":"ready"},"workspace":{"state":"ready"},"runtimeDependencies":{"state":"${runtimeState}"}}}\n\n`,
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      )
+    }
+    if (url.includes("/api/v1/tree")) {
+      treeCalls += 1
+      if (treeCalls === 1) {
+        return json({
+          error: {
+            code: "WORKSPACE_NOT_READY",
+            details: { code: "WORKSPACE_NOT_READY", retryable: true, requirement: "workspace-fs" },
+          },
+        }, { status: 503 })
+      }
+      return json({ entries: [] })
+    }
+    if (url.includes("/api/v1/agent/sessions")) return json([])
+    return json({ entries: [] })
+  }))
+
+  render(
+    <WorkspaceBackgroundBoot
+      workspaceId="w-runtime-deps-mixed-retry"
+      requestHeaders={{ "x-boring-workspace-id": "w-runtime-deps-mixed-retry" }}
+      onStatusChange={onStatusChange}
+    />,
+  )
+
+  await waitFor(() => expect(onStatusChange).toHaveBeenCalledWith({
+    status: "ready",
+    runtimeDependencies: { state: "preparing" },
+  }), { timeout: 2_500 })
+  await waitFor(() => expect(onStatusChange).toHaveBeenLastCalledWith({
+    status: "ready",
+    runtimeDependencies: { state: "ready" },
+  }), { timeout: 2_500 })
+})
+
+it("updates runtime dependency status after workspace becomes usable", async () => {
+  const onStatusChange = vi.fn()
+  let readyStatusCalls = 0
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.includes("/api/v1/ready-status")) {
+      readyStatusCalls += 1
+      const runtimeState = readyStatusCalls === 1 ? "preparing" : "ready"
+      return new Response(
+        `event: status\ndata: {"state":"ready","capabilities":{"chat":{"state":"ready"},"workspace":{"state":"ready"},"runtimeDependencies":{"state":"${runtimeState}"}}}\n\n`,
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      )
+    }
+    if (url.includes("/api/v1/agent/sessions")) return json([])
+    return json({ entries: [] })
+  }))
+
+  render(
+    <WorkspaceBackgroundBoot
+      workspaceId="w-runtime-deps-update"
+      requestHeaders={{ "x-boring-workspace-id": "w-runtime-deps-update" }}
+      onStatusChange={onStatusChange}
+    />,
+  )
+
+  await waitFor(() => expect(onStatusChange).toHaveBeenCalledWith({
+    status: "ready",
+    runtimeDependencies: { state: "preparing" },
+  }))
+  await waitFor(() => expect(onStatusChange).toHaveBeenLastCalledWith({
+    status: "ready",
+    runtimeDependencies: { state: "ready" },
+  }), { timeout: 2_500 })
+})
+
 it("reports degraded ready-status SSE as failed", async () => {
   const onStatusChange = vi.fn()
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {

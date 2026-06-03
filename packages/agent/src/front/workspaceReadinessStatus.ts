@@ -1,7 +1,7 @@
 import { ErrorCode } from '../shared/error-codes'
 import type { ToolReadinessRequirement } from '../shared/tool'
 
-const COPY: Record<ToolReadinessRequirement, string> = {
+const COPY: Partial<Record<ToolReadinessRequirement, string>> = {
   'workspace-fs': 'Files are still loading.',
   'sandbox-exec': 'Sandbox is still waking.',
   'ui-bridge': 'Workspace UI is still connecting.',
@@ -40,6 +40,6 @@ export function getWorkspaceNotReadyStatus(output: unknown): WorkspaceNotReadySt
     code: ErrorCode.enum.WORKSPACE_NOT_READY,
     retryable: true,
     requirement: requirement as ToolReadinessRequirement,
-    message: COPY[requirement as ToolReadinessRequirement],
+    message: COPY[requirement as ToolReadinessRequirement] ?? 'Workspace is still preparing.',
   }
 }

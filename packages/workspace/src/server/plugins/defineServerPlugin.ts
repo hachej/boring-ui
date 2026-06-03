@@ -9,6 +9,15 @@ import {
 
 type WorkspaceRuntimeProvisioning = NonNullable<ProvisionWorkspaceRuntimeOptions["plugins"][number]["provisioning"]>
 
+export interface WorkspaceServerPluginAsset {
+  /** Stable asset name within this plugin, e.g. "sdk" or "workspace-template". */
+  name: string
+  /** Source directory or file owned by the plugin. Relative strings are resolved by the app integration. */
+  source: string | URL
+  /** Optional runtime target path within this plugin's asset namespace. Defaults to name. */
+  target?: string
+}
+
 export interface WorkspaceServerPlugin {
   id: string
   label?: string
@@ -28,6 +37,8 @@ export interface WorkspaceServerPlugin {
   skills?: PluginSkillSource[]
   agentTools?: AgentTool[]
   provisioning?: WorkspaceRuntimeProvisioning
+  /** Static filesystem assets this plugin needs in production/serverless bundles. */
+  assets?: WorkspaceServerPluginAsset[]
   routes?: FastifyPluginAsync
   /** UI state keys owned by this plugin that browser state PUTs must not overwrite. */
   preservedUiStateKeys?: string[]
@@ -105,6 +116,24 @@ function validateSkills(pluginId: string, skills: PluginSkillSource[]): void {
     }
     if (!isPathLike(skill.source)) {
       fail(pluginId, `skills[${i}].source must be a string or URL`)
+    }
+  }
+}
+
+function validatePluginAssets(pluginId: string, assets: WorkspaceServerPluginAsset[]): void {
+  for (let i = 0; i < assets.length; i++) {
+    const asset = assets[i]
+    if (!asset || typeof asset !== "object") {
+      fail(pluginId, `assets[${i}] must be an object`)
+    }
+    if (!asset.name || typeof asset.name !== "string") {
+      fail(pluginId, `assets[${i}].name must be a non-empty string`)
+    }
+    if (!isPathLike(asset.source)) {
+      fail(pluginId, `assets[${i}].source must be a string or URL`)
+    }
+    if (asset.target !== undefined && (!asset.target || typeof asset.target !== "string")) {
+      fail(pluginId, `assets[${i}].target must be a non-empty string when provided`)
     }
   }
 }
@@ -235,6 +264,12 @@ export function validateServerPlugin(plugin: WorkspaceServerPlugin): void {
       fail(plugin.id, "agentTools must be an array when provided")
     }
     plugin.agentTools.forEach((tool, index) => validateAgentTool(plugin.id, tool, index))
+  }
+  if (plugin.assets !== undefined) {
+    if (!Array.isArray(plugin.assets)) {
+      fail(plugin.id, "assets must be an array when provided")
+    }
+    validatePluginAssets(plugin.id, plugin.assets)
   }
   if (plugin.routes !== undefined && typeof plugin.routes !== "function") {
     fail(plugin.id, "routes must be a Fastify plugin function when provided")

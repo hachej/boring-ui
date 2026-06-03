@@ -353,6 +353,15 @@ export function WorkspaceAgentFront<
     workspaceId,
     expired: false,
   }))
+  const [initialRemoteSessionCreating, setInitialRemoteSessionCreating] = useState<{ workspaceId: string; creating: boolean }>(() => ({
+    workspaceId,
+    creating: false,
+  }))
+  const [initialRemoteSessionCreateFailed, setInitialRemoteSessionCreateFailed] = useState<{ workspaceId: string; failed: boolean }>(() => ({
+    workspaceId,
+    failed: false,
+  }))
+  const [freshEmptySession, setFreshEmptySession] = useState<{ workspaceId: string; id: string } | null>(null)
   const workspaceWarmupStatus = workspaceWarmupState.workspaceId === workspaceId
     ? workspaceWarmupState.status
     : PREPARING_WARMUP_STATUS
@@ -410,6 +419,7 @@ export function WorkspaceAgentFront<
     onCreateSession !== undefined ||
     onDeleteSession !== undefined
   const emptySessionsGraceExpired = emptySessionsGrace.workspaceId === workspaceId && emptySessionsGrace.expired
+  const suppressEmptyAutoCreateRef = useRef(false)
   const remoteEmptySessionsSettling = Boolean(
     remoteSessionsAvailable
     && sessionApi
@@ -417,10 +427,23 @@ export function WorkspaceAgentFront<
     && activeRemoteSessions.length === 0
     && !emptySessionsGraceExpired,
   )
+  const remoteInitialSessionCreating = initialRemoteSessionCreating.workspaceId === workspaceId
+    && initialRemoteSessionCreating.creating
+  const remoteInitialSessionFailed = initialRemoteSessionCreateFailed.workspaceId === workspaceId
+    && initialRemoteSessionCreateFailed.failed
+  const remoteInitialSessionNeeded = Boolean(
+    remoteSessionsAvailable
+      && sessionApi
+      && !hasExplicitSessionProps
+      && activeRemoteSessions.length === 0
+      && emptySessionsGraceExpired
+      && !suppressEmptyAutoCreateRef.current
+      && !remoteInitialSessionFailed,
+  )
   const remoteSessionsTransitioning = (
     remoteSessionsPending
     && !pendingStoredActiveSessionId
-  ) || remoteEmptySessionsSettling
+  ) || remoteEmptySessionsSettling || remoteInitialSessionCreating || remoteInitialSessionNeeded
 
   useEffect(() => {
     if (!remoteEmptySessionsSettling) {
@@ -508,7 +531,6 @@ export function WorkspaceAgentFront<
     }
     return rawSwitch(nextSessionId)
   }, [effectiveActiveSessionId, rawSwitch])
-  const suppressEmptyAutoCreateRef = useRef(false)
   const resolvedCreate = remoteSessionsPending
     ? remoteSessionActionsUnavailable
     : sessionApi
@@ -576,6 +598,9 @@ export function WorkspaceAgentFront<
   useEffect(() => {
     autoCreateSessionRef.current = false
     suppressEmptyAutoCreateRef.current = false
+    setInitialRemoteSessionCreating({ workspaceId, creating: false })
+    setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
+    setFreshEmptySession(null)
   }, [workspaceId])
 
   useEffect(() => {
@@ -589,15 +614,34 @@ export function WorkspaceAgentFront<
     if (activeRemoteSessions.length > 0) {
       autoCreateSessionRef.current = false
       suppressEmptyAutoCreateRef.current = false
+      setInitialRemoteSessionCreating((current) => (
+        current.workspaceId === workspaceId && current.creating
+          ? { workspaceId, creating: false }
+          : current
+      ))
+      setInitialRemoteSessionCreateFailed((current) => (
+        current.workspaceId === workspaceId && current.failed
+          ? { workspaceId, failed: false }
+          : current
+      ))
       return
     }
     if (suppressEmptyAutoCreateRef.current) return
     if (autoCreateSessionRef.current) return
     autoCreateSessionRef.current = true
-    void Promise.resolve(sessionApi.create({ title: defaultSessionTitle })).catch(() => {
-      autoCreateSessionRef.current = false
-    })
-  }, [activeRemoteSessions.length, autoSubmitSessionId, defaultSessionTitle, remoteEmptySessionsSettling, sessionApi])
+    setInitialRemoteSessionCreating({ workspaceId, creating: true })
+    setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
+    void Promise.resolve(sessionApi.create({ title: defaultSessionTitle }))
+      .then((session) => {
+        const id = (session as { id?: unknown } | null | undefined)?.id
+        if (typeof id === "string") setFreshEmptySession({ workspaceId, id })
+      })
+      .catch(() => {
+        autoCreateSessionRef.current = false
+        setInitialRemoteSessionCreating({ workspaceId, creating: false })
+        setInitialRemoteSessionCreateFailed({ workspaceId, failed: true })
+      })
+  }, [activeRemoteSessions.length, autoSubmitSessionId, defaultSessionTitle, remoteEmptySessionsSettling, sessionApi, workspaceId])
 
   useEffect(() => {
     surfaceOpenRef.current = surfaceOpen
@@ -670,7 +714,12 @@ export function WorkspaceAgentFront<
   }, [requestedAutoSubmitInitialDraft, workspaceId])
   const autoSubmittingInitialDraft = requestedAutoSubmitInitialDraft
   const delayAutoSubmitDraft = autoSubmittingInitialDraft && shouldUseRemoteSessions && !effectiveActiveSessionId
-  const hydrateMessages = !autoSubmitHydrationDisabled && provisionWorkspace !== false && (
+  const freshEmptySessionActive = Boolean(
+    freshEmptySession
+      && freshEmptySession.workspaceId === workspaceId
+      && freshEmptySession.id === effectiveActiveSessionId,
+  )
+  const hydrateMessages = !freshEmptySessionActive && !autoSubmitHydrationDisabled && provisionWorkspace !== false && (
     shouldUseRemoteSessions ? Boolean(effectiveActiveSessionId) : true
   )
   const handleWorkspaceWarmupStatusChange = useCallback((status: WorkspaceWarmupStatus) => {

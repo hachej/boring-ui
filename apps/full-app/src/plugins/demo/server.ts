@@ -1,11 +1,11 @@
-import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { join } from "node:path"
 import type { CoreWorkspaceAgentServerPlugin } from "@hachej/boring-core/app/server"
+import { definePluginAsset, resolvePluginAssetPath } from "@hachej/boring-workspace/server"
 
-// The plugin owns its SDK: the Python package lives alongside this file at
-// ./sdk (apps/full-app/src/plugins/demo/sdk).
-const here = dirname(fileURLToPath(import.meta.url))
-const demoSdkRoot = join(here, "sdk")
+// The plugin owns its SDK: the Python package lives at ./sdk in source and is
+// declared here so production/serverless builds can copy it into place.
+const demoSdkAsset = definePluginAsset(import.meta.url, "sdk", "./sdk/")
+const demoSdkRoot = resolvePluginAssetPath(import.meta.url, demoSdkAsset.target ?? demoSdkAsset.name)
 
 /**
  * Backend half of the demo plugin: provisions the dummy `democli` Python SDK into
@@ -19,6 +19,7 @@ export const demoServerPlugin: CoreWorkspaceAgentServerPlugin = {
     "A demo CLI `democli` is preinstalled in this workspace — try `democli`, `democli info`, or `democli echo hello`.",
     'A "Demo" panel is available (command palette → "Open Demo panel").',
   ].join("\n"),
+  assets: [demoSdkAsset],
   provisioning: {
     python: [
       {

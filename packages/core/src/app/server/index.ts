@@ -22,7 +22,3 @@ export {
   runCoreWorkspaceAgentServer,
   type RunCoreWorkspaceAgentServerOptions,
 } from './runServer.js'
-export {
-  createCoreVercelEntry,
-  type CreateCoreVercelEntryOptions,
-} from './vercelEntry.js'

@@ -23,7 +23,9 @@ export {
 export type { UiBridge, UiState, UiCommand, CommandResult } from "../shared/ui-bridge"
 export {
   bootstrapServer,
+  definePluginAsset,
   defineServerPlugin,
+  resolvePluginAssetPath,
   validateServerPlugin,
 } from "./plugins/bootstrapServer"
 export type {
@@ -33,6 +35,7 @@ export type {
   WorkspaceProvisioningContribution,
   WorkspaceRouteContribution,
   WorkspaceServerPlugin,
+  WorkspaceServerPluginAsset,
 } from "./plugins/bootstrapServer"
 // Boring plugin asset manager + reload-pluggability helpers.
 export { buildBoringSystemPrompt } from "./boringSystemPrompt"

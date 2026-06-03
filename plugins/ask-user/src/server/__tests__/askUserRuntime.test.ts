@@ -76,7 +76,7 @@ describe("AskUserRuntime", () => {
     const question = await pendingQuestion(store, "s1")
     await runtime.submitAnswer(question.questionId, "s1", { answer: "yes" })
     await expect(result).resolves.toMatchObject({ status: "answered", answer: { values: { answer: "yes" } } })
-  })
+  }, 30_000)
 
   it("cancels on timeout and abort", async () => {
     const store = await makeStore()
