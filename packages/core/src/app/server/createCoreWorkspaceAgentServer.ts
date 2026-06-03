@@ -12,6 +12,7 @@ import {
 import {
   collectWorkspaceAgentServerPlugins,
   hasDirServerPlugin,
+  omitPluginAuthoringProvisioning,
   readWorkspacePluginPackagePiSnapshot,
   readWorkspacePluginPackageRuntimePlugins,
   resolveDefaultWorkspacePluginPackagePaths,
@@ -129,6 +130,12 @@ export interface CreateCoreWorkspaceAgentServerOptions
   excludeDefaults?: CreateWorkspaceAgentServerOptions['excludeDefaults']
   defaultPluginPackages?: CreateWorkspaceAgentServerOptions['defaultPluginPackages']
   appPackageJsonPath?: CreateWorkspaceAgentServerOptions['appPackageJsonPath']
+  /**
+   * Enable workspace plugin-authoring tooling/prompt for this app.
+   * Defaults to false for full-app/core production composition; set true only
+   * when a live plugin-editing experience is activated.
+   */
+  installPluginAuthoring?: CreateWorkspaceAgentServerOptions['installPluginAuthoring']
   /** Core consumes plugins statically for now; app-level hot reload is explicitly unsupported. */
   hotReload?: false
   forceProvisioning?: boolean
@@ -646,12 +653,14 @@ export async function createCoreWorkspaceAgentServer(
     )),
   )
 
+  const installPluginAuthoring = options.installPluginAuthoring === true
   const pluginCollection = collectWorkspaceAgentServerPlugins({
     workspaceRoot: pluginWorkspaceRoot,
     systemPromptAppend: staticSystemPromptAppend,
     pi: mergePiOptions(options.pi, defaultPackagePiOptions),
     plugins: resolvedPlugins,
     excludeDefaults: options.excludeDefaults,
+    installPluginAuthoring,
   })
 
   const resolveWorkspaceId = async (request: Parameters<NonNullable<RegisterAgentRoutesOptions['getWorkspaceId']>>[0]) =>
@@ -679,6 +688,7 @@ export async function createCoreWorkspaceAgentServer(
       pi: mergePiOptions(options.pi, defaultPackagePiOptions),
       plugins: resolvedPlugins,
       excludeDefaults: options.excludeDefaults,
+      installPluginAuthoring,
     })
     piOptionsByRoot.set(
       resolvedRoot,
@@ -723,11 +733,14 @@ export async function createCoreWorkspaceAgentServer(
     getWorkspaceRoot: resolveRoot,
     provisionRuntime: async ({ provisioningAdapter, runtimeLayout, workspaceId, request, runtimeMode }) => {
       if (!provisioningAdapter) return undefined
+      const runtimePlugins = [
+        ...pluginCollection.runtimePlugins,
+        ...defaultPackageRuntimePlugins,
+      ]
       return await provisionWorkspaceRuntime({
-        plugins: [
-          ...pluginCollection.runtimePlugins,
-          ...defaultPackageRuntimePlugins,
-        ],
+        plugins: runtimeMode === 'direct'
+          ? omitPluginAuthoringProvisioning(runtimePlugins)
+          : runtimePlugins,
         adapter: provisioningAdapter,
         runtimeLayout,
         telemetry,

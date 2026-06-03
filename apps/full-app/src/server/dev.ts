@@ -3,14 +3,22 @@ import {
   createCoreWorkspaceAgentServer,
   startCoreWorkspaceAgentDevServer,
 } from '@hachej/boring-core/app/server'
-import { demoServerPlugin } from '../plugins/demo/server'
+import { serverPlugins } from './plugins.js'
 
 const appRoot = appRootFromImportMeta(import.meta.url, 2)
+
+function pluginAuthoringEnabledFromEnv(): boolean {
+  return process.env.BORING_PLUGIN_AUTHORING === '1'
+}
 
 startCoreWorkspaceAgentDevServer({
   appRoot,
   buildServer: (options) =>
-    createCoreWorkspaceAgentServer({ ...options, plugins: [demoServerPlugin] }),
+    createCoreWorkspaceAgentServer({
+      ...options,
+      plugins: serverPlugins,
+      installPluginAuthoring: pluginAuthoringEnabledFromEnv(),
+    }),
 }).catch((error) => {
   console.error(error)
   process.exit(1)

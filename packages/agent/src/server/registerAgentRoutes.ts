@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify'
 import { basename } from 'node:path'
-import type { AgentTool } from '../shared/tool'
+import type { AgentTool, ToolReadinessRequirement } from '../shared/tool'
 import type { AgentHarnessFactory } from '../shared/harness'
 import type { SessionStore } from '../shared/session'
 import type { SandboxHandleStore } from '../shared/sandbox-handle-store'
@@ -22,6 +22,7 @@ import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { registerConfiguredModelProviders } from './models/modelConfig'
 import { mergeTools, type PluginToolRegistration } from './catalog/mergeTools'
+import type { ToolReadinessState } from './catalog/toolReadiness'
 import { buildFilesystemAgentTools } from './tools/filesystem'
 import { buildHarnessAgentTools } from './tools/harness'
 import { buildUploadAgentTools } from './tools/upload'
@@ -79,9 +80,24 @@ function getAvailableModelProviders(): string[] {
   ).sort((a, b) => a.localeCompare(b))
 }
 
+type RuntimeDependencyState = 'not-started' | 'preparing' | 'ready' | 'failed'
+
+interface RuntimeDependencyReadiness {
+  state: RuntimeDependencyState
+  requirement?: ToolReadinessRequirement
+  startedAt?: string
+  completedAt?: string
+  errorCode?: string
+  causeCode?: string
+  retryable?: boolean
+  message?: string
+}
+
 interface RuntimeBinding {
   runtimeBundle: RuntimeBundle
   runtimeProvisioning?: WorkspaceProvisioningResult
+  runtimeDependencies: RuntimeDependencyReadiness
+  runtimeProvisioningTask?: Promise<WorkspaceProvisioningResult | undefined>
   reprovision: (request?: FastifyRequest) => Promise<WorkspaceProvisioningResult | undefined>
   harness: AgentHarness
   tools: AgentTool[]
@@ -193,6 +209,35 @@ function createRuntimeProvisioningFailedError(workspaceId: string, cause: unknow
       ...(typeof causeCode === 'string' ? { causeCode } : {}),
     },
   )
+}
+
+function isRuntimeReadinessRequirement(requirement: ToolReadinessRequirement): boolean {
+  return requirement === 'runtime-dependencies' || requirement.startsWith('runtime:')
+}
+
+function causeCodeFrom(error: unknown): string | undefined {
+  const code = (error as { code?: unknown } | null)?.code
+  return typeof code === 'string' ? code : undefined
+}
+
+function createRuntimeReadinessCheck(
+  workspaceId: string,
+  getRuntimeDependencies: () => RuntimeDependencyReadiness,
+): (requirement: ToolReadinessRequirement, tool: AgentTool) => ToolReadinessState {
+  return (requirement) => {
+    if (!isRuntimeReadinessRequirement(requirement)) return true
+    const runtimeDependencies = getRuntimeDependencies()
+    if (runtimeDependencies.state === 'ready' || runtimeDependencies.state === 'not-started') return true
+    return {
+      ready: false,
+      state: runtimeDependencies.state,
+      errorCode: runtimeDependencies.errorCode,
+      causeCode: runtimeDependencies.causeCode,
+      message: runtimeDependencies.message,
+      workspaceId,
+      retryable: runtimeDependencies.retryable ?? true,
+    }
+  }
 }
 
 export interface RegisterAgentRoutesOptions {
@@ -404,9 +449,97 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       requestId: request?.id,
       telemetry: opts.telemetry,
     }
-    let runtimeProvisioning = await runRuntimeProvisioning(workspaceId, scope, request)
+    let runtimeProvisioning: WorkspaceProvisioningResult | undefined
+    let runtimeDependencies: RuntimeDependencyReadiness = hasRuntimeProvisioningInput
+      ? {
+          state: 'preparing',
+          requirement: 'runtime-dependencies',
+          startedAt: new Date().toISOString(),
+          retryable: true,
+        }
+      : { state: 'ready' }
+    let provisioningGeneration = 0
 
     const runtimeBundle = await modeAdapter.create(modeCtx)
+    const readyTracker = new ReadyStatusTracker({
+      sandboxReady: resolvedMode !== 'vercel-sandbox',
+      harnessReady: false,
+      capabilities: {
+        chat: { state: 'preparing' },
+        workspace: { state: resolvedMode !== 'vercel-sandbox' ? 'ready' : 'preparing' },
+        runtimeDependencies,
+      },
+    })
+    if (resolvedMode === 'vercel-sandbox') {
+      queueMicrotask(() => readyTracker.markSandboxReady())
+    }
+
+    let binding: RuntimeBinding | undefined
+    const updateRuntimeDependencies = (next: RuntimeDependencyReadiness) => {
+      runtimeDependencies = next
+      if (binding) binding.runtimeDependencies = next
+      readyTracker.updateRuntimeDependencies(next)
+    }
+
+    const startRuntimeProvisioning = (provisionRequest?: FastifyRequest) => {
+      if (!hasRuntimeProvisioningInput) return undefined
+      if (binding?.runtimeProvisioningTask && runtimeDependencies.state === 'preparing') {
+        return binding.runtimeProvisioningTask
+      }
+      const generation = ++provisioningGeneration
+      readyTracker.clearDegraded()
+      updateRuntimeDependencies({
+        state: 'preparing',
+        requirement: 'runtime-dependencies',
+        startedAt: new Date().toISOString(),
+        retryable: true,
+      })
+      const task = runRuntimeProvisioning(workspaceId, scope, provisionRequest).then(
+        async (result) => {
+          if (generation !== provisioningGeneration) return result
+          runtimeProvisioning = result
+          if (binding) binding.runtimeProvisioning = result
+          if (binding?.harness.reloadSession) {
+            try {
+              const sessions = await binding.harness.sessions.list({ workspaceId })
+              await Promise.allSettled(
+                sessions.map((session) => binding?.harness.reloadSession?.(session.id)),
+              )
+            } catch (error) {
+              app.log.warn({ err: error, workspaceId }, '[agent] failed to refresh harness sessions after runtime provisioning')
+            }
+          }
+          updateRuntimeDependencies({
+            state: 'ready',
+            requirement: 'runtime-dependencies',
+            completedAt: new Date().toISOString(),
+            retryable: true,
+          })
+          return result
+        },
+        (error) => {
+          if (generation !== provisioningGeneration) throw error
+          const causeCode = causeCodeFrom(error)
+          updateRuntimeDependencies({
+            state: 'failed',
+            requirement: 'runtime-dependencies',
+            completedAt: new Date().toISOString(),
+            errorCode: ErrorCode.enum.RUNTIME_PROVISIONING_FAILED,
+            ...(causeCode ? { causeCode } : {}),
+            retryable: true,
+            message: 'Agent runtime provisioning failed. Reload the workspace and try again.',
+          })
+          readyTracker.markDegraded('runtime dependency provisioning failed')
+          app.log.warn({ err: error, workspaceId }, '[agent] background runtime provisioning failed')
+          throw error
+        },
+      )
+      task.catch(() => {})
+      if (binding) binding.runtimeProvisioningTask = task
+      return task
+    }
+
+    const checkReadiness = createRuntimeReadinessCheck(workspaceId, () => runtimeDependencies)
 
     // UI tools (get_ui_state / exec_ui) and the /api/v1/ui/* routes moved
     // to @hachej/boring-workspace. Hosts that want them register uiRoutes
@@ -417,6 +550,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
           env: runtimeProvisioning.env,
           pathEntries: runtimeProvisioning.pathEntries,
         } : undefined,
+        getReadiness: () => checkReadiness('runtime:python', {} as AgentTool),
       }),
       ...buildFilesystemAgentTools(runtimeBundle),
       ...buildUploadAgentTools(runtimeBundle),
@@ -454,6 +588,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       ],
       pluginTools,
       logger: app.log,
+      checkReadiness,
     })
     const harnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
       ...input,
@@ -462,9 +597,18 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         noSkills: true,
         ...scope.pi,
         additionalSkillPaths: [
-          ...(runtimeProvisioning?.skillPaths ?? []),
           ...(scope.pi?.additionalSkillPaths ?? []),
         ],
+        getHotReloadableResources: () => {
+          const hot = scope.pi?.getHotReloadableResources?.() ?? {}
+          return {
+            ...hot,
+            additionalSkillPaths: [
+              ...(runtimeProvisioning?.skillPaths ?? []),
+              ...(hot.additionalSkillPaths ?? []),
+            ],
+          }
+        },
       },
     }))
     const harness = await harnessFactory({
@@ -477,25 +621,23 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         : opts.systemPromptDynamic,
       telemetry: opts.telemetry,
     })
-    const readyTracker = new ReadyStatusTracker({
-      sandboxReady: resolvedMode !== 'vercel-sandbox',
-      harnessReady: true,
-    })
-    if (resolvedMode === 'vercel-sandbox') {
-      queueMicrotask(() => readyTracker.markSandboxReady())
-    }
+    readyTracker.markHarnessReady()
 
-    return {
+    binding = {
       runtimeBundle,
       runtimeProvisioning,
+      runtimeDependencies,
+      runtimeProvisioningTask: undefined,
       reprovision: async (reloadRequest?: FastifyRequest) => {
-        runtimeProvisioning = await runRuntimeProvisioning(workspaceId, scope, reloadRequest)
-        return runtimeProvisioning
+        const result = await startRuntimeProvisioning(reloadRequest)
+        return await result
       },
       harness,
       tools,
       readyTracker,
     }
+    startRuntimeProvisioning(request)
+    return binding
   }
 
   function createRuntimeBindingEntry(
@@ -738,7 +880,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   })
   await app.register(chatRoutes, {
     getRuntime: async (request) => {
-      const binding = await getBindingForRequest(request, { failIfPending: hasRuntimeProvisioningInput })
+      const binding = await getBindingForRequest(request)
       return {
         harness: binding.harness,
         workdir: binding.runtimeBundle.workspace.root,

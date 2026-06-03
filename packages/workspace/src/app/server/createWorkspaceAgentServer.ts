@@ -140,6 +140,19 @@ export interface CreateWorkspaceAgentServerOptions
   appPackageJsonPath?: string
   /** Additional plugin collection roots to scan alongside workspace .pi/extensions and package/plugin-derived roots. */
   additionalBoringPluginDirs?: string[]
+  /**
+   * Install and advertise the boring plugin-authoring runtime.
+   *
+   * Keep this off for production/hosted workspaces unless a plugin-editing
+   * experience is explicitly enabled. Remote sandboxes can support authoring,
+   * but the CLI should be provisioned only for that activated editing mode,
+   * not for every normal workspace boot.
+   *
+   * Defaults to true for local/standalone strong-filesystem runtimes and false
+   * for remote/best-effort runtimes. Core/full-app may choose a stricter
+   * default at its composition boundary.
+   */
+  installPluginAuthoring?: boolean
   /** Optional host-owned front-target override for boring plugin list/event payloads. */
   boringPluginFrontTargetResolver?: BoringPluginFrontTargetResolver
   /** Preserve legacy `/@fs/...` frontUrl payloads alongside frontTarget. Defaults to true. */
@@ -187,54 +200,8 @@ function readPackageVersion(packageRoot: string | null): string | undefined {
   }
 }
 
-function nodePackageContribution(
-  contributionId: string,
-  nodePackageId: string,
-  packageName: string,
-  packageRoot: string | null,
-): WorkspaceProvisioningContribution | null {
-  if (!packageRoot || !existsSync(join(packageRoot, "package.json"))) return null
-  return {
-    id: contributionId,
-    provisioning: {
-      nodePackages: [{ id: nodePackageId, packageName, packageRoot }],
-    },
-  }
-}
-
-function publishedNodePackageContribution(
-  contributionId: string,
-  nodePackageId: string,
-  packageName: string,
-  version?: string,
-  expectedBins?: string[],
-): WorkspaceProvisioningContribution {
-  return {
-    id: contributionId,
-    provisioning: {
-      nodePackages: [
-        {
-          id: nodePackageId,
-          packageName,
-          ...(version ? { version } : {}),
-          ...(expectedBins ? { expectedBins } : {}),
-        },
-      ],
-    },
-  }
-}
-
 function useLocalPackageProvisioning(): boolean {
   return process.env.BORING_USE_LOCAL_PACKAGES === "1"
-}
-
-function createWorkspacePackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
-  return nodePackageContribution(
-    "boring-workspace-package",
-    "boring-workspace",
-    "@hachej/boring-workspace",
-    resolveWorkspacePackageRoot(),
-  )
 }
 
 function resolveBoringPiPackageRoot(): string | null {
@@ -256,10 +223,6 @@ function resolveBoringPiPackageRoot(): string | null {
   } catch {
     return null
   }
-}
-
-function createBoringPiPackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
-  return nodePackageContribution("boring-pi-package", "boring-pi", "@hachej/boring-pi", resolveBoringPiPackageRoot())
 }
 
 function isUsableBoringUiPluginCliPackageRoot(candidate: string): boolean {
@@ -289,7 +252,13 @@ function resolveBoringUiPluginCliPackageRoot(): string | null {
   }
 }
 
-const PLUGIN_AUTHORING_PROVISIONING_IDS = new Set(["boring-ui-plugin-cli-package"])
+export const PLUGIN_AUTHORING_PROVISIONING_IDS = new Set(["boring-ui-plugin-cli-package"])
+
+export function omitPluginAuthoringProvisioning(
+  plugins: WorkspaceRuntimeProvisioningInput[],
+): WorkspaceRuntimeProvisioningInput[] {
+  return plugins.filter((plugin) => !PLUGIN_AUTHORING_PROVISIONING_IDS.has(plugin.id))
+}
 
 function createBoringUiPluginCliPackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
   const packageRoot = useLocalPackageProvisioning() ? resolveBoringUiPluginCliPackageRoot() : null
@@ -355,6 +324,8 @@ export interface CollectWorkspaceAgentServerPluginsOptions
   workspaceRoot?: string
   systemPromptAppend?: string
   pi?: WorkspaceAgentPiOptions
+  /** Whether to include built-in boring plugin-authoring provisioning/prompt resources. */
+  installPluginAuthoring?: boolean
 }
 
 export function buildWorkspaceContextPrompt(): string {
@@ -382,11 +353,9 @@ export function collectWorkspaceAgentServerPlugins(
   const callerExtensionPaths = opts.pi?.extensionPaths ?? []
 
   const excludedDefaults = new Set(opts.excludeDefaults ?? [])
-  const builtinProvisioningContributions = [
-    createWorkspacePackageProvisioningContribution(),
-    createBoringPiPackageProvisioningContribution(),
-    createBoringUiPluginCliPackageProvisioningContribution(),
-  ]
+  const builtinProvisioningContributions = (opts.installPluginAuthoring === false
+    ? []
+    : [createBoringUiPluginCliPackageProvisioningContribution()])
     .filter((entry): entry is WorkspaceProvisioningContribution => Boolean(entry))
     .filter((entry) => !excludedDefaults.has(entry.id))
 
@@ -587,9 +556,12 @@ export async function createWorkspaceAgentServer(
   const resolvedPlugins = await Promise.all(
     allPluginEntries.map((entry) => resolveOnePluginEntry<WorkspaceServerPlugin>(entry, ctx)),
   )
+  const pluginAuthoringEnabled = (opts.installPluginAuthoring ?? workspaceFsCapability === "strong")
+    && !(opts.excludeDefaults ?? []).includes("boring-ui-plugin-cli-package")
   const pluginCollection = collectWorkspaceAgentServerPlugins({
     ...opts,
     plugins: resolvedPlugins,
+    installPluginAuthoring: pluginAuthoringEnabled,
   })
 
   // Note: defaultPluginPackagePaths land in `boringPluginDirs` below.
@@ -603,7 +575,6 @@ export async function createWorkspaceAgentServer(
   // discovered/default plugin packages is snapped once at boot and merged
   // here so production/static hosts keep the same app-default agent context
   // without a dynamic refresh hook.
-  const pluginAuthoringEnabled = workspaceFsCapability === "strong" && !(opts.excludeDefaults ?? []).includes("boring-ui-plugin-cli-package")
   const workspacePackagePiPackage = pluginAuthoringEnabled ? createBoringPiPackageSource(workspaceRoot) : undefined
   const baseStaticPiSkillPaths = [
     ...(pluginAuthoringEnabled ? resolveBoringPiSkillPaths(workspaceRoot) : []),
@@ -660,8 +631,8 @@ export async function createWorkspaceAgentServer(
       ...pluginCollection.runtimePlugins,
       ...readWorkspacePluginPackageRuntimePlugins(boringPluginDirs),
     ])
-    if (workspaceFsCapability === "strong") return inputs
-    return inputs.filter((plugin) => !PLUGIN_AUTHORING_PROVISIONING_IDS.has(plugin.id))
+    if (resolvedMode === "direct") return omitPluginAuthoringProvisioning(inputs)
+    return inputs
   }
   let currentRuntimeProvisioning = opts.runtimeProvisioning
   const runtimeWorkspaceRoot = resolvedMode === "vercel-sandbox"

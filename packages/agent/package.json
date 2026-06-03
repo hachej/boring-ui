@@ -59,7 +59,9 @@
     "lint": "pnpm run typecheck && pnpm run lint:invariants",
     "lint:invariants": "bash ../../scripts/check-invariants.sh .",
     "clean": "rm -rf dist .tsbuildinfo",
-    "smoke:vercel-sandbox": "tsx ./scripts/smoke-vercel-sandbox.mts"
+    "smoke:vercel-sandbox": "tsx ./scripts/smoke-vercel-sandbox.mts",
+    "smoke:capability-readiness": "tsx ./scripts/smoke-capability-readiness.mts",
+    "smoke:capability-readiness:vercel": "tsx ./scripts/smoke-capability-readiness-vercel.mts"
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.170",

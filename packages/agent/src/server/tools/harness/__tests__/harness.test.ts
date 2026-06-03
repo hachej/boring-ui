@@ -8,6 +8,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { ExecResult, Sandbox } from '../../../../shared/sandbox'
 import type { Workspace } from '../../../../shared/workspace'
 import type { RuntimeBundle } from '../../../runtime/mode'
+import { ErrorCode } from '../../../../shared/error-codes'
 import { buildHarnessAgentTools } from '../index'
 
 function mockWorkspace(root = '/workspace'): Workspace {
@@ -138,6 +139,51 @@ describe('buildHarnessAgentTools', () => {
     expect(result.content[0].text).toContain('pip-shim')
     expect(result.content[0].text).toContain(workspaceRoot)
     expect(result.content[0].text).toContain(join(workspaceRoot, '.boring-agent', 'venv'))
+  })
+
+  test('direct bash returns runtime readiness for explicit runtime dependency command while preparing', async () => {
+    const workspaceRoot = await makeTempWorkspace()
+    const bundle = mockBundle('direct', ['exec'], workspaceRoot)
+    const tools = buildHarnessAgentTools(bundle, {
+      getReadiness: () => ({ ready: false, state: 'preparing', workspaceId: 'workspace-a', retryable: true }),
+    })
+    const bashTool = tools.find((t) => t.name === 'bash')!
+
+    const result = await bashTool.execute(
+      { command: './.boring-agent/venv/bin/democli --version', timeout: 10 },
+      { abortSignal: new AbortController().signal, toolCallId: 'test-runtime-bin-not-ready' },
+    )
+
+    expect(result.isError).toBe(true)
+    expect(result.details).toMatchObject({
+      code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
+      requirement: 'runtime:python',
+      state: 'preparing',
+      retryable: true,
+    })
+  })
+
+  test('direct bash adapts missing Python runtime imports while preparing', async () => {
+    const workspaceRoot = await makeTempWorkspace()
+    const bundle = mockBundle('direct', ['exec'], workspaceRoot)
+    const tools = buildHarnessAgentTools(bundle, {
+      getReadiness: () => ({ ready: false, state: 'preparing', workspaceId: 'workspace-a', retryable: true }),
+    })
+    const bashTool = tools.find((t) => t.name === 'bash')!
+
+    const result = await bashTool.execute(
+      { command: "python3 - <<'PY'\nimport boring_macro\nPY", timeout: 10 },
+      { abortSignal: new AbortController().signal, toolCallId: 'test-python-import-not-ready' },
+    )
+
+    expect(result.isError).toBe(true)
+    expect(result.details).toMatchObject({
+      code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
+      requirement: 'runtime:python',
+      state: 'preparing',
+      retryable: true,
+    })
+    expect(result.content[0].text).not.toContain('ModuleNotFoundError')
   })
 
   test('direct bash prefixes provisioning PATH/env while preserving caller PATH tail', async () => {

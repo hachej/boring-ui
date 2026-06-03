@@ -38,4 +38,36 @@ describe('GET /api/v1/ready-status', () => {
     expect(res.body).toContain('runtime failed')
     await app.close()
   })
+
+  test('includes backward-compatible capability readiness details through runtime completion', async () => {
+    const tracker = new ReadyStatusTracker({
+      sandboxReady: true,
+      harnessReady: true,
+      capabilities: {
+        chat: { state: 'ready' },
+        workspace: { state: 'ready' },
+        runtimeDependencies: {
+          state: 'preparing',
+          requirement: 'runtime:python',
+          startedAt: '2026-06-02T00:00:00.000Z',
+        },
+      },
+    })
+    const app = await buildApp(tracker)
+    setTimeout(() => tracker.updateRuntimeDependencies({
+      state: 'ready',
+      requirement: 'runtime:python',
+      completedAt: '2026-06-02T00:00:01.000Z',
+    }), 0)
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/ready-status' })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toContain('"sandboxReady":true')
+    expect(res.body).toContain('"harnessReady":true')
+    expect(res.body).toContain('"runtimeDependencies":{"state":"preparing"')
+    expect(res.body).toContain('"runtimeDependencies":{"state":"ready"')
+    expect(res.body).toContain('"requirement":"runtime:python"')
+    await app.close()
+  })
 })
