@@ -22,6 +22,7 @@ import { createWorkspaceStore } from "../store"
 import { bindStore, useThemePreference } from "../store/selectors"
 import { createBridge } from "../bridge/createBridge"
 import { createBridgeClient, type BridgeClient } from "../bridge/client"
+import { PanelRenderStatusProvider } from "../registry/PanelRenderStatusBoundary"
 import { CommandPalette } from "../components/CommandPalette"
 import { events, workspaceEvents } from "../events"
 import { Toaster } from "../toast"
@@ -589,6 +590,7 @@ export function WorkspaceProvider({
               catalogRegistry={catalogRegistry}
               surfaceResolverRegistry={surfaceResolverRegistry}
             >
+              <PanelRenderStatusProvider apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} authHeaders={resolvedAuthHeaders}>
               <WorkspacePluginProviders
                 plugins={pluginsWithBindings}
                 apiBaseUrl={apiBaseUrl}
@@ -609,6 +611,7 @@ export function WorkspaceProvider({
                 {children}
                 {(typeof import.meta !== 'undefined' && import.meta.env?.DEV) && <PluginInspector plugins={pluginMetas} />}
               </WorkspacePluginProviders>
+              </PanelRenderStatusProvider>
             </RegistryProvider>
           </PluginErrorProvider>
           </WorkspaceAttentionProvider>

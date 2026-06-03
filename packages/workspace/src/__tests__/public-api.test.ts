@@ -116,6 +116,12 @@ describe("@hachej/boring-workspace public API", () => {
       expect(api.createBridge).toBeDefined()
       expect(api.createBridgeClient).toBeDefined()
     })
+
+    it("exports WorkspaceLink helpers", () => {
+      expect(api.WorkspaceLink).toBeDefined()
+      expect(api.workspaceLinkCommand).toBeDefined()
+      expect(api.workspaceLinkHref).toBeDefined()
+    })
   })
 
   describe("dock runtime", () => {
@@ -158,7 +164,8 @@ describe("@hachej/boring-workspace public API", () => {
   })
 
   describe("filesystem data APIs", () => {
-    it("does not export filesystem data APIs from the package root", () => {
+    it("exports only hook-free runtime-safe file data helpers from the package root", () => {
+      expect(api.readFileRecords).toBeDefined()
       expect("DataProvider" in api).toBe(false)
       expect("useDataClient" in api).toBe(false)
       expect("useFileContent" in api).toBe(false)

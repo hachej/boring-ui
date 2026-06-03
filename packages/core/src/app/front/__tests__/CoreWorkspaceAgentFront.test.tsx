@@ -37,6 +37,7 @@ vi.mock('../../../front/index.js', () => ({
     )
   },
   UserMenu: () => <div>User menu</div>,
+  ThemeToggle: () => <div>Theme toggle</div>,
   WorkspaceSwitcher: () => <div>Switcher</div>,
   routes: { signin: '/auth/signin', forgotPassword: '/auth/forgot-password' },
   useCurrentWorkspace: () => currentWorkspaceId ? ({ id: currentWorkspaceId, name: 'Workspace A' }) : null,

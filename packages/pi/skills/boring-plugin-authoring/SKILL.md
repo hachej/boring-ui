@@ -15,23 +15,23 @@ paths are correct — the parts agents most often invent or get wrong.
 
 ```sh
 # First check whether this runtime supports workspace-local plugin roots.
-boring-ui plugin-status --json
+boring-ui-plugin status --json
 
 # Only run this when workspaceLocalPluginRoots is true. Always target the
 # current workspace root. The second arg prevents writing into a parent repo
 # if your shell cwd drifts.
-boring-ui scaffold-plugin <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"
+boring-ui-plugin scaffold <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"
 ```
 
 The workspace agent puts the provisioned Node bin directory on `PATH` (for
 local/bwrap this is `/workspace/.boring-agent/node/node_modules/.bin`), provides
-the `boring-ui` command there, and exports `BORING_AGENT_WORKSPACE_ROOT`. Use
+the `boring-ui-plugin` command there, and exports `BORING_AGENT_WORKSPACE_ROOT`. Use
 `$BORING_AGENT_WORKSPACE_ROOT` instead of host paths such as `/home/...`; in
 sandboxed modes the runtime-visible workspace is `/workspace`. Do not `cd` to a
 parent repo to scaffold; hot-reloadable user plugins belong under
 `$BORING_AGENT_WORKSPACE_ROOT/.pi/extensions/<name>/`. If you are outside the
 agent workspace and do not have that binary, use
-`npx @hachej/boring-ui-cli scaffold-plugin <kebab-name> <workspace-root>`.
+`npx @hachej/boring-ui-plugin-cli scaffold <kebab-name> <workspace-root>`.
 
 The scaffold writes the canonical hot-reload package skeleton:
 
@@ -46,18 +46,19 @@ The scaffold writes the canonical hot-reload package skeleton:
 
 **Default to workspace-local.** Never ask the user to choose. Always scaffold into `.pi/extensions/<name>/`. Only use `~/.pi/agent/extensions/` when the user explicitly asks for a globally installed plugin (e.g. "make this a global plugin").
 
-This skill teaches the **workspace-local** authoring path. Before scaffolding or writing `.pi/extensions`, run `boring-ui plugin-status --json`. Only use `.pi/extensions` when `workspaceLocalPluginRoots` is `true`. If it is `false`, do not create a hot-reloadable plugin; explain that this runtime does not support local plugin roots. Do not scaffold directly into the global root unless the user explicitly asks for a globally installed plugin.
+This skill teaches the **workspace-local** authoring path. Before scaffolding or writing `.pi/extensions`, run `boring-ui-plugin status --json`. Only use `.pi/extensions` when `workspaceLocalPluginRoots` is `true`. If it is `false`, do not create a hot-reloadable plugin; explain that this runtime does not support local plugin roots. Do not scaffold directly into the global root unless the user explicitly asks for a globally installed plugin.
 
 Hot-reloadable agent behavior belongs in `pi.extensions` / `pi.skills` / `pi.systemPrompt`. The scaffold does not create `server/index.ts`: `boring.server` is advanced boot-time/static server integration and is not activated by `/reload` for `.pi/extensions` user plugins.
 
 **Workflow:**
 
-1. Run `boring-ui plugin-status --json` via the bash tool and stop if `workspaceLocalPluginRoots` is `false`.
+1. Run `boring-ui-plugin status --json` via the bash tool and stop if `workspaceLocalPluginRoots` is `false`.
 2. Run the scaffold command via the bash tool.
 3. Read the generated files with the read tool.
 4. Edit them in place with the edit tool — do **NOT** rewrite from scratch.
-5. Run `boring-ui verify-plugin <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"` via bash. Fix anything it reports and re-run until it returns `OK`.
-6. Tell the user to run `/reload` for front/Pi asset changes. If you added `boring.server`, tell the user the workspace process must be statically composed with that package and restarted.
+5. Run `boring-ui-plugin verify <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"` via bash. Fix anything it reports and re-run until it returns `OK`.
+6. If the workspace UI is open, run `boring-ui-plugin test <kebab-name>` via bash. Add `--workspace <id>` in workspaces mode and `--panel-id <id>` if the plugin's main panel is not `<kebab-name>.panel`. Fix render failures and re-run until it returns `OK`. If it reports `NO_BROWSER_CONNECTED`, ask the user to open the workspace UI and rerun.
+7. Tell the user to run `/reload` for front/Pi asset changes. If you added `boring.server`, tell the user the workspace process must be statically composed with that package and restarted.
 
 If the scaffold says the plugin already exists, you can read the existing
 files directly and skip the scaffold step.
@@ -133,7 +134,7 @@ Two valid layouts, picked by intent:
 
 Global user-installed plugins are a third case: they are **discovered** from `~/.pi/agent/extensions/`, but this skill still recommends authoring/testing them in a workspace-local `.pi/extensions/<name>/` first, then copying/installing them globally once they work.
 
-The rest of this skill teaches the hot-reload layout. Repo contributors building a publishable plugin start from `packages/cli/templates/plugin/` (build-based template) instead; everyone else uses `boring-ui scaffold-plugin <name>` (Step 0).
+The rest of this skill teaches the hot-reload layout. Repo contributors building a publishable plugin start from `packages/cli/templates/plugin/` (build-based template) instead; everyone else uses `boring-ui-plugin scaffold <name>` (Step 0).
 
 ## package.json shape
 
@@ -188,6 +189,54 @@ Notes:
 - Do NOT use `defineFrontPlugin` or `createPlugin` (don't exist).
 
 ## Common patterns
+
+### Workspace links (open files, surfaces, and panels without routes)
+
+Use `WorkspaceLink` when rows/cards should open workspace targets. It renders an
+anchor for normal link affordance, but unmodified left-click dispatches through
+`postUiCommand` on the existing frontend command bus. Do **not** add backend
+routes or set `window.location` for in-workspace navigation.
+
+```tsx
+import React from "react"
+import { WorkspaceLink } from "@hachej/boring-workspace"
+
+function Row() {
+  return (
+    <div>
+      <WorkspaceLink to={{ kind: "openFile", path: "README.md" }}>
+        Open README
+      </WorkspaceLink>
+
+      <WorkspaceLink
+        to={{ kind: "openSurface", surfaceKind: "niche", target: "climate-tools" }}
+      >
+        Open niche detail
+      </WorkspaceLink>
+    </div>
+  )
+}
+```
+
+Supported targets:
+
+```ts
+{ kind: "openFile", path: "README.md" }
+{ kind: "openSurface", surfaceKind: "my-surface", target: "record-id", meta?: {...} }
+{ kind: "openPanel", id: "my-panel:record-id", component: "my-plugin.panel", title?: "Title", params?: {...} }
+{ kind: "expandToFile", path: "src/index.ts" }
+```
+
+Important details:
+
+- Prefer `openSurface` for domain records. Register a `surfaceResolver` for the
+  same `surfaceKind`; let the resolver choose the panel id/component/params.
+- Use `openPanel` only when you already know the registered panel component id.
+  It needs both `id` (panel instance id) and `component` (registered panel id).
+- Do **not** use `navigateToLine` yet. The current workspace dispatcher accepts
+  that command as a no-op, so a helper exposing it would be a false promise.
+- `WorkspaceLink` does not replace file visualizers. File visualizers still use
+  `surfaceResolvers`; links are just the clickable way to request opens.
 
 ### File visualizer (opens files in your panel)
 
@@ -281,7 +330,7 @@ the tool.
 `boring.server: "server/index.ts"` is only for workspace server integrations
 that the host composes at boot (for example through `defaultPluginPackages` or
 explicit server plugins) and activates by restarting the process. `boring-ui
-verify-plugin` checks that the declared file is safe and present, but `/reload`
+boring-ui-plugin verify` checks that the declared file is safe and present, but `/reload`
 does **not** import/register `.pi/extensions` server routes or agent tools.
 
 Only use this path when the user/host explicitly wants boot-time server routes or

@@ -54,6 +54,72 @@ describe("uiRoutes", () => {
     await app.close()
   })
 
+  test("panel status route reports browser liveness and latest pane state", async () => {
+    const app = Fastify({ logger: false })
+    const bridge = createInMemoryBridge()
+    await app.register(uiRoutes, { bridge })
+    await app.ready()
+
+    const disconnected = await app.inject({
+      method: "GET",
+      url: "/api/v1/ui/panels/status?panelInstanceId=self-test:demo:demo.panel&pluginId=demo&panelId=demo.panel",
+    })
+    expect(disconnected.json()).toMatchObject({ state: "no-browser-connected", connected: false })
+
+    await app.inject({ method: "GET", url: "/api/v1/ui/state" })
+    const missing = await app.inject({
+      method: "GET",
+      url: "/api/v1/ui/panels/status?panelInstanceId=self-test:demo:demo.panel&pluginId=demo&panelId=demo.panel",
+    })
+    expect(missing.json()).toMatchObject({ state: "missing", connected: true })
+
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/v1/ui/panels/status",
+      payload: {
+        pluginId: "demo",
+        panelId: "demo.panel",
+        panelInstanceId: "self-test:demo:demo.panel",
+        state: "ready",
+        revision: 3,
+      },
+    })
+    expect(put.statusCode).toBe(200)
+
+    const ready = await app.inject({
+      method: "GET",
+      url: "/api/v1/ui/panels/status?panelInstanceId=self-test:demo:demo.panel&pluginId=demo&panelId=demo.panel",
+    })
+    expect(ready.json()).toMatchObject({
+      state: "ready",
+      connected: true,
+      status: { pluginId: "demo", panelId: "demo.panel", revision: 3 },
+    })
+
+    await app.close()
+  })
+
+  test("posting UI commands does not count as browser liveness", async () => {
+    const app = Fastify({ logger: false })
+    const bridge = createInMemoryBridge()
+    await app.register(uiRoutes, { bridge })
+    await app.ready()
+
+    const post = await app.inject({
+      method: "POST",
+      url: "/api/v1/ui/commands",
+      payload: { kind: "openPanel", params: { id: "p", component: "demo.panel" } },
+    })
+    expect(post.statusCode).toBe(200)
+
+    const status = await app.inject({
+      method: "GET",
+      url: "/api/v1/ui/panels/status?panelInstanceId=self-test:demo:demo.panel&pluginId=demo&panelId=demo.panel",
+    })
+    expect(status.json()).toMatchObject({ state: "no-browser-connected", connected: false })
+    await app.close()
+  })
+
   test("PUT /ui/state merges with server-published slots", async () => {
     const app = Fastify({ logger: false })
     const bridge = createInMemoryBridge()

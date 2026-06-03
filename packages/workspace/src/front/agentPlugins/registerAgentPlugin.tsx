@@ -3,7 +3,7 @@ import * as ReactDom from "react-dom"
 import * as ReactDomClient from "react-dom/client"
 import * as ReactJsxDevRuntime from "react/jsx-dev-runtime"
 import * as ReactJsxRuntime from "react/jsx-runtime"
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import type { ErrorCode } from "@hachej/boring-agent/shared"
 import {
   createCapturingBoringFrontAPI,
@@ -159,6 +159,7 @@ async function captureFrontFactory(pluginId: string, frontUrl: string, revision:
  */
 function buildRegistryPayloads(
   pluginId: string,
+  revision: number,
   captured: CapturedBoringFrontRegistrations,
 ): {
   panels: PanelConfig[]
@@ -175,6 +176,7 @@ function buildRegistryPayloads(
       placement: panel.placement ?? "center",
       source: panel.source ?? "plugin",
       pluginId,
+      pluginRevision: revision,
       ...(panel.icon ? { icon: panel.icon } : {}),
       ...(panel.requiresCapabilities ? { requiresCapabilities: panel.requiresCapabilities } : {}),
       ...(panel.essential !== undefined ? { essential: panel.essential } : {}),
@@ -190,6 +192,7 @@ function buildRegistryPayloads(
       placement: "left-tab",
       source: tab.source ?? "plugin",
       pluginId,
+      pluginRevision: revision,
       ...(tab.icon ? { icon: tab.icon } : {}),
       ...(tab.requiresCapabilities ? { requiresCapabilities: tab.requiresCapabilities } : {}),
       ...(tab.lazy !== undefined ? { lazy: tab.lazy } : {}),
@@ -291,17 +294,19 @@ function assertNoOutputCollisions(
 
 function commitCapturedFrontFactory(
   pluginId: string,
+  revision: number,
   captured: CapturedBoringFrontRegistrations,
   registries: ReturnType<typeof getRegistries>,
 ): void {
   if (captured.providers.length > 0 || captured.bindings.length > 0) {
     warnUnsupportedDynamicContributions(pluginId, captured)
     // Provider/binding contributions require mounting in the provider tree,
-    // which hot reload cannot do safely yet. Throw so the caller preserves any
-    // existing static or previously-loaded registrations.
-    throw new Error(`PLUGIN_UNSUPPORTED_DYNAMIC_CONTRIBUTIONS: plugin "${pluginId}" registered provider/binding outputs that require an app restart`)
+    // which hot reload cannot do safely yet. Keep any provider/binding from the
+    // statically mounted app, but still refresh hot-swappable panel/command/
+    // catalog/resolver outputs. If a newly-added panel depends on an unmounted
+    // provider, the panel render self-test reports that concrete render error.
   }
-  const payloads = buildRegistryPayloads(pluginId, captured)
+  const payloads = buildRegistryPayloads(pluginId, revision, captured)
   assertNoOutputCollisions(pluginId, payloads, registries)
   registries.panels.replaceByPluginId(pluginId, payloads.panels)
   registries.commands.replaceByPluginId(pluginId, payloads.commands)
@@ -316,6 +321,21 @@ function unregisterPlugin(pluginId: string, registries: ReturnType<typeof getReg
   registries.surfaceResolvers.replaceByPluginId(pluginId, [])
 }
 
+/**
+ * True when a dispatched WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT originates from
+ * the `/reload` slash command (ChatPanel's `callPluginReload`) rather than from
+ * this hook's own per-plugin lifecycle dispatches. The hook always tags its
+ * dispatches with a `type` of "boring.plugin.*"; the `/reload` POST forwards the
+ * server response (`{ reloaded, restartWarnings, diagnostics }`), which has no
+ * such `type`. We listen only for the `/reload` variant so we never re-trigger
+ * ourselves from our own events.
+ */
+function isPluginReloadCommandEvent(detail: unknown): boolean {
+  if (!detail || typeof detail !== "object") return true
+  const type = (detail as { type?: unknown }).type
+  return typeof type !== "string" || !type.startsWith("boring.plugin.")
+}
+
 export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): void {
   const panels = useRegistry()
   const commands = useCommandRegistry()
@@ -324,9 +344,38 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
   const lastSeenRef = useRef(new Map<string, number>())
   const latestRequestedRef = useRef(new Map<string, number>())
   const replaySeenRef = useRef(new Set<string>())
+  // Bumped by a window listener whenever `/reload` runs (while hot reload is
+  // active). Included in the EventSource effect deps so `/reload` tears down and
+  // reopens the stream, mirroring what a workspace switch does — without a full
+  // remount. `forceReimportRef` makes the next reconnect re-import the replayed
+  // current bundles even at an unchanged revision.
+  const [reloadNonce, setReloadNonce] = useState(0)
+  const forceReimportRef = useRef(false)
 
   useEffect(() => {
     if (options.enabled === false || typeof EventSource === "undefined") return
+    const onReloadCommand = (raw: Event) => {
+      const detail = (raw as CustomEvent).detail
+      if (!isPluginReloadCommandEvent(detail)) return
+      forceReimportRef.current = true
+      setReloadNonce((n) => n + 1)
+    }
+    window.addEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, onReloadCommand as EventListener)
+    return () => window.removeEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, onReloadCommand as EventListener)
+  }, [options.enabled])
+
+  useEffect(() => {
+    if (options.enabled === false || typeof EventSource === "undefined") return
+    // A `/reload`-triggered reconnect must re-import the replayed current
+    // bundles even though their revision is unchanged. Clear the
+    // revision-dedupe maps so the gate (`revision <= lastSeen`) does not skip
+    // the replayed `boring.plugin.load` events. The cache-busting timestamp in
+    // `appendFrontImportRevision` ensures a fresh module instance loads.
+    if (forceReimportRef.current) {
+      forceReimportRef.current = false
+      lastSeenRef.current.clear()
+      latestRequestedRef.current.clear()
+    }
     if (hasBearerAuth(options.authHeaders)) {
       console.warn(
         "[boring-ui] front plugin hot reload disabled: native EventSource cannot send Authorization bearer headers, and this server does not advertise a token-query fallback for /api/v1/agent-plugins/events.",
@@ -389,7 +438,7 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           // Subscribers (including DockView) see exactly one
           // transition — never an intermediate empty state.
           try {
-            commitCapturedFrontFactory(event.id, captured, registries)
+            commitCapturedFrontFactory(event.id, event.revision, captured, registries)
           } catch (error) {
             throw {
               stage: "register",
@@ -520,5 +569,5 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
       replaySeenRef.current.clear()
       es.close()
     }
-  }, [options.apiBaseUrl, options.workspaceId, options.enabled, options.authHeaders, options.importFront, panels, commands, catalogs, surfaceResolvers])
+  }, [options.apiBaseUrl, options.workspaceId, options.enabled, options.authHeaders, options.importFront, panels, commands, catalogs, surfaceResolvers, reloadNonce])
 }

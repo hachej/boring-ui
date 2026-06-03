@@ -49,7 +49,7 @@ type CliMode = keyof typeof MODE_MAP
 type RuntimeMode = typeof MODE_MAP[CliMode]
 
 const require = createRequire(import.meta.url)
-const CLI_PACKAGE_NAME = "@hachej/boring-ui-cli"
+const PLUGIN_CLI_PACKAGE_NAME = "@hachej/boring-ui-plugin-cli"
 
 const CLI_VERSION = (() => {
   try {
@@ -118,18 +118,33 @@ export function resolveBoringUiCliPackageRoot(): string {
   return resolve(__dirname, "..", "..")
 }
 
-export function createBoringUiCliRuntimePlugin(
-  packageRoot = resolveBoringUiCliPackageRoot(),
-): ProvisionWorkspaceRuntimeOptions["plugins"][number] {
+function isUsableBoringUiPluginCliPackageRoot(candidate: string): boolean {
+  try {
+    const pkg = JSON.parse(readFileSync(join(candidate, "package.json"), "utf8")) as { name?: string }
+    return pkg.name === PLUGIN_CLI_PACKAGE_NAME
+      && existsSync(join(candidate, "dist", "bin.js"))
+  } catch {
+    return false
+  }
+}
+
+export function resolveBoringUiPluginCliPackageRoot(): string | null {
+  const cliRoot = resolveBoringUiCliPackageRoot()
+  const candidate = resolve(cliRoot, "..", "plugin-cli")
+  return isUsableBoringUiPluginCliPackageRoot(candidate) ? candidate : null
+}
+
+export function createBoringUiCliRuntimePlugin(): ProvisionWorkspaceRuntimeOptions["plugins"][number] {
+  const useLocal = process.env.BORING_USE_LOCAL_PACKAGES === "1"
+  const packageRoot = useLocal ? resolveBoringUiPluginCliPackageRoot() : null
   return {
-    id: "boring-ui-cli-runtime",
+    id: "boring-ui-plugin-cli-runtime",
     provisioning: {
       nodePackages: [{
-        id: "boring-ui-cli",
-        packageName: CLI_PACKAGE_NAME,
-        packageRoot,
-        version: CLI_VERSION,
-        expectedBins: ["boring-ui"],
+        id: "boring-ui-plugin-cli",
+        packageName: PLUGIN_CLI_PACKAGE_NAME,
+        ...(packageRoot ? { packageRoot } : { version: CLI_VERSION }),
+        expectedBins: ["boring-ui-plugin"],
       }],
     },
   }
@@ -176,6 +191,12 @@ function ensureFrontendBuilt(publicDir: string) {
 
 export async function registerStatic(app: FastifyInstance, publicDir: string) {
   ensureFrontendBuilt(publicDir)
+  // Compress responses (gzip/brotli) before serving static assets. The front
+  // bundle is multi-MB uncompressed; over a remote/tailscale link that raw
+  // transfer dominates first-load time. Compression cuts it ~3-4x. Registered
+  // before @fastify/static so its onSend hook wraps the file streams.
+  const { default: fastifyCompress } = await import("@fastify/compress")
+  await app.register(fastifyCompress, { global: true, encodings: ["br", "gzip"], threshold: 1024 })
   const { default: fastifyStatic } = await import("@fastify/static")
   await app.register(fastifyStatic, {
     root: publicDir,
@@ -200,6 +221,8 @@ const HELP_TEXT = [
   "                                       Scaffold a hot-reloadable plugin",
   "  boring-ui verify-plugin [name] [workspace]",
   "                                       Validate plugin manifests/files",
+  "  boring-ui test-plugin <name> [--url <url>]",
+  "                                       Reload, open, and live-render-test a plugin panel",
   "",
   "Options:",
   "  -p, --port <port>       HTTP port (default: 5200)",
@@ -435,6 +458,7 @@ export async function createFolderModeApp(opts: {
   })
 
   app.get("/api/v1/workspace/meta", async () => ({
+    workspaceId: "default",
     workspaceRoot,
     projectName,
     version: CLI_VERSION,
@@ -683,6 +707,7 @@ export async function createWorkspacesModeApp(opts: {
   })
 
   await app.register(workspaceServer.uiRoutes, {
+    getWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
     getBridge: async (request) => getBridge((await workspaceFromRequest(request)).id),
   })
 
@@ -1006,6 +1031,10 @@ export async function runCli(options: RunCliOptions): Promise<void> {
       name: { type: "string", short: "n" },
       path: { type: "string" as const },
       json: { type: "boolean" as const },
+      url: { type: "string" as const },
+      workspace: { type: "string" as const },
+      "panel-id": { type: "string" as const },
+      "timeout-ms": { type: "string" as const },
       help: { type: "boolean", short: "h" },
     },
     allowPositionals: true,
@@ -1029,17 +1058,13 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     cliMode = rawMode as CliMode
     mode = MODE_MAP[cliMode]
   } else {
-    // Auto-detect: use autoDetectMode() from @hachej/boring-agent/server.
-    // On Linux with bwrap → local-sandbox (bwrap); everywhere else → local (direct).
-    const agent = await import("@hachej/boring-agent/server")
-    const detected = agent.autoDetectMode()
-    if (detected === "local") {
-      cliMode = "local-sandbox"
-      mode = "local"
-    } else {
-      cliMode = "local"
-      mode = "direct"
-    }
+    // Default to direct (no sandbox) on every platform — including Linux with
+    // bwrap available. Direct mode boots ~instantly (no pack/extract, no
+    // sandbox spin-up); bwrap isolation is opt-in via `--mode local-sandbox`,
+    // since its per-workspace first-boot provisioning cost should only be paid
+    // when the caller explicitly wants the isolation (and accepts the wait).
+    cliMode = "local"
+    mode = "direct"
   }
 
   const base = {
@@ -1079,6 +1104,20 @@ export async function runCli(options: RunCliOptions): Promise<void> {
 
   if (positionals[0] === "verify-plugin") {
     await handleVerifyPluginCommand({ positionals })
+    return
+  }
+
+  if (positionals[0] === "test-plugin") {
+    await handleTestPluginCommand({
+      positionals,
+      args: {
+        url: args.url as string | undefined,
+        workspace: args.workspace as string | undefined,
+        panelId: args["panel-id"] as string | undefined,
+        timeoutMs: args["timeout-ms"] as string | undefined,
+        json: args.json === true,
+      },
+    })
     return
   }
 
@@ -1159,6 +1198,28 @@ async function handleVerifyPluginCommand(opts: { positionals: string[] }) {
   }
 }
 
+async function handleTestPluginCommand(opts: {
+  positionals: string[]
+  args: { url?: string; workspace?: string; panelId?: string; timeoutMs?: string; json: boolean }
+}) {
+  const name = opts.positionals[1]
+  if (!name) throw new Error("usage: boring-ui test-plugin <name> [--url <local-server-url>] [--workspace <id>] [--panel-id <id>] [--timeout-ms <ms>] [--json]")
+  const timeoutMs = opts.args.timeoutMs === undefined ? undefined : Number(opts.args.timeoutMs)
+  if (timeoutMs !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
+    throw new Error("--timeout-ms must be a positive number")
+  }
+  const { formatSelfTestResult, runPluginSelfTest } = await import("./testPlugin.js")
+  const result = await runPluginSelfTest({
+    pluginId: name,
+    url: opts.args.url,
+    workspaceId: opts.args.workspace,
+    panelId: opts.args.panelId,
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+  })
+  console.log(opts.args.json ? JSON.stringify(result, null, 2) : formatSelfTestResult(result))
+  if (!result.ok) process.exit(1)
+}
+
 async function handleScaffoldPluginCommand(opts: { positionals: string[] }) {
   const name = opts.positionals[1]
   if (!name) {
@@ -1181,7 +1242,8 @@ async function handleScaffoldPluginCommand(opts: { positionals: string[] }) {
   console.log(`  1. edit front/index.tsx for UI panels/commands/resolvers`)
   console.log(`  2. add pi.extensions / skills for hot-reloadable agent behavior`)
   console.log(`  3. bash \`boring-ui verify-plugin\` — confirms manifests + files are valid`)
-  console.log(`  4. ask the user: /reload`)
+  console.log(`  4. if the UI is open, bash \`boring-ui test-plugin <name>\` — catches panel render failures`)
+  console.log(`  5. ask the user: /reload`)
   console.log("")
   console.log("Advanced server integration:")
   console.log("  boring.server is boot-time/static composition only. It is NOT hot-registered")

@@ -71,6 +71,12 @@ describe('useSessions', () => {
     expect(result.error).toBeUndefined()
   })
 
+  test('uses an initial active session id when provided', () => {
+    useSessions({ initialActiveSessionId: 'session-from-url' })
+
+    expect(stateSlots[1][0]).toBe('session-from-url')
+  })
+
   test('effect calls refresh on mount', () => {
     useSessions()
     expect(effectCallbacks).toHaveLength(1)
@@ -116,6 +122,73 @@ describe('useSessions', () => {
     expect(mockFetch).toHaveBeenCalledWith('/api/v1/agent/sessions', {
       headers: { 'x-boring-workspace-id': 'w1' },
     })
+  })
+
+  test('retries transient 503s without surfacing an error, then loads sessions', async () => {
+    vi.useFakeTimers()
+    try {
+      // First three calls 503 ("runtime still preparing"), then success.
+      mockFetch
+        .mockResolvedValueOnce({ ok: false, status: 503 })
+        .mockResolvedValueOnce({ ok: false, status: 503 })
+        .mockResolvedValueOnce({ ok: false, status: 503 })
+        .mockResolvedValueOnce({ ok: true, json: async () => [{ id: 's1', title: 'First' }] })
+
+      useSessions()
+      const refreshFn = callbackFns[0]
+      const setError = stateSlots[3][1]
+      const setSessions = stateSlots[0][1]
+
+      const promise = refreshFn()
+      // Drain the backoff timers + microtasks between retries.
+      await vi.runAllTimersAsync()
+      await promise
+
+      // It retried past the 503s and eventually fetched successfully.
+      expect(mockFetch).toHaveBeenCalledTimes(4)
+      expect(setSessions).toHaveBeenCalledWith([{ id: 's1', title: 'First' }])
+      // No terminal error was surfaced (only setError(undefined) on success).
+      const setErrorMock = setError as unknown as ReturnType<typeof vi.fn>
+      const sawTruthyError = setErrorMock.mock.calls.some((call: unknown[]) => Boolean(call[0]))
+      expect(sawTruthyError).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('does not retry a non-503 failure (no infinite retry on a real 500)', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 500 })
+
+    useSessions()
+    const refreshFn = callbackFns[0]
+    await refreshFn()
+
+    // A 500 is terminal: exactly one fetch, error surfaced.
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    const setError = stateSlots[3][1]
+    expect(setError).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('500') }))
+  })
+
+  test('gives up after the bounded retry budget on a persistent 503', async () => {
+    vi.useFakeTimers()
+    try {
+      mockFetch.mockResolvedValue({ ok: false, status: 503 })
+
+      useSessions()
+      const refreshFn = callbackFns[0]
+      const setError = stateSlots[3][1]
+
+      const promise = refreshFn()
+      await vi.runAllTimersAsync()
+      await promise
+
+      // Bounded: MAX_SESSIONS_RETRIES (8) retries => 9 total attempts, not infinite.
+      expect(mockFetch).toHaveBeenCalledTimes(9)
+      // After exhausting the budget the 503 surfaces as a terminal error.
+      expect(setError).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('preparing') }))
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   test('refresh skips stale responses via version counter', async () => {
@@ -203,6 +276,22 @@ describe('useSessions', () => {
 
     expect(mockFetch).toHaveBeenCalledTimes(2)
     expect(mockFetch).toHaveBeenLastCalledWith('/api/v1/agent/sessions')
+  })
+
+  test('create keeps the new session visible when the immediate refresh is stale empty', async () => {
+    const newSession = { id: 's-new', title: 'Test' }
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => newSession })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] })
+
+    useSessions()
+    const createFn = callbackFns[1]
+    await createFn()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const setSessions = stateSlots[0][1] as unknown as ReturnType<typeof vi.fn>
+    expect(setSessions).toHaveBeenCalledWith([newSession])
+    expect(setSessions).not.toHaveBeenCalledWith([])
   })
 
   test('create surfaces error on failure', async () => {

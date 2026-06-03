@@ -45,6 +45,7 @@ jobs:
           pnpm -r \
             --filter @hachej/boring-ui-kit \
             --filter @hachej/boring-agent \
+            --filter @hachej/boring-ui-plugin-cli \
             --filter @hachej/boring-workspace \
             --filter @hachej/boring-core \
             --filter @hachej/boring-deck \
@@ -60,7 +61,7 @@ jobs:
 
       - name: Publish
         run: |
-          for pkg in packages/ui packages/agent packages/workspace packages/core packages/cli plugins/deck plugins/ask-user plugins/data-explorer plugins/data-catalog; do
+          for pkg in packages/ui packages/agent packages/plugin-cli packages/workspace packages/core packages/cli plugins/deck plugins/ask-user plugins/data-explorer plugins/data-catalog; do
             name=$(node -p "require('./$pkg/package.json').name")
             version=$(node -p "require('./$pkg/package.json').version")
             if npm view "$name@$version" version >/dev/null 2>&1; then

@@ -479,7 +479,7 @@ export function ChatPanel(props: ChatPanelProps) {
   }, [sessionId])
 
   const {
-    messages, sendMessage, setMessages, status, error, stop, clearError,
+    messages, sendMessage, setMessages, status, error, stop, clearError, hydratingMessages,
   } = useAgentChat({
     sessionId,
     onData: (part) => {
@@ -727,7 +727,7 @@ export function ChatPanel(props: ChatPanelProps) {
   const renderMessages = displayMessages.filter((message) => (
     message.role !== 'assistant' || hasVisibleMessageContent(message)
   ))
-  const emptyHero = emptyPlacement === 'hero' && renderMessages.length === 0
+  const emptyHero = emptyPlacement === 'hero' && renderMessages.length === 0 && !hydratingMessages
 
   // Stop button: cancels stream, clears the queued follow-up, and lets host UI
   // cancel any host-level blocker that is waiting for user attention.
@@ -1049,7 +1049,13 @@ export function ChatPanel(props: ChatPanelProps) {
           chrome ? "max-w-3xl px-6 py-8" : "max-w-[680px] px-4 py-4",
           emptyHero && "py-4 text-center",
         )}>
-          {renderMessages.length === 0 && (
+          {renderMessages.length === 0 && hydratingMessages && (
+            <div className="flex items-center gap-2 rounded-xl border border-border bg-card/70 px-4 py-3 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading chat history…
+            </div>
+          )}
+          {renderMessages.length === 0 && !hydratingMessages && (
             <ChatEmptyState
               eyebrow={emptyState?.eyebrow}
               title={emptyState?.title}
@@ -1360,32 +1366,33 @@ export function ChatPanel(props: ChatPanelProps) {
       </Conversation>
 
       <div className={cn(chrome ? "px-4 pb-4 pt-2 sm:px-6 sm:pb-5" : "px-3 pb-3 pt-1")}>
-        {/* Working… badge — collapses to 0 height when idle so it doesn't waste
-            vertical space. Height transition preserves layout stability. */}
-        <div
-          className={cn(
-            "mx-auto w-full overflow-hidden transition-all duration-300",
-            chrome ? "max-w-3xl" : "max-w-[680px]",
-            isStreaming ? "mb-2 max-h-8" : "max-h-0",
-          )}
-        >
+        {/* Working… badge. Unmount when idle so restored completed chats do not
+            expose stale live-region text to screen readers or text extraction. */}
+        {isStreaming && (
           <div
-            data-testid="chat-working"
-            role="status"
-            aria-live="polite"
             className={cn(
-              "inline-flex items-center gap-2 rounded-full border border-border/50 bg-background/85 px-2.5 py-1 text-[12px] text-muted-foreground/75 shadow-sm backdrop-blur",
+              "mx-auto mb-2 w-full overflow-hidden transition-all duration-300 max-h-8",
+              chrome ? "max-w-3xl" : "max-w-[680px]",
             )}
           >
-            <motion.span
-              aria-hidden="true"
-              className="inline-block size-1.5 rounded-full bg-[color:var(--accent)]"
-              animate={{ opacity: [0.35, 1, 0.35] }}
-              transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
-            />
-            <span>Working…</span>
+            <div
+              data-testid="chat-working"
+              role="status"
+              aria-live="polite"
+              className={cn(
+                "inline-flex items-center gap-2 rounded-full border border-border/50 bg-background/85 px-2.5 py-1 text-[12px] text-muted-foreground/75 shadow-sm backdrop-blur",
+              )}
+            >
+              <motion.span
+                aria-hidden="true"
+                className="inline-block size-1.5 rounded-full bg-[color:var(--accent)]"
+                animate={{ opacity: [0.35, 1, 0.35] }}
+                transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+              />
+              <span>Working…</span>
+            </div>
           </div>
-        </div>
+        )}
         {composerStatusNotice && (
           <div
             data-testid="chat-composer-runtime-notice"

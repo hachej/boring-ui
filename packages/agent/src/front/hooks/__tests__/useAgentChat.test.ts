@@ -6,19 +6,21 @@ let capturedTransportOpts: Record<string, unknown> | undefined
 const refStore = { current: undefined as unknown }
 const allRefs: Array<{ current: unknown }> = []
 const mockSetMessages = vi.fn()
+const mockStop = vi.fn()
 const mockUseStateSetter = vi.fn()
 const mockFetch = vi.fn()
 const mockStorageGetItem = vi.fn()
 const mockStorageSetItem = vi.fn()
+let mockChatStatus: 'ready' | 'submitted' | 'streaming' | 'error' = 'ready'
 
 vi.mock('@ai-sdk/react', () => ({
   useChat: vi.fn(() => ({
     id: 'mock-chat',
     messages: [],
     sendMessage: vi.fn(),
-    status: 'ready' as const,
+    status: mockChatStatus,
     error: undefined,
-    stop: vi.fn(),
+    stop: mockStop,
     setMessages: mockSetMessages,
   })),
 }))
@@ -35,6 +37,7 @@ vi.mock('react', async () => {
   return {
     ...actual,
     useMemo: <T>(fn: () => T) => fn(),
+    useCallback: <T extends (...args: never[]) => unknown>(fn: T) => fn,
     useRef: (initial: unknown) => {
       const ref = { current: initial }
       allRefs.push(ref)
@@ -74,10 +77,12 @@ beforeEach(() => {
   capturedTransportOpts = undefined
   allRefs.length = 0
   mockSetMessages.mockReset()
+  mockStop.mockReset()
   mockUseStateSetter.mockReset()
   mockStorageGetItem.mockReset()
   mockStorageSetItem.mockReset()
   mockFetch.mockReset()
+  mockChatStatus = 'ready'
   mockFetch.mockResolvedValue({
     ok: false,
     json: async () => null,
@@ -164,6 +169,29 @@ describe('useAgentChat', () => {
     expect(result).toHaveProperty('stop')
   })
 
+  test('sends and cancels with a client turn id', () => {
+    const result = useAgentChat({ sessionId: 'sess-cancel', requestHeaders: { authorization: 'Bearer test' } })
+
+    result.sendMessage({ text: 'cancel me', files: [] })
+    const bodyFn = capturedTransportOpts!.body as () => Record<string, unknown>
+    const body = bodyFn()
+    expect(body.clientTurnId).toEqual(expect.stringMatching(/^turn:/))
+
+    result.stop()
+
+    expect(mockStop).toHaveBeenCalled()
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      `/api/v1/agent/chat/sess-cancel/turn?turnId=${encodeURIComponent(body.clientTurnId as string)}`,
+      { method: 'DELETE', headers: { authorization: 'Bearer test' } },
+    )
+  })
+
+  test('marks the current session as hydrating until its own history load completes', () => {
+    const result = useAgentChat({ sessionId: 'sess-1' })
+
+    expect(result.hydratingMessages).toBe(true)
+  })
+
   test('passes transport instance to useChat', () => {
     useAgentChat({ sessionId: 'sess-1' })
 
@@ -175,12 +203,91 @@ describe('useAgentChat', () => {
     })
   })
 
-  test('enables resume on useChat', () => {
+  test('does not resume completed cached histories on mount', () => {
+    mockStorageGetItem.mockReturnValueOnce(JSON.stringify([
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+      { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'done' }] },
+    ]))
+
+    useAgentChat({ sessionId: 'sess-1' })
+
+    expect(useChat).toHaveBeenCalledWith(
+      expect.objectContaining({ resume: false }),
+    )
+  })
+
+  test('treats stale SDK streaming state as ready for completed cached histories', () => {
+    mockChatStatus = 'streaming'
+    mockStorageGetItem.mockReturnValueOnce(JSON.stringify([
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+      { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'done' }] },
+    ]))
+
+    const result = useAgentChat({ sessionId: 'sess-1' })
+
+    expect(result.status).toBe('ready')
+  })
+
+  test('resumes when cached history ends with an in-flight user message', () => {
+    mockStorageGetItem.mockReturnValueOnce(JSON.stringify([
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'keep going' }] },
+    ]))
+
     useAgentChat({ sessionId: 'sess-1' })
 
     expect(useChat).toHaveBeenCalledWith(
       expect.objectContaining({ resume: true }),
     )
+  })
+
+  test('resumes partial assistant text when the cached session status is active', () => {
+    mockStorageGetItem.mockImplementation((key: string) => {
+      if (key === 'boring-agent:messages:sess-1') {
+        return JSON.stringify([
+          { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+          { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'partial answer' }] },
+        ])
+      }
+      if (key === 'boring-agent:status:sess-1') return 'active'
+      return null
+    })
+
+    useAgentChat({ sessionId: 'sess-1' })
+
+    expect(useChat).toHaveBeenCalledWith(
+      expect.objectContaining({ resume: true }),
+    )
+  })
+
+  test('keeps an active resumed session ready while chat history hydrates', () => {
+    mockChatStatus = 'ready'
+    mockStorageGetItem.mockImplementation((key: string) => {
+      if (key === 'boring-agent:messages:sess-1') {
+        return JSON.stringify([
+          { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+          { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'partial answer' }] },
+        ])
+      }
+      if (key === 'boring-agent:status:sess-1') return 'active'
+      return null
+    })
+
+    const result = useAgentChat({ sessionId: 'sess-1' })
+
+    expect(result.status).toBe('ready')
+    expect(result.hydratingMessages).toBe(true)
+  })
+
+  test('marks stale SDK streaming state ready in the cached session status', () => {
+    mockChatStatus = 'streaming'
+    mockStorageGetItem.mockReturnValueOnce(JSON.stringify([
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+      { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'done' }] },
+    ]))
+
+    useAgentChat({ sessionId: 'sess-1' })
+
+    expect(mockStorageSetItem).toHaveBeenCalledWith('boring-agent:status:sess-1', 'ready')
   })
 
   test('throttles AI SDK message-store updates while streaming', () => {
@@ -189,6 +296,162 @@ describe('useAgentChat', () => {
     expect(useChat).toHaveBeenCalledWith(
       expect.objectContaining({ experimental_throttle: 50 }),
     )
+  })
+
+  test('caches the submitted user message synchronously before the stream starts', () => {
+    mockStorageGetItem.mockReturnValue(JSON.stringify([]))
+    const result = useAgentChat({ sessionId: 'sess-1' })
+    mockStorageSetItem.mockClear()
+
+    result.sendMessage({ text: 'message before switch', files: [] })
+
+    const messagesWrite = mockStorageSetItem.mock.calls.find(([key]) => key === 'boring-agent:messages:sess-1')
+    expect(messagesWrite).toBeDefined()
+    const cached = JSON.parse(messagesWrite?.[1] as string)
+    expect(cached).toEqual([
+      expect.objectContaining({
+        id: expect.stringMatching(/^pending-user:/),
+        role: 'user',
+        parts: [{ type: 'text', text: 'message before switch' }],
+      }),
+    ])
+    expect(mockStorageSetItem).toHaveBeenCalledWith('boring-agent:status:sess-1', 'active')
+    expect(mockUseStateSetter).toHaveBeenCalledWith(expect.any(Function))
+  })
+
+  test('preserves a new optimistic user message even when it repeats an earlier prompt', () => {
+    mockStorageGetItem.mockReturnValue(JSON.stringify([
+      { id: 'u-old', role: 'user', parts: [{ type: 'text', text: 'same prompt' }] },
+      { id: 'a-old', role: 'assistant', parts: [{ type: 'text', text: 'old answer' }] },
+    ]))
+    const result = useAgentChat({ sessionId: 'sess-repeat' })
+    mockStorageSetItem.mockClear()
+
+    result.sendMessage({ text: 'same prompt', files: [] })
+
+    const messagesWrite = mockStorageSetItem.mock.calls.find(([key]) => key === 'boring-agent:messages:sess-repeat')
+    const cached = JSON.parse(messagesWrite?.[1] as string)
+    expect(cached).toHaveLength(3)
+    expect(cached[2]).toEqual(expect.objectContaining({
+      id: expect.stringMatching(/^pending-user:/),
+      role: 'user',
+      parts: [{ type: 'text', text: 'same prompt' }],
+    }))
+  })
+
+  test('keeps an active partial assistant cache resumable when server history is stale', async () => {
+    const cachedUser = { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'run long thing' }] }
+    const partialAssistant = { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'partial answer' }] }
+    mockChatStatus = 'streaming'
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ messages: [] }),
+    })
+    mockStorageGetItem.mockImplementation((key: string) => {
+      if (key === 'boring-agent:messages:sess-1') return JSON.stringify([cachedUser, partialAssistant])
+      if (key === 'boring-agent:status:sess-1') return 'active'
+      return null
+    })
+
+    const result = useAgentChat({ sessionId: 'sess-1' })
+    await flushPromises()
+
+    expect(result.status).toBe('ready')
+    expect(result.hydratingMessages).toBe(true)
+    expect(useChat).toHaveBeenCalledWith(expect.objectContaining({ resume: true }))
+    expect(mockStorageSetItem).not.toHaveBeenCalledWith('boring-agent:status:sess-1', 'ready')
+  })
+
+  test('clears an active marker when settled server history supersedes a partial cache', async () => {
+    const cachedUser = { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'run long thing' }] }
+    const partialAssistant = { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'partial answer' }] }
+    const serverUser = { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'run long thing' }] }
+    const serverTool = {
+      id: 'a1',
+      role: 'assistant',
+      parts: [{ type: 'tool-bash', state: 'output-available', input: {}, output: [] }],
+    }
+    const serverDone = { id: 'a2', role: 'assistant', parts: [{ type: 'text', text: 'Done.' }] }
+    mockChatStatus = 'streaming'
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ messages: [serverUser, serverTool, serverDone] }),
+    })
+    mockStorageGetItem.mockImplementation((key: string) => {
+      if (key === 'boring-agent:messages:sess-1') return JSON.stringify([cachedUser, partialAssistant])
+      if (key === 'boring-agent:status:sess-1') return 'active'
+      return null
+    })
+
+    useAgentChat({ sessionId: 'sess-1' })
+    await flushPromises()
+
+    expect(mockStorageSetItem).toHaveBeenCalledWith('boring-agent:status:sess-1', 'ready')
+    expect(mockUseStateSetter).toHaveBeenCalledWith('boring-agent:messages:sess-1')
+    expect(mockStop).toHaveBeenCalled()
+  })
+
+  test('does not stop a new local turn that starts before hydration settles', async () => {
+    let resolveFetch: (value: { ok: true; json: () => Promise<{ messages: unknown[] }> }) => void = () => {}
+    const pendingFetch = new Promise<{ ok: true; json: () => Promise<{ messages: unknown[] }> }>((resolve) => {
+      resolveFetch = resolve
+    })
+    const serverUser = { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'done already' }] }
+    const serverAssistant = { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'settled' }] }
+    mockFetch.mockReturnValueOnce(pendingFetch)
+    mockStorageGetItem.mockImplementation((key: string) => {
+      if (key === 'boring-agent:status:sess-race-stop') return 'active'
+      return null
+    })
+
+    const result = useAgentChat({ sessionId: 'sess-race-stop' })
+    result.sendMessage({ text: 'new local turn', files: [] })
+    resolveFetch({ ok: true, json: async () => ({ messages: [serverUser, serverAssistant] }) })
+    await flushPromises()
+
+    expect(mockStorageSetItem).toHaveBeenCalledWith('boring-agent:status:sess-race-stop', 'ready')
+    expect(mockStop).not.toHaveBeenCalled()
+  })
+
+  test('places an optimistic pending user before the completed server assistant response', async () => {
+    const pendingUser = { id: 'pending-user:123', role: 'user', parts: [{ type: 'text', text: 'message while switching' }] }
+    const serverAssistant = { id: 'server-a1', role: 'assistant', parts: [{ type: 'text', text: 'done' }] }
+    mockChatStatus = 'streaming'
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ messages: [serverAssistant] }),
+    })
+    mockStorageGetItem.mockImplementation((key: string) => {
+      if (key === 'boring-agent:messages:sess-1') return JSON.stringify([pendingUser])
+      if (key === 'boring-agent:status:sess-1') return 'active'
+      return null
+    })
+
+    useAgentChat({ sessionId: 'sess-1' })
+    await flushPromises()
+
+    expect(mockSetMessages).toHaveBeenCalledWith([pendingUser, serverAssistant])
+    expect(mockStorageSetItem).toHaveBeenCalledWith('boring-agent:status:sess-1', 'ready')
+    expect(mockUseStateSetter).toHaveBeenCalledWith('boring-agent:messages:sess-1')
+  })
+
+  test('replaces an optimistic pending user message with the server copy when both exist', async () => {
+    const serverUser = { id: 'server-u1', role: 'user', parts: [{ type: 'text', text: 'same message' }] }
+    const serverAssistant = { id: 'server-a1', role: 'assistant', parts: [{ type: 'text', text: 'done' }] }
+    const pendingUser = { id: 'pending-user:123', role: 'user', parts: [{ type: 'text', text: 'same message' }] }
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ messages: [serverUser, serverAssistant] }),
+    })
+    mockStorageGetItem.mockImplementation((key: string) => {
+      if (key === 'boring-agent:messages:sess-1') return JSON.stringify([pendingUser])
+      return null
+    })
+
+    useAgentChat({ sessionId: 'sess-1' })
+    await flushPromises()
+
+    expect(mockSetMessages).toHaveBeenCalledWith([serverUser, serverAssistant])
   })
 
   test('forwards onData callback to useChat', () => {
@@ -236,7 +499,172 @@ describe('useAgentChat', () => {
     expect(mockSetMessages).toHaveBeenCalledWith(hydratedMessages)
   })
 
-  test('does not let late hydration overwrite an in-flight local turn', async () => {
+  test('returns sanitized messages immediately when AI SDK state contains duplicate stable user text', async () => {
+    const firstUser = { id: 'server-user-1', role: 'user', parts: [{ type: 'text', text: 'wait10s before response' }] }
+    const assistant = { id: 'assistant-1', role: 'assistant', parts: [{ type: 'text', text: 'done' }] }
+    const duplicateUser = { id: 'user-1780472366061', role: 'user', parts: [{ type: 'text', text: 'wait10s before response' }] }
+    vi.mocked(useChat).mockReturnValueOnce({
+      id: 'mock-chat',
+      messages: [firstUser, assistant, duplicateUser],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: undefined,
+      stop: mockStop,
+      setMessages: mockSetMessages,
+    } as unknown as ReturnType<typeof useChat>)
+
+    const result = useAgentChat({ sessionId: 'sess-duplicate-user-render', hydrateMessages: false })
+
+    expect(result.messages).toEqual([firstUser, assistant])
+    expect(mockSetMessages).toHaveBeenCalledWith([firstUser, assistant])
+  })
+
+  test('collapses repeated assistant text across parts', async () => {
+    const user = { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'wait10s before response' }] }
+    const assistant = {
+      id: 'a1',
+      role: 'assistant',
+      parts: [
+        { type: 'text', text: 'donedone' },
+        { type: 'text', text: 'done' },
+      ],
+    }
+    vi.mocked(useChat).mockReturnValueOnce({
+      id: 'mock-chat',
+      messages: [user, assistant],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: undefined,
+      stop: mockStop,
+      setMessages: mockSetMessages,
+    } as unknown as ReturnType<typeof useChat>)
+
+    const result = useAgentChat({ sessionId: 'sess-repeated-assistant-parts', hydrateMessages: false })
+
+    expect(result.messages).toEqual([
+      user,
+      { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'done' }] },
+    ])
+    expect(mockSetMessages).toHaveBeenCalledWith([
+      user,
+      { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'done' }] },
+    ])
+  })
+
+  test('returns sanitized messages immediately when AI SDK state contains duplicate assistant text', async () => {
+    const user = { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'yo respond me in 10 s' }] }
+    const assistant = {
+      id: 'a1',
+      role: 'assistant',
+      parts: [
+        { type: 'reasoning', text: '', state: 'done' },
+        { type: 'text', text: 'yo — responding now ✅', state: 'done' },
+      ],
+    }
+    const duplicateAssistant = {
+      id: 'assistant-1780433653864',
+      role: 'assistant',
+      parts: [
+        { type: 'reasoning', id: '0', text: '' },
+        { type: 'text', text: 'yo — responding now ✅' },
+      ],
+    }
+    vi.mocked(useChat).mockReturnValueOnce({
+      id: 'mock-chat',
+      messages: [user, assistant, duplicateAssistant],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: undefined,
+      stop: vi.fn(),
+      setMessages: mockSetMessages,
+    } as unknown as ReturnType<typeof useChat>)
+
+    const result = useAgentChat({ sessionId: 'sess-duplicate-render', hydrateMessages: false })
+
+    expect(result.messages).toEqual([user, assistant])
+    expect(mockSetMessages).toHaveBeenCalledWith([user, assistant])
+  })
+
+  test('does not show working while restoring an active marker before messages hydrate', () => {
+    mockStorageGetItem.mockImplementation((key: string) => {
+      if (key === 'boring-agent:status:sess-restoring') return 'active'
+      return null
+    })
+
+    const result = useAgentChat({ sessionId: 'sess-restoring' })
+
+    expect(result.hydratingMessages).toBe(true)
+    expect(result.status).toBe('ready')
+  })
+
+  test('dedupes duplicate assistant text from cached snapshots during hydration', async () => {
+    const serverUser = { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'yo respond me in 10 s' }] }
+    const serverAssistant = {
+      id: 'a1',
+      role: 'assistant',
+      parts: [
+        { type: 'reasoning', text: '', state: 'done' },
+        { type: 'text', text: 'yo — responding now ✅', state: 'done' },
+      ],
+    }
+    const duplicateAssistant = {
+      id: 'assistant-1780433653864',
+      role: 'assistant',
+      parts: [
+        { type: 'reasoning', id: '0', text: '' },
+        { type: 'text', text: 'yo — responding now ✅' },
+      ],
+    }
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ messages: [serverUser, serverAssistant] }),
+    })
+    mockStorageGetItem.mockReturnValue(JSON.stringify([serverUser, serverAssistant, duplicateAssistant]))
+
+    useAgentChat({ sessionId: 'sess-duplicate-assistant' })
+    await flushPromises()
+
+    expect(mockSetMessages).toHaveBeenCalledWith([serverUser, serverAssistant])
+  })
+
+  test('merges cached in-flight user message with stale server history on reload', async () => {
+    const serverOld = { id: 'server-old', role: 'assistant', parts: [{ type: 'text', text: 'old server state' }] }
+    const cachedLocalUser = { id: 'local-u1', role: 'user', parts: [{ type: 'text', text: 'new message while running' }] }
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ messages: [serverOld] }),
+    })
+    mockStorageGetItem.mockReturnValue(JSON.stringify([serverOld, cachedLocalUser]))
+
+    useAgentChat({ sessionId: 'sess-running-reload' })
+    await flushPromises()
+
+    expect(mockFetch).toHaveBeenCalledWith('/api/v1/agent/chat/sess-running-reload/messages')
+    expect(mockStorageGetItem).toHaveBeenCalledWith('boring-agent:messages:sess-running-reload')
+    expect(mockSetMessages).toHaveBeenCalledWith([serverOld, cachedLocalUser])
+  })
+
+  test('does not collapse repeated user messages with distinct ids', async () => {
+    vi.mocked(useChat).mockReturnValueOnce({
+      id: 'mock-chat',
+      messages: [
+        { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'retry this' }] },
+        { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'retry this' }] },
+      ],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: undefined,
+      stop: vi.fn(),
+      setMessages: mockSetMessages,
+    } as unknown as ReturnType<typeof useChat>)
+
+    useAgentChat({ sessionId: 'sess-repeat', hydrateMessages: false })
+    await flushPromises()
+
+    expect(mockSetMessages).not.toHaveBeenCalled()
+  })
+
+  test('merges late hydration with an in-flight local turn', async () => {
     vi.mocked(useChat).mockReturnValueOnce({
       id: 'mock-chat',
       messages: [{ id: 'local-u1', role: 'user', parts: [{ type: 'text', text: 'new draft' }] }],
@@ -257,6 +685,9 @@ describe('useAgentChat', () => {
     await flushPromises()
 
     expect(mockFetch).toHaveBeenCalledWith('/api/v1/agent/chat/sess-race/messages')
-    expect(mockSetMessages).not.toHaveBeenCalled()
+    expect(mockSetMessages).toHaveBeenCalledWith([
+      { id: 'server-old', role: 'assistant', parts: [{ type: 'text', text: 'old server state' }] },
+      { id: 'local-u1', role: 'user', parts: [{ type: 'text', text: 'new draft' }] },
+    ])
   })
 })
