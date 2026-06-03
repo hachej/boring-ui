@@ -1,10 +1,8 @@
-// @hachej/boring-agent/front — Tailwind + shadcn styled ChatPanel, primitives, hooks, and slash commands.
+// @hachej/boring-agent/front — Tailwind + shadcn styled PiChatPanel, primitives, hooks, and slash commands.
 
 export { uploadFile } from './upload/uploadFile'
 export type { UploadFileOptions, UploadFileResult } from './upload/uploadFile'
 
-export { ChatPanel } from './ChatPanel'
-export type { ChatPanelProps } from './ChatPanel'
 export { PiChatPanel } from './chat/PiChatPanel'
 export type { PiChatPanelProps } from './chat/PiChatPanel'
 export { DebugDrawer } from './DebugDrawer'
@@ -19,21 +17,6 @@ export { getAgentCommands } from './commands'
 export type { AgentCommandContribution, AgentCommandOptions } from './commands'
 
 // Hooks + slash commands
-/**
- * @deprecated Legacy AI SDK-shaped chat hook. New integrations should use
- * PiChatPanel/usePiSessions; this export stays only until the legacy hard
- * cutover removes the old ChatPanel transport path.
- */
-export { useAgentChat } from './hooks/useAgentChat'
-/** @deprecated Legacy AI SDK-shaped chat hook options; use PiChatPanel/usePiSessions. */
-export type { UseAgentChatOptions } from './hooks/useAgentChat'
-/**
- * @deprecated Legacy session hook for the old /api/v1/agent/sessions surface.
- * New integrations should use usePiSessions.
- */
-export { useSessions } from './hooks/useSessions'
-/** @deprecated Legacy session hook types; use UsePiSessionsOptions/UsePiSessionsResult. */
-export type { UseSessionsOptions, UseSessionsResult } from './hooks/useSessions'
 export {
   usePiSessions,
   activeSessionStorageKey,

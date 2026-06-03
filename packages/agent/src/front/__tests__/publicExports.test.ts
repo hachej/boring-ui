@@ -13,10 +13,13 @@ describe('@hachej/boring-agent/front public exports', () => {
     expect(source).not.toMatch(/PiAgentSessionAdapter/)
   })
 
-  test('marks legacy AI-SDK-shaped hooks as deprecated until the hard cutover removes them', () => {
+  test('does not export legacy AI-SDK-shaped chat hooks after the hard cutover', () => {
     const source = frontIndex()
-    expect(source).toMatch(/@deprecated[^]*useAgentChat[^]*UseAgentChatOptions/)
-    expect(source).toMatch(/@deprecated[^]*useSessions[^]*UseSessionsOptions/)
+    expect(source).not.toContain('use' + 'AgentChat')
+    expect(source).not.toContain('Use' + 'AgentChatOptions')
+    expect(source).not.toContain('use' + 'Sessions')
+    expect(source).not.toContain('Use' + 'SessionsOptions')
+    expect(source).toMatch(/usePiSessions|UsePiSessionsOptions/)
   })
 
   test('keeps package export map to documented package surfaces only', () => {

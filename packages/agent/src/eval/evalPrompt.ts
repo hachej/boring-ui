@@ -1,9 +1,9 @@
 /**
- * Single-prompt eval. Posts a chat through `app.inject`, captures every
- * tool call in the streamed response, and matches against the expected
+ * Single-prompt eval. Posts a Pi-native chat through `app.inject`, captures
+ * tool calls from the canonical session snapshot, and matches against the expected
  * shape.
  *
- * The Fastify routes are exercised in-process (no real network for /chat
+ * The Fastify routes are exercised in-process (no real network for Pi chat
  * itself), but the LLM call inside the harness IS real — that's the whole
  * point. Cost lives at the model API boundary; control via model choice +
  * retry budget + suite-level concurrency.
@@ -149,7 +149,7 @@ async function runOnce(
   const querySuffix = formatQuerySuffix(opts.query)
 
   // Register the session so the harness has somewhere to attach the turn.
-  // Some harness impls auto-create on chat.send; pre-creating is safe in
+  // Some harness impls auto-create on prompt; pre-creating is safe in
   // both cases and lets the cleanup DELETE find a real row.
   await app.inject({
     method: "POST",
@@ -158,7 +158,7 @@ async function runOnce(
     payload: { id: opts.sessionId },
   })
 
-  // System prompt path: the agent's chat schema doesn't accept a system
+  // System prompt path: the agent's prompt schema doesn't accept a system
   // prompt directly today (it lives on the harness or model config). For
   // now we pre-pend it to the user message with a separator the LLM
   // typically respects. If we land a /system route or extend the schema
@@ -172,11 +172,11 @@ async function runOnce(
     res = await withTimeout(
       app.inject({
         method: "POST",
-        url: `/api/v1/agent/chat${querySuffix}`,
+        url: `/api/v1/agent/pi-chat/${encodeURIComponent(opts.sessionId)}/prompt${querySuffix}`,
         headers: opts.headers,
         payload: {
-          sessionId: opts.sessionId,
           message: userMessage,
+          clientNonce: `eval-${opts.sessionId}`,
           model: opts.model,
         },
       }),
@@ -197,11 +197,38 @@ async function runOnce(
 
   if (res.statusCode !== 200) {
     throw new Error(
-      `chat returned ${res.statusCode}: ${res.body.slice(0, 256)}`,
+      `Pi chat prompt returned ${res.statusCode}: ${res.body.slice(0, 256)}`,
     )
   }
 
-  return parseSseStream(res.body)
+  const state = await app.inject({
+    method: "GET",
+    url: `/api/v1/agent/pi-chat/${encodeURIComponent(opts.sessionId)}/state${querySuffix}`,
+    headers: opts.headers,
+  })
+  if (state.statusCode !== 200) {
+    throw new Error(`Pi chat state returned ${state.statusCode}: ${state.body.slice(0, 256)}`)
+  }
+  return capturePiChatSnapshot(JSON.parse(state.body) as Record<string, unknown>)
+}
+
+function capturePiChatSnapshot(snapshot: Record<string, unknown>): CapturedStream {
+  const toolCalls: ToolCall[] = []
+  const textParts: string[] = []
+  const messages = Array.isArray(snapshot.messages) ? snapshot.messages : []
+  for (const message of messages) {
+    if (typeof message !== 'object' || message === null) continue
+    const parts = Array.isArray((message as { parts?: unknown }).parts) ? (message as { parts: unknown[] }).parts : []
+    for (const part of parts) {
+      if (typeof part !== 'object' || part === null) continue
+      const rec = part as Record<string, unknown>
+      if (rec.type === 'text' && typeof rec.text === 'string') textParts.push(rec.text)
+      if (rec.type === 'tool-call' && typeof rec.toolName === 'string') {
+        toolCalls.push({ tool: rec.toolName, params: typeof rec.input === 'object' && rec.input !== null ? rec.input as Record<string, unknown> : {} })
+      }
+    }
+  }
+  return { toolCalls, text: textParts.join('') }
 }
 
 function formatQuerySuffix(query: RunOnceOpts["query"]): string {
@@ -216,8 +243,8 @@ function formatQuerySuffix(query: RunOnceOpts["query"]): string {
 }
 
 /**
- * Extract tool calls + text + usage from the SSE response body produced
- * by /api/v1/agent/chat. Each SSE event line is `data: <json>\n` where
+ * Extract tool calls + text + usage from a legacy SSE response body. Each SSE
+ * event line is `data: <json>\n` where
  * json is a UIMessageChunk. We watch for:
  * - `tool-input-available`: { toolName, input } → ToolCall
  * - `text-delta`: { delta } → accumulate into text buffer

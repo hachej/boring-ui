@@ -139,7 +139,9 @@ function remoteFactory(remote: FakeRemotePiSession) {
 describe('PiChatPanel sandbox shell', () => {
   test('imports no old chat hooks/projection/AI SDK stream contracts', () => {
     const source = readFileSync('src/front/chat/PiChatPanel.tsx', 'utf8')
-    expect(source).not.toMatch(/useAgentChat|piChatProjection|piNativeFollowUpQueue|@ai-sdk\/react|useChat|UIMessageChunk/)
+    for (const forbidden of ['use' + 'AgentChat', 'piChat' + 'Projection', 'piNative' + 'FollowUpQueue', '@ai-sdk' + '/react', 'use' + 'Chat', 'UIMessageChunk']) {
+      expect(source).not.toContain(forbidden)
+    }
   })
 
   test('hydrates selected Pi session from usePiSessions and can create a new session', async () => {

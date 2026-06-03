@@ -936,6 +936,20 @@ function collectAssistantTextFromPayload(value: unknown, acc: string[] = []): st
   return acc
 }
 
+function extractPiChatText(snapshot: unknown): string {
+  const chunks: string[] = []
+  if (!snapshot || typeof snapshot !== 'object') return ''
+  const messages = Array.isArray((snapshot as { messages?: unknown }).messages)
+    ? (snapshot as { messages: unknown[] }).messages
+    : []
+  for (const message of messages) {
+    if (!message || typeof message !== 'object') continue
+    if ((message as { role?: unknown }).role !== 'assistant') continue
+    collectAssistantTextFromPayload((message as { parts?: unknown }).parts, chunks)
+  }
+  return chunks.join('')
+}
+
 function extractAssistantText(payloads: string[]): string {
   const chunks: string[] = []
   for (const payload of payloads) {
@@ -997,8 +1011,8 @@ async function stepAgentChat(
   })
 
   try {
-    const { status, text, headers } = await requestText(
-      `${baseUrl}/api/v1/agent/chat`,
+    const { status, text } = await requestText(
+      `${baseUrl}/api/v1/agent/pi-chat/${encodeURIComponent(sessionId)}/prompt`,
       {
         method: 'POST',
         headers: {
@@ -1007,8 +1021,8 @@ async function stepAgentChat(
           'x-boring-workspace-id': workspaceId,
         },
         body: JSON.stringify({
-          sessionId,
           message: 'Reply with exactly: ok',
+          clientNonce: `smoke-${sessionId}`,
           model: { provider: AGENT_SMOKE_MODEL_PROVIDER, id: AGENT_SMOKE_MODEL_ID },
         }),
       },
@@ -1020,17 +1034,16 @@ async function stepAgentChat(
       fail(step, `expected HTTP 200, got ${status} (${text.slice(0, 500)})`)
     }
 
-    const contentType = headers.get('content-type') ?? ''
-    if (!contentType.includes('text/event-stream')) {
-      fail(step, `expected text/event-stream, got ${contentType}`)
+    const state = await requestJson(
+      `${baseUrl}/api/v1/agent/pi-chat/${encodeURIComponent(sessionId)}/state`,
+      { method: 'GET', headers: { cookie, 'x-boring-workspace-id': workspaceId } },
+      step,
+      AGENT_CHAT_TIMEOUT_MS,
+    )
+    if (state.status !== 200) {
+      fail(step, `expected state HTTP 200, got ${state.status}`)
     }
-
-    const payloads = extractSsePayloads(text)
-    if (!payloads.includes('[DONE]')) {
-      fail(step, `expected [DONE] SSE marker, got ${text.slice(0, 1_000)}`)
-    }
-
-    const assistantText = extractAssistantText(payloads)
+    const assistantText = extractPiChatText(state.json)
     if (!assistantText.toLowerCase().includes('ok')) {
       fail(step, `expected assistant text to contain ok, got ${JSON.stringify(assistantText)}`)
     }
@@ -1039,7 +1052,6 @@ async function stepAgentChat(
       step,
       status,
       sessionId,
-      eventCount: payloads.length,
       assistantText,
     })
   } finally {

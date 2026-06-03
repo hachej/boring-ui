@@ -1,7 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify'
 import type { AgentTool } from '../shared/tool'
 import type { AgentHarnessFactory } from '../shared/harness'
-import type { SessionStore } from '../shared/session'
 import type { TelemetrySink } from '../shared/telemetry'
 import { getEnv } from './config/env'
 import type { RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
@@ -17,10 +16,10 @@ import { healthRoutes } from './http/routes/health'
 import { fileRoutes } from './http/routes/file'
 import { fsEventsRoutes } from './http/routes/fsEvents'
 import { treeRoutes } from './http/routes/tree'
-import { chatRoutes } from './http/routes/chat'
 import { modelsRoutes } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
 import { sessionRoutes } from './http/routes/sessions'
+import { piChatRoutes } from './http/routes/piChat'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
@@ -29,6 +28,7 @@ import { reloadRoutes } from './http/routes/reload'
 import { searchRoutes } from './http/routes/search'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
+import { HarnessPiChatService } from './pi-chat/harnessPiChatService'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
@@ -190,15 +190,14 @@ export async function createAgentApp(
   // (runtimeBundle.fileSearch). One impl, one set of glob semantics,
   // one bound-to-workspace-root guarantee.
   await app.register(searchRoutes, { fileSearch: runtimeBundle.fileSearch })
-  await app.register(chatRoutes, {
+  const piChatService = new HarnessPiChatService({
     harness,
+    sessionStore: harness.sessions,
     workdir: runtimeBundle.workspace.root,
-    sessionStore: harness.sessions as unknown as SessionStore,
-    sessionChangesTracker,
-    telemetry: opts.telemetry,
   })
+  await app.register(piChatRoutes, { service: piChatService })
   await app.register(sessionRoutes, {
-    sessionStore: harness.sessions as unknown as SessionStore,
+    sessionStore: harness.sessions,
     harness,
     workdir: runtimeBundle.workspace.root,
   })

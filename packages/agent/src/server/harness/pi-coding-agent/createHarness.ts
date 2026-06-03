@@ -22,6 +22,7 @@ import type { TelemetrySink } from "../../../shared/telemetry.js";
 import type { UIMessageChunk } from "../../../shared/message.js";
 import { adaptToolsForPi, unmarkToolResultErrorDetails } from "./tool-adapter.js";
 import { piEventToChunks } from "./stream-adapter.js";
+import { createPiAgentSessionAdapter } from "../../pi-chat/PiAgentSessionAdapter.js";
 import { PiSessionStore } from "./sessions.js";
 import { createSessionTitleScheduler } from "./sessionTitle.js";
 import {
@@ -674,7 +675,7 @@ export function createPiCodingAgentHarness(opts: {
     return removed;
   }
 
-  return {
+  return ({
     id: "pi-coding-agent",
     placement: "server",
     sessions: sessionStore,
@@ -717,6 +718,11 @@ export function createPiCodingAgentHarness(opts: {
     },
 
     reloadSession: reloadPiSession,
+
+    async getPiSessionAdapter(input: SendMessageInput, ctx: RunContext) {
+      const { piSession } = await getOrCreatePiSession(input.sessionId, input, ctx);
+      return createPiAgentSessionAdapter(piSession);
+    },
 
     async *sendMessage(
       input: SendMessageInput,
@@ -1236,5 +1242,5 @@ export function createPiCodingAgentHarness(opts: {
         }
       }
     },
-  };
+  } as AgentHarness & { getPiSessionAdapter: (input: SendMessageInput, ctx: RunContext) => Promise<unknown> });
 }
