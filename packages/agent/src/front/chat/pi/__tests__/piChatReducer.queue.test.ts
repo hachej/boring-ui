@@ -13,6 +13,40 @@ function optimistic(clientNonce: string, text: string, clientSeq?: number): Opti
 }
 
 describe('piChatReducer queue behavior', () => {
+  it('applies queue updates only in monotonic seq order', () => {
+    let state = createInitialPiChatState({ sessionId: 's1', storageScope: 'scope' })
+    state = piChatReducer(state, {
+      type: 'event',
+      event: {
+        type: 'queue-updated',
+        seq: 1,
+        queue: { followUps: [{ id: 'q1', kind: 'followup', clientNonce: 'nonce-1', clientSeq: 1, displayText: 'first' }] },
+      },
+    })
+    const afterFirst = state
+
+    state = piChatReducer(state, {
+      type: 'event',
+      event: {
+        type: 'queue-updated',
+        seq: 1,
+        queue: { followUps: [{ id: 'duplicate', kind: 'followup', clientNonce: 'nonce-dup', clientSeq: 1, displayText: 'duplicate' }] },
+      },
+    })
+    expect(state).toBe(afterFirst)
+
+    state = piChatReducer(state, {
+      type: 'event',
+      event: {
+        type: 'queue-updated',
+        seq: 3,
+        queue: { followUps: [{ id: 'gap', kind: 'followup', clientNonce: 'nonce-gap', clientSeq: 3, displayText: 'gap' }] },
+      },
+    })
+    expect(state.queue.followUps).toEqual([{ id: 'q1', kind: 'followup', clientNonce: 'nonce-1', clientSeq: 1, displayText: 'first' }])
+    expect(state.needsResync).toEqual({ expectedSeq: 2, actualSeq: 3, lastSeq: 1 })
+  })
+
   it('reconciles queued follow-ups by nonce/seq metadata, never by text equality', () => {
     let state = createInitialPiChatState({ sessionId: 's1', storageScope: 'scope' })
     state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('nonce-1', 'same text', 1) })

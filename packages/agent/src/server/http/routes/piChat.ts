@@ -27,7 +27,8 @@ import {
 } from '../../../shared/chat'
 import type { PiChatReplayRangeError } from '../../pi-chat/piChatReplayBuffer'
 import { PI_CHAT_CURSOR_AHEAD, PI_CHAT_REPLAY_GAP } from '../../pi-chat/piChatReplayBuffer'
-import type { PiSessionRequestContext } from '../../pi-chat/piSessionIdentity'
+import type { PiSessionCreateInit, PiSessionRequestContext } from '../../pi-chat/piSessionIdentity'
+import type { SessionSummary } from '../../../shared/session'
 
 const DEFAULT_WORKSPACE_ID = 'default'
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 25_000
@@ -51,6 +52,9 @@ const EventsQuerySchema: z.ZodType<EventsQuery, z.ZodTypeDef, unknown> = z.objec
 })
 
 const EmptyBodySchema = z.preprocess((value) => value ?? {}, z.object({}).strict())
+const CreateSessionBodySchema = z.preprocess((value) => value ?? {}, z.object({
+  title: z.string().min(1).max(200).optional(),
+}).strict())
 
 export interface PiChatEventStreamSubscription {
   type: 'ok'
@@ -64,6 +68,9 @@ export type PiChatEventStreamResult = PiChatEventStreamSubscription | PiChatRepl
 export type PiChatEventSubscriber = (event: PiChatEvent) => void
 
 export interface PiChatSessionService {
+  listSessions?(ctx: PiSessionRequestContext): Promise<SessionSummary[]>
+  createSession?(ctx: PiSessionRequestContext, init?: PiSessionCreateInit): Promise<SessionSummary>
+  deleteSession?(ctx: PiSessionRequestContext, sessionId: string): Promise<void>
   readState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot>
   subscribe(ctx: PiSessionRequestContext, sessionId: string, cursor: number, subscriber: PiChatEventSubscriber): Promise<PiChatEventStreamResult>
   prompt(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload): Promise<PromptReceipt>
@@ -117,6 +124,41 @@ export function piChatRoutes(
   opts: PiChatRoutesOptions,
   done: (err?: Error) => void,
 ): void {
+  app.get('/api/v1/agent/pi-chat/sessions', async (request, reply) => {
+    try {
+      const service = await resolveService(opts, request)
+      if (!service.listSessions) throw unsupportedServiceMethod('list Pi chat sessions')
+      return reply.send(await service.listSessions(getRequestContext(request)))
+    } catch (err) {
+      return sendRouteError(reply, err, 'list pi chat sessions failed')
+    }
+  })
+
+  app.post('/api/v1/agent/pi-chat/sessions', async (request, reply) => {
+    const body = parseWithSchema(CreateSessionBodySchema, request.body, reply, 'body')
+    if (!body) return
+    try {
+      const service = await resolveService(opts, request)
+      if (!service.createSession) throw unsupportedServiceMethod('create Pi chat session')
+      return reply.code(201).send(await service.createSession(getRequestContext(request), body))
+    } catch (err) {
+      return sendRouteError(reply, err, 'create pi chat session failed')
+    }
+  })
+
+  app.delete('/api/v1/agent/pi-chat/sessions/:sessionId', async (request, reply) => {
+    const params = parseParams(request, reply)
+    if (!params) return
+    try {
+      const service = await resolveService(opts, request)
+      if (!service.deleteSession) throw unsupportedServiceMethod('delete Pi chat session')
+      await service.deleteSession(getRequestContext(request), params.sessionId)
+      return reply.code(204).send()
+    } catch (err) {
+      return sendRouteError(reply, err, 'delete pi chat session failed')
+    }
+  })
+
   app.get('/api/v1/agent/pi-chat/:sessionId/state', async (request, reply) => {
     const params = parseParams(request, reply)
     if (!params) return
@@ -275,6 +317,14 @@ function parseWithSchema<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, value: 
     },
   })
   return undefined
+}
+
+function unsupportedServiceMethod(action: string): PiChatRouteError {
+  return new PiChatRouteError({
+    statusCode: 501,
+    code: ErrorCode.enum.INTERNAL_ERROR,
+    message: `pi chat service does not support ${action}`,
+  })
 }
 
 async function resolveService(opts: PiChatRoutesOptions, request: FastifyRequest): Promise<PiChatSessionService> {

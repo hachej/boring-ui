@@ -22,6 +22,16 @@ export type { UseAgentChatOptions } from './hooks/useAgentChat'
 export { useSessions } from './hooks/useSessions'
 export type { UseSessionsOptions, UseSessionsResult } from './hooks/useSessions'
 export {
+  usePiSessions,
+  activeSessionStorageKey,
+  readActiveSessionId,
+  writeActiveSessionId,
+  clearActiveSessionId,
+  SessionList as PiSessionList,
+  SessionBrowser as PiSessionBrowser,
+} from './chat/session'
+export type { UsePiSessionsOptions, UsePiSessionsResult, PiSessionCreateInit, SessionListProps } from './chat/session'
+export {
   builtinCommands,
   createCommandRegistry,
   parseSlashCommand,

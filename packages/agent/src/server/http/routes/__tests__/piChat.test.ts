@@ -42,10 +42,30 @@ function activeSnapshot(overrides: Partial<PiChatSnapshot> = {}): PiChatSnapshot
 
 class FakePiChatService implements PiChatSessionService {
   snapshot = activeSnapshot()
+  sessions = [
+    { id: 'pi-1', title: 'Running session', createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:01:00.000Z', turnCount: 1 },
+  ]
   events: PiChatEvent[] = []
   subscriptionResult: Awaited<ReturnType<PiChatSessionService['subscribe']>> | undefined
   readonly unsubscribe = vi.fn()
-  readonly calls: Array<{ method: string; ctx: PiSessionRequestContext; sessionId: string; payload?: unknown; cursor?: number }> = []
+  readonly calls: Array<{ method: string; ctx: PiSessionRequestContext; sessionId?: string; payload?: unknown; cursor?: number }> = []
+
+  async listSessions(ctx: PiSessionRequestContext) {
+    this.calls.push({ method: 'listSessions', ctx })
+    return this.sessions
+  }
+
+  async createSession(ctx: PiSessionRequestContext, init?: { title?: string }) {
+    const session = { id: 'pi-new', title: init?.title ?? 'New session', createdAt: '2026-06-03T00:02:00.000Z', updatedAt: '2026-06-03T00:02:00.000Z', turnCount: 0 }
+    this.calls.push({ method: 'createSession', ctx, sessionId: session.id, payload: init ?? {} })
+    this.sessions = [session, ...this.sessions]
+    return session
+  }
+
+  async deleteSession(ctx: PiSessionRequestContext, sessionId: string) {
+    this.calls.push({ method: 'deleteSession', ctx, sessionId })
+    this.sessions = this.sessions.filter((session) => session.id !== sessionId)
+  }
 
   async readState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot> {
     this.calls.push({ method: 'readState', ctx, sessionId })
@@ -97,6 +117,39 @@ async function buildApp(service = new FakePiChatService()) {
 }
 
 describe('piChatRoutes', () => {
+  test('Pi-native session list/create/delete routes use scoped context instead of legacy transcript store', async () => {
+    const { app, service } = await buildApp()
+
+    const list = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/pi-chat/sessions',
+      headers: { 'x-boring-storage-scope': 'scope-a' },
+    })
+    expect(list.statusCode).toBe(200)
+    expect(list.json()).toEqual(service.sessions)
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions',
+      headers: { 'x-boring-storage-scope': 'scope-a' },
+      payload: { title: 'New Pi session' },
+    })
+    expect(created.statusCode).toBe(201)
+    expect(created.json()).toMatchObject({ id: 'pi-new', title: 'New Pi session' })
+
+    const deleted = await app.inject({
+      method: 'DELETE',
+      url: '/api/v1/agent/pi-chat/sessions/pi-new',
+      headers: { 'x-boring-storage-scope': 'scope-a' },
+    })
+    expect(deleted.statusCode).toBe(204)
+
+    expect(service.calls.map((call) => call.method)).toEqual(['listSessions', 'createSession', 'deleteSession'])
+    expect(service.calls[0]).toMatchObject({ ctx: { workspaceId: 'workspace-a', storageScope: 'scope-a', authSubject: 'user-a' } })
+
+    await app.close()
+  })
+
   test('GET /state returns active canonical snapshot for reload without browser transcript cache', async () => {
     const { app, service } = await buildApp()
 
