@@ -395,6 +395,123 @@ describe("pluginFrontRuntime", () => {
     }
   }, 20_000)
 
+  test("resolves ui-kit imports from the host package instead of plugin-local deps", async () => {
+    const pluginRoot = await makeTempDir("plugin-front-runtime-ui-kit-")
+    const plugin = await writeRuntimePlugin(pluginRoot, {
+      "front/index.tsx": 'import { Button } from "@hachej/boring-ui-kit"\nexport const Component = Button\n',
+    })
+
+    const host = await createPluginFrontRuntimeHost()
+    try {
+      host.trackPlugin({ workspaceId: "workspace-a", plugin, revision: 1, frontEntrySubpath: "front/index.tsx" })
+      const entry = await host.serve({
+        workspaceId: "workspace-a",
+        pluginId: "runtime-plugin",
+        revision: 1,
+        subpath: "front/index.tsx",
+      })
+      expect(String(entry.body)).toMatch(/__vite\/proxy\/packages%2Fui%2Fsrc%2Findex\.ts|__vite\/proxy\/@id/)
+    } finally {
+      await host.close()
+    }
+  }, 20_000)
+
+  test("resolves plugin-local bare imports through the runtime proxy", async () => {
+    const pluginRoot = await makeTempDir("plugin-front-runtime-local-dep-")
+    const plugin = await writeRuntimePlugin(pluginRoot, {
+      "front/index.tsx": 'import { value } from "tiny-lib"\nexport const answer = value\n',
+      "node_modules/tiny-lib/package.json": JSON.stringify({ name: "tiny-lib", version: "1.0.0", main: "index.js" }),
+      "node_modules/tiny-lib/index.js": 'export const value = "plugin local dep"\n',
+    })
+
+    const host = await createPluginFrontRuntimeHost()
+    const app = fastify({ logger: false })
+    await host.registerRoutes(app)
+    host.trackPlugin({ workspaceId: "workspace-a", plugin, revision: 1, frontEntrySubpath: "front/index.tsx" })
+
+    try {
+      const entry = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/index.tsx`,
+      })
+      expect(entry.statusCode).toBe(200)
+      const depPath = entry.body.match(new RegExp(`"(${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/[^"']*)"`))?.[1]
+      expect(depPath, entry.body).toBeTruthy()
+
+      const dep = await app.inject({ method: "GET", url: depPath! })
+      expect(dep.statusCode, dep.body).toBe(200)
+      expect(dep.body).toContain("plugin local dep")
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
+
+  test("rejects plugin-local dependency attempts to import arbitrary /@fs paths", async () => {
+    const pluginRoot = await makeTempDir("plugin-front-runtime-bad-dep-")
+    const plugin = await writeRuntimePlugin(pluginRoot, {
+      "front/index.tsx": 'import { value } from "bad-lib"\nexport const answer = value\n',
+      "node_modules/bad-lib/package.json": JSON.stringify({ name: "bad-lib", version: "1.0.0", main: "index.js" }),
+      "node_modules/bad-lib/index.js": 'import secret from "/@fs/etc/passwd?raw"\nexport const value = secret\n',
+    })
+
+    const host = await createPluginFrontRuntimeHost()
+    const app = fastify({ logger: false })
+    await host.registerRoutes(app)
+    host.trackPlugin({ workspaceId: "workspace-a", plugin, revision: 1, frontEntrySubpath: "front/index.tsx" })
+
+    try {
+      const entry = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/index.tsx`,
+      })
+      expect(entry.statusCode).toBe(200)
+      const depPath = entry.body.match(new RegExp(`"(${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/[^"']*)"`))?.[1]
+      expect(depPath, entry.body).toBeTruthy()
+
+      const dep = await app.inject({ method: "GET", url: depPath! })
+      expect(dep.statusCode).toBe(400)
+      expect(dep.body).toContain(ErrorCode.enum.PLUGIN_RUNTIME_UNSAFE_IMPORT)
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
+
+  test("rejects plugin-local dependency CSS url attempts to reference arbitrary /@fs paths", async () => {
+    const pluginRoot = await makeTempDir("plugin-front-runtime-bad-dep-css-")
+    const plugin = await writeRuntimePlugin(pluginRoot, {
+      "front/index.tsx": 'import "bad-css-lib"\nexport const ok = true\n',
+      "node_modules/bad-css-lib/package.json": JSON.stringify({ name: "bad-css-lib", version: "1.0.0", main: "index.js" }),
+      "node_modules/bad-css-lib/index.js": 'import "./style.css"\nexport const value = true\n',
+      "node_modules/bad-css-lib/style.css": 'body { background: url("/@fs/etc/passwd"); }\n',
+    })
+
+    const host = await createPluginFrontRuntimeHost()
+    const app = fastify({ logger: false })
+    await host.registerRoutes(app)
+    host.trackPlugin({ workspaceId: "workspace-a", plugin, revision: 1, frontEntrySubpath: "front/index.tsx" })
+
+    try {
+      const entry = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/index.tsx`,
+      })
+      expect(entry.statusCode).toBe(200)
+      const depPath = entry.body.match(new RegExp(`"(${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/[^"']*)"`))?.[1]
+      expect(depPath, entry.body).toBeTruthy()
+
+      const dep = await app.inject({ method: "GET", url: depPath! })
+      expect(dep.statusCode, dep.body).toBe(200)
+      const cssPath = dep.body.match(new RegExp(`"(${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/[^"']*style\.css[^"']*)"`))?.[1]
+      expect(cssPath, dep.body).toBeTruthy()
+
+      const css = await app.inject({ method: "GET", url: cssPath! })
+      expect(css.statusCode).toBe(400)
+      expect(css.body).toContain(ErrorCode.enum.PLUGIN_RUNTIME_UNSAFE_IMPORT)
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
+
   test("keeps plain strings/comments from tripping unsafe-import validation", async () => {
     const pluginRoot = await makeTempDir("plugin-front-runtime-string-literal-")
     const plugin = await writeRuntimePlugin(pluginRoot, {
@@ -529,6 +646,7 @@ describe("pluginFrontRuntime", () => {
       const jsxDevSingletonCode = __testingRuntimeSingletonModuleCode("react/jsx-dev-runtime") ?? ""
       expect(jsxDevSingletonCode).toContain("export default normalized")
       expect(jsxDevSingletonCode).toContain("export const jsxDEV = normalized")
+      expect(__testingRuntimeSingletonModuleCode("@hachej/boring-ui-kit")).toBeFalsy()
 
       await expect(host.serve({
         workspaceId: "workspace-a",

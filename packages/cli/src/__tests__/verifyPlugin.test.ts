@@ -59,6 +59,138 @@ describe("verifyPlugin", () => {
     expect(result.outcomes[0]).toMatchObject({ id: "good", ok: true, errors: [] })
   })
 
+  test("allows host-provided ui-kit imports without plugin dependencies", () => {
+    plant("ui-kit", {
+      "package.json": JSON.stringify({
+        name: "ui-kit",
+        version: "1.0.0",
+        boring: { label: "UI", front: "front/index.tsx" },
+      }),
+      "front/index.tsx": 'import { Button } from "@hachej/boring-ui-kit"\nexport default Button\n',
+    })
+
+    const result = verifyPlugin({ workspaceRoot })
+    expect(result.ok).toBe(true)
+    expect(result.outcomes[0].errors).toEqual([])
+  })
+
+  test("reports missing plugin-local dependencies with install hints", () => {
+    plant("needs-recharts", {
+      "package.json": JSON.stringify({
+        name: "needs-recharts",
+        version: "1.0.0",
+        dependencies: { recharts: "^3.0.0" },
+        boring: { label: "Charts", front: "front/index.tsx" },
+      }),
+      "front/index.tsx": 'import { LineChart } from "recharts"\nexport default LineChart\n',
+    })
+
+    const result = verifyPlugin({ workspaceRoot })
+    expect(result.ok).toBe(false)
+    const joined = result.outcomes[0].errors.join("\n")
+    expect(joined).toContain('dependency "recharts" is declared but not installed')
+    expect(joined).toContain("npm install")
+  })
+
+  test("accepts plugin-local installed dependencies", () => {
+    const dir = plant("has-local-dep", {
+      "package.json": JSON.stringify({
+        name: "has-local-dep",
+        version: "1.0.0",
+        dependencies: { "tiny-lib": "1.0.0" },
+        boring: { label: "Dep", front: "front/index.tsx" },
+      }),
+      "front/index.tsx": 'import { value } from "tiny-lib"\nexport default value\n',
+      "node_modules/tiny-lib/package.json": JSON.stringify({ name: "tiny-lib", version: "1.0.0", main: "index.js" }),
+      "node_modules/tiny-lib/index.js": "export const value = true\n",
+    })
+
+    const result = verifyPlugin({ workspaceRoot, name: "has-local-dep" })
+    expect(result.ok).toBe(true)
+    expect(result.outcomes[0]).toMatchObject({ id: "has-local-dep", ok: true, dir })
+  })
+
+  test("rejects host-provided dependencies in package.json", () => {
+    plant("bad-singleton", {
+      "package.json": JSON.stringify({
+        name: "bad-singleton",
+        version: "1.0.0",
+        dependencies: { react: "^19.0.0", "@hachej/boring-ui-kit": "^0.1.0" },
+        boring: { label: "Bad", front: "front/index.tsx" },
+      }),
+      "front/index.tsx": 'import React from "react"\nexport default React\n',
+    })
+
+    const result = verifyPlugin({ workspaceRoot })
+    expect(result.ok).toBe(false)
+    const joined = result.outcomes[0].errors.join("\n")
+    expect(joined).toContain("host-provided package")
+    expect(joined).toContain("@hachej/boring-ui-kit")
+  })
+
+  test("reports undeclared missing front imports with install hints", () => {
+    plant("missing-import", {
+      "package.json": JSON.stringify({
+        name: "missing-import",
+        version: "1.0.0",
+        boring: { label: "Missing", front: "front/index.tsx" },
+      }),
+      "front/index.tsx": 'import maplibregl from "maplibre-gl"\nexport default maplibregl\n',
+    })
+
+    const result = verifyPlugin({ workspaceRoot })
+    expect(result.ok).toBe(false)
+    const joined = result.outcomes[0].errors.join("\n")
+    expect(joined).toContain('missing dependency for front import "maplibre-gl"')
+    expect(joined).toContain("npm install maplibre-gl")
+  })
+
+  test("reports unsafe CSS url imports from front code", () => {
+    plant("bad-css-url", {
+      "package.json": JSON.stringify({
+        name: "bad-css-url",
+        version: "1.0.0",
+        boring: { label: "CSS", front: "front/index.tsx" },
+      }),
+      "front/index.tsx": 'import "./style.css"\nexport default {}\n',
+      "front/style.css": 'body { background: url("/@fs/etc/passwd"); }\n',
+    })
+
+    const result = verifyPlugin({ workspaceRoot })
+    expect(result.ok).toBe(false)
+    expect(result.outcomes[0].errors.join("\n")).toContain('/@fs/etc/passwd')
+  })
+
+  test("reports Node built-ins imported from front code", () => {
+    plant("node-built-in", {
+      "package.json": JSON.stringify({
+        name: "node-built-in",
+        version: "1.0.0",
+        boring: { label: "Node", front: "front/index.tsx" },
+      }),
+      "front/index.tsx": 'import fs from "node:fs"\nexport default fs\n',
+    })
+
+    const result = verifyPlugin({ workspaceRoot })
+    expect(result.ok).toBe(false)
+    expect(result.outcomes[0].errors.join("\n")).toContain("Node built-ins are not available")
+  })
+
+  test("ignores import-looking examples in front code comments", () => {
+    plant("commented-example", {
+      "package.json": JSON.stringify({
+        name: "commented-example",
+        version: "1.0.0",
+        boring: { label: "Comment", front: "front/index.tsx" },
+      }),
+      "front/index.tsx": '// import { baseConfig } from "@hachej/some-base"\nexport default {}\n',
+    })
+
+    const result = verifyPlugin({ workspaceRoot })
+    expect(result.ok).toBe(true)
+    expect(result.outcomes[0].errors).toEqual([])
+  })
+
   test("reports INVALID_PLUGIN_METADATA when boring.server is set to true", () => {
     plant("bad-server", {
       "package.json": JSON.stringify({

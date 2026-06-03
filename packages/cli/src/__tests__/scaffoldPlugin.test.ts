@@ -35,11 +35,14 @@ describe("scaffoldPlugin", () => {
 
     const front = readFileSync(join(result.pluginDir, "front", "index.tsx"), "utf8")
     expect(front).toContain('import { definePlugin } from "@hachej/boring-workspace/plugin"')
+    expect(front).toContain('from "@hachej/boring-ui-kit"')
     expect(front).toContain('"my-plugin"')
     expect(front).toContain('"my-plugin.panel"')
     expect(front).toContain('"my-plugin.open"')
-    expect(front).toContain('"my-plugin.tab"')
     expect(front).toContain("MyPluginPane")
+    expect(front).toContain("<Card>")
+    expect(front).toContain("<EmptyState")
+    expect(front).not.toContain("style={{ padding: 16 }}")
     // The scaffold reads from the canonical template files (not inline
     // strings), so placeholder leakage like "<kebab-name>" indicates the
     // substitution missed something.

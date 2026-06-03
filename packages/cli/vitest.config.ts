@@ -8,7 +8,7 @@ export default defineConfig({
   test: {
     server: {
       deps: {
-        inline: [/^@hachej\/boring-(agent|workspace)(\/.*)?$/],
+        inline: [/^@hachej\/boring-(agent|workspace|ui-kit)(\/.*)?$/, /^@hachej\/boring-ui-plugin-cli$/],
       },
     },
     projects: [
@@ -46,6 +46,8 @@ export default defineConfig({
       { find: /^@hachej\/boring-workspace\/app\/front$/, replacement: resolve(repoRoot, "packages/workspace/src/app/front/index.ts") },
       { find: /^@hachej\/boring-workspace\/app\/server$/, replacement: resolve(repoRoot, "packages/workspace/src/app/server/index.ts") },
       { find: /^@hachej\/boring-workspace$/, replacement: resolve(repoRoot, "packages/workspace/src/index.ts") },
+      { find: /^@hachej\/boring-ui-kit$/, replacement: resolve(repoRoot, "packages/ui/src/index.ts") },
+      { find: /^@hachej\/boring-ui-plugin-cli$/, replacement: resolve(repoRoot, "packages/plugin-cli/src/index.ts") },
     ],
   },
 })

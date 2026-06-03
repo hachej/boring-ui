@@ -9,9 +9,47 @@
 
 import React from "react"
 import { definePlugin } from "@hachej/boring-workspace/plugin"
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  EmptyState,
+  Toolbar,
+  ToolbarGroup,
+} from "@hachej/boring-ui-kit"
 
 function MyPane() {
-  return <div style={{ padding: 16 }}>Hello from &lt;kebab-name&gt;</div>
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-background text-foreground">
+      <Toolbar className="border-b border-border px-3 py-2">
+        <ToolbarGroup>
+          <Badge variant="secondary">Runtime plugin</Badge>
+        </ToolbarGroup>
+      </Toolbar>
+
+      <div className="min-h-0 flex-1 overflow-auto p-4">
+        <Card>
+          <CardHeader>
+            <CardTitle><Label></CardTitle>
+            <CardDescription>
+              Replace this scaffold with the plugin's real workspace UI.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <EmptyState
+              title="Nothing to show yet"
+              description="Connect data, register a surface resolver, or add actions for this plugin."
+              actions={<Button size="sm">Primary action</Button>}
+            />
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  )
 }
 
 export default definePlugin({

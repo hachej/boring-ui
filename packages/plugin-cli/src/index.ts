@@ -108,6 +108,8 @@ export async function runBoringUiPluginCli(argv = process.argv.slice(2)): Promis
   console.log(pluginCommandUsage())
 }
 
+export { findHintForError, formatVerifyResult, scaffoldPlugin, verifyPlugin } from "./server/index"
+export type { PluginVerifyOutcome, ScaffoldPluginOptions, ScaffoldPluginResult, VerifyPluginResult } from "./server/index"
 export { formatSelfTestResult, runPluginSelfTest } from "./server/testPlugin"
 export type { PaneSelfTestState, RunPluginSelfTestOptions, SelfTestEvent, SelfTestResult } from "./server/testPlugin"
 
