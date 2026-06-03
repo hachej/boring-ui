@@ -22,12 +22,16 @@ function stableTextHash(text: string): string {
   return hash.toString(36)
 }
 
-function buildFollowUpQueue(snapshot: PiAgentSessionSnapshot): QueuedUserMessage[] {
-  return snapshot.followUpMessages.map((displayText, index) => ({
-    id: queueId(snapshot.sessionId, index, displayText),
+export function buildPiChatQueuedFollowUps(sessionId: string, followUpMessages: readonly string[]): QueuedUserMessage[] {
+  return followUpMessages.map((displayText, index) => ({
+    id: queueId(sessionId, index, displayText),
     kind: 'followup',
     displayText,
   }))
+}
+
+function buildFollowUpQueue(snapshot: PiAgentSessionSnapshot): QueuedUserMessage[] {
+  return buildPiChatQueuedFollowUps(snapshot.sessionId, snapshot.followUpMessages)
 }
 
 function statusFromSnapshot(snapshot: PiAgentSessionSnapshot, error?: ChatError): PiChatStatus {
