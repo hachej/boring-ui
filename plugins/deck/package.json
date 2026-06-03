@@ -10,6 +10,7 @@
   },
   "homepage": "https://github.com/hachej/boring-ui",
   "boring": {
+    "id": "deck",
     "label": "Deck",
     "front": "dist/front/index.js"
   },

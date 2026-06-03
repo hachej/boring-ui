@@ -1,6 +1,6 @@
-import { Suspense, createElement, lazy, useMemo, useSyncExternalStore, type ComponentType } from "react"
+import { createElement, lazy, useMemo, useSyncExternalStore, type ComponentType } from "react"
 import type { PanelConfig, PanelRegistration } from "./types"
-import { PluginErrorBoundary } from "../plugin/PluginErrorBoundary"
+import { PanelRenderStatusBoundary } from "./PanelRenderStatusBoundary"
 
 export class PanelRegistry {
   private panels = new Map<string, PanelConfig>()
@@ -149,29 +149,23 @@ export class PanelRegistry {
       const current = registry.get(panelId)
       const gen = registry.generation
       // biome-ignore lint/suspicious/noExplicitAny: see comment above
+      const renderable = Boolean(current && registry.satisfiesCapabilities(current))
       const Inner: ComponentType<any> = useMemo(() => {
         if (!current || !registry.satisfiesCapabilities(current)) return () => null
         if (current.lazy) return registry.getLazyComponent(panelId, current.component)
         return current.component as ComponentType<any>
       }, [current?.component, current?.lazy, current?.requiresCapabilities, gen])
+      if (!renderable) return null
       const pluginId = current?.pluginId ?? current?.id ?? panelId
+      const panelInstanceId = typeof props?.api?.id === "string" ? props.api.id : undefined
       return createElement(
-        PluginErrorBoundary,
+        PanelRenderStatusBoundary,
         {
           pluginId,
-          contributionKind: "panel" as const,
-          contributionId: panelId,
-          children: createElement(
-            Suspense,
-            {
-              fallback: createElement(
-                "div",
-                { className: "flex h-full items-center justify-center text-sm text-muted-foreground" },
-                "Loading…",
-              ),
-              children: createElement(Inner, props),
-            },
-          ),
+          panelId,
+          panelInstanceId,
+          revision: current?.pluginRevision,
+          children: createElement(Inner, props),
         },
       )
     }
