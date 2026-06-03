@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { CliVersionBadge, cliWorkspacePath, workspaceIdFromCliUrl } from "../front/App"
+import { CliVersionBadge, chatSessionIdFromCliUrl, cliWorkspacePath, workspaceIdFromCliUrl } from "../front/App"
 
 describe("CLI chrome", () => {
   test("renders a compact version badge when CLI meta has a version", () => {
@@ -18,5 +18,12 @@ describe("CLI chrome", () => {
   test("builds navigable workspace paths", () => {
     expect(cliWorkspacePath("project-123")).toBe("/workspace/project-123")
     expect(cliWorkspacePath("project name")).toBe("/workspace/project%20name")
+    expect(cliWorkspacePath("project-123", "chat-abc")).toBe("/workspace/project-123?session=chat-abc")
+  })
+
+  test("reads chat session id from workspace URL query", () => {
+    expect(chatSessionIdFromCliUrl("?session=chat-abc")).toBe("chat-abc")
+    expect(chatSessionIdFromCliUrl("?session=")).toBeNull()
+    expect(chatSessionIdFromCliUrl("")).toBeNull()
   })
 })

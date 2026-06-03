@@ -186,6 +186,42 @@ describe('ChatPanel (shadcn)', () => {
     expect(html).toContain('Hi there')
   })
 
+  test('does not expose the working live region for a restored completed chat', () => {
+    mockUseAgentChat.mockReturnValue({
+      messages: [
+        { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'yo' }] },
+        { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'Yo! What can I help you with?', state: 'done' }] },
+      ],
+      sendMessage: mockSendMessage,
+      status: 'ready',
+      error: undefined,
+      hydratingMessages: false,
+    })
+
+    render(<ChatPanel sessionId="sess-restored-complete" />)
+
+    expect(screen.getByText('yo')).toBeTruthy()
+    expect(screen.getByText('Yo! What can I help you with?')).toBeTruthy()
+    expect(screen.queryByText('Working…')).toBeNull()
+  })
+
+  test('shows the working live region while a restored chat is still running', () => {
+    mockUseAgentChat.mockReturnValue({
+      messages: [
+        { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'wait then answer' }] },
+      ],
+      sendMessage: mockSendMessage,
+      status: 'submitted',
+      error: undefined,
+      hydratingMessages: false,
+    })
+
+    render(<ChatPanel sessionId="sess-restored-running" />)
+
+    expect(screen.getByText('wait then answer')).toBeTruthy()
+    expect(screen.getByText('Working…')).toBeTruthy()
+  })
+
   test('renders reasoning parts', () => {
     mockUseAgentChat.mockReturnValue({
       messages: [
@@ -1045,8 +1081,8 @@ describe('ChatPanel (shadcn)', () => {
         error: undefined,
       })
       const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
-      // Badge is always in DOM; hidden via max-h-0 when not working
-      expect(html).toContain('max-h-0')
+      expect(html).not.toContain('data-testid="chat-working"')
+      expect(html).not.toContain('Working…')
     })
   })
 

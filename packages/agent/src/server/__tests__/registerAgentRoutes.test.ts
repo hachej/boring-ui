@@ -132,7 +132,7 @@ test('registerAgentRoutes provisions the resolved request workspace, not the hos
   }
 }, 15_000)
 
-test('chat returns runtime-not-ready while request-scoped provisioning is pending', async () => {
+test('chat history loads while request-scoped provisioning is pending', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-chat-pending-provision-')
   const app = Fastify({ logger: false })
   const provisionStarted = vi.fn()
@@ -169,10 +169,18 @@ test('chat returns runtime-not-ready while request-scoped provisioning is pendin
   await app.ready()
 
   try {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/sessions',
+      payload: { title: 'Existing chat' },
+    })
+    expect(created.statusCode).toBe(200)
+    const sessionId = created.json().id as string
+
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/agent/chat',
-      payload: { sessionId: 's1', message: 'hello' },
+      payload: { sessionId, message: 'hello' },
     })
 
     expect(res.statusCode).toBe(503)
@@ -183,6 +191,24 @@ test('chat returns runtime-not-ready while request-scoped provisioning is pendin
       },
     })
     expect(provisionStarted).toHaveBeenCalledOnce()
+
+    const saved = await app.inject({
+      method: 'PUT',
+      url: `/api/v1/agent/chat/${encodeURIComponent(sessionId)}/messages`,
+      payload: {
+        messages: [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: 'previous message' }] }],
+      },
+    })
+    expect(saved.statusCode).toBe(204)
+
+    const hydrated = await app.inject({
+      method: 'GET',
+      url: `/api/v1/agent/chat/${encodeURIComponent(sessionId)}/messages`,
+    })
+    expect(hydrated.statusCode).toBe(200)
+    expect(hydrated.json()).toMatchObject({
+      messages: [{ role: 'user', parts: [{ type: 'text', text: 'previous message' }] }],
+    })
 
     resolveProvision?.()
     const catalog = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })

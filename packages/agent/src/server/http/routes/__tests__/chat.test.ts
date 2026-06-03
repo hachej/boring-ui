@@ -47,9 +47,15 @@ function buildApp(overrides: Partial<ChatRouteOptions> = {}) {
   app.register(chatRoutes, {
     harness: overrides.harness ?? createMockHarness(),
     workdir: overrides.workdir ?? '/tmp/test',
+    getRuntime: overrides.getRuntime,
     telemetry: overrides.telemetry,
   })
   return app.ready().then(() => app)
+}
+
+function waitForAbort(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve()
+  return new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }))
 }
 
 function createTelemetryRecorder(): { telemetry: TelemetrySink; events: TelemetryEvent[] } {
@@ -440,6 +446,140 @@ describe('POST /api/v1/agent/chat', () => {
 
     await app.close()
   })
+
+  test('rejects a second active POST turn for the same session', async () => {
+    let resolveStarted: () => void = () => {}
+    const started = new Promise<void>((resolve) => { resolveStarted = resolve })
+    const harness: AgentHarness = {
+      id: 'single-turn-harness',
+      placement: 'server',
+      sendMessage(_input, ctx) {
+        resolveStarted()
+        return (async function* () {
+          yield { type: 'start' } as UIMessageChunk
+          await waitForAbort(ctx.abortSignal)
+          yield { type: 'finish' } as UIMessageChunk
+        })()
+      },
+      sessions: createMockHarness().sessions,
+    }
+    const app = await buildApp({ harness })
+
+    const postA = app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      payload: { ...validBody, clientTurnId: 'turn-a' },
+    })
+    await started
+
+    const postB = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      payload: { ...validBody, message: 'turn-b', clientTurnId: 'turn-b' },
+    })
+
+    expect(postB.statusCode).toBe(409)
+    expect(postB.json().error.message).toBe('turn_already_active')
+
+    await app.inject({ method: 'DELETE', url: '/api/v1/agent/chat/sess-1/turn?turnId=turn-a' })
+    await postA
+    await app.close()
+  }, 10_000)
+
+  test('reserves the active turn before async runtime resolution', async () => {
+    let resolveRuntimeGate: () => void = () => {}
+    let resolveRuntimeEntered: () => void = () => {}
+    const runtimeGate = new Promise<void>((resolve) => { resolveRuntimeGate = resolve })
+    const runtimeEntered = new Promise<void>((resolve) => { resolveRuntimeEntered = resolve })
+    const harness = createMockHarness()
+    let runtimeCalls = 0
+    const app = await buildApp({
+      getRuntime: async () => {
+        runtimeCalls += 1
+        if (runtimeCalls === 1) {
+          resolveRuntimeEntered()
+          await runtimeGate
+        }
+        return { harness, workdir: '/tmp/test' }
+      },
+    })
+
+    const postA = app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      payload: { ...validBody, clientTurnId: 'turn-a' },
+    })
+    await runtimeEntered
+
+    const postB = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      payload: { ...validBody, message: 'turn-b', clientTurnId: 'turn-b' },
+    })
+    resolveRuntimeGate()
+    const resA = await postA
+
+    expect(postB.statusCode).toBe(409)
+    expect(postB.json().error.message).toBe('turn_already_active')
+    expect(resA.statusCode).toBe(200)
+
+    await app.close()
+  })
+
+  test('stale turn cancel does not abort the newer sequential turn', async () => {
+    const signals = new Map<string, AbortSignal>()
+    const startedResolvers = new Map<string, () => void>()
+    const started = (turnId: string) => new Promise<void>((resolve) => startedResolvers.set(turnId, resolve))
+    const harness: AgentHarness = {
+      id: 'abortable-harness',
+      placement: 'server',
+      sendMessage(input, ctx) {
+        const turnId = input.message
+        signals.set(turnId, ctx.abortSignal)
+        startedResolvers.get(turnId)?.()
+        return (async function* () {
+          yield { type: 'start' } as UIMessageChunk
+          await waitForAbort(ctx.abortSignal)
+          yield { type: 'finish' } as UIMessageChunk
+        })()
+      },
+      sessions: createMockHarness().sessions,
+    }
+    const app = await buildApp({ harness })
+
+    const aStarted = started('turn-a')
+    const postA = app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      payload: { ...validBody, message: 'turn-a', clientTurnId: 'turn-a' },
+    })
+    await aStarted
+    await app.inject({ method: 'DELETE', url: '/api/v1/agent/chat/sess-1/turn?turnId=turn-a' })
+    await postA
+
+    const bStarted = started('turn-b')
+    const postB = app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      payload: { ...validBody, message: 'turn-b', clientTurnId: 'turn-b' },
+    })
+    await bStarted
+
+    const staleCancelA = await app.inject({
+      method: 'DELETE',
+      url: '/api/v1/agent/chat/sess-1/turn?turnId=turn-a',
+    })
+
+    expect(staleCancelA.statusCode).toBe(204)
+    expect(signals.get('turn-a')?.aborted).toBe(true)
+    expect(signals.get('turn-b')?.aborted).toBe(false)
+
+    await app.inject({ method: 'DELETE', url: '/api/v1/agent/chat/sess-1/turn?turnId=turn-b' })
+    expect(signals.get('turn-b')?.aborted).toBe(true)
+
+    await postB
+    await app.close()
+  }, 10_000)
 
   test('response includes X-Turn-Id header', async () => {
     const app = await buildApp()

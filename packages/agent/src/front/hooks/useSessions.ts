@@ -9,6 +9,7 @@ export interface UseSessionsOptions {
   storageKey?: string
   enabled?: boolean
   refreshKey?: unknown
+  initialActiveSessionId?: string
 }
 
 export interface UseSessionsResult {
@@ -48,11 +49,36 @@ function requestInit(
   return { headers }
 }
 
+/**
+ * Thrown when the sessions endpoint returns HTTP 503 ("Agent runtime is still
+ * preparing"). This is a transient condition during cold-start warmup, so it is
+ * treated as retryable: the hook retries with backoff instead of surfacing an empty
+ * chat. Only 503 is retryable — every other failure (network error, 4xx, 5xx)
+ * is a terminal error so we never mask real/offline failures.
+ */
+class SessionsPreparingError extends Error {
+  constructor() {
+    super('Agent runtime is still preparing')
+    this.name = 'SessionsPreparingError'
+  }
+}
+
+// Bounded retry policy for transient 503s during runtime warmup.
+const MAX_SESSIONS_RETRIES = 8
+function retryDelayMs(attempt: number): number {
+  return Math.min(250 * 2 ** attempt, 2000)
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 async function fetchSessions(
   headers: Record<string, string> | undefined,
 ): Promise<SessionSummary[]> {
   const init = requestInit(headers)
   const res = init ? await fetch(API_BASE, init) : await fetch(API_BASE)
+  if (res.status === 503) throw new SessionsPreparingError()
   if (!res.ok) throw new Error(`Failed to load sessions: ${res.status}`)
   return res.json()
 }
@@ -62,22 +88,38 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
   const requestHeaders = opts.requestHeaders
   const enabled = opts.enabled ?? true
   const refreshKey = opts.refreshKey
+  const initialActiveSessionId = opts.initialActiveSessionId
   const scopeKey = useMemo(
     () => `${storageKey}\n${headersScopeKey(requestHeaders)}`,
     [requestHeaders, storageKey],
   )
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>(
-    () => readPersistedId(storageKey),
+    () => initialActiveSessionId ?? readPersistedId(storageKey),
   )
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | undefined>()
   const [loaded, setLoaded] = useState(false)
   const versionRef = useRef(0)
   const loadedScopeRef = useRef(scopeKey)
+  const pendingCreatedSessionsRef = useRef<Map<string, SessionSummary>>(new Map())
+  const pendingCreatedScopeRef = useRef(scopeKey)
+  // Unmount guard: set false in the consuming effect's cleanup (below) so
+  // in-flight retries never setState after unmount. Kept as a plain ref (no
+  // dedicated effect) to avoid perturbing hook order.
+  const mountedRef = useRef(true)
+
+  function ensurePendingCreatedScope(): void {
+    if (pendingCreatedScopeRef.current === scopeKey) return
+    pendingCreatedScopeRef.current = scopeKey
+    pendingCreatedSessionsRef.current.clear()
+  }
 
   const refresh = useCallback(async () => {
     const v = ++versionRef.current
+    // A state update is only valid while this refresh is the latest one
+    // (no newer scope change / refresh) and the component is still mounted.
+    const isCurrent = () => v === versionRef.current && mountedRef.current
     if (!enabled) {
       setSessions([])
       setActiveSessionId(undefined)
@@ -89,25 +131,54 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
     setLoaded(false)
     setLoading(true)
     try {
-      const data = await fetchSessions(requestHeaders)
-      if (v === versionRef.current) {
+      let data: SessionSummary[] | undefined
+      // Bounded retry loop: a transient 503 ("runtime still preparing") keeps
+      // us in loading state and retries with backoff rather than latching an
+      // error and showing an empty chat. Non-retryable errors fall straight
+      // through to the catch block below (original behavior).
+      for (let attempt = 0; ; attempt++) {
+        try {
+          data = await fetchSessions(requestHeaders)
+          break
+        } catch (err) {
+          const retryable =
+            err instanceof SessionsPreparingError && attempt < MAX_SESSIONS_RETRIES
+          if (!retryable) throw err
+          // Cancel in-flight retries if a newer refresh/scope change happened
+          // or we unmounted; do not touch state in that case.
+          if (!isCurrent()) return
+          await delay(retryDelayMs(attempt))
+          if (!isCurrent()) return
+        }
+      }
+      if (isCurrent() && data) {
+        ensurePendingCreatedScope()
+        const pendingCreatedSessions = pendingCreatedSessionsRef.current
+        for (const session of data) pendingCreatedSessions.delete(session.id)
+        const serverIds = new Set(data.map((session) => session.id))
+        const mergedData = pendingCreatedSessions.size > 0
+          ? [
+              ...Array.from(pendingCreatedSessions.values()).filter((session) => !serverIds.has(session.id)),
+              ...data,
+            ]
+          : data
         const replacingLoadedScope = loadedScopeRef.current !== scopeKey
         loadedScopeRef.current = scopeKey
-        const persisted = readPersistedId(storageKey)
+        const persisted = initialActiveSessionId ?? readPersistedId(storageKey)
         setError(undefined)
         setLoaded(true)
-        setSessions(data)
+        setSessions(mergedData)
         setActiveSessionId((prev) => {
           const preferred = replacingLoadedScope ? persisted : (prev ?? persisted)
-          if (preferred && data.some((session) => session.id === preferred)) return preferred
-          const next = data[0]?.id
+          if (preferred && mergedData.some((session) => session.id === preferred)) return preferred
+          const next = mergedData[0]?.id
           persistId(storageKey, next)
           return next
         })
         setLoading(false)
       }
     } catch (err) {
-      if (v === versionRef.current) {
+      if (isCurrent()) {
         const replacingLoadedScope = loadedScopeRef.current !== scopeKey
         loadedScopeRef.current = scopeKey
         if (replacingLoadedScope) {
@@ -119,9 +190,10 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
         setLoading(false)
       }
     }
-  }, [enabled, requestHeaders, scopeKey, storageKey])
+  }, [enabled, initialActiveSessionId, requestHeaders, scopeKey, storageKey])
 
   useEffect(() => {
+    mountedRef.current = true
     if (!enabled) {
       setSessions([])
       setActiveSessionId(undefined)
@@ -131,6 +203,9 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
       return
     }
     void refresh()
+    return () => {
+      mountedRef.current = false
+    }
   }, [enabled, refresh, refreshKey, scopeKey])
 
   const create = useCallback(
@@ -147,13 +222,15 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
         throw err
       }
       const session: SessionSummary = await res.json()
-      setSessions((prev) => [session, ...prev])
+      ensurePendingCreatedScope()
+      pendingCreatedSessionsRef.current.set(session.id, session)
+      setSessions((prev) => [session, ...prev.filter((existing) => existing.id !== session.id)])
       setActiveSessionId(session.id)
       persistId(storageKey, session.id)
       void refresh()
       return session
     },
-    [enabled, refresh, requestHeaders, storageKey],
+    [enabled, refresh, requestHeaders, scopeKey, storageKey],
   )
 
   const switchSession = useCallback((id: string) => {
@@ -164,6 +241,8 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
   const deleteSession = useCallback(
     async (id: string): Promise<void> => {
       if (!enabled) throw new Error('Sessions are disabled')
+      ensurePendingCreatedScope()
+      pendingCreatedSessionsRef.current.delete(id)
       setSessions((prev) => prev.filter((s) => s.id !== id))
       setActiveSessionId((prev) => {
         if (prev === id) {
@@ -189,7 +268,7 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
       }
       void refresh()
     },
-    [enabled, refresh, requestHeaders, storageKey],
+    [enabled, refresh, requestHeaders, scopeKey, storageKey],
   )
 
   const scopeMatches = loadedScopeRef.current === scopeKey
