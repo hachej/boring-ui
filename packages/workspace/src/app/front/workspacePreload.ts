@@ -8,10 +8,16 @@ const PREPARING_ERROR_CODES = new Set([
   "RUNTIME_PROVISIONING_LOCKED",
 ])
 
+export type WorkspaceRuntimeDependenciesWarmupStatus = {
+  state: "preparing" | "ready" | "failed"
+  message?: string
+  requirement?: string
+}
+
 export type WorkspaceWarmupStatus =
-  | { status: "preparing"; requirement?: "workspace-fs" | "sandbox-exec" | "ui-bridge"; message?: string }
-  | { status: "ready" }
-  | { status: "failed"; message: string; requirement?: "workspace-fs" | "sandbox-exec" | "ui-bridge" }
+  | { status: "preparing"; requirement?: "workspace-fs" | "sandbox-exec" | "ui-bridge"; message?: string; runtimeDependencies?: WorkspaceRuntimeDependenciesWarmupStatus }
+  | { status: "ready"; runtimeDependencies?: WorkspaceRuntimeDependenciesWarmupStatus }
+  | { status: "failed"; message: string; requirement?: "workspace-fs" | "sandbox-exec" | "ui-bridge"; runtimeDependencies?: WorkspaceRuntimeDependenciesWarmupStatus }
 
 export function preloadUrl(apiBaseUrl: string | null | undefined, path: string): string {
   if (/^https?:\/\//i.test(path)) return path
@@ -107,7 +113,40 @@ export function errorMessageFromPayload(payload: unknown): string | null {
   return typeof error?.message === "string" && error.message ? error.message : null
 }
 
-export function parseReadyStatusSse(payload: unknown): { state?: string; message?: string } | null {
+export interface ReadyStatusWarmupSnapshot {
+  state?: string
+  message?: string
+  chatState?: string
+  workspaceState?: string
+  runtimeDependenciesState?: string
+  runtimeDependenciesMessage?: string
+  runtimeDependenciesRequirement?: string
+}
+
+function normalizeReadyStatusSnapshot(payload: unknown): ReadyStatusWarmupSnapshot | null {
+  if (!payload || typeof payload !== "object") return null
+  const root = payload as {
+    state?: unknown
+    message?: unknown
+    capabilities?: {
+      chat?: { state?: unknown }
+      workspace?: { state?: unknown }
+      runtimeDependencies?: { state?: unknown; message?: unknown; requirement?: unknown }
+    }
+  }
+  return {
+    state: typeof root.state === "string" ? root.state : undefined,
+    message: typeof root.message === "string" ? root.message : undefined,
+    chatState: typeof root.capabilities?.chat?.state === "string" ? root.capabilities.chat.state : undefined,
+    workspaceState: typeof root.capabilities?.workspace?.state === "string" ? root.capabilities.workspace.state : undefined,
+    runtimeDependenciesState: typeof root.capabilities?.runtimeDependencies?.state === "string" ? root.capabilities.runtimeDependencies.state : undefined,
+    runtimeDependenciesMessage: typeof root.capabilities?.runtimeDependencies?.message === "string" ? root.capabilities.runtimeDependencies.message : undefined,
+    runtimeDependenciesRequirement: typeof root.capabilities?.runtimeDependencies?.requirement === "string" ? root.capabilities.runtimeDependencies.requirement : undefined,
+  }
+}
+
+export function parseReadyStatusSse(payload: unknown): ReadyStatusWarmupSnapshot | null {
+  if (payload && typeof payload === "object") return normalizeReadyStatusSnapshot(payload)
   if (typeof payload !== "string" || !payload.trim()) return null
   const events = payload.split(/\n\n+/)
   for (let i = events.length - 1; i >= 0; i -= 1) {
@@ -117,16 +156,25 @@ export function parseReadyStatusSse(payload: unknown): { state?: string; message
       .map((line) => line.slice("data:".length).trim())
     if (dataLines.length === 0) continue
     try {
-      const parsed = JSON.parse(dataLines.join("\n")) as { state?: unknown; message?: unknown }
-      return {
-        state: typeof parsed.state === "string" ? parsed.state : undefined,
-        message: typeof parsed.message === "string" ? parsed.message : undefined,
-      }
+      return normalizeReadyStatusSnapshot(JSON.parse(dataLines.join("\n")))
     } catch {
       return null
     }
   }
   return null
+}
+
+export function parseFirstReadyStatusSseEvent(payload: string): ReadyStatusWarmupSnapshot | null {
+  const index = payload.indexOf("\n\n")
+  if (index < 0) return null
+  return parseReadyStatusSse(payload.slice(0, index + 2))
+}
+
+export function readyStatusSupportsWorkspaceUse(status: ReadyStatusWarmupSnapshot | null): boolean {
+  if (!status) return true
+  const hasCapabilityStates = Boolean(status.chatState || status.workspaceState)
+  if (hasCapabilityStates) return status.chatState === "ready" && status.workspaceState === "ready"
+  return status.state === "ready"
 }
 
 export async function readResponsePayload(response: Response): Promise<unknown> {

@@ -425,6 +425,36 @@ describe('ChatPanel (shadcn)', () => {
     expect(screen.getAllByText('Preparing workspace…')).toHaveLength(1)
   })
 
+  test('keeps composer enabled without a banner while only runtime dependencies are preparing', async () => {
+    render(
+      <ChatPanel
+        sessionId="sess-runtime-deps-preparing"
+        workspaceWarmupStatus={{ status: 'ready', runtimeDependencies: { state: 'preparing' } }}
+      />,
+    )
+
+    await act(async () => {
+      await capturedOnSubmit!({ text: 'Chat now', files: [] })
+    })
+
+    expect(mockSendMessage).toHaveBeenCalled()
+    expect(capturedTextareaProps?.disabled).toBe(false)
+    expect(capturedTextareaProps?.readOnly).toBe(false)
+    expect(screen.queryByTestId('chat-composer-runtime-notice')).toBeNull()
+  })
+
+  test('shows runtime dependency failure notice', () => {
+    render(
+      <ChatPanel
+        sessionId="sess-runtime-deps-failed"
+        workspaceWarmupStatus={{ status: 'ready', runtimeDependencies: { state: 'failed', message: 'Dependency install failed.' } }}
+      />,
+    )
+
+    expect(screen.getByTestId('chat-composer-runtime-notice').textContent).toContain('Runtime tools failed to prepare')
+    expect(screen.getByTestId('chat-composer-runtime-notice').textContent).toContain('Dependency install failed')
+  })
+
   test('passive render does not force-scroll to bottom', () => {
     renderToStaticMarkup(<ChatPanel sessionId="sess-passive-scroll" />)
 

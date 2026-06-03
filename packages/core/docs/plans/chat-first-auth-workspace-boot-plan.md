@@ -20,7 +20,7 @@ This plan must stay compatible with that provisioning plan. In particular, selec
 $WORKSPACE/.boring-agent/
 ```
 
-and runtime setup is a synchronous idempotent reconciler that runs on workspace load before the agent runtime is declared ready. This plan defines **when browser app flows may request/observe that server-side work without blocking shell/draft UX**; it does not redefine provisioning internals.
+and runtime setup is an idempotent reconciler whose fingerprints remain the correctness source. Runtime dependency reconciliation may continue in the background after chat/workspace capabilities are usable. This plan defines **when browser app flows may request/observe that server-side work without blocking shell/draft UX**; it does not redefine provisioning internals.
 
 ---
 
@@ -524,7 +524,7 @@ Runtime provisioning plan owns:
 - workspace file seeding
 - node/python runtime package installs
 - provisioning state/locks
-- synchronous package install/update policy and stable provisioning errors
+- package install/update policy, fingerprints, and stable provisioning errors
 - Vercel artifact behavior
 
 This plan owns only the UI contract around it:
@@ -549,27 +549,33 @@ When `provisionWorkspace === false`, background boot must not call agent-runtime
 
 CLI project/workspaces mode still provisions the selected workspace according to the runtime provisioning plan; it is outside this browser auth gate.
 
-### 8.3 UI mapping
+### 8.3 Capability-scoped UI mapping
 
-Do not duplicate runtime provisioning internals here. The runtime plan currently runs reconciliation synchronously before declaring the agent runtime ready: no async package update path and no provisioning status endpoint in the first pass.
-
-For this plan, the UI only needs:
+Do not duplicate runtime provisioning internals here. The agent runtime now exposes readiness as three capability levels instead of one global blocker:
 
 ```txt
-agent runtime preparing
-  → composer or workbench-local “Preparing agent…” status
+chat ready
+  → composer/chat shell may proceed; first token is not blocked by pandas/bm installs
 
-agent runtime ready
-  → real Send/tools may proceed
+workspace/files ready
+  → file tree/editor/workspace file tools may proceed after workspace root/template seeding is safe
 
-agent runtime failed
+runtimeDependencies preparing
+  → show non-blocking “Runtime dependencies installing…” / “Macro runtime installing…” status
+  → dependency-backed tools return retryable AGENT_RUNTIME_NOT_READY
+
+runtimeDependencies ready
+  → bm, macro SDK, pandas/requests/numpy, node/python package contributions may proceed
+
+runtimeDependencies failed
   → keep draft/chat shell visible
   → show retry/actionable local error
+  → dependency-backed tools return RUNTIME_PROVISIONING_FAILED
 ```
 
-Required runtime setup may block real agent execution. It must not block public shell continuity, draft restoration, or the top-bar Sign in → avatar transition.
+Required runtime setup may block dependency-backed tools. It must not block public shell continuity, draft restoration, the top-bar Sign in → avatar transition, normal chat, or already-ready workspace/file surfaces.
 
-Do not convert every provisioning state to `WORKSPACE_NOT_READY`. Use `WORKSPACE_NOT_READY` only for workspace substrate readiness such as files, sandbox, or UI bridge.
+Do not convert every provisioning state to `WORKSPACE_NOT_READY`. Use `WORKSPACE_NOT_READY` only for workspace substrate readiness such as files, sandbox, or UI bridge. Runtime dependency readiness uses `AGENT_RUNTIME_NOT_READY` while preparing and `RUNTIME_PROVISIONING_FAILED` when provisioning fails.
 
 ---
 

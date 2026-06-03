@@ -222,6 +222,32 @@ describe("rebuildPiMessagesFromDataParts", () => {
     })
   })
 
+  it("preserves structured AGENT_RUNTIME_NOT_READY tool-result details", () => {
+    const output = {
+      content: [{ type: "text", text: "The macro Python runtime is still installing. This usually takes a few seconds." }],
+      details: {
+        code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
+        retryable: true,
+        requirement: "runtime:python",
+        state: "preparing",
+        workspaceId: "workspace-a",
+      },
+    }
+    const messages: UIMessage[] = [
+      makeMessage("envelope", "assistant", [
+        dataStart("a-runtime", "assistant"),
+        toolCallEnd("a-runtime", "call-runtime", "bash", { command: "bm run" }),
+        toolResult("a-runtime", "call-runtime", output, true),
+      ]),
+    ]
+    const rebuilt = rebuildPiMessagesFromDataParts(messages)
+    const toolPart = (rebuilt[0]!.parts ?? []).find((p) =>
+      typeof p.type === "string" && p.type.startsWith("tool-"),
+    ) as { state?: string; output?: typeof output }
+    expect(toolPart.state).toBe("output-error")
+    expect(toolPart.output?.details).toEqual(output.details)
+  })
+
   it("marks tool-result as output-error when isError=true", () => {
     const messages: UIMessage[] = [
       makeMessage("envelope", "assistant", [

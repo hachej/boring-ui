@@ -393,11 +393,10 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
 })
 
 describe("createWorkspaceAgentServer — plugin provisioning", () => {
-  test("materializes the boring-plugin-authoring skill into the workspace-local runtime", async () => {
-    // The system prompt is minimal (it just points at this skill); the
-    // skill itself is the doc the agent reads. The runtime provisioner
-    // must materialize it under .boring-agent/node so Pi can load it
-    // without writing generated packages into the user workspace root.
+  test("exposes boring-plugin-authoring skill without provisioning boring-pi into node_modules", async () => {
+    // The agent should see the built-in plugin-authoring skill via static Pi
+    // package resources. Direct-mode runtime provisioning stays slim and does
+    // not install built-in authoring packages into .boring-agent/node.
     const workspaceRoot = await makeTempDir("boring-workspace-skill-")
 
     const app = await createWorkspaceAgentServer({
@@ -407,34 +406,21 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     })
 
     try {
-      const skill = await readFile(
+      await expect(readFile(
         join(workspaceRoot, ".boring-agent", "node", "node_modules", "@hachej", "boring-pi", "skills", "boring-plugin-authoring", "SKILL.md"),
         "utf8",
-      )
-      expect(skill).toContain("name: boring-plugin-authoring")
-      expect(skill).toContain("../../references/workspace/plugins.md")
+      )).rejects.toThrow()
+
+      const res = await app.inject({ method: "GET", url: "/api/v1/agent/skills" })
+      expect(res.statusCode).toBe(200)
+      const skillNames: string[] = res.json().skills.map((s: { name: string }) => s.name)
+      expect(skillNames).toContain("boring-plugin-authoring")
     } finally {
       await app.close()
     }
   }, 15_000)
 
-  /**
-   * Simulates the CLI scenario: a globally-installed boring-ui binary runs
-   * in a fresh user workspace with no pre-populated node_modules. The chain
-   * we exercise is:
-   *
-   *   require.resolve("@hachej/boring-pi/package.json")  // CLI process
-   *     ↓ runtime provisioning installs skills under .boring-agent/node/
-   *     ↓ createBoringPiPackageSource emits the package source
-   *     ↓ createResourceSettingsManager injects it into Pi's project settings
-   *     ↓ Pi indexes package.json#pi.skills
-   *     ↓ Pi surfaces the skill via /api/v1/agent/skills
-   *
-   * If any link breaks (package missing on publish, provisioning skips the
-   * skills dir, injection drops the package), the skill goes silent for
-   * every CLI user. This test fails loudly before any of that ships.
-   */
-  test("provisions boring-ui CLI in a fresh workspace", async () => {
+  test("direct mode skips workspace-local boring-ui plugin CLI provisioning", async () => {
     const workspaceRoot = await makeTempDir("boring-cli-shim-")
 
     const app = await createWorkspaceAgentServer({
@@ -445,12 +431,8 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
 
     try {
       const provisionedCli = join(workspaceRoot, ".boring-agent", "node", "node_modules", "@hachej", "boring-ui-plugin-cli")
-      await expect(readFile(join(provisionedCli, "package.json"), "utf8")).resolves.toContain("@hachej/boring-ui-plugin-cli")
-      await expect(readFile(join(provisionedCli, "templates", "front-canonical.tsx"), "utf8")).resolves.toContain("definePlugin")
-      await expect(readFile(join(workspaceRoot, ".boring-agent", "node", "node_modules", ".bin", "boring-ui-plugin"), "utf8")).resolves.toContain("node")
-
-      // No shell shim or full boring-ui CLI — plugin authoring uses the
-      // dedicated boring-ui-plugin workspace setup command on PATH.
+      await expect(readFile(join(provisionedCli, "package.json"), "utf8")).rejects.toThrow()
+      await expect(readFile(join(workspaceRoot, ".boring-agent", "node", "node_modules", ".bin", "boring-ui-plugin"), "utf8")).rejects.toThrow()
     } finally {
       await app.close()
     }

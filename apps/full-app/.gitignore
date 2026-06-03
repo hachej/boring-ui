@@ -1,11 +1,5 @@
 dist
 node_modules
-.vercel
-api/generated-index.ts
-api/generated-index.js
-api/generated-index.js.map
-api/generated-index.ts.map
-api/index.ts.map
 
 __pycache__/
 *.pyc

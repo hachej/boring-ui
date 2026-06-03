@@ -111,6 +111,27 @@ describe("workspace readiness tool status", () => {
     const html = renderToStaticMarkup(<>{shadcnDefaultToolRenderers.read!(part)}</>)
     expect(html).not.toContain("Files are still loading.")
   })
+
+  test("renders friendly retryable runtime readiness status", () => {
+    const part = makePart({
+      toolName: "bash",
+      state: "output-error",
+      output: {
+        content: [{ type: "text", text: "bm: command not found" }],
+        details: {
+          code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
+          retryable: true,
+          requirement: "runtime:python",
+          state: "preparing",
+        },
+      },
+      errorText: "bm: command not found",
+    })
+    const html = renderToStaticMarkup(<>{shadcnDefaultToolRenderers.bash!(part)}</>)
+    expect(html).toContain("Python runtime dependencies are still installing.")
+    expect(html).toContain("This is retryable")
+    expect(html).not.toContain("bm: command not found")
+  })
 })
 
 describe("shadcn exec_ui renderer", () => {

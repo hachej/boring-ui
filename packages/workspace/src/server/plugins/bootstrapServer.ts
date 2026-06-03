@@ -14,7 +14,8 @@ export {
   validateServerPlugin,
 } from "./defineServerPlugin"
 export { compactPiPackages } from "./piPackages"
-export type { WorkspaceServerPlugin } from "./defineServerPlugin"
+export { definePluginAsset, resolvePluginAssetPath } from "./assets"
+export type { WorkspaceServerPlugin, WorkspaceServerPluginAsset } from "./defineServerPlugin"
 export type { WorkspacePiPackageSource } from "./piPackages"
 
 export interface ServerBootstrapOptions {

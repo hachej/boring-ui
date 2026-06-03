@@ -34,8 +34,8 @@ All API failures must use the response envelope:
 | `PATH_NOT_WRITABLE` | Path parent missing or write denied | 403 | user-fix | warn | stable (public API) |
 | `WORKSPACE_UNINITIALIZED` | Workspace adapter/store not initialized yet | 503 | retry | warn | stable (public API) |
 | `WORKSPACE_NOT_READY` | Workspace substrate (`workspace-fs`, `sandbox-exec`, or `ui-bridge`) is still preparing | 503 | retry | warn | stable (public API) |
-| `AGENT_RUNTIME_NOT_READY` | Selected workspace agent runtime is still preparing | 503 | retry | warn | stable (public API) |
-| `RUNTIME_PROVISIONING_FAILED` | Agent runtime provisioning failed before runtime became ready | 503 | retry/report | error | stable (public API) |
+| `AGENT_RUNTIME_NOT_READY` | Selected workspace runtime dependencies (`runtime-dependencies` or `runtime:<name>`, e.g. `runtime:python`/`runtime:node`) are still preparing | 503 | retry | warn | stable (public API) |
+| `RUNTIME_PROVISIONING_FAILED` | Agent runtime dependency provisioning failed before Level 3 runtime dependencies became ready | 503 | retry/report | error | stable (public API) |
 | `RUNTIME_PROVISIONING_LOCKED` | Agent runtime provisioning is locked by another reconciler | 423 | retry | warn | stable (public API) |
 | `BWRAP_UNAVAILABLE` | `bwrap` binary not found | 500 | report-bug | error | stable (public API) |
 | `BWRAP_TIMEOUT` | Sandbox command exceeded timeout | 408 | retry | warn | stable (public API) |
@@ -68,3 +68,39 @@ All API failures must use the response envelope:
 | `PROVISIONING_UV_INSTALL_FAILED` | uv venv or uv pip install failed | 500 | user-fix | error | stable (public API) |
 | `PROVISIONING_ARTIFACT_FAILED` | Runtime-mode adapter failed to prepare/upload install artifact | 500 | retry | error | stable (public API) |
 | `INTERNAL_ERROR` | Catch-all internal failure | 500 | report-bug | error | internal (may change) |
+
+## Readiness error details
+
+`WORKSPACE_NOT_READY` is reserved for workspace substrate requirements:
+
+```json
+{
+  "code": "WORKSPACE_NOT_READY",
+  "retryable": true,
+  "requirement": "workspace-fs"
+}
+```
+
+Runtime dependency preparation is separate so chat/file work can continue while `.boring-agent` dependencies install:
+
+```json
+{
+  "code": "AGENT_RUNTIME_NOT_READY",
+  "retryable": true,
+  "requirement": "runtime:python",
+  "state": "preparing",
+  "workspaceId": "workspace_123"
+}
+```
+
+If dependency provisioning fails, dependency-backed tools return:
+
+```json
+{
+  "code": "RUNTIME_PROVISIONING_FAILED",
+  "retryable": true,
+  "requirement": "runtime:python",
+  "state": "failed",
+  "causeCode": "PROVISIONING_UV_INSTALL_FAILED"
+}
+```

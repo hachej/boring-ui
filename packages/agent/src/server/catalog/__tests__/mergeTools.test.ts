@@ -78,6 +78,47 @@ describe('mergeTools', () => {
     expect(result.content[0]?.text).toBe('plugin_metadata')
   })
 
+  it('returns runtime-not-ready details for preparing runtime requirements', async () => {
+    const runtimeTool = { ...makeTool('macro_transform'), readinessRequirements: ['runtime:python' as const] }
+    const tools = mergeTools({
+      standardTools: [runtimeTool],
+      checkReadiness: () => ({ ready: false, state: 'preparing', workspaceId: 'workspace-a', retryable: true }),
+    })
+
+    const result = await tools[0]!.execute({}, { toolCallId: 'call', abortSignal: new AbortController().signal })
+    expect(result).toMatchObject({
+      isError: true,
+      details: {
+        code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
+        retryable: true,
+        requirement: 'runtime:python',
+        state: 'preparing',
+        workspaceId: 'workspace-a',
+      },
+    })
+    expect(result.content[0]?.text).toContain('Python runtime dependencies are still installing')
+  })
+
+  it('returns runtime-provisioning-failed details for failed runtime requirements', async () => {
+    const runtimeTool = { ...makeTool('macro_transform'), readinessRequirements: ['runtime:python' as const] }
+    const tools = mergeTools({
+      standardTools: [runtimeTool],
+      checkReadiness: () => ({ ready: false, state: 'failed', causeCode: 'PROVISIONING_UV_INSTALL_FAILED', retryable: true }),
+    })
+
+    const result = await tools[0]!.execute({}, { toolCallId: 'call', abortSignal: new AbortController().signal })
+    expect(result).toMatchObject({
+      isError: true,
+      details: {
+        code: ErrorCode.enum.RUNTIME_PROVISIONING_FAILED,
+        retryable: true,
+        requirement: 'runtime:python',
+        state: 'failed',
+        causeCode: 'PROVISIONING_UV_INSTALL_FAILED',
+      },
+    })
+  })
+
   it('uses later plugin when two plugins register the same tool name', () => {
     const pluginFirst = makeTool('dup_tool', 'first plugin impl')
     const pluginSecond = makeTool('dup_tool', 'second plugin impl')
