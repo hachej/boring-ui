@@ -165,7 +165,20 @@ export function chatRoutes(
         properties: telemetryProperties,
       })
 
+      if (activeTurnBySession.has(sessionId)) {
+        return reply.code(409).send({
+          error: {
+            code: ERROR_CODE_CONFLICT,
+            message: 'turn_already_active',
+          },
+        })
+      }
+
       const abortController = new AbortController()
+      const sessionAbortControllers = activeAbortControllersBySession.get(sessionId) ?? new Map<string, AbortController>()
+      sessionAbortControllers.set(turnId, abortController)
+      activeAbortControllersBySession.set(sessionId, sessionAbortControllers)
+      activeTurnBySession.set(sessionId, turnId)
 
       const buf = buffers.create(sessionId, turnId)
 
@@ -183,11 +196,6 @@ export function chatRoutes(
           { sessionId, message, model, thinkingLevel, attachments },
           ctx,
         )
-
-        const sessionAbortControllers = activeAbortControllersBySession.get(sessionId) ?? new Map<string, AbortController>()
-        sessionAbortControllers.set(turnId, abortController)
-        activeAbortControllersBySession.set(sessionId, sessionAbortControllers)
-        activeTurnBySession.set(sessionId, turnId)
 
         // Decouple the harness turn from the browser response. Session switches
         // and reloads close the current HTTP response; that must not abort the
@@ -282,6 +290,14 @@ export function chatRoutes(
         reply.raw.flushHeaders()
         return
       } catch (err) {
+        const sessionAbortControllers = activeAbortControllersBySession.get(sessionId)
+        if (sessionAbortControllers?.get(turnId) === abortController) {
+          sessionAbortControllers.delete(turnId)
+          if (sessionAbortControllers.size === 0) activeAbortControllersBySession.delete(sessionId)
+        }
+        if (activeTurnBySession.get(sessionId) === turnId) {
+          activeTurnBySession.delete(sessionId)
+        }
         request.log.error({ err, sessionId }, '[chat] error')
         safeCapture(telemetry, {
           name: 'agent.chat.failed',
