@@ -1038,7 +1038,6 @@ async function stepAgentChat(
       `${baseUrl}/api/v1/agent/pi-chat/${encodeURIComponent(sessionId)}/state`,
       { method: 'GET', headers: { cookie, 'x-boring-workspace-id': workspaceId } },
       step,
-      AGENT_CHAT_TIMEOUT_MS,
     )
     if (state.status !== 200) {
       fail(step, `expected state HTTP 200, got ${state.status}`)

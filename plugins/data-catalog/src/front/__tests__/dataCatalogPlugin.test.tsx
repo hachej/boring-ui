@@ -83,6 +83,7 @@ function makeMockApi(): { api: BoringFrontAPI; captured: CapturedRegistrations }
     registerSurfaceResolver: vi.fn((r) => {
       captured.surfaceResolvers.push(r)
     }),
+    registerToolRenderer: vi.fn(),
   }
   return { api, captured }
 }
