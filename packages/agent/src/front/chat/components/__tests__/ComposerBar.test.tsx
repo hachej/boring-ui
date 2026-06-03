@@ -22,6 +22,17 @@ describe('ComposerBar', () => {
     expect(document.querySelector('[data-boring-agent-part="composer-footer"]')).toBeTruthy()
   })
 
+  test('restores focus when focusSignal changes', () => {
+    const { rerender } = render(<ComposerBar status="idle" onSend={vi.fn()} focusSignal={0} />)
+    const textarea = screen.getByRole('textbox', { name: 'Agent prompt' })
+    textarea.blur()
+    expect(document.activeElement).not.toBe(textarea)
+
+    rerender(<ComposerBar status="idle" onSend={vi.fn()} focusSignal={1} />)
+
+    expect(document.activeElement).toBe(textarea)
+  })
+
   test('Escape prioritizes stopping an active turn while keeping the composer presentational', () => {
     const onStop = vi.fn()
     const onEscape = vi.fn()
@@ -55,6 +66,7 @@ describe('ComposerBar', () => {
     expect(error.textContent).toContain('Unknown command /wat')
 
     const preview = screen.getByText('2 queued follow-ups').closest('[data-boring-agent-part="composer-queue-preview"]') as HTMLElement
+    expect(preview.className).toContain('motion-reduce:transition-none')
     expect(within(preview).getByText('first queued · second queued')).toBeTruthy()
     fireEvent.click(within(preview).getByRole('button', { name: 'Edit queued follow-ups' }))
     expect(onEditQueued).toHaveBeenCalledWith(queuePreview)

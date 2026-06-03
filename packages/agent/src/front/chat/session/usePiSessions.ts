@@ -25,6 +25,7 @@ export interface UsePiSessionsOptions {
   storage?: ActiveSessionStorageLike
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: Omit<Partial<RemotePiSessionOptions>, 'sessionId' | 'workspaceId' | 'storageScope' | 'apiBaseUrl' | 'headers' | 'fetch'>
+  connectActiveSession?: boolean
   retry?: {
     maxRetries?: number
     baseMs?: number
@@ -37,6 +38,7 @@ export interface UsePiSessionsResult {
   activeSession: SessionSummary | undefined
   activeSessionId: string | undefined
   activePiSession: RemotePiSession | undefined
+  dataStorageScope: string
   loading: boolean
   error: Error | undefined
   refresh: () => Promise<void>
@@ -60,12 +62,14 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const storageScope = options.storageScope ?? 'default'
   const fetchImpl = useMemo(() => options.fetch ?? globalThis.fetch.bind(globalThis), [options.fetch])
   const createRemoteSession = options.createRemoteSession ?? createRemotePiSession
+  const connectActiveSession = options.connectActiveSession ?? true
   const retryMaxRetries = options.retry?.maxRetries ?? DEFAULT_MAX_RETRIES
   const retryBaseMs = options.retry?.baseMs ?? DEFAULT_RETRY_BASE_MS
   const retryMaxMs = options.retry?.maxMs ?? DEFAULT_RETRY_MAX_MS
   const headersKey = useMemo(() => headersScopeKey(options.requestHeaders, storageScope), [options.requestHeaders, storageScope])
   const normalizedHeaders = useMemo(() => buildRequestHeaders(options.requestHeaders, storageScope), [headersKey, storageScope])
   const [sessions, setSessions] = useState<SessionSummary[]>([])
+  const [dataStorageScope, setDataStorageScope] = useState(storageScope)
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>(() => (
     options.initialActiveSessionId ?? readActiveSessionId({ storageScope, storage: options.storage })
   ))
@@ -105,6 +109,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     for (const session of data) pendingCreated.delete(session.id)
     const merged = mergeSessions(Array.from(pendingCreated.values()), data)
 
+    setDataStorageScope(storageScope)
     setSessions(merged)
     setActiveSessionId((previous) => {
       const persisted = options.initialActiveSessionId ?? readActiveSessionId({ storageScope, storage: options.storage })
@@ -123,6 +128,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     clearRetryTimer(retryTimerRef)
 
     if (!enabled) {
+      setDataStorageScope(storageScope)
       setSessions([])
       setActiveSessionId(undefined)
       setError(undefined)
@@ -168,7 +174,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }, [refresh, options.refreshKey])
 
   useEffect(() => {
-    if (!enabled || !activeSessionId || !activeSessionKnown) {
+    if (!enabled || !connectActiveSession || !activeSessionId || !activeSessionKnown) {
       setActivePiSession(undefined)
       return
     }
@@ -186,7 +192,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     return () => {
       session.dispose()
     }
-  }, [activeSessionId, activeSessionKnown, apiBaseUrl, createRemoteSession, enabled, fetchImpl, options.remoteSessionOptions, options.workspaceId, requestHeaders, storageScope])
+  }, [activeSessionId, activeSessionKnown, apiBaseUrl, connectActiveSession, createRemoteSession, enabled, fetchImpl, options.remoteSessionOptions, options.workspaceId, requestHeaders, storageScope])
 
   const create = useCallback(async (init?: PiSessionCreateInit): Promise<SessionSummary> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
@@ -203,12 +209,13 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     const session = toSessionSummary(await response.json())
     ensurePendingScope()
     pendingCreatedRef.current.set(session.id, session)
+    setDataStorageScope(storageScope)
     setSessions((previous) => mergeSessions([session], previous))
     setActiveSessionId(session.id)
     persistActive(session.id)
     void refresh()
     return session
-  }, [enabled, ensurePendingScope, fetchImpl, persistActive, refresh, requestHeaders, sessionsUrl])
+  }, [enabled, ensurePendingScope, fetchImpl, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
 
   const switchSession = useCallback((id: string) => {
     const known = sessionsRef.current.some((session) => session.id === id)
@@ -221,6 +228,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     if (!enabled) throw new Error('Pi sessions are disabled')
     ensurePendingScope()
     pendingCreatedRef.current.delete(id)
+    setDataStorageScope(storageScope)
     setSessions((previous) => previous.filter((session) => session.id !== id))
     setActiveSessionId((previous) => {
       if (previous !== id) return previous
@@ -242,14 +250,15 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       throw error
     }
     void refresh()
-  }, [enabled, ensurePendingScope, fetchImpl, persistActive, refresh, requestHeaders, sessionsUrl])
+  }, [enabled, ensurePendingScope, fetchImpl, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
 
   const reset = useCallback(() => {
     pendingCreatedRef.current.clear()
+    setDataStorageScope(storageScope)
     setActiveSessionId(undefined)
     setActivePiSession(undefined)
     persistActive(undefined)
-  }, [persistActive])
+  }, [persistActive, storageScope])
 
   const activeSession = sessions.find((session) => session.id === activeSessionId)
 
@@ -258,6 +267,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     activeSession,
     activeSessionId: activeSession?.id,
     activePiSession: activeSession ? activePiSession : undefined,
+    dataStorageScope,
     loading: enabled ? loading : false,
     error,
     refresh,

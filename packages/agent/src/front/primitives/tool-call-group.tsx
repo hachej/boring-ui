@@ -85,8 +85,9 @@ export const ToolCallGroup = memo(({ tools, mergedToolRenderers }: ToolCallGroup
   return (
     <Collapsible open={isOpen} onOpenChange={handleOpenChange} className="not-prose my-1.5">
       <CollapsibleTrigger
+        aria-label={`Tool calls: ${title}`}
         className={cn(
-          'group/trigger flex w-fit items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors',
+          'group/trigger flex w-fit items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors motion-reduce:transition-none',
           'border border-border/40 bg-card/40 text-muted-foreground/70',
           'hover:border-border/70 hover:bg-card/70 hover:text-muted-foreground',
           hasError && 'border-destructive/30 text-destructive/60 hover:text-destructive/80',

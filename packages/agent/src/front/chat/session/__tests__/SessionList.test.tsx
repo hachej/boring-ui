@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import '@testing-library/jest-dom/vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import type { SessionSummary } from '../../../../shared/session'
@@ -15,10 +14,10 @@ describe('SessionList', () => {
   test('renders sessions with agent-owned data attrs and active state', () => {
     render(<SessionList sessions={sessions} activeId="pi-1" />)
 
-    expect(screen.getByRole('navigation', { name: 'Session history' })).toHaveAttribute('data-boring-agent-part', 'session-list')
-    expect(screen.getByText('Running session')).toBeInTheDocument()
-    expect(screen.getByText('Older session')).toBeInTheDocument()
-    expect(screen.getByText('Running session').closest('[data-boring-agent-part="session-row"]')).toHaveAttribute('data-boring-state', 'selected')
+    expect(screen.getByRole('navigation', { name: 'Session history' }).getAttribute('data-boring-agent-part')).toBe('session-list')
+    expect(screen.getByText('Running session')).toBeTruthy()
+    expect(screen.getByText('Older session')).toBeTruthy()
+    expect(screen.getByText('Running session').closest('[data-boring-agent-part="session-row"]')?.getAttribute('data-boring-state')).toBe('selected')
   })
 
   test('calls create, switch, and delete without delete also switching', () => {
@@ -41,10 +40,10 @@ describe('SessionList', () => {
 
   test('renders empty/loading states', () => {
     const { rerender } = render(<SessionList sessions={[]} />)
-    expect(screen.getByText(/No sessions yet/)).toBeInTheDocument()
+    expect(screen.getByText(/No sessions yet/)).toBeTruthy()
 
     rerender(<SessionList sessions={[]} loading />)
-    expect(screen.getByRole('navigation', { name: 'Session history' })).toHaveAttribute('aria-busy', 'true')
-    expect(screen.getByText(/Loading sessions/)).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: 'Session history' }).getAttribute('aria-busy')).toBe('true')
+    expect(screen.getByText(/Loading sessions/)).toBeTruthy()
   })
 })

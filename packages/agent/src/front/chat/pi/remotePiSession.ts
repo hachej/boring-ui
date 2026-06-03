@@ -10,6 +10,7 @@ import type {
   QueueClearReceipt,
   StopPayload,
   StopReceipt,
+  PiChatEvent,
 } from '../../../shared/chat'
 import {
   CommandReceiptSchema,
@@ -32,6 +33,9 @@ import {
 const SUPPORTED_PROTOCOL_VERSION = 1
 const DEFAULT_RECONNECT_BASE_MS = 1_000
 const DEFAULT_RECONNECT_MAX_MS = 30_000
+const DEFAULT_LARGE_STATE_WARNING_BYTES = 5 * 1024 * 1024
+const DEFAULT_LARGE_STATE_WARNING_MESSAGES = 300
+const EVENT_TYPE_RING_LIMIT = 20
 
 export interface RemotePiSessionHeaders {
   [key: string]: string | undefined
@@ -44,6 +48,7 @@ export interface RemotePiSessionOptions {
   apiBaseUrl?: string
   headers?: RemotePiSessionHeaders | (() => RemotePiSessionHeaders | Promise<RemotePiSessionHeaders>)
   fetch?: typeof globalThis.fetch
+  onEvent?: (event: PiChatEvent) => void
   storeOptions?: PiChatStoreOptions
   autoStart?: boolean
   reconnect?: {
@@ -52,11 +57,44 @@ export interface RemotePiSessionOptions {
     jitterRatio?: number
     random?: () => number
   }
+  debug?: {
+    largeStateWarningBytes?: number
+    largeStateWarningMessages?: number
+    onWarning?: (warning: RemotePiSessionLargeStateWarning) => void
+  }
   setTimeoutFn?: typeof globalThis.setTimeout
   clearTimeoutFn?: typeof globalThis.clearTimeout
 }
 
+export interface RemotePiSessionLargeStateWarning {
+  type: 'large-state'
+  sessionId: string
+  approxBytes: number
+  messageCount: number
+  thresholdBytes: number
+  thresholdMessages: number
+}
+
 export interface RemotePiSessionDebugState {
+  sessionId: string
+  lastSeq: number
+  status: PiChatState['status']
+  connection: PiChatState['connection']['state']
+  lastHeartbeatAt?: number
+  queue: {
+    followUps: number
+    optimisticOutbox: number
+    pendingToolCalls: number
+  }
+  recentEventTypes: string[]
+  gapCount: number
+  retryNotice?: PiChatState['retryNotice']
+  largeStateWarning?: RemotePiSessionLargeStateWarning
+  history: {
+    mode: 'full'
+    messageCount: number
+    streamingMessageCount: 0 | 1
+  }
   disposed: boolean
   generation: number
   streamRunId: number
@@ -82,6 +120,9 @@ export class RemotePiSession {
   private streamAbortController?: AbortController
   private reconnectTimer?: ReconnectTimer
   private readonly fetchControllers = new Set<AbortController>()
+  private readonly recentEventTypes: string[] = []
+  private gapCount = 0
+  private largeStateWarning?: RemotePiSessionLargeStateWarning
 
   constructor(private readonly options: RemotePiSessionOptions) {
     this.apiBaseUrl = options.apiBaseUrl?.replace(/\/$/, '') ?? ''
@@ -105,7 +146,27 @@ export class RemotePiSession {
   }
 
   getDebugState(): RemotePiSessionDebugState {
+    const state = this.store.getState()
     return {
+      sessionId: state.sessionId,
+      lastSeq: state.lastSeq,
+      status: state.status,
+      connection: state.connection.state,
+      lastHeartbeatAt: state.connection.lastHeartbeatAt,
+      queue: {
+        followUps: state.queue.followUps.length,
+        optimisticOutbox: Object.keys(state.optimisticOutbox).length,
+        pendingToolCalls: state.pendingToolCallIds.size,
+      },
+      recentEventTypes: [...this.recentEventTypes],
+      gapCount: this.gapCount,
+      retryNotice: state.retryNotice,
+      largeStateWarning: this.largeStateWarning,
+      history: {
+        mode: state.history.mode,
+        messageCount: state.history.messageCount,
+        streamingMessageCount: state.streamingMessage ? 1 : 0,
+      },
       disposed: this.disposed,
       generation: this.generation,
       streamRunId: this.streamRunId,
@@ -167,6 +228,8 @@ export class RemotePiSession {
       const raw = await this.fetchJson(this.stateUrl(), { method: 'GET', headers })
       if (!this.isGenerationActive(generation)) return
 
+      this.recordLargeStateWarning(raw)
+
       if (readProtocolVersion(raw) !== SUPPORTED_PROTOCOL_VERSION) {
         this.dispatchProtocolError(`Unsupported Pi chat protocol version: ${String(readProtocolVersion(raw) ?? 'missing')}`)
         return
@@ -210,6 +273,7 @@ export class RemotePiSession {
         if (!this.isStreamActive(generation, runId)) return
         const replayError = parsePiChatReplayRangeError(response.status, body)
         if (replayError) {
+          this.gapCount += 1
           this.rehydrateAfterStreamReset(generation)
           return
         }
@@ -235,8 +299,11 @@ export class RemotePiSession {
             return
           }
 
+          this.recordEventType(frame.type)
+          this.options.onEvent?.(frame)
           this.store.dispatch({ type: 'event', event: frame })
           if (this.store.getState().needsResync && this.isStreamActive(generation, runId)) {
+            this.gapCount += 1
             this.rehydrateAfterStreamReset(generation)
           }
         },
@@ -344,6 +411,33 @@ export class RemotePiSession {
     this.store.dispatch({ type: 'protocol-error', error }, { flush: true })
   }
 
+  private recordEventType(type: string): void {
+    this.recentEventTypes.push(type)
+    if (this.recentEventTypes.length > EVENT_TYPE_RING_LIMIT) this.recentEventTypes.shift()
+  }
+
+  private recordLargeStateWarning(raw: unknown): void {
+    const messageCount = readSnapshotMessageCount(raw)
+    const approxBytes = estimateJsonBytes(raw)
+    const thresholdBytes = this.options.debug?.largeStateWarningBytes ?? DEFAULT_LARGE_STATE_WARNING_BYTES
+    const thresholdMessages = this.options.debug?.largeStateWarningMessages ?? DEFAULT_LARGE_STATE_WARNING_MESSAGES
+    if (messageCount <= thresholdMessages && approxBytes <= thresholdBytes) {
+      this.largeStateWarning = undefined
+      return
+    }
+
+    const warning: RemotePiSessionLargeStateWarning = {
+      type: 'large-state',
+      sessionId: this.options.sessionId,
+      approxBytes,
+      messageCount,
+      thresholdBytes,
+      thresholdMessages,
+    }
+    this.largeStateWarning = warning
+    this.options.debug?.onWarning?.(warning)
+  }
+
   private clearReconnectTimer(): void {
     this.reconnectTimer?.cancel()
     this.reconnectTimer = undefined
@@ -416,6 +510,20 @@ function errorMessage(error: unknown, fallback: string): string {
 
 function readProtocolVersion(value: unknown): unknown {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>).protocolVersion : undefined
+}
+
+function readSnapshotMessageCount(value: unknown): number {
+  if (typeof value !== 'object' || value === null) return 0
+  const messages = (value as Record<string, unknown>).messages
+  return Array.isArray(messages) ? messages.length : 0
+}
+
+function estimateJsonBytes(value: unknown): number {
+  try {
+    return new TextEncoder().encode(JSON.stringify(value)).byteLength
+  } catch {
+    return 0
+  }
 }
 
 function hasHeader(headers: Record<string, string>, name: string): boolean {

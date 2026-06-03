@@ -1,7 +1,7 @@
 "use client"
 
 import type { KeyboardEvent, ReactNode } from 'react'
-import { memo, useCallback } from 'react'
+import { memo, useCallback, useEffect, useRef } from 'react'
 import { AlertCircleIcon, ListRestartIcon } from 'lucide-react'
 import { TooltipProvider } from '@hachej/boring-ui-kit'
 import type { PiChatStatus, QueuedUserMessage } from '../../../shared/chat'
@@ -36,6 +36,8 @@ export interface ComposerBarProps extends Omit<PromptInputProps, 'children' | 'o
   commandError?: string
   leftControls?: ReactNode
   rightControls?: ReactNode
+  /** Increment/change this value to restore focus to the composer textarea. */
+  focusSignal?: unknown
   onValueChange?: (value: string) => void
   onSend: (payload: ComposerSendPayload) => false | void | Promise<false | void>
   onStop?: () => void
@@ -53,6 +55,7 @@ export const ComposerBar = memo(({
   commandError,
   leftControls,
   rightControls,
+  focusSignal,
   onValueChange,
   onSend,
   onStop,
@@ -63,6 +66,12 @@ export const ComposerBar = memo(({
 }: ComposerBarProps) => {
   const isBusy = status === 'submitted' || status === 'streaming' || status === 'aborting'
   const submitStatus = toPromptSubmitStatus(status)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (focusSignal === undefined) return
+    rootRef.current?.querySelector<HTMLTextAreaElement>('[data-boring-agent-part="composer-input"]')?.focus()
+  }, [focusSignal])
 
   const handleSubmit = useCallback((input: PromptInputMessage) => {
     const text = input.text.trim()
@@ -80,7 +89,7 @@ export const ComposerBar = memo(({
 
   return (
     <TooltipProvider>
-      <div data-boring-agent-part="composer-bar" className={cn('border-t bg-background/95 p-3', className)}>
+      <div ref={rootRef} data-boring-agent-part="composer-bar" className={cn('border-t bg-background/95 p-3', className)}>
       <QueuedFollowUpsPreview followUps={queuePreview} onEditQueued={onEditQueued} />
       {commandError ? (
         <div
@@ -147,7 +156,7 @@ function QueuedFollowUpsPreview({ followUps, onEditQueued }: QueuedFollowUpsPrev
   return (
     <div
       data-boring-agent-part="composer-queue-preview"
-      className="mb-2 flex items-start justify-between gap-3 rounded-md border border-dashed border-border/70 bg-muted/35 px-3 py-2 text-sm"
+      className="mb-2 flex items-start justify-between gap-3 rounded-md border border-dashed border-border/70 bg-muted/35 px-3 py-2 text-sm motion-reduce:transition-none"
     >
       <div className="min-w-0 text-muted-foreground">
         <div className="font-medium text-foreground">{followUps.length} queued follow-up{followUps.length === 1 ? '' : 's'}</div>

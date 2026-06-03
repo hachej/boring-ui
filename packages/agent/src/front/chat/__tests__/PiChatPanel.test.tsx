@@ -75,7 +75,36 @@ class FakeRemotePiSession {
   }
 
   getDebugState() {
-    return { disposed: false, generation: 0, streamRunId: 0, reconnectAttempt: 0, hasReconnectTimer: false, inflightFetches: 0 }
+    return {
+      sessionId: this.state.sessionId,
+      lastSeq: this.state.lastSeq,
+      status: this.state.status,
+      connection: this.state.connection.state,
+      lastHeartbeatAt: this.state.connection.lastHeartbeatAt,
+      queue: {
+        followUps: this.state.queue.followUps.length,
+        optimisticOutbox: Object.keys(this.state.optimisticOutbox).length,
+        pendingToolCalls: this.state.pendingToolCallIds.size,
+      },
+      recentEventTypes: ['agent-start', 'message-delta'],
+      gapCount: 1,
+      retryNotice: this.state.retryNotice,
+      largeStateWarning: {
+        type: 'large-state' as const,
+        sessionId: this.state.sessionId,
+        approxBytes: 123456,
+        messageCount: this.state.committedMessages.length,
+        thresholdBytes: 10,
+        thresholdMessages: 1,
+      },
+      history: { mode: 'full' as const, messageCount: this.state.committedMessages.length, streamingMessageCount: this.state.streamingMessage ? 1 as const : 0 as const },
+      disposed: false,
+      generation: 0,
+      streamRunId: 0,
+      reconnectAttempt: 0,
+      hasReconnectTimer: false,
+      inflightFetches: 0,
+    }
   }
 
   subscribe(listener: () => void): () => void {
@@ -166,6 +195,31 @@ describe('PiChatPanel sandbox shell', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Interrupt' }))
     await waitFor(() => expect(remote.stop).toHaveBeenCalledTimes(1))
     expect(remote.interrupt).toHaveBeenCalledTimes(1)
+  })
+
+  test('renders safe debug metadata, status announcements, and large-state warning without prompt bodies', async () => {
+    const remote = new FakeRemotePiSession(remoteState({
+      status: 'streaming',
+      connection: { state: 'reconnecting', lastHeartbeatAt: 123 },
+      committedMessages: [
+        { id: 'u-secret', role: 'user', status: 'done', parts: [{ type: 'text', id: 'secret:text', text: 'SECRET_PROMPT_BODY /home/ubuntu/project/file.txt' }] },
+        { id: 'a1', role: 'assistant', status: 'done', parts: [{ type: 'text', id: 'a1:text', text: 'visible answer' }] },
+      ],
+    }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+
+    render(<PiChatPanel debug storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={remoteFactory(remote)} />)
+
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('reconnecting'))
+    expect(screen.getByText(/Large Pi chat state/)).toBeTruthy()
+    const debugPanel = screen.getByLabelText('Pi chat debug metadata')
+    expect(debugPanel.textContent).toContain('"sessionId": "pi-1"')
+    expect(debugPanel.textContent).toContain('"lastSeq": 7')
+    expect(debugPanel.textContent).toContain('"gapCount": 1')
+    expect(debugPanel.textContent).toContain('"followUps": 0')
+    expect(debugPanel.textContent).not.toContain('SECRET_PROMPT_BODY')
+    expect(debugPanel.textContent).not.toContain('/home/ubuntu/project/file.txt')
+    expect(screen.getByText('visible answer')).toBeTruthy()
   })
 
   test('reload-ish hydration uses persisted active id and renders state notices/queue from server snapshot', async () => {

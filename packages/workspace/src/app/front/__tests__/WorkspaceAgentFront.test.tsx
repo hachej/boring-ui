@@ -62,7 +62,7 @@ describe("WorkspaceAgentFront", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/sessions")) {
+      if (url.includes("/api/v1/agent/pi-chat/sessions")) {
         // Only the cold-start GET race is simulated; POST/DELETE pass through.
         const method = init?.method ?? "GET"
         if (method === "GET" && sessionsFailuresRemaining > 0) {
@@ -258,7 +258,7 @@ describe("WorkspaceAgentFront", () => {
       expect(call[1]?.headers).toMatchObject({ "x-boring-workspace-id": "no-provision" })
       expect(call[1]?.headers).not.toHaveProperty("X-BORING-WORKSPACE-ID")
     }
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/sessions"))).toBe(false)
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/sessions"))).toBe(false)
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/chat"))).toBe(false)
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/ready-status"))).toBe(false)
   })
@@ -382,7 +382,7 @@ describe("WorkspaceAgentFront", () => {
         return new Promise<Response>((resolve) => { resolveWorkspaceBTree = resolve })
       }
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/sessions")) return new Response(JSON.stringify([{ id: `session-${workspaceId ?? "unknown"}`, title: "Session" }]), { status: 200 })
+      if (url.includes("/api/v1/agent/pi-chat/sessions")) return new Response(JSON.stringify([{ id: `session-${workspaceId ?? "unknown"}`, title: "Session" }]), { status: 200 })
       if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
       if (url.includes("/api/v1/agent/models")) return new Response(JSON.stringify({ models: [] }), { status: 200 })
       if (url.includes("/api/v1/agent/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
@@ -399,10 +399,10 @@ describe("WorkspaceAgentFront", () => {
     )
 
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/sessions"))).toBe(true)
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/sessions"))).toBe(true)
     })
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/chat/session-workspace-a/messages"))).toBe(true)
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/session-workspace-a/state"))).toBe(true)
     })
     fetchMock.mockClear()
 
@@ -420,16 +420,65 @@ describe("WorkspaceAgentFront", () => {
     await new Promise((resolve) => setTimeout(resolve, 50))
 
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/sessions"))).toBe(true)
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/sessions"))).toBe(true)
     })
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/chat/session-workspace-b/messages"))).toBe(true)
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/session-workspace-b/state"))).toBe(true)
     })
     expect(fetchMock.mock.calls.some(([input, init]) => {
       const headers = init?.headers as Record<string, string> | undefined
-      return String(input).includes("/api/v1/agent/chat/session-workspace-a/messages") && headers?.["x-boring-workspace-id"] === "workspace-b"
+      return String(input).includes("/api/v1/agent/pi-chat/session-workspace-a/state") && headers?.["x-boring-workspace-id"] === "workspace-b"
     })).toBe(false)
     resolveWorkspaceBTree?.(new Response(JSON.stringify({ entries: [] }), { status: 200 }))
+  })
+
+  it("does not deadlock when workspaces share the same pi session id", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const headers = init?.headers as Record<string, string> | undefined
+      const workspaceId = headers?.["x-boring-workspace-id"]
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.includes("/api/v1/agent/pi-chat/sessions")) {
+        return new Response(JSON.stringify([{ id: "default", title: `Session ${workspaceId}` }]), { status: 200 })
+      }
+      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agent/models")) return new Response(JSON.stringify({ models: [] }), { status: 200 })
+      if (url.includes("/api/v1/agent/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
+      return new Response(null, { status: 204 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const { rerender } = render(
+      <WorkspaceAgentFront
+        workspaceId="workspace-a"
+        requestHeaders={{ "x-boring-workspace-id": "workspace-a" }}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([input, init]) => {
+        const headers = init?.headers as Record<string, string> | undefined
+        return String(input).includes("/api/v1/agent/pi-chat/default/state") && headers?.["x-boring-workspace-id"] === "workspace-a"
+      })).toBe(true)
+    })
+    fetchMock.mockClear()
+
+    rerender(
+      <WorkspaceAgentFront
+        workspaceId="workspace-b"
+        requestHeaders={{ "x-boring-workspace-id": "workspace-b" }}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([input, init]) => {
+        const headers = init?.headers as Record<string, string> | undefined
+        return String(input).includes("/api/v1/agent/pi-chat/default/state") && headers?.["x-boring-workspace-id"] === "workspace-b"
+      })).toBe(true)
+    })
+    expect(screen.queryByText("Loading sessions…")).not.toBeInTheDocument()
   })
 
   it("uses the workspace's persisted active chat while session list refreshes", async () => {
@@ -514,8 +563,8 @@ describe("WorkspaceAgentFront", () => {
         return new Promise<Response>((resolve) => { resolveWorkspaceBTree = resolve })
       }
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/sessions") && workspaceId === "workspace-b") return new Response(JSON.stringify({ message: "nope" }), { status: 500 })
-      if (url.includes("/api/v1/agent/sessions")) return new Response(JSON.stringify([{ id: "session-workspace-a", title: "A" }]), { status: 200 })
+      if (url.includes("/api/v1/agent/pi-chat/sessions") && workspaceId === "workspace-b") return new Response(JSON.stringify({ message: "nope" }), { status: 500 })
+      if (url.includes("/api/v1/agent/pi-chat/sessions")) return new Response(JSON.stringify([{ id: "session-workspace-a", title: "A" }]), { status: 200 })
       return new Response(JSON.stringify([]), { status: 200 })
     })
     vi.stubGlobal("fetch", fetchMock)
@@ -524,19 +573,49 @@ describe("WorkspaceAgentFront", () => {
       <WorkspaceAgentFront workspaceId="workspace-a" persistenceEnabled={false} />,
     )
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/chat/session-workspace-a/messages"))).toBe(true)
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/session-workspace-a/state"))).toBe(true)
     })
     fetchMock.mockClear()
 
     rerender(<WorkspaceAgentFront workspaceId="workspace-b" persistenceEnabled={false} />)
     resolveWorkspaceBTree?.(new Response(JSON.stringify({ entries: [] }), { status: 200 }))
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/sessions"))).toBe(true)
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/sessions"))).toBe(true)
     })
     expect(fetchMock.mock.calls.some(([input, init]) => {
       const headers = init?.headers as Record<string, string> | undefined
-      return String(input).includes("/api/v1/agent/chat/session-workspace-a/messages") && headers?.["x-boring-workspace-id"] === "workspace-b"
+      return String(input).includes("/api/v1/agent/pi-chat/session-workspace-a/state") && headers?.["x-boring-workspace-id"] === "workspace-b"
     })).toBe(false)
+  })
+
+  it("forwards plugin tool renderers into the agent chat panel", async () => {
+    let capturedChatProps: WorkspaceChatPanelProps | undefined
+    const toolRenderer = vi.fn(() => <span>Rendered tool</span>)
+    const plugin = definePlugin({
+      id: "tool-renderer-plugin",
+      label: "Tool Renderer Plugin",
+      setup(api) {
+        api.registerToolRenderer({ id: "plugin-tool", render: toolRenderer })
+      },
+    })
+
+    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
+      capturedChatProps = props
+      return <div>Captured chat panel</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="tool-renderer-workspace"
+        chatPanel={CapturingChatPanel}
+        plugins={[plugin]}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(capturedChatProps?.toolRenderers).toMatchObject({ "plugin-tool": toolRenderer })
+    })
   })
 
   it("opens the workbench when the embedded agent asks to open an artifact", async () => {
@@ -888,7 +967,7 @@ describe("WorkspaceAgentFront", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/sessions")) {
+      if (url.includes("/api/v1/agent/pi-chat/sessions")) {
         const method = init?.method ?? "GET"
         if (method === "GET" && sessionsFailuresRemaining > 0) {
           sessionsFailuresRemaining -= 1
@@ -897,7 +976,7 @@ describe("WorkspaceAgentFront", () => {
         if (method === "GET") return new Response(JSON.stringify([{ id: "s1", title: "Existing" }]), { status: 200 })
       }
       if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
-      if (url.includes("/api/v1/agent/chat")) return new Response(JSON.stringify({ messages: [] }), { status: 200 })
+      if (url.includes("/api/v1/agent/pi-chat/") && url.includes("/state")) return new Response(JSON.stringify({ protocolVersion: 1, sessionId: "existing", seq: 0, status: "idle", messages: [], queue: { followUps: [] }, followUpMode: "one-at-a-time" }), { status: 200 })
       if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
       return new Response(null, { status: 204 })
     })
@@ -930,7 +1009,7 @@ describe("WorkspaceAgentFront", () => {
     // And the chat must NOT have given up by auto-creating a brand-new empty
     // session as if none existed (no POST to the sessions endpoint).
     expect(fetchMock.mock.calls.some(([input, init]) =>
-      String(input).includes("/api/v1/agent/sessions") && (init?.method ?? "GET") === "POST",
+      String(input).includes("/api/v1/agent/pi-chat/sessions") && (init?.method ?? "GET") === "POST",
     )).toBe(false)
   })
 

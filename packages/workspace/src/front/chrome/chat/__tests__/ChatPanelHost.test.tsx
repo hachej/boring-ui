@@ -27,6 +27,12 @@ function FakeChatPanel({ onData, onOpenArtifact, composerBlockers, onComposerSto
       >
         emit data
       </button>
+      <button
+        type="button"
+        onClick={() => onData?.({ type: "file-changed", seq: 7, changeType: "write", path: "src/pi.ts" })}
+      >
+        emit pi file event
+      </button>
       <button type="button" onClick={() => onOpenArtifact?.("src/example.ts")}>
         open artifact
       </button>
@@ -80,6 +86,23 @@ describe("ChatPanelHost", () => {
     )
     expect(onData).toHaveBeenCalledWith(
       expect.objectContaining({ type: "data-file-changed" }),
+    )
+  })
+
+  it("maps Pi file-changed events into the workspace file-change bridge", () => {
+    const changed = vi.fn()
+    events.on(filesystemEvents.changed, changed)
+
+    render(
+      <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
+        <ChatPanelHost sessionId="s1" />
+      </WorkspaceProvider>,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "emit pi file event" }))
+
+    expect(changed).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "src/pi.ts", cause: "agent", toolCallId: "pi:7" }),
     )
   })
 

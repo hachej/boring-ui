@@ -59,6 +59,8 @@ describe('ToolCallGroup Pi-native adapter', () => {
     }))
     expect(rendererByToolName).not.toHaveBeenCalled()
     expect(html).toContain('renderer-id:pi-tool-call-1:custom_tool:special')
+    expect(html).toContain('aria-label="Tool calls: Used custom_tool"')
+    expect(html).toContain('motion-reduce:transition-none')
     expect(html).toContain('data-tool-renderer-source="rendererId"')
   })
 

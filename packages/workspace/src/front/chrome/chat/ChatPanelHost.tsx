@@ -33,6 +33,20 @@ function streamEndpointFromBridgeEndpoint(endpoint: string | null | undefined): 
   return normalized
 }
 
+function workspaceAgentDataPart(part: unknown): unknown {
+  if (typeof part !== "object" || part === null) return part
+  const event = part as Record<string, unknown>
+  if (event.type !== "file-changed" || typeof event.path !== "string") return part
+  return {
+    type: "data-file-changed",
+    data: {
+      op: typeof event.changeType === "string" ? event.changeType : "edit",
+      path: event.path,
+      toolCallId: typeof event.seq === "number" ? `pi:${event.seq}` : "pi:file-changed",
+    },
+  }
+}
+
 export function ChatPanelHost(props: ChatPanelHostProps) {
   const ChatPanelImpl = useWorkspaceChatPanel()
   const { blockers } = useWorkspaceAttention()
@@ -101,7 +115,7 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
 
   const handleData = useCallback(
     (part: unknown) => {
-      emitAgentData(part)
+      emitAgentData(workspaceAgentDataPart(part))
       props.onData?.(part)
     },
     [props.onData],

@@ -5,6 +5,8 @@ export type { UploadFileOptions, UploadFileResult } from './upload/uploadFile'
 
 export { ChatPanel } from './ChatPanel'
 export type { ChatPanelProps } from './ChatPanel'
+export { PiChatPanel } from './chat/PiChatPanel'
+export type { PiChatPanelProps } from './chat/PiChatPanel'
 export { DebugDrawer } from './DebugDrawer'
 export {
   ArtifactOpenProvider,

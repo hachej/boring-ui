@@ -36,6 +36,12 @@ export interface PiChatSeqGap {
   lastSeq: number
 }
 
+export interface PiChatHistoryState {
+  /** First cut renders full history; this explicit shape leaves room for paged windows later. */
+  mode: 'full'
+  messageCount: number
+}
+
 export interface PiChatState {
   sessionId: string
   workspaceId?: string
@@ -45,6 +51,7 @@ export interface PiChatState {
   lastSeq: number
   committedMessages: BoringChatMessage[]
   streamingMessage?: BoringChatMessage
+  history: PiChatHistoryState
   queue: { followUps: QueuedUserMessage[] }
   optimisticOutbox: Record<string, OptimisticUserMessage>
   pendingToolCallIds: Set<string>
@@ -84,6 +91,7 @@ export function createInitialPiChatState(options: CreatePiChatStateOptions): PiC
     status: options.status ?? 'hydrating',
     lastSeq: options.lastSeq ?? 0,
     committedMessages: [],
+    history: { mode: 'full', messageCount: 0 },
     queue: { followUps: [] },
     optimisticOutbox: {},
     pendingToolCallIds: new Set(),
@@ -159,6 +167,7 @@ function hydrateFromSnapshot(state: PiChatState, snapshot: PiChatSnapshot): PiCh
     lastSeq: snapshot.seq,
     committedMessages: snapshot.messages,
     streamingMessage: undefined,
+    history: { mode: 'full', messageCount: snapshot.messages.length },
     queue: snapshot.queue,
     optimisticOutbox: nextOutbox,
     pendingToolCallIds: collectPendingToolCallIds(snapshot.messages),
@@ -270,11 +279,10 @@ function applyMessageStart(state: PiChatState, event: Extract<PiChatEvent, { typ
         ...(event.files ?? []),
       ],
     }
-    return {
+    return withCommittedMessages({
       ...state,
-      committedMessages: replaceOrAppendMessage(state.committedMessages, message),
       optimisticOutbox: removeOutboxEntry(state.optimisticOutbox, event.clientNonce),
-    }
+    }, replaceOrAppendMessage(state.committedMessages, message))
   }
 
   const assistant: BoringChatMessage = {
@@ -327,12 +335,11 @@ function commitFinalMessage(state: PiChatState, messageId: string, final: Boring
     if (part.type === 'tool-call' && !isToolPending(part)) nextPending.delete(part.id)
   }
 
-  return {
+  return withCommittedMessages({
     ...state,
     streamingMessage: state.streamingMessage?.id === messageId ? undefined : state.streamingMessage,
-    committedMessages: replaceOrAppendMessage(state.committedMessages.filter((message) => message.id !== messageId), final),
     pendingToolCallIds: nextPending,
-  }
+  }, replaceOrAppendMessage(state.committedMessages.filter((message) => message.id !== messageId), final))
 }
 
 function updateMessageById(state: PiChatState, messageId: string, update: (message: BoringChatMessage) => BoringChatMessage): PiChatState {
@@ -411,6 +418,14 @@ function replaceOrAppendMessage(messages: BoringChatMessage[], message: BoringCh
   const next = [...messages]
   next[index] = message
   return next
+}
+
+function withCommittedMessages(state: PiChatState, committedMessages: BoringChatMessage[]): PiChatState {
+  return {
+    ...state,
+    committedMessages,
+    history: { mode: 'full', messageCount: committedMessages.length },
+  }
 }
 
 function settleTurn(state: PiChatState, status: 'ok' | 'aborted' | 'error'): PiChatState {

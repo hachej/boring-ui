@@ -196,6 +196,89 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
+  it('exposes safe debug metadata and large /state warnings without payload bodies or secrets', async () => {
+    const events = openNdjsonStream()
+    const warnings: unknown[] = []
+    const sensitive = 'SECRET_PROMPT_TOKEN_/home/ubuntu/project/private.txt'
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/state')) {
+        return jsonResponse(snapshot({
+          seq: 5,
+          messages: [
+            { id: 'u1', role: 'user', status: 'done', parts: [{ type: 'text', id: 'u1:text', text: sensitive }] },
+            { id: 'u2', role: 'user', status: 'done', parts: [{ type: 'text', id: 'u2:text', text: 'second' }] },
+            { id: 'u3', role: 'user', status: 'done', parts: [{ type: 'text', id: 'u3:text', text: 'third' }] },
+          ],
+        }))
+      }
+      if (url.endsWith('/events?cursor=5')) return new Response(events.stream)
+      if (url.endsWith('/prompt')) {
+        const body = init?.body ? JSON.parse(String(init.body)) : undefined
+        return jsonResponse({ accepted: true, cursor: 6, clientNonce: body.clientNonce })
+      }
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, {
+      headers: { authorization: 'Bearer SECRET_TOKEN' },
+      debug: { largeStateWarningMessages: 2, largeStateWarningBytes: 10, onWarning: (warning) => warnings.push(warning) },
+    })
+
+    await waitUntil(() => fetchMock.mock.calls.some((call) => String(call[0]).endsWith('/events?cursor=5')))
+    events.write({ type: 'agent-start', seq: 6, turnId: 'turn-debug' } satisfies PiChatEvent)
+    await waitUntil(() => session.getDebugState().lastSeq === 6)
+    await session.prompt({
+      message: 'never expose this prompt body',
+      clientNonce: 'nonce-secret',
+      attachments: [{ filename: 'secret.txt', url: 'file:///home/ubuntu/project/secret.txt' }],
+    })
+
+    const debug = session.getDebugState()
+    expect(debug).toMatchObject({
+      sessionId: 's1',
+      lastSeq: 6,
+      connection: 'connected',
+      queue: { followUps: 1, optimisticOutbox: 1, pendingToolCalls: 0 },
+      recentEventTypes: ['agent-start'],
+      history: { mode: 'full', messageCount: 3, streamingMessageCount: 0 },
+      largeStateWarning: expect.objectContaining({ type: 'large-state', sessionId: 's1', messageCount: 3 }),
+    })
+    expect(warnings).toEqual([expect.objectContaining({ type: 'large-state', sessionId: 's1', messageCount: 3 })])
+    const serialized = JSON.stringify(debug)
+    expect(serialized).not.toContain(sensitive)
+    expect(serialized).not.toContain('SECRET_TOKEN')
+    expect(serialized).not.toContain('never expose this prompt body')
+    expect(serialized).not.toContain('file:///home/ubuntu/project/secret.txt')
+
+    session.dispose()
+  })
+
+  it('increments safe gap counters for stream gaps and replay range recovery', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/state') && fetchMock.mock.calls.length === 1) return jsonResponse(snapshot({ seq: 10 }))
+      if (url.endsWith('/events?cursor=10')) {
+        return jsonResponse({
+          error: {
+            code: ErrorCode.enum.CURSOR_OUT_OF_RANGE,
+            message: PI_CHAT_REPLAY_GAP_CODE,
+            retryable: true,
+            details: { reason: PI_CHAT_REPLAY_GAP_CODE, latestSeq: 20, minReplaySeq: 18 },
+          },
+        }, 409)
+      }
+      if (url.endsWith('/state')) return jsonResponse(snapshot({ seq: 20, status: 'idle', activeTurnId: undefined }))
+      if (url.endsWith('/events?cursor=20')) return new Response(openNdjsonStream().stream)
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock)
+
+    await waitUntil(() => fetchMock.mock.calls.some((call) => String(call[0]).endsWith('/events?cursor=20')))
+
+    expect(session.getDebugState().gapCount).toBe(1)
+    expect(JSON.stringify(session.getDebugState())).not.toContain('latestSeq')
+
+    session.dispose()
+  })
+
   it('shows a protocol runtime notice and does not open events for unsupported /state protocol versions', async () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (url.endsWith('/state')) return jsonResponse({ ...snapshot(), protocolVersion: 2 })
