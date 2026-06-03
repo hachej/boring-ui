@@ -743,7 +743,7 @@ describe("useAgentPluginHotReload", () => {
     expect(screen.getByTestId("panel-ids")).toHaveTextContent("")
   })
 
-  test("warns and preserves previous UI when a hot-load revision adds provider/binding contributions", async () => {
+  test("warns but refreshes supported UI when a hot-load revision includes provider/binding contributions", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
     const importFront = async (_url: string, revision: number): Promise<{ default: BoringFrontFactoryWithId }> => ({
       default: hotPlugin("provider-plugin", (api) => {
@@ -760,7 +760,7 @@ describe("useAgentPluginHotReload", () => {
           id: "hot-pane",
           label: "Hot Pane",
           component: function HotPane() {
-            return React.createElement("div", { "data-testid": "hot-pane" }, revision === 1 ? "version one" : "should not mount")
+            return React.createElement("div", { "data-testid": "hot-pane" }, revision === 1 ? "version one" : "version two")
           },
         })
       }),
@@ -824,7 +824,7 @@ describe("useAgentPluginHotReload", () => {
       })
 
       await waitFor(() => expect(warn).toHaveBeenCalledWith(expect.stringContaining("Dynamic provider/binding mounting is not implemented")))
-      expect(screen.getByTestId("hot-pane")).toHaveTextContent("version one")
+      await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version two"))
     } finally {
       warn.mockRestore()
     }

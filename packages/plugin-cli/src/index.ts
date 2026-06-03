@@ -8,6 +8,7 @@ import {
   verifyPlugin,
   workspaceLocalPluginRootsEnabled,
 } from "./server/index"
+import { formatSelfTestResult, runPluginSelfTest } from "./server/testPlugin"
 
 export function pluginCommandUsage(): string {
   return [
@@ -17,6 +18,7 @@ export function pluginCommandUsage(): string {
     "  boring-ui-plugin status [--json]",
     "  boring-ui-plugin scaffold <name> [workspace]",
     "  boring-ui-plugin verify [name] [workspace]",
+    "  boring-ui-plugin test <name> [--url <url>] [--workspace <id>] [--panel-id <id>] [--timeout-ms <ms>] [--json]",
   ].join("\n")
 }
 
@@ -46,7 +48,8 @@ function handleScaffold(positionals: string[]): void {
   console.log("  1. edit front/index.tsx for UI panels/commands/resolvers")
   console.log("  2. add pi.extensions / skills for hot-reloadable agent behavior")
   console.log("  3. bash `boring-ui-plugin verify` — confirms manifests + files are valid")
-  console.log("  4. ask the user: /reload")
+  console.log("  4. if the UI is open, bash `boring-ui-plugin test <name>` — catches panel render failures")
+  console.log("  5. ask the user: /reload")
 }
 
 function handleVerify(positionals: string[]): void {
@@ -69,7 +72,30 @@ function handleVerify(positionals: string[]): void {
   process.exit(1)
 }
 
-export function runBoringUiPluginCli(argv = process.argv.slice(2)): void {
+function readOption(argv: string[], name: string): string | undefined {
+  const index = argv.indexOf(name)
+  if (index === -1) return undefined
+  return argv[index + 1]
+}
+
+async function handleTest(argv: string[], positionals: string[], json: boolean): Promise<void> {
+  const name = positionals[0]
+  if (!name) throw new Error("usage: boring-ui-plugin test <name> [--url <local-server-url>] [--workspace <id>] [--panel-id <id>] [--timeout-ms <ms>] [--json]")
+  const timeoutRaw = readOption(argv, "--timeout-ms")
+  const timeoutMs = timeoutRaw ? Number(timeoutRaw) : undefined
+  if (timeoutRaw && (timeoutMs == null || !Number.isFinite(timeoutMs) || timeoutMs <= 0)) throw new Error("--timeout-ms must be a positive number")
+  const result = await runPluginSelfTest({
+    pluginId: name,
+    ...(readOption(argv, "--url") ? { url: readOption(argv, "--url") } : {}),
+    ...(readOption(argv, "--workspace") ? { workspaceId: readOption(argv, "--workspace") } : {}),
+    ...(readOption(argv, "--panel-id") ? { panelId: readOption(argv, "--panel-id") } : {}),
+    ...(timeoutMs == null ? {} : { timeoutMs }),
+  })
+  console.log(json ? JSON.stringify(result, null, 2) : formatSelfTestResult(result))
+  if (!result.ok) process.exit(1)
+}
+
+export async function runBoringUiPluginCli(argv = process.argv.slice(2)): Promise<void> {
   const positionals = argv.filter((arg) => !arg.startsWith("-"))
   const json = argv.includes("--json")
   const command = positionals[0]
@@ -78,6 +104,10 @@ export function runBoringUiPluginCli(argv = process.argv.slice(2)): void {
   if (command === "status") return handleStatus(json)
   if (command === "scaffold") return handleScaffold(rest)
   if (command === "verify") return handleVerify(rest)
+  if (command === "test") return await handleTest(argv, rest, json)
   console.log(pluginCommandUsage())
 }
+
+export { formatSelfTestResult, runPluginSelfTest } from "./server/testPlugin"
+export type { PaneSelfTestState, RunPluginSelfTestOptions, SelfTestEvent, SelfTestResult } from "./server/testPlugin"
 
