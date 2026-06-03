@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { useState } from "react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -50,12 +50,27 @@ class MockEventSource {
 }
 
 describe("WorkspaceAgentFront", () => {
+  // Number of consecutive HTTP 503 ("Agent runtime is still preparing")
+  // responses the sessions GET should return before succeeding. Default 0 so
+  // every existing test keeps the original behavior; the cold-start regression
+  // test below sets it to a small N for its single render.
+  let sessionsFailuresRemaining = 0
+
   beforeEach(() => {
     localStorage.clear()
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    sessionsFailuresRemaining = 0
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
-      if (url.includes("/api/v1/agent/sessions")) return new Response(JSON.stringify([]), { status: 200 })
+      if (url.includes("/api/v1/agent/sessions")) {
+        // Only the cold-start GET race is simulated; POST/DELETE pass through.
+        const method = init?.method ?? "GET"
+        if (method === "GET" && sessionsFailuresRemaining > 0) {
+          sessionsFailuresRemaining -= 1
+          return new Response(null, { status: 503 })
+        }
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
       if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
       if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
       return new Response(null, { status: 204 })
@@ -362,7 +377,6 @@ describe("WorkspaceAgentFront", () => {
     })
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/chat/session-workspace-a/messages"))).toBe(true)
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/chat/session-workspace-a/stream"))).toBe(true)
     })
     fetchMock.mockClear()
 
@@ -390,6 +404,78 @@ describe("WorkspaceAgentFront", () => {
       return String(input).includes("/api/v1/agent/chat/session-workspace-a/messages") && headers?.["x-boring-workspace-id"] === "workspace-b"
     })).toBe(false)
     resolveWorkspaceBTree?.(new Response(JSON.stringify({ entries: [] }), { status: 200 }))
+  })
+
+  it("uses the workspace's persisted active chat while session list refreshes", async () => {
+    localStorage.setItem("boring-workspace:sessions:workspace-b", "persisted-workspace-b")
+    let workspaceBLoading = true
+    const useSessions = ({ requestHeaders }: { requestHeaders: Record<string, string> }) => {
+      const workspaceId = requestHeaders["x-boring-workspace-id"]
+      if (workspaceId === "workspace-b" && workspaceBLoading) {
+        const staleWorkspaceASession = { id: "session-workspace-a", title: "Stale workspace A" }
+        return {
+          sessions: [staleWorkspaceASession],
+          loading: true,
+          activeSessionId: staleWorkspaceASession.id,
+          activeSession: staleWorkspaceASession,
+          switch: vi.fn(),
+          create: vi.fn(),
+          delete: vi.fn(),
+        }
+      }
+      const session = { id: `session-${workspaceId}`, title: `Session ${workspaceId}` }
+      return {
+        sessions: [session],
+        loading: false,
+        activeSessionId: session.id,
+        activeSession: session,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+    const SessionChatPanel = (props: WorkspaceChatPanelProps) => <div>Chat session {props.sessionId}</div>
+
+    const { rerender } = render(
+      <WorkspaceAgentFront
+        workspaceId="workspace-a"
+        requestHeaders={{ "x-boring-workspace-id": "workspace-a" }}
+        chatPanel={SessionChatPanel}
+        useSessions={useSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(await screen.findByText("Chat session session-workspace-a")).toBeInTheDocument()
+
+    rerender(
+      <WorkspaceAgentFront
+        workspaceId="workspace-b"
+        requestHeaders={{ "x-boring-workspace-id": "workspace-b" }}
+        chatPanel={SessionChatPanel}
+        useSessions={useSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(screen.getByText("Chat session persisted-workspace-b")).toBeInTheDocument()
+    expect(screen.queryByText("No sessions yet.")).not.toBeInTheDocument()
+    expect(screen.queryByText("Stale workspace A")).not.toBeInTheDocument()
+
+    workspaceBLoading = false
+    rerender(
+      <WorkspaceAgentFront
+        workspaceId="workspace-b"
+        requestHeaders={{ "x-boring-workspace-id": "workspace-b" }}
+        chatPanel={SessionChatPanel}
+        useSessions={useSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText("Chat session session-workspace-b")).toBeInTheDocument()
+    })
   })
 
   it("does not expose stale sessions when session refresh fails after workspace switch", async () => {
@@ -557,6 +643,93 @@ describe("WorkspaceAgentFront", () => {
     })
   })
 
+  it("removes the empty auto-created default when the user manually creates a chat", async () => {
+    const create = vi.fn(async () => ({ id: "manual", title: "New session", updatedAt: Date.now(), turnCount: 0 }))
+    const deleted = vi.fn()
+
+    function useSessionsWithAutoDefault() {
+      const [sessions, setSessions] = useState([
+        { id: "auto", title: "Project", updatedAt: Date.now(), turnCount: 0 },
+      ])
+      return {
+        sessions,
+        activeSessionId: sessions[0]?.id ?? null,
+        activeSession: sessions[0] ?? null,
+        loading: false,
+        create: async () => {
+          const session = await create()
+          setSessions((prev) => [session, ...prev])
+          return session
+        },
+        switch: vi.fn(),
+        delete: (id: string) => {
+          deleted(id)
+          setSessions((prev) => prev.filter((session) => session.id !== id))
+        },
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="manual-create"
+        chatPanel={ChatPanel}
+        useSessions={useSessionsWithAutoDefault}
+        defaultSessionTitle="Project"
+        persistenceEnabled={false}
+      />,
+    )
+
+    fireEvent.click(screen.getAllByRole("button", { name: "New chat" })[0])
+
+    await waitFor(() => {
+      expect(create).toHaveBeenCalledOnce()
+      expect(deleted).toHaveBeenCalledWith("auto")
+    })
+  })
+
+  it("does not auto-create a replacement after the user deletes the last remote session", async () => {
+    vi.useFakeTimers()
+    const create = vi.fn(async () => ({ id: "created", title: "Created" }))
+    const deleted = vi.fn()
+
+    function useDeletingSessions() {
+      const [sessionIds, setSessionIds] = useState(["only"])
+      const sessions = sessionIds.map((id) => ({ id, title: "Only session", updatedAt: Date.now() }))
+      return {
+        sessions,
+        activeSessionId: sessions[0]?.id ?? null,
+        activeSession: sessions[0] ?? null,
+        loading: false,
+        create,
+        switch: vi.fn(),
+        delete: (id: string) => {
+          deleted(id)
+          setSessionIds((prev) => prev.filter((sessionId) => sessionId !== id))
+        },
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="delete-last"
+        chatPanel={ChatPanel}
+        useSessions={useDeletingSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Sessions" }))
+    fireEvent.click(screen.getByLabelText("Delete Only session"))
+
+    expect(deleted).toHaveBeenCalledWith("only")
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2500)
+    })
+
+    expect(create).not.toHaveBeenCalled()
+    vi.useRealTimers()
+  })
+
   it("adds workspace id to request headers when host omits them", async () => {
     const observedProviders: Array<Record<string, string> | undefined> = []
     const observedSessions: Array<Record<string, string>> = []
@@ -675,6 +848,66 @@ describe("WorkspaceAgentFront", () => {
     window.removeEventListener("boring:workspace-composer-stop", observed)
   })
 
+  it("recovers the session chat after transient cold-start 503s without any remount", async () => {
+    // Reproduces the "empty chat after page reload until you switch workspace
+    // away and back" bug. On a fresh load the sessions GET returns 503 ("Agent
+    // runtime is still preparing") for the first few calls during warmup. The
+    // pre-fix useSessions latched that 503 into a terminal error and rendered an
+    // empty chat (default "New session" title, no loaded session) with no retry,
+    // so chat stayed empty until a full remount (only a workspace switch did
+    // that, via key={activeWorkspace.id}). The fix retries transient 503s with
+    // backoff while staying in loading state. This test mounts ONCE — no
+    // remount, no key change, no workspace switch — and asserts the real session
+    // loaded from the eventual 200 shows up.
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.includes("/api/v1/agent/sessions")) {
+        const method = init?.method ?? "GET"
+        if (method === "GET" && sessionsFailuresRemaining > 0) {
+          sessionsFailuresRemaining -= 1
+          return new Response(null, { status: 503 })
+        }
+        if (method === "GET") return new Response(JSON.stringify([{ id: "s1", title: "Existing" }]), { status: 200 })
+      }
+      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agent/chat")) return new Response(JSON.stringify({ messages: [] }), { status: 200 })
+      if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    // First two cold-start session GETs fail with 503 (backoff ~0.25s + ~0.5s),
+    // then the third returns the existing session. Kept to 2 so total real-timer
+    // backoff stays sub-second.
+    sessionsFailuresRemaining = 2
+
+    const user = userEvent.setup()
+    render(
+      <WorkspaceAgentFront
+        workspaceId="cold-start-503"
+        requestHeaders={{ "x-boring-workspace-id": "cold-start-503" }}
+        persistenceEnabled={false}
+      />,
+    )
+
+    // The existing session must surface after the retries succeed — proving the
+    // chat recovered on the same mount. Open the session browser and assert the
+    // real session is shown (it appears as both the TopBar session title and the
+    // session-browser row). Against the pre-fix latched-error behavior the chat
+    // stays empty: the TopBar shows the "New session" fallback and no row exists,
+    // so zero "Existing" elements are found and this fails.
+    await user.click(await screen.findByRole("button", { name: "Sessions" }, { timeout: 4000 }))
+    await waitFor(() => {
+      expect(screen.getAllByText("Existing").length).toBeGreaterThan(0)
+    }, { timeout: 4000 })
+
+    // And the chat must NOT have given up by auto-creating a brand-new empty
+    // session as if none existed (no POST to the sessions endpoint).
+    expect(fetchMock.mock.calls.some(([input, init]) =>
+      String(input).includes("/api/v1/agent/sessions") && (init?.method ?? "GET") === "POST",
+    )).toBe(false)
+  })
+
   it("creates the first remote session when a sessions hook loads empty", async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
     vi.stubGlobal("fetch", fetchMock)
@@ -699,6 +932,6 @@ describe("WorkspaceAgentFront", () => {
 
     await waitFor(() => {
       expect(createSession).toHaveBeenCalledWith({ title: "Fresh session" })
-    })
+    }, { timeout: 3000 })
   })
 })

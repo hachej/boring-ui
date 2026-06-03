@@ -10,7 +10,7 @@ import {
   utimes,
 } from "node:fs/promises";
 import { readFileSync, readdirSync } from "node:fs";
-import { join, basename } from "node:path";
+import { join, basename, resolve } from "node:path";
 import { homedir } from "node:os";
 import {
   parseSessionEntries,
@@ -27,6 +27,7 @@ import type {
   SessionDetail,
 } from "../../../shared/session.js";
 import type { UIMessage } from "../../../shared/message.js";
+import { dropEmptyAssistantUiMessages, sanitizeUiMessages } from "../../../shared/message-sanitizer.js";
 
 function defaultSessionDir(cwd: string): string {
   const safePath = `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
@@ -74,9 +75,12 @@ export class PiSessionStore implements SessionStore {
   async list(ctx: SessionCtx): Promise<SessionSummary[]> {
     const files = await readdir(this.sessionDir).catch(() => []);
     const jsonlFiles = files.filter((f) => f.endsWith(".jsonl"));
+    const filepaths = jsonlFiles.map((f) => join(this.sessionDir, f));
+    const referencedPiFiles = await this.referencedPiFiles(filepaths);
+    const visibleFiles = filepaths.filter((filepath) => !referencedPiFiles.has(resolve(filepath)));
 
     const summaries = await Promise.all(
-      jsonlFiles.map((f) => this.summarizeFile(join(this.sessionDir, f))),
+      visibleFiles.map((filepath) => this.summarizeFile(filepath)),
     );
 
     return summaries
@@ -142,26 +146,36 @@ export class PiSessionStore implements SessionStore {
     );
 
     const fileStat = await fsStat(filepath);
+    const linkedPiFile = extractPiSessionFilePath(fileEntries);
+    const linked = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)
+      ? await this.readLinkedPiSession(linkedPiFile)
+      : null;
+    const linkedEntries = linked?.entries.filter(
+      (e): e is SessionEntry => e.type !== "session",
+    ) ?? [];
 
     // Prefer a persisted UI snapshot if available — these are written by
     // the client after each turn and survive server restarts. When no
     // snapshot exists, rebuild the UI transcript from every persisted message
     // entry in file order rather than pi's compacted LLM working context.
     const uiSnapshot = extractLatestUiSnapshot(fileEntries);
-    const messages = uiSnapshot ?? piMessagesToUIMessages(
-      sessionEntries
+    const transcriptEntries = linkedEntries.length > 0 ? linkedEntries : sessionEntries;
+    const messages = uiSnapshot ?? dropEmptyAssistantUiMessages(piMessagesToUIMessages(
+      transcriptEntries
         .filter((entry): entry is SessionMessageEntry => entry.type === "message")
         .map((entry) => entry.message),
-    );
+      sessionId,
+    ));
 
-    const title = extractTitle(sessionEntries) ?? "New session";
+    const title = extractTitle(sessionEntries) ?? extractTitle(linkedEntries) ?? "New session";
     const turnCount = messages.filter((m) => m.role === "user").length;
+    const updatedAtMs = Math.max(fileStat.mtime.getTime(), linked?.mtime.getTime() ?? 0);
 
     return {
       id: sessionId,
       title,
       createdAt: header?.timestamp ?? fileStat.birthtime.toISOString(),
-      updatedAt: fileStat.mtime.toISOString(),
+      updatedAt: new Date(updatedAtMs).toISOString(),
       turnCount,
       messages,
     };
@@ -173,7 +187,7 @@ export class PiSessionStore implements SessionStore {
       type: "ui_snapshot",
       id: randomUUID(),
       timestamp: new Date().toISOString(),
-      messages,
+      messages: sanitizeUiMessages(messages, { dropEmptyAssistantMessages: true }),
     });
     await appendFile(filepath, entry + "\n");
   }
@@ -241,7 +255,12 @@ export class PiSessionStore implements SessionStore {
     const filepath = await this.resolveSessionFile(sessionId).catch(
       () => null,
     );
-    if (filepath) await rm(filepath, { force: true });
+    if (!filepath) return;
+    const linkedPiFile = await this.linkedPiFileFor(filepath);
+    await rm(filepath, { force: true });
+    if (linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)) {
+      await rm(linkedPiFile, { force: true });
+    }
   }
 
   touchSession(sessionId: string, title?: string): void {
@@ -282,6 +301,31 @@ export class PiSessionStore implements SessionStore {
     return join(this.sessionDir, match);
   }
 
+  private async linkedPiFileFor(filepath: string): Promise<string | null> {
+    try {
+      const content = await readFile(filepath, "utf-8");
+      return extractPiSessionFilePath(safeParseEntries(content));
+    } catch {
+      return null;
+    }
+  }
+
+  private async referencedPiFiles(filepaths: string[]): Promise<Set<string>> {
+    const referenced = new Set<string>();
+    await Promise.all(filepaths.map(async (filepath) => {
+      try {
+        const content = await readFile(filepath, "utf-8");
+        const piFilePath = extractPiSessionFilePath(safeParseEntries(content));
+        if (piFilePath && resolve(piFilePath) !== resolve(filepath)) {
+          referenced.add(resolve(piFilePath));
+        }
+      } catch {
+        // Ignore unreadable files; summarizeFile will drop them later.
+      }
+    }));
+    return referenced;
+  }
+
   private async summarizeFile(
     filepath: string,
   ): Promise<SessionSummary | null> {
@@ -303,29 +347,65 @@ export class PiSessionStore implements SessionStore {
       const sessionEntries = entries.filter(
         (e): e is SessionEntry => e.type !== "session",
       );
+      const linkedPiFile = extractPiSessionFilePath(entries);
+      const linked = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)
+        ? await this.readLinkedPiSession(linkedPiFile)
+        : null;
+      const linkedEntries = linked?.entries.filter(
+        (e): e is SessionEntry => e.type !== "session",
+      ) ?? [];
+      const uiSnapshot = extractLatestUiSnapshot(entries);
 
       const title =
         extractTitle(sessionEntries) ??
+        extractTitle(linkedEntries) ??
+        firstUserMessage(linkedEntries) ??
         firstUserMessage(sessionEntries) ??
         "New session";
 
-      const turnCount = sessionEntries.filter(
-        (e) =>
-          e.type === "message" &&
-          ((e as SessionMessageEntry).message as any)?.role === "user",
-      ).length;
+      const turnCount = uiSnapshot
+        ? uiSnapshot.filter((m) => m.role === "user").length
+        : [...sessionEntries, ...linkedEntries].filter(
+            (e) =>
+              e.type === "message" &&
+              ((e as SessionMessageEntry).message as any)?.role === "user",
+          ).length;
+      const updatedAtMs = Math.max(fileStat.mtime.getTime(), linked?.mtime.getTime() ?? 0);
 
       return {
         id: header.id,
         title,
         createdAt: header.timestamp,
-        updatedAt: fileStat.mtime.toISOString(),
+        updatedAt: new Date(updatedAtMs).toISOString(),
         turnCount,
       };
     } catch {
       return null;
     }
   }
+
+  private async readLinkedPiSession(filepath: string): Promise<{ entries: (SessionHeader | SessionEntry)[]; mtime: Date } | null> {
+    try {
+      const [fileStat, content] = await Promise.all([
+        fsStat(filepath),
+        readFile(filepath, "utf-8"),
+      ]);
+      return { entries: safeParseEntries(content), mtime: fileStat.mtime };
+    } catch {
+      return null;
+    }
+  }
+}
+
+function extractPiSessionFilePath(entries: (SessionHeader | SessionEntry)[]): string | null {
+  let piFilePath: string | null = null;
+  for (const e of entries) {
+    const rec = e as { type?: string; path?: string };
+    if (rec.type === "pi_session_file" && typeof rec.path === "string") {
+      piFilePath = rec.path;
+    }
+  }
+  return piFilePath;
 }
 
 function extractLatestUiSnapshot(entries: (SessionHeader | SessionEntry)[]): UIMessage[] | null {
@@ -333,7 +413,7 @@ function extractLatestUiSnapshot(entries: (SessionHeader | SessionEntry)[]): UIM
   for (const e of entries) {
     const rec = e as { type?: string; messages?: unknown };
     if (rec.type === "ui_snapshot" && Array.isArray(rec.messages)) {
-      latest = rec.messages as UIMessage[];
+      latest = sanitizeUiMessages(rec.messages as UIMessage[], { dropEmptyAssistantMessages: true });
     }
   }
   return latest;
@@ -383,7 +463,24 @@ function safeParseEntries(
   }
 }
 
-function piMessagesToUIMessages(messages: unknown[]): UIMessage[] {
+// Reconstructed message ids must be DETERMINISTIC across repeated loads of the
+// same session file. If they were random (randomUUID), every GET /messages
+// would return identical content but fresh ids, defeating the client's
+// merge-by-id dedup and causing chat history to visually duplicate/stack on
+// each browser reload. Derive a stable id from the session id + the message's
+// position in the reconstructed list.
+function reconstructedMessageId(
+  sessionId: string | undefined,
+  role: string,
+  index: number,
+): string {
+  return sessionId ? `${sessionId}-${role}-${index}` : `${role}-${index}`;
+}
+
+function piMessagesToUIMessages(
+  messages: unknown[],
+  sessionId?: string,
+): UIMessage[] {
   const result: UIMessage[] = [];
   let currentAssistant: UIMessage | null = null;
 
@@ -406,7 +503,7 @@ function piMessagesToUIMessages(messages: unknown[]): UIMessage[] {
               : "";
 
         result.push({
-          id: randomUUID(),
+          id: reconstructedMessageId(sessionId, "user", result.length),
           role: "user",
           parts: [{ type: "text", text }],
         } as UIMessage);
@@ -448,7 +545,7 @@ function piMessagesToUIMessages(messages: unknown[]): UIMessage[] {
           }
         }
         const uiMsg = {
-          id: randomUUID(),
+          id: reconstructedMessageId(sessionId, "assistant", result.length),
           role: "assistant",
           parts,
         } as UIMessage;

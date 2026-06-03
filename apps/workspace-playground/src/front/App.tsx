@@ -95,8 +95,8 @@ export function WorkspaceShell() {
     [showcase],
   )
   const handleActiveSessionIdChange = useCallback(
-    (sessionId: string) => {
-      if (showcase) seedShowcase(sessionId)
+    (sessionId: string | null) => {
+      if (showcase && sessionId) seedShowcase(sessionId)
     },
     [showcase],
   )
