@@ -103,10 +103,18 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
   const [loaded, setLoaded] = useState(false)
   const versionRef = useRef(0)
   const loadedScopeRef = useRef(scopeKey)
+  const pendingCreatedSessionsRef = useRef<Map<string, SessionSummary>>(new Map())
+  const pendingCreatedScopeRef = useRef(scopeKey)
   // Unmount guard: set false in the consuming effect's cleanup (below) so
   // in-flight retries never setState after unmount. Kept as a plain ref (no
   // dedicated effect) to avoid perturbing hook order.
   const mountedRef = useRef(true)
+
+  function ensurePendingCreatedScope(): void {
+    if (pendingCreatedScopeRef.current === scopeKey) return
+    pendingCreatedScopeRef.current = scopeKey
+    pendingCreatedSessionsRef.current.clear()
+  }
 
   const refresh = useCallback(async () => {
     const v = ++versionRef.current
@@ -145,16 +153,26 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
         }
       }
       if (isCurrent() && data) {
+        ensurePendingCreatedScope()
+        const pendingCreatedSessions = pendingCreatedSessionsRef.current
+        for (const session of data) pendingCreatedSessions.delete(session.id)
+        const serverIds = new Set(data.map((session) => session.id))
+        const mergedData = pendingCreatedSessions.size > 0
+          ? [
+              ...Array.from(pendingCreatedSessions.values()).filter((session) => !serverIds.has(session.id)),
+              ...data,
+            ]
+          : data
         const replacingLoadedScope = loadedScopeRef.current !== scopeKey
         loadedScopeRef.current = scopeKey
         const persisted = initialActiveSessionId ?? readPersistedId(storageKey)
         setError(undefined)
         setLoaded(true)
-        setSessions(data)
+        setSessions(mergedData)
         setActiveSessionId((prev) => {
           const preferred = replacingLoadedScope ? persisted : (prev ?? persisted)
-          if (preferred && data.some((session) => session.id === preferred)) return preferred
-          const next = data[0]?.id
+          if (preferred && mergedData.some((session) => session.id === preferred)) return preferred
+          const next = mergedData[0]?.id
           persistId(storageKey, next)
           return next
         })
@@ -205,13 +223,15 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
         throw err
       }
       const session: SessionSummary = await res.json()
-      setSessions((prev) => [session, ...prev])
+      ensurePendingCreatedScope()
+      pendingCreatedSessionsRef.current.set(session.id, session)
+      setSessions((prev) => [session, ...prev.filter((existing) => existing.id !== session.id)])
       setActiveSessionId(session.id)
       persistId(storageKey, session.id)
       void refresh()
       return session
     },
-    [enabled, refresh, requestHeaders, storageKey],
+    [enabled, refresh, requestHeaders, scopeKey, storageKey],
   )
 
   const switchSession = useCallback((id: string) => {
@@ -222,6 +242,8 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
   const deleteSession = useCallback(
     async (id: string): Promise<void> => {
       if (!enabled) throw new Error('Sessions are disabled')
+      ensurePendingCreatedScope()
+      pendingCreatedSessionsRef.current.delete(id)
       setSessions((prev) => prev.filter((s) => s.id !== id))
       setActiveSessionId((prev) => {
         if (prev === id) {
@@ -247,7 +269,7 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
       }
       void refresh()
     },
-    [enabled, refresh, requestHeaders, storageKey],
+    [enabled, refresh, requestHeaders, scopeKey, storageKey],
   )
 
   const scopeMatches = loadedScopeRef.current === scopeKey

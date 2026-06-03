@@ -278,6 +278,22 @@ describe('useSessions', () => {
     expect(mockFetch).toHaveBeenLastCalledWith('/api/v1/agent/sessions')
   })
 
+  test('create keeps the new session visible when the immediate refresh is stale empty', async () => {
+    const newSession = { id: 's-new', title: 'Test' }
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => newSession })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] })
+
+    useSessions()
+    const createFn = callbackFns[1]
+    await createFn()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const setSessions = stateSlots[0][1] as unknown as ReturnType<typeof vi.fn>
+    expect(setSessions).toHaveBeenCalledWith([newSession])
+    expect(setSessions).not.toHaveBeenCalledWith([])
+  })
+
   test('create surfaces error on failure', async () => {
     mockFetch.mockResolvedValueOnce({ ok: false, status: 500 })
 
