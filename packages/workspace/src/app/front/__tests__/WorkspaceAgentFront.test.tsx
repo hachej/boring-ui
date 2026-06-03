@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { useState } from "react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../../front/agentPlugins/reloadEvent"
 import { UI_COMMAND_EVENT, type UiCommand } from "../../../front/bridge"
 import type { WorkspaceChatPanelProps } from "../../../front/chrome/chat/types"
 import type { PanelConfig } from "../../../front/registry/types"
@@ -833,6 +834,61 @@ describe("WorkspaceAgentFront", () => {
 
     expect(create).not.toHaveBeenCalled()
     vi.useRealTimers()
+  })
+
+  it("injects a workspace-owned plugin reload callback into the chat panel", async () => {
+    let capturedChatProps: WorkspaceChatPanelProps | undefined
+    const reloadEvents: unknown[] = []
+    const listener = (event: Event) => reloadEvents.push((event as CustomEvent).detail)
+    window.addEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.endsWith("/api/v1/agent/reload")) {
+        expect(init?.method).toBe("POST")
+        expect(init?.headers).toMatchObject({ "x-boring-workspace-id": "reload-workspace", "content-type": "application/json" })
+        expect(JSON.parse(String(init?.body))).toEqual({ sessionId: "pi-reload" })
+        return new Response(JSON.stringify({ reloaded: true, diagnostics: [{ message: "rebuilt plugin front" }] }), { status: 200 })
+      }
+      return new Response(JSON.stringify([]), { status: 200 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    function ReloadProbe(props: WorkspaceChatPanelProps) {
+      capturedChatProps = props
+      return <div>Reload probe</div>
+    }
+    const useSessions = () => ({
+      sessions: [{ id: "pi-reload", title: "Pi reload" }],
+      loading: false,
+      activeSessionId: "pi-reload",
+      activeSession: { id: "pi-reload", title: "Pi reload" },
+      switch: vi.fn(),
+      create: vi.fn(),
+      delete: vi.fn(),
+    })
+
+    try {
+      render(
+        <WorkspaceAgentFront
+          workspaceId="reload-workspace"
+          chatPanel={ReloadProbe}
+          useSessions={useSessions}
+          requestHeaders={{ "x-boring-workspace-id": "reload-workspace" }}
+          apiBaseUrl="/agent"
+          persistenceEnabled={false}
+        />,
+      )
+
+      await waitFor(() => expect(typeof capturedChatProps?.onReloadAgentPlugins).toBe("function"))
+      const message = await (capturedChatProps?.onReloadAgentPlugins as () => Promise<string>)()
+      expect(message).toContain("Agent plugins reloaded.")
+      expect(message).toContain("rebuilt plugin front")
+      expect(fetchMock).toHaveBeenCalledWith("/agent/api/v1/agent/reload", expect.objectContaining({ method: "POST" }))
+      expect(reloadEvents).toContainEqual({ reloaded: true, diagnostics: [{ message: "rebuilt plugin front" }] })
+    } finally {
+      window.removeEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
+    }
   })
 
   it("adds workspace id to request headers when host omits them", async () => {

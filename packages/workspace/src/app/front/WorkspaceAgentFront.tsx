@@ -21,6 +21,7 @@ import {
   createLocalStorageSessions,
   useLocalStorageSessions,
 } from "./localStorageSessions"
+import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../front/agentPlugins/reloadEvent"
 import { WorkspaceBackgroundBoot } from "./WorkspaceBackgroundBoot"
 import { workspaceRequestHeaders, type WorkspaceWarmupStatus } from "./workspacePreload"
 
@@ -199,6 +200,16 @@ function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSess
 
 function workspaceIdFromHeaders(headers?: Record<string, string>): string | null {
   return headers?.["x-boring-workspace-id"] ?? headers?.["X-Boring-Workspace-Id"] ?? null
+}
+
+function pluginReloadMessage(payload: { reloaded?: boolean; diagnostics?: Array<{ message?: string }> }): string {
+  const base = payload.reloaded ? "Agent plugins reloaded." : "Agent plugins will reload on the next message."
+  const diagnosticMessages = Array.isArray(payload.diagnostics)
+    ? payload.diagnostics.map((item) => item.message).filter((message): message is string => Boolean(message))
+    : []
+  return diagnosticMessages.length > 0
+    ? `${base}\n\nWarnings:\n${diagnosticMessages.join("\n")}`
+    : base
 }
 
 function readStoredSessionId(storageKey: string): string | null {
@@ -793,6 +804,25 @@ export function WorkspaceAgentFront<
 
   const workbenchBlocked = workspaceWarmupStatus.status !== "ready"
   const workbenchOverlay = workbenchBlocked ? <WorkbenchWarmupOverlay status={workspaceWarmupStatus} /> : undefined
+  const reloadAgentPlugins = useCallback(async () => {
+    const endpoint = `${apiBaseUrl?.replace(/\/$/, "") ?? ""}/api/v1/agent/reload`
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { ...resolvedRequestHeaders, "content-type": "application/json" },
+        body: JSON.stringify({ sessionId: chatSessionId }),
+      })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({})) as { error?: string }
+        return payload.error || `reload failed (${response.status})`
+      }
+      const payload = await response.json().catch(() => ({})) as { reloaded?: boolean; diagnostics?: Array<{ message?: string }> }
+      window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: payload }))
+      return pluginReloadMessage(payload)
+    } catch (error) {
+      return error instanceof Error ? error.message : "Agent plugin reload failed."
+    }
+  }, [apiBaseUrl, chatSessionId, resolvedRequestHeaders])
 
   const centerParams = useMemo(
     () => {
@@ -808,6 +838,7 @@ export function WorkspaceAgentFront<
       storageScope: workspaceId,
       requestHeaders: resolvedRequestHeaders,
       showSessions: false,
+      onReloadAgentPlugins: chatParams?.onReloadAgentPlugins ?? reloadAgentPlugins,
       toolRenderers: { ...pluginToolRenderers, ...(chatToolRenderers ?? {}) },
       bridgeEndpoint,
       getSurface,
@@ -831,7 +862,7 @@ export function WorkspaceAgentFront<
       ...(hotReloadEnabled !== undefined ? { hotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, delayAutoSubmitDraft, chatSessionId, resolvedRequestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, extraCommands, workspaceWarmupStatus, hydrateMessages, hotReloadEnabled, pluginToolRenderers, workspaceId],
+    [apiBaseUrl, chatParams, delayAutoSubmitDraft, chatSessionId, resolvedRequestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, extraCommands, workspaceWarmupStatus, hydrateMessages, hotReloadEnabled, pluginToolRenderers, reloadAgentPlugins, workspaceId],
   )
   const surfaceParams = useMemo<SurfaceShellProps>(() => ({
     storageKey: resolvedSurfaceStorageKey,

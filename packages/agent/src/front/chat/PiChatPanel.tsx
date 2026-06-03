@@ -39,6 +39,7 @@ export interface PiChatPanelProps {
   chrome?: boolean
   debug?: boolean
   showSessions?: boolean
+  hotReloadEnabled?: boolean
   initialDraft?: string
   autoSubmitInitialDraft?: boolean
   model?: ModelSelection | null
@@ -73,6 +74,7 @@ export function PiChatPanel({
   chrome = true,
   debug = false,
   showSessions = true,
+  hotReloadEnabled = true,
   initialDraft,
   autoSubmitInitialDraft = false,
   model,
@@ -140,10 +142,13 @@ export function PiChatPanel({
   const [composerFocusSignal, setComposerFocusSignal] = useState(0)
 
   const registry = useMemo(() => {
-    const next = createCommandRegistry(builtinCommands)
+    const effectiveBuiltins = hotReloadEnabled
+      ? builtinCommands
+      : builtinCommands.filter((command) => command.name !== 'reload')
+    const next = createCommandRegistry(effectiveBuiltins)
     for (const command of commands) next.register(command)
     return next
-  }, [commands])
+  }, [commands, hotReloadEnabled])
 
   const activeChatSessionId = chatState?.sessionId
   const activeSessionId = externalSessionId ?? sessions.activeSessionId
@@ -258,7 +263,7 @@ export function PiChatPanel({
       },
       onMentionedFilesConsumed,
     })
-  }, [activeBlockers, activeChatSessionId, activePiSession, addLocalNotice, mentionedFiles, onBeforeSubmit, onCommandResult, onComposerWarning, onMentionedFilesConsumed, registry, reloadAgentPlugins, resetSession, selectedModel, selectedThinking, thinkingControl])
+  }, [activeBlockers, activeChatSessionId, activePiSession, addLocalNotice, hotReloadEnabled, mentionedFiles, onBeforeSubmit, onCommandResult, onComposerWarning, onMentionedFilesConsumed, registry, reloadAgentPlugins, resetSession, selectedModel, selectedThinking, thinkingControl])
 
   const sendComposerMessage = useCallback(async ({ text, files }: ComposerSendPayload) => {
     if (!policy) {

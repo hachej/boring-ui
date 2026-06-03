@@ -222,6 +222,62 @@ describe('PiChatPanel sandbox shell', () => {
     expect(screen.getByText('visible answer')).toBeTruthy()
   })
 
+  test('runs /reload through the injected plugin reload callback', async () => {
+    const remote = new FakeRemotePiSession(remoteState())
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/v1/agent/pi-chat/sessions')) return jsonResponse([session('pi-1')])
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    const onReloadAgentPlugins = vi.fn(async () => 'Agent plugins reloaded.\n\nWarnings:\nrebuilt plugin front')
+    const onCommandResult = vi.fn()
+
+    render(
+      <PiChatPanel
+        storageScope="workspace-a"
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+        onReloadAgentPlugins={onReloadAgentPlugins}
+        onCommandResult={onCommandResult}
+      />,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: '/reload' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+
+    await waitFor(() => expect(onReloadAgentPlugins).toHaveBeenCalledTimes(1))
+    expect(onCommandResult).toHaveBeenCalledWith(expect.stringContaining('Agent plugins reloaded.'))
+    expect(onCommandResult).toHaveBeenCalledWith(expect.stringContaining('rebuilt plugin front'))
+    expect(remote.prompt).not.toHaveBeenCalled()
+  })
+
+  test('hotReloadEnabled=false makes /reload fall through as a normal Pi prompt', async () => {
+    const remote = new FakeRemotePiSession(remoteState())
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/v1/agent/pi-chat/sessions')) return jsonResponse([session('pi-1')])
+      if (url.endsWith('/api/v1/agent/reload')) throw new Error('reload route should not be called')
+      throw new Error(`unexpected fetch ${url}`)
+    })
+
+    render(
+      <PiChatPanel
+        hotReloadEnabled={false}
+        storageScope="scope-a"
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+      />,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: '/reload' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({ message: '/reload' })))
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/v1/agent/reload', expect.anything())
+  })
+
   test('reload-ish hydration uses persisted active id and renders state notices/queue from server snapshot', async () => {
     const persisted = storage({ [activeSessionStorageKey('scope-a')]: 'pi-1' })
     const remote = new FakeRemotePiSession(remoteState({
