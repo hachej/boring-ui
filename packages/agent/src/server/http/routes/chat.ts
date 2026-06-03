@@ -90,6 +90,7 @@ export function chatRoutes(
   const telemetry = opts.telemetry ?? noopTelemetry
   const validateBody = createBodyValidator(chatBodySchema)
   const buffers = new StreamBufferStore()
+  const activeAbortControllers = new Map<string, AbortController>()
   // Track last follow-up seq/nonce per session for dedupe detection.
   // Evict entries when sessions are deleted via the sessionChangesTracker
   // hook below, and cap at 5000 to bound memory in long-running servers.
@@ -163,16 +164,6 @@ export function chatRoutes(
       })
 
       const abortController = new AbortController()
-      let streamStarted = false
-      let streamCompleted = false
-      // Abort only when the response stream connection closes while a turn is
-      // still active. Using request.raw "close" can fire right after request-body
-      // read on some clients/proxies, which prematurely aborts turns.
-      reply.raw.on('close', () => {
-        if (streamStarted && !streamCompleted && !abortController.signal.aborted) {
-          abortController.abort()
-        }
-      })
 
       const buf = buffers.create(sessionId, turnId)
 
@@ -191,59 +182,79 @@ export function chatRoutes(
           ctx,
         )
 
-        const stream = createUIMessageStream({
-          async execute({ writer }: { writer: { write(chunk: UIMessageChunk): void } }) {
-            let streamFailed = false
-            try {
-              for await (const chunk of chunks) {
-                const c = chunk as UIMessageChunk
-                const fileChange = parseFileChangeChunk(c)
-                if (fileChange) {
-                  sessionChangesTracker?.record(sessionId, fileChange)
-                }
-                buf.append(c)
-                writer.write(c)
+        activeAbortControllers.set(sessionId, abortController)
+
+        // Decouple the harness turn from the browser response. Session switches
+        // and reloads close the current HTTP response; that must not abort the
+        // agent turn or leave a half-persisted user message behind. The running
+        // turn pumps into the replay buffer, while each client response only
+        // subscribes to that buffer and can disconnect independently.
+        void (async () => {
+          let streamFailed = false
+          try {
+            for await (const chunk of chunks) {
+              const c = chunk as UIMessageChunk
+              const fileChange = parseFileChangeChunk(c)
+              if (fileChange) {
+                sessionChangesTracker?.record(sessionId, fileChange)
               }
-            } catch (err) {
-              streamFailed = true
-              request.log.error({ err, sessionId }, '[chat] stream error')
+              buf.append(c)
+            }
+          } catch (err) {
+            streamFailed = true
+            request.log.error({ err, sessionId }, '[chat] stream error')
+            safeCapture(telemetry, {
+              name: 'agent.chat.failed',
+              properties: {
+                ...telemetryProperties,
+                status: 'error',
+                durationMs: Date.now() - startedAt,
+                errorCode: ErrorCode.enum.INTERNAL_ERROR,
+              },
+            })
+            buf.append({
+              type: 'error',
+              errorText: 'internal error',
+            } as UIMessageChunk)
+          } finally {
+            if (activeAbortControllers.get(sessionId) === abortController) {
+              activeAbortControllers.delete(sessionId)
+            }
+            if (!streamFailed) {
               safeCapture(telemetry, {
-                name: 'agent.chat.failed',
+                name: 'agent.chat.completed',
                 properties: {
                   ...telemetryProperties,
-                  status: 'error',
+                  status: 'ok',
                   durationMs: Date.now() - startedAt,
-                  errorCode: ErrorCode.enum.INTERNAL_ERROR,
                 },
               })
-              const errChunk = {
-                type: 'error',
-                errorText: 'internal error',
-              } as UIMessageChunk
-              buf.append(errChunk)
-              writer.write(errChunk)
-            } finally {
-              // Set streamCompleted BEFORE marking buffer complete so the
-              // reply.raw 'close' event handler (which fires asynchronously
-              // and may arrive before markComplete's callback) sees the flag
-              // and does NOT abort an already-finished stream.
-              streamCompleted = true
-              if (!streamFailed) {
-                safeCapture(telemetry, {
-                  name: 'agent.chat.completed',
-                  properties: {
-                    ...telemetryProperties,
-                    status: 'ok',
-                    durationMs: Date.now() - startedAt,
-                  },
-                })
-              }
-              buf.markComplete(() => buffers.evict(sessionId, turnId))
             }
+            buf.markComplete(() => buffers.evict(sessionId, turnId))
+          }
+        })()
+
+        const stream = createUIMessageStream({
+          async execute({ writer }: { writer: { write(chunk: UIMessageChunk): void } }) {
+            const replayed = buf.replay(-1)
+            for (const e of replayed) writer.write(e.chunk)
+            if (buf.complete) return
+            await new Promise<void>((resolve) => {
+              const unsub = buf.subscribe(
+                (e) => writer.write(e.chunk),
+                () => {
+                  unsub()
+                  resolve()
+                },
+              )
+              request.raw.on('close', () => {
+                unsub()
+                resolve()
+              })
+            })
           },
         })
 
-        streamStarted = true
         reply.hijack()
         pipeUIMessageStreamToResponse({
           response: reply.raw,
@@ -271,7 +282,6 @@ export function chatRoutes(
           },
         })
         buf.markComplete(() => buffers.evict(sessionId, turnId))
-        if (streamStarted) return
         const statusCode = (err as { statusCode?: unknown })?.statusCode
         const stableCode = (err as { code?: unknown })?.code
         if (typeof statusCode === 'number' && statusCode >= 400 && statusCode < 600) {
@@ -383,6 +393,15 @@ export function chatRoutes(
         // console 404 during first-load auto session creation.
         return reply.code(200).send({ messages: [] })
       }
+    },
+  )
+
+  app.delete(
+    '/api/v1/agent/chat/:sessionId/turn',
+    async (request, reply) => {
+      const { sessionId } = request.params as { sessionId: string }
+      activeAbortControllers.get(sessionId)?.abort()
+      return reply.code(204).send()
     },
   )
 

@@ -221,6 +221,12 @@ function writeCachedMessages(cacheKey: string, messages: UIMessage[]): void {
   } catch { /* quota exceeded: drop cache silently */ }
 }
 
+function clearCachedMessages(cacheKey: string): void {
+  try {
+    globalThis.localStorage?.removeItem?.(cacheKey)
+  } catch { /* storage unavailable: ignore */ }
+}
+
 export function useAgentChat(opts: UseAgentChatOptions) {
   const { sessionId } = opts
   const hydrateMessages = opts.hydrateMessages ?? true
@@ -276,10 +282,23 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   const messages = useMemo(() => mergeMessages([], rawMessages), [rawMessages])
   const messagesRef = useRef(messages)
   messagesRef.current = messages
-  const stop = chat.stop
+  const rawStop = chat.stop
+
+  const stop = useCallback(() => {
+    rawStop()
+    if (!sessionId) return
+    fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/turn`, {
+      method: 'DELETE',
+      headers: optsRef.current.requestHeaders,
+    }).catch(() => { /* best-effort cancellation */ })
+  }, [rawStop, sessionId])
 
   const [localTurnActive, setLocalTurnActive] = useState(false)
   const localTurnVersionRef = useRef(0)
+  useEffect(() => {
+    setLocalTurnActive(false)
+  }, [sessionId])
+
   const sendMessage = useCallback((...args: Parameters<typeof chat.sendMessage>) => {
     localTurnVersionRef.current += 1
     setLocalTurnActive(true)
@@ -344,7 +363,8 @@ export function useAgentChat(opts: UseAgentChatOptions) {
           // resume before hydration finished. Once the server proves the turn
           // is settled, stop that reconnect attempt, but never cancel a user
           // turn that started after this hydration request began.
-          if (localTurnVersionRef.current === hydrateLocalTurnVersion) stop()
+          if (localTurnVersionRef.current === hydrateLocalTurnVersion) rawStop()
+          clearCachedMessages(cacheKey)
           if (statusKey) {
             try {
               globalThis.localStorage?.setItem(statusKey, 'ready')
@@ -385,7 +405,7 @@ export function useAgentChat(opts: UseAgentChatOptions) {
       })
 
     return () => { aborted = true }
-  }, [hydrateMessages, sessionId, cacheKey, setMessages, statusKey, stop])
+  }, [hydrateMessages, sessionId, cacheKey, setMessages, statusKey, rawStop])
 
   // Mirror messages → localStorage whenever they change. Gated on `hydrated`
   // so the initial empty state never overwrites a previously-cached history.
@@ -412,8 +432,15 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     const prevActive = prev === 'submitted' || prev === 'streaming'
     if (prevActive && (rawStatus === 'ready' || rawStatus === 'error')) {
       setLocalTurnActive(false)
+      if (cacheKey && statusKey && shouldResume) {
+        setSettledResumeKey(cacheKey)
+        clearCachedMessages(cacheKey)
+        try {
+          globalThis.localStorage?.setItem(statusKey, 'ready')
+        } catch { /* quota exceeded: drop status cache silently */ }
+      }
     }
-  }, [rawStatus, sessionId])
+  }, [rawStatus, sessionId, cacheKey, statusKey, shouldResume])
 
   useEffect(() => {
     if (!statusKey) return
