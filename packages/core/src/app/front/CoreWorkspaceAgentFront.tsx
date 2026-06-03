@@ -49,6 +49,8 @@ export interface CoreWorkspaceAgentFrontProps<
 }
 
 function DefaultTopBarRight() {
+  // Theme switching lives in the UserMenu for the full app, so no separate
+  // top-bar toggle here (that's only for standalone hosts like the playground).
   return <UserMenu />
 }
 
@@ -260,6 +262,7 @@ function WorkspaceRoute<
       bootPreloadPaths={bootPreloadPaths}
       frontPluginHotReload={false}
       hotReloadEnabled={false}
+      showThemeToggle={false}
     />
   )
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
 import { ChatPanel as DefaultChatPanel, useSessions as useDefaultAgentSessions, type SlashCommand } from "@hachej/boring-agent/front"
 import { WorkspaceProvider, type WorkspaceProviderProps } from "../../front/provider/WorkspaceProvider"
-import { ChatLayout, TopBar, type ChatLayoutProps } from "../../front/layout"
+import { ChatLayout, TopBar, ThemeToggle, type ChatLayoutProps } from "../../front/layout"
 import type { WorkspaceChatPanelProps } from "../../front/chrome/chat/types"
 import type {
   SurfaceShellApi,
@@ -69,6 +69,13 @@ export interface WorkspaceAgentFrontProps<
   surfaceInitialPanels?: SurfaceShellProps["initialPanels"]
   topBarLeft?: ReactNode
   topBarRight?: ReactNode
+  /**
+   * Show the built-in top-bar theme toggle. Defaults to true for standalone
+   * hosts (e.g. the workspace playground) that have no other theme control.
+   * Full apps that already expose theme switching elsewhere (e.g. the core
+   * UserMenu) should set this to false to avoid a duplicate control.
+   */
+  showThemeToggle?: boolean
   sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number }>
   activeSessionId?: string | null
   onSwitchSession?: (id: string) => void
@@ -275,6 +282,7 @@ export function WorkspaceAgentFront<
   surfaceInitialPanels,
   topBarLeft,
   topBarRight,
+  showThemeToggle = true,
   chatParams,
   hotReloadEnabled,
   frontPluginHotReload,
@@ -678,7 +686,12 @@ export function WorkspaceAgentFront<
             onCommandPalette={openCommandPalette}
             onNewChat={resolvedCreate}
             topBarLeft={topBarLeft}
-            topBarRight={topBarRight}
+            topBarRight={
+              <>
+                {showThemeToggle ? <ThemeToggle /> : null}
+                {topBarRight}
+              </>
+            }
           />
           <ChatLayout
             className={className}

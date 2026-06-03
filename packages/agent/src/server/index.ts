@@ -51,10 +51,8 @@ export {
   createVercelProvisioningAdapter,
   VERCEL_PROVISIONING_CACHE_ROOT,
 } from './sandbox/vercel-sandbox/provisioningAdapter'
-export type {
-  CreateVercelProvisioningAdapterOptions,
-  VercelProvisioningArtifactRequest,
-} from './sandbox/vercel-sandbox/provisioningAdapter'
+export type { CreateVercelProvisioningAdapterOptions } from './sandbox/vercel-sandbox/provisioningAdapter'
+export type { ProvisioningArtifactRequest } from './workspace/provisioning/packArtifact'
 export { provisionWorkspaceRuntime } from './workspace/provisioning'
 export type {
   PluginSkillSource,

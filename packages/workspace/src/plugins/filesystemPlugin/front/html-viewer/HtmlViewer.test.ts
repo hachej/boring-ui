@@ -1,7 +1,20 @@
-import { describe, expect, it, vi } from "vitest"
-import { prepareHtmlPreviewDocument, rawFileUrlFor, resolveHtmlPreviewAssetPath, rewriteCssAssetUrls } from "./HtmlViewer"
+// @vitest-environment jsdom
+import React from "react"
+import { render, screen, waitFor } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
+import { describe, expect, it, vi, beforeEach } from "vitest"
+import { HtmlViewer, prepareHtmlPreviewDocument, rawFileUrlFor, resolveHtmlPreviewAssetPath, rewriteCssAssetUrls } from "./HtmlViewer"
+
+vi.mock("../data/DataProvider", () => ({
+  useApiBaseUrl: () => "",
+  useWorkspaceRequestId: () => null,
+}))
 
 describe("HtmlViewer asset rewriting", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it("resolves relative preview assets from the HTML file directory", () => {
     expect(resolveHtmlPreviewAssetPath("pages/index.html", "./styles/site.css")).toBe("pages/styles/site.css")
     expect(resolveHtmlPreviewAssetPath("pages/index.html", "../assets/logo.png")).toBe("assets/logo.png")
@@ -44,5 +57,39 @@ describe("HtmlViewer asset rewriting", () => {
     expect(html).toContain("url('/api/v1/files/raw?path=pages%2Fassets%2Fhero.png')")
     expect(html).toContain('src="/api/v1/files/raw?path=pages%2Fassets%2Flogo.png"')
     expect(html).toContain('src="/api/v1/files/raw?path=pages%2Fscripts%2Fbook.js"')
+  })
+
+  it("refresh button re-fetches and rebuilds the preview document", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response("<html><body>first</body></html>", { status: 200 }))
+      .mockResolvedValueOnce(new Response("<html><body>second</body></html>", { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const user = userEvent.setup()
+    render(React.createElement(HtmlViewer, { path: "pages/index.html" }))
+
+    await waitFor(() => {
+      const frame = screen.getByTitle("index.html") as HTMLIFrameElement
+      expect(frame.getAttribute("srcdoc") ?? "").toContain("first")
+    })
+
+    await user.click(screen.getByRole("button", { name: "Refresh preview" }))
+
+    await waitFor(() => {
+      const frame = screen.getByTitle("index.html") as HTMLIFrameElement
+      expect(frame.getAttribute("srcdoc") ?? "").toContain("second")
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/files/raw?path=pages%2Findex.html",
+      expect.objectContaining({ credentials: "include" }),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/files/raw?path=pages%2Findex.html",
+      expect.objectContaining({ credentials: "include" }),
+    )
   })
 })
