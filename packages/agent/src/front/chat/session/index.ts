@@ -17,6 +17,7 @@ export {
   scopedComposerStorageKey,
   selectComposerHistoryFromCanonicalUsers,
   skillCommandText,
+  modelOptionsForSelection,
   writePiComposerModelSelection,
   writePiComposerShowThoughts,
   writePiComposerThinking,
