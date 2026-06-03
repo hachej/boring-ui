@@ -232,11 +232,13 @@ export type {
 // Bridge
 export { createBridge } from "./front/bridge"
 export { createBridgeClient } from "./front/bridge"
-export { postUiCommand, UI_COMMAND_EVENT } from "./front/bridge"
+export { postUiCommand, UI_COMMAND_EVENT, WorkspaceLink, workspaceLinkCommand, workspaceLinkHref } from "./front/bridge"
 export type {
   BridgeClient,
   BridgeClientOptions,
   UIStatePut,
+  WorkspaceLinkProps,
+  WorkspaceLinkTarget,
 } from "./front/bridge"
 export type {
   DispatchContext,

@@ -92,24 +92,24 @@ describe("AskUserRuntime", () => {
   it("rate limits by session", async () => {
     const store = await makeStore()
     const runtime = new AskUserRuntime({ store, limits: { perSessionPerMinute: 1, perPrincipalPerHour: 99 } })
-    const first = runtime.ask({ sessionId: "s1", schema })
+    const controller = new AbortController()
+    const first = runtime.ask({ sessionId: "s1", schema }, controller.signal)
     const question = await pendingQuestion(store, "s1")
+    await vi.waitFor(() => expect(runtime.coordinator.hasWaiter(question.questionId)).toBe(true))
     await expect(runtime.ask({ sessionId: "s1", schema })).rejects.toMatchObject({ code: ASK_USER_ERROR_CODES.RATE_LIMITED })
-    await runtime.cancelQuestion(question.questionId, "s1")
-    await expect(first).resolves.toMatchObject({ status: "cancelled" })
+    controller.abort()
+    await expect(first).resolves.toMatchObject({ status: "cancelled", reason: "aborted" })
   })
 
   it("abandons persisted startup orphans", async () => {
     const store = await makeStore()
-    const runtime = new AskUserRuntime({ store })
-    void runtime.ask({ sessionId: "s1", schema })
-    const question = await pendingQuestion(store, "s1")
+    const question = makeQuestion({ questionId: "orphan-q", sessionId: "s1" })
+    await store.createPending(question)
+
     const restarted = new AskUserRuntime({ store })
     await restarted.abandonOrphanedPending(["s1"])
     await expect(store.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "abandoned" })
-    // Bumped from the 5s default: this orphan-reconciliation test flakes on timeout
-    // under CI load. Pre-existing flake, unrelated to this PR.
-  }, 30_000)
+  })
 
   it("abandons if submit/cancel discovers a missing waiter", async () => {
     const store = await makeStore()
