@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * Unit tests for the shadcn-styled tool renderers — pinning the rendered
  * shape of the high-frequency tools (exec_ui in particular) so a future
@@ -11,8 +12,9 @@
  * call the body shows both the input JSON (kind + params) and the
  * output JSON (seq, status).
  */
-import { describe, test, expect } from "vitest"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { renderToStaticMarkup } from "react-dom/server"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import { ErrorCode } from "../../shared/error-codes"
 import { shadcnDefaultToolRenderers } from "../toolRenderers"
 import type { ToolPart } from "../../front/toolRenderers"
@@ -205,5 +207,35 @@ describe("shadcn exec_ui renderer", () => {
     const html = renderToStaticMarkup(<>{shadcnDefaultToolRenderers.exec_ui!(part)}</>)
     expect(html).toContain("(empty)")
     expect(html).toContain("Pending")
+  })
+})
+
+describe("write tool renderer copy action", () => {
+  const originalExecCommand = document.execCommand
+
+  afterEach(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: undefined,
+    })
+    document.execCommand = originalExecCommand
+  })
+
+  test("falls back to legacy copy when clipboard API is unavailable", async () => {
+    const execCommand = vi.fn().mockReturnValue(true)
+    document.execCommand = execCommand
+    const part = makePart({
+      toolName: "write",
+      input: { path: "src/example.ts", content: "export const ok = true" },
+    })
+
+    render(<>{shadcnDefaultToolRenderers.write!(part)}</>)
+
+    fireEvent.click(screen.getByRole("button", { name: /writesrc\/example\.tsCompleted/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }))
+
+    await waitFor(() => {
+      expect(execCommand).toHaveBeenCalledWith("copy")
+    })
   })
 })

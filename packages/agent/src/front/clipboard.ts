@@ -15,12 +15,15 @@ export async function copyTextToClipboard(text: string): Promise<boolean> {
   textarea.value = text
   textarea.setAttribute('readonly', '')
   textarea.style.position = 'fixed'
+  textarea.style.top = '-9999px'
+  textarea.style.left = '-9999px'
   textarea.style.opacity = '0'
   textarea.style.pointerEvents = 'none'
   document.body.appendChild(textarea)
-  textarea.select()
 
   try {
+    textarea.focus()
+    textarea.select()
     return document.execCommand?.('copy') ?? false
   } catch {
     return false
