@@ -393,11 +393,10 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
 })
 
 describe("createWorkspaceAgentServer — plugin provisioning", () => {
-  test("materializes the boring-plugin-authoring skill into the workspace-local runtime", async () => {
-    // The system prompt is minimal (it just points at this skill); the
-    // skill itself is the doc the agent reads. The runtime provisioner
-    // must materialize it under .boring-agent/node so Pi can load it
-    // without writing generated packages into the user workspace root.
+  test("exposes boring-plugin-authoring skill without provisioning boring-pi into node_modules", async () => {
+    // The agent should see the built-in plugin-authoring skill via static Pi
+    // package resources. Runtime provisioning stays slim: only the dedicated
+    // boring-ui-plugin CLI is installed into .boring-agent/node.
     const workspaceRoot = await makeTempDir("boring-workspace-skill-")
 
     const app = await createWorkspaceAgentServer({
@@ -407,12 +406,15 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     })
 
     try {
-      const skill = await readFile(
+      await expect(readFile(
         join(workspaceRoot, ".boring-agent", "node", "node_modules", "@hachej", "boring-pi", "skills", "boring-plugin-authoring", "SKILL.md"),
         "utf8",
-      )
-      expect(skill).toContain("name: boring-plugin-authoring")
-      expect(skill).toContain("../../references/workspace/plugins.md")
+      )).rejects.toThrow()
+
+      const res = await app.inject({ method: "GET", url: "/api/v1/agent/skills" })
+      expect(res.statusCode).toBe(200)
+      const skillNames: string[] = res.json().skills.map((s: { name: string }) => s.name)
+      expect(skillNames).toContain("boring-plugin-authoring")
     } finally {
       await app.close()
     }

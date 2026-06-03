@@ -187,54 +187,8 @@ function readPackageVersion(packageRoot: string | null): string | undefined {
   }
 }
 
-function nodePackageContribution(
-  contributionId: string,
-  nodePackageId: string,
-  packageName: string,
-  packageRoot: string | null,
-): WorkspaceProvisioningContribution | null {
-  if (!packageRoot || !existsSync(join(packageRoot, "package.json"))) return null
-  return {
-    id: contributionId,
-    provisioning: {
-      nodePackages: [{ id: nodePackageId, packageName, packageRoot }],
-    },
-  }
-}
-
-function publishedNodePackageContribution(
-  contributionId: string,
-  nodePackageId: string,
-  packageName: string,
-  version?: string,
-  expectedBins?: string[],
-): WorkspaceProvisioningContribution {
-  return {
-    id: contributionId,
-    provisioning: {
-      nodePackages: [
-        {
-          id: nodePackageId,
-          packageName,
-          ...(version ? { version } : {}),
-          ...(expectedBins ? { expectedBins } : {}),
-        },
-      ],
-    },
-  }
-}
-
 function useLocalPackageProvisioning(): boolean {
   return process.env.BORING_USE_LOCAL_PACKAGES === "1"
-}
-
-function createWorkspacePackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
-  return nodePackageContribution(
-    "boring-workspace-package",
-    "boring-workspace",
-    "@hachej/boring-workspace",
-    resolveWorkspacePackageRoot(),
-  )
 }
 
 function resolveBoringPiPackageRoot(): string | null {
@@ -256,10 +210,6 @@ function resolveBoringPiPackageRoot(): string | null {
   } catch {
     return null
   }
-}
-
-function createBoringPiPackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
-  return nodePackageContribution("boring-pi-package", "boring-pi", "@hachej/boring-pi", resolveBoringPiPackageRoot())
 }
 
 function isUsableBoringUiPluginCliPackageRoot(candidate: string): boolean {
@@ -383,8 +333,6 @@ export function collectWorkspaceAgentServerPlugins(
 
   const excludedDefaults = new Set(opts.excludeDefaults ?? [])
   const builtinProvisioningContributions = [
-    createWorkspacePackageProvisioningContribution(),
-    createBoringPiPackageProvisioningContribution(),
     createBoringUiPluginCliPackageProvisioningContribution(),
   ]
     .filter((entry): entry is WorkspaceProvisioningContribution => Boolean(entry))
