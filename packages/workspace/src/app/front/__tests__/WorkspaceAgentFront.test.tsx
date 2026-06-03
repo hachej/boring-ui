@@ -934,4 +934,58 @@ describe("WorkspaceAgentFront", () => {
       expect(createSession).toHaveBeenCalledWith({ title: "Fresh session" })
     }, { timeout: 3000 })
   })
+
+  it("keeps the chat shell in transition until the first empty remote session is stable", async () => {
+    const captured: CapturedChatPanelProps[] = []
+    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
+      captured.push(props)
+      return <div data-testid="chat-panel">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>
+    }
+
+    function useInitiallyEmptySessions() {
+      const [created, setCreated] = useState<TSessionLike | null>(null)
+      return {
+        sessions: created ? [created] : [],
+        loading: false,
+        activeSessionId: created?.id ?? null,
+        activeSession: created,
+        switch: vi.fn(),
+        create: vi.fn(async () => {
+          const session = {
+            id: "created-empty-session",
+            title: "Fresh session",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            turnCount: 0,
+          }
+          setCreated(session)
+          return session
+        }),
+        delete: vi.fn(),
+      }
+    }
+
+    type TSessionLike = {
+      id: string
+      title: string
+      createdAt: string
+      updatedAt: string
+      turnCount: number
+    }
+
+    render(
+      <WorkspaceAgentFront<TSessionLike>
+        workspaceId="remote-empty-session-stable"
+        chatPanel={CapturingChatPanel}
+        defaultSessionTitle="Fresh session"
+        useSessions={useInitiallyEmptySessions}
+      />,
+    )
+
+    expect(screen.queryByTestId("chat-panel")).toBeNull()
+    await waitFor(() => expect(screen.getByTestId("chat-panel").textContent).toContain("created-empty-session"), { timeout: 3000 })
+
+    expect(captured.some((props) => props.sessionId === "default")).toBe(false)
+    expect(captured.at(-1)?.hydrateMessages).toBe(false)
+  })
 })
