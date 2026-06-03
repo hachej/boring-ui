@@ -497,6 +497,58 @@ describe('useAgentChat', () => {
     expect(mockSetMessages).toHaveBeenCalledWith(hydratedMessages)
   })
 
+  test('returns sanitized messages immediately when AI SDK state contains duplicate stable user text', async () => {
+    const firstUser = { id: 'server-user-1', role: 'user', parts: [{ type: 'text', text: 'wait10s before response' }] }
+    const assistant = { id: 'assistant-1', role: 'assistant', parts: [{ type: 'text', text: 'done' }] }
+    const duplicateUser = { id: 'user-1780472366061', role: 'user', parts: [{ type: 'text', text: 'wait10s before response' }] }
+    vi.mocked(useChat).mockReturnValueOnce({
+      id: 'mock-chat',
+      messages: [firstUser, assistant, duplicateUser],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: undefined,
+      stop: mockStop,
+      setMessages: mockSetMessages,
+    } as unknown as ReturnType<typeof useChat>)
+
+    const result = useAgentChat({ sessionId: 'sess-duplicate-user-render', hydrateMessages: false })
+
+    expect(result.messages).toEqual([firstUser, assistant])
+    expect(mockSetMessages).toHaveBeenCalledWith([firstUser, assistant])
+  })
+
+  test('collapses repeated assistant text across parts', async () => {
+    const user = { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'wait10s before response' }] }
+    const assistant = {
+      id: 'a1',
+      role: 'assistant',
+      parts: [
+        { type: 'text', text: 'donedone' },
+        { type: 'text', text: 'done' },
+      ],
+    }
+    vi.mocked(useChat).mockReturnValueOnce({
+      id: 'mock-chat',
+      messages: [user, assistant],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: undefined,
+      stop: mockStop,
+      setMessages: mockSetMessages,
+    } as unknown as ReturnType<typeof useChat>)
+
+    const result = useAgentChat({ sessionId: 'sess-repeated-assistant-parts', hydrateMessages: false })
+
+    expect(result.messages).toEqual([
+      user,
+      { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'done' }] },
+    ])
+    expect(mockSetMessages).toHaveBeenCalledWith([
+      user,
+      { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'done' }] },
+    ])
+  })
+
   test('returns sanitized messages immediately when AI SDK state contains duplicate assistant text', async () => {
     const user = { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'yo respond me in 10 s' }] }
     const assistant = {
