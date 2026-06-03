@@ -6,6 +6,7 @@ let capturedTransportOpts: Record<string, unknown> | undefined
 const refStore = { current: undefined as unknown }
 const allRefs: Array<{ current: unknown }> = []
 const mockSetMessages = vi.fn()
+const mockStop = vi.fn()
 const mockUseStateSetter = vi.fn()
 const mockFetch = vi.fn()
 const mockStorageGetItem = vi.fn()
@@ -19,7 +20,7 @@ vi.mock('@ai-sdk/react', () => ({
     sendMessage: vi.fn(),
     status: mockChatStatus,
     error: undefined,
-    stop: vi.fn(),
+    stop: mockStop,
     setMessages: mockSetMessages,
   })),
 }))
@@ -76,6 +77,7 @@ beforeEach(() => {
   capturedTransportOpts = undefined
   allRefs.length = 0
   mockSetMessages.mockReset()
+  mockStop.mockReset()
   mockUseStateSetter.mockReset()
   mockStorageGetItem.mockReset()
   mockStorageSetItem.mockReset()
@@ -367,6 +369,29 @@ describe('useAgentChat', () => {
 
     expect(mockStorageSetItem).toHaveBeenCalledWith('boring-agent:status:sess-1', 'ready')
     expect(mockUseStateSetter).toHaveBeenCalledWith('boring-agent:messages:sess-1')
+    expect(mockStop).toHaveBeenCalled()
+  })
+
+  test('does not stop a new local turn that starts before hydration settles', async () => {
+    let resolveFetch: (value: { ok: true; json: () => Promise<{ messages: unknown[] }> }) => void = () => {}
+    const pendingFetch = new Promise<{ ok: true; json: () => Promise<{ messages: unknown[] }> }>((resolve) => {
+      resolveFetch = resolve
+    })
+    const serverUser = { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'done already' }] }
+    const serverAssistant = { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'settled' }] }
+    mockFetch.mockReturnValueOnce(pendingFetch)
+    mockStorageGetItem.mockImplementation((key: string) => {
+      if (key === 'boring-agent:status:sess-race-stop') return 'active'
+      return null
+    })
+
+    const result = useAgentChat({ sessionId: 'sess-race-stop' })
+    result.sendMessage({ text: 'new local turn', files: [] })
+    resolveFetch({ ok: true, json: async () => ({ messages: [serverUser, serverAssistant] }) })
+    await flushPromises()
+
+    expect(mockStorageSetItem).toHaveBeenCalledWith('boring-agent:status:sess-race-stop', 'ready')
+    expect(mockStop).not.toHaveBeenCalled()
   })
 
   test('places an optimistic pending user before the completed server assistant response', async () => {

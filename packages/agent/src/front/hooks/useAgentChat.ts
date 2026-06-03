@@ -276,9 +276,12 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   const messages = useMemo(() => mergeMessages([], rawMessages), [rawMessages])
   const messagesRef = useRef(messages)
   messagesRef.current = messages
+  const stop = chat.stop
 
   const [localTurnActive, setLocalTurnActive] = useState(false)
+  const localTurnVersionRef = useRef(0)
   const sendMessage = useCallback((...args: Parameters<typeof chat.sendMessage>) => {
+    localTurnVersionRef.current += 1
     setLocalTurnActive(true)
     setSettledResumeKey((current) => (current === cacheKey ? null : current))
     if (cacheKey) {
@@ -317,6 +320,7 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     }
     let aborted = false
     setHydratedKey(null)
+    const hydrateLocalTurnVersion = localTurnVersionRef.current
 
     const hydrateMerged = (serverMessages: UIMessage[], cachedMessages: UIMessage[]) => {
       const current = messagesRef.current
@@ -336,6 +340,11 @@ export function useAgentChat(opts: UseAgentChatOptions) {
         )
         if (authoritativeSettledServerTail) {
           setSettledResumeKey(cacheKey)
+          // A stale local "active" marker may have already triggered AI SDK
+          // resume before hydration finished. Once the server proves the turn
+          // is settled, stop that reconnect attempt, but never cancel a user
+          // turn that started after this hydration request began.
+          if (localTurnVersionRef.current === hydrateLocalTurnVersion) stop()
           if (statusKey) {
             try {
               globalThis.localStorage?.setItem(statusKey, 'ready')
@@ -376,7 +385,7 @@ export function useAgentChat(opts: UseAgentChatOptions) {
       })
 
     return () => { aborted = true }
-  }, [hydrateMessages, sessionId, cacheKey, setMessages, statusKey])
+  }, [hydrateMessages, sessionId, cacheKey, setMessages, statusKey, stop])
 
   // Mirror messages → localStorage whenever they change. Gated on `hydrated`
   // so the initial empty state never overwrites a previously-cached history.
