@@ -116,6 +116,12 @@ describe("@hachej/boring-workspace public API", () => {
       expect(api.createBridge).toBeDefined()
       expect(api.createBridgeClient).toBeDefined()
     })
+
+    it("exports WorkspaceLink helpers", () => {
+      expect(api.WorkspaceLink).toBeDefined()
+      expect(api.workspaceLinkCommand).toBeDefined()
+      expect(api.workspaceLinkHref).toBeDefined()
+    })
   })
 
   describe("dock runtime", () => {
