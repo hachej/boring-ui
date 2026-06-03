@@ -8,8 +8,8 @@ const FIXTURE_PI_ROOT = "/fake/node_modules/@hachej/boring-pi"
 describe("buildBoringSystemPrompt", () => {
   test("renders a numbered TODO workflow", () => {
     const prompt = buildBoringSystemPrompt({
-      scaffoldCommand: "boring-ui scaffold-plugin",
-      verifyCommand: "boring-ui verify-plugin",
+      scaffoldCommand: "boring-ui-plugin scaffold",
+      verifyCommand: "boring-ui-plugin verify",
       boringPiRootOverride: FIXTURE_PI_ROOT,
     })
     expect(prompt).toMatch(/\*\*1\.\s+Check plugin-root support/)
@@ -20,19 +20,19 @@ describe("buildBoringSystemPrompt", () => {
 
   test("includes the scaffold and verify CLI invocations", () => {
     const prompt = buildBoringSystemPrompt({
-      scaffoldCommand: "boring-ui scaffold-plugin",
-      verifyCommand: "boring-ui verify-plugin",
+      scaffoldCommand: "boring-ui-plugin scaffold",
+      verifyCommand: "boring-ui-plugin verify",
       boringPiRootOverride: FIXTURE_PI_ROOT,
     })
-    expect(prompt).toContain("boring-ui plugin-status --json")
-    expect(prompt).toContain("boring-ui scaffold-plugin <kebab-name>")
-    expect(prompt).toContain("boring-ui verify-plugin")
+    expect(prompt).toContain("boring-ui-plugin status --json")
+    expect(prompt).toContain("boring-ui-plugin scaffold <kebab-name>")
+    expect(prompt).toContain("boring-ui-plugin verify")
   })
 
   test("names every common hallucination", () => {
     const prompt = buildBoringSystemPrompt({
-      scaffoldCommand: "boring-ui scaffold-plugin",
-      verifyCommand: "boring-ui verify-plugin",
+      scaffoldCommand: "boring-ui-plugin scaffold",
+      verifyCommand: "boring-ui-plugin verify",
       boringPiRootOverride: FIXTURE_PI_ROOT,
     })
     // API factories:
@@ -53,8 +53,8 @@ describe("buildBoringSystemPrompt", () => {
 
   test("does NOT inline the canonical code blocks (scaffold owns the shape)", () => {
     const prompt = buildBoringSystemPrompt({
-      scaffoldCommand: "boring-ui scaffold-plugin",
-      verifyCommand: "boring-ui verify-plugin",
+      scaffoldCommand: "boring-ui-plugin scaffold",
+      verifyCommand: "boring-ui-plugin verify",
       boringPiRootOverride: FIXTURE_PI_ROOT,
     })
     // The verbose `import { definePlugin } ... export default
@@ -69,8 +69,8 @@ describe("buildBoringSystemPrompt", () => {
 
   test("emits a pi-style docs pointer block with workspace-readable paths into boring-pi", () => {
     const prompt = buildBoringSystemPrompt({
-      scaffoldCommand: "boring-ui scaffold-plugin",
-      verifyCommand: "boring-ui verify-plugin",
+      scaffoldCommand: "boring-ui-plugin scaffold",
+      verifyCommand: "boring-ui-plugin verify",
       boringPiRootOverride: FIXTURE_PI_ROOT,
     })
     // Heading + each of the 4 docs targets.
@@ -86,8 +86,8 @@ describe("buildBoringSystemPrompt", () => {
     // degraded path. We pass an explicit invalid override to bypass the
     // real require.resolve so the test is hermetic.
     const prompt = buildBoringSystemPrompt({
-      scaffoldCommand: "boring-ui scaffold-plugin",
-      verifyCommand: "boring-ui verify-plugin",
+      scaffoldCommand: "boring-ui-plugin scaffold",
+      verifyCommand: "boring-ui-plugin verify",
       boringPiRootOverride: null,
     })
     // Workflow + hallucinations still present.
@@ -101,7 +101,7 @@ describe("buildBoringSystemPrompt", () => {
 
   test("without scaffoldCommand, step 1 is reading the skill", () => {
     const prompt = buildBoringSystemPrompt({
-      verifyCommand: "boring-ui verify-plugin",
+      verifyCommand: "boring-ui-plugin verify",
       boringPiRootOverride: FIXTURE_PI_ROOT,
     })
     expect(prompt).toContain("Read the `boring-plugin-authoring` skill")
@@ -114,8 +114,8 @@ describe("buildBoringSystemPrompt", () => {
     // Keep a hard ceiling so the appendix doesn't drift back toward
     // inlining content the agent should `read` on demand instead.
     const prompt = buildBoringSystemPrompt({
-      scaffoldCommand: "boring-ui scaffold-plugin",
-      verifyCommand: "boring-ui verify-plugin",
+      scaffoldCommand: "boring-ui-plugin scaffold",
+      verifyCommand: "boring-ui-plugin verify",
       boringPiRootOverride: FIXTURE_PI_ROOT,
     })
     expect(prompt.length).toBeLessThan(4000)
@@ -126,8 +126,8 @@ describe("buildBoringSystemPrompt", () => {
     // boring-pi is a real dep (the case in this monorepo), docs
     // paths SHOULD be emitted.
     const prompt = buildBoringSystemPrompt({
-      scaffoldCommand: "boring-ui scaffold-plugin",
-      verifyCommand: "boring-ui verify-plugin",
+      scaffoldCommand: "boring-ui-plugin scaffold",
+      verifyCommand: "boring-ui-plugin verify",
     })
     // The pointer block heading is always there.
     expect(prompt).toContain("## boring-ui plugin authoring documentation")
