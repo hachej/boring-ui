@@ -1,7 +1,7 @@
 import './app.css'
-import { useEffect, useState } from 'react'
-import { ChatPanel, useSessions } from '@hachej/boring-agent/front'
-import type { SessionSummary } from '@hachej/boring-agent/shared'
+import { useCallback, useEffect, useState } from 'react'
+import { ChatPanel, PiChatPanel, useSessions } from '@hachej/boring-agent/front'
+import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, type SessionSummary } from '@hachej/boring-agent/shared'
 import { Showcase } from '../Showcase'
 
 type Theme = 'light' | 'dark'
@@ -16,8 +16,26 @@ function readStoredTheme(): Theme {
   return 'dark'
 }
 
+type PluginReloadPayload = { reloaded?: boolean }
+
+function useStandalonePluginReload(enabled: boolean) {
+  return useCallback(async () => {
+    if (!enabled) return 'Agent plugin reload is not configured.'
+    const response = await fetch('/api/v1/agent/reload', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    if (!response.ok) return `reload failed (${response.status})`
+    const payload = await response.json().catch(() => ({})) as PluginReloadPayload
+    window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: payload }))
+    return payload.reloaded ? 'Agent plugins reloaded.' : 'Agent plugins will reload on the next message.'
+  }, [enabled])
+}
+
 function Playground() {
-  const sessions = useSessions()
+  const piNative = new URLSearchParams(window.location.search).get('piNative') === '1'
+  const sessions = useSessions({ enabled: !piNative })
   const [tab, setTab] = useState<'chat' | 'showcase'>('chat')
   const [chrome, setChrome] = useState(true)
   const [thinkingControl, setThinkingControl] = useState(true)
@@ -34,41 +52,62 @@ function Playground() {
   }, [theme])
 
   const [systemPromptOpen, setSystemPromptOpen] = useState(false)
+  const reloadAgentPlugins = useStandalonePluginReload(piNative)
+
+  const renderMainPanel = () => {
+    if (tab === 'showcase') {
+      return (
+        <div className="h-full overflow-y-auto">
+          <Showcase />
+        </div>
+      )
+    }
+    if (piNative) {
+      return (
+        <PiChatPanel
+          chrome={chrome}
+          thinkingControl={thinkingControl}
+          debug={true}
+          storageScope="agent-playground"
+          onReloadAgentPlugins={reloadAgentPlugins}
+          className="h-full"
+        />
+      )
+    }
+    if (sessions.activeSessionId) {
+      return (
+        <ChatPanel
+          key={sessions.activeSessionId}
+          sessionId={sessions.activeSessionId}
+          chrome={chrome}
+          thinkingControl={thinkingControl}
+          suggestions={suggestions === 'none' ? [] : undefined}
+          debug={true}
+          className="h-full"
+        />
+      )
+    }
+    return <Empty onCreate={() => sessions.create()} loading={sessions.loading} />
+  }
 
   return (
     <div className="flex h-screen w-screen flex-col bg-[color:var(--canvas)]">
-      <SessionBar
-        sessions={sessions}
-        onToggleSystemPrompt={() => setSystemPromptOpen((v) => !v)}
-        systemPromptOpen={systemPromptOpen}
-        tab={tab}
-        onTabChange={setTab}
-      />
+      {!piNative && (
+        <SessionBar
+          sessions={sessions}
+          onToggleSystemPrompt={() => setSystemPromptOpen((v) => !v)}
+          systemPromptOpen={systemPromptOpen}
+          tab={tab}
+          onTabChange={setTab}
+        />
+      )}
 
       <div className="flex min-h-0 flex-1">
         <div className="min-w-0 flex-1">
-          {tab === 'showcase' ? (
-            <div className="h-full overflow-y-auto">
-              <Showcase />
-            </div>
-          ) : sessions.activeSessionId ? (
-            // key forces ChatPanel to remount on session switch so useAgentChat
-            // re-hydrates from /messages cleanly.
-            <ChatPanel
-              key={sessions.activeSessionId}
-              sessionId={sessions.activeSessionId}
-              chrome={chrome}
-              thinkingControl={thinkingControl}
-              suggestions={suggestions === 'none' ? [] : undefined}
-              debug={true}
-              className="h-full"
-            />
-          ) : (
-            <Empty onCreate={() => sessions.create()} loading={sessions.loading} />
-          )}
+          {renderMainPanel()}
 
         </div>
-        {systemPromptOpen && sessions.activeSessionId && (
+        {!piNative && systemPromptOpen && sessions.activeSessionId && (
           <SystemPromptDrawer
             sessionId={sessions.activeSessionId}
             onClose={() => setSystemPromptOpen(false)}
@@ -76,12 +115,14 @@ function Playground() {
         )}
       </div>
 
-      <Knobs
-        chrome={chrome} setChrome={setChrome}
-        thinkingControl={thinkingControl} setThinkingControl={setThinkingControl}
-        suggestions={suggestions} setSuggestions={setSuggestions}
-        theme={theme} setTheme={setTheme}
-      />
+      {!piNative && (
+        <Knobs
+          chrome={chrome} setChrome={setChrome}
+          thinkingControl={thinkingControl} setThinkingControl={setThinkingControl}
+          suggestions={suggestions} setSuggestions={setSuggestions}
+          theme={theme} setTheme={setTheme}
+        />
+      )}
     </div>
   )
 }
