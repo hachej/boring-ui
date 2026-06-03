@@ -50,6 +50,7 @@ const chatBodySchema = z.object({
     )
     .max(20)
     .optional(),
+  clientTurnId: z.string().min(1).max(128).optional(),
 })
 
 type ChatBody = z.infer<typeof chatBodySchema>
@@ -90,7 +91,8 @@ export function chatRoutes(
   const telemetry = opts.telemetry ?? noopTelemetry
   const validateBody = createBodyValidator(chatBodySchema)
   const buffers = new StreamBufferStore()
-  const activeAbortControllers = new Map<string, AbortController>()
+  const activeAbortControllersBySession = new Map<string, Map<string, AbortController>>()
+  const activeTurnBySession = new Map<string, string>()
   // Track last follow-up seq/nonce per session for dedupe detection.
   // Evict entries when sessions are deleted via the sessionChangesTracker
   // hook below, and cap at 5000 to bound memory in long-running servers.
@@ -146,9 +148,9 @@ export function chatRoutes(
     '/api/v1/agent/chat',
     { preHandler: validateBody },
     async (request, reply) => {
-      const { sessionId, message, model, thinkingLevel, attachments } =
+      const { sessionId, message, model, thinkingLevel, attachments, clientTurnId } =
         request.body as ChatBody
-      const turnId = randomUUID()
+      const turnId = clientTurnId ?? randomUUID()
       const startedAt = Date.now()
       const telemetryProperties: Record<string, string | number> = {
         sessionId,
@@ -182,7 +184,10 @@ export function chatRoutes(
           ctx,
         )
 
-        activeAbortControllers.set(sessionId, abortController)
+        const sessionAbortControllers = activeAbortControllersBySession.get(sessionId) ?? new Map<string, AbortController>()
+        sessionAbortControllers.set(turnId, abortController)
+        activeAbortControllersBySession.set(sessionId, sessionAbortControllers)
+        activeTurnBySession.set(sessionId, turnId)
 
         // Decouple the harness turn from the browser response. Session switches
         // and reloads close the current HTTP response; that must not abort the
@@ -192,6 +197,7 @@ export function chatRoutes(
         void (async () => {
           let streamFailed = false
           try {
+            buf.append(c({ type: 'data-turn-start', data: { turnId } }))
             for await (const chunk of chunks) {
               const c = chunk as UIMessageChunk
               const fileChange = parseFileChangeChunk(c)
@@ -217,8 +223,13 @@ export function chatRoutes(
               errorText: 'internal error',
             } as UIMessageChunk)
           } finally {
-            if (activeAbortControllers.get(sessionId) === abortController) {
-              activeAbortControllers.delete(sessionId)
+            const sessionAbortControllers = activeAbortControllersBySession.get(sessionId)
+            if (sessionAbortControllers?.get(turnId) === abortController) {
+              sessionAbortControllers.delete(turnId)
+              if (sessionAbortControllers.size === 0) activeAbortControllersBySession.delete(sessionId)
+            }
+            if (activeTurnBySession.get(sessionId) === turnId) {
+              activeTurnBySession.delete(sessionId)
             }
             if (!streamFailed) {
               safeCapture(telemetry, {
@@ -400,7 +411,13 @@ export function chatRoutes(
     '/api/v1/agent/chat/:sessionId/turn',
     async (request, reply) => {
       const { sessionId } = request.params as { sessionId: string }
-      activeAbortControllers.get(sessionId)?.abort()
+      const query = request.query as { turnId?: unknown }
+      const requestedTurnId = typeof query.turnId === 'string' && query.turnId.length > 0
+        ? query.turnId
+        : activeTurnBySession.get(sessionId)
+      if (requestedTurnId) {
+        activeAbortControllersBySession.get(sessionId)?.get(requestedTurnId)?.abort()
+      }
       return reply.code(204).send()
     },
   )

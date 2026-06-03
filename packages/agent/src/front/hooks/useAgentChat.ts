@@ -204,6 +204,16 @@ function cachedStatusNeedsResume(statusKey: string): boolean {
   }
 }
 
+function createClientTurnId(): string {
+  return `turn:${Date.now()}:${Math.random().toString(36).slice(2)}`
+}
+
+function turnIdFromDataPart(part: unknown): string | null {
+  const candidate = part as { type?: unknown; data?: { turnId?: unknown } } | undefined
+  if (candidate?.type !== 'data-turn-start') return null
+  return typeof candidate.data?.turnId === 'string' && candidate.data.turnId.length > 0 ? candidate.data.turnId : null
+}
+
 function optimisticUserMessageFromSendArgs(args: unknown[]): UIMessage | null {
   const input = args[0] as { text?: unknown } | undefined
   const text = typeof input?.text === 'string' ? input.text : ''
@@ -245,6 +255,8 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     [cacheKey, hydrateMessages, settledResumeKey, statusKey],
   )
 
+  const activeTurnIdRef = useRef<string | null>(null)
+
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
@@ -254,6 +266,7 @@ export function useAgentChat(opts: UseAgentChatOptions) {
           sessionId: optsRef.current.sessionId,
           model: optsRef.current.model,
           thinkingLevel: optsRef.current.thinkingLevel,
+          ...(activeTurnIdRef.current ? { clientTurnId: activeTurnIdRef.current } : {}),
         }),
       }),
     [sessionId],
@@ -269,6 +282,8 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     // does its own matching delta batching in usePiChatProjection.
     experimental_throttle: 50,
     onData: (part) => {
+      const turnId = turnIdFromDataPart(part)
+      if (turnId) activeTurnIdRef.current = turnId
       // File-change invalidation is no longer done here. The host
       // (e.g. @hachej/boring-workspace's ChatCenteredShell) wires onData to
       // its workspace event bus via `emitAgentFileChange`, and a
@@ -287,7 +302,9 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   const stop = useCallback(() => {
     rawStop()
     if (!sessionId) return
-    fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/turn`, {
+    const turnId = activeTurnIdRef.current
+    const suffix = turnId ? `?turnId=${encodeURIComponent(turnId)}` : ''
+    fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/turn${suffix}`, {
       method: 'DELETE',
       headers: optsRef.current.requestHeaders,
     }).catch(() => { /* best-effort cancellation */ })
@@ -300,6 +317,7 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   }, [sessionId])
 
   const sendMessage = useCallback((...args: Parameters<typeof chat.sendMessage>) => {
+    activeTurnIdRef.current = createClientTurnId()
     localTurnVersionRef.current += 1
     setLocalTurnActive(true)
     setSettledResumeKey((current) => (current === cacheKey ? null : current))
@@ -432,6 +450,7 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     const prevActive = prev === 'submitted' || prev === 'streaming'
     if (prevActive && (rawStatus === 'ready' || rawStatus === 'error')) {
       setLocalTurnActive(false)
+      activeTurnIdRef.current = null
       if (cacheKey && statusKey && shouldResume) {
         setSettledResumeKey(cacheKey)
         clearCachedMessages(cacheKey)
@@ -540,5 +559,5 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     }).catch(() => { /* best-effort, ignore failures */ })
   }, [opts.persistMessages, sessionId, status, messages])
 
-  return { ...chat, messages, sendMessage, status, hydrated, hydratingMessages: hydrateMessages && Boolean(sessionId) && !hydrated }
+  return { ...chat, messages, sendMessage, stop, status, hydrated, hydratingMessages: hydrateMessages && Boolean(sessionId) && !hydrated }
 }

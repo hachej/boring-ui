@@ -169,6 +169,23 @@ describe('useAgentChat', () => {
     expect(result).toHaveProperty('stop')
   })
 
+  test('sends and cancels with a client turn id', () => {
+    const result = useAgentChat({ sessionId: 'sess-cancel', requestHeaders: { authorization: 'Bearer test' } })
+
+    result.sendMessage({ text: 'cancel me', files: [] })
+    const bodyFn = capturedTransportOpts!.body as () => Record<string, unknown>
+    const body = bodyFn()
+    expect(body.clientTurnId).toEqual(expect.stringMatching(/^turn:/))
+
+    result.stop()
+
+    expect(mockStop).toHaveBeenCalled()
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      `/api/v1/agent/chat/sess-cancel/turn?turnId=${encodeURIComponent(body.clientTurnId as string)}`,
+      { method: 'DELETE', headers: { authorization: 'Bearer test' } },
+    )
+  })
+
   test('marks the current session as hydrating until its own history load completes', () => {
     const result = useAgentChat({ sessionId: 'sess-1' })
 

@@ -441,6 +441,63 @@ describe('POST /api/v1/agent/chat', () => {
     await app.close()
   })
 
+  test('turn cancel only aborts the requested client turn id', async () => {
+    const signals = new Map<string, AbortSignal>()
+    const startedResolvers = new Map<string, () => void>()
+    const started = (turnId: string) => new Promise<void>((resolve) => startedResolvers.set(turnId, resolve))
+    const harness: AgentHarness = {
+      id: 'abortable-harness',
+      placement: 'server',
+      sendMessage(input, ctx) {
+        const turnId = input.message
+        signals.set(turnId, ctx.abortSignal)
+        startedResolvers.get(turnId)?.()
+        return (async function* () {
+          yield { type: 'start' } as UIMessageChunk
+          await new Promise<void>((resolve) => ctx.abortSignal.addEventListener('abort', () => resolve(), { once: true }))
+          yield { type: 'finish' } as UIMessageChunk
+        })()
+      },
+      sessions: createMockHarness().sessions,
+    }
+    const app = await buildApp({ harness })
+
+    const aStarted = started('turn-a')
+    const postA = app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      payload: { ...validBody, message: 'turn-a', clientTurnId: 'turn-a' },
+    })
+    await aStarted
+
+    const bStarted = started('turn-b')
+    const postB = app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      payload: { ...validBody, message: 'turn-b', clientTurnId: 'turn-b' },
+    })
+    await bStarted
+
+    const cancelA = await app.inject({
+      method: 'DELETE',
+      url: '/api/v1/agent/chat/sess-1/turn?turnId=turn-a',
+    })
+
+    expect(cancelA.statusCode).toBe(204)
+    expect(signals.get('turn-a')?.aborted).toBe(true)
+    expect(signals.get('turn-b')?.aborted).toBe(false)
+
+    const cancelB = await app.inject({
+      method: 'DELETE',
+      url: '/api/v1/agent/chat/sess-1/turn?turnId=turn-b',
+    })
+    expect(cancelB.statusCode).toBe(204)
+    expect(signals.get('turn-b')?.aborted).toBe(true)
+
+    await Promise.all([postA, postB])
+    await app.close()
+  }, 10_000)
+
   test('response includes X-Turn-Id header', async () => {
     const app = await buildApp()
 
