@@ -9,7 +9,6 @@
  */
 import { Badge, Collapsible, CollapsibleContent, CollapsibleTrigger } from "@hachej/boring-ui-kit";
 import { cn } from "@/front/lib";
-import type { DynamicToolUIPart, ToolUIPart } from "ai";
 import {
   CheckCircleIcon,
   ChevronDownIcon,
@@ -42,22 +41,35 @@ export const Tool = ({ className, ...props }: ToolProps) => (
   />
 );
 
-export type ToolPart = ToolUIPart | DynamicToolUIPart;
+export type ToolState =
+  | "input-streaming"
+  | "input-available"
+  | "approval-requested"
+  | "approval-responded"
+  | "output-available"
+  | "output-denied"
+  | "output-error"
+  | "aborted";
+
+export type ToolPart = {
+  type: `tool-${string}` | "dynamic-tool" | "tool-call";
+  state: ToolState;
+  toolName?: string;
+  input?: unknown;
+  output?: unknown;
+  errorText?: string;
+};
 
 export type ToolHeaderProps = {
   title?: ReactNode;
   className?: string;
   icon?: ReactNode;
-} & (
-  | { type: ToolUIPart["type"]; state: ToolUIPart["state"]; toolName?: never }
-  | {
-      type: DynamicToolUIPart["type"];
-      state: DynamicToolUIPart["state"];
-      toolName: string;
-    }
-);
+  type: ToolPart["type"];
+  state: ToolState;
+  toolName?: string;
+};
 
-const statusLabels: Record<ToolPart["state"], string> = {
+const statusLabels: Record<ToolState, string> = {
   "approval-requested": "Awaiting Approval",
   "approval-responded": "Responded",
   "input-available": "Running",
@@ -65,9 +77,10 @@ const statusLabels: Record<ToolPart["state"], string> = {
   "output-available": "Completed",
   "output-denied": "Denied",
   "output-error": "Error",
+  aborted: "Aborted",
 };
 
-const statusIcons: Record<ToolPart["state"], ReactNode> = {
+const statusIcons: Record<ToolState, ReactNode> = {
   "approval-requested": <ClockIcon className="size-4 text-accent" />,
   "approval-responded": <CheckCircleIcon className="size-4 text-accent" />,
   "input-available": <ClockIcon className="size-4 animate-pulse text-muted-foreground" />,
@@ -75,9 +88,10 @@ const statusIcons: Record<ToolPart["state"], ReactNode> = {
   "output-available": <CheckCircleIcon className="size-4 text-accent" />,
   "output-denied": <XCircleIcon className="size-4 text-destructive" />,
   "output-error": <XCircleIcon className="size-4 text-destructive" />,
+  aborted: <XCircleIcon className="size-4 text-muted-foreground" />,
 };
 
-export const getStatusBadge = (status: ToolPart["state"]) => (
+export const getStatusBadge = (status: ToolState) => (
   <Badge className="gap-1.5 rounded-full text-xs" variant="secondary">
     {statusIcons[status]}
     {statusLabels[status]}
@@ -94,7 +108,7 @@ export const ToolHeader = ({
   ...props
 }: ToolHeaderProps) => {
   const derivedName =
-    type === "dynamic-tool" ? toolName : type.split("-").slice(1).join("-");
+    type === "dynamic-tool" || type === "tool-call" ? toolName : type.split("-").slice(1).join("-");
 
   return (
     <CollapsibleTrigger
@@ -127,7 +141,7 @@ export const ToolContent = ({ className, ...props }: ToolContentProps) => (
 );
 
 export type ToolInputProps = ComponentProps<"div"> & {
-  input: ToolPart["input"];
+  input: unknown;
 };
 
 export const ToolInput = ({ className, input, ...props }: ToolInputProps) => (
@@ -142,8 +156,8 @@ export const ToolInput = ({ className, input, ...props }: ToolInputProps) => (
 );
 
 export type ToolOutputProps = ComponentProps<"div"> & {
-  output: ToolPart["output"];
-  errorText: ToolPart["errorText"];
+  output: unknown;
+  errorText?: string;
 };
 
 export const ToolOutput = ({

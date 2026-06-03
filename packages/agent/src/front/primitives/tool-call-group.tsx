@@ -1,24 +1,28 @@
 "use client"
 
-import { getToolName, isToolUIPart } from 'ai'
-import type { UIMessage } from 'ai'
 import { ChevronDownIcon } from 'lucide-react'
 import { memo, useCallback, useMemo, useState } from 'react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@hachej/boring-ui-kit'
-import { extractToolUiMetadata } from '../../shared/tool-ui'
-import { resolveToolRenderer, type ToolPart, type ToolRendererOverrides } from '../bareToolRenderers'
+import {
+  resolveToolRendererForPart,
+  toToolPart,
+  type ToolPart,
+  type ToolRenderablePart,
+  type ToolRendererOverrides,
+} from '../bareToolRenderers'
 import { cn } from '../lib'
 import { Shimmer } from './shimmer'
 import { getWorkspaceNotReadyStatus } from '../workspaceReadinessStatus'
 
-export type GroupedToolEntry = { part: UIMessage['parts'][number]; key: string }
+export type GroupedToolEntry = { part: ToolRenderablePart; key: string }
 
-function isSettledState(state: string): boolean {
+function isSettledState(state: ToolPart['state']): boolean {
   return (
     state === 'output-available' ||
     state === 'output-error' ||
     state === 'output-denied' ||
-    state === 'approval-responded'
+    state === 'approval-responded' ||
+    state === 'aborted'
   )
 }
 
@@ -34,12 +38,10 @@ const TOOL_NOUNS: Record<string, string> = {
   get_ui_state: 'UI state',
 }
 
-function buildTitle(tools: GroupedToolEntry[], settled: boolean): string {
+function buildTitle(tools: ToolPart[], settled: boolean): string {
   const counts = new Map<string, number>()
-  for (const { part } of tools) {
-    if (!isToolUIPart(part)) continue
-    const name = getToolName(part as Parameters<typeof getToolName>[0])
-    counts.set(name, (counts.get(name) ?? 0) + 1)
+  for (const part of tools) {
+    counts.set(part.toolName, (counts.get(part.toolName) ?? 0) + 1)
   }
 
   const segments = [...counts.entries()].map(([name, count]) => {
@@ -57,20 +59,18 @@ interface ToolCallGroupProps {
 }
 
 export const ToolCallGroup = memo(({ tools, mergedToolRenderers }: ToolCallGroupProps) => {
-  const isSettled = tools.every(({ part }) => {
-    if (!isToolUIPart(part)) return true
-    return isSettledState((part as unknown as ToolPart).state)
-  })
+  const toolParts = useMemo(() => tools
+    .map(({ part, key }) => {
+      const toolPart = toToolPart(part)
+      return toolPart ? { part: toolPart, key } : null
+    })
+    .filter((entry): entry is { part: ToolPart; key: string } => Boolean(entry)), [tools])
 
-  const workspaceNotReady = tools.map(({ part }) => {
-    if (!isToolUIPart(part)) return null
-    return getWorkspaceNotReadyStatus((part as unknown as ToolPart).output)
-  }).find(Boolean)
+  const isSettled = toolParts.every(({ part }) => isSettledState(part.state))
 
-  const hasError = tools.some(({ part }) => {
-    if (!isToolUIPart(part)) return false
-    return (part as unknown as ToolPart).state === 'output-error'
-  }) && !workspaceNotReady
+  const workspaceNotReady = toolParts.map(({ part }) => getWorkspaceNotReadyStatus(part.output)).find(Boolean)
+
+  const hasError = toolParts.some(({ part }) => part.state === 'output-error') && !workspaceNotReady
 
   // Always start collapsed — the header is the live status.
   // User expands only when they want to inspect individual calls.
@@ -78,7 +78,9 @@ export const ToolCallGroup = memo(({ tools, mergedToolRenderers }: ToolCallGroup
 
   const handleOpenChange = useCallback((open: boolean) => setIsOpen(open), [])
 
-  const title = useMemo(() => buildTitle(tools, isSettled), [tools, isSettled])
+  const title = useMemo(() => buildTitle(toolParts.map(({ part }) => part), isSettled), [toolParts, isSettled])
+
+  if (toolParts.length === 0) return null
 
   return (
     <Collapsible open={isOpen} onOpenChange={handleOpenChange} className="not-prose my-1.5">
@@ -116,7 +118,7 @@ export const ToolCallGroup = memo(({ tools, mergedToolRenderers }: ToolCallGroup
           'ml-1 shrink-0 rounded-sm border border-border/40 px-1 tabular-nums',
           'text-[10px] text-muted-foreground/50',
         )}>
-          {tools.length}
+          {toolParts.length}
         </span>
       </CollapsibleTrigger>
 
@@ -124,13 +126,19 @@ export const ToolCallGroup = memo(({ tools, mergedToolRenderers }: ToolCallGroup
         <div className="relative mt-1.5 pl-[18px]">
           <div className="absolute left-[5px] top-0 bottom-2 w-px bg-border/35" />
           <div className="flex flex-col gap-0">
-            {tools.map(({ part, key }) => {
-              if (!isToolUIPart(part)) return null
-              const tp = part as unknown as ToolPart
-              const name = getToolName(part as Parameters<typeof getToolName>[0])
-              const ui = extractToolUiMetadata(tp.output)
-              const render = resolveToolRenderer(ui?.rendererId ?? name, mergedToolRenderers)
-              return <div key={key} className="min-w-0">{render({ ...tp, toolName: name, ui })}</div>
+            {toolParts.map(({ part, key }) => {
+              const { renderer, part: resolvedPart, resolution } = resolveToolRendererForPart(part, mergedToolRenderers)
+              return (
+                <div
+                  key={key}
+                  className="min-w-0"
+                  data-tool-call-id={resolvedPart.toolCallId}
+                  data-tool-renderer-key={resolution.key}
+                  data-tool-renderer-source={resolution.source}
+                >
+                  {renderer(resolvedPart)}
+                </div>
+              )
             })}
           </div>
         </div>

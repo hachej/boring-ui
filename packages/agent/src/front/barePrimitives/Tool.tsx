@@ -15,6 +15,7 @@ export type ToolState =
   | 'output-available'
   | 'output-error'
   | 'output-denied'
+  | 'aborted'
 
 export interface ToolProps {
   toolName: string
@@ -45,6 +46,8 @@ function stateLabel(state: ToolState): string {
       return 'Error'
     case 'output-denied':
       return 'Denied'
+    case 'aborted':
+      return 'Aborted'
   }
 }
 
@@ -70,7 +73,7 @@ export function Tool({
 }: ToolProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const isRunning = state === 'input-streaming' || state === 'input-available'
-  const isComplete = state === 'output-available' || state === 'output-error' || state === 'output-denied'
+  const isComplete = state === 'output-available' || state === 'output-error' || state === 'output-denied' || state === 'aborted'
   const [elapsedSec, setElapsedSec] = useState(0)
   const startRef = useRef(0)
 

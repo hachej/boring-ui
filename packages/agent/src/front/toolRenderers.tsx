@@ -10,6 +10,7 @@
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import {
   langFromPath,
+  resolveToolRendererForPart,
   type ToolPart,
   type ToolRenderer,
   type ToolRendererOverrides,
@@ -468,12 +469,18 @@ function renderExecUi(part: ToolPart): ReactNode {
 
 // ---- fallback ----
 
+function fallbackTitle(part: ToolPart): string {
+  const requested = part.rendererResolution?.requestedRendererId
+  if (requested && requested !== part.toolName) return `${part.toolName} · renderer ${requested} unavailable`
+  return part.toolName
+}
+
 function renderFallback(part: ToolPart): ReactNode {
   const readiness = renderReadinessBlock(part)
   if (readiness) return readiness
   return (
     <Tool>
-      <ToolHeader title={part.toolName} {...toHeaderProps(part)} />
+      <ToolHeader title={fallbackTitle(part)} {...toHeaderProps(part)} />
       <ToolContent>
         {part.input !== undefined && part.input !== null && (
           <ToolInput input={part.input} />
@@ -509,4 +516,4 @@ export function mergeShadcnToolRenderers(
   return result
 }
 
-export { bareDefaults as bareDefaultToolRenderers }
+export { bareDefaults as bareDefaultToolRenderers, resolveToolRendererForPart }
