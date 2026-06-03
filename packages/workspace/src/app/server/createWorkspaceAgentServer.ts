@@ -262,52 +262,50 @@ function createBoringPiPackageProvisioningContribution(): WorkspaceProvisioningC
   return nodePackageContribution("boring-pi-package", "boring-pi", "@hachej/boring-pi", resolveBoringPiPackageRoot())
 }
 
-function resolveBoringUiCliPackageRoot(): string | null {
+function isUsableBoringUiPluginCliPackageRoot(candidate: string): boolean {
+  try {
+    const pkg = JSON.parse(readFileSync(join(candidate, "package.json"), "utf8")) as { name?: string }
+    return pkg.name === "@hachej/boring-ui-plugin-cli"
+      && existsSync(join(candidate, "dist", "bin.js"))
+  } catch {
+    return false
+  }
+}
+
+function resolveBoringUiPluginCliPackageRoot(): string | null {
   const workspacePackageRoot = resolveWorkspacePackageRoot()
   const candidates = [
-    join(workspacePackageRoot, "..", "cli"),
-    join(workspacePackageRoot, "node_modules", "@hachej", "boring-ui-cli"),
+    join(workspacePackageRoot, "..", "plugin-cli"),
+    join(workspacePackageRoot, "node_modules", "@hachej", "boring-ui-plugin-cli"),
   ]
   for (const candidate of candidates) {
-    try {
-      const pkg = JSON.parse(readFileSync(join(candidate, "package.json"), "utf8")) as { name?: string }
-      if (pkg.name === "@hachej/boring-ui-cli") return candidate
-    } catch {
-      // try next layout
-    }
+    if (isUsableBoringUiPluginCliPackageRoot(candidate)) return candidate
   }
   try {
-    return dirname(require.resolve("@hachej/boring-ui-cli/package.json"))
+    const resolved = dirname(require.resolve("@hachej/boring-ui-plugin-cli/package.json"))
+    return isUsableBoringUiPluginCliPackageRoot(resolved) ? resolved : null
   } catch {
     return null
   }
 }
 
-function createBoringUiCliPackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
-  const packageRoot = resolveBoringUiCliPackageRoot()
-  if (useLocalPackageProvisioning()) {
-    return nodePackageContribution(
-      "boring-ui-cli-package",
-      "boring-ui-cli",
-      "@hachej/boring-ui-cli",
-      packageRoot,
-    )
-  }
+const PLUGIN_AUTHORING_PROVISIONING_IDS = new Set(["boring-ui-plugin-cli-package"])
 
-  // Default to the published CLI package, not a local folder install. npm
-  // installs local folders as symlinks; inside local/bwrap those symlinks can
-  // resolve into host-only monorepo paths and make `boring-ui verify-plugin`
-  // unable to import @hachej/boring-workspace. Published installs are real
-  // node_modules copies and stay self-contained inside the workspace runtime.
-  return publishedNodePackageContribution(
-    "boring-ui-cli-package",
-    "boring-ui-cli",
-    "@hachej/boring-ui-cli",
-    packageRoot === join(resolveWorkspacePackageRoot(), "..", "cli")
-      ? undefined
-      : readPackageVersion(packageRoot) ?? readPackageVersion(resolveWorkspacePackageRoot()),
-    ["boring-ui"],
-  )
+function createBoringUiPluginCliPackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
+  const packageRoot = useLocalPackageProvisioning() ? resolveBoringUiPluginCliPackageRoot() : null
+  const version = readPackageVersion(resolveWorkspacePackageRoot())
+
+  return {
+    id: "boring-ui-plugin-cli-package",
+    provisioning: {
+      nodePackages: [{
+        id: "boring-ui-plugin-cli",
+        packageName: "@hachej/boring-ui-plugin-cli",
+        ...(packageRoot ? { packageRoot } : { version }),
+        expectedBins: ["boring-ui-plugin"],
+      }],
+    },
+  }
 }
 
 function createBoringPiPackageSource(workspaceRoot: string): WorkspacePiPackageSource | undefined {
@@ -365,7 +363,7 @@ export function buildWorkspaceContextPrompt(): string {
     '- Root: `$BORING_AGENT_WORKSPACE_ROOT` (exported into every bash invocation)',
     '- Generated plugin skills: `$BORING_AGENT_WORKSPACE_ROOT/.boring-agent/skills/` — readable with normal file tools',
     '- User workspace skills: `$BORING_AGENT_WORKSPACE_ROOT/.agents/skills/`',
-    '- Runtime CLIs (`boring-ui`, `bm`, `python`, `pip`, `uv`) come from `.boring-agent/node`, `.boring-agent/venv`, and `.boring-agent/sdk/uv` and are already on PATH',
+    '- Runtime CLIs (`boring-ui-plugin`, `bm`, `python`, `pip`, `uv`) come from `.boring-agent/node`, `.boring-agent/venv`, and `.boring-agent/sdk/uv` and are already on PATH',
   ].join('\n')
 }
 
@@ -383,11 +381,14 @@ export function collectWorkspaceAgentServerPlugins(
   const callerPiPackages = opts.pi?.packages ?? []
   const callerExtensionPaths = opts.pi?.extensionPaths ?? []
 
+  const excludedDefaults = new Set(opts.excludeDefaults ?? [])
   const builtinProvisioningContributions = [
     createWorkspacePackageProvisioningContribution(),
     createBoringPiPackageProvisioningContribution(),
-    createBoringUiCliPackageProvisioningContribution(),
-  ].filter((entry): entry is WorkspaceProvisioningContribution => Boolean(entry))
+    createBoringUiPluginCliPackageProvisioningContribution(),
+  ]
+    .filter((entry): entry is WorkspaceProvisioningContribution => Boolean(entry))
+    .filter((entry) => !excludedDefaults.has(entry.id))
 
   return {
     provisioningContributions: [
@@ -602,9 +603,10 @@ export async function createWorkspaceAgentServer(
   // discovered/default plugin packages is snapped once at boot and merged
   // here so production/static hosts keep the same app-default agent context
   // without a dynamic refresh hook.
-  const workspacePackagePiPackage = createBoringPiPackageSource(workspaceRoot)
+  const pluginAuthoringEnabled = workspaceFsCapability === "strong" && !(opts.excludeDefaults ?? []).includes("boring-ui-plugin-cli-package")
+  const workspacePackagePiPackage = pluginAuthoringEnabled ? createBoringPiPackageSource(workspaceRoot) : undefined
   const baseStaticPiSkillPaths = [
-    ...resolveBoringPiSkillPaths(workspaceRoot),
+    ...(pluginAuthoringEnabled ? resolveBoringPiSkillPaths(workspaceRoot) : []),
     ...(pluginCollection.agentOptions.pi?.additionalSkillPaths ?? []),
   ]
   const baseStaticPiPackages = [
@@ -653,10 +655,14 @@ export async function createWorkspaceAgentServer(
     includeLegacyFrontUrl: opts.boringPluginIncludeLegacyFrontUrl,
   })
 
-  const buildRuntimeProvisioningInputs = () => mergeRuntimeProvisioningInputs([
-    ...pluginCollection.runtimePlugins,
-    ...readWorkspacePluginPackageRuntimePlugins(boringPluginDirs),
-  ])
+  const buildRuntimeProvisioningInputs = () => {
+    const inputs = mergeRuntimeProvisioningInputs([
+      ...pluginCollection.runtimePlugins,
+      ...readWorkspacePluginPackageRuntimePlugins(boringPluginDirs),
+    ])
+    if (workspaceFsCapability === "strong") return inputs
+    return inputs.filter((plugin) => !PLUGIN_AUTHORING_PROVISIONING_IDS.has(plugin.id))
+  }
   let currentRuntimeProvisioning = opts.runtimeProvisioning
   const runtimeWorkspaceRoot = resolvedMode === "vercel-sandbox"
     ? VERCEL_SANDBOX_WORKSPACE_ROOT
@@ -702,20 +708,18 @@ export async function createWorkspaceAgentServer(
     ],
     systemPromptAppend: [
       workspaceFsCapability === "strong" ? buildWorkspaceContextPrompt() : undefined,
-      // `boring-ui` resolves via PATH (pnpm's workspace bin or the
-      // user's npx/global install). We deliberately do NOT prefix with
-      // `npx @hachej/boring-ui-cli` here — that would pull the
-      // published version, which lags the locally-installed CLI when
-      // the agent is iterating in a monorepo. Keep the bin name short.
-      buildBoringSystemPrompt({
-        scaffoldCommand: "boring-ui scaffold-plugin",
-        verifyCommand: "boring-ui verify-plugin",
+      // `boring-ui-plugin` resolves via PATH from the provisioned workspace
+      // runtime. It is the slim setup component for agent-authored plugins;
+      // do not route plugin authoring through the full human-facing CLI.
+      pluginAuthoringEnabled ? buildBoringSystemPrompt({
+        scaffoldCommand: "boring-ui-plugin scaffold",
+        verifyCommand: "boring-ui-plugin verify",
         boringPiRootOverride: boringPiRootVisibleToAgentTools(
           workspaceRoot,
           resolvedMode,
           opts.provisionWorkspace !== false,
         ),
-      }),
+      }) : undefined,
       pluginCollection.agentOptions.systemPromptAppend,
       staticPluginPackagePiSnapshot.systemPromptAppend,
     ].filter(Boolean).join("\n\n") || undefined,

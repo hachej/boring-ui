@@ -17,6 +17,7 @@ import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createVercelSandboxModeAdapter } from './runtime/modes/vercel-sandbox'
 import { evictSandboxHandleCacheForWorkspace } from './sandbox/vercel-sandbox/resolveSandboxHandle'
 import { createPiCodingAgentHarness } from './harness/pi-coding-agent/createHarness'
+import { PiSessionStore } from './harness/pi-coding-agent/sessions'
 import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { registerConfiguredModelProviders } from './models/modelConfig'
@@ -618,6 +619,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     ? null
     : await getOrCreateRuntimeBinding(sessionId)
   const skillsScopeByRequest = new WeakMap<FastifyRequest, Promise<SkillScope>>()
+  const earlySessionStores = new Map<string, SessionStore>()
 
   function getSkillsScopeForRequest(request: FastifyRequest): Promise<SkillScope> {
     let promise = skillsScopeByRequest.get(request)
@@ -634,6 +636,19 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   ): Promise<RuntimeBinding> {
     if (staticBinding) return staticBinding
     return await getOrCreateRuntimeBinding(getRequestWorkspaceId(request), request, options)
+  }
+
+  async function getSessionStoreForRequest(request: FastifyRequest): Promise<SessionStore> {
+    if (staticBinding) return staticBinding.harness.sessions as unknown as SessionStore
+    const scope = await resolveRuntimeScope(getRequestWorkspaceId(request), request)
+    const cached = earlySessionStores.get(scope.key)
+    if (cached) return cached
+    const store = new PiSessionStore(scope.root, {
+      sessionNamespace: scope.sessionNamespace,
+      storageCwd: scope.root,
+    }) as unknown as SessionStore
+    earlySessionStores.set(scope.key, store)
+    return store
   }
 
   const agentToolNames = staticBinding
@@ -729,14 +744,12 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         workdir: binding.runtimeBundle.workspace.root,
       }
     },
+    getSessionStore: getSessionStoreForRequest,
     sessionChangesTracker,
     telemetry: opts.telemetry,
   })
   await app.register(sessionRoutes, {
-    getSessionStore: async (request) => {
-      const binding = await getBindingForRequest(request)
-      return binding.harness.sessions as unknown as SessionStore
-    },
+    getSessionStore: getSessionStoreForRequest,
     getRuntime: async (request) => {
       const binding = await getBindingForRequest(request)
       return {

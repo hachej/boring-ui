@@ -14,6 +14,7 @@ hit while building `niche-explorer`.
 Ship the smallest fix for each observed pain before building a generic platform.
 
 - Prefer existing CLI/local endpoints over new RPC surfaces.
+- When a new endpoint is unavoidable, keep it owned by the canonical layer (for self-test, UI panel status belongs under `/api/v1/ui/*`, not a plugin-specific route).
 - Prefer file-backed reads before DB-backed reads.
 - Prefer already-installed dependency resolution before arbitrary `npm install`.
 - Defer writes until read DX and self-test DX are proven.
@@ -22,7 +23,7 @@ Ship the smallest fix for each observed pain before building a generic platform.
 
 | Observed failure | Smallest useful fix | Plan |
 | --- | --- | --- |
-| Agent needed a human to report browser/runtime errors | Plugin health + headless self-test | [01-health-self-test.md](./01-health-self-test.md) |
+| Agent needed a human to report browser/runtime errors | Plugin health + live pane-status self-test | [01-health-self-test.md](./01-health-self-test.md) |
 | Plugin bundled a huge JSON blob to show data | Enhance the existing file endpoint with paginated record reads | [02-file-data-access.md](./02-file-data-access.md) |
 | Plugin links needed to open workspace files/panels/surfaces | Front-only `WorkspaceLink` over existing UI effects | [03-workspace-link.md](./03-workspace-link.md) |
 | Plugin could not import useful front packages like `DataExplorer` | Resolve already-installed deps while keeping React/workspace singleton | [04-dependency-import.md](./04-dependency-import.md) |
@@ -32,7 +33,7 @@ Ship the smallest fix for each observed pain before building a generic platform.
 
 ```txt
 1. Health/self-test
-   -> agent can see reload, render, network, and blank-pane failures
+   -> agent can reload, open a pane, and read live browser-reported pane status
 
 2. File-backed data reads
    -> niche-explorer stops bundling data and reads paginated records from workspace files
@@ -51,8 +52,9 @@ Ship the smallest fix for each observed pain before building a generic platform.
 
 V1 is intentionally modest:
 
-> A CLI runtime plugin can self-test, read paginated records from a workspace file, navigate the
-> workspace, and import already-installed UI dependencies without loading a second React.
+> A CLI runtime plugin can self-test through the live workspace UI, read paginated records from a
+> workspace file, navigate the workspace, and import already-installed UI dependencies without
+> loading a second React.
 
 ## Explicitly deferred from V1
 
@@ -62,6 +64,6 @@ V1 is intentionally modest:
 - SQLite/DuckDB writes.
 - Optimistic row concurrency and idempotency.
 - Remote/hosted plugin trust modes.
-- Bridge RPC migration.
+- Full Bridge RPC migration. The health/self-test status route should stay narrow and mechanically migratable to WorkspaceBridge later.
 
 Those may still be good ideas. They are not needed to fix the first-order plugin DX problems.
