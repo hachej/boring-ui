@@ -92,10 +92,16 @@ export type ComposerBlocker = {
   actions?: ComposerBlockerAction[]
 }
 
+export type ChatPanelRuntimeDependenciesWarmupStatus = {
+  state: 'preparing' | 'ready' | 'failed'
+  message?: string
+  requirement?: string
+}
+
 export type ChatPanelWorkspaceWarmupStatus =
-  | { status: 'preparing'; requirement?: 'workspace-fs' | 'sandbox-exec' | 'ui-bridge'; message?: string }
-  | { status: 'ready' }
-  | { status: 'failed'; requirement?: 'workspace-fs' | 'sandbox-exec' | 'ui-bridge'; message?: string }
+  | { status: 'preparing'; requirement?: 'workspace-fs' | 'sandbox-exec' | 'ui-bridge'; message?: string; runtimeDependencies?: ChatPanelRuntimeDependenciesWarmupStatus }
+  | { status: 'ready'; runtimeDependencies?: ChatPanelRuntimeDependenciesWarmupStatus }
+  | { status: 'failed'; requirement?: 'workspace-fs' | 'sandbox-exec' | 'ui-bridge'; message?: string; runtimeDependencies?: ChatPanelRuntimeDependenciesWarmupStatus }
 
 export type ChatSubmitSource = 'composer' | 'suggestion'
 
@@ -264,6 +270,19 @@ function composerNoticeForWarmup(status: ChatPanelWorkspaceWarmupStatus | undefi
     title: 'Preparing workspace…',
     code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
   }
+}
+
+function composerNoticeForRuntimeDependencies(status: ChatPanelWorkspaceWarmupStatus | undefined): { title: string; detail?: string; code?: string } | null {
+  const runtime = status?.runtimeDependencies
+  if (!runtime || runtime.state === 'ready') return null
+  if (runtime.state === 'failed') {
+    return {
+      title: 'Runtime tools failed to prepare.',
+      detail: runtime.message ?? 'Chat still works, but dependency-backed tools may be unavailable.',
+      code: ErrorCode.enum.RUNTIME_PROVISIONING_FAILED,
+    }
+  }
+  return null
 }
 
 function isComposerRuntimeNotice(error: { code?: string } | null | undefined): boolean {
@@ -524,7 +543,8 @@ export function ChatPanel(props: ChatPanelProps) {
   const friendlyChatError = error ? friendlyError(error) : null
   const runtimeErrorNotice = isComposerRuntimeNotice(friendlyChatError) ? friendlyChatError : null
   const warmupNotice = composerNoticeForWarmup(workspaceWarmupStatus)
-  const composerStatusNotice = composerRuntimeNotice ?? runtimeErrorNotice ?? warmupNotice
+  const runtimeDependenciesNotice = composerNoticeForRuntimeDependencies(workspaceWarmupStatus)
+  const composerStatusNotice = composerRuntimeNotice ?? runtimeErrorNotice ?? warmupNotice ?? runtimeDependenciesNotice
   const workspaceWarmupBlocked = Boolean(warmupNotice)
   const composerBlocked = workspaceWarmupBlocked || composerBlockers.length > 0
   const primaryComposerBlocker = composerBlockers[0]

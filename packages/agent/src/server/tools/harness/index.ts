@@ -6,7 +6,8 @@ import {
 } from '@mariozechner/pi-coding-agent'
 
 import type { Sandbox } from '../../../shared/sandbox'
-import type { AgentTool, ToolResult } from '../../../shared/tool'
+import type { AgentTool, ToolReadinessRequirement, ToolResult } from '../../../shared/tool'
+import { runtimeNotReadyToolResult, type ToolReadinessState } from '../../catalog/toolReadiness'
 import { getRuntimeBundleStorageRoot, type RuntimeBundle } from '../../runtime/mode'
 import { buildBwrapArgs } from '../../sandbox/bwrap/buildBwrapArgs'
 import { withWorkspacePythonEnv } from '../../sandbox/workspacePythonEnv'
@@ -23,6 +24,7 @@ export interface HarnessRuntimeProvisioningSnapshot {
 
 export interface HarnessRuntimeProvisioningOptions extends HarnessRuntimeProvisioningSnapshot {
   getCurrent?: () => HarnessRuntimeProvisioningSnapshot | undefined
+  getReadiness?: () => ToolReadinessState
 }
 
 function mergeRuntimeEnv(
@@ -102,34 +104,90 @@ function bashOptionsForMode(
   }
 }
 
-function adaptPiTool(piTool: ReturnType<typeof createBashToolDefinition>): AgentTool {
+function isRuntimeReady(readiness: ToolReadinessState | undefined): boolean {
+  return readiness === undefined || readiness === true || (typeof readiness === 'object' && readiness !== null && readiness.ready === true)
+}
+
+function runtimeRequirementForCommand(command: string): ToolReadinessRequirement | undefined {
+  if (command.includes('.boring-agent/venv/bin/')) return 'runtime:python'
+  if (/python(?:3)?\s+-c\s+['\"][^'\"]*(?:from\s+\S+\s+)?import\s+/.test(command)) return 'runtime:python'
+  if (command.includes('.boring-agent/node/')) return 'runtime:node'
+  if (command.includes('.boring-agent/')) return 'runtime-dependencies'
+  return undefined
+}
+
+function runtimeRequirementForFailure(text: string): ToolReadinessRequirement | undefined {
+  if (/\.boring-agent\/venv\/bin\/[^\s:]+: (?:No such file or directory|not found)/i.test(text)) return 'runtime:python'
+  if (/ModuleNotFoundError: No module named ['\"][^'\"]+['\"]/i.test(text)) return 'runtime:python'
+  if (/\.boring-agent\/node\/[^\s:]+: (?:No such file or directory|not found)/i.test(text)) return 'runtime:node'
+  if (/(?:^|\n)(?:[^\n:]+:\s*)?(?:line \d+:\s*)?[A-Za-z0-9_.-]+: command not found/i.test(text)) return 'runtime-dependencies'
+  return undefined
+}
+
+function adaptPiTool(
+  piTool: ReturnType<typeof createBashToolDefinition>,
+  runtime?: HarnessRuntimeProvisioningOptions,
+): AgentTool {
   return {
     name: piTool.name,
     description: piTool.description,
     promptSnippet: piTool.promptSnippet,
     parameters: piTool.parameters as unknown as Record<string, unknown>,
+    readinessRequirements: ['sandbox-exec'],
     async execute(params, ctx) {
-      const result = await piTool.execute(
-        ctx.toolCallId,
-        params as any,
-        ctx.abortSignal,
-        ctx.onUpdate
-          ? (update) => {
-              const text = update.content
-                .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
-                .map((c) => c.text)
-                .join('')
-              ctx.onUpdate!(text)
-            }
-          : undefined,
-        {} as never,
-      )
+      const command = typeof params.command === 'string' ? params.command : ''
+      const readiness = runtime?.getReadiness?.()
+      const commandRuntimeRequirement = command ? runtimeRequirementForCommand(command) : undefined
+      if (commandRuntimeRequirement && !isRuntimeReady(readiness)) {
+        return runtimeNotReadyToolResult(commandRuntimeRequirement,
+          readiness && typeof readiness === 'object' && readiness.ready === false
+            ? readiness
+            : { ready: false, state: 'preparing', retryable: true })
+      }
+      let result: Awaited<ReturnType<typeof piTool.execute>>
+      try {
+        result = await piTool.execute(
+          ctx.toolCallId,
+          params as any,
+          ctx.abortSignal,
+          ctx.onUpdate
+            ? (update) => {
+                const text = update.content
+                  .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
+                  .map((c) => c.text)
+                  .join('')
+                ctx.onUpdate!(text)
+              }
+            : undefined,
+          {} as never,
+        )
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        const latestReadiness = runtime?.getReadiness?.()
+        const failureRuntimeRequirement = runtimeRequirementForFailure(message)
+        if (command && failureRuntimeRequirement && !isRuntimeReady(latestReadiness)) {
+          return runtimeNotReadyToolResult(failureRuntimeRequirement,
+            latestReadiness && typeof latestReadiness === 'object' && latestReadiness.ready === false
+              ? latestReadiness
+              : { ready: false, state: 'preparing', retryable: true })
+        }
+        throw error
+      }
       const textContent = (result.content ?? [])
         .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
         .map((c) => ({ type: 'text' as const, text: c.text }))
+      const text = textContent.map((part) => part.text).join('\n')
+      const latestReadiness = runtime?.getReadiness?.()
+      const failureRuntimeRequirement = runtimeRequirementForFailure(text)
+      if (command && failureRuntimeRequirement && !isRuntimeReady(latestReadiness)) {
+        return runtimeNotReadyToolResult(failureRuntimeRequirement,
+          latestReadiness && typeof latestReadiness === 'object' && latestReadiness.ready === false
+            ? latestReadiness
+            : { ready: false, state: 'preparing', retryable: true })
+      }
       return {
         content: textContent.length > 0 ? textContent : [{ type: 'text', text: '' }],
-        isError: false,
+        isError: Boolean((result as { isError?: unknown }).isError),
         details: result.details,
       }
     },
@@ -199,7 +257,7 @@ export function buildHarnessAgentTools(
   runtime?: HarnessRuntimeProvisioningOptions,
 ): AgentTool[] {
   const tools: AgentTool[] = [
-    adaptPiTool(createBashToolDefinition(bundle.workspace.root, bashOptionsForMode(bundle, runtime))),
+    adaptPiTool(createBashToolDefinition(bundle.workspace.root, bashOptionsForMode(bundle, runtime)), runtime),
   ]
 
   if (bundle.sandbox.capabilities.includes('isolated-code')) {

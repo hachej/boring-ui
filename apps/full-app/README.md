@@ -298,13 +298,13 @@ pnpm --filter full-app smoke:post-deploy
 | Workspace management | ✅ CRUD + invites + roles | ❌ Build yourself | ❌ Build yourself |
 | Agent integration | ✅ Pi harness + tool catalog | ❌ Manual | ❌ Manual |
 | Multi-tenant safe | ✅ Workspace-scoped routes + guards | ❌ DIY | ❌ DIY |
-| Deployment guides | ✅ Vercel + Fly.io + Docker | ⚠️ Whatever you choose | ✅ Vercel only |
+| Deployment guides | ✅ Fly.io + Docker | ⚠️ Whatever you choose | ✅ Vercel only |
 | Post-deploy smoke | ✅ signup → email → reset → capabilities | ❌ DIY | ❌ DIY |
 
 **When to use full-app:**
 - You're building a multi-user agent app and want a working starting point
 - You need to see how core + agent + workspace compose in the real world
-- You want deployable templates (Vercel or Fly.io) with smoke tests
+- You want a deployable Fly.io/Docker template with smoke tests
 
 **When it might not fit:**
 - You just want to try the agent quickly (use `npx @hachej/boring-ui-cli`)
@@ -323,7 +323,6 @@ pnpm --filter full-app smoke:post-deploy
 | `sign-up succeeds but no verification email` | Mail transport not configured | Set `MAIL_TRANSPORT_URL=console://` for dev logs |
 | `workspace/:id` 403 | User not member of workspace | Create workspace first from `/me`, or seed a default |
 | `agent chat 500` | Missing `ANTHROPIC_API_KEY` | Set the env var and restart |
-| `vercel function timeout` | Long agent response hitting limit | Check `maxDuration` in `vercel.json` (plan must support it) |
 
 ---
 
@@ -331,7 +330,6 @@ pnpm --filter full-app smoke:post-deploy
 
 - **Private app template** — Not a published npm package. Clone from the monorepo and adapt.
 - **Opinionated stack** — Postgres + Drizzle + better-auth + Fastify. Swapping any layer requires code changes.
-- **Vercel maxDuration** — Agent chat can timeout on lower-tier Vercel plans. The `maxDuration: 300` setting requires a plan that supports 5-minute functions.
 - **No GitHub OAuth** — Deferred to v1.x. Email/password + magic links only.
 - **No billing/Stripe** — Multi-tenant billing is future `@boring/cloud` territory.
 - **Single language server** — No LSP integration. The editor (CodeMirror6) has syntax highlighting but no semantic features.

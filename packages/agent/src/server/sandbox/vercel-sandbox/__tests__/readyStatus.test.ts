@@ -6,10 +6,15 @@ describe('ReadyStatusTracker', () => {
     const tracker = new ReadyStatusTracker()
     expect(tracker.state).toBe('provisioning')
     expect(tracker.isReady()).toBe(false)
-    expect(tracker.getReadiness()).toEqual({
+    expect(tracker.getReadiness()).toMatchObject({
       sandboxReady: false,
       harnessReady: false,
       degradedReason: undefined,
+      capabilities: {
+        chat: { state: 'preparing' },
+        workspace: { state: 'preparing' },
+        runtimeDependencies: { state: 'ready' },
+      },
     })
   })
 
@@ -32,7 +37,7 @@ describe('ReadyStatusTracker', () => {
     expect(tracker.isReady()).toBe(true)
   })
 
-  it('transitions to degraded with reason', () => {
+  it('transitions to degraded with reason and can recover', () => {
     const tracker = new ReadyStatusTracker({
       sandboxReady: true,
       harnessReady: true,
@@ -42,6 +47,10 @@ describe('ReadyStatusTracker', () => {
     tracker.markDegraded('sandbox crashed')
     expect(tracker.state).toBe('degraded')
     expect(tracker.getReadiness().degradedReason).toBe('sandbox crashed')
+
+    tracker.clearDegraded()
+    expect(tracker.state).toBe('ready')
+    expect(tracker.getReadiness().degradedReason).toBeUndefined()
   })
 
   it('subscribe receives immediate snapshot then updates', () => {
