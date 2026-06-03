@@ -15,23 +15,23 @@ paths are correct — the parts agents most often invent or get wrong.
 
 ```sh
 # First check whether this runtime supports workspace-local plugin roots.
-boring-ui plugin-status --json
+boring-ui-plugin status --json
 
 # Only run this when workspaceLocalPluginRoots is true. Always target the
 # current workspace root. The second arg prevents writing into a parent repo
 # if your shell cwd drifts.
-boring-ui scaffold-plugin <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"
+boring-ui-plugin scaffold <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"
 ```
 
 The workspace agent puts the provisioned Node bin directory on `PATH` (for
 local/bwrap this is `/workspace/.boring-agent/node/node_modules/.bin`), provides
-the `boring-ui` command there, and exports `BORING_AGENT_WORKSPACE_ROOT`. Use
+the `boring-ui-plugin` command there, and exports `BORING_AGENT_WORKSPACE_ROOT`. Use
 `$BORING_AGENT_WORKSPACE_ROOT` instead of host paths such as `/home/...`; in
 sandboxed modes the runtime-visible workspace is `/workspace`. Do not `cd` to a
 parent repo to scaffold; hot-reloadable user plugins belong under
 `$BORING_AGENT_WORKSPACE_ROOT/.pi/extensions/<name>/`. If you are outside the
 agent workspace and do not have that binary, use
-`npx @hachej/boring-ui-cli scaffold-plugin <kebab-name> <workspace-root>`.
+`npx @hachej/boring-ui-plugin-cli scaffold <kebab-name> <workspace-root>`.
 
 The scaffold writes the canonical hot-reload package skeleton:
 
@@ -46,17 +46,17 @@ The scaffold writes the canonical hot-reload package skeleton:
 
 **Default to workspace-local.** Never ask the user to choose. Always scaffold into `.pi/extensions/<name>/`. Only use `~/.pi/agent/extensions/` when the user explicitly asks for a globally installed plugin (e.g. "make this a global plugin").
 
-This skill teaches the **workspace-local** authoring path. Before scaffolding or writing `.pi/extensions`, run `boring-ui plugin-status --json`. Only use `.pi/extensions` when `workspaceLocalPluginRoots` is `true`. If it is `false`, do not create a hot-reloadable plugin; explain that this runtime does not support local plugin roots. Do not scaffold directly into the global root unless the user explicitly asks for a globally installed plugin.
+This skill teaches the **workspace-local** authoring path. Before scaffolding or writing `.pi/extensions`, run `boring-ui-plugin status --json`. Only use `.pi/extensions` when `workspaceLocalPluginRoots` is `true`. If it is `false`, do not create a hot-reloadable plugin; explain that this runtime does not support local plugin roots. Do not scaffold directly into the global root unless the user explicitly asks for a globally installed plugin.
 
 Hot-reloadable agent behavior belongs in `pi.extensions` / `pi.skills` / `pi.systemPrompt`. The scaffold does not create `server/index.ts`: `boring.server` is advanced boot-time/static server integration and is not activated by `/reload` for `.pi/extensions` user plugins.
 
 **Workflow:**
 
-1. Run `boring-ui plugin-status --json` via the bash tool and stop if `workspaceLocalPluginRoots` is `false`.
+1. Run `boring-ui-plugin status --json` via the bash tool and stop if `workspaceLocalPluginRoots` is `false`.
 2. Run the scaffold command via the bash tool.
 3. Read the generated files with the read tool.
 4. Edit them in place with the edit tool — do **NOT** rewrite from scratch.
-5. Run `boring-ui verify-plugin <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"` via bash. Fix anything it reports and re-run until it returns `OK`.
+5. Run `boring-ui-plugin verify <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"` via bash. Fix anything it reports and re-run until it returns `OK`.
 6. Tell the user to run `/reload` for front/Pi asset changes. If you added `boring.server`, tell the user the workspace process must be statically composed with that package and restarted.
 
 If the scaffold says the plugin already exists, you can read the existing
@@ -133,7 +133,7 @@ Two valid layouts, picked by intent:
 
 Global user-installed plugins are a third case: they are **discovered** from `~/.pi/agent/extensions/`, but this skill still recommends authoring/testing them in a workspace-local `.pi/extensions/<name>/` first, then copying/installing them globally once they work.
 
-The rest of this skill teaches the hot-reload layout. Repo contributors building a publishable plugin start from `packages/cli/templates/plugin/` (build-based template) instead; everyone else uses `boring-ui scaffold-plugin <name>` (Step 0).
+The rest of this skill teaches the hot-reload layout. Repo contributors building a publishable plugin start from `packages/cli/templates/plugin/` (build-based template) instead; everyone else uses `boring-ui-plugin scaffold <name>` (Step 0).
 
 ## package.json shape
 
@@ -281,7 +281,7 @@ the tool.
 `boring.server: "server/index.ts"` is only for workspace server integrations
 that the host composes at boot (for example through `defaultPluginPackages` or
 explicit server plugins) and activates by restarting the process. `boring-ui
-verify-plugin` checks that the declared file is safe and present, but `/reload`
+boring-ui-plugin verify` checks that the declared file is safe and present, but `/reload`
 does **not** import/register `.pi/extensions` server routes or agent tools.
 
 Only use this path when the user/host explicitly wants boot-time server routes or
