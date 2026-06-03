@@ -51,13 +51,24 @@ export function workspaceIdFromCliUrl(pathname: string): string | null {
   }
 }
 
-export function cliWorkspacePath(workspaceId: string): string {
-  return `/workspace/${encodeURIComponent(workspaceId)}`
+const CHAT_SESSION_QUERY_PARAM = "session"
+
+export function chatSessionIdFromCliUrl(search: string): string | null {
+  const raw = new URLSearchParams(search).get(CHAT_SESSION_QUERY_PARAM)
+  return raw?.trim() || null
 }
 
-function syncCliWorkspaceUrl(workspaceId: string): void {
-  const nextPath = cliWorkspacePath(workspaceId)
-  if (window.location.pathname === nextPath) return
+export function cliWorkspacePath(workspaceId: string, sessionId?: string | null): string {
+  const path = `/workspace/${encodeURIComponent(workspaceId)}`
+  if (!sessionId) return path
+  const params = new URLSearchParams()
+  params.set(CHAT_SESSION_QUERY_PARAM, sessionId)
+  return `${path}?${params.toString()}`
+}
+
+function syncCliWorkspaceUrl(workspaceId: string, sessionId?: string | null): void {
+  const nextPath = cliWorkspacePath(workspaceId, sessionId)
+  if (`${window.location.pathname}${window.location.search}` === nextPath) return
   window.history.replaceState(null, "", nextPath)
 }
 
@@ -93,6 +104,7 @@ export function CliWorkspaceShell() {
   const [cliVersion, setCliVersion] = useState<string | null>(null)
   const [workspaces, setWorkspaces] = useState<LocalWorkspace[]>([])
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
+  const [urlSessionId, setUrlSessionId] = useState<string | null>(() => chatSessionIdFromCliUrl(window.location.search))
   const [metaLoaded, setMetaLoaded] = useState(false)
   const [runtimePluginFrontLoadingEnabled, setRuntimePluginFrontLoadingEnabled] = useState(false)
 
@@ -146,6 +158,7 @@ export function CliWorkspaceShell() {
     const onFocus = () => refreshWorkspaces()
     const onPopState = () => {
       setActiveWorkspaceId(workspaceIdFromCliUrl(window.location.pathname))
+      setUrlSessionId(chatSessionIdFromCliUrl(window.location.search))
     }
     window.addEventListener("focus", onFocus)
     window.addEventListener("popstate", onPopState)
@@ -157,8 +170,20 @@ export function CliWorkspaceShell() {
 
   useEffect(() => {
     if (!workspacesMode || !activeWorkspaceId) return
-    syncCliWorkspaceUrl(activeWorkspaceId)
-  }, [activeWorkspaceId, workspacesMode])
+    syncCliWorkspaceUrl(activeWorkspaceId, urlSessionId)
+  }, [activeWorkspaceId, urlSessionId, workspacesMode])
+
+  const useUrlAgentSessions = useCallback((opts: Parameters<typeof useAgentSessions>[0]): ReturnType<typeof useAgentSessions> => {
+    const nextOpts = {
+      ...opts,
+      initialActiveSessionId: urlSessionId ?? undefined,
+    } as Parameters<typeof useAgentSessions>[0]
+    return useAgentSessions(nextOpts)
+  }, [urlSessionId])
+
+  const handleActiveSessionIdChange = useCallback((sessionId: string | null) => {
+    setUrlSessionId((current) => current === sessionId ? current : sessionId)
+  }, [])
 
   const plugins = useMemo(() => [], [])
   const activeWorkspaceRequestHeaders = useMemo(
@@ -205,7 +230,8 @@ export function CliWorkspaceShell() {
         providerStorageKey={`boring-ui-v2:layout:${activeWorkspace.id}`}
         appTitle="Boring UI"
         defaultSessionTitle={activeWorkspace.name}
-        useSessions={useAgentSessions}
+        useSessions={useUrlAgentSessions}
+        onActiveSessionIdChange={handleActiveSessionIdChange}
         chatParams={{ thinkingControl: true }}
         frontPluginHotReload={runtimePluginFrontLoadingEnabled ? "vite" : false}
         topBarRight={<CliVersionBadge version={cliVersion} />}
@@ -219,6 +245,7 @@ export function CliWorkspaceShell() {
             settingsDescription={activeWorkspace.path}
             onSelectWorkspace={(workspaceId) => {
               window.localStorage.setItem("boring-ui:local-workspace-id", workspaceId)
+              setUrlSessionId(null)
               setActiveWorkspaceId(workspaceId)
             }}
           />
@@ -237,7 +264,8 @@ export function CliWorkspaceShell() {
       providerStorageKey={`boring-ui-v2:layout:${projectName}`}
       appTitle={projectName}
       defaultSessionTitle={projectName}
-      useSessions={useAgentSessions}
+      useSessions={useUrlAgentSessions}
+      onActiveSessionIdChange={handleActiveSessionIdChange}
       chatParams={{ thinkingControl: true }}
       frontPluginHotReload={runtimePluginFrontLoadingEnabled ? "vite" : false}
       topBarRight={<CliVersionBadge version={cliVersion} />}

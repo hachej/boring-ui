@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { z } from 'zod'
-import { createUIMessageStream, pipeUIMessageStreamToResponse } from '../sse'
-import type { UIMessageChunk } from '../sse'
-import type { AgentHarness, RunContext } from '../../../shared/harness'
-import type { SessionCtx } from '../../../shared/session'
+import { pipeUIMessageStreamToResponse } from '../sse'
+import type { AgentHarness } from '../../../shared/harness'
+import type { SessionCtx, SessionStore } from '../../../shared/session'
 import type { UIMessage } from '../../../shared/message'
 import { ErrorCode } from '../../../shared/error-codes'
 import { noopTelemetry, safeCapture, type TelemetrySink } from '../../../shared/telemetry'
@@ -15,16 +14,9 @@ import {
   ERROR_CODE_RANGE_NOT_SATISFIABLE,
   ERROR_CODE_CONFLICT,
 } from '../middleware'
-import { StreamBufferStore } from '../streamBuffer'
-import {
-  parseFileChangeChunk,
-  type SessionChangesTracker,
-} from '../sessionChangesTracker'
+import type { SessionChangesTracker } from '../sessionChangesTracker'
+import { createBufferedUiMessageStream, TurnManager } from '../turnManager'
 import { projectPiDataMessages } from '../../harness/pi-coding-agent/projectPiDataMessages'
-
-function c(data: Record<string, unknown>): UIMessageChunk {
-  return data as unknown as UIMessageChunk
-}
 
 const chatBodySchema = z.object({
   sessionId: z.string().min(1).max(128),
@@ -50,6 +42,7 @@ const chatBodySchema = z.object({
     )
     .max(20)
     .optional(),
+  clientTurnId: z.string().min(1).max(128).optional(),
 })
 
 type ChatBody = z.infer<typeof chatBodySchema>
@@ -57,10 +50,12 @@ type ChatBody = z.infer<typeof chatBodySchema>
 export interface ChatRouteOptions {
   harness?: AgentHarness
   workdir?: string
+  sessionStore?: SessionStore
   getRuntime?: (request: FastifyRequest) => Promise<{
     harness: AgentHarness
     workdir: string
   }>
+  getSessionStore?: (request: FastifyRequest) => Promise<SessionStore>
   sessionChangesTracker?: SessionChangesTracker
   telemetry?: TelemetrySink
 }
@@ -87,7 +82,7 @@ export function chatRoutes(
   const { sessionChangesTracker } = opts
   const telemetry = opts.telemetry ?? noopTelemetry
   const validateBody = createBodyValidator(chatBodySchema)
-  const buffers = new StreamBufferStore()
+  const turnManager = new TurnManager()
   // Track last follow-up seq/nonce per session for dedupe detection.
   // Evict entries when sessions are deleted via the sessionChangesTracker
   // hook below, and cap at 5000 to bound memory in long-running servers.
@@ -132,13 +127,20 @@ export function chatRoutes(
     throw new Error('chat route requires harness/workdir or getRuntime')
   }
 
+  async function resolveSessionStore(request: FastifyRequest): Promise<SessionStore> {
+    if (opts.getSessionStore) return await opts.getSessionStore(request)
+    if (opts.sessionStore) return opts.sessionStore
+    const runtime = await resolveRuntime(request)
+    return runtime.harness.sessions as unknown as SessionStore
+  }
+
   app.post(
     '/api/v1/agent/chat',
     { preHandler: validateBody },
     async (request, reply) => {
-      const { sessionId, message, model, thinkingLevel, attachments } =
+      const { sessionId, message, model, thinkingLevel, attachments, clientTurnId } =
         request.body as ChatBody
-      const turnId = randomUUID()
+      const turnId = clientTurnId ?? randomUUID()
       const startedAt = Date.now()
       const telemetryProperties: Record<string, string | number> = {
         sessionId,
@@ -153,94 +155,65 @@ export function chatRoutes(
         properties: telemetryProperties,
       })
 
-      const abortController = new AbortController()
-      let streamStarted = false
-      let streamCompleted = false
-      // Abort only when the response stream connection closes while a turn is
-      // still active. Using request.raw "close" can fire right after request-body
-      // read on some clients/proxies, which prematurely aborts turns.
-      reply.raw.on('close', () => {
-        if (streamStarted && !streamCompleted && !abortController.signal.aborted) {
-          abortController.abort()
-        }
-      })
-
-      const buf = buffers.create(sessionId, turnId)
-
       try {
-        const runtime = await resolveRuntime(request)
-        const ctx: RunContext = {
-          abortSignal: abortController.signal,
-          workdir: runtime.workdir,
-        }
-        safeCapture(telemetry, {
-          name: 'agent.chat.message.submitted',
-          properties: telemetryProperties,
-        })
-        const chunks = runtime.harness.sendMessage(
-          { sessionId, message, model, thinkingLevel, attachments },
-          ctx,
-        )
-
-        const stream = createUIMessageStream({
-          async execute({ writer }: { writer: { write(chunk: UIMessageChunk): void } }) {
-            let streamFailed = false
-            try {
-              for await (const chunk of chunks) {
-                const c = chunk as UIMessageChunk
-                const fileChange = parseFileChangeChunk(c)
-                if (fileChange) {
-                  sessionChangesTracker?.record(sessionId, fileChange)
-                }
-                buf.append(c)
-                writer.write(c)
-              }
-            } catch (err) {
-              streamFailed = true
-              request.log.error({ err, sessionId }, '[chat] stream error')
-              safeCapture(telemetry, {
-                name: 'agent.chat.failed',
-                properties: {
-                  ...telemetryProperties,
-                  status: 'error',
-                  durationMs: Date.now() - startedAt,
-                  errorCode: ErrorCode.enum.INTERNAL_ERROR,
-                },
-              })
-              const errChunk = {
-                type: 'error',
-                errorText: 'internal error',
-              } as UIMessageChunk
-              buf.append(errChunk)
-              writer.write(errChunk)
-            } finally {
-              // Set streamCompleted BEFORE marking buffer complete so the
-              // reply.raw 'close' event handler (which fires asynchronously
-              // and may arrive before markComplete's callback) sees the flag
-              // and does NOT abort an already-finished stream.
-              streamCompleted = true
-              if (!streamFailed) {
-                safeCapture(telemetry, {
-                  name: 'agent.chat.completed',
-                  properties: {
-                    ...telemetryProperties,
-                    status: 'ok',
-                    durationMs: Date.now() - startedAt,
-                  },
-                })
-              }
-              buf.markComplete(() => buffers.evict(sessionId, turnId))
-            }
+        const startedTurn = await turnManager.startTurn({
+          sessionId,
+          turnId,
+          input: { sessionId, message, model, thinkingLevel, attachments },
+          resolveRuntime: () => resolveRuntime(request),
+          sessionChangesTracker,
+          onSubmitted: () => {
+            safeCapture(telemetry, {
+              name: 'agent.chat.message.submitted',
+              properties: telemetryProperties,
+            })
+          },
+          onStreamError: (err) => {
+            request.log.error({ err, sessionId }, '[chat] stream error')
+            safeCapture(telemetry, {
+              name: 'agent.chat.failed',
+              properties: {
+                ...telemetryProperties,
+                status: 'error',
+                durationMs: Date.now() - startedAt,
+                errorCode: ErrorCode.enum.INTERNAL_ERROR,
+              },
+            })
+          },
+          onStreamComplete: () => {
+            safeCapture(telemetry, {
+              name: 'agent.chat.completed',
+              properties: {
+                ...telemetryProperties,
+                status: 'ok',
+                durationMs: Date.now() - startedAt,
+              },
+            })
           },
         })
 
-        streamStarted = true
+        if ('active' in startedTurn) {
+          return reply.code(409).send({
+            error: {
+              code: ERROR_CODE_CONFLICT,
+              message: 'turn_already_active',
+            },
+          })
+        }
+
+        // Decouple the harness turn from the browser response. Session switches
+        // and reloads close the current HTTP response; that must not abort the
+        // agent turn or leave a half-persisted user message behind. The running
+        // turn pumps into the replay buffer, while each client response only
+        // subscribes to that buffer and can disconnect independently.
+        const stream = createBufferedUiMessageStream(startedTurn.buffer, request.raw)
+
         reply.hijack()
         pipeUIMessageStreamToResponse({
           response: reply.raw,
           stream,
           headers: {
-            'X-Turn-Id': turnId,
+            'X-Turn-Id': startedTurn.turnId,
             'X-Accel-Buffering': 'no',
             'Cache-Control': 'no-cache, no-transform',
           },
@@ -261,8 +234,6 @@ export function chatRoutes(
             errorCode: safeTelemetryErrorCode((err as { code?: unknown })?.code),
           },
         })
-        buf.markComplete(() => buffers.evict(sessionId, turnId))
-        if (streamStarted) return
         const statusCode = (err as { statusCode?: unknown })?.statusCode
         const stableCode = (err as { code?: unknown })?.code
         if (typeof statusCode === 'number' && statusCode >= 400 && statusCode < 600) {
@@ -297,7 +268,7 @@ export function chatRoutes(
         })
       }
 
-      const active = buffers.getActive(sessionId)
+      const active = turnManager.getActive(sessionId)
 
       if (!active) {
         // No active streaming turn to resume. History hydration goes through
@@ -322,26 +293,7 @@ export function chatRoutes(
         '[resume] replaying',
       )
 
-      const stream = createUIMessageStream({
-        async execute({ writer }: { writer: { write(chunk: UIMessageChunk): void } }) {
-          const replayed = buf.replay(cursor)
-          for (const e of replayed) writer.write(e.chunk)
-          if (buf.complete) return
-          await new Promise<void>((resolve) => {
-            const unsub = buf.subscribe(
-              (e) => writer.write(e.chunk),
-              () => {
-                unsub()
-                resolve()
-              },
-            )
-            request.raw.on('close', () => {
-              unsub()
-              resolve()
-            })
-          })
-        },
-      })
+      const stream = createBufferedUiMessageStream(buf, request.raw, cursor)
 
       reply.hijack()
       pipeUIMessageStreamToResponse({
@@ -364,8 +316,8 @@ export function chatRoutes(
         workspaceId: request.workspaceContext?.workspaceId ?? 'default',
       }
       try {
-        const runtime = await resolveRuntime(request)
-        const detail = await runtime.harness.sessions.load(ctx, sessionId)
+        const store = await resolveSessionStore(request)
+        const detail = await store.load(ctx, sessionId)
         const messages = Array.isArray(detail?.messages) ? detail.messages : []
         return reply.code(200).send({ messages })
       } catch {
@@ -374,6 +326,19 @@ export function chatRoutes(
         // console 404 during first-load auto session creation.
         return reply.code(200).send({ messages: [] })
       }
+    },
+  )
+
+  app.delete(
+    '/api/v1/agent/chat/:sessionId/turn',
+    async (request, reply) => {
+      const { sessionId } = request.params as { sessionId: string }
+      const query = request.query as { turnId?: unknown }
+      const requestedTurnId = typeof query.turnId === 'string' && query.turnId.length > 0
+        ? query.turnId
+        : undefined
+      turnManager.abortTurn(sessionId, requestedTurnId)
+      return reply.code(204).send()
     },
   )
 
@@ -478,9 +443,9 @@ export function chatRoutes(
         workspaceId: request.workspaceContext?.workspaceId ?? 'default',
       }
       try {
-        const runtime = await resolveRuntime(request)
-        if (runtime.harness.sessions.saveMessages) {
-          await runtime.harness.sessions.saveMessages(ctx, sessionId, projectPiDataMessages(body.messages))
+        const store = await resolveSessionStore(request)
+        if (store.saveMessages) {
+          await store.saveMessages(ctx, sessionId, projectPiDataMessages(body.messages))
         }
         return reply.code(204).send()
       } catch {
