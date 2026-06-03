@@ -158,7 +158,8 @@ describe("@hachej/boring-workspace public API", () => {
   })
 
   describe("filesystem data APIs", () => {
-    it("does not export filesystem data APIs from the package root", () => {
+    it("exports only hook-free runtime-safe file data helpers from the package root", () => {
+      expect(api.readFileRecords).toBeDefined()
       expect("DataProvider" in api).toBe(false)
       expect("useDataClient" in api).toBe(false)
       expect("useFileContent" in api).toBe(false)

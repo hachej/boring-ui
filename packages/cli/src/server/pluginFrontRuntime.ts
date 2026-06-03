@@ -70,6 +70,7 @@ const WORKSPACE_ROOT_SINGLETON_EXPORTS = [
   "useApiBaseUrl",
   "useHasWorkspaceFilesProvider",
   "useWorkspaceRequestId",
+  "readFileRecords",
   "filesystemEvents",
   "cn",
   "PanelRegistry",

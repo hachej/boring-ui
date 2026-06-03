@@ -11,6 +11,12 @@ import {
   ERROR_CODE_VALIDATION_ERROR,
 } from '../middleware'
 import { createLogger } from '../../logging'
+import {
+  FileRecordsValidationError,
+  MAX_RECORD_FILE_BYTES,
+  buildFileRecordsResult,
+  parseFileRecordsRequest,
+} from './fileRecords'
 
 const log = createLogger('boring/workspace-settings')
 
@@ -201,6 +207,13 @@ function contentTypeForPath(path: string): string {
   }
 }
 
+
+function sendValidationError(reply: FastifyReply, message: string, field?: string): FastifyReply {
+  return reply.code(400).send({
+    error: { code: ERROR_CODE_VALIDATION_ERROR, message, ...(field ? { field } : {}) },
+  })
+}
+
 export function fileRoutes(
   app: FastifyInstance,
   opts: {
@@ -240,6 +253,37 @@ export function fileRoutes(
         .header('cache-control', 'no-store')
         .send(Buffer.from(bytes))
     } catch (err) {
+      return classifyError(err, reply, 'file')
+    }
+  })
+
+  app.get('/api/v1/files/records', async (request, reply) => {
+    try {
+      const parsed = parseFileRecordsRequest(request.query as Record<string, unknown>)
+      const workspace = await resolveWorkspace(request)
+      const stat = await workspace.stat(parsed.path)
+      if (stat.kind !== 'file') {
+        return sendValidationError(reply, 'path is not a file', 'path')
+      }
+      if (stat.size > MAX_RECORD_FILE_BYTES) {
+        return sendValidationError(reply, 'records file is too large', 'path')
+      }
+      const content = await workspace.readFile(parsed.path)
+      if (Buffer.byteLength(content, 'utf8') > MAX_RECORD_FILE_BYTES) {
+        return sendValidationError(reply, 'records file is too large', 'path')
+      }
+      return buildFileRecordsResult({
+        path: parsed.path,
+        content,
+        mtimeMs: stat.mtimeMs,
+        offset: parsed.offset,
+        limit: parsed.limit,
+        q: parsed.q,
+      })
+    } catch (err) {
+      if (err instanceof FileRecordsValidationError) {
+        return sendValidationError(reply, err.message, err.field)
+      }
       return classifyError(err, reply, 'file')
     }
   })
