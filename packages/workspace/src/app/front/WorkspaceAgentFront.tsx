@@ -185,8 +185,8 @@ function ChatSessionTransitionState() {
     <div className="flex h-full min-h-0 items-center justify-center bg-background px-6 text-center">
       <div className="max-w-sm rounded-2xl border border-border bg-card p-5 shadow-sm">
         <div className="mx-auto mb-3 h-7 w-7 rounded-full border-2 border-muted-foreground/20 border-t-foreground animate-spin" aria-hidden="true" />
-        <div className="text-sm font-semibold text-foreground">Restoring chat…</div>
-        <p className="mt-2 text-sm text-muted-foreground">Loading this workspace’s saved sessions.</p>
+        <div className="text-sm font-semibold text-foreground">Loading sessions…</div>
+        <p className="mt-2 text-sm text-muted-foreground">Finding this workspace’s saved chats.</p>
       </div>
     </div>
   )
@@ -443,7 +443,7 @@ export function WorkspaceAgentFront<
   const pendingStoredSessionPlaceholder = pendingStoredActiveSessionId
     ? [{
         id: pendingStoredActiveSessionId,
-        title: "Restoring chat…",
+        title: "Loading sessions…",
         createdAt: new Date(0).toISOString(),
         updatedAt: new Date(0).toISOString(),
         turnCount: 0,
@@ -804,7 +804,7 @@ export function WorkspaceAgentFront<
         <div className="flex h-full min-h-0 flex-col">
           <TopBar
             appTitle={appTitle}
-            sessionTitle={remoteSessionsTransitioning ? "Restoring chat…" : resolvedSessionTitle ?? defaultSessionTitle}
+            sessionTitle={remoteSessionsTransitioning ? "Loading sessions…" : resolvedSessionTitle ?? defaultSessionTitle}
             onCommandPalette={openCommandPalette}
             onNewChat={resolvedCreate}
             topBarLeft={topBarLeft}

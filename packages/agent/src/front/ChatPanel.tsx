@@ -1049,7 +1049,7 @@ export function ChatPanel(props: ChatPanelProps) {
           {renderMessages.length === 0 && hydratingMessages && (
             <div className="flex items-center gap-2 rounded-xl border border-border bg-card/70 px-4 py-3 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Restoring chat…
+              Loading chat history…
             </div>
           )}
           {renderMessages.length === 0 && !hydratingMessages && (
