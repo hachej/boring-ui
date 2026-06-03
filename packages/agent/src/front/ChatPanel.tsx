@@ -1001,8 +1001,8 @@ export function ChatPanel(props: ChatPanelProps) {
   useEffect(() => {
     if (!autoSubmitInitialDraft) return
     if (!initialDraft?.trim()) return
-    if (autoSubmittedDraftRef.current === initialDraft) return
-    if (autoSubmittingDraftRef.current === initialDraft) return
+    if (autoSubmittedDraftRef.current !== undefined) return
+    if (autoSubmittingDraftRef.current !== undefined) return
     const targetSessionId = sessionId
     autoSubmittingDraftRef.current = initialDraft
     void (async () => {

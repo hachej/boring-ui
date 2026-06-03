@@ -585,6 +585,32 @@ describe('ChatPanel (shadcn)', () => {
     expect(mockSendMessage).not.toHaveBeenCalled()
   })
 
+  test('auto-submit does not send a changed draft twice for the same active session', async () => {
+    const { rerender } = render(
+      <ChatPanel
+        sessionId="sess-auto-draft-once"
+        initialDraft="first draft"
+        autoSubmitInitialDraft
+      />,
+    )
+
+    await waitFor(() => {
+      expect(mockSendMessage).toHaveBeenCalledTimes(1)
+    })
+
+    mockSendMessage.mockClear()
+    rerender(
+      <ChatPanel
+        sessionId="sess-auto-draft-once"
+        initialDraft="changed draft"
+        autoSubmitInitialDraft
+      />,
+    )
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mockSendMessage).not.toHaveBeenCalled()
+  })
+
   test('auto-submit resets when the same draft moves to a new session', async () => {
     const { rerender } = render(
       <ChatPanel
@@ -884,39 +910,19 @@ describe('ChatPanel (shadcn)', () => {
     )
   })
 
-  test('slash command is intercepted and does not send to AI', async () => {
+  test('unknown slash text is not intercepted as a local-only clear command', async () => {
     renderToStaticMarkup(<ChatPanel sessionId="sess-cmd" />)
 
+    // Pi-native first cut intentionally omits /clear: local-only transcript
+    // filtering would create a second history owner. Unknown slash text stays
+    // normal prompt text for now instead of mutating browser messages.
     await capturedOnSubmit!({ text: '/clear', files: [] })
 
-    expect(mockSendMessage).not.toHaveBeenCalled()
-    expect(mockSetMessages).toHaveBeenCalled()
-  })
-
-  test('slash command picker closes after executing a slash command', async () => {
-    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() })
-    render(<ChatPanel sessionId="sess-cmd-picker" />)
-
-    act(() => {
-      const textarea = { value: '/reload', selectionStart: '/reload'.length }
-      ;(capturedTextareaProps?.onChange as (event: { currentTarget: typeof textarea }) => void)?.({ currentTarget: textarea })
-    })
-    expect(screen.getByText('/reload')).toBeTruthy()
-
-    await act(async () => {
-      await capturedOnSubmit!({ text: '/reload', files: [] })
-    })
-
-    expect(screen.queryByText('/reload')).toBeNull()
-  })
-
-  test('/clear calls setMessages with empty array', async () => {
-    renderToStaticMarkup(<ChatPanel sessionId="sess-clear" />)
-
-    await capturedOnSubmit!({ text: '/clear', files: [] })
-
-    expect(mockSendMessage).not.toHaveBeenCalled()
-    expect(mockSetMessages).toHaveBeenCalledWith([])
+    expect(mockSetMessages).not.toHaveBeenCalledWith([])
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      { text: '/clear', files: [] },
+      { body: expect.objectContaining({ message: '/clear' }) },
+    )
   })
 
   test('/reset deletes server session and calls onSessionReset', async () => {

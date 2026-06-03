@@ -113,6 +113,36 @@ describe('PromptInput — upload flow', () => {
     })
   })
 
+  it('submits uploaded stable attachment URLs once ready', async () => {
+    const onUploadFile = vi.fn(() => Promise.resolve({ url: 'https://example.com/img.png' }))
+    const onSubmit = vi.fn()
+
+    render(<Harness onUploadFile={onUploadFile} onSubmit={onSubmit} />)
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    const file = new File(['x'], 'img.png', { type: 'image/png' })
+
+    act(() => {
+      pasteFile(textarea, file)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('status').textContent).toBe('ready')
+    })
+    fireEvent.change(textarea, { target: { value: 'describe image' } })
+    fireEvent.submit(textarea.closest('form')!)
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        {
+          text: 'describe image',
+          files: [expect.objectContaining({ filename: 'img.png', mediaType: 'image/png', url: 'https://example.com/img.png' })],
+        },
+        expect.anything(),
+      )
+    })
+  })
+
   it('submit is blocked while a file is still uploading', async () => {
     const onUploadFile = vi.fn(() => new Promise<{ url: string }>(() => {}))
     const onSubmit = vi.fn()

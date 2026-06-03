@@ -23,17 +23,12 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('/clear', () => {
-  test('calls clearMessages', () => {
-    const ctx = makeContext()
-    getBuiltin('clear').handler('', ctx)
-    expect(ctx.clearMessages).toHaveBeenCalledOnce()
-  })
-
-  test('returns no message', () => {
-    const ctx = makeContext()
-    const result = getBuiltin('clear').handler('', ctx)
-    expect(result).toBeUndefined()
+describe('/clear intentionally absent', () => {
+  test('does not register /clear in the Pi-native first cut', () => {
+    // First-cut Pi-native chat intentionally omits local-only transcript
+    // filtering. Canonical history is Pi JSONL; a future viewport clear must
+    // be non-canonical and should be tested separately when reintroduced.
+    expect(builtinCommands.find((c) => c.name === 'clear')).toBeUndefined()
   })
 })
 
@@ -56,13 +51,26 @@ describe('/reset', () => {
 })
 
 describe('/help', () => {
-  test('lists all commands', () => {
+  test('lists Pi-native builtin commands and omits /clear', () => {
     const ctx = makeContext()
     const result = getBuiltin('help').handler('', ctx)
-    expect(result).toContain('/clear')
+    expect(result).not.toContain('/clear')
     expect(result).toContain('/reset')
     expect(result).toContain('/reload')
     expect(result).toContain('/help')
+  })
+
+  test('includes skill and extra commands from the registry context', () => {
+    const ctx = makeContext({
+      listCommands: vi.fn().mockReturnValue([
+        ...builtinCommands,
+        { name: 'review', description: 'Run review skill', kind: 'skill', handler: vi.fn() },
+        { name: 'ask-user', description: 'Ask user', handler: vi.fn() },
+      ]),
+    })
+    const result = getBuiltin('help').handler('', ctx)
+    expect(result).toContain('/review — Run review skill')
+    expect(result).toContain('/ask-user — Ask user')
   })
 
   test('returns message when no commands', () => {
@@ -90,16 +98,17 @@ describe('/reload', () => {
   })
 })
 
-describe('all 4 builtins are registered', () => {
-  test('has exactly 4 commands', () => {
-    expect(builtinCommands).toHaveLength(4)
+describe('Pi-native builtins are registered', () => {
+  test('has exactly 3 commands', () => {
+    expect(builtinCommands).toHaveLength(3)
   })
 
-  test.each(['clear', 'reset', 'reload', 'help'])('includes /%s', (name) => {
+  test.each(['reset', 'reload', 'help'])('includes /%s', (name) => {
     expect(builtinCommands.find((c) => c.name === name)).toBeDefined()
   })
 
-  test('does NOT include /model or /cost (removed)', () => {
+  test('does NOT include removed/deferred local commands', () => {
+    expect(builtinCommands.find((c) => c.name === 'clear')).toBeUndefined()
     expect(builtinCommands.find((c) => c.name === 'model')).toBeUndefined()
     expect(builtinCommands.find((c) => c.name === 'cost')).toBeUndefined()
   })

@@ -69,6 +69,21 @@ describe('ModelSelect', () => {
     expect(screen.getByPlaceholderText('Search models…')).toBeTruthy()
   })
 
+  it('keeps provider-qualified selections distinct when model ids collide', () => {
+    render(
+      <ModelSelect
+        value={{ provider: 'anthropic', id: 'sonnet' }}
+        onChange={() => {}}
+        options={[
+          { provider: 'anthropic', id: 'sonnet', label: 'Claude Sonnet', available: true },
+          { provider: 'openrouter', id: 'sonnet', label: 'OpenRouter Sonnet', available: true },
+        ]}
+      />,
+    )
+
+    expect(screen.getByText('Claude Sonnet')).toBeTruthy()
+  })
+
   it('invokes onChange when a model is selected', () => {
     const onChange = vi.fn()
     render(
