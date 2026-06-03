@@ -389,8 +389,6 @@ export function useAgentChat(opts: UseAgentChatOptions) {
       : knownActiveTurn && rawStatus === 'ready'
         ? 'submitted'
         : rawStatus
-  const statusRef = useRef(status)
-  statusRef.current = status
   const prevRawStatusRef = useRef(rawStatus)
   useEffect(() => {
     const prev = prevRawStatusRef.current

@@ -52,12 +52,11 @@ function requestInit(
 /**
  * Thrown when the sessions endpoint returns HTTP 503 ("Agent runtime is still
  * preparing"). This is a transient condition during cold-start warmup, so it is
- * marked retryable: the hook retries with backoff instead of surfacing an empty
+ * treated as retryable: the hook retries with backoff instead of surfacing an empty
  * chat. Only 503 is retryable — every other failure (network error, 4xx, 5xx)
  * is a terminal error so we never mask real/offline failures.
  */
 class SessionsPreparingError extends Error {
-  readonly retryable = true
   constructor() {
     super('Agent runtime is still preparing')
     this.name = 'SessionsPreparingError'

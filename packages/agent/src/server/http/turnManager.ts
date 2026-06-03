@@ -27,16 +27,16 @@ interface StartTurnOptions {
   onStreamComplete?: () => void
 }
 
-export interface StartedTurn {
+interface StartedTurn {
   turnId: string
   buffer: TurnBuffer
 }
 
-export interface TurnAlreadyActive {
+interface TurnAlreadyActive {
   active: true
 }
 
-export type StartTurnResult = StartedTurn | TurnAlreadyActive
+type StartTurnResult = StartedTurn | TurnAlreadyActive
 
 interface ReservedTurn {
   sessionId: string
