@@ -1,9 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { z } from 'zod'
-import { createUIMessageStream, pipeUIMessageStreamToResponse } from '../sse'
-import type { UIMessageChunk } from '../sse'
-import type { AgentHarness, RunContext } from '../../../shared/harness'
+import { pipeUIMessageStreamToResponse } from '../sse'
+import type { AgentHarness } from '../../../shared/harness'
 import type { SessionCtx, SessionStore } from '../../../shared/session'
 import type { UIMessage } from '../../../shared/message'
 import { ErrorCode } from '../../../shared/error-codes'
@@ -15,16 +14,9 @@ import {
   ERROR_CODE_RANGE_NOT_SATISFIABLE,
   ERROR_CODE_CONFLICT,
 } from '../middleware'
-import { StreamBufferStore } from '../streamBuffer'
-import {
-  parseFileChangeChunk,
-  type SessionChangesTracker,
-} from '../sessionChangesTracker'
+import type { SessionChangesTracker } from '../sessionChangesTracker'
+import { createBufferedUiMessageStream, TurnManager } from '../turnManager'
 import { projectPiDataMessages } from '../../harness/pi-coding-agent/projectPiDataMessages'
-
-function c(data: Record<string, unknown>): UIMessageChunk {
-  return data as unknown as UIMessageChunk
-}
 
 const chatBodySchema = z.object({
   sessionId: z.string().min(1).max(128),
@@ -90,9 +82,7 @@ export function chatRoutes(
   const { sessionChangesTracker } = opts
   const telemetry = opts.telemetry ?? noopTelemetry
   const validateBody = createBodyValidator(chatBodySchema)
-  const buffers = new StreamBufferStore()
-  const activeAbortControllersBySession = new Map<string, Map<string, AbortController>>()
-  const activeTurnBySession = new Map<string, string>()
+  const turnManager = new TurnManager()
   // Track last follow-up seq/nonce per session for dedupe detection.
   // Evict entries when sessions are deleted via the sessionChangesTracker
   // hook below, and cap at 5000 to bound memory in long-running servers.
@@ -165,57 +155,20 @@ export function chatRoutes(
         properties: telemetryProperties,
       })
 
-      if (activeTurnBySession.has(sessionId)) {
-        return reply.code(409).send({
-          error: {
-            code: ERROR_CODE_CONFLICT,
-            message: 'turn_already_active',
-          },
-        })
-      }
-
-      const abortController = new AbortController()
-      const sessionAbortControllers = activeAbortControllersBySession.get(sessionId) ?? new Map<string, AbortController>()
-      sessionAbortControllers.set(turnId, abortController)
-      activeAbortControllersBySession.set(sessionId, sessionAbortControllers)
-      activeTurnBySession.set(sessionId, turnId)
-
-      const buf = buffers.create(sessionId, turnId)
-
       try {
-        const runtime = await resolveRuntime(request)
-        const ctx: RunContext = {
-          abortSignal: abortController.signal,
-          workdir: runtime.workdir,
-        }
-        safeCapture(telemetry, {
-          name: 'agent.chat.message.submitted',
-          properties: telemetryProperties,
-        })
-        const chunks = runtime.harness.sendMessage(
-          { sessionId, message, model, thinkingLevel, attachments },
-          ctx,
-        )
-
-        // Decouple the harness turn from the browser response. Session switches
-        // and reloads close the current HTTP response; that must not abort the
-        // agent turn or leave a half-persisted user message behind. The running
-        // turn pumps into the replay buffer, while each client response only
-        // subscribes to that buffer and can disconnect independently.
-        void (async () => {
-          let streamFailed = false
-          try {
-            buf.append(c({ type: 'data-turn-start', data: { turnId } }))
-            for await (const chunk of chunks) {
-              const c = chunk as UIMessageChunk
-              const fileChange = parseFileChangeChunk(c)
-              if (fileChange) {
-                sessionChangesTracker?.record(sessionId, fileChange)
-              }
-              buf.append(c)
-            }
-          } catch (err) {
-            streamFailed = true
+        const startedTurn = await turnManager.startTurn({
+          sessionId,
+          turnId,
+          input: { sessionId, message, model, thinkingLevel, attachments },
+          resolveRuntime: () => resolveRuntime(request),
+          sessionChangesTracker,
+          onSubmitted: () => {
+            safeCapture(telemetry, {
+              name: 'agent.chat.message.submitted',
+              properties: telemetryProperties,
+            })
+          },
+          onStreamError: (err) => {
             request.log.error({ err, sessionId }, '[chat] stream error')
             safeCapture(telemetry, {
               name: 'agent.chat.failed',
@@ -226,60 +179,41 @@ export function chatRoutes(
                 errorCode: ErrorCode.enum.INTERNAL_ERROR,
               },
             })
-            buf.append({
-              type: 'error',
-              errorText: 'internal error',
-            } as UIMessageChunk)
-          } finally {
-            const sessionAbortControllers = activeAbortControllersBySession.get(sessionId)
-            if (sessionAbortControllers?.get(turnId) === abortController) {
-              sessionAbortControllers.delete(turnId)
-              if (sessionAbortControllers.size === 0) activeAbortControllersBySession.delete(sessionId)
-            }
-            if (activeTurnBySession.get(sessionId) === turnId) {
-              activeTurnBySession.delete(sessionId)
-            }
-            if (!streamFailed) {
-              safeCapture(telemetry, {
-                name: 'agent.chat.completed',
-                properties: {
-                  ...telemetryProperties,
-                  status: 'ok',
-                  durationMs: Date.now() - startedAt,
-                },
-              })
-            }
-            buf.markComplete(() => buffers.evict(sessionId, turnId))
-          }
-        })()
-
-        const stream = createUIMessageStream({
-          async execute({ writer }: { writer: { write(chunk: UIMessageChunk): void } }) {
-            const replayed = buf.replay(-1)
-            for (const e of replayed) writer.write(e.chunk)
-            if (buf.complete) return
-            await new Promise<void>((resolve) => {
-              const unsub = buf.subscribe(
-                (e) => writer.write(e.chunk),
-                () => {
-                  unsub()
-                  resolve()
-                },
-              )
-              request.raw.on('close', () => {
-                unsub()
-                resolve()
-              })
+          },
+          onStreamComplete: () => {
+            safeCapture(telemetry, {
+              name: 'agent.chat.completed',
+              properties: {
+                ...telemetryProperties,
+                status: 'ok',
+                durationMs: Date.now() - startedAt,
+              },
             })
           },
         })
+
+        if ('active' in startedTurn) {
+          return reply.code(409).send({
+            error: {
+              code: ERROR_CODE_CONFLICT,
+              message: 'turn_already_active',
+            },
+          })
+        }
+
+        // Decouple the harness turn from the browser response. Session switches
+        // and reloads close the current HTTP response; that must not abort the
+        // agent turn or leave a half-persisted user message behind. The running
+        // turn pumps into the replay buffer, while each client response only
+        // subscribes to that buffer and can disconnect independently.
+        const stream = createBufferedUiMessageStream(startedTurn.buffer, request.raw)
 
         reply.hijack()
         pipeUIMessageStreamToResponse({
           response: reply.raw,
           stream,
           headers: {
-            'X-Turn-Id': turnId,
+            'X-Turn-Id': startedTurn.turnId,
             'X-Accel-Buffering': 'no',
             'Cache-Control': 'no-cache, no-transform',
           },
@@ -290,14 +224,6 @@ export function chatRoutes(
         reply.raw.flushHeaders()
         return
       } catch (err) {
-        const sessionAbortControllers = activeAbortControllersBySession.get(sessionId)
-        if (sessionAbortControllers?.get(turnId) === abortController) {
-          sessionAbortControllers.delete(turnId)
-          if (sessionAbortControllers.size === 0) activeAbortControllersBySession.delete(sessionId)
-        }
-        if (activeTurnBySession.get(sessionId) === turnId) {
-          activeTurnBySession.delete(sessionId)
-        }
         request.log.error({ err, sessionId }, '[chat] error')
         safeCapture(telemetry, {
           name: 'agent.chat.failed',
@@ -308,7 +234,6 @@ export function chatRoutes(
             errorCode: safeTelemetryErrorCode((err as { code?: unknown })?.code),
           },
         })
-        buf.markComplete(() => buffers.evict(sessionId, turnId))
         const statusCode = (err as { statusCode?: unknown })?.statusCode
         const stableCode = (err as { code?: unknown })?.code
         if (typeof statusCode === 'number' && statusCode >= 400 && statusCode < 600) {
@@ -343,7 +268,7 @@ export function chatRoutes(
         })
       }
 
-      const active = buffers.getActive(sessionId)
+      const active = turnManager.getActive(sessionId)
 
       if (!active) {
         // No active streaming turn to resume. History hydration goes through
@@ -368,26 +293,7 @@ export function chatRoutes(
         '[resume] replaying',
       )
 
-      const stream = createUIMessageStream({
-        async execute({ writer }: { writer: { write(chunk: UIMessageChunk): void } }) {
-          const replayed = buf.replay(cursor)
-          for (const e of replayed) writer.write(e.chunk)
-          if (buf.complete) return
-          await new Promise<void>((resolve) => {
-            const unsub = buf.subscribe(
-              (e) => writer.write(e.chunk),
-              () => {
-                unsub()
-                resolve()
-              },
-            )
-            request.raw.on('close', () => {
-              unsub()
-              resolve()
-            })
-          })
-        },
-      })
+      const stream = createBufferedUiMessageStream(buf, request.raw, cursor)
 
       reply.hijack()
       pipeUIMessageStreamToResponse({
@@ -430,10 +336,8 @@ export function chatRoutes(
       const query = request.query as { turnId?: unknown }
       const requestedTurnId = typeof query.turnId === 'string' && query.turnId.length > 0
         ? query.turnId
-        : activeTurnBySession.get(sessionId)
-      if (requestedTurnId) {
-        activeAbortControllersBySession.get(sessionId)?.get(requestedTurnId)?.abort()
-      }
+        : undefined
+      turnManager.abortTurn(sessionId, requestedTurnId)
       return reply.code(204).send()
     },
   )
