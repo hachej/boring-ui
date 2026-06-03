@@ -225,6 +225,39 @@ describe('ChatPanel (shadcn)', () => {
     expect(screen.getByText('Working…')).toBeTruthy()
   })
 
+  test('copies assistant markdown message text with clipboard fallback', async () => {
+    const execCommand = vi.fn(() => true)
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommand,
+    })
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: vi.fn().mockRejectedValue(new Error('blocked')),
+      },
+    })
+
+    mockUseAgentChat.mockReturnValue({
+      messages: [
+        { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: '## Heading\n\nhello `world`' }] },
+      ],
+      sendMessage: mockSendMessage,
+      setMessages: mockSetMessages,
+      status: 'ready',
+      error: undefined,
+    })
+
+    render(<ChatPanel sessionId="sess-copy-message" />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy message' }))
+
+    await waitFor(() => {
+      expect(execCommand).toHaveBeenCalledWith('copy')
+    })
+    expect(screen.getByRole('button', { name: 'Copied' })).toBeTruthy()
+  })
+
   test('renders reasoning parts', () => {
     mockUseAgentChat.mockReturnValue({
       messages: [

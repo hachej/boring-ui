@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { UIMessage } from 'ai'
+import { copyTextToClipboard } from './clipboard'
 import { cn } from './lib'
 import { Button, IconButton, Tabs, TabsContent, TabsList, TabsTrigger } from '@hachej/boring-ui-kit'
 import {
@@ -18,9 +19,8 @@ function CopyButton({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false)
 
   const onCopy = useCallback(() => {
-    const writeText = navigator.clipboard?.writeText?.bind(navigator.clipboard)
-    if (!writeText) return
-    void writeText(value).then(() => {
+    void copyTextToClipboard(value).then((ok) => {
+      if (!ok) return
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1200)
     })

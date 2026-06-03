@@ -30,6 +30,7 @@ import {
   ArtifactTitle,
 } from './primitives/artifact'
 import { CopyIcon, DownloadIcon } from 'lucide-react'
+import { copyTextToClipboard } from './clipboard'
 import { cn } from './lib'
 import { ErrorCode } from '../shared/error-codes'
 import { getRuntimeReadinessStatus } from './runtimeReadinessStatus'
@@ -276,9 +277,7 @@ function renderWrite(part: ToolPart): ReactNode {
                 tooltip="Copy contents"
                 label="Copy"
                 onClick={() => {
-                  if (typeof navigator !== 'undefined' && navigator.clipboard) {
-                    navigator.clipboard.writeText(content).catch(() => {})
-                  }
+                  void copyTextToClipboard(content)
                 }}
               />
               <ArtifactAction
