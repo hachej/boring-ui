@@ -24,6 +24,8 @@ export interface CreatePluginResult {
   filesCreated: string[]
 }
 
+const KEBAB_RE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/
+
 function findRepoRoot(from: string): string | null {
   let current = from
   while (true) {
@@ -84,13 +86,18 @@ export function createPlugin(options: CreatePluginOptions): CreatePluginResult {
     )
   }
 
+  if (!KEBAB_RE.test(name)) {
+    throw new Error(
+      `invalid plugin name "${name}" — must be kebab-case (e.g. "my-plugin")`,
+    )
+  }
+
   const repoRoot = findRepoRoot(cwd)
   const targetParent = options.path ? resolve(cwd, options.path) : join(repoRoot ?? cwd, "plugins")
   const targetDir = join(targetParent, name)
   if (existsSync(targetDir)) throw new Error(`Directory already exists: ${targetDir}`)
 
-  const id = name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/^-+|-+$/g, "")
-  if (!id) throw new Error(`invalid plugin name: ${name}`)
+  const id = name
   const symbolBase = id.replace(/-plugin$/, "") || id
   const pascalBase = symbolBase
     .split(/[-_]+/)
