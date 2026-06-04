@@ -16,7 +16,7 @@ import {
   Loader2Icon,
 } from "lucide-react"
 import { getFileIcon } from "../../../../front/registry/getFileIcon"
-import { Input } from "@hachej/boring-ui-kit"
+import { EmptyState, Input } from "@hachej/boring-ui-kit"
 import { cn } from "../../../../front/lib/utils"
 import { getFileTreeDndManager } from "./dndManager"
 
@@ -149,6 +149,28 @@ function InlineEditInput({
       className="h-5 min-w-0 flex-1 rounded-sm border-[color:var(--accent)]/60 px-1 text-[13px] leading-[1.2] focus-visible:ring-[color:var(--accent)]"
     />
   )
+}
+
+function countVisibleNodes(
+  nodes: FileTreeNode[],
+  searchQuery: string | undefined,
+): number {
+  if (!searchQuery?.trim()) return nodes.length
+
+  const term = searchQuery.trim().toLowerCase()
+  const countMatches = (entries: FileTreeNode[]): number => {
+    let count = 0
+    for (const entry of entries) {
+      const selfMatches = entry.name.toLowerCase().includes(term)
+      const childCount = entry.children?.length ? countMatches(entry.children) : 0
+      if (selfMatches || childCount > 0) {
+        count += 1
+      }
+    }
+    return count
+  }
+
+  return countMatches(nodes)
 }
 
 function Node({ node, style, dragHandle }: NodeRendererProps<FileTreeNode>) {
@@ -377,6 +399,11 @@ export function FileTree({
     [onContextMenu, editing, pendingPaths, onSubmitEdit, onCancelEdit],
   )
 
+  const visibleNodeCount = useMemo(
+    () => countVisibleNodes(files, searchQuery),
+    [files, searchQuery],
+  )
+
   if (files.length === 0) {
     return (
       <div
@@ -386,6 +413,20 @@ export function FileTree({
         )}
       >
         No files
+      </div>
+    )
+  }
+
+  if (visibleNodeCount === 0) {
+    return (
+      <div className={cn("flex h-full items-center justify-center p-6", className)}>
+        <EmptyState
+          className="min-h-0 border-0"
+          title="No matching files"
+          description={searchQuery?.trim()
+            ? `No files match “${searchQuery.trim()}”.`
+            : "No files match the current filter."}
+        />
       </div>
     )
   }
