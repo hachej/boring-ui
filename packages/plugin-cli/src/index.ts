@@ -1,7 +1,9 @@
 import {
   buildPluginStatus,
   findHintForError,
+  createPlugin,
   formatVerifyResult,
+  parseCreateArgs,
   parseScaffoldArgs,
   parseVerifyArgs,
   scaffoldPlugin,
@@ -16,6 +18,7 @@ export function pluginCommandUsage(): string {
     "",
     "Commands:",
     "  boring-ui-plugin status [--json]",
+    "  boring-ui-plugin create <name> [--path <dir>]",
     "  boring-ui-plugin scaffold <name> [workspace]",
     "  boring-ui-plugin verify [name] [workspace]",
     "  boring-ui-plugin test <name> [--url <url>] [--workspace <id>] [--panel-id <id>] [--timeout-ms <ms>] [--json]",
@@ -31,6 +34,22 @@ function handleStatus(json: boolean): void {
   console.log(status.workspaceLocalPluginRoots
     ? `workspace-local plugin roots enabled: ${status.extensionsDir}`
     : `workspace-local plugin roots disabled: ${status.reason}`)
+}
+
+function handleCreate(argv: string[], positionals: string[]): void {
+  const args = parseCreateArgs(positionals)
+  const result = createPlugin({
+    name: args.name,
+    ...(readOption(argv, "--path") ? { path: readOption(argv, "--path") } : {}),
+  })
+  console.log(`created ${result.id}`)
+  console.log(`  dir   ${result.pluginDir}`)
+  console.log("")
+  console.log("Next steps:")
+  console.log(`  1. cd ${result.pluginDir}`)
+  console.log("  2. pnpm install")
+  console.log(`  3. pnpm --filter ${result.packageName} typecheck`)
+  console.log(`  4. pnpm --filter ${result.packageName} test`)
 }
 
 function handleScaffold(positionals: string[]): void {
@@ -102,14 +121,15 @@ export async function runBoringUiPluginCli(argv = process.argv.slice(2)): Promis
   const rest = positionals.slice(1)
 
   if (command === "status") return handleStatus(json)
+  if (command === "create") return handleCreate(argv, rest)
   if (command === "scaffold") return handleScaffold(rest)
   if (command === "verify") return handleVerify(rest)
   if (command === "test") return await handleTest(argv, rest, json)
   console.log(pluginCommandUsage())
 }
 
-export { findHintForError, formatVerifyResult, scaffoldPlugin, verifyPlugin } from "./server/index"
-export type { PluginVerifyOutcome, ScaffoldPluginOptions, ScaffoldPluginResult, VerifyPluginResult } from "./server/index"
+export { createPlugin, findHintForError, formatVerifyResult, scaffoldPlugin, verifyPlugin } from "./server/index"
+export type { CreatePluginOptions, CreatePluginResult, PluginVerifyOutcome, ScaffoldPluginOptions, ScaffoldPluginResult, VerifyPluginResult } from "./server/index"
 export { formatSelfTestResult, runPluginSelfTest } from "./server/testPlugin"
 export type { PaneSelfTestState, RunPluginSelfTestOptions, SelfTestEvent, SelfTestResult } from "./server/testPlugin"
 

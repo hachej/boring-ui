@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "type": "module",
   "private": true,
-  "description": "Reference app/internal boring-ui package-plugin example using declarative definePlugin({ ... }) front contributions plus boot-time server integration. Generated .pi/extensions plugins should use boring-ui scaffold-plugin instead.",
+  "description": "Reference app/internal boring-ui package-plugin example using declarative definePlugin({ ... }) front contributions plus boot-time server integration. Generated .pi/extensions plugins should use boring-ui-plugin scaffold instead.",
   "boring": {
     "label": "Sample",
     "front": "dist/front/index.js",

@@ -25,7 +25,6 @@ If a plugin needs `recharts`, the user/agent adds it to that plugin package and 
 ```bash
 cd .pi/extensions/my-plugin
 npm install recharts
-# pnpm add recharts is also fine when the plugin author chooses pnpm
 ```
 
 This deliberately matches Pi's behavior for local extensions:
@@ -97,5 +96,5 @@ URL rewriting. Add a dedicated import-policy/resolution module and make all path
 - Node built-ins remain rejected from front code.
 - Declared-but-missing dependencies fail with clear diagnostics and an install hint.
 - `react`, `react-dom`, `@hachej/boring-workspace*`, and `@hachej/boring-ui-kit` declared as plugin dependencies are rejected or warned as forbidden singleton deps.
-- Plugin-authoring prompt/skill docs tell agents to run `npm install`/`pnpm add` inside `.pi/extensions/<plugin>/` after adding deps.
+- Plugin-authoring prompt/skill docs tell agents to run `npm install` inside `.pi/extensions/<plugin>/` after adding deps.
 - `/reload` never runs package install.

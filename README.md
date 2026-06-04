@@ -218,7 +218,7 @@ Near-term priorities:
 | `@hachej/boring-ask-user`      | Agent-to-user question/answer surface and `ask_user` tool                               | [plugins/ask-user](plugins/ask-user/README.md)                           |
 | `@hachej/boring-data-explorer` | Searchable, faceted data tables — the primitive for explorer-style panels               | [plugins/data-explorer](plugins/data-explorer/README.md)                 |
 | `@hachej/boring-data-catalog`  | Configurable catalog tab built on `data-explorer`                                       | [plugins/data-catalog](plugins/data-catalog/README.md)                   |
-| App/internal plugin template   | Publishable package-plugin reference; generated plugins use `boring-ui scaffold-plugin` | [packages/cli/templates/plugin](packages/cli/templates/plugin/README.md) |
+| App/internal plugin template   | Publishable package-plugin reference; create with `boring-ui-plugin create` | [packages/plugin-cli/templates/plugin](packages/plugin-cli/templates/plugin/README.md) |
 
 
 ### Reference apps
@@ -261,7 +261,7 @@ integration:
 - `boring.front` — workbench UI from `definePlugin({ ... })`: panels, commands, catalogs, surface resolvers, providers, bindings
 - `boring.server` — explicit static/boot-time server integration from `defineServerPlugin({ ... })`: agent tools that need backend state and HTTP routes. Restart the workspace server after changes.
 
-Run `boring-ui plugin create <name>` for a publishable package plugin, or start from [packages/cli/templates/plugin](packages/cli/templates/plugin/README.md). For a front/Pi hot-reloadable local plugin, run `boring-ui scaffold-plugin <name>`.
+For a publishable package plugin, run `boring-ui-plugin create <name> --path plugins`. For a front/Pi hot-reloadable local plugin, run `boring-ui-plugin scaffold <name>`.
 
 ### Current hot-reload compatibility
 

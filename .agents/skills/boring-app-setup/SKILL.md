@@ -50,7 +50,7 @@ Use another base only when the user clearly wants:
 
 - `.agents/skills/boring-plugin-build/SKILL.md`
 - `packages/pi/skills/boring-plugin-authoring/SKILL.md`
-- `packages/cli/templates/plugin/README.md`
+- `packages/plugin-cli/templates/plugin/README.md`
 - `packages/cli/README.md`
 
 ## Rule
