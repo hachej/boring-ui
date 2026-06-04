@@ -202,9 +202,30 @@ Notes:
 
 - Package discovery derives an asset id from `package.json#name` (`@scope/name` becomes `scope-name`). `config.id` is the contribution namespace for front outputs. Matching the normalized package id is recommended for fully package-loaded plugins; first-party/static composition may use a shorter namespace.
 - Panel/command/tab ids should be `<plugin-id>.<thing>` — convention.
-- Do not add `leftTabs` by default. A left tab is permanent sidebar navigation; use it only for catalogs or always-on tools. File visualizers should open through `surfaceResolvers`, not create sidebar tabs.
 - Import React explicitly (no `globalThis.React`).
 - Do NOT use `defineFrontPlugin` or `createPlugin` (don't exist).
+
+## Choose how the plugin opens
+
+Plugins have three different navigation surfaces. Pick the one that matches the
+user intent; do not register all of them by default.
+
+| User intent | Use | Why |
+|---|---|---|
+| "Give me a command/button to open this tool" | `commands: [{ panelId }]` | Command opens the panel on demand; no permanent sidebar slot. |
+| "Add a persistent left-sidebar category/tab" | `leftTabs: [{ panelId }]` | Left tab is always visible navigation for catalogs, dashboards, or always-on tools. It renders the referenced panel. |
+| "When I open files matching X, show them in my custom pane" | `surfaceResolvers` with `WORKSPACE_OPEN_PATH_SURFACE_KIND` | File-open routing chooses the right panel by file/path pattern. No sidebar tab needed. |
+
+Rules:
+
+- Do **not** add `leftTabs` just because a plugin has a panel. A left tab is
+  permanent sidebar navigation.
+- Use `leftTabs` for categories like Data, Charts, Search, Docs, or other
+  always-on workspace tools.
+- Use a file-pattern `surfaceResolver` for file visualizers/readers/editors
+  (`*.csv`, `*.deck.md`, `*.json`, etc.).
+- A plugin may have both only when it truly has both jobs: e.g. a Charts sidebar
+  dashboard **and** a resolver that opens `*.chart.json` files in a chart pane.
 
 ## Design-system defaults
 
