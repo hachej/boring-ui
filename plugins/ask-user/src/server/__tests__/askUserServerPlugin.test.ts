@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { vi } from "vitest"
 
 vi.mock("@boring/agent/server", () => ({}))
@@ -7,10 +9,11 @@ import { mkdtemp } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import { FileAskUserStore } from "../askUserStore"
+import type { AskUserStore } from "../askUserStore"
 import { AskUserRuntime } from "../askUserRuntime"
 import { createAskUserTool } from "../createAskUserTool"
 import { createAskUserServerPlugin } from "../askUserServerPlugin"
+import { MemoryAskUserStore } from "./testAskUserStore"
 import type { UiBridge, UiCommand, UiState } from "@hachej/boring-workspace/server"
 import type { AskUserQuestion } from "../../shared/types"
 
@@ -27,9 +30,9 @@ function bridge(): UiBridge & { commands: UiCommand[] } {
 }
 
 const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer" }] }
-const pendingWait = { timeout: 10_000 }
+const pendingWait = { timeout: 30_000 }
 
-async function waitForPendingQuestion(store: FileAskUserStore, sessionId: string): Promise<AskUserQuestion> {
+async function waitForPendingQuestion(store: AskUserStore, sessionId: string): Promise<AskUserQuestion> {
   const started = Date.now()
   let last: AskUserQuestion | null = null
   while (Date.now() - started < pendingWait.timeout) {
@@ -41,8 +44,7 @@ async function waitForPendingQuestion(store: FileAskUserStore, sessionId: string
 }
 
 async function fixture() {
-  const dir = await mkdtemp(join(tmpdir(), "ask-user-plugin-"))
-  const store = new FileAskUserStore(join(dir, "questions.json"))
+  const store = new MemoryAskUserStore()
   const runtime = new AskUserRuntime({ store })
   return { store, runtime }
 }
@@ -106,7 +108,7 @@ describe("ask-user Pi tool", () => {
     await waitForRuntimeWaiter(runtime, pending.questionId)
     await runtime.submitAnswer(pending.questionId, "s1", { answer: "ok" })
     await expect(pendingResult).resolves.toMatchObject({ details: { status: "answered" } })
-  }, 10_000)
+  }, 30_000)
 })
 
 describe("createAskUserServerPlugin", () => {

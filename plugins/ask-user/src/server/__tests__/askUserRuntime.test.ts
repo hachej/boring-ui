@@ -1,20 +1,19 @@
-import { mkdtemp } from "node:fs/promises"
-import { join } from "node:path"
-import { tmpdir } from "node:os"
+// @vitest-environment node
+
 import { describe, expect, it, vi } from "vitest"
 import { ASK_USER_ERROR_CODES } from "../../shared/error-codes"
 import type { AskUserFormSchema, AskUserQuestion } from "../../shared/types"
-import { FileAskUserStore } from "../askUserStore"
+import type { AskUserStore } from "../askUserStore"
 import { AskUserRuntime, InProcessAskUserCoordinator, requireAskUserRuntime } from "../askUserRuntime"
+import { MemoryAskUserStore } from "./testAskUserStore"
 
 const schema: AskUserFormSchema = { wireVersion: 1, fields: [{ type: "text", name: "answer", label: "Answer" }] }
 
 async function makeStore() {
-  const dir = await mkdtemp(join(tmpdir(), "ask-user-runtime-"))
-  return new FileAskUserStore(join(dir, "questions.json"))
+  return new MemoryAskUserStore()
 }
 
-async function pendingQuestion(store: FileAskUserStore, sessionId: string) {
+async function pendingQuestion(store: AskUserStore, sessionId: string) {
   const started = Date.now()
   while (Date.now() - started < 10_000) {
     const question = await store.getPending(sessionId)

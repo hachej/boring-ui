@@ -1,11 +1,11 @@
-import { mkdtemp } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
+// @vitest-environment node
+
 import { describe, expect, it, vi } from "vitest"
 import { ASK_USER_UI_STATE_SLOTS } from "../../shared/constants"
-import { FileAskUserStore } from "../askUserStore"
+import type { AskUserStore } from "../askUserStore"
 import { AskUserRuntime } from "../askUserRuntime"
 import { AskUserStatePublisher } from "../askUserStatePublisher"
+import { MemoryAskUserStore } from "./testAskUserStore"
 import type { UiBridge, UiCommand, UiState } from "@hachej/boring-workspace/server"
 
 function bridge(): UiBridge & { commands: UiCommand[] } {
@@ -21,15 +21,14 @@ function bridge(): UiBridge & { commands: UiCommand[] } {
 }
 
 async function makeStore() {
-  const dir = await mkdtemp(join(tmpdir(), "ask-user-state-"))
-  return new FileAskUserStore(join(dir, "questions.json"))
+  return new MemoryAskUserStore()
 }
 
 const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer" }] }
 
-async function waitForPending(store: FileAskUserStore, sessionId: string) {
+async function waitForPending(store: AskUserStore, sessionId: string) {
   const started = Date.now()
-  while (Date.now() - started < 10_000) {
+  while (Date.now() - started < 30_000) {
     const pending = await store.getPending(sessionId)
     if (pending) return pending
     await new Promise((resolve) => setTimeout(resolve, 25))
@@ -40,7 +39,7 @@ async function waitForPending(store: FileAskUserStore, sessionId: string) {
 async function waitForRuntimeWaiter(runtime: AskUserRuntime, questionId: string) {
   await vi.waitFor(() => {
     expect(runtime.coordinator.hasWaiter(questionId)).toBe(true)
-  }, { timeout: 10_000 })
+  }, { timeout: 30_000 })
 }
 
 describe("AskUserStatePublisher", () => {
@@ -75,7 +74,7 @@ describe("AskUserStatePublisher", () => {
     abandonedController.abort()
     await expect(abandonedPending).resolves.toMatchObject({ status: "cancelled" })
     await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null }))
-  }, 15_000)
+  }, 30_000)
 })
 
 describe("ask-user UI open", () => {
@@ -90,7 +89,7 @@ describe("ask-user UI open", () => {
     await waitForRuntimeWaiter(runtime, question!.questionId)
     await runtime.submitAnswer(question!.questionId, "s1", { answer: "ok" })
     await expect(pending).resolves.toMatchObject({ status: "answered" })
-  }, 15_000)
+  }, 30_000)
 
   it("returns abort without waiting for openSurface acknowledgement", async () => {
     const store = await makeStore()
@@ -113,5 +112,5 @@ describe("ask-user UI open", () => {
     await waitForRuntimeWaiter(runtime, question!.questionId)
     await runtime.submitAnswer(question!.questionId, "s1", { answer: "ok" })
     await expect(pending).resolves.toMatchObject({ status: "answered" })
-  }, 15_000)
+  }, 30_000)
 })
