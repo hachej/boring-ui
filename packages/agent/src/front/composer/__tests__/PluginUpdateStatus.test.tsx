@@ -58,7 +58,7 @@ describe("PluginUpdateStatus", () => {
     expect(onDismiss).toHaveBeenCalledOnce()
   })
 
-  test("keeps success banners with browser front events visible until manually dismissed", () => {
+  test("auto-dismisses success banners with browser front events", () => {
     vi.useFakeTimers()
     const onDismiss = vi.fn()
 
@@ -75,12 +75,69 @@ describe("PluginUpdateStatus", () => {
       />,
     )
 
-    expect(container.textContent).toContain("Browser plugin modules updated")
-    expect(container.textContent).toContain("csv-viewer")
+    expect(container.textContent).toContain("Reload complete")
+    expect(container.textContent).toContain("1 plugin module refreshed")
+    expect(container.textContent).not.toContain("csv-viewer")
     act(() => {
-      vi.advanceTimersByTime(10_000)
+      vi.advanceTimersByTime(2500)
     })
-    expect(onDismiss).not.toHaveBeenCalled()
+    expect(onDismiss).toHaveBeenCalledOnce()
+  })
+
+  test("does not reset auto-dismiss when browser module details arrive", () => {
+    vi.useFakeTimers()
+    const onDismiss = vi.fn()
+    const container = document.createElement("div")
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    roots.push(root)
+    containers.push(container)
+
+    act(() => {
+      root.render(
+        <PluginUpdateStatus
+          state={{ kind: "success", reloaded: false }}
+          onDismiss={onDismiss}
+          onRetry={vi.fn()}
+          successAutoDismissMs={1000}
+        />,
+      )
+    })
+    act(() => {
+      vi.advanceTimersByTime(500)
+    })
+    act(() => {
+      root.render(
+        <PluginUpdateStatus
+          state={{
+            kind: "success",
+            reloaded: false,
+            frontEvents: [{ source: "browser", pluginId: "csv-viewer", message: "front module loaded" }],
+          }}
+          onDismiss={onDismiss}
+          onRetry={vi.fn()}
+          successAutoDismissMs={1000}
+        />,
+      )
+    })
+    act(() => {
+      vi.advanceTimersByTime(500)
+    })
+
+    expect(onDismiss).toHaveBeenCalledOnce()
+  })
+
+  test("uses the provided max-width class so it can match the composer", () => {
+    const container = render(
+      <PluginUpdateStatus
+        state={{ kind: "success", reloaded: true }}
+        onDismiss={vi.fn()}
+        onRetry={vi.fn()}
+        maxWidthClassName="max-w-[680px]"
+      />,
+    )
+
+    expect(container.querySelector('[data-boring-plugin-update="success"]')?.className).toContain("max-w-[680px]")
   })
 
   test("keeps success banners with diagnostics visible until manually dismissed", () => {

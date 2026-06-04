@@ -14,8 +14,9 @@ describe("buildBoringSystemPrompt", () => {
     })
     expect(prompt).toMatch(/\*\*1\.\s+Check plugin-root support/)
     expect(prompt).toMatch(/\*\*2\.\s+Edit/)
-    expect(prompt).toMatch(/\*\*3\.\s+Verify/)
-    expect(prompt).toMatch(/\*\*4\.\s+Ask the user to run `\/reload`/)
+    expect(prompt).toMatch(/\*\*3\.\s+Install plugin-local deps/)
+    expect(prompt).toMatch(/\*\*4\.\s+Verify/)
+    expect(prompt).toMatch(/\*\*5\.\s+Ask the user to run `\/reload`/)
   })
 
   test("includes the scaffold and verify CLI invocations", () => {
@@ -27,6 +28,18 @@ describe("buildBoringSystemPrompt", () => {
     expect(prompt).toContain("boring-ui-plugin status --json")
     expect(prompt).toContain("boring-ui-plugin scaffold <kebab-name>")
     expect(prompt).toContain("boring-ui-plugin verify")
+  })
+
+  test("teaches plugin-local deps and boring-ui-kit defaults", () => {
+    const prompt = buildBoringSystemPrompt({
+      scaffoldCommand: "boring-ui-plugin scaffold",
+      verifyCommand: "boring-ui-plugin verify",
+      boringPiRootOverride: FIXTURE_PI_ROOT,
+    })
+    expect(prompt).toContain("@hachej/boring-ui-kit")
+    expect(prompt).toContain("plugin-local deps")
+    expect(prompt).toContain("npm install <dep>")
+    expect(prompt).toContain("/reload` never installs packages")
   })
 
   test("names every common hallucination", () => {
@@ -108,17 +121,17 @@ describe("buildBoringSystemPrompt", () => {
     expect(prompt).not.toMatch(/\*\*1\.\s+Check plugin-root support/)
   })
 
-  test("stays under 4000 chars in the full configuration", () => {
-    // The pi-style docs pointer block adds ~600 chars over the
-    // workflow-only prompt; absolute pnpm paths can be 100+ chars each.
-    // Keep a hard ceiling so the appendix doesn't drift back toward
-    // inlining content the agent should `read` on demand instead.
+  test("stays under 5000 chars in the full configuration", () => {
+    // The pi-style docs pointer block plus compact deps/design-system
+    // reminders are still much cheaper than inlining the full authoring docs.
+    // Keep a ceiling so the appendix doesn't drift back toward inlining
+    // content the agent should `read` on demand instead.
     const prompt = buildBoringSystemPrompt({
       scaffoldCommand: "boring-ui-plugin scaffold",
       verifyCommand: "boring-ui-plugin verify",
       boringPiRootOverride: FIXTURE_PI_ROOT,
     })
-    expect(prompt.length).toBeLessThan(4000)
+    expect(prompt.length).toBeLessThan(5000)
   })
 
   test("uses require.resolve to find @hachej/boring-pi when no override is provided", () => {

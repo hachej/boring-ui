@@ -562,6 +562,53 @@ describe("useAgentPluginHotReload", () => {
     expect(screen.getByTestId("all-panel-ids")).not.toHaveTextContent("hidden-removed-pane")
   })
 
+  test("renders runtime left tabs by resolving their panelId component", async () => {
+    const importFront = async (): Promise<{ default: BoringFrontFactoryWithId }> => ({
+      default: hotPlugin("hot-plugin", (api) => {
+        api.registerPanel({
+          id: "hot-left-pane",
+          label: "Hot Left Pane",
+          component: function HotLeftPane() {
+            return <div data-testid="hot-left-pane">left tab content</div>
+          },
+        })
+        api.registerLeftTab({
+          id: "hot-left-tab",
+          title: "Hot Left",
+          panelId: "hot-left-pane",
+        })
+      }),
+    })
+
+    function LeftTabHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <PaneRenderer id="hot-left-tab" />
+        </RegistryProvider>
+      )
+    }
+
+    render(<LeftTabHarness />)
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl: "/@fs/front.mjs",
+      boring: { front: "./front.mjs" },
+    })
+
+    await waitFor(() => expect(screen.getByTestId("hot-left-pane")).toHaveTextContent("left tab content"))
+  })
+
   test("updates command palette entries when plugin front registrations change", async () => {
     const importFront = async (_url: string, revision: number): Promise<{ default: BoringFrontFactoryWithId }> => ({
       default: hotPlugin("hot-plugin", (api) => {

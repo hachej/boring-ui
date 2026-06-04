@@ -25,11 +25,19 @@ export type WorkbenchLeftTabId = string
 
 const FILES_LEFT_TAB_ID = "files"
 
+export interface WorkbenchLeftPaneOpenPanelConfig {
+  id: string
+  component: string
+  title?: string
+  params?: Record<string, unknown>
+}
+
 export interface WorkbenchLeftPaneProps {
   rootDir?: string
   bridge?: WorkspaceBridge
   defaultTab?: WorkbenchLeftTabId
   revealFileTreeRequest?: { path: string; seq: number } | null
+  onOpenPanel?: (config: WorkbenchLeftPaneOpenPanelConfig) => void
   onCollapse?: () => void
   className?: string
 }
@@ -39,6 +47,7 @@ export function WorkbenchLeftPane({
   bridge,
   defaultTab,
   revealFileTreeRequest,
+  onOpenPanel,
   onCollapse,
   className,
 }: WorkbenchLeftPaneProps) {
@@ -198,7 +207,7 @@ export function WorkbenchLeftPane({
       )}
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        <LeftTabPanelHost panel={activeEntry?.panel} params={leftTabParams} />
+        <LeftTabPanelHost panel={activeEntry?.panel} params={leftTabParams} onOpenPanel={onOpenPanel} />
       </div>
     </div>
   )
@@ -211,14 +220,19 @@ const noopPaneApi = new Proxy(
     get: () => () => noopDisposable,
   },
 ) as PaneProps["api"]
-const noopContainerApi = new Proxy(
-  {},
-  {
-    get: () => () => undefined,
-  },
-) as PaneProps["containerApi"]
+function createLeftTabContainerApi(onOpenPanel: WorkbenchLeftPaneProps["onOpenPanel"]): PaneProps["containerApi"] {
+  return new Proxy(
+    {},
+    {
+      get: (_target, prop) => {
+        if (prop === "addPanel") return (config: WorkbenchLeftPaneOpenPanelConfig) => onOpenPanel?.(config)
+        return () => undefined
+      },
+    },
+  ) as PaneProps["containerApi"]
+}
 
-function LeftTabPanelHost({ panel, params }: { panel?: PanelConfig; params: LeftTabParams }) {
+function LeftTabPanelHost({ panel, params, onOpenPanel }: { panel?: PanelConfig; params: LeftTabParams; onOpenPanel?: WorkbenchLeftPaneProps["onOpenPanel"] }) {
   const Inner = useMemo(() => {
     if (!panel) return null
     if (panel.lazy) {
@@ -228,6 +242,8 @@ function LeftTabPanelHost({ panel, params }: { panel?: PanelConfig; params: Left
     }
     return panel.component as ComponentType<any>
   }, [panel])
+
+  const containerApi = useMemo(() => createLeftTabContainerApi(onOpenPanel), [onOpenPanel])
 
   if (!panel || !Inner) {
     return (
@@ -252,7 +268,7 @@ function LeftTabPanelHost({ panel, params }: { panel?: PanelConfig; params: Left
         {createElement(Inner, {
           params,
           api: noopPaneApi,
-          containerApi: noopContainerApi,
+          containerApi,
           className: "h-full",
         })}
       </Suspense>

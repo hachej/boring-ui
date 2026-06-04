@@ -893,6 +893,23 @@ describe('ChatPanel (shadcn)', () => {
     expect(mockSetMessages).toHaveBeenCalled()
   })
 
+  test('slash command picker closes after executing a slash command', async () => {
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() })
+    render(<ChatPanel sessionId="sess-cmd-picker" />)
+
+    act(() => {
+      const textarea = { value: '/reload', selectionStart: '/reload'.length }
+      ;(capturedTextareaProps?.onChange as (event: { currentTarget: typeof textarea }) => void)?.({ currentTarget: textarea })
+    })
+    expect(screen.getByText('/reload')).toBeTruthy()
+
+    await act(async () => {
+      await capturedOnSubmit!({ text: '/reload', files: [] })
+    })
+
+    expect(screen.queryByText('/reload')).toBeNull()
+  })
+
   test('/clear calls setMessages with empty array', async () => {
     renderToStaticMarkup(<ChatPanel sessionId="sess-clear" />)
 

@@ -123,6 +123,17 @@ describe("createInMemoryBridge", () => {
     expect(await bridge.drainCommands?.()).toEqual([]);
   });
 
+  it("queues commands when all subscribers report dead delivery", async () => {
+    const bridge = createInMemoryBridge();
+    bridge.subscribeCommands(() => false);
+
+    await bridge.postCommand({ kind: "openFile", params: { path: "/queued.ts" } });
+
+    expect(await bridge.drainCommands?.()).toEqual([
+      { kind: "openFile", params: { path: "/queued.ts" }, seq: 1 },
+    ]);
+  });
+
   it("queues commands again after the last live subscriber disconnects", async () => {
     const bridge = createInMemoryBridge();
     const unsub = bridge.subscribeCommands(() => {});

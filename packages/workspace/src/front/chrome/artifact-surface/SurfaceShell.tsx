@@ -634,6 +634,7 @@ export function SurfaceShell({
               bridge={bridge}
               defaultTab={defaultLeftTab}
               revealFileTreeRequest={fileTreeRevealRequest}
+              onOpenPanel={openPanelSync}
               onCollapse={() => setCollapsed(true)}
             />
           </aside>

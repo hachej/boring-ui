@@ -83,8 +83,13 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): s
   n += 1
   steps.push(
     opts.scaffoldCommand
-      ? `**${n}. Edit the generated files to implement the request.** Keep the scaffold imports, \`definePlugin\` shape, and manifest layout; replace only placeholder content/ids/labels with the real implementation.`
-      : `**${n}. Create or edit the plugin files to implement what the user asked for.** Use the boring-plugin-authoring skill as the canonical source for imports, the \`definePlugin\` call shape, and the manifest layout.`,
+      ? `**${n}. Edit the generated files.** Keep scaffold imports/layout. Use \`@hachej/boring-ui-kit\` + workspace primitives for native UI; avoid ad-hoc inline UI.`
+      : `**${n}. Create or edit plugin files.** Use the boring-plugin-authoring skill for imports, \`definePlugin\`, manifest layout, and boring-ui-kit design defaults.`,
+  )
+
+  n += 1
+  steps.push(
+    `**${n}. Install plugin-local deps only when needed.** If adding a browser package, bash \`cd "$BORING_AGENT_WORKSPACE_ROOT/.pi/extensions/<kebab-name>" && npm install <dep>\`; never install at workspace root. \`/reload\` never installs packages.`,
   )
 
   n += 1
@@ -129,6 +134,7 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): s
       "- Server/Pi tool method: `handler` — use `execute`. Return shape: `{ content: [{ type: \"text\", text }] }` (NEVER a bare string).",
       "- Manifest values: `boring.server: true` — use `false`/omit for hot-reload user plugins, or a relative path string only for advanced boot-time/static server integration.",
       "- File layout: files at the package root, or `src/` / `dist/` / `lib/` subdirectories — the scaffold's hot-reload layout (`front/index.tsx`, optional `agent/index.ts` declared in `pi.extensions`) is the one the workspace refreshes on `/reload`.",
+      "- Dependency installs: do NOT install plugin UI dependencies at the workspace root. Install them inside `.pi/extensions/<name>/` and keep React/workspace/boring-ui-kit imports as host singletons, not plugin dependencies.",
       "- Hot-reload agent tools: do NOT put them in `.pi/extensions/<name>/server/index.ts`; use `pi.extensions` instead. `boring.server` requires static composition plus process restart.",
     ].join("\n"),
     docsBlock,

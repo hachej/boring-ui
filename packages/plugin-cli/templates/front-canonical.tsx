@@ -9,9 +9,47 @@
 
 import React from "react"
 import { definePlugin } from "@hachej/boring-workspace/plugin"
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  EmptyState,
+  Toolbar,
+  ToolbarGroup,
+} from "@hachej/boring-ui-kit"
 
 function MyPane() {
-  return <div style={{ padding: 16 }}>Hello from &lt;kebab-name&gt;</div>
+  return (
+    <div className="flex h-full min-h-0 min-w-0 flex-col bg-background text-foreground">
+      <Toolbar className="border-b border-border px-3 py-2">
+        <ToolbarGroup>
+          <Badge variant="secondary">Runtime plugin</Badge>
+        </ToolbarGroup>
+      </Toolbar>
+
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto p-4">
+        <Card>
+          <CardHeader>
+            <CardTitle><Label></CardTitle>
+            <CardDescription>
+              Replace this scaffold with the plugin's real workspace UI.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <EmptyState
+              title="Nothing to show yet"
+              description="Connect data, register a surface resolver, or add actions for this plugin."
+              actions={<Button size="sm">Primary action</Button>}
+            />
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  )
 }
 
 export default definePlugin({
@@ -26,6 +64,9 @@ export default definePlugin({
   // Do not add leftTabs by default: left tabs are persistent sidebar
   // navigation. Use them only for always-on tools/catalogs that deserve a
   // permanent sidebar entry; file visualizers should use surfaceResolvers.
+  // Keep left-tab panes responsive too: use min-w-0 + overflow-auto, and use
+  // containerApi.addPanel(...) from PaneProps when a sidebar button should open
+  // a center workbench pane.
   // leftTabs: [
   //   { id: "<kebab-name>.tab", title: "<Label>", panelId: "<kebab-name>.panel" },
   // ],
@@ -43,6 +84,10 @@ export default definePlugin({
   // setup: (api) => { if (env.beta) api.registerPanel(betaPanel) },
 })
 
+// Responsive pane rule: panels and left tabs live inside resizable dock regions.
+// Avoid fixed large widths; prefer w-full/min-w-0 layouts and responsive chart
+// wrappers such as Recharts ResponsiveContainer.
+//
 // All available `definePlugin` config fields:
 //   id            (required, string)
 //   label         (optional, string)

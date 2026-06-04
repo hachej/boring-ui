@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
-import { isAbsolute, join, relative, resolve } from "node:path"
+import { builtinModules, createRequire } from "node:module"
+import { extname, isAbsolute, join, relative, resolve } from "node:path"
 import {
   isSafePluginRelativePath,
   validateBoringPluginManifest,
@@ -35,6 +36,26 @@ function readPluginSignatureCache(pluginRootDir: string): PluginSignatureCachePa
   const loadedAt = typeof obj.loadedAt === "number" ? obj.loadedAt : 0
   return { version: 1, serverSignature: sig, loadedAt }
 }
+
+const HOST_PROVIDED_IMPORTS = new Set([
+  "react",
+  "react-dom",
+  "react-dom/client",
+  "react/jsx-runtime",
+  "react/jsx-dev-runtime",
+  "@hachej/boring-workspace",
+  "@hachej/boring-workspace/plugin",
+  "@hachej/boring-workspace/events",
+  "@hachej/boring-ui-kit",
+])
+const HOST_PROVIDED_DEPENDENCIES = new Set([
+  "react",
+  "react-dom",
+  "@hachej/boring-workspace",
+  "@hachej/boring-ui-kit",
+])
+const FRONT_SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".css"])
+const NODE_BUILTIN_IMPORTS = new Set(builtinModules.flatMap((name) => [name, `node:${name}`]))
 
 interface VerifyPluginOptions {
   /** Workspace root containing `.pi/extensions/`. */
@@ -141,6 +162,134 @@ function resolveExistingContainedPath(pluginDir: string, value: string, field: s
   return { path: targetReal }
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function packageNameFromSpecifier(specifier: string): string {
+  const parts = specifier.split("/")
+  return specifier.startsWith("@") && parts.length >= 2 ? `${parts[0]}/${parts[1]}` : parts[0]
+}
+
+function dependencyDir(pluginDir: string, packageName: string): string {
+  return packageName.startsWith("@")
+    ? join(pluginDir, "node_modules", ...packageName.split("/"))
+    : join(pluginDir, "node_modules", packageName)
+}
+
+function readDependencySection(pkg: Record<string, unknown>, section: string): string[] {
+  const value = pkg[section]
+  if (!isObject(value)) return []
+  return Object.keys(value)
+}
+
+function validateDependencyManifest(pluginDir: string, pkg: Record<string, unknown>, errors: string[]): void {
+  for (const section of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"]) {
+    for (const dep of readDependencySection(pkg, section)) {
+      if (HOST_PROVIDED_DEPENDENCIES.has(dep)) {
+        errors.push(`${section}.${dep}: do not list host-provided package "${dep}" as a plugin dependency; import it from the host runtime instead.`)
+      }
+    }
+  }
+
+  for (const dep of readDependencySection(pkg, "dependencies")) {
+    if (HOST_PROVIDED_DEPENDENCIES.has(dep)) continue
+    if (!existsSync(dependencyDir(pluginDir, dep))) {
+      errors.push(`dependency "${dep}" is declared but not installed. Run: cd ${pluginDir} && npm install`)
+    }
+  }
+}
+
+function isBareImport(specifier: string): boolean {
+  return !specifier.startsWith(".") && !specifier.startsWith("/") && !specifier.startsWith("file://")
+}
+
+function isUnsafeFrontSpecifier(specifier: string): boolean {
+  return specifier.startsWith("/@fs/")
+    || specifier.startsWith("//")
+    || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(specifier)
+    || isAbsolute(specifier)
+}
+
+function stripCommentsForImportScan(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1")
+}
+
+function collectImportSpecifiers(source: string, path: string): string[] {
+  const specs: string[] = []
+  const extension = extname(path).toLowerCase()
+  if (extension === ".css") {
+    const cssImportPattern = /^\s*@import\s+(?:url\(\s*(?:["']([^"']+)["']|([^\s)"']+))\s*\)|["']([^"']+)["'])/gm
+    const cssUrlPattern = /\burl\(\s*(?:["']([^"']+)["']|([^\s)"']+))\s*\)/gm
+    let match: RegExpExecArray | null
+    while ((match = cssImportPattern.exec(source)) !== null) specs.push(match[1] ?? match[2] ?? match[3] ?? "")
+    while ((match = cssUrlPattern.exec(source)) !== null) specs.push(match[1] ?? match[2] ?? "")
+    return specs.filter(Boolean)
+  }
+
+  const code = stripCommentsForImportScan(source)
+  const patterns = [
+    /\bimport\s+(?:[^"']*?\s+from\s+)?["']([^"']+)["']/g,
+    /\bexport\s+[^"']*?\s+from\s+["']([^"']+)["']/g,
+    /\bimport\(\s*["']([^"']+)["']\s*\)/g,
+  ]
+  for (const pattern of patterns) {
+    let match: RegExpExecArray | null
+    while ((match = pattern.exec(code)) !== null) specs.push(match[1])
+  }
+  return specs
+}
+
+function visitSourceFiles(root: string, check: (path: string) => void): void {
+  if (!existsSync(root)) return
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (entry.name === "node_modules" || entry.name.startsWith(".")) continue
+    const path = join(root, entry.name)
+    if (entry.isDirectory()) {
+      visitSourceFiles(path, check)
+    } else if (entry.isFile() && FRONT_SOURCE_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
+      check(path)
+    }
+  }
+}
+
+function validateFrontImports(pluginDir: string, errors: string[]): void {
+  const req = createRequire(join(pluginDir, "package.json"))
+  const nodeModulesReal = existsSync(join(pluginDir, "node_modules")) ? realpathSync(join(pluginDir, "node_modules")) : null
+  const check = (path: string) => {
+    const source = readFileSync(path, "utf8")
+    for (const specifier of collectImportSpecifiers(source, path)) {
+      if (specifier.startsWith("node:") || NODE_BUILTIN_IMPORTS.has(specifier)) {
+        errors.push(`${path}: front import "${specifier}" is not browser-safe; Node built-ins are not available in runtime plugin fronts.`)
+        continue
+      }
+      if (isUnsafeFrontSpecifier(specifier)) {
+        errors.push(`${path}: front import "${specifier}" bypasses the host runtime URL space.`)
+        continue
+      }
+      if (!isBareImport(specifier)) continue
+      const packageName = packageNameFromSpecifier(specifier)
+      if (HOST_PROVIDED_IMPORTS.has(specifier)) continue
+      if (HOST_PROVIDED_DEPENDENCIES.has(packageName)) {
+        errors.push(`${path}: front import "${specifier}" targets an unsupported host-provided package subpath; use documented front imports only.`)
+        continue
+      }
+      try {
+        const resolved = req.resolve(specifier)
+        if (!nodeModulesReal || !isInsideRoot(nodeModulesReal, realpathSync(resolved))) {
+          errors.push(`${path}: front import "${specifier}" must resolve from this plugin's node_modules. Run: cd ${pluginDir} && npm install ${packageName}`)
+        }
+      } catch {
+        errors.push(`${path}: missing dependency for front import "${specifier}". Run: cd ${pluginDir} && npm install ${packageName}`)
+      }
+    }
+  }
+  visitSourceFiles(join(pluginDir, "front"), check)
+  visitSourceFiles(join(pluginDir, "shared"), check)
+}
+
 function verifySinglePlugin(pluginDir: string): PluginVerifyOutcome {
   const id = pluginDir.split(/[\\/]/).pop() ?? "<unknown>"
   const errors: string[] = []
@@ -158,6 +307,8 @@ function verifySinglePlugin(pluginDir: string): PluginVerifyOutcome {
     const message = error instanceof Error ? error.message : String(error)
     return { id, dir: pluginDir, ok: false, errors: [`package.json is not valid JSON: ${message}`], warnings }
   }
+
+  if (isObject(parsed)) validateDependencyManifest(pluginDir, parsed, errors)
 
   const result = validateBoringPluginManifest(parsed)
   if (!result.valid) {
@@ -218,6 +369,8 @@ function verifySinglePlugin(pluginDir: string): PluginVerifyOutcome {
       if (resolved.error) errors.push(resolved.error)
     }
   }
+
+  validateFrontImports(pluginDir, errors)
 
   const piSkills = (manifest.pi as { skills?: string[] } | undefined)?.skills
   if (Array.isArray(piSkills)) {
