@@ -100,7 +100,7 @@ export function PluginUpdateStatus({
         : frontEvents.length > 0
           ? `${frontEvents.length} plugin module${frontEvents.length === 1 ? "" : "s"} refreshed. Changes are live.`
           : "Changes are live."
-      : "Changes will apply on the next agent message."
+      : undefined
     return (
       <div
         data-boring-plugin-update="success"
