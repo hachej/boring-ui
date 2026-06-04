@@ -22,9 +22,13 @@ implementation, such as:
 - main panels/views to include
 - desired visual tone and complexity
 - any must-have interactions or constraints
+- a final free-text `remarks` / `notes` field for anything the structured fields missed
 
-If `ask_user` is not available, ask the same concise questions in chat. Once the user
-answers, proceed to STEP 0.
+When using `ask_user`, always include that final `remarks` field as a `textarea` at
+the end of the form. It can be optional, but it must be present.
+
+If `ask_user` is not available, ask the same concise questions in chat and include a
+final "Anything else / remarks?" question. Once the user answers, proceed to STEP 0.
 
 ## STEP 0 — Always scaffold first
 
@@ -230,6 +234,19 @@ Notes:
 
 Plugins have three different navigation surfaces. Pick the one that matches the
 user intent; do not register all of them by default.
+
+**Left pane vs main pane rule:** if a plugin has a persistent `leftTabs` entry
+and a main workbench panel, create **two separate components**:
+
+- `LeftPane` / sidebar component: compact navigator, filters, summaries, recent
+  items, buttons, and quick actions. It lives in the narrow left workbench.
+- `MainPane` / center component: full detail view with tables, charts, editors,
+  previews, and multi-step workflows.
+
+Do **not** register the same full `MainPane` component as both `panels[].component`
+and `leftTabs[].panelId`. That duplicates the center UI in the narrow sidebar and
+makes plugins feel broken. Left-pane buttons can open the center pane with
+`PaneProps.containerApi.addPanel({ id, component: "<plugin>.panel", title, params })`.
 
 | User intent | Use | Why |
 |---|---|---|
