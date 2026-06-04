@@ -49,7 +49,7 @@ import {
   AttachmentInfo,
   AttachmentRemove,
 } from './primitives/attachments'
-import { PaperclipIcon, CopyIcon, CheckIcon, RefreshCwIcon, Loader2, AlertCircleIcon, XIcon } from 'lucide-react'
+import { PaperclipIcon, CopyIcon, CheckIcon, RefreshCwIcon, Loader2, AlertCircleIcon, XIcon, SquareArrowOutUpRight } from 'lucide-react'
 import {
   Button,
   IconButton,
@@ -547,11 +547,14 @@ export function ChatPanel(props: ChatPanelProps) {
   const runtimeDependenciesNotice = composerNoticeForRuntimeDependencies(workspaceWarmupStatus)
   const composerStatusNotice = composerRuntimeNotice ?? runtimeErrorNotice ?? warmupNotice ?? runtimeDependenciesNotice
   const workspaceWarmupBlocked = Boolean(warmupNotice)
-  const composerBlocked = workspaceWarmupBlocked || composerBlockers.length > 0
+  const hostComposerBlocked = composerBlockers.length > 0
+  const composerBlocked = workspaceWarmupBlocked || hostComposerBlocked
   const primaryComposerBlocker = composerBlockers[0]
   const composerBlockerLabel = workspaceWarmupBlocked
     ? (warmupNotice?.title ?? 'Preparing workspace…')
     : primaryComposerBlocker?.label ?? 'Complete the pending workspace action to continue.'
+  const composerSubmitStatus = hostComposerBlocked && !workspaceWarmupBlocked ? 'streaming' : status
+  const activityBadgeLabel = hostComposerBlocked && !workspaceWarmupBlocked ? 'Waiting for your answer…' : 'Working…'
 
   const registry = useMemo(
     () => {
@@ -751,11 +754,15 @@ export function ChatPanel(props: ChatPanelProps) {
   const emptyHero = emptyPlacement === 'hero' && renderMessages.length === 0 && !hydratingMessages
 
   // Stop button: cancels stream, clears the queued follow-up, and lets host UI
-  // cancel any host-level blocker that is waiting for user attention.
+  // cancel any host-level blocker that is waiting for user attention. When the
+  // stop affordance is shown only because a host blocker (for example ask_user)
+  // is pending, do not abort the agent stream: cancelling the blocker lets the
+  // tool resolve and update its card out of Running state.
   const handleStop = useCallback(() => {
     onComposerStop?.()
+    if (hostComposerBlocked && !workspaceWarmupBlocked) return
     stopAndClearFollowUps()
-  }, [onComposerStop, stopAndClearFollowUps])
+  }, [hostComposerBlocked, onComposerStop, stopAndClearFollowUps, workspaceWarmupBlocked])
 
   // Escape: interrupts the stream but keeps the queued message — it auto-sends next.
   // Same behaviour as pi's keyboard interrupt: "stop this, do my follow-up instead."
@@ -1391,7 +1398,7 @@ export function ChatPanel(props: ChatPanelProps) {
       <div className={cn(chrome ? "px-4 pb-4 pt-2 sm:px-6 sm:pb-5" : "px-3 pb-3 pt-1")}>
         {/* Working… badge. Unmount when idle so restored completed chats do not
             expose stale live-region text to screen readers or text extraction. */}
-        {isStreaming && (
+        {(isStreaming || (hostComposerBlocked && !workspaceWarmupBlocked)) && (
           <div
             className={cn(
               "mx-auto mb-2 w-full overflow-hidden transition-all duration-300 max-h-8",
@@ -1412,7 +1419,7 @@ export function ChatPanel(props: ChatPanelProps) {
                 animate={{ opacity: [0.35, 1, 0.35] }}
                 transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
               />
-              <span>Working…</span>
+              <span>{activityBadgeLabel}</span>
             </div>
           </div>
         )}
@@ -1444,21 +1451,29 @@ export function ChatPanel(props: ChatPanelProps) {
             role="status"
             aria-live="polite"
             className={cn(
-              "mx-auto mb-2 w-full max-w-3xl rounded-[var(--radius-md)] border border-primary/30 bg-primary/10",
+              "mx-auto mb-2 w-full rounded-[var(--radius-md)] border border-primary/30 bg-primary/10",
               "px-3 py-2 text-xs text-foreground",
+              chrome ? "max-w-3xl" : "max-w-[680px]",
             )}
           >
-            <span>{composerBlockerLabel}</span>
-            {primaryComposerBlocker?.actions?.map((action) => (
-              <button
-                key={action.id}
-                type="button"
-                className="ml-2 rounded border border-primary/30 px-2 py-0.5 text-[11px] font-medium hover:bg-primary/10"
-                onClick={() => onComposerBlockerAction?.(primaryComposerBlocker, action.id)}
-              >
-                {action.label}
-              </button>
-            ))}
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate">{composerBlockerLabel}</span>
+              {primaryComposerBlocker?.actions?.map((action) => {
+                const ActionIcon = action.id === 'open' ? SquareArrowOutUpRight : action.id === 'cancel' ? XIcon : null
+                return (
+                  <button
+                    key={action.id}
+                    type="button"
+                    aria-label={action.label}
+                    title={action.label}
+                    className="inline-flex size-6 shrink-0 items-center justify-center rounded border border-primary/30 text-primary hover:bg-primary/10"
+                    onClick={() => onComposerBlockerAction?.(primaryComposerBlocker, action.id)}
+                  >
+                    {ActionIcon ? <ActionIcon aria-hidden="true" className="size-3.5" /> : <span className="px-1 text-[11px] font-medium">{action.label}</span>}
+                  </button>
+                )
+              })}
+            </div>
           </div>
         )}
         {hotReloadEnabled && (
@@ -1599,9 +1614,9 @@ export function ChatPanel(props: ChatPanelProps) {
                 <div className="ml-1 flex items-center gap-1.5">
                   <KbdHints />
                   <PromptInputSubmit
-                    status={status}
+                    status={composerSubmitStatus}
                   onStop={handleStop}
-                  disabled={composerBlocked && !isStreaming}
+                  disabled={workspaceWarmupBlocked}
                   className={cn(
                     // Primary action. Uses the warm accent (not `primary`,
                     // which is a neutral foreground tone) — this is the one
