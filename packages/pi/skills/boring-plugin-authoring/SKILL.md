@@ -5,6 +5,27 @@ description: Create, extend, or update boring-ui workspace plugins, including ho
 
 # Boring Plugin Authoring
 
+## STEP -1 — Clarify vague new-plugin requests
+
+When the user asks for a **new plugin** but the request is broad or underspecified
+(e.g. "make me a plugin", "build a dashboard plugin", "make this plugin UI more complex"),
+ask for the missing product details **before scaffolding or editing**. Do not silently
+invent the domain, data source, navigation behavior, or visual direction.
+
+If the `ask_user` tool is installed, prefer it for this clarification so the user gets
+a structured form in the Workspace Questions pane. Ask only for decisions that affect
+implementation, such as:
+
+- plugin purpose and target user
+- data source or sample data to use
+- whether it needs a persistent left tab, a slash command, a file opener/surface resolver, or some combination
+- main panels/views to include
+- desired visual tone and complexity
+- any must-have interactions or constraints
+
+If `ask_user` is not available, ask the same concise questions in chat. Once the user
+answers, proceed to STEP 0.
+
 ## STEP 0 — Always scaffold first
 
 Don't write plugin files from scratch. The CLI scaffold produces a known-correct
