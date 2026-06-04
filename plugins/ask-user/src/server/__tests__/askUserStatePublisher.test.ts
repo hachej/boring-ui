@@ -28,10 +28,18 @@ async function makeStore() {
 const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer" }] }
 
 async function waitForPending(store: FileAskUserStore, sessionId: string) {
-  return vi.waitFor(async () => {
+  const started = Date.now()
+  while (Date.now() - started < 10_000) {
     const pending = await store.getPending(sessionId)
-    expect(pending).not.toBeNull()
-    return pending!
+    if (pending) return pending
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  throw new Error(`timed out waiting for pending question for ${sessionId}`)
+}
+
+async function waitForRuntimeWaiter(runtime: AskUserRuntime, questionId: string) {
+  await vi.waitFor(() => {
+    expect(runtime.coordinator.hasWaiter(questionId)).toBe(true)
   }, { timeout: 10_000 })
 }
 
@@ -48,12 +56,14 @@ describe("AskUserStatePublisher", () => {
       expect(slot).toMatchObject({ question: { status: "ready" } })
       return (slot as { question: { questionId: string } }).question
     })
+    await waitForRuntimeWaiter(runtime, question.questionId)
     await runtime.submitAnswer(question.questionId, "s1", { answer: "ok" })
     await expect(pending).resolves.toMatchObject({ status: "answered" })
     await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null }))
 
     const cancelPending = runtime.ask({ sessionId: "s1", schema })
     const q2 = await waitForPending(store, "s1")
+    await waitForRuntimeWaiter(runtime, q2.questionId)
     await runtime.cancelQuestion(q2.questionId, "s1")
     await expect(cancelPending).resolves.toMatchObject({ status: "cancelled" })
     await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null }))
@@ -77,6 +87,7 @@ describe("ask-user UI open", () => {
     const question = await waitForPending(store, "s1")
     await new Promise((resolve) => setTimeout(resolve, 10))
     await expect(store.getPending("s1")).resolves.not.toBeNull()
+    await waitForRuntimeWaiter(runtime, question!.questionId)
     await runtime.submitAnswer(question!.questionId, "s1", { answer: "ok" })
     await expect(pending).resolves.toMatchObject({ status: "answered" })
   }, 15_000)
@@ -99,6 +110,7 @@ describe("ask-user UI open", () => {
     const runtime = new AskUserRuntime({ store, uiBridge: ui })
     const pending = runtime.ask({ sessionId: "s1", title: "T", schema })
     const question = await waitForPending(store, "s1")
+    await waitForRuntimeWaiter(runtime, question!.questionId)
     await runtime.submitAnswer(question!.questionId, "s1", { answer: "ok" })
     await expect(pending).resolves.toMatchObject({ status: "answered" })
   }, 15_000)

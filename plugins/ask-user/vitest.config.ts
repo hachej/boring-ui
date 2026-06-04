@@ -17,5 +17,9 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test-setup.ts"],
     include: ["**/*.test.{ts,tsx}"],
+    // The ask-user server tests exercise one blocking in-process coordinator
+    // and pending-question store semantics. Running files in parallel makes
+    // timing assertions depend on CPU load in CI; keep this package serial.
+    fileParallelism: false,
   },
 })

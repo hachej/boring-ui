@@ -12,6 +12,7 @@ import { AskUserRuntime } from "../askUserRuntime"
 import { createAskUserTool } from "../createAskUserTool"
 import { createAskUserServerPlugin } from "../askUserServerPlugin"
 import type { UiBridge, UiCommand, UiState } from "@hachej/boring-workspace/server"
+import type { AskUserQuestion } from "../../shared/types"
 
 function bridge(): UiBridge & { commands: UiCommand[] } {
   let state: UiState | null = null
@@ -27,6 +28,17 @@ function bridge(): UiBridge & { commands: UiCommand[] } {
 
 const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer" }] }
 const pendingWait = { timeout: 5_000 }
+
+async function waitForPendingQuestion(store: FileAskUserStore, sessionId: string): Promise<AskUserQuestion> {
+  const started = Date.now()
+  let last: AskUserQuestion | null = null
+  while (Date.now() - started < pendingWait.timeout) {
+    last = await store.getPending(sessionId)
+    if (last) return last
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  throw new Error(`timed out waiting for pending question for ${sessionId}; last=${JSON.stringify(last)}`)
+}
 
 async function fixture() {
   const dir = await mkdtemp(join(tmpdir(), "ask-user-plugin-"))
@@ -89,13 +101,10 @@ describe("ask-user Pi tool", () => {
     const { store, runtime } = await fixture()
     const tool = createAskUserTool({ runtime, sessionId: "s1" })
     const pendingResult = tool.execute("call", { title: "Need input", schema, timeoutMs: 60_000 }, undefined)
-    let pending = await store.getPending("s1")
-    await vi.waitFor(async () => {
-      pending = await store.getPending("s1")
-      expect(pending).toMatchObject({ status: "ready", title: "Need input" })
-    }, pendingWait)
-    await waitForRuntimeWaiter(runtime, pending!.questionId)
-    await runtime.submitAnswer(pending!.questionId, "s1", { answer: "ok" })
+    const pending = await waitForPendingQuestion(store, "s1")
+    expect(pending).toMatchObject({ status: "ready", title: "Need input" })
+    await waitForRuntimeWaiter(runtime, pending.questionId)
+    await runtime.submitAnswer(pending.questionId, "s1", { answer: "ok" })
     await expect(pendingResult).resolves.toMatchObject({ details: { status: "answered" } })
   }, 10_000)
 })
