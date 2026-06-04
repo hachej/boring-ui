@@ -410,7 +410,7 @@ describe("pluginFrontRuntime", () => {
         revision: 1,
         subpath: "front/index.tsx",
       })
-      expect(String(entry.body)).toMatch(/__vite\/proxy\/packages%2Fui%2Fsrc%2Findex\.ts|__vite\/proxy\/@id/)
+      expect(String(entry.body)).toMatch(/__vite\/proxy\/(?:packages%2Fui%2Fsrc%2Findex\.ts|packages%2Fui%2Fdist%2Findex\.js|@id)/)
     } finally {
       await host.close()
     }

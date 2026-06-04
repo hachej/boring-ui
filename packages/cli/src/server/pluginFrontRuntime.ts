@@ -884,6 +884,12 @@ function isBareImport(source: string): boolean {
   return !source.startsWith(".") && !source.startsWith("/") && !source.startsWith("file://")
 }
 
+function isUnsupportedHostProvidedSubpath(source: string): boolean {
+  if (!isBareImport(source) || isHostProvidedModule(source)) return false
+  const packageName = packageNameFromBareSpecifier(source)
+  return HOST_PROVIDED_MODULES.some((moduleName) => packageNameFromBareSpecifier(moduleName) === packageName)
+}
+
 function stripBlockComments(sourceText: string): string {
   return sourceText.replace(/\/\*[\s\S]*?\*\//g, (match) => match.replace(/[^\n]/g, " "))
 }
@@ -931,6 +937,7 @@ function validateSourceImports(sourceText: string, importer: string, basePath: s
     specifier.startsWith("node:")
     || NODE_BUILTIN_MODULES.has(specifier)
     || isUnsafeAbsoluteImport(specifier, basePath)
+    || isUnsupportedHostProvidedSubpath(specifier)
   )
 
   const isImportMetaGlobCall = (expression: ts.Expression): boolean => {
@@ -1251,6 +1258,10 @@ export async function createPluginFrontRuntimeHost(
     server: {
       middlewareMode: true,
       hmr: false,
+      // Runtime plugin modules are served from immutable revision snapshots
+      // plus explicit plugin-local dependency virtual ids. Watching the whole
+      // monorepo is useless here and can exhaust CI file-watch limits.
+      watch: null,
     },
   })
 
