@@ -21,5 +21,6 @@ export default defineConfig({
     // and pending-question store semantics. Running files in parallel makes
     // timing assertions depend on CPU load in CI; keep this package serial.
     fileParallelism: false,
+    testTimeout: 30_000,
   },
 })

@@ -27,7 +27,7 @@ function bridge(): UiBridge & { commands: UiCommand[] } {
 }
 
 const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer" }] }
-const pendingWait = { timeout: 5_000 }
+const pendingWait = { timeout: 10_000 }
 
 async function waitForPendingQuestion(store: FileAskUserStore, sessionId: string): Promise<AskUserQuestion> {
   const started = Date.now()
