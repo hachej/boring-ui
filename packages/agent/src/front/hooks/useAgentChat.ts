@@ -194,13 +194,16 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   const cacheKey = sessionId ? `boring-agent:messages:${sessionId}` : null
   const statusKey = sessionId ? `boring-agent:status:${sessionId}` : null
   const [settledResumeKey, setSettledResumeKey] = useState<string | null>(null)
+  const [localTurnActive, setLocalTurnActive] = useState(false)
+  const localTurnVersionRef = useRef(0)
   const shouldResume = useMemo(
     () => hydrateMessages && Boolean(
       cacheKey
+      && !localTurnActive
       && settledResumeKey !== cacheKey
       && (cachedMessagesNeedResume(cacheKey) || (statusKey ? cachedStatusNeedsResume(statusKey) : false)),
     ),
-    [cacheKey, hydrateMessages, settledResumeKey, statusKey],
+    [cacheKey, hydrateMessages, localTurnActive, settledResumeKey, statusKey],
   )
 
   const activeTurnIdRef = useRef<string | null>(null)
@@ -258,8 +261,6 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     }).catch(() => { /* best-effort cancellation */ })
   }, [rawStop, sessionId])
 
-  const [localTurnActive, setLocalTurnActive] = useState(false)
-  const localTurnVersionRef = useRef(0)
   useEffect(() => {
     setLocalTurnActive(false)
   }, [sessionId])
@@ -397,13 +398,13 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     if (prevActive && (rawStatus === 'ready' || rawStatus === 'error')) {
       setLocalTurnActive(false)
       activeTurnIdRef.current = null
-      if (cacheKey && statusKey && shouldResume) {
-        setSettledResumeKey(cacheKey)
-        clearCachedMessages(cacheKey)
+      if (cacheKey) setSettledResumeKey(cacheKey)
+      if (statusKey) {
         try {
           globalThis.localStorage?.setItem(statusKey, 'ready')
         } catch { /* quota exceeded: drop status cache silently */ }
       }
+      if (cacheKey && shouldResume) clearCachedMessages(cacheKey)
     }
   }, [rawStatus, sessionId, cacheKey, statusKey, shouldResume])
 
