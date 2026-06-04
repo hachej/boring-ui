@@ -4,7 +4,7 @@ Reference shape for **app/internal publishable npm-package plugins**.
 The CLI copies this directory when you run:
 
 ```sh
-boring-ui plugin create <your-name> --path plugins
+cp -R packages/cli/templates/plugin plugins/<your-name>
 cd plugins/<your-name>
 pnpm install
 pnpm typecheck && pnpm test
@@ -21,7 +21,7 @@ cp -R packages/cli/templates/plugin plugins/<your-name>
 > **Building a generated/runtime user plugin instead** (hot-reloadable,
 > no build step, drops into a workspace's `.pi/extensions/<name>/`)?
 > Don't copy this template and don't use `npx` from inside the agent
-> runtime — run the workspace-local `boring-ui scaffold-plugin <name>`.
+> runtime — run the workspace-local `boring-ui-plugin scaffold <name>`.
 
 ## Shape
 

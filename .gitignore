@@ -26,6 +26,8 @@ packages/*/lib/node_modules/
 .env
 .env.*
 !**/.env.example
+.vercel/
+**/.vercel/
 
 # Playwright output
 apps/boring-macro-v2/workspace/
@@ -80,6 +82,6 @@ packages/workspace/src/plugins/eval-*/
 /.pi/
 
 # Per-plugin signature cache written by BoringPluginAssetManager on load —
-# read by `boring-ui verify-plugin` to detect server-file drift. Runtime
+# read by `boring-ui-plugin verify` to detect server-file drift. Runtime
 # state, never checked in.
 **/.boring-signature.json

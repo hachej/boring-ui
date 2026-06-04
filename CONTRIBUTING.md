@@ -56,13 +56,13 @@ If it fails, look at `packages/workspace/scripts/check-plugin-invariants.mjs` fo
 
 ### Plugin shape
 
-If you're adding a publishable plugin, run:
+If you're adding a publishable plugin, start from the package-plugin template:
 
 ```bash
-pnpm --filter @hachej/boring-ui-cli build   # one-time, if not built
-pnpm --filter @hachej/boring-ui-cli boring-ui plugin create <your-name> --path plugins
+mkdir -p plugins
+cp -R packages/cli/templates/plugin plugins/<your-name>
 cd plugins/<your-name>
-# rename anything the scaffold did not cover
+# rename sample identifiers/package names for your plugin
 pnpm install
 pnpm --filter @hachej/boring-<your-name> typecheck
 pnpm --filter @hachej/boring-<your-name> test

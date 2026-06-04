@@ -52,7 +52,7 @@ export interface PluginVerifyOutcome {
    * Non-fatal informational messages — e.g. "this plugin declares
    * boring.server, which is boot-time/static composition only and is
    * not hot-registered by /reload". Does NOT flip `ok` to false;
-   * verify-plugin is about manifest validity, not activation.
+   * boring-ui-plugin verify is about manifest validity, not activation.
    */
   warnings: string[]
 }

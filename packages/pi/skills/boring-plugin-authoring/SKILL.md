@@ -329,8 +329,8 @@ the tool.
 
 `boring.server: "server/index.ts"` is only for workspace server integrations
 that the host composes at boot (for example through `defaultPluginPackages` or
-explicit server plugins) and activates by restarting the process. `boring-ui
-boring-ui-plugin verify` checks that the declared file is safe and present, but `/reload`
+explicit server plugins) and activates by restarting the process. `boring-ui-plugin verify`
+checks that the declared file is safe and present, but `/reload`
 does **not** import/register `.pi/extensions` server routes or agent tools.
 
 Only use this path when the user/host explicitly wants boot-time server routes or

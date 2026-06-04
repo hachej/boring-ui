@@ -8,9 +8,9 @@ What kind of plugin is this?
 
 | Want | Use | Why |
 |---|---|---|
-| fast local/runtime plugin, hot reload, no trusted backend routes | `boring-ui scaffold-plugin <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"` | creates `.pi/extensions/<name>/` in the current workspace |
-| verify a runtime/generated plugin | `boring-ui verify-plugin <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"` | checks manifest + file shape |
-| shipped repo-level packaged plugin | `boring-ui plugin create <name> --path plugins` | copies the publishable package template |
+| fast local/runtime plugin, hot reload, no trusted backend routes | `boring-ui-plugin scaffold <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"` | creates `.pi/extensions/<name>/` in the current workspace |
+| verify a runtime/generated plugin | `boring-ui-plugin verify <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"` | checks manifest + file shape |
+| shipped repo-level packaged plugin | copy `packages/cli/templates/plugin/` into `plugins/<name>/` and rename identifiers | uses the publishable package template shape |
 | shipped app-local direct-source plugin | copy `apps/workspace-playground/src/plugins/playgroundDataCatalog/` shape | matches the in-repo app-local pattern |
 | package-plugin reference shape | `packages/cli/templates/plugin/README.md` | canonical template layout |
 
@@ -24,8 +24,8 @@ For fast local experimentation, default to a runtime/generated plugin.
 Use:
 
 ```bash
-boring-ui scaffold-plugin <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"
-boring-ui verify-plugin <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"
+boring-ui-plugin scaffold <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"
+boring-ui-plugin verify <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"
 ```
 
 Canonical references:
@@ -53,13 +53,13 @@ Do **not** use this path when the app needs trusted backend routes as part of th
 
 ### Repo-level packaged plugin
 
-Use:
+Use the package plugin template:
 
-```bash
-boring-ui plugin create <name> --path plugins
+```txt
+packages/cli/templates/plugin/
 ```
 
-This is the path that matches the built CLI template.
+Copy it into `plugins/<name>/` and rename the sample identifiers for the plugin.
 
 ### App-local direct-source plugin
 
