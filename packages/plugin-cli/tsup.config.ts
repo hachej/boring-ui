@@ -7,4 +7,5 @@ export default defineConfig({
   dts: true,
   sourcemap: false,
   clean: true,
+  external: ["playwright"],
 })

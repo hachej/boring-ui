@@ -108,6 +108,7 @@ export function PanelRenderStatusBoundary(props: PanelRenderStatusBoundaryProps)
     {
       className: "h-full min-h-0",
       "data-boring-plugin-id": props.pluginId,
+      "data-boring-panel-id": props.panelId,
       "data-boring-panel-component-id": props.panelId,
       ...(panelInstanceId ? { "data-boring-panel-instance-id": panelInstanceId } : {}),
       ...(props.revision !== undefined ? { "data-boring-plugin-revision": String(props.revision) } : {}),

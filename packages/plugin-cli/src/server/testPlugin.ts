@@ -1,8 +1,28 @@
+import { mkdir, writeFile } from "node:fs/promises"
+import { join, resolve } from "node:path"
+
 export type PaneSelfTestState = "ready" | "loading" | "error" | "missing" | "timeout" | "no-browser-connected"
 
 export interface SelfTestEvent {
   code: string
   message: string
+}
+
+export interface PluginTestArtifactFiles {
+  panelPng?: string
+  appPng?: string
+  consoleJson?: string
+  networkJson?: string
+  statusJson?: string
+}
+
+export interface PluginTestArtifacts {
+  attempted: boolean
+  saved: boolean
+  mode: "none" | "failure-only" | "screenshot" | "open" | "open+screenshot"
+  dir?: string
+  files?: PluginTestArtifactFiles
+  captureError?: SelfTestEvent
 }
 
 export interface SelfTestResult {
@@ -19,6 +39,7 @@ export interface SelfTestResult {
     error?: SelfTestEvent
     lastReportedAt?: string
   }
+  artifacts?: PluginTestArtifacts
 }
 
 export interface RunPluginSelfTestOptions {
@@ -27,11 +48,40 @@ export interface RunPluginSelfTestOptions {
   workspaceId?: string
   panelId?: string
   timeoutMs?: number
+  screenshot?: boolean
+  open?: boolean
+  artifactsDir?: string
 }
 
 interface FetchJsonResult {
   status: number
   body: unknown
+}
+
+interface BrowserConsoleEntry {
+  type: string
+  text: string
+  location?: { url?: string; lineNumber?: number; columnNumber?: number }
+  timestamp: string
+}
+
+interface BrowserFailedRequestEntry {
+  url: string
+  method: string
+  failureText?: string
+  status?: number
+  statusText?: string
+  timestamp: string
+}
+
+interface SelfTestRunContext {
+  pluginId: string
+  baseUrl: string
+  workspaceId?: string
+  timeoutMs: number
+  panelId: string
+  panelInstanceId: string
+  headers: Record<string, string>
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000
@@ -75,6 +125,21 @@ function truncateMessage(message: string): string {
 
 function event(code: string, message: string): SelfTestEvent {
   return { code, message: truncateMessage(message) }
+}
+
+function artifactMode(options: RunPluginSelfTestOptions): PluginTestArtifacts["mode"] {
+  if (options.open && options.screenshot) return "open+screenshot"
+  if (options.open) return "open"
+  if (options.screenshot) return "screenshot"
+  return "failure-only"
+}
+
+function defaultArtifactsRoot(pluginId: string): string {
+  return resolve(process.cwd(), ".pi", "extensions", pluginId, ".boring", "test-artifacts")
+}
+
+function timestampDirName(now = new Date()): string {
+  return now.toISOString().replace(/[:.]/g, "-")
 }
 
 async function readJson(response: Response): Promise<unknown> {
@@ -197,34 +262,26 @@ async function openPanel(args: { baseUrl: string; headers: Record<string, string
   return []
 }
 
-export async function runPluginSelfTest(options: RunPluginSelfTestOptions): Promise<SelfTestResult> {
-  const pluginId = options.pluginId.trim()
-  if (!pluginId) throw new Error("plugin id is required")
-  const baseUrl = normalizeBaseUrl(inferSelfTestUrl(options.url))
-  const workspaceId = inferSelfTestWorkspaceId(options.workspaceId) ?? await inferWorkspaceIdFromMeta(baseUrl)
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
-  const panelId = buildPanelId(pluginId, options.panelId)
-  const panelInstanceId = buildPanelInstanceId(pluginId, panelId)
-  const headers = workspaceHeaders(workspaceId)
+async function executeSelfTest(context: SelfTestRunContext): Promise<SelfTestResult> {
   const reloadErrors: SelfTestEvent[] = []
   let revision: number | undefined
 
   try {
-    const reload = await fetchJson(apiUrl(baseUrl, "/api/v1/agent/reload"), {
+    const reload = await fetchJson(apiUrl(context.baseUrl, "/api/v1/agent/reload"), {
       method: "POST",
-      headers: { "content-type": "application/json", ...headers },
-      body: JSON.stringify({ ...(workspaceId ? { sessionId: workspaceId } : {}) }),
+      headers: { "content-type": "application/json", ...context.headers },
+      body: JSON.stringify({ ...(context.workspaceId ? { sessionId: context.workspaceId } : {}) }),
     })
     if (reload.status < 200 || reload.status >= 300) reloadErrors.push(event("RELOAD_HTTP_ERROR", `/api/v1/agent/reload returned ${reload.status}`))
-    reloadErrors.push(...collectReloadDiagnostics(pluginId, reload.body))
+    reloadErrors.push(...collectReloadDiagnostics(context.pluginId, reload.body))
   } catch (error) {
     reloadErrors.push(event("RELOAD_FAILED", error instanceof Error ? error.message : String(error)))
   }
 
   try {
-    const diagnostics = await fetchJson(apiUrl(baseUrl, "/api/v1/runtime-plugin-diagnostics"), { headers })
+    const diagnostics = await fetchJson(apiUrl(context.baseUrl, "/api/v1/runtime-plugin-diagnostics"), { headers: context.headers })
     if (diagnostics.status >= 200 && diagnostics.status < 300) {
-      const normalized = collectRuntimeDiagnostics(pluginId, diagnostics.body)
+      const normalized = collectRuntimeDiagnostics(context.pluginId, diagnostics.body)
       reloadErrors.push(...normalized.events)
       revision = normalized.revision
     } else if (diagnostics.status !== 404) {
@@ -233,7 +290,7 @@ export async function runPluginSelfTest(options: RunPluginSelfTestOptions): Prom
   } catch {
     // Optional endpoint. Workspace playground hosts can still decide by pane status.
   }
-  reloadErrors.push(...await maybeReadPluginError(baseUrl, pluginId, headers))
+  reloadErrors.push(...await maybeReadPluginError(context.baseUrl, context.pluginId, context.headers))
 
   const start = Date.now()
   let lastOpenAt = 0
@@ -241,16 +298,33 @@ export async function runPluginSelfTest(options: RunPluginSelfTestOptions): Prom
   let lastStatus: Record<string, unknown> | undefined
   let openErrors: SelfTestEvent[] = []
 
-  while (Date.now() - start <= timeoutMs) {
-    const status = await pollPaneStatus({ baseUrl, headers, workspaceId, pluginId, panelId, panelInstanceId, minReportedAtMs: start })
+  while (Date.now() - start <= context.timeoutMs) {
+    const status = await pollPaneStatus({
+      baseUrl: context.baseUrl,
+      headers: context.headers,
+      workspaceId: context.workspaceId,
+      pluginId: context.pluginId,
+      panelId: context.panelId,
+      panelInstanceId: context.panelInstanceId,
+      minReportedAtMs: start,
+    })
     lastState = status.state
     lastStatus = status.status
     if (status.state === "no-browser-connected") {
-      return buildResult({ pluginId, workspaceId, revision, reloadErrors, panelId, panelInstanceId, state: "no-browser-connected", status: lastStatus })
+      return buildResult({
+        pluginId: context.pluginId,
+        workspaceId: context.workspaceId,
+        revision,
+        reloadErrors,
+        panelId: context.panelId,
+        panelInstanceId: context.panelInstanceId,
+        state: "no-browser-connected",
+        status: lastStatus,
+      })
     }
     if (status.state === "ready" || status.state === "error") break
     if (Date.now() - lastOpenAt >= POLL_MS) {
-      openErrors = await openPanel({ baseUrl, headers, pluginId, panelId, panelInstanceId })
+      openErrors = await openPanel(context)
       lastOpenAt = Date.now()
     }
     await new Promise((resolve) => setTimeout(resolve, POLL_MS))
@@ -258,7 +332,16 @@ export async function runPluginSelfTest(options: RunPluginSelfTestOptions): Prom
 
   if (openErrors.length > 0) reloadErrors.push(...openErrors)
   const finalState = lastState === "ready" || lastState === "error" ? lastState : "timeout"
-  return buildResult({ pluginId, workspaceId, revision, reloadErrors, panelId, panelInstanceId, state: finalState, status: lastStatus })
+  return buildResult({
+    pluginId: context.pluginId,
+    workspaceId: context.workspaceId,
+    revision,
+    reloadErrors,
+    panelId: context.panelId,
+    panelInstanceId: context.panelInstanceId,
+    state: finalState,
+    status: lastStatus,
+  })
 }
 
 function buildResult(args: {
@@ -293,6 +376,127 @@ function buildResult(args: {
   }
 }
 
+async function captureArtifacts(result: SelfTestResult, context: SelfTestRunContext, options: RunPluginSelfTestOptions): Promise<PluginTestArtifacts> {
+  const mode = artifactMode(options)
+  const rootDir = resolve(options.artifactsDir ?? defaultArtifactsRoot(context.pluginId), timestampDirName())
+  const consoleEntries: BrowserConsoleEntry[] = []
+  const failedRequests: BrowserFailedRequestEntry[] = []
+  const files: PluginTestArtifactFiles = {}
+
+  try {
+    await mkdir(rootDir, { recursive: true })
+    const { chromium } = await import("playwright")
+    const browser = await chromium.launch({ headless: !options.open })
+    const page = await browser.newPage()
+
+    page.on("console", (message) => {
+      const location = message.location()
+      consoleEntries.push({
+        type: message.type(),
+        text: truncateMessage(message.text()),
+        location: {
+          ...(location.url ? { url: location.url } : {}),
+          ...(location.lineNumber ? { lineNumber: location.lineNumber } : {}),
+          ...(location.columnNumber ? { columnNumber: location.columnNumber } : {}),
+        },
+        timestamp: new Date().toISOString(),
+      })
+    })
+    page.on("requestfailed", (request) => {
+      failedRequests.push({
+        url: request.url(),
+        method: request.method(),
+        failureText: request.failure()?.errorText,
+        timestamp: new Date().toISOString(),
+      })
+    })
+    page.on("response", (response) => {
+      if (response.status() < 400) return
+      failedRequests.push({
+        url: response.url(),
+        method: response.request().method(),
+        status: response.status(),
+        statusText: response.statusText(),
+        timestamp: new Date().toISOString(),
+      })
+    })
+
+    await page.goto(context.baseUrl, { waitUntil: "load", timeout: context.timeoutMs })
+    await page.waitForTimeout(500)
+
+    const selector = `[data-boring-panel-instance-id="${context.panelInstanceId}"]`
+    const fallbackSelector = `[data-boring-panel-id="${context.panelId}"]`
+    const locator = page.locator(selector)
+    const fallbackLocator = page.locator(fallbackSelector)
+    const target = await locator.count() > 0 ? locator : fallbackLocator
+
+    const appPath = join(rootDir, "app.png")
+    await page.screenshot({ path: appPath, fullPage: true })
+    files.appPng = appPath
+
+    if (await target.count() > 0) {
+      const panelPath = join(rootDir, "panel.png")
+      await target.first().screenshot({ path: panelPath })
+      files.panelPng = panelPath
+    }
+
+    const consolePath = join(rootDir, "console.json")
+    await writeFile(consolePath, `${JSON.stringify(consoleEntries, null, 2)}\n`, "utf8")
+    files.consoleJson = consolePath
+
+    const networkPath = join(rootDir, "network.json")
+    await writeFile(networkPath, `${JSON.stringify(failedRequests, null, 2)}\n`, "utf8")
+    files.networkJson = networkPath
+
+    const statusPath = join(rootDir, "status.json")
+    await writeFile(statusPath, `${JSON.stringify(result, null, 2)}\n`, "utf8")
+    files.statusJson = statusPath
+
+    if (options.open) {
+      await page.waitForTimeout(context.timeoutMs)
+    }
+
+    await browser.close()
+    return { attempted: true, saved: true, mode, dir: rootDir, files }
+  } catch (error) {
+    const statusPath = join(rootDir, "status.json")
+    try {
+      await mkdir(rootDir, { recursive: true })
+      await writeFile(statusPath, `${JSON.stringify(result, null, 2)}\n`, "utf8")
+      files.statusJson = statusPath
+    } catch {
+      // best effort
+    }
+    return {
+      attempted: true,
+      saved: Object.keys(files).length > 0,
+      mode,
+      ...(Object.keys(files).length > 0 ? { dir: rootDir, files } : {}),
+      captureError: event("CAPTURE_FAILED", error instanceof Error ? error.message : String(error)),
+    }
+  }
+}
+
+export async function runPluginSelfTest(options: RunPluginSelfTestOptions): Promise<SelfTestResult> {
+  const pluginId = options.pluginId.trim()
+  if (!pluginId) throw new Error("plugin id is required")
+  const baseUrl = normalizeBaseUrl(inferSelfTestUrl(options.url))
+  const workspaceId = inferSelfTestWorkspaceId(options.workspaceId) ?? await inferWorkspaceIdFromMeta(baseUrl)
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const panelId = buildPanelId(pluginId, options.panelId)
+  const panelInstanceId = buildPanelInstanceId(pluginId, panelId)
+  const headers = workspaceHeaders(workspaceId)
+  const context: SelfTestRunContext = { pluginId, baseUrl, workspaceId, timeoutMs, panelId, panelInstanceId, headers }
+
+  let result = await executeSelfTest(context)
+  const shouldCapture = options.screenshot || options.open || !result.ok
+  if (shouldCapture) {
+    const artifacts = await captureArtifacts(result, context, options)
+    result = { ...result, artifacts }
+  }
+  return result
+}
+
 export function formatSelfTestResult(result: SelfTestResult): string {
   const lines = [
     result.ok ? `OK ${result.pluginId}` : `FAIL ${result.pluginId}`,
@@ -301,6 +505,8 @@ export function formatSelfTestResult(result: SelfTestResult): string {
   if (result.revision !== undefined) lines.push(`  revision ${result.revision}`)
   for (const item of result.reloadErrors) lines.push(`  reload   ${item.code}: ${item.message}`)
   if (result.pane.error) lines.push(`  pane     ${result.pane.error.code}: ${result.pane.error.message}`)
+  if (result.artifacts?.dir) lines.push(`  artifacts ${result.artifacts.dir}`)
+  if (result.artifacts?.captureError) lines.push(`  artifacts ${result.artifacts.captureError.code}: ${result.artifacts.captureError.message}`)
   if (result.pane.state === "no-browser-connected") {
     lines.push(`  hint     open the workspace UI, then rerun boring-ui-plugin test ${result.pluginId}`)
   }

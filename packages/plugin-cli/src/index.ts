@@ -21,7 +21,7 @@ export function pluginCommandUsage(): string {
     "  boring-ui-plugin create <name> [--path <dir>]",
     "  boring-ui-plugin scaffold <name> [workspace]",
     "  boring-ui-plugin verify [name] [workspace]",
-    "  boring-ui-plugin test <name> [--url <url>] [--workspace <id>] [--panel-id <id>] [--timeout-ms <ms>] [--json]",
+    "  boring-ui-plugin test <name> [--url <url>] [--workspace <id>] [--panel-id <id>] [--timeout-ms <ms>] [--open] [--screenshot] [--artifacts-dir <path>] [--json]",
   ].join("\n")
 }
 
@@ -99,7 +99,7 @@ function readOption(argv: string[], name: string): string | undefined {
 
 async function handleTest(argv: string[], positionals: string[], json: boolean): Promise<void> {
   const name = positionals[0]
-  if (!name) throw new Error("usage: boring-ui-plugin test <name> [--url <local-server-url>] [--workspace <id>] [--panel-id <id>] [--timeout-ms <ms>] [--json]")
+  if (!name) throw new Error("usage: boring-ui-plugin test <name> [--url <local-server-url>] [--workspace <id>] [--panel-id <id>] [--timeout-ms <ms>] [--open] [--screenshot] [--artifacts-dir <path>] [--json]")
   const timeoutRaw = readOption(argv, "--timeout-ms")
   const timeoutMs = timeoutRaw ? Number(timeoutRaw) : undefined
   if (timeoutRaw && (timeoutMs == null || !Number.isFinite(timeoutMs) || timeoutMs <= 0)) throw new Error("--timeout-ms must be a positive number")
@@ -109,6 +109,9 @@ async function handleTest(argv: string[], positionals: string[], json: boolean):
     ...(readOption(argv, "--workspace") ? { workspaceId: readOption(argv, "--workspace") } : {}),
     ...(readOption(argv, "--panel-id") ? { panelId: readOption(argv, "--panel-id") } : {}),
     ...(timeoutMs == null ? {} : { timeoutMs }),
+    ...(argv.includes("--open") ? { open: true } : {}),
+    ...(argv.includes("--screenshot") ? { screenshot: true } : {}),
+    ...(readOption(argv, "--artifacts-dir") ? { artifactsDir: readOption(argv, "--artifacts-dir") } : {}),
   })
   console.log(json ? JSON.stringify(result, null, 2) : formatSelfTestResult(result))
   if (!result.ok) process.exit(1)

@@ -186,6 +186,23 @@ describe("PanelRegistry", () => {
     expect(await screen.findByText("lazy-two")).toBeInTheDocument()
     expect(screen.queryByText("lazy-one")).not.toBeInTheDocument()
   })
+
+  it("adds stable panel markers for plugin pane screenshots", async () => {
+    const reg = new PanelRegistry()
+    reg.register("chart-demo.panel", {
+      title: "Chart Demo",
+      pluginId: "chart-demo",
+      pluginRevision: 7,
+      component: () => <div>chart demo pane</div>,
+    })
+    const Panel = reg.getComponents()["chart-demo.panel"]
+    render(<Panel api={{ id: "self-test:chart-demo:chart-demo.panel" }} />)
+    const wrapper = screen.getByText("chart demo pane").closest("[data-boring-panel-id]")
+    expect(wrapper).toHaveAttribute("data-boring-panel-id", "chart-demo.panel")
+    expect(wrapper).toHaveAttribute("data-boring-plugin-id", "chart-demo")
+    expect(wrapper).toHaveAttribute("data-boring-panel-instance-id", "self-test:chart-demo:chart-demo.panel")
+    expect(wrapper).toHaveAttribute("data-boring-plugin-revision", "7")
+  })
 })
 
 // --- Surface resolver routing ---

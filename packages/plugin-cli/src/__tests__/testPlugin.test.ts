@@ -1,8 +1,12 @@
 import Fastify from "fastify"
+import { access, mkdtemp, rm } from "node:fs/promises"
+import { join } from "node:path"
+import { tmpdir } from "node:os"
 import { afterEach, describe, expect, test } from "vitest"
 import { runPluginSelfTest } from "../server/testPlugin"
 
 const apps: Array<{ close: () => Promise<unknown> }> = []
+const tempDirs: string[] = []
 
 async function startApp(setup: (app: ReturnType<typeof Fastify>) => void | Promise<void>) {
   const app = Fastify({ logger: false })
@@ -16,7 +20,14 @@ async function startApp(setup: (app: ReturnType<typeof Fastify>) => void | Promi
 
 afterEach(async () => {
   for (const app of apps.splice(0)) await app.close()
+  for (const dir of tempDirs.splice(0)) await rm(dir, { recursive: true, force: true })
 })
+
+async function tempDir(prefix: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), prefix))
+  tempDirs.push(dir)
+  return dir
+}
 
 describe("runPluginSelfTest", () => {
   test("returns no-browser-connected when the UI has not connected", async () => {
@@ -100,5 +111,26 @@ describe("runPluginSelfTest", () => {
     expect(result.ok).toBe(true)
     expect(result.revision).toBe(2)
     expect(result.pane).toMatchObject({ state: "ready", found: true })
+  })
+
+  test("saves status artifact on failure when browser capture fails", async () => {
+    const url = await startApp((app) => {
+      app.post("/api/v1/agent/reload", async () => ({ ok: true }))
+      app.get("/api/v1/ui/panels/status", async () => ({ ok: true, connected: true, state: "error", status: {
+        pluginId: "demo",
+        panelId: "demo.panel",
+        panelInstanceId: "self-test:demo:demo.panel",
+        state: "error",
+        error: { code: "PLUGIN_PANEL_RENDER_ERROR", message: "boom" },
+        reportedAt: new Date().toISOString(),
+      } }))
+    })
+
+    const artifactsDir = await tempDir("boring-plugin-artifacts-")
+    const result = await runPluginSelfTest({ pluginId: "demo", url, timeoutMs: 100, artifactsDir })
+    expect(result.ok).toBe(false)
+    expect(result.artifacts?.attempted).toBe(true)
+    expect(result.artifacts?.files?.statusJson).toBeTruthy()
+    await expect(access(result.artifacts!.files!.statusJson!)).resolves.toBeUndefined()
   })
 })
