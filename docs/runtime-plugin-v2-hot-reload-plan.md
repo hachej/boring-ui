@@ -206,14 +206,14 @@ Long term:
 
 ## Package-template policy
 
-`packages/cli/templates/plugin` is useful as an app/internal package example, but it
+`packages/plugin-cli/templates/plugin` is useful as an app/internal package example, but it
 should not be the main generated-plugin authoring path.
 
 Canonical authoring path:
 
 ```bash
-boring-ui scaffold-plugin <name>
-boring-ui verify-plugin <name>
+boring-ui-plugin scaffold <name>
+boring-ui-plugin verify <name>
 ```
 
 Reasons:
@@ -327,8 +327,8 @@ File search and normal file-open routing should ignore runtime-owned artifacts.
 
 Local CLI:
 
-- agent scaffolds a plugin with `boring-ui scaffold-plugin`;
-- `boring-ui verify-plugin` passes;
+- agent scaffolds a plugin with `boring-ui-plugin scaffold`;
+- `boring-ui-plugin verify` passes;
 - `/reload` loads frontend/Pi resources without browser restart;
 - file-open routes to generated visualizer;
 - generated plugin has no backend route;

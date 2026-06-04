@@ -9,13 +9,13 @@ Copy-paste snippets for the two plugin paths.
 ### Scaffold
 
 ```bash
-boring-ui scaffold-plugin <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"
+boring-ui-plugin scaffold <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"
 ```
 
 ### Verify
 
 ```bash
-boring-ui verify-plugin <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"
+boring-ui-plugin verify <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"
 ```
 
 ### Reload reminder

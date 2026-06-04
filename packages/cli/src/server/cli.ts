@@ -9,17 +9,11 @@ import type {
 } from "@hachej/boring-agent/server"
 import { execSync } from "node:child_process"
 import {
-  cpSync,
   existsSync,
-  mkdirSync,
-  readdirSync,
   readFileSync,
-  renameSync,
-  statSync,
-  writeFileSync,
 } from "node:fs"
 import { createRequire } from "node:module"
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
+import { basename, dirname, isAbsolute, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { parseArgs } from "node:util"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "./localWorkspaces.js"
@@ -217,12 +211,6 @@ const HELP_TEXT = [
   "Commands:",
   "  boring-ui [workspace]                 Start the workspace UI for a folder",
   "  boring-ui workspaces <subcommand>     Manage saved local workspaces",
-  "  boring-ui scaffold-plugin <name> [workspace]",
-  "                                       Scaffold a hot-reloadable plugin",
-  "  boring-ui verify-plugin [name] [workspace]",
-  "                                       Validate plugin manifests/files",
-  "  boring-ui test-plugin <name> [--url <url>]",
-  "                                       Reload, open, and live-render-test a plugin panel",
   "",
   "Options:",
   "  -p, --port <port>       HTTP port (default: 5200)",
@@ -248,10 +236,8 @@ const AUTH_GUIDE = [
 ].join("\n")
 
 async function checkAuth(): Promise<number> {
-  // Keep pi-coding-agent out of the CLI's top-level module graph so
-  // lightweight subcommands (`scaffold-plugin`, `verify-plugin`) still run
-  // from the workspace-local provisioned CLI copy, which intentionally does
-  // not materialize the whole dependency tree.
+  // Keep pi-coding-agent out of the CLI's top-level module graph so help and
+  // workspace-management commands stay lightweight.
   const { AuthStorage, ModelRegistry } = await import("@mariozechner/pi-coding-agent")
   const authStorage = AuthStorage.create()
   const registry = ModelRegistry.create(authStorage)
@@ -848,132 +834,6 @@ async function startWorkspacesMode(opts: {
   openBrowser(initialUrl)
 }
 
-function findRepoRoot(from: string): string | null {
-  let current = from
-  while (true) {
-    if (existsSync(join(current, "pnpm-workspace.yaml"))) return current
-    const parent = dirname(current)
-    if (parent === current) return null
-    current = parent
-  }
-}
-
-// Recursively walk a directory and return relative paths to files
-function walkDir(dir: string, base: string, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
-    if (entry === "node_modules" || entry === ".git" || entry === "dist") continue
-    const fullPath = join(dir, entry)
-    const stat = statSync(fullPath)
-    if (stat.isDirectory()) {
-      walkDir(fullPath, base, out)
-      continue
-    }
-    out.push(relative(base, fullPath))
-  }
-  return out
-}
-
-function replaceInFile(filePath: string, replacements: Record<string, string>) {
-  let content = readFileSync(filePath, "utf8")
-  for (const [from, to] of Object.entries(replacements)) {
-    content = content.replaceAll(from, to)
-  }
-  writeFileSync(filePath, content, "utf8")
-}
-
-async function handlePluginCommand(opts: {
-  positionals: string[]
-  args: { path?: string }
-}) {
-  const subcommand = opts.positionals[1]
-  if (subcommand !== "create") {
-    console.log("Usage: boring-ui plugin create <name> [--path <dir>]")
-    console.log("")
-    console.log("Scaffold a new plugin from the template.")
-    console.log("")
-    console.log("Arguments:")
-    console.log("  <name>        Plugin name (e.g. my-plugin)")
-    console.log("  --path        Parent directory for the new plugin (default: plugins/)")
-    return
-  }
-
-  const name = opts.positionals[2]
-  if (!name) throw new Error("usage: boring-ui plugin create <name>")
-
-  const __dirname = dirname(fileURLToPath(import.meta.url))
-  const packageRoot = resolve(__dirname, "..", "..")
-  const templateDir = join(packageRoot, "templates", "plugin")
-  if (!existsSync(templateDir)) {
-    throw new Error(
-      `Plugin template not found at ${templateDir}.\n` +
-      "This build may not include the plugin template.",
-    )
-  }
-
-  const repoRoot = findRepoRoot(process.cwd())
-  const customPath = opts.args.path
-  const targetParent = customPath ? resolve(customPath) : join(repoRoot ?? process.cwd(), "plugins")
-  const targetDir = join(targetParent, name)
-
-  if (existsSync(targetDir)) {
-    throw new Error(`Directory already exists: ${targetDir}`)
-  }
-
-  const id = name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/^-+|-+$/g, "")
-  if (!id) throw new Error(`invalid plugin name: ${name}`)
-  const symbolBase = id.replace(/-plugin$/, "") || id
-  const pascalBase = symbolBase
-    .split(/[-_]+/)
-    .map((seg) => seg.charAt(0).toUpperCase() + seg.slice(1))
-    .join("")
-  const camelBase = pascalBase.charAt(0).toLowerCase() + pascalBase.slice(1)
-  const upperBase = symbolBase.replace(/-/g, "_").toUpperCase()
-
-  console.log(`Scaffolding plugin "${id}" at ${targetDir}`)
-
-  // Copy template (excluding node_modules)
-  mkdirSync(targetParent, { recursive: true })
-  cpSync(templateDir, targetDir, { recursive: true })
-
-  // Walk and rename template identifiers/ids in all files.
-  const files = walkDir(targetDir, targetDir)
-  const pkgName = `@hachej/boring-${id}`
-  for (const file of files) {
-    const fullPath = join(targetDir, file)
-    replaceInFile(fullPath, {
-      "@hachej/boring-plugin-template": pkgName,
-      "sample-plugin": id,
-      "sample-panel": `${id}-panel`,
-      "sample.open": `${id}.open`,
-      "sample:": `${id}:`,
-      '"sample"': `"${id}"`,
-      "SAMPLE": upperBase,
-      "Sample": pascalBase,
-      "sampleSurfaceResolver": `${camelBase}SurfaceResolver`,
-      "samplePanel": `${camelBase}Panel`,
-    })
-
-    if (file.includes("samplePlugin")) {
-      const newFile = file.replace(/samplePlugin/g, `${camelBase}Plugin`)
-      const oldPath = join(targetDir, file)
-      const newPath = join(targetDir, newFile)
-      if (oldPath !== newPath) {
-        mkdirSync(dirname(newPath), { recursive: true })
-        renameSync(oldPath, newPath)
-      }
-    }
-  }
-
-  console.log("")
-  console.log(`✓ Created plugin \`${id}\` at ${relative(process.cwd(), targetDir)}`)
-  console.log("")
-  console.log("Next steps:")
-  console.log(`  cd ${relative(process.cwd(), targetDir)}`)
-  console.log("  pnpm install")
-  console.log(`  pnpm --filter ${pkgName} typecheck`)
-  console.log(`  pnpm --filter ${pkgName} test`)
-}
-
 async function handleWorkspacesCommand(opts: {
   args: { name?: string }
   positionals: string[]
@@ -1075,13 +935,6 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     mode,
   }
 
-  if (positionals[0] === "plugin") {
-    await handlePluginCommand({
-      positionals,
-      args: { path: args.path as string | undefined },
-    })
-    return
-  }
 
   if (positionals[0] === "workspaces") {
     await handleWorkspacesCommand({
@@ -1092,160 +945,9 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     return
   }
 
-  if (positionals[0] === "plugin-status") {
-    handlePluginStatusCommand({ json: args.json === true })
-    return
-  }
-
-  if (positionals[0] === "scaffold-plugin") {
-    await handleScaffoldPluginCommand({ positionals })
-    return
-  }
-
-  if (positionals[0] === "verify-plugin") {
-    await handleVerifyPluginCommand({ positionals })
-    return
-  }
-
-  if (positionals[0] === "test-plugin") {
-    await handleTestPluginCommand({
-      positionals,
-      args: {
-        url: args.url as string | undefined,
-        workspace: args.workspace as string | undefined,
-        panelId: args["panel-id"] as string | undefined,
-        timeoutMs: args["timeout-ms"] as string | undefined,
-        json: args.json === true,
-      },
-    })
-    return
-  }
 
   await startFolderMode({
     ...base,
     folderArg: positionals[0],
   })
-}
-
-function defaultWorkspaceRoot(): string {
-  return process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd()
-}
-
-function workspaceLocalPluginRootsEnabled(): boolean {
-  const raw = process.env.BORING_AGENT_WORKSPACE_LOCAL_PLUGIN_ROOTS
-  if (raw == null || raw.trim() === "") return true
-  return !["0", "false", "no", "off"].includes(raw.trim().toLowerCase())
-}
-
-function buildPluginStatus() {
-  const workspaceRoot = resolve(defaultWorkspaceRoot())
-  const enabled = workspaceLocalPluginRootsEnabled()
-  return {
-    workspaceLocalPluginRoots: enabled,
-    workspaceRoot,
-    extensionsDir: join(workspaceRoot, ".pi", "extensions"),
-    reloadSupported: enabled,
-    ...(enabled ? {} : {
-      reason: "This runtime writes to a remote sandbox; host-side plugin discovery cannot load .pi/extensions from there.",
-    }),
-  }
-}
-
-function handlePluginStatusCommand(opts: { json: boolean }) {
-  const status = buildPluginStatus()
-  if (opts.json) {
-    console.log(JSON.stringify(status, null, 2))
-    return
-  }
-  console.log(status.workspaceLocalPluginRoots
-    ? `workspace-local plugin roots enabled: ${status.extensionsDir}`
-    : `workspace-local plugin roots disabled: ${status.reason}`)
-}
-
-async function handleVerifyPluginCommand(opts: { positionals: string[] }) {
-  // Usage: `boring-ui verify-plugin [<name>] [<workspace>]`
-  // No name: verify every plugin under .pi/extensions/.
-  // With name: verify only `.pi/extensions/<name>/`.
-  // Workspace defaults to BORING_AGENT_WORKSPACE_ROOT when invoked
-  // through the workspace-local shim, then cwd as a manual fallback.
-  // The flag-free positional form keeps the invocation short for the
-  // agent's bash tool.
-  const maybeName = opts.positionals[1]
-  const maybeWorkspace = opts.positionals[2]
-  const looksLikePath = maybeName && (maybeName.includes("/") || maybeName.startsWith("."))
-  const name = looksLikePath ? undefined : maybeName
-  const workspaceRoot = resolve(maybeWorkspace ?? (looksLikePath ? maybeName! : defaultWorkspaceRoot()))
-
-  const { findHintForError, formatVerifyResult, verifyPlugin } = await import("./verifyPlugin.js")
-  const result = verifyPlugin({ workspaceRoot, ...(name ? { name } : {}) })
-  console.log(formatVerifyResult(result))
-  if (!result.ok) {
-    // Surface actionable hints for the well-known mistakes so the agent
-    // sees a one-line "do this instead" alongside the raw error.
-    const hints: string[] = []
-    for (const outcome of result.outcomes) {
-      for (const err of outcome.errors) {
-        const hint = findHintForError(err)
-        if (hint) hints.push(`  hint (${outcome.id}): ${hint}`)
-      }
-    }
-    if (hints.length > 0) {
-      console.log("")
-      console.log("Suggestions:")
-      for (const hint of hints) console.log(hint)
-    }
-    process.exit(1)
-  }
-}
-
-async function handleTestPluginCommand(opts: {
-  positionals: string[]
-  args: { url?: string; workspace?: string; panelId?: string; timeoutMs?: string; json: boolean }
-}) {
-  const name = opts.positionals[1]
-  if (!name) throw new Error("usage: boring-ui test-plugin <name> [--url <local-server-url>] [--workspace <id>] [--panel-id <id>] [--timeout-ms <ms>] [--json]")
-  const timeoutMs = opts.args.timeoutMs === undefined ? undefined : Number(opts.args.timeoutMs)
-  if (timeoutMs !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
-    throw new Error("--timeout-ms must be a positive number")
-  }
-  const { formatSelfTestResult, runPluginSelfTest } = await import("./testPlugin.js")
-  const result = await runPluginSelfTest({
-    pluginId: name,
-    url: opts.args.url,
-    workspaceId: opts.args.workspace,
-    panelId: opts.args.panelId,
-    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-  })
-  console.log(opts.args.json ? JSON.stringify(result, null, 2) : formatSelfTestResult(result))
-  if (!result.ok) process.exit(1)
-}
-
-async function handleScaffoldPluginCommand(opts: { positionals: string[] }) {
-  const name = opts.positionals[1]
-  if (!name) {
-    throw new Error("usage: boring-ui scaffold-plugin <name> [workspace]")
-  }
-  const status = buildPluginStatus()
-  if (!status.workspaceLocalPluginRoots) {
-    throw new Error(`${status.reason} Do not scaffold into .pi/extensions in this runtime.`)
-  }
-  const workspaceRoot = resolve(opts.positionals[2] ?? defaultWorkspaceRoot())
-  const { scaffoldPlugin } = await import("./scaffoldPlugin.js")
-  const result = scaffoldPlugin({ name, workspaceRoot })
-  console.log(`scaffolded ${name}`)
-  console.log(`  dir   ${result.pluginDir}`)
-  for (const file of result.filesCreated) {
-    console.log(`  +     ${file}`)
-  }
-  console.log("")
-  console.log("Next steps:")
-  console.log(`  1. edit front/index.tsx for UI panels/commands/resolvers`)
-  console.log(`  2. add pi.extensions / skills for hot-reloadable agent behavior`)
-  console.log(`  3. bash \`boring-ui verify-plugin\` — confirms manifests + files are valid`)
-  console.log(`  4. if the UI is open, bash \`boring-ui test-plugin <name>\` — catches panel render failures`)
-  console.log(`  5. ask the user: /reload`)
-  console.log("")
-  console.log("Advanced server integration:")
-  console.log("  boring.server is boot-time/static composition only. It is NOT hot-registered")
-  console.log("  by /reload for .pi/extensions user plugins; use Pi extensions for agent tools.")
 }

@@ -64,7 +64,7 @@ Use `DECISION_TREE.md` before writing files.
 Use when:
 
 - iterating inside a workspace
-- authoring with the boring CLI
+- authoring with the `boring-ui-plugin` CLI
 - relying on `/reload` for front/Pi resources
 - avoiding custom backend routes
 
@@ -72,7 +72,7 @@ Workflow:
 
 1. run the scaffold command from the canonical skill
 2. edit the generated files in place
-3. run `boring-ui verify-plugin <name> "$BORING_AGENT_WORKSPACE_ROOT"`
+3. run `boring-ui-plugin verify <name> "$BORING_AGENT_WORKSPACE_ROOT"`
 4. tell the user to run `/reload`
 
 Use `SNIPPETS.md` if you want copy-paste commands instead of rebuilding them by hand.
@@ -105,7 +105,7 @@ Concrete in-repo app-local example:
 
 Important:
 
-- `plugins/<name>/` is the home that matches `boring-ui plugin create <name> --path plugins`
+- `plugins/<name>/` is the repo-level packaged plugin home; create it with `boring-ui-plugin create <name> --path plugins`
 - `apps/<app>/src/plugins/<name>/` follows the direct-source app-local pattern shown in the playground example, not the built `dist/*` CLI template shape
 
 Use the same manifest principles as the canonical skill:
@@ -199,7 +199,7 @@ This is the shortest path from idea to production-safe plugin.
 For runtime plugins:
 
 ```bash
-boring-ui verify-plugin <name> "$BORING_AGENT_WORKSPACE_ROOT"
+boring-ui-plugin verify <name> "$BORING_AGENT_WORKSPACE_ROOT"
 ```
 
 For app/internal plugins:

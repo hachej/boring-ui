@@ -83,7 +83,7 @@ export function scaffoldPlugin(opts: ScaffoldPluginOptions): ScaffoldPluginResul
 
   // .gitignore: keep machine-managed sidecars out of the plugin author's
   // git history. `.boring-signature.json` is written by the asset manager
-  // on every load (used by verify-plugin to detect server-file drift) and
+  // on every load (used by boring-ui-plugin verify to detect server-file drift) and
   // would otherwise show up as a dirty working tree after every dev
   // session.
   write(".gitignore", "# Machine-managed sidecars written by the boring-ui plugin runtime.\n.boring-signature.json\n")

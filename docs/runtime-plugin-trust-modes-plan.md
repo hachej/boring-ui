@@ -456,7 +456,7 @@ boring-ui --plugin-dev
 Agent creates:
 
 ```bash
-boring-ui scaffold-plugin csv-viewer "$BORING_AGENT_WORKSPACE_ROOT"
+boring-ui-plugin scaffold csv-viewer "$BORING_AGENT_WORKSPACE_ROOT"
 ```
 
 User or agent edits `front/index.tsx`, then runs `/reload`.

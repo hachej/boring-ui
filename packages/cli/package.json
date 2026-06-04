@@ -9,8 +9,7 @@
   },
   "files": [
     "dist/",
-    "public/",
-    "templates/"
+    "public/"
   ],
   "scripts": {
     "build": "tsup",

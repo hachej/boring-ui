@@ -134,7 +134,7 @@ Two valid layouts, picked by intent:
 
 Global user-installed plugins are a third case: they are **discovered** from `~/.pi/agent/extensions/`, but this skill still recommends authoring/testing them in a workspace-local `.pi/extensions/<name>/` first, then copying/installing them globally once they work.
 
-The rest of this skill teaches the hot-reload layout. Repo contributors building a publishable plugin start from `packages/cli/templates/plugin/` (build-based template) instead; everyone else uses `boring-ui-plugin scaffold <name>` (Step 0).
+The rest of this skill teaches the hot-reload layout. Repo contributors building a publishable plugin use `boring-ui-plugin create <name> --path plugins` (build-based template) instead; everyone else uses `boring-ui-plugin scaffold <name>` (Step 0).
 
 ## package.json shape
 
@@ -329,8 +329,8 @@ the tool.
 
 `boring.server: "server/index.ts"` is only for workspace server integrations
 that the host composes at boot (for example through `defaultPluginPackages` or
-explicit server plugins) and activates by restarting the process. `boring-ui
-boring-ui-plugin verify` checks that the declared file is safe and present, but `/reload`
+explicit server plugins) and activates by restarting the process. `boring-ui-plugin verify`
+checks that the declared file is safe and present, but `/reload`
 does **not** import/register `.pi/extensions` server routes or agent tools.
 
 Only use this path when the user/host explicitly wants boot-time server routes or

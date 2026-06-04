@@ -238,7 +238,7 @@ boring-ui-plugin scaffold <name>
 boring-ui-plugin verify <name>
 ```
 
-Do not teach agents to copy `packages/cli/templates/plugin` for generated runtime
+Do not teach agents to copy `packages/plugin-cli/templates/plugin` for generated runtime
 plugins. That template is an app/internal publishable package example.
 
 ### 4.7 `pluginHotReload`

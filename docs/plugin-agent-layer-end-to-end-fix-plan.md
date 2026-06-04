@@ -15,7 +15,7 @@ Make agent-authored boring-ui plugins work end-to-end:
 
 The CSV viewer flow failed for several independent reasons:
 
-- `boring-ui scaffold-plugin` was advertised, but no `boring-ui` shim existed in `.boring-agent/bin`, so the agent hit `command not found` and hand-wrote files.
+- `boring-ui-plugin scaffold` was advertised, but no `boring-ui-plugin` bin existed in the provisioned runtime PATH, so the agent hit `command not found` and hand-wrote files.
 - Prompt docs pointed at host paths that were not readable inside the local bwrap runtime. The agent could not read `boring-plugin-authoring/SKILL.md` and reverse-engineered from stale plugins.
 - The generated plugin collided with built-in `csv-viewer`, which the filesystem plugin already uses for raw CSV display.
 - Hot-loaded panels were registered in `PanelRegistry`, but some surface UI code used memoized/stale registry-derived lists, so new panel ids did not become openable after `/reload`.
@@ -32,21 +32,21 @@ The CSV viewer flow failed for several independent reasons:
 - Copy the CLI package assets needed by scaffold/verify (`package.json`, `dist/`, `templates/`, and other shipped static assets) into the runtime workspace.
 - Install a `boring-ui` executable shim into `<workspace>/.boring-agent/bin/` during `createWorkspaceAgentServer()` boot. The shim must call the workspace-local CLI (`$WORKSPACE_ROOT/node_modules/@hachej/boring-ui-cli/dist/index.js`), not server-local `node_modules`.
 - Ensure the shim works in direct, local bwrap, and remote sandbox modes wherever provisioning materializes workspace files.
-- Keep using the short command in prompts: `boring-ui scaffold-plugin <name>` and `boring-ui verify-plugin`.
+- Keep using the short command in prompts: `boring-ui-plugin scaffold <name>` and `boring-ui-plugin verify`.
 - Ensure the scaffold + verify commands operate against `$BORING_AGENT_WORKSPACE_ROOT` / current workspace root, not the repo root.
 
 **Tests**
 
 - Server unit/integration:
   - create a temp workspace through `createWorkspaceAgentServer({ mode: "direct" })`.
-  - assert `<workspaceRoot>/node_modules/@hachej/boring-ui-cli/package.json` and `templates/front-canonical.tsx` exist.
-  - assert `.boring-agent/bin/boring-ui` exists and is executable.
-  - run the shim with `scaffold-plugin demo-plugin <workspaceRoot>` if cheap, or assert shim content points to `$WORKSPACE_ROOT/node_modules/@hachej/boring-ui-cli/dist/index.js`.
+  - assert `<workspaceRoot>/node_modules/@hachej/boring-ui-plugin-cli/package.json` and `templates/front-canonical.tsx` exist.
+  - assert the provisioned `boring-ui-plugin` bin exists and is executable.
+  - run `boring-ui-plugin scaffold demo-plugin <workspaceRoot>` if cheap, or assert the bin points to the provisioned plugin CLI package.
 - Runtime PATH smoke:
-  - through the same runtime path the agent bash tool uses, assert `command -v boring-ui` resolves to `.boring-agent/bin/boring-ui`.
-  - assert `echo $PATH` contains `.boring-agent/bin` before generic system bins.
+  - through the same runtime path the agent bash tool uses, assert `command -v boring-ui-plugin` resolves to the provisioned plugin CLI bin.
+  - assert `echo $PATH` contains the provisioned node bin directory before generic system bins.
 - Local-mode smoke where available:
-  - run the same `command -v boring-ui` assertion inside local bwrap mode, not only direct mode.
+  - run the same `command -v boring-ui-plugin` assertion inside local bwrap mode, not only direct mode.
 
 **Acceptance**
 
@@ -61,7 +61,7 @@ The CSV viewer flow failed for several independent reasons:
   - local bwrap: `/workspace/node_modules/@hachej/boring-pi/...`
 - Keep host `require.resolve` fallback only for non-sandbox/static cases.
 - Add prompt warning: file visualizers need `surfaceResolvers` for `WORKSPACE_OPEN_PATH_SURFACE_KIND`; a panel alone is not enough.
-- Update `boring-plugin-authoring` skill to prefer `boring-ui scaffold-plugin`, with `npx @hachej/boring-ui-cli ...` only as outside-agent fallback.
+- Update `boring-plugin-authoring` skill to prefer `boring-ui-plugin scaffold`, with `npx @hachej/boring-ui-cli ...` only as outside-agent fallback.
 
 **Tests**
 
@@ -180,8 +180,8 @@ The CSV viewer flow failed for several independent reasons:
 
 **Assertions**
 
-- Transcript/tool calls include successful `boring-ui scaffold-plugin eval-hello-panel`.
-- Transcript/tool calls include successful `boring-ui verify-plugin`.
+- Transcript/tool calls include successful `boring-ui-plugin scaffold eval-hello-panel`.
+- Transcript/tool calls include successful `boring-ui-plugin verify`.
 - Plugin package exists under `.pi/extensions/eval-hello-panel`.
 - `POST /api/v1/agent/reload` succeeds.
 - `GET /api/v1/agent-plugins` includes `eval-hello-panel` with `frontUrl`.
@@ -257,8 +257,8 @@ The CSV viewer flow failed for several independent reasons:
 1. Start playground on clean ports.
 2. Open browser.
 3. Ask agent: `create a new CSV viewer plugin that opens .csv files as a table and SVG chart`.
-4. Confirm first tool call uses `boring-ui scaffold-plugin` successfully.
-5. Confirm it runs `boring-ui verify-plugin` successfully.
+4. Confirm first tool call uses `boring-ui-plugin scaffold` successfully.
+5. Confirm it runs `boring-ui-plugin verify` successfully.
 6. Run `/reload`.
 7. Open `data.csv` from file tree.
 8. Confirm custom plugin panel opens instead of built-in raw CSV panel.

@@ -1,5 +1,6 @@
 import { join, resolve } from "node:path"
 
+import { createPlugin } from "./createPlugin"
 import { scaffoldPlugin } from "./scaffoldPlugin"
 import {
   findHintForError,
@@ -56,12 +57,23 @@ export function parseScaffoldArgs(positionals: string[], workspaceRoot = default
   return { name, workspaceRoot: resolve(positionals[1] ?? workspaceRoot) }
 }
 
+export function parseCreateArgs(positionals: string[]): { name: string } {
+  const name = positionals[0]
+  if (!name) throw new Error("usage: boring-ui-plugin create <name> [--path <dir>]")
+  return { name }
+}
+
 export {
+  createPlugin,
   scaffoldPlugin,
   verifyPlugin,
   formatVerifyResult,
   findHintForError,
 }
+export type {
+  CreatePluginOptions,
+  CreatePluginResult,
+} from "./createPlugin"
 export type {
   ScaffoldPluginOptions,
   ScaffoldPluginResult,

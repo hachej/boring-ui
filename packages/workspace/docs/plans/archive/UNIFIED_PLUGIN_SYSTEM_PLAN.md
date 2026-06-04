@@ -10,7 +10,7 @@ fork of the manifest.
 
 ### Plugin authoring — already unified
 
-`packages/cli/templates/plugin/` codifies one shape, locked in by PR #40
+`packages/plugin-cli/templates/plugin/` codifies one shape, locked in by PR #40
 (`refactor/plugin-template`) and the `/boring-plugin-build` skill:
 
 ```
@@ -356,7 +356,7 @@ The `/boring-plugin-build` skill needs three additions:
    extension path (`src/agent/index.ts` + `pi.extensions` manifest field)
    for tools that want full hot reload.
 
-The template (`packages/cli/templates/plugin/`) stays as-is for L0/L1; an optional
+The template (`packages/plugin-cli/templates/plugin/`) stays as-is for L0/L1; an optional
 `agent/index.ts` example can be added later when L2 migration of any
 shipped plugin proves the pattern.
 

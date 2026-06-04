@@ -13,9 +13,9 @@ For fast local iteration, default to a runtime/generated plugin.
 
 | Want | Use | How to start |
 |---|---|---|
-| fast local runtime plugin with `/reload` | runtime/generated plugin | `boring-ui scaffold-plugin <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"` |
-| validate runtime/generated plugin | runtime/generated plugin | `boring-ui verify-plugin <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"` |
-| shipped trusted repo-level plugin | app/internal packaged plugin | `boring-ui plugin create <name> --path plugins` |
+| fast local runtime plugin with `/reload` | runtime/generated plugin | `boring-ui-plugin scaffold <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"` |
+| validate runtime/generated plugin | runtime/generated plugin | `boring-ui-plugin verify <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"` |
+| shipped trusted repo-level plugin | app/internal packaged plugin | `boring-ui-plugin create <name> --path plugins` |
 | shipped trusted app-local plugin | app/internal plugin | copy the app-local shape from `apps/workspace-playground/src/plugins/playgroundDataCatalog/` |
 
 ## Layout rule
@@ -27,7 +27,7 @@ For fast local iteration, default to a runtime/generated plugin.
 ## Traps to avoid
 
 - don't use `.pi/extensions` as the default shipped-app path
-- don't use `boring-ui plugin create ...` as the app-local `src/plugins/*` path without first verifying the generated shape matches the app-local direct-source pattern
+- don't use the package-plugin template as the app-local `src/plugins/*` path without first verifying the generated shape matches the app-local direct-source pattern
 - don't invent a third plugin layout
 - don't choose packaged plugin flow when the user only wants fast workspace iteration
 
@@ -35,5 +35,5 @@ For fast local iteration, default to a runtime/generated plugin.
 
 - `../manuals/plugins/PLUGIN_PATHS.md`
 - `packages/pi/skills/boring-plugin-authoring/SKILL.md`
-- `packages/cli/templates/plugin/README.md`
+- `packages/plugin-cli/templates/plugin/README.md`
 - `packages/cli/README.md`

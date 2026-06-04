@@ -152,7 +152,7 @@ In public exports:
 Update current docs to say only:
 
 - use `definePlugin({ ... })`;
-- generated plugins use `boring-ui scaffold-plugin`;
+- generated plugins use `boring-ui-plugin scaffold`;
 - `outputs[]` / `defineFrontPlugin` are legacy/internal and not authoring API.
 
 Do not change archived docs except optional historical banners.
