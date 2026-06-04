@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node:fs"
 import { createRequire } from "node:module"
-import { dirname, resolve } from "node:path"
+import { basename, dirname, resolve } from "node:path"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 
 export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
@@ -54,6 +54,10 @@ export async function startPlaygroundServer(): Promise<void> {
       defaultPluginPackages: [resolve(APP_ROOT, "src/plugins/playgroundDataCatalog")],
       plugins: [{ dir: ASK_USER_PACKAGE_ROOT, hotReload: false }],
     })
+    app.get("/api/v1/workspace/meta", async () => ({
+      projectName: basename(workspaceRoot) || "Workspace",
+      workspaceRoot,
+    }))
     await app.listen({ port: AGENT_API_PORT, host: "127.0.0.1" })
   })()
   return agentBoot

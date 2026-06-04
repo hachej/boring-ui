@@ -44,16 +44,16 @@ export interface ExecUiToolOptions {
   /**
    * After dispatching a state-changing command (openFile, openPanel,
    * openSurface, closePanel), wait this many ms before the first state
-   * read. Set to 0 to disable verification entirely. Defaults to 200ms.
+   * read. Set to 0 to disable verification entirely. Defaults to 250ms.
    */
   verifyDelayMs?: number
   /**
    * How many additional state reads to attempt after the first if the
-   * expected change hasn't appeared yet. Defaults to 2.
+   * expected change hasn't appeared yet. Defaults to 20 (~5s total).
    */
   verifyRetries?: number
   /**
-   * Milliseconds between retry state reads. Defaults to 200ms.
+   * Milliseconds between retry state reads. Defaults to 250ms.
    */
   verifyIntervalMs?: number
 }
@@ -194,9 +194,9 @@ export function createExecUiTool(
   opts: ExecUiToolOptions = {},
 ): AgentTool {
   const { workspaceRoot, resolvePathKind } = opts
-  const verifyDelayMs = opts.verifyDelayMs ?? 200
-  const verifyRetries = opts.verifyRetries ?? 2
-  const verifyIntervalMs = opts.verifyIntervalMs ?? 200
+  const verifyDelayMs = opts.verifyDelayMs ?? 250
+  const verifyRetries = opts.verifyRetries ?? 20
+  const verifyIntervalMs = opts.verifyIntervalMs ?? 250
   return {
     name: "exec_ui",
     readinessRequirements: ["ui-bridge"],
@@ -268,11 +268,12 @@ export function createExecUiTool(
       "  showNotification params: { msg: string, level?: 'info'|'warn'|'error' }",
       "",
       "Returns { seq, status, uiState? }. For openFile / openPanel / openSurface /",
-      "closePanel the response includes a `uiState` snapshot taken ~400ms after",
-      "dispatch — check uiState.openTabs to confirm the action took effect.",
+      "closePanel the response includes a `uiState` snapshot after waiting up",
+      "to a few seconds for the browser to dispatch the command — check",
+      "uiState.openTabs to confirm the action took effect.",
       "If the expected tab is missing from openTabs the frontend silently",
       "rejected the command (unknown panel component, unregistered surface",
-      "resolver, or surface not yet ready). For other kinds only { seq, status }",
+      "resolver, or disconnected browser). For other kinds only { seq, status }",
       "is returned. To open a FILE prefer openFile (path-aware) over openPanel",
       "(which is for non-file panes like charts).",
     ].join("\n"),
@@ -384,7 +385,7 @@ export function createExecUiTool(
           await new Promise<void>((r) => setTimeout(r, verifyDelayMs))
           let uiState = await uiBridge.getState()
           for (let i = 0; i < verifyRetries; i++) {
-            if (isVerified(effectiveKind, cmdParams, uiState)) break
+            if (uiState === null || isVerified(effectiveKind, cmdParams, uiState)) break
             await new Promise<void>((r) => setTimeout(r, verifyIntervalMs))
             uiState = await uiBridge.getState()
           }
