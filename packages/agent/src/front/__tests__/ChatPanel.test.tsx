@@ -70,7 +70,7 @@ vi.mock('../primitives/prompt-input', () => ({
     return <textarea data-testid="prompt-textarea" defaultValue={props.defaultValue} />
   },
   PromptInputFooter: ({ children }: any) => <div data-testid="prompt-footer">{children}</div>,
-  PromptInputSubmit: ({ status }: any) => <div data-testid="prompt-submit" data-status={status} />,
+  PromptInputSubmit: ({ status, disabled, onStop }: any) => <button data-testid="prompt-submit" data-status={status} disabled={disabled} onClick={onStop} />,
   usePromptInputAttachments: (...args: unknown[]) => mockUseAttachments(...args),
 }))
 
@@ -893,6 +893,23 @@ describe('ChatPanel (shadcn)', () => {
     expect(mockSetMessages).toHaveBeenCalled()
   })
 
+  test('slash command picker closes after executing a slash command', async () => {
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() })
+    render(<ChatPanel sessionId="sess-cmd-picker" />)
+
+    act(() => {
+      const textarea = { value: '/reload', selectionStart: '/reload'.length }
+      ;(capturedTextareaProps?.onChange as (event: { currentTarget: typeof textarea }) => void)?.({ currentTarget: textarea })
+    })
+    expect(screen.getByText('/reload')).toBeTruthy()
+
+    await act(async () => {
+      await capturedOnSubmit!({ text: '/reload', files: [] })
+    })
+
+    expect(screen.queryByText('/reload')).toBeNull()
+  })
+
   test('/clear calls setMessages with empty array', async () => {
     renderToStaticMarkup(<ChatPanel sessionId="sess-clear" />)
 
@@ -1070,6 +1087,54 @@ describe('ChatPanel (shadcn)', () => {
 
     const html = renderToStaticMarkup(<ChatPanel sessionId="sess-stream" />)
     expect(html).toContain('data-status="streaming"')
+  })
+
+  test('host composer blocker turns submit into stop and shows waiting copy', () => {
+    mockUseAgentChat.mockReturnValue({
+      messages: [],
+      sendMessage: mockSendMessage,
+      setMessages: mockSetMessages,
+      stop: mockStop,
+      status: 'ready',
+      error: undefined,
+    })
+
+    const html = renderToStaticMarkup(
+      <ChatPanel
+        sessionId="sess-question"
+        chrome={false}
+        composerBlockers={[{ id: 'question', reason: 'waiting_for_user_input', label: 'Waiting for your answer…', actions: [{ id: 'open', label: 'Open Questions' }, { id: 'cancel', label: 'Cancel question' }] }]}
+      />,
+    )
+    expect(html).toContain('Waiting for your answer…')
+    expect(html).toContain('max-w-[680px]')
+    expect(html).toContain('aria-label="Open Questions"')
+    expect(html).toContain('aria-label="Cancel question"')
+    expect(html).toContain('data-status="streaming"')
+    expect(html).not.toContain('data-testid="prompt-submit" disabled=""')
+  })
+
+  test('host composer blocker stop button notifies the host', () => {
+    const onComposerStop = vi.fn()
+    mockUseAgentChat.mockReturnValue({
+      messages: [],
+      sendMessage: mockSendMessage,
+      setMessages: mockSetMessages,
+      stop: mockStop,
+      status: 'ready',
+      error: undefined,
+    })
+
+    render(
+      <ChatPanel
+        sessionId="sess-question-stop"
+        composerBlockers={[{ id: 'question', reason: 'waiting_for_user_input', label: 'Waiting for your answer…' }]}
+        onComposerStop={onComposerStop}
+      />,
+    )
+    fireEvent.click(screen.getByTestId('prompt-submit'))
+    expect(onComposerStop).toHaveBeenCalledOnce()
+    expect(mockStop).not.toHaveBeenCalled()
   })
 
   test('Escape stops active streaming from a workspace target', () => {

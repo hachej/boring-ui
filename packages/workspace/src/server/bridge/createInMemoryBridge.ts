@@ -6,7 +6,7 @@ import type {
 } from "../../shared/ui-bridge";
 
 type AnnotatedCommand = UiCommand & { seq: number };
-type CommandHandler = (cmd: AnnotatedCommand) => void;
+type CommandHandler = (cmd: AnnotatedCommand) => unknown;
 const MAX_PENDING_COMMANDS = 1_000;
 
 export function createInMemoryBridge(): UiBridge {
@@ -34,10 +34,11 @@ export function createInMemoryBridge(): UiBridge {
     async postCommand(cmd: UiCommand): Promise<CommandResult> {
       const seq = nextSeq++;
       const annotated: AnnotatedCommand = { ...cmd, seq };
-      if (subscribers.size === 0) enqueuePending(annotated);
+      let delivered = false;
       for (const handler of subscribers) {
-        handler(annotated);
+        if (handler(annotated) !== false) delivered = true;
       }
+      if (!delivered) enqueuePending(annotated);
       return { seq, status: "ok" };
     },
 

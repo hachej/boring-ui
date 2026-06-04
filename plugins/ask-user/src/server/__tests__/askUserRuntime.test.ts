@@ -1,25 +1,32 @@
-import { mkdtemp } from "node:fs/promises"
-import { join } from "node:path"
-import { tmpdir } from "node:os"
+// @vitest-environment node
+
 import { describe, expect, it, vi } from "vitest"
 import { ASK_USER_ERROR_CODES } from "../../shared/error-codes"
 import type { AskUserFormSchema, AskUserQuestion } from "../../shared/types"
-import { FileAskUserStore } from "../askUserStore"
+import type { AskUserStore } from "../askUserStore"
 import { AskUserRuntime, InProcessAskUserCoordinator, requireAskUserRuntime } from "../askUserRuntime"
+import { MemoryAskUserStore } from "./testAskUserStore"
 
 const schema: AskUserFormSchema = { wireVersion: 1, fields: [{ type: "text", name: "answer", label: "Answer" }] }
 
 async function makeStore() {
-  const dir = await mkdtemp(join(tmpdir(), "ask-user-runtime-"))
-  return new FileAskUserStore(join(dir, "questions.json"))
+  return new MemoryAskUserStore()
 }
 
-async function pendingQuestion(store: FileAskUserStore, sessionId: string) {
-  return vi.waitFor(async () => {
+async function pendingQuestion(store: AskUserStore, sessionId: string) {
+  const started = Date.now()
+  while (Date.now() - started < 10_000) {
     const question = await store.getPending(sessionId)
-    expect(question).not.toBeNull()
-    return question!
-  }, { timeout: 5_000 })
+    if (question) return question
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  throw new Error(`timed out waiting for pending question for ${sessionId}`)
+}
+
+async function waitForRuntimeWaiter(runtime: AskUserRuntime, questionId: string) {
+  await vi.waitFor(() => {
+    expect(runtime.coordinator.hasWaiter(questionId)).toBe(true)
+  }, { timeout: 10_000 })
 }
 
 function makeQuestion(overrides: Partial<AskUserQuestion> = {}): AskUserQuestion {
@@ -65,6 +72,7 @@ describe("AskUserRuntime", () => {
     expect(q1.status).toBe("ready")
     expect(q1.answerToken.length).toBeGreaterThanOrEqual(22)
     await expect(runtime.ask({ sessionId: "s2", title: "B", schema })).rejects.toMatchObject({ code: ASK_USER_ERROR_CODES.PENDING_EXISTS })
+    await waitForRuntimeWaiter(runtime, q1.questionId)
     await runtime.cancelQuestion(q1.questionId, "s1")
     await expect(first).resolves.toMatchObject({ status: "cancelled" })
   })
@@ -74,6 +82,7 @@ describe("AskUserRuntime", () => {
     const runtime = new AskUserRuntime({ store })
     const result = runtime.ask({ sessionId: "s1", title: "T", schema })
     const question = await pendingQuestion(store, "s1")
+    await waitForRuntimeWaiter(runtime, question.questionId)
     await runtime.submitAnswer(question.questionId, "s1", { answer: "yes" })
     await expect(result).resolves.toMatchObject({ status: "answered", answer: { values: { answer: "yes" } } })
   }, 30_000)
