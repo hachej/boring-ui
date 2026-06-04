@@ -858,6 +858,7 @@ export function ChatPanel(props: ChatPanelProps) {
     if (parsed) {
       const cmd = registry.get(parsed.name)
       if (cmd?.kind === 'skill') {
+        dismissSlash()
         const skillMessage = parsed.args
           ? `skill: ${parsed.name}\n\n${parsed.args}`
           : `skill: ${parsed.name}`
@@ -869,6 +870,7 @@ export function ChatPanel(props: ChatPanelProps) {
         return
       }
       if (cmd) {
+        dismissSlash()
         const ctx: SlashCommandContext = {
           sessionId,
           clearMessages: () => setMessages([]),
