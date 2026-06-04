@@ -84,6 +84,49 @@ describe("PluginUpdateStatus", () => {
     expect(onDismiss).toHaveBeenCalledOnce()
   })
 
+  test("does not reset auto-dismiss when browser module details arrive", () => {
+    vi.useFakeTimers()
+    const onDismiss = vi.fn()
+    const container = document.createElement("div")
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    roots.push(root)
+    containers.push(container)
+
+    act(() => {
+      root.render(
+        <PluginUpdateStatus
+          state={{ kind: "success", reloaded: false }}
+          onDismiss={onDismiss}
+          onRetry={vi.fn()}
+          successAutoDismissMs={1000}
+        />,
+      )
+    })
+    act(() => {
+      vi.advanceTimersByTime(500)
+    })
+    act(() => {
+      root.render(
+        <PluginUpdateStatus
+          state={{
+            kind: "success",
+            reloaded: false,
+            frontEvents: [{ source: "browser", pluginId: "csv-viewer", message: "front module loaded" }],
+          }}
+          onDismiss={onDismiss}
+          onRetry={vi.fn()}
+          successAutoDismissMs={1000}
+        />,
+      )
+    })
+    act(() => {
+      vi.advanceTimersByTime(500)
+    })
+
+    expect(onDismiss).toHaveBeenCalledOnce()
+  })
+
   test("uses the provided max-width class so it can match the composer", () => {
     const container = render(
       <PluginUpdateStatus

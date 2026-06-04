@@ -13,7 +13,7 @@
  *  - "error"    — red-ish accent, with the diagnostic message and a
  *    "Try again" button that re-runs `/reload`.
  */
-import { useEffect, type ReactElement } from "react"
+import { useEffect, useRef, type ReactElement } from "react"
 import { cn } from "../lib"
 import type { PluginRestartWarning } from "../../shared/agentPluginEvents"
 
@@ -47,13 +47,22 @@ export function PluginUpdateStatus({
   successAutoDismissMs = 1000,
   maxWidthClassName = "max-w-3xl",
 }: PluginUpdateStatusProps): ReactElement | null {
+  const onDismissRef = useRef(onDismiss)
+  useEffect(() => {
+    onDismissRef.current = onDismiss
+  }, [onDismiss])
+
+  const successDismissKey = state?.kind === "success"
+    ? `${state.reloaded}:${(state.restartWarnings?.length ?? 0) > 0 || (state.diagnostics?.length ?? 0) > 0}`
+    : null
+
   useEffect(() => {
     if (!state || state.kind !== "success" || successAutoDismissMs <= 0) return
     const hasWarningsOrDiagnostics = (state.restartWarnings?.length ?? 0) > 0 || (state.diagnostics?.length ?? 0) > 0
     if (hasWarningsOrDiagnostics) return
-    const timeout = window.setTimeout(onDismiss, successAutoDismissMs)
+    const timeout = window.setTimeout(() => onDismissRef.current(), successAutoDismissMs)
     return () => window.clearTimeout(timeout)
-  }, [state, onDismiss, successAutoDismissMs])
+  }, [state?.kind, successDismissKey, successAutoDismissMs])
 
   if (!state) return null
 
