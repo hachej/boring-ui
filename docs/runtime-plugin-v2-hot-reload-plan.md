@@ -206,7 +206,7 @@ Long term:
 
 ## Package-template policy
 
-`packages/cli/templates/plugin` is useful as an app/internal package example, but it
+`packages/plugin-cli/templates/plugin` is useful as an app/internal package example, but it
 should not be the main generated-plugin authoring path.
 
 Canonical authoring path:

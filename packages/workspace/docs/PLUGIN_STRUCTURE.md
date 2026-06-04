@@ -29,8 +29,9 @@ backend registration.
 
 ## App/internal publishable package plugin
 
-Use [`packages/cli/templates/plugin`](../../../packages/cli/templates/plugin/) as the reference
-shape when building a trusted package composed by an app shell:
+Run `boring-ui-plugin create <name> --path plugins` for the trusted package
+shape composed by an app shell. The command uses
+[`packages/plugin-cli/templates/plugin`](../../../packages/plugin-cli/templates/plugin/) as its reference:
 
 ```txt
 plugins/<name>/

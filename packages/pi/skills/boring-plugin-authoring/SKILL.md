@@ -134,7 +134,7 @@ Two valid layouts, picked by intent:
 
 Global user-installed plugins are a third case: they are **discovered** from `~/.pi/agent/extensions/`, but this skill still recommends authoring/testing them in a workspace-local `.pi/extensions/<name>/` first, then copying/installing them globally once they work.
 
-The rest of this skill teaches the hot-reload layout. Repo contributors building a publishable plugin start from `packages/cli/templates/plugin/` (build-based template) instead; everyone else uses `boring-ui-plugin scaffold <name>` (Step 0).
+The rest of this skill teaches the hot-reload layout. Repo contributors building a publishable plugin use `boring-ui-plugin create <name> --path plugins` (build-based template) instead; everyone else uses `boring-ui-plugin scaffold <name>` (Step 0).
 
 ## package.json shape
 

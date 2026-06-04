@@ -97,12 +97,11 @@ npx ./packages/cli/dist/index.js
 Plugin authoring operations live in the dedicated plugin CLI:
 
 ```bash
-boring-ui-plugin scaffold my-plugin "$BORING_AGENT_WORKSPACE_ROOT"
-boring-ui-plugin verify my-plugin "$BORING_AGENT_WORKSPACE_ROOT"
-boring-ui-plugin test my-plugin
+boring-ui-plugin create my-package-plugin --path plugins
+boring-ui-plugin scaffold my-runtime-plugin "$BORING_AGENT_WORKSPACE_ROOT"
+boring-ui-plugin verify my-runtime-plugin "$BORING_AGENT_WORKSPACE_ROOT"
+boring-ui-plugin test my-runtime-plugin
 ```
-
-For publishable package plugins, start from `templates/plugin/` and copy it into `plugins/<name>/`.
 
 ---
 

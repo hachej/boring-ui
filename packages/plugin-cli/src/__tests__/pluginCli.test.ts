@@ -55,6 +55,11 @@ test("packed plugin CLI owns boring-ui-plugin and supports plugin commands", asy
   const status = await execFileAsync(bin, ["status", "--json"], { cwd: installRoot })
   expect(JSON.parse(status.stdout)).toMatchObject({ workspaceLocalPluginRoots: true })
 
+  const create = await execFileAsync(bin, ["create", "tiny-package", "--path", "plugins"], { cwd: installRoot })
+  expect(create.stdout).toContain("created tiny-package")
+  const packagePlugin = JSON.parse(await readFile(join(installRoot, "plugins", "tiny-package", "package.json"), "utf8")) as { name: string }
+  expect(packagePlugin.name).toBe("@hachej/boring-tiny-package")
+
   const scaffold = await execFileAsync(bin, ["scaffold", "tiny-runtime", workspaceRoot], { cwd: installRoot })
   expect(scaffold.stdout).toContain("scaffolded tiny-runtime")
 

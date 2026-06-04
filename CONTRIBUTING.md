@@ -56,22 +56,14 @@ If it fails, look at `packages/workspace/scripts/check-plugin-invariants.mjs` fo
 
 ### Plugin shape
 
-If you're adding a publishable plugin, start from the package-plugin template:
+If you're adding a publishable plugin, use the plugin CLI package-template command:
 
 ```bash
-mkdir -p plugins
-cp -R packages/cli/templates/plugin plugins/<your-name>
+boring-ui-plugin create <your-name> --path plugins
 cd plugins/<your-name>
-# rename sample identifiers/package names for your plugin
 pnpm install
 pnpm --filter @hachej/boring-<your-name> typecheck
 pnpm --filter @hachej/boring-<your-name> test
-```
-
-Or manually copy the template from [packages/cli/templates/plugin](packages/cli/templates/plugin/README.md):
-
-```bash
-cp -R packages/cli/templates/plugin plugins/<your-name>
 ```
 
 The `plugins/*` glob in `pnpm-workspace.yaml` picks new plugins up automatically.
@@ -93,7 +85,7 @@ A plugin breaking these rules will fail invariant lint.
 - **E2E**: `playwright`. See `apps/workspace-playground/e2e/*.spec.ts` for the patterns. The playground server is the canonical test target.
 - **Visual / DOM-shape regressions**: prefer DOM assertions over screenshot diffs (font-shift makes screenshots flaky). See `apps/workspace-playground/e2e/visual.spec.ts` for the pattern.
 
-Don't add a new test setup file. Each plugin owns a copy of `src/test-setup.ts` — keep it in sync with [`packages/cli/templates/plugin/src/test-setup.ts`](packages/cli/templates/plugin/src/test-setup.ts).
+Don't add a new test setup file. Each plugin owns a copy of `src/test-setup.ts` — keep it in sync with [`packages/plugin-cli/templates/plugin/src/test-setup.ts`](packages/plugin-cli/templates/plugin/src/test-setup.ts).
 
 ### Code style
 

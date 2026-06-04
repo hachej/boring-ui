@@ -15,7 +15,7 @@ For fast local iteration, default to a runtime/generated plugin.
 |---|---|---|
 | fast local runtime plugin with `/reload` | runtime/generated plugin | `boring-ui-plugin scaffold <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"` |
 | validate runtime/generated plugin | runtime/generated plugin | `boring-ui-plugin verify <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"` |
-| shipped trusted repo-level plugin | app/internal packaged plugin | copy `packages/cli/templates/plugin/` into `plugins/<name>/` and rename identifiers |
+| shipped trusted repo-level plugin | app/internal packaged plugin | `boring-ui-plugin create <name> --path plugins` |
 | shipped trusted app-local plugin | app/internal plugin | copy the app-local shape from `apps/workspace-playground/src/plugins/playgroundDataCatalog/` |
 
 ## Layout rule
@@ -35,5 +35,5 @@ For fast local iteration, default to a runtime/generated plugin.
 
 - `../manuals/plugins/PLUGIN_PATHS.md`
 - `packages/pi/skills/boring-plugin-authoring/SKILL.md`
-- `packages/cli/templates/plugin/README.md`
+- `packages/plugin-cli/templates/plugin/README.md`
 - `packages/cli/README.md`

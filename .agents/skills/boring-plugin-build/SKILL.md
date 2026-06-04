@@ -105,7 +105,7 @@ Concrete in-repo app-local example:
 
 Important:
 
-- `plugins/<name>/` is the repo-level packaged plugin home; start from `packages/cli/templates/plugin/` when you need that shape
+- `plugins/<name>/` is the repo-level packaged plugin home; create it with `boring-ui-plugin create <name> --path plugins`
 - `apps/<app>/src/plugins/<name>/` follows the direct-source app-local pattern shown in the playground example, not the built `dist/*` CLI template shape
 
 Use the same manifest principles as the canonical skill:

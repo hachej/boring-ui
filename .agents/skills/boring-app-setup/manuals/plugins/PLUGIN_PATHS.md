@@ -10,9 +10,9 @@ What kind of plugin is this?
 |---|---|---|
 | fast local/runtime plugin, hot reload, no trusted backend routes | `boring-ui-plugin scaffold <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"` | creates `.pi/extensions/<name>/` in the current workspace |
 | verify a runtime/generated plugin | `boring-ui-plugin verify <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"` | checks manifest + file shape |
-| shipped repo-level packaged plugin | copy `packages/cli/templates/plugin/` into `plugins/<name>/` and rename identifiers | uses the publishable package template shape |
+| shipped repo-level packaged plugin | `boring-ui-plugin create <name> --path plugins` | uses the publishable package template shape |
 | shipped app-local direct-source plugin | copy `apps/workspace-playground/src/plugins/playgroundDataCatalog/` shape | matches the in-repo app-local pattern |
-| package-plugin reference shape | `packages/cli/templates/plugin/README.md` | canonical template layout |
+| package-plugin reference shape | `packages/plugin-cli/templates/plugin/README.md` | canonical template layout |
 
 ## Default rule
 
@@ -53,13 +53,11 @@ Do **not** use this path when the app needs trusted backend routes as part of th
 
 ### Repo-level packaged plugin
 
-Use the package plugin template:
+Use the plugin CLI package-template command:
 
-```txt
-packages/cli/templates/plugin/
+```bash
+boring-ui-plugin create <name> --path plugins
 ```
-
-Copy it into `plugins/<name>/` and rename the sample identifiers for the plugin.
 
 ### App-local direct-source plugin
 
@@ -70,7 +68,7 @@ Use the in-repo direct-source pattern instead of the built CLI template:
 Canonical references:
 
 - `packages/cli/README.md`
-- `packages/cli/templates/plugin/README.md`
+- `packages/plugin-cli/templates/plugin/README.md`
 - `packages/workspace/docs/PLUGIN_STRUCTURE.md`
 - `packages/core/docs/PLUGIN_INTEGRATION.md`
 - `apps/workspace-playground/src/plugins/playgroundDataCatalog/package.json`
