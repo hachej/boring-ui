@@ -44,7 +44,7 @@ export function PluginUpdateStatus({
   state,
   onDismiss,
   onRetry,
-  successAutoDismissMs = 4000,
+  successAutoDismissMs = 1800,
   maxWidthClassName = "max-w-3xl",
 }: PluginUpdateStatusProps): ReactElement | null {
   useEffect(() => {
@@ -79,35 +79,43 @@ export function PluginUpdateStatus({
     const warnings = state.restartWarnings ?? []
     const diagnostics = state.diagnostics ?? []
     const frontEvents = state.frontEvents ?? []
+    const hasWarningsOrDiagnostics = warnings.length > 0 || diagnostics.length > 0
+    const title = state.reloaded
+      ? hasWarningsOrDiagnostics
+        ? "Plugins updated with warnings"
+        : "Plugins updated"
+      : "Plugins queued for next message"
+    const detail = state.reloaded
+      ? hasWarningsOrDiagnostics
+        ? "Review the details below."
+        : frontEvents.length > 0
+          ? `${frontEvents.length} browser module${frontEvents.length === 1 ? "" : "s"} reloaded.`
+          : undefined
+      : "They will apply on the next agent message."
     return (
       <div
         data-boring-plugin-update="success"
         role="status"
         aria-live="polite"
         className={cn(
-          "mx-auto mb-2 w-full rounded-[var(--radius-md)] border border-[oklch(0.78_0.13_148)]/40 bg-[oklch(0.95_0.05_148/0.3)]",
-          "px-3 py-2 text-xs text-foreground",
+          "mx-auto mb-2 w-full rounded-[var(--radius-md)] border border-[oklch(0.78_0.13_148)]/35 bg-[oklch(0.95_0.05_148/0.28)]",
+          "px-3 py-2 text-xs text-foreground shadow-sm",
           maxWidthClassName,
         )}
       >
-        <div className="flex items-center gap-2">
-          <span className="text-[oklch(0.45_0.13_148)]" aria-hidden="true">✓</span>
-          <span className="flex-1">
-            {state.reloaded
-              ? warnings.length > 0 || diagnostics.length > 0
-                ? "Plugins updated with warnings."
-                : frontEvents.length > 0
-                  ? "Plugins updated. Browser modules reloaded."
-                  : "Plugins updated."
-              : "Plugins will reload on the next message."}
+        <div className="flex items-start gap-2">
+          <span className="mt-0.5 text-[oklch(0.45_0.13_148)]" aria-hidden="true">✓</span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-medium leading-5">{title}</span>
+            {detail ? <span className="block leading-4 text-muted-foreground">{detail}</span> : null}
           </span>
           <button
             type="button"
             onClick={onDismiss}
-            className="rounded border border-transparent px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="-mr-1 rounded border border-transparent px-1.5 py-0.5 text-[13px] leading-none text-muted-foreground hover:bg-muted hover:text-foreground"
             aria-label="Dismiss plugin update status"
           >
-            Dismiss
+            ×
           </button>
         </div>
         {diagnostics.length > 0 ? (
@@ -128,29 +136,6 @@ export function PluginUpdateStatus({
               {diagnostics.map((diagnostic, index) => (
                 <li key={`${diagnostic.pluginId ?? diagnostic.source ?? "plugin"}-${index}`}>
                   <code className="font-mono text-[10.5px]">{diagnostic.pluginId ?? diagnostic.source ?? "plugin"}</code> — {diagnostic.message ?? "reload diagnostic"}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-        {frontEvents.length > 0 ? (
-          <div
-            data-boring-plugin-update-front-events=""
-            className={cn(
-              "mt-2 rounded border border-[oklch(0.78_0.13_148)]/35 bg-[oklch(0.95_0.05_148/0.25)]",
-              "px-2 py-1.5 text-[11px] text-foreground",
-            )}
-          >
-            <div className="flex items-center gap-1.5 font-medium text-[oklch(0.45_0.13_148)]">
-              <span aria-hidden="true">✓</span>
-              <span>
-                Browser plugin modules updated ({frontEvents.length})
-              </span>
-            </div>
-            <ul className="mt-1 ml-4 list-disc text-foreground/85">
-              {frontEvents.map((event, index) => (
-                <li key={`${event.pluginId ?? event.source ?? "plugin"}-${index}`}>
-                  <code className="font-mono text-[10.5px]">{event.pluginId ?? event.source ?? "plugin"}</code> — {event.message ?? "front module updated"}
                 </li>
               ))}
             </ul>
