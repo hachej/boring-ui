@@ -13,9 +13,9 @@ const allFields: AskUserFormSchema = { wireVersion: 1, fields: [
   { type: "number", name: "num", label: "Num", min: 1, max: 5, integer: true },
 ] }
 
-function Form(props: { schema?: AskUserFormSchema; onSubmit?: (values: any) => void; onCancel?: () => void; registry?: any }) {
+function Form(props: { schema?: AskUserFormSchema; onSubmit?: (values: any) => void; onCancel?: () => void; registry?: any; formClassName?: string }) {
   return <QuestionFormProvider schema={props.schema} rendererRegistry={props.registry} onSubmit={props.onSubmit} onCancel={props.onCancel}>
-    <QuestionForm><QuestionFields /><QuestionSubmitButton /><QuestionCancelButton /></QuestionForm>
+    <QuestionForm className={props.formClassName}><QuestionFields /><QuestionSubmitButton /><QuestionCancelButton /></QuestionForm>
   </QuestionFormProvider>
 }
 
@@ -49,10 +49,19 @@ describe("QuestionForm primitives", () => {
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "a" } })
     fireEvent.click(screen.getByLabelText(/X/))
     fireEvent.change(screen.getByLabelText(/Num/), { target: { value: "2" } })
-    fireEvent.keyDown(screen.getByRole("form", { name: "Question form" }), { key: "Enter", ctrlKey: true })
+    fireEvent.keyDown(screen.getByRole("form", { name: "Question form" }), { key: "Enter" })
     expect(submit).toHaveBeenCalled()
+    fireEvent.keyDown(screen.getByLabelText(/Area/), { key: "Enter" })
+    expect(submit).toHaveBeenCalledTimes(1)
+    fireEvent.keyDown(screen.getByLabelText(/Area/), { key: "Enter", ctrlKey: true })
+    expect(submit).toHaveBeenCalledTimes(2)
     fireEvent.keyDown(screen.getByRole("form", { name: "Question form" }), { key: "Escape" })
     expect(cancel).toHaveBeenCalled()
+  })
+
+  it("passes form layout classes through", () => {
+    render(<Form schema={allFields} formClassName="flex min-h-0 flex-1 flex-col" />)
+    expect(screen.getByRole("form", { name: "Question form" })).toHaveClass("flex", "min-h-0", "flex-1", "flex-col")
   })
 
   it("cancel button composes caller onClick without losing default cancel", () => {
