@@ -152,7 +152,13 @@ export function uiRoutes(
     }
 
     const unsub = bridge.subscribeCommands((cmd) => {
-      reply.raw.write(`event: command\ndata: ${JSON.stringify(encodeCommand(cmd))}\n\n`);
+      if (reply.raw.destroyed || reply.raw.writableEnded) return false;
+      try {
+        reply.raw.write(`event: command\ndata: ${JSON.stringify(encodeCommand(cmd))}\n\n`);
+        return true;
+      } catch {
+        return false;
+      }
     });
     const heartbeat = setInterval(() => {
       if (reply.raw.writableEnded) return;

@@ -16,7 +16,7 @@ Follow Pi's local extension dependency model:
 ```txt
 .pi/extensions/my-plugin/
   package.json
-  node_modules/        # created by npm/pnpm install run in this directory
+  node_modules/        # created by npm install run in this directory
   front/index.tsx
 ```
 
@@ -25,7 +25,6 @@ If a plugin needs `recharts`, the user/agent adds it to that plugin package and 
 ```bash
 cd .pi/extensions/my-plugin
 npm install recharts
-# pnpm add recharts is also fine when the plugin author chooses pnpm
 ```
 
 This deliberately matches Pi's behavior for local extensions:
@@ -35,12 +34,14 @@ This deliberately matches Pi's behavior for local extensions:
 - imports resolve from that folder's `node_modules`;
 - `/reload` reloads resources but does **not** install missing packages.
 
-Missing dependencies fail with clear diagnostics, ideally through `boring-ui-plugin verify <name>`:
+Missing dependencies fail with clear diagnostics through `boring-ui-plugin verify <name>`:
 
 ```txt
 Missing dependency: recharts
 Run: cd .pi/extensions/my-plugin && npm install
 ```
+
+The plugin-authoring prompt/skill should tell agents to install newly added plugin dependencies directly in the plugin folder before `verify`/`test`/`/reload`.
 
 This keeps local plugin authoring as simple as Pi: a trusted local dev machine, package-local dependencies, no hidden package-manager work during reload.
 
@@ -66,6 +67,7 @@ react/jsx-dev-runtime
 @hachej/boring-workspace
 @hachej/boring-workspace/plugin
 @hachej/boring-workspace/events
+@hachej/boring-ui-kit
 ```
 
 Everything else may resolve only if installed under the plugin package (or otherwise resolvable from that plugin package root) and browser-safe.
@@ -83,7 +85,8 @@ URL rewriting. Add a dedicated import-policy/resolution module and make all path
 - **D2.** Extract runtime import policy from `pluginFrontRuntime.ts`.
 - **D3.** Resolve plugin-local bare imports through Vite while externalizing singletons.
 - **D4.** Add verify diagnostics for declared-but-missing plugin dependencies and forbidden singleton dependencies.
-- **D5.** Prove a runtime plugin can import a package installed in `.pi/extensions/<plugin>/node_modules` without dual React.
+- **D5.** Update plugin-authoring prompt/skill docs so agents install newly added dependencies directly in the plugin folder before verify/test/reload.
+- **D6.** Prove a runtime plugin can import a package installed in `.pi/extensions/<plugin>/node_modules` without dual React.
 
 ## Acceptance
 
@@ -92,5 +95,6 @@ URL rewriting. Add a dedicated import-policy/resolution module and make all path
 - Workspace singleton identity is preserved.
 - Node built-ins remain rejected from front code.
 - Declared-but-missing dependencies fail with clear diagnostics and an install hint.
-- `react`, `react-dom`, and `@hachej/boring-workspace*` declared as plugin dependencies are rejected or warned as forbidden singleton deps.
+- `react`, `react-dom`, `@hachej/boring-workspace*`, and `@hachej/boring-ui-kit` declared as plugin dependencies are rejected or warned as forbidden singleton deps.
+- Plugin-authoring prompt/skill docs tell agents to run `npm install` inside `.pi/extensions/<plugin>/` after adding deps.
 - `/reload` never runs package install.

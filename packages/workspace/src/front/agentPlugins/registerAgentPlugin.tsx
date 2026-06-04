@@ -168,6 +168,7 @@ function buildRegistryPayloads(
   surfaceResolvers: SurfaceResolverConfig[]
 } {
   const panels: PanelConfig[] = []
+  const panelsById = new Map(captured.panels.map((panel) => [panel.id, panel]))
   for (const panel of captured.panels) {
     panels.push({
       id: panel.id,
@@ -185,10 +186,11 @@ function buildRegistryPayloads(
     } as PanelConfig)
   }
   for (const tab of captured.leftTabs) {
+    const referencedPanel = panelsById.get(tab.panelId)
     panels.push({
       id: tab.id,
       title: tab.title,
-      component: tab.component ?? (() => null),
+      component: tab.component ?? referencedPanel?.component ?? (() => null),
       placement: "left-tab",
       source: tab.source ?? "plugin",
       pluginId,
