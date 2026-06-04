@@ -242,6 +242,9 @@ Design rules:
 - Use boring-ui tokens/classes (`bg-background`, `text-foreground`, `border-border`, `text-muted-foreground`, `accent`) instead of hard-coded colors.
 - Prefer `className` + Tailwind utilities; avoid inline styles except dynamic sizing/positioning.
 - Structure panes as full-height roots with optional toolbar/header and a scrollable body.
+- Make every pane horizontally responsive. Pane roots should use `min-w-0 min-h-0`; scroll regions should use `min-w-0 overflow-auto`; grids should collapse with responsive classes such as `grid-cols-1 md:grid-cols-3`.
+- Do **not** hard-code large content widths (`width={820}`, `w-[900px]`, fixed SVG/chart width) unless the containing region can scroll intentionally. For charts, prefer library responsive wrappers such as Recharts `ResponsiveContainer` with a `w-full min-w-0` parent.
+- Test horizontal resize mentally and/or in the browser: narrow the workbench and confirm content wraps, shrinks, or scrolls instead of being clipped.
 - Always include empty/loading/error states for data-driven panes.
 - Do not add `@hachej/boring-ui-kit` to plugin dependencies; it is host-provided.
 - Only add plugin-local dependencies for specialized libraries (charts, maps, editors, etc.), not for basic controls.
