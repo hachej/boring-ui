@@ -46,7 +46,7 @@ Tracks fixes for the branch review against `main`.
 Locks in the "two entrances, one source of truth" model for plugin-authoring guidance.
 
 - [x] Slim `@hachej/boring-pi` to skills + reference docs only.
-  - Moved `references/workspace/templates/*` → `packages/cli/templates/` (CLI is the only consumer).
+  - Moved `references/workspace/templates/*` → `packages/plugin-cli/templates/` (CLI is the only consumer).
   - Replaced `resolveCanonicalTemplatesDir`'s walk-up resolver in `scaffoldPlugin.ts` with a 5-line `resolveBundledTemplatesDir` that reads from the CLI's own bundled dir. Kept `templatesDir` as a test escape hatch.
   - `packages/cli/package.json` `files` now includes `"templates/"` so they ship in the tarball; the integration test that installs CLI from pack + scaffolds via `npx` passes.
 - [x] Make `@hachej/boring-pi` an explicit runtime dep of `@hachej/boring-workspace`.
@@ -145,7 +145,7 @@ Locks in the "two entrances, one source of truth" model for plugin-authoring gui
 
 ## Design notes
 
-- The CLI `scaffoldPlugin({ templatesDir })` test escape hatch is intentionally retained for focused unit tests. The production path uses bundled `packages/cli/templates/`.
+- The CLI `scaffoldPlugin({ templatesDir })` test escape hatch is intentionally retained for focused unit tests. The production path uses bundled `packages/plugin-cli/templates/`.
 
 ## Progress log
 
@@ -154,7 +154,7 @@ Locks in the "two entrances, one source of truth" model for plugin-authoring gui
 - 2026-05-20: Review-fix pass added app-manifest default plugin package discovery coverage, allowed front/Pi-only default packages without server imports, added route-level `/reload` diagnostics response coverage, kept non-fatal diagnostics on the success/warning UI path, and made server rebuild diagnostic-only.
 - 2026-05-20: Core static composition pass disabled core front/server hot reload through a symmetric app-level `hotReload?: false` contract, routed core server plugin entries/default packages through the workspace app-server resolver, documented that plugin hot reload is standalone workspace-agent only for now, and made boot-time core plugin `UiBridge` unavailable instead of cross-workspace broadcast.
 - 2026-05-20: Scanner cleanup added one-pass `scanBoringPlugins()` and switched the asset manager/default-package Pi snapshot path to use it instead of preflighting and reading with duplicate filesystem work.
-- 2026-05-20: Completed the boring-pi migration (DECISIONS #17). Templates moved to `packages/cli/templates/`; `boringSystemPrompt.ts` shrunk to a Pi-style pointer block resolved via `require.resolve("@hachej/boring-pi/package.json")`; `<available_skills>` and pointer block both reference the same boring-pi install. Eval against qwen3.6-plus: 7/7 plugin-creation tests pass end-to-end with user-voice prompts.
+- 2026-05-20: Completed the boring-pi migration (DECISIONS #17). Templates moved to `packages/plugin-cli/templates/`; `boringSystemPrompt.ts` shrunk to a Pi-style pointer block resolved via `require.resolve("@hachej/boring-pi/package.json")`; `<available_skills>` and pointer block both reference the same boring-pi install. Eval against qwen3.6-plus: 7/7 plugin-creation tests pass end-to-end with user-voice prompts.
 
 - 2026-05-22: PR review fix pass — all findings from parallel review + architecture/deep code review addressed. 1211 tests pass (88 files, 3 skipped). Summary:
   - P0: PanelRegistry generation counter for hot-reload stale panels; ChatPanel throw→return; hasDirServerPlugin catch in filter
