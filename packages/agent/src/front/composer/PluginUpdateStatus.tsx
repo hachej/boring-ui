@@ -44,7 +44,7 @@ export function PluginUpdateStatus({
   state,
   onDismiss,
   onRetry,
-  successAutoDismissMs = 1000,
+  successAutoDismissMs = 1400,
   maxWidthClassName = "max-w-3xl",
 }: PluginUpdateStatusProps): ReactElement | null {
   const onDismissRef = useRef(onDismiss)
