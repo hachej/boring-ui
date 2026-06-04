@@ -75,8 +75,8 @@ describe("PluginUpdateStatus", () => {
       />,
     )
 
-    expect(container.textContent).toContain("Plugins updated")
-    expect(container.textContent).toContain("1 browser module reloaded")
+    expect(container.textContent).toContain("Reload complete")
+    expect(container.textContent).toContain("1 plugin module refreshed")
     expect(container.textContent).not.toContain("csv-viewer")
     act(() => {
       vi.advanceTimersByTime(2500)

@@ -44,7 +44,7 @@ export function PluginUpdateStatus({
   state,
   onDismiss,
   onRetry,
-  successAutoDismissMs = 1800,
+  successAutoDismissMs = 1000,
   maxWidthClassName = "max-w-3xl",
 }: PluginUpdateStatusProps): ReactElement | null {
   useEffect(() => {
@@ -82,16 +82,16 @@ export function PluginUpdateStatus({
     const hasWarningsOrDiagnostics = warnings.length > 0 || diagnostics.length > 0
     const title = state.reloaded
       ? hasWarningsOrDiagnostics
-        ? "Plugins updated with warnings"
-        : "Plugins updated"
-      : "Plugins queued for next message"
+        ? "Reload finished with warnings"
+        : "Reload complete"
+      : "Reload queued"
     const detail = state.reloaded
       ? hasWarningsOrDiagnostics
-        ? "Review the details below."
+        ? "Some plugin changes need attention."
         : frontEvents.length > 0
-          ? `${frontEvents.length} browser module${frontEvents.length === 1 ? "" : "s"} reloaded.`
-          : undefined
-      : "They will apply on the next agent message."
+          ? `${frontEvents.length} plugin module${frontEvents.length === 1 ? "" : "s"} refreshed. Changes are live.`
+          : "Changes are live."
+      : "Changes will apply on the next agent message."
     return (
       <div
         data-boring-plugin-update="success"
