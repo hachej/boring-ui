@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { RefreshCw } from "lucide-react"
 import { ErrorState, Spinner } from "@hachej/boring-ui-kit"
 import { useApiBaseUrl, useWorkspaceRequestId } from "../data/DataProvider"
 import { cn } from "../../../../front/lib/utils"
@@ -8,6 +9,8 @@ import { cn } from "../../../../front/lib/utils"
 export interface MediaViewerProps {
   path: string
   kind: "image" | "pdf"
+  reloadKey?: number
+  onReload?: () => void
   className?: string
 }
 
@@ -20,17 +23,18 @@ function filename(path: string): string {
   return path.split("/").pop() ?? path
 }
 
-export function MediaViewer({ path, kind, className }: MediaViewerProps) {
+export function MediaViewer({ path, kind, reloadKey = 0, onReload, className }: MediaViewerProps) {
   const apiBaseUrl = useApiBaseUrl()
   const workspaceRequestId = useWorkspaceRequestId()
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const rawUrl = useMemo(
-    () => apiUrl(apiBaseUrl, `/api/v1/files/raw?path=${encodeURIComponent(path)}`),
-    [apiBaseUrl, path],
-  )
+  const rawUrl = useMemo(() => {
+    const query = new URLSearchParams({ path })
+    if (reloadKey > 0) query.set("reload", String(reloadKey))
+    return apiUrl(apiBaseUrl, `/api/v1/files/raw?${query.toString()}`)
+  }, [apiBaseUrl, path, reloadKey])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -98,13 +102,25 @@ export function MediaViewer({ path, kind, className }: MediaViewerProps) {
         <div className="min-w-0 truncate text-xs font-medium text-muted-foreground" title={path}>
           {filename(path)}
         </div>
-        <a
-          href={objectUrl}
-          download={filename(path)}
-          className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          Download
-        </a>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onReload}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label={`Reload ${filename(path)}`}
+            title="Reload preview"
+          >
+            <RefreshCw className="size-3.5" />
+            <span>Reload</span>
+          </button>
+          <a
+            href={objectUrl}
+            download={filename(path)}
+            className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            Download
+          </a>
+        </div>
       </div>
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
         {kind === "image" ? (
