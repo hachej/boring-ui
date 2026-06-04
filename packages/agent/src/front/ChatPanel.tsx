@@ -1464,6 +1464,7 @@ export function ChatPanel(props: ChatPanelProps) {
             state={pluginUpdateState}
             onDismiss={dismissPluginUpdate}
             onRetry={runPluginUpdate}
+            maxWidthClassName={chrome ? "max-w-3xl" : "max-w-[680px]"}
           />
         )}
         {attachmentNotice && (

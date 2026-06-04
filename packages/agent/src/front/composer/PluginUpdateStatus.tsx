@@ -36,6 +36,8 @@ export interface PluginUpdateStatusProps {
   onRetry: () => void
   /** Auto-dismiss clean success banners. Set to 0 to disable. */
   successAutoDismissMs?: number
+  /** Width class supplied by ChatPanel so the banner matches the composer. */
+  maxWidthClassName?: string
 }
 
 export function PluginUpdateStatus({
@@ -43,11 +45,12 @@ export function PluginUpdateStatus({
   onDismiss,
   onRetry,
   successAutoDismissMs = 4000,
+  maxWidthClassName = "max-w-3xl",
 }: PluginUpdateStatusProps): ReactElement | null {
   useEffect(() => {
     if (!state || state.kind !== "success" || successAutoDismissMs <= 0) return
-    const hasDetails = (state.restartWarnings?.length ?? 0) > 0 || (state.diagnostics?.length ?? 0) > 0 || (state.frontEvents?.length ?? 0) > 0
-    if (hasDetails) return
+    const hasWarningsOrDiagnostics = (state.restartWarnings?.length ?? 0) > 0 || (state.diagnostics?.length ?? 0) > 0
+    if (hasWarningsOrDiagnostics) return
     const timeout = window.setTimeout(onDismiss, successAutoDismissMs)
     return () => window.clearTimeout(timeout)
   }, [state, onDismiss, successAutoDismissMs])
@@ -61,8 +64,9 @@ export function PluginUpdateStatus({
         role="status"
         aria-live="polite"
         className={cn(
-          "mx-auto mb-2 w-full max-w-3xl rounded-[var(--radius-md)] border border-accent/30 bg-[color:var(--accent-soft)]",
+          "mx-auto mb-2 w-full rounded-[var(--radius-md)] border border-accent/30 bg-[color:var(--accent-soft)]",
           "px-3 py-2 text-xs text-foreground flex items-center gap-2",
+          maxWidthClassName,
         )}
       >
         <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-accent" aria-hidden="true" />
@@ -81,8 +85,9 @@ export function PluginUpdateStatus({
         role="status"
         aria-live="polite"
         className={cn(
-          "mx-auto mb-2 w-full max-w-3xl rounded-[var(--radius-md)] border border-[oklch(0.78_0.13_148)]/40 bg-[oklch(0.95_0.05_148/0.3)]",
+          "mx-auto mb-2 w-full rounded-[var(--radius-md)] border border-[oklch(0.78_0.13_148)]/40 bg-[oklch(0.95_0.05_148/0.3)]",
           "px-3 py-2 text-xs text-foreground",
+          maxWidthClassName,
         )}
       >
         <div className="flex items-center gap-2">
@@ -187,8 +192,9 @@ export function PluginUpdateStatus({
       role="status"
       aria-live="polite"
       className={cn(
-        "mx-auto mb-2 w-full max-w-3xl rounded-[var(--radius-md)] border border-destructive/40 bg-destructive/10",
+        "mx-auto mb-2 w-full rounded-[var(--radius-md)] border border-destructive/40 bg-destructive/10",
         "px-3 py-2 text-xs text-foreground",
+        maxWidthClassName,
       )}
     >
       <div className="flex items-center gap-2">
