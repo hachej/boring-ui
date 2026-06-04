@@ -1,27 +1,19 @@
 # Plugin template
 
 Reference shape for **app/internal publishable npm-package plugins**.
-The CLI copies this directory when you run:
+The plugin CLI copies this directory when you run:
 
 ```sh
-boring-ui plugin create <your-name> --path plugins
+boring-ui-plugin create <your-name> --path plugins
 cd plugins/<your-name>
 pnpm install
 pnpm typecheck && pnpm test
 ```
 
-Or copy it manually:
-
-```sh
-cp -R packages/cli/templates/plugin plugins/<your-name>
-# rename: `sample` → `<your-name>` in src/, package.json:name,
-#         tsup entries, vitest aliases as needed
-```
-
 > **Building a generated/runtime user plugin instead** (hot-reloadable,
 > no build step, drops into a workspace's `.pi/extensions/<name>/`)?
 > Don't copy this template and don't use `npx` from inside the agent
-> runtime — run the workspace-local `boring-ui scaffold-plugin <name>`.
+> runtime — run the workspace-local `boring-ui-plugin scaffold <name>`.
 
 ## Shape
 
@@ -55,7 +47,7 @@ plugins/<name>/
 - **shared/** — constants and types used by both sides. Keep it tiny.
 - **`src/test-setup.ts`** — jest-dom matchers, ResizeObserver + Range
   polyfills, testing-library cleanup. Each plugin owns its own copy;
-  keep them in sync with `packages/cli/templates/plugin/src/test-setup.ts`
+  keep them in sync with `packages/plugin-cli/templates/plugin/src/test-setup.ts`
   if the canonical setup changes.
 
 ## Invariants

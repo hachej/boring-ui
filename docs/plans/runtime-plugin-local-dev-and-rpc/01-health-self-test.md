@@ -114,11 +114,11 @@ CLI-only diagnostics routes mandatory for workspace playground hosts.
 Runner flow should tolerate both host shapes:
 
 1. `POST /api/v1/agent/reload`
-   - folder mode: no workspace header required
-   - workspaces mode: pass `x-boring-workspace-id` or `?workspaceId=<id>`
+  - folder mode: no workspace header required
+  - workspaces mode: pass `x-boring-workspace-id` or `?workspaceId=<id>`
 2. If available, read plugin diagnostics:
-   - CLI host: `GET /api/v1/runtime-plugin-diagnostics`
-   - workspace host: existing `/api/v1/agent-plugins` and reload response diagnostics are enough for V1
+  - CLI host: `GET /api/v1/runtime-plugin-diagnostics`
+  - workspace host: existing `/api/v1/agent-plugins` and reload response diagnostics are enough for V1
 3. Fold only target-plugin diagnostics into `reloadErrors`.
 
 Catches:
@@ -212,7 +212,7 @@ PUT /api/v1/ui/panels/status
 GET /api/v1/ui/panels/status?panelInstanceId=...
 ```
 
-This is panel render status, not `test-plugin` state. `test-plugin` is only one consumer. Keep the route narrow, UI-owned, and mechanically migratable to WorkspaceBridge later.
+This is panel render status, not plugin-test command state. The `boring-ui-plugin test` runner is only one consumer. Keep the route narrow, UI-owned, and mechanically migratable to WorkspaceBridge later.
 
 Preferred file shape:
 
@@ -297,9 +297,9 @@ Runner flow:
 1. Build workspace-scoped headers/query.
 2. Call `POST /api/v1/agent/reload`.
 3. Read available target-plugin diagnostics.
-   - Prefer `/api/v1/runtime-plugin-diagnostics` when present.
-   - Otherwise use `/api/v1/agent/reload` diagnostics and `/api/v1/agent-plugins/:id/error` when available.
-   - Treat `404` from optional diagnostics routes as `diagnosticsUnavailable`, not as failure, when pane status can still decide the target result.
+  - Prefer `/api/v1/runtime-plugin-diagnostics` when present.
+  - Otherwise use `/api/v1/agent/reload` diagnostics and `/api/v1/agent-plugins/:id/error` when available.
+  - Treat `404` from optional diagnostics routes as `diagnosticsUnavailable`, not as failure, when pane status can still decide the target result.
 4. Wait until the target panel is registered when the host can expose that signal; otherwise retry `openPanel` until pane status appears or timeout. Do not post exactly once and then wait forever, because browser plugin registration can still be in flight after reload.
 5. Open the pane through existing UI bridge command:
 

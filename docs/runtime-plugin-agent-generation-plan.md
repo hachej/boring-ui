@@ -1065,7 +1065,7 @@ Before writing files, agent records 5-10 bullets in plugin README or temp notes:
 ### Step 2 — scaffold
 
 ```bash
-boring-ui scaffold-plugin <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"
+boring-ui-plugin scaffold <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"
 ```
 
 Scaffold creates:
@@ -1113,7 +1113,7 @@ Rules:
 ### Step 6 — verify statically
 
 ```bash
-boring-ui verify-plugin <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"
+boring-ui-plugin verify <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"
 ```
 
 Verifier checks:
@@ -1177,7 +1177,7 @@ If errors:
 
 Reports host generation contract.
 
-### `boring-ui scaffold-plugin --target auto|native|iframe`
+### `boring-ui-plugin scaffold --target auto|native|iframe`
 
 Scaffold according to effective host policy.
 
@@ -1194,7 +1194,7 @@ Explicit `--target native` or `--target iframe` may create a single-target plugi
 but verifier/health output must report that the plugin is not portable to the
 missing runtime.
 
-### `boring-ui verify-plugin`
+### `boring-ui-plugin verify`
 
 Already exists; extend for manifest-first tools/UI/runtime rules.
 

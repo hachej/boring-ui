@@ -55,6 +55,7 @@ import {
   IconButton,
 } from '@hachej/boring-ui-kit'
 import { cn } from './lib'
+import { copyTextToClipboard } from './clipboard'
 import { friendlyError } from './chatErrors'
 import { getReasoningPart, isBlankTextPart, isFilePart, isTextPart, type ReasoningPartView } from './chatMessageParts'
 import { useComposerHistory } from './useComposerHistory'
@@ -1870,36 +1871,8 @@ function MessageActionsBar({
   }
   const handleCopy = async () => {
     if (!visible) return
-    if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
-      try {
-        await navigator.clipboard.writeText(text)
-        markCopied()
-        return
-      } catch {
-        /* fall through to legacy fallback */
-      }
-    }
-    // Fallback for non-secure contexts (HTTP dev URLs etc.) where the
-    // async Clipboard API is unavailable. document.execCommand('copy') is
-    // deprecated but still supported by every shipping browser and works
-    // off a temporary textarea + selection.
-    if (typeof document === 'undefined') return
-    const ta = document.createElement('textarea')
-    ta.value = text
-    ta.setAttribute('readonly', '')
-    ta.style.position = 'fixed'
-    ta.style.opacity = '0'
-    ta.style.pointerEvents = 'none'
-    document.body.appendChild(ta)
-    ta.select()
-    try {
-      const ok = document.execCommand('copy')
-      if (ok) markCopied()
-    } catch {
-      /* nothing more we can do */
-    } finally {
-      document.body.removeChild(ta)
-    }
+    const ok = await copyTextToClipboard(text)
+    if (ok) markCopied()
   }
   const iconActionBtnClass = cn(
     "inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)]",

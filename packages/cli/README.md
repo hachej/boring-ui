@@ -92,13 +92,16 @@ pnpm --filter @hachej/boring-ui-cli build
 npx ./packages/cli/dist/index.js
 ```
 
-### Scaffold a Plugin
+### Plugins
+
+Plugin authoring operations live in the dedicated plugin CLI:
 
 ```bash
-boring-ui plugin create my-plugin --path plugins
+boring-ui-plugin create my-package-plugin --path plugins
+boring-ui-plugin scaffold my-runtime-plugin "$BORING_AGENT_WORKSPACE_ROOT"
+boring-ui-plugin verify my-runtime-plugin "$BORING_AGENT_WORKSPACE_ROOT"
+boring-ui-plugin test my-runtime-plugin
 ```
-
-This copies the bundled plugin template from `templates/plugin/`, renames the sample identifiers, and creates `plugins/my-plugin`.
 
 ---
 
