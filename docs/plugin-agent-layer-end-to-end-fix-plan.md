@@ -15,7 +15,7 @@ Make agent-authored boring-ui plugins work end-to-end:
 
 The CSV viewer flow failed for several independent reasons:
 
-- `boring-ui-plugin scaffold` was advertised, but no `boring-ui` shim existed in `.boring-agent/bin`, so the agent hit `command not found` and hand-wrote files.
+- `boring-ui-plugin scaffold` was advertised, but no `boring-ui-plugin` bin existed in the provisioned runtime PATH, so the agent hit `command not found` and hand-wrote files.
 - Prompt docs pointed at host paths that were not readable inside the local bwrap runtime. The agent could not read `boring-plugin-authoring/SKILL.md` and reverse-engineered from stale plugins.
 - The generated plugin collided with built-in `csv-viewer`, which the filesystem plugin already uses for raw CSV display.
 - Hot-loaded panels were registered in `PanelRegistry`, but some surface UI code used memoized/stale registry-derived lists, so new panel ids did not become openable after `/reload`.
