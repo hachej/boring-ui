@@ -79,23 +79,6 @@ export function MediaViewer({ path, kind, reloadKey = 0, onReload, className }: 
     )
   }
 
-  if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
-        <Spinner className="size-3.5" />
-        <span>Loading preview...</span>
-      </div>
-    )
-  }
-
-  if (error || !objectUrl) {
-    return (
-      <div className="flex h-full items-center justify-center p-6">
-        <ErrorState title="Failed to load preview" description={error ?? "Preview unavailable."} />
-      </div>
-    )
-  }
-
   return (
     <div className={cn("flex h-full min-h-0 flex-col bg-background", className)}>
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/60 px-3 py-2">
@@ -106,24 +89,34 @@ export function MediaViewer({ path, kind, reloadKey = 0, onReload, className }: 
           <button
             type="button"
             onClick={onReload}
-            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+            disabled={!onReload}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
             aria-label={`Reload ${filename(path)}`}
             title="Reload preview"
           >
             <RefreshCw className="size-3.5" />
             <span>Reload</span>
           </button>
-          <a
-            href={objectUrl}
-            download={filename(path)}
-            className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            Download
-          </a>
+          {objectUrl ? (
+            <a
+              href={objectUrl}
+              download={filename(path)}
+              className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              Download
+            </a>
+          ) : null}
         </div>
       </div>
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
-        {kind === "image" ? (
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Spinner className="size-3.5" />
+            <span>Loading preview...</span>
+          </div>
+        ) : error || !objectUrl ? (
+          <ErrorState title="Failed to load preview" description={error ?? "Preview unavailable."} />
+        ) : kind === "image" ? (
           <img
             src={objectUrl}
             alt={filename(path)}

@@ -151,7 +151,7 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
     if (question && pending === null && !paramQuestion) api.close()
   }, [api, pending, paramQuestion, question])
 
-  return <div className={className ? `${className} min-h-0` : "h-full min-h-0"}>
+  return <div className={className ? `${className} min-h-0 overflow-hidden` : "h-full min-h-0 overflow-hidden"}>
     <Pane className="h-full min-h-0 overflow-hidden border-0 bg-background text-sm">
       <PaneHeader className="border-b bg-background/95">
         <div>
