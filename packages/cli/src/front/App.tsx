@@ -5,6 +5,7 @@ import * as ReactJsxDevRuntime from "react/jsx-dev-runtime"
 import * as ReactJsxRuntime from "react/jsx-runtime"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { ChatPanel, useSessions as useAgentSessions } from "@hachej/boring-agent"
+import { askUserPlugin } from "@hachej/boring-ask-user/front"
 import * as WorkspaceSingleton from "@hachej/boring-workspace"
 import * as WorkspaceEventsSingleton from "@hachej/boring-workspace/events"
 import * as WorkspacePluginSingleton from "@hachej/boring-workspace/plugin"
@@ -185,7 +186,7 @@ export function CliWorkspaceShell() {
     setUrlSessionId((current) => current === sessionId ? current : sessionId)
   }, [])
 
-  const plugins = useMemo(() => [], [])
+  const plugins = useMemo(() => [askUserPlugin], [])
   const activeWorkspaceRequestHeaders = useMemo(
     () => activeWorkspaceId ? { "x-boring-workspace-id": activeWorkspaceId } : null,
     [activeWorkspaceId],

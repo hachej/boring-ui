@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify"
+import type { AgentTool } from "@hachej/boring-agent/shared"
 import type {
   BoringAgentRuntimePaths,
   ProvisionWorkspaceRuntimeOptions,
@@ -409,6 +410,7 @@ export async function createFolderModeApp(opts: {
     logger: false,
     provisionWorkspace: false,
     runtimeProvisioning,
+    defaultPluginPackages: ["@hachej/boring-ask-user"],
     additionalBoringPluginDirs: [getGlobalPiExtensionsRoot()],
     boringPluginFrontTargetResolver: runtimeHost.createFrontTargetResolver(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID),
     boringPluginIncludeLegacyFrontUrl: false,
@@ -495,12 +497,14 @@ export async function createWorkspacesModeApp(opts: {
   registryPath?: string
   provisionWorkspace?: boolean
 }): Promise<FastifyInstance> {
-  const [workspaceAppServer, workspaceServer, agentServer, fastifyModule, { createPluginFrontRuntimeHost }] = await Promise.all([
+  const [workspaceAppServer, workspaceServer, agentServer, fastifyModule, { createPluginFrontRuntimeHost }, askUserServer, askUserShared] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
     import("@hachej/boring-workspace/server"),
     import("@hachej/boring-agent/server"),
     import("fastify"),
     import("./pluginFrontRuntime.js"),
+    import("@hachej/boring-ask-user/server"),
+    import("@hachej/boring-ask-user/shared"),
   ])
   const registry = createLocalWorkspaceRegistry(opts.registryPath)
   const app = fastifyModule.default({ logger: false, bodyLimit: 16 * 1024 * 1024 })
@@ -517,6 +521,13 @@ export async function createWorkspacesModeApp(opts: {
   }>()
   const pluginPiSnapshots = new Map<string, ReturnType<typeof readCliPluginPiSnapshot>>()
   const runtimeProvisioningByWorkspace = new Map<string, WorkspaceProvisioningResult | undefined>()
+  const askUserContexts = new Map<string, {
+    stopPublisher: () => void
+    systemPrompt: string | undefined
+    agentTools: AgentTool[]
+    store: InstanceType<typeof askUserServer.FileAskUserStore>
+    runtime: InstanceType<typeof askUserServer.AskUserRuntime>
+  }>()
 
   function getBridge(workspaceId: string) {
     let bridge = bridges.get(workspaceId)
@@ -571,6 +582,35 @@ export async function createWorkspacesModeApp(opts: {
     return runtime
   }
 
+  function getAskUserContext(workspace: LocalWorkspace) {
+    const existing = askUserContexts.get(workspace.id)
+    if (existing) return existing
+
+    const bridge = getBridge(workspace.id)
+    const store = new askUserServer.FileAskUserStore(join(workspace.path, ".boring", "ask-user.json"))
+    const runtime = new askUserServer.AskUserRuntime({ store, uiBridge: bridge })
+    const stopPublisher = new askUserServer.AskUserStatePublisher(store, bridge).start()
+    const tool = askUserServer.createAskUserTool({ runtime, sessionId: () => "default" })
+    const plugin = askUserServer.createAskUserServerPlugin({ workspaceRoot: workspace.path, store, runtime })
+    const context = {
+      stopPublisher,
+      systemPrompt: plugin.systemPrompt,
+      agentTools: [{
+        name: tool.name,
+        description: tool.description,
+        promptSnippet: tool.promptSnippet,
+        parameters: tool.parameters,
+        execute(params: Parameters<AgentTool["execute"]>[0], ctx: Parameters<AgentTool["execute"]>[1]) {
+          return tool.execute(ctx.toolCallId, params, ctx.abortSignal, ctx.sessionId)
+        },
+      }],
+      store,
+      runtime,
+    }
+    askUserContexts.set(workspace.id, context)
+    return context
+  }
+
   function getLoadedPluginPiSnapshot(workspace: LocalWorkspace) {
     return pluginPiSnapshots.get(pluginRuntimeKey(workspace)) ?? {
       additionalSkillPaths: [],
@@ -588,6 +628,8 @@ export async function createWorkspacesModeApp(opts: {
     pluginRuntimes.delete(runtimeKey)
     pluginPiSnapshots.delete(runtimeKey)
     runtimeProvisioningByWorkspace.delete(workspace.id)
+    askUserContexts.get(workspace.id)?.stopPublisher()
+    askUserContexts.delete(workspace.id)
     bridges.delete(workspace.id)
     diagnosticsStore.disposeWorkspace(workspace.id)
     await runtimeHost.disposeWorkspace(workspace.id)
@@ -644,7 +686,10 @@ export async function createWorkspacesModeApp(opts: {
     getSystemPromptDynamic: async ({ workspaceId }) => {
       const workspace = await requireWorkspace(workspaceId)
       await getLoadedPluginRuntime(workspace)
-      return getLoadedPluginPiSnapshot(workspace).systemPromptAppend
+      return [
+        getAskUserContext(workspace).systemPrompt,
+        getLoadedPluginPiSnapshot(workspace).systemPromptAppend,
+      ].filter(Boolean).join("\n\n") || undefined
     },
     getWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
     getWorkspaceRoot: async (workspaceId) => (await requireWorkspace(workspaceId)).path,
@@ -685,16 +730,49 @@ export async function createWorkspacesModeApp(opts: {
         getHotReloadableResources: () => getLoadedPluginPiSnapshot(workspace),
       }
     },
-    getExtraTools: async ({ workspaceId, workspaceRoot, workspaceFsCapability }) => [
-      ...workspaceServer.createWorkspaceUiTools(getBridge(workspaceId), {
-        workspaceRoot: workspaceFsCapability === "strong" ? workspaceRoot : undefined,
-      }),
-    ],
+    getExtraTools: async ({ workspaceId, workspaceRoot, workspaceFsCapability }) => {
+      const workspace = await requireWorkspace(workspaceId)
+      return [
+        ...workspaceServer.createWorkspaceUiTools(getBridge(workspaceId), {
+          workspaceRoot: workspaceFsCapability === "strong" ? workspaceRoot : undefined,
+        }),
+        ...getAskUserContext(workspace).agentTools,
+      ]
+    },
+  })
+
+  app.post("/api/v1/questions/commands", async (request, reply) => {
+    const workspace = await workspaceFromRequest(request)
+    const parsed = askUserShared.QuestionsCommandSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "validation_error", message: parsed.error.issues[0]?.message ?? "invalid command" })
+    }
+    const context = getAskUserContext(workspace)
+    const bridge = new askUserServer.QuestionsBridge({
+      store: context.store,
+      runtime: context.runtime,
+      getAuthContext: () => {
+        const body = request.body as { params?: { sessionId?: unknown } } | undefined
+        return {
+          sessionId: typeof body?.params?.sessionId === "string" ? body.params.sessionId : "anonymous",
+          principalId: "anonymous",
+        }
+      },
+    })
+    try {
+      return await bridge.handle(parsed.data)
+    } catch (error) {
+      if (error instanceof askUserServer.QuestionsBridgeError) {
+        return reply.code(error.statusCode).send({ error: error.code, message: error.message })
+      }
+      throw error
+    }
   })
 
   await app.register(workspaceServer.uiRoutes, {
     getWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
     getBridge: async (request) => getBridge((await workspaceFromRequest(request)).id),
+    preserveStateKeys: [askUserShared.ASK_USER_UI_STATE_SLOTS.PENDING],
   })
 
   app.get("/api/v1/runtime-plugin-diagnostics", async (request) => {

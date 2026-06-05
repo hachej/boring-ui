@@ -18,6 +18,10 @@ vi.mock("@hachej/boring-agent", () => ({
   useSessions: () => ({ sessions: [], loading: false }),
 }))
 
+vi.mock("@hachej/boring-ask-user/front", () => ({
+  askUserPlugin: { pluginId: "ask-user", pluginLabel: "Questions" },
+}))
+
 vi.mock("@hachej/boring-workspace/app/front", () => ({
   WorkspaceAgentFront: (props: Record<string, unknown>) => workspaceAgentFrontSpy(props),
 }))
@@ -70,6 +74,7 @@ describe("CliWorkspaceShell", () => {
     expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({
       frontPluginHotReload: "vite",
       appTitle: "Folder Workspace",
+      plugins: [expect.objectContaining({ pluginId: "ask-user" })],
     })
 
     expect(screen.getByText("v1.2.3")).not.toBeNull()
