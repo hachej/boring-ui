@@ -440,6 +440,12 @@ Two axes — **where it is** and **where it is in the process**. Tag every issue
 
 Legacy kind-of-work labels (`bug`, `feature`, `enhancement`, `refactor`, `architecture`, `story`) are optional/loose — the two axes above are what we tag on consistently. Create labels with the `hachej` gh login (the Vault `boringdata-agent` token is read-only on the repo).
 
+## 8. GitHub PR proof-of-work comments
+
+For every GitHub issue/PR implementation, follow `docs/procedures/proof-of-work.md`.
+
+A PR is not ready for human review until the agent posts a final GitHub proof comment with tests, manual validation, artifacts/screenshots where relevant, workspace-playground details for UI/workspace behavior, and known gaps. Never post host/IP addresses in the public repo; post only ports and local/operator paths.
+
 ---
 
 ## Communication mode
