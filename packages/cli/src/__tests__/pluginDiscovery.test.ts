@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { join, resolve } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import {
   createCliPluginAssetManager,
   getGlobalPiExtensionsRoot,
@@ -13,6 +13,21 @@ async function makeTempDir(prefix: string): Promise<string> {
   return await mkdtemp(join(tmpdir(), prefix))
 }
 
+async function writeRuntimePlugin(dir: string, name: string, systemPrompt: string): Promise<void> {
+  await mkdir(join(dir, "front"), { recursive: true })
+  await writeFile(join(dir, "front", "index.tsx"), "export default function Plugin() { return null }\n", "utf8")
+  await writeFile(join(dir, "package.json"), JSON.stringify({
+    name,
+    boring: { front: "front/index.tsx" },
+    pi: { systemPrompt },
+  }), "utf8")
+}
+
+async function writeRecordsFile(recordsPath: string, sources: Array<Record<string, unknown>>): Promise<void> {
+  await mkdir(dirname(recordsPath), { recursive: true })
+  await writeFile(recordsPath, JSON.stringify({ version: 1, sources }), "utf8")
+}
+
 describe("plugin discovery helpers", () => {
   test("resolves the default global Pi extensions root", () => {
     expect(getGlobalPiExtensionsRoot({ globalRoot: "/tmp/custom-global" })).toBe(resolve("/tmp/custom-global"))
@@ -24,9 +39,9 @@ describe("plugin discovery helpers", () => {
       { rootDir: resolve("/tmp/global-extensions"), kind: "external" },
       { rootDir: resolve("/tmp/global-agent", "npm"), kind: "external" },
       { rootDir: resolve("/tmp/global-agent", "git"), kind: "external" },
-      { rootDir: resolve("/tmp/workspace", ".pi", "extensions"), kind: "external" },
-      { rootDir: resolve("/tmp/workspace", ".pi", "npm"), kind: "external" },
-      { rootDir: resolve("/tmp/workspace", ".pi", "git"), kind: "external" },
+      { rootDir: resolve("/tmp/workspace", ".pi", "extensions"), kind: "external", workspaceId: resolve("/tmp/workspace") },
+      { rootDir: resolve("/tmp/workspace", ".pi", "npm"), kind: "external", workspaceId: resolve("/tmp/workspace") },
+      { rootDir: resolve("/tmp/workspace", ".pi", "git"), kind: "external", workspaceId: resolve("/tmp/workspace") },
     ])
   })
 
@@ -61,6 +76,101 @@ describe("plugin discovery helpers", () => {
       expect(snapshot.extensionPaths).toContain(resolve(localPlugin, "agent", "index.ts"))
       expect(snapshot.systemPromptAppend).toContain("Local prompt")
       expect(snapshot.systemPromptAppend).toContain("Global prompt")
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("workspace-local record shadows a global record with the same plugin id", async () => {
+    const root = await makeTempDir("boring-cli-plugin-record-shadow-")
+    const workspaceRoot = join(root, "workspace")
+    const globalAgentRoot = join(root, "global-agent")
+    const globalRoot = join(globalAgentRoot, "extensions")
+    const globalPlugin = join(root, "global-source")
+    const localPlugin = join(workspaceRoot, "plugins", "shadow-plugin")
+
+    await writeRuntimePlugin(globalPlugin, "shadow-plugin", "Global shadow prompt")
+    await writeRuntimePlugin(localPlugin, "shadow-plugin", "Local shadow prompt")
+    await writeRecordsFile(join(globalAgentRoot, "boring-plugin-sources.json"), [{
+      id: "shadow-plugin",
+      kind: "local",
+      scope: "global",
+      source: globalPlugin,
+      rootDir: globalPlugin,
+      installedAt: "2026-01-01T00:00:00.000Z",
+    }])
+    await writeRecordsFile(join(workspaceRoot, ".pi", "boring-plugin-sources.json"), [{
+      id: "shadow-plugin",
+      kind: "local",
+      scope: "local",
+      source: localPlugin,
+      rootDir: localPlugin,
+      rootDirRelativeToWorkspace: "plugins/shadow-plugin",
+      sourceRelativeToWorkspace: "plugins/shadow-plugin",
+      installedAt: "2026-01-01T00:00:00.000Z",
+    }])
+
+    try {
+      const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot, globalAgentRoot })
+      expect(snapshot.systemPromptAppend).toContain("Local shadow prompt")
+      expect(snapshot.systemPromptAppend).not.toContain("Global shadow prompt")
+
+      const manager = createCliPluginAssetManager(workspaceRoot, { globalRoot, globalAgentRoot })
+      await manager.load()
+      expect(manager.list()).toEqual([expect.objectContaining({ id: "shadow-plugin" })])
+      expect(manager.inspectLoaded()).toEqual([expect.objectContaining({ id: "shadow-plugin", rootDir: resolve(localPlugin) })])
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("workspace-local collection plugin shadows a global collection plugin with the same id", async () => {
+    const root = await makeTempDir("boring-cli-plugin-collection-shadow-")
+    const workspaceRoot = join(root, "workspace")
+    const globalRoot = join(root, "global-extensions")
+    const globalPlugin = join(globalRoot, "shadow-plugin")
+    const localPlugin = join(workspaceRoot, ".pi", "extensions", "shadow-plugin")
+
+    await writeRuntimePlugin(globalPlugin, "shadow-plugin", "Global collection prompt")
+    await writeRuntimePlugin(localPlugin, "shadow-plugin", "Local collection prompt")
+
+    try {
+      const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot })
+      expect(snapshot.systemPromptAppend).toContain("Local collection prompt")
+      expect(snapshot.systemPromptAppend).not.toContain("Global collection prompt")
+
+      const manager = createCliPluginAssetManager(workspaceRoot, { globalRoot })
+      await manager.load()
+      expect(manager.list()).toEqual([expect.objectContaining({ id: "shadow-plugin" })])
+      expect(manager.inspectLoaded()).toEqual([expect.objectContaining({ id: "shadow-plugin", rootDir: resolve(localPlugin) })])
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("sandbox /workspace local records resolve against the host workspace root", async () => {
+    const root = await makeTempDir("boring-cli-plugin-sandbox-record-")
+    const workspaceRoot = join(root, "host-workspace")
+    const plugin = join(workspaceRoot, "plugins", "sandbox-plugin")
+
+    await writeRuntimePlugin(plugin, "sandbox-plugin", "Sandbox prompt")
+    await writeRecordsFile(join(workspaceRoot, ".pi", "boring-plugin-sources.json"), [{
+      id: "sandbox-plugin",
+      kind: "local",
+      scope: "local",
+      source: "/workspace/plugins/sandbox-plugin",
+      rootDir: "/workspace/plugins/sandbox-plugin",
+      installedAt: "2026-01-01T00:00:00.000Z",
+    }])
+
+    try {
+      expect(resolveCliBoringPluginDirs(workspaceRoot, { globalRoot: join(root, "global-extensions") })).toContainEqual({
+        rootDir: resolve(plugin),
+        kind: "external",
+        workspaceId: resolve(workspaceRoot),
+      })
+      const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot: join(root, "global-extensions") })
+      expect(snapshot.systemPromptAppend).toContain("Sandbox prompt")
     } finally {
       await rm(root, { recursive: true, force: true })
     }

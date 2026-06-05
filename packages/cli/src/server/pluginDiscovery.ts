@@ -47,9 +47,9 @@ export function resolveCliBoringPluginDirs(
     { rootDir: getGlobalPiExtensionsRoot(options), kind: "external" },
     { rootDir: globalScope.npmDir, kind: "external" },
     { rootDir: globalScope.gitDir, kind: "external" },
-    { rootDir: localScope.extensionsDir, kind: "external" },
-    { rootDir: localScope.npmDir, kind: "external" },
-    { rootDir: localScope.gitDir, kind: "external" },
+    { rootDir: localScope.extensionsDir, kind: "external", workspaceId: resolvedWorkspaceRoot },
+    { rootDir: localScope.npmDir, kind: "external", workspaceId: resolvedWorkspaceRoot },
+    { rootDir: localScope.gitDir, kind: "external", workspaceId: resolvedWorkspaceRoot },
     ...records.map((record): BoringPluginSourceInput => ({
       rootDir: record.rootDir,
       kind: "external",

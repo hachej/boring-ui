@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from "node:fs"
 import { homedir, tmpdir } from "node:os"
-import { basename, dirname, isAbsolute, join, resolve } from "node:path"
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { validateBoringPluginManifest } from "../manifest"
 
 export type PluginInstallScope = "local" | "global"
@@ -26,6 +26,8 @@ export interface PluginSourceRecord {
   packageName?: string
   version?: string
   ref?: string
+  rootDirRelativeToWorkspace?: string
+  sourceRelativeToWorkspace?: string
 }
 
 interface PluginSourceRecordsFile {
@@ -163,6 +165,8 @@ function readRecordsFile(recordsPath: string): PluginSourceRecordsFile {
       ...(typeof record.packageName === "string" ? { packageName: record.packageName } : {}),
       ...(typeof record.version === "string" ? { version: record.version } : {}),
       ...(typeof record.ref === "string" ? { ref: record.ref } : {}),
+      ...(typeof record.rootDirRelativeToWorkspace === "string" ? { rootDirRelativeToWorkspace: record.rootDirRelativeToWorkspace } : {}),
+      ...(typeof record.sourceRelativeToWorkspace === "string" ? { sourceRelativeToWorkspace: record.sourceRelativeToWorkspace } : {}),
     })
   }
   return { version: 1, sources }
@@ -173,8 +177,37 @@ function writeRecordsFile(recordsPath: string, file: PluginSourceRecordsFile): v
   writeFileSync(recordsPath, `${JSON.stringify(file, null, 2)}\n`, "utf8")
 }
 
+function isWorkspaceRelativePath(value: string): boolean {
+  return value === "." || (!isAbsolute(value) && !value.split(/[\\/]/).includes(".."))
+}
+
+function pathRelativeToWorkspace(workspaceRoot: string | undefined, value: string): string | undefined {
+  if (!workspaceRoot) return undefined
+  const rel = relative(workspaceRoot, value)
+  if (!rel || rel === ".") return "."
+  if (rel.startsWith("..") || isAbsolute(rel)) return undefined
+  return rel.split("\\").join("/")
+}
+
+function resolveWorkspacePath(paths: PluginSourceScopePaths, value: string, relativeValue?: string): string {
+  if (paths.scope !== "local" || !paths.workspaceRoot) return value
+  if (relativeValue && isWorkspaceRelativePath(relativeValue)) return resolve(paths.workspaceRoot, relativeValue)
+  if (value === "/workspace") return resolve(paths.workspaceRoot)
+  if (value.startsWith("/workspace/")) return resolve(paths.workspaceRoot, value.slice("/workspace/".length))
+  return value
+}
+
+function normalizeRecordForScope(paths: PluginSourceScopePaths, record: PluginSourceRecord): PluginSourceRecord {
+  if (record.scope !== "local") return record
+  return {
+    ...record,
+    rootDir: resolveWorkspacePath(paths, record.rootDir, record.rootDirRelativeToWorkspace),
+    source: resolveWorkspacePath(paths, record.source, record.sourceRelativeToWorkspace),
+  }
+}
+
 export function readPluginSourceRecords(paths: PluginSourceScopePaths): PluginSourceRecord[] {
-  return readRecordsFile(paths.recordsPath).sources
+  return readRecordsFile(paths.recordsPath).sources.map((record) => normalizeRecordForScope(paths, record))
 }
 
 export function readPluginSourceRecordsForRoots(opts: {
@@ -199,11 +232,19 @@ function replaceRecord(paths: PluginSourceScopePaths, record: PluginSourceRecord
 
 function removeRecord(paths: PluginSourceScopePaths, target: string): PluginSourceRecord | null {
   const file = readRecordsFile(paths.recordsPath)
-  const index = file.sources.findIndex((record) => record.id === target || record.source === target || record.rootDir === resolveMaybePath(target))
+  const resolvedTarget = resolveMaybePath(target)
+  const index = file.sources.findIndex((record) => {
+    const normalized = normalizeRecordForScope(paths, record)
+    return record.id === target
+      || record.source === target
+      || record.rootDir === resolvedTarget
+      || normalized.source === target
+      || normalized.rootDir === resolvedTarget
+  })
   if (index === -1) return null
   const [record] = file.sources.splice(index, 1)
   writeRecordsFile(paths.recordsPath, file)
-  return record ?? null
+  return record ? normalizeRecordForScope(paths, record) : null
 }
 
 function resolveMaybePath(value: string): string {
@@ -337,9 +378,17 @@ function moveFreshDir(from: string, to: string): void {
   renameSync(from, to)
 }
 
-function installLocalSource(source: string): { rootDir: string; source: string; ref?: string } {
+function installLocalSource(source: string, paths: PluginSourceScopePaths): { rootDir: string; source: string; ref?: string; rootDirRelativeToWorkspace?: string; sourceRelativeToWorkspace?: string } {
   const rootDir = realpathSync(resolveMaybePath(source))
-  return { rootDir, source: rootDir }
+  const relativePath = pathRelativeToWorkspace(paths.workspaceRoot, rootDir)
+  return {
+    rootDir,
+    source: rootDir,
+    ...(paths.scope === "local" && relativePath ? {
+      rootDirRelativeToWorkspace: relativePath,
+      sourceRelativeToWorkspace: relativePath,
+    } : {}),
+  }
 }
 
 function installGitSource(spec: string, paths: PluginSourceScopePaths, ref?: string): { rootDir: string; source: string; ref?: string } {
@@ -383,8 +432,8 @@ export function installPluginSource(opts: InstallPluginSourceOptions): PluginIns
   const paths = resolvePluginSourceScopePaths(scope, opts)
   ensureScopeDirs(paths)
   const classified = classifySource(opts.source)
-  const installed: { rootDir: string; source: string; ref?: string } = classified.kind === "local"
-    ? installLocalSource(classified.spec)
+  const installed: { rootDir: string; source: string; ref?: string; rootDirRelativeToWorkspace?: string; sourceRelativeToWorkspace?: string } = classified.kind === "local"
+    ? installLocalSource(classified.spec, paths)
     : classified.kind === "git"
       ? installGitSource(classified.spec, paths, classified.ref)
       : installNpmSource(classified.spec, paths)
@@ -399,6 +448,8 @@ export function installPluginSource(opts: InstallPluginSourceOptions): PluginIns
     ...(meta.packageName ? { packageName: meta.packageName } : {}),
     ...(meta.version ? { version: meta.version } : {}),
     ...(installed.ref ? { ref: installed.ref } : {}),
+    ...(installed.rootDirRelativeToWorkspace ? { rootDirRelativeToWorkspace: installed.rootDirRelativeToWorkspace } : {}),
+    ...(installed.sourceRelativeToWorkspace ? { sourceRelativeToWorkspace: installed.sourceRelativeToWorkspace } : {}),
   }
   const replaced = replaceRecord(paths, record)
   return { record, scopePaths: paths, dependencyHints: meta.dependencyHints, replaced }

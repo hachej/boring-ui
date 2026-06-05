@@ -130,6 +130,55 @@ test("boring-ui-plugin install/list/remove defaults to workspace-local records w
   })
 })
 
+test("boring-ui-plugin local installs inside the workspace persist workspace-relative path metadata", async () => {
+  const root = await tempDir("boring-plugin-source-relative-")
+  const workspaceRoot = join(root, "workspace")
+  const source = join(workspaceRoot, "plugins", "relative-plugin")
+  await mkdir(workspaceRoot, { recursive: true })
+  await writeRuntimePlugin(source, "relative-plugin")
+
+  const install = await runPluginCli(["install", "plugins/relative-plugin"], { cwd: workspaceRoot })
+  expect(install.stdout).toContain("installed relative-plugin")
+
+  const records = JSON.parse(await readFile(join(workspaceRoot, ".pi", "boring-plugin-sources.json"), "utf8")) as {
+    sources: Array<{ id: string; rootDir: string; source: string; rootDirRelativeToWorkspace?: string; sourceRelativeToWorkspace?: string }>
+  }
+  expect(records.sources).toEqual([expect.objectContaining({
+    id: "relative-plugin",
+    rootDir: resolve(source),
+    source: resolve(source),
+    rootDirRelativeToWorkspace: "plugins/relative-plugin",
+    sourceRelativeToWorkspace: "plugins/relative-plugin",
+  })])
+})
+
+test("boring-ui-plugin list resolves sandbox /workspace records against the host workspace", async () => {
+  const root = await tempDir("boring-plugin-source-sandbox-record-")
+  const workspaceRoot = join(root, "host-workspace")
+  const pluginRoot = join(workspaceRoot, "plugins", "sandbox-plugin")
+  await mkdir(join(workspaceRoot, ".pi"), { recursive: true })
+  await writeRuntimePlugin(pluginRoot, "sandbox-plugin")
+  await writeFile(join(workspaceRoot, ".pi", "boring-plugin-sources.json"), JSON.stringify({
+    version: 1,
+    sources: [{
+      id: "sandbox-plugin",
+      kind: "local",
+      scope: "local",
+      source: "/workspace/plugins/sandbox-plugin",
+      rootDir: "/workspace/plugins/sandbox-plugin",
+      installedAt: "2026-01-01T00:00:00.000Z",
+    }],
+  }), "utf8")
+
+  const list = await runPluginCli(["list", "--json"], { cwd: workspaceRoot })
+  expect(JSON.parse(list.stdout).records).toEqual([expect.objectContaining({
+    id: "sandbox-plugin",
+    scope: "local",
+    source: resolve(pluginRoot),
+    rootDir: resolve(pluginRoot),
+  })])
+})
+
 test("boring-ui-plugin installs git and npm plugin source without installing dependencies", async () => {
   const root = await tempDir("boring-plugin-source-remote-")
   const workspaceRoot = join(root, "workspace")
