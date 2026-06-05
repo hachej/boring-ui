@@ -1,6 +1,8 @@
 import { ErrorCode } from "@hachej/boring-agent/shared"
-import Fastify from "fastify"
+import Fastify, { type FastifyInstance } from "fastify"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { request as httpRequest } from "node:http"
+import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, test } from "vitest"
@@ -162,11 +164,21 @@ describe("RuntimeBackendRegistry", () => {
     await expect(dispatchValue(registry)).resolves.toEqual({ value: "ok" })
   })
 
-  test("rejects wrong workspace dispatches for workspace-scoped snapshots", async () => {
+  test("rejects missing and wrong workspace dispatches for workspace-scoped snapshots", async () => {
     const root = await tempDir("runtime-backend-workspace-")
     const serverPath = await writeRuntimeModule(root, `export default { routes(router) { router.get("/value", () => ({ ok: true })) } }`)
     const registry = new RuntimeBackendRegistry()
     await registry.reloadFromLoadedPlugins([plugin(serverPath, { source: { rootDir: root, kind: "external", workspaceId: "one" } })])
+    await expect(registry.dispatch({
+      pluginId: "plain-plugin",
+      method: "GET",
+      path: "/value",
+      query: new URLSearchParams(),
+      headers: new Headers(),
+      signal: new AbortController().signal,
+      body: undefined,
+      logger: console,
+    })).rejects.toMatchObject({ code: ErrorCode.enum.RUNTIME_PLUGIN_NOT_FOUND })
     await expect(registry.dispatch({
       pluginId: "plain-plugin",
       method: "GET",
@@ -230,7 +242,107 @@ describe("runtimeBackendGateway", () => {
       await app.close()
     }
   })
+
+  test("rejects workspace-scoped snapshots without a workspace header through the gateway", async () => {
+    const root = await tempDir("runtime-backend-gateway-workspace-")
+    const serverPath = await writeRuntimeModule(root, `export default { routes(router) { router.get("/value", () => ({ ok: true })) } }`)
+    const registry = new RuntimeBackendRegistry()
+    await registry.reloadFromLoadedPlugins([plugin(serverPath, { source: { rootDir: root, kind: "external", workspaceId: "one" } })])
+    const app = Fastify({ logger: false })
+    await app.register(runtimeBackendGateway, { registry })
+    try {
+      const missing = await app.inject({ method: "GET", url: "/api/v1/plugins/plain-plugin/value" })
+      expect(missing.statusCode).toBe(404)
+      expect(missing.json().error.code).toBe(ErrorCode.enum.RUNTIME_PLUGIN_NOT_FOUND)
+
+      const ok = await app.inject({ method: "GET", url: "/api/v1/plugins/plain-plugin/value", headers: { "x-boring-workspace-id": "one" } })
+      expect(ok.statusCode).toBe(200)
+      expect(ok.json()).toEqual({ ok: true })
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("preserves exact raw route tails before dispatch", async () => {
+    const root = await tempDir("runtime-backend-gateway-tail-")
+    const serverPath = await writeRuntimeModule(root, `
+      export default {
+        routes(router) {
+          router.get("/", () => ({ route: "root" }))
+          router.get("/double", () => ({ route: "double" }))
+          router.get("/secret", () => ({ route: "secret" }))
+        },
+      }
+    `)
+    const registry = new RuntimeBackendRegistry()
+    await registry.reloadFromLoadedPlugins([plugin(serverPath, { id: "p" })])
+    const app = Fastify({ logger: false })
+    await app.register(runtimeBackendGateway, { registry })
+    try {
+      const rootWithSlash = await rawHttpRequest(app, "/api/v1/plugins/p/")
+      expect(rootWithSlash.statusCode).toBe(200)
+      expect(rootWithSlash.json()).toEqual({ route: "root" })
+
+      const rootWithoutSlash = await rawHttpRequest(app, "/api/v1/plugins/p")
+      expect(rootWithoutSlash.statusCode).toBe(200)
+      expect(rootWithoutSlash.json()).toEqual({ route: "root" })
+
+      const doubleSlash = await rawHttpRequest(app, "/api/v1/plugins/p//double")
+      expect(doubleSlash.statusCode).toBe(404)
+      expect(doubleSlash.json()).toEqual({
+        error: {
+          code: ErrorCode.enum.RUNTIME_PLUGIN_ROUTE_NOT_FOUND,
+          message: "runtime backend route not found: GET //double",
+        },
+      })
+
+      const dotSegment = await rawHttpRequest(app, "/api/v1/plugins/p/a/../secret")
+      expect(dotSegment.statusCode).toBe(404)
+      expect(dotSegment.json()).toEqual({
+        error: {
+          code: ErrorCode.enum.RUNTIME_PLUGIN_ROUTE_NOT_FOUND,
+          message: "runtime backend route path must not contain .. segments",
+        },
+      })
+
+      for (const path of [
+        "/api/v1/plugins/p/a/%2e%2e/secret",
+        "/api/v1/plugins/p/a/%2E%2E/secret",
+        "/api/v1/plugins/p/%2e%2e/secret",
+      ]) {
+        const encoded = await rawHttpRequest(app, path)
+        expect(encoded.statusCode).toBe(404)
+        expect(encoded.json()).toEqual({
+          error: {
+            code: ErrorCode.enum.RUNTIME_PLUGIN_ROUTE_NOT_FOUND,
+            message: "runtime backend route path must not contain .. segments",
+          },
+        })
+      }
+    } finally {
+      await app.close()
+    }
+  })
 })
+
+async function rawHttpRequest(app: FastifyInstance, path: string): Promise<{ statusCode: number, body: string, json: () => unknown }> {
+  if (!app.server.listening) await app.listen({ host: "127.0.0.1", port: 0 })
+  const address = app.server.address() as AddressInfo
+  return new Promise((resolve, reject) => {
+    const req = httpRequest({ host: "127.0.0.1", port: address.port, method: "GET", path }, (res) => {
+      let body = ""
+      res.setEncoding("utf8")
+      res.on("data", (chunk) => { body += chunk })
+      res.on("end", () => resolve({
+        statusCode: res.statusCode ?? 0,
+        body,
+        json: () => JSON.parse(body),
+      }))
+    })
+    req.on("error", reject)
+    req.end()
+  })
+}
 
 async function dispatchValue(registry: RuntimeBackendRegistry): Promise<unknown> {
   const response = await registry.dispatch({

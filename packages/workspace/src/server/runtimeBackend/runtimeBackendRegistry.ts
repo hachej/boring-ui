@@ -183,7 +183,7 @@ export class RuntimeBackendRegistry {
         `runtime backend plugin not found: ${request.pluginId}`,
       )
     }
-    if (snapshot.source.workspaceId && request.workspaceId && snapshot.source.workspaceId !== request.workspaceId) {
+    if (snapshot.source.workspaceId && snapshot.source.workspaceId !== request.workspaceId) {
       throw new RuntimeBackendError(
         ErrorCode.enum.RUNTIME_PLUGIN_NOT_FOUND,
         404,

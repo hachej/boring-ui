@@ -9,13 +9,42 @@ export interface RuntimeBackendGatewayOptions {
 
 type GatewayParams = {
   pluginId: string
-  "*"?: string
 }
 
-function normalizeGatewayPath(tail: string | undefined): string {
-  const path = tail && tail.length > 0
-    ? (tail.startsWith("/") ? tail : `/${tail}`)
-    : "/"
+const GATEWAY_PREFIX = "/api/v1/plugins/"
+
+function rawPathFromRequest(request: FastifyRequest): string {
+  const url = request.raw.url ?? request.url
+  const queryIndex = url.indexOf("?")
+  return queryIndex === -1 ? url : url.slice(0, queryIndex)
+}
+
+function rawGatewayTail(request: FastifyRequest, pluginId: string): string {
+  const rawPath = rawPathFromRequest(request)
+  const prefix = `${GATEWAY_PREFIX}${pluginId}`
+  if (rawPath === prefix || rawPath === `${prefix}/`) return "/"
+  if (!rawPath.startsWith(`${prefix}/`)) {
+    throw new RuntimeBackendError(
+      ErrorCode.enum.RUNTIME_PLUGIN_ROUTE_NOT_FOUND,
+      404,
+      "runtime backend route not found",
+    )
+  }
+  return rawPath.slice(prefix.length)
+}
+
+function normalizeGatewayPath(rawTail: string): string {
+  let path: string
+  try {
+    path = decodeURIComponent(rawTail)
+  } catch {
+    throw new RuntimeBackendError(
+      ErrorCode.enum.RUNTIME_PLUGIN_ROUTE_NOT_FOUND,
+      404,
+      "runtime backend route path is not valid percent-encoding",
+    )
+  }
+  if (path.length === 0) path = "/"
   if (path.includes("\\")) {
     throw new RuntimeBackendError(
       ErrorCode.enum.RUNTIME_PLUGIN_ROUTE_NOT_FOUND,
@@ -98,7 +127,7 @@ function sendError(reply: FastifyReply, error: unknown): FastifyReply {
 }
 
 export async function runtimeBackendGateway(app: FastifyInstance, opts: RuntimeBackendGatewayOptions): Promise<void> {
-  app.all<{ Params: GatewayParams }>("/api/v1/plugins/:pluginId/*", async (request, reply) => {
+  const handle = async (request: FastifyRequest<{ Params: GatewayParams }>, reply: FastifyReply) => {
     const { pluginId } = request.params
     if (!isValidBoringPluginId(pluginId)) {
       return sendError(reply, new RuntimeBackendError(
@@ -110,7 +139,7 @@ export async function runtimeBackendGateway(app: FastifyInstance, opts: RuntimeB
 
     let path: string
     try {
-      path = normalizeGatewayPath(request.params["*"])
+      path = normalizeGatewayPath(rawGatewayTail(request, pluginId))
     } catch (error) {
       return sendError(reply, error)
     }
@@ -136,5 +165,8 @@ export async function runtimeBackendGateway(app: FastifyInstance, opts: RuntimeB
     } finally {
       request.raw.off("close", close)
     }
-  })
+  }
+
+  app.all<{ Params: GatewayParams }>("/api/v1/plugins/:pluginId", handle)
+  app.all<{ Params: GatewayParams }>("/api/v1/plugins/:pluginId/*", handle)
 }
