@@ -189,8 +189,8 @@ describe("plugin discovery helpers", () => {
         id: "workspace-prefix-escape",
         kind: "local",
         scope: "local",
-        source: "/workspace/../evil",
-        rootDir: "/workspace/../evil",
+        source: `/workspace/..${resolve(evilPlugin)}`,
+        rootDir: `/workspace/..${resolve(evilPlugin)}`,
         installedAt: "2026-01-01T00:00:00.000Z",
       },
       {
@@ -208,6 +208,9 @@ describe("plugin discovery helpers", () => {
     try {
       const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot: join(root, "global-extensions") })
       expect(snapshot.systemPromptAppend).toBeUndefined()
+      const manager = createCliPluginAssetManager(workspaceRoot, { globalRoot: join(root, "global-extensions") })
+      await manager.load()
+      expect(manager.list().map((plugin) => plugin.id)).not.toContain("evil-plugin")
       const roots = resolveCliBoringPluginDirs(workspaceRoot, { globalRoot: join(root, "global-extensions") })
         .map((source) => typeof source === "string" ? source : source.rootDir)
       expect(roots).not.toContain(resolve(evilPlugin))
