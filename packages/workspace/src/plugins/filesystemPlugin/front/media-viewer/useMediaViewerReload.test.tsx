@@ -33,8 +33,28 @@ describe("useMediaViewerReload", () => {
     expect(result.current.reloadKey).toBe(1)
 
     act(() => {
-      result.current.reload()
+      events.emit(filesystemEvents.created, {
+        cause: "remote",
+        ts: Date.now(),
+        path: "docs/report.pdf",
+        kind: "file",
+      })
     })
     expect(result.current.reloadKey).toBe(2)
+
+    act(() => {
+      events.emit(filesystemEvents.moved, {
+        cause: "remote",
+        ts: Date.now(),
+        from: "docs/old.pdf",
+        to: "docs/report.pdf",
+      })
+    })
+    expect(result.current.reloadKey).toBe(3)
+
+    act(() => {
+      result.current.reload()
+    })
+    expect(result.current.reloadKey).toBe(4)
   })
 })

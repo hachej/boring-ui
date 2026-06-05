@@ -1,7 +1,8 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { onFilesystemChanged } from "../agentFileBridge"
+import { events } from "../../../../front/events"
+import { filesystemEvents } from "../../shared/events"
 
 export interface UseMediaViewerReloadOptions {
   path: string
@@ -22,10 +23,20 @@ export function useMediaViewerReload({ path }: UseMediaViewerReloadOptions): Use
   useEffect(() => {
     if (!path) return
 
-    return onFilesystemChanged((event) => {
-      if (event.path !== path) return
-      reload()
+    const offChanged = events.on(filesystemEvents.changed, (event) => {
+      if (event.path === path) reload()
     })
+    const offCreated = events.on(filesystemEvents.created, (event) => {
+      if (event.kind === "file" && event.path === path) reload()
+    })
+    const offMoved = events.on(filesystemEvents.moved, (event) => {
+      if (event.to === path) reload()
+    })
+    return () => {
+      offChanged()
+      offCreated()
+      offMoved()
+    }
   }, [path, reload])
 
   return { reloadKey, reload }
