@@ -17,6 +17,7 @@ Use this skill for one job: release the current `main` of `boring-ui-v2` to npm 
 - Do not use destructive commands (`git reset --hard`, `git clean -fd`, force push).
 - Do not run `boring-ui --version` as a version check: this CLI may start a server. Use package-manager metadata instead.
 - Do not install `@latest` until npm confirms the new version is visible.
+- After installing the global CLI, restart already-running global `boring-ui` servers; long-lived Node processes keep the old package code in memory.
 - If any release workflow fails, stop and report the failed run URL.
 
 ## 1. Prepare a clean main worktree
@@ -163,7 +164,50 @@ node -p "require(require('child_process').execSync('npm root -g').toString().tri
 command -v boring-ui
 ```
 
-## 8. Final response checklist
+## 8. Restart running global boring-ui servers
+
+A running `node /home/ubuntu/.npm-global/bin/boring-ui ...` process keeps the old CLI code in memory after `npm install -g`. Restart any global workspace servers that should pick up the new release.
+
+For the standard global workspaces server on port `5213`:
+
+```bash
+pid=$(ss -ltnp 'sport = :5213' 2>/dev/null | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | head -1)
+if [ -n "$pid" ]; then
+  ps -p "$pid" -o pid,lstart,cmd
+  cwd=$(readlink "/proc/$pid/cwd")
+  kill -TERM "$pid"
+  for i in $(seq 1 20); do
+    if ! kill -0 "$pid" 2>/dev/null; then break; fi
+    sleep 0.5
+  done
+  if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid"; fi
+else
+  cwd=/home/ubuntu/projects/boring-ui-v2
+fi
+
+log=/tmp/boring-ui-global-5213.log
+cd "$cwd"
+nohup boring-ui workspaces --port 5213 --host 0.0.0.0 > "$log" 2>&1 &
+new_pid=$!
+
+for i in $(seq 1 40); do
+  if ss -ltnp 'sport = :5213' 2>/dev/null | grep -q "pid=$new_pid"; then break; fi
+  if ! kill -0 "$new_pid" 2>/dev/null; then tail -80 "$log"; exit 1; fi
+  sleep 0.5
+done
+
+ps -p "$new_pid" -o pid,lstart,cmd
+ss -ltnp 'sport = :5213'
+tail -40 "$log" || true
+```
+
+If other global `boring-ui` processes are running, inspect and restart them intentionally rather than killing unrelated dev servers:
+
+```bash
+ps -eo pid,lstart,cmd | grep '/.npm-global/bin/boring-ui' | grep -v grep || true
+```
+
+## 9. Final response checklist
 
 Report:
 
@@ -173,4 +217,5 @@ Report:
 - release workflow status/run URL
 - npm version observed
 - global CLI package version installed
+- restarted global server PID(s), port(s), and log path(s)
 - gates run

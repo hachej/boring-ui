@@ -135,9 +135,10 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
   const displayTitle = isDirty ? title.slice(0, -2) : title
   const Icon = getFileIcon(displayTitle)
   const filePath = readStringParam(props.params, "path") ?? readPathFromPanelId(api.id)
-  const otherTabs = siblingPanels(props)
+  const groupTabs = siblingPanels(props)
     .map(panelSnapshot)
-    .filter((sibling) => sibling.id !== api.id && sibling.close)
+    .filter((panel) => panel.close)
+  const otherTabs = groupTabs.filter((sibling) => sibling.id !== api.id)
 
   // Subscribe to editor save lifecycle keyed by panelId. The badge
   // flips on at save:start and off at save:end (regardless of ok).
@@ -195,6 +196,12 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
     for (const sibling of otherTabs) sibling.close?.()
   }
 
+  const handleCloseAll = () => {
+    setMenu(null)
+    api.setActive?.()
+    for (const panel of groupTabs) panel.close?.()
+  }
+
   const contextMenu =
     menu && typeof document !== "undefined"
       ? createPortal(
@@ -227,6 +234,16 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
                 onClick={handleCloseOthers}
               >
                 Close other tabs
+              </button>
+            ) : null}
+            {groupTabs.length > 0 ? (
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground"
+                onClick={handleCloseAll}
+              >
+                Close all
               </button>
             ) : null}
           </div>,
