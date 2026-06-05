@@ -21,6 +21,7 @@ Keep the composer compact and one-line by moving model/thinking controls into sl
 - No persistent model picker button.
 - No persistent thinking picker button.
 - Status can be compact text below or near composer.
+- `/model` and `/thinking` status labels are clickable buttons that open the same picker menus as the slash commands.
 
 ## Slash commands
 
@@ -57,6 +58,6 @@ Keep the composer compact and one-line by moving model/thinking controls into sl
 
 ## Success criteria
 
-- User can discover settings by typing `/`.
+- User can discover settings by typing `/` or clicking the compact `/model` / `/thinking` status labels.
 - Composer remains visually quiet with one or multiple chat panes.
-- Model/thinking state is visible but not dominant.
+- Model/thinking state is visible, clickable, and not dominant.
