@@ -2,13 +2,15 @@ import { render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { WorkspaceBootGate } from "../WorkspaceBootGate"
 
+const SESSION_PRELOAD_PATHS = ["/api/v1/tree?path=.", "/api/v1/agent/sessions"]
+
 describe("WorkspaceBootGate", () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
   it("preloads workspace endpoints before rendering children", async () => {
-    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response(null, { status: 204 }))
     vi.stubGlobal("fetch", fetchMock)
 
     render(
@@ -29,12 +31,7 @@ describe("WorkspaceBootGate", () => {
         headers: { "x-boring-workspace-id": "w1" },
       }),
     )
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/base/api/v1/agent/sessions",
-      expect.objectContaining({
-        headers: { "x-boring-workspace-id": "w1" },
-      }),
-    )
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/sessions"))).toBe(false)
   })
 
   it("skips agent runtime warmup when provisioning is disabled", async () => {
@@ -73,7 +70,7 @@ describe("WorkspaceBootGate", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     render(
-      <WorkspaceBootGate workspaceId="w1">
+      <WorkspaceBootGate workspaceId="w1" preloadPaths={SESSION_PRELOAD_PATHS}>
         <div>Workspace ready</div>
       </WorkspaceBootGate>,
     )
