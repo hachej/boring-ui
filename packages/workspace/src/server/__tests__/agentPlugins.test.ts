@@ -20,6 +20,37 @@ async function tmp(prefix: string): Promise<string> {
   return dir
 }
 
+async function readSseReplayPayloads(url: string): Promise<Array<Record<string, unknown>>> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 1_000)
+  const response = await fetch(url, { signal: controller.signal })
+  expect(response.status).toBe(200)
+  expect(response.headers.get("content-type")).toContain("text/event-stream")
+  expect(response.body).toBeTruthy()
+
+  const reader = response.body!.getReader()
+  const decoder = new TextDecoder()
+  let raw = ""
+  try {
+    while (!raw.includes("boring.plugin.replay-complete")) {
+      const chunk = await reader.read()
+      if (chunk.done) break
+      raw += decoder.decode(chunk.value, { stream: true })
+    }
+  } finally {
+    clearTimeout(timeout)
+    controller.abort()
+    await reader.cancel().catch(() => {})
+  }
+  expect(raw).toContain("boring.plugin.replay-complete")
+
+  return raw
+    .split("\n\n")
+    .map((block) => block.split("\n").find((line) => line.startsWith("data: ")))
+    .filter((line): line is string => line !== undefined)
+    .map((line) => JSON.parse(line.slice("data: ".length)) as Record<string, unknown>)
+}
+
 async function writePlugin(root: string, body?: string): Promise<void> {
   await mkdir(join(root, "front"), { recursive: true })
   await mkdir(join(root, "server"), { recursive: true })
@@ -76,6 +107,39 @@ describe("boring agent plugin assets", () => {
     expect(manager.list()[0]).not.toHaveProperty("source")
     expect(load.events[0]).not.toHaveProperty("rootDir")
     expect(load.events[0]).not.toHaveProperty("source")
+  })
+
+  test("public list and SSE replay payloads do not expose source metadata", async () => {
+    const root = await tmp("boring-plugin-public-metadata-")
+    await writePlugin(root)
+
+    const source = { rootDir: root, kind: "external" as const, workspaceId: "ws-1" }
+    const manager = new BoringPluginAssetManager({ pluginDirs: [source], errorRoot: join(root, ".errors") })
+    await manager.load()
+
+    const app = Fastify({ logger: false })
+    await app.register(boringPluginRoutes, { manager })
+    try {
+      const list = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
+      expect(list.statusCode).toBe(200)
+      const publicEntry = list.json()[0]
+      expect(publicEntry).toMatchObject({ id: "boring-plugin-test", revision: 1 })
+      expect(publicEntry).not.toHaveProperty("rootDir")
+      expect(publicEntry).not.toHaveProperty("source")
+      expect(JSON.stringify(publicEntry)).not.toContain('"rootDir"')
+      expect(JSON.stringify(publicEntry)).not.toContain('"source"')
+
+      const address = await app.listen({ host: "127.0.0.1", port: 0 })
+      const replayPayloads = await readSseReplayPayloads(`${address}/api/v1/agent-plugins/events`)
+      const replayedLoad = replayPayloads.find((payload) => payload.type === "boring.plugin.load")
+      expect(replayedLoad).toMatchObject({ id: "boring-plugin-test", replay: true })
+      expect(replayedLoad).not.toHaveProperty("rootDir")
+      expect(replayedLoad).not.toHaveProperty("source")
+      expect(JSON.stringify(replayedLoad)).not.toContain('"rootDir"')
+      expect(JSON.stringify(replayedLoad)).not.toContain('"source"')
+    } finally {
+      await app.close()
+    }
   })
 
   test("manager keeps /@fs frontUrl fallback when no frontTargetResolver is supplied", async () => {
