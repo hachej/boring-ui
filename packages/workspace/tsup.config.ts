@@ -6,6 +6,7 @@ export default defineConfig({
   entry: {
     "app-server": "src/app/server/index.ts",
     server: "src/server/index.ts",
+    "runtime-server": "src/server/runtimeBackend/defineRuntimeServerPlugin.ts",
     shared: "src/shared/index.ts",
     events: "src/front/events/index.ts",
     plugin: "src/plugin.ts",
@@ -16,6 +17,7 @@ export default defineConfig({
     entry: {
       "app-server": "src/app/server/index.ts",
       server: "src/server/index.ts",
+      "runtime-server": "src/server/runtimeBackend/defineRuntimeServerPlugin.ts",
       shared: "src/shared/index.ts",
       events: "src/front/events/index.ts",
       plugin: "src/plugin.ts",

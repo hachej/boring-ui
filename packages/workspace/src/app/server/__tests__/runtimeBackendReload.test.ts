@@ -1,0 +1,96 @@
+import { ErrorCode } from "@hachej/boring-agent/shared"
+import type { FastifyInstance } from "fastify"
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { afterEach, describe, expect, test } from "vitest"
+import { createWorkspaceAgentServer } from "../createWorkspaceAgentServer"
+
+const roots: string[] = []
+
+async function tempRoot(prefix: string): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), prefix))
+  roots.push(root)
+  return root
+}
+
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+})
+
+async function writeExternalPlugin(workspaceRoot: string, id: string, serverSource: string): Promise<string> {
+  const pluginDir = join(workspaceRoot, ".pi", "extensions", id)
+  await mkdir(pluginDir, { recursive: true })
+  await writeFile(join(pluginDir, "package.json"), JSON.stringify({
+    name: id,
+    version: "1.0.0",
+    boring: { server: "server.ts" },
+  }), "utf8")
+  await writeFile(join(pluginDir, "server.ts"), serverSource, "utf8")
+  return pluginDir
+}
+
+describe("runtime backend integration with canonical reload", () => {
+  test("serves external boring.server handlers through the gateway and hot-reloads via /api/v1/agent/reload", async () => {
+    const workspaceRoot = await tempRoot("runtime-backend-app-")
+    const pluginDir = await writeExternalPlugin(workspaceRoot, "runtime-plugin", `
+      export default {
+        routes(router) { router.get("/value", () => ({ value: "one" })) },
+      }
+    `)
+    const app = await createWorkspaceAgentServer({ workspaceRoot, mode: "direct", logger: false, provisionWorkspace: false })
+    try {
+      const first = await app.inject({ method: "GET", url: "/api/v1/plugins/runtime-plugin/value" })
+      expect(first.statusCode).toBe(200)
+      expect(first.json()).toEqual({ value: "one" })
+
+      await writeFile(join(pluginDir, "server.ts"), `
+        export default {
+          routes(router) { router.get("/value", () => ({ value: "two" })) },
+        }
+      `, "utf8")
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(reload.statusCode).toBe(200)
+
+      const second = await app.inject({ method: "GET", url: "/api/v1/plugins/runtime-plugin/value" })
+      expect(second.statusCode).toBe(200)
+      expect(second.json()).toEqual({ value: "two" })
+
+      await writeFile(join(pluginDir, "server.ts"), `export default { routes(router) { router.get("/value", () => ({ value: `, "utf8")
+      const failedReload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(failedReload.statusCode).toBe(200)
+      expect(failedReload.json().diagnostics).toEqual(expect.arrayContaining([
+        expect.objectContaining({ pluginId: "runtime-plugin", code: ErrorCode.enum.RUNTIME_PLUGIN_LOAD_FAILED }),
+      ]))
+
+      const afterFailure = await app.inject({ method: "GET", url: "/api/v1/plugins/runtime-plugin/value" })
+      expect(afterFailure.statusCode).toBe(200)
+      expect(afterFailure.json()).toEqual({ value: "two" })
+
+      const oldReload = await app.inject({ method: "POST", url: "/api/boring.reload", payload: {} })
+      expect(oldReload.statusCode).toBe(404)
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
+
+  test("removed external plugin unloads gateway handlers", async () => {
+    const workspaceRoot = await tempRoot("runtime-backend-remove-")
+    const pluginDir = await writeExternalPlugin(workspaceRoot, "removable-plugin", `
+      export default { routes(router) { router.get("/value", () => ({ ok: true })) } }
+    `)
+    let app: FastifyInstance | null = await createWorkspaceAgentServer({ workspaceRoot, mode: "direct", logger: false, provisionWorkspace: false })
+    try {
+      expect((await app.inject({ method: "GET", url: "/api/v1/plugins/removable-plugin/value" })).statusCode).toBe(200)
+      await rm(pluginDir, { recursive: true, force: true })
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(reload.statusCode).toBe(200)
+      const after = await app.inject({ method: "GET", url: "/api/v1/plugins/removable-plugin/value" })
+      expect(after.statusCode).toBe(404)
+      expect(after.json().error.code).toBe(ErrorCode.enum.RUNTIME_PLUGIN_NOT_FOUND)
+    } finally {
+      await app?.close()
+      app = null
+    }
+  }, 20_000)
+})

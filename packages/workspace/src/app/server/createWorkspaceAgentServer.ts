@@ -26,6 +26,7 @@ import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
 import { BoringPluginAssetManager } from "../../server/agentPlugins/manager"
 import type { BoringPluginFrontTargetResolver, BoringPluginSource, BoringPluginSourceInput } from "../../server/agentPlugins/types"
 import { boringPluginRoutes, collectRestartWarnings } from "../../server/agentPlugins/routes"
+import { RuntimeBackendRegistry, runtimeBackendGateway } from "../../server/runtimeBackend"
 import { aggregatePluginPrompts } from "../../server/agentPlugins/aggregatePluginPrompts"
 import { normalizeBoringPluginPiPackages } from "../../server/agentPlugins/piPackages"
 import {
@@ -633,6 +634,7 @@ export async function createWorkspaceAgentServer(
     frontTargetResolver: opts.boringPluginFrontTargetResolver,
     includeLegacyFrontUrl: opts.boringPluginIncludeLegacyFrontUrl,
   })
+  const runtimeBackendRegistry = new RuntimeBackendRegistry()
 
   const buildRuntimeProvisioningInputs = () => {
     const inputs = mergeRuntimeProvisioningInputs([
@@ -714,6 +716,7 @@ export async function createWorkspaceAgentServer(
       let diagnostics: PluginRebuildResult["diagnostics"] = []
       if (pluginHotReload) {
         const scan = await boringAssetManager.load()
+        const backendReload = await runtimeBackendRegistry.reloadFromLoadedPlugins(boringAssetManager.inspectLoaded())
         restart_warnings = collectRestartWarnings(scan.events)
         const scanDiagnostics = scan.errors.map((error) => ({
           source: `boring plugin asset scan (${error.id})`,
@@ -721,7 +724,7 @@ export async function createWorkspaceAgentServer(
           pluginId: error.id,
         }))
         const rebuild = await rebuildPlugins()
-        diagnostics = [...scanDiagnostics, ...rebuild.diagnostics]
+        diagnostics = [...scanDiagnostics, ...backendReload.diagnostics, ...rebuild.diagnostics]
       }
       await runRuntimeProvisioning()
       const callerResult = await opts.beforeReload?.()
@@ -758,10 +761,15 @@ export async function createWorkspaceAgentServer(
       : undefined,
   })
   await boringAssetManager.load()
+  await runtimeBackendRegistry.reloadFromLoadedPlugins(boringAssetManager.inspectLoaded())
+  app.addHook("onClose", async () => {
+    await runtimeBackendRegistry.close()
+  })
   await app.register(uiRoutes, { bridge, preserveStateKeys: pluginCollection.preservedUiStateKeys })
   await app.register(boringPluginRoutes, {
     manager: boringAssetManager,
   })
+  await app.register(runtimeBackendGateway, { registry: runtimeBackendRegistry })
   for (const { routes } of pluginCollection.routeContributions) {
     await app.register(routes)
   }
@@ -772,11 +780,18 @@ export async function createWorkspaceAgentServer(
   ;(app as FastifyInstance & {
     __boringRebuildPlugins?: () => Promise<PluginRebuildResult>
     __boringAssetManager?: BoringPluginAssetManager
+    __boringRuntimeBackendRegistry?: RuntimeBackendRegistry
   }).__boringRebuildPlugins = rebuildPlugins
   ;(app as FastifyInstance & {
     __boringRebuildPlugins?: () => Promise<PluginRebuildResult>
     __boringAssetManager?: BoringPluginAssetManager
+    __boringRuntimeBackendRegistry?: RuntimeBackendRegistry
   }).__boringAssetManager = boringAssetManager
+  ;(app as FastifyInstance & {
+    __boringRebuildPlugins?: () => Promise<PluginRebuildResult>
+    __boringAssetManager?: BoringPluginAssetManager
+    __boringRuntimeBackendRegistry?: RuntimeBackendRegistry
+  }).__boringRuntimeBackendRegistry = runtimeBackendRegistry
 
   return app
 }

@@ -79,6 +79,7 @@ export interface LoadedBoringPluginInspection {
   rootDir: string
   frontPath?: string
   frontTarget?: BoringPluginFrontTarget
+  serverPath?: string
   source: BoringPluginSource
 }
 
@@ -266,6 +267,7 @@ export class BoringPluginAssetManager {
       source: plugin.source,
       ...(plugin.frontPath ? { frontPath: plugin.frontPath } : {}),
       ...(plugin.frontTarget ? { frontTarget: plugin.frontTarget } : {}),
+      ...(plugin.serverPath ? { serverPath: plugin.serverPath } : {}),
     }))
   }
 
