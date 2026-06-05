@@ -3,6 +3,7 @@ import type { SessionSummary } from '../../shared/session'
 
 const API_BASE = '/api/v1/agent/sessions'
 const STORAGE_KEY = 'boring-agent:activeSessionId'
+const SESSION_PAGE_SIZE = 50
 
 export interface UseSessionsOptions {
   requestHeaders?: Record<string, string>
@@ -17,10 +18,13 @@ export interface UseSessionsResult {
   activeSession: SessionSummary | undefined
   activeSessionId: string | undefined
   loading: boolean
+  loadingMore: boolean
+  hasMore: boolean
   error: Error | undefined
   create: (init?: { title?: string }) => Promise<SessionSummary>
   switch: (id: string) => void
   delete: (id: string) => Promise<void>
+  loadMore: () => Promise<void>
 }
 
 function readPersistedId(storageKey: string): string | undefined {
@@ -73,11 +77,19 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function sessionsUrl(offset: number): string {
+  if (offset <= 0) return API_BASE
+  const query = new URLSearchParams({ limit: String(SESSION_PAGE_SIZE), offset: String(offset) })
+  return `${API_BASE}?${query.toString()}`
+}
+
 async function fetchSessions(
   headers: Record<string, string> | undefined,
+  offset = 0,
 ): Promise<SessionSummary[]> {
   const init = requestInit(headers)
-  const res = init ? await fetch(API_BASE, init) : await fetch(API_BASE)
+  const url = sessionsUrl(offset)
+  const res = init ? await fetch(url, init) : await fetch(url)
   if (res.status === 503) throw new SessionsPreparingError()
   if (!res.ok) throw new Error(`Failed to load sessions: ${res.status}`)
   return res.json()
@@ -98,6 +110,8 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
     () => initialActiveSessionId ?? readPersistedId(storageKey),
   )
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
   const [error, setError] = useState<Error | undefined>()
   const [loaded, setLoaded] = useState(false)
   const versionRef = useRef(0)
@@ -126,6 +140,8 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
       setError(undefined)
       setLoaded(false)
       setLoading(false)
+      setLoadingMore(false)
+      setHasMore(false)
       return
     }
     setLoaded(false)
@@ -168,6 +184,7 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
         setError(undefined)
         setLoaded(true)
         setSessions(mergedData)
+        setHasMore(data.length === SESSION_PAGE_SIZE)
         setActiveSessionId((prev) => {
           const preferred = replacingLoadedScope ? persisted : (prev ?? persisted)
           if (preferred && mergedData.some((session) => session.id === preferred)) return preferred
@@ -184,6 +201,7 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
         if (replacingLoadedScope) {
           setSessions([])
           setActiveSessionId(undefined)
+          setHasMore(false)
         }
         setLoaded(true)
         setError(err instanceof Error ? err : new Error(String(err)))
@@ -200,6 +218,8 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
       setError(undefined)
       setLoaded(false)
       setLoading(false)
+      setLoadingMore(false)
+      setHasMore(false)
       return
     }
     void refresh()
@@ -207,6 +227,24 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
       mountedRef.current = false
     }
   }, [enabled, refresh, refreshKey, scopeKey])
+
+  const loadMore = useCallback(async (): Promise<void> => {
+    if (!enabled || loadingMore || !hasMore) return
+    setLoadingMore(true)
+    try {
+      const data = await fetchSessions(requestHeaders, sessions.length)
+      if (!mountedRef.current) return
+      setSessions((current) => {
+        const seen = new Set(current.map((session) => session.id))
+        return [...current, ...data.filter((session) => !seen.has(session.id))]
+      })
+      setHasMore(data.length === SESSION_PAGE_SIZE)
+    } catch (err) {
+      if (mountedRef.current) setError(err instanceof Error ? err : new Error(String(err)))
+    } finally {
+      if (mountedRef.current) setLoadingMore(false)
+    }
+  }, [enabled, hasMore, loadingMore, requestHeaders, sessions.length])
 
   const create = useCallback(
     async (init?: { title?: string }): Promise<SessionSummary> => {
@@ -280,9 +318,12 @@ export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
     activeSession: visibleSessions.find((s) => s.id === visibleActiveSessionId),
     activeSessionId: visibleActiveSessionId,
     loading: enabled ? !scopeMatches || loading || !loaded : false,
+    loadingMore,
+    hasMore: enabled && scopeMatches ? hasMore : false,
     error,
     create,
     switch: switchSession,
     delete: deleteSession,
+    loadMore,
   }
 }

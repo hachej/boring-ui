@@ -96,6 +96,32 @@ describe("WorkspaceAgentFront", () => {
     expect(MockEventSource.instances.filter((instance) => instance.url.includes("/api/v1/agent-plugins/events"))).toHaveLength(0)
   })
 
+  it("renders the chat shell while remote sessions are still loading", () => {
+    const PendingChatPanel = (props: WorkspaceChatPanelProps) => (
+      <div data-testid="chat-panel">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>
+    )
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="slow-session-list"
+        chatPanel={PendingChatPanel}
+        useSessions={() => ({
+          sessions: [],
+          activeSession: null,
+          activeSessionId: null,
+          loading: true,
+          error: undefined,
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+        })}
+      />,
+    )
+
+    expect(screen.getByTestId("chat-panel")).toHaveTextContent("Chat default hydrate=false")
+    expect(screen.queryByText("Loading sessions…")).not.toBeInTheDocument()
+  })
+
   it("keeps session history closed by default and opens it from the rail button", async () => {
     const user = userEvent.setup()
     const onOpenNav = vi.fn()

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile, utimes } from "node:fs/promises";
 import { DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -423,6 +423,38 @@ describe("PiSessionStore", () => {
     expect(list).toHaveLength(2);
     expect(list[0].id).toBe(s2.id);
     expect(list[1].id).toBe(s1.id);
+  });
+
+  it("paginates session lists before summarizing", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const first = await store.create(ctx, { title: "First" });
+    const second = await store.create(ctx, { title: "Second" });
+    const third = await store.create(ctx, { title: "Third" });
+    const now = Date.now();
+    await utimes(join(tmpDir, `${first.id}.jsonl`), new Date(now - 3000), new Date(now - 3000));
+    await utimes(join(tmpDir, `${second.id}.jsonl`), new Date(now - 2000), new Date(now - 2000));
+    await utimes(join(tmpDir, `${third.id}.jsonl`), new Date(now - 1000), new Date(now - 1000));
+
+    const list = await store.list(ctx, { limit: 1, offset: 1 });
+    expect(list).toHaveLength(1);
+    expect(list[0]).toEqual(expect.objectContaining({ id: second.id, title: "Second" }));
+  });
+
+  it("summarizes giant UI snapshots from file prefixes", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const session = await store.create(ctx, { title: "Huge snapshot" });
+    const filepath = join(tmpDir, `${session.id}.jsonl`);
+    const giantSnapshot = JSON.stringify({
+      type: "ui_snapshot",
+      id: "snapshot",
+      timestamp: new Date().toISOString(),
+      messages: [{ id: "m1", role: "user", parts: [{ type: "text", text: "x".repeat(2_000_000) }] }],
+    });
+    await writeFile(filepath, `${await readFile(filepath, "utf-8")}${giantSnapshot}\n`, "utf-8");
+
+    const list = await store.list(ctx, { limit: 1 });
+    expect(list).toHaveLength(1);
+    expect(list[0]).toEqual(expect.objectContaining({ id: session.id, title: "Huge snapshot" }));
   });
 
   it("skips malformed JSONL lines without crashing", async () => {

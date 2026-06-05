@@ -64,6 +64,13 @@ describe("SessionBrowser", () => {
     expect(onSwitch).not.toHaveBeenCalled()
   })
 
+  it("calls onLoadMore from the load-more footer", () => {
+    const onLoadMore = vi.fn()
+    render(<SessionBrowser sessions={sample} hasMore onLoadMore={onLoadMore} />)
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }))
+    expect(onLoadMore).toHaveBeenCalledTimes(1)
+  })
+
   it("renders empty state when no sessions are supplied", () => {
     render(<SessionBrowser sessions={[]} />)
     expect(screen.getByText(/No sessions yet/)).toBeInTheDocument()

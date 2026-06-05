@@ -12,6 +12,9 @@ export interface SessionBrowserProps {
   onSwitch?: (id: string) => void
   onCreate?: () => void
   onDelete?: (id: string) => void
+  onLoadMore?: () => void
+  hasMore?: boolean
+  loadingMore?: boolean
   onClose?: () => void
   className?: string
 }
@@ -97,6 +100,9 @@ export function SessionBrowser({
   onSwitch,
   onCreate,
   onDelete,
+  onLoadMore,
+  hasMore = false,
+  loadingMore = false,
   onClose,
   className,
 }: SessionBrowserProps) {
@@ -158,6 +164,19 @@ export function SessionBrowser({
             </ul>
           </section>
         ))}
+
+        {hasMore && onLoadMore ? (
+          <div className="px-3 py-3">
+            <button
+              type="button"
+              onClick={onLoadMore}
+              disabled={loadingMore}
+              className="w-full rounded-md border border-border/60 px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-60"
+            >
+              {loadingMore ? "Loading…" : "Load more"}
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   )

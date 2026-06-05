@@ -8,6 +8,7 @@ import {
   writeFile,
   appendFile,
   utimes,
+  open,
 } from "node:fs/promises";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, basename, resolve } from "node:path";
@@ -25,6 +26,7 @@ import type {
   SessionCtx,
   SessionSummary,
   SessionDetail,
+  SessionListOptions,
 } from "../../../shared/session.js";
 import type { UIMessage } from "../../../shared/message.js";
 import { dropEmptyAssistantUiMessages, sanitizeUiMessages } from "../../../shared/message-sanitizer.js";
@@ -36,6 +38,7 @@ function defaultSessionDir(cwd: string): string {
 
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
 const SAFE_SESSION_NAMESPACE = /^[a-zA-Z0-9_-]+$/;
+const SUMMARY_PREFIX_BYTES = 64 * 1024;
 
 function sessionDirForNamespace(namespace: string): string {
   const safeNamespace = namespace.trim();
@@ -72,20 +75,33 @@ export class PiSessionStore implements SessionStore {
     return this.sessionDir;
   }
 
-  async list(ctx: SessionCtx): Promise<SessionSummary[]> {
+  async list(ctx: SessionCtx, options?: SessionListOptions): Promise<SessionSummary[]> {
     const files = await readdir(this.sessionDir).catch(() => []);
     const jsonlFiles = files.filter((f) => f.endsWith(".jsonl"));
     const filepaths = jsonlFiles.map((f) => join(this.sessionDir, f));
     const referencedPiFiles = await this.referencedPiFiles(filepaths);
-    const visibleFiles = filepaths.filter((filepath) => !referencedPiFiles.has(resolve(filepath)));
+    const fileStats = await Promise.all(filepaths.map(async (filepath) => {
+      try {
+        return { filepath, stat: await fsStat(filepath) };
+      } catch {
+        return null;
+      }
+    }));
+    const visibleFiles = fileStats
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+      .filter(({ filepath }) => !referencedPiFiles.has(resolve(filepath)))
+      .sort((a, b) => b.stat.mtime.getTime() - a.stat.mtime.getTime());
+
+    const offset = Math.max(0, options?.offset ?? 0);
+    const pageFiles = options?.limit === undefined
+      ? visibleFiles.slice(offset)
+      : visibleFiles.slice(offset, offset + Math.max(0, options.limit));
 
     const summaries = await Promise.all(
-      visibleFiles.map((filepath) => this.summarizeFile(filepath)),
+      pageFiles.map(({ filepath, stat }) => this.summarizeFile(filepath, stat)),
     );
 
-    return summaries
-      .filter((s): s is SessionSummary => s !== null)
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return summaries.filter((s): s is SessionSummary => s !== null);
   }
 
   async create(
@@ -314,7 +330,7 @@ export class PiSessionStore implements SessionStore {
     const referenced = new Set<string>();
     await Promise.all(filepaths.map(async (filepath) => {
       try {
-        const content = await readFile(filepath, "utf-8");
+        const content = await readJsonlPrefix(filepath);
         const piFilePath = extractPiSessionFilePath(safeParseEntries(content));
         if (piFilePath && resolve(piFilePath) !== resolve(filepath)) {
           referenced.add(resolve(piFilePath));
@@ -328,11 +344,12 @@ export class PiSessionStore implements SessionStore {
 
   private async summarizeFile(
     filepath: string,
+    existingStat?: Awaited<ReturnType<typeof fsStat>>,
   ): Promise<SessionSummary | null> {
     try {
       const [fileStat, content] = await Promise.all([
-        fsStat(filepath),
-        readFile(filepath, "utf-8"),
+        existingStat ?? fsStat(filepath),
+        readJsonlPrefix(filepath),
       ]);
 
       const firstNewline = content.indexOf("\n");
@@ -349,12 +366,11 @@ export class PiSessionStore implements SessionStore {
       );
       const linkedPiFile = extractPiSessionFilePath(entries);
       const linked = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)
-        ? await this.readLinkedPiSession(linkedPiFile)
+        ? await this.readLinkedPiSessionSummary(linkedPiFile)
         : null;
       const linkedEntries = linked?.entries.filter(
         (e): e is SessionEntry => e.type !== "session",
       ) ?? [];
-      const uiSnapshot = extractLatestUiSnapshot(entries);
 
       const title =
         extractTitle(sessionEntries) ??
@@ -363,13 +379,11 @@ export class PiSessionStore implements SessionStore {
         firstUserMessage(sessionEntries) ??
         "New session";
 
-      const turnCount = uiSnapshot
-        ? uiSnapshot.filter((m) => m.role === "user").length
-        : [...sessionEntries, ...linkedEntries].filter(
-            (e) =>
-              e.type === "message" &&
-              ((e as SessionMessageEntry).message as any)?.role === "user",
-          ).length;
+      const turnCount = [...sessionEntries, ...linkedEntries].filter(
+        (e) =>
+          e.type === "message" &&
+          ((e as SessionMessageEntry).message as any)?.role === "user",
+      ).length;
       const updatedAtMs = Math.max(fileStat.mtime.getTime(), linked?.mtime.getTime() ?? 0);
 
       return {
@@ -394,6 +408,34 @@ export class PiSessionStore implements SessionStore {
     } catch {
       return null;
     }
+  }
+
+  private async readLinkedPiSessionSummary(filepath: string): Promise<{ entries: (SessionHeader | SessionEntry)[]; mtime: Date } | null> {
+    try {
+      const [fileStat, content] = await Promise.all([
+        fsStat(filepath),
+        readJsonlPrefix(filepath),
+      ]);
+      return { entries: safeParseEntries(content), mtime: fileStat.mtime };
+    } catch {
+      return null;
+    }
+  }
+}
+
+async function readJsonlPrefix(filepath: string, maxBytes = SUMMARY_PREFIX_BYTES): Promise<string> {
+  const handle = await open(filepath, "r");
+  try {
+    const buffer = Buffer.alloc(maxBytes);
+    const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
+    let content = buffer.subarray(0, bytesRead).toString("utf-8");
+    if (bytesRead === maxBytes) {
+      const lastNewline = content.lastIndexOf("\n");
+      if (lastNewline >= 0) content = content.slice(0, lastNewline + 1);
+    }
+    return content;
+  } finally {
+    await handle.close();
   }
 }
 

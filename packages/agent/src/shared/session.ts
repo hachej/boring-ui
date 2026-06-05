@@ -1,7 +1,7 @@
 import type { UIMessage } from './message'
 
 export interface SessionStore {
-  list(ctx: SessionCtx): Promise<SessionSummary[]>
+  list(ctx: SessionCtx, options?: SessionListOptions): Promise<SessionSummary[]>
   create(ctx: SessionCtx, init?: { title?: string }): Promise<SessionSummary>
   load(ctx: SessionCtx, sessionId: string): Promise<SessionDetail>
   delete(ctx: SessionCtx, sessionId: string): Promise<void>
@@ -16,6 +16,11 @@ export interface SessionStore {
 export interface SessionCtx {
   workspaceId: string
   userId?: string
+}
+
+export interface SessionListOptions {
+  limit?: number
+  offset?: number
 }
 
 export interface SessionSummary {

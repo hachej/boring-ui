@@ -58,10 +58,13 @@ describe('useSessions', () => {
     expect(result).toHaveProperty('activeSession')
     expect(result).toHaveProperty('activeSessionId')
     expect(result).toHaveProperty('loading')
+    expect(result).toHaveProperty('loadingMore')
+    expect(result).toHaveProperty('hasMore')
     expect(result).toHaveProperty('error')
     expect(result).toHaveProperty('create')
     expect(result).toHaveProperty('switch')
     expect(result).toHaveProperty('delete')
+    expect(result).toHaveProperty('loadMore')
   })
 
   test('initial state is loading with empty sessions', () => {
@@ -136,7 +139,7 @@ describe('useSessions', () => {
 
       useSessions()
       const refreshFn = callbackFns[0]
-      const setError = stateSlots[3][1]
+      const setError = stateSlots[5][1]
       const setSessions = stateSlots[0][1]
 
       const promise = refreshFn()
@@ -165,7 +168,7 @@ describe('useSessions', () => {
 
     // A 500 is terminal: exactly one fetch, error surfaced.
     expect(mockFetch).toHaveBeenCalledTimes(1)
-    const setError = stateSlots[3][1]
+    const setError = stateSlots[5][1]
     expect(setError).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('500') }))
   })
 
@@ -176,7 +179,7 @@ describe('useSessions', () => {
 
       useSessions()
       const refreshFn = callbackFns[0]
-      const setError = stateSlots[3][1]
+      const setError = stateSlots[5][1]
 
       const promise = refreshFn()
       await vi.runAllTimersAsync()
@@ -217,7 +220,7 @@ describe('useSessions', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => [newSession] })
 
     useSessions()
-    const createFn = callbackFns[1]
+    const createFn = callbackFns[2]
 
     const result = await createFn({ title: 'New session' })
     expect(result).toEqual(newSession)
@@ -235,7 +238,7 @@ describe('useSessions', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => [newSession] })
 
     useSessions({ requestHeaders: { 'x-boring-workspace-id': 'w1' } })
-    const createFn = callbackFns[1]
+    const createFn = callbackFns[2]
 
     await createFn({ title: 'New session' })
     expect(mockFetch).toHaveBeenCalledWith('/api/v1/agent/sessions', {
@@ -255,7 +258,7 @@ describe('useSessions', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => [newSession] })
 
     useSessions()
-    const createFn = callbackFns[1]
+    const createFn = callbackFns[2]
     await createFn()
 
     expect(localStorage.setItem).toHaveBeenCalledWith(
@@ -271,7 +274,7 @@ describe('useSessions', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => [newSession] })
 
     useSessions()
-    const createFn = callbackFns[1]
+    const createFn = callbackFns[2]
     await createFn()
 
     expect(mockFetch).toHaveBeenCalledTimes(2)
@@ -285,7 +288,7 @@ describe('useSessions', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => [] })
 
     useSessions()
-    const createFn = callbackFns[1]
+    const createFn = callbackFns[2]
     await createFn()
     await new Promise((resolve) => setTimeout(resolve, 0))
 
@@ -298,14 +301,14 @@ describe('useSessions', () => {
     mockFetch.mockResolvedValueOnce({ ok: false, status: 500 })
 
     useSessions()
-    const createFn = callbackFns[1]
+    const createFn = callbackFns[2]
 
     await expect(createFn()).rejects.toThrow('Failed to create session: 500')
   })
 
   test('switch updates activeSessionId and persists', () => {
     useSessions()
-    const switchFn = callbackFns[2]
+    const switchFn = callbackFns[3]
     switchFn('s-42')
 
     const setActiveId = stateSlots[1][1]
@@ -318,7 +321,7 @@ describe('useSessions', () => {
 
   test('switch can persist under a workspace-scoped storageKey', () => {
     useSessions({ storageKey: 'boring-agent:activeSessionId:w1' })
-    const switchFn = callbackFns[2]
+    const switchFn = callbackFns[3]
     switchFn('s-42')
 
     expect(localStorage.setItem).toHaveBeenCalledWith(
@@ -333,7 +336,7 @@ describe('useSessions', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => [] })
 
     useSessions()
-    const deleteFn = callbackFns[3]
+    const deleteFn = callbackFns[4]
     await deleteFn('s1')
 
     expect(mockFetch).toHaveBeenCalledWith(
@@ -348,7 +351,7 @@ describe('useSessions', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => [] })
 
     useSessions({ requestHeaders: { 'x-boring-workspace-id': 'w1' } })
-    const deleteFn = callbackFns[3]
+    const deleteFn = callbackFns[4]
     await deleteFn('s1')
 
     expect(mockFetch).toHaveBeenCalledWith(
@@ -366,7 +369,7 @@ describe('useSessions', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => [] })
 
     useSessions()
-    const deleteFn = callbackFns[3]
+    const deleteFn = callbackFns[4]
     await deleteFn('s1')
 
     const setSessions = stateSlots[0][1]
@@ -379,7 +382,7 @@ describe('useSessions', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => [] })
 
     useSessions()
-    const deleteFn = callbackFns[3]
+    const deleteFn = callbackFns[4]
     await deleteFn('s1')
 
     const setActiveId = stateSlots[1][1]
@@ -392,7 +395,7 @@ describe('useSessions', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => [] })
 
     useSessions()
-    const deleteFn = callbackFns[3]
+    const deleteFn = callbackFns[4]
     await deleteFn('s1')
 
     expect(mockFetch).toHaveBeenCalledTimes(2)
@@ -404,7 +407,7 @@ describe('useSessions', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => [] })
 
     useSessions()
-    const deleteFn = callbackFns[3]
+    const deleteFn = callbackFns[4]
     await expect(deleteFn('gone')).resolves.toBeUndefined()
   })
 
@@ -414,7 +417,7 @@ describe('useSessions', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => [{ id: 's1' }] })
 
     useSessions()
-    const deleteFn = callbackFns[3]
+    const deleteFn = callbackFns[4]
 
     await expect(deleteFn('s1')).rejects.toThrow('Failed to delete session: 500')
     expect(mockFetch).toHaveBeenCalledTimes(2)
@@ -426,10 +429,10 @@ describe('useSessions', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => [{ id: 's1' }] })
 
     useSessions()
-    const deleteFn = callbackFns[3]
+    const deleteFn = callbackFns[4]
 
     await expect(deleteFn('s1')).rejects.toThrow('Failed to fetch')
-    const setError = stateSlots[3][1]
+    const setError = stateSlots[5][1]
     expect(setError).toHaveBeenCalled()
     expect(mockFetch).toHaveBeenCalledTimes(2)
   })
