@@ -179,6 +179,49 @@ test("boring-ui-plugin list resolves sandbox /workspace records against the host
   })])
 })
 
+test("boring-ui-plugin list does not resolve sandbox records that escape the workspace", async () => {
+  const root = await tempDir("boring-plugin-source-sandbox-escape-")
+  const workspaceRoot = join(root, "host-workspace")
+  await mkdir(join(workspaceRoot, ".pi"), { recursive: true })
+  await writeFile(join(workspaceRoot, ".pi", "boring-plugin-sources.json"), JSON.stringify({
+    version: 1,
+    sources: [
+      {
+        id: "workspace-prefix-escape",
+        kind: "local",
+        scope: "local",
+        source: "/workspace/../evil",
+        rootDir: "/workspace/../evil",
+        installedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "relative-metadata-escape",
+        kind: "local",
+        scope: "local",
+        source: "/workspace/plugins/relative-metadata-escape",
+        rootDir: "/workspace/plugins/relative-metadata-escape",
+        rootDirRelativeToWorkspace: "../evil",
+        sourceRelativeToWorkspace: "../evil",
+        installedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+  }), "utf8")
+
+  const list = await runPluginCli(["list", "--json"], { cwd: workspaceRoot })
+  expect(JSON.parse(list.stdout).records).toEqual([
+    expect.objectContaining({
+      id: "workspace-prefix-escape",
+      source: "/workspace/../evil",
+      rootDir: "/workspace/../evil",
+    }),
+    expect.objectContaining({
+      id: "relative-metadata-escape",
+      source: "/workspace/plugins/relative-metadata-escape",
+      rootDir: "/workspace/plugins/relative-metadata-escape",
+    }),
+  ])
+})
+
 test("boring-ui-plugin installs git and npm plugin source without installing dependencies", async () => {
   const root = await tempDir("boring-plugin-source-remote-")
   const workspaceRoot = join(root, "workspace")
