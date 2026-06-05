@@ -140,7 +140,7 @@ export interface CreateWorkspaceAgentServerOptions
    */
   appPackageJsonPath?: string
   /** Additional plugin collection roots to scan alongside workspace .pi/extensions and package/plugin-derived roots. */
-  additionalBoringPluginDirs?: string[]
+  additionalBoringPluginDirs?: BoringPluginSourceInput[]
   /**
    * Install and advertise the boring plugin-authoring runtime.
    *
@@ -415,7 +415,7 @@ function uniquePluginSources(sources: BoringPluginSource[]): BoringPluginSource[
 function collectBoringPluginSources(
   workspaceRoot: string,
   pluginCollection: WorkspaceAgentServerPluginCollection,
-  additionalPluginDirs: string[] = [],
+  additionalPluginDirs: BoringPluginSourceInput[] = [],
 ): BoringPluginSource[] {
   const extensionPaths = pluginCollection.agentOptions.pi?.extensionPaths ?? []
   const pluginRoots = extensionPaths.flatMap((path) => {
@@ -429,7 +429,9 @@ function collectBoringPluginSources(
     { rootDir: join(workspaceRoot, ".pi", "extensions"), kind: "external" },
     { rootDir: join(homedir(), ".pi", "agent", "extensions"), kind: "external" },
     ...pluginRoots.map((rootDir): BoringPluginSource => ({ rootDir, kind: "internal" })),
-    ...additionalPluginDirs.map((rootDir): BoringPluginSource => ({ rootDir, kind: "internal" })),
+    ...additionalPluginDirs.map((entry): BoringPluginSource => typeof entry === "string"
+      ? { rootDir: entry, kind: "internal" }
+      : entry),
   ])
 }
 

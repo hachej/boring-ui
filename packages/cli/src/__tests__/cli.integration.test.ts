@@ -15,6 +15,7 @@ const distBin = join(cliRoot, "dist", "index.js")
 const tempDirs: string[] = []
 
 beforeAll(() => {
+  execFileSync("pnpm", ["--dir", resolve(cliRoot, "../plugin-cli"), "build"], { stdio: "pipe" })
   execFileSync("pnpm", ["--dir", cliRoot, "build"], { stdio: "pipe" })
 }, 60_000)
 
@@ -48,6 +49,31 @@ test("installed boring-ui --help exits without starting a workspace", async () =
     stdout: expect.stringContaining("Usage: boring-ui"),
   })
 })
+
+test("boring-ui plugin reuses plugin CLI install/list/remove handlers", async () => {
+  const root = await makeTempDir("boring-cli-plugin-facade-")
+  const workspaceRoot = join(root, "workspace")
+  const pluginRoot = join(root, "facade-plugin")
+  await mkdir(join(pluginRoot, "front"), { recursive: true })
+  await mkdir(workspaceRoot, { recursive: true })
+  await writeFile(join(pluginRoot, "front", "index.tsx"), "export default function Plugin() { return null }\n", "utf-8")
+  await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
+    name: "facade-plugin",
+    version: "1.0.0",
+    boring: { front: "front/index.tsx" },
+  }), "utf-8")
+
+  const install = await runCli(["plugin", "install", pluginRoot, "--workspace", workspaceRoot], {})
+  expect(install.stdout).toContain("installed facade-plugin")
+  expect(install.stdout).toContain("scope local")
+
+  const list = await runCli(["plugin", "list", "--json", "--workspace", workspaceRoot], {})
+  expect(JSON.parse(list.stdout).records).toEqual([expect.objectContaining({ id: "facade-plugin", scope: "local" })])
+
+  await expect(runCli(["plugin", "remove", "facade-plugin", "--workspace", workspaceRoot], {})).resolves.toMatchObject({
+    stdout: expect.stringContaining("removed facade-plugin"),
+  })
+}, 20_000)
 
 test("package exposes an installable boring-ui bin with published assets", async () => {
   const packageJson = JSON.parse(await readFile(join(cliRoot, "package.json"), "utf-8")) as {
