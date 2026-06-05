@@ -157,12 +157,6 @@ describe("workspaces mode runtime plugin wiring", () => {
         runtimePluginDiagnosticsEnabled: true,
       })
 
-      const catalog = await app.inject({ method: "GET", url: `/api/v1/agent/catalog?workspaceId=${registeredA.id}` })
-      expect(catalog.statusCode).toBe(200)
-      expect(catalog.json().tools).toEqual(expect.arrayContaining([
-        expect.objectContaining({ name: "ask_user" }),
-      ]))
-
       const diagnostics = await app.inject({ method: "GET", url: `/api/v1/runtime-plugin-diagnostics?workspaceId=${registeredA.id}` })
       expect(diagnostics.statusCode).toBe(200)
       expect(diagnostics.json()).toMatchObject({

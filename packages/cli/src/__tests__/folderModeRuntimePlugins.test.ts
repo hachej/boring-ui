@@ -71,7 +71,6 @@ describe("folder mode runtime plugin wiring", () => {
       const list = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
       expect(list.statusCode).toBe(200)
       expect(list.json()).toEqual(expect.arrayContaining([
-        expect.objectContaining({ id: "ask-user" }),
         expect.objectContaining({
           id: "global-plugin",
           revision: 1,
@@ -96,12 +95,6 @@ describe("folder mode runtime plugin wiring", () => {
       for (const plugin of list.json() as Array<Record<string, unknown>>) {
         expect(plugin.frontUrl).toBeUndefined()
       }
-
-      const catalog = await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })
-      expect(catalog.statusCode).toBe(200)
-      expect(catalog.json().tools).toEqual(expect.arrayContaining([
-        expect.objectContaining({ name: "ask_user" }),
-      ]))
 
       const meta = await app.inject({ method: "GET", url: "/api/v1/workspace/meta" })
       expect(meta.statusCode).toBe(200)
@@ -182,8 +175,8 @@ describe("folder mode runtime plugin wiring", () => {
 
     try {
       const list = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
-      const plugin = (list.json() as Array<{ id: string; frontTarget?: { entryUrl?: string } }>).find((item) => item.id === "front-removed-plugin")
-      if (!plugin?.frontTarget?.entryUrl) throw new Error("front-removed-plugin missing runtime entry")
+      const [plugin] = list.json() as Array<{ frontTarget?: { entryUrl?: string } }>
+      expect(plugin?.frontTarget?.entryUrl).toBeTruthy()
 
       await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
         name: "front-removed-plugin",

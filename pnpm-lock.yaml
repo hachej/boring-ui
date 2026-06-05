@@ -384,9 +384,6 @@ importers:
       '@hachej/boring-agent':
         specifier: workspace:*
         version: link:../agent
-      '@hachej/boring-ask-user':
-        specifier: workspace:*
-        version: link:../../plugins/ask-user
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../ui
