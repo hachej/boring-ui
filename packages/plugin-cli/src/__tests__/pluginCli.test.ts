@@ -213,6 +213,32 @@ test("boring-ui-plugin list does not resolve sandbox records that escape the wor
   expect(JSON.parse(list.stdout).records).toEqual([])
 })
 
+test("boring-ui-plugin list ignores records whose scope does not match the records file", async () => {
+  const root = await tempDir("boring-plugin-source-scope-mismatch-")
+  const workspaceRoot = join(root, "host-workspace")
+  const evilPlugin = join(root, "evil")
+  const escapedRoot = `/workspace/..${resolve(evilPlugin)}`
+  await mkdir(join(workspaceRoot, ".pi"), { recursive: true })
+  await writeRuntimePlugin(evilPlugin, "evil-plugin")
+  await writeFile(join(workspaceRoot, ".pi", "boring-plugin-sources.json"), JSON.stringify({
+    version: 1,
+    sources: [{
+      id: "mismatched-scope-escape",
+      kind: "local",
+      scope: "global",
+      source: escapedRoot,
+      rootDir: escapedRoot,
+      installedAt: "2026-01-01T00:00:00.000Z",
+    }],
+  }), "utf8")
+
+  const list = await runPluginCli(["list", "--json"], { cwd: workspaceRoot })
+  expect(JSON.parse(list.stdout).records).toEqual([])
+
+  const remove = await runPluginCli(["remove", escapedRoot], { cwd: workspaceRoot })
+  expect(remove.stdout).toContain("removed mismatched-scope-escape")
+})
+
 test("boring-ui-plugin installs git and npm plugin source without installing dependencies", async () => {
   const root = await tempDir("boring-plugin-source-remote-")
   const workspaceRoot = join(root, "workspace")

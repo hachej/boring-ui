@@ -220,6 +220,40 @@ describe("plugin discovery helpers", () => {
     }
   })
 
+  test("workspace-local records file ignores records with mismatched global scope", async () => {
+    const root = await makeTempDir("boring-cli-plugin-record-scope-mismatch-")
+    const workspaceRoot = join(root, "host-workspace")
+    const evilPlugin = join(root, "evil")
+    const escapedRoot = `/workspace/..${resolve(evilPlugin)}`
+
+    await writeRuntimePlugin(evilPlugin, "evil-plugin", "Evil prompt")
+    await writeRecordsFile(join(workspaceRoot, ".pi", "boring-plugin-sources.json"), [{
+      id: "mismatched-scope-escape",
+      kind: "local",
+      scope: "global",
+      source: escapedRoot,
+      rootDir: escapedRoot,
+      installedAt: "2026-01-01T00:00:00.000Z",
+    }])
+
+    try {
+      const roots = resolveCliBoringPluginDirs(workspaceRoot, { globalRoot: join(root, "global-extensions") })
+        .map((source) => typeof source === "string" ? source : source.rootDir)
+      expect(roots).not.toContain(resolve(evilPlugin))
+      expect(roots).not.toContain(escapedRoot)
+
+      const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot: join(root, "global-extensions") })
+      expect(snapshot.systemPromptAppend ?? "").not.toContain("Evil prompt")
+
+      const manager = createCliPluginAssetManager(workspaceRoot, { globalRoot: join(root, "global-extensions") })
+      await manager.load()
+      expect(manager.list().map((plugin) => plugin.id)).not.toContain("evil-plugin")
+      expect(manager.inspectLoaded().map((plugin) => plugin.rootDir)).not.toContain(resolve(evilPlugin))
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   test("plugin asset manager lists global plugins plus the current workspace's local plugins", async () => {
     const root = await makeTempDir("boring-cli-plugin-manager-")
     const globalRoot = join(root, "global-extensions")

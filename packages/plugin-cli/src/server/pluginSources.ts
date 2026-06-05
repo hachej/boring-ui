@@ -201,6 +201,7 @@ function resolveWorkspacePath(paths: PluginSourceScopePaths, value: string, rela
 }
 
 function normalizeRecordForScope(paths: PluginSourceScopePaths, record: PluginSourceRecord): PluginSourceRecord | null {
+  if (record.scope !== paths.scope) return null
   if (record.scope !== "local") return record
   const rootDir = resolveWorkspacePath(paths, record.rootDir, record.rootDirRelativeToWorkspace)
   const source = resolveWorkspacePath(paths, record.source, record.sourceRelativeToWorkspace)
@@ -246,6 +247,7 @@ function removeRecord(paths: PluginSourceScopePaths, target: string): PluginSour
     const normalized = normalizeRecordForScope(paths, record)
     return record.id === target
       || record.source === target
+      || record.rootDir === target
       || record.rootDir === resolvedTarget
       || normalized?.source === target
       || normalized?.rootDir === resolvedTarget
