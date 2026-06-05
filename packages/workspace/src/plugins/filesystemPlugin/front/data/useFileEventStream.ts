@@ -130,6 +130,7 @@ interface ChangeEnvelope {
 function relay(c: ChangeEnvelope["change"]): void {
   switch (c.op) {
     case "write":
+      events.emit(filesystemEvents.created, { ...remoteMeta(), path: c.path, kind: "file" })
       events.emit(filesystemEvents.changed, { ...remoteMeta(), path: c.path })
       return
     case "mkdir":
