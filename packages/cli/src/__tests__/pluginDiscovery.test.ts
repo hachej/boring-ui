@@ -18,11 +18,15 @@ describe("plugin discovery helpers", () => {
     expect(getGlobalPiExtensionsRoot({ globalRoot: "/tmp/custom-global" })).toBe(resolve("/tmp/custom-global"))
   })
 
-  test("returns deduped global + workspace plugin dirs", () => {
+  test("returns deduped global + workspace plugin source roots", () => {
     const workspaceRoot = "/tmp/workspace"
-    expect(resolveCliBoringPluginDirs(workspaceRoot, { globalRoot: "/tmp/global" })).toEqual([
-      resolve("/tmp/global"),
-      resolve("/tmp/workspace", ".pi", "extensions"),
+    expect(resolveCliBoringPluginDirs(workspaceRoot, { globalRoot: "/tmp/global-extensions", globalAgentRoot: "/tmp/global-agent" })).toEqual([
+      { rootDir: resolve("/tmp/global-extensions"), kind: "external" },
+      { rootDir: resolve("/tmp/global-agent", "npm"), kind: "external" },
+      { rootDir: resolve("/tmp/global-agent", "git"), kind: "external" },
+      { rootDir: resolve("/tmp/workspace", ".pi", "extensions"), kind: "external" },
+      { rootDir: resolve("/tmp/workspace", ".pi", "npm"), kind: "external" },
+      { rootDir: resolve("/tmp/workspace", ".pi", "git"), kind: "external" },
     ])
   })
 

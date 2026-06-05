@@ -7,6 +7,27 @@ import {
   formatVerifyResult,
   verifyPlugin,
 } from "./verifyPlugin"
+export {
+  formatPluginSourceList,
+  installPluginSource,
+  listPluginSources,
+  readPluginSourceRecords,
+  readPluginSourceRecordsForRoots,
+  removePluginSource,
+  resolvePluginSourceScopePaths,
+} from "./pluginSources"
+export type {
+  InstallPluginSourceOptions,
+  ListPluginSourcesOptions,
+  PluginInstallResult,
+  PluginInstallScope,
+  PluginListResult,
+  PluginRemoveResult,
+  PluginSourceKind,
+  PluginSourceRecord,
+  PluginSourceScopePaths,
+  RemovePluginSourceOptions,
+} from "./pluginSources"
 
 function defaultWorkspaceRoot(): string {
   return process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd()
