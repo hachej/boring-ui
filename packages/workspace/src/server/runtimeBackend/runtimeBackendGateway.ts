@@ -2,6 +2,7 @@ import { ErrorCode } from "@hachej/boring-agent/shared"
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { isValidBoringPluginId } from "../../shared/plugins/manifest"
 import { RuntimeBackendError, type RuntimeBackendDispatchResponse, type RuntimeBackendRegistry } from "./runtimeBackendRegistry"
+import { describeUnsafeRuntimePathSegment, findUnsafeRuntimePathSegment } from "./runtimePathSegments"
 
 export interface RuntimeBackendGatewayOptions {
   registry: RuntimeBackendRegistry
@@ -45,18 +46,12 @@ function normalizeGatewayPath(rawTail: string): string {
     )
   }
   if (path.length === 0) path = "/"
-  if (path.includes("\\")) {
+  const unsafeSegment = findUnsafeRuntimePathSegment(path)
+  if (unsafeSegment) {
     throw new RuntimeBackendError(
       ErrorCode.enum.RUNTIME_PLUGIN_ROUTE_NOT_FOUND,
       404,
-      "runtime backend route path must not contain backslashes",
-    )
-  }
-  if (path.split("/").includes("..")) {
-    throw new RuntimeBackendError(
-      ErrorCode.enum.RUNTIME_PLUGIN_ROUTE_NOT_FOUND,
-      404,
-      "runtime backend route path must not contain .. segments",
+      `runtime backend route path must not contain ${describeUnsafeRuntimePathSegment(unsafeSegment)}`,
     )
   }
   return path

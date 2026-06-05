@@ -1,4 +1,5 @@
 import type { RuntimePluginHandler, RuntimePluginRouter } from "./defineRuntimeServerPlugin"
+import { describeUnsafeRuntimePathSegment, findUnsafeRuntimePathSegment } from "./runtimePathSegments"
 
 export type RuntimePluginMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS" | "ALL"
 
@@ -25,14 +26,18 @@ export function validateRuntimeRoutePath(path: string): string {
   if (!path.startsWith("/")) {
     throw new Error(`runtime route path must start with /: ${path}`)
   }
-  if (path.includes("\\")) {
-    throw new Error(`runtime route path must not contain backslashes: ${path}`)
-  }
   if (path.includes("?") || path.includes("#")) {
     throw new Error(`runtime route path must not include query strings or fragments: ${path}`)
   }
-  if (path.split("/").includes("..")) {
-    throw new Error(`runtime route path must not contain .. segments: ${path}`)
+  let decodedPath: string
+  try {
+    decodedPath = decodeURIComponent(path)
+  } catch {
+    throw new Error(`runtime route path must be valid percent-encoding: ${path}`)
+  }
+  const unsafeSegment = findUnsafeRuntimePathSegment(decodedPath)
+  if (unsafeSegment) {
+    throw new Error(`runtime route path must not contain ${describeUnsafeRuntimePathSegment(unsafeSegment)}: ${path}`)
   }
   if (path.includes(":")) {
     throw new Error(`runtime route path must be exact and must not contain params: ${path}`)

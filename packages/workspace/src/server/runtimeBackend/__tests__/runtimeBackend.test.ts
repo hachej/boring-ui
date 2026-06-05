@@ -74,8 +74,20 @@ describe("runtime backend server contract", () => {
       router.get("/items/*", () => undefined)
     })).rejects.toThrow(/wildcards/)
     await expect(captureRuntimeRoutes((router) => {
+      router.get("/./secret", () => undefined)
+    })).rejects.toThrow(/must not contain \. segments/)
+    await expect(captureRuntimeRoutes((router) => {
       router.get("/../secret", () => undefined)
     })).rejects.toThrow(/\.\./)
+    await expect(captureRuntimeRoutes((router) => {
+      router.get("/%2e/secret", () => undefined)
+    })).rejects.toThrow(/must not contain \. segments/)
+    await expect(captureRuntimeRoutes((router) => {
+      router.get("/bad\\path", () => undefined)
+    })).rejects.toThrow(/backslashes/)
+    await expect(captureRuntimeRoutes((router) => {
+      router.get("/%5csecret", () => undefined)
+    })).rejects.toThrow(/backslashes/)
     await expect(captureRuntimeRoutes((router) => {
       router.get("/dupe", () => undefined)
       router.get("/dupe", () => undefined)
@@ -238,6 +250,37 @@ describe("runtimeBackendGateway", () => {
 
       const unsafe = await app.inject({ method: "GET", url: "/api/v1/plugins/plain-plugin/../secret" })
       expect(unsafe.statusCode).toBe(404)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("rejects unsafe raw gateway tails before dispatch", async () => {
+    const dispatchedPaths: string[] = []
+    const registry = {
+      dispatch: async (request: { path: string }) => {
+        dispatchedPaths.push(request.path)
+        return { status: 200, headers: {}, body: { path: request.path } }
+      },
+    } as unknown as RuntimeBackendRegistry
+    const app = Fastify({ logger: false })
+    await app.register(runtimeBackendGateway, { registry })
+    try {
+      for (const [path, message] of [
+        ["/api/v1/plugins/p/./secret", "runtime backend route path must not contain . segments"],
+        ["/api/v1/plugins/p/%2e/secret", "runtime backend route path must not contain . segments"],
+        ["/api/v1/plugins/p/%5csecret", "runtime backend route path must not contain backslashes"],
+      ] as const) {
+        const response = await rawHttpRequest(app, path)
+        expect(response.statusCode).toBe(404)
+        expect(response.json()).toEqual({
+          error: {
+            code: ErrorCode.enum.RUNTIME_PLUGIN_ROUTE_NOT_FOUND,
+            message,
+          },
+        })
+      }
+      expect(dispatchedPaths).toEqual([])
     } finally {
       await app.close()
     }
