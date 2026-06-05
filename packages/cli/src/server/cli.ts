@@ -830,7 +830,10 @@ async function startWorkspacesMode(opts: {
 
   console.log(`  workspaces ${registry.path}`)
   console.log(`  ${initialUrl}  ready\n`)
-  if ((await checkAuth()) === 0) console.log(AUTH_GUIDE)
+  // Do not run checkAuth() in workspaces server startup. It imports Pi's model
+  // registry after the socket is listening, which can block the event loop and
+  // make the first direct workspace URL wait on static assets. The browser can
+  // surface provider/auth state through /api/v1/agent/models when needed.
   openBrowser(initialUrl)
 }
 
