@@ -100,10 +100,16 @@ describe("importServerModule", () => {
     const dir = await tmp("boring-server-import-native-")
     const serverPath = join(dir, "server.mjs")
     await writeFile(serverPath, "export default { value: 'native' }\n", "utf8")
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
-    const { importServerModule } = await importFreshServerModule()
 
-    await expect(importServerModule(serverPath, false)).resolves.toMatchObject({ default: { value: "native" } })
-    expect(warn).not.toHaveBeenCalled()
+    const restoreLoad = mockJitiLoad("unavailable")
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    try {
+      const { importServerModule } = await importFreshServerModule()
+
+      await expect(importServerModule(serverPath, false)).resolves.toMatchObject({ default: { value: "native" } })
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      restoreLoad()
+    }
   })
 })
