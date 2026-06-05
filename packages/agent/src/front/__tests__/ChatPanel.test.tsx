@@ -97,6 +97,7 @@ function withLocalStorage(values: Record<string, string>, fn: () => void): void 
 }
 
 beforeEach(() => {
+  vi.restoreAllMocks()
   capturedOnSubmit = undefined
   capturedTextareaProps = undefined
   mockPiProjection.piMessages = []
@@ -978,6 +979,20 @@ describe('ChatPanel (shadcn)', () => {
         },
       },
     )
+  })
+
+  test('server-loaded skills are fetched for slash-command registration', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({
+        skills: [{ name: 'issue-200-local-test-skill', description: 'Local issue 200 reproduction skill.' }],
+      }), { status: 200 }),
+    )
+
+    render(<ChatPanel sessionId="sess-server-skill-picker" />)
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith('/api/v1/agent/skills', { headers: undefined })
+    })
   })
 
   test('extraCommands are available as slash commands', async () => {

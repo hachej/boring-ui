@@ -851,6 +851,34 @@ test('skills endpoint lists Pi-resolved project skills', async () => {
   await app.close()
 })
 
+test('skills endpoint lists workspace-local .agents/skills entries from additionalSkillPaths', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-local-skills-project-')
+  const localSkillDir = join(workspaceRoot, '.agents', 'skills', 'issue-200-local-test-skill')
+  await mkdir(localSkillDir, { recursive: true })
+  await writeFile(
+    join(localSkillDir, 'SKILL.md'),
+    '---\nname: issue-200-local-test-skill\ndescription: Local issue 200 reproduction skill.\n---\n',
+    'utf-8',
+  )
+
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    pi: {
+      additionalSkillPaths: [join(workspaceRoot, '.agents', 'skills')],
+    },
+  })
+  await app.ready()
+
+  const res = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
+  expect(res.statusCode).toBe(200)
+  const names: string[] = res.json().skills.map((skill: { name: string }) => skill.name)
+  expect(names).toContain('issue-200-local-test-skill')
+
+  await app.close()
+})
+
 test('skills endpoint does not require unrelated runtime-only dynamic hooks', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-skills-runtime-hooks-')
   const projectSkillDir = join(workspaceRoot, '.pi', 'skills', 'project-skill')
