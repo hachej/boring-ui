@@ -36,6 +36,7 @@ interface FetchJsonResult {
 
 const DEFAULT_TIMEOUT_MS = 10_000
 const POLL_MS = 500
+const NO_BROWSER_GRACE_MS = 1_500
 
 export function inferSelfTestUrl(explicitUrl: string | undefined, env: Record<string, string | undefined> = process.env): string {
   const envUrl = env.BORING_UI_SELF_TEST_URL ?? env.BORING_UI_URL ?? env.BORING_WORKSPACE_URL
@@ -240,24 +241,32 @@ export async function runPluginSelfTest(options: RunPluginSelfTestOptions): Prom
   let lastState: PaneSelfTestState = "missing"
   let lastStatus: Record<string, unknown> | undefined
   let openErrors: SelfTestEvent[] = []
+  let openedAtLeastOnce = false
 
   while (Date.now() - start <= timeoutMs) {
+    const now = Date.now()
+    if (!openedAtLeastOnce || now - lastOpenAt >= POLL_MS) {
+      openErrors = await openPanel({ baseUrl, headers, pluginId, panelId, panelInstanceId })
+      lastOpenAt = Date.now()
+      openedAtLeastOnce = openErrors.length === 0 || openedAtLeastOnce
+    }
+
     const status = await pollPaneStatus({ baseUrl, headers, workspaceId, pluginId, panelId, panelInstanceId, minReportedAtMs: start })
     lastState = status.state
     lastStatus = status.status
-    if (status.state === "no-browser-connected") {
-      return buildResult({ pluginId, workspaceId, revision, reloadErrors, panelId, panelInstanceId, state: "no-browser-connected", status: lastStatus })
-    }
     if (status.state === "ready" || status.state === "error") break
-    if (Date.now() - lastOpenAt >= POLL_MS) {
-      openErrors = await openPanel({ baseUrl, headers, pluginId, panelId, panelInstanceId })
-      lastOpenAt = Date.now()
+    if (status.state === "no-browser-connected" && openedAtLeastOnce && Date.now() - lastOpenAt >= NO_BROWSER_GRACE_MS) {
+      return buildResult({ pluginId, workspaceId, revision, reloadErrors, panelId, panelInstanceId, state: "no-browser-connected", status: lastStatus })
     }
     await new Promise((resolve) => setTimeout(resolve, POLL_MS))
   }
 
   if (openErrors.length > 0) reloadErrors.push(...openErrors)
-  const finalState = lastState === "ready" || lastState === "error" ? lastState : "timeout"
+  const finalState = lastState === "ready" || lastState === "error"
+    ? lastState
+    : lastState === "no-browser-connected" && openedAtLeastOnce
+      ? "no-browser-connected"
+      : "timeout"
   return buildResult({ pluginId, workspaceId, revision, reloadErrors, panelId, panelInstanceId, state: finalState, status: lastStatus })
 }
 
