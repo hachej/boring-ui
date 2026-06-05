@@ -552,6 +552,7 @@ export function createPiCodingAgentHarness(opts: {
     handle.piSession.dispose();
     piSessions.delete(sessionId);
     clearNativeFollowUpWork(sessionId);
+    consumedNativeFollowUpKeys.delete(sessionId);
   }
 
   const originalDelete = sessionStore.delete.bind(sessionStore);
@@ -562,6 +563,7 @@ export function createPiCodingAgentHarness(opts: {
 
   const nativeFollowUpPending = new Set<string>();
   const nativeFollowUpQueues = new Map<string, NativeFollowUpRequest[]>();
+  const consumedNativeFollowUpKeys = new Map<string, Set<string>>();
 
   function clearNativeFollowUpWork(sessionId: string): void {
     nativeFollowUpPending.delete(sessionId);
@@ -611,14 +613,43 @@ export function createPiCodingAgentHarness(opts: {
     session._emitQueueUpdate?.();
   }
 
+  function followUpDedupeKeys(options?: FollowUpOptions | NativeFollowUpRequest): string[] {
+    const keys: string[] = [];
+    if (options?.clientNonce) keys.push(`nonce:${options.clientNonce}`);
+    if (options?.clientSeq !== undefined) keys.push(`seq:${options.clientSeq}`);
+    return keys;
+  }
+
   function hasFollowUpSelector(options?: FollowUpOptions): boolean {
-    return Boolean(options?.clientNonce) || options?.clientSeq !== undefined;
+    return followUpDedupeKeys(options).length > 0;
   }
 
   function matchesFollowUpSelector(item: NativeFollowUpRequest, options?: FollowUpOptions): boolean {
     if (!hasFollowUpSelector(options)) return true;
-    return Boolean(options?.clientNonce && item.clientNonce === options.clientNonce)
-      || (options?.clientSeq !== undefined && item.clientSeq === options.clientSeq);
+    const optionKeys = new Set(followUpDedupeKeys(options));
+    return followUpDedupeKeys(item).some((key) => optionKeys.has(key));
+  }
+
+  function rememberConsumedNativeFollowUp(sessionId: string, request: NativeFollowUpRequest | undefined): void {
+    const keys = followUpDedupeKeys(request);
+    if (keys.length === 0) return;
+    const consumed = consumedNativeFollowUpKeys.get(sessionId) ?? new Set<string>();
+    for (const key of keys) consumed.add(key);
+    consumedNativeFollowUpKeys.set(sessionId, consumed);
+  }
+
+  function followUpPostDedupeKeys(options?: FollowUpOptions | NativeFollowUpRequest): string[] {
+    if (options?.clientNonce) return [`nonce:${options.clientNonce}`];
+    if (options?.clientSeq !== undefined) return [`seq:${options.clientSeq}`];
+    return [];
+  }
+
+  function hasQueuedOrConsumedNativeFollowUp(sessionId: string, options?: FollowUpOptions): boolean {
+    const optionKeys = new Set(followUpPostDedupeKeys(options));
+    if (optionKeys.size === 0) return false;
+    const consumed = consumedNativeFollowUpKeys.get(sessionId);
+    if (consumed && [...optionKeys].some((key) => consumed.has(key))) return true;
+    return (nativeFollowUpQueues.get(sessionId) ?? []).some((request) => followUpPostDedupeKeys(request).some((key) => optionKeys.has(key)));
   }
 
   function removeNativeFollowUp(sessionId: string, options?: FollowUpOptions): NativeFollowUpRemoval[] {
@@ -651,6 +682,7 @@ export function createPiCodingAgentHarness(opts: {
     async followUp(sessionId: string, text: string, _attachments?: MessageAttachment[], displayText = text, options?: FollowUpOptions): Promise<void> {
       const handle = piSessions.get(sessionId);
       if (!handle) throw new Error("followup_session_not_ready");
+      if (hasQueuedOrConsumedNativeFollowUp(sessionId, options)) return;
       const queue = nativeFollowUpQueues.get(sessionId) ?? [];
       queue.push({
         text,
@@ -983,8 +1015,8 @@ export function createPiCodingAgentHarness(opts: {
             const queue = nativeFollowUpQueues.get(input.sessionId);
             if (queue?.length) {
               const index = queue.findIndex((item) => item.text === text || item.displayText === text);
-              if (index >= 0) queue.splice(index, 1);
-              else queue.shift();
+              const consumed = index >= 0 ? queue.splice(index, 1)[0] : queue.shift();
+              rememberConsumedNativeFollowUp(input.sessionId, consumed);
               if (queue.length > 0) nativeFollowUpQueues.set(input.sessionId, queue);
               else clearNativeFollowUpWork(input.sessionId);
             } else {

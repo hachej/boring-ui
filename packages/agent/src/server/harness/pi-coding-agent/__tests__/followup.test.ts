@@ -107,6 +107,74 @@ describe("native pi follow-up integration", () => {
     await reader.return?.();
   });
 
+  it("dedupes repeated queued follow-up posts with the same nonce", async () => {
+    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup" });
+    const iter = harness.sendMessage({ sessionId: "sess-dedupe", message: "first" }, makeCtx());
+    const reader = iter[Symbol.asyncIterator]();
+
+    const boot = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
+    await boot;
+
+    await harness.followUp!("sess-dedupe", "same nonce", undefined, "same nonce", { clientNonce: "nonce-dedupe", clientSeq: 1 });
+    await harness.followUp!("sess-dedupe", "same nonce", undefined, "same nonce", { clientNonce: "nonce-dedupe", clientSeq: 1 });
+
+    expect(promptCalls.map((c) => c.message)).toEqual(["first", "same nonce"]);
+    expect(mockSessions[0].agent.followUpQueue.messages.map((msg: any) => msg.content[0].text)).toEqual(["same nonce"]);
+
+    promptHandle.resolve?.();
+    await reader.return?.();
+  });
+
+  it("does not dedupe distinct nonces that reuse a client sequence", async () => {
+    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup" });
+    const iter = harness.sendMessage({ sessionId: "sess-seq-reuse", message: "first" }, makeCtx());
+    const reader = iter[Symbol.asyncIterator]();
+
+    const boot = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
+    await boot;
+
+    await harness.followUp!("sess-seq-reuse", "first seq", undefined, "first seq", { clientNonce: "nonce-seq-a", clientSeq: 1 });
+    await harness.followUp!("sess-seq-reuse", "second seq", undefined, "second seq", { clientNonce: "nonce-seq-b", clientSeq: 1 });
+
+    expect(promptCalls.map((c) => c.message)).toEqual(["first", "first seq", "second seq"]);
+    expect(mockSessions[0].agent.followUpQueue.messages.map((msg: any) => msg.content[0].text)).toEqual(["first seq", "second seq"]);
+
+    promptHandle.resolve?.();
+    await reader.return?.();
+  });
+
+  it("dedupes a repeated follow-up post after pi consumes the first copy", async () => {
+    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup" });
+    const iter = harness.sendMessage({ sessionId: "sess-consumed-dedupe", message: "first" }, makeCtx());
+    const reader = iter[Symbol.asyncIterator]();
+
+    const boot = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
+    await boot;
+
+    await harness.followUp!("sess-consumed-dedupe", "same consumed nonce", undefined, "same consumed nonce", { clientNonce: "nonce-consumed", clientSeq: 1 });
+
+    const consumed = reader.next();
+    emit({
+      type: "message_start",
+      message: { id: "u2", role: "user", content: [{ type: "text", text: "same consumed nonce" }] },
+    });
+    await consumed;
+
+    await harness.followUp!("sess-consumed-dedupe", "same consumed nonce", undefined, "same consumed nonce", { clientNonce: "nonce-consumed", clientSeq: 1 });
+
+    expect(promptCalls.map((c) => c.message)).toEqual(["first", "same consumed nonce"]);
+    expect(mockSessions[0].agent.followUpQueue.messages.map((msg: any) => msg.content[0].text)).toEqual(["same consumed nonce"]);
+
+    promptHandle.resolve?.();
+    await reader.return?.();
+  });
+
   it("can delete a queued follow-up before pi drains it", async () => {
     const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup" });
     const iter = harness.sendMessage({ sessionId: "sess-delete", message: "first" }, makeCtx());
