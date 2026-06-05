@@ -56,6 +56,28 @@ describe("boring agent plugin assets", () => {
     expect(plugins[0].serverPath).toBe(join(root, "server", "index.js"))
   })
 
+  test("scan and load preserve explicit source metadata without leaking it to list payloads", async () => {
+    const root = await tmp("boring-plugin-source-metadata-")
+    await writePlugin(root)
+
+    const source = { rootDir: root, kind: "external" as const, workspaceId: "ws-1" }
+    const scan = scanBoringPlugins([source])
+    expect(scan.plugins[0].source).toEqual(source)
+
+    const manager = new BoringPluginAssetManager({ pluginDirs: [source], errorRoot: join(root, ".errors") })
+    const load = await manager.load()
+
+    expect(manager.inspectLoaded()[0]).toMatchObject({
+      id: "boring-plugin-test",
+      rootDir: root,
+      source,
+    })
+    expect(manager.list()[0]).not.toHaveProperty("rootDir")
+    expect(manager.list()[0]).not.toHaveProperty("source")
+    expect(load.events[0]).not.toHaveProperty("rootDir")
+    expect(load.events[0]).not.toHaveProperty("source")
+  })
+
   test("manager keeps /@fs frontUrl fallback when no frontTargetResolver is supplied", async () => {
     const root = await tmp("boring-plugin-front-fallback-")
     await writePlugin(root)
@@ -512,9 +534,8 @@ describe("boring agent plugin assets", () => {
 
       // Edit a tracked file → signature bumps → next load emits a fresh event.
       await writePlugin(root, "export default { id: 'boring-plugin-test', systemPrompt: 'V2' }\n")
-      const reload = await app.inject({ method: "POST", url: "/api/boring.reload" })
-      expect(reload.statusCode).toBe(200)
-      expect(reload.json().plugins[0].revision).toBe(2)
+      const reload = await manager.load()
+      expect(reload.loaded[0].revision).toBe(2)
     } finally {
       await app.close()
     }
@@ -536,84 +557,16 @@ describe("boring agent plugin assets", () => {
     expect(result.loaded[0].revision).toBeGreaterThanOrEqual(2)
   })
 
-  test("POST /api/boring.reload carries rebuildPlugins diagnostics in the 422 body (PLUGIN_SYSTEM.md §5)", async () => {
-    const root = await tmp("boring-plugin-reload-diagnostics-")
+  test("POST /api/boring.reload is not registered", async () => {
+    const root = await tmp("boring-plugin-obsolete-reload-")
     await writePlugin(root)
-    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
-    const rebuildPlugins = async () => ({
-      ok: false,
-      diagnostics: [
-        { source: "directory (/some/dir)", message: "syntax error: unexpected `{{`", pluginId: "broken" },
-      ],
-    })
-
-    const app = Fastify({ logger: false })
-    await app.register(boringPluginRoutes, { manager, rebuildPlugins })
-    try {
-      const reload = await app.inject({ method: "POST", url: "/api/boring.reload" })
-      expect(reload.statusCode).toBe(422)
-      const body = reload.json()
-      expect(body.ok).toBe(false)
-      expect(body.diagnostics).toEqual([
-        expect.objectContaining({ pluginId: "broken", message: expect.stringContaining("syntax error") }),
-      ])
-      // Healthy plugins (asset manager scan succeeded) still listed.
-      expect(body.plugins[0].id).toBe("boring-plugin-test")
-    } finally {
-      await app.close()
-    }
-  })
-
-  test("POST /api/boring.reload returns 200 when both scan and rebuild are clean", async () => {
-    const root = await tmp("boring-plugin-reload-ok-")
-    await writePlugin(root)
-    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
-    const rebuildPlugins = async () => ({ ok: true, diagnostics: [] })
-
-    const app = Fastify({ logger: false })
-    await app.register(boringPluginRoutes, { manager, rebuildPlugins })
-    try {
-      const reload = await app.inject({ method: "POST", url: "/api/boring.reload" })
-      expect(reload.statusCode).toBe(200)
-      expect(reload.json().ok).toBe(true)
-    } finally {
-      await app.close()
-    }
-  })
-
-  test("POST /api/boring.reload surfaces restart_warnings when a plugin's server file changed mid-session", async () => {
-    const root = await tmp("boring-plugin-reload-warn-")
-    await writePlugin(root) // includes server/index.js + boring.server set
     const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
 
     const app = Fastify({ logger: false })
     await app.register(boringPluginRoutes, { manager })
-
     try {
-      // First reload: no prior record, so no requiresRestart, so no warning.
-      const initial = await app.inject({ method: "POST", url: "/api/boring.reload" })
-      expect(initial.statusCode).toBe(200)
-      const initialBody = initial.json() as { restart_warnings?: unknown }
-      expect(initialBody.restart_warnings).toBeUndefined()
-
-      // Touch the server file → next reload event carries requiresRestart →
-      // route surfaces a restart_warnings entry.
-      await new Promise((resolve) => setTimeout(resolve, 20))
-      await writeFile(join(root, "server", "index.js"), "export default function(api) { api.get('/v2', async () => ({ ok: true })) }\n", "utf8")
-
-      const restart = await app.inject({ method: "POST", url: "/api/boring.reload" })
-      expect(restart.statusCode).toBe(200)
-      const body = restart.json() as {
-        ok: boolean
-        restart_warnings?: Array<{ id: string; surfaces: string[]; message: string }>
-      }
-      expect(body.ok).toBe(true)
-      expect(body.restart_warnings).toBeDefined()
-      expect(body.restart_warnings).toHaveLength(1)
-      expect(body.restart_warnings![0].id).toBe("boring-plugin-test")
-      expect(body.restart_warnings![0].surfaces).toEqual(["routes", "agentTools"])
-      expect(body.restart_warnings![0].message).toContain("restart the workspace process")
-      expect(body.restart_warnings![0].message).toContain("Ctrl-C")
+      const reload = await app.inject({ method: "POST", url: "/api/boring.reload" })
+      expect(reload.statusCode).toBe(404)
     } finally {
       await app.close()
     }

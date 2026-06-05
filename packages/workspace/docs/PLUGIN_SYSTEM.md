@@ -243,14 +243,13 @@ plugins. That template is an app/internal publishable package example.
 
 ### 4.7 `pluginHotReload`
 
-`createWorkspaceAgentServer({ pluginHotReload })` controls runtime plugin
-reload endpoints and dynamic Pi/package refresh.
+`createWorkspaceAgentServer({ pluginHotReload })` controls dynamic Pi/package
+refresh through the canonical `/api/v1/agent/reload` path.
 
-- `true` (default): registers `/api/boring.reload`, keeps
-  `/api/v1/agent-plugins/events` active, and refreshes discovered plugin Pi
-  resources on `/api/v1/agent/reload`.
+- `true` (default): keeps `/api/v1/agent-plugins/events` active and refreshes
+  discovered plugin Pi resources on `/api/v1/agent/reload`.
 - `false`: static discovery/listing remains available, but package resources
-  are snapped once at boot and the developer reload endpoint is disabled.
+  are snapped once at boot and canonical reload skips plugin hot-refresh work.
 
 ---
 

@@ -7,7 +7,7 @@ import {
   type BoringPackagePiField,
   type BoringPluginPackageJson,
 } from "../../shared/plugins/manifest"
-import type { BoringServerPluginManifest } from "./types"
+import type { BoringPluginSource, BoringPluginSourceInput, BoringServerPluginManifest } from "./types"
 import { resolveContainedPluginPath } from "./pluginPaths"
 
 export interface BoringPluginPreflightIssue {
@@ -28,8 +28,17 @@ export interface BoringPluginScanResult {
 }
 
 interface DiscoveredBoringPluginDirs {
-  dirs: string[]
+  sources: BoringPluginSource[]
   missingPackageJson: string[]
+}
+
+function normalizeBoringPluginSource(input: BoringPluginSourceInput): BoringPluginSource {
+  if (typeof input === "string") return { rootDir: resolve(input), kind: "internal" }
+  return {
+    rootDir: resolve(input.rootDir),
+    kind: input.kind,
+    ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+  }
 }
 
 function pluginIdFromPackageJson(pkg: { name?: string; boring?: { id?: string } }, rootDir: string): string {
@@ -106,11 +115,12 @@ function packagePathContainmentIssues(rootDir: string, pkg: BoringPluginPackageJ
   return issues
 }
 
-function discoverBoringPluginDirs(pluginDirs: string[]): DiscoveredBoringPluginDirs {
-  const out = new Set<string>()
+function discoverBoringPluginDirs(pluginDirs: BoringPluginSourceInput[]): DiscoveredBoringPluginDirs {
+  const out = new Map<string, BoringPluginSource>()
   const missingPackageJson: string[] = []
   for (const raw of pluginDirs) {
-    const dir = resolve(raw)
+    const source = normalizeBoringPluginSource(raw)
+    const dir = source.rootDir
     if (!existsSync(dir)) continue
     const info = statSync(dir)
     if (!info.isDirectory()) continue
@@ -123,8 +133,10 @@ function discoverBoringPluginDirs(pluginDirs: string[]): DiscoveredBoringPluginD
       if (existsSync(join(child, "package.json"))) childPackageDirs.push(child)
     }
 
-    if (hasPackageJson) out.add(dir)
-    for (const child of childPackageDirs) out.add(child)
+    if (hasPackageJson && !out.has(dir)) out.set(dir, source)
+    for (const child of childPackageDirs) {
+      if (!out.has(child)) out.set(child, { ...source, rootDir: child })
+    }
 
     // Parent collection directories such as .pi/extensions are valid even when empty.
     // A non-collection directory with no package.json and no package children is treated
@@ -133,10 +145,13 @@ function discoverBoringPluginDirs(pluginDirs: string[]): DiscoveredBoringPluginD
       missingPackageJson.push(dir)
     }
   }
-  return { dirs: [...out].sort(), missingPackageJson: [...new Set(missingPackageJson)].sort() }
+  return {
+    sources: [...out.values()].sort((a, b) => a.rootDir.localeCompare(b.rootDir)),
+    missingPackageJson: [...new Set(missingPackageJson)].sort(),
+  }
 }
 
-export function scanBoringPlugins(pluginDirs: string[]): BoringPluginScanResult {
+export function scanBoringPlugins(pluginDirs: BoringPluginSourceInput[]): BoringPluginScanResult {
   const errors: BoringPluginPreflightIssue[] = []
   const plugins: BoringServerPluginManifest[] = []
   const seenIds = new Map<string, string>()
@@ -146,7 +161,8 @@ export function scanBoringPlugins(pluginDirs: string[]): BoringPluginScanResult 
     errors.push({ pluginDir, code: "MISSING_PACKAGE_JSON", message: "package.json is missing" })
   }
 
-  for (const rootDir of discovered.dirs) {
+  for (const source of discovered.sources) {
+    const rootDir = source.rootDir
     let raw: Record<string, unknown>
     try {
       raw = parsePackageJson(rootDir)
@@ -227,6 +243,7 @@ export function scanBoringPlugins(pluginDirs: string[]): BoringPluginScanResult 
       ...(serverPath ? { serverPath } : {}),
       ...(extensionPaths.length > 0 ? { extensionPaths } : {}),
       ...(skillPaths.length > 0 ? { skillPaths } : {}),
+      source,
     })
   }
 
@@ -234,11 +251,11 @@ export function scanBoringPlugins(pluginDirs: string[]): BoringPluginScanResult 
   return { preflight, plugins }
 }
 
-export function preflightBoringPlugins(pluginDirs: string[]): BoringPluginPreflightResult {
+export function preflightBoringPlugins(pluginDirs: BoringPluginSourceInput[]): BoringPluginPreflightResult {
   return scanBoringPlugins(pluginDirs).preflight
 }
 
-export function readBoringPlugins(pluginDirs: string[]): BoringServerPluginManifest[] {
+export function readBoringPlugins(pluginDirs: BoringPluginSourceInput[]): BoringServerPluginManifest[] {
   const scan = scanBoringPlugins(pluginDirs)
   return scan.preflight.ok ? scan.plugins : []
 }
