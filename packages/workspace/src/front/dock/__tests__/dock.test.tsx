@@ -507,6 +507,35 @@ describe("ShadcnTab", () => {
     expect(siblingApi.close).toHaveBeenCalledTimes(1)
   })
 
+  it("close all closes every tab in the current group", () => {
+    const currentApi = {
+      title: "Current",
+      id: "tab-current",
+      close: vi.fn(),
+      setActive: vi.fn(),
+    }
+    const siblingApi = { title: "Sibling", id: "tab-sibling", close: vi.fn() }
+    const otherGroupApi = { title: "Other", id: "tab-other", close: vi.fn() }
+    ;(currentApi as any).group = { panels: [{ api: currentApi }, { api: siblingApi }] }
+
+    render(
+      <ShadcnTab
+        api={currentApi as any}
+        containerApi={{ panels: [{ api: currentApi }, { api: siblingApi }, { api: otherGroupApi }] } as any}
+        params={{}}
+        tabLocation={"header" as any}
+      />,
+    )
+
+    fireEvent.contextMenu(screen.getByTitle("Current"))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close all" }))
+
+    expect(currentApi.setActive).toHaveBeenCalled()
+    expect(currentApi.close).toHaveBeenCalledTimes(1)
+    expect(siblingApi.close).toHaveBeenCalledTimes(1)
+    expect(otherGroupApi.close).not.toHaveBeenCalled()
+  })
+
   it("shows copy path and hides close-other when there are no other tabs", () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, "clipboard", {
@@ -529,6 +558,7 @@ describe("ShadcnTab", () => {
     expect(screen.getByRole("menuitem", { name: "Copy path" })).toBeInTheDocument()
     expect(screen.queryByRole("menuitem", { name: "Copy absolute path" })).not.toBeInTheDocument()
     expect(screen.queryByRole("menuitem", { name: "Close other tabs" })).not.toBeInTheDocument()
+    expect(screen.getByRole("menuitem", { name: "Close all" })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("menuitem", { name: "Copy path" }))
     expect(writeText).toHaveBeenCalledWith("src/App.tsx")
