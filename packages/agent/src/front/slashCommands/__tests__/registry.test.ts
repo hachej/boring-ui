@@ -41,4 +41,11 @@ describe('createCommandRegistry', () => {
     reg.register(makeCommand('b'))
     expect(reg.list().map((c) => c.name)).toEqual(['c', 'a', 'b'])
   })
+
+  test('preserves click behavior metadata', () => {
+    const reg = createCommandRegistry([
+      { name: 'reload', description: 'Reload', clickBehavior: 'execute', handler: vi.fn() },
+    ])
+    expect(reg.get('reload')?.clickBehavior).toBe('execute')
+  })
 })

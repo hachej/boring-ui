@@ -4,6 +4,7 @@ export const builtinCommands: SlashCommand[] = [
   {
     name: 'clear',
     description: 'Hide messages from display',
+    clickBehavior: 'insert',
     handler(_, ctx) {
       ctx.clearMessages()
     },
@@ -11,6 +12,7 @@ export const builtinCommands: SlashCommand[] = [
   {
     name: 'reset',
     description: 'Delete current session and start fresh',
+    clickBehavior: 'insert',
     handler(_, ctx) {
       if (!globalThis.confirm('Reset this session? All messages will be cleared.')) return
       ctx.resetSession()
@@ -20,6 +22,7 @@ export const builtinCommands: SlashCommand[] = [
   {
     name: 'reload',
     description: 'Reload agent plugins',
+    clickBehavior: 'execute',
     handler(_, ctx) {
       // Use the banner status UX when the host has wired pluginUpdate;
       // otherwise fall back to printing the result inline in chat.
@@ -30,6 +33,7 @@ export const builtinCommands: SlashCommand[] = [
   {
     name: 'help',
     description: 'Show available commands',
+    clickBehavior: 'insert',
     handler(_, ctx) {
       const cmds = ctx.listCommands()
       if (cmds.length === 0) return 'No commands available.'

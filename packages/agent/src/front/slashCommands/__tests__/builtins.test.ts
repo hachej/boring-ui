@@ -72,6 +72,16 @@ describe('/help', () => {
   })
 })
 
+describe('builtin click behavior metadata', () => {
+  test('/reload is marked execute', () => {
+    expect(getBuiltin('reload').clickBehavior).toBe('execute')
+  })
+
+  test('/help is marked insert', () => {
+    expect(getBuiltin('help').clickBehavior).toBe('insert')
+  })
+})
+
 describe('/reload', () => {
   test('uses pluginUpdate.run (banner UX) when the host provides it', async () => {
     const run = vi.fn().mockResolvedValue('Plugins updated.')

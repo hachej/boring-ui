@@ -38,7 +38,20 @@ vi.mock('../primitives/conversation', () => ({
 vi.mock('../primitives/message', () => ({
   Message: ({ children, from }: any) => <div data-testid="message" data-from={from}>{children}</div>,
   MessageContent: ({ children }: any) => <div data-testid="message-content">{children}</div>,
-  MessageResponse: ({ children }: any) => <div data-testid="message-response">{children}</div>,
+  MessageResponse: ({ children, components }: any) => {
+    const text = typeof children === 'string' ? children : ''
+    const Anchor = components?.a ?? ((props: any) => <a {...props} />)
+    const parts = text.split(/(\[[^\]]+\]\(agent-slash:(?:execute|insert|disabled):[^\)]+\))/g)
+    return (
+      <div data-testid="message-response">
+        {parts.map((part: string, index: number) => {
+          const match = /^\[([^\]]+)\]\(agent-slash:(execute|insert|disabled):([^\)]+)\)$/.exec(part)
+          if (!match) return <span key={index}>{part}</span>
+          return <Anchor key={index} href={`agent-slash:${match[2]}:${match[3]}`}>{match[1]}</Anchor>
+        })}
+      </div>
+    )
+  },
 }))
 
 vi.mock('../primitives/reasoning', () => ({
@@ -67,7 +80,7 @@ vi.mock('../primitives/prompt-input', () => ({
   },
   PromptInputTextarea: (props: any) => {
     capturedTextareaProps = props
-    return <textarea data-testid="prompt-textarea" defaultValue={props.defaultValue} />
+    return <textarea data-testid="prompt-textarea" defaultValue={props.defaultValue} ref={props.ref} />
   },
   PromptInputFooter: ({ children }: any) => <div data-testid="prompt-footer">{children}</div>,
   PromptInputSubmit: ({ status, disabled, onStop }: any) => <button data-testid="prompt-submit" data-status={status} disabled={disabled} onClick={onStop} />,
@@ -978,6 +991,83 @@ describe('ChatPanel (shadcn)', () => {
         },
       },
     )
+  })
+
+  test('assistant /reload mention renders as clickable command chip and executes reload flow', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ reloaded: true }),
+    })
+    vi.stubGlobal('fetch', mockFetch)
+    mockUseAgentChat.mockReturnValue({
+      messages: [
+        {
+          id: 'a-reload',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'Please run /reload to apply plugin changes.' }],
+        },
+      ],
+      sendMessage: mockSendMessage,
+      setMessages: mockSetMessages,
+      stop: mockStop,
+      status: 'ready',
+      error: undefined,
+    })
+
+    render(<ChatPanel sessionId="sess-chip-reload" />)
+
+    fireEvent.click(screen.getByRole('button', { name: '/reload' }))
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/agent/reload', expect.objectContaining({ method: 'POST' }))
+    })
+    expect(mockSendMessage).not.toHaveBeenCalled()
+  })
+
+  test('unknown assistant slash text stays plain text', () => {
+    mockUseAgentChat.mockReturnValue({
+      messages: [
+        {
+          id: 'a-unknown',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'Try /unknown if you want.' }],
+        },
+      ],
+      sendMessage: mockSendMessage,
+      setMessages: mockSetMessages,
+      stop: mockStop,
+      status: 'ready',
+      error: undefined,
+    })
+
+    render(<ChatPanel sessionId="sess-chip-unknown" />)
+
+    expect(screen.queryByRole('button', { name: '/unknown' })).toBeNull()
+    expect(screen.getByTestId('message-response').textContent).toContain('Try /unknown if you want.')
+  })
+
+  test('insert-behavior assistant slash command populates composer without executing', () => {
+    mockUseAgentChat.mockReturnValue({
+      messages: [
+        {
+          id: 'a-help',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'Try /help to see commands.' }],
+        },
+      ],
+      sendMessage: mockSendMessage,
+      setMessages: mockSetMessages,
+      stop: mockStop,
+      status: 'ready',
+      error: undefined,
+    })
+
+    render(<ChatPanel sessionId="sess-chip-help" />)
+
+    fireEvent.click(screen.getByRole('button', { name: '/help' }))
+
+    expect((screen.getByTestId('prompt-textarea') as HTMLTextAreaElement).value).toBe('/help')
+    expect(mockSendMessage).not.toHaveBeenCalled()
   })
 
   test('extraCommands are available as slash commands', async () => {

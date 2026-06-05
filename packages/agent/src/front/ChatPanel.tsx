@@ -1,7 +1,7 @@
 import type { FileUIPart, UIMessage } from 'ai'
 import { isToolUIPart } from 'ai'
 import { motion } from 'motion/react'
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
 
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from '../shared/agentPluginEvents'
 import { ErrorCode } from '../shared/error-codes'
@@ -19,6 +19,7 @@ import { PI_AGENT_RUNTIME_CAPABILITIES } from '../shared/capabilities'
 import { builtinCommands } from './slashCommands/builtins'
 import { parseSlashCommand } from './slashCommands/parser'
 import { createCommandRegistry, type SlashCommand, type SlashCommandContext } from './slashCommands/registry'
+import type { MessageResponseProps } from './primitives/message'
 import { PluginUpdateStatus, type PluginUpdateState, type PluginRestartWarning, type PluginReloadDiagnostic } from './composer/PluginUpdateStatus'
 import {
   type ToolRendererOverrides,
@@ -256,6 +257,63 @@ function mergeSettledPiFallbacksInPlace(messages: UIMessage[], piMessages: UIMes
   }
 
   return out
+}
+
+const SLASH_COMMAND_MENTION_PATTERN = /(^|[^`\w])\/(\w[\w-]*)\b/g
+
+function escapeMarkdownLinkLabel(text: string): string {
+  return text.replace(/([\[\]\\])/g, '\\$1')
+}
+
+function decorateSlashCommandMentions(text: string, commands: SlashCommand[]): string {
+  if (!text.includes('/')) return text
+  const byName = new Map(commands.map((command) => [command.name, command]))
+  return text.replace(SLASH_COMMAND_MENTION_PATTERN, (match, prefix: string, name: string) => {
+    const command = byName.get(name)
+    if (!command || !command.clickBehavior) return match
+    const slashText = `/${name}`
+    return `${prefix}[${escapeMarkdownLinkLabel(slashText)}](agent-slash:${command.clickBehavior}:${name})`
+  })
+}
+
+function parseSlashCommandHref(href: string): { behavior: 'execute' | 'insert' | 'disabled'; name: string } | null {
+  const match = /^agent-slash:(execute|insert|disabled):([a-z0-9][\w-]*)$/i.exec(href)
+  if (!match) return null
+  return { behavior: match[1] as 'execute' | 'insert' | 'disabled', name: match[2] }
+}
+
+function SlashCommandMentionLink(
+  props: ComponentProps<'a'> & {
+    onSlashCommand?: (name: string, behavior: 'execute' | 'insert' | 'disabled') => void
+  },
+) {
+  const { href, onSlashCommand, className, children, ...rest } = props
+  const parsed = typeof href === 'string' ? parseSlashCommandHref(href) : null
+  if (!parsed) return <a href={href} className={className} {...rest}>{children}</a>
+
+  const interactive = parsed.behavior !== 'disabled'
+  return (
+    <button
+      type="button"
+      className={cn(
+        'inline-flex items-center rounded-full border px-2 py-0.5 font-medium no-underline transition-colors',
+        interactive
+          ? 'border-[color:var(--accent)]/30 bg-[color:var(--accent-soft)] text-[color:var(--accent)] hover:border-[color:var(--accent)]/50 hover:bg-[color:var(--accent-soft)]/80'
+          : 'cursor-default border-border/60 bg-muted/50 text-muted-foreground/70',
+        className,
+      )}
+      aria-disabled={interactive ? undefined : true}
+      title={interactive ? `Run ${children}` : `${children} is unavailable here`}
+      onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        if (!interactive) return
+        onSlashCommand?.(parsed.name, parsed.behavior)
+      }}
+    >
+      {children}
+    </button>
+  )
 }
 
 function composerNoticeForWarmup(status: ChatPanelWorkspaceWarmupStatus | undefined): { title: string; detail?: string; code?: string } | null {
@@ -804,6 +862,53 @@ export function ChatPanel(props: ChatPanelProps) {
       if (focus) textareaRef.current.focus()
     }
   }, [promptInputController])
+
+  const runSlashCommand = useCallback(async (name: string, args = '') => {
+    const command = registry.get(name)
+    if (!command || command.kind === 'skill') return false
+    const ctx: SlashCommandContext = {
+      sessionId,
+      clearMessages: () => setMessages([]),
+      resetSession: () => {
+        setMessages([])
+        fetch(
+          `/api/v1/agent/sessions/${encodeURIComponent(sessionId)}`,
+          requestHeaders
+            ? { method: 'DELETE', headers: requestHeaders }
+            : { method: 'DELETE' },
+        ).catch(() => {})
+        void onSessionReset?.()
+      },
+      listCommands: () => registry.list(),
+      reloadAgentPlugins,
+      pluginUpdate: { run: runPluginUpdate },
+    }
+    const result = await Promise.resolve(command.handler(args, ctx))
+    if (typeof result === 'string') {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: globalThis.crypto?.randomUUID?.() ?? String(Date.now()),
+          role: 'assistant' as const,
+          content: result,
+          parts: [{ type: 'text' as const, text: result }],
+        },
+      ])
+    }
+    return true
+  }, [onSessionReset, registry, reloadAgentPlugins, requestHeaders, runPluginUpdate, sessionId, setMessages])
+
+  const handleAssistantSlashCommand = useCallback((name: string, behavior: 'execute' | 'insert' | 'disabled') => {
+    if (behavior === 'disabled') return
+    if (behavior === 'insert') {
+      setComposerDraft(`/${name}`, true)
+      return
+    }
+    void runSlashCommand(name)
+  }, [runSlashCommand, setComposerDraft])
+  const assistantMessageComponents = useMemo<MessageResponseProps['components']>(() => ({
+    a: (props) => <SlashCommandMentionLink {...props} onSlashCommand={handleAssistantSlashCommand} />,
+  }), [handleAssistantSlashCommand])
   const {
     mentionState,
     slashQuery,
@@ -878,35 +983,7 @@ export function ChatPanel(props: ChatPanelProps) {
       }
       if (cmd) {
         dismissSlash()
-        const ctx: SlashCommandContext = {
-          sessionId,
-          clearMessages: () => setMessages([]),
-          resetSession: () => {
-            setMessages([])
-            fetch(
-              `/api/v1/agent/sessions/${encodeURIComponent(sessionId)}`,
-              requestHeaders
-                ? { method: 'DELETE', headers: requestHeaders }
-                : { method: 'DELETE' },
-            ).catch(() => {})
-            void onSessionReset?.()
-          },
-          listCommands: () => registry.list(),
-          reloadAgentPlugins,
-          pluginUpdate: { run: runPluginUpdate },
-        }
-        const result = await Promise.resolve(cmd.handler(parsed.args, ctx))
-        if (typeof result === 'string') {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: globalThis.crypto?.randomUUID?.() ?? String(Date.now()),
-              role: 'assistant' as const,
-              content: result,
-              parts: [{ type: 'text' as const, text: result }],
-            },
-          ])
-        }
+        await runSlashCommand(parsed.name, parsed.args)
         return
       }
     }
@@ -1318,8 +1395,11 @@ export function ChatPanel(props: ChatPanelProps) {
                             "prose-pre:my-0 prose-pre:rounded-none prose-pre:border-0",
                             "prose-pre:bg-transparent prose-pre:p-0",
                           )}
+                          components={role === 'assistant' ? assistantMessageComponents : undefined}
                         >
-                          {part.text}
+                          {role === 'assistant'
+                            ? decorateSlashCommandMentions(part.text, allCommands)
+                            : part.text}
                         </MessageResponse>
                       )
                     }

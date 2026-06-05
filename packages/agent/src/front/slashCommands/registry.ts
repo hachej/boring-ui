@@ -1,10 +1,13 @@
 export type SlashCommandHandler = (args: string, ctx: SlashCommandContext) => string | void | Promise<string | void>
 
+export type SlashCommandClickBehavior = 'execute' | 'insert' | 'disabled'
+
 export interface SlashCommand {
   name: string
   description: string
   /** 'skill' commands are forwarded to the PI agent as `skill: <name>\n\n<args>` instead of running locally. */
   kind?: 'local' | 'skill'
+  clickBehavior?: SlashCommandClickBehavior
   handler: SlashCommandHandler
 }
 
