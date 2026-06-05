@@ -176,6 +176,47 @@ describe("plugin discovery helpers", () => {
     }
   })
 
+  test("sandbox local records do not resolve workspace escapes", async () => {
+    const root = await makeTempDir("boring-cli-plugin-sandbox-escape-")
+    const workspaceRoot = join(root, "host-workspace")
+    const evilPlugin = join(root, "evil")
+    const safePlugin = join(workspaceRoot, "plugins", "relative-metadata-escape")
+
+    await writeRuntimePlugin(evilPlugin, "evil-plugin", "Evil prompt")
+    await writeRuntimePlugin(safePlugin, "relative-metadata-escape", "Safe prompt")
+    await writeRecordsFile(join(workspaceRoot, ".pi", "boring-plugin-sources.json"), [
+      {
+        id: "workspace-prefix-escape",
+        kind: "local",
+        scope: "local",
+        source: "/workspace/../evil",
+        rootDir: "/workspace/../evil",
+        installedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "relative-metadata-escape",
+        kind: "local",
+        scope: "local",
+        source: "/workspace/plugins/relative-metadata-escape",
+        rootDir: "/workspace/plugins/relative-metadata-escape",
+        rootDirRelativeToWorkspace: "../evil",
+        sourceRelativeToWorkspace: "../evil",
+        installedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ])
+
+    try {
+      const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot: join(root, "global-extensions") })
+      expect(snapshot.systemPromptAppend).toBeUndefined()
+      const roots = resolveCliBoringPluginDirs(workspaceRoot, { globalRoot: join(root, "global-extensions") })
+        .map((source) => typeof source === "string" ? source : source.rootDir)
+      expect(roots).not.toContain(resolve(evilPlugin))
+      expect(roots).not.toContain(resolve(safePlugin))
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   test("plugin asset manager lists global plugins plus the current workspace's local plugins", async () => {
     const root = await makeTempDir("boring-cli-plugin-manager-")
     const globalRoot = join(root, "global-extensions")

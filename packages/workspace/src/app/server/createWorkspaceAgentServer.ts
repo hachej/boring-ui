@@ -407,7 +407,8 @@ export async function provisionWorkspaceAgentServer(opts: {
 function uniquePluginSources(sources: BoringPluginSource[]): BoringPluginSource[] {
   const byRoot = new Map<string, BoringPluginSource>()
   for (const source of sources) {
-    if (!byRoot.has(source.rootDir)) byRoot.set(source.rootDir, source)
+    const existing = byRoot.get(source.rootDir)
+    if (!existing || (!existing.workspaceId && source.workspaceId)) byRoot.set(source.rootDir, source)
   }
   return [...byRoot.values()]
 }
@@ -426,7 +427,7 @@ function collectBoringPluginSources(
     }
   })
   return uniquePluginSources([
-    { rootDir: join(workspaceRoot, ".pi", "extensions"), kind: "external" },
+    { rootDir: join(workspaceRoot, ".pi", "extensions"), kind: "external", workspaceId: workspaceRoot },
     { rootDir: join(homedir(), ".pi", "agent", "extensions"), kind: "external" },
     ...pluginRoots.map((rootDir): BoringPluginSource => ({ rootDir, kind: "internal" })),
     ...additionalPluginDirs.map((entry): BoringPluginSource => typeof entry === "string"

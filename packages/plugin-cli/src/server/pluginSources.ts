@@ -191,9 +191,12 @@ function pathRelativeToWorkspace(workspaceRoot: string | undefined, value: strin
 
 function resolveWorkspacePath(paths: PluginSourceScopePaths, value: string, relativeValue?: string): string {
   if (paths.scope !== "local" || !paths.workspaceRoot) return value
-  if (relativeValue && isWorkspaceRelativePath(relativeValue)) return resolve(paths.workspaceRoot, relativeValue)
+  if (relativeValue) return isWorkspaceRelativePath(relativeValue) ? resolve(paths.workspaceRoot, relativeValue) : value
   if (value === "/workspace") return resolve(paths.workspaceRoot)
-  if (value.startsWith("/workspace/")) return resolve(paths.workspaceRoot, value.slice("/workspace/".length))
+  if (value.startsWith("/workspace/")) {
+    const workspaceRelativePath = value.slice("/workspace/".length)
+    return isWorkspaceRelativePath(workspaceRelativePath) ? resolve(paths.workspaceRoot, workspaceRelativePath) : value
+  }
   return value
 }
 
