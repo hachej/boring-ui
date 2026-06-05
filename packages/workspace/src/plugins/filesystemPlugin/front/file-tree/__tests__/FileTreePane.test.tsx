@@ -12,6 +12,7 @@ const mockDeleteFile = vi.fn()
 const mockFileSearch = vi.fn()
 
 const mockGetTree = vi.fn()
+const mockGetGitUrlMetadata = vi.fn()
 
 vi.mock("../../data", () => ({
   useFileList: (dir: string) => mockFileList(dir),
@@ -21,6 +22,7 @@ vi.mock("../../data", () => ({
   useDeleteFile: () => ({ mutateAsync: mockDeleteFile }),
   useFileSearch: (query: string, limit?: number) => mockFileSearch(query, limit),
   useDataClient: () => ({ getTree: mockGetTree }),
+  useGitUrlMetadata: (path: string | null) => mockGetGitUrlMetadata(path),
   useApiBaseUrl: () => "/api",
 }))
 
@@ -171,6 +173,7 @@ beforeEach(() => {
     isLoading: false,
     error: undefined,
   })
+  mockGetGitUrlMetadata.mockImplementation(() => ({ data: { enabled: false } }))
 })
 
 describe("FileTreePane", () => {
@@ -418,6 +421,37 @@ describe("FileTreePane", () => {
     expect(screen.getByRole("menuitem", { name: "Rename" })).toBeInTheDocument()
     expect(screen.getByRole("menuitem", { name: "Delete" })).toBeInTheDocument()
     expect(screen.getByRole("menuitem", { name: "Copy path" })).toBeInTheDocument()
+  })
+
+  it("shows Copy Git URL when git metadata is available for a file", async () => {
+    mockGetGitUrlMetadata.mockImplementation((path: string | null) => ({
+      data: path === "index.ts"
+        ? { enabled: true, url: "https://github.com/hachej/boring-ui/blob/main/index.ts" }
+        : { enabled: false },
+    }))
+
+    render(<FileTreePane />, { wrapper })
+    await waitFor(() => expect(screen.getByText("index.ts")).toBeInTheDocument())
+
+    fireEvent.contextMenu(screen.getByText("index.ts"))
+
+    expect(screen.getByRole("menuitem", { name: "Copy Git URL" })).toBeInTheDocument()
+  })
+
+  it("shows a clear reason instead of Copy Git URL when unavailable", async () => {
+    mockGetGitUrlMetadata.mockImplementation((path: string | null) => ({
+      data: path === "index.ts"
+        ? { enabled: false, reason: "Workspace is not inside a Git repository." }
+        : { enabled: false },
+    }))
+
+    render(<FileTreePane />, { wrapper })
+    await waitFor(() => expect(screen.getByText("index.ts")).toBeInTheDocument())
+
+    fireEvent.contextMenu(screen.getByText("index.ts"))
+
+    expect(screen.queryByRole("menuitem", { name: "Copy Git URL" })).not.toBeInTheDocument()
+    expect(screen.getByText("Workspace is not inside a Git repository.")).toBeInTheDocument()
   })
 
   it("delete context action shows AlertDialog confirmation", async () => {
@@ -828,6 +862,29 @@ describe("FileTreePane", () => {
       fireEvent.click(screen.getByRole("menuitem", { name: "Copy path" }))
 
       await waitFor(() => expect(writeText).toHaveBeenCalledWith("index.ts"))
+    })
+
+    it("copies the git url when Copy Git URL is clicked", async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined)
+      Object.defineProperty(globalThis.navigator, "clipboard", {
+        value: { writeText },
+        configurable: true,
+      })
+      mockGetGitUrlMetadata.mockImplementation((path: string | null) => ({
+        data: path === "index.ts"
+          ? { enabled: true, url: "https://github.com/hachej/boring-ui/blob/main/index.ts" }
+          : { enabled: false },
+      }))
+
+      render(<FileTreePane />, { wrapper })
+      await waitFor(() => expect(screen.getByText("index.ts")).toBeInTheDocument())
+
+      fireEvent.contextMenu(screen.getByText("index.ts"))
+      fireEvent.click(screen.getByRole("menuitem", { name: "Copy Git URL" }))
+
+      await waitFor(() =>
+        expect(writeText).toHaveBeenCalledWith("https://github.com/hachej/boring-ui/blob/main/index.ts"),
+      )
     })
 
     it("shows a success toast after copying", async () => {

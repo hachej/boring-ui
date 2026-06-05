@@ -18,6 +18,7 @@ import {
   useDeleteFile,
   useFileSearch,
   useDataClient,
+  useGitUrlMetadata,
 } from "../data"
 import type { FileEntry } from "../data/types"
 import type { FileTreeNode, FileTreeEditState } from "./FileTree"
@@ -170,6 +171,10 @@ export function FileTreeView({
   const [treeHeight, setTreeHeight] = useState(400)
 
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null)
+  const gitUrlPath = ctxMenu && !ctxMenu.isBackground && ctxMenu.node.kind === "file"
+    ? ctxMenu.node.path
+    : null
+  const { data: gitUrlMetadata } = useGitUrlMetadata(gitUrlPath)
   const [deleteTarget, setDeleteTarget] = useState<FileTreeNode | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const [selectedPath, setSelectedPath] = useState<string | null>(
@@ -575,6 +580,14 @@ export function FileTreeView({
     toast.success({ title: "Path copied", description: ctxMenu.node.path })
   })
 
+  const handleCopyGitUrl = ctxAction(async () => {
+    if (!gitUrlMetadata?.enabled || !gitUrlMetadata.url) {
+      throw new Error(gitUrlMetadata?.reason ?? "Git URL unavailable")
+    }
+    await copyToClipboard(gitUrlMetadata.url)
+    toast.success({ title: "Git URL copied", description: gitUrlMetadata.url })
+  })
+
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteTarget) return
     const target = deleteTarget
@@ -716,6 +729,15 @@ export function FileTreeView({
               <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleCopyPath}>
                 Copy path
               </Button>
+              {gitUrlMetadata?.enabled ? (
+                <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleCopyGitUrl}>
+                  Copy Git URL
+                </Button>
+              ) : gitUrlMetadata?.reason ? (
+                <div className="px-2 py-1 text-xs text-muted-foreground" aria-live="polite">
+                  {gitUrlMetadata.reason}
+                </div>
+              ) : null}
             </>
           )}
         </div>

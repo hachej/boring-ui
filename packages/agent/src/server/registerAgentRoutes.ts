@@ -40,6 +40,7 @@ import { catalogRoutes } from './http/routes/catalog'
 import { readyStatusRoutes } from './http/routes/readyStatus'
 import type { ReloadHookResult } from './http/routes/reload'
 import { searchRoutes } from './http/routes/search'
+import { gitRoutes } from './http/routes/git'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
 import type { AgentHarness } from '../shared/harness'
@@ -878,6 +879,11 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   await app.register(searchRoutes, {
     getFileSearch: async (request) => (await getBindingForRequest(request)).runtimeBundle.fileSearch,
   })
+  await app.addHook('preHandler', async (request) => {
+    const binding = await getBindingForRequest(request)
+    ;(request as FastifyRequest & { workspaceRoot?: string }).workspaceRoot = binding.runtimeBundle.workspace.root
+  })
+  await app.register(gitRoutes)
   await app.register(chatRoutes, {
     getRuntime: async (request) => {
       const binding = await getBindingForRequest(request)
