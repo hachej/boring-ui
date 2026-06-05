@@ -189,28 +189,34 @@ function pathRelativeToWorkspace(workspaceRoot: string | undefined, value: strin
   return rel.split("\\").join("/")
 }
 
-function resolveWorkspacePath(paths: PluginSourceScopePaths, value: string, relativeValue?: string): string {
+function resolveWorkspacePath(paths: PluginSourceScopePaths, value: string, relativeValue?: string): string | null {
   if (paths.scope !== "local" || !paths.workspaceRoot) return value
-  if (relativeValue) return isWorkspaceRelativePath(relativeValue) ? resolve(paths.workspaceRoot, relativeValue) : value
+  if (relativeValue !== undefined) return isWorkspaceRelativePath(relativeValue) ? resolve(paths.workspaceRoot, relativeValue) : null
   if (value === "/workspace") return resolve(paths.workspaceRoot)
   if (value.startsWith("/workspace/")) {
     const workspaceRelativePath = value.slice("/workspace/".length)
-    return isWorkspaceRelativePath(workspaceRelativePath) ? resolve(paths.workspaceRoot, workspaceRelativePath) : value
+    return isWorkspaceRelativePath(workspaceRelativePath) ? resolve(paths.workspaceRoot, workspaceRelativePath) : null
   }
   return value
 }
 
-function normalizeRecordForScope(paths: PluginSourceScopePaths, record: PluginSourceRecord): PluginSourceRecord {
+function normalizeRecordForScope(paths: PluginSourceScopePaths, record: PluginSourceRecord): PluginSourceRecord | null {
   if (record.scope !== "local") return record
+  const rootDir = resolveWorkspacePath(paths, record.rootDir, record.rootDirRelativeToWorkspace)
+  const source = resolveWorkspacePath(paths, record.source, record.sourceRelativeToWorkspace)
+  if (!rootDir || !source) return null
   return {
     ...record,
-    rootDir: resolveWorkspacePath(paths, record.rootDir, record.rootDirRelativeToWorkspace),
-    source: resolveWorkspacePath(paths, record.source, record.sourceRelativeToWorkspace),
+    rootDir,
+    source,
   }
 }
 
 export function readPluginSourceRecords(paths: PluginSourceScopePaths): PluginSourceRecord[] {
-  return readRecordsFile(paths.recordsPath).sources.map((record) => normalizeRecordForScope(paths, record))
+  return readRecordsFile(paths.recordsPath).sources.flatMap((record) => {
+    const normalized = normalizeRecordForScope(paths, record)
+    return normalized ? [normalized] : []
+  })
 }
 
 export function readPluginSourceRecordsForRoots(opts: {
@@ -241,13 +247,14 @@ function removeRecord(paths: PluginSourceScopePaths, target: string): PluginSour
     return record.id === target
       || record.source === target
       || record.rootDir === resolvedTarget
-      || normalized.source === target
-      || normalized.rootDir === resolvedTarget
+      || normalized?.source === target
+      || normalized?.rootDir === resolvedTarget
   })
   if (index === -1) return null
   const [record] = file.sources.splice(index, 1)
   writeRecordsFile(paths.recordsPath, file)
-  return record ? normalizeRecordForScope(paths, record) : null
+  if (!record) return null
+  return normalizeRecordForScope(paths, record) ?? record
 }
 
 function resolveMaybePath(value: string): string {
