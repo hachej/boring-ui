@@ -362,6 +362,11 @@ export function WorkspaceAgentFront<
     failed: false,
   }))
   const [freshEmptySession, setFreshEmptySession] = useState<{ workspaceId: string; id: string } | null>(null)
+  const [requestedSessionState, setRequestedSessionState] = useState<{
+    workspaceId: string
+    sessionId: string
+    missing: boolean
+  } | null>(null)
   const workspaceWarmupStatus = workspaceWarmupState.workspaceId === workspaceId
     ? workspaceWarmupState.status
     : PREPARING_WARMUP_STATUS
@@ -601,6 +606,7 @@ export function WorkspaceAgentFront<
     setInitialRemoteSessionCreating({ workspaceId, creating: false })
     setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
     setFreshEmptySession(null)
+    setRequestedSessionState(null)
   }, [workspaceId])
 
   useEffect(() => {
@@ -749,6 +755,38 @@ export function WorkspaceAgentFront<
     onActiveSessionIdChange?.(effectiveActiveSessionId ?? null)
   }, [effectiveActiveSessionId, onActiveSessionIdChange, remoteSessionsPending])
 
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const command = (event as CustomEvent).detail as { kind?: unknown; params?: Record<string, unknown> } | undefined
+      if (command?.kind !== "openSession") return
+      const sessionId = typeof command.params?.sessionId === "string" ? command.params.sessionId : null
+      if (!sessionId) return
+      const sessionExists = resolvedSessions.some((session) => session.id === sessionId)
+      if (!sessionExists) {
+        setRequestedSessionState({ workspaceId, sessionId, missing: true })
+        setNavOpen(true)
+        return
+      }
+      setRequestedSessionState({ workspaceId, sessionId, missing: false })
+      resolvedSwitch(sessionId)
+      setNavOpen(true)
+    }
+    globalThis.addEventListener?.(UI_COMMAND_EVENT, handler)
+    return () => globalThis.removeEventListener?.(UI_COMMAND_EVENT, handler)
+  }, [resolvedSessions, resolvedSwitch, setNavOpen, workspaceId])
+
+  useEffect(() => {
+    setRequestedSessionState((current) => {
+      if (!current || current.workspaceId !== workspaceId) return current
+      if (current.missing) {
+        return resolvedSessions.some((session) => session.id === current.sessionId)
+          ? { workspaceId, sessionId: current.sessionId, missing: false }
+          : current
+      }
+      return effectiveActiveSessionId === current.sessionId ? null : current
+    })
+  }, [effectiveActiveSessionId, resolvedSessions, workspaceId])
+
   const workbenchBlocked = workspaceWarmupStatus.status !== "ready"
   const workbenchOverlay = workbenchBlocked ? <WorkbenchWarmupOverlay status={workspaceWarmupStatus} /> : undefined
 
@@ -868,7 +906,6 @@ export function WorkspaceAgentFront<
             <ChatSessionTransitionState />
           ) : (
             <ChatLayout
-              className={className}
               nav={effectiveNavOpen ? "session-list" : null}
               navParams={{
                 sessions: resolvedSessions,
@@ -905,6 +942,8 @@ export function WorkspaceAgentFront<
                 setSurfaceOpen(true)
                 setWorkbenchLeftOpen(true)
               } : undefined}
+              className={className}
+              statusBanner={requestedSessionState?.workspaceId === workspaceId ? requestedSessionState : null}
             />
           )}
         </div>

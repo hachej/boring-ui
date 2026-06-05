@@ -30,6 +30,7 @@ const KNOWN_KINDS = new Set([
   "openFile",
   "openSurface",
   "openPanel",
+  "openSession",
   "navigateToLine",
   "expandToFile",
   "showNotification",

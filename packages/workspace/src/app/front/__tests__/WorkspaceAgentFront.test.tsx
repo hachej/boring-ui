@@ -824,6 +824,51 @@ describe("WorkspaceAgentFront", () => {
     )
   })
 
+  it("opens a referenced session through the workspace openSession command", async () => {
+    render(
+      <WorkspaceAgentFront
+        workspaceId="session-link-workspace"
+        chatPanel={ChatPanel}
+        sessions={[{ id: "sess-source", title: "Source" }, { id: "sess-target", title: "Target" }]}
+        activeSessionId="sess-source"
+        persistenceEnabled={false}
+      />,
+    )
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent(UI_COMMAND_EVENT, {
+        detail: { kind: "openSession", params: { sessionId: "sess-target" } satisfies UiCommand["params"] },
+      }))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Session browser")).toHaveAttribute("aria-hidden", "false")
+      expect(screen.getByText("Target")).toBeInTheDocument()
+    })
+  })
+
+  it("shows a clear missing-session banner when a referenced session is unavailable", async () => {
+    render(
+      <WorkspaceAgentFront
+        workspaceId="missing-session-link-workspace"
+        chatPanel={ChatPanel}
+        sessions={[{ id: "sess-source", title: "Source" }]}
+        activeSessionId="sess-source"
+        persistenceEnabled={false}
+      />,
+    )
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent(UI_COMMAND_EVENT, {
+        detail: { kind: "openSession", params: { sessionId: "sess-missing" } satisfies UiCommand["params"] },
+      }))
+    })
+
+    expect(await screen.findByText(/was not found in this workspace\./)).toBeInTheDocument()
+    expect(screen.getByText("sess-missing")).toBeInTheDocument()
+    expect(screen.getByLabelText("Session browser")).toHaveAttribute("aria-hidden", "false")
+  })
+
   it("cancels pending session-scoped attention when switching sessions", async () => {
     const user = userEvent.setup()
     const onSwitchSession = vi.fn()

@@ -372,6 +372,13 @@ export function ChatLayout(props: ChatLayoutProps) {
               chatCollapsed ? "opacity-0" : "opacity-100",
             )}
           >
+            {props.statusBanner ? (
+              <div className="border-b border-[color:oklch(from_var(--border)_l_c_h/0.6)] bg-muted/40 px-4 py-2 text-sm text-foreground">
+                {props.statusBanner.missing
+                  ? <>Session <code className="rounded bg-background px-1 py-0.5 text-xs">{props.statusBanner.sessionId}</code> was not found in this workspace.</>
+                  : <>Opening session <code className="rounded bg-background px-1 py-0.5 text-xs">{props.statusBanner.sessionId}</code>…</>}
+              </div>
+            ) : null}
             <PanelSlot id={centerId} params={props.centerParams} />
           </div>
           {!chatCollapsed ? (

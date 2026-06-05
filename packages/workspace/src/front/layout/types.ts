@@ -1,5 +1,10 @@
 import type { ReactNode } from "react"
 
+export interface ChatLayoutStatusBanner {
+  sessionId: string
+  missing: boolean
+}
+
 export interface IdeLayoutProps {
   sidebar?: string
   center?: string
@@ -23,4 +28,5 @@ export interface ChatLayoutProps {
   surfaceButtonBottomOffset?: number
   onOpenSidebar?: () => void
   className?: string
+  statusBanner?: ChatLayoutStatusBanner | null
 }

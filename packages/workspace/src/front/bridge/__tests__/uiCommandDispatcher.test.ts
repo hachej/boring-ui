@@ -121,6 +121,14 @@ describe("dispatchUiCommand", () => {
     }
   })
 
+  it("openSession is a known command kind but does not touch the workbench dispatcher", () => {
+    const c = ctx()
+    expect(() => dispatchUiCommand({ kind: "openSession", params: { sessionId: "sess-123" } }, c)).not.toThrow()
+    expect(c.__surface.__opened).toEqual([])
+    expect(c.__surface.__panels).toEqual([])
+    expect(c.__surface.__surfaces).toEqual([])
+  })
+
   it("openPanel calls surface.openPanel with the full config", () => {
     const c = ctx()
     dispatchUiCommand(

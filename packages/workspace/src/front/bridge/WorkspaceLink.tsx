@@ -7,6 +7,7 @@ export type WorkspaceLinkTarget =
   | { kind: "openSurface"; surfaceKind: string; target: string; meta?: Record<string, unknown> }
   | { kind: "openPanel"; id: string; component: string; title?: string; params?: Record<string, unknown> }
   | { kind: "expandToFile"; path: string }
+  | { kind: "openSession"; sessionId: string }
 
 export interface WorkspaceLinkProps {
   to: WorkspaceLinkTarget
@@ -35,6 +36,8 @@ export function workspaceLinkCommand(to: WorkspaceLinkTarget): UiCommand {
       }
     case "expandToFile":
       return { kind: "expandToFile", params: { path: to.path } }
+    case "openSession":
+      return { kind: "openSession", params: { sessionId: to.sessionId } }
   }
 }
 
