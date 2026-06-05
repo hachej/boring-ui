@@ -5,6 +5,31 @@ description: Create, extend, or update boring-ui workspace plugins, including ho
 
 # Boring Plugin Authoring
 
+## STEP -1 — Clarify vague new-plugin requests
+
+When the user asks for a **new plugin** but the request is broad or underspecified
+(e.g. "make me a plugin", "build a dashboard plugin", "make this plugin UI more complex"),
+ask for the missing product details **before scaffolding or editing**. Do not silently
+invent the domain, data source, navigation behavior, or visual direction.
+
+If the `ask_user` tool is installed, prefer it for this clarification so the user gets
+a structured form in the Workspace Questions pane. Ask only for decisions that affect
+implementation, such as:
+
+- plugin purpose and target user
+- data source or sample data to use
+- whether it needs a persistent left tab, a slash command, a file opener/surface resolver, or some combination
+- main panels/views to include
+- desired visual tone and complexity
+- any must-have interactions or constraints
+- a final free-text `remarks` / `notes` field for anything the structured fields missed
+
+When using `ask_user`, always include that final `remarks` field as a `textarea` at
+the end of the form. It can be optional, but it must be present.
+
+If `ask_user` is not available, ask the same concise questions in chat and include a
+final "Anything else / remarks?" question. Once the user answers, proceed to STEP 0.
+
 ## STEP 0 — Always scaffold first
 
 Don't write plugin files from scratch. The CLI scaffold produces a known-correct
@@ -209,6 +234,19 @@ Notes:
 
 Plugins have three different navigation surfaces. Pick the one that matches the
 user intent; do not register all of them by default.
+
+**Left pane vs main pane rule:** if a plugin has a persistent `leftTabs` entry
+and a main workbench panel, create **two separate components**:
+
+- `LeftPane` / sidebar component: compact navigator, filters, summaries, recent
+  items, buttons, and quick actions. It lives in the narrow left workbench.
+- `MainPane` / center component: full detail view with tables, charts, editors,
+  previews, and multi-step workflows.
+
+Do **not** register the same full `MainPane` component as both `panels[].component`
+and `leftTabs[].panelId`. That duplicates the center UI in the narrow sidebar and
+makes plugins feel broken. Left-pane buttons can open the center pane with
+`PaneProps.containerApi.addPanel({ id, component: "<plugin>.panel", title, params })`.
 
 | User intent | Use | Why |
 |---|---|---|
