@@ -762,9 +762,11 @@ export async function createWorkspaceAgentServer(
   })
   await boringAssetManager.load()
   await runtimeBackendRegistry.reloadFromLoadedPlugins(boringAssetManager.inspectLoaded())
-  app.addHook("onClose", async () => {
-    await runtimeBackendRegistry.close()
-  })
+  if (typeof app.addHook === "function") {
+    app.addHook("onClose", async () => {
+      await runtimeBackendRegistry.close()
+    })
+  }
   await app.register(uiRoutes, { bridge, preserveStateKeys: pluginCollection.preservedUiStateKeys })
   await app.register(boringPluginRoutes, {
     manager: boringAssetManager,

@@ -93,4 +93,25 @@ describe("runtime backend integration with canonical reload", () => {
       app = null
     }
   }, 20_000)
+
+  test("closes runtime backend registry when the Fastify app closes", async () => {
+    const workspaceRoot = await tempRoot("runtime-backend-close-")
+    const state = globalThis as typeof globalThis & { __runtimeBackendCloseHookDisposeCount?: number }
+    state.__runtimeBackendCloseHookDisposeCount = 0
+    const app = await createWorkspaceAgentServer({ workspaceRoot, mode: "direct", logger: false, provisionWorkspace: false })
+    await writeExternalPlugin(workspaceRoot, "close-plugin", `
+      export default {
+        routes(router) { router.get("/value", () => ({ ok: true })) },
+        dispose() { globalThis.__runtimeBackendCloseHookDisposeCount++ },
+      }
+    `)
+    try {
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(reload.statusCode).toBe(200)
+      expect((await app.inject({ method: "GET", url: "/api/v1/plugins/close-plugin/value" })).statusCode).toBe(200)
+    } finally {
+      await app.close()
+    }
+    expect(state.__runtimeBackendCloseHookDisposeCount).toBe(1)
+  }, 20_000)
 })
