@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { RefreshCw } from "lucide-react"
+import { Download, RefreshCw } from "lucide-react"
 import { ErrorState, Spinner } from "@hachej/boring-ui-kit"
 import { useApiBaseUrl, useWorkspaceRequestId } from "../data/DataProvider"
 import { cn } from "../../../../front/lib/utils"
@@ -90,20 +90,21 @@ export function MediaViewer({ path, kind, reloadKey = 0, onReload, className }: 
             type="button"
             onClick={onReload}
             disabled={!onReload}
-            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+            className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
             aria-label={`Reload ${filename(path)}`}
             title="Reload preview"
           >
             <RefreshCw className="size-3.5" />
-            <span>Reload</span>
           </button>
           {objectUrl ? (
             <a
               href={objectUrl}
               download={filename(path)}
-              className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label={`Download ${filename(path)}`}
+              title="Download"
             >
-              Download
+              <Download className="size-3.5" />
             </a>
           ) : null}
         </div>
