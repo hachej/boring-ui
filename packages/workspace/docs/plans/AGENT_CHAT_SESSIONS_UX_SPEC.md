@@ -36,7 +36,7 @@ Single pane:
 Session row click          → replace active pane session
 Session row external icon  → open/focus separate pane
 Pane close                 → remove view only
-Border/edge +              → create new session to the right
+Divider/edge +             → create new session to the right
 ```
 
 ## Pane controls
@@ -47,7 +47,21 @@ Border/edge +              → create new session to the right
 - With one pane, the `+` floats on the pane's right edge.
 - With adjacent panes, the `+` sits on the divider between them.
 - Implement the `+` from the chat-stage/DockView overlay layer so it can straddle the divider without being clipped by pane overflow.
-- Active pane indication must be neutral but visible: full-pane hairline or header treatment.
+- Active pane indication uses a neutral **focus frame**:
+  - a 1px inset border around the active pane;
+  - a slightly darker native header/control pill;
+  - no colored stripe, no orange, no dimming inactive content.
+
+```text
+active pane                         inactive pane
+┌══════════════════════════════┐    ┌──────────────────────┐
+║ [grip] [x]                   ║    │ [grip] [x]           │
+║                              ║    │                      │
+║ composer                     ║    │ composer             │
+└══════════════════════════════┘    └──────────────────────┘
+```
+
+The frame should read like keyboard focus for a pro editor: obvious when scanning, quiet when reading.
 
 ## Session drawer
 
