@@ -136,6 +136,29 @@ describe("FileTree", () => {
     expect(screen.getByText("package.json")).toBeInTheDocument()
   })
 
+  it("renders a filter-specific empty state when searchQuery matches no files", () => {
+    render(
+      <FileTree files={sampleFiles} searchQuery="does-not-exist" height={300} />,
+    )
+
+    expect(screen.getByText("No matching files")).toBeInTheDocument()
+    expect(screen.getByText("No files match “does-not-exist”.")).toBeInTheDocument()
+    expect(screen.queryByText("No files")).not.toBeInTheDocument()
+  })
+
+  it("shows files again after clearing the searchQuery", () => {
+    const { rerender } = render(
+      <FileTree files={sampleFiles} searchQuery="does-not-exist" height={300} />,
+    )
+
+    expect(screen.getByText("No matching files")).toBeInTheDocument()
+
+    rerender(<FileTree files={sampleFiles} searchQuery="" height={300} />)
+
+    expect(screen.queryByText("No matching files")).not.toBeInTheDocument()
+    expect(screen.getByText("package.json")).toBeInTheDocument()
+  })
+
   it("renders 1000+ files without crashing", () => {
     const manyFiles: FileTreeNode[] = Array.from({ length: 1000 }, (_, i) => ({
       name: `file-${i}.ts`,
