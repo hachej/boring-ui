@@ -13,6 +13,8 @@ import type {
   BoringPluginFrontTarget,
   BoringPluginFrontTargetResolver,
   BoringPluginListEntry,
+  BoringPluginSource,
+  BoringPluginSourceInput,
   BoringServerPluginManifest,
   PluginRestartSurface,
 } from "./types"
@@ -38,7 +40,7 @@ interface LoadedPluginRecord extends BoringServerPluginManifest {
 }
 
 export interface BoringPluginAssetManagerOptions {
-  pluginDirs: string[]
+  pluginDirs: BoringPluginSourceInput[]
   /**
    * Root directory for per-plugin `.error` sidecar files written by the
    * asset manager and read by verify-plugin. Defaults to `<cwd>/.pi/extensions`.
@@ -77,6 +79,7 @@ export interface LoadedBoringPluginInspection {
   rootDir: string
   frontPath?: string
   frontTarget?: BoringPluginFrontTarget
+  source: BoringPluginSource
 }
 
 export interface LoadedBoringPluginPiSnapshot {
@@ -175,6 +178,7 @@ function pluginSignature(plugin: BoringServerPluginManifest): string {
     .update(JSON.stringify(plugin.boring))
     .update(JSON.stringify(plugin.pi ?? {}))
     .update(plugin.version)
+    .update(JSON.stringify(plugin.source))
     .update(plugin.frontPath ?? "")
     .update(pluginFileSignature(plugin.frontPath))
     .update(directorySignature(frontSignatureRoot(plugin)))
@@ -217,7 +221,7 @@ function computeRequiresRestart(
 }
 
 export class BoringPluginAssetManager {
-  private readonly pluginDirs: string[]
+  private readonly pluginDirs: BoringPluginSourceInput[]
   private readonly errorRoot: string
   private readonly frontTargetResolver?: BoringPluginFrontTargetResolver
   private readonly includeLegacyFrontUrl: boolean
@@ -259,6 +263,7 @@ export class BoringPluginAssetManager {
       version: plugin.version,
       revision: plugin.revision,
       rootDir: plugin.rootDir,
+      source: plugin.source,
       ...(plugin.frontPath ? { frontPath: plugin.frontPath } : {}),
       ...(plugin.frontTarget ? { frontTarget: plugin.frontTarget } : {}),
     }))

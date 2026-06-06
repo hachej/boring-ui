@@ -44,6 +44,18 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir
 }
 
+async function writeRuntimePlugin(root: string, id: string, prompt: string): Promise<void> {
+  await mkdir(join(root, "front"), { recursive: true })
+  await mkdir(join(root, "server"), { recursive: true })
+  await writeFile(join(root, "front", "index.tsx"), "export default function PluginPane() { return null }\n", "utf8")
+  await writeFile(join(root, "server", "index.js"), `export default { id: ${JSON.stringify(id)}, systemPrompt: ${JSON.stringify(prompt)} }\n`, "utf8")
+  await writeFile(join(root, "package.json"), JSON.stringify({
+    name: id,
+    version: "1.0.0",
+    boring: { front: "front/index.tsx", server: "server/index.js" },
+  }), "utf8")
+}
+
 function getProvisionedNodePackage(collection: ReturnType<typeof collectWorkspaceAgentServerPlugins>, id: string) {
   return collection.runtimePlugins
     .flatMap((plugin) => plugin.provisioning?.nodePackages ?? [])
@@ -552,6 +564,85 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     try {
       const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: { sessionId: "missing" } })
       expect(reload.statusCode).toBe(200)
+    } finally {
+      await app.close()
+    }
+  }, 15_000)
+
+  test("POST /api/v1/agent/reload returns diagnostics for malformed plugin rebuilds", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-reload-diagnostics-")
+    const pluginRoot = await makeTempDir("boring-workspace-reload-diagnostic-plugin-")
+    await writeRuntimePlugin(pluginRoot, "reload-diagnostic-plugin", "OK")
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      provisionWorkspace: false,
+      defaultPluginPackages: [pluginRoot],
+    })
+
+    try {
+      await writeFile(join(pluginRoot, "package.json"), "{ not json", "utf8")
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: { sessionId: "missing" } })
+      expect(reload.statusCode).toBe(200)
+      const body = reload.json() as {
+        ok: boolean
+        diagnostics?: Array<{ source: string; message: string; pluginId?: string }>
+      }
+      expect(body.ok).toBe(true)
+      expect(body.diagnostics?.length).toBeGreaterThan(0)
+      expect(body.diagnostics).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          source: expect.stringContaining("boring plugin asset scan"),
+          message: expect.stringMatching(/JSON|package\.json|Unexpected/),
+        }),
+        expect.objectContaining({
+          source: expect.stringContaining(`directory (${pluginRoot})`),
+          message: expect.stringContaining("package.json"),
+        }),
+      ]))
+    } finally {
+      await app.close()
+    }
+  }, 15_000)
+
+  test("POST /api/v1/agent/reload returns restart_warnings when a server entry changes", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-reload-warning-")
+    const pluginRoot = await makeTempDir("boring-workspace-reload-warning-plugin-")
+    await writeRuntimePlugin(pluginRoot, "reload-warning-plugin", "V1")
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      provisionWorkspace: false,
+      defaultPluginPackages: [pluginRoot],
+    })
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      await writeFile(
+        join(pluginRoot, "server", "index.js"),
+        "export default { id: 'reload-warning-plugin', systemPrompt: 'V2' }\n",
+        "utf8",
+      )
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: { sessionId: "missing" } })
+      expect(reload.statusCode).toBe(200)
+      const body = reload.json() as {
+        ok: boolean
+        restart_warnings?: Array<{ id: string; surfaces: string[]; message: string }>
+        diagnostics?: unknown[]
+      }
+      expect(body.ok).toBe(true)
+      expect(body.diagnostics).toBeUndefined()
+      expect(body.restart_warnings).toEqual([
+        expect.objectContaining({
+          id: "reload-warning-plugin",
+          surfaces: ["routes", "agentTools"],
+          message: expect.stringContaining("restart"),
+        }),
+      ])
     } finally {
       await app.close()
     }

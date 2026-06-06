@@ -52,7 +52,7 @@ describe("synthetic: asset manager discovers newly-created plugin dirs on /reloa
     expect(plugin.boring.front).toBe("front/index.tsx")
   })
 
-  test("pluginHotReload=false keeps static plugin listing but omits /api/boring.reload", async () => {
+  test("pluginHotReload=false keeps static plugin listing and skips canonical hot reload discovery", async () => {
     const disabledRoot = await mkdtemp(join(tmpdir(), "synth-discovery-static-"))
     let disabledApp: FastifyInstance | null = null
     try {
@@ -77,8 +77,19 @@ describe("synthetic: asset manager discovers newly-created plugin dirs on /reloa
       expect(listed.statusCode).toBe(200)
       expect(listed.json().find((p: { id: string }) => p.id === "static-at-boot")).toBeTruthy()
 
-      const reload = await disabledApp.inject({ method: "POST", url: "/api/boring.reload", payload: {} })
-      expect(reload.statusCode).toBe(404)
+      const latePluginDir = join(disabledRoot, ".pi", "extensions", "late-static-plugin")
+      await mkdir(join(latePluginDir, "front"), { recursive: true })
+      await writeFile(join(latePluginDir, "front", "index.tsx"), "export default function() {}\n", "utf8")
+      await writeFile(join(latePluginDir, "package.json"), JSON.stringify({
+        name: "late-static-plugin",
+        version: "1.0.0",
+        boring: { front: "front/index.tsx", server: false },
+      }), "utf8")
+
+      const reload = await disabledApp.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(reload.statusCode).toBe(200)
+      const afterReload = await disabledApp.inject({ method: "GET", url: "/api/v1/agent-plugins" })
+      expect(afterReload.json().find((p: { id: string }) => p.id === "late-static-plugin")).toBeUndefined()
     } finally {
       if (disabledApp) await disabledApp.close()
       await rm(disabledRoot, { recursive: true, force: true })
