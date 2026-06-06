@@ -38,5 +38,6 @@ export default defineConfig({
     // external so Node consumers resolve from their own node_modules;
     // browser bundles never reach the server entry so it doesn't leak.
     "@mariozechner/pi-coding-agent",
+    /^@hachej\/boring-ui-plugin-cli(\/.*)?$/,
   ],
 })

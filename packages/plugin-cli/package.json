@@ -16,6 +16,10 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
+    "./plugin-sources": {
+      "import": "./dist/plugin-sources.js",
+      "types": "./dist/plugin-sources.d.ts"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
