@@ -156,11 +156,11 @@ function QueuedFollowUpsPreview({ followUps, onEditQueued }: QueuedFollowUpsPrev
   return (
     <div
       data-boring-agent-part="composer-queue-preview"
-      className="mb-2 flex items-start justify-between gap-3 rounded-md border border-dashed border-border/70 bg-muted/35 px-3 py-2 text-sm motion-reduce:transition-none"
+      className="mb-2 flex items-start justify-between gap-3 rounded-md border border-dashed border-[color:var(--border)] bg-[color:oklch(from_var(--muted)_l_c_h/0.45)] px-3 py-2 text-sm text-[color:var(--foreground)] motion-reduce:transition-none"
     >
-      <div className="min-w-0 text-muted-foreground">
-        <div className="font-medium text-foreground">{followUps.length} queued follow-up{followUps.length === 1 ? '' : 's'}</div>
-        <div className="truncate" data-boring-agent-part="composer-queue-preview-text">
+      <div className="min-w-0 text-[color:var(--muted-foreground)]">
+        <div className="font-medium text-[color:var(--foreground)]">{followUps.length} queued follow-up{followUps.length === 1 ? '' : 's'}</div>
+        <div className="truncate text-[color:var(--muted-foreground)]" data-boring-agent-part="composer-queue-preview-text">
           {followUps.map((followUp) => followUp.displayText).join(' · ')}
         </div>
       </div>
@@ -172,7 +172,6 @@ function QueuedFollowUpsPreview({ followUps, onEditQueued }: QueuedFollowUpsPrev
           aria-label="Edit queued follow-ups"
         >
           <ListRestartIcon className="size-4" />
-          <span>Edit queued</span>
         </PromptInputButton>
       ) : null}
     </div>

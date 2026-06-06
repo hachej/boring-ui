@@ -5,11 +5,15 @@ export type PromptPayload = ChatSubmitPayload
 
 export interface FollowUpPayload {
   message: string
+  displayMessage?: string
   clientNonce: string
   clientSeq: number
 }
 
-export type QueueClearPayload = Record<string, never>
+export interface QueueClearPayload {
+  clientNonce?: string
+  clientSeq?: number
+}
 export type InterruptPayload = Record<string, never>
 export type StopPayload = Record<string, never>
 

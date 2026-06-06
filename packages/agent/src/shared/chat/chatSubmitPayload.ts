@@ -13,6 +13,7 @@ export interface ChatAttachmentPayload {
 
 export interface ChatSubmitPayload {
   message: string
+  displayMessage?: string
   clientNonce: string
   model?: ChatModelSelection
   thinkingLevel?: ThinkingLevel

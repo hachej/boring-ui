@@ -1,6 +1,6 @@
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 import { ErrorCode } from '../../shared/error-codes'
-import { sanitizeToolUiMetadata, type BoringChatPart, type PiChatEvent } from '../../shared/chat'
+import { sanitizeToolUiMetadata, type BoringChatMessage, type BoringChatPart, type PiChatEvent } from '../../shared/chat'
 import { buildPiChatHistory } from './piChatHistory'
 import { buildPiChatQueuedFollowUps } from './piChatSnapshot'
 
@@ -25,6 +25,10 @@ export class PiChatEventMapper {
   private readonly sessionId: string
   private activeTurnId: string | undefined
   private activeAssistantMessageId: string | undefined
+  private readonly pendingUserStarts: Array<{ messageId: string; text?: string }> = []
+  private readonly toolCallMessageIds = new Map<string, string>()
+  private readonly endedMessageIds = new Set<string>()
+  private readonly endedAssistantTurnIds = new Set<string>()
 
   constructor(options: PiChatEventMapperOptions) {
     this.sessionId = options.sessionId
@@ -42,14 +46,21 @@ export class PiChatEventMapper {
       case 'agent_start': {
         const turnId = optionalString(event.turnId) ?? this.createTurnId()
         this.activeTurnId = turnId
+        this.pendingUserStarts.length = 0
+        this.endedMessageIds.clear()
+        this.endedAssistantTurnIds.clear()
         return [this.event({ type: 'agent-start', turnId })]
       }
 
       case 'agent_end': {
         const turnId = this.activeTurnId ?? this.createTurnId()
         const status = agentEndStatus(event)
-        const mapped = [this.event({ type: 'agent-end', turnId, status })]
+        const mapped = [
+          ...this.mapAgentEndFinalAssistant(event, turnId),
+          this.event({ type: 'agent-end', turnId, status }),
+        ]
         this.activeAssistantMessageId = undefined
+        this.toolCallMessageIds.clear()
         if (status !== 'error') this.activeTurnId = undefined
         return mapped
       }
@@ -75,6 +86,7 @@ export class PiChatEventMapper {
         ]
 
       case 'auto_retry_start':
+        this.resetDedupForRetry()
         return [
           this.event({
             type: 'auto-retry-start',
@@ -108,6 +120,14 @@ export class PiChatEventMapper {
     return `turn:${this.sessionId}:${this.seq + 1}`
   }
 
+  private resetDedupForRetry(): void {
+    this.endedMessageIds.clear()
+    if (this.activeTurnId) this.endedAssistantTurnIds.delete(this.activeTurnId)
+    else this.endedAssistantTurnIds.clear()
+    this.activeAssistantMessageId = undefined
+    this.toolCallMessageIds.clear()
+  }
+
   private event<T extends Omit<PiChatEvent, 'seq'>>(event: T): T & { seq: number } {
     this.seq += 1
     return { ...event, seq: this.seq }
@@ -121,7 +141,9 @@ export class PiChatEventMapper {
     const role: 'user' | 'assistant' = rawRole
 
     const messageId = messageIdFrom(message) ?? fallbackMessageId(this.sessionId, role, this.seq + 1)
+    const text = textFromContent(message.content) ?? optionalString(message.text)
     if (role === 'assistant') this.activeAssistantMessageId = messageId
+    if (role === 'user' && messageIdFrom(message) === undefined) this.pendingUserStarts.push({ messageId, text })
 
     const clientNonce = optionalString(message.clientNonce)
     const clientSeq = numberValue(message.clientSeq)
@@ -131,7 +153,8 @@ export class PiChatEventMapper {
       role,
       clientNonce,
       clientSeq,
-      text: textFromContent(message.content) ?? optionalString(message.text),
+      createdAt: messageTimestamp(message),
+      text,
       files: filePartsFromContent(message.content, messageId),
     })
 
@@ -196,6 +219,7 @@ export class PiChatEventMapper {
     if (!isRecord(assistantEvent.toolCall)) return []
     const toolCall = assistantEvent.toolCall
     const toolCallId = optionalString(toolCall.id) ?? `${messageId}:tool:${partIdFromAssistantEvent(assistantEvent)}`
+    this.toolCallMessageIds.set(toolCallId, messageId)
     return [
       this.event({
         type: 'tool-call',
@@ -212,14 +236,65 @@ export class PiChatEventMapper {
     if (!isRecord(event.message)) return []
     const final = buildPiChatHistory([event.message], { sessionId: this.sessionId, turnId: this.activeTurnId })[0]
     if (!final) return []
-    if (final.role === 'assistant') this.activeAssistantMessageId = undefined
-    return [this.event({ type: 'message-end', messageId: final.id, final })]
+    const messageId = this.finalMessageId(final)
+    const canonicalFinal = final.id === messageId ? final : rewriteMessageId(final, messageId)
+    if (this.endedMessageIds.has(messageId)) return []
+    this.endedMessageIds.add(messageId)
+    if (canonicalFinal.role === 'assistant') {
+      if (this.activeTurnId && isTerminalAssistantFinal(canonicalFinal)) this.endedAssistantTurnIds.add(this.activeTurnId)
+      this.activeAssistantMessageId = undefined
+    }
+    return [this.event({ type: 'message-end', messageId, final: canonicalFinal })]
+  }
+
+  private mapAgentEndFinalAssistant(event: RecordLike, turnId: string): PiChatEvent[] {
+    if (this.endedAssistantTurnIds.has(turnId)) return []
+    const messages = readRecordArray(event.messages)
+    const lastAssistantIndex = findLastIndex(messages, (message) => messageRole(message) === 'assistant')
+    if (lastAssistantIndex < 0) return []
+    if (isContentlessTerminalAssistant(messages[lastAssistantIndex] as RecordLike)) return []
+
+    const finalAssistant = this.buildAgentEndFinalAssistant(messages, lastAssistantIndex, turnId)
+    if (!finalAssistant) return []
+    if (this.endedMessageIds.has(finalAssistant.id)) return []
+
+    this.endedMessageIds.add(finalAssistant.id)
+    this.activeAssistantMessageId = undefined
+    return [this.event({ type: 'message-end', messageId: finalAssistant.id, final: finalAssistant })]
+  }
+
+  private finalMessageId(final: BoringChatMessage): string {
+    if (final.role === 'assistant' && this.activeAssistantMessageId) return this.activeAssistantMessageId
+    if (final.role !== 'user') return final.id
+
+    const text = messageText(final)
+    const exactIndex = this.pendingUserStarts.findIndex((start) => start.text === text)
+    const fallbackIndex = exactIndex >= 0 ? exactIndex : this.pendingUserStarts.findIndex((start) => start.text === undefined || text === undefined)
+    if (fallbackIndex < 0) return final.id
+    const [matched] = this.pendingUserStarts.splice(fallbackIndex, 1)
+    return matched?.messageId ?? final.id
+  }
+
+  private buildAgentEndFinalAssistant(messages: RecordLike[], lastAssistantIndex: number, turnId: string): BoringChatMessage | undefined {
+    const rawAssistant = messages[lastAssistantIndex]
+    if (!rawAssistant) return undefined
+
+    if (messageIdFrom(rawAssistant) === undefined) {
+      return buildPiChatHistory([{ id: this.activeAssistantMessageId ?? fallbackAgentEndAssistantId(this.sessionId, turnId), message: rawAssistant }], {
+        sessionId: this.sessionId,
+        turnId,
+      })[0]
+    }
+
+    const assistants = buildPiChatHistory(messages, { sessionId: this.sessionId, turnId })
+      .filter((message) => message.role === 'assistant')
+    return assistants[assistants.length - 1]
   }
 
   private mapToolExecutionEnd(event: RecordLike): PiChatEvent[] {
-    const messageId = this.activeAssistantMessageId ?? fallbackMessageId(this.sessionId, 'assistant', this.seq + 1)
     const toolCallId = optionalString(event.toolCallId)
     if (!toolCallId) return []
+    const messageId = this.toolCallMessageIds.get(toolCallId) ?? this.activeAssistantMessageId ?? fallbackMessageId(this.sessionId, 'assistant', this.seq + 1)
     const result = event.result
     const mapped: PiChatEvent[] = []
 
@@ -267,6 +342,17 @@ function readStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 }
 
+function readRecordArray(value: unknown): RecordLike[] {
+  return Array.isArray(value) ? value.filter((item): item is RecordLike => isRecord(item)) : []
+}
+
+function findLastIndex<T>(items: readonly T[], predicate: (item: T) => boolean): number {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (predicate(items[index] as T)) return index
+  }
+  return -1
+}
+
 function messageRole(message: RecordLike): string | undefined {
   return optionalString(message.role) ?? optionalString(message.type)
 }
@@ -275,8 +361,18 @@ function messageIdFrom(message: RecordLike): string | undefined {
   return optionalString(message.id) ?? optionalString(message.messageId)
 }
 
+function messageTimestamp(message: RecordLike): string | undefined {
+  const timestamp = message.timestamp
+  if (typeof timestamp === 'number' && Number.isFinite(timestamp)) return new Date(timestamp).toISOString()
+  return optionalString(timestamp)
+}
+
 function fallbackMessageId(sessionId: string, role: string, seq: number): string {
   return `pi:${sessionId}:event:${seq}:${role}`
+}
+
+function fallbackAgentEndAssistantId(sessionId: string, turnId: string): string {
+  return `pi:${sessionId}:turn:${turnId}:assistant`
 }
 
 function textFromContent(content: unknown): string | undefined {
@@ -286,12 +382,62 @@ function textFromContent(content: unknown): string | undefined {
   return text.length > 0 ? text : undefined
 }
 
+function isContentlessTerminalAssistant(message: RecordLike): boolean {
+  if (message.stopReason !== 'aborted' && message.stopReason !== 'error') return false
+  return !hasDisplayableAssistantContent(message.content)
+}
+
+function hasDisplayableAssistantContent(content: unknown): boolean {
+  if (typeof content === 'string') return content.length > 0
+  if (!Array.isArray(content)) return false
+
+  return content.some((part) => {
+    if (!isRecord(part)) return false
+    if (part.type === 'toolCall') return true
+    if (part.type === 'text') return typeof part.text === 'string' && part.text.length > 0
+    if (part.type === 'thinking' || part.type === 'reasoning') {
+      return (typeof part.thinking === 'string' && part.thinking.length > 0) || (typeof part.text === 'string' && part.text.length > 0)
+    }
+    return false
+  })
+}
+
 function filePartsFromContent(content: unknown, messageId: string): BoringChatPart[] {
   if (!Array.isArray(content)) return []
   return content.flatMap((part, index): BoringChatPart[] => {
     if (!isRecord(part) || part.type !== 'image') return []
     return [{ type: 'file', id: `${messageId}:file:${index}`, mediaType: optionalString(part.mimeType) }]
   })
+}
+
+function messageText(message: BoringChatMessage): string | undefined {
+  const text = message.parts
+    .filter((part): part is Extract<BoringChatPart, { type: 'text' }> => part.type === 'text')
+    .map((part) => part.text)
+    .join('')
+  return text.length > 0 ? text : undefined
+}
+
+function isTerminalAssistantFinal(message: BoringChatMessage): boolean {
+  return message.role === 'assistant' && !message.parts.some((part) => part.type === 'tool-call')
+}
+
+function rewriteMessageId(message: BoringChatMessage, id: string): BoringChatMessage {
+  return {
+    ...message,
+    id,
+    parts: message.parts.map((part, index): BoringChatPart => {
+      if (part.type === 'text') return { ...part, id: rewritePartId(part.id, message.id, id, `text:${index}`) }
+      if (part.type === 'file') return { ...part, id: rewritePartId(part.id, message.id, id, `file:${index}`) }
+      if (part.type === 'reasoning') return { ...part, id: rewritePartId(part.id, message.id, id, `reasoning:${index}`) }
+      return part
+    }),
+  }
+}
+
+function rewritePartId(partId: string | undefined, previousMessageId: string, nextMessageId: string, fallbackSuffix: string): string {
+  if (partId?.startsWith(previousMessageId)) return `${nextMessageId}${partId.slice(previousMessageId.length)}`
+  return `${nextMessageId}:${fallbackSuffix}`
 }
 
 function partIdFromAssistantEvent(assistantEvent: RecordLike): string {

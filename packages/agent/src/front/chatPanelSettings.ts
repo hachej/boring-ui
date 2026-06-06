@@ -10,7 +10,7 @@ const STORAGE_SHOW_THOUGHTS_KEY = 'boring-agent:composer:show-thoughts'
  */
 export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high'
 
-export const DEFAULT_THINKING: ThinkingLevel = 'off'
+export const DEFAULT_THINKING: ThinkingLevel = 'medium'
 export const THINKING_LEVELS: ThinkingLevel[] = ['off', 'low', 'medium', 'high']
 
 export function isThinkingLevel(value: unknown): value is ThinkingLevel {

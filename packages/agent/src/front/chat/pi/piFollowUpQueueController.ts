@@ -1,23 +1,30 @@
 import type {
   ChatAttachmentPayload,
+  CommandReceipt,
   FollowUpPayload,
+  FollowUpReceipt,
+  InterruptReceipt,
   PiChatStatus,
   PromptPayload,
+  PromptReceipt,
   QueuedUserMessage,
+  QueueClearReceipt,
+  StopReceipt,
 } from '../../../shared/chat'
 import type { PiChatState } from './piChatReducer'
 
 export interface PiQueueSessionLike {
   getState(): PiChatState
-  prompt(payload: PromptPayload): Promise<unknown>
-  followUp(payload: FollowUpPayload): Promise<unknown>
-  clearQueue(): Promise<unknown>
-  interrupt(): Promise<unknown>
-  stop(): Promise<unknown>
+  prompt(payload: PromptPayload): Promise<PromptReceipt>
+  followUp(payload: FollowUpPayload): Promise<FollowUpReceipt>
+  clearQueue(): Promise<QueueClearReceipt>
+  interrupt(): Promise<InterruptReceipt>
+  stop(): Promise<StopReceipt>
 }
 
 export interface PiQueueSubmitInput {
   text: string
+  displayText?: string
   attachments?: ChatAttachmentPayload[]
   model?: PromptPayload['model']
   thinkingLevel?: PromptPayload['thinkingLevel']
@@ -30,11 +37,12 @@ export interface PiQueueControllerOptions {
   onDraftChange?: (draft: string) => void
   getDraft?: () => string
   onWarning?: (message: string) => void
+  onPromptSubmitStarted?: (clientNonce: string) => void
 }
 
 export type PiQueueSubmitResult =
-  | { type: 'prompt'; clientNonce: string }
-  | { type: 'followup'; clientNonce: string; clientSeq: number }
+  | { type: 'prompt'; clientNonce: string; cursor?: number }
+  | { type: 'followup'; clientNonce: string; clientSeq: number; cursor?: number }
   | { type: 'blocked'; reason: 'empty' | 'hydrating' | 'busy-attachments' | 'busy-slash-command'; message: string }
 
 export type PiQueueEditQueuedResult =
@@ -72,19 +80,21 @@ export class PiFollowUpQueueController {
 
       const clientNonce = this.createClientNonce()
       const clientSeq = this.nextFollowUpClientSeq()
-      await this.session.followUp({ message: text, clientNonce, clientSeq })
-      return { type: 'followup', clientNonce, clientSeq }
+      const receipt = await this.session.followUp({ message: text, ...(input.displayText ? { displayMessage: input.displayText } : {}), clientNonce, clientSeq })
+      return { type: 'followup', clientNonce, clientSeq, cursor: receipt.cursor }
     }
 
     const clientNonce = this.createClientNonce()
-    await this.session.prompt({
+    this.options.onPromptSubmitStarted?.(clientNonce)
+    const receipt = await this.session.prompt({
       message: text,
+      ...(input.displayText ? { displayMessage: input.displayText } : {}),
       clientNonce,
       ...(input.model ? { model: input.model } : {}),
       ...(input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
       ...(attachments.length > 0 ? { attachments } : {}),
     })
-    return { type: 'prompt', clientNonce }
+    return { type: 'prompt', clientNonce, cursor: receipt.cursor }
   }
 
   async editQueued(): Promise<PiQueueEditQueuedResult> {
@@ -108,11 +118,11 @@ export class PiFollowUpQueueController {
     }
   }
 
-  interrupt(): Promise<unknown> {
+  interrupt(): Promise<CommandReceipt> {
     return this.session.interrupt()
   }
 
-  stop(): Promise<unknown> {
+  stop(): Promise<StopReceipt> {
     return this.session.stop()
   }
 

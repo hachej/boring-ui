@@ -13,6 +13,7 @@ export type PiChatEvent =
       role: 'user' | 'assistant'
       clientNonce?: string
       clientSeq?: number
+      createdAt?: string
       text?: string
       files?: BoringChatPart[]
     }

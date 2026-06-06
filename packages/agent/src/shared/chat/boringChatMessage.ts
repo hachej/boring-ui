@@ -36,6 +36,7 @@ export interface BoringChatMessage {
   parts: BoringChatPart[]
   createdAt?: string
   clientNonce?: string
+  clientSeq?: number
   piEntryId?: string
   turnId?: string
 }

@@ -99,6 +99,7 @@ export const BoringChatMessageSchema = z.object({
   parts: z.array(BoringChatPartSchema),
   createdAt: z.string().optional(),
   clientNonce: z.string().optional(),
+  clientSeq: z.number().int().nonnegative().optional(),
   piEntryId: z.string().optional(),
   turnId: z.string().optional(),
 }) satisfies z.ZodType<BoringChatMessage, z.ZodTypeDef, unknown>
@@ -137,6 +138,7 @@ export const PiChatEventSchema = z.discriminatedUnion('type', [
     role: z.enum(['user', 'assistant']),
     clientNonce: z.string().optional(),
     clientSeq: z.number().int().nonnegative().optional(),
+    createdAt: z.string().optional(),
     text: z.string().optional(),
     files: z.array(BoringChatPartSchema).optional(),
   }),
@@ -217,6 +219,7 @@ export const ChatAttachmentPayloadSchema = z.object({
 
 export const PromptPayloadSchema = z.object({
   message: z.string().min(1).max(1_000_000),
+  displayMessage: z.string().min(1).max(1_000_000).optional(),
   clientNonce: nonEmptyString.max(128),
   model: ChatModelSelectionSchema.optional(),
   thinkingLevel: ThinkingLevelSchema.optional(),
@@ -225,11 +228,18 @@ export const PromptPayloadSchema = z.object({
 
 export const FollowUpPayloadSchema = z.object({
   message: z.string().min(1).max(1_000_000),
+  displayMessage: z.string().min(1).max(1_000_000).optional(),
   clientNonce: nonEmptyString.max(128),
   clientSeq: z.number().int().nonnegative(),
 }) satisfies z.ZodType<FollowUpPayload>
 
-export const QueueClearPayloadSchema = z.object({}).strict() satisfies z.ZodType<QueueClearPayload>
+export const QueueClearPayloadSchema = z.preprocess(
+  (value) => value ?? {},
+  z.object({
+    clientNonce: nonEmptyString.max(128).optional(),
+    clientSeq: z.number().int().nonnegative().optional(),
+  }).strict(),
+) satisfies z.ZodType<QueueClearPayload, z.ZodTypeDef, unknown>
 
 export const InterruptPayloadSchema = z.object({}).strict() satisfies z.ZodType<InterruptPayload>
 

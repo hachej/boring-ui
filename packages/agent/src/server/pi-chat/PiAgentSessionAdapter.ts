@@ -33,6 +33,7 @@ export interface PiAgentSessionAdapter {
   clearQueue(): { steering: string[]; followUp: string[] };
   abort(): Promise<void>;
   abortRetry?: () => void;
+  continueQueuedFollowUp?: () => Promise<void>;
 }
 
 /**
@@ -61,12 +62,17 @@ export interface PiAgentSessionLike {
   abortRetry?: () => void;
 }
 
+export interface PiAgentSessionAdapterOptions {
+  sessionId?: string;
+  continueQueuedFollowUp?: () => Promise<void>;
+}
+
 function normalizePromptInput(input: PiAgentPromptInput): { text: string; options?: PromptOptions } {
   if (typeof input === "string") return { text: input };
   return input;
 }
 
-export function createPiAgentSessionAdapter(session: PiAgentSessionLike): PiAgentSessionAdapter {
+export function createPiAgentSessionAdapter(session: PiAgentSessionLike, options: PiAgentSessionAdapterOptions = {}): PiAgentSessionAdapter {
   const adapter: PiAgentSessionAdapter = {
     readSnapshot() {
       return {
@@ -79,7 +85,7 @@ export function createPiAgentSessionAdapter(session: PiAgentSessionLike): PiAgen
         steeringMessages: session.getSteeringMessages(),
         followUpMessages: session.getFollowUpMessages(),
         followUpMode: session.followUpMode,
-        sessionId: session.sessionId,
+        sessionId: options.sessionId ?? session.sessionId,
         sessionName: session.sessionName,
       };
     },
@@ -108,6 +114,9 @@ export function createPiAgentSessionAdapter(session: PiAgentSessionLike): PiAgen
 
   if (typeof session.abortRetry === "function") {
     adapter.abortRetry = () => session.abortRetry?.();
+  }
+  if (options.continueQueuedFollowUp) {
+    adapter.continueQueuedFollowUp = options.continueQueuedFollowUp;
   }
 
   return adapter;

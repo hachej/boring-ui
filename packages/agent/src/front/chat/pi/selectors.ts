@@ -1,21 +1,51 @@
-import type { BoringChatMessage, QueuedUserMessage } from '../../../shared/chat'
+import type { BoringChatMessage, BoringChatPart, QueuedUserMessage } from '../../../shared/chat'
 import type { PiChatRuntimeNotice, PiChatState } from './piChatReducer'
+import { earliestCreatedAt } from './piChatMessageMetadata'
+import { mergeFinalMessageParts, preservedFinalMessageStatus } from './piChatPartMerging'
 
 export function selectMessagesForRender(state: PiChatState): BoringChatMessage[] {
-  const messages = [...state.committedMessages]
-  for (const optimistic of Object.values(state.optimisticOutbox)) {
-    if (!messages.some((message) => message.clientNonce === optimistic.clientNonce)) {
-      messages.push(optimistic)
-    }
+  const messages = foldRenderableAssistantMessages(state.committedMessages)
+  const optimisticMessages = Object.values(state.optimisticOutbox)
+    .filter((optimistic) => !messages.some((message) => message.clientNonce === optimistic.clientNonce))
+
+  for (const optimistic of optimisticMessages) {
+    if (optimistic.clientSeq === undefined) insertOptimisticPrompt(messages, optimistic)
   }
-  if (state.streamingMessage && !messages.some((message) => message.id === state.streamingMessage?.id)) {
-    messages.push(state.streamingMessage)
-  }
+  if (state.streamingMessage) upsertRenderableStreamingMessage(messages, state.streamingMessage)
   return messages
 }
 
 export function selectQueuePreview(state: PiChatState): QueuedUserMessage[] {
-  return state.queue.followUps
+  const followUps = [...state.queue.followUps]
+  const representedNonces = new Set(followUps.map((followUp) => followUp.clientNonce).filter(Boolean))
+  const representedClientSeqs = new Set(followUps
+    .map((followUp) => followUp.clientSeq)
+    .filter((clientSeq): clientSeq is number => clientSeq !== undefined))
+  const metadataFreeTextCounts = new Map<string, number>()
+  for (const followUp of followUps) {
+    if (followUp.clientNonce || followUp.clientSeq !== undefined) continue
+    metadataFreeTextCounts.set(followUp.displayText, (metadataFreeTextCounts.get(followUp.displayText) ?? 0) + 1)
+  }
+
+  for (const message of Object.values(state.optimisticOutbox)) {
+    if (message.clientSeq === undefined) continue
+    if (message.clientNonce && representedNonces.has(message.clientNonce)) continue
+    if (representedClientSeqs.has(message.clientSeq)) continue
+    const text = optimisticText(message)
+    const metadataFreeTextCount = metadataFreeTextCounts.get(text) ?? 0
+    if (metadataFreeTextCount > 0) {
+      metadataFreeTextCounts.set(text, metadataFreeTextCount - 1)
+      continue
+    }
+    followUps.push({
+      id: `optimistic:${message.clientNonce}`,
+      kind: 'followup',
+      displayText: text,
+      clientNonce: message.clientNonce,
+      clientSeq: message.clientSeq,
+    })
+  }
+  return followUps
 }
 
 export function selectRuntimeNotices(state: PiChatState): PiChatRuntimeNotice[] {
@@ -42,4 +72,96 @@ export function selectIsEmptyTimeline(state: PiChatState): boolean {
 
 export function selectHasPendingOutbox(state: PiChatState): boolean {
   return Object.keys(state.optimisticOutbox).length > 0
+}
+
+function optimisticText(message: BoringChatMessage): string {
+  const text = message.parts
+    .filter((part): part is Extract<BoringChatPart, { type: 'text' }> => part.type === 'text')
+    .map((part) => part.text)
+    .join('\n\n')
+  return text
+}
+
+function insertOptimisticPrompt(messages: BoringChatMessage[], optimistic: BoringChatMessage): void {
+  const optimisticTime = messageCreatedAtMs(optimistic)
+  if (optimisticTime === undefined) {
+    messages.push(optimistic)
+    return
+  }
+
+  const insertAt = messages.findIndex((message) => {
+    const messageTime = messageCreatedAtMs(message)
+    return messageTime !== undefined && messageTime > optimisticTime
+  })
+  if (insertAt === -1) messages.push(optimistic)
+  else messages.splice(insertAt, 0, optimistic)
+}
+
+function foldRenderableAssistantMessages(source: BoringChatMessage[]): BoringChatMessage[] {
+  const messages: BoringChatMessage[] = []
+  for (const message of source) {
+    if (message.role !== 'assistant') {
+      messages.push(message)
+      continue
+    }
+    const mergeIndex = findRenderableAssistantMergeIndex(messages, message)
+    if (mergeIndex < 0) {
+      messages.push(message)
+      continue
+    }
+    messages[mergeIndex] = mergeRenderableAssistantMessage(messages[mergeIndex]!, message)
+  }
+  return messages
+}
+
+function upsertRenderableStreamingMessage(messages: BoringChatMessage[], streamingMessage: BoringChatMessage): void {
+  const mergeIndex = findRenderableAssistantMergeIndex(messages, streamingMessage)
+  if (mergeIndex < 0) {
+    messages.push(streamingMessage)
+    return
+  }
+  messages[mergeIndex] = mergeRenderableAssistantMessage(messages[mergeIndex]!, streamingMessage)
+}
+
+function findRenderableAssistantMergeIndex(messages: BoringChatMessage[], message: BoringChatMessage): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const candidate = messages[index]
+    if (!candidate) continue
+    if (candidate.id === message.id && candidate.role === message.role) {
+      if (isDifferentAssistantTurn(candidate, message)) continue
+      return index
+    }
+    if (candidate.role === 'assistant' && message.role === 'assistant' && candidate.turnId && candidate.turnId === message.turnId) {
+      return index
+    }
+  }
+  return -1
+}
+
+function isDifferentAssistantTurn(left: BoringChatMessage, right: BoringChatMessage): boolean {
+  return Boolean(
+    left.role === 'assistant' &&
+    right.role === 'assistant' &&
+    left.turnId &&
+    right.turnId &&
+    left.turnId !== right.turnId,
+  )
+}
+
+function mergeRenderableAssistantMessage(previous: BoringChatMessage, next: BoringChatMessage): BoringChatMessage {
+  if (previous.role !== 'assistant' || next.role !== 'assistant') return next
+  const parts = mergeFinalMessageParts(previous.parts, next.parts)
+  return {
+    ...previous,
+    ...next,
+    createdAt: earliestCreatedAt(previous.createdAt, next.createdAt),
+    parts,
+    status: preservedFinalMessageStatus(next, previous, parts),
+  }
+}
+
+function messageCreatedAtMs(message: BoringChatMessage): number | undefined {
+  if (!message.createdAt) return undefined
+  const timestamp = Date.parse(message.createdAt)
+  return Number.isFinite(timestamp) ? timestamp : undefined
 }

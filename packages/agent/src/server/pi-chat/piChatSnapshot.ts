@@ -5,7 +5,9 @@ import { buildPiChatHistory } from './piChatHistory'
 
 export interface BuildPiChatSnapshotOptions {
   seq: number
+  sessionId?: string
   activeTurnId?: string
+  messageTurnIds?: ReadonlyMap<string, string>
   status?: PiChatStatus
   error?: ChatError
 }
@@ -54,20 +56,21 @@ function errorFromSnapshot(snapshot: PiAgentSessionSnapshot): ChatError | undefi
 
 export function buildPiChatSnapshot(adapter: PiAgentSessionAdapter, options: BuildPiChatSnapshotOptions): PiChatSnapshot {
   const piSnapshot = adapter.readSnapshot()
+  const sessionId = options.sessionId ?? piSnapshot.sessionId
   const error = options.error ?? errorFromSnapshot(piSnapshot)
   const status = options.status ?? statusFromSnapshot(piSnapshot, error)
 
   return {
     protocolVersion: 1,
-    sessionId: piSnapshot.sessionId,
+    sessionId,
     seq: options.seq,
     status,
     activeTurnId: options.activeTurnId,
     messages: buildPiChatHistory(piSnapshot.messages, {
-      sessionId: piSnapshot.sessionId,
-      turnId: options.activeTurnId,
+      sessionId,
+      messageTurnIds: options.messageTurnIds,
     }),
-    queue: { followUps: buildFollowUpQueue(piSnapshot) },
+    queue: { followUps: buildPiChatQueuedFollowUps(sessionId, piSnapshot.followUpMessages) },
     followUpMode: 'one-at-a-time',
     error,
   }

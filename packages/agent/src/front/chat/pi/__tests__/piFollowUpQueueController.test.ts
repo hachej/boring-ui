@@ -12,9 +12,9 @@ class FakeQueueSession implements PiQueueSessionLike {
   state: PiChatState
   prompts: PromptPayload[] = []
   followUps: FollowUpPayload[] = []
-  clearQueue = vi.fn(async () => ({ accepted: true, cursor: 1, cleared: this.state.queue.followUps.length }))
-  interrupt = vi.fn(async () => ({ accepted: true, cursor: 2 }))
-  stop = vi.fn(async () => ({ accepted: true, cursor: 3, stopped: true, clearedQueue: this.state.queue.followUps }))
+  clearQueue = vi.fn(async () => ({ accepted: true as const, cursor: 1, cleared: this.state.queue.followUps.length }))
+  interrupt = vi.fn(async () => ({ accepted: true as const, cursor: 2 }))
+  stop = vi.fn(async () => ({ accepted: true as const, cursor: 3, stopped: true as const, clearedQueue: this.state.queue.followUps }))
 
   constructor(status: PiChatStatus, followUps: QueuedUserMessage[] = []) {
     this.state = createInitialPiChatState({ sessionId: 's1', storageScope: 'scope', status })
@@ -27,12 +27,12 @@ class FakeQueueSession implements PiQueueSessionLike {
 
   async prompt(payload: PromptPayload) {
     this.prompts.push(payload)
-    return { accepted: true, cursor: 10, clientNonce: payload.clientNonce }
+    return { accepted: true as const, cursor: 10, clientNonce: payload.clientNonce }
   }
 
   async followUp(payload: FollowUpPayload) {
     this.followUps.push(payload)
-    return { accepted: true, cursor: 11, clientNonce: payload.clientNonce, clientSeq: payload.clientSeq, queued: true }
+    return { accepted: true as const, cursor: 11, clientNonce: payload.clientNonce, clientSeq: payload.clientSeq, queued: true as const }
   }
 }
 
@@ -53,7 +53,7 @@ describe('PiFollowUpQueueController', () => {
       thinkingLevel: 'medium',
     })
 
-    expect(result).toEqual({ type: 'prompt', clientNonce: 'nonce-1' })
+    expect(result).toEqual({ type: 'prompt', clientNonce: 'nonce-1', cursor: 10 })
     expect(session.prompts).toEqual([
       {
         message: 'build this',
@@ -72,8 +72,8 @@ describe('PiFollowUpQueueController', () => {
     ])
     const controller = createPiFollowUpQueueController(session, { createClientNonce: nonceFactory() })
 
-    await expect(controller.submit({ text: 'same text' })).resolves.toEqual({ type: 'followup', clientNonce: 'nonce-1', clientSeq: 5 })
-    await expect(controller.submit({ text: 'same text' })).resolves.toEqual({ type: 'followup', clientNonce: 'nonce-2', clientSeq: 6 })
+    await expect(controller.submit({ text: 'same text' })).resolves.toEqual({ type: 'followup', clientNonce: 'nonce-1', clientSeq: 5, cursor: 11 })
+    await expect(controller.submit({ text: 'same text' })).resolves.toEqual({ type: 'followup', clientNonce: 'nonce-2', clientSeq: 6, cursor: 11 })
 
     expect(session.prompts).toEqual([])
     expect(session.followUps).toEqual([
@@ -116,6 +116,7 @@ describe('PiFollowUpQueueController', () => {
       type: 'followup',
       clientNonce: 'nonce-1',
       clientSeq: 1,
+      cursor: 11,
     })
 
     expect(session.followUps).toEqual([{ message: '/template expanded', clientNonce: 'nonce-1', clientSeq: 1 }])

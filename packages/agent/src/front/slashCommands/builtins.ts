@@ -21,6 +21,33 @@ export const builtinCommands: SlashCommand[] = [
     },
   },
   {
+    name: 'model',
+    description: 'Open or set the composer model',
+    handler(args, ctx) {
+      const query = args.trim()
+      if (query) return ctx.selectComposerModel?.(query)
+      if (ctx.openModelPicker?.() === false) return { preserveDraft: true }
+    },
+  },
+  {
+    name: 'thinking',
+    description: 'Open or set the thinking level',
+    handler(args, ctx) {
+      const query = args.trim()
+      if (query) return ctx.selectComposerThinking?.(query)
+      if (ctx.openThinkingPicker?.() === false) return { preserveDraft: true }
+    },
+  },
+  {
+    name: 'think',
+    description: 'Alias for /thinking',
+    handler(args, ctx) {
+      const query = args.trim()
+      if (query) return ctx.selectComposerThinking?.(query)
+      if (ctx.openThinkingPicker?.() === false) return { preserveDraft: true }
+    },
+  },
+  {
     name: 'help',
     description: 'Show available commands',
     handler(_, ctx) {

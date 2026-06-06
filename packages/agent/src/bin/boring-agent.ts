@@ -21,6 +21,7 @@ import react from '@vitejs/plugin-react'
 import { createAgentApp } from '../server/createAgentApp'
 import type { RuntimeModeId } from '../server/runtime/mode'
 import { projectNameFromWorkspaceRoot } from './projectName'
+import { createScriptedPiHarness } from '../server/testing/scriptedPiHarness'
 
 // ── Arg parsing ───────────────────────────────────────────────────────────────
 
@@ -97,6 +98,8 @@ async function startFrontend(apiPort: number): Promise<string> {
       strictPort: false,
       host: '127.0.0.1',
       hmr: false,
+      // E2E starts many short-lived servers; watching can hit the host watcher limit.
+      watch: null,
       proxy: {
         '/api': apiTarget,
         '/health': apiTarget,
@@ -125,6 +128,9 @@ const app = await createAgentApp({
   sessionId: 'e2e',
   version,
   logger: false,
+  ...(process.env.BORING_AGENT_E2E_SCRIPTED_PI === '1'
+    ? { harnessFactory: createScriptedPiHarness }
+    : {}),
 })
 
 // Allow cross-origin requests from the Vite dev server so that

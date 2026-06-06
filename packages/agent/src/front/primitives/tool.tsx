@@ -92,7 +92,7 @@ const statusIcons: Record<ToolState, ReactNode> = {
 };
 
 export const getStatusBadge = (status: ToolState) => (
-  <Badge className="gap-1.5 rounded-full text-xs" variant="secondary">
+  <Badge className="shrink-0 gap-1.5 rounded-full text-xs" variant="secondary">
     {statusIcons[status]}
     {statusLabels[status]}
   </Badge>
@@ -112,18 +112,24 @@ export const ToolHeader = ({
 
   return (
     <CollapsibleTrigger
+      data-boring-agent-part="tool-header"
       className={cn(
-        "flex w-full items-center justify-between gap-4 p-3",
+        "flex w-full min-w-0 items-center justify-between gap-3 p-3 text-left",
         className,
       )}
       {...props}
     >
-      <div className="flex items-center gap-2">
-        {icon ?? <WrenchIcon className="size-4 text-muted-foreground" />}
-        <span className="font-medium text-sm">{title ?? derivedName}</span>
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        {icon ?? <WrenchIcon className="size-4 shrink-0 text-muted-foreground" />}
+        <span data-boring-agent-part="tool-title" className="min-w-0 flex-1 truncate text-sm font-medium">
+          {title ?? derivedName}
+        </span>
         {getStatusBadge(state)}
       </div>
-      <ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+      <ChevronDownIcon
+        data-boring-agent-part="tool-chevron"
+        className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180"
+      />
     </CollapsibleTrigger>
   );
 };
@@ -170,14 +176,18 @@ export const ToolOutput = ({
     return null;
   }
 
-  let Output: ReactNode = <div>{output as ReactNode}</div>;
+  let Output: ReactNode = null;
 
-  if (typeof output === "object" && !isValidElement(output)) {
-    Output = (
-      <CodeBlock code={JSON.stringify(output, null, 2)} language="json" />
-    );
-  } else if (typeof output === "string") {
-    Output = <CodeBlock code={output} language="text" />;
+  if (!errorText) {
+    if (typeof output === "object" && !isValidElement(output)) {
+      Output = (
+        <CodeBlock code={JSON.stringify(output, null, 2)} language="json" />
+      );
+    } else if (typeof output === "string") {
+      Output = <CodeBlock code={output} language="text" />;
+    } else if (output) {
+      Output = <div>{output as ReactNode}</div>;
+    }
   }
 
   return (
@@ -187,13 +197,17 @@ export const ToolOutput = ({
       </h4>
       <div
         className={cn(
-          "overflow-x-auto rounded-md text-xs [&_table]:w-full",
+          "rounded-md text-xs [&_table]:w-full",
           errorText
-            ? "bg-destructive/10 text-destructive"
-            : "bg-muted/30 text-foreground",
+            ? "overflow-hidden border border-destructive/20 bg-destructive/10 text-destructive"
+            : "overflow-x-auto bg-muted/30 text-foreground",
         )}
       >
-        {errorText && <div className="p-3">{errorText}</div>}
+        {errorText ? (
+          <pre className="m-0 overflow-x-auto whitespace-pre-wrap break-words p-3 font-mono text-[12px] leading-5 [overflow-wrap:anywhere]">
+            {errorText}
+          </pre>
+        ) : null}
         {Output}
       </div>
     </div>

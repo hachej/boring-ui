@@ -22,7 +22,8 @@ import type { TelemetrySink } from "../../../shared/telemetry.js";
 import type { UIMessageChunk } from "../../../shared/message.js";
 import { adaptToolsForPi, unmarkToolResultErrorDetails } from "./tool-adapter.js";
 import { piEventToChunks } from "./stream-adapter.js";
-import { createPiAgentSessionAdapter } from "../../pi-chat/PiAgentSessionAdapter.js";
+import { createPiFollowUpQueueCompat } from "./piFollowUpQueueCompat.js";
+import { createPiAgentSessionAdapter, type PiAgentSessionAdapter } from "../../pi-chat/PiAgentSessionAdapter.js";
 import { PiSessionStore } from "./sessions.js";
 import { createSessionTitleScheduler } from "./sessionTitle.js";
 import {
@@ -38,18 +39,6 @@ interface PiSessionHandle {
   piSession: AgentSession;
   modelRegistry: ModelRegistry;
   sessionManager: SessionManager;
-}
-
-interface NativeFollowUpRequest {
-  text: string;
-  displayText: string;
-  clientNonce?: string;
-  clientSeq?: number;
-}
-
-interface NativeFollowUpRemoval {
-  request: NativeFollowUpRequest;
-  textOrdinal: number;
 }
 
 export { mergePiPackageSources } from "../../piPackages.js";
@@ -552,8 +541,7 @@ export function createPiCodingAgentHarness(opts: {
     if (!handle) return;
     handle.piSession.dispose();
     piSessions.delete(sessionId);
-    clearNativeFollowUpWork(sessionId);
-    consumedNativeFollowUpKeys.delete(sessionId);
+    followUpQueueCompat.clearSession(sessionId);
   }
 
   const originalDelete = sessionStore.delete.bind(sessionStore);
@@ -562,118 +550,7 @@ export function createPiCodingAgentHarness(opts: {
     disposePiSession(sessionId);
   };
 
-  const nativeFollowUpPending = new Set<string>();
-  const nativeFollowUpQueues = new Map<string, NativeFollowUpRequest[]>();
-  const consumedNativeFollowUpKeys = new Map<string, Set<string>>();
-
-  function clearNativeFollowUpWork(sessionId: string): void {
-    nativeFollowUpPending.delete(sessionId);
-    nativeFollowUpQueues.delete(sessionId);
-  }
-
-  function userMessageText(message: unknown): string {
-    const content = (message as { content?: unknown }).content;
-    if (!Array.isArray(content)) return "";
-    return content
-      .map((part) => ((part as { type?: unknown; text?: unknown }).type === "text" && typeof (part as { text?: unknown }).text === "string") ? (part as { text: string }).text : "")
-      .join("");
-  }
-
-  function removeFirstMatchingOrdinal<T>(items: T[], matches: (item: T) => boolean, ordinal: number): void {
-    let seen = 0;
-    const index = items.findIndex((item) => {
-      if (!matches(item)) return false;
-      if (seen++ !== ordinal) return false;
-      return true;
-    });
-    if (index >= 0) items.splice(index, 1);
-  }
-
-  function removePiQueuedFollowUp(piSession: AgentSession, text?: string, textOrdinal = 0): void {
-    const session = piSession as unknown as {
-      _followUpMessages?: string[];
-      _emitQueueUpdate?: () => void;
-      agent?: {
-        clearFollowUpQueue?: () => void;
-        followUpQueue?: { messages?: unknown[] };
-      };
-    };
-    if (!text) {
-      session.agent?.clearFollowUpQueue?.();
-      if (Array.isArray(session._followUpMessages)) session._followUpMessages = [];
-      session._emitQueueUpdate?.();
-      return;
-    }
-    const queuedMessages = session.agent?.followUpQueue?.messages;
-    if (Array.isArray(queuedMessages)) {
-      removeFirstMatchingOrdinal(queuedMessages, (message) => userMessageText(message) === text, textOrdinal);
-    }
-    if (Array.isArray(session._followUpMessages)) {
-      removeFirstMatchingOrdinal(session._followUpMessages, (message) => message === text, textOrdinal);
-    }
-    session._emitQueueUpdate?.();
-  }
-
-  function followUpDedupeKeys(options?: FollowUpOptions | NativeFollowUpRequest): string[] {
-    const keys: string[] = [];
-    if (options?.clientNonce) keys.push(`nonce:${options.clientNonce}`);
-    if (options?.clientSeq !== undefined) keys.push(`seq:${options.clientSeq}`);
-    return keys;
-  }
-
-  function hasFollowUpSelector(options?: FollowUpOptions): boolean {
-    return followUpDedupeKeys(options).length > 0;
-  }
-
-  function matchesFollowUpSelector(item: NativeFollowUpRequest, options?: FollowUpOptions): boolean {
-    if (!hasFollowUpSelector(options)) return true;
-    const optionKeys = new Set(followUpDedupeKeys(options));
-    return followUpDedupeKeys(item).some((key) => optionKeys.has(key));
-  }
-
-  function rememberConsumedNativeFollowUp(sessionId: string, request: NativeFollowUpRequest | undefined): void {
-    const keys = followUpDedupeKeys(request);
-    if (keys.length === 0) return;
-    const consumed = consumedNativeFollowUpKeys.get(sessionId) ?? new Set<string>();
-    for (const key of keys) consumed.add(key);
-    consumedNativeFollowUpKeys.set(sessionId, consumed);
-  }
-
-  function followUpPostDedupeKeys(options?: FollowUpOptions | NativeFollowUpRequest): string[] {
-    if (options?.clientNonce) return [`nonce:${options.clientNonce}`];
-    if (options?.clientSeq !== undefined) return [`seq:${options.clientSeq}`];
-    return [];
-  }
-
-  function hasQueuedOrConsumedNativeFollowUp(sessionId: string, options?: FollowUpOptions): boolean {
-    const optionKeys = new Set(followUpPostDedupeKeys(options));
-    if (optionKeys.size === 0) return false;
-    const consumed = consumedNativeFollowUpKeys.get(sessionId);
-    if (consumed && [...optionKeys].some((key) => consumed.has(key))) return true;
-    return (nativeFollowUpQueues.get(sessionId) ?? []).some((request) => followUpPostDedupeKeys(request).some((key) => optionKeys.has(key)));
-  }
-
-  function removeNativeFollowUp(sessionId: string, options?: FollowUpOptions): NativeFollowUpRemoval[] {
-    const queue = nativeFollowUpQueues.get(sessionId);
-    if (!queue?.length) {
-      if (!hasFollowUpSelector(options)) clearNativeFollowUpWork(sessionId);
-      return [];
-    }
-
-    const removed: NativeFollowUpRemoval[] = [];
-    const next: NativeFollowUpRequest[] = [];
-    const textCounts = new Map<string, number>();
-    for (const request of queue) {
-      const textOrdinal = textCounts.get(request.text) ?? 0;
-      textCounts.set(request.text, textOrdinal + 1);
-      if (matchesFollowUpSelector(request, options)) removed.push({ request, textOrdinal });
-      else next.push(request);
-    }
-
-    if (next.length > 0) nativeFollowUpQueues.set(sessionId, next);
-    else clearNativeFollowUpWork(sessionId);
-    return removed;
-  }
+  const followUpQueueCompat = createPiFollowUpQueueCompat();
 
   return ({
     id: "pi-coding-agent",
@@ -683,28 +560,13 @@ export function createPiCodingAgentHarness(opts: {
     async followUp(sessionId: string, text: string, _attachments?: MessageAttachment[], displayText = text, options?: FollowUpOptions): Promise<void> {
       const handle = piSessions.get(sessionId);
       if (!handle) throw new Error("followup_session_not_ready");
-      if (hasQueuedOrConsumedNativeFollowUp(sessionId, options)) return;
-      const queue = nativeFollowUpQueues.get(sessionId) ?? [];
-      queue.push({
-        text,
-        displayText,
-        clientNonce: options?.clientNonce,
-        clientSeq: options?.clientSeq,
-      });
-      nativeFollowUpQueues.set(sessionId, queue);
-      nativeFollowUpPending.add(sessionId);
+      followUpQueueCompat.record(sessionId, text, displayText, options);
       await handle.piSession.followUp(text);
     },
 
     clearFollowUp(sessionId: string, options?: FollowUpOptions): void {
       const handle = piSessions.get(sessionId);
-      const removed = removeNativeFollowUp(sessionId, options);
-      if (!handle) return;
-      if (!options?.clientNonce && options?.clientSeq === undefined) {
-        removePiQueuedFollowUp(handle.piSession);
-        return;
-      }
-      for (const item of removed) removePiQueuedFollowUp(handle.piSession, item.request.text, item.textOrdinal);
+      followUpQueueCompat.clear(sessionId, handle?.piSession, options);
     },
 
     /**
@@ -721,7 +583,12 @@ export function createPiCodingAgentHarness(opts: {
 
     async getPiSessionAdapter(input: SendMessageInput, ctx: RunContext) {
       const { piSession } = await getOrCreatePiSession(input.sessionId, input, ctx);
-      return createPiAgentSessionAdapter(piSession);
+      return createPiAgentSessionAdapter(piSession, {
+        sessionId: input.sessionId,
+        ...(piSession.agent && typeof piSession.agent.continue === "function"
+          ? { continueQueuedFollowUp: () => piSession.agent!.continue() }
+          : {}),
+      });
     },
 
     async *sendMessage(
@@ -1018,16 +885,7 @@ export function createPiCodingAgentHarness(opts: {
             inlineTurnIndex += 1;
             sawTextChunk = false;
             currentPiAssistantMessageId = null;
-            const queue = nativeFollowUpQueues.get(input.sessionId);
-            if (queue?.length) {
-              const index = queue.findIndex((item) => item.text === text || item.displayText === text);
-              const consumed = index >= 0 ? queue.splice(index, 1)[0] : queue.shift();
-              rememberConsumedNativeFollowUp(input.sessionId, consumed);
-              if (queue.length > 0) nativeFollowUpQueues.set(input.sessionId, queue);
-              else clearNativeFollowUpWork(input.sessionId);
-            } else {
-              nativeFollowUpPending.delete(input.sessionId);
-            }
+            followUpQueueCompat.consume(input.sessionId, text);
           }
         } else if (event.type === "message_end" && (event as any).message?.role === "user") {
           converted = piHistoryChunks;
@@ -1095,7 +953,7 @@ export function createPiCodingAgentHarness(opts: {
             // Pi 0.75+ can emit agent_end for a failed attempt while it is
             // about to auto-retry. Keep the HTTP stream open so retry chunks
             // are delivered instead of accumulating after the generator exits.
-          } else if (nativeFollowUpPending.has(input.sessionId) && !ctx.abortSignal.aborted) {
+          } else if (followUpQueueCompat.hasPending(input.sessionId) && !ctx.abortSignal.aborted) {
             // Pi native follow-up was queued but its user message has not been
             // emitted yet. Keep this HTTP stream open; the queued user
             // message_start will clear the pending flag and produce the
@@ -1177,8 +1035,8 @@ export function createPiCodingAgentHarness(opts: {
             // message_start. If pi resolves without that consumption event,
             // do not keep the HTTP stream open forever waiting for chunks that
             // will never arrive.
-            if (!done && nativeFollowUpPending.has(input.sessionId)) {
-              clearNativeFollowUpWork(input.sessionId);
+            if (!done && followUpQueueCompat.hasPending(input.sessionId)) {
+              followUpQueueCompat.clearSession(input.sessionId);
               done = true;
               stopHeartbeat();
               if (wake) wake();
@@ -1242,5 +1100,5 @@ export function createPiCodingAgentHarness(opts: {
         }
       }
     },
-  } as AgentHarness & { getPiSessionAdapter: (input: SendMessageInput, ctx: RunContext) => Promise<unknown> });
+  } as AgentHarness & { getPiSessionAdapter: (input: SendMessageInput, ctx: RunContext) => Promise<PiAgentSessionAdapter> });
 }

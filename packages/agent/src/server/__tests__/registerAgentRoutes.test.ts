@@ -183,12 +183,11 @@ test('request-scoped ready-status resolves the requested workspace', async () =>
 
 test('registerAgentRoutes reload reruns provisioning and refreshes skills scope', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-reload-provision-')
-  const skillRootV1 = join(workspaceRoot, 'generated-skills-v1', 'reload-skill-v1')
-  const skillRootV2 = join(workspaceRoot, 'generated-skills-v2', 'reload-skill-v2')
-  await mkdir(skillRootV1, { recursive: true })
-  await mkdir(skillRootV2, { recursive: true })
-  await writeFile(join(skillRootV1, 'SKILL.md'), '---\nname: reload-skill-v1\ndescription: Before reload.\n---\n')
-  await writeFile(join(skillRootV2, 'SKILL.md'), '---\nname: reload-skill-v2\ndescription: After reload.\n---\n')
+  const skillRoot = join(workspaceRoot, 'generated-skills', 'reload-skill')
+  async function writeReloadSkill(description: string): Promise<void> {
+    await mkdir(skillRoot, { recursive: true })
+    await writeFile(join(skillRoot, 'SKILL.md'), `---\nname: reload-skill\ndescription: ${description}\n---\n`)
+  }
   let provisionCalls = 0
   const reloadSession = vi.fn(async () => true)
   const app = Fastify({ logger: false })
@@ -198,11 +197,12 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
     mode: 'direct',
     provisionRuntime: async () => {
       provisionCalls += 1
+      await writeReloadSkill(provisionCalls === 1 ? 'Before reload.' : 'After reload.')
       return {
         changed: true,
         env: { BORING_AGENT_WORKSPACE_ROOT: workspaceRoot },
         pathEntries: [],
-        skillPaths: [provisionCalls === 1 ? dirname(skillRootV1) : dirname(skillRootV2)],
+        skillPaths: [dirname(skillRoot)],
       }
     },
     harnessFactory: async () => ({
@@ -230,7 +230,9 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
     await eventually(async () => {
       const before = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
       expect(before.statusCode).toBe(200)
-      expect(before.json().skills.map((skill: { name: string }) => skill.name)).toContain('reload-skill-v1')
+      expect(before.json().skills).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: 'reload-skill', description: 'Before reload.' }),
+      ]))
     })
 
     const reload = await app.inject({ method: 'POST', url: '/api/v1/agent/reload', payload: {} })
@@ -239,11 +241,11 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
     expect(reloadSession).toHaveBeenCalledWith('default')
     expect(provisionCalls).toBe(2)
 
-    const after = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
+    const after = await app.inject({ method: 'GET', url: '/api/v1/agent/skills?refresh=1' })
     expect(after.statusCode).toBe(200)
-    const names: string[] = after.json().skills.map((skill: { name: string }) => skill.name)
-    expect(names).toContain('reload-skill-v2')
-    expect(names).not.toContain('reload-skill-v1')
+    expect(after.json().skills).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'reload-skill', description: 'After reload.' }),
+    ]))
   } finally {
     await app.close()
   }

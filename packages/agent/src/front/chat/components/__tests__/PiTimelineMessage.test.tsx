@@ -1,0 +1,90 @@
+// @vitest-environment jsdom
+import { fireEvent, render, screen, within } from '@testing-library/react'
+import { describe, expect, test, vi } from 'vitest'
+import type { BoringChatMessage } from '../../../../shared/chat'
+import { PiTimelineMessage } from '../PiTimelineMessage'
+
+vi.mock('../../../primitives/message', () => ({
+  Message: ({ children, from, ...props }: any) => <article data-from={from} {...props}>{children}</article>,
+  MessageContent: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+  MessageResponse: ({ children }: any) => <div data-testid="message-response">{children}</div>,
+}))
+
+vi.mock('../../../primitives/reasoning', () => ({
+  Reasoning: ({ children, isStreaming, open, defaultOpen: _defaultOpen, onOpenChange: _onOpenChange, autoClose: _autoClose, ...props }: any) => (
+    <section data-testid="reasoning" data-open={String(open)} data-streaming={String(isStreaming)} {...props}>
+      {children}
+    </section>
+  ),
+  ReasoningTrigger: ({ onClick, getThinkingMessage }: any) => (
+    <button type="button" onClick={onClick}>
+      {getThinkingMessage?.(false) ?? 'thoughts'}
+    </button>
+  ),
+  ReasoningContent: ({ children }: any) => <div data-testid="reasoning-content">{children}</div>,
+}))
+
+vi.mock('../../../primitives/tool-call-group', () => ({
+  ToolCallGroup: ({ tools }: any) => (
+    <div data-testid="tool-call-group">
+      {tools.map(({ part }: any) => `${part.toolName}:${part.state}`).join(',')}
+    </div>
+  ),
+}))
+
+vi.mock('../../../primitives/attachments', () => ({
+  Attachments: ({ children }: any) => <div data-testid="attachments">{children}</div>,
+  Attachment: ({ children, data }: any) => <div data-filename={data.filename}>{children}</div>,
+  AttachmentPreview: () => <span>preview</span>,
+  AttachmentInfo: () => <span>info</span>,
+}))
+
+describe('PiTimelineMessage', () => {
+  test('renders live assistant parts in reasoning, tool, notice, text order and opens collapsed thoughts', () => {
+    const message: BoringChatMessage = {
+      id: 'a-live',
+      role: 'assistant',
+      status: 'streaming',
+      parts: [
+        { type: 'reasoning', id: 'r1', text: 'first thought', state: 'done' },
+        { type: 'reasoning', id: 'r2', text: 'second thought', state: 'streaming' },
+        { type: 'tool-call', id: 'tool-1', toolName: 'bash', input: { command: 'pwd' }, state: 'input-available' },
+        { type: 'tool-call', id: 'tool-2', toolName: 'read', input: { path: 'README.md' }, state: 'output-available' },
+        { type: 'notice', id: 'notice-1', level: 'warning', text: 'Command warning:\nvery-long-unbroken-token-that-should-wrap' },
+        { type: 'text', id: 'a-live:text', text: 'Final answer' },
+      ],
+    }
+
+    render(
+      <PiTimelineMessage
+        message={message}
+        isLast
+        isStreaming
+        showThoughts={false}
+        toolRenderers={{}}
+      />,
+    )
+
+    const row = screen.getByRole('article')
+    expect(row.getAttribute('data-boring-agent-message-id')).toBe('a-live')
+    expect(row.getAttribute('data-boring-agent-message-status')).toBe('streaming')
+
+    const reasoning = within(row).getByTestId('reasoning')
+    expect(reasoning.getAttribute('data-open')).toBe('false')
+    expect(reasoning.getAttribute('data-streaming')).toBe('true')
+    expect(within(reasoning).getByTestId('reasoning-content').textContent).toBe('first thought\n\nsecond thought')
+
+    fireEvent.click(within(reasoning).getByRole('button', { name: 'thoughts' }))
+    expect(within(row).getByTestId('reasoning').getAttribute('data-open')).toBe('true')
+
+    const tools = within(row).getByTestId('tool-call-group').closest('[data-boring-agent-part="message-tools"]')
+    const notice = row.querySelector('[data-boring-agent-part="message-notice"]')
+    const text = within(row).getByText('Final answer').closest('[data-boring-agent-part="message-text"]')
+    expect(tools?.textContent).toBe('bash:input-available,read:output-available')
+    expect(notice?.querySelector('.whitespace-pre-wrap')?.textContent).toBe('Command warning:\nvery-long-unbroken-token-that-should-wrap')
+
+    expect(reasoning.compareDocumentPosition(tools!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(tools!.compareDocumentPosition(notice!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(notice!.compareDocumentPosition(text!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+})

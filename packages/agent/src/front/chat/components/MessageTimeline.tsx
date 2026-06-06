@@ -2,7 +2,7 @@
 
 import type { HTMLAttributes, ReactNode } from 'react'
 import { memo, useMemo } from 'react'
-import type { BoringChatMessage, BoringChatPart, QueuedUserMessage } from '../../../shared/chat'
+import type { BoringChatMessage, BoringChatPart } from '../../../shared/chat'
 import { cn } from '../../lib'
 import {
   Attachment,
@@ -32,8 +32,6 @@ export interface MessageTimelineEmptyState {
 export interface MessageTimelineProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
   /** Already-selected render messages, normally selectMessagesForRender(state). */
   messages: BoringChatMessage[]
-  /** Already-selected queue preview, normally selectQueuePreview(state). */
-  queuePreview?: QueuedUserMessage[]
   emptyState?: MessageTimelineEmptyState
   toolRenderers?: ToolRendererOverrides
   onScrollToBottomReady?: ConversationProps['onScrollToBottomReady']
@@ -41,7 +39,6 @@ export interface MessageTimelineProps extends Omit<HTMLAttributes<HTMLDivElement
 
 export const MessageTimeline = memo(({
   messages,
-  queuePreview = [],
   emptyState,
   toolRenderers,
   onScrollToBottomReady,
@@ -72,7 +69,6 @@ export const MessageTimeline = memo(({
             <TimelineMessage key={message.id} message={message} toolRenderers={toolRenderers} />
           ))
         )}
-        <QueuePreview followUps={queuePreview} />
       </ConversationContent>
       <ConversationScrollButton />
     </Conversation>
@@ -94,6 +90,7 @@ const TimelineMessage = memo(({ message, toolRenderers }: TimelineMessageProps) 
     <Message
       data-boring-agent-part="message"
       data-boring-agent-message-id={message.id}
+      data-boring-agent-message-role={message.role}
       data-boring-agent-message-status={message.status}
       from={message.role}
     >
@@ -197,29 +194,6 @@ function toAttachmentData(part: Extract<BoringChatPart, { type: 'file' }>): Atta
 }
 
 function partKey(messageId: string, part: BoringChatPart, index: number): string {
-  if ('id' in part && part.id) return part.id
+  if ('id' in part && part.id) return `${messageId}:${part.type}:${part.id}`
   return `${messageId}:${part.type}:${index}`
-}
-
-interface QueuePreviewProps {
-  followUps: QueuedUserMessage[]
-}
-
-function QueuePreview({ followUps }: QueuePreviewProps) {
-  if (followUps.length === 0) return null
-  return (
-    <div
-      data-boring-agent-part="queue-preview"
-      className="ml-auto flex w-fit max-w-[95%] flex-col gap-1 rounded-lg border border-dashed border-border/70 bg-muted/35 px-3 py-2 text-xs text-muted-foreground"
-    >
-      <div className="font-medium text-foreground/80">Queued follow-ups</div>
-      <ol className="list-decimal space-y-1 pl-4">
-        {followUps.map((followUp) => (
-          <li key={followUp.id} data-boring-agent-queue-item={followUp.id}>
-            {followUp.displayText}
-          </li>
-        ))}
-      </ol>
-    </div>
-  )
 }

@@ -12,6 +12,10 @@ export interface PiSessionCreateInit {
   title?: string
 }
 
+export interface PiSessionRefreshOptions {
+  background?: boolean
+}
+
 export interface UsePiSessionsOptions {
   apiBaseUrl?: string
   sessionsApiPath?: string
@@ -41,7 +45,7 @@ export interface UsePiSessionsResult {
   dataStorageScope: string
   loading: boolean
   error: Error | undefined
-  refresh: () => Promise<void>
+  refresh: (options?: PiSessionRefreshOptions) => Promise<void>
   create: (init?: PiSessionCreateInit) => Promise<SessionSummary>
   switch: (id: string) => void
   delete: (id: string) => Promise<void>
@@ -122,10 +126,11 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     })
   }, [ensurePendingScope, options.initialActiveSessionId, options.storage, persistActive, storageScope])
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (refreshOptions: PiSessionRefreshOptions = {}) => {
     const version = ++refreshVersionRef.current
     const isCurrent = () => mountedRef.current && version === refreshVersionRef.current
     clearRetryTimer(retryTimerRef)
+    const background = refreshOptions.background === true
 
     if (!enabled) {
       setDataStorageScope(storageScope)
@@ -137,7 +142,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       return
     }
 
-    setLoading(true)
+    if (!background) setLoading(true)
     try {
       let data: SessionSummary[] | undefined
       for (let attempt = 0; ; attempt += 1) {
@@ -158,7 +163,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       setLoading(false)
     } catch (err) {
       if (!isCurrent()) return
-      setError(err instanceof Error ? err : new Error(String(err)))
+      if (!background) setError(err instanceof Error ? err : new Error(String(err)))
       setLoading(false)
     }
   }, [applySessions, enabled, fetchImpl, persistActive, requestHeaders, retryBaseMs, retryMaxMs, retryMaxRetries, sessionsUrl])

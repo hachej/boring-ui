@@ -38,6 +38,23 @@ describe('SessionList', () => {
     expect(onSwitch).not.toHaveBeenCalled()
   })
 
+  test('sorts sessions by updatedAt descending with deterministic ties', () => {
+    const tiedUpdatedAt = new Date(now.getTime() - 30_000).toISOString()
+    const unsorted: SessionSummary[] = [
+      { id: 'session-old', title: 'Oldest', createdAt: new Date(now.getTime() - 120_000).toISOString(), updatedAt: new Date(now.getTime() - 120_000).toISOString(), turnCount: 1 },
+      { id: 'session-tie-b', title: 'Tie B', createdAt: new Date(now.getTime() - 20_000).toISOString(), updatedAt: tiedUpdatedAt, turnCount: 2 },
+      { id: 'session-new', title: 'Newest', createdAt: now.toISOString(), updatedAt: now.toISOString(), turnCount: 3 },
+      { id: 'session-tie-a', title: 'Tie A', createdAt: new Date(now.getTime() - 10_000).toISOString(), updatedAt: tiedUpdatedAt, turnCount: 4 },
+    ]
+
+    render(<SessionList sessions={unsorted} activeId="session-tie-a" />)
+
+    const rows = Array.from(document.querySelectorAll('[data-boring-agent-part="session-row"]'))
+    expect(rows.map((row) => row.querySelector('[title]')?.getAttribute('title'))).toEqual(['Newest', 'Tie A', 'Tie B', 'Oldest'])
+    expect(rows.filter((row) => row.getAttribute('data-boring-state') === 'selected')).toHaveLength(1)
+    expect(rows[1]?.getAttribute('data-boring-state')).toBe('selected')
+  })
+
   test('renders empty/loading states', () => {
     const { rerender } = render(<SessionList sessions={[]} />)
     expect(screen.getByText(/No sessions yet/)).toBeTruthy()

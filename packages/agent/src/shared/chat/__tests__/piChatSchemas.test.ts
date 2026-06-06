@@ -96,6 +96,8 @@ describe('Pi chat shared schemas', () => {
 
   test('validates empty command payloads and command receipts', () => {
     expect(QueueClearPayloadSchema.parse({})).toEqual({})
+    expect(QueueClearPayloadSchema.parse(undefined)).toEqual({})
+    expect(QueueClearPayloadSchema.parse({ clientNonce: 'nonce-q', clientSeq: 1 })).toEqual({ clientNonce: 'nonce-q', clientSeq: 1 })
     expect(InterruptPayloadSchema.parse({})).toEqual({})
     expect(StopPayloadSchema.parse({})).toEqual({})
     expect(QueueClearPayloadSchema.safeParse({ unexpected: true }).success).toBe(false)
@@ -124,6 +126,13 @@ describe('Pi chat shared schemas', () => {
     })
 
     expect(parsed).toEqual({ type: 'message-delta', seq: 5, messageId: 'm1', partId: 'p1', kind: 'text', delta: 'hi' })
+    expect(PiChatEventSchema.parse({
+      type: 'message-start',
+      seq: 6,
+      messageId: 'u1',
+      role: 'user',
+      createdAt: '2026-06-06T10:00:00.000Z',
+    })).toMatchObject({ type: 'message-start', createdAt: '2026-06-06T10:00:00.000Z' })
     expect(PiChatEventSchema.safeParse({ type: 'new-future-event', seq: 1 }).success).toBe(false)
     expect(PiChatEventSchema.safeParse({ type: 'message-delta', messageId: 'm1', partId: 'p1', kind: 'text', delta: 'hi' }).success).toBe(false)
   })

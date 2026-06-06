@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen, within } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
-import type { BoringChatMessage, QueuedUserMessage } from '../../../../shared/chat'
+import type { BoringChatMessage } from '../../../../shared/chat'
 import { MessageTimeline } from '../MessageTimeline'
 
 vi.mock('../../../primitives/conversation', () => ({
@@ -88,21 +88,6 @@ describe('MessageTimeline', () => {
     expect(Boolean(assistantContent && tools && finalText)).toBe(true)
     expect(assistantContent!.compareDocumentPosition(tools!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(tools!.compareDocumentPosition(finalText!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  })
-
-  test('renders queue preview from queue selector output, not as transcript messages', () => {
-    const queuePreview: QueuedUserMessage[] = [
-      { id: 'q1', kind: 'followup', displayText: 'then run tests', clientSeq: 1 },
-      { id: 'q2', kind: 'followup', displayText: 'then summarize', clientSeq: 2 },
-    ]
-
-    render(<MessageTimeline messages={messages()} queuePreview={queuePreview} />)
-
-    const preview = screen.getByText('Queued follow-ups').closest('[data-boring-agent-part="queue-preview"]')
-    expect(preview).toBeTruthy()
-    expect(within(preview as HTMLElement).getByText('then run tests')).toBeTruthy()
-    expect(within(preview as HTMLElement).getByText('then summarize')).toBeTruthy()
-    expect(screen.getAllByRole('article')).toHaveLength(2)
   })
 
   test('renders empty state without requiring browser transcript cache', () => {

@@ -58,9 +58,9 @@ export type PiComposerBlockedReason =
   | 'pre-submit-cancelled'
 
 export type PiComposerSubmitResult =
-  | { type: 'prompt'; clientNonce: string; preserveDraft: false }
-  | { type: 'followup'; clientNonce: string; clientSeq: number; preserveDraft: false }
-  | { type: 'command'; command: string; result?: string; preserveDraft: false }
+  | { type: 'prompt'; clientNonce: string; cursor?: number; preserveDraft: false }
+  | { type: 'followup'; clientNonce: string; clientSeq: number; cursor?: number; preserveDraft: false }
+  | { type: 'command'; command: string; result?: string; preserveDraft: boolean }
   | { type: 'blocked'; reason: PiComposerBlockedReason; message: string; preserveDraft: true }
 
 export class PiComposerPolicyController {
@@ -108,14 +108,16 @@ export class PiComposerPolicyController {
     if (this.options.isActiveSession && !this.options.isActiveSession()) {
       return this.block('inactive-session', 'The active session changed before the message was sent.')
     }
-    this.options.onMentionedFilesConsumed?.()
 
-    return this.fromQueueResult(await this.queueController.submit({
+    const result = await this.queueController.submit({
       text: serverMessage,
+      displayText: text,
       attachments,
       model: this.options.model ?? undefined,
       ...(this.options.thinkingControl ? { thinkingLevel: this.options.thinkingLevel ?? DEFAULT_THINKING } : {}),
-    }))
+    })
+    if (result.type !== 'blocked') this.options.onMentionedFilesConsumed?.()
+    return this.fromQueueResult(result)
   }
 
   async editQueued() {
@@ -147,8 +149,14 @@ export class PiComposerPolicyController {
       return this.block('busy-slash-command', 'Slash commands are not queued while the agent is responding.')
     }
     const result = await Promise.resolve(this.options.registry.get(commandName)?.handler(args, this.options.slashContext))
-    if (typeof result === 'string') this.options.onCommandResult?.(result)
-    return { type: 'command', command: commandName, ...(typeof result === 'string' ? { result } : {}), preserveDraft: false }
+    const message = typeof result === 'string'
+      ? result
+      : result && typeof result === 'object'
+        ? result.message
+        : undefined
+    const preserveDraft = Boolean(result && typeof result === 'object' && result.preserveDraft === true)
+    if (message) this.options.onCommandResult?.(message)
+    return { type: 'command', command: commandName, ...(message ? { result: message } : {}), preserveDraft }
   }
 
   private async runBeforeSubmit(draft: string, files: FileUIPart[], source: PiComposerSubmitInput['source']): Promise<boolean> {
@@ -219,6 +227,10 @@ export class InitialDraftAutoSubmitGuard {
     if (this.submitted.has(sessionId)) return false
     this.submitted.add(sessionId)
     return true
+  }
+
+  releaseAutoSubmit(sessionId: string): void {
+    this.submitted.delete(sessionId)
   }
 }
 

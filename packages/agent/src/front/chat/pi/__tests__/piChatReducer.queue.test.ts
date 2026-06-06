@@ -47,7 +47,7 @@ describe('piChatReducer queue behavior', () => {
     expect(state.needsResync).toEqual({ expectedSeq: 2, actualSeq: 3, lastSeq: 1 })
   })
 
-  it('reconciles queued follow-ups by nonce/seq metadata, never by text equality', () => {
+  it('reconciles queued follow-ups by nonce/seq metadata', () => {
     let state = createInitialPiChatState({ sessionId: 's1', storageScope: 'scope' })
     state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('nonce-1', 'same text', 1) })
     state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('nonce-2', 'same text', 2) })
@@ -65,6 +65,97 @@ describe('piChatReducer queue behavior', () => {
     expect(state.queue.followUps).toEqual([{ id: 'q2', kind: 'followup', clientNonce: 'nonce-2', clientSeq: 2, displayText: 'same text' }])
   })
 
+  it('does not fall back to duplicate text when queued follow-ups include clientSeq', () => {
+    let state = createInitialPiChatState({ sessionId: 's1', storageScope: 'scope' })
+    state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('nonce-1', 'same text', 1) })
+    state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('nonce-2', 'same text', 2) })
+
+    state = piChatReducer(state, {
+      type: 'event',
+      event: {
+        type: 'queue-updated',
+        seq: 1,
+        queue: { followUps: [{ id: 'q2', kind: 'followup', clientSeq: 2, displayText: 'same text' }] },
+      },
+    })
+
+    expect(Object.keys(state.optimisticOutbox)).toEqual(['nonce-1'])
+  })
+
+  it('reconciles metadata-free queue snapshots against optimistic follow-ups without clearing prompts', () => {
+    let state = createInitialPiChatState({ sessionId: 's1', storageScope: 'scope' })
+    state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('prompt-nonce', 'same text') })
+    state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('followup-nonce', 'same text', 1) })
+
+    state = piChatReducer(state, {
+      type: 'event',
+      event: {
+        type: 'queue-updated',
+        seq: 1,
+        queue: { followUps: [{ id: 'q1', kind: 'followup', displayText: 'same text' }] },
+      },
+    })
+
+    expect(Object.keys(state.optimisticOutbox)).toEqual(['prompt-nonce'])
+    expect(state.queue.followUps).toEqual([{ id: 'q1', kind: 'followup', clientNonce: 'followup-nonce', clientSeq: 1, displayText: 'same text' }])
+
+    state = piChatReducer(state, {
+      type: 'event',
+      event: {
+        type: 'queue-updated',
+        seq: 2,
+        queue: { followUps: [{ id: 'q1', kind: 'followup', displayText: 'same text' }] },
+      },
+    })
+
+    expect(Object.keys(state.optimisticOutbox)).toEqual(['prompt-nonce'])
+    expect(state.queue.followUps).toEqual([{ id: 'q1', kind: 'followup', clientNonce: 'followup-nonce', clientSeq: 1, displayText: 'same text' }])
+  })
+
+  it('does not text-reconcile ambiguous metadata-free duplicate follow-ups', () => {
+    let state = createInitialPiChatState({ sessionId: 's1', storageScope: 'scope' })
+    state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('nonce-1', 'same text', 1) })
+    state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('nonce-2', 'same text', 2) })
+
+    state = piChatReducer(state, {
+      type: 'event',
+      event: {
+        type: 'queue-updated',
+        seq: 1,
+        queue: { followUps: [{ id: 'q1', kind: 'followup', displayText: 'same text' }] },
+      },
+    })
+
+    expect(Object.keys(state.optimisticOutbox)).toEqual(['nonce-1', 'nonce-2'])
+    expect(state.queue.followUps).toEqual([{ id: 'q1', kind: 'followup', displayText: 'same text' }])
+  })
+
+  it('preserves optimistic follow-ups across empty queue updates until stronger server evidence arrives', () => {
+    let state = createInitialPiChatState({ sessionId: 's1', storageScope: 'scope' })
+    state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('prompt-nonce', 'prompt') })
+    state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('followup-nonce', 'follow up', 1) })
+
+    state = piChatReducer(state, {
+      type: 'event',
+      event: {
+        type: 'queue-updated',
+        seq: 1,
+        queue: { followUps: [] },
+      },
+    })
+
+    expect(Object.keys(state.optimisticOutbox)).toEqual(['prompt-nonce', 'followup-nonce'])
+    expect(state.queue.followUps).toEqual([])
+
+    state = piChatReducer(state, {
+      type: 'clear-optimistic-followups',
+      clientNonce: 'followup-nonce',
+      clientSeq: 1,
+    })
+
+    expect(Object.keys(state.optimisticOutbox)).toEqual(['prompt-nonce'])
+  })
+
   it('removes an optimistic placeholder when Pi consumes the follow-up', () => {
     let state = createInitialPiChatState({ sessionId: 's1', storageScope: 'scope' })
     state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('nonce-1', 'next', 1) })
@@ -74,6 +165,114 @@ describe('piChatReducer queue behavior', () => {
     })
 
     expect(state.optimisticOutbox).toEqual({})
+  })
+
+  it('removes a queued follow-up from preview when the queued user turn starts', () => {
+    let state = createInitialPiChatState({ sessionId: 's1', storageScope: 'scope' })
+    state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('nonce-1', 'next', 1) })
+    state = piChatReducer(state, {
+      type: 'event',
+      event: {
+        type: 'queue-updated',
+        seq: 1,
+        queue: { followUps: [{ id: 'q1', kind: 'followup', clientNonce: 'nonce-1', clientSeq: 1, displayText: 'next' }] },
+      },
+    })
+
+    state = piChatReducer(state, {
+      type: 'event',
+      event: {
+        type: 'message-start',
+        seq: 2,
+        messageId: 'u2',
+        role: 'user',
+        text: 'next',
+        clientNonce: 'nonce-1',
+        clientSeq: 1,
+      },
+    })
+
+    expect(state.queue.followUps).toEqual([])
+    expect(state.optimisticOutbox).toEqual({})
+    expect(state.committedMessages).toEqual([
+      expect.objectContaining({ id: 'u2', clientNonce: 'nonce-1', clientSeq: 1 }),
+    ])
+  })
+
+  it('clears all optimistic follow-ups after an accepted full queue clear without dropping prompts', () => {
+    let state = createInitialPiChatState({ sessionId: 's1', storageScope: 'scope' })
+    state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('prompt-nonce', 'prompt') })
+    state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('followup-1', 'first', 1) })
+    state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('followup-2', 'second', 2) })
+    state = {
+      ...state,
+      queue: {
+        followUps: [
+          { id: 'q1', kind: 'followup', clientNonce: 'followup-1', clientSeq: 1, displayText: 'first' },
+          { id: 'q2', kind: 'followup', clientNonce: 'followup-2', clientSeq: 2, displayText: 'second' },
+        ],
+      },
+    }
+
+    state = piChatReducer(state, { type: 'clear-optimistic-followups' })
+
+    expect(Object.keys(state.optimisticOutbox)).toEqual(['prompt-nonce'])
+    expect(state.queue.followUps).toEqual([])
+  })
+
+  it('uses clientNonce before clientSeq when clearing a selected queued follow-up', () => {
+    let state = createInitialPiChatState({ sessionId: 's1', storageScope: 'scope' })
+    state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('nonce-a', 'first tab', 1) })
+    state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('nonce-b', 'second tab', 1) })
+    state = {
+      ...state,
+      queue: {
+        followUps: [
+          { id: 'q-a', kind: 'followup', clientNonce: 'nonce-a', clientSeq: 1, displayText: 'first tab' },
+          { id: 'q-b', kind: 'followup', clientNonce: 'nonce-b', clientSeq: 1, displayText: 'second tab' },
+        ],
+      },
+    }
+
+    state = piChatReducer(state, { type: 'clear-optimistic-followups', clientNonce: 'nonce-a', clientSeq: 1 })
+
+    expect(Object.keys(state.optimisticOutbox)).toEqual(['nonce-b'])
+    expect(state.queue.followUps).toEqual([{ id: 'q-b', kind: 'followup', clientNonce: 'nonce-b', clientSeq: 1, displayText: 'second tab' }])
+  })
+
+  it('preserves user selectors when a final message replaces the message-start row', () => {
+    let state = createInitialPiChatState({ sessionId: 's1', storageScope: 'scope' })
+    state = piChatReducer(state, {
+      type: 'event',
+      event: {
+        type: 'message-start',
+        seq: 1,
+        messageId: 'u1',
+        role: 'user',
+        text: 'next',
+        clientNonce: 'nonce-1',
+        clientSeq: 1,
+      },
+    })
+
+    state = piChatReducer(state, {
+      type: 'event',
+      event: {
+        type: 'message-end',
+        seq: 2,
+        messageId: 'u1',
+        final: {
+          id: 'u1',
+          role: 'user',
+          status: 'done',
+          parts: [{ type: 'text', id: 'u1:text:0', text: 'next' }],
+        },
+      },
+    })
+
+    expect(state.committedMessages).toEqual([
+      expect.objectContaining({ id: 'u1', clientNonce: 'nonce-1', clientSeq: 1 }),
+    ])
   })
 
   it('hydrates accepted queue after active reload and clears browser-only stale outbox with notice', () => {

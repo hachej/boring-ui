@@ -172,5 +172,9 @@ function startOfDay(date: Date): number {
 }
 
 function sortByUpdatedDesc(a: SessionSummary, b: SessionSummary): number {
-  return (toDate(b.updatedAt)?.getTime() ?? 0) - (toDate(a.updatedAt)?.getTime() ?? 0)
+  const updatedDelta = (toDate(b.updatedAt)?.getTime() ?? 0) - (toDate(a.updatedAt)?.getTime() ?? 0)
+  if (updatedDelta !== 0) return updatedDelta
+  const createdDelta = (toDate(b.createdAt)?.getTime() ?? 0) - (toDate(a.createdAt)?.getTime() ?? 0)
+  if (createdDelta !== 0) return createdDelta
+  return a.id.localeCompare(b.id)
 }

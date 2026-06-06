@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { FileUIPart } from 'ai'
-import type { BoringChatMessage, PiChatStatus, PromptPayload, QueuedUserMessage } from '../../../../shared/chat'
+import type { BoringChatMessage, FollowUpPayload, PiChatStatus, PromptPayload, QueuedUserMessage } from '../../../../shared/chat'
 import { createInitialPiChatState, type PiChatState } from '../../pi/piChatReducer'
 import type { PiQueueSessionLike } from '../../pi/piFollowUpQueueController'
 import { createCommandRegistry, type SlashCommandContext } from '../../../slashCommands/registry'
@@ -22,10 +22,10 @@ import type { ActiveSessionStorageLike } from '../activeSessionStorage'
 class FakeComposerSession implements PiQueueSessionLike {
   state: PiChatState
   prompts: PromptPayload[] = []
-  followUps: Array<{ message: string; clientNonce: string; clientSeq: number }> = []
-  clearQueue = vi.fn(async () => ({ accepted: true, cursor: 1, cleared: this.state.queue.followUps.length }))
-  interrupt = vi.fn(async () => ({ accepted: true, cursor: 2 }))
-  stop = vi.fn(async () => ({ accepted: true, cursor: 3, stopped: true, clearedQueue: this.state.queue.followUps }))
+  followUps: FollowUpPayload[] = []
+  clearQueue = vi.fn(async () => ({ accepted: true as const, cursor: 1, cleared: this.state.queue.followUps.length }))
+  interrupt = vi.fn(async () => ({ accepted: true as const, cursor: 2 }))
+  stop = vi.fn(async () => ({ accepted: true as const, cursor: 3, stopped: true as const, clearedQueue: this.state.queue.followUps }))
 
   constructor(status: PiChatStatus, followUps: QueuedUserMessage[] = []) {
     this.state = createInitialPiChatState({ sessionId: 's1', storageScope: 'scope', status })
@@ -38,12 +38,12 @@ class FakeComposerSession implements PiQueueSessionLike {
 
   async prompt(payload: PromptPayload) {
     this.prompts.push(payload)
-    return { accepted: true, cursor: 10, clientNonce: payload.clientNonce }
+    return { accepted: true as const, cursor: 10, clientNonce: payload.clientNonce }
   }
 
-  async followUp(payload: { message: string; clientNonce: string; clientSeq: number }) {
+  async followUp(payload: FollowUpPayload) {
     this.followUps.push(payload)
-    return { accepted: true, cursor: 11, clientNonce: payload.clientNonce, clientSeq: payload.clientSeq, queued: true as const }
+    return { accepted: true as const, cursor: 11, clientNonce: payload.clientNonce, clientSeq: payload.clientSeq, queued: true as const }
   }
 }
 
@@ -149,6 +149,31 @@ describe('PiComposerPolicyController submit policy', () => {
     expect(session.prompts[0]?.message).toContain('Build it')
     expect(session.prompts[0]?.message).toContain('[attached: spec.md (text/markdown)]')
     expect(session.prompts[0]?.message).toContain('@files: src/app.ts')
+    expect(session.prompts[0]?.displayMessage).toBe('Build it')
+  })
+
+  it('does not consume mentioned files when the remote prompt fails before acceptance', async () => {
+    const session = new FakeComposerSession('idle')
+    session.prompt = vi.fn(async (payload: PromptPayload) => {
+      session.prompts.push(payload)
+      throw new Error('network down')
+    })
+    const consumed = vi.fn()
+    const policy = createPiComposerPolicyController({
+      session,
+      registry: createCommandRegistry(builtinCommands),
+      slashContext: context(),
+      mentionedFiles: ['src/app.ts'],
+      onMentionedFilesConsumed: consumed,
+    })
+
+    await expect(policy.submit({ text: 'retry me' })).rejects.toThrow('network down')
+
+    expect(session.prompts[0]).toMatchObject({
+      message: 'retry me\n\n@files: src/app.ts',
+      displayMessage: 'retry me',
+    })
+    expect(consumed).not.toHaveBeenCalled()
   })
 
   it('preserves draft when warmup/blockers or pre-submit cancellation block submission', async () => {
@@ -224,6 +249,7 @@ describe('PiComposerPolicyController submit policy', () => {
       type: 'followup',
       clientNonce: 'nonce-1',
       clientSeq: 1,
+      cursor: 11,
       preserveDraft: false,
     })
     expect(session.followUps).toEqual([{ message: 'skill: review\n\nsrc/app.ts', clientNonce: 'nonce-1', clientSeq: 1 }])

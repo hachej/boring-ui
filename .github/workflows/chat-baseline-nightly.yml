@@ -1,0 +1,65 @@
+name: Chat Baseline Nightly
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 7 * * *"
+
+env:
+  CI: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chat-baseline-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bombadil-chat:
+    name: Pi-native Bombadil Chat Baseline
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@d15e628ca66d93ee5f352c71671a7bc6a97af5c9 # v6.0.8
+
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build agent package graph
+        run: pnpm --filter @hachej/boring-agent... --workspace-concurrency=4 run build
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Run Bombadil chat baseline
+        run: pnpm test:bombadil:chat:nightly
+        env:
+          BOMBADIL_OUTPUT_PATH: ${{ github.workspace }}/bombadil-results/pi-native-chat
+
+      - name: Upload Bombadil results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bombadil-pi-native-chat
+          path: bombadil-results
+          if-no-files-found: warn

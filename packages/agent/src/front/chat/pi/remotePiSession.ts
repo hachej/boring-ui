@@ -26,6 +26,7 @@ import { createPiChatStore, type PiChatStore, type PiChatStoreListener, type PiC
 import {
   buildPiChatEventsUrl,
   parsePiChatReplayRangeError,
+  PI_CHAT_CURSOR_AHEAD_CODE,
   readPiChatNdjsonStream,
   schedulePiChatReconnect,
 } from './piChatStream'
@@ -116,6 +117,7 @@ export class RemotePiSession {
   private generation = 0
   private streamRunId = 0
   private reconnectAttempt = 0
+  private started = false
   private disposed = false
   private streamAbortController?: AbortController
   private reconnectTimer?: ReconnectTimer
@@ -134,11 +136,10 @@ export class RemotePiSession {
       sessionId: options.sessionId,
       workspaceId: options.workspaceId,
       storageScope: this.storageScope,
+      status: options.autoStart === false ? 'idle' : undefined,
     }), options.storeOptions)
 
-    if (options.autoStart !== false) {
-      void this.hydrateAndConnect(this.generation)
-    }
+    if (options.autoStart !== false) this.start()
   }
 
   getState(): PiChatState {
@@ -180,19 +181,53 @@ export class RemotePiSession {
     return this.store.subscribe(listener)
   }
 
+  start(cursor?: number): Promise<void> {
+    if (this.disposed || this.started) return Promise.resolve()
+    this.started = true
+    const generation = this.generation
+    if (cursor === undefined) {
+      void this.hydrateAndConnect(generation)
+      return Promise.resolve()
+    }
+    this.store.dispatch({ type: 'cursor-sync', cursor }, { flush: true })
+    this.store.dispatch({ type: 'connection-state', state: 'connecting' }, { flush: true })
+    return this.connectEvents(cursor, generation)
+  }
+
   async prompt(payload: PromptPayload): Promise<PromptReceipt> {
     if (!this.disposed) {
       this.store.dispatch({ type: 'optimistic-user-message', message: toOptimisticUserMessage(payload) }, { flush: true })
     }
-    return this.postCommand('/prompt', payload, PromptReceiptSchema)
+    if (!this.started) await this.start(this.store.getState().lastSeq)
+    try {
+      const receipt = await this.postCommand('/prompt', payload, PromptReceiptSchema)
+      return receipt
+    } catch (error) {
+      this.rollbackOptimisticMessage(payload.clientNonce)
+      throw error
+    }
   }
 
   async followUp(payload: FollowUpPayload): Promise<FollowUpReceipt> {
-    return this.postCommand('/followup', payload, FollowUpReceiptSchema)
+    if (!this.disposed) {
+      this.store.dispatch({ type: 'optimistic-user-message', message: toOptimisticUserMessage(payload) }, { flush: true })
+    }
+    if (!this.started) await this.start(this.store.getState().lastSeq)
+    try {
+      const receipt = await this.postCommand('/followup', payload, FollowUpReceiptSchema)
+      return receipt
+    } catch (error) {
+      this.rollbackOptimisticMessage(payload.clientNonce)
+      throw error
+    }
   }
 
   async clearQueue(payload: QueueClearPayload = {}): Promise<QueueClearReceipt> {
-    return this.postCommand('/queue/clear', payload, QueueClearReceiptSchema)
+    const receipt = await this.postCommand('/queue/clear', payload, QueueClearReceiptSchema)
+    if (!this.disposed && receipt.cleared > 0) {
+      this.store.dispatch({ type: 'clear-optimistic-followups', ...payload }, { flush: true })
+    }
+    return receipt
   }
 
   async interrupt(payload: InterruptPayload = {}): Promise<CommandReceipt> {
@@ -200,7 +235,11 @@ export class RemotePiSession {
   }
 
   async stop(payload: StopPayload = {}): Promise<StopReceipt> {
-    return this.postCommand('/stop', payload, StopReceiptSchema)
+    const receipt = await this.postCommand('/stop', payload, StopReceiptSchema)
+    if (!this.disposed && receipt.clearedQueue.length > 0) {
+      this.store.dispatch({ type: 'clear-optimistic-followups' }, { flush: true })
+    }
+    return receipt
   }
 
   dispose(): void {
@@ -216,7 +255,7 @@ export class RemotePiSession {
     this.store.dispose()
   }
 
-  private async hydrateAndConnect(generation: number): Promise<void> {
+  private async hydrateAndConnect(generation: number, options: { allowSeqRewind?: boolean } = {}): Promise<void> {
     if (!this.isGenerationActive(generation)) return
     this.clearReconnectTimer()
     this.abortEventStream()
@@ -237,7 +276,7 @@ export class RemotePiSession {
 
       const snapshot = PiChatSnapshotSchema.parse(raw)
       if (!this.isGenerationActive(generation)) return
-      this.store.dispatch({ type: 'hydrate', snapshot }, { flush: true })
+      this.store.dispatch({ type: 'hydrate', snapshot, allowSeqRewind: options?.allowSeqRewind }, { flush: true })
       this.connectEvents(snapshot.seq, generation)
     } catch (error) {
       if (!this.isGenerationActive(generation) || isAbortError(error)) return
@@ -246,50 +285,80 @@ export class RemotePiSession {
     }
   }
 
-  private connectEvents(cursor: number, generation: number): void {
-    if (!this.isGenerationActive(generation)) return
+  private connectEvents(cursor: number, generation: number): Promise<void> {
+    if (!this.isGenerationActive(generation)) return Promise.resolve()
     this.clearReconnectTimer()
     this.abortEventStream()
     const runId = ++this.streamRunId
     const controller = new AbortController()
     this.streamAbortController = controller
+    let markOpen!: () => void
+    const open = new Promise<void>((resolve) => {
+      markOpen = resolve
+    })
 
-    void this.runEventStream(cursor, generation, runId, controller)
+    void this.runEventStream(cursor, generation, runId, controller, markOpen)
+    return open
   }
 
-  private async runEventStream(cursor: number, generation: number, runId: number, controller: AbortController): Promise<void> {
+  private async runEventStream(
+    cursor: number,
+    generation: number,
+    runId: number,
+    controller: AbortController,
+    onOpen?: () => void,
+  ): Promise<void> {
+    let opened = false
+    const markOpen = () => {
+      if (opened) return
+      opened = true
+      onOpen?.()
+    }
     try {
       const headers = await this.requestHeaders()
-      if (!this.isStreamActive(generation, runId)) return
+      if (!this.isStreamActive(generation, runId)) {
+        markOpen()
+        return
+      }
       const response = await this.fetchImpl(buildPiChatEventsUrl({ apiBaseUrl: this.apiBaseUrl, sessionId: this.options.sessionId, cursor }), {
         method: 'GET',
         headers,
         signal: controller.signal,
       })
-      if (!this.isStreamActive(generation, runId)) return
+      if (!this.isStreamActive(generation, runId)) {
+        markOpen()
+        return
+      }
 
       if (!response.ok) {
         const body = await safeReadJson(response)
-        if (!this.isStreamActive(generation, runId)) return
+        if (!this.isStreamActive(generation, runId)) {
+          markOpen()
+          return
+        }
         const replayError = parsePiChatReplayRangeError(response.status, body)
         if (replayError) {
           this.gapCount += 1
-          this.rehydrateAfterStreamReset(generation)
+          this.rehydrateAfterStreamReset(generation, { allowSeqRewind: replayError.type === PI_CHAT_CURSOR_AHEAD_CODE })
+          markOpen()
           return
         }
         this.dispatchProtocolError(routeErrorMessage(body, `Pi chat event stream failed with HTTP ${response.status}.`))
         this.scheduleReconnect(generation)
+        markOpen()
         return
       }
 
       if (!response.body) {
         this.dispatchProtocolError('Pi chat event stream response did not include a body.')
         this.scheduleReconnect(generation)
+        markOpen()
         return
       }
 
       this.reconnectAttempt = 0
       this.store.dispatch({ type: 'connection-state', state: 'connected' }, { flush: true })
+      markOpen()
       await readPiChatNdjsonStream(response.body, {
         onFrame: (frame) => {
           if (!this.isStreamActive(generation, runId)) return
@@ -320,17 +389,18 @@ export class RemotePiSession {
         this.scheduleReconnect(generation)
       }
     } catch (error) {
+      markOpen()
       if (!this.isStreamActive(generation, runId) || isAbortError(error)) return
       this.dispatchProtocolError(errorMessage(error, 'Pi chat event stream disconnected.'))
       this.scheduleReconnect(generation)
     }
   }
 
-  private rehydrateAfterStreamReset(generation: number): void {
+  private rehydrateAfterStreamReset(generation: number, options: { allowSeqRewind?: boolean } = {}): void {
     if (!this.isGenerationActive(generation)) return
     this.streamRunId += 1
     this.abortEventStream()
-    void this.hydrateAndConnect(generation)
+    void this.hydrateAndConnect(generation, options)
   }
 
   private scheduleReconnect(generation: number): void {
@@ -370,6 +440,11 @@ export class RemotePiSession {
       throw abortError('Remote Pi session disposed before command receipt.')
     }
     return schema.parse(raw)
+  }
+
+  private rollbackOptimisticMessage(clientNonce: string): void {
+    if (this.disposed) return
+    this.store.dispatch({ type: 'remove-optimistic-user-message', clientNonce }, { flush: true })
   }
 
   private async fetchJson(url: string, init: RequestInit): Promise<unknown> {
@@ -468,15 +543,18 @@ class RemotePiSessionHttpError extends Error {
   }
 }
 
-function toOptimisticUserMessage(payload: PromptPayload): OptimisticUserMessage {
+function toOptimisticUserMessage(payload: PromptPayload | FollowUpPayload): OptimisticUserMessage {
+  const displayText = payload.displayMessage ?? payload.message
   return {
     id: `optimistic:${payload.clientNonce}`,
     role: 'user',
     status: 'pending',
     clientNonce: payload.clientNonce,
+    createdAt: new Date().toISOString(),
+    ...('clientSeq' in payload ? { clientSeq: payload.clientSeq } : {}),
     parts: [
-      { type: 'text', id: `optimistic:${payload.clientNonce}:text`, text: payload.message },
-      ...(payload.attachments ?? []).map((attachment, index) => ({
+      { type: 'text', id: `optimistic:${payload.clientNonce}:text`, text: displayText },
+      ...('attachments' in payload ? (payload.attachments ?? []) : []).map((attachment, index) => ({
         type: 'file' as const,
         id: `optimistic:${payload.clientNonce}:file:${index}`,
         filename: attachment.filename,

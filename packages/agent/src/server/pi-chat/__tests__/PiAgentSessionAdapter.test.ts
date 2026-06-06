@@ -48,7 +48,8 @@ function createFakeSession(overrides: Partial<PiAgentSessionLike> = {}) {
 describe("PiAgentSessionAdapter", () => {
   it("reads a Pi-session-shaped snapshot without introducing a harness abstraction", () => {
     const { session } = createFakeSession();
-    const adapter = createPiAgentSessionAdapter(session);
+    const continueQueuedFollowUp = vi.fn(async () => {});
+    const adapter = createPiAgentSessionAdapter(session, { continueQueuedFollowUp });
 
     expect(adapter.readSnapshot()).toEqual({
       state: { messages: [{ role: "user", content: "hello" }] },
@@ -65,6 +66,13 @@ describe("PiAgentSessionAdapter", () => {
     });
     expect(session.getSteeringMessages).toHaveBeenCalledTimes(1);
     expect(session.getFollowUpMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it("can expose a browser-visible session id when Pi uses a linked native session file", () => {
+    const { session } = createFakeSession({ sessionId: "native-pi-session" });
+    const adapter = createPiAgentSessionAdapter(session, { sessionId: "boring-session" });
+
+    expect(adapter.readSnapshot().sessionId).toBe("boring-session");
   });
 
   it("subscribes through Pi and returns Pi's unsubscribe function", () => {
@@ -99,20 +107,23 @@ describe("PiAgentSessionAdapter", () => {
     expect(session.prompt).toHaveBeenNthCalledWith(2, "with options", { expandPromptTemplates: false });
   });
 
-  it("forwards followUp, clearQueue, abort, and abortRetry to Pi", async () => {
+  it("forwards followUp, clearQueue, abort, abortRetry, and queued continuation to Pi", async () => {
     const { session } = createFakeSession();
-    const adapter = createPiAgentSessionAdapter(session);
+    const continueQueuedFollowUp = vi.fn(async () => {});
+    const adapter = createPiAgentSessionAdapter(session, { continueQueuedFollowUp });
 
     await adapter.followUp("next question");
     const cleared = adapter.clearQueue();
     await adapter.abort();
     adapter.abortRetry?.();
+    await adapter.continueQueuedFollowUp?.();
 
     expect(session.followUp).toHaveBeenCalledWith("next question");
     expect(session.clearQueue).toHaveBeenCalledTimes(1);
     expect(cleared).toEqual({ steering: ["steer later"], followUp: ["follow up later"] });
     expect(session.abort).toHaveBeenCalledTimes(1);
     expect(session.abortRetry).toHaveBeenCalledTimes(1);
+    expect(continueQueuedFollowUp).toHaveBeenCalledTimes(1);
   });
 
   it("omits abortRetry when the installed Pi session does not expose it", () => {
@@ -120,5 +131,12 @@ describe("PiAgentSessionAdapter", () => {
     const adapter = createPiAgentSessionAdapter(session);
 
     expect(adapter.abortRetry).toBeUndefined();
+  });
+
+  it("omits queued continuation when no adapter option supplies it", () => {
+    const { session } = createFakeSession();
+    const adapter = createPiAgentSessionAdapter(session);
+
+    expect(adapter.continueQueuedFollowUp).toBeUndefined();
   });
 });

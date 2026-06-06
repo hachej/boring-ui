@@ -14,6 +14,16 @@ function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve
+    reject = nextReject
+  })
+  return { promise, resolve, reject }
+}
+
 function storage(initial: Record<string, string> = {}): ActiveSessionStorageLike & { values: Map<string, string> } {
   const values = new Map(Object.entries(initial))
   return {
@@ -144,6 +154,113 @@ describe('usePiSessions', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(result.current.activeSessionId).toBe('pi-ready')
     expect(result.current.error).toBeUndefined()
+  })
+
+  test('preserves the current active session while retrying a transient cold-runtime 503 refresh', async () => {
+    const remote = remoteFactory()
+    const retryResponse = deferred<Response>()
+    fetchMock.mockResolvedValueOnce(jsonResponse([session('pi-existing')]))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a',
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remote.factory,
+      retry: { baseMs: 1, maxMs: 1, maxRetries: 4 },
+    }))
+
+    await waitFor(() => expect(result.current.activeSessionId).toBe('pi-existing'))
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ error: { message: 'preparing' } }, 503))
+      .mockReturnValueOnce(retryResponse.promise)
+
+    let refreshPromise!: Promise<void>
+    act(() => {
+      refreshPromise = result.current.refresh()
+    })
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+
+    expect(result.current.loading).toBe(true)
+    expect(result.current.error).toBeUndefined()
+    expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-existing'])
+    expect(result.current.activeSessionId).toBe('pi-existing')
+    expect(remote.created).toHaveLength(1)
+
+    await act(async () => {
+      retryResponse.resolve(jsonResponse([session('pi-existing')]))
+      await refreshPromise
+    })
+
+    expect(result.current.loading).toBe(false)
+    expect(result.current.error).toBeUndefined()
+    expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-existing'])
+    expect(result.current.activeSessionId).toBe('pi-existing')
+  })
+
+  test('background refresh updates sessions without entering loading state', async () => {
+    const remote = remoteFactory()
+    const refreshResponse = deferred<Response>()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([session('pi-existing', '2026-06-03T00:00:00.000Z')]))
+      .mockReturnValueOnce(refreshResponse.promise)
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a',
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remote.factory,
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.sessions[0]).toMatchObject({ id: 'pi-existing', title: 'Session pi-existing' })
+
+    let refreshPromise!: Promise<void>
+    act(() => {
+      refreshPromise = result.current.refresh({ background: true })
+    })
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(result.current.loading).toBe(false)
+    expect(result.current.sessions[0]).toMatchObject({ id: 'pi-existing', title: 'Session pi-existing' })
+
+    await act(async () => {
+      refreshResponse.resolve(jsonResponse([{
+        ...session('pi-existing', '2026-06-05T00:00:00.000Z'),
+        title: 'Session pi-existing renamed',
+      }]))
+      await refreshPromise
+    })
+
+    expect(result.current.loading).toBe(false)
+    expect(result.current.sessions[0]).toMatchObject({
+      id: 'pi-existing',
+      title: 'Session pi-existing renamed',
+      updatedAt: '2026-06-05T00:00:00.000Z',
+    })
+  })
+
+  test('background refresh failure preserves current sessions without surfacing an error', async () => {
+    const remote = remoteFactory()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([session('pi-existing')]))
+      .mockResolvedValueOnce(jsonResponse({ error: { message: 'metadata refresh failed' } }, 500))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a',
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remote.factory,
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    await act(async () => {
+      await result.current.refresh({ background: true })
+    })
+
+    expect(result.current.loading).toBe(false)
+    expect(result.current.error).toBeUndefined()
+    expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-existing'])
+    expect(result.current.activeSessionId).toBe('pi-existing')
   })
 
   test('unmount cancels cold-runtime retries and does not create a remote session', async () => {

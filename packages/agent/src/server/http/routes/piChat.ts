@@ -200,9 +200,11 @@ export function piChatRoutes(
     const heartbeatIntervalMs = opts.heartbeatIntervalMs === undefined
       ? DEFAULT_HEARTBEAT_INTERVAL_MS
       : opts.heartbeatIntervalMs
+    const writeHeartbeat = () => writeFrame({ type: 'heartbeat', now: new Date().toISOString() })
     const heartbeat = heartbeatIntervalMs === false
       ? undefined
-      : setInterval(() => writeFrame({ type: 'heartbeat', now: new Date().toISOString() }), heartbeatIntervalMs)
+      : setInterval(writeHeartbeat, heartbeatIntervalMs)
+    if (heartbeatIntervalMs !== false) writeHeartbeat()
 
     const close = () => {
       if (closed) return
@@ -219,7 +221,7 @@ export function piChatRoutes(
       if (!closed) stream.end()
     })
 
-    reply
+    return reply
       .header('Content-Type', 'application/x-ndjson')
       .header('Cache-Control', 'no-cache, no-transform')
       .header('X-Accel-Buffering', 'no')
@@ -257,7 +259,7 @@ export function piChatRoutes(
   app.post('/api/v1/agent/pi-chat/:sessionId/queue/clear', async (request, reply) => {
     const params = parseParams(request, reply)
     if (!params) return
-    const body = parseWithSchema(EmptyBodySchema.pipe(QueueClearPayloadSchema), request.body, reply, 'body')
+    const body = parseWithSchema(QueueClearPayloadSchema, request.body, reply, 'body')
     if (!body) return
     try {
       const service = await resolveService(opts, request)

@@ -68,7 +68,9 @@ describe('ComposerBar', () => {
     const preview = screen.getByText('2 queued follow-ups').closest('[data-boring-agent-part="composer-queue-preview"]') as HTMLElement
     expect(preview.className).toContain('motion-reduce:transition-none')
     expect(within(preview).getByText('first queued · second queued')).toBeTruthy()
-    fireEvent.click(within(preview).getByRole('button', { name: 'Edit queued follow-ups' }))
+    const edit = within(preview).getByRole('button', { name: 'Edit queued follow-ups' })
+    expect(edit.textContent).not.toContain('Edit queued')
+    fireEvent.click(edit)
     expect(onEditQueued).toHaveBeenCalledWith(queuePreview)
   })
 })

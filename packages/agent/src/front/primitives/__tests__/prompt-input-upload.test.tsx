@@ -3,6 +3,7 @@ import { render, screen, act, waitFor, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   PromptInput,
+  PromptInputProvider,
   PromptInputTextarea,
   PromptInputSubmit,
   usePromptInputAttachments,
@@ -39,6 +40,14 @@ function Harness({ onUploadFile, onSubmit }: HarnessProps) {
       <PromptInputSubmit />
       <AttachmentStatus />
     </PromptInput>
+  )
+}
+
+function ProviderHarness({ onUploadFile, onSubmit }: HarnessProps) {
+  return (
+    <PromptInputProvider>
+      <Harness onUploadFile={onUploadFile} onSubmit={onSubmit} />
+    </PromptInputProvider>
   )
 }
 
@@ -183,5 +192,36 @@ describe('PromptInput — upload flow', () => {
       )
     })
     expect(textarea.value).toBe('keep this draft')
+  })
+
+  it('does not wipe provider-backed text typed while async submit is pending', async () => {
+    let resolveSubmit: (() => void) | undefined
+    const submitPromise = new Promise<void>((resolve) => {
+      resolveSubmit = resolve
+    })
+    const onSubmit = vi.fn(async () => submitPromise)
+
+    render(<ProviderHarness onSubmit={onSubmit} />)
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'submitted draft' } })
+    fireEvent.submit(textarea.closest('form')!)
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        { text: 'submitted draft', files: [] },
+        expect.anything(),
+      )
+    })
+    expect(textarea.value).toBe('')
+
+    fireEvent.change(textarea, { target: { value: 'next draft' } })
+
+    await act(async () => {
+      resolveSubmit?.()
+      await submitPromise
+    })
+
+    expect(textarea.value).toBe('next draft')
   })
 })

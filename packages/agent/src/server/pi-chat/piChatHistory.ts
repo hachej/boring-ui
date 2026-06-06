@@ -9,6 +9,7 @@ export interface PiSessionHistoryEntry {
 export interface BuildPiChatHistoryOptions {
   sessionId: string
   turnId?: string
+  messageTurnIds?: ReadonlyMap<string, string>
 }
 
 type RecordLike = Record<string, unknown>
@@ -113,13 +114,20 @@ function assistantParts(message: RecordLike, messageId: string): BoringChatPart[
     }
     if (part.type === 'toolCall') {
       const toolCallId = optionalString(part.id) ?? `${messageId}:tool:${index}`
+      const state = part.state === 'output-error'
+        ? 'output-error'
+        : part.state === 'output-available'
+          ? 'output-available'
+          : 'input-available'
       return [
         {
           type: 'tool-call',
           id: toolCallId,
           toolName: optionalString(part.name) ?? optionalString(part.toolName) ?? 'unknown',
           input: toolInputFromCall(part),
-          state: 'input-available',
+          state,
+          output: part.output,
+          errorText: optionalString(part.errorText),
           ui: extractToolUiMetadata({ details: { ui: part.ui } }),
         },
       ]
@@ -190,7 +198,7 @@ export function buildPiChatHistory(entries: readonly unknown[], options: BuildPi
       id,
       createdAt: messageTimestamp(entry.message),
       piEntryId,
-      turnId: optionalString(entry.message.turnId) ?? options.turnId,
+      turnId: optionalString(entry.message.turnId) ?? options.messageTurnIds?.get(id) ?? options.turnId,
     }
 
     if (role === 'user') {

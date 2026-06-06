@@ -218,6 +218,52 @@ describe("native pi follow-up integration", () => {
     await reader.return?.();
   });
 
+  it("deletes the remaining duplicate-text follow-up after pi consumes the first one", async () => {
+    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup" });
+    const iter = harness.sendMessage({ sessionId: "sess-delete-dupe-consumed", message: "first" }, makeCtx());
+    const reader = iter[Symbol.asyncIterator]();
+
+    const boot = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
+    await boot;
+
+    await harness.followUp!("sess-delete-dupe-consumed", "same text", undefined, "same text", { clientNonce: "nonce-1", clientSeq: 1 });
+    await harness.followUp!("sess-delete-dupe-consumed", "same text", undefined, "same text", { clientNonce: "nonce-2", clientSeq: 2 });
+
+    mockSessions[0].agent.followUpQueue.messages.shift();
+    mockSessions[0]._followUpMessages.shift();
+
+    harness.clearFollowUp!("sess-delete-dupe-consumed", { clientNonce: "nonce-2" });
+
+    expect(mockSessions[0].agent.followUpQueue.messages).toEqual([]);
+    expect(mockSessions[0]._followUpMessages).toEqual([]);
+
+    promptHandle.resolve?.();
+    await reader.return?.();
+  });
+
+  it("prefers clientNonce over colliding clientSeq when deleting a queued follow-up", async () => {
+    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup" });
+    const iter = harness.sendMessage({ sessionId: "sess-delete-seq-collision", message: "first" }, makeCtx());
+    const reader = iter[Symbol.asyncIterator]();
+
+    const boot = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
+    await boot;
+
+    await harness.followUp!("sess-delete-seq-collision", "keep me", undefined, "keep me", { clientNonce: "nonce-1", clientSeq: 1 });
+    await harness.followUp!("sess-delete-seq-collision", "delete me", undefined, "delete me", { clientNonce: "nonce-2", clientSeq: 1 });
+    harness.clearFollowUp!("sess-delete-seq-collision", { clientNonce: "nonce-2", clientSeq: 1 });
+
+    expect(mockSessions[0].agent.followUpQueue.messages.map((msg: any) => msg.content[0].text)).toEqual(["keep me"]);
+    expect(mockSessions[0]._followUpMessages).toEqual(["keep me"]);
+
+    promptHandle.resolve?.();
+    await reader.return?.();
+  });
+
   it("maps pi's consumed follow-up user message into a data marker and namespaces the next assistant parts", async () => {
     const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup" });
     const iter = harness.sendMessage({ sessionId: "sess-events", message: "first" }, makeCtx());

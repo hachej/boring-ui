@@ -172,26 +172,176 @@ describe('RemotePiSession', () => {
   it('also rehydrates /state on cursor_ahead route errors', async () => {
     const events = openNdjsonStream()
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.endsWith('/state') && fetchMock.mock.calls.length === 1) return jsonResponse(snapshot({ seq: 10 }))
-      if (url.endsWith('/events?cursor=10')) {
+      if (url.endsWith('/state') && fetchMock.mock.calls.length === 1) {
+        return jsonResponse(snapshot({
+          seq: 30,
+          messages: [
+            {
+              id: 'u1',
+              role: 'user',
+              status: 'done',
+              parts: [{ type: 'text', id: 'u1:text', text: 'stale ahead text' }],
+            },
+          ],
+        }))
+      }
+      if (url.endsWith('/events?cursor=30')) {
         return jsonResponse({
           error: {
             code: ErrorCode.enum.CURSOR_OUT_OF_RANGE,
             message: PI_CHAT_CURSOR_AHEAD_CODE,
             retryable: true,
-            details: { reason: PI_CHAT_CURSOR_AHEAD_CODE, latestSeq: 12 },
+            details: { reason: PI_CHAT_CURSOR_AHEAD_CODE, latestSeq: 24 },
           },
         }, 409)
       }
-      if (url.endsWith('/state')) return jsonResponse(snapshot({ seq: 12, status: 'idle', activeTurnId: undefined }))
-      if (url.endsWith('/events?cursor=12')) return new Response(events.stream)
+      if (url.endsWith('/state')) {
+        return jsonResponse(snapshot({
+          seq: 24,
+          status: 'idle',
+          activeTurnId: undefined,
+          messages: [
+            {
+              id: 'u1',
+              role: 'user',
+              status: 'done',
+              parts: [{ type: 'text', id: 'u1:text', text: 'canonical text' }],
+            },
+          ],
+        }))
+      }
+      if (url.endsWith('/events?cursor=24')) return new Response(events.stream)
       throw new Error(`unexpected URL ${url}`)
     }) as unknown as MockFetch
     const session = createSession(fetchMock)
 
-    await waitUntil(() => fetchMock.mock.calls.some((call) => String(call[0]).endsWith('/events?cursor=12')))
+    await waitUntil(() => fetchMock.mock.calls.some((call) => String(call[0]).endsWith('/events?cursor=24')))
 
-    expect(session.getState()).toMatchObject({ hydrated: true, lastSeq: 12, status: 'idle' })
+    expect(session.getState()).toMatchObject({ hydrated: true, lastSeq: 24, status: 'idle' })
+    expect(session.getState().committedMessages).toEqual([
+      expect.objectContaining({ id: 'u1', parts: [expect.objectContaining({ text: 'canonical text' })] }),
+    ])
+
+    session.dispose()
+  })
+
+  it('survives repeated replay range recovery and a live seq gap without duplicating messages', async () => {
+    const streamAfterRouteGaps = openNdjsonStream()
+    const finalStream = openNdjsonStream()
+    let stateReads = 0
+    const assistantAfterFirstGap = {
+      id: 'a1',
+      role: 'assistant' as const,
+      status: 'streaming' as const,
+      parts: [
+        { type: 'reasoning' as const, id: 'r1', text: 'thinking after first gap', state: 'done' as const },
+      ],
+    }
+    const assistantAfterSecondGap = {
+      id: 'a1',
+      role: 'assistant' as const,
+      status: 'streaming' as const,
+      parts: [
+        { type: 'reasoning' as const, id: 'r1', text: 'thinking after first gap', state: 'done' as const },
+        {
+          type: 'tool-call' as const,
+          id: 'tool-1',
+          toolName: 'bash',
+          state: 'output-available' as const,
+          output: 'redacted tool output',
+        },
+      ],
+    }
+    const finalAssistant = {
+      id: 'a1',
+      role: 'assistant' as const,
+      status: 'done' as const,
+      parts: [
+        ...assistantAfterSecondGap.parts,
+        { type: 'text' as const, id: 't1', text: 'final after replay churn' },
+      ],
+    }
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/state')) {
+        stateReads += 1
+        if (stateReads === 1) return jsonResponse(snapshot({ seq: 10 }))
+        if (stateReads === 2) return jsonResponse(snapshot({ seq: 14, messages: [snapshot().messages[0]!, assistantAfterFirstGap] }))
+        if (stateReads === 3) return jsonResponse(snapshot({ seq: 20, messages: [snapshot().messages[0]!, assistantAfterSecondGap] }))
+        return jsonResponse(snapshot({
+          seq: 22,
+          messages: [snapshot().messages[0]!, assistantAfterSecondGap],
+        }))
+      }
+      if (url.endsWith('/events?cursor=10')) {
+        return jsonResponse({
+          error: {
+            code: ErrorCode.enum.CURSOR_OUT_OF_RANGE,
+            message: PI_CHAT_REPLAY_GAP_CODE,
+            retryable: true,
+            details: { reason: PI_CHAT_REPLAY_GAP_CODE, latestSeq: 14, minReplaySeq: 13 },
+          },
+        }, 409)
+      }
+      if (url.endsWith('/events?cursor=14')) {
+        return jsonResponse({
+          error: {
+            code: ErrorCode.enum.CURSOR_OUT_OF_RANGE,
+            message: PI_CHAT_REPLAY_GAP_CODE,
+            retryable: true,
+            details: { reason: PI_CHAT_REPLAY_GAP_CODE, latestSeq: 20, minReplaySeq: 19 },
+          },
+        }, 409)
+      }
+      if (url.endsWith('/events?cursor=20')) return new Response(streamAfterRouteGaps.stream)
+      if (url.endsWith('/events?cursor=22')) return new Response(finalStream.stream)
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock)
+
+    await waitUntil(() => fetchMock.mock.calls.some((call) => String(call[0]).endsWith('/events?cursor=20')))
+    expect(session.getState()).toMatchObject({
+      hydrated: true,
+      lastSeq: 20,
+      committedMessages: [
+        expect.objectContaining({ id: 'u1' }),
+        expect.objectContaining({ id: 'a1', parts: [expect.objectContaining({ type: 'reasoning' }), expect.objectContaining({ type: 'tool-call' })] }),
+      ],
+    })
+
+    streamAfterRouteGaps.write({ type: 'message-start', seq: 22, messageId: 'a-gap', role: 'assistant' } satisfies PiChatEvent)
+    await waitUntil(() => fetchMock.mock.calls.some((call) => String(call[0]).endsWith('/events?cursor=22')))
+    expect(session.getState()).toMatchObject({ hydrated: true, lastSeq: 22 })
+    expect(session.getDebugState().gapCount).toBe(3)
+
+    finalStream.write({ type: 'message-delta', seq: 23, messageId: 'a1', partId: 't1', kind: 'text', delta: 'final after replay churn' } satisfies PiChatEvent)
+    finalStream.write({ type: 'message-part-end', seq: 24, messageId: 'a1', partId: 't1', kind: 'text', text: 'final after replay churn' } satisfies PiChatEvent)
+    finalStream.write({ type: 'message-end', seq: 25, messageId: 'a1', final: finalAssistant } satisfies PiChatEvent)
+    finalStream.write({ type: 'agent-end', seq: 26, turnId: 'turn-1', status: 'ok' } satisfies PiChatEvent)
+
+    await waitUntil(() => session.getState().lastSeq === 26)
+    const assistantMessages = session.getState().committedMessages.filter((message) => message.id === 'a1')
+    expect(assistantMessages).toHaveLength(1)
+    expect(assistantMessages[0]).toMatchObject({
+      id: 'a1',
+      status: 'done',
+      parts: [
+        expect.objectContaining({ type: 'reasoning', state: 'done' }),
+        expect.objectContaining({ type: 'tool-call', state: 'output-available' }),
+        expect.objectContaining({ type: 'text', text: 'final after replay churn' }),
+      ],
+    })
+    expect(session.getState()).toMatchObject({ status: 'idle', streamingMessage: undefined, needsResync: undefined })
+    expect(session.getState().committedMessages.map((message) => message.id)).toEqual(['u1', 'a1'])
+    expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
+      'https://agent.test/api/v1/agent/pi-chat/s1/state',
+      'https://agent.test/api/v1/agent/pi-chat/s1/events?cursor=10',
+      'https://agent.test/api/v1/agent/pi-chat/s1/state',
+      'https://agent.test/api/v1/agent/pi-chat/s1/events?cursor=14',
+      'https://agent.test/api/v1/agent/pi-chat/s1/state',
+      'https://agent.test/api/v1/agent/pi-chat/s1/events?cursor=20',
+      'https://agent.test/api/v1/agent/pi-chat/s1/state',
+      'https://agent.test/api/v1/agent/pi-chat/s1/events?cursor=22',
+    ])
 
     session.dispose()
   })
@@ -372,6 +522,109 @@ describe('RemotePiSession', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('starts idle without hydration when autoStart is false', () => {
+    const fetchMock = vi.fn(async () => jsonResponse(snapshot())) as unknown as MockFetch
+    const session = createSession(fetchMock, { autoStart: false })
+
+    expect(session.getState()).toMatchObject({
+      status: 'idle',
+      hydrated: false,
+      connection: { state: 'disconnected' },
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    session.dispose()
+  })
+
+  it('opens events from the current cursor before the first command when autoStart is false', async () => {
+    const events = openNdjsonStream()
+    const promptResponse = deferred<Response>()
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined
+      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
+      if (url.endsWith('/prompt')) return promptResponse.promise.then((response) => {
+        expect(body.clientNonce).toBe('nonce-1')
+        return response
+      })
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { autoStart: false })
+
+    const receipt = session.prompt({ message: 'hello', clientNonce: 'nonce-1' })
+    await waitUntil(() => fetchMock.mock.calls.some((call) => String(call[0]).endsWith('/events?cursor=0')))
+    await waitUntil(() => session.getState().connection.state === 'connected')
+
+    expect(fetchMock.mock.calls.map((call) => String(call[0]))).not.toContain('https://agent.test/api/v1/agent/pi-chat/s1/state')
+    const eventCallIndex = fetchMock.mock.calls.findIndex((call) => String(call[0]).endsWith('/events?cursor=0'))
+    await waitUntil(() => fetchMock.mock.calls.some((call) => String(call[0]).endsWith('/prompt')))
+    const promptCallIndex = fetchMock.mock.calls.findIndex((call) => String(call[0]).endsWith('/prompt'))
+    expect(eventCallIndex).toBeLessThan(promptCallIndex)
+    expect(session.getState()).toMatchObject({ hydrated: true, lastSeq: 0, connection: { state: 'connected' } })
+
+    events.write({ type: 'agent-start', seq: 1, turnId: 'turn-1' } satisfies PiChatEvent)
+    await waitUntil(() => session.getState().lastSeq === 1)
+    expect(session.getState().status).toBe('streaming')
+    promptResponse.resolve(jsonResponse({ accepted: true, cursor: 1, clientNonce: 'nonce-1' }))
+    await expect(receipt).resolves.toEqual({ accepted: true, cursor: 1, clientNonce: 'nonce-1' })
+
+    session.dispose()
+  })
+
+  it('rolls back optimistic follow-ups when the follow-up command fails', async () => {
+    const events = openNdjsonStream()
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
+      if (url.endsWith('/followup')) return jsonResponse({ error: { message: 'queue failed' } }, 500)
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { autoStart: false })
+
+    await expect(session.followUp({ message: 'queued', clientNonce: 'nonce-q', clientSeq: 1 })).rejects.toThrow('queue failed')
+
+    expect(session.getState().optimisticOutbox).toEqual({})
+
+    session.dispose()
+  })
+
+  it('clears optimistic queued follow-ups from the stop receipt before a queue echo arrives', async () => {
+    const events = openNdjsonStream()
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined
+      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
+      if (url.endsWith('/followup')) return jsonResponse({ accepted: true, cursor: 1, clientNonce: body.clientNonce, clientSeq: body.clientSeq, queued: true })
+      if (url.endsWith('/stop')) {
+        return jsonResponse({
+          accepted: true,
+          cursor: 2,
+          stopped: true,
+          clearedQueue: [{ id: 'q1', kind: 'followup', clientNonce: 'nonce-q', clientSeq: 1, displayText: 'queued' }],
+        })
+      }
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { autoStart: false })
+
+    await expect(session.followUp({ message: 'queued', clientNonce: 'nonce-q', clientSeq: 1 })).resolves.toEqual({
+      accepted: true,
+      cursor: 1,
+      clientNonce: 'nonce-q',
+      clientSeq: 1,
+      queued: true,
+    })
+    expect(session.getState().optimisticOutbox['nonce-q']).toMatchObject({ status: 'pending', clientSeq: 1 })
+
+    await expect(session.stop()).resolves.toEqual({
+      accepted: true,
+      cursor: 2,
+      stopped: true,
+      clearedQueue: [{ id: 'q1', kind: 'followup', clientNonce: 'nonce-q', clientSeq: 1, displayText: 'queued' }],
+    })
+
+    expect(session.getState().optimisticOutbox).toEqual({})
+
+    session.dispose()
+  })
+
   it('does not start stale hydration fetches when async headers resolve after dispose', async () => {
     const headers = deferred<Record<string, string>>()
     const fetchMock = vi.fn(async () => jsonResponse(snapshot({ seq: 99 }))) as unknown as MockFetch
@@ -387,9 +640,11 @@ describe('RemotePiSession', () => {
   })
 
   it('posts commands through the remote session seam and keeps command receipts out of canonical transcript', async () => {
+    const events = openNdjsonStream()
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       const body = init?.body ? JSON.parse(String(init.body)) : undefined
       if (url.endsWith('/prompt')) return jsonResponse({ accepted: true, cursor: 1, clientNonce: body.clientNonce })
+      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
       if (url.endsWith('/followup')) return jsonResponse({ accepted: true, cursor: 2, clientNonce: body.clientNonce, clientSeq: body.clientSeq, queued: true })
       if (url.endsWith('/queue/clear')) return jsonResponse({ accepted: true, cursor: 3, cleared: 1 })
       if (url.endsWith('/interrupt')) return jsonResponse({ accepted: true, cursor: 4 })
@@ -400,19 +655,28 @@ describe('RemotePiSession', () => {
 
     await expect(session.prompt({ message: 'hello', clientNonce: 'nonce-1', attachments: [{ filename: 'a.txt', url: 'https://file.test/a.txt' }] })).resolves.toEqual({ accepted: true, cursor: 1, clientNonce: 'nonce-1' })
     await expect(session.followUp({ message: 'queued', clientNonce: 'nonce-q', clientSeq: 1 })).resolves.toEqual({ accepted: true, cursor: 2, clientNonce: 'nonce-q', clientSeq: 1, queued: true })
-    await expect(session.clearQueue()).resolves.toEqual({ accepted: true, cursor: 3, cleared: 1 })
+    await expect(session.clearQueue({ clientNonce: 'nonce-q', clientSeq: 1 })).resolves.toEqual({ accepted: true, cursor: 3, cleared: 1 })
     await expect(session.interrupt()).resolves.toEqual({ accepted: true, cursor: 4 })
     await expect(session.stop()).resolves.toEqual({ accepted: true, cursor: 5, stopped: true, clearedQueue: [] })
 
-    expect(fetchMock.mock.calls.map((call) => [String(call[0]), (call[1] as RequestInit | undefined)?.method])).toEqual([
+    const postCalls = fetchMock.mock.calls.filter((call) => (call[1] as RequestInit | undefined)?.method === 'POST')
+    expect(postCalls.map((call) => [String(call[0]), (call[1] as RequestInit | undefined)?.method])).toEqual([
       ['https://agent.test/api/v1/agent/pi-chat/s1/prompt', 'POST'],
       ['https://agent.test/api/v1/agent/pi-chat/s1/followup', 'POST'],
       ['https://agent.test/api/v1/agent/pi-chat/s1/queue/clear', 'POST'],
       ['https://agent.test/api/v1/agent/pi-chat/s1/interrupt', 'POST'],
       ['https://agent.test/api/v1/agent/pi-chat/s1/stop', 'POST'],
     ])
+    expect(JSON.parse(String(postCalls[2]?.[1]?.body))).toEqual({ clientNonce: 'nonce-q', clientSeq: 1 })
     expect(session.getState().committedMessages).toEqual([])
-    expect(session.getState().optimisticOutbox['nonce-1']).toMatchObject({ role: 'user', status: 'pending', clientNonce: 'nonce-1' })
+    expect(session.getState().optimisticOutbox['nonce-1']).toMatchObject({
+      role: 'user',
+      status: 'pending',
+      clientNonce: 'nonce-1',
+      createdAt: expect.any(String),
+    })
+    expect(Date.parse(session.getState().optimisticOutbox['nonce-1']?.createdAt ?? '')).not.toBeNaN()
+    expect(session.getState().optimisticOutbox['nonce-q']).toBeUndefined()
 
     session.dispose()
   })

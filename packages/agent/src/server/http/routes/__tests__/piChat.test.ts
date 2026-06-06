@@ -9,12 +9,13 @@ import type {
   PiChatSnapshot,
   PromptPayload,
   PromptReceipt,
+  QueueClearPayload,
   QueueClearReceipt,
   StopReceipt,
 } from '../../../../shared/chat'
 import type { PiSessionRequestContext } from '../../../pi-chat/piSessionIdentity'
 import { PI_CHAT_CURSOR_AHEAD, PI_CHAT_REPLAY_GAP } from '../../../pi-chat/piChatReplayBuffer'
-import { piChatBusyError, piChatRoutes, PiChatRouteError, type PiChatSessionService } from '../piChat'
+import { piChatBusyError, piChatRoutes, PiChatRouteError, type PiChatRoutesOptions, type PiChatSessionService } from '../piChat'
 
 function activeSnapshot(overrides: Partial<PiChatSnapshot> = {}): PiChatSnapshot {
   return {
@@ -89,8 +90,8 @@ class FakePiChatService implements PiChatSessionService {
     return { accepted: true, cursor: 14, clientNonce: payload.clientNonce, clientSeq: payload.clientSeq, queued: true }
   }
 
-  async clearQueue(ctx: PiSessionRequestContext, sessionId: string): Promise<QueueClearReceipt> {
-    this.calls.push({ method: 'clearQueue', ctx, sessionId, payload: {} })
+  async clearQueue(ctx: PiSessionRequestContext, sessionId: string, payload: QueueClearPayload = {}): Promise<QueueClearReceipt> {
+    this.calls.push({ method: 'clearQueue', ctx, sessionId, payload })
     return { accepted: true, cursor: 15, cleared: 2 }
   }
 
@@ -105,13 +106,13 @@ class FakePiChatService implements PiChatSessionService {
   }
 }
 
-async function buildApp(service = new FakePiChatService()) {
+async function buildApp(service = new FakePiChatService(), routeOptions: Omit<PiChatRoutesOptions, 'service'> = {}) {
   const app = Fastify({ logger: false })
   app.addHook('onRequest', async (request) => {
     request.workspaceContext = { workspaceId: 'workspace-a', authenticated: true }
     ;(request as unknown as { user: { id: string } }).user = { id: 'user-a' }
   })
-  await app.register(piChatRoutes, { service, heartbeatIntervalMs: false })
+  await app.register(piChatRoutes, { service, heartbeatIntervalMs: false, ...routeOptions })
   await app.ready()
   return { app, service }
 }
@@ -146,6 +147,33 @@ describe('piChatRoutes', () => {
 
     expect(service.calls.map((call) => call.method)).toEqual(['listSessions', 'createSession', 'deleteSession'])
     expect(service.calls[0]).toMatchObject({ ctx: { workspaceId: 'workspace-a', storageScope: 'scope-a', authSubject: 'user-a' } })
+
+    await app.close()
+  })
+
+  test('GET /sessions forwards retryable runtime-not-ready service errors', async () => {
+    const service = new FakePiChatService()
+    service.listSessions = vi.fn(async () => {
+      throw new PiChatRouteError({
+        statusCode: 503,
+        code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
+        message: 'Agent runtime is still preparing. Try again in a moment.',
+        retryable: true,
+      })
+    })
+    const { app } = await buildApp(service)
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })
+    expect(res.statusCode).toBe(503)
+    expect(res.json()).toEqual({
+      error: {
+        code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
+        message: 'Agent runtime is still preparing. Try again in a moment.',
+        retryable: true,
+      },
+    })
+
+    expect(service.listSessions).toHaveBeenCalledTimes(1)
 
     await app.close()
   })
@@ -320,6 +348,11 @@ describe('piChatRoutes', () => {
     expect(clear.statusCode).toBe(202)
     expect(clear.json()).toEqual({ accepted: true, cursor: 15, cleared: 2 })
 
+    const clearSelected = await app.inject({ method: 'POST', url: '/api/v1/agent/pi-chat/pi-1/queue/clear', payload: { clientNonce: 'nonce-q', clientSeq: 1 } })
+    expect(clearSelected.statusCode).toBe(202)
+    expect(clearSelected.json()).toEqual({ accepted: true, cursor: 15, cleared: 2 })
+    expect(service.calls.at(-1)).toMatchObject({ method: 'clearQueue', payload: { clientNonce: 'nonce-q', clientSeq: 1 } })
+
     const interrupt = await app.inject({ method: 'POST', url: '/api/v1/agent/pi-chat/pi-1/interrupt' })
     expect(interrupt.statusCode).toBe(202)
     expect(interrupt.json()).toEqual({ accepted: true, cursor: 16 })
@@ -332,7 +365,7 @@ describe('piChatRoutes', () => {
     expect(invalid.statusCode).toBe(400)
     expect(invalid.json()).toMatchObject({ error: { code: ErrorCode.enum.BRIDGE_COMMAND_INVALID, field: 'body' } })
 
-    expect(service.calls.map((call) => call.method)).toEqual(['clearQueue', 'interrupt', 'stop'])
+    expect(service.calls.map((call) => call.method)).toEqual(['clearQueue', 'clearQueue', 'interrupt', 'stop'])
 
     await app.close()
   })

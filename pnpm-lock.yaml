@@ -306,6 +306,9 @@ importers:
         specifier: ^3.25.76
         version: 3.25.76
     devDependencies:
+      '@antithesishq/bombadil':
+        specifier: 0.5.0
+        version: 0.5.0
       '@opentelemetry/api':
         specifier: ^1.9.1
         version: 1.9.1
@@ -1129,6 +1132,10 @@ packages:
     peerDependenciesMeta:
       zod:
         optional: true
+
+  '@antithesishq/bombadil@0.5.0':
+    resolution: {integrity: sha512-s0zImmr0iyvSP6QcVLvf40CUiZYIdWBAxiq20uhzujwvfitYa3PGJN652k/pLtVccHM/JrGQxZdvLnihZpltHA==}
+    hasBin: true
 
   '@asamuzakjp/css-color@5.1.11':
     resolution: {integrity: sha512-KVw6qIiCTUQhByfTd78h2yD1/00waTmm9uy/R7Ck/ctUyAPj+AEDLkQIdJW0T8+qGgj3j5bpNKK7Q3G+LedJWg==}
@@ -7817,6 +7824,8 @@ snapshots:
       json-schema-to-ts: 3.1.1
     optionalDependencies:
       zod: 3.25.76
+
+  '@antithesishq/bombadil@0.5.0': {}
 
   '@asamuzakjp/css-color@5.1.11':
     dependencies:

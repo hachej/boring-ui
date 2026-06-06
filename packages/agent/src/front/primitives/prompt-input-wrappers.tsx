@@ -36,17 +36,15 @@ export const PromptInputHeader = ({
   />
 );
 
-export type PromptInputFooterProps = Omit<
-  ComponentProps<typeof InputGroupAddon>,
-  "align"
->;
+export type PromptInputFooterProps = ComponentProps<typeof InputGroupAddon>;
 
 export const PromptInputFooter = ({
+  align = "block-end",
   className,
   ...props
 }: PromptInputFooterProps) => (
   <InputGroupAddon
-    align="block-end"
+    align={align}
     className={cn("justify-between gap-1", className)}
     {...props}
   />

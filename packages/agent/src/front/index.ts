@@ -3,8 +3,8 @@
 export { uploadFile } from './upload/uploadFile'
 export type { UploadFileOptions, UploadFileResult } from './upload/uploadFile'
 
-export { PiChatPanel } from './chat/PiChatPanel'
-export type { PiChatPanelProps } from './chat/PiChatPanel'
+export { PiChatPanel, PiChatPanel as ChatPanel } from './chat/PiChatPanel'
+export type { PiChatPanelProps, PiChatPanelProps as ChatPanelProps } from './chat/PiChatPanel'
 export { DebugDrawer } from './DebugDrawer'
 export {
   ArtifactOpenProvider,

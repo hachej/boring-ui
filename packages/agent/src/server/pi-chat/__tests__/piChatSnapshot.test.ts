@@ -51,8 +51,8 @@ describe('buildPiChatSnapshot', () => {
       status: 'streaming',
       activeTurnId: 'turn-active',
       messages: [
-        expect.objectContaining({ id: 'entry-user', role: 'user', piEntryId: 'entry-user', turnId: 'turn-active' }),
-        expect.objectContaining({ id: 'entry-assistant', role: 'assistant', piEntryId: 'entry-assistant', turnId: 'turn-active' }),
+        expect.objectContaining({ id: 'entry-user', role: 'user', piEntryId: 'entry-user' }),
+        expect.objectContaining({ id: 'entry-assistant', role: 'assistant', piEntryId: 'entry-assistant' }),
       ],
       queue: {
         followUps: [
@@ -66,8 +66,39 @@ describe('buildPiChatSnapshot', () => {
       followUpMode: 'one-at-a-time',
       error: undefined,
     })
+    expect(snapshot.messages.map((message) => message.turnId)).toEqual([undefined, undefined])
     expect(snapshot.messages[0]?.parts).toEqual([{ type: 'text', id: 'entry-user:text:0', text: 'start' }])
     expect(snapshot.messages[1]?.parts).toEqual([{ type: 'text', id: 'entry-assistant:text:0', text: 'working' }])
+  })
+
+  it('only applies active turn ids to live-mapped snapshot messages during in-flight reload', () => {
+    const snapshot = buildPiChatSnapshot(
+      createAdapter({
+        sessionId: 'pi-active',
+        isStreaming: true,
+        messages: [
+          { id: 'old-user', message: { role: 'user', content: 'old prompt', timestamp: 1 } },
+          { id: 'old-assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'old answer' }], stopReason: 'stop', timestamp: 2 } },
+          { id: 'active-user', message: { role: 'user', content: 'active prompt', timestamp: 3 } },
+          { id: 'active-assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'working' }], timestamp: 4 } },
+        ],
+      }),
+      {
+        seq: 42,
+        activeTurnId: 'turn-active',
+        messageTurnIds: new Map([
+          ['active-user', 'turn-active'],
+          ['active-assistant', 'turn-active'],
+        ]),
+      },
+    )
+
+    expect(snapshot.messages.map((message) => [message.id, message.turnId])).toEqual([
+      ['old-user', undefined],
+      ['old-assistant', undefined],
+      ['active-user', 'turn-active'],
+      ['active-assistant', 'turn-active'],
+    ])
   })
 
   it('pins followUpMode to one-at-a-time and derives stable queue preview ids', () => {
@@ -85,6 +116,19 @@ describe('buildPiChatSnapshot', () => {
       { id: 'queue:pi-queue:followup:0:c1n3xj', kind: 'followup', displayText: 'same text' },
       { id: 'queue:pi-queue:followup:1:c1n3xj', kind: 'followup', displayText: 'same text' },
     ])
+  })
+
+  it('can canonicalize linked native Pi snapshots to the browser-visible session id', () => {
+    const snapshot = buildPiChatSnapshot(
+      createAdapter({
+        sessionId: 'native-pi-session',
+        followUpMessages: ['queued'],
+      }),
+      { seq: 1, sessionId: 'boring-session' },
+    )
+
+    expect(snapshot.sessionId).toBe('boring-session')
+    expect(snapshot.queue.followUps[0]?.id).toContain('queue:boring-session:followup:0')
   })
 
   it('maps idle and error state without mutating canonical history', () => {

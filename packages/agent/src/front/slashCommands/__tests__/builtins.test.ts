@@ -98,18 +98,43 @@ describe('/reload', () => {
   })
 })
 
-describe('Pi-native builtins are registered', () => {
-  test('has exactly 3 commands', () => {
-    expect(builtinCommands).toHaveLength(3)
+describe('/model and /thinking', () => {
+  test('/model opens the model picker without args and delegates selection with args', () => {
+    const openModelPicker = vi.fn()
+    const selectComposerModel = vi.fn().mockReturnValue('Model set.')
+    const ctx = makeContext({ openModelPicker, selectComposerModel })
+
+    expect(getBuiltin('model').handler('', ctx)).toBeUndefined()
+    expect(openModelPicker).toHaveBeenCalledOnce()
+    expect(getBuiltin('model').handler('gpt', ctx)).toBe('Model set.')
+    expect(selectComposerModel).toHaveBeenCalledWith('gpt')
   })
 
-  test.each(['reset', 'reload', 'help'])('includes /%s', (name) => {
+  test('/thinking and /think open or set the thinking picker', () => {
+    const openThinkingPicker = vi.fn()
+    const selectComposerThinking = vi.fn().mockReturnValue('Thinking set.')
+    const ctx = makeContext({ openThinkingPicker, selectComposerThinking })
+
+    expect(getBuiltin('thinking').handler('', ctx)).toBeUndefined()
+    expect(openThinkingPicker).toHaveBeenCalledOnce()
+    expect(getBuiltin('thinking').handler('low', ctx)).toBe('Thinking set.')
+    expect(getBuiltin('think').handler('high', ctx)).toBe('Thinking set.')
+    expect(selectComposerThinking).toHaveBeenCalledWith('low')
+    expect(selectComposerThinking).toHaveBeenCalledWith('high')
+  })
+})
+
+describe('Pi-native builtins are registered', () => {
+  test('has exactly 6 commands', () => {
+    expect(builtinCommands).toHaveLength(6)
+  })
+
+  test.each(['reset', 'reload', 'model', 'thinking', 'think', 'help'])('includes /%s', (name) => {
     expect(builtinCommands.find((c) => c.name === name)).toBeDefined()
   })
 
   test('does NOT include removed/deferred local commands', () => {
     expect(builtinCommands.find((c) => c.name === 'clear')).toBeUndefined()
-    expect(builtinCommands.find((c) => c.name === 'model')).toBeUndefined()
     expect(builtinCommands.find((c) => c.name === 'cost')).toBeUndefined()
   })
 })
