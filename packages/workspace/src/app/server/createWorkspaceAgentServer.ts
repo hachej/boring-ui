@@ -22,6 +22,10 @@ import { dirname, join } from "node:path"
 import { homedir } from "node:os"
 import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
+import {
+  readPluginSourceRecords,
+  resolvePluginSourceScopePaths,
+} from "@hachej/boring-ui-plugin-cli/plugin-sources"
 import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
 import { BoringPluginAssetManager } from "../../server/agentPlugins/manager"
 import type { BoringPluginFrontTargetResolver, BoringPluginSource, BoringPluginSourceInput } from "../../server/agentPlugins/types"
@@ -413,6 +417,25 @@ function uniquePluginSources(sources: BoringPluginSource[]): BoringPluginSource[
   return [...byRoot.values()]
 }
 
+function collectPluginSourceRecordSources(workspaceRoot: string): BoringPluginSource[] {
+  const globalScope = resolvePluginSourceScopePaths("global", { globalRoot: join(homedir(), ".pi", "agent") })
+  const localScope = resolvePluginSourceScopePaths("local", { workspaceRoot })
+  const records = [
+    ...readPluginSourceRecords(globalScope),
+    ...readPluginSourceRecords(localScope),
+  ]
+  return [
+    { rootDir: globalScope.npmDir, kind: "external" },
+    { rootDir: globalScope.gitDir, kind: "external" },
+    { rootDir: localScope.npmDir, kind: "external" },
+    { rootDir: localScope.gitDir, kind: "external" },
+    ...records.map((record): BoringPluginSource => ({
+      rootDir: record.rootDir,
+      kind: "external",
+    })),
+  ]
+}
+
 function collectBoringPluginSources(
   workspaceRoot: string,
   pluginCollection: WorkspaceAgentServerPluginCollection,
@@ -427,8 +450,9 @@ function collectBoringPluginSources(
     }
   })
   return uniquePluginSources([
-    { rootDir: join(workspaceRoot, ".pi", "extensions"), kind: "external", workspaceId: workspaceRoot },
+    { rootDir: join(workspaceRoot, ".pi", "extensions"), kind: "external" },
     { rootDir: join(homedir(), ".pi", "agent", "extensions"), kind: "external" },
+    ...collectPluginSourceRecordSources(workspaceRoot),
     ...pluginRoots.map((rootDir): BoringPluginSource => ({ rootDir, kind: "internal" })),
     ...additionalPluginDirs.map((entry): BoringPluginSource => typeof entry === "string"
       ? { rootDir: entry, kind: "internal" }
@@ -602,10 +626,11 @@ export async function createWorkspaceAgentServer(
   // Boring plugin discovery: scan external workspace/global extension
   // collections plus internal app/plugin-provided sources. Source kind is
   // explicit so later activation code does not infer trust from paths.
-  const boringPluginDirs = uniquePluginSources([
+  const buildBoringPluginDirs = () => uniquePluginSources([
     ...defaultPluginPackagePaths.map((rootDir): BoringPluginSource => ({ rootDir, kind: "internal" })),
     ...collectBoringPluginSources(workspaceRoot, pluginCollection, opts.additionalBoringPluginDirs),
   ])
+  const boringPluginDirs = buildBoringPluginDirs()
 
   // Dynamic Pi resources discovered from package.json#pi at /reload time.
   // Pi calls `getHotReloadableResources()` on every reloadSession() and merges the
@@ -628,11 +653,11 @@ export async function createWorkspaceAgentServer(
   ]
 
   const getHotReloadablePiResources = pluginHotReload
-    ? () => readWorkspacePluginPackagePiSnapshot(boringPluginDirs)
+    ? () => readWorkspacePluginPackagePiSnapshot(buildBoringPluginDirs())
     : undefined
 
   const boringAssetManager = new BoringPluginAssetManager({
-    pluginDirs: boringPluginDirs,
+    pluginDirs: buildBoringPluginDirs,
     errorRoot: join(workspaceRoot, ".pi", "extensions"),
     frontTargetResolver: opts.boringPluginFrontTargetResolver,
     includeLegacyFrontUrl: opts.boringPluginIncludeLegacyFrontUrl,
@@ -642,7 +667,7 @@ export async function createWorkspaceAgentServer(
   const buildRuntimeProvisioningInputs = () => {
     const inputs = mergeRuntimeProvisioningInputs([
       ...pluginCollection.runtimePlugins,
-      ...readWorkspacePluginPackageRuntimePlugins(boringPluginDirs),
+      ...readWorkspacePluginPackageRuntimePlugins(buildBoringPluginDirs()),
     ])
     if (resolvedMode === "direct") return omitPluginAuthoringProvisioning(inputs)
     return inputs

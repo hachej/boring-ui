@@ -716,6 +716,9 @@ importers:
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../ui
+      '@hachej/boring-ui-plugin-cli':
+        specifier: workspace:*
+        version: link:../plugin-cli
       '@lezer/highlight':
         specifier: ^1.2.3
         version: 1.2.3

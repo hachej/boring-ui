@@ -191,10 +191,10 @@ function discoverBoringPluginDirs(pluginDirs: BoringPluginSourceInput[]): Discov
       if (!out.has(child)) out.set(child, { ...source, rootDir: child })
     }
 
-    // Parent collection directories such as .pi/extensions are valid even when empty.
+    // Parent collection directories such as .pi/extensions/.pi/npm/.pi/git are valid even when empty.
     // A non-collection directory with no package.json and no package children is treated
     // as an explicitly supplied plugin dir and reported to the caller.
-    if (!hasPackageJson && childPackageDirs.length === 0 && basename(dir) !== "extensions") {
+    if (!hasPackageJson && childPackageDirs.length === 0 && !["extensions", "npm", "git"].includes(basename(dir))) {
       missingPackageJson.push(dir)
     }
   }
