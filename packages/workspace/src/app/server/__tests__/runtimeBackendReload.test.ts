@@ -51,6 +51,7 @@ describe("runtime backend integration with canonical reload", () => {
       `, "utf8")
       const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
       expect(reload.statusCode).toBe(200)
+      expect(reload.json().restart_warnings).toBeUndefined()
 
       const second = await app.inject({ method: "GET", url: "/api/v1/plugins/runtime-plugin/value" })
       expect(second.statusCode).toBe(200)
