@@ -484,6 +484,25 @@ describe("boring agent plugin assets", () => {
     }
   })
 
+  test("external runtime server file changes do not require restart", async () => {
+    const root = await tmp("boring-plugin-runtime-no-restart-")
+    await writePlugin(root)
+    const manager = new BoringPluginAssetManager({
+      pluginDirs: [{ rootDir: root, kind: "external" }],
+      errorRoot: join(root, ".errors"),
+    })
+
+    await manager.load()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await writeFile(join(root, "server", "index.js"), "export default function(api) { api.get('/changed', async () => ({ ok: true })) }\n", "utf8")
+    const serverChanged = await manager.load()
+    const loadEvent = serverChanged.events.find((event) => event.type === "boring.plugin.load")
+    expect(loadEvent?.type).toBe("boring.plugin.load")
+    if (loadEvent?.type === "boring.plugin.load") {
+      expect(loadEvent.requiresRestart).toBeUndefined()
+    }
+  })
+
   test("reloads when front/shared dependencies change, not only the front entrypoint", async () => {
     const root = await tmp("boring-plugin-front-dep-")
     await writePlugin(root)

@@ -57,6 +57,25 @@ export {
   readPluginSignatureCache,
   writePluginSignatureCache,
 } from "./agentPlugins/signatureCache"
+export {
+  defineRuntimeServerPlugin,
+  runtimeBackendGateway,
+  RuntimeBackendError,
+  RuntimeBackendRegistry,
+  validateRuntimeServerPlugin,
+} from "./runtimeBackend"
+export type {
+  RuntimeBackendDiagnostic,
+  RuntimeBackendDispatchRequest,
+  RuntimeBackendDispatchResponse,
+  RuntimeBackendGatewayOptions,
+  RuntimeBackendReloadResult,
+  RuntimePluginContext,
+  RuntimePluginHandler,
+  RuntimePluginResponse,
+  RuntimePluginRouter,
+  RuntimeServerPlugin,
+} from "./runtimeBackend"
 export type {
   BoringPluginEvent,
   BoringPluginFrontTarget,

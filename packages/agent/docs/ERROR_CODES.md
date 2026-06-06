@@ -59,6 +59,11 @@ All API failures must use the response envelope:
 | `PLUGIN_RUNTIME_PRIVATE_FILE` | Plugin runtime request targeted a disallowed private/non-front file | 403 | user-fix | warn | stable (public API) |
 | `PLUGIN_RUNTIME_UNSAFE_IMPORT` | Plugin frontend import is browser-unsafe or bypasses the host runtime surface | 400 | user-fix | warn | stable (public API) |
 | `PLUGIN_RUNTIME_TRANSFORM_FAILED` | Host runtime could not transform the plugin frontend module graph | 500 | report-bug | error | stable (public API) |
+| `RUNTIME_PLUGIN_NOT_FOUND` | Runtime backend gateway could not find a live plugin snapshot | 404 | user-fix | warn | stable (public API) |
+| `RUNTIME_PLUGIN_ROUTE_NOT_FOUND` | Runtime backend gateway could not match an exact plugin-owned route | 404 | user-fix | warn | stable (public API) |
+| `RUNTIME_PLUGIN_HANDLER_FAILED` | Runtime backend handler threw while serving a plugin-owned route | 500 | report-bug | error | stable (public API) |
+| `RUNTIME_PLUGIN_LOAD_FAILED` | Runtime backend module failed to import, validate, capture, or dispose | 500 | report-bug | error | stable (public API) |
+| `RUNTIME_PLUGIN_RESPONSE_UNSUPPORTED` | Runtime backend handler returned an unsupported response value | 500 | report-bug | error | stable (public API) |
 | `PROVISIONING_LAYOUT_FAILED` | Failed to create/write generated `.boring-agent` layout | 500 | report-bug | error | stable (public API) |
 | `PROVISIONING_SKILLS_FAILED` | Failed to mirror plugin skills into `.boring-agent/skills` | 500 | report-bug | error | stable (public API) |
 | `PROVISIONING_TEMPLATES_FAILED` | Failed to seed missing workspace template files | 500 | report-bug | error | stable (public API) |

@@ -49,6 +49,11 @@
       "import": "./dist/server.js",
       "default": "./dist/server.js"
     },
+    "./runtime-server": {
+      "types": "./dist/runtime-server.d.ts",
+      "import": "./dist/runtime-server.js",
+      "default": "./dist/runtime-server.js"
+    },
     "./events": {
       "types": "./dist/events.d.ts",
       "import": "./dist/events.js"
