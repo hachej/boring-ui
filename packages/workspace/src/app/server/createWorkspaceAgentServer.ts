@@ -19,11 +19,12 @@ import {
 import type { FastifyInstance } from "fastify"
 import { existsSync, mkdirSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
+import { homedir } from "node:os"
 import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
 import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
 import { BoringPluginAssetManager } from "../../server/agentPlugins/manager"
-import type { BoringPluginFrontTargetResolver } from "../../server/agentPlugins/types"
+import type { BoringPluginFrontTargetResolver, BoringPluginSource, BoringPluginSourceInput } from "../../server/agentPlugins/types"
 import { boringPluginRoutes, collectRestartWarnings } from "../../server/agentPlugins/routes"
 import { aggregatePluginPrompts } from "../../server/agentPlugins/aggregatePluginPrompts"
 import { normalizeBoringPluginPiPackages } from "../../server/agentPlugins/piPackages"
@@ -93,12 +94,11 @@ export interface CreateWorkspaceAgentServerOptions
   workspaceProvisioning?: { force?: boolean }
   validateUiPaths?: boolean
   /**
-   * Whether live plugin reload endpoints refresh discovered package plugins.
+   * Whether the canonical agent reload refreshes discovered package plugins.
    * When true, chat `/reload` refreshes package front/Pi metadata and reports
    * static-server restart warnings; dir-source server entries are re-imported
    * for diagnostics only. When false, initial static discovery still runs, but
-   * dynamic Pi/system-prompt refresh and `POST /api/boring.reload` are disabled.
-   * Defaults to true.
+   * dynamic Pi/system-prompt refresh is disabled. Defaults to true.
    */
   pluginHotReload?: boolean
   /**
@@ -403,11 +403,19 @@ export async function provisionWorkspaceAgentServer(opts: {
   })
 }
 
-function collectBoringPluginDirs(
+function uniquePluginSources(sources: BoringPluginSource[]): BoringPluginSource[] {
+  const byRoot = new Map<string, BoringPluginSource>()
+  for (const source of sources) {
+    if (!byRoot.has(source.rootDir)) byRoot.set(source.rootDir, source)
+  }
+  return [...byRoot.values()]
+}
+
+function collectBoringPluginSources(
   workspaceRoot: string,
   pluginCollection: WorkspaceAgentServerPluginCollection,
   additionalPluginDirs: string[] = [],
-): string[] {
+): BoringPluginSource[] {
   const extensionPaths = pluginCollection.agentOptions.pi?.extensionPaths ?? []
   const pluginRoots = extensionPaths.flatMap((path) => {
     try {
@@ -416,11 +424,12 @@ function collectBoringPluginDirs(
       return []
     }
   })
-  return [...new Set([
-    join(workspaceRoot, ".pi", "extensions"),
-    ...pluginRoots,
-    ...additionalPluginDirs,
-  ])]
+  return uniquePluginSources([
+    { rootDir: join(workspaceRoot, ".pi", "extensions"), kind: "external" },
+    { rootDir: join(homedir(), ".pi", "agent", "extensions"), kind: "external" },
+    ...pluginRoots.map((rootDir): BoringPluginSource => ({ rootDir, kind: "internal" })),
+    ...additionalPluginDirs.map((rootDir): BoringPluginSource => ({ rootDir, kind: "internal" })),
+  ])
 }
 
 export interface WorkspacePluginPackagePiSnapshot {
@@ -469,7 +478,7 @@ function uniqueStrings(values: string[]): string[] {
   return [...new Set(values)]
 }
 
-export function readWorkspacePluginPackageRuntimePlugins(pluginDirs: string[]): WorkspaceRuntimeProvisioningInput[] {
+export function readWorkspacePluginPackageRuntimePlugins(pluginDirs: BoringPluginSourceInput[]): WorkspaceRuntimeProvisioningInput[] {
   const scan = scanBoringPlugins(pluginDirs)
   return scan.plugins.map((plugin) => ({
     id: plugin.id,
@@ -492,7 +501,7 @@ function aggregatePluginSystemPromptsFromScan(scan: ReturnType<typeof scanBoring
   return `# Loaded boring-ui plugin context\n\n${prompts.join("\n\n")}`
 }
 
-export function readWorkspacePluginPackagePiSnapshot(pluginDirs: string[]): WorkspacePluginPackagePiSnapshot {
+export function readWorkspacePluginPackagePiSnapshot(pluginDirs: BoringPluginSourceInput[]): WorkspacePluginPackagePiSnapshot {
   try {
     const scan = scanBoringPlugins(pluginDirs)
     const systemPromptAppend = aggregatePluginSystemPromptsFromScan(scan)
@@ -586,14 +595,13 @@ export async function createWorkspaceAgentServer(
   ]
   const baseStaticPiExtensionPaths = pluginCollection.agentOptions.pi?.extensionPaths ?? []
 
-  // Boring plugin discovery: scan .pi/extensions/, any plugin-contributed
-  // extension parent paths, and the app-default plugin package dirs.
-  // The asset manager treats each as a plugin source; SSE + jiti reload
-  // works the same for all three categories.
-  const boringPluginDirs = [
-    ...collectBoringPluginDirs(workspaceRoot, pluginCollection, opts.additionalBoringPluginDirs),
-    ...defaultPluginPackagePaths,
-  ]
+  // Boring plugin discovery: scan external workspace/global extension
+  // collections plus internal app/plugin-provided sources. Source kind is
+  // explicit so later activation code does not infer trust from paths.
+  const boringPluginDirs = uniquePluginSources([
+    ...defaultPluginPackagePaths.map((rootDir): BoringPluginSource => ({ rootDir, kind: "internal" })),
+    ...collectBoringPluginSources(workspaceRoot, pluginCollection, opts.additionalBoringPluginDirs),
+  ])
 
   // Dynamic Pi resources discovered from package.json#pi at /reload time.
   // Pi calls `getHotReloadableResources()` on every reloadSession() and merges the
@@ -753,8 +761,6 @@ export async function createWorkspaceAgentServer(
   await app.register(uiRoutes, { bridge, preserveStateKeys: pluginCollection.preservedUiStateKeys })
   await app.register(boringPluginRoutes, {
     manager: boringAssetManager,
-    rebuildPlugins,
-    enableReloadRoute: pluginHotReload,
   })
   for (const { routes } of pluginCollection.routeContributions) {
     await app.register(routes)

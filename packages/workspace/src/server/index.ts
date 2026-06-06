@@ -41,7 +41,7 @@ export type {
 export { buildBoringSystemPrompt } from "./boringSystemPrompt"
 export { BoringPluginAssetManager } from "./agentPlugins/manager"
 export { boringPluginRoutes, collectRestartWarnings } from "./agentPlugins/routes"
-export type { PluginReloadRebuild, PluginRestartWarning } from "./agentPlugins/routes"
+export type { PluginRestartWarning } from "./agentPlugins/routes"
 export { aggregatePluginPrompts } from "./agentPlugins/aggregatePluginPrompts"
 export { preflightBoringPlugins, readBoringPlugins, scanBoringPlugins } from "./agentPlugins/scan"
 export type { BoringPluginScanResult } from "./agentPlugins/scan"
@@ -65,6 +65,9 @@ export type {
   BoringPluginNativeFrontTarget,
   BoringPluginNativeFrontTargetTrust,
   BoringPluginListEntry,
+  BoringPluginSource,
+  BoringPluginSourceInput,
+  BoringPluginSourceKind,
   BoringServerPluginManifest,
 } from "./agentPlugins/types"
 

@@ -10,6 +10,16 @@ import type {
   BoringPluginNativeFrontTargetTrust as SharedBoringPluginNativeFrontTargetTrust,
 } from "../../shared/plugins/runtimePluginTypes"
 
+export type BoringPluginSourceKind = "internal" | "external"
+
+export interface BoringPluginSource {
+  rootDir: string
+  kind: BoringPluginSourceKind
+  workspaceId?: string
+}
+
+export type BoringPluginSourceInput = string | BoringPluginSource
+
 export interface BoringServerPluginManifest {
   id: string
   rootDir: string
@@ -22,6 +32,7 @@ export interface BoringServerPluginManifest {
   serverPath?: string
   extensionPaths?: string[]
   skillPaths?: string[]
+  source: BoringPluginSource
 }
 
 export type BoringPluginNativeFrontTargetTrust = SharedBoringPluginNativeFrontTargetTrust
