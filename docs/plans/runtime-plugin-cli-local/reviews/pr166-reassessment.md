@@ -1,13 +1,14 @@
-# PR #166 reassessment — plugin-local deps + ui-kit scaffold impact
+# Merged PR #166 reassessment — plugin-local deps + ui-kit scaffold impact
 
-Assumption: user request “PR 66” refers to open PR #166:
+PR #166 is now merged into `main`:
 
 ```txt
-feat(cli): support plugin-local deps and ui-kit scaffolds
+feat(cli): support plugin-local deps and ui-kit scaffolds (#166)
 branch: plan/plugin-local-deps
+merged into: origin/main
 ```
 
-PR #166 inspected:
+Merged PR #166 changes inspected:
 
 - `docs/plans/runtime-plugin-local-dev-and-rpc/04-dependency-import.md`
 - `docs/plans/runtime-plugin-local-dev-and-rpc/06-generated-plugin-design-system.md`
@@ -18,9 +19,9 @@ PR #166 inspected:
 
 ## Verdict
 
-The current CLI/local runtime backend plan remains valid, but PR #166 changes the correct simplification boundary.
+The current CLI/local runtime backend plan remains valid, but merged main has a new simplification boundary.
 
-The plan must not build another dependency/install system around `/reload`. PR #166 already establishes the right local model:
+The plan must not build another dependency/install system around `/reload`. Main now establishes the right local model:
 
 ```txt
 plugin folder owns its deps
@@ -32,7 +33,7 @@ host provides React/workspace/ui-kit singletons
 
 ## Impact 1 — Match Pi dependency behavior by source kind
 
-PR #166 teaches agents to do this for authored `.pi/extensions` plugins:
+Merged main teaches agents to do this for authored `.pi/extensions` plugins:
 
 ```bash
 cd .pi/extensions/my-plugin
@@ -40,13 +41,13 @@ npm install recharts
 boring-ui-plugin verify my-plugin <workspace-root>
 ```
 
-That does **not** mean `boring-ui install <source>` should ignore dependencies. When the user explicitly asks to install a package/source, the installer should perform normal package-manager work for that source.
+That does **not** mean `boring-ui-plugin install <source>` should ignore dependencies. When the user explicitly asks to install a package/source, the installer should perform normal package-manager work for that source.
 
 Correct boundary:
 
-- `boring-ui install npm:<pkg>` installs the package and its declared dependencies in the plugin install/package root.
-- `boring-ui install git:<repo>` clones and runs dependency install in the cloned plugin package directory when `package.json` exists, like Pi.
-- `boring-ui install ./local-plugin` references the local path without copying and without auto-installing dependencies, matching Pi local-path behavior.
+- `boring-ui-plugin install npm:<pkg>` installs the package and its declared dependencies in the plugin install/package root.
+- `boring-ui-plugin install git:<repo>` clones and runs dependency install in the cloned plugin package directory when `package.json` exists, like Pi.
+- `boring-ui-plugin install ./local-plugin` references the local path without copying and without auto-installing dependencies, matching Pi local-path behavior.
 - For local paths, missing dependencies are surfaced as install hints, e.g. `cd ./local-plugin && npm install`.
 - Dependency installs never run in the workspace root or app root.
 - `/reload` never installs anything.
@@ -56,7 +57,7 @@ Plan updated accordingly.
 
 ## Impact 2 — Runtime backend modules should not require workspace package imports
 
-PR #166 solves frontend host imports with a Vite runtime import policy. Runtime backend modules are loaded by server-side jiti, not the browser Vite runtime.
+Merged main solves frontend host imports with a Vite runtime import policy. Runtime backend modules are loaded by server-side jiti, not the browser Vite runtime.
 
 If PR 02 required every `.pi/extensions` backend module to write:
 
@@ -113,7 +114,7 @@ If backend modules later need host SDK imports, add them deliberately as a follo
 
 ## Impact 5 — PR 03 can be narrower than before
 
-Because PR #166 already improves local plugin authoring DX, PR 03 should stay focused on source/package management:
+Because main already improves local plugin authoring DX, PR 03 should stay focused on source/package management:
 
 ```txt
 install/list/remove plugin packages/sources
@@ -123,11 +124,11 @@ not frontend dep resolution
 not backend self-test
 ```
 
-This makes PR 03 smaller and avoids stepping on PR #166.
+This makes PR 03 smaller and avoids stepping on merged-main behavior.
 
 ## Required plan changes applied
 
-- Context now calls out PR #166 decisions.
+- Context now calls out merged PR #166 decisions.
 - PR 02 now uses `boring.server` plus a plain default-export runtime server module as canonical `.pi/extensions` shape.
 - `@hachej/boring-workspace/runtime-server` is optional helper/types, not required for activation.
 - PR 03 now says npm/git installs leave declared deps present, local-path installs do not auto-install deps, and reload never installs deps.
@@ -158,4 +159,4 @@ PR 03 — install/list/remove MVP
   verify tells user what to install inside plugin folder
 ```
 
-This aligns with PR #166 and keeps the backend plan simple.
+This aligns with current `main` and keeps the backend plan simple.

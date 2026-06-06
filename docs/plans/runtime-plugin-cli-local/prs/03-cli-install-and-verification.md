@@ -1,19 +1,22 @@
-# PR 03 — Pi-style install/list/remove MVP
+# PR 03 — Pi-package install/list/remove MVP
 
 ## Goal
 
 After the server MVP works from existing plugin roots, add the smallest useful user-facing install flow.
 
+Design update after PR 02/03 playground validation: a boring plugin package is also a Pi package. Install/list/remove must manage Pi package sources and boring must discover `package.json#boring` from those same package roots. Do **not** create a parallel boring-only source registry.
+
 ## Scope
 
-Add Pi-style install, list, and remove commands for the human/host-facing `boring-ui` CLI.
+Add Pi-style package source install, list, and remove commands for boring plugin packages.
 
-Do not conflate this with:
+Ownership split:
 
-- the agent-facing `boring-ui-plugin` authoring CLI provisioned by `installPluginAuthoring` in latest main;
-- `/reload` or `verify` trying to repair missing dependencies for an already-authored plugin.
+- `boring-ui-plugin` owns the implementation because it is the slim workspace/agent-facing plugin CLI already provisioned into editable workspaces.
+- top-level `boring-ui plugin ...` may expose/reuse the same handlers/options as a human-facing facade.
+- `/reload` and `verify` must never repair/install missing dependencies for an already-authored plugin.
 
-`boring-ui-plugin` remains the slim scaffold/verify/test tool available inside agent workspaces. `boring-ui install` is the package/source install manager.
+Installed sources are Pi package sources. Boring consumes the same package roots by reading `package.json#boring`; Pi consumes `package.json#pi`. If a package has no `pi` resources, Pi no-ops (verified with `DefaultResourceLoader`: zero extensions, no prompt append).
 
 Dependency install rule mirrors Pi:
 
@@ -23,7 +26,7 @@ local-path installs reference the local package and do not auto-install dependen
 Never install dependencies in the workspace root or app root.
 ```
 
-Internal/app plugins are different: they are composed by the app and their dependencies are owned by the app/monorepo package manager, not by `boring-ui install`.
+Internal/app plugins are different: they are composed by the app and their dependencies are owned by the app/monorepo package manager, not by `boring-ui-plugin install`.
 
 `update` and backend self-test are follow-ups unless implementation turns out trivial and does not expand the PR.
 
@@ -32,20 +35,22 @@ Internal/app plugins are different: they are composed by the app and their depen
 Required:
 
 ```bash
-boring-ui install npm:@boring-plugins/email-client
-boring-ui install git:github.com/user/email-client@v1
-boring-ui install https://github.com/user/email-client
-boring-ui install ./local-plugin
-boring-ui install -l ./local-plugin
+boring-ui-plugin install npm:@boring-plugins/email-client
+boring-ui-plugin install git:github.com/user/email-client@v1
+boring-ui-plugin install https://github.com/user/email-client
+boring-ui-plugin install ./local-plugin
+boring-ui-plugin install -l ./local-plugin
 
-boring-ui list [--json]
-boring-ui remove <source-or-id>
+boring-ui-plugin list [--json]
+boring-ui-plugin remove <source-or-id>
+
+boring-ui plugin install ./local-plugin   # facade/reuse, if exposed
 ```
 
 Deferred/stretch:
 
 ```bash
-boring-ui update [source-or-id]
+boring-ui-plugin update [source-or-id]
 ```
 
 ## Trust model
@@ -53,7 +58,7 @@ boring-ui update [source-or-id]
 CLI/local install mirrors Pi:
 
 ```txt
-boring-ui install <source> = trusted local code, enabled by default
+boring-ui-plugin install <source> = trusted local code, enabled by default
 ```
 
 No permission prompts/grants in this PR.
@@ -69,14 +74,14 @@ Security: Boring plugins run as trusted local code in CLI mode. Review third-par
 Default is global/user install.
 
 ```bash
-boring-ui install <source>
+boring-ui-plugin install <source>
 ```
 
 Workspace-local install:
 
 ```bash
-boring-ui install -l <source>
-boring-ui install --local <source>
+boring-ui-plugin install -l <source>
+boring-ui-plugin install --local <source>
 ```
 
 Roots mirror Pi:
@@ -144,13 +149,14 @@ After install:
 2. read `package.json`;
 3. validate Boring manifest;
 4. derive plugin id from package name;
-5. add source record for selected scope;
-6. run `verify-plugin` when applicable;
-7. tell user to run `/reload` or trigger reload only when safe.
+5. add package source to Pi's selected scope/package source settings;
+6. make boring discovery read those same Pi package roots for `package.json#boring`;
+7. run `verify-plugin` when applicable;
+8. tell user to run `/reload` or trigger reload only when safe.
 
 Do not require Playwright `test-plugin` in this PR. It can remain a manual command or follow-up integration.
 
-Dependency install is allowed during `boring-ui install npm:<pkg>` and `boring-ui install git:<repo>` for the installed/cloned package. Local-path install does not auto-install dependencies. Do not add dependency-install behavior to `/reload`; PR #166 intentionally keeps reload as reload-only.
+Dependency install is allowed during `boring-ui-plugin install npm:<pkg>` and `boring-ui-plugin install git:<repo>` for the installed/cloned package. Local-path install does not auto-install dependencies. Do not add dependency-install behavior to `/reload`; PR #166 intentionally keeps reload as reload-only.
 
 ## Follow-ups
 
@@ -159,7 +165,7 @@ Dependency install is allowed during `boring-ui install npm:<pkg>` and `boring-u
 Add after install/list/remove works:
 
 ```bash
-boring-ui update [source-or-id]
+boring-ui-plugin update [source-or-id]
 ```
 
 ### Backend self-test polish
@@ -207,13 +213,17 @@ Host metadata health remains separate if/when added:
 - Third-party warning prints for npm/git/URL.
 - Manifest validation happens before activation.
 - npm/git/URL installs leave declared package dependencies present.
-- Local-path install references the local package without auto-installing dependencies and prints clear install hints if dependencies are missing.
+- Local-path install references the local package through Pi package source settings without auto-installing dependencies and prints clear install hints if dependencies are missing.
 - Any dependency install that does happen runs in the installed/cloned plugin package directory, never workspace/app root.
 - Missing plugin-local deps are never installed during reload.
+- No `.pi/boring-plugin-sources.json` or other bespoke boring registry is introduced; the package source registry is Pi-owned/compatible.
+- Installed plugin with only `package.json#boring` and no `package.json#pi` is valid: Pi no-ops and boring loads the UI/backend surfaces.
 - Installed plugin can use PR 02 runtime backend after `/reload`.
 
 ## Acceptance
 
-- User can install, list, and remove external plugins like Pi.
+- User can install, list, and remove external boring plugins as Pi package sources.
+- Boring discovers installed Pi package sources and loads their `package.json#boring` surfaces after `/reload`.
+- Pi consumes any `package.json#pi` resources from the same packages and no-ops for packages without `pi`.
 - Installed plugin can be verified and, after reload, use the server MVP from PR 02.
 - `update` and backend self-test are not required for this PR to ship.

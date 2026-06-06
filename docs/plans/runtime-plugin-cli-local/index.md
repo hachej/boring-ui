@@ -18,20 +18,22 @@ Use these three PR-sized plans:
 | --- | --- | --- |
 | 01 | [prs/01-foundation.md](./prs/01-foundation.md) | Source metadata, remove old reload route, and shared jiti helper. No backend execution. |
 | 02 | [prs/02-server-runtime-mvp.md](./prs/02-server-runtime-mvp.md) | Hot runtime behavior for external `boring.server` entries: plain module contract, route capture, registry, gateway, reload diagnostics. No install or host health route. |
-| 03 | [prs/03-cli-install-and-verification.md](./prs/03-cli-install-and-verification.md) | Pi-style install/list/remove MVP, aligned with PR #166 plugin-local dependency installs. `update` and backend self-test are follow-ups. |
+| 03 | [prs/03-cli-install-and-verification.md](./prs/03-cli-install-and-verification.md) | Pi package-source install/list/remove MVP, aligned with PR #166 plugin-local dependency installs. `update` and backend self-test are follow-ups. |
 
 ## Core decisions
 
 - CLI/local uses Pi trust semantics:
 
   ```txt
-  boring-ui install <source> = trusted local code, enabled by default
+  boring-ui-plugin install <source> = trusted local code, enabled by default
   ```
 
 - Plugin authors use one manifest field: `boring.server`.
 - Internal plugins are fixed/boot-time and use the existing `WorkspaceServerPlugin` path.
 - External CLI/local plugins are hot-reloaded through the gateway.
 - PR #166's plugin-local dependency model remains intact: `/reload` never installs missing packages.
+- Boring plugin packages are Pi packages: Pi consumes `package.json#pi`, boring consumes `package.json#boring`, and packages with no `pi` resources are valid no-ops for Pi.
+- Install/list/remove should use Pi package source settings/roots, not a separate `.pi/boring-plugin-sources.json` registry.
 - `/api/v1/agent/reload` is the only reload endpoint; remove the older `/api/boring.reload` developer route in PR 01.
 - Boring already has jiti fresh import for diagnostic `boring.server` reload; missing piece is source-aware gateway/registry commit:
 

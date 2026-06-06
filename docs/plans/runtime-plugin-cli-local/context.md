@@ -14,7 +14,7 @@ External CLI plugins extend the local workspace runtime.
 CLI/local external plugins use the **Pi trust model**:
 
 ```txt
-boring-ui install <source> = trusted local code, enabled by default
+boring-ui-plugin install <source> = trusted local code, enabled by default
 ```
 
 No permission prompts/grants in the CLI MVP. Hosted/cloud/marketplace can add permission policy later.
@@ -122,7 +122,7 @@ Adds/establishes:
 Impact on this plan:
 
 - keep Pi-style plugin-local dependency behavior;
-- do not make `boring-ui install` a hidden dependency installer for existing `.pi/extensions` authoring;
+- do not make `boring-ui-plugin install` / `boring-ui plugin install` a hidden dependency installer for existing `.pi/extensions` authoring;
 - avoid requiring runtime backend modules to import a host package just to be loadable.
 
 ### PR #157 — File records data access
@@ -143,7 +143,7 @@ Adds `boring-ui test-plugin <name>` with Playwright reload/render diagnostics. T
 - Keep one plugin-facing server field: `boring.server`. Internal plugins are fixed/boot-time; external CLI/local plugins are hot-reloaded through the gateway.
 - Do not grow `createWorkspaceAgentServer.ts` with new reload logic; extract a focused reload helper only when it deletes complexity instead of adding abstraction.
 - Do not put executable backend handler tables in `BoringPluginAssetManager`.
-- Do not infer trust from path strings and do not store drift-prone `runtimeBackendAllowed` booleans; preserve explicit internal/external source records.
+- Do not infer trust from path strings and do not store drift-prone `runtimeBackendAllowed` booleans; preserve explicit internal/external source metadata from the package source collector.
 - Do not expose `workspace.root` or raw host paths to runtime backend handlers.
 - Use exact-match backend route dispatch in MVP. No custom mini-router.
 - Keep host health metadata outside plugin-owned gateway paths.
@@ -166,18 +166,30 @@ Host plugin metadata/health:
 
 ## Install model
 
-Target model mirrors Pi. Implementation can ship install/list/remove first and add update later. This is package/source installation: npm/git installs should leave declared dependencies present inside the installed/cloned plugin package dir, while local-path installs reference the local package without auto-installing deps. Never install deps in workspace/app root. That is separate from `/reload` or verify fixing dependencies for already-authored plugins:
+Target model mirrors Pi package sources. Implementation can ship install/list/remove first and add update later. This is package-source installation: npm/git installs should leave declared dependencies present inside the installed/cloned plugin package dir, while local-path installs reference the local package without auto-installing deps. Never install deps in workspace/app root. That is separate from `/reload` or verify fixing dependencies for already-authored plugins.
+
+Boring plugin packages use normal package metadata:
+
+```txt
+package.json#boring  -> boring UI/runtime-server surfaces
+package.json#pi      -> Pi resources, if any
+```
+
+A package with `boring` but no `pi` resources is valid: Pi resource loading no-ops, and boring still scans the package root. Do not add a second boring-owned package source registry such as `.pi/boring-plugin-sources.json`.
+
+Implementation ownership:
 
 ```bash
-boring-ui install npm:@boring-plugins/email-client
-boring-ui install git:github.com/user/email-client@v1
-boring-ui install https://github.com/user/email-client
-boring-ui install ./plugins/email-client
-boring-ui install -l ./plugins/email-client   # workspace-local
+boring-ui-plugin install npm:@boring-plugins/email-client
+boring-ui-plugin install git:github.com/user/email-client@v1
+boring-ui-plugin install https://github.com/user/email-client
+boring-ui-plugin install ./plugins/email-client
+boring-ui-plugin install -l ./plugins/email-client   # workspace-local
 
-boring-ui remove <source-or-id>
-boring-ui list
-boring-ui update [source-or-id]
+boring-ui-plugin remove <source-or-id>
+boring-ui-plugin list
+
+boring-ui plugin install ./plugins/email-client      # optional top-level facade/reuse
 ```
 
 Scopes:

@@ -58,7 +58,7 @@ Acceptance:
 
 - existing `.pi/extensions/<id>` plugin with `boring.server` can hot-reload backend handlers in CLI/local mode.
 
-## PR 03 — Pi-style install/list/remove MVP
+## PR 03 — Pi package-source install/list/remove MVP
 
 Detailed plan: [prs/03-cli-install-and-verification.md](./prs/03-cli-install-and-verification.md)
 
@@ -66,18 +66,23 @@ Goal: add user-facing install/list/remove after server MVP works.
 
 Includes:
 
-- package/source install flow matching Pi: npm/git install deps in installed/cloned plugin dirs, local paths are referenced without auto-installing deps, and `/reload` stays dependency-free;
-- `boring-ui install <source>` global by default;
-- `boring-ui install -l/--local <source>` workspace-local;
+- package-source install flow matching Pi: npm/git install deps in installed/cloned plugin dirs, local paths are referenced without auto-installing deps, and `/reload` stays dependency-free;
+- `boring-ui-plugin install <source>` implementation, with optional `boring-ui plugin ...` facade/reuse;
+- global/user scope and `-l/--local` workspace scope using Pi package source settings;
 - npm/git/URL/local path sources;
 - `list` and `remove`;
 - manifest validation before activation;
+- boring discovery scans the same Pi package roots for `package.json#boring`;
+- Pi scans the same package roots for `package.json#pi` and no-ops when absent;
+- no separate `.pi/boring-plugin-sources.json` registry;
 - security warning for third-party sources.
 
 Acceptance:
 
-- user can install, list, and remove external plugins like Pi;
+- user can install, list, and remove external boring plugins as Pi package sources;
 - workspace-local shadows global same-id plugin;
+- installed package appears in `/api/v1/agent-plugins` after `/reload`;
+- package with no `pi` resources does not break Pi resource loading;
 - installed plugin can use PR 02 server runtime after `/reload`.
 
 Follow-up:

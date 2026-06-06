@@ -15,6 +15,7 @@ This PR combines the setup work that is too small/noisy as separate PRs:
 3. Add minimal source classification: internal plugins are fixed/boot-time; external plugins are hot-reloaded through the gateway.
 4. Remove the obsolete `/api/boring.reload` endpoint so there is one reload path.
 5. Extract the existing jiti fresh-import helper.
+6. Treat merged-main plugin-local dependency support from PR #166 as baseline: plugin folders own `package.json`/`node_modules`, host singletons stay host-provided, and `/reload` never installs packages.
 
 ## Why this PR exists
 
@@ -25,6 +26,8 @@ explicit source trust -> one reload endpoint -> canonical fresh import
 ```
 
 Without this, the implementation risks path-based trust inference, duplicated reload semantics, and another ad-hoc jiti loader.
+
+Latest `main` already includes PR #166's frontend runtime plugin dependency cleanup. PR 01 must not reopen that problem. Treat `rootDir` as the plugin package root used by existing front-runtime verification/resolution, but do not add install metadata, dependency policy, scaffold changes, or package-manager work in this foundation PR.
 
 ## Tasks
 
@@ -42,7 +45,7 @@ Source shape for this PR:
 
 ```ts
 type BoringPluginSource = {
-  rootDir: string // absolute normalized host path
+  rootDir: string // absolute normalized plugin package root on the host
   kind: "internal" | "external"
   workspaceId?: string
 }
@@ -62,6 +65,14 @@ Ignore advanced host escape hatches for MVP. If a host uses extra scan dirs, the
 
 This is not a new plugin API. Plugin authors still use `boring.server`. The host only records whether the source is internal or external so activation logic is not inferred from paths at random callsites.
 
+Merged-main dependency cleanup constraints for this source metadata:
+
+- `rootDir` is also the package root where authored runtime plugins keep `package.json` and plugin-local `node_modules`.
+- Do not add dependency/install fields to `BoringPluginSource` in PR 01.
+- Do not infer source kind from whether `node_modules` exists, whether `@hachej/boring-ui-kit` is imported, or whether a scaffold template was used.
+- Do not mutate `package.json`, lockfiles, or `node_modules` during scan/load/reload.
+- Keep host-provided frontend singleton policy (`react`, `react-dom`, `@hachej/boring-workspace*`, `@hachej/boring-ui-kit`) in the existing front-runtime/verifier path; source classification is only for `boring.server` activation.
+
 Loaded plugin records should carry:
 
 ```ts
@@ -74,7 +85,7 @@ type LoadedBoringPlugin = {
 }
 ```
 
-`npm` / `git` / `local-path` install details are PR 03 metadata. They are not needed in the server foundation.
+`npm` / `git` / `local-path` install details are PR 03 metadata. They are not needed in the server foundation. PR 01 should only preserve enough source/package-root identity for later PRs to make those decisions explicitly.
 
 ### 2. Remove obsolete reload endpoint
 
@@ -98,6 +109,8 @@ Why two endpoints exist today:
 - `/api/boring.reload` is a workspace/plugin developer endpoint from earlier plugin asset-manager work. It scans plugin assets and reports restart warnings without doing the full agent/session reload.
 
 Do not grow two reload systems. PR 01 should remove `/api/boring.reload` and route all reload tooling through `/api/v1/agent/reload`.
+
+Keep the merged-main reload rule from PR #166: canonical reload refreshes plugin resources and diagnostics, but it must not install missing plugin dependencies or modify any plugin package folder.
 
 There is no developer reload compatibility route after PR 01.
 
@@ -140,6 +153,8 @@ Extract existing behavior from `pluginEntryResolver.ts`:
 - fallback warning behavior remains unchanged.
 - existing `boring.server` diagnostics use the helper.
 
+Keep this backend import helper separate from the merged frontend Vite import policy. Do not add backend aliases for host-provided frontend packages in PR 01; PR 02's runtime backend contract can use plain default exports without requiring local plugins to import workspace helper packages.
+
 ## Non-goals
 
 - No runtime backend API.
@@ -149,22 +164,26 @@ Extract existing behavior from `pluginEntryResolver.ts`:
 - No behavior change to canonical `/api/v1/agent/reload` flow.
 - Remove obsolete `/api/boring.reload` flow.
 - No reload helper abstraction unless it deletes more code than it adds.
+- No plugin dependency install/resolution work; latest `main` already owns plugin-local frontend deps and PR 03 owns install/list/remove.
+- No scaffold or ui-kit template work; latest `main` already made generated fronts use host-provided `@hachej/boring-ui-kit`.
 
 ## Tests
 
 - Manifest keeps accepting safe `boring.server` paths.
 - Unsafe `boring.server` path is rejected.
 - Source metadata survives scan/load without changing existing list/event response shapes.
+- Source `rootDir` remains the plugin package root used by current plugin-local dependency verification/resolution.
 - Internal sources are boot-time/fixed.
 - External sources are hot-reloaded through the gateway.
 - `POST /api/boring.reload` returns 404/not registered after PR 01.
-- Existing canonical reload behavior and diagnostics remain unchanged.
+- Existing canonical reload behavior and diagnostics remain unchanged, including no package install during reload.
 - `hotReload: true` jiti import sees source edits.
 - Native import/fallback warning behavior is unchanged.
 
 ## Acceptance
 
-- Internal vs external source classification is explicit, not path-inferred and not stored as a drift-prone backend-allowed boolean.
+- Internal vs external source classification is explicit, not path-inferred, not dependency-inferred, and not stored as a drift-prone backend-allowed boolean.
+- Merged-main dependency/import cleanup is preserved: package-local deps stay package-local, host singletons stay host-provided, and PR 01 does not add another dependency system.
 - There is only one reload endpoint; no new reload abstraction is introduced unless it materially reduces code.
 - There is one canonical jiti server module import helper.
 - No runtime backend handlers execute yet.
