@@ -79,6 +79,7 @@ export interface LoadedBoringPluginInspection {
   rootDir: string
   frontPath?: string
   frontTarget?: BoringPluginFrontTarget
+  serverPath?: string
   source: BoringPluginSource
 }
 
@@ -192,11 +193,12 @@ function pluginSignature(plugin: BoringServerPluginManifest): string {
 }
 
 /**
- * Compare the previous + new manifest's server-side surfaces. Returns
- * the surfaces whose changes can't be hot-reloaded (the workspace
- * wires routes + agentTools once at boot). Cheap heuristic: any
- * change to the server file (signature) AND server file is present
- * in either revision = both surfaces flagged.
+ * Compare the previous + new manifest's static server-side surfaces.
+ * Returns the surfaces whose changes can't be hot-reloaded because the
+ * trusted app/internal plugin path wires Fastify routes + agentTools once
+ * at boot. Workspace-local runtime plugins (`source.kind === "external"`)
+ * are handled by RuntimeBackendRegistry and do hot-reload via `/reload`,
+ * so they must not produce restart warnings.
  *
  * First-time loads (no `previous`) don't set this — agentTools/routes
  * are correctly in place from the initial boot.
@@ -206,11 +208,12 @@ function computeRequiresRestart(
   next: BoringServerPluginManifest,
 ): PluginRestartSurface[] {
   if (!previous) return []
+  if (previous.source.kind === "external" && next.source.kind === "external") return []
   const prevHasServer = !!previous.serverPath
   const nextHasServer = !!next.serverPath
   if (!prevHasServer && !nextHasServer) return []
-  // Server added or removed mid-session — both surfaces need a restart
-  // to take effect.
+  // Server added or removed mid-session — both static surfaces need a
+  // restart to take effect.
   if (prevHasServer !== nextHasServer) return ["routes", "agentTools"]
   // Both present — we can't compare the PREVIOUS file's content (it's
   // been overwritten), so compare the cached load-time signature against
@@ -266,6 +269,7 @@ export class BoringPluginAssetManager {
       source: plugin.source,
       ...(plugin.frontPath ? { frontPath: plugin.frontPath } : {}),
       ...(plugin.frontTarget ? { frontTarget: plugin.frontTarget } : {}),
+      ...(plugin.serverPath ? { serverPath: plugin.serverPath } : {}),
     }))
   }
 
