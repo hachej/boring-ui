@@ -121,7 +121,7 @@ definePlugin({
 - ❌ `createPlugin(...)` — use `definePlugin(...)`
 - ❌ `defineFrontPlugin(...)` — removed from the public API
 - ❌ inside `setup`: `api.registerComponent`, `api.addPanel`, `api.registerCommand` (no `Panel`), `api.registerTab` — use the corresponding `register*` name from the table above
-- ❌ in Pi extensions: `defineTool(...)` / `export const tools` — export a default function and call `pi.registerTool({ name, description, execute })`
+- ❌ in Pi extensions: `defineTool(...)` / `export const tools` — export a default function and call `pi.registerTool({ name, description, parameters: { type: "object", properties: {} }, execute })`. `parameters` is mandatory even for no-arg tools.
 
 ## File layout (do not put files elsewhere)
 

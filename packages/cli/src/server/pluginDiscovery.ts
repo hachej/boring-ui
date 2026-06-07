@@ -17,7 +17,7 @@ import {
 export interface ResolveCliBoringPluginDirsOptions {
   /** Existing tests/callers use this as the global extensions root. */
   globalRoot?: string
-  /** Optional global ~/.pi/agent-style base root for npm/git/source records. */
+  /** Optional global ~/.pi/agent-style base root for Pi package sources. */
   globalAgentRoot?: string
   frontTargetResolver?: BoringPluginFrontTargetResolver
   includeLegacyFrontUrl?: boolean
@@ -39,7 +39,7 @@ export function resolveCliBoringPluginDirs(
   const globalAgentRoot = getGlobalPiAgentRoot(options)
   const globalScope = resolvePluginSourceScopePaths("global", { globalRoot: globalAgentRoot })
   const localScope = resolvePluginSourceScopePaths("local", { workspaceRoot: resolvedWorkspaceRoot })
-  const records = [
+  const packageSources = [
     ...readPluginSourceRecords(globalScope),
     ...readPluginSourceRecords(localScope),
   ]
@@ -50,7 +50,7 @@ export function resolveCliBoringPluginDirs(
     { rootDir: localScope.extensionsDir, kind: "external", workspaceId: resolvedWorkspaceRoot },
     { rootDir: localScope.npmDir, kind: "external", workspaceId: resolvedWorkspaceRoot },
     { rootDir: localScope.gitDir, kind: "external", workspaceId: resolvedWorkspaceRoot },
-    ...records.map((record): BoringPluginSourceInput => ({
+    ...packageSources.map((record): BoringPluginSourceInput => ({
       rootDir: record.rootDir,
       kind: "external",
       ...(record.scope === "local" ? { workspaceId: resolvedWorkspaceRoot } : {}),

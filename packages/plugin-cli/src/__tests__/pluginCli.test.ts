@@ -91,7 +91,12 @@ async function runPluginCli(args: string[], opts: { cwd: string; env?: Record<st
   })
 }
 
-test("boring-ui-plugin install/list/remove defaults to workspace-local records without the main CLI", async () => {
+async function readPiSettingsPackages(settingsPath: string): Promise<string[]> {
+  const settings = JSON.parse(await readFile(settingsPath, "utf8")) as { packages?: unknown[] }
+  return (settings.packages ?? []).flatMap((entry) => typeof entry === "string" ? [entry] : [])
+}
+
+test("boring-ui-plugin install/list/remove defaults to workspace-local Pi settings without the main CLI", async () => {
   const root = await tempDir("boring-plugin-source-local-")
   const workspaceRoot = join(root, "workspace")
   const source = join(root, "source-plugin")
@@ -106,16 +111,8 @@ test("boring-ui-plugin install/list/remove defaults to workspace-local records w
   expect(install.stdout).toContain(`Run: cd ${resolve(source)} && npm install`)
   await expect(access(join(workspaceRoot, ".pi", "extensions", "local-plugin"))).rejects.toThrow()
 
-  const records = JSON.parse(await readFile(join(workspaceRoot, ".pi", "boring-plugin-sources.json"), "utf8")) as {
-    sources: Array<{ id: string; kind: string; scope: string; rootDir: string; source: string }>
-  }
-  expect(records.sources).toEqual([expect.objectContaining({
-    id: "local-plugin",
-    kind: "local",
-    scope: "local",
-    rootDir: resolve(source),
-    source: resolve(source),
-  })])
+  await expect(access(join(workspaceRoot, ".pi", "boring-plugin-sources.json"))).rejects.toThrow()
+  expect(await readPiSettingsPackages(join(workspaceRoot, ".pi", "settings.json"))).toEqual([resolve(source)])
 
   const list = await runPluginCli(["list", "--json"], { cwd: workspaceRoot })
   expect(JSON.parse(list.stdout).records).toEqual([expect.objectContaining({ id: "local-plugin", scope: "local" })])
@@ -140,103 +137,58 @@ test("boring-ui-plugin local installs inside the workspace persist workspace-rel
   const install = await runPluginCli(["install", "plugins/relative-plugin"], { cwd: workspaceRoot })
   expect(install.stdout).toContain("installed relative-plugin")
 
-  const records = JSON.parse(await readFile(join(workspaceRoot, ".pi", "boring-plugin-sources.json"), "utf8")) as {
-    sources: Array<{ id: string; rootDir: string; source: string; rootDirRelativeToWorkspace?: string; sourceRelativeToWorkspace?: string }>
-  }
-  expect(records.sources).toEqual([expect.objectContaining({
-    id: "relative-plugin",
-    rootDir: resolve(source),
-    source: resolve(source),
-    rootDirRelativeToWorkspace: "plugins/relative-plugin",
-    sourceRelativeToWorkspace: "plugins/relative-plugin",
-  })])
+  await expect(access(join(workspaceRoot, ".pi", "boring-plugin-sources.json"))).rejects.toThrow()
+  expect(await readPiSettingsPackages(join(workspaceRoot, ".pi", "settings.json"))).toEqual(["../plugins/relative-plugin"])
 })
 
-test("boring-ui-plugin list resolves sandbox /workspace records against the host workspace", async () => {
-  const root = await tempDir("boring-plugin-source-sandbox-record-")
+test("boring-ui-plugin list resolves Pi settings paths relative to the settings file", async () => {
+  const root = await tempDir("boring-plugin-source-settings-relative-")
   const workspaceRoot = join(root, "host-workspace")
-  const pluginRoot = join(workspaceRoot, "plugins", "sandbox-plugin")
+  const pluginRoot = join(workspaceRoot, "plugins", "settings-plugin")
   await mkdir(join(workspaceRoot, ".pi"), { recursive: true })
-  await writeRuntimePlugin(pluginRoot, "sandbox-plugin")
-  await writeFile(join(workspaceRoot, ".pi", "boring-plugin-sources.json"), JSON.stringify({
-    version: 1,
-    sources: [{
-      id: "sandbox-plugin",
-      kind: "local",
-      scope: "local",
-      source: "/workspace/plugins/sandbox-plugin",
-      rootDir: "/workspace/plugins/sandbox-plugin",
-      installedAt: "2026-01-01T00:00:00.000Z",
-    }],
+  await writeRuntimePlugin(pluginRoot, "settings-plugin")
+  await writeFile(join(workspaceRoot, ".pi", "settings.json"), JSON.stringify({
+    packages: ["../plugins/settings-plugin"],
   }), "utf8")
 
   const list = await runPluginCli(["list", "--json"], { cwd: workspaceRoot })
   expect(JSON.parse(list.stdout).records).toEqual([expect.objectContaining({
-    id: "sandbox-plugin",
+    id: "settings-plugin",
     scope: "local",
+    packageSource: "../plugins/settings-plugin",
     source: resolve(pluginRoot),
     rootDir: resolve(pluginRoot),
   })])
 })
 
-test("boring-ui-plugin list does not resolve sandbox records that escape the workspace", async () => {
-  const root = await tempDir("boring-plugin-source-sandbox-escape-")
+test("boring-ui-plugin list resolves file: Pi package sources", async () => {
+  const root = await tempDir("boring-plugin-source-file-prefix-")
   const workspaceRoot = join(root, "host-workspace")
-  const evilPlugin = join(root, "evil")
+  const pluginRoot = join(workspaceRoot, "plugins", "file-plugin")
   await mkdir(join(workspaceRoot, ".pi"), { recursive: true })
-  await writeRuntimePlugin(evilPlugin, "evil-plugin")
-  await writeFile(join(workspaceRoot, ".pi", "boring-plugin-sources.json"), JSON.stringify({
-    version: 1,
-    sources: [
-      {
-        id: "workspace-prefix-escape",
-        kind: "local",
-        scope: "local",
-        source: `/workspace/..${resolve(evilPlugin)}`,
-        rootDir: `/workspace/..${resolve(evilPlugin)}`,
-        installedAt: "2026-01-01T00:00:00.000Z",
-      },
-      {
-        id: "relative-metadata-escape",
-        kind: "local",
-        scope: "local",
-        source: "/workspace/plugins/relative-metadata-escape",
-        rootDir: "/workspace/plugins/relative-metadata-escape",
-        rootDirRelativeToWorkspace: "../evil",
-        sourceRelativeToWorkspace: "../evil",
-        installedAt: "2026-01-01T00:00:00.000Z",
-      },
-    ],
+  await writeRuntimePlugin(pluginRoot, "file-plugin")
+  await writeFile(join(workspaceRoot, ".pi", "settings.json"), JSON.stringify({
+    packages: ["file:../plugins/file-plugin"],
   }), "utf8")
 
   const list = await runPluginCli(["list", "--json"], { cwd: workspaceRoot })
-  expect(JSON.parse(list.stdout).records).toEqual([])
+  expect(JSON.parse(list.stdout).records).toEqual([expect.objectContaining({
+    id: "file-plugin",
+    packageSource: "file:../plugins/file-plugin",
+    rootDir: resolve(pluginRoot),
+  })])
 })
 
-test("boring-ui-plugin list ignores records whose scope does not match the records file", async () => {
-  const root = await tempDir("boring-plugin-source-scope-mismatch-")
+test("boring-ui-plugin list ignores uninspectable Pi package sources", async () => {
+  const root = await tempDir("boring-plugin-source-uninspectable-")
   const workspaceRoot = join(root, "host-workspace")
-  const evilPlugin = join(root, "evil")
-  const escapedRoot = `/workspace/..${resolve(evilPlugin)}`
   await mkdir(join(workspaceRoot, ".pi"), { recursive: true })
-  await writeRuntimePlugin(evilPlugin, "evil-plugin")
-  await writeFile(join(workspaceRoot, ".pi", "boring-plugin-sources.json"), JSON.stringify({
-    version: 1,
-    sources: [{
-      id: "mismatched-scope-escape",
-      kind: "local",
-      scope: "global",
-      source: escapedRoot,
-      rootDir: escapedRoot,
-      installedAt: "2026-01-01T00:00:00.000Z",
-    }],
+  await writeFile(join(workspaceRoot, ".pi", "settings.json"), JSON.stringify({
+    packages: ["../missing", "npm:not-installed-yet"],
   }), "utf8")
 
   const list = await runPluginCli(["list", "--json"], { cwd: workspaceRoot })
   expect(JSON.parse(list.stdout).records).toEqual([])
-
-  const remove = await runPluginCli(["remove", escapedRoot], { cwd: workspaceRoot })
-  expect(remove.stdout).toContain("removed mismatched-scope-escape")
 })
 
 test("boring-ui-plugin installs git and npm plugin source without installing dependencies", async () => {
@@ -266,11 +218,21 @@ test("boring-ui-plugin installs git and npm plugin source without installing dep
   await expect(access(join(workspaceRoot, ".pi", "npm", "npm-plugin", "package.json"))).resolves.toBeUndefined()
   await expect(access(join(workspaceRoot, ".pi", "npm", "npm-plugin", "node_modules"))).rejects.toThrow()
 
+  expect(await readPiSettingsPackages(join(workspaceRoot, ".pi", "settings.json"))).toEqual([
+    "./git/git-plugin",
+    "./npm/npm-plugin",
+  ])
+
   const list = await runPluginCli(["list", "--json", "--workspace", workspaceRoot], { cwd: root })
   expect(JSON.parse(list.stdout).records.map((record: { id: string; kind: string }) => [record.id, record.kind]).sort()).toEqual([
     ["git-plugin", "git"],
     ["npm-plugin", "npm"],
   ])
+
+  await rm(join(workspaceRoot, ".pi", "npm", "npm-plugin"), { recursive: true, force: true })
+  const staleRemove = await runPluginCli(["remove", "./npm/npm-plugin", "--workspace", workspaceRoot], { cwd: root })
+  expect(staleRemove.stdout).toContain("removed ./npm/npm-plugin")
+  expect(await readPiSettingsPackages(join(workspaceRoot, ".pi", "settings.json"))).toEqual(["./git/git-plugin"])
 
   await runPluginCli(["remove", "git-plugin", "--workspace", workspaceRoot], { cwd: root })
   await expect(access(join(workspaceRoot, ".pi", "git", "git-plugin"))).rejects.toThrow()

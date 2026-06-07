@@ -39,10 +39,8 @@ interface LoadedPluginRecord extends BoringServerPluginManifest {
   serverSignature: string | null
 }
 
-export type BoringPluginSourceProvider = BoringPluginSourceInput[] | (() => BoringPluginSourceInput[])
-
 export interface BoringPluginAssetManagerOptions {
-  pluginDirs: BoringPluginSourceProvider
+  pluginDirs: BoringPluginSourceInput[]
   /**
    * Root directory for per-plugin `.error` sidecar files written by the
    * asset manager and read by verify-plugin. Defaults to `<cwd>/.pi/extensions`.
@@ -226,7 +224,7 @@ function computeRequiresRestart(
 }
 
 export class BoringPluginAssetManager {
-  private readonly pluginDirs: BoringPluginSourceProvider
+  private readonly pluginDirs: BoringPluginSourceInput[]
   private readonly errorRoot: string
   private readonly frontTargetResolver?: BoringPluginFrontTargetResolver
   private readonly includeLegacyFrontUrl: boolean
@@ -244,12 +242,8 @@ export class BoringPluginAssetManager {
     this.includeLegacyFrontUrl = options.includeLegacyFrontUrl ?? true
   }
 
-  private currentPluginDirs(): BoringPluginSourceInput[] {
-    return typeof this.pluginDirs === "function" ? this.pluginDirs() : this.pluginDirs
-  }
-
   preflight(): BoringPluginPreflightResult {
-    return preflightBoringPlugins(this.currentPluginDirs())
+    return preflightBoringPlugins(this.pluginDirs)
   }
 
   list(): BoringPluginListEntry[] {
@@ -319,8 +313,8 @@ export class BoringPluginAssetManager {
 
   private async doLoadOnce(): Promise<LoadBoringAssetsResult> {
     this.lastErrors.clear()
-    const scan = scanBoringPlugins(this.currentPluginDirs())
-    const nextPlugins = scan.plugins
+    const scan = scanBoringPlugins(this.pluginDirs)
+    const nextPlugins = scan.plugins.filter((plugin) => plugin.hasBoring)
     const nextIds = new Set(nextPlugins.map((plugin) => plugin.id))
     const invalidPluginDirs = new Set(scan.preflight.errors.map((error) => resolve(error.pluginDir)))
     const events: BoringPluginEvent[] = []

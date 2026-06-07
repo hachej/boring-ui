@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { dirname, join, resolve } from "node:path"
+import { join, resolve } from "node:path"
 import {
   createCliPluginAssetManager,
   getGlobalPiExtensionsRoot,
@@ -23,9 +23,9 @@ async function writeRuntimePlugin(dir: string, name: string, systemPrompt: strin
   }), "utf8")
 }
 
-async function writeRecordsFile(recordsPath: string, sources: Array<Record<string, unknown>>): Promise<void> {
-  await mkdir(dirname(recordsPath), { recursive: true })
-  await writeFile(recordsPath, JSON.stringify({ version: 1, sources }), "utf8")
+async function writePiSettings(settingsPath: string, packages: string[]): Promise<void> {
+  await mkdir(join(settingsPath, ".."), { recursive: true })
+  await writeFile(settingsPath, JSON.stringify({ packages }), "utf8")
 }
 
 describe("plugin discovery helpers", () => {
@@ -81,8 +81,8 @@ describe("plugin discovery helpers", () => {
     }
   })
 
-  test("workspace-local record shadows a global record with the same plugin id", async () => {
-    const root = await makeTempDir("boring-cli-plugin-record-shadow-")
+  test("workspace-local Pi package source shadows a global package source with the same plugin id", async () => {
+    const root = await makeTempDir("boring-cli-plugin-source-shadow-")
     const workspaceRoot = join(root, "workspace")
     const globalAgentRoot = join(root, "global-agent")
     const globalRoot = join(globalAgentRoot, "extensions")
@@ -91,24 +91,8 @@ describe("plugin discovery helpers", () => {
 
     await writeRuntimePlugin(globalPlugin, "shadow-plugin", "Global shadow prompt")
     await writeRuntimePlugin(localPlugin, "shadow-plugin", "Local shadow prompt")
-    await writeRecordsFile(join(globalAgentRoot, "boring-plugin-sources.json"), [{
-      id: "shadow-plugin",
-      kind: "local",
-      scope: "global",
-      source: globalPlugin,
-      rootDir: globalPlugin,
-      installedAt: "2026-01-01T00:00:00.000Z",
-    }])
-    await writeRecordsFile(join(workspaceRoot, ".pi", "boring-plugin-sources.json"), [{
-      id: "shadow-plugin",
-      kind: "local",
-      scope: "local",
-      source: localPlugin,
-      rootDir: localPlugin,
-      rootDirRelativeToWorkspace: "plugins/shadow-plugin",
-      sourceRelativeToWorkspace: "plugins/shadow-plugin",
-      installedAt: "2026-01-01T00:00:00.000Z",
-    }])
+    await writePiSettings(join(globalAgentRoot, "settings.json"), [globalPlugin])
+    await writePiSettings(join(workspaceRoot, ".pi", "settings.json"), ["../plugins/shadow-plugin"])
 
     try {
       const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot, globalAgentRoot })
@@ -148,20 +132,13 @@ describe("plugin discovery helpers", () => {
     }
   })
 
-  test("sandbox /workspace local records resolve against the host workspace root", async () => {
-    const root = await makeTempDir("boring-cli-plugin-sandbox-record-")
+  test("workspace-local Pi package sources resolve relative to .pi/settings.json", async () => {
+    const root = await makeTempDir("boring-cli-plugin-settings-relative-")
     const workspaceRoot = join(root, "host-workspace")
-    const plugin = join(workspaceRoot, "plugins", "sandbox-plugin")
+    const plugin = join(workspaceRoot, "plugins", "settings-plugin")
 
-    await writeRuntimePlugin(plugin, "sandbox-plugin", "Sandbox prompt")
-    await writeRecordsFile(join(workspaceRoot, ".pi", "boring-plugin-sources.json"), [{
-      id: "sandbox-plugin",
-      kind: "local",
-      scope: "local",
-      source: "/workspace/plugins/sandbox-plugin",
-      rootDir: "/workspace/plugins/sandbox-plugin",
-      installedAt: "2026-01-01T00:00:00.000Z",
-    }])
+    await writeRuntimePlugin(plugin, "settings-plugin", "Settings prompt")
+    await writePiSettings(join(workspaceRoot, ".pi", "settings.json"), ["../plugins/settings-plugin"])
 
     try {
       expect(resolveCliBoringPluginDirs(workspaceRoot, { globalRoot: join(root, "global-extensions") })).toContainEqual({
@@ -170,85 +147,39 @@ describe("plugin discovery helpers", () => {
         workspaceId: resolve(workspaceRoot),
       })
       const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot: join(root, "global-extensions") })
-      expect(snapshot.systemPromptAppend).toContain("Sandbox prompt")
+      expect(snapshot.systemPromptAppend).toContain("Settings prompt")
     } finally {
       await rm(root, { recursive: true, force: true })
     }
   })
 
-  test("sandbox local records do not resolve workspace escapes", async () => {
-    const root = await makeTempDir("boring-cli-plugin-sandbox-escape-")
+  test("workspace-local Pi package sources support file: local entries", async () => {
+    const root = await makeTempDir("boring-cli-plugin-settings-file-")
     const workspaceRoot = join(root, "host-workspace")
-    const evilPlugin = join(root, "evil")
-    const safePlugin = join(workspaceRoot, "plugins", "relative-metadata-escape")
+    const plugin = join(workspaceRoot, "plugins", "file-plugin")
 
-    await writeRuntimePlugin(evilPlugin, "evil-plugin", "Evil prompt")
-    await writeRuntimePlugin(safePlugin, "relative-metadata-escape", "Safe prompt")
-    await writeRecordsFile(join(workspaceRoot, ".pi", "boring-plugin-sources.json"), [
-      {
-        id: "workspace-prefix-escape",
-        kind: "local",
-        scope: "local",
-        source: `/workspace/..${resolve(evilPlugin)}`,
-        rootDir: `/workspace/..${resolve(evilPlugin)}`,
-        installedAt: "2026-01-01T00:00:00.000Z",
-      },
-      {
-        id: "relative-metadata-escape",
-        kind: "local",
-        scope: "local",
-        source: "/workspace/plugins/relative-metadata-escape",
-        rootDir: "/workspace/plugins/relative-metadata-escape",
-        rootDirRelativeToWorkspace: "../evil",
-        sourceRelativeToWorkspace: "../evil",
-        installedAt: "2026-01-01T00:00:00.000Z",
-      },
-    ])
+    await writeRuntimePlugin(plugin, "file-plugin", "File prompt")
+    await writePiSettings(join(workspaceRoot, ".pi", "settings.json"), ["file:../plugins/file-plugin"])
+
+    try {
+      const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot: join(root, "global-extensions") })
+      expect(snapshot.systemPromptAppend).toContain("File prompt")
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("workspace-local Pi package sources ignore uninspectable package entries", async () => {
+    const root = await makeTempDir("boring-cli-plugin-settings-uninspectable-")
+    const workspaceRoot = join(root, "host-workspace")
+    await writePiSettings(join(workspaceRoot, ".pi", "settings.json"), ["../missing", "npm:future-package"])
 
     try {
       const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot: join(root, "global-extensions") })
       expect(snapshot.systemPromptAppend).toBeUndefined()
       const manager = createCliPluginAssetManager(workspaceRoot, { globalRoot: join(root, "global-extensions") })
       await manager.load()
-      expect(manager.list().map((plugin) => plugin.id)).not.toContain("evil-plugin")
-      const roots = resolveCliBoringPluginDirs(workspaceRoot, { globalRoot: join(root, "global-extensions") })
-        .map((source) => typeof source === "string" ? source : source.rootDir)
-      expect(roots).not.toContain(resolve(evilPlugin))
-      expect(roots).not.toContain(resolve(safePlugin))
-    } finally {
-      await rm(root, { recursive: true, force: true })
-    }
-  })
-
-  test("workspace-local records file ignores records with mismatched global scope", async () => {
-    const root = await makeTempDir("boring-cli-plugin-record-scope-mismatch-")
-    const workspaceRoot = join(root, "host-workspace")
-    const evilPlugin = join(root, "evil")
-    const escapedRoot = `/workspace/..${resolve(evilPlugin)}`
-
-    await writeRuntimePlugin(evilPlugin, "evil-plugin", "Evil prompt")
-    await writeRecordsFile(join(workspaceRoot, ".pi", "boring-plugin-sources.json"), [{
-      id: "mismatched-scope-escape",
-      kind: "local",
-      scope: "global",
-      source: escapedRoot,
-      rootDir: escapedRoot,
-      installedAt: "2026-01-01T00:00:00.000Z",
-    }])
-
-    try {
-      const roots = resolveCliBoringPluginDirs(workspaceRoot, { globalRoot: join(root, "global-extensions") })
-        .map((source) => typeof source === "string" ? source : source.rootDir)
-      expect(roots).not.toContain(resolve(evilPlugin))
-      expect(roots).not.toContain(escapedRoot)
-
-      const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot: join(root, "global-extensions") })
-      expect(snapshot.systemPromptAppend ?? "").not.toContain("Evil prompt")
-
-      const manager = createCliPluginAssetManager(workspaceRoot, { globalRoot: join(root, "global-extensions") })
-      await manager.load()
-      expect(manager.list().map((plugin) => plugin.id)).not.toContain("evil-plugin")
-      expect(manager.inspectLoaded().map((plugin) => plugin.rootDir)).not.toContain(resolve(evilPlugin))
+      expect(manager.list()).toEqual([])
     } finally {
       await rm(root, { recursive: true, force: true })
     }
