@@ -148,6 +148,180 @@ describe("PiSessionStore.load fallback transcript reconstruction", () => {
     ]);
   });
 
+  it("ignores stale ui snapshots when the linked transcript has newer messages", async () => {
+    const boringSessionId = "boring-stale-snapshot";
+    const nativeSessionId = "native-fresh-transcript";
+    const nativePath = join(tmpDir, `2026-06-03_${nativeSessionId}.jsonl`);
+    const boringPath = join(tmpDir, `${boringSessionId}.jsonl`);
+    const nativeLines = [
+      {
+        type: "session",
+        version: 1,
+        id: nativeSessionId,
+        timestamp: "2026-06-03T00:00:00.000Z",
+        cwd: "/workspace",
+      },
+      {
+        type: "message",
+        id: "fresh-user",
+        parentId: null,
+        timestamp: "2026-06-03T00:00:05.000Z",
+        message: { role: "user", content: [{ type: "text", text: "fresh prompt" }] },
+      },
+    ];
+    const boringLines = [
+      {
+        type: "session",
+        version: 1,
+        id: boringSessionId,
+        timestamp: "2026-06-03T00:00:00.000Z",
+        cwd: "/workspace",
+      },
+      {
+        type: "pi_session_file",
+        timestamp: "2026-06-03T00:00:01.000Z",
+        path: nativePath,
+      },
+      {
+        type: "ui_snapshot",
+        id: "stale-snapshot",
+        timestamp: "2026-06-03T00:00:02.000Z",
+        messages: [
+          { id: "stale-user", role: "user", parts: [{ type: "text", text: "stale prompt" }] },
+        ],
+      },
+    ];
+    await writeFile(nativePath, `${nativeLines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+    await writeFile(boringPath, `${boringLines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+
+    const store = new PiSessionStore("/workspace", tmpDir);
+    const detail = await store.load(ctx, boringSessionId);
+
+    expect(detail.messages).toHaveLength(1);
+    expect(detail.messages[0].id).toBe(`${boringSessionId}-user-0`);
+    expect(detail.messages[0].parts).toEqual([{ type: "text", text: "fresh prompt" }]);
+  });
+
+  it("uses current ui snapshots without reconstructing malformed transcript messages", async () => {
+    const sessionId = "sess-current-snapshot";
+    const filepath = join(tmpDir, `${sessionId}.jsonl`);
+    const lines = [
+      {
+        type: "session",
+        version: 1,
+        id: sessionId,
+        timestamp: "2026-05-01T00:00:00.000Z",
+        cwd: "/workspace",
+      },
+      {
+        type: "message",
+        id: "malformed-user",
+        parentId: null,
+        timestamp: "2026-05-01T00:00:01.000Z",
+        message: {
+          role: "user",
+          content: [null],
+        },
+      },
+      {
+        type: "ui_snapshot",
+        id: "snapshot-current",
+        timestamp: "2026-05-01T00:00:02.000Z",
+        messages: [
+          { id: "u1", role: "user", parts: [{ type: "text", text: "snapshot prompt" }] },
+        ],
+      },
+    ];
+    await writeFile(filepath, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+
+    const store = new PiSessionStore("/workspace", tmpDir);
+    const detail = await store.load(ctx, sessionId);
+
+    expect(detail.messages).toEqual([
+      { id: "u1", role: "user", parts: [{ type: "text", text: "snapshot prompt" }] },
+    ]);
+  });
+
+  it("reconstructs stale snapshots while skipping malformed transcript parts", async () => {
+    const sessionId = "sess-stale-snapshot-malformed";
+    const filepath = join(tmpDir, `${sessionId}.jsonl`);
+    const lines = [
+      {
+        type: "session",
+        version: 1,
+        id: sessionId,
+        timestamp: "2026-05-01T00:00:00.000Z",
+        cwd: "/workspace",
+      },
+      {
+        type: "ui_snapshot",
+        id: "snapshot-stale",
+        timestamp: "2026-05-01T00:00:01.000Z",
+        messages: [
+          { id: "stale", role: "user", parts: [{ type: "text", text: "stale prompt" }] },
+        ],
+      },
+      {
+        type: "message",
+        id: "malformed-user",
+        parentId: null,
+        timestamp: "2026-05-01T00:00:02.000Z",
+        message: {
+          role: "user",
+          content: [null, { type: "text", text: "fresh prompt" }],
+        },
+      },
+    ];
+    await writeFile(filepath, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+
+    const store = new PiSessionStore("/workspace", tmpDir);
+    const detail = await store.load(ctx, sessionId);
+
+    expect(detail.messages).toEqual([
+      { id: `${sessionId}-user-0`, role: "user", parts: [{ type: "text", text: "fresh prompt" }] },
+    ]);
+  });
+
+  it("uses current ui snapshots already stored in raw timestamp-named native sessions", async () => {
+    const sessionId = "native-snapshot";
+    const filepath = join(tmpDir, `2026-06-04T15-23-19-668Z_${sessionId}.jsonl`);
+    const lines = [
+      {
+        type: "session",
+        version: 1,
+        id: sessionId,
+        timestamp: "2026-06-04T15:23:19.668Z",
+        cwd: "/workspace",
+      },
+      {
+        type: "message",
+        id: "native-user",
+        parentId: null,
+        timestamp: "2026-06-04T15:23:20.000Z",
+        message: {
+          role: "user",
+          content: [{ type: "text", text: "raw prompt" }],
+        },
+      },
+      {
+        type: "ui_snapshot",
+        id: "native-snapshot-current",
+        timestamp: "2026-06-04T15:23:21.000Z",
+        messages: [
+          { id: "snapshot-user", role: "user", parts: [{ type: "text", text: "snapshot prompt" }] },
+        ],
+      },
+    ];
+    await writeFile(filepath, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+
+    const store = new PiSessionStore("/workspace", tmpDir);
+    const detail = await store.load(ctx, sessionId);
+
+    expect(detail.messages).toEqual([
+      { id: "snapshot-user", role: "user", parts: [{ type: "text", text: "snapshot prompt" }] },
+    ]);
+  });
+
   it("rebuilds the full transcript from message entries when no ui snapshot exists", async () => {
     const sessionId = "sess-compacted-no-snapshot";
     const filepath = join(tmpDir, `${sessionId}.jsonl`);

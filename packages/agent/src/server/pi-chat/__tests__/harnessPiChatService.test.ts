@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 import type { AgentHarness, RunContext, SendMessageInput } from '../../../shared/harness'
+import type { UIMessage } from '../../../shared/message'
 import type { SessionStore } from '../../../shared/session'
 import type { PiChatEvent } from '../../../shared/chat'
 import { createInitialPiChatState, piChatReducer } from '../../../front/chat/pi/piChatReducer'
@@ -74,6 +75,7 @@ function createAdapterForNativeSession(nativeSessionId: string): FakeAdapter {
 
 function createHarness(adapter: PiAgentSessionAdapter): AgentHarness & {
   getPiSessionAdapter: (input: SendMessageInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
+  hasPiSession: (sessionId: string) => boolean
 } {
   const nativeFollowUps: Array<{ text: string; clientNonce?: string; clientSeq?: number }> = adapter.readSnapshot().followUpMessages.map((text) => ({ text }))
   const syncSnapshot = () => {
@@ -85,6 +87,7 @@ function createHarness(adapter: PiAgentSessionAdapter): AgentHarness & {
     placement: 'server',
     sessions: sessionStore,
     async *sendMessage() {},
+    hasPiSession: vi.fn(() => false),
     getPiSessionAdapter: vi.fn(async () => adapter),
     followUp: vi.fn(async (_sessionId, text, _attachments, displayText, options) => {
       nativeFollowUps.push({ text: displayText ?? text, clientNonce: options?.clientNonce, clientSeq: options?.clientSeq })
@@ -694,6 +697,116 @@ describe('HarnessPiChatService', () => {
       sessionId: 's1',
       queue: { followUps: [] },
     })
+  })
+
+  it('hydrates inactive persisted state without opening a live Pi adapter', async () => {
+    const adapter = createAdapter()
+    const persistedStore: SessionStore = {
+      ...sessionStore,
+      load: vi.fn(async () => ({
+        id: 's-history',
+        title: 'History',
+        createdAt: '2026-06-01T00:00:00.000Z',
+        updatedAt: '2026-06-01T00:00:01.000Z',
+        turnCount: 1,
+        messages: [
+          {
+            id: 'u1',
+            role: 'user',
+            parts: [{ type: 'text', text: 'persisted prompt' }],
+          },
+          {
+            id: 'a1',
+            role: 'assistant',
+            parts: [
+              { type: 'reasoning', text: 'thought', state: 'done' },
+              {
+                type: 'tool-bash',
+                toolCallId: 'call-1',
+                toolName: 'bash',
+                state: 'output-available',
+                output: { content: 'ok' },
+                ui: { rendererId: 'terminal.command', displayGroup: 'Commands', details: { command: 'pwd' }, extra: 'ignored' },
+              },
+              { type: 'text', text: 'persisted answer' },
+            ],
+          },
+        ] as UIMessage[],
+      })),
+    }
+    const harness = createHarness(adapter)
+    const service = new HarnessPiChatService({
+      harness,
+      sessionStore: persistedStore,
+      workdir: '/workspace',
+    })
+
+    const state = await service.readState(ctx, 's-history')
+
+    expect(harness.getPiSessionAdapter).not.toHaveBeenCalled()
+    expect(state).toMatchObject({
+      sessionId: 's-history',
+      status: 'idle',
+      messages: [
+        expect.objectContaining({
+          id: 'u1',
+          role: 'user',
+          parts: [expect.objectContaining({ type: 'text', text: 'persisted prompt' })],
+        }),
+        expect.objectContaining({
+          id: 'a1',
+          role: 'assistant',
+          parts: [
+            expect.objectContaining({ type: 'reasoning', text: 'thought' }),
+            expect.objectContaining({
+              type: 'tool-call',
+              id: 'call-1',
+              toolName: 'bash',
+              state: 'output-available',
+              ui: { rendererId: 'terminal.command', displayGroup: 'Commands', details: { command: 'pwd' } },
+            }),
+            expect.objectContaining({ type: 'text', text: 'persisted answer' }),
+          ],
+        }),
+      ],
+    })
+  })
+
+  it('uses the live adapter instead of persisted state when the harness has a Pi session', async () => {
+    const adapter = createAdapter()
+    adapter.readSnapshot().messages = [
+      { id: 'live-user', message: { role: 'user', content: [{ type: 'text', text: 'live prompt' }] } },
+    ]
+    const persistedStore: SessionStore = {
+      ...sessionStore,
+      load: vi.fn(async () => ({
+        id: 's1',
+        title: 'Persisted',
+        createdAt: '',
+        updatedAt: '',
+        turnCount: 1,
+        messages: [
+          { id: 'stale-user', role: 'user', parts: [{ type: 'text', text: 'stale prompt' }] },
+        ] as UIMessage[],
+      })),
+    }
+    const harness = createHarness(adapter)
+    vi.mocked(harness.hasPiSession).mockReturnValue(true)
+    const service = new HarnessPiChatService({
+      harness,
+      sessionStore: persistedStore,
+      workdir: '/workspace',
+    })
+
+    const state = await service.readState(ctx, 's1')
+
+    expect(harness.getPiSessionAdapter).toHaveBeenCalled()
+    expect(state.messages).toEqual([
+      expect.objectContaining({
+        id: 'live-user',
+        parts: [expect.objectContaining({ type: 'text', text: 'live prompt' })],
+      }),
+    ])
   })
 
   it('threads prompt and follow-up selectors through only new recovered snapshot messages', async () => {

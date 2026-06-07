@@ -579,6 +579,10 @@ export function createPiCodingAgentHarness(opts: {
       return piSessions.get(sessionId)?.piSession.systemPrompt;
     },
 
+    hasPiSession(sessionId: string): boolean {
+      return piSessions.has(sessionId);
+    },
+
     reloadSession: reloadPiSession,
 
     async getPiSessionAdapter(input: SendMessageInput, ctx: RunContext) {

@@ -9,9 +9,11 @@ import { buildPiChatQueuedFollowUps, buildPiChatSnapshot } from './piChatSnapsho
 import { PiChatEventMapper } from './piChatEvents'
 import { PiChatReplayBuffer } from './piChatReplayBuffer'
 import { followUpSelector, hasFollowUpSelector, PiChatMessageMetadataReconciler } from './piChatMessageMetadataReconciler'
+import { extractToolUiMetadata, sanitizeToolUiMetadata } from '../../shared/tool-ui'
 
 type PiNativeHarness = AgentHarness & {
   getPiSessionAdapter?: (input: SendMessageInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
+  hasPiSession?: (sessionId: string) => boolean
 }
 
 interface LiveSessionChannel {
@@ -68,8 +70,13 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   async readState(ctx: PiSessionRequestContext, sessionId: string) {
-    const adapter = await this.getAdapter(ctx, sessionId, '')
     const channel = this.channels.get(sessionId)
+    if (!channel && !this.harnessMayHaveLiveSession(sessionId)) {
+      const persisted = await this.readPersistedState(ctx, sessionId)
+      if (persisted) return persisted
+    }
+
+    const adapter = await this.getAdapter(ctx, sessionId, '')
     const snapshot = this.messageMetadata.enrichSnapshot(sessionId, buildPiChatSnapshot(adapter, {
       seq: channel?.buffer.latestSeq ?? 0,
       sessionId,
@@ -77,6 +84,31 @@ export class HarnessPiChatService implements PiChatSessionService {
       messageTurnIds: channel?.messageTurnIds,
     }))
     return this.enrichSyntheticPromptFailures(sessionId, snapshot)
+  }
+
+  private harnessMayHaveLiveSession(sessionId: string): boolean {
+    return typeof this.harness.hasPiSession === 'function'
+      ? this.harness.hasPiSession(sessionId)
+      : true
+  }
+
+  private async readPersistedState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot | null> {
+    try {
+      const detail = await this.sessionStore.load(toSessionCtx(ctx), sessionId)
+      return {
+        protocolVersion: 1,
+        sessionId: detail.id,
+        seq: 0,
+        status: 'idle',
+        messages: detail.messages
+          .map((message, index) => persistedUiMessageToBoringChatMessage(sessionId, message, index))
+          .filter((message): message is BoringChatMessage => message !== null),
+        queue: { followUps: [] },
+        followUpMode: 'one-at-a-time',
+      }
+    } catch {
+      return null
+    }
   }
 
   async subscribe(ctx: PiSessionRequestContext, sessionId: string, cursor: number, subscriber: PiChatEventSubscriber): Promise<PiChatEventStreamResult> {
@@ -367,6 +399,94 @@ function promptPayloadMessage(payload: PromptPayload, messageId: string, created
       ...(promptPayloadFileParts(payload, messageId) ?? []),
     ],
   }
+}
+
+function persistedUiMessageToBoringChatMessage(sessionId: string, rawMessage: unknown, index: number): BoringChatMessage | null {
+  if (!isRecord(rawMessage)) return null
+  const role = rawMessage.role
+  if (role !== 'user' && role !== 'assistant' && role !== 'system') return null
+  const id = optionalString(rawMessage.id) ?? `persisted:${sessionId}:${index}:${role}`
+  const parts = Array.isArray(rawMessage.parts)
+    ? rawMessage.parts.flatMap((part, partIndex) => persistedUiPartToBoringChatPart(part, id, partIndex))
+    : []
+  return {
+    id,
+    role,
+    status: 'done',
+    createdAt: optionalString(rawMessage.createdAt),
+    piEntryId: optionalString(rawMessage.piEntryId),
+    turnId: optionalString(rawMessage.turnId),
+    parts,
+  }
+}
+
+function persistedUiPartToBoringChatPart(part: unknown, messageId: string, index: number): BoringChatPart[] {
+  if (!isRecord(part)) return []
+  if (part.type === 'text' && typeof part.text === 'string') {
+    return [{ type: 'text', id: optionalString(part.id) ?? `${messageId}:text:${index}`, text: part.text }]
+  }
+  if (part.type === 'reasoning' && typeof part.text === 'string') {
+    return [{
+      type: 'reasoning',
+      id: optionalString(part.id) ?? `${messageId}:reasoning:${index}`,
+      text: part.text,
+      state: part.state === 'streaming' ? 'streaming' : 'done',
+    }]
+  }
+  if (part.type === 'file') {
+    return [{
+      type: 'file',
+      id: optionalString(part.id) ?? `${messageId}:file:${index}`,
+      filename: optionalString(part.filename),
+      mediaType: optionalString(part.mediaType),
+      url: optionalString(part.url),
+    }]
+  }
+  if (part.type === 'notice') {
+    const level = part.level === 'warning' || part.level === 'error' ? part.level : 'info'
+    return [{
+      type: 'notice',
+      id: optionalString(part.id) ?? `${messageId}:notice:${index}`,
+      level,
+      text: optionalString(part.text) ?? '',
+    }]
+  }
+  if (typeof part.type === 'string' && part.type.startsWith('tool-')) {
+    const toolName = optionalString(part.toolName) ?? (part.type.slice('tool-'.length) || 'unknown')
+    const ui = sanitizeToolUiMetadata(part.ui) ?? extractToolUiMetadata(part.output)
+    return [{
+      type: 'tool-call',
+      id: optionalString(part.toolCallId) ?? optionalString(part.id) ?? `${messageId}:tool:${index}`,
+      toolName,
+      input: part.input,
+      state: persistedToolState(part.state),
+      output: part.output,
+      errorText: optionalString(part.errorText),
+      ...(ui ? { ui } : {}),
+    }]
+  }
+  return []
+}
+
+function persistedToolState(value: unknown): Extract<BoringChatPart, { type: 'tool-call' }>['state'] {
+  switch (value) {
+    case 'input-streaming':
+    case 'input-available':
+    case 'output-available':
+    case 'output-error':
+    case 'aborted':
+      return value
+    default:
+      return 'input-available'
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
 }
 
 function mergeSyntheticMessages(messages: BoringChatMessage[], syntheticMessages: BoringChatMessage[]): BoringChatMessage[] {

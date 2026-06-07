@@ -394,6 +394,103 @@ describe("PiSessionStore", () => {
     expect(detail.messages).toEqual([]);
   });
 
+  it("loads raw timestamp-named Pi session files for existing native sessions", async () => {
+    const sessionId = "native-session";
+    const nativePath = join(tmpDir, `2026-06-04T15-23-19-668Z_${sessionId}.jsonl`);
+    const wrapperPath = join(tmpDir, `${sessionId}.jsonl`);
+    await writeFile(
+      nativePath,
+      `${JSON.stringify({
+        type: "session",
+        version: 1,
+        id: sessionId,
+        timestamp: "2026-06-04T15:23:19.668Z",
+        cwd: "/tmp",
+      })}\n`,
+      "utf-8",
+    );
+
+    const store = new PiSessionStore("/tmp", tmpDir);
+
+    expect(store.loadPiSessionFileSync(sessionId)).toBe(nativePath);
+    await expect(store.loadPiSessionFile(ctx, sessionId)).resolves.toBe(nativePath);
+
+    const wrapperContent = await readFile(wrapperPath, "utf-8");
+    expect(wrapperContent).toContain("\"pi_session_file\"");
+    expect(wrapperContent).toContain(nativePath);
+
+    await store.saveMessages(ctx, sessionId, [
+      { id: "u1", role: "user", parts: [{ type: "text", text: "ui prompt" }] },
+    ]);
+
+    expect(await readFile(wrapperPath, "utf-8")).toContain("\"ui_snapshot\"");
+    expect(await readFile(nativePath, "utf-8")).not.toContain("\"ui_snapshot\"");
+  });
+
+  it("does not create duplicate wrappers for already linked native transcripts", async () => {
+    const nativeSessionId = "native-linked";
+    const boringSessionId = "boring-wrapper";
+    const nativePath = join(tmpDir, `2026-06-04T15-23-19-668Z_${nativeSessionId}.jsonl`);
+    const boringPath = join(tmpDir, `${boringSessionId}.jsonl`);
+    await writeFile(
+      nativePath,
+      [
+        {
+          type: "session",
+          version: 1,
+          id: nativeSessionId,
+          timestamp: "2026-06-04T15:23:19.668Z",
+          cwd: "/tmp",
+        },
+        {
+          type: "message",
+          id: "native-user-1",
+          parentId: null,
+          timestamp: "2026-06-04T15:23:20.000Z",
+          message: { role: "user", content: [{ type: "text", text: "linked prompt" }] },
+        },
+      ].map((line) => JSON.stringify(line)).join("\n") + "\n",
+      "utf-8",
+    );
+    await writeFile(
+      boringPath,
+      [
+        {
+          type: "session",
+          version: 1,
+          id: boringSessionId,
+          timestamp: "2026-06-04T15:23:19.668Z",
+          cwd: "/tmp",
+        },
+        {
+          type: "pi_session_file",
+          timestamp: "2026-06-04T15:23:19.668Z",
+          path: nativePath,
+        },
+      ].map((line) => JSON.stringify(line)).join("\n") + "\n",
+      "utf-8",
+    );
+
+    const store = new PiSessionStore("/tmp", tmpDir);
+
+    expect(store.loadPiSessionFileSync(nativeSessionId)).toBeNull();
+    await expect(store.loadPiSessionFile(ctx, nativeSessionId)).resolves.toBeNull();
+    await expect(readFile(join(tmpDir, `${nativeSessionId}.jsonl`), "utf-8"))
+      .rejects.toMatchObject({ code: "ENOENT" });
+
+    await expect(store.load(ctx, nativeSessionId)).rejects.toThrow("Session not found");
+    const detail = await store.load(ctx, boringSessionId);
+    expect(detail.id).toBe(boringSessionId);
+    expect(detail.messages[0].parts).toEqual([{ type: "text", text: "linked prompt" }]);
+
+    const summaries = await store.list(ctx);
+    expect(summaries.map((summary) => summary.id)).toEqual([boringSessionId]);
+
+    await store.delete(ctx, nativeSessionId);
+    await expect(readFile(boringPath, "utf-8")).resolves.toContain("\"pi_session_file\"");
+    await expect(readFile(nativePath, "utf-8")).resolves.toContain("\"native-linked\"");
+  });
+
   it("deletes a session", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
     const session = await store.create(ctx);
@@ -478,6 +575,126 @@ describe("PiSessionStore", () => {
     const list = await store.list(ctx, { limit: 1, includeId: first.id });
 
     expect(list.map((session) => session.id)).toEqual([third.id, first.id]);
+  });
+
+  it("refreshes cached summaries when linked Pi transcripts change", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const nativePath = join(tmpDir, "2026-06-04_native-linked.jsonl");
+    const boringPath = join(tmpDir, "boring-linked.jsonl");
+    const nativeLines = [
+      {
+        type: "session",
+        version: 1,
+        id: "native-linked",
+        timestamp: "2026-06-04T00:00:00.000Z",
+        cwd: "/tmp",
+      },
+      {
+        type: "message",
+        id: "native-user-1",
+        parentId: null,
+        timestamp: "2026-06-04T00:00:01.000Z",
+        message: { role: "user", content: [{ type: "text", text: "first linked prompt" }] },
+      },
+    ];
+    const boringLines = [
+      {
+        type: "session",
+        version: 1,
+        id: "boring-linked",
+        timestamp: "2026-06-04T00:00:00.000Z",
+        cwd: "/tmp",
+      },
+      {
+        type: "pi_session_file",
+        timestamp: "2026-06-04T00:00:01.000Z",
+        path: nativePath,
+      },
+    ];
+    await writeFile(nativePath, `${nativeLines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+    await writeFile(boringPath, `${boringLines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+
+    const firstList = await store.list(ctx, { limit: 1 });
+    expect(firstList[0]).toEqual(expect.objectContaining({ id: "boring-linked", turnCount: 1 }));
+
+    const { appendFile } = await import("node:fs/promises");
+    await appendFile(nativePath, `${JSON.stringify({
+      type: "message",
+      id: "native-user-2",
+      parentId: "native-user-1",
+      timestamp: "2026-06-04T00:00:02.000Z",
+      message: { role: "user", content: [{ type: "text", text: "second linked prompt" }] },
+    })}\n`, "utf-8");
+    const touched = new Date(Date.now() + 1000);
+    await utimes(nativePath, touched, touched);
+
+    const secondList = await store.list(ctx, { limit: 1 });
+    expect(secondList[0]).toEqual(expect.objectContaining({ id: "boring-linked", turnCount: 2 }));
+  });
+
+  it("orders linked Pi transcript sessions by linked transcript mtime before pagination", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const nativePath = join(tmpDir, "2026-06-04_native-active.jsonl");
+    const boringPath = join(tmpDir, "boring-active.jsonl");
+    const olderDirectPath = join(tmpDir, "direct-older.jsonl");
+    const nativeLines = [
+      {
+        type: "session",
+        version: 1,
+        id: "native-active",
+        timestamp: "2026-06-04T00:00:00.000Z",
+        cwd: "/tmp",
+      },
+      {
+        type: "message",
+        id: "native-user-1",
+        parentId: null,
+        timestamp: "2026-06-04T00:00:01.000Z",
+        message: { role: "user", content: [{ type: "text", text: "active linked prompt" }] },
+      },
+    ];
+    const boringLines = [
+      {
+        type: "session",
+        version: 1,
+        id: "boring-active",
+        timestamp: "2026-06-04T00:00:00.000Z",
+        cwd: "/tmp",
+      },
+      {
+        type: "pi_session_file",
+        timestamp: "2026-06-04T00:00:01.000Z",
+        path: nativePath,
+      },
+    ];
+    const directLines = [
+      {
+        type: "session",
+        version: 1,
+        id: "direct-older",
+        timestamp: "2026-06-04T00:00:00.000Z",
+        cwd: "/tmp",
+      },
+      {
+        type: "session_info",
+        id: "direct-title",
+        parentId: null,
+        timestamp: "2026-06-04T00:00:01.000Z",
+        name: "Direct older",
+      },
+    ];
+    await writeFile(nativePath, `${nativeLines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+    await writeFile(boringPath, `${boringLines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+    await writeFile(olderDirectPath, `${directLines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+
+    const now = Date.now();
+    await utimes(boringPath, new Date(now - 10_000), new Date(now - 10_000));
+    await utimes(olderDirectPath, new Date(now - 1_000), new Date(now - 1_000));
+    await utimes(nativePath, new Date(now), new Date(now));
+
+    const firstPage = await store.list(ctx, { limit: 1 });
+
+    expect(firstPage.map((session) => session.id)).toEqual(["boring-active"]);
   });
 
   it("summarizes giant UI snapshots from file prefixes", async () => {
