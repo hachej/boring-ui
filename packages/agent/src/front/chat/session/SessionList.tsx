@@ -13,6 +13,9 @@ export interface SessionListProps {
   onSwitch?: (id: string) => void
   onCreate?: () => void
   onDelete?: (id: string) => void
+  onLoadMore?: () => void
+  hasMore?: boolean
+  loadingMore?: boolean
   onClose?: () => void
   className?: string
 }
@@ -21,7 +24,19 @@ type Group = { key: string; label: string; items: SessionSummary[] }
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-export function SessionList({ sessions, activeId, loading = false, onSwitch, onCreate, onDelete, onClose, className }: SessionListProps) {
+export function SessionList({
+  sessions,
+  activeId,
+  loading = false,
+  onSwitch,
+  onCreate,
+  onDelete,
+  onLoadMore,
+  hasMore = false,
+  loadingMore = false,
+  onClose,
+  className,
+}: SessionListProps) {
   const groups = useMemo(() => groupSessions(sessions), [sessions])
 
   return (
@@ -75,6 +90,19 @@ export function SessionList({ sessions, activeId, loading = false, onSwitch, onC
             </ul>
           </section>
         ))}
+
+        {hasMore && onLoadMore ? (
+          <div className="px-3 py-3">
+            <button
+              type="button"
+              onClick={onLoadMore}
+              disabled={loadingMore}
+              className="w-full rounded-md border border-border/60 px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-60"
+            >
+              {loadingMore ? 'Loading...' : 'Load more'}
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   )

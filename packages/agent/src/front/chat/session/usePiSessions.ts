@@ -4,6 +4,7 @@ import { createRemotePiSession, type RemotePiSession, type RemotePiSessionOption
 import { readActiveSessionId, writeActiveSessionId, type ActiveSessionStorageLike } from './activeSessionStorage'
 
 const DEFAULT_SESSIONS_API_PATH = '/api/v1/agent/pi-chat/sessions'
+const SESSION_PAGE_SIZE = 50
 const DEFAULT_MAX_RETRIES = 8
 const DEFAULT_RETRY_BASE_MS = 250
 const DEFAULT_RETRY_MAX_MS = 2_000
@@ -44,11 +45,14 @@ export interface UsePiSessionsResult {
   activePiSession: RemotePiSession | undefined
   dataStorageScope: string
   loading: boolean
+  loadingMore: boolean
+  hasMore: boolean
   error: Error | undefined
   refresh: (options?: PiSessionRefreshOptions) => Promise<void>
   create: (init?: PiSessionCreateInit) => Promise<SessionSummary>
   switch: (id: string) => void
   delete: (id: string) => Promise<void>
+  loadMore: () => Promise<void>
   reset: () => void
 }
 
@@ -72,6 +76,8 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const retryMaxMs = options.retry?.maxMs ?? DEFAULT_RETRY_MAX_MS
   const headersKey = useMemo(() => headersScopeKey(options.requestHeaders, storageScope), [options.requestHeaders, storageScope])
   const normalizedHeaders = useMemo(() => buildRequestHeaders(options.requestHeaders, storageScope), [headersKey, storageScope])
+  const requestScopeKey = useMemo(() => requestScopeIdentity(apiBaseUrl, sessionsApiPath, storageScope, headersKey), [apiBaseUrl, headersKey, sessionsApiPath, storageScope])
+  const dataSourceKey = useMemo(() => dataSourceIdentity(apiBaseUrl, sessionsApiPath, storageScope), [apiBaseUrl, sessionsApiPath, storageScope])
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [dataStorageScope, setDataStorageScope] = useState(storageScope)
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>(() => (
@@ -79,52 +85,105 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   ))
   const [activePiSession, setActivePiSession] = useState<RemotePiSession | undefined>(undefined)
   const [loading, setLoading] = useState(enabled)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
   const [error, setError] = useState<Error | undefined>(undefined)
   const mountedRef = useRef(false)
   const refreshVersionRef = useRef(0)
   const retryTimerRef = useRef<RetryDelayHandle | undefined>(undefined)
   const sessionsRef = useRef<SessionSummary[]>([])
+  const activeSessionIdRef = useRef<string | undefined>(activeSessionId)
+  const hasMoreRef = useRef(hasMore)
+  const canonicalLoadedCountRef = useRef(0)
+  const loadMoreRequestSeqRef = useRef(0)
+  const loadMoreInFlightRef = useRef(false)
   const pendingCreatedRef = useRef<Map<string, SessionSummary>>(new Map())
-  const pendingCreatedScopeRef = useRef(scopeIdentity(apiBaseUrl, sessionsApiPath, storageScope, headersKey))
+  const pendingCreatedScopeRef = useRef(requestScopeKey)
+  const dataStorageScopeRef = useRef(storageScope)
+  const loadedDataSourceRef = useRef(dataSourceKey)
+  const requestScopeRef = useRef(requestScopeKey)
+  requestScopeRef.current = requestScopeKey
 
   useEffect(() => {
     sessionsRef.current = sessions
   }, [sessions])
 
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId
+  }, [activeSessionId])
+
+  useEffect(() => {
+    hasMoreRef.current = hasMore
+  }, [hasMore])
+
   const activeSessionKnown = Boolean(activeSessionId && sessions.some((session) => session.id === activeSessionId))
 
   const requestHeaders = useCallback((): Record<string, string> => normalizedHeaders, [normalizedHeaders])
   const sessionsUrl = useCallback((suffix = '') => `${apiBaseUrl}${sessionsApiPath}${suffix}`, [apiBaseUrl, sessionsApiPath])
+  const sessionsListUrl = useCallback((offset = 0, includeId?: string) => {
+    const query = new URLSearchParams()
+    if (offset > 0) {
+      query.set('limit', String(SESSION_PAGE_SIZE))
+      query.set('offset', String(offset))
+    }
+    if (offset <= 0 && includeId) query.set('activeSessionId', includeId)
+    if (query.size === 0) return sessionsUrl()
+    return sessionsUrl(`?${query.toString()}`)
+  }, [sessionsUrl])
 
   const persistActive = useCallback((id: string | undefined) => {
     writeActiveSessionId(id, { storageScope, storage: options.storage })
   }, [options.storage, storageScope])
 
   const ensurePendingScope = useCallback(() => {
-    const nextScope = scopeIdentity(apiBaseUrl, sessionsApiPath, storageScope, headersKey)
-    if (pendingCreatedScopeRef.current === nextScope) return
-    pendingCreatedScopeRef.current = nextScope
+    if (pendingCreatedScopeRef.current === requestScopeKey) return
+    pendingCreatedScopeRef.current = requestScopeKey
     pendingCreatedRef.current.clear()
-  }, [apiBaseUrl, headersKey, sessionsApiPath, storageScope])
+  }, [requestScopeKey])
 
-  const applySessions = useCallback((data: SessionSummary[]) => {
+  const preferredSessionId = useCallback((): string | undefined => {
+    const persisted = options.initialActiveSessionId ?? readActiveSessionId({ storageScope, storage: options.storage })
+    if (loadedDataSourceRef.current === dataSourceKey) return activeSessionIdRef.current ?? persisted
+    if (dataStorageScopeRef.current !== storageScope) return persisted
+    return undefined
+  }, [dataSourceKey, options.initialActiveSessionId, options.storage, storageScope])
+
+  const applySessions = useCallback((data: SessionSummary[], applyOptions: { background?: boolean } = {}) => {
     ensurePendingScope()
+    const replacingScope = loadedDataSourceRef.current !== dataSourceKey
+    const requestedActiveId = preferredSessionId()
+    const replacingScopePreferred = replacingScope ? requestedActiveId : undefined
     const pendingCreated = pendingCreatedRef.current
     for (const session of data) pendingCreated.delete(session.id)
-    const merged = mergeSessions(Array.from(pendingCreated.values()), data)
+    const canonicalCount = canonicalPageCount(data)
+    const pageMayHaveMore = data.length >= SESSION_PAGE_SIZE
+    const wasExhaustedBeyondFirstPage = applyOptions.background
+      && !hasMoreRef.current
+      && canonicalLoadedCountRef.current >= canonicalCount
+    const requestedActiveReturned = Boolean(requestedActiveId && data.some((session) => session.id === requestedActiveId))
+    const current = applyOptions.background && pageMayHaveMore
+      ? sessionsRef.current.filter((session) => !requestedActiveId || requestedActiveReturned || session.id !== requestedActiveId)
+      : []
+    const merged = mergeSessions(Array.from(pendingCreated.values()), data, current)
+    const nextHasMore = pageMayHaveMore && !wasExhaustedBeyondFirstPage
+    canonicalLoadedCountRef.current = applyOptions.background
+      ? Math.max(canonicalLoadedCountRef.current, canonicalCount)
+      : canonicalCount
 
+    loadedDataSourceRef.current = dataSourceKey
+    dataStorageScopeRef.current = storageScope
     setDataStorageScope(storageScope)
     setSessions(merged)
+    setHasMore(nextHasMore)
     setActiveSessionId((previous) => {
-      const persisted = options.initialActiveSessionId ?? readActiveSessionId({ storageScope, storage: options.storage })
-      const preferred = previous ?? persisted
+      const preferred = replacingScope ? replacingScopePreferred : previous ?? preferredSessionId()
       const next = preferred && merged.some((session) => session.id === preferred)
         ? preferred
         : merged[0]?.id
       persistActive(next)
       return next
     })
-  }, [ensurePendingScope, options.initialActiveSessionId, options.storage, persistActive, storageScope])
+  }, [dataSourceKey, ensurePendingScope, persistActive, preferredSessionId, storageScope])
 
   const refresh = useCallback(async (refreshOptions: PiSessionRefreshOptions = {}) => {
     const version = ++refreshVersionRef.current
@@ -133,21 +192,31 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     const background = refreshOptions.background === true
 
     if (!enabled) {
+      loadMoreRequestSeqRef.current += 1
+      loadMoreInFlightRef.current = false
+      canonicalLoadedCountRef.current = 0
+      loadedDataSourceRef.current = dataSourceKey
+      dataStorageScopeRef.current = storageScope
       setDataStorageScope(storageScope)
       setSessions([])
       setActiveSessionId(undefined)
       setError(undefined)
       setLoading(false)
+      setLoadingMore(false)
+      setHasMore(false)
       persistActive(undefined)
       return
     }
 
+    loadMoreRequestSeqRef.current += 1
+    loadMoreInFlightRef.current = false
+    setLoadingMore(false)
     if (!background) setLoading(true)
     try {
       let data: SessionSummary[] | undefined
       for (let attempt = 0; ; attempt += 1) {
         try {
-          data = await fetchSessionList(fetchImpl, sessionsUrl(), requestHeaders())
+          data = await fetchSessionList(fetchImpl, sessionsListUrl(0, preferredSessionId()), requestHeaders())
           break
         } catch (err) {
           const retryable = err instanceof SessionsPreparingError && attempt < retryMaxRetries
@@ -158,7 +227,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
         }
       }
       if (!isCurrent() || !data) return
-      applySessions(data)
+      applySessions(data, { background })
       setError(undefined)
       setLoading(false)
     } catch (err) {
@@ -166,7 +235,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       if (!background) setError(err instanceof Error ? err : new Error(String(err)))
       setLoading(false)
     }
-  }, [applySessions, enabled, fetchImpl, persistActive, requestHeaders, retryBaseMs, retryMaxMs, retryMaxRetries, sessionsUrl])
+  }, [applySessions, enabled, fetchImpl, persistActive, preferredSessionId, requestHeaders, retryBaseMs, retryMaxMs, retryMaxRetries, sessionsListUrl])
 
   useEffect(() => {
     mountedRef.current = true
@@ -177,6 +246,41 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       clearRetryTimer(retryTimerRef)
     }
   }, [refresh, options.refreshKey])
+
+  const loadMore = useCallback(async (): Promise<void> => {
+    if (!enabled || loading || loadingMore || loadMoreInFlightRef.current || !hasMore) return
+    const requestSeq = ++loadMoreRequestSeqRef.current
+    loadMoreInFlightRef.current = true
+    const version = refreshVersionRef.current
+    const scope = requestScopeKey
+    const offset = canonicalLoadedCountRef.current
+    setLoadingMore(true)
+    try {
+      const data = await fetchSessionList(fetchImpl, sessionsListUrl(offset), requestHeaders())
+      if (!mountedRef.current || requestSeq !== loadMoreRequestSeqRef.current || version !== refreshVersionRef.current || scope !== requestScopeRef.current) return
+      const merged = mergeSessions(sessionsRef.current, data)
+      const nextHasMore = data.length >= SESSION_PAGE_SIZE
+      canonicalLoadedCountRef.current += data.length
+      setSessions(merged)
+      setHasMore(nextHasMore)
+      setError(undefined)
+      setActiveSessionId((previous) => {
+        if (previous && merged.some((session) => session.id === previous)) return previous
+        const next = merged[0]?.id
+        persistActive(next)
+        return next
+      })
+    } catch (err) {
+      if (mountedRef.current && requestSeq === loadMoreRequestSeqRef.current && version === refreshVersionRef.current && scope === requestScopeRef.current) {
+        setError(err instanceof Error ? err : new Error(String(err)))
+      }
+    } finally {
+      if (requestSeq === loadMoreRequestSeqRef.current) loadMoreInFlightRef.current = false
+      if (mountedRef.current && requestSeq === loadMoreRequestSeqRef.current && version === refreshVersionRef.current && scope === requestScopeRef.current) {
+        setLoadingMore(false)
+      }
+    }
+  }, [enabled, fetchImpl, hasMore, loading, loadingMore, persistActive, requestHeaders, requestScopeKey, sessionsListUrl])
 
   useEffect(() => {
     if (!enabled || !connectActiveSession || !activeSessionId || !activeSessionKnown) {
@@ -259,26 +363,36 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
 
   const reset = useCallback(() => {
     pendingCreatedRef.current.clear()
+    loadMoreRequestSeqRef.current += 1
+    loadMoreInFlightRef.current = false
+    canonicalLoadedCountRef.current = canonicalPageCount(sessionsRef.current)
+    loadedDataSourceRef.current = dataSourceKey
+    dataStorageScopeRef.current = storageScope
     setDataStorageScope(storageScope)
     setActiveSessionId(undefined)
     setActivePiSession(undefined)
+    setLoadingMore(false)
     persistActive(undefined)
-  }, [persistActive, storageScope])
+  }, [dataSourceKey, persistActive, storageScope])
 
-  const activeSession = sessions.find((session) => session.id === activeSessionId)
+  const visibleActiveSessionId = enabled ? activeSessionId : undefined
+  const activeSession = enabled ? sessions.find((session) => session.id === visibleActiveSessionId) : undefined
 
   return {
     sessions,
     activeSession,
-    activeSessionId: activeSession?.id,
-    activePiSession: activeSession ? activePiSession : undefined,
+    activeSessionId: visibleActiveSessionId,
+    activePiSession: visibleActiveSessionId ? activePiSession : undefined,
     dataStorageScope,
     loading: enabled ? loading : false,
+    loadingMore,
+    hasMore: enabled ? hasMore : false,
     error,
     refresh,
     create,
     switch: switchSession,
     delete: deleteSession,
+    loadMore,
     reset,
   }
 }
@@ -306,13 +420,19 @@ function toSessionSummary(value: unknown): SessionSummary {
   }
 }
 
-function mergeSessions(overlay: SessionSummary[], canonical: SessionSummary[]): SessionSummary[] {
+function canonicalPageCount(data: SessionSummary[]): number {
+  return Math.min(data.length, SESSION_PAGE_SIZE)
+}
+
+function mergeSessions(...lists: SessionSummary[][]): SessionSummary[] {
   const seen = new Set<string>()
   const merged: SessionSummary[] = []
-  for (const session of [...overlay, ...canonical]) {
-    if (seen.has(session.id)) continue
-    seen.add(session.id)
-    merged.push(session)
+  for (const list of lists) {
+    for (const session of list) {
+      if (seen.has(session.id)) continue
+      seen.add(session.id)
+      merged.push(session)
+    }
   }
   return merged
 }
@@ -330,8 +450,12 @@ function headersScopeKey(headers: Record<string, string | undefined> | undefined
   return JSON.stringify({ storageScope, headers: Object.entries(headers ?? {}).sort(([a], [b]) => a.localeCompare(b)) })
 }
 
-function scopeIdentity(apiBaseUrl: string, sessionsApiPath: string, storageScope: string, headersKey: string): string {
+function requestScopeIdentity(apiBaseUrl: string, sessionsApiPath: string, storageScope: string, headersKey: string): string {
   return `${apiBaseUrl}\n${sessionsApiPath}\n${storageScope}\n${headersKey}`
+}
+
+function dataSourceIdentity(apiBaseUrl: string, sessionsApiPath: string, storageScope: string): string {
+  return `${apiBaseUrl}\n${sessionsApiPath}\n${storageScope}`
 }
 
 function hasHeader(headers: Record<string, string>, name: string): boolean {

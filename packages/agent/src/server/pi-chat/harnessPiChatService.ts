@@ -1,5 +1,5 @@
 import type { AgentHarness, RunContext, SendMessageInput } from '../../shared/harness'
-import type { SessionStore } from '../../shared/session'
+import type { SessionListOptions, SessionStore } from '../../shared/session'
 import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, FollowUpReceipt, InterruptPayload, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
 import { ErrorCode } from '../../shared/error-codes'
 import type { PiChatSessionService, PiChatEventSubscriber, PiChatEventStreamResult } from '../http/routes/piChat'
@@ -50,8 +50,8 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.workdir = options.workdir
   }
 
-  async listSessions(ctx: PiSessionRequestContext) {
-    return this.sessionStore.list(toSessionCtx(ctx))
+  async listSessions(ctx: PiSessionRequestContext, options?: SessionListOptions) {
+    return this.sessionStore.list(toSessionCtx(ctx), options)
   }
 
   async createSession(ctx: PiSessionRequestContext, init?: PiSessionCreateInit) {

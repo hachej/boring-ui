@@ -93,15 +93,13 @@ export class PiSessionStore implements SessionStore {
       .sort((a, b) => b.stat.mtime.getTime() - a.stat.mtime.getTime());
 
     const offset = Math.max(0, options?.offset ?? 0);
-    const pageFiles = options?.limit === undefined
-      ? visibleFiles.slice(offset)
-      : visibleFiles.slice(offset, offset + Math.max(0, options.limit));
+    const limit = options?.limit === undefined ? undefined : Math.max(0, options.limit);
+    const pageSummaries = await this.summarizeVisiblePage(visibleFiles, { offset, limit });
+    const includeId = options?.includeId;
+    if (!includeId || pageSummaries.some((summary) => summary.id === includeId)) return pageSummaries;
 
-    const summaries = await Promise.all(
-      pageFiles.map(({ filepath, stat }) => this.summarizeFile(filepath, stat)),
-    );
-
-    return summaries.filter((s): s is SessionSummary => s !== null);
+    const includeSummary = await this.summarizeIncludedSession(includeId, referencedPiFiles);
+    return includeSummary ? [...pageSummaries, includeSummary] : pageSummaries;
   }
 
   async create(
@@ -393,6 +391,54 @@ export class PiSessionStore implements SessionStore {
         updatedAt: new Date(updatedAtMs).toISOString(),
         turnCount,
       };
+    } catch {
+      return null;
+    }
+  }
+
+  private async summarizeVisiblePage(
+    visibleFiles: Array<{ filepath: string; stat: Awaited<ReturnType<typeof fsStat>> }>,
+    options: { offset: number; limit: number | undefined },
+  ): Promise<SessionSummary[]> {
+    if (options.limit === 0) return [];
+
+    const page: SessionSummary[] = [];
+    let validSeen = 0;
+    let index = 0;
+    const batchSize = options.limit === undefined
+      ? Math.max(1, visibleFiles.length)
+      : Math.max(1, options.limit);
+
+    while (index < visibleFiles.length && (options.limit === undefined || page.length < options.limit)) {
+      const batch = visibleFiles.slice(index, index + batchSize);
+      index += batch.length;
+      const summaries = await Promise.all(
+        batch.map(({ filepath, stat }) => this.summarizeFile(filepath, stat)),
+      );
+
+      for (const summary of summaries) {
+        if (!summary) continue;
+        if (validSeen < options.offset) {
+          validSeen += 1;
+          continue;
+        }
+        if (options.limit !== undefined && page.length >= options.limit) break;
+        page.push(summary);
+        validSeen += 1;
+      }
+    }
+
+    return page;
+  }
+
+  private async summarizeIncludedSession(
+    sessionId: string,
+    referencedPiFiles: Set<string>,
+  ): Promise<SessionSummary | null> {
+    try {
+      const filepath = await this.resolveSessionFile(sessionId);
+      if (referencedPiFiles.has(resolve(filepath))) return null;
+      return this.summarizeFile(filepath);
     } catch {
       return null;
     }

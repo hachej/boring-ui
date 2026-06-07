@@ -425,7 +425,7 @@ describe("PiSessionStore", () => {
     expect(list[1].id).toBe(s1.id);
   });
 
-  it("paginates session lists before summarizing", async () => {
+  it("paginates session lists by valid summaries", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
     const first = await store.create(ctx, { title: "First" });
     const second = await store.create(ctx, { title: "Second" });
@@ -438,6 +438,46 @@ describe("PiSessionStore", () => {
     const list = await store.list(ctx, { limit: 1, offset: 1 });
     expect(list).toHaveLength(1);
     expect(list[0]).toEqual(expect.objectContaining({ id: second.id, title: "Second" }));
+  });
+
+  it("fills paginated lists after skipping malformed session files", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const first = await store.create(ctx, { title: "First" });
+    const second = await store.create(ctx, { title: "Second" });
+    const third = await store.create(ctx, { title: "Third" });
+    const badPath = join(tmpDir, "newest-bad.jsonl");
+    await writeFile(badPath, "NOT A SESSION\n", "utf-8");
+    const now = Date.now();
+    await utimes(join(tmpDir, `${first.id}.jsonl`), new Date(now - 4000), new Date(now - 4000));
+    await utimes(join(tmpDir, `${second.id}.jsonl`), new Date(now - 3000), new Date(now - 3000));
+    await utimes(join(tmpDir, `${third.id}.jsonl`), new Date(now - 2000), new Date(now - 2000));
+    await utimes(badPath, new Date(now - 1000), new Date(now - 1000));
+
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const firstPage = await store.list(ctx, { limit: 2 });
+      expect(firstPage.map((session) => session.id)).toEqual([third.id, second.id]);
+
+      const secondPage = await store.list(ctx, { limit: 1, offset: 2 });
+      expect(secondPage.map((session) => session.id)).toEqual([first.id]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("can include a requested active session outside the first page", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const first = await store.create(ctx, { title: "First" });
+    const second = await store.create(ctx, { title: "Second" });
+    const third = await store.create(ctx, { title: "Third" });
+    const now = Date.now();
+    await utimes(join(tmpDir, `${first.id}.jsonl`), new Date(now - 3000), new Date(now - 3000));
+    await utimes(join(tmpDir, `${second.id}.jsonl`), new Date(now - 2000), new Date(now - 2000));
+    await utimes(join(tmpDir, `${third.id}.jsonl`), new Date(now - 1000), new Date(now - 1000));
+
+    const list = await store.list(ctx, { limit: 1, includeId: first.id });
+
+    expect(list.map((session) => session.id)).toEqual([third.id, first.id]);
   });
 
   it("summarizes giant UI snapshots from file prefixes", async () => {

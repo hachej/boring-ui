@@ -21,6 +21,7 @@ export interface SessionCtx {
 export interface SessionListOptions {
   limit?: number
   offset?: number
+  includeId?: string
 }
 
 export interface SessionSummary {

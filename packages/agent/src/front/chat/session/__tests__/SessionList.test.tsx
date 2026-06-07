@@ -63,4 +63,12 @@ describe('SessionList', () => {
     expect(screen.getByRole('navigation', { name: 'Session history' }).getAttribute('aria-busy')).toBe('true')
     expect(screen.getByText(/Loading sessions/)).toBeTruthy()
   })
+
+  test('renders load more control for paginated session history', () => {
+    const onLoadMore = vi.fn()
+    render(<SessionList sessions={sessions} activeId="pi-1" hasMore onLoadMore={onLoadMore} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
+    expect(onLoadMore).toHaveBeenCalledTimes(1)
+  })
 })

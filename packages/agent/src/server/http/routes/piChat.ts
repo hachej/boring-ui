@@ -28,10 +28,13 @@ import {
 import type { PiChatReplayRangeError } from '../../pi-chat/piChatReplayBuffer'
 import { PI_CHAT_CURSOR_AHEAD, PI_CHAT_REPLAY_GAP } from '../../pi-chat/piChatReplayBuffer'
 import type { PiSessionCreateInit, PiSessionRequestContext } from '../../pi-chat/piSessionIdentity'
-import type { SessionSummary } from '../../../shared/session'
+import type { SessionListOptions, SessionSummary } from '../../../shared/session'
 
 const DEFAULT_WORKSPACE_ID = 'default'
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 25_000
+const DEFAULT_SESSION_LIST_LIMIT = 50
+const MAX_SESSION_LIST_LIMIT = 100
+const SAFE_SESSION_LIST_INCLUDE_ID = /^[a-zA-Z0-9_-]{1,128}$/
 
 const SessionParamsSchema = z.object({
   sessionId: z.string().min(1).max(128),
@@ -68,7 +71,7 @@ export type PiChatEventStreamResult = PiChatEventStreamSubscription | PiChatRepl
 export type PiChatEventSubscriber = (event: PiChatEvent) => void
 
 export interface PiChatSessionService {
-  listSessions?(ctx: PiSessionRequestContext): Promise<SessionSummary[]>
+  listSessions?(ctx: PiSessionRequestContext, options?: SessionListOptions): Promise<SessionSummary[]>
   createSession?(ctx: PiSessionRequestContext, init?: PiSessionCreateInit): Promise<SessionSummary>
   deleteSession?(ctx: PiSessionRequestContext, sessionId: string): Promise<void>
   readState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot>
@@ -128,7 +131,7 @@ export function piChatRoutes(
     try {
       const service = await resolveService(opts, request)
       if (!service.listSessions) throw unsupportedServiceMethod('list Pi chat sessions')
-      return reply.send(await service.listSessions(getRequestContext(request)))
+      return reply.send(await service.listSessions(getRequestContext(request), sessionListOptions(request)))
     } catch (err) {
       return sendRouteError(reply, err, 'list pi chat sessions failed')
     }
@@ -303,6 +306,25 @@ export function piChatRoutes(
 
 function parseParams(request: FastifyRequest, reply: FastifyReply): { sessionId: string } | undefined {
   return parseWithSchema(SessionParamsSchema, request.params, reply, 'params')
+}
+
+function sessionListOptions(request: FastifyRequest): SessionListOptions {
+  const query = request.query as Record<string, unknown>
+  return {
+    limit: boundedInteger(query.limit, DEFAULT_SESSION_LIST_LIMIT, 1, MAX_SESSION_LIST_LIMIT),
+    offset: boundedInteger(query.offset, 0, 0, Number.MAX_SAFE_INTEGER),
+    includeId: optionalSessionId(query.activeSessionId),
+  }
+}
+
+function boundedInteger(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = typeof value === 'string' ? Number.parseInt(value, 10) : NaN
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.min(max, Math.max(min, parsed))
+}
+
+function optionalSessionId(value: unknown): string | undefined {
+  return typeof value === 'string' && SAFE_SESSION_LIST_INCLUDE_ID.test(value) ? value : undefined
 }
 
 function parseWithSchema<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, value: unknown, reply: FastifyReply, scope: 'body' | 'params' | 'query'): T | undefined {

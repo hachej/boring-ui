@@ -15,6 +15,7 @@ import type {
 } from '../../../../shared/chat'
 import type { PiSessionRequestContext } from '../../../pi-chat/piSessionIdentity'
 import { PI_CHAT_CURSOR_AHEAD, PI_CHAT_REPLAY_GAP } from '../../../pi-chat/piChatReplayBuffer'
+import type { SessionListOptions } from '../../../../shared/session'
 import { piChatBusyError, piChatRoutes, PiChatRouteError, type PiChatRoutesOptions, type PiChatSessionService } from '../piChat'
 
 function activeSnapshot(overrides: Partial<PiChatSnapshot> = {}): PiChatSnapshot {
@@ -49,10 +50,10 @@ class FakePiChatService implements PiChatSessionService {
   events: PiChatEvent[] = []
   subscriptionResult: Awaited<ReturnType<PiChatSessionService['subscribe']>> | undefined
   readonly unsubscribe = vi.fn()
-  readonly calls: Array<{ method: string; ctx: PiSessionRequestContext; sessionId?: string; payload?: unknown; cursor?: number }> = []
+  readonly calls: Array<{ method: string; ctx: PiSessionRequestContext; sessionId?: string; payload?: unknown; cursor?: number; options?: SessionListOptions }> = []
 
-  async listSessions(ctx: PiSessionRequestContext) {
-    this.calls.push({ method: 'listSessions', ctx })
+  async listSessions(ctx: PiSessionRequestContext, options?: SessionListOptions) {
+    this.calls.push({ method: 'listSessions', ctx, options })
     return this.sessions
   }
 
@@ -146,7 +147,27 @@ describe('piChatRoutes', () => {
     expect(deleted.statusCode).toBe(204)
 
     expect(service.calls.map((call) => call.method)).toEqual(['listSessions', 'createSession', 'deleteSession'])
-    expect(service.calls[0]).toMatchObject({ ctx: { workspaceId: 'workspace-a', storageScope: 'scope-a', authSubject: 'user-a' } })
+    expect(service.calls[0]).toMatchObject({
+      ctx: { workspaceId: 'workspace-a', storageScope: 'scope-a', authSubject: 'user-a' },
+      options: { limit: 50, offset: 0 },
+    })
+
+    await app.close()
+  })
+
+  test('GET /sessions forwards bounded pagination options to the Pi-native service', async () => {
+    const { app, service } = await buildApp()
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/pi-chat/sessions?limit=500&offset=25&activeSessionId=pi-older',
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(service.calls[0]).toMatchObject({
+      method: 'listSessions',
+      options: { limit: 100, offset: 25, includeId: 'pi-older' },
+    })
 
     await app.close()
   })

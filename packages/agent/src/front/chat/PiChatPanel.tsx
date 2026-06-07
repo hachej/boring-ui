@@ -854,6 +854,9 @@ export function PiChatPanel({
               onCreate={createSession}
               onSwitch={sessions.switch}
               onDelete={deleteSession}
+              onLoadMore={sessions.loadMore}
+              hasMore={sessions.hasMore}
+              loadingMore={sessions.loadingMore}
             />
           </aside>
         ) : null}
