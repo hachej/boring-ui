@@ -1,10 +1,12 @@
 import { ErrorCode } from "@hachej/boring-agent/shared"
 import type { FastifyInstance } from "fastify"
+import { existsSync } from "node:fs"
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, test } from "vitest"
-import { createWorkspaceAgentServer } from "../createWorkspaceAgentServer"
+import { scanBoringPlugins } from "../../../server/agentPlugins/scan"
+import { createWorkspaceAgentServer, readPiSettingsBoringPluginSources } from "../createWorkspaceAgentServer"
 
 const roots: string[] = []
 
@@ -30,7 +32,134 @@ async function writeExternalPlugin(workspaceRoot: string, id: string, serverSour
   return pluginDir
 }
 
+async function writePiOnlyPackage(workspaceRoot: string): Promise<string> {
+  const pluginDir = join(workspaceRoot, "plugins", "pi-smoke")
+  await mkdir(join(pluginDir, "skills", "pi-smoke"), { recursive: true })
+  await writeFile(join(pluginDir, "package.json"), JSON.stringify({
+    name: "pi-smoke",
+    version: "0.0.0",
+    pi: {
+      extensions: ["index.ts"],
+      skills: ["skills"],
+    },
+  }), "utf8")
+  await writeFile(join(pluginDir, "index.ts"), `
+    export default function piSmoke(pi) {
+      pi.registerTool({
+        name: "pi_smoke_echo",
+        description: "Pi package smoke test tool",
+        parameters: { type: "object", properties: {} },
+        execute: async () => ({ content: [{ type: "text", text: "PI_SMOKE_OK" }] }),
+      })
+    }
+  `, "utf8")
+  await writeFile(join(pluginDir, "skills", "pi-smoke", "SKILL.md"), [
+    "---",
+    "name: pi-smoke",
+    "description: Pi package smoke skill.",
+    "---",
+    "",
+    "Say PI_SMOKE_OK.",
+  ].join("\n"), "utf8")
+  return pluginDir
+}
+
+async function writeBoringOnlyPackage(workspaceRoot: string): Promise<string> {
+  const pluginDir = join(workspaceRoot, "plugins", "boring-smoke")
+  await mkdir(join(pluginDir, "front"), { recursive: true })
+  await mkdir(join(pluginDir, "server"), { recursive: true })
+  await writeFile(join(pluginDir, "package.json"), JSON.stringify({
+    name: "boring-smoke",
+    version: "0.0.0",
+    type: "module",
+    boring: {
+      label: "Boring Smoke",
+      front: "front/index.tsx",
+      server: "server/index.ts",
+    },
+  }), "utf8")
+  await writeFile(join(pluginDir, "front", "index.tsx"), "export default { id: 'boring-smoke' }\n", "utf8")
+  await writeFile(join(pluginDir, "server", "index.ts"), `
+    export default {
+      routes(router) { router.get("/ping", () => ({ ok: true, plugin: "boring-smoke" })) },
+    }
+  `, "utf8")
+  return pluginDir
+}
+
+async function writeProjectPiSettings(workspaceRoot: string, packages: string[]): Promise<void> {
+  await mkdir(join(workspaceRoot, ".pi"), { recursive: true })
+  await writeFile(join(workspaceRoot, ".pi", "settings.json"), JSON.stringify({ packages }, null, 2), "utf8")
+}
+
+describe("Pi settings plugin-source discovery", () => {
+  test("workspace-local settings sources carry workspaceId so they shadow global externals", async () => {
+    const root = await tempRoot("boring-runtime-settings-shadow-")
+    const workspaceRoot = join(root, "workspace")
+    const globalPlugin = join(root, "global", "shadow-plugin")
+    const localPlugin = join(workspaceRoot, "plugins", "shadow-plugin")
+    await mkdir(join(globalPlugin, "front"), { recursive: true })
+    await mkdir(join(localPlugin, "front"), { recursive: true })
+    for (const pluginRoot of [globalPlugin, localPlugin]) {
+      await writeFile(join(pluginRoot, "front", "index.tsx"), "export default function Plugin() { return null }\n", "utf8")
+      await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
+        name: "shadow-plugin",
+        boring: { front: "front/index.tsx" },
+      }), "utf8")
+    }
+    await mkdir(join(workspaceRoot, ".pi"), { recursive: true })
+    await writeFile(join(workspaceRoot, ".pi", "settings.json"), JSON.stringify({
+      packages: ["../plugins/shadow-plugin"],
+    }), "utf8")
+
+    const localSources = readPiSettingsBoringPluginSources(join(workspaceRoot, ".pi", "settings.json"), workspaceRoot)
+    expect(localSources).toEqual([{ rootDir: localPlugin, kind: "external", workspaceId: workspaceRoot }])
+
+    const scan = scanBoringPlugins([
+      { rootDir: globalPlugin, kind: "external" },
+      ...localSources,
+    ])
+    expect(scan.preflight.ok).toBe(true)
+    expect(scan.plugins.map((plugin) => plugin.rootDir)).toEqual([localPlugin])
+  })
+})
+
 describe("runtime backend integration with canonical reload", () => {
+  test("reload discovers workspace-local Pi package sources for Pi resources and Boring runtime plugins", async () => {
+    const workspaceRoot = await tempRoot("runtime-backend-pi-sources-")
+    const app = await createWorkspaceAgentServer({ workspaceRoot, mode: "direct", logger: false, provisionWorkspace: false })
+    try {
+      await writePiOnlyPackage(workspaceRoot)
+      await writeBoringOnlyPackage(workspaceRoot)
+      await writeProjectPiSettings(workspaceRoot, [
+        "../plugins/pi-smoke",
+        "../plugins/boring-smoke",
+      ])
+
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(reload.statusCode).toBe(200)
+
+      const plugins = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
+      expect(plugins.statusCode).toBe(200)
+      const pluginIds = plugins.json().map((plugin: { id: string }) => plugin.id)
+      expect(pluginIds).toContain("boring-smoke")
+      expect(pluginIds).not.toContain("pi-smoke")
+
+      const ping = await app.inject({ method: "GET", url: "/api/v1/plugins/boring-smoke/ping" })
+      expect(ping.statusCode).toBe(200)
+      expect(ping.json()).toEqual({ ok: true, plugin: "boring-smoke" })
+
+      const skills = await app.inject({ method: "GET", url: "/api/v1/agent/skills" })
+      expect(skills.statusCode).toBe(200)
+      const skillNames = skills.json().skills.map((skill: { name: string }) => skill.name)
+      expect(skillNames).toContain("pi-smoke")
+
+      expect(existsSync(join(workspaceRoot, ".pi", "boring-plugin-sources.json"))).toBe(false)
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
+
   test("serves external boring.server handlers through the gateway and hot-reloads via /api/v1/agent/reload", async () => {
     const workspaceRoot = await tempRoot("runtime-backend-app-")
     const pluginDir = await writeExternalPlugin(workspaceRoot, "runtime-plugin", `

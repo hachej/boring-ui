@@ -37,6 +37,7 @@ async function writeRuntimePlugin(root: string, files: Record<string, string>): 
     boring: { front: "front/index.tsx", label: "Runtime Plugin" },
     frontPath: join(root, "front", "index.tsx"),
     source: { rootDir: root, kind: "external" },
+    hasBoring: true,
   }
 }
 
@@ -263,6 +264,7 @@ describe("pluginFrontRuntime", () => {
       boring: { front: "front/index.tsx", label: "Runtime Plugin" },
       frontPath: join(pluginRoot, "front", "index.tsx"),
       source: { rootDir: pluginRoot, kind: "external" },
+      hasBoring: true,
     }
 
     const host = await createPluginFrontRuntimeHost()

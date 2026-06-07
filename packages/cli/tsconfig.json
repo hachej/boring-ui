@@ -15,7 +15,8 @@
       "@hachej/boring-agent/eval": ["../agent/src/eval/index.ts"],
       "@hachej/boring-workspace": ["../workspace/src/index.ts"],
       "@hachej/boring-workspace/server": ["../workspace/src/server/index.ts"],
-      "@hachej/boring-workspace/app/server": ["../workspace/src/app/server/index.ts"]
+      "@hachej/boring-workspace/app/server": ["../workspace/src/app/server/index.ts"],
+      "@hachej/boring-ui-plugin-cli": ["../plugin-cli/src/index.ts"]
     }
   },
   "include": ["src/**/*", "scripts/**/*"],

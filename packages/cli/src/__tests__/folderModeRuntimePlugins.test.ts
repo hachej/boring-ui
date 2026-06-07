@@ -158,6 +158,42 @@ describe("folder mode runtime plugin wiring", () => {
     }
   }, 20_000)
 
+  test("workspace-local collection plugin shadows global collection plugin in folder mode app", async () => {
+    const homeRoot = await makeTempDir("boring-cli-folder-shadow-home-")
+    const workspaceRoot = await makeTempDir("boring-cli-folder-shadow-workspace-")
+    process.env.HOME = homeRoot
+
+    const globalPlugin = join(homeRoot, ".pi", "agent", "extensions", "shadow-plugin")
+    const localPlugin = join(workspaceRoot, ".pi", "extensions", "shadow-plugin")
+    await writePlugin(globalPlugin, "shadow-plugin")
+    await writePlugin(localPlugin, "shadow-plugin")
+
+    const app = await createFolderModeApp({
+      workspaceRoot,
+      mode: "direct",
+      projectName: "Folder Workspace",
+      provisionWorkspace: false,
+    })
+
+    try {
+      const list = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
+      expect(list.statusCode).toBe(200)
+      expect((list.json() as Array<{ id: string }>).map((plugin) => plugin.id)).toEqual(["shadow-plugin"])
+
+      const diagnostics = await app.inject({ method: "GET", url: "/api/v1/runtime-plugin-diagnostics" })
+      expect(diagnostics.statusCode).toBe(200)
+      expect(diagnostics.json()).toMatchObject({
+        plugins: [expect.objectContaining({
+          id: "shadow-plugin",
+          rootDir: localPlugin,
+          frontPath: join(localPlugin, "front", "index.tsx"),
+        })],
+      })
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
+
   test("folder mode reload untracks runtime targets when a plugin loses its front entry", async () => {
     const homeRoot = await makeTempDir("boring-cli-folder-front-removed-home-")
     const workspaceRoot = await makeTempDir("boring-cli-folder-front-removed-workspace-")
