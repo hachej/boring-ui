@@ -22,6 +22,7 @@ import { Message, MessageContent, MessageResponse } from '../../primitives/messa
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '../../primitives/reasoning'
 import { ToolCallGroup, type GroupedToolEntry } from '../../primitives/tool-call-group'
 import type { ToolRendererOverrides } from '../../bareToolRenderers'
+import { noticeSurfaceClass, noticeTextClass } from './noticeStyles'
 
 export interface MessageTimelineEmptyState {
   title?: string
@@ -170,14 +171,9 @@ function renderNonToolPart(message: BoringChatMessage, part: BoringChatPart, key
           key={key}
           data-boring-agent-part="message-notice"
           data-notice-level={part.level}
-          className={cn(
-            'rounded-md border px-3 py-2 text-xs',
-            part.level === 'error' && 'border-destructive/30 bg-destructive/5 text-destructive',
-            part.level === 'warning' && 'border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-300',
-            part.level === 'info' && 'border-border/60 bg-muted/40 text-muted-foreground',
-          )}
+          className={noticeSurfaceClass(part.level, 'text-xs')}
         >
-          {part.text}
+          <div className={noticeTextClass()}>{part.text}</div>
         </div>
       )
   }

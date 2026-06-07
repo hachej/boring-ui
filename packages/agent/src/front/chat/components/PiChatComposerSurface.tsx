@@ -32,6 +32,7 @@ import {
   QueuedComposerNotice,
   type ComposerBlocker,
 } from './ChatNotices'
+import { noticeSurfaceClass } from './noticeStyles'
 
 const MAX_PROMPT_ATTACHMENTS = 2
 const MAX_PROMPT_ATTACHMENT_BYTES = 4 * 1024 * 1024
@@ -243,10 +244,7 @@ export function PiChatComposerSurface({
         <div
           role="status"
           aria-live="polite"
-          className={cn(
-            'mx-auto mb-2 w-full max-w-3xl rounded-[var(--radius-md)] border border-accent/40 bg-[color:var(--accent-soft)]',
-            'px-3 py-2 text-xs text-foreground',
-          )}
+          className={noticeSurfaceClass('info', 'mx-auto mb-2 w-full max-w-3xl text-xs')}
         >
           {attachmentNotice}
         </div>

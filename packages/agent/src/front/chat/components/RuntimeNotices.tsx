@@ -6,6 +6,7 @@ import { AlertTriangleIcon, InfoIcon, Loader2Icon, PlugZapIcon, RefreshCwIcon, X
 import { Button } from '@hachej/boring-ui-kit'
 import { cn } from '../../lib'
 import type { PiChatRuntimeNotice } from '../pi/piChatReducer'
+import { noticeIconClass, noticeSurfaceClass, noticeTextClass } from './noticeStyles'
 
 export type RuntimeNoticeKind = 'reconnect' | 'protocol' | 'warmup' | 'plugin' | 'retry' | 'generic'
 
@@ -58,15 +59,13 @@ function RuntimeNoticeRow({ notice, onDismiss, onAction }: RuntimeNoticeRowProps
       data-runtime-notice-kind={kind}
       data-runtime-notice-level={notice.level}
       className={cn(
-        'flex items-start gap-2 rounded-md border px-3 py-2 text-sm motion-reduce:transition-none',
-        notice.level === 'error' && 'border-destructive/30 bg-destructive/5 text-destructive',
-        notice.level === 'warning' && 'border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-300',
-        notice.level === 'info' && 'border-border/60 bg-muted/40 text-muted-foreground',
+        noticeSurfaceClass(notice.level),
+        'flex items-start gap-2.5 motion-reduce:transition-none',
       )}
     >
-      <Icon className={cn('mt-0.5 size-4 shrink-0', kind === 'retry' && 'animate-spin motion-reduce:animate-none')} aria-hidden="true" />
+      <Icon className={cn(noticeIconClass(notice.level), kind === 'retry' && 'animate-spin motion-reduce:animate-none')} aria-hidden="true" />
       <div className="min-w-0 flex-1">
-        <p className="leading-5">{notice.text}</p>
+        <p className={noticeTextClass()}>{notice.text}</p>
       </div>
       {actionLabel && onAction ? (
         <Button type="button" variant="ghost" size="sm" onClick={() => onAction(notice.id)}>
@@ -80,6 +79,7 @@ function RuntimeNoticeRow({ notice, onDismiss, onAction }: RuntimeNoticeRowProps
           size="icon-sm"
           aria-label="Dismiss notice"
           onClick={() => onDismiss(notice.id)}
+          className="-mr-1 -mt-1 shrink-0 text-muted-foreground/70 hover:bg-muted hover:text-foreground"
         >
           <XIcon className="size-3" />
         </Button>

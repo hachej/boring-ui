@@ -19,6 +19,7 @@ describe('RuntimeNoticeMessages', () => {
     expect(row.getAttribute('data-boring-agent-part')).toBe('runtime-notice')
     expect(row.getAttribute('data-runtime-notice-id')).toBe('command:failed')
     expect(row.getAttribute('data-runtime-notice-level')).toBe('error')
+    expect(row.closest('[data-boring-agent-message-role]')).toBeNull()
 
     const body = row.querySelector('.whitespace-pre-wrap') as HTMLElement
     expect(body.textContent).toBe(text)

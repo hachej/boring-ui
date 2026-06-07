@@ -252,7 +252,7 @@ function ShowcaseMessageSession() {
                   tools={errorGroup.map((part, index) => ({ part, key: `error-${index}` }))}
                   mergedToolRenderers={renderers}
                 />
-                <div data-boring-agent-part="message-notice" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
+                <div data-boring-agent-part="message-notice" className="rounded-[var(--radius-md)] border border-destructive/25 bg-destructive/[0.07] px-3 py-2 text-[13px] leading-5 text-foreground">
                   Tool failed with a scoped active-turn error. The composer should recover after the terminal error.
                 </div>
               </MessageContent>

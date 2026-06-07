@@ -16,6 +16,7 @@ import {
 import { Message, MessageContent, MessageResponse } from '../../primitives/message'
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '../../primitives/reasoning'
 import { ToolCallGroup, type GroupedToolEntry } from '../../primitives/tool-call-group'
+import { noticeSurfaceClass, noticeTextClass } from './noticeStyles'
 
 export interface PiTimelineMessageProps {
   message: BoringChatMessage
@@ -211,14 +212,9 @@ function NoticeBubble({ level, text }: { level: 'info' | 'warning' | 'error'; te
     <div
       data-boring-agent-part="message-notice"
       data-notice-level={level}
-      className={cn(
-        'rounded-md border px-3 py-2 text-xs',
-        level === 'error' && 'border-destructive/30 bg-destructive/5 text-destructive',
-        level === 'warning' && 'border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-300',
-        level === 'info' && 'border-border/60 bg-muted/40 text-muted-foreground',
-      )}
+      className={noticeSurfaceClass(level, 'text-xs')}
     >
-      <div className="min-w-0 whitespace-pre-wrap break-words leading-5 [overflow-wrap:anywhere]">
+      <div className={noticeTextClass()}>
         {text}
       </div>
     </div>

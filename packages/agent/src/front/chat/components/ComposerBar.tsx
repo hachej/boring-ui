@@ -20,6 +20,7 @@ import {
   type PromptInputProps,
 } from '../../primitives/prompt-input'
 import { PromptInputButton } from '../../primitives/prompt-input-wrappers'
+import { noticeIconClass, noticeSurfaceClass, noticeTextClass } from './noticeStyles'
 
 export interface ComposerSendPayload {
   text: string
@@ -95,10 +96,10 @@ export const ComposerBar = memo(({
         <div
           role="alert"
           data-boring-agent-part="composer-command-error"
-          className="mb-2 flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+          className={cn(noticeSurfaceClass('error'), 'mb-2 flex items-start gap-2.5')}
         >
-          <AlertCircleIcon className="size-4 shrink-0" aria-hidden="true" />
-          <span>{commandError}</span>
+          <AlertCircleIcon className={noticeIconClass('error')} aria-hidden="true" />
+          <span className={noticeTextClass('flex-1')}>{commandError}</span>
         </div>
       ) : null}
       <PromptInput onSubmit={handleSubmit} className="relative" {...promptInputProps}>
