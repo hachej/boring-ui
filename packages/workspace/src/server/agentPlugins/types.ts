@@ -25,6 +25,8 @@ export interface BoringServerPluginManifest {
   rootDir: string
   version: string
   boring: BoringPackageBoringField
+  /** True when package.json explicitly declares a boring manifest. Pi-only packages remain valid Pi resources but are not listed as Boring plugins. */
+  hasBoring: boolean
   pi?: BoringPackagePiField
   frontPath?: string
   /** Legacy Vite-dev browser import fallback (`/@fs/...`). */

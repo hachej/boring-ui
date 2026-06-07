@@ -18,14 +18,10 @@ import {
 } from "@hachej/boring-agent/server"
 import type { FastifyInstance } from "fastify"
 import { existsSync, mkdirSync, readFileSync } from "node:fs"
-import { dirname, join } from "node:path"
+import { dirname, isAbsolute, join, resolve } from "node:path"
 import { homedir } from "node:os"
 import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
-import {
-  readPluginSourceRecords,
-  resolvePluginSourceScopePaths,
-} from "@hachej/boring-ui-plugin-cli/plugin-sources"
 import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
 import { BoringPluginAssetManager } from "../../server/agentPlugins/manager"
 import type { BoringPluginFrontTargetResolver, BoringPluginSource, BoringPluginSourceInput } from "../../server/agentPlugins/types"
@@ -417,23 +413,47 @@ function uniquePluginSources(sources: BoringPluginSource[]): BoringPluginSource[
   return [...byRoot.values()]
 }
 
-function collectPluginSourceRecordSources(workspaceRoot: string): BoringPluginSource[] {
-  const globalScope = resolvePluginSourceScopePaths("global", { globalRoot: join(homedir(), ".pi", "agent") })
-  const localScope = resolvePluginSourceScopePaths("local", { workspaceRoot })
-  const records = [
-    ...readPluginSourceRecords(globalScope),
-    ...readPluginSourceRecords(localScope),
-  ]
-  return [
-    { rootDir: globalScope.npmDir, kind: "external" },
-    { rootDir: globalScope.gitDir, kind: "external" },
-    { rootDir: localScope.npmDir, kind: "external" },
-    { rootDir: localScope.gitDir, kind: "external" },
-    ...records.map((record): BoringPluginSource => ({
-      rootDir: record.rootDir,
-      kind: "external",
-    })),
-  ]
+const REMOTE_PI_PACKAGE_SOURCE_PREFIXES = ["npm:", "git:", "github:", "http:", "https:", "ssh:"]
+
+function piPackageSourceValue(entry: unknown): string | undefined {
+  if (typeof entry === "string") return entry
+  if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+    const source = (entry as { source?: unknown }).source
+    return typeof source === "string" ? source : undefined
+  }
+  return undefined
+}
+
+function resolveLocalPiPackageSource(settingsDir: string, source: string): string | undefined {
+  const path = source.startsWith("file:") ? source.slice("file:".length) : source
+  if (!path) return undefined
+  if (REMOTE_PI_PACKAGE_SOURCE_PREFIXES.some((prefix) => path.startsWith(prefix))) return undefined
+  if (!isAbsolute(path) && path !== "." && path !== "./" && !path.startsWith("./") && !path.startsWith("../")) return undefined
+  return resolve(settingsDir, path)
+}
+
+export function readPiSettingsBoringPluginSources(settingsPath: string, workspaceId?: string): BoringPluginSource[] {
+  let raw: unknown
+  try {
+    raw = JSON.parse(readFileSync(settingsPath, "utf8"))
+  } catch {
+    return []
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return []
+  const packages = (raw as { packages?: unknown }).packages
+  if (!Array.isArray(packages)) return []
+  const settingsDir = dirname(settingsPath)
+  return uniquePluginSources(
+    packages
+      .map(piPackageSourceValue)
+      .map((source) => source ? resolveLocalPiPackageSource(settingsDir, source) : undefined)
+      .filter((rootDir): rootDir is string => Boolean(rootDir))
+      .map((rootDir): BoringPluginSource => ({
+        rootDir,
+        kind: "external",
+        ...(workspaceId ? { workspaceId } : {}),
+      })),
+  )
 }
 
 function collectBoringPluginSources(
@@ -450,9 +470,12 @@ function collectBoringPluginSources(
     }
   })
   return uniquePluginSources([
-    { rootDir: join(workspaceRoot, ".pi", "extensions"), kind: "external" },
+    { rootDir: join(workspaceRoot, ".pi", "extensions"), kind: "external", workspaceId: workspaceRoot },
+    { rootDir: join(workspaceRoot, ".pi", "npm"), kind: "external", workspaceId: workspaceRoot },
+    { rootDir: join(workspaceRoot, ".pi", "git"), kind: "external", workspaceId: workspaceRoot },
     { rootDir: join(homedir(), ".pi", "agent", "extensions"), kind: "external" },
-    ...collectPluginSourceRecordSources(workspaceRoot),
+    ...readPiSettingsBoringPluginSources(join(workspaceRoot, ".pi", "settings.json"), workspaceRoot),
+    ...readPiSettingsBoringPluginSources(join(homedir(), ".pi", "agent", "settings.json")),
     ...pluginRoots.map((rootDir): BoringPluginSource => ({ rootDir, kind: "internal" })),
     ...additionalPluginDirs.map((entry): BoringPluginSource => typeof entry === "string"
       ? { rootDir: entry, kind: "internal" }
@@ -626,11 +649,16 @@ export async function createWorkspaceAgentServer(
   // Boring plugin discovery: scan external workspace/global extension
   // collections plus internal app/plugin-provided sources. Source kind is
   // explicit so later activation code does not infer trust from paths.
-  const buildBoringPluginDirs = () => uniquePluginSources([
-    ...defaultPluginPackagePaths.map((rootDir): BoringPluginSource => ({ rootDir, kind: "internal" })),
-    ...collectBoringPluginSources(workspaceRoot, pluginCollection, opts.additionalBoringPluginDirs),
-  ])
-  const boringPluginDirs = buildBoringPluginDirs()
+  const boringPluginDirs: BoringPluginSource[] = []
+  const refreshBoringPluginDirs = (): BoringPluginSource[] => {
+    const next = uniquePluginSources([
+      ...defaultPluginPackagePaths.map((rootDir): BoringPluginSource => ({ rootDir, kind: "internal" })),
+      ...collectBoringPluginSources(workspaceRoot, pluginCollection, opts.additionalBoringPluginDirs),
+    ])
+    boringPluginDirs.splice(0, boringPluginDirs.length, ...next)
+    return boringPluginDirs
+  }
+  refreshBoringPluginDirs()
 
   // Dynamic Pi resources discovered from package.json#pi at /reload time.
   // Pi calls `getHotReloadableResources()` on every reloadSession() and merges the
@@ -638,7 +666,7 @@ export async function createWorkspaceAgentServer(
   // arrays the harness already captured.
   const staticPluginPackagePiSnapshot = pluginHotReload
     ? emptyPackageJsonPiSnapshot()
-    : readWorkspacePluginPackagePiSnapshot(boringPluginDirs)
+    : readWorkspacePluginPackagePiSnapshot(refreshBoringPluginDirs())
   const staticPiSkillPaths = [
     ...baseStaticPiSkillPaths,
     ...staticPluginPackagePiSnapshot.additionalSkillPaths,
@@ -653,11 +681,11 @@ export async function createWorkspaceAgentServer(
   ]
 
   const getHotReloadablePiResources = pluginHotReload
-    ? () => readWorkspacePluginPackagePiSnapshot(buildBoringPluginDirs())
+    ? () => readWorkspacePluginPackagePiSnapshot(refreshBoringPluginDirs())
     : undefined
 
   const boringAssetManager = new BoringPluginAssetManager({
-    pluginDirs: buildBoringPluginDirs,
+    pluginDirs: boringPluginDirs,
     errorRoot: join(workspaceRoot, ".pi", "extensions"),
     frontTargetResolver: opts.boringPluginFrontTargetResolver,
     includeLegacyFrontUrl: opts.boringPluginIncludeLegacyFrontUrl,
@@ -667,7 +695,7 @@ export async function createWorkspaceAgentServer(
   const buildRuntimeProvisioningInputs = () => {
     const inputs = mergeRuntimeProvisioningInputs([
       ...pluginCollection.runtimePlugins,
-      ...readWorkspacePluginPackageRuntimePlugins(buildBoringPluginDirs()),
+      ...readWorkspacePluginPackageRuntimePlugins(refreshBoringPluginDirs()),
     ])
     if (resolvedMode === "direct") return omitPluginAuthoringProvisioning(inputs)
     return inputs
@@ -743,6 +771,7 @@ export async function createWorkspaceAgentServer(
       let restart_warnings: ReturnType<typeof collectRestartWarnings> = []
       let diagnostics: PluginRebuildResult["diagnostics"] = []
       if (pluginHotReload) {
+        refreshBoringPluginDirs()
         const scan = await boringAssetManager.load()
         const backendReload = await runtimeBackendRegistry.reloadFromLoadedPlugins(boringAssetManager.inspectLoaded())
         restart_warnings = collectRestartWarnings(scan.events)
@@ -788,6 +817,7 @@ export async function createWorkspaceAgentServer(
       ? () => aggregatePluginPrompts(boringAssetManager)
       : undefined,
   })
+  refreshBoringPluginDirs()
   await boringAssetManager.load()
   await runtimeBackendRegistry.reloadFromLoadedPlugins(boringAssetManager.inspectLoaded())
   if (typeof app.addHook === "function") {
@@ -799,7 +829,7 @@ export async function createWorkspaceAgentServer(
   await app.register(boringPluginRoutes, {
     manager: boringAssetManager,
   })
-  await app.register(runtimeBackendGateway, { registry: runtimeBackendRegistry })
+  await app.register(runtimeBackendGateway, { registry: runtimeBackendRegistry, defaultWorkspaceId: workspaceRoot })
   for (const { routes } of pluginCollection.routeContributions) {
     await app.register(routes)
   }

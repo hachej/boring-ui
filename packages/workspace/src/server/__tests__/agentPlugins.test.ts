@@ -87,6 +87,18 @@ describe("boring agent plugin assets", () => {
     expect(plugins[0].serverPath).toBe(join(root, "server", "index.js"))
   })
 
+  test("readBoringPlugins filters Pi-only packages out of Boring plugin results", async () => {
+    const root = await tmp("boring-plugin-pi-only-")
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "pi-only-plugin",
+      pi: { systemPrompt: "Pi only" },
+    }), "utf8")
+
+    const scan = scanBoringPlugins([root])
+    expect(scan.plugins).toEqual([expect.objectContaining({ id: "pi-only-plugin", hasBoring: false })])
+    expect(readBoringPlugins([root])).toEqual([])
+  })
+
   test("scan and load preserve explicit source metadata without leaking it to list payloads", async () => {
     const root = await tmp("boring-plugin-source-metadata-")
     await writePlugin(root)

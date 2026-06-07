@@ -32,11 +32,6 @@ interface DiscoveredBoringPluginDirs {
   missingPackageJson: string[]
 }
 
-interface BoringPluginScanCandidate {
-  plugin: BoringServerPluginManifest
-  source: BoringPluginSource
-}
-
 function normalizeBoringPluginSource(input: BoringPluginSourceInput): BoringPluginSource {
   if (typeof input === "string") return { rootDir: resolve(input), kind: "internal" }
   return {
@@ -120,54 +115,6 @@ function packagePathContainmentIssues(rootDir: string, pkg: BoringPluginPackageJ
   return issues
 }
 
-function externalSourcePriority(source: BoringPluginSource): number | undefined {
-  if (source.kind !== "external") return undefined
-  return source.workspaceId ? 2 : 1
-}
-
-function selectPluginCandidates(candidates: BoringPluginScanCandidate[]): {
-  plugins: BoringServerPluginManifest[]
-  errors: BoringPluginPreflightIssue[]
-} {
-  const plugins: BoringServerPluginManifest[] = []
-  const errors: BoringPluginPreflightIssue[] = []
-  const groups = new Map<string, BoringPluginScanCandidate[]>()
-  for (const candidate of candidates) {
-    groups.set(candidate.plugin.id, [...(groups.get(candidate.plugin.id) ?? []), candidate])
-  }
-
-  for (const group of groups.values()) {
-    if (group.length === 1) {
-      plugins.push(group[0]!.plugin)
-      continue
-    }
-
-    const priorities = group.map((candidate) => externalSourcePriority(candidate.source))
-    const canUseExternalPriority = priorities.every((priority): priority is number => priority !== undefined)
-    if (canUseExternalPriority) {
-      const bestPriority = Math.max(...priorities)
-      const winners = group.filter((candidate) => externalSourcePriority(candidate.source) === bestPriority)
-      if (winners.length === 1) {
-        plugins.push(winners[0]!.plugin)
-        continue
-      }
-    }
-
-    const id = group[0]!.plugin.id
-    const firstRoot = group[0]!.plugin.rootDir
-    for (const duplicate of group.slice(1)) {
-      errors.push({
-        pluginDir: duplicate.plugin.rootDir,
-        pluginId: id,
-        code: "INVALID_PLUGIN_METADATA",
-        message: `duplicate plugin id "${id}" also declared by ${firstRoot}`,
-      })
-    }
-  }
-
-  return { plugins, errors }
-}
-
 function discoverBoringPluginDirs(pluginDirs: BoringPluginSourceInput[]): DiscoveredBoringPluginDirs {
   const out = new Map<string, BoringPluginSource>()
   const missingPackageJson: string[] = []
@@ -191,10 +138,11 @@ function discoverBoringPluginDirs(pluginDirs: BoringPluginSourceInput[]): Discov
       if (!out.has(child)) out.set(child, { ...source, rootDir: child })
     }
 
-    // Parent collection directories such as .pi/extensions/.pi/npm/.pi/git are valid even when empty.
+    // Parent collection directories such as .pi/extensions are valid even when empty.
     // A non-collection directory with no package.json and no package children is treated
     // as an explicitly supplied plugin dir and reported to the caller.
-    if (!hasPackageJson && childPackageDirs.length === 0 && !["extensions", "npm", "git"].includes(basename(dir))) {
+    const collectionDirNames = new Set(["extensions", "npm", "git"])
+    if (!hasPackageJson && childPackageDirs.length === 0 && !collectionDirNames.has(basename(dir))) {
       missingPackageJson.push(dir)
     }
   }
@@ -206,7 +154,8 @@ function discoverBoringPluginDirs(pluginDirs: BoringPluginSourceInput[]): Discov
 
 export function scanBoringPlugins(pluginDirs: BoringPluginSourceInput[]): BoringPluginScanResult {
   const errors: BoringPluginPreflightIssue[] = []
-  const candidates: BoringPluginScanCandidate[] = []
+  const plugins: BoringServerPluginManifest[] = []
+  const seenIds = new Map<string, string>()
   const discovered = discoverBoringPluginDirs(pluginDirs)
 
   for (const pluginDir of discovered.missingPackageJson) {
@@ -251,6 +200,35 @@ export function scanBoringPlugins(pluginDirs: BoringPluginSourceInput[]): Boring
         message: `effective plugin id "${id}" must start with a letter or number and use only letters, numbers, dot, underscore, colon, or dash`,
       })
       canAddPlugin = false
+    } else {
+      const previous = seenIds.get(id)
+      if (previous) {
+        const previousPluginIndex = plugins.findIndex((plugin) => plugin.id === id)
+        const previousPlugin = previousPluginIndex >= 0 ? plugins[previousPluginIndex] : undefined
+        const currentIsWorkspaceLocal = Boolean(source.workspaceId)
+        const previousIsWorkspaceLocal = Boolean(previousPlugin?.source.workspaceId)
+        const currentMayShadowPrevious = source.kind === "external"
+          && currentIsWorkspaceLocal
+          && previousPlugin?.source.kind === "external"
+          && !previousIsWorkspaceLocal
+        if (currentMayShadowPrevious) {
+          if (previousPluginIndex >= 0) plugins.splice(previousPluginIndex, 1)
+          seenIds.set(id, rootDir)
+        } else if (!currentIsWorkspaceLocal && previousIsWorkspaceLocal) {
+          canAddPlugin = false
+        } else {
+          errors.push({
+            pluginDir: rootDir,
+            pluginId: id,
+            code: "INVALID_PLUGIN_METADATA",
+            message: `duplicate plugin id "${id}" also declared by ${previous}`,
+          })
+          if (previousPluginIndex >= 0) plugins.splice(previousPluginIndex, 1)
+          canAddPlugin = false
+        }
+      } else {
+        seenIds.set(id, rootDir)
+      }
     }
 
     const containmentIssues = packagePathContainmentIssues(rootDir, result.packageJson)
@@ -261,6 +239,7 @@ export function scanBoringPlugins(pluginDirs: BoringPluginSourceInput[]): Boring
     if (!canAddPlugin) continue
 
     const pkg = result.packageJson
+    const hasBoring = pkg.boring !== undefined
     const boring = pkg.boring ?? {}
     const pi = pkg.pi as BoringPackagePiField | undefined
     const frontPath = resolvePluginPath(rootDir, boring.front, { mustExist: true })
@@ -270,27 +249,23 @@ export function scanBoringPlugins(pluginDirs: BoringPluginSourceInput[]): Boring
     const version = pkg.version ?? "0.0.0"
     const extensionPaths = resolvePluginPaths(rootDir, pi?.extensions)
     const skillPaths = resolvePluginPaths(rootDir, pi?.skills)
-    candidates.push({
+    plugins.push({
+      id,
+      rootDir,
+      version,
+      boring,
+      hasBoring,
+      ...(pi ? { pi } : {}),
+      ...(frontPath ? { frontPath, frontUrl: `/@fs/${frontPath}` } : {}),
+      ...(serverPath ? { serverPath } : {}),
+      ...(extensionPaths.length > 0 ? { extensionPaths } : {}),
+      ...(skillPaths.length > 0 ? { skillPaths } : {}),
       source,
-      plugin: {
-        id,
-        rootDir,
-        version,
-        boring,
-        ...(pi ? { pi } : {}),
-        ...(frontPath ? { frontPath, frontUrl: `/@fs/${frontPath}` } : {}),
-        ...(serverPath ? { serverPath } : {}),
-        ...(extensionPaths.length > 0 ? { extensionPaths } : {}),
-        ...(skillPaths.length > 0 ? { skillPaths } : {}),
-        source,
-      },
     })
   }
 
-  const selected = selectPluginCandidates(candidates)
-  errors.push(...selected.errors)
   const preflight = { ok: errors.length === 0, errors }
-  return { preflight, plugins: selected.plugins }
+  return { preflight, plugins }
 }
 
 export function preflightBoringPlugins(pluginDirs: BoringPluginSourceInput[]): BoringPluginPreflightResult {
@@ -299,7 +274,7 @@ export function preflightBoringPlugins(pluginDirs: BoringPluginSourceInput[]): B
 
 export function readBoringPlugins(pluginDirs: BoringPluginSourceInput[]): BoringServerPluginManifest[] {
   const scan = scanBoringPlugins(pluginDirs)
-  return scan.preflight.ok ? scan.plugins : []
+  return scan.preflight.ok ? scan.plugins.filter((plugin) => plugin.hasBoring) : []
 }
 
 export function pluginRootFromExtensionPath(extensionPath: string): string {

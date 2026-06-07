@@ -64,6 +64,17 @@ describe("buildBoringSystemPrompt", () => {
     expect(prompt).toContain("boring.server: true")
   })
 
+  test("teaches Pi extension tools with mandatory parameters schema", () => {
+    const prompt = buildBoringSystemPrompt({
+      scaffoldCommand: "boring-ui-plugin scaffold",
+      verifyCommand: "boring-ui-plugin verify",
+      boringPiRootOverride: FIXTURE_PI_ROOT,
+    })
+    expect(prompt).toContain('parameters: { type: "object", properties: {} }')
+    expect(prompt).toContain("parameters` is mandatory")
+    expect(prompt).not.toContain("pi.registerTool({ name, description, execute })")
+  })
+
   test("does NOT inline the canonical code blocks (scaffold owns the shape)", () => {
     const prompt = buildBoringSystemPrompt({
       scaffoldCommand: "boring-ui-plugin scaffold",
