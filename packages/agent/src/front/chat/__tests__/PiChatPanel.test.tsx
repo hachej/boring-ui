@@ -452,6 +452,27 @@ describe('PiChatPanel sandbox shell', () => {
     expect(screen.queryByText('What are we building?')).toBeNull()
   })
 
+  test('shows loading instead of empty suggestions before selected session state is available', async () => {
+    const remote = {
+      dispose: vi.fn(),
+      getState: vi.fn(() => undefined),
+      subscribe: vi.fn(() => () => {}),
+    } as unknown as RemotePiSession
+    const createRemoteSession = vi.fn(() => remote)
+
+    render(
+      <PiChatPanel
+        sessionId="pi-1"
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        createRemoteSession={createRemoteSession}
+      />,
+    )
+
+    expect(await screen.findByText(/Loading chat history/)).toBeTruthy()
+    expect(screen.queryByText('What are we building?')).toBeNull()
+  })
+
   test('keeps an external Pi session stable when equal request headers are recreated', async () => {
     const remote = new FakeRemotePiSession(remoteState({ sessionId: 'pi-1' }))
     const createRemoteSession = remoteFactory(remote)

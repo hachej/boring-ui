@@ -251,6 +251,7 @@ export function PiChatPanel({
   const selectedChatState = activeSessionId && chatState?.sessionId !== activeSessionId ? undefined : chatState
   const selectedPiSession = selectedChatState ? activePiSession : undefined
   const chatStatePending = Boolean(activeSessionId && chatState && chatState.sessionId !== activeSessionId)
+  const selectedSessionPending = Boolean(activeSessionId && !selectedChatState)
   const modelDiscovery = useChatModelSelection({
     apiBaseUrl,
     defaultModel,
@@ -362,7 +363,7 @@ export function PiChatPanel({
   const queuePreview = selectedChatState ? selectQueuePreview(selectedChatState) : []
   const messages = canonicalMessages
   const userHistory = useMemo(() => selectComposerHistoryFromCanonicalUsers(canonicalMessages), [canonicalMessages])
-  const emptyStateHydrating = statusForState(selectedChatState, sessionsLoading || chatStatePending) === 'hydrating'
+  const emptyStateHydrating = statusForState(selectedChatState, sessionsLoading || chatStatePending || selectedSessionPending) === 'hydrating'
   const emptyHero = emptyPlacement === 'hero' && messages.length === 0 && queuePreview.length === 0 && !emptyStateHydrating
   const debugState = selectedPiSession?.getDebugState()
   const composerBlocked = workspaceWarmupBlocked || activeBlockers.length > 0
@@ -728,7 +729,7 @@ export function PiChatPanel({
     }
   }, [activeSessionId, initialDraft, onDraftRestored, setComposerDraft])
 
-  const remoteStatus: PiChatStatus = selectedChatState?.status ?? (sessionsLoading || chatStatePending ? 'hydrating' : 'idle')
+  const remoteStatus: PiChatStatus = selectedChatState?.status ?? (sessionsLoading || chatStatePending || selectedSessionPending ? 'hydrating' : 'idle')
   const status: PiChatStatus =
     localSubmittedSessionId === activeSessionId && remoteStatus === 'idle'
       ? 'submitted'

@@ -44,6 +44,9 @@ function openNdjsonStream() {
     write(frame: unknown) {
       controller?.enqueue(encoder.encode(`${JSON.stringify(frame)}\n`))
     },
+    error(error: unknown) {
+      controller?.error(error)
+    },
     close() {
       controller?.close()
     },
@@ -103,6 +106,23 @@ function deferred<T>() {
     reject = nextReject
   })
   return { promise, resolve, reject }
+}
+
+function installWindowLifecycleStub() {
+  const listeners = new Map<string, Set<EventListener>>()
+  const addEventListener = vi.fn((type: string, listener: EventListener) => {
+    const current = listeners.get(type) ?? new Set<EventListener>()
+    current.add(listener)
+    listeners.set(type, current)
+  })
+  const removeEventListener = vi.fn((type: string, listener: EventListener) => {
+    listeners.get(type)?.delete(listener)
+  })
+  const dispatch = (type: string) => {
+    for (const listener of listeners.get(type) ?? []) listener(new Event(type))
+  }
+  vi.stubGlobal('window', { addEventListener, removeEventListener })
+  return { addEventListener, removeEventListener, dispatch }
 }
 
 afterEach(() => {
@@ -510,6 +530,30 @@ describe('RemotePiSession', () => {
     expect(session.getDebugState().hasReconnectTimer).toBe(false)
     expect(timers.size).toBe(0)
     expect(clearTimeoutCalls).toBe(1)
+  })
+
+  it('ignores event stream closure while the page is unloading', async () => {
+    const lifecycle = installWindowLifecycleStub()
+    const events = openNdjsonStream()
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/state')) return jsonResponse(snapshot({ seq: 5, status: 'idle', activeTurnId: undefined }))
+      if (url.endsWith('/events?cursor=5')) return new Response(events.stream)
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock)
+
+    await waitUntil(() => session.getState().connection.state === 'connected')
+
+    lifecycle.dispatch('pagehide')
+    events.error(new Error('Error in input stream'))
+    await flushPromises()
+
+    expect(session.getState().notices.some((notice) => notice.id === 'protocol-error')).toBe(false)
+    expect(session.getDebugState().hasReconnectTimer).toBe(false)
+
+    lifecycle.dispatch('pageshow')
+    session.dispose()
+    vi.unstubAllGlobals()
   })
 
   it('does not start fetches from commands after dispose', async () => {

@@ -41,7 +41,9 @@ export async function startPlaygroundServer(): Promise<void> {
   if (agentBoot) return agentBoot
   agentBoot = (async () => {
     const workspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT ?? WORKSPACE_DIR
-    seedWorkspaceFromFixtures(workspaceRoot)
+    if (process.env.BORING_WORKSPACE_PLAYGROUND_SEED_FIXTURES !== "0") {
+      seedWorkspaceFromFixtures(workspaceRoot)
+    }
     console.log(`[workspace-playground] workspace root: ${workspaceRoot}`)
     const app = await createWorkspaceAgentServer({
       workspaceRoot,

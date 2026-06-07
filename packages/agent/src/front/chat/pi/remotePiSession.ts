@@ -37,6 +37,9 @@ const DEFAULT_RECONNECT_MAX_MS = 30_000
 const DEFAULT_LARGE_STATE_WARNING_BYTES = 5 * 1024 * 1024
 const DEFAULT_LARGE_STATE_WARNING_MESSAGES = 300
 const EVENT_TYPE_RING_LIMIT = 20
+let pageLifecycleInstalled = false
+let pageUnloading = false
+let pageUnloadResetTimer: ReturnType<typeof globalThis.setTimeout> | undefined
 
 export interface RemotePiSessionHeaders {
   [key: string]: string | undefined
@@ -127,6 +130,7 @@ export class RemotePiSession {
   private largeStateWarning?: RemotePiSessionLargeStateWarning
 
   constructor(private readonly options: RemotePiSessionOptions) {
+    ensurePageLifecycleListeners()
     this.apiBaseUrl = options.apiBaseUrl?.replace(/\/$/, '') ?? ''
     this.storageScope = options.storageScope ?? ''
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis)
@@ -385,12 +389,12 @@ export class RemotePiSession {
         },
       })
 
-      if (this.isStreamActive(generation, runId)) {
+      if (this.isStreamActive(generation, runId) && !pageUnloading) {
         this.scheduleReconnect(generation)
       }
     } catch (error) {
       markOpen()
-      if (!this.isStreamActive(generation, runId) || isAbortError(error)) return
+      if (!this.isStreamActive(generation, runId) || shouldIgnoreStreamClose(error, controller)) return
       this.dispatchProtocolError(errorMessage(error, 'Pi chat event stream disconnected.'))
       this.scheduleReconnect(generation)
     }
@@ -615,4 +619,34 @@ function abortError(message: string): DOMException {
 
 function isAbortError(error: unknown): boolean {
   return (error instanceof DOMException && error.name === 'AbortError') || (error instanceof Error && error.name === 'AbortError')
+}
+
+function shouldIgnoreStreamClose(error: unknown, controller: AbortController): boolean {
+  return controller.signal.aborted || pageUnloading || isAbortError(error)
+}
+
+function ensurePageLifecycleListeners(): void {
+  if (pageLifecycleInstalled || typeof window === 'undefined') return
+  pageLifecycleInstalled = true
+  window.addEventListener('pagehide', markPageUnloading)
+  window.addEventListener('beforeunload', markPageUnloading)
+  window.addEventListener('pageshow', clearPageUnloading)
+}
+
+function markPageUnloading(): void {
+  pageUnloading = true
+  if (pageUnloadResetTimer !== undefined) globalThis.clearTimeout(pageUnloadResetTimer)
+  // A beforeunload handler elsewhere can cancel navigation; recover if the page stays alive.
+  pageUnloadResetTimer = globalThis.setTimeout(() => {
+    pageUnloading = false
+    pageUnloadResetTimer = undefined
+  }, 5_000)
+}
+
+function clearPageUnloading(): void {
+  if (pageUnloadResetTimer !== undefined) {
+    globalThis.clearTimeout(pageUnloadResetTimer)
+    pageUnloadResetTimer = undefined
+  }
+  pageUnloading = false
 }
