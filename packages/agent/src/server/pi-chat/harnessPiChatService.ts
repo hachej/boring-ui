@@ -1,6 +1,7 @@
 import type { AgentHarness, RunContext, SendMessageInput } from '../../shared/harness'
 import type { SessionStore } from '../../shared/session'
-import type { FollowUpPayload, FollowUpReceipt, InterruptPayload, PiChatEvent, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
+import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, FollowUpReceipt, InterruptPayload, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
+import { ErrorCode } from '../../shared/error-codes'
 import type { PiChatSessionService, PiChatEventSubscriber, PiChatEventStreamResult } from '../http/routes/piChat'
 import type { PiSessionCreateInit, PiSessionRequestContext } from './piSessionIdentity'
 import type { PiAgentPromptInput, PiAgentSessionAdapter } from './PiAgentSessionAdapter'
@@ -17,8 +18,14 @@ interface LiveSessionChannel {
   buffer: PiChatReplayBuffer
   adapter: PiAgentSessionAdapter
   unsubscribe: () => void
+  mapper: PiChatEventMapper
   activeTurnId?: string
   messageTurnIds: Map<string, string>
+}
+
+interface SyntheticPromptFailure {
+  message: BoringChatMessage
+  error: ChatError
 }
 
 export interface HarnessPiChatServiceOptions {
@@ -34,6 +41,8 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly channels = new Map<string, LiveSessionChannel>()
   private readonly messageMetadata = new PiChatMessageMetadataReconciler()
   private readonly activePromptRuns = new Map<string, Promise<void>>()
+  private readonly syntheticPromptFailures = new Map<string, SyntheticPromptFailure[]>()
+  private readonly activeSyntheticPromptErrors = new Map<string, ChatError>()
 
   constructor(options: HarnessPiChatServiceOptions) {
     this.harness = options.harness as PiNativeHarness
@@ -53,18 +62,21 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.channels.get(sessionId)?.unsubscribe()
     this.channels.delete(sessionId)
     this.messageMetadata.clearSession(sessionId)
+    this.syntheticPromptFailures.delete(sessionId)
+    this.activeSyntheticPromptErrors.delete(sessionId)
     await this.sessionStore.delete(toSessionCtx(ctx), sessionId)
   }
 
   async readState(ctx: PiSessionRequestContext, sessionId: string) {
     const adapter = await this.getAdapter(ctx, sessionId, '')
     const channel = this.channels.get(sessionId)
-    return this.messageMetadata.enrichSnapshot(sessionId, buildPiChatSnapshot(adapter, {
+    const snapshot = this.messageMetadata.enrichSnapshot(sessionId, buildPiChatSnapshot(adapter, {
       seq: channel?.buffer.latestSeq ?? 0,
       sessionId,
       activeTurnId: channel?.activeTurnId,
       messageTurnIds: channel?.messageTurnIds,
     }))
+    return this.enrichSyntheticPromptFailures(sessionId, snapshot)
   }
 
   async subscribe(ctx: PiSessionRequestContext, sessionId: string, cursor: number, subscriber: PiChatEventSubscriber): Promise<PiChatEventStreamResult> {
@@ -78,13 +90,19 @@ export class HarnessPiChatService implements PiChatSessionService {
     const adapter = await this.getAdapter(ctx, sessionId, payload)
     await this.ensureChannel(ctx, sessionId, adapter)
     this.messageMetadata.recordPrompt(sessionId, payload)
+    const channel = this.channels.get(sessionId)
+    const receiptCursor = nextPromptReceiptCursor(channel)
     try {
-      await this.runPrompt(sessionId, adapter, toPiPromptInput(payload))
+      const run = this.trackActiveRun(sessionId, adapter.prompt(toPiPromptInput(payload)))
+      run.catch((error) => {
+        if (!this.messageMetadata.hasPrompt(sessionId, { clientNonce: payload.clientNonce, displayText: payload.displayMessage ?? payload.message })) return
+        this.publishPromptRunError(sessionId, channel, payload, error)
+      })
     } catch (err) {
       this.messageMetadata.removePrompt(sessionId, { clientNonce: payload.clientNonce })
       throw err
     }
-    return { accepted: true, cursor: this.channels.get(sessionId)?.buffer.latestSeq ?? 0, clientNonce: payload.clientNonce }
+    return { accepted: true, cursor: receiptCursor, clientNonce: payload.clientNonce }
   }
 
   async followUp(ctx: PiSessionRequestContext, sessionId: string, payload: FollowUpPayload): Promise<FollowUpReceipt> {
@@ -213,6 +231,68 @@ export class HarnessPiChatService implements PiChatSessionService {
     return Boolean(this.harness.clearFollowUp && hasFollowUpSelector(followUp)) || adapter.readSnapshot().followUpMessages.length <= 1
   }
 
+  private enrichSyntheticPromptFailures(sessionId: string, snapshot: PiChatSnapshot): PiChatSnapshot {
+    const failures = this.syntheticPromptFailures.get(sessionId)
+    if (!failures || failures.length === 0) return snapshot
+    const activeError = this.activeSyntheticPromptErrors.get(sessionId)
+    return {
+      ...snapshot,
+      status: activeError ? 'error' : snapshot.status,
+      error: activeError ?? snapshot.error,
+      messages: mergeSyntheticMessages(snapshot.messages, failures.map((failure) => failure.message)),
+    }
+  }
+
+  private publishChannelEvent(sessionId: string, channel: LiveSessionChannel, event: PiChatEvent): void {
+    if (event.type === 'agent-start') {
+      channel.activeTurnId = event.turnId
+      this.activeSyntheticPromptErrors.delete(sessionId)
+    }
+    if (event.type === 'message-start' && channel.activeTurnId) {
+      channel.messageTurnIds.set(event.messageId, channel.activeTurnId)
+    }
+    if (event.type === 'message-end' && channel.activeTurnId) {
+      channel.messageTurnIds.set(event.messageId, channel.activeTurnId)
+      channel.messageTurnIds.set(event.final.id, channel.activeTurnId)
+    }
+    if (event.type === 'agent-end' && channel.activeTurnId === event.turnId) channel.activeTurnId = undefined
+    this.messageMetadata.consumeEvent(sessionId, event)
+    channel.buffer.publish(event)
+  }
+
+  private publishPromptRunError(sessionId: string, channel: LiveSessionChannel | undefined, payload: PromptPayload, error: unknown): void {
+    if (!channel) return
+    const createdAt = new Date().toISOString()
+    const messageId = `prompt-error:${payload.clientNonce}:user`
+    const message = promptPayloadMessage(payload, messageId, createdAt, channel.activeTurnId)
+    this.publishChannelEvent(sessionId, channel, channel.mapper.mapSynthetic({
+      type: 'message-start',
+      messageId,
+      role: 'user',
+      clientNonce: payload.clientNonce,
+      text: payload.displayMessage ?? payload.message,
+      files: promptPayloadFileParts(payload, messageId),
+      createdAt,
+    }))
+    const promptError: ChatError = {
+      code: ErrorCode.enum.INTERNAL_ERROR,
+      message: error instanceof Error && error.message ? error.message : 'Prompt failed before the agent run completed.',
+      retryable: false,
+    }
+    const errorEvent = channel.mapper.mapSynthetic({
+      type: 'error',
+      turnId: channel.activeTurnId,
+      retryable: false,
+      error: promptError,
+    })
+    this.publishChannelEvent(sessionId, channel, errorEvent)
+    const failures = this.syntheticPromptFailures.get(sessionId) ?? []
+    failures.push({ message, error: promptError })
+    this.syntheticPromptFailures.set(sessionId, failures)
+    this.activeSyntheticPromptErrors.set(sessionId, promptError)
+    channel.activeTurnId = undefined
+  }
+
   private async getAdapter(ctx: PiSessionRequestContext, sessionId: string, input: string | PromptPayload): Promise<PiAgentSessionAdapter> {
     if (!this.harness.getPiSessionAdapter) throw new Error('pi-native harness adapter unavailable')
     const message = typeof input === 'string' ? input : input.message
@@ -242,21 +322,11 @@ export class HarnessPiChatService implements PiChatSessionService {
     if (existing) return existing
     const buffer = new PiChatReplayBuffer()
     const mapper = new PiChatEventMapper({ sessionId, initialSeq: buffer.latestSeq })
-    const channel: LiveSessionChannel = { buffer, adapter, unsubscribe: () => {}, messageTurnIds: new Map() }
+    const channel: LiveSessionChannel = { buffer, adapter, unsubscribe: () => {}, mapper, messageTurnIds: new Map() }
     const unsubscribe = adapter.subscribe((event) => {
       for (const mapped of mapper.map(event)) {
         const enriched = this.messageMetadata.enrichEvent(sessionId, mapped)
-        if (enriched.type === 'agent-start') channel.activeTurnId = enriched.turnId
-        if (enriched.type === 'message-start' && channel.activeTurnId) {
-          channel.messageTurnIds.set(enriched.messageId, channel.activeTurnId)
-        }
-        if (enriched.type === 'message-end' && channel.activeTurnId) {
-          channel.messageTurnIds.set(enriched.messageId, channel.activeTurnId)
-          channel.messageTurnIds.set(enriched.final.id, channel.activeTurnId)
-        }
-        if (enriched.type === 'agent-end' && channel.activeTurnId === enriched.turnId) channel.activeTurnId = undefined
-        this.messageMetadata.consumeEvent(sessionId, enriched)
-        buffer.publish(enriched)
+        this.publishChannelEvent(sessionId, channel, enriched)
       }
     })
     channel.unsubscribe = unsubscribe
@@ -267,6 +337,59 @@ export class HarnessPiChatService implements PiChatSessionService {
 }
 
 class AutoPostFollowUpError extends Error {}
+
+function nextPromptReceiptCursor(channel: LiveSessionChannel | undefined): number {
+  return (channel?.buffer.latestSeq ?? 0) + 1
+}
+
+function promptPayloadFileParts(payload: PromptPayload, messageId: string): BoringChatPart[] | undefined {
+  if (!payload.attachments || payload.attachments.length === 0) return undefined
+  return payload.attachments.map((attachment, index) => ({
+    type: 'file',
+    id: `${messageId}:file:${index}`,
+    filename: attachment.filename,
+    mediaType: attachment.mediaType,
+    url: attachment.url,
+  }))
+}
+
+function promptPayloadMessage(payload: PromptPayload, messageId: string, createdAt: string, turnId: string | undefined): BoringChatMessage {
+  const displayText = payload.displayMessage ?? payload.message
+  return {
+    id: messageId,
+    role: 'user',
+    status: 'done',
+    clientNonce: payload.clientNonce,
+    createdAt,
+    turnId,
+    parts: [
+      ...(displayText ? [{ type: 'text' as const, id: `${messageId}:text:0`, text: displayText }] : []),
+      ...(promptPayloadFileParts(payload, messageId) ?? []),
+    ],
+  }
+}
+
+function mergeSyntheticMessages(messages: BoringChatMessage[], syntheticMessages: BoringChatMessage[]): BoringChatMessage[] {
+  const existingIds = new Set(messages.map((message) => message.id))
+  const merged = [...messages]
+  for (const synthetic of syntheticMessages) {
+    if (existingIds.has(synthetic.id)) continue
+    const syntheticTime = messageTime(synthetic)
+    const insertAt = syntheticTime === undefined ? -1 : merged.findIndex((message) => {
+      const timestamp = messageTime(message)
+      return timestamp !== undefined && timestamp > syntheticTime
+    })
+    if (insertAt < 0) merged.push(synthetic)
+    else merged.splice(insertAt, 0, synthetic)
+  }
+  return merged
+}
+
+function messageTime(message: BoringChatMessage): number | undefined {
+  if (!message.createdAt) return undefined
+  const timestamp = Date.parse(message.createdAt)
+  return Number.isFinite(timestamp) ? timestamp : undefined
+}
 
 function toPiPromptInput(payload: PromptPayload): PiAgentPromptInput {
   const images = promptImagesFromAttachments(payload.attachments)

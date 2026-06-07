@@ -57,18 +57,21 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
       >
         {fileParts.length > 0 ? (
           <Attachments
-            variant="list"
+            variant={role === 'user' ? 'inline' : 'list'}
             className={cn(
-              'gap-1.5',
+              role === 'user' ? 'mb-2 w-full gap-2' : 'gap-1.5',
               role === 'user'
-                ? '[&>div]:border-0 [&>div]:bg-transparent [&>div]:px-0 [&>div]:py-1 [&>div:hover]:bg-transparent'
+                ? '[&>div]:max-w-full [&>div]:border-input/60 [&>div]:bg-background/35 [&>div]:px-1.5 [&>div]:text-secondary-foreground [&>div:hover]:bg-background/45'
                 : undefined,
             )}
           >
             {fileParts.map((file, index) => (
-              <Attachment key={`file-${message.id}-${index}`} data={toAttachmentData(file, `file-${message.id}-${index}`)}>
-                <AttachmentPreview className="size-10 shrink-0 rounded-[var(--radius-md)]" />
-                <AttachmentInfo className="min-w-0 flex-1" />
+              <Attachment
+                key={`file-${message.id}-${index}`}
+                data={toAttachmentData(file, `file-${message.id}-${index}`)}
+              >
+                <AttachmentPreview className={role === 'user' ? '!size-5 shrink-0 rounded-[var(--radius-sm)]' : 'size-10 shrink-0 rounded-[var(--radius-md)]'} />
+                <AttachmentInfo className={role === 'user' ? 'min-w-0 max-w-[220px] flex-1 text-[12px]' : 'min-w-0 flex-1'} />
               </Attachment>
             ))}
           </Attachments>
@@ -91,6 +94,8 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
             )
           }
           if (item.part.type === 'text') {
+            const text = textForMessageDisplay(item.part.text, role)
+            if (!text) return null
             return (
               <div key={item.key} data-boring-agent-part="message-text">
                 <MessageResponse
@@ -109,7 +114,7 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
                     'prose-pre:bg-transparent prose-pre:p-0',
                   )}
                 >
-                  {item.part.text}
+                  {text}
                 </MessageResponse>
               </div>
             )
@@ -219,6 +224,22 @@ function NoticeBubble({ level, text }: { level: 'info' | 'warning' | 'error'; te
       </div>
     </div>
   )
+}
+
+function textForMessageDisplay(text: string, role: BoringChatMessage['role']): string {
+  if (role !== 'user') return text
+  return stripAttachmentSummaryBlocks(text)
+}
+
+function stripAttachmentSummaryBlocks(text: string): string {
+  const lines = text.split('\n')
+  const firstSummaryIndex = lines.findIndex(isAttachmentSummaryLine)
+  if (firstSummaryIndex < 0) return text
+  return lines.slice(0, firstSummaryIndex).join('\n').trim()
+}
+
+function isAttachmentSummaryLine(line: string): boolean {
+  return /^\[attached: .+ \(.+\)\]$/.test(line.trim())
 }
 
 function MessageActionsBar({

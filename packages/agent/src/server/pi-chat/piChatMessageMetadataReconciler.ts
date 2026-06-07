@@ -56,6 +56,13 @@ export class PiChatMessageMetadataReconciler {
     else this.promptMetadata.delete(sessionId)
   }
 
+  hasPrompt(sessionId: string, selector: { clientNonce?: string; displayText?: string }): boolean {
+    const metadata = this.promptMetadata.get(sessionId)
+    if (!metadata) return false
+    if (selector.clientNonce) return metadata.some((entry) => entry.clientNonce === selector.clientNonce)
+    return metadata.some((entry) => matchesMetadataText(entry, selector.displayText))
+  }
+
   recordFollowUp(sessionId: string, payload: FollowUpPayload): void {
     const metadata = this.followUpMetadata.get(sessionId) ?? []
     const displayText = payload.displayMessage ?? payload.message

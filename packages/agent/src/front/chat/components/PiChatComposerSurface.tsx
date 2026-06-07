@@ -296,7 +296,7 @@ export function PiChatComposerSurface({
           chrome ? 'max-w-3xl bg-transparent shadow-[0_1px_2px_-1px_oklch(0_0_0/0.06),0_6px_18px_-12px_oklch(0_0_0/0.12),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.7)] focus-within:shadow-[0_1px_3px_-1px_oklch(0_0_0/0.08),0_10px_28px_-14px_oklch(0_0_0/0.16),inset_0_0_0_1px_oklch(from_var(--accent)_l_c_h/0.45)]' : 'max-w-[680px] bg-transparent shadow-[inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.7)] focus-within:shadow-[inset_0_0_0_1px_oklch(from_var(--accent)_l_c_h/0.45)]',
           'transition-shadow duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]',
           '[&_[data-slot=input-group]]:!h-auto [&_[data-slot=input-group]]:!min-h-[var(--composer-input-group-height)]',
-          '[&_[data-slot=input-group]]:!flex-row [&_[data-slot=input-group]]:!items-center [&_[data-slot=input-group]]:!overflow-hidden',
+          '[&_[data-slot=input-group]]:!flex-col [&_[data-slot=input-group]]:!items-stretch [&_[data-slot=input-group]]:!overflow-hidden',
           '[&_[data-slot=input-group]]:!border-0 [&_[data-slot=input-group]]:!rounded-[28px]',
           '[&_[data-slot=input-group]]:!bg-transparent [&_[data-slot=input-group]]:!shadow-none',
           '[&_[data-slot=input-group]]:dark:!bg-transparent [&_[data-slot=input-group]]:!ring-0',
@@ -319,55 +319,60 @@ export function PiChatComposerSurface({
           }}
         >
           <AttachmentsList />
-          <div className="flex h-14 shrink-0 items-center pl-2">
-            <AttachmentButton disabled={disabled || isStreaming} />
-          </div>
-          <PromptInputTextarea
-            value={draft}
-            placeholder={composerBlocked ? composerBlockerLabel : composerPlaceholder ?? 'Ask anything…'}
-            disabled={disabled}
-            readOnly={composerBlocked}
-            aria-label="Agent prompt"
-            ref={(node) => {
-              textareaRef.current = node
-              resizeTextarea(node)
-            }}
-            onChange={onTextareaChange}
-            onKeyDown={onTextareaKeyDown}
-            style={{ fieldSizing: 'fixed' } as CSSProperties}
-            className={cn(
-              'min-w-0 flex-1 !min-h-10 !max-h-40 resize-none overflow-hidden border-0 bg-transparent shadow-none',
-              '[field-sizing:fixed]',
-              'px-2 py-2 text-[13px] leading-6',
-              'placeholder:text-muted-foreground/45',
-              'focus-visible:ring-0 focus-visible:ring-offset-0',
-            )}
-          />
-          <PromptInputFooter
-            align="inline-end"
-            data-boring-agent-part="composer-submit-addon"
-            className="!order-none !w-auto shrink-0 self-center justify-between border-0 bg-transparent !px-2 !py-0"
+          <div
+            data-boring-agent-part="composer-input-row"
+            className="flex min-h-[var(--composer-input-group-height)] w-full items-center"
           >
-            <div className="ml-auto flex items-center gap-1.5">
-              <PromptInputSubmit
-                data-boring-agent-part="composer-submit"
-                status={submitStatus}
-                onStop={onStop}
-                disabled={submitDisabled}
-                className={cn(
-                  'h-8 w-8 shrink-0 rounded-full',
-                  'bg-foreground',
-                  '!text-background',
-                  'transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]',
-                  'hover:bg-foreground/90 hover:shadow-[0_0_0_3px_oklch(from_var(--foreground)_l_c_h/0.12)] hover:scale-[1.04]',
-                  'active:scale-[0.93] active:brightness-95',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20',
-                  'disabled:pointer-events-none disabled:opacity-40',
-                  '[&>svg]:size-3.5',
-                )}
-              />
+            <div className="flex h-14 shrink-0 items-center pl-2">
+              <AttachmentButton disabled={disabled || isStreaming} />
             </div>
-          </PromptInputFooter>
+            <PromptInputTextarea
+              value={draft}
+              placeholder={composerBlocked ? composerBlockerLabel : composerPlaceholder ?? 'Ask anything…'}
+              disabled={disabled}
+              readOnly={composerBlocked}
+              aria-label="Agent prompt"
+              ref={(node) => {
+                textareaRef.current = node
+                resizeTextarea(node)
+              }}
+              onChange={onTextareaChange}
+              onKeyDown={onTextareaKeyDown}
+              style={{ fieldSizing: 'fixed' } as CSSProperties}
+              className={cn(
+                'min-w-0 flex-1 !min-h-10 !max-h-40 resize-none overflow-hidden border-0 bg-transparent shadow-none',
+                '[field-sizing:fixed]',
+                'px-2 py-2 text-[13px] leading-6',
+                'placeholder:text-muted-foreground/45',
+                'focus-visible:ring-0 focus-visible:ring-offset-0',
+              )}
+            />
+            <PromptInputFooter
+              align="inline-end"
+              data-boring-agent-part="composer-submit-addon"
+              className="!order-none !w-auto shrink-0 self-center justify-between border-0 bg-transparent !px-2 !py-0"
+            >
+              <div className="ml-auto flex items-center gap-1.5">
+                <PromptInputSubmit
+                  data-boring-agent-part="composer-submit"
+                  status={submitStatus}
+                  onStop={onStop}
+                  disabled={submitDisabled}
+                  className={cn(
+                    'h-8 w-8 shrink-0 rounded-full',
+                    'bg-foreground',
+                    '!text-background',
+                    'transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]',
+                    'hover:bg-foreground/90 hover:shadow-[0_0_0_3px_oklch(from_var(--foreground)_l_c_h/0.12)] hover:scale-[1.04]',
+                    'active:scale-[0.93] active:brightness-95',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20',
+                    'disabled:pointer-events-none disabled:opacity-40',
+                    '[&>svg]:size-3.5',
+                  )}
+                />
+              </div>
+            </PromptInputFooter>
+          </div>
         </PromptInput>
       </div>
       <div

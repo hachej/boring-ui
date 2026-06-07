@@ -273,6 +273,29 @@ async function waitForEvents(events: PiChatEvent[], label: string, predicate: ()
   throw new Error(`Timed out waiting for ${label}: ${JSON.stringify(summary)}`)
 }
 
+async function waitForState(
+  service: HarnessPiChatService,
+  label: string,
+  predicate: (state: Awaited<ReturnType<HarnessPiChatService['readState']>>) => boolean,
+): Promise<Awaited<ReturnType<HarnessPiChatService['readState']>>> {
+  const deadline = Date.now() + 1_000
+  let latest = await service.readState(ctx, 's1')
+  while (Date.now() < deadline) {
+    latest = await service.readState(ctx, 's1')
+    if (predicate(latest)) return latest
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  throw new Error(`Timed out waiting for ${label}: ${JSON.stringify({
+    status: latest.status,
+    messages: latest.messages.map((message) => ({
+      id: message.id,
+      role: message.role,
+      status: message.status,
+      parts: message.parts.map((part) => part.type),
+    })),
+  })}`)
+}
+
 describe('HarnessPiChatService real Pi loop', () => {
   it('projects Pi provider tool-use, tool result, and continued final text through the service', async () => {
     const { adapter, providerCalls, toolCalls } = await createRealPiAdapter()
@@ -290,6 +313,12 @@ describe('HarnessPiChatService real Pi loop', () => {
       message: 'run the probe',
       clientNonce: 'nonce-real-loop',
     })
+    await waitForEvents(events, 'real Pi loop final text', () => events.some((event) =>
+      event.type === 'message-part-end' &&
+      event.messageId === 'assistant-final' &&
+      event.kind === 'text' &&
+      event.text === 'REAL_LOOP_DONE'
+    ))
 
     expect(providerCalls).toHaveLength(2)
     expect(toolCalls).toEqual([{ toolCallId: 'tool-1', params: { query: 'status' } }])
@@ -340,6 +369,12 @@ describe('HarnessPiChatService real Pi loop', () => {
       message: 'run the failing probe',
       clientNonce: 'nonce-real-loop-error',
     })
+    await waitForEvents(events, 'failed real Pi tool loop final text', () => events.some((event) =>
+      event.type === 'message-part-end' &&
+      event.messageId === 'assistant-after-error' &&
+      event.kind === 'text' &&
+      event.text === 'ERROR_LOOP_DONE'
+    ))
 
     expect(providerCalls).toHaveLength(2)
     expect(toolCalls).toEqual([{ toolCallId: 'tool-error', params: { query: 'fail' } }])
@@ -393,6 +428,12 @@ describe('HarnessPiChatService real Pi loop', () => {
       message: 'run both probes',
       clientNonce: 'nonce-real-loop-multi',
     })
+    await waitForEvents(events, 'multi-tool real Pi loop final text', () => events.some((event) =>
+      event.type === 'message-part-end' &&
+      event.messageId === 'assistant-after-tools' &&
+      event.kind === 'text' &&
+      event.text === 'MULTI_LOOP_DONE'
+    ))
 
     expect(providerCalls).toHaveLength(2)
     expect(toolCalls).toEqual(expect.arrayContaining([
@@ -450,6 +491,10 @@ describe('HarnessPiChatService real Pi loop', () => {
 
     await expect(service.interrupt(ctx, 's1', {})).resolves.toMatchObject({ accepted: true })
     await promptPromise
+    await waitForEvents(events, 'interrupted real Pi tool abort', () => events.some((event) =>
+      event.type === 'agent-end' &&
+      event.status === 'aborted'
+    ))
 
     expect(providerCalls).toHaveLength(2)
     expect(toolCalls).toEqual([{ toolCallId: 'tool-abort', params: { query: 'wait-abort' } }])
@@ -719,6 +764,13 @@ describe('HarnessPiChatService real Pi loop', () => {
       message: 'run then reload',
       clientNonce: 'nonce-real-loop-reload',
     })
+    await waitForState(service, 'completed real Pi loop before reload', (state) =>
+      state.status === 'idle' &&
+      state.messages.some((message) =>
+        message.id === 'assistant-after-reload-tool' &&
+        message.parts.some((part) => part.type === 'text' && part.text === 'RELOAD_LOOP_DONE')
+      )
+    )
 
     // This simulates browser/service reload over the same live Pi session. It
     // does not prove JSONL cold-restart persistence.

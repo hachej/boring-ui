@@ -1,4 +1,4 @@
-import type { ComponentPropsWithoutRef } from 'react'
+import type { ComponentPropsWithoutRef, RefObject } from 'react'
 import { forwardRef, useEffect, useRef, useState } from 'react'
 import { CheckIcon, ChevronDownIcon, EyeIcon, EyeOffIcon } from 'lucide-react'
 import {
@@ -81,6 +81,24 @@ function selectorItemClass(selected: boolean) {
 
 function isTextInputTarget(target: EventTarget | null): boolean {
   return target instanceof HTMLInputElement
+}
+
+function useDismissOnOutsidePointer(ref: RefObject<HTMLElement | null>, onClose?: () => void) {
+  useEffect(() => {
+    if (!onClose) return
+    const handler = (event: PointerEvent | MouseEvent) => {
+      const target = event.target
+      if (target instanceof Node && ref.current?.contains(target)) return
+      if (target instanceof Element && target.closest('[data-boring-agent-part="model-select"], [data-boring-agent-part="thinking-select"]')) return
+      onClose()
+    }
+    window.addEventListener('pointerdown', handler, { capture: true })
+    window.addEventListener('mousedown', handler, { capture: true })
+    return () => {
+      window.removeEventListener('pointerdown', handler, { capture: true })
+      window.removeEventListener('mousedown', handler, { capture: true })
+    }
+  }, [onClose, ref])
 }
 
 /**
@@ -238,6 +256,8 @@ export function ModelPickerMenu({
     : 0
   const [activeIndex, setActiveIndex] = useState(selectedIndex)
   const activeIndexRef = useRef(selectedIndex)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  useDismissOnOutsidePointer(menuRef, onClose)
   const setKeyboardActiveIndex = (next: number | ((current: number) => number)) => {
     const resolved = typeof next === 'function' ? next(activeIndexRef.current) : next
     activeIndexRef.current = resolved
@@ -271,7 +291,7 @@ export function ModelPickerMenu({
   }, [activeIndex, disabled, keyboardOptions, onChange, onClose])
   const optionIndexes = new Map(groupedOptions.map((option, index) => [encodeModelKey(option), index + 1]))
   return (
-    <div data-boring-agent="" data-boring-agent-part="model-picker-menu" className={cn(composerPickerMenuClass, className)}>
+    <div ref={menuRef} data-boring-agent="" data-boring-agent-part="model-picker-menu" className={cn(composerPickerMenuClass, className)}>
       <Command className="bg-transparent text-[color:var(--popover-foreground)]">
         {menuOptions.length > 8 && (
           <div className="border-b border-border/60 px-2">
@@ -540,6 +560,8 @@ export function ThinkingPickerMenu({
   const selectedIndex = Math.max(0, THINKING_LEVELS.indexOf(value))
   const [activeIndex, setActiveIndex] = useState(selectedIndex)
   const activeIndexRef = useRef(selectedIndex)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  useDismissOnOutsidePointer(menuRef, onClose)
   const setKeyboardActiveIndex = (next: number | ((current: number) => number)) => {
     const resolved = typeof next === 'function' ? next(activeIndexRef.current) : next
     activeIndexRef.current = resolved
@@ -572,7 +594,7 @@ export function ThinkingPickerMenu({
     return () => window.removeEventListener('keydown', handler, { capture: true })
   }, [activeIndex, disabled, onChange, onClose])
   return (
-    <div data-boring-agent="" data-boring-agent-part="thinking-picker-menu" className={cn(composerPickerMenuClass, className)}>
+    <div ref={menuRef} data-boring-agent="" data-boring-agent-part="thinking-picker-menu" className={cn(composerPickerMenuClass, className)}>
       <Command className="bg-transparent text-[color:var(--popover-foreground)]">
         <CommandList className="max-h-[300px] p-0.5">
           {THINKING_LEVELS.map((level, index) => (

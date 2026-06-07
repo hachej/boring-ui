@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { describe, expect, test, vi } from 'vitest'
 import type { SessionSummary } from '../../../shared/session'
@@ -13,6 +13,8 @@ vi.stubGlobal('ResizeObserver', class {
   unobserve() {}
   disconnect() {}
 })
+Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:attachment') })
+Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
 Element.prototype.scrollIntoView = vi.fn()
 
 function session(id: string, title = `Session ${id}`): SessionSummary {
@@ -569,6 +571,27 @@ describe('PiChatPanel sandbox shell', () => {
     expect(attach.getAttribute('title')).toBe('Attachments are available when the composer is ready.')
   })
 
+  test('keeps attachment chips in their own composer row', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+    render(<PiChatPanel serverResourcesEnabled={false} storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={remoteFactory(remote)} />)
+
+    const textarea = await screen.findByLabelText('Agent prompt')
+    await waitFor(() => expect((textarea as HTMLTextAreaElement).disabled).toBe(false))
+    const file = new File(['png'], 'image.png', { type: 'image/png' })
+    const paste = createEvent.paste(textarea)
+    Object.defineProperty(paste, 'clipboardData', {
+      value: { items: [{ kind: 'file', getAsFile: () => file }] },
+    })
+    fireEvent(textarea, paste)
+
+    const attachmentRow = (await screen.findByText('image.png')).closest('[data-boring-agent-part="composer-attachment-row"]')
+    const inputRow = textarea.closest('[data-boring-agent-part="composer-input-row"]')
+    expect(attachmentRow).toBeTruthy()
+    expect(inputRow).toBeTruthy()
+    expect(inputRow?.contains(attachmentRow)).toBe(false)
+  })
+
   test('renders server queued follow-ups only in the composer banner', async () => {
     const remote = new FakeRemotePiSession(remoteState({
       status: 'streaming',
@@ -822,7 +845,16 @@ describe('PiChatPanel sandbox shell', () => {
     fireEvent.keyDown(textarea, { key: 'ArrowUp' })
     expect(document.querySelector('[data-boring-agent-part="model-picker-menu"]')).not.toBeNull()
     expect((textarea as HTMLTextAreaElement).value).toBe('')
-    fireEvent.keyDown(window, { key: 'Escape' })
+    const modelTrigger = screen.getByRole('button', { name: /Current model:/ })
+    fireEvent.mouseDown(modelTrigger)
+    fireEvent.click(modelTrigger)
+    await waitFor(() => expect(document.querySelector('[data-boring-agent-part="model-picker-menu"]')).toBeNull())
+
+    fireEvent.change(textarea, { target: { value: '/mod' } })
+    commands = await screen.findByRole('listbox', { name: 'Commands' })
+    fireEvent.mouseDown(within(commands).getByText('/model'))
+    await screen.findByText('Claude Sonnet')
+    fireEvent.mouseDown(document.body)
     await waitFor(() => expect(document.querySelector('[data-boring-agent-part="model-picker-menu"]')).toBeNull())
 
     fireEvent.change(textarea, { target: { value: '/mod' } })
@@ -840,6 +872,22 @@ describe('PiChatPanel sandbox shell', () => {
     picker = document.querySelector('[data-boring-agent-part="thinking-picker-menu"]')
     expect(picker?.className).toContain('bg-[color:var(--popover)]')
     expect(picker?.closest('[data-slot="popover-content"]')).toBeNull()
+    const thinkingTrigger = screen.getByRole('button', { name: 'Thinking level: Med' })
+    fireEvent.mouseDown(thinkingTrigger)
+    fireEvent.click(thinkingTrigger)
+    await waitFor(() => expect(document.querySelector('[data-boring-agent-part="thinking-picker-menu"]')).toBeNull())
+
+    fireEvent.change(textarea, { target: { value: '/thinking' } })
+    commands = await screen.findByRole('listbox', { name: 'Commands' })
+    fireEvent.mouseDown(within(commands).getByText('/thinking'))
+    await screen.findByText('Deep reasoning')
+    fireEvent.mouseDown(document.body)
+    await waitFor(() => expect(document.querySelector('[data-boring-agent-part="thinking-picker-menu"]')).toBeNull())
+
+    fireEvent.change(textarea, { target: { value: '/thinking' } })
+    commands = await screen.findByRole('listbox', { name: 'Commands' })
+    fireEvent.mouseDown(within(commands).getByText('/thinking'))
+    await screen.findByText('Deep reasoning')
     fireEvent.keyDown(window, { key: 'ArrowDown' })
     fireEvent.keyDown(window, { key: 'Enter' })
     await waitFor(() => expect(screen.getByRole('button', { name: 'Thinking level: High' })).toBeTruthy())
@@ -897,6 +945,36 @@ describe('PiChatPanel sandbox shell', () => {
     await waitFor(() => expect(onComposerWarning).toHaveBeenCalledWith('Model selection is controlled by the host.'))
     expect((textarea as HTMLTextAreaElement).value).toBe('/model')
     expect(remote.prompt).not.toHaveBeenCalled()
+  })
+
+  test('does not swallow submit clicks when an outside click closes the model picker', async () => {
+    const remote = new FakeRemotePiSession(remoteState())
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+    render(
+      <PiChatPanel
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        availableModels={[
+          { provider: 'anthropic', id: 'claude-sonnet', label: 'Claude Sonnet', available: true },
+        ]}
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+      />,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: 'submit while menu is open' } })
+    fireEvent.click(screen.getByRole('button', { name: /Current model:/ }))
+    await waitFor(() => expect(document.querySelector('[data-boring-agent-part="model-picker-menu"]')).not.toBeNull())
+
+    const submit = screen.getByRole('button', { name: 'Submit' })
+    fireEvent.mouseDown(submit)
+    fireEvent.click(submit)
+
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'submit while menu is open',
+    })))
+    expect(document.querySelector('[data-boring-agent-part="model-picker-menu"]')).toBeNull()
   })
 
   test('keeps controlled null model as Pi default in submitted prompt payload', async () => {

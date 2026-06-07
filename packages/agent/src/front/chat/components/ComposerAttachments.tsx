@@ -38,9 +38,10 @@ export function AttachmentsList() {
   if (attachments.files.length === 0) return null
   return (
     <Attachments
+      data-boring-agent-part="composer-attachment-row"
       data-align="block-start"
       variant="inline"
-      className="w-full flex-wrap items-center justify-start gap-2 px-5 pb-1 pt-3"
+      className="w-full flex-wrap items-center justify-start gap-2 px-5 pb-0 pt-3"
     >
       {attachments.files.map((file) => (
         <Attachment

@@ -87,4 +87,56 @@ describe('PiTimelineMessage', () => {
     expect(tools!.compareDocumentPosition(notice!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(notice!.compareDocumentPosition(text!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
+
+  test('renders user file attachments separately from model-only attachment markers', () => {
+    const message: BoringChatMessage = {
+      id: 'u-file',
+      role: 'user',
+      status: 'done',
+      parts: [
+        { type: 'text', id: 'u-file:text', text: 'wait is inside the image?\n\n[attached: image.png (image/png, not inlined — binary)]' },
+        { type: 'file', id: 'u-file:file', filename: 'image.png', mediaType: 'image/png', url: 'blob:image' },
+      ],
+    }
+
+    render(
+      <PiTimelineMessage
+        message={message}
+        isLast={false}
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+      />,
+    )
+
+    expect(screen.getByTestId('attachments').querySelector('[data-filename="image.png"]')).toBeTruthy()
+    expect(screen.getByTestId('message-response').textContent).toBe('wait is inside the image?')
+    expect(screen.queryByText(/attached: image\.png/)).toBeNull()
+  })
+
+  test('strips generated text attachment blocks from recovered user text', () => {
+    const message: BoringChatMessage = {
+      id: 'u-text-file',
+      role: 'user',
+      status: 'done',
+      parts: [
+        { type: 'text', id: 'u-text-file:text', text: 'please review this\n\n[attached: spec.md (text/markdown)]\n```\n# spec\n```ts\nsecret contents\n```\n```' },
+      ],
+    }
+
+    render(
+      <PiTimelineMessage
+        message={message}
+        isLast={false}
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+      />,
+    )
+
+    expect(screen.getByTestId('message-response').textContent).toBe('please review this')
+    expect(screen.queryByText(/attached: spec\.md/)).toBeNull()
+    expect(screen.queryByText(/secret contents/)).toBeNull()
+    expect(screen.queryByText(/# spec/)).toBeNull()
+  })
 })

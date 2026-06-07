@@ -39,6 +39,10 @@ export class PiChatEventMapper {
     return this.seq
   }
 
+  mapSynthetic<T extends Omit<PiChatEvent, 'seq'>>(event: T): T & { seq: number } {
+    return this.event(event)
+  }
+
   map(event: AgentSessionEvent | unknown): PiChatEvent[] {
     if (!isRecord(event) || typeof event.type !== 'string') return []
 

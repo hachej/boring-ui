@@ -114,6 +114,16 @@ function createService(adapter = createAdapter()) {
   return { service, harness, adapter }
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve
+    reject = nextReject
+  })
+  return { promise, resolve, reject }
+}
+
 function renderMessagesFromEvents(events: PiChatEvent[]) {
   const state = events.reduce((current, event) => (
     piChatReducer(current, { type: 'event', event })
@@ -178,6 +188,177 @@ describe('HarnessPiChatService', () => {
         images: [{ type: 'image', mimeType: 'image/png', data: 'abc123' }],
       },
     })
+  })
+
+  it('acknowledges prompt acceptance before the active run settles', async () => {
+    const adapter = createAdapter()
+    const run = deferred<void>()
+    adapter.prompt = vi.fn(() => run.promise)
+    const { service } = createService(adapter)
+
+    const receipt = await service.prompt(ctx, 's1', {
+      message: 'long running prompt',
+      clientNonce: 'nonce-running',
+    })
+
+    expect(receipt).toMatchObject({ accepted: true, clientNonce: 'nonce-running', cursor: 1 })
+    expect(adapter.prompt).toHaveBeenCalledWith('long running prompt')
+    run.resolve()
+    await run.promise
+  })
+
+  it('publishes an error event when an accepted prompt run rejects before streaming events arrive', async () => {
+    const adapter = createAdapter()
+    const run = deferred<void>()
+    adapter.prompt = vi.fn(() => run.promise)
+    const { service } = createService(adapter)
+    const events: PiChatEvent[] = []
+    const subscription = await service.subscribe(ctx, 's1', 0, (event) => events.push(event))
+    expect(subscription.type).toBe('ok')
+
+    const receipt = await service.prompt(ctx, 's1', {
+      message: 'will fail',
+      clientNonce: 'nonce-fail',
+    })
+
+    run.reject(new Error('provider down'))
+    await run.promise.catch(() => {})
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(receipt).toMatchObject({ accepted: true, cursor: 1, clientNonce: 'nonce-fail' })
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'message-start',
+        seq: 1,
+        role: 'user',
+        text: 'will fail',
+        clientNonce: 'nonce-fail',
+      }),
+      expect.objectContaining({
+        type: 'error',
+        seq: 2,
+        error: expect.objectContaining({ message: 'provider down', retryable: false }),
+      }),
+    ]))
+    await expect(service.readState(ctx, 's1')).resolves.toMatchObject({
+      seq: 2,
+      status: 'error',
+      error: expect.objectContaining({ message: 'provider down', retryable: false }),
+      messages: [
+        expect.objectContaining({
+          role: 'user',
+          clientNonce: 'nonce-fail',
+          parts: [expect.objectContaining({ type: 'text', text: 'will fail' })],
+        }),
+      ],
+    })
+
+    if (subscription.type === 'ok') subscription.unsubscribe()
+  })
+
+  it('does not synthesize a prompt rejection after the prompt user message is consumed', async () => {
+    const adapter = createAdapter()
+    const run = deferred<void>()
+    adapter.prompt = vi.fn(() => run.promise)
+    const { service } = createService(adapter)
+    const events: PiChatEvent[] = []
+    const subscription = await service.subscribe(ctx, 's1', 0, (event) => events.push(event))
+    expect(subscription.type).toBe('ok')
+
+    const receipt = await service.prompt(ctx, 's1', {
+      message: 'started then failed',
+      clientNonce: 'nonce-started',
+    })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-started' } as unknown as AgentSessionEvent)
+    adapter.emit({
+      type: 'message_start',
+      message: { id: 'u-started', role: 'user', content: [{ type: 'text', text: 'started then failed' }] },
+    } as unknown as AgentSessionEvent)
+
+    run.reject(new Error('provider down after start'))
+    await run.promise.catch(() => {})
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(receipt).toMatchObject({ accepted: true, cursor: 1 })
+    expect(events).toEqual([
+      expect.objectContaining({ type: 'agent-start', seq: 1, turnId: 'turn-started' }),
+      expect.objectContaining({ type: 'message-start', seq: 2, messageId: 'u-started', role: 'user', clientNonce: 'nonce-started' }),
+    ])
+
+    if (subscription.type === 'ok') subscription.unsubscribe()
+  })
+
+  it('still publishes prompt rejection after unrelated events advance the stream', async () => {
+    const adapter = createAdapter()
+    const run = deferred<void>()
+    adapter.prompt = vi.fn(() => run.promise)
+    const { service } = createService(adapter)
+    const events: PiChatEvent[] = []
+    const subscription = await service.subscribe(ctx, 's1', 0, (event) => events.push(event))
+    expect(subscription.type).toBe('ok')
+
+    const receipt = await service.prompt(ctx, 's1', {
+      message: 'fails after queue noise',
+      clientNonce: 'nonce-noise',
+    })
+    adapter.emit({ type: 'queue_update', followUp: ['unrelated queued'] } as unknown as AgentSessionEvent)
+
+    run.reject(new Error('provider down after queue event'))
+    await run.promise.catch(() => {})
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(receipt).toMatchObject({ accepted: true, cursor: 1 })
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'queue-updated', seq: 1 }),
+      expect.objectContaining({ type: 'message-start', seq: 2, role: 'user', text: 'fails after queue noise', clientNonce: 'nonce-noise' }),
+      expect.objectContaining({ type: 'error', seq: 3, error: expect.objectContaining({ message: 'provider down after queue event' }) }),
+    ]))
+
+    if (subscription.type === 'ok') subscription.unsubscribe()
+  })
+
+  it('keeps mapper sequence aligned after a pre-stream prompt rejection', async () => {
+    const adapter = createAdapter()
+    const failedRun = deferred<void>()
+    const retryRun = deferred<void>()
+    adapter.prompt = vi.fn()
+      .mockImplementationOnce(() => failedRun.promise)
+      .mockImplementationOnce(() => retryRun.promise)
+    const { service } = createService(adapter)
+    const events: PiChatEvent[] = []
+    const subscription = await service.subscribe(ctx, 's1', 0, (event) => events.push(event))
+    expect(subscription.type).toBe('ok')
+
+    await service.prompt(ctx, 's1', {
+      message: 'first try',
+      clientNonce: 'nonce-first',
+    })
+    failedRun.reject(new Error('provider down'))
+    await failedRun.promise.catch(() => {})
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    await expect(service.prompt(ctx, 's1', {
+      message: 'retry',
+      clientNonce: 'nonce-retry',
+    })).resolves.toMatchObject({ accepted: true, cursor: 3, clientNonce: 'nonce-retry' })
+    expect(() => {
+      adapter.emit({ type: 'agent_start', turnId: 'turn-retry' } as unknown as AgentSessionEvent)
+      adapter.emit({
+        type: 'message_start',
+        message: { id: 'retry-user', role: 'user', content: [{ type: 'text', text: 'retry' }] },
+      } as unknown as AgentSessionEvent)
+    }).not.toThrow()
+    retryRun.resolve()
+    await retryRun.promise
+
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'message-start', seq: 1, role: 'user', text: 'first try', clientNonce: 'nonce-first' }),
+      expect.objectContaining({ type: 'error', seq: 2 }),
+      expect.objectContaining({ type: 'agent-start', seq: 3, turnId: 'turn-retry' }),
+      expect.objectContaining({ type: 'message-start', seq: 4, messageId: 'retry-user', role: 'user', clientNonce: 'nonce-retry' }),
+    ]))
+
+    if (subscription.type === 'ok') subscription.unsubscribe()
   })
 
   it('prefers prompt metadata over queued follow-up metadata for repeated user text events', async () => {
