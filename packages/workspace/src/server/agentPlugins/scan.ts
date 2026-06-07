@@ -141,7 +141,8 @@ function discoverBoringPluginDirs(pluginDirs: BoringPluginSourceInput[]): Discov
     // Parent collection directories such as .pi/extensions are valid even when empty.
     // A non-collection directory with no package.json and no package children is treated
     // as an explicitly supplied plugin dir and reported to the caller.
-    if (!hasPackageJson && childPackageDirs.length === 0 && basename(dir) !== "extensions") {
+    const collectionDirNames = new Set(["extensions", "npm", "git"])
+    if (!hasPackageJson && childPackageDirs.length === 0 && !collectionDirNames.has(basename(dir))) {
       missingPackageJson.push(dir)
     }
   }
@@ -202,15 +203,29 @@ export function scanBoringPlugins(pluginDirs: BoringPluginSourceInput[]): Boring
     } else {
       const previous = seenIds.get(id)
       if (previous) {
-        errors.push({
-          pluginDir: rootDir,
-          pluginId: id,
-          code: "INVALID_PLUGIN_METADATA",
-          message: `duplicate plugin id "${id}" also declared by ${previous}`,
-        })
         const previousPluginIndex = plugins.findIndex((plugin) => plugin.id === id)
-        if (previousPluginIndex >= 0) plugins.splice(previousPluginIndex, 1)
-        canAddPlugin = false
+        const previousPlugin = previousPluginIndex >= 0 ? plugins[previousPluginIndex] : undefined
+        const currentIsWorkspaceLocal = Boolean(source.workspaceId)
+        const previousIsWorkspaceLocal = Boolean(previousPlugin?.source.workspaceId)
+        const currentMayShadowPrevious = source.kind === "external"
+          && currentIsWorkspaceLocal
+          && previousPlugin?.source.kind === "external"
+          && !previousIsWorkspaceLocal
+        if (currentMayShadowPrevious) {
+          if (previousPluginIndex >= 0) plugins.splice(previousPluginIndex, 1)
+          seenIds.set(id, rootDir)
+        } else if (!currentIsWorkspaceLocal && previousIsWorkspaceLocal) {
+          canAddPlugin = false
+        } else {
+          errors.push({
+            pluginDir: rootDir,
+            pluginId: id,
+            code: "INVALID_PLUGIN_METADATA",
+            message: `duplicate plugin id "${id}" also declared by ${previous}`,
+          })
+          if (previousPluginIndex >= 0) plugins.splice(previousPluginIndex, 1)
+          canAddPlugin = false
+        }
       } else {
         seenIds.set(id, rootDir)
       }
@@ -224,6 +239,7 @@ export function scanBoringPlugins(pluginDirs: BoringPluginSourceInput[]): Boring
     if (!canAddPlugin) continue
 
     const pkg = result.packageJson
+    const hasBoring = pkg.boring !== undefined
     const boring = pkg.boring ?? {}
     const pi = pkg.pi as BoringPackagePiField | undefined
     const frontPath = resolvePluginPath(rootDir, boring.front, { mustExist: true })
@@ -238,6 +254,7 @@ export function scanBoringPlugins(pluginDirs: BoringPluginSourceInput[]): Boring
       rootDir,
       version,
       boring,
+      hasBoring,
       ...(pi ? { pi } : {}),
       ...(frontPath ? { frontPath, frontUrl: `/@fs/${frontPath}` } : {}),
       ...(serverPath ? { serverPath } : {}),
@@ -257,7 +274,7 @@ export function preflightBoringPlugins(pluginDirs: BoringPluginSourceInput[]): B
 
 export function readBoringPlugins(pluginDirs: BoringPluginSourceInput[]): BoringServerPluginManifest[] {
   const scan = scanBoringPlugins(pluginDirs)
-  return scan.preflight.ok ? scan.plugins : []
+  return scan.preflight.ok ? scan.plugins.filter((plugin) => plugin.hasBoring) : []
 }
 
 export function pluginRootFromExtensionPath(extensionPath: string): string {

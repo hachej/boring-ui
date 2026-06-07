@@ -6,6 +6,7 @@ import { describeUnsafeRuntimePathSegment, findUnsafeRuntimePathSegment } from "
 
 export interface RuntimeBackendGatewayOptions {
   registry: RuntimeBackendRegistry
+  defaultWorkspaceId?: string
 }
 
 type GatewayParams = {
@@ -152,7 +153,9 @@ export async function runtimeBackendGateway(app: FastifyInstance, opts: RuntimeB
         signal: abort.signal,
         body: request.body,
         logger: loggerFromRequest(request),
-        ...(firstString(request.headers["x-boring-workspace-id"]) ? { workspaceId: firstString(request.headers["x-boring-workspace-id"]) } : {}),
+        ...(firstString(request.headers["x-boring-workspace-id"]) ?? opts.defaultWorkspaceId
+          ? { workspaceId: firstString(request.headers["x-boring-workspace-id"]) ?? opts.defaultWorkspaceId }
+          : {}),
       })
       return sendDispatchResponse(reply, response)
     } catch (error) {
