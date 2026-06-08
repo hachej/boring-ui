@@ -45,7 +45,7 @@ function DebugValue({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-md border border-border/40 bg-muted/20 p-2">
       <div className="mb-1 flex items-center justify-between gap-2">
-        <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground/80">
+        <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
           {label}
         </span>
         <CopyButton value={value} label={`Copy ${label}`} />
@@ -68,7 +68,7 @@ function SessionTab({ sessionId }: { sessionId: string }) {
       </p>
       <DebugValue label="Pi session id" value={sessionId} />
       <DebugValue label="Resume command" value={resumeCommand} />
-      <p className="rounded-md border border-border/30 bg-muted/10 p-2 text-[10px] leading-relaxed text-muted-foreground/75 dark:text-zinc-300">
+      <p className="rounded-md border border-border/30 bg-muted/10 p-2 text-[10px] leading-relaxed text-muted-foreground dark:text-zinc-300">
         Tip: <code className="font-mono text-foreground/80">pi --continue</code>{' '}
         opens the most recent session for the current working directory. The
         explicit command above targets this session directly.
