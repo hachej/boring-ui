@@ -191,14 +191,30 @@ test("boring-ui-plugin list ignores uninspectable Pi package sources", async () 
   expect(JSON.parse(list.stdout).records).toEqual([])
 })
 
-test("boring-ui-plugin installs git and npm plugin source without installing dependencies", async () => {
+async function writeLocalDependency(dir: string, name: string): Promise<void> {
+  await mkdir(dir, { recursive: true })
+  await writeFile(join(dir, "package.json"), JSON.stringify({ name, version: "1.0.0", main: "index.js" }, null, 2), "utf8")
+  await writeFile(join(dir, "index.js"), "module.exports = {}\n", "utf8")
+}
+
+test("boring-ui-plugin installs git and npm plugin sources with their declared dependencies", async () => {
   const root = await tempDir("boring-plugin-source-remote-")
   const workspaceRoot = join(root, "workspace")
   const gitSource = join(root, "git-source")
   const npmSource = join(root, "npm-source")
+  // A real, network-free dependency referenced by absolute file: spec so the
+  // install resolves it offline and after the package is relocated into .pi.
+  const dependency = join(root, "dep-pkg")
   await mkdir(workspaceRoot, { recursive: true })
-  await writeRuntimePlugin(gitSource, "git-plugin", { leftpad: "^0.0.1" })
-  await writeRuntimePlugin(npmSource, "npm-plugin", { leftpad: "^0.0.1" })
+  // npm materializes a file: dependency as a *relative* symlink even from an
+  // absolute spec, so this also guards the "install at the final path, not in
+  // staging" rationale: installing in staging then moving would leave the
+  // symlink dangling and these assertions would fail.
+  await writeLocalDependency(dependency, "boring-source-dep")
+  // `react` is host-provided: it must be stripped before install (never fetched,
+  // never shadowed), while the real file: dependency is installed.
+  await writeRuntimePlugin(gitSource, "git-plugin", { "boring-source-dep": `file:${dependency}`, react: "^18.0.0" })
+  await writeRuntimePlugin(npmSource, "npm-plugin", { "boring-source-dep": `file:${dependency}`, react: "^18.0.0" })
 
   await execFileAsync("git", ["init"], { cwd: gitSource })
   await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: gitSource })
@@ -209,14 +225,20 @@ test("boring-ui-plugin installs git and npm plugin source without installing dep
   const gitInstall = await runPluginCli(["install", `git:${gitSource}`, "--workspace", workspaceRoot], { cwd: root })
   expect(gitInstall.stderr).toContain("Security: Boring plugins run as trusted local code")
   expect(gitInstall.stdout).toContain("installed git-plugin")
+  expect(gitInstall.stdout).not.toContain("Missing dependency")
   await expect(access(join(workspaceRoot, ".pi", "git", "git-plugin", "package.json"))).resolves.toBeUndefined()
-  await expect(access(join(workspaceRoot, ".pi", "git", "git-plugin", "node_modules"))).rejects.toThrow()
+  // Dependencies are installed into the cloned package's own node_modules, like Pi.
+  await expect(access(join(workspaceRoot, ".pi", "git", "git-plugin", "node_modules", "boring-source-dep", "package.json"))).resolves.toBeUndefined()
+  // Host-provided react is stripped, never shadowed into the plugin tree.
+  await expect(access(join(workspaceRoot, ".pi", "git", "git-plugin", "node_modules", "react"))).rejects.toThrow()
 
   const npmInstall = await runPluginCli(["install", `npm:${npmSource}`, "--workspace", workspaceRoot], { cwd: root })
   expect(npmInstall.stderr).toContain("Security: Boring plugins run as trusted local code")
   expect(npmInstall.stdout).toContain("installed npm-plugin")
+  expect(npmInstall.stdout).not.toContain("Missing dependency")
   await expect(access(join(workspaceRoot, ".pi", "npm", "npm-plugin", "package.json"))).resolves.toBeUndefined()
-  await expect(access(join(workspaceRoot, ".pi", "npm", "npm-plugin", "node_modules"))).rejects.toThrow()
+  await expect(access(join(workspaceRoot, ".pi", "npm", "npm-plugin", "node_modules", "boring-source-dep", "package.json"))).resolves.toBeUndefined()
+  await expect(access(join(workspaceRoot, ".pi", "npm", "npm-plugin", "node_modules", "react"))).rejects.toThrow()
 
   expect(await readPiSettingsPackages(join(workspaceRoot, ".pi", "settings.json"))).toEqual([
     "./git/git-plugin",
@@ -236,6 +258,20 @@ test("boring-ui-plugin installs git and npm plugin source without installing dep
 
   await runPluginCli(["remove", "git-plugin", "--workspace", workspaceRoot], { cwd: root })
   await expect(access(join(workspaceRoot, ".pi", "git", "git-plugin"))).rejects.toThrow()
+})
+
+test("boring-ui-plugin local install references the source and never installs its dependencies", async () => {
+  const root = await tempDir("boring-plugin-source-local-deps-")
+  const workspaceRoot = join(root, "workspace")
+  const source = join(root, "local-source")
+  await mkdir(workspaceRoot, { recursive: true })
+  await writeRuntimePlugin(source, "local-dep-plugin", { recharts: "^2.0.0" })
+
+  const install = await runPluginCli(["install", source], { cwd: workspaceRoot })
+  expect(install.stdout).toContain("installed local-dep-plugin")
+  expect(install.stdout).toContain("Missing dependency: recharts")
+  // Local-path sources are an editable tree the author owns: never mutated.
+  await expect(access(join(source, "node_modules"))).rejects.toThrow()
 })
 
 test("boring-ui-plugin supports explicit global source scope", async () => {
