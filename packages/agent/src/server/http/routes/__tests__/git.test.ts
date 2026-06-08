@@ -1,32 +1,55 @@
 import Fastify from 'fastify'
 import { afterEach, expect, test, vi } from 'vitest'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { __gitTestUtils, gitRoutes } from '../git'
+import { gitRoutes } from '../git'
+import { __gitTestUtils } from '../../../git/gitFileUrl'
 
-const tempRoots: string[] = []
-
-afterEach(async () => {
+afterEach(() => {
   vi.restoreAllMocks()
-  await Promise.all(tempRoots.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-async function makeRoot(prefix: string): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), prefix))
-  tempRoots.push(dir)
-  return dir
+function buildApp(workspaceRoot?: string) {
+  const app = Fastify({ logger: false })
+  if (workspaceRoot !== undefined) {
+    app.addHook('preHandler', async (request) => {
+      ;(request as { workspaceRoot?: string }).workspaceRoot = workspaceRoot
+    })
+  }
+  app.register(gitRoutes)
+  return app
 }
 
-test('returns disabled when workspace is not a git repo', async () => {
-  const workspaceRoot = await makeRoot('boring-git-routes-')
-  await writeFile(join(workspaceRoot, 'index.ts'), 'export {}\n')
+// The route delegates git work to resolveGitFileUrl; stub the git invocation
+// (an object property, always spyable) so the route test needs no real repo or
+// filesystem access — node:fs is banned in routes/. End-to-end resolver
+// behavior is covered by src/server/git/__tests__/gitFileUrl.test.ts.
 
-  const app = Fastify({ logger: false })
-  app.addHook('preHandler', async (request) => {
-    ;(request as { workspaceRoot?: string }).workspaceRoot = workspaceRoot
+test('passes the workspace-relative path through and returns the resolved url', async () => {
+  vi.spyOn(__gitTestUtils, 'runGit').mockImplementation(async (args) => {
+    const joined = args.join(' ')
+    if (joined === 'rev-parse --show-toplevel') return '/work/root'
+    if (joined === 'remote get-url origin') return 'git@github.com:hachej/boring-ui.git'
+    if (joined === 'symbolic-ref --quiet --short HEAD') return 'main'
+    throw new Error(`unexpected git args: ${joined}`)
   })
-  await app.register(gitRoutes)
+
+  const app = buildApp('/work/root')
+  await app.ready()
+
+  const res = await app.inject({ method: 'GET', url: '/api/v1/git/file-url?path=src/main.ts' })
+  expect(res.statusCode).toBe(200)
+  // The url's blob path reflects the request path resolved under the workspace root.
+  expect(res.json()).toEqual({
+    enabled: true,
+    url: 'https://github.com/hachej/boring-ui/blob/main/src/main.ts',
+  })
+
+  await app.close()
+})
+
+test('returns a disabled result when the resolver reports no repo', async () => {
+  vi.spyOn(__gitTestUtils, 'runGit').mockRejectedValue(new Error('not a repo'))
+
+  const app = buildApp('/work/root')
   await app.ready()
 
   const res = await app.inject({ method: 'GET', url: '/api/v1/git/file-url?path=index.ts' })
@@ -36,62 +59,35 @@ test('returns disabled when workspace is not a git repo', async () => {
   await app.close()
 })
 
-test('builds github urls from origin and branch', async () => {
-  const workspaceRoot = await makeRoot('boring-git-routes-repo-')
-  await mkdir(join(workspaceRoot, 'src'), { recursive: true })
-  await writeFile(join(workspaceRoot, 'src', 'main.ts'), 'export {}\n')
-
-  const app = Fastify({ logger: false })
-  app.addHook('preHandler', async (request) => {
-    ;(request as { workspaceRoot?: string }).workspaceRoot = workspaceRoot
-  })
-  await app.register(gitRoutes)
+test('rejects a missing path with a validation error', async () => {
+  const app = buildApp('/work/root')
   await app.ready()
 
-  vi.spyOn(__gitTestUtils, 'runGit').mockImplementation(async (args: string[]) => {
-    const joined = args.join(' ')
-    if (joined === 'rev-parse --show-toplevel') return workspaceRoot
-    if (joined === 'remote get-url origin') return 'git@github.com:hachej/boring-ui.git'
-    if (joined === 'symbolic-ref --quiet --short HEAD') return 'main'
-    throw new Error(`unexpected git args: ${joined}`)
-  })
-
-  const res = await app.inject({ method: 'GET', url: '/api/v1/git/file-url?path=src/main.ts' })
-  expect(res.statusCode).toBe(200)
-  expect(res.json()).toEqual({
-    enabled: true,
-    url: 'https://github.com/hachej/boring-ui/blob/main/src/main.ts',
-  })
+  const res = await app.inject({ method: 'GET', url: '/api/v1/git/file-url' })
+  expect(res.statusCode).toBe(400)
+  expect(res.json().error.code).toBe('validation_error')
 
   await app.close()
 })
 
-test('falls back to commit sha when HEAD is detached', async () => {
-  const workspaceRoot = await makeRoot('boring-git-routes-detached-')
-  await writeFile(join(workspaceRoot, 'README.md'), '# hi\n')
-
-  const app = Fastify({ logger: false })
-  app.addHook('preHandler', async (request) => {
-    ;(request as { workspaceRoot?: string }).workspaceRoot = workspaceRoot
-  })
-  await app.register(gitRoutes)
+test('rejects a path containing null bytes', async () => {
+  const app = buildApp('/work/root')
   await app.ready()
 
-  vi.spyOn(__gitTestUtils, 'runGit').mockImplementation(async (args: string[]) => {
-    const joined = args.join(' ')
-    if (joined === 'rev-parse --show-toplevel') return workspaceRoot
-    if (joined === 'remote get-url origin') return 'https://github.com/hachej/boring-ui.git'
-    if (joined === 'symbolic-ref --quiet --short HEAD') throw new Error('detached')
-    if (joined === 'rev-parse HEAD') return 'abc123'
-    throw new Error(`unexpected git args: ${joined}`)
-  })
+  const res = await app.inject({ method: 'GET', url: '/api/v1/git/file-url?path=a%00b' })
+  expect(res.statusCode).toBe(400)
+  expect(res.json().error.code).toBe('invalid_path')
 
-  const res = await app.inject({ method: 'GET', url: '/api/v1/git/file-url?path=README.md' })
-  expect(res.statusCode).toBe(200)
-  expect(res.json()).toEqual({
-    enabled: true,
-    url: 'https://github.com/hachej/boring-ui/blob/abc123/README.md',
-  })
+  await app.close()
+})
+
+test('returns 500 when the workspace root is unavailable', async () => {
+  const app = buildApp(undefined)
+  await app.ready()
+
+  const res = await app.inject({ method: 'GET', url: '/api/v1/git/file-url?path=index.ts' })
+  expect(res.statusCode).toBe(500)
+  expect(res.json().error.code).toBe('internal')
 
   await app.close()
 })
