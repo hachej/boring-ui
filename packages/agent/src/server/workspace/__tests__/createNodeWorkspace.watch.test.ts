@@ -15,6 +15,21 @@ function wait(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
 }
 
+// Poll until the expected event arrives or we hit a generous deadline.
+// chokidar event latency is unbounded under parallel CI load, so a fixed
+// sleep is flaky; polling resolves as soon as the event lands.
+async function waitForEvent(
+  events: WorkspaceChangeEvent[],
+  pred: (e: WorkspaceChangeEvent) => boolean,
+  timeoutMs = 5000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (events.some(pred)) return
+    await wait(25)
+  }
+}
+
 describe('createNodeWorkspace.watch', () => {
   let root: string
   let watcher: WorkspaceWatcher | null
@@ -45,7 +60,7 @@ describe('createNodeWorkspace.watch', () => {
     // chokidar takes a tick to bind; give it a moment before mutating.
     await wait(SETTLE_MS)
     await ws.writeFile('a.txt', 'hello')
-    await wait(SETTLE_MS)
+    await waitForEvent(events, (e) => e.op === 'write' && e.path === 'a.txt')
 
     const writes = events.filter((e) => e.op === 'write' && e.path === 'a.txt')
     expect(writes.length).toBeGreaterThan(0)
@@ -71,7 +86,7 @@ describe('createNodeWorkspace.watch', () => {
     watcher.subscribe((e) => events.push(e))
 
     await ws.unlink('b.txt')
-    await wait(SETTLE_MS)
+    await waitForEvent(events, (e) => e.op === 'unlink' && e.path === 'b.txt')
 
     expect(events.some((e) => e.op === 'unlink' && e.path === 'b.txt')).toBe(true)
   })
