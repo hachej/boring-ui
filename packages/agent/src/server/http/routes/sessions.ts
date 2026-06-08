@@ -6,6 +6,7 @@ import type {
   SessionCtx,
   SessionSummary,
   SessionDetail,
+  SessionListOptions,
 } from '../../../shared/session'
 import type { UIMessage, UIMessageChunk } from '../../../shared/message'
 import type { AgentHarness } from '../../../shared/harness'
@@ -19,6 +20,8 @@ import {
 
 const DEFAULT_SESSION_TITLE = 'New session'
 const DEFAULT_WORKSPACE_ID = 'default'
+const DEFAULT_SESSION_LIST_LIMIT = 50
+const MAX_SESSION_LIST_LIMIT = 100
 const MAX_ANALYSIS_TRANSCRIPT_CHARS = 120_000
 
 const createSessionBodySchema = z
@@ -59,11 +62,14 @@ class SessionNotFoundError extends Error {
 export class InMemorySessionStore implements SessionStore {
   private sessions = new Map<string, InMemorySession>()
 
-  async list(ctx: SessionCtx): Promise<SessionSummary[]> {
-    return Array.from(this.sessions.values())
+  async list(ctx: SessionCtx, options?: SessionListOptions): Promise<SessionSummary[]> {
+    const offset = options?.offset ?? 0
+    const limit = options?.limit
+    const summaries = Array.from(this.sessions.values())
       .filter((session) => session.workspaceId === ctx.workspaceId)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .map(toSummary)
+    return limit === undefined ? summaries.slice(offset) : summaries.slice(offset, offset + limit)
   }
 
   async create(
@@ -131,6 +137,20 @@ function toSummary(session: InMemorySession): SessionSummary {
     updatedAt: session.updatedAt,
     turnCount: session.messages.filter((message) => message.role === 'user').length,
   }
+}
+
+function sessionListOptions(request: FastifyRequest): SessionListOptions {
+  const query = request.query as Record<string, unknown>
+  return {
+    limit: boundedInteger(query.limit, DEFAULT_SESSION_LIST_LIMIT, 1, MAX_SESSION_LIST_LIMIT),
+    offset: boundedInteger(query.offset, 0, 0, Number.MAX_SAFE_INTEGER),
+  }
+}
+
+function boundedInteger(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = typeof value === 'string' ? Number.parseInt(value, 10) : NaN
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.min(max, Math.max(min, parsed))
 }
 
 function getSessionCtx(request: FastifyRequest): SessionCtx {
@@ -364,7 +384,7 @@ export function sessionRoutes(
   app.get('/api/v1/agent/sessions', async (request, reply) => {
     try {
       const store = await resolveSessionStore(request)
-      return await store.list(getSessionCtx(request))
+      return await store.list(getSessionCtx(request), sessionListOptions(request))
     } catch (err) {
       return classifySessionError(err, reply)
     }

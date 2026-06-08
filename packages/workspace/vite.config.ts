@@ -38,6 +38,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": resolve(__dirname, "src"),
+      "@hachej/boring-ui-plugin-cli/plugin-sources": resolve(__dirname, "../plugin-cli/src/server/pluginSources.ts"),
+      "@hachej/boring-agent/shared": resolve(__dirname, "../agent/src/shared/index.ts"),
+      "@hachej/boring-workspace/runtime-server": resolve(__dirname, "src/server/runtimeBackend/defineRuntimeServerPlugin.ts"),
       "@hachej/boring-workspace/server": resolve(__dirname, "src/server/index.ts"),
       "@hachej/boring-workspace": resolve(__dirname, "src/index.ts"),
     },

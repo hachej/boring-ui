@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-workspace",
-  "version": "0.1.32",
+  "version": "0.1.33",
   "type": "module",
   "license": "MIT",
   "description": "Workspace UI, plugin, and bridge package for composing chat, files, catalogs, editors, and app-specific panes.",
@@ -48,6 +48,11 @@
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js",
       "default": "./dist/server.js"
+    },
+    "./runtime-server": {
+      "types": "./dist/runtime-server.d.ts",
+      "import": "./dist/runtime-server.js",
+      "default": "./dist/runtime-server.js"
     },
     "./events": {
       "types": "./dist/events.d.ts",
@@ -107,6 +112,7 @@
     "@codemirror/view": "^6.41.1",
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
+    "@hachej/boring-ui-plugin-cli": "workspace:*",
     "@lezer/highlight": "^1.2.3",
     "@tanstack/react-query": "^5.0.0",
     "@tiptap/core": "^3.22.4",
