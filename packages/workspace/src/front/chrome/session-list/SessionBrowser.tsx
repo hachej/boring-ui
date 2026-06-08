@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo } from "react"
-import { ChevronLeft, Plus } from "lucide-react"
+import { ChevronLeft, ExternalLink, Plus } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import type { SessionItem } from "../../components/SessionList"
@@ -10,6 +10,7 @@ export interface SessionBrowserProps {
   sessions: SessionItem[]
   activeId?: string | null
   onSwitch?: (id: string) => void
+  onOpenAsTab?: (id: string) => void
   onCreate?: () => void
   onDelete?: (id: string) => void
   onLoadMore?: () => void
@@ -98,6 +99,7 @@ export function SessionBrowser({
   sessions,
   activeId,
   onSwitch,
+  onOpenAsTab,
   onCreate,
   onDelete,
   onLoadMore,
@@ -158,6 +160,7 @@ export function SessionBrowser({
                   session={session}
                   active={session.id === activeId}
                   onSwitch={onSwitch}
+                  onOpenAsTab={onOpenAsTab}
                   onDelete={onDelete}
                 />
               ))}
@@ -186,11 +189,13 @@ function SessionRow({
   session,
   active,
   onSwitch,
+  onOpenAsTab,
   onDelete,
 }: {
   session: SessionItem
   active: boolean
   onSwitch?: (id: string) => void
+  onOpenAsTab?: (id: string) => void
   onDelete?: (id: string) => void
 }) {
   const time = relativeTime(session.updatedAt)
@@ -221,6 +226,22 @@ function SessionRow({
           </span>
         )}
       </span>
+      {onOpenAsTab && (
+        <IconButton
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="shrink-0 text-muted-foreground/70 hover:text-foreground focus-visible:opacity-100"
+          onClick={(e) => {
+            e.stopPropagation()
+            onOpenAsTab(session.id)
+          }}
+          aria-label={`Open ${session.title || "session"} in chat pane`}
+          title="Open in chat pane"
+        >
+          <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.75} />
+        </IconButton>
+      )}
       {onDelete && (
         <IconButton
           type="button"

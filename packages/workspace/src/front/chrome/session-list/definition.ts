@@ -7,6 +7,7 @@ interface SessionListPaneParams {
   sessions?: SessionItem[]
   activeId?: string | null
   onSwitch?: (id: string) => void
+  onOpenAsTab?: (id: string) => void
   onCreate?: () => void
   onDelete?: (id: string) => void
   onLoadMore?: () => void
@@ -20,6 +21,7 @@ function SessionListPane({ params }: PaneProps<SessionListPaneParams | undefined
     sessions: params?.sessions ?? [],
     activeId: params?.activeId,
     onSwitch: params?.onSwitch,
+    onOpenAsTab: params?.onOpenAsTab,
     onCreate: params?.onCreate,
     onDelete: params?.onDelete,
     onLoadMore: params?.onLoadMore,

@@ -12,6 +12,7 @@ import type { PaneProps } from "../registry/types"
 import { readStoredNumber, writeStoredNumber } from "../store/localStorageValues"
 import type { ChatLayoutProps } from "./types"
 import { useWorkspaceAttention, useWorkspaceContext } from "../provider"
+import { ChatPaneStage } from "./ChatPaneStage"
 
 export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
   const {
@@ -109,6 +110,8 @@ export function ChatLayout(props: ChatLayoutProps) {
   const closeSurface = getCallback(props.surfaceParams, "onClose")
   const closeSidebar = getCallback(props.sidebarParams, "onClose")
   const createSession = getCallback(props.navParams, "onCreate")
+  const chatPanes = props.chatPanes?.filter((pane) => pane.id.length > 0) ?? []
+  const hasChatPanes = chatPanes.length > 0
   const sidebarOpen = Boolean(props.sidebar)
   const canControlNav = navOpen ? Boolean(closeNav) : Boolean(props.onOpenNav)
   const canControlSurface = surfaceOpen ? Boolean(closeSurface) : Boolean(props.onOpenSurface)
@@ -286,7 +289,7 @@ export function ChatLayout(props: ChatLayoutProps) {
   // Switching to a different session re-opens the chat if it was collapsed, so
   // the newly selected conversation is visible. Skips the initial mount (only
   // reacts to an actual change of the active session id).
-  const activeSessionId = props.centerParams?.sessionId as string | undefined
+  const activeSessionId = (props.activeChatPaneId ?? props.centerParams?.sessionId) as string | undefined
   const prevSessionIdRef = useRef(activeSessionId)
   useEffect(() => {
     const prev = prevSessionIdRef.current
@@ -372,9 +375,25 @@ export function ChatLayout(props: ChatLayoutProps) {
               chatCollapsed ? "opacity-0" : "opacity-100",
             )}
           >
-            <PanelSlot id={centerId} params={props.centerParams} />
+            {hasChatPanes ? (
+              <ChatPaneStage
+                panes={chatPanes}
+                activePaneId={props.activeChatPaneId}
+                onActivePaneChange={props.onActiveChatPaneChange}
+                onClosePane={props.onCloseChatPane}
+                onCreatePaneAfter={props.onCreateChatPaneAfter}
+                renderPane={(pane) => (
+                  <PanelSlot
+                    id={pane.panel ?? centerId}
+                    params={pane.params ?? props.centerParams}
+                  />
+                )}
+              />
+            ) : (
+              <PanelSlot id={centerId} params={props.centerParams} />
+            )}
           </div>
-          {!chatCollapsed ? (
+          {!chatCollapsed && (!hasChatPanes || chatPanes.length === 1) ? (
             <IconButton
               type="button"
               variant="ghost"
@@ -635,7 +654,11 @@ function getCallback(params: Record<string, unknown> | undefined, key: string): 
 
 function focusAgentComposer(): void {
   if (typeof document === "undefined") return
-  const textarea = document.querySelector<HTMLTextAreaElement>(
+  const activePane = document.querySelector<HTMLElement>(
+    '[data-boring-workspace-part="chat-pane"][data-boring-state="active"]',
+  )
+  const root: Document | HTMLElement = activePane ?? document
+  const textarea = root.querySelector<HTMLTextAreaElement>(
     '[data-boring-agent] textarea[name="message"], textarea[name="message"]',
   )
   textarea?.focus()

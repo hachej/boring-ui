@@ -64,6 +64,17 @@ describe("SessionBrowser", () => {
     expect(onSwitch).not.toHaveBeenCalled()
   })
 
+  it("opens a row as a separate pane without also switching the active pane", () => {
+    const onSwitch = vi.fn()
+    const onOpenAsTab = vi.fn()
+    render(<SessionBrowser sessions={sample} activeId="s1" onSwitch={onSwitch} onOpenAsTab={onOpenAsTab} />)
+
+    fireEvent.click(screen.getByLabelText("Open Second session in chat pane"))
+
+    expect(onOpenAsTab).toHaveBeenCalledWith("s2")
+    expect(onSwitch).not.toHaveBeenCalled()
+  })
+
   it("calls onLoadMore from the load-more footer", () => {
     const onLoadMore = vi.fn()
     render(<SessionBrowser sessions={sample} hasMore onLoadMore={onLoadMore} />)
