@@ -5,6 +5,10 @@ const CI = process.env.CI === 'true' || process.env.CI === '1'
 export default defineConfig({
   testDir: '.',
   testMatch: '*.spec.ts',
+  // Bombadil specs import their runtime from the bombadil CLI (a types-only
+  // package at author time) and run via scripts/run-bombadil-chat.mjs, not the
+  // plain Playwright runner. Keep them out of `pnpm e2e`.
+  testIgnore: 'bombadil/**',
   fullyParallel: false,
   workers: CI ? 1 : undefined,
   globalTimeout: CI ? 300_000 : undefined,

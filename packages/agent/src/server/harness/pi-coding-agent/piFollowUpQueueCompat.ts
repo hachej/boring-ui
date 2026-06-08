@@ -24,7 +24,11 @@ type PiQueueCompatibleSession = {
 
 export interface PiFollowUpQueueCompat {
   clearSession(sessionId: string): void;
-  record(sessionId: string, text: string, displayText: string, options?: FollowUpOptions): void;
+  /**
+   * Records a follow-up post. Returns false when the post is a duplicate of one
+   * already seen this turn (same client nonce) and must not be re-queued.
+   */
+  record(sessionId: string, text: string, displayText: string, options?: FollowUpOptions): boolean;
   clear(sessionId: string, piSession?: AgentSession, options?: FollowUpOptions): void;
   consume(sessionId: string, text: string): void;
   hasPending(sessionId: string): boolean;
@@ -33,13 +37,21 @@ export interface PiFollowUpQueueCompat {
 export function createPiFollowUpQueueCompat(): PiFollowUpQueueCompat {
   const pending = new Set<string>();
   const queues = new Map<string, NativeFollowUpRequest[]>();
+  // Client nonces seen this turn. Survives consumption (so a retried post of an
+  // already-drained follow-up is dropped) and is reset only at turn/session
+  // boundaries via clearSession.
+  const seenNonces = new Map<string, Set<string>>();
 
   function clearSession(sessionId: string): void {
     pending.delete(sessionId);
     queues.delete(sessionId);
+    seenNonces.delete(sessionId);
   }
 
-  function record(sessionId: string, text: string, displayText: string, options?: FollowUpOptions): void {
+  function record(sessionId: string, text: string, displayText: string, options?: FollowUpOptions): boolean {
+    const nonce = options?.clientNonce;
+    if (nonce && seenNonces.get(sessionId)?.has(nonce)) return false;
+
     const queue = queues.get(sessionId) ?? [];
     queue.push({
       text,
@@ -49,6 +61,13 @@ export function createPiFollowUpQueueCompat(): PiFollowUpQueueCompat {
     });
     queues.set(sessionId, queue);
     pending.add(sessionId);
+
+    if (nonce) {
+      const seen = seenNonces.get(sessionId) ?? new Set<string>();
+      seen.add(nonce);
+      seenNonces.set(sessionId, seen);
+    }
+    return true;
   }
 
   function clear(sessionId: string, piSession?: AgentSession, options?: FollowUpOptions): void {
@@ -71,8 +90,14 @@ export function createPiFollowUpQueueCompat(): PiFollowUpQueueCompat {
     const index = queue.findIndex((item) => item.text === text || item.displayText === text);
     if (index >= 0) queue.splice(index, 1);
     else queue.shift();
-    if (queue.length > 0) queues.set(sessionId, queue);
-    else clearSession(sessionId);
+    if (queue.length > 0) {
+      queues.set(sessionId, queue);
+    } else {
+      // Drain the queue but keep seen nonces: a duplicate post of a follow-up pi
+      // already consumed this turn must still be deduped (clearSession resets it).
+      queues.delete(sessionId);
+      pending.delete(sessionId);
+    }
   }
 
   function hasPending(sessionId: string): boolean {

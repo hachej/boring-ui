@@ -12,6 +12,8 @@ import { adaptToolsForPi } from "../tool-adapter.js";
 import { PiSessionStore } from "../sessions.js";
 import type { AgentTool } from "../../../../shared/tool.js";
 
+const ENOENT_CODE = "ENOENT";
+
 const noopTool: AgentTool = {
   name: "noop",
   description: "Does nothing, returns ok",
@@ -476,7 +478,7 @@ describe("PiSessionStore", () => {
     expect(store.loadPiSessionFileSync(nativeSessionId)).toBeNull();
     await expect(store.loadPiSessionFile(ctx, nativeSessionId)).resolves.toBeNull();
     await expect(readFile(join(tmpDir, `${nativeSessionId}.jsonl`), "utf-8"))
-      .rejects.toMatchObject({ code: "ENOENT" });
+      .rejects.toMatchObject({ code: ENOENT_CODE });
 
     await expect(store.load(ctx, nativeSessionId)).rejects.toThrow("Session not found");
     const detail = await store.load(ctx, boringSessionId);

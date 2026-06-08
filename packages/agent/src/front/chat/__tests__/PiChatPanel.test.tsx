@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
-import { describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { SessionSummary } from '../../../shared/session'
 import { createInitialPiChatState, type PiChatState } from '../pi/piChatReducer'
 import type { RemotePiSession, RemotePiSessionOptions } from '../pi/remotePiSession'
@@ -148,6 +148,14 @@ function remoteFactory(remote: FakeRemotePiSession) {
 }
 
 describe('PiChatPanel sandbox shell', () => {
+  // Tests reuse storageScope values (scope-a, workspace-a, ...). Persisted
+  // active-session pointers must not leak across tests, or a later test will try
+  // to restore a session its fetch mock doesn't serve and render a navigation error.
+  afterEach(() => {
+    window.localStorage.clear()
+    window.sessionStorage.clear()
+  })
+
   test('imports no old chat hooks/projection/AI SDK stream contracts', () => {
     const source = readFileSync('src/front/chat/PiChatPanel.tsx', 'utf8')
     for (const forbidden of ['use' + 'AgentChat', 'piChat' + 'Projection', 'piNative' + 'FollowUpQueue', '@ai-sdk' + '/react', 'UIMessageChunk']) {
