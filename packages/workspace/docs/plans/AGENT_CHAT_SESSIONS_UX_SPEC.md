@@ -44,8 +44,8 @@ Divider/edge +             → create new session to the right
 - Use DockView native tab/header for drag; fake overlay grips do not work.
 - Header controls are compact: drag grip and close only.
 - Per-pane `+` belongs on the right edge/divider between panes, not in the pane header.
-- With one pane, the `+` is the floating button on the right of the chat/session history side.
-- With adjacent panes, the `+` sits on the divider between them.
+- With exactly one chat session pane open, the `+` is the floating button on the right of the chat/session history side.
+- With two or more chat session panes open, the `+` sits on the divider/border between panes.
 - Implement the `+` from the chat-stage/DockView overlay layer so it can straddle the divider without being clipped by pane overflow.
 - Active pane indication uses a neutral **focus frame**:
   - a 1px inset border around the active pane;
