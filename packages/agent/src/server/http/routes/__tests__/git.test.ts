@@ -9,12 +9,9 @@ afterEach(() => {
 
 function buildApp(workspaceRoot?: string) {
   const app = Fastify({ logger: false })
-  if (workspaceRoot !== undefined) {
-    app.addHook('preHandler', async (request) => {
-      ;(request as { workspaceRoot?: string }).workspaceRoot = workspaceRoot
-    })
-  }
-  app.register(gitRoutes)
+  app.register(gitRoutes, {
+    getWorkspaceRoot: workspaceRoot === undefined ? undefined : () => workspaceRoot,
+  })
   return app
 }
 

@@ -879,11 +879,9 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   await app.register(searchRoutes, {
     getFileSearch: async (request) => (await getBindingForRequest(request)).runtimeBundle.fileSearch,
   })
-  await app.addHook('preHandler', async (request) => {
-    const binding = await getBindingForRequest(request)
-    ;(request as FastifyRequest & { workspaceRoot?: string }).workspaceRoot = binding.runtimeBundle.workspace.root
+  await app.register(gitRoutes, {
+    getWorkspaceRoot: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace.root,
   })
-  await app.register(gitRoutes)
   await app.register(chatRoutes, {
     getRuntime: async (request) => {
       const binding = await getBindingForRequest(request)
