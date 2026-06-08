@@ -98,6 +98,10 @@ function withLocalStorage(values: Record<string, string>, fn: () => void): void 
 
 beforeEach(() => {
   vi.restoreAllMocks()
+  // useServerSkills fires a fetch on mount; stub it so render()-based tests
+  // (which run effects, unlike renderToStaticMarkup) don't hit an undefined
+  // global fetch. Individual tests can override with their own stub.
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }))
   capturedOnSubmit = undefined
   capturedTextareaProps = undefined
   mockPiProjection.piMessages = []
