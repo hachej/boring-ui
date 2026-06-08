@@ -23,7 +23,27 @@ export function removeOutboxForMessageStart(
 ): Record<string, OptimisticUserMessage> {
   if (event.clientNonce) return removeOutboxEntry(outbox, event.clientNonce)
   if (event.clientSeq !== undefined) return clearOptimisticFollowUps(outbox, { clientSeq: event.clientSeq })
-  return outbox
+  // Pi's native queue consumes a follow-up without echoing its clientNonce/clientSeq
+  // on the user message-start. If we never reconciled it against a queue-updated
+  // (consumption can win the race), match the consumed text against a single
+  // pending optimistic follow-up and clear it — otherwise the already-sent message
+  // lingers and reorders in the live queue preview until a refresh.
+  return removeOptimisticFollowUpByText(outbox, event.text)
+}
+
+function removeOptimisticFollowUpByText(
+  outbox: Record<string, OptimisticUserMessage>,
+  text: string | undefined,
+): Record<string, OptimisticUserMessage> {
+  if (!text) return outbox
+  const matches = Object.values(outbox).filter(
+    (message) => message.clientSeq !== undefined && optimisticText(message) === text,
+  )
+  const match = matches[0]
+  // Only clear when the text unambiguously identifies one queued follow-up,
+  // mirroring the metadata-free reconciliation used elsewhere in this module.
+  if (matches.length !== 1 || !match) return outbox
+  return removeOutboxEntry(outbox, match.clientNonce)
 }
 
 export function removeQueueEntryForMessageStart(

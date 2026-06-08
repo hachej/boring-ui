@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createInitialPiChatState, piChatReducer, type OptimisticUserMessage } from '../piChatReducer'
+import { selectQueuePreview } from '../selectors'
 
 function optimistic(clientNonce: string, text: string, clientSeq?: number): OptimisticUserMessage {
   return {
@@ -165,6 +166,57 @@ describe('piChatReducer queue behavior', () => {
     })
 
     expect(state.optimisticOutbox).toEqual({})
+  })
+
+  it('removes the optimistic follow-up when Pi consumes it without a queue confirmation or client selector', () => {
+    // Race: the agent consumes a queued follow-up before the server's
+    // queue-updated (which carries the clientNonce) is processed, and the
+    // consumed user message-start echoes no clientNonce/clientSeq. The optimistic
+    // placeholder must still be cleared by text so it does not linger as a ghost
+    // / reordered entry in the live queue preview (refresh already shows it gone).
+    let state = createInitialPiChatState({ sessionId: 's1', storageScope: 'scope' })
+    state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('nonce-1', 'next', 1) })
+    // Consumed user turn starts WITHOUT clientNonce/clientSeq and with no prior
+    // queue-updated confirming the follow-up (real server behavior under the race).
+    state = piChatReducer(state, {
+      type: 'event',
+      event: { type: 'message-start', seq: 1, messageId: 'u2', role: 'user', text: 'next' },
+    })
+
+    expect(state.optimisticOutbox).toEqual({})
+    expect(selectQueuePreview(state)).toEqual([])
+    expect(state.committedMessages).toEqual([
+      expect.objectContaining({ id: 'u2', role: 'user' }),
+    ])
+  })
+
+  it('does not resurrect a consumed follow-up behind still-pending ones in the live preview', () => {
+    // Reproduces the user-visible reorder: the user queues A then B. The agent
+    // consumes A before A is confirmed in a queue-updated; A's message-start
+    // carries no client selector. A naive projection keeps A's optimistic and
+    // re-appends the (already sent) A behind the still-pending B — showing [B, A]
+    // until a refresh. The preview must stay [B].
+    let state = createInitialPiChatState({ sessionId: 's1', storageScope: 'scope' })
+    state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('nonce-a', 'A', 1) })
+    state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('nonce-b', 'B', 2) })
+    // Only B reaches the server queue snapshot; A was already pulled for consumption.
+    state = piChatReducer(state, {
+      type: 'event',
+      event: {
+        type: 'queue-updated',
+        seq: 1,
+        queue: { followUps: [{ id: 'qb', kind: 'followup', clientNonce: 'nonce-b', clientSeq: 2, displayText: 'B' }] },
+      },
+    })
+    // A's consumed user turn starts without a client selector.
+    state = piChatReducer(state, {
+      type: 'event',
+      event: { type: 'message-start', seq: 2, messageId: 'uA', role: 'user', text: 'A' },
+    })
+
+    expect(selectQueuePreview(state).map((followUp) => followUp.displayText)).toEqual(['B'])
+    // nonce-b was cleared on queue confirmation, nonce-a on consumption.
+    expect(Object.keys(state.optimisticOutbox)).toEqual([])
   })
 
   it('removes a queued follow-up from preview when the queued user turn starts', () => {
