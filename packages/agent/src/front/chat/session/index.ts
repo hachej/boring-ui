@@ -9,16 +9,12 @@ export {
 export { usePiSessions, type UsePiSessionsOptions, type UsePiSessionsResult, type PiSessionCreateInit, type PiSessionRefreshOptions } from './usePiSessions'
 export { SessionList, SessionBrowser, type SessionListProps } from './SessionList'
 export {
-  PiComposerPolicyController,
   InitialDraftAutoSubmitGuard,
-  buildPromptPolicyPayload,
   createPiComposerPolicyController,
   readPiComposerSettings,
   scopedComposerStorageKey,
   selectComposerHistoryFromCanonicalUsers,
-  skillCommandText,
   modelOptionsForSelection,
-  writePiComposerModelSelection,
   writePiComposerShowThoughts,
   writePiComposerThinking,
   type PiComposerBlockedReason,

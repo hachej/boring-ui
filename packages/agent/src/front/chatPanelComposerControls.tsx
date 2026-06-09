@@ -1,6 +1,6 @@
 import type { ComponentPropsWithoutRef, RefObject } from 'react'
 import { forwardRef, useEffect, useRef, useState } from 'react'
-import { CheckIcon, ChevronDownIcon, EyeIcon, EyeOffIcon } from 'lucide-react'
+import { CheckIcon, ChevronDownIcon } from 'lucide-react'
 import {
   Command,
   CommandEmpty,
@@ -8,7 +8,6 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-  IconButton,
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -624,35 +623,5 @@ export function ThinkingPickerMenu({
         </CommandList>
       </Command>
     </div>
-  )
-}
-
-export function ThoughtVisibilityButton({
-  visible,
-  onToggle,
-  className,
-  iconClassName,
-}: {
-  visible: boolean
-  onToggle: () => void
-  className?: string
-  iconClassName?: string
-}) {
-  const Icon = visible ? EyeIcon : EyeOffIcon
-  return (
-    <IconButton
-      type="button"
-      data-boring-agent-part="thought-toggle"
-      data-boring-state={visible ? "selected" : undefined}
-      variant="ghost"
-      size="icon-sm"
-      onClick={onToggle}
-      className={cn(composerActionClass, "w-8", visible && "text-foreground", className)}
-      aria-pressed={visible}
-      aria-label={visible ? "Hide thoughts" : "Show thoughts"}
-      title={visible ? "Hide thoughts" : "Show thoughts"}
-    >
-      <Icon className={cn("h-3.5 w-3.5", iconClassName)} strokeWidth={1.75} />
-    </IconButton>
   )
 }

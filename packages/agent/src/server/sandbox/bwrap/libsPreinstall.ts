@@ -13,17 +13,6 @@ const CACHE_BASE = '/var/cache/boring-agent/venvs'
 const SYSTEM_VENV_PATH = '/opt/venv'
 const INSTALL_TIMEOUT_MS = 120_000
 
-export interface LibsPreinstallConfig {
-  pythonPackages?: string[]
-  workspaceRoot?: string
-}
-
-export interface PreinstallResult {
-  tier1VenvPath: string | null
-  tier2VenvPath: string | null
-  skipped: boolean
-}
-
 function hashPackageList(packages: string[]): string {
   const sorted = [...packages].sort()
   return createHash('sha256').update(sorted.join('\n')).digest('hex').slice(0, 16)
@@ -154,22 +143,4 @@ export function buildVenvEnv(tier1Path: string | null, workspaceRoot: string): R
 export function parsePackagesEnv(envValue: string | undefined): string[] {
   if (!envValue || envValue.trim().length === 0) return []
   return envValue.split(',').map((p) => p.trim()).filter((p) => p.length > 0)
-}
-
-export async function preinstallLibs(config: LibsPreinstallConfig): Promise<PreinstallResult> {
-  const packages = config.pythonPackages ?? []
-
-  if (packages.length === 0 && !config.workspaceRoot) {
-    log.info('no packages and no workspace — skipping preinstall')
-    return { tier1VenvPath: null, tier2VenvPath: null, skipped: true }
-  }
-
-  const tier1Path = ensureTier1Venv(packages)
-
-  let tier2Path: string | null = null
-  if (config.workspaceRoot) {
-    tier2Path = ensureTier2Venv(config.workspaceRoot, tier1Path)
-  }
-
-  return { tier1VenvPath: tier1Path, tier2VenvPath: tier2Path, skipped: false }
 }

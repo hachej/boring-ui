@@ -164,12 +164,6 @@ export function parseReadyStatusSse(payload: unknown): ReadyStatusWarmupSnapshot
   return null
 }
 
-export function parseFirstReadyStatusSseEvent(payload: string): ReadyStatusWarmupSnapshot | null {
-  const index = payload.indexOf("\n\n")
-  if (index < 0) return null
-  return parseReadyStatusSse(payload.slice(0, index + 2))
-}
-
 export function readyStatusSupportsWorkspaceUse(status: ReadyStatusWarmupSnapshot | null): boolean {
   if (!status) return true
   const hasCapabilityStates = Boolean(status.chatState || status.workspaceState)

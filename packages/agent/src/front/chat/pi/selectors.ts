@@ -66,14 +66,6 @@ export function selectRuntimeNotices(state: PiChatState): PiChatRuntimeNotice[] 
   return notices
 }
 
-export function selectIsEmptyTimeline(state: PiChatState): boolean {
-  return selectMessagesForRender(state).length === 0
-}
-
-export function selectHasPendingOutbox(state: PiChatState): boolean {
-  return Object.keys(state.optimisticOutbox).length > 0
-}
-
 function optimisticText(message: BoringChatMessage): string {
   const text = message.parts
     .filter((part): part is Extract<BoringChatPart, { type: 'text' }> => part.type === 'text')

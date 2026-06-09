@@ -5,12 +5,6 @@ import { THINKING_LEVELS } from '../chatPanelSettings'
 import type { PluginReloadDiagnostic } from '../composer/PluginUpdateStatus'
 import type { PiChatState } from './pi/piChatReducer'
 
-export function normalizeHeaders(headers: Record<string, string | undefined> | undefined): Record<string, string> | undefined {
-  if (!headers) return undefined
-  const entries = normalizedHeaderEntries(headers)
-  return entries.length > 0 ? Object.fromEntries(entries) : undefined
-}
-
 export function headersContentKey(headers: Record<string, string | undefined> | undefined): string {
   return JSON.stringify(normalizedHeaderEntries(headers).sort(([a], [b]) => a.localeCompare(b)))
 }

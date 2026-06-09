@@ -15,7 +15,6 @@ import {
   type ToolRenderer,
   type ToolRendererOverrides,
 } from './bareToolRenderers'
-import type { defaultToolRenderers as bareDefaults } from './bareToolRenderers/renderers'
 import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput, getStatusBadge } from './primitives/tool'
 import { CollapsibleTrigger } from '@hachej/boring-ui-kit'
 import { ChevronDownIcon, ExternalLinkIcon, FileDiffIcon, FilePlus2Icon, FileTextIcon, SearchIcon, SquareTerminalIcon, ZapIcon } from 'lucide-react'
@@ -516,4 +515,4 @@ export function mergeShadcnToolRenderers(
   return result
 }
 
-export { bareDefaults as bareDefaultToolRenderers, resolveToolRendererForPart }
+export { resolveToolRendererForPart }
