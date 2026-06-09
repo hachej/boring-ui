@@ -109,7 +109,7 @@ export function ChatEmptyState({
         ["--chat-empty-accent" as string]: "var(--accent)",
       }}
       className={cn(
-        "mx-auto flex w-full max-w-[640px] flex-col px-2 pt-12 pb-4",
+        "@container mx-auto flex w-full max-w-[640px] flex-col px-2 pt-12 pb-4",
         className,
       )}
     >
@@ -132,7 +132,7 @@ export function ChatEmptyState({
       {suggestions.length > 0 && (
         <div
           data-boring-agent-part="suggestion-grid"
-          className="mt-8 grid w-full grid-cols-1 gap-px overflow-hidden rounded-xl bg-border/70 ring-1 ring-border/70 sm:grid-cols-2"
+          className="mt-8 grid w-full grid-cols-1 gap-px overflow-hidden rounded-xl bg-border/70 ring-1 ring-border/70 @[32rem]:grid-cols-2"
         >
           {suggestions.map((suggestion) => {
             const Icon = suggestion.icon
@@ -158,11 +158,11 @@ export function ChatEmptyState({
                   />
                 )}
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="truncate text-[13px] font-medium text-foreground">
+                  <span className="text-[13px] font-medium text-foreground">
                     {suggestion.label}
                   </span>
                   {suggestion.hint && (
-                    <span className="truncate text-[12px] text-muted-foreground">
+                    <span className="text-[12px] text-muted-foreground">
                       {suggestion.hint}
                     </span>
                   )}

@@ -135,12 +135,15 @@ describe('ChatPanel (shadcn)', () => {
     expect(html).toContain('aria-live="polite"')
   })
 
-  test('renders empty state with default suggestion grid when no messages', () => {
+  test('renders empty state with container-responsive suggestion layout when no messages', () => {
     const html = renderToStaticMarkup(<ChatPanel sessionId="sess-empty" />)
     // Default headline + at least one default suggestion card.
     expect(html).toContain('What are we building?')
     expect(html).toContain('Summarize the README')
     expect(html).toContain('Explain this codebase')
+    expect(html).toContain('@container')
+    expect(html).toContain('@[32rem]:grid-cols-2')
+    expect(html).not.toContain('sm:grid-cols-2')
   })
 
   test('custom suggestions override defaults and prompt label fallback works', () => {

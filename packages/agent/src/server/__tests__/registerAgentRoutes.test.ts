@@ -10,9 +10,26 @@ import type { RuntimeModeAdapter } from '../runtime/mode'
 
 const tempDirs: string[] = []
 
+async function removeDirEventually(dir: string, timeoutMs = 5000): Promise<void> {
+  const startedAt = Date.now()
+  let lastError: unknown
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      await rm(dir, { recursive: true, force: true })
+      return
+    } catch (error) {
+      lastError = error
+      const code = typeof error === 'object' && error && 'code' in error ? (error as { code?: string }).code : undefined
+      if (code !== 'ENOTEMPTY' && code !== 'EBUSY') throw error
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+  }
+  if (lastError) throw lastError
+}
+
 afterEach(async () => {
   await Promise.all(
-    tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
+    tempDirs.splice(0).map((dir) => removeDirEventually(dir)),
   )
 })
 
