@@ -219,7 +219,7 @@ describe('PiChatEventMapper', () => {
         clientNonce: 'nonce-1',
         clientSeq: 7,
         text: 'hello',
-        files: [{ type: 'file', id: 'user-1:file:1', mediaType: 'image/png' }],
+        files: [{ type: 'file', id: 'user-1:file:1', mediaType: 'image/png', url: 'data:image/png;base64,redacted' }],
       },
       { type: 'followup-consumed', seq: 12, clientNonce: 'nonce-1', clientSeq: 7, messageId: 'user-1' },
     ])
