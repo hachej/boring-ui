@@ -3,7 +3,7 @@ import { createInitialPiChatState, piChatReducer, type OptimisticUserMessage, ty
 import { selectMessagesForRender, selectQueuePreview, selectRuntimeNotices } from '../selectors'
 import { createPiChatStore } from '../piChatStore'
 
-function optimistic(clientNonce: string, options: { clientSeq?: number; createdAt?: string; text?: string } = {}): OptimisticUserMessage {
+function optimistic(clientNonce: string, options: { clientSeq?: number; createdAt?: string; text?: string; afterMessageId?: string } = {}): OptimisticUserMessage {
   return {
     id: `optimistic:${clientNonce}`,
     role: 'user',
@@ -11,6 +11,7 @@ function optimistic(clientNonce: string, options: { clientSeq?: number; createdA
     clientNonce,
     clientSeq: options.clientSeq,
     createdAt: options.createdAt,
+    afterMessageId: options.afterMessageId,
     parts: [{ type: 'text', text: options.text ?? 'pending' }],
   }
 }
@@ -104,11 +105,14 @@ describe('Pi chat selectors and store', () => {
         followUpMode: 'one-at-a-time',
       },
     })
+    // The orphan placeholder was submitted right after u1 (its anchor), before
+    // u2/a2 arrived; it renders at that position regardless of clock skew.
     state = piChatReducer(state, {
       type: 'optimistic-user-message',
       message: optimistic('nonce-earlier-prompt', {
         createdAt: '2026-06-06T10:00:01.000Z',
         text: 'earlier optimistic prompt',
+        afterMessageId: 'u1',
       }),
     })
 
@@ -118,6 +122,36 @@ describe('Pi chat selectors and store', () => {
       'u2',
       'a2',
     ])
+  })
+
+  it('keeps a just-sent prompt below the previous reply despite client/server clock skew', () => {
+    // Reproduces the live reorder: the previous reply (a1) carries a server
+    // timestamp slightly ahead of the client clock, so the optimistic prompt's
+    // createdAt is "earlier" than a1. Anchoring by submit position (after a1)
+    // keeps it at the bottom; createdAt ordering would float it above a1.
+    let state = createInitialPiChatState({ sessionId: 's1', storageScope: 'scope' })
+    state = piChatReducer(state, {
+      type: 'hydrate',
+      snapshot: {
+        protocolVersion: 1,
+        sessionId: 's1',
+        seq: 2,
+        status: 'idle',
+        messages: [
+          { id: 'u1', role: 'user', status: 'done', createdAt: '2026-06-09T10:00:00.000Z', parts: [{ type: 'text', id: 'u1:t', text: 'hi' }] },
+          { id: 'a1', role: 'assistant', status: 'done', createdAt: '2026-06-09T10:00:06.000Z', parts: [{ type: 'text', id: 'a1:t', text: 'answer' }] },
+        ],
+        queue: { followUps: [] },
+        followUpMode: 'one-at-a-time',
+      },
+    })
+    // Submitted "now" but the client clock trails the server's a1 timestamp.
+    state = piChatReducer(state, {
+      type: 'optimistic-user-message',
+      message: optimistic('nonce-new', { createdAt: '2026-06-09T10:00:05.000Z', text: 'new prompt' }),
+    })
+
+    expect(selectMessagesForRender(state).map((message) => message.id)).toEqual(['u1', 'a1', 'optimistic:nonce-new'])
   })
 
   it('folds same-turn committed and streaming assistant rows before render', () => {

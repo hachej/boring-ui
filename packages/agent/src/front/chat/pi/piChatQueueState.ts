@@ -8,6 +8,13 @@ export interface OptimisticUserMessage extends BoringChatMessage {
   role: 'user'
   clientNonce: string
   clientSeq?: number
+  /**
+   * Id of the last committed message when this optimistic prompt was submitted.
+   * Used to position the placeholder by sequence rather than by wall-clock time,
+   * so client/server clock skew can't render a just-sent prompt above the
+   * previous reply.
+   */
+  afterMessageId?: string
 }
 
 export function removeOutboxEntry(outbox: Record<string, OptimisticUserMessage>, clientNonce?: string): Record<string, OptimisticUserMessage> {
