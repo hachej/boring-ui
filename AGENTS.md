@@ -14,7 +14,7 @@ Read this first. Re-read after compaction.
 - No secrets in git. Do not paste tokens into commits or logs.
 - No broad rewrite scripts (codemods, "fix everything") without approval.
 - No file variants (`*_v2.*`, `*_improved.*`) — edit in place.
-- Branch policy: work on `main`. Never create feature branches unless instructed.
+- Branch policy: never work directly on `main`. Create a short-lived branch or separate worktree for every change, and land through review/merge unless the user explicitly authorizes direct `main` work.
 - Quality gates: run relevant lint/type-check/tests before considering work done.
 - Multi-agent awareness: never stash, revert, or overwrite another agent's uncommitted work. If you encounter unexpected changes, investigate before acting.
 

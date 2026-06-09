@@ -187,7 +187,7 @@ fi
 
 log=/tmp/boring-ui-global-5213.log
 cd "$cwd"
-nohup boring-ui workspaces --port 5213 --host 0.0.0.0 --mode local > "$log" 2>&1 &
+nohup boring-ui workspaces --port 5213 --host 0.0.0.0 > "$log" 2>&1 &
 new_pid=$!
 
 for i in $(seq 1 40); do

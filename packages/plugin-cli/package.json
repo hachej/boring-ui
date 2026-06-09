@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-ui-plugin-cli",
-  "version": "0.1.32",
+  "version": "0.1.34",
   "description": "Slim boring-ui plugin authoring CLI for workspace runtimes.",
   "license": "MIT",
   "type": "module",
@@ -15,6 +15,10 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./plugin-sources": {
+      "import": "./dist/plugin-sources.js",
+      "types": "./dist/plugin-sources.d.ts"
     },
     "./package.json": "./package.json"
   },
