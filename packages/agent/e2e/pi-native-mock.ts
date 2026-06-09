@@ -149,10 +149,14 @@ export async function installPiNativeMock(page: Page): Promise<void> {
 
     window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      // The chat appends query params to some endpoints (e.g.
+      // /pi-chat/sessions?activeSessionId=...). Match on the path so a query
+      // string doesn't make an exact-match route fall through to the real backend.
+      const pathname = url.split('?')[0] ?? url
       const method = init?.method ?? (input instanceof Request ? input.method : 'GET')
       const state = load()
 
-      if (url.endsWith('/api/v1/agent/models') && method === 'GET') {
+      if (pathname.endsWith('/api/v1/agent/models') && method === 'GET') {
         return json({
           models: [
             { provider: 'anthropic', id: 'claude-sonnet', label: 'Claude Sonnet', available: true },
@@ -163,7 +167,7 @@ export async function installPiNativeMock(page: Page): Promise<void> {
           defaultModel: { provider: 'anthropic', id: 'claude-sonnet' },
         })
       }
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'GET') {
+      if (pathname.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'GET') {
         state.sessionListRequests = (state.sessionListRequests ?? 0) + 1
         if ((state.sessionList503Remaining ?? 0) > 0) {
           state.sessionList503Remaining = (state.sessionList503Remaining ?? 0) - 1
@@ -174,7 +178,7 @@ export async function installPiNativeMock(page: Page): Promise<void> {
         save(state)
         return json(state.sessions ?? [{ id: 'pi-e2e', title: 'Pi Native E2E', createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:00:00.000Z', turnCount: state.messages.length }])
       }
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'POST') {
+      if (pathname.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'POST') {
         state.sessionCreates = (state.sessionCreates ?? 0) + 1
         save(state)
         return json({ id: 'pi-e2e-new', title: 'New Pi Native E2E', createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:00:00.000Z', turnCount: 0 }, { status: 201 })
@@ -381,7 +385,7 @@ export async function installPiNativeMock(page: Page): Promise<void> {
         save(state)
         return json({ accepted: true, cursor: state.seq })
       }
-      if (url.endsWith('/api/v1/agent/reload') && method === 'POST') {
+      if (pathname.endsWith('/api/v1/agent/reload') && method === 'POST') {
         state.reloads += 1
         save(state)
         window.dispatchEvent(new CustomEvent('boring-ui:agent-plugins-reloaded', { detail: { reloaded: true, diagnostics: [] } }))

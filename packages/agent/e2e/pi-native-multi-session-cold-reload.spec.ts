@@ -156,7 +156,9 @@ test.describe('Pi-native multi-session cold reload', () => {
 
       sessionListStatuses.length = 0
       let transientFailuresRemaining = 2
-      await page.route('**/api/v1/agent/pi-chat/sessions', async (route) => {
+      // Match the list endpoint with or without its ?activeSessionId=… query
+      // (but not /sessions/<id>/… subpaths), so the 503 injection still fires.
+      await page.route(/\/api\/v1\/agent\/pi-chat\/sessions(\?|$)/, async (route) => {
         if (transientFailuresRemaining > 0) {
           transientFailuresRemaining -= 1
           await route.fulfill({

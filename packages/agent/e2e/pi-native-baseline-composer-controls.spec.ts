@@ -33,8 +33,10 @@ test.describe('Pi-native baseline composer controls', () => {
     expect(chrome.rail.borderWidth).toBe('0px')
     expect(chrome.rail.borderRadius).toBeGreaterThan(20)
     expect(Math.round(chrome.inputGroup.height)).toBe(56)
-    expect(chrome.inputGroup.flexDirection).toBe('row')
-    expect(chrome.inputGroup.alignItems).toBe('center')
+    // The composer input-group is a column shell (textarea row stacked over the
+    // controls row); the visible horizontal bar is the inner items-center row.
+    expect(chrome.inputGroup.flexDirection).toBe('column')
+    expect(chrome.inputGroup.alignItems).toBe('stretch')
     expect(chrome.inputGroup.backgroundColor).toBe('rgba(0, 0, 0, 0)')
     expect(chrome.inputGroup.boxShadow).not.toContain('inset')
     expect(chrome.inputGroup.borderWidth).toBe('0px')
@@ -117,7 +119,7 @@ test.describe('Pi-native baseline composer controls', () => {
     expect(Math.round(multiLine.rail.height - singleLine.rail.height)).toBeGreaterThanOrEqual(32)
     expect(multiLine.rail.multiline).toBe('true')
     expect(multiLine.rail.cssHeight).toBe(`${Math.round(multiLine.inputGroup.height)}px`)
-    expect(multiLine.inputGroup.alignItems).toBe('center')
+    expect(multiLine.inputGroup.alignItems).toBe('stretch')
     expect(multiLine.textarea.value).toBe('first line\nsecond line\nthird line')
     expect(multiLine.textarea.height).toBeGreaterThan(singleLine.textarea.height)
     expect(multiLine.textarea.clientHeight + 1).toBeGreaterThanOrEqual(multiLine.textarea.scrollHeight)
