@@ -2,6 +2,8 @@
 
 import type { FileUIPart } from 'ai'
 import { Loader2 } from 'lucide-react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useStickToBottomContext } from 'use-stick-to-bottom'
 import type { BoringChatMessage } from '../../../shared/chat'
 import type { ToolRendererOverrides } from '../../bareToolRenderers'
 import { ChatEmptyState, type ChatSuggestion } from '../../ChatEmptyState'
@@ -13,6 +15,13 @@ import {
 } from '../../primitives/conversation'
 import { RuntimeNoticeMessages, type PanelNotice } from './ChatNotices'
 import { PiTimelineMessage } from './PiTimelineMessage'
+
+// Heavy sessions (tool-heavy runs reach thousands of messages) must not mount
+// the whole transcript at once. Render a window anchored to the latest message
+// and reveal older messages as the user scrolls up.
+const TRANSCRIPT_WINDOW = 60
+const TRANSCRIPT_WINDOW_STEP = 40
+const LOAD_OLDER_THRESHOLD_PX = 320
 
 export interface PiConversationSurfaceProps {
   chrome: boolean
@@ -33,6 +42,8 @@ export interface PiConversationSurfaceProps {
   onScrollToBottomReady: (scrollToBottom: () => void) => void
   onSuggestionSubmit: (payload: { text: string; files: FileUIPart[]; source: 'suggestion' }) => Promise<false | void>
   onRestoreDraft: (text: string) => void
+  /** Changes when the active session changes; resets the history window to the latest page. */
+  windowResetKey?: string
 }
 
 export function PiConversationSurface({
@@ -50,8 +61,24 @@ export function PiConversationSurface({
   onScrollToBottomReady,
   onSuggestionSubmit,
   onRestoreDraft,
+  windowResetKey,
 }: PiConversationSurfaceProps) {
   const messageItems = buildMessageRenderItems(messages)
+  const total = messageItems.length
+
+  const [visibleCount, setVisibleCount] = useState(TRANSCRIPT_WINDOW)
+  // Start each session at the latest window rather than inheriting a large
+  // window expanded in a previously-viewed session.
+  useEffect(() => {
+    setVisibleCount(TRANSCRIPT_WINDOW)
+  }, [windowResetKey])
+
+  const hasOlder = total > visibleCount
+  const visibleItems = hasOlder ? messageItems.slice(total - visibleCount) : messageItems
+  const olderCount = hasOlder ? total - visibleCount : 0
+  const loadOlder = useCallback(() => {
+    setVisibleCount((count) => count + TRANSCRIPT_WINDOW_STEP)
+  }, [])
 
   return (
     <Conversation
@@ -87,11 +114,14 @@ export function PiConversationSurface({
             }}
           />
         ) : null}
-        {messageItems.map(({ message, key }, index) => (
+        {hasOlder ? (
+          <TranscriptHistoryLoader olderCount={olderCount} onLoadOlder={loadOlder} />
+        ) : null}
+        {visibleItems.map(({ message, key }, index) => (
           <PiTimelineMessage
             key={key}
             message={message}
-            isLast={index === messageItems.length - 1}
+            isLast={index === visibleItems.length - 1}
             isStreaming={isStreaming}
             showThoughts={showThoughts}
             toolRenderers={toolRenderers}
@@ -101,6 +131,59 @@ export function PiConversationSurface({
       </ConversationContent>
       <ConversationScrollButton />
     </Conversation>
+  )
+}
+
+/**
+ * Renders the "load older" affordance and auto-reveals the previous page when
+ * the user scrolls near the top, preserving their scroll position so prepended
+ * messages don't jump the viewport. Must render inside <Conversation> so it can
+ * read the stick-to-bottom scroll container.
+ */
+function TranscriptHistoryLoader({ olderCount, onLoadOlder }: { olderCount: number; onLoadOlder: () => void }) {
+  const { scrollRef } = useStickToBottomContext()
+  const pendingAnchor = useRef<number | null>(null)
+  const armed = useRef(true)
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const onScroll = () => {
+      if (!armed.current) return
+      if (el.scrollTop <= LOAD_OLDER_THRESHOLD_PX) {
+        armed.current = false
+        // Distance from the current position to the bottom of content; preserved
+        // across the prepend so the same messages stay under the viewport.
+        pendingAnchor.current = el.scrollHeight - el.scrollTop
+        onLoadOlder()
+      }
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [scrollRef, onLoadOlder])
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    if (pendingAnchor.current != null) {
+      el.scrollTop = el.scrollHeight - pendingAnchor.current
+      pendingAnchor.current = null
+    }
+    // Re-arm only once we're clear of the trigger zone, so the programmatic
+    // scroll above can't immediately re-fire and run away.
+    if (el.scrollTop > LOAD_OLDER_THRESHOLD_PX) armed.current = true
+  })
+
+  return (
+    <div className="flex justify-center" data-boring-agent-part="transcript-load-older">
+      <button
+        type="button"
+        onClick={onLoadOlder}
+        className="rounded-full border border-border/60 px-3 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+      >
+        Load {olderCount} older message{olderCount === 1 ? '' : 's'}
+      </button>
+    </div>
   )
 }
 

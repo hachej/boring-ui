@@ -886,6 +886,7 @@ export function PiChatPanel({
               }}
               onSuggestionSubmit={({ text, files, source }) => sendComposerMessage({ text, files, source })}
               onRestoreDraft={setComposerDraft}
+              windowResetKey={activeSessionId}
             />
 
             <PiChatComposerSurface
