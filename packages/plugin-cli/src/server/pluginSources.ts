@@ -9,7 +9,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs"
-import { homedir, tmpdir } from "node:os"
+import { homedir } from "node:os"
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { validateBoringPluginManifest } from "../manifest"
 
@@ -282,12 +282,25 @@ function validateInstallablePluginRoot(pluginRoot: string): { id: string; packag
   }
 }
 
+/**
+ * Packages the workspace host always supplies at runtime. A plugin must resolve
+ * these from the host, never from a copy inside its own tree — a second React in
+ * particular causes dual-React / invalid-hook-call crashes. We never report them
+ * as missing, and `installPluginDependencies` strips them from the plugin's own
+ * `dependencies` before installing so npm can't pull a shadow copy even when a
+ * plugin lists them under `dependencies` instead of `peerDependencies`. (This
+ * covers the plugin's direct deps; a transitive dep that wrongly declares React
+ * under `dependencies` rather than `peerDependencies` could still hoist a copy —
+ * `--legacy-peer-deps` plus the React-as-peer convention is what guards that.)
+ */
+const HOST_PROVIDED_DEPENDENCIES = new Set(["react", "react-dom", "@hachej/boring-workspace", "@hachej/boring-ui-kit"])
+
 function dependencyHints(pluginRoot: string, pkg: Record<string, unknown>): string[] {
   const dependencies = pkg.dependencies
   if (!dependencies || typeof dependencies !== "object" || Array.isArray(dependencies)) return []
   const hints: string[] = []
   for (const dep of Object.keys(dependencies)) {
-    if (dep === "react" || dep === "react-dom" || dep === "@hachej/boring-workspace" || dep === "@hachej/boring-ui-kit") continue
+    if (HOST_PROVIDED_DEPENDENCIES.has(dep)) continue
     const depDir = dep.startsWith("@") ? join(pluginRoot, "node_modules", ...dep.split("/")) : join(pluginRoot, "node_modules", dep)
     if (!existsSync(depDir)) hints.push(`Missing dependency: ${dep}\nRun: cd ${pluginRoot} && npm install`)
   }
@@ -330,6 +343,9 @@ function safeInstallDir(parent: string, id: string): string {
   return join(parent, cleaned)
 }
 
+// Promote a staged package to its final path. Callers stage inside the
+// destination's own parent dir (see withStagingDir), so `from` and `to` are
+// always on the same filesystem and this rename can't hit EXDEV.
 function moveFreshDir(from: string, to: string): void {
   if (existsSync(to)) throw new Error(`plugin install target already exists: ${to}. Remove it first with boring-ui-plugin remove ${basename(to)}`)
   mkdirSync(dirname(to), { recursive: true })
@@ -341,29 +357,87 @@ function installLocalSource(source: string, paths: PluginSourceScopePaths): { ro
   return { rootDir, packageSource: sourceForLocalPackage(paths, rootDir) }
 }
 
-function installGitSource(spec: string, paths: PluginSourceScopePaths, ref?: string): { rootDir: string; packageSource: string; ref?: string } {
-  const tmp = mkdtempSync(join(tmpdir(), "boring-plugin-git-"))
-  const cloneDir = join(tmp, "repo")
+/**
+ * Install a freshly placed plugin package's declared dependencies into its own
+ * `node_modules`, the same way Pi installs package sources: delegate to the
+ * package manager rather than shipping a bare tarball. Runs at the FINAL install
+ * path (not in staging) so package-manager-authored relative symlinks — e.g.
+ * `file:` deps — resolve correctly and survive.
+ *
+ * Host-provided packages are stripped from the manifest first so npm cannot pull
+ * a shadow copy into the plugin tree; the workspace supplies them at runtime.
+ * Rolls the package back out on failure so a partial install never lingers.
+ * Local-path sources are excluded by the caller: those reference an editable tree
+ * the author owns and must not be mutated.
+ */
+function installPluginDependencies(pluginRoot: string): void {
+  const pkg = readPackageJson(pluginRoot)
+  const declared = pkg.dependencies
+  if (!declared || typeof declared !== "object" || Array.isArray(declared)) return
+  const installable = Object.fromEntries(
+    Object.entries(declared).filter(([name]) => !HOST_PROVIDED_DEPENDENCIES.has(name)),
+  )
+  if (Object.keys(installable).length === 0) return
+  if (Object.keys(installable).length !== Object.keys(declared).length) {
+    writeFileSync(
+      join(pluginRoot, "package.json"),
+      `${JSON.stringify({ ...pkg, dependencies: installable }, null, 2)}\n`,
+      "utf8",
+    )
+  }
   try {
+    // Scripts run (no --ignore-scripts), matching Pi: install lifecycle scripts of
+    // the plugin and its deps execute here. The install path already warns that
+    // plugins are trusted local code.
+    run("npm", ["install", "--omit=dev", "--no-audit", "--no-fund", "--legacy-peer-deps"], { cwd: pluginRoot })
+  } catch (err) {
+    // Deps are mandatory for npm/git sources (a plugin missing them won't load),
+    // so a failed install is a failed install: roll the package back out — leaving
+    // no settings entry and no half-placed dir — rather than register a broken
+    // plugin. Re-run the install once the registry is reachable again.
+    rmSync(pluginRoot, { recursive: true, force: true })
+    const detail = err instanceof Error ? err.message : String(err)
+    throw new Error(`failed to install dependencies for plugin at ${pluginRoot}; install rolled back. ${detail}`)
+  }
+}
+
+/**
+ * Stage a fetched package next to its final destination (inside the scope's
+ * git/npm root, on the same filesystem) so promoting it is an atomic rename.
+ * The previous implementation staged under the OS temp dir and renamed across
+ * mounts, which throws EXDEV whenever `/tmp` is a separate filesystem (tmpfs,
+ * Docker, most CI) — i.e. the common case.
+ */
+function withStagingDir<T>(parent: string, fn: (stagingDir: string) => T): T {
+  mkdirSync(parent, { recursive: true })
+  const staging = mkdtempSync(join(parent, ".staging-"))
+  try {
+    return fn(staging)
+  } finally {
+    rmSync(staging, { recursive: true, force: true })
+  }
+}
+
+function installGitSource(spec: string, paths: PluginSourceScopePaths, ref?: string): { rootDir: string; packageSource: string; ref?: string } {
+  return withStagingDir(paths.gitDir, (staging) => {
+    const cloneDir = join(staging, "repo")
     run("git", ["clone", "--quiet", spec, cloneDir])
     if (ref) run("git", ["checkout", "--quiet", ref], { cwd: cloneDir })
     const meta = validateInstallablePluginRoot(cloneDir)
     const target = safeInstallDir(paths.gitDir, meta.id)
     moveFreshDir(cloneDir, target)
+    installPluginDependencies(target)
     return { rootDir: target, packageSource: sourceForLocalPackage(paths, target), ...(ref ? { ref } : {}) }
-  } finally {
-    rmSync(tmp, { recursive: true, force: true })
-  }
+  })
 }
 
 function installNpmSource(spec: string, paths: PluginSourceScopePaths): { rootDir: string; packageSource: string } {
-  const tmp = mkdtempSync(join(tmpdir(), "boring-plugin-npm-"))
-  const packDir = join(tmp, "pack")
-  const extractDir = join(tmp, "extract")
-  mkdirSync(packDir, { recursive: true })
-  mkdirSync(extractDir, { recursive: true })
-  try {
-    const stdout = runWithStdout("npm", ["pack", "--silent", spec, "--pack-destination", packDir], { cwd: tmp })
+  return withStagingDir(paths.npmDir, (staging) => {
+    const packDir = join(staging, "pack")
+    const extractDir = join(staging, "extract")
+    mkdirSync(packDir, { recursive: true })
+    mkdirSync(extractDir, { recursive: true })
+    const stdout = runWithStdout("npm", ["pack", "--silent", spec, "--pack-destination", packDir], { cwd: staging })
     const tarballName = stdout.trim().split(/\r?\n/).filter(Boolean).at(-1)
     if (!tarballName) throw new Error(`npm pack did not produce a tarball for ${spec}`)
     const tarball = isAbsolute(tarballName) ? tarballName : join(packDir, tarballName)
@@ -371,10 +445,9 @@ function installNpmSource(spec: string, paths: PluginSourceScopePaths): { rootDi
     const meta = validateInstallablePluginRoot(extractDir)
     const target = safeInstallDir(paths.npmDir, meta.id)
     moveFreshDir(extractDir, target)
+    installPluginDependencies(target)
     return { rootDir: target, packageSource: sourceForLocalPackage(paths, target) }
-  } finally {
-    rmSync(tmp, { recursive: true, force: true })
-  }
+  })
 }
 
 function recordFromPackageSource(paths: PluginSourceScopePaths, entry: PiPackageEntry): PluginSourceRecord | null {
