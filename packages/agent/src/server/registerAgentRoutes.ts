@@ -8,6 +8,7 @@ import type { TelemetrySink } from '../shared/telemetry'
 import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
 import { getEnv } from './config/env'
 import type { RuntimeBundle, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
+import { getRuntimeBundleStorageRoot } from './runtime/mode'
 import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from './workspace/runtimeLayout'
 import { VERCEL_SANDBOX_WORKSPACE_ROOT } from './workspace/createVercelSandboxWorkspace'
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningResult } from './workspace/provisioning'
@@ -880,7 +881,8 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     getFileSearch: async (request) => (await getBindingForRequest(request)).runtimeBundle.fileSearch,
   })
   await app.register(gitRoutes, {
-    getWorkspaceRoot: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace.root,
+    getWorkspaceRoot: async (request) =>
+      getRuntimeBundleStorageRoot((await getBindingForRequest(request)).runtimeBundle),
   })
   await app.register(chatRoutes, {
     getRuntime: async (request) => {
