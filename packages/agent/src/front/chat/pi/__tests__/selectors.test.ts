@@ -169,6 +169,51 @@ describe('Pi chat selectors and store', () => {
     ])
   })
 
+  it('does not fold same-turn assistant replies across a queued user turn', () => {
+    // Pi drains a queued follow-up inside the same agent turn, so the follow-up's
+    // reply shares the previous reply's turnId with the queued user message
+    // between them. They must render as separate replies in order — not merged
+    // into the earlier reply (which would push the queued prompt out of order).
+    const state: PiChatState = {
+      ...createInitialPiChatState({ sessionId: 's1', storageScope: 'scope' }),
+      status: 'idle',
+      hydrated: true,
+      turnId: 'turn-x',
+      committedMessages: [
+        { id: 'u1', role: 'user', status: 'done', turnId: 'turn-x', parts: [{ type: 'text', id: 'u1:t', text: 'count to 3' }] },
+        { id: 'a1', role: 'assistant', status: 'done', turnId: 'turn-x', parts: [{ type: 'text', id: 'a1:t', text: '1 2 3' }] },
+        { id: 'u2', role: 'user', status: 'done', turnId: 'turn-x', parts: [{ type: 'text', id: 'u2:t', text: 'say BANANA' }] },
+        { id: 'a2', role: 'assistant', status: 'done', turnId: 'turn-x', parts: [{ type: 'text', id: 'a2:t', text: 'BANANA' }] },
+      ],
+    }
+
+    const rendered = selectMessagesForRender(state)
+    expect(rendered.map((message) => message.id)).toEqual(['u1', 'a1', 'u2', 'a2'])
+    expect(rendered.map((message) => (message.parts[0] as { text?: string }).text)).toEqual([
+      'count to 3', '1 2 3', 'say BANANA', 'BANANA',
+    ])
+  })
+
+  it('still folds a same-turn streaming reply that follows the queued reply', () => {
+    // The queued follow-up's own streaming chunks (same turn, no user between)
+    // should still coalesce into its reply.
+    const state: PiChatState = {
+      ...createInitialPiChatState({ sessionId: 's1', storageScope: 'scope' }),
+      status: 'streaming',
+      hydrated: true,
+      turnId: 'turn-x',
+      committedMessages: [
+        { id: 'u1', role: 'user', status: 'done', turnId: 'turn-x', parts: [{ type: 'text', id: 'u1:t', text: 'count' }] },
+        { id: 'a1', role: 'assistant', status: 'done', turnId: 'turn-x', parts: [{ type: 'text', id: 'a1:t', text: '1 2 3' }] },
+        { id: 'u2', role: 'user', status: 'done', turnId: 'turn-x', parts: [{ type: 'text', id: 'u2:t', text: 'say BANANA' }] },
+        { id: 'a2', role: 'assistant', status: 'streaming', turnId: 'turn-x', parts: [{ type: 'text', id: 'a2:t', text: 'BAN' }] },
+      ],
+      streamingMessage: { id: 'a2', role: 'assistant', status: 'streaming', turnId: 'turn-x', parts: [{ type: 'text', id: 'a2:t', text: 'BANANA' }] },
+    }
+
+    expect(selectMessagesForRender(state).map((message) => message.id)).toEqual(['u1', 'a1', 'u2', 'a2'])
+  })
+
   it('keeps repeated assistant ids separate across different turns', () => {
     const state: PiChatState = {
       ...createInitialPiChatState({ sessionId: 's1', storageScope: 'scope' }),

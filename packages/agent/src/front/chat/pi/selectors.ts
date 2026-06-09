@@ -134,6 +134,11 @@ function findRenderableAssistantMergeIndex(messages: BoringChatMessage[], messag
     if (candidate.role === 'assistant' && message.role === 'assistant' && candidate.turnId && candidate.turnId === message.turnId) {
       return index
     }
+    // Stop at a user turn: Pi keeps the agent loop (and turnId) open while it
+    // drains a queued follow-up, so the follow-up's assistant reply shares the
+    // previous reply's turnId. Merging across the intervening user message would
+    // fold the new reply into the old one and push the queued prompt out of order.
+    if (candidate.role === 'user') break
   }
   return -1
 }
