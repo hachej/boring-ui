@@ -13,6 +13,8 @@ import type {
   BoringPluginFrontTarget,
   BoringPluginFrontTargetResolver,
   BoringPluginListEntry,
+  BoringPluginSource,
+  BoringPluginSourceInput,
   BoringServerPluginManifest,
   PluginRestartSurface,
 } from "./types"
@@ -38,7 +40,7 @@ interface LoadedPluginRecord extends BoringServerPluginManifest {
 }
 
 export interface BoringPluginAssetManagerOptions {
-  pluginDirs: string[]
+  pluginDirs: BoringPluginSourceInput[]
   /**
    * Root directory for per-plugin `.error` sidecar files written by the
    * asset manager and read by verify-plugin. Defaults to `<cwd>/.pi/extensions`.
@@ -77,6 +79,8 @@ export interface LoadedBoringPluginInspection {
   rootDir: string
   frontPath?: string
   frontTarget?: BoringPluginFrontTarget
+  serverPath?: string
+  source: BoringPluginSource
 }
 
 export interface LoadedBoringPluginPiSnapshot {
@@ -175,6 +179,7 @@ function pluginSignature(plugin: BoringServerPluginManifest): string {
     .update(JSON.stringify(plugin.boring))
     .update(JSON.stringify(plugin.pi ?? {}))
     .update(plugin.version)
+    .update(JSON.stringify(plugin.source))
     .update(plugin.frontPath ?? "")
     .update(pluginFileSignature(plugin.frontPath))
     .update(directorySignature(frontSignatureRoot(plugin)))
@@ -188,11 +193,12 @@ function pluginSignature(plugin: BoringServerPluginManifest): string {
 }
 
 /**
- * Compare the previous + new manifest's server-side surfaces. Returns
- * the surfaces whose changes can't be hot-reloaded (the workspace
- * wires routes + agentTools once at boot). Cheap heuristic: any
- * change to the server file (signature) AND server file is present
- * in either revision = both surfaces flagged.
+ * Compare the previous + new manifest's static server-side surfaces.
+ * Returns the surfaces whose changes can't be hot-reloaded because the
+ * trusted app/internal plugin path wires Fastify routes + agentTools once
+ * at boot. Workspace-local runtime plugins (`source.kind === "external"`)
+ * are handled by RuntimeBackendRegistry and do hot-reload via `/reload`,
+ * so they must not produce restart warnings.
  *
  * First-time loads (no `previous`) don't set this — agentTools/routes
  * are correctly in place from the initial boot.
@@ -202,11 +208,12 @@ function computeRequiresRestart(
   next: BoringServerPluginManifest,
 ): PluginRestartSurface[] {
   if (!previous) return []
+  if (previous.source.kind === "external" && next.source.kind === "external") return []
   const prevHasServer = !!previous.serverPath
   const nextHasServer = !!next.serverPath
   if (!prevHasServer && !nextHasServer) return []
-  // Server added or removed mid-session — both surfaces need a restart
-  // to take effect.
+  // Server added or removed mid-session — both static surfaces need a
+  // restart to take effect.
   if (prevHasServer !== nextHasServer) return ["routes", "agentTools"]
   // Both present — we can't compare the PREVIOUS file's content (it's
   // been overwritten), so compare the cached load-time signature against
@@ -217,7 +224,7 @@ function computeRequiresRestart(
 }
 
 export class BoringPluginAssetManager {
-  private readonly pluginDirs: string[]
+  private readonly pluginDirs: BoringPluginSourceInput[]
   private readonly errorRoot: string
   private readonly frontTargetResolver?: BoringPluginFrontTargetResolver
   private readonly includeLegacyFrontUrl: boolean
@@ -259,8 +266,10 @@ export class BoringPluginAssetManager {
       version: plugin.version,
       revision: plugin.revision,
       rootDir: plugin.rootDir,
+      source: plugin.source,
       ...(plugin.frontPath ? { frontPath: plugin.frontPath } : {}),
       ...(plugin.frontTarget ? { frontTarget: plugin.frontTarget } : {}),
+      ...(plugin.serverPath ? { serverPath: plugin.serverPath } : {}),
     }))
   }
 
@@ -305,7 +314,7 @@ export class BoringPluginAssetManager {
   private async doLoadOnce(): Promise<LoadBoringAssetsResult> {
     this.lastErrors.clear()
     const scan = scanBoringPlugins(this.pluginDirs)
-    const nextPlugins = scan.plugins
+    const nextPlugins = scan.plugins.filter((plugin) => plugin.hasBoring)
     const nextIds = new Set(nextPlugins.map((plugin) => plugin.id))
     const invalidPluginDirs = new Set(scan.preflight.errors.map((error) => resolve(error.pluginDir)))
     const events: BoringPluginEvent[] = []

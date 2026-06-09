@@ -22,17 +22,14 @@ import type {
   RuntimePluginHostSnapshot,
   RuntimePluginServerSnapshotEntry,
 } from "../shared/runtimePluginDiagnostics.js"
-import {
-  createCliPluginAssetManager,
-  getGlobalPiExtensionsRoot,
-  readCliPluginPiSnapshot,
-  resolveCliBoringPluginDirs,
-} from "./pluginDiscovery.js"
+import type { readCliPluginPiSnapshot as readCliPluginPiSnapshotFn } from "./pluginDiscovery.js"
 
 export interface RunCliOptions {
   argv?: string[]
   publicDir: string
 }
+
+type CliPluginPiSnapshot = ReturnType<typeof readCliPluginPiSnapshotFn>
 
 const MODE_MAP = {
   "local": "direct", // no sandbox, full network access
@@ -211,6 +208,7 @@ const HELP_TEXT = [
   "Commands:",
   "  boring-ui [workspace]                 Start the workspace UI for a folder",
   "  boring-ui workspaces <subcommand>     Manage saved local workspaces",
+  "  boring-ui plugin <subcommand>         Install, list, and remove plugin sources",
   "",
   "Options:",
   "  -p, --port <port>       HTTP port (default: 5200)",
@@ -389,19 +387,21 @@ export async function createFolderModeApp(opts: {
 }): Promise<FastifyInstance> {
   const workspaceRoot = resolve(opts.workspaceRoot)
   const projectName = opts.projectName ?? (basename(workspaceRoot) || "workspace")
-  const [{ createWorkspaceAgentServer, readWorkspacePluginPackageRuntimePlugins }, { createPluginFrontRuntimeHost }] = await Promise.all([
+  const [{ createWorkspaceAgentServer, readWorkspacePluginPackageRuntimePlugins }, { createPluginFrontRuntimeHost }, pluginDiscovery] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
     import("./pluginFrontRuntime.js"),
+    import("./pluginDiscovery.js"),
   ])
   const diagnosticsStore = createRuntimePluginDiagnosticsStore()
   const runtimeHost = await createPluginFrontRuntimeHost({
     onDiagnostic: (diagnostic) => diagnosticsStore.record(diagnostic),
   })
+  const pluginDirs = pluginDiscovery.resolveCliBoringPluginDirs(workspaceRoot)
   const runtimeProvisioning = await provisionCliWorkspaceRuntime({
     workspaceRoot,
     mode: opts.mode,
     provisionWorkspace: opts.provisionWorkspace,
-    plugins: readWorkspacePluginPackageRuntimePlugins(resolveCliBoringPluginDirs(workspaceRoot)),
+    plugins: readWorkspacePluginPackageRuntimePlugins(pluginDirs),
   })
   const app = await createWorkspaceAgentServer({
     workspaceRoot,
@@ -409,7 +409,7 @@ export async function createFolderModeApp(opts: {
     logger: false,
     provisionWorkspace: false,
     runtimeProvisioning,
-    additionalBoringPluginDirs: [getGlobalPiExtensionsRoot()],
+    additionalBoringPluginDirs: pluginDirs,
     boringPluginFrontTargetResolver: runtimeHost.createFrontTargetResolver(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID),
     boringPluginIncludeLegacyFrontUrl: false,
   })
@@ -495,12 +495,13 @@ export async function createWorkspacesModeApp(opts: {
   registryPath?: string
   provisionWorkspace?: boolean
 }): Promise<FastifyInstance> {
-  const [workspaceAppServer, workspaceServer, agentServer, fastifyModule, { createPluginFrontRuntimeHost }] = await Promise.all([
+  const [workspaceAppServer, workspaceServer, agentServer, fastifyModule, { createPluginFrontRuntimeHost }, pluginDiscovery] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
     import("@hachej/boring-workspace/server"),
     import("@hachej/boring-agent/server"),
     import("fastify"),
     import("./pluginFrontRuntime.js"),
+    import("./pluginDiscovery.js"),
   ])
   const registry = createLocalWorkspaceRegistry(opts.registryPath)
   const app = fastifyModule.default({ logger: false, bodyLimit: 16 * 1024 * 1024 })
@@ -515,7 +516,7 @@ export async function createWorkspacesModeApp(opts: {
     manager: InstanceType<typeof workspaceServer.BoringPluginAssetManager>
     ensureLoaded: Promise<void>
   }>()
-  const pluginPiSnapshots = new Map<string, ReturnType<typeof readCliPluginPiSnapshot>>()
+  const pluginPiSnapshots = new Map<string, CliPluginPiSnapshot>()
   const runtimeProvisioningByWorkspace = new Map<string, WorkspaceProvisioningResult | undefined>()
 
   function getBridge(workspaceId: string) {
@@ -542,7 +543,7 @@ export async function createWorkspacesModeApp(opts: {
     return `${workspace.id}:${workspace.path}`
   }
 
-  function syncLoadedPluginPiSnapshot(workspace: LocalWorkspace, manager: { inspectLoadedPiSnapshot(): ReturnType<typeof readCliPluginPiSnapshot> }): void {
+  function syncLoadedPluginPiSnapshot(workspace: LocalWorkspace, manager: { inspectLoadedPiSnapshot(): CliPluginPiSnapshot }): void {
     pluginPiSnapshots.set(pluginRuntimeKey(workspace), manager.inspectLoadedPiSnapshot())
   }
 
@@ -550,7 +551,7 @@ export async function createWorkspacesModeApp(opts: {
     const key = pluginRuntimeKey(workspace)
     let runtime = pluginRuntimes.get(key)
     if (!runtime) {
-      const manager = createCliPluginAssetManager(workspace.path, {
+      const manager = pluginDiscovery.createCliPluginAssetManager(workspace.path, {
         frontTargetResolver: runtimeHost.createFrontTargetResolver(workspace.id),
         includeLegacyFrontUrl: false,
       })
@@ -659,7 +660,7 @@ export async function createWorkspacesModeApp(opts: {
         provisionWorkspace: opts.provisionWorkspace,
         adapter: provisioningAdapter,
         runtimeLayout,
-        plugins: workspaceAppServer.readWorkspacePluginPackageRuntimePlugins(resolveCliBoringPluginDirs(workspaceRoot)),
+        plugins: workspaceAppServer.readWorkspacePluginPackageRuntimePlugins(pluginDiscovery.resolveCliBoringPluginDirs(workspaceRoot)),
       })
       runtimeProvisioningByWorkspace.set(workspaceId, provisioned)
       return provisioned
@@ -885,6 +886,12 @@ async function handleWorkspacesCommand(opts: {
 }
 
 export async function runCli(options: RunCliOptions): Promise<void> {
+  if (options.argv?.[0] === "plugin") {
+    const { runBoringUiPluginCli } = await import("@hachej/boring-ui-plugin-cli")
+    await runBoringUiPluginCli(options.argv.slice(1))
+    return
+  }
+
   const { values: args, positionals } = parseArgs({
     args: options.argv,
     options: {
