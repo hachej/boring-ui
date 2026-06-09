@@ -76,6 +76,27 @@ export interface MarkdownEditorProps {
   documentPath?: string
 }
 
+export function countMarkdownWords(content: string): number {
+  const plainText = content
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`[^`]*`/g, " ")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/^\s{0,3}[-*_]{3,}\s*$/gm, " ")
+    .replace(/^\s{0,3}(?:[-*+]\s+|\d+[.)]\s+|>\s?)/gm, "")
+    .replace(/^\s{0,3}\|?(?:\s*:?-+:?\s*\|)+\s*$/gm, " ")
+    .replace(/\|/g, " ")
+    .replace(/[*_~>#]/g, " ")
+  const matches = plainText.match(/\b[\p{L}\p{N}']+\b/gu)
+  return matches?.length ?? 0
+}
+
+function formatWordCountLabel(count: number): string {
+  return `${count} word${count === 1 ? "" : "s"}`
+}
+
 function isExternalImageSrc(src: string): boolean {
   return /^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(src)
 }
@@ -457,6 +478,7 @@ export function MarkdownEditor({
   onChangeRef.current = onChange
   const suppressChangeRef = useRef(false)
   const editorRef = useRef<Editor | null>(null)
+  const wordCount = useMemo(() => countMarkdownWords(content), [content])
 
   // Stable ref so handlePaste (created once in useEditor) always calls the latest version.
   const insertImageRef = useRef<(file: File) => Promise<void>>(async () => {})
@@ -593,6 +615,9 @@ export function MarkdownEditor({
         ) : (
           <EditorContent editor={editor} />
         )}
+      </div>
+      <div className="border-t border-border/60 px-4 py-2 text-right text-xs text-muted-foreground" data-testid="markdown-word-count">
+        {formatWordCountLabel(wordCount)}
       </div>
     </div>
   )
