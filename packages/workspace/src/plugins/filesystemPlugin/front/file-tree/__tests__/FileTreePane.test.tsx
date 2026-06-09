@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from "vitest"
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type React from "react"
@@ -150,7 +150,7 @@ vi.mock("../FileTree", () => {
   }
 })
 
-import { FileTreePane } from "../FileTreeView"
+import { FileTreePane, clampContextMenuPosition } from "../FileTreeView"
 
 const sampleFiles = [
   { name: "src", kind: "dir" as const, path: "src" },
@@ -165,6 +165,35 @@ function wrapper({ children }: { children: React.ReactNode }) {
   return <QueryClientProvider client={qc}>{children}</QueryClientProvider>
 }
 
+const originalInnerWidth = window.innerWidth
+const originalInnerHeight = window.innerHeight
+
+beforeAll(() => {
+  Object.defineProperty(window, "innerWidth", {
+    configurable: true,
+    writable: true,
+    value: 320,
+  })
+  Object.defineProperty(window, "innerHeight", {
+    configurable: true,
+    writable: true,
+    value: 420,
+  })
+})
+
+afterAll(() => {
+  Object.defineProperty(window, "innerWidth", {
+    configurable: true,
+    writable: true,
+    value: originalInnerWidth,
+  })
+  Object.defineProperty(window, "innerHeight", {
+    configurable: true,
+    writable: true,
+    value: originalInnerHeight,
+  })
+})
+
 beforeEach(() => {
   vi.clearAllMocks()
   mockFileSearch.mockReturnValue({ data: undefined })
@@ -174,6 +203,20 @@ beforeEach(() => {
     error: undefined,
   })
   mockGetGitUrlMetadata.mockImplementation(() => ({ data: { enabled: false } }))
+})
+
+describe("clampContextMenuPosition", () => {
+  it("keeps the menu inside the viewport when opened near the bottom-right edge", () => {
+    expect(
+      clampContextMenuPosition(280, 390, { width: 120, height: 100 }, 320, 420),
+    ).toEqual({ x: 192, y: 312 })
+  })
+
+  it("leaves in-bounds positions unchanged", () => {
+    expect(
+      clampContextMenuPosition(40, 60, { width: 120, height: 100 }, 320, 420),
+    ).toEqual({ x: 40, y: 60 })
+  })
 })
 
 describe("FileTreePane", () => {
@@ -452,6 +495,57 @@ describe("FileTreePane", () => {
 
     expect(screen.queryByRole("menuitem", { name: "Copy Git URL" })).not.toBeInTheDocument()
     expect(screen.getByText("Workspace is not inside a Git repository.")).toBeInTheDocument()
+  })
+
+  it("repositions the context menu when opened too close to the viewport bottom", async () => {
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.getAttribute("role") === "menu") {
+          return {
+            x: 0,
+            y: 0,
+            top: 0,
+            left: 0,
+            right: 120,
+            bottom: 100,
+            width: 120,
+            height: 100,
+            toJSON: () => ({}),
+          } as DOMRect
+        }
+        return {
+          x: 0,
+          y: 0,
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: 0,
+          height: 0,
+          toJSON: () => ({}),
+        } as DOMRect
+      })
+
+    try {
+      render(<FileTreePane />, { wrapper })
+
+      await waitFor(() => {
+        expect(screen.getByText("index.ts")).toBeInTheDocument()
+      })
+
+      fireEvent.contextMenu(screen.getByText("index.ts"), {
+        clientX: 280,
+        clientY: 390,
+      })
+
+      await waitFor(() => {
+        const menu = screen.getByRole("menu")
+        expect(menu).toHaveStyle({ left: "192px", top: "312px" })
+      })
+    } finally {
+      rectSpy.mockRestore()
+    }
   })
 
   it("delete context action shows AlertDialog confirmation", async () => {

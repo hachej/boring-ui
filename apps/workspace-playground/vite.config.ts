@@ -65,6 +65,9 @@ const dynamicPluginReactRefreshExclude = [
   /packages\/(workspace|agent|ui)\/dist\//,
 ]
 
+const usePollingWatch = process.env.CHOKIDAR_USEPOLLING === "1" || process.env.BORING_VITE_USEPOLLING === "1"
+const pollingInterval = Number(process.env.CHOKIDAR_INTERVAL ?? process.env.BORING_VITE_POLL_INTERVAL ?? "300")
+
 export default defineConfig({
   plugins: [
     react({
@@ -96,6 +99,12 @@ export default defineConfig({
   server: {
     port: VITE_PORT,
     host: true,
+    watch: usePollingWatch
+      ? {
+          usePolling: true,
+          interval: Number.isFinite(pollingInterval) && pollingInterval > 0 ? pollingInterval : 300,
+        }
+      : undefined,
     proxy: {
       // All API traffic goes to the agent server — the agent owns the
       // filesystem and the UI bridge. No vite-side mocks.
