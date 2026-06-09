@@ -5,6 +5,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -76,6 +77,27 @@ interface ContextMenuState {
   x: number
   y: number
   isBackground?: boolean
+}
+
+const CONTEXT_MENU_MARGIN = 8
+
+function clampContextMenuPosition(
+  x: number,
+  y: number,
+  menuRect: Pick<DOMRect, "width" | "height">,
+  viewportWidth: number,
+  viewportHeight: number,
+) {
+  return {
+    x: Math.max(
+      CONTEXT_MENU_MARGIN,
+      Math.min(x, viewportWidth - menuRect.width - CONTEXT_MENU_MARGIN),
+    ),
+    y: Math.max(
+      CONTEXT_MENU_MARGIN,
+      Math.min(y, viewportHeight - menuRect.height - CONTEXT_MENU_MARGIN),
+    ),
+  }
 }
 
 export interface FileTreeViewProps {
@@ -200,6 +222,23 @@ export function FileTreeView({
     }
     document.addEventListener("pointerdown", onPointerDown)
     return () => document.removeEventListener("pointerdown", onPointerDown)
+  }, [ctxMenu])
+
+  useLayoutEffect(() => {
+    if (!ctxMenu || !menuRef.current) return
+    const { x, y } = clampContextMenuPosition(
+      ctxMenu.x,
+      ctxMenu.y,
+      menuRef.current.getBoundingClientRect(),
+      window.innerWidth,
+      window.innerHeight,
+    )
+    if (x === ctxMenu.x && y === ctxMenu.y) return
+    setCtxMenu((prev) => {
+      if (!prev) return prev
+      if (prev.x === x && prev.y === y) return prev
+      return { ...prev, x, y }
+    })
   }, [ctxMenu])
 
   useEffect(() => {
@@ -745,6 +784,8 @@ export function FileTreeView({
     </div>
   )
 }
+
+export { clampContextMenuPosition }
 
 export interface FileTreePaneParams extends LeftTabParams {
   rootDir?: string
