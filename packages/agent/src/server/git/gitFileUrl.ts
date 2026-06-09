@@ -1,7 +1,7 @@
 import { dirname, relative } from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { buildGitFileUrl } from '../../../../workspace/src/plugins/filesystemPlugin/front/data/gitUrl'
+import { buildGitFileUrl } from './buildGitFileUrl'
 
 const execFileAsync = promisify(execFile)
 

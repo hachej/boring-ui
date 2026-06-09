@@ -1,9 +1,3 @@
-export interface GitUrlMetadata {
-  enabled: boolean
-  reason?: string
-  url?: string
-}
-
 function normalizeRemoteUrl(remoteUrl: string): string | null {
   const trimmed = remoteUrl.trim()
   if (!trimmed) return null
@@ -22,9 +16,14 @@ function normalizeRemoteUrl(remoteUrl: string): string | null {
 }
 
 function sanitizeRef(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null
+  return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
+/**
+ * Build a GitHub blob URL for a repo-relative file path. Pure, server-side:
+ * the git file-url route is the only consumer, so it lives in the agent
+ * package rather than reaching across into @hachej/boring-workspace.
+ */
 export function buildGitFileUrl(input: {
   remoteUrl: string
   repoRelativePath: string
@@ -35,11 +34,11 @@ export function buildGitFileUrl(input: {
   if (!remoteBaseUrl) return null
 
   const ref = sanitizeRef(input.branch) ?? sanitizeRef(input.commitSha)
-  const repoRelativePath = input.repoRelativePath.trim().replace(/^\/+/, "")
+  const repoRelativePath = input.repoRelativePath.trim().replace(/^\/+/, '')
   if (!ref || !repoRelativePath) return null
 
   return `${remoteBaseUrl}/blob/${encodeURIComponent(ref)}/${repoRelativePath
-    .split("/")
+    .split('/')
     .map((segment) => encodeURIComponent(segment))
-    .join("/")}`
+    .join('/')}`
 }

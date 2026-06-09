@@ -24,7 +24,6 @@ export {
   setPreloadedTreeEntries,
 } from "./treePreloadCache"
 export type { FileEntry, FileContent, FileStat, FetchClientOptions, GitUrlMetadata } from "./types"
-export { buildGitFileUrl } from "./gitUrl"
 export type { FileRecordsFormat, FileRecordsResult, FileRecordsSource, ReadFileRecordsOptions } from "./fileRecords"
 export { useFileUpload } from "./useFileUpload"
 export type { UseFileUploadOptions, UseFileUploadResult } from "./useFileUpload"
