@@ -218,7 +218,7 @@ export const ModelSelectTrigger = forwardRef<HTMLButtonElement, ModelSelectTrigg
     >
       {trigger === 'slash' ? (
         <>
-          <span className="text-muted-foreground/55">/model: </span>
+          <span className="text-muted-foreground">/model: </span>
           <span className="text-foreground">{triggerLabel}</span>
         </>
       ) : (
@@ -531,7 +531,7 @@ export const ThinkingSelectTrigger = forwardRef<HTMLButtonElement, ThinkingSelec
       {trigger === 'button' ? <ThinkingLevelGlyph level={value} /> : null}
       {trigger === 'slash' ? (
         <>
-          <span className="text-muted-foreground/55">/thinking: </span>
+          <span className="text-muted-foreground">/thinking: </span>
           <span className="text-foreground">{THINKING_LEVEL_STATUS_LABELS[value]}</span>
         </>
       ) : (

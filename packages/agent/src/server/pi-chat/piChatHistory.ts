@@ -63,14 +63,31 @@ function filePartsFromContent(content: unknown, messageId: string): BoringChatPa
   if (!Array.isArray(content)) return []
   return content.flatMap((part, index): BoringChatPart[] => {
     if (!isRecord(part) || part.type !== 'image') return []
+    const mediaType = optionalString(part.mimeType)
     return [
       {
         type: 'file',
         id: `${messageId}:file:${index}`,
-        mediaType: optionalString(part.mimeType),
+        ...(optionalString(part.filename) ? { filename: optionalString(part.filename) } : {}),
+        ...(mediaType ? { mediaType } : {}),
+        ...(imagePartUrl(part, mediaType) ? { url: imagePartUrl(part, mediaType) } : {}),
       },
     ]
   })
+}
+
+/**
+ * Rebuilds a displayable URL for an image content part. Pi stores raw base64 in
+ * `data` (no data: prefix); without this the attachment renders with an empty
+ * src. Prefers an explicit url, then an existing data: URL, then base64 + mime.
+ */
+function imagePartUrl(part: RecordLike, mediaType: string | undefined): string | undefined {
+  const existing = optionalString(part.url)
+  if (existing) return existing
+  const data = optionalString(part.data)
+  if (!data) return undefined
+  if (data.startsWith('data:')) return data
+  return `data:${mediaType ?? 'application/octet-stream'};base64,${data}`
 }
 
 function userParts(message: RecordLike, messageId: string): BoringChatPart[] {

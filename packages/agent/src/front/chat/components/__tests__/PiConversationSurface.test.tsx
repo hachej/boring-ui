@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { BoringChatMessage } from '../../../../shared/chat'
 import { PiConversationSurface } from '../PiConversationSurface'
@@ -12,6 +12,42 @@ vi.mock('../../../primitives/conversation', () => ({
   ConversationContent: ({ children, ...props }: any) => <div {...props}>{children}</div>,
   ConversationScrollButton: () => <button type="button">Scroll to latest message</button>,
 }))
+
+// The Conversation provider is mocked above, so the history loader's
+// stick-to-bottom context needs a stub (no real scroll element in jsdom).
+vi.mock('use-stick-to-bottom', () => ({
+  useStickToBottomContext: () => ({ scrollRef: { current: null } }),
+}))
+
+function textMessages(count: number): BoringChatMessage[] {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `m${i}`,
+    role: i % 2 === 0 ? 'user' : 'assistant',
+    status: 'done',
+    parts: [{ type: 'text', id: `m${i}:t`, text: `msg ${i}` }],
+  }))
+}
+
+function renderSurface(messages: BoringChatMessage[], windowResetKey?: string) {
+  return (
+    <PiConversationSurface
+      chrome
+      emptyHero={false}
+      messages={messages}
+      emptyStateHydrating={false}
+      suggestions={[]}
+      isStreaming={false}
+      showThoughts={false}
+      toolRenderers={{}}
+      runtimeNotices={[]}
+      onDismissNotice={() => {}}
+      onScrollToBottomReady={() => {}}
+      onSuggestionSubmit={async () => undefined}
+      onRestoreDraft={() => {}}
+      windowResetKey={windowResetKey}
+    />
+  )
+}
 
 vi.mock('../PiTimelineMessage', () => ({
   PiTimelineMessage: ({ message }: { message: BoringChatMessage }) => (
@@ -133,5 +169,39 @@ describe('PiConversationSurface', () => {
     const updatedRow = screen.getByTestId('timeline-message')
     expect(updatedRow.getAttribute('data-boring-agent-message-id')).toBe('a-final')
     expect(updatedRow.getAttribute('data-row-marker')).toBe('late-final-live-row-marker')
+  })
+
+  test('windows the transcript to the latest page and reveals older on demand', () => {
+    render(renderSurface(textMessages(100)))
+
+    // Only the latest window mounts, anchored to the newest message.
+    let ids = screen.getAllByTestId('timeline-message').map((el) => el.getAttribute('data-boring-agent-message-id'))
+    expect(ids).toHaveLength(60)
+    expect(ids[0]).toBe('m40')
+    expect(ids).toContain('m99')
+    expect(ids).not.toContain('m0')
+
+    // Revealing older expands the window upward.
+    fireEvent.click(screen.getByRole('button', { name: /Load 40 older messages/ }))
+    ids = screen.getAllByTestId('timeline-message').map((el) => el.getAttribute('data-boring-agent-message-id'))
+    expect(ids).toHaveLength(100)
+    expect(ids[0]).toBe('m0')
+    expect(screen.queryByRole('button', { name: /older message/ })).toBeNull()
+  })
+
+  test('renders short transcripts in full with no load-older affordance', () => {
+    render(renderSurface(textMessages(12)))
+    expect(screen.getAllByTestId('timeline-message')).toHaveLength(12)
+    expect(screen.queryByRole('button', { name: /older message/ })).toBeNull()
+  })
+
+  test('resets the window to the latest page when the active session changes', () => {
+    const { rerender } = render(renderSurface(textMessages(100), 'session-a'))
+    fireEvent.click(screen.getByRole('button', { name: /Load 40 older messages/ }))
+    expect(screen.getAllByTestId('timeline-message')).toHaveLength(100)
+
+    // Switching sessions snaps back to the latest window.
+    rerender(renderSurface(textMessages(100), 'session-b'))
+    expect(screen.getAllByTestId('timeline-message')).toHaveLength(60)
   })
 })

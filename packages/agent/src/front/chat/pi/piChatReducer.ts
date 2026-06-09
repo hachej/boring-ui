@@ -136,7 +136,13 @@ export function piChatReducer(state: PiChatState, action: PiChatReducerAction): 
         ...state,
         optimisticOutbox: {
           ...state.optimisticOutbox,
-          [action.message.clientNonce]: action.message,
+          [action.message.clientNonce]: {
+            ...action.message,
+            // Anchor the placeholder to the message it was submitted after so its
+            // render position is clock-skew independent (see OptimisticUserMessage).
+            afterMessageId: action.message.afterMessageId
+              ?? state.committedMessages[state.committedMessages.length - 1]?.id,
+          },
         },
       }
     case 'remove-optimistic-user-message':

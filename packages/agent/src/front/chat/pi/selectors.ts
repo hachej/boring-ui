@@ -9,7 +9,7 @@ export function selectMessagesForRender(state: PiChatState): BoringChatMessage[]
     .filter((optimistic) => !messages.some((message) => message.clientNonce === optimistic.clientNonce))
 
   for (const optimistic of optimisticMessages) {
-    if (optimistic.clientSeq === undefined) insertOptimisticPrompt(messages, optimistic)
+    if (optimistic.clientSeq === undefined) insertOptimisticPrompt(messages, optimistic, optimistic.afterMessageId)
   }
   if (state.streamingMessage) upsertRenderableStreamingMessage(messages, state.streamingMessage)
   return messages
@@ -82,7 +82,20 @@ function optimisticText(message: BoringChatMessage): string {
   return text
 }
 
-function insertOptimisticPrompt(messages: BoringChatMessage[], optimistic: BoringChatMessage): void {
+function insertOptimisticPrompt(messages: BoringChatMessage[], optimistic: BoringChatMessage, afterMessageId?: string): void {
+  // Preferred: position by the message that was last committed when the prompt
+  // was submitted. This is sequence-based, so client/server clock skew can't
+  // float a just-sent prompt above the previous reply.
+  if (afterMessageId !== undefined) {
+    const anchorIndex = messages.findIndex((message) => message.id === afterMessageId)
+    if (anchorIndex >= 0) {
+      messages.splice(anchorIndex + 1, 0, optimistic)
+      return
+    }
+  }
+
+  // Fallback (e.g. recovered placeholder whose anchor isn't in view): order by
+  // creation time, then append.
   const optimisticTime = messageCreatedAtMs(optimistic)
   if (optimisticTime === undefined) {
     messages.push(optimistic)
@@ -134,6 +147,11 @@ function findRenderableAssistantMergeIndex(messages: BoringChatMessage[], messag
     if (candidate.role === 'assistant' && message.role === 'assistant' && candidate.turnId && candidate.turnId === message.turnId) {
       return index
     }
+    // Stop at a user turn: Pi keeps the agent loop (and turnId) open while it
+    // drains a queued follow-up, so the follow-up's assistant reply shares the
+    // previous reply's turnId. Merging across the intervening user message would
+    // fold the new reply into the old one and push the queued prompt out of order.
+    if (candidate.role === 'user') break
   }
   return -1
 }

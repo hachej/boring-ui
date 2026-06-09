@@ -3,7 +3,7 @@ import { createInitialPiChatState, piChatReducer, type OptimisticUserMessage, ty
 import { selectMessagesForRender, selectQueuePreview, selectRuntimeNotices } from '../selectors'
 import { createPiChatStore } from '../piChatStore'
 
-function optimistic(clientNonce: string, options: { clientSeq?: number; createdAt?: string; text?: string } = {}): OptimisticUserMessage {
+function optimistic(clientNonce: string, options: { clientSeq?: number; createdAt?: string; text?: string; afterMessageId?: string } = {}): OptimisticUserMessage {
   return {
     id: `optimistic:${clientNonce}`,
     role: 'user',
@@ -11,6 +11,7 @@ function optimistic(clientNonce: string, options: { clientSeq?: number; createdA
     clientNonce,
     clientSeq: options.clientSeq,
     createdAt: options.createdAt,
+    afterMessageId: options.afterMessageId,
     parts: [{ type: 'text', text: options.text ?? 'pending' }],
   }
 }
@@ -104,11 +105,14 @@ describe('Pi chat selectors and store', () => {
         followUpMode: 'one-at-a-time',
       },
     })
+    // The orphan placeholder was submitted right after u1 (its anchor), before
+    // u2/a2 arrived; it renders at that position regardless of clock skew.
     state = piChatReducer(state, {
       type: 'optimistic-user-message',
       message: optimistic('nonce-earlier-prompt', {
         createdAt: '2026-06-06T10:00:01.000Z',
         text: 'earlier optimistic prompt',
+        afterMessageId: 'u1',
       }),
     })
 
@@ -118,6 +122,36 @@ describe('Pi chat selectors and store', () => {
       'u2',
       'a2',
     ])
+  })
+
+  it('keeps a just-sent prompt below the previous reply despite client/server clock skew', () => {
+    // Reproduces the live reorder: the previous reply (a1) carries a server
+    // timestamp slightly ahead of the client clock, so the optimistic prompt's
+    // createdAt is "earlier" than a1. Anchoring by submit position (after a1)
+    // keeps it at the bottom; createdAt ordering would float it above a1.
+    let state = createInitialPiChatState({ sessionId: 's1', storageScope: 'scope' })
+    state = piChatReducer(state, {
+      type: 'hydrate',
+      snapshot: {
+        protocolVersion: 1,
+        sessionId: 's1',
+        seq: 2,
+        status: 'idle',
+        messages: [
+          { id: 'u1', role: 'user', status: 'done', createdAt: '2026-06-09T10:00:00.000Z', parts: [{ type: 'text', id: 'u1:t', text: 'hi' }] },
+          { id: 'a1', role: 'assistant', status: 'done', createdAt: '2026-06-09T10:00:06.000Z', parts: [{ type: 'text', id: 'a1:t', text: 'answer' }] },
+        ],
+        queue: { followUps: [] },
+        followUpMode: 'one-at-a-time',
+      },
+    })
+    // Submitted "now" but the client clock trails the server's a1 timestamp.
+    state = piChatReducer(state, {
+      type: 'optimistic-user-message',
+      message: optimistic('nonce-new', { createdAt: '2026-06-09T10:00:05.000Z', text: 'new prompt' }),
+    })
+
+    expect(selectMessagesForRender(state).map((message) => message.id)).toEqual(['u1', 'a1', 'optimistic:nonce-new'])
   })
 
   it('folds same-turn committed and streaming assistant rows before render', () => {
@@ -167,6 +201,51 @@ describe('Pi chat selectors and store', () => {
       { type: 'reasoning', id: 'a3:reasoning', text: 'thoughts', state: 'done' },
       { type: 'text', id: 'a3-live:text', text: 'final answer' },
     ])
+  })
+
+  it('does not fold same-turn assistant replies across a queued user turn', () => {
+    // Pi drains a queued follow-up inside the same agent turn, so the follow-up's
+    // reply shares the previous reply's turnId with the queued user message
+    // between them. They must render as separate replies in order — not merged
+    // into the earlier reply (which would push the queued prompt out of order).
+    const state: PiChatState = {
+      ...createInitialPiChatState({ sessionId: 's1', storageScope: 'scope' }),
+      status: 'idle',
+      hydrated: true,
+      turnId: 'turn-x',
+      committedMessages: [
+        { id: 'u1', role: 'user', status: 'done', turnId: 'turn-x', parts: [{ type: 'text', id: 'u1:t', text: 'count to 3' }] },
+        { id: 'a1', role: 'assistant', status: 'done', turnId: 'turn-x', parts: [{ type: 'text', id: 'a1:t', text: '1 2 3' }] },
+        { id: 'u2', role: 'user', status: 'done', turnId: 'turn-x', parts: [{ type: 'text', id: 'u2:t', text: 'say BANANA' }] },
+        { id: 'a2', role: 'assistant', status: 'done', turnId: 'turn-x', parts: [{ type: 'text', id: 'a2:t', text: 'BANANA' }] },
+      ],
+    }
+
+    const rendered = selectMessagesForRender(state)
+    expect(rendered.map((message) => message.id)).toEqual(['u1', 'a1', 'u2', 'a2'])
+    expect(rendered.map((message) => (message.parts[0] as { text?: string }).text)).toEqual([
+      'count to 3', '1 2 3', 'say BANANA', 'BANANA',
+    ])
+  })
+
+  it('still folds a same-turn streaming reply that follows the queued reply', () => {
+    // The queued follow-up's own streaming chunks (same turn, no user between)
+    // should still coalesce into its reply.
+    const state: PiChatState = {
+      ...createInitialPiChatState({ sessionId: 's1', storageScope: 'scope' }),
+      status: 'streaming',
+      hydrated: true,
+      turnId: 'turn-x',
+      committedMessages: [
+        { id: 'u1', role: 'user', status: 'done', turnId: 'turn-x', parts: [{ type: 'text', id: 'u1:t', text: 'count' }] },
+        { id: 'a1', role: 'assistant', status: 'done', turnId: 'turn-x', parts: [{ type: 'text', id: 'a1:t', text: '1 2 3' }] },
+        { id: 'u2', role: 'user', status: 'done', turnId: 'turn-x', parts: [{ type: 'text', id: 'u2:t', text: 'say BANANA' }] },
+        { id: 'a2', role: 'assistant', status: 'streaming', turnId: 'turn-x', parts: [{ type: 'text', id: 'a2:t', text: 'BAN' }] },
+      ],
+      streamingMessage: { id: 'a2', role: 'assistant', status: 'streaming', turnId: 'turn-x', parts: [{ type: 'text', id: 'a2:t', text: 'BANANA' }] },
+    }
+
+    expect(selectMessagesForRender(state).map((message) => message.id)).toEqual(['u1', 'a1', 'u2', 'a2'])
   })
 
   it('keeps repeated assistant ids separate across different turns', () => {
