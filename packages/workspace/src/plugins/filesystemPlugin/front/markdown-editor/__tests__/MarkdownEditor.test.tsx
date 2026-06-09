@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
-import { MarkdownEditor, sanitizeHtml, isSafeUrl, rawFileUrlForMarkdownImage, isUserEditedChange } from "../MarkdownEditor"
+import { MarkdownEditor, sanitizeHtml, isSafeUrl, rawFileUrlForMarkdownImage, isUserEditedChange, countMarkdownWords } from "../MarkdownEditor"
 
 describe("MarkdownEditor", () => {
   beforeEach(() => {
@@ -29,6 +29,20 @@ describe("MarkdownEditor", () => {
     expect(scrollRegion).toBeTruthy()
     expect(scrollRegion.className).toContain("min-h-0")
     expect(scrollRegion.className).toContain("flex-1")
+  })
+
+  describe("countMarkdownWords", () => {
+    it("returns 0 for an empty document", () => {
+      expect(countMarkdownWords("")).toBe(0)
+    })
+
+    it("counts readable markdown text instead of common syntax noise", () => {
+      expect(countMarkdownWords("# Hello world\n\n- one **two**\n- [three](https://example.com)\n> four")).toBe(6)
+    })
+
+    it("ignores fenced code blocks and images", () => {
+      expect(countMarkdownWords("Intro words\n\n```ts\nconst hidden = true\n```\n\n![Diagram](./diagram.png)")).toBe(2)
+    })
   })
 
   describe("isUserEditedChange", () => {
@@ -93,6 +107,26 @@ describe("MarkdownEditor", () => {
     expect(screen.getByTitle("Highlight")).toBeInTheDocument()
     expect(screen.getByTitle("Horizontal rule")).toBeInTheDocument()
     expect(screen.getByTitle("Raw markdown")).toBeInTheDocument()
+  })
+
+  it("shows a word count footer", async () => {
+    render(<MarkdownEditor content="# Hello\n\nWorld" />)
+    await waitFor(() => {
+      expect(screen.getByTestId("markdown-word-count")).toHaveTextContent("3 words")
+    })
+  })
+
+  it("updates the word count when raw markdown changes", async () => {
+    const onChange = vi.fn()
+    const { rerender } = render(<MarkdownEditor content="" onChange={onChange} />)
+    await waitFor(() => {
+      expect(screen.getByTestId("markdown-word-count")).toHaveTextContent("0 words")
+    })
+
+    rerender(<MarkdownEditor content="one two three" onChange={onChange} />)
+    await waitFor(() => {
+      expect(screen.getByTestId("markdown-word-count")).toHaveTextContent("3 words")
+    })
   })
 
   it("toggles a discreet raw markdown editor", async () => {
