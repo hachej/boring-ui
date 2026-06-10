@@ -222,6 +222,7 @@ export function CliWorkspaceShell() {
         key={activeWorkspace.id}
         chatPanel={ChatPanel}
         workspaceId={activeWorkspace.id}
+        workspaceLabel={activeWorkspace.name}
         requestHeaders={requestHeaders}
         authHeaders={requestHeaders}
         plugins={plugins}
