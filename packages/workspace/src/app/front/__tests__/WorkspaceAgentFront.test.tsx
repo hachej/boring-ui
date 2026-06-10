@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../../front/agentPlugins/reloadEvent"
@@ -245,6 +245,75 @@ describe("WorkspaceAgentFront", () => {
 
     await waitFor(() => {
       expect(visibleChatSessionIds()).toEqual(["s1", "created"])
+    })
+  })
+
+  it("restores the persisted pane layout on reload", async () => {
+    localStorage.setItem(
+      "boring-workspace:chat-panes:restore-panes",
+      JSON.stringify({ ids: ["s1", "s2"], activeId: "s2" }),
+    )
+    const sessions = [
+      { id: "s1", title: "First session", updatedAt: Date.now() - 1_000 },
+      { id: "s2", title: "Second session", updatedAt: Date.now() - 2_000 },
+    ]
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="restore-panes"
+        chatPanel={SessionIdChatPanel}
+        sessions={sessions}
+        activeSessionId="s2"
+        onSwitchSession={vi.fn()}
+        onCreateSession={vi.fn()}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
+    })
+  })
+
+  it("restores the persisted pane layout while remote sessions load", async () => {
+    localStorage.setItem(
+      "boring-workspace:chat-panes:remote-restore",
+      JSON.stringify({ ids: ["s1", "s2"], activeId: "s2" }),
+    )
+    localStorage.setItem("boring-workspace:sessions:remote-restore", "s2")
+
+    function useDelayedSessions() {
+      const [loading, setLoading] = useState(true)
+      useEffect(() => {
+        const timer = setTimeout(() => setLoading(false), 50)
+        return () => clearTimeout(timer)
+      }, [])
+      const sessions = loading
+        ? []
+        : [
+            { id: "s1", title: "First session", updatedAt: Date.now() - 1_000 },
+            { id: "s2", title: "Second session", updatedAt: Date.now() - 2_000 },
+          ]
+      return {
+        sessions,
+        loading,
+        activeSessionId: loading ? null : "s2",
+        activeSession: sessions[1] ?? null,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="remote-restore"
+        chatPanel={SessionIdChatPanel}
+        useSessions={useDelayedSessions}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
     })
   })
 

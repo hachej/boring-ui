@@ -838,7 +838,10 @@ export function WorkspaceAgentFront<
   const chatSessionId = shouldUseRemoteSessions && !useSessionsProp && remoteSessionSnapshot.workspaceId !== workspaceId
     ? "default"
     : effectiveActiveSessionId ?? (autoSubmitSessionId !== undefined ? "default" : resolvedSessions[0]?.id ?? "default")
-  const sessionListAuthoritative = !sessionApi?.hasMore
+  // While remote sessions load, resolvedSessions is a one-item placeholder
+  // for the stored active session — never an authoritative list to prune
+  // restored panes against.
+  const sessionListAuthoritative = !sessionApi?.hasMore && !remoteSessionsPending
   useEffect(() => {
     if (remoteSessionsTransitioning) return
     const pendingCreatePane = pendingCreatePaneRef.current
@@ -860,6 +863,11 @@ export function WorkspaceAgentFront<
       const current = previous.workspaceId === workspaceId
         ? previous
         : { workspaceId, ids: [], activeId: null }
+      // While remote sessions are still loading, chatSessionId may be the
+      // ephemeral "default" placeholder — restored pane state is more
+      // trustworthy than it, so leave the layout untouched until the real
+      // session list arrives.
+      if (remoteSessionsPending && current.ids.length > 0 && !pendingCreatedId) return current
       const rawIds = current.ids.length > 0 ? current.ids : [desiredSessionId]
       const prunedIds = canPruneMissingSessions
         ? rawIds.filter((id) => sessionIds.has(id) || id === pendingCreatedId)
@@ -880,7 +888,7 @@ export function WorkspaceAgentFront<
       ) return previous
       return { workspaceId, ids: nextIds, activeId: nextActiveId }
     })
-  }, [autoSubmitSessionId, chatSessionId, remoteSessionsTransitioning, resolvedSessions, sessionListAuthoritative, workspaceId])
+  }, [autoSubmitSessionId, chatSessionId, remoteSessionsPending, remoteSessionsTransitioning, resolvedSessions, sessionListAuthoritative, workspaceId])
 
   const sessionTitleById = useMemo(() => {
     const titles = new Map<string, string | null | undefined>()
