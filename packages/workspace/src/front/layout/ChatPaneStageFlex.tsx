@@ -102,10 +102,9 @@ function ChatPane({
       <PaneFocusRing active={multiPane && active} flash={flash} />
       <div
         data-boring-workspace-part="chat-pane-header"
-        className={cn(
-          "flex h-8 shrink-0 items-center justify-between border-b border-border/55 px-2",
-          multiPane && active ? "bg-muted/60" : "bg-background",
-        )}
+        // Seamless with the content: no separating border, no tint — the
+        // full-pane focus ring is the active indicator.
+        className="flex h-8 shrink-0 items-center justify-between bg-background px-2"
       >
         <div className="flex min-w-0 items-center gap-1.5 px-1">
           <span

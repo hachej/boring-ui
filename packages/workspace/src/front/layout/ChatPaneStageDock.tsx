@@ -230,6 +230,7 @@ export function ChatPaneStageDock({
     <StageContext.Provider value={contextValue}>
       <div
         data-boring-workspace-part="chat-pane-stage"
+        data-multi-pane={panes.length > 1 ? "true" : "false"}
         className="relative h-full min-h-0 w-full bg-background"
       >
         <DockviewReact
@@ -262,7 +263,6 @@ function ChatPanePanel(props: IDockviewPanelProps) {
   if (!pane) return null
 
   const active = paneId === stage.activePaneId
-  const multiPane = stage.panes.length > 1
   const flash = paneId === stage.flashPaneId
   return (
     <div
@@ -281,7 +281,9 @@ function ChatPanePanel(props: IDockviewPanelProps) {
         stage.onActivePaneChange?.(paneId)
       }}
     >
-      <PaneFocusRing active={multiPane && active} flash={flash} />
+      {/* The active ring lives at the dockview group level (CSS) so it wraps
+          the header too; this inner ring only serves the flash pulse. */}
+      <PaneFocusRing active={false} flash={flash} />
       <div className="min-h-0 flex-1 overflow-hidden">
         {stage.renderPane(pane)}
       </div>
