@@ -4,7 +4,6 @@ import * as ReactDomClient from "react-dom/client"
 import * as ReactJsxDevRuntime from "react/jsx-dev-runtime"
 import * as ReactJsxRuntime from "react/jsx-runtime"
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { ChatPanel, useSessions as useAgentSessions } from "@hachej/boring-agent"
 import * as WorkspaceSingleton from "@hachej/boring-workspace"
 import * as WorkspaceEventsSingleton from "@hachej/boring-workspace/events"
 import * as WorkspacePluginSingleton from "@hachej/boring-workspace/plugin"
@@ -173,14 +172,6 @@ export function CliWorkspaceShell() {
     syncCliWorkspaceUrl(activeWorkspaceId, urlSessionId)
   }, [activeWorkspaceId, urlSessionId, workspacesMode])
 
-  const useUrlAgentSessions = useCallback((opts: Parameters<typeof useAgentSessions>[0]): ReturnType<typeof useAgentSessions> => {
-    const nextOpts = {
-      ...opts,
-      initialActiveSessionId: urlSessionId ?? undefined,
-    } as Parameters<typeof useAgentSessions>[0]
-    return useAgentSessions(nextOpts)
-  }, [urlSessionId])
-
   const handleActiveSessionIdChange = useCallback((sessionId: string | null) => {
     setUrlSessionId((current) => current === sessionId ? current : sessionId)
   }, [])
@@ -220,7 +211,6 @@ export function CliWorkspaceShell() {
     return (
       <WorkspaceAgentFront
         key={activeWorkspace.id}
-        chatPanel={ChatPanel}
         workspaceId={activeWorkspace.id}
         workspaceLabel={activeWorkspace.name}
         requestHeaders={requestHeaders}
@@ -231,7 +221,7 @@ export function CliWorkspaceShell() {
         providerStorageKey={`boring-ui-v2:layout:${activeWorkspace.id}`}
         appTitle="Boring UI"
         defaultSessionTitle={activeWorkspace.name}
-        useSessions={useUrlAgentSessions}
+        activeSessionId={urlSessionId ?? undefined}
         onActiveSessionIdChange={handleActiveSessionIdChange}
         chatParams={{ thinkingControl: true }}
         frontPluginHotReload={runtimePluginFrontLoadingEnabled ? "vite" : false}
@@ -257,7 +247,6 @@ export function CliWorkspaceShell() {
 
   return (
     <WorkspaceAgentFront
-      chatPanel={ChatPanel}
       workspaceId={projectName}
       plugins={plugins}
       apiBaseUrl=""
@@ -265,7 +254,7 @@ export function CliWorkspaceShell() {
       providerStorageKey={`boring-ui-v2:layout:${projectName}`}
       appTitle={projectName}
       defaultSessionTitle={projectName}
-      useSessions={useUrlAgentSessions}
+      activeSessionId={urlSessionId ?? undefined}
       onActiveSessionIdChange={handleActiveSessionIdChange}
       chatParams={{ thinkingControl: true }}
       frontPluginHotReload={runtimePluginFrontLoadingEnabled ? "vite" : false}

@@ -1,4 +1,4 @@
-import type { ComponentType } from "react"
+import type { ComponentType, ReactNode } from "react"
 import type { PanelConfig, PaneProps } from "../types/panel"
 import type { SurfaceOpenRequest, SurfacePanelResolution } from "../types/surface"
 import { PluginError } from "./errors"
@@ -62,6 +62,13 @@ export interface BoringFrontSurfaceResolverRegistration {
   resolve: (request: SurfaceOpenRequest) => SurfacePanelResolution | null | undefined
 }
 
+export type BoringFrontToolRenderer = (part: unknown) => ReactNode
+
+export interface BoringFrontToolRendererRegistration {
+  id: string
+  render: BoringFrontToolRenderer
+}
+
 export interface BoringFrontAPI {
   registerProvider(registration: BoringFrontProviderRegistration): void
   registerBinding(registration: BoringFrontBindingRegistration): void
@@ -70,6 +77,7 @@ export interface BoringFrontAPI {
   registerPanelCommand(registration: BoringFrontPanelCommandRegistration): void
   registerLeftTab<T = LeftTabParams>(registration: BoringFrontLeftTabRegistration<T>): void
   registerSurfaceResolver(registration: BoringFrontSurfaceResolverRegistration): void
+  registerToolRenderer(registration: BoringFrontToolRendererRegistration): void
 }
 
 export type BoringFrontFactory = (api: BoringFrontAPI) => void | Promise<void>
@@ -106,6 +114,7 @@ export interface DefinePluginConfig {
   providers?: ReadonlyArray<BoringFrontProviderRegistration>
   bindings?: ReadonlyArray<BoringFrontBindingRegistration>
   catalogs?: ReadonlyArray<CatalogConfig>
+  toolRenderers?: ReadonlyArray<BoringFrontToolRendererRegistration>
   /**
    * Escape hatch for registrations that can't be expressed declaratively.
    * Called LAST, after every declarative field has been registered.
@@ -145,6 +154,7 @@ export function definePlugin<const Config extends DefinePluginConfig>(
     for (const provider of config.providers ?? []) api.registerProvider(provider)
     for (const binding of config.bindings ?? []) api.registerBinding(binding)
     for (const catalog of config.catalogs ?? []) api.registerCatalog(catalog)
+    for (const renderer of config.toolRenderers ?? []) api.registerToolRenderer(renderer)
     if (config.setup) config.setup(api)
     return undefined
   }
@@ -176,6 +186,7 @@ export interface CapturedBoringFrontRegistrations {
   panelCommands: BoringFrontPanelCommandRegistration[]
   leftTabs: BoringFrontLeftTabRegistration<any>[]
   surfaceResolvers: BoringFrontSurfaceResolverRegistration[]
+  toolRenderers: BoringFrontToolRendererRegistration[]
 }
 
 export interface CapturedFrontPlugin {
@@ -200,6 +211,7 @@ export function createCapturingBoringFrontAPI(options: { pluginId?: string } = {
   const panelCommands: BoringFrontPanelCommandRegistration[] = []
   const leftTabs: BoringFrontLeftTabRegistration<any>[] = []
   const surfaceResolvers: BoringFrontSurfaceResolverRegistration[] = []
+  const toolRenderers: BoringFrontToolRendererRegistration[] = []
   // Intra-plugin id collision detection (PLUGIN_SYSTEM.md §5.7): two register*
   // calls in the same factory chain landing the same id are silent
   // last-write-wins in the atomic-replace path. Catch them at capture time.
@@ -253,6 +265,10 @@ export function createCapturingBoringFrontAPI(options: { pluginId?: string } = {
       }
       surfaceResolvers.push(registration)
     },
+    registerToolRenderer(registration) {
+      claim("tool-renderer", registration.id)
+      toolRenderers.push(registration)
+    },
     flush() {
       return {
         providers: clone(providers),
@@ -262,6 +278,7 @@ export function createCapturingBoringFrontAPI(options: { pluginId?: string } = {
         panelCommands: clone(panelCommands),
         leftTabs: clone(leftTabs),
         surfaceResolvers: clone(surfaceResolvers),
+        toolRenderers: clone(toolRenderers),
       }
     },
   }

@@ -348,6 +348,10 @@ export const PromptInput = ({
   // Try to use a provider controller if present
   const controller = useOptionalPromptInputController();
   const usingProvider = !!controller;
+  const providerTextValueRef = useRef("");
+  if (usingProvider) {
+    providerTextValueRef.current = controller.textInput.value;
+  }
 
   // Refs
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -702,7 +706,10 @@ export const PromptInput = ({
       // where user input during async blob conversion would be lost. If a host
       // intercepts and cancels the submit (return false), restore the captured
       // draft below instead of clearing it.
-      if (!usingProvider) {
+      if (usingProvider) {
+        controller.textInput.clear();
+        providerTextValueRef.current = "";
+      } else {
         form.reset();
       }
 
@@ -722,21 +729,32 @@ export const PromptInput = ({
         const result = await onSubmit({ files: convertedFiles, text }, event);
         if (result === false) {
           if (usingProvider) {
-            controller.textInput.setInput(text);
+            if (providerTextValueRef.current === "") {
+              controller.textInput.setInput(text);
+              providerTextValueRef.current = text;
+            }
           } else {
             const textInput = form.elements.namedItem("message") as HTMLTextAreaElement | HTMLInputElement | null;
-            if (textInput) textInput.value = text;
+            if (textInput && textInput.value === "") textInput.value = text;
           }
           return;
         }
 
         clear();
         if (usingProvider) {
-          controller.textInput.clear();
+          if (providerTextValueRef.current === "" || providerTextValueRef.current === text) {
+            controller.textInput.clear();
+            providerTextValueRef.current = "";
+          }
         }
       } catch {
         // Don't clear on error - user may want to retry
-        if (!usingProvider) {
+        if (usingProvider) {
+          if (providerTextValueRef.current === "") {
+            controller.textInput.setInput(text);
+            providerTextValueRef.current = text;
+          }
+        } else {
           const textInput = form.elements.namedItem("message") as HTMLTextAreaElement | HTMLInputElement | null;
           if (textInput && textInput.value === "") textInput.value = text;
         }
@@ -990,6 +1008,7 @@ export const PromptInputSubmit = ({
     <InputGroupButton
       aria-label={isGenerating ? "Stop" : "Submit"}
       className={cn(className)}
+      data-boring-agent-submit-status={status ?? "ready"}
       onClick={handleClick}
       size={size}
       type={isGenerating && onStop ? "button" : "submit"}

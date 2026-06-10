@@ -30,12 +30,15 @@ export function usePickerKeyboard({
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'ArrowDown') {
+        if (count <= 0) return
         e.preventDefault()
         setActiveIdx((i) => Math.min(i + 1, count - 1))
       } else if (e.key === 'ArrowUp') {
+        if (count <= 0) return
         e.preventDefault()
         setActiveIdx((i) => Math.max(i - 1, 0))
       } else if (e.key === 'Enter' || e.key === 'Tab') {
+        if (count <= 0) return
         e.preventDefault()
         selectRef.current(activeIdx)
       } else if (e.key === 'Escape') {

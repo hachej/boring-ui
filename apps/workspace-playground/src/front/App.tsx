@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { ChatPanel, useSessions as useAgentSessions } from "@hachej/boring-agent"
 import { createDeckPlugin } from "@hachej/boring-deck/front"
 import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
 import { WorkspaceProvider } from "@hachej/boring-workspace"
@@ -133,7 +132,6 @@ export function WorkspaceShell() {
 
   return (
     <WorkspaceAgentFront
-      chatPanel={ChatPanel}
       workspaceId={showcase ? "playground" : projectName}
       apiBaseUrl=""
       persistenceEnabled
@@ -144,7 +142,6 @@ export function WorkspaceShell() {
       frontPluginHotReload="vite"
       fullPageBasePath="/full-page"
       provisionWorkspace={!showcase}
-      useSessions={showcase ? undefined : useAgentSessions}
       sessions={sessions}
       activeSessionId={showcase ? SHOWCASE_SESSION_ID : undefined}
       onActiveSessionIdChange={handleActiveSessionIdChange}

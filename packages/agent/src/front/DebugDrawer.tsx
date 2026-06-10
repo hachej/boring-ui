@@ -45,7 +45,7 @@ function DebugValue({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-md border border-border/40 bg-muted/20 p-2">
       <div className="mb-1 flex items-center justify-between gap-2">
-        <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground/80">
+        <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
           {label}
         </span>
         <CopyButton value={value} label={`Copy ${label}`} />
@@ -68,7 +68,7 @@ function SessionTab({ sessionId }: { sessionId: string }) {
       </p>
       <DebugValue label="Pi session id" value={sessionId} />
       <DebugValue label="Resume command" value={resumeCommand} />
-      <p className="rounded-md border border-border/30 bg-muted/10 p-2 text-[10px] leading-relaxed text-muted-foreground/75 dark:text-zinc-300">
+      <p className="rounded-md border border-border/30 bg-muted/10 p-2 text-[10px] leading-relaxed text-muted-foreground dark:text-zinc-300">
         Tip: <code className="font-mono text-foreground/80">pi --continue</code>{' '}
         opens the most recent session for the current working directory. The
         explicit command above targets this session directly.
@@ -83,11 +83,17 @@ const RETRY_DELAY_MS = 2500
 const MAX_RETRIES = 20
 
 function SystemPromptTab({
+  apiBaseUrl,
+  fetch: fetchImpl,
   sessionId,
   requestHeaders,
+  storageScope,
 }: {
+  apiBaseUrl?: string
+  fetch?: typeof globalThis.fetch
   sessionId: string
   requestHeaders?: Record<string, string>
+  storageScope?: string
 }) {
   const [state, setState] = useState<
     | { kind: 'loading' }
@@ -108,8 +114,10 @@ function SystemPromptTab({
     let retryTimer: ReturnType<typeof setTimeout> | null = null
     setState({ kind: 'loading' })
 
-    const opts = requestHeaders ? { headers: requestHeaders } : undefined
-    fetch(`/api/v1/agent/sessions/${encodeURIComponent(sessionId)}/system-prompt`, opts)
+    const nextFetch = fetchImpl ?? globalThis.fetch.bind(globalThis)
+    nextFetch(agentResourceUrl(apiBaseUrl, `/api/v1/agent/sessions/${encodeURIComponent(sessionId)}/system-prompt`), {
+      headers: scopedHeaders(requestHeaders, storageScope),
+    })
       .then(async (res) => {
         if (aborted) return
         if (res.ok) {
@@ -142,7 +150,7 @@ function SystemPromptTab({
       aborted = true
       if (retryTimer) clearTimeout(retryTimer)
     }
-  }, [sessionId, requestHeaders, retryKey])
+  }, [apiBaseUrl, fetchImpl, sessionId, requestHeaders, retryKey, storageScope])
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -325,14 +333,17 @@ const MAX_WIDTH = 800
 const DEFAULT_WIDTH = 440
 
 interface DebugDrawerProps {
+  apiBaseUrl?: string
+  fetch?: typeof globalThis.fetch
   sessionId: string
   messages: UIMessage[]
   requestHeaders?: Record<string, string>
+  storageScope?: string
   width: number
   onWidthChange: (w: number) => void
 }
 
-export function DebugDrawer({ sessionId, messages, requestHeaders, width, onWidthChange }: DebugDrawerProps) {
+export function DebugDrawer({ apiBaseUrl, fetch, sessionId, messages, requestHeaders, storageScope, width, onWidthChange }: DebugDrawerProps) {
   const [tab, setTab] = useState<Tab>('session')
 
   const onDragStart = useCallback((e: React.MouseEvent) => {
@@ -387,7 +398,7 @@ export function DebugDrawer({ sessionId, messages, requestHeaders, width, onWidt
             <SessionTab sessionId={sessionId} />
           </TabsContent>
           <TabsContent value="prompt" forceMount className="flex flex-col flex-1 min-h-0 overflow-hidden data-[state=inactive]:hidden">
-            <SystemPromptTab sessionId={sessionId} requestHeaders={requestHeaders} />
+            <SystemPromptTab apiBaseUrl={apiBaseUrl} fetch={fetch} sessionId={sessionId} requestHeaders={requestHeaders} storageScope={storageScope} />
           </TabsContent>
           <TabsContent value="messages" forceMount className="flex flex-col flex-1 min-h-0 overflow-hidden data-[state=inactive]:hidden">
             <MessagesTab messages={messages} />
@@ -396,4 +407,17 @@ export function DebugDrawer({ sessionId, messages, requestHeaders, width, onWidt
       </aside>
     </>
   )
+}
+
+function agentResourceUrl(apiBaseUrl: string | undefined, path: string): string {
+  const base = apiBaseUrl?.replace(/\/$/, '') ?? ''
+  return `${base}${path}`
+}
+
+function scopedHeaders(headers: Record<string, string> | undefined, storageScope: string | undefined): Record<string, string> | undefined {
+  if (!headers && !storageScope) return undefined
+  const result: Record<string, string> = { ...(headers ?? {}) }
+  const hasStorageScope = Object.keys(result).some((key) => key.toLowerCase() === 'x-boring-storage-scope')
+  if (storageScope && !hasStorageScope) result['x-boring-storage-scope'] = storageScope
+  return result
 }

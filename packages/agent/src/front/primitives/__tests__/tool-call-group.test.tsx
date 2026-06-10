@@ -3,7 +3,8 @@ import { describe, expect, test, vi } from 'vitest'
 import type { ToolPart } from '../../bareToolRenderers'
 
 vi.mock('@hachej/boring-ui-kit', () => ({
-  Collapsible: ({ children }: { children: React.ReactNode }) => <div data-testid="collapsible">{children}</div>,
+  Button: ({ children, ...props }: { children: React.ReactNode }) => <button {...props}>{children}</button>,
+  Collapsible: ({ children, ...props }: { children: React.ReactNode }) => <div data-testid="collapsible" {...props}>{children}</div>,
   CollapsibleContent: ({ children }: { children: React.ReactNode }) => <div data-testid="content">{children}</div>,
   CollapsibleTrigger: ({ children }: { children: React.ReactNode }) => <button>{children}</button>,
 }))
@@ -23,6 +24,64 @@ function toolPart(overrides: Partial<ToolPart> = {}): ToolPart {
 }
 
 describe('ToolCallGroup renderer metadata', () => {
+  test('marks approval-requested groups separately from running groups', () => {
+    const part = toolPart({
+      state: 'approval-requested',
+      output: undefined,
+    })
+
+    const html = renderToStaticMarkup(
+      <ToolCallGroup tools={[{ part: part as any, key: 'call-1' }]} mergedToolRenderers={{}} />,
+    )
+
+    expect(html).toContain('data-boring-agent-tool-state="approval-needed"')
+    expect(html).toContain('Needs approval custom_tool')
+    expect(html).not.toContain('data-boring-agent-tool-state="running"')
+    expect(html).not.toContain('Running 0s')
+  })
+
+  test.each(['output-denied', 'approval-responded'] as const)('marks %s groups settled', (state) => {
+    const part = toolPart({ state })
+
+    const html = renderToStaticMarkup(
+      <ToolCallGroup tools={[{ part: part as any, key: 'call-1' }]} mergedToolRenderers={{}} />,
+    )
+
+    expect(html).toContain('data-boring-agent-tool-state="settled"')
+    expect(html).not.toContain('data-boring-agent-tool-state="running"')
+    expect(html).not.toContain('Running 0s')
+  })
+
+  test('marks aborted groups separately from used tools', () => {
+    const part = toolPart({ state: 'aborted' })
+
+    const html = renderToStaticMarkup(
+      <ToolCallGroup tools={[{ part: part as any, key: 'call-1' }]} mergedToolRenderers={{}} />,
+    )
+
+    expect(html).toContain('data-boring-agent-tool-state="aborted"')
+    expect(html).toContain('Stopped custom_tool')
+    expect(html).not.toContain('Tool calls: Used custom_tool')
+    expect(html).not.toContain('data-boring-agent-tool-state="settled"')
+    expect(html).not.toContain('Running 0s')
+  })
+
+  test('bounds expanded tool detail rows to the normal tool lane', () => {
+    const part = toolPart({
+      toolName: 'bash',
+      state: 'output-error',
+      errorText: 'command failed',
+    })
+
+    const html = renderToStaticMarkup(
+      <ToolCallGroup tools={[{ part: part as any, key: 'call-1' }]} mergedToolRenderers={{}} />,
+    )
+
+    expect(html).toContain('data-boring-agent-part="tool-group-details"')
+    expect(html).toContain('max-w-2xl')
+    expect(html).toContain('[&amp;_[data-boring-agent-part=tool-card]]:!my-0')
+  })
+
   test('routes to an explicitly registered rendererId from tool output metadata', () => {
     const customRenderer = vi.fn((part: ToolPart) => (
       <div data-testid="custom-renderer">

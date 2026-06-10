@@ -33,5 +33,4 @@ test('checking SessionSummary contract', () => {
 
 test('checking SessionDetail extends SessionSummary', () => {
   expectTypeOf<SessionDetail>().toMatchTypeOf<SessionSummary>()
-  expectTypeOf<SessionDetail>().toHaveProperty('messages')
 })
