@@ -31,10 +31,9 @@ import { healthRoutes } from './http/routes/health'
 import { fileRoutes } from './http/routes/file'
 import { fsEventsRoutes } from './http/routes/fsEvents'
 import { treeRoutes } from './http/routes/tree'
-import { chatRoutes } from './http/routes/chat'
 import { modelsRoutes } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
-import { sessionRoutes } from './http/routes/sessions'
+import { piChatRoutes } from './http/routes/piChat'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
@@ -45,6 +44,7 @@ import { gitRoutes } from './http/routes/git'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
 import type { AgentHarness } from '../shared/harness'
+import { HarnessPiChatService } from './pi-chat/harnessPiChatService'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_WORKSPACE_ID = 'default'
@@ -104,6 +104,7 @@ interface RuntimeBinding {
   harness: AgentHarness
   tools: AgentTool[]
   readyTracker: ReadyStatusTracker
+  piChatService?: HarnessPiChatService
   lastHealthCheckMs?: number
 }
 
@@ -783,14 +784,14 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   }
 
   async function getSessionStoreForRequest(request: FastifyRequest): Promise<SessionStore> {
-    if (staticBinding) return staticBinding.harness.sessions as unknown as SessionStore
+    if (staticBinding) return staticBinding.harness.sessions
     const scope = await resolveRuntimeScope(getRequestWorkspaceId(request), request)
     const cached = earlySessionStores.get(scope.key)
     if (cached) return cached
     const store = new PiSessionStore(scope.root, {
       sessionNamespace: scope.sessionNamespace,
       storageCwd: scope.root,
-    }) as unknown as SessionStore
+    })
     earlySessionStores.set(scope.key, store)
     return store
   }
@@ -884,26 +885,15 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     getWorkspaceRoot: async (request) =>
       getRuntimeBundleStorageRoot((await getBindingForRequest(request)).runtimeBundle),
   })
-  await app.register(chatRoutes, {
-    getRuntime: async (request) => {
+  await app.register(piChatRoutes, {
+    getService: async (request) => {
       const binding = await getBindingForRequest(request)
-      return {
+      binding.piChatService ??= new HarnessPiChatService({
         harness: binding.harness,
+        sessionStore: binding.harness.sessions,
         workdir: binding.runtimeBundle.workspace.root,
-      }
-    },
-    getSessionStore: getSessionStoreForRequest,
-    sessionChangesTracker,
-    telemetry: opts.telemetry,
-  })
-  await app.register(sessionRoutes, {
-    getSessionStore: getSessionStoreForRequest,
-    getRuntime: async (request) => {
-      const binding = await getBindingForRequest(request)
-      return {
-        harness: binding.harness,
-        workdir: binding.runtimeBundle.workspace.root,
-      }
+      })
+      return binding.piChatService
     },
   })
   await app.register(systemPromptRoutes, {

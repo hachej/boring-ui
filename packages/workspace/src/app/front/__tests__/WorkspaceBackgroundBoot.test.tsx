@@ -10,7 +10,7 @@ function json(data: unknown, init?: ResponseInit) {
   })
 }
 
-const SESSION_PRELOAD_PATHS = ["/api/v1/tree?path=.", "/api/v1/agent/sessions"]
+const SESSION_PRELOAD_PATHS = ["/api/v1/tree?path=.", "/api/v1/agent/pi-chat/sessions"]
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -21,7 +21,7 @@ it("runs warmup in the background without gating on sessions and seeds the tree 
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
     if (url.includes("/api/v1/tree")) return json({ entries: [{ name: "src", type: "directory", path: "src" }] })
-    if (url.includes("/api/v1/agent/sessions")) throw new Error("sessions should not gate workspace warmup")
+    if (url.includes("/api/v1/agent/pi-chat/sessions")) throw new Error("sessions should not gate workspace warmup")
     if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
     return new Response(null, { status: 404 })
   })
@@ -37,7 +37,7 @@ it("runs warmup in the background without gating on sessions and seeds the tree 
   )
 
   await waitFor(() => expect(onStatusChange).toHaveBeenLastCalledWith({ status: "ready" }))
-  expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/sessions"))).toBe(false)
+  expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/sessions"))).toBe(false)
   expect(getPreloadedTreeEntries("/base", "w-bg", ".")).toEqual([
     { name: "src", type: "directory", path: "src" },
   ])
@@ -77,7 +77,7 @@ it("keeps retryable WORKSPACE_NOT_READY as preparing", async () => {
 it("keeps retryable AGENT_RUNTIME_NOT_READY as preparing", async () => {
   const onStatusChange = vi.fn()
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-    if (String(input).includes("/api/v1/agent/sessions")) {
+    if (String(input).includes("/api/v1/agent/pi-chat/sessions")) {
       return json({
         error: {
           code: "AGENT_RUNTIME_NOT_READY",
@@ -110,7 +110,7 @@ it("keeps polling transient runtime-preparing warmup after ready-status complete
   let sessionCalls = 0
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
-    if (url.includes("/api/v1/agent/sessions")) {
+    if (url.includes("/api/v1/agent/pi-chat/sessions")) {
       sessionCalls += 1
       if (sessionCalls <= 2) {
         return json({
@@ -153,7 +153,7 @@ it("treats ready chat/workspace capabilities as warm before runtime dependencies
         },
       }), { status: 200, headers: { "Content-Type": "text/event-stream" } })
     }
-    if (url.includes("/api/v1/agent/sessions")) return json([])
+    if (url.includes("/api/v1/agent/pi-chat/sessions")) return json([])
     return json({ entries: [] })
   }))
 
@@ -197,7 +197,7 @@ it("preserves runtime dependency status while other warmup paths are retrying", 
       }
       return json({ entries: [] })
     }
-    if (url.includes("/api/v1/agent/sessions")) return json([])
+    if (url.includes("/api/v1/agent/pi-chat/sessions")) return json([])
     return json({ entries: [] })
   }))
 
@@ -232,7 +232,7 @@ it("updates runtime dependency status after workspace becomes usable", async () 
         { status: 200, headers: { "Content-Type": "text/event-stream" } },
       )
     }
-    if (url.includes("/api/v1/agent/sessions")) return json([])
+    if (url.includes("/api/v1/agent/pi-chat/sessions")) return json([])
     return json({ entries: [] })
   }))
 
@@ -258,7 +258,7 @@ it("reports degraded ready-status SSE as failed", async () => {
   const onStatusChange = vi.fn()
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
-    if (url.includes("/api/v1/agent/sessions")) {
+    if (url.includes("/api/v1/agent/pi-chat/sessions")) {
       return json({
         error: {
           code: "AGENT_RUNTIME_NOT_READY",
@@ -294,7 +294,7 @@ it("reports degraded ready-status SSE as failed", async () => {
 it("reports JSON error envelope messages for non-retryable warmup failures", async () => {
   const onStatusChange = vi.fn()
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-    if (String(input).includes("/api/v1/agent/sessions")) {
+    if (String(input).includes("/api/v1/agent/pi-chat/sessions")) {
       return json({ error: { code: "RUNTIME_PROVISIONING_FAILED", message: "Agent runtime failed to prepare" } }, { status: 503 })
     }
     return json({ entries: [] })
@@ -356,7 +356,7 @@ it("does not request runtime readiness when provisionWorkspace is false", async 
 
   await waitFor(() => expect(onStatusChange).toHaveBeenLastCalledWith({ status: "ready" }))
   expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/ready-status"))).toBe(false)
-  expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/sessions"))).toBe(false)
+  expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/sessions"))).toBe(false)
 })
 
 it("ignores stale responses after workspace switch", async () => {

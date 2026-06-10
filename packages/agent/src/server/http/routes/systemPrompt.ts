@@ -17,7 +17,7 @@ export interface SystemPromptRouteOptions {
  * Returns the resolved system prompt currently in effect for the given
  * pi session, or 404 if the underlying runtime hasn't materialised the
  * session yet (typical pre-first-turn state — pi creates lazily on first
- * sendMessage). Hosts whose harness doesn't implement `getSystemPrompt`
+ * first prompt). Hosts whose harness doesn't implement `getSystemPrompt`
  * get 501 — the capability simply isn't there.
  */
 export function systemPromptRoutes(

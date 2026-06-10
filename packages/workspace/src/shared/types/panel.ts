@@ -59,11 +59,6 @@ export interface PanelConfig<T = any> {
   component: ComponentType<PaneProps<T>> | (() => Promise<{ default: ComponentType<PaneProps<T>> }>)
 }
 
-// Type guard to check if a panel is lazy
-export function isLazyPanel(config: PanelConfig): config is PanelConfig & { lazy: true } {
-  return config.lazy === true
-}
-
 export type PanelRegistration<T = any> = Omit<PanelConfig<T>, 'id'>
 
 /**

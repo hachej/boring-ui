@@ -21,7 +21,6 @@ export type {
   SessionSummary,
   SessionDetail,
 } from './session'
-export type { UIMessage, UIMessageChunk } from './message'
 export type { FileSearch } from './file-search'
 export type { TelemetryEvent, TelemetrySink } from './telemetry'
 export { noopTelemetry, safeCapture } from './telemetry'
@@ -55,3 +54,56 @@ export {
 export type { AgentRuntimeCapabilities } from './capabilities'
 export { validateTool } from './validateTool'
 export { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from './agentPluginEvents'
+
+export type {
+  BoringChatMessage,
+  BoringChatPart,
+  ChatError,
+  ChatAttachmentPayload,
+  ChatModelSelection,
+  ChatSubmitPayload,
+  ThinkingLevel,
+  CommandReceipt,
+  FollowUpPayload,
+  FollowUpReceipt,
+  InterruptPayload,
+  InterruptReceipt,
+  PromptPayload,
+  PromptReceipt,
+  QueueClearPayload,
+  QueueClearReceipt,
+  StopPayload,
+  StopReceipt,
+  PiChatEvent,
+  PiChatHeartbeatFrame,
+  PiChatStreamFrame,
+  PiChatSnapshot,
+  PiChatStatus,
+  QueuedUserMessage,
+} from './chat'
+export {
+  BoringChatMessageSchema,
+  BoringChatPartSchema,
+  ChatAttachmentPayloadSchema,
+  ChatErrorSchema,
+  ChatModelSelectionSchema,
+  CommandReceiptSchema,
+  FollowUpPayloadSchema,
+  FollowUpReceiptSchema,
+  PiChatEventSchema,
+  PiChatHeartbeatFrameSchema,
+  PiChatSnapshotSchema,
+  PiChatStatusSchema,
+  PiChatStreamFrameSchema,
+  PromptPayloadSchema,
+  PromptReceiptSchema,
+  QueueClearPayloadSchema,
+  QueueClearReceiptSchema,
+  InterruptPayloadSchema,
+  StopPayloadSchema,
+  QueuedUserMessageSchema,
+  StopReceiptSchema,
+  ThinkingLevelSchema,
+  ToolUiMetadataSchema,
+  sanitizeToolUiMetadata,
+} from './chat'

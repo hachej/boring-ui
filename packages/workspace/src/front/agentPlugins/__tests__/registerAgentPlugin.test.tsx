@@ -231,6 +231,71 @@ describe("useAgentPluginHotReload", () => {
     expect(screen.getByTestId("hot-pane")).toHaveTextContent("version two")
   })
 
+  test("command-originated /reload reconnects and re-imports replayed same-revision plugins without lifecycle loops", async () => {
+    let text = "version one"
+    const importFront = vi.fn(async (): Promise<{ default: BoringFrontFactoryWithId }> => ({
+      default: hotPlugin("hot-plugin", (api) => {
+        api.registerPanel({
+          id: "hot-pane",
+          label: "Hot Pane",
+          component: function HotPane() {
+            return React.createElement("div", { "data-testid": "hot-pane" }, text)
+          },
+        })
+      }),
+    }))
+
+    function ReloadHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <PaneRenderer id="hot-pane" />
+        </RegistryProvider>
+      )
+    }
+
+    render(<ReloadHarness />)
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      workspaceId: "test-workspace",
+      frontUrl: "/@fs/front.mjs",
+      boring: { front: "./front.mjs" },
+    })
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version one"))
+    expect(importFront).toHaveBeenCalledTimes(1)
+
+    text = "version two"
+    window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: { reloaded: true } }))
+    await waitFor(() => expect(MockEventSource.instances).toHaveLength(2))
+    expect(MockEventSource.instances[0].closed).toBe(true)
+
+    MockEventSource.instances[1].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      workspaceId: "test-workspace",
+      replay: true,
+      frontUrl: "/@fs/front.mjs",
+      boring: { front: "./front.mjs" },
+    })
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version two"))
+    expect(importFront).toHaveBeenCalledTimes(2)
+
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    expect(MockEventSource.instances).toHaveLength(2)
+  })
+
   test("prefers frontTarget.entryUrl over legacy frontUrl payloads", async () => {
     const importFront = vi.fn(async () => ({
       default: hotPlugin("hot-plugin", (api) => {

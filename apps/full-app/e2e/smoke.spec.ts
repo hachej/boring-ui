@@ -122,7 +122,7 @@ test('smoke: sign in and land on /workspace/:id', async ({ page, baseURL }) => {
       return route.fulfill(json({ models: [] }))
     }
 
-    if (path === '/api/v1/agent/sessions') {
+    if (path === '/api/v1/agent/pi-chat/sessions') {
       return route.fulfill(json([]))
     }
 

@@ -47,6 +47,9 @@
     "dev": "tsx src/server/dev.ts",
     "test": "vitest run",
     "test:e2e": "playwright test -c e2e/playwright.config.ts",
+    "test:chat-baseline": "node ./scripts/run-chat-baseline.mjs",
+    "test:bombadil:chat": "node ./scripts/run-bombadil-chat.mjs",
+    "test:bombadil:chat:nightly": "BOMBADIL_TIME_LIMIT=5m node ./scripts/run-bombadil-chat.mjs",
     "test:regression": "vitest run src/server/__tests__/system-prompt-size.regression.test.ts",
     "test:watch": "vitest",
     "eval": "tsx ./scripts/eval.ts",
@@ -64,7 +67,6 @@
     "smoke:capability-readiness:vercel": "tsx ./scripts/smoke-capability-readiness-vercel.mts"
   },
   "dependencies": {
-    "@ai-sdk/react": "^3.0.170",
     "@hachej/boring-ui-kit": "workspace:*",
     "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.75.5",
     "@radix-ui/react-collapsible": "^1.1.12",
@@ -101,6 +103,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@antithesishq/bombadil": "0.5.0",
     "@opentelemetry/api": "^1.9.1",
     "@tailwindcss/postcss": "^4.2.4",
     "@types/node": "^22.15.3",

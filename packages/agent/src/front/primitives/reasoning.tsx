@@ -50,6 +50,7 @@ export type ReasoningProps = ComponentProps<typeof Collapsible> & {
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
   duration?: number;
+  autoClose?: boolean;
 };
 
 const AUTO_CLOSE_DELAY = 1000;
@@ -63,6 +64,7 @@ export const Reasoning = memo(
     defaultOpen,
     onOpenChange,
     duration: durationProp,
+    autoClose = true,
     children,
     ...props
   }: ReasoningProps) => {
@@ -108,6 +110,7 @@ export const Reasoning = memo(
     useEffect(() => {
       if (
         hasEverStreamedRef.current &&
+        autoClose &&
         !isStreaming &&
         isOpen &&
         !hasAutoClosed
@@ -119,7 +122,7 @@ export const Reasoning = memo(
 
         return () => clearTimeout(timer);
       }
-    }, [isStreaming, isOpen, setIsOpen, hasAutoClosed]);
+    }, [isStreaming, isOpen, setIsOpen, hasAutoClosed, autoClose]);
 
     const handleOpenChange = useCallback(
       (newOpen: boolean) => {

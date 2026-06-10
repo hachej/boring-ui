@@ -1,4 +1,5 @@
-export type SlashCommandHandler = (args: string, ctx: SlashCommandContext) => string | void | Promise<string | void>
+export type SlashCommandHandlerResult = string | void | { message?: string; preserveDraft?: boolean }
+export type SlashCommandHandler = (args: string, ctx: SlashCommandContext) => SlashCommandHandlerResult | Promise<SlashCommandHandlerResult>
 
 export interface SlashCommand {
   name: string
@@ -14,6 +15,10 @@ export interface SlashCommandContext {
   resetSession: () => void
   listCommands: () => SlashCommand[]
   reloadAgentPlugins: () => Promise<string>
+  openModelPicker?: () => boolean | void
+  selectComposerModel?: (query: string) => string | void
+  openThinkingPicker?: () => boolean | void
+  selectComposerThinking?: (query: string) => string | void
   /**
    * Drives the PluginUpdateStatus banner above the composer. The `/reload`
    * builtin prefers this over the inline-text path: it calls

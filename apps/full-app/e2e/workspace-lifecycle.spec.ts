@@ -224,13 +224,13 @@ async function installWorkspaceLifecycleMocks(page: Page, baseURL: string | unde
       return route.fulfill(json({ models: [] }))
     }
 
-    if (path === '/api/v1/agent/sessions' && method === 'GET') {
+    if (path === '/api/v1/agent/pi-chat/sessions' && method === 'GET') {
       const workspaceId = workspaceIdFromRequest(route)
       sessionRequests.push(workspaceId)
       return route.fulfill(json(sessionsByWorkspace.get(workspaceId) ?? []))
     }
 
-    if (path === '/api/v1/agent/sessions' && method === 'POST') {
+    if (path === '/api/v1/agent/pi-chat/sessions' && method === 'POST') {
       const workspaceId = workspaceIdFromRequest(route)
       sessionRequests.push(workspaceId)
       const body = JSON.parse(request.postData() ?? '{}') as { title?: string }

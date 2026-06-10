@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
-import { ChatPanel as DefaultChatPanel, useSessions as useDefaultAgentSessions, type SlashCommand } from "@hachej/boring-agent/front"
+import {
+  PiChatPanel as DefaultPiChatPanel,
+  usePiSessions as useDefaultPiSessions,
+  type SlashCommand,
+  type ToolRendererOverrides,
+} from "@hachej/boring-agent/front"
 import { WorkspaceProvider, type WorkspaceProviderProps } from "../../front/provider/WorkspaceProvider"
 import { ChatLayout, TopBar, ThemeToggle, type ChatLayoutProps } from "../../front/layout"
 import type { WorkspaceChatPanelProps } from "../../front/chrome/chat/types"
@@ -16,6 +21,7 @@ import {
   createLocalStorageSessions,
   useLocalStorageSessions,
 } from "./localStorageSessions"
+import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../front/agentPlugins/reloadEvent"
 import { WorkspaceBackgroundBoot } from "./WorkspaceBackgroundBoot"
 import { workspaceRequestHeaders, type WorkspaceWarmupStatus } from "./workspacePreload"
 
@@ -36,6 +42,7 @@ export interface WorkspaceAgentSessionsApi<
   error?: Error | null
   activeSessionId?: string | null
   activeSession?: TSession | null
+  workspaceId?: string | null
   switch: (id: string) => void
   create: (input?: { title?: string }) => void | Promise<unknown>
   delete: (id: string) => void | Promise<unknown>
@@ -47,6 +54,8 @@ export type UseWorkspaceAgentSessions<
 > = (options: {
   requestHeaders: Record<string, string>
   storageKey: string
+  workspaceId?: string
+  apiBaseUrl?: string
   enabled?: boolean
   refreshKey?: unknown
 }) => WorkspaceAgentSessionsApi<TSession>
@@ -174,6 +183,34 @@ function WorkbenchWarmupOverlay({ status }: { status: WorkspaceWarmupStatus }) {
       </div>
     </div>
   )
+}
+
+function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSessions>[0]): WorkspaceAgentSessionsApi {
+  const workspaceId = options.workspaceId ?? workspaceIdFromHeaders(options.requestHeaders) ?? options.storageKey
+  const piSessions = useDefaultPiSessions({
+    apiBaseUrl: options.apiBaseUrl,
+    workspaceId,
+    storageScope: workspaceId,
+    requestHeaders: options.requestHeaders,
+    enabled: options.enabled,
+    connectActiveSession: false,
+    refreshKey: options.refreshKey,
+  })
+  return { ...piSessions, workspaceId: piSessions.dataStorageScope }
+}
+
+function workspaceIdFromHeaders(headers?: Record<string, string>): string | null {
+  return headers?.["x-boring-workspace-id"] ?? headers?.["X-Boring-Workspace-Id"] ?? null
+}
+
+function pluginReloadMessage(payload: { reloaded?: boolean; diagnostics?: Array<{ message?: string }> }): string {
+  const base = payload.reloaded ? "Agent plugins reloaded." : "Agent plugins will reload on the next message."
+  const diagnosticMessages = Array.isArray(payload.diagnostics)
+    ? payload.diagnostics.map((item) => item.message).filter((message): message is string => Boolean(message))
+    : []
+  return diagnosticMessages.length > 0
+    ? `${base}\n\nWarnings:\n${diagnosticMessages.join("\n")}`
+    : base
 }
 
 function readStoredSessionId(storageKey: string): string | null {
@@ -370,23 +407,28 @@ export function WorkspaceAgentFront<
   const workspaceWarmupStatus = workspaceWarmupState.workspaceId === workspaceId
     ? workspaceWarmupState.status
     : PREPARING_WARMUP_STATUS
-  const chatPanel = (chatPanelProp ?? DefaultChatPanel) as ComponentType<WorkspaceChatPanelProps>
-  const useSessions = (useSessionsProp ?? useDefaultAgentSessions) as UseWorkspaceAgentSessions<TSession>
+  const chatPanel = (chatPanelProp ?? DefaultPiChatPanel) as ComponentType<WorkspaceChatPanelProps>
+  const useSessions = (useSessionsProp ?? useDefaultWorkspacePiSessions) as UseWorkspaceAgentSessions<TSession>
   const shouldUseRemoteSessions = !chatPanelProp || Boolean(useSessionsProp)
   const remoteSessionHookEnabled = shouldUseRemoteSessions && provisionWorkspace !== false
   const remoteSessionActionsUnavailable = () => undefined
   const remoteSessionApi = useSessions({
     requestHeaders: resolvedRequestHeaders,
     storageKey: resolvedSessionStorageKey,
+    workspaceId,
+    apiBaseUrl,
     enabled: remoteSessionHookEnabled,
   })
-  const remoteSessionsAvailable = remoteSessionHookEnabled && !remoteSessionApi.loading && !remoteSessionApi.error
-  const remoteSessionsPending = remoteSessionHookEnabled && !remoteSessionsAvailable
   const [remoteSessionSnapshot, setRemoteSessionSnapshot] = useState<{
     workspaceId: string
     sessions: TSession[]
     activeSessionId: string | null | undefined
   }>(() => ({ workspaceId, sessions: [], activeSessionId: null }))
+  const remoteSessionsArePreviousWorkspace = remoteSessionHookEnabled
+    && remoteSessionApi.workspaceId != null
+    && remoteSessionApi.workspaceId !== workspaceId
+  const remoteSessionsAvailable = remoteSessionHookEnabled && !remoteSessionApi.loading && !remoteSessionApi.error && !remoteSessionsArePreviousWorkspace
+  const remoteSessionsPending = remoteSessionHookEnabled && !remoteSessionsAvailable
   useEffect(() => {
     if (!remoteSessionsAvailable) return
     setRemoteSessionSnapshot((previous) => {
@@ -697,11 +739,22 @@ export function WorkspaceAgentFront<
     () => capturedPlugins.flatMap((plugin) => plugin.registrations.panels.map((panel) => panel.id)),
     [capturedPlugins],
   )
+  const pluginToolRenderers = useMemo<ToolRendererOverrides>(() => {
+    const renderers: ToolRendererOverrides = {}
+    for (const plugin of capturedPlugins) {
+      for (const renderer of plugin.registrations.toolRenderers) {
+        renderers[renderer.id] = renderer.render as ToolRendererOverrides[string]
+      }
+    }
+    return renderers
+  }, [capturedPlugins])
   const shellExtraPanels = useMemo(
     () => [...(extraPanels ?? []), ...pluginPanelIds],
     [extraPanels, pluginPanelIds],
   )
-  const chatSessionId = effectiveActiveSessionId ?? (autoSubmitSessionId !== undefined ? "default" : resolvedSessions[0]?.id ?? "default")
+  const chatSessionId = shouldUseRemoteSessions && !useSessionsProp && remoteSessionSnapshot.workspaceId !== workspaceId
+    ? "default"
+    : effectiveActiveSessionId ?? (autoSubmitSessionId !== undefined ? "default" : resolvedSessions[0]?.id ?? "default")
   const [autoSubmitHydrationDisabled, setAutoSubmitHydrationDisabled] = useState(requestedAutoSubmitInitialDraft)
   const autoSubmitHydrationWorkspaceRef = useRef(workspaceId)
   useEffect(() => {
@@ -753,13 +806,42 @@ export function WorkspaceAgentFront<
 
   const workbenchBlocked = workspaceWarmupStatus.status !== "ready"
   const workbenchOverlay = workbenchBlocked ? <WorkbenchWarmupOverlay status={workspaceWarmupStatus} /> : undefined
+  const reloadAgentPlugins = useCallback(async () => {
+    const endpoint = `${apiBaseUrl?.replace(/\/$/, "") ?? ""}/api/v1/agent/reload`
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { ...resolvedRequestHeaders, "content-type": "application/json" },
+        body: JSON.stringify({ sessionId: chatSessionId }),
+      })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({})) as { error?: string }
+        return payload.error || `reload failed (${response.status})`
+      }
+      const payload = await response.json().catch(() => ({})) as { reloaded?: boolean; diagnostics?: Array<{ message?: string }> }
+      window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: payload }))
+      return pluginReloadMessage(payload)
+    } catch (error) {
+      return error instanceof Error ? error.message : "Agent plugin reload failed."
+    }
+  }, [apiBaseUrl, chatSessionId, resolvedRequestHeaders])
 
   const centerParams = useMemo(
-    () => ({
+    () => {
+      const chatToolRenderers = (chatParams?.toolRenderers && typeof chatParams.toolRenderers === "object")
+        ? chatParams.toolRenderers as ToolRendererOverrides
+        : undefined
+      return {
       ...chatParams,
       ...(delayAutoSubmitDraft ? { autoSubmitInitialDraft: false, initialDraft: undefined } : {}),
       sessionId: chatSessionId,
+      apiBaseUrl,
+      workspaceId,
+      storageScope: workspaceId,
       requestHeaders: resolvedRequestHeaders,
+      showSessions: false,
+      onReloadAgentPlugins: chatParams?.onReloadAgentPlugins ?? reloadAgentPlugins,
+      toolRenderers: { ...pluginToolRenderers, ...(chatToolRenderers ?? {}) },
       bridgeEndpoint,
       getSurface,
       isWorkbenchOpen,
@@ -780,8 +862,9 @@ export function WorkspaceAgentFront<
       // lets ChatPanel apply its own default (true) and avoids overriding a
       // value passed through chatParams.
       ...(hotReloadEnabled !== undefined ? { hotReloadEnabled } : {}),
-    }),
-    [chatParams, delayAutoSubmitDraft, chatSessionId, resolvedRequestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, extraCommands, workspaceWarmupStatus, hydrateMessages, hotReloadEnabled],
+    }
+    },
+    [apiBaseUrl, chatParams, delayAutoSubmitDraft, chatSessionId, resolvedRequestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, extraCommands, workspaceWarmupStatus, hydrateMessages, hotReloadEnabled, pluginToolRenderers, reloadAgentPlugins, workspaceId],
   )
   const surfaceParams = useMemo<SurfaceShellProps>(() => ({
     storageKey: resolvedSurfaceStorageKey,

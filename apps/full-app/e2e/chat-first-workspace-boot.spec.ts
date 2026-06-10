@@ -45,7 +45,7 @@ test('authenticated workspace route renders chat before tree/session warmup reso
     }
     if (path === '/api/v1/workspaces') return route.fulfill(json({ workspaces: [WORKSPACE] }))
     if (path === `/api/v1/workspaces/${WORKSPACE.id}`) return route.fulfill(json({ workspace: WORKSPACE, role: 'owner' }))
-    if (path === '/api/v1/tree' || path === '/api/v1/agent/sessions') {
+    if (path === '/api/v1/tree' || path === '/api/v1/agent/pi-chat/sessions') {
       delayed.push(path)
       return new Promise<void>(() => {})
     }
@@ -63,5 +63,5 @@ test('authenticated workspace route renders chat before tree/session warmup reso
   await expect(page.getByText(WORKSPACE.name)).toBeVisible()
   await expect(page.getByPlaceholder('Ask anything…')).toBeVisible()
   await expect(page.getByText('Opening workspace')).toHaveCount(0)
-  expect(delayed).toEqual(expect.arrayContaining(['/api/v1/tree', '/api/v1/agent/sessions']))
+  expect(delayed).toEqual(expect.arrayContaining(['/api/v1/tree', '/api/v1/agent/pi-chat/sessions']))
 })

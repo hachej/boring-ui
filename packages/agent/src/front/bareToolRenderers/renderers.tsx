@@ -1,28 +1,111 @@
 import type { ReactNode } from 'react'
+import type { BoringChatPart } from '../../shared/chat/boringChatMessage'
 import type { ToolUiMetadata } from '../../shared/tool-ui'
+import { extractToolUiMetadata, sanitizeToolUiMetadata } from '../../shared/tool-ui'
 import { Tool, type ToolState } from '../barePrimitives/Tool'
 import { Terminal } from '../barePrimitives/Terminal'
 import { CodeBlock } from '../barePrimitives/CodeBlock'
 import { DiffView } from './DiffView'
 
-const FALLBACK_RENDERER_KEY = '__fallback'
+export const FALLBACK_RENDERER_KEY = '__fallback'
+
+type BoringToolCallPart = Extract<BoringChatPart, { type: 'tool-call' }>
+
+export interface ToolRendererResolution {
+  key: string
+  source: 'rendererId' | 'toolName' | 'fallback'
+  requestedRendererId?: string
+}
 
 export interface ToolPart {
-  type: string
+  /** Neutral render-model type. Legacy `tool-<name>` values are accepted at the renderer boundary. */
+  type: 'tool-call' | `tool-${string}` | 'dynamic-tool'
   toolName: string
+  /** Stable tool call id; for Pi-native BoringChatPart this is BoringChatPart.id. */
   toolCallId: string
   state: ToolState
   input?: unknown
   output?: unknown
   errorText?: string
   ui?: ToolUiMetadata
+  rendererResolution?: ToolRendererResolution
 }
 
+export type ToolRenderablePart = ToolPart | BoringToolCallPart | unknown
 export type ToolRenderer = (part: ToolPart) => ReactNode
 export type ToolRendererOverrides = Partial<Record<string, ToolRenderer>>
 
 function asRecord(v: unknown): Record<string, unknown> {
   return (typeof v === 'object' && v !== null ? v : {}) as Record<string, unknown>
+}
+
+function isBoringToolCallPart(value: unknown): value is BoringToolCallPart {
+  return asRecord(value).type === 'tool-call' && typeof asRecord(value).toolName === 'string' && typeof asRecord(value).id === 'string'
+}
+
+function isLegacyToolPart(value: unknown): value is Record<string, unknown> {
+  const record = asRecord(value)
+  return typeof record.toolName === 'string' || (typeof record.type === 'string' && record.type.startsWith('tool-'))
+}
+
+function coerceToolState(value: unknown): ToolState {
+  switch (value) {
+    case 'input-streaming':
+    case 'input-available':
+    case 'approval-requested':
+    case 'approval-responded':
+    case 'output-available':
+    case 'output-error':
+    case 'output-denied':
+    case 'aborted':
+      return value
+    default:
+      return 'input-streaming'
+  }
+}
+
+function extractToolName(part: Record<string, unknown>): string {
+  if (typeof part.toolName === 'string' && part.toolName.trim()) return part.toolName.trim()
+  if (typeof part.type === 'string' && part.type.startsWith('tool-')) return part.type.slice('tool-'.length)
+  return 'tool'
+}
+
+function normalizeToolUiMetadata(part: { ui?: unknown; output?: unknown }): ToolUiMetadata | undefined {
+  return sanitizeToolUiMetadata(part.ui) ?? extractToolUiMetadata(part.output)
+}
+
+export function toToolPart(part: ToolRenderablePart): ToolPart | null {
+  if (isBoringToolCallPart(part)) {
+    return {
+      type: 'tool-call',
+      toolName: part.toolName,
+      toolCallId: part.id,
+      state: part.state,
+      input: part.input,
+      output: part.output,
+      errorText: part.errorText,
+      ui: normalizeToolUiMetadata(part),
+    }
+  }
+
+  if (!isLegacyToolPart(part)) return null
+  const record = asRecord(part)
+  const toolName = extractToolName(record)
+  const toolCallId = typeof record.toolCallId === 'string'
+    ? record.toolCallId
+    : typeof record.id === 'string'
+      ? record.id
+      : `${toolName}:unknown`
+  return {
+    type: 'tool-call',
+    toolName,
+    toolCallId,
+    state: coerceToolState(record.state),
+    input: record.input,
+    output: record.output,
+    errorText: typeof record.errorText === 'string' ? record.errorText : undefined,
+    ui: normalizeToolUiMetadata(record),
+  }
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -215,6 +298,12 @@ function renderExecUi(part: ToolPart): ReactNode {
   )
 }
 
+function fallbackToolName(part: ToolPart): string {
+  const requested = part.rendererResolution?.requestedRendererId
+  if (requested && requested !== part.toolName) return `${part.toolName} · renderer ${requested} unavailable`
+  return part.toolName
+}
+
 function renderFallback(part: ToolPart): ReactNode {
   const renderJson = (value: unknown): ReactNode => (
     <pre
@@ -231,7 +320,7 @@ function renderFallback(part: ToolPart): ReactNode {
 
   return (
     <Tool
-      toolName={part.toolName}
+      toolName={fallbackToolName(part)}
       toolCallId={part.toolCallId}
       state={part.state}
       input={part.input}
@@ -269,13 +358,51 @@ export function mergeToolRenderers(
   ) as Record<string, ToolRenderer>
 }
 
+function rendererIdKey(ui: ToolUiMetadata | undefined): string | undefined {
+  const key = ui?.rendererId?.trim()
+  return key || undefined
+}
+
+function withResolution(part: ToolPart, resolution: ToolRendererResolution): ToolPart {
+  return { ...part, rendererResolution: resolution }
+}
+
+function resolveByKey(key: string, overrides?: ToolRendererOverrides): ToolRenderer | undefined {
+  return overrides?.[key] ?? defaultToolRenderers[key]
+}
+
+export function resolveToolRendererForPart(
+  part: ToolPart,
+  overrides?: ToolRendererOverrides,
+): { renderer: ToolRenderer; part: ToolPart; resolution: ToolRendererResolution } {
+  const requestedRendererId = rendererIdKey(part.ui)
+  if (requestedRendererId) {
+    const renderer = resolveByKey(requestedRendererId, overrides)
+    if (renderer) {
+      const resolution = { key: requestedRendererId, source: 'rendererId' as const, requestedRendererId }
+      return { renderer, part: withResolution(part, resolution), resolution }
+    }
+  }
+
+  const toolNameRenderer = resolveByKey(part.toolName, overrides)
+  if (toolNameRenderer) {
+    const resolution = { key: part.toolName, source: 'toolName' as const, requestedRendererId }
+    return { renderer: toolNameRenderer, part: withResolution(part, resolution), resolution }
+  }
+
+  const fallback = overrides?.[FALLBACK_RENDERER_KEY] ?? renderFallback
+  const resolution = { key: FALLBACK_RENDERER_KEY, source: 'fallback' as const, requestedRendererId }
+  return { renderer: fallback, part: withResolution(part, resolution), resolution }
+}
+
 export function resolveToolRenderer(
-  toolName: string,
+  toolNameOrPart: string | ToolPart,
   overrides?: ToolRendererOverrides,
 ): ToolRenderer {
+  if (typeof toolNameOrPart !== 'string') return resolveToolRendererForPart(toolNameOrPart, overrides).renderer
   return (
-    overrides?.[toolName]
-    ?? defaultToolRenderers[toolName]
+    overrides?.[toolNameOrPart]
+    ?? defaultToolRenderers[toolNameOrPart]
     ?? overrides?.[FALLBACK_RENDERER_KEY]
     ?? renderFallback
   )

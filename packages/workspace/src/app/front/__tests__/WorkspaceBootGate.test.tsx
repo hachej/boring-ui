@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { WorkspaceBootGate } from "../WorkspaceBootGate"
 
-const SESSION_PRELOAD_PATHS = ["/api/v1/tree?path=.", "/api/v1/agent/sessions"]
+const SESSION_PRELOAD_PATHS = ["/api/v1/tree?path=.", "/api/v1/agent/pi-chat/sessions"]
 
 describe("WorkspaceBootGate", () => {
   afterEach(() => {
@@ -31,7 +31,7 @@ describe("WorkspaceBootGate", () => {
         headers: { "x-boring-workspace-id": "w1" },
       }),
     )
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/sessions"))).toBe(false)
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/sessions"))).toBe(false)
   })
 
   it("skips agent runtime warmup when provisioning is disabled", async () => {
@@ -48,7 +48,7 @@ describe("WorkspaceBootGate", () => {
       expect(screen.getByText("Workspace ready")).toBeInTheDocument()
     })
 
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/sessions"))).toBe(false)
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/pi-chat/sessions"))).toBe(false)
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/ready-status"))).toBe(false)
   })
 
@@ -56,7 +56,7 @@ describe("WorkspaceBootGate", () => {
     let sessionCalls = 0
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.includes("/api/v1/agent/sessions")) {
+      if (url.includes("/api/v1/agent/pi-chat/sessions")) {
         sessionCalls += 1
         if (sessionCalls <= 2) {
           return new Response(JSON.stringify({ error: { code: "AGENT_RUNTIME_NOT_READY", retryable: true } }), { status: 503 })

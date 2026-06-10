@@ -20,6 +20,10 @@
     "./styles.css": {
       "style": "./dist/styles.css",
       "default": "./dist/styles.css"
+    },
+    "./tokens.css": {
+      "style": "./dist/tokens.css",
+      "default": "./dist/tokens.css"
     }
   },
   "sideEffects": [

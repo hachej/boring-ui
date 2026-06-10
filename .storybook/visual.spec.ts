@@ -55,13 +55,8 @@ test.describe("storybook visual baseline", () => {
     await expect(page.locator("#storybook-root")).toHaveScreenshot("workspace-file-tree-mobile.png", snapshotOptions)
   })
 
-  test("agent chat variants", async ({ page }) => {
-    await page.setViewportSize({ width: 1024, height: 768 })
-
-    await openStory(page, "agent-chatpanel--classic-chat-panel")
-    await expect(page.locator("#storybook-root")).toHaveScreenshot("agent-chat-classic.png", snapshotOptions)
-
-    await openStory(page, "agent-chatpanel--shadcn-chat-panel", { dark: true })
-    await expect(page.locator("#storybook-root")).toHaveScreenshot("agent-chat-shadcn-dark.png", snapshotOptions)
-  })
+  // Note: the legacy ChatPanel visual stories were removed alongside the
+  // pi-native chat rewrite that deleted src/front/ChatPanel.tsx. The new
+  // PiChatPanel surface is covered by unit + e2e suites; a stable visual
+  // baseline for it should be regenerated in the CI environment.
 })

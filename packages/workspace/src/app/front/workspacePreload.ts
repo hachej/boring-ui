@@ -90,7 +90,7 @@ export function parseRetryableWarmupPreparing(payload: unknown): WarmupPreparing
 
 export function isAgentRuntimeWarmupPath(path: string): boolean {
   const url = new URL(path, "http://workspace.local")
-  return url.pathname === "/api/v1/agent/sessions" || url.pathname === "/api/v1/ready-status"
+  return url.pathname === "/api/v1/agent/pi-chat/sessions" || url.pathname === "/api/v1/ready-status"
 }
 
 export function isReadyStatusPath(path: string): boolean {
@@ -162,12 +162,6 @@ export function parseReadyStatusSse(payload: unknown): ReadyStatusWarmupSnapshot
     }
   }
   return null
-}
-
-export function parseFirstReadyStatusSseEvent(payload: string): ReadyStatusWarmupSnapshot | null {
-  const index = payload.indexOf("\n\n")
-  if (index < 0) return null
-  return parseReadyStatusSse(payload.slice(0, index + 2))
 }
 
 export function readyStatusSupportsWorkspaceUse(status: ReadyStatusWarmupSnapshot | null): boolean {

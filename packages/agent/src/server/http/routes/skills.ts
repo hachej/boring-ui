@@ -23,6 +23,10 @@ export interface SkillSummary {
   description: string
 }
 
+interface SkillsQuery {
+  refresh?: string
+}
+
 const CACHE_TTL_MS = 30_000
 
 export interface SkillsRoutesOptions {
@@ -43,7 +47,7 @@ export function skillsRoutes(
 ): void {
   const cached = new Map<string, { skills: SkillSummary[]; expiresAt: number }>()
 
-  app.get('/api/v1/agent/skills', async (request, reply) => {
+  app.get<{ Querystring: SkillsQuery }>('/api/v1/agent/skills', async (request, reply) => {
     try {
       const workspaceRoot = opts.getWorkspaceRoot
         ? await opts.getWorkspaceRoot(request)
@@ -63,7 +67,8 @@ export function skillsRoutes(
         if (entry.expiresAt <= now) cached.delete(key)
       }
       const cachedEntry = cached.get(cacheKey)
-      if (cachedEntry && cachedEntry.expiresAt > now) {
+      const refresh = request.query.refresh === '1'
+      if (!refresh && cachedEntry && cachedEntry.expiresAt > now) {
         return reply.code(200).send({ skills: cachedEntry.skills })
       }
 

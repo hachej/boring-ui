@@ -1,7 +1,6 @@
 import { expectTypeOf, test } from 'vitest'
 
 import type { AgentHarness, RunContext, SendMessageInput, MessageAttachment } from '../harness'
-import type { UIMessageChunk } from '../message'
 import type { SessionStore } from '../session'
 
 test('AgentHarness contract', () => {
@@ -10,10 +9,6 @@ test('AgentHarness contract', () => {
     readonly placement: 'server' | 'browser'
     sessions: SessionStore
   }>()
-  expectTypeOf<AgentHarness['sendMessage']>().parameters.toEqualTypeOf<
-    [input: SendMessageInput, ctx: RunContext]
-  >()
-  expectTypeOf<AgentHarness['sendMessage']>().returns.toEqualTypeOf<AsyncIterable<UIMessageChunk>>()
   expectTypeOf<AgentHarness>().not.toHaveProperty('reconnect')
 })
 

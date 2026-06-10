@@ -1,6 +1,5 @@
 import { expectTypeOf, test } from 'vitest'
 
-import type { UIMessage, UIMessageChunk } from '../message'
 import type {
   SessionCtx,
   SessionDetail,
@@ -42,12 +41,5 @@ test('Session shapes', () => {
     turnCount: number
   }>()
 
-  expectTypeOf<SessionDetail['messages']>().toEqualTypeOf<UIMessage[]>()
-})
-
-test('Message type re-exports', () => {
-  expectTypeOf<UIMessage>().toMatchTypeOf<{
-    role: 'system' | 'user' | 'assistant' | 'tool'
-  }>()
-  expectTypeOf<UIMessageChunk>().toHaveProperty('type')
+  expectTypeOf<SessionDetail>().toEqualTypeOf<SessionSummary>()
 })

@@ -9,7 +9,6 @@
  */
 import { Badge, Collapsible, CollapsibleContent, CollapsibleTrigger } from "@hachej/boring-ui-kit";
 import { cn } from "@/front/lib";
-import type { DynamicToolUIPart, ToolUIPart } from "ai";
 import {
   CheckCircleIcon,
   ChevronDownIcon,
@@ -42,22 +41,35 @@ export const Tool = ({ className, ...props }: ToolProps) => (
   />
 );
 
-export type ToolPart = ToolUIPart | DynamicToolUIPart;
+export type ToolState =
+  | "input-streaming"
+  | "input-available"
+  | "approval-requested"
+  | "approval-responded"
+  | "output-available"
+  | "output-denied"
+  | "output-error"
+  | "aborted";
+
+export type ToolPart = {
+  type: `tool-${string}` | "dynamic-tool" | "tool-call";
+  state: ToolState;
+  toolName?: string;
+  input?: unknown;
+  output?: unknown;
+  errorText?: string;
+};
 
 export type ToolHeaderProps = {
   title?: ReactNode;
   className?: string;
   icon?: ReactNode;
-} & (
-  | { type: ToolUIPart["type"]; state: ToolUIPart["state"]; toolName?: never }
-  | {
-      type: DynamicToolUIPart["type"];
-      state: DynamicToolUIPart["state"];
-      toolName: string;
-    }
-);
+  type: ToolPart["type"];
+  state: ToolState;
+  toolName?: string;
+};
 
-const statusLabels: Record<ToolPart["state"], string> = {
+const statusLabels: Record<ToolState, string> = {
   "approval-requested": "Awaiting Approval",
   "approval-responded": "Responded",
   "input-available": "Running",
@@ -65,9 +77,10 @@ const statusLabels: Record<ToolPart["state"], string> = {
   "output-available": "Completed",
   "output-denied": "Denied",
   "output-error": "Error",
+  aborted: "Aborted",
 };
 
-const statusIcons: Record<ToolPart["state"], ReactNode> = {
+const statusIcons: Record<ToolState, ReactNode> = {
   "approval-requested": <ClockIcon className="size-4 text-accent" />,
   "approval-responded": <CheckCircleIcon className="size-4 text-accent" />,
   "input-available": <ClockIcon className="size-4 animate-pulse text-muted-foreground" />,
@@ -75,10 +88,11 @@ const statusIcons: Record<ToolPart["state"], ReactNode> = {
   "output-available": <CheckCircleIcon className="size-4 text-accent" />,
   "output-denied": <XCircleIcon className="size-4 text-destructive" />,
   "output-error": <XCircleIcon className="size-4 text-destructive" />,
+  aborted: <XCircleIcon className="size-4 text-muted-foreground" />,
 };
 
-export const getStatusBadge = (status: ToolPart["state"]) => (
-  <Badge className="gap-1.5 rounded-full text-xs" variant="secondary">
+export const getStatusBadge = (status: ToolState) => (
+  <Badge className="shrink-0 gap-1.5 rounded-full text-xs" variant="secondary">
     {statusIcons[status]}
     {statusLabels[status]}
   </Badge>
@@ -94,22 +108,28 @@ export const ToolHeader = ({
   ...props
 }: ToolHeaderProps) => {
   const derivedName =
-    type === "dynamic-tool" ? toolName : type.split("-").slice(1).join("-");
+    type === "dynamic-tool" || type === "tool-call" ? toolName : type.split("-").slice(1).join("-");
 
   return (
     <CollapsibleTrigger
+      data-boring-agent-part="tool-header"
       className={cn(
-        "flex w-full items-center justify-between gap-4 p-3",
+        "flex w-full min-w-0 items-center justify-between gap-3 p-3 text-left",
         className,
       )}
       {...props}
     >
-      <div className="flex items-center gap-2">
-        {icon ?? <WrenchIcon className="size-4 text-muted-foreground" />}
-        <span className="font-medium text-sm">{title ?? derivedName}</span>
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        {icon ?? <WrenchIcon className="size-4 shrink-0 text-muted-foreground" />}
+        <span data-boring-agent-part="tool-title" className="min-w-0 flex-1 truncate text-sm font-medium">
+          {title ?? derivedName}
+        </span>
         {getStatusBadge(state)}
       </div>
-      <ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+      <ChevronDownIcon
+        data-boring-agent-part="tool-chevron"
+        className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180"
+      />
     </CollapsibleTrigger>
   );
 };
@@ -127,7 +147,7 @@ export const ToolContent = ({ className, ...props }: ToolContentProps) => (
 );
 
 export type ToolInputProps = ComponentProps<"div"> & {
-  input: ToolPart["input"];
+  input: unknown;
 };
 
 export const ToolInput = ({ className, input, ...props }: ToolInputProps) => (
@@ -142,8 +162,8 @@ export const ToolInput = ({ className, input, ...props }: ToolInputProps) => (
 );
 
 export type ToolOutputProps = ComponentProps<"div"> & {
-  output: ToolPart["output"];
-  errorText: ToolPart["errorText"];
+  output: unknown;
+  errorText?: string;
 };
 
 export const ToolOutput = ({
@@ -156,14 +176,18 @@ export const ToolOutput = ({
     return null;
   }
 
-  let Output: ReactNode = <div>{output as ReactNode}</div>;
+  let Output: ReactNode = null;
 
-  if (typeof output === "object" && !isValidElement(output)) {
-    Output = (
-      <CodeBlock code={JSON.stringify(output, null, 2)} language="json" />
-    );
-  } else if (typeof output === "string") {
-    Output = <CodeBlock code={output} language="text" />;
+  if (!errorText) {
+    if (typeof output === "object" && !isValidElement(output)) {
+      Output = (
+        <CodeBlock code={JSON.stringify(output, null, 2)} language="json" />
+      );
+    } else if (typeof output === "string") {
+      Output = <CodeBlock code={output} language="text" />;
+    } else if (output) {
+      Output = <div>{output as ReactNode}</div>;
+    }
   }
 
   return (
@@ -173,13 +197,17 @@ export const ToolOutput = ({
       </h4>
       <div
         className={cn(
-          "overflow-x-auto rounded-md text-xs [&_table]:w-full",
+          "rounded-md text-xs [&_table]:w-full",
           errorText
-            ? "bg-destructive/10 text-destructive"
-            : "bg-muted/30 text-foreground",
+            ? "overflow-hidden border border-destructive/20 bg-destructive/10 text-destructive"
+            : "overflow-x-auto bg-muted/30 text-foreground",
         )}
       >
-        {errorText && <div className="p-3">{errorText}</div>}
+        {errorText ? (
+          <pre className="m-0 overflow-x-auto whitespace-pre-wrap break-words p-3 font-mono text-[12px] leading-5 [overflow-wrap:anywhere]">
+            {errorText}
+          </pre>
+        ) : null}
         {Output}
       </div>
     </div>

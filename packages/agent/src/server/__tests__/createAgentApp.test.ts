@@ -104,7 +104,6 @@ test('createAgentApp wires runtime provisioning skill paths into harness and ski
       },
       async delete() {},
     },
-    async *sendMessage() {},
   }))
 
   const app = await createAgentApp({
@@ -155,7 +154,6 @@ test('createAgentApp can use a custom harness factory for non-pi runtimes', asyn
       async delete() {},
     },
     reloadSession,
-    async *sendMessage() {},
   }))
 
   const app = await createAgentApp({
@@ -177,18 +175,7 @@ test('createAgentApp can use a custom harness factory for non-pi runtimes', asyn
     expect(harnessFactory.mock.calls[0]?.[0].telemetry).toBe(telemetry)
     expect(harnessFactory.mock.calls[0]?.[0].tools.map((tool: { name: string }) => tool.name)).toContain('custom_runtime_tool')
 
-    const chatRes = await app.inject({
-      method: 'POST',
-      url: '/api/v1/agent/chat',
-      payload: { sessionId: 'custom', message: 'secret prompt must not be captured' },
-    })
-    expect(chatRes.statusCode).toBe(200)
-    expect(telemetryEvents.map((event) => event.name)).toEqual([
-      'agent.chat.started',
-      'agent.chat.message.submitted',
-      'agent.chat.completed',
-    ])
-    expect(JSON.stringify(telemetryEvents)).not.toContain('secret prompt')
+    expect(telemetryEvents).toEqual([])
 
     const res = await app.inject({ method: 'POST', url: '/api/v1/agent/reload', payload: { sessionId: 'custom' } })
     expect(res.statusCode).toBe(200)

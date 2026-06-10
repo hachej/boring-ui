@@ -144,7 +144,7 @@ This sets `BORING_USE_LOCAL_PACKAGES=1`, which resolves `@hachej/boring-agent` i
 │                         │
 │  <ChatPanel>            │
 │  <SessionToolbar>       │
-│  useAgentChat hook      │
+│  Pi-native session API  │
 └──────────┬──────────────┘
            │ UIMessage stream (SSE)
 ┌──────────▼──────────────┐

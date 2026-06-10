@@ -9,7 +9,6 @@ export const ERROR_CODE_PATH_REJECTED = 'path_rejected'
 export const ERROR_CODE_NOT_FOUND = 'not_found'
 export const ERROR_CODE_ALREADY_EXISTS = 'already_exists'
 export const ERROR_CODE_CONFLICT = 'conflict'
-export const ERROR_CODE_RANGE_NOT_SATISFIABLE = 'range_not_satisfiable'
 export const ERROR_CODE_INTERNAL = 'internal'
 export const ERROR_CODE_NOT_IMPLEMENTED = 'not_implemented'
 

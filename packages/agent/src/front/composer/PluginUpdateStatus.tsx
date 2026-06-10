@@ -14,8 +14,10 @@
  *    "Try again" button that re-runs `/reload`.
  */
 import { useEffect, useRef, type ReactElement } from "react"
+import { AlertCircleIcon, XIcon } from "lucide-react"
 import { cn } from "../lib"
 import type { PluginRestartWarning } from "../../shared/agentPluginEvents"
+import { noticeIconClass, noticeSurfaceClass, noticeTextClass } from "../chat/components/noticeStyles"
 
 export type { PluginRestartWarning }
 
@@ -185,32 +187,28 @@ export function PluginUpdateStatus({
       data-boring-plugin-update="error"
       role="status"
       aria-live="polite"
-      className={cn(
-        "mx-auto mb-2 w-full rounded-[var(--radius-md)] border border-destructive/40 bg-destructive/10",
-        "px-3 py-2 text-xs text-foreground",
-        maxWidthClassName,
-      )}
+      className={noticeSurfaceClass("error", cn("mx-auto mb-2 w-full text-xs", maxWidthClassName))}
     >
-      <div className="flex items-center gap-2">
-        <span className="text-destructive" aria-hidden="true">⚠</span>
+      <div className="flex items-start gap-2.5">
+        <AlertCircleIcon className={noticeIconClass("error", "size-3.5")} aria-hidden="true" />
         <span className="flex-1 font-medium">Plugin update failed.</span>
         <button
           type="button"
           onClick={onRetry}
-          className="rounded border border-destructive/40 px-2 py-0.5 text-[11px] font-medium hover:bg-destructive/10"
+          className="shrink-0 rounded border border-destructive/25 px-2 py-0.5 text-[11px] font-medium hover:bg-destructive/10"
         >
           Try again
         </button>
         <button
           type="button"
           onClick={onDismiss}
-          className="rounded border border-transparent px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="-mr-1 -mt-1 inline-flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
           aria-label="Dismiss plugin update status"
         >
-          Dismiss
+          <XIcon className="size-3" aria-hidden="true" />
         </button>
       </div>
-      <pre className="mt-2 whitespace-pre-wrap break-words text-[11px] text-destructive/90">{state.message}</pre>
+      <pre className={noticeTextClass("mt-2 text-[11px] text-muted-foreground")}>{state.message}</pre>
     </div>
   )
 }

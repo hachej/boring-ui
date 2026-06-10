@@ -9,7 +9,7 @@ const agentRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const repoRoot = resolve(agentRoot, '..', '..')
 
 const auditedFiles = [
-  { root: agentRoot, path: 'src/front/ChatPanel.tsx' },
+  { root: agentRoot, path: 'src/front/chat/PiChatPanel.tsx' },
   { root: agentRoot, path: 'examples/with-custom-tool/client.tsx' },
   { root: repoRoot, path: 'apps/agent-playground/src/front/App.tsx' },
   { root: repoRoot, path: 'apps/agent-playground/src/server/index.ts' },

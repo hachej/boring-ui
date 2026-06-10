@@ -1,10 +1,39 @@
 import { useCallback, useState, type RefObject } from 'react'
 import { detectMention, type MentionState } from './primitives/mention-picker'
 
+interface PickedMentionedFile {
+  path: string
+  token: string
+}
+
 function setTextareaValue(textarea: HTMLTextAreaElement, value: string): void {
   const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
   setter?.call(textarea, value)
   textarea.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
+function mentionToken(path: string): string {
+  return `@${path.split('/').pop() ?? path}`
+}
+
+function disambiguatedMentionToken(path: string): string {
+  const normalized = path.replace(/^\/+/, '')
+  return `@${normalized || path}`
+}
+
+function tokenForPickedPath(path: string, existing: readonly PickedMentionedFile[]): string {
+  const token = mentionToken(path)
+  const collides = existing.some((file) => file.path !== path && file.token === token)
+  return collides ? disambiguatedMentionToken(path) : token
+}
+
+function valueHasMentionToken(value: string, token: string): boolean {
+  const mentionBoundary = '[^A-Za-z0-9_./-]'
+  return new RegExp(`(^|${mentionBoundary})${escapeRegExp(token)}($|${mentionBoundary})`).test(value)
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 export function useComposerPickers({
@@ -14,7 +43,11 @@ export function useComposerPickers({
 }) {
   const [mentionState, setMentionState] = useState<MentionState | null>(null)
   const [slashQuery, setSlashQuery] = useState<string | null>(null)
-  const [mentionedFiles, setMentionedFiles] = useState<string[]>([])
+  const [mentionedFiles, setMentionedFiles] = useState<PickedMentionedFile[]>([])
+
+  const reconcileMentionedFiles = useCallback((value: string) => {
+    setMentionedFiles((prev) => prev.filter((file) => valueHasMentionToken(value, file.token)))
+  }, [])
 
   const handleComposerChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const ta = e.currentTarget
@@ -29,21 +62,22 @@ export function useComposerPickers({
       setSlashQuery(null)
       setMentionState(detectMention(ta.value, cursor))
     }
-  }, [textareaRef])
+    reconcileMentionedFiles(ta.value)
+  }, [reconcileMentionedFiles, textareaRef])
 
   const selectMention = useCallback((path: string) => {
     const ta = textareaRef.current
     if (!ta || !mentionState) return
     const { anchorStart, anchorEnd } = mentionState
-    const token = `@${path.split('/').pop() ?? path}`
+    const token = tokenForPickedPath(path, mentionedFiles)
     const newValue = ta.value.slice(0, anchorStart) + token + ta.value.slice(anchorEnd)
     setTextareaValue(ta, newValue)
     const newCursor = anchorStart + token.length
     ta.setSelectionRange(newCursor, newCursor)
     ta.focus()
     setMentionState(null)
-    setMentionedFiles((prev) => prev.includes(path) ? prev : [...prev, path])
-  }, [mentionState, textareaRef])
+    setMentionedFiles((prev) => prev.some((file) => file.path === path) ? prev : [...prev, { path, token }])
+  }, [mentionState, mentionedFiles, textareaRef])
 
   const selectSlashCommand = useCallback((name: string) => {
     const ta = textareaRef.current
@@ -70,7 +104,7 @@ export function useComposerPickers({
   return {
     mentionState,
     slashQuery,
-    mentionedFiles,
+    mentionedFiles: mentionedFiles.map((file) => file.path),
     clearMentionedFiles,
     dismissMention,
     dismissSlash,

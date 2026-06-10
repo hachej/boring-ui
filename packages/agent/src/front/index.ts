@@ -1,10 +1,10 @@
-// @hachej/boring-agent/front — Tailwind + shadcn styled ChatPanel, primitives, hooks, and slash commands.
+// @hachej/boring-agent/front — Tailwind + shadcn styled PiChatPanel, primitives, hooks, and slash commands.
 
 export { uploadFile } from './upload/uploadFile'
 export type { UploadFileOptions, UploadFileResult } from './upload/uploadFile'
 
-export { ChatPanel } from './ChatPanel'
-export type { ChatPanelProps } from './ChatPanel'
+export { PiChatPanel, PiChatPanel as ChatPanel } from './chat/PiChatPanel'
+export type { PiChatPanelProps, PiChatPanelProps as ChatPanelProps } from './chat/PiChatPanel'
 export { DebugDrawer } from './DebugDrawer'
 export {
   ArtifactOpenProvider,
@@ -17,10 +17,16 @@ export { getAgentCommands } from './commands'
 export type { AgentCommandContribution, AgentCommandOptions } from './commands'
 
 // Hooks + slash commands
-export { useAgentChat } from './hooks/useAgentChat'
-export type { UseAgentChatOptions } from './hooks/useAgentChat'
-export { useSessions } from './hooks/useSessions'
-export type { UseSessionsOptions, UseSessionsResult } from './hooks/useSessions'
+export {
+  usePiSessions,
+  activeSessionStorageKey,
+  readActiveSessionId,
+  writeActiveSessionId,
+  clearActiveSessionId,
+  SessionList as PiSessionList,
+  SessionBrowser as PiSessionBrowser,
+} from './chat/session'
+export type { UsePiSessionsOptions, UsePiSessionsResult, PiSessionCreateInit, SessionListProps } from './chat/session'
 export {
   builtinCommands,
   createCommandRegistry,

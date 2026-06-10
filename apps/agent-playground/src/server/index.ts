@@ -16,6 +16,11 @@ const apiPort = Number(new URL(apiAddress).port)
 const apiTarget = `http://127.0.0.1:${apiPort}`
 
 const playgroundRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+const repoRoot = path.resolve(playgroundRoot, '../..')
+const agentSourceRoot = path.resolve(repoRoot, 'packages/agent/src')
+const configuredFrontendPort = process.env.FRONTEND_PORT
+const frontendPort = configuredFrontendPort ? Number(configuredFrontendPort) : 5183
+const frontendStrictPort = process.env.FRONTEND_STRICT_PORT === '1'
 
 const vite = await createViteServer({
   configFile: false,
@@ -63,14 +68,22 @@ const vite = await createViteServer({
     },
   ],
   server: {
-    port: Number(process.env.FRONTEND_PORT) || 5183,
-    strictPort: false,
+    port: Number.isFinite(frontendPort) ? frontendPort : 5183,
+    strictPort: frontendStrictPort,
     host: process.env.HOST ?? '0.0.0.0',
     allowedHosts: true,
     proxy: {
       '/api': apiTarget,
       '/health': apiTarget,
       '/ready': apiTarget,
+    },
+  },
+  resolve: {
+    alias: {
+      '@hachej/boring-agent/front/styles.css': path.resolve(agentSourceRoot, 'front/styles/globals.css'),
+      '@hachej/boring-agent/front': path.resolve(agentSourceRoot, 'front/index.ts'),
+      '@hachej/boring-agent/shared': path.resolve(agentSourceRoot, 'shared/index.ts'),
+      '@': agentSourceRoot,
     },
   },
 })
