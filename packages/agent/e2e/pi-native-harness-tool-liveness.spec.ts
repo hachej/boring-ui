@@ -43,7 +43,7 @@ test.describe('Pi-native harness-backed tool liveness', () => {
       await composer.fill('baseline slow tool liveness')
       await submit.click()
 
-      const runningTool = page.getByRole('button', { name: /Tool calls: Using command/i })
+      const runningTool = page.getByRole('button', { name: /Tool calls: Using search/i })
       await expect(runningTool).toBeVisible({ timeout: 10_000 })
       await expect(runningTool).toContainText(/Running \d+s/)
       await expect(runningTool).toContainText(/Running [1-9]\d*s/, { timeout: 4_000 })
@@ -58,14 +58,14 @@ test.describe('Pi-native harness-backed tool liveness', () => {
       })
       expect(running.assistantMessages[0]?.text).toMatch(/Running \d+s/)
       expect(running.assistantMessages[0]?.toolLabels).toEqual([
-        expect.stringMatching(/Tool calls: Using command/i),
+        expect.stringMatching(/Tool calls: Using search/i),
       ])
 
       // The 10 x 500ms scripted tool delay keeps this safely inside the live window.
       await page.waitForTimeout(1_000)
       await expect(runningTool).toBeVisible()
 
-      await expect(page.getByRole('button', { name: /Tool calls: Used command/i })).toBeVisible({ timeout: 10_000 })
+      await expect(page.getByRole('button', { name: /Tool calls: Used search/i })).toBeVisible({ timeout: 10_000 })
       await expect(conversation.getByText('PI_NATIVE_ASSISTANT_DONE')).toBeVisible({ timeout: 10_000 })
       await expect(page.getByTestId('chat-working')).toHaveCount(0, { timeout: 10_000 })
 
@@ -78,9 +78,9 @@ test.describe('Pi-native harness-backed tool liveness', () => {
         toolStates: ['settled'],
       })
       expect(settled.assistantMessages[0]?.toolLabels).toEqual([
-        expect.stringMatching(/Tool calls: Used command/i),
+        expect.stringMatching(/Tool calls: Used search/i),
       ])
-      expect(settled.assistantMessages[0]?.toolLabels.join(' ')).not.toMatch(/Tool calls: Using command/i)
+      expect(settled.assistantMessages[0]?.toolLabels.join(' ')).not.toMatch(/Tool calls: Using search/i)
       expect(settled.assistantMessages[0]?.text).not.toMatch(/Running \d+s/)
       expect(countOccurrences(settled.assistantMessages[0]?.text ?? '', 'PI_NATIVE_ASSISTANT_DONE')).toBe(1)
 

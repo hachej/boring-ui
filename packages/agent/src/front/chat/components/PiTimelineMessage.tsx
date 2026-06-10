@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { CheckIcon, CopyIcon } from 'lucide-react'
 import { Button } from '@hachej/boring-ui-kit'
 import type { BoringChatMessage, BoringChatPart } from '../../../shared/chat'
-import type { ToolRendererOverrides } from '../../bareToolRenderers'
+import { resolveToolRendererForPart, toToolPart, type ToolRendererOverrides } from '../../bareToolRenderers'
 import { cn } from '../../lib'
 import {
   Attachment,
@@ -17,6 +17,20 @@ import { Message, MessageContent, MessageResponse } from '../../primitives/messa
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '../../primitives/reasoning'
 import { ToolCallGroup, type GroupedToolEntry } from '../../primitives/tool-call-group'
 import { noticeSurfaceClass, noticeTextClass } from './noticeStyles'
+
+/**
+ * Read-only / inspection tools collapse into the grouped "Used X · Y" summary;
+ * everything else (bash, write, edit, and any tool with side effects) renders as
+ * an individual card, expanded by default, so the command / diff / output is
+ * visible without a click. Tweak this set to change which tools stay collapsed.
+ */
+const COLLAPSIBLE_TOOL_NAMES = new Set([
+  'read', 'ls', 'find', 'grep', 'search', 'web_search', 'code_search', 'fetch_content',
+])
+
+function isCollapsibleTool(part: BoringChatPart): boolean {
+  return part.type === 'tool-call' && COLLAPSIBLE_TOOL_NAMES.has(part.toolName)
+}
 
 export interface PiTimelineMessageProps {
   message: BoringChatMessage
@@ -90,6 +104,13 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
             return (
               <div key={item.key} data-boring-agent-part="message-tools">
                 <ToolCallGroup tools={item.tools} mergedToolRenderers={toolRenderers} />
+              </div>
+            )
+          }
+          if (item.kind === 'tool-plain') {
+            return (
+              <div key={item.key} data-boring-agent-part="message-tools">
+                <PlainToolCard part={item.part} renderers={toolRenderers} />
               </div>
             )
           }
@@ -172,10 +193,31 @@ function TimelineReasoningPart({ item, showThoughts }: { item: Extract<Renderabl
   )
 }
 
+/**
+ * Renders a single action tool as its own standalone card (collapsed by
+ * default; click the header to expand). Unlike read-only tools it is not folded
+ * into the grouped "Used X · Y" summary — each action tool gets its own row.
+ */
+function PlainToolCard({ part, renderers }: { part: Extract<BoringChatPart, { type: 'tool-call' }>; renderers: ToolRendererOverrides }) {
+  const toolPart = toToolPart(part)
+  if (!toolPart) return null
+  const { renderer, part: resolved, resolution } = resolveToolRendererForPart(toolPart, renderers)
+  return (
+    <div
+      data-tool-call-id={resolved.toolCallId}
+      data-tool-renderer-key={resolution.key}
+      data-tool-renderer-source={resolution.source}
+    >
+      {renderer(resolved)}
+    </div>
+  )
+}
+
 type RenderablePart =
   | { kind: 'reasoning'; key: string; text: string; state?: Extract<BoringChatPart, { type: 'reasoning' }>['state'] }
   | { kind: 'part'; key: string; part: Exclude<BoringChatPart, { type: 'reasoning' | 'tool-call' | 'file' }> }
   | { kind: 'tool-group'; key: string; tools: GroupedToolEntry[] }
+  | { kind: 'tool-plain'; key: string; part: Extract<BoringChatPart, { type: 'tool-call' }> }
 
 function groupRenderableParts(message: BoringChatMessage): RenderablePart[] {
   const grouped: RenderablePart[] = []
@@ -191,7 +233,15 @@ function groupRenderableParts(message: BoringChatMessage): RenderablePart[] {
     const key = partKey(message.id, part, index)
     if (part.type === 'file') return
     if (part.type === 'tool-call') {
-      pendingTools.push({ part, key })
+      if (isCollapsibleTool(part)) {
+        // read-only tools accumulate into the collapsed group summary.
+        pendingTools.push({ part, key })
+      } else {
+        // action tools (bash/write/edit/…) render plain + expanded, each on
+        // its own — so break any pending read-only group first.
+        flushTools()
+        grouped.push({ kind: 'tool-plain', key, part })
+      }
       return
     }
     flushTools()

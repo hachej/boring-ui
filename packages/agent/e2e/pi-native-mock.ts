@@ -49,6 +49,7 @@ export async function installPiNativeMock(page: Page): Promise<void> {
       promptTextDeltas?: string[]
       promptFinalText?: string
       promptFinalTexts?: string[]
+      promptToolName?: string
       promptToolResultDelayMs?: number
       promptToolError?: boolean
       promptToolErrorText?: string
@@ -265,9 +266,10 @@ export async function installPiNativeMock(page: Page): Promise<void> {
         nextSeq(state); emitPiE2E({ type: 'message-part-end', seq: state.seq, messageId: assistantId, partId: reasoningId, kind: 'reasoning', text: 'Reasoning visible' })
         const toolInput = {
           command: 'printf redacted',
-          ...(state.promptToolDescription ? { description: state.promptToolDescription } : {}),
+          ...(state.promptToolDescription ? { description: state.promptToolDescription, pattern: state.promptToolDescription } : {}),
         }
-        nextSeq(state); emitPiE2E({ type: 'tool-call', seq: state.seq, messageId: assistantId, toolCallId: toolId, toolName: 'bash', input: toolInput })
+        const promptToolName = state.promptToolName ?? 'bash'
+        nextSeq(state); emitPiE2E({ type: 'tool-call', seq: state.seq, messageId: assistantId, toolCallId: toolId, toolName: promptToolName, input: toolInput })
         if ((state.promptToolResultDelayMs ?? 0) > 0) {
           await new Promise((resolve) => setTimeout(resolve, state.promptToolResultDelayMs))
         }
@@ -297,7 +299,7 @@ export async function installPiNativeMock(page: Page): Promise<void> {
           {
             type: 'tool-call',
             id: toolId,
-            toolName: 'bash',
+            toolName: promptToolName,
             state: state.promptToolError ? 'output-error' : 'output-available',
             input: toolInput,
             output: toolOutput,

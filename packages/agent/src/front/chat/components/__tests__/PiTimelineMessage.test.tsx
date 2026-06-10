@@ -48,7 +48,7 @@ describe('PiTimelineMessage', () => {
       parts: [
         { type: 'reasoning', id: 'r1', text: 'first thought', state: 'done' },
         { type: 'reasoning', id: 'r2', text: 'second thought', state: 'streaming' },
-        { type: 'tool-call', id: 'tool-1', toolName: 'bash', input: { command: 'pwd' }, state: 'input-available' },
+        { type: 'tool-call', id: 'tool-1', toolName: 'grep', input: { pattern: 'todo' }, state: 'input-available' },
         { type: 'tool-call', id: 'tool-2', toolName: 'read', input: { path: 'README.md' }, state: 'output-available' },
         { type: 'notice', id: 'notice-1', level: 'warning', text: 'Command warning:\nvery-long-unbroken-token-that-should-wrap' },
         { type: 'text', id: 'a-live:text', text: 'Final answer' },
@@ -80,12 +80,40 @@ describe('PiTimelineMessage', () => {
     const tools = within(row).getByTestId('tool-call-group').closest('[data-boring-agent-part="message-tools"]')
     const notice = row.querySelector('[data-boring-agent-part="message-notice"]')
     const text = within(row).getByText('Final answer').closest('[data-boring-agent-part="message-text"]')
-    expect(tools?.textContent).toBe('bash:input-available,read:output-available')
+    expect(tools?.textContent).toBe('grep:input-available,read:output-available')
     expect(notice?.querySelector('.whitespace-pre-wrap')?.textContent).toBe('Command warning:\nvery-long-unbroken-token-that-should-wrap')
 
     expect(reasoning.compareDocumentPosition(tools!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(tools!.compareDocumentPosition(notice!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(notice!.compareDocumentPosition(text!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  test('renders action tools (bash) as plain cards and groups read-only tools', () => {
+    const message: BoringChatMessage = {
+      id: 'a-tools',
+      role: 'assistant',
+      status: 'done',
+      parts: [
+        { type: 'tool-call', id: 'call-read', toolName: 'read', input: { path: 'a.ts' }, state: 'output-available' },
+        { type: 'tool-call', id: 'call-bash', toolName: 'bash', input: { command: 'echo hi' }, state: 'output-available', output: { stdout: 'hi' } },
+      ],
+    }
+
+    render(
+      <PiTimelineMessage message={message} isLast isStreaming={false} showThoughts={false} toolRenderers={{}} />,
+    )
+
+    const row = screen.getByRole('article')
+    // read-only tool stays in the collapsed group summary…
+    const group = within(row).getByTestId('tool-call-group')
+    expect(group.textContent).toBe('read:output-available')
+    // …and the bash action tool renders as its own plain card (not in the group).
+    const bashCard = row.querySelector('[data-tool-call-id="call-bash"]')
+    expect(bashCard).toBeTruthy()
+    expect(group.contains(bashCard)).toBe(false)
+    // read group precedes the bash card (emitted order preserved).
+    expect(group.closest('[data-boring-agent-part="message-tools"]')!
+      .compareDocumentPosition(bashCard!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   test('renders user file attachments separately from model-only attachment markers', () => {

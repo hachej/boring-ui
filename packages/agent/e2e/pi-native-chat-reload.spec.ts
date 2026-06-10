@@ -83,9 +83,9 @@ test.describe('Pi-native active reload proof', () => {
               {
                 type: 'tool-call',
                 id: 'tool-1',
-                toolName: 'bash',
+                toolName: 'grep',
                 state: 'output-available',
-                input: { command: 'printf redacted' },
+                input: { pattern: 'printf redacted' },
                 output: 'TOOL_OUTPUT_BEFORE_RELOAD',
               },
             ],
@@ -113,7 +113,7 @@ test.describe('Pi-native active reload proof', () => {
     await expect(chat).toHaveAttribute('data-pi-chat-connection', 'connected', { timeout: 10_000 })
     await expect(assistantMessages).toHaveCount(1)
     await expect(assistantToolGroups).toHaveCount(1)
-    await expect(assistantToolGroups.getByRole('button', { name: /Tool calls: Used command/ })).toBeVisible()
+    await expect(assistantToolGroups.getByRole('button', { name: /Tool calls: Used search/ })).toBeVisible()
     await expect(conversation.locator('[data-boring-agent-part="message-text"]', { hasText: finalText })).toHaveCount(0)
 
     await page.reload({ waitUntil: 'domcontentloaded' })
@@ -121,7 +121,7 @@ test.describe('Pi-native active reload proof', () => {
     await expect(chat).toHaveAttribute('data-pi-chat-connection', 'connected', { timeout: 10_000 })
     await expect(assistantMessages).toHaveCount(1)
     await expect(assistantToolGroups).toHaveCount(1)
-    await expect(assistantToolGroups.getByRole('button', { name: /Tool calls: Used command/ })).toBeVisible()
+    await expect(assistantToolGroups.getByRole('button', { name: /Tool calls: Used search/ })).toBeVisible()
 
     const finalSeq = await page.evaluate((replayedFinalText) => {
       type BrowserMessage = { id: string; role: 'user' | 'assistant'; status?: string; parts: Array<Record<string, unknown>> }

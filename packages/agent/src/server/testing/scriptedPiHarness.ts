@@ -263,8 +263,8 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     const toolPart = {
       type: 'toolCall',
       id: toolCallId,
-      name: 'bash',
-      arguments: { command: 'printf baseline' },
+      name: 'grep',
+      arguments: { pattern: 'baseline' },
       state: 'input-available',
     }
     assistantContent.push(toolPart)
@@ -277,8 +277,8 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
         partial: { id: assistantId },
         toolCall: {
           id: toolCallId,
-          name: 'bash',
-          arguments: { command: 'printf baseline' },
+          name: 'grep',
+          arguments: { pattern: 'baseline' },
         },
       },
     })
