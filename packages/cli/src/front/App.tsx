@@ -200,9 +200,10 @@ export function CliWorkspaceShell() {
       coldStartAttemptsRef.current = null
       return
     }
-    // Reset the counter whenever we start watching a new workspace id.
+    // Reset the counter and gave-up state whenever we start watching a new workspace id.
     if (coldStartAttemptsRef.current?.id !== activeWorkspaceId) {
       coldStartAttemptsRef.current = { id: activeWorkspaceId, count: 0 }
+      setColdStartGaveUp(false)
     }
     const timer = window.setInterval(() => {
       if (!coldStartAttemptsRef.current) return
