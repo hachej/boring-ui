@@ -71,6 +71,11 @@ test.describe('Pi-native long transcript reload', () => {
     const expectedMessages = LONG_TRANSCRIPT_TURNS * 2
 
     await expect(chat).toHaveAttribute('data-pi-chat-connection', 'connected', { timeout: 10_000 })
+    // The transcript is windowed (renders the most recent slice, loads older on
+    // scroll-up). Scroll up to materialise the full transcript before asserting
+    // the complete set — relying on the window happening to cover all rows is a
+    // mount-timing race.
+    await loadFullTranscript(page, expectedMessages)
     await expect(messageRows).toHaveCount(expectedMessages, { timeout: 10_000 })
     await expect(conversation.getByText('LONG_ASSISTANT_001')).toBeVisible()
     await expect(conversation.getByText('LONG_ASSISTANT_024')).toBeVisible()
@@ -83,6 +88,7 @@ test.describe('Pi-native long transcript reload', () => {
     await page.reload({ waitUntil: 'domcontentloaded' })
 
     await expect(chat).toHaveAttribute('data-pi-chat-connection', 'connected', { timeout: 10_000 })
+    await loadFullTranscript(page, expectedMessages)
     await expect(messageRows).toHaveCount(expectedMessages, { timeout: 10_000 })
     await expect(conversation.getByText('LONG_ASSISTANT_001')).toBeVisible()
     await expect(conversation.getByText('LONG_ASSISTANT_024')).toBeVisible()
@@ -106,6 +112,40 @@ test.describe('Pi-native long transcript reload', () => {
     })
   })
 })
+
+/**
+ * The transcript view windows to the most recent slice and loads older rows
+ * when the scroll container nears the top. Drive that explicitly: scroll the
+ * conversation's scroller to the top (re-arming the load-older trigger) until
+ * every row is materialised, so assertions don't depend on a mount-timing
+ * race between the initial window and stick-to-bottom pinning.
+ */
+async function loadFullTranscript(page: Page, expected: number): Promise<void> {
+  const rows = page.locator('[data-boring-agent-part="message"]')
+  const deadline = Date.now() + 15_000
+  while ((await rows.count()) < expected) {
+    if (Date.now() > deadline) break
+    const grew = await page.evaluate(() => {
+      const root = document.querySelector('[aria-label="Agent conversation"]')
+      if (!root) return false
+      // The scrollable element is the conversation root or a descendant whose
+      // content overflows; pick whichever actually scrolls.
+      const candidates = [root, ...Array.from(root.querySelectorAll('*'))] as HTMLElement[]
+      const scroller = candidates.find((el) => el.scrollHeight > el.clientHeight + 1)
+      if (!scroller) return false
+      scroller.scrollTop = 0
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }))
+      return true
+    })
+    if (!grew) {
+      // No scroller yet (content still settling) — give the window a beat.
+      await page.waitForTimeout(150)
+      continue
+    }
+    // Wait for the prepend to land (count increases) before scrolling again.
+    await page.waitForTimeout(200)
+  }
+}
 
 async function readMessageSummary(page: Page): Promise<MessageSummary[]> {
   return page.locator('[data-boring-agent-part="message"]').evaluateAll((nodes: Element[]) => nodes.map((node) => ({
