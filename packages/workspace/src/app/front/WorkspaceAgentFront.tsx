@@ -65,6 +65,7 @@ export interface WorkspaceAgentFrontProps<
   beforeShell?: ReactNode
   afterShell?: ReactNode
   appTitle?: string
+  workspaceLabel?: string
   defaultSessionTitle?: string
   navEnabled?: boolean
   defaultNavOpen?: boolean
@@ -302,6 +303,7 @@ export function WorkspaceAgentFront<
   onDeleteSession,
   onActiveSessionIdChange,
   appTitle = "Boring",
+  workspaceLabel,
   defaultSessionTitle = "New session",
   navEnabled = true,
   defaultNavOpen = false,
@@ -826,6 +828,7 @@ export function WorkspaceAgentFront<
         defaultTheme={defaultTheme}
         onThemeChange={onThemeChange}
         workspaceId={workspaceId}
+        workspaceLabel={workspaceLabel}
         storageKey={resolvedProviderStorageKey}
         persistenceEnabled={persistenceEnabled}
         bridgeEndpoint={null}

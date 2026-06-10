@@ -40,6 +40,7 @@ import type { CatalogConfig } from "../../shared/plugins/types"
 import type { WorkspaceChatPanelComponent, WorkspaceChatPanelProps } from "../chrome/chat/types"
 import { WorkspaceAttentionProvider } from "../attention"
 import { useAgentPluginHotReload } from "../agentPlugins/registerAgentPlugin"
+import { formatWorkspaceDocumentTitle } from "./workspaceTitle"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -357,8 +358,10 @@ export interface WorkspaceProviderProps {
   defaultTheme?: "light" | "dark" | undefined
   onThemeChange?: (theme: "light" | "dark") => void
   workspaceId?: string
+  workspaceLabel?: string
   storageKey?: string
   persistenceEnabled?: boolean
+  manageDocumentTitle?: boolean
   bridgeEndpoint?: string | null
   onAuthError?: (statusCode: number) => void
   onOpenFile?: (path: string) => void
@@ -406,8 +409,10 @@ export function WorkspaceProvider({
   defaultTheme,
   onThemeChange,
   workspaceId,
+  workspaceLabel,
   storageKey,
   persistenceEnabled = true,
+  manageDocumentTitle = true,
   bridgeEndpoint,
   onAuthError,
   onOpenFile,
@@ -565,6 +570,11 @@ export function WorkspaceProvider({
     () => scopedAuthHeaders(workspaceId, authHeaders),
     [authHeaders, workspaceId],
   )
+
+  useEffect(() => {
+    if (!manageDocumentTitle) return
+    document.title = formatWorkspaceDocumentTitle({ workspaceLabel, workspaceId })
+  }, [manageDocumentTitle, workspaceId, workspaceLabel])
 
   const [bridgeConnected, setBridgeConnected] = useState(false)
 
