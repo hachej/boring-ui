@@ -29,6 +29,7 @@ export class PiChatEventMapper {
   private readonly toolCallMessageIds = new Map<string, string>()
   private readonly endedMessageIds = new Set<string>()
   private readonly endedAssistantTurnIds = new Set<string>()
+  private readonly errorEmittedTurnIds = new Set<string>()
 
   constructor(options: PiChatEventMapperOptions) {
     this.sessionId = options.sessionId
@@ -53,6 +54,7 @@ export class PiChatEventMapper {
         this.pendingUserStarts.length = 0
         this.endedMessageIds.clear()
         this.endedAssistantTurnIds.clear()
+        this.errorEmittedTurnIds.clear()
         return [this.event({ type: 'agent-start', turnId })]
       }
 
@@ -61,6 +63,7 @@ export class PiChatEventMapper {
         const status = agentEndStatus(event)
         const mapped = [
           ...this.mapAgentEndFinalAssistant(event, turnId),
+          ...this.mapAgentEndError(event, turnId, status),
           this.event({ type: 'agent-end', turnId, status }),
         ]
         this.activeAssistantMessageId = undefined
@@ -192,6 +195,7 @@ export class PiChatEventMapper {
       }
       case 'error': {
         const errorMessage = errorMessageFromAssistantError(assistantEvent)
+        if (this.activeTurnId) this.errorEmittedTurnIds.add(this.activeTurnId)
         return [
           this.event({
             type: 'error',
@@ -265,6 +269,34 @@ export class PiChatEventMapper {
     this.endedMessageIds.add(finalAssistant.id)
     this.activeAssistantMessageId = undefined
     return [this.event({ type: 'message-end', messageId: finalAssistant.id, final: finalAssistant })]
+  }
+
+  /**
+   * Surfaces a turn failure as an explicit `error` event. Some failures (e.g.
+   * "No API key for provider") never produce an assistant `error` stream
+   * event — the message only rides on agent_end's final assistant entry
+   * (stopReason 'error' + errorMessage), which is also where the snapshot
+   * reads it from. Without this, live clients see an empty assistant message
+   * and an error agent-end but never the error text. Skipped when pi will
+   * auto-retry (auto_retry_* events own that flow) or when an error event was
+   * already emitted for this turn.
+   */
+  private mapAgentEndError(event: RecordLike, turnId: string, status: 'ok' | 'aborted' | 'error'): PiChatEvent[] {
+    if (status !== 'error' || event.willRetry === true) return []
+    if (this.errorEmittedTurnIds.has(turnId)) return []
+    this.errorEmittedTurnIds.add(turnId)
+    return [
+      this.event({
+        type: 'error',
+        turnId,
+        retryable: false,
+        error: {
+          code: ErrorCode.enum.INTERNAL_ERROR,
+          message: agentEndErrorMessage(event),
+          retryable: false,
+        },
+      }),
+    ]
   }
 
   private finalMessageId(final: BoringChatMessage): string {
@@ -474,6 +506,13 @@ function agentEndStatus(event: RecordLike): 'ok' | 'aborted' | 'error' {
   if (lastAssistant?.stopReason === 'aborted') return 'aborted'
   if (lastAssistant?.stopReason === 'error' || event.willRetry === true) return 'error'
   return 'ok'
+}
+
+function agentEndErrorMessage(event: RecordLike): string {
+  const messages = Array.isArray(event.messages) ? event.messages : []
+  const lastAssistant = [...messages].reverse().find((message): message is RecordLike => isRecord(message) && message.role === 'assistant')
+  if (typeof lastAssistant?.errorMessage === 'string' && lastAssistant.errorMessage.length > 0) return lastAssistant.errorMessage
+  return 'Agent turn failed.'
 }
 
 function errorMessageFromAssistantError(assistantEvent: RecordLike): string {

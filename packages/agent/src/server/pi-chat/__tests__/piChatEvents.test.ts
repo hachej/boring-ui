@@ -391,6 +391,55 @@ describe('PiChatEventMapper', () => {
     ])
   })
 
+  it('surfaces an agent_end turn failure as an error event when no assistant error event was streamed', () => {
+    const mapper = new PiChatEventMapper({ sessionId: 'sess-1' })
+    mapper.map({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+
+    const end = mapper.map({
+      type: 'agent_end',
+      willRetry: false,
+      messages: [assistantMessage({ stopReason: 'error', content: [], errorMessage: 'No API key for provider: anthropic' })],
+    } as unknown as AgentSessionEvent)
+
+    expect(end).toMatchObject([
+      {
+        type: 'error',
+        turnId: 'turn-1',
+        retryable: false,
+        error: { code: ErrorCode.enum.INTERNAL_ERROR, message: 'No API key for provider: anthropic', retryable: false },
+      },
+      { type: 'agent-end', turnId: 'turn-1', status: 'error' },
+    ])
+    expect(PiChatEventSchema.parse(end[0])).toEqual(end[0])
+  })
+
+  it('does not duplicate the error event when the assistant already streamed one for the turn', () => {
+    const mapper = new PiChatEventMapper({ sessionId: 'sess-1' })
+    mapper.map({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    mapper.map({ type: 'message_update', assistantMessageEvent: { type: 'error', reason: 'error', error: { errorMessage: 'model failed' } } } as unknown as AgentSessionEvent)
+
+    const end = mapper.map({
+      type: 'agent_end',
+      willRetry: false,
+      messages: [assistantMessage({ stopReason: 'error', content: [], errorMessage: 'model failed' })],
+    } as unknown as AgentSessionEvent)
+
+    expect(end).toMatchObject([{ type: 'agent-end', turnId: 'turn-1', status: 'error' }])
+  })
+
+  it('does not synthesize an error event when pi will auto-retry the turn', () => {
+    const mapper = new PiChatEventMapper({ sessionId: 'sess-1' })
+    mapper.map({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+
+    const end = mapper.map({
+      type: 'agent_end',
+      willRetry: true,
+      messages: [assistantMessage({ stopReason: 'error', content: [], errorMessage: 'rate limited' })],
+    } as unknown as AgentSessionEvent)
+
+    expect(end).toMatchObject([{ type: 'agent-end', turnId: 'turn-1', status: 'error' }])
+  })
+
   it('provides a stateless helper for one-off event mapping', () => {
     expect(mapPiAgentSessionEvent({ type: 'agent_start' } as AgentSessionEvent, { sessionId: 'sess-1' })).toEqual([
       { type: 'agent-start', seq: 1, turnId: 'turn:sess-1:1' },
