@@ -23,21 +23,21 @@
     "@hachej/boring-workspace": "workspace:*",
     "@hachej/boring-deck": "workspace:*",
     "@hachej/boring-ask-user": "workspace:*",
-    "@duckdb/node-api": "1.5.2-r.1",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "@duckdb/node-api": "1.5.2-r.2",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "@hachej/boring-data-explorer": "workspace:*",
     "@hachej/boring-data-catalog": "workspace:*"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",
     "@tailwindcss/vite": "^4.0.0",
-    "@types/react": "^19.0.0",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.0.0",
     "tailwindcss": "^4.0.0",
-    "typescript": "^5.4.0",
+    "typescript": "^6.0.3",
     "vitest": "^3.2.6",
-    "vite": "^6.0.0"
+    "vite": "^8.0.16"
   }
 }
