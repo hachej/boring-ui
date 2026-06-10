@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from 'node:timers/promises'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
-import type { AgentHarness, AgentHarnessFactoryInput, FollowUpOptions, RunContext, SendMessageInput } from '../../shared/harness.js'
+import type { AgentHarness, AgentHarnessFactoryInput, RunContext, SendMessageInput } from '../../shared/harness.js'
+import type { PiFollowUpQueueOptions, PiFollowUpSelector } from '../harness/pi-coding-agent/piFollowUpQueueCompat.js'
 import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '../../shared/session.js'
 import { getEnv } from '../config/env.js'
 import type { PiAgentPromptInput, PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../pi-chat/PiAgentSessionAdapter.js'
@@ -53,12 +54,6 @@ export function createScriptedPiHarness(input: AgentHarnessFactoryInput): AgentH
     },
     async reloadSession() {
       return true
-    },
-    async followUp(sessionId, text, _attachments, _displayText, options) {
-      await getAdapter(sessionId).followUp(text, options)
-    },
-    clearFollowUp(sessionId, options) {
-      getAdapter(sessionId).clearFollowUp(options)
     },
     getSystemPrompt() {
       return `Scripted Pi e2e harness for ${input.cwd}`
@@ -159,7 +154,7 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     await this.runScriptedTurn(text)
   }
 
-  async followUp(text: string, options?: FollowUpOptions): Promise<void> {
+  async followUp(text: string, options?: PiFollowUpQueueOptions): Promise<void> {
     this.followUps.push({
       text,
       clientNonce: options?.clientNonce,
@@ -330,7 +325,7 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     return this.followUps.map((followUp) => followUp.text)
   }
 
-  private findFollowUpIndex(options: FollowUpOptions): number {
+  private findFollowUpIndex(options: PiFollowUpSelector): number {
     if (options.clientNonce) return this.followUps.findIndex((followUp) => followUp.clientNonce === options.clientNonce)
     if (options.clientSeq !== undefined) return this.followUps.findIndex((followUp) => followUp.clientSeq === options.clientSeq)
     return -1

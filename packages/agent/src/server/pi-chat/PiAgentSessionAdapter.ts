@@ -3,6 +3,11 @@ import type {
   AgentSessionEventListener,
   PromptOptions,
 } from "@mariozechner/pi-coding-agent";
+import {
+  createPiFollowUpQueueCompat,
+  type PiFollowUpQueueOptions,
+  type PiFollowUpSelector,
+} from "../harness/pi-coding-agent/piFollowUpQueueCompat.js";
 
 export interface PiAgentSessionSnapshot {
   state: unknown;
@@ -29,8 +34,10 @@ export interface PiAgentSessionAdapter {
   readSnapshot(): PiAgentSessionSnapshot;
   subscribe(listener: (event: AgentSessionEvent) => void): () => void;
   prompt(input: PiAgentPromptInput): Promise<void>;
-  followUp(text: string): Promise<void>;
-  clearQueue(): { steering: string[]; followUp: string[] };
+  /** Queue a follow-up for after the current turn. Nonce-deduped per session. */
+  followUp(text: string, options?: PiFollowUpQueueOptions): Promise<void>;
+  /** Remove queued follow-up(s): all of them, or just the selected one. */
+  clearFollowUp(options?: PiFollowUpSelector): void;
   abort(): Promise<void>;
   abortRetry?: () => void;
   continueQueuedFollowUp?: () => Promise<void>;
@@ -57,7 +64,6 @@ export interface PiAgentSessionLike {
   subscribe(listener: AgentSessionEventListener): () => void;
   prompt(text: string, options?: PromptOptions): Promise<void>;
   followUp(text: string): Promise<void>;
-  clearQueue(): { steering: string[]; followUp: string[] };
   abort(): Promise<void>;
   abortRetry?: () => void;
 }
@@ -73,6 +79,7 @@ function normalizePromptInput(input: PiAgentPromptInput): { text: string; option
 }
 
 export function createPiAgentSessionAdapter(session: PiAgentSessionLike, options: PiAgentSessionAdapterOptions = {}): PiAgentSessionAdapter {
+  const followUpQueue = createPiFollowUpQueueCompat();
   const adapter: PiAgentSessionAdapter = {
     readSnapshot() {
       return {
@@ -99,12 +106,14 @@ export function createPiAgentSessionAdapter(session: PiAgentSessionLike, options
       await session.prompt(text, options);
     },
 
-    async followUp(text) {
+    async followUp(text, followUpOptions) {
+      const accepted = followUpQueue.record(text, followUpOptions);
+      if (!accepted) return;
       await session.followUp(text);
     },
 
-    clearQueue() {
-      return session.clearQueue();
+    clearFollowUp(selector) {
+      followUpQueue.clear(session, selector);
     },
 
     async abort() {

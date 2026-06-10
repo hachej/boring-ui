@@ -39,33 +39,8 @@ export interface AgentHarness {
    */
   getSystemPrompt?: (sessionId: string) => string | undefined
 
-  /**
-   * Queue a follow-up message for delivery after the current turn. The
-   * pi-chat service calls this when a prompt arrives mid-turn; the harness
-   * records it (nonce-deduped) and hands it to pi's native follow-up queue.
-   */
-  followUp?(
-    sessionId: string,
-    text: string,
-    attachments?: MessageAttachment[],
-    displayText?: string,
-    options?: FollowUpOptions,
-  ): void | Promise<void>
-
-  /**
-   * Discard queued follow-up(s) for this session (called by the Stop button or
-   * by a queued-message delete action). When `options` identifies a single
-   * client message, implementations should remove only that item if possible.
-   */
-  clearFollowUp?(sessionId: string, options?: FollowUpOptions): void
-
   /** Reload native agent resources/extensions for an existing session. */
   reloadSession?: (sessionId: string) => Promise<boolean>
-}
-
-export interface FollowUpOptions {
-  clientNonce?: string
-  clientSeq?: number
 }
 
 /* Resume is NOT a harness concern — see Stream resumption section.

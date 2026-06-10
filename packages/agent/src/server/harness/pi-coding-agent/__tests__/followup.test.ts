@@ -70,13 +70,12 @@ function makeCtx(ac = new AbortController()): RunContext {
   return { abortSignal: ac.signal, workdir: "/tmp/test-followup" };
 }
 
-// Creates the harness and registers a live pi session handle the way the
-// pi-chat service does: through getPiSessionAdapter (sessions are created
-// lazily; followUp requires the handle to exist).
-async function makeHarnessWithSession(sessionId: string) {
+// Creates the session adapter the way the pi-chat service does: through
+// getPiSessionAdapter (sessions are created lazily). Queue ops live on the
+// adapter.
+async function makeSessionAdapter(sessionId: string) {
   const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup" });
-  await harness.getPiSessionAdapter({ sessionId, message: "" }, makeCtx());
-  return harness;
+  return await harness.getPiSessionAdapter({ sessionId, message: "" }, makeCtx());
 }
 
 function simulatePiConsumes(session: any): void {
@@ -93,41 +92,41 @@ beforeEach(() => {
 
 describe("native pi follow-up integration", () => {
   it("queues follow-up through pi's native followUp API", async () => {
-    const harness = await makeHarnessWithSession("sess-native");
+    const adapter = await makeSessionAdapter("sess-native");
 
-    await harness.followUp!("sess-native", "second visible");
+    await adapter.followUp("second visible");
 
     expect(promptCalls.map((c) => c.message)).toEqual(["second visible"]);
     expect(promptCalls[0]?.opts).toMatchObject({ nativeFollowUp: true });
   });
 
   it("dedupes repeated queued follow-up posts with the same nonce", async () => {
-    const harness = await makeHarnessWithSession("sess-dedupe");
+    const adapter = await makeSessionAdapter("sess-dedupe");
 
-    await harness.followUp!("sess-dedupe", "same nonce", undefined, "same nonce", { clientNonce: "nonce-dedupe", clientSeq: 1 });
-    await harness.followUp!("sess-dedupe", "same nonce", undefined, "same nonce", { clientNonce: "nonce-dedupe", clientSeq: 1 });
+    await adapter.followUp("same nonce", { displayText: "same nonce", clientNonce: "nonce-dedupe", clientSeq: 1 });
+    await adapter.followUp("same nonce", { displayText: "same nonce", clientNonce: "nonce-dedupe", clientSeq: 1 });
 
     expect(promptCalls.map((c) => c.message)).toEqual(["same nonce"]);
     expect(mockSessions[0].agent.followUpQueue.messages.map((msg: any) => msg.content[0].text)).toEqual(["same nonce"]);
   });
 
   it("does not dedupe distinct nonces that reuse a client sequence", async () => {
-    const harness = await makeHarnessWithSession("sess-seq-reuse");
+    const adapter = await makeSessionAdapter("sess-seq-reuse");
 
-    await harness.followUp!("sess-seq-reuse", "first seq", undefined, "first seq", { clientNonce: "nonce-seq-a", clientSeq: 1 });
-    await harness.followUp!("sess-seq-reuse", "second seq", undefined, "second seq", { clientNonce: "nonce-seq-b", clientSeq: 1 });
+    await adapter.followUp("first seq", { displayText: "first seq", clientNonce: "nonce-seq-a", clientSeq: 1 });
+    await adapter.followUp("second seq", { displayText: "second seq", clientNonce: "nonce-seq-b", clientSeq: 1 });
 
     expect(promptCalls.map((c) => c.message)).toEqual(["first seq", "second seq"]);
     expect(mockSessions[0].agent.followUpQueue.messages.map((msg: any) => msg.content[0].text)).toEqual(["first seq", "second seq"]);
   });
 
   it("dedupes a repeated follow-up post after pi consumes the first copy", async () => {
-    const harness = await makeHarnessWithSession("sess-consumed-dedupe");
+    const adapter = await makeSessionAdapter("sess-consumed-dedupe");
 
-    await harness.followUp!("sess-consumed-dedupe", "same consumed nonce", undefined, "same consumed nonce", { clientNonce: "nonce-consumed", clientSeq: 1 });
+    await adapter.followUp("same consumed nonce", { displayText: "same consumed nonce", clientNonce: "nonce-consumed", clientSeq: 1 });
     simulatePiConsumes(mockSessions[0]);
 
-    await harness.followUp!("sess-consumed-dedupe", "same consumed nonce", undefined, "same consumed nonce", { clientNonce: "nonce-consumed", clientSeq: 1 });
+    await adapter.followUp("same consumed nonce", { displayText: "same consumed nonce", clientNonce: "nonce-consumed", clientSeq: 1 });
 
     // seen nonces survive consumption until the turn/session boundary, so the
     // retried post is dropped instead of double-queueing.
@@ -136,10 +135,10 @@ describe("native pi follow-up integration", () => {
   });
 
   it("can delete a queued follow-up before pi drains it", async () => {
-    const harness = await makeHarnessWithSession("sess-delete");
+    const adapter = await makeSessionAdapter("sess-delete");
 
-    await harness.followUp!("sess-delete", "delete me", undefined, "delete me", { clientNonce: "nonce-delete", clientSeq: 1 });
-    harness.clearFollowUp!("sess-delete", { clientNonce: "nonce-delete" });
+    await adapter.followUp("delete me", { displayText: "delete me", clientNonce: "nonce-delete", clientSeq: 1 });
+    adapter.clearFollowUp({ clientNonce: "nonce-delete" });
 
     expect(promptCalls.map((c) => c.message)).toEqual(["delete me"]);
     expect(mockSessions[0].agent.followUpQueue.messages).toEqual([]);
@@ -147,36 +146,36 @@ describe("native pi follow-up integration", () => {
   });
 
   it("deleting one duplicate-text follow-up leaves the other queued", async () => {
-    const harness = await makeHarnessWithSession("sess-delete-dupe");
+    const adapter = await makeSessionAdapter("sess-delete-dupe");
 
-    await harness.followUp!("sess-delete-dupe", "same text", undefined, "same text", { clientNonce: "nonce-1", clientSeq: 1 });
-    await harness.followUp!("sess-delete-dupe", "same text", undefined, "same text", { clientNonce: "nonce-2", clientSeq: 2 });
-    harness.clearFollowUp!("sess-delete-dupe", { clientNonce: "nonce-2" });
+    await adapter.followUp("same text", { displayText: "same text", clientNonce: "nonce-1", clientSeq: 1 });
+    await adapter.followUp("same text", { displayText: "same text", clientNonce: "nonce-2", clientSeq: 2 });
+    adapter.clearFollowUp({ clientNonce: "nonce-2" });
 
     expect(mockSessions[0].agent.followUpQueue.messages.map((msg: any) => msg.content[0].text)).toEqual(["same text"]);
     expect(mockSessions[0]._followUpMessages).toEqual(["same text"]);
   });
 
   it("deletes the remaining duplicate-text follow-up after pi consumes the first one", async () => {
-    const harness = await makeHarnessWithSession("sess-delete-dupe-consumed");
+    const adapter = await makeSessionAdapter("sess-delete-dupe-consumed");
 
-    await harness.followUp!("sess-delete-dupe-consumed", "same text", undefined, "same text", { clientNonce: "nonce-1", clientSeq: 1 });
-    await harness.followUp!("sess-delete-dupe-consumed", "same text", undefined, "same text", { clientNonce: "nonce-2", clientSeq: 2 });
+    await adapter.followUp("same text", { displayText: "same text", clientNonce: "nonce-1", clientSeq: 1 });
+    await adapter.followUp("same text", { displayText: "same text", clientNonce: "nonce-2", clientSeq: 2 });
 
     simulatePiConsumes(mockSessions[0]);
 
-    harness.clearFollowUp!("sess-delete-dupe-consumed", { clientNonce: "nonce-2" });
+    adapter.clearFollowUp({ clientNonce: "nonce-2" });
 
     expect(mockSessions[0].agent.followUpQueue.messages).toEqual([]);
     expect(mockSessions[0]._followUpMessages).toEqual([]);
   });
 
   it("prefers clientNonce over colliding clientSeq when deleting a queued follow-up", async () => {
-    const harness = await makeHarnessWithSession("sess-delete-seq-collision");
+    const adapter = await makeSessionAdapter("sess-delete-seq-collision");
 
-    await harness.followUp!("sess-delete-seq-collision", "keep me", undefined, "keep me", { clientNonce: "nonce-1", clientSeq: 1 });
-    await harness.followUp!("sess-delete-seq-collision", "delete me", undefined, "delete me", { clientNonce: "nonce-2", clientSeq: 1 });
-    harness.clearFollowUp!("sess-delete-seq-collision", { clientNonce: "nonce-2", clientSeq: 1 });
+    await adapter.followUp("keep me", { displayText: "keep me", clientNonce: "nonce-1", clientSeq: 1 });
+    await adapter.followUp("delete me", { displayText: "delete me", clientNonce: "nonce-2", clientSeq: 1 });
+    adapter.clearFollowUp({ clientNonce: "nonce-2", clientSeq: 1 });
 
     expect(mockSessions[0].agent.followUpQueue.messages.map((msg: any) => msg.content[0].text)).toEqual(["keep me"]);
     expect(mockSessions[0]._followUpMessages).toEqual(["keep me"]);

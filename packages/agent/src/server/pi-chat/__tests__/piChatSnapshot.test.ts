@@ -23,7 +23,7 @@ function createAdapter(snapshot: Partial<PiAgentSessionSnapshot>): PiAgentSessio
     subscribe: () => () => {},
     prompt: async () => {},
     followUp: async () => {},
-    clearQueue: () => ({ steering: [], followUp: [] }),
+    clearFollowUp: () => {},
     abort: async () => {},
   }
 }

@@ -29,7 +29,6 @@ function createFakeSession(overrides: Partial<PiAgentSessionLike> = {}) {
     }),
     prompt: vi.fn(async () => {}),
     followUp: vi.fn(async () => {}),
-    clearQueue: vi.fn(() => ({ steering: ["steer later"], followUp: ["follow up later"] })),
     abort: vi.fn(async () => {}),
     abortRetry: vi.fn(),
     ...overrides,
@@ -107,23 +106,32 @@ describe("PiAgentSessionAdapter", () => {
     expect(session.prompt).toHaveBeenNthCalledWith(2, "with options", { expandPromptTemplates: false });
   });
 
-  it("forwards followUp, clearQueue, abort, abortRetry, and queued continuation to Pi", async () => {
+  it("forwards followUp, abort, abortRetry, and queued continuation to Pi", async () => {
     const { session } = createFakeSession();
     const continueQueuedFollowUp = vi.fn(async () => {});
     const adapter = createPiAgentSessionAdapter(session, { continueQueuedFollowUp });
 
     await adapter.followUp("next question");
-    const cleared = adapter.clearQueue();
     await adapter.abort();
     adapter.abortRetry?.();
     await adapter.continueQueuedFollowUp?.();
 
     expect(session.followUp).toHaveBeenCalledWith("next question");
-    expect(session.clearQueue).toHaveBeenCalledTimes(1);
-    expect(cleared).toEqual({ steering: ["steer later"], followUp: ["follow up later"] });
     expect(session.abort).toHaveBeenCalledTimes(1);
     expect(session.abortRetry).toHaveBeenCalledTimes(1);
     expect(continueQueuedFollowUp).toHaveBeenCalledTimes(1);
+  });
+
+  it("nonce-dedupes repeated followUp posts and supports selective clear", async () => {
+    const { session } = createFakeSession();
+    const adapter = createPiAgentSessionAdapter(session);
+
+    await adapter.followUp("queued", { clientNonce: "n1", clientSeq: 1 });
+    await adapter.followUp("queued", { clientNonce: "n1", clientSeq: 1 });
+    expect(session.followUp).toHaveBeenCalledTimes(1);
+
+    // Selector that matches nothing must not blow away pi's queue.
+    adapter.clearFollowUp({ clientNonce: "other" });
   });
 
   it("omits abortRetry when the installed Pi session does not expose it", () => {

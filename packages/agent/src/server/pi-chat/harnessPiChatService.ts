@@ -142,11 +142,11 @@ export class HarnessPiChatService implements PiChatSessionService {
     await this.ensureChannel(ctx, sessionId, adapter)
     this.messageMetadata.recordFollowUp(sessionId, payload)
     try {
-      if (this.harness.followUp) {
-        await this.harness.followUp(sessionId, payload.message, undefined, payload.displayMessage ?? payload.message, { clientNonce: payload.clientNonce, clientSeq: payload.clientSeq })
-      } else {
-        await adapter.followUp(payload.message)
-      }
+      await adapter.followUp(payload.message, {
+        displayText: payload.displayMessage ?? payload.message,
+        clientNonce: payload.clientNonce,
+        clientSeq: payload.clientSeq,
+      })
     } catch (err) {
       this.messageMetadata.removeFollowUp(sessionId, payload)
       throw err
@@ -157,11 +157,8 @@ export class HarnessPiChatService implements PiChatSessionService {
   async clearQueue(ctx: PiSessionRequestContext, sessionId: string, payload: QueueClearPayload): Promise<QueueClearReceipt> {
     const adapter = await this.getAdapter(ctx, sessionId, '')
     if (hasFollowUpSelector(payload)) {
-      if (!this.harness.clearFollowUp) {
-        return { accepted: true, cursor: this.channels.get(sessionId)?.buffer.latestSeq ?? 0, cleared: 0 }
-      }
       const before = adapter.readSnapshot().followUpMessages.length
-      this.harness.clearFollowUp(sessionId, payload)
+      adapter.clearFollowUp(payload)
       const after = adapter.readSnapshot().followUpMessages.length
       if (after < before) this.messageMetadata.removeFollowUp(sessionId, payload)
       return { accepted: true, cursor: this.channels.get(sessionId)?.buffer.latestSeq ?? 0, cleared: Math.max(0, before - after) }
@@ -191,13 +188,8 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   private clearAllFollowUps(adapter: PiAgentSessionAdapter, sessionId: string): string[] {
-    if (!this.harness.clearFollowUp) {
-      const cleared = adapter.clearQueue().followUp
-      this.messageMetadata.clearFollowUps(sessionId)
-      return cleared
-    }
     const before = [...adapter.readSnapshot().followUpMessages]
-    this.harness.clearFollowUp(sessionId)
+    adapter.clearFollowUp()
     const after = adapter.readSnapshot().followUpMessages
     this.messageMetadata.syncFromTexts(sessionId, after)
     return removedFollowUps(before, after)
@@ -247,9 +239,8 @@ export class HarnessPiChatService implements PiChatSessionService {
     adapter: PiAgentSessionAdapter,
     followUp: QueuedUserMessage,
   ): boolean {
-    if (this.harness.clearFollowUp && hasFollowUpSelector(followUp)) {
-      const selector = followUpSelector(followUp)
-      this.harness.clearFollowUp(sessionId, selector)
+    if (hasFollowUpSelector(followUp)) {
+      adapter.clearFollowUp(followUpSelector(followUp))
       return true
     }
     if (adapter.readSnapshot().followUpMessages.length <= 1) {
@@ -260,7 +251,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   private canClearAutoPostedFollowUpForFallback(adapter: PiAgentSessionAdapter, followUp: QueuedUserMessage): boolean {
-    return Boolean(this.harness.clearFollowUp && hasFollowUpSelector(followUp)) || adapter.readSnapshot().followUpMessages.length <= 1
+    return hasFollowUpSelector(followUp) || adapter.readSnapshot().followUpMessages.length <= 1
   }
 
   private enrichSyntheticPromptFailures(sessionId: string, snapshot: PiChatSnapshot): PiChatSnapshot {

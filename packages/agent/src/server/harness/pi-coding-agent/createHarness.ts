@@ -14,12 +14,11 @@ import {
   loadSkills,
   type ExtensionFactory,
 } from "@mariozechner/pi-coding-agent";
-import type { AgentHarness, SendMessageInput, RunContext, MessageAttachment, FollowUpOptions } from "../../../shared/harness.js";
+import type { AgentHarness, SendMessageInput, RunContext } from "../../../shared/harness.js";
 import { createLogger } from "../../logging.js";
 import type { AgentTool } from "../../../shared/tool.js";
 import type { TelemetrySink } from "../../../shared/telemetry.js";
 import { adaptToolsForPi, unmarkToolResultErrorDetails } from "./tool-adapter.js";
-import { createPiFollowUpQueueCompat } from "./piFollowUpQueueCompat.js";
 import { createPiAgentSessionAdapter, type PiAgentSessionAdapter } from "../../pi-chat/PiAgentSessionAdapter.js";
 import { PiSessionStore } from "./sessions.js";
 import {
@@ -474,7 +473,6 @@ export function createPiCodingAgentHarness(opts: {
     if (!handle) return;
     handle.piSession.dispose();
     piSessions.delete(sessionId);
-    followUpQueueCompat.clearSession(sessionId);
   }
 
   const originalDelete = sessionStore.delete.bind(sessionStore);
@@ -483,25 +481,11 @@ export function createPiCodingAgentHarness(opts: {
     disposePiSession(sessionId);
   };
 
-  const followUpQueueCompat = createPiFollowUpQueueCompat();
 
   return ({
     id: "pi-coding-agent",
     placement: "server",
     sessions: sessionStore,
-
-    async followUp(sessionId: string, text: string, _attachments?: MessageAttachment[], displayText = text, options?: FollowUpOptions): Promise<void> {
-      const handle = piSessions.get(sessionId);
-      if (!handle) throw new Error("followup_session_not_ready");
-      const accepted = followUpQueueCompat.record(sessionId, text, displayText, options);
-      if (!accepted) return;
-      await handle.piSession.followUp(text);
-    },
-
-    clearFollowUp(sessionId: string, options?: FollowUpOptions): void {
-      const handle = piSessions.get(sessionId);
-      followUpQueueCompat.clear(sessionId, handle?.piSession, options);
-    },
 
     /**
      * Pi exposes the resolved system prompt as a getter on AgentSession.

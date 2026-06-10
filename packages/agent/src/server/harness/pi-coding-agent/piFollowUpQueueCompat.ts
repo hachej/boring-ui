@@ -1,5 +1,15 @@
-import type { AgentSession } from "@mariozechner/pi-coding-agent";
-import type { FollowUpOptions } from "../../../shared/harness.js";
+import type { PiAgentSessionLike } from "../../pi-chat/PiAgentSessionAdapter.js";
+
+export interface PiFollowUpQueueOptions {
+  displayText?: string;
+  clientNonce?: string;
+  clientSeq?: number;
+}
+
+export interface PiFollowUpSelector {
+  clientNonce?: string;
+  clientSeq?: number;
+}
 
 interface NativeFollowUpRequest {
   text: string;
@@ -22,53 +32,43 @@ type PiQueueCompatibleSession = {
   };
 };
 
+/**
+ * Per-session follow-up queue bookkeeping layered over pi's native queue.
+ * Owned by the session adapter (one instance per pi session): nonce-dedupes
+ * repeated posts and supports selective removal, which pi does not expose.
+ */
 export interface PiFollowUpQueueCompat {
-  clearSession(sessionId: string): void;
   /**
-   * Records a follow-up post. Returns false when the post is a duplicate of one
-   * already seen this turn (same client nonce) and must not be re-queued.
+   * Records a follow-up post. Returns false when the post is a duplicate of
+   * one already seen this session (same client nonce) and must not re-queue.
    */
-  record(sessionId: string, text: string, displayText: string, options?: FollowUpOptions): boolean;
-  clear(sessionId: string, piSession?: AgentSession, options?: FollowUpOptions): void;
+  record(text: string, options?: PiFollowUpQueueOptions): boolean;
+  clear(piSession: PiAgentSessionLike, options?: PiFollowUpSelector): void;
 }
 
 export function createPiFollowUpQueueCompat(): PiFollowUpQueueCompat {
-  const queues = new Map<string, NativeFollowUpRequest[]>();
-  // Client nonces seen this turn. Survives consumption (so a retried post of an
-  // already-drained follow-up is dropped) and is reset only at turn/session
-  // boundaries via clearSession.
-  const seenNonces = new Map<string, Set<string>>();
+  let queue: NativeFollowUpRequest[] = [];
+  // Client nonces seen this session. Survives consumption so a retried post of
+  // an already-drained follow-up is dropped.
+  const seenNonces = new Set<string>();
 
-  function clearSession(sessionId: string): void {
-    queues.delete(sessionId);
-    seenNonces.delete(sessionId);
-  }
-
-  function record(sessionId: string, text: string, displayText: string, options?: FollowUpOptions): boolean {
+  function record(text: string, options?: PiFollowUpQueueOptions): boolean {
     const nonce = options?.clientNonce;
-    if (nonce && seenNonces.get(sessionId)?.has(nonce)) return false;
+    if (nonce && seenNonces.has(nonce)) return false;
 
-    const queue = queues.get(sessionId) ?? [];
     queue.push({
       text,
-      displayText,
+      displayText: options?.displayText ?? text,
       clientNonce: options?.clientNonce,
       clientSeq: options?.clientSeq,
     });
-    queues.set(sessionId, queue);
-
-    if (nonce) {
-      const seen = seenNonces.get(sessionId) ?? new Set<string>();
-      seen.add(nonce);
-      seenNonces.set(sessionId, seen);
-    }
+    if (nonce) seenNonces.add(nonce);
     return true;
   }
 
-  function clear(sessionId: string, piSession?: AgentSession, options?: FollowUpOptions): void {
-    if (piSession) syncWithPi(sessionId, piSession);
-    const removed = removeNativeFollowUp(sessionId, options);
-    if (!piSession) return;
+  function clear(piSession: PiAgentSessionLike, options?: PiFollowUpSelector): void {
+    syncWithPi(piSession);
+    const removed = removeNativeFollowUp(options);
     if (!options?.clientNonce && options?.clientSeq === undefined) {
       removePiQueuedFollowUp(piSession);
       return;
@@ -76,12 +76,11 @@ export function createPiFollowUpQueueCompat(): PiFollowUpQueueCompat {
     for (const item of removed) removePiQueuedFollowUp(piSession, item.request.text, item.textOrdinal);
   }
 
-  function syncWithPi(sessionId: string, piSession: AgentSession): void {
-    const queue = queues.get(sessionId);
-    if (!queue?.length) return;
+  function syncWithPi(piSession: PiAgentSessionLike): void {
+    if (!queue.length) return;
     const piTexts = readPiQueuedFollowUpTexts(piSession);
     if (piTexts.length === 0) {
-      clearSession(sessionId);
+      queue = [];
       return;
     }
     if (piTexts.length >= queue.length) return;
@@ -104,13 +103,12 @@ export function createPiFollowUpQueueCompat(): PiFollowUpQueueCompat {
     }
 
     if (remaining.length !== piTexts.length) return;
-    queues.set(sessionId, remaining);
+    queue = remaining;
   }
 
-  function removeNativeFollowUp(sessionId: string, options?: FollowUpOptions): NativeFollowUpRemoval[] {
-    const queue = queues.get(sessionId);
-    if (!queue?.length) {
-      if (!hasFollowUpSelector(options)) clearSession(sessionId);
+  function removeNativeFollowUp(options?: PiFollowUpSelector): NativeFollowUpRemoval[] {
+    if (!queue.length) {
+      if (!hasFollowUpSelector(options)) seenNonces.clear();
       return [];
     }
 
@@ -124,15 +122,19 @@ export function createPiFollowUpQueueCompat(): PiFollowUpQueueCompat {
       else next.push(request);
     }
 
-    if (next.length > 0) queues.set(sessionId, next);
-    else clearSession(sessionId);
+    queue = next;
+    // Draining the queue via an explicit clear resets nonce memory so a later
+    // resubmission of the same client message is accepted again. (Consumption
+    // by pi deliberately does NOT reset it — retried posts of a drained
+    // follow-up stay deduped; see syncWithPi.)
+    if (queue.length === 0) seenNonces.clear();
     return removed;
   }
 
-  return { clearSession, record, clear };
+  return { record, clear };
 }
 
-function removePiQueuedFollowUp(piSession: AgentSession, text?: string, textOrdinal = 0): void {
+function removePiQueuedFollowUp(piSession: PiAgentSessionLike, text?: string, textOrdinal = 0): void {
   const queue = piQueueAccess(piSession);
   if (!text) {
     queue.clearAll();
@@ -147,7 +149,7 @@ function removePiQueuedFollowUp(piSession: AgentSession, text?: string, textOrdi
   queue.emitUpdate();
 }
 
-function readPiQueuedFollowUpTexts(piSession: AgentSession): string[] {
+function readPiQueuedFollowUpTexts(piSession: PiAgentSessionLike): string[] {
   const queue = piQueueAccess(piSession);
   if (queue.queuedMessages) {
     return queue.queuedMessages.map(userMessageText).filter((text) => text.length > 0);
@@ -156,10 +158,10 @@ function readPiQueuedFollowUpTexts(piSession: AgentSession): string[] {
   return [];
 }
 
-function piQueueAccess(piSession: AgentSession) {
+function piQueueAccess(piSession: PiAgentSessionLike) {
   // Pi does not currently expose selective follow-up removal. Keep the
   // private-field compatibility shim isolated here so queue ownership does
-  // not leak through the rest of the harness.
+  // not leak through the rest of the adapter.
   const session = piSession as unknown as PiQueueCompatibleSession;
   const followUpMessages = Array.isArray(session._followUpMessages)
     ? session._followUpMessages
@@ -199,11 +201,11 @@ function removeFirstMatchingOrdinal<T>(items: T[], matches: (item: T) => boolean
   if (index >= 0) items.splice(index, 1);
 }
 
-function hasFollowUpSelector(options?: FollowUpOptions): boolean {
+function hasFollowUpSelector(options?: PiFollowUpSelector): boolean {
   return Boolean(options?.clientNonce) || options?.clientSeq !== undefined;
 }
 
-function matchesFollowUpSelector(item: NativeFollowUpRequest, options?: FollowUpOptions): boolean {
+function matchesFollowUpSelector(item: NativeFollowUpRequest, options?: PiFollowUpSelector): boolean {
   if (!hasFollowUpSelector(options)) return true;
   if (options?.clientNonce) return item.clientNonce === options.clientNonce;
   return options?.clientSeq !== undefined && item.clientSeq === options.clientSeq;

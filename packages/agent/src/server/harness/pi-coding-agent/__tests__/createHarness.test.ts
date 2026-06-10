@@ -33,7 +33,6 @@ describe("createPiCodingAgentHarness", () => {
     expect(harness.placement).toBe("server");
     expect(harness.sessions).toBeInstanceOf(PiSessionStore);
     expect(typeof harness.getPiSessionAdapter).toBe("function");
-    expect(typeof harness.followUp).toBe("function");
     expect(typeof harness.reloadSession).toBe("function");
   });
 
