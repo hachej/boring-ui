@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '../lib'
+import { usePickerKeyboard } from './use-picker-keyboard'
 
 interface Command {
   name: string
@@ -29,10 +30,9 @@ function commandGroup(cmd: Command): string {
 }
 
 export function SlashCommandPicker({ query, commands, onSelect, onDismiss }: SlashCommandPickerProps) {
-  const [search, setSearch] = useState(query)
   const [plugin, setPlugin] = useState<string>(ALL_PLUGINS)
   const [activeIdx, setActiveIdx] = useState(0)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
 
   // Distinct plugin groups, for the selector chips at the top of the menu.
@@ -42,60 +42,40 @@ export function SlashCommandPicker({ query, commands, onSelect, onDismiss }: Sla
   }, [commands])
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
+    const q = query.trim().toLowerCase()
     return commands.filter((c) => {
       if (plugin !== ALL_PLUGINS && commandGroup(c) !== plugin) return false
       if (!q) return true
       return c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q)
     })
-  }, [commands, search, plugin])
+  }, [commands, query, plugin])
 
-  // Auto-focus the search input when the menu opens so the user can type/filter
-  // immediately without leaving the keyboard.
-  useEffect(() => {
-    inputRef.current?.focus()
-  }, [])
-
-  // Keep the active row in range and scrolled into view as the list changes.
+  // Keep the active row in range as the list changes.
   useEffect(() => {
     setActiveIdx((i) => (filtered.length === 0 ? 0 : Math.min(i, filtered.length - 1)))
   }, [filtered.length])
+
   useEffect(() => {
-    const el = listRef.current?.children[activeIdx] as HTMLElement | undefined
-    el?.scrollIntoView({ block: 'nearest' })
-  }, [activeIdx])
-
-  const move = (delta: number) => {
-    if (filtered.length === 0) return
-    setActiveIdx((i) => (i + delta + filtered.length) % filtered.length)
-  }
-
-  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); move(1) }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1) }
-    else if (e.key === 'Enter' || e.key === 'Tab') {
-      e.preventDefault()
-      if (filtered[activeIdx]) onSelect(filtered[activeIdx].name)
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      onDismiss()
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        onDismiss()
+      }
     }
-  }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onDismiss])
+
+  usePickerKeyboard({
+    count: filtered.length,
+    activeIdx,
+    setActiveIdx,
+    listRef,
+    onSelect: (idx) => { if (filtered[idx]) onSelect(filtered[idx].name) },
+    onDismiss,
+  })
 
   return (
-    <div className="mb-1 w-full overflow-hidden rounded-lg border border-border/60 bg-popover shadow-lg">
-      {/* Search bar */}
-      <div className="border-b border-border/50 px-2 py-1.5">
-        <input
-          ref={inputRef}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder="Search commands…"
-          aria-label="Search commands"
-          className="w-full bg-transparent px-1 text-[12px] text-foreground outline-none placeholder:text-muted-foreground"
-        />
-      </div>
+    <div ref={containerRef} className="mb-1 w-full overflow-hidden rounded-lg border border-border/60 bg-popover shadow-lg">
 
       {/* Plugin selection */}
       {groups.length > 1 && (

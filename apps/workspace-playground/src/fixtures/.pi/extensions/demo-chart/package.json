@@ -1,0 +1,12 @@
+{
+  "name": "demo-chart",
+  "version": "0.1.0",
+  "private": true,
+  "boring": {
+    "label": "Demo Chart",
+    "front": "front/index.tsx"
+  },
+  "pi": {
+    "systemPrompt": "Demo Chart plugin — renders a simple bar chart panel from the workspace data."
+  }
+}

@@ -1,0 +1,61 @@
+# Eval suite: slash command creation for boring runtime plugins.
+#
+# Goal: catch regressions where the agent generates a wrong pi.slashCommands
+# shape (e.g. using invented keys like "command", "title", or "action" instead
+# of the spec'd "name" + "description"), and verify that agent/index.ts is
+# wired with pi.registerCommand.
+#
+# The seeded workspace contains a pre-existing plugin at
+# .pi/extensions/demo-chart/ that has no pi.slashCommands entry yet.
+#
+# Run:
+#   pnpm --filter workspace-playground eval src/eval/plugin-slash-command.yaml
+
+model:
+  provider: openrouter
+  id: deepseek/deepseek-chat-v3-0324
+
+defaults:
+  retries: 1
+  timeoutMs: 180000
+
+prompts:
+  # ── Prompt 1: add slash command to an existing plugin ───────────────────────
+  # Natural user request — no format hints. Tests whether the agent reads the
+  # boring-plugin-authoring skill and produces the correct "name"/"description"
+  # shape on its own. Regression: agent invents wrong keys like "command" or
+  # "action". The assertion checks the written content uses "name" as a key
+  # (not just as a value) and registers the command in agent/index.ts.
+  - prompt: >
+      The demo-chart plugin at .pi/extensions/demo-chart/ doesn't have a slash
+      command yet. Add one so users can type /open-demo-chart in the chat to
+      open its panel. Update package.json and create agent/index.ts.
+    expect:
+      # package.json must be touched — either written fresh or edited in place.
+      # We assert edit (correct for an existing file). A write also satisfies this
+      # if the agent rewrites the whole file.
+      - tool: edit
+        params:
+          path: !EvalRegex '\.pi/extensions/demo-chart/package\.json'
+      # agent/index.ts is a new file — must be written with pi.registerCommand.
+      # This is the critical regression check: if agent/index.ts is missing,
+      # the slash command handler does not exist and the command silently no-ops.
+      - tool: write
+        params:
+          path: !EvalRegex '\.pi/extensions/demo-chart/agent/index\.ts'
+          content: !EvalRegex 'registerCommand'
+
+  # ── Prompt 2: scaffold a new plugin and verify the slash command shape ───────
+  # Asks the agent to scaffold + inspect. The regression being caught: scaffold
+  # produces a package.json WITHOUT pi.slashCommands, so the agent either fails
+  # to find it or must add it manually. Assertion checks the read/write includes
+  # the slashCommands field — not just that scaffold ran.
+  - prompt: >
+      Create a new runtime plugin called "data-viz" for this workspace that
+      users can open with a slash command. After creating it, read the
+      package.json and confirm the slash command is declared there.
+    expect:
+      # package.json must be read (agent checks what was created)
+      - tool: read
+        params:
+          path: !EvalRegex '\.pi/extensions/data-viz/package\.json'
