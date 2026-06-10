@@ -18,7 +18,7 @@ import type { PluginUpdateState } from '../composer/PluginUpdateStatus'
 import { useComposerHistory } from '../useComposerHistory'
 import { useComposerPickers } from '../useComposerPickers'
 import { useChatModelSelection } from '../hooks/useChatModelSelection'
-import { useServerSkills } from '../hooks/useServerSkills'
+import { useServerCommands } from '../hooks/useServerCommands'
 import { useAttachmentNotice } from '../hooks/useAttachmentNotice'
 import {
   composerNoticeForRuntimeDependencies,
@@ -340,16 +340,14 @@ export function PiChatPanel({
     for (const command of commands) next.register(command)
     return next
   }, [apiBaseUrl, commands, extraCommands, hotReloadEnabled, normalizedRequestHeaders, serverResourcesEnabled, serverSkillsRefreshKey, storageScope])
-  const skillsStamp = useServerSkills({
-    apiBaseUrl,
-    fetch,
+  const commandsStamp = useServerCommands({
     registry,
-    refreshKey: serverSkillsRefreshKey,
     requestHeaders: normalizedRequestHeaders,
-    storageScope,
+    sessionId: activeSessionId ?? 'default',
+    refreshKey: serverSkillsRefreshKey,
     enabled: serverResourcesEnabled,
   })
-  const allCommands = useMemo(() => registry.list(), [registry, skillsStamp])
+  const allCommands = useMemo(() => registry.list(), [registry, commandsStamp])
 
   const activeChatSessionId = selectedChatState?.sessionId
   const warmupNotice = composerNoticeForWarmup(workspaceWarmupStatus)

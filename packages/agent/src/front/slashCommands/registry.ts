@@ -4,8 +4,20 @@ export type SlashCommandHandler = (args: string, ctx: SlashCommandContext) => Sl
 export interface SlashCommand {
   name: string
   description: string
-  /** 'skill' commands are forwarded to the PI agent as `skill: <name>\n\n<args>` instead of running locally. */
-  kind?: 'local' | 'skill'
+  /**
+   * - local: handled in the browser.
+   * - server: forwarded as the original slash command so PI extension/prompt commands run natively.
+   * - skill: forwarded to the PI agent as `skill: <name>\n\n<args>`.
+   */
+  kind?: 'local' | 'server' | 'skill'
+  /**
+   * Origin of the command, surfaced as a tag in the slash-command picker.
+   * Mirrors Pi's command sources for server commands; `local` for built-in
+   * browser commands. Display only.
+   */
+  source?: 'local' | 'extension' | 'prompt' | 'skill'
+  /** Originating plugin/package name (when known), shown as a tag. */
+  sourcePlugin?: string
   handler: SlashCommandHandler
 }
 
@@ -34,6 +46,7 @@ export interface SlashCommandContext {
 
 export interface CommandRegistry {
   register(cmd: SlashCommand): void
+  unregister(name: string): void
   get(name: string): SlashCommand | undefined
   list(): SlashCommand[]
 }
@@ -48,6 +61,9 @@ export function createCommandRegistry(initial?: SlashCommand[]): CommandRegistry
   return {
     register(cmd: SlashCommand) {
       commands.set(cmd.name, cmd)
+    },
+    unregister(name: string) {
+      commands.delete(name)
     },
     get(name: string) {
       return commands.get(name)

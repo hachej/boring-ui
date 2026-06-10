@@ -23,54 +23,33 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('/clear intentionally absent', () => {
-  test('does not register /clear in the Pi-native first cut', () => {
-    // First-cut Pi-native chat intentionally omits local-only transcript
-    // filtering. Canonical history is Pi JSONL; a future viewport clear must
-    // be non-canonical and should be tested separately when reintroduced.
-    expect(builtinCommands.find((c) => c.name === 'clear')).toBeUndefined()
-  })
-})
-
-describe('/reset', () => {
-  test('resets session when confirmed', () => {
-    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+describe('/clear', () => {
+  test('calls clearMessages', () => {
     const ctx = makeContext()
-    const result = getBuiltin('reset').handler('', ctx)
-    expect(ctx.resetSession).toHaveBeenCalledOnce()
-    expect(result).toBe('Session reset.')
+    getBuiltin('clear').handler('', ctx)
+    expect(ctx.clearMessages).toHaveBeenCalledOnce()
   })
 
-  test('does nothing when cancelled', () => {
-    vi.stubGlobal('confirm', vi.fn().mockReturnValue(false))
+  test('returns no message', () => {
     const ctx = makeContext()
-    const result = getBuiltin('reset').handler('', ctx)
-    expect(ctx.resetSession).not.toHaveBeenCalled()
+    const result = getBuiltin('clear').handler('', ctx)
     expect(result).toBeUndefined()
   })
 })
 
 describe('/help', () => {
-  test('lists Pi-native builtin commands and omits /clear', () => {
+  test('renders commands as a GFM table (one row per command)', () => {
     const ctx = makeContext()
-    const result = getBuiltin('help').handler('', ctx)
-    expect(result).not.toContain('/clear')
-    expect(result).toContain('/reset')
+    const result = getBuiltin('help').handler('', ctx) as string
+    expect(result).toContain('/clear')
+    expect(result).not.toContain('/reset')
     expect(result).toContain('/reload')
     expect(result).toContain('/help')
-  })
-
-  test('includes skill and extra commands from the registry context', () => {
-    const ctx = makeContext({
-      listCommands: vi.fn().mockReturnValue([
-        ...builtinCommands,
-        { name: 'review', description: 'Run review skill', kind: 'skill', handler: vi.fn() },
-        { name: 'ask-user', description: 'Ask user', handler: vi.fn() },
-      ]),
-    })
-    const result = getBuiltin('help').handler('', ctx)
-    expect(result).toContain('/review — Run review skill')
-    expect(result).toContain('/ask-user — Ask user')
+    // GFM table so Streamdown renders each command on its own row.
+    expect(result).toContain('| Command | Description |')
+    expect(result).toContain('| --- | --- |')
+    expect(result).toContain('| `/clear` |')
+    expect(result.split('\n').filter((l) => l.startsWith('| `/')).length).toBeGreaterThanOrEqual(3)
   })
 
   test('returns message when no commands', () => {
@@ -98,43 +77,18 @@ describe('/reload', () => {
   })
 })
 
-describe('/model and /thinking', () => {
-  test('/model opens the model picker without args and delegates selection with args', () => {
-    const openModelPicker = vi.fn()
-    const selectComposerModel = vi.fn().mockReturnValue('Model set.')
-    const ctx = makeContext({ openModelPicker, selectComposerModel })
-
-    expect(getBuiltin('model').handler('', ctx)).toBeUndefined()
-    expect(openModelPicker).toHaveBeenCalledOnce()
-    expect(getBuiltin('model').handler('gpt', ctx)).toBe('Model set.')
-    expect(selectComposerModel).toHaveBeenCalledWith('gpt')
+describe('all 3 builtins are registered', () => {
+  test('has exactly 3 commands', () => {
+    expect(builtinCommands).toHaveLength(3)
   })
 
-  test('/thinking and /think open or set the thinking picker', () => {
-    const openThinkingPicker = vi.fn()
-    const selectComposerThinking = vi.fn().mockReturnValue('Thinking set.')
-    const ctx = makeContext({ openThinkingPicker, selectComposerThinking })
-
-    expect(getBuiltin('thinking').handler('', ctx)).toBeUndefined()
-    expect(openThinkingPicker).toHaveBeenCalledOnce()
-    expect(getBuiltin('thinking').handler('low', ctx)).toBe('Thinking set.')
-    expect(getBuiltin('think').handler('high', ctx)).toBe('Thinking set.')
-    expect(selectComposerThinking).toHaveBeenCalledWith('low')
-    expect(selectComposerThinking).toHaveBeenCalledWith('high')
-  })
-})
-
-describe('Pi-native builtins are registered', () => {
-  test('has exactly 6 commands', () => {
-    expect(builtinCommands).toHaveLength(6)
-  })
-
-  test.each(['reset', 'reload', 'model', 'thinking', 'think', 'help'])('includes /%s', (name) => {
+  test.each(['clear', 'reload', 'help'])('includes /%s', (name) => {
     expect(builtinCommands.find((c) => c.name === name)).toBeDefined()
   })
 
-  test('does NOT include removed/deferred local commands', () => {
-    expect(builtinCommands.find((c) => c.name === 'clear')).toBeUndefined()
+  test('does NOT include /model, /reset, or /cost (removed)', () => {
+    expect(builtinCommands.find((c) => c.name === 'model')).toBeUndefined()
+    expect(builtinCommands.find((c) => c.name === 'reset')).toBeUndefined()
     expect(builtinCommands.find((c) => c.name === 'cost')).toBeUndefined()
   })
 })

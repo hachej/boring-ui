@@ -472,9 +472,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
   // Issue #200: a workspace-local `.agents/skills/<name>` skill must appear in
   // the slash-command list (the unified /api/v1/agent/commands endpoint), not
   // only in the /skills API — alongside the existing package/global skills.
-  // NOTE: This test requires the /api/v1/agent/commands route (commandsRoutes in
-  // createAgentApp.ts) which is ported in Phase 2. Skip until then.
-  test.skip("local .agents/skills skill appears in the slash-command list (#200)", async () => {
+  test("local .agents/skills skill appears in the slash-command list (#200)", async () => {
     const workspaceRoot = await makeTempDir("boring-local-skill-slash-")
     await mkdir(join(workspaceRoot, ".agents", "skills", "local-test-skill"), { recursive: true })
     await writeFile(
