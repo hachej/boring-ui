@@ -221,8 +221,7 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
         async delete() {},
       },
       reloadSession,
-      async *sendMessage() {},
-    }),
+      }),
   })
   await app.ready()
 
@@ -308,22 +307,22 @@ test('registerAgentRoutes isolates same-root sessions with getSessionNamespace',
   try {
     const created = await app.inject({
       method: 'POST',
-      url: '/api/v1/agent/sessions',
+      url: '/api/v1/agent/pi-chat/sessions',
       headers: { 'x-boring-workspace-id': 'workspace-a' },
       payload: { title: 'Workspace A' },
     })
-    expect(created.statusCode).toBe(200)
+    expect(created.statusCode).toBe(201)
 
     const workspaceA = await app.inject({
       method: 'GET',
-      url: '/api/v1/agent/sessions',
+      url: '/api/v1/agent/pi-chat/sessions',
       headers: { 'x-boring-workspace-id': 'workspace-a' },
     })
     expect(workspaceA.json()).toHaveLength(1)
 
     const workspaceB = await app.inject({
       method: 'GET',
-      url: '/api/v1/agent/sessions',
+      url: '/api/v1/agent/pi-chat/sessions',
       headers: { 'x-boring-workspace-id': 'workspace-b' },
     })
     expect(workspaceB.json()).toHaveLength(0)
@@ -350,22 +349,22 @@ test('registerAgentRoutes treats dynamic session namespace as request scoped', a
   try {
     const created = await app.inject({
       method: 'POST',
-      url: '/api/v1/agent/sessions',
+      url: '/api/v1/agent/pi-chat/sessions',
       headers: { 'x-session-namespace': 'namespace-a' },
       payload: { title: 'Namespace A' },
     })
-    expect(created.statusCode).toBe(200)
+    expect(created.statusCode).toBe(201)
 
     const namespaceA = await app.inject({
       method: 'GET',
-      url: '/api/v1/agent/sessions',
+      url: '/api/v1/agent/pi-chat/sessions',
       headers: { 'x-session-namespace': 'namespace-a' },
     })
     expect(namespaceA.json()).toHaveLength(1)
 
     const namespaceB = await app.inject({
       method: 'GET',
-      url: '/api/v1/agent/sessions',
+      url: '/api/v1/agent/pi-chat/sessions',
       headers: { 'x-session-namespace': 'namespace-b' },
     })
     expect(namespaceB.json()).toHaveLength(0)
@@ -387,7 +386,7 @@ test('registerAgentRoutes mounts sessions endpoint', async () => {
   })
   await app.ready()
 
-  const res = await app.inject({ method: 'GET', url: '/api/v1/agent/sessions' })
+  const res = await app.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })
   expect(res.statusCode).toBe(200)
   expect(Array.isArray(res.json())).toBe(true)
 
@@ -449,7 +448,7 @@ test('registerAgentRoutes bridges request.user to workspaceContext', async () =>
   })
   await app.ready()
 
-  const res = await app.inject({ method: 'GET', url: '/api/v1/agent/sessions' })
+  const res = await app.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })
   expect(res.statusCode).toBe(200)
 
   await app.close()

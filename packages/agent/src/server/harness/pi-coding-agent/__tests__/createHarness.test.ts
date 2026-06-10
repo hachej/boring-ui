@@ -32,7 +32,7 @@ describe("createPiCodingAgentHarness", () => {
     expect(harness.id).toBe("pi-coding-agent");
     expect(harness.placement).toBe("server");
     expect(harness.sessions).toBeInstanceOf(PiSessionStore);
-    expect(typeof harness.sendMessage).toBe("function");
+    expect(typeof harness.getPiSessionAdapter).toBe("function");
     expect(typeof harness.reloadSession).toBe("function");
   });
 
@@ -389,11 +389,13 @@ describe("PiSessionStore", () => {
     expect(list[0].id).toBe(session.id);
   });
 
-  it("loads a session with empty messages", async () => {
+  it("loads a freshly created session with no message entries", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
     const session = await store.create(ctx);
     const detail = await store.load(ctx, session.id);
-    expect(detail.messages).toEqual([]);
+    expect(detail.turnCount).toBe(0);
+    const entries = await store.loadEntries(ctx, session.id);
+    expect(entries.messages).toEqual([]);
   });
 
   it("loads raw timestamp-named Pi session files for existing native sessions", async () => {
@@ -420,13 +422,6 @@ describe("PiSessionStore", () => {
     const wrapperContent = await readFile(wrapperPath, "utf-8");
     expect(wrapperContent).toContain("\"pi_session_file\"");
     expect(wrapperContent).toContain(nativePath);
-
-    await store.saveMessages(ctx, sessionId, [
-      { id: "u1", role: "user", parts: [{ type: "text", text: "ui prompt" }] },
-    ]);
-
-    expect(await readFile(wrapperPath, "utf-8")).toContain("\"ui_snapshot\"");
-    expect(await readFile(nativePath, "utf-8")).not.toContain("\"ui_snapshot\"");
   });
 
   it("does not create duplicate wrappers for already linked native transcripts", async () => {
@@ -483,7 +478,10 @@ describe("PiSessionStore", () => {
     await expect(store.load(ctx, nativeSessionId)).rejects.toThrow("Session not found");
     const detail = await store.load(ctx, boringSessionId);
     expect(detail.id).toBe(boringSessionId);
-    expect(detail.messages[0].parts).toEqual([{ type: "text", text: "linked prompt" }]);
+    const entries = await store.loadEntries(ctx, boringSessionId);
+    expect((entries.messages[0] as { content: unknown }).content).toEqual([
+      { type: "text", text: "linked prompt" },
+    ]);
 
     const summaries = await store.list(ctx);
     expect(summaries.map((summary) => summary.id)).toEqual([boringSessionId]);

@@ -12,11 +12,11 @@ describe('createScriptedPiHarness', () => {
       workdir: '/workspace',
     })
 
-    await harness.followUp?.('s1', 'first', undefined, 'first', { clientNonce: 'nonce-1', clientSeq: 1 })
-    await harness.followUp?.('s1', 'second', undefined, 'second', { clientNonce: 'nonce-2', clientSeq: 2 })
-    await harness.followUp?.('s1', 'third', undefined, 'third', { clientNonce: 'nonce-3', clientSeq: 3 })
+    await adapter.followUp('first', { displayText: 'first', clientNonce: 'nonce-1', clientSeq: 1 })
+    await adapter.followUp('second', { displayText: 'second', clientNonce: 'nonce-2', clientSeq: 2 })
+    await adapter.followUp('third', { displayText: 'third', clientNonce: 'nonce-3', clientSeq: 3 })
 
-    harness.clearFollowUp?.('s1', { clientNonce: 'nonce-2', clientSeq: 2 })
+    adapter.clearFollowUp({ clientNonce: 'nonce-2', clientSeq: 2 })
 
     expect(adapter.readSnapshot().followUpMessages).toEqual(['first', 'third'])
   })
@@ -134,7 +134,7 @@ describe('createScriptedPiHarness', () => {
       })
     })
 
-    await harness.followUp?.('s1', 'next queued', undefined, 'next queued', { clientNonce: 'nonce-next', clientSeq: 1 })
+    await adapter.followUp('next queued', { displayText: 'next queued', clientNonce: 'nonce-next', clientSeq: 1 })
     const prompt = adapter.prompt('initial prompt')
     await firstMessage
     await adapter.abort()

@@ -61,38 +61,4 @@ test.describe('streaming bash: incremental output', () => {
     })
   })
 
-  test('SSE stream delivers tool chunks via API', async ({
-    browserPage,
-    backend,
-  }) => {
-    const apiUrl = backend.apiUrl
-
-    const result = await browserPage.evaluate(async (url: string) => {
-      const res = await fetch(`${url}/api/v1/agent/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: 'stream-bash-test',
-          message: 'Run: echo "sse-check-ok"',
-        }),
-      })
-
-      const reader = res.body!.getReader()
-      const decoder = new TextDecoder()
-      let raw = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        raw += decoder.decode(value, { stream: true })
-      }
-
-      const hasToolChunk = raw.includes('tool-input-available')
-      const hasDone = raw.includes('[DONE]')
-      return { hasToolChunk, hasDone, length: raw.length }
-    }, apiUrl)
-
-    expect(result.hasToolChunk).toBe(true)
-    expect(result.hasDone).toBe(true)
-    expect(result.length).toBeGreaterThan(0)
-  })
 })

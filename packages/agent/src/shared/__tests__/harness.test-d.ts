@@ -4,12 +4,10 @@ import type { AgentHarness, SendMessageInput, RunContext } from '../harness'
 test('checking AgentHarness contract', () => {
   expectTypeOf<AgentHarness>().toHaveProperty('id')
   expectTypeOf<AgentHarness>().toHaveProperty('placement')
-  expectTypeOf<AgentHarness>().toHaveProperty('sendMessage')
   expectTypeOf<AgentHarness>().toHaveProperty('sessions')
 
   expectTypeOf<AgentHarness['id']>().toEqualTypeOf<string>()
   expectTypeOf<AgentHarness['placement']>().toEqualTypeOf<'server' | 'browser'>()
-  expectTypeOf<AgentHarness['sendMessage']>().toBeFunction()
 })
 
 test('checking SendMessageInput contract', () => {

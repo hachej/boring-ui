@@ -7,7 +7,6 @@ import {
   mkdir,
   writeFile,
   appendFile,
-  utimes,
   open,
 } from "node:fs/promises";
 import { closeSync, openSync, readFileSync, readSync, readdirSync, writeFileSync } from "node:fs";
@@ -28,8 +27,14 @@ import type {
   SessionDetail,
   SessionListOptions,
 } from "../../../shared/session.js";
-import type { UIMessage } from "../../../shared/message.js";
-import { dropEmptyAssistantUiMessages, sanitizeUiMessages } from "../../../shared/message-sanitizer.js";
+
+/** Raw pi message objects (role/content/timestamp on the object), in file
+ * order, ready to feed straight into buildPiChatHistory — the same shape the
+ * live event path consumes. */
+export interface PiSessionEntries {
+  id: string;
+  messages: unknown[];
+}
 
 function defaultSessionDir(cwd: string): string {
   const safePath = `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
@@ -55,11 +60,6 @@ interface NormalizedListOptions {
   limit: number | undefined;
   offset: number;
   includeId: string | undefined;
-}
-
-interface UiSnapshotRecord {
-  messages: UIMessage[];
-  timestampMs: number;
 }
 
 function sessionDirForNamespace(namespace: string): string {
@@ -199,7 +199,44 @@ export class PiSessionStore implements SessionStore {
     };
   }
 
-  async load(ctx: SessionCtx, sessionId: string): Promise<SessionDetail> {
+  async load(_ctx: SessionCtx, sessionId: string): Promise<SessionDetail> {
+    const resolved = await this.resolveSessionTranscript(sessionId);
+    const title =
+      extractTitle(resolved.sessionEntries) ?? extractTitle(resolved.linkedEntries) ?? "New session";
+    const turnCount = countUserTurns(resolved.transcriptEntries);
+    const updatedAtMs = Math.max(resolved.fileStat.mtime.getTime(), resolved.linkedMtimeMs ?? 0);
+
+    return {
+      id: resolved.resolvedSessionId,
+      title,
+      createdAt: resolved.header?.timestamp ?? resolved.fileStat.birthtime.toISOString(),
+      updatedAt: new Date(updatedAtMs).toISOString(),
+      turnCount,
+    };
+  }
+
+  /**
+   * Returns the persisted pi message objects in file order so callers can run
+   * them through buildPiChatHistory — the same canonical projection the live
+   * event path uses. This is the cold-load counterpart to the live snapshot.
+   */
+  async loadEntries(_ctx: SessionCtx, sessionId: string): Promise<PiSessionEntries> {
+    const resolved = await this.resolveSessionTranscript(sessionId);
+    const messages = resolved.transcriptEntries
+      .filter((entry): entry is SessionMessageEntry => entry.type === "message")
+      .map((entry) => entry.message);
+    return { id: resolved.resolvedSessionId, messages };
+  }
+
+  private async resolveSessionTranscript(sessionId: string): Promise<{
+    resolvedSessionId: string;
+    header: SessionHeader | undefined;
+    sessionEntries: SessionEntry[];
+    linkedEntries: SessionEntry[];
+    transcriptEntries: SessionEntry[];
+    fileStat: Awaited<ReturnType<typeof fsStat>>;
+    linkedMtimeMs?: number;
+  }> {
     const filepath = await this.resolveSessionFile(sessionId);
     let content: string;
     try {
@@ -225,45 +262,20 @@ export class PiSessionStore implements SessionStore {
       (e): e is SessionEntry => e.type !== "session",
     ) ?? [];
 
-    // Prefer a persisted UI snapshot if available — these are written by
-    // the client after each turn and survive server restarts. When no
-    // snapshot exists, rebuild the UI transcript from every persisted message
-    // entry in file order rather than pi's compacted LLM working context.
+    // Rebuild the transcript from every persisted message entry in file order
+    // (preferring a linked native transcript) rather than pi's compacted LLM
+    // working context, so reloads recover the full conversation.
     const transcriptEntries = linkedEntries.length > 0 ? linkedEntries : sessionEntries;
-    const uiSnapshot = extractLatestUiSnapshot([...fileEntries, ...linkedEntries]);
-    const resolvedSessionId = header?.id ?? sessionId;
-    const messages = uiSnapshot && isUiSnapshotCurrent(uiSnapshot, transcriptEntries)
-      ? uiSnapshot.messages
-      : dropEmptyAssistantUiMessages(piMessagesToUIMessages(
-          transcriptEntries
-            .filter((entry): entry is SessionMessageEntry => entry.type === "message")
-            .map((entry) => entry.message),
-          resolvedSessionId,
-        ));
-
-    const title = extractTitle(sessionEntries) ?? extractTitle(linkedEntries) ?? "New session";
-    const turnCount = messages.filter((m) => m.role === "user").length;
-    const updatedAtMs = Math.max(fileStat.mtime.getTime(), linked?.mtime.getTime() ?? 0);
 
     return {
-      id: resolvedSessionId,
-      title,
-      createdAt: header?.timestamp ?? fileStat.birthtime.toISOString(),
-      updatedAt: new Date(updatedAtMs).toISOString(),
-      turnCount,
-      messages,
+      resolvedSessionId: header?.id ?? sessionId,
+      header,
+      sessionEntries,
+      linkedEntries,
+      transcriptEntries,
+      fileStat,
+      linkedMtimeMs: linked?.mtime.getTime(),
     };
-  }
-
-  async saveMessages(ctx: SessionCtx, sessionId: string, messages: UIMessage[]): Promise<void> {
-    const filepath = await this.resolveSessionFile(sessionId);
-    const entry = JSON.stringify({
-      type: "ui_snapshot",
-      id: randomUUID(),
-      timestamp: new Date().toISOString(),
-      messages: sanitizeUiMessages(messages, { dropEmptyAssistantMessages: true }),
-    });
-    await appendFile(filepath, entry + "\n");
   }
 
   // Synchronous variant used during session initialization so that no async
@@ -337,25 +349,6 @@ export class PiSessionStore implements SessionStore {
       await rm(linkedPiFile, { force: true });
       this.prefixCache.delete(linkedPiFile);
     }
-  }
-
-  touchSession(sessionId: string, title?: string): void {
-    this.resolveSessionFile(sessionId)
-      .then((filepath) => {
-        if (title) {
-          const entry: SessionInfoEntry = {
-            type: "session_info",
-            id: randomUUID(),
-            parentId: null,
-            timestamp: new Date().toISOString(),
-            name: title,
-          };
-          return appendFile(filepath, JSON.stringify(entry) + "\n");
-        }
-        const now = new Date();
-        return utimes(filepath, now, now);
-      })
-      .catch(() => {});
   }
 
   private async resolveSessionFile(sessionId: string): Promise<string> {
@@ -773,36 +766,10 @@ function isTimestampNamedPiSessionFile(filepath: string, sessionId: string): boo
   return basename(filepath).endsWith(`_${sessionId}.jsonl`);
 }
 
-function extractLatestUiSnapshot(entries: (SessionHeader | SessionEntry)[]): UiSnapshotRecord | null {
-  let latest: UiSnapshotRecord | null = null;
-  for (const e of entries) {
-    const rec = e as { type?: string; messages?: unknown; timestamp?: unknown };
-    if (rec.type === "ui_snapshot" && Array.isArray(rec.messages)) {
-      const timestampMs = typeof rec.timestamp === "string" ? Date.parse(rec.timestamp) : NaN;
-      const snapshot = {
-        messages: sanitizeUiMessages(rec.messages as UIMessage[], { dropEmptyAssistantMessages: true }),
-        timestampMs: Number.isFinite(timestampMs) ? timestampMs : 0,
-      };
-      if (!latest || snapshot.timestampMs >= latest.timestampMs) latest = snapshot;
-    }
-  }
-  return latest;
-}
-
-function isUiSnapshotCurrent(snapshot: UiSnapshotRecord, transcriptEntries: SessionEntry[]): boolean {
-  const latestMessageTimestamp = latestMessageTimestampMs(transcriptEntries);
-  return latestMessageTimestamp === undefined || snapshot.timestampMs >= latestMessageTimestamp;
-}
-
-function latestMessageTimestampMs(entries: SessionEntry[]): number | undefined {
-  let latest: number | undefined;
-  for (const entry of entries) {
-    if (entry.type !== "message") continue;
-    const timestampMs = Date.parse((entry as { timestamp?: string }).timestamp ?? "");
-    if (!Number.isFinite(timestampMs)) continue;
-    latest = latest === undefined ? timestampMs : Math.max(latest, timestampMs);
-  }
-  return latest;
+function countUserTurns(entries: SessionEntry[]): number {
+  return entries.filter(
+    (e) => e.type === "message" && ((e as SessionMessageEntry).message as any)?.role === "user",
+  ).length;
 }
 
 function extractTitle(entries: SessionEntry[]): string | undefined {
@@ -854,20 +821,6 @@ function parseJsonlPrefixEntries(content: string): (SessionHeader | SessionEntry
   return entries;
 }
 
-// Reconstructed message ids must be DETERMINISTIC across repeated loads of the
-// same session file. If they were random (randomUUID), every GET /messages
-// would return identical content but fresh ids, defeating the client's
-// merge-by-id dedup and causing chat history to visually duplicate/stack on
-// each browser reload. Derive a stable id from the session id + the message's
-// position in the reconstructed list.
-function reconstructedMessageId(
-  sessionId: string | undefined,
-  role: string,
-  index: number,
-): string {
-  return sessionId ? `${sessionId}-${role}-${index}` : `${role}-${index}`;
-}
-
 function textFromPiContent(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
@@ -879,105 +832,3 @@ function textFromPiContent(content: unknown): string {
     .join("");
 }
 
-function piMessagesToUIMessages(
-  messages: unknown[],
-  sessionId?: string,
-): UIMessage[] {
-  const result: UIMessage[] = [];
-  let currentAssistant: UIMessage | null = null;
-
-  for (const raw of messages) {
-    const msg = raw as any;
-    if (!msg || typeof msg !== "object" || !("role" in msg)) continue;
-
-    switch (msg.role) {
-      case "user": {
-        currentAssistant = null;
-        const text = textFromPiContent(msg.content);
-
-        result.push({
-          id: reconstructedMessageId(sessionId, "user", result.length),
-          role: "user",
-          parts: [{ type: "text", text }],
-        } as UIMessage);
-        break;
-      }
-
-      case "assistant": {
-        const parts: any[] = [];
-        if (Array.isArray(msg.content)) {
-          for (const rawItem of msg.content) {
-            const item = rawItem as {
-              type?: unknown;
-              text?: unknown;
-              thinking?: unknown;
-              name?: unknown;
-              id?: unknown;
-              arguments?: unknown;
-            } | null;
-            if (!item || typeof item !== "object") continue;
-            switch (item.type) {
-              case "text":
-                parts.push({ type: "text", text: typeof item.text === "string" ? item.text : "", state: "done" });
-                break;
-              case "thinking":
-                parts.push({
-                  type: "reasoning",
-                  text: typeof item.thinking === "string" ? item.thinking : "",
-                  state: "done",
-                });
-                break;
-              case "toolCall":
-                if (typeof item.name !== "string" || typeof item.id !== "string") break;
-                // AI SDK convention: static tool parts use `type: "tool-${toolName}"`.
-                // The frontend's `getToolName()` reads the suffix after the
-                // first hyphen, so "tool-invocation" yields the tool name
-                // "invocation" — which doesn't match any registered renderer
-                // and falls back to the generic fallback. Use the actual tool
-                // name in the type discriminator so renderers (exec_ui, read,
-                // bash, etc.) match.
-                parts.push({
-                  type: `tool-${item.name}`,
-                  toolCallId: item.id,
-                  toolName: item.name,
-                  state: "input-available",
-                  input: item.arguments,
-                });
-                break;
-            }
-          }
-        }
-        const uiMsg = {
-          id: reconstructedMessageId(sessionId, "assistant", result.length),
-          role: "assistant",
-          parts,
-        } as UIMessage;
-        result.push(uiMsg);
-        currentAssistant = uiMsg;
-        break;
-      }
-
-      case "toolResult": {
-        if (!currentAssistant) break;
-        const toolPart = (currentAssistant.parts as any[]).find(
-          (p) =>
-            typeof p.type === "string" && p.type.startsWith("tool-") && p.toolCallId === msg.toolCallId,
-        );
-        if (toolPart) {
-          if (msg.isError) {
-            toolPart.state = "output-error";
-            toolPart.errorText = Array.isArray(msg.content)
-              ? msg.content.map((c: any) => (typeof c?.text === "string" ? c.text : "")).join("\n")
-              : String(msg.content);
-          } else {
-            toolPart.state = "output-available";
-            toolPart.output = msg.content;
-          }
-        }
-        break;
-      }
-    }
-  }
-
-  return result;
-}

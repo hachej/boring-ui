@@ -32,7 +32,6 @@ import { fsEventsRoutes } from './http/routes/fsEvents'
 import { treeRoutes } from './http/routes/tree'
 import { modelsRoutes } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
-import { sessionRoutes } from './http/routes/sessions'
 import { piChatRoutes } from './http/routes/piChat'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
@@ -890,9 +889,6 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       })
       return binding.piChatService
     },
-  })
-  await app.register(sessionRoutes, {
-    getSessionStore: getSessionStoreForRequest,
   })
   await app.register(systemPromptRoutes, {
     getHarness: async (request) => (await getBindingForRequest(request)).harness,

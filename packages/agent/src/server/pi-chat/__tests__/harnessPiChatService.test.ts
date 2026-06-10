@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 import type { AgentHarness, RunContext, SendMessageInput } from '../../../shared/harness'
-import type { UIMessage } from '../../../shared/message'
 import type { SessionStore } from '../../../shared/session'
 import type { PiChatEvent } from '../../../shared/chat'
 import { createInitialPiChatState, piChatReducer } from '../../../front/chat/pi/piChatReducer'
@@ -17,10 +16,14 @@ const ctx: PiSessionRequestContext = {
   requestId: 'request-a',
 }
 
+type PersistedSessionStore = SessionStore & {
+  loadEntries?: (ctx: { workspaceId: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[] }>
+}
+
 const sessionStore: SessionStore = {
   list: vi.fn(async () => []),
   create: vi.fn(async () => ({ id: 's1', title: 'New session', createdAt: '', updatedAt: '', turnCount: 0 })),
-  load: vi.fn(async () => ({ id: 's1', title: 'New session', createdAt: '', updatedAt: '', turnCount: 0, messages: [] })),
+  load: vi.fn(async () => ({ id: 's1', title: 'New session', createdAt: '', updatedAt: '', turnCount: 0 })),
   delete: vi.fn(async () => {}),
 }
 
@@ -30,6 +33,7 @@ type FakeAdapter = PiAgentSessionAdapter & {
 
 function createAdapter(followUps: string[] = []): FakeAdapter {
   const listeners = new Set<(event: AgentSessionEvent) => void>()
+  const nativeFollowUps: Array<{ text: string; clientNonce?: string; clientSeq?: number }> = followUps.map((text) => ({ text }))
   const snapshot: PiAgentSessionSnapshot = {
     state: {},
     messages: [],
@@ -50,11 +54,20 @@ function createAdapter(followUps: string[] = []): FakeAdapter {
       return () => listeners.delete(listener)
     }),
     prompt: vi.fn(async () => {}),
-    followUp: vi.fn(async () => {}),
-    clearQueue: vi.fn(() => {
-      const cleared = [...snapshot.followUpMessages]
-      snapshot.followUpMessages = []
-      return { steering: [], followUp: cleared }
+    followUp: vi.fn(async (text: string, options?: { displayText?: string; clientNonce?: string; clientSeq?: number }) => {
+      nativeFollowUps.push({ text: options?.displayText ?? text, clientNonce: options?.clientNonce, clientSeq: options?.clientSeq })
+      snapshot.followUpMessages = nativeFollowUps.map((item) => item.text)
+    }),
+    clearFollowUp: vi.fn((options?: { clientNonce?: string; clientSeq?: number }) => {
+      if (options?.clientNonce || options?.clientSeq !== undefined) {
+        const index = nativeFollowUps.findIndex((item) => options.clientNonce
+          ? item.clientNonce === options.clientNonce
+          : item.clientSeq === options.clientSeq)
+        if (index >= 0) nativeFollowUps.splice(index, 1)
+      } else {
+        nativeFollowUps.splice(0)
+      }
+      snapshot.followUpMessages = nativeFollowUps.map((item) => item.text)
     }),
     abort: vi.fn(async () => {}),
     abortRetry: vi.fn(),
@@ -77,33 +90,12 @@ function createHarness(adapter: PiAgentSessionAdapter): AgentHarness & {
   getPiSessionAdapter: (input: SendMessageInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
   hasPiSession: (sessionId: string) => boolean
 } {
-  const nativeFollowUps: Array<{ text: string; clientNonce?: string; clientSeq?: number }> = adapter.readSnapshot().followUpMessages.map((text) => ({ text }))
-  const syncSnapshot = () => {
-    adapter.readSnapshot().followUpMessages = nativeFollowUps.map((item) => item.text)
-  }
-
   return {
     id: 'fake-pi',
     placement: 'server',
     sessions: sessionStore,
-    async *sendMessage() {},
     hasPiSession: vi.fn(() => false),
     getPiSessionAdapter: vi.fn(async () => adapter),
-    followUp: vi.fn(async (_sessionId, text, _attachments, displayText, options) => {
-      nativeFollowUps.push({ text: displayText ?? text, clientNonce: options?.clientNonce, clientSeq: options?.clientSeq })
-      syncSnapshot()
-    }),
-    clearFollowUp: vi.fn((_sessionId, options) => {
-      if (options?.clientNonce || options?.clientSeq !== undefined) {
-        const index = nativeFollowUps.findIndex((item) => options.clientNonce
-          ? item.clientNonce === options.clientNonce
-          : item.clientSeq === options.clientSeq)
-        if (index >= 0) nativeFollowUps.splice(index, 1)
-      } else {
-        nativeFollowUps.splice(0)
-      }
-      syncSnapshot()
-    }),
   }
 }
 
@@ -535,7 +527,8 @@ describe('HarnessPiChatService', () => {
       clientNonce: 'queued-nonce',
       clientSeq: 1,
     })
-    expect(harness.followUp).toHaveBeenCalledWith('s1', 'queued raw text\n\n@files: src/app.ts', undefined, 'queued raw text', {
+    expect(adapter.followUp).toHaveBeenCalledWith('queued raw text\n\n@files: src/app.ts', {
+      displayText: 'queued raw text',
       clientNonce: 'queued-nonce',
       clientSeq: 1,
     })
@@ -551,8 +544,7 @@ describe('HarnessPiChatService', () => {
   it('rejects interrupt instead of silently skipping fallback auto-post when one queued item cannot be safely consumed', async () => {
     const adapter = createAdapter(['first queued', 'second queued'])
     adapter.continueQueuedFollowUp = undefined
-    const { service, harness } = createService(adapter)
-    harness.clearFollowUp = undefined
+    const { service } = createService(adapter)
 
     await expect(service.interrupt(ctx, 's1', {})).rejects.toThrow('Cannot auto-post queued follow-up')
 
@@ -564,8 +556,7 @@ describe('HarnessPiChatService', () => {
     const adapter = createAdapter(['queued raw text'])
     adapter.continueQueuedFollowUp = undefined
     adapter.prompt = vi.fn(async () => { throw new Error('provider down') })
-    const { service, harness } = createService(adapter)
-    harness.clearFollowUp = undefined
+    const { service } = createService(adapter)
 
     await expect(service.interrupt(ctx, 's1', {})).rejects.toThrow('provider down')
 
@@ -620,11 +611,11 @@ describe('HarnessPiChatService', () => {
       clientSeq: 3,
     })).resolves.toMatchObject({ accepted: true, queued: true, clientNonce: 'nonce-q', clientSeq: 3 })
 
-    expect(harness.followUp).toHaveBeenCalledWith('s1', 'queued', undefined, 'queued', {
+    expect(adapter.followUp).toHaveBeenCalledWith('queued', {
+      displayText: 'queued',
       clientNonce: 'nonce-q',
       clientSeq: 3,
     })
-    expect(adapter.followUp).not.toHaveBeenCalled()
   })
 
   it('enriches queue events emitted during follow-up enqueue', async () => {
@@ -633,7 +624,7 @@ describe('HarnessPiChatService', () => {
     const events: PiChatEvent[] = []
     const subscription = await service.subscribe(ctx, 's1', 0, (event) => events.push(event))
     expect(subscription.type).toBe('ok')
-    harness.followUp = vi.fn(async () => {
+    adapter.followUp = vi.fn(async () => {
       adapter.emit({ type: 'queue_update', followUp: ['queued'] } as unknown as AgentSessionEvent)
     })
 
@@ -699,39 +690,43 @@ describe('HarnessPiChatService', () => {
     })
   })
 
-  it('hydrates inactive persisted state without opening a live Pi adapter', async () => {
+  it('hydrates inactive persisted state through buildPiChatHistory without opening a live Pi adapter', async () => {
     const adapter = createAdapter()
-    const persistedStore: SessionStore = {
+    // The cold-load path now feeds the raw persisted pi message entries through
+    // buildPiChatHistory — the same canonical projection as the live path.
+    const persistedStore: PersistedSessionStore = {
       ...sessionStore,
-      load: vi.fn(async () => ({
+      loadEntries: vi.fn(async () => ({
         id: 's-history',
-        title: 'History',
-        createdAt: '2026-06-01T00:00:00.000Z',
-        updatedAt: '2026-06-01T00:00:01.000Z',
-        turnCount: 1,
         messages: [
           {
             id: 'u1',
             role: 'user',
-            parts: [{ type: 'text', text: 'persisted prompt' }],
+            content: [{ type: 'text', text: 'persisted prompt' }],
           },
           {
             id: 'a1',
             role: 'assistant',
-            parts: [
-              { type: 'reasoning', text: 'thought', state: 'done' },
+            content: [
+              { type: 'thinking', thinking: 'thought' },
               {
-                type: 'tool-bash',
-                toolCallId: 'call-1',
-                toolName: 'bash',
-                state: 'output-available',
-                output: { content: 'ok' },
+                type: 'toolCall',
+                id: 'call-1',
+                name: 'bash',
+                arguments: { command: 'pwd' },
                 ui: { rendererId: 'terminal.command', displayGroup: 'Commands', details: { command: 'pwd' }, extra: 'ignored' },
               },
               { type: 'text', text: 'persisted answer' },
             ],
+            stopReason: 'stop',
           },
-        ] as UIMessage[],
+          {
+            role: 'toolResult',
+            toolCallId: 'call-1',
+            content: [{ type: 'text', text: 'ok' }],
+            isError: false,
+          },
+        ],
       })),
     }
     const harness = createHarness(adapter)
@@ -777,17 +772,13 @@ describe('HarnessPiChatService', () => {
     adapter.readSnapshot().messages = [
       { id: 'live-user', message: { role: 'user', content: [{ type: 'text', text: 'live prompt' }] } },
     ]
-    const persistedStore: SessionStore = {
+    const persistedStore: PersistedSessionStore = {
       ...sessionStore,
-      load: vi.fn(async () => ({
+      loadEntries: vi.fn(async () => ({
         id: 's1',
-        title: 'Persisted',
-        createdAt: '',
-        updatedAt: '',
-        turnCount: 1,
         messages: [
-          { id: 'stale-user', role: 'user', parts: [{ type: 'text', text: 'stale prompt' }] },
-        ] as UIMessage[],
+          { id: 'stale-user', role: 'user', content: [{ type: 'text', text: 'stale prompt' }] },
+        ],
       })),
     }
     const harness = createHarness(adapter)
@@ -856,11 +847,10 @@ describe('HarnessPiChatService', () => {
       clientSeq: 3,
     })).resolves.toMatchObject({ accepted: true, cleared: 1 })
 
-    expect(harness.clearFollowUp).toHaveBeenCalledWith('s1', {
+    expect(adapter.clearFollowUp).toHaveBeenCalledWith({
       clientNonce: 'nonce-q',
       clientSeq: 3,
     })
-    expect(adapter.clearQueue).not.toHaveBeenCalled()
   })
 
   it('prefers nonce over colliding clientSeq when removing selected metadata', async () => {
@@ -876,17 +866,16 @@ describe('HarnessPiChatService', () => {
     })
   })
 
-  it('does not turn selected clears into full clears without harness selector support', async () => {
+  it('does not turn selected clears that match nothing into full clears', async () => {
     const adapter = createAdapter(['first', 'second'])
-    const { service, harness } = createService(adapter)
-    harness.clearFollowUp = undefined
+    const { service } = createService(adapter)
 
     await expect(service.clearQueue(ctx, 's1', {
       clientNonce: 'nonce-q',
       clientSeq: 3,
     })).resolves.toMatchObject({ accepted: true, cleared: 0 })
 
-    expect(adapter.clearQueue).not.toHaveBeenCalled()
+    expect(adapter.readSnapshot().followUpMessages).toEqual(['first', 'second'])
   })
 
   it('interrupts the active run and auto-posts the next queued follow-up', async () => {
@@ -902,10 +891,9 @@ describe('HarnessPiChatService', () => {
 
     expect(adapter.abortRetry).toHaveBeenCalledTimes(1)
     expect(adapter.abort).toHaveBeenCalledTimes(1)
-    expect(harness.clearFollowUp).not.toHaveBeenCalled()
+    expect(adapter.clearFollowUp).not.toHaveBeenCalled()
     expect(adapter.continueQueuedFollowUp).toHaveBeenCalledTimes(1)
     expect(adapter.prompt).not.toHaveBeenCalled()
-    expect(adapter.clearQueue).not.toHaveBeenCalled()
     await expect(service.readState(ctx, 's1')).resolves.toMatchObject({
       queue: { followUps: [] },
     })
@@ -996,7 +984,7 @@ describe('HarnessPiChatService', () => {
     })
     await expect(service.interrupt(ctx, 's1', {})).resolves.toMatchObject({ accepted: true })
 
-    expect(harness.clearFollowUp).toHaveBeenCalledWith('s1', {
+    expect(adapter.clearFollowUp).toHaveBeenCalledWith({
       clientNonce: 'nonce-fallback',
       clientSeq: 5,
     })
@@ -1006,13 +994,12 @@ describe('HarnessPiChatService', () => {
     })
   })
 
-  it('clears the harness metadata queue on full clear and stop', async () => {
+  it('clears the adapter queue on full clear and stop', async () => {
     const adapter = createAdapter(['first', 'second'])
     const { service, harness } = createService(adapter)
 
     await expect(service.clearQueue(ctx, 's1', {})).resolves.toMatchObject({ accepted: true, cleared: 2 })
-    expect(harness.clearFollowUp).toHaveBeenCalledWith('s1')
-    expect(adapter.clearQueue).not.toHaveBeenCalled()
+    expect(adapter.clearFollowUp).toHaveBeenCalledTimes(1)
 
     const stopAdapter = createAdapter(['stop queued'])
     const stop = createService(stopAdapter)
@@ -1022,8 +1009,7 @@ describe('HarnessPiChatService', () => {
       clearedQueue: [{ id: expect.stringContaining('queue:s1:followup'), kind: 'followup', displayText: 'stop queued' }],
     })
 
-    expect(stop.harness.clearFollowUp).toHaveBeenCalledWith('s1')
-    expect(stopAdapter.clearQueue).not.toHaveBeenCalled()
+    expect(stopAdapter.clearFollowUp).toHaveBeenCalledTimes(1)
     expect(stopAdapter.abort).toHaveBeenCalledTimes(1)
   })
 })

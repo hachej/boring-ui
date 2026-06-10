@@ -247,11 +247,11 @@ interface RuntimeSessionSummary {
 }
 
 async function clearSessions(apiUrl: string): Promise<void> {
-  const response = await fetch(`${apiUrl}/api/v1/agent/sessions`)
+  const response = await fetch(`${apiUrl}/api/v1/agent/pi-chat/sessions`)
   expect(response.status).toBe(200)
   const sessions = await response.json() as RuntimeSessionSummary[]
   for (const session of sessions) {
-    const deleted = await fetch(`${apiUrl}/api/v1/agent/sessions/${encodeURIComponent(session.id)}`, {
+    const deleted = await fetch(`${apiUrl}/api/v1/agent/pi-chat/sessions/${encodeURIComponent(session.id)}`, {
       method: 'DELETE',
     })
     expect([204, 404]).toContain(deleted.status)

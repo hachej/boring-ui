@@ -1,7 +1,7 @@
 import { setTimeout as sleep } from 'node:timers/promises'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
-import type { AgentHarness, AgentHarnessFactoryInput, FollowUpOptions, RunContext, SendMessageInput } from '../../shared/harness.js'
-import type { UIMessageChunk } from '../../shared/message.js'
+import type { AgentHarness, AgentHarnessFactoryInput, RunContext, SendMessageInput } from '../../shared/harness.js'
+import type { PiFollowUpQueueOptions, PiFollowUpSelector } from '../harness/pi-coding-agent/piFollowUpQueueCompat.js'
 import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '../../shared/session.js'
 import { getEnv } from '../config/env.js'
 import type { PiAgentPromptInput, PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../pi-chat/PiAgentSessionAdapter.js'
@@ -18,9 +18,7 @@ interface ScriptedRun {
   cancelled: boolean
 }
 
-interface ScriptedSessionRecord extends SessionSummary {
-  messages: unknown[]
-}
+type ScriptedSessionRecord = SessionSummary
 
 const DEFAULT_SESSION_ID = 'scripted-main'
 const DEFAULT_TIME = '2026-06-04T12:00:00.000Z'
@@ -48,21 +46,12 @@ export function createScriptedPiHarness(input: AgentHarnessFactoryInput): AgentH
     id: 'scripted-pi-e2e',
     placement: 'server',
     sessions,
-    async *sendMessage(): AsyncIterable<UIMessageChunk> {
-      // Pi-native chat uses getPiSessionAdapter() through HarnessPiChatService.
-    },
     async getPiSessionAdapter({ sessionId }: SendMessageInput) {
       await sessions.ensure(sessionId)
       return getAdapter(sessionId)
     },
     async reloadSession() {
       return true
-    },
-    async followUp(sessionId, text, _attachments, _displayText, options) {
-      await getAdapter(sessionId).followUp(text, options)
-    },
-    clearFollowUp(sessionId, options) {
-      getAdapter(sessionId).clearFollowUp(options)
     },
     getSystemPrompt() {
       return `Scripted Pi e2e harness for ${input.cwd}`
@@ -101,7 +90,7 @@ class ScriptedSessionStore implements SessionStore {
   async load(_ctx: SessionCtx, sessionId: string): Promise<SessionDetail> {
     const record = this.records.get(sessionId)
     if (!record) throw new Error(`Session not found: ${sessionId}`)
-    return { ...toSummary(record), messages: [] }
+    return toSummary(record)
   }
 
   async delete(_ctx: SessionCtx, sessionId: string): Promise<void> {
@@ -115,7 +104,6 @@ class ScriptedSessionStore implements SessionStore {
       createdAt: DEFAULT_TIME,
       updatedAt: DEFAULT_TIME,
       turnCount: 0,
-      messages: [],
     }
   }
 }
@@ -163,7 +151,7 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     await this.runScriptedTurn(text)
   }
 
-  async followUp(text: string, options?: FollowUpOptions): Promise<void> {
+  async followUp(text: string, options?: PiFollowUpQueueOptions): Promise<void> {
     this.followUps.push({
       text,
       clientNonce: options?.clientNonce,
@@ -334,7 +322,7 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     return this.followUps.map((followUp) => followUp.text)
   }
 
-  private findFollowUpIndex(options: FollowUpOptions): number {
+  private findFollowUpIndex(options: PiFollowUpSelector): number {
     if (options.clientNonce) return this.followUps.findIndex((followUp) => followUp.clientNonce === options.clientNonce)
     if (options.clientSeq !== undefined) return this.followUps.findIndex((followUp) => followUp.clientSeq === options.clientSeq)
     return -1

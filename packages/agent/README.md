@@ -285,7 +285,7 @@ A: Yes. Use the `CatalogDeps` pattern to build tools that bind to `Workspace` an
 A: It lets the agent programmatically open files, panels, and surfaces in the workbench. The agent calls `exec_ui({ kind: "openFile", params: { path: "src/index.ts" } })` and the panel opens. It's a typed pubsub bus between backend and frontend.
 
 **Q: How does stream resumption work?**  
-A: The server wraps the harness's event stream in a per-turn ring buffer. Disconnected clients reconnect via `GET /api/v1/agent/chat/:sessionId/:turnId?cursor=<n>`. If the turn completed, it replays from `SessionStore`.
+A: The server wraps the harness's event stream in a per-turn ring buffer. Disconnected clients reconnect via `GET /api/v1/agent/pi-chat/:sessionId/events?from=<seq>`; the replay buffer serves missed events.
 
 ---
 

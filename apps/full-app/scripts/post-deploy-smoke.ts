@@ -896,7 +896,7 @@ async function stepAgentSessions(
   log('info', 'smoke.step.start', { step, workspaceId })
 
   const { status, json } = await requestJson(
-    `${baseUrl}/api/v1/agent/sessions`,
+    `${baseUrl}/api/v1/agent/pi-chat/sessions`,
     { method: 'GET', headers: { cookie, 'x-boring-workspace-id': workspaceId } },
     step,
   )
@@ -973,7 +973,7 @@ async function tryDeleteAgentSession(
 ): Promise<{ status: number; detail: unknown }> {
   try {
     const response = await fetch(
-      `${baseUrl}/api/v1/agent/sessions/${encodeURIComponent(sessionId)}`,
+      `${baseUrl}/api/v1/agent/pi-chat/sessions/${encodeURIComponent(sessionId)}`,
       {
         method: 'DELETE',
         headers: { cookie, 'x-boring-workspace-id': workspaceId },
