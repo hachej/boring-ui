@@ -3,7 +3,7 @@ import * as ReactDom from "react-dom"
 import * as ReactDomClient from "react-dom/client"
 import * as ReactJsxDevRuntime from "react/jsx-dev-runtime"
 import * as ReactJsxRuntime from "react/jsx-runtime"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { askUserPlugin } from "@hachej/boring-ask-user/front"
 import * as WorkspaceSingleton from "@hachej/boring-workspace"
 import * as WorkspaceEventsSingleton from "@hachej/boring-workspace/events"
@@ -185,6 +185,37 @@ export function CliWorkspaceShell() {
     syncCliWorkspaceUrl(activeWorkspaceId, urlSessionId)
   }, [activeWorkspaceId, urlSessionId, workspacesMode])
 
+  // While the targeted workspace is still cold-starting (selected but not yet available),
+  // poll the workspace list so it self-heals once initialization finishes — without
+  // requiring a manual refresh/focus or a workspace switch. If it never becomes available
+  // (e.g. a stale link to a deleted workspace), give up after a bounded number of attempts
+  // and fall back to an available workspace instead of polling forever.
+  const coldStartAttemptsRef = useRef(0)
+  useEffect(() => {
+    if (!workspacesMode || !activeWorkspaceId) return
+    const ready = workspaces.some((workspace) => workspace.id === activeWorkspaceId && workspace.available)
+    if (ready) {
+      coldStartAttemptsRef.current = 0
+      return
+    }
+    const timer = window.setInterval(() => {
+      coldStartAttemptsRef.current += 1
+      if (coldStartAttemptsRef.current > 10) {
+        window.clearInterval(timer)
+        setActiveWorkspaceId((current) => {
+          const fallback = workspaces.find((workspace) => workspace.available)
+          if (!fallback) return current
+          window.localStorage.setItem("boring-ui:local-workspace-id", fallback.id)
+          return fallback.id
+        })
+        return
+      }
+      refreshWorkspaces()
+    }, 1500)
+    return () => window.clearInterval(timer)
+  }, [workspacesMode, activeWorkspaceId, workspaces, refreshWorkspaces])
+
+
   const handleActiveSessionIdChange = useCallback((sessionId: string | null) => {
     setUrlSessionId((current) => current === sessionId ? current : sessionId)
   }, [])
@@ -205,6 +236,20 @@ export function CliWorkspaceShell() {
     const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null
 
     if (!activeWorkspace) {
+      // A URL-targeted workspace that isn't available yet is cold-starting, not missing —
+      // show a loading state while the poll above resolves it instead of an error screen.
+      if (activeWorkspaceId) {
+        return (
+          <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground">
+            <div className="max-w-md rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
+              <h1 className="text-lg font-semibold">Loading workspace…</h1>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Preparing <code>{activeWorkspaceId}</code>. This can take a moment on first load.
+              </p>
+            </div>
+          </div>
+        )
+      }
       const hasUnavailableWorkspaces = workspaces.length > 0
       return (
         <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground">
