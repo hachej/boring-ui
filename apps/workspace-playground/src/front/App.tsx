@@ -66,6 +66,7 @@ function WorkspaceFullPageShell() {
       apiBaseUrl=""
       plugins={workspacePlugins}
       persistenceEnabled
+      manageDocumentTitle={false}
       workspaceId="playground-full-page"
       fullPageBasePath="/full-page"
     >
@@ -110,7 +111,6 @@ export function WorkspaceShell() {
         const next = meta?.projectName?.trim()
         if (next) {
           setProjectName(next)
-          document.title = next
         }
         setMetaLoaded(true)
       })
@@ -137,6 +137,7 @@ export function WorkspaceShell() {
       persistenceEnabled
       providerStorageKey="boring-ui-v2:layout:playground"
       appTitle={showcase ? "Boring" : projectName}
+      workspaceLabel={showcase ? undefined : projectName}
       defaultSessionTitle={showcase ? "New session" : projectName}
       frontPluginHotReload="vite"
       fullPageBasePath="/full-page"

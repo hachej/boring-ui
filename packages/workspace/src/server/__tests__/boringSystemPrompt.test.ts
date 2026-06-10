@@ -30,6 +30,21 @@ describe("buildBoringSystemPrompt", () => {
     expect(prompt).toContain("boring-ui-plugin verify")
   })
 
+  test("teaches installing an existing plugin via boring-ui-plugin install, not npm install", () => {
+    const prompt = buildBoringSystemPrompt({
+      scaffoldCommand: "boring-ui-plugin scaffold",
+      verifyCommand: "boring-ui-plugin verify",
+      boringPiRootOverride: FIXTURE_PI_ROOT,
+    })
+    expect(prompt).toContain("## Installing an existing or published plugin")
+    expect(prompt).toContain("boring-ui-plugin install <source>")
+    expect(prompt).toContain("npm:<package>")
+    // The exact failure mode: plain npm install does not register the plugin.
+    expect(prompt).toContain("does NOT register it as a plugin")
+    expect(prompt).toContain("boring-ui-plugin list")
+    expect(prompt).toContain("boring-ui-plugin remove <id-or-source>")
+  })
+
   test("teaches plugin-local deps and boring-ui-kit defaults", () => {
     const prompt = buildBoringSystemPrompt({
       scaffoldCommand: "boring-ui-plugin scaffold",
@@ -62,6 +77,17 @@ describe("buildBoringSystemPrompt", () => {
     expect(prompt).toContain("execute")
     expect(prompt).toContain('content: [{ type: "text"')
     expect(prompt).toContain("boring.server: true")
+  })
+
+  test("teaches Pi extension tools with mandatory parameters schema", () => {
+    const prompt = buildBoringSystemPrompt({
+      scaffoldCommand: "boring-ui-plugin scaffold",
+      verifyCommand: "boring-ui-plugin verify",
+      boringPiRootOverride: FIXTURE_PI_ROOT,
+    })
+    expect(prompt).toContain('parameters: { type: "object", properties: {} }')
+    expect(prompt).toContain("parameters` is mandatory")
+    expect(prompt).not.toContain("pi.registerTool({ name, description, execute })")
   })
 
   test("does NOT inline the canonical code blocks (scaffold owns the shape)", () => {
@@ -121,17 +147,18 @@ describe("buildBoringSystemPrompt", () => {
     expect(prompt).not.toMatch(/\*\*1\.\s+Check plugin-root support/)
   })
 
-  test("stays under 5000 chars in the full configuration", () => {
-    // The pi-style docs pointer block plus compact deps/design-system
-    // reminders are still much cheaper than inlining the full authoring docs.
-    // Keep a ceiling so the appendix doesn't drift back toward inlining
-    // content the agent should `read` on demand instead.
+  test("stays under 5500 chars in the full configuration", () => {
+    // The pi-style docs pointer block, compact deps/design-system reminders,
+    // and the short install-an-existing-plugin section are still much cheaper
+    // than inlining the full authoring docs. Keep a ceiling so the appendix
+    // doesn't drift back toward inlining content the agent should `read` on
+    // demand instead.
     const prompt = buildBoringSystemPrompt({
       scaffoldCommand: "boring-ui-plugin scaffold",
       verifyCommand: "boring-ui-plugin verify",
       boringPiRootOverride: FIXTURE_PI_ROOT,
     })
-    expect(prompt.length).toBeLessThan(5000)
+    expect(prompt.length).toBeLessThan(5500)
   })
 
   test("uses require.resolve to find @hachej/boring-pi when no override is provided", () => {

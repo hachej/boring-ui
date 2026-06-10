@@ -18,6 +18,7 @@ export type {
   WorkspaceBridgeContextValue,
   WorkspaceContextValue,
 } from "./WorkspaceProvider"
+export { formatWorkspaceDocumentTitle } from "./workspaceTitle"
 export {
   WorkspaceAttentionProvider,
   useWorkspaceAttention,

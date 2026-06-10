@@ -78,6 +78,8 @@ const devServerWatchIgnored = [
   "**/.pi/agent/sessions/**",
   "**/node_modules/**",
 ]
+const usePollingWatch = process.env.CHOKIDAR_USEPOLLING === "1" || process.env.BORING_VITE_USEPOLLING === "1"
+const pollingInterval = Number(process.env.CHOKIDAR_INTERVAL ?? process.env.BORING_VITE_POLL_INTERVAL ?? "300")
 
 export default defineConfig({
   plugins: [
@@ -115,6 +117,14 @@ export default defineConfig({
     },
     watch: {
       ignored: devServerWatchIgnored,
+      // Opt-in polling for environments where native FS events don't fire
+      // (network mounts, some containers): CHOKIDAR_USEPOLLING=1.
+      ...(usePollingWatch
+        ? {
+            usePolling: true,
+            interval: Number.isFinite(pollingInterval) && pollingInterval > 0 ? pollingInterval : 300,
+          }
+        : {}),
     },
     proxy: {
       // All API traffic goes to the agent server — the agent owns the

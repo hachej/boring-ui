@@ -76,4 +76,35 @@ describe("CliWorkspaceShell", () => {
     expect(screen.queryByText("Trusted local runtime plugins")).toBeNull()
     expect(screen.queryByText("Plugin diagnostics")).toBeNull()
   })
+
+  test("workspaces mode passes the active workspace name as the document-title label", async () => {
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith("/api/v1/workspace/meta")) {
+        return new Response(JSON.stringify({ projectName: "Boring UI", workspacesMode: true, version: "1.0.0" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      if (url.endsWith("/api/v1/local-workspaces")) {
+        return new Response(JSON.stringify({
+          workspaces: [{ id: "ws-alpha-be8d3c24", name: "Alpha Project", path: "/tmp/ws-alpha", available: true }],
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    }) as typeof fetch
+
+    render(<CliWorkspaceShell />)
+
+    await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
+    // The tab title comes from workspaceLabel; it must be the friendly name,
+    // not the slug+hash workspace id.
+    expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+      workspaceId: "ws-alpha-be8d3c24",
+      workspaceLabel: "Alpha Project",
+    })
+  })
 })

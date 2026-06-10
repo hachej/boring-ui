@@ -4,6 +4,7 @@ import type { AgentHarnessFactory } from '../shared/harness'
 import type { TelemetrySink } from '../shared/telemetry'
 import { getEnv } from './config/env'
 import type { RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
+import { getRuntimeBundleStorageRoot } from './runtime/mode'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createPiCodingAgentHarness } from './harness/pi-coding-agent/createHarness'
 import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
@@ -25,6 +26,7 @@ import { catalogRoutes } from './http/routes/catalog'
 import { readyStatusRoutes } from './http/routes/readyStatus'
 import { reloadRoutes } from './http/routes/reload'
 import { searchRoutes } from './http/routes/search'
+import { gitRoutes } from './http/routes/git'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
 import { HarnessPiChatService } from './pi-chat/harnessPiChatService'
@@ -189,6 +191,10 @@ export async function createAgentApp(
   // (runtimeBundle.fileSearch). One impl, one set of glob semantics,
   // one bound-to-workspace-root guarantee.
   await app.register(searchRoutes, { fileSearch: runtimeBundle.fileSearch })
+  // Powers the file-tree "Copy Git URL" action. Must use the HOST storage root
+  // (where .git lives), not workspace.root — in sandbox modes the latter is the
+  // in-sandbox cwd (e.g. /workspace) and git would not find the repo.
+  await app.register(gitRoutes, { getWorkspaceRoot: () => getRuntimeBundleStorageRoot(runtimeBundle) })
   const piChatService = new HarnessPiChatService({
     harness,
     sessionStore: harness.sessions,

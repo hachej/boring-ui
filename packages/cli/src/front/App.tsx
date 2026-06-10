@@ -212,6 +212,7 @@ export function CliWorkspaceShell() {
       <WorkspaceAgentFront
         key={activeWorkspace.id}
         workspaceId={activeWorkspace.id}
+        workspaceLabel={activeWorkspace.name}
         requestHeaders={requestHeaders}
         authHeaders={requestHeaders}
         plugins={plugins}
