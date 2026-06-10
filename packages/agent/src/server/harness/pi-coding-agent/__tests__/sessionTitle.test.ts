@@ -3,6 +3,7 @@ import type { SessionDetail } from "../../../../shared/session.js";
 import {
   createSessionTitleScheduler,
   formatFallbackTitle,
+  formatPromptTitle,
 } from "../sessionTitle.js";
 
 const FIXED_NOW = new Date("2026-04-23T12:34:56.000Z");
@@ -90,7 +91,7 @@ describe("createSessionTitleScheduler", () => {
     await vi.waitFor(() => {
       expect(writeTitle).toHaveBeenCalledWith(
         "sess-2",
-        formatFallbackTitle(FIXED_NOW),
+        "Need help naming this chat",
       );
     });
   });
@@ -147,8 +148,40 @@ describe("createSessionTitleScheduler", () => {
     await vi.waitFor(() => {
       expect(writeTitle).toHaveBeenCalledWith(
         "sess-4",
-        formatFallbackTitle(FIXED_NOW),
+        "what should we name this",
       );
     });
+  });
+
+  it("truncates a long first message at a word boundary", async () => {
+    const writeTitle = vi.fn();
+
+    const schedule = createSessionTitleScheduler({
+      loadSession: async () => sessionDetail(),
+      writeTitle,
+      getApiKey: () => "",
+      now: () => FIXED_NOW,
+      timeoutMs: 20,
+      pollMs: 1,
+    });
+
+    schedule({
+      sessionId: "sess-5",
+      firstUserMessage:
+        "Please review the deployment pipeline configuration and tell me why staging fails",
+      firstAssistantReply: "Looking at the pipeline now.",
+    });
+
+    await vi.waitFor(() => {
+      expect(writeTitle).toHaveBeenCalledWith(
+        "sess-5",
+        "Please review the deployment pipeline…",
+      );
+    });
+  });
+
+  it("falls back to a timestamp title for a whitespace-only first message", () => {
+    expect(formatPromptTitle("   \n  ")).toBeNull();
+    expect(formatFallbackTitle(FIXED_NOW)).toBe("New chat 2026-04-23 12:34");
   });
 });

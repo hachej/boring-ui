@@ -44,6 +44,23 @@ export function formatFallbackTitle(now: Date = new Date()): string {
   return `${FALLBACK_PREFIX} ${timestamp}`;
 }
 
+const MAX_PROMPT_TITLE_CHARS = 48;
+
+/**
+ * Derive a title from the user's first message. A content-derived title
+ * keeps the session recognizable in history lists even when no title model
+ * is configured — a timestamp fallback tells the user nothing.
+ */
+export function formatPromptTitle(firstUserMessage: string): string | null {
+  const squashed = firstUserMessage.replace(/\s+/g, " ").trim();
+  if (!squashed) return null;
+  if (squashed.length <= MAX_PROMPT_TITLE_CHARS) return squashed;
+  const slice = squashed.slice(0, MAX_PROMPT_TITLE_CHARS);
+  const lastSpace = slice.lastIndexOf(" ");
+  const cut = lastSpace > MAX_PROMPT_TITLE_CHARS / 2 ? slice.slice(0, lastSpace) : slice;
+  return `${cut.trimEnd()}…`;
+}
+
 export function normalizeSessionTitle(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const squashed = value.replace(/\s+/g, " ").trim();
@@ -169,7 +186,8 @@ export function createSessionTitleScheduler(
       if (!detail || detail.turnCount !== 1) return;
       if (hasCustomTitle(detail.title)) return;
 
-      const fallbackTitle = formatFallbackTitle(getNow());
+      const fallbackTitle =
+        formatPromptTitle(firstUserMessage) ?? formatFallbackTitle(getNow());
       // Do not inspect provider environment variables here. Chat model/auth
       // is Pi-owned; this optional legacy Anthropic title helper only runs
       // when a caller explicitly injects a title API key.
