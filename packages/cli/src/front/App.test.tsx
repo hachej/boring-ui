@@ -94,6 +94,30 @@ describe("CliWorkspaceShell", () => {
     expect(window.location.pathname).toBe("/workspace/target")
   })
 
+  test("waits for a URL workspace that is absent during cold start", async () => {
+    window.history.replaceState(null, "", "/workspace/target")
+    // First list lacks the URL-targeted workspace (still initializing); a fallback is available.
+    mockWorkspacesMode([
+      [{ id: "other", name: "Other", path: "/other", available: true }],
+      [
+        { id: "other", name: "Other", path: "/other", available: true },
+        { id: "target", name: "Target", path: "/target", available: true },
+      ],
+    ])
+
+    render(<CliWorkspaceShell />)
+
+    // It must not silently mount the fallback workspace.
+    await screen.findByText("Loading workspace…")
+    expect(workspaceAgentFrontSpy).not.toHaveBeenCalled()
+
+    // Once the targeted workspace becomes available, it resolves to it (never the fallback).
+    // The cold-start poll re-fetches after 1.5s, so allow extra time here.
+    await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled(), { timeout: 4000 })
+    expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({ workspaceId: "target" })
+    expect(window.location.pathname).toBe("/workspace/target")
+  })
+
   test("mounts the URL workspace directly when it is already available", async () => {
     window.history.replaceState(null, "", "/workspace/target")
     mockWorkspacesMode([
