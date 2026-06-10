@@ -3,8 +3,7 @@ import { afterEach, describe, expect, test } from 'vitest'
 import { ERROR_CODE_NOT_FOUND, ERROR_CODE_VALIDATION_ERROR } from '../../middleware'
 import { sessionRoutes } from '../sessions'
 import type { SessionStore, SessionCtx, SessionSummary, SessionDetail } from '../../../../shared/session'
-import type { UIMessage, UIMessageChunk } from '../../../../shared/message'
-import type { AgentHarness } from '../../../../shared/harness'
+import type { UIMessage } from '../../../../shared/message'
 
 const apps: FastifyInstance[] = []
 
@@ -200,71 +199,6 @@ describe('session routes', () => {
     expect(res.body).toContain('Why did the deck fail?')
     expect(res.body).toContain('[tool:bash]')
     expect(res.body).toContain('pnpm test')
-  })
-
-  test('creates an analysis session and prompt without running the harness by default', async () => {
-    const store = new MockSessionStore()
-    const created = await store.create({ workspaceId: 'default' }, { title: 'Need analysis' })
-    await store.saveMessages?.({ workspaceId: 'default' }, created.id, [
-      {
-        id: 'u1',
-        role: 'user',
-        parts: [{ type: 'text', text: 'Make a labor deck' }],
-      } as UIMessage,
-    ])
-    const app = await buildApp({ sessionStore: store })
-
-    const res = await app.inject({
-      method: 'POST',
-      url: `/api/v1/agent/sessions/${created.id}/analysis`,
-      payload: { instructions: 'Focus on blockers' },
-    })
-
-    expect(res.statusCode).toBe(200)
-    const body = res.json()
-    expect(body.sourceSession.id).toBe(created.id)
-    expect(body.analysisSession.id).toEqual(expect.any(String))
-    expect(body.analysisSession.title).toBe('Analysis: Need analysis')
-    expect(body.prompt).toContain('agent-session analyst')
-    expect(body.prompt).toContain('Focus on blockers')
-    expect(body.prompt).toContain('Make a labor deck')
-    expect(body.transcriptUrl).toBe(`/api/v1/agent/sessions/${created.id}/transcript`)
-  })
-
-  test('can run an analysis through the configured harness', async () => {
-    const store = new MockSessionStore()
-    const created = await store.create({ workspaceId: 'default' }, { title: 'Run analysis' })
-    await store.saveMessages?.({ workspaceId: 'default' }, created.id, [
-      {
-        id: 'u1',
-        role: 'user',
-        parts: [{ type: 'text', text: 'What happened?' }],
-      } as UIMessage,
-    ])
-    const sent: string[] = []
-    const harness: AgentHarness = {
-      id: 'mock',
-      placement: 'server',
-      sessions: store,
-      async *sendMessage(input): AsyncIterable<UIMessageChunk> {
-        sent.push(input.message)
-        yield { type: 'text-delta', id: '0', delta: 'analysis ' } as UIMessageChunk
-        yield { type: 'text-delta', id: '0', delta: 'done' } as UIMessageChunk
-      },
-    }
-    const app = await buildApp({ sessionStore: store, harness, workdir: '/tmp/work' })
-
-    const res = await app.inject({
-      method: 'POST',
-      url: `/api/v1/agent/sessions/${created.id}/analysis`,
-      payload: { run: true },
-    })
-
-    expect(res.statusCode).toBe(200)
-    const body = res.json()
-    expect(body.analysisText).toBe('analysis done')
-    expect(sent).toHaveLength(1)
-    expect(sent[0]).toContain('What happened?')
   })
 
   test('returns 400 for invalid session id params', async () => {

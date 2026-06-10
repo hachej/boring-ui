@@ -198,8 +198,6 @@ export async function createAgentApp(
   await app.register(piChatRoutes, { service: piChatService })
   await app.register(sessionRoutes, {
     sessionStore: harness.sessions,
-    harness,
-    workdir: runtimeBundle.workspace.root,
   })
   await app.register(systemPromptRoutes, { harness })
   await app.register(modelsRoutes)
