@@ -85,6 +85,7 @@ export interface WorkspaceAgentFrontProps<
       | "onActiveChatPaneChange"
       | "onCloseChatPane"
       | "onCreateChatPaneAfter"
+      | "flashChatPaneId"
       | "surface"
       | "surfaceParams"
       | "sidebar"
@@ -244,6 +245,39 @@ function readStoredSessionId(storageKey: string): string | null {
     return globalThis.localStorage?.getItem(storageKey) ?? null
   } catch {
     return null
+  }
+}
+
+function readStoredChatPaneState(storageKey: string, workspaceId: string): ChatPaneState | null {
+  try {
+    const raw = globalThis.localStorage?.getItem(storageKey)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { ids?: unknown; activeId?: unknown }
+    const ids = Array.isArray(parsed.ids)
+      ? parsed.ids.filter((id): id is string => typeof id === "string" && id.length > 0)
+      : []
+    if (ids.length === 0) return null
+    const activeId = typeof parsed.activeId === "string" && ids.includes(parsed.activeId)
+      ? parsed.activeId
+      : ids[0]
+    return { workspaceId, ids, activeId }
+  } catch {
+    return null
+  }
+}
+
+function writeStoredChatPaneState(storageKey: string, state: ChatPaneState): void {
+  try {
+    if (state.ids.length === 0) {
+      globalThis.localStorage?.removeItem(storageKey)
+      return
+    }
+    globalThis.localStorage?.setItem(
+      storageKey,
+      JSON.stringify({ ids: state.ids, activeId: state.activeId }),
+    )
+  } catch {
+    // Best-effort persistence only.
   }
 }
 
@@ -429,11 +463,29 @@ export function WorkspaceAgentFront<
     failed: false,
   }))
   const [freshEmptySession, setFreshEmptySession] = useState<{ workspaceId: string; id: string } | null>(null)
-  const [chatPaneState, setChatPaneState] = useState<ChatPaneState>(() => ({
-    workspaceId,
-    ids: [],
-    activeId: null,
-  }))
+  const chatPaneStorageKey = `boring-workspace:chat-panes:${workspaceId}`
+  const [chatPaneState, setChatPaneState] = useState<ChatPaneState>(() =>
+    (shellPersistenceEnabled ? readStoredChatPaneState(chatPaneStorageKey, workspaceId) : null)
+      ?? { workspaceId, ids: [], activeId: null },
+  )
+  const [flashChatPane, setFlashChatPane] = useState<{ workspaceId: string; id: string } | null>(null)
+  useEffect(() => {
+    if (!flashChatPane) return
+    const timer = setTimeout(() => setFlashChatPane(null), 700)
+    return () => clearTimeout(timer)
+  }, [flashChatPane])
+  useEffect(() => {
+    if (!shellPersistenceEnabled) return
+    if (chatPaneState.workspaceId !== workspaceId) return
+    writeStoredChatPaneState(chatPaneStorageKey, chatPaneState)
+  }, [chatPaneState, chatPaneStorageKey, shellPersistenceEnabled, workspaceId])
+  useEffect(() => {
+    setChatPaneState((previous) => {
+      if (previous.workspaceId === workspaceId) return previous
+      return (shellPersistenceEnabled ? readStoredChatPaneState(chatPaneStorageKey, workspaceId) : null)
+        ?? { workspaceId, ids: [], activeId: null }
+    })
+  }, [chatPaneStorageKey, shellPersistenceEnabled, workspaceId])
   const workspaceWarmupStatus = workspaceWarmupState.workspaceId === workspaceId
     ? workspaceWarmupState.status
     : PREPARING_WARMUP_STATUS
@@ -874,18 +926,26 @@ export function WorkspaceAgentFront<
   }, [chatSessionId, rawSwitch, workspaceId])
 
   const openChatPane = useCallback((nextSessionId: string) => {
+    const current = chatPaneState.workspaceId === workspaceId
+      ? chatPaneState
+      : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }
+    // Opening a session that is already on the stage is a focus, not an
+    // insert — flash the pane so the click visibly landed somewhere.
+    if (current.ids.includes(nextSessionId)) {
+      setFlashChatPane({ workspaceId, id: nextSessionId })
+    }
     setChatPaneState((previous) => {
-      const current = previous.workspaceId === workspaceId
+      const paneState = previous.workspaceId === workspaceId
         ? previous
         : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }
       return {
         workspaceId,
-        ids: insertPaneAfter(current.ids, current.activeId, nextSessionId),
+        ids: insertPaneAfter(paneState.ids, paneState.activeId, nextSessionId),
         activeId: nextSessionId,
       }
     })
     return rawSwitch(nextSessionId)
-  }, [chatSessionId, rawSwitch, workspaceId])
+  }, [chatPaneState, chatSessionId, rawSwitch, workspaceId])
 
   const closeChatPane = useCallback((sessionId: string) => {
     const current = chatPaneState.workspaceId === workspaceId
@@ -1177,6 +1237,7 @@ export function WorkspaceAgentFront<
               onActiveChatPaneChange={activateChatPane}
               onCloseChatPane={closeChatPane}
               onCreateChatPaneAfter={createChatPaneAfter}
+              flashChatPaneId={flashChatPane?.workspaceId === workspaceId ? flashChatPane.id : null}
               surface={surfaceOpen ? "artifact-surface" : null}
               surfaceParams={surfaceParams as Record<string, unknown>}
               surfaceOverlay={workbenchOverlay}
