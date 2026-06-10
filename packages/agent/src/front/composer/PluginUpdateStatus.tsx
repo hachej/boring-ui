@@ -14,10 +14,9 @@
  *    "Try again" button that re-runs `/reload`.
  */
 import { useEffect, useRef, type ReactElement } from "react"
-import { AlertCircleIcon, XIcon } from "lucide-react"
 import { cn } from "../lib"
+import { ComposerStatusBanner } from "./ComposerStatusBanner"
 import type { PluginRestartWarning } from "../../shared/agentPluginEvents"
-import { noticeIconClass, noticeSurfaceClass, noticeTextClass } from "../chat/components/noticeStyles"
 
 export type { PluginRestartWarning }
 
@@ -70,19 +69,12 @@ export function PluginUpdateStatus({
 
   if (state.kind === "running") {
     return (
-      <div
-        data-boring-plugin-update="running"
-        role="status"
-        aria-live="polite"
-        className={cn(
-          "mx-auto mb-2 w-full rounded-[var(--radius-md)] border border-accent/30 bg-[color:var(--accent-soft)]",
-          "px-3 py-2 text-xs text-foreground flex items-center gap-2",
-          maxWidthClassName,
-        )}
-      >
-        <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-accent" aria-hidden="true" />
-        <span>Updating plugins…</span>
-      </div>
+      <ComposerStatusBanner
+        tone="running"
+        dataAttribute="data-boring-plugin-update"
+        maxWidthClassName={maxWidthClassName}
+        runningContent="Updating plugins…"
+      />
     )
   }
 
@@ -104,31 +96,15 @@ export function PluginUpdateStatus({
           : "Changes are live."
       : undefined
     return (
-      <div
-        data-boring-plugin-update="success"
-        role="status"
-        aria-live="polite"
-        className={cn(
-          "mx-auto mb-2 w-full rounded-[var(--radius-md)] border border-[oklch(0.78_0.13_148)]/35 bg-[oklch(0.95_0.05_148/0.28)]",
-          "px-3 py-2 text-xs text-foreground shadow-sm",
-          maxWidthClassName,
-        )}
+      <ComposerStatusBanner
+        tone="success"
+        dataAttribute="data-boring-plugin-update"
+        maxWidthClassName={maxWidthClassName}
+        title={title}
+        detail={detail}
+        onDismiss={onDismiss}
+        dismissAriaLabel="Dismiss plugin update status"
       >
-        <div className="flex items-start gap-2">
-          <span className="mt-0.5 text-[oklch(0.45_0.13_148)]" aria-hidden="true">✓</span>
-          <span className="min-w-0 flex-1">
-            <span className="block font-medium leading-5">{title}</span>
-            {detail ? <span className="block leading-4 text-muted-foreground">{detail}</span> : null}
-          </span>
-          <button
-            type="button"
-            onClick={onDismiss}
-            className="-mr-1 rounded border border-transparent px-1.5 py-0.5 text-[13px] leading-none text-muted-foreground hover:bg-muted hover:text-foreground"
-            aria-label="Dismiss plugin update status"
-          >
-            ×
-          </button>
-        </div>
         {diagnostics.length > 0 ? (
           <div
             data-boring-plugin-update-diagnostics=""
@@ -178,37 +154,21 @@ export function PluginUpdateStatus({
             </p>
           </div>
         ) : null}
-      </div>
+      </ComposerStatusBanner>
     )
   }
 
   return (
-    <div
-      data-boring-plugin-update="error"
-      role="status"
-      aria-live="polite"
-      className={noticeSurfaceClass("error", cn("mx-auto mb-2 w-full text-xs", maxWidthClassName))}
-    >
-      <div className="flex items-start gap-2.5">
-        <AlertCircleIcon className={noticeIconClass("error", "size-3.5")} aria-hidden="true" />
-        <span className="flex-1 font-medium">Plugin update failed.</span>
-        <button
-          type="button"
-          onClick={onRetry}
-          className="shrink-0 rounded border border-destructive/25 px-2 py-0.5 text-[11px] font-medium hover:bg-destructive/10"
-        >
-          Try again
-        </button>
-        <button
-          type="button"
-          onClick={onDismiss}
-          className="-mr-1 -mt-1 inline-flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-          aria-label="Dismiss plugin update status"
-        >
-          <XIcon className="size-3" aria-hidden="true" />
-        </button>
-      </div>
-      <pre className={noticeTextClass("mt-2 text-[11px] text-muted-foreground")}>{state.message}</pre>
-    </div>
+    <ComposerStatusBanner
+      tone="error"
+      dataAttribute="data-boring-plugin-update"
+      maxWidthClassName={maxWidthClassName}
+      title="Plugin update failed."
+      message={state.message}
+      onRetry={onRetry}
+      onDismiss={onDismiss}
+      retryLabel="Try again"
+      dismissAriaLabel="Dismiss plugin update status"
+    />
   )
 }
