@@ -236,6 +236,10 @@ export function ChatPaneStageDock({
           className="dv-shell dv-chat-stage h-full"
           components={STAGE_COMPONENTS}
           defaultTabComponent={ChatPaneHeader as React.FunctionComponent<IDockviewPanelHeaderProps>}
+          // Groups always hold exactly one pane (center drops are vetoed),
+          // so the single header stretches across the full group width and
+          // reads as a flat pane header, not a tab.
+          singleTabMode="fullwidth"
           onReady={handleReady}
         />
       </div>

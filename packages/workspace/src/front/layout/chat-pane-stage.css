@@ -4,22 +4,32 @@
 .dv-chat-stage {
   --dv-tabs-and-actions-container-height: 32px;
   --dv-tabs-and-actions-container-font-size: 0.75rem;
+
+  /* Panes, not tabs: no pill — the header shares the pane background. */
+  --dv-activegroup-visiblepanel-tab-background-color: transparent;
+  --dv-activegroup-hiddenpanel-tab-background-color: transparent;
+  --dv-inactivegroup-visiblepanel-tab-background-color: transparent;
+  --dv-inactivegroup-hiddenpanel-tab-background-color: transparent;
 }
 
-/* Panes, not tabs: the single header stretches across the full group width
-   and reads as a flat pane header (grip + title + close), with none of the
-   tab pill chrome. */
+/* The (always single, fullwidth) header reads as a flat pane header:
+   grip + title + close, with a hairline under it. */
 .dv-chat-stage .dv-tabs-and-actions-container {
   border-bottom: 1px solid oklch(from var(--border) l c h / 0.55);
 }
 
+/* dockview's fullwidth single-tab rules stop at the scroll wrapper; carry
+   the full width down to the tab itself. */
+.dv-chat-stage .dv-tabs-and-actions-container.dv-single-tab .dv-tabs-container {
+  width: 100%;
+}
+
 .dv-chat-stage .dv-tab {
-  flex: 1 1 100%;
+  width: 100%;
   max-width: none;
-  min-width: 0;
+  flex: 1 1 auto;
   padding: 0;
   border-right: none;
-  background-color: transparent;
 }
 
 /* The chat stage hides dockview's built-in tab close icon entirely — the
