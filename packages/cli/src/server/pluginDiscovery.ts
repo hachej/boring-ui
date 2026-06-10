@@ -1,6 +1,5 @@
 import { homedir } from "node:os"
-import { existsSync, readFileSync } from "node:fs"
-import { createRequire } from "node:module"
+import { existsSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import {
@@ -10,6 +9,7 @@ import {
 } from "@hachej/boring-workspace/server"
 import {
   readWorkspacePluginPackagePiSnapshot,
+  resolveDefaultWorkspacePluginPackagePaths,
   type WorkspacePluginPackagePiSnapshot,
 } from "@hachej/boring-workspace/app/server"
 import {
@@ -56,37 +56,20 @@ function getGlobalPiAgentRoot(options: ResolveCliBoringPluginDirsOptions = {}): 
   return resolve(options.globalAgentRoot ?? dirname(getGlobalPiExtensionsRoot(options)))
 }
 
-// Read boring.defaultPluginPackages from the CLI's own package.json manifest.
-// Each entry is a package name (e.g. "@hachej/boring-ask-user") resolved via
-// import.meta.resolve so it is found in node_modules both in the published CLI
-// and in the monorepo (where pnpm symlinks workspace:* deps into node_modules).
+// Resolve CLI-bundled default plugin packages declared in this package's own
+// boring.defaultPluginPackages manifest field. Delegates to the shared workspace
+// utility so resolution semantics (anchor, error policy, relative paths) stay
+// consistent across the CLI and app hosts.
 function resolveCliDefaultPluginPackagePaths(): string[] {
-  const cliRoot = resolveBoringUiCliPackageRoot()
-  let entries: string[]
+  const cliPackageJsonPath = join(resolveBoringUiCliPackageRoot(), "package.json")
+  if (!existsSync(cliPackageJsonPath)) return []
   try {
-    const manifest = JSON.parse(readFileSync(join(cliRoot, "package.json"), "utf-8")) as {
-      boring?: { defaultPluginPackages?: string[] }
-    }
-    entries = manifest.boring?.defaultPluginPackages ?? []
+    return resolveDefaultWorkspacePluginPackagePaths({ appPackageJsonPath: cliPackageJsonPath })
   } catch {
+    // Missing dep in the CLI package is a packaging error; swallow here so a
+    // bad build doesn't crash every workspace launch — the plugin just won't load.
     return []
   }
-  const resolved: string[] = []
-  for (const entry of entries) {
-    try {
-      // Resolve the package's package.json via Node module resolution so this
-      // works from any invocation directory — no hardcoded relative paths.
-      // createRequire anchored to this file finds packages in the CLI's own
-      // node_modules, both in the published build and in the monorepo.
-      const req = createRequire(import.meta.url)
-      const pkgJsonPath = req.resolve(`${entry}/package.json`)
-      const pkgDir = dirname(pkgJsonPath)
-      if (existsSync(join(pkgDir, "package.json"))) resolved.push(pkgDir)
-    } catch {
-      // package not installed — skip silently
-    }
-  }
-  return resolved
 }
 
 export function resolveCliBoringPluginDirs(

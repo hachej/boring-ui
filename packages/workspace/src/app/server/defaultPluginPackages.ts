@@ -39,13 +39,26 @@ function readAppManifestDefaultPlugins(appPackageJsonPath: string | undefined): 
  * `require.resolve('<name>/package.json')`) or an absolute filesystem
  * path. THROWS on unresolved entries — a typo or missing dependency
  * is an app boot-time error, not something to silently drop.
+ *
+ * Resolution priority for npm package names:
+ *   1. `appDir` — the app's own package directory (its node_modules contain
+ *      its declared deps; this is the authoritative location for internal
+ *      plugins in both published and monorepo layouts).
+ *   2. `workspaceRoot` — fallback for callers that omit appPackageJsonPath.
+ *   3. `import.meta.url` — last resort (boring-workspace's own node_modules).
  */
 function resolveDefaultPluginPackagePaths(
+  appDir: string | null,
   workspaceRoot: string,
   defaultPluginPackages: string[],
 ): string[] {
   if (defaultPluginPackages.length === 0) return []
-  const require = createRequire(join(workspaceRoot, "package.json"))
+  // Anchor to the app's own directory first: internal plugins are deps of the
+  // app, not of the user's workspace. Fall back to workspaceRoot, then this
+  // module's own location.
+  const primaryAnchor = appDir ?? workspaceRoot
+  const requireFromApp = createRequire(join(primaryAnchor, "package.json"))
+  const requireFromWorkspace = appDir ? createRequire(join(workspaceRoot, "package.json")) : requireFromApp
   const requireFromHere = createRequire(import.meta.url)
   const resolved: string[] = []
   for (const entry of defaultPluginPackages) {
@@ -62,18 +75,18 @@ function resolveDefaultPluginPackagePaths(
       continue
     }
     let resolvedPath: string | null = null
-    try {
-      resolvedPath = dirname(require.resolve(`${entry}/package.json`))
-    } catch {
+    for (const req of [requireFromApp, requireFromWorkspace, requireFromHere]) {
       try {
-        // Fallback: resolve from this module's location (covers hosts
-        // whose workspace doesn't have its own package.json layout).
-        resolvedPath = dirname(requireFromHere.resolve(`${entry}/package.json`))
+        resolvedPath = dirname(req.resolve(`${entry}/package.json`))
+        break
       } catch {
-        throw new Error(
-          `defaultPluginPackages: cannot resolve "${entry}" — install it as a dep of the app (or workspace root) so require.resolve can find its package.json. Pass an absolute path instead if the package lives outside node_modules.`,
-        )
+        // try next anchor
       }
+    }
+    if (!resolvedPath) {
+      throw new Error(
+        `defaultPluginPackages: cannot resolve "${entry}" — install it as a dep of the app so require.resolve can find its package.json. Pass an absolute path instead if the package lives outside node_modules.`,
+      )
     }
     resolved.push(resolvedPath)
   }
@@ -98,7 +111,8 @@ export function resolveDefaultWorkspacePluginPackagePaths({
   appPackageJsonPath,
 }: ResolveDefaultWorkspacePluginPackagePathsOptions = {}): string[] {
   const manifestPluginPackages = readAppManifestDefaultPlugins(appPackageJsonPath)
-  return resolveDefaultPluginPackagePaths(workspaceRoot, [
+  const appDir = appPackageJsonPath ? dirname(appPackageJsonPath) : null
+  return resolveDefaultPluginPackagePaths(appDir, workspaceRoot, [
     ...manifestPluginPackages,
     ...defaultPluginPackages,
   ])
