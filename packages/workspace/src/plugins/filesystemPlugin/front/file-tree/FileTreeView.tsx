@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from "react"
+import { createPortal } from "react-dom"
 import type { DockviewPanelApi } from "dockview-react"
 import {
   useFileList,
@@ -734,7 +735,7 @@ export function FileTreeView({
         )}
       </div>
 
-      {ctxMenu && (
+      {ctxMenu && createPortal(
         <div
           ref={menuRef}
           role="menu"
@@ -779,7 +780,12 @@ export function FileTreeView({
               ) : null}
             </>
           )}
-        </div>
+        </div>,
+        // Portal to <body>: the menu is position:fixed, but the dockview panel
+        // ancestor is transformed (its own containing block) and PanelChrome is
+        // overflow-hidden, which clipped the menu at the panel's bottom edge.
+        // Rendering at the body root makes "fixed" truly viewport-relative.
+        document.body,
       )}
 
       <AlertDialog
