@@ -339,25 +339,6 @@ export class PiSessionStore implements SessionStore {
     }
   }
 
-  touchSession(sessionId: string, title?: string): void {
-    this.resolveSessionFile(sessionId)
-      .then((filepath) => {
-        if (title) {
-          const entry: SessionInfoEntry = {
-            type: "session_info",
-            id: randomUUID(),
-            parentId: null,
-            timestamp: new Date().toISOString(),
-            name: title,
-          };
-          return appendFile(filepath, JSON.stringify(entry) + "\n");
-        }
-        const now = new Date();
-        return utimes(filepath, now, now);
-      })
-      .catch(() => {});
-  }
-
   private async resolveSessionFile(sessionId: string): Promise<string> {
     if (!SAFE_ID.test(sessionId)) {
       throw new Error(`Session not found: ${sessionId}`);

@@ -21,7 +21,6 @@ function fakeHarness(overrides: Partial<AgentHarness> = {}): AgentHarness {
   return {
     id: 'fake',
     placement: 'server',
-    sendMessage: vi.fn(),
     sessions: {} as AgentHarness['sessions'],
     ...overrides,
   }

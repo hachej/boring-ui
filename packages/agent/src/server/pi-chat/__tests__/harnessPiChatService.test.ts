@@ -86,7 +86,6 @@ function createHarness(adapter: PiAgentSessionAdapter): AgentHarness & {
     id: 'fake-pi',
     placement: 'server',
     sessions: sessionStore,
-    async *sendMessage() {},
     hasPiSession: vi.fn(() => false),
     getPiSessionAdapter: vi.fn(async () => adapter),
     followUp: vi.fn(async (_sessionId, text, _attachments, displayText, options) => {

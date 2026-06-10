@@ -1,7 +1,6 @@
 import { setTimeout as sleep } from 'node:timers/promises'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 import type { AgentHarness, AgentHarnessFactoryInput, FollowUpOptions, RunContext, SendMessageInput } from '../../shared/harness.js'
-import type { UIMessageChunk } from '../../shared/message.js'
 import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '../../shared/session.js'
 import { getEnv } from '../config/env.js'
 import type { PiAgentPromptInput, PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../pi-chat/PiAgentSessionAdapter.js'
@@ -48,9 +47,6 @@ export function createScriptedPiHarness(input: AgentHarnessFactoryInput): AgentH
     id: 'scripted-pi-e2e',
     placement: 'server',
     sessions,
-    async *sendMessage(): AsyncIterable<UIMessageChunk> {
-      // Pi-native chat uses getPiSessionAdapter() through HarnessPiChatService.
-    },
     async getPiSessionAdapter({ sessionId }: SendMessageInput) {
       await sessions.ensure(sessionId)
       return getAdapter(sessionId)

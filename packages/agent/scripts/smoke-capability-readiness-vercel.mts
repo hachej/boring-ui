@@ -6,7 +6,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentHarness } from '../src/shared/harness'
 import type { AgentTool } from '../src/shared/tool'
-import type { UIMessageChunk } from '../src/shared/message'
 import { ErrorCode } from '../src/shared/error-codes'
 import { registerAgentRoutes } from '../src/server/registerAgentRoutes'
 import { FileHandleStore } from '../src/server/sandbox/vercel-sandbox/FileHandleStore'
@@ -77,9 +76,6 @@ function makeHarness(onTools: (tools: AgentTool[]) => void): (opts: { tools: Age
           return { id: 's1', title: 'Smoke', createdAt: now, updatedAt: now, turnCount: 0, messages: [] }
         },
         async delete() {},
-      },
-      async *sendMessage(): AsyncIterable<UIMessageChunk> {
-        yield { type: 'text-delta', id: '0', delta: 'vercel readiness smoke first byte' } as UIMessageChunk
       },
     }
   }

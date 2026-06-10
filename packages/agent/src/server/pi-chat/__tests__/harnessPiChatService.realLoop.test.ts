@@ -250,7 +250,6 @@ function createHarness(adapter: PiAgentSessionAdapter): AgentHarness & {
     id: 'real-pi-loop',
     placement: 'server',
     sessions: sessionStore,
-    async *sendMessage() {},
     getPiSessionAdapter: vi.fn(async () => adapter),
   }
 }

@@ -31,7 +31,6 @@ function makeHarness(): AgentHarness {
       },
       async delete() {},
     },
-    async *sendMessage() {},
   }
 }
 

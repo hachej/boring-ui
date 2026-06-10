@@ -221,8 +221,7 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
         async delete() {},
       },
       reloadSession,
-      async *sendMessage() {},
-    }),
+      }),
   })
   await app.ready()
 

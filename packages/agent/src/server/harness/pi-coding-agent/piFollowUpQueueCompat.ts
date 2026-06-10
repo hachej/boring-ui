@@ -30,12 +30,9 @@ export interface PiFollowUpQueueCompat {
    */
   record(sessionId: string, text: string, displayText: string, options?: FollowUpOptions): boolean;
   clear(sessionId: string, piSession?: AgentSession, options?: FollowUpOptions): void;
-  consume(sessionId: string, text: string): void;
-  hasPending(sessionId: string): boolean;
 }
 
 export function createPiFollowUpQueueCompat(): PiFollowUpQueueCompat {
-  const pending = new Set<string>();
   const queues = new Map<string, NativeFollowUpRequest[]>();
   // Client nonces seen this turn. Survives consumption (so a retried post of an
   // already-drained follow-up is dropped) and is reset only at turn/session
@@ -43,7 +40,6 @@ export function createPiFollowUpQueueCompat(): PiFollowUpQueueCompat {
   const seenNonces = new Map<string, Set<string>>();
 
   function clearSession(sessionId: string): void {
-    pending.delete(sessionId);
     queues.delete(sessionId);
     seenNonces.delete(sessionId);
   }
@@ -60,7 +56,6 @@ export function createPiFollowUpQueueCompat(): PiFollowUpQueueCompat {
       clientSeq: options?.clientSeq,
     });
     queues.set(sessionId, queue);
-    pending.add(sessionId);
 
     if (nonce) {
       const seen = seenNonces.get(sessionId) ?? new Set<string>();
@@ -79,29 +74,6 @@ export function createPiFollowUpQueueCompat(): PiFollowUpQueueCompat {
       return;
     }
     for (const item of removed) removePiQueuedFollowUp(piSession, item.request.text, item.textOrdinal);
-  }
-
-  function consume(sessionId: string, text: string): void {
-    const queue = queues.get(sessionId);
-    if (!queue?.length) {
-      pending.delete(sessionId);
-      return;
-    }
-    const index = queue.findIndex((item) => item.text === text || item.displayText === text);
-    if (index >= 0) queue.splice(index, 1);
-    else queue.shift();
-    if (queue.length > 0) {
-      queues.set(sessionId, queue);
-    } else {
-      // Drain the queue but keep seen nonces: a duplicate post of a follow-up pi
-      // already consumed this turn must still be deduped (clearSession resets it).
-      queues.delete(sessionId);
-      pending.delete(sessionId);
-    }
-  }
-
-  function hasPending(sessionId: string): boolean {
-    return pending.has(sessionId);
   }
 
   function syncWithPi(sessionId: string, piSession: AgentSession): void {
@@ -157,7 +129,7 @@ export function createPiFollowUpQueueCompat(): PiFollowUpQueueCompat {
     return removed;
   }
 
-  return { clearSession, record, clear, consume, hasPending };
+  return { clearSession, record, clear };
 }
 
 function removePiQueuedFollowUp(piSession: AgentSession, text?: string, textOrdinal = 0): void {

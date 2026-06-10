@@ -102,7 +102,6 @@ test('createAgentApp wires runtime provisioning skill paths into harness and ski
       },
       async delete() {},
     },
-    async *sendMessage() {},
   }))
 
   const app = await createAgentApp({
@@ -153,7 +152,6 @@ test('createAgentApp can use a custom harness factory for non-pi runtimes', asyn
       async delete() {},
     },
     reloadSession,
-    async *sendMessage() {},
   }))
 
   const app = await createAgentApp({

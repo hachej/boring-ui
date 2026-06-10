@@ -1,6 +1,6 @@
 import { expectTypeOf, test } from 'vitest'
 
-import type { UIMessage, UIMessageChunk } from '../message'
+import type { UIMessage } from '../message'
 import type {
   SessionCtx,
   SessionDetail,
@@ -49,5 +49,4 @@ test('Message type re-exports', () => {
   expectTypeOf<UIMessage>().toMatchTypeOf<{
     role: 'system' | 'user' | 'assistant' | 'tool'
   }>()
-  expectTypeOf<UIMessageChunk>().toHaveProperty('type')
 })

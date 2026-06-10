@@ -1,1 +1,1 @@
-export type { UIMessage, UIMessageChunk } from 'ai'
+export type { UIMessage } from 'ai'
