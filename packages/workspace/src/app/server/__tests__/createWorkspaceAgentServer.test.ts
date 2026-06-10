@@ -86,7 +86,7 @@ describe("workspace app-server plugin package helpers", () => {
     const appPackageJsonPath = join(appRoot, "package.json")
     await writeFile(appPackageJsonPath, JSON.stringify({
       name: "temp-app",
-      boring: { defaultPluginPackages: ["./plugins/manifest-plugin"] },
+      boring: { defaultPlugins: ["./plugins/manifest-plugin"] },
     }), "utf8")
 
     const paths = resolveDefaultWorkspacePluginPackagePaths({
@@ -550,7 +550,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     expect(agentOptions.systemPromptAppend).toContain("STATIC_FOO_PROMPT")
   })
 
-  test("app package boring.defaultPluginPackages discovers front/Pi-only packages without server import", async () => {
+  test("app package boring.defaultPlugins discovers front/Pi-only packages without server import", async () => {
     const appRoot = await makeTempDir("boring-app-default-package-")
     const pluginRoot = join(appRoot, "plugins", "foo")
     await mkdir(join(pluginRoot, "front"), { recursive: true })
@@ -565,7 +565,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     const appPackageJsonPath = join(appRoot, "package.json")
     await writeFile(appPackageJsonPath, JSON.stringify({
       name: "temp-app",
-      boring: { defaultPluginPackages: ["./plugins/foo"] },
+      boring: { defaultPlugins: ["./plugins/foo"] },
     }), "utf8")
 
     agentServerMock.createAgentApp.mockImplementationOnce(async () => Fastify({ logger: false }) as never)
@@ -690,7 +690,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     }
   })
 
-  test("app package boring.defaultPluginPackages throws when declared server entry is missing", async () => {
+  test("app package boring.defaultPlugins throws when declared server entry is missing", async () => {
     const appRoot = await makeTempDir("boring-app-default-package-missing-server-")
     const pluginRoot = join(appRoot, "plugins", "bad")
     await mkdir(join(pluginRoot, "front"), { recursive: true })
@@ -703,7 +703,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     const appPackageJsonPath = join(appRoot, "package.json")
     await writeFile(appPackageJsonPath, JSON.stringify({
       name: "temp-app",
-      boring: { defaultPluginPackages: ["./plugins/bad"] },
+      boring: { defaultPlugins: ["./plugins/bad"] },
     }), "utf8")
 
     await expect(createWorkspaceAgentServer({

@@ -4,10 +4,8 @@
   "private": true,
   "type": "module",
   "boring": {
-    "defaultPluginPackages": [
-      "@hachej/boring-ask-user",
-      "@hachej/boring-deck",
-      "./src/plugins/playgroundDataCatalog"
+    "defaultPlugins": [
+      "@hachej/boring-ask-user"
     ]
   },
   "scripts": {

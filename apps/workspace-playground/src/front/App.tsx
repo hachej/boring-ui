@@ -3,11 +3,11 @@ import { createDeckPlugin } from "@hachej/boring-deck/front"
 import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
 import { WorkspaceProvider } from "@hachej/boring-workspace"
 import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation } from "@hachej/boring-workspace/app/front"
-import { askUserPlugin } from "@hachej/boring-ask-user/front"
+import defaultFrontPlugins from "virtual:boring-front-plugins"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
-// Most plugin packages are declared in package.json#boring.defaultPluginPackages.
-// Provider/binding plugins need static front composition for now because the
-// hot-load bridge intentionally skips dynamic provider/binding registration.
+// Zero-config plugins (boring.defaultPlugins in package.json) are loaded via the
+// virtual:boring-front-plugins Vite module. Plugins needing custom config (deck)
+// are composed inline below and merged into the plugins array.
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
@@ -43,7 +43,7 @@ const playgroundDeckPlugin = createDeckPlugin({
   },
 })
 
-const workspacePlugins = [askUserPlugin, playgroundDeckPlugin]
+const workspacePlugins = [...defaultFrontPlugins, playgroundDeckPlugin]
 
 function WorkspaceFullPageShell() {
   const parsed = parseFullPagePanelLocation(window.location.search)

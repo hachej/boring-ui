@@ -3,22 +3,22 @@ import { createRequire } from "node:module"
 import { dirname, isAbsolute, join } from "node:path"
 
 /**
- * Read `package.json#boring.defaultPluginPackages: string[]` from the
- * app's package.json, if `appPackageJsonPath` was provided. Relative
- * entries are resolved against the package.json's own directory so apps
- * can write paths like "./src/plugins/foo" without computing absolutes
- * in their boot code. Returns the resolved absolute paths (or npm names
- * unchanged, for later resolution by resolveDefaultPluginPackagePaths).
+ * Read `package.json#boring.defaultPlugins: string[]` from the app's
+ * package.json, if `appPackageJsonPath` was provided. Relative entries are
+ * resolved against the package.json's own directory so apps can write paths
+ * like "./src/plugins/foo" without computing absolutes in their boot code.
+ * Returns the resolved absolute paths (or npm names unchanged, for later
+ * resolution by resolveDefaultPluginPackagePaths).
  */
 function readAppManifestDefaultPlugins(appPackageJsonPath: string | undefined): string[] {
   if (!appPackageJsonPath || !existsSync(appPackageJsonPath)) return []
-  let pkg: { boring?: { defaultPluginPackages?: unknown } }
+  let pkg: { boring?: { defaultPlugins?: unknown } }
   try {
     pkg = JSON.parse(readFileSync(appPackageJsonPath, "utf8"))
   } catch {
     return []
   }
-  const entries = pkg.boring?.defaultPluginPackages
+  const entries = pkg.boring?.defaultPlugins
   if (!Array.isArray(entries)) return []
   const pkgDir = dirname(appPackageJsonPath)
   return entries

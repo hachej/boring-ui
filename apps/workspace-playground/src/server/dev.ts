@@ -41,15 +41,15 @@ export async function startPlaygroundServer(): Promise<void> {
       seedWorkspaceFromFixtures(workspaceRoot)
     }
     console.log(`[workspace-playground] workspace root: ${workspaceRoot}`)
-    // Default plugin packages are declared in package.json#boring.defaultPluginPackages.
-    // Provider/binding plugin fronts (ask-user, deck) are statically composed in
-    // src/front/App.tsx — the hot-load bridge skips dynamic provider/binding
-    // registration so there is no duplicate module instance.
+    // Zero-config npm plugins (boring.defaultPlugins in package.json) are
+    // auto-registered via appPackageJsonPath. Local plugins (playgroundDataCatalog)
+    // are passed explicitly since they are not npm packages.
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "local",
       logger: true,
       appPackageJsonPath: join(APP_ROOT, "package.json"),
+      defaultPluginPackages: [resolve(APP_ROOT, "src/plugins/playgroundDataCatalog")],
     })
     app.get("/api/v1/workspace/meta", async () => ({
       projectName: basename(workspaceRoot) || "Workspace",

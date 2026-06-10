@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "boring": {
-    "defaultPluginPackages": [
+    "defaultPlugins": [
       "@hachej/boring-ask-user"
     ]
   },
