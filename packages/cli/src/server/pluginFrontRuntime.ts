@@ -796,6 +796,50 @@ function parsePluginDependencyVirtualId(id: string): PluginDependencyContext | n
   }
 }
 
+// Cache of nodeModulesDir → real paths of all top-level package entries.
+// Built once per plugin instance; pnpm symlinks make the real path of each dep
+// land in the global content-addressable store (outside node_modules), so we
+// resolve every entry up-front and check containment against those real roots.
+const pluginPackageRootsCache = new Map<string, Promise<ReadonlySet<string>>>()
+
+async function getPluginPackageRoots(nodeModulesDir: string): Promise<ReadonlySet<string>> {
+  let cached = pluginPackageRootsCache.get(nodeModulesDir)
+  if (!cached) {
+    cached = buildPluginPackageRoots(nodeModulesDir)
+    pluginPackageRootsCache.set(nodeModulesDir, cached)
+  }
+  return cached
+}
+
+async function buildPluginPackageRoots(nodeModulesDir: string): Promise<ReadonlySet<string>> {
+  const roots = new Set<string>()
+  let entries: string[]
+  try {
+    entries = readdirSync(nodeModulesDir)
+  } catch {
+    return roots
+  }
+  for (const entry of entries) {
+    if (entry.startsWith(".")) continue // skip .pnpm, .modules.yaml, etc.
+    const entryPath = resolvePath(nodeModulesDir, entry)
+    if (entry.startsWith("@")) {
+      // Scoped namespace directory — resolve each package inside it
+      let scopedEntries: string[]
+      try {
+        scopedEntries = readdirSync(entryPath)
+      } catch {
+        continue
+      }
+      for (const scopedEntry of scopedEntries) {
+        roots.add(await resolveRealLike(resolvePath(entryPath, scopedEntry)))
+      }
+    } else {
+      roots.add(await resolveRealLike(entryPath))
+    }
+  }
+  return roots
+}
+
 async function ensurePluginDependencyPath(record: TrackedPluginRecord, source: string, importer: string | undefined, resolvedPath: string): Promise<string> {
   const nodeModulesDir = resolvePath(record.rootDir, "node_modules")
   if (!existsSync(nodeModulesDir)) {
@@ -811,22 +855,17 @@ async function ensurePluginDependencyPath(record: TrackedPluginRecord, source: s
   const nodeModulesReal = await resolveRealLike(nodeModulesDir)
   const resolvedReal = await resolveRealLike(resolvedPath)
   if (!isWithin(nodeModulesReal, resolvedReal)) {
-    // pnpm installs packages as symlinks from node_modules into a global
-    // content-addressable store, so the real path of any pnpm-managed dep
-    // lives outside node_modules and fails the isWithin() check above. For
-    // bare package specifiers, verify via the symlink: find the entry in
-    // node_modules, resolve it to its real target, and confirm that
-    // resolvedReal is inside that target.
-    let passedPnpmCheck = false
-    if (!source.startsWith(".") && !source.startsWith("/")) {
-      const packageName = packageNameFromBareSpecifier(source)
-      const symlinkEntry = resolvePath(nodeModulesDir, packageName)
-      if (existsSync(symlinkEntry)) {
-        const symlinkReal = await resolveRealLike(symlinkEntry)
-        passedPnpmCheck = symlinkReal === resolvedReal || isWithin(symlinkReal, resolvedReal)
-      }
-    }
-    if (!passedPnpmCheck) {
+    // pnpm stores packages in a global content-addressable store and symlinks
+    // them from node_modules. The real path of any pnpm-managed dep (including
+    // files reachable via relative imports within that dep) lives outside
+    // node_modules, so isWithin() always fails. Fall back to a cached set of
+    // real package roots derived from the node_modules symlink targets: if
+    // resolvedReal is inside any of those roots, it's legitimately installed.
+    const packageRoots = await getPluginPackageRoots(nodeModulesDir)
+    const isInstalledPackage = Array.from(packageRoots).some(
+      (root) => root === resolvedReal || isWithin(root, resolvedReal),
+    )
+    if (!isInstalledPackage) {
       throw new PluginFrontRuntimeError(
         ErrorCode.enum.PLUGIN_RUNTIME_UNSAFE_IMPORT,
         400,
