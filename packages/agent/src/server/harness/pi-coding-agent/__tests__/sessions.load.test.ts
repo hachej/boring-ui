@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildPiChatHistory } from "../../../pi-chat/piChatHistory";
@@ -259,5 +259,57 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
     expect(history).toHaveLength(1);
     expect(history[0].role).toBe("user");
     expect(textOf(history[0])).toBe("fresh prompt");
+  });
+
+  it("compacts legacy ui_snapshot bloat out of the file on first load (repair-on-read)", async () => {
+    const sessionId = "sess-legacy-bloat";
+    const filepath = join(tmpDir, `${sessionId}.jsonl`);
+
+    // Simulate a pre-#227 session: session header + session_info + many huge ui_snapshots
+    // (each snapshot is a full transcript copy — 60 of them could reach 90 MB in production)
+    const hugeSnapshotMessages = Array.from({ length: 5 }, (_, i) => ({
+      id: `u${i}`, role: "user", parts: [{ type: "text", text: `q${i}`.repeat(500) }],
+    }));
+    const lines = [
+      { type: "session", version: 1, id: sessionId, timestamp: "2026-01-01T00:00:00.000Z", cwd: "/workspace" },
+      { type: "session_info", id: "info-1", parentId: null, timestamp: "2026-01-01T00:00:01.000Z", name: "Legacy session" },
+      { type: "message", id: "m-u1", parentId: null, timestamp: "2026-01-01T00:00:02.000Z",
+        message: { role: "user", content: [{ type: "text", text: "real question" }] } },
+      { type: "message", id: "m-a1", parentId: "m-u1", timestamp: "2026-01-01T00:00:03.000Z",
+        message: { role: "assistant", content: [{ type: "text", text: "real answer" }] } },
+      // Ten legacy snapshots (each containing the full message list, potentially huge)
+      ...Array.from({ length: 10 }, (_, i) => ({
+        type: "ui_snapshot", id: `snap-${i}`, timestamp: "2026-01-01T00:01:00.000Z",
+        messages: hugeSnapshotMessages,
+      })),
+    ];
+    const originalContent = lines.map((l) => JSON.stringify(l)).join("\n") + "\n";
+    await writeFile(filepath, originalContent, "utf-8");
+
+    const sizeBefore = (await stat(filepath)).size;
+    const store = new PiSessionStore("/workspace", tmpDir);
+
+    // loadEntries triggers resolveSessionTranscript which should compact the file
+    const { messages } = await store.loadEntries(ctx, sessionId);
+    const history = buildPiChatHistory(messages, { sessionId });
+
+    // Messages are intact after compaction
+    expect(history).toHaveLength(2);
+    expect(history[0].role).toBe("user");
+    expect(textOf(history[0])).toBe("real question");
+
+    // The file was compacted — ui_snapshot records stripped
+    const compactedContent = await readFile(filepath, "utf-8");
+    const snapshotCount = compactedContent
+      .split("\n")
+      .filter((l) => l.trim())
+      .filter((l) => { try { return (JSON.parse(l) as { type?: string }).type === "ui_snapshot" } catch { return false } })
+      .length;
+    expect(snapshotCount).toBe(0);
+    expect((await stat(filepath)).size).toBeLessThan(sizeBefore / 2);
+
+    // Non-snapshot records (session_info) survive
+    const detail = await store.load(ctx, sessionId);
+    expect(detail.title).toBe("Legacy session");
   });
 });

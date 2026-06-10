@@ -43,7 +43,65 @@ describe("CliWorkspaceShell", () => {
     cleanup()
     globalThis.fetch = originalFetch
     window.localStorage.clear()
+    window.history.replaceState(null, "", "/")
     document.title = ""
+  })
+
+  function mockWorkspacesMode(workspacesByCall: Array<Array<{ id: string; name: string; path: string; available: boolean }>>) {
+    let call = 0
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith("/api/v1/workspace/meta")) {
+        return new Response(JSON.stringify({ projectName: "Folder Workspace", workspacesMode: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      if (url.endsWith("/api/v1/local-workspaces")) {
+        const workspaces = workspacesByCall[Math.min(call, workspacesByCall.length - 1)] ?? []
+        call += 1
+        return new Response(JSON.stringify({ workspaces }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    }) as typeof fetch
+  }
+
+  test("does not redirect away from a URL workspace that is still cold-starting", async () => {
+    window.history.replaceState(null, "", "/workspace/target")
+    // The URL-targeted workspace is in the list but not yet available (cold-starting).
+    // A fallback is available. The fix: mount the URL workspace directly; let
+    // WorkspaceAgentFront handle the boot/loading state rather than redirecting.
+    mockWorkspacesMode([
+      [
+        { id: "other", name: "Other", path: "/other", available: true },
+        { id: "target", name: "Target", path: "/target", available: false },
+      ],
+    ])
+
+    render(<CliWorkspaceShell />)
+
+    // Must mount the URL workspace, never the fallback.
+    await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
+    expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({ workspaceId: "target" })
+    expect(window.location.pathname).toBe("/workspace/target")
+  })
+
+  test("mounts the URL workspace directly when it is already available", async () => {
+    window.history.replaceState(null, "", "/workspace/target")
+    mockWorkspacesMode([
+      [
+        { id: "other", name: "Other", path: "/other", available: true },
+        { id: "target", name: "Target", path: "/target", available: true },
+      ],
+    ])
+
+    render(<CliWorkspaceShell />)
+
+    await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
+    expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({ workspaceId: "target" })
   })
 
   test("enables runtime hot loading without rendering plugin helper pills", async () => {
