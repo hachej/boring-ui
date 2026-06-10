@@ -347,19 +347,24 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
   const latestRequestedRef = useRef(new Map<string, number>())
   const replaySeenRef = useRef(new Set<string>())
   // Bumped by a window listener whenever `/reload` runs (while hot reload is
-  // active). Included in the EventSource effect deps so `/reload` tears down and
-  // reopens the stream, mirroring what a workspace switch does — without a full
-  // remount. `forceReimportRef` makes the next reconnect re-import the replayed
-  // current bundles even at an unchanged revision.
+  // active). Included in the EventSource effect deps so `/reload` reopens the
+  // stream and re-imports, mirroring a workspace switch — without a full remount.
+  // `reloadReconnectRef` marks the reconnect as reload-triggered so that (a) the
+  // outgoing effect's cleanup KEEPS plugin registrations in place (the replay
+  // swaps them atomically; tearing them down here briefly removes the panels from
+  // the registry and therefore from the live dock's component map, which the dock
+  // never re-adds without a remount — the "plugin vanishes on /reload" bug), and
+  // (b) the next connection re-imports the replayed current bundles even at an
+  // unchanged revision.
   const [reloadNonce, setReloadNonce] = useState(0)
-  const forceReimportRef = useRef(false)
+  const reloadReconnectRef = useRef(false)
 
   useEffect(() => {
     if (options.enabled === false || typeof EventSource === "undefined") return
     const onReloadCommand = (raw: Event) => {
       const detail = (raw as CustomEvent).detail
       if (!isPluginReloadCommandEvent(detail)) return
-      forceReimportRef.current = true
+      reloadReconnectRef.current = true
       setReloadNonce((n) => n + 1)
     }
     window.addEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, onReloadCommand as EventListener)
@@ -368,16 +373,14 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
 
   useEffect(() => {
     if (options.enabled === false || typeof EventSource === "undefined") return
-    // A `/reload`-triggered reconnect must re-import the replayed current
-    // bundles even though their revision is unchanged. Clear the
-    // revision-dedupe maps so the gate (`revision <= lastSeen`) does not skip
-    // the replayed `boring.plugin.load` events. The cache-busting timestamp in
+    // A `/reload`-triggered reconnect must re-import the replayed current bundles
+    // even though their revision is unchanged. Rather than clearing the
+    // revision-dedupe maps (which would drop the knowledge needed to prune deleted
+    // plugins on replay-complete), keep them and let `forceReimport` bypass the
+    // revision gate for the replayed snapshot below. The cache-busting timestamp in
     // `appendFrontImportRevision` ensures a fresh module instance loads.
-    if (forceReimportRef.current) {
-      forceReimportRef.current = false
-      lastSeenRef.current.clear()
-      latestRequestedRef.current.clear()
-    }
+    const forceReimport = reloadReconnectRef.current
+    reloadReconnectRef.current = false
     if (hasBearerAuth(options.authHeaders)) {
       console.warn(
         "[boring-ui] front plugin hot reload disabled: native EventSource cannot send Authorization bearer headers, and this server does not advertise a token-query fallback for /api/v1/agent-plugins/events.",
@@ -398,9 +401,12 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           if (disposed) return
           if (event.workspaceId && options.workspaceId && event.workspaceId !== options.workspaceId) return
           if (event.replay) replaySeenRef.current.add(event.id)
+          // On a `/reload`-triggered reconnect, re-import the replayed snapshot even
+          // at an unchanged revision (its registrations were kept, not torn down).
+          const bypassGate = forceReimport && event.replay === true
           const lastSeen = lastSeenRef.current.get(event.id) ?? 0
           const latestRequested = latestRequestedRef.current.get(event.id) ?? 0
-          if (event.revision <= Math.max(lastSeen, latestRequested)) return
+          if (!bypassGate && event.revision <= Math.max(lastSeen, latestRequested)) return
           latestRequestedRef.current.set(event.id, event.revision)
           const frontEntryUrl = resolveFrontEntryUrl(event, options.apiBaseUrl)
           if (frontEntryUrl) {
@@ -428,7 +434,7 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           }
           if (disposed) return
           if (latestRequestedRef.current.get(event.id) !== event.revision) return
-          if (event.revision <= (lastSeenRef.current.get(event.id) ?? 0)) return
+          if (!bypassGate && event.revision <= (lastSeenRef.current.get(event.id) ?? 0)) return
           if (!captured) {
             unregisterPlugin(event.id, registries)
             lastSeenRef.current.set(event.id, event.revision)
@@ -565,10 +571,20 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
     es.addEventListener("boring.plugin.replay-complete", handleReplayComplete as EventListener)
     return () => {
       disposed = true
-      for (const pluginId of lastSeenRef.current.keys()) unregisterPlugin(pluginId, registries)
-      lastSeenRef.current.clear()
-      latestRequestedRef.current.clear()
-      replaySeenRef.current.clear()
+      // Keep registrations across a `/reload`-triggered reconnect: the immediately
+      // following connection replays and atomically swaps each plugin in place
+      // (replaceByPluginId), and replay-complete prunes any plugin missing from the
+      // new snapshot. A full teardown here would briefly unregister the panels —
+      // removing them from the live dock's component map, which the dock never
+      // re-adds without a remount. Only tear down for genuine disconnects
+      // (workspace switch, hot-reload disabled, unmount), where reloadReconnectRef
+      // is false.
+      if (!reloadReconnectRef.current) {
+        for (const pluginId of lastSeenRef.current.keys()) unregisterPlugin(pluginId, registries)
+        lastSeenRef.current.clear()
+        latestRequestedRef.current.clear()
+        replaySeenRef.current.clear()
+      }
       es.close()
     }
   }, [options.apiBaseUrl, options.workspaceId, options.enabled, options.authHeaders, options.importFront, panels, commands, catalogs, surfaceResolvers, reloadNonce])

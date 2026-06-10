@@ -1,5 +1,5 @@
 import React, { useSyncExternalStore } from "react"
-import { render, screen, waitFor } from "@testing-library/react"
+import { act, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises"
 import { join } from "node:path"
@@ -1268,5 +1268,160 @@ describe("useAgentPluginHotReload", () => {
     })
 
     await waitFor(() => expect(screen.getByTestId("pane-missing")).toHaveTextContent("missing"))
+  })
+
+  test("keeps panels registered through a /reload reconnect and re-imports the replayed snapshot", async () => {
+    const presence: boolean[] = []
+    let importText = "v1"
+    let importCalls = 0
+    const importFront = async (): Promise<{ default?: BoringFrontFactoryWithId }> => {
+      importCalls += 1
+      const text = importText
+      return {
+        default: hotPlugin("hot-plugin", (api) => {
+          api.registerPanel({
+            id: "hot-pane",
+            label: "Hot Pane",
+            component: function HotPane() {
+              return React.createElement("div", { "data-testid": "hot-pane" }, text)
+            },
+          })
+        }),
+      }
+    }
+
+    function PresenceProbe() {
+      const registry = useRegistry()
+      useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot)
+      presence.push(Boolean(registry.get("hot-pane")))
+      return null
+    }
+
+    function ReloadHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <PaneRenderer id="hot-pane" />
+          <PresenceProbe />
+        </RegistryProvider>
+      )
+    }
+
+    render(<ReloadHarness />)
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl: "/@fs/v1.mjs",
+      boring: { front: "./front.mjs" },
+    })
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("v1"))
+
+    // After the initial load the panel must never disappear, even momentarily.
+    const fromHere = presence.length
+    importText = "v2"
+
+    // The `/reload` slash command forwards the server response, which carries no
+    // "boring.plugin.*" type — that is what triggers the reload reconnect.
+    act(() => {
+      window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: { reloaded: ["hot-plugin"] } }))
+    })
+
+    // A new stream opens without tearing the previous registration down.
+    await waitFor(() => expect(MockEventSource.instances.length).toBe(2))
+    MockEventSource.instances[1].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      replay: true,
+      frontUrl: "/@fs/v2.mjs",
+      boring: { front: "./front.mjs" },
+    })
+
+    // The replayed snapshot re-imports at the unchanged revision (fresh module).
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("v2"))
+    expect(importCalls).toBe(2)
+    // No render between the load and now ever observed the panel missing.
+    expect(presence.slice(fromHere).every(Boolean)).toBe(true)
+  })
+
+  test("/reload reconnect still prunes plugins absent from the replayed snapshot", async () => {
+    const importFront = async (frontUrl: string): Promise<{ default?: BoringFrontFactoryWithId }> => {
+      const id = frontUrl.includes("alpha") ? "alpha" : "beta"
+      return {
+        default: hotPlugin(id, (api) => {
+          api.registerPanel({
+            id: `${id}-pane`,
+            label: `${id} Pane`,
+            component: function Pane() {
+              return React.createElement("div", { "data-testid": `${id}-pane` }, id)
+            },
+          })
+        }),
+      }
+    }
+
+    function TwoPluginHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <PaneRenderer id="alpha-pane" />
+          <AllPanelIds />
+        </RegistryProvider>
+      )
+    }
+
+    render(<TwoPluginHarness />)
+    for (const id of ["alpha", "beta"]) {
+      MockEventSource.instances[0].dispatch("boring.plugin.load", {
+        type: "boring.plugin.load",
+        id,
+        version: "1.0.0",
+        revision: 1,
+        frontUrl: `/@fs/${id}.mjs`,
+        boring: { front: "./front.mjs" },
+      })
+    }
+    await waitFor(() => expect(screen.getByTestId("all-panel-ids")).toHaveTextContent("alpha-pane"))
+    await waitFor(() => expect(screen.getByTestId("all-panel-ids")).toHaveTextContent("beta-pane"))
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: { reloaded: ["alpha", "beta"] } }))
+    })
+    await waitFor(() => expect(MockEventSource.instances.length).toBe(2))
+
+    // Only alpha replays; beta is gone from the new snapshot.
+    MockEventSource.instances[1].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "alpha",
+      version: "1.0.0",
+      revision: 1,
+      replay: true,
+      frontUrl: "/@fs/alpha.mjs",
+      boring: { front: "./front.mjs" },
+    })
+    MockEventSource.instances[1].dispatch("boring.plugin.replay-complete", {
+      type: "boring.plugin.replay-complete",
+      workspaceId: "test-workspace",
+    })
+
+    await waitFor(() => expect(screen.getByTestId("all-panel-ids")).not.toHaveTextContent("beta-pane"))
+    expect(screen.getByTestId("all-panel-ids")).toHaveTextContent("alpha-pane")
   })
 })
