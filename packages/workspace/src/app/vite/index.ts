@@ -21,6 +21,14 @@ export function boringDefaultFrontPlugins(opts: { appRoot: string }) {
     resolveId(id: string) {
       return id === virtualId ? resolvedId : undefined
     },
+    handleHotUpdate({ modules }: { modules: Array<{ id: string | null }> }) {
+      // Prevent the virtual module from being HMR-invalidated. Its content is
+      // derived from boring.defaultPlugins in package.json which doesn't change
+      // at runtime. If it were re-evaluated on HMR, provider plugins like
+      // ask-user would create new context objects while old providers stay
+      // mounted — breaking context lookups in their panels.
+      return modules.filter((m) => m.id !== resolvedId)
+    },
     load(id: string) {
       if (id !== resolvedId) return undefined
       let entries: string[]

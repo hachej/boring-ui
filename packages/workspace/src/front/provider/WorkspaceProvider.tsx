@@ -52,12 +52,13 @@ function NullChatPanel(_props: WorkspaceChatPanelProps) {
 
 export type FrontPluginHotReloadMode = "vite" | false
 
-function AgentPluginHotReloadBridge(props: { apiBaseUrl: string; workspaceId?: string; mode: FrontPluginHotReloadMode; authHeaders?: Record<string, string> }) {
+function AgentPluginHotReloadBridge(props: { apiBaseUrl: string; workspaceId?: string; mode: FrontPluginHotReloadMode; authHeaders?: Record<string, string>; staticPluginIds?: ReadonlySet<string> }) {
   useAgentPluginHotReload({
     apiBaseUrl: props.apiBaseUrl,
     workspaceId: props.workspaceId,
     authHeaders: props.authHeaders,
     enabled: props.mode === "vite",
+    staticPluginIds: props.staticPluginIds,
   })
   return null
 }
@@ -485,7 +486,7 @@ export function WorkspaceProvider({
     }
   }, [bridgeEndpoint, store])
 
-  const { panelRegistry, commandRegistry, catalogRegistry, surfaceResolverRegistry, pluginMetas, pluginsWithBindings } = useMemo(() => {
+  const { panelRegistry, commandRegistry, catalogRegistry, surfaceResolverRegistry, pluginMetas, pluginsWithBindings, staticPluginIds } = useMemo(() => {
     const pr = new PanelRegistry(capabilities)
     const cr = new CommandRegistry()
     const cat = new CatalogRegistry()
@@ -533,6 +534,7 @@ export function WorkspaceProvider({
       surfaceResolverRegistry: sr,
       pluginMetas: metas,
       pluginsWithBindings: bootstrapResult.plugins,
+      staticPluginIds: new Set(bootstrapResult.plugins.map((p) => p.id)) as ReadonlySet<string>,
     }
   }, [capabilities, chatPanel, plugins, excludeDefaults, panels])
 
@@ -609,7 +611,7 @@ export function WorkspaceProvider({
                 apiTimeout={apiTimeout}
               >
                 <WorkspacePluginBindings plugins={pluginsWithBindings} />
-                <AgentPluginHotReloadBridge apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} mode={frontPluginHotReload} authHeaders={resolvedAuthHeaders} />
+                <AgentPluginHotReloadBridge apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} mode={frontPluginHotReload} authHeaders={resolvedAuthHeaders} staticPluginIds={staticPluginIds} />
                 <WorkspaceOpenFileBinding onOpenFile={onOpenFile} />
                 <WorkspaceCommandBindings commands={commands} />
                 <WorkspaceCatalogBindings
