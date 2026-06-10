@@ -125,7 +125,7 @@ test.describe('Pi-native harness-backed baseline message flow', () => {
         'message-text',
       ])
       expect(countOccurrences(assistant?.text ?? '', 'PI_NATIVE_ASSISTANT_DONE')).toBe(1)
-      expect(assistant?.text).toMatch(/Used command|Ran command|bash/i)
+      expect(assistant?.text).toMatch(/Used search|grep/i)
 
       const assistantIds = timelineTrace
         .flatMap((frame) => frame.messages)
