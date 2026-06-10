@@ -1,6 +1,9 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
 
+/* Standard boring theme (light + dark --boring-* values + shadcn bridge). */
+@import '@hachej/boring-ui-kit/tokens.css' layer(base);
+
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* App-local Tailwind scan roots only. Agent classes ship precompiled via
@@ -18,88 +21,6 @@
 }
 
 @layer base {
-  :root {
-    --boring-background: oklch(0.995 0.0015 72);
-    --boring-foreground: oklch(0.18 0.004 72);
-    --boring-card: oklch(1 0 0);
-    --boring-card-foreground: oklch(0.18 0.004 72);
-    --boring-popover: oklch(1 0 0);
-    --boring-popover-foreground: oklch(0.18 0.004 72);
-    --boring-primary: oklch(0.22 0.006 72);
-    --boring-primary-foreground: oklch(0.985 0.002 72);
-    --boring-secondary: oklch(0.965 0.003 72);
-    --boring-secondary-foreground: oklch(0.22 0.006 72);
-    --boring-muted: oklch(0.965 0.003 72);
-    --boring-muted-foreground: oklch(0.52 0.008 72);
-    --boring-accent: oklch(0.62 0.14 65);
-    --boring-accent-foreground: oklch(0.995 0 0);
-    --boring-accent-soft: oklch(0.96 0.03 65);
-    --boring-border: oklch(0.915 0.004 72);
-    --boring-input: oklch(0.915 0.004 72);
-    --boring-ring: oklch(0.62 0.14 65);
-    --boring-canvas: oklch(0.928 0.006 72);
-    --background: var(--boring-background);
-    --foreground: var(--boring-foreground);
-    --card: var(--boring-card);
-    --card-foreground: var(--boring-card-foreground);
-    --popover: var(--boring-popover);
-    --popover-foreground: var(--boring-popover-foreground);
-    --primary: var(--boring-primary);
-    --primary-foreground: var(--boring-primary-foreground);
-    --secondary: var(--boring-secondary);
-    --secondary-foreground: var(--boring-secondary-foreground);
-    --muted: var(--boring-muted);
-    --muted-foreground: var(--boring-muted-foreground);
-    --accent: var(--boring-accent);
-    --accent-foreground: var(--boring-accent-foreground);
-    --accent-soft: var(--boring-accent-soft);
-    --border: var(--boring-border);
-    --input: var(--boring-input);
-    --ring: var(--boring-ring);
-    --canvas: var(--boring-canvas);
-  }
-
-  .dark {
-    --boring-background: oklch(0.145 0.004 285.823);
-    --boring-foreground: oklch(0.985 0 0);
-    --boring-card: oklch(0.145 0.004 285.823);
-    --boring-card-foreground: oklch(0.985 0 0);
-    --boring-popover: oklch(0.165 0.004 285.823);
-    --boring-popover-foreground: oklch(0.985 0 0);
-    --boring-primary: oklch(0.985 0 0);
-    --boring-primary-foreground: oklch(0.205 0.006 285.885);
-    --boring-secondary: oklch(0.269 0.006 285.885);
-    --boring-secondary-foreground: oklch(0.985 0 0);
-    --boring-muted: oklch(0.269 0.006 285.885);
-    --boring-muted-foreground: oklch(0.708 0.01 286.073);
-    --boring-accent: oklch(0.62 0.14 65);
-    --boring-accent-foreground: oklch(0.12 0.004 285.823);
-    --boring-accent-soft: oklch(0.28 0.04 65);
-    --boring-border: oklch(0.269 0.006 285.885);
-    --boring-input: oklch(0.269 0.006 285.885);
-    --boring-ring: oklch(0.62 0.14 65);
-    --boring-canvas: oklch(0.12 0.004 285.823);
-    --background: var(--boring-background);
-    --foreground: var(--boring-foreground);
-    --card: var(--boring-card);
-    --card-foreground: var(--boring-card-foreground);
-    --popover: var(--boring-popover);
-    --popover-foreground: var(--boring-popover-foreground);
-    --primary: var(--boring-primary);
-    --primary-foreground: var(--boring-primary-foreground);
-    --secondary: var(--boring-secondary);
-    --secondary-foreground: var(--boring-secondary-foreground);
-    --muted: var(--boring-muted);
-    --muted-foreground: var(--boring-muted-foreground);
-    --accent: var(--boring-accent);
-    --accent-foreground: var(--boring-accent-foreground);
-    --accent-soft: var(--boring-accent-soft);
-    --border: var(--boring-border);
-    --input: var(--boring-input);
-    --ring: var(--boring-ring);
-    --canvas: var(--boring-canvas);
-  }
-
   * { border-color: var(--color-border); }
   body { background-color: var(--color-background); color: var(--color-foreground); }
 }
