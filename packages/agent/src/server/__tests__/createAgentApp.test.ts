@@ -1,6 +1,8 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { afterEach, expect, test, vi } from 'vitest'
 
 import { getEnv, restoreEnvForTest, setEnvForTest } from '../config/env'
@@ -523,6 +525,58 @@ test('POST /api/v1/agent/reload is available before first turn', async () => {
 
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({ ok: true, sessionId: 'default', reloaded: false })
+  } finally {
+    await app.close()
+  }
+})
+
+test('GET /api/v1/git/file-url 404-free and disabled for a non-git workspace', async () => {
+  // Regression: the file-tree "Copy Git URL" action calls this route, which the
+  // workspace app serves via createAgentApp. It must be wired here (not only in
+  // registerAgentRoutes), or the action 404s. A bare temp dir is not a git
+  // repo, so the route resolves to a disabled result rather than 404.
+  const workspaceRoot = await makeTempDir('boring-ui-git-route-')
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+  })
+
+  try {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/git/file-url?path=README.md' })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({
+      enabled: false,
+      reason: 'Workspace is not inside a Git repository.',
+    })
+  } finally {
+    await app.close()
+  }
+})
+
+test('GET /api/v1/git/file-url resolves a real repo via the host storage root', async () => {
+  // End-to-end: the route must run git against the HOST workspace path. Build a
+  // real repo with a github origin and assert the blob URL comes back.
+  const workspaceRoot = await makeTempDir('boring-ui-git-repo-')
+  const git = async (...args: string[]) => {
+    await promisify(execFile)('git', args, { cwd: workspaceRoot })
+  }
+  await git('init', '-b', 'main')
+  await git('config', 'user.email', 'test@example.com')
+  await git('config', 'user.name', 'Test')
+  await git('remote', 'add', 'origin', 'git@github.com:acme/demo.git')
+  await writeFile(join(workspaceRoot, 'README.md'), '# demo\n')
+  await git('add', '.')
+  await git('commit', '-m', 'init')
+
+  const app = await createAgentApp({ workspaceRoot, mode: 'direct', logger: false })
+  try {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/git/file-url?path=README.md' })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({
+      enabled: true,
+      url: 'https://github.com/acme/demo/blob/main/README.md',
+    })
   } finally {
     await app.close()
   }
