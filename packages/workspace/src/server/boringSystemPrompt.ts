@@ -137,6 +137,12 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): s
       "- Dependency installs: do NOT install plugin UI dependencies at the workspace root. Install them inside `.pi/extensions/<name>/` and keep React/workspace/boring-ui-kit imports as host singletons, not plugin dependencies.",
       "- Hot-reload agent tools: do NOT put them in `.pi/extensions/<name>/server/index.ts`; use `pi.extensions` instead. `boring.server` requires static composition plus process restart.",
     ].join("\n"),
+    [
+      "## Installing an existing or published plugin",
+      "To ADD an existing or published plugin (not author a new one), use `boring-ui-plugin install <source>` via bash — `<source>` is `npm:<package>`, `git:<repo>`, `github:<owner>/<repo>`, an `http(s)` git URL, or a local path; add `--global` for all workspaces (default is this workspace).",
+      "A bare `npm install <package>` does NOT register it as a plugin (no `.pi/settings.json` package source), so it will NOT load — always use `boring-ui-plugin install`, then ask the user to `/reload` (a `boring.server` backend also needs a process restart).",
+      "Inspect with `boring-ui-plugin list [--json]`; remove with `boring-ui-plugin remove <id-or-source>`.",
+    ].join("\n"),
     docsBlock,
   ].join("\n\n")
 }
