@@ -151,11 +151,11 @@ app.addHook('onRequest', async (request, reply) => {
 const apiAddress = await app.listen({ port, host: '127.0.0.1' })
 const apiPort = Number(new URL(apiAddress).port)
 
-// Pre-create a default session so the frontend's useSessions hook finds one
+// Pre-create a default session so the frontend's session list finds one
 // on first load and renders the ChatPanel without requiring the user to click
 // "Create session". The E2E tests were written against a single-session app.
 try {
-  await fetch(`http://127.0.0.1:${apiPort}/api/v1/agent/sessions`, {
+  await fetch(`http://127.0.0.1:${apiPort}/api/v1/agent/pi-chat/sessions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title: projectName }),

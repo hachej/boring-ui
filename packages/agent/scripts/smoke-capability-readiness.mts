@@ -64,17 +64,18 @@ async function main(): Promise<void> {
   await app.ready()
   log('app_ready', { app_ready_ms: Math.round(performance.now() - startedAt) })
 
+  // The chat API must answer while runtime provisioning is still pending —
+  // the pi-chat sessions list exercises the agent binding without an LLM.
   const chatStartedAt = performance.now()
   const chat = await app.inject({
-    method: 'POST',
-    url: '/api/v1/agent/chat',
-    payload: { sessionId: 's1', message: 'hello' },
+    method: 'GET',
+    url: '/api/v1/agent/pi-chat/sessions',
   })
   log('chat_response', {
     chat_response_ms: Math.round(performance.now() - chatStartedAt),
     status: chat.statusCode,
   })
-  if (chat.statusCode !== 200) throw new Error(`chat blocked with status ${chat.statusCode}: ${chat.body}`)
+  if (chat.statusCode !== 200) throw new Error(`pi-chat sessions blocked with status ${chat.statusCode}: ${chat.body}`)
 
   log('ready_status_pending', {
     runtime_preparing: true,

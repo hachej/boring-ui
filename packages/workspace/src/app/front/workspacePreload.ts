@@ -90,7 +90,7 @@ export function parseRetryableWarmupPreparing(payload: unknown): WarmupPreparing
 
 export function isAgentRuntimeWarmupPath(path: string): boolean {
   const url = new URL(path, "http://workspace.local")
-  return url.pathname === "/api/v1/agent/sessions" || url.pathname === "/api/v1/ready-status"
+  return url.pathname === "/api/v1/agent/pi-chat/sessions" || url.pathname === "/api/v1/ready-status"
 }
 
 export function isReadyStatusPath(path: string): boolean {
