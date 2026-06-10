@@ -811,13 +811,30 @@ async function ensurePluginDependencyPath(record: TrackedPluginRecord, source: s
   const nodeModulesReal = await resolveRealLike(nodeModulesDir)
   const resolvedReal = await resolveRealLike(resolvedPath)
   if (!isWithin(nodeModulesReal, resolvedReal)) {
-    throw new PluginFrontRuntimeError(
-      ErrorCode.enum.PLUGIN_RUNTIME_UNSAFE_IMPORT,
-      400,
-      "resolve",
-      "runtime plugin dependency resolved outside the plugin-local node_modules directory",
-      { source, importer, resolvedPath, pluginNodeModules: nodeModulesDir },
-    )
+    // pnpm installs packages as symlinks from node_modules into a global
+    // content-addressable store, so the real path of any pnpm-managed dep
+    // lives outside node_modules and fails the isWithin() check above. For
+    // bare package specifiers, verify via the symlink: find the entry in
+    // node_modules, resolve it to its real target, and confirm that
+    // resolvedReal is inside that target.
+    let passedPnpmCheck = false
+    if (!source.startsWith(".") && !source.startsWith("/")) {
+      const packageName = packageNameFromBareSpecifier(source)
+      const symlinkEntry = resolvePath(nodeModulesDir, packageName)
+      if (existsSync(symlinkEntry)) {
+        const symlinkReal = await resolveRealLike(symlinkEntry)
+        passedPnpmCheck = symlinkReal === resolvedReal || isWithin(symlinkReal, resolvedReal)
+      }
+    }
+    if (!passedPnpmCheck) {
+      throw new PluginFrontRuntimeError(
+        ErrorCode.enum.PLUGIN_RUNTIME_UNSAFE_IMPORT,
+        400,
+        "resolve",
+        "runtime plugin dependency resolved outside the plugin-local node_modules directory",
+        { source, importer, resolvedPath, pluginNodeModules: nodeModulesDir },
+      )
+    }
   }
   return resolvedReal
 }
@@ -1160,6 +1177,16 @@ export async function createPluginFrontRuntimeHost(
     configFile: false,
     logLevel: "silent",
     root: repoRoot,
+    // Skip the dep-optimisation entry scan. Without this, Vite crawls the
+    // entire monorepo looking for import statements and hits files like
+    // App.tsx that import `virtual:boring-front-plugins` — a module that
+    // is not registered in this Vite server. That transform error corrupts
+    // the dep-opt lock, causing any concurrently-starting Vite instance to
+    // hang until the test timeout fires.
+    // noDiscovery disables runtime dep discovery too, so transforming a plugin
+    // module with bare imports (e.g. lucide-react) never triggers Vite's
+    // esbuild pre-bundler, which would hang the request for tens of seconds.
+    optimizeDeps: { entries: [], noDiscovery: true },
     plugins: [
       react(),
       {

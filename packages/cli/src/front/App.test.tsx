@@ -18,9 +18,10 @@ vi.mock("@hachej/boring-agent", () => ({
   useSessions: () => ({ sessions: [], loading: false }),
 }))
 
-vi.mock("@hachej/boring-ask-user/front", () => ({
-  askUserPlugin: { pluginId: "ask-user", pluginLabel: "Questions" },
-}))
+vi.mock("@hachej/boring-ask-user/front", () => {
+  const askUserPlugin = { pluginId: "ask-user", pluginLabel: "Questions" }
+  return { askUserPlugin, default: askUserPlugin }
+})
 
 vi.mock("@hachej/boring-workspace/app/front", () => ({
   WorkspaceAgentFront: (props: Record<string, unknown>) => workspaceAgentFrontSpy(props),

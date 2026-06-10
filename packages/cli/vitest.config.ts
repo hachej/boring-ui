@@ -1,10 +1,12 @@
 import { resolve } from "node:path"
 import { configDefaults, defineConfig } from "vitest/config"
+import { boringDefaultFrontPlugins } from "@hachej/boring-workspace/app/vite"
 
 const root = __dirname
 const repoRoot = resolve(root, "..", "..")
 
 export default defineConfig({
+  plugins: [boringDefaultFrontPlugins({ appRoot: root })],
   test: {
     server: {
       deps: {
