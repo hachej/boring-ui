@@ -3,7 +3,7 @@ import * as ReactDom from "react-dom"
 import * as ReactDomClient from "react-dom/client"
 import * as ReactJsxDevRuntime from "react/jsx-dev-runtime"
 import * as ReactJsxRuntime from "react/jsx-runtime"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import * as WorkspaceSingleton from "@hachej/boring-workspace"
 import * as WorkspaceEventsSingleton from "@hachej/boring-workspace/events"
 import * as WorkspacePluginSingleton from "@hachej/boring-workspace/plugin"
@@ -106,7 +106,6 @@ export function CliWorkspaceShell() {
   const [urlSessionId, setUrlSessionId] = useState<string | null>(() => chatSessionIdFromCliUrl(window.location.search))
   const [metaLoaded, setMetaLoaded] = useState(false)
   const [runtimePluginFrontLoadingEnabled, setRuntimePluginFrontLoadingEnabled] = useState(false)
-  const [coldStartGaveUp, setColdStartGaveUp] = useState(false)
 
   const refreshWorkspaces = useCallback(() => {
     void fetch("/api/v1/local-workspaces")
@@ -185,46 +184,6 @@ export function CliWorkspaceShell() {
     syncCliWorkspaceUrl(activeWorkspaceId, urlSessionId)
   }, [activeWorkspaceId, urlSessionId, workspacesMode])
 
-  // While the targeted workspace is still cold-starting (selected but not yet available),
-  // poll the workspace list so it self-heals once initialization finishes — without
-  // requiring a manual refresh/focus or a workspace switch. If it never becomes available
-  // (e.g. a stale link to a deleted workspace), give up after a bounded number of attempts
-  // and fall back to an available workspace instead of polling forever.
-  // Track attempts per workspace id so a switch to a different cold workspace
-  // always gets a fresh budget (not the remnant count from the previous one).
-  const coldStartAttemptsRef = useRef<{ id: string; count: number } | null>(null)
-  useEffect(() => {
-    if (!workspacesMode || !activeWorkspaceId) return
-    const ready = workspaces.some((workspace) => workspace.id === activeWorkspaceId && workspace.available)
-    if (ready) {
-      coldStartAttemptsRef.current = null
-      return
-    }
-    // Reset the counter and gave-up state whenever we start watching a new workspace id.
-    if (coldStartAttemptsRef.current?.id !== activeWorkspaceId) {
-      coldStartAttemptsRef.current = { id: activeWorkspaceId, count: 0 }
-      setColdStartGaveUp(false)
-    }
-    const timer = window.setInterval(() => {
-      if (!coldStartAttemptsRef.current) return
-      coldStartAttemptsRef.current.count += 1
-      if (coldStartAttemptsRef.current.count > 10) {
-        window.clearInterval(timer)
-        const fallback = workspaces.find((workspace) => workspace.available)
-        if (fallback) {
-          window.localStorage.setItem("boring-ui:local-workspace-id", fallback.id)
-          setActiveWorkspaceId(fallback.id)
-        } else {
-          // No workspace available at all — show an error instead of loading forever.
-          setColdStartGaveUp(true)
-        }
-        return
-      }
-      refreshWorkspaces()
-    }, 1500)
-    return () => window.clearInterval(timer)
-  }, [workspacesMode, activeWorkspaceId, workspaces, refreshWorkspaces])
-
   const handleActiveSessionIdChange = useCallback((sessionId: string | null) => {
     setUrlSessionId((current) => current === sessionId ? current : sessionId)
   }, [])
@@ -240,33 +199,9 @@ export function CliWorkspaceShell() {
   }
 
   if (workspacesMode) {
-    const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId && workspace.available) ?? null
+    const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null
+
     if (!activeWorkspace) {
-      // A URL-targeted workspace that isn't available yet is cold-starting, not missing —
-      // show a loading state while the poll above resolves it instead of an error screen.
-      if (activeWorkspaceId) {
-        return (
-          <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground">
-            <div className="max-w-md rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
-              {coldStartGaveUp ? (
-                <>
-                  <h1 className="text-lg font-semibold">Workspace unavailable</h1>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    <code>{activeWorkspaceId}</code> did not become available. The folder may be missing or the workspace may have been deleted. Restore the folder and refresh, or add a new workspace.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <h1 className="text-lg font-semibold">Loading workspace…</h1>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Preparing <code>{activeWorkspaceId}</code>. This can take a moment on first load.
-                  </p>
-                </>
-              )}
-            </div>
-          </div>
-        )
-      }
       const hasUnavailableWorkspaces = workspaces.length > 0
       return (
         <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground">

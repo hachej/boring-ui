@@ -71,24 +71,20 @@ describe("CliWorkspaceShell", () => {
 
   test("does not redirect away from a URL workspace that is still cold-starting", async () => {
     window.history.replaceState(null, "", "/workspace/target")
-    // First list lacks the URL-targeted workspace (still initializing); a fallback is available.
+    // The URL-targeted workspace is in the list but not yet available (cold-starting).
+    // A fallback is available. The fix: mount the URL workspace directly; let
+    // WorkspaceAgentFront handle the boot/loading state rather than redirecting.
     mockWorkspacesMode([
-      [{ id: "other", name: "Other", path: "/other", available: true }],
       [
         { id: "other", name: "Other", path: "/other", available: true },
-        { id: "target", name: "Target", path: "/target", available: true },
+        { id: "target", name: "Target", path: "/target", available: false },
       ],
     ])
 
     render(<CliWorkspaceShell />)
 
-    // It must not silently mount the fallback workspace.
-    await screen.findByText("Loading workspace…")
-    expect(workspaceAgentFrontSpy).not.toHaveBeenCalled()
-
-    // Once the targeted workspace becomes available, it resolves to it (never the fallback).
-    // The cold-start poll re-fetches after 1.5s, so allow extra time here.
-    await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled(), { timeout: 4000 })
+    // Must mount the URL workspace, never the fallback.
+    await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
     expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({ workspaceId: "target" })
     expect(window.location.pathname).toBe("/workspace/target")
   })
