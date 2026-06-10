@@ -9,11 +9,18 @@ import { buildPiChatQueuedFollowUps, buildPiChatSnapshot } from './piChatSnapsho
 import { PiChatEventMapper } from './piChatEvents'
 import { PiChatReplayBuffer } from './piChatReplayBuffer'
 import { followUpSelector, hasFollowUpSelector, PiChatMessageMetadataReconciler } from './piChatMessageMetadataReconciler'
-import { extractToolUiMetadata, sanitizeToolUiMetadata } from '../../shared/tool-ui'
+import { buildPiChatHistory } from './piChatHistory'
 
 type PiNativeHarness = AgentHarness & {
   getPiSessionAdapter?: (input: SendMessageInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
   hasPiSession?: (sessionId: string) => boolean
+}
+
+/** Pi session stores additionally expose the raw persisted message entries so
+ * the cold-load path can run them through the same buildPiChatHistory mapping
+ * as the live event path. */
+type PiSessionStoreLike = SessionStore & {
+  loadEntries?: (ctx: { workspaceId: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[] }>
 }
 
 interface LiveSessionChannel {
@@ -38,7 +45,7 @@ export interface HarnessPiChatServiceOptions {
 
 export class HarnessPiChatService implements PiChatSessionService {
   private readonly harness: PiNativeHarness
-  private readonly sessionStore: SessionStore
+  private readonly sessionStore: PiSessionStoreLike
   private readonly workdir: string
   private readonly channels = new Map<string, LiveSessionChannel>()
   private readonly messageMetadata = new PiChatMessageMetadataReconciler()
@@ -93,16 +100,15 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   private async readPersistedState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot | null> {
+    if (!this.sessionStore.loadEntries) return null
     try {
-      const detail = await this.sessionStore.load(toSessionCtx(ctx), sessionId)
+      const { id, messages } = await this.sessionStore.loadEntries(toSessionCtx(ctx), sessionId)
       return {
         protocolVersion: 1,
-        sessionId: detail.id,
+        sessionId: id,
         seq: 0,
         status: 'idle',
-        messages: detail.messages
-          .map((message, index) => persistedUiMessageToBoringChatMessage(sessionId, message, index))
-          .filter((message): message is BoringChatMessage => message !== null),
+        messages: buildPiChatHistory(messages, { sessionId: id }),
         queue: { followUps: [] },
         followUpMode: 'one-at-a-time',
       }
@@ -390,94 +396,6 @@ function promptPayloadMessage(payload: PromptPayload, messageId: string, created
       ...(promptPayloadFileParts(payload, messageId) ?? []),
     ],
   }
-}
-
-function persistedUiMessageToBoringChatMessage(sessionId: string, rawMessage: unknown, index: number): BoringChatMessage | null {
-  if (!isRecord(rawMessage)) return null
-  const role = rawMessage.role
-  if (role !== 'user' && role !== 'assistant' && role !== 'system') return null
-  const id = optionalString(rawMessage.id) ?? `persisted:${sessionId}:${index}:${role}`
-  const parts = Array.isArray(rawMessage.parts)
-    ? rawMessage.parts.flatMap((part, partIndex) => persistedUiPartToBoringChatPart(part, id, partIndex))
-    : []
-  return {
-    id,
-    role,
-    status: 'done',
-    createdAt: optionalString(rawMessage.createdAt),
-    piEntryId: optionalString(rawMessage.piEntryId),
-    turnId: optionalString(rawMessage.turnId),
-    parts,
-  }
-}
-
-function persistedUiPartToBoringChatPart(part: unknown, messageId: string, index: number): BoringChatPart[] {
-  if (!isRecord(part)) return []
-  if (part.type === 'text' && typeof part.text === 'string') {
-    return [{ type: 'text', id: optionalString(part.id) ?? `${messageId}:text:${index}`, text: part.text }]
-  }
-  if (part.type === 'reasoning' && typeof part.text === 'string') {
-    return [{
-      type: 'reasoning',
-      id: optionalString(part.id) ?? `${messageId}:reasoning:${index}`,
-      text: part.text,
-      state: part.state === 'streaming' ? 'streaming' : 'done',
-    }]
-  }
-  if (part.type === 'file') {
-    return [{
-      type: 'file',
-      id: optionalString(part.id) ?? `${messageId}:file:${index}`,
-      filename: optionalString(part.filename),
-      mediaType: optionalString(part.mediaType),
-      url: optionalString(part.url),
-    }]
-  }
-  if (part.type === 'notice') {
-    const level = part.level === 'warning' || part.level === 'error' ? part.level : 'info'
-    return [{
-      type: 'notice',
-      id: optionalString(part.id) ?? `${messageId}:notice:${index}`,
-      level,
-      text: optionalString(part.text) ?? '',
-    }]
-  }
-  if (typeof part.type === 'string' && part.type.startsWith('tool-')) {
-    const toolName = optionalString(part.toolName) ?? (part.type.slice('tool-'.length) || 'unknown')
-    const ui = sanitizeToolUiMetadata(part.ui) ?? extractToolUiMetadata(part.output)
-    return [{
-      type: 'tool-call',
-      id: optionalString(part.toolCallId) ?? optionalString(part.id) ?? `${messageId}:tool:${index}`,
-      toolName,
-      input: part.input,
-      state: persistedToolState(part.state),
-      output: part.output,
-      errorText: optionalString(part.errorText),
-      ...(ui ? { ui } : {}),
-    }]
-  }
-  return []
-}
-
-function persistedToolState(value: unknown): Extract<BoringChatPart, { type: 'tool-call' }>['state'] {
-  switch (value) {
-    case 'input-streaming':
-    case 'input-available':
-    case 'output-available':
-    case 'output-error':
-    case 'aborted':
-      return value
-    default:
-      return 'input-available'
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.length > 0 ? value : undefined
 }
 
 function mergeSyntheticMessages(messages: BoringChatMessage[], syntheticMessages: BoringChatMessage[]): BoringChatMessage[] {

@@ -21,7 +21,6 @@ export type {
   SessionSummary,
   SessionDetail,
 } from './session'
-export type { UIMessage } from './message'
 export type { FileSearch } from './file-search'
 export type { TelemetryEvent, TelemetrySink } from './telemetry'
 export { noopTelemetry, safeCapture } from './telemetry'

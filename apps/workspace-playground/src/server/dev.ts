@@ -3,8 +3,8 @@ import { createRequire } from "node:module"
 import { basename, dirname, resolve } from "node:path"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 
-export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
-export const VITE_PORT = Number(process.env.PORT) || 5200
+export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5213
+export const VITE_PORT = Number(process.env.PORT) || 5203
 export const APP_ROOT = resolve(import.meta.dirname, "../..")
 export const FIXTURES_DIR = resolve(APP_ROOT, "src/fixtures")
 export const WORKSPACE_DIR = resolve(APP_ROOT, "workspace")

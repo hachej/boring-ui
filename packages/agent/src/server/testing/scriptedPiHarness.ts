@@ -18,9 +18,7 @@ interface ScriptedRun {
   cancelled: boolean
 }
 
-interface ScriptedSessionRecord extends SessionSummary {
-  messages: unknown[]
-}
+type ScriptedSessionRecord = SessionSummary
 
 const DEFAULT_SESSION_ID = 'scripted-main'
 const DEFAULT_TIME = '2026-06-04T12:00:00.000Z'
@@ -92,7 +90,7 @@ class ScriptedSessionStore implements SessionStore {
   async load(_ctx: SessionCtx, sessionId: string): Promise<SessionDetail> {
     const record = this.records.get(sessionId)
     if (!record) throw new Error(`Session not found: ${sessionId}`)
-    return { ...toSummary(record), messages: [] }
+    return toSummary(record)
   }
 
   async delete(_ctx: SessionCtx, sessionId: string): Promise<void> {
@@ -106,7 +104,6 @@ class ScriptedSessionStore implements SessionStore {
       createdAt: DEFAULT_TIME,
       updatedAt: DEFAULT_TIME,
       turnCount: 0,
-      messages: [],
     }
   }
 }

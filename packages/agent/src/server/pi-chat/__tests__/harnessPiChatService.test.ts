@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 import type { AgentHarness, RunContext, SendMessageInput } from '../../../shared/harness'
-import type { UIMessage } from '../../../shared/message'
 import type { SessionStore } from '../../../shared/session'
 import type { PiChatEvent } from '../../../shared/chat'
 import { createInitialPiChatState, piChatReducer } from '../../../front/chat/pi/piChatReducer'
@@ -17,10 +16,14 @@ const ctx: PiSessionRequestContext = {
   requestId: 'request-a',
 }
 
+type PersistedSessionStore = SessionStore & {
+  loadEntries?: (ctx: { workspaceId: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[] }>
+}
+
 const sessionStore: SessionStore = {
   list: vi.fn(async () => []),
   create: vi.fn(async () => ({ id: 's1', title: 'New session', createdAt: '', updatedAt: '', turnCount: 0 })),
-  load: vi.fn(async () => ({ id: 's1', title: 'New session', createdAt: '', updatedAt: '', turnCount: 0, messages: [] })),
+  load: vi.fn(async () => ({ id: 's1', title: 'New session', createdAt: '', updatedAt: '', turnCount: 0 })),
   delete: vi.fn(async () => {}),
 }
 
@@ -687,39 +690,43 @@ describe('HarnessPiChatService', () => {
     })
   })
 
-  it('hydrates inactive persisted state without opening a live Pi adapter', async () => {
+  it('hydrates inactive persisted state through buildPiChatHistory without opening a live Pi adapter', async () => {
     const adapter = createAdapter()
-    const persistedStore: SessionStore = {
+    // The cold-load path now feeds the raw persisted pi message entries through
+    // buildPiChatHistory — the same canonical projection as the live path.
+    const persistedStore: PersistedSessionStore = {
       ...sessionStore,
-      load: vi.fn(async () => ({
+      loadEntries: vi.fn(async () => ({
         id: 's-history',
-        title: 'History',
-        createdAt: '2026-06-01T00:00:00.000Z',
-        updatedAt: '2026-06-01T00:00:01.000Z',
-        turnCount: 1,
         messages: [
           {
             id: 'u1',
             role: 'user',
-            parts: [{ type: 'text', text: 'persisted prompt' }],
+            content: [{ type: 'text', text: 'persisted prompt' }],
           },
           {
             id: 'a1',
             role: 'assistant',
-            parts: [
-              { type: 'reasoning', text: 'thought', state: 'done' },
+            content: [
+              { type: 'thinking', thinking: 'thought' },
               {
-                type: 'tool-bash',
-                toolCallId: 'call-1',
-                toolName: 'bash',
-                state: 'output-available',
-                output: { content: 'ok' },
+                type: 'toolCall',
+                id: 'call-1',
+                name: 'bash',
+                arguments: { command: 'pwd' },
                 ui: { rendererId: 'terminal.command', displayGroup: 'Commands', details: { command: 'pwd' }, extra: 'ignored' },
               },
               { type: 'text', text: 'persisted answer' },
             ],
+            stopReason: 'stop',
           },
-        ] as UIMessage[],
+          {
+            role: 'toolResult',
+            toolCallId: 'call-1',
+            content: [{ type: 'text', text: 'ok' }],
+            isError: false,
+          },
+        ],
       })),
     }
     const harness = createHarness(adapter)
@@ -765,17 +772,13 @@ describe('HarnessPiChatService', () => {
     adapter.readSnapshot().messages = [
       { id: 'live-user', message: { role: 'user', content: [{ type: 'text', text: 'live prompt' }] } },
     ]
-    const persistedStore: SessionStore = {
+    const persistedStore: PersistedSessionStore = {
       ...sessionStore,
-      load: vi.fn(async () => ({
+      loadEntries: vi.fn(async () => ({
         id: 's1',
-        title: 'Persisted',
-        createdAt: '',
-        updatedAt: '',
-        turnCount: 1,
         messages: [
-          { id: 'stale-user', role: 'user', parts: [{ type: 'text', text: 'stale prompt' }] },
-        ] as UIMessage[],
+          { id: 'stale-user', role: 'user', content: [{ type: 'text', text: 'stale prompt' }] },
+        ],
       })),
     }
     const harness = createHarness(adapter)
