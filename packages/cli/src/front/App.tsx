@@ -116,7 +116,19 @@ export function CliWorkspaceShell() {
         setActiveWorkspaceId((current) => {
           const urlWorkspaceId = workspaceIdFromCliUrl(window.location.pathname)
           const stored = window.localStorage.getItem("boring-ui:local-workspace-id")
-          const preferred = current ?? urlWorkspaceId ?? stored
+          // An explicit /workspace/<id> in the URL is authoritative: keep targeting it
+          // even while it is still cold-starting (absent from the list or available:false)
+          // instead of silently redirecting to another workspace. A later refresh
+          // (on focus) resolves it once the workspace finishes initializing. Falling back
+          // here would latch a different workspace into `current` and permanently shadow
+          // the URL id, forcing a manual switch to recover.
+          if (urlWorkspaceId) {
+            if (next.some((workspace) => workspace.id === urlWorkspaceId && workspace.available)) {
+              window.localStorage.setItem("boring-ui:local-workspace-id", urlWorkspaceId)
+            }
+            return urlWorkspaceId
+          }
+          const preferred = current ?? stored
           const availablePreferred = preferred ? next.find((workspace) => workspace.id === preferred && workspace.available) : null
           const selected = availablePreferred ?? next.find((workspace) => workspace.available) ?? null
           if (selected) window.localStorage.setItem("boring-ui:local-workspace-id", selected.id)
@@ -187,7 +199,8 @@ export function CliWorkspaceShell() {
   }
 
   if (workspacesMode) {
-    const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId && workspace.available) ?? null
+    const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null
+
     if (!activeWorkspace) {
       const hasUnavailableWorkspaces = workspaces.length > 0
       return (

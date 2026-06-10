@@ -7,6 +7,7 @@ import {
   mkdir,
   writeFile,
   appendFile,
+  rename,
   open,
 } from "node:fs/promises";
 import { closeSync, openSync, readFileSync, readSync, readdirSync, writeFileSync } from "node:fs";
@@ -246,11 +247,35 @@ export class PiSessionStore implements SessionStore {
     }
 
     const fileEntries = safeParseEntries(content);
+
+    // Legacy sessions accumulated a full ui_snapshot on every turn — a 428-message
+    // session could reach 90 MB across 60 snapshots, making every cold-load parse
+    // megabytes of data and stall the UI. Compact them out on first read so all
+    // subsequent loads are fast. The snapshot entries are never read back in the
+    // new architecture (loadEntries uses message entries; load() uses session_info).
+    // Wrapped in try/catch: a disk-full or concurrent-append race must never turn a
+    // successful read into a thrown error — the in-memory filter below is always correct.
+    if (fileEntries.some((e) => (e as { type?: string }).type === "ui_snapshot")) {
+      const compacted = fileEntries
+        .filter((e) => (e as { type?: string }).type !== "ui_snapshot")
+        .map((e) => JSON.stringify(e))
+        .join("\n") + "\n";
+      const tmp = `${filepath}.compact-${randomUUID()}`;
+      try {
+        await writeFile(tmp, compacted, "utf-8");
+        await rename(tmp, filepath);
+      } catch {
+        // Repair failed (disk-full, concurrent write, read-only FS) — skip it silently.
+        // The next read will retry; the in-memory result is already correct.
+        await rm(tmp, { force: true }).catch(() => {});
+      }
+    }
+
     const header = fileEntries.find(
       (e): e is SessionHeader => e.type === "session",
     );
     const sessionEntries = fileEntries.filter(
-      (e): e is SessionEntry => e.type !== "session",
+      (e): e is SessionEntry => e.type !== "session" && (e as { type?: string }).type !== "ui_snapshot",
     );
 
     const fileStat = await fsStat(filepath);
