@@ -6,7 +6,7 @@
   "type": "module",
   "boring": {
     "defaultPluginPackages": [
-      "../../plugins/ask-user"
+      "@hachej/boring-ask-user"
     ]
   },
   "bin": {

@@ -1,5 +1,6 @@
 import { homedir } from "node:os"
-import { existsSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
+import { createRequire } from "node:module"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import {
@@ -55,22 +56,35 @@ function getGlobalPiAgentRoot(options: ResolveCliBoringPluginDirsOptions = {}): 
   return resolve(options.globalAgentRoot ?? dirname(getGlobalPiExtensionsRoot(options)))
 }
 
-// CLI-bundled default plugin packages. Resolved relative to the CLI's
-// own package root so we don't depend on require.resolve() finding them
-// in node_modules — some test layouts hoist the CLI's deps to a
-// different location than the workspace package's, which would silently
-// drop the defaults. Relative paths inside `package.json#boring` follow
-// the same convention so the manifest stays the single source of truth.
-const CLI_DEFAULT_PLUGIN_PACKAGES: string[] = ["../../plugins/ask-user"]
-
+// Read boring.defaultPluginPackages from the CLI's own package.json manifest.
+// Each entry is a package name (e.g. "@hachej/boring-ask-user") resolved via
+// import.meta.resolve so it is found in node_modules both in the published CLI
+// and in the monorepo (where pnpm symlinks workspace:* deps into node_modules).
 function resolveCliDefaultPluginPackagePaths(): string[] {
-  if (CLI_DEFAULT_PLUGIN_PACKAGES.length === 0) return []
-  const baseDir = resolveBoringUiCliPackageRoot()
+  const cliRoot = resolveBoringUiCliPackageRoot()
+  let entries: string[]
+  try {
+    const manifest = JSON.parse(readFileSync(join(cliRoot, "package.json"), "utf-8")) as {
+      boring?: { defaultPluginPackages?: string[] }
+    }
+    entries = manifest.boring?.defaultPluginPackages ?? []
+  } catch {
+    return []
+  }
   const resolved: string[] = []
-  for (const entry of CLI_DEFAULT_PLUGIN_PACKAGES) {
-    const absolute = resolve(baseDir, entry)
-    if (!existsSync(join(absolute, "package.json"))) continue
-    resolved.push(absolute)
+  for (const entry of entries) {
+    try {
+      // Resolve the package's package.json via Node module resolution so this
+      // works from any invocation directory — no hardcoded relative paths.
+      // createRequire anchored to this file finds packages in the CLI's own
+      // node_modules, both in the published build and in the monorepo.
+      const req = createRequire(import.meta.url)
+      const pkgJsonPath = req.resolve(`${entry}/package.json`)
+      const pkgDir = dirname(pkgJsonPath)
+      if (existsSync(join(pkgDir, "package.json"))) resolved.push(pkgDir)
+    } catch {
+      // package not installed — skip silently
+    }
   }
   return resolved
 }
