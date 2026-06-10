@@ -20,14 +20,50 @@ afterEach(async () => {
 
 describe("runPluginSelfTest", () => {
   test("returns no-browser-connected when the UI has not connected", async () => {
+    let openPanelCalls = 0
     const url = await startApp((app) => {
       app.post("/api/v1/agent/reload", async () => ({ ok: true }))
+      app.post("/api/v1/ui/commands", async () => {
+        openPanelCalls += 1
+        return { seq: openPanelCalls, status: "ok" }
+      })
       app.get("/api/v1/ui/panels/status", async () => ({ ok: true, connected: false, state: "no-browser-connected" }))
     })
 
-    const result = await runPluginSelfTest({ pluginId: "demo", url, timeoutMs: 100 })
+    const result = await runPluginSelfTest({ pluginId: "demo", url, timeoutMs: 1600 })
+    expect(openPanelCalls).toBeGreaterThan(0)
     expect(result.ok).toBe(false)
     expect(result.pane.state).toBe("no-browser-connected")
+  })
+
+  test("opens the self-test panel before concluding no browser is connected", async () => {
+    let openPanelCalls = 0
+    const url = await startApp((app) => {
+      app.post("/api/v1/agent/reload", async () => ({ ok: true }))
+      app.post("/api/v1/ui/commands", async () => {
+        openPanelCalls += 1
+        return { seq: openPanelCalls, status: "ok" }
+      })
+      app.get("/api/v1/ui/panels/status", async () => openPanelCalls === 0
+        ? { ok: true, connected: false, state: "no-browser-connected" }
+        : {
+            ok: true,
+            connected: true,
+            state: "ready",
+            status: {
+              pluginId: "demo",
+              panelId: "demo.panel",
+              panelInstanceId: "self-test:demo:demo.panel",
+              state: "ready",
+              reportedAt: new Date().toISOString(),
+            },
+          })
+    })
+
+    const result = await runPluginSelfTest({ pluginId: "demo", url, timeoutMs: 1000 })
+    expect(openPanelCalls).toBeGreaterThan(0)
+    expect(result.ok).toBe(true)
+    expect(result.pane).toMatchObject({ state: "ready", found: true })
   })
 
   test("ignores stale pane status from a previous self-test", async () => {
