@@ -7,33 +7,16 @@
 // sends. Catches header/body contract drift between client and server.
 import Fastify, { type FastifyInstance } from "fastify"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { sessionRoutes, InMemorySessionStore } from "../sessions"
-import type { AgentHarness } from "../../../../shared/harness"
-
-// Minimal harness — only the `sessions` API matters for the route handlers
-// covered here. `sendMessage` isn't exercised by /api/v1/agent/sessions/*.
-function createTestHarness(): AgentHarness {
-  const store = new InMemorySessionStore()
-  return {
-    id: "test-harness",
-    placement: "server",
-    sendMessage: () => {
-      throw new Error("sendMessage not used in these tests")
-    },
-    sessions: store,
-  }
-}
+import { sessionRoutes } from "../sessions"
 
 let app: FastifyInstance
 let baseUrl: string
 
 beforeEach(async () => {
   app = Fastify({ logger: false })
-  const harness = createTestHarness()
-  await app.register(sessionRoutes, {
-    harness,
-    workdir: "/tmp/test",
-  })
+  // No options: routes fall back to their own InMemorySessionStore — which is
+  // also what the previous setup exercised (it never passed sessionStore).
+  await app.register(sessionRoutes, {})
   await app.ready()
   baseUrl = await app.listen({ port: 0, host: "127.0.0.1" })
 })
