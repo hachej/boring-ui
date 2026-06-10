@@ -18,6 +18,7 @@ export interface ChatLayoutProps {
   onActiveChatPaneChange?: (id: string) => void
   onCloseChatPane?: (id: string) => void
   onCreateChatPaneAfter?: (id: string) => void
+  flashChatPaneId?: string | null
   surface?: string | null
   surfaceParams?: Record<string, unknown>
   surfaceOverlay?: ReactNode

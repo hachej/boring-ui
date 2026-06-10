@@ -382,6 +382,7 @@ export function ChatLayout(props: ChatLayoutProps) {
                 onActivePaneChange={props.onActiveChatPaneChange}
                 onClosePane={props.onCloseChatPane}
                 onCreatePaneAfter={props.onCreateChatPaneAfter}
+                flashPaneId={props.flashChatPaneId}
                 renderPane={(pane) => (
                   <PanelSlot
                     id={pane.panel ?? centerId}
