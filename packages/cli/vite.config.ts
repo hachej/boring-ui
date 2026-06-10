@@ -3,11 +3,12 @@ import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import { createBoringAppViteAliases } from "@hachej/boring-core/app/vite"
+import { boringDefaultFrontPlugins } from "@hachej/boring-workspace/app/vite"
 
 const baseResolve = createBoringAppViteAliases({ appRoot: __dirname })
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [boringDefaultFrontPlugins({ appRoot: __dirname }), react(), tailwindcss()],
   resolve: {
     ...baseResolve,
     alias: [

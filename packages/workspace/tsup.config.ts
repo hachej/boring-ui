@@ -5,6 +5,7 @@ const PEER_EXTERNALS = ["react", "react-dom", "react/jsx-runtime"]
 export default defineConfig({
   entry: {
     "app-server": "src/app/server/index.ts",
+    "app-vite": "src/app/vite/index.ts",
     server: "src/server/index.ts",
     "runtime-server": "src/server/runtimeBackend/defineRuntimeServerPlugin.ts",
     shared: "src/shared/index.ts",
@@ -16,6 +17,7 @@ export default defineConfig({
     resolve: false,
     entry: {
       "app-server": "src/app/server/index.ts",
+      "app-vite": "src/app/vite/index.ts",
       server: "src/server/index.ts",
       "runtime-server": "src/server/runtimeBackend/defineRuntimeServerPlugin.ts",
       shared: "src/shared/index.ts",

@@ -1,51 +1,13 @@
 import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
-import { readFileSync } from "node:fs"
-import { createRequire } from "node:module"
-import { dirname, join, resolve } from "node:path"
+import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { createBoringAppViteAliases } from "@hachej/boring-core/app/vite"
+import { boringDefaultFrontPlugins } from "@hachej/boring-workspace/app/vite"
 import { AGENT_API_PORT, VITE_PORT, startPlaygroundServer } from "./src/server/dev"
 
 const APP_ROOT = dirname(fileURLToPath(import.meta.url))
-
-function boringDefaultFrontPlugins() {
-  const virtualId = "virtual:boring-front-plugins"
-  const resolvedId = "\0" + virtualId
-  return {
-    name: "boring-default-front-plugins",
-    resolveId(id: string) { return id === virtualId ? resolvedId : undefined },
-    load(id: string) {
-      if (id !== resolvedId) return undefined
-      let entries: string[]
-      try {
-        const manifest = JSON.parse(readFileSync(join(APP_ROOT, "package.json"), "utf-8")) as {
-          boring?: { defaultPlugins?: unknown }
-        }
-        entries = (manifest.boring?.defaultPlugins ?? []).filter((e): e is string => typeof e === "string")
-      } catch { return "export default []" }
-      const req = createRequire(join(APP_ROOT, "package.json"))
-      const imports: string[] = []
-      const vars: string[] = []
-      let i = 0
-      for (const pkg of entries) {
-        if (pkg.startsWith(".") || pkg.startsWith("/")) continue
-        try {
-          const pkgJson = JSON.parse(readFileSync(req.resolve(`${pkg}/package.json`), "utf-8")) as {
-            boring?: { front?: string }
-          }
-          if (pkgJson.boring?.front) {
-            imports.push(`import _p${i} from ${JSON.stringify(`${pkg}/front`)}`)
-            vars.push(`_p${i}`)
-            i++
-          }
-        } catch { /* no front, skip */ }
-      }
-      return [...imports, `export default [${vars.join(", ")}]`].join("\n")
-    },
-  }
-}
 
 const baseResolve = createBoringAppViteAliases({ appRoot: __dirname })
 const repoRoot = resolve(__dirname, "../..")
@@ -125,7 +87,7 @@ const pollingInterval = Number(process.env.CHOKIDAR_INTERVAL ?? process.env.BORI
 
 export default defineConfig({
   plugins: [
-    boringDefaultFrontPlugins(),
+    boringDefaultFrontPlugins({ appRoot: APP_ROOT }),
     react({
       exclude: dynamicPluginReactRefreshExclude,
     }),
