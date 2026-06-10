@@ -14,7 +14,7 @@ Read this first. Re-read after compaction.
 - No secrets in git. Do not paste tokens into commits or logs.
 - No broad rewrite scripts (codemods, "fix everything") without approval.
 - No file variants (`*_v2.*`, `*_improved.*`) — edit in place.
-- Branch policy: work on `main`. Never create feature branches unless instructed.
+- Branch policy: never work directly on `main`. Create a short-lived branch or separate worktree for every change, and land through review/merge unless the user explicitly authorizes direct `main` work.
 - Quality gates: run relevant lint/type-check/tests before considering work done.
 - Multi-agent awareness: never stash, revert, or overwrite another agent's uncommitted work. If you encounter unexpected changes, investigate before acting.
 
@@ -439,6 +439,12 @@ Two axes — **where it is** and **where it is in the process**. Tag every issue
 **`plugin:` — where it is** (zero or more, green): `ask-user` · `data-catalog` · `data-explorer` · `deck`
 
 Legacy kind-of-work labels (`bug`, `feature`, `enhancement`, `refactor`, `architecture`, `story`) are optional/loose — the two axes above are what we tag on consistently. Create labels with the `hachej` gh login (the Vault `boringdata-agent` token is read-only on the repo).
+
+## 8. GitHub PR proof-of-work comments
+
+For every GitHub issue/PR implementation, follow `docs/procedures/proof-of-work.md`.
+
+A PR is not ready for human review until the agent posts a final GitHub proof comment with tests, manual validation, artifacts/screenshots where relevant, workspace-playground details for UI/workspace behavior, and known gaps. Never post host/IP addresses in the public repo; post only ports and local/operator paths.
 
 ---
 

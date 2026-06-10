@@ -71,9 +71,10 @@ describe("askUserPlugin front shell", () => {
     vi.stubGlobal("fetch", fetchMock)
     const Provider = getProvider()
     const Panel = getPanel()
-    render(<Provider apiBaseUrl=""><Panel params={{ questionId: "q1", question }} api={{ close: vi.fn() }} className="h-full" /></Provider>)
+    const { container } = render(<Provider apiBaseUrl=""><Panel params={{ questionId: "q1", question }} api={{ close: vi.fn() }} className="h-full" /></Provider>)
 
     expect(await screen.findByText("Choose A or B")).toBeInTheDocument()
+    expect(container.firstElementChild).toHaveClass("overflow-hidden")
   })
 
   it("composer stop cancels pending question even when pane is closed", async () => {

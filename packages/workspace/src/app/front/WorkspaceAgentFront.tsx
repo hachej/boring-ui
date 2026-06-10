@@ -31,12 +31,15 @@ export interface WorkspaceAgentSessionsApi<
 > {
   sessions: TSession[]
   loading: boolean
+  loadingMore?: boolean
+  hasMore?: boolean
   error?: Error | null
   activeSessionId?: string | null
   activeSession?: TSession | null
   switch: (id: string) => void
   create: (input?: { title?: string }) => void | Promise<unknown>
   delete: (id: string) => void | Promise<unknown>
+  loadMore?: () => void | Promise<unknown>
 }
 
 export type UseWorkspaceAgentSessions<
@@ -62,6 +65,7 @@ export interface WorkspaceAgentFrontProps<
   beforeShell?: ReactNode
   afterShell?: ReactNode
   appTitle?: string
+  workspaceLabel?: string
   defaultSessionTitle?: string
   navEnabled?: boolean
   defaultNavOpen?: boolean
@@ -299,6 +303,7 @@ export function WorkspaceAgentFront<
   onDeleteSession,
   onActiveSessionIdChange,
   appTitle = "Boring",
+  workspaceLabel,
   defaultSessionTitle = "New session",
   navEnabled = true,
   defaultNavOpen = false,
@@ -440,10 +445,7 @@ export function WorkspaceAgentFront<
       && !suppressEmptyAutoCreateRef.current
       && !remoteInitialSessionFailed,
   )
-  const remoteSessionsTransitioning = (
-    remoteSessionsPending
-    && !pendingStoredActiveSessionId
-  ) || remoteEmptySessionsSettling || remoteInitialSessionCreating || remoteInitialSessionNeeded
+  const remoteSessionsTransitioning = remoteEmptySessionsSettling || remoteInitialSessionCreating || remoteInitialSessionNeeded
 
   useEffect(() => {
     if (!remoteEmptySessionsSettling) {
@@ -826,6 +828,7 @@ export function WorkspaceAgentFront<
         defaultTheme={defaultTheme}
         onThemeChange={onThemeChange}
         workspaceId={workspaceId}
+        workspaceLabel={workspaceLabel}
         storageKey={resolvedProviderStorageKey}
         persistenceEnabled={persistenceEnabled}
         bridgeEndpoint={null}
@@ -876,6 +879,9 @@ export function WorkspaceAgentFront<
                 onSwitch: resolvedSwitch,
                 onCreate: resolvedCreate,
                 onDelete: resolvedDelete,
+                onLoadMore: sessionApi?.loadMore,
+                hasMore: sessionApi?.hasMore,
+                loadingMore: sessionApi?.loadingMore,
                 onClose: () => setNavOpen(false),
               }}
               center="chat"

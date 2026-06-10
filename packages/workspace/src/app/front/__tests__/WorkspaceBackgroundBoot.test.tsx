@@ -10,16 +10,18 @@ function json(data: unknown, init?: ResponseInit) {
   })
 }
 
+const SESSION_PRELOAD_PATHS = ["/api/v1/tree?path=.", "/api/v1/agent/sessions"]
+
 afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-it("runs warmup in the background and seeds the tree cache", async () => {
+it("runs warmup in the background without gating on sessions and seeds the tree cache", async () => {
   const onStatusChange = vi.fn()
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
     if (url.includes("/api/v1/tree")) return json({ entries: [{ name: "src", type: "directory", path: "src" }] })
-    if (url.includes("/api/v1/agent/sessions")) return json([])
+    if (url.includes("/api/v1/agent/sessions")) throw new Error("sessions should not gate workspace warmup")
     if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
     return new Response(null, { status: 404 })
   })
@@ -35,6 +37,7 @@ it("runs warmup in the background and seeds the tree cache", async () => {
   )
 
   await waitFor(() => expect(onStatusChange).toHaveBeenLastCalledWith({ status: "ready" }))
+  expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/agent/sessions"))).toBe(false)
   expect(getPreloadedTreeEntries("/base", "w-bg", ".")).toEqual([
     { name: "src", type: "directory", path: "src" },
   ])
@@ -89,6 +92,7 @@ it("keeps retryable AGENT_RUNTIME_NOT_READY as preparing", async () => {
     <WorkspaceBackgroundBoot
       workspaceId="w-runtime-preparing"
       requestHeaders={{ "x-boring-workspace-id": "w-runtime-preparing" }}
+      preloadPaths={SESSION_PRELOAD_PATHS}
       onStatusChange={onStatusChange}
     />,
   )
@@ -126,6 +130,7 @@ it("keeps polling transient runtime-preparing warmup after ready-status complete
     <WorkspaceBackgroundBoot
       workspaceId="w-runtime-eventually-ready"
       requestHeaders={{ "x-boring-workspace-id": "w-runtime-eventually-ready" }}
+      preloadPaths={SESSION_PRELOAD_PATHS}
       onStatusChange={onStatusChange}
     />,
   )
@@ -299,6 +304,7 @@ it("reports JSON error envelope messages for non-retryable warmup failures", asy
     <WorkspaceBackgroundBoot
       workspaceId="w-runtime-failed"
       requestHeaders={{ "x-boring-workspace-id": "w-runtime-failed" }}
+      preloadPaths={SESSION_PRELOAD_PATHS}
       onStatusChange={onStatusChange}
     />,
   )

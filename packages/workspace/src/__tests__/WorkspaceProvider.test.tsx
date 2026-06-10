@@ -4,6 +4,7 @@ import { renderHook } from "@testing-library/react"
 import { type ReactNode, useState } from "react"
 import {
   WorkspaceProvider,
+  formatWorkspaceDocumentTitle,
   useTheme,
   useWorkspaceBridge,
 } from "../front/provider"
@@ -494,6 +495,71 @@ describe("WorkspaceProvider — panel registration", () => {
       </WorkspaceProvider>,
     )
     expect(screen.getAllByTestId("count").at(-1)?.textContent).toBe("12")
+  })
+})
+
+describe("WorkspaceProvider — document title", () => {
+  it("formats the workspace label when present", () => {
+    expect(formatWorkspaceDocumentTitle({ workspaceLabel: "PR Issue Manager", workspaceId: "workspace-1" })).toBe("PR Issue Manager · Boring UI")
+  })
+
+  it("falls back to workspaceId when label is missing", () => {
+    expect(formatWorkspaceDocumentTitle({ workspaceId: "workspace-playground" })).toBe("workspace-playground · Boring UI")
+  })
+
+  it("keeps normal short ids that are not hostnames", () => {
+    expect(formatWorkspaceDocumentTitle({ workspaceId: "abc" })).toBe("abc · Boring UI")
+    expect(formatWorkspaceDocumentTitle({ workspaceLabel: "deadbeef" })).toBe("deadbeef · Boring UI")
+  })
+
+  it("falls back to the default title when no safe workspace metadata exists", () => {
+    expect(formatWorkspaceDocumentTitle({})).toBe("Boring UI")
+    expect(formatWorkspaceDocumentTitle({ workspaceLabel: "   ", workspaceId: "" })).toBe("Boring UI")
+    expect(formatWorkspaceDocumentTitle({ workspaceLabel: "/home/ubuntu/projects/boring-ui-v2" })).toBe("Boring UI")
+    expect(formatWorkspaceDocumentTitle({ workspaceLabel: "127.0.0.1:5212" })).toBe("Boring UI")
+    expect(formatWorkspaceDocumentTitle({ workspaceLabel: "localhost:5212" })).toBe("Boring UI")
+    expect(formatWorkspaceDocumentTitle({ workspaceLabel: "workspace.example.com:5212" })).toBe("Boring UI")
+    expect(formatWorkspaceDocumentTitle({ workspaceLabel: "::1" })).toBe("Boring UI")
+    expect(formatWorkspaceDocumentTitle({ workspaceLabel: "C:/Users/demo/project" })).toBe("Boring UI")
+    expect(formatWorkspaceDocumentTitle({ workspaceLabel: "HTTPS://workspace.example.com" })).toBe("Boring UI")
+  })
+
+  it("updates document.title when workspace metadata changes", () => {
+    const { rerender } = render(
+      <WorkspaceProvider workspaceId="workspace-a" workspaceLabel="Workspace A" persistenceEnabled={false}>
+        <div />
+      </WorkspaceProvider>,
+    )
+
+    expect(document.title).toBe("Workspace A · Boring UI")
+
+    rerender(
+      <WorkspaceProvider workspaceId="workspace-b" workspaceLabel="Workspace B" persistenceEnabled={false}>
+        <div />
+      </WorkspaceProvider>,
+    )
+
+    expect(document.title).toBe("Workspace B · Boring UI")
+  })
+
+  it("falls back to workspaceId in document.title when label is missing", () => {
+    render(
+      <WorkspaceProvider workspaceId="workspace-scope" persistenceEnabled={false}>
+        <div />
+      </WorkspaceProvider>,
+    )
+
+    expect(document.title).toBe("workspace-scope · Boring UI")
+  })
+
+  it("falls back to workspaceId in document.title when workspaceLabel is unsafe", () => {
+    render(
+      <WorkspaceProvider workspaceId="workspace-scope" workspaceLabel="localhost:5212" persistenceEnabled={false}>
+        <div />
+      </WorkspaceProvider>,
+    )
+
+    expect(document.title).toBe("workspace-scope · Boring UI")
   })
 })
 

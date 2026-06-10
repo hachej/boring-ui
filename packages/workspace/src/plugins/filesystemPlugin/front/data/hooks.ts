@@ -13,7 +13,7 @@ import { getPreloadedTreeEntries } from "./treePreloadCache"
 import { events, userMeta } from "../../../../front/events"
 import { filesystemEvents } from "../../shared/events"
 import { FILES_QUERY_KEY_SEGMENT } from "../../shared/constants"
-import type { FileContent, FileEntry, FileStat } from "./types"
+import type { FileContent, FileEntry, FileStat, GitUrlMetadata } from "./types"
 
 function noRetryOn404(count: number, error: Error): boolean {
   if (error instanceof FetchError && error.status === 404) return false
@@ -58,6 +58,19 @@ export function useStat(path: string | null): UseQueryResult<FileStat> {
     queryKey: [base, workspaceId, "stat", path],
     queryFn: ({ signal }) => client.stat(path!, signal),
     enabled: path != null,
+    retry: noRetryOn404,
+  })
+}
+
+export function useGitUrlMetadata(path: string | null): UseQueryResult<GitUrlMetadata> {
+  const client = useDataClient()
+  const base = useApiBaseUrl()
+  const workspaceId = useWorkspaceRequestId()
+  return useQuery({
+    queryKey: [base, workspaceId, "git-file-url", path],
+    queryFn: ({ signal }) => client.getGitUrlMetadata(path!, signal),
+    enabled: path != null,
+    staleTime: 30_000,
     retry: noRetryOn404,
   })
 }

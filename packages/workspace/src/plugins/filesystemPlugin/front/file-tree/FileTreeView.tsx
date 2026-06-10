@@ -5,6 +5,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -18,6 +19,7 @@ import {
   useDeleteFile,
   useFileSearch,
   useDataClient,
+  useGitUrlMetadata,
 } from "../data"
 import type { FileEntry } from "../data/types"
 import type { FileTreeNode, FileTreeEditState } from "./FileTree"
@@ -76,6 +78,27 @@ interface ContextMenuState {
   x: number
   y: number
   isBackground?: boolean
+}
+
+const CONTEXT_MENU_MARGIN = 8
+
+function clampContextMenuPosition(
+  x: number,
+  y: number,
+  menuRect: Pick<DOMRect, "width" | "height">,
+  viewportWidth: number,
+  viewportHeight: number,
+) {
+  return {
+    x: Math.max(
+      CONTEXT_MENU_MARGIN,
+      Math.min(x, viewportWidth - menuRect.width - CONTEXT_MENU_MARGIN),
+    ),
+    y: Math.max(
+      CONTEXT_MENU_MARGIN,
+      Math.min(y, viewportHeight - menuRect.height - CONTEXT_MENU_MARGIN),
+    ),
+  }
 }
 
 export interface FileTreeViewProps {
@@ -170,6 +193,10 @@ export function FileTreeView({
   const [treeHeight, setTreeHeight] = useState(400)
 
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null)
+  const gitUrlPath = ctxMenu && !ctxMenu.isBackground && ctxMenu.node.kind === "file"
+    ? ctxMenu.node.path
+    : null
+  const { data: gitUrlMetadata } = useGitUrlMetadata(gitUrlPath)
   const [deleteTarget, setDeleteTarget] = useState<FileTreeNode | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const [selectedPath, setSelectedPath] = useState<string | null>(
@@ -200,6 +227,23 @@ export function FileTreeView({
     }
     document.addEventListener("pointerdown", onPointerDown)
     return () => document.removeEventListener("pointerdown", onPointerDown)
+  }, [ctxMenu])
+
+  useLayoutEffect(() => {
+    if (!ctxMenu || !menuRef.current) return
+    const { x, y } = clampContextMenuPosition(
+      ctxMenu.x,
+      ctxMenu.y,
+      menuRef.current.getBoundingClientRect(),
+      window.innerWidth,
+      window.innerHeight,
+    )
+    if (x === ctxMenu.x && y === ctxMenu.y) return
+    setCtxMenu((prev) => {
+      if (!prev) return prev
+      if (prev.x === x && prev.y === y) return prev
+      return { ...prev, x, y }
+    })
   }, [ctxMenu])
 
   useEffect(() => {
@@ -575,6 +619,14 @@ export function FileTreeView({
     toast.success({ title: "Path copied", description: ctxMenu.node.path })
   })
 
+  const handleCopyGitUrl = ctxAction(async () => {
+    if (!gitUrlMetadata?.enabled || !gitUrlMetadata.url) {
+      throw new Error(gitUrlMetadata?.reason ?? "Git URL unavailable")
+    }
+    await copyToClipboard(gitUrlMetadata.url)
+    toast.success({ title: "Git URL copied", description: gitUrlMetadata.url })
+  })
+
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteTarget) return
     const target = deleteTarget
@@ -716,6 +768,15 @@ export function FileTreeView({
               <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleCopyPath}>
                 Copy path
               </Button>
+              {gitUrlMetadata?.enabled ? (
+                <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleCopyGitUrl}>
+                  Copy Git URL
+                </Button>
+              ) : gitUrlMetadata?.reason ? (
+                <div className="px-2 py-1 text-xs text-muted-foreground" aria-live="polite">
+                  {gitUrlMetadata.reason}
+                </div>
+              ) : null}
             </>
           )}
         </div>
@@ -745,6 +806,8 @@ export function FileTreeView({
     </div>
   )
 }
+
+export { clampContextMenuPosition }
 
 export interface FileTreePaneParams extends LeftTabParams {
   rootDir?: string
