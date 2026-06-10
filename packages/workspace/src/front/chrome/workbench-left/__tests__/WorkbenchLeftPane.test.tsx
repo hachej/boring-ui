@@ -53,4 +53,45 @@ describe("WorkbenchLeftPane", () => {
       params: { from: "left-tab" },
     })
   })
+
+  test("categories render as a rail with a calm active state and menu collapse", () => {
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("files", {
+      title: "Files",
+      placement: "left-tab",
+      component: () => <div>files body</div>,
+    })
+    panelRegistry.register("data", {
+      title: "Data",
+      placement: "left-tab",
+      component: () => <div>data body</div>,
+    })
+    const onCollapse = vi.fn()
+
+    render(
+      <RegistryProvider
+        panelRegistry={panelRegistry}
+        commandRegistry={new CommandRegistry()}
+        surfaceResolverRegistry={new SurfaceResolverRegistry()}
+      >
+        <WorkbenchLeftPane defaultTab="files" onCollapse={onCollapse} />
+      </RegistryProvider>,
+    )
+
+    const rail = screen.getByRole("navigation", { name: "Workspace categories" })
+    expect(rail).toBeInTheDocument()
+    const filesButton = screen.getByRole("button", { name: "Files" })
+    const dataButton = screen.getByRole("button", { name: "Data" })
+    expect(filesButton).toHaveAttribute("aria-pressed", "true")
+    expect(dataButton).toHaveAttribute("aria-pressed", "false")
+    // No accent stripe: the active state is the shared grey surface.
+    expect(filesButton.className).not.toContain("accent")
+
+    fireEvent.click(dataButton)
+    expect(dataButton).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByText("data body")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide workspace menu" }))
+    expect(onCollapse).toHaveBeenCalled()
+  })
 })

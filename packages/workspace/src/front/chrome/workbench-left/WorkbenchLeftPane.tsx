@@ -12,8 +12,8 @@ import {
   useSyncExternalStore,
   type ComponentType,
 } from "react"
-import { ChevronLeft, PanelLeft, Search, X } from "lucide-react"
-import { IconButton, Input, Tabs, TabsList, TabsTrigger } from "@hachej/boring-ui-kit"
+import { Menu, PanelLeft, Search, X } from "lucide-react"
+import { IconButton, Input } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import type { WorkspaceBridge } from "../../bridge/types"
 import { useRegistry } from "../../registry"
@@ -68,7 +68,7 @@ export function WorkbenchLeftPane({
       next.push({
         id: panel.id,
         title: panel.title,
-        icon: Icon ? <Icon className="h-3.5 w-3.5" /> : <PanelLeft className="h-3.5 w-3.5" />,
+        icon: Icon ? <Icon className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />,
         panel,
       })
     }
@@ -135,79 +135,102 @@ export function WorkbenchLeftPane({
     [bridge, debouncedQuery, revealFileTreeRequest, rootDir],
   )
 
+  // Workspace categories live on a quiet icon rail. The active category
+  // visually connects to the content pane as one calm grey surface — same
+  // background on the icon and the pane, bridged across the rail gutter,
+  // with no accent marker or side stripe (see WORKSPACE_LEFT_NAV_UX_SPEC).
+  const rail = (
+    <nav
+      className="flex w-11 shrink-0 flex-col items-center gap-1 bg-muted/35 px-1.5 py-2"
+      aria-label="Workspace categories"
+    >
+      {onCollapse && (
+        <button
+          type="button"
+          title="Hide workspace menu"
+          aria-label="Hide workspace menu"
+          onClick={onCollapse}
+          className="mb-1 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        >
+          <Menu className="h-4 w-4" strokeWidth={1.75} />
+        </button>
+      )}
+      {tabs.map((entry) => {
+        const active = entry.id === activeTab
+        return (
+          <button
+            key={entry.id}
+            type="button"
+            title={entry.title}
+            aria-label={entry.title}
+            aria-pressed={active}
+            onClick={() => setTab(entry.id)}
+            className={cn(
+              "relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+              active && "rounded-r-none bg-muted/35 text-foreground shadow-none hover:bg-muted/35 before:absolute before:-right-1.5 before:top-0 before:h-full before:w-1.5 before:bg-muted/35",
+            )}
+          >
+            {entry.icon}
+          </button>
+        )
+      })}
+    </nav>
+  )
+
   return (
-    <div data-boring-workspace-part="workbench-left" className={cn("workbench-left-root flex h-full min-h-0 flex-col", className)}>
-      <div className="flex h-11 items-center gap-1 border-b border-border/60 px-2.5">
-        <Tabs value={activeTab} onValueChange={setTab} className="min-w-0 flex-1 overflow-hidden" aria-label="Workbench sources">
-          <TabsList variant="line" className="h-auto min-w-0 max-w-full gap-0.5 overflow-x-auto p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {tabs.map((entry) => (
-              <TabsTrigger
-                key={entry.id}
-                value={entry.id}
-                className="h-8 flex-none gap-1.5 px-2 py-1 text-[12px] data-[state=active]:text-foreground data-[state=active]:after:bg-[color:var(--accent)]"
-              >
-                <span className="data-[state=active]:text-[color:var(--accent)]">{entry.icon}</span>
-                <span className="tracking-tight">{entry.title}</span>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+    <div data-boring-workspace-part="workbench-left" className={cn("workbench-left-root flex h-full min-h-0", className)}>
+      {rail}
 
-        {showChromeSearch && (
-          <IconButton
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            onClick={toggleSearch}
-            className={cn(searchOpen && "bg-foreground/5 text-foreground")}
-            aria-label="Search"
-            title="Search"
-          >
-            <Search className="h-3.5 w-3.5" strokeWidth={1.75} />
-          </IconButton>
-        )}
-        {onCollapse && (
-          <IconButton
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            onClick={onCollapse}
-            aria-label="Hide sources"
-            title="Hide sources"
-          >
-            <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
-          </IconButton>
-        )}
-      </div>
-
-      {showChromeSearch && searchOpen && (
-        <div className="flex items-center gap-1 border-b border-border/60 px-2 py-1.5">
-          <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <Input
-            ref={searchInputRef}
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={onSearchKeyDown}
-            placeholder={`Search ${(activeEntry?.title ?? "sources").toLowerCase()}...`}
-            className="h-7 flex-1 border-0 bg-transparent px-0 py-0 text-xs shadow-none focus-visible:ring-0 dark:bg-transparent"
-          />
-          {query && (
+      <div className="flex h-full min-w-0 flex-1 flex-col bg-muted/35">
+        <div className="flex h-11 items-center gap-1 border-b border-border/60 bg-muted/35 px-2.5">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+            <span className="shrink-0 text-foreground/80">{activeEntry?.icon}</span>
+            <div className="truncate text-[14px] font-medium tracking-tight text-foreground">{activeEntry?.title ?? "Sources"}</div>
+          </div>
+          {showChromeSearch && (
             <IconButton
               type="button"
               variant="ghost"
               size="icon-xs"
-              onClick={() => setQuery("")}
-              aria-label="Clear search"
+              onClick={toggleSearch}
+              className={cn(searchOpen && "bg-foreground/5 text-foreground")}
+              aria-label="Search"
+              title="Search"
             >
-              <X className="h-3 w-3" />
+              <Search className="h-3.5 w-3.5" strokeWidth={1.75} />
             </IconButton>
           )}
         </div>
-      )}
 
-      <div className="min-h-0 flex-1 overflow-hidden">
-        <LeftTabPanelHost panel={activeEntry?.panel} params={leftTabParams} onOpenPanel={onOpenPanel} />
+        {showChromeSearch && searchOpen && (
+          <div className="flex items-center gap-1 border-b border-border/60 px-2 py-1.5">
+            <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <Input
+              ref={searchInputRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={onSearchKeyDown}
+              placeholder={`Search ${(activeEntry?.title ?? "sources").toLowerCase()}...`}
+              className="h-7 flex-1 border-0 bg-transparent px-0 py-0 text-xs shadow-none focus-visible:ring-0 dark:bg-transparent"
+            />
+            {query && (
+              <IconButton
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => setQuery("")}
+                aria-label="Clear search"
+              >
+                <X className="h-3 w-3" />
+              </IconButton>
+            )}
+          </div>
+        )}
+
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <LeftTabPanelHost panel={activeEntry?.panel} params={leftTabParams} onOpenPanel={onOpenPanel} />
+        </div>
       </div>
     </div>
   )
@@ -248,7 +271,7 @@ function LeftTabPanelHost({ panel, params, onOpenPanel }: { panel?: PanelConfig;
   if (!panel || !Inner) {
     return (
       <div className="flex h-full items-center justify-center px-4 text-center text-[12px] text-muted-foreground">
-        No workbench source registered.
+        No workspace category registered.
       </div>
     )
   }
@@ -261,7 +284,7 @@ function LeftTabPanelHost({ panel, params, onOpenPanel }: { panel?: PanelConfig;
       <Suspense
         fallback={
           <div className="flex h-full items-center justify-center px-4 text-center text-[12px] text-muted-foreground">
-            Loading source...
+            Loading workspace category...
           </div>
         }
       >

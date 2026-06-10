@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { DockviewApi } from "dockview-react"
-import { ChevronRight, FolderTree } from "lucide-react"
+import { ChevronRight, Menu } from "lucide-react"
 import { Button, IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { ArtifactSurfacePane } from "./ArtifactSurfacePane"
@@ -690,10 +690,10 @@ export function SurfaceShell({
                 size="icon-xs"
                 onClick={() => setCollapsed(false)}
                 className="pointer-events-auto ml-2"
-                aria-label="Show sources"
-                title="Show sources"
+                aria-label="Show workspace menu"
+                title="Show workspace menu"
               >
-                <FolderTree className="h-4 w-4" strokeWidth={1.75} />
+                <Menu className="h-4 w-4" strokeWidth={1.75} />
               </IconButton>
             )}
           </div>
@@ -758,10 +758,10 @@ function EmptyWorkbenchOverlay({
             size="icon-xs"
             onClick={onExpandFiles}
             className="pointer-events-auto mx-1"
-            aria-label="Show sources"
-            title="Show sources"
+            aria-label="Show workspace menu"
+            title="Show workspace menu"
           >
-            <FolderTree className="h-4 w-4" strokeWidth={1.75} />
+            <Menu className="h-4 w-4" strokeWidth={1.75} />
           </IconButton>
         )}
         <div className="flex-1" />
@@ -784,8 +784,8 @@ function EmptyWorkbenchOverlay({
             onClick={onExpandFiles}
             className="pointer-events-auto mt-2 gap-1.5 text-[12px] hover:border-[color:var(--accent)]/40 hover:text-[color:var(--accent)]"
           >
-            <FolderTree className="h-3.5 w-3.5" strokeWidth={1.75} />
-            Show sources
+            <Menu className="h-3.5 w-3.5" strokeWidth={1.75} />
+            Show workspace menu
           </Button>
         )}
       </div>
