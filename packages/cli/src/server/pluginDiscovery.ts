@@ -1,5 +1,7 @@
 import { homedir } from "node:os"
+import { existsSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import {
   BoringPluginAssetManager,
   type BoringPluginFrontTargetResolver,
@@ -14,6 +16,19 @@ import {
   resolvePluginSourceScopePaths,
 } from "@hachej/boring-ui-plugin-cli"
 
+/**
+ * Absolute path to the running CLI package's directory. Used to resolve
+ * CLI-default plugin packages (e.g. `@hachej/boring-ask-user`) from the
+ * CLI's own `node_modules`, regardless of the current working directory
+ * the CLI was invoked from. Re-exported by `./cli.ts` for backward
+ * compatibility with existing call sites.
+ */
+export function resolveBoringUiCliPackageRoot(): string {
+  const here = dirname(fileURLToPath(import.meta.url))
+  // pluginDiscovery.ts is in src/server/, the package root is ../..
+  return resolve(here, "..", "..")
+}
+
 export interface ResolveCliBoringPluginDirsOptions {
   /** Existing tests/callers use this as the global extensions root. */
   globalRoot?: string
@@ -21,6 +36,15 @@ export interface ResolveCliBoringPluginDirsOptions {
   globalAgentRoot?: string
   frontTargetResolver?: BoringPluginFrontTargetResolver
   includeLegacyFrontUrl?: boolean
+  /**
+   * Include CLI-bundled default plugin packages (e.g.
+   * `@hachej/boring-ask-user`) discovered from the CLI's own
+   * `node_modules`. Defaults to `true` — the CLI ships with these
+   * packages as part of its default install and they should be
+   * registered for every workspace. Tests that need to assert the
+   * exact set of *user* plugin sources can pass `false` to opt out.
+   */
+  includeDefaultPackages?: boolean
 }
 
 export function getGlobalPiExtensionsRoot(options: ResolveCliBoringPluginDirsOptions = {}): string {
@@ -29,6 +53,26 @@ export function getGlobalPiExtensionsRoot(options: ResolveCliBoringPluginDirsOpt
 
 function getGlobalPiAgentRoot(options: ResolveCliBoringPluginDirsOptions = {}): string {
   return resolve(options.globalAgentRoot ?? dirname(getGlobalPiExtensionsRoot(options)))
+}
+
+// CLI-bundled default plugin packages. Resolved relative to the CLI's
+// own package root so we don't depend on require.resolve() finding them
+// in node_modules — some test layouts hoist the CLI's deps to a
+// different location than the workspace package's, which would silently
+// drop the defaults. Relative paths inside `package.json#boring` follow
+// the same convention so the manifest stays the single source of truth.
+const CLI_DEFAULT_PLUGIN_PACKAGES: string[] = ["../../plugins/ask-user"]
+
+function resolveCliDefaultPluginPackagePaths(): string[] {
+  if (CLI_DEFAULT_PLUGIN_PACKAGES.length === 0) return []
+  const baseDir = resolveBoringUiCliPackageRoot()
+  const resolved: string[] = []
+  for (const entry of CLI_DEFAULT_PLUGIN_PACKAGES) {
+    const absolute = resolve(baseDir, entry)
+    if (!existsSync(join(absolute, "package.json"))) continue
+    resolved.push(absolute)
+  }
+  return resolved
 }
 
 export function resolveCliBoringPluginDirs(
@@ -43,7 +87,11 @@ export function resolveCliBoringPluginDirs(
     ...readPluginSourceRecords(globalScope),
     ...readPluginSourceRecords(localScope),
   ]
+  const includeDefaultPackages = options.includeDefaultPackages ?? true
   const roots: BoringPluginSourceInput[] = [
+    ...(includeDefaultPackages
+      ? resolveCliDefaultPluginPackagePaths().map((rootDir): BoringPluginSourceInput => ({ rootDir, kind: "internal" }))
+      : []),
     { rootDir: getGlobalPiExtensionsRoot(options), kind: "external" },
     { rootDir: globalScope.npmDir, kind: "external" },
     { rootDir: globalScope.gitDir, kind: "external" },

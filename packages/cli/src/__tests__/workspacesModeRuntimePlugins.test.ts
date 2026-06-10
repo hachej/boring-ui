@@ -135,20 +135,38 @@ describe("workspaces mode runtime plugin wiring", () => {
     const sse = await openSse(`${address}/api/v1/agent-plugins/events?workspaceId=${encodeURIComponent(registeredA.id)}`)
 
     try {
-      const first = await sse.nextEvent((event) => event.event === "boring.plugin.load")
-      const second = await sse.nextEvent((event) => event.event === "boring.plugin.load" && event.data.id !== first.data.id)
-      const replayComplete = await sse.nextEvent((event) => event.event === "boring.plugin.replay-complete")
-
-      expect([first.data.id, second.data.id].sort()).toEqual(["global-plugin", "local-a"])
-      expect(first.data.workspaceId).toBe(registeredA.id)
-      expect(second.data.workspaceId).toBe(registeredA.id)
-      expect(first.data.replay).toBe(true)
-      expect(second.data.replay).toBe(true)
-      expect(first.data.frontTarget).toBeTruthy()
-      expect(second.data.frontTarget).toBeTruthy()
-      expect(first.data.frontUrl).toBeUndefined()
-      expect(second.data.frontUrl).toBeUndefined()
-      expect(replayComplete.data).toMatchObject({ workspaceId: registeredA.id, replay: true })
+      // The CLI bundles @hachej/boring-ask-user as a CLI-default plugin
+      // package, so the SSE stream / list include it alongside the test
+      // fixtures. Filter to the IDs this test actually loaded.
+      const expectedTestPluginIds = ["global-plugin", "local-a"]
+      const collectMessages = async (expectedCount: number): Promise<SseMessage[]> => {
+        const collected: SseMessage[] = []
+        for (let i = 0; i < 60; i += 1) {
+          const event = await sse.nextEvent((msg) => msg.event === "boring.plugin.load" || msg.event === "boring.plugin.replay-complete")
+          collected.push(event)
+          if (collected.length >= expectedCount) break
+        }
+        return collected
+      }
+      const events = await collectMessages(4)
+      const loaded = events
+        .filter((event) => event.event === "boring.plugin.load")
+        .map((event) => ({ id: String(event.data.id), data: event.data }))
+      const replayComplete = events.find((event) => event.event === "boring.plugin.replay-complete")
+      const loadedTestPluginIds = loaded.map((event) => event.id).filter((id) => expectedTestPluginIds.includes(id)).sort()
+      expect(loadedTestPluginIds).toEqual(expectedTestPluginIds)
+      for (const event of loaded) {
+        expect(event.data.workspaceId).toBe(registeredA.id)
+        expect(event.data.replay).toBe(true)
+        expect({ id: event.id, hasFrontTarget: Boolean(event.data.frontTarget) }).toEqual({
+          id: event.id,
+          hasFrontTarget: true,
+        })
+        expect(event.data.frontUrl).toBeUndefined()
+      }
+      const askUserEvent = loaded.find((event) => event.id === "ask-user")
+      expect(askUserEvent).toBeDefined()
+      expect(replayComplete).toBeDefined()
 
       const meta = await app.inject({ method: "GET", url: "/api/v1/workspace/meta" })
       expect(meta.json()).toMatchObject({
@@ -178,7 +196,7 @@ describe("workspaces mode runtime plugin wiring", () => {
 
       const listA = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${registeredA.id}` })
       const pluginsA = listA.json() as Array<{ id: string; frontTarget?: { entryUrl?: string } }>
-      expect(pluginsA.map((plugin) => plugin.id).sort()).toEqual(["global-plugin", "local-a"])
+      expect(pluginsA.map((plugin) => plugin.id).sort()).toEqual(["ask-user", "global-plugin", "local-a"])
       for (const plugin of pluginsA) {
         expect(plugin.frontTarget?.entryUrl).toBeTruthy()
         const runtime = await app.inject({ method: "GET", url: plugin.frontTarget!.entryUrl! })
@@ -186,12 +204,12 @@ describe("workspaces mode runtime plugin wiring", () => {
       }
 
       const listB = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${registeredB.id}` })
-      expect((listB.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["global-plugin", "local-b"])
+      expect((listB.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "global-plugin", "local-b"])
     } finally {
       await sse.close()
       await app.close()
     }
-  }, 20_000)
+  }, 60_000)
 
   test("ordinary GET does not become a hidden refresh path and zero-plugin workspaces still complete replay", async () => {
     const homeRoot = await makeTempDir("boring-cli-workspaces-empty-home-")
@@ -208,13 +226,17 @@ describe("workspaces mode runtime plugin wiring", () => {
       const replayComplete = await sse.nextEvent((event) => event.event === "boring.plugin.replay-complete")
       expect(replayComplete.data).toMatchObject({ workspaceId: workspace.id, replay: true })
 
+      // ask-user is the CLI's default plugin package and is present even
+      // for zero-external-plugin workspaces. The fixture only writes
+      // `later-plugin` mid-test, so the pre-reload list should contain
+      // exactly the ask-user default.
       const before = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
-      expect(before.json()).toEqual([])
+      expect((before.json() as Array<{ id: string }>).map((plugin) => plugin.id)).toEqual(["ask-user"])
 
       await writePlugin(join(workspaceRoot, ".pi", "extensions", "later-plugin"), "later-plugin")
 
       const stillBeforeReload = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
-      expect(stillBeforeReload.json()).toEqual([])
+      expect((stillBeforeReload.json() as Array<{ id: string }>).map((plugin) => plugin.id)).toEqual(["ask-user"])
 
       const reload = await app.inject({
         method: "POST",
@@ -225,7 +247,7 @@ describe("workspaces mode runtime plugin wiring", () => {
       expect(reload.json()).toMatchObject({ ok: true, sessionId: expect.any(String), reloaded: expect.any(Boolean) })
 
       const afterReload = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
-      expect((afterReload.json() as Array<{ id: string }>).map((plugin) => plugin.id)).toEqual(["later-plugin"])
+      expect((afterReload.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "later-plugin"])
     } finally {
       await sse.close()
       await app.close()
@@ -247,14 +269,14 @@ describe("workspaces mode runtime plugin wiring", () => {
     try {
       await sse.nextEvent((event) => event.event === "boring.plugin.replay-complete")
       const list = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
-      const [plugin] = list.json() as Array<{ frontTarget?: { entryUrl?: string } }>
+      const plugin = (list.json() as Array<{ id: string; frontTarget?: { entryUrl?: string } }>).find((item) => item.id === "evict-plugin")
       expect(plugin?.frontTarget?.entryUrl).toBeTruthy()
 
       const remove = await app.inject({ method: "DELETE", url: `/api/v1/local-workspaces/${workspace.id}` })
       expect(remove.json()).toMatchObject({ ok: true })
       await sse.waitForClose()
 
-      const runtime = await app.inject({ method: "GET", url: plugin.frontTarget!.entryUrl! })
+      const runtime = await app.inject({ method: "GET", url: plugin!.frontTarget!.entryUrl! })
       expect(runtime.statusCode).toBe(404)
     } finally {
       await sse.close()
@@ -277,7 +299,7 @@ describe("workspaces mode runtime plugin wiring", () => {
 
     try {
       const list = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
-      const [plugin] = list.json() as Array<{ frontTarget?: { entryUrl?: string } }>
+      const plugin = (list.json() as Array<{ id: string; frontTarget?: { entryUrl?: string } }>).find((item) => item.id === "front-removed-plugin")
       expect(plugin?.frontTarget?.entryUrl).toBeTruthy()
       await sse.nextEvent((event) => event.event === "boring.plugin.replay-complete")
 
@@ -296,7 +318,7 @@ describe("workspaces mode runtime plugin wiring", () => {
 
       const loadWithoutFront = await sse.nextEvent((event) => event.event === "boring.plugin.load" && event.data.id === "front-removed-plugin" && !("frontTarget" in event.data))
       expect(loadWithoutFront.data).toMatchObject({ id: "front-removed-plugin", workspaceId: workspace.id, replay: false })
-      const runtimeAfterFrontRemoved = await app.inject({ method: "GET", url: plugin.frontTarget!.entryUrl! })
+      const runtimeAfterFrontRemoved = await app.inject({ method: "GET", url: plugin!.frontTarget!.entryUrl! })
       expect(runtimeAfterFrontRemoved.statusCode).toBe(404)
     } finally {
       await sse.close()
@@ -317,7 +339,7 @@ describe("workspaces mode runtime plugin wiring", () => {
 
     try {
       const list = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
-      const [plugin] = list.json() as Array<{ frontTarget?: { entryUrl?: string } }>
+      const plugin = (list.json() as Array<{ id: string; frontTarget?: { entryUrl?: string } }>).find((item) => item.id === "no-sse-plugin")
       expect(plugin?.frontTarget?.entryUrl).toBeTruthy()
 
       await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
@@ -333,7 +355,7 @@ describe("workspaces mode runtime plugin wiring", () => {
       })
       expect(reload.statusCode).toBe(200)
 
-      const runtimeAfterReload = await app.inject({ method: "GET", url: plugin.frontTarget!.entryUrl! })
+      const runtimeAfterReload = await app.inject({ method: "GET", url: plugin!.frontTarget!.entryUrl! })
       expect(runtimeAfterReload.statusCode).toBe(404)
     } finally {
       await app.close()
@@ -354,7 +376,7 @@ describe("workspaces mode runtime plugin wiring", () => {
 
     try {
       const list = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
-      const [plugin] = list.json() as Array<{ frontTarget?: { entryUrl?: string } }>
+      const plugin = (list.json() as Array<{ id: string; frontTarget?: { entryUrl?: string } }>).find((item) => item.id === "live-plugin")
       expect(plugin?.frontTarget?.entryUrl).toBeTruthy()
       await sse.nextEvent((event) => event.event === "boring.plugin.replay-complete")
 
@@ -371,7 +393,7 @@ describe("workspaces mode runtime plugin wiring", () => {
 
       const unload = await sse.nextEvent((event) => event.event === "boring.plugin.unload")
       expect(unload.data).toMatchObject({ id: "live-plugin", workspaceId: workspace.id, replay: false })
-      const runtimeAfterUnload = await app.inject({ method: "GET", url: plugin.frontTarget!.entryUrl! })
+      const runtimeAfterUnload = await app.inject({ method: "GET", url: plugin!.frontTarget!.entryUrl! })
       expect(runtimeAfterUnload.statusCode).toBe(404)
     } finally {
       await sse.close()

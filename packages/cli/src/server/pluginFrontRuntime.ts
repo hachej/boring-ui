@@ -450,12 +450,18 @@ function normalizeRequestSubpath(raw: string): string {
 }
 
 function assertRuntimeFrontEntrySubpath(frontEntrySubpath: string): void {
-  if (frontEntrySubpath.startsWith("front/")) return
+  // Accept any subpath that targets a `front/` segment inside the
+  // package. Source-style plugins expose `front/index.tsx`; published
+  // build-output plugins expose `dist/front/index.js`. Both layouts are
+  // valid — reject only paths that don't include a `front/` directory
+  // anywhere, which catches manifest typos and accidental relative-path
+  // escapes.
+  if (/(^|\/)front\//.test(frontEntrySubpath)) return
   throw new PluginFrontRuntimeError(
     ErrorCode.enum.PLUGIN_RUNTIME_PRIVATE_FILE,
     403,
     "validate",
-    "native runtime plugin fronts must live under the front/ directory",
+    "native runtime plugin fronts must live under a front/ directory",
     { frontEntrySubpath },
   )
 }
@@ -685,7 +691,7 @@ async function resolveFileWithinPlugin(record: TrackedPluginRecord, subpath: str
   return resolvedPath
 }
 
-function snapshotRuntimeSourceFiles(pluginRoot: string): Map<string, Uint8Array> {
+function snapshotRuntimeSourceFiles(pluginRoot: string, frontRootDir: string, frontRootRelative: string): Map<string, Uint8Array> {
   const snapshot = new Map<string, Uint8Array>()
   const visit = (dir: string, subpathPrefix: string) => {
     if (!existsSync(dir)) return
@@ -722,7 +728,11 @@ function snapshotRuntimeSourceFiles(pluginRoot: string): Map<string, Uint8Array>
       }
     }
   }
-  visit(resolvePath(pluginRoot, "front"), "front")
+  // Walk both the actual front root (e.g. `front/` for source-style
+  // plugins, `dist/front/` for build-output plugins) and the shared
+  // root. The front root prefix is preserved in snapshot keys so the
+  // runtime validator can resolve the same subpath the request used.
+  visit(frontRootDir, frontRootRelative.split("\\").join("/"))
   visit(resolvePath(pluginRoot, "shared"), "shared")
   return snapshot
 }
@@ -1750,20 +1760,28 @@ export async function createPluginFrontRuntimeHost(
     assertRuntimeFrontEntrySubpath(frontEntrySubpath)
     const entryUrl = buildRuntimeUrl(basePath, workspaceId, pluginId, revision, frontEntrySubpath)
     const rootDir = resolvePath(args.plugin.rootDir)
+    // Compute the front root ONCE: source-style plugins expose
+    // `front/index.tsx` (front root is `front/`); build-output plugins
+    // expose `dist/front/index.js` (front root is `dist/front/`). The
+    // root governs both the served allowed subtree and the source
+    // snapshot, so they must agree.
+    const frontRootRelative = (frontEntrySubpath === "front" || frontEntrySubpath.startsWith("front/"))
+      ? "front"
+      : (() => {
+          const parent = dirname(frontEntrySubpath)
+          if (parent === "front" || parent.endsWith("/front")) return parent
+          return parent
+        })()
+    const frontRootDir = resolvePath(rootDir, frontRootRelative)
     storeTrackedPlugin({
       workspaceId,
       pluginId,
       revision,
       rootDir,
       frontEntrySubpath,
-      frontRootDir: resolvePath(
-        rootDir,
-        frontEntrySubpath === "front" || frontEntrySubpath.startsWith("front/")
-          ? "front"
-          : dirname(frontEntrySubpath),
-      ),
+      frontRootDir,
       sharedRootDir: resolvePath(rootDir, "shared"),
-      sourceSnapshot: snapshotRuntimeSourceFiles(rootDir),
+      sourceSnapshot: snapshotRuntimeSourceFiles(rootDir, frontRootDir, frontRootRelative),
     }, entryUrl)
     return entryUrl
   }
@@ -1772,7 +1790,13 @@ export async function createPluginFrontRuntimeHost(
     return (plugin: BoringServerPluginManifest, context: { revision: number; frontEntrySubpath: string }) => {
       if (!plugin.frontPath) return undefined
       const frontEntrySubpath = normalizeRequestSubpath(context.frontEntrySubpath)
-      if (!frontEntrySubpath.startsWith("front/")) return undefined
+      // The runtime host serves any relative path inside the plugin
+      // root. Source-style plugins expose `front/index.tsx`; published
+      // build-output plugins expose `dist/front/index.js`. Both layouts
+      // are valid — accept any subpath that targets a `front/` segment
+      // somewhere inside the package, and reject everything else
+      // (catches manifest typos and accidental relative-path escapes).
+      if (!/(^|\/)front\//.test(frontEntrySubpath)) return undefined
       return {
         kind: "native",
         entryUrl: trackPlugin({

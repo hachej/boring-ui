@@ -4,6 +4,11 @@
   "description": "Turn an agent into an app",
   "license": "MIT",
   "type": "module",
+  "boring": {
+    "defaultPluginPackages": [
+      "../../plugins/ask-user"
+    ]
+  },
   "bin": {
     "boring-ui": "./dist/index.js"
   },
@@ -22,6 +27,7 @@
     "@fastify/compress": "^8.3.1",
     "@fastify/static": "^9.1.1",
     "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-ask-user": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
     "@hachej/boring-ui-plugin-cli": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",

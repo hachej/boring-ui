@@ -13,8 +13,7 @@ import {
   readFileSync,
 } from "node:fs"
 import { createRequire } from "node:module"
-import { basename, dirname, isAbsolute, join, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
+import { basename, isAbsolute, join, resolve } from "node:path"
 import { parseArgs } from "node:util"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "./localWorkspaces.js"
 import type {
@@ -22,6 +21,7 @@ import type {
   RuntimePluginHostSnapshot,
   RuntimePluginServerSnapshotEntry,
 } from "../shared/runtimePluginDiagnostics.js"
+import { resolveBoringUiCliPackageRoot } from "./pluginDiscovery.js"
 import type { readCliPluginPiSnapshot as readCliPluginPiSnapshotFn } from "./pluginDiscovery.js"
 
 export interface RunCliOptions {
@@ -104,10 +104,8 @@ function openBrowser(url: string) {
   } catch {}
 }
 
-export function resolveBoringUiCliPackageRoot(): string {
-  const __dirname = dirname(fileURLToPath(import.meta.url))
-  return resolve(__dirname, "..", "..")
-}
+// resolveBoringUiCliPackageRoot is imported from ./pluginDiscovery.js so
+// the discovery module can use the same helper without a circular import.
 
 function isUsableBoringUiPluginCliPackageRoot(candidate: string): boolean {
   try {
@@ -409,6 +407,7 @@ export async function createFolderModeApp(opts: {
     logger: false,
     provisionWorkspace: false,
     runtimeProvisioning,
+    appPackageJsonPath: join(resolveBoringUiCliPackageRoot(), "package.json"),
     additionalBoringPluginDirs: pluginDirs,
     boringPluginFrontTargetResolver: runtimeHost.createFrontTargetResolver(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID),
     boringPluginIncludeLegacyFrontUrl: false,
@@ -724,8 +723,10 @@ export async function createWorkspacesModeApp(opts: {
   })
   app.get("/api/v1/agent-plugins/events", async (request, reply) => {
     const workspace = await workspaceFromRequest(request)
+    console.error("[SSE] loading plugins for", workspace.id)
     const runtime = await getLoadedPluginRuntime(workspace)
     const manager = runtime.manager
+    console.error("[SSE] plugins loaded, count:", manager.list().length)
 
     reply.hijack()
     const res = reply.raw
