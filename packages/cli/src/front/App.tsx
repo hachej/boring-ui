@@ -106,6 +106,7 @@ export function CliWorkspaceShell() {
   const [urlSessionId, setUrlSessionId] = useState<string | null>(() => chatSessionIdFromCliUrl(window.location.search))
   const [metaLoaded, setMetaLoaded] = useState(false)
   const [runtimePluginFrontLoadingEnabled, setRuntimePluginFrontLoadingEnabled] = useState(false)
+  const [coldStartGaveUp, setColdStartGaveUp] = useState(false)
 
   const refreshWorkspaces = useCallback(() => {
     void fetch("/api/v1/local-workspaces")
@@ -189,24 +190,33 @@ export function CliWorkspaceShell() {
   // requiring a manual refresh/focus or a workspace switch. If it never becomes available
   // (e.g. a stale link to a deleted workspace), give up after a bounded number of attempts
   // and fall back to an available workspace instead of polling forever.
-  const coldStartAttemptsRef = useRef(0)
+  // Track attempts per workspace id so a switch to a different cold workspace
+  // always gets a fresh budget (not the remnant count from the previous one).
+  const coldStartAttemptsRef = useRef<{ id: string; count: number } | null>(null)
   useEffect(() => {
     if (!workspacesMode || !activeWorkspaceId) return
     const ready = workspaces.some((workspace) => workspace.id === activeWorkspaceId && workspace.available)
     if (ready) {
-      coldStartAttemptsRef.current = 0
+      coldStartAttemptsRef.current = null
       return
     }
+    // Reset the counter whenever we start watching a new workspace id.
+    if (coldStartAttemptsRef.current?.id !== activeWorkspaceId) {
+      coldStartAttemptsRef.current = { id: activeWorkspaceId, count: 0 }
+    }
     const timer = window.setInterval(() => {
-      coldStartAttemptsRef.current += 1
-      if (coldStartAttemptsRef.current > 10) {
+      if (!coldStartAttemptsRef.current) return
+      coldStartAttemptsRef.current.count += 1
+      if (coldStartAttemptsRef.current.count > 10) {
         window.clearInterval(timer)
-        setActiveWorkspaceId((current) => {
-          const fallback = workspaces.find((workspace) => workspace.available)
-          if (!fallback) return current
+        const fallback = workspaces.find((workspace) => workspace.available)
+        if (fallback) {
           window.localStorage.setItem("boring-ui:local-workspace-id", fallback.id)
-          return fallback.id
-        })
+          setActiveWorkspaceId(fallback.id)
+        } else {
+          // No workspace available at all — show an error instead of loading forever.
+          setColdStartGaveUp(true)
+        }
         return
       }
       refreshWorkspaces()
@@ -237,10 +247,21 @@ export function CliWorkspaceShell() {
         return (
           <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground">
             <div className="max-w-md rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
-              <h1 className="text-lg font-semibold">Loading workspace…</h1>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Preparing <code>{activeWorkspaceId}</code>. This can take a moment on first load.
-              </p>
+              {coldStartGaveUp ? (
+                <>
+                  <h1 className="text-lg font-semibold">Workspace unavailable</h1>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    <code>{activeWorkspaceId}</code> did not become available. The folder may be missing or the workspace may have been deleted. Restore the folder and refresh, or add a new workspace.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h1 className="text-lg font-semibold">Loading workspace…</h1>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Preparing <code>{activeWorkspaceId}</code>. This can take a moment on first load.
+                  </p>
+                </>
+              )}
             </div>
           </div>
         )

@@ -253,15 +253,22 @@ export class PiSessionStore implements SessionStore {
     // megabytes of data and stall the UI. Compact them out on first read so all
     // subsequent loads are fast. The snapshot entries are never read back in the
     // new architecture (loadEntries uses message entries; load() uses session_info).
+    // Wrapped in try/catch: a disk-full or concurrent-append race must never turn a
+    // successful read into a thrown error — the in-memory filter below is always correct.
     if (fileEntries.some((e) => (e as { type?: string }).type === "ui_snapshot")) {
       const compacted = fileEntries
         .filter((e) => (e as { type?: string }).type !== "ui_snapshot")
         .map((e) => JSON.stringify(e))
         .join("\n") + "\n";
       const tmp = `${filepath}.compact-${randomUUID()}`;
-      await writeFile(tmp, compacted, "utf-8");
-      await rename(tmp, filepath).catch(() => { /* ignore — next read will retry */ });
-      content = compacted;
+      try {
+        await writeFile(tmp, compacted, "utf-8");
+        await rename(tmp, filepath);
+      } catch {
+        // Repair failed (disk-full, concurrent write, read-only FS) — skip it silently.
+        // The next read will retry; the in-memory result is already correct.
+        await rm(tmp, { force: true }).catch(() => {});
+      }
     }
 
     const header = fileEntries.find(
