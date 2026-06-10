@@ -460,6 +460,7 @@ test.describe("Pi-native baseline message flow", () => {
         JSON.stringify({
           promptFinalText: "DELAYED_TOOL_DONE",
           promptToolResultDelayMs: 1500,
+          promptToolName: "grep",
         }),
       );
     });
@@ -543,6 +544,7 @@ test.describe("Pi-native baseline message flow", () => {
         JSON.stringify({
           promptFinalText: "FAILED_TOOL_DONE",
           promptToolResultDelayMs: 1000,
+          promptToolName: "grep",
           promptToolError: true,
           promptToolErrorText: "TOOL_E2E_ERROR",
           promptToolDescription: "failed-command-header-layout-token-without-breakpoints-0123456789abcdefghijklmnopqrstuvwxyz-0123456789abcdefghijklmnopqrstuvwxyz",
@@ -593,7 +595,7 @@ test.describe("Pi-native baseline message flow", () => {
     assertChatDomInvariants(failedState);
 
     const failedToolTrigger = page.getByRole("button", {
-      name: /Tool calls: Failed command/i,
+      name: /Tool calls: Failed search/i,
     });
     await expect(failedToolTrigger).toBeVisible();
     const failedToolTriggerClass = await failedToolTrigger.getAttribute("class");
@@ -609,7 +611,7 @@ test.describe("Pi-native baseline message flow", () => {
     await expect(failedToolGroup).toHaveAttribute("data-state", "open");
     const failedToolCard = page.locator('[data-boring-agent-part="tool-card"]');
     await expect(failedToolCard).toHaveAttribute("data-state", "closed");
-    await failedToolCard.getByRole("button", { name: /bash · failed-command-header-layout-token.*Error/i }).click();
+    await failedToolCard.getByRole("button", { name: /grep · failed-command-header-layout-token.*Error/i }).click();
     await expect(failedToolCard).toHaveAttribute("data-state", "open");
     const errorPre = page.locator('[data-boring-agent-part="tool-result"] pre').filter({ hasText: "TOOL_E2E_ERROR" });
     await expect(errorPre).toBeVisible();
@@ -687,8 +689,8 @@ test.describe("Pi-native baseline message flow", () => {
         seq: 4,
         messageId: "a-tool",
         toolCallId: "call-aborted",
-        toolName: "bash",
-        input: { command: "sleep 10" },
+        toolName: "grep",
+        input: { pattern: "sleep 10" },
       },
       {
         type: "message-end",
@@ -708,10 +710,10 @@ test.describe("Pi-native baseline message flow", () => {
       page.locator('[data-boring-agent-tool-state="aborted"]'),
     ).toHaveCount(1, { timeout: 10_000 });
     await expect(
-      page.getByRole("button", { name: /Tool calls: Stopped command/i }),
+      page.getByRole("button", { name: /Tool calls: Stopped search/i }),
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: /Tool calls: Used command/i }),
+      page.getByRole("button", { name: /Tool calls: Used search/i }),
     ).toHaveCount(0);
 
     const abortedState = await readChatDomState(page);
@@ -737,8 +739,8 @@ test.describe("Pi-native baseline message flow", () => {
             {
               type: "tool-call",
               id: "call-aborted",
-              toolName: "bash",
-              input: { command: "sleep 10" },
+              toolName: "grep",
+              input: { pattern: "sleep 10" },
               state: "output-available",
               output: { content: "late success" },
             },
@@ -756,7 +758,7 @@ test.describe("Pi-native baseline message flow", () => {
     ).toHaveCount(1);
     await expect(conversation.getByText("LATE_FINAL_AFTER_ABORT")).toBeVisible();
     await expect(
-      page.getByRole("button", { name: /Tool calls: Used command/i }),
+      page.getByRole("button", { name: /Tool calls: Used search/i }),
     ).toHaveCount(0);
 
     const finalState = await readChatDomState(page);
