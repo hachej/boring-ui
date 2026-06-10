@@ -130,10 +130,18 @@ export function WorkspaceShell() {
     return <div className="h-screen w-screen bg-background" />
   }
 
+  // The playground defaults to the dock chat stage (the engine under active
+  // iteration); ?paneEngine=flex switches back to the default flex row.
+  const paneEngineParam = typeof window !== "undefined"
+    ? new URLSearchParams(window.location.search).get("paneEngine")
+    : null
+  const chatPaneEngine = paneEngineParam === "flex" ? "flex" : "dock"
+
   return (
     <WorkspaceAgentFront
       workspaceId={showcase ? "playground" : projectName}
       apiBaseUrl=""
+      chatPaneEngine={chatPaneEngine}
       persistenceEnabled
       providerStorageKey="boring-ui-v2:layout:playground"
       appTitle={showcase ? "Boring" : projectName}
