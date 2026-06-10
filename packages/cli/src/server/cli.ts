@@ -723,10 +723,8 @@ export async function createWorkspacesModeApp(opts: {
   })
   app.get("/api/v1/agent-plugins/events", async (request, reply) => {
     const workspace = await workspaceFromRequest(request)
-    console.error("[SSE] loading plugins for", workspace.id)
     const runtime = await getLoadedPluginRuntime(workspace)
     const manager = runtime.manager
-    console.error("[SSE] plugins loaded, count:", manager.list().length)
 
     reply.hijack()
     const res = reply.raw

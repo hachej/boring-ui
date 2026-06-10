@@ -1833,11 +1833,7 @@ export async function createPluginFrontRuntimeHost(
     // snapshot, so they must agree.
     const frontRootRelative = (frontEntrySubpath === "front" || frontEntrySubpath.startsWith("front/"))
       ? "front"
-      : (() => {
-          const parent = dirname(frontEntrySubpath)
-          if (parent === "front" || parent.endsWith("/front")) return parent
-          return parent
-        })()
+      : dirname(frontEntrySubpath)
     const frontRootDir = resolvePath(rootDir, frontRootRelative)
     storeTrackedPlugin({
       workspaceId,

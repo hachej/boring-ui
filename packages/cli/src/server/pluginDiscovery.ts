@@ -57,7 +57,7 @@ function getGlobalPiAgentRoot(options: ResolveCliBoringPluginDirsOptions = {}): 
 }
 
 // Resolve CLI-bundled default plugin packages declared in this package's own
-// boring.defaultPluginPackages manifest field. Delegates to the shared workspace
+// boring.defaultPlugins manifest field. Delegates to the shared workspace
 // utility so resolution semantics (anchor, error policy, relative paths) stay
 // consistent across the CLI and app hosts.
 function resolveCliDefaultPluginPackagePaths(): string[] {
@@ -65,9 +65,10 @@ function resolveCliDefaultPluginPackagePaths(): string[] {
   if (!existsSync(cliPackageJsonPath)) return []
   try {
     return resolveDefaultWorkspacePluginPackagePaths({ appPackageJsonPath: cliPackageJsonPath })
-  } catch {
+  } catch (error) {
     // Missing dep in the CLI package is a packaging error; swallow here so a
     // bad build doesn't crash every workspace launch — the plugin just won't load.
+    console.error("[boring-ui] failed to resolve default plugin packages:", error instanceof Error ? error.message : String(error))
     return []
   }
 }

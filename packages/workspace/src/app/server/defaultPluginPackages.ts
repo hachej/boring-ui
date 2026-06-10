@@ -68,7 +68,7 @@ function resolveDefaultPluginPackagePaths(
     if (isAbsolute(entry)) {
       if (!existsSync(join(entry, "package.json"))) {
         throw new Error(
-          `defaultPluginPackages: "${entry}" has no package.json — provide a path to a directory containing package.json with a "boring" field.`,
+          `boring.defaultPlugins: "${entry}" has no package.json — provide a path to a directory containing package.json with a "boring" field.`,
         )
       }
       resolved.push(entry)
@@ -85,7 +85,7 @@ function resolveDefaultPluginPackagePaths(
     }
     if (!resolvedPath) {
       throw new Error(
-        `defaultPluginPackages: cannot resolve "${entry}" — install it as a dep of the app so require.resolve can find its package.json. Pass an absolute path instead if the package lives outside node_modules.`,
+        `boring.defaultPlugins: cannot resolve "${entry}" — install it as a dep of the app so require.resolve can find its package.json. Pass an absolute path instead if the package lives outside node_modules.`,
       )
     }
     resolved.push(resolvedPath)
@@ -102,7 +102,7 @@ export interface ResolveDefaultWorkspacePluginPackagePathsOptions {
 /**
  * Resolve app-default plugin package declarations exactly once for app hosts.
  * This is shared by standalone workspace-agent and core composition so both
- * read `package.json#boring.defaultPluginPackages` with the same relative-path
+ * read `package.json#boring.defaultPlugins` with the same relative-path
  * and package-name semantics.
  */
 export function resolveDefaultWorkspacePluginPackagePaths({

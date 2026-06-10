@@ -45,7 +45,12 @@ export function boringDefaultFrontPlugins(opts: { appRoot: string }) {
       const vars: string[] = []
       let i = 0
       for (const pkg of entries) {
-        if (pkg.startsWith(".") || pkg.startsWith("/")) continue
+        if (pkg.startsWith(".") || pkg.startsWith("/")) {
+          // Relative/absolute paths are supported on the server side but cannot
+          // be statically imported by this Vite plugin. Use an npm package name.
+          console.warn(`[boring-default-front-plugins] "${pkg}" is a path, not a package name — skipping front import. Use an npm package name in boring.defaultPlugins.`)
+          continue
+        }
         try {
           const pkgJson = JSON.parse(readFileSync(req.resolve(`${pkg}/package.json`), "utf-8")) as {
             boring?: { front?: string }
