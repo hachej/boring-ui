@@ -1,0 +1,13 @@
+/* Chat pane stage — compact dockview chrome scoped under .dv-chat-stage.
+   Inherits the token mapping from dockview-overrides.css (.dv-shell). */
+
+.dv-chat-stage {
+  --dv-tabs-and-actions-container-height: 34px;
+  --dv-tabs-and-actions-container-font-size: 0.75rem;
+}
+
+/* The chat stage hides dockview's built-in tab close icon entirely — the
+   custom ChatPaneTab renders its own close control with pane semantics. */
+.dv-chat-stage .dv-default-tab-action {
+  display: none;
+}

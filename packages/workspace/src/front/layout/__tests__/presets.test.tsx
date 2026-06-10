@@ -638,9 +638,9 @@ describe("ChatLayout component", () => {
 
     expect(screen.getByLabelText("Chat session First")).toHaveAttribute("data-boring-state", "inactive")
     expect(screen.getByLabelText("Chat session Second")).toHaveAttribute("data-boring-state", "active")
-    expect(screen.queryByLabelText("Drag First chat pane")).not.toBeInTheDocument()
-    expect(document.querySelector('[data-boring-workspace-part="chat-pane-stage"]')?.className).toContain("overflow-x-auto")
-    expect(screen.getAllByRole("button", { name: "New chat to the right" })).toHaveLength(2)
+    // Panes are dockview panels: native tab header carries drag + close.
+    expect(document.querySelector('[data-boring-workspace-part="chat-pane-stage"] .dv-chat-stage')).not.toBeNull()
+    expect(screen.getByRole("button", { name: "New chat to the right" })).toBeInTheDocument()
 
     await user.click(screen.getByLabelText("Chat session First"))
     expect(setActive).toHaveBeenCalledWith("s1")
@@ -648,8 +648,9 @@ describe("ChatLayout component", () => {
     await user.click(screen.getByLabelText("Close Second pane"))
     expect(closePane).toHaveBeenCalledWith("s2")
 
-    await user.click(screen.getAllByRole("button", { name: "New chat to the right" })[0])
-    expect(createAfter).toHaveBeenCalledWith("s1")
+    // The stage-level "+" creates next to the active pane.
+    await user.click(screen.getByRole("button", { name: "New chat to the right" }))
+    expect(createAfter).toHaveBeenCalledWith("s2")
   })
 
   it("does not activate an inactive pane when using its header controls", async () => {
@@ -677,8 +678,8 @@ describe("ChatLayout component", () => {
     expect(closePane).toHaveBeenCalledWith("s1")
     expect(setActive).not.toHaveBeenCalled()
 
-    await user.click(screen.getAllByRole("button", { name: "New chat to the right" })[0])
-    expect(createAfter).toHaveBeenCalledWith("s1")
+    await user.click(screen.getByRole("button", { name: "New chat to the right" }))
+    expect(createAfter).toHaveBeenCalledWith("s2")
     expect(setActive).not.toHaveBeenCalled()
   })
 

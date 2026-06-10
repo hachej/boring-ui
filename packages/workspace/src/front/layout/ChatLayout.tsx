@@ -383,6 +383,7 @@ export function ChatLayout(props: ChatLayoutProps) {
                 onClosePane={props.onCloseChatPane}
                 onCreatePaneAfter={props.onCreateChatPaneAfter}
                 flashPaneId={props.flashChatPaneId}
+                storageKey={props.storageKey}
                 renderPane={(pane) => (
                   <PanelSlot
                     id={pane.panel ?? centerId}
