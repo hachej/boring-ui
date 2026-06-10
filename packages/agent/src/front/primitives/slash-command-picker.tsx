@@ -31,9 +31,14 @@ function commandGroup(cmd: Command): string {
 
 export function SlashCommandPicker({ query, commands, onSelect, onDismiss }: SlashCommandPickerProps) {
   const [plugin, setPlugin] = useState<string>(ALL_PLUGINS)
+  const [searchQuery, setSearchQuery] = useState(query)
   const [activeIdx, setActiveIdx] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Sync the internal search query when the textarea content changes.
+  useEffect(() => { setSearchQuery(query) }, [query])
 
   // Distinct plugin groups, for the selector chips at the top of the menu.
   const groups = useMemo(() => {
@@ -42,13 +47,13 @@ export function SlashCommandPicker({ query, commands, onSelect, onDismiss }: Sla
   }, [commands])
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
+    const q = searchQuery.trim().toLowerCase()
     return commands.filter((c) => {
       if (plugin !== ALL_PLUGINS && commandGroup(c) !== plugin) return false
       if (!q) return true
       return c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q)
     })
-  }, [commands, query, plugin])
+  }, [commands, searchQuery, plugin])
 
   // Keep the active row in range as the list changes.
   useEffect(() => {
@@ -76,6 +81,17 @@ export function SlashCommandPicker({ query, commands, onSelect, onDismiss }: Sla
 
   return (
     <div ref={containerRef} className="mb-1 w-full overflow-hidden rounded-lg border border-border/60 bg-popover shadow-lg">
+
+      {/* Search input */}
+      <input
+        ref={inputRef}
+        aria-label="Search commands"
+        type="text"
+        value={searchQuery}
+        onChange={(e) => { setSearchQuery(e.target.value); setActiveIdx(0) }}
+        className="w-full border-b border-border/50 bg-transparent px-3 py-1.5 text-[12px] outline-none"
+        autoComplete="off"
+      />
 
       {/* Plugin selection */}
       {groups.length > 1 && (

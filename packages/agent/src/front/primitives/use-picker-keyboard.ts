@@ -38,8 +38,14 @@ export function usePickerKeyboard({
         // Wrap around: up from the first item loops to the last.
         setActiveIdx((i) => (count === 0 ? 0 : (i - 1 + count) % count))
       } else if (e.key === 'Enter' || e.key === 'Tab') {
-        e.preventDefault()
-        selectRef.current(activeIdx)
+        if (count > 0) {
+          e.preventDefault()
+          selectRef.current(activeIdx)
+        } else {
+          // No items to select — dismiss the picker and let the event fall through
+          // so the underlying textarea can submit normally.
+          dismissRef.current()
+        }
       } else if (e.key === 'Escape') {
         e.preventDefault()
         dismissRef.current()

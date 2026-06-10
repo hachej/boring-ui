@@ -23,6 +23,24 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+describe('/reset', () => {
+  test('calls resetSession after confirm', () => {
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    const ctx = makeContext()
+    const result = getBuiltin('reset').handler('', ctx)
+    expect(ctx.resetSession).toHaveBeenCalledOnce()
+    expect(result).toBe('Session reset.')
+  })
+
+  test('returns undefined when confirm is cancelled', () => {
+    vi.stubGlobal('confirm', vi.fn(() => false))
+    const ctx = makeContext()
+    const result = getBuiltin('reset').handler('', ctx)
+    expect(ctx.resetSession).not.toHaveBeenCalled()
+    expect(result).toBeUndefined()
+  })
+})
+
 describe('/clear', () => {
   test('calls clearMessages', () => {
     const ctx = makeContext()
@@ -42,7 +60,7 @@ describe('/help', () => {
     const ctx = makeContext()
     const result = getBuiltin('help').handler('', ctx) as string
     expect(result).toContain('/clear')
-    expect(result).not.toContain('/reset')
+    expect(result).toContain('/reset')
     expect(result).toContain('/reload')
     expect(result).toContain('/help')
     // GFM table so Streamdown renders each command on its own row.
@@ -77,18 +95,44 @@ describe('/reload', () => {
   })
 })
 
-describe('all 3 builtins are registered', () => {
-  test('has exactly 3 commands', () => {
-    expect(builtinCommands).toHaveLength(3)
+describe('/model', () => {
+  test('opens model picker when no args', () => {
+    const openModelPicker = vi.fn(() => true)
+    const ctx = makeContext({ openModelPicker })
+    getBuiltin('model').handler('', ctx)
+    expect(openModelPicker).toHaveBeenCalledOnce()
   })
 
-  test.each(['clear', 'reload', 'help'])('includes /%s', (name) => {
+  test('calls selectComposerModel with query when args provided', () => {
+    const selectComposerModel = vi.fn()
+    const ctx = makeContext({ selectComposerModel })
+    getBuiltin('model').handler('claude-sonnet', ctx)
+    expect(selectComposerModel).toHaveBeenCalledWith('claude-sonnet')
+  })
+})
+
+describe('/thinking and /think', () => {
+  test('/thinking opens thinking picker when no args', () => {
+    const openThinkingPicker = vi.fn(() => true)
+    const ctx = makeContext({ openThinkingPicker })
+    getBuiltin('thinking').handler('', ctx)
+    expect(openThinkingPicker).toHaveBeenCalledOnce()
+  })
+
+  test('/think is an alias for /thinking', () => {
+    const selectComposerThinking = vi.fn()
+    const ctx = makeContext({ selectComposerThinking })
+    getBuiltin('think').handler('high', ctx)
+    expect(selectComposerThinking).toHaveBeenCalledWith('high')
+  })
+})
+
+describe('all builtins registered', () => {
+  test.each(['reset', 'clear', 'reload', 'model', 'thinking', 'think', 'help'])('includes /%s', (name) => {
     expect(builtinCommands.find((c) => c.name === name)).toBeDefined()
   })
 
-  test('does NOT include /model, /reset, or /cost (removed)', () => {
-    expect(builtinCommands.find((c) => c.name === 'model')).toBeUndefined()
-    expect(builtinCommands.find((c) => c.name === 'reset')).toBeUndefined()
+  test('does NOT include /cost (never added)', () => {
     expect(builtinCommands.find((c) => c.name === 'cost')).toBeUndefined()
   })
 })
