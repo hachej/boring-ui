@@ -22,6 +22,12 @@ export interface FileStat {
   kind: "file" | "dir"
 }
 
+export interface GitUrlMetadata {
+  enabled: boolean
+  reason?: string
+  url?: string
+}
+
 export interface FetchClientOptions {
   apiBaseUrl: string
   authHeaders?: Record<string, string>

@@ -1,4 +1,4 @@
-import type { FetchClientOptions, FileContent, FileEntry, FileStat } from "./types"
+import type { FetchClientOptions, FileContent, FileEntry, FileStat, GitUrlMetadata } from "./types"
 
 const DEFAULT_TIMEOUT = 10_000
 const DEFAULT_MAX_RETRIES = 3
@@ -189,6 +189,16 @@ export class FetchClient {
     return this.request<FileStat>(
       "GET",
       `/api/v1/stat?path=${encodeURIComponent(path)}`,
+      undefined,
+      undefined,
+      signal,
+    )
+  }
+
+  async getGitUrlMetadata(path: string, signal?: AbortSignal): Promise<GitUrlMetadata> {
+    return this.request<GitUrlMetadata>(
+      "GET",
+      `/api/v1/git/file-url?path=${encodeURIComponent(path)}`,
       undefined,
       undefined,
       signal,
