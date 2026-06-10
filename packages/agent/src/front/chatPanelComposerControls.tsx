@@ -195,6 +195,10 @@ export const ModelSelectTrigger = forwardRef<HTMLButtonElement, ModelSelectTrigg
   ...props
 }, ref) {
   const triggerLabel = modelTriggerLabel(value, options)
+  // Show the provider alongside the model so the same model name across
+  // providers stays unambiguous, e.g. "Sonnet (Anthropic)". 'Pi default'
+  // (no explicit selection) has no provider to show.
+  const triggerDisplay = value ? `${triggerLabel} (${displayProviderLabel(value.provider)})` : triggerLabel
   return (
     <button
       ref={ref}
@@ -202,8 +206,8 @@ export const ModelSelectTrigger = forwardRef<HTMLButtonElement, ModelSelectTrigg
       data-boring-agent-part="model-select"
       data-boring-state={disabled ? "disabled" : undefined}
       disabled={disabled}
-      aria-label={trigger === 'slash' ? `Open model picker. Current model: ${triggerLabel}` : 'Model'}
-      title={trigger === 'slash' ? `Open model picker. Current model: ${triggerLabel}` : undefined}
+      aria-label={trigger === 'slash' ? `Open model picker. Current model: ${triggerDisplay}` : 'Model'}
+      title={trigger === 'slash' ? `Open model picker. Current model: ${triggerDisplay}` : undefined}
       onClick={onClick}
       className={cn(
         trigger === 'slash'
@@ -218,11 +222,11 @@ export const ModelSelectTrigger = forwardRef<HTMLButtonElement, ModelSelectTrigg
       {trigger === 'slash' ? (
         <>
           <span className="text-muted-foreground">/model: </span>
-          <span className="text-foreground">{triggerLabel}</span>
+          <span className="text-foreground">{triggerDisplay}</span>
         </>
       ) : (
         <>
-          <span className="min-w-0 truncate">{triggerLabel}</span>
+          <span className="min-w-0 truncate">{triggerDisplay}</span>
           <ChevronDownIcon className="h-3 w-3 shrink-0 text-muted-foreground/50" aria-hidden="true" />
         </>
       )}

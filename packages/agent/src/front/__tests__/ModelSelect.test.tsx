@@ -34,7 +34,7 @@ describe('ModelSelect', () => {
       />,
     )
     expect(screen.getByRole('button', { name: 'Model' })).toBeTruthy()
-    expect(screen.getByText('GPT-4o')).toBeTruthy()
+    expect(screen.getByText('GPT-4o (OpenAI)')).toBeTruthy()
   })
 
   it('uses the compact bordered composer control style', () => {
@@ -117,7 +117,7 @@ describe('ModelSelect', () => {
       />,
     )
 
-    expect(screen.getByText('Claude Sonnet')).toBeTruthy()
+    expect(screen.getByText('Claude Sonnet (Anthropic)')).toBeTruthy()
   })
 
   it('invokes onChange when a model is selected', () => {
