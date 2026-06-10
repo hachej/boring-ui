@@ -44,13 +44,19 @@ export function mergeFinalMessageParts(
   finalParts: BoringChatPart[],
   options: { textMode?: FinalTextMergeMode; preserveCoveredTextPartKeys?: ReadonlySet<string> } = {},
 ): BoringChatPart[] {
-  return normalizeAssistantPartOrder([
+  // Merge per-type so streaming and final parts reconcile by identity, then
+  // restore the original emitted sequence. A turn legitimately interleaves
+  // text and tools (tool call → text comment → more tool calls); bucketing by
+  // type would collapse that to "all tools, then all text" and make later
+  // tool calls render in the group above the preceding message.
+  const merged = [
     ...mergeReasoningParts(existingParts.filter(isReasoningPart), finalParts.filter(isReasoningPart)),
     ...mergeToolParts(existingParts.filter(isToolPart), finalParts.filter(isToolPart)),
     ...mergeTextParts(existingParts.filter(isTextPart), finalParts.filter(isTextPart), options),
     ...dedupePartsByIdentity([...existingParts.filter(isNoticePart), ...finalParts.filter(isNoticePart)]),
     ...dedupePartsByIdentity([...existingParts.filter(isFilePart), ...finalParts.filter(isFilePart)]),
-  ])
+  ]
+  return orderPartsBySourceSequence(merged, existingParts, finalParts)
 }
 
 export function shouldKeepFinalMessageStreaming(final: BoringChatMessage, parts: BoringChatPart[]): boolean {
@@ -294,29 +300,74 @@ function dedupePartsByIdentity(parts: BoringChatPart[]): BoringChatPart[] {
   return deduped
 }
 
-function normalizeAssistantPartOrder(parts: BoringChatPart[]): BoringChatPart[] {
-  return parts
+/**
+ * Reorders the type-merged parts back into their emitted sequence so reasoning,
+ * tools and text interleave exactly as the model produced them (think → call →
+ * think → call stays interleaved; it is not collapsed into one reasoning block
+ * and one tool group).
+ *
+ * The final snapshot is the authoritative emitted order, and merged parts carry
+ * the final part's id, so positions come from the snapshot. Streaming-only parts
+ * absent from the snapshot (e.g. a tool whose result hasn't landed yet, or any
+ * part mid-stream before a snapshot exists) are interpolated just after the most
+ * recent preceding part that IS in the snapshot, preserving their streaming order.
+ */
+function orderPartsBySourceSequence(
+  merged: BoringChatPart[],
+  existingParts: BoringChatPart[],
+  finalParts: BoringChatPart[],
+): BoringChatPart[] {
+  const finalPositionById = new Map<string, number>()
+  const finalPositionByRef = new Map<BoringChatPart, number>()
+  finalParts.forEach((part, index) => {
+    finalPositionByRef.set(part, index)
+    if (part.id !== undefined && !finalPositionById.has(part.id)) finalPositionById.set(part.id, index)
+  })
+
+  // Interpolated keys for streaming parts not represented in the snapshot:
+  // anchored just after the latest preceding streamed part that IS in the
+  // snapshot, sub-ordered by streaming position so their relative order holds.
+  const streamKeyByRef = new Map<BoringChatPart, number>()
+  const streamKeyById = new Map<string, number>()
+  const span = existingParts.length + 1
+  let anchor = -1
+  let sub = 0
+  existingParts.forEach((part) => {
+    const finalPos = part.id !== undefined ? finalPositionById.get(part.id) : undefined
+    if (finalPos !== undefined) {
+      anchor = finalPos
+      sub = 0
+    } else {
+      sub += 1
+    }
+    const key = finalPos !== undefined ? finalPos : anchor + sub / span
+    streamKeyByRef.set(part, key)
+    if (part.id !== undefined && !streamKeyById.has(part.id)) streamKeyById.set(part.id, key)
+  })
+
+  const orderKey = (part: BoringChatPart): number | undefined => {
+    if (part.id !== undefined && finalPositionById.has(part.id)) return finalPositionById.get(part.id)
+    if (finalPositionByRef.has(part)) return finalPositionByRef.get(part)
+    if (streamKeyByRef.has(part)) return streamKeyByRef.get(part)
+    if (part.id !== undefined && streamKeyById.has(part.id)) return streamKeyById.get(part.id)
+    return undefined
+  }
+
+  return merged
     .map((part, index) => ({ part, index }))
     .sort((left, right) => {
-      const weightDelta = assistantPartOrderWeight(left.part) - assistantPartOrderWeight(right.part)
-      return weightDelta === 0 ? left.index - right.index : weightDelta
+      const leftKey = orderKey(left.part)
+      const rightKey = orderKey(right.part)
+      if (leftKey !== undefined && rightKey !== undefined) {
+        return leftKey === rightKey ? left.index - right.index : leftKey - rightKey
+      }
+      // Parts with a known source position sort before unknown ones; ties and
+      // unknown/unknown fall back to the stable merged order.
+      if (leftKey !== undefined) return -1
+      if (rightKey !== undefined) return 1
+      return left.index - right.index
     })
     .map(({ part }) => part)
-}
-
-function assistantPartOrderWeight(part: BoringChatPart): number {
-  switch (part.type) {
-    case 'reasoning':
-      return 0
-    case 'tool-call':
-      return 1
-    case 'text':
-      return 2
-    case 'notice':
-      return 3
-    case 'file':
-      return 4
-  }
 }
 
 function mergeMatchingFinalPart(existingPart: BoringChatPart, finalPart: BoringChatPart): BoringChatPart {
