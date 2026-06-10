@@ -9,6 +9,13 @@ import type { SurfaceShellApi, OpenPanelConfig } from "../chrome/artifact-surfac
 import type { UiCommand } from "./types"
 import type { SurfaceOpenRequest } from "../../shared/types/surface"
 
+/**
+ * Browser CustomEvent name dispatched on `window` when a `showNotification`
+ * UI command is dispatched from the server. Keep in sync with
+ * `WORKSPACE_COMMAND_NOTIFY_EVENT` in `@hachej/boring-agent/shared`.
+ */
+export const WORKSPACE_COMMAND_NOTIFY_EVENT = "boring-ui:command-notify"
+
 export interface DispatchContext {
   /**
    * Imperative handle to the workbench surface. Function (getter) so a
@@ -189,6 +196,21 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
     }
     case "closeWorkbenchLeftPane": {
       runWhenSurfaceReady(ctx, (surface) => surface.closeWorkbenchLeftPane())
+      return
+    }
+    case "showNotification": {
+      const msg = strParam(cmd.params, "msg")
+      if (!msg) return
+      const rawLevel = cmd.params?.level
+      const level: "success" | "error" | "info" =
+        rawLevel === "error" ? "error" : rawLevel === "warn" ? "info" : "info"
+      if (typeof globalThis.dispatchEvent === "function" && typeof CustomEvent !== "undefined") {
+        globalThis.dispatchEvent(
+          new CustomEvent(WORKSPACE_COMMAND_NOTIFY_EVENT, {
+            detail: { message: msg, tone: level },
+          }),
+        )
+      }
       return
     }
   }

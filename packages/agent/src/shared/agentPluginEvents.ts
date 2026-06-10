@@ -25,3 +25,20 @@ export interface PluginRestartWarning {
   surfaces: string[]
   message: string
 }
+
+/**
+ * Browser CustomEvent name dispatched on `window` when a `showNotification`
+ * UI command arrives from the server (e.g. from a plugin slash command that
+ * calls `notify()`). `PiChatPanel` listens for this to show the
+ * `CommandRunStatus` banner above the composer.
+ */
+export const WORKSPACE_COMMAND_NOTIFY_EVENT = 'boring-ui:command-notify'
+
+/**
+ * Payload carried by `WORKSPACE_COMMAND_NOTIFY_EVENT`. Maps directly to
+ * what `uiCommandDispatcher` extracts from the `showNotification` command.
+ */
+export interface CommandNotifyPayload {
+  message: string
+  tone: 'success' | 'error' | 'info'
+}

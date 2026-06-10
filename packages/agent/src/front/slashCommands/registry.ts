@@ -6,10 +6,12 @@ export interface SlashCommand {
   description: string
   /**
    * - local: handled in the browser.
-   * - server: forwarded as the original slash command so PI extension/prompt commands run natively.
    * - skill: forwarded to the PI agent as `skill: <name>\n\n<args>`.
+   * Server commands registered via `useServerCommands` omit `kind` (or set
+   * it to `local`) — Pi handles execution natively so no frontend kind-check
+   * is needed.
    */
-  kind?: 'local' | 'server' | 'skill'
+  kind?: 'local' | 'skill'
   /**
    * Origin of the command, surfaced as a tag in the slash-command picker.
    * Mirrors Pi's command sources for server commands; `local` for built-in

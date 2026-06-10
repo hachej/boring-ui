@@ -4,7 +4,11 @@ import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FileUIPart } from 'ai'
 import { ArtifactOpenProvider } from '../ArtifactOpenContext'
-import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from '../../shared/agentPluginEvents'
+import {
+  WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT,
+  WORKSPACE_COMMAND_NOTIFY_EVENT,
+  type CommandNotifyPayload,
+} from '../../shared/agentPluginEvents'
 import type { PiChatEvent, PiChatStatus } from '../../shared/chat'
 import type { AvailableModel, ModelSelection, ThinkingLevel } from '../chatPanelSettings'
 import { DEFAULT_THINKING } from '../chatPanelSettings'
@@ -15,6 +19,7 @@ import { builtinCommands, createCommandRegistry } from '../slashCommands'
 import type { ToolRendererOverrides } from '../bareToolRenderers'
 import { mergeShadcnToolRenderers } from '../toolRenderers'
 import type { PluginUpdateState } from '../composer/PluginUpdateStatus'
+import type { CommandRunState } from '../composer/CommandRunStatus'
 import { useComposerHistory } from '../useComposerHistory'
 import { useComposerPickers } from '../useComposerPickers'
 import { useChatModelSelection } from '../hooks/useChatModelSelection'
@@ -316,6 +321,7 @@ export function PiChatPanel({
   const [localNotices, setLocalNotices] = useState<PanelNotice[]>([])
   const [dismissedNoticeIds, setDismissedNoticeIds] = useState<Set<string>>(() => new Set())
   const [pluginUpdateState, setPluginUpdateState] = useState<PluginUpdateState | null>(null)
+  const [commandNotifyState, setCommandNotifyState] = useState<CommandRunState | null>(null)
   const [serverSkillsRefreshKey, setServerSkillsRefreshKey] = useState(0)
   const [localSubmittedSessionId, setLocalSubmittedSessionId] = useState<string | undefined>()
   const localSubmittedSessionRef = useRef<string | undefined>(undefined)
@@ -479,6 +485,25 @@ export function PiChatPanel({
   }, [reloadAgentPlugins])
 
   const dismissPluginUpdate = useCallback(() => setPluginUpdateState(null), [])
+
+  const dismissCommandNotify = useCallback(() => setCommandNotifyState(null), [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onCommandNotify = (event: Event) => {
+      const payload = (event as CustomEvent<CommandNotifyPayload>).detail
+      if (!payload || typeof payload.message !== 'string') return
+      const tone = payload.tone
+      if (tone === 'error') {
+        setCommandNotifyState({ kind: 'error', command: '', message: payload.message })
+      } else {
+        // 'success' and 'info' both use the success banner tone
+        setCommandNotifyState({ kind: 'success', command: '', detail: payload.message })
+      }
+    }
+    window.addEventListener(WORKSPACE_COMMAND_NOTIFY_EVENT, onCommandNotify as EventListener)
+    return () => window.removeEventListener(WORKSPACE_COMMAND_NOTIFY_EVENT, onCommandNotify as EventListener)
+  }, [])
 
   useEffect(() => {
     if (!hotReloadEnabled || typeof window === 'undefined') return
@@ -715,6 +740,7 @@ export function PiChatPanel({
 
   useEffect(() => {
     setPluginUpdateState(null)
+    setCommandNotifyState(null)
     setLocalNotices([])
     setDismissedNoticeIds(new Set())
   }, [activeSessionId])
@@ -907,6 +933,8 @@ export function PiChatPanel({
               pluginUpdateState={pluginUpdateState}
               onDismissPluginUpdate={dismissPluginUpdate}
               onRunPluginUpdate={runPluginUpdate}
+              commandNotifyState={commandNotifyState}
+              onDismissCommandNotify={dismissCommandNotify}
               attachmentNotice={attachmentNotice}
               onAttachmentNotice={setAttachmentNotice}
               mentionState={mentionState}

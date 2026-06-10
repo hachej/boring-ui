@@ -12,7 +12,6 @@ function toSlashCommand(command: ServerCommandSummary): SlashCommand {
   return {
     name: command.name,
     description: command.description ?? '',
-    kind: 'server',
     source: command.source,
     ...(command.sourcePlugin ? { sourcePlugin: command.sourcePlugin } : {}),
     handler: () => {},
