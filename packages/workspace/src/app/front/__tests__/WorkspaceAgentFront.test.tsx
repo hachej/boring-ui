@@ -191,7 +191,9 @@ describe("WorkspaceAgentFront", () => {
 
     render(<Harness />)
 
-    expect(screen.queryByRole("button", { name: "New chat" })).not.toBeInTheDocument()
+    // Session creation is contextual: the floating left-edge "New chat"
+    // button plus the drawer header "+" — no global top-bar control.
+    expect(screen.getAllByRole("button", { name: "New chat" })).toHaveLength(1)
     expect(visibleChatSessionIds()).toEqual(["s1"])
 
     await user.click(screen.getByText("Second session"))
@@ -241,7 +243,7 @@ describe("WorkspaceAgentFront", () => {
 
     render(<Harness />)
 
-    await user.click(screen.getByRole("button", { name: "New chat to the right" }))
+    await user.click(screen.getByRole("button", { name: "New chat" }))
 
     await waitFor(() => {
       expect(visibleChatSessionIds()).toEqual(["s1", "created"])
@@ -345,7 +347,7 @@ describe("WorkspaceAgentFront", () => {
 
     render(<Harness />)
 
-    await user.click(screen.getByRole("button", { name: "New chat to the right" }))
+    await user.click(screen.getByRole("button", { name: "New chat" }))
 
     await waitFor(() => {
       expect(visibleChatSessionIds()).toEqual(["s1", "created"])
@@ -1258,7 +1260,7 @@ describe("WorkspaceAgentFront", () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole("button", { name: "New chat to the right" }))
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }))
 
     await waitFor(() => {
       expect(create).toHaveBeenCalledOnce()

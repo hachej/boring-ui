@@ -381,9 +381,9 @@ export function ChatLayout(props: ChatLayoutProps) {
                 activePaneId={props.activeChatPaneId}
                 onActivePaneChange={props.onActiveChatPaneChange}
                 onClosePane={props.onCloseChatPane}
-                onCreatePaneAfter={props.onCreateChatPaneAfter}
                 flashPaneId={props.flashChatPaneId}
                 storageKey={props.storageKey}
+                engine={props.chatPaneEngine}
                 renderPane={(pane) => (
                   <PanelSlot
                     id={pane.panel ?? centerId}
@@ -484,6 +484,20 @@ export function ChatLayout(props: ChatLayoutProps) {
           onClick={props.onOpenNav}
           label="Sessions"
           hint="⌘1"
+        />
+      ) : null}
+      {!chatCollapsed && hasChatPanes && props.onCreateChatPaneAfter ? (
+        <FloatingEdgeButton
+          side="left"
+          icon="plus"
+          onClick={() => {
+            const targetId = props.activeChatPaneId ?? chatPanes[chatPanes.length - 1]?.id
+            if (targetId) props.onCreateChatPaneAfter?.(targetId)
+          }}
+          label="New chat"
+          // Sits directly above the Sessions toggle when that is visible;
+          // takes its slot when the drawer is open.
+          stackIndex={!navOpen && props.onOpenNav ? 1 : 0}
         />
       ) : null}
       {chatCollapsed ? (
@@ -730,7 +744,7 @@ function FloatingEdgeButton({
   pulse = false,
 }: {
   side: "left" | "right"
-  icon: "sessions" | "workbench" | "chat"
+  icon: "sessions" | "workbench" | "chat" | "plus"
   onClick: () => void
   label: string
   hint?: string
@@ -777,6 +791,10 @@ function FloatingEdgeButton({
             <span className="absolute -right-1.5 -top-1.5 h-2 w-2 rounded-full bg-[color:var(--accent)]" aria-hidden="true" />
           ) : null}
         </span>
+      ) : icon === "plus" ? (
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
       ) : (
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M3 7.5 A1.5 1.5 0 0 1 4.5 6 h4 l2 2 h9 A1.5 1.5 0 0 1 21 9.5 V17.5 A1.5 1.5 0 0 1 19.5 19 H4.5 A1.5 1.5 0 0 1 3 17.5 Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />

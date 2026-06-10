@@ -420,6 +420,7 @@ export function WorkspaceAgentFront<
   onOpenNav,
   onOpenSurface,
   surfaceButtonBottomOffset,
+  chatPaneEngine,
   className,
 }: WorkspaceAgentFrontProps<TSession>) {
   const resolvedProviderStorageKey =
@@ -1246,6 +1247,7 @@ export function WorkspaceAgentFront<
               onCloseChatPane={closeChatPane}
               onCreateChatPaneAfter={createChatPaneAfter}
               flashChatPaneId={flashChatPane?.workspaceId === workspaceId ? flashChatPane.id : null}
+              chatPaneEngine={chatPaneEngine}
               surface={surfaceOpen ? "artifact-surface" : null}
               surfaceParams={surfaceParams as Record<string, unknown>}
               surfaceOverlay={workbenchOverlay}

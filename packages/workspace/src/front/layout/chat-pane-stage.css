@@ -2,12 +2,28 @@
    Inherits the token mapping from dockview-overrides.css (.dv-shell). */
 
 .dv-chat-stage {
-  --dv-tabs-and-actions-container-height: 34px;
+  --dv-tabs-and-actions-container-height: 32px;
   --dv-tabs-and-actions-container-font-size: 0.75rem;
 }
 
+/* Panes, not tabs: the single header stretches across the full group width
+   and reads as a flat pane header (grip + title + close), with none of the
+   tab pill chrome. */
+.dv-chat-stage .dv-tabs-and-actions-container {
+  border-bottom: 1px solid oklch(from var(--border) l c h / 0.55);
+}
+
+.dv-chat-stage .dv-tab {
+  flex: 1 1 100%;
+  max-width: none;
+  min-width: 0;
+  padding: 0;
+  border-right: none;
+  background-color: transparent;
+}
+
 /* The chat stage hides dockview's built-in tab close icon entirely — the
-   custom ChatPaneTab renders its own close control with pane semantics. */
+   custom header renders its own close control with pane semantics. */
 .dv-chat-stage .dv-default-tab-action {
   display: none;
 }

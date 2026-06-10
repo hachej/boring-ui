@@ -638,9 +638,10 @@ describe("ChatLayout component", () => {
 
     expect(screen.getByLabelText("Chat session First")).toHaveAttribute("data-boring-state", "inactive")
     expect(screen.getByLabelText("Chat session Second")).toHaveAttribute("data-boring-state", "active")
-    // Panes are dockview panels: native tab header carries drag + close.
-    expect(document.querySelector('[data-boring-workspace-part="chat-pane-stage"] .dv-chat-stage')).not.toBeNull()
-    expect(screen.getByRole("button", { name: "New chat to the right" })).toBeInTheDocument()
+    // Default engine is the flex row; the dock engine is behind the flag.
+    expect(document.querySelector('[data-boring-workspace-part="chat-pane-stage"]')?.className).toContain("overflow-x-auto")
+    expect(document.querySelector(".dv-chat-stage")).toBeNull()
+    expect(screen.getByRole("button", { name: "New chat" })).toBeInTheDocument()
 
     await user.click(screen.getByLabelText("Chat session First"))
     expect(setActive).toHaveBeenCalledWith("s1")
@@ -648,9 +649,51 @@ describe("ChatLayout component", () => {
     await user.click(screen.getByLabelText("Close Second pane"))
     expect(closePane).toHaveBeenCalledWith("s2")
 
-    // The stage-level "+" creates next to the active pane.
-    await user.click(screen.getByRole("button", { name: "New chat to the right" }))
+    // The floating left-edge "+" creates next to the active pane.
+    await user.click(screen.getByRole("button", { name: "New chat" }))
     expect(createAfter).toHaveBeenCalledWith("s2")
+  })
+
+  it("renders the dockview chat stage when the dock engine flag is set", async () => {
+    const user = userEvent.setup()
+    const closePane = vi.fn()
+
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        chatPanes={[
+          { id: "s1", title: "First", panel: "chat", params: { sessionId: "s1" } },
+          { id: "s2", title: "Second", panel: "chat", params: { sessionId: "s2" } },
+        ]}
+        activeChatPaneId="s2"
+        onCloseChatPane={closePane}
+        chatPaneEngine="dock"
+      />,
+      ["chat", "session-list"],
+    )
+
+    expect(document.querySelector(".dv-chat-stage")).not.toBeNull()
+    expect(screen.getByLabelText("Chat session Second")).toHaveAttribute("data-boring-state", "active")
+
+    await user.click(screen.getByLabelText("Close Second pane"))
+    expect(closePane).toHaveBeenCalledWith("s2")
+  })
+
+  it("reads the dock engine flag from localStorage when no prop is set", () => {
+    localStorage.setItem("boring-workspace:chat-pane-engine", "dock")
+    try {
+      renderWithRegistry(
+        <ChatLayout
+          center="chat"
+          chatPanes={[{ id: "s1", title: "First", panel: "chat", params: { sessionId: "s1" } }]}
+          activeChatPaneId="s1"
+        />,
+        ["chat", "session-list"],
+      )
+      expect(document.querySelector(".dv-chat-stage")).not.toBeNull()
+    } finally {
+      localStorage.removeItem("boring-workspace:chat-pane-engine")
+    }
   })
 
   it("does not activate an inactive pane when using its header controls", async () => {
@@ -678,7 +721,7 @@ describe("ChatLayout component", () => {
     expect(closePane).toHaveBeenCalledWith("s1")
     expect(setActive).not.toHaveBeenCalled()
 
-    await user.click(screen.getByRole("button", { name: "New chat to the right" }))
+    await user.click(screen.getByRole("button", { name: "New chat" }))
     expect(createAfter).toHaveBeenCalledWith("s2")
     expect(setActive).not.toHaveBeenCalled()
   })
