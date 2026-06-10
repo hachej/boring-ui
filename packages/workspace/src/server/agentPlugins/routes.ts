@@ -2,11 +2,6 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import type { BoringPluginAssetManager } from "./manager"
 import type { BoringPluginEvent, PluginRestartSurface } from "./types"
 
-export interface PluginReloadRebuild {
-  ok: boolean
-  diagnostics: { source: string; message: string; pluginId?: string }[]
-}
-
 /**
  * One per plugin whose load event carried a non-empty
  * `requiresRestart` field. Surfaced alongside the /reload response so
@@ -42,45 +37,10 @@ export function collectRestartWarnings(events: BoringPluginEvent[]): PluginResta
 
 export interface BoringPluginRoutesOptions {
   manager: BoringPluginAssetManager
-  /**
-   * Server-side plugin rebuild closure (jiti re-import of dir-source
-   * entries). Called AFTER the asset manager scan. Per-plugin failures
-   * surface as diagnostics; combined with asset-manager errors into the
-   * 422 response body so the agent's /reload UI can show them. Optional —
-   * tests that exercise the route in isolation can omit it.
-   */
-  rebuildPlugins?: () => Promise<PluginReloadRebuild>
-  /** Register the developer reload endpoint. Static discovery/listing remains available when false. */
-  enableReloadRoute?: boolean
 }
 
 export async function boringPluginRoutes(app: FastifyInstance, opts: BoringPluginRoutesOptions): Promise<void> {
-  const { manager, rebuildPlugins, enableReloadRoute = true } = opts
-
-  if (enableReloadRoute) {
-    app.post("/api/boring.reload", async (_request, reply) => {
-      const scan = await manager.load()
-      const rebuild = rebuildPlugins ? await rebuildPlugins() : { ok: true, diagnostics: [] }
-      const restart_warnings = collectRestartWarnings(scan.events)
-      const hasFailures = scan.errors.length > 0 || rebuild.diagnostics.length > 0
-      if (hasFailures) {
-        return reply.status(422).send({
-          ok: false,
-          errors: scan.errors,
-          diagnostics: rebuild.diagnostics,
-          plugins: scan.loaded,
-          // Even on failure, emit warnings for plugins that DID reload
-          // — partial-failure tolerance means some loaded successfully.
-          ...(restart_warnings.length > 0 ? { restart_warnings } : {}),
-        })
-      }
-      return reply.send({
-        ok: true,
-        plugins: scan.loaded,
-        ...(restart_warnings.length > 0 ? { restart_warnings } : {}),
-      })
-    })
-  }
+  const { manager } = opts
 
   const listPlugins = async () => manager.list()
   app.get("/api/v1/agent-plugins", listPlugins)

@@ -101,11 +101,7 @@ export async function createLocalFolderModeApp(opts: {
   })
   await manager.load()
   await app.register(uiRoutes, { bridge })
-  await app.register(boringPluginRoutes, {
-    manager,
-    rebuildPlugins: async () => ({ ok: true, diagnostics: [] }),
-    enableReloadRoute: true,
-  })
+  await app.register(boringPluginRoutes, { manager })
   await runtimeHost.registerRoutes(app as FastifyInstance)
   app.get("/api/v1/workspace/meta", async () => ({
     workspaceRoot,

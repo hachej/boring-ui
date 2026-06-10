@@ -31,12 +31,15 @@ export interface WorkspaceAgentSessionsApi<
 > {
   sessions: TSession[]
   loading: boolean
+  loadingMore?: boolean
+  hasMore?: boolean
   error?: Error | null
   activeSessionId?: string | null
   activeSession?: TSession | null
   switch: (id: string) => void
   create: (input?: { title?: string }) => void | Promise<unknown>
   delete: (id: string) => void | Promise<unknown>
+  loadMore?: () => void | Promise<unknown>
 }
 
 export type UseWorkspaceAgentSessions<
@@ -442,10 +445,7 @@ export function WorkspaceAgentFront<
       && !suppressEmptyAutoCreateRef.current
       && !remoteInitialSessionFailed,
   )
-  const remoteSessionsTransitioning = (
-    remoteSessionsPending
-    && !pendingStoredActiveSessionId
-  ) || remoteEmptySessionsSettling || remoteInitialSessionCreating || remoteInitialSessionNeeded
+  const remoteSessionsTransitioning = remoteEmptySessionsSettling || remoteInitialSessionCreating || remoteInitialSessionNeeded
 
   useEffect(() => {
     if (!remoteEmptySessionsSettling) {
@@ -879,6 +879,9 @@ export function WorkspaceAgentFront<
                 onSwitch: resolvedSwitch,
                 onCreate: resolvedCreate,
                 onDelete: resolvedDelete,
+                onLoadMore: sessionApi?.loadMore,
+                hasMore: sessionApi?.hasMore,
+                loadingMore: sessionApi?.loadingMore,
                 onClose: () => setNavOpen(false),
               }}
               center="chat"

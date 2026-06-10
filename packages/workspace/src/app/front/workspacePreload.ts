@@ -1,6 +1,6 @@
 import { setPreloadedTreeEntries } from "../../plugins/filesystemPlugin/front/data/treePreloadCache"
 
-export const DEFAULT_BOOT_PRELOAD_PATHS = ["/api/v1/tree?path=.", "/api/v1/agent/sessions"]
+export const DEFAULT_BOOT_PRELOAD_PATHS = ["/api/v1/tree?path=."]
 
 const PREPARING_ERROR_CODES = new Set([
   "WORKSPACE_NOT_READY",
