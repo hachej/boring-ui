@@ -22,6 +22,7 @@ const playgroundOnlyAliases = [
   { find: "@hachej/boring-workspace/shared", replacement: resolve(__dirname, "../../packages/workspace/dist/shared.js") },
   { find: "@hachej/boring-workspace/app/front", replacement: resolve(__dirname, "../../packages/workspace/dist/app-front.js") },
   { find: "@hachej/boring-workspace/app/server", replacement: resolve(__dirname, "../../packages/workspace/dist/app-server.js") },
+  { find: "@hachej/boring-workspace/runtime-server", replacement: resolve(__dirname, "../../packages/workspace/dist/runtime-server.js") },
   { find: "@hachej/boring-workspace/server", replacement: resolve(__dirname, "../../packages/workspace/dist/server.js") },
   { find: "@hachej/boring-workspace", replacement: resolve(__dirname, "../../packages/workspace/dist/workspace.js") },
   { find: "@/", replacement: resolve(__dirname, "../../packages/workspace/src") + "/" },
@@ -64,6 +65,9 @@ const dynamicPluginReactRefreshExclude = [
   /packages\/(workspace|agent|ui)\/dist\//,
 ]
 
+const usePollingWatch = process.env.CHOKIDAR_USEPOLLING === "1" || process.env.BORING_VITE_USEPOLLING === "1"
+const pollingInterval = Number(process.env.CHOKIDAR_INTERVAL ?? process.env.BORING_VITE_POLL_INTERVAL ?? "300")
+
 export default defineConfig({
   plugins: [
     react({
@@ -95,6 +99,12 @@ export default defineConfig({
   server: {
     port: VITE_PORT,
     host: true,
+    watch: usePollingWatch
+      ? {
+          usePolling: true,
+          interval: Number.isFinite(pollingInterval) && pollingInterval > 0 ? pollingInterval : 300,
+        }
+      : undefined,
     proxy: {
       // All API traffic goes to the agent server — the agent owns the
       // filesystem and the UI bridge. No vite-side mocks.
