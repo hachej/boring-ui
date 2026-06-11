@@ -284,6 +284,9 @@ export function deriveSourcePlugin(sourceInfo: SlashCommandInfo["sourceInfo"] | 
   // Boring runtime plugin: .pi/extensions/<name>/...
   const runtimePlugin = path.match(/[/\\]\.pi[/\\]extensions[/\\]([^/\\]+)/);
   if (runtimePlugin) return runtimePlugin[1];
+  // Provisioned plugin skill: .boring-agent/skills/<plugin>/<skill>/SKILL.md
+  const provisionedSkill = path.match(/[/\\]\.boring-agent[/\\]skills[/\\]([^/\\]+)/);
+  if (provisionedSkill) return provisionedSkill[1];
   // npm package source: "npm:<pkg>"
   if (source.startsWith("npm:")) return source.slice(4) || undefined;
   // git source: "git/<host>/<owner>/<repo>" -> repo

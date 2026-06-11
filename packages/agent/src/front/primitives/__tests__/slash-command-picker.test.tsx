@@ -11,7 +11,7 @@ describe('SlashCommandPicker', () => {
   })
 
   const commands = [
-    { name: 'skill:boring-plugin-authoring', description: 'Author a plugin', source: 'skill' as const },
+    { name: 'skill:boring-plugin-authoring', description: 'Author a plugin', source: 'skill' as const, sourcePlugin: 'plugin-authoring' },
     { name: 'open-demo-cmd', description: 'Open the demo panel', source: 'extension' as const, sourcePlugin: 'demo-cmd' },
     { name: 'run', description: 'Run a subagent', source: 'extension' as const, sourcePlugin: 'pi-subagents' },
     { name: 'reload', description: 'Reload plugins', source: 'local' as const },
@@ -19,11 +19,12 @@ describe('SlashCommandPicker', () => {
 
   const searchInput = () => screen.getByLabelText('Search commands') as HTMLInputElement
 
-  it('tags skill commands "skill" and other commands with their source plugin', () => {
+  it('tags plugin-owned skill commands with both skill and plugin tags', () => {
     render(<SlashCommandPicker query="" commands={commands} onSelect={() => {}} onDismiss={() => {}} />)
 
     const skillRow = screen.getByText('/skill:boring-plugin-authoring').closest('li')
     expect(skillRow?.querySelector('.uppercase')?.textContent).toBe('skill')
+    expect(skillRow?.textContent).toContain('plugin-authoring')
 
     const extensionRow = screen.getByText('/open-demo-cmd').closest('li')
     expect(extensionRow?.textContent).toContain('demo-cmd')

@@ -142,9 +142,16 @@ export function SlashCommandPicker({ query, commands, onSelect, onDismiss }: Sla
               <span className="flex items-center gap-1.5">
                 <span className="font-medium text-foreground/80">/{cmd.name}</span>
                 {cmd.source === 'skill' ? (
-                  <span className="rounded-sm bg-accent/15 px-1 py-px text-[9px] font-medium uppercase tracking-wide text-accent-foreground">
-                    skill
-                  </span>
+                  <>
+                    <span className="rounded-sm bg-accent/15 px-1 py-px text-[9px] font-medium uppercase tracking-wide text-accent-foreground">
+                      skill
+                    </span>
+                    {cmd.sourcePlugin ? (
+                      <span className="rounded-sm bg-muted px-1 py-px text-[9px] font-medium text-muted-foreground">
+                        {cmd.sourcePlugin}
+                      </span>
+                    ) : null}
+                  </>
                 ) : cmd.sourcePlugin ? (
                   // Originating plugin/package for non-skill commands.
                   <span className="rounded-sm bg-muted px-1 py-px text-[9px] font-medium text-muted-foreground">
