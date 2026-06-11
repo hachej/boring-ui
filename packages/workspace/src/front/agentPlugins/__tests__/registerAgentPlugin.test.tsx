@@ -712,7 +712,7 @@ describe("useAgentPluginHotReload", () => {
         id: "hot-plugin",
         version: "1.0.0",
         revision: 1,
-        frontUrl: "/@fs/front.mjs",
+        frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
         boring: { front: "./front.mjs" },
       })
 
