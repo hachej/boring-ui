@@ -1,9 +1,10 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ErrorState, IconButton, Spinner } from "@hachej/boring-ui-kit"
-import { ExternalLink, RefreshCcw } from "lucide-react"
+import { Camera, ExternalLink, RefreshCcw } from "lucide-react"
 import { cn } from "../../../../front/lib/utils"
+import { toast } from "../../../../front/toast"
 import { useApiBaseUrl, useWorkspaceRequestId } from "../data/DataProvider"
 
 export interface HtmlViewerProps {
@@ -116,6 +117,39 @@ async function fetchText(url: string, headers: Record<string, string>, signal: A
   return res.text()
 }
 
+async function screenshotViaDisplayMedia(rect: DOMRect): Promise<Blob> {
+  if (!navigator.mediaDevices?.getDisplayMedia) {
+    throw new Error("Screen capture is not supported in this browser")
+  }
+
+  const stream = await navigator.mediaDevices.getDisplayMedia({
+    video: { displaySurface: "browser" },
+    audio: false,
+    preferCurrentTab: true,
+  } as DisplayMediaStreamOptions & { preferCurrentTab?: boolean })
+
+  try {
+    const track = stream.getVideoTracks()[0]
+    if (!track) throw new Error("No screen capture track returned")
+
+    const imageCapture = new ImageCapture(track) as ImageCapture & { grabFrame(): Promise<ImageBitmap> }
+    const bitmap = await imageCapture.grabFrame()
+    const scaleX = bitmap.width / window.innerWidth
+    const scaleY = bitmap.height / window.innerHeight
+    const sx = Math.round(rect.left * scaleX)
+    const sy = Math.round(rect.top * scaleY)
+    const sw = Math.max(1, Math.round(rect.width * scaleX))
+    const sh = Math.max(1, Math.round(rect.height * scaleY))
+    const canvas = new OffscreenCanvas(sw, sh)
+    const ctx = canvas.getContext("2d")
+    if (!ctx) throw new Error("Could not create screenshot canvas")
+    ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, sw, sh)
+    return await canvas.convertToBlob({ type: "image/png" })
+  } finally {
+    for (const track of stream.getTracks()) track.stop()
+  }
+}
+
 export async function prepareHtmlPreviewDocument(options: {
   html: string
   path: string
@@ -187,6 +221,7 @@ export async function prepareHtmlPreviewDocument(options: {
 export function HtmlViewer({ path, className }: HtmlViewerProps) {
   const apiBaseUrl = useApiBaseUrl()
   const workspaceRequestId = useWorkspaceRequestId()
+  const containerRef = useRef<HTMLDivElement>(null)
   const [html, setHtml] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -200,6 +235,38 @@ export function HtmlViewer({ path, className }: HtmlViewerProps) {
   const refresh = useCallback(() => {
     setReloadKey((current) => current + 1)
   }, [])
+
+  const handleScreenshot = useCallback(async () => {
+    const rect = containerRef.current?.getBoundingClientRect()
+    if (!rect) {
+      toast.error({ title: "Screenshot failed", description: "Preview element not found" })
+      return
+    }
+
+    let blob: Blob
+    try {
+      blob = await screenshotViaDisplayMedia(rect)
+    } catch (error) {
+      toast.error({
+        title: "Screenshot failed",
+        description: error instanceof Error ? error.message : "Screen capture failed",
+      })
+      return
+    }
+
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })])
+      toast.success({ title: "Screenshot copied to clipboard" })
+    } catch {
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `${filename(path).replace(/\.[^.]+$/, "")}-screenshot.png`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success({ title: "Screenshot downloaded" })
+    }
+  }, [path])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -258,9 +325,20 @@ export function HtmlViewer({ path, className }: HtmlViewerProps) {
   }
 
   return (
-    <div className={cn("flex h-full min-h-0 flex-col bg-background", className)}>
+    <div ref={containerRef} className={cn("flex h-full min-h-0 flex-col bg-background", className)}>
       <div className="flex shrink-0 items-center justify-end gap-3 border-b border-border/60 px-3 py-2">
         <div className="flex items-center gap-1">
+          <IconButton
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={handleScreenshot}
+            aria-label="Copy screenshot"
+            title="Copy screenshot"
+          >
+            <Camera className="h-3.5 w-3.5" strokeWidth={1.75} />
+          </IconButton>
           <IconButton
             type="button"
             variant="ghost"

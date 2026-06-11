@@ -1,10 +1,11 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Download, RefreshCw } from "lucide-react"
+import { Camera, Download, RefreshCw } from "lucide-react"
 import { ErrorState, Spinner } from "@hachej/boring-ui-kit"
 import { useApiBaseUrl, useWorkspaceRequestId } from "../data/DataProvider"
 import { cn } from "../../../../front/lib/utils"
+import { toast } from "../../../../front/toast"
 
 export interface MediaViewerProps {
   path: string
@@ -23,6 +24,24 @@ function filename(path: string): string {
   return path.split("/").pop() ?? path
 }
 
+async function imageUrlToPngBlob(url: string): Promise<Blob> {
+  const image = new Image()
+  image.decoding = "async"
+  image.src = url
+  await image.decode()
+
+  const canvas = document.createElement("canvas")
+  canvas.width = image.naturalWidth
+  canvas.height = image.naturalHeight
+  const ctx = canvas.getContext("2d")
+  if (!ctx) throw new Error("Could not create screenshot canvas")
+  ctx.drawImage(image, 0, 0)
+
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"))
+  if (!blob) throw new Error("Could not render image screenshot")
+  return blob
+}
+
 export function MediaViewer({ path, kind, reloadKey = 0, onReload, className }: MediaViewerProps) {
   const apiBaseUrl = useApiBaseUrl()
   const workspaceRequestId = useWorkspaceRequestId()
@@ -35,6 +54,34 @@ export function MediaViewer({ path, kind, reloadKey = 0, onReload, className }: 
     if (reloadKey > 0) query.set("reload", String(reloadKey))
     return apiUrl(apiBaseUrl, `/api/v1/files/raw?${query.toString()}`)
   }, [apiBaseUrl, path, reloadKey])
+
+  async function handleScreenshot() {
+    if (!objectUrl) return
+
+    let blob: Blob
+    try {
+      blob = await imageUrlToPngBlob(objectUrl)
+    } catch (error) {
+      toast.error({
+        title: "Screenshot failed",
+        description: error instanceof Error ? error.message : "Image screenshot failed",
+      })
+      return
+    }
+
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })])
+      toast.success({ title: "Screenshot copied to clipboard" })
+    } catch {
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `${filename(path).replace(/\.[^.]+$/, "")}-screenshot.png`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success({ title: "Screenshot downloaded" })
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController()
@@ -96,6 +143,17 @@ export function MediaViewer({ path, kind, reloadKey = 0, onReload, className }: 
           >
             <RefreshCw className="size-3.5" />
           </button>
+          {kind === "image" && objectUrl ? (
+            <button
+              type="button"
+              onClick={handleScreenshot}
+              className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label={`Copy screenshot of ${filename(path)}`}
+              title="Copy screenshot"
+            >
+              <Camera className="size-3.5" />
+            </button>
+          ) : null}
           {objectUrl ? (
             <a
               href={objectUrl}
