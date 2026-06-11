@@ -23,7 +23,7 @@ import { cn } from "../lib/utils"
 import { ControlTooltip } from "../components/ControlTooltip"
 import { CHAT_SESSION_DRAG_TYPE, PaneFocusRing, paneTitle, type ChatPaneDescriptor, type ChatPaneStageProps } from "./ChatPaneStage"
 
-type ChatPaneStageDockProps = Omit<ChatPaneStageProps, "engine">
+type ChatPaneStageDockProps = ChatPaneStageProps
 
 const CHAT_PANE_COMPONENT = "chat-pane"
 const PANE_MIN_WIDTH = 280
