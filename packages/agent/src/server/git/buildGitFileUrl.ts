@@ -7,12 +7,30 @@ function normalizeRemoteUrl(remoteUrl: string): string | null {
     return `https://github.com/${sshMatch[1]}/${sshMatch[2]}`
   }
 
-  const httpsMatch = /^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/i.exec(trimmed)
-  if (httpsMatch) {
-    return `https://github.com/${httpsMatch[1]}/${httpsMatch[2]}`
-  }
+  const httpsBaseUrl = normalizeHttpsGithubRemote(trimmed)
+  if (httpsBaseUrl) return httpsBaseUrl
 
   return null
+}
+
+function normalizeHttpsGithubRemote(remoteUrl: string): string | null {
+  let url: URL
+  try {
+    url = new URL(remoteUrl)
+  } catch {
+    return null
+  }
+
+  if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'github.com') return null
+
+  const parts = url.pathname.replace(/^\/+|\/+$/g, '').split('/')
+  if (parts.length !== 2) return null
+
+  const [owner, repoWithSuffix] = parts
+  const repo = repoWithSuffix.endsWith('.git') ? repoWithSuffix.slice(0, -4) : repoWithSuffix
+  if (!owner || !repo) return null
+
+  return `https://github.com/${owner}/${repo}`
 }
 
 function sanitizeRef(value: unknown): string | null {

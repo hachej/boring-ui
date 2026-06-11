@@ -45,6 +45,26 @@ test('builds github urls from origin and branch', async () => {
   })
 })
 
+test('builds github urls from credentialed HTTPS origin without leaking credentials', async () => {
+  const workspaceRoot = await makeRoot('boring-git-url-credentialed-repo-')
+  await mkdir(join(workspaceRoot, 'docs'), { recursive: true })
+  await writeFile(join(workspaceRoot, 'docs', 'guide.md'), '# hi\n')
+
+  vi.spyOn(__gitTestUtils, 'runGit').mockImplementation(async (args: string[]) => {
+    const joined = args.join(' ')
+    if (joined === 'rev-parse --show-toplevel') return workspaceRoot
+    if (joined === 'remote get-url origin') return 'https://x-access-token:TOKEN@github.com/hachej/boring-content.git'
+    if (joined === 'symbolic-ref --quiet --short HEAD') return 'main'
+    throw new Error(`unexpected git args: ${joined}`)
+  })
+
+  const result = await resolveGitFileUrl(workspaceRoot, 'docs/guide.md')
+  expect(result).toEqual({
+    enabled: true,
+    url: 'https://github.com/hachej/boring-content/blob/main/docs/guide.md',
+  })
+})
+
 test('falls back to commit sha when HEAD is detached', async () => {
   const workspaceRoot = await makeRoot('boring-git-url-detached-')
   await writeFile(join(workspaceRoot, 'README.md'), '# hi\n')
