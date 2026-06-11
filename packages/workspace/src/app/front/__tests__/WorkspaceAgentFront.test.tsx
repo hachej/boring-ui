@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../../front/agentPlugins/reloadEvent"
@@ -24,6 +24,33 @@ function ChatPanel(props: WorkspaceChatPanelProps) {
       <button type="button" onClick={() => props.onOpenArtifact?.("src/example.ts")}>Open artifact</button>
     </div>
   )
+}
+
+function SessionIdChatPanel(props: WorkspaceChatPanelProps) {
+  return <div data-testid="chat-pane" data-session-id={props.sessionId}>Chat pane {props.sessionId}</div>
+}
+
+function TextareaChatPanel(props: WorkspaceChatPanelProps) {
+  return (
+    <textarea
+      name="message"
+      data-testid={`composer-${props.sessionId}`}
+      defaultValue={`Composer ${props.sessionId}`}
+    />
+  )
+}
+
+function visibleChatSessionIds(): string[] {
+  return screen.getAllByTestId("chat-pane").map((node) => node.getAttribute("data-session-id") ?? "")
+}
+
+// History starts collapsed when chat panes are open; expand it so tests can
+// reach history rows. No-op when there is no collapsed History toggle.
+function expandHistory(): void {
+  const toggle = screen.queryByRole("button", { name: "History", hidden: true })
+  if (toggle && toggle.getAttribute("aria-expanded") === "false") {
+    fireEvent.click(toggle)
+  }
 }
 
 function GlobalCommandPanel() {
@@ -141,6 +168,473 @@ describe("WorkspaceAgentFront", () => {
 
     expect(onOpenNav).toHaveBeenCalledOnce()
     expect(screen.getByLabelText("Session browser")).toHaveAttribute("aria-hidden", "false")
+  })
+
+  it("treats session history as data and opened chat panes as views", async () => {
+    const user = userEvent.setup()
+    const switchCalls: string[] = []
+    const sessions = [
+      { id: "s1", title: "First session", updatedAt: Date.now() - 1_000 },
+      { id: "s2", title: "Second session", updatedAt: Date.now() - 2_000 },
+      { id: "s3", title: "Third session", updatedAt: Date.now() - 3_000 },
+    ]
+
+    function Harness() {
+      const [activeSessionId, setActiveSessionId] = useState("s1")
+      return (
+        <WorkspaceAgentFront
+          workspaceId="multi-pane-sessions"
+          chatPanel={SessionIdChatPanel}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSwitchSession={(id) => {
+            switchCalls.push(id)
+            setActiveSessionId(id)
+          }}
+          onCreateSession={vi.fn()}
+          defaultNavOpen
+          persistenceEnabled={false}
+        />
+      )
+    }
+
+    render(<Harness />)
+    expandHistory()
+
+    // Session creation is contextual: with the drawer open its header "+"
+    // is the affordance and the floating "New chat" button hides.
+    expect(screen.queryByRole("button", { name: "New chat" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "New session" })).toBeInTheDocument()
+    expect(visibleChatSessionIds()).toEqual(["s1"])
+
+    await user.click(screen.getByText("Second session"))
+    expect(switchCalls).toContain("s2")
+    expect(visibleChatSessionIds()).toEqual(["s2"])
+
+    await user.click(screen.getByLabelText("Open Third session in chat pane"))
+    expect(switchCalls).toContain("s3")
+    expect(visibleChatSessionIds()).toEqual(["s2", "s3"])
+
+    await user.click(screen.getByText("First session"))
+    expect(switchCalls).toContain("s1")
+    expect(visibleChatSessionIds()).toEqual(["s2", "s1"])
+
+    await user.click(screen.getByLabelText("Close First session pane"))
+    expect(switchCalls).toContain("s2")
+    expect(visibleChatSessionIds()).toEqual(["s2"])
+    expect(screen.getByText("First session")).toBeInTheDocument()
+  })
+
+  it("opens a controlled void-created session as a pane to the right", async () => {
+    const user = userEvent.setup()
+
+    function Harness() {
+      const [sessions, setSessions] = useState([
+        { id: "s1", title: "First session", updatedAt: Date.now() - 1_000 },
+      ])
+      const [activeSessionId, setActiveSessionId] = useState("s1")
+      return (
+        <WorkspaceAgentFront
+          workspaceId="controlled-create-pane"
+          chatPanel={SessionIdChatPanel}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSwitchSession={setActiveSessionId}
+          onCreateSession={() => {
+            setSessions((previous) => [
+              { id: "created", title: "Created session", updatedAt: Date.now() },
+              ...previous,
+            ])
+            setActiveSessionId("created")
+          }}
+          persistenceEnabled={false}
+        />
+      )
+    }
+
+    render(<Harness />)
+    expandHistory()
+
+    await user.click(screen.getByRole("button", { name: "New chat" }))
+
+    await waitFor(() => {
+      expect(visibleChatSessionIds()).toEqual(["s1", "created"])
+    })
+  })
+
+  it("restores the persisted pane layout on reload", async () => {
+    localStorage.setItem(
+      "boring-workspace:chat-panes:restore-panes",
+      JSON.stringify({ ids: ["s1", "s2"], activeId: "s2" }),
+    )
+    const sessions = [
+      { id: "s1", title: "First session", updatedAt: Date.now() - 1_000 },
+      { id: "s2", title: "Second session", updatedAt: Date.now() - 2_000 },
+    ]
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="restore-panes"
+        chatPanel={SessionIdChatPanel}
+        sessions={sessions}
+        activeSessionId="s2"
+        onSwitchSession={vi.fn()}
+        onCreateSession={vi.fn()}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
+    })
+  })
+
+  it("restores the persisted pane layout while remote sessions load", async () => {
+    localStorage.setItem(
+      "boring-workspace:chat-panes:remote-restore",
+      JSON.stringify({ ids: ["s1", "s2"], activeId: "s2" }),
+    )
+    localStorage.setItem("boring-workspace:sessions:remote-restore", "s2")
+
+    function useDelayedSessions() {
+      const [loading, setLoading] = useState(true)
+      useEffect(() => {
+        const timer = setTimeout(() => setLoading(false), 50)
+        return () => clearTimeout(timer)
+      }, [])
+      const sessions = loading
+        ? []
+        : [
+            { id: "s1", title: "First session", updatedAt: Date.now() - 1_000 },
+            { id: "s2", title: "Second session", updatedAt: Date.now() - 2_000 },
+          ]
+      return {
+        sessions,
+        loading,
+        activeSessionId: loading ? null : "s2",
+        activeSession: sessions[1] ?? null,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="remote-restore"
+        chatPanel={SessionIdChatPanel}
+        useSessions={useDelayedSessions}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
+    })
+  })
+
+  it("keeps an async returned created pane while controlled sessions catch up", async () => {
+    const user = userEvent.setup()
+
+    function Harness() {
+      const [sessions, setSessions] = useState([
+        { id: "s1", title: "First session", updatedAt: Date.now() - 1_000 },
+      ])
+      const [activeSessionId, setActiveSessionId] = useState("s1")
+      return (
+        <WorkspaceAgentFront
+          workspaceId="async-created-pane"
+          chatPanel={SessionIdChatPanel}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSwitchSession={setActiveSessionId}
+          onCreateSession={() => Promise.resolve({ id: "created", title: "Created session", updatedAt: Date.now() })}
+          beforeShell={
+            <button type="button" onClick={() => setSessions((previous) => [...previous])}>
+              Refresh stale sessions
+            </button>
+          }
+          persistenceEnabled={false}
+        />
+      )
+    }
+
+    render(<Harness />)
+    expandHistory()
+
+    await user.click(screen.getByRole("button", { name: "New chat" }))
+
+    await waitFor(() => {
+      expect(visibleChatSessionIds()).toEqual(["s1", "created"])
+    })
+
+    await user.click(screen.getByRole("button", { name: "Refresh stale sessions" }))
+
+    await waitFor(() => {
+      expect(visibleChatSessionIds()).toEqual(["s1", "created"])
+    })
+  })
+
+  it("removes an open chat pane when its session is deleted from history", async () => {
+    const user = userEvent.setup()
+    const deleted = vi.fn()
+
+    function Harness() {
+      const [sessions, setSessions] = useState([
+        { id: "s1", title: "First session", updatedAt: Date.now() - 1_000 },
+        { id: "s2", title: "Second session", updatedAt: Date.now() - 2_000 },
+      ])
+      const [activeSessionId, setActiveSessionId] = useState("s1")
+      return (
+        <WorkspaceAgentFront
+          workspaceId="delete-open-pane"
+          chatPanel={SessionIdChatPanel}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSwitchSession={setActiveSessionId}
+          onDeleteSession={(id) => {
+            deleted(id)
+            setSessions((previous) => previous.filter((session) => session.id !== id))
+          }}
+          defaultNavOpen
+          persistenceEnabled={false}
+        />
+      )
+    }
+
+    render(<Harness />)
+    expandHistory()
+
+    await user.click(screen.getByLabelText("Open Second session in chat pane"))
+    expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
+
+    await user.click(screen.getByLabelText("Delete Second session"))
+
+    await waitFor(() => {
+      expect(deleted).toHaveBeenCalledWith("s2")
+      expect(visibleChatSessionIds()).toEqual(["s1"])
+      expect(screen.queryByText("Second session")).not.toBeInTheDocument()
+    })
+  })
+
+  it("prunes open panes when a controlled session list drops a session", async () => {
+    const user = userEvent.setup()
+
+    function Harness() {
+      const [sessions, setSessions] = useState([
+        { id: "s1", title: "First session", updatedAt: Date.now() - 1_000 },
+        { id: "s2", title: "Second session", updatedAt: Date.now() - 2_000 },
+      ])
+      const [activeSessionId, setActiveSessionId] = useState("s1")
+      return (
+        <WorkspaceAgentFront
+          workspaceId="external-session-prune"
+          chatPanel={SessionIdChatPanel}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSwitchSession={setActiveSessionId}
+          beforeShell={
+            <button type="button" onClick={() => setSessions((previous) => previous.filter((session) => session.id !== "s2"))}>
+              Drop second session
+            </button>
+          }
+          defaultNavOpen
+          persistenceEnabled={false}
+        />
+      )
+    }
+
+    render(<Harness />)
+    expandHistory()
+
+    await user.click(screen.getByLabelText("Open Second session in chat pane"))
+    expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
+
+    await user.click(screen.getByRole("button", { name: "Drop second session" }))
+
+    await waitFor(() => {
+      expect(visibleChatSessionIds()).toEqual(["s1"])
+      expect(screen.queryByText("Second session")).not.toBeInTheDocument()
+    })
+  })
+
+  it("keeps open panes that are missing from a paginated remote session page", async () => {
+    const user = userEvent.setup()
+
+    function Harness() {
+      const [sessions, setSessions] = useState([
+        { id: "s1", title: "First session", updatedAt: Date.now() - 1_000 },
+        { id: "s2", title: "Second session", updatedAt: Date.now() - 2_000 },
+      ])
+      const [activeSessionId, setActiveSessionId] = useState("s1")
+      const usePaginatedSessions = () => ({
+        sessions,
+        activeSessionId,
+        activeSession: sessions.find((session) => session.id === activeSessionId) ?? null,
+        loading: false,
+        hasMore: true,
+        create: vi.fn(),
+        switch: setActiveSessionId,
+        delete: vi.fn(),
+      })
+      return (
+        <WorkspaceAgentFront
+          workspaceId="paginated-session-pane"
+          chatPanel={SessionIdChatPanel}
+          useSessions={usePaginatedSessions}
+          beforeShell={
+            <button type="button" onClick={() => setSessions((previous) => previous.filter((session) => session.id !== "s2"))}>
+              Show first page
+            </button>
+          }
+          defaultNavOpen
+          persistenceEnabled={false}
+        />
+      )
+    }
+
+    render(<Harness />)
+    expandHistory()
+
+    await user.click(screen.getByLabelText("Open Second session in chat pane"))
+    expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
+
+    await user.click(screen.getByRole("button", { name: "Show first page" }))
+
+    await waitFor(() => {
+      expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
+    })
+  })
+
+  it("keeps the UI command stream owned by the active chat pane only", async () => {
+    const user = userEvent.setup()
+    MockEventSource.instances = []
+    vi.stubGlobal("EventSource", MockEventSource)
+    const sessions = [
+      { id: "s1", title: "First session", updatedAt: Date.now() - 1_000 },
+      { id: "s2", title: "Second session", updatedAt: Date.now() - 2_000 },
+    ]
+    const activeStreams = () => MockEventSource.instances.filter((instance) => (
+      instance.url.includes("/api/v1/ui/commands/next")
+      && instance.close.mock.calls.length === 0
+    ))
+
+    function Harness() {
+      const [activeSessionId, setActiveSessionId] = useState("s1")
+      return (
+        <WorkspaceAgentFront
+          workspaceId="single-ui-command-stream"
+          chatPanel={SessionIdChatPanel}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSwitchSession={setActiveSessionId}
+          bridgeEndpoint="/api/v1/ui"
+          defaultNavOpen
+          persistenceEnabled={false}
+        />
+      )
+    }
+
+    render(<Harness />)
+    expandHistory()
+
+    await waitFor(() => {
+      expect(activeStreams()).toHaveLength(1)
+    })
+
+    await user.click(screen.getByLabelText("Open Second session in chat pane"))
+
+    await waitFor(() => {
+      expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
+      expect(activeStreams()).toHaveLength(1)
+    })
+  })
+
+  it("does not stop still-visible sessions when changing visible chat panes", async () => {
+    const user = userEvent.setup()
+    const stopEvents: unknown[] = []
+    const onStop = (event: Event) => stopEvents.push((event as CustomEvent).detail)
+    window.addEventListener("boring:workspace-composer-stop", onStop)
+    const sessions = [
+      { id: "s1", title: "First session", updatedAt: Date.now() - 1_000 },
+      { id: "s2", title: "Second session", updatedAt: Date.now() - 2_000 },
+    ]
+
+    function Harness() {
+      const [activeSessionId, setActiveSessionId] = useState("s1")
+      return (
+        <WorkspaceAgentFront
+          workspaceId="visible-pane-no-stop"
+          chatPanel={SessionIdChatPanel}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSwitchSession={setActiveSessionId}
+          defaultNavOpen
+          persistenceEnabled={false}
+        />
+      )
+    }
+
+    render(<Harness />)
+    expandHistory()
+
+    try {
+      await user.click(screen.getByLabelText("Open Second session in chat pane"))
+      await user.click(screen.getByLabelText("Chat session First session"))
+      await user.click(screen.getByLabelText("Chat session Second session"))
+      await user.click(screen.getByLabelText("Close Second session pane"))
+
+      expect(stopEvents).toEqual([])
+    } finally {
+      window.removeEventListener("boring:workspace-composer-stop", onStop)
+    }
+  })
+
+  it("keeps keyboard focus aligned with the active chat pane", async () => {
+    const user = userEvent.setup()
+    const switchCalls: string[] = []
+    const sessions = [
+      { id: "s1", title: "First session", updatedAt: Date.now() - 1_000 },
+      { id: "s2", title: "Second session", updatedAt: Date.now() - 2_000 },
+    ]
+
+    function Harness() {
+      const [activeSessionId, setActiveSessionId] = useState("s1")
+      return (
+        <WorkspaceAgentFront
+          workspaceId="keyboard-pane-focus"
+          chatPanel={TextareaChatPanel}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSwitchSession={(id) => {
+            switchCalls.push(id)
+            setActiveSessionId(id)
+          }}
+          defaultNavOpen
+          persistenceEnabled={false}
+        />
+      )
+    }
+
+    render(<Harness />)
+    expandHistory()
+
+    await user.click(screen.getByLabelText("Open Second session in chat pane"))
+    document.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("composer-s2")).toHaveFocus()
+    })
+
+    act(() => {
+      screen.getByTestId("composer-s1").focus()
+    })
+
+    await waitFor(() => {
+      expect(switchCalls).toContain("s1")
+    })
   })
 
   it("restores session history and workbench visibility per workspace", async () => {
@@ -785,7 +1279,7 @@ describe("WorkspaceAgentFront", () => {
       />,
     )
 
-    fireEvent.click(screen.getAllByRole("button", { name: "New chat" })[0])
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }))
 
     await waitFor(() => {
       expect(create).toHaveBeenCalledOnce()
@@ -1002,6 +1496,7 @@ describe("WorkspaceAgentFront", () => {
       />,
     )
 
+    expandHistory()
     await user.click(screen.getByText("Session two"))
     expect(onSwitchSession).toHaveBeenCalledWith("s2")
     expect(observed).toHaveBeenCalledWith(expect.objectContaining({ detail: { sessionId: "s1" } }))

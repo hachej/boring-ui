@@ -327,3 +327,52 @@
 }
 .tiptap-prose strong { font-weight: 600; }
 .tiptap-prose mark { background-color: oklch(from var(--accent) l c h / 0.2); color: inherit; padding: 0 2px; border-radius: 2px; }
+
+/* Discreet scrollbar — thin, dim, and only tinted on hover. Applied to
+   workspace chrome scroll regions (session list, etc.). */
+.boring-scrollbar-discreet {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(from var(--foreground) l c h / 0.14) transparent;
+}
+.boring-scrollbar-discreet::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.boring-scrollbar-discreet::-webkit-scrollbar-track {
+  background: transparent;
+}
+.boring-scrollbar-discreet::-webkit-scrollbar-thumb {
+  background-color: oklch(from var(--foreground) l c h / 0.12);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.boring-scrollbar-discreet:hover::-webkit-scrollbar-thumb {
+  background-color: oklch(from var(--foreground) l c h / 0.22);
+}
+.boring-scrollbar-discreet::-webkit-scrollbar-thumb:hover {
+  background-color: oklch(from var(--foreground) l c h / 0.34);
+}
+
+/* Apply the discreet treatment to every scroll region inside the workspace
+   shell (chat transcript, panes, file tree…) so scrollbars read quietly. */
+[data-boring-workspace] {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(from var(--foreground) l c h / 0.14) transparent;
+}
+[data-boring-workspace] ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+[data-boring-workspace] ::-webkit-scrollbar-track {
+  background: transparent;
+}
+[data-boring-workspace] ::-webkit-scrollbar-thumb {
+  background-color: oklch(from var(--foreground) l c h / 0.12);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+[data-boring-workspace] ::-webkit-scrollbar-thumb:hover {
+  background-color: oklch(from var(--foreground) l c h / 0.3);
+}
