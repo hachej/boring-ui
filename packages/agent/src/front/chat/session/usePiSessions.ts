@@ -5,7 +5,10 @@ import { readActiveSessionId, writeActiveSessionId, type ActiveSessionStorageLik
 
 const DEFAULT_SESSIONS_API_PATH = '/api/v1/agent/pi-chat/sessions'
 const SESSION_PAGE_SIZE = 50
-const DEFAULT_MAX_RETRIES = 8
+// 60 attempts with the 2s backoff cap ≈ two minutes of resilience — enough
+// to ride out a hub restart plus its cold-start window, after which the
+// session list recovers without a remount.
+const DEFAULT_MAX_RETRIES = 60
 const DEFAULT_RETRY_BASE_MS = 250
 const DEFAULT_RETRY_MAX_MS = 2_000
 
@@ -61,6 +64,14 @@ class SessionsPreparingError extends Error {
     super('Agent runtime is still preparing')
     this.name = 'SessionsPreparingError'
   }
+}
+
+// Network-level failure (server restarting, connection refused). fetch()
+// rejects with TypeError in every browser for these; they are transient by
+// nature and must be retried like a 503, not surfaced as a terminal error
+// that pins "Loading sessions" until the component remounts.
+function isNetworkFetchError(error: unknown): boolean {
+  return error instanceof TypeError
 }
 
 export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessionsResult {
@@ -219,7 +230,8 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
           data = await fetchSessionList(fetchImpl, sessionsListUrl(0, preferredSessionId()), requestHeaders())
           break
         } catch (err) {
-          const retryable = err instanceof SessionsPreparingError && attempt < retryMaxRetries
+          const transient = err instanceof SessionsPreparingError || isNetworkFetchError(err)
+          const retryable = transient && attempt < retryMaxRetries
           if (!retryable) throw err
           if (!isCurrent()) return
           await delayWithRef(retryDelayMs(attempt, { baseMs: retryBaseMs, maxMs: retryMaxMs }), retryTimerRef)
