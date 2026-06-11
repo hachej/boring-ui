@@ -16,7 +16,7 @@ import { ComposerStatusBanner } from "./ComposerStatusBanner"
 
 export type CommandRunState =
   | { kind: "running"; command: string }
-  | { kind: "success"; command: string; detail?: string }
+  | { kind: "success"; command: string; detail?: string; runId: number }
   | { kind: "error"; command: string; message: string }
 
 export interface CommandRunStatusProps {
@@ -39,7 +39,7 @@ export function CommandRunStatus({
     onDismissRef.current = onDismiss
   }, [onDismiss])
 
-  const successKey = state?.kind === "success" ? `${state.command}:${state.detail ?? ""}` : null
+  const successKey = state?.kind === "success" ? `${state.runId}:${state.command}:${state.detail ?? ""}` : null
   useEffect(() => {
     if (!state || state.kind !== "success" || successAutoDismissMs <= 0) return
     const timeout = window.setTimeout(() => onDismissRef.current(), successAutoDismissMs)
@@ -55,9 +55,9 @@ export function CommandRunStatus({
         dataAttribute="data-boring-command-run"
         maxWidthClassName={maxWidthClassName}
         runningContent={
-          <>
-            Running <code className="font-mono">/{state.command}</code>…
-          </>
+          state.command
+            ? <> Running <code className="font-mono">/{state.command}</code>… </>
+            : "Running command…"
         }
       />
     )
@@ -70,9 +70,9 @@ export function CommandRunStatus({
         dataAttribute="data-boring-command-run"
         maxWidthClassName={maxWidthClassName}
         title={
-          <>
-            Ran <code className="font-mono">/{state.command}</code>
-          </>
+          state.command
+            ? <> Ran <code className="font-mono">/{state.command}</code> </>
+            : "Command ran"
         }
         detail={state.detail}
         onDismiss={onDismiss}
@@ -87,9 +87,9 @@ export function CommandRunStatus({
       dataAttribute="data-boring-command-run"
       maxWidthClassName={maxWidthClassName}
       title={
-        <>
-          <code className="font-mono">/{state.command}</code> failed.
-        </>
+        state.command
+          ? <> <code className="font-mono">/{state.command}</code> failed. </>
+          : "Command failed."
       }
       message={state.message}
       onDismiss={onDismiss}

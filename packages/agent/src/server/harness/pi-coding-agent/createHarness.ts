@@ -544,6 +544,21 @@ export function createPiCodingAgentHarness(opts: {
       return handle.resourceLoader.getExtensions().runtime.getCommands().map(normalizeSlashCommandInfo);
     },
 
+    async executeSlashCommand(sessionId: string, name: string, args: string, ctx: RunContext): Promise<void> {
+      const handle = await getOrCreatePiSession(sessionId, { sessionId, message: "" }, ctx);
+      const command = handle.piSession.extensionRunner.getCommand(name);
+      if (command) {
+        await command.handler(args, handle.piSession.extensionRunner.createCommandContext());
+        return;
+      }
+
+      const knownCommand = handle.resourceLoader.getExtensions().runtime.getCommands().some((candidate) => candidate.name === name);
+      if (!knownCommand) throw new Error(`command '${name}' not registered in session '${sessionId}'`);
+
+      const text = args.trim() ? `/${name} ${args}` : `/${name}`;
+      await handle.piSession.prompt(text);
+    },
+
     async getPiSessionAdapter(input: SendMessageInput, ctx: RunContext) {
       const { piSession } = await getOrCreatePiSession(input.sessionId, input, ctx);
       return createPiAgentSessionAdapter(piSession, {

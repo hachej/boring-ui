@@ -202,12 +202,13 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
       const msg = strParam(cmd.params, "msg")
       if (!msg) return
       const rawLevel = cmd.params?.level
-      const level: "success" | "error" | "info" =
-        rawLevel === "error" ? "error" : rawLevel === "warn" ? "info" : "info"
+      const level: "success" | "error" | "info" | "warn" =
+        rawLevel === "error" ? "error" : rawLevel === "warn" ? "warn" : "info"
+      const command = strParam(cmd.params, "command") ?? undefined
       if (typeof globalThis.dispatchEvent === "function" && typeof CustomEvent !== "undefined") {
         globalThis.dispatchEvent(
           new CustomEvent(WORKSPACE_COMMAND_NOTIFY_EVENT, {
-            detail: { message: msg, tone: level },
+            detail: { message: msg, tone: level, command },
           }),
         )
       }

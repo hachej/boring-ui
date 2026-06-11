@@ -38,7 +38,7 @@ export function useServerSkills({
         let added = 0
         for (const skill of payload.skills) {
           if (!registry.get(skill.name)) {
-            registry.register({ name: skill.name, description: skill.description, kind: 'skill', handler: () => {} })
+            registry.register({ name: skill.name, description: skill.description, kind: 'skill', source: 'skill', handler: () => {} })
             added++
           }
         }

@@ -40,5 +40,7 @@ export const WORKSPACE_COMMAND_NOTIFY_EVENT = 'boring-ui:command-notify'
  */
 export interface CommandNotifyPayload {
   message: string
-  tone: 'success' | 'error' | 'info'
+  tone: 'success' | 'error' | 'info' | 'warn'
+  /** Name of the command that triggered the notification (without leading slash). */
+  command?: string
 }

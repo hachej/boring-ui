@@ -44,6 +44,14 @@ export interface AgentHarness {
 
   /** List slash commands registered in the agent runtime for a given session. */
   getSlashCommands?: (sessionId: string, ctx: RunContext) => ReadonlyArray<AgentSlashCommandSummary> | Promise<ReadonlyArray<AgentSlashCommandSummary>>
+
+  /**
+   * Execute a named slash command registered via `pi.registerCommand` in a
+   * plugin extension. Calls the handler in-process; the handler may dispatch
+   * UI commands (openPanel, notify) through the workspace bridge. Throws if
+   * the command is not found or the handler throws.
+   */
+  executeSlashCommand?: (sessionId: string, name: string, args: string, ctx: RunContext) => Promise<void>
 }
 
 export interface AgentSlashCommandSummary {

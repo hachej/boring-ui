@@ -46,7 +46,7 @@ describe("CommandRunStatus", () => {
     const onDismiss = vi.fn()
     const container = render(
       <CommandRunStatus
-        state={{ kind: "success", command: "open-demo-cmd", detail: "ran in 12ms" }}
+        state={{ kind: "success", command: "open-demo-cmd", detail: "ran in 12ms", runId: 1 }}
         onDismiss={onDismiss}
         successAutoDismissMs={1400}
       />,

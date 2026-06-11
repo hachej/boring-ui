@@ -11,20 +11,26 @@ interface ServerCommandSummary {
 
 function toSlashCommand(
   command: ServerCommandSummary,
-  sessionId: string,
+  getSessionId: () => string,
   apiBaseUrl: string | undefined,
   requestHeaders: Record<string, string> | undefined,
+  fetchImpl: typeof globalThis.fetch,
 ): SlashCommand {
   return {
     name: command.name,
     description: command.description ?? '',
     source: command.source,
     ...(command.sourcePlugin ? { sourcePlugin: command.sourcePlugin } : {}),
-    handler: async () => {
+    handler: async (args) => {
       const base = apiBaseUrl?.replace(/\/$/, '') ?? ''
-      const url = `${base}/api/v1/agent/commands/execute?sessionId=${encodeURIComponent(sessionId)}&name=${encodeURIComponent(command.name)}`
+      const params = new URLSearchParams({ sessionId: getSessionId() })
+      const url = `${base}/api/v1/agent/commands/execute?${params.toString()}`
       try {
-        const res = await fetch(url, { method: 'POST', headers: requestHeaders })
+        const res = await fetchImpl(url, {
+          method: 'POST',
+          headers: { ...(requestHeaders ?? {}), 'content-type': 'application/json' },
+          body: JSON.stringify({ name: command.name, args }),
+        })
         if (!res.ok) {
           const body = await res.json().catch(() => ({})) as { error?: string }
           if (typeof globalThis.dispatchEvent === 'function') {
@@ -100,7 +106,7 @@ export function useServerCommands({
         const removed = clearRegistered()
         let added = false
         for (const serverCommand of payload.commands ?? []) {
-          const command = toSlashCommand(serverCommand, sessionIdRef.current, apiBaseUrl, requestHeaders)
+          const command = toSlashCommand(serverCommand, () => sessionIdRef.current, apiBaseUrl, headers, nextFetch)
           if (registry.get(command.name)) continue
           registry.register(command)
           registeredNamesRef.current.add(command.name)

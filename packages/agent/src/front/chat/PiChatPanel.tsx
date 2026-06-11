@@ -322,6 +322,7 @@ export function PiChatPanel({
   const [dismissedNoticeIds, setDismissedNoticeIds] = useState<Set<string>>(() => new Set())
   const [pluginUpdateState, setPluginUpdateState] = useState<PluginUpdateState | null>(null)
   const [commandNotifyState, setCommandNotifyState] = useState<CommandRunState | null>(null)
+  const commandRunIdRef = useRef(0)
   const [serverSkillsRefreshKey, setServerSkillsRefreshKey] = useState(0)
   const [localSubmittedSessionId, setLocalSubmittedSessionId] = useState<string | undefined>()
   const localSubmittedSessionRef = useRef<string | undefined>(undefined)
@@ -350,6 +351,9 @@ export function PiChatPanel({
     registry,
     requestHeaders: normalizedRequestHeaders,
     sessionId: activeSessionId ?? 'default',
+    apiBaseUrl,
+    fetch,
+    storageScope,
     refreshKey: serverSkillsRefreshKey,
     enabled: serverResourcesEnabled,
   })
@@ -494,11 +498,13 @@ export function PiChatPanel({
       const payload = (event as CustomEvent<CommandNotifyPayload>).detail
       if (!payload || typeof payload.message !== 'string') return
       const tone = payload.tone
+      const command = payload.command ?? ''
       if (tone === 'error') {
-        setCommandNotifyState({ kind: 'error', command: '', message: payload.message })
+        setCommandNotifyState({ kind: 'error', command, message: payload.message })
       } else {
-        // 'success' and 'info' both use the success banner tone
-        setCommandNotifyState({ kind: 'success', command: '', detail: payload.message })
+        // 'success', 'info', and 'warn' all use the success banner tone
+        const runId = ++commandRunIdRef.current
+        setCommandNotifyState({ kind: 'success', command, detail: payload.message, runId })
       }
     }
     window.addEventListener(WORKSPACE_COMMAND_NOTIFY_EVENT, onCommandNotify as EventListener)
