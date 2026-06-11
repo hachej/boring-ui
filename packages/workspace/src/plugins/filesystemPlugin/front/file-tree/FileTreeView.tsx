@@ -339,6 +339,42 @@ export function FileTreeView({
     [dataClient, rootDir, ignoreNames],
   )
 
+  // Expanded subfolders cache their children in local state (not react-query),
+  // so `useFileList`'s invalidation only refreshes the root level. Mirror the
+  // expanded dir set into a ref and re-fetch the affected dir when an
+  // agent/remote change lands inside it — otherwise a file the agent writes
+  // into an open folder stays hidden until the user collapses + re-expands it.
+  // `user`-caused changes already refresh locally at their call sites.
+  const expandedDirsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    expandedDirsRef.current = new Set(expandedChildren.keys())
+  }, [expandedChildren])
+
+  useEffect(() => {
+    const affected = (paths: string[]): string[] =>
+      Array.from(new Set(paths.map(parentDir))).filter((dir) => expandedDirsRef.current.has(dir))
+    const offCreated = events.on(filesystemEvents.created, (e) => {
+      if (e.cause === "user") return
+      const dirs = affected([e.path])
+      if (dirs.length) void refreshDirs(dirs)
+    })
+    const offDeleted = events.on(filesystemEvents.deleted, (e) => {
+      if (e.cause === "user") return
+      const dirs = affected([e.path])
+      if (dirs.length) void refreshDirs(dirs)
+    })
+    const offMoved = events.on(filesystemEvents.moved, (e) => {
+      if (e.cause === "user") return
+      const dirs = affected([e.from, e.to])
+      if (dirs.length) void refreshDirs(dirs)
+    })
+    return () => {
+      offCreated()
+      offDeleted()
+      offMoved()
+    }
+  }, [refreshDirs])
+
   const revealTreePath = useCallback(
     async (path: string | null, options?: { refreshTargetDir?: boolean }) => {
       if (!path) return

@@ -385,12 +385,10 @@ export function PiChatPanel({
     const sessionNotice = sessionsError
       ? [{ id: 'session-navigation-error', level: 'error' as const, text: sessionsError.message, dismissible: true }]
       : []
-    const blockerNotices = activeBlockers.map((blocker) => ({
-      id: `composer-blocker:${blocker.id}`,
-      level: 'warning' as const,
-      text: blocker.label ?? blocker.reason ?? 'Workspace is not ready for a new message.',
-      dismissible: false,
-    }))
+    // Composer blockers already render as an actionable bar right above the
+    // input (ComposerBlockerNotice, with Open/Cancel buttons), so surfacing
+    // them again as a timeline warning notice just duplicates the same line.
+    // Keep the single actionable bar; don't echo it here.
     const largeStateNotice = debug && debugState?.largeStateWarning
       ? [{
           id: 'large-state-warning',
@@ -399,8 +397,8 @@ export function PiChatPanel({
           dismissible: true,
         }]
       : []
-    return [...fromState, ...sessionNotice, ...blockerNotices, ...largeStateNotice, ...localNotices].filter((notice) => !dismissedNoticeIds.has(notice.id))
-  }, [activeBlockers, debug, debugState?.largeStateWarning, dismissedNoticeIds, localNotices, selectedChatState, sessionsError])
+    return [...fromState, ...sessionNotice, ...largeStateNotice, ...localNotices].filter((notice) => !dismissedNoticeIds.has(notice.id))
+  }, [debug, debugState?.largeStateWarning, dismissedNoticeIds, localNotices, selectedChatState, sessionsError])
 
   const addLocalNotice = useCallback((notice: PanelNotice) => {
     setLocalNotices((previous) => {
@@ -844,6 +842,24 @@ export function PiChatPanel({
     setModelPickerOpen(false)
     setThinkingPickerOpen(false)
   }, [isStreaming])
+
+  // Broadcast per-session busy state so shell chrome (e.g. the session
+  // browser) can show a "working" indicator without coupling to this panel.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !activeChatSessionId) return
+    window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
+      detail: { sessionId: activeChatSessionId, working: isStreaming },
+    }))
+    if (!isStreaming) return
+    const sessionId = activeChatSessionId
+    return () => {
+      // Pane unmounted (or session switched) mid-stream: clear the signal
+      // rather than leaving a stale "working" badge behind.
+      window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
+        detail: { sessionId, working: false },
+      }))
+    }
+  }, [activeChatSessionId, isStreaming])
 
   const onTextareaKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Escape' && isStreaming) {

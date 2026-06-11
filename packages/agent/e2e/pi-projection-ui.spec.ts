@@ -64,6 +64,7 @@ test.describe('pi projection UI regressions', () => {
     await installPiNativeMock(page)
     await page.addInitScript(() => {
       localStorage.setItem('boring-agent:v2:agent-playground:composer:show-thoughts', '1')
+      localStorage.setItem('__boring_pi_native_e2e_state__', JSON.stringify({ promptToolName: 'grep' }))
     })
     await navigateBrowserToBackend(page, `${backend.browserUrl}?piNative=1`)
 
@@ -73,7 +74,7 @@ test.describe('pi projection UI regressions', () => {
 
     const conversation = page.getByLabel('Agent conversation')
     await expect(conversation.getByText('PI_NATIVE_ASSISTANT_DONE')).toBeVisible({ timeout: 10_000 })
-    await expect(conversation.getByText(/Used command|Using command/)).toBeVisible({ timeout: 10_000 })
+    await expect(conversation.getByText(/Used search|Using search/)).toBeVisible({ timeout: 10_000 })
 
     const thoughtsTrigger = conversation.getByText(/thoughts|thinking/).first()
     await expect(thoughtsTrigger).toBeVisible({ timeout: 10_000 })
