@@ -494,10 +494,11 @@ export async function createWorkspacesModeApp(opts: {
   registryPath?: string
   provisionWorkspace?: boolean
 }): Promise<FastifyInstance> {
-  const [workspaceAppServer, workspaceServer, agentServer, fastifyModule, { createPluginFrontRuntimeHost }, pluginDiscovery] = await Promise.all([
+  const [workspaceAppServer, workspaceServer, agentServer, agentShared, fastifyModule, { createPluginFrontRuntimeHost }, pluginDiscovery] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
     import("@hachej/boring-workspace/server"),
     import("@hachej/boring-agent/server"),
+    import("@hachej/boring-agent/shared"),
     import("fastify"),
     import("./pluginFrontRuntime.js"),
     import("./pluginDiscovery.js"),
@@ -509,10 +510,41 @@ export async function createWorkspacesModeApp(opts: {
     onDiagnostic: (diagnostic) => diagnosticsStore.record(diagnostic),
   })
   await runtimeHost.registerRoutes(app)
+  // External plugin server routes (/api/v1/plugins/<id>/*). The gateway is
+  // registered once; dispatch resolves the per-workspace RuntimeBackendRegistry
+  // from the request's workspaceId (header), lazily booting the runtime.
+  await app.register(workspaceServer.runtimeBackendGateway, {
+    registry: {
+      dispatch: async (dispatchRequest) => {
+        if (!dispatchRequest.workspaceId) {
+          throw new workspaceServer.RuntimeBackendError(
+            agentShared.ErrorCode.enum.RUNTIME_PLUGIN_NOT_FOUND,
+            404,
+            "runtime backend dispatch requires a workspace id (x-boring-workspace-id header)",
+          )
+        }
+        const workspace = await registry.get(dispatchRequest.workspaceId)
+        if (!workspace?.available) {
+          throw new workspaceServer.RuntimeBackendError(
+            agentShared.ErrorCode.enum.RUNTIME_PLUGIN_NOT_FOUND,
+            404,
+            `runtime backend dispatch: unknown workspace ${dispatchRequest.workspaceId}`,
+          )
+        }
+        const runtime = await getLoadedPluginRuntime(workspace)
+        // Workspace-local plugin sources carry the workspace ROOT PATH as their
+        // workspaceId (see resolveCliBoringPluginDirs); the HTTP request carries
+        // the registry id. Each workspace has its own backendRegistry, so
+        // translate id → path for the registry's scope check.
+        return runtime.backendRegistry.dispatch({ ...dispatchRequest, workspaceId: resolve(workspace.path) })
+      },
+    },
+  })
   const bridges = new Map<string, ReturnType<typeof workspaceServer.createInMemoryBridge>>()
   const workspaceEventClosers = new Map<string, Set<() => void>>()
   const pluginRuntimes = new Map<string, {
     manager: InstanceType<typeof workspaceServer.BoringPluginAssetManager>
+    backendRegistry: InstanceType<typeof workspaceServer.RuntimeBackendRegistry>
     ensureLoaded: Promise<void>
   }>()
   const pluginPiSnapshots = new Map<string, CliPluginPiSnapshot>()
@@ -554,10 +586,13 @@ export async function createWorkspacesModeApp(opts: {
         frontTargetResolver: runtimeHost.createFrontTargetResolver(workspace.id),
         includeLegacyFrontUrl: false,
       })
+      const backendRegistry = new workspaceServer.RuntimeBackendRegistry()
       runtime = {
         manager,
-        ensureLoaded: manager.load().then(() => {
+        backendRegistry,
+        ensureLoaded: manager.load().then(async () => {
           syncLoadedPluginPiSnapshot(workspace, manager)
+          await backendRegistry.reloadFromLoadedPlugins(manager.inspectLoaded())
         }),
       }
       pluginRuntimes.set(key, runtime)
@@ -585,6 +620,10 @@ export async function createWorkspacesModeApp(opts: {
     }
     workspaceEventClosers.delete(workspace.id)
     const runtimeKey = pluginRuntimeKey(workspace)
+    const runtime = pluginRuntimes.get(runtimeKey)
+    if (runtime) {
+      try { await runtime.backendRegistry.close() } catch {}
+    }
     pluginRuntimes.delete(runtimeKey)
     pluginPiSnapshots.delete(runtimeKey)
     runtimeProvisioningByWorkspace.delete(workspace.id)
@@ -670,9 +709,17 @@ export async function createWorkspacesModeApp(opts: {
       const scan = await runtime.manager.load()
       syncLoadedPluginPiSnapshot(workspace, runtime.manager)
       syncRuntimeHostFromPluginEvents(runtimeHost, workspaceId, scan.events)
+      const backendReload = await runtime.backendRegistry.reloadFromLoadedPlugins(runtime.manager.inspectLoaded())
       return {
         restart_warnings: workspaceServer.collectRestartWarnings(scan.events),
-        diagnostics: reloadDiagnostics(scan),
+        diagnostics: [
+          ...reloadDiagnostics(scan),
+          ...backendReload.diagnostics.map((diagnostic) => ({
+            source: diagnostic.source,
+            message: diagnostic.message,
+            ...(diagnostic.pluginId ? { pluginId: diagnostic.pluginId } : {}),
+          })),
+        ],
       }
     },
     getPi: async ({ workspaceId, workspaceRoot }) => {

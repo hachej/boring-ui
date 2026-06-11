@@ -210,6 +210,59 @@ describe("workspaces mode runtime plugin wiring", () => {
     }
   }, 60_000)
 
+  test("external plugin server routes dispatch through the gateway and hot-reload via /reload", async () => {
+    const homeRoot = await makeTempDir("boring-cli-workspaces-routes-home-")
+    const registryPath = join(await makeTempDir("boring-cli-workspaces-routes-registry-"), "workspaces.yaml")
+    const workspaceRoot = await makeTempDir("boring-cli-workspace-routes-")
+    process.env.HOME = homeRoot
+
+    const pluginRoot = join(workspaceRoot, ".pi", "extensions", "routes-plugin")
+    const writeServerModule = async (payload: string) => {
+      await mkdir(join(pluginRoot, "server"), { recursive: true })
+      await writeFile(join(pluginRoot, "server", "index.js"), [
+        "export default {",
+        "  routes(router) {",
+        `    router.get("/items", () => ({ payload: ${JSON.stringify(payload)} }))`,
+        "  },",
+        "}",
+        "",
+      ].join("\n"), "utf8")
+    }
+    await writeServerModule("v1")
+    await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
+      name: "routes-plugin",
+      version: "1.0.0",
+      boring: { label: "Routes Plugin", server: "./server/index.js" },
+    }), "utf8")
+
+    const [workspace] = await setupRegistry([workspaceRoot], registryPath)
+    const app = await createWorkspacesModeApp({ mode: "direct", registryPath, provisionWorkspace: false })
+
+    try {
+      const headers = { "x-boring-workspace-id": workspace.id }
+      const first = await app.inject({ method: "GET", url: "/api/v1/plugins/routes-plugin/items", headers })
+      expect(first.statusCode).toBe(200)
+      expect(first.json()).toEqual({ payload: "v1" })
+
+      // Edit the server module, /reload, and the route serves the new code.
+      await writeServerModule("v2")
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", headers })
+      expect(reload.statusCode).toBe(200)
+      const second = await app.inject({ method: "GET", url: "/api/v1/plugins/routes-plugin/items", headers })
+      expect(second.statusCode).toBe(200)
+      expect(second.json()).toEqual({ payload: "v2" })
+
+      // Missing workspace header → stable 404, not a crash.
+      const noWorkspace = await app.inject({ method: "GET", url: "/api/v1/plugins/routes-plugin/items" })
+      expect(noWorkspace.statusCode).toBe(404)
+      // Unknown plugin in a valid workspace → registry's own 404.
+      const unknownPlugin = await app.inject({ method: "GET", url: "/api/v1/plugins/nope/items", headers })
+      expect(unknownPlugin.statusCode).toBe(404)
+    } finally {
+      await app.close()
+    }
+  }, 60_000)
+
   test("ordinary GET does not become a hidden refresh path and zero-plugin workspaces still complete replay", async () => {
     const homeRoot = await makeTempDir("boring-cli-workspaces-empty-home-")
     const registryPath = join(await makeTempDir("boring-cli-workspaces-empty-registry-"), "workspaces.yaml")
