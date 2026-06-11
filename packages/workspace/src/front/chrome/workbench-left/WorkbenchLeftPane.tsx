@@ -12,7 +12,7 @@ import {
   useSyncExternalStore,
   type ComponentType,
 } from "react"
-import { Menu, PanelLeft, Search, X } from "lucide-react"
+import { Menu, Search, X } from "lucide-react"
 import { IconButton, Input } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import type { WorkspaceBridge } from "../../bridge/types"
@@ -68,7 +68,10 @@ export function WorkbenchLeftPane({
       next.push({
         id: panel.id,
         title: panel.title,
-        icon: Icon ? <Icon className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />,
+        // Icon-less plugins get an initial-letter glyph instead of a shared
+        // generic icon — on an icon-only rail, two identical fallback icons
+        // would be indistinguishable.
+        icon: Icon ? <Icon className="h-4 w-4" /> : <CategoryInitial title={panel.title} />,
         panel,
       })
     }
@@ -233,6 +236,19 @@ export function WorkbenchLeftPane({
         </div>
       </div>
     </div>
+  )
+}
+
+function CategoryInitial({ title }: { title: string }) {
+  const letter = (title.trim()[0] ?? "?").toUpperCase()
+  return (
+    <span
+      aria-hidden="true"
+      data-boring-workspace-part="category-initial"
+      className="flex h-4 w-4 items-center justify-center rounded-[5px] bg-foreground/10 text-[10px] font-semibold leading-none text-foreground/70"
+    >
+      {letter}
+    </span>
   )
 }
 

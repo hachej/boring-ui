@@ -94,4 +94,35 @@ describe("WorkbenchLeftPane", () => {
     fireEvent.click(screen.getByRole("button", { name: "Hide workspace menu" }))
     expect(onCollapse).toHaveBeenCalled()
   })
+
+  test("icon-less categories fall back to an initial-letter glyph", () => {
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("files", {
+      title: "Files",
+      placement: "left-tab",
+      component: () => <div>files body</div>,
+    })
+    panelRegistry.register("data", {
+      title: "Data",
+      placement: "left-tab",
+      component: () => <div>data body</div>,
+    })
+
+    render(
+      <RegistryProvider
+        panelRegistry={panelRegistry}
+        commandRegistry={new CommandRegistry()}
+        surfaceResolverRegistry={new SurfaceResolverRegistry()}
+      >
+        <WorkbenchLeftPane defaultTab="files" />
+      </RegistryProvider>,
+    )
+
+    // Neither panel registers an icon: each rail button shows its own
+    // initial instead of a shared generic glyph.
+    const filesButton = screen.getByRole("button", { name: "Files" })
+    const dataButton = screen.getByRole("button", { name: "Data" })
+    expect(filesButton.querySelector('[data-boring-workspace-part="category-initial"]')?.textContent).toBe("F")
+    expect(dataButton.querySelector('[data-boring-workspace-part="category-initial"]')?.textContent).toBe("D")
+  })
 })
