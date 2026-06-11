@@ -1149,6 +1149,14 @@ export async function createPluginFrontRuntimeHost(
     appType: "custom",
     configFile: false,
     logLevel: "silent",
+    // Disable the dep optimizer entirely. With discovery on, Vite re-optimizes
+    // mid-session as plugin imports surface new deps; each pass rewrites
+    // node_modules/.vite/deps and bumps the browserHash, invalidating chunk
+    // URLs the browser already holds (ERR_FILE_NOT_FOUND_IN_OPTIMIZED_DEP_DIR)
+    // and stalling in-flight plugin front transforms indefinitely. The runtime
+    // host serves deps through its own proxy/singleton routes, so pre-bundling
+    // buys nothing here.
+    optimizeDeps: { entries: [], noDiscovery: true },
     root: repoRoot,
     plugins: [
       react(),
