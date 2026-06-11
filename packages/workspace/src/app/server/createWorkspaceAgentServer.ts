@@ -38,6 +38,7 @@ import { rebuildServerPlugins, type PluginRebuildResult } from "./rebuildServerP
 import { resolveDefaultWorkspacePluginPackagePaths } from "./defaultPluginPackages"
 import { pluginRootFromExtensionPath, scanBoringPlugins } from "../../server/agentPlugins/scan"
 import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
+import { registerWorkspaceUiBridge } from "../../shared/plugins/uiBridgeRegistry"
 import { createWorkspaceUiTools } from "../../server/ui-control/tools/uiTools"
 import { uiRoutes } from "../../server/ui-control/http/uiRoutes"
 import {
@@ -579,6 +580,7 @@ export async function createWorkspaceAgentServer(
 ): Promise<FastifyInstance> {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const bridge = createInMemoryBridge()
+  const unregisterUiBridge = registerWorkspaceUiBridge(bridge)
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
   const workspaceFsCapability = modeAdapter.workspaceFsCapability ?? "best-effort"
@@ -823,6 +825,7 @@ export async function createWorkspaceAgentServer(
   if (typeof app.addHook === "function") {
     app.addHook("onClose", async () => {
       await runtimeBackendRegistry.close()
+      unregisterUiBridge()
     })
   }
   await app.register(uiRoutes, { bridge, preserveStateKeys: pluginCollection.preservedUiStateKeys })

@@ -469,6 +469,38 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     }
   }, 15_000)
 
+  // Issue #200: a workspace-local `.agents/skills/<name>` skill must appear in
+  // the slash-command list (the unified /api/v1/agent/commands endpoint), not
+  // only in the /skills API — alongside the existing package/global skills.
+  test("local .agents/skills skill appears in the slash-command list (#200)", async () => {
+    const workspaceRoot = await makeTempDir("boring-local-skill-slash-")
+    await mkdir(join(workspaceRoot, ".agents", "skills", "local-test-skill"), { recursive: true })
+    await writeFile(
+      join(workspaceRoot, ".agents", "skills", "local-test-skill", "SKILL.md"),
+      "---\nname: local-test-skill\ndescription: A workspace-local skill for the slash list.\n---\n# Local test skill\n",
+      "utf8",
+    )
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+    })
+
+    try {
+      const res = await app.inject({ method: "GET", url: "/api/v1/agent/commands?sessionId=default" })
+      expect(res.statusCode).toBe(200)
+      const commands = res.json().commands as Array<{ name: string; source: string }>
+      const skillCommands = commands.filter((c) => c.source === "skill").map((c) => c.name)
+      // Pi prefixes skill commands with `skill:`. The local skill must be listed
+      // and existing package skills must still be present.
+      expect(skillCommands).toContain("skill:local-test-skill")
+      expect(skillCommands).toContain("skill:boring-plugin-authoring")
+    } finally {
+      await app.close()
+    }
+  }, 15_000)
+
   test("collects plugin provisioning declarations and asks agent to seed workspace", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-provisioned-")
     const templateRoot = await makeTempDir("boring-workspace-template-")

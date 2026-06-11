@@ -296,3 +296,48 @@ test("boring-ui-plugin supports explicit global source scope", async () => {
     rootDir: resolve(source),
   })])
 })
+
+// Eval: scaffolded package.json must use the correct pi.slashCommands shape
+// (name + description, no leading slash, no invented keys like command/title/action).
+// This catches regressions where the template is updated without the agent-facing
+// canonical template, leading agents to invent wrong field names from training data.
+test("scaffold produces package.json with correct pi.slashCommands shape", async () => {
+  const root = await tempDir("boring-plugin-slash-eval-")
+  const workspaceRoot = join(root, "workspace")
+  await mkdir(workspaceRoot, { recursive: true })
+
+  await runPluginCli(["scaffold", "my-panel", workspaceRoot], { cwd: workspaceRoot })
+
+  const pkg = JSON.parse(
+    await readFile(join(workspaceRoot, ".pi", "extensions", "my-panel", "package.json"), "utf8")
+  ) as {
+    pi?: {
+      extensions?: unknown
+      slashCommands?: Array<{ name?: unknown; description?: unknown; command?: unknown; title?: unknown; action?: unknown }>
+    }
+  }
+
+  // pi.extensions must point to agent/index.ts
+  expect(pkg.pi?.extensions).toEqual(["agent/index.ts"])
+
+  // pi.slashCommands must be an array with exactly one entry
+  const cmds = pkg.pi?.slashCommands
+  expect(Array.isArray(cmds)).toBe(true)
+  expect(cmds).toHaveLength(1)
+
+  const cmd = cmds![0]!
+
+  // name must be a non-empty string without a leading slash
+  expect(typeof cmd.name).toBe("string")
+  expect((cmd.name as string).length).toBeGreaterThan(0)
+  expect(cmd.name as string).not.toMatch(/^\//)
+
+  // description must be a non-empty string
+  expect(typeof cmd.description).toBe("string")
+  expect((cmd.description as string).length).toBeGreaterThan(0)
+
+  // Invented keys must NOT be present
+  expect(cmd.command).toBeUndefined()
+  expect(cmd.title).toBeUndefined()
+  expect(cmd.action).toBeUndefined()
+})

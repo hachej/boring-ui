@@ -24,6 +24,7 @@ import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
 import { readyStatusRoutes } from './http/routes/readyStatus'
+import { commandsRoutes } from './http/routes/commands'
 import { reloadRoutes } from './http/routes/reload'
 import { searchRoutes } from './http/routes/search'
 import { gitRoutes } from './http/routes/git'
@@ -220,6 +221,7 @@ export async function createAgentApp(
   })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })
+  await app.register(commandsRoutes, { harness, defaultSessionId: sessionId, workdir: runtimeBundle.workspace.root })
   await app.register(reloadRoutes, { harness, defaultSessionId: sessionId, beforeReload: opts.beforeReload })
   await app.register(readyStatusRoutes, { tracker: readyTracker })
 
