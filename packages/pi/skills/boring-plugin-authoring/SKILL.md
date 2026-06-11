@@ -613,6 +613,12 @@ front assets plus Pi extensions/skills/prompts. If you changed `boring.server`,
 say that `/reload` is not enough: the host must statically compose that server
 entry and restart the workspace process.
 
+After the user runs `/reload`, call the `plugin_diagnostics` tool to check for
+plugin/skill load errors. `/reload` surfaces silent load failures (bad
+`SKILL.md`, extension import errors, missing `pi.skills`/`pi.extensions` paths)
+there — read the reported errors, fix them, and ask the user to `/reload` again,
+iterating until `plugin_diagnostics` comes back clean.
+
 If the user reports a page reload, `Invalid hook call`, or
 `resolveDispatcher() is null` after editing a plugin, suspect host Vite config
 first: `.pi/extensions` files must be excluded from React Refresh and ignored by

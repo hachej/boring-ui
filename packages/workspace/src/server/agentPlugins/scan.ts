@@ -110,8 +110,8 @@ function packagePathContainmentIssues(rootDir: string, pkg: BoringPluginPackageJ
   if (boring?.server !== false && boring?.server !== undefined) {
     push(pathPreflightIssue(rootDir, boring.server, "boring.server"))
   }
-  pi?.extensions?.forEach((value, index) => push(pathPreflightIssue(rootDir, value, `pi.extensions[${index}]`)))
-  pi?.skills?.forEach((value, index) => push(pathPreflightIssue(rootDir, value, `pi.skills[${index}]`)))
+  pi?.extensions?.forEach((value, index) => push(pathPreflightIssue(rootDir, value, `pi.extensions[${index}]`, { mustExist: true })))
+  pi?.skills?.forEach((value, index) => push(pathPreflightIssue(rootDir, value, `pi.skills[${index}]`, { mustExist: true })))
   return issues
 }
 

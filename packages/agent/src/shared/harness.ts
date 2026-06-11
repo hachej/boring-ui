@@ -42,6 +42,14 @@ export interface AgentHarness {
   /** Reload native agent resources/extensions for an existing session. */
   reloadSession?: (sessionId: string) => Promise<boolean>
 
+  /**
+   * Resource (skill/extension) load diagnostics for an existing session.
+   * Returns `[]` when the session has no live agent session yet. Lets the
+   * /reload route and the `plugin_diagnostics` tool surface silent
+   * skill/extension load failures back to the UI and the agent.
+   */
+  getResourceDiagnostics?: (sessionId: string) => Array<{ source: string; message: string; path?: string }>
+
   /** List slash commands registered in the agent runtime for a given session. */
   getSlashCommands?: (sessionId: string, ctx: RunContext) => ReadonlyArray<AgentSlashCommandSummary> | Promise<ReadonlyArray<AgentSlashCommandSummary>>
 

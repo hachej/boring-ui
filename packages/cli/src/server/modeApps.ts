@@ -601,6 +601,22 @@ export async function createWorkspacesModeApp(opts: {
         ],
       }
     },
+    getPluginDiagnostics: async ({ workspaceId }) => {
+      const workspace = await requireWorkspace(workspaceId)
+      const runtime = await getLoadedPluginRuntime(workspace)
+      return [
+        ...runtime.manager.getErrors().map((error) => ({
+          source: "plugin-load",
+          message: error.message,
+          ...(error.id ? { pluginId: error.id } : {}),
+        })),
+        ...runtime.manager.preflight().errors.map((error) => ({
+          source: "plugin-preflight",
+          message: `${error.code}: ${error.message} (${error.pluginDir})`,
+          ...(error.pluginId ? { pluginId: error.pluginId } : {}),
+        })),
+      ]
+    },
     getPi: async ({ workspaceId, workspaceRoot }) => {
       const workspace = await requireWorkspace(workspaceId)
       await getLoadedPluginRuntime(workspace)
