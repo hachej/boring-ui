@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import type { IDockviewPanelHeaderProps } from "dockview-react"
-import { X, Loader2 } from "lucide-react"
+import { X } from "lucide-react"
 import { getFileIcon } from "../registry/getFileIcon"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../lib/utils"
@@ -265,26 +265,18 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
         }}
         onContextMenu={openContextMenu}
       >
-        {isSaving ? (
-          <Loader2
-            data-testid="tab-saving-spinner"
-            aria-label="Saving"
-            className="h-3.5 w-3.5 shrink-0 animate-spin text-[color:var(--accent)]"
-            strokeWidth={2}
-          />
-        ) : (
-          <Icon
-            className={cn(
-              "h-3.5 w-3.5 shrink-0 text-muted-foreground/70",
-              "[.dv-active-tab_&]:text-[color:var(--accent)] [.active-tab_&]:text-[color:var(--accent)]",
-            )}
-            strokeWidth={1.5}
-          />
-        )}
+        <Icon
+          className={cn(
+            "h-3.5 w-3.5 shrink-0 text-muted-foreground/70",
+            "[.dv-active-tab_&]:text-[color:var(--accent)] [.active-tab_&]:text-[color:var(--accent)]",
+          )}
+          strokeWidth={1.5}
+        />
         <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{displayTitle}</span>
         <div className="flex shrink-0 items-center gap-1">
-          {isDirty ? (
+          {isDirty || isSaving ? (
             <span
+              data-testid="tab-dirty-dot"
               aria-hidden="true"
               className={cn(
                 "h-1.5 w-1.5 shrink-0 rounded-full bg-foreground/35",
