@@ -204,7 +204,7 @@ export function SessionBrowser({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto py-2.5">
+      <div className="boring-scrollbar-discreet flex-1 overflow-y-auto py-2.5">
         {sessions.length === 0 && (
           <div className="px-3 py-8 text-center text-[13px] text-muted-foreground">
             No sessions yet.

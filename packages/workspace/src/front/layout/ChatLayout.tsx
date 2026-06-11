@@ -397,14 +397,20 @@ export function ChatLayout(props: ChatLayoutProps) {
               <PanelSlot id={centerId} params={props.centerParams} />
             )}
           </div>
-          {!chatCollapsed && (!hasChatPanes || chatPanes.length === 1) ? (
+          {!chatCollapsed ? (
             <ControlTooltip label="Collapse chat" hint="⌘\" side="bottom">
               <IconButton
                 type="button"
                 variant="ghost"
                 size="icon-xs"
                 onClick={toggleChatCollapsed}
-                className="absolute right-2 top-2 z-20"
+                // With multiple panes the rightmost pane header owns the
+                // top-right corner; drop the collapse control to the
+                // bottom-right so the two never overlap.
+                className={cn(
+                  "absolute right-2 z-30 rounded-full bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:bg-muted hover:text-foreground",
+                  hasChatPanes && chatPanes.length > 1 ? "bottom-2" : "top-2",
+                )}
                 aria-label="Collapse chat"
               >
                 <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />

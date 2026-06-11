@@ -728,12 +728,28 @@ describe("ChatLayout component", () => {
     expect(setActive).not.toHaveBeenCalled()
   })
 
-  it("keeps the collapse control when there is one chat pane", () => {
+  it("keeps the collapse control with a single chat pane", () => {
     renderWithRegistry(
       <ChatLayout
         center="chat"
         chatPanes={[
           { id: "s1", title: "First", panel: "chat", params: { sessionId: "s1" } },
+        ]}
+        activeChatPaneId="s1"
+      />,
+      ["chat", "session-list"],
+    )
+
+    expect(screen.getByRole("button", { name: "Collapse chat" })).toBeInTheDocument()
+  })
+
+  it("keeps the collapse control with multiple chat panes", () => {
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        chatPanes={[
+          { id: "s1", title: "First", panel: "chat", params: { sessionId: "s1" } },
+          { id: "s2", title: "Second", panel: "chat", params: { sessionId: "s2" } },
         ]}
         activeChatPaneId="s1"
       />,
