@@ -2,12 +2,8 @@ import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import { dirname, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
 import { createBoringAppViteAliases } from "@hachej/boring-core/app/vite"
-import { boringDefaultFrontPlugins } from "@hachej/boring-workspace/app/vite"
 import { AGENT_API_PORT, VITE_PORT, startPlaygroundServer } from "./src/server/dev"
-
-const APP_ROOT = dirname(fileURLToPath(import.meta.url))
 
 const baseResolve = createBoringAppViteAliases({ appRoot: __dirname })
 const repoRoot = resolve(__dirname, "../..")
@@ -87,7 +83,6 @@ const pollingInterval = Number(process.env.CHOKIDAR_INTERVAL ?? process.env.BORI
 
 export default defineConfig({
   plugins: [
-    boringDefaultFrontPlugins({ appRoot: APP_ROOT }),
     react({
       exclude: dynamicPluginReactRefreshExclude,
     }),

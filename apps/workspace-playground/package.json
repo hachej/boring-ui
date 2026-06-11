@@ -3,11 +3,6 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "boring": {
-    "defaultPlugins": [
-      "@hachej/boring-ask-user"
-    ]
-  },
   "scripts": {
     "build:deps": "pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-explorer build && pnpm --filter @hachej/boring-data-catalog build",
     "dev": "pnpm run build:deps && vite",

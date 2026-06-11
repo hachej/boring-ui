@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node:fs"
-import { basename, dirname, join, resolve } from "node:path"
+import { basename, dirname, resolve } from "node:path"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 
 export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
@@ -41,15 +41,14 @@ export async function startPlaygroundServer(): Promise<void> {
       seedWorkspaceFromFixtures(workspaceRoot)
     }
     console.log(`[workspace-playground] workspace root: ${workspaceRoot}`)
-    // Zero-config npm plugins (boring.defaultPlugins in package.json) are
-    // auto-registered via appPackageJsonPath. Local plugins (playgroundDataCatalog)
-    // are passed explicitly since they are not npm packages.
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "local",
       logger: true,
-      appPackageJsonPath: join(APP_ROOT, "package.json"),
-      defaultPluginPackages: [resolve(APP_ROOT, "src/plugins/playgroundDataCatalog")],
+      defaultPluginPackages: [
+        "@hachej/boring-ask-user",
+        resolve(APP_ROOT, "src/plugins/playgroundDataCatalog"),
+      ],
     })
     app.get("/api/v1/workspace/meta", async () => ({
       projectName: basename(workspaceRoot) || "Workspace",
