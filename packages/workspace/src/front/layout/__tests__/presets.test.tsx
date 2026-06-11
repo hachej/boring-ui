@@ -615,6 +615,150 @@ describe("ChatLayout component", () => {
     expect(screen.getByLabelText("Chat")).toHaveAttribute("data-boring-state", "expanded")
   })
 
+  it("renders chat panes with active focus state and pane-level controls", async () => {
+    const user = userEvent.setup()
+    const setActive = vi.fn()
+    const closePane = vi.fn()
+    const createAfter = vi.fn()
+
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        nav={null}
+        chatPanes={[
+          { id: "s1", title: "First", panel: "chat", params: { sessionId: "s1" } },
+          { id: "s2", title: "Second", panel: "chat", params: { sessionId: "s2" } },
+        ]}
+        activeChatPaneId="s2"
+        onActiveChatPaneChange={setActive}
+        onCloseChatPane={closePane}
+        onCreateChatPaneAfter={createAfter}
+      />,
+      ["chat", "session-list"],
+    )
+
+    expect(screen.getByLabelText("Chat session First")).toHaveAttribute("data-boring-state", "inactive")
+    expect(screen.getByLabelText("Chat session Second")).toHaveAttribute("data-boring-state", "active")
+    // Default engine is the flex row; the dock engine is behind the flag.
+    expect(document.querySelector('[data-boring-workspace-part="chat-pane-stage"]')?.className).toContain("overflow-x-auto")
+    expect(document.querySelector(".dv-chat-stage")).toBeNull()
+    expect(screen.getByRole("button", { name: "New chat" })).toBeInTheDocument()
+
+    await user.click(screen.getByLabelText("Chat session First"))
+    expect(setActive).toHaveBeenCalledWith("s1")
+
+    await user.click(screen.getByLabelText("Close Second pane"))
+    expect(closePane).toHaveBeenCalledWith("s2")
+
+    // The floating left-edge "+" creates next to the active pane.
+    await user.click(screen.getByRole("button", { name: "New chat" }))
+    expect(createAfter).toHaveBeenCalledWith("s2")
+  })
+
+  it("renders the dockview chat stage when the dock engine flag is set", async () => {
+    const user = userEvent.setup()
+    const closePane = vi.fn()
+
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        chatPanes={[
+          { id: "s1", title: "First", panel: "chat", params: { sessionId: "s1" } },
+          { id: "s2", title: "Second", panel: "chat", params: { sessionId: "s2" } },
+        ]}
+        activeChatPaneId="s2"
+        onCloseChatPane={closePane}
+        chatPaneEngine="dock"
+      />,
+      ["chat", "session-list"],
+    )
+
+    expect(document.querySelector(".dv-chat-stage")).not.toBeNull()
+    expect(screen.getByLabelText("Chat session Second")).toHaveAttribute("data-boring-state", "active")
+
+    await user.click(screen.getByLabelText("Close Second pane"))
+    expect(closePane).toHaveBeenCalledWith("s2")
+  })
+
+  it("reads the dock engine flag from localStorage when no prop is set", () => {
+    localStorage.setItem("boring-workspace:chat-pane-engine", "dock")
+    try {
+      renderWithRegistry(
+        <ChatLayout
+          center="chat"
+          chatPanes={[{ id: "s1", title: "First", panel: "chat", params: { sessionId: "s1" } }]}
+          activeChatPaneId="s1"
+        />,
+        ["chat", "session-list"],
+      )
+      expect(document.querySelector(".dv-chat-stage")).not.toBeNull()
+    } finally {
+      localStorage.removeItem("boring-workspace:chat-pane-engine")
+    }
+  })
+
+  it("does not activate an inactive pane when using its header controls", async () => {
+    const user = userEvent.setup()
+    const setActive = vi.fn()
+    const closePane = vi.fn()
+    const createAfter = vi.fn()
+
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        nav={null}
+        chatPanes={[
+          { id: "s1", title: "First", panel: "chat", params: { sessionId: "s1" } },
+          { id: "s2", title: "Second", panel: "chat", params: { sessionId: "s2" } },
+        ]}
+        activeChatPaneId="s2"
+        onActiveChatPaneChange={setActive}
+        onCloseChatPane={closePane}
+        onCreateChatPaneAfter={createAfter}
+      />,
+      ["chat", "session-list"],
+    )
+
+    await user.click(screen.getByLabelText("Close First pane"))
+    expect(closePane).toHaveBeenCalledWith("s1")
+    expect(setActive).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole("button", { name: "New chat" }))
+    expect(createAfter).toHaveBeenCalledWith("s2")
+    expect(setActive).not.toHaveBeenCalled()
+  })
+
+  it("keeps the collapse control with a single chat pane", () => {
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        chatPanes={[
+          { id: "s1", title: "First", panel: "chat", params: { sessionId: "s1" } },
+        ]}
+        activeChatPaneId="s1"
+      />,
+      ["chat", "session-list"],
+    )
+
+    expect(screen.getByRole("button", { name: "Collapse chat" })).toBeInTheDocument()
+  })
+
+  it("keeps the collapse control with multiple chat panes", () => {
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        chatPanes={[
+          { id: "s1", title: "First", panel: "chat", params: { sessionId: "s1" } },
+          { id: "s2", title: "Second", panel: "chat", params: { sessionId: "s2" } },
+        ]}
+        activeChatPaneId="s1"
+      />,
+      ["chat", "session-list"],
+    )
+
+    expect(screen.getByRole("button", { name: "Collapse chat" })).toBeInTheDocument()
+  })
+
   it("stacks the floating expand-chat button above the sessions button on the left edge", () => {
     renderWithRegistry(
       <ChatLayout center="chat" nav={null} onOpenNav={vi.fn()} storageKey="chat-layout-stack" />,
