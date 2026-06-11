@@ -450,6 +450,48 @@ describe("pluginFrontRuntime", () => {
     }
   }, 20_000)
 
+  test("does not rewrite a dependency's own react.js module to the react singleton", async () => {
+    // Regression: dockview ships dist/esm/react.js (exporting ReactPart).
+    // The optimizer-chunk filename heuristic ("react.js" → react singleton)
+    // must not capture dependency-internal modules that merely share the
+    // filename — the singleton lacks their exports, which kills the whole
+    // importing plugin graph with a named-export SyntaxError.
+    const pluginRoot = await makeTempDir("plugin-front-runtime-react-name-clash-")
+    const plugin = await writeRuntimePlugin(pluginRoot, {
+      "front/index.tsx": 'import { value } from "dockish"\nexport const answer = value\n',
+      "node_modules/dockish/package.json": JSON.stringify({ name: "dockish", version: "1.0.0", main: "index.js" }),
+      "node_modules/dockish/index.js": 'import { ReactPart } from "./react.js"\nexport const value = ReactPart\n',
+      "node_modules/dockish/react.js": 'export const ReactPart = "dep-owned react module"\n',
+    })
+
+    const host = await createPluginFrontRuntimeHost()
+    const app = fastify({ logger: false })
+    await host.registerRoutes(app)
+    host.trackPlugin({ workspaceId: "workspace-a", plugin, revision: 1, frontEntrySubpath: "front/index.tsx" })
+
+    try {
+      const entry = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/index.tsx`,
+      })
+      expect(entry.statusCode).toBe(200)
+      const depPath = entry.body.match(new RegExp(`"(${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/[^"']*)"`))?.[1]
+      expect(depPath, entry.body).toBeTruthy()
+
+      const dep = await app.inject({ method: "GET", url: depPath! })
+      expect(dep.statusCode, dep.body).toBe(200)
+      // The dep's internal ./react.js import must stay a proxy URL, not the singleton.
+      expect(dep.body).not.toContain("/__vite/singleton/react")
+      const innerPath = dep.body.match(new RegExp(`"(${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/[^"']*react[^"']*)"`))?.[1]
+      expect(innerPath, dep.body).toBeTruthy()
+      const inner = await app.inject({ method: "GET", url: innerPath! })
+      expect(inner.statusCode, inner.body).toBe(200)
+      expect(inner.body).toContain("dep-owned react module")
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
+
   test("rejects plugin-local dependency attempts to import arbitrary /@fs paths", async () => {
     const pluginRoot = await makeTempDir("plugin-front-runtime-bad-dep-")
     const plugin = await writeRuntimePlugin(pluginRoot, {

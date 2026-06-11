@@ -519,6 +519,13 @@ function optimizedDependencySingletonSource(targetPath: string): HostVirtualSing
   for (const [suffix, source] of workspaceSingletonByPath) {
     if (normalizedPath.endsWith(suffix)) return source
   }
+  // Filename-based mapping applies ONLY to Vite optimizer output
+  // (.vite/deps/react.js etc.). Matching by bare filename anywhere would
+  // also capture a dependency's own module that happens to be named
+  // react.js — e.g. dockview/dist/esm/react.js, whose exports (ReactPart)
+  // do not exist on the react singleton, killing the whole importing
+  // plugin module graph with a named-export SyntaxError.
+  if (!normalizedPath.includes("/.vite/deps/")) return undefined
   const fileName = normalizedPath.slice(normalizedPath.lastIndexOf("/") + 1)
   const sourceByFileName: Record<string, HostVirtualSingletonModule> = {
     "react.js": "react",
