@@ -674,6 +674,55 @@ describe("useAgentPluginHotReload", () => {
     await waitFor(() => expect(screen.getByTestId("hot-left-pane")).toHaveTextContent("left tab content"))
   })
 
+  test("warns when a left tab references an unknown panelId", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    try {
+      const importFront = async (): Promise<{ default: BoringFrontFactoryWithId }> => ({
+        default: hotPlugin("hot-plugin", (api) => {
+          api.registerPanel({
+            id: "hot-plugin.panel",
+            label: "Real Panel",
+            component: function RealPanel() { return null },
+          })
+          api.registerLeftTab({
+            id: "hot-plugin.tab",
+            title: "Typo Tab",
+            panelId: "hot-plugin-typo.panel",
+          })
+        }),
+      })
+
+      function WarnHarness() {
+        const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+        const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+        const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+        function Listener() {
+          useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+          return null
+        }
+        return (
+          <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+            <Listener />
+          </RegistryProvider>
+        )
+      }
+
+      render(<WarnHarness />)
+      MockEventSource.instances[0].dispatch("boring.plugin.load", {
+        type: "boring.plugin.load",
+        id: "hot-plugin",
+        version: "1.0.0",
+        revision: 1,
+        frontUrl: "/@fs/front.mjs",
+        boring: { front: "./front.mjs" },
+      })
+
+      await waitFor(() => expect(warn).toHaveBeenCalledWith(expect.stringContaining('references unknown panelId "hot-plugin-typo.panel"')))
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   test("updates command palette entries when plugin front registrations change", async () => {
     const importFront = async (_url: string, revision: number): Promise<{ default: BoringFrontFactoryWithId }> => ({
       default: hotPlugin("hot-plugin", (api) => {
