@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from "vitest"
-import { render, fireEvent, screen } from "@testing-library/react"
+import { act, render, fireEvent, screen } from "@testing-library/react"
+import { useEffect } from "react"
 import { SessionBrowser } from "../SessionBrowser"
+import { WorkspaceAttentionProvider, useWorkspaceAttention } from "../../../attention/WorkspaceAttentionProvider"
 import type { SessionItem } from "../../../components/SessionList"
 
 const now = Date.now()
@@ -85,5 +87,54 @@ describe("SessionBrowser", () => {
   it("renders empty state when no sessions are supplied", () => {
     render(<SessionBrowser sessions={[]} />)
     expect(screen.getByText(/No sessions yet/)).toBeInTheDocument()
+  })
+
+  it("shows a working badge while a session's chat panel streams", () => {
+    render(<SessionBrowser sessions={sample} activeId="s1" />)
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { sessionId: "s2", working: true },
+      }))
+    })
+    const badge = document.querySelector('[data-boring-badge="working"]')
+    expect(badge).toBeInTheDocument()
+    expect(badge?.closest("li")?.textContent).toContain("Second session")
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { sessionId: "s2", working: false },
+      }))
+    })
+    expect(document.querySelector('[data-boring-badge="working"]')).toBeNull()
+  })
+
+  it("shows a needs-input badge for sessions blocked on the user", () => {
+    function BlockSession({ sessionId }: { sessionId: string }) {
+      const { addBlocker, removeBlocker } = useWorkspaceAttention()
+      useEffect(() => {
+        addBlocker({ id: `ask:${sessionId}`, reason: "waiting_for_user_input", sessionId })
+        return () => removeBlocker(`ask:${sessionId}`)
+      }, [addBlocker, removeBlocker, sessionId])
+      return null
+    }
+
+    render(
+      <WorkspaceAttentionProvider>
+        <BlockSession sessionId="s3" />
+        <SessionBrowser sessions={sample} activeId="s1" />
+      </WorkspaceAttentionProvider>,
+    )
+
+    // A blocked session outranks "working": send both signals for s3.
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { sessionId: "s3", working: true },
+      }))
+    })
+    const badge = document.querySelector('[data-boring-badge="needs-input"]')
+    expect(badge).toBeInTheDocument()
+    expect(badge?.closest("li")?.textContent).toContain("Third session")
+    expect(document.querySelector('[data-boring-badge="working"]')).toBeNull()
   })
 })

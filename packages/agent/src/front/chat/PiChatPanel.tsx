@@ -815,6 +815,24 @@ export function PiChatPanel({
     setThinkingPickerOpen(false)
   }, [isStreaming])
 
+  // Broadcast per-session busy state so shell chrome (e.g. the session
+  // browser) can show a "working" indicator without coupling to this panel.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !activeChatSessionId) return
+    window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
+      detail: { sessionId: activeChatSessionId, working: isStreaming },
+    }))
+    if (!isStreaming) return
+    const sessionId = activeChatSessionId
+    return () => {
+      // Pane unmounted (or session switched) mid-stream: clear the signal
+      // rather than leaving a stale "working" badge behind.
+      window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
+        detail: { sessionId, working: false },
+      }))
+    }
+  }, [activeChatSessionId, isStreaming])
+
   const onTextareaKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Escape' && isStreaming) {
       if (event.defaultPrevented || mentionState !== null || slashQuery !== null) {

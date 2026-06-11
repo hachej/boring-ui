@@ -1,11 +1,41 @@
 "use client"
 
-import { useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { ChevronLeft, ExternalLink, Plus } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { ControlTooltip } from "../../components/ControlTooltip"
+import { useWorkspaceAttention } from "../../attention/WorkspaceAttentionProvider"
 import type { SessionItem } from "../../components/SessionList"
+
+const CHAT_SESSION_STATUS_EVENT = "boring:chat-session-status"
+
+/**
+ * Session ids whose chat panel is currently streaming. Fed by the
+ * "boring:chat-session-status" window event each mounted chat panel emits —
+ * the browser stays decoupled from any particular chat implementation.
+ */
+function useWorkingSessionIds(): ReadonlySet<string> {
+  const [working, setWorking] = useState<ReadonlySet<string>>(() => new Set())
+  useEffect(() => {
+    const onStatus = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { sessionId?: unknown; working?: unknown } | undefined
+      if (typeof detail?.sessionId !== "string") return
+      const sessionId = detail.sessionId
+      const isWorking = detail.working === true
+      setWorking((current) => {
+        if (current.has(sessionId) === isWorking) return current
+        const next = new Set(current)
+        if (isWorking) next.add(sessionId)
+        else next.delete(sessionId)
+        return next
+      })
+    }
+    window.addEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
+    return () => window.removeEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
+  }, [])
+  return working
+}
 
 export interface SessionBrowserProps {
   sessions: SessionItem[]
@@ -110,6 +140,15 @@ export function SessionBrowser({
   className,
 }: SessionBrowserProps) {
   const groups = useMemo(() => groupSessions(sessions), [sessions])
+  const workingSessionIds = useWorkingSessionIds()
+  const { blockers } = useWorkspaceAttention()
+  const needsInputSessionIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const blocker of blockers) {
+      if (blocker.reason === "waiting_for_user_input" && blocker.sessionId) ids.add(blocker.sessionId)
+    }
+    return ids
+  }, [blockers])
 
   return (
     <div
@@ -164,6 +203,8 @@ export function SessionBrowser({
                   key={session.id}
                   session={session}
                   active={session.id === activeId}
+                  working={workingSessionIds.has(session.id)}
+                  needsInput={needsInputSessionIds.has(session.id)}
                   onSwitch={onSwitch}
                   onOpenAsTab={onOpenAsTab}
                   onDelete={onDelete}
@@ -193,12 +234,16 @@ export function SessionBrowser({
 function SessionRow({
   session,
   active,
+  working,
+  needsInput,
   onSwitch,
   onOpenAsTab,
   onDelete,
 }: {
   session: SessionItem
   active: boolean
+  working: boolean
+  needsInput: boolean
   onSwitch?: (id: string) => void
   onOpenAsTab?: (id: string) => void
   onDelete?: (id: string) => void
@@ -231,6 +276,25 @@ function SessionRow({
           </span>
         )}
       </span>
+      {needsInput ? (
+        <span
+          data-boring-workspace-part="session-badge"
+          data-boring-badge="needs-input"
+          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-destructive/12 px-1.5 py-0.5 text-[10px] font-medium leading-none text-destructive"
+        >
+          <span aria-hidden="true" className="h-1.5 w-1.5 animate-pulse rounded-full bg-destructive" />
+          needs input
+        </span>
+      ) : working ? (
+        <span
+          data-boring-workspace-part="session-badge"
+          data-boring-badge="working"
+          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-foreground/[0.07] px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
+        >
+          <span aria-hidden="true" className="h-1.5 w-1.5 animate-pulse rounded-full bg-[color:var(--accent)]" />
+          working
+        </span>
+      ) : null}
       {onOpenAsTab && (
         <ControlTooltip label="Open in chat pane">
           <IconButton
