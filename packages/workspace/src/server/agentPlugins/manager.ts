@@ -250,6 +250,20 @@ export class BoringPluginAssetManager {
     return [...this.loaded.values()].map((plugin) => this.toListEntry(plugin))
   }
 
+  /**
+   * Plugins whose front lifecycle the SSE channel owns. Internal plugins are
+   * app code — their front is statically bundled by the host app and must
+   * never be re-imported through the hot-reload pipeline (a second module
+   * instance would carry a fresh React context identity, breaking
+   * provider ↔ panel lookups). They are loaded server-side (routes, agent
+   * tools, Pi snapshot) but excluded from SSE replay and live events.
+   */
+  listExternal(): BoringPluginListEntry[] {
+    return [...this.loaded.values()]
+      .filter((plugin) => plugin.source.kind === "external")
+      .map((plugin) => this.toListEntry(plugin))
+  }
+
   getError(pluginId: string): string | null {
     const path = this.errorPath(pluginId)
     if (!path || !existsSync(path)) return null
@@ -336,7 +350,9 @@ export class BoringPluginAssetManager {
       }
       const event: BoringPluginEvent = { type: "boring.plugin.unload", id, revision }
       events.push(event)
-      this.emit(event)
+      // Internal plugins never appear on the SSE channel (see listExternal);
+      // the events array stays complete for /reload diagnostics.
+      if (previous?.source.kind !== "internal") this.emit(event)
     }
 
     for (const plugin of nextPlugins) {
@@ -388,17 +404,22 @@ export class BoringPluginAssetManager {
           ...(requiresRestart.length > 0 ? { requiresRestart } : {}),
         }
         events.push(event)
-        this.emit(event)
+        // Internal plugins never appear on the SSE channel (see listExternal);
+        // the events array stays complete so /reload restart warnings
+        // (collectRestartWarnings) still cover internal server-file drift.
+        if (plugin.source.kind !== "internal") this.emit(event)
       } catch (error) {
         const revision = this.bumpRevision(plugin.id)
         const message = error instanceof Error ? error.stack ?? error.message : String(error)
         this.writeError(plugin.id, message)
-        const event: BoringPluginEvent = { type: "boring.plugin.error", id: plugin.id, revision, message }
         const loadError = { id: plugin.id, revision, message }
         this.lastErrors.set(plugin.id, loadError)
         errors.push(loadError)
+        const event: BoringPluginEvent = { type: "boring.plugin.error", id: plugin.id, revision, message }
         events.push(event)
-        this.emit(event)
+        // Internal plugins never appear on the SSE channel (see listExternal);
+        // their failures stay in errors/getErrors for boot diagnostics.
+        if (plugin.source.kind !== "internal") this.emit(event)
       }
     }
 

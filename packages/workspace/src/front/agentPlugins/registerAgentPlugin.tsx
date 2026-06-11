@@ -49,12 +49,6 @@ export interface RegisterAgentPluginOptions {
   enabled?: boolean
   authHeaders?: Record<string, string>
   importFront?: (frontUrl: string, revision: number) => Promise<{ default?: BoringFrontFactoryWithId }>
-  /** Plugin IDs that are already registered via the app's static bootstrap.
-   *  SSE reload events for these IDs are acknowledged but skipped — their front
-   *  modules must not be re-imported because that would create a second module
-   *  instance with a different React context identity, breaking provider lookup
-   *  in any panel that depends on a provider from the static plugin. */
-  staticPluginIds?: ReadonlySet<string>
 }
 
 function joinUrl(base: string, path: string): string {
@@ -352,11 +346,11 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
   const lastSeenRef = useRef(new Map<string, number>())
   const latestRequestedRef = useRef(new Map<string, number>())
   const replaySeenRef = useRef(new Set<string>())
-  // Tracks plugins that were successfully registered via commitCapturedFrontFactory
-  // (i.e. had a frontTarget and went through the dynamic import path). Only these
-  // should be unregistered on unload/reload — static/internal plugins (no frontTarget)
-  // have their registrations managed by the app bootstrap, not this SSE hook.
-  const dynamicallyRegisteredRef = useRef(new Set<string>())
+  // Tracks plugins that were successfully registered via commitCapturedFrontFactory.
+  // The SSE channel only carries external plugins (internal ones are statically
+  // bundled by the app and filtered server-side), so this hook owns the full
+  // lifecycle of everything it sees here.
+  const registeredRef = useRef(new Set<string>())
   // Bumped by a window listener whenever `/reload` runs (while hot reload is
   // active). Included in the EventSource effect deps so `/reload` reopens the
   // stream and re-imports, mirroring a workspace switch — without a full remount.
@@ -419,22 +413,6 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           const latestRequested = latestRequestedRef.current.get(event.id) ?? 0
           if (!bypassGate && event.revision <= Math.max(lastSeen, latestRequested)) return
           latestRequestedRef.current.set(event.id, event.revision)
-          // Static plugins are already registered via the app bootstrap. Re-importing
-          // their front module would create a second module instance with a fresh React
-          // context identity, breaking provider ↔ panel context lookup (the provider
-          // still holds the OLD context; the newly-imported panel consumes the NEW one).
-          // Just acknowledge the event so replay-complete doesn't prune them.
-          //
-          // Guard: skip only if the plugin has NOT been dynamically registered yet.
-          // `dynamicallyRegisteredRef` is the single authoritative source for "whose
-          // lifecycle does this SSE hook own?" — if a plugin somehow becomes dynamic
-          // after bootstrap (future scenario), the guard lifts and it gets managed here.
-          // The unload gates all check dynamicallyRegisteredRef directly, so they need
-          // no matching change.
-          if (options.staticPluginIds?.has(event.id) && !dynamicallyRegisteredRef.current.has(event.id)) {
-            lastSeenRef.current.set(event.id, event.revision)
-            return
-          }
           const frontEntryUrl = resolveFrontEntryUrl(event, options.apiBaseUrl)
           if (frontEntryUrl) {
             pendingTracked = true
@@ -468,9 +446,9 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
             // the app bootstrap and must not be cleared by the SSE reload hook —
             // doing so removes their panels from the registry while their providers
             // remain mounted, which causes "must be rendered under Provider" errors.
-            if (dynamicallyRegisteredRef.current.has(event.id)) {
+            if (registeredRef.current.has(event.id)) {
               unregisterPlugin(event.id, registries)
-              dynamicallyRegisteredRef.current.delete(event.id)
+              registeredRef.current.delete(event.id)
             }
             lastSeenRef.current.set(event.id, event.revision)
             return
@@ -487,7 +465,7 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
               error,
             }
           }
-          dynamicallyRegisteredRef.current.add(event.id)
+          registeredRef.current.add(event.id)
           lastSeenRef.current.set(event.id, event.revision)
           window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: event }))
         } catch (error) {
@@ -543,9 +521,9 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
         const latestRequested = latestRequestedRef.current.get(event.id) ?? 0
         if (event.revision <= Math.max(lastSeen, latestRequested)) return
         latestRequestedRef.current.set(event.id, event.revision)
-        if (dynamicallyRegisteredRef.current.has(event.id)) {
+        if (registeredRef.current.has(event.id)) {
           unregisterPlugin(event.id, registries)
-          dynamicallyRegisteredRef.current.delete(event.id)
+          registeredRef.current.delete(event.id)
         }
         lastSeenRef.current.set(event.id, event.revision)
         window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: event }))
@@ -585,9 +563,9 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           if (replaySeen.has(pluginId)) continue
           // Only unregister if the plugin was dynamically loaded — static/internal
           // plugins keep their bootstrap registrations across workspace reconnects.
-          if (dynamicallyRegisteredRef.current.has(pluginId)) {
+          if (registeredRef.current.has(pluginId)) {
             unregisterPlugin(pluginId, registries)
-            dynamicallyRegisteredRef.current.delete(pluginId)
+            registeredRef.current.delete(pluginId)
           }
           lastSeenRef.current.delete(pluginId)
           latestRequestedRef.current.delete(pluginId)
@@ -626,8 +604,8 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
         // Only unregister dynamically-loaded plugins. Static/internal plugins keep
         // their bootstrap registrations — the WorkspaceProvider re-runs bootstrap on
         // remount (workspace switch) which re-registers them.
-        for (const pluginId of dynamicallyRegisteredRef.current) unregisterPlugin(pluginId, registries)
-        dynamicallyRegisteredRef.current.clear()
+        for (const pluginId of registeredRef.current) unregisterPlugin(pluginId, registries)
+        registeredRef.current.clear()
         lastSeenRef.current.clear()
         latestRequestedRef.current.clear()
         replaySeenRef.current.clear()

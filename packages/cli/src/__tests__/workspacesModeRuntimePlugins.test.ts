@@ -135,9 +135,9 @@ describe("workspaces mode runtime plugin wiring", () => {
     const sse = await openSse(`${address}/api/v1/agent-plugins/events?workspaceId=${encodeURIComponent(registeredA.id)}`)
 
     try {
-      // The CLI bundles @hachej/boring-ask-user as a CLI-default plugin
-      // package, so the SSE stream / list include it alongside the test
-      // fixtures. Filter to the IDs this test actually loaded.
+      // The CLI bundles @hachej/boring-ask-user as an internal default plugin
+      // package. Internal plugins are statically bundled into the app front and
+      // never appear on the SSE channel — only the external test fixtures do.
       const expectedTestPluginIds = ["global-plugin", "local-a"]
       const collectMessages = async (expectedCount: number): Promise<SseMessage[]> => {
         const collected: SseMessage[] = []
@@ -148,13 +148,12 @@ describe("workspaces mode runtime plugin wiring", () => {
         }
         return collected
       }
-      const events = await collectMessages(4)
+      const events = await collectMessages(3)
       const loaded = events
         .filter((event) => event.event === "boring.plugin.load")
         .map((event) => ({ id: String(event.data.id), data: event.data }))
       const replayComplete = events.find((event) => event.event === "boring.plugin.replay-complete")
-      const loadedTestPluginIds = loaded.map((event) => event.id).filter((id) => expectedTestPluginIds.includes(id)).sort()
-      expect(loadedTestPluginIds).toEqual(expectedTestPluginIds)
+      expect(loaded.map((event) => event.id).sort()).toEqual(expectedTestPluginIds)
       for (const event of loaded) {
         expect(event.data.workspaceId).toBe(registeredA.id)
         expect(event.data.replay).toBe(true)
@@ -164,8 +163,8 @@ describe("workspaces mode runtime plugin wiring", () => {
         })
         expect(event.data.frontUrl).toBeUndefined()
       }
-      const askUserEvent = loaded.find((event) => event.id === "ask-user")
-      expect(askUserEvent).toBeDefined()
+      // Internal plugins (ask-user) are excluded from the SSE channel.
+      expect(loaded.find((event) => event.id === "ask-user")).toBeUndefined()
       expect(replayComplete).toBeDefined()
 
       const meta = await app.inject({ method: "GET", url: "/api/v1/workspace/meta" })

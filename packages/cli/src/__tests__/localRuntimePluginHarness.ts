@@ -12,6 +12,7 @@ import {
   uiRoutes,
 } from "../../../workspace/src/server/index"
 import type { LoadBoringAssetsResult } from "../../../workspace/src/server/agentPlugins/manager"
+import type { BoringPluginSourceInput } from "../../../workspace/src/server/agentPlugins/types"
 import { createPluginFrontRuntimeHost } from "../server/pluginFrontRuntime"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "../server/localWorkspaces"
 
@@ -23,8 +24,14 @@ function getGlobalPiExtensionsRoot(): string {
   return resolve(join(homedir(), ".pi", "agent", "extensions"))
 }
 
-function resolvePluginDirs(workspaceRoot: string): string[] {
-  return [getGlobalPiExtensionsRoot(), resolve(workspaceRoot, ".pi", "extensions")]
+function resolvePluginDirs(workspaceRoot: string): BoringPluginSourceInput[] {
+  // .pi/extensions roots are user-authored hot-reloadable plugins — declare
+  // them external so they flow through the SSE channel (mirrors
+  // resolveCliBoringPluginDirs in production).
+  return [
+    { rootDir: getGlobalPiExtensionsRoot(), kind: "external" },
+    { rootDir: resolve(workspaceRoot, ".pi", "extensions"), kind: "external" },
+  ]
 }
 
 function firstString(value: unknown): string | undefined {
