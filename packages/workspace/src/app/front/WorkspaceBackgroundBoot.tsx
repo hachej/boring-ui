@@ -17,6 +17,14 @@ import {
 } from "./workspacePreload"
 
 const PREPARING_RETRY_DELAY_MS = 500
+// Per-attempt budget for a single warmup request. Right after a server
+// (re)start the event loop can be saturated for tens of seconds by cold
+// plugin transforms; an un-timed fetch issued in that window hangs
+// indefinitely and pins the "Preparing workspace" overlay even though the
+// server becomes ready moments later (recoverable only by remounting, e.g.
+// switching workspaces). Treat a slow attempt as retryable-preparing so the
+// normal retry loop re-issues a fresh request against the recovered server.
+const WARMUP_ATTEMPT_TIMEOUT_MS = 10_000
 
 export interface WorkspaceBackgroundBootProps {
   workspaceId: string
@@ -127,20 +135,40 @@ async function fetchWarmupPath({
   signal: AbortSignal
   workspaceId: string
 }): Promise<WarmupPathResult> {
-  const response = await fetch(preloadUrl(apiBaseUrl, path), { headers, signal })
-  if (isReadyStatusPath(path)) return fetchReadyStatusWarmupPath(response)
+  // Bound each attempt and treat timeouts/network-level failures (server
+  // restarting, connection refused) as retryable-preparing rather than a
+  // terminal failure: the caller's retry loop re-issues a fresh attempt.
+  const attempt = new AbortController()
+  const timeout = globalThis.setTimeout(() => attempt.abort(new DOMException("Warmup attempt timed out", "TimeoutError")), WARMUP_ATTEMPT_TIMEOUT_MS)
+  const onOuterAbort = () => attempt.abort(signal.reason)
+  if (signal.aborted) onOuterAbort()
+  signal.addEventListener("abort", onOuterAbort, { once: true })
+  try {
+    const response = await fetch(preloadUrl(apiBaseUrl, path), { headers, signal: attempt.signal })
+    if (isReadyStatusPath(path)) return await fetchReadyStatusWarmupPath(response)
 
-  const payload = await readResponsePayload(response)
-  if (!response.ok) {
-    const preparing = parseRetryableWarmupPreparing(payload)
-    if (preparing) return { status: "preparing", ...preparing }
-    throw new Error(errorMessageFromPayload(payload) ?? `${path} failed with ${response.status}`)
-  }
+    const payload = await readResponsePayload(response)
+    if (!response.ok) {
+      const preparing = parseRetryableWarmupPreparing(payload)
+      if (preparing) return { status: "preparing", ...preparing }
+      throw new Error(errorMessageFromPayload(payload) ?? `${path} failed with ${response.status}`)
+    }
 
-  if (payload && typeof payload === "object") {
-    seedTreePreloadFromBody(apiBaseUrl, headers["x-boring-workspace-id"] ?? workspaceId, path, payload as { entries?: unknown })
+    if (payload && typeof payload === "object") {
+      seedTreePreloadFromBody(apiBaseUrl, headers["x-boring-workspace-id"] ?? workspaceId, path, payload as { entries?: unknown })
+    }
+    return { status: "ready" }
+  } catch (error) {
+    if (signal.aborted) throw error
+    // Attempt timeout or network-level failure (TypeError: Failed to fetch /
+    // aborted body read): retryable, not fatal. HTTP-level errors with a
+    // payload are thrown above and stay terminal.
+    if (attempt.signal.aborted || (error instanceof TypeError)) return { status: "preparing" }
+    throw error
+  } finally {
+    globalThis.clearTimeout(timeout)
+    signal.removeEventListener("abort", onOuterAbort)
   }
-  return { status: "ready" }
 }
 
 export function WorkspaceBackgroundBoot({
