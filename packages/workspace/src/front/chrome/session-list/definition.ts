@@ -6,6 +6,7 @@ import { SessionBrowser } from "./SessionBrowser"
 interface SessionListPaneParams {
   sessions?: SessionItem[]
   activeId?: string | null
+  openIds?: string[]
   onSwitch?: (id: string) => void
   onOpenAsTab?: (id: string) => void
   onCreate?: () => void
@@ -20,6 +21,7 @@ function SessionListPane({ params }: PaneProps<SessionListPaneParams | undefined
   return createElement(SessionBrowser, {
     sessions: params?.sessions ?? [],
     activeId: params?.activeId,
+    openIds: params?.openIds,
     onSwitch: params?.onSwitch,
     onOpenAsTab: params?.onOpenAsTab,
     onCreate: params?.onCreate,

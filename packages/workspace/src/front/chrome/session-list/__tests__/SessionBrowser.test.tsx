@@ -89,6 +89,19 @@ describe("SessionBrowser", () => {
     expect(screen.getByText(/No sessions yet/)).toBeInTheDocument()
   })
 
+  it("splits open sessions into an Active section above history", () => {
+    render(<SessionBrowser sessions={sample} activeId="s1" openIds={["s1", "s3"]} />)
+
+    expect(screen.getByText("Active")).toBeInTheDocument()
+    expect(screen.getByText("History")).toBeInTheDocument()
+    const activeSection = document.querySelector('[data-boring-workspace-part="session-active-section"]')
+    expect(activeSection?.textContent).toContain("First session")
+    expect(activeSection?.textContent).toContain("Third session")
+    expect(activeSection?.textContent).not.toContain("Second session")
+    // Open rows carry the open indicator dot.
+    expect(activeSection?.querySelectorAll('[data-boring-workspace-part="session-open-dot"]')).toHaveLength(2)
+  })
+
   it("shows a working badge while a session's chat panel streams", () => {
     render(<SessionBrowser sessions={sample} activeId="s1" />)
 

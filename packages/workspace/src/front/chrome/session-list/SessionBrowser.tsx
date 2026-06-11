@@ -41,6 +41,8 @@ function useWorkingSessionIds(): ReadonlySet<string> {
 export interface SessionBrowserProps {
   sessions: SessionItem[]
   activeId?: string | null
+  /** Session ids currently open as chat panes, in pane order. */
+  openIds?: string[]
   onSwitch?: (id: string) => void
   onOpenAsTab?: (id: string) => void
   onCreate?: () => void
@@ -130,6 +132,7 @@ function relativeTime(value: SessionItem["updatedAt"]): string {
 export function SessionBrowser({
   sessions,
   activeId,
+  openIds,
   onSwitch,
   onOpenAsTab,
   onCreate,
@@ -140,7 +143,20 @@ export function SessionBrowser({
   onClose,
   className,
 }: SessionBrowserProps) {
-  const groups = useMemo(() => groupSessions(sessions), [sessions])
+  // Open panes surface in an "Active" section, in pane order; everything
+  // else is history grouped by recency.
+  const openSet = useMemo(() => new Set(openIds ?? []), [openIds])
+  const activeSessions = useMemo(
+    () => (openIds ?? [])
+      .map((id) => sessions.find((session) => session.id === id))
+      .filter((session): session is SessionItem => Boolean(session)),
+    [openIds, sessions],
+  )
+  const historySessions = useMemo(
+    () => (openSet.size > 0 ? sessions.filter((session) => !openSet.has(session.id)) : sessions),
+    [openSet, sessions],
+  )
+  const groups = useMemo(() => groupSessions(historySessions), [historySessions])
   const workingSessionIds = useWorkingSessionIds()
   const { blockers } = useWorkspaceAttention()
   const needsInputSessionIds = useMemo(() => {
@@ -192,8 +208,37 @@ export function SessionBrowser({
           </div>
         )}
 
+        {activeSessions.length > 0 && (
+          <section data-boring-workspace-part="session-active-section">
+            <div className="flex items-baseline justify-between gap-2 px-3.5 pb-2 pt-2 text-[11px] font-medium tracking-tight text-muted-foreground/75">
+              <span>Active</span>
+              <span aria-hidden="true" className="text-[10.5px] tabular-nums text-muted-foreground/40">{activeSessions.length}</span>
+            </div>
+            <ul role="list" className="flex flex-col">
+              {activeSessions.map((session) => (
+                <SessionRow
+                  key={session.id}
+                  session={session}
+                  active={session.id === activeId}
+                  open
+                  working={workingSessionIds.has(session.id)}
+                  needsInput={needsInputSessionIds.has(session.id)}
+                  onSwitch={onSwitch}
+                  onOpenAsTab={onOpenAsTab}
+                  onDelete={onDelete}
+                />
+              ))}
+            </ul>
+            {groups.length > 0 && (
+              <div className="px-3.5 pb-1 pt-4 text-[11px] font-medium tracking-tight text-muted-foreground/75">
+                History
+              </div>
+            )}
+          </section>
+        )}
+
         {groups.map((group, i) => (
-          <section key={group.key} className={cn(i > 0 && "mt-4")}>
+          <section key={group.key} className={cn((i > 0 || activeSessions.length > 0) && "mt-2")}>
             <div className="flex items-baseline justify-between gap-2 px-3.5 pb-2 pt-2 text-[11px] font-medium tracking-tight text-muted-foreground/75">
               <span>{group.label}</span>
               <span aria-hidden="true" className="text-[10.5px] tabular-nums text-muted-foreground/40">{group.items.length}</span>
@@ -204,6 +249,7 @@ export function SessionBrowser({
                   key={session.id}
                   session={session}
                   active={session.id === activeId}
+                  open={false}
                   working={workingSessionIds.has(session.id)}
                   needsInput={needsInputSessionIds.has(session.id)}
                   onSwitch={onSwitch}
@@ -235,6 +281,7 @@ export function SessionBrowser({
 function SessionRow({
   session,
   active,
+  open,
   working,
   needsInput,
   onSwitch,
@@ -243,6 +290,7 @@ function SessionRow({
 }: {
   session: SessionItem
   active: boolean
+  open: boolean
   working: boolean
   needsInput: boolean
   onSwitch?: (id: string) => void
@@ -270,6 +318,16 @@ function SessionRow({
         e.dataTransfer.effectAllowed = "copyMove"
       }}
     >
+      {open && (
+        <span
+          aria-hidden="true"
+          data-boring-workspace-part="session-open-dot"
+          className={cn(
+            "h-1.5 w-1.5 shrink-0 rounded-full",
+            active ? "bg-foreground/70" : "bg-foreground/30",
+          )}
+        />
+      )}
       <span className="min-w-0 flex-1 truncate leading-5" title={session.title}>
         <span className={cn(active ? "font-medium text-foreground" : "text-foreground/90")}>
           {session.title || "Untitled"}

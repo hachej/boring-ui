@@ -1231,6 +1231,7 @@ export function WorkspaceAgentFront<
               navParams={{
                 sessions: resolvedSessions,
                 activeId: activeChatPaneId,
+                openIds: chatPaneIds,
                 onSwitch: switchToChatPane,
                 onOpenAsTab: openChatPane,
                 onCreate: resolvedCreate,

@@ -365,17 +365,26 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
     return () => sub?.dispose?.()
   }, [api])
 
+  // With a single pane there is nothing to move or close — show a plain
+  // title bar without the drag grip and close control.
+  const multiPane = stage.panes.length > 1
   const canClose = Boolean(stage.onClosePane)
   return (
     <div
-      className="group flex h-full w-full min-w-0 cursor-grab select-none items-center gap-1.5 px-2 text-[12px] font-medium leading-none tracking-tight active:cursor-grabbing"
+      className={cn(
+        "group flex h-full w-full min-w-0 select-none items-center gap-1.5 px-2 text-[12px] font-medium leading-none tracking-tight",
+        multiPane && "cursor-grab active:cursor-grabbing",
+      )}
       title={title}
     >
-      <GripVertical
-        aria-hidden="true"
-        className="h-3.5 w-3.5 shrink-0 text-muted-foreground/45 transition-colors group-hover:text-muted-foreground"
-        strokeWidth={1.75}
-      />
+      {multiPane ? (
+        <GripVertical
+          aria-hidden="true"
+          data-boring-workspace-part="chat-pane-grip"
+          className="h-3.5 w-3.5 shrink-0 text-muted-foreground/45 transition-colors group-hover:text-muted-foreground"
+          strokeWidth={1.75}
+        />
+      ) : null}
       <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-foreground/70">
         {title}
       </span>
