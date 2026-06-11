@@ -93,7 +93,6 @@ export async function createLocalFolderModeApp(opts: {
     pluginDirs: resolvePluginDirs(workspaceRoot),
     errorRoot: join(workspaceRoot, ".pi", "extensions"),
     frontTargetResolver: runtimeHost.createFrontTargetResolver(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID),
-    includeLegacyFrontUrl: false,
   })
   const app = await createAgentApp({
     mode: opts.mode,
@@ -166,7 +165,6 @@ export async function createLocalWorkspacesModeApp(opts: {
         pluginDirs: resolvePluginDirs(workspace.path),
         errorRoot: join(workspace.path, ".pi", "extensions"),
         frontTargetResolver: runtimeHost.createFrontTargetResolver(workspace.id),
-        includeLegacyFrontUrl: false,
       })
       runtime = {
         manager,

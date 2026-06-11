@@ -319,7 +319,6 @@ export async function createFolderModeApp(opts: {
     defaultPluginPackages: pluginDiscovery.resolveCliDefaultPluginPackagePaths(),
     additionalBoringPluginDirs: pluginDirs,
     boringPluginFrontTargetResolver: runtimeHost.createFrontTargetResolver(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID),
-    boringPluginIncludeLegacyFrontUrl: false,
   })
   await runtimeHost.registerRoutes(app as FastifyInstance)
   const folderAssetManager = (app as FastifyInstance & {
@@ -459,7 +458,6 @@ export async function createWorkspacesModeApp(opts: {
     if (!runtime) {
       const manager = pluginDiscovery.createCliPluginAssetManager(workspace.path, {
         frontTargetResolver: runtimeHost.createFrontTargetResolver(workspace.id),
-        includeLegacyFrontUrl: false,
       })
       const backendRegistry = new workspaceServer.RuntimeBackendRegistry()
       runtime = {

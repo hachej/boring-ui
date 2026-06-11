@@ -75,10 +75,8 @@ function resolveFrontEntryUrl(
   event: Extract<RuntimePluginBrowserEvent, { type: "boring.plugin.load" }>,
   apiBaseUrl: string | undefined,
 ): string | undefined {
-  const frontTarget = event.frontTarget as BoringPluginFrontTarget | undefined
-  if (frontTarget?.entryUrl) return resolveFrontUrl(frontTarget.entryUrl, apiBaseUrl)
-  if (event.frontUrl) return resolveFrontUrl(event.frontUrl, apiBaseUrl)
-  return undefined
+  if (!event.frontTarget?.entryUrl) return undefined
+  return resolveFrontUrl(event.frontTarget.entryUrl, apiBaseUrl)
 }
 
 function getRegistries(

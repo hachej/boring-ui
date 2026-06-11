@@ -116,6 +116,13 @@ export interface CreateWorkspaceAgentServerOptions
    * load process.
    */
   defaultPluginPackages?: string[]
+  /**
+   * The host app's package root. Anchors npm-name resolution of
+   * `defaultPluginPackages` at the app's own node_modules (in addition to a
+   * walk-up from `workspaceRoot`). Pass when the workspace root does not
+   * live under the app directory.
+   */
+  appRoot?: string
   /** Additional plugin collection roots to scan alongside workspace .pi/extensions and package/plugin-derived roots. */
   additionalBoringPluginDirs?: BoringPluginSourceInput[]
   /**
@@ -133,8 +140,6 @@ export interface CreateWorkspaceAgentServerOptions
   installPluginAuthoring?: boolean
   /** Optional host-owned front-target override for boring plugin list/event payloads. */
   boringPluginFrontTargetResolver?: BoringPluginFrontTargetResolver
-  /** Preserve legacy `/@fs/...` frontUrl payloads alongside frontTarget. Defaults to true. */
-  boringPluginIncludeLegacyFrontUrl?: boolean
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -575,6 +580,7 @@ export async function createWorkspaceAgentServer(
   const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths({
     workspaceRoot,
     defaultPluginPackages: opts.defaultPluginPackages,
+    anchorDir: opts.appRoot,
   })
   const pluginHotReload = opts.pluginHotReload ?? true
   const defaultPluginDirEntries: WorkspacePluginEntry[] = defaultPluginPackagePaths
@@ -662,7 +668,6 @@ export async function createWorkspaceAgentServer(
     pluginDirs: boringPluginDirs,
     errorRoot: join(workspaceRoot, ".pi", "extensions"),
     frontTargetResolver: opts.boringPluginFrontTargetResolver,
-    includeLegacyFrontUrl: opts.boringPluginIncludeLegacyFrontUrl,
   })
   const runtimeBackendRegistry = new RuntimeBackendRegistry()
 

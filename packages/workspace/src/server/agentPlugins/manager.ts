@@ -49,15 +49,11 @@ export interface BoringPluginAssetManagerOptions {
    */
   errorRoot?: string
   /**
-   * Optional host-owned runtime front-target resolver. When omitted, list/event
-   * payloads preserve the existing `frontUrl` (`/@fs/...`) fallback only.
+   * Optional host-owned runtime front-target resolver (the CLI's runtime
+   * module host mints `native` targets). When omitted, plugins with a front
+   * entry get a `module-url` target pointing at the Vite-dev `/@fs/...` URL.
    */
   frontTargetResolver?: BoringPluginFrontTargetResolver
-  /**
-   * Keep legacy `/@fs/...` frontUrl payloads alongside frontTarget. Defaults
-   * to true for back-compat; packaged CLI folder/workspaces mode can disable it.
-   */
-  includeLegacyFrontUrl?: boolean
 }
 
 export interface LoadBoringAssetsError {
@@ -227,7 +223,6 @@ export class BoringPluginAssetManager {
   private readonly pluginDirs: BoringPluginSourceInput[]
   private readonly errorRoot: string
   private readonly frontTargetResolver?: BoringPluginFrontTargetResolver
-  private readonly includeLegacyFrontUrl: boolean
   private readonly loaded = new Map<string, LoadedPluginRecord>()
   private readonly revisions = new Map<string, number>()
   private readonly listeners = new Set<Listener>()
@@ -239,7 +234,6 @@ export class BoringPluginAssetManager {
     this.pluginDirs = options.pluginDirs
     this.errorRoot = options.errorRoot ?? join(process.cwd(), ".pi", "extensions") // callers MUST override errorRoot in non-trivial deployments
     this.frontTargetResolver = options.frontTargetResolver
-    this.includeLegacyFrontUrl = options.includeLegacyFrontUrl ?? true
   }
 
   preflight(): BoringPluginPreflightResult {
@@ -395,7 +389,6 @@ export class BoringPluginAssetManager {
           boring: plugin.boring,
           version: plugin.version,
           revision,
-          ...(this.frontUrlPayload(plugin.frontUrl)),
           ...(frontTarget ? { frontTarget } : {}),
           ...(requiresRestart.length > 0 ? { requiresRestart } : {}),
         }
@@ -446,18 +439,17 @@ export class BoringPluginAssetManager {
       ...(plugin.pi ? { pi: plugin.pi } : {}),
       version: plugin.version,
       revision: plugin.revision,
-      ...(this.frontUrlPayload(plugin.frontUrl)),
       ...(plugin.frontTarget ? { frontTarget: plugin.frontTarget } : {}),
     }
   }
 
-  private frontUrlPayload(frontUrl: string | undefined): Pick<BoringPluginListEntry, "frontUrl"> | Record<string, never> {
-    if (!this.includeLegacyFrontUrl || !frontUrl) return {}
-    return { frontUrl }
-  }
-
   private resolveFrontTarget(plugin: BoringServerPluginManifest, revision: number): BoringPluginFrontTarget | undefined {
-    if (!plugin.frontPath || !this.frontTargetResolver) return undefined
+    if (!plugin.frontPath) return undefined
+    if (!this.frontTargetResolver) {
+      // No runtime host — serve the entry as a plain browser module URL and
+      // let the host's Vite dev server transform it.
+      return plugin.frontUrl ? { kind: "module-url", entryUrl: plugin.frontUrl, revision } : undefined
+    }
     const frontEntrySubpath = typeof plugin.boring.front === "string"
       ? plugin.boring.front.replace(/^\.\//, "")
       : normalizePluginSubpath(plugin.rootDir, plugin.frontPath)

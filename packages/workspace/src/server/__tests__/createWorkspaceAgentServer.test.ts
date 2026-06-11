@@ -9,7 +9,7 @@
  */
 import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 import { afterEach, beforeEach, expect, test, describe } from "vitest"
 import {
   collectWorkspaceAgentServerPlugins,
@@ -849,6 +849,9 @@ describe("createWorkspaceAgentServer — defaultPluginPackages (standard load pr
       mode: "direct",
       logger: false,
       disableDefaultFileTools: true,
+      // The fixture package is a dep of @hachej/boring-workspace itself —
+      // anchor npm-name resolution there, like a host app passing its root.
+      appRoot: resolve(__dirname, "..", "..", ".."),
       // Workspace-local fixture package — proves require.resolve + DirPluginEntry
       // + BoringPluginAssetManager scan all wire together correctly without
       // coupling this workspace test to a real plugin package like ask-user.
@@ -864,15 +867,16 @@ describe("createWorkspaceAgentServer — defaultPluginPackages (standard load pr
       expect(toolNames).toContain("fixture_ping")
 
       // Front-side discovery: the package appears in /api/v1/agent-plugins
-      // with a frontUrl pointing at its boring.front entry. The
-      // front-side SSE subscriber would dynamic-import this URL.
+      // with a module-url frontTarget pointing at its boring.front entry.
+      // The front-side SSE subscriber would dynamic-import this URL.
       const plugins = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
       expect(plugins.statusCode).toBe(200)
       // Plugin id is derived from package.json#name via @scope/name → scope-name
-      const list = plugins.json() as Array<{ id: string; frontUrl?: string }>
+      const list = plugins.json() as Array<{ id: string; frontTarget?: { kind: string; entryUrl: string } }>
       const found = list.find((p) => p.id === "boring-fixtures-default-plugin")
       expect(found, `boring-fixtures-default-plugin not in /api/v1/agent-plugins; got: ${JSON.stringify(list)}`).toBeDefined()
-      expect(found?.frontUrl).toMatch(/\/@fs\//)
+      expect(found?.frontTarget?.kind).toBe("module-url")
+      expect(found?.frontTarget?.entryUrl).toMatch(/\/@fs\//)
     } finally {
       await app.close()
     }

@@ -663,7 +663,6 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
         expect.objectContaining({
           id: "hot-plugin",
           boring: expect.objectContaining({ front: "front/index.tsx" }),
-          frontUrl: expect.stringContaining("/@fs/"),
           frontTarget: {
             kind: "native",
             entryUrl: "/runtime/hot-plugin/1/front/index.tsx",

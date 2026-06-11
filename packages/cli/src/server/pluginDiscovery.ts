@@ -35,7 +35,6 @@ export interface ResolveCliBoringPluginDirsOptions {
   /** Optional global ~/.pi/agent-style base root for Pi package sources. */
   globalAgentRoot?: string
   frontTargetResolver?: BoringPluginFrontTargetResolver
-  includeLegacyFrontUrl?: boolean
   /**
    * Include CLI-bundled default plugin packages (e.g.
    * `@hachej/boring-ask-user`) discovered from the CLI's own
@@ -132,6 +131,5 @@ export function createCliPluginAssetManager(
     pluginDirs: resolveCliBoringPluginDirs(workspaceRoot, options),
     errorRoot: resolve(workspaceRoot, ".boring-agent", "plugin-errors"),
     frontTargetResolver: options.frontTargetResolver,
-    includeLegacyFrontUrl: options.includeLegacyFrontUrl,
   })
 }

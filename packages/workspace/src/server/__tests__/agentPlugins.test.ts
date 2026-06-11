@@ -154,7 +154,7 @@ describe("boring agent plugin assets", () => {
     }
   })
 
-  test("manager keeps /@fs frontUrl fallback when no frontTargetResolver is supplied", async () => {
+  test("manager emits module-url front targets when no frontTargetResolver is supplied", async () => {
     const root = await tmp("boring-plugin-front-fallback-")
     await writePlugin(root)
 
@@ -162,21 +162,26 @@ describe("boring agent plugin assets", () => {
     const result = await manager.load()
     const loadEvent = result.events.find((event) => event.type === "boring.plugin.load")
 
+    const expectedTarget = {
+      kind: "module-url",
+      entryUrl: expect.stringContaining("/@fs/"),
+      revision: 1,
+    }
     expect(result.loaded).toEqual([
       expect.objectContaining({
         id: "boring-plugin-test",
         revision: 1,
-        frontUrl: expect.stringContaining("/@fs/"),
+        frontTarget: expectedTarget,
       }),
     ])
-    expect(result.loaded[0]).not.toHaveProperty("frontTarget")
+    expect(result.loaded[0]).not.toHaveProperty("frontUrl")
     expect(loadEvent).toEqual(expect.objectContaining({
       type: "boring.plugin.load",
       id: "boring-plugin-test",
       revision: 1,
-      frontUrl: expect.stringContaining("/@fs/"),
+      frontTarget: expectedTarget,
     }))
-    expect(loadEvent).not.toHaveProperty("frontTarget")
+    expect(loadEvent).not.toHaveProperty("frontUrl")
   })
 
   test("manager emits revision-addressed native frontTarget payloads when a resolver is supplied", async () => {
@@ -201,7 +206,6 @@ describe("boring agent plugin assets", () => {
     expect(first.loaded[0]).toMatchObject({
       id: "boring-plugin-test",
       revision: 1,
-      frontUrl: expect.stringContaining("/@fs/"),
       frontTarget: {
         kind: "native",
         entryUrl: "/api/v1/agent-plugins/runtime/boring-plugin-test/1/front/index.tsx",
