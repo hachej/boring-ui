@@ -210,6 +210,7 @@ export {
   userMeta,
   agentMeta,
   emitAgentData,
+  workspaceEvents,
 } from "./front/events"
 export type {
   Origin,

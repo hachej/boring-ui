@@ -24,6 +24,18 @@ import {
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../front/agentPlugins/reloadEvent"
 import { WorkspaceBackgroundBoot } from "./WorkspaceBackgroundBoot"
 import { workspaceRequestHeaders, type WorkspaceWarmupStatus } from "./workspacePreload"
+import {
+  createdSessionId,
+  insertPaneAfter,
+  replaceActivePane,
+  type ChatPaneState,
+} from "./chatPaneState"
+
+interface PendingCreatePane {
+  afterId: string
+  knownIds: Set<string>
+  createdId?: string
+}
 
 export interface WorkspaceAgentSession {
   id: string
@@ -63,7 +75,24 @@ export type UseWorkspaceAgentSessions<
 export interface WorkspaceAgentFrontProps<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
 > extends Omit<WorkspaceProviderProps, "children" | "workspaceId" | "storageKey" | "chatPanel">,
-    Omit<ChatLayoutProps, "nav" | "navParams" | "center" | "centerParams" | "surface" | "surfaceParams" | "sidebar" | "sidebarParams" | "storageKey"> {
+    Omit<ChatLayoutProps,
+      | "nav"
+      | "navParams"
+      | "center"
+      | "centerParams"
+      | "chatPanes"
+      | "activeChatPaneId"
+      | "onActiveChatPaneChange"
+      | "onCloseChatPane"
+      | "onCreateChatPaneAfter"
+      | "onDropChatSession"
+      | "flashChatPaneId"
+      | "surface"
+      | "surfaceParams"
+      | "sidebar"
+      | "sidebarParams"
+      | "storageKey"
+    > {
   workspaceId: string
   chatPanel?: ComponentType<WorkspaceChatPanelProps>
   useSessions?: UseWorkspaceAgentSessions<TSession>
@@ -93,7 +122,7 @@ export interface WorkspaceAgentFrontProps<
   sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number; turnCount?: number }>
   activeSessionId?: string | null
   onSwitchSession?: (id: string) => void
-  onCreateSession?: () => void
+  onCreateSession?: () => unknown | Promise<unknown>
   onDeleteSession?: (id: string) => void
   onActiveSessionIdChange?: (sessionId: string | null) => void
   chatParams?: Record<string, unknown>
@@ -147,6 +176,7 @@ function useStoredBooleanState(
 }
 
 const EMPTY_HEADERS: Record<string, string> = {}
+const EMPTY_STRING_LIST: string[] = []
 const PREPARING_WARMUP_STATUS: WorkspaceWarmupStatus = { status: "preparing" }
 
 const emptySurfaceSnapshot: SurfaceShellSnapshot = {
@@ -218,6 +248,65 @@ function readStoredSessionId(storageKey: string): string | null {
     return globalThis.localStorage?.getItem(storageKey) ?? null
   } catch {
     return null
+  }
+}
+
+function readStoredChatPaneState(storageKey: string, workspaceId: string): ChatPaneState | null {
+  try {
+    const raw = globalThis.localStorage?.getItem(storageKey)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { ids?: unknown; activeId?: unknown }
+    const ids = Array.isArray(parsed.ids)
+      ? parsed.ids.filter((id): id is string => typeof id === "string" && id.length > 0)
+      : []
+    if (ids.length === 0) return null
+    const activeId = typeof parsed.activeId === "string" && ids.includes(parsed.activeId)
+      ? parsed.activeId
+      : ids[0]
+    return { workspaceId, ids, activeId }
+  } catch {
+    return null
+  }
+}
+
+function writeStoredChatPaneState(storageKey: string, state: ChatPaneState): void {
+  try {
+    if (state.ids.length === 0) {
+      globalThis.localStorage?.removeItem(storageKey)
+      return
+    }
+    globalThis.localStorage?.setItem(
+      storageKey,
+      JSON.stringify({ ids: state.ids, activeId: state.activeId }),
+    )
+  } catch {
+    // Best-effort persistence only.
+  }
+}
+
+function readStoredPinnedSessions(storageKey: string, workspaceId: string): { workspaceId: string; ids: string[] } | null {
+  try {
+    const raw = globalThis.localStorage?.getItem(storageKey)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { ids?: unknown }
+    const ids = Array.isArray(parsed.ids)
+      ? parsed.ids.filter((id): id is string => typeof id === "string" && id.length > 0)
+      : []
+    return { workspaceId, ids }
+  } catch {
+    return null
+  }
+}
+
+function writeStoredPinnedSessions(storageKey: string, ids: string[]): void {
+  try {
+    if (ids.length === 0) {
+      globalThis.localStorage?.removeItem(storageKey)
+      return
+    }
+    globalThis.localStorage?.setItem(storageKey, JSON.stringify({ ids }))
+  } catch {
+    // Best-effort persistence only.
   }
 }
 
@@ -361,6 +450,7 @@ export function WorkspaceAgentFront<
   onOpenNav,
   onOpenSurface,
   surfaceButtonBottomOffset,
+  chatPaneEngine,
   className,
 }: WorkspaceAgentFrontProps<TSession>) {
   const resolvedProviderStorageKey =
@@ -404,6 +494,53 @@ export function WorkspaceAgentFront<
     failed: false,
   }))
   const [freshEmptySession, setFreshEmptySession] = useState<{ workspaceId: string; id: string } | null>(null)
+  const chatPaneStorageKey = `boring-workspace:chat-panes:${workspaceId}`
+  const [chatPaneState, setChatPaneState] = useState<ChatPaneState>(() =>
+    (shellPersistenceEnabled ? readStoredChatPaneState(chatPaneStorageKey, workspaceId) : null)
+      ?? { workspaceId, ids: [], activeId: null },
+  )
+  const [flashChatPane, setFlashChatPane] = useState<{ workspaceId: string; id: string } | null>(null)
+  useEffect(() => {
+    if (!flashChatPane) return
+    const timer = setTimeout(() => setFlashChatPane(null), 700)
+    return () => clearTimeout(timer)
+  }, [flashChatPane])
+
+  const pinnedStorageKey = `boring-workspace:pinned-sessions:${workspaceId}`
+  const [pinnedState, setPinnedState] = useState<{ workspaceId: string; ids: string[] }>(() =>
+    (shellPersistenceEnabled ? readStoredPinnedSessions(pinnedStorageKey, workspaceId) : null)
+      ?? { workspaceId, ids: [] },
+  )
+  const pinnedIds = pinnedState.workspaceId === workspaceId ? pinnedState.ids : EMPTY_STRING_LIST
+  useEffect(() => {
+    setPinnedState((previous) => {
+      if (previous.workspaceId === workspaceId) return previous
+      return (shellPersistenceEnabled ? readStoredPinnedSessions(pinnedStorageKey, workspaceId) : null)
+        ?? { workspaceId, ids: [] }
+    })
+  }, [pinnedStorageKey, shellPersistenceEnabled, workspaceId])
+  const toggleSessionPinned = useCallback((sessionId: string) => {
+    setPinnedState((previous) => {
+      const current = previous.workspaceId === workspaceId ? previous.ids : []
+      const ids = current.includes(sessionId)
+        ? current.filter((id) => id !== sessionId)
+        : [sessionId, ...current]
+      if (shellPersistenceEnabled) writeStoredPinnedSessions(pinnedStorageKey, ids)
+      return { workspaceId, ids }
+    })
+  }, [pinnedStorageKey, shellPersistenceEnabled, workspaceId])
+  useEffect(() => {
+    if (!shellPersistenceEnabled) return
+    if (chatPaneState.workspaceId !== workspaceId) return
+    writeStoredChatPaneState(chatPaneStorageKey, chatPaneState)
+  }, [chatPaneState, chatPaneStorageKey, shellPersistenceEnabled, workspaceId])
+  useEffect(() => {
+    setChatPaneState((previous) => {
+      if (previous.workspaceId === workspaceId) return previous
+      return (shellPersistenceEnabled ? readStoredChatPaneState(chatPaneStorageKey, workspaceId) : null)
+        ?? { workspaceId, ids: [], activeId: null }
+    })
+  }, [chatPaneStorageKey, shellPersistenceEnabled, workspaceId])
   const workspaceWarmupStatus = workspaceWarmupState.workspaceId === workspaceId
     ? workspaceWarmupState.status
     : PREPARING_WARMUP_STATUS
@@ -624,6 +761,7 @@ export function WorkspaceAgentFront<
     shellPersistenceEnabled,
   )
   const autoCreateSessionRef = useRef(false)
+  const pendingCreatePaneRef = useRef<PendingCreatePane | null>(null)
   const surfaceOpenRef = useRef(surfaceOpen)
   const surfaceKeyRef = useRef(resolvedSurfaceStorageKey)
   const surfaceRef = useRef<{ key: string; api: SurfaceShellApi } | null>(null)
@@ -755,6 +893,182 @@ export function WorkspaceAgentFront<
   const chatSessionId = shouldUseRemoteSessions && !useSessionsProp && remoteSessionSnapshot.workspaceId !== workspaceId
     ? "default"
     : effectiveActiveSessionId ?? (autoSubmitSessionId !== undefined ? "default" : resolvedSessions[0]?.id ?? "default")
+  // While remote sessions load, resolvedSessions is a one-item placeholder
+  // for the stored active session — never an authoritative list to prune
+  // restored panes against.
+  const sessionListAuthoritative = !sessionApi?.hasMore && !remoteSessionsPending
+  useEffect(() => {
+    if (remoteSessionsTransitioning) return
+    const pendingCreatePane = pendingCreatePaneRef.current
+    const sessionIds = new Set(resolvedSessions.map((session) => session.id))
+    const pendingCreatedId = pendingCreatePane
+      ? pendingCreatePane.createdId
+        ?? (sessionIds.has(chatSessionId) && !pendingCreatePane.knownIds.has(chatSessionId)
+          ? chatSessionId
+          : resolvedSessions.find((session) => !pendingCreatePane.knownIds.has(session.id))?.id ?? null)
+      : null
+    if (pendingCreatedId && sessionIds.has(pendingCreatedId)) pendingCreatePaneRef.current = null
+    const preservingEphemeralDefault = chatSessionId === "default" && autoSubmitSessionId !== undefined
+    const canPruneMissingSessions = sessionListAuthoritative && sessionIds.size > 0 && !preservingEphemeralDefault
+    const desiredSessionId = pendingCreatedId
+      ?? (canPruneMissingSessions && !sessionIds.has(chatSessionId)
+        ? resolvedSessions[0]?.id ?? chatSessionId
+        : chatSessionId)
+    setChatPaneState((previous) => {
+      const current = previous.workspaceId === workspaceId
+        ? previous
+        : { workspaceId, ids: [], activeId: null }
+      // While remote sessions are still loading, chatSessionId may be the
+      // ephemeral "default" placeholder — restored pane state is more
+      // trustworthy than it, so leave the layout untouched until the real
+      // session list arrives.
+      if (remoteSessionsPending && current.ids.length > 0 && !pendingCreatedId) return current
+      const rawIds = current.ids.length > 0 ? current.ids : [desiredSessionId]
+      const prunedIds = canPruneMissingSessions
+        ? rawIds.filter((id) => sessionIds.has(id) || id === pendingCreatedId)
+        : rawIds
+      const ids = prunedIds.length > 0 ? prunedIds : [desiredSessionId]
+      const activeId = current.activeId && ids.includes(current.activeId) ? current.activeId : ids[0] ?? desiredSessionId
+      const nextIds = pendingCreatedId
+        ? insertPaneAfter(ids, pendingCreatePane?.afterId, pendingCreatedId)
+        : desiredSessionId === activeId || ids.includes(desiredSessionId)
+          ? ids
+          : replaceActivePane(ids, activeId, desiredSessionId)
+      const nextActiveId = nextIds.includes(desiredSessionId) ? desiredSessionId : nextIds[0] ?? desiredSessionId
+      if (
+        previous.workspaceId === workspaceId
+        && previous.activeId === nextActiveId
+        && previous.ids.length === nextIds.length
+        && previous.ids.every((id, index) => id === nextIds[index])
+      ) return previous
+      return { workspaceId, ids: nextIds, activeId: nextActiveId }
+    })
+  }, [autoSubmitSessionId, chatSessionId, remoteSessionsPending, remoteSessionsTransitioning, resolvedSessions, sessionListAuthoritative, workspaceId])
+
+  const sessionTitleById = useMemo(() => {
+    const titles = new Map<string, string | null | undefined>()
+    for (const session of resolvedSessions) titles.set(session.id, session.title)
+    return titles
+  }, [resolvedSessions])
+
+  const activeChatPaneState = chatPaneState.workspaceId === workspaceId
+    ? chatPaneState
+    : { workspaceId, ids: [], activeId: null }
+  const chatPaneIds = activeChatPaneState.ids.length > 0 ? activeChatPaneState.ids : [chatSessionId]
+  const activeChatPaneId = activeChatPaneState.activeId ?? chatPaneIds[0] ?? chatSessionId
+
+  const switchToChatPane = useCallback((nextSessionId: string) => {
+    const current = chatPaneState.workspaceId === workspaceId
+      ? chatPaneState
+      : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }
+    const alreadyVisible = current.ids.includes(nextSessionId)
+    setChatPaneState((previous) => {
+      const paneState = previous.workspaceId === workspaceId
+        ? previous
+        : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }
+      const ids = paneState.ids.includes(nextSessionId)
+        ? paneState.ids
+        : replaceActivePane(paneState.ids, paneState.activeId, nextSessionId)
+      return { workspaceId, ids, activeId: nextSessionId }
+    })
+    return alreadyVisible ? rawSwitch(nextSessionId) : resolvedSwitch(nextSessionId)
+  }, [chatPaneState, chatSessionId, rawSwitch, resolvedSwitch, workspaceId])
+
+  const activateChatPane = useCallback((nextSessionId: string) => {
+    setChatPaneState((previous) => {
+      const current = previous.workspaceId === workspaceId
+        ? previous
+        : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }
+      return {
+        workspaceId,
+        ids: current.ids.includes(nextSessionId) ? current.ids : insertPaneAfter(current.ids, current.activeId, nextSessionId),
+        activeId: nextSessionId,
+      }
+    })
+    return rawSwitch(nextSessionId)
+  }, [chatSessionId, rawSwitch, workspaceId])
+
+  const openChatPane = useCallback((nextSessionId: string) => {
+    const current = chatPaneState.workspaceId === workspaceId
+      ? chatPaneState
+      : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }
+    // Opening a session that is already on the stage is a focus, not an
+    // insert — flash the pane so the click visibly landed somewhere.
+    if (current.ids.includes(nextSessionId)) {
+      setFlashChatPane({ workspaceId, id: nextSessionId })
+    }
+    setChatPaneState((previous) => {
+      const paneState = previous.workspaceId === workspaceId
+        ? previous
+        : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }
+      return {
+        workspaceId,
+        ids: insertPaneAfter(paneState.ids, paneState.activeId, nextSessionId),
+        activeId: nextSessionId,
+      }
+    })
+    return rawSwitch(nextSessionId)
+  }, [chatPaneState, chatSessionId, rawSwitch, workspaceId])
+
+  const closeChatPane = useCallback((sessionId: string) => {
+    const current = chatPaneState.workspaceId === workspaceId
+      ? chatPaneState
+      : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }
+    if (current.ids.length <= 1) return
+    const closingIndex = current.ids.indexOf(sessionId)
+    if (closingIndex < 0) return
+    const nextIds = current.ids.filter((id) => id !== sessionId)
+    const nextActiveId = current.activeId === sessionId
+      ? nextIds[Math.max(0, closingIndex - 1)] ?? nextIds[0] ?? null
+      : current.activeId
+    setChatPaneState({ workspaceId, ids: nextIds, activeId: nextActiveId })
+    if (nextActiveId && current.activeId === sessionId) rawSwitch(nextActiveId)
+  }, [chatPaneState, chatSessionId, rawSwitch, workspaceId])
+
+  const createChatPaneAfter = useCallback((afterId: string) => {
+    const pendingCreatePane = {
+      afterId,
+      knownIds: new Set(resolvedSessions.map((session) => session.id)),
+    }
+    pendingCreatePaneRef.current = pendingCreatePane
+    const created = resolvedCreate()
+    void Promise.resolve(created).then((session) => {
+      const id = createdSessionId(session)
+      if (!id) return
+      if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = { ...pendingCreatePane, createdId: id }
+      setChatPaneState((previous) => {
+        const current = previous.workspaceId === workspaceId
+          ? previous
+          : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }
+        return {
+          workspaceId,
+          ids: insertPaneAfter(current.ids, afterId, id),
+          activeId: id,
+        }
+      })
+    }).catch(() => {
+      if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
+    })
+    return created
+  }, [chatSessionId, resolvedCreate, resolvedSessions, workspaceId])
+
+  const deleteSessionAndPane = useCallback((sessionId: string) => {
+    const current = chatPaneState.workspaceId === workspaceId
+      ? chatPaneState
+      : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }
+    const deletingIndex = current.ids.indexOf(sessionId)
+    let nextActiveId = current.activeId
+    if (deletingIndex >= 0) {
+      const nextIds = current.ids.filter((id) => id !== sessionId)
+      nextActiveId = current.activeId === sessionId
+        ? nextIds[Math.max(0, deletingIndex - 1)] ?? nextIds[0] ?? null
+        : current.activeId
+      setChatPaneState({ workspaceId, ids: nextIds, activeId: nextActiveId })
+      if (nextActiveId && current.activeId === sessionId) resolvedSwitch(nextActiveId)
+    }
+    return resolvedDelete(sessionId)
+  }, [chatPaneState, chatSessionId, resolvedDelete, resolvedSwitch, workspaceId])
+
   const [autoSubmitHydrationDisabled, setAutoSubmitHydrationDisabled] = useState(requestedAutoSubmitInitialDraft)
   const autoSubmitHydrationWorkspaceRef = useRef(workspaceId)
   useEffect(() => {
@@ -806,13 +1120,13 @@ export function WorkspaceAgentFront<
 
   const workbenchBlocked = workspaceWarmupStatus.status !== "ready"
   const workbenchOverlay = workbenchBlocked ? <WorkbenchWarmupOverlay status={workspaceWarmupStatus} /> : undefined
-  const reloadAgentPlugins = useCallback(async () => {
+  const reloadAgentPluginsForSession = useCallback(async (sessionId: string) => {
     const endpoint = `${apiBaseUrl?.replace(/\/$/, "") ?? ""}/api/v1/agent/reload`
     try {
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { ...resolvedRequestHeaders, "content-type": "application/json" },
-        body: JSON.stringify({ sessionId: chatSessionId }),
+        body: JSON.stringify({ sessionId }),
       })
       if (!response.ok) {
         const payload = await response.json().catch(() => ({})) as { error?: string }
@@ -824,25 +1138,26 @@ export function WorkspaceAgentFront<
     } catch (error) {
       return error instanceof Error ? error.message : "Agent plugin reload failed."
     }
-  }, [apiBaseUrl, chatSessionId, resolvedRequestHeaders])
+  }, [apiBaseUrl, resolvedRequestHeaders])
 
-  const centerParams = useMemo(
-    () => {
+  const makeCenterParams = useCallback(
+    (sessionId: string, options: { bridgeEnabled?: boolean } = {}) => {
+      const bridgeEnabled = options.bridgeEnabled ?? true
       const chatToolRenderers = (chatParams?.toolRenderers && typeof chatParams.toolRenderers === "object")
         ? chatParams.toolRenderers as ToolRendererOverrides
         : undefined
       return {
       ...chatParams,
       ...(delayAutoSubmitDraft ? { autoSubmitInitialDraft: false, initialDraft: undefined } : {}),
-      sessionId: chatSessionId,
+      sessionId,
       apiBaseUrl,
       workspaceId,
       storageScope: workspaceId,
       requestHeaders: resolvedRequestHeaders,
       showSessions: false,
-      onReloadAgentPlugins: chatParams?.onReloadAgentPlugins ?? reloadAgentPlugins,
+      onReloadAgentPlugins: chatParams?.onReloadAgentPlugins ?? (() => reloadAgentPluginsForSession(sessionId)),
       toolRenderers: { ...pluginToolRenderers, ...(chatToolRenderers ?? {}) },
-      bridgeEndpoint,
+      bridgeEndpoint: bridgeEnabled ? bridgeEndpoint : null,
       getSurface,
       isWorkbenchOpen,
       openWorkbench,
@@ -864,8 +1179,20 @@ export function WorkspaceAgentFront<
       ...(hotReloadEnabled !== undefined ? { hotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, delayAutoSubmitDraft, chatSessionId, resolvedRequestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, extraCommands, workspaceWarmupStatus, hydrateMessages, hotReloadEnabled, pluginToolRenderers, reloadAgentPlugins, workspaceId],
+    [apiBaseUrl, chatParams, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, extraCommands, workspaceWarmupStatus, hydrateMessages, hotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, workspaceId],
   )
+  const centerParams = useMemo(
+    () => makeCenterParams(chatSessionId),
+    [chatSessionId, makeCenterParams],
+  )
+  const chatPanes = useMemo(() => (
+    chatPaneIds.map((id) => ({
+      id,
+      title: sessionTitleById.get(id) ?? (id === "default" ? defaultSessionTitle : id),
+      panel: "chat",
+      params: makeCenterParams(id, { bridgeEnabled: id === activeChatPaneId }),
+    }))
+  ), [activeChatPaneId, chatPaneIds, defaultSessionTitle, makeCenterParams, sessionTitleById])
   const surfaceParams = useMemo<SurfaceShellProps>(() => ({
     storageKey: resolvedSurfaceStorageKey,
     defaultLeftTab: defaultWorkbenchLeftTab,
@@ -941,7 +1268,6 @@ export function WorkspaceAgentFront<
             appTitle={appTitle}
             sessionTitle={remoteSessionsTransitioning ? "Loading sessions…" : resolvedSessionTitle ?? defaultSessionTitle}
             onCommandPalette={openCommandPalette}
-            onNewChat={resolvedCreate}
             topBarLeft={topBarLeft}
             topBarRight={
               <>
@@ -958,10 +1284,14 @@ export function WorkspaceAgentFront<
               nav={effectiveNavOpen ? "session-list" : null}
               navParams={{
                 sessions: resolvedSessions,
-                activeId: resolvedActiveId,
-                onSwitch: resolvedSwitch,
+                activeId: activeChatPaneId,
+                openIds: chatPaneIds,
+                pinnedIds,
+                onTogglePin: toggleSessionPinned,
+                onSwitch: switchToChatPane,
+                onOpenAsTab: openChatPane,
                 onCreate: resolvedCreate,
-                onDelete: resolvedDelete,
+                onDelete: deleteSessionAndPane,
                 onLoadMore: sessionApi?.loadMore,
                 hasMore: sessionApi?.hasMore,
                 loadingMore: sessionApi?.loadingMore,
@@ -969,6 +1299,14 @@ export function WorkspaceAgentFront<
               }}
               center="chat"
               centerParams={centerParams}
+              chatPanes={chatPanes}
+              activeChatPaneId={activeChatPaneId}
+              onActiveChatPaneChange={activateChatPane}
+              onCloseChatPane={closeChatPane}
+              onCreateChatPaneAfter={createChatPaneAfter}
+              onDropChatSession={openChatPane}
+              flashChatPaneId={flashChatPane?.workspaceId === workspaceId ? flashChatPane.id : null}
+              chatPaneEngine={chatPaneEngine}
               surface={surfaceOpen ? "artifact-surface" : null}
               surfaceParams={surfaceParams as Record<string, unknown>}
               surfaceOverlay={workbenchOverlay}
