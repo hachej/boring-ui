@@ -89,12 +89,12 @@ export function PaneFocusRing({ active, flash }: { active: boolean; flash: boole
       aria-hidden="true"
       data-boring-workspace-part="chat-pane-focus-ring"
       className={cn(
-        "pointer-events-none absolute inset-[3px] z-30 rounded-[10px]",
+        "pointer-events-none absolute inset-0 z-30",
         "transition-[opacity,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
         active || flash ? "opacity-100" : "opacity-0",
         flash
           ? "shadow-[inset_0_0_0_2px_oklch(from_var(--foreground)_l_c_h/0.55)]"
-          : "shadow-[inset_0_0_0_1px_oklch(from_var(--foreground)_l_c_h/0.32),inset_0_1px_14px_-10px_oklch(from_var(--foreground)_l_c_h/0.28)]",
+          : "bg-[color:oklch(from_var(--foreground)_l_c_h/0.025)] shadow-[inset_0_0_0_1px_oklch(from_var(--foreground)_l_c_h/0.22)]",
       )}
     />
   )
