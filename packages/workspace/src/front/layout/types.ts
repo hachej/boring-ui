@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import type { ChatPaneDescriptor } from "./ChatPaneStage"
 
 export interface IdeLayoutProps {
   sidebar?: string
@@ -12,6 +13,13 @@ export interface ChatLayoutProps {
   navParams?: Record<string, unknown>
   center?: string
   centerParams?: Record<string, unknown>
+  chatPanes?: ChatPaneDescriptor[]
+  activeChatPaneId?: string | null
+  onActiveChatPaneChange?: (id: string) => void
+  onCloseChatPane?: (id: string) => void
+  onCreateChatPaneAfter?: (id: string) => void
+  onDropChatSession?: (sessionId: string) => void
+  flashChatPaneId?: string | null
   surface?: string | null
   surfaceParams?: Record<string, unknown>
   surfaceOverlay?: ReactNode

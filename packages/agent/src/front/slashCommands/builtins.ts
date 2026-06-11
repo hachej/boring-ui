@@ -11,6 +11,13 @@ export const builtinCommands: SlashCommand[] = [
     },
   },
   {
+    name: 'clear',
+    description: 'Hide messages from display',
+    handler(_, ctx) {
+      ctx.clearMessages()
+    },
+  },
+  {
     name: 'reload',
     description: 'Reload agent plugins',
     handler(_, ctx) {
@@ -53,7 +60,15 @@ export const builtinCommands: SlashCommand[] = [
     handler(_, ctx) {
       const cmds = ctx.listCommands()
       if (cmds.length === 0) return 'No commands available.'
-      return cmds.map((c) => `/${c.name} — ${c.description}`).join('\n')
+      // Render as a GFM table. The chat renders assistant messages through
+      // Streamdown (GFM), so a plain "\n"-joined list would collapse into one
+      // run-on line; a table keeps each command on its own row.
+      const escape = (text: string) => text.replace(/\|/g, '\\|').replace(/\n/g, ' ')
+      return [
+        '| Command | Description |',
+        '| --- | --- |',
+        ...cmds.map((c) => `| \`/${c.name}\` | ${escape(c.description ?? '')} |`),
+      ].join('\n')
     },
   },
 ]

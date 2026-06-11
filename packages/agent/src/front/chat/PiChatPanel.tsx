@@ -4,7 +4,11 @@ import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FileUIPart } from 'ai'
 import { ArtifactOpenProvider } from '../ArtifactOpenContext'
-import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from '../../shared/agentPluginEvents'
+import {
+  WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT,
+  WORKSPACE_COMMAND_NOTIFY_EVENT,
+  type CommandNotifyPayload,
+} from '../../shared/agentPluginEvents'
 import type { PiChatEvent, PiChatStatus } from '../../shared/chat'
 import type { AvailableModel, ModelSelection, ThinkingLevel } from '../chatPanelSettings'
 import { DEFAULT_THINKING } from '../chatPanelSettings'
@@ -15,10 +19,11 @@ import { builtinCommands, createCommandRegistry } from '../slashCommands'
 import type { ToolRendererOverrides } from '../bareToolRenderers'
 import { mergeShadcnToolRenderers } from '../toolRenderers'
 import type { PluginUpdateState } from '../composer/PluginUpdateStatus'
+import type { CommandRunState } from '../composer/CommandRunStatus'
 import { useComposerHistory } from '../useComposerHistory'
 import { useComposerPickers } from '../useComposerPickers'
 import { useChatModelSelection } from '../hooks/useChatModelSelection'
-import { useServerSkills } from '../hooks/useServerSkills'
+import { useServerCommands } from '../hooks/useServerCommands'
 import { useAttachmentNotice } from '../hooks/useAttachmentNotice'
 import {
   composerNoticeForRuntimeDependencies,
@@ -316,6 +321,8 @@ export function PiChatPanel({
   const [localNotices, setLocalNotices] = useState<PanelNotice[]>([])
   const [dismissedNoticeIds, setDismissedNoticeIds] = useState<Set<string>>(() => new Set())
   const [pluginUpdateState, setPluginUpdateState] = useState<PluginUpdateState | null>(null)
+  const [commandNotifyState, setCommandNotifyState] = useState<CommandRunState | null>(null)
+  const commandRunIdRef = useRef(0)
   const [serverSkillsRefreshKey, setServerSkillsRefreshKey] = useState(0)
   const [localSubmittedSessionId, setLocalSubmittedSessionId] = useState<string | undefined>()
   const localSubmittedSessionRef = useRef<string | undefined>(undefined)
@@ -340,16 +347,17 @@ export function PiChatPanel({
     for (const command of commands) next.register(command)
     return next
   }, [apiBaseUrl, commands, extraCommands, hotReloadEnabled, normalizedRequestHeaders, serverResourcesEnabled, serverSkillsRefreshKey, storageScope])
-  const skillsStamp = useServerSkills({
+  const commandsStamp = useServerCommands({
+    registry,
+    requestHeaders: normalizedRequestHeaders,
+    sessionId: activeSessionId ?? 'default',
     apiBaseUrl,
     fetch,
-    registry,
-    refreshKey: serverSkillsRefreshKey,
-    requestHeaders: normalizedRequestHeaders,
     storageScope,
+    refreshKey: serverSkillsRefreshKey,
     enabled: serverResourcesEnabled,
   })
-  const allCommands = useMemo(() => registry.list(), [registry, skillsStamp])
+  const allCommands = useMemo(() => registry.list(), [registry, commandsStamp])
 
   const activeChatSessionId = selectedChatState?.sessionId
   const warmupNotice = composerNoticeForWarmup(workspaceWarmupStatus)
@@ -377,12 +385,10 @@ export function PiChatPanel({
     const sessionNotice = sessionsError
       ? [{ id: 'session-navigation-error', level: 'error' as const, text: sessionsError.message, dismissible: true }]
       : []
-    const blockerNotices = activeBlockers.map((blocker) => ({
-      id: `composer-blocker:${blocker.id}`,
-      level: 'warning' as const,
-      text: blocker.label ?? blocker.reason ?? 'Workspace is not ready for a new message.',
-      dismissible: false,
-    }))
+    // Composer blockers already render as an actionable bar right above the
+    // input (ComposerBlockerNotice, with Open/Cancel buttons), so surfacing
+    // them again as a timeline warning notice just duplicates the same line.
+    // Keep the single actionable bar; don't echo it here.
     const largeStateNotice = debug && debugState?.largeStateWarning
       ? [{
           id: 'large-state-warning',
@@ -391,8 +397,8 @@ export function PiChatPanel({
           dismissible: true,
         }]
       : []
-    return [...fromState, ...sessionNotice, ...blockerNotices, ...largeStateNotice, ...localNotices].filter((notice) => !dismissedNoticeIds.has(notice.id))
-  }, [activeBlockers, debug, debugState?.largeStateWarning, dismissedNoticeIds, localNotices, selectedChatState, sessionsError])
+    return [...fromState, ...sessionNotice, ...largeStateNotice, ...localNotices].filter((notice) => !dismissedNoticeIds.has(notice.id))
+  }, [debug, debugState?.largeStateWarning, dismissedNoticeIds, localNotices, selectedChatState, sessionsError])
 
   const addLocalNotice = useCallback((notice: PanelNotice) => {
     setLocalNotices((previous) => {
@@ -481,6 +487,27 @@ export function PiChatPanel({
   }, [reloadAgentPlugins])
 
   const dismissPluginUpdate = useCallback(() => setPluginUpdateState(null), [])
+
+  const dismissCommandNotify = useCallback(() => setCommandNotifyState(null), [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onCommandNotify = (event: Event) => {
+      const payload = (event as CustomEvent<CommandNotifyPayload>).detail
+      if (!payload || typeof payload.message !== 'string') return
+      const tone = payload.tone
+      const command = payload.command ?? ''
+      if (tone === 'error') {
+        setCommandNotifyState({ kind: 'error', command, message: payload.message })
+      } else {
+        // 'success', 'info', and 'warn' all use the success banner tone
+        const runId = ++commandRunIdRef.current
+        setCommandNotifyState({ kind: 'success', command, detail: payload.message, runId })
+      }
+    }
+    window.addEventListener(WORKSPACE_COMMAND_NOTIFY_EVENT, onCommandNotify as EventListener)
+    return () => window.removeEventListener(WORKSPACE_COMMAND_NOTIFY_EVENT, onCommandNotify as EventListener)
+  }, [])
 
   useEffect(() => {
     if (!hotReloadEnabled || typeof window === 'undefined') return
@@ -717,6 +744,7 @@ export function PiChatPanel({
 
   useEffect(() => {
     setPluginUpdateState(null)
+    setCommandNotifyState(null)
     setLocalNotices([])
     setDismissedNoticeIds(new Set())
   }, [activeSessionId])
@@ -815,6 +843,24 @@ export function PiChatPanel({
     setThinkingPickerOpen(false)
   }, [isStreaming])
 
+  // Broadcast per-session busy state so shell chrome (e.g. the session
+  // browser) can show a "working" indicator without coupling to this panel.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !activeChatSessionId) return
+    window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
+      detail: { sessionId: activeChatSessionId, working: isStreaming },
+    }))
+    if (!isStreaming) return
+    const sessionId = activeChatSessionId
+    return () => {
+      // Pane unmounted (or session switched) mid-stream: clear the signal
+      // rather than leaving a stale "working" badge behind.
+      window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
+        detail: { sessionId, working: false },
+      }))
+    }
+  }, [activeChatSessionId, isStreaming])
+
   const onTextareaKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Escape' && isStreaming) {
       if (event.defaultPrevented || mentionState !== null || slashQuery !== null) {
@@ -909,6 +955,8 @@ export function PiChatPanel({
               pluginUpdateState={pluginUpdateState}
               onDismissPluginUpdate={dismissPluginUpdate}
               onRunPluginUpdate={runPluginUpdate}
+              commandNotifyState={commandNotifyState}
+              onDismissCommandNotify={dismissCommandNotify}
               attachmentNotice={attachmentNotice}
               onAttachmentNotice={setAttachmentNotice}
               mentionState={mentionState}

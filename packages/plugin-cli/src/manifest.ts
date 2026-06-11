@@ -28,6 +28,13 @@ export interface BoringPackagePiSourceObject {
 
 export type BoringPackagePiSource = string | BoringPackagePiSourceObject
 
+export interface BoringPluginSlashCommand {
+  /** Command name shown in the picker — no leading slash (e.g. "open-my-plugin"). */
+  name: string
+  /** One-line description shown in the picker. */
+  description: string
+}
+
 export interface BoringPackagePiField {
   /** Native Pi extension entrypoints, relative to the package root. */
   extensions?: string[]
@@ -37,6 +44,8 @@ export interface BoringPackagePiField {
   packages?: BoringPackagePiSource[]
   /** Agent context injected by the boring Pi extension. Prefer skills for large docs. */
   systemPrompt?: string
+  /** Slash commands to surface in the Pi picker. Each entry must have `name` (no slash) and `description`. */
+  slashCommands?: BoringPluginSlashCommand[]
 }
 
 export interface BoringPluginPackageJson {
@@ -211,6 +220,32 @@ function validatePiPackages(
   })
 }
 
+function validatePiSlashCommands(
+  issues: BoringPluginManifestIssue[],
+  value: unknown,
+): void {
+  if (value === undefined) return
+  if (!Array.isArray(value)) {
+    issues.push(issue("INVALID_FIELD", "pi.slashCommands", "pi.slashCommands must be an array when provided"))
+    return
+  }
+  value.forEach((entry, index) => {
+    const field = `pi.slashCommands[${index}]`
+    if (!isRecord(entry)) {
+      issues.push(issue("INVALID_FIELD", field, `${field} must be an object with name and description`))
+      return
+    }
+    if (typeof entry.name !== "string" || entry.name.length === 0) {
+      issues.push(issue("INVALID_FIELD", `${field}.name`, `${field}.name must be a non-empty string (no leading slash)`))
+    } else if ((entry.name as string).startsWith("/")) {
+      issues.push(issue("INVALID_FIELD", `${field}.name`, `${field}.name must not start with "/" — omit the slash`))
+    }
+    if (typeof entry.description !== "string" || entry.description.length === 0) {
+      issues.push(issue("INVALID_FIELD", `${field}.description`, `${field}.description must be a non-empty string`))
+    }
+  })
+}
+
 function validatePiField(
   issues: BoringPluginManifestIssue[],
   pi: unknown,
@@ -226,6 +261,7 @@ function validatePiField(
   if (pi.systemPrompt !== undefined && typeof pi.systemPrompt !== "string") {
     issues.push(issue("INVALID_FIELD", "pi.systemPrompt", "pi.systemPrompt must be a string when provided"))
   }
+  validatePiSlashCommands(issues, pi.slashCommands)
   return pi as BoringPackagePiField
 }
 

@@ -2,6 +2,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExt
 import { IconButton, LoadingState, ResizeHandle as UiResizeHandle } from "@hachej/boring-ui-kit"
 import { ChevronLeft, MessageSquare } from "lucide-react"
 import { cn } from "../lib/utils"
+import { ControlTooltip } from "../components/ControlTooltip"
 import { dispatchUiCommand, type DispatchContext } from "../bridge"
 import { events, useEvent, workspaceEvents } from "../events"
 import { useKeyboardShortcuts, type ShortcutBinding } from "../hooks/useKeyboardShortcuts"
@@ -12,6 +13,7 @@ import type { PaneProps } from "../registry/types"
 import { readStoredNumber, writeStoredNumber } from "../store/localStorageValues"
 import type { ChatLayoutProps } from "./types"
 import { useWorkspaceAttention, useWorkspaceContext } from "../provider"
+import { ChatPaneStage } from "./ChatPaneStage"
 
 export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
   const {
@@ -109,6 +111,8 @@ export function ChatLayout(props: ChatLayoutProps) {
   const closeSurface = getCallback(props.surfaceParams, "onClose")
   const closeSidebar = getCallback(props.sidebarParams, "onClose")
   const createSession = getCallback(props.navParams, "onCreate")
+  const chatPanes = props.chatPanes?.filter((pane) => pane.id.length > 0) ?? []
+  const hasChatPanes = chatPanes.length > 0
   const sidebarOpen = Boolean(props.sidebar)
   const canControlNav = navOpen ? Boolean(closeNav) : Boolean(props.onOpenNav)
   const canControlSurface = surfaceOpen ? Boolean(closeSurface) : Boolean(props.onOpenSurface)
@@ -286,7 +290,7 @@ export function ChatLayout(props: ChatLayoutProps) {
   // Switching to a different session re-opens the chat if it was collapsed, so
   // the newly selected conversation is visible. Skips the initial mount (only
   // reacts to an actual change of the active session id).
-  const activeSessionId = props.centerParams?.sessionId as string | undefined
+  const activeSessionId = (props.activeChatPaneId ?? props.centerParams?.sessionId) as string | undefined
   const prevSessionIdRef = useRef(activeSessionId)
   useEffect(() => {
     const prev = prevSessionIdRef.current
@@ -372,20 +376,45 @@ export function ChatLayout(props: ChatLayoutProps) {
               chatCollapsed ? "opacity-0" : "opacity-100",
             )}
           >
-            <PanelSlot id={centerId} params={props.centerParams} />
+            {hasChatPanes ? (
+              <ChatPaneStage
+                panes={chatPanes}
+                activePaneId={props.activeChatPaneId}
+                onActivePaneChange={props.onActiveChatPaneChange}
+                onClosePane={props.onCloseChatPane}
+                flashPaneId={props.flashChatPaneId}
+                storageKey={props.storageKey}
+                onDropSession={props.onDropChatSession}
+                renderPane={(pane) => (
+                  <PanelSlot
+                    id={pane.panel ?? centerId}
+                    params={pane.params ?? props.centerParams}
+                  />
+                )}
+              />
+            ) : (
+              <PanelSlot id={centerId} params={props.centerParams} />
+            )}
           </div>
           {!chatCollapsed ? (
-            <IconButton
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              onClick={toggleChatCollapsed}
-              className="absolute right-2 top-2 z-20"
-              aria-label="Collapse chat"
-              title="Collapse chat (⌘\\)"
-            >
-              <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
-            </IconButton>
+            <ControlTooltip label="Collapse chat" hint="⌘\" side="bottom">
+              <IconButton
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                onClick={toggleChatCollapsed}
+                // With multiple panes the rightmost pane header owns the
+                // top-right corner; drop the collapse control to the
+                // bottom-right so the two never overlap.
+                className={cn(
+                  "absolute right-2 z-30 rounded-full bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:bg-muted hover:text-foreground",
+                  hasChatPanes && chatPanes.length > 1 ? "bottom-2" : "top-2",
+                )}
+                aria-label="Collapse chat"
+              >
+                <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
+              </IconButton>
+            </ControlTooltip>
           ) : null}
         </main>
 
@@ -429,17 +458,18 @@ export function ChatLayout(props: ChatLayoutProps) {
                 <div className="relative h-full min-h-0">
                   {props.surfaceOverlay}
                   {closeSurface ? (
-                    <IconButton
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={closeSurface}
-                      className="absolute right-3 top-3 z-20 rounded-full bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:bg-muted hover:text-foreground"
-                      aria-label="Close workbench"
-                      title="Close workbench (⌘2)"
-                    >
-                      <span aria-hidden="true">›</span>
-                    </IconButton>
+                    <ControlTooltip label="Close workbench" hint="⌘2" side="left">
+                      <IconButton
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={closeSurface}
+                        className="absolute right-3 top-3 z-20 rounded-full bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:bg-muted hover:text-foreground"
+                        aria-label="Close workbench"
+                      >
+                        <span aria-hidden="true">›</span>
+                      </IconButton>
+                    </ControlTooltip>
                   ) : null}
                 </div>
               ) : <PanelSlot id={surfaceId} params={props.surfaceParams} />}
@@ -463,6 +493,20 @@ export function ChatLayout(props: ChatLayoutProps) {
           onClick={props.onOpenNav}
           label="Sessions"
           hint="⌘1"
+        />
+      ) : null}
+      {!chatCollapsed && !navOpen && hasChatPanes && props.onCreateChatPaneAfter ? (
+        <FloatingEdgeButton
+          side="left"
+          icon="plus"
+          onClick={() => {
+            const targetId = props.activeChatPaneId ?? chatPanes[chatPanes.length - 1]?.id
+            if (targetId) props.onCreateChatPaneAfter?.(targetId)
+          }}
+          label="New chat"
+          // Sits directly above the Sessions toggle; when the session drawer
+          // is open the drawer's own header "+" takes over and this hides.
+          stackIndex={props.onOpenNav ? 1 : 0}
         />
       ) : null}
       {chatCollapsed ? (
@@ -635,7 +679,11 @@ function getCallback(params: Record<string, unknown> | undefined, key: string): 
 
 function focusAgentComposer(): void {
   if (typeof document === "undefined") return
-  const textarea = document.querySelector<HTMLTextAreaElement>(
+  const activePane = document.querySelector<HTMLElement>(
+    '[data-boring-workspace-part="chat-pane"][data-boring-state="active"]',
+  )
+  const root: Document | HTMLElement = activePane ?? document
+  const textarea = root.querySelector<HTMLTextAreaElement>(
     '[data-boring-agent] textarea[name="message"], textarea[name="message"]',
   )
   textarea?.focus()
@@ -705,7 +753,7 @@ function FloatingEdgeButton({
   pulse = false,
 }: {
   side: "left" | "right"
-  icon: "sessions" | "workbench" | "chat"
+  icon: "sessions" | "workbench" | "chat" | "plus"
   onClick: () => void
   label: string
   hint?: string
@@ -719,13 +767,13 @@ function FloatingEdgeButton({
   // Buttons are h-9 (36px); stack them with a 8px gap so they never overlap.
   const stackOffset = stackIndex * 44
   return (
+    <ControlTooltip label={label} hint={hint} side={side === "left" ? "right" : "left"}>
     <IconButton
       type="button"
       variant="ghost"
       size="icon-sm"
       onClick={onClick}
       aria-label={label}
-      title={hint ? `${label} (${hint})` : label}
       className={cn(
         "absolute z-30 h-9 w-9 gap-0.5 rounded-lg bg-background text-muted-foreground",
         side === "left" ? "left-2" : "right-2",
@@ -752,11 +800,16 @@ function FloatingEdgeButton({
             <span className="absolute -right-1.5 -top-1.5 h-2 w-2 rounded-full bg-[color:var(--accent)]" aria-hidden="true" />
           ) : null}
         </span>
+      ) : icon === "plus" ? (
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
       ) : (
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M3 7.5 A1.5 1.5 0 0 1 4.5 6 h4 l2 2 h9 A1.5 1.5 0 0 1 21 9.5 V17.5 A1.5 1.5 0 0 1 19.5 19 H4.5 A1.5 1.5 0 0 1 3 17.5 Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
         </svg>
       )}
     </IconButton>
+    </ControlTooltip>
   )
 }

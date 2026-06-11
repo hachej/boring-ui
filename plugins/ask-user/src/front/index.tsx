@@ -3,7 +3,9 @@
 import { Button, EmptyState, Notice, Pane, PaneBody, PaneFooter, PaneHeader, PaneTitle } from "@hachej/boring-ui-kit"
 import {
   UI_COMMAND_EVENT,
+  events,
   useWorkspaceAttention,
+  workspaceEvents,
   type PaneProps,
   type PluginProviderProps,
 } from "@hachej/boring-workspace"
@@ -111,12 +113,27 @@ function AskUserProvider({ apiBaseUrl, authHeaders, children }: PluginProviderPr
     }
     const onVisibility = () => { if (document.visibilityState === "visible") void refreshPending() }
     const onUiCommand = () => { void refreshPending() }
+    // Questions are created mid-run by the ask_user tool, with no focus or
+    // UI-command transition to piggyback on. Throttle-refresh while agent
+    // stream parts flow so the pending question (and its blocker/badge)
+    // appears without requiring a tab switch or reload.
+    let agentDataTimer: ReturnType<typeof setTimeout> | null = null
+    const onAgentData = () => {
+      if (agentDataTimer) return
+      agentDataTimer = setTimeout(() => {
+        agentDataTimer = null
+        void refreshPending()
+      }, 1200)
+    }
+    const offAgentData = events.on(workspaceEvents.agentData, onAgentData)
     void refreshPending()
     window.addEventListener("focus", refreshPending)
     document.addEventListener("visibilitychange", onVisibility)
     window.addEventListener(UI_COMMAND_EVENT, onUiCommand)
     return () => {
       stopped = true
+      if (agentDataTimer) clearTimeout(agentDataTimer)
+      offAgentData()
       window.removeEventListener("focus", refreshPending)
       document.removeEventListener("visibilitychange", onVisibility)
       window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)

@@ -70,7 +70,7 @@ describe('piChatReducer', () => {
     expect(state.notices).toContainEqual(expect.objectContaining({ id: 'stale-outbox-cleared', level: 'warning' }))
   })
 
-  it('normalizes assistant part order during /state hydration', () => {
+  it('preserves the emitted part order from the snapshot during /state hydration', () => {
     const state = piChatReducer(initial(), {
       type: 'hydrate',
       snapshot: snapshot({
@@ -92,7 +92,7 @@ describe('piChatReducer', () => {
       }),
     })
 
-    expect(state.committedMessages[0]?.parts.map((part) => part.type)).toEqual(['reasoning', 'tool-call', 'text'])
+    expect(state.committedMessages[0]?.parts.map((part) => part.type)).toEqual(['text', 'tool-call', 'reasoning'])
   })
 
   it('dedupes stale duplicate tool parts during /state hydration', () => {
@@ -1523,7 +1523,7 @@ describe('piChatReducer', () => {
 
     expect(state.committedMessages).toHaveLength(1)
     expect(state.pendingToolCallIds).toEqual(new Set(['call-1']))
-    expect(state.committedMessages[0]?.parts.map((part) => part.type)).toEqual(['reasoning', 'reasoning', 'tool-call', 'text'])
+    expect(state.committedMessages[0]?.parts.map((part) => part.type)).toEqual(['reasoning', 'tool-call', 'reasoning', 'text'])
     expect(state.committedMessages[0]?.parts).toContainEqual(
       expect.objectContaining({ type: 'reasoning', id: 'r-live', text: 'complete live thought', state: 'done' }),
     )
@@ -1691,7 +1691,7 @@ describe('piChatReducer', () => {
       },
     ])
 
-    expect(state.committedMessages[0]?.parts.map((part) => part.type)).toEqual(['reasoning', 'tool-call', 'text'])
+    expect(state.committedMessages[0]?.parts.map((part) => part.type)).toEqual(['tool-call', 'text', 'reasoning'])
     expect(state.committedMessages[0]?.parts.filter((part) => part.type === 'reasoning')).toEqual([
       { type: 'reasoning', id: 'r-final', text: 'same thought', state: 'done' },
     ])
@@ -1974,7 +1974,7 @@ describe('piChatReducer', () => {
     )
   })
 
-  it('normalizes final-only assistant part order', () => {
+  it('preserves the emitted part order of a final-only assistant message', () => {
     const state = reduceEvents([
       {
         type: 'message-end',
@@ -1993,7 +1993,7 @@ describe('piChatReducer', () => {
       },
     ])
 
-    expect(state.committedMessages[0]?.parts.map((part) => part.type)).toEqual(['reasoning', 'tool-call', 'text'])
+    expect(state.committedMessages[0]?.parts.map((part) => part.type)).toEqual(['text', 'tool-call', 'reasoning'])
   })
 
   it('dedupes duplicate final tool ids during final-message merge', () => {

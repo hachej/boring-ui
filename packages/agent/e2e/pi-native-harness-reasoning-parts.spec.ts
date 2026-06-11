@@ -48,7 +48,7 @@ test.describe('Pi-native harness-backed reasoning part ordering', () => {
       await composer.fill('baseline multiple reasoning parts')
       await page.locator('[data-boring-agent-part="composer-submit"]').click()
 
-      await expect(page.getByRole('button', { name: 'Tool calls: Using command' })).toBeVisible({ timeout: 10_000 })
+      await expect(page.getByRole('button', { name: 'Tool calls: Using search' })).toBeVisible({ timeout: 10_000 })
       const runningState = await readAssistantPartState(page)
       await testInfo.attach('pi-native-harness-reasoning-parts-running.json', {
         body: Buffer.from(JSON.stringify({
