@@ -13,7 +13,7 @@ import {
   type ComponentType,
 } from "react"
 import { Menu, Search, X } from "lucide-react"
-import { IconButton, Input } from "@hachej/boring-ui-kit"
+import { IconButton, Input, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import type { WorkspaceBridge } from "../../bridge/types"
 import { useRegistry } from "../../registry"
@@ -142,42 +142,52 @@ export function WorkbenchLeftPane({
   // visually connects to the content pane as one calm grey surface — same
   // background on the icon and the pane, bridged across the rail gutter,
   // with no accent marker or side stripe (see WORKSPACE_LEFT_NAV_UX_SPEC).
+  // Instant tooltips (no OS hover delay) name the icon-only categories.
   const rail = (
-    <nav
-      className="flex w-11 shrink-0 flex-col items-center gap-1 bg-muted/35 px-1.5 py-2"
-      aria-label="Workspace categories"
-    >
-      {onCollapse && (
-        <button
-          type="button"
-          title="Hide workspace menu"
-          aria-label="Hide workspace menu"
-          onClick={onCollapse}
-          className="mb-1 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-        >
-          <Menu className="h-4 w-4" strokeWidth={1.75} />
-        </button>
-      )}
-      {tabs.map((entry) => {
-        const active = entry.id === activeTab
-        return (
-          <button
-            key={entry.id}
-            type="button"
-            title={entry.title}
-            aria-label={entry.title}
-            aria-pressed={active}
-            onClick={() => setTab(entry.id)}
-            className={cn(
-              "relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-              active && "rounded-r-none bg-muted/35 text-foreground shadow-none hover:bg-muted/35 before:absolute before:-right-1.5 before:top-0 before:h-full before:w-1.5 before:bg-muted/35",
-            )}
-          >
-            {entry.icon}
-          </button>
-        )
-      })}
-    </nav>
+    <TooltipProvider delayDuration={0} skipDelayDuration={300}>
+      <nav
+        className="flex w-11 shrink-0 flex-col items-center gap-1 bg-muted/35 px-1.5 py-2"
+        aria-label="Workspace categories"
+      >
+        {onCollapse && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Hide workspace menu"
+                onClick={onCollapse}
+                className="mb-1 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              >
+                <Menu className="h-4 w-4" strokeWidth={1.75} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">Hide workspace menu</TooltipContent>
+          </Tooltip>
+        )}
+        {tabs.map((entry) => {
+          const active = entry.id === activeTab
+          return (
+            <Tooltip key={entry.id}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={entry.title}
+                  aria-pressed={active}
+                  onClick={() => setTab(entry.id)}
+                  className={cn(
+                    "relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                    active && "rounded-r-none bg-muted/35 text-foreground shadow-none hover:bg-muted/35 before:absolute before:-right-1.5 before:top-0 before:h-full before:w-1.5 before:bg-muted/35",
+                  )}
+                >
+                  {entry.icon}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">{entry.title}</TooltipContent>
+            </Tooltip>
+          )
+        })}
+      </nav>
+    </TooltipProvider>
   )
 
   return (
