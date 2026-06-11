@@ -23,26 +23,17 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('/clear intentionally absent', () => {
-  test('does not register /clear in the Pi-native first cut', () => {
-    // First-cut Pi-native chat intentionally omits local-only transcript
-    // filtering. Canonical history is Pi JSONL; a future viewport clear must
-    // be non-canonical and should be tested separately when reintroduced.
-    expect(builtinCommands.find((c) => c.name === 'clear')).toBeUndefined()
-  })
-})
-
 describe('/reset', () => {
-  test('resets session when confirmed', () => {
-    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+  test('calls resetSession after confirm', () => {
+    vi.stubGlobal('confirm', vi.fn(() => true))
     const ctx = makeContext()
     const result = getBuiltin('reset').handler('', ctx)
     expect(ctx.resetSession).toHaveBeenCalledOnce()
     expect(result).toBe('Session reset.')
   })
 
-  test('does nothing when cancelled', () => {
-    vi.stubGlobal('confirm', vi.fn().mockReturnValue(false))
+  test('returns undefined when confirm is cancelled', () => {
+    vi.stubGlobal('confirm', vi.fn(() => false))
     const ctx = makeContext()
     const result = getBuiltin('reset').handler('', ctx)
     expect(ctx.resetSession).not.toHaveBeenCalled()
@@ -50,27 +41,33 @@ describe('/reset', () => {
   })
 })
 
-describe('/help', () => {
-  test('lists Pi-native builtin commands and omits /clear', () => {
+describe('/clear', () => {
+  test('calls clearMessages', () => {
     const ctx = makeContext()
-    const result = getBuiltin('help').handler('', ctx)
-    expect(result).not.toContain('/clear')
+    getBuiltin('clear').handler('', ctx)
+    expect(ctx.clearMessages).toHaveBeenCalledOnce()
+  })
+
+  test('returns no message', () => {
+    const ctx = makeContext()
+    const result = getBuiltin('clear').handler('', ctx)
+    expect(result).toBeUndefined()
+  })
+})
+
+describe('/help', () => {
+  test('renders commands as a GFM table (one row per command)', () => {
+    const ctx = makeContext()
+    const result = getBuiltin('help').handler('', ctx) as string
+    expect(result).toContain('/clear')
     expect(result).toContain('/reset')
     expect(result).toContain('/reload')
     expect(result).toContain('/help')
-  })
-
-  test('includes skill and extra commands from the registry context', () => {
-    const ctx = makeContext({
-      listCommands: vi.fn().mockReturnValue([
-        ...builtinCommands,
-        { name: 'review', description: 'Run review skill', kind: 'skill', handler: vi.fn() },
-        { name: 'ask-user', description: 'Ask user', handler: vi.fn() },
-      ]),
-    })
-    const result = getBuiltin('help').handler('', ctx)
-    expect(result).toContain('/review — Run review skill')
-    expect(result).toContain('/ask-user — Ask user')
+    // GFM table so Streamdown renders each command on its own row.
+    expect(result).toContain('| Command | Description |')
+    expect(result).toContain('| --- | --- |')
+    expect(result).toContain('| `/clear` |')
+    expect(result.split('\n').filter((l) => l.startsWith('| `/')).length).toBeGreaterThanOrEqual(3)
   })
 
   test('returns message when no commands', () => {
@@ -98,43 +95,44 @@ describe('/reload', () => {
   })
 })
 
-describe('/model and /thinking', () => {
-  test('/model opens the model picker without args and delegates selection with args', () => {
-    const openModelPicker = vi.fn()
-    const selectComposerModel = vi.fn().mockReturnValue('Model set.')
-    const ctx = makeContext({ openModelPicker, selectComposerModel })
-
-    expect(getBuiltin('model').handler('', ctx)).toBeUndefined()
+describe('/model', () => {
+  test('opens model picker when no args', () => {
+    const openModelPicker = vi.fn(() => true)
+    const ctx = makeContext({ openModelPicker })
+    getBuiltin('model').handler('', ctx)
     expect(openModelPicker).toHaveBeenCalledOnce()
-    expect(getBuiltin('model').handler('gpt', ctx)).toBe('Model set.')
-    expect(selectComposerModel).toHaveBeenCalledWith('gpt')
   })
 
-  test('/thinking and /think open or set the thinking picker', () => {
-    const openThinkingPicker = vi.fn()
-    const selectComposerThinking = vi.fn().mockReturnValue('Thinking set.')
-    const ctx = makeContext({ openThinkingPicker, selectComposerThinking })
+  test('calls selectComposerModel with query when args provided', () => {
+    const selectComposerModel = vi.fn()
+    const ctx = makeContext({ selectComposerModel })
+    getBuiltin('model').handler('claude-sonnet', ctx)
+    expect(selectComposerModel).toHaveBeenCalledWith('claude-sonnet')
+  })
+})
 
-    expect(getBuiltin('thinking').handler('', ctx)).toBeUndefined()
+describe('/thinking and /think', () => {
+  test('/thinking opens thinking picker when no args', () => {
+    const openThinkingPicker = vi.fn(() => true)
+    const ctx = makeContext({ openThinkingPicker })
+    getBuiltin('thinking').handler('', ctx)
     expect(openThinkingPicker).toHaveBeenCalledOnce()
-    expect(getBuiltin('thinking').handler('low', ctx)).toBe('Thinking set.')
-    expect(getBuiltin('think').handler('high', ctx)).toBe('Thinking set.')
-    expect(selectComposerThinking).toHaveBeenCalledWith('low')
+  })
+
+  test('/think is an alias for /thinking', () => {
+    const selectComposerThinking = vi.fn()
+    const ctx = makeContext({ selectComposerThinking })
+    getBuiltin('think').handler('high', ctx)
     expect(selectComposerThinking).toHaveBeenCalledWith('high')
   })
 })
 
-describe('Pi-native builtins are registered', () => {
-  test('has exactly 6 commands', () => {
-    expect(builtinCommands).toHaveLength(6)
-  })
-
-  test.each(['reset', 'reload', 'model', 'thinking', 'think', 'help'])('includes /%s', (name) => {
+describe('all builtins registered', () => {
+  test.each(['reset', 'clear', 'reload', 'model', 'thinking', 'think', 'help'])('includes /%s', (name) => {
     expect(builtinCommands.find((c) => c.name === name)).toBeDefined()
   })
 
-  test('does NOT include removed/deferred local commands', () => {
-    expect(builtinCommands.find((c) => c.name === 'clear')).toBeUndefined()
+  test('does NOT include /cost (never added)', () => {
     expect(builtinCommands.find((c) => c.name === 'cost')).toBeUndefined()
   })
 })

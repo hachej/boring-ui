@@ -121,7 +121,7 @@ is an array of registration objects:
 | Field | Item shape | What it does |
 |---|---|---|
 | `panels` | `{ id, label, component }` | Register a React component as a panel |
-| `commands` | `{ id, title, panelId }` | Add a slash-command that opens a panel |
+| `commands` | `{ id, title, panelId }` | Add a **Ctrl+K command-palette entry** that opens a panel — ⚠️ this is NOT the `/open-…` slash-command in agent chat; for that, see `pi.registerCommand` below |
 | `leftTabs` | `{ id, title, panelId }` | Add a sidebar tab |
 | `surfaceResolvers` | `{ id, kind, resolve(request) }` | Map a domain target → panel |
 | `providers` / `bindings` / `catalogs` | (rare) | Advanced |
@@ -200,7 +200,13 @@ The scaffold writes this. Customize fields but keep the structure:
   },
   "pi": {
     "systemPrompt": "<1-2 sentences telling the agent when this plugin is relevant>",
-    "extensions": ["agent/index.ts"]  // OPTIONAL — only if you write a Pi extension
+    "extensions": ["agent/index.ts"],  // OPTIONAL — only if you write a Pi extension
+    // Declare slash commands statically so the picker shows them on plugin load,
+    // before the agent runs. Pair each entry with a pi.registerCommand handler
+    // in agent/index.ts.
+    "slashCommands": [
+      { "name": "open-<kebab-name>", "description": "Open the <Label> panel" }
+    ]
   }
 }
 ```
@@ -312,6 +318,56 @@ Design rules:
 - Only add plugin-local dependencies for specialized libraries (charts, maps, editors, etc.), not for basic controls.
 
 ## Common patterns
+
+### Slash commands that open a panel (UI actions)
+
+Two separate command systems exist. Know which one to use:
+
+| System | Where declared | Appears in | Executes |
+|--------|---------------|------------|---------|
+| `definePlugin.commands` | `front/index.tsx` | boring-ui command palette (Ctrl+K) | Boring-ui opens the panel directly — no agent involved |
+| `pi.registerCommand` + `pi.slashCommands` | `agent/index.ts` + `package.json` | Agent slash picker (`/open-…`) | Pi runs the handler; handler calls `openPanel` via UI bridge |
+
+**For a slash command the user types in the agent chat** (`/open-<name>`), use the Pi path. The scaffold already generates this — run it, then customize the placeholders. Do not rewrite from scratch.
+
+The pattern requires two things:
+
+**1. Static declaration in `package.json`** — so the command appears in the picker immediately on plugin load, before any agent code runs:
+
+```jsonc
+"pi": {
+  "slashCommands": [
+    { "name": "open-<kebab-name>", "description": "Open the <Label> panel" }
+  ]
+}
+```
+
+**2. Runtime handler in `agent/index.ts`** — uses `openPanel` from `@hachej/boring-workspace/plugin` (host-provided, do not add to dependencies):
+
+```ts
+import { NoWorkspaceUiBridgeError, notify, openPanel } from "@hachej/boring-workspace/plugin"
+
+export default function (pi: any) {
+  pi.registerCommand("open-<kebab-name>", {
+    description: "Open the <Label> panel",
+    handler: async () => {
+      try {
+        await openPanel({ id: "<kebab-name>.slash-open", component: "<kebab-name>.panel" })
+        await notify("Opened <Label>.", "info")    // shows in composer status bar
+      } catch (error) {
+        if (error instanceof NoWorkspaceUiBridgeError) throw error
+        await notify(`Could not open <Label>: ${error instanceof Error ? error.message : String(error)}`, "error").catch(() => {})
+        throw error
+      }
+    },
+  })
+}
+```
+
+Key rules:
+- `openPanel` uses the in-process UI bridge — no `BORING_UI_URL`, no `fetch`, no env vars.
+- `notify` surfaces a toast in the composer status bar, not a chat message.
+- `openPanel` / `notify` are **server/agent-side only** — do not import them in `front/index.tsx`.
 
 ### Workspace links (open files, surfaces, and panels without routes)
 

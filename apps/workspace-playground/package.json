@@ -16,7 +16,10 @@
     "build": "pnpm run build:deps && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "pnpm run build:deps && playwright test"
+    "test:e2e": "pnpm run build:deps && playwright test",
+    "eval": "AGENT_API_PORT=5350 vite-node src/eval/run.ts",
+    "eval:slash-command": "AGENT_API_PORT=5350 vite-node src/eval/run.ts src/eval/plugin-slash-command.yaml",
+    "eval:woreplace": "AGENT_API_PORT=5350 vite-node src/eval/run.ts src/eval/woreplace-skill.yaml"
   },
   "dependencies": {
     "@hachej/boring-agent": "workspace:*",

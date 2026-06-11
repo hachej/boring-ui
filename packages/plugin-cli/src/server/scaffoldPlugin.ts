@@ -50,6 +50,7 @@ export function scaffoldPlugin(opts: ScaffoldPluginOptions): ScaffoldPluginResul
   }
   const tplFront = join(templatesDir, "front-canonical.tsx")
   const tplPackage = join(templatesDir, "package-canonical.json")
+  const tplAgent = join(templatesDir, "agent-canonical.ts")
   for (const tpl of [tplFront, tplPackage]) {
     if (!existsSync(tpl)) {
       throw new Error(`canonical template missing: ${tpl}`)
@@ -80,6 +81,11 @@ export function scaffoldPlugin(opts: ScaffoldPluginOptions): ScaffoldPluginResul
 
   const frontSource = substitute(readFileSync(tplFront, "utf8"), opts.name, label)
   write("front/index.tsx", frontSource)
+
+  if (existsSync(tplAgent)) {
+    const agentSource = substitute(readFileSync(tplAgent, "utf8"), opts.name, label)
+    write("agent/index.ts", agentSource)
+  }
 
   // .gitignore: keep machine-managed sidecars out of the plugin author's
   // git history. `.boring-signature.json` is written by the asset manager

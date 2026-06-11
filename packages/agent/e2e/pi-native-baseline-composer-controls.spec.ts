@@ -290,7 +290,7 @@ test.describe('Pi-native baseline composer controls', () => {
     await expect(modelSelect).toContainText('Claude Opus')
 
     await composer.fill('/thinking')
-    await slashMenu.getByText('/thinking').click()
+    await slashMenu.getByText('/thinking', { exact: true }).click()
     const thinkingMenu = page.locator('[data-boring-agent-part="thinking-picker-menu"]')
     await expect(thinkingMenu).toBeVisible()
     const thinkingRect = await readPickerRect(thinkingMenu)
@@ -302,7 +302,7 @@ test.describe('Pi-native baseline composer controls', () => {
     await composer.press('Escape')
     await expect(thinkingMenu).toHaveCount(0)
     await composer.fill('/thinking')
-    await slashMenu.getByText('/thinking').click()
+    await slashMenu.getByText('/thinking', { exact: true }).click()
     await expect(thinkingMenu).toBeVisible()
     await composer.press('ArrowDown')
     await composer.press('Enter')

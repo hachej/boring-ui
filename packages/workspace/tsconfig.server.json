@@ -32,7 +32,8 @@
   ],
   "files": [
     "src/shared/plugins/manifest.ts",
-    "src/shared/plugins/runtimePluginTypes.ts"
+    "src/shared/plugins/runtimePluginTypes.ts",
+    "src/shared/plugins/uiBridgeRegistry.ts"
   ],
   "exclude": ["node_modules", "dist", "src/app/front/**", "src/shared/plugins/**"]
 }

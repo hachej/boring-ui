@@ -8,6 +8,8 @@ import type { QueuedUserMessage } from '../../../shared/chat'
 import type { AvailableModel, ModelSelection, ThinkingLevel } from '../../chatPanelSettings'
 import type { PluginUpdateState } from '../../composer/PluginUpdateStatus'
 import { PluginUpdateStatus } from '../../composer/PluginUpdateStatus'
+import type { CommandRunState } from '../../composer/CommandRunStatus'
+import { CommandRunStatus } from '../../composer/CommandRunStatus'
 import {
   ModelPickerMenu,
   ModelSelectTrigger,
@@ -79,6 +81,8 @@ export interface PiChatComposerSurfaceProps {
   pluginUpdateState: PluginUpdateState | null
   onDismissPluginUpdate: () => void
   onRunPluginUpdate: () => Promise<string>
+  commandNotifyState: CommandRunState | null
+  onDismissCommandNotify: () => void
   attachmentNotice?: string | null
   onAttachmentNotice: (message: string) => void
   mentionState: MentionState | null
@@ -134,6 +138,8 @@ export function PiChatComposerSurface({
   pluginUpdateState,
   onDismissPluginUpdate,
   onRunPluginUpdate,
+  commandNotifyState,
+  onDismissCommandNotify,
   attachmentNotice,
   onAttachmentNotice,
   mentionState,
@@ -240,6 +246,10 @@ export function PiChatComposerSurface({
           onRetry={onRunPluginUpdate}
         />
       ) : null}
+      <CommandRunStatus
+        state={commandNotifyState}
+        onDismiss={onDismissCommandNotify}
+      />
       {attachmentNotice ? (
         <div
           role="status"

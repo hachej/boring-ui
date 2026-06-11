@@ -138,6 +138,11 @@ test('createAgentApp can use a custom harness factory for non-pi runtimes', asyn
       telemetryEvents.push(event)
     },
   }
+  const getSlashCommands = vi.fn((sessionId: string) => [{
+    name: 'open-test-panel',
+    description: `Open test panel for ${sessionId}`,
+    source: 'extension' as const,
+  }])
   const harnessFactory = vi.fn(async (input) => ({
     id: 'custom-test-harness',
     placement: 'server' as const,
@@ -154,6 +159,7 @@ test('createAgentApp can use a custom harness factory for non-pi runtimes', asyn
       async delete() {},
     },
     reloadSession,
+    getSlashCommands,
   }))
 
   const app = await createAgentApp({
@@ -175,12 +181,51 @@ test('createAgentApp can use a custom harness factory for non-pi runtimes', asyn
     expect(harnessFactory.mock.calls[0]?.[0].telemetry).toBe(telemetry)
     expect(harnessFactory.mock.calls[0]?.[0].tools.map((tool: { name: string }) => tool.name)).toContain('custom_runtime_tool')
 
+    const commandsRes = await app.inject({ method: 'GET', url: '/api/v1/agent/commands?sessionId=custom' })
+    expect(commandsRes.statusCode).toBe(200)
+    expect(commandsRes.json()).toMatchObject({
+      commands: [{ name: 'open-test-panel', source: 'extension' }],
+    })
+
     expect(telemetryEvents).toEqual([])
 
     const res = await app.inject({ method: 'POST', url: '/api/v1/agent/reload', payload: { sessionId: 'custom' } })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({ ok: true, sessionId: 'custom', reloaded: true })
     expect(reloadSession).toHaveBeenCalledWith('custom')
+  } finally {
+    await app.close()
+  }
+})
+
+test('GET /api/v1/agent/commands reports command discovery failures', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-command-route-failure-')
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    harnessFactory: vi.fn(async () => ({
+      id: 'failing-command-harness',
+      placement: 'server' as const,
+      sessions: {
+        async list() { return [] },
+        async create() {
+          const now = new Date().toISOString()
+          return { id: 'default', title: 'Default', createdAt: now, updatedAt: now, turnCount: 0 }
+        },
+        async load() {
+          const now = new Date().toISOString()
+          return { id: 'default', title: 'Default', createdAt: now, updatedAt: now, turnCount: 0, messages: [] }
+        },
+        async delete() {},
+      },
+      getSlashCommands: () => { throw new Error('command loader failed') },
+    })),
+  })
+  try {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/agent/commands' })
+    expect(res.statusCode).toBe(500)
+    expect(res.json()).toMatchObject({ commands: [], error: 'command loader failed' })
   } finally {
     await app.close()
   }

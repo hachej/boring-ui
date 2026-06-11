@@ -364,7 +364,7 @@ describe('PiChatPanel sandbox shell', () => {
       if (url.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'GET') return jsonResponse([])
       if (url.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'POST') return createSessionResponse.promise
       if (url.endsWith('/api/v1/agent/models')) return modelsResponse.promise
-      if (url.endsWith('/api/v1/agent/skills')) return skillsResponse.promise
+      if (url.includes('/api/v1/agent/commands')) return skillsResponse.promise
       throw new Error(`unexpected fetch ${url}`)
     })
 
@@ -375,7 +375,7 @@ describe('PiChatPanel sandbox shell', () => {
 
     await act(async () => {
       modelsResponse.resolve(jsonResponse({ models: [] }))
-      skillsResponse.resolve(jsonResponse({ skills: [] }))
+      skillsResponse.resolve(jsonResponse({ commands: [] }))
       await Promise.resolve()
     })
 
@@ -393,7 +393,7 @@ describe('PiChatPanel sandbox shell', () => {
       const url = String(input)
       if (url === 'https://agent.test/api/v1/agent/pi-chat/sessions') return jsonResponse([])
       if (url === 'https://agent.test/api/v1/agent/models') return jsonResponse({ models: [] })
-      if (url === 'https://agent.test/api/v1/agent/skills') return jsonResponse({ skills: [] })
+      if (url.startsWith('https://agent.test/api/v1/agent/commands')) return jsonResponse({ commands: [] })
       throw new Error(`unexpected fetch ${url}`)
     })
 
@@ -410,7 +410,7 @@ describe('PiChatPanel sandbox shell', () => {
       expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual(expect.arrayContaining([
         'https://agent.test/api/v1/agent/pi-chat/sessions',
         'https://agent.test/api/v1/agent/models',
-        'https://agent.test/api/v1/agent/skills',
+        expect.stringContaining('https://agent.test/api/v1/agent/commands'),
       ]))
     })
     for (const [, init] of fetchMock.mock.calls) {
@@ -1468,24 +1468,25 @@ describe('PiChatPanel sandbox shell', () => {
 
   test('refreshes server skill slash commands after plugin reload', async () => {
     const remote = new FakeRemotePiSession(remoteState())
-    let skillsRequestCount = 0
-    const skillsRequestUrls: string[] = []
+    let reloadTriggered = false
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       const parsed = new URL(url, 'https://agent.test')
       if (parsed.pathname === '/api/v1/agent/pi-chat/sessions') return jsonResponse([session('pi-1')])
-      if (parsed.pathname === '/api/v1/agent/skills') {
-        skillsRequestCount += 1
-        skillsRequestUrls.push(url)
+      if (parsed.pathname === '/api/v1/agent/commands') {
         return jsonResponse({
-          skills: parsed.searchParams.get('refresh') === '1'
-            ? [{ name: 'fresh-skill', description: 'Fresh plugin skill' }]
+          commands: reloadTriggered
+            ? [{ name: 'fresh-skill', description: 'Fresh plugin skill', source: 'skill' }]
             : [],
         })
       }
       throw new Error(`unexpected fetch ${url}`)
     })
-    const onReloadAgentPlugins = vi.fn(async () => 'Agent plugins reloaded.')
+    const onReloadAgentPlugins = vi.fn(async () => {
+      reloadTriggered = true
+      return 'Agent plugins reloaded.'
+    })
+    const onCommandResult = vi.fn()
 
     render(
       <PiChatPanel
@@ -1494,33 +1495,33 @@ describe('PiChatPanel sandbox shell', () => {
         fetch={fetchMock as unknown as typeof fetch}
         createRemoteSession={remoteFactory(remote)}
         onReloadAgentPlugins={onReloadAgentPlugins}
+        onCommandResult={onCommandResult}
       />,
     )
 
     const textarea = await screen.findByLabelText('Agent prompt')
-    await waitFor(() => expect(skillsRequestCount).toBe(1))
 
     fireEvent.change(textarea, { target: { value: '/reload' } })
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
 
-    await waitFor(() => expect(onReloadAgentPlugins).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(skillsRequestCount).toBeGreaterThanOrEqual(2))
-    expect(skillsRequestUrls).toEqual(expect.arrayContaining(['/api/v1/agent/skills?refresh=1']))
+    // onCommandResult fires AFTER runPluginUpdate completes (and after setServerSkillsRefreshKey)
+    await waitFor(() => expect(onCommandResult).toHaveBeenCalledWith(expect.stringContaining('Agent plugins reloaded.')))
 
     fireEvent.change(textarea, { target: { value: '/' } })
     expect(await screen.findByText('/fresh-skill')).toBeTruthy()
     expect(await screen.findByText('Fresh plugin skill')).toBeTruthy()
   })
 
-  test('reports unconfigured plugin reload as an error without refreshing server skills', async () => {
+  test('reports unconfigured plugin reload as an error without refreshing server commands', async () => {
     const remote = new FakeRemotePiSession(remoteState())
-    let skillsRequestCount = 0
+    let commandsRequestCount = 0
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions')) return jsonResponse([session('pi-1')])
-      if (url.endsWith('/api/v1/agent/skills')) {
-        skillsRequestCount += 1
-        return jsonResponse({ skills: [] })
+      const parsed = new URL(url, 'https://agent.test')
+      if (parsed.pathname === '/api/v1/agent/pi-chat/sessions') return jsonResponse([session('pi-1')])
+      if (parsed.pathname === '/api/v1/agent/commands') {
+        commandsRequestCount += 1
+        return jsonResponse({ commands: [] })
       }
       throw new Error(`unexpected fetch ${url}`)
     })
@@ -1537,13 +1538,14 @@ describe('PiChatPanel sandbox shell', () => {
     )
 
     const textarea = await screen.findByLabelText('Agent prompt')
-    await waitFor(() => expect(skillsRequestCount).toBe(1))
+    await waitFor(() => expect(commandsRequestCount).toBeGreaterThanOrEqual(1))
+    const preReloadCount = commandsRequestCount
 
     fireEvent.change(textarea, { target: { value: '/reload' } })
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
 
     await waitFor(() => expect(onCommandResult).toHaveBeenCalledWith('Plugin update failed: Agent plugin reload is not configured.'))
-    expect(skillsRequestCount).toBe(1)
+    expect(commandsRequestCount).toBe(preReloadCount)
     expect(container.querySelector('[data-boring-plugin-update="error"]')).toBeTruthy()
     expect(container.querySelector('[data-boring-plugin-update="success"]')).toBeNull()
     expect(remote.prompt).not.toHaveBeenCalled()

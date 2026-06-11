@@ -231,6 +231,50 @@ Do not pick silently. Plugin shape drives everything else.
 
 ---
 
+## Slash commands that open a panel (UI actions)
+
+Runtime plugins can register slash commands that open their panel (or trigger any in-process action) directly from the Pi composer. Two steps:
+
+### 1. Declare in `package.json`
+
+```json
+{
+  "pi": {
+    "extensions": ["agent/index.ts"],
+    "slashCommands": [
+      { "name": "open-<kebab-name>", "description": "Open the <Label> panel" }
+    ]
+  }
+}
+```
+
+- `name` — command name **without** a leading slash (e.g. `"open-counter"`, not `"/counter"`).
+- `description` — one-line hint shown in the picker.
+- No `command`, `title`, `action`, or `handler` keys — those are not part of the schema and will be ignored.
+
+### 2. Register the handler in `agent/index.ts`
+
+```ts
+import { openPanel, notify } from '@hachej/boring-workspace/plugin'
+
+export default function (pi: PiApi) {
+  pi.registerCommand('open-<kebab-name>', async () => {
+    await openPanel({ pluginName: '<kebab-name>' })
+    await notify({ message: '<Label> opened' })
+  })
+}
+```
+
+`openPanel` and `notify` are imported from `@hachej/boring-workspace/plugin`.
+
+**Key rules:**
+- The `name` in `pi.slashCommands` must exactly match the command name passed to `pi.registerCommand`.
+- The declaration in `package.json` is for picker discoverability; the actual behavior lives in `registerCommand`.
+- `openPanel({ pluginName })` uses the `pluginName` matching `package.json#boring.label` (or the inferred kebab name).
+- `notify` is optional — use it to give the user feedback after the action.
+
+---
+
 ## References
 
 - `DECISION_TREE.md`

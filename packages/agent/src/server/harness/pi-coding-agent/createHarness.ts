@@ -13,8 +13,9 @@ import {
   getAgentDir,
   loadSkills,
   type ExtensionFactory,
+  type SlashCommandInfo,
 } from "@mariozechner/pi-coding-agent";
-import type { AgentHarness, SendMessageInput, RunContext } from "../../../shared/harness.js";
+import type { AgentHarness, AgentSlashCommandSummary, SendMessageInput, RunContext } from "../../../shared/harness.js";
 import { createLogger } from "../../logging.js";
 import type { AgentTool } from "../../../shared/tool.js";
 import type { TelemetrySink } from "../../../shared/telemetry.js";
@@ -34,6 +35,7 @@ interface PiSessionHandle {
   piSession: AgentSession;
   modelRegistry: ModelRegistry;
   sessionManager: SessionManager;
+  resourceLoader: DefaultResourceLoader;
 }
 
 export { mergePiPackageSources } from "../../piPackages.js";
@@ -268,6 +270,43 @@ function basenameForAttachment(filename: string): string {
   return safe || "image";
 }
 
+/**
+ * Derive the originating plugin/package name from Pi's command sourceInfo.
+ * Returns the extension directory name for boring runtime plugins (.pi/extensions/<name>),
+ * the package name for npm sources, the repo name for git sources, and the
+ * filename for user-global single-file extensions. Returns undefined for built-in/top-level
+ * commands with no package origin.
+ */
+export function deriveSourcePlugin(sourceInfo: SlashCommandInfo["sourceInfo"] | undefined): string | undefined {
+  if (!sourceInfo) return undefined;
+  const path = typeof sourceInfo.path === "string" ? sourceInfo.path : "";
+  const source = typeof sourceInfo.source === "string" ? sourceInfo.source : "";
+  // Boring runtime plugin: .pi/extensions/<name>/...
+  const runtimePlugin = path.match(/[/\\]\.pi[/\\]extensions[/\\]([^/\\]+)/);
+  if (runtimePlugin) return runtimePlugin[1];
+  // Provisioned plugin skill: .boring-agent/skills/<plugin>/<skill>/SKILL.md
+  const provisionedSkill = path.match(/[/\\]\.boring-agent[/\\]skills[/\\]([^/\\]+)/);
+  if (provisionedSkill) return provisionedSkill[1];
+  // npm package source: "npm:<pkg>"
+  if (source.startsWith("npm:")) return source.slice(4) || undefined;
+  // git source: "git/<host>/<owner>/<repo>" -> repo
+  if (source.startsWith("git/")) return source.split("/").filter(Boolean).pop();
+  // User-global single-file extension: .../extensions/<file>.ts
+  const fileExtension = path.match(/[/\\]extensions[/\\]([^/\\]+)\.[cm]?[tj]sx?$/);
+  if (fileExtension) return fileExtension[1];
+  return undefined;
+}
+
+function normalizeSlashCommandInfo(command: SlashCommandInfo): AgentSlashCommandSummary {
+  const sourcePlugin = deriveSourcePlugin(command.sourceInfo);
+  return {
+    name: command.name,
+    ...(command.description ? { description: command.description } : {}),
+    source: command.source,
+    ...(sourcePlugin ? { sourcePlugin } : {}),
+  };
+}
+
 export function createPiCodingAgentHarness(opts: {
   tools: AgentTool[];
   /** Host/storage cwd used for harness-owned resources (.pi settings, attachments, plugin discovery). */
@@ -455,7 +494,7 @@ export function createPiCodingAgentHarness(opts: {
       }
     }
 
-    const handle: PiSessionHandle = { piSession, modelRegistry, sessionManager };
+    const handle: PiSessionHandle = { piSession, modelRegistry, sessionManager, resourceLoader };
     piSessions.set(sessionId, handle);
     return handle;
   }
@@ -502,6 +541,26 @@ export function createPiCodingAgentHarness(opts: {
     },
 
     reloadSession: reloadPiSession,
+
+    async getSlashCommands(sessionId: string, ctx: RunContext): Promise<ReadonlyArray<AgentSlashCommandSummary>> {
+      const handle = await getOrCreatePiSession(sessionId, { sessionId, message: "" }, ctx);
+      return handle.resourceLoader.getExtensions().runtime.getCommands().map(normalizeSlashCommandInfo);
+    },
+
+    async executeSlashCommand(sessionId: string, name: string, args: string, ctx: RunContext): Promise<void> {
+      const handle = await getOrCreatePiSession(sessionId, { sessionId, message: "" }, ctx);
+      const command = handle.piSession.extensionRunner.getCommand(name);
+      if (command) {
+        await command.handler(args, handle.piSession.extensionRunner.createCommandContext());
+        return;
+      }
+
+      const knownCommand = handle.resourceLoader.getExtensions().runtime.getCommands().some((candidate) => candidate.name === name);
+      if (!knownCommand) throw new Error(`command '${name}' not registered in session '${sessionId}'`);
+
+      const text = args.trim() ? `/${name} ${args}` : `/${name}`;
+      await handle.piSession.prompt(text);
+    },
 
     async getPiSessionAdapter(input: SendMessageInput, ctx: RunContext) {
       const { piSession } = await getOrCreatePiSession(input.sessionId, input, ctx);

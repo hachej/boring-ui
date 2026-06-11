@@ -41,6 +41,30 @@ export interface AgentHarness {
 
   /** Reload native agent resources/extensions for an existing session. */
   reloadSession?: (sessionId: string) => Promise<boolean>
+
+  /** List slash commands registered in the agent runtime for a given session. */
+  getSlashCommands?: (sessionId: string, ctx: RunContext) => ReadonlyArray<AgentSlashCommandSummary> | Promise<ReadonlyArray<AgentSlashCommandSummary>>
+
+  /**
+   * Execute a named slash command registered via `pi.registerCommand` in a
+   * plugin extension. Calls the handler in-process; the handler may dispatch
+   * UI commands (openPanel, notify) through the workspace bridge. Throws if
+   * the command is not found or the handler throws.
+   */
+  executeSlashCommand?: (sessionId: string, name: string, args: string, ctx: RunContext) => Promise<void>
+}
+
+export interface AgentSlashCommandSummary {
+  name: string
+  description?: string
+  source: 'extension' | 'prompt' | 'skill'
+  /**
+   * Name of the originating plugin/package, when derivable from Pi's
+   * sourceInfo (e.g. a `.pi/extensions/<name>` runtime plugin, or an
+   * `npm:`/`git/` package). Surfaced as a tag in the slash-command picker.
+   * Absent for built-in/top-level commands with no package origin.
+   */
+  sourcePlugin?: string
 }
 
 /* Resume is NOT a harness concern — see Stream resumption section.
