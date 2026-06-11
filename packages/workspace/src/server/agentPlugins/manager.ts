@@ -348,11 +348,7 @@ export class BoringPluginAssetManager {
       if (previous) {
         try { clearPluginSignatureCache(previous.rootDir) } catch {}
       }
-      const event: BoringPluginEvent = { type: "boring.plugin.unload", id, revision }
-      events.push(event)
-      // Internal plugins never appear on the SSE channel (see listExternal);
-      // the events array stays complete for /reload diagnostics.
-      if (previous?.source.kind !== "internal") this.emit(event)
+      this.record(events, { type: "boring.plugin.unload", id, revision }, previous?.source)
     }
 
     for (const plugin of nextPlugins) {
@@ -403,11 +399,7 @@ export class BoringPluginAssetManager {
           ...(frontTarget ? { frontTarget } : {}),
           ...(requiresRestart.length > 0 ? { requiresRestart } : {}),
         }
-        events.push(event)
-        // Internal plugins never appear on the SSE channel (see listExternal);
-        // the events array stays complete so /reload restart warnings
-        // (collectRestartWarnings) still cover internal server-file drift.
-        if (plugin.source.kind !== "internal") this.emit(event)
+        this.record(events, event, plugin.source)
       } catch (error) {
         const revision = this.bumpRevision(plugin.id)
         const message = error instanceof Error ? error.stack ?? error.message : String(error)
@@ -415,11 +407,7 @@ export class BoringPluginAssetManager {
         const loadError = { id: plugin.id, revision, message }
         this.lastErrors.set(plugin.id, loadError)
         errors.push(loadError)
-        const event: BoringPluginEvent = { type: "boring.plugin.error", id: plugin.id, revision, message }
-        events.push(event)
-        // Internal plugins never appear on the SSE channel (see listExternal);
-        // their failures stay in errors/getErrors for boot diagnostics.
-        if (plugin.source.kind !== "internal") this.emit(event)
+        this.record(events, { type: "boring.plugin.error", id: plugin.id, revision, message }, plugin.source)
       }
     }
 
@@ -479,6 +467,17 @@ export class BoringPluginAssetManager {
     })
     if (!frontTarget) return undefined
     return { ...frontTarget, revision }
+  }
+
+  /**
+   * Append to the load result's events array and emit on the SSE channel —
+   * unless the source is internal. Internal plugins are app code: their
+   * events stay in the load result (for /reload diagnostics and restart
+   * warnings) but never reach SSE subscribers (see listExternal).
+   */
+  private record(events: BoringPluginEvent[], event: BoringPluginEvent, source: BoringPluginSource | undefined): void {
+    events.push(event)
+    if (source?.kind !== "internal") this.emit(event)
   }
 
   private emit(event: BoringPluginEvent): void {

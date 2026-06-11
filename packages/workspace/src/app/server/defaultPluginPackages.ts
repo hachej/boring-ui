@@ -32,10 +32,13 @@ export function resolveDefaultWorkspacePluginPackagePaths({
   anchorDir,
 }: ResolveDefaultWorkspacePluginPackagePathsOptions = {}): string[] {
   if (defaultPluginPackages.length === 0) return []
+  // Two anchors only: the host package's own root (explicit) and the
+  // workspace root (walk-up). No silent fallback through this module's own
+  // node_modules — a host that forgot to declare the plugin as a dependency
+  // should fail loudly at boot, not resolve through accidental hoisting.
   const requireFromAnchor = anchorDir ? createRequire(join(anchorDir, "package.json")) : null
   const requireFromWorkspace = createRequire(join(workspaceRoot, "package.json"))
-  const requireFromHere = createRequire(import.meta.url)
-  const resolvers = [requireFromAnchor, requireFromWorkspace, requireFromHere]
+  const resolvers = [requireFromAnchor, requireFromWorkspace]
     .filter((req): req is NodeRequire => req !== null)
   const resolved: string[] = []
   for (const entry of defaultPluginPackages) {
