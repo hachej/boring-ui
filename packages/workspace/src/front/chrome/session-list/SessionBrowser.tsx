@@ -4,6 +4,7 @@ import { useMemo } from "react"
 import { ChevronLeft, Plus } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
+import { ControlTooltip } from "../../components/ControlTooltip"
 import type { SessionItem } from "../../components/SessionList"
 
 export interface SessionBrowserProps {
@@ -124,14 +125,18 @@ export function SessionBrowser({
         </span>
         <div className="flex items-center gap-0.5">
           {onCreate && (
-            <IconButton type="button" variant="ghost" size="icon-xs" onClick={onCreate} aria-label="New session" title="New chat">
-              <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
-            </IconButton>
+            <ControlTooltip label="New chat" side="bottom">
+              <IconButton type="button" variant="ghost" size="icon-xs" onClick={onCreate} aria-label="New session">
+                <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
+              </IconButton>
+            </ControlTooltip>
           )}
           {onClose && (
-            <IconButton type="button" variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close sessions" title="Close sessions (⌘1)">
-              <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
-            </IconButton>
+            <ControlTooltip label="Close sessions" hint="⌘1" side="bottom">
+              <IconButton type="button" variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close sessions">
+                <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
+              </IconButton>
+            </ControlTooltip>
           )}
         </div>
       </div>
