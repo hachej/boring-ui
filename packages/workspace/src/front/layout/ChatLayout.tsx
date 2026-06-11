@@ -2,6 +2,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExt
 import { IconButton, LoadingState, ResizeHandle as UiResizeHandle } from "@hachej/boring-ui-kit"
 import { ChevronLeft, MessageSquare } from "lucide-react"
 import { cn } from "../lib/utils"
+import { ControlTooltip } from "../components/ControlTooltip"
 import { dispatchUiCommand, type DispatchContext } from "../bridge"
 import { events, useEvent, workspaceEvents } from "../events"
 import { useKeyboardShortcuts, type ShortcutBinding } from "../hooks/useKeyboardShortcuts"
@@ -375,17 +376,18 @@ export function ChatLayout(props: ChatLayoutProps) {
             <PanelSlot id={centerId} params={props.centerParams} />
           </div>
           {!chatCollapsed ? (
-            <IconButton
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              onClick={toggleChatCollapsed}
-              className="absolute right-2 top-2 z-20"
-              aria-label="Collapse chat"
-              title="Collapse chat (⌘\\)"
-            >
-              <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
-            </IconButton>
+            <ControlTooltip label="Collapse chat" hint="⌘\\" side="bottom">
+              <IconButton
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                onClick={toggleChatCollapsed}
+                className="absolute right-2 top-2 z-20"
+                aria-label="Collapse chat"
+              >
+                <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
+              </IconButton>
+            </ControlTooltip>
           ) : null}
         </main>
 
@@ -429,17 +431,18 @@ export function ChatLayout(props: ChatLayoutProps) {
                 <div className="relative h-full min-h-0">
                   {props.surfaceOverlay}
                   {closeSurface ? (
-                    <IconButton
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={closeSurface}
-                      className="absolute right-3 top-3 z-20 rounded-full bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:bg-muted hover:text-foreground"
-                      aria-label="Close workbench"
-                      title="Close workbench (⌘2)"
-                    >
-                      <span aria-hidden="true">›</span>
-                    </IconButton>
+                    <ControlTooltip label="Close workbench" hint="⌘2" side="left">
+                      <IconButton
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={closeSurface}
+                        className="absolute right-3 top-3 z-20 rounded-full bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:bg-muted hover:text-foreground"
+                        aria-label="Close workbench"
+                      >
+                        <span aria-hidden="true">›</span>
+                      </IconButton>
+                    </ControlTooltip>
                   ) : null}
                 </div>
               ) : <PanelSlot id={surfaceId} params={props.surfaceParams} />}
@@ -719,13 +722,13 @@ function FloatingEdgeButton({
   // Buttons are h-9 (36px); stack them with a 8px gap so they never overlap.
   const stackOffset = stackIndex * 44
   return (
+    <ControlTooltip label={label} hint={hint} side={side === "left" ? "right" : "left"}>
     <IconButton
       type="button"
       variant="ghost"
       size="icon-sm"
       onClick={onClick}
       aria-label={label}
-      title={hint ? `${label} (${hint})` : label}
       className={cn(
         "absolute z-30 h-9 w-9 gap-0.5 rounded-lg bg-background text-muted-foreground",
         side === "left" ? "left-2" : "right-2",
@@ -758,5 +761,6 @@ function FloatingEdgeButton({
         </svg>
       )}
     </IconButton>
+    </ControlTooltip>
   )
 }
