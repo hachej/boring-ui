@@ -83,16 +83,9 @@ describe("workspace app-server plugin package helpers", () => {
       pi: { extensions: ["agent/index.ts"] },
     }), "utf8")
     await writeFile(join(explicitPluginRoot, "agent", "index.ts"), "export default function() {}\n", "utf8")
-    const appPackageJsonPath = join(appRoot, "package.json")
-    await writeFile(appPackageJsonPath, JSON.stringify({
-      name: "temp-app",
-      boring: { defaultPlugins: ["./plugins/manifest-plugin"] },
-    }), "utf8")
-
     const paths = resolveDefaultWorkspacePluginPackagePaths({
       workspaceRoot: appRoot,
-      appPackageJsonPath,
-      defaultPluginPackages: [explicitPluginRoot],
+      defaultPluginPackages: [manifestPluginRoot, explicitPluginRoot],
     })
     expect(paths).toEqual([manifestPluginRoot, explicitPluginRoot])
 
@@ -550,7 +543,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     expect(agentOptions.systemPromptAppend).toContain("STATIC_FOO_PROMPT")
   })
 
-  test("app package boring.defaultPlugins discovers front/Pi-only packages without server import", async () => {
+  test("defaultPluginPackages discovers front/Pi-only packages without server import", async () => {
     const appRoot = await makeTempDir("boring-app-default-package-")
     const pluginRoot = join(appRoot, "plugins", "foo")
     await mkdir(join(pluginRoot, "front"), { recursive: true })
@@ -562,16 +555,10 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       boring: { front: "front/index.tsx" },
       pi: { systemPrompt: "FOO_PLUGIN_PROMPT", skills: ["skills"] },
     }), "utf8")
-    const appPackageJsonPath = join(appRoot, "package.json")
-    await writeFile(appPackageJsonPath, JSON.stringify({
-      name: "temp-app",
-      boring: { defaultPlugins: ["./plugins/foo"] },
-    }), "utf8")
-
     agentServerMock.createAgentApp.mockImplementationOnce(async () => Fastify({ logger: false }) as never)
     const app = await createWorkspaceAgentServer({
       workspaceRoot: appRoot,
-      appPackageJsonPath,
+      defaultPluginPackages: [pluginRoot],
       logger: false,
       provisionWorkspace: false,
     })
@@ -690,7 +677,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     }
   })
 
-  test("app package boring.defaultPlugins throws when declared server entry is missing", async () => {
+  test("defaultPluginPackages throws when declared server entry is missing", async () => {
     const appRoot = await makeTempDir("boring-app-default-package-missing-server-")
     const pluginRoot = join(appRoot, "plugins", "bad")
     await mkdir(join(pluginRoot, "front"), { recursive: true })
@@ -700,15 +687,9 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       version: "1.0.0",
       boring: { front: "front/index.tsx", server: "server/missing.ts" },
     }), "utf8")
-    const appPackageJsonPath = join(appRoot, "package.json")
-    await writeFile(appPackageJsonPath, JSON.stringify({
-      name: "temp-app",
-      boring: { defaultPlugins: ["./plugins/bad"] },
-    }), "utf8")
-
     await expect(createWorkspaceAgentServer({
       workspaceRoot: appRoot,
-      appPackageJsonPath,
+      defaultPluginPackages: [pluginRoot],
       logger: false,
       provisionWorkspace: false,
     })).rejects.toThrow(/declared but not found/)

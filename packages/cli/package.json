@@ -4,11 +4,6 @@
   "description": "Turn an agent into an app",
   "license": "MIT",
   "type": "module",
-  "boring": {
-    "defaultPlugins": [
-      "@hachej/boring-ask-user"
-    ]
-  },
   "bin": {
     "boring-ui": "./dist/index.js"
   },

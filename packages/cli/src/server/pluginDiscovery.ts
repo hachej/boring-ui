@@ -1,5 +1,4 @@
 import { homedir } from "node:os"
-import { existsSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import {
@@ -56,15 +55,22 @@ function getGlobalPiAgentRoot(options: ResolveCliBoringPluginDirsOptions = {}): 
   return resolve(options.globalAgentRoot ?? dirname(getGlobalPiExtensionsRoot(options)))
 }
 
-// Resolve CLI-bundled default plugin packages declared in this package's own
-// boring.defaultPlugins manifest field. Delegates to the shared workspace
-// utility so resolution semantics (anchor, error policy, relative paths) stay
-// consistent across the CLI and app hosts.
-function resolveCliDefaultPluginPackagePaths(): string[] {
-  const cliPackageJsonPath = join(resolveBoringUiCliPackageRoot(), "package.json")
-  if (!existsSync(cliPackageJsonPath)) return []
+/**
+ * CLI-bundled internal plugins. The explicit server-side list — the front
+ * side mirrors it with static imports in src/front/App.tsx. Keep the two
+ * in sync when adding a default plugin.
+ */
+const CLI_DEFAULT_PLUGIN_PACKAGES = ["@hachej/boring-ask-user"]
+
+// Resolve the CLI's bundled default plugin packages from the CLI's own
+// node_modules. Delegates to the shared workspace utility so resolution
+// semantics (anchors, error policy) stay consistent across hosts.
+export function resolveCliDefaultPluginPackagePaths(): string[] {
   try {
-    return resolveDefaultWorkspacePluginPackagePaths({ appPackageJsonPath: cliPackageJsonPath })
+    return resolveDefaultWorkspacePluginPackagePaths({
+      anchorDir: resolveBoringUiCliPackageRoot(),
+      defaultPluginPackages: CLI_DEFAULT_PLUGIN_PACKAGES,
+    })
   } catch (error) {
     // Missing dep in the CLI package is a packaging error; swallow here so a
     // bad build doesn't crash every workspace launch — the plugin just won't load.

@@ -116,29 +116,6 @@ export interface CreateWorkspaceAgentServerOptions
    * load process.
    */
   defaultPluginPackages?: string[]
-  /**
-   * Absolute path to the app's `package.json`. When passed, the workspace
-   * reads `package.json#boring.defaultPluginPackages: string[]` from it
-   * and merges those entries with anything passed in
-   * `defaultPluginPackages`. Relative entries in package.json resolve
-   * against the package.json's own directory.
-   *
-   * Example app `package.json`:
-   *
-   *     {
-   *       "name": "my-app",
-   *       "boring": {
-   *         "defaultPluginPackages": [
-   *           "@hachej/boring-ask-user",
-   *           "./src/plugins/playgroundDataCatalog"
-   *         ]
-   *       }
-   *     }
-   *
-   * Lets apps declare their plugin set in the canonical app manifest
-   * instead of inside the server boot path.
-   */
-  appPackageJsonPath?: string
   /** Additional plugin collection roots to scan alongside workspace .pi/extensions and package/plugin-derived roots. */
   additionalBoringPluginDirs?: BoringPluginSourceInput[]
   /**
@@ -588,18 +565,15 @@ export async function createWorkspaceAgentServer(
   })
   const ctx: WorkspaceAgentServerPluginContext = { workspaceRoot, bridge }
 
-  // Resolve app-default plugin packages from two sources, merged:
-  //   1. `opts.defaultPluginPackages` (explicit, set in code)
-  //   2. `package.json#boring.defaultPluginPackages` (declarative, the
-  //      canonical app manifest location — preferred for new apps).
-  // Each entry is resolved to an absolute package dir. All default package
-  // dirs flow into the boring asset manager + dynamic Pi scan; only packages
+  // Resolve app-default plugin packages (explicit list set in host boot
+  // code — the server-side mirror of the app's static front imports). Each
+  // entry is resolved to an absolute package dir. All default package dirs
+  // flow into the boring asset manager + dynamic Pi scan; only packages
   // that actually declare/provide a server entry flow into the server-side
   // install array. Front/Pi-only default packages must not be forced through
   // a server import.
   const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths({
     workspaceRoot,
-    appPackageJsonPath: opts.appPackageJsonPath,
     defaultPluginPackages: opts.defaultPluginPackages,
   })
   const pluginHotReload = opts.pluginHotReload ?? true

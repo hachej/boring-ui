@@ -178,7 +178,7 @@ export function CliWorkspaceShell() {
   }, [])
 
   // CLI-default plugins are app code: statically imported, composed once.
-  // Keep in sync with boring.defaultPlugins in package.json (server side).
+  // Keep in sync with CLI_DEFAULT_PLUGIN_PACKAGES in server/pluginDiscovery.ts.
   const plugins = useMemo(() => [askUserPlugin], [])
   const activeWorkspaceRequestHeaders = useMemo(
     () => activeWorkspaceId ? { "x-boring-workspace-id": activeWorkspaceId } : null,

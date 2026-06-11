@@ -129,7 +129,6 @@ export interface CreateCoreWorkspaceAgentServerOptions
   plugins?: CoreWorkspacePluginEntry[]
   excludeDefaults?: CreateWorkspaceAgentServerOptions['excludeDefaults']
   defaultPluginPackages?: CreateWorkspaceAgentServerOptions['defaultPluginPackages']
-  appPackageJsonPath?: CreateWorkspaceAgentServerOptions['appPackageJsonPath']
   /**
    * Enable workspace plugin-authoring tooling/prompt for this app.
    * Defaults to false for full-app/core production composition; set true only
@@ -616,7 +615,6 @@ export async function createCoreWorkspaceAgentServer(
 
   const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths({
     workspaceRoot: pluginWorkspaceRoot,
-    appPackageJsonPath: options.appPackageJsonPath,
     defaultPluginPackages: options.defaultPluginPackages,
   })
   const defaultPackagePiSnapshot = readWorkspacePluginPackagePiSnapshot(defaultPluginPackagePaths)

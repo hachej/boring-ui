@@ -407,7 +407,10 @@ export async function createFolderModeApp(opts: {
     logger: false,
     provisionWorkspace: false,
     runtimeProvisioning,
-    appPackageJsonPath: join(resolveBoringUiCliPackageRoot(), "package.json"),
+    // CLI-bundled internal plugins, resolved to absolute package dirs. This
+    // drives the server-side install array (boot-time routes/agentTools);
+    // additionalBoringPluginDirs only feeds the asset-manager scan.
+    defaultPluginPackages: pluginDiscovery.resolveCliDefaultPluginPackagePaths(),
     additionalBoringPluginDirs: pluginDirs,
     boringPluginFrontTargetResolver: runtimeHost.createFrontTargetResolver(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID),
     boringPluginIncludeLegacyFrontUrl: false,
