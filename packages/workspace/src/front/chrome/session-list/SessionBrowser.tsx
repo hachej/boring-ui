@@ -158,7 +158,10 @@ export function SessionBrowser({
   )
   const groups = useMemo(() => groupSessions(historySessions), [historySessions])
   const [activeCollapsed, setActiveCollapsed] = useState(false)
-  const [historyCollapsed, setHistoryCollapsed] = useState(false)
+  // History starts collapsed so the drawer leads with what's open; expands
+  // on click. With no panes open there is no Active section, so history
+  // shows by default to avoid an empty-looking drawer.
+  const [historyCollapsed, setHistoryCollapsed] = useState(() => (openIds?.length ?? 0) > 0)
   const workingSessionIds = useWorkingSessionIds()
   const { blockers } = useWorkspaceAttention()
   const needsInputSessionIds = useMemo(() => {

@@ -79,12 +79,11 @@ export const CHAT_SESSION_DRAG_TYPE = "application/x-boring-chat-session"
 
 /**
  * The pane focus treatment shared by both engines: the selected chat stays
- * white while the others recede behind a faint grey wash; the active pane's
- * boundary darkens slightly (single line, no inset ring). Flash is a
- * stronger transient ring. Neutral by design — it should read like keyboard
- * focus in a pro editor, not a colored selection.
+ * white while the others recede behind a faint grey wash — no border on the
+ * active pane, the background contrast alone marks the selection. Flash is a
+ * stronger transient ring for open-as-pane feedback.
  */
-export function PaneFocusRing({ active, dimmed, flash }: { active: boolean; dimmed: boolean; flash: boolean }) {
+export function PaneFocusRing({ dimmed, flash }: { active?: boolean; dimmed: boolean; flash: boolean }) {
   return (
     <div
       aria-hidden="true"
@@ -93,7 +92,6 @@ export function PaneFocusRing({ active, dimmed, flash }: { active: boolean; dimm
         "pointer-events-none absolute inset-0 z-30",
         "transition-[background-color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
         dimmed && !flash && "bg-[color:oklch(from_var(--foreground)_l_c_h/0.035)]",
-        active && !flash && "shadow-[inset_0_0_0_1px_oklch(from_var(--foreground)_l_c_h/0.22)]",
         flash && "shadow-[inset_0_0_0_2px_oklch(from_var(--foreground)_l_c_h/0.55)]",
       )}
     />

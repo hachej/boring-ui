@@ -109,11 +109,17 @@ describe("SessionBrowser", () => {
     const activeSection = document.querySelector('[data-boring-workspace-part="session-active-section"]')
     expect(activeSection?.querySelector("li")).toBeNull()
 
-    expect(screen.getByText(/Second session/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: /History/ }))
+    // History starts collapsed when panes are open; clicking it expands.
     expect(screen.queryByText(/Second session/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: /History/ }))
+    expect(screen.getByText(/Second session/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: /History/ }))
+    expect(screen.queryByText(/Second session/)).not.toBeInTheDocument()
+  })
+
+  it("shows history expanded by default when no panes are open", () => {
+    render(<SessionBrowser sessions={sample} activeId="s1" />)
     expect(screen.getByText(/Second session/)).toBeInTheDocument()
   })
 

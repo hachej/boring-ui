@@ -76,14 +76,9 @@
 }
 
 /* The selected chat stays white; the others recede behind a faint grey
-   wash. The active pane also gets a slightly darker boundary, drawn at
-   inset 0 so it merges with the group separator (no double border). */
+   wash. No border on the active pane — the background contrast alone marks
+   the selection. */
 [data-boring-workspace-part="chat-pane-stage"][data-multi-pane="true"]
   .dv-groupview:not(.dv-active-group)::after {
   background: oklch(from var(--foreground) l c h / 0.035);
-}
-
-[data-boring-workspace-part="chat-pane-stage"][data-multi-pane="true"]
-  .dv-groupview.dv-active-group::after {
-  box-shadow: inset 0 0 0 1px oklch(from var(--foreground) l c h / 0.22);
 }

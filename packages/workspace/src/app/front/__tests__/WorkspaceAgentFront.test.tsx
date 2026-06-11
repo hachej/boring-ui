@@ -44,6 +44,15 @@ function visibleChatSessionIds(): string[] {
   return screen.getAllByTestId("chat-pane").map((node) => node.getAttribute("data-session-id") ?? "")
 }
 
+// History starts collapsed when chat panes are open; expand it so tests can
+// reach history rows. No-op when there is no collapsed History toggle.
+function expandHistory(): void {
+  const toggle = screen.queryByRole("button", { name: "History", hidden: true })
+  if (toggle && toggle.getAttribute("aria-expanded") === "false") {
+    fireEvent.click(toggle)
+  }
+}
+
 function GlobalCommandPanel() {
   return <div>Global command panel body</div>
 }
@@ -190,6 +199,7 @@ describe("WorkspaceAgentFront", () => {
     }
 
     render(<Harness />)
+    expandHistory()
 
     // Session creation is contextual: with the drawer open its header "+"
     // is the affordance and the floating "New chat" button hides.
@@ -243,6 +253,7 @@ describe("WorkspaceAgentFront", () => {
     }
 
     render(<Harness />)
+    expandHistory()
 
     await user.click(screen.getByRole("button", { name: "New chat" }))
 
@@ -347,6 +358,7 @@ describe("WorkspaceAgentFront", () => {
     }
 
     render(<Harness />)
+    expandHistory()
 
     await user.click(screen.getByRole("button", { name: "New chat" }))
 
@@ -389,6 +401,7 @@ describe("WorkspaceAgentFront", () => {
     }
 
     render(<Harness />)
+    expandHistory()
 
     await user.click(screen.getByLabelText("Open Second session in chat pane"))
     expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
@@ -430,6 +443,7 @@ describe("WorkspaceAgentFront", () => {
     }
 
     render(<Harness />)
+    expandHistory()
 
     await user.click(screen.getByLabelText("Open Second session in chat pane"))
     expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
@@ -478,6 +492,7 @@ describe("WorkspaceAgentFront", () => {
     }
 
     render(<Harness />)
+    expandHistory()
 
     await user.click(screen.getByLabelText("Open Second session in chat pane"))
     expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
@@ -519,6 +534,7 @@ describe("WorkspaceAgentFront", () => {
     }
 
     render(<Harness />)
+    expandHistory()
 
     await waitFor(() => {
       expect(activeStreams()).toHaveLength(1)
@@ -558,6 +574,7 @@ describe("WorkspaceAgentFront", () => {
     }
 
     render(<Harness />)
+    expandHistory()
 
     try {
       await user.click(screen.getByLabelText("Open Second session in chat pane"))
@@ -598,6 +615,7 @@ describe("WorkspaceAgentFront", () => {
     }
 
     render(<Harness />)
+    expandHistory()
 
     await user.click(screen.getByLabelText("Open Second session in chat pane"))
     document.dispatchEvent(new KeyboardEvent("keydown", {
@@ -1478,6 +1496,7 @@ describe("WorkspaceAgentFront", () => {
       />,
     )
 
+    expandHistory()
     await user.click(screen.getByText("Session two"))
     expect(onSwitchSession).toHaveBeenCalledWith("s2")
     expect(observed).toHaveBeenCalledWith(expect.objectContaining({ detail: { sessionId: "s1" } }))
