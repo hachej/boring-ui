@@ -1,9 +1,10 @@
 "use client"
 
-import { useCallback, useEffect } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import { useWorkspaceAttention, useWorkspaceChatPanel } from "../../provider"
 import { emitAgentData } from "../../events"
 import { dispatchUiCommand, startUiCommandStream } from "../../bridge"
+import { relativizeWorkspacePath } from "../../../app/front/workspacePreload"
 import type { SurfaceShellApi } from "../artifact-surface/SurfaceShell"
 import type { WorkspaceChatPanelProps } from "./types"
 
@@ -60,15 +61,35 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
     ...chatPanelProps
   } = props
 
+  // Agent tool inputs (read/write/edit) carry absolute filesystem paths, but
+  // the workspace file API is relative-only (absolute paths 403). Learn the
+  // workspace root once so click-to-open can translate absolute → relative.
+  const workspaceRootRef = useRef<string | null>(null)
+  const apiBase = streamEndpointFromBridgeEndpoint(bridgeEndpoint) ?? ""
+  const metaWorkspaceId = workspaceIdFromHeaders(chatPanelProps.requestHeaders)
+  useEffect(() => {
+    let cancelled = false
+    const headers: Record<string, string> = metaWorkspaceId ? { "x-boring-workspace-id": metaWorkspaceId } : {}
+    void fetch(`${apiBase}/api/v1/workspace/meta`, { headers })
+      .then((res) => (res.ok ? res.json() as Promise<{ workspaceRoot?: unknown }> : null))
+      .then((meta) => {
+        if (cancelled) return
+        if (meta && typeof meta.workspaceRoot === "string") workspaceRootRef.current = meta.workspaceRoot
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [apiBase, metaWorkspaceId])
+
   const openArtifact = useCallback(
     (path: string) => {
+      const resolved = relativizeWorkspacePath(path, workspaceRootRef.current)
       if (getSurface && isWorkbenchOpen && openWorkbench) {
         dispatchUiCommand(
-          { kind: "openFile", params: { path } },
+          { kind: "openFile", params: { path: resolved } },
           { surface: getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench },
         )
       }
-      props.onOpenArtifact?.(path)
+      props.onOpenArtifact?.(resolved)
     },
     [getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, props.onOpenArtifact],
   )

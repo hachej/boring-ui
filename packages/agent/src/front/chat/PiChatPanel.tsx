@@ -377,12 +377,10 @@ export function PiChatPanel({
     const sessionNotice = sessionsError
       ? [{ id: 'session-navigation-error', level: 'error' as const, text: sessionsError.message, dismissible: true }]
       : []
-    const blockerNotices = activeBlockers.map((blocker) => ({
-      id: `composer-blocker:${blocker.id}`,
-      level: 'warning' as const,
-      text: blocker.label ?? blocker.reason ?? 'Workspace is not ready for a new message.',
-      dismissible: false,
-    }))
+    // Composer blockers already render as an actionable bar right above the
+    // input (ComposerBlockerNotice, with Open/Cancel buttons), so surfacing
+    // them again as a timeline warning notice just duplicates the same line.
+    // Keep the single actionable bar; don't echo it here.
     const largeStateNotice = debug && debugState?.largeStateWarning
       ? [{
           id: 'large-state-warning',
@@ -391,8 +389,8 @@ export function PiChatPanel({
           dismissible: true,
         }]
       : []
-    return [...fromState, ...sessionNotice, ...blockerNotices, ...largeStateNotice, ...localNotices].filter((notice) => !dismissedNoticeIds.has(notice.id))
-  }, [activeBlockers, debug, debugState?.largeStateWarning, dismissedNoticeIds, localNotices, selectedChatState, sessionsError])
+    return [...fromState, ...sessionNotice, ...largeStateNotice, ...localNotices].filter((notice) => !dismissedNoticeIds.has(notice.id))
+  }, [debug, debugState?.largeStateWarning, dismissedNoticeIds, localNotices, selectedChatState, sessionsError])
 
   const addLocalNotice = useCallback((notice: PanelNotice) => {
     setLocalNotices((previous) => {

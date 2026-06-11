@@ -151,6 +151,8 @@ vi.mock("../FileTree", () => {
 })
 
 import { FileTreePane, clampContextMenuPosition } from "../FileTreeView"
+import { events, remoteMeta, userMeta } from "../../../../../front/events"
+import { filesystemEvents } from "../../../shared/events"
 
 const sampleFiles = [
   { name: "src", kind: "dir" as const, path: "src" },
@@ -401,6 +403,45 @@ describe("FileTreePane", () => {
       expect(screen.getByTestId("file-tree")).toHaveAttribute("data-reveal", "src")
     })
     expect(bridge.openFile).not.toHaveBeenCalled()
+  })
+
+  it("refreshes an expanded folder when an agent/remote change lands inside it", async () => {
+    mockGetTree.mockResolvedValue([{ name: "old.ts", kind: "file", path: "src/old.ts" }])
+    let expandHandler: ((payload: { path: string }) => void) | null = null
+    const bridge = {
+      getActiveFile: () => null,
+      openFile: vi.fn().mockResolvedValue({ seq: 1, status: "ok" }),
+      subscribe: vi.fn((event, handler) => {
+        if (event === "tree:expand") expandHandler = handler
+        return vi.fn()
+      }),
+    }
+
+    render(<FileTreePane bridge={bridge as any} />, { wrapper })
+    await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+    await waitFor(() => expect(bridge.subscribe).toHaveBeenCalled())
+
+    // Expand "src" so its children live in local state (not react-query).
+    // Wait for the child to actually render — that guarantees expandedChildren
+    // committed (getTree is called synchronously, before its promise resolves).
+    act(() => expandHandler?.({ path: "src" }))
+    await screen.findByText("old.ts")
+    mockGetTree.mockClear()
+
+    // A remote (agent/SSE) create inside the expanded dir must re-fetch it…
+    act(() => {
+      events.emit(filesystemEvents.created, { ...remoteMeta(), path: "src/new.ts", kind: "file" })
+    })
+    await waitFor(() => expect(mockGetTree).toHaveBeenCalledWith("src"))
+
+    // …but a create in a non-expanded dir, or a user-caused one, must not.
+    mockGetTree.mockClear()
+    act(() => {
+      events.emit(filesystemEvents.created, { ...remoteMeta(), path: "other/x.ts", kind: "file" })
+      events.emit(filesystemEvents.created, { ...userMeta(), path: "src/typed.ts", kind: "file" })
+    })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(mockGetTree).not.toHaveBeenCalled()
   })
 
   it("reveals folder requests forwarded through left-tab params", async () => {
