@@ -52,6 +52,12 @@ export interface ChatPaneStageProps {
    * `${storageKey}:chatPaneLayout`.
    */
   storageKey?: string
+  /**
+   * Called when a session is dropped onto the stage (drag a session-browser
+   * row in). The parent opens the session as a pane; the dock engine places
+   * it where it was dropped.
+   */
+  onDropSession?: (sessionId: string) => void
   engine?: ChatPaneEngine | null
 }
 
@@ -64,6 +70,12 @@ export function ChatPaneStage({ engine, ...props }: ChatPaneStageProps) {
 export function paneTitle(pane: { title?: string | null }): string {
   return pane.title || "Untitled"
 }
+
+/**
+ * DataTransfer type for dragging a chat session (e.g. a session-browser row)
+ * into the chat stage. The payload is the session id.
+ */
+export const CHAT_SESSION_DRAG_TYPE = "application/x-boring-chat-session"
 
 /**
  * The active-pane focus treatment shared by both engines: a soft rounded

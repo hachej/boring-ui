@@ -384,6 +384,7 @@ export function ChatLayout(props: ChatLayoutProps) {
                 onClosePane={props.onCloseChatPane}
                 flashPaneId={props.flashChatPaneId}
                 storageKey={props.storageKey}
+                onDropSession={props.onDropChatSession}
                 engine={props.chatPaneEngine}
                 renderPane={(pane) => (
                   <PanelSlot

@@ -6,6 +6,7 @@ import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { ControlTooltip } from "../../components/ControlTooltip"
 import { useWorkspaceAttention } from "../../attention/WorkspaceAttentionProvider"
+import { CHAT_SESSION_DRAG_TYPE } from "../../layout/ChatPaneStage"
 import type { SessionItem } from "../../components/SessionList"
 
 const CHAT_SESSION_STATUS_EVENT = "boring:chat-session-status"
@@ -260,6 +261,14 @@ function SessionRow({
         active && "bg-foreground/[0.06] text-foreground",
       )}
       onClick={() => onSwitch?.(session.id)}
+      // Rows can be dragged onto the chat stage to open the session as a
+      // pane at the drop position (dock engine).
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData(CHAT_SESSION_DRAG_TYPE, session.id)
+        e.dataTransfer.setData("text/plain", session.title || session.id)
+        e.dataTransfer.effectAllowed = "copyMove"
+      }}
     >
       <span className="min-w-0 flex-1 truncate leading-5" title={session.title}>
         <span className={cn(active ? "font-medium text-foreground" : "text-foreground/90")}>

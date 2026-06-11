@@ -18,6 +18,7 @@ export interface ChatLayoutProps {
   onActiveChatPaneChange?: (id: string) => void
   onCloseChatPane?: (id: string) => void
   onCreateChatPaneAfter?: (id: string) => void
+  onDropChatSession?: (sessionId: string) => void
   flashChatPaneId?: string | null
   /**
    * Chat stage layout engine. `dock` enables the dockview-backed stage

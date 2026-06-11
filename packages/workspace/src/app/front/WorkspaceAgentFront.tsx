@@ -85,6 +85,7 @@ export interface WorkspaceAgentFrontProps<
       | "onActiveChatPaneChange"
       | "onCloseChatPane"
       | "onCreateChatPaneAfter"
+      | "onDropChatSession"
       | "flashChatPaneId"
       | "surface"
       | "surfaceParams"
@@ -1246,6 +1247,7 @@ export function WorkspaceAgentFront<
               onActiveChatPaneChange={activateChatPane}
               onCloseChatPane={closeChatPane}
               onCreateChatPaneAfter={createChatPaneAfter}
+              onDropChatSession={openChatPane}
               flashChatPaneId={flashChatPane?.workspaceId === workspaceId ? flashChatPane.id : null}
               chatPaneEngine={chatPaneEngine}
               surface={surfaceOpen ? "artifact-surface" : null}

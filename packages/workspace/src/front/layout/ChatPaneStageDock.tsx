@@ -21,7 +21,7 @@ import { GripVertical, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../lib/utils"
 import { ControlTooltip } from "../components/ControlTooltip"
-import { PaneFocusRing, paneTitle, type ChatPaneDescriptor, type ChatPaneStageProps } from "./ChatPaneStage"
+import { CHAT_SESSION_DRAG_TYPE, PaneFocusRing, paneTitle, type ChatPaneDescriptor, type ChatPaneStageProps } from "./ChatPaneStage"
 
 type ChatPaneStageDockProps = Omit<ChatPaneStageProps, "engine">
 
@@ -42,6 +42,23 @@ const StageContext = createContext<StageContextValue | null>(null)
 
 function layoutStorageKey(storageKey: string): string {
   return `${storageKey}:chatPaneLayout`
+}
+
+type DropDirection = "left" | "right" | "above" | "below" | "within"
+
+interface PendingPlacement {
+  referencePanelId: string | null
+  direction: DropDirection
+}
+
+function dropPositionToDirection(position: string): DropDirection {
+  switch (position) {
+    case "left": return "left"
+    case "right": return "right"
+    case "top": return "above"
+    case "bottom": return "below"
+    default: return "within"
+  }
 }
 
 interface SerializedDockLayout {
@@ -97,6 +114,7 @@ function syncPanesToDock(
   api: DockviewApi,
   panes: ChatPaneDescriptor[],
   activePaneId: string | null,
+  pendingPlacements?: Map<string, PendingPlacement>,
 ): void {
   const wanted = new Map(panes.map((pane) => [pane.id, pane]))
   for (const panel of [...api.panels]) {
@@ -104,6 +122,19 @@ function syncPanesToDock(
   }
   panes.forEach((pane, index) => {
     if (api.getPanel(pane.id)) return
+    const placement = pendingPlacements?.get(pane.id)
+    if (placement) {
+      pendingPlacements?.delete(pane.id)
+      const reference = placement.referencePanelId ? api.getPanel(placement.referencePanelId) : undefined
+      addChatPanel(
+        api,
+        pane,
+        reference
+          ? { referencePanel: reference, direction: placement.direction }
+          : { direction: placement.direction === "within" ? "right" : placement.direction },
+      )
+      return
+    }
     const before = index > 0 ? api.getPanel(panes[index - 1].id) : undefined
     const after = !before && index + 1 < panes.length ? api.getPanel(panes[index + 1].id) : undefined
     addChatPanel(
@@ -135,15 +166,19 @@ export function ChatPaneStageDock({
   onClosePane,
   flashPaneId,
   storageKey,
+  onDropSession,
 }: ChatPaneStageDockProps) {
   const apiRef = useRef<DockviewApi | null>(null)
   // True while this component mutates dockview itself; dockview activation
   // events fired during programmatic sync must not echo back to the parent.
   const syncingRef = useRef(false)
   const disposeRef = useRef<(() => void) | null>(null)
+  // Drop placements recorded by onDidDrop, consumed by the next pane sync
+  // so a dropped session's panel appears where it was dropped.
+  const pendingPlacementsRef = useRef(new Map<string, PendingPlacement>())
 
-  const latestRef = useRef({ panes, activePaneId: activePaneId ?? null, onActivePaneChange, storageKey })
-  latestRef.current = { panes, activePaneId: activePaneId ?? null, onActivePaneChange, storageKey }
+  const latestRef = useRef({ panes, activePaneId: activePaneId ?? null, onActivePaneChange, onDropSession, storageKey })
+  latestRef.current = { panes, activePaneId: activePaneId ?? null, onActivePaneChange, onDropSession, storageKey }
 
   const resolvedActiveId = activePaneId ?? panes[0]?.id ?? null
 
@@ -171,7 +206,7 @@ export function ChatPaneStageDock({
           // A stale/incompatible layout must never block the chat stage.
         }
       }
-      syncPanesToDock(api, currentPanes, currentActive)
+      syncPanesToDock(api, currentPanes, currentActive, pendingPlacementsRef.current)
     } finally {
       syncingRef.current = false
     }
@@ -196,6 +231,22 @@ export function ChatPaneStageDock({
       }
     })
 
+    // Accept session rows dragged in from outside the dock (the session
+    // browser). The drop opens the session as a pane at the drop position.
+    const dragOverDisposable = api.onUnhandledDragOverEvent((dragEvent) => {
+      const types = dragEvent.nativeEvent.dataTransfer?.types
+      if (types && Array.from(types).includes(CHAT_SESSION_DRAG_TYPE)) dragEvent.accept()
+    })
+    const dropDisposable = api.onDidDrop((dropEvent) => {
+      const sessionId = dropEvent.nativeEvent.dataTransfer?.getData(CHAT_SESSION_DRAG_TYPE)
+      if (!sessionId) return
+      pendingPlacementsRef.current.set(sessionId, {
+        referencePanelId: dropEvent.group?.activePanel?.id ?? null,
+        direction: dropPositionToDirection(dropEvent.position),
+      })
+      latestRef.current.onDropSession?.(sessionId)
+    })
+
     let persistTimer: ReturnType<typeof setTimeout> | null = null
     const layoutDisposable = api.onDidLayoutChange(() => {
       const key = latestRef.current.storageKey
@@ -208,6 +259,8 @@ export function ChatPaneStageDock({
       if (persistTimer) clearTimeout(persistTimer)
       activeDisposable.dispose()
       overlayDisposable.dispose()
+      dragOverDisposable.dispose()
+      dropDisposable.dispose()
       layoutDisposable.dispose()
     }
   }, [])
@@ -219,7 +272,7 @@ export function ChatPaneStageDock({
     if (!api) return
     syncingRef.current = true
     try {
-      syncPanesToDock(api, panes, resolvedActiveId)
+      syncPanesToDock(api, panes, resolvedActiveId, pendingPlacementsRef.current)
     } finally {
       syncingRef.current = false
     }
