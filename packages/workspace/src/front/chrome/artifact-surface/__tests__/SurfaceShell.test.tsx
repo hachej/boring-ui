@@ -205,6 +205,6 @@ describe("SurfaceShell", () => {
     })
 
     expect(screen.queryByLabelText("Workbench left pane")).not.toBeInTheDocument()
-    expect(screen.getAllByRole("button", { name: "Show sources" }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole("button", { name: "Show workspace menu" }).length).toBeGreaterThan(0)
   })
 })
