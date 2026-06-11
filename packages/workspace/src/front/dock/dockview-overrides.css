@@ -141,18 +141,43 @@
   opacity: 0.7;
 }
 
-/* Sash (resize handle) */
-.dv-shell .sash-container .sash,
-.dv-shell .dv-sash-container .dv-sash {
-  transition: background-color 0.2s;
+/* Sash (resize handle)
+   Dockview's default 4px grab zone is easy to miss. Keep the visible divider
+   subtle, but expand the pointer target to 12px so pane resizing is forgiving. */
+.dv-shell {
+  --dv-sash-color: transparent;
+  --dv-active-sash-color: transparent;
+  --dv-active-sash-transition-delay: 0s;
 }
 
-.dv-shell .sash-container .sash:hover,
-.dv-shell .sash-container .sash.active,
-.dv-shell .dv-sash-container .dv-sash:hover,
-.dv-shell .dv-sash-container .dv-sash.dv-active {
-  background-color: var(--primary);
-  transition-delay: 0.15s;
+.dv-shell .sash-container .sash,
+.dv-shell .dv-sash-container .dv-sash {
+  transition: box-shadow 0.16s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dv-shell .dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash {
+  width: 12px;
+  margin-left: -4px;
+}
+
+.dv-shell .dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash {
+  height: 12px;
+  margin-top: -4px;
+}
+
+.dv-shell .dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash:hover,
+.dv-shell .dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash:active {
+  box-shadow: inset 0 0 0 1px oklch(from var(--primary) l c h / 0.45),
+    inset 5px 0 0 oklch(from var(--primary) l c h / 0.35),
+    inset 6px 0 0 oklch(from var(--primary) l c h / 0.35);
+}
+
+.dv-shell .dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash:hover,
+.dv-shell .dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash:active {
+  box-shadow: inset 0 0 0 1px oklch(from var(--primary) l c h / 0.45),
+    inset 0 5px 0 oklch(from var(--primary) l c h / 0.35),
+    inset 0 6px 0 oklch(from var(--primary) l c h / 0.35);
 }
 
 /* Drop target overlay */

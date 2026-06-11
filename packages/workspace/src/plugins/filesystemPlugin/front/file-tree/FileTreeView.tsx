@@ -609,6 +609,7 @@ export function FileTreeView({
               path: newPath,
               kind: "file",
             })
+            handleSelect(newPath)
             toast.success({ title: "File created", description: newPath })
           } else {
             await createDir({ path: newPath })
@@ -643,6 +644,7 @@ export function FileTreeView({
       clearPending,
       addOptimisticEntry,
       removeOptimisticEntry,
+      handleSelect,
     ],
   )
 

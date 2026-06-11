@@ -233,7 +233,7 @@ function SessionRow({
         type="button"
         variant="ghost"
         size="icon-xs"
-        className="shrink-0 text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 group-data-[focused=true]:opacity-100"
+        className="hidden shrink-0 text-muted-foreground hover:text-foreground group-hover:inline-flex group-data-[focused=true]:inline-flex"
         onClick={copySessionId}
         tabIndex={isFocused ? 0 : -1}
         aria-label={`Copy Pi session id for ${session.title}`}
@@ -252,7 +252,7 @@ function SessionRow({
           type="button"
           variant="ghost"
           size="icon-xs"
-          className="shrink-0 text-muted-foreground opacity-0 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 group-data-[focused=true]:opacity-100"
+          className="hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:inline-flex group-data-[focused=true]:inline-flex"
           onClick={(e) => {
             e.stopPropagation()
             onDelete(session.id)

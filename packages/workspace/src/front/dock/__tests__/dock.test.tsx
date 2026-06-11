@@ -698,22 +698,26 @@ describe("ShadcnTab", () => {
     expect(siblingB.api.close).toHaveBeenCalledTimes(1)
   })
 
-  it("shows a saving spinner while save start is in flight, hides on save end", async () => {
+  it("keeps the file icon stable and shows a dot while save is in flight", async () => {
     events._reset()
     const mockApi = { title: "doc.md", id: "panel-7", close: vi.fn() }
-    render(<ShadcnTab api={mockApi as any} containerApi={{} as any} params={{}} tabLocation={"header" as any} />)
+    const { container } = render(<ShadcnTab api={mockApi as any} containerApi={{} as any} params={{}} tabLocation={"header" as any} />)
 
-    expect(screen.queryByTestId("tab-saving-spinner")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("tab-dirty-dot")).not.toBeInTheDocument()
+    const iconBefore = container.querySelector("svg")
+    expect(iconBefore).toBeInTheDocument()
 
     act(() => {
       events.emit(workspaceEvents.editorSaveStart, { panelId: "panel-7" })
     })
-    expect(screen.getByTestId("tab-saving-spinner")).toBeInTheDocument()
+    expect(screen.getByTestId("tab-dirty-dot")).toBeInTheDocument()
+    expect(container.querySelector("svg")).toBe(iconBefore)
 
     act(() => {
       events.emit(workspaceEvents.editorSaveEnd, { panelId: "panel-7" })
     })
-    expect(screen.queryByTestId("tab-saving-spinner")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("tab-dirty-dot")).not.toBeInTheDocument()
+    expect(container.querySelector("svg")).toBe(iconBefore)
   })
 
   it("ignores save events for OTHER panel ids", async () => {
@@ -723,21 +727,21 @@ describe("ShadcnTab", () => {
     act(() => {
       events.emit(workspaceEvents.editorSaveStart, { panelId: "someone-else" })
     })
-    expect(screen.queryByTestId("tab-saving-spinner")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("tab-dirty-dot")).not.toBeInTheDocument()
   })
 
-  it("clears the spinner on save:end even when the save itself failed (lifecycle hook always emits)", async () => {
+  it("clears the save dot on save:end even when the save itself failed (lifecycle hook always emits)", async () => {
     events._reset()
     const mockApi = { title: "x.md", id: "p", close: vi.fn() }
     render(<ShadcnTab api={mockApi as any} containerApi={{} as any} params={{}} tabLocation={"header" as any} />)
     act(() => {
       events.emit(workspaceEvents.editorSaveStart, { panelId: "p" })
     })
-    expect(screen.getByTestId("tab-saving-spinner")).toBeInTheDocument()
+    expect(screen.getByTestId("tab-dirty-dot")).toBeInTheDocument()
     act(() => {
       events.emit(workspaceEvents.editorSaveEnd, { panelId: "p" })
     })
-    expect(screen.queryByTestId("tab-saving-spinner")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("tab-dirty-dot")).not.toBeInTheDocument()
   })
 })
 
