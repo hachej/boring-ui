@@ -34,11 +34,6 @@
       "types": "./dist/shared.d.ts",
       "import": "./dist/shared.js"
     },
-    "./app/vite": {
-      "types": "./dist/app-vite.d.ts",
-      "import": "./dist/app-vite.js",
-      "default": "./dist/app-vite.js"
-    },
     "./app/front": {
       "types": "./dist/app-front.d.ts",
       "import": "./dist/app-front.js",

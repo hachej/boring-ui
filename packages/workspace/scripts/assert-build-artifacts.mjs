@@ -22,8 +22,6 @@ const requiredFiles = [
   "dist/app-front.d.ts",
   "dist/app-server.js",
   "dist/app-server.d.ts",
-  "dist/app-vite.js",
-  "dist/app-vite.d.ts",
   "dist/server.js",
   "dist/server.d.ts",
   "dist/shared.js",
