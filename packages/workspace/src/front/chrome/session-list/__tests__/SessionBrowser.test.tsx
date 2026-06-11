@@ -102,6 +102,21 @@ describe("SessionBrowser", () => {
     expect(activeSection?.querySelectorAll('[data-boring-workspace-part="session-open-dot"]')).toHaveLength(2)
   })
 
+  it("collapses the Active and History sections", () => {
+    render(<SessionBrowser sessions={sample} activeId="s1" openIds={["s1"]} />)
+
+    fireEvent.click(screen.getByRole("button", { name: /Active/ }))
+    const activeSection = document.querySelector('[data-boring-workspace-part="session-active-section"]')
+    expect(activeSection?.querySelector("li")).toBeNull()
+
+    expect(screen.getByText(/Second session/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: /History/ }))
+    expect(screen.queryByText(/Second session/)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /History/ }))
+    expect(screen.getByText(/Second session/)).toBeInTheDocument()
+  })
+
   it("shows a working badge while a session's chat panel streams", () => {
     render(<SessionBrowser sessions={sample} activeId="s1" />)
 

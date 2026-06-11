@@ -624,6 +624,7 @@ describe("ChatLayout component", () => {
     renderWithRegistry(
       <ChatLayout
         center="chat"
+        nav={null}
         chatPanes={[
           { id: "s1", title: "First", panel: "chat", params: { sessionId: "s1" } },
           { id: "s2", title: "Second", panel: "chat", params: { sessionId: "s2" } },
@@ -705,6 +706,7 @@ describe("ChatLayout component", () => {
     renderWithRegistry(
       <ChatLayout
         center="chat"
+        nav={null}
         chatPanes={[
           { id: "s1", title: "First", panel: "chat", params: { sessionId: "s1" } },
           { id: "s2", title: "Second", panel: "chat", params: { sessionId: "s2" } },

@@ -191,9 +191,10 @@ describe("WorkspaceAgentFront", () => {
 
     render(<Harness />)
 
-    // Session creation is contextual: the floating left-edge "New chat"
-    // button plus the drawer header "+" — no global top-bar control.
-    expect(screen.getAllByRole("button", { name: "New chat" })).toHaveLength(1)
+    // Session creation is contextual: with the drawer open its header "+"
+    // is the affordance and the floating "New chat" button hides.
+    expect(screen.queryByRole("button", { name: "New chat" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "New session" })).toBeInTheDocument()
     expect(visibleChatSessionIds()).toEqual(["s1"])
 
     await user.click(screen.getByText("Second session"))

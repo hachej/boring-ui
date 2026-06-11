@@ -490,7 +490,7 @@ export function ChatLayout(props: ChatLayoutProps) {
           hint="⌘1"
         />
       ) : null}
-      {!chatCollapsed && hasChatPanes && props.onCreateChatPaneAfter ? (
+      {!chatCollapsed && !navOpen && hasChatPanes && props.onCreateChatPaneAfter ? (
         <FloatingEdgeButton
           side="left"
           icon="plus"
@@ -499,9 +499,9 @@ export function ChatLayout(props: ChatLayoutProps) {
             if (targetId) props.onCreateChatPaneAfter?.(targetId)
           }}
           label="New chat"
-          // Sits directly above the Sessions toggle when that is visible;
-          // takes its slot when the drawer is open.
-          stackIndex={!navOpen && props.onOpenNav ? 1 : 0}
+          // Sits directly above the Sessions toggle; when the session drawer
+          // is open the drawer's own header "+" takes over and this hides.
+          stackIndex={props.onOpenNav ? 1 : 0}
         />
       ) : null}
       {chatCollapsed ? (

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { ChevronLeft, ExternalLink, Plus } from "lucide-react"
+import { ChevronLeft, ChevronRight, ExternalLink, Plus } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { ControlTooltip } from "../../components/ControlTooltip"
@@ -157,6 +157,8 @@ export function SessionBrowser({
     [openSet, sessions],
   )
   const groups = useMemo(() => groupSessions(historySessions), [historySessions])
+  const [activeCollapsed, setActiveCollapsed] = useState(false)
+  const [historyCollapsed, setHistoryCollapsed] = useState(false)
   const workingSessionIds = useWorkingSessionIds()
   const { blockers } = useWorkspaceAttention()
   const needsInputSessionIds = useMemo(() => {
@@ -210,71 +212,119 @@ export function SessionBrowser({
 
         {activeSessions.length > 0 && (
           <section data-boring-workspace-part="session-active-section">
-            <div className="flex items-baseline justify-between gap-2 px-3.5 pb-2 pt-2 text-[11px] font-medium tracking-tight text-muted-foreground/75">
-              <span>Active</span>
-              <span aria-hidden="true" className="text-[10.5px] tabular-nums text-muted-foreground/40">{activeSessions.length}</span>
-            </div>
-            <ul role="list" className="flex flex-col">
-              {activeSessions.map((session) => (
-                <SessionRow
-                  key={session.id}
-                  session={session}
-                  active={session.id === activeId}
-                  open
-                  working={workingSessionIds.has(session.id)}
-                  needsInput={needsInputSessionIds.has(session.id)}
-                  onSwitch={onSwitch}
-                  onOpenAsTab={onOpenAsTab}
-                  onDelete={onDelete}
-                />
-              ))}
-            </ul>
-            {groups.length > 0 && (
-              <div className="px-3.5 pb-1 pt-4 text-[11px] font-medium tracking-tight text-muted-foreground/75">
-                History
-              </div>
+            <SectionHeader
+              label="Active"
+              count={activeSessions.length}
+              collapsed={activeCollapsed}
+              onToggle={() => setActiveCollapsed((value) => !value)}
+            />
+            {!activeCollapsed && (
+              <ul role="list" className="flex flex-col">
+                {activeSessions.map((session) => (
+                  <SessionRow
+                    key={session.id}
+                    session={session}
+                    active={session.id === activeId}
+                    open
+                    working={workingSessionIds.has(session.id)}
+                    needsInput={needsInputSessionIds.has(session.id)}
+                    onSwitch={onSwitch}
+                    onOpenAsTab={onOpenAsTab}
+                    onDelete={onDelete}
+                  />
+                ))}
+              </ul>
             )}
           </section>
         )}
 
-        {groups.map((group, i) => (
-          <section key={group.key} className={cn((i > 0 || activeSessions.length > 0) && "mt-2")}>
-            <div className="flex items-baseline justify-between gap-2 px-3.5 pb-2 pt-2 text-[11px] font-medium tracking-tight text-muted-foreground/75">
-              <span>{group.label}</span>
-              <span aria-hidden="true" className="text-[10.5px] tabular-nums text-muted-foreground/40">{group.items.length}</span>
-            </div>
-            <ul role="list" className="flex flex-col">
-              {group.items.map((session) => (
-                <SessionRow
-                  key={session.id}
-                  session={session}
-                  active={session.id === activeId}
-                  open={false}
-                  working={workingSessionIds.has(session.id)}
-                  needsInput={needsInputSessionIds.has(session.id)}
-                  onSwitch={onSwitch}
-                  onOpenAsTab={onOpenAsTab}
-                  onDelete={onDelete}
-                />
-              ))}
-            </ul>
-          </section>
-        ))}
+        {groups.length > 0 && (
+          <section
+            data-boring-workspace-part="session-history-section"
+            className={cn(activeSessions.length > 0 && "mt-3")}
+          >
+            <SectionHeader
+              label="History"
+              count={historySessions.length}
+              collapsed={historyCollapsed}
+              onToggle={() => setHistoryCollapsed((value) => !value)}
+            />
+            {!historyCollapsed && (
+              <>
+                {groups.map((group, i) => (
+                  <section key={group.key} className={cn(i > 0 && "mt-2")}>
+                    <div className="flex items-baseline justify-between gap-2 px-5 pb-2 pt-2 text-[11px] font-medium tracking-tight text-muted-foreground/60">
+                      <span>{group.label}</span>
+                      <span aria-hidden="true" className="text-[10.5px] tabular-nums text-muted-foreground/40">{group.items.length}</span>
+                    </div>
+                    <ul role="list" className="flex flex-col">
+                      {group.items.map((session) => (
+                        <SessionRow
+                          key={session.id}
+                          session={session}
+                          active={session.id === activeId}
+                          open={false}
+                          working={workingSessionIds.has(session.id)}
+                          needsInput={needsInputSessionIds.has(session.id)}
+                          onSwitch={onSwitch}
+                          onOpenAsTab={onOpenAsTab}
+                          onDelete={onDelete}
+                        />
+                      ))}
+                    </ul>
+                  </section>
+                ))}
 
-        {hasMore && onLoadMore ? (
-          <div className="px-3 py-3">
-            <button
-              type="button"
-              onClick={onLoadMore}
-              disabled={loadingMore}
-              className="w-full rounded-md border border-border/60 px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-60"
-            >
-              {loadingMore ? "Loading…" : "Load more"}
-            </button>
-          </div>
-        ) : null}
+                {hasMore && onLoadMore ? (
+                  <div className="px-3 py-3">
+                    <button
+                      type="button"
+                      onClick={onLoadMore}
+                      disabled={loadingMore}
+                      className="w-full rounded-md border border-border/60 px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-60"
+                    >
+                      {loadingMore ? "Loading…" : "Load more"}
+                    </button>
+                  </div>
+                ) : null}
+              </>
+            )}
+          </section>
+        )}
       </div>
     </div>
+  )
+}
+
+function SectionHeader({
+  label,
+  count,
+  collapsed,
+  onToggle,
+}: {
+  label: string
+  count: number
+  collapsed: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={!collapsed}
+      data-boring-workspace-part="session-section-toggle"
+      className="flex w-full items-baseline justify-between gap-2 px-3.5 pb-2 pt-2 text-[11px] font-medium tracking-tight text-muted-foreground/75 transition-colors hover:text-foreground/80"
+    >
+      <span className="flex items-center gap-1">
+        <ChevronRight
+          aria-hidden="true"
+          className={cn("h-3 w-3 transition-transform duration-150", !collapsed && "rotate-90")}
+          strokeWidth={2}
+        />
+        {label}
+      </span>
+      <span aria-hidden="true" className="text-[10.5px] tabular-nums text-muted-foreground/40">{count}</span>
+    </button>
   )
 }
 
@@ -368,7 +418,7 @@ function SessionRow({
             type="button"
             variant="ghost"
             size="icon-xs"
-            className="shrink-0 text-muted-foreground/70 hover:text-foreground focus-visible:opacity-100"
+            className="shrink-0 text-muted-foreground/70 opacity-0 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
             onClick={(e) => {
               e.stopPropagation()
               onOpenAsTab(session.id)
