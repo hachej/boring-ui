@@ -4,6 +4,7 @@ import { useMemo } from "react"
 import { ChevronLeft, ExternalLink, Plus } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
+import { ControlTooltip } from "../../components/ControlTooltip"
 import type { SessionItem } from "../../components/SessionList"
 
 export interface SessionBrowserProps {
@@ -126,14 +127,18 @@ export function SessionBrowser({
         </span>
         <div className="flex items-center gap-0.5">
           {onCreate && (
-            <IconButton type="button" variant="ghost" size="icon-xs" onClick={onCreate} aria-label="New session" title="New chat">
-              <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
-            </IconButton>
+            <ControlTooltip label="New chat" side="bottom">
+              <IconButton type="button" variant="ghost" size="icon-xs" onClick={onCreate} aria-label="New session">
+                <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
+              </IconButton>
+            </ControlTooltip>
           )}
           {onClose && (
-            <IconButton type="button" variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close sessions" title="Close sessions (⌘1)">
-              <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
-            </IconButton>
+            <ControlTooltip label="Close sessions" hint="⌘1" side="bottom">
+              <IconButton type="button" variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close sessions">
+                <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
+              </IconButton>
+            </ControlTooltip>
           )}
         </div>
       </div>
@@ -227,37 +232,40 @@ function SessionRow({
         )}
       </span>
       {onOpenAsTab && (
-        <IconButton
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          className="shrink-0 text-muted-foreground/70 hover:text-foreground focus-visible:opacity-100"
-          onClick={(e) => {
-            e.stopPropagation()
-            onOpenAsTab(session.id)
-          }}
-          aria-label={`Open ${session.title || "session"} in chat pane`}
-          title="Open in chat pane"
-        >
-          <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.75} />
-        </IconButton>
+        <ControlTooltip label="Open in chat pane">
+          <IconButton
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            className="shrink-0 text-muted-foreground/70 hover:text-foreground focus-visible:opacity-100"
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpenAsTab(session.id)
+            }}
+            aria-label={`Open ${session.title || "session"} in chat pane`}
+          >
+            <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.75} />
+          </IconButton>
+        </ControlTooltip>
       )}
       {onDelete && (
-        <IconButton
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          className="shrink-0 text-muted-foreground opacity-0 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
-          onClick={(e) => {
-            e.stopPropagation()
-            onDelete(session.id)
-          }}
-          aria-label={`Delete ${session.title || "session"}`}
-        >
-          <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-            <path d="M3.5 3.5l7 7M10.5 3.5l-7 7" />
-          </svg>
-        </IconButton>
+        <ControlTooltip label="Delete session">
+          <IconButton
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            className="shrink-0 text-muted-foreground opacity-0 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+            onClick={(e) => {
+              e.stopPropagation()
+              onDelete(session.id)
+            }}
+            aria-label={`Delete ${session.title || "session"}`}
+          >
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M3.5 3.5l7 7M10.5 3.5l-7 7" />
+            </svg>
+          </IconButton>
+        </ControlTooltip>
       )}
     </li>
   )

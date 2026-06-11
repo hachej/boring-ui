@@ -20,6 +20,7 @@ import "./chat-pane-stage.css"
 import { GripVertical, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../lib/utils"
+import { ControlTooltip } from "../components/ControlTooltip"
 import { PaneFocusRing, paneTitle, type ChatPaneDescriptor, type ChatPaneStageProps } from "./ChatPaneStage"
 
 type ChatPaneStageDockProps = Omit<ChatPaneStageProps, "engine">
@@ -326,27 +327,29 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
         {title}
       </span>
       {canClose ? (
-        <IconButton
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          data-boring-workspace-part="chat-pane-control"
-          className="h-5 w-5 shrink-0 text-muted-foreground/80 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 [.dv-active-tab_&]:opacity-55 [.dv-active-tab_&]:hover:opacity-100"
-          // Dockview activates a panel from a NATIVE pointerdown listener on
-          // the tab wrapper (an ancestor of this button). React's capture
-          // handlers run at root-capture, before that bubble listener — stop
-          // the native event there so closing a pane never activates it.
-          onPointerDownCapture={(event) => event.nativeEvent.stopPropagation()}
-          onMouseDownCapture={(event) => event.nativeEvent.stopPropagation()}
-          onClick={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            stage.onClosePane?.(api.id)
-          }}
-          aria-label={`Close ${title} pane`}
-        >
-          <X className="h-3 w-3" strokeWidth={2.25} />
-        </IconButton>
+        <ControlTooltip label="Close pane" side="bottom">
+          <IconButton
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            data-boring-workspace-part="chat-pane-control"
+            className="h-5 w-5 shrink-0 text-muted-foreground/80 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 [.dv-active-tab_&]:opacity-55 [.dv-active-tab_&]:hover:opacity-100"
+            // Dockview activates a panel from a NATIVE pointerdown listener on
+            // the tab wrapper (an ancestor of this button). React's capture
+            // handlers run at root-capture, before that bubble listener — stop
+            // the native event there so closing a pane never activates it.
+            onPointerDownCapture={(event) => event.nativeEvent.stopPropagation()}
+            onMouseDownCapture={(event) => event.nativeEvent.stopPropagation()}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              stage.onClosePane?.(api.id)
+            }}
+            aria-label={`Close ${title} pane`}
+          >
+            <X className="h-3 w-3" strokeWidth={2.25} />
+          </IconButton>
+        </ControlTooltip>
       ) : null}
     </div>
   )

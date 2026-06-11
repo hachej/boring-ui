@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react"
 import { X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../lib/utils"
+import { ControlTooltip } from "../components/ControlTooltip"
 import { PaneFocusRing, paneTitle, type ChatPaneDescriptor, type ChatPaneStageProps } from "./ChatPaneStage"
 
 type ChatPaneStageFlexProps = Omit<ChatPaneStageProps, "engine">
@@ -117,22 +118,23 @@ function ChatPane({
           </span>
         </div>
         {multiPane ? (
-          <IconButton
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            data-boring-workspace-part="chat-pane-control"
-            className="text-muted-foreground hover:text-foreground"
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.stopPropagation()
-              onClosePane?.(pane.id)
-            }}
-            aria-label={`Close ${title} pane`}
-            title="Close pane"
-          >
-            <X className="h-3.5 w-3.5" strokeWidth={1.75} />
-          </IconButton>
+          <ControlTooltip label="Close pane" side="bottom">
+            <IconButton
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              data-boring-workspace-part="chat-pane-control"
+              className="text-muted-foreground hover:text-foreground"
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation()
+                onClosePane?.(pane.id)
+              }}
+              aria-label={`Close ${title} pane`}
+            >
+              <X className="h-3.5 w-3.5" strokeWidth={1.75} />
+            </IconButton>
+          </ControlTooltip>
         ) : null}
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
