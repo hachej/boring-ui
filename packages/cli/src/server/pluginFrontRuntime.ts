@@ -515,16 +515,33 @@ function optimizedDependencySingletonSource(targetPath: string): HostVirtualSing
   const cleanPath = targetPath.split("?")[0]
   const normalizedPath = cleanPath.replaceAll("\\", "/")
   const workspaceSingletonByPath: Array<[string, HostVirtualSingletonModule]> = [
+    // Monorepo dev layout.
     ["/packages/workspace/dist/workspace.js", "@hachej/boring-workspace"],
     ["/packages/workspace/src/index.ts", "@hachej/boring-workspace"],
     ["/packages/workspace/dist/plugin.js", "@hachej/boring-workspace/plugin"],
     ["/packages/workspace/src/plugin.ts", "@hachej/boring-workspace/plugin"],
     ["/packages/workspace/dist/events.js", "@hachej/boring-workspace/events"],
     ["/packages/workspace/src/front/events/index.ts", "@hachej/boring-workspace/events"],
+    // Installed layout (npm global / pnpm store): the scoped-package suffix
+    // matches both node_modules/@hachej/... and .pnpm/.../@hachej/... paths.
+    // Without these, a plugin importing the workspace root in an installed
+    // CLI gets a proxied SECOND copy of the workspace bundle — its context
+    // hooks (useApiBaseUrl, ...) read the wrong React context, and the
+    // proxied app-level graph drags un-interop'd CJS deps that fail to load.
+    ["/@hachej/boring-workspace/dist/workspace.js", "@hachej/boring-workspace"],
+    ["/@hachej/boring-workspace/dist/plugin.js", "@hachej/boring-workspace/plugin"],
+    ["/@hachej/boring-workspace/dist/events.js", "@hachej/boring-workspace/events"],
   ]
   for (const [suffix, source] of workspaceSingletonByPath) {
     if (normalizedPath.endsWith(suffix)) return source
   }
+  // Filename-based mapping applies ONLY to Vite optimizer output
+  // (.vite/deps/react.js etc.). Matching by bare filename anywhere would
+  // also capture a dependency's own module that happens to be named
+  // react.js — e.g. dockview/dist/esm/react.js, whose exports (ReactPart)
+  // do not exist on the react singleton, killing the whole importing
+  // plugin module graph with a named-export SyntaxError.
+  if (!normalizedPath.includes("/.vite/deps/")) return undefined
   const fileName = normalizedPath.slice(normalizedPath.lastIndexOf("/") + 1)
   const sourceByFileName: Record<string, HostVirtualSingletonModule> = {
     "react.js": "react",
@@ -1220,6 +1237,13 @@ export async function createPluginFrontRuntimeHost(
     appType: "custom",
     configFile: false,
     logLevel: "silent",
+    // Disable the dep optimizer entirely. With discovery on, Vite re-optimizes
+    // mid-session as plugin imports surface new deps; each pass rewrites
+    // node_modules/.vite/deps and bumps the browserHash, invalidating chunk
+    // URLs the browser already holds (ERR_FILE_NOT_FOUND_IN_OPTIMIZED_DEP_DIR)
+    // and stalling in-flight plugin front transforms indefinitely. The runtime
+    // host serves deps through its own proxy/singleton routes, so pre-bundling
+    // buys nothing here.
     root: repoRoot,
     // Skip the dep-optimisation entry scan. Without this, Vite crawls the
     // entire monorepo looking for import statements and hits files like

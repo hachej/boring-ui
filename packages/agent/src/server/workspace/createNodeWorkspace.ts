@@ -21,14 +21,18 @@ const DEFAULT_WATCH_IGNORES = [
   'node_modules',
   '.git',
   '.DS_Store',
+  '.worktrees',
+  '.boring-agent',
+  '.cache',
   'dist',
   '.next',
   '.turbo',
   'test-results',
 ] as const
 
-function shouldIgnoreWatchPath(path: string): boolean {
-  const parts = path.split(sep)
+function shouldIgnoreWatchPath(root: string, path: string): boolean {
+  const relPath = relative(root, path)
+  const parts = relPath.split(sep)
   return parts.some((part) =>
     DEFAULT_WATCH_IGNORES.includes(part as (typeof DEFAULT_WATCH_IGNORES)[number]) ||
     part.endsWith('.tsbuildinfo'),
@@ -48,7 +52,7 @@ function createNodeWatcher(root: string): WorkspaceWatcher {
   const ensureFsw = (): FSWatcher => {
     if (fsw) return fsw
     fsw = chokidar.watch(root, {
-      ignored: shouldIgnoreWatchPath,
+      ignored: (path) => shouldIgnoreWatchPath(root, path),
       ignoreInitial: true,
       persistent: true,
       followSymlinks: false,

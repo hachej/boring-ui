@@ -220,7 +220,7 @@ function computeRequiresRestart(
 }
 
 export class BoringPluginAssetManager {
-  private readonly pluginDirs: BoringPluginSourceInput[]
+  private pluginDirs: BoringPluginSourceInput[]
   private readonly errorRoot: string
   private readonly frontTargetResolver?: BoringPluginFrontTargetResolver
   private readonly loaded = new Map<string, LoadedPluginRecord>()
@@ -234,6 +234,17 @@ export class BoringPluginAssetManager {
     this.pluginDirs = options.pluginDirs
     this.errorRoot = options.errorRoot ?? join(process.cwd(), ".pi", "extensions") // callers MUST override errorRoot in non-trivial deployments
     this.frontTargetResolver = options.frontTargetResolver
+  }
+
+  /**
+   * Replace the scanned source roots. Lets hosts re-resolve discovery inputs
+   * (e.g. workspace `.pi/settings.json` package sources, which can gain
+   * entries after `boring-ui-plugin install`) before the next load() so
+   * `/reload` picks up newly installed plugin sources without a process
+   * restart.
+   */
+  setPluginDirs(pluginDirs: BoringPluginSourceInput[]): void {
+    this.pluginDirs = pluginDirs
   }
 
   preflight(): BoringPluginPreflightResult {

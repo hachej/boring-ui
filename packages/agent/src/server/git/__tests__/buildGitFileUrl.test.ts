@@ -22,6 +22,16 @@ describe('buildGitFileUrl', () => {
     ).toBe('https://github.com/owner/repo/blob/feature%2Ftest/docs/Guide%20Name.md')
   })
 
+  it('strips credentials from credentialed GitHub HTTPS remotes', () => {
+    expect(
+      buildGitFileUrl({
+        remoteUrl: 'https://x-access-token:TOKEN@github.com/owner/repo.git',
+        repoRelativePath: 'src/main.ts',
+        branch: 'main',
+      }),
+    ).toBe('https://github.com/owner/repo/blob/main/src/main.ts')
+  })
+
   it('falls back to commit sha when branch is unavailable', () => {
     expect(
       buildGitFileUrl({

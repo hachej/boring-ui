@@ -185,6 +185,16 @@ function buildRegistryPayloads(
   }
   for (const tab of captured.leftTabs) {
     const referencedPanel = panelsById.get(tab.panelId)
+    if (!tab.component && !referencedPanel) {
+      // A leftTab pointing at an unknown panelId renders an empty pane —
+      // almost always a typo in the plugin (the panel id and the tab's
+      // panelId drifted apart). Be loud: the silent fallback cost real
+      // debugging time in the field.
+      console.warn(
+        `[boring-ui] plugin "${pluginId}": left tab "${tab.id}" references unknown panelId "${tab.panelId}" `
+        + `(registered panels: ${[...panelsById.keys()].join(", ") || "none"}). The tab will render empty.`,
+      )
+    }
     panels.push({
       id: tab.id,
       title: tab.title,

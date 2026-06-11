@@ -254,6 +254,77 @@ it("updates runtime dependency status after workspace becomes usable", async () 
   }), { timeout: 2_500 })
 })
 
+it("treats network-level fetch failures as retryable preparing, then recovers", async () => {
+  // Server restarting: fetch rejects with TypeError. The warmup must keep
+  // retrying (preparing), not fail terminally, and recover once the server
+  // is back — without a remount.
+  const onStatusChange = vi.fn()
+  let calls = 0
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    calls += 1
+    if (calls <= 2) throw new TypeError("Failed to fetch")
+    if (url.includes("/api/v1/tree")) return json({ entries: [] })
+    if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+    return json([])
+  }))
+
+  render(
+    <WorkspaceBackgroundBoot
+      workspaceId="w-netfail"
+      apiBaseUrl="/base"
+      requestHeaders={{ "x-boring-workspace-id": "w-netfail" }}
+      onStatusChange={onStatusChange}
+    />,
+  )
+
+  await waitFor(() => expect(onStatusChange).toHaveBeenLastCalledWith({ status: "ready" }), { timeout: 8000 })
+  expect(onStatusChange.mock.calls.some(([status]) => status.status === "failed")).toBe(false)
+}, 15_000)
+
+it("times out a hung warmup attempt and recovers on retry", async () => {
+  // Right after a server restart the event loop can be saturated for tens of
+  // seconds; an un-timed first fetch would hang forever and pin the
+  // "Preparing workspace" overlay until remount. A hung attempt must be
+  // aborted and retried.
+  vi.useFakeTimers()
+  try {
+    const onStatusChange = vi.fn()
+    let calls = 0
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      calls += 1
+      if (calls <= 2) {
+        // Hang until aborted by the per-attempt timeout.
+        return new Promise<Response>((_, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true })
+        })
+      }
+      if (url.includes("/api/v1/tree")) return Promise.resolve(json({ entries: [] }))
+      if (url.includes("/api/v1/ready-status")) return Promise.resolve(new Response(null, { status: 200 }))
+      return Promise.resolve(json([]))
+    }))
+
+    render(
+      <WorkspaceBackgroundBoot
+        workspaceId="w-hang"
+        apiBaseUrl="/base"
+        requestHeaders={{ "x-boring-workspace-id": "w-hang" }}
+        onStatusChange={onStatusChange}
+      />,
+    )
+
+    // First attempts hang; advance past the attempt timeout + retry delay.
+    await vi.advanceTimersByTimeAsync(11_000)
+    await vi.advanceTimersByTimeAsync(11_000)
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(onStatusChange).toHaveBeenLastCalledWith({ status: "ready" })
+    expect(onStatusChange.mock.calls.some(([status]) => status.status === "failed")).toBe(false)
+  } finally {
+    vi.useRealTimers()
+  }
+}, 20_000)
+
 it("reports degraded ready-status SSE as failed", async () => {
   const onStatusChange = vi.fn()
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {

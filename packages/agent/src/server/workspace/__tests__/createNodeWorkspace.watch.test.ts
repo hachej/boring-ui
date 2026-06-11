@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createNodeWorkspace } from '../createNodeWorkspace'
@@ -68,6 +68,22 @@ describe('createNodeWorkspace.watch', () => {
     if (writes[0]!.mtimeMs !== undefined) expect(writes[0]!.mtimeMs).toBeGreaterThan(0)
   })
 
+  it('does not ignore everything when the workspace root is under an ignored-name parent', async () => {
+    const workspaceRoot = join(root, '.worktrees', 'child-workspace')
+    await mkdir(workspaceRoot, { recursive: true })
+    const ws = createNodeWorkspace(workspaceRoot)
+    watcher = ws.watch!()
+
+    const events: WorkspaceChangeEvent[] = []
+    watcher.subscribe((e) => events.push(e))
+    await wait(SETTLE_MS)
+
+    await ws.writeFile('inside-root.txt', 'visible')
+    await waitForEvent(events, (e) => e.op === 'write' && e.path === 'inside-root.txt')
+
+    expect(events.some((e) => e.op === 'write' && e.path === 'inside-root.txt')).toBe(true)
+  })
+
   it('shares one underlying watcher across multiple subscribers', async () => {
     const ws = createNodeWorkspace(root)
     const w1 = ws.watch!()
@@ -89,6 +105,30 @@ describe('createNodeWorkspace.watch', () => {
     await waitForEvent(events, (e) => e.op === 'unlink' && e.path === 'b.txt')
 
     expect(events.some((e) => e.op === 'unlink' && e.path === 'b.txt')).toBe(true)
+  })
+
+  it('ignores heavyweight internal directories', async () => {
+    const ws = createNodeWorkspace(root)
+    const ignoredDirs = ['.worktrees', '.boring-agent', '.cache']
+    for (const dir of ignoredDirs) await ws.mkdir(dir, { recursive: true })
+
+    watcher = ws.watch!()
+
+    const events: WorkspaceChangeEvent[] = []
+    watcher.subscribe((e) => events.push(e))
+    await wait(SETTLE_MS)
+
+    await ws.writeFile('visible.txt', 'visible')
+    await waitForEvent(events, (e) => e.op === 'write' && e.path === 'visible.txt')
+    expect(events.some((e) => e.op === 'write' && e.path === 'visible.txt')).toBe(true)
+    events.length = 0
+
+    for (const dir of ignoredDirs) {
+      await ws.writeFile(`${dir}/hidden.txt`, 'hidden')
+    }
+    await wait(SETTLE_MS)
+
+    expect(events).toEqual([])
   })
 
   it('subscribe returns an unsubscribe fn — events stop flowing after it is called', async () => {
