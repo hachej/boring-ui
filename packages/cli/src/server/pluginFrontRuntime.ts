@@ -509,12 +509,22 @@ function optimizedDependencySingletonSource(targetPath: string): HostVirtualSing
   const cleanPath = targetPath.split("?")[0]
   const normalizedPath = cleanPath.replaceAll("\\", "/")
   const workspaceSingletonByPath: Array<[string, HostVirtualSingletonModule]> = [
+    // Monorepo dev layout.
     ["/packages/workspace/dist/workspace.js", "@hachej/boring-workspace"],
     ["/packages/workspace/src/index.ts", "@hachej/boring-workspace"],
     ["/packages/workspace/dist/plugin.js", "@hachej/boring-workspace/plugin"],
     ["/packages/workspace/src/plugin.ts", "@hachej/boring-workspace/plugin"],
     ["/packages/workspace/dist/events.js", "@hachej/boring-workspace/events"],
     ["/packages/workspace/src/front/events/index.ts", "@hachej/boring-workspace/events"],
+    // Installed layout (npm global / pnpm store): the scoped-package suffix
+    // matches both node_modules/@hachej/... and .pnpm/.../@hachej/... paths.
+    // Without these, a plugin importing the workspace root in an installed
+    // CLI gets a proxied SECOND copy of the workspace bundle — its context
+    // hooks (useApiBaseUrl, ...) read the wrong React context, and the
+    // proxied app-level graph drags un-interop'd CJS deps that fail to load.
+    ["/@hachej/boring-workspace/dist/workspace.js", "@hachej/boring-workspace"],
+    ["/@hachej/boring-workspace/dist/plugin.js", "@hachej/boring-workspace/plugin"],
+    ["/@hachej/boring-workspace/dist/events.js", "@hachej/boring-workspace/events"],
   ]
   for (const [suffix, source] of workspaceSingletonByPath) {
     if (normalizedPath.endsWith(suffix)) return source

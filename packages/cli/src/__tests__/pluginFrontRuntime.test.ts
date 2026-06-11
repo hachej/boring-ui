@@ -492,6 +492,40 @@ describe("pluginFrontRuntime", () => {
     }
   }, 20_000)
 
+  test("maps installed-layout @hachej/boring-workspace imports to the host singleton", async () => {
+    // In an installed CLI the workspace package resolves under
+    // node_modules/@hachej/boring-workspace (not packages/workspace). The
+    // root import must hit the host singleton — a proxied second copy reads
+    // the wrong React context and drags un-interop'd app-level CJS deps.
+    const pluginRoot = await makeTempDir("plugin-front-runtime-installed-ws-")
+    const plugin = await writeRuntimePlugin(pluginRoot, {
+      "front/index.tsx": 'import { useApiBaseUrl } from "@hachej/boring-workspace"\nexport const hook = useApiBaseUrl\n',
+      "node_modules/@hachej/boring-workspace/package.json": JSON.stringify({
+        name: "@hachej/boring-workspace",
+        version: "0.0.0",
+        exports: { ".": "./dist/workspace.js" },
+      }),
+      "node_modules/@hachej/boring-workspace/dist/workspace.js": "export const useApiBaseUrl = () => { throw new Error('proxied copy must not load') }\n",
+    })
+
+    const host = await createPluginFrontRuntimeHost()
+    const app = fastify({ logger: false })
+    await host.registerRoutes(app)
+    host.trackPlugin({ workspaceId: "workspace-a", plugin, revision: 1, frontEntrySubpath: "front/index.tsx" })
+
+    try {
+      const entry = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/index.tsx`,
+      })
+      expect(entry.statusCode).toBe(200)
+      expect(entry.body).toContain("/__vite/singleton/%40hachej%2Fboring-workspace")
+      expect(entry.body).not.toContain("boring-workspace%2Fdist%2Fworkspace.js")
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
+
   test("rejects plugin-local dependency attempts to import arbitrary /@fs paths", async () => {
     const pluginRoot = await makeTempDir("plugin-front-runtime-bad-dep-")
     const plugin = await writeRuntimePlugin(pluginRoot, {
