@@ -668,6 +668,12 @@ export async function createWorkspacesModeApp(opts: {
     beforeReload: async ({ workspaceId }) => {
       const workspace = await requireWorkspace(workspaceId)
       const runtime = await getLoadedPluginRuntime(workspace)
+      // Re-resolve discovery roots before rescanning: package sources in
+      // .pi/settings.json can gain entries after boot (boring-ui-plugin
+      // install), but the manager's dirs were resolved once when this
+      // workspace runtime was created. Without this, newly installed plugin
+      // sources stay invisible until a full process restart.
+      runtime.manager.setPluginDirs(pluginDiscovery.resolveCliBoringPluginDirs(workspace.path))
       const scan = await runtime.manager.load()
       syncLoadedPluginPiSnapshot(workspace, runtime.manager)
       syncRuntimeHostFromPluginEvents(runtimeHost, workspaceId, scan.events)
