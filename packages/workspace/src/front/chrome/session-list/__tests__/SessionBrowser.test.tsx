@@ -123,6 +123,36 @@ describe("SessionBrowser", () => {
     expect(screen.getByText(/Second session/)).toBeInTheDocument()
   })
 
+  it("renders a Pinned section and toggles pin state", () => {
+    const onTogglePin = vi.fn()
+    // s1 open (Active, unpinned), s2 pinned.
+    render(
+      <SessionBrowser
+        sessions={sample}
+        activeId="s1"
+        openIds={["s1"]}
+        pinnedIds={["s2"]}
+        onTogglePin={onTogglePin}
+      />,
+    )
+
+    const pinnedSection = document.querySelector('[data-boring-workspace-part="session-pinned-section"]')
+    expect(pinnedSection).toBeInTheDocument()
+    expect(pinnedSection?.textContent).toContain("Second session")
+    // A pinned session shows its toggle in the pinned state, and a pinned
+    // session is pulled out of the Active section.
+    expect(pinnedSection?.querySelector('[data-boring-state="pinned"]')).toBeInTheDocument()
+    const activeSection = document.querySelector('[data-boring-workspace-part="session-active-section"]')
+    expect(activeSection?.textContent).not.toContain("Second session")
+
+    fireEvent.click(screen.getByRole("button", { name: /Unpin Second session/ }))
+    expect(onTogglePin).toHaveBeenCalledWith("s2")
+
+    // Pinning an un-pinned (Active) row.
+    fireEvent.click(screen.getByRole("button", { name: /^Pin First session/ }))
+    expect(onTogglePin).toHaveBeenCalledWith("s1")
+  })
+
   it("shows a working badge while a session's chat panel streams", () => {
     render(<SessionBrowser sessions={sample} activeId="s1" />)
 

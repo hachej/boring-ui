@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { ChevronLeft, ChevronRight, ExternalLink, Plus } from "lucide-react"
+import { ChevronLeft, ChevronRight, ExternalLink, Pin, Plus } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { ControlTooltip } from "../../components/ControlTooltip"
@@ -43,6 +43,9 @@ export interface SessionBrowserProps {
   activeId?: string | null
   /** Session ids currently open as chat panes, in pane order. */
   openIds?: string[]
+  /** Session ids the user pinned; surfaced in a Pinned section on top. */
+  pinnedIds?: string[]
+  onTogglePin?: (id: string) => void
   onSwitch?: (id: string) => void
   onOpenAsTab?: (id: string) => void
   onCreate?: () => void
@@ -133,6 +136,8 @@ export function SessionBrowser({
   sessions,
   activeId,
   openIds,
+  pinnedIds,
+  onTogglePin,
   onSwitch,
   onOpenAsTab,
   onCreate,
@@ -143,25 +148,40 @@ export function SessionBrowser({
   onClose,
   className,
 }: SessionBrowserProps) {
-  // Open panes surface in an "Active" section, in pane order; everything
-  // else is history grouped by recency.
+  // Pinned sessions sit in their own section on top, in pin order. Open
+  // panes surface in "Active" (in pane order); everything else is history
+  // grouped by recency. A session appears in only the highest-priority
+  // section it qualifies for: Pinned > Active > History.
   const openSet = useMemo(() => new Set(openIds ?? []), [openIds])
-  const activeSessions = useMemo(
-    () => (openIds ?? [])
+  const pinnedSet = useMemo(() => new Set(pinnedIds ?? []), [pinnedIds])
+  const pinnedSessions = useMemo(
+    () => (pinnedIds ?? [])
       .map((id) => sessions.find((session) => session.id === id))
       .filter((session): session is SessionItem => Boolean(session)),
-    [openIds, sessions],
+    [pinnedIds, sessions],
+  )
+  const activeSessions = useMemo(
+    () => (openIds ?? [])
+      .filter((id) => !pinnedSet.has(id))
+      .map((id) => sessions.find((session) => session.id === id))
+      .filter((session): session is SessionItem => Boolean(session)),
+    [openIds, pinnedSet, sessions],
   )
   const historySessions = useMemo(
-    () => (openSet.size > 0 ? sessions.filter((session) => !openSet.has(session.id)) : sessions),
-    [openSet, sessions],
+    () => (openSet.size > 0 || pinnedSet.size > 0
+      ? sessions.filter((session) => !openSet.has(session.id) && !pinnedSet.has(session.id))
+      : sessions),
+    [openSet, pinnedSet, sessions],
   )
   const groups = useMemo(() => groupSessions(historySessions), [historySessions])
+  const [pinnedCollapsed, setPinnedCollapsed] = useState(false)
   const [activeCollapsed, setActiveCollapsed] = useState(false)
   // History starts collapsed so the drawer leads with what's open; expands
   // on click. With no panes open there is no Active section, so history
   // shows by default to avoid an empty-looking drawer.
-  const [historyCollapsed, setHistoryCollapsed] = useState(() => (openIds?.length ?? 0) > 0)
+  const [historyCollapsed, setHistoryCollapsed] = useState(
+    () => (openIds?.length ?? 0) > 0 || (pinnedIds?.length ?? 0) > 0,
+  )
   const workingSessionIds = useWorkingSessionIds()
   const { blockers } = useWorkspaceAttention()
   const needsInputSessionIds = useMemo(() => {
@@ -213,8 +233,38 @@ export function SessionBrowser({
           </div>
         )}
 
+        {pinnedSessions.length > 0 && (
+          <section data-boring-workspace-part="session-pinned-section">
+            <SectionHeader
+              label="Pinned"
+              count={pinnedSessions.length}
+              collapsed={pinnedCollapsed}
+              onToggle={() => setPinnedCollapsed((value) => !value)}
+            />
+            {!pinnedCollapsed && (
+              <ul role="list" className="flex flex-col">
+                {pinnedSessions.map((session) => (
+                  <SessionRow
+                    key={session.id}
+                    session={session}
+                    active={session.id === activeId}
+                    open={openSet.has(session.id)}
+                    pinned
+                    working={workingSessionIds.has(session.id)}
+                    needsInput={needsInputSessionIds.has(session.id)}
+                    onSwitch={onSwitch}
+                    onOpenAsTab={onOpenAsTab}
+                    onTogglePin={onTogglePin}
+                    onDelete={onDelete}
+                  />
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
+
         {activeSessions.length > 0 && (
-          <section data-boring-workspace-part="session-active-section">
+          <section data-boring-workspace-part="session-active-section" className={cn(pinnedSessions.length > 0 && "mt-3")}>
             <SectionHeader
               label="Active"
               count={activeSessions.length}
@@ -229,10 +279,12 @@ export function SessionBrowser({
                     session={session}
                     active={session.id === activeId}
                     open
+                    pinned={pinnedSet.has(session.id)}
                     working={workingSessionIds.has(session.id)}
                     needsInput={needsInputSessionIds.has(session.id)}
                     onSwitch={onSwitch}
                     onOpenAsTab={onOpenAsTab}
+                    onTogglePin={onTogglePin}
                     onDelete={onDelete}
                   />
                 ))}
@@ -267,10 +319,12 @@ export function SessionBrowser({
                           session={session}
                           active={session.id === activeId}
                           open={false}
+                          pinned={pinnedSet.has(session.id)}
                           working={workingSessionIds.has(session.id)}
                           needsInput={needsInputSessionIds.has(session.id)}
                           onSwitch={onSwitch}
                           onOpenAsTab={onOpenAsTab}
+                          onTogglePin={onTogglePin}
                           onDelete={onDelete}
                         />
                       ))}
@@ -335,19 +389,23 @@ function SessionRow({
   session,
   active,
   open,
+  pinned,
   working,
   needsInput,
   onSwitch,
   onOpenAsTab,
+  onTogglePin,
   onDelete,
 }: {
   session: SessionItem
   active: boolean
   open: boolean
+  pinned: boolean
   working: boolean
   needsInput: boolean
   onSwitch?: (id: string) => void
   onOpenAsTab?: (id: string) => void
+  onTogglePin?: (id: string) => void
   onDelete?: (id: string) => void
 }) {
   const time = relativeTime(session.updatedAt)
@@ -415,6 +473,33 @@ function SessionRow({
           working
         </span>
       ) : null}
+      {onTogglePin && (
+        <ControlTooltip label={pinned ? "Unpin session" : "Pin session"}>
+          <IconButton
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            data-boring-workspace-part="session-pin-toggle"
+            data-boring-state={pinned ? "pinned" : undefined}
+            className={cn(
+              "shrink-0 focus-visible:opacity-100 group-hover:opacity-100",
+              // A pinned session keeps its pin lit so the state is legible;
+              // unpinned rows reveal the affordance on hover like the others.
+              pinned
+                ? "text-[color:var(--accent)] opacity-100 hover:text-[color:var(--accent)]"
+                : "text-muted-foreground/70 opacity-0 hover:text-foreground",
+            )}
+            onClick={(e) => {
+              e.stopPropagation()
+              onTogglePin(session.id)
+            }}
+            aria-label={pinned ? `Unpin ${session.title || "session"}` : `Pin ${session.title || "session"}`}
+            aria-pressed={pinned}
+          >
+            <Pin className={cn("h-3.5 w-3.5", pinned && "fill-current")} strokeWidth={1.75} />
+          </IconButton>
+        </ControlTooltip>
+      )}
       {onOpenAsTab && (
         <ControlTooltip label="Open in chat pane">
           <IconButton

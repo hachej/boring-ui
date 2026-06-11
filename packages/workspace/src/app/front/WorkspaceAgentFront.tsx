@@ -175,6 +175,7 @@ function useStoredBooleanState(
 }
 
 const EMPTY_HEADERS: Record<string, string> = {}
+const EMPTY_STRING_LIST: string[] = []
 const PREPARING_WARMUP_STATUS: WorkspaceWarmupStatus = { status: "preparing" }
 
 const emptySurfaceSnapshot: SurfaceShellSnapshot = {
@@ -277,6 +278,32 @@ function writeStoredChatPaneState(storageKey: string, state: ChatPaneState): voi
       storageKey,
       JSON.stringify({ ids: state.ids, activeId: state.activeId }),
     )
+  } catch {
+    // Best-effort persistence only.
+  }
+}
+
+function readStoredPinnedSessions(storageKey: string, workspaceId: string): { workspaceId: string; ids: string[] } | null {
+  try {
+    const raw = globalThis.localStorage?.getItem(storageKey)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { ids?: unknown }
+    const ids = Array.isArray(parsed.ids)
+      ? parsed.ids.filter((id): id is string => typeof id === "string" && id.length > 0)
+      : []
+    return { workspaceId, ids }
+  } catch {
+    return null
+  }
+}
+
+function writeStoredPinnedSessions(storageKey: string, ids: string[]): void {
+  try {
+    if (ids.length === 0) {
+      globalThis.localStorage?.removeItem(storageKey)
+      return
+    }
+    globalThis.localStorage?.setItem(storageKey, JSON.stringify({ ids }))
   } catch {
     // Best-effort persistence only.
   }
@@ -476,6 +503,30 @@ export function WorkspaceAgentFront<
     const timer = setTimeout(() => setFlashChatPane(null), 700)
     return () => clearTimeout(timer)
   }, [flashChatPane])
+
+  const pinnedStorageKey = `boring-workspace:pinned-sessions:${workspaceId}`
+  const [pinnedState, setPinnedState] = useState<{ workspaceId: string; ids: string[] }>(() =>
+    (shellPersistenceEnabled ? readStoredPinnedSessions(pinnedStorageKey, workspaceId) : null)
+      ?? { workspaceId, ids: [] },
+  )
+  const pinnedIds = pinnedState.workspaceId === workspaceId ? pinnedState.ids : EMPTY_STRING_LIST
+  useEffect(() => {
+    setPinnedState((previous) => {
+      if (previous.workspaceId === workspaceId) return previous
+      return (shellPersistenceEnabled ? readStoredPinnedSessions(pinnedStorageKey, workspaceId) : null)
+        ?? { workspaceId, ids: [] }
+    })
+  }, [pinnedStorageKey, shellPersistenceEnabled, workspaceId])
+  const toggleSessionPinned = useCallback((sessionId: string) => {
+    setPinnedState((previous) => {
+      const current = previous.workspaceId === workspaceId ? previous.ids : []
+      const ids = current.includes(sessionId)
+        ? current.filter((id) => id !== sessionId)
+        : [sessionId, ...current]
+      if (shellPersistenceEnabled) writeStoredPinnedSessions(pinnedStorageKey, ids)
+      return { workspaceId, ids }
+    })
+  }, [pinnedStorageKey, shellPersistenceEnabled, workspaceId])
   useEffect(() => {
     if (!shellPersistenceEnabled) return
     if (chatPaneState.workspaceId !== workspaceId) return
@@ -1232,6 +1283,8 @@ export function WorkspaceAgentFront<
                 sessions: resolvedSessions,
                 activeId: activeChatPaneId,
                 openIds: chatPaneIds,
+                pinnedIds,
+                onTogglePin: toggleSessionPinned,
                 onSwitch: switchToChatPane,
                 onOpenAsTab: openChatPane,
                 onCreate: resolvedCreate,
