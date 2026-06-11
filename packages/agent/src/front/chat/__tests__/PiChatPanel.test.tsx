@@ -1290,8 +1290,10 @@ describe('PiChatPanel sandbox shell', () => {
     )
 
     const textarea = await screen.findByLabelText('Agent prompt')
-    expect(textarea.getAttribute('placeholder')).toBe('Select a file before chatting')
-    expect(screen.getAllByText('Select a file before chatting').length).toBeGreaterThan(0)
+    // The blocker text is shown once, in the actionable blocker bar — not also
+    // echoed into the input placeholder (which would duplicate the same line).
+    expect(textarea.getAttribute('placeholder')).toBe('')
+    expect(screen.getAllByText('Select a file before chatting').length).toBe(1)
   })
 
   test('/reset does not race empty-session auto-create into duplicate session creation', async () => {
