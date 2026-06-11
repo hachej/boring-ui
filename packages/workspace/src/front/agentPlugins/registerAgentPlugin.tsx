@@ -424,7 +424,14 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           // context identity, breaking provider ↔ panel context lookup (the provider
           // still holds the OLD context; the newly-imported panel consumes the NEW one).
           // Just acknowledge the event so replay-complete doesn't prune them.
-          if (options.staticPluginIds?.has(event.id)) {
+          //
+          // Guard: skip only if the plugin has NOT been dynamically registered yet.
+          // `dynamicallyRegisteredRef` is the single authoritative source for "whose
+          // lifecycle does this SSE hook own?" — if a plugin somehow becomes dynamic
+          // after bootstrap (future scenario), the guard lifts and it gets managed here.
+          // The unload gates all check dynamicallyRegisteredRef directly, so they need
+          // no matching change.
+          if (options.staticPluginIds?.has(event.id) && !dynamicallyRegisteredRef.current.has(event.id)) {
             lastSeenRef.current.set(event.id, event.revision)
             return
           }
