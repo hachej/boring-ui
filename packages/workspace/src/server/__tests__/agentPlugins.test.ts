@@ -154,29 +154,34 @@ describe("boring agent plugin assets", () => {
     }
   })
 
-  test("manager keeps /@fs frontUrl fallback when no frontTargetResolver is supplied", async () => {
+  test("manager emits module-url front targets when no frontTargetResolver is supplied", async () => {
     const root = await tmp("boring-plugin-front-fallback-")
     await writePlugin(root)
 
-    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
+    const manager = new BoringPluginAssetManager({ pluginDirs: [{ rootDir: root, kind: "external" as const }], errorRoot: join(root, ".errors") })
     const result = await manager.load()
     const loadEvent = result.events.find((event) => event.type === "boring.plugin.load")
 
+    const expectedTarget = {
+      kind: "module-url",
+      entryUrl: expect.stringContaining("/@fs/"),
+      revision: 1,
+    }
     expect(result.loaded).toEqual([
       expect.objectContaining({
         id: "boring-plugin-test",
         revision: 1,
-        frontUrl: expect.stringContaining("/@fs/"),
+        frontTarget: expectedTarget,
       }),
     ])
-    expect(result.loaded[0]).not.toHaveProperty("frontTarget")
+    expect(result.loaded[0]).not.toHaveProperty("frontUrl")
     expect(loadEvent).toEqual(expect.objectContaining({
       type: "boring.plugin.load",
       id: "boring-plugin-test",
       revision: 1,
-      frontUrl: expect.stringContaining("/@fs/"),
+      frontTarget: expectedTarget,
     }))
-    expect(loadEvent).not.toHaveProperty("frontTarget")
+    expect(loadEvent).not.toHaveProperty("frontUrl")
   })
 
   test("manager emits revision-addressed native frontTarget payloads when a resolver is supplied", async () => {
@@ -184,7 +189,7 @@ describe("boring agent plugin assets", () => {
     await writePlugin(root)
 
     const manager = new BoringPluginAssetManager({
-      pluginDirs: [root],
+      pluginDirs: [{ rootDir: root, kind: "external" as const }],
       errorRoot: join(root, ".errors"),
       frontTargetResolver(plugin, { revision, frontEntrySubpath }) {
         return {
@@ -201,7 +206,6 @@ describe("boring agent plugin assets", () => {
     expect(first.loaded[0]).toMatchObject({
       id: "boring-plugin-test",
       revision: 1,
-      frontUrl: expect.stringContaining("/@fs/"),
       frontTarget: {
         kind: "native",
         entryUrl: "/api/v1/agent-plugins/runtime/boring-plugin-test/1/front/index.tsx",
@@ -368,7 +372,7 @@ describe("boring agent plugin assets", () => {
     await symlink(realRoot, linkedPlugin)
 
     const manager = new BoringPluginAssetManager({
-      pluginDirs: [linkedPlugin],
+      pluginDirs: [{ rootDir: linkedPlugin, kind: "external" as const }],
       errorRoot: join(linkRoot, ".errors"),
       frontTargetResolver(plugin, { revision, frontEntrySubpath }) {
         return {
@@ -378,7 +382,6 @@ describe("boring agent plugin assets", () => {
           entryUrl: `/runtime/${plugin.id}/${revision}/${frontEntrySubpath}`,
         }
       },
-      includeLegacyFrontUrl: false,
     })
 
     const result = await manager.load()
@@ -462,7 +465,9 @@ describe("boring agent plugin assets", () => {
     // it — perfect for this test.
     await writePlugin(root)
 
-    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
+    // requiresRestart only applies to internal plugins — external server
+    // files are hot-reloaded by the runtime backend and never warn.
+    const manager = new BoringPluginAssetManager({ pluginDirs: [{ rootDir: root, kind: "internal" as const }], errorRoot: join(root, ".errors") })
 
     // First load: no `previous`, so requiresRestart is omitted (the
     // initial boot wired everything correctly).
@@ -526,7 +531,7 @@ describe("boring agent plugin assets", () => {
     await mkdir(join(root, "shared"), { recursive: true })
     await writeFile(join(root, "front", "panel.tsx"), "export const label = 'one'\n", "utf8")
     await writeFile(join(root, "shared", "constants.ts"), "export const label = 'one'\n", "utf8")
-    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
+    const manager = new BoringPluginAssetManager({ pluginDirs: [{ rootDir: root, kind: "external" as const }], errorRoot: join(root, ".errors") })
 
     await manager.load()
     expect(manager.list()[0].revision).toBe(1)
@@ -546,7 +551,7 @@ describe("boring agent plugin assets", () => {
   test("aggregatePluginPrompts reflects current package pi.systemPrompt across reloads", async () => {
     const root = await tmp("boring-plugin-agent-context-reload-")
     await writePlugin(root)
-    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
+    const manager = new BoringPluginAssetManager({ pluginDirs: [{ rootDir: root, kind: "external" as const }], errorRoot: join(root, ".errors") })
     await manager.load()
 
     expect(aggregatePluginPrompts(manager)).toContain("Test plugin context")
@@ -578,7 +583,7 @@ describe("boring agent plugin assets", () => {
       pi: { systemPrompt: "Broken plugin context" },
     }), "utf8")
 
-    const manager = new BoringPluginAssetManager({ pluginDirs: [validRoot, invalidRoot], errorRoot: join(validRoot, ".errors") })
+    const manager = new BoringPluginAssetManager({ pluginDirs: [{ rootDir: validRoot, kind: "external" as const }, { rootDir: invalidRoot, kind: "external" as const }], errorRoot: join(validRoot, ".errors") })
     const scan = await manager.load()
     expect(scan.errors).toEqual([expect.objectContaining({ id: "broken-plugin" })])
 
@@ -598,9 +603,42 @@ describe("boring agent plugin assets", () => {
       version: "1.0.0",
       boring: { front: "./front/index.tsx" },
     }), "utf8")
-    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
+    const manager = new BoringPluginAssetManager({ pluginDirs: [{ rootDir: root, kind: "external" as const }], errorRoot: join(root, ".errors") })
     await manager.load()
     expect(aggregatePluginPrompts(manager)).toBeUndefined()
+  })
+
+  test("internal plugins load server-side but never reach the SSE channel", async () => {
+    // Internal plugins are app code: their front is statically bundled by the
+    // host, so the SSE hot-reload channel (subscribe + listExternal replay)
+    // must never carry them. The events array stays complete for /reload
+    // diagnostics, and list()/getErrors keep full visibility.
+    const internalRoot = await tmp("boring-plugin-internal-")
+    const externalRoot = await tmp("boring-plugin-external-")
+    await writePlugin(internalRoot)
+    await writePlugin(externalRoot)
+    const externalPkg = JSON.parse(await readFile(join(externalRoot, "package.json"), "utf8"))
+    externalPkg.name = "boring-plugin-external"
+    await writeFile(join(externalRoot, "package.json"), JSON.stringify(externalPkg), "utf8")
+
+    const manager = new BoringPluginAssetManager({
+      pluginDirs: [
+        { rootDir: internalRoot, kind: "internal" as const },
+        { rootDir: externalRoot, kind: "external" as const },
+      ],
+      errorRoot: join(internalRoot, ".errors"),
+    })
+    const emitted: string[] = []
+    manager.subscribe((event) => emitted.push(event.id))
+
+    const result = await manager.load()
+    // Both load server-side; the events array records both.
+    expect(result.loaded.map((p) => p.id).sort()).toEqual(["boring-plugin-external", "boring-plugin-test"])
+    expect(result.events.map((e) => e.id).sort()).toEqual(["boring-plugin-external", "boring-plugin-test"])
+    // Only the external plugin reaches subscribers and the SSE replay list.
+    expect(emitted).toEqual(["boring-plugin-external"])
+    expect(manager.listExternal().map((p) => p.id)).toEqual(["boring-plugin-external"])
+    expect(manager.list().map((p) => p.id).sort()).toEqual(["boring-plugin-external", "boring-plugin-test"])
   })
 
   test("scans plugins, emits load events, and serves canonical /api/v1/agent-plugins", async () => {
@@ -608,7 +646,7 @@ describe("boring agent plugin assets", () => {
     // Server module instantiation lives in pluginEntryResolver, not here.
     const root = await tmp("boring-plugin-manager-")
     await writePlugin(root)
-    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
+    const manager = new BoringPluginAssetManager({ pluginDirs: [{ rootDir: root, kind: "external" as const }], errorRoot: join(root, ".errors") })
     const events: string[] = []
     manager.subscribe((event) => events.push(event.type))
 
@@ -639,7 +677,7 @@ describe("boring agent plugin assets", () => {
   test("queues one successor load when reload is requested during an inflight load", async () => {
     const root = await tmp("boring-plugin-queued-")
     await writePlugin(root)
-    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
+    const manager = new BoringPluginAssetManager({ pluginDirs: [{ rootDir: root, kind: "external" as const }], errorRoot: join(root, ".errors") })
 
     // Two concurrent loads: the second queues behind the first.
     const first = manager.load()
@@ -655,7 +693,7 @@ describe("boring agent plugin assets", () => {
   test("POST /api/boring.reload is not registered", async () => {
     const root = await tmp("boring-plugin-obsolete-reload-")
     await writePlugin(root)
-    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
+    const manager = new BoringPluginAssetManager({ pluginDirs: [{ rootDir: root, kind: "external" as const }], errorRoot: join(root, ".errors") })
 
     const app = Fastify({ logger: false })
     await app.register(boringPluginRoutes, { manager })
@@ -674,7 +712,7 @@ describe("boring agent plugin assets", () => {
     pkg.name = "bad plugin name"
     await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
     const errorRoot = join(root, ".errors")
-    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot })
+    const manager = new BoringPluginAssetManager({ pluginDirs: [{ rootDir: root, kind: "external" as const }], errorRoot })
     const events: string[] = []
     manager.subscribe((event) => events.push(`${event.type}:${event.id}`))
 
@@ -711,7 +749,7 @@ describe("boring agent plugin assets", () => {
     pkg.boring.front = "../escape.tsx"
     await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
     const errorRoot = join(root, ".errors")
-    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot })
+    const manager = new BoringPluginAssetManager({ pluginDirs: [{ rootDir: root, kind: "external" as const }], errorRoot })
     const events: string[] = []
     manager.subscribe((event) => events.push(`${event.type}:${event.id}`))
 
@@ -743,7 +781,7 @@ describe("boring agent plugin assets", () => {
     expect(scan.preflight.ok).toBe(false)
     expect(scan.plugins.map((plugin) => plugin.id)).toEqual(["valid-plugin"])
 
-    const manager = new BoringPluginAssetManager({ pluginDirs: [valid, invalid], errorRoot: join(valid, ".errors") })
+    const manager = new BoringPluginAssetManager({ pluginDirs: [{ rootDir: valid, kind: "external" as const }, { rootDir: invalid, kind: "external" as const }], errorRoot: join(valid, ".errors") })
     const events: string[] = []
     manager.subscribe((event) => events.push(`${event.type}:${event.id}`))
     const result = await manager.load()
@@ -763,7 +801,7 @@ describe("boring agent plugin assets", () => {
     const root = await tmp("boring-plugin-error-persist-")
     await writePlugin(root)
     const errorRoot = join(root, ".pi", "extensions")
-    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot })
+    const manager = new BoringPluginAssetManager({ pluginDirs: [{ rootDir: root, kind: "external" as const }], errorRoot })
 
     const first = await manager.load()
     expect(first.errors).toEqual([])

@@ -212,19 +212,9 @@ function components.
 Production Fastify-only hosts need a workspace-owned module asset endpoint
 before loading TS/TSX front plugin entries without Vite.
 
-Runtime reload is separately switchable in `createWorkspaceAgentServer`:
-
-```ts
-createWorkspaceAgentServer({
-  pluginHotReload: true, // /reload refreshes front assets and dynamic pi.* snapshots
-})
-```
-
-Set `pluginHotReload: false` for static production hosts. The workspace still
-takes a boot-time snapshot of discovered/default package `pi.*` resources and
-`pi.systemPrompt`; it just does not refresh them on `/reload`. Workspace server
-entries are always boot-time/static composition: restart the host process after
-changing `boring.server` code.
+Runtime front assets and dynamic `pi.*` snapshots refresh through the canonical
+`/reload` path. Workspace server entries remain boot-time/static composition:
+restart the host process after changing `boring.server` code.
 
 ## Invariants
 

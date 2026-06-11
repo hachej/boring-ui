@@ -1,11 +1,20 @@
 import { ErrorCode } from "@hachej/boring-agent/shared"
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { isValidBoringPluginId } from "../../shared/plugins/manifest"
-import { RuntimeBackendError, type RuntimeBackendDispatchResponse, type RuntimeBackendRegistry } from "./runtimeBackendRegistry"
+import { RuntimeBackendError, type RuntimeBackendDispatchRequest, type RuntimeBackendDispatchResponse } from "./runtimeBackendRegistry"
 import { describeUnsafeRuntimePathSegment, findUnsafeRuntimePathSegment } from "./runtimePathSegments"
 
+/**
+ * Minimal dispatch surface the gateway needs. RuntimeBackendRegistry satisfies
+ * it directly; multi-workspace hosts can pass a facade that routes the request
+ * to a per-workspace registry by `request.workspaceId`.
+ */
+export interface RuntimeBackendDispatcher {
+  dispatch(request: RuntimeBackendDispatchRequest): Promise<RuntimeBackendDispatchResponse>
+}
+
 export interface RuntimeBackendGatewayOptions {
-  registry: RuntimeBackendRegistry
+  registry: RuntimeBackendDispatcher
   defaultWorkspaceId?: string
 }
 

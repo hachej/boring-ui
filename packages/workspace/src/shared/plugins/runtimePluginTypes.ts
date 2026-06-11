@@ -19,7 +19,18 @@ export interface BoringPluginNativeFrontTarget {
   trust: BoringPluginNativeFrontTargetTrust
 }
 
-export type BoringPluginFrontTarget = BoringPluginNativeFrontTarget
+/**
+ * Plugin front served as a plain browser module URL — the Vite-dev transport
+ * (`/@fs/...`). Hosts running a Vite dev server let Vite transform the entry;
+ * the CLI's runtime host mints `native` targets instead.
+ */
+export interface BoringPluginModuleUrlFrontTarget {
+  kind: "module-url"
+  entryUrl: string
+  revision: number
+}
+
+export type BoringPluginFrontTarget = BoringPluginNativeFrontTarget | BoringPluginModuleUrlFrontTarget
 
 export type BoringPluginEvent =
   | {
@@ -28,7 +39,6 @@ export type BoringPluginEvent =
       boring: BoringPackageBoringField
       version: string
       revision: number
-      frontUrl?: string
       frontTarget?: BoringPluginFrontTarget
     }
   | { type: "boring.plugin.unload"; id: string; revision: number }
@@ -40,6 +50,5 @@ export interface BoringPluginListEntry {
   pi?: BoringPackagePiField
   version: string
   revision: number
-  frontUrl?: string
   frontTarget?: BoringPluginFrontTarget
 }

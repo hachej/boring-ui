@@ -22,6 +22,7 @@
     "@fastify/compress": "^8.3.1",
     "@fastify/static": "^9.1.1",
     "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-ask-user": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
     "@hachej/boring-ui-plugin-cli": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",

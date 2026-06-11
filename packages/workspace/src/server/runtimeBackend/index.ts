@@ -29,4 +29,4 @@ export type {
   RuntimeBackendReloadResult,
 } from "./runtimeBackendRegistry"
 export { runtimeBackendGateway } from "./runtimeBackendGateway"
-export type { RuntimeBackendGatewayOptions } from "./runtimeBackendGateway"
+export type { RuntimeBackendDispatcher, RuntimeBackendGatewayOptions } from "./runtimeBackendGateway"

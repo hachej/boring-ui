@@ -1,5 +1,4 @@
 import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node:fs"
-import { createRequire } from "node:module"
 import { basename, dirname, resolve } from "node:path"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 
@@ -8,9 +7,6 @@ export const VITE_PORT = Number(process.env.PORT) || 5200
 export const APP_ROOT = resolve(import.meta.dirname, "../..")
 export const FIXTURES_DIR = resolve(APP_ROOT, "src/fixtures")
 export const WORKSPACE_DIR = resolve(APP_ROOT, "workspace")
-
-const require = createRequire(import.meta.url)
-const ASK_USER_PACKAGE_ROOT = dirname(require.resolve("@hachej/boring-ask-user/package.json"))
 
 function seedFixtureEntry(srcRoot: string, destRoot: string): void {
   for (const name of readdirSync(srcRoot)) {
@@ -49,12 +45,10 @@ export async function startPlaygroundServer(): Promise<void> {
       workspaceRoot,
       mode: "local",
       logger: true,
-      // `ask-user` and `deck` front plugins are statically composed in
-      // src/front/App.tsx. Do not also expose their package fronts through
-      // the hot-load asset manager: provider/binding plugins must stay one
-      // module instance, or panes can render outside their provider context.
-      defaultPluginPackages: [resolve(APP_ROOT, "src/plugins/playgroundDataCatalog")],
-      plugins: [{ dir: ASK_USER_PACKAGE_ROOT, hotReload: false }],
+      defaultPluginPackages: [
+        "@hachej/boring-ask-user",
+        resolve(APP_ROOT, "src/plugins/playgroundDataCatalog"),
+      ],
     })
     app.get("/api/v1/workspace/meta", async () => ({
       projectName: basename(workspaceRoot) || "Workspace",

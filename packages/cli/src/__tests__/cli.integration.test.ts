@@ -87,6 +87,7 @@ test("package exposes an installable boring-ui bin with published assets", async
   expect(packageJson.dependencies).toEqual(expect.objectContaining({
     "@fastify/static": expect.any(String),
     "@hachej/boring-agent": expect.any(String),
+    "@hachej/boring-ask-user": expect.any(String),
     "@hachej/boring-workspace": expect.any(String),
     fastify: expect.any(String),
   }))

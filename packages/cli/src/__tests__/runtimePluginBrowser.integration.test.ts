@@ -158,10 +158,11 @@ browserTest("built folder mode browser path hot-loads, preserves previous-good r
     trace.push("open folder mode page")
     await page.goto(address, { waitUntil: "load" })
     await page.getByRole("button", { name: "Workbench" }).click()
-    await pwExpect(page.getByText("Runtime Tab")).toBeVisible()
+    const runtimeTab = page.getByRole("button", { name: "Runtime Tab" })
+    await pwExpect(runtimeTab).toBeVisible()
 
     trace.push("render runtime plugin left tab v1")
-    await page.locator('button[role="tab"]').filter({ hasText: "Runtime Tab" }).click({ force: true })
+    await runtimeTab.click({ force: true })
     await pwExpect(page.getByText("runtime-plugin-ready-v1")).toBeVisible()
 
     trace.push("reload to v2")
