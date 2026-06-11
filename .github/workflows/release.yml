@@ -61,7 +61,7 @@ jobs:
 
       - name: Publish
         run: |
-          for pkg in packages/ui packages/agent packages/plugin-cli packages/workspace packages/core packages/cli plugins/deck plugins/ask-user plugins/data-explorer plugins/data-catalog; do
+          for pkg in packages/ui packages/agent packages/plugin-cli packages/workspace packages/core plugins/deck plugins/ask-user packages/cli plugins/data-explorer plugins/data-catalog; do
             name=$(node -p "require('./$pkg/package.json').name")
             version=$(node -p "require('./$pkg/package.json').version")
             if npm view "$name@$version" version >/dev/null 2>&1; then
