@@ -82,14 +82,13 @@ export async function boringPluginRoutes(app: FastifyInstance, opts: BoringPlugi
       write(event.type, payload)
     })
 
-    for (const plugin of manager.list()) {
+    for (const plugin of manager.listExternal()) {
       write("boring.plugin.load", {
         type: "boring.plugin.load",
         id: plugin.id,
         boring: plugin.boring,
         version: plugin.version,
         revision: plugin.revision,
-        ...(plugin.frontUrl ? { frontUrl: plugin.frontUrl } : {}),
         ...(plugin.frontTarget ? { frontTarget: plugin.frontTarget } : {}),
         replay: true,
       })
