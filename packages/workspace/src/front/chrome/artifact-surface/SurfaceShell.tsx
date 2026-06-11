@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { DockviewApi } from "dockview-react"
 import { ChevronRight, Menu } from "lucide-react"
+import { ControlTooltip } from "../../components/ControlTooltip"
 import { Button, IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { ArtifactSurfacePane } from "./ArtifactSurfacePane"
@@ -684,17 +685,18 @@ export function SurfaceShell({
         >
           <div>
             {collapsed && (
-              <IconButton
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => setCollapsed(false)}
-                className="pointer-events-auto ml-2"
-                aria-label="Show workspace menu"
-                title="Show workspace menu"
-              >
-                <Menu className="h-4 w-4" strokeWidth={1.75} />
-              </IconButton>
+              <ControlTooltip label="Show workspace menu" side="right">
+                <IconButton
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => setCollapsed(false)}
+                  className="pointer-events-auto ml-2"
+                  aria-label="Show workspace menu"
+                >
+                  <Menu className="h-4 w-4" strokeWidth={1.75} />
+                </IconButton>
+              </ControlTooltip>
             )}
           </div>
           {onClose && <WorkbenchCloseAction onClose={onClose} />}
@@ -752,17 +754,18 @@ function EmptyWorkbenchOverlay({
       {/* Fallback top bar so icons are always visible even with no tabs */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-0.5 border-b border-[color:oklch(from_var(--border)_l_c_h/0.4)] bg-background px-1" style={{ height: 44 }}>
         {collapsed && (
-          <IconButton
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            onClick={onExpandFiles}
-            className="pointer-events-auto mx-1"
-            aria-label="Show workspace menu"
-            title="Show workspace menu"
-          >
-            <Menu className="h-4 w-4" strokeWidth={1.75} />
-          </IconButton>
+          <ControlTooltip label="Show workspace menu" side="right">
+            <IconButton
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              onClick={onExpandFiles}
+              className="pointer-events-auto mx-1"
+              aria-label="Show workspace menu"
+            >
+              <Menu className="h-4 w-4" strokeWidth={1.75} />
+            </IconButton>
+          </ControlTooltip>
         )}
         <div className="flex-1" />
       </div>
