@@ -13,18 +13,41 @@
   --dv-inactivegroup-hiddenpanel-tab-background-color: transparent;
 }
 
+/* Neutralize the workbench pill-tab chrome (.dv-shell .dv-tab in
+   dockview-overrides.css): no rounded corners, no active-tab border or
+   accent, no header underline, no tab sizing caps. The double class on
+   the stage root (.dv-shell.dv-chat-stage) out-specifies the workbench
+   rules; the header must read as part of the pane, not a tab strip. */
+.dv-shell.dv-chat-stage .dv-tabs-and-actions-container {
+  border-bottom: none;
+  padding: 0;
+  gap: 0;
+  align-items: stretch;
+}
+
 /* dockview's fullwidth single-tab rules stop at the scroll wrapper; carry
    the full width down to the tab itself. */
-.dv-chat-stage .dv-tabs-and-actions-container.dv-single-tab .dv-tabs-container {
+.dv-shell.dv-chat-stage .dv-tabs-and-actions-container.dv-single-tab .dv-tabs-container {
   width: 100%;
 }
 
-.dv-chat-stage .dv-tab {
+.dv-shell.dv-chat-stage .dv-tab,
+.dv-shell.dv-chat-stage .dv-tab.dv-active-tab {
   width: 100%;
+  height: 100%;
+  min-width: 0;
   max-width: none;
   flex: 1 1 auto;
+  align-self: stretch;
+  margin-bottom: 0;
   padding: 0;
-  border-right: none;
+  border: none;
+  border-radius: 0;
+  background-color: transparent !important;
+}
+
+.dv-shell.dv-chat-stage .dv-tab.dv-active-tab::before {
+  content: none;
 }
 
 /* The chat stage hides dockview's built-in tab close icon entirely — the
