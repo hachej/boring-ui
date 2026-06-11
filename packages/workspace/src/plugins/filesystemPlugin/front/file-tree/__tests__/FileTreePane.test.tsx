@@ -833,6 +833,27 @@ describe("FileTreePane", () => {
       )
     })
 
+    it("New file submit opens the created file", async () => {
+      const bridge = {
+        openFile: vi.fn().mockResolvedValue({ seq: 1, status: "ok" }),
+      }
+      mockFileWrite.mockResolvedValue(undefined)
+      render(<FileTreePane bridge={bridge as any} />, { wrapper })
+      await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+
+      const container = screen.getByTestId("file-tree").parentElement!
+      fireEvent.contextMenu(container)
+      fireEvent.click(screen.getByRole("menuitem", { name: "New file" }))
+
+      const input = await screen.findByTestId("file-tree-edit-input")
+      fireEvent.change(input, { target: { value: "notes.md" } })
+      fireEvent.keyDown(input, { key: "Enter" })
+
+      await waitFor(() =>
+        expect(bridge.openFile).toHaveBeenCalledWith("notes.md", { mode: "edit" }),
+      )
+    })
+
     it("New file submit emits filesystem created on the bus with cause:'user'", async () => {
       const { events } = await import("../../../../../front/events")
       const { filesystemEvents } = await import("../../../shared/events")
