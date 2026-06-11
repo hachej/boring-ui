@@ -16,9 +16,9 @@ const PUBLISHABLE = [
   "packages/workspace",
   "packages/agent",
   "packages/ui",
-  "packages/cli", // @hachej/boring-ui-cli
   "plugins/deck",
   "plugins/ask-user",
+  "packages/cli", // @hachej/boring-ui-cli
   "plugins/data-explorer",
   "plugins/data-catalog",
 ]
