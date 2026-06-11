@@ -35,66 +35,95 @@ export function useFileEventInvalidation(): void {
   const workspaceId = useWorkspaceRequestId()
 
   useEffect(() => {
+    const batch = createInvalidationBatch(queryClient)
+
     const offChanged = events.on(filesystemEvents.changed, (e) => {
-      invalidateFile(queryClient, base, workspaceId, e.path)
+      invalidateFile(batch, base, workspaceId, e.path)
     })
     const offCreated = events.on(filesystemEvents.created, (e) => {
-      invalidateTree(queryClient, base, workspaceId)
+      invalidateTree(batch, base, workspaceId)
       if (e.kind === "file") {
-        invalidateFile(queryClient, base, workspaceId, e.path)
+        invalidateFile(batch, base, workspaceId, e.path)
       }
     })
     const offMoved = events.on(filesystemEvents.moved, (e) => {
-      invalidateTree(queryClient, base, workspaceId)
-      invalidateFile(queryClient, base, workspaceId, e.from)
-      invalidateFile(queryClient, base, workspaceId, e.to)
-      invalidateSearch(queryClient, base, workspaceId)
+      invalidateTree(batch, base, workspaceId)
+      invalidateFile(batch, base, workspaceId, e.from)
+      invalidateFile(batch, base, workspaceId, e.to)
+      invalidateSearch(batch, base, workspaceId)
     })
     const offDeleted = events.on(filesystemEvents.deleted, (e) => {
-      invalidateTree(queryClient, base, workspaceId)
-      invalidateFile(queryClient, base, workspaceId, e.path)
-      invalidateSearch(queryClient, base, workspaceId)
+      invalidateTree(batch, base, workspaceId)
+      invalidateFile(batch, base, workspaceId, e.path)
+      invalidateSearch(batch, base, workspaceId)
     })
     return () => {
       offChanged()
       offCreated()
       offMoved()
       offDeleted()
+      batch.dispose()
     }
   }, [queryClient, base, workspaceId])
 }
 
-function invalidateFile(
-  qc: QueryClient,
-  base: string,
-  workspaceId: string | null,
-  path: string,
-): void {
-  qc.invalidateQueries({ queryKey: [base, workspaceId, FILES_QUERY_KEY_SEGMENT, path] })
-  qc.invalidateQueries({ queryKey: [base, workspaceId, "stat", path] })
+const INVALIDATION_BATCH_MS = 25
+
+type QueryKey = readonly unknown[]
+
+interface InvalidationBatch {
+  enqueue(queryKey: QueryKey): void
+  dispose(): void
 }
 
-function invalidateStat(
-  qc: QueryClient,
+function createInvalidationBatch(qc: QueryClient): InvalidationBatch {
+  const pending = new Map<string, QueryKey>()
+  let timer: ReturnType<typeof setTimeout> | undefined
+
+  const flush = () => {
+    timer = undefined
+    const keys = Array.from(pending.values())
+    pending.clear()
+    for (const queryKey of keys) {
+      qc.invalidateQueries({ queryKey })
+    }
+  }
+
+  return {
+    enqueue(queryKey) {
+      pending.set(JSON.stringify(queryKey), queryKey)
+      if (timer === undefined) timer = setTimeout(flush, INVALIDATION_BATCH_MS)
+    },
+    dispose() {
+      if (timer !== undefined) clearTimeout(timer)
+      timer = undefined
+      pending.clear()
+    },
+  }
+}
+
+function invalidateFile(
+  batch: InvalidationBatch,
   base: string,
   workspaceId: string | null,
   path: string,
 ): void {
-  qc.invalidateQueries({ queryKey: [base, workspaceId, "stat", path] })
+  batch.enqueue([base, workspaceId, FILES_QUERY_KEY_SEGMENT, path])
+  batch.enqueue([base, workspaceId, "stat", path])
 }
 
 function invalidateTree(
-  qc: QueryClient,
+  batch: InvalidationBatch,
   base: string,
   workspaceId: string | null,
 ): void {
-  qc.invalidateQueries({ queryKey: [base, workspaceId, "tree"] })
+  batch.enqueue([base, workspaceId, "tree"])
 }
 
 function invalidateSearch(
-  qc: QueryClient,
+  batch: InvalidationBatch,
   base: string,
   workspaceId: string | null,
 ): void {
-  qc.invalidateQueries({ queryKey: [base, workspaceId, "search"] })
+  batch.enqueue([base, workspaceId, "search"])
 }

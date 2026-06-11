@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest"
-import { renderHook } from "@testing-library/react"
+import { renderHook, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ReactNode } from "react"
 
@@ -24,6 +24,10 @@ function makeWrapper(queryClient: QueryClient) {
   }
 }
 
+function queryKeyCalls(invalidate: ReturnType<typeof vi.fn>): Array<readonly unknown[]> {
+  return invalidate.mock.calls.map(([f]) => (f as { queryKey: readonly unknown[] }).queryKey)
+}
+
 describe("useFileEventInvalidation", () => {
   let qc: QueryClient
   // Untyped on purpose — vitest's MockInstance generic doesn't compose
@@ -38,29 +42,29 @@ describe("useFileEventInvalidation", () => {
     ;(qc as any).invalidateQueries = invalidate
   })
 
-  it("filesystem changed invalidates files + stat for the path only (granular)", () => {
+  it("filesystem changed invalidates files + stat for the path only (granular)", async () => {
     renderHook(() => useFileEventInvalidation(), { wrapper: makeWrapper(qc) })
     events.emit(filesystemEvents.changed, { ...agentMeta("tc-1"), path: "src/a.ts" })
 
-    expect(invalidate).toHaveBeenCalledWith({
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({
       queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "files", "src/a.ts"],
-    })
+    }))
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "stat", "src/a.ts"],
     })
     // Tree/search are NOT touched on a content-only change.
-    const calls = invalidate.mock.calls.map(([f]) => (f as { queryKey: readonly unknown[] }).queryKey)
+    const calls = queryKeyCalls(invalidate)
     expect(calls.some((k) => k[2] === "tree")).toBe(false)
     expect(calls.some((k) => k[2] === "search")).toBe(false)
   })
 
-  it("filesystem created (file) invalidates tree + files + stat", () => {
+  it("filesystem created (file) invalidates tree + files + stat", async () => {
     renderHook(() => useFileEventInvalidation(), { wrapper: makeWrapper(qc) })
     events.emit(filesystemEvents.created, { ...userMeta(), path: "src/new.ts", kind: "file" })
 
-    expect(invalidate).toHaveBeenCalledWith({
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({
       queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "tree"],
-    })
+    }))
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "files", "src/new.ts"],
     })
@@ -69,24 +73,24 @@ describe("useFileEventInvalidation", () => {
     })
   })
 
-  it("filesystem created (dir) invalidates tree only", () => {
+  it("filesystem created (dir) invalidates tree only", async () => {
     renderHook(() => useFileEventInvalidation(), { wrapper: makeWrapper(qc) })
     events.emit(filesystemEvents.created, { ...userMeta(), path: "scripts", kind: "dir" })
 
-    expect(invalidate).toHaveBeenCalledWith({
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({
       queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "tree"],
-    })
-    const calls = invalidate.mock.calls.map(([f]) => (f as { queryKey: readonly unknown[] }).queryKey)
+    }))
+    const calls = queryKeyCalls(invalidate)
     expect(calls.some((k) => k[2] === "stat")).toBe(false)
   })
 
-  it("filesystem moved invalidates tree + files(from,to) + search", () => {
+  it("filesystem moved invalidates tree + files(from,to) + search", async () => {
     renderHook(() => useFileEventInvalidation(), { wrapper: makeWrapper(qc) })
     events.emit(filesystemEvents.moved, { ...userMeta(), from: "old.ts", to: "new.ts" })
 
-    expect(invalidate).toHaveBeenCalledWith({
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({
       queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "tree"],
-    })
+    }))
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "files", "old.ts"],
     })
@@ -98,13 +102,13 @@ describe("useFileEventInvalidation", () => {
     })
   })
 
-  it("filesystem deleted invalidates tree + files(path) + search", () => {
+  it("filesystem deleted invalidates tree + files(path) + search", async () => {
     renderHook(() => useFileEventInvalidation(), { wrapper: makeWrapper(qc) })
     events.emit(filesystemEvents.deleted, { ...userMeta(), path: "doomed.ts" })
 
-    expect(invalidate).toHaveBeenCalledWith({
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({
       queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "tree"],
-    })
+    }))
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "files", "doomed.ts"],
     })
@@ -113,12 +117,29 @@ describe("useFileEventInvalidation", () => {
     })
   })
 
-  it("unsubscribes on unmount — events fired afterwards do not invalidate", () => {
+  it("coalesces a delete burst to one tree and one search invalidation", async () => {
+    renderHook(() => useFileEventInvalidation(), { wrapper: makeWrapper(qc) })
+
+    for (let i = 0; i < 50; i += 1) {
+      events.emit(filesystemEvents.deleted, { ...agentMeta("burst"), path: `folder/file-${i}.txt` })
+    }
+
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({
+      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "tree"],
+    }))
+    const calls = queryKeyCalls(invalidate)
+    expect(calls.filter((k) => k[2] === "tree")).toHaveLength(1)
+    expect(calls.filter((k) => k[2] === "search")).toHaveLength(1)
+    expect(calls.filter((k) => k[2] === "files")).toHaveLength(50)
+  })
+
+  it("unsubscribes on unmount — events fired afterwards do not invalidate", async () => {
     const { unmount } = renderHook(() => useFileEventInvalidation(), { wrapper: makeWrapper(qc) })
     unmount()
     invalidate.mockClear()
 
     events.emit(filesystemEvents.changed, { ...userMeta(), path: "x.ts" })
+    await new Promise((resolve) => setTimeout(resolve, 50))
     expect(invalidate).not.toHaveBeenCalled()
   })
 })
