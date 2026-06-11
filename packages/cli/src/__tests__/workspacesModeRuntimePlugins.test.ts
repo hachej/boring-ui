@@ -232,6 +232,43 @@ describe("workspaces mode runtime plugin wiring", () => {
     }
   }, 20_000)
 
+  test("package sources added to .pi/settings.json after boot are picked up by /reload", async () => {
+    const homeRoot = await makeTempDir("boring-cli-workspaces-pkgsrc-home-")
+    const registryPath = join(await makeTempDir("boring-cli-workspaces-pkgsrc-registry-"), "workspaces.yaml")
+    const workspaceRoot = await makeTempDir("boring-cli-workspace-pkgsrc-")
+    process.env.HOME = homeRoot
+
+    const [workspace] = await setupRegistry([workspaceRoot], registryPath)
+    const app = await createWorkspacesModeApp({ mode: "direct", registryPath, provisionWorkspace: false })
+
+    try {
+      // Boot the workspace runtime with no plugin sources.
+      const before = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
+      expect(before.json()).toEqual([])
+
+      // Simulate `boring-ui-plugin install ../some-plugin`: a package source
+      // dir outside .pi/extensions, registered in .pi/settings.json packages.
+      const pluginDir = join(workspaceRoot, "vendor", "settings-plugin")
+      await writePlugin(pluginDir, "settings-plugin")
+      await mkdir(join(workspaceRoot, ".pi"), { recursive: true })
+      await writeFile(join(workspaceRoot, ".pi", "settings.json"), JSON.stringify({
+        packages: ["../vendor/settings-plugin"],
+      }), "utf8")
+
+      const reload = await app.inject({
+        method: "POST",
+        url: "/api/v1/agent/reload?workspaceId=" + encodeURIComponent(workspace.id),
+        payload: {},
+      })
+      expect(reload.statusCode).toBe(200)
+
+      const afterReload = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
+      expect((afterReload.json() as Array<{ id: string }>).map((plugin) => plugin.id)).toEqual(["settings-plugin"])
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
+
   test("workspace eviction closes active SSE streams and disposes runtime targets", async () => {
     const homeRoot = await makeTempDir("boring-cli-workspaces-evict-home-")
     const registryPath = join(await makeTempDir("boring-cli-workspaces-evict-registry-"), "workspaces.yaml")
