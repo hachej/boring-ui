@@ -1,38 +1,12 @@
 import type { ReactNode } from "react"
 import { cn } from "../lib/utils"
 import { ChatPaneStageDock } from "./ChatPaneStageDock"
-import { ChatPaneStageFlex } from "./ChatPaneStageFlex"
 
 export interface ChatPaneDescriptor {
   id: string
   title?: string | null
   panel?: string
   params?: Record<string, unknown>
-}
-
-/**
- * Layout engine for the chat pane stage.
- *
- * - `flex` (default): panes lay out as a single row of vertical splits.
- * - `dock`: dockview-backed stage — drag pane headers to split in any
- *   direction and resize; geometry persists per workspace.
- *
- * Resolution order: explicit prop, then the
- * `boring-workspace:chat-pane-engine` localStorage override, then `flex`.
- */
-export type ChatPaneEngine = "flex" | "dock"
-
-const ENGINE_STORAGE_KEY = "boring-workspace:chat-pane-engine"
-
-export function resolveChatPaneEngine(preferred?: ChatPaneEngine | null): ChatPaneEngine {
-  if (preferred === "dock" || preferred === "flex") return preferred
-  try {
-    const stored = globalThis.localStorage?.getItem(ENGINE_STORAGE_KEY)
-    if (stored === "dock" || stored === "flex") return stored
-  } catch {
-    // Storage may be unavailable; fall through to the default.
-  }
-  return "flex"
 }
 
 export interface ChatPaneStageProps {
@@ -48,23 +22,26 @@ export interface ChatPaneStageProps {
    */
   flashPaneId?: string | null
   /**
-   * Dock engine only: persist the dockview layout (splits, sizes) under
+   * Persist the dockview layout (splits, sizes) under
    * `${storageKey}:chatPaneLayout`.
    */
   storageKey?: string
   /**
    * Called when a session is dropped onto the stage (drag a session-browser
-   * row in). The parent opens the session as a pane; the dock engine places
-   * it where it was dropped.
+   * row in). The parent opens the session as a pane placed where it was
+   * dropped.
    */
   onDropSession?: (sessionId: string) => void
-  engine?: ChatPaneEngine | null
 }
 
-export function ChatPaneStage({ engine, ...props }: ChatPaneStageProps) {
-  return resolveChatPaneEngine(engine) === "dock"
-    ? <ChatPaneStageDock {...props} />
-    : <ChatPaneStageFlex {...props} />
+/**
+ * Chat pane stage: a dockview-backed surface where each open session is a
+ * pane. Drag flat pane headers to split in any direction, drag a session
+ * row in to open it at a drop position, resize — geometry persists per
+ * workspace.
+ */
+export function ChatPaneStage(props: ChatPaneStageProps) {
+  return <ChatPaneStageDock {...props} />
 }
 
 export function paneTitle(pane: { title?: string | null }): string {

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import type { ChatPaneDescriptor, ChatPaneEngine } from "./ChatPaneStage"
+import type { ChatPaneDescriptor } from "./ChatPaneStage"
 
 export interface IdeLayoutProps {
   sidebar?: string
@@ -20,13 +20,6 @@ export interface ChatLayoutProps {
   onCreateChatPaneAfter?: (id: string) => void
   onDropChatSession?: (sessionId: string) => void
   flashChatPaneId?: string | null
-  /**
-   * Chat stage layout engine. `dock` enables the dockview-backed stage
-   * (drag headers to split in any direction); defaults to the flex row.
-   * The `boring-workspace:chat-pane-engine` localStorage key overrides
-   * when no explicit value is passed.
-   */
-  chatPaneEngine?: ChatPaneEngine | null
   surface?: string | null
   surfaceParams?: Record<string, unknown>
   surfaceOverlay?: ReactNode
