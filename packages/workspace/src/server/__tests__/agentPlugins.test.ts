@@ -382,7 +382,6 @@ describe("boring agent plugin assets", () => {
           entryUrl: `/runtime/${plugin.id}/${revision}/${frontEntrySubpath}`,
         }
       },
-      includeLegacyFrontUrl: false,
     })
 
     const result = await manager.load()

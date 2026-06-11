@@ -218,9 +218,9 @@ running Fastify/agent process by `/reload`.
 
 | Surface | Runtime `.pi/extensions` | App/internal package plugin | Notes |
 | --- | --- | --- | --- |
-| `pi.systemPrompt` | `/reload`, next turn | `/reload` in dev when discovered; static in production if hot reload disabled | Appended by `systemPromptDynamic`. |
+| `pi.systemPrompt` | `/reload`, next turn | `/reload` when discovered | Appended by `systemPromptDynamic`. |
 | `pi.extensions` | `/reload` through Pi session reload | `/reload` when discovered as package resources | File paths are re-read from manifest. |
-| `pi.skills` / `pi.packages` | `/reload` through dynamic resource getter | `/reload` in dev; boot snapshot when `pluginHotReload=false` | `verify-plugin` checks declared local skill paths. |
+| `pi.skills` / `pi.packages` | `/reload` through dynamic resource getter | `/reload` when discovered as package resources | `verify-plugin` checks declared local skill paths. |
 | `boring.front` panels/commands/catalogs/surface resolvers | `/reload` + SSE + browser dynamic import | `/reload` in dev when front URL is served by the app/Vite | Previous version stays live on import/register failure. |
 | `boring.server` routes/agentTools | Not supported for generated plugins | Boot-time only | `/reload` can warn `requiresRestart`. Restart process to apply. |
 | Providers/bindings from hot-loaded front factories | Skipped | Static composition only | Dynamic provider tree mounting is intentionally not implemented yet. |
@@ -240,16 +240,6 @@ boring-ui-plugin verify <name>
 
 Do not teach agents to copy `packages/plugin-cli/templates/plugin` for generated runtime
 plugins. That template is an app/internal publishable package example.
-
-### 4.7 `pluginHotReload`
-
-`createWorkspaceAgentServer({ pluginHotReload })` controls dynamic Pi/package
-refresh through the canonical `/api/v1/agent/reload` path.
-
-- `true` (default): keeps `/api/v1/agent-plugins/events` active and refreshes
-  discovered plugin Pi resources on `/api/v1/agent/reload`.
-- `false`: static discovery/listing remains available, but package resources
-  are snapped once at boot and canonical reload skips plugin hot-refresh work.
 
 ---
 
