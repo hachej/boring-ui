@@ -800,6 +800,11 @@ function parsePluginDependencyVirtualId(id: string): PluginDependencyContext | n
 // Built once per plugin instance; pnpm symlinks make the real path of each dep
 // land in the global content-addressable store (outside node_modules), so we
 // resolve every entry up-front and check containment against those real roots.
+//
+// This cache is intentionally unbounded and never invalidated. If a user runs
+// `npm install` inside a plugin dir mid-session, they must restart the CLI for
+// the new dep to be importable — the server's module graph has the same
+// constraint — so a stale cache cannot be reached in normal use.
 const pluginPackageRootsCache = new Map<string, Promise<ReadonlySet<string>>>()
 
 async function getPluginPackageRoots(nodeModulesDir: string): Promise<ReadonlySet<string>> {
