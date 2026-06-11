@@ -49,15 +49,11 @@ export interface BoringPluginAssetManagerOptions {
    */
   errorRoot?: string
   /**
-   * Optional host-owned runtime front-target resolver. When omitted, list/event
-   * payloads preserve the existing `frontUrl` (`/@fs/...`) fallback only.
+   * Optional host-owned runtime front-target resolver (the CLI's runtime
+   * module host mints `native` targets). When omitted, plugins with a front
+   * entry get a `module-url` target pointing at the Vite-dev `/@fs/...` URL.
    */
   frontTargetResolver?: BoringPluginFrontTargetResolver
-  /**
-   * Keep legacy `/@fs/...` frontUrl payloads alongside frontTarget. Defaults
-   * to true for back-compat; packaged CLI folder/workspaces mode can disable it.
-   */
-  includeLegacyFrontUrl?: boolean
 }
 
 export interface LoadBoringAssetsError {
@@ -227,7 +223,6 @@ export class BoringPluginAssetManager {
   private pluginDirs: BoringPluginSourceInput[]
   private readonly errorRoot: string
   private readonly frontTargetResolver?: BoringPluginFrontTargetResolver
-  private readonly includeLegacyFrontUrl: boolean
   private readonly loaded = new Map<string, LoadedPluginRecord>()
   private readonly revisions = new Map<string, number>()
   private readonly listeners = new Set<Listener>()
@@ -239,7 +234,6 @@ export class BoringPluginAssetManager {
     this.pluginDirs = options.pluginDirs
     this.errorRoot = options.errorRoot ?? join(process.cwd(), ".pi", "extensions") // callers MUST override errorRoot in non-trivial deployments
     this.frontTargetResolver = options.frontTargetResolver
-    this.includeLegacyFrontUrl = options.includeLegacyFrontUrl ?? true
   }
 
   /**
@@ -259,6 +253,20 @@ export class BoringPluginAssetManager {
 
   list(): BoringPluginListEntry[] {
     return [...this.loaded.values()].map((plugin) => this.toListEntry(plugin))
+  }
+
+  /**
+   * Plugins whose front lifecycle the SSE channel owns. Internal plugins are
+   * app code — their front is statically bundled by the host app and must
+   * never be re-imported through the hot-reload pipeline (a second module
+   * instance would carry a fresh React context identity, breaking
+   * provider ↔ panel lookups). They are loaded server-side (routes, agent
+   * tools, Pi snapshot) but excluded from SSE replay and live events.
+   */
+  listExternal(): BoringPluginListEntry[] {
+    return [...this.loaded.values()]
+      .filter((plugin) => plugin.source.kind === "external")
+      .map((plugin) => this.toListEntry(plugin))
   }
 
   getError(pluginId: string): string | null {
@@ -345,9 +353,7 @@ export class BoringPluginAssetManager {
       if (previous) {
         try { clearPluginSignatureCache(previous.rootDir) } catch {}
       }
-      const event: BoringPluginEvent = { type: "boring.plugin.unload", id, revision }
-      events.push(event)
-      this.emit(event)
+      this.record(events, { type: "boring.plugin.unload", id, revision }, previous?.source)
     }
 
     for (const plugin of nextPlugins) {
@@ -394,22 +400,18 @@ export class BoringPluginAssetManager {
           boring: plugin.boring,
           version: plugin.version,
           revision,
-          ...(this.frontUrlPayload(plugin.frontUrl)),
           ...(frontTarget ? { frontTarget } : {}),
           ...(requiresRestart.length > 0 ? { requiresRestart } : {}),
         }
-        events.push(event)
-        this.emit(event)
+        this.record(events, event, plugin.source)
       } catch (error) {
         const revision = this.bumpRevision(plugin.id)
         const message = error instanceof Error ? error.stack ?? error.message : String(error)
         this.writeError(plugin.id, message)
-        const event: BoringPluginEvent = { type: "boring.plugin.error", id: plugin.id, revision, message }
         const loadError = { id: plugin.id, revision, message }
         this.lastErrors.set(plugin.id, loadError)
         errors.push(loadError)
-        events.push(event)
-        this.emit(event)
+        this.record(events, { type: "boring.plugin.error", id: plugin.id, revision, message }, plugin.source)
       }
     }
 
@@ -448,18 +450,17 @@ export class BoringPluginAssetManager {
       ...(plugin.pi ? { pi: plugin.pi } : {}),
       version: plugin.version,
       revision: plugin.revision,
-      ...(this.frontUrlPayload(plugin.frontUrl)),
       ...(plugin.frontTarget ? { frontTarget: plugin.frontTarget } : {}),
     }
   }
 
-  private frontUrlPayload(frontUrl: string | undefined): Pick<BoringPluginListEntry, "frontUrl"> | Record<string, never> {
-    if (!this.includeLegacyFrontUrl || !frontUrl) return {}
-    return { frontUrl }
-  }
-
   private resolveFrontTarget(plugin: BoringServerPluginManifest, revision: number): BoringPluginFrontTarget | undefined {
-    if (!plugin.frontPath || !this.frontTargetResolver) return undefined
+    if (!plugin.frontPath) return undefined
+    if (!this.frontTargetResolver) {
+      // No runtime host — serve the entry as a plain browser module URL and
+      // let the host's Vite dev server transform it.
+      return plugin.frontUrl ? { kind: "module-url", entryUrl: plugin.frontUrl, revision } : undefined
+    }
     const frontEntrySubpath = typeof plugin.boring.front === "string"
       ? plugin.boring.front.replace(/^\.\//, "")
       : normalizePluginSubpath(plugin.rootDir, plugin.frontPath)
@@ -469,6 +470,17 @@ export class BoringPluginAssetManager {
     })
     if (!frontTarget) return undefined
     return { ...frontTarget, revision }
+  }
+
+  /**
+   * Append to the load result's events array and emit on the SSE channel —
+   * unless the source is internal. Internal plugins are app code: their
+   * events stay in the load result (for /reload diagnostics and restart
+   * warnings) but never reach SSE subscribers (see listExternal).
+   */
+  private record(events: BoringPluginEvent[], event: BoringPluginEvent, source: BoringPluginSource | undefined): void {
+    events.push(event)
+    if (source?.kind !== "internal") this.emit(event)
   }
 
   private emit(event: BoringPluginEvent): void {

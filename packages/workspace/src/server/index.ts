@@ -68,6 +68,7 @@ export type {
   RuntimeBackendDiagnostic,
   RuntimeBackendDispatchRequest,
   RuntimeBackendDispatchResponse,
+  RuntimeBackendDispatcher,
   RuntimeBackendGatewayOptions,
   RuntimeBackendReloadResult,
   RuntimePluginContext,

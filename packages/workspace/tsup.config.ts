@@ -16,7 +16,7 @@ export default defineConfig({
     resolve: false,
     entry: {
       "app-server": "src/app/server/index.ts",
-      server: "src/server/index.ts",
+        server: "src/server/index.ts",
       "runtime-server": "src/server/runtimeBackend/defineRuntimeServerPlugin.ts",
       shared: "src/shared/index.ts",
       events: "src/front/events/index.ts",

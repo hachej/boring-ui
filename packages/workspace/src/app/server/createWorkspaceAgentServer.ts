@@ -96,14 +96,6 @@ export interface CreateWorkspaceAgentServerOptions
   workspaceProvisioning?: { force?: boolean }
   validateUiPaths?: boolean
   /**
-   * Whether the canonical agent reload refreshes discovered package plugins.
-   * When true, chat `/reload` refreshes package front/Pi metadata and reports
-   * static-server restart warnings; dir-source server entries are re-imported
-   * for diagnostics only. When false, initial static discovery still runs, but
-   * dynamic Pi/system-prompt refresh is disabled. Defaults to true.
-   */
-  pluginHotReload?: boolean
-  /**
    * App-default plugin packages (by npm name OR absolute filesystem path).
    * Each entry is resolved at boot, registered as a Pi package (so Pi sees
    * its skills/extensions/prompts), and discovered by the
@@ -118,28 +110,12 @@ export interface CreateWorkspaceAgentServerOptions
    */
   defaultPluginPackages?: string[]
   /**
-   * Absolute path to the app's `package.json`. When passed, the workspace
-   * reads `package.json#boring.defaultPluginPackages: string[]` from it
-   * and merges those entries with anything passed in
-   * `defaultPluginPackages`. Relative entries in package.json resolve
-   * against the package.json's own directory.
-   *
-   * Example app `package.json`:
-   *
-   *     {
-   *       "name": "my-app",
-   *       "boring": {
-   *         "defaultPluginPackages": [
-   *           "@hachej/boring-ask-user",
-   *           "./src/plugins/playgroundDataCatalog"
-   *         ]
-   *       }
-   *     }
-   *
-   * Lets apps declare their plugin set in the canonical app manifest
-   * instead of inside the server boot path.
+   * The host app's package root. Anchors npm-name resolution of
+   * `defaultPluginPackages` at the app's own node_modules (in addition to a
+   * walk-up from `workspaceRoot`). Pass when the workspace root does not
+   * live under the app directory.
    */
-  appPackageJsonPath?: string
+  appRoot?: string
   /** Additional plugin collection roots to scan alongside workspace .pi/extensions and package/plugin-derived roots. */
   additionalBoringPluginDirs?: BoringPluginSourceInput[]
   /**
@@ -157,8 +133,6 @@ export interface CreateWorkspaceAgentServerOptions
   installPluginAuthoring?: boolean
   /** Optional host-owned front-target override for boring plugin list/event payloads. */
   boringPluginFrontTargetResolver?: BoringPluginFrontTargetResolver
-  /** Preserve legacy `/@fs/...` frontUrl payloads alongside frontTarget. Defaults to true. */
-  boringPluginIncludeLegacyFrontUrl?: boolean
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -590,23 +564,20 @@ export async function createWorkspaceAgentServer(
   })
   const ctx: WorkspaceAgentServerPluginContext = { workspaceRoot, bridge }
 
-  // Resolve app-default plugin packages from two sources, merged:
-  //   1. `opts.defaultPluginPackages` (explicit, set in code)
-  //   2. `package.json#boring.defaultPluginPackages` (declarative, the
-  //      canonical app manifest location — preferred for new apps).
-  // Each entry is resolved to an absolute package dir. All default package
-  // dirs flow into the boring asset manager + dynamic Pi scan; only packages
+  // Resolve app-default plugin packages (explicit list set in host boot
+  // code — the server-side mirror of the app's static front imports). Each
+  // entry is resolved to an absolute package dir. All default package dirs
+  // flow into the boring asset manager + dynamic Pi scan; only packages
   // that actually declare/provide a server entry flow into the server-side
   // install array. Front/Pi-only default packages must not be forced through
   // a server import.
   const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths({
     workspaceRoot,
-    appPackageJsonPath: opts.appPackageJsonPath,
     defaultPluginPackages: opts.defaultPluginPackages,
+    anchorDir: opts.appRoot,
   })
-  const pluginHotReload = opts.pluginHotReload ?? true
   const defaultPluginDirEntries: WorkspacePluginEntry[] = defaultPluginPackagePaths
-    .map((dir) => ({ dir, hotReload: pluginHotReload }))
+    .map((dir) => ({ dir, hotReload: true }))
     .filter((entry) => hasDirServerPlugin(entry))
 
   const allPluginEntries: WorkspacePluginEntry[] = [
@@ -626,17 +597,10 @@ export async function createWorkspaceAgentServer(
     installPluginAuthoring: pluginAuthoringEnabled,
   })
 
-  // Note: defaultPluginPackagePaths land in `boringPluginDirs` below.
-  // With hot reload enabled, package `pi.*` fields flow through the
-  // dynamic resource getter. With hot reload disabled, the same scan is
-  // snapped once at boot and merged into static Pi options.
-
   // Static Pi resources known at boot: workspace skill dir,
-  // factory-supplied values, and the bundled @hachej/boring-pi skill
-  // package. When pluginHotReload is disabled, package.json#pi from
-  // discovered/default plugin packages is snapped once at boot and merged
-  // here so production/static hosts keep the same app-default agent context
-  // without a dynamic refresh hook.
+  // factory-supplied values, and the bundled @hachej/boring-pi skill package.
+  // Plugin package.json#pi resources flow through the dynamic resource getter
+  // so `/reload` always re-reads manifest changes.
   const workspacePackagePiPackage = pluginAuthoringEnabled ? createBoringPiPackageSource(workspaceRoot) : undefined
   const baseStaticPiSkillPaths = [
     ...(pluginAuthoringEnabled ? resolveBoringPiSkillPaths(workspaceRoot) : []),
@@ -666,9 +630,7 @@ export async function createWorkspaceAgentServer(
   // Pi calls `getHotReloadableResources()` on every reloadSession() and merges the
   // result with the static fields above, so the workspace never mutates
   // arrays the harness already captured.
-  const staticPluginPackagePiSnapshot = pluginHotReload
-    ? emptyPackageJsonPiSnapshot()
-    : readWorkspacePluginPackagePiSnapshot(refreshBoringPluginDirs())
+  const staticPluginPackagePiSnapshot = emptyPackageJsonPiSnapshot()
   const staticPiSkillPaths = [
     ...baseStaticPiSkillPaths,
     ...staticPluginPackagePiSnapshot.additionalSkillPaths,
@@ -682,15 +644,12 @@ export async function createWorkspaceAgentServer(
     ...staticPluginPackagePiSnapshot.extensionPaths,
   ]
 
-  const getHotReloadablePiResources = pluginHotReload
-    ? () => readWorkspacePluginPackagePiSnapshot(refreshBoringPluginDirs())
-    : undefined
+  const getHotReloadablePiResources = () => readWorkspacePluginPackagePiSnapshot(refreshBoringPluginDirs())
 
   const boringAssetManager = new BoringPluginAssetManager({
     pluginDirs: boringPluginDirs,
     errorRoot: join(workspaceRoot, ".pi", "extensions"),
     frontTargetResolver: opts.boringPluginFrontTargetResolver,
-    includeLegacyFrontUrl: opts.boringPluginIncludeLegacyFrontUrl,
   })
   const runtimeBackendRegistry = new RuntimeBackendRegistry()
 
@@ -772,19 +731,17 @@ export async function createWorkspaceAgentServer(
       // plugins unaffected" recovery story.
       let restart_warnings: ReturnType<typeof collectRestartWarnings> = []
       let diagnostics: PluginRebuildResult["diagnostics"] = []
-      if (pluginHotReload) {
-        refreshBoringPluginDirs()
-        const scan = await boringAssetManager.load()
-        const backendReload = await runtimeBackendRegistry.reloadFromLoadedPlugins(boringAssetManager.inspectLoaded())
-        restart_warnings = collectRestartWarnings(scan.events)
-        const scanDiagnostics = scan.errors.map((error) => ({
-          source: `boring plugin asset scan (${error.id})`,
-          message: error.message,
-          pluginId: error.id,
-        }))
-        const rebuild = await rebuildPlugins()
-        diagnostics = [...scanDiagnostics, ...backendReload.diagnostics, ...rebuild.diagnostics]
-      }
+      refreshBoringPluginDirs()
+      const scan = await boringAssetManager.load()
+      const backendReload = await runtimeBackendRegistry.reloadFromLoadedPlugins(boringAssetManager.inspectLoaded())
+      restart_warnings = collectRestartWarnings(scan.events)
+      const scanDiagnostics = scan.errors.map((error) => ({
+        source: `boring plugin asset scan (${error.id})`,
+        message: error.message,
+        pluginId: error.id,
+      }))
+      const rebuild = await rebuildPlugins()
+      diagnostics = [...scanDiagnostics, ...backendReload.diagnostics, ...rebuild.diagnostics]
       await runRuntimeProvisioning()
       const callerResult = await opts.beforeReload?.()
       const callerRestartWarnings = callerResult && typeof callerResult === "object"
@@ -815,9 +772,7 @@ export async function createWorkspaceAgentServer(
       extensionFactories: pluginCollection.agentOptions.pi?.extensionFactories,
       getHotReloadableResources: getHotReloadablePiResources,
     },
-    systemPromptDynamic: pluginHotReload
-      ? () => aggregatePluginPrompts(boringAssetManager)
-      : undefined,
+    systemPromptDynamic: () => aggregatePluginPrompts(boringAssetManager),
   })
   refreshBoringPluginDirs()
   await boringAssetManager.load()

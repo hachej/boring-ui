@@ -1,7 +1,7 @@
 import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
-import { resolve } from "node:path"
+import { dirname, resolve } from "node:path"
 import { createBoringAppViteAliases } from "@hachej/boring-core/app/vite"
 import { AGENT_API_PORT, VITE_PORT, startPlaygroundServer } from "./src/server/dev"
 

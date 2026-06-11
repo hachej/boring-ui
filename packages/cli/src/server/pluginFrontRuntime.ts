@@ -450,12 +450,18 @@ function normalizeRequestSubpath(raw: string): string {
 }
 
 function assertRuntimeFrontEntrySubpath(frontEntrySubpath: string): void {
-  if (frontEntrySubpath.startsWith("front/")) return
+  // Accept any subpath that targets a `front/` segment inside the
+  // package. Source-style plugins expose `front/index.tsx`; published
+  // build-output plugins expose `dist/front/index.js`. Both layouts are
+  // valid — reject only paths that don't include a `front/` directory
+  // anywhere, which catches manifest typos and accidental relative-path
+  // escapes.
+  if (/(^|\/)front\//.test(frontEntrySubpath)) return
   throw new PluginFrontRuntimeError(
     ErrorCode.enum.PLUGIN_RUNTIME_PRIVATE_FILE,
     403,
     "validate",
-    "native runtime plugin fronts must live under the front/ directory",
+    "native runtime plugin fronts must live under a front/ directory",
     { frontEntrySubpath },
   )
 }
@@ -702,7 +708,7 @@ async function resolveFileWithinPlugin(record: TrackedPluginRecord, subpath: str
   return resolvedPath
 }
 
-function snapshotRuntimeSourceFiles(pluginRoot: string): Map<string, Uint8Array> {
+function snapshotRuntimeSourceFiles(pluginRoot: string, frontRootDir: string, frontRootRelative: string): Map<string, Uint8Array> {
   const snapshot = new Map<string, Uint8Array>()
   const visit = (dir: string, subpathPrefix: string) => {
     if (!existsSync(dir)) return
@@ -739,7 +745,11 @@ function snapshotRuntimeSourceFiles(pluginRoot: string): Map<string, Uint8Array>
       }
     }
   }
-  visit(resolvePath(pluginRoot, "front"), "front")
+  // Walk both the actual front root (e.g. `front/` for source-style
+  // plugins, `dist/front/` for build-output plugins) and the shared
+  // root. The front root prefix is preserved in snapshot keys so the
+  // runtime validator can resolve the same subpath the request used.
+  visit(frontRootDir, frontRootRelative.split("\\").join("/"))
   visit(resolvePath(pluginRoot, "shared"), "shared")
   return snapshot
 }
@@ -803,6 +813,55 @@ function parsePluginDependencyVirtualId(id: string): PluginDependencyContext | n
   }
 }
 
+// Cache of nodeModulesDir → real paths of all top-level package entries.
+// Built once per plugin instance; pnpm symlinks make the real path of each dep
+// land in the global content-addressable store (outside node_modules), so we
+// resolve every entry up-front and check containment against those real roots.
+//
+// This cache is intentionally unbounded and never invalidated. If a user runs
+// `npm install` inside a plugin dir mid-session, they must restart the CLI for
+// the new dep to be importable — the server's module graph has the same
+// constraint — so a stale cache cannot be reached in normal use.
+const pluginPackageRootsCache = new Map<string, Promise<ReadonlySet<string>>>()
+
+async function getPluginPackageRoots(nodeModulesDir: string): Promise<ReadonlySet<string>> {
+  let cached = pluginPackageRootsCache.get(nodeModulesDir)
+  if (!cached) {
+    cached = buildPluginPackageRoots(nodeModulesDir)
+    pluginPackageRootsCache.set(nodeModulesDir, cached)
+  }
+  return cached
+}
+
+async function buildPluginPackageRoots(nodeModulesDir: string): Promise<ReadonlySet<string>> {
+  const roots = new Set<string>()
+  let entries: string[]
+  try {
+    entries = readdirSync(nodeModulesDir)
+  } catch {
+    return roots
+  }
+  for (const entry of entries) {
+    if (entry.startsWith(".")) continue // skip .pnpm, .modules.yaml, etc.
+    const entryPath = resolvePath(nodeModulesDir, entry)
+    if (entry.startsWith("@")) {
+      // Scoped namespace directory — resolve each package inside it
+      let scopedEntries: string[]
+      try {
+        scopedEntries = readdirSync(entryPath)
+      } catch {
+        continue
+      }
+      for (const scopedEntry of scopedEntries) {
+        roots.add(await resolveRealLike(resolvePath(entryPath, scopedEntry)))
+      }
+    } else {
+      roots.add(await resolveRealLike(entryPath))
+    }
+  }
+  return roots
+}
+
 async function ensurePluginDependencyPath(record: TrackedPluginRecord, source: string, importer: string | undefined, resolvedPath: string): Promise<string> {
   const nodeModulesDir = resolvePath(record.rootDir, "node_modules")
   if (!existsSync(nodeModulesDir)) {
@@ -818,13 +877,25 @@ async function ensurePluginDependencyPath(record: TrackedPluginRecord, source: s
   const nodeModulesReal = await resolveRealLike(nodeModulesDir)
   const resolvedReal = await resolveRealLike(resolvedPath)
   if (!isWithin(nodeModulesReal, resolvedReal)) {
-    throw new PluginFrontRuntimeError(
-      ErrorCode.enum.PLUGIN_RUNTIME_UNSAFE_IMPORT,
-      400,
-      "resolve",
-      "runtime plugin dependency resolved outside the plugin-local node_modules directory",
-      { source, importer, resolvedPath, pluginNodeModules: nodeModulesDir },
+    // pnpm stores packages in a global content-addressable store and symlinks
+    // them from node_modules. The real path of any pnpm-managed dep (including
+    // files reachable via relative imports within that dep) lives outside
+    // node_modules, so isWithin() always fails. Fall back to a cached set of
+    // real package roots derived from the node_modules symlink targets: if
+    // resolvedReal is inside any of those roots, it's legitimately installed.
+    const packageRoots = await getPluginPackageRoots(nodeModulesDir)
+    const isInstalledPackage = Array.from(packageRoots).some(
+      (root) => root === resolvedReal || isWithin(root, resolvedReal),
     )
+    if (!isInstalledPackage) {
+      throw new PluginFrontRuntimeError(
+        ErrorCode.enum.PLUGIN_RUNTIME_UNSAFE_IMPORT,
+        400,
+        "resolve",
+        "runtime plugin dependency resolved outside the plugin-local node_modules directory",
+        { source, importer, resolvedPath, pluginNodeModules: nodeModulesDir },
+      )
+    }
   }
   return resolvedReal
 }
@@ -1173,8 +1244,17 @@ export async function createPluginFrontRuntimeHost(
     // and stalling in-flight plugin front transforms indefinitely. The runtime
     // host serves deps through its own proxy/singleton routes, so pre-bundling
     // buys nothing here.
-    optimizeDeps: { entries: [], noDiscovery: true },
     root: repoRoot,
+    // Skip the dep-optimisation entry scan. Without this, Vite crawls the
+    // entire monorepo looking for import statements and hits files like
+    // App.tsx that import `virtual:boring-front-plugins` — a module that
+    // is not registered in this Vite server. That transform error corrupts
+    // the dep-opt lock, causing any concurrently-starting Vite instance to
+    // hang until the test timeout fires.
+    // noDiscovery disables runtime dep discovery too, so transforming a plugin
+    // module with bare imports (e.g. lucide-react) never triggers Vite's
+    // esbuild pre-bundler, which would hang the request for tens of seconds.
+    optimizeDeps: { entries: [], noDiscovery: true },
     plugins: [
       react(),
       {
@@ -1775,20 +1855,24 @@ export async function createPluginFrontRuntimeHost(
     assertRuntimeFrontEntrySubpath(frontEntrySubpath)
     const entryUrl = buildRuntimeUrl(basePath, workspaceId, pluginId, revision, frontEntrySubpath)
     const rootDir = resolvePath(args.plugin.rootDir)
+    // Compute the front root ONCE: source-style plugins expose
+    // `front/index.tsx` (front root is `front/`); build-output plugins
+    // expose `dist/front/index.js` (front root is `dist/front/`). The
+    // root governs both the served allowed subtree and the source
+    // snapshot, so they must agree.
+    const frontRootRelative = (frontEntrySubpath === "front" || frontEntrySubpath.startsWith("front/"))
+      ? "front"
+      : dirname(frontEntrySubpath)
+    const frontRootDir = resolvePath(rootDir, frontRootRelative)
     storeTrackedPlugin({
       workspaceId,
       pluginId,
       revision,
       rootDir,
       frontEntrySubpath,
-      frontRootDir: resolvePath(
-        rootDir,
-        frontEntrySubpath === "front" || frontEntrySubpath.startsWith("front/")
-          ? "front"
-          : dirname(frontEntrySubpath),
-      ),
+      frontRootDir,
       sharedRootDir: resolvePath(rootDir, "shared"),
-      sourceSnapshot: snapshotRuntimeSourceFiles(rootDir),
+      sourceSnapshot: snapshotRuntimeSourceFiles(rootDir, frontRootDir, frontRootRelative),
     }, entryUrl)
     return entryUrl
   }
@@ -1797,7 +1881,13 @@ export async function createPluginFrontRuntimeHost(
     return (plugin: BoringServerPluginManifest, context: { revision: number; frontEntrySubpath: string }) => {
       if (!plugin.frontPath) return undefined
       const frontEntrySubpath = normalizeRequestSubpath(context.frontEntrySubpath)
-      if (!frontEntrySubpath.startsWith("front/")) return undefined
+      // The runtime host serves any relative path inside the plugin
+      // root. Source-style plugins expose `front/index.tsx`; published
+      // build-output plugins expose `dist/front/index.js`. Both layouts
+      // are valid — accept any subpath that targets a `front/` segment
+      // somewhere inside the package, and reject everything else
+      // (catches manifest typos and accidental relative-path escapes).
+      if (!/(^|\/)front\//.test(frontEntrySubpath)) return undefined
       return {
         kind: "native",
         entryUrl: trackPlugin({

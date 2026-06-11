@@ -200,7 +200,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl,
+      frontTarget: { kind: "module-url", entryUrl: frontUrl, revision: 1 },
       boring: { front: "./front.mjs" },
     })
 
@@ -213,7 +213,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 2,
-      frontUrl,
+      frontTarget: { kind: "module-url", entryUrl: frontUrl, revision: 1 },
       boring: { front: "./front.mjs" },
     })
 
@@ -224,7 +224,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl,
+      frontTarget: { kind: "module-url", entryUrl: frontUrl, revision: 1 },
       boring: { front: "./front.mjs" },
     })
 
@@ -268,7 +268,7 @@ describe("useAgentPluginHotReload", () => {
       version: "1.0.0",
       revision: 1,
       workspaceId: "test-workspace",
-      frontUrl: "/@fs/front.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version one"))
@@ -286,7 +286,7 @@ describe("useAgentPluginHotReload", () => {
       revision: 1,
       workspaceId: "test-workspace",
       replay: true,
-      frontUrl: "/@fs/front.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version two"))
@@ -296,7 +296,7 @@ describe("useAgentPluginHotReload", () => {
     expect(MockEventSource.instances).toHaveLength(2)
   })
 
-  test("prefers frontTarget.entryUrl over legacy frontUrl payloads", async () => {
+  test("imports native frontTarget entry urls through importFront", async () => {
     const importFront = vi.fn(async () => ({
       default: hotPlugin("hot-plugin", (api) => {
         api.registerPanel({
@@ -331,7 +331,6 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/legacy-front.mjs",
       frontTarget: { kind: "native", entryUrl: "/runtime/front-target.mjs", revision: 1, trust: "local-trusted-native" },
       boring: { front: "./front.mjs" },
     })
@@ -439,7 +438,7 @@ describe("useAgentPluginHotReload", () => {
         id: "csv-plugin",
         version: "1.0.0",
         revision: 1,
-        frontUrl: "/@fs/csv-plugin.tsx",
+        frontTarget: { kind: "module-url", entryUrl: "/@fs/csv-plugin.tsx", revision: 1 },
         boring: { front: "front/index.tsx" },
       })
 
@@ -508,7 +507,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/hook-front.tsx",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/hook-front.tsx", revision: 1 },
       boring: { front: "front/index.tsx" },
     })
 
@@ -545,7 +544,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/front.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
 
@@ -606,7 +605,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/front.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version 1"))
@@ -619,7 +618,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 2,
-      frontUrl: "/@fs/front.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version 2"))
@@ -667,7 +666,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/front.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
 
@@ -713,7 +712,7 @@ describe("useAgentPluginHotReload", () => {
         id: "hot-plugin",
         version: "1.0.0",
         revision: 1,
-        frontUrl: "/@fs/front.mjs",
+        frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
         boring: { front: "./front.mjs" },
       })
 
@@ -763,7 +762,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/front.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("command-list")).toHaveTextContent("hot-plugin.open:Open Hot Plugin"))
@@ -774,7 +773,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 2,
-      frontUrl: "/@fs/front.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("command-list")).toHaveTextContent("hot-plugin.open:Open Hot Plugin v2"))
@@ -824,7 +823,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/front.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("catalog-list")).toHaveTextContent("hot-catalog:Hot Catalog"))
@@ -835,7 +834,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 2,
-      frontUrl: "/@fs/front.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("catalog-list")).toHaveTextContent("hot-catalog:Hot Catalog v2"))
@@ -890,7 +889,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/front.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("loaded"))
@@ -970,7 +969,7 @@ describe("useAgentPluginHotReload", () => {
         id: "provider-plugin",
         version: "1.0.0",
         revision: 1,
-        frontUrl: "/@fs/front.mjs",
+        frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
         boring: { front: "./front.mjs" },
       })
       await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version one"))
@@ -980,7 +979,7 @@ describe("useAgentPluginHotReload", () => {
         id: "provider-plugin",
         version: "1.0.0",
         revision: 2,
-        frontUrl: "/@fs/front.mjs",
+        frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
         boring: { front: "./front.mjs" },
       })
 
@@ -1062,7 +1061,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/slow-one.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/slow-one.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
     MockEventSource.instances[0].dispatch("boring.plugin.load", {
@@ -1070,7 +1069,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 2,
-      frontUrl: "/@fs/fast-two.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/fast-two.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
 
@@ -1125,7 +1124,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/slow.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/slow.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(oldImportCalls).toBe(1))
@@ -1137,7 +1136,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/fresh.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/fresh.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
 
@@ -1193,7 +1192,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/flaky.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/flaky.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     }
       MockEventSource.instances[0].dispatch("boring.plugin.load", event)
@@ -1250,7 +1249,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl,
+      frontTarget: { kind: "module-url", entryUrl: frontUrl, revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("stable"))
@@ -1261,7 +1260,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 2,
-      frontUrl,
+      frontTarget: { kind: "module-url", entryUrl: frontUrl, revision: 1 },
       boring: { front: "./front.mjs" },
     })
 
@@ -1281,7 +1280,7 @@ describe("useAgentPluginHotReload", () => {
         id: "hot-plugin",
         version: "1.0.0",
         revision: 3,
-        frontUrl,
+        frontTarget: { kind: "module-url", entryUrl: frontUrl, revision: 1 },
         boring: { front: "./front.mjs" },
       })
       await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("recovered"))
@@ -1317,7 +1316,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl,
+      frontTarget: { kind: "module-url", entryUrl: frontUrl, revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("loaded"))
@@ -1345,7 +1344,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl,
+      frontTarget: { kind: "module-url", entryUrl: frontUrl, revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("loaded"))
@@ -1370,7 +1369,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl,
+      frontTarget: { kind: "module-url", entryUrl: frontUrl, revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("loaded"))
@@ -1434,7 +1433,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/v1.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/v1.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("v1"))
@@ -1457,7 +1456,7 @@ describe("useAgentPluginHotReload", () => {
       version: "1.0.0",
       revision: 1,
       replay: true,
-      frontUrl: "/@fs/v2.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/v2.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
 
@@ -1508,7 +1507,7 @@ describe("useAgentPluginHotReload", () => {
         id,
         version: "1.0.0",
         revision: 1,
-        frontUrl: `/@fs/${id}.mjs`,
+        frontTarget: { kind: "module-url", entryUrl: `/@fs/${id}.mjs`, revision: 1 },
         boring: { front: "./front.mjs" },
       })
     }
@@ -1527,7 +1526,7 @@ describe("useAgentPluginHotReload", () => {
       version: "1.0.0",
       revision: 1,
       replay: true,
-      frontUrl: "/@fs/alpha.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/alpha.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
     MockEventSource.instances[1].dispatch("boring.plugin.replay-complete", {

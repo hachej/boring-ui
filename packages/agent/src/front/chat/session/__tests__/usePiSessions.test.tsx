@@ -773,6 +773,27 @@ describe('usePiSessions', () => {
     expect(result.current.error).toBeUndefined()
   })
 
+  test('retries network-level fetch failures (server restarting) instead of failing terminally', async () => {
+    const remote = remoteFactory()
+    fetchMock
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(jsonResponse([session('pi-after-restart')]))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a',
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remote.factory,
+      retry: { baseMs: 1, maxMs: 1, maxRetries: 4 },
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(result.current.activeSessionId).toBe('pi-after-restart')
+    expect(result.current.error).toBeUndefined()
+  })
+
   test('preserves the current active session while retrying a transient cold-runtime 503 refresh', async () => {
     const remote = remoteFactory()
     const retryResponse = deferred<Response>()
