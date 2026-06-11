@@ -19,6 +19,27 @@ export type WorkspaceWarmupStatus =
   | { status: "ready"; runtimeDependencies?: WorkspaceRuntimeDependenciesWarmupStatus }
   | { status: "failed"; message: string; requirement?: "workspace-fs" | "sandbox-exec" | "ui-bridge"; runtimeDependencies?: WorkspaceRuntimeDependenciesWarmupStatus }
 
+/**
+ * Convert an absolute filesystem path into a workspace-relative one when it
+ * lives inside `workspaceRoot`. The workspace HTTP file API (`/api/v1/files`,
+ * tree, etc.) is relative-only and rejects absolute paths with a 403 — but the
+ * agent's tool inputs (read/write/edit) surface absolute paths. Clicking such
+ * a path to open it in the workbench therefore needs this translation.
+ *
+ * Already-relative paths and absolute paths that fall outside the root are
+ * returned unchanged (the latter will legitimately 403). The workspace root
+ * itself maps to ".".
+ */
+export function relativizeWorkspacePath(path: string, workspaceRoot: string | null | undefined): string {
+  if (!path || !workspaceRoot) return path
+  const p = path.replace(/\\/g, "/").replace(/\/+$/, "")
+  const root = workspaceRoot.replace(/\\/g, "/").replace(/\/+$/, "")
+  if (!p.startsWith("/")) return path
+  if (p === root) return "."
+  if (p.startsWith(`${root}/`)) return p.slice(root.length + 1)
+  return path
+}
+
 export function preloadUrl(apiBaseUrl: string | null | undefined, path: string): string {
   if (/^https?:\/\//i.test(path)) return path
   if (!apiBaseUrl) return path

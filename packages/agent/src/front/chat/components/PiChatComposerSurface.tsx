@@ -328,7 +328,14 @@ export function PiChatComposerSurface({
             </div>
             <PromptInputTextarea
               value={draft}
-              placeholder={composerBlocked ? composerBlockerLabel : composerPlaceholder ?? 'Ask anything…'}
+              placeholder={
+                composerBlocked
+                  // Warmup has no action bar, so the label belongs in the
+                  // placeholder. A real blocker already shows the label in the
+                  // ComposerBlockerNotice bar above — don't repeat it here.
+                  ? (workspaceWarmupBlocked ? composerBlockerLabel : '')
+                  : composerPlaceholder ?? 'Ask anything…'
+              }
               disabled={disabled}
               readOnly={composerBlocked}
               aria-label="Agent prompt"
