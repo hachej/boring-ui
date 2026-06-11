@@ -100,7 +100,7 @@ function ChatPane({
         onActivePaneChange?.(pane.id)
       }}
     >
-      <PaneFocusRing active={multiPane && active} flash={flash} />
+      <PaneFocusRing active={multiPane && active} dimmed={multiPane && !active} flash={flash} />
       <div
         data-boring-workspace-part="chat-pane-header"
         // Seamless with the content: no separating border, no tint — the

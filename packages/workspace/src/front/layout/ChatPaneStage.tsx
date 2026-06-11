@@ -78,23 +78,23 @@ export function paneTitle(pane: { title?: string | null }): string {
 export const CHAT_SESSION_DRAG_TYPE = "application/x-boring-chat-session"
 
 /**
- * The active-pane focus treatment shared by both engines: a soft rounded
- * inset ring that fades in and out instead of popping, with a slightly
- * stronger variant while a pane is flashed. Neutral by design — it should
- * read like keyboard focus in a pro editor, not a colored selection.
+ * The pane focus treatment shared by both engines: the selected chat stays
+ * white while the others recede behind a faint grey wash; the active pane's
+ * boundary darkens slightly (single line, no inset ring). Flash is a
+ * stronger transient ring. Neutral by design — it should read like keyboard
+ * focus in a pro editor, not a colored selection.
  */
-export function PaneFocusRing({ active, flash }: { active: boolean; flash: boolean }) {
+export function PaneFocusRing({ active, dimmed, flash }: { active: boolean; dimmed: boolean; flash: boolean }) {
   return (
     <div
       aria-hidden="true"
       data-boring-workspace-part="chat-pane-focus-ring"
       className={cn(
         "pointer-events-none absolute inset-0 z-30",
-        "transition-[opacity,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
-        active || flash ? "opacity-100" : "opacity-0",
-        flash
-          ? "shadow-[inset_0_0_0_2px_oklch(from_var(--foreground)_l_c_h/0.55)]"
-          : "bg-[color:oklch(from_var(--foreground)_l_c_h/0.025)] shadow-[inset_0_0_0_1px_oklch(from_var(--foreground)_l_c_h/0.22)]",
+        "transition-[background-color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        dimmed && !flash && "bg-[color:oklch(from_var(--foreground)_l_c_h/0.035)]",
+        active && !flash && "shadow-[inset_0_0_0_1px_oklch(from_var(--foreground)_l_c_h/0.22)]",
+        flash && "shadow-[inset_0_0_0_2px_oklch(from_var(--foreground)_l_c_h/0.55)]",
       )}
     />
   )

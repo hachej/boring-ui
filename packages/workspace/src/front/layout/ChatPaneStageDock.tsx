@@ -337,7 +337,7 @@ function ChatPanePanel(props: IDockviewPanelProps) {
     >
       {/* The active ring lives at the dockview group level (CSS) so it wraps
           the header too; this inner ring only serves the flash pulse. */}
-      <PaneFocusRing active={false} flash={flash} />
+      <PaneFocusRing active={false} dimmed={false} flash={flash} />
       <div className="min-h-0 flex-1 overflow-hidden">
         {stage.renderPane(pane)}
       </div>
