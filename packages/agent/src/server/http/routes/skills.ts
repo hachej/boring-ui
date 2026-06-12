@@ -16,7 +16,7 @@ import {
   loadSkills,
 } from '@mariozechner/pi-coding-agent'
 import type { PiPackageSource } from '../../piPackages'
-import { createResourceSettingsManager } from '../../harness/pi-coding-agent/createHarness'
+import { createResourceSettingsManager, withPiHarnessDefaults } from '../../harness/pi-coding-agent/createHarness'
 
 export interface SkillSummary {
   name: string
@@ -58,10 +58,13 @@ export function skillsRoutes(
       const piPackages = opts.getPiPackages
         ? await opts.getPiPackages(request)
         : opts.piPackages
-      const noSkills = opts.getNoSkills
+      // `undefined` means the host didn't say — resolve through the canonical
+      // harness policy so a bare registration can't silently flip ambient
+      // skill discovery on.
+      const noSkills = (opts.getNoSkills
         ? await opts.getNoSkills(request)
-        : opts.noSkills
-      const cacheKey = JSON.stringify([workspaceRoot, additionalSkillPaths ?? [], piPackages ?? [], Boolean(noSkills)])
+        : opts.noSkills) ?? withPiHarnessDefaults().noSkills
+      const cacheKey = JSON.stringify([workspaceRoot, additionalSkillPaths ?? [], piPackages ?? [], noSkills])
       const now = Date.now()
       for (const [key, entry] of cached) {
         if (entry.expiresAt <= now) cached.delete(key)
@@ -95,7 +98,7 @@ export function skillsRoutes(
         cwd: workspaceRoot,
         agentDir,
         skillPaths: [...packageSkillPaths, ...(additionalSkillPaths ?? [])],
-        includeDefaults: false,
+        includeDefaults: !noSkills,
       })
       const skills: SkillSummary[] = result.skills.map((s) => ({
         name: s.name,
