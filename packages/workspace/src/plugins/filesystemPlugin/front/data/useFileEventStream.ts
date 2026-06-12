@@ -84,8 +84,16 @@ export function useFileEventStream(): void {
       relay(envelope.change)
     }
 
-    const onUnsupported = () => {
+    const onUnsupported = (ev: MessageEvent) => {
       unsupported = true
+      try {
+        const data = JSON.parse(ev.data as string) as { reason?: string; message?: string }
+        console.warn(
+          `[boring-ui] live file events disabled (${data.reason ?? "unsupported"})${data.message ? `: ${data.message}` : ""}`,
+        )
+      } catch {
+        console.warn("[boring-ui] live file events disabled")
+      }
       es?.close()
     }
 
