@@ -25,14 +25,23 @@ function shouldIgnoreWatchPath(root: string, path: string): boolean {
   return parts.some((part) => isIgnoredDirName(part))
 }
 
+/** Workspace-relative path with POSIX separators — the wire format for
+ * every `WorkspaceChangeEvent.path`. */
+function toPosixRel(root: string, absPath: string): string {
+  return relative(root, absPath).split(sep).join('/')
+}
+
 /**
  * Watcher with one host-facing extra: `emitRename`. Chokidar has no
  * rename primitive — a moved directory surfaces as an `unlink` per old
  * path plus an `add` per new path, thousands of events for a big tree.
  * When the host performed the rename itself (the files/move API), it
  * announces it here: subscribers get ONE synthetic `rename` event and
- * the watcher absorbs the unlink/add echo for both subtrees while it
- * lasts (sliding idle window, hard-capped).
+ * the watcher absorbs exactly the echo that rename predicts —
+ * `unlink`/`unlinkDir` under the old prefix, `add`/`addDir` under the
+ * new one — while it lasts (sliding idle window, hard-capped). Other
+ * event kinds under either prefix (a real edit or delete inside the
+ * moved folder) flow through untouched.
  */
 interface NodeWorkspaceWatcher extends WorkspaceWatcher {
   emitRename(fromRel: string, toRel: string): void
@@ -43,11 +52,21 @@ const RENAME_ECHO_IDLE_MS = 1_000
 /** Absolute ceiling so a prefix can never be muted indefinitely. */
 const RENAME_ECHO_MAX_MS = 30_000
 
+/** Raw chokidar event names — suppression matches on these, not on the
+ * collapsed `WorkspaceChangeEvent.op` (add and change both map to
+ * `write`, but only add is rename echo). */
+type ChokidarEventKind = 'add' | 'addDir' | 'change' | 'unlink' | 'unlinkDir'
+
 interface EchoSuppression {
   prefix: string
+  /** Event kinds this prefix absorbs — the rename's predicted echo. */
+  kinds: ReadonlySet<ChokidarEventKind>
   idleDeadline: number
   hardDeadline: number
 }
+
+const RENAME_ECHO_FROM_KINDS: ReadonlySet<ChokidarEventKind> = new Set(['unlink', 'unlinkDir'])
+const RENAME_ECHO_TO_KINDS: ReadonlySet<ChokidarEventKind> = new Set(['add', 'addDir'])
 
 /**
  * Watching a workspace means chokidar enumerates (and on some
@@ -124,11 +143,11 @@ function createNodeWatcher(root: string): NodeWorkspaceWatcher {
       // performs itself arrive via `emitRename` instead, which also
       // mutes this echo.
     })
-    fsw.on('add', (p, s) => emit({ op: 'write', path: rel(p), mtimeMs: s?.mtimeMs }))
-    fsw.on('change', (p, s) => emit({ op: 'write', path: rel(p), mtimeMs: s?.mtimeMs }))
-    fsw.on('addDir', (p) => emit({ op: 'mkdir', path: rel(p) }))
-    fsw.on('unlink', (p) => emit({ op: 'unlink', path: rel(p) }))
-    fsw.on('unlinkDir', (p) => emit({ op: 'unlink', path: rel(p) }))
+    fsw.on('add', (p, s) => emit('add', { op: 'write', path: rel(p), mtimeMs: s?.mtimeMs }))
+    fsw.on('change', (p, s) => emit('change', { op: 'write', path: rel(p), mtimeMs: s?.mtimeMs }))
+    fsw.on('addDir', (p) => emit('addDir', { op: 'mkdir', path: rel(p) }))
+    fsw.on('unlink', (p) => emit('unlink', { op: 'unlink', path: rel(p) }))
+    fsw.on('unlinkDir', (p) => emit('unlinkDir', { op: 'unlink', path: rel(p) }))
     let loggedError = false
     fsw.on('error', (err) => {
       // Watch errors are best-effort, but a silent EMFILE storm (macOS
@@ -148,29 +167,25 @@ function createNodeWatcher(root: string): NodeWorkspaceWatcher {
   // chokidar loose on an over-sized tree can OOM the process.
   const ensureFsw = (): Promise<WorkspaceWatcherReadiness> => {
     if (readiness) return readiness
-    readiness = (async () => {
+    readiness = (async (): Promise<WorkspaceWatcherReadiness> => {
       const cap = maxWatchedEntries()
       const count = await countWatchableEntries(root, cap)
-      if (closed) return { ok: true } as const
+      if (closed) return { ok: false, reason: 'closed' }
       if (count > cap) {
         const message =
           `workspace at ${root} has more than ${cap} entries — file watching disabled. `
           + `Start boring-ui in a smaller subfolder for live file updates, `
           + `or raise BORING_MAX_WATCHED_ENTRIES.`
         console.error(`[boring-agent] ${message}`)
-        return { ok: false, reason: 'workspace_too_large', message } as const
+        return { ok: false, reason: 'workspace_too_large', message }
       }
       startFsw()
-      return { ok: true } as const
+      return { ok: true }
     })()
     return readiness
   }
 
-  const rel = (abs: string): string => {
-    const r = relative(root, abs)
-    // Normalize Windows separators so the wire format stays POSIX.
-    return r.split(sep).join('/')
-  }
+  const rel = (abs: string): string => toPosixRel(root, abs)
 
   const fanout = (event: WorkspaceChangeEvent) => {
     if (closed) return
@@ -180,7 +195,7 @@ function createNodeWatcher(root: string): NodeWorkspaceWatcher {
     }
   }
 
-  const isSuppressedEcho = (path: string): boolean => {
+  const isSuppressedEcho = (kind: ChokidarEventKind, path: string): boolean => {
     const now = Date.now()
     for (let i = suppressions.length - 1; i >= 0; i--) {
       const s = suppressions[i]!
@@ -188,7 +203,7 @@ function createNodeWatcher(root: string): NodeWorkspaceWatcher {
         suppressions.splice(i, 1)
         continue
       }
-      if (path === s.prefix || path.startsWith(`${s.prefix}/`)) {
+      if (s.kinds.has(kind) && (path === s.prefix || path.startsWith(`${s.prefix}/`))) {
         s.idleDeadline = Math.min(now + RENAME_ECHO_IDLE_MS, s.hardDeadline)
         return true
       }
@@ -197,10 +212,9 @@ function createNodeWatcher(root: string): NodeWorkspaceWatcher {
   }
 
   // Chokidar events go through the suppression filter; synthetic
-  // events from `emitRename` bypass it (their own `to` prefix is in
-  // the suppression list).
-  const emit = (event: WorkspaceChangeEvent) => {
-    if (isSuppressedEcho(event.path)) return
+  // events from `emitRename` bypass it via `fanout` directly.
+  const emit = (kind: ChokidarEventKind, event: WorkspaceChangeEvent) => {
+    if (isSuppressedEcho(kind, event.path)) return
     fanout(event)
   }
 
@@ -219,13 +233,14 @@ function createNodeWatcher(root: string): NodeWorkspaceWatcher {
     emitRename(fromRel, toRel) {
       if (closed) return
       const now = Date.now()
-      for (const prefix of [fromRel, toRel]) {
-        suppressions.push({
-          prefix,
-          idleDeadline: now + RENAME_ECHO_IDLE_MS,
-          hardDeadline: now + RENAME_ECHO_MAX_MS,
-        })
+      const window = {
+        idleDeadline: now + RENAME_ECHO_IDLE_MS,
+        hardDeadline: now + RENAME_ECHO_MAX_MS,
       }
+      suppressions.push(
+        { prefix: fromRel, kinds: RENAME_ECHO_FROM_KINDS, ...window },
+        { prefix: toRel, kinds: RENAME_ECHO_TO_KINDS, ...window },
+      )
       fanout({ op: 'rename', path: toRel, oldPath: fromRel })
     },
     close() {
@@ -256,9 +271,6 @@ export function createNodeWorkspace(root: string, opts: CreateNodeWorkspaceOptio
   // of `watch()` on this workspace. Codex flagged "one watcher per
   // SSE client" as a fd leak — this avoids it.
   let cachedWatcher: NodeWorkspaceWatcher | null = null
-
-  const relPosix = (absPath: string): string =>
-    relative(root, absPath).split(sep).join('/')
 
   const workspace: Workspace = {
     root: runtimeContext.runtimeCwd,
@@ -374,7 +386,7 @@ export function createNodeWorkspace(root: string, opts: CreateNodeWorkspaceOptio
       // One synthetic rename instead of the unlink/add event storm
       // chokidar would stream for every file under a moved directory.
       // No watcher yet → no subscribers → nothing to announce.
-      cachedWatcher?.emitRename(relPosix(fromAbsPath), relPosix(toAbsPath))
+      cachedWatcher?.emitRename(toPosixRel(root, fromAbsPath), toPosixRel(root, toAbsPath))
     },
   }
 
