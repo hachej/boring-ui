@@ -120,6 +120,8 @@ describe("useFileEventInvalidation", () => {
     expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "files", "src/deep/a.ts"])).toBe(true)
     expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "stat", "src/a.ts"])).toBe(true)
     expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "tree", "src/deep"])).toBe(true)
+    // The moved dir's OWN listing is dead too (panes mounted at rootDir="src").
+    expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "tree", "src"])).toBe(true)
     // …unrelated paths, the new prefix, and other workspaces are not.
     expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "files", "other/a.ts"])).toBe(false)
     expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "files", "lib/a.ts"])).toBe(false)

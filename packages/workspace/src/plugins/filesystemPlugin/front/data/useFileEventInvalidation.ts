@@ -147,9 +147,10 @@ function invalidateTree(
  * A directory move arrives as ONE rename event carrying only the top-
  * level from/to, but file/stat/tree queries are keyed by full path —
  * without this, an editor open on a file under the moved folder keeps
- * stale content on a dead key. Invalidate everything cached under the
- * old prefix; only ACTIVE descendant queries (open editors) refetch.
- * File moves have no descendants, so this is a no-op for them.
+ * stale content on a dead key. Invalidate everything cached AT or
+ * UNDER the old path (the dir's own tree listing dies with it too);
+ * only ACTIVE queries (open editors/panes) refetch. File moves have no
+ * descendants, so for them this only re-covers the exact path.
  */
 function invalidateMovedDescendants(
   batch: InvalidationBatch,
@@ -165,7 +166,7 @@ function invalidateMovedDescendants(
         && key[1] === workspaceId
         && (key[2] === FILES_QUERY_KEY_SEGMENT || key[2] === "stat" || key[2] === "tree")
         && typeof key[3] === "string"
-        && key[3].startsWith(prefix)
+        && (key[3] === from || key[3].startsWith(prefix))
     },
   })
 }
