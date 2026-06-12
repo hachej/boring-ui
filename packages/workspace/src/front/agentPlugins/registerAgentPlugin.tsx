@@ -191,10 +191,13 @@ async function captureFrontFactory(pluginId: string, frontUrl: string, revision:
 // "keeping previous version" + "definePlugin: id is required" path). That
 // failure is transient — a moment later the same revision imports cleanly —
 // but it used to be permanent until a revision bump or workspace switch. Retry
-// the import (NOT the register) a few times with a short backoff so the plugin
-// recovers in place.
-const FRONT_IMPORT_RETRY_ATTEMPTS = 4
+// the import (NOT the register) with exponential backoff so the plugin
+// recovers in place. The budget must outlast a cold-start server stall (a
+// hard reload can race tens of seconds of server-side warmup work): 7
+// attempts at 750ms doubling ≈ 47s of cover, capped at 10s per wait.
+const FRONT_IMPORT_RETRY_ATTEMPTS = 7
 const FRONT_IMPORT_RETRY_DELAY_MS = 750
+const FRONT_IMPORT_RETRY_MAX_DELAY_MS = 10_000
 
 async function importFrontWithRetry({
   pluginId,
@@ -226,7 +229,8 @@ async function importFrontWithRetry({
         `[boring-ui] plugin ${pluginId} front import failed (attempt ${attempt + 1}/${maxAttempts}); retrying`,
         error,
       )
-      await new Promise((resolve) => setTimeout(resolve, delayMs))
+      const backoff = Math.min(delayMs * 2 ** attempt, FRONT_IMPORT_RETRY_MAX_DELAY_MS)
+      await new Promise((resolve) => setTimeout(resolve, backoff))
     }
   }
   throw lastError
