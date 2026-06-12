@@ -1,4 +1,4 @@
-import { useMemo, type KeyboardEvent, type DragEvent, type ReactNode } from "react"
+import { useMemo, type ComponentType, type KeyboardEvent, type DragEvent, type ReactNode } from "react"
 import { ChevronRightIcon, ChevronDownIcon, FilterIcon, SearchIcon, XIcon } from "lucide-react"
 import { cn } from "./utils"
 import { Button, Chip as UiChip, ChipButton, EmptyState, Input, Spinner, Toolbar as UiToolbar } from "@hachej/boring-ui-kit"
@@ -25,6 +25,10 @@ export type DataExplorerProps = {
   /** Empty state shown when the top-level result has no rows and no query/filters. */
   emptyState?: ReactNode
   searchPlaceholder?: string
+  /** Optional title rendered inside the explorer toolbar (for chromeless left tabs). */
+  toolbarTitle?: ReactNode
+  /** Optional icon rendered before toolbarTitle. */
+  toolbarIcon?: ComponentType<{ className?: string }>
   /** Hide the search input. Default true. */
   searchable?: boolean
   /**
@@ -49,6 +53,8 @@ export function DataExplorer({
   getDragPayload,
   emptyState = "No results",
   searchPlaceholder = "Search…",
+  toolbarTitle,
+  toolbarIcon,
   searchable = true,
   query,
   onQueryChange,
@@ -109,6 +115,8 @@ export function DataExplorer({
         <Toolbar
           searchable={showSearch}
           searchPlaceholder={searchPlaceholder}
+          title={toolbarTitle}
+          icon={toolbarIcon}
           query={state.query}
           onQueryChange={setToolbarQuery}
           facetConfigs={facetConfigs}
@@ -159,6 +167,8 @@ export function DataExplorer({
 type ToolbarProps = {
   searchable: boolean
   searchPlaceholder: string
+  title?: ReactNode
+  icon?: ComponentType<{ className?: string }>
   query: string
   onQueryChange: (q: string) => void
   facetConfigs?: FacetConfig[]
@@ -173,6 +183,8 @@ type ToolbarProps = {
 function Toolbar({
   searchable,
   searchPlaceholder,
+  title,
+  icon: Icon,
   query,
   onQueryChange,
   facetConfigs,
@@ -185,12 +197,18 @@ function Toolbar({
 }: ToolbarProps) {
   return (
     <UiToolbar className="border-b border-border/60 px-2 py-1.5">
+      {title ? (
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 px-1">
+          {Icon ? <Icon className="h-4 w-4 shrink-0 text-foreground/80" /> : null}
+          <span className="truncate text-[14px] font-medium tracking-tight text-foreground">{title}</span>
+        </div>
+      ) : null}
       {total != null ? (
         <span className="px-1 font-mono text-[10.5px] uppercase tracking-[0.05em] text-muted-foreground/80">
           {total.toLocaleString()}
         </span>
       ) : null}
-      <div className="flex-1" />
+      <div className={title ? "w-1 shrink-0" : "flex-1"} />
       {searchable ? (
         <Popover>
           <PopoverTrigger

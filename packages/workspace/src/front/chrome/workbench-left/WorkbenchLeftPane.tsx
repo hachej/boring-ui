@@ -212,28 +212,30 @@ export function WorkbenchLeftPane({
       {rail}
 
       <div className="flex h-full min-w-0 flex-1 flex-col bg-muted/35">
-        <div className="flex h-11 items-center gap-1 border-b border-border/60 bg-muted/35 px-2.5">
-          <div className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span className="shrink-0 text-foreground/80">{activeEntry?.icon}</span>
-            <div className="truncate text-[14px] font-medium tracking-tight text-foreground">{activeEntry?.title ?? "Sources"}</div>
+        {!activeOwnsSearch && (
+          <div className="flex h-11 items-center gap-1 border-b border-border/60 bg-muted/35 px-2.5">
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+              <span className="shrink-0 text-foreground/80">{activeEntry?.icon}</span>
+              <div className="truncate text-[14px] font-medium tracking-tight text-foreground">{activeEntry?.title ?? "Sources"}</div>
+            </div>
+            {showChromeSearch && (
+              <ControlTooltip label="Search" side="bottom">
+                <IconButton
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={toggleSearch}
+                  className={cn(searchOpen && "bg-foreground/5 text-foreground")}
+                  aria-label="Search"
+                >
+                  <Search className="h-3.5 w-3.5" strokeWidth={1.75} />
+                </IconButton>
+              </ControlTooltip>
+            )}
           </div>
-          {showChromeSearch && (
-            <ControlTooltip label="Search" side="bottom">
-              <IconButton
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                onClick={toggleSearch}
-                className={cn(searchOpen && "bg-foreground/5 text-foreground")}
-                aria-label="Search"
-              >
-                <Search className="h-3.5 w-3.5" strokeWidth={1.75} />
-              </IconButton>
-            </ControlTooltip>
-          )}
-        </div>
+        )}
 
-        {showChromeSearch && searchOpen && (
+        {!activeOwnsSearch && showChromeSearch && searchOpen && (
           <div className="flex items-center gap-1 border-b border-border/60 px-2 py-1.5">
             <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <Input
