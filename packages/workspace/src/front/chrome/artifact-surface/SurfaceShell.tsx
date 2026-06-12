@@ -88,6 +88,7 @@ export interface SurfaceShellProps {
    */
   extraPanels?: string[]
   defaultLeftTab?: string
+  onReloadAgentPlugins?: () => void | Promise<unknown>
   initialPanels?: Array<{ id: string; component: string; title?: string; params?: Record<string, unknown> }>
   className?: string
 }
@@ -140,6 +141,7 @@ export function SurfaceShell({
   onClose,
   extraPanels,
   defaultLeftTab,
+  onReloadAgentPlugins,
   initialPanels,
   className,
 }: SurfaceShellProps) {
@@ -636,6 +638,7 @@ export function SurfaceShell({
               defaultTab={defaultLeftTab}
               revealFileTreeRequest={fileTreeRevealRequest}
               onOpenPanel={openPanelSync}
+              onReloadAgentPlugins={onReloadAgentPlugins}
               onCollapse={() => setCollapsed(true)}
             />
           </aside>
