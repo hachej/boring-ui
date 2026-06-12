@@ -356,6 +356,7 @@ export function CliWorkspaceShell() {
               window.localStorage.setItem("boring-ui:local-workspace-id", workspaceId)
               setActiveWorkspaceId(workspaceId)
             }}
+            getWorkspaceHref={(workspaceId) => cliWorkspacePath(workspaceId)}
           />
         }
       />
