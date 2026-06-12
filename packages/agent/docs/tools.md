@@ -4,7 +4,10 @@
 
 The agent runtime ships a catalog of tools for interacting with the workspace filesystem and shell.
 
-## Built-in tools
+## Filesystem + shell tools
+
+These are adapted from `@earendil-works/pi-coding-agent` and bound to the
+selected runtime mode (see [runtime.md](./runtime.md)):
 
 | tool | description |
 |---|---|
@@ -15,19 +18,21 @@ The agent runtime ships a catalog of tools for interacting with the workspace fi
 | `find` | Find files by name pattern |
 | `grep` | Search file contents |
 | `ls` | List directory contents |
-| `exec_ui` | Post a command to the workspace UI (open panels, navigate, etc.) |
-| `get_ui_state` | Read what panels are currently open |
 
-## exec_ui
+## Tools added by this package
 
-The primary tool for interacting with the workspace frontend. See [bridge.md](../../workspace/docs/bridge.md) for the full command reference.
+| tool | description |
+|---|---|
+| `execute_isolated_code` | Run code in an isolated sandbox capability |
+| `upload_file` | Upload a workspace file to blob storage |
+| `plugin_diagnostics` | Report loaded plugins and any load errors |
 
-```json
-{
-  "kind": "openSurface",
-  "params": { "kind": "my-plugin.open", "target": "item-123" }
-}
-```
+## UI-bridge tools (workspace-owned)
+
+`exec_ui` and `get_ui_state` are **not** part of the standalone agent. They are
+contributed by `@hachej/boring-workspace` when the agent is mounted via
+`createWorkspaceAgentApp`. Standalone `createAgentApp` ships no UI tools. For the
+UI command reference see `packages/workspace/docs/PLUGIN_SYSTEM.md`.
 
 ## Adding custom tools
 

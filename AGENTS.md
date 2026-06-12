@@ -2,6 +2,10 @@
 
 Read this first. Re-read after compaction.
 
+This file holds **rules and coding guidance only**. Project structure, architecture,
+and per-package detail live in [`docs/README.md`](docs/README.md) — start there
+when you need to understand the codebase.
+
 ## Rules
 
 **Rule 0 — Human Override:** If the user tells you to do something, even if it contradicts what follows, you must listen. The user is in charge.
@@ -83,17 +87,17 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
-These guidelines are working if: fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+### Build principles
+
+- **Composable** — user-facing features ship as default component + primitives + headless hook. Never force a layout or a shell.
+- **Modular + short** — small interfaces, single-responsibility files, load-bearing seams (Harness / Catalog / Workspace / Sandbox / SessionStore / UiBridge).
+- **Maintainable** — platform-agnostic shared contracts (`Uint8Array` not `Buffer`, no `node:*` in `src/shared/**`). Adapters own platform specifics.
+- **Ship fast, accept known risk** — don't pre-engineer mitigations for enumerated risks; add them reactively.
+- **Port over re-research** — old boring-ui (`/home/ubuntu/projects/boring-ui/`) has battle-hardened validators, bwrap flags, fileRoutes. Port verbatim where possible.
 
 ## What This Is
 
-**boring-ui-v2** is a greenfield monorepo building **three publishable packages**:
-
-- `**@hachej/boring-core**` — canonical app shell: DB (Postgres/Drizzle), auth (better-auth), config, HTTP app factory (Fastify), and frontend provider stack (`<BoringApp>`). Every child app imports core first. See `[packages/core/docs/CORE.md](packages/core/docs/CORE.md)` for the full spec.
-- `**@hachej/boring-agent**` — pane-embeddable coding agent. Ships 3 execution modes behind one mental model: `direct` (no isolation, macOS/Windows dev) / `local` (bwrap on Linux) / `vercel-sandbox` (Firecracker microVM). Also ships as a first-class CLI (`npx @hachej/boring-agent`), zero setup, zero deploy.
-- `**@hachej/boring-workspace**` — workspace UI and bridge package. Front code composes injected chat, plugin-owned left tabs/editors/catalogs, DockView layouts, and the UI bridge client. Server/app code exports workspace bridge routes/tools and `createWorkspaceAgentApp()` for shells that compose `@hachej/boring-agent/server`.
-
-**Dependency graph (inverted — core at the bottom):**
+**boring-ui-v2** is a pnpm monorepo of publishable packages for building agent-powered workspace apps:
 
 ```
   apps/*  →  @hachej/boring-workspace  →  @hachej/boring-core
@@ -101,59 +105,29 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
     └──────→  @hachej/boring-agent  (standalone OK — zero core imports at runtime)
 ```
 
-`@hachej/boring-core` owns persistence and identity. `@hachej/boring-agent` and `@hachej/boring-workspace` stay DB-free; core injects stores via `createCoreApp` options. Agent can also boot standalone (`createAgentApp`) with zero core dependency.
+- `@hachej/boring-core` — DB (Postgres/Drizzle), auth (better-auth), config, HTTP app factory, frontend shell. Owns persistence and identity.
+- `@hachej/boring-agent` — pane-embeddable coding agent: `direct` / `local` (bwrap) / `vercel-sandbox` execution modes; also a standalone CLI.
+- `@hachej/boring-workspace` — workspace UI, DockView layouts, plugin system, UI bridge. Agent and workspace stay DB-free; core injects stores.
 
-The three packages are designed to be composed by a final **app shell** (the end user's app). See `packages/agent/docs/plans/agent-package-spec.md`, `packages/workspace/docs/INTERFACES.md`, and `packages/core/docs/CORE.md` for current package boundaries.
+Plus `@hachej/boring-ui-kit` (shared UI primitives), `@hachej/boring-pi` (agent-facing skills/references), `@hachej/boring-ui-cli` (local hub CLI), `@hachej/boring-ui-plugin-cli` (plugin authoring), `plugins/*` (ask-user, data-catalog, data-explorer, deck), and `apps/*` (playgrounds + full-app reference).
 
-### Why two packages (and how we build)
-
-v1 boring-ui tangled chat, layout, sandboxing, and deploy concerns into a single repo. v2 untangles them on purpose:
-
-- `**@hachej/boring-agent` is a product by itself** — `npx @hachej/boring-agent` is a legitimate standalone tool. Users who want "Claude Code in a browser against my repo" don't need layouts or panels or git UI.
-- `**@hachej/boring-workspace` owns workspace UI contracts** — layouts, plugin registries, catalogs, surface resolvers, and the UI bridge. Base front/shared code stays agent-free; `@hachej/boring-workspace/app/*` may provide batteries-included composition with `@hachej/boring-agent`.
-
-**Future packages (not yet implemented, but shape current decisions):**
-
-- `**@boring/cloud**` — deployment + multi-tenancy. Multi-workspace provisioning, per-user/per-tenant workspace lifecycle, Fly/Modal/Vercel orchestration, billing integration, multi-tenant auth. Kept OUT of agent + workspace so self-hosters don't carry cloud weight.
-
-Design implication today: every interface that might need DB-backing in the future (`SessionStore`, `SandboxHandleStore`, etc.) ships with a file-based default in v2 + an injection seam (`createAgentApp({ sessionStore, sandboxHandleStore })`) so core/cloud can swap in DB impls without touching agent/workspace internals.
-
-**Build principles — apply these to every bead:**
-
-- **Composable** — every user-facing feature ships as a trio: default component + primitives + headless hook. Consumers pick the level they want; we never force a layout or a shell.
-- **Modular + short** — small interfaces, single-responsibility files, load-bearing seams (Harness / Catalog / Workspace / Sandbox / SessionStore / UiBridge). 
-- **Easy to maintain** — platform-agnostic shared contracts (`Uint8Array` not `Buffer`, no `node:*` in `src/shared/**`). Adapters own platform specifics. Swapping an adapter = swap one file.
-- **Ship fast, accept known risk** — if a risk is enumerated in the spec's Risks section, we don't pre-engineer mitigations. We add them reactively when a user hits them.
-- **Port over re-research** — the old boring-ui has battle-hardened path validators, bwrap flags, fileRoutes. Port verbatim where possible.
-
-### Target stack (per spec — not yet installed)
-
-- Frontend: React + Vite + Tailwind v4, `@ai-sdk/react` `useChat`, ai-elements copied into `src/front/primitives/` (shadcn-style).
-- Backend: TypeScript, Fastify, `@mariozechner/pi-coding-agent` as harness runtime.
-- Sandboxing: `child_process.exec` (direct) / `bwrap` (local) / `@vercel/sandbox` (remote).
-- Testing: Vitest (unit) + Playwright (e2e).
-- Package mgmt: pnpm workspace.
-
-## Repo Layout
-
-Packages live in `packages/`. App fixtures and demos live in `apps/`. Do not add
-`src/` at repo root, and do not add the old v1 CLI Go tool (`bui`).
+Full structure, package map, and per-package docs: **[`docs/README.md`](docs/README.md)**.
 
 ## Where to Find What
 
-
-| What                                                      | Where                                                        |
-| --------------------------------------------------------- | ------------------------------------------------------------ |
-| Agent package spec (canonical design)                     | `packages/agent/docs/plans/agent-package-spec.md`            |
-| Workspace package interfaces                              | `packages/workspace/docs/INTERFACES.md`                      |
-| Workspace package history                                 | `packages/workspace/docs/plans/archive/WORKSPACE_V2_PLAN.md` |
-| Execution plan (all tasks, decisions, risks, tests)       | `.beads/` — `br ready`, `br show <id>`                       |
-| Old boring-ui (reference for porting — don't re-research) | `/home/ubuntu/projects/boring-ui/`                           |
-
-
-The agent spec has a "Reference files from the old boring-ui" section (§Reference files) mapping each port task → the exact file to port from. **Port and adapt — no blind research.**
-
-Beads are the single source of truth for execution. Governance content (locked decisions, review outcomes, error codes, cross-plan contracts, invariant rules) lives in beads and gets published to `docs/` when its bead closes — check beads first, then `docs/` once they exist.
+| What                                            | Where                                                            |
+| ----------------------------------------------- | ---------------------------------------------------------------- |
+| Global project structure + docs index           | `docs/README.md`                                                 |
+| Locked architectural decisions                  | `docs/DECISIONS.md` (+ `docs/REVIEW_DECISIONS.md`)               |
+| Agent ↔ workspace integration contract          | `docs/WORKSPACE_CONTRACT.md`                                     |
+| Per-package architecture/abstractions/decisions | `packages/<pkg>/docs/README.md` (core, agent, workspace, cli)    |
+| ui-kit, pi, plugin-cli (single-README packages) | `packages/{ui,pi,plugin-cli}/README.md`                          |
+| Plugin system spec (normative — code cites §X)  | `packages/workspace/docs/PLUGIN_SYSTEM.md`                       |
+| Plugin layout guide + code patterns             | `packages/workspace/docs/PLUGIN_STRUCTURE.md`                    |
+| Each plugin's behavior/config                   | `plugins/<name>/README.md`                                       |
+| Historical plans (never current truth)          | `docs/plans/archive/`, `packages/*/docs/plans/archive/`          |
+| Execution state (tasks, decisions, risks)       | `.beads/` — `br ready`, `br show <id>`                           |
+| Old boring-ui (porting reference)               | `/home/ubuntu/projects/boring-ui/`                               |
 
 ## Critical architectural invariants
 
@@ -164,7 +138,7 @@ These must hold in all code. Grep-enforced in CI (see beads tagged `invariant-li
 3. **Routes + tools receive `Workspace` as a parameter** — never a path or root-dir. Centralized adapter resolution via `resolveMode()`.
 4. **Path validation is the adapter's job** — consumers pass user paths; adapters reject `../` / absolute / symlink-escape.
 5. **Workspace + Sandbox swap as a paired `RuntimeModeAdapter`** — they must share a filesystem substrate. Mixed pairings = split-brain.
-6. `**UiBridge.postCommand` is the single dispatch source** — chat-stream `data-ui-command` parts are display-only derivatives.
+6. **`UiBridge.postCommand` is the single dispatch source** — chat-stream `data-ui-command` parts are display-only derivatives.
 7. **Workspace base front/shared code has ZERO value imports from `@hachej/boring-agent`** — package-neutral workspace UI keeps agent injected. `@hachej/boring-workspace/app/front` may import documented `@hachej/boring-agent/front` APIs for default app composition, and `@hachej/boring-workspace/app/server` may import documented `@hachej/boring-agent/server` APIs.
 8. **Every error has a stable code** from the canonical error-codes enum (one import site, no raw string codes).
 9. **Pi-tools migration stays locked** — `bash`/`read`/`write`/`edit`/`find`/`grep`/`ls` flow through pi factories plus Operations adapters. Custom AgentTools require Principle 3 justification from epic `boring-ui-v2-uhwx`.
@@ -219,98 +193,19 @@ pnpm --filter agent-playground dev
 pnpm --filter @hachej/boring-workspace build && pnpm --filter workspace-playground test
 ```
 
-### Plugin system — code patterns
+### Writing plugins
 
-The user-facing intro is in `[README.md#plugin-system](README.md#plugin-system)`. Canonical structure for new plugins is in `[packages/workspace/docs/PLUGIN_STRUCTURE.md](packages/workspace/docs/PLUGIN_STRUCTURE.md)`. The code patterns you'll write most often:
+Canonical structure, code patterns, and the output-type table:
+`packages/workspace/docs/PLUGIN_STRUCTURE.md` (layout + patterns) and
+`packages/workspace/docs/PLUGIN_SYSTEM.md` (normative spec — code cites it as
+`Per PLUGIN_SYSTEM.md §X`; keep its section numbering stable when editing).
 
-**Minimal plugin:**
-
-```ts
-import { defineFrontPlugin, definePanel } from "@hachej/boring-workspace"
-
-export const myPlugin = defineFrontPlugin({
-  id: "my-plugin",
-  label: "My Plugin",
-  systemPrompt: "You can open widgets with the 'open-widget' tool.",  // injected into agent context
-  outputs: [
-    {
-      type: "panel",
-      panel: definePanel({
-        id: "my-widget",
-        title: "Widget",
-        placement: "center",
-        component: () => import("./WidgetPane").then(m => ({ default: m.WidgetPane })),
-      }),
-    },
-  ],
-})
-```
-
-**Panel components** receive `PaneProps<T>`:
-
-```ts
-import type { PaneProps } from "@hachej/boring-workspace"
-
-interface Params { id?: string }
-
-export function WidgetPane({ params, api, containerApi }: PaneProps<Params>) {
-  // params       — data passed when the panel is opened
-  // api          — DockviewPanelApi (close, setTitle, onDidParametersChange, …)
-  // containerApi — DockviewApi (addPanel, fromJSON, …)
-}
-```
-
-**Do NOT set `lazy: true`.** The registry auto-detects it: a zero-arg function `() => import(...)` is a lazy factory; a component `(props) => JSX` is eager. Plugin panels are code-split automatically.
-
-**Output types:**
-
-
-| type               | contributes                                                  |
-| ------------------ | ------------------------------------------------------------ |
-| `panel`            | center/right/bottom pane opened programmatically             |
-| `left-tab`         | persistent tab in the left sidebar                           |
-| `command`          | command palette entry                                        |
-| `catalog`          | searchable, faceted data-explorer tab                        |
-| `surface-resolver` | maps `SurfaceOpenRequest` kind → panel id                    |
-| `binding`          | React component mounted in the provider tree                 |
-| `provider`         | binding that also receives `apiBaseUrl`, `authHeaders`, etc. |
-
-
-**Composing plugins (imperative API via `definePlugin`):**
-
-See `packages/workspace/docs/PLUGIN_SYSTEM.md` for the `@hachej/boring-plugin/plugin`
-imperative `api.register*` API. Plugin outputs are now declared through
-`definePlugin({ id, ... })` instead of `composePlugins()`, which was removed.
-
-**Registering with the shell:**
-
-```tsx
-<WorkspaceProvider plugins={[myPlugin]} {...shellOptions}>
-  <IdeLayout />
-</WorkspaceProvider>
-```
-
-### Key architectural flows
-
-**How panels render:**
-
-1. `WorkspaceProvider` creates a `PanelRegistry` and calls `bootstrap()` with all plugins.
-2. `bootstrap()` calls `registry.register()` for every panel output.
-3. `PanelRegistry.register()` auto-detects lazy vs eager from `component.length`.
-4. `DockviewShell` calls `registry.getComponents()` which wraps lazy panels in `React.lazy + Suspense + PluginErrorBoundary`.
-5. When dockview opens a panel by id it renders the wrapped component.
-
-**Bridge / UI commands:**
-
-The workspace has a typed pubsub bus (`events`, `postUiCommand`) for communication between the agent backend and the frontend. Use `events.on(workspaceEvents.xxx, handler)` on the front, and `postUiCommand(...)` from the server-side plugin to trigger panel opens, file navigation, etc.
-
-**Surface resolver:**
-
-A surface resolver maps an agent-emitted `SurfaceOpenRequest` (e.g. `{ kind: "open-series", seriesId: "GDPC1" }`) to a panel-open call. Register via a `type: "surface-resolver"` output with a `resolve(req) → SurfacePanelResolution | null` function.
+One recurring gotcha: do **not** set `lazy: true` on panels — the registry
+auto-detects lazy from a zero-arg `() => import(...)` factory.
 
 ### Vite alias convention
 
-Apps that consume `@hachej/boring-workspace` from source for HMR (e.g. `apps/workspace-playground`) gate the source alias on a `BORING_USE_LOCAL_PACKAGES=1` env var. If you add a new `@hachej/boring-workspace/*` subpath import, add it to **both**:
+Apps that consume `@hachej/boring-workspace` from source for HMR gate the source alias behind an env var. If you add a new `@hachej/boring-workspace/*` subpath import, add it to **both**:
 
 - the app's `vite.config.ts` → `resolve.alias`
 - `packages/workspace/package.json` → `exports` map (and rebuild workspace)
@@ -325,7 +220,6 @@ Each package has its own `tsconfig.json`. Workspace has separate `tsconfig.front
 
 ## 0. Tools you have
 
-
 | Tool                  | Purpose                                                        | Key commands                                                                                      |
 | --------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `br`                  | Issue tracking — source of truth for work state                | `br ready`, `br show <id>`, `br update <id> -s <status>`, `br close <id>`, `br sync --flush-only` |
@@ -335,7 +229,6 @@ Each package has its own `tsconfig.json`. Workspace has separate `tsconfig.front
 | `cod exec "<prompt>"` | Ask Codex for review (claude-code agents use this)             | non-interactive exec mode                                                                         |
 | MCP Agent Mail        | Peer coordination, file reservations                           | `register_agent`, `send_message`, `fetch_inbox`, `file_reservation_paths`                         |
 | `vault kv get/list`   | Read-only access to `secret/agent/*` + `secret/shared/*`       | `vault kv get -field=api_key secret/agent/anthropic`                                              |
-
 
 **Hard rules:** never launch bare `bv`; never edit `.beads/*.jsonl` by hand; never commit secrets; use MCP tools natively (not HTTP wrappers).
 
@@ -350,7 +243,7 @@ Each package has its own `tsconfig.json`. Workspace has separate `tsconfig.front
   ```
 
    If first time this session, broadcast an intro message.
-3. **Skim the relevant spec** (agent or workspace).
+3. **Skim the relevant package docs** (`packages/<pkg>/docs/README.md`).
 4. **Pick a bead:** `bv --robot-next` (preferred) or `br ready`.
 5. **Check for collisions** before claiming: inbox for `[CLAIM]` messages on the same bead; skip if taken.
 
@@ -424,14 +317,12 @@ Two axes — **where it is** and **where it is in the process**. Tag every issue
 
 **`status:` — where it is in the process** (exactly one; moves left→right):
 
-
 | Label                   | Meaning                                      |
 | ----------------------- | -------------------------------------------- |
 | `status:to-plan`        | Needs a plan written                         |
 | `status:to-plan-review` | Plan written, awaiting review                |
 | `status:to-code`        | Plan approved — ready to implement           |
 | `status:to-code-review` | Implementation done, diff/PR awaiting review |
-
 
 `to-plan → to-plan-review → to-code → to-code-review → (closed)`
 

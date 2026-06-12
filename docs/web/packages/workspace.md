@@ -1,6 +1,6 @@
-# `@boring/workspace`
+# `@hachej/boring-workspace`
 
-`@boring/workspace` is the workspace UI and bridge package.
+`@hachej/boring-workspace` is the workspace UI and bridge package.
 
 ## What it owns
 
@@ -35,15 +35,15 @@ Workspace plugin outputs include:
 
 ## Important boundary
 
-Workspace base front/shared code should not value-import `@boring/agent`.
+Workspace base front/shared code should not value-import `@hachej/boring-agent`.
 
 Agent-aware composition belongs in app composition layers, not in the package-neutral workspace base.
 
 ## Typical usage
 
 ```tsx
-import { WorkspaceProvider, IdeLayout } from '@boring/workspace'
-import { ChatPanel } from '@boring/agent'
+import { WorkspaceProvider, IdeLayout } from '@hachej/boring-workspace'
+import { ChatPanel } from '@hachej/boring-agent'
 
 <WorkspaceProvider chatPanel={ChatPanel}>
   <IdeLayout />

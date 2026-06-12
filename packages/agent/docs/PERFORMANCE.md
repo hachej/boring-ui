@@ -18,7 +18,7 @@
 Command used:
 
 ```bash
-pnpm --filter @boring/agent run bench:vercel-cold-start -- \
+pnpm --filter @hachej/boring-agent run bench:vercel-cold-start -- \
   --iterations 10 \
   --runtime python3.13 \
   --snapshot-id <snapshot-id>

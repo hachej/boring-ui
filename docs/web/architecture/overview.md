@@ -5,20 +5,20 @@ boring-ui v2 is built as three publishable packages with intentionally separated
 ## Stack order
 
 ```text
-apps/*  →  @boring/workspace  →  @boring/core
-  │              ↑
-  └──────→  @boring/agent
+apps/*  →  @hachej/boring-workspace  →  @hachej/boring-core
+  │                  ↑
+  └──────→  @hachej/boring-agent
 ```
 
 There is also an important product view:
 
-- `@boring/agent` is standalone-capable
-- `@boring/workspace` is the workspace UI layer
-- `@boring/core` is the app foundation that owns persistence and identity
+- `@hachej/boring-agent` is standalone-capable
+- `@hachej/boring-workspace` is the workspace UI layer
+- `@hachej/boring-core` is the app foundation that owns persistence and identity
 
 ## Package roles
 
-### `@boring/core`
+### `@hachej/boring-core`
 Owns:
 - Postgres/Drizzle data model
 - auth via better-auth
@@ -29,7 +29,7 @@ Owns:
 
 Core is the only package that owns persistence and identity.
 
-### `@boring/agent`
+### `@hachej/boring-agent`
 Owns:
 - coding-agent runtime
 - tool execution model
@@ -40,7 +40,7 @@ Owns:
 
 Agent is designed to run without runtime dependency on core.
 
-### `@boring/workspace`
+### `@hachej/boring-workspace`
 Owns:
 - IDE-style layouts and Dockview composition
 - plugin registries and panel contracts
@@ -77,7 +77,7 @@ v1 mixed chat, layout, sandboxing, and deploy concerns into a single product sha
 - path validation belongs to adapters
 - workspace and sandbox swap as a paired runtime mode adapter
 - `UiBridge.postCommand` is the single dispatch source
-- workspace base front/shared code has zero value imports from `@boring/agent`
+- workspace base front/shared code has zero value imports from `@hachej/boring-agent`
 - every error has a stable code
 
 ## Where to go next

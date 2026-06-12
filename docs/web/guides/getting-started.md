@@ -2,16 +2,18 @@
 
 This is the shortest path to understanding the repo.
 
-## 1. Learn the three packages
+## 1. Learn the three foundation packages
 
-- `@boring/core` — foundation
-- `@boring/agent` — coding agent
-- `@boring/workspace` — workspace UI
+- `@hachej/boring-core` — foundation
+- `@hachej/boring-agent` — coding agent
+- `@hachej/boring-workspace` — workspace UI
 
 Start with:
-- `packages/core/docs/CORE.md`
+- `packages/core/docs/README.md`
 - `packages/agent/docs/plans/agent-package-spec.md`
 - `packages/workspace/docs/INTERFACES.md`
+
+(See the [Package map](../architecture/package-map.md) for the supporting packages, plugins, and example apps.)
 
 ## 2. Understand the intended composition
 
@@ -45,14 +47,30 @@ Start from workspace.
 - [Agent package](../packages/agent.md)
 - [Workspace package](../packages/workspace.md)
 
-## 6. Watch the invariants
+## 6. Build and test from the root
+
+The repo is a pnpm workspace (`pnpm-workspace.yaml` globs `packages/*`, `plugins/*`, `apps/*`, plus agent examples and workspace test fixtures). Common root scripts:
+
+```bash
+pnpm build          # build every workspace (-r)
+pnpm build:packages # build only packages/* and plugins/*
+pnpm typecheck      # build packages then typecheck all
+pnpm test           # build packages then run all unit tests
+pnpm lint           # generated-artifact + import-boundary audits
+pnpm e2e            # agent end-to-end tests
+pnpm ci             # lint + typecheck + test + invariants + e2e
+```
+
+To run a playground app, filter to it, e.g. `pnpm --filter workspace-playground dev` (see [proof-of-work](../../procedures/proof-of-work.md) for the port convention).
+
+## 7. Watch the invariants
 
 Important examples:
 
 - shared code stays platform-agnostic
 - workspace and sandbox must share the same filesystem substrate
 - `UiBridge.postCommand` is the dispatch source
-- workspace base code must not value-import agent
+- workspace base code must not value-import `@hachej/boring-agent`
 
 ## Next steps
 

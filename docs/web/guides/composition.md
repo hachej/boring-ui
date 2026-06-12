@@ -13,8 +13,8 @@ This page shows how the three packages fit together in a real app shell.
 Core creates the Fastify app. Agent mounts onto it.
 
 ```ts
-import { createCoreApp, loadConfig } from '@boring/core/server'
-import { registerAgentRoutes } from '@boring/agent/server'
+import { createCoreApp, loadConfig } from '@hachej/boring-core/server'
+import { registerAgentRoutes } from '@hachej/boring-agent/server'
 
 const config = await loadConfig()
 const app = await createCoreApp(config)
@@ -26,12 +26,12 @@ This keeps auth, persistence, and user/workspace ownership in core while exposin
 
 ## Frontend composition
 
-Core provides the top-level shell. Workspace provides layout. Agent provides chat UI.
+Core provides the top-level shell (`CoreFront`, which wraps the config/theme/auth providers). Workspace provides layout. Agent provides chat UI.
 
 ```tsx
-import { BoringApp } from '@boring/core/front'
-import { WorkspaceProvider, IdeLayout } from '@boring/workspace'
-import { ChatPanel } from '@boring/agent'
+import { CoreFront } from '@hachej/boring-core/front'
+import { WorkspaceProvider, IdeLayout } from '@hachej/boring-workspace'
+import { ChatPanel } from '@hachej/boring-agent'
 import { Route } from 'react-router-dom'
 
 function WorkspaceRoute() {
@@ -42,10 +42,12 @@ function WorkspaceRoute() {
   )
 }
 
-<BoringApp>
+<CoreFront>
   <Route path="/" element={<WorkspaceRoute />} />
-</BoringApp>
+</CoreFront>
 ```
+
+> Many apps compose this wiring for you. `@hachej/boring-core/app/front` ships `CoreWorkspaceAgentFront`, a higher-level shell that mounts core providers, workspace layout, and the injected agent chat in one component.
 
 ## Why this composition works
 
@@ -60,7 +62,7 @@ Each package contributes one layer without collapsing boundaries.
 Agent can also run without core:
 
 ```ts
-import { createAgentApp } from '@boring/agent/server'
+import { createAgentApp } from '@hachej/boring-agent/server'
 
 const app = await createAgentApp({ mode: 'direct', workspaceRoot: process.cwd() })
 await app.listen({ port: 3000 })

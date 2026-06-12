@@ -1,9 +1,22 @@
 # Locked Decisions Registry
 
-Source of truth for architectural decisions in `@boring/agent`. Any PR that changes a locked decision must update this document and include rationale in the PR description.
+Source of truth for architectural decisions in `@hachej/boring-agent`. Any PR that changes a locked decision must update this document and include rationale in the PR description.
 
 See also: [REVIEW_DECISIONS.md](./REVIEW_DECISIONS.md) for adopted/deferred findings from external reviews.
-See also: [WORKSPACE_CONTRACT.md](./WORKSPACE_CONTRACT.md) for the `@boring/agent` ↔ `@boring/workspace` integration contract.
+See also: [WORKSPACE_CONTRACT.md](./WORKSPACE_CONTRACT.md) for the `@hachej/boring-agent` ↔ `@hachej/boring-workspace` integration contract.
+
+> **Reader note (registry is historical; entries are not rewritten):** Some
+> entries below predate later changes and use names/scopes that have since moved.
+> In particular: (1) the published package scope is now `@hachej/boring-*` (e.g.
+> `@hachej/boring-agent`), not `@boring/*`; (2) the chat UI was rewritten to be
+> pi-native — decisions **2**, **11b**, **11d**, **14**, and **15** describe the
+> pre-rewrite ai-elements export surface (`ChatPanel`, `SessionToolbar`,
+> `Composer`, `ModelPicker`, `useAgentChat`/`useSessions`, `theme.css`). The
+> current public front surface is the `Pi*` / `usePiSessions` family and styling
+> ships via `@hachej/boring-agent/front/styles.css` — see
+> [WORKSPACE_CONTRACT.md](./WORKSPACE_CONTRACT.md) §2–3 for the live list; and
+> (3) `@boring/cloud` (decision 11) remains a planned, not-yet-extracted package.
+> The original decisions are preserved for rationale and history.
 
 Each decision has four fields:
 
@@ -272,7 +285,7 @@ Each decision has four fields:
 |---|---|
 | **What** | An external install source (e.g. the host's global `@hachej/boring-ui-cli`) is materialized into a workspace's runtime differently per mode. **Direct mode (no OS sandbox)** installs it as a `file:` dependency, which npm resolves to a symlink into the host's global `node_modules` — and that is the correct default there. **Sandbox modes (local/bwrap, vercel-sandbox)** instead pack the source into a self-contained tarball inside the workspace and let `npm install <.tgz>` / `uv pip install <.tar.gz>` extract a real copy, via one shared `resolveArtifactInstallSource()`/`packProvisioningArtifact()` (`workspace/provisioning/packArtifact.ts`). No directory symlink escapes the workspace in a sandbox mode. |
 | **Why** | npm materializes a `file:` *directory* dep as a symlink (like `npm link`), and its `.bin` shim then `realpath`-resolves to the host's global install — outside the workspace root. In direct mode that is fine (the process runs on the host where the link resolves) and is the fastest, lowest-disk option. In a sandbox the target lives outside the bind mount, so the link is invisible/dangling and the realpath guard rejects it; the sandbox must therefore receive an extracted copy, not a link. Unifying both sandbox providers on the same pack→extract path keeps provider-specific code from inventing a separate app-materialization path (see the preprovisioned-base plan's "reuse the serve-time runtime path" constraint). |
-| **Rationale** | The escaping `.bin/boring-ui` symlink is npm's standard behavior, not a design choice; it crash-looped sandbox provisioning (the realpath guard threw, breaking the skip-vs-reinstall short-circuit). A naive copy of a *directory* source still leaves a symlink hop; packing to a tarball is what yields a true extracted copy, and is what the vercel mode already did — so the local mode was aligned to it rather than the reverse. **Scope:** pack self-contains the CLI *package*, not its full transitive dependency tree (the workspace CLI is a thin shim by design), so the per-install escaping-symlink problem is solved, but making the CLI's whole dep tree present *inside* a sandbox — and the boot-speed win — remains the separate [preprovisioned-base-runtime acceleration](./plans/preprovisioned-base-runtime-acceleration-plan.md) work. |
+| **Rationale** | The escaping `.bin/boring-ui` symlink is npm's standard behavior, not a design choice; it crash-looped sandbox provisioning (the realpath guard threw, breaking the skip-vs-reinstall short-circuit). A naive copy of a *directory* source still leaves a symlink hop; packing to a tarball is what yields a true extracted copy, and is what the vercel mode already did — so the local mode was aligned to it rather than the reverse. **Scope:** pack self-contains the CLI *package*, not its full transitive dependency tree (the workspace CLI is a thin shim by design), so the per-install escaping-symlink problem is solved, but making the CLI's whole dep tree present *inside* a sandbox — and the boot-speed win — remains the separate [preprovisioned-base-runtime acceleration](./plans/archive/preprovisioned-base-runtime-acceleration-plan.md) work. |
 | **Re-evaluate when** | The preprovisioned-base / bundled-dep-tree runtime ships (then "self-contained" extends from the package to the whole tree, and the symlink-tolerance kept for direct mode could be revisited); OR npm changes how it materializes `file:` deps; OR a workspace must run the global CLI *inside* a sandbox where the global path is not mounted. |
 
 ---

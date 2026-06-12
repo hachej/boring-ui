@@ -1,6 +1,6 @@
-# `@boring/core`
+# `@hachej/boring-core`
 
-`@boring/core` is the foundation package for boring-ui v2 apps.
+`@hachej/boring-core` is the foundation package for boring-ui v2 apps.
 
 ## What it owns
 
@@ -8,7 +8,7 @@
 - auth via better-auth
 - config loading and validation
 - Fastify app factory
-- frontend provider shell via `<BoringApp>`
+- frontend provider shell via `CoreFront` (and the higher-level `CoreWorkspaceAgentFront`)
 - users, workspaces, members, invites, capabilities
 
 ## What it is for
@@ -30,12 +30,12 @@ Use core when you are building the full app shell and need:
 
 ## Frontend role
 
-Core also ships the application shell used by frontend apps:
+Core also ships the application shell used by frontend apps (via `@hachej/boring-core/front`):
 
-- `<BoringApp>`
-- auth pages
-- config/theme/auth providers
-- user/workspace hooks and menus
+- `CoreFront` (top-level providers + auth pages) and `CoreWorkspaceAgentFront` (full composed shell, via `@hachej/boring-core/app/front`)
+- auth pages and auth gate
+- `ConfigProvider` / `ThemeProvider` and config/theme/auth hooks
+- user/workspace hooks, menus, and settings pages
 
 ## Key boundary
 
@@ -46,7 +46,7 @@ If a feature depends on durable user/workspace records, it belongs here.
 ## Typical usage
 
 ```ts
-import { createCoreApp, loadConfig } from '@boring/core/server'
+import { createCoreApp, loadConfig } from '@hachej/boring-core/server'
 
 const config = await loadConfig()
 const app = await createCoreApp(config)
@@ -54,6 +54,6 @@ const app = await createCoreApp(config)
 
 ## Related docs
 
-- canonical spec: `packages/core/docs/CORE.md`
+- canonical docs: `packages/core/docs/README.md`
 - [Composition guide](../guides/composition.md)
 - [Glossary](../reference/glossary.md)
