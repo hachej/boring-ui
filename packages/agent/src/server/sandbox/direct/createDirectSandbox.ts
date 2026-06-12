@@ -99,7 +99,7 @@ export function createDirectSandbox(opts: CreateDirectSandboxOptions = {}): Sand
       return await new Promise((resolve, reject) => {
         const child = spawn(cmd, {
           cwd,
-          env: withWorkspacePythonEnv({ workspaceRoot, env: opts?.env }),
+          env: withWorkspacePythonEnv({ workspaceRoot, env: opts?.env, preserveHostHome: true }),
           shell: true,
           windowsHide: true,
           detached: process.platform !== 'win32',

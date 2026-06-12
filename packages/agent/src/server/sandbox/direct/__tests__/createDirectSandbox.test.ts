@@ -146,7 +146,10 @@ test('exec forces managed env roots and appends plugin PATH after runtime bins',
 
   const [root, home, venv, pythonHome, pathValue] = Buffer.from(result.stdout).toString('utf-8').split('\n')
   expect(root).toBe(workspaceRoot)
-  expect(home).toBe(workspaceRoot)
+  // Direct (host-passthrough) mode preserves the caller's HOME so host-auth
+  // CLIs (gh, git) keep working; only the workspace-scoped python vars below
+  // are rewritten to the workspace root.
+  expect(home).toBe('/plugin-home')
   expect(venv).toBe(join(workspaceRoot, '.boring-agent', 'venv'))
   expect(pythonHome).toBe('')
   expect(pathValue.split(':').slice(0, 5)).toEqual([

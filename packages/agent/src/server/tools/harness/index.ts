@@ -70,6 +70,7 @@ function directSpawnHook(
     env: withWorkspacePythonEnv({
       workspaceRoot,
       env: mergeRuntimeEnv(runtime, context.env),
+      preserveHostHome: true,
     }),
   })
 }

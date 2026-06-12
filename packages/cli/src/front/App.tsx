@@ -106,13 +106,28 @@ export function CliWorkspaceShell() {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
   const [urlSessionId, setUrlSessionId] = useState<string | null>(() => chatSessionIdFromCliUrl(window.location.search))
   const [metaLoaded, setMetaLoaded] = useState(false)
+  // Tracks whether at least one local-workspaces fetch has *succeeded*. Used to
+  // tell "the registry is genuinely empty" (show the add-a-workspace screen)
+  // apart from "the first fetch hasn't landed / failed" (keep showing loading
+  // and retry) so a transient error never strands the page on the empty state.
+  const [workspacesLoaded, setWorkspacesLoaded] = useState(false)
   const [runtimePluginFrontLoadingEnabled, setRuntimePluginFrontLoadingEnabled] = useState(false)
+
+  const refreshWorkspacesRef = useRef<(() => void) | null>(null)
 
   const refreshWorkspaces = useCallback(() => {
     void fetch("/api/v1/local-workspaces")
-      .then(async (res) => res.ok ? await res.json() as { workspaces: LocalWorkspace[] } : { workspaces: [] })
+      .then(async (res) => {
+        // A failed fetch (transient 5xx during cold start, network blip, ...) is
+        // NOT an authoritative "no workspaces" answer. Throwing here routes it to
+        // the catch below, which preserves the current list and schedules a retry
+        // instead of latching the empty "No local workspaces" dead-end screen.
+        if (!res.ok) throw new Error(`local-workspaces ${res.status}`)
+        return await res.json() as { workspaces: LocalWorkspace[] }
+      })
       .then((data) => {
         const next = data.workspaces ?? []
+        setWorkspacesLoaded(true)
         setWorkspaces((current) => areWorkspacesEqual(current, next) ? current : next)
         setActiveWorkspaceId((current) => {
           const urlWorkspaceId = workspaceIdFromCliUrl(window.location.pathname)
@@ -136,8 +151,14 @@ export function CliWorkspaceShell() {
           return selected?.id ?? null
         })
       })
-      .catch(() => {})
+      .catch(() => {
+        // Leave the existing workspace list untouched and retry shortly so a
+        // transient failure can't strand the page on the empty-state screen.
+        window.setTimeout(() => refreshWorkspacesRef.current?.(), 1500)
+      })
   }, [])
+
+  refreshWorkspacesRef.current = refreshWorkspaces
 
   useEffect(() => {
     let cancelled = false
@@ -246,6 +267,20 @@ export function CliWorkspaceShell() {
               <p className="mt-2 text-sm text-muted-foreground">
                 Preparing <code>{activeWorkspaceId}</code>. This can take a moment on first load.
               </p>
+            </div>
+          </div>
+        )
+      }
+      // The workspace registry list hasn't successfully loaded yet (first fetch
+      // still in flight or transiently failed and retrying). Show a neutral
+      // loading state instead of the "No local workspaces" empty state, which
+      // would otherwise flash — and previously latch — on a transient error even
+      // though the API does return workspaces.
+      if (!workspacesLoaded && workspaces.length === 0) {
+        return (
+          <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground">
+            <div className="max-w-md rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
+              <h1 className="text-lg font-semibold">Loading workspaces…</h1>
             </div>
           </div>
         )
