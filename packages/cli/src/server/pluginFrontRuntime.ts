@@ -1211,6 +1211,7 @@ export interface PluginFrontRuntimeHost {
   invalidatePlugin(workspaceId: string, pluginId: string, keepRevision?: number): Promise<void>
   disposeWorkspace(workspaceId: string): Promise<void>
   serve(request: PluginFrontRuntimeServeRequest): Promise<PluginFrontRuntimeResponse>
+  warmupWorkspace(workspaceId: string): Promise<void>
   registerRoutes(app: FastifyInstance): Promise<void>
   close(): Promise<void>
 }
@@ -1902,6 +1903,43 @@ export async function createPluginFrontRuntimeHost(
     }
   }
 
+  // Pre-transform the front entry (and, transitively, the react /
+  // @hachej/boring-workspace singleton modules it imports) for every tracked
+  // plugin in a workspace so the first browser request hits a warm transform
+  // cache instead of paying ~4s of cold Vite resolve/transform that starves
+  // the event loop. Fire-and-forget: failures are swallowed (the real browser
+  // request will surface them) and serve()'s own promise-dedupe means a
+  // concurrent browser hit reuses this in-flight transform rather than racing.
+  async function warmupWorkspace(workspaceId: string): Promise<void> {
+    if (closed) return
+    const records = trackedWorkspaces.get(workspaceId)
+    if (!records || records.size === 0) return
+    await Promise.all(
+      [...records.values()].map(async (record) => {
+        try {
+          await serve({
+            workspaceId,
+            pluginId: record.pluginId,
+            revision: record.revision,
+            subpath: record.frontEntrySubpath,
+          })
+        } catch (error) {
+          emit({
+            level: "warn",
+            stage: "transform",
+            outcome: "rejected",
+            msg: "plugin front warmup transform failed (ignored)",
+            workspaceId,
+            pluginId: record.pluginId,
+            revision: record.revision,
+            requestedPath: record.frontEntrySubpath,
+            details: { error: error instanceof Error ? error.message : String(error) },
+          })
+        }
+      }),
+    )
+  }
+
   function untrackPlugin(workspaceId: string, pluginId: string): void {
     const tracked = trackedWorkspaces.get(workspaceId)?.get(pluginId)
     trackedWorkspaces.get(workspaceId)?.delete(pluginId)
@@ -1935,6 +1973,7 @@ export async function createPluginFrontRuntimeHost(
     invalidatePlugin,
     disposeWorkspace,
     serve,
+    warmupWorkspace,
     registerRoutes,
     close,
   }

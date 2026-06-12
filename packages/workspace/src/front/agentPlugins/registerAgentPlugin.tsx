@@ -49,6 +49,9 @@ export interface RegisterAgentPluginOptions {
   enabled?: boolean
   authHeaders?: Record<string, string>
   importFront?: (frontUrl: string, revision: number) => Promise<{ default?: BoringFrontFactoryWithId }>
+  // Bounded retry for transient cold-start front-import failures (singleton
+  // graph not yet warm after a hard refresh). Exposed mainly for tests.
+  frontImportRetry?: { attempts?: number; delayMs?: number }
 }
 
 function joinUrl(base: string, path: string): string {
@@ -147,6 +150,53 @@ async function captureFrontFactory(pluginId: string, frontUrl: string, revision:
   const api = createCapturingBoringFrontAPI({ pluginId })
   await mod.default(api)
   return api.flush()
+}
+
+// Cold-start retry for plugin front imports. On a hard refresh while the
+// embedded Vite plugin runtime is still warming, the imported module can
+// evaluate against a not-yet-ready singleton graph and throw (the silent
+// "keeping previous version" + "definePlugin: id is required" path). That
+// failure is transient — a moment later the same revision imports cleanly —
+// but it used to be permanent until a revision bump or workspace switch. Retry
+// the import (NOT the register) a few times with a short backoff so the plugin
+// recovers in place.
+const FRONT_IMPORT_RETRY_ATTEMPTS = 4
+const FRONT_IMPORT_RETRY_DELAY_MS = 750
+
+async function importFrontWithRetry({
+  pluginId,
+  frontEntryUrl,
+  revision,
+  importFront,
+  isStale,
+  attempts = FRONT_IMPORT_RETRY_ATTEMPTS,
+  delayMs = FRONT_IMPORT_RETRY_DELAY_MS,
+}: {
+  pluginId: string
+  frontEntryUrl: string
+  revision: number
+  importFront: RegisterAgentPluginOptions["importFront"]
+  isStale: () => boolean
+  attempts?: number
+  delayMs?: number
+}): Promise<CapturedBoringFrontRegistrations> {
+  const maxAttempts = Math.max(1, attempts)
+  let lastError: unknown
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (isStale()) throw lastError ?? new Error(`plugin ${pluginId} front import superseded`)
+    try {
+      return await captureFrontFactory(pluginId, frontEntryUrl, revision, importFront)
+    } catch (error) {
+      lastError = error
+      if (attempt === maxAttempts - 1 || isStale()) break
+      console.warn(
+        `[boring-ui] plugin ${pluginId} front import failed (attempt ${attempt + 1}/${maxAttempts}); retrying`,
+        error,
+      )
+      await new Promise((resolve) => setTimeout(resolve, delayMs))
+    }
+  }
+  throw lastError
 }
 
 /**
@@ -437,7 +487,16 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           let captured: CapturedBoringFrontRegistrations | null = null
           try {
             captured = frontEntryUrl
-              ? await captureFrontFactory(event.id, frontEntryUrl, event.revision, options.importFront)
+              ? await importFrontWithRetry({
+                  pluginId: event.id,
+                  frontEntryUrl,
+                  revision: event.revision,
+                  importFront: options.importFront,
+                  isStale: () =>
+                    disposed || latestRequestedRef.current.get(event!.id) !== event!.revision,
+                  ...(options.frontImportRetry?.attempts !== undefined ? { attempts: options.frontImportRetry.attempts } : {}),
+                  ...(options.frontImportRetry?.delayMs !== undefined ? { delayMs: options.frontImportRetry.delayMs } : {}),
+                })
               : null
           } catch (error) {
             throw {
@@ -620,5 +679,5 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
       }
       es.close()
     }
-  }, [options.apiBaseUrl, options.workspaceId, options.enabled, options.authHeaders, options.importFront, panels, commands, catalogs, surfaceResolvers, reloadNonce])
+  }, [options.apiBaseUrl, options.workspaceId, options.enabled, options.authHeaders, options.importFront, options.frontImportRetry, panels, commands, catalogs, surfaceResolvers, reloadNonce])
 }

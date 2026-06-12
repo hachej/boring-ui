@@ -218,6 +218,49 @@ describe("pluginFrontRuntime", () => {
     }
   }, 20_000)
 
+  test("warmupWorkspace pre-transforms tracked front entries so the first browser hit is a cache-hit", async () => {
+    const diagnostics: PluginFrontRuntimeDiagnostic[] = []
+    const pluginRoot = await makeTempDir("plugin-front-runtime-warmup-")
+    const plugin = await writeRuntimePlugin(pluginRoot, {
+      "front/index.tsx": 'import "./styles.css"\nexport const ok = true\n',
+      "front/styles.css": ".runtime-panel { color: tomato; }\n",
+    })
+
+    const host = await createPluginFrontRuntimeHost({ onDiagnostic: (entry) => diagnostics.push(entry) })
+    host.trackPlugin({
+      workspaceId: "workspace-a",
+      plugin,
+      revision: 1,
+      frontEntrySubpath: "front/index.tsx",
+    })
+
+    try {
+      // No-op for an unknown / empty workspace — must not throw.
+      await host.warmupWorkspace("does-not-exist")
+
+      await host.warmupWorkspace("workspace-a")
+      const afterWarmupCacheMisses = diagnostics.filter(
+        (d) => d.outcome === "cache-miss" && d.requestedPath === "front/index.tsx",
+      ).length
+      expect(afterWarmupCacheMisses).toBe(1)
+
+      // The browser's first request now reuses the warm transform cache.
+      const served = await host.serve({
+        workspaceId: "workspace-a",
+        pluginId: "runtime-plugin",
+        revision: 1,
+        subpath: "front/index.tsx",
+      })
+      expect(served.body).toContain("export const ok")
+      const cacheHits = diagnostics.filter(
+        (d) => d.outcome === "cache-hit" && d.requestedPath === "front/index.tsx",
+      ).length
+      expect(cacheHits).toBeGreaterThanOrEqual(1)
+    } finally {
+      await host.close()
+    }
+  }, 20_000)
+
   test("rejects direct __vite proxy access that was never minted by a validated runtime request", async () => {
     const host = await createPluginFrontRuntimeHost()
     const app = fastify({ logger: false })

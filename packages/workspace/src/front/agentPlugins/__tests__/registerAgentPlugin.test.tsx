@@ -1174,7 +1174,9 @@ describe("useAgentPluginHotReload", () => {
       const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
       const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
       function Listener() {
-        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        // Disable the cold-start auto-retry so this test exercises the
+        // single-attempt fail → error-event → recover-on-next-dispatch path.
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront, frontImportRetry: { attempts: 1 } })
         return null
       }
       return (
@@ -1213,6 +1215,68 @@ describe("useAgentPluginHotReload", () => {
     }
   })
 
+  test("auto-recovers a transient cold-start front import failure without a re-dispatch", async () => {
+    // Mirrors the hard-refresh case where the first import evaluates against a
+    // not-yet-warm singleton graph and throws, but the same revision imports
+    // cleanly a moment later. The hook must retry in place and register the
+    // plugin without a workspace switch or another load event.
+    const browserEvents: Array<Record<string, unknown>> = []
+    const listener = (event: Event) => browserEvents.push((event as CustomEvent<Record<string, unknown>>).detail)
+    window.addEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
+    let attempts = 0
+    const importFront = async (): Promise<{ default?: BoringFrontFactoryWithId }> => {
+      attempts += 1
+      if (attempts < 3) throw new Error("definePlugin: `id` is required and must be a non-empty string")
+      return {
+        default: hotPlugin("hot-plugin", (api) => {
+          api.registerPanel({
+            id: "hot-pane",
+            label: "Hot Pane",
+            component: function HotPane() {
+              return React.createElement("div", { "data-testid": "hot-pane" }, "auto recovered")
+            },
+          })
+        }),
+      }
+    }
+
+    function AutoRetryHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront, frontImportRetry: { attempts: 4, delayMs: 5 } })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <PaneRenderer id="hot-pane" />
+        </RegistryProvider>
+      )
+    }
+
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    try {
+      render(<AutoRetryHarness />)
+      MockEventSource.instances[0].dispatch("boring.plugin.load", {
+        type: "boring.plugin.load",
+        id: "hot-plugin",
+        version: "1.0.0",
+        revision: 1,
+        frontTarget: { kind: "module-url", entryUrl: "/@fs/flaky.mjs", revision: 1 },
+        boring: { front: "./front.mjs" },
+      })
+      await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("auto recovered"))
+      expect(attempts).toBe(3)
+      // No terminal front-error should be emitted once the retry succeeds.
+      expect(browserEvents).not.toContainEqual(expect.objectContaining({ type: "boring.plugin.front-error" }))
+    } finally {
+      consoleWarn.mockRestore()
+      window.removeEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
+    }
+  })
+
   test("keeps the current pane live when generated plugin code has no valid default factory", async () => {
     const browserEvents: Array<Record<string, unknown>> = []
     const listener = (event: Event) => browserEvents.push((event as CustomEvent<Record<string, unknown>>).detail)
@@ -1231,7 +1295,9 @@ describe("useAgentPluginHotReload", () => {
         return await importFrontFromDisk(url)
       }, [])
       function Listener() {
-        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        // Disable the cold-start auto-retry so this test exercises the
+        // single-attempt "keep previous version on a broken replacement" path.
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront, frontImportRetry: { attempts: 1 } })
         return null
       }
       return (

@@ -34,6 +34,15 @@ import {
 const SUPPORTED_PROTOCOL_VERSION = 1
 const DEFAULT_RECONNECT_BASE_MS = 1_000
 const DEFAULT_RECONNECT_MAX_MS = 30_000
+// Per-attempt budget for the /state hydration (and command) fetches. Right
+// after a server (re)start the event loop can be saturated for tens of seconds
+// by cold plugin transforms; an un-timed fetch issued in that window hangs
+// indefinitely and pins the chat on "Loading chat history…" forever, because a
+// hung request never throws so hydrateAndConnect never reaches its retry path.
+// The only escape was remounting (switching workspaces). Bound each request so
+// a slow/hung attempt surfaces as a (retryable) error and the reconnect loop
+// re-issues a fresh request against the recovered server.
+const DEFAULT_REQUEST_TIMEOUT_MS = 15_000
 const DEFAULT_LARGE_STATE_WARNING_BYTES = 5 * 1024 * 1024
 const DEFAULT_LARGE_STATE_WARNING_MESSAGES = 300
 const EVENT_TYPE_RING_LIMIT = 20
@@ -68,6 +77,9 @@ export interface RemotePiSessionOptions {
   }
   setTimeoutFn?: typeof globalThis.setTimeout
   clearTimeoutFn?: typeof globalThis.clearTimeout
+  // Per-attempt timeout for /state and command fetches. Defaults to
+  // DEFAULT_REQUEST_TIMEOUT_MS; exposed mainly for tests.
+  requestTimeoutMs?: number
 }
 
 export interface RemotePiSessionLargeStateWarning {
@@ -117,6 +129,7 @@ export class RemotePiSession {
   private readonly storageScope: string
   private readonly setTimeoutFn: typeof globalThis.setTimeout
   private readonly clearTimeoutFn: typeof globalThis.clearTimeout
+  private readonly requestTimeoutMs: number
   private generation = 0
   private streamRunId = 0
   private reconnectAttempt = 0
@@ -136,6 +149,7 @@ export class RemotePiSession {
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis)
     this.setTimeoutFn = options.setTimeoutFn ?? globalThis.setTimeout
     this.clearTimeoutFn = options.clearTimeoutFn ?? globalThis.clearTimeout
+    this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
     this.store = createPiChatStore(createInitialPiChatState({
       sessionId: options.sessionId,
       workspaceId: options.workspaceId,
@@ -318,9 +332,25 @@ export class RemotePiSession {
       opened = true
       onOpen?.()
     }
+    // Bound only the time-to-first-response of the (long-lived) stream fetch:
+    // a saturated/restarting server can leave the request hanging before any
+    // bytes arrive, which would otherwise never reconnect. Cleared as soon as
+    // the response headers land so the streaming body is never timed out.
+    let connectTimedOut = false
+    let connectTimer: ReturnType<typeof globalThis.setTimeout> | undefined = globalThis.setTimeout(() => {
+      connectTimedOut = true
+      controller.abort()
+    }, this.requestTimeoutMs)
+    const clearConnectTimer = () => {
+      if (connectTimer !== undefined) {
+        globalThis.clearTimeout(connectTimer)
+        connectTimer = undefined
+      }
+    }
     try {
       const headers = await this.requestHeaders()
       if (!this.isStreamActive(generation, runId)) {
+        clearConnectTimer()
         markOpen()
         return
       }
@@ -329,6 +359,7 @@ export class RemotePiSession {
         headers,
         signal: controller.signal,
       })
+      clearConnectTimer()
       if (!this.isStreamActive(generation, runId)) {
         markOpen()
         return
@@ -393,10 +424,19 @@ export class RemotePiSession {
         this.scheduleReconnect(generation)
       }
     } catch (error) {
+      clearConnectTimer()
       markOpen()
-      if (!this.isStreamActive(generation, runId) || shouldIgnoreStreamClose(error, controller)) return
-      this.dispatchProtocolError(errorMessage(error, 'Pi chat event stream disconnected.'))
+      if (!this.isStreamActive(generation, runId)) return
+      // A connect-timeout aborts the controller, so shouldIgnoreStreamClose
+      // would normally swallow it; treat it instead as a recoverable
+      // disconnect that schedules a reconnect against the recovered server.
+      if (!connectTimedOut && shouldIgnoreStreamClose(error, controller)) return
+      this.dispatchProtocolError(connectTimedOut
+        ? `Pi chat event stream timed out after ${this.requestTimeoutMs}ms.`
+        : errorMessage(error, 'Pi chat event stream disconnected.'))
       this.scheduleReconnect(generation)
+    } finally {
+      clearConnectTimer()
     }
   }
 
@@ -454,12 +494,28 @@ export class RemotePiSession {
   private async fetchJson(url: string, init: RequestInit): Promise<unknown> {
     const controller = new AbortController()
     this.fetchControllers.add(controller)
+    // Bound the attempt: a hung request (saturated server right after a
+    // restart, dead keep-alive socket) would otherwise never settle, leaving
+    // the chat stuck hydrating. On timeout we abort the in-flight fetch so it
+    // rejects with an AbortError, surfacing as a retryable hydrate error.
+    let timedOut = false
+    const timer = globalThis.setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, this.requestTimeoutMs)
     try {
       const response = await this.fetchImpl(url, { ...init, signal: controller.signal })
       const body = await safeReadJson(response)
       if (!response.ok) throw new RemotePiSessionHttpError(response.status, routeErrorMessage(body, `HTTP ${response.status}`), body)
       return body
+    } catch (error) {
+      // Distinguish our own timeout abort from a dispose-driven abort: a
+      // dispose abort must stay an (ignored) AbortError, but a timeout should
+      // throw a real error so the caller's catch reaches scheduleReconnect.
+      if (timedOut) throw new Error(`Request to ${url} timed out after ${this.requestTimeoutMs}ms.`)
+      throw error
     } finally {
+      globalThis.clearTimeout(timer)
       this.fetchControllers.delete(controller)
     }
   }
