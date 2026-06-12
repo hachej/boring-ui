@@ -188,3 +188,45 @@ BORING_AGENT_WORKSPACE_ROOT=/absolute/path/to/workspace
 ```
 
 When unset, defaults to the current working directory at server start.
+
+## Adding a custom runtime mode
+
+A mode is a `RuntimeModeAdapter` (defined in `src/server/runtime/mode.ts`).
+There is no registry to edit: pass your adapter as the `runtimeModeAdapter`
+option to `createAgentApp(opts)` or `registerAgentRoutes(app, opts)` — it takes
+precedence over `mode`/auto-detection (`createAgentApp.ts`,
+`registerAgentRoutes.ts`). `resolveMode()` only knows the three built-ins and
+throws for unknown ids, telling you to pass `runtimeModeAdapter`.
+
+```ts
+interface RuntimeModeAdapter {
+  id: string                                  // built-ins: 'direct' | 'local' | 'vercel-sandbox'
+  workspaceFsCapability?: 'strong' | 'weak'   // are workspace files on the host path before create()?
+                                              // remote backends must NOT claim 'strong' — composition
+                                              // layers use this to gate host-side fs checks
+  create(ctx: ModeContext): Promise<RuntimeBundle>
+  createProvisioningAdapter?(runtimeLayout, ctx?): WorkspaceProvisioningAdapter
+  dispose?(): Promise<void>
+}
+
+interface RuntimeBundle {
+  runtimeContext?: WorkspaceRuntimeContext   // e.g. { runtimeCwd: '/workspace' }
+  storageRoot?: string                       // host path for host-fs tools; required unless the
+                                             // workspace itself resolves a host root. NOT the
+                                             // agent-visible cwd — Workspace.root stays the public namespace
+  workspace: Workspace                       // your filesystem adapter
+  sandbox: Sandbox                           // your exec adapter — MUST share the workspace's
+                                             // filesystem substrate (invariant 5: mixed pairings = split-brain)
+  fileSearch: FileSearch                     // createServerFileSearch(workspace, sandbox) usually
+}
+```
+
+Reference implementation to copy: `src/server/runtime/modes/local.ts` (~35
+lines: mkdir + template copy + `createNodeWorkspace` + `createBwrapSandbox`,
+paired on the same root). Tests to extend:
+`src/server/runtime/__tests__/resolveMode.test.ts`.
+
+Rules that must hold (see AGENTS.md invariants 3–5): the adapter owns path
+validation (reject `../`, absolute, symlink escapes — see
+`src/server/workspace/paths.ts`); Workspace + Sandbox swap as a pair; consumers
+receive `Workspace` as a parameter and never see raw paths.

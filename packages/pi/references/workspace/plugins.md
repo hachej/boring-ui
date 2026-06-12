@@ -176,6 +176,16 @@ export default function extension(api: { registerTool(tool: unknown): void }) {
 }
 ```
 
+## Chat slash commands
+
+Pi resources double as chat `/slash` commands: extensions, prompts, and skills
+shipped in `package.json#pi` appear automatically in the chat composer's
+slash-command picker, tagged with their source (`extension`/`prompt`/`skill`)
+and plugin name. `kind: skill` commands are forwarded to the agent as
+`skill: <name>`; server commands execute via the agent's commands route without
+going through the chat loop. No harness changes are needed — shipping the Pi
+resource is enough.
+
 ## Folder layout
 
 ```txt

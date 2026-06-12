@@ -25,7 +25,8 @@ the doc that matches your task.
   surface resolvers into panel openings (`src/shared/types/surface.ts`).
 - **Two plugin tiers** — App/internal package plugins (trusted, boot-time, may add
   routes/agent tools/Pi resources) and runtime/generated `.pi/extensions` plugins
-  (hot-reloaded for front/Pi, route-free). See `PLUGIN_SYSTEM.md`.
+  (a.k.a. *external* plugins: hot-reloaded for front/Pi, route-free). See
+  `PLUGIN_SYSTEM.md` §1.1 for the trust model.
 
 ## Key abstractions
 

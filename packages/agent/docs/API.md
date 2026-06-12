@@ -50,7 +50,7 @@ The Node runtime. Key exports:
   Vercel sandbox/snapshot helpers (`createVercelSandboxWorkspace`,
   `bakeSnapshotIfNeeded`, deployment-snapshot providers, `FileHandleStore`).
 - Workspace adapters: `createNodeWorkspace`, `createVercelSandboxWorkspace`.
-- Mode resolution: `autoDetectMode`, `resolveMode`, `hasBwrap`.
+- Mode resolution: `autoDetectMode`, `resolveMode`, `hasBwrap`. Custom execution backends are injected via the `runtimeModeAdapter` option — see [runtime.md §Adding a custom runtime mode](./runtime.md#adding-a-custom-runtime-mode).
 - Provisioning: `provisionRuntimeWorkspace`, `provisionWorkspaceRuntime`,
   `getBoringAgentRuntimePaths`, `getBoringAgentRuntimeEnv`,
   `createVercelProvisioningAdapter`.
