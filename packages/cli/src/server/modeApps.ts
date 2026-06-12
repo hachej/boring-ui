@@ -370,6 +370,10 @@ export async function createFolderModeApp(opts: {
     logger: false,
     provisionWorkspace: false,
     runtimeProvisioning,
+    // The standalone CLI runs on the user's own machine, so ambient skill
+    // discovery (workspace + user-global ~/.pi skills) is on. The library
+    // default is off (withPiHarnessDefaults) to keep hosted agents isolated.
+    pi: { noSkills: false },
     // CLI-bundled internal plugins, resolved to absolute package dirs. This
     // drives the server-side install array (boot-time routes/agentTools);
     // additionalBoringPluginDirs only feeds the asset-manager scan.
@@ -703,6 +707,9 @@ export async function createWorkspacesModeApp(opts: {
       const workspace = await requireWorkspace(workspaceId)
       await getLoadedPluginRuntime(workspace)
       return {
+        // Same policy as folder mode: the local hub runs on the user's own
+        // machine, so ambient skill discovery is on (library default is off).
+        noSkills: false,
         additionalSkillPaths: [join(workspaceRoot, ".agents", "skills")],
         packages: [],
         extensionPaths: [],

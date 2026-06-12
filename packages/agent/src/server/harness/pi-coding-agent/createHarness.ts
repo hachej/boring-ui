@@ -110,6 +110,29 @@ export interface PiHarnessOptions {
   getHotReloadableResources?: () => HotReloadablePiResources;
 }
 
+/** Pi harness options with the discovery flags resolved to definite booleans. */
+export type ResolvedPiHarnessOptions = PiHarnessOptions & {
+  noContextFiles: boolean;
+  noSkills: boolean;
+};
+
+/**
+ * Boring's default pi resource-discovery policy — the ONE place these flags
+ * get their defaults. Harness factories must apply this instead of inlining
+ * flag literals; hosts override per-field through their `pi` config.
+ *
+ * - `noContextFiles: true` — boring composes its own workspace context
+ *   prompt; pi's ambient AGENTS.md/CLAUDE.md discovery stays off.
+ * - `noSkills: true` — ambient skill discovery (workspace + user-global
+ *   ~/.pi skills) stays off so user-global skills don't leak into hosted
+ *   agents. Hosts that run on the user's own machine (the standalone CLI)
+ *   opt in with `pi: { noSkills: false }`.
+ */
+export function withPiHarnessDefaults(pi?: PiHarnessOptions): ResolvedPiHarnessOptions {
+  const { noContextFiles = true, noSkills = true, ...rest } = pi ?? {};
+  return { ...rest, noContextFiles, noSkills };
+}
+
 export interface HotReloadablePiResources {
   additionalSkillPaths?: string[];
   packages?: PiPackageSource[];
