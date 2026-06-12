@@ -1,6 +1,8 @@
 # STYLING
 
-Styling contract for `@hachej/boring-agent` frontend surfaces.
+Styling contract for `@hachej/boring-agent` frontend surfaces. For the full
+agent/workspace Tailwind isolation model, see
+[`docs/TAILWIND-V4-STYLE-ISOLATION.md`](../../../docs/TAILWIND-V4-STYLE-ISOLATION.md).
 
 ## Package CSS
 

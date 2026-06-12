@@ -58,7 +58,7 @@ Common optional:
 | `RESEND_API_KEY` | — | Resend mail transport |
 | `BORING_AGENT_WORKSPACE_ROOT` | — | Override the agent workspace root |
 | `BORING_AGENT_DEFAULT_MODEL_PROVIDER`, `BORING_AGENT_DEFAULT_MODEL_ID`, `INFOMANIAK_API_TOKEN`, `BORING_AGENT_INFOMANIAK_PRODUCT_ID`, `BORING_AGENT_INFOMANIAK_MODEL` | — | Default chat model, incl. OpenAI-compatible Infomaniak endpoint |
-| `BORING_AGENT_MODE` | `local` | Set `vercel-sandbox` to run the agent in a Vercel Firecracker microVM (+ `VERCEL_*` vars) |
+| `BORING_AGENT_MODE` | `local` | Set `vercel-sandbox` to run the agent in a Vercel Firecracker microVM. Also configure Vercel credentials such as `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`, and local/dev auth via `VERCEL_TOKEN` when OIDC is not available. |
 
 The post-deploy smoke script reads `DEPLOY_URL` plus a family of `SMOKE_*` vars (e.g. `SMOKE_EMAIL`, `SMOKE_PASSWORD`, `SMOKE_AGENT_MODEL_PROVIDER`) to exercise sign-up/verify/reset/agent-chat against a deployed instance.
 

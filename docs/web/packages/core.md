@@ -19,23 +19,24 @@ Use core when you are building the full app shell and need:
 - workspace membership rules
 - invite flows
 - app config
-- a server factory that other packages can mount into
+- the default composed app surfaces for server + frontend
 
-## Main server entrypoints
+## Main entrypoints
 
-- `createCoreApp()`
-- `loadConfig()`
-- `validateConfig()`
-- `buildRuntimeConfigPayload()`
+**Common app-shell path**
+- `@hachej/boring-core/app/server` → `createCoreWorkspaceAgentServer()`
+- `@hachej/boring-core/app/front` → `CoreWorkspaceAgentFront`
+
+**Lower-level core-only path**
+- `@hachej/boring-core/server` → `createCoreApp()`, `loadConfig()`, `validateConfig()`, `buildRuntimeConfigPayload()`
+- `@hachej/boring-core/front` → `CoreFront`
 
 ## Frontend role
 
-Core also ships the application shell used by frontend apps (via `@hachej/boring-core/front`):
+Core ships two front surfaces:
 
-- `CoreFront` (top-level providers + auth pages) and `CoreWorkspaceAgentFront` (full composed shell, via `@hachej/boring-core/app/front`)
-- auth pages and auth gate
-- `ConfigProvider` / `ThemeProvider` and config/theme/auth hooks
-- user/workspace hooks, menus, and settings pages
+- `@hachej/boring-core/front` → `CoreFront`, auth pages, config/theme/auth hooks, user/workspace hooks, menus, and settings pages
+- `@hachej/boring-core/app/front` → `CoreWorkspaceAgentFront`, the higher-level composed shell for the common full-app path
 
 ## Key boundary
 
@@ -45,15 +46,22 @@ If a feature depends on durable user/workspace records, it belongs here.
 
 ## Typical usage
 
-```ts
-import { createCoreApp, loadConfig } from '@hachej/boring-core/server'
+Common full-app path:
 
-const config = await loadConfig()
-const app = await createCoreApp(config)
+```ts
+import { createCoreWorkspaceAgentServer } from '@hachej/boring-core/app/server'
+
+const app = await createCoreWorkspaceAgentServer({
+  // config, plugins, stores, runtime options
+})
 ```
+
+Use `createCoreApp()` only when you intentionally want the lower-level core-only server factory.
 
 ## Related docs
 
 - canonical docs: `packages/core/docs/README.md`
+- [Design FAQ](../reference/design-faq.md)
+- [Troubleshooting map](../reference/troubleshooting.md)
 - [Composition guide](../guides/composition.md)
 - [Glossary](../reference/glossary.md)

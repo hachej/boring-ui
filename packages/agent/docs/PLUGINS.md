@@ -84,6 +84,12 @@ previous tool came from built-ins, `extraTools`, or another plugin.
 
 ## Discovery Sources (direct/local)
 
+This section describes **Pi-native resource discovery** at the harness level.
+Workspace runtime/generated plugins are a higher-level package format under
+`.pi/extensions/<id>/package.json` documented in
+`packages/workspace/docs/PLUGIN_SYSTEM.md`; those packages may themselves
+declare `pi.extensions` resources.
+
 In `direct` and `local` mode, plugin discovery can load tools from:
 
 - `~/.pi/agent/extensions/*.js|*.mjs` (global)

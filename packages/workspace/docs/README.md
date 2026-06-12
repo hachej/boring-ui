@@ -25,7 +25,8 @@ the doc that matches your task.
   surface resolvers into panel openings (`src/shared/types/surface.ts`).
 - **Two plugin tiers** — App/internal package plugins (trusted, boot-time, may add
   routes/agent tools/Pi resources) and runtime/generated `.pi/extensions` plugins
-  (a.k.a. *external* plugins: hot-reloaded for front/Pi, route-free). See
+  (a.k.a. *external* plugins: hot-reloaded for front/Pi, route-free, and loaded
+  only in local/direct-style host runtime contexts — not `vercel-sandbox`). See
   `PLUGIN_SYSTEM.md` §1.1 for the trust model.
 
 ## Key abstractions
@@ -61,6 +62,9 @@ the doc that matches your task.
   `requiresRestart` warning.
 - **Chat-first boot.** `WorkspaceAgentFront` mounts immediately while readiness
   warms in the background; workbench surfaces are locally gated by warmup state.
+- **Style isolation.** Workspace owns public `--boring-*` tokens and Tailwind base
+  reset; agent consumes them under `[data-boring-agent]`. See
+  [`docs/TAILWIND-V4-STYLE-ISOLATION.md`](../../../docs/TAILWIND-V4-STYLE-ISOLATION.md).
 
 ## Docs
 

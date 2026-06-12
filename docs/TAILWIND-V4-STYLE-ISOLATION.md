@@ -63,6 +63,16 @@ language. The agent can still render standalone (its fallbacks apply when no hos
 - every `--boring-agent-*` token consumed in agent source has a package default
 - child apps do not `@source` package `src/` CSS (no scanning `packages/{agent,workspace}/src`)
 
+## Debug checklist
+
+If styles look wrong or tokens leak:
+
+1. Check import order first: workspace globals → agent styles → app overrides.
+2. Inspect `packages/workspace/src/globals.css`: workspace should be the only `:root` owner of public `--boring-*` tokens and Tailwind base reset.
+3. Inspect `packages/agent/src/front/styles/globals.css`: agent should scope token bindings under `[data-boring-agent]`, define no `:root`, and import no Tailwind/preflight/base layer.
+4. Apply app overrides through public `--boring-*` or `--boring-agent-*` tokens, not package-internal DOM selectors.
+5. If this regresses, check `packages/agent/src/__tests__/tailwind-style-conflict.test.ts`.
+
 ## Constraints to keep
 
 > **The agent package must never `@import "tailwindcss"` (or a preflight) in shipped CSS.**

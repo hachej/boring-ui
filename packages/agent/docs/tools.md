@@ -30,9 +30,10 @@ selected runtime mode (see [runtime.md](./runtime.md)):
 ## UI-bridge tools (workspace-owned)
 
 `exec_ui` and `get_ui_state` are **not** part of the standalone agent. They are
-contributed by `@hachej/boring-workspace` when the agent is mounted via
-`createWorkspaceAgentApp`. Standalone `createAgentApp` ships no UI tools. For the
-UI command reference see `packages/workspace/docs/PLUGIN_SYSTEM.md`.
+contributed by `@hachej/boring-workspace` when the agent is mounted via the
+workspace-composed server surfaces (typically `createWorkspaceAgentServer`).
+Standalone `createAgentApp` ships no UI tools. For the UI command reference see
+`packages/workspace/docs/PLUGIN_SYSTEM.md`.
 
 ## Adding custom tools
 
@@ -42,7 +43,7 @@ Three paths — pick by who owns the tool and how it should update:
 | --- | --- | --- |
 | `createAgentApp({ extraTools })` | App shell owns the tool, standalone agent | Boot-time |
 | `defineServerPlugin({ agentTools })` | A workspace plugin package contributes it | Boot-time |
-| Pi-native `.pi/extensions` | Tool should hot-reload with `/reload` | Hot-reloadable |
+| Pi resources (`package.json#pi`, often in runtime plugins under `.pi/extensions/<name>/`) | Tool/skill/chat behavior should hot-reload with `/reload` | Hot-reloadable |
 
 **App-shell `extraTools`** — the simplest path for a standalone agent: pass
 `extraTools: [myTool]` to `createAgentApp(...)` (or `registerAgentRoutes`).
