@@ -34,6 +34,22 @@ Each tool provides:
 - `toolCallId`
 - Optional progress callbacks (`onUpdate`)
 
+Optional fields:
+
+- `readinessRequirements?: ToolReadinessRequirement[]` — gates the tool on
+  runtime readiness. `mergeTools` assigns `['workspace-fs']` to plugin tools
+  that omit it (built-in/`extraTools` tools keep whatever they declare).
+- `promptSnippet?` — extra guidance injected into the system prompt when the
+  tool is registered.
+
+## Trust & runtime modes
+
+Plugin tools' `execute()` run in the **host Node process** and bypass the
+sandbox by design — treat plugin code as trusted local/workspace code. Plugin
+auto-discovery is local-mode-only (see the `vercel-sandbox` caveat below). For
+the full internal-vs-external plugin trust model, see
+`packages/workspace/docs/PLUGIN_SYSTEM.md` §1.1.
+
 ## Safety + Compatibility Rules
 
 - Validate all plugin input against schema before execution.
@@ -110,5 +126,7 @@ When porting plugins from host modes to `vercel-sandbox`, expect differences:
 ## References
 
 - Adding tools: [tools.md](./tools.md)
+- Chat `/slash` commands as a plugin surface:
+  `packages/workspace/docs/PLUGIN_SYSTEM.md` §4.7
 - Minimal integration sketch: `examples/with-custom-tool/README.md`
 - Historical design notes: `docs/plans/archive/` (archival; not current truth)

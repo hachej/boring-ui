@@ -133,7 +133,7 @@ Each decision has four fields:
 | **What** | `mode = "direct" \| "local" \| "vercel-sandbox"` in config. Env override via `BORING_AGENT_MODE`. |
 | **Why** | Each mode selects a Workspace + Sandbox pairing. |
 | **Rationale** | Three named modes cover all current deployment targets. Env override supports CI and container deploys. |
-| **Re-evaluate when** | A fourth execution context is needed. |
+| **Re-evaluate when** | A fourth execution context is needed. Note: non-builtin modes are already supported without core edits — pass a custom `runtimeModeAdapter` to `createAgentApp`/`registerAgentRoutes` (see `packages/agent/docs/runtime.md`). |
 
 ## 8. Plugins
 
