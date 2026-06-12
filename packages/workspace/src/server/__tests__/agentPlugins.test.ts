@@ -359,6 +359,59 @@ describe("boring agent plugin assets", () => {
     expect(readBoringPlugins([collection])).toEqual([])
   })
 
+  test("reports registered source dirs that do not exist", async () => {
+    const root = await tmp("boring-plugin-registered-missing-")
+    const gone = join(root, "deleted-plugin")
+
+    // Speculative scan roots stay silent when absent…
+    expect(preflightBoringPlugins([{ rootDir: gone, kind: "external" }])).toEqual({ ok: true, errors: [] })
+    // …registered ones surface a preflight error.
+    const result = preflightBoringPlugins([{ rootDir: gone, kind: "external", registered: true }])
+    expect(result.ok).toBe(false)
+    expect(result.errors[0]).toMatchObject({
+      pluginDir: gone,
+      code: "MISSING_PLUGIN_DIR",
+    })
+  })
+
+  test("reports registered source dirs without package.json even with non-package children", async () => {
+    const root = await tmp("boring-plugin-registered-stripped-")
+    await mkdir(join(root, "dist"), { recursive: true })
+
+    const result = preflightBoringPlugins([{ rootDir: root, kind: "external", registered: true }])
+    expect(result.ok).toBe(false)
+    expect(result.errors[0]).toMatchObject({
+      pluginDir: root,
+      code: "MISSING_PACKAGE_JSON",
+    })
+  })
+
+  test("reports registered source dirs whose package.json has no plugin metadata", async () => {
+    const root = await tmp("boring-plugin-registered-no-metadata-")
+    await writeFile(join(root, "package.json"), JSON.stringify({ name: "not-a-plugin", version: "1.0.0" }), "utf8")
+
+    // Non-registered package dirs without metadata are skipped silently…
+    expect(preflightBoringPlugins([{ rootDir: root, kind: "external" }])).toEqual({ ok: true, errors: [] })
+    // …registered ones surface a preflight error.
+    const result = preflightBoringPlugins([{ rootDir: root, kind: "external", registered: true }])
+    expect(result.ok).toBe(false)
+    expect(result.errors[0]).toMatchObject({
+      pluginDir: root,
+      code: "INVALID_PLUGIN_METADATA",
+      message: expect.stringContaining("no \"boring\" or \"pi\" plugin metadata"),
+    })
+  })
+
+  test("registered source dirs with valid plugins still load normally", async () => {
+    const root = await tmp("boring-plugin-registered-valid-")
+    await writePlugin(root)
+
+    const result = scanBoringPlugins([{ rootDir: root, kind: "external", registered: true }])
+    expect(result.preflight).toEqual({ ok: true, errors: [] })
+    expect(result.plugins).toHaveLength(1)
+    expect(result.plugins[0].id).toBe("boring-plugin-test")
+  })
+
   test("rejects explicit server entries that resolve outside the plugin root", async () => {
     const root = await tmp("boring-plugin-explicit-server-symlink-escape-")
     const outside = await tmp("boring-plugin-outside-server-target-")

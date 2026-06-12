@@ -107,6 +107,7 @@ describe("createDataCatalogPlugin (BoringFrontFactory)", () => {
         panelId: "warehouse-data-tab",
       }),
     )
+    expect(captured.leftTabs[0]).not.toHaveProperty("chromeless", true)
 
     expect(captured.panels).toHaveLength(1)
     expect(captured.panels[0]).toEqual(
@@ -155,6 +156,40 @@ describe("createDataCatalogPlugin (BoringFrontFactory)", () => {
         params: { bridge },
         bridge,
       }),
+    )
+  })
+
+  it("uses the host left-pane search when rendered chromeless with a controlled query", async () => {
+    const adapterWithSpy: ExplorerDataSource = {
+      search: vi.fn(adapter.search),
+    }
+    const factory = createDataCatalogPlugin({
+      id: "metrics",
+      label: "Metrics",
+      adapter: adapterWithSpy,
+      facets: [{ key: "category", label: "Category" }],
+    })
+    const { api, captured } = makeMockApi()
+    await factory(api)
+
+    const tab = captured.leftTabs[0]
+    if (!tab) throw new Error("missing left tab")
+    const Component = tab.component as ComponentType<any>
+    const chromeActionsElement = document.createElement("div")
+
+    const { container } = render(
+      <Component
+        params={{ chromeless: true, query: "customers", chromeActionsElement }}
+      />,
+    )
+
+    await screen.findByText("Customers")
+    expect(screen.queryByText("Daily Orders")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Search" })).not.toBeInTheDocument()
+    expect(chromeActionsElement.querySelector('[aria-label="Filters"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Filters"]')).toBeNull()
+    expect(adapterWithSpy.search).toHaveBeenCalledWith(
+      expect.objectContaining({ query: "customers" }),
     )
   })
 
