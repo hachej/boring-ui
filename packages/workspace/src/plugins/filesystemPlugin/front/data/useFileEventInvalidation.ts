@@ -27,7 +27,8 @@ import { parentDir } from "../file-tree/treeModel"
  *   filesystem:file.changed      → files(path) + stat(path)
  *   filesystem:file.created file → tree(parent) + files(path) + stat(path)
  *   filesystem:file.created dir  → tree(parent)       (no file content, no stat fetch)
- *   filesystem:file.moved        → tree(parents of from+to) + files(from+to) + stat(from+to) + search
+ *   filesystem:file.moved        → tree(parents of from+to) + files(from+to) + stat(from+to)
+ *                                  + everything cached under from/ (dir moves) + search
  *   filesystem:file.deleted      → tree(parent) + files(path) + stat(path) + search
  *
  * Tree invalidation targets the changed path's PARENT listing, not the
@@ -56,6 +57,7 @@ export function useFileEventInvalidation(): void {
       invalidateTree(batch, base, workspaceId, e.to)
       invalidateFile(batch, base, workspaceId, e.from)
       invalidateFile(batch, base, workspaceId, e.to)
+      invalidateMovedDescendants(batch, base, workspaceId, e.from)
       invalidateSearch(batch, base, workspaceId)
     })
     const offDeleted = events.on(filesystemEvents.deleted, (e) => {
@@ -77,29 +79,38 @@ const INVALIDATION_BATCH_MS = 25
 
 type QueryKey = readonly unknown[]
 
+type InvalidateFilter = Parameters<QueryClient["invalidateQueries"]>[0]
+
 interface InvalidationBatch {
   enqueue(queryKey: QueryKey): void
+  /** Filter-based invalidation; `dedupeKey` coalesces repeats within a batch window. */
+  enqueueFilter(dedupeKey: string, filter: InvalidateFilter): void
   dispose(): void
 }
 
 function createInvalidationBatch(qc: QueryClient): InvalidationBatch {
-  const pending = new Map<string, QueryKey>()
+  const pending = new Map<string, InvalidateFilter>()
   let timer: ReturnType<typeof setTimeout> | undefined
 
   const flush = () => {
     timer = undefined
-    const keys = Array.from(pending.values())
+    const filters = Array.from(pending.values())
     pending.clear()
-    for (const queryKey of keys) {
-      qc.invalidateQueries({ queryKey })
+    for (const filter of filters) {
+      qc.invalidateQueries(filter)
     }
+  }
+
+  const enqueueFilter = (dedupeKey: string, filter: InvalidateFilter) => {
+    pending.set(dedupeKey, filter)
+    if (timer === undefined) timer = setTimeout(flush, INVALIDATION_BATCH_MS)
   }
 
   return {
     enqueue(queryKey) {
-      pending.set(JSON.stringify(queryKey), queryKey)
-      if (timer === undefined) timer = setTimeout(flush, INVALIDATION_BATCH_MS)
+      enqueueFilter(JSON.stringify(queryKey), { queryKey })
     },
+    enqueueFilter,
     dispose() {
       if (timer !== undefined) clearTimeout(timer)
       timer = undefined
@@ -130,6 +141,33 @@ function invalidateTree(
   path: string,
 ): void {
   batch.enqueue([base, workspaceId, "tree", parentDir(path)])
+}
+
+/**
+ * A directory move arrives as ONE rename event carrying only the top-
+ * level from/to, but file/stat/tree queries are keyed by full path —
+ * without this, an editor open on a file under the moved folder keeps
+ * stale content on a dead key. Invalidate everything cached under the
+ * old prefix; only ACTIVE descendant queries (open editors) refetch.
+ * File moves have no descendants, so this is a no-op for them.
+ */
+function invalidateMovedDescendants(
+  batch: InvalidationBatch,
+  base: string,
+  workspaceId: string | null,
+  from: string,
+): void {
+  const prefix = `${from}/`
+  batch.enqueueFilter(`descendants:${base}:${workspaceId}:${prefix}`, {
+    predicate: (query) => {
+      const key = query.queryKey
+      return key[0] === base
+        && key[1] === workspaceId
+        && (key[2] === FILES_QUERY_KEY_SEGMENT || key[2] === "stat" || key[2] === "tree")
+        && typeof key[3] === "string"
+        && key[3].startsWith(prefix)
+    },
+  })
 }
 
 function invalidateSearch(
