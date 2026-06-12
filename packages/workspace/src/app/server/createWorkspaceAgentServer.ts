@@ -268,8 +268,9 @@ function createBoringPiPackageSource(workspaceRoot: string): WorkspacePiPackageS
  * The boring-pi package source above is the canonical declarative way to
  * register the skill, but Pi's DefaultResourceLoader skips package-resolved
  * skills (`enabledSkills`) when `noSkills: true` is set — and boring's
- * default agent factory does set `noSkills: true` so user-global skills
- * (~/.agents/skills) don't leak into the agent's prompt. To keep OUR
+ * canonical harness policy (`withPiHarnessDefaults` in @hachej/boring-agent)
+ * defaults to `noSkills: true` so user-global skills (~/.agents/skills)
+ * don't leak into hosted agents' prompts. To keep OUR
  * skill flowing regardless of that filter, we also push the SKILL.md
  * path into `additionalSkillPaths`, which Pi loads via its skillsOverride
  * even under noSkills. Belt-and-suspenders so the agent always sees the
