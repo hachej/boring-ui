@@ -466,6 +466,14 @@ export async function createWorkspacesModeApp(opts: {
         ensureLoaded: manager.load().then(async () => {
           syncLoadedPluginPiSnapshot(workspace, manager)
           await backendRegistry.reloadFromLoadedPlugins(manager.inspectLoaded())
+          // Fire-and-forget: pre-transform the loaded plugins' front entries
+          // (and their react/@hachej/boring-workspace singletons) so the first
+          // browser request hits a warm Vite transform cache instead of paying
+          // ~4s of cold compilation that starves the event loop and delays
+          // /state, /tree, etc. Never block binding creation; swallow errors.
+          void Promise.resolve()
+            .then(() => runtimeHost.warmupWorkspace(workspace.id))
+            .catch(() => undefined)
         }),
       }
       pluginRuntimes.set(key, runtime)
