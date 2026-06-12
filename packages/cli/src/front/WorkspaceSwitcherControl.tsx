@@ -8,7 +8,7 @@ import {
   DropdownMenuTrigger,
   Kbd,
 } from "@hachej/boring-ui-kit"
-import { Check, ChevronsUpDown, Plus, Settings } from "lucide-react"
+import { ChevronsUpDown, Plus, Settings } from "lucide-react"
 
 export interface WorkspaceSwitcherControlItem {
   id: string
@@ -27,12 +27,23 @@ export interface WorkspaceSwitcherControlProps {
   settingsLabel?: string
   settingsDescription?: string
   onSelectWorkspace: (workspaceId: string) => void
+  getWorkspaceHref?: (workspaceId: string) => string
   onCreateWorkspace?: () => void
   onOpenWorkspaceSettings?: (workspaceId: string) => void
 }
 
 function workspaceInitial(name: string): string {
   return (name.trim()[0] ?? "W").toUpperCase()
+}
+
+function OpenInNewTabIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M15 3h6v6" />
+      <path d="M10 14 21 3" />
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    </svg>
+  )
 }
 
 function nextAvailableIndex(
@@ -58,6 +69,7 @@ export function WorkspaceSwitcherControl({
   settingsLabel = "Workspace settings",
   settingsDescription = "Rename, runtime, deletion",
   onSelectWorkspace,
+  getWorkspaceHref,
   onCreateWorkspace,
   onOpenWorkspaceSettings,
 }: WorkspaceSwitcherControlProps) {
@@ -125,6 +137,7 @@ export function WorkspaceSwitcherControl({
 
   const handlePickerNavigationKey = useCallback((event: KeyboardEvent | ReactKeyboardEvent) => {
     if (!open) return
+    if (event.target instanceof Element && event.target.closest('[data-workspace-new-tab-button="true"]')) return
     if (event.metaKey || event.altKey || event.ctrlKey) return
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault()
@@ -158,6 +171,11 @@ export function WorkspaceSwitcherControl({
   const handleMenuKeyDown = useCallback((event: ReactKeyboardEvent) => {
     handlePickerNavigationKey(event)
   }, [handlePickerNavigationKey])
+
+  const openWorkspaceInNewTab = useCallback((workspaceId: string) => {
+    const href = getWorkspaceHref?.(workspaceId) ?? `/workspace/${encodeURIComponent(workspaceId)}`
+    window.open(href, "_blank", "noopener,noreferrer")
+  }, [getWorkspaceHref])
 
   if (workspaces.length === 0) {
     return (
@@ -226,43 +244,66 @@ export function WorkspaceSwitcherControl({
               const isActive = activeIndex === index
               const available = workspace.available !== false
               return (
-                <DropdownMenuItem
-                  ref={(node) => { itemRefs.current[index] = node }}
-                  key={workspace.id}
-                  aria-label={workspace.name}
-                  data-current={isCurrent ? "true" : "false"}
-                  data-active={isActive ? "true" : "false"}
-                  disabled={!available}
-                  onFocus={() => setActiveIndex(index)}
-                  onPointerMove={() => { if (available) setActiveIndex(index) }}
-                  onSelect={() => onSelectWorkspace(workspace.id)}
-                  style={{
-                    backgroundColor: isActive
-                      ? "color-mix(in oklch, var(--foreground) 10%, transparent)"
-                      : isCurrent
-                        ? "color-mix(in oklch, var(--foreground) 5%, transparent)"
-                        : undefined,
-                  }}
-                  className="relative gap-3 rounded-lg px-2.5 py-2.5 pl-3 text-[13px] focus:text-foreground data-[active=true]:text-foreground data-[current=true]:text-foreground"
-                >
-                  <span
-                    aria-hidden="true"
-                    style={{ backgroundColor: isActive ? "var(--foreground)" : "transparent" }}
-                    className="absolute bottom-2 left-1 top-2 w-0.5 rounded-full"
-                  />
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background text-xs font-semibold text-muted-foreground">
-                    {workspaceInitial(workspace.name)}
-                  </span>
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="truncate text-sm font-medium">{workspace.name}</span>
-                    {available ? (
-                      workspace.path ? <span className="truncate text-xs text-muted-foreground">{workspace.path}</span> : null
-                    ) : (
-                      <span className="truncate text-xs text-destructive">Folder unavailable</span>
-                    )}
-                  </span>
-                  {isCurrent ? <Check className="h-4 w-4 text-foreground" aria-hidden="true" /> : null}
-                </DropdownMenuItem>
+                <div key={workspace.id} className="group relative w-full">
+                  <DropdownMenuItem
+                    ref={(node) => { itemRefs.current[index] = node }}
+                    aria-label={available ? workspace.name : `${workspace.name}. Folder unavailable.`}
+                    data-current={isCurrent ? "true" : "false"}
+                    data-active={isActive ? "true" : "false"}
+                    disabled={!available}
+                    onFocus={() => setActiveIndex(index)}
+                    onPointerMove={() => { if (available) setActiveIndex(index) }}
+                    onSelect={() => onSelectWorkspace(workspace.id)}
+                    style={{
+                      paddingRight: 72,
+                      backgroundColor: isActive
+                        ? "color-mix(in oklch, var(--foreground) 10%, transparent)"
+                        : isCurrent
+                          ? "color-mix(in oklch, var(--foreground) 5%, transparent)"
+                          : undefined,
+                    }}
+                    className="relative gap-3 rounded-lg px-2.5 py-2.5 pl-3 text-[13px] focus:text-foreground data-[active=true]:text-foreground data-[current=true]:text-foreground"
+                  >
+                    <span
+                      aria-hidden="true"
+                      style={{ backgroundColor: isActive ? "var(--foreground)" : "transparent" }}
+                      className="absolute bottom-2 left-1 top-2 w-0.5 rounded-full"
+                    />
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background text-xs font-semibold text-muted-foreground">
+                      {workspaceInitial(workspace.name)}
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="truncate text-sm font-medium">{workspace.name}</span>
+                      {available ? (
+                        workspace.path ? <span className="truncate text-xs text-muted-foreground">{workspace.path}</span> : null
+                      ) : (
+                        <span className="truncate text-xs text-destructive">Folder unavailable</span>
+                      )}
+                    </span>
+                  </DropdownMenuItem>
+                  {available ? (
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      data-workspace-new-tab-button="true"
+                      aria-label={`Open ${workspace.name} in new tab`}
+                      title="Open in new tab"
+                      onPointerDown={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                      }}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        openWorkspaceInNewTab(workspace.id)
+                      }}
+                      style={{ right: 6, top: "50%", transform: "translateY(-50%)" }}
+                      className="absolute z-10 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition hover:bg-foreground/10 hover:text-foreground focus:opacity-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100 group-focus-within:opacity-100"
+                    >
+                      <OpenInNewTabIcon className="h-3.5 w-3.5" />
+                    </button>
+                  ) : null}
+                </div>
               )
             })}
           </div>

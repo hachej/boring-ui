@@ -229,6 +229,7 @@ export {
   readPluginSourceRecordsForRoots,
   removePluginSource,
   resolvePluginSourceScopePaths,
+  resolveRegisteredPluginSourceDirs,
   scaffoldPlugin,
   verifyPlugin,
 } from "./server/index"
@@ -245,6 +246,7 @@ export type {
   PluginSourceRecord,
   PluginSourceScopePaths,
   PluginVerifyOutcome,
+  RegisteredPluginSourceDir,
   RemovePluginSourceOptions,
   ScaffoldPluginOptions,
   ScaffoldPluginResult,

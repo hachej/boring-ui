@@ -106,8 +106,7 @@ export function createDataCatalogPlugin(
     const { query, controlled } = useDataCatalogQuery(params)
     const bridge = params?.bridge as WorkspaceBridge | undefined
     const handleSelect = (row: ExplorerItem) => onSelect(row, { params, bridge })
-    const ownsChrome = params?.chromeless === true
-    const effectiveControlled = controlled && !ownsChrome
+    const usesOuterChromeSearch = controlled && params?.chromeless === true
     return (
       <DataExplorer
         adapter={options.adapter}
@@ -117,10 +116,11 @@ export function createDataCatalogPlugin(
         getDragPayload={options.getDragPayload}
         emptyState={emptyState}
         searchPlaceholder={searchPlaceholder}
-        toolbarTitle={ownsChrome ? leftTabTitle : undefined}
-        toolbarIcon={ownsChrome ? leftTabIcon : undefined}
-        query={effectiveControlled ? query : undefined}
-        searchable={!effectiveControlled}
+        toolbarTitle={usesOuterChromeSearch ? undefined : leftTabTitle}
+        toolbarIcon={usesOuterChromeSearch ? undefined : leftTabIcon}
+        query={usesOuterChromeSearch ? query : undefined}
+        searchable={!usesOuterChromeSearch}
+        toolbarPortalElement={usesOuterChromeSearch ? params?.chromeActionsElement : undefined}
         pageSize={options.pageSize}
         debounceMs={options.debounceMs}
         className={className ?? "h-full"}
@@ -183,7 +183,6 @@ export function createDataCatalogPlugin(
         icon: leftTabIcon,
         component: DataCatalogLeftTab,
         source,
-        chromeless: true,
         panelId: leftTabId,
       }
     : undefined
