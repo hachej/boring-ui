@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
-import type { Workspace } from '../../../shared/workspace'
+import type { Workspace, WorkspaceWatcherReadiness } from '../../../shared/workspace'
 import {
   createFsEventBroadcaster,
   type FsEventBroadcaster,
@@ -16,8 +16,9 @@ import {
  *   event: change
  *   data: { eventId, seq, ts, change: { op, path, oldPath?, mtimeMs? } }
  *
- *   event: unsupported    — workspace.watch is not implemented; client falls back
- *   data: { reason }
+ *   event: unsupported    — workspace.watch is not implemented, or the
+ *   data: { reason, message? }  watcher refused the workspace (e.g.
+ *                           `workspace_too_large`); client falls back
  *
  *   event: resync-required — gap between client's Last-Event-ID and our buffer;
  *   data: {}                  client should drop caches and refetch on demand
@@ -52,19 +53,35 @@ export function fsEventsRoutes(
   // request-scoped workspace id.
   const broadcasters = new Map<string, BroadcasterEntry>()
 
-  const ensureBroadcaster = async (request: FastifyRequest): Promise<{
-    workspaceId: string
-    entry: BroadcasterEntry
-  } | null> => {
+  const ensureBroadcaster = async (request: FastifyRequest): Promise<
+    | { workspaceId: string; entry: BroadcasterEntry }
+    | { unsupported: { reason: string; message?: string } }
+  > => {
     const workspace = opts.getWorkspace
       ? await opts.getWorkspace(request)
       : opts.workspace
     if (!workspace) throw new Error('fs event route requires workspace or getWorkspace')
-    if (typeof workspace.watch !== 'function') return null
+    if (typeof workspace.watch !== 'function') {
+      return { unsupported: { reason: 'watch_not_implemented' } }
+    }
     const workspaceId = request.workspaceContext?.workspaceId ?? 'default'
     const existing = broadcasters.get(workspaceId)
     if (existing) return { workspaceId, entry: existing }
-    const broadcaster = createFsEventBroadcaster(workspace.watch())
+    const watcher = workspace.watch()
+    // Watchers with a startup guard (workspace-size check) refuse to
+    // observe over-sized trees — relay that to the client as
+    // `unsupported` so it falls back instead of waiting forever.
+    const readiness: WorkspaceWatcherReadiness = (await watcher.whenReady?.()) ?? { ok: true }
+    if (!readiness.ok) {
+      return { unsupported: { reason: readiness.reason, ...(readiness.message ? { message: readiness.message } : {}) } }
+    }
+    // Two first-connects can race here: both pass the pre-await lookup
+    // and share the watcher's readiness promise. Re-check after the
+    // await so only one of them constructs (and registers) the
+    // broadcaster — a duplicate would double-subscribe the watcher.
+    const existingAfterWait = broadcasters.get(workspaceId)
+    if (existingAfterWait) return { workspaceId, entry: existingAfterWait }
+    const broadcaster = createFsEventBroadcaster(watcher)
     const entry = { broadcaster, subscribers: 0 }
     broadcasters.set(workspaceId, entry)
     return { workspaceId, entry }
@@ -88,8 +105,8 @@ export function fsEventsRoutes(
     reply.hijack()
     setupSse(request, reply.raw)
 
-    if (!resolved) {
-      writeSse(reply.raw, 'unsupported', { reason: 'watch_not_implemented' })
+    if ('unsupported' in resolved) {
+      writeSse(reply.raw, 'unsupported', resolved.unsupported)
       reply.raw.end()
       return
     }
