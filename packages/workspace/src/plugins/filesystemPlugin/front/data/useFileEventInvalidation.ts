@@ -24,10 +24,14 @@ import { FILES_QUERY_KEY_SEGMENT } from "../../shared/constants"
  * Granular invalidation per event kind so a content-only change
  * doesn't nuke tree/search caches:
  *   filesystem:file.changed      → files(path) + stat(path)
- *   filesystem:file.created file → tree + files(path) + stat(path)
- *   filesystem:file.created dir  → tree only          (no file content, no stat fetch)
- *   filesystem:file.moved        → tree + files(from+to) + stat(from+to) + search
- *   filesystem:file.deleted      → tree + files(path) + stat(path) + search
+ *   filesystem:file.created file → tree(parent) + files(path) + stat(path)
+ *   filesystem:file.created dir  → tree(parent)       (no file content, no stat fetch)
+ *   filesystem:file.moved        → tree(parents of from+to) + files(from+to) + stat(from+to) + search
+ *   filesystem:file.deleted      → tree(parent) + files(path) + stat(path) + search
+ *
+ * Tree invalidation targets the changed path's PARENT listing, not the
+ * whole `tree` prefix — during event storms (large dir moves, builds)
+ * a prefix invalidation refetched every mounted listing per batch.
  */
 export function useFileEventInvalidation(): void {
   const queryClient = useQueryClient()
@@ -41,19 +45,20 @@ export function useFileEventInvalidation(): void {
       invalidateFile(batch, base, workspaceId, e.path)
     })
     const offCreated = events.on(filesystemEvents.created, (e) => {
-      invalidateTree(batch, base, workspaceId)
+      invalidateTree(batch, base, workspaceId, e.path)
       if (e.kind === "file") {
         invalidateFile(batch, base, workspaceId, e.path)
       }
     })
     const offMoved = events.on(filesystemEvents.moved, (e) => {
-      invalidateTree(batch, base, workspaceId)
+      invalidateTree(batch, base, workspaceId, e.from)
+      invalidateTree(batch, base, workspaceId, e.to)
       invalidateFile(batch, base, workspaceId, e.from)
       invalidateFile(batch, base, workspaceId, e.to)
       invalidateSearch(batch, base, workspaceId)
     })
     const offDeleted = events.on(filesystemEvents.deleted, (e) => {
-      invalidateTree(batch, base, workspaceId)
+      invalidateTree(batch, base, workspaceId, e.path)
       invalidateFile(batch, base, workspaceId, e.path)
       invalidateSearch(batch, base, workspaceId)
     })
@@ -112,12 +117,23 @@ function invalidateFile(
   batch.enqueue([base, workspaceId, "stat", path])
 }
 
+/**
+ * Tree listing queries are keyed `[base, ws, "tree", dir]` — invalidate
+ * only the listing that actually shows the changed path: its parent.
+ * Matches `parentDir` in `file-tree/treeModel.ts` ("." for top-level).
+ */
+function treeParentDir(path: string): string {
+  const i = path.lastIndexOf("/")
+  return i > 0 ? path.slice(0, i) : "."
+}
+
 function invalidateTree(
   batch: InvalidationBatch,
   base: string,
   workspaceId: string | null,
+  path: string,
 ): void {
-  batch.enqueue([base, workspaceId, "tree"])
+  batch.enqueue([base, workspaceId, "tree", treeParentDir(path)])
 }
 
 function invalidateSearch(

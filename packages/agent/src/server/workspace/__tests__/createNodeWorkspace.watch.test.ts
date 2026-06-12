@@ -131,6 +131,49 @@ describe('createNodeWorkspace.watch', () => {
     expect(events).toEqual([])
   })
 
+  it('emits one synthetic rename for workspace.rename instead of an unlink/add storm', async () => {
+    const ws = createNodeWorkspace(root)
+    await ws.mkdir('big', { recursive: true })
+    for (let i = 0; i < 20; i += 1) {
+      await ws.writeFile(`big/f-${i}.txt`, String(i))
+    }
+    watcher = ws.watch!()
+    const events: WorkspaceChangeEvent[] = []
+    watcher.subscribe((e) => events.push(e))
+    await wait(SETTLE_MS)
+
+    await ws.rename('big', 'moved')
+    await waitForEvent(events, (e) => e.op === 'rename' && e.path === 'moved')
+
+    const renames = events.filter((e) => e.op === 'rename')
+    expect(renames).toEqual([{ op: 'rename', path: 'moved', oldPath: 'big' }])
+
+    // The chokidar echo (unlink per old path, add per new path) is
+    // absorbed: nothing under either subtree reaches subscribers.
+    await wait(SETTLE_MS)
+    const echo = events.filter(
+      (e) => e.op !== 'rename'
+        && (e.path === 'big' || e.path.startsWith('big/') || e.path === 'moved' || e.path.startsWith('moved/')),
+    )
+    expect(echo).toEqual([])
+  })
+
+  it('rename echo suppression does not mute unrelated paths', async () => {
+    const ws = createNodeWorkspace(root)
+    await ws.writeFile('solo.txt', 'x')
+    watcher = ws.watch!()
+    const events: WorkspaceChangeEvent[] = []
+    watcher.subscribe((e) => events.push(e))
+    await wait(SETTLE_MS)
+
+    await ws.rename('solo.txt', 'renamed.txt')
+    await ws.writeFile('elsewhere.txt', 'y')
+    await waitForEvent(events, (e) => e.op === 'write' && e.path === 'elsewhere.txt')
+
+    expect(events.some((e) => e.op === 'rename' && e.path === 'renamed.txt' && e.oldPath === 'solo.txt')).toBe(true)
+    expect(events.some((e) => e.op === 'write' && e.path === 'elsewhere.txt')).toBe(true)
+  })
+
   it('subscribe returns an unsubscribe fn — events stop flowing after it is called', async () => {
     const ws = createNodeWorkspace(root)
     watcher = ws.watch!()
@@ -143,6 +186,59 @@ describe('createNodeWorkspace.watch', () => {
     await wait(SETTLE_MS)
 
     expect(events.length).toBe(0)
+  })
+
+  it('whenReady resolves ok for a normally sized workspace', async () => {
+    const ws = createNodeWorkspace(root)
+    await ws.writeFile('one.txt', 'x')
+    watcher = ws.watch!()
+    await expect(watcher.whenReady!()).resolves.toEqual({ ok: true })
+  })
+
+  it('refuses to watch a workspace above the entry cap and reports it via whenReady', async () => {
+    const prevCap = process.env.BORING_MAX_WATCHED_ENTRIES
+    process.env.BORING_MAX_WATCHED_ENTRIES = '5'
+    try {
+      const ws = createNodeWorkspace(root)
+      for (let i = 0; i < 10; i += 1) {
+        await ws.writeFile(`file-${i}.txt`, String(i))
+      }
+      watcher = ws.watch!()
+
+      const events: WorkspaceChangeEvent[] = []
+      watcher.subscribe((e) => events.push(e))
+
+      const readiness = await watcher.whenReady!()
+      expect(readiness).toMatchObject({ ok: false, reason: 'workspace_too_large' })
+      if (!readiness.ok) expect(readiness.message).toContain('BORING_MAX_WATCHED_ENTRIES')
+
+      // No chokidar instance was started — mutations stay unobserved.
+      await ws.writeFile('after-guard.txt', 'y')
+      await wait(SETTLE_MS)
+      expect(events).toEqual([])
+    } finally {
+      if (prevCap === undefined) delete process.env.BORING_MAX_WATCHED_ENTRIES
+      else process.env.BORING_MAX_WATCHED_ENTRIES = prevCap
+    }
+  })
+
+  it('entry cap counting skips ignored directories', async () => {
+    const prevCap = process.env.BORING_MAX_WATCHED_ENTRIES
+    process.env.BORING_MAX_WATCHED_ENTRIES = '10'
+    try {
+      const ws = createNodeWorkspace(root)
+      // 30 entries under node_modules must not count toward the cap.
+      await ws.mkdir('node_modules/pkg', { recursive: true })
+      for (let i = 0; i < 30; i += 1) {
+        await ws.writeFile(`node_modules/pkg/dep-${i}.js`, String(i))
+      }
+      await ws.writeFile('src.txt', 'x')
+      watcher = ws.watch!()
+      await expect(watcher.whenReady!()).resolves.toEqual({ ok: true })
+    } finally {
+      if (prevCap === undefined) delete process.env.BORING_MAX_WATCHED_ENTRIES
+      else process.env.BORING_MAX_WATCHED_ENTRIES = prevCap
+    }
   })
 
   it('close is idempotent and stops new subscribers from receiving events', async () => {
