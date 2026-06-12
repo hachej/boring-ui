@@ -187,6 +187,25 @@ describe('createNodeWorkspace.watch', () => {
     expect(events.some((e) => e.op === 'write' && e.path === 'moved/f-1.txt')).toBe(true)
   })
 
+  it('renames before chokidar starts register no suppression — later adds flow', async () => {
+    const ws = createNodeWorkspace(root)
+    await ws.mkdir('big', { recursive: true })
+    await ws.writeFile('big/f.txt', 'x')
+    watcher = ws.watch!()
+    // Rename BEFORE any subscriber: no chokidar instance, no echo to
+    // absorb — must not arm suppression windows for when it starts.
+    await ws.rename('big', 'moved')
+
+    const events: WorkspaceChangeEvent[] = []
+    watcher.subscribe((e) => events.push(e))
+    await watcher.whenReady!()
+    await wait(SETTLE_MS)
+
+    await ws.writeFile('moved/new.txt', 'y')
+    await waitForEvent(events, (e) => e.op === 'write' && e.path === 'moved/new.txt')
+    expect(events.some((e) => e.op === 'write' && e.path === 'moved/new.txt')).toBe(true)
+  })
+
   it('rename echo suppression does not mute unrelated paths', async () => {
     const ws = createNodeWorkspace(root)
     await ws.writeFile('solo.txt', 'x')

@@ -108,8 +108,9 @@ async function countWatchableEntries(root: string, cap: number): Promise<number>
 
 /**
  * One chokidar instance per workspace root, fanned out to N
- * subscribers. Created lazily on first `watch()` call so unit tests
- * and watch-free hosts pay nothing.
+ * subscribers. Chokidar starts lazily on the first subscribe/whenReady
+ * (after the size guard passes) so unit tests and watch-free hosts pay
+ * nothing.
  */
 export function createNodeWatcher(root: string): NodeWorkspaceWatcher {
   const listeners = new Set<(e: WorkspaceChangeEvent) => void>()
@@ -222,15 +223,22 @@ export function createNodeWatcher(root: string): NodeWorkspaceWatcher {
     },
     emitRename(fromRel, toRel) {
       if (closed) return
-      const now = Date.now()
-      const window = {
-        idleDeadline: now + RENAME_ECHO_IDLE_MS,
-        hardDeadline: now + RENAME_ECHO_MAX_MS,
+      // Suppressions absorb chokidar's echo — without a running chokidar
+      // instance there is no echo. Registering anyway would leak entries
+      // (only pruned on chokidar events) and wrongly mute genuine adds if
+      // chokidar starts inside the window (ignoreInitial means the
+      // post-start scan never replays this rename).
+      if (fsw) {
+        const now = Date.now()
+        const window = {
+          idleDeadline: now + RENAME_ECHO_IDLE_MS,
+          hardDeadline: now + RENAME_ECHO_MAX_MS,
+        }
+        suppressions.push(
+          { prefix: fromRel, kinds: RENAME_ECHO_FROM_KINDS, ...window },
+          { prefix: toRel, kinds: RENAME_ECHO_TO_KINDS, ...window },
+        )
       }
-      suppressions.push(
-        { prefix: fromRel, kinds: RENAME_ECHO_FROM_KINDS, ...window },
-        { prefix: toRel, kinds: RENAME_ECHO_TO_KINDS, ...window },
-      )
       fanout({ op: 'rename', path: toRel, oldPath: fromRel })
     },
     close() {
