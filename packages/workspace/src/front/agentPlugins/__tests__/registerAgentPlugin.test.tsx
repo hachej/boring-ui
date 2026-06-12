@@ -464,6 +464,115 @@ describe("useAgentPluginHotReload", () => {
     }
   })
 
+  test("reports an exhausted front import failure back to the server diagnostics channel", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+    const reportFrontError = vi.fn()
+    const importFront = vi.fn(async (): Promise<{ default: BoringFrontFactoryWithId }> => {
+      throw new Error("exports is not defined")
+    })
+
+    function FailureHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({
+          workspaceId: "test-workspace",
+          importFront,
+          reportFrontError,
+          // Single attempt, no delay: exhaust the retry immediately.
+          frontImportRetry: { attempts: 1, delayMs: 0 },
+        })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+        </RegistryProvider>
+      )
+    }
+
+    try {
+      render(<FailureHarness />)
+      MockEventSource.instances[0].dispatch("boring.plugin.load", {
+        type: "boring.plugin.load",
+        id: "ccusage-dashboard",
+        version: "1.0.0",
+        revision: 3,
+        frontTarget: { kind: "module-url", entryUrl: "/runtime/ccusage.mjs", revision: 3 },
+        boring: { front: "front/index.tsx" },
+      })
+
+      await waitFor(() => {
+        expect(reportFrontError).toHaveBeenCalledTimes(1)
+      })
+      expect(reportFrontError).toHaveBeenCalledWith(expect.objectContaining({
+        pluginId: "ccusage-dashboard",
+        revision: 3,
+        message: "exports is not defined",
+        url: "/runtime/ccusage.mjs",
+      }))
+    } finally {
+      consoleError.mockRestore()
+    }
+  })
+
+  test("default front-error reporter POSTs the failure to the server endpoint", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 204 } as Response))
+    const originalFetch = globalThis.fetch
+    ;(globalThis as { fetch?: typeof fetch }).fetch = fetchMock as unknown as typeof fetch
+    const importFront = vi.fn(async (): Promise<{ default: BoringFrontFactoryWithId }> => {
+      throw new Error("recharts proxy failed")
+    })
+
+    function FailureHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({
+          apiBaseUrl: "/agent",
+          workspaceId: "test-workspace",
+          importFront,
+          frontImportRetry: { attempts: 1, delayMs: 0 },
+        })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+        </RegistryProvider>
+      )
+    }
+
+    try {
+      render(<FailureHarness />)
+      MockEventSource.instances[0].dispatch("boring.plugin.load", {
+        type: "boring.plugin.load",
+        id: "ccusage-dashboard",
+        version: "1.0.0",
+        revision: 2,
+        frontTarget: { kind: "module-url", entryUrl: "/runtime/ccusage.mjs", revision: 2 },
+        boring: { front: "front/index.tsx" },
+      })
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+      })
+      const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+      expect(url).toBe("/agent/api/v1/agent-plugins/ccusage-dashboard/front-error?workspaceId=test-workspace")
+      expect(init.method).toBe("POST")
+      expect(JSON.parse(String(init.body))).toEqual(expect.objectContaining({
+        revision: 2,
+        message: "recharts proxy failed",
+      }))
+    } finally {
+      consoleError.mockRestore()
+      ;(globalThis as { fetch?: typeof fetch }).fetch = originalFetch
+    }
+  })
+
   test("supports hook-based panel components from hot-loaded front factories", async () => {
     const importFront = async (): Promise<{ default: BoringFrontFactoryWithId }> => ({
       default: hotPlugin("hot-plugin", (api) => {

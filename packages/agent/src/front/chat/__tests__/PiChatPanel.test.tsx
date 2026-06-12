@@ -922,6 +922,29 @@ describe('PiChatPanel sandbox shell', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Thinking level: High' })).toBeTruthy())
   })
 
+  test('excludes requested built-in slash commands', async () => {
+    const remote = new FakeRemotePiSession(remoteState())
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+    render(
+      <PiChatPanel
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        excludeBuiltinCommands={["model"]}
+        availableModels={[
+          { provider: 'anthropic', id: 'claude-sonnet', label: 'Claude Sonnet', available: true },
+        ]}
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+      />,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: '/mod' } })
+
+    await waitFor(() => expect(screen.queryByText('/model')).toBeNull())
+    expect(screen.queryByRole('listbox', { name: 'Commands' })).toBeNull()
+  })
+
   test('preserves slash draft when requested picker is disabled while streaming', async () => {
     const remote = new FakeRemotePiSession(remoteState({ status: 'streaming' }))
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))

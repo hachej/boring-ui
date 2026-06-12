@@ -14,29 +14,14 @@ import {
   ensureWritableWorkspacePath,
   validatePath,
 } from './paths'
+import { isIgnoredDirName } from './ignore'
 
 const EPERM_CODE = 'EPERM'
-
-const DEFAULT_WATCH_IGNORES = [
-  'node_modules',
-  '.git',
-  '.DS_Store',
-  '.worktrees',
-  '.boring-agent',
-  '.cache',
-  'dist',
-  '.next',
-  '.turbo',
-  'test-results',
-] as const
 
 function shouldIgnoreWatchPath(root: string, path: string): boolean {
   const relPath = relative(root, path)
   const parts = relPath.split(sep)
-  return parts.some((part) =>
-    DEFAULT_WATCH_IGNORES.includes(part as (typeof DEFAULT_WATCH_IGNORES)[number]) ||
-    part.endsWith('.tsbuildinfo'),
-  )
+  return parts.some((part) => isIgnoredDirName(part))
 }
 
 /**
