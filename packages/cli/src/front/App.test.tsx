@@ -165,6 +165,64 @@ describe("CliWorkspaceShell", () => {
     expect(screen.queryByText("Plugin diagnostics")).toBeNull()
   })
 
+  test("honors a legacy ?session= deep link once, then strips it from the URL", async () => {
+    window.history.replaceState(null, "", "/workspace/target?session=chat-legacy")
+    mockWorkspacesMode([
+      [{ id: "target", name: "Target", path: "/target", available: true }],
+    ])
+
+    render(<CliWorkspaceShell />)
+
+    await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
+    // The legacy session id is forwarded once to seed the active session…
+    expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+      workspaceId: "target",
+      activeSessionId: "chat-legacy",
+    })
+    // …and onActiveSessionIdChange is no longer wired up (the URL is not synced).
+    expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0].onActiveSessionIdChange).toBeUndefined()
+    // The param is dropped from the address bar; the path is preserved.
+    await waitFor(() => expect(window.location.search).toBe(""))
+    expect(window.location.pathname).toBe("/workspace/target")
+  })
+
+  test("does not write ?session= into the URL on a fresh open", async () => {
+    window.history.replaceState(null, "", "/workspace/target")
+    mockWorkspacesMode([
+      [{ id: "target", name: "Target", path: "/target", available: true }],
+    ])
+
+    render(<CliWorkspaceShell />)
+
+    await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
+    expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({ workspaceId: "target" })
+    expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0].activeSessionId).toBeUndefined()
+    expect(window.location.search).toBe("")
+    expect(window.location.pathname).toBe("/workspace/target")
+  })
+
+  test("scopes a legacy ?session= to the workspace the link pointed at", async () => {
+    // The deep link targets `target`, but `other` is what becomes active first.
+    // The legacy session must not bleed onto a different workspace.
+    window.history.replaceState(null, "", "/workspace/other?session=chat-legacy")
+    mockWorkspacesMode([
+      [
+        { id: "other", name: "Other", path: "/other", available: true },
+        { id: "target", name: "Target", path: "/target", available: true },
+      ],
+    ])
+
+    render(<CliWorkspaceShell />)
+
+    await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
+    // `other` is the URL workspace here, so it does receive the legacy session.
+    expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+      workspaceId: "other",
+      activeSessionId: "chat-legacy",
+    })
+    await waitFor(() => expect(window.location.search).toBe(""))
+  })
+
   test("workspaces mode passes the active workspace name as the document-title label", async () => {
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
