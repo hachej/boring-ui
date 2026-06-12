@@ -105,6 +105,29 @@ describe("useFileEventInvalidation", () => {
     })
   })
 
+  it("directory move invalidates descendant file/stat/tree caches under the old prefix", async () => {
+    renderHook(() => useFileEventInvalidation(), { wrapper: makeWrapper(qc) })
+    events.emit(filesystemEvents.moved, { ...userMeta(), from: "src", to: "lib" })
+
+    await waitFor(() => expect(invalidate).toHaveBeenCalled())
+    const predicates = invalidate.mock.calls
+      .map(([f]) => (f as { predicate?: (q: { queryKey: readonly unknown[] }) => boolean }).predicate)
+      .filter((p): p is (q: { queryKey: readonly unknown[] }) => boolean => typeof p === "function")
+    expect(predicates).toHaveLength(1)
+    const matches = (key: readonly unknown[]) => predicates[0]({ queryKey: key })
+
+    // Descendants under the OLD prefix are invalidated…
+    expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "files", "src/deep/a.ts"])).toBe(true)
+    expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "stat", "src/a.ts"])).toBe(true)
+    expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "tree", "src/deep"])).toBe(true)
+    // …unrelated paths, the new prefix, and other workspaces are not.
+    expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "files", "other/a.ts"])).toBe(false)
+    expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "files", "lib/a.ts"])).toBe(false)
+    expect(matches([TEST_BASE, "other-workspace", "files", "src/a.ts"])).toBe(false)
+    // Prefix match is path-segment-aware: "src-other" is not under "src/".
+    expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "files", "src-other/a.ts"])).toBe(false)
+  })
+
   it("filesystem deleted invalidates parent tree listing + files(path) + search", async () => {
     renderHook(() => useFileEventInvalidation(), { wrapper: makeWrapper(qc) })
     events.emit(filesystemEvents.deleted, { ...userMeta(), path: "doomed.ts" })

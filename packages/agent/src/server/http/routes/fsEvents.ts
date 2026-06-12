@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
-import type { Workspace } from '../../../shared/workspace'
+import type { Workspace, WorkspaceWatcherReadiness } from '../../../shared/workspace'
 import {
   createFsEventBroadcaster,
   type FsEventBroadcaster,
@@ -71,7 +71,7 @@ export function fsEventsRoutes(
     // Watchers with a startup guard (workspace-size check) refuse to
     // observe over-sized trees — relay that to the client as
     // `unsupported` so it falls back instead of waiting forever.
-    const readiness = (await watcher.whenReady?.()) ?? { ok: true as const }
+    const readiness: WorkspaceWatcherReadiness = (await watcher.whenReady?.()) ?? { ok: true }
     if (!readiness.ok) {
       return { unsupported: { reason: readiness.reason, ...(readiness.message ? { message: readiness.message } : {}) } }
     }
