@@ -300,6 +300,7 @@ export function CliWorkspaceShell() {
               setUrlSessionId(null)
               setActiveWorkspaceId(workspaceId)
             }}
+            getWorkspaceHref={(workspaceId) => cliWorkspacePath(workspaceId)}
           />
         }
       />
