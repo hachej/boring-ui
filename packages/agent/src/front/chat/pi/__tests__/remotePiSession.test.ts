@@ -155,6 +155,38 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
+  it('recovers a hung /state hydration via the request timeout instead of stalling forever', async () => {
+    // First /state never settles (saturated/restarting server). Without a
+    // per-attempt timeout the chat stays stuck "Loading chat history…"; the
+    // timeout must abort it so the reconnect loop re-issues a fresh request
+    // that succeeds — no remount/workspace-switch needed.
+    const events = openNdjsonStream()
+    let stateCalls = 0
+    const hang = deferred<Response>()
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url.endsWith('/state')) {
+        stateCalls += 1
+        if (stateCalls === 1) {
+          // Hang until aborted by the request timeout.
+          const signal = init?.signal
+          return new Promise<Response>((_resolve, reject) => {
+            signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true })
+          })
+        }
+        return Promise.resolve(jsonResponse(snapshot({ seq: 7 })))
+      }
+      if (url.endsWith('/events?cursor=7')) return Promise.resolve(new Response(events.stream))
+      return hang.promise
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { requestTimeoutMs: 20 })
+
+    await waitUntil(() => session.getState().hydrated === true, 3000)
+    expect(session.getState()).toMatchObject({ hydrated: true, lastSeq: 7 })
+    expect(stateCalls).toBeGreaterThanOrEqual(2)
+
+    session.dispose()
+  })
+
   it('rehydrates /state and reconnects from returned seq on replay_gap route errors', async () => {
     const events = openNdjsonStream()
     const fetchMock = vi.fn(async (url: string) => {
