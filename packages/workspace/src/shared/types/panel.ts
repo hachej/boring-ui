@@ -45,6 +45,8 @@ export interface PanelConfig<T = any> {
   essential?: boolean
   chromeless?: boolean
   supportsFullPage?: boolean
+  /** Center-panel id opened when this config is used as a left-tab category. */
+  defaultPanelId?: string
   /** Source: "builtin" | "app" */
   source?: string
   pluginId?: string
