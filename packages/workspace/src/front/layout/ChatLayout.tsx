@@ -655,11 +655,10 @@ function ResizeHandle({ side, ariaLabel, onResize }: ResizeHandleProps) {
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
       className={cn(
-        "absolute top-0 bottom-0 z-20 bg-transparent",
-        "transition-colors duration-200",
-        "hover:bg-border/70 hover:[transition-delay:150ms]",
-        "active:bg-muted-foreground/30",
-        side === "drawer-right" ? "right-0" : "left-0",
+        "absolute -top-px -bottom-px z-20 w-3 bg-transparent hover:!bg-transparent active:!bg-transparent",
+        "after:absolute after:inset-y-2 after:left-1/2 after:w-px after:-translate-x-1/2 after:rounded-full after:bg-border/55",
+        "after:transition-[width,background-color] after:duration-150 hover:after:w-1 hover:after:bg-foreground/35 active:after:w-1 active:after:bg-foreground/50",
+        side === "drawer-right" ? "-right-1.5" : "-left-1.5",
       )}
     />
   )

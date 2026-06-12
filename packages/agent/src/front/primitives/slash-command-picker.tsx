@@ -94,28 +94,26 @@ export function SlashCommandPicker({ query, commands, onSelect, onDismiss }: Sla
       />
 
       {/* Plugin selection */}
-      {groups.length > 1 && (
-        <div className="flex flex-wrap gap-1 border-b border-border/50 px-2 py-1.5" role="tablist" aria-label="Filter by plugin">
-          {[ALL_PLUGINS, ...groups].map((g) => {
-            const selected = plugin === g
-            return (
-              <button
-                key={g}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                onMouseDown={(e) => { e.preventDefault(); setPlugin(g); setActiveIdx(0) }}
-                className={cn(
-                  'rounded-full px-2 py-px text-[10px] font-medium transition-colors',
-                  selected ? 'bg-accent/15 text-accent-foreground' : 'bg-muted/60 text-muted-foreground hover:bg-muted',
-                )}
-              >
-                {g === ALL_PLUGINS ? 'All' : g}
-              </button>
-            )
-          })}
-        </div>
-      )}
+      <div className="flex flex-wrap gap-1 border-b border-border/50 px-2 py-1.5" role="tablist" aria-label="Filter by plugin">
+        {[ALL_PLUGINS, ...groups].map((g) => {
+          const selected = plugin === g
+          return (
+            <button
+              key={g}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              onMouseDown={(e) => { e.preventDefault(); setPlugin(g); setActiveIdx(0) }}
+              className={cn(
+                'rounded-full px-2 py-px text-[10px] font-medium transition-colors',
+                selected ? 'bg-accent/15 text-accent-foreground' : 'bg-muted/60 text-muted-foreground hover:bg-muted',
+              )}
+            >
+              {g === ALL_PLUGINS ? 'All' : g}
+            </button>
+          )
+        })}
+      </div>
 
       {/* Command list — sized to show ~8 rows before scrolling. */}
       {filtered.length === 0 ? (
