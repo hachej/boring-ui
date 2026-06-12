@@ -54,6 +54,64 @@ describe("WorkbenchLeftPane", () => {
     })
   })
 
+  test("selecting a category opens its associated default center panel", () => {
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("data.panel", {
+      title: "Data Panel",
+      placement: "center",
+      component: () => <div>data center</div>,
+    })
+    panelRegistry.register("data.tab", {
+      title: "Data",
+      placement: "left-tab",
+      defaultPanelId: "data.panel",
+      component: () => <div>data body</div>,
+    })
+    const onOpenPanel = vi.fn()
+
+    render(
+      <RegistryProvider
+        panelRegistry={panelRegistry}
+        commandRegistry={new CommandRegistry()}
+        surfaceResolverRegistry={new SurfaceResolverRegistry()}
+      >
+        <WorkbenchLeftPane onOpenPanel={onOpenPanel} />
+      </RegistryProvider>,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Data" }))
+
+    expect(onOpenPanel).toHaveBeenCalledWith({
+      id: "data.panel",
+      component: "data.panel",
+      title: "Data Panel",
+    })
+  })
+
+  test("right-clicking a category reloads agent plugins", () => {
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("data.tab", {
+      title: "Data",
+      placement: "left-tab",
+      component: () => <div>data body</div>,
+    })
+    const onReloadAgentPlugins = vi.fn()
+
+    render(
+      <RegistryProvider
+        panelRegistry={panelRegistry}
+        commandRegistry={new CommandRegistry()}
+        surfaceResolverRegistry={new SurfaceResolverRegistry()}
+      >
+        <WorkbenchLeftPane onReloadAgentPlugins={onReloadAgentPlugins} />
+      </RegistryProvider>,
+    )
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Data" }))
+
+    expect(onReloadAgentPlugins).toHaveBeenCalledTimes(1)
+  })
+
   test("categories render as a rail with a calm active state and menu collapse", () => {
     const panelRegistry = new PanelRegistry()
     panelRegistry.register("files", {

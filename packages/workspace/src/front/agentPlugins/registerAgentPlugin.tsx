@@ -250,6 +250,7 @@ function buildRegistryPayloads(
       title: tab.title,
       component: tab.component ?? referencedPanel?.component ?? (() => null),
       placement: "left-tab",
+      defaultPanelId: tab.panelId,
       source: tab.source ?? "plugin",
       pluginId,
       pluginRevision: revision,

@@ -39,6 +39,7 @@ export interface WorkbenchLeftPaneProps {
   defaultTab?: WorkbenchLeftTabId
   revealFileTreeRequest?: { path: string; seq: number } | null
   onOpenPanel?: (config: WorkbenchLeftPaneOpenPanelConfig) => void
+  onReloadAgentPlugins?: () => void | Promise<unknown>
   onCollapse?: () => void
   className?: string
 }
@@ -49,6 +50,7 @@ export function WorkbenchLeftPane({
   defaultTab,
   revealFileTreeRequest,
   onOpenPanel,
+  onReloadAgentPlugins,
   onCollapse,
   className,
 }: WorkbenchLeftPaneProps) {
@@ -108,6 +110,23 @@ export function WorkbenchLeftPane({
       setTab(FILES_LEFT_TAB_ID)
     }
   }, [revealFileTreeRequest, tabs])
+
+  const openDefaultPanelForTab = useCallback((entry: { panel?: PanelConfig }) => {
+    const defaultPanelId = entry.panel?.defaultPanelId
+    if (!defaultPanelId || !onOpenPanel) return
+    const target = panels.find((panel) => panel.id === defaultPanelId && panel.placement !== "left-tab")
+    if (!target) return
+    onOpenPanel({
+      id: target.id,
+      component: target.id,
+      title: target.title,
+    })
+  }, [onOpenPanel, panels])
+
+  const selectTab = useCallback((entry: { id: string; panel?: PanelConfig }) => {
+    setTab(entry.id)
+    openDefaultPanelForTab(entry)
+  }, [openDefaultPanelForTab])
 
   const toggleSearch = useCallback(() => {
     setSearchOpen((s) => {
@@ -169,7 +188,12 @@ export function WorkbenchLeftPane({
               type="button"
               aria-label={entry.title}
               aria-pressed={active}
-              onClick={() => setTab(entry.id)}
+              onClick={() => selectTab(entry)}
+              onContextMenu={(event) => {
+                if (!onReloadAgentPlugins) return
+                event.preventDefault()
+                void onReloadAgentPlugins()
+              }}
               className={cn(
                 "relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
                 active && "rounded-r-none bg-muted/35 text-foreground shadow-none hover:bg-muted/35 before:absolute before:-right-1.5 before:top-0 before:h-full before:w-1.5 before:bg-muted/35",
