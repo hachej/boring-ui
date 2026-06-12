@@ -15,13 +15,14 @@ describe("CLI chrome", () => {
     expect(workspaceIdFromCliUrl("/")).toBeNull()
   })
 
-  test("builds navigable workspace paths", () => {
+  test("builds navigable workspace paths without a session query", () => {
     expect(cliWorkspacePath("project-123")).toBe("/workspace/project-123")
     expect(cliWorkspacePath("project name")).toBe("/workspace/project%20name")
-    expect(cliWorkspacePath("project-123", "chat-abc")).toBe("/workspace/project-123?session=chat-abc")
   })
 
-  test("reads chat session id from workspace URL query", () => {
+  test("reads a legacy chat session id from the workspace URL query", () => {
+    // Read-only back-compat: legacy deep links still carry ?session=, which we
+    // honor once on load (then strip). The path builder above never writes it.
     expect(chatSessionIdFromCliUrl("?session=chat-abc")).toBe("chat-abc")
     expect(chatSessionIdFromCliUrl("?session=")).toBeNull()
     expect(chatSessionIdFromCliUrl("")).toBeNull()

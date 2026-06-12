@@ -201,7 +201,7 @@ describe('GET /api/v1/workspaces', () => {
     expect(res.statusCode).toBe(200)
     const body = res.json()
     expect(body.workspaces).toHaveLength(1)
-    expect(body.workspaces[0].name).toBe('My Workspace')
+    expect(body.workspaces[0].name).toBe('Default workspace')
     expect(body.workspaces[0].isDefault).toBe(true)
     expect(members.get(body.workspaces[0].id)?.get(OWNER_ID)).toBe('owner')
   })
@@ -238,7 +238,7 @@ describe('GET /api/v1/workspaces', () => {
     const body = res.json()
     expect(body.workspaces).toHaveLength(1)
     expect(body.workspaces[0].createdBy).toBe(OWNER_ID)
-    expect(body.workspaces[0].name).toBe('My Workspace')
+    expect(body.workspaces[0].name).toBe('Default workspace')
   })
 })
 
@@ -471,11 +471,11 @@ describe('Provisioner integration', () => {
       expect(res.statusCode).toBe(200)
 
       const workspace = res.json().workspaces[0]
-      expect(workspace).toMatchObject({ name: 'My Workspace', isDefault: true })
+      expect(workspace).toMatchObject({ name: 'Default workspace', isDefault: true })
       expect(provisionFn).toHaveBeenCalledOnce()
       expect(provisionFn).toHaveBeenCalledWith(expect.objectContaining({
         workspaceId: workspace.id,
-        workspaceName: 'My Workspace',
+        workspaceName: 'Default workspace',
         ownerId: OWNER_ID,
         appId: APP_ID,
       }))
@@ -499,7 +499,7 @@ describe('Provisioner integration', () => {
 
     it('provisions an existing signup-created default workspace with missing runtime', async () => {
       provisionFn.mockResolvedValue({ volumePath: '/volumes/signup-default' })
-      const workspace = provSeedWorkspace('My Workspace', OWNER_ID, { isDefault: true })
+      const workspace = provSeedWorkspace('Default workspace', OWNER_ID, { isDefault: true })
 
       const res = await provInject('GET', '/api/v1/workspaces', OWNER_ID)
       expect(res.statusCode).toBe(200)
@@ -508,7 +508,7 @@ describe('Provisioner integration', () => {
       expect(provisionFn).toHaveBeenCalledOnce()
       expect(provisionFn).toHaveBeenCalledWith(expect.objectContaining({
         workspaceId: workspace.id,
-        workspaceName: 'My Workspace',
+        workspaceName: 'Default workspace',
         ownerId: OWNER_ID,
         appId: APP_ID,
       }))
@@ -519,7 +519,7 @@ describe('Provisioner integration', () => {
 
     it('backfills shared default workspace runtime under the creator owner id', async () => {
       provisionFn.mockResolvedValue({ volumePath: '/volumes/shared-default' })
-      const workspace = provSeedWorkspace('My Workspace', OWNER_ID, { isDefault: true })
+      const workspace = provSeedWorkspace('Default workspace', OWNER_ID, { isDefault: true })
       pMembers.get(workspace.id)?.set(EDITOR_ID, 'editor')
 
       const res = await provInject('GET', '/api/v1/workspaces', EDITOR_ID)

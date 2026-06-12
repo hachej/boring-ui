@@ -1,4 +1,5 @@
-import { useMemo, type KeyboardEvent, type DragEvent, type ReactNode } from "react"
+import { useMemo, type ComponentType, type KeyboardEvent, type DragEvent, type ReactNode } from "react"
+import { createPortal } from "react-dom"
 import { ChevronRightIcon, ChevronDownIcon, FilterIcon, SearchIcon, XIcon } from "lucide-react"
 import { cn } from "./utils"
 import { Button, Chip as UiChip, ChipButton, EmptyState, Input, Spinner, Toolbar as UiToolbar } from "@hachej/boring-ui-kit"
@@ -25,6 +26,10 @@ export type DataExplorerProps = {
   /** Empty state shown when the top-level result has no rows and no query/filters. */
   emptyState?: ReactNode
   searchPlaceholder?: string
+  /** Optional title rendered inside the explorer toolbar (for chromeless left tabs). */
+  toolbarTitle?: ReactNode
+  /** Optional icon rendered before toolbarTitle. */
+  toolbarIcon?: ComponentType<{ className?: string }>
   /** Hide the search input. Default true. */
   searchable?: boolean
   /**
@@ -35,6 +40,8 @@ export type DataExplorerProps = {
   query?: string
   /** Called when the toolbar search changes. Use with `query` for controlled per-tab search. */
   onQueryChange?: (query: string) => void
+  /** Optional external chrome target for toolbar-only actions such as filters. */
+  toolbarPortalElement?: Element | null
   /** Page size and debounce — passed through to useExplorerState. */
   pageSize?: number
   debounceMs?: number
@@ -49,9 +56,12 @@ export function DataExplorer({
   getDragPayload,
   emptyState = "No results",
   searchPlaceholder = "Search…",
+  toolbarTitle,
+  toolbarIcon,
   searchable = true,
   query,
   onQueryChange,
+  toolbarPortalElement,
   pageSize,
   debounceMs,
   className,
@@ -75,6 +85,9 @@ export function DataExplorer({
   const hasFilters = Object.values(state.filters).some((v) => v.length > 0)
   const treeMode = !!groupBy && !hasQuery && !hasFilters
   const filterCount = Object.values(state.filters).reduce((n, v) => n + v.length, 0)
+  const useExternalToolbarActions = Boolean(
+    toolbarPortalElement && !showSearch && facetConfigs?.length && !toolbarTitle,
+  )
 
   // Group entries from facets (canonical for tree mode).
   const groupEntries = useMemo(() => {
@@ -105,10 +118,25 @@ export function DataExplorer({
 
   return (
     <div className={cn("flex h-full flex-col", className)} data-slot="data-explorer">
-      {showSearch || facetConfigs?.length ? (
+      {useExternalToolbarActions && toolbarPortalElement
+        ? createPortal(
+            <ExternalToolbarActions
+              facetConfigs={facetConfigs}
+              facets={state.facets}
+              filters={state.filters}
+              filterCount={filterCount}
+              onToggleFilter={state.toggleFilter}
+              onClearFilters={state.clearFilters}
+            />,
+            toolbarPortalElement,
+          )
+        : null}
+      {(showSearch || facetConfigs?.length) && !useExternalToolbarActions ? (
         <Toolbar
           searchable={showSearch}
           searchPlaceholder={searchPlaceholder}
+          title={toolbarTitle}
+          icon={toolbarIcon}
           query={state.query}
           onQueryChange={setToolbarQuery}
           facetConfigs={facetConfigs}
@@ -159,6 +187,8 @@ export function DataExplorer({
 type ToolbarProps = {
   searchable: boolean
   searchPlaceholder: string
+  title?: ReactNode
+  icon?: ComponentType<{ className?: string }>
   query: string
   onQueryChange: (q: string) => void
   facetConfigs?: FacetConfig[]
@@ -173,6 +203,8 @@ type ToolbarProps = {
 function Toolbar({
   searchable,
   searchPlaceholder,
+  title,
+  icon: Icon,
   query,
   onQueryChange,
   facetConfigs,
@@ -185,12 +217,18 @@ function Toolbar({
 }: ToolbarProps) {
   return (
     <UiToolbar className="border-b border-border/60 px-2 py-1.5">
+      {title ? (
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 px-1">
+          {Icon ? <Icon className="h-4 w-4 shrink-0 text-foreground/80" /> : null}
+          <span className="truncate text-[14px] font-medium tracking-tight text-foreground">{title}</span>
+        </div>
+      ) : null}
       {total != null ? (
         <span className="px-1 font-mono text-[10.5px] uppercase tracking-[0.05em] text-muted-foreground/80">
           {total.toLocaleString()}
         </span>
       ) : null}
-      <div className="flex-1" />
+      <div className={title ? "w-1 shrink-0" : "flex-1"} />
       {searchable ? (
         <Popover>
           <PopoverTrigger
@@ -220,42 +258,75 @@ function Toolbar({
           </PopoverContent>
         </Popover>
       ) : null}
-      {facetConfigs?.length ? (
-        <Popover>
-          <PopoverTrigger
-            aria-label="Filters"
-            className={cn(
-              "inline-flex h-7 items-center gap-1 rounded-sm px-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground",
-              filterCount > 0 && "bg-muted text-foreground",
-            )}
-          >
-            <FilterIcon size={12} />
-            {filterCount > 0 ? <span className="font-mono text-[10px]">{filterCount}</span> : null}
-          </PopoverTrigger>
-          <PopoverContent
-            side="right"
-            align="start"
-            sideOffset={8}
-            className="w-64 space-y-3 p-3 text-[12px]"
-          >
-            {facetConfigs.map((config) => (
-              <FacetSection
-                key={config.key}
-                config={config}
-                values={facets?.[config.key] ?? []}
-                selected={filters[config.key] ?? []}
-                onToggle={onToggleFilter}
-              />
-            ))}
-            {filterCount > 0 ? (
-              <Button type="button" variant="ghost" size="xs" onClick={onClearFilters} className="gap-1 text-[11px] text-muted-foreground hover:text-foreground">
-                <XIcon size={11} /> Clear all
-              </Button>
-            ) : null}
-          </PopoverContent>
-        </Popover>
-      ) : null}
+      <FilterControl
+        facetConfigs={facetConfigs}
+        facets={facets}
+        filters={filters}
+        filterCount={filterCount}
+        onToggleFilter={onToggleFilter}
+        onClearFilters={onClearFilters}
+      />
     </UiToolbar>
+  )
+}
+
+type FilterControlProps = {
+  facetConfigs?: FacetConfig[]
+  facets: ReturnType<typeof useExplorerState>["facets"]
+  filters: Record<string, string[]>
+  filterCount: number
+  onToggleFilter: (key: string, value: string) => void
+  onClearFilters: () => void
+}
+
+function ExternalToolbarActions(props: FilterControlProps) {
+  return <FilterControl {...props} />
+}
+
+function FilterControl({
+  facetConfigs,
+  facets,
+  filters,
+  filterCount,
+  onToggleFilter,
+  onClearFilters,
+}: FilterControlProps) {
+  if (!facetConfigs?.length) return null
+
+  return (
+    <Popover>
+      <PopoverTrigger
+        aria-label="Filters"
+        className={cn(
+          "inline-flex h-7 items-center gap-1 rounded-sm px-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground",
+          filterCount > 0 && "bg-muted text-foreground",
+        )}
+      >
+        <FilterIcon size={12} />
+        {filterCount > 0 ? <span className="font-mono text-[10px]">{filterCount}</span> : null}
+      </PopoverTrigger>
+      <PopoverContent
+        side="right"
+        align="start"
+        sideOffset={8}
+        className="w-64 space-y-3 p-3 text-[12px]"
+      >
+        {facetConfigs.map((config) => (
+          <FacetSection
+            key={config.key}
+            config={config}
+            values={facets?.[config.key] ?? []}
+            selected={filters[config.key] ?? []}
+            onToggle={onToggleFilter}
+          />
+        ))}
+        {filterCount > 0 ? (
+          <Button type="button" variant="ghost" size="xs" onClick={onClearFilters} className="gap-1 text-[11px] text-muted-foreground hover:text-foreground">
+            <XIcon size={11} /> Clear all
+          </Button>
+        ) : null}
+      </PopoverContent>
+    </Popover>
   )
 }
 

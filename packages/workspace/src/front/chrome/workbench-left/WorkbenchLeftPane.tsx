@@ -86,6 +86,10 @@ export function WorkbenchLeftPane({
   const [query, setQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const [chromeActionsElement, setChromeActionsElement] = useState<HTMLDivElement | null>(null)
+  const setChromeActionsRef = useCallback((node: HTMLDivElement | null) => {
+    setChromeActionsElement(node)
+  }, [])
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   useEffect(() => {
@@ -153,9 +157,10 @@ export function WorkbenchLeftPane({
       query: debouncedQuery,
       searchQuery: debouncedQuery || undefined,
       chromeless: true,
+      chromeActionsElement,
       revealFileTreeRequest,
     }),
-    [bridge, debouncedQuery, revealFileTreeRequest, rootDir],
+    [bridge, chromeActionsElement, debouncedQuery, revealFileTreeRequest, rootDir],
   )
 
   // Workspace categories live on a quiet icon rail. The active category
@@ -212,28 +217,35 @@ export function WorkbenchLeftPane({
       {rail}
 
       <div className="flex h-full min-w-0 flex-1 flex-col bg-muted/35">
-        <div className="flex h-11 items-center gap-1 border-b border-border/60 bg-muted/35 px-2.5">
-          <div className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span className="shrink-0 text-foreground/80">{activeEntry?.icon}</span>
-            <div className="truncate text-[14px] font-medium tracking-tight text-foreground">{activeEntry?.title ?? "Sources"}</div>
+        {!activeOwnsSearch && (
+          <div className="flex h-11 items-center gap-1 border-b border-border/60 bg-muted/35 px-2.5">
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+              <span className="shrink-0 text-foreground/80">{activeEntry?.icon}</span>
+              <div className="truncate text-[14px] font-medium tracking-tight text-foreground">{activeEntry?.title ?? "Sources"}</div>
+            </div>
+            {showChromeSearch && (
+              <ControlTooltip label="Search" side="bottom">
+                <IconButton
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={toggleSearch}
+                  className={cn(searchOpen && "bg-foreground/5 text-foreground")}
+                  aria-label="Search"
+                >
+                  <Search className="h-3.5 w-3.5" strokeWidth={1.75} />
+                </IconButton>
+              </ControlTooltip>
+            )}
+            <div
+              ref={setChromeActionsRef}
+              className="flex shrink-0 items-center gap-1"
+              data-boring-workspace-part="left-tab-chrome-actions"
+            />
           </div>
-          {showChromeSearch && (
-            <ControlTooltip label="Search" side="bottom">
-              <IconButton
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                onClick={toggleSearch}
-                className={cn(searchOpen && "bg-foreground/5 text-foreground")}
-                aria-label="Search"
-              >
-                <Search className="h-3.5 w-3.5" strokeWidth={1.75} />
-              </IconButton>
-            </ControlTooltip>
-          )}
-        </div>
+        )}
 
-        {showChromeSearch && searchOpen && (
+        {!activeOwnsSearch && showChromeSearch && searchOpen && (
           <div className="flex items-center gap-1 border-b border-border/60 px-2 py-1.5">
             <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <Input

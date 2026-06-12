@@ -351,7 +351,7 @@ export function WorkspaceSwitcher({
                   setName(event.target.value)
                   if (serverError) setServerError(null)
                 }}
-                placeholder="My Workspace"
+                placeholder="Default workspace"
                 aria-invalid={nameError ? 'true' : 'false'}
                 autoFocus
               />

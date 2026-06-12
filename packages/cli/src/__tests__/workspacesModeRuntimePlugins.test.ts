@@ -263,6 +263,49 @@ describe("workspaces mode runtime plugin wiring", () => {
     }
   }, 60_000)
 
+  test("front import errors are workspace-scoped and surface in runtime-plugin-diagnostics", async () => {
+    const homeRoot = await makeTempDir("boring-cli-workspaces-fronterr-home-")
+    const registryPath = join(await makeTempDir("boring-cli-workspaces-fronterr-registry-"), "workspaces.yaml")
+    const workspaceA = await makeTempDir("boring-cli-ws-fronterr-a-")
+    const workspaceB = await makeTempDir("boring-cli-ws-fronterr-b-")
+    process.env.HOME = homeRoot
+
+    await writePlugin(join(workspaceA, ".pi", "extensions", "broken-front"), "broken-front")
+    const [registeredA, registeredB] = await setupRegistry([workspaceA, workspaceB], registryPath)
+    const app = await createWorkspacesModeApp({ mode: "direct", registryPath, provisionWorkspace: false })
+
+    try {
+      const headersA = { "x-boring-workspace-id": registeredA.id }
+      const headersB = { "x-boring-workspace-id": registeredB.id }
+
+      const report = await app.inject({
+        method: "POST",
+        url: "/api/v1/agent-plugins/broken-front/front-error",
+        headers: headersA,
+        payload: { revision: 4, message: "recharts proxy is not browser-evaluable" },
+      })
+      expect(report.statusCode).toBe(204)
+
+      const diagA = await app.inject({ method: "GET", url: "/api/v1/runtime-plugin-diagnostics", headers: headersA })
+      expect(diagA.json()).toMatchObject({
+        workspaceId: registeredA.id,
+        plugins: expect.arrayContaining([
+          expect.objectContaining({
+            id: "broken-front",
+            frontError: expect.objectContaining({ revision: 4, message: "recharts proxy is not browser-evaluable" }),
+          }),
+        ]),
+      })
+
+      // The report is scoped to workspace A — workspace B never sees it.
+      const diagB = await app.inject({ method: "GET", url: "/api/v1/runtime-plugin-diagnostics", headers: headersB })
+      const bHasFrontError = (diagB.json() as { plugins: Array<{ frontError?: unknown }> }).plugins.some((plugin) => plugin.frontError)
+      expect(bHasFrontError).toBe(false)
+    } finally {
+      await app.close()
+    }
+  }, 60_000)
+
   test("ordinary GET does not become a hidden refresh path and zero-plugin workspaces still complete replay", async () => {
     const homeRoot = await makeTempDir("boring-cli-workspaces-empty-home-")
     const registryPath = join(await makeTempDir("boring-cli-workspaces-empty-registry-"), "workspaces.yaml")
