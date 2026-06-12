@@ -4,13 +4,13 @@
 The final application that composes the publishable packages into a user-facing product.
 
 ## Core
-Shorthand for `@boring/core`, the package that owns persistence, identity, config, and the app foundation.
+Shorthand for `@hachej/boring-core`, the package that owns persistence, identity, config, and the app foundation.
 
 ## Agent
-Shorthand for `@boring/agent`, the package that owns the coding-agent runtime, tools, chat transport, and standalone app shape.
+Shorthand for `@hachej/boring-agent`, the package that owns the coding-agent runtime, tools, chat transport, and standalone app shape.
 
 ## Workspace
-Shorthand for `@boring/workspace`, the package that owns workspace layouts, plugin contracts, and the UI bridge.
+Shorthand for `@hachej/boring-workspace`, the package that owns workspace layouts, plugin contracts, and the UI bridge.
 
 ## Harness
 The runtime abstraction that runs the LLM conversation loop and streams agent output.

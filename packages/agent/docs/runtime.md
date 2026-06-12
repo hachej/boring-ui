@@ -59,17 +59,20 @@ Provisioned runtime artifacts live under the workspace-local `.boring-agent/` di
 
 ```txt
 .boring-agent/
-  bin/       # command shims exposed on PATH: python, pip, app CLIs, ...
-  node/      # npm prefix for provisioned node packages
-  venv/      # Python virtual environment
-  sdk/       # staged local SDK/package sources used for runtime-visible installs
-  state/     # provisioning marker/fingerprint and managed-bin manifests
-  cache/     # npm/pip/uv caches
+  node/      # npm prefix for provisioned node packages (bins at node/node_modules/.bin)
+  venv/      # Python virtualenv (console scripts at venv/bin)
+  sdk/       # staged local SDK/package sources; sdk/uv holds the workspace-local uv
+  skills/    # mirror of plugin skills
+  cache/     # npm/uv/pip caches
   tmp/       # staged venvs, tarballs, temp files
-  logs/      # runtime logs
 ```
 
-The provisioner writes ownership markers for managed runtime directories. Do not hand-edit managed files as an app integration mechanism; declare provisioning contributions instead.
+PATH entries exposed to the harness are `node/node_modules/.bin`, `venv/bin`,
+and `sdk/uv/bin` (see `getBoringAgentPathEntries` in
+`src/server/workspace/runtimeLayout.ts`). The provisioner writes ownership
+markers (`.boring-agent-owned.json`) for managed runtime directories. Do not
+hand-edit managed files as an app integration mechanism; declare provisioning
+contributions instead.
 
 ## Runtime provisioning
 

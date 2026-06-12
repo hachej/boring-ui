@@ -2,7 +2,48 @@
 
 This page answers a common contributor question: **where should this code live?**
 
-## `@boring/core`
+## Full inventory
+
+The monorepo has three layers: foundation packages, supporting packages/CLIs, and consumers (plugins + apps).
+
+### Foundation packages (`packages/*`)
+
+| Package | Role |
+|---|---|
+| `@hachej/boring-core` | DB, auth, config, HTTP app factory, frontend app shell |
+| `@hachej/boring-agent` | Pane-embeddable coding agent; `direct`/`local`/`vercel-sandbox` execution modes |
+| `@hachej/boring-workspace` | Workspace UI, plugin system, and UI bridge |
+
+### Supporting packages (`packages/*`)
+
+| Package | Role |
+|---|---|
+| `@hachej/boring-ui-kit` | Shared shadcn-style UI primitives consumed by the other packages and generated panes |
+| `@hachej/boring-pi` | Pi skills and agent-facing references for boring-ui |
+| `@hachej/boring-ui-cli` | App authoring CLI — "turn an agent into an app" |
+| `@hachej/boring-ui-plugin-cli` | Slim plugin-authoring CLI for workspace runtimes |
+
+### First-party workspace plugins (`plugins/*`)
+
+| Plugin | Role |
+|---|---|
+| `@hachej/boring-ask-user` | Surfaces agent questions to the user and streams answers back |
+| `@hachej/boring-data-catalog` | Plugin *builder* for data catalogs (`createDataCatalogPlugin(options)`) |
+| `@hachej/boring-data-explorer` | Data explorer primitive and shared explorer contracts |
+| `@hachej/boring-deck` | Front-only markdown deck plugin scaffold |
+| `ccusage-dashboard`, `github-pr-tracker` | Signature-stub plugin slots (no published package yet) |
+
+### Example apps (`apps/*`)
+
+| App | Role |
+|---|---|
+| `agent-playground` | Standalone playground for `@hachej/boring-agent` |
+| `workspace-playground` | Workspace UI playground (used for proof-of-work validation) |
+| `full-app` | Full composed app shell (core + agent + workspace) |
+
+The rest of this page covers where new code belongs across the three foundation packages.
+
+## `@hachej/boring-core`
 
 Put code here when it involves:
 
@@ -22,7 +63,7 @@ Examples:
 - invite acceptance
 - current-user APIs
 
-## `@boring/agent`
+## `@hachej/boring-agent`
 
 Put code here when it involves:
 
@@ -42,7 +83,7 @@ Examples:
 - `registerAgentRoutes()`
 - `bash`, `read`, `write`, `edit`, `find`, `grep`, `ls`
 
-## `@boring/workspace`
+## `@hachej/boring-workspace`
 
 Put code here when it involves:
 

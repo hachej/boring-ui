@@ -1,22 +1,27 @@
 # PLUGINS
 
-Plugin and extension notes for `@boring/agent`.
+Plugin and extension notes for `@hachej/boring-agent`.
 
-## Current Status
+## Two extension paths
 
-The full plugin runtime is not shipped yet in this scaffold.
+There are two ways to extend the agent, depending on host integration:
 
-Today:
+1. **Pi-native resources** (`package.json#pi`: `extensions`, `skills`,
+   `prompts`, `systemPrompt`) — discovered by the Pi harness in `direct`/`local`
+   mode and reloadable through `/reload`. This is the right place for portable,
+   hot-reloadable tools and skills. See [tools.md](./tools.md).
+2. **Trusted server plugins** (`@hachej/boring-workspace` `defineServerPlugin`)
+   — static/boot-time `agentTools`, routes, and provisioning declared by trusted
+   server code. See [tools.md](./tools.md) and
+   [runtime-provisioning.md](./runtime-provisioning.md).
 
-- Tool contracts are defined in `src/shared/tool.ts`.
-- Runtime catalog/harness integration is still under active implementation.
+Both paths converge on the same `AgentTool` contract
+(`src/shared/tool.ts`). The standalone `createAgentApp` ships no UI tools;
+`exec_ui`/`get_ui_state` and UI routes are owned by `@hachej/boring-workspace`.
 
-## Planned Integration Model
+## Tool contract
 
-The intended extension seam is "register additional tools into the catalog"
-without modifying core runtime internals.
-
-Each tool should provide:
+Each tool provides:
 
 - Stable `name`
 - Clear `description`
@@ -104,5 +109,6 @@ When porting plugins from host modes to `vercel-sandbox`, expect differences:
 
 ## References
 
-- Canonical design: `docs/plans/agent-package-spec.md`
+- Adding tools: [tools.md](./tools.md)
 - Minimal integration sketch: `examples/with-custom-tool/README.md`
+- Historical design notes: `docs/plans/archive/` (archival; not current truth)

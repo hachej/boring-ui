@@ -1,20 +1,26 @@
 # Deployment Workflow
 
 This doc describes the intended production deployment flow for app shells that compose
-`@boring/core`, `@boring/workspace`, and `@boring/agent`.
+`@hachej/boring-core`, `@hachej/boring-workspace`, and `@hachej/boring-agent`.
+
+Status: forward-looking design. Ownership boundaries and the workspace-provisioning
+flow are implemented today. The deployment-snapshot release pipeline (`release.ts`,
+core snapshot store) is a target shape — `apps/full-app/fly.toml` currently runs
+`migrate.js` as its release command, not `release.js`. Sections marked "Target" /
+"Recommended" / "milestones" are not shipped yet.
 
 Example today: `apps/full-app` deploys to Fly.io with `BORING_AGENT_MODE=vercel-sandbox`.
 
 ## Ownership
 
-- `@boring/agent` owns runtime execution primitives:
+- `@hachej/boring-agent` owns runtime execution primitives:
   - direct/local/vercel sandbox adapters
   - deployment snapshot provider adapters
   - workspace runtime provisioning execution
-- `@boring/workspace` owns plugin interpretation:
+- `@hachej/boring-workspace` owns plugin interpretation:
   - server plugins declare provisioning needs
   - workspace normalizes plugin declarations into agent provisioning contributions
-- `@boring/core` owns durable app/platform records:
+- `@hachej/boring-core` owns durable app/platform records:
   - workspaces, members, auth, settings
   - runtime/sandbox handle records
   - deployment snapshot records
@@ -288,12 +294,12 @@ Minimum checks:
 6. In the sandbox, `uv --version` succeeds.
 7. If the deployed app includes a concrete provisioned plugin, run that plugin's known smoke command (for example, macro's `bm list` should report builtin transforms).
 
-`@boring/agent` already has package-level evals for fixture provisioning:
+`@hachej/boring-agent` already has package-level evals for fixture provisioning:
 
 ```sh
-pnpm --filter @boring/agent eval:provisioning
-pnpm --filter @boring/agent eval:provisioning:agent
-pnpm --filter @boring/agent eval:provisioning:agent:vercel
+pnpm --filter @hachej/boring-agent eval:provisioning
+pnpm --filter @hachej/boring-agent eval:provisioning:agent
+pnpm --filter @hachej/boring-agent eval:provisioning:agent:vercel
 ```
 
 The Vercel eval validates a live sandbox with fixture SDK/template setup and a real agent turn.

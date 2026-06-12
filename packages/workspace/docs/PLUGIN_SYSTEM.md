@@ -6,8 +6,9 @@ example `PLUGIN_SYSTEM.md §4.5`), so keep headings stable when editing.
 
 This document describes the implementation as it exists now. Historical
 implementation plans live under `packages/workspace/docs/plans/archive/`.
-For future generated/hosted runtime-plugin architecture, see the repo-level
-`docs/runtime-plugin-v2-hot-reload-plan.md`.
+For the historical generated/hosted runtime-plugin architecture exploration,
+see the archived repo-level
+`docs/plans/archive/runtime-plugin-v2-hot-reload-plan.md`.
 
 ## Contents
 
