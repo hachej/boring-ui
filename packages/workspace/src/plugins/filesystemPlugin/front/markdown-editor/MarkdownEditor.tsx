@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import type { ChangeEvent } from "react"
+import type { ChangeEvent, MouseEvent as ReactMouseEvent } from "react"
 import { useEditor, useEditorState, EditorContent } from "@tiptap/react"
 import type { Editor } from "@tiptap/core"
 import StarterKit from "@tiptap/starter-kit"
@@ -45,6 +45,7 @@ import {
   Loader2Icon,
 } from "lucide-react"
 import { Input, Toolbar as UiToolbar, ToolbarButton as UiToolbarButton, ToolbarSeparator as UiToolbarSeparator } from "@hachej/boring-ui-kit"
+import { postUiCommand } from "../../../../front/bridge/uiCommandBus"
 import { cn } from "../../../../front/lib/utils"
 
 const lowlight = createLowlight(common)
@@ -145,6 +146,34 @@ export function rawFileUrlForMarkdownImage(
   return `${base}/api/v1/files/raw?${params.toString()}`
 }
 
+function isExternalLinkHref(href: string): boolean {
+  return /^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#|\?)/i.test(href)
+}
+
+export function workspaceFilePathForMarkdownLink(href: string, documentPath?: string): string | null {
+  const trimmed = href.trim()
+  if (!trimmed || isExternalLinkHref(trimmed)) return null
+  const pathPart = trimmed.split(/[?#]/, 1)[0]
+  if (!pathPart) return null
+  const docDir = documentPath?.includes("/") ? documentPath.slice(0, documentPath.lastIndexOf("/")) : ""
+  const parts = `${docDir ? `${docDir}/` : ""}${pathPart}`.split("/")
+  const out: string[] = []
+  for (const part of parts) {
+    if (!part || part === ".") continue
+    if (part === "..") {
+      if (out.length === 0) return null
+      out.pop()
+      continue
+    }
+    out.push(part)
+  }
+  return out.join("/") || null
+}
+
+function shouldHandleWorkspaceLinkClick(event: MouseEvent): boolean {
+  return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
+}
+
 const baseExtensions = [
   StarterKit.configure({
     codeBlock: false,
@@ -157,6 +186,8 @@ const baseExtensions = [
     autolink: true,
     linkOnPaste: true,
     defaultProtocol: "https",
+    isAllowedUri: (url, ctx) =>
+      isSafeUrl(url) && (workspaceFilePathForMarkdownLink(url) !== null || ctx.defaultValidate(url)),
     HTMLAttributes: { rel: "noopener noreferrer nofollow", target: "_blank" },
   }),
   Placeholder.configure({
@@ -590,6 +621,18 @@ export function MarkdownEditor({
     suppressChangeRef.current = false
   }, [editor, content])
 
+  const handleEditorClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!shouldHandleWorkspaceLinkClick(event.nativeEvent)) return
+    const target = event.target instanceof Element ? event.target.closest("a[href]") : null
+    const href = target?.getAttribute("href")
+    if (!href) return
+    const path = workspaceFilePathForMarkdownLink(href, documentPath)
+    if (!path) return
+    event.preventDefault()
+    event.stopPropagation()
+    postUiCommand({ kind: "openFile", params: { path } })
+  }
+
   return (
     <div className={cn("flex h-full min-h-0 flex-col overflow-hidden", className)}>
       {!readOnly && (
@@ -601,7 +644,7 @@ export function MarkdownEditor({
           uploading={uploading}
         />
       )}
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto" onClickCapture={handleEditorClick}>
         {rawMode && !readOnly ? (
           <textarea
             aria-label="Raw markdown"
