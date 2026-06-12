@@ -77,7 +77,8 @@ function handleScaffold(positionals: string[]): void {
   console.log("  3. bash `boring-ui-plugin verify` — confirms manifests + files are valid")
   console.log("  4. if the UI is open, bash `boring-ui-plugin test <name>` — catches panel render failures")
   console.log("  5. ask the user: /reload")
-  console.log("  6. after /reload, call the plugin_diagnostics tool to confirm no load errors — /reload reports plugin/skill errors there")
+  console.log("  6. after /reload, ALWAYS call the plugin_diagnostics tool AND re-run `boring-ui-plugin test <name>` — front import failures only show up there (source plugin-front / PLUGIN_FRONT_ERROR), not in the /reload banner")
+  console.log("  7. iterate (fix -> /reload -> plugin_diagnostics + test) until both are clean before reporting success")
 }
 
 function handleVerify(positionals: string[]): void {
