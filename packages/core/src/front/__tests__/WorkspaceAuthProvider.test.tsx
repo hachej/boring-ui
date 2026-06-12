@@ -44,7 +44,7 @@ const BEAD_ID = 'boring-ui-v2-un4j'
 const WS_1: Workspace = {
   id: 'ws-001',
   appId: 'test-app',
-  name: 'My Workspace',
+  name: 'Default workspace',
   createdBy: 'user-1',
   createdAt: '2026-01-01T00:00:00.000Z',
   deletedAt: null,
@@ -271,7 +271,7 @@ describe('WorkspaceAuthProvider', () => {
       renderWithRouter(`/workspace/${WS_1.id}`, qc)
 
       await waitFor(() =>
-        expect(screen.getByTestId('ws-name').textContent).toBe('My Workspace'),
+        expect(screen.getByTestId('ws-name').textContent).toBe('Default workspace'),
       )
       expect(screen.getByTestId('ws-role').textContent).toBe('owner')
       assertionPassed('workspace-by-id')
@@ -306,7 +306,7 @@ describe('WorkspaceAuthProvider', () => {
       renderWithRouter(`/workspace/${encodeURIComponent(specialWs.id)}`, qc)
 
       await waitFor(() =>
-        expect(screen.getByTestId('ws-name').textContent).toBe('My Workspace'),
+        expect(screen.getByTestId('ws-name').textContent).toBe('Default workspace'),
       )
       expect(requestedUrl).toContain('/api/v1/workspaces/team%2Fa%20b')
       assertionPassed('workspace-route-id-encoded')
@@ -324,7 +324,7 @@ describe('WorkspaceAuthProvider', () => {
       renderWithRouter('/', qc)
 
       await waitFor(() =>
-        expect(screen.getByTestId('ws-name').textContent).toBe('My Workspace'),
+        expect(screen.getByTestId('ws-name').textContent).toBe('Default workspace'),
       )
       expect(screen.getByTestId('ws-role').textContent).toBe('editor')
       assertionPassed('workspace-fallback-default')
@@ -432,7 +432,7 @@ describe('WorkspaceAuthProvider', () => {
 
       renderWithRouter(`/workspace/${WS_1.id}`, qc)
 
-      expect(screen.getByTestId('ws-name').textContent).toBe('My Workspace')
+      expect(screen.getByTestId('ws-name').textContent).toBe('Default workspace')
       expect(screen.getByTestId('ws-role').textContent).toBe('owner')
       assertionPassed('workspace-cache-hit')
 
@@ -472,7 +472,7 @@ describe('WorkspaceAuthProvider', () => {
       }))
 
       await waitFor(() =>
-        expect(screen.getByTestId('ws-name').textContent).toBe('My Workspace'),
+        expect(screen.getByTestId('ws-name').textContent).toBe('Default workspace'),
       )
       expect(screen.getByTestId('ws-role').textContent).toBe('owner')
       assertionPassed('workspace-loading-resolves')

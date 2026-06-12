@@ -111,7 +111,7 @@ describe('post-signup hook — default workspace', () => {
     await app.close()
   })
 
-  it('creates a default workspace named "My Workspace" on signup', async () => {
+  it('creates a default workspace named "Default workspace" on signup', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/auth/sign-up/email',
@@ -129,7 +129,7 @@ describe('post-signup hook — default workspace', () => {
 
     const workspaces = await workspaceStore.list(userId, 'test-app')
     expect(workspaces).toHaveLength(1)
-    expect(workspaces[0].name).toBe('My Workspace')
+    expect(workspaces[0].name).toBe('Default workspace')
     expect(workspaces[0].isDefault).toBe(true)
   })
 })
@@ -233,7 +233,7 @@ describe('post-signup hook — invite acceptance', () => {
     const inviteeId = JSON.parse(res.body)?.user?.id
     const inviteeWorkspaces = await workspaceStore.list(inviteeId, 'test-app')
     expect(inviteeWorkspaces).toHaveLength(1)
-    expect(inviteeWorkspaces[0].name).toBe('My Workspace')
+    expect(inviteeWorkspaces[0].name).toBe('Default workspace')
   })
 
   it('sets boring_invite_failed cookie on email mismatch', async () => {
@@ -290,7 +290,7 @@ describe('post-signup hook — invite acceptance', () => {
     const inviteeId = JSON.parse(res.body)?.user?.id
     const inviteeWorkspaces = await workspaceStore.list(inviteeId, 'test-app')
     expect(inviteeWorkspaces).toHaveLength(1)
-    expect(inviteeWorkspaces[0].name).toBe('My Workspace')
+    expect(inviteeWorkspaces[0].name).toBe('Default workspace')
   })
 
   it('sets boring_invite_failed cookie on already-accepted invite', async () => {

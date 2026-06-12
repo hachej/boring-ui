@@ -4,7 +4,7 @@ import { HttpError, ERROR_CODES } from '../../shared/errors.js'
 import { requireWorkspaceMember } from '../auth/requireWorkspaceMember.js'
 import { createWorkspaceBody, updateWorkspaceBody } from './__schemas__/workspaces.js'
 
-const DEFAULT_WORKSPACE_NAME = 'My Workspace'
+const DEFAULT_WORKSPACE_NAME = 'Default workspace'
 
 const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
   const store = app.workspaceStore

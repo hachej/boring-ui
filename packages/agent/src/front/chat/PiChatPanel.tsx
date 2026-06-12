@@ -72,6 +72,7 @@ import {
 const DebugDrawer = lazy(() => import('../DebugDrawer').then((m) => ({ default: m.DebugDrawer })))
 
 const EMPTY_COMMANDS: SlashCommand[] = []
+const EMPTY_COMMAND_NAMES: string[] = []
 const EMPTY_BLOCKERS: Array<{ id: string; sessionId?: string; label?: string; reason?: string }> = []
 
 export type { ComposerBlocker, ComposerBlockerAction, PanelNotice }
@@ -131,6 +132,8 @@ export interface PiChatPanelProps {
   serverResourcesEnabled?: boolean
   mentionedFiles?: string[] | (() => string[])
   commands?: SlashCommand[]
+  /** Built-in slash command names to omit from the composer command registry. */
+  excludeBuiltinCommands?: string[]
   toolRenderers?: ToolRendererOverrides
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: UsePiSessionsOptions['remoteSessionOptions']
@@ -180,6 +183,7 @@ export function PiChatPanel({
   serverResourcesEnabled = true,
   mentionedFiles,
   commands = EMPTY_COMMANDS,
+  excludeBuiltinCommands = EMPTY_COMMAND_NAMES,
   toolRenderers,
   createRemoteSession,
   remoteSessionOptions,
@@ -339,14 +343,16 @@ export function PiChatPanel({
   }, [])
 
   const registry = useMemo(() => {
-    const effectiveBuiltins = hotReloadEnabled
-      ? builtinCommands
-      : builtinCommands.filter((command) => command.name !== 'reload')
+    const excludedBuiltins = new Set(excludeBuiltinCommands)
+    const effectiveBuiltins = builtinCommands.filter((command) => {
+      if (!hotReloadEnabled && command.name === 'reload') return false
+      return !excludedBuiltins.has(command.name)
+    })
     const next = createCommandRegistry(effectiveBuiltins)
     for (const command of extraCommands ?? []) next.register(command)
     for (const command of commands) next.register(command)
     return next
-  }, [apiBaseUrl, commands, extraCommands, hotReloadEnabled, normalizedRequestHeaders, serverResourcesEnabled, serverSkillsRefreshKey, storageScope])
+  }, [apiBaseUrl, commands, excludeBuiltinCommands, extraCommands, hotReloadEnabled, normalizedRequestHeaders, serverResourcesEnabled, serverSkillsRefreshKey, storageScope])
   const commandsStamp = useServerCommands({
     registry,
     requestHeaders: normalizedRequestHeaders,

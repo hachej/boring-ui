@@ -80,7 +80,7 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
     }
 
     if (!inviteAccepted) {
-      await workspaceStore.create(user.id, 'My Workspace', config.appId, { isDefault: true })
+      await workspaceStore.create(user.id, 'Default workspace', config.appId, { isDefault: true })
     }
 
     if (

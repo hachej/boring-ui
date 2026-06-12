@@ -58,12 +58,12 @@ describe('workspaces schema', () => {
   it('inserts a workspace with defaults', async () => {
     const [ws] = await sql`
       INSERT INTO workspaces (app_id, name, created_by)
-      VALUES ('app1', 'My Workspace', ${userAId})
+      VALUES ('app1', 'Default workspace', ${userAId})
       RETURNING *
     `
     expect(ws.id).toBeDefined()
     expect(ws.app_id).toBe('app1')
-    expect(ws.name).toBe('My Workspace')
+    expect(ws.name).toBe('Default workspace')
     expect(ws.created_by).toBe(userAId)
     expect(ws.created_at).toBeDefined()
     expect(ws.deleted_at).toBeNull()
