@@ -766,7 +766,11 @@ export async function createWorkspacesModeApp(opts: {
   void (async () => {
     await new Promise((resolve) => setTimeout(resolve, 250))
     try {
-      for (const workspace of await registry.list()) {
+      // Most-recently-used first: a user refreshing right after a restart is
+      // almost always in the workspace they touched last.
+      const byRecency = [...await registry.list()]
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      for (const workspace of byRecency) {
         if (!workspace.available) continue
         try {
           await getLoadedPluginRuntime(workspace)
