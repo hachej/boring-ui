@@ -757,5 +757,33 @@ export async function createWorkspacesModeApp(opts: {
     runtimePluginDiagnosticsEnabled: true,
   }))
 
+  // Pre-warm plugin runtimes so a freshly-restarted hub doesn't pay cold
+  // plugin loads + Vite singleton transforms on the first browser request
+  // (several seconds of event-loop saturation that delays /state, tree, and
+  // commands). Priority: the most-recently-used workspace — the one the hub
+  // opens by default and the one a user hard-refreshes after a restart —
+  // warms immediately; the remaining workspaces warm afterwards in the
+  // background. Serial and best-effort: a failing workspace must not block
+  // the others, and a real browser request never waits on this queue — the
+  // lazy path creates (or reuses the in-flight) runtime for its workspace
+  // directly.
+  void (async () => {
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    try {
+      const byRecency = [...await registry.list()]
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      for (const workspace of byRecency) {
+        if (!workspace.available) continue
+        try {
+          await getLoadedPluginRuntime(workspace)
+        } catch (error) {
+          app.log.warn({ err: error, workspaceId: workspace.id }, "[cli] workspace plugin prewarm failed")
+        }
+      }
+    } catch (error) {
+      app.log.warn({ err: error }, "[cli] workspace plugin prewarm skipped")
+    }
+  })()
+
   return app
 }
