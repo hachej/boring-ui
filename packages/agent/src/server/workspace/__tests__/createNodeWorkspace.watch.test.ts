@@ -158,6 +158,35 @@ describe('createNodeWorkspace.watch', () => {
     expect(echo).toEqual([])
   })
 
+  it('genuine deletes and edits inside the rename destination survive the echo window', async () => {
+    const ws = createNodeWorkspace(root)
+    await ws.mkdir('big', { recursive: true })
+    for (let i = 0; i < 5; i += 1) {
+      await ws.writeFile(`big/f-${i}.txt`, String(i))
+    }
+    watcher = ws.watch!()
+    const events: WorkspaceChangeEvent[] = []
+    watcher.subscribe((e) => events.push(e))
+    await wait(SETTLE_MS)
+
+    await ws.rename('big', 'moved')
+    await waitForEvent(events, (e) => e.op === 'rename' && e.path === 'moved')
+    // Let chokidar finish discovering the new subtree (its add echo is
+    // absorbed) so the next mutations are tracked-file events.
+    await wait(SETTLE_MS)
+
+    // Suppression only absorbs the rename's predicted echo — a real
+    // delete (unlink under `to`) and a real edit (change under `to`)
+    // must still reach subscribers while the window is open.
+    await ws.unlink('moved/f-0.txt')
+    await ws.writeFile('moved/f-1.txt', 'edited')
+    await waitForEvent(events, (e) => e.op === 'unlink' && e.path === 'moved/f-0.txt')
+    await waitForEvent(events, (e) => e.op === 'write' && e.path === 'moved/f-1.txt')
+
+    expect(events.some((e) => e.op === 'unlink' && e.path === 'moved/f-0.txt')).toBe(true)
+    expect(events.some((e) => e.op === 'write' && e.path === 'moved/f-1.txt')).toBe(true)
+  })
+
   it('rename echo suppression does not mute unrelated paths', async () => {
     const ws = createNodeWorkspace(root)
     await ws.writeFile('solo.txt', 'x')

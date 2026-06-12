@@ -6,6 +6,7 @@ import { events } from "../../../../front/events"
 import { useApiBaseUrl, useWorkspaceRequestId } from "./DataProvider"
 import { filesystemEvents } from "../../shared/events"
 import { FILES_QUERY_KEY_SEGMENT } from "../../shared/constants"
+import { parentDir } from "../file-tree/treeModel"
 
 /**
  * Single source of truth for translating workspace bus `filesystem:file.*` events
@@ -119,21 +120,16 @@ function invalidateFile(
 
 /**
  * Tree listing queries are keyed `[base, ws, "tree", dir]` — invalidate
- * only the listing that actually shows the changed path: its parent.
- * Matches `parentDir` in `file-tree/treeModel.ts` ("." for top-level).
+ * only the listing that actually shows the changed path: its parent
+ * (the same `parentDir` the file tree itself keys dirs with).
  */
-function treeParentDir(path: string): string {
-  const i = path.lastIndexOf("/")
-  return i > 0 ? path.slice(0, i) : "."
-}
-
 function invalidateTree(
   batch: InvalidationBatch,
   base: string,
   workspaceId: string | null,
   path: string,
 ): void {
-  batch.enqueue([base, workspaceId, "tree", treeParentDir(path)])
+  batch.enqueue([base, workspaceId, "tree", parentDir(path)])
 }
 
 function invalidateSearch(

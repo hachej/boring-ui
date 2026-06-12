@@ -75,6 +75,10 @@ export function fsEventsRoutes(
     if (!readiness.ok) {
       return { unsupported: { reason: readiness.reason, ...(readiness.message ? { message: readiness.message } : {}) } }
     }
+    // Two first-connects can race here: both pass the pre-await lookup
+    // and share the watcher's readiness promise. Re-check after the
+    // await so only one of them constructs (and registers) the
+    // broadcaster — a duplicate would double-subscribe the watcher.
     const existingAfterWait = broadcasters.get(workspaceId)
     if (existingAfterWait) return { workspaceId, entry: existingAfterWait }
     const broadcaster = createFsEventBroadcaster(watcher)
