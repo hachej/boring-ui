@@ -52,6 +52,16 @@ export interface RegisterAgentPluginOptions {
   // Bounded retry for transient cold-start front-import failures (singleton
   // graph not yet warm after a hard refresh). Exposed mainly for tests.
   frontImportRetry?: { attempts?: number; delayMs?: number }
+  // Reports an exhausted front import failure back to the server diagnostics
+  // channel. Defaults to a fetch POST; overridable for tests.
+  reportFrontError?: (report: FrontErrorReport) => void
+}
+
+export interface FrontErrorReport {
+  pluginId: string
+  revision: number
+  message: string
+  url?: string
 }
 
 function joinUrl(base: string, path: string): string {
@@ -67,6 +77,29 @@ function withWorkspaceId(url: string, workspaceId: string | undefined): string {
 
 function isAbsoluteModuleUrl(url: string): boolean {
   return /^[A-Za-z][A-Za-z0-9+.-]*:/.test(url) || url.startsWith("//")
+}
+
+// Posts an exhausted front import failure to the server so it surfaces in the
+// runtime-plugin-diagnostics response and the plugin_diagnostics agent tool —
+// otherwise a plugin that fails to evaluate in the browser looks healthy
+// server-side (its manifest scan and runtime transform both succeeded).
+function postFrontError(
+  options: Pick<RegisterAgentPluginOptions, "apiBaseUrl" | "workspaceId" | "authHeaders">,
+  report: FrontErrorReport,
+): void {
+  if (typeof fetch !== "function") return
+  const url = withWorkspaceId(
+    joinUrl(options.apiBaseUrl ?? "", `/api/v1/agent-plugins/${encodeURIComponent(report.pluginId)}/front-error`),
+    options.workspaceId,
+  )
+  void fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(options.authHeaders ?? {}) },
+    body: JSON.stringify({ revision: report.revision, message: report.message, ...(report.url ? { url: report.url } : {}) }),
+    keepalive: true,
+  }).catch(() => {
+    // Best-effort: a failed report-back must never break plugin loading.
+  })
 }
 
 function resolveFrontUrl(frontUrl: string, apiBaseUrl: string | undefined): string {
@@ -550,6 +583,15 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           const message = actualError instanceof Error ? actualError.message : String(actualError)
           console.error(`[boring-ui] failed to load plugin ${label}; keeping previous version`, actualError)
           if (event) {
+            const failedFrontUrl = resolveFrontEntryUrl(event, options.apiBaseUrl)
+            const report: FrontErrorReport = {
+              pluginId: event.id,
+              revision: event.revision,
+              message,
+              ...(failedFrontUrl ? { url: failedFrontUrl } : {}),
+            }
+            if (options.reportFrontError) options.reportFrontError(report)
+            else postFrontError(options, report)
             window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, {
               detail: {
                 type: "boring.plugin.front-error",
