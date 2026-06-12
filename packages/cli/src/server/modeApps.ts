@@ -13,6 +13,7 @@ import { basename, isAbsolute, join, resolve } from "node:path"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "./localWorkspaces.js"
 import type {
   RuntimePluginDiagnosticsResponse,
+  RuntimePluginFrontError,
   RuntimePluginHostSnapshot,
   RuntimePluginServerSnapshotEntry,
 } from "../shared/runtimePluginDiagnostics.js"
@@ -153,6 +154,11 @@ const RUNTIME_PLUGIN_TRUST_DESCRIPTION = "Loads plugin UI code from trusted loca
 
 function createRuntimePluginDiagnosticsStore() {
   const byWorkspace = new Map<string, Map<string, RuntimePluginHostSnapshot>>()
+  // Browser-reported front import failures, keyed workspace -> pluginId. The
+  // server stays green for these (the manifest scan and runtime transform both
+  // succeed) — only the browser knows the front module failed to evaluate, so
+  // it reports the failure back here for the diagnostics surfaces to render.
+  const frontErrorsByWorkspace = new Map<string, Map<string, RuntimePluginFrontError>>()
 
   function upsert(workspaceId: string, pluginId: string): RuntimePluginHostSnapshot {
     const workspace = byWorkspace.get(workspaceId) ?? new Map<string, RuntimePluginHostSnapshot>()
@@ -198,6 +204,14 @@ function createRuntimePluginDiagnosticsStore() {
         entry.lastErrorCode = undefined
         entry.lastErrorMessage = undefined
         entry.lastErrorStage = undefined
+        // A newer revision was tracked: any front error reported against an
+        // older revision is now stale (the user likely fixed the import and
+        // /reloaded). Errors for this exact revision or newer are kept until the
+        // browser reports success by simply not re-POSTing a failure.
+        const storedFrontError = frontErrorsByWorkspace.get(diagnostic.workspaceId)?.get(diagnostic.pluginId)
+        if (storedFrontError && diagnostic.revision !== undefined && storedFrontError.revision < diagnostic.revision) {
+          frontErrorsByWorkspace.get(diagnostic.workspaceId)?.delete(diagnostic.pluginId)
+        }
       }
       if (diagnostic.stage === "cache") entry.lastRequestAt = now
       if (diagnostic.stage === "transform" && diagnostic.outcome === "served") {
@@ -226,8 +240,25 @@ function createRuntimePluginDiagnosticsStore() {
         .map((entry) => ({ ...entry, recent: [...entry.recent] }))
         .sort((a, b) => a.pluginId.localeCompare(b.pluginId))
     },
+    recordFrontError(workspaceId: string, error: RuntimePluginFrontError) {
+      const forWorkspace = frontErrorsByWorkspace.get(workspaceId) ?? new Map<string, RuntimePluginFrontError>()
+      frontErrorsByWorkspace.set(workspaceId, forWorkspace)
+      // Only keep the latest failure at or past the last one we saw; a stale
+      // retry from an older revision must not clobber a fresher report.
+      const existing = forWorkspace.get(error.pluginId)
+      if (existing && existing.revision > error.revision) return
+      forWorkspace.set(error.pluginId, error)
+    },
+    clearFrontError(workspaceId: string, pluginId: string) {
+      frontErrorsByWorkspace.get(workspaceId)?.delete(pluginId)
+    },
+    frontErrors(workspaceId: string): RuntimePluginFrontError[] {
+      return [...(frontErrorsByWorkspace.get(workspaceId)?.values() ?? [])]
+        .sort((a, b) => a.pluginId.localeCompare(b.pluginId))
+    },
     disposeWorkspace(workspaceId: string) {
       byWorkspace.delete(workspaceId)
+      frontErrorsByWorkspace.delete(workspaceId)
     },
   }
 }
@@ -249,6 +280,7 @@ function buildRuntimePluginDiagnosticsResponse(args: {
   loaded: Array<{ id: string; version?: string; revision?: number; rootDir?: string; frontPath?: string; frontTarget?: unknown }>
   errors: Array<{ id: string; message: string }>
   host: RuntimePluginHostSnapshot[]
+  frontErrors?: RuntimePluginFrontError[]
 }): RuntimePluginDiagnosticsResponse {
   const byPlugin = new Map<string, RuntimePluginServerSnapshotEntry>()
   for (const plugin of args.loaded) {
@@ -278,9 +310,34 @@ function buildRuntimePluginDiagnosticsResponse(args: {
       host: hostEntry,
     })
   }
+  for (const frontError of args.frontErrors ?? []) {
+    const current = byPlugin.get(frontError.pluginId) ?? { id: frontError.pluginId }
+    byPlugin.set(frontError.pluginId, {
+      ...current,
+      frontError,
+    })
+  }
   return {
     workspaceId: args.workspaceId,
     plugins: [...byPlugin.values()].sort((a, b) => a.id.localeCompare(b.id)),
+  }
+}
+
+// Parses a browser-reported front import failure (POST body) into a stored
+// diagnostic. Returns null when the payload is malformed so the route can 400.
+function parseFrontErrorReport(pluginId: string, body: unknown): RuntimePluginFrontError | null {
+  if (typeof body !== "object" || body === null) return null
+  const record = body as Record<string, unknown>
+  const message = typeof record.message === "string" ? record.message : ""
+  if (!pluginId || !message) return null
+  const revisionRaw = record.revision
+  const revision = typeof revisionRaw === "number" && Number.isFinite(revisionRaw) ? revisionRaw : 0
+  return {
+    pluginId,
+    revision,
+    message,
+    ...(typeof record.url === "string" ? { url: record.url } : {}),
+    reportedAt: Date.now(),
   }
 }
 export async function createFolderModeApp(opts: {
@@ -347,7 +404,16 @@ export async function createFolderModeApp(opts: {
       loaded: manager?.inspectLoaded() ?? [],
       errors: manager?.getErrors() ?? [],
       host: diagnosticsStore.snapshot(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID),
+      frontErrors: diagnosticsStore.frontErrors(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID),
     })
+  })
+
+  app.post("/api/v1/agent-plugins/:id/front-error", async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const report = parseFrontErrorReport(id, request.body)
+    if (!report) return reply.code(400).send({ error: "invalid_front_error_report" })
+    diagnosticsStore.recordFrontError(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID, report)
+    return reply.code(204).send()
   })
 
   app.get("/api/v1/workspace/meta", async () => ({
@@ -623,6 +689,14 @@ export async function createWorkspacesModeApp(opts: {
           message: `${error.code}: ${error.message} (${error.pluginDir})`,
           ...(error.pluginId ? { pluginId: error.pluginId } : {}),
         })),
+        // Browser-reported front import failures: the server scan/transform is
+        // green, so without these a plugin that never renders looks healthy to
+        // the agent. The plugin_diagnostics tool consumes this array.
+        ...diagnosticsStore.frontErrors(workspace.id).map((error) => ({
+          source: "plugin-front",
+          message: error.message,
+          pluginId: error.pluginId,
+        })),
       ]
     },
     getPi: async ({ workspaceId, workspaceRoot }) => {
@@ -655,7 +729,17 @@ export async function createWorkspacesModeApp(opts: {
       loaded: runtime.manager.inspectLoaded(),
       errors: runtime.manager.getErrors(),
       host: diagnosticsStore.snapshot(workspace.id),
+      frontErrors: diagnosticsStore.frontErrors(workspace.id),
     })
+  })
+
+  app.post("/api/v1/agent-plugins/:id/front-error", async (request, reply) => {
+    const workspace = await workspaceFromRequest(request)
+    const { id } = request.params as { id: string }
+    const report = parseFrontErrorReport(id, request.body)
+    if (!report) return reply.code(400).send({ error: "invalid_front_error_report" })
+    diagnosticsStore.recordFrontError(workspace.id, report)
+    return reply.code(204).send()
   })
 
   app.get("/api/v1/agent-plugins", async (request) => {
