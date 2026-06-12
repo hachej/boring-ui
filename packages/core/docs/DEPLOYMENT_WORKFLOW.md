@@ -11,6 +11,13 @@ core snapshot store) is a target shape — `apps/full-app/fly.toml` currently ru
 
 Example today: `apps/full-app` deploys to Fly.io with `BORING_AGENT_MODE=vercel-sandbox`.
 
+## Read this doc in two layers
+
+- **Current / shipped today** — what `apps/full-app` actually does right now.
+- **Target / recommended** — forward-looking release-flow design that is not fully shipped yet.
+
+If you are debugging a deploy bug, trust the **Current** sections first.
+
 ## Ownership
 
 - `@hachej/boring-agent` owns runtime execution primitives:
@@ -40,10 +47,10 @@ Example today: `apps/full-app` deploys to Fly.io with `BORING_AGENT_MODE=vercel-
 Runtime image:
 
 ```txt
-node:20-slim
+node:22-slim
 bubblewrap ca-certificates
 BORING_AGENT_MODE=vercel-sandbox
-FULL_APP_WORKSPACE_ROOT=/data/workspaces
+BORING_AGENT_WORKSPACE_ROOT=/data/workspaces
 ```
 
 Fly release command currently runs migrations:

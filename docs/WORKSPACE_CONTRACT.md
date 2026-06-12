@@ -227,6 +227,7 @@ Workspace implements handlers for commands it cares about:
 |---|---|
 | `openFile` | Open file in editor pane |
 | `openPanel` | Activate/create panel by id |
+| `openSurface` | Resolve a domain target through registered surface resolvers, then open the resolved panel |
 | `closePanel` | Remove panel |
 | `showNotification` | Display toast/notification |
 | `navigateToLine` | Scroll editor to file:line |

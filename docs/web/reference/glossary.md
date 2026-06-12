@@ -30,8 +30,14 @@ A named pairing of workspace adapter plus sandbox adapter, such as `direct`, `lo
 ## UI bridge
 The command/state bridge between backend intent and frontend workspace behavior. `UiBridge.postCommand` is the single dispatch source.
 
+## Runtime/generated plugin
+A workspace-local plugin under `.pi/extensions/*`. Hot-reloadable for front and Pi resources, but route-free. Also called an **external plugin** in the current trust-model docs; this does **not** mean a hosted/untrusted marketplace plugin.
+
+## App/internal plugin
+A trusted boot-time plugin package composed by the app. Can contribute routes, static agent tools, provisioning, and front outputs.
+
 ## Plugin output
-A typed contribution from a workspace plugin, such as a panel, command, catalog, or surface resolver.
+A typed front contribution from a workspace plugin, such as a panel, command, catalog, or surface resolver.
 
 ## Surface resolver
 A plugin output that maps domain-level open requests into concrete panel openings.

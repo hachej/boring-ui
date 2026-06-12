@@ -34,11 +34,11 @@ The important rule is that workspace and sandbox swap as a paired runtime mode a
 
 ## What it provides to apps
 
-- `ChatPanel` (an alias for `PiChatPanel`, from the package's front entry)
-- `useAgentChat()`
-- `useSessions()`
+- `ChatPanel` and related UI primitives from the front entry
+- session/chat hooks from the front entry
 - server route registration / app creation (`@hachej/boring-agent/server`)
 - tool execution surface (`bash`, `read`, `write`, `edit`, `find`, `grep`, `ls`)
+- package-added tools such as `upload_file`, `plugin_diagnostics`, and isolated-code execution when that capability is enabled
 
 > UI-aware tools (`get_ui_state`, `exec_ui`) and the `/api/v1/ui/*` routes live in `@hachej/boring-workspace`, not here. Standalone agent ships zero UI surface; hosts that want UI tooling compose via the workspace package.
 
@@ -64,6 +64,7 @@ const app = await createAgentApp({ mode: 'local', workspaceRoot: process.cwd() }
 
 ## Related docs
 
-- canonical spec: `packages/agent/docs/plans/agent-package-spec.md`
-- package docs: `packages/agent/docs/`
+- package docs: `packages/agent/docs/README.md`
+- [Design FAQ](../reference/design-faq.md)
+- [Troubleshooting map](../reference/troubleshooting.md)
 - [Composition guide](../guides/composition.md)

@@ -10,44 +10,46 @@ This page shows how the three packages fit together in a real app shell.
 
 ## Server composition
 
-Core creates the Fastify app. Agent mounts onto it.
+For the full app-shell path, use the composed server surface from core:
 
 ```ts
-import { createCoreApp, loadConfig } from '@hachej/boring-core/server'
-import { registerAgentRoutes } from '@hachej/boring-agent/server'
+import { createCoreWorkspaceAgentServer } from '@hachej/boring-core/app/server'
 
-const config = await loadConfig()
-const app = await createCoreApp(config)
-await app.register(registerAgentRoutes)
-await app.listen({ port: config.port })
+const app = await createCoreWorkspaceAgentServer({
+  // config, plugins, stores, and runtime options live here
+})
 ```
 
-This keeps auth, persistence, and user/workspace ownership in core while exposing agent capabilities through mounted routes.
+Use lower-level `createCoreApp(...)` + `registerAgentRoutes(...)` only when you
+intentionally need custom wiring across core, workspace, and agent. The
+composed server surface is the safe default.
 
 ## Frontend composition
 
-Core provides the top-level shell (`CoreFront`, which wraps the config/theme/auth providers). Workspace provides layout. Agent provides chat UI.
+For the common app-shell path, use the composed front surface from core:
 
 ```tsx
-import { CoreFront } from '@hachej/boring-core/front'
-import { WorkspaceProvider, IdeLayout } from '@hachej/boring-workspace'
-import { ChatPanel } from '@hachej/boring-agent'
-import { Route } from 'react-router-dom'
+import { CoreWorkspaceAgentFront } from '@hachej/boring-core/app/front'
+import '@hachej/boring-core/app/front/styles.css'
 
-function WorkspaceRoute() {
+export function App() {
   return (
-    <WorkspaceProvider chatPanel={ChatPanel}>
-      <IdeLayout />
-    </WorkspaceProvider>
+    <CoreWorkspaceAgentFront
+      apiBaseUrl=""
+      chatEntryMode="chat-first"
+      plugins={[]}
+    />
   )
 }
-
-<CoreFront>
-  <Route path="/" element={<WorkspaceRoute />} />
-</CoreFront>
 ```
 
-> Many apps compose this wiring for you. `@hachej/boring-core/app/front` ships `CoreWorkspaceAgentFront`, a higher-level shell that mounts core providers, workspace layout, and the injected agent chat in one component.
+That component composes the core shell, workspace runtime, and injected chat
+surface for the standard boring-ui app shape.
+
+If you need lower-level control, the layering is still:
+- core for config/theme/auth/workspace identity
+- workspace for layout and plugin host
+- agent for the chat panel
 
 ## Why this composition works
 
@@ -77,6 +79,8 @@ Do not put database-backed workspace concerns into agent or workspace internals.
 ## See also
 
 - [Architecture overview](../architecture/overview.md)
+- [Design FAQ](../reference/design-faq.md)
+- [Troubleshooting map](../reference/troubleshooting.md)
 - [Core package](../packages/core.md)
 - [Agent package](../packages/agent.md)
 - [Workspace package](../packages/workspace.md)

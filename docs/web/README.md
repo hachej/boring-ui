@@ -19,6 +19,8 @@ This docs area is a human-oriented guide to how the packages fit together, what 
 - [Agent package](./packages/agent.md)
 - [Workspace package](./packages/workspace.md)
 - [Composition guide](./guides/composition.md)
+- [Design FAQ](./reference/design-faq.md)
+- [Troubleshooting map](./reference/troubleshooting.md)
 - [Concepts glossary](./reference/glossary.md)
 
 ## Audience

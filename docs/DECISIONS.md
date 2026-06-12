@@ -121,9 +121,9 @@ Each decision has four fields:
 
 | Field | |
 |---|---|
-| **What** | Workspace + Sandbox MUST target the same execution context. Enforced at adapter construction; no mixed pairings. |
-| **Why** | A NodeWorkspace with a VercelSandboxExec would read local files but execute remotely -- silently broken. |
-| **Rationale** | Compile-time/construction-time enforcement is cheaper than debugging subtle runtime mismatches. |
+| **What** | Workspace + Sandbox MUST target the same execution context. Enforced at adapter construction; no mixed pairings. The public workspace namespace must stay coherent across file tree root, shell cwd, model-visible cwd, and `BORING_AGENT_WORKSPACE_ROOT`. |
+| **Why** | A NodeWorkspace with a VercelSandboxExec would read local files but execute remotely -- silently broken. Leaking adapter-private roots into model-visible paths creates the same class of split-brain bug. |
+| **Rationale** | Compile-time/construction-time enforcement is cheaper than debugging subtle runtime mismatches. One public namespace keeps prompts, tools, and shell observations talking about the same place. |
 | **Re-evaluate when** | A legitimate cross-context pairing emerges. |
 
 ## 7f. Mode selection

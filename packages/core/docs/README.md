@@ -53,7 +53,7 @@ identity match, then the workspace/agent surfaces warm in the background (see
 | `@hachej/boring-core/app/server` | Node | `createCoreWorkspaceAgentServer`, `runCoreWorkspaceAgentServer`, dev + vercel handlers |
 | `@hachej/boring-core/app/front` | Browser | `CoreWorkspaceAgentFront`, chat-first shell options |
 | `@hachej/boring-core/app/vite` | Node | `createBoringAppViteAliases` (React singleton dedupe) |
-| `@hachej/boring-core/theme.css`, `/app/front/styles.css` | Browser | CSS tokens / app shell styles |
+| `@hachej/boring-core/theme.css`, `/app/front/styles.css` | Browser | Core/app-shell styles that compose the shared `--boring-*` token system; workspace owns the base Tailwind token/reset contract |
 
 ## Key abstractions
 

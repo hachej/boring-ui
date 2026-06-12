@@ -59,6 +59,7 @@ Provisioned runtime artifacts live under the workspace-local `.boring-agent/` di
 
 ```txt
 .boring-agent/
+  bin/       # managed shims for provisioned CLIs
   node/      # npm prefix for provisioned node packages (bins at node/node_modules/.bin)
   venv/      # Python virtualenv (console scripts at venv/bin)
   sdk/       # staged local SDK/package sources; sdk/uv holds the workspace-local uv
@@ -69,7 +70,9 @@ Provisioned runtime artifacts live under the workspace-local `.boring-agent/` di
 
 PATH entries exposed to the harness are `node/node_modules/.bin`, `venv/bin`,
 and `sdk/uv/bin` (see `getBoringAgentPathEntries` in
-`src/server/workspace/runtimeLayout.ts`). The provisioner writes ownership
+`src/server/workspace/runtimeLayout.ts`). `.boring-agent/bin` is a managed shim
+location written by the provisioner; it is not the canonical PATH source
+described by `getBoringAgentPathEntries`. The provisioner writes ownership
 markers (`.boring-agent-owned.json`) for managed runtime directories. Do not
 hand-edit managed files as an app integration mechanism; declare provisioning
 contributions instead.
@@ -115,7 +118,7 @@ provisioning: {
 }
 ```
 
-The provisioner stages each project under `.boring-agent/sdk/python/<id>`, installs it into `.boring-agent/venv`, and exposes console scripts from `.boring-agent/bin`. File URL env values must point inside the Python project and are converted to runtime-visible SDK paths.
+The provisioner stages each project under `.boring-agent/sdk/python/<id>`, installs it into `.boring-agent/venv`, and may write managed shims under `.boring-agent/bin`. The harness-visible executables still come from the runtime PATH entries above. File URL env values must point inside the Python project and are converted to runtime-visible SDK paths.
 
 Reserved env keys (`BORING_AGENT_WORKSPACE_ROOT`, `VIRTUAL_ENV`, `HOME`, `PYTHONHOME`) cannot be set by plugins.
 
@@ -136,7 +139,7 @@ provisioning: {
 }
 ```
 
-Local packages are packed/installed into `.boring-agent/node`; managed bin shims are written to `.boring-agent/bin`. Multiple node packages are installed together so later packages do not prune earlier ones.
+Local packages are packed/installed into `.boring-agent/node`; managed bin shims may also be written to `.boring-agent/bin`. The harness-visible executables still come from `node/node_modules/.bin`. Multiple node packages are installed together so later packages do not prune earlier ones.
 
 ## vercel-sandbox
 
@@ -165,10 +168,12 @@ Linux only. Wraps tool execution in a `bubblewrap` sandbox. The workspace root i
 
 ```bash
 BORING_AGENT_MODE=local
-BORING_AGENT_WORKSPACE_ROOT=/home/ubuntu/projects/my-app
+BORING_AGENT_WORKSPACE_ROOT=/home/ubuntu/projects/my-app   # host config input
 ```
 
-The host workspace path is adapter-private. Model-facing cwd, file-tree root, and `BORING_AGENT_WORKSPACE_ROOT` should all be `/workspace`.
+The host workspace path is adapter-private. Inside the runtime/model-visible
+namespace, cwd, file-tree root, and `BORING_AGENT_WORKSPACE_ROOT` should all be
+`/workspace`.
 
 ## direct
 
@@ -183,11 +188,16 @@ In direct mode, host paths are expected: `runtimeCwd` is the real `BORING_AGENT_
 
 ## Workspace root
 
+Config input:
+
 ```bash
 BORING_AGENT_WORKSPACE_ROOT=/absolute/path/to/workspace
 ```
 
-When unset, defaults to the current working directory at server start.
+When unset, it defaults to the current working directory at server start.
+In `direct` mode this is also the model-visible workspace root. In isolated
+modes, the adapter maps that host path into the public runtime namespace
+(`/workspace`).
 
 ## Adding a custom runtime mode
 
@@ -201,9 +211,9 @@ throws for unknown ids, telling you to pass `runtimeModeAdapter`.
 ```ts
 interface RuntimeModeAdapter {
   id: string                                  // built-ins: 'direct' | 'local' | 'vercel-sandbox'
-  workspaceFsCapability?: 'strong' | 'weak'   // are workspace files on the host path before create()?
-                                              // remote backends must NOT claim 'strong' — composition
-                                              // layers use this to gate host-side fs checks
+  workspaceFsCapability?: Workspace['fsCapability']
+                                              // describes how much host-side fs access exists before create();
+                                              // remote backends must not claim strong host visibility
   create(ctx: ModeContext): Promise<RuntimeBundle>
   createProvisioningAdapter?(runtimeLayout, ctx?): WorkspaceProvisioningAdapter
   dispose?(): Promise<void>
@@ -226,7 +236,7 @@ lines: mkdir + template copy + `createNodeWorkspace` + `createBwrapSandbox`,
 paired on the same root). Tests to extend:
 `src/server/runtime/__tests__/resolveMode.test.ts`.
 
-Rules that must hold (see AGENTS.md invariants 3–5): the adapter owns path
-validation (reject `../`, absolute, symlink escapes — see
-`src/server/workspace/paths.ts`); Workspace + Sandbox swap as a pair; consumers
-receive `Workspace` as a parameter and never see raw paths.
+Rules that must hold: the adapter owns path validation (reject `../`,
+absolute, symlink escapes — see `src/server/workspace/paths.ts`); Workspace +
+Sandbox swap as a pair; consumers receive `Workspace` as a parameter and never
+see raw paths.
