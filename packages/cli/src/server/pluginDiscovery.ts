@@ -12,8 +12,8 @@ import {
   type WorkspacePluginPackagePiSnapshot,
 } from "@hachej/boring-workspace/app/server"
 import {
-  readPluginSourceRecords,
   resolvePluginSourceScopePaths,
+  resolveRegisteredPluginSourceDirs,
 } from "@hachej/boring-ui-plugin-cli"
 
 /**
@@ -86,9 +86,13 @@ export function resolveCliBoringPluginDirs(
   const globalAgentRoot = getGlobalPiAgentRoot(options)
   const globalScope = resolvePluginSourceScopePaths("global", { globalRoot: globalAgentRoot })
   const localScope = resolvePluginSourceScopePaths("local", { workspaceRoot: resolvedWorkspaceRoot })
+  // Resolved WITHOUT validation: registered sources are passed to the
+  // scanner as-is (flagged `registered`) so a broken one — deleted dir,
+  // stripped package.json — produces a visible preflight error instead
+  // of silently dropping the plugin.
   const packageSources = [
-    ...readPluginSourceRecords(globalScope),
-    ...readPluginSourceRecords(localScope),
+    ...resolveRegisteredPluginSourceDirs(globalScope).map((dir) => ({ ...dir, scope: "global" as const })),
+    ...resolveRegisteredPluginSourceDirs(localScope).map((dir) => ({ ...dir, scope: "local" as const })),
   ]
   const includeDefaultPackages = options.includeDefaultPackages ?? true
   const roots: BoringPluginSourceInput[] = [
@@ -104,6 +108,7 @@ export function resolveCliBoringPluginDirs(
     ...packageSources.map((record): BoringPluginSourceInput => ({
       rootDir: record.rootDir,
       kind: "external",
+      registered: true,
       ...(record.scope === "local" ? { workspaceId: resolvedWorkspaceRoot } : {}),
     })),
   ]
