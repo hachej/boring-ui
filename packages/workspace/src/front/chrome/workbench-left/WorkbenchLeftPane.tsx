@@ -86,6 +86,10 @@ export function WorkbenchLeftPane({
   const [query, setQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const [chromeActionsElement, setChromeActionsElement] = useState<HTMLDivElement | null>(null)
+  const setChromeActionsRef = useCallback((node: HTMLDivElement | null) => {
+    setChromeActionsElement(node)
+  }, [])
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   useEffect(() => {
@@ -153,9 +157,10 @@ export function WorkbenchLeftPane({
       query: debouncedQuery,
       searchQuery: debouncedQuery || undefined,
       chromeless: true,
+      chromeActionsElement,
       revealFileTreeRequest,
     }),
-    [bridge, debouncedQuery, revealFileTreeRequest, rootDir],
+    [bridge, chromeActionsElement, debouncedQuery, revealFileTreeRequest, rootDir],
   )
 
   // Workspace categories live on a quiet icon rail. The active category
@@ -232,6 +237,11 @@ export function WorkbenchLeftPane({
                 </IconButton>
               </ControlTooltip>
             )}
+            <div
+              ref={setChromeActionsRef}
+              className="flex shrink-0 items-center gap-1"
+              data-boring-workspace-part="left-tab-chrome-actions"
+            />
           </div>
         )}
 

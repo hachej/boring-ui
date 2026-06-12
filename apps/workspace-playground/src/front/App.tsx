@@ -4,6 +4,7 @@ import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
 import { WorkspaceProvider } from "@hachej/boring-workspace"
 import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation } from "@hachej/boring-workspace/app/front"
 import { askUserPlugin } from "@hachej/boring-ask-user/front"
+import playgroundDataCatalogPlugin from "../plugins/playgroundDataCatalog/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
 
 function isShowcaseRoute(): boolean {
@@ -40,7 +41,7 @@ const playgroundDeckPlugin = createDeckPlugin({
   },
 })
 
-const workspacePlugins = [askUserPlugin, playgroundDeckPlugin]
+const workspacePlugins = [playgroundDataCatalogPlugin, askUserPlugin, playgroundDeckPlugin]
 
 function WorkspaceFullPageShell() {
   const parsed = parseFullPagePanelLocation(window.location.search)
