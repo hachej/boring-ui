@@ -66,6 +66,14 @@ describe('SlashCommandPicker', () => {
     expect(screen.queryByText('/reload')).toBeNull()
   })
 
+  it('keeps the filter bar visible even when there is only one command group', () => {
+    render(<SlashCommandPicker query="" commands={[commands[3]]} onSelect={() => {}} onDismiss={() => {}} />)
+
+    expect(screen.getByRole('tablist', { name: 'Filter by plugin' })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'All' })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'built-in' })).toBeTruthy()
+  })
+
   it('wraps selection with arrow keys from the search input', () => {
     render(<SlashCommandPicker query="" commands={commands} onSelect={() => {}} onDismiss={() => {}} />)
     const options = () => Array.from(document.querySelectorAll('[role="option"]'))
