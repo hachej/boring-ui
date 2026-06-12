@@ -114,6 +114,14 @@ function collectRuntimeDiagnostics(pluginId: string, body: unknown): { events: S
   if (!plugin) return { events }
   if (typeof plugin.serverLoadedRevision === "number") revision = plugin.serverLoadedRevision
   if (typeof plugin.serverError === "string") events.push(event("PLUGIN_SERVER_ERROR", plugin.serverError))
+  // Browser-reported front import failure. The server-side scan/transform is
+  // green for these, so without surfacing the front error the self-test would
+  // pass even though the plugin never renders in the UI.
+  if (isObject(plugin.frontError)) {
+    if (typeof plugin.frontError.revision === "number") revision = plugin.frontError.revision
+    const message = typeof plugin.frontError.message === "string" ? plugin.frontError.message : "front module failed to load"
+    events.push(event("PLUGIN_FRONT_ERROR", message))
+  }
   if (isObject(plugin.host)) {
     if (typeof plugin.host.revision === "number") revision = plugin.host.revision
     const code = typeof plugin.host.lastErrorCode === "string" ? plugin.host.lastErrorCode : "PLUGIN_RUNTIME_HOST_ERROR"

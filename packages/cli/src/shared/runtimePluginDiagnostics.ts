@@ -25,6 +25,14 @@ export interface RuntimePluginHostSnapshot {
   recent: PluginFrontRuntimeDiagnostic[]
 }
 
+export interface RuntimePluginFrontError {
+  pluginId: string
+  revision: number
+  message: string
+  url?: string
+  reportedAt: number
+}
+
 export interface RuntimePluginServerSnapshotEntry {
   id: string
   version?: string
@@ -33,6 +41,7 @@ export interface RuntimePluginServerSnapshotEntry {
   frontTarget?: BoringPluginFrontTarget
   serverLoadedRevision?: number
   serverError?: string
+  frontError?: RuntimePluginFrontError
   host?: RuntimePluginHostSnapshot
 }
 

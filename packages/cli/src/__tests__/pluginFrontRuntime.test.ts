@@ -925,4 +925,91 @@ describe("pluginFrontRuntime", () => {
       await app.close()
     }
   }, 20_000)
+
+  test("serves a CommonJS plugin dependency as browser-evaluable ESM with interop", async () => {
+    const pluginRoot = await makeTempDir("plugin-front-runtime-cjs-interop-")
+    const plugin = await writeRuntimePlugin(pluginRoot, {
+      "front/index.tsx": 'import { getVal } from "cjs-lib/compat/get"\nexport const answer = getVal\n',
+      "node_modules/cjs-lib/package.json": JSON.stringify({ name: "cjs-lib", version: "1.0.0", main: "index.js" }),
+      "node_modules/cjs-lib/index.js": "module.exports = { hi: 1 }\n",
+      // CJS that re-exports through a nested require() — both the bare
+      // `module.exports`/`exports` globals AND the synchronous require() must be
+      // shimmed for the browser, or the whole importing graph dies.
+      "node_modules/cjs-lib/compat/get.js": 'module.exports.getVal = require("../dist/inner.js").value;\n',
+      "node_modules/cjs-lib/dist/inner.js": 'Object.defineProperty(exports, "__esModule", { value: true });\nexports.value = "DEEP-CJS-VALUE";\n',
+    })
+
+    const host = await createPluginFrontRuntimeHost()
+    const app = fastify({ logger: false })
+    await host.registerRoutes(app)
+    host.trackPlugin({ workspaceId: "workspace-a", plugin, revision: 1, frontEntrySubpath: "front/index.tsx" })
+
+    try {
+      const entry = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/index.tsx`,
+      })
+      expect(entry.statusCode, entry.body).toBe(200)
+      const depPath = entry.body.match(new RegExp(`"(${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/[^"']*)"`))?.[1]
+      expect(depPath, entry.body).toBeTruthy()
+
+      const dep = await app.inject({ method: "GET", url: depPath! })
+      expect(dep.statusCode, dep.body).toBe(200)
+      // The served module must be real ESM the browser can evaluate: a default
+      // export, the lexer-detected named export, and the nested require()
+      // rewritten to a hoisted proxy import (never a bare top-level require()).
+      expect(dep.body).toContain("export default")
+      expect(dep.body).toContain("export const getVal")
+      expect(dep.body).toMatch(new RegExp(`import \\* as [^\\n]*from "${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/`))
+      // No un-shimmed top-level CJS globals leak out (the only `module.exports`
+      // text left is inside the wrapped IIFE that receives them as parameters).
+      const beforeWrapper = dep.body.slice(0, dep.body.indexOf("(function (module, exports, require)"))
+      expect(beforeWrapper).not.toMatch(/\bmodule\.exports\b/)
+      expect(beforeWrapper).not.toMatch(/\bexports\./)
+
+      // The deep nested require() target is itself served as interop'd ESM.
+      const innerPath = dep.body.match(new RegExp(`"(${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/[^"']*inner[^"']*)"`))?.[1]
+      expect(innerPath, dep.body).toBeTruthy()
+      const inner = await app.inject({ method: "GET", url: innerPath! })
+      expect(inner.statusCode, inner.body).toBe(200)
+      expect(inner.body).toContain("DEEP-CJS-VALUE")
+      expect(inner.body).toContain("export default")
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
+
+  test("resolves a dependency subpath to the actual subpath file, not the package main", async () => {
+    const pluginRoot = await makeTempDir("plugin-front-runtime-subpath-")
+    const plugin = await writeRuntimePlugin(pluginRoot, {
+      "front/index.tsx": 'import { value } from "sub-lib/es6"\nexport const answer = value\n',
+      "node_modules/sub-lib/package.json": JSON.stringify({ name: "sub-lib", version: "1.0.0", main: "lib/index.js", module: "es6/index.js" }),
+      "node_modules/sub-lib/lib/index.js": 'export const value = "MAIN-SHOULD-NOT-LOAD"\n',
+      "node_modules/sub-lib/es6/index.js": 'export const value = "ES6-SUBPATH-LOADED"\n',
+    })
+
+    const host = await createPluginFrontRuntimeHost()
+    const app = fastify({ logger: false })
+    await host.registerRoutes(app)
+    host.trackPlugin({ workspaceId: "workspace-a", plugin, revision: 1, frontEntrySubpath: "front/index.tsx" })
+
+    try {
+      const entry = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/index.tsx`,
+      })
+      expect(entry.statusCode, entry.body).toBe(200)
+      const depPath = entry.body.match(new RegExp(`"(${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/[^"']*)"`))?.[1]
+      expect(depPath, entry.body).toBeTruthy()
+
+      const dep = await app.inject({ method: "GET", url: depPath! })
+      expect(dep.statusCode, dep.body).toBe(200)
+      // The bare `sub-lib/es6` specifier must resolve to es6/index.js — the
+      // subpath the import named — and never collapse to the package main.
+      expect(dep.body).toContain("ES6-SUBPATH-LOADED")
+      expect(dep.body).not.toContain("MAIN-SHOULD-NOT-LOAD")
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
 })

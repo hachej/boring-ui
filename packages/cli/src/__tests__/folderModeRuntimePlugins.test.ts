@@ -158,6 +158,57 @@ describe("folder mode runtime plugin wiring", () => {
     }
   }, 20_000)
 
+  test("browser-reported front import errors surface in runtime-plugin-diagnostics", async () => {
+    const homeRoot = await makeTempDir("boring-cli-folder-fronterr-home-")
+    const workspaceRoot = await makeTempDir("boring-cli-folder-fronterr-workspace-")
+    process.env.HOME = homeRoot
+
+    const globalPlugin = join(homeRoot, ".pi", "agent", "extensions", "broken-front")
+    await writePlugin(globalPlugin, "broken-front")
+
+    const app = await createFolderModeApp({
+      workspaceRoot,
+      mode: "direct",
+      provisionWorkspace: false,
+    })
+
+    try {
+      // Malformed report is rejected.
+      const bad = await app.inject({
+        method: "POST",
+        url: "/api/v1/agent-plugins/broken-front/front-error",
+        payload: { revision: 2 },
+      })
+      expect(bad.statusCode).toBe(400)
+
+      // A valid browser report is accepted and stored.
+      const report = await app.inject({
+        method: "POST",
+        url: "/api/v1/agent-plugins/broken-front/front-error",
+        payload: { revision: 2, message: "exports is not defined", url: "/runtime/broken.mjs" },
+      })
+      expect(report.statusCode).toBe(204)
+
+      const diagnostics = await app.inject({ method: "GET", url: "/api/v1/runtime-plugin-diagnostics" })
+      expect(diagnostics.statusCode).toBe(200)
+      expect(diagnostics.json()).toMatchObject({
+        plugins: expect.arrayContaining([
+          expect.objectContaining({
+            id: "broken-front",
+            frontError: expect.objectContaining({
+              pluginId: "broken-front",
+              revision: 2,
+              message: "exports is not defined",
+              url: "/runtime/broken.mjs",
+            }),
+          }),
+        ]),
+      })
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
+
   test("workspace-local collection plugin shadows global collection plugin in folder mode app", async () => {
     const homeRoot = await makeTempDir("boring-cli-folder-shadow-home-")
     const workspaceRoot = await makeTempDir("boring-cli-folder-shadow-workspace-")

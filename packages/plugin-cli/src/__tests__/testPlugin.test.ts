@@ -1,6 +1,6 @@
 import Fastify from "fastify"
 import { afterEach, describe, expect, test } from "vitest"
-import { runPluginSelfTest } from "../server/testPlugin"
+import { formatSelfTestResult, runPluginSelfTest } from "../server/testPlugin"
 
 const apps: Array<{ close: () => Promise<unknown> }> = []
 
@@ -105,6 +105,37 @@ describe("runPluginSelfTest", () => {
     const result = await runPluginSelfTest({ pluginId: "demo", url, timeoutMs: 1000 })
     expect(opened).toBe(true)
     expect(result.ok).toBe(true)
+  })
+
+  test("fails with the captured front import error reported by the browser", async () => {
+    const url = await startApp((app) => {
+      app.post("/api/v1/agent/reload", async () => ({ ok: true, diagnostics: [] }))
+      // Server scan is green, but the browser reported the front module failed
+      // to evaluate — the self-test must surface it and fail.
+      app.get("/api/v1/runtime-plugin-diagnostics", async () => ({
+        workspaceId: "ws",
+        plugins: [
+          {
+            id: "demo",
+            serverLoadedRevision: 3,
+            frontError: { pluginId: "demo", revision: 3, message: "exports is not defined", reportedAt: Date.now() },
+          },
+        ],
+      }))
+      app.post("/api/v1/ui/commands", async () => ({ seq: 1, status: "ok" }))
+      // Pane never mounts (the front import failed), so it stays missing.
+      app.get("/api/v1/ui/panels/status", async () => ({ ok: true, connected: true, state: "missing" }))
+    })
+
+    const result = await runPluginSelfTest({ pluginId: "demo", url, timeoutMs: 800 })
+    expect(result.ok).toBe(false)
+    expect(result.revision).toBe(3)
+    expect(result.reloadErrors).toContainEqual(
+      expect.objectContaining({ code: "PLUGIN_FRONT_ERROR", message: "exports is not defined" }),
+    )
+    const formatted = formatSelfTestResult(result)
+    expect(formatted).toContain("FAIL demo")
+    expect(formatted).toContain("PLUGIN_FRONT_ERROR: exports is not defined")
   })
 
   test("opens the panel and returns ready status", async () => {
