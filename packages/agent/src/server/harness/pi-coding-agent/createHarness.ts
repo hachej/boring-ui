@@ -355,6 +355,11 @@ export function createPiCodingAgentHarness(opts: {
   getPiSessionAdapter(input: SendMessageInput, ctx: RunContext): Promise<PiAgentSessionAdapter>;
   hasPiSession(sessionId: string): boolean;
 } {
+  // Normalize at the true boundary: direct callers and custom harnessFactory
+  // hosts get the canonical discovery policy even if they never heard of
+  // withPiHarnessDefaults. Idempotent for the built-in factories, which
+  // already pass defaulted options.
+  const pi = withPiHarnessDefaults(opts.pi);
   const sessionStore = new PiSessionStore(opts.runtimeCwd ?? opts.cwd, {
     sessionNamespace: opts.sessionNamespace,
     sessionDir: opts.sessionDir,
@@ -370,22 +375,22 @@ export function createPiCodingAgentHarness(opts: {
   const effectivePackages: PiPackageSource[] = []
   const effectiveExtensionPaths: string[] = []
   const refreshEffectiveResources = (): void => {
-    const dynamic = opts.pi?.getHotReloadableResources?.() ?? {}
+    const dynamic = pi.getHotReloadableResources?.() ?? {}
     effectiveSkillPaths.splice(
       0,
       effectiveSkillPaths.length,
-      ...(opts.pi?.additionalSkillPaths ?? []),
+      ...(pi.additionalSkillPaths ?? []),
       ...(dynamic.additionalSkillPaths ?? []),
     )
     effectivePackages.splice(
       0,
       effectivePackages.length,
-      ...mergePiPackageSources(opts.pi?.packages ?? [], dynamic.packages ?? []),
+      ...mergePiPackageSources(pi.packages ?? [], dynamic.packages ?? []),
     )
     effectiveExtensionPaths.splice(
       0,
       effectiveExtensionPaths.length,
-      ...(opts.pi?.extensionPaths ?? []),
+      ...(pi.extensionPaths ?? []),
       ...(dynamic.extensionPaths ?? []),
     )
   }
@@ -484,7 +489,7 @@ export function createPiCodingAgentHarness(opts: {
     const extensionFactories = [
       toolErrorResultExtension,
       ...(dynamicPromptExtension ? [dynamicPromptExtension] : []),
-      ...(opts.pi?.extensionFactories ?? []),
+      ...(pi.extensionFactories ?? []),
     ]
     const settingsManager = createResourceSettingsManager(
       opts.cwd,
@@ -498,8 +503,8 @@ export function createPiCodingAgentHarness(opts: {
       appendSystemPromptOverride: (base: string[]) => [...base, composedSystemPromptAppend],
       ...(effectiveExtensionPaths.length ? { additionalExtensionPaths: effectiveExtensionPaths } : {}),
       ...(extensionFactories.length ? { extensionFactories } : {}),
-      ...(opts.pi?.noContextFiles ? { noContextFiles: true } : {}),
-      ...(opts.pi?.noSkills ? { noSkills: true } : {}),
+      ...(pi.noContextFiles ? { noContextFiles: true } : {}),
+      ...(pi.noSkills ? { noSkills: true } : {}),
       ...(effectiveSkillPaths.length ? { additionalSkillPaths: effectiveSkillPaths } : {}),
       // skillsOverride REPLACES Pi's resolved skill set, which includes
       // skills contributed by host-declared pi packages (e.g.
@@ -508,7 +513,7 @@ export function createPiCodingAgentHarness(opts: {
       // Passing additionalSkillPaths is not, by itself, a request to throw
       // away package skills — those should keep flowing through Pi's loader
       // and merge with the additional paths.
-      ...(opts.pi?.noSkills
+      ...(pi.noSkills
         ? {
             skillsOverride: () =>
               loadSkills({
