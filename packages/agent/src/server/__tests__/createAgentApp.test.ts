@@ -198,6 +198,46 @@ test('createAgentApp can use a custom harness factory for non-pi runtimes', asyn
   }
 })
 
+test('POST /api/v1/agent/reload surfaces harness resource diagnostics', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-reload-diagnostics-')
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    harnessFactory: vi.fn(async () => ({
+      id: 'diagnostics-harness',
+      placement: 'server' as const,
+      sessions: {
+        async list() { return [] },
+        async create() {
+          const now = new Date().toISOString()
+          return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0 }
+        },
+        async load() {
+          const now = new Date().toISOString()
+          return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0, messages: [] }
+        },
+        async delete() {},
+      },
+      reloadSession: async () => true,
+      getResourceDiagnostics: () => [
+        { source: 'pi-skills', message: 'bad SKILL.md', path: 'skills/broken' },
+      ],
+    })),
+  })
+  try {
+    const res = await app.inject({ method: 'POST', url: '/api/v1/agent/reload', payload: { sessionId: 'custom' } })
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.reloaded).toBe(true)
+    expect(body.diagnostics).toEqual([
+      { source: 'pi-skills', message: 'bad SKILL.md' },
+    ])
+  } finally {
+    await app.close()
+  }
+})
+
 test('GET /api/v1/agent/commands reports command discovery failures', async () => {
   const workspaceRoot = await makeTempDir('boring-ui-command-route-failure-')
   const app = await createAgentApp({
@@ -277,6 +317,7 @@ test('POST /api/v1/agent/reload includes beforeReload restart warnings and diagn
       ],
       diagnostics: [
         { source: 'directory (/plugin)', pluginId: 'broken-plugin', message: 'syntax error' },
+        { source: 'reload', message: 'No live agent session to reload yet — changes apply to the next session.' },
       ],
     })
   } finally {
@@ -556,7 +597,14 @@ test('POST /api/v1/agent/reload is available before first turn', async () => {
     })
 
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ ok: true, sessionId: 'default', reloaded: false })
+    expect(res.json()).toEqual({
+      ok: true,
+      sessionId: 'default',
+      reloaded: false,
+      diagnostics: [
+        { source: 'reload', message: 'No live agent session to reload yet — changes apply to the next session.' },
+      ],
+    })
   } finally {
     await app.close()
   }

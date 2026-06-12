@@ -103,8 +103,12 @@ export function skillsRoutes(
       }))
       cached.set(cacheKey, { skills, expiresAt: now + CACHE_TTL_MS })
       return reply.code(200).send({ skills })
-    } catch {
-      return reply.code(200).send({ skills: [] })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      request.log.warn({ err: error }, '[agent] failed to load skills')
+      // Still 200 so the slash-command picker keeps working; the `error`
+      // field makes the failure observable to callers that inspect it.
+      return reply.code(200).send({ skills: [], error: message })
     }
   })
 

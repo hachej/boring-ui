@@ -34,6 +34,12 @@ export interface ReloadRoutesOptions {
     | ReloadHookResult
     | undefined
     | Promise<void | ReloadHookResult | undefined>
+  /**
+   * Called with the combined diagnostics (hook + harness resource
+   * diagnostics) after a reload, so a host can stash them for the
+   * `plugin_diagnostics` tool to replay to the agent.
+   */
+  onDiagnostics?: (diagnostics: ReloadHookDiagnostic[]) => void
 }
 
 interface ReloadBody {
@@ -55,13 +61,27 @@ export function reloadRoutes(
       const hookResult = await opts.beforeReload?.()
       const reloaded = await opts.harness.reloadSession(sessionId)
       const restart_warnings = hookResult?.restart_warnings
-      const diagnostics = hookResult?.diagnostics
+      const diagnostics: ReloadHookDiagnostic[] = [
+        ...(hookResult?.diagnostics ?? []),
+        ...(opts.harness.getResourceDiagnostics?.(sessionId) ?? []).map((d) => ({
+          source: d.source,
+          // The harness already folds the path into the message.
+          message: d.message,
+        })),
+      ]
+      if (!reloaded) {
+        diagnostics.push({
+          source: "reload",
+          message: "No live agent session to reload yet — changes apply to the next session.",
+        })
+      }
+      opts.onDiagnostics?.(diagnostics)
       return {
         ok: true,
         sessionId,
         reloaded,
         ...(restart_warnings && restart_warnings.length > 0 ? { restart_warnings } : {}),
-        ...(diagnostics && diagnostics.length > 0 ? { diagnostics } : {}),
+        ...(diagnostics.length > 0 ? { diagnostics } : {}),
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

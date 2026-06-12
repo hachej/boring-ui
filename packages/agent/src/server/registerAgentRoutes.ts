@@ -45,6 +45,7 @@ import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
 import type { AgentHarness } from '../shared/harness'
 import { HarnessPiChatService } from './pi-chat/harnessPiChatService'
+import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_WORKSPACE_ID = 'default'
@@ -106,6 +107,12 @@ interface RuntimeBinding {
   readyTracker: ReadyStatusTracker
   piChatService?: HarnessPiChatService
   lastHealthCheckMs?: number
+  /**
+   * Diagnostics from the most recent /api/v1/agent/reload (merged hook +
+   * harness resource diagnostics). Stashed so the `plugin_diagnostics` tool
+   * can replay them to the agent.
+   */
+  lastReloadDiagnostics?: Array<{ source: string; message: string; pluginId?: string }>
 }
 
 interface RuntimeBindingEntry {
@@ -311,6 +318,15 @@ export interface RegisterAgentRoutesOptions {
     workspaceRoot: string
     request: FastifyRequest
   }) => void | ReloadHookResult | undefined | Promise<void | ReloadHookResult | undefined>
+  /**
+   * Optional host callback returning current plugin/skill load diagnostics
+   * for a workspace. Surfaced by the `plugin_diagnostics` agent tool so the
+   * model can iterate on plugin/skill load errors after a /reload.
+   */
+  getPluginDiagnostics?: (args: {
+    workspaceId: string
+    workspaceRoot: string
+  }) => Promise<Array<{ source: string; message: string; pluginId?: string }>>
 }
 
 /**
@@ -557,6 +573,17 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       }),
       ...buildFilesystemAgentTools(runtimeBundle),
       ...buildUploadAgentTools(runtimeBundle),
+      createPluginDiagnosticsTool({
+        // `binding` is assigned later in this function; read through thunks.
+        getLastReloadDiagnostics: () => binding?.lastReloadDiagnostics ?? [],
+        getHarness: () => binding?.harness,
+        ...(opts.getPluginDiagnostics
+          ? {
+              getPluginErrors: () =>
+                opts.getPluginDiagnostics!({ workspaceId, workspaceRoot: root }),
+            }
+          : {}),
+      }),
     ]
     const pluginTools: PluginToolRegistration[] = []
 
@@ -947,13 +974,31 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       const reloadSessionId = request.body?.sessionId || sessionId
       const reloaded = await binding.harness.reloadSession(reloadSessionId)
       const restart_warnings = hookResult?.restart_warnings
-      const diagnostics = hookResult?.diagnostics
+      const diagnostics: Array<{ source: string; message: string; pluginId?: string }> = [
+        ...(hookResult?.diagnostics ?? []),
+        ...(binding.harness.getResourceDiagnostics?.(reloadSessionId) ?? []).map((d) => ({
+          source: d.source,
+          // The harness already folds the path into the message (front only
+          // renders `.message`).
+          message: d.message,
+        })),
+      ]
+      // If the harness reported nothing reloaded (no live agent session yet),
+      // surface a note so a "/reload had no effect" state is observable rather
+      // than looking like a clean reload.
+      if (!reloaded) {
+        diagnostics.push({
+          source: 'reload',
+          message: 'No live agent session to reload yet — changes apply to the next session.',
+        })
+      }
+      binding.lastReloadDiagnostics = diagnostics
       return {
         ok: true,
         sessionId: reloadSessionId,
         reloaded,
         ...(restart_warnings && restart_warnings.length > 0 ? { restart_warnings } : {}),
-        ...(diagnostics && diagnostics.length > 0 ? { diagnostics } : {}),
+        ...(diagnostics.length > 0 ? { diagnostics } : {}),
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

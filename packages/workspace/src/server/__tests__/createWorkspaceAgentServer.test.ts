@@ -667,7 +667,11 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
         diagnostics?: unknown[]
       }
       expect(body.ok).toBe(true)
-      expect(body.diagnostics).toBeUndefined()
+      // Session "missing" has no live agent session, so the only diagnostic is
+      // the "nothing reloaded yet" note.
+      expect(body.diagnostics).toEqual([
+        { source: "reload", message: "No live agent session to reload yet — changes apply to the next session." },
+      ])
       expect(body.restart_warnings).toEqual([
         expect.objectContaining({
           id: "reload-warning-plugin",
