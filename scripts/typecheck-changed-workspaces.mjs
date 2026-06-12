@@ -101,12 +101,20 @@ function closure(seeds, graph) {
 }
 
 const checkNames = closure(changedNames, dependentsByName)
+function hasScript(name, scriptName) {
+  const workspace = workspaceByName.get(name)
+  if (!workspace) return false
+  const manifest = workspaceManifest(workspace)
+  return Boolean(manifest.scripts?.[scriptName])
+}
+
 const buildNames = new Set(
   [...closure(checkNames, depsByName)].filter((name) => {
     const workspace = workspaceByName.get(name)
-    return workspace && !workspace.rel.startsWith('apps/')
+    return workspace && !workspace.rel.startsWith('apps/') && hasScript(name, 'build')
   }),
 )
+const typecheckNames = new Set([...checkNames].filter((name) => hasScript(name, 'typecheck')))
 
 function filters(names) {
   return [...names].sort().flatMap((name) => ['--filter', name])
@@ -114,7 +122,12 @@ function filters(names) {
 
 console.log(`typecheck-changed: changed=${[...changedNames].sort().join(', ')}`)
 console.log(`typecheck-changed: checking changed packages + dependents=${[...checkNames].sort().join(', ')}`)
-console.log(`typecheck-changed: prebuilding package/plugin dependencies=${[...buildNames].sort().join(', ')}`)
+console.log(`typecheck-changed: typecheck-capable workspaces=${[...typecheckNames].sort().join(', ') || '(none)'}`)
+console.log(`typecheck-changed: prebuilding package/plugin dependencies=${[...buildNames].sort().join(', ') || '(none)'}`)
 
 if (buildNames.size > 0) run('pnpm', ['-r', ...filters(buildNames), `--workspace-concurrency=${concurrency}`, 'run', 'build'])
-run('pnpm', ['-r', ...filters(checkNames), `--workspace-concurrency=${concurrency}`, 'run', 'typecheck'])
+if (typecheckNames.size === 0) {
+  console.log(`typecheck-changed: no changed workspaces with typecheck scripts; skipping`)
+  process.exit(0)
+}
+run('pnpm', ['-r', ...filters(typecheckNames), `--workspace-concurrency=${concurrency}`, 'run', 'typecheck'])
