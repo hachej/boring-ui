@@ -58,12 +58,12 @@ describe("useFileEventInvalidation", () => {
     expect(calls.some((k) => k[2] === "search")).toBe(false)
   })
 
-  it("filesystem created (file) invalidates tree + files + stat", async () => {
+  it("filesystem created (file) invalidates parent tree listing + files + stat", async () => {
     renderHook(() => useFileEventInvalidation(), { wrapper: makeWrapper(qc) })
     events.emit(filesystemEvents.created, { ...userMeta(), path: "src/new.ts", kind: "file" })
 
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith({
-      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "tree"],
+      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "tree", "src"],
     }))
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "files", "src/new.ts"],
@@ -73,41 +73,44 @@ describe("useFileEventInvalidation", () => {
     })
   })
 
-  it("filesystem created (dir) invalidates tree only", async () => {
+  it("filesystem created (dir) invalidates the root tree listing only", async () => {
     renderHook(() => useFileEventInvalidation(), { wrapper: makeWrapper(qc) })
     events.emit(filesystemEvents.created, { ...userMeta(), path: "scripts", kind: "dir" })
 
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith({
-      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "tree"],
+      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "tree", "."],
     }))
     const calls = queryKeyCalls(invalidate)
     expect(calls.some((k) => k[2] === "stat")).toBe(false)
   })
 
-  it("filesystem moved invalidates tree + files(from,to) + search", async () => {
+  it("filesystem moved invalidates parent trees + files(from,to) + search", async () => {
     renderHook(() => useFileEventInvalidation(), { wrapper: makeWrapper(qc) })
-    events.emit(filesystemEvents.moved, { ...userMeta(), from: "old.ts", to: "new.ts" })
+    events.emit(filesystemEvents.moved, { ...userMeta(), from: "old.ts", to: "docs/new.ts" })
 
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith({
-      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "tree"],
+      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "tree", "."],
     }))
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "tree", "docs"],
+    })
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "files", "old.ts"],
     })
     expect(invalidate).toHaveBeenCalledWith({
-      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "files", "new.ts"],
+      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "files", "docs/new.ts"],
     })
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "search"],
     })
   })
 
-  it("filesystem deleted invalidates tree + files(path) + search", async () => {
+  it("filesystem deleted invalidates parent tree listing + files(path) + search", async () => {
     renderHook(() => useFileEventInvalidation(), { wrapper: makeWrapper(qc) })
     events.emit(filesystemEvents.deleted, { ...userMeta(), path: "doomed.ts" })
 
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith({
-      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "tree"],
+      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "tree", "."],
     }))
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "files", "doomed.ts"],
@@ -125,9 +128,10 @@ describe("useFileEventInvalidation", () => {
     }
 
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith({
-      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "tree"],
+      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "tree", "folder"],
     }))
     const calls = queryKeyCalls(invalidate)
+    // All 50 deletions share one parent dir → one coalesced tree key.
     expect(calls.filter((k) => k[2] === "tree")).toHaveLength(1)
     expect(calls.filter((k) => k[2] === "search")).toHaveLength(1)
     expect(calls.filter((k) => k[2] === "files")).toHaveLength(50)
