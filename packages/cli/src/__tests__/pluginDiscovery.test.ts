@@ -151,6 +151,7 @@ describe("plugin discovery helpers", () => {
       })).toContainEqual({
         rootDir: resolve(plugin),
         kind: "external",
+        registered: true,
         workspaceId: resolve(workspaceRoot),
       })
       const snapshot = readCliPluginPiSnapshot(workspaceRoot, {
@@ -179,7 +180,7 @@ describe("plugin discovery helpers", () => {
     }
   })
 
-  test("workspace-local Pi package sources ignore uninspectable package entries", async () => {
+  test("workspace-local Pi package sources surface broken local entries as load errors", async () => {
     const root = await makeTempDir("boring-cli-plugin-settings-uninspectable-")
     const workspaceRoot = join(root, "host-workspace")
     await writePiSettings(join(workspaceRoot, ".pi", "settings.json"), ["../missing", "npm:future-package"])
@@ -188,8 +189,13 @@ describe("plugin discovery helpers", () => {
       const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot: join(root, "global-extensions"), includeDefaultPackages: false })
       expect(snapshot.systemPromptAppend).toBeUndefined()
       const manager = createCliPluginAssetManager(workspaceRoot, { globalRoot: join(root, "global-extensions"), includeDefaultPackages: false })
-      await manager.load()
+      const result = await manager.load()
       expect(manager.list()).toEqual([])
+      // Remote specs (npm:) stay silent until installed; the registered
+      // local path that no longer exists must not vanish silently.
+      expect(result.errors).toEqual([expect.objectContaining({
+        message: expect.stringContaining("MISSING_PLUGIN_DIR"),
+      })])
     } finally {
       await rm(root, { recursive: true, force: true })
     }

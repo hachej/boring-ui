@@ -191,6 +191,24 @@ test("boring-ui-plugin list ignores uninspectable Pi package sources", async () 
   expect(JSON.parse(list.stdout).records).toEqual([])
 })
 
+test("resolveRegisteredPluginSourceDirs keeps broken local entries and skips remote specs", async () => {
+  const { resolvePluginSourceScopePaths, resolveRegisteredPluginSourceDirs } = await import("../index")
+  const root = await tempDir("boring-plugin-registered-dirs-")
+  const workspaceRoot = join(root, "host-workspace")
+  const validPlugin = join(workspaceRoot, "plugins", "valid-plugin")
+  await mkdir(join(workspaceRoot, ".pi"), { recursive: true })
+  await writeRuntimePlugin(validPlugin, "valid-plugin")
+  await writeFile(join(workspaceRoot, ".pi", "settings.json"), JSON.stringify({
+    packages: ["../plugins/valid-plugin", "../plugins/deleted-plugin", "npm:not-installed-yet"],
+  }), "utf8")
+
+  const scope = resolvePluginSourceScopePaths("local", { workspaceRoot })
+  expect(resolveRegisteredPluginSourceDirs(scope)).toEqual([
+    { source: "../plugins/valid-plugin", rootDir: resolve(validPlugin) },
+    { source: "../plugins/deleted-plugin", rootDir: resolve(workspaceRoot, "plugins", "deleted-plugin") },
+  ])
+})
+
 async function writeLocalDependency(dir: string, name: string): Promise<void> {
   await mkdir(dir, { recursive: true })
   await writeFile(join(dir, "package.json"), JSON.stringify({ name, version: "1.0.0", main: "index.js" }, null, 2), "utf8")
