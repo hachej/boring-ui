@@ -488,6 +488,34 @@ export function readPluginSourceRecordsForRoots(opts: {
   return [...readPluginSourceRecords(global), ...readPluginSourceRecords(local)]
 }
 
+export interface RegisteredPluginSourceDir {
+  /** Raw package source string as written in settings.json. */
+  source: string
+  /** Absolute directory the source resolves to (may not exist). */
+  rootDir: string
+}
+
+/**
+ * Resolve every local-path `packages` entry in the scope's settings.json
+ * to its directory WITHOUT validating the plugin root. Remote specs
+ * (npm:, git:, URLs) are skipped — their installed copies live under the
+ * scope's npm/git dirs, which hosts already scan directly.
+ *
+ * Unlike `readPluginSourceRecords`, broken entries are returned rather
+ * than dropped: hosts pass these dirs to the Boring plugin scanner with
+ * `registered: true`, so a deleted dir or stripped package.json surfaces
+ * as a preflight error in the plugin UI instead of the plugin silently
+ * vanishing.
+ */
+export function resolveRegisteredPluginSourceDirs(paths: PluginSourceScopePaths): RegisteredPluginSourceDir[] {
+  return packageEntries(readPiSettings(paths.settingsPath)).flatMap((entry) => {
+    const source = packageEntrySource(entry)
+    if (!source) return []
+    const rootDir = resolvePackageSourcePath(paths.baseDir, source)
+    return rootDir ? [{ source, rootDir }] : []
+  })
+}
+
 function upsertPackageSource(paths: PluginSourceScopePaths, record: PluginSourceRecord): boolean {
   const settings = readPiSettings(paths.settingsPath)
   const entries = packageEntries(settings)

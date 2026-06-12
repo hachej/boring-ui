@@ -16,6 +16,14 @@ export interface BoringPluginSource {
   rootDir: string
   kind: BoringPluginSourceKind
   workspaceId?: string
+  /**
+   * True when the user explicitly registered this directory as a plugin
+   * source (e.g. a `packages` entry in Pi settings.json). Registered
+   * sources that are missing, lack a package.json, or carry no plugin
+   * metadata surface as preflight errors instead of being silently
+   * skipped the way speculative scan roots are.
+   */
+  registered?: boolean
 }
 
 export type BoringPluginSourceInput = string | BoringPluginSource

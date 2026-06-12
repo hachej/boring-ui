@@ -15,6 +15,7 @@ export {
   readPluginSourceRecordsForRoots,
   removePluginSource,
   resolvePluginSourceScopePaths,
+  resolveRegisteredPluginSourceDirs,
 } from "./pluginSources"
 export type {
   InstallPluginSourceOptions,
@@ -26,6 +27,7 @@ export type {
   PluginSourceKind,
   PluginSourceRecord,
   PluginSourceScopePaths,
+  RegisteredPluginSourceDir,
   RemovePluginSourceOptions,
 } from "./pluginSources"
 
