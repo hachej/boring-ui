@@ -198,11 +198,11 @@ Near-term priorities:
 ### Plugins
 
 
-| Plugin                         | What it adds                                                                            | README                                                                   |
-| ------------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `@hachej/boring-ask-user`      | Agent-to-user question/answer surface and `ask_user` tool                               | [plugins/ask-user](plugins/ask-user/README.md)                           |
-| `@hachej/boring-data-explorer` | Searchable, faceted data tables — the primitive for explorer-style panels               | [plugins/data-explorer](plugins/data-explorer/README.md)                 |
-| `@hachej/boring-data-catalog`  | Configurable catalog tab built on `data-explorer`                                       | [plugins/data-catalog](plugins/data-catalog/README.md)                   |
+| Plugin                         | What it adds                                                                | README                                                                                 |
+| ------------------------------ | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `@hachej/boring-ask-user`      | Agent-to-user question/answer surface and `ask_user` tool                   | [plugins/ask-user](plugins/ask-user/README.md)                                         |
+| `@hachej/boring-data-explorer` | Searchable, faceted data tables — the primitive for explorer-style panels   | [plugins/data-explorer](plugins/data-explorer/README.md)                               |
+| `@hachej/boring-data-catalog`  | Configurable catalog tab built on `data-explorer`                           | [plugins/data-catalog](plugins/data-catalog/README.md)                                 |
 | App/internal plugin template   | Publishable package-plugin reference; create with `boring-ui-plugin create` | [packages/plugin-cli/templates/plugin](packages/plugin-cli/templates/plugin/README.md) |
 
 
