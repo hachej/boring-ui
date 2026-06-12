@@ -368,6 +368,13 @@ export function createPiCodingAgentHarness(opts: {
   }
   refreshEffectiveResources()
 
+  // Single-flight guard: concurrent cold callers for the same session (e.g.
+  // two browser tabs each opening /events + /state) must share one Pi session
+  // create. Without it both miss the `piSessions` cache, each run the ~seconds
+  // createAgentSession, and the loser's handle is overwritten — leaking a Pi
+  // session and breaking the single-writer guarantee.
+  const piSessionCreations = new Map<string, Promise<PiSessionHandle>>();
+
   async function getOrCreatePiSession(
     sessionId: string,
     input: SendMessageInput,
@@ -379,6 +386,27 @@ export function createPiCodingAgentHarness(opts: {
       return existing;
     }
 
+    const inFlight = piSessionCreations.get(sessionId);
+    if (inFlight) {
+      const handle = await inFlight;
+      await applyRequestedSessionOptions(handle, input);
+      return handle;
+    }
+
+    const creation = createPiSession(sessionId, input, ctx);
+    piSessionCreations.set(sessionId, creation);
+    try {
+      return await creation;
+    } finally {
+      if (piSessionCreations.get(sessionId) === creation) piSessionCreations.delete(sessionId);
+    }
+  }
+
+  async function createPiSession(
+    sessionId: string,
+    input: SendMessageInput,
+    ctx: RunContext,
+  ): Promise<PiSessionHandle> {
     // Auth/model credentials are Pi-owned. AuthStorage.create() lets Pi read
     // its normal environment/settings/auth sources; Boring does not pick a
     // provider credential itself.

@@ -48,6 +48,11 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly sessionStore: PiSessionStoreLike
   private readonly workdir: string
   private readonly channels = new Map<string, LiveSessionChannel>()
+  // Single-flight guard so concurrent cold callers (e.g. two browser tabs each
+  // opening /events while the session is still being created) converge on one
+  // LiveSessionChannel instead of racing through ensureChannel and orphaning
+  // the loser's adapter subscription.
+  private readonly channelCreations = new Map<string, Promise<LiveSessionChannel>>()
   private readonly messageMetadata = new PiChatMessageMetadataReconciler()
   private readonly activePromptRuns = new Map<string, Promise<void>>()
   private readonly syntheticPromptFailures = new Map<string, SyntheticPromptFailure[]>()
@@ -342,11 +347,41 @@ export class HarnessPiChatService implements PiChatSessionService {
   private async getChannel(ctx: PiSessionRequestContext, sessionId: string): Promise<LiveSessionChannel> {
     const existing = this.channels.get(sessionId)
     if (existing) return existing
-    const adapter = await this.getAdapter(ctx, sessionId, '')
-    return this.ensureChannel(ctx, sessionId, adapter)
+    return this.createChannelOnce(sessionId, () => this.getAdapter(ctx, sessionId, ''))
   }
 
   private async ensureChannel(ctx: PiSessionRequestContext, sessionId: string, adapter: PiAgentSessionAdapter): Promise<LiveSessionChannel> {
+    const existing = this.channels.get(sessionId)
+    if (existing) return existing
+    return this.createChannelOnce(sessionId, async () => adapter)
+  }
+
+  /**
+   * Resolve (or create) the single LiveSessionChannel for a session, coalescing
+   * concurrent cold callers onto one in-flight creation. Without this guard two
+   * tabs opening /events on a not-yet-live session both fall through the channel
+   * cache miss, build separate channels + adapter subscriptions, and the second
+   * `this.channels.set` orphans the first — so the first tab's stream silently
+   * stops receiving events.
+   */
+  private async createChannelOnce(sessionId: string, resolveAdapter: () => Promise<PiAgentSessionAdapter>): Promise<LiveSessionChannel> {
+    const inFlight = this.channelCreations.get(sessionId)
+    if (inFlight) return inFlight
+    const creation = (async () => {
+      const existing = this.channels.get(sessionId)
+      if (existing) return existing
+      const adapter = await resolveAdapter()
+      return this.buildChannel(sessionId, adapter)
+    })()
+    this.channelCreations.set(sessionId, creation)
+    try {
+      return await creation
+    } finally {
+      if (this.channelCreations.get(sessionId) === creation) this.channelCreations.delete(sessionId)
+    }
+  }
+
+  private buildChannel(sessionId: string, adapter: PiAgentSessionAdapter): LiveSessionChannel {
     const existing = this.channels.get(sessionId)
     if (existing) return existing
     const buffer = new PiChatReplayBuffer()
