@@ -108,6 +108,66 @@ describe('GET /api/v1/tree', () => {
     await app.close()
   })
 
+  test('recursive lists ignored dirs as entries but does not descend into them', async () => {
+    const workspace = createWorkspace({
+      '.': [
+        { name: 'src', kind: 'dir' },
+        { name: 'node_modules', kind: 'dir' },
+        { name: '.worktrees', kind: 'dir' },
+        { name: '.git', kind: 'dir' },
+      ],
+      'src': [{ name: 'index.ts', kind: 'file' }],
+      // These children must never be walked into:
+      'node_modules': [{ name: 'left-pad', kind: 'dir' }],
+      '.worktrees': [{ name: 'wt-1', kind: 'dir' }],
+      '.git': [{ name: 'HEAD', kind: 'file' }],
+    })
+    const app = await buildApp(workspace)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/tree?recursive=true',
+    })
+
+    expect(res.statusCode).toBe(200)
+    const paths = res.json().entries.map((e: any) => e.path)
+    // The ignored dirs themselves are still listed (entry-equivalence preserved).
+    expect(paths).toContain('node_modules')
+    expect(paths).toContain('.worktrees')
+    expect(paths).toContain('.git')
+    // Real source is still walked.
+    expect(paths).toContain('src/index.ts')
+    // But their contents are NOT walked.
+    expect(paths).not.toContain('node_modules/left-pad')
+    expect(paths).not.toContain('.worktrees/wt-1')
+    expect(paths).not.toContain('.git/HEAD')
+
+    await app.close()
+  })
+
+  test('non-recursive listing of an ignored dir still returns its children', async () => {
+    // Users can expand an ignored dir on demand via a non-recursive request.
+    const workspace = createWorkspace({
+      'node_modules': [
+        { name: 'left-pad', kind: 'dir' },
+        { name: '.package-lock.json', kind: 'file' },
+      ],
+    })
+    const app = await buildApp(workspace)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/tree?path=node_modules',
+    })
+
+    expect(res.statusCode).toBe(200)
+    const paths = res.json().entries.map((e: any) => e.path)
+    expect(paths).toContain('node_modules/left-pad')
+    expect(paths).toContain('node_modules/.package-lock.json')
+
+    await app.close()
+  })
+
   test('recursive respects max depth of 10', async () => {
     const tree: Record<string, Entry[]> = {}
     let current = '.'
