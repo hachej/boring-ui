@@ -276,6 +276,22 @@ describe("boring agent plugin assets", () => {
     expect(plugin.pi?.systemPrompt).toBe("Test plugin context")
   })
 
+  test("fails preflight when a declared pi.skills path does not exist", async () => {
+    const root = await tmp("boring-plugin-missing-skill-")
+    await writePlugin(root)
+    const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
+    pkg.pi.skills = ["skills/missing"]
+    await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
+
+    const result = preflightBoringPlugins([root])
+    expect(result.ok).toBe(false)
+    expect(result.errors[0]).toMatchObject({
+      code: "INVALID_PLUGIN_METADATA",
+      message: expect.stringContaining("skills/missing"),
+    })
+    expect(readBoringPlugins([root])).toEqual([])
+  })
+
   test("uses boring.id as explicit plugin id when provided", async () => {
     const root = await tmp("boring-plugin-explicit-id-")
     await writePlugin(root)

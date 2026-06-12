@@ -77,6 +77,7 @@ function handleScaffold(positionals: string[]): void {
   console.log("  3. bash `boring-ui-plugin verify` — confirms manifests + files are valid")
   console.log("  4. if the UI is open, bash `boring-ui-plugin test <name>` — catches panel render failures")
   console.log("  5. ask the user: /reload")
+  console.log("  6. after /reload, call the plugin_diagnostics tool to confirm no load errors — /reload reports plugin/skill errors there")
 }
 
 function handleVerify(positionals: string[]): void {

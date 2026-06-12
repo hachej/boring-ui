@@ -1,6 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify'
 import type { AgentTool } from '../shared/tool'
-import type { AgentHarnessFactory } from '../shared/harness'
+import type { AgentHarness, AgentHarnessFactory } from '../shared/harness'
 import type { TelemetrySink } from '../shared/telemetry'
 import { getEnv } from './config/env'
 import type { RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
@@ -31,6 +31,8 @@ import { gitRoutes } from './http/routes/git'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
 import { HarnessPiChatService } from './pi-chat/harnessPiChatService'
+import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
+import type { ReloadHookDiagnostic } from './http/routes/reload'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
@@ -86,6 +88,15 @@ export interface CreateAgentAppOptions {
    * the workspace plugin layer.
    */
   systemPromptDynamic?: () => string | undefined | Promise<string | undefined>
+  /**
+   * Optional host callback returning current plugin/skill load diagnostics
+   * for this workspace. Surfaced by the `plugin_diagnostics` agent tool so the
+   * model can iterate on plugin/skill load errors after a /reload.
+   */
+  getPluginDiagnostics?: (args: {
+    workspaceId: string
+    workspaceRoot: string
+  }) => Promise<Array<{ source: string; message: string; pluginId?: string }>>
 }
 
 export async function createAgentApp(
@@ -131,6 +142,12 @@ export async function createAgentApp(
     ],
   }
 
+  // Captured after the harness is built; read through thunks because the
+  // plugin_diagnostics tool is added to the tool catalog before the harness
+  // exists, and diagnostics accumulate on each /reload.
+  let harnessRef: AgentHarness | undefined
+  let lastReloadDiagnostics: ReloadHookDiagnostic[] = []
+
   const tools: AgentTool[] = [
     ...buildHarnessAgentTools(runtimeBundle, {
       getCurrent: () => {
@@ -141,6 +158,16 @@ export async function createAgentApp(
     ...(opts.disableDefaultFileTools ? [] : buildFilesystemAgentTools(runtimeBundle)),
     ...(opts.extraTools ?? []),
     ...pluginTools,
+    createPluginDiagnosticsTool({
+      getLastReloadDiagnostics: () => lastReloadDiagnostics,
+      getHarness: () => harnessRef,
+      ...(opts.getPluginDiagnostics
+        ? {
+            getPluginErrors: () =>
+              opts.getPluginDiagnostics!({ workspaceId: sessionId, workspaceRoot }),
+          }
+        : {}),
+    }),
   ]
 
   const harnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
@@ -160,6 +187,7 @@ export async function createAgentApp(
     systemPromptDynamic: opts.systemPromptDynamic,
     telemetry: opts.telemetry,
   })
+  harnessRef = harness
   const sessionChangesTracker = new InMemorySessionChangesTracker()
 
   const readyTracker = new ReadyStatusTracker({
@@ -222,7 +250,14 @@ export async function createAgentApp(
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })
   await app.register(commandsRoutes, { harness, defaultSessionId: sessionId, workdir: runtimeBundle.workspace.root })
-  await app.register(reloadRoutes, { harness, defaultSessionId: sessionId, beforeReload: opts.beforeReload })
+  await app.register(reloadRoutes, {
+    harness,
+    defaultSessionId: sessionId,
+    beforeReload: opts.beforeReload,
+    onDiagnostics: (diagnostics) => {
+      lastReloadDiagnostics = diagnostics
+    },
+  })
   await app.register(readyStatusRoutes, { tracker: readyTracker })
 
   return app

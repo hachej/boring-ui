@@ -540,6 +540,45 @@ export function createPiCodingAgentHarness(opts: {
       return piSessions.has(sessionId);
     },
 
+    /**
+     * Surface Pi's skill/extension load diagnostics for a session so silent
+     * load failures (bad SKILL.md, extension import errors) reach the UI and
+     * the agent. Returns [] when the session has no live pi session yet.
+     * The resourceLoader getters are synchronous.
+     */
+    getResourceDiagnostics(sessionId: string): Array<{ source: string; message: string; path?: string }> {
+      const handle = piSessions.get(sessionId);
+      if (!handle) return [];
+      const out: Array<{ source: string; message: string; path?: string }> = [];
+      // Pi can emit the same diagnostic once per skill-path source, and its
+      // messages often embed the path already — append it only when missing
+      // and de-duplicate on the final (source, message) pair.
+      const seen = new Set<string>();
+      const push = (entry: { source: string; message: string; path?: string }) => {
+        const key = `${entry.source}\n${entry.message}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push(entry);
+      };
+      for (const diagnostic of handle.resourceLoader.getSkills().diagnostics) {
+        push({
+          source: "pi-skills",
+          message: diagnostic.path && !diagnostic.message.includes(diagnostic.path)
+            ? `${diagnostic.message} (${diagnostic.path})`
+            : diagnostic.message,
+          ...(diagnostic.path ? { path: diagnostic.path } : {}),
+        });
+      }
+      for (const error of handle.resourceLoader.getExtensions().errors) {
+        push({
+          source: "pi-extensions",
+          message: error.error.includes(error.path) ? error.error : `${error.error} (${error.path})`,
+          path: error.path,
+        });
+      }
+      return out;
+    },
+
     reloadSession: reloadPiSession,
 
     async getSlashCommands(sessionId: string, ctx: RunContext): Promise<ReadonlyArray<AgentSlashCommandSummary>> {

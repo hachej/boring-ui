@@ -762,6 +762,18 @@ export async function createWorkspaceAgentServer(
         ...(mergedDiagnostics.length > 0 ? { diagnostics: mergedDiagnostics } : {}),
       }
     },
+    getPluginDiagnostics: async () => [
+      ...boringAssetManager.getErrors().map((error) => ({
+        source: "plugin-load",
+        message: error.message,
+        ...(error.id ? { pluginId: error.id } : {}),
+      })),
+      ...boringAssetManager.preflight().errors.map((error) => ({
+        source: "plugin-preflight",
+        message: `${error.code}: ${error.message} (${error.pluginDir})`,
+        ...(error.pluginId ? { pluginId: error.pluginId } : {}),
+      })),
+    ],
     runtimeProvisioning: currentRuntimeProvisioning,
     getRuntimeProvisioning: () => currentRuntimeProvisioning,
     pi: {
