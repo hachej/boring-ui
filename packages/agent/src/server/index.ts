@@ -84,6 +84,21 @@ export {
 } from './piPackages'
 export { registerAgentRoutes } from './registerAgentRoutes'
 export type { RegisterAgentRoutesOptions } from './registerAgentRoutes'
+export type {
+  AgentMeteringSink,
+  MeteringErrorLogger,
+  MeteringReleaseInput,
+  MeteringReleaseReason,
+  MeteringReservationResult,
+  MeteringReserveInput,
+  MeteringRunKind,
+  MeteringRunScope,
+  MeteringRunStatus,
+  MeteringSettleInput,
+  MeteringUsage,
+  MeteringUsageInput,
+} from './pi-chat/metering'
+export { normalizeMeteringUsage } from './pi-chat/metering'
 export { createLogger } from './logging'
 export type { Logger, LogFields } from './logging'
 export type {

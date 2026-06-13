@@ -31,6 +31,7 @@ import { gitRoutes } from './http/routes/git'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
 import { HarnessPiChatService } from './pi-chat/harnessPiChatService'
+import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import type { ReloadHookDiagnostic } from './http/routes/reload'
 
@@ -69,6 +70,8 @@ export interface CreateAgentAppOptions {
   sessionNamespace?: string
   /** Optional best-effort telemetry sink supplied by an embedding host. */
   telemetry?: TelemetrySink
+  /** Optional billing sink for native Pi usage (see AgentMeteringSink). */
+  metering?: AgentMeteringSink
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
   sessionDir?: string
   /**
@@ -228,6 +231,7 @@ export async function createAgentApp(
     harness,
     sessionStore: harness.sessions,
     workdir: runtimeBundle.workspace.root,
+    metering: opts.metering,
   })
   await app.register(piChatRoutes, { service: piChatService })
   await app.register(systemPromptRoutes, { harness })

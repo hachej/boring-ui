@@ -1,0 +1,513 @@
+import { describe, expect, it, vi } from 'vitest'
+import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
+import type { AgentHarness, RunContext, SendMessageInput } from '../../../shared/harness'
+import type { SessionStore } from '../../../shared/session'
+import type { PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../PiAgentSessionAdapter'
+import { HarnessPiChatService } from '../harnessPiChatService'
+import type { PiSessionRequestContext } from '../piSessionIdentity'
+import type {
+  AgentMeteringSink,
+  MeteringReleaseInput,
+  MeteringReserveInput,
+  MeteringSettleInput,
+  MeteringUsageInput,
+} from '../metering'
+import { normalizeMeteringUsage } from '../metering'
+
+const ctx: PiSessionRequestContext = {
+  workspaceId: 'workspace-a',
+  storageScope: 'scope-a',
+  authSubject: 'user-a',
+  requestId: 'request-a',
+}
+
+const sessionStore: SessionStore = {
+  list: vi.fn(async () => []),
+  create: vi.fn(async () => ({ id: 's1', title: 'New session', createdAt: '', updatedAt: '', turnCount: 0 })),
+  load: vi.fn(async () => ({ id: 's1', title: 'New session', createdAt: '', updatedAt: '', turnCount: 0 })),
+  delete: vi.fn(async () => {}),
+}
+
+type FakeAdapter = PiAgentSessionAdapter & {
+  emit(event: AgentSessionEvent): void
+}
+
+function createAdapter(followUps: string[] = []): FakeAdapter {
+  const listeners = new Set<(event: AgentSessionEvent) => void>()
+  const nativeFollowUps: Array<{ text: string; clientNonce?: string; clientSeq?: number }> = followUps.map((text) => ({ text }))
+  const snapshot: PiAgentSessionSnapshot = {
+    state: {},
+    messages: [],
+    isStreaming: true,
+    isRetrying: false,
+    retryAttempt: 0,
+    pendingMessageCount: 0,
+    steeringMessages: [],
+    followUpMessages: followUps,
+    followUpMode: 'one-at-a-time',
+    sessionId: 's1',
+  }
+
+  return {
+    readSnapshot: vi.fn(() => snapshot),
+    subscribe: vi.fn((listener: (event: AgentSessionEvent) => void) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    }),
+    prompt: vi.fn(async () => {}),
+    followUp: vi.fn(async (text: string, options?: { displayText?: string; clientNonce?: string; clientSeq?: number }) => {
+      nativeFollowUps.push({ text: options?.displayText ?? text, clientNonce: options?.clientNonce, clientSeq: options?.clientSeq })
+      snapshot.followUpMessages = nativeFollowUps.map((item) => item.text)
+    }),
+    clearFollowUp: vi.fn((options?: { clientNonce?: string; clientSeq?: number }) => {
+      if (options?.clientNonce || options?.clientSeq !== undefined) {
+        const index = nativeFollowUps.findIndex((item) => options.clientNonce
+          ? item.clientNonce === options.clientNonce
+          : item.clientSeq === options.clientSeq)
+        if (index >= 0) nativeFollowUps.splice(index, 1)
+      } else {
+        nativeFollowUps.splice(0)
+      }
+      snapshot.followUpMessages = nativeFollowUps.map((item) => item.text)
+    }),
+    abort: vi.fn(async () => {}),
+    abortRetry: vi.fn(),
+    emit: (event: AgentSessionEvent) => {
+      for (const listener of listeners) listener(event)
+    },
+  }
+}
+
+interface SinkCalls {
+  reserved: MeteringReserveInput[]
+  usage: MeteringUsageInput[]
+  settled: MeteringSettleInput[]
+  released: MeteringReleaseInput[]
+}
+
+function createSink(overrides: Partial<AgentMeteringSink> = {}): { sink: AgentMeteringSink; calls: SinkCalls } {
+  const calls: SinkCalls = { reserved: [], usage: [], settled: [], released: [] }
+  const sink: AgentMeteringSink = {
+    reserveRun: async (input) => {
+      calls.reserved.push(input)
+      return { reservationId: `res-${calls.reserved.length}` }
+    },
+    recordUsage: async (input) => {
+      calls.usage.push(input)
+    },
+    settleRun: async (input) => {
+      calls.settled.push(input)
+    },
+    releaseRun: async (input) => {
+      calls.released.push(input)
+    },
+    ...overrides,
+  }
+  return { sink, calls }
+}
+
+function createService(adapter: FakeAdapter, sink: AgentMeteringSink) {
+  const harness: AgentHarness & {
+    getPiSessionAdapter: (input: SendMessageInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
+    hasPiSession: (sessionId: string) => boolean
+  } = {
+    id: 'fake-pi',
+    placement: 'server',
+    sessions: sessionStore,
+    hasPiSession: vi.fn(() => false),
+    getPiSessionAdapter: vi.fn(async () => adapter),
+  }
+  const service = new HarnessPiChatService({
+    harness,
+    sessionStore,
+    workdir: '/workspace',
+    metering: sink,
+    meteringLogger: () => {},
+  })
+  return { service, harness }
+}
+
+const USAGE = {
+  input: 1200,
+  output: 340,
+  cacheRead: 90,
+  cacheWrite: 10,
+  totalTokens: 1640,
+  cost: { input: 0.0012, output: 0.0034, cacheRead: 0.00001, cacheWrite: 0.00002, total: 0.00463 },
+}
+
+function assistantMessageEnd(overrides: Record<string, unknown> = {}): AgentSessionEvent {
+  return {
+    type: 'message_end',
+    message: {
+      id: 'a1',
+      role: 'assistant',
+      content: [{ type: 'text', text: 'done' }],
+      provider: 'ollama',
+      model: 'kimi-k2:1t',
+      usage: USAGE,
+      stopReason: 'stop',
+      timestamp: 1,
+      ...overrides,
+    },
+  } as unknown as AgentSessionEvent
+}
+
+function agentEnd(stopReason: 'stop' | 'error' | 'aborted', errorMessage?: string): AgentSessionEvent {
+  return {
+    type: 'agent_end',
+    messages: [{ role: 'assistant', content: [], stopReason, errorMessage }],
+  } as unknown as AgentSessionEvent
+}
+
+describe('pi chat metering', () => {
+  it('meters a normal prompt run: reserve, record native usage, settle ok', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', {
+      message: 'hello',
+      clientNonce: 'nonce-1',
+      model: { provider: 'ollama', id: 'kimi-k2:1t' },
+    })
+
+    expect(calls.reserved).toEqual([
+      expect.objectContaining({
+        kind: 'prompt',
+        workspaceId: 'workspace-a',
+        userId: 'user-a',
+        sessionId: 's1',
+        source: 'pi-chat',
+        message: 'hello',
+        model: { provider: 'ollama', id: 'kimi-k2:1t' },
+        turnId: 'pi-run:s1:prompt:nonce-1',
+      }),
+    ])
+
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    adapter.emit(assistantMessageEnd())
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    expect(calls.usage).toEqual([
+      expect.objectContaining({
+        turnId: 'pi-run:s1:prompt:nonce-1',
+        reservationId: 'res-1',
+        usageId: 'pi-usage:s1:message:a1',
+        messageId: 'a1',
+        model: { provider: 'ollama', id: 'kimi-k2:1t' },
+        stopReason: 'stop',
+        usage: {
+          input: 1200,
+          output: 340,
+          cacheRead: 90,
+          cacheWrite: 10,
+          cost: { input: 0.0012, output: 0.0034, cacheRead: 0.00001, cacheWrite: 0.00002, total: 0.00463 },
+        },
+      }),
+    ])
+    expect(calls.settled).toEqual([
+      expect.objectContaining({ turnId: 'pi-run:s1:prompt:nonce-1', reservationId: 'res-1', status: 'ok' }),
+    ])
+    expect(calls.released).toEqual([])
+  })
+
+  it('records zero-cost provider usage verbatim so hosts can apply fallback pricing', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'hi', clientNonce: 'nonce-zero' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    adapter.emit(assistantMessageEnd({
+      usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    }))
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    expect(calls.usage).toEqual([
+      expect.objectContaining({
+        usage: expect.objectContaining({ input: 10, output: 5, cost: expect.objectContaining({ total: 0 }) }),
+      }),
+    ])
+    expect(calls.settled).toHaveLength(1)
+  })
+
+  it('settles ok without usage rows when the provider reported no usage', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'hi', clientNonce: 'nonce-no-usage' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    expect(calls.usage).toEqual([])
+    expect(calls.settled).toEqual([expect.objectContaining({ status: 'ok' })])
+    expect(calls.released).toEqual([])
+  })
+
+  it('releases the reservation when the run errors before any usage arrived', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'boom', clientNonce: 'nonce-err' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    adapter.emit(agentEnd('error', 'No API key for provider'))
+    await service.flushMetering()
+
+    expect(calls.usage).toEqual([])
+    expect(calls.settled).toEqual([])
+    expect(calls.released).toEqual([
+      expect.objectContaining({ turnId: 'pi-run:s1:prompt:nonce-err', reason: 'error-before-usage' }),
+    ])
+  })
+
+  it('releases the reservation when the prompt run rejects before streaming', async () => {
+    const adapter = createAdapter()
+    adapter.prompt = vi.fn(async () => {
+      throw new Error('provider down')
+    })
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'boom', clientNonce: 'nonce-reject' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await service.flushMetering()
+
+    expect(calls.settled).toEqual([])
+    expect(calls.released).toEqual([
+      expect.objectContaining({ turnId: 'pi-run:s1:prompt:nonce-reject', reason: 'error-before-usage' }),
+    ])
+  })
+
+  it('settles an errored run that already produced billable usage', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'partial', clientNonce: 'nonce-partial' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    adapter.emit(assistantMessageEnd())
+    adapter.emit(agentEnd('error', 'tool crashed'))
+    await service.flushMetering()
+
+    expect(calls.usage).toHaveLength(1)
+    expect(calls.settled).toEqual([expect.objectContaining({ status: 'error' })])
+    expect(calls.released).toEqual([])
+  })
+
+  it('keeps the usage idempotency key stable across duplicate native message_end events', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'dup', clientNonce: 'nonce-dup' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    adapter.emit(assistantMessageEnd())
+    adapter.emit(assistantMessageEnd())
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    expect(calls.usage).toHaveLength(2)
+    expect(calls.usage[0]?.usageId).toBe('pi-usage:s1:message:a1')
+    expect(calls.usage[1]?.usageId).toBe('pi-usage:s1:message:a1')
+  })
+
+  it('meters consumed follow-ups independently from the originating prompt', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'first', clientNonce: 'nonce-p' })
+    await service.followUp(ctx, 's1', { message: 'second', clientNonce: 'nonce-f', clientSeq: 0 })
+
+    expect(calls.reserved).toEqual([
+      expect.objectContaining({ kind: 'prompt', turnId: 'pi-run:s1:prompt:nonce-p' }),
+      expect.objectContaining({ kind: 'followup', turnId: 'pi-run:s1:followup:nonce-f:0' }),
+    ])
+
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    adapter.emit(assistantMessageEnd({ id: 'a1' }))
+    // Pi consumes the queued follow-up inside the same agent loop.
+    adapter.emit({
+      type: 'message_start',
+      message: { id: 'u2', role: 'user', content: [{ type: 'text', text: 'second' }], clientNonce: 'nonce-f', clientSeq: 0 },
+    } as unknown as AgentSessionEvent)
+    adapter.emit(assistantMessageEnd({ id: 'a2' }))
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    expect(calls.usage).toEqual([
+      expect.objectContaining({ usageId: 'pi-usage:s1:message:a1', turnId: 'pi-run:s1:prompt:nonce-p' }),
+      expect.objectContaining({ usageId: 'pi-usage:s1:message:a2', turnId: 'pi-run:s1:followup:nonce-f:0' }),
+    ])
+    expect(calls.settled).toEqual([
+      expect.objectContaining({ turnId: 'pi-run:s1:prompt:nonce-p', status: 'ok' }),
+      expect.objectContaining({ turnId: 'pi-run:s1:followup:nonce-f:0', status: 'ok' }),
+    ])
+    expect(calls.released).toEqual([])
+  })
+
+  it('releases queued follow-up reservations on selector clear, full clear, and stop', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.followUp(ctx, 's1', { message: 'q1', clientNonce: 'nonce-q1', clientSeq: 0 })
+    await service.followUp(ctx, 's1', { message: 'q2', clientNonce: 'nonce-q2', clientSeq: 1 })
+    await service.followUp(ctx, 's1', { message: 'q3', clientNonce: 'nonce-q3', clientSeq: 2 })
+
+    await service.clearQueue(ctx, 's1', { clientNonce: 'nonce-q1' })
+    await service.flushMetering()
+    expect(calls.released).toEqual([
+      expect.objectContaining({ turnId: 'pi-run:s1:followup:nonce-q1:0', reason: 'queue-cleared' }),
+    ])
+
+    await service.stop(ctx, 's1', {})
+    await service.flushMetering()
+    expect(calls.released).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ turnId: 'pi-run:s1:followup:nonce-q2:1', reason: 'queue-cleared' }),
+        expect.objectContaining({ turnId: 'pi-run:s1:followup:nonce-q3:2', reason: 'queue-cleared' }),
+      ]),
+    )
+    expect(calls.released).toHaveLength(3)
+    expect(calls.settled).toEqual([])
+  })
+
+  it('releases an aborted run without usage as cancelled', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'stop me', clientNonce: 'nonce-abort' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    adapter.emit(agentEnd('aborted'))
+    await service.flushMetering()
+
+    expect(calls.settled).toEqual([])
+    expect(calls.released).toEqual([
+      expect.objectContaining({ turnId: 'pi-run:s1:prompt:nonce-abort', reason: 'cancelled' }),
+    ])
+  })
+
+  it('rejects the prompt (fail closed) when the sink refuses the reservation', async () => {
+    const adapter = createAdapter()
+    const refusal = Object.assign(new Error('demo credit exhausted'), { statusCode: 402 })
+    const { sink, calls } = createSink({
+      reserveRun: async () => {
+        throw refusal
+      },
+    })
+    const { service } = createService(adapter, sink)
+
+    await expect(service.prompt(ctx, 's1', { message: 'no funds', clientNonce: 'nonce-x' })).rejects.toBe(refusal)
+    expect(adapter.prompt).not.toHaveBeenCalled()
+    expect(calls.usage).toEqual([])
+
+    await expect(service.followUp(ctx, 's1', { message: 'still none', clientNonce: 'nonce-y', clientSeq: 0 })).rejects.toBe(refusal)
+    expect(adapter.followUp).not.toHaveBeenCalled()
+  })
+
+  it('releases the follow-up reservation when the adapter rejects queuing', async () => {
+    const adapter = createAdapter()
+    adapter.followUp = vi.fn(async () => {
+      throw new Error('queue full')
+    })
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await expect(service.followUp(ctx, 's1', { message: 'nope', clientNonce: 'nonce-q', clientSeq: 0 })).rejects.toThrow('queue full')
+    await service.flushMetering()
+    expect(calls.released).toEqual([
+      expect.objectContaining({ turnId: 'pi-run:s1:followup:nonce-q:0', reason: 'run-rejected' }),
+    ])
+  })
+
+  it('releases all reservations when the session is deleted', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'live', clientNonce: 'nonce-live' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    await service.followUp(ctx, 's1', { message: 'queued', clientNonce: 'nonce-fq', clientSeq: 0 })
+
+    await service.deleteSession(ctx, 's1')
+    await service.flushMetering()
+
+    expect(calls.released).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ turnId: 'pi-run:s1:followup:nonce-fq:0', reason: 'cancelled' }),
+        expect.objectContaining({ turnId: 'pi-run:s1:prompt:nonce-live', reason: 'cancelled' }),
+      ]),
+    )
+  })
+
+  it('keeps publishing chat events when sink usage/settle calls fail', async () => {
+    const adapter = createAdapter()
+    const failures: unknown[] = []
+    const { sink } = createSink({
+      recordUsage: async () => {
+        throw new Error('db down')
+      },
+      settleRun: async () => {
+        throw new Error('db still down')
+      },
+    })
+    const harness: AgentHarness & { getPiSessionAdapter: (input: SendMessageInput, ctx: RunContext) => Promise<PiAgentSessionAdapter> } = {
+      id: 'fake-pi',
+      placement: 'server',
+      sessions: sessionStore,
+      getPiSessionAdapter: vi.fn(async () => adapter),
+    }
+    const service = new HarnessPiChatService({
+      harness,
+      sessionStore,
+      workdir: '/workspace',
+      metering: sink,
+      meteringLogger: (_message, error) => failures.push(error),
+    })
+    const events: unknown[] = []
+    const subscription = await service.subscribe(ctx, 's1', 0, (event) => events.push(event))
+    expect(subscription.type).toBe('ok')
+
+    await service.prompt(ctx, 's1', { message: 'resilient', clientNonce: 'nonce-r' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    adapter.emit(assistantMessageEnd())
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    expect(events.length).toBeGreaterThan(0)
+    expect(failures).toHaveLength(2)
+    if (subscription.type === 'ok') subscription.unsubscribe()
+  })
+})
+
+describe('normalizeMeteringUsage', () => {
+  it('normalizes a full native usage object', () => {
+    expect(normalizeMeteringUsage(USAGE)).toEqual({
+      input: 1200,
+      output: 340,
+      cacheRead: 90,
+      cacheWrite: 10,
+      cost: { input: 0.0012, output: 0.0034, cacheRead: 0.00001, cacheWrite: 0.00002, total: 0.00463 },
+    })
+  })
+
+  it('zero-fills partial objects and rejects non-objects', () => {
+    expect(normalizeMeteringUsage({ input: 7 })).toEqual({
+      input: 7,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    })
+    expect(normalizeMeteringUsage(undefined)).toBeUndefined()
+    expect(normalizeMeteringUsage('usage')).toBeUndefined()
+  })
+})

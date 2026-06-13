@@ -10,6 +10,7 @@ import { PiChatEventMapper } from './piChatEvents'
 import { PiChatReplayBuffer } from './piChatReplayBuffer'
 import { followUpSelector, hasFollowUpSelector, PiChatMessageMetadataReconciler } from './piChatMessageMetadataReconciler'
 import { buildPiChatHistory } from './piChatHistory'
+import { PiChatMeteringCoordinator, type AgentMeteringSink, type MeteringErrorLogger } from './metering'
 
 type PiNativeHarness = AgentHarness & {
   getPiSessionAdapter?: (input: SendMessageInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
@@ -41,6 +42,15 @@ export interface HarnessPiChatServiceOptions {
   harness: AgentHarness
   sessionStore: SessionStore
   workdir: string
+  /**
+   * Optional host billing sink. When set, accepted prompts/follow-ups reserve
+   * before execution (a rejecting sink blocks the request), native assistant
+   * usage is recorded per message, and every run settles or releases from
+   * native terminal lifecycle.
+   */
+  metering?: AgentMeteringSink
+  /** Receives non-fatal metering pipeline failures (default: console.warn). */
+  meteringLogger?: MeteringErrorLogger
 }
 
 export class HarnessPiChatService implements PiChatSessionService {
@@ -57,11 +67,20 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly activePromptRuns = new Map<string, Promise<void>>()
   private readonly syntheticPromptFailures = new Map<string, SyntheticPromptFailure[]>()
   private readonly activeSyntheticPromptErrors = new Map<string, ChatError>()
+  private readonly metering?: PiChatMeteringCoordinator
 
   constructor(options: HarnessPiChatServiceOptions) {
     this.harness = options.harness as PiNativeHarness
     this.sessionStore = options.sessionStore
     this.workdir = options.workdir
+    this.metering = options.metering
+      ? new PiChatMeteringCoordinator(options.metering, options.meteringLogger)
+      : undefined
+  }
+
+  /** Test/diagnostic hook: resolves once queued metering sink calls settle. */
+  async flushMetering(): Promise<void> {
+    await this.metering?.flush()
   }
 
   async listSessions(ctx: PiSessionRequestContext, options?: SessionListOptions) {
@@ -75,6 +94,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   async deleteSession(ctx: PiSessionRequestContext, sessionId: string) {
     this.channels.get(sessionId)?.unsubscribe()
     this.channels.delete(sessionId)
+    this.metering?.releaseSession(sessionId)
     this.messageMetadata.clearSession(sessionId)
     this.syntheticPromptFailures.delete(sessionId)
     this.activeSyntheticPromptErrors.delete(sessionId)
@@ -132,16 +152,28 @@ export class HarnessPiChatService implements PiChatSessionService {
   async prompt(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload): Promise<PromptReceipt> {
     const adapter = await this.getAdapter(ctx, sessionId, payload)
     await this.ensureChannel(ctx, sessionId, adapter)
+    // Reserve before execution; a rejecting sink (e.g. credits exhausted)
+    // fails the request closed before any model call happens.
+    await this.metering?.reservePrompt({
+      workspaceId: ctx.workspaceId,
+      userId: ctx.authSubject,
+      sessionId,
+      clientNonce: payload.clientNonce,
+      message: payload.message,
+      model: payload.model,
+    })
     this.messageMetadata.recordPrompt(sessionId, payload)
     const channel = this.channels.get(sessionId)
     const receiptCursor = nextPromptReceiptCursor(channel)
     try {
       const run = this.trackActiveRun(sessionId, adapter.prompt(toPiPromptInput(payload)))
       run.catch((error) => {
+        this.metering?.failPromptRun(sessionId, payload.clientNonce)
         if (!this.messageMetadata.hasPrompt(sessionId, { clientNonce: payload.clientNonce, displayText: payload.displayMessage ?? payload.message })) return
         this.publishPromptRunError(sessionId, channel, payload, error)
       })
     } catch (err) {
+      this.metering?.failPromptRun(sessionId, payload.clientNonce)
       this.messageMetadata.removePrompt(sessionId, { clientNonce: payload.clientNonce })
       throw err
     }
@@ -151,6 +183,14 @@ export class HarnessPiChatService implements PiChatSessionService {
   async followUp(ctx: PiSessionRequestContext, sessionId: string, payload: FollowUpPayload): Promise<FollowUpReceipt> {
     const adapter = await this.getAdapter(ctx, sessionId, payload.message)
     await this.ensureChannel(ctx, sessionId, adapter)
+    await this.metering?.reserveFollowUp({
+      workspaceId: ctx.workspaceId,
+      userId: ctx.authSubject,
+      sessionId,
+      clientNonce: payload.clientNonce,
+      clientSeq: payload.clientSeq,
+      message: payload.message,
+    })
     this.messageMetadata.recordFollowUp(sessionId, payload)
     try {
       await adapter.followUp(payload.message, {
@@ -159,6 +199,7 @@ export class HarnessPiChatService implements PiChatSessionService {
         clientSeq: payload.clientSeq,
       })
     } catch (err) {
+      this.metering?.failFollowUpRun(sessionId, payload)
       this.messageMetadata.removeFollowUp(sessionId, payload)
       throw err
     }
@@ -171,10 +212,14 @@ export class HarnessPiChatService implements PiChatSessionService {
       const before = adapter.readSnapshot().followUpMessages.length
       adapter.clearFollowUp(payload)
       const after = adapter.readSnapshot().followUpMessages.length
-      if (after < before) this.messageMetadata.removeFollowUp(sessionId, payload)
+      if (after < before) {
+        this.messageMetadata.removeFollowUp(sessionId, payload)
+        this.metering?.releaseQueued(sessionId, payload)
+      }
       return { accepted: true, cursor: this.channels.get(sessionId)?.buffer.latestSeq ?? 0, cleared: Math.max(0, before - after) }
     }
     const clearedQueue = this.clearAllFollowUps(adapter, sessionId)
+    this.metering?.releaseQueued(sessionId)
     return { accepted: true, cursor: this.channels.get(sessionId)?.buffer.latestSeq ?? 0, cleared: clearedQueue.length }
   }
 
@@ -194,6 +239,8 @@ export class HarnessPiChatService implements PiChatSessionService {
   async stop(ctx: PiSessionRequestContext, sessionId: string, _payload: StopPayload): Promise<StopReceipt> {
     const adapter = await this.getAdapter(ctx, sessionId, '')
     const clearedQueue = this.clearAllFollowUps(adapter, sessionId)
+    // The active run settles/releases via the native aborted agent-end.
+    this.metering?.releaseQueued(sessionId)
     await adapter.abort()
     return { accepted: true, stopped: true, cursor: this.channels.get(sessionId)?.buffer.latestSeq ?? 0, clearedQueue: buildPiChatQueuedFollowUps(sessionId, clearedQueue) }
   }
@@ -228,6 +275,9 @@ export class HarnessPiChatService implements PiChatSessionService {
     if (!this.canClearAutoPostedFollowUpForFallback(adapter, followUp)) {
       throw new AutoPostFollowUpError('Cannot auto-post queued follow-up because this runtime cannot safely remove only the consumed queued item.')
     }
+    // Fallback re-posts the follow-up as a plain prompt; no followup-consumed
+    // event will fire, so hand its reservation to the next agent-start.
+    this.metering?.promoteQueuedToPrompt(sessionId, followUp)
     await this.runPrompt(sessionId, adapter, metadata?.serverText ?? followUp.displayText)
     this.clearAutoPostedFollowUpForFallback(sessionId, adapter, followUp)
   }
@@ -388,10 +438,12 @@ export class HarnessPiChatService implements PiChatSessionService {
     const mapper = new PiChatEventMapper({ sessionId, initialSeq: buffer.latestSeq })
     const channel: LiveSessionChannel = { buffer, adapter, unsubscribe: () => {}, mapper, messageTurnIds: new Map() }
     const unsubscribe = adapter.subscribe((event) => {
-      for (const mapped of mapper.map(event)) {
+      const mappedEvents = mapper.map(event)
+      for (const mapped of mappedEvents) {
         const enriched = this.messageMetadata.enrichEvent(sessionId, mapped)
         this.publishChannelEvent(sessionId, channel, enriched)
       }
+      this.metering?.observe(sessionId, event, mappedEvents)
     })
     channel.unsubscribe = unsubscribe
     this.channels.set(sessionId, channel)
