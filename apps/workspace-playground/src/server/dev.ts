@@ -43,6 +43,7 @@ export async function startPlaygroundServer(): Promise<void> {
     console.log(`[workspace-playground] workspace root: ${workspaceRoot}`)
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
+      appRoot: APP_ROOT,
       mode: "local",
       logger: true,
       defaultPluginPackages: [

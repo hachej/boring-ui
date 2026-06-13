@@ -7,6 +7,7 @@ import { useApiBaseUrl, useWorkspaceRequestId } from "./DataProvider"
 import { filesystemEvents } from "../../shared/events"
 import { FILES_QUERY_KEY_SEGMENT } from "../../shared/constants"
 import { parentDir } from "../file-tree/treeModel"
+import type { FileEntry } from "./types"
 
 /**
  * Single source of truth for translating workspace bus `filesystem:file.*` events
@@ -42,40 +43,78 @@ export function useFileEventInvalidation(): void {
 
   useEffect(() => {
     const batch = createInvalidationBatch(queryClient)
+    const settledTimers = new Set<ReturnType<typeof setTimeout>>()
+    const runAfterFsSettles = (fn: () => void) => {
+      const timer = setTimeout(() => {
+        settledTimers.delete(timer)
+        fn()
+      }, SETTLED_REMOTE_FS_INVALIDATION_MS)
+      settledTimers.add(timer)
+    }
 
     const offChanged = events.on(filesystemEvents.changed, (e) => {
       invalidateFile(batch, base, workspaceId, e.path)
     })
     const offCreated = events.on(filesystemEvents.created, (e) => {
-      invalidateTree(batch, base, workspaceId, e.path)
-      if (e.kind === "file") {
-        invalidateFile(batch, base, workspaceId, e.path)
+      upsertTreeCache(queryClient, base, workspaceId, {
+        name: basename(e.path),
+        kind: e.kind,
+        path: e.path,
+      })
+      const invalidate = () => {
+        invalidateTree(batch, base, workspaceId, e.path)
+        if (e.kind === "file") {
+          invalidateFile(batch, base, workspaceId, e.path)
+        }
       }
+      invalidate()
+      if (e.cause === "remote") runAfterFsSettles(invalidate)
     })
     const offMoved = events.on(filesystemEvents.moved, (e) => {
-      invalidateTree(batch, base, workspaceId, e.from)
-      invalidateTree(batch, base, workspaceId, e.to)
-      invalidateFile(batch, base, workspaceId, e.from)
-      invalidateFile(batch, base, workspaceId, e.to)
-      invalidateMovedDescendants(batch, base, workspaceId, e.from)
-      invalidateSearch(batch, base, workspaceId)
+      const movedEntry = getTreeCacheEntry(queryClient, base, workspaceId, e.from)
+      removeTreeCacheEntry(queryClient, base, workspaceId, e.from)
+      if (movedEntry) {
+        upsertTreeCache(queryClient, base, workspaceId, {
+          ...movedEntry,
+          name: basename(e.to),
+          path: e.to,
+        })
+      }
+      const invalidate = () => {
+        invalidateTree(batch, base, workspaceId, e.from)
+        invalidateTree(batch, base, workspaceId, e.to)
+        invalidateFile(batch, base, workspaceId, e.from)
+        invalidateFile(batch, base, workspaceId, e.to)
+        invalidateMovedDescendants(batch, base, workspaceId, e.from)
+        invalidateSearch(batch, base, workspaceId)
+      }
+      invalidate()
+      if (e.cause === "remote") runAfterFsSettles(invalidate)
     })
     const offDeleted = events.on(filesystemEvents.deleted, (e) => {
-      invalidateTree(batch, base, workspaceId, e.path)
-      invalidateFile(batch, base, workspaceId, e.path)
-      invalidateSearch(batch, base, workspaceId)
+      removeTreeCacheEntry(queryClient, base, workspaceId, e.path)
+      const invalidate = () => {
+        invalidateTree(batch, base, workspaceId, e.path)
+        invalidateFile(batch, base, workspaceId, e.path)
+        invalidateSearch(batch, base, workspaceId)
+      }
+      invalidate()
+      if (e.cause === "remote") runAfterFsSettles(invalidate)
     })
     return () => {
       offChanged()
       offCreated()
       offMoved()
       offDeleted()
+      for (const timer of settledTimers) clearTimeout(timer)
+      settledTimers.clear()
       batch.dispose()
     }
   }, [queryClient, base, workspaceId])
 }
 
 const INVALIDATION_BATCH_MS = 25
+const SETTLED_REMOTE_FS_INVALIDATION_MS = 250
 
 type QueryKey = readonly unknown[]
 
@@ -117,6 +156,50 @@ function createInvalidationBatch(qc: QueryClient): InvalidationBatch {
       pending.clear()
     },
   }
+}
+
+function basename(path: string): string {
+  const i = path.lastIndexOf("/")
+  return i >= 0 ? path.slice(i + 1) : path
+}
+
+function treeKey(base: string, workspaceId: string | null, dir: string): QueryKey {
+  return [base, workspaceId, "tree", dir]
+}
+
+function getTreeCacheEntry(
+  qc: QueryClient,
+  base: string,
+  workspaceId: string | null,
+  path: string,
+): FileEntry | undefined {
+  const entries = qc.getQueryData<FileEntry[]>(treeKey(base, workspaceId, parentDir(path)))
+  return entries?.find((entry) => entry.path === path)
+}
+
+function upsertTreeCache(
+  qc: QueryClient,
+  base: string,
+  workspaceId: string | null,
+  entry: FileEntry,
+): void {
+  qc.setQueryData<FileEntry[]>(treeKey(base, workspaceId, parentDir(entry.path)), (entries) => {
+    if (!entries) return entries
+    const withoutEntry = entries.filter((candidate) => candidate.path !== entry.path)
+    return [...withoutEntry, entry]
+  })
+}
+
+function removeTreeCacheEntry(
+  qc: QueryClient,
+  base: string,
+  workspaceId: string | null,
+  path: string,
+): void {
+  qc.setQueryData<FileEntry[]>(treeKey(base, workspaceId, parentDir(path)), (entries) => {
+    if (!entries) return entries
+    return entries.filter((entry) => entry.path !== path)
+  })
 }
 
 function invalidateFile(
