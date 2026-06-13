@@ -1,119 +1,86 @@
-# Tailwind v4 Style Isolation: @boring/agent vs @boring/workspace
+# Tailwind v4 Style Isolation: @hachej/boring-agent vs @hachej/boring-workspace
 
-Research for boring-ui-v2-qs8. Investigates whether Tailwind v4 usage in
-`@boring/agent/ui-shadcn` conflicts with `@boring/workspace` styles when both
-are loaded in the same consumer app.
+How Tailwind v4 styling is shared between `@hachej/boring-agent` and
+`@hachej/boring-workspace` when both load in the same consumer app.
 
-## Summary
+> **History:** This doc began as research for `boring-ui-v2-qs8`, which found a
+> potential `:root` token collision (workspace used oklch, agent shipped raw HSL
+> at `:root`, and importing both was unsafe). That collision has since been
+> **resolved** by moving to the token-bridge model described below. The current
+> contract is enforced by `packages/agent/src/__tests__/tailwind-style-conflict.test.ts`.
 
-**Three conflicts exist; two are contained by current architecture, one requires
-a documented constraint.**
+## Current model: workspace owns tokens, agent inherits them
 
-| # | Conflict | Severity | Current status |
-|---|----------|----------|----------------|
-| 1 | CSS variable collision at `:root` | HIGH | Mitigated by separate CSS entry points |
-| 2 | Double `@layer base` reset | MEDIUM | Mitigated: agent globals.css has no `@layer base` |
-| 3 | Utility class identity collision | LOW | Same Tailwind v4; no prefix divergence |
-
-## Conflict 1: CSS Variable Collision at `:root`
-
-Both packages define the same 24 shadcn token names (`--background`, `--primary`,
-`--border`, etc.) at `:root` scope but with **incompatible value formats**:
-
-- **workspace** (`globals.css`): oklch values, e.g. `--background: oklch(1 0 0);`
-- **agent/ui-shadcn** (`styles.css`): raw HSL values, e.g. `--background: 0 0% 100%;`
-
-If a consumer imports both files, the last `:root` block wins. Utilities like
-`bg-background` resolve to the wrong format in whichever package loaded first.
-
-### Why it doesn't bite us today
-
-The two CSS files serve different roles:
-
-- `@boring/workspace/globals.css` is a full Tailwind entry point (`@import "tailwindcss"` + `@theme inline` + `@layer base`). It defines the workspace's design tokens.
-- `@boring/agent/ui-shadcn/styles.css` is a **standalone CSS variable sheet** with no Tailwind directives. Consumers import it *instead of* the workspace globals when building a standalone chat app.
-
-The workspace-playground app imports only workspace globals; it does not import
-agent/ui-shadcn/styles.css. The agent's bare primitives (`@boring/agent/theme.css`)
-use `[data-boring-agent]`-scoped variables (`--boring-agent-*`) that never collide.
-
-### Constraint
-
-> **Do not import both `@boring/workspace/globals.css` and
-> `@boring/agent/ui-shadcn/styles.css` in the same document.**
-> They define the same CSS custom properties with incompatible value formats.
-> Choose one as the design-token source; the other package's components will
-> inherit from it.
-
-## Conflict 2: Double Preflight / `@layer base`
-
-Workspace globals.css declares:
+The two packages are now **designed to be imported together**, in order:
 
 ```css
-@layer base {
-  * { @apply border-border; }
-  body { @apply bg-background text-foreground; }
-}
+@import "@hachej/boring-workspace/globals.css";
+@import "@hachej/boring-agent/front/styles.css";
+@import "./app.css"; /* optional app overrides */
 ```
 
-Agent's ui-shadcn/styles.css has **no** `@layer base` and **no** `@import "tailwindcss"`.
-The agent's bare theme.css is scoped to `[data-boring-agent]` and doesn't use
-`@layer` at all.
+### Workspace owns the public token set at `:root`
 
-**Result:** No double-reset today. If a future change adds `@import "tailwindcss"`
-to the agent's CSS, this becomes a problem (two preflight injections).
+`packages/workspace/src/globals.css` is the single Tailwind entry point. It:
 
-### Constraint
+- `@import "tailwindcss"` (with `source(none)`) and `@import "@hachej/boring-ui-kit/styles.css"`
+- defines the public `--boring-*` design tokens at `:root` (and `.dark`), in **oklch**, e.g. `--boring-background: oklch(0.995 0.0015 72);`
+- bridges those public tokens to the internal shadcn aliases, e.g. `--background: var(--boring-background);`
+- owns the `@layer base` reset (`* { border-border }`, `body { bg-background text-foreground }`)
 
-> **Only one package should `@import "tailwindcss"` per document.** The agent
-> package must never add its own `@import "tailwindcss"` to shipped CSS; it
-> relies on the consumer's Tailwind setup.
+### Agent consumes host tokens, scoped to `[data-boring-agent]`
 
-## Conflict 3: Utility Class Identity
+`packages/agent/src/front/styles/globals.css`:
 
-Both packages use the same Tailwind v4 utility classes (`bg-background`,
-`text-foreground`, `border-border`, etc.). Since both consume the same Tailwind
-version and neither applies a prefix, class names are identical.
+- defines **no** `:root` tokens (verified by test)
+- under `[data-boring-agent]`, re-binds shadcn aliases to the host's public tokens with package-default fallbacks, e.g. `--background: var(--boring-background, oklch(0.995 0.0015 72));`
+- defines its own component-level tokens namespaced `--boring-agent-*` (font, spacing, message/tool styling), each with a package default
+- contains **no** `@import "tailwindcss"`, no `tailwindcss/preflight.css`, and **no** `@layer base` — it relies on the consumer's Tailwind setup and the workspace reset
+- handles dark mode via `.dark [data-boring-agent]`, inheriting workspace's `.dark` token values
 
-**This is safe** when Conflict 1 is avoided (single set of `:root` variables).
-Identical class names resolving against a single variable source produce
-consistent styles.
+The net effect: the agent pane and the shell it embeds into share one visual
+language. The agent can still render standalone (its fallbacks apply when no host
+`--boring-*` tokens are present).
 
-If prefixing is ever needed (e.g., embedding agent UI in a non-Tailwind host),
-the agent's `[data-boring-agent]` scoped primitives are already prefix-free.
-The shadcn components would need a Tailwind `prefix` config.
+## Why there is no longer a collision
 
-## Architecture: Two Isolation Tiers
+- **One `:root` owner.** Only workspace defines `--boring-*` at `:root`; the agent
+  never writes `:root`, so there is no last-writer-wins conflict.
+- **One token format.** Both packages use oklch. The old oklch-vs-HSL mismatch is gone.
+- **One Tailwind entry / one preflight.** Only workspace imports Tailwind and owns
+  `@layer base`. The agent must never add its own `@import "tailwindcss"` to shipped CSS.
+- **Scoped component tokens.** `--boring-agent-*` are namespaced and never collide.
 
-### Tier 1 — Bare primitives (`@boring/agent` default export)
+## Invariants (enforced by the test)
 
-- Styles in `theme.css`, all scoped to `[data-boring-agent]` attribute selector
-- Variables namespaced: `--boring-agent-bg`, `--boring-agent-fg`, etc.
-- **Zero collision risk** with any host framework
+`packages/agent/src/__tests__/tailwind-style-conflict.test.ts` asserts:
 
-### Tier 2 — shadcn components (`@boring/agent/ui-shadcn`)
+- workspace owns the public `--boring-*` base tokens at `:root` and bridges them to shadcn aliases
+- agent consumes host `--boring-*` tokens under `[data-boring-agent]` and defines no `:root` tokens
+- agent source CSS omits Tailwind preflight / `@layer base` / `@import "tailwindcss"`
+- workspace keeps reset/base-layer ownership
+- dark mode is tokenized by workspace and inherited by agent (`.dark [data-boring-agent]`)
+- every `--boring-agent-*` token consumed in agent source has a package default
+- child apps do not `@source` package `src/` CSS (no scanning `packages/{agent,workspace}/src`)
 
-- Relies on standard shadcn CSS variables (`--background`, `--primary`, etc.)
-- Designed for apps that already use shadcn/ui or Tailwind v4
-- **Shares variable namespace** with workspace package by design
-- Requires the "one globals.css" constraint above
+## Debug checklist
 
-## Test Coverage
+If styles look wrong or tokens leak:
 
-`packages/agent/src/__tests__/tailwind-style-conflict.test.ts` verifies:
-- The 24 overlapping variable names are documented
-- Value format mismatch (oklch vs HSL) is detected
-- Agent's bare theme.css uses only `--boring-agent-*` (no collisions)
-- Agent's ui-shadcn/styles.css contains no `@import "tailwindcss"`
+1. Check import order first: workspace globals → agent styles → app overrides.
+2. Inspect `packages/workspace/src/globals.css`: workspace should be the only `:root` owner of public `--boring-*` tokens and Tailwind base reset.
+3. Inspect `packages/agent/src/front/styles/globals.css`: agent should scope token bindings under `[data-boring-agent]`, define no `:root`, and import no Tailwind/preflight/base layer.
+4. Apply app overrides through public `--boring-*` or `--boring-agent-*` tokens, not package-internal DOM selectors.
+5. If this regresses, check `packages/agent/src/__tests__/tailwind-style-conflict.test.ts`.
 
-## Recommendations
+## Constraints to keep
 
-1. **No action needed for current architecture.** The separation between
-   workspace globals and agent ui-shadcn styles is clean.
+> **The agent package must never `@import "tailwindcss"` (or a preflight) in shipped CSS.**
+> It relies on the consumer's Tailwind setup and the workspace base layer.
 
-2. **Guard the constraint** via the test file. If someone adds
-   `@import "tailwindcss"` to the agent's shipped CSS, the test fails.
+> **Do not move public token ownership out of workspace.** The `--boring-*` set is
+> defined once, at `:root`, in `@hachej/boring-workspace/globals.css`. Other packages
+> consume it; they do not redefine it.
 
-3. **Future consideration:** If we need both packages' globals in the same
-   document, migrate agent/ui-shadcn to oklch format to match workspace.
-   This is a one-time mechanical change (~24 values).
+> **Override theme by setting `--boring-*` (and `--boring-agent-*`) tokens**, not by
+> editing package source CSS.
