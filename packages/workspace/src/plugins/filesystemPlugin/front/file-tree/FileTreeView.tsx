@@ -82,6 +82,7 @@ interface ContextMenuState {
 }
 
 const CONTEXT_MENU_MARGIN = 8
+const SETTLED_REMOTE_TREE_REFRESH_MS = 250
 
 function clampContextMenuPosition(
   x: number,
@@ -134,6 +135,19 @@ function parentDirsForReveal(path: string): string[] {
   return dirs
 }
 
+function basename(path: string): string {
+  const i = path.lastIndexOf("/")
+  return i >= 0 ? path.slice(i + 1) : path
+}
+
+function hideEntries(
+  entries: FileEntry[] | undefined,
+  hiddenPaths: ReadonlySet<string>,
+): FileEntry[] | undefined {
+  if (!entries || hiddenPaths.size === 0) return entries
+  return entries.filter((entry) => !hiddenPaths.has(entry.path))
+}
+
 /**
  * File tree with the full workbench actions: tracks container height,
  * routes selects through `bridge.openFile`, and provides a right-click
@@ -158,10 +172,11 @@ export function FileTreeView({
   const [optimisticEntries, setOptimisticEntries] = useState<
     Map<string, FileEntry[]>
   >(new Map())
+  const [hiddenEntryPaths, setHiddenEntryPaths] = useState<Set<string>>(new Set())
   const rootDirKey = dirKey(rootDir)
   const rawFileListWithOptimistic = useMemo(
-    () => mergeEntries(rawFileList, optimisticEntries.get(rootDirKey)),
-    [rawFileList, optimisticEntries, rootDirKey],
+    () => hideEntries(mergeEntries(rawFileList, optimisticEntries.get(rootDirKey)), hiddenEntryPaths),
+    [rawFileList, optimisticEntries, rootDirKey, hiddenEntryPaths],
   )
   // Filter out junk folders (node_modules, dist, …) before they hit
   // buildTree. Cheap O(n) at the top level; nested children are already
@@ -180,15 +195,18 @@ export function FileTreeView({
     Map<string, FileEntry[]>
   >(new Map())
   const expandedChildrenWithOptimistic = useMemo(() => {
-    if (optimisticEntries.size === 0) return expandedChildren
-    const next = new Map(expandedChildren)
+    if (optimisticEntries.size === 0 && hiddenEntryPaths.size === 0) return expandedChildren
+    const next = new Map<string, FileEntry[]>()
+    for (const [dir, entries] of expandedChildren) {
+      next.set(dir, hideEntries(entries, hiddenEntryPaths) ?? entries)
+    }
     for (const [dir, entries] of optimisticEntries) {
       if (dir === rootDirKey) continue
-      const merged = mergeEntries(next.get(dir), entries)
+      const merged = hideEntries(mergeEntries(next.get(dir), entries), hiddenEntryPaths)
       if (merged) next.set(dir, merged)
     }
     return next
-  }, [expandedChildren, optimisticEntries, rootDirKey])
+  }, [expandedChildren, optimisticEntries, rootDirKey, hiddenEntryPaths])
 
   const containerRef = useRef<HTMLDivElement>(null)
   const [treeHeight, setTreeHeight] = useState(400)
@@ -351,27 +369,36 @@ export function FileTreeView({
   }, [expandedChildren])
 
   useEffect(() => {
+    const settledTimers = new Set<ReturnType<typeof setTimeout>>()
     const affected = (paths: string[]): string[] =>
       Array.from(new Set(paths.map(parentDir))).filter((dir) => expandedDirsRef.current.has(dir))
+    const refreshNowAndAfterSettle = (dirs: string[]) => {
+      if (!dirs.length) return
+      void refreshDirs(dirs)
+      const timer = setTimeout(() => {
+        settledTimers.delete(timer)
+        void refreshDirs(dirs)
+      }, SETTLED_REMOTE_TREE_REFRESH_MS)
+      settledTimers.add(timer)
+    }
     const offCreated = events.on(filesystemEvents.created, (e) => {
       if (e.cause === "user") return
-      const dirs = affected([e.path])
-      if (dirs.length) void refreshDirs(dirs)
+      refreshNowAndAfterSettle(affected([e.path]))
     })
     const offDeleted = events.on(filesystemEvents.deleted, (e) => {
       if (e.cause === "user") return
-      const dirs = affected([e.path])
-      if (dirs.length) void refreshDirs(dirs)
+      refreshNowAndAfterSettle(affected([e.path]))
     })
     const offMoved = events.on(filesystemEvents.moved, (e) => {
       if (e.cause === "user") return
-      const dirs = affected([e.from, e.to])
-      if (dirs.length) void refreshDirs(dirs)
+      refreshNowAndAfterSettle(affected([e.from, e.to]))
     })
     return () => {
       offCreated()
       offDeleted()
       offMoved()
+      for (const timer of settledTimers) clearTimeout(timer)
+      settledTimers.clear()
     }
   }, [refreshDirs])
 
@@ -461,6 +488,52 @@ export function FileTreeView({
       return next
     })
   }, [])
+
+  const hideEntry = useCallback((path: string) => {
+    setHiddenEntryPaths((prev) => {
+      if (prev.has(path)) return prev
+      const next = new Set(prev)
+      next.add(path)
+      return next
+    })
+  }, [])
+
+  const unhideEntry = useCallback((path: string) => {
+    setHiddenEntryPaths((prev) => {
+      if (!prev.has(path)) return prev
+      const next = new Set(prev)
+      next.delete(path)
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    const shouldPatchDir = (dir: string) => dir === rootDirKey || expandedDirsRef.current.has(dir)
+    const offCreated = events.on(filesystemEvents.created, (e) => {
+      unhideEntry(e.path)
+      if (e.cause === "user") return
+      const dir = parentDir(e.path)
+      if (shouldPatchDir(dir)) {
+        addOptimisticEntry(dir, { name: basename(e.path), kind: e.kind, path: e.path })
+      }
+    })
+    const offDeleted = events.on(filesystemEvents.deleted, (e) => {
+      if (e.cause === "user") return
+      hideEntry(e.path)
+      removeOptimisticEntry(parentDir(e.path), e.path)
+    })
+    const offMoved = events.on(filesystemEvents.moved, (e) => {
+      if (e.cause === "user") return
+      hideEntry(e.from)
+      unhideEntry(e.to)
+      removeOptimisticEntry(parentDir(e.from), e.from)
+    })
+    return () => {
+      offCreated()
+      offDeleted()
+      offMoved()
+    }
+  }, [addOptimisticEntry, hideEntry, removeOptimisticEntry, rootDirKey, unhideEntry])
 
   // Paths currently being mutated (move/rename/delete/create). Renders a
   // pending spinner on the affected rows. Set during the await; cleared in

@@ -15,7 +15,7 @@ vi.mock("../DataProvider", () => ({
 }))
 
 import { useFileEventInvalidation } from "../useFileEventInvalidation"
-import { events, agentMeta, userMeta } from "../../../../../front/events"
+import { events, agentMeta, remoteMeta, userMeta } from "../../../../../front/events"
 import { filesystemEvents } from "../../../shared/events"
 
 function makeWrapper(queryClient: QueryClient) {
@@ -71,6 +71,33 @@ describe("useFileEventInvalidation", () => {
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "stat", "src/new.ts"],
     })
+  })
+
+  it("re-invalidates remote creates after the filesystem settles", async () => {
+    renderHook(() => useFileEventInvalidation(), { wrapper: makeWrapper(qc) })
+    events.emit(filesystemEvents.created, { ...remoteMeta(), path: "src/new.ts", kind: "file" })
+
+    await waitFor(() => expect(
+      queryKeyCalls(invalidate).filter((k) => k[2] === "tree" && k[3] === "src"),
+    ).toHaveLength(1))
+
+    await waitFor(() => expect(
+      queryKeyCalls(invalidate).filter((k) => k[2] === "tree" && k[3] === "src"),
+    ).toHaveLength(2), { timeout: 1000 })
+  })
+
+  it("updates cached parent tree entries for remote creates before refetch completes", async () => {
+    qc.setQueryData([TEST_BASE, TEST_WORKSPACE_ID, "tree", "src"], [
+      { name: "old.ts", kind: "file", path: "src/old.ts" },
+    ])
+    renderHook(() => useFileEventInvalidation(), { wrapper: makeWrapper(qc) })
+
+    events.emit(filesystemEvents.created, { ...remoteMeta(), path: "src/new.ts", kind: "file" })
+
+    await waitFor(() => expect(qc.getQueryData([TEST_BASE, TEST_WORKSPACE_ID, "tree", "src"])).toEqual([
+      { name: "old.ts", kind: "file", path: "src/old.ts" },
+      { name: "new.ts", kind: "file", path: "src/new.ts" },
+    ]))
   })
 
   it("filesystem created (dir) invalidates the root tree listing only", async () => {
