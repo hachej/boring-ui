@@ -118,15 +118,21 @@ interface MeteringRun {
    * across run instances. */
   instanceId: number
   usageCount: number
-  /** Message ids already recorded, so agent_end finals don't double-record. */
-  recordedMessageIds: Set<string>
+  /** Dedup keys (message id, or a usage signature for id-less messages) already
+   * recorded this attempt, so an agent_end final doesn't double-record the
+   * message_end. Cleared on auto-retry so each attempt meters independently. */
+  recordedUsageKeys: Set<string>
   /** Set when a recordUsage sink call rejected — at least one ledger row for
    * this run is missing, so the run must not falsely settle. */
   usageWriteFailed: boolean
   /** Present on queued follow-up runs; matched against clear/consume selectors. */
   followUp?: FollowUpSelector
+  /** Resolves/rejects when the host reservation settles. Awaited by concurrent
+   * duplicates so they observe the owner's accept/reject. */
+  reservation: Promise<void>
   terminal: boolean
-  /** Serializes sink calls per run so settle/release never overtakes usage. */
+  /** Serializes sink calls per run so settle/release never overtakes usage and
+   * release never overtakes the reservation insert. */
   ops: Promise<void>
 }
 
@@ -137,6 +143,10 @@ interface SessionMeteringState {
   active?: MeteringRun
   /** Reserved follow-up runs awaiting consumption. */
   queued: MeteringRun[]
+  /** Client nonces of follow-ups already consumed this session. Mirrors the Pi
+   * adapter's post-consumption nonce memory so a retry of a consumed follow-up
+   * is suppressed instead of reserving a hold the adapter will never enqueue. */
+  consumedFollowUpNonces: Set<string>
 }
 
 // Run ids key the store's per-(runId, userId) reservation idempotency. They
@@ -244,35 +254,63 @@ export class PiChatMeteringCoordinator {
     const runId = promptRunId(input.sessionId, input.clientNonce)
     // Duplicate (incl. two concurrent retries racing the gap before the async
     // reserve resolves): the run is registered synchronously below, so the
-    // loser's findRun sees it. Return false so the caller skips execution.
-    if (this.findRun(state, runId)) return false
+    // loser's findRun sees it. Await the owner's reservation so a duplicate
+    // reports the same accept/reject, then skip execution.
+    const existing = this.findRun(state, runId)
+    if (existing) {
+      await existing.reservation
+      return false
+    }
     const run = this.createRun(input, 'prompt', runId)
     state.pendingPrompts.push(run)
-    try {
-      await this.applyReservation(run, input)
-    } catch (err) {
-      this.removeReservingRun(state, run, input.sessionId)
-      throw err
-    }
-    return true
+    return this.materializeReservation(state, run, input)
   }
 
   /** Reserve a follow-up run. Throws (fail closed) when the sink rejects.
-   * Returns false when this selector already has a tracked run. */
+   * Returns false when this selector already has a tracked/consumed run. */
   async reserveFollowUp(input: ReserveFollowUpInput): Promise<boolean> {
     const state = this.sessionState(input.sessionId)
     const runId = followUpRunId(input.sessionId, input.clientNonce, input.clientSeq)
-    if (this.findRun(state, runId)) return false
+    const existing = this.findRun(state, runId)
+    if (existing) {
+      await existing.reservation
+      return false
+    }
+    // A consumed follow-up's nonce stays in the Pi adapter's memory, so a retry
+    // would reserve a hold the adapter silently drops. Suppress it.
+    if (state.consumedFollowUpNonces.has(input.clientNonce)) return false
     const run = this.createRun(input, 'followup', runId)
     run.followUp = { clientNonce: input.clientNonce, clientSeq: input.clientSeq }
     state.queued.push(run)
+    return this.materializeReservation(state, run, input)
+  }
+
+  /**
+   * Acquire the reservation for a freshly-registered run. The reserve is put on
+   * the run's ops chain so a concurrent release/settle is ordered strictly
+   * after the reservation row exists. Returns false (skip execution) when a
+   * concurrent stop/interrupt/delete terminated the run while the reserve was
+   * in flight; throws (fail closed) when the sink rejects.
+   */
+  private async materializeReservation(
+    state: SessionMeteringState,
+    run: MeteringRun,
+    input: ReservePromptInput,
+  ): Promise<boolean> {
+    run.reservation = this.applyReservation(run, input)
+    const reserveOp = run.reservation.catch(() => {})
+    run.ops = reserveOp
+    this.inflightOps.add(reserveOp)
+    void reserveOp.finally(() => this.inflightOps.delete(reserveOp))
     try {
-      await this.applyReservation(run, input)
+      await run.reservation
     } catch (err) {
       this.removeReservingRun(state, run, input.sessionId)
       throw err
     }
-    return true
+    // Cancelled mid-reserve: the release is already queued behind the reserve on
+    // run.ops, so the hold is cleaned up — just don't execute.
+    return !run.terminal
   }
 
   /** True while a non-terminal prompt run exists for this nonce (accept →
@@ -290,6 +328,7 @@ export class PiChatMeteringCoordinator {
   hasFollowUpRun(sessionId: string, selector: FollowUpSelector): boolean {
     const state = this.sessions.get(sessionId)
     if (!state) return false
+    if (selector.clientNonce !== undefined && state.consumedFollowUpNonces.has(selector.clientNonce)) return true
     if (state.queued.some((run) => followUpMatches(run, selector))) return true
     const active = state.active
     return active !== undefined && !active.terminal && active.followUp !== undefined && followUpMatches(active, selector)
@@ -426,6 +465,12 @@ export class PiChatMeteringCoordinator {
           this.consumeFollowUp(state, event)
           break
         }
+        case 'auto-retry-start': {
+          // New attempt for the same run: reset per-attempt usage dedup so the
+          // next attempt's usage (notably id-less) meters independently.
+          if (state.active) state.active.recordedUsageKeys.clear()
+          break
+        }
         case 'agent-end': {
           // Harvest authoritative usage riding on agent_end first (deduped by
           // message id) — a willRetry attempt may still carry real, billed
@@ -452,6 +497,7 @@ export class PiChatMeteringCoordinator {
   private consumeFollowUp(state: SessionMeteringState, selector: FollowUpSelector): void {
     const run = takeQueuedFollowUp(state, selector)
     if (!run) return
+    if (run.followUp?.clientNonce) state.consumedFollowUpNonces.add(run.followUp.clientNonce)
     if (state.active && !state.active.terminal) this.finishRun(state.active, 'ok')
     state.active = run
   }
@@ -480,16 +526,12 @@ export class PiChatMeteringCoordinator {
     for (let index = nativeEvent.messages.length - 1; index >= 0; index -= 1) {
       const message = nativeEvent.messages[index]
       if (!isRecord(message) || message.role !== 'assistant') continue
-      this.recordAssistantUsage(state, message, { finalFallback: true })
+      this.recordAssistantUsage(state, message)
       return
     }
   }
 
-  private recordAssistantUsage(
-    state: SessionMeteringState,
-    message: unknown,
-    opts: { finalFallback?: boolean } = {},
-  ): void {
+  private recordAssistantUsage(state: SessionMeteringState, message: unknown): void {
     if (!isRecord(message) || message.role !== 'assistant') return
     const usage = normalizeMeteringUsage(message.usage)
     if (!usage) return
@@ -501,15 +543,16 @@ export class PiChatMeteringCoordinator {
     }
 
     const messageId = typeof message.id === 'string' && message.id.length > 0 ? message.id : undefined
-    if (messageId) {
-      if (run.recordedMessageIds.has(messageId)) return
-      run.recordedMessageIds.add(messageId)
-    } else if (opts.finalFallback && run.usageCount > 0) {
-      // An id-less agent_end final after message_end usage was already
-      // recorded is almost certainly the same message; skip rather than
-      // double-bill.
-      return
-    }
+    const stopReasonForKey = typeof message.stopReason === 'string' ? message.stopReason : ''
+    // Dedup the agent_end final against the message_end of the SAME message
+    // within this attempt. With a native id that's exact; id-less, fall back to
+    // a usage signature. recordedUsageKeys is cleared on auto-retry so a new
+    // attempt's id-less usage is metered rather than skipped as a "duplicate".
+    const dedupKey = messageId
+      ? `id:${messageId}`
+      : `sig:${usage.input}:${usage.output}:${usage.cacheRead}:${usage.cacheWrite}:${usage.cost.total}:${stopReasonForKey}`
+    if (run.recordedUsageKeys.has(dedupKey)) return
+    run.recordedUsageKeys.add(dedupKey)
 
     run.usageCount += 1
     const model = typeof message.model === 'string' && message.model.length > 0 ? message.model : undefined
@@ -554,8 +597,9 @@ export class PiChatMeteringCoordinator {
       reservationId: undefined,
       instanceId: (this.runInstances += 1),
       usageCount: 0,
-      recordedMessageIds: new Set(),
+      recordedUsageKeys: new Set(),
       usageWriteFailed: false,
+      reservation: Promise.resolve(),
       terminal: false,
       ops: Promise.resolve(),
     }
@@ -627,14 +671,21 @@ export class PiChatMeteringCoordinator {
   private sessionState(sessionId: string): SessionMeteringState {
     let state = this.sessions.get(sessionId)
     if (!state) {
-      state = { pendingPrompts: [], queued: [] }
+      state = { pendingPrompts: [], queued: [], consumedFollowUpNonces: new Set() }
       this.sessions.set(sessionId, state)
     }
     return state
   }
 
   private pruneSession(sessionId: string, state: SessionMeteringState): void {
-    if (!state.active && state.pendingPrompts.length === 0 && state.queued.length === 0) {
+    // Keep sessions that hold consumed follow-up nonce memory (mirrors the Pi
+    // adapter channel's lifetime; both are cleared on deleteSession).
+    if (
+      !state.active &&
+      state.pendingPrompts.length === 0 &&
+      state.queued.length === 0 &&
+      state.consumedFollowUpNonces.size === 0
+    ) {
       this.sessions.delete(sessionId)
     }
   }

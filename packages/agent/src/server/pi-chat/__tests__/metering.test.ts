@@ -948,6 +948,106 @@ describe('PiChatMeteringCoordinator promoted follow-up failure', () => {
     expect(calls.usage[1]?.usageId).toBe('pi-usage:pi-run:s1:prompt:n:2:1')
   })
 
+  it('does not start an unmetered run when a stop cancels it during the reserve await', async () => {
+    const calls: SinkCalls = { reserved: [], usage: [], settled: [], released: [] }
+    const gate = deferred<void>()
+    const sink: AgentMeteringSink = {
+      reserveRun: async (input) => { calls.reserved.push(input); await gate.promise; return {} },
+      recordUsage: async (input) => { calls.usage.push(input) },
+      settleRun: async (input) => { calls.settled.push(input) },
+      releaseRun: async (input) => { calls.released.push(input) },
+    }
+    const coordinator = new PiChatMeteringCoordinator(sink, () => {})
+
+    const reservePromise = coordinator.reservePrompt({ ...scope, clientNonce: 'n', message: 'a' })
+    // A stop lands while the reservation is still in flight.
+    coordinator.releasePending('s1')
+    gate.resolve()
+    const isNewRun = await reservePromise
+    await coordinator.flush()
+
+    // Caller is told to skip execution, and the hold is released after the
+    // reservation row exists (release ordered behind reserve on run.ops).
+    expect(isNewRun).toBe(false)
+    expect(calls.released).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:n', reason: 'cancelled' }),
+    ])
+  })
+
+  it('propagates the owner reservation rejection to a concurrent duplicate', async () => {
+    const calls: SinkCalls = { reserved: [], usage: [], settled: [], released: [] }
+    const gate = deferred<void>()
+    const sink: AgentMeteringSink = {
+      reserveRun: async (input) => {
+        calls.reserved.push(input)
+        await gate.promise
+        throw Object.assign(new Error('credits exhausted'), { statusCode: 402 })
+      },
+      recordUsage: async (input) => { calls.usage.push(input) },
+      settleRun: async (input) => { calls.settled.push(input) },
+      releaseRun: async (input) => { calls.released.push(input) },
+    }
+    const coordinator = new PiChatMeteringCoordinator(sink, () => {})
+
+    const first = coordinator.reservePrompt({ ...scope, clientNonce: 'n', message: 'a' })
+    const second = coordinator.reservePrompt({ ...scope, clientNonce: 'n', message: 'b' })
+    gate.resolve()
+
+    // Both concurrent same-nonce requests see the rejection (no false success).
+    await expect(first).rejects.toThrow('credits exhausted')
+    await expect(second).rejects.toThrow('credits exhausted')
+    expect(calls.reserved).toHaveLength(1)
+  })
+
+  it('meters id-less usage from each failed retry attempt independently', async () => {
+    const { sink, calls } = coordinatorSink()
+    const coordinator = new PiChatMeteringCoordinator(sink, () => {})
+    await coordinator.reservePrompt({ ...scope, clientNonce: 'n', message: 'a' })
+    coordinator.observe('s1', { type: 'agent_start', turnId: 't' }, [
+      { type: 'agent-start', seq: 1, turnId: 't' } as never,
+    ])
+
+    const failedAttempt = (input: number) => ({
+      type: 'agent_end',
+      willRetry: true,
+      messages: [{ role: 'assistant', stopReason: 'error', usage: { input, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: input, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }],
+    })
+    // Two failed attempts with identical id-less usage, separated by auto-retry.
+    coordinator.observe('s1', failedAttempt(100), [{ type: 'agent-end', seq: 2, turnId: 't', status: 'error' } as never])
+    coordinator.observe('s1', { type: 'auto_retry_start' }, [
+      { type: 'auto-retry-start', seq: 3, attempt: 1, maxAttempts: 3, delayMs: 0, errorMessage: 'x' } as never,
+    ])
+    coordinator.observe('s1', failedAttempt(100), [{ type: 'agent-end', seq: 4, turnId: 't', status: 'error' } as never])
+    coordinator.observe('s1', { type: 'auto_retry_start' }, [
+      { type: 'auto-retry-start', seq: 5, attempt: 2, maxAttempts: 3, delayMs: 0, errorMessage: 'x' } as never,
+    ])
+    coordinator.observe('s1', { type: 'message_end', message: { id: 'a-ok', role: 'assistant', usage: USAGE } }, [])
+    coordinator.observe('s1', { type: 'agent_end', messages: [{ role: 'assistant', stopReason: 'stop' }] }, [
+      { type: 'agent-end', seq: 6, turnId: 't', status: 'ok' } as never,
+    ])
+    await coordinator.flush()
+
+    // Both failed attempts + the success are billed (3 usage rows).
+    expect(calls.usage).toHaveLength(3)
+  })
+
+  it('suppresses a follow-up retry whose nonce was already consumed', async () => {
+    const { sink, calls } = coordinatorSink()
+    const coordinator = new PiChatMeteringCoordinator(sink, () => {})
+
+    await coordinator.reserveFollowUp({ ...scope, clientNonce: 'f', clientSeq: 0, message: 'q' })
+    coordinator.observe('s1', { type: 'message_start', message: {} }, [
+      { type: 'message-start', seq: 1, messageId: 'u', role: 'user', clientNonce: 'f', clientSeq: 0 } as never,
+    ])
+    expect(coordinator.hasFollowUpRun('s1', { clientNonce: 'f', clientSeq: 0 })).toBe(true)
+
+    // A retry reservation of the consumed nonce is short-circuited (the adapter
+    // would silently drop it, stranding the hold).
+    const retryReserved = await coordinator.reserveFollowUp({ ...scope, clientNonce: 'f', clientSeq: 0, message: 'q' })
+    expect(retryReserved).toBe(false)
+    expect(calls.reserved).toHaveLength(1)
+  })
+
   it('failFollowUpRun releases a queued run by selector and no-ops once it is consumed', async () => {
     const { sink, calls } = coordinatorSink()
     const coordinator = new PiChatMeteringCoordinator(sink, () => {})
