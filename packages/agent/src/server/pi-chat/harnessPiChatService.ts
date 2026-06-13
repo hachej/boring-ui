@@ -156,8 +156,13 @@ export class HarnessPiChatService implements PiChatSessionService {
     // start a second model run or a second reservation — the original run
     // owns execution and metering. Acknowledge it idempotently instead of
     // re-issuing adapter.prompt(), whose busy-rejection would otherwise fail
-    // the shared metering run.
-    if (this.messageMetadata.hasPrompt(sessionId, { clientNonce: payload.clientNonce })) {
+    // the shared metering run. The metering coordinator tracks the run for its
+    // whole lifetime (accept → agent-end); the reconciler metadata only covers
+    // accept → message-start, so check both.
+    if (
+      this.messageMetadata.hasPrompt(sessionId, { clientNonce: payload.clientNonce }) ||
+      this.metering?.hasPromptRun(sessionId, payload.clientNonce)
+    ) {
       return {
         accepted: true,
         cursor: this.channels.get(sessionId)?.buffer.latestSeq ?? 0,
@@ -289,7 +294,14 @@ export class HarnessPiChatService implements PiChatSessionService {
     const metadata = this.messageMetadata.findFollowUpForQueueItem(sessionId, followUp)
     this.messageMetadata.recordConsumingFollowUp(sessionId, followUp, metadata?.serverText)
     if (adapter.continueQueuedFollowUp) {
-      await this.trackActiveRun(sessionId, adapter.continueQueuedFollowUp())
+      try {
+        await this.trackActiveRun(sessionId, adapter.continueQueuedFollowUp())
+      } catch (err) {
+        // Rejected before Pi consumed the follow-up; release its reservation.
+        // A no-op if it was already consumed (the run left the queue).
+        this.metering?.failFollowUpRun(sessionId, followUp)
+        throw err
+      }
       return
     }
     if (!this.canClearAutoPostedFollowUpForFallback(adapter, followUp)) {

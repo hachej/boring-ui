@@ -256,6 +256,16 @@ export class PiChatMeteringCoordinator {
     state.queued.push(run)
   }
 
+  /** True while a non-terminal prompt run exists for this nonce (accept →
+   * agent-end). Used to suppress duplicate-nonce execution for the full run
+   * lifetime, not just until the user message-start is consumed. */
+  hasPromptRun(sessionId: string, clientNonce: string): boolean {
+    const state = this.sessions.get(sessionId)
+    if (!state) return false
+    const run = this.findRun(state, promptRunId(sessionId, clientNonce))
+    return run !== undefined && !run.terminal
+  }
+
   /** The accepted prompt failed before/without running (sync throw or run rejection). */
   failPromptRun(sessionId: string, clientNonce: string): void {
     const state = this.sessions.get(sessionId)
@@ -388,12 +398,14 @@ export class PiChatMeteringCoordinator {
           break
         }
         case 'agent-end': {
+          // Harvest authoritative usage riding on agent_end first (deduped by
+          // message id) — a willRetry attempt may still carry real, billed
+          // token usage for the failed attempt.
+          this.harvestAgentEndUsage(state, nativeEvent)
           // Pi auto-retries inside the same run (agent_end with willRetry,
           // then auto_retry_* events, then the retried stream — without a new
-          // agent_start). Terminating here would release the reservation and
-          // drop the retried completion's usage.
+          // agent_start). Don't terminate: the run continues for the retry.
           if (isRecord(nativeEvent) && nativeEvent.willRetry === true) break
-          this.harvestAgentEndUsage(state, nativeEvent)
           if (state.active && !state.active.terminal) this.finishRun(state.active, event.status)
           state.active = undefined
           break

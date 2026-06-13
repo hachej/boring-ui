@@ -486,6 +486,79 @@ describe('pi chat metering', () => {
     expect(calls.settled).toEqual([])
   })
 
+  it('suppresses a duplicate prompt nonce that retries mid-stream after message-start', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'go', clientNonce: 'nonce-mid' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    // The prompt's user message-start is consumed (reconciler metadata cleared),
+    // but the run is still active mid-stream.
+    adapter.emit({
+      type: 'message_start',
+      message: { id: 'u1', role: 'user', content: [{ type: 'text', text: 'go' }], clientNonce: 'nonce-mid' },
+    } as unknown as AgentSessionEvent)
+
+    // Client retries the same nonce now — must be suppressed, not re-executed.
+    const retry = await service.prompt(ctx, 's1', { message: 'go', clientNonce: 'nonce-mid' })
+    expect(retry).toMatchObject({ duplicate: true })
+    expect(adapter.prompt).toHaveBeenCalledTimes(1)
+
+    adapter.emit(assistantMessageEnd({ id: 'a1' }))
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    expect(calls.reserved).toHaveLength(1)
+    expect(calls.usage).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-mid', usageId: 'pi-usage:s1:message:a1' }),
+    ])
+    expect(calls.settled).toEqual([expect.objectContaining({ status: 'ok' })])
+    expect(calls.released).toEqual([])
+  })
+
+  it('harvests billable usage from a willRetry agent_end final assistant', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'flaky', clientNonce: 'nonce-rt' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    // Failed attempt carries real usage and rides on a willRetry agent_end.
+    adapter.emit(agentEnd('error', 'overloaded', {
+      willRetry: true,
+      messages: [{ id: 'a-failed', role: 'assistant', content: [], stopReason: 'error', usage: USAGE, provider: 'ollama', model: 'kimi-k2:1t' }],
+    }))
+    adapter.emit({ type: 'auto_retry_start', attempt: 1, maxAttempts: 3, delayMs: 0, errorMessage: 'overloaded' } as unknown as AgentSessionEvent)
+    adapter.emit({ type: 'auto_retry_end', success: true, attempt: 1 } as unknown as AgentSessionEvent)
+    adapter.emit(assistantMessageEnd({ id: 'a-ok' }))
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    // Both the failed attempt's usage and the retried completion are billed.
+    expect(calls.usage).toEqual([
+      expect.objectContaining({ usageId: 'pi-usage:s1:message:a-failed' }),
+      expect.objectContaining({ usageId: 'pi-usage:s1:message:a-ok' }),
+    ])
+    expect(calls.settled).toEqual([expect.objectContaining({ status: 'ok' })])
+    expect(calls.released).toEqual([])
+  })
+
+  it('does not bill a willRetry agent_end that carries no usage', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'flaky', clientNonce: 'nonce-rt2' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    adapter.emit(agentEnd('error', 'overloaded', { willRetry: true }))
+    adapter.emit(assistantMessageEnd({ id: 'a-ok' }))
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    expect(calls.usage).toEqual([expect.objectContaining({ usageId: 'pi-usage:s1:message:a-ok' })])
+  })
+
   it('releases a queued follow-up reservation cleared by clientSeq alone', async () => {
     const adapter = createAdapter()
     const { sink, calls } = createSink()
@@ -800,6 +873,28 @@ describe('PiChatMeteringCoordinator promoted follow-up failure', () => {
   }
 
   const scope = { workspaceId: 'ws', userId: 'user-a', sessionId: 's1' }
+
+  it('failFollowUpRun releases a queued run by selector and no-ops once it is consumed', async () => {
+    const { sink, calls } = coordinatorSink()
+    const coordinator = new PiChatMeteringCoordinator(sink, () => {})
+
+    await coordinator.reserveFollowUp({ ...scope, clientNonce: 'nonce-f', clientSeq: 0, message: 'queued' })
+    // continueQueuedFollowUp rejected before consumption → release the hold.
+    coordinator.failFollowUpRun('s1', { clientNonce: 'nonce-f', clientSeq: 0 })
+    await coordinator.flush()
+    expect(calls.released).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:followup:nonce-f:0', reason: 'run-rejected' }),
+    ])
+
+    // After consumption the queued lookup is empty, so a late failure is a no-op.
+    await coordinator.reserveFollowUp({ ...scope, clientNonce: 'nonce-g', clientSeq: 1, message: 'queued2' })
+    coordinator.observe('s1', { type: 'message_start', message: {} }, [
+      { type: 'message-start', seq: 1, messageId: 'u', role: 'user', clientNonce: 'nonce-g', clientSeq: 1 } as never,
+    ])
+    coordinator.failFollowUpRun('s1', { clientNonce: 'nonce-g', clientSeq: 1 })
+    await coordinator.flush()
+    expect(calls.released).toHaveLength(1)
+  })
 
   it('releases a promoted follow-up that fails before agent-start and never binds it to a later run', async () => {
     const { sink, calls } = coordinatorSink()
