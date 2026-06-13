@@ -66,3 +66,48 @@ usage with a margin.
 Phases 1–2 and the code of 3 are buildable now on `feat/native-pi-metering`; the live LS
 end-to-end (5) and #294 merge are the gates. Build, unit-test, and stage so it lights up
 when the test packs + webhook secret land.
+
+## Environment contract (`apps/full-app`)
+All money config is **fail-closed**: a provided-but-invalid value throws at startup
+(`readCreditsConfig`), never silently falls back.
+
+| Env var | Required | Meaning |
+|---|---|---|
+| `BORING_CREDITS_ENABLED` | no (default on) | `0` disables consumption + purchase routes entirely. |
+| `BORING_CREDITS_SIGNUP_GRANT_EUR` | no (default 2) | Free starter grant, EUR. |
+| `BORING_CREDITS_SIGNUP_GRANT_EXPIRES_DAYS` | no (default never) | `0`/unset = never; else a positive integer. |
+| `BORING_CREDITS_RESERVATION_EUR` | no | Per-run hold. **Unset ⇒ computed worst-case run** (see limitations). An explicit value below the worst case throws. |
+| `BORING_CREDITS_MIN_BALANCE_EUR` | no (default 0.05) | Floor kept available **after** a run's hold. |
+| `BORING_CREDITS_MARGIN` | no (default 1.3) | Pricing margin; must be ≥ 1. |
+| `BORING_CREDITS_RATES` | recommended | `regex=inEur:outEur;…` per-MTok rates (e.g. `infomaniak=0.5:1.5`). Matched against `provider/id`. Non-positive/malformed entries throw. |
+| `BORING_CREDITS_MAX_CONTEXT_TOKENS` / `_MAX_OUTPUT_TOKENS` / `_MAX_CALLS_PER_RUN` | no (200k/16k/4) | Worst-case-run inputs for hold sizing. |
+| `BORING_CREDITS_LS_WEBHOOK_SECRET` | for purchases | LS webhook signing secret (raw-body HMAC). |
+| `BORING_CREDITS_LS_STORE_ID` | **required if webhook secret set** | Webhook ignores orders from other stores. |
+| `BORING_CREDITS_LS_TEST_MODE` | **required if LS configured** | Exactly `0` (live) or `1` (test). |
+| `BORING_CREDITS_LS_VARIANTS` | for purchases | `creditEur:variantId,…` — pack value (EUR, drives crediting) → LS variant id (**positive integer**). Duplicate pack/variant ids throw. |
+| `BORING_CREDITS_LS_API_KEY` / `_LS_DEFAULT_PACK` / `_LS_REDIRECT_URL` | for checkout | Server-side checkout creation. |
+| `VITE_CREDITS_BUY_ENABLED` | no | Front fallback for the Buy button (server `checkoutEnabled` takes precedence). |
+
+Money-safety invariants enforced in code: fixed per-variant crediting (no order-amount
+fallback); net-paid ≥ pack value (underpayment rejected); discounts disabled + checkout
+locked to the selected variant; per-order global idempotency with full-identity conflict
+detection; refund reconciliation by order id with store/mode matching; unknown models
+fail closed at the highest effective rate.
+
+## Known limitations (accepted for launch, documented)
+1. **Per-run hard stop is not per-call.** The hold bounds a run's overdraft (sized for
+   `MAX_CALLS_PER_RUN` worst-case calls); a run exceeding that budget can overshoot, bounded,
+   and the user's *next* run is then refused. True per-call enforcement needs a Pi-runtime
+   abort hook (the metering coordinator is an observer) — a deliberate follow-up.
+2. **Hold sizing includes built-in expensive defaults.** `maxEffectiveRate` covers Claude
+   Opus (15/75) from the built-in table even if you only serve Infomaniak, so the default
+   hold can exceed the €2 starter grant (a startup warning fires). **Action for launch:** set
+   `BORING_CREDITS_RATES` for your served models and tune `MAX_CONTEXT_TOKENS`/
+   `MAX_CALLS_PER_RUN` (or set `RESERVATION_EUR`) so the hold ≤ the starter grant.
+3. **Durable settlement under a sustained DB outage.** If usage write *and* the fallback
+   charge both fail and stay failed past the reservation TTL, that one run can free up (the
+   hold blocks the user until then; failures are logged for reconcile). A persistent
+   settlement-retry queue is a follow-up.
+4. **Single-store purchase key.** The purchase PK is `order_id`; cross-store/mode collisions
+   are prevented by the per-store/mode webhook secret + config validation. A composite
+   `store:mode:order_id` key would harden a future multi-tenant DB.
