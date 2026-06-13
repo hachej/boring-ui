@@ -10,6 +10,7 @@ import type { WorkspaceChangeEvent, WorkspaceWatcher } from '../../../shared/wor
 // semantics — these tests check that an event eventually arrives, not that
 // it arrives within a tight budget.
 const SETTLE_MS = 750
+const WATCH_TEST_TIMEOUT_MS = 15_000
 
 function wait(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
@@ -96,16 +97,16 @@ describe('createNodeWorkspace.watch', () => {
     const ws = createNodeWorkspace(root)
     await ws.writeFile('b.txt', 'tmp')
     watcher = ws.watch!()
-    await wait(SETTLE_MS)
 
     const events: WorkspaceChangeEvent[] = []
     watcher.subscribe((e) => events.push(e))
+    await watcher.whenReady?.()
 
     await ws.unlink('b.txt')
-    await waitForEvent(events, (e) => e.op === 'unlink' && e.path === 'b.txt')
+    await waitForEvent(events, (e) => e.op === 'unlink' && e.path === 'b.txt', WATCH_TEST_TIMEOUT_MS - 1_000)
 
     expect(events.some((e) => e.op === 'unlink' && e.path === 'b.txt')).toBe(true)
-  })
+  }, WATCH_TEST_TIMEOUT_MS)
 
   it('ignores heavyweight internal directories', async () => {
     const ws = createNodeWorkspace(root)
