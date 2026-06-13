@@ -643,8 +643,8 @@ describe('pi chat metering', () => {
     await service.flushMetering()
 
     expect(calls.usage).toEqual([
-      // id-less fallback usage id: pi-usage:<runId>:<instanceId>:<n>
-      expect.objectContaining({ usageId: 'pi-usage:pi-run:s1:prompt:nonce-final:1:1', runId: 'pi-run:s1:prompt:nonce-final' }),
+      // id-less fallback usage id keyed by the persisted reservationId.
+      expect.objectContaining({ usageId: 'pi-usage:reservation:res-1:1', runId: 'pi-run:s1:prompt:nonce-final' }),
     ])
     // Usage was billable, so the errored run settles instead of releasing.
     expect(calls.settled).toEqual([expect.objectContaining({ status: 'error' })])
@@ -772,6 +772,31 @@ describe('pi chat metering', () => {
     expect(calls.released).toEqual([
       expect.objectContaining({ runId: 'pi-run:s1:followup:nonce-q:0', reason: 'run-rejected' }),
     ])
+  })
+
+  it('aborts the live Pi run and bills observed usage before deleting the session', async () => {
+    const adapter = createAdapter()
+    const run = deferred<void>()
+    adapter.prompt = vi.fn(() => run.promise)
+    // The native abort ends the run; its aborted agent-end flows to metering.
+    adapter.abort = vi.fn(async () => {
+      adapter.emit(assistantMessageEnd({ id: 'a1' }))
+      adapter.emit(agentEnd('aborted'))
+      run.resolve()
+    })
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'expensive', clientNonce: 'nonce-del' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+
+    await service.deleteSession(ctx, 's1')
+    await service.flushMetering()
+
+    // The run was aborted (no leaked model run) and its observed usage settled.
+    expect(adapter.abort).toHaveBeenCalled()
+    expect(calls.usage).toEqual([expect.objectContaining({ usageId: 'pi-usage:s1:message:a1' })])
+    expect(calls.settled).toEqual([expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-del' })])
   })
 
   it('releases all reservations when the session is deleted', async () => {

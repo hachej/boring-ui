@@ -92,7 +92,18 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   async deleteSession(ctx: PiSessionRequestContext, sessionId: string) {
-    this.channels.get(sessionId)?.unsubscribe()
+    const channel = this.channels.get(sessionId)
+    if (channel) {
+      // sessionStore.delete only disposes the Pi listener; it does not abort the
+      // underlying Agent run. Abort it first (so it stops generating billable
+      // usage) and await the in-flight run while the subscription is still live,
+      // so the native aborted agent-end finalizes the active metering run with
+      // its observed usage before we tear the channel down.
+      const activeRun = this.activePromptRuns.get(sessionId)
+      await channel.adapter.abort()
+      await activeRun?.catch(() => {})
+    }
+    channel?.unsubscribe()
     this.channels.delete(sessionId)
     this.metering?.releaseSession(sessionId)
     this.messageMetadata.clearSession(sessionId)

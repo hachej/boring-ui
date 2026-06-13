@@ -581,9 +581,18 @@ export class PiChatMeteringCoordinator {
     const model = typeof message.model === 'string' && message.model.length > 0 ? message.model : undefined
     const provider = typeof message.provider === 'string' && message.provider.length > 0 ? message.provider : undefined
     const stopReason = typeof message.stopReason === 'string' ? message.stopReason : undefined
+    // Stable usage id for ledger idempotency. Native id when present. Otherwise
+    // prefer the persisted reservationId: it's DB-assigned (stable across
+    // process restarts) and distinct per reserve — and the store's idempotent
+    // reserve hands a crash-retry of the same runId back the SAME reservation,
+    // so the retried usage id matches and is deduped rather than double-billed.
+    // Only when the sink returns no reservationId do we fall back to the
+    // process-local run instance (best effort).
     const usageId = messageId
       ? `pi-usage:${run.scope.sessionId}:message:${messageId}`
-      : `pi-usage:${run.scope.runId}:${run.instanceId}:${run.usageCount}`
+      : run.reservationId
+        ? `pi-usage:reservation:${run.reservationId}:${run.usageCount}`
+        : `pi-usage:${run.scope.runId}:${run.instanceId}:${run.usageCount}`
 
     this.enqueue(run, async () => {
       try {
