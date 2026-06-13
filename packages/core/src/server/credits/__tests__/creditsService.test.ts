@@ -35,6 +35,7 @@ function makeStore(overrides: Partial<CreditsMeteringStore> = {}): CreditsMeteri
     recordUsage: vi.fn(async () => ({ inserted: true })),
     finishReservation: vi.fn(async () => ({ updated: true })),
     expireStaleReservations: vi.fn(async () => 0),
+    billedMicrosForRun: vi.fn(async () => 0),
     ...overrides,
   }
 }
@@ -130,6 +131,23 @@ describe('CreditsService', () => {
       usageId: 'usage-1', provider: 'infomaniak', model: 'infomaniak/mistral',
       providerCostMicros: 500_000, billedCostMicros: Math.ceil(0.5 * 1.3 * 1_000_000),
     }))
+  })
+
+  it('fallback-charges only the delta up to the hold (no double-charge on partial usage)', async () => {
+    // €0.2 of usage already billed for the run; hold is 250k → top up 50k only.
+    const store = makeStore({ billedMicrosForRun: vi.fn(async () => 200_000) })
+    const service = new CreditsService(store, CONFIG)
+    await service.chargeFallbackUsage({ userId: 'u1', runId: 'r', reservationId: 'res-1' })
+    expect(store.recordUsage).toHaveBeenCalledWith(expect.objectContaining({ billedCostMicros: 50_000, source: 'pi-chat-fallback' }))
+    expect(store.finishReservation).toHaveBeenCalledWith({ reservationId: 'res-1' }, 'settled')
+  })
+
+  it('fallback skips the debit entirely when usage already met the hold', async () => {
+    const store = makeStore({ billedMicrosForRun: vi.fn(async () => 300_000) }) // ≥ hold
+    const service = new CreditsService(store, CONFIG)
+    await service.chargeFallbackUsage({ userId: 'u1', runId: 'r', reservationId: 'res-1' })
+    expect(store.recordUsage).not.toHaveBeenCalled()
+    expect(store.finishReservation).toHaveBeenCalledWith({ reservationId: 'res-1' }, 'settled')
   })
 
   it('settles and releases by reservation id when present, else by run+user', async () => {

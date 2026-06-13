@@ -147,7 +147,11 @@ export function usageToCredits(
   const outputTokens = clampTokens(usage.outputTokens)
   const cacheReadTokens = clampTokens(usage.cacheReadTokens)
   const cacheWriteTokens = clampTokens(usage.cacheWriteTokens)
-  const modelId = model.id ?? 'unknown'
+  // Match rates against a provider-qualified id ("provider/id") so a rate keyed
+  // by provider name (e.g. `infomaniak`) matches even when the model id alone
+  // (e.g. `Qwen/Qwen3.5`) doesn't contain the provider. A bare id still matches
+  // id-based patterns (the provider prefix is just an additional anchor).
+  const modelId = [model.provider, model.id].filter(Boolean).join('/') || 'unknown'
 
   const reported = usage.providerReportedCost
   const reportedUnits = typeof reported === 'number' && Number.isFinite(reported) && reported > 0 ? reported : 0

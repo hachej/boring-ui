@@ -96,7 +96,10 @@ describe('handleLemonSqueezyWebhook', () => {
     const res = await handleLemonSqueezyWebhook(body, sign(body), options)
 
     expect(res).toEqual({ status: 200, body: { ok: true, orderId: 'order-123', created: true } })
-    expect(grant).toHaveBeenCalledWith({ userId: 'user-1', orderId: 'order-123', reason: 'purchase:order-123', amountMicros: 10_000_000 })
+    expect(grant).toHaveBeenCalledWith(
+      { userId: 'user-1', orderId: 'order-123', reason: 'purchase:order-123', amountMicros: 10_000_000 },
+      expect.objectContaining({ orderId: 'order-123', variantId: '42' }),
+    )
   })
 
   it('rejects an invalid signature with 401 and never grants', async () => {
@@ -165,11 +168,28 @@ describe('handleLemonSqueezyWebhook', () => {
     expect(grant).not.toHaveBeenCalled()
   })
 
+  it('does not grant when the net paid amount is below the credits it maps to', async () => {
+    // creditsForOrder grants 10_000_000 micros (€10), but the buyer paid only €1.
+    const { options, grant } = opts({ creditsForOrder: () => 10_000_000, creditMicrosPerUnit: 1_000_000 })
+    const body = orderPayload({}, { subtotal: 100, discount_total: 0, total: 100 })
+    const res = await handleLemonSqueezyWebhook(body, sign(body), options)
+    expect(res).toMatchObject({ status: 200, body: { ok: false, reason: 'underpaid_order' } })
+    expect(grant).not.toHaveBeenCalled()
+  })
+
+  it('grants when the net paid amount covers the credits (discount-aware)', async () => {
+    const { options, grant } = opts({ creditsForOrder: () => 6_000_000, creditMicrosPerUnit: 1_000_000 })
+    // €10 subtotal − €4 discount = €6 net, grants €6 of credits.
+    const body = orderPayload({}, { subtotal: 1000, discount_total: 400, total: 600 })
+    await handleLemonSqueezyWebhook(body, sign(body), options)
+    expect(grant).toHaveBeenCalled()
+  })
+
   it('honors a custom resolveUserId', async () => {
     const { options, grant } = opts({ resolveUserId: () => 'mapped-user' })
     const body = orderPayload({ custom_data: {} })
     await handleLemonSqueezyWebhook(body, sign(body), options)
-    expect(grant).toHaveBeenCalledWith(expect.objectContaining({ userId: 'mapped-user' }))
+    expect(grant).toHaveBeenCalledWith(expect.objectContaining({ userId: 'mapped-user' }), expect.anything())
   })
 
   it('revokes credits on a refund event and never grants', async () => {

@@ -182,7 +182,15 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
           secret: ls.webhookSecret,
           creditsForOrder,
           isCreditOrder,
-          grant: (input) => options.service.grantPurchase(input.userId, input.orderId, input.amountMicros),
+          // Refuse to grant a fixed pack value the buyer didn't actually pay for.
+          creditMicrosPerUnit,
+          grant: (input, order) =>
+            options.service.grantPurchase(input.userId, input.orderId, input.amountMicros, {
+              storeId: order.storeId,
+              testMode: order.testMode,
+              currency: order.currency,
+              variantId: order.variantId,
+            }),
           // Refunds/disputes revoke the order's credits. A PARTIAL refund passes
           // the cumulative refunded fraction (refunded_amount / total); a full
           // refund passes undefined. allowTombstone gates writing a pre-grant
@@ -197,6 +205,8 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
                   ? order.refundedAmountCents / order.totalCents
                   : undefined,
               allowTombstone: isCreditOrder(order),
+              expectedStoreId: order.storeId,
+              expectedTestMode: order.testMode,
             }),
           log: options.log,
         },

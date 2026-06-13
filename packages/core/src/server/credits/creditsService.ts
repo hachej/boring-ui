@@ -100,7 +100,7 @@ export class CreditExhaustedError extends Error {
  * upstream signature changes compile-time errors and lets tests stub it. */
 export type CreditsMeteringStore = Pick<
   PostgresMeteringStore,
-  'grantOnce' | 'grantPurchaseOnce' | 'revokePurchase' | 'getBalance' | 'reserve' | 'recordUsage' | 'finishReservation' | 'expireStaleReservations'
+  'grantOnce' | 'grantPurchaseOnce' | 'revokePurchase' | 'getBalance' | 'reserve' | 'recordUsage' | 'finishReservation' | 'expireStaleReservations' | 'billedMicrosForRun'
 >
 
 function disabledBalance(userId: string): CreditBalance {
@@ -152,10 +152,16 @@ export class CreditsService {
   }
 
   /** Credit a completed purchase. Globally idempotent per order id (safe on
-   * webhook retry, and the same order can never be credited to two users). */
-  async grantPurchase(userId: string, orderId: string, amountMicros: number): Promise<{ created: boolean }> {
+   * webhook retry, and the same order can never be credited to two users). The
+   * optional provider identity is persisted for audit/refund reconciliation. */
+  async grantPurchase(
+    userId: string,
+    orderId: string,
+    amountMicros: number,
+    identity?: { storeId?: string; testMode?: boolean; currency?: string; variantId?: string },
+  ): Promise<{ created: boolean }> {
     if (!this.config.enabled) return { created: false }
-    const { granted } = await this.store.grantPurchaseOnce({ userId, orderId, amountMicros })
+    const { granted } = await this.store.grantPurchaseOnce({ userId, orderId, amountMicros, ...identity })
     return { created: granted }
   }
 
@@ -165,9 +171,17 @@ export class CreditsService {
    * refund tombstone for an order not yet credited (set only when the refund
    * validates as a credit order); an already-credited order is always revocable.
    * Idempotent per cumulative level. */
-  async revokePurchase(orderId: string, opts: { refundFraction?: number; allowTombstone?: boolean } = {}): Promise<{ revoked: boolean }> {
+  async revokePurchase(
+    orderId: string,
+    opts: { refundFraction?: number; allowTombstone?: boolean; expectedStoreId?: string; expectedTestMode?: boolean } = {},
+  ): Promise<{ revoked: boolean }> {
     if (!this.config.enabled) return { revoked: false }
-    return this.store.revokePurchase(orderId, { refundFraction: opts.refundFraction, allowTombstone: opts.allowTombstone })
+    return this.store.revokePurchase(orderId, {
+      refundFraction: opts.refundFraction,
+      allowTombstone: opts.allowTombstone,
+      expectedStoreId: opts.expectedStoreId,
+      expectedTestMode: opts.expectedTestMode,
+    })
   }
 
   async getBalance(userId: string): Promise<CreditBalance> {
@@ -280,21 +294,28 @@ export class CreditsService {
   async chargeFallbackUsage(input: { userId: string; runId: string; reservationId?: string }): Promise<void> {
     if (!this.config.enabled) return
     const key = input.reservationId ?? input.runId
-    await this.store.recordUsage({
-      usageId: `usage-fallback:${key}`,
-      userId: input.userId,
-      runId: input.runId,
-      source: 'pi-chat-fallback',
-      billedCostMicros: this.config.runReservationMicros,
-      providerCostMicros: 0,
-      metadata: { kind: 'usage_write_failed_fallback', reservationId: input.reservationId ?? null, currency: 'credits' },
-    })
+    // Top up to the hold, not ON TOP of it: if some usage rows for this run were
+    // already billed (partial write failure), charge only the missing delta so a
+    // partial-success run isn't double-charged.
+    const alreadyBilled = await this.store.billedMicrosForRun(input.userId, input.runId)
+    const topUp = Math.max(0, this.config.runReservationMicros - alreadyBilled)
+    if (topUp > 0) {
+      await this.store.recordUsage({
+        usageId: `usage-fallback:${key}`,
+        userId: input.userId,
+        runId: input.runId,
+        source: 'pi-chat-fallback',
+        billedCostMicros: topUp,
+        providerCostMicros: 0,
+        metadata: { kind: 'usage_write_failed_fallback', reservationId: input.reservationId ?? null, alreadyBilledMicros: alreadyBilled, currency: 'credits' },
+      })
+    }
     await this.store.finishReservation(
       input.reservationId ? { reservationId: input.reservationId } : { runId: input.runId, userId: input.userId },
       'settled',
     )
-    this.log?.('credits: usage write failed — charged fallback hold and settled (reconcile against missing usage)', {
-      runId: input.runId, reservationId: input.reservationId, billedCostMicros: this.config.runReservationMicros,
+    this.log?.('credits: usage write failed/missing — topped up to the hold and settled (reconcile against missing usage)', {
+      runId: input.runId, reservationId: input.reservationId, alreadyBilledMicros: alreadyBilled, topUpMicros: topUp,
     })
   }
 }

@@ -103,6 +103,15 @@ describe('usageToCredits', () => {
     expect(estimateProviderCost('zzz-unknown', 1_000_000, 0, config)).toEqual({ units: 1, usedDefault: true })
   })
 
+  it('matches a provider-keyed rate against the provider, not just the model id', () => {
+    // Rate keyed by provider name; the model id alone ("Qwen/Qwen3.5") doesn't
+    // contain "infomaniak", but the provider-qualified key does.
+    const config: CreditPricingConfig = { margin: 1, creditMicrosPerUnit: 1_000_000, rates: INFOMANIAK_RATE }
+    const cost = usageToCredits({ inputTokens: 1_000_000, outputTokens: 0 }, { provider: 'infomaniak', id: 'Qwen/Qwen3.5' }, config)
+    expect(cost.providerCostMicros).toBe(500_000) // €0.5 infomaniak rate applied
+    expect(cost.pricedFromDefault).toBe(false)
+  })
+
   describe('maxEffectiveRate (for sizing the per-run hold)', () => {
     it('uses the priciest DEFAULT_MODEL_RATES entry when no rates are configured', () => {
       // DEFAULT_MODEL_RATES includes Claude Opus at 15/75 — the hold must cover it.

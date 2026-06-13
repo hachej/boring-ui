@@ -54,12 +54,15 @@ beforeEach(async () => {
 })
 
 describe('grantPurchaseOnce (global per-order idempotency)', () => {
-  it('credits a paid order exactly once, even across retries and a different user', async () => {
+  it('credits a paid order exactly once; an identical retry no-ops, a conflicting one throws', async () => {
     expect(await store.grantPurchaseOnce({ orderId: 'ord-1', userId: USER, amountMicros: 10_000_000 })).toEqual({ granted: true })
-    // Retry of the same order → no second grant.
+    // Identical retry of the same order → no second grant (idempotent).
     expect(await store.grantPurchaseOnce({ orderId: 'ord-1', userId: USER, amountMicros: 10_000_000 })).toEqual({ granted: false })
-    // Same order id misrouted to a different user → still no grant (global key).
-    expect(await store.grantPurchaseOnce({ orderId: 'ord-1', userId: OTHER_USER, amountMicros: 10_000_000 })).toEqual({ granted: false })
+    // Same order id misrouted to a DIFFERENT user → conflict, surfaced loudly
+    // (never silently 200-acked as idempotent — it's accounting corruption).
+    await expect(store.grantPurchaseOnce({ orderId: 'ord-1', userId: OTHER_USER, amountMicros: 10_000_000 })).rejects.toThrow(/refusing conflicting re-grant/)
+    // A conflicting amount for the same user also throws.
+    await expect(store.grantPurchaseOnce({ orderId: 'ord-1', userId: USER, amountMicros: 25_000_000 })).rejects.toThrow(/refusing conflicting re-grant/)
 
     expect((await store.getBalance(USER)).grantedMicros).toBe(10_000_000)
     expect((await store.getBalance(OTHER_USER)).grantedMicros).toBe(0)

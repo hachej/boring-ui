@@ -144,22 +144,38 @@ export class PostgresMeteringStore {
     userId: string
     amountMicros: number
     source?: string
+    storeId?: string
+    testMode?: boolean
+    currency?: string
+    variantId?: string
   }): Promise<{ granted: boolean }> {
     if (!input.orderId) throw new Error('grantPurchaseOnce requires an orderId')
     if (!Number.isSafeInteger(input.amountMicros) || input.amountMicros <= 0) {
       throw new Error('purchase amountMicros must be a positive integer')
     }
     const source = input.source ?? 'lemonsqueezy'
+    const identity = { storeId: input.storeId ?? null, testMode: input.testMode ?? null, currency: input.currency ?? null, variantId: input.variantId ?? null }
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`purchase:${input.orderId}`}))`)
       const existing = await tx
-        .select({ status: creditPurchases.status, pendingRefundPpm: creditPurchases.pendingRefundPpm })
+        .select({ status: creditPurchases.status, userId: creditPurchases.userId, amountMicros: creditPurchases.amountMicros, pendingRefundPpm: creditPurchases.pendingRefundPpm })
         .from(creditPurchases)
         .where(eq(creditPurchases.orderId, input.orderId))
         .limit(1)
       const prior = existing[0]
       // Already granted, or fully refunded (tombstone/transitioned) → never grant.
-      if (prior && prior.status !== 'refund_pending') return { granted: false }
+      if (prior && prior.status !== 'refund_pending') {
+        // A retry must carry the SAME user + amount. A mismatch means an
+        // attribution/amount bug or a reused order id — surface it loudly rather
+        // than silently 200-ack a money/accounting corruption as idempotent.
+        if (prior.status === 'granted' && (prior.userId !== input.userId || prior.amountMicros !== input.amountMicros)) {
+          throw new Error(
+            `purchase ${input.orderId} already granted to ${prior.userId} for ${prior.amountMicros} micros; ` +
+              `refusing conflicting re-grant to ${input.userId} for ${input.amountMicros} micros`,
+          )
+        }
+        return { granted: false }
+      }
 
       const insertGrant = async () => {
         const grantRows = await tx
@@ -182,7 +198,7 @@ export class PostgresMeteringStore {
         const revoke = Math.min(input.amountMicros, Math.round((input.amountMicros * pendingPpm) / 1_000_000))
         await tx
           .update(creditPurchases)
-          .set({ userId: input.userId, amountMicros: input.amountMicros, status: revoke >= input.amountMicros ? 'refunded' : 'granted', pendingRefundPpm: null, refundedMicros: revoke > 0 ? revoke : null, refundedAt: revoke > 0 ? new Date() : null })
+          .set({ userId: input.userId, amountMicros: input.amountMicros, status: revoke >= input.amountMicros ? 'refunded' : 'granted', pendingRefundPpm: null, refundedMicros: revoke > 0 ? revoke : null, refundedAt: revoke > 0 ? new Date() : null, ...identity })
           .where(eq(creditPurchases.orderId, input.orderId))
         await insertGrant()
         if (revoke > 0) {
@@ -200,6 +216,7 @@ export class PostgresMeteringStore {
         amountMicros: input.amountMicros,
         status: 'granted',
         source,
+        ...identity,
       })
       await insertGrant()
       return { granted: true }
@@ -224,7 +241,7 @@ export class PostgresMeteringStore {
    */
   async revokePurchase(
     orderId: string,
-    opts: { refundFraction?: number; source?: string; allowTombstone?: boolean } = {},
+    opts: { refundFraction?: number; source?: string; allowTombstone?: boolean; expectedStoreId?: string; expectedTestMode?: boolean } = {},
   ): Promise<{ revoked: boolean }> {
     if (!orderId) throw new Error('revokePurchase requires an orderId')
     const source = opts.source ?? 'lemonsqueezy-refund'
@@ -244,6 +261,8 @@ export class PostgresMeteringStore {
           status: creditPurchases.status,
           refundedMicros: creditPurchases.refundedMicros,
           pendingRefundPpm: creditPurchases.pendingRefundPpm,
+          storeId: creditPurchases.storeId,
+          testMode: creditPurchases.testMode,
         })
         .from(creditPurchases)
         .where(eq(creditPurchases.orderId, orderId))
@@ -280,6 +299,15 @@ export class PostgresMeteringStore {
         }
         return { revoked: false }
       }
+      // Defense in depth beyond the per-store/mode webhook secret: when the
+      // credited order has a stored store/mode, a refund claiming a different
+      // store or mode must NOT revoke it (guards a raw-order-id collision).
+      if (
+        (row.storeId != null && opts.expectedStoreId != null && row.storeId !== opts.expectedStoreId) ||
+        (row.testMode != null && opts.expectedTestMode != null && row.testMode !== opts.expectedTestMode)
+      ) {
+        return { revoked: false }
+      }
       const credited = row.amountMicros ?? 0
       const alreadyRefunded = row.refundedMicros ?? 0
       // Cumulative revoked amount on the credited (pre-tax) basis, capped at
@@ -313,6 +341,16 @@ export class PostgresMeteringStore {
         .where(eq(creditPurchases.orderId, orderId))
       return { revoked: debit.length > 0 }
     })
+  }
+
+  /** Total billed micros already recorded for a run (for fallback top-up so a
+   * partial-success run isn't charged the hold ON TOP of its real usage). */
+  async billedMicrosForRun(userId: string, runId: string): Promise<number> {
+    const rows = await this.db
+      .select({ total: sql<string>`coalesce(sum(${usageLedger.billedCostMicros}), 0)` })
+      .from(usageLedger)
+      .where(and(eq(usageLedger.userId, userId), eq(usageLedger.runId, runId)))
+    return Number(rows[0]?.total ?? 0)
   }
 
   async getBalance(userId: string, now: Date = new Date()): Promise<MeteringBalance> {

@@ -318,6 +318,12 @@ export const creditPurchases = pgTable(
     /** Pending refund fraction in parts-per-million (fraction × 1e6), set when a
      * partial refund arrives before the grant; applied at grant time. */
     pendingRefundPpm: bigint('pending_refund_ppm', { mode: 'number' }),
+    /** Provider identity captured at grant time, for audit/reconcile and to match
+     * a later refund against the order we actually credited. */
+    storeId: text('store_id'),
+    testMode: boolean('test_mode'),
+    currency: text('currency'),
+    variantId: text('variant_id'),
   },
   (table) => [
     index('boring_credit_purchases_user_idx').on(table.userId),

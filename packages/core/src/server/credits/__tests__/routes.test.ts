@@ -25,6 +25,7 @@ function makeStore(): CreditsMeteringStore {
     recordUsage: vi.fn(async () => ({ inserted: true })),
     finishReservation: vi.fn(async () => ({ updated: true })),
     expireStaleReservations: vi.fn(async () => 0),
+    billedMicrosForRun: vi.fn(async () => 0),
   }
 }
 
@@ -80,7 +81,7 @@ describe('credits routes', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({ ok: true, orderId: 'order-77' })
-    expect(store.grantPurchaseOnce).toHaveBeenCalledWith({ userId: 'user-1', orderId: 'order-77', amountMicros: 10_000_000 })
+    expect(store.grantPurchaseOnce).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1', orderId: 'order-77', amountMicros: 10_000_000 }))
   })
 
   it('grants the FIXED per-variant value, ignoring the order subtotal (multi-item/discount safe)', async () => {
@@ -98,7 +99,7 @@ describe('credits routes', () => {
       payload: body,
     })
     expect(res.statusCode).toBe(200)
-    expect(store.grantPurchaseOnce).toHaveBeenCalledWith({ userId: 'user-1', orderId: 'order-fix', amountMicros: 5_000_000 })
+    expect(store.grantPurchaseOnce).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1', orderId: 'order-fix', amountMicros: 5_000_000 }))
   })
 
   it('fails registration when a credit variant has no fixed credit value', async () => {
@@ -173,7 +174,7 @@ describe('credits routes', () => {
     expect(res.json()).toMatchObject({ ok: true, reason: 'refund_revoked', orderId: 'order-77' })
     // No refunded_amount → full refund (fraction undefined); variant 1 is a credit
     // order so a pre-grant tombstone is allowed.
-    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', { refundFraction: undefined, allowTombstone: true })
+    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', expect.objectContaining({ refundFraction: undefined, allowTombstone: true }))
     expect(store.grantPurchaseOnce).not.toHaveBeenCalled()
   })
 
@@ -192,7 +193,7 @@ describe('credits routes', () => {
       payload: body,
     })
     expect(res.statusCode).toBe(200)
-    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', { refundFraction: 0.3, allowTombstone: true })
+    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', expect.objectContaining({ refundFraction: 0.3, allowTombstone: true }))
   })
 
   it('does not allow a pre-grant tombstone for a refund from the wrong store/mode/variant', async () => {
@@ -212,7 +213,7 @@ describe('credits routes', () => {
       payload: body,
     })
     expect(res.statusCode).toBe(200)
-    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', { refundFraction: 1, allowTombstone: false })
+    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', expect.objectContaining({ refundFraction: 1, allowTombstone: false }))
   })
 
   it('credits the net pre-tax amount when a discount applied', async () => {
@@ -230,7 +231,7 @@ describe('credits routes', () => {
       payload: body,
     })
     expect(res.statusCode).toBe(200)
-    expect(store.grantPurchaseOnce).toHaveBeenCalledWith({ userId: 'user-1', orderId: 'order-disc', amountMicros: 6_000_000 })
+    expect(store.grantPurchaseOnce).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1', orderId: 'order-disc', amountMicros: 6_000_000 }))
   })
 
   it('rejects a webhook with a bad signature and never grants', async () => {

@@ -116,8 +116,9 @@ export interface LemonSqueezyWebhookOptions {
    */
   resolveUserId?: (order: LemonSqueezyOrder) => string | undefined
   /** Grant credits idempotently. `reason` is `purchase:<orderId>` (the
-   * idempotency key); `orderId` is provided so callers don't re-parse it. */
-  grant: (input: { userId: string; orderId: string; reason: string; amountMicros: number }) => Promise<{ created: boolean }>
+   * idempotency key); `orderId` is provided so callers don't re-parse it. The
+   * full `order` is passed so the grant can persist provider identity. */
+  grant: (input: { userId: string; orderId: string; reason: string; amountMicros: number }, order: LemonSqueezyOrder) => Promise<{ created: boolean }>
   /** Which events to credit on. Defaults to `order_created`. */
   creditableEvents?: string[]
   /**
@@ -127,6 +128,11 @@ export interface LemonSqueezyWebhookOptions {
    * false acks the webhook without crediting.
    */
   isCreditOrder: (order: LemonSqueezyOrder) => boolean
+  /** Credit micros per 1 currency unit (e.g. 1_000_000 = €0.000001/credit). When
+   * set, the webhook refuses to mint a fixed pack value unless the net paid
+   * amount (subtotal − discount) covers it — so a dashboard/manual discount or LS
+   * bug can't grant full credits for an underpaid order. */
+  creditMicrosPerUnit?: number
   /** Events that revoke a previously-credited purchase. Default `order_refunded`. */
   refundEvents?: string[]
   /** Revoke a refunded/disputed order's credits (idempotent per order). REQUIRED
@@ -213,11 +219,28 @@ export async function handleLemonSqueezyWebhook(
     return { status: 200, body: { ok: false, reason: 'no_credit_amount', orderId: order.orderId } }
   }
 
-  const { created } = await options.grant({
-    userId,
-    orderId: order.orderId,
-    reason: `purchase:${order.orderId}`,
-    amountMicros,
-  })
+  // Don't mint a fixed pack value for an underpaid order: require the net paid
+  // amount (subtotal − discount, pre-tax) to cover the credits being granted.
+  if (typeof options.creditMicrosPerUnit === 'number' && options.creditMicrosPerUnit > 0) {
+    const netPaidMicros = Math.max(0, order.subtotalCents - order.discountTotalCents) * (options.creditMicrosPerUnit / 100)
+    if (netPaidMicros + 1e-6 < amountMicros) {
+      options.log?.('lemonsqueezy order underpaid for the credits it maps to — not granting', {
+        orderId: order.orderId, amountMicros, netPaidMicros, subtotalCents: order.subtotalCents, discountTotalCents: order.discountTotalCents,
+      })
+      // Deterministic underpayment (config/discount/bug) — ack so LS stops
+      // retrying; logged for operator reconcile (refund or manual credit).
+      return { status: 200, body: { ok: false, reason: 'underpaid_order', orderId: order.orderId } }
+    }
+  }
+
+  const { created } = await options.grant(
+    {
+      userId,
+      orderId: order.orderId,
+      reason: `purchase:${order.orderId}`,
+      amountMicros,
+    },
+    order,
+  )
   return { status: 200, body: { ok: true, orderId: order.orderId, created } }
 }

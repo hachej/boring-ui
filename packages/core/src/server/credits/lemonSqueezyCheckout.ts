@@ -43,7 +43,13 @@ export function buildCheckoutRequestBody(input: CreateCheckoutInput): Record<str
         // Disable discount codes: credits are granted on the net pre-tax amount,
         // and a discount must never let a buyer pay less than the credited value.
         checkout_options: { discount: false },
-        ...(input.redirectUrl ? { product_options: { redirect_url: input.redirectUrl } } : {}),
+        // Lock the checkout to EXACTLY the server-selected variant — without
+        // enabled_variants, LS may let the buyer switch to another variant of the
+        // product, which would then mis-credit or not credit at all.
+        product_options: {
+          enabled_variants: [Number(input.variantId)],
+          ...(input.redirectUrl ? { redirect_url: input.redirectUrl } : {}),
+        },
       },
       relationships: {
         store: { data: { type: 'stores', id: input.storeId } },
