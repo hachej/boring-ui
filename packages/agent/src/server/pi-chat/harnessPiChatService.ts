@@ -152,36 +152,22 @@ export class HarnessPiChatService implements PiChatSessionService {
   async prompt(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload): Promise<PromptReceipt> {
     const adapter = await this.getAdapter(ctx, sessionId, payload)
     await this.ensureChannel(ctx, sessionId, adapter)
-    // A duplicate in-flight prompt (client retry reusing the nonce) must not
-    // start a second model run or a second reservation — the original run
-    // owns execution and metering. Acknowledge it idempotently instead of
-    // re-issuing adapter.prompt(), whose busy-rejection would otherwise fail
-    // the shared metering run. The metering coordinator tracks the run for its
-    // whole lifetime (accept → agent-end); the reconciler metadata only covers
-    // accept → message-start, so check both.
-    if (
-      this.messageMetadata.hasPrompt(sessionId, { clientNonce: payload.clientNonce }) ||
-      this.metering?.hasPromptRun(sessionId, payload.clientNonce)
-    ) {
-      return {
-        accepted: true,
-        cursor: this.channels.get(sessionId)?.buffer.latestSeq ?? 0,
-        clientNonce: payload.clientNonce,
-        duplicate: true,
-      }
-    }
-    // Reserve before execution; a rejecting sink (e.g. credits exhausted)
-    // fails the request closed before any model call happens. A false result
-    // means a concurrent duplicate already owns this run — skip execution.
-    const reservedNewRun = (await this.metering?.reservePrompt({
+    // Reserve before execution. The coordinator is the single source of dedup
+    // truth: it awaits the owning run's reservation, so a concurrent duplicate
+    // sees the same accept/reject (a rejecting sink — e.g. credits exhausted —
+    // re-throws here and fails the request closed before any model call).
+    //   - 'duplicate'  another run owns this nonce → acknowledge, don't execute.
+    //   - 'cancelled'  a concurrent stop/interrupt terminated the run mid-reserve
+    //                  → surface as aborted rather than a fake accepted run.
+    const outcome = (await this.metering?.reservePrompt({
       workspaceId: ctx.workspaceId,
       userId: ctx.authSubject,
       sessionId,
       clientNonce: payload.clientNonce,
       message: payload.message,
       model: payload.model,
-    })) ?? true
-    if (!reservedNewRun) {
+    })) ?? 'created'
+    if (outcome === 'duplicate') {
       return {
         accepted: true,
         cursor: this.channels.get(sessionId)?.buffer.latestSeq ?? 0,
@@ -189,6 +175,7 @@ export class HarnessPiChatService implements PiChatSessionService {
         duplicate: true,
       }
     }
+    if (outcome === 'cancelled') throw promptCancelledError()
     this.messageMetadata.recordPrompt(sessionId, payload)
     const channel = this.channels.get(sessionId)
     const receiptCursor = nextPromptReceiptCursor(channel)
@@ -210,28 +197,18 @@ export class HarnessPiChatService implements PiChatSessionService {
   async followUp(ctx: PiSessionRequestContext, sessionId: string, payload: FollowUpPayload): Promise<FollowUpReceipt> {
     const adapter = await this.getAdapter(ctx, sessionId, payload.message)
     await this.ensureChannel(ctx, sessionId, adapter)
-    // A duplicate follow-up (client retry reusing nonce/seq) must not enqueue a
-    // second native follow-up or take a second hold while the original is still
-    // queued/active. Acknowledge it idempotently.
-    if (this.metering?.hasFollowUpRun(sessionId, payload)) {
-      return {
-        accepted: true,
-        queued: true,
-        cursor: this.channels.get(sessionId)?.buffer.latestSeq ?? 0,
-        clientNonce: payload.clientNonce,
-        clientSeq: payload.clientSeq,
-        duplicate: true,
-      }
-    }
-    const reservedNewFollowUp = (await this.metering?.reserveFollowUp({
+    // Reserve before enqueuing; the coordinator awaits the owner's reservation
+    // and dedups concurrent/consumed retries (so a duplicate doesn't take a
+    // second hold or queue a second native follow-up).
+    const outcome = (await this.metering?.reserveFollowUp({
       workspaceId: ctx.workspaceId,
       userId: ctx.authSubject,
       sessionId,
       clientNonce: payload.clientNonce,
       clientSeq: payload.clientSeq,
       message: payload.message,
-    })) ?? true
-    if (!reservedNewFollowUp) {
+    })) ?? 'created'
+    if (outcome === 'duplicate') {
       return {
         accepted: true,
         queued: true,
@@ -241,6 +218,7 @@ export class HarnessPiChatService implements PiChatSessionService {
         duplicate: true,
       }
     }
+    if (outcome === 'cancelled') throw promptCancelledError()
     this.messageMetadata.recordFollowUp(sessionId, payload)
     try {
       await adapter.followUp(payload.message, {
@@ -530,6 +508,17 @@ export class HarnessPiChatService implements PiChatSessionService {
 }
 
 class AutoPostFollowUpError extends Error {}
+
+/** A prompt/follow-up whose run was cancelled by a concurrent stop/interrupt
+ * during reservation. Surfaced as a retryable 409 (ABORTED) rather than a fake
+ * accepted run the client would wait on forever. */
+function promptCancelledError(): Error {
+  return Object.assign(new Error('request cancelled before execution'), {
+    statusCode: 409,
+    code: ErrorCode.enum.ABORTED,
+    retryable: true,
+  })
+}
 
 function nextPromptReceiptCursor(channel: LiveSessionChannel | undefined): number {
   return (channel?.buffer.latestSeq ?? 0) + 1

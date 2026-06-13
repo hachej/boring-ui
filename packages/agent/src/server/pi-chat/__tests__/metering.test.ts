@@ -13,6 +13,7 @@ import type {
   MeteringUsageInput,
 } from '../metering'
 import { normalizeMeteringUsage, PiChatMeteringCoordinator } from '../metering'
+import { ErrorCode } from '../../../shared/error-codes'
 
 const ctx: PiSessionRequestContext = {
   workspaceId: 'workspace-a',
@@ -718,6 +719,28 @@ describe('pi chat metering', () => {
     ])
   })
 
+  it('aborts (does not fake-accept) a prompt cancelled by a concurrent deleteSession during reserve', async () => {
+    const adapter = createAdapter()
+    const entered = deferred<void>()
+    const gate = deferred<void>()
+    const { sink } = createSink({
+      reserveRun: async () => {
+        entered.resolve()
+        await gate.promise
+        return {}
+      },
+    })
+    const { service } = createService(adapter, sink)
+
+    const promptPromise = service.prompt(ctx, 's1', { message: 'x', clientNonce: 'nonce-c' })
+    await entered.promise // reservePrompt has registered the run and is awaiting the sink
+    await service.deleteSession(ctx, 's1') // releaseSession terminates the in-flight run
+    gate.resolve()
+
+    await expect(promptPromise).rejects.toMatchObject({ statusCode: 409, code: ErrorCode.enum.ABORTED })
+    expect(adapter.prompt).not.toHaveBeenCalled()
+  })
+
   it('rejects the prompt (fail closed) when the sink refuses the reservation', async () => {
     const adapter = createAdapter()
     const refusal = Object.assign(new Error('demo credit exhausted'), { statusCode: 402 })
@@ -909,7 +932,8 @@ describe('PiChatMeteringCoordinator promoted follow-up failure', () => {
     const [firstNew, secondNew] = await Promise.all([first, second])
 
     // Exactly one new run; the loser is told it's a duplicate.
-    expect([firstNew, secondNew].filter(Boolean)).toHaveLength(1)
+    expect([firstNew, secondNew].filter((o) => o === 'created')).toHaveLength(1)
+    expect([firstNew, secondNew].filter((o) => o === 'duplicate')).toHaveLength(1)
 
     coordinator.observe('s1', { type: 'agent_start', turnId: 't' }, [
       { type: 'agent-start', seq: 1, turnId: 't' } as never,
@@ -968,7 +992,7 @@ describe('PiChatMeteringCoordinator promoted follow-up failure', () => {
 
     // Caller is told to skip execution, and the hold is released after the
     // reservation row exists (release ordered behind reserve on run.ops).
-    expect(isNewRun).toBe(false)
+    expect(isNewRun).toBe('cancelled')
     expect(calls.released).toEqual([
       expect.objectContaining({ runId: 'pi-run:s1:prompt:n', reason: 'cancelled' }),
     ])
@@ -1044,7 +1068,7 @@ describe('PiChatMeteringCoordinator promoted follow-up failure', () => {
     // A retry reservation of the consumed nonce is short-circuited (the adapter
     // would silently drop it, stranding the hold).
     const retryReserved = await coordinator.reserveFollowUp({ ...scope, clientNonce: 'f', clientSeq: 0, message: 'q' })
-    expect(retryReserved).toBe(false)
+    expect(retryReserved).toBe('duplicate')
     expect(calls.reserved).toHaveLength(1)
   })
 

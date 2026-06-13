@@ -98,6 +98,15 @@ export interface MeteringReleaseInput extends MeteringRunScope {
 
 export type MeteringErrorLogger = (message: string, error: unknown) => void
 
+/**
+ * Result of an accepted prompt/follow-up reservation:
+ * - `created`   a new run was reserved; execute it.
+ * - `duplicate` another run already owns this nonce; skip execution.
+ * - `cancelled` a concurrent stop/interrupt/delete terminated the run while the
+ *               reservation was in flight; skip execution (the hold is released).
+ */
+export type ReserveOutcome = 'created' | 'duplicate' | 'cancelled'
+
 const meteringLogger = createLogger('pi-chat-metering')
 
 const defaultMeteringErrorLogger: MeteringErrorLogger = (message, error) => {
@@ -249,17 +258,18 @@ export class PiChatMeteringCoordinator {
   }
 
   /** Reserve a prompt run. Throws (fail closed) when the sink rejects. */
-  async reservePrompt(input: ReservePromptInput): Promise<boolean> {
+  async reservePrompt(input: ReservePromptInput): Promise<ReserveOutcome> {
     const state = this.sessionState(input.sessionId)
     const runId = promptRunId(input.sessionId, input.clientNonce)
     // Duplicate (incl. two concurrent retries racing the gap before the async
     // reserve resolves): the run is registered synchronously below, so the
     // loser's findRun sees it. Await the owner's reservation so a duplicate
-    // reports the same accept/reject, then skip execution.
+    // reports the same accept/reject (the await re-throws an owner rejection),
+    // then skip execution.
     const existing = this.findRun(state, runId)
     if (existing) {
       await existing.reservation
-      return false
+      return 'duplicate'
     }
     const run = this.createRun(input, 'prompt', runId)
     state.pendingPrompts.push(run)
@@ -267,18 +277,18 @@ export class PiChatMeteringCoordinator {
   }
 
   /** Reserve a follow-up run. Throws (fail closed) when the sink rejects.
-   * Returns false when this selector already has a tracked/consumed run. */
-  async reserveFollowUp(input: ReserveFollowUpInput): Promise<boolean> {
+   * Returns 'duplicate' when this selector already has a tracked/consumed run. */
+  async reserveFollowUp(input: ReserveFollowUpInput): Promise<ReserveOutcome> {
     const state = this.sessionState(input.sessionId)
     const runId = followUpRunId(input.sessionId, input.clientNonce, input.clientSeq)
     const existing = this.findRun(state, runId)
     if (existing) {
       await existing.reservation
-      return false
+      return 'duplicate'
     }
     // A consumed follow-up's nonce stays in the Pi adapter's memory, so a retry
     // would reserve a hold the adapter silently drops. Suppress it.
-    if (state.consumedFollowUpNonces.has(input.clientNonce)) return false
+    if (state.consumedFollowUpNonces.has(input.clientNonce)) return 'duplicate'
     const run = this.createRun(input, 'followup', runId)
     run.followUp = { clientNonce: input.clientNonce, clientSeq: input.clientSeq }
     state.queued.push(run)
@@ -288,15 +298,15 @@ export class PiChatMeteringCoordinator {
   /**
    * Acquire the reservation for a freshly-registered run. The reserve is put on
    * the run's ops chain so a concurrent release/settle is ordered strictly
-   * after the reservation row exists. Returns false (skip execution) when a
-   * concurrent stop/interrupt/delete terminated the run while the reserve was
+   * after the reservation row exists. Returns 'cancelled' (skip execution) when
+   * a concurrent stop/interrupt/delete terminated the run while the reserve was
    * in flight; throws (fail closed) when the sink rejects.
    */
   private async materializeReservation(
     state: SessionMeteringState,
     run: MeteringRun,
     input: ReservePromptInput,
-  ): Promise<boolean> {
+  ): Promise<ReserveOutcome> {
     run.reservation = this.applyReservation(run, input)
     const reserveOp = run.reservation.catch(() => {})
     run.ops = reserveOp
@@ -310,7 +320,7 @@ export class PiChatMeteringCoordinator {
     }
     // Cancelled mid-reserve: the release is already queued behind the reserve on
     // run.ops, so the hold is cleaned up — just don't execute.
-    return !run.terminal
+    return run.terminal ? 'cancelled' : 'created'
   }
 
   /** True while a non-terminal prompt run exists for this nonce (accept →
