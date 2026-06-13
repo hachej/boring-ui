@@ -196,15 +196,15 @@ describe('credits routes', () => {
     expect(store.revokePurchase).toHaveBeenCalledWith('order-77', expect.objectContaining({ refundFraction: 0.3, allowTombstone: true }))
   })
 
-  it('does not allow a pre-grant tombstone for a refund from the wrong store/mode/variant', async () => {
+  it('allows a pre-grant tombstone for a refund missing its variant (still our store/mode)', async () => {
     const store = makeStore()
-    const a = await build(store) // creditVariantIds ['1'], expectedTestMode true
-    // Refund for variant 999 (not a credit pack): the store is still asked to
-    // reconcile by order id (an order we credited is revocable), but a pre-grant
-    // tombstone is NOT allowed for this unrecognized order.
+    const a = await build(store) // expectedTestMode true, currency EUR, no expectedStoreId
+    // Refund payload omits first_order_item — the tombstone must still be allowed
+    // (store/mode/currency identify it as ours), or a later order_created could
+    // grant a refunded order.
     const body = JSON.stringify({
       meta: { event_name: 'order_refunded', custom_data: { user_id: 'user-1' } },
-      data: { type: 'orders', id: 'order-77', attributes: { status: 'refunded', test_mode: true, currency: 'EUR', subtotal: 1000, total: 1000, refunded: true, refunded_amount: 1000, first_order_item: { variant_id: 999 } } },
+      data: { type: 'orders', id: 'order-77', attributes: { status: 'refunded', test_mode: true, currency: 'EUR', subtotal: 1000, total: 1000, refunded: true, refunded_amount: 1000 } },
     })
     const res = await a.inject({
       method: 'POST',
@@ -213,7 +213,25 @@ describe('credits routes', () => {
       payload: body,
     })
     expect(res.statusCode).toBe(200)
-    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', expect.objectContaining({ refundFraction: 1, allowTombstone: false }))
+    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', expect.objectContaining({ allowTombstone: true }))
+  })
+
+  it('does not allow a pre-grant tombstone for a refund in the wrong mode', async () => {
+    const store = makeStore()
+    const a = await build(store) // expectedTestMode true
+    // A LIVE-mode refund (test_mode false) is not ours → no tombstone.
+    const body = JSON.stringify({
+      meta: { event_name: 'order_refunded', custom_data: { user_id: 'user-1' } },
+      data: { type: 'orders', id: 'order-77', attributes: { status: 'refunded', test_mode: false, currency: 'EUR', subtotal: 1000, total: 1000, refunded: true, refunded_amount: 1000, first_order_item: { variant_id: 1 } } },
+    })
+    const res = await a.inject({
+      method: 'POST',
+      url: '/api/credits/webhooks/lemonsqueezy',
+      headers: { 'content-type': 'application/json', 'x-signature': createHmac('sha256', SECRET).update(body).digest('hex') },
+      payload: body,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', expect.objectContaining({ allowTombstone: false }))
   })
 
   it('credits the net pre-tax amount when a discount applied', async () => {

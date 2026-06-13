@@ -46,8 +46,9 @@ describe('usageToCredits', () => {
       { id: 'mystery-model' },
       AT_COST,
     )
-    // Token pricing at the conservative default (€3/MTok) wins over the tiny report.
-    expect(cost.providerCostMicros).toBe(3_000_000)
+    // Token pricing wins over the tiny report; an unmatched model fails closed at
+    // the highest effective rate (Opus 15/MTok from the built-in defaults).
+    expect(cost.providerCostMicros).toBe(15_000_000)
     expect(cost.pricedFromDefault).toBe(true)
   })
 
@@ -73,11 +74,18 @@ describe('usageToCredits', () => {
     expect(cost.billedCreditMicros).toBe(0)
   })
 
-  it('fails safe: an unknown model bills at the conservative default rate (never zero)', () => {
+  it('fails closed: an unknown model bills at the highest effective rate (never zero/cheap)', () => {
     const cost = usageToCredits({ inputTokens: 1_000_000, outputTokens: 0 }, { id: 'mystery-model' }, AT_COST)
-    // CONSERVATIVE_DEFAULT_RATE.inputPerMillion = €3.
-    expect(cost.providerCostMicros).toBe(3_000_000)
-    expect(cost.billedCreditMicros).toBe(3_000_000)
+    // No explicit defaultRate ⇒ highest built-in (Opus 15/MTok), not the cheap floor.
+    expect(cost.providerCostMicros).toBe(15_000_000)
+    expect(cost.billedCreditMicros).toBe(15_000_000)
+    expect(cost.pricedFromDefault).toBe(true)
+  })
+
+  it('uses an explicit defaultRate for unmatched models when configured', () => {
+    const config: CreditPricingConfig = { margin: 1, creditMicrosPerUnit: 1_000_000, defaultRate: { inputPerMillion: 4, outputPerMillion: 8 } }
+    const cost = usageToCredits({ inputTokens: 1_000_000, outputTokens: 0 }, { id: 'mystery-model' }, config)
+    expect(cost.providerCostMicros).toBe(4_000_000)
     expect(cost.pricedFromDefault).toBe(true)
   })
 

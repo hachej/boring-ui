@@ -158,13 +158,20 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
   // rejected — billing must not infer safety from absent data.
   const creditVariantIds = new Set(ls.creditVariantIds)
   const requireCurrency = (ls.requireCurrency ?? 'EUR').toUpperCase()
-  const isCreditOrder = (order: LemonSqueezyOrder): boolean => {
-    if (creditVariantIds.size === 0) return false
-    if (!order.variantId || !creditVariantIds.has(order.variantId)) return false
+  // Store/mode/currency check WITHOUT the variant — used to decide whether a
+  // refund-before-grant may write a tombstone. Refund payloads can omit/alter
+  // first_order_item, so requiring the variant here would let a refunded order
+  // be granted later; the store/mode/currency are enough to know it's ours.
+  const isOurStoreOrder = (order: LemonSqueezyOrder): boolean => {
     if (!order.currency || order.currency.toUpperCase() !== requireCurrency) return false
     if (order.testMode !== ls.expectedTestMode) return false
     if (ls.expectedStoreId && order.storeId !== ls.expectedStoreId) return false
     return true
+  }
+  const isCreditOrder = (order: LemonSqueezyOrder): boolean => {
+    if (creditVariantIds.size === 0) return false
+    if (!order.variantId || !creditVariantIds.has(order.variantId)) return false
+    return isOurStoreOrder(order)
   }
 
   // Encapsulated scope so the raw-buffer body parser only applies to the webhook.
@@ -204,9 +211,13 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
                 order.refundedAmountCents > 0 && order.totalCents > 0
                   ? order.refundedAmountCents / order.totalCents
                   : undefined,
-              allowTombstone: isCreditOrder(order),
-              expectedStoreId: order.storeId,
-              expectedTestMode: order.testMode,
+              // Tombstone an unknown order only if it's on our store/mode (NOT
+              // requiring the variant, which a refund payload may omit).
+              allowTombstone: isOurStoreOrder(order),
+              // Match a credited order against the CONFIGURED identity, not the
+              // (payload-controlled) refund fields.
+              expectedStoreId: ls.expectedStoreId,
+              expectedTestMode: ls.expectedTestMode,
             }),
           log: options.log,
         },

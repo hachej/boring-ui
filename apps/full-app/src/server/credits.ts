@@ -51,6 +51,11 @@ function parseVariants(raw: string | undefined): Record<string, string> {
     if (!Number.isFinite(Number(pack)) || Number(pack) <= 0) {
       throw new Error(`invalid BORING_CREDITS_LS_VARIANTS pack id (must be a positive EUR credit value): "${pack}"`)
     }
+    // LS variant ids are positive integers; require it so the checkout's
+    // enabled_variants lock is always effective.
+    if (!/^[0-9]+$/.test(variant) || Number(variant) <= 0) {
+      throw new Error(`invalid BORING_CREDITS_LS_VARIANTS variant id (must be a positive integer Lemon Squeezy id): "${variant}"`)
+    }
     if (pack in out) throw new Error(`duplicate pack id in BORING_CREDITS_LS_VARIANTS: "${pack}"`)
     // Reject a variant id reused across packs — it would make one variant credit
     // an ambiguous amount (the last pack to map to it would win).

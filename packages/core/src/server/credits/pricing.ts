@@ -128,7 +128,11 @@ export function estimateProviderCost(
   config: CreditPricingConfig,
 ): { units: number; usedDefault: boolean } {
   const matched = rateForModel(modelId, config)
-  const rate = matched ?? config.defaultRate ?? CONSERVATIVE_DEFAULT_RATE
+  // Fail closed for an unmatched model: bill at an explicit defaultRate if set,
+  // else at the HIGHEST effective rate (configured + built-in). A fixed cheap
+  // default would undercharge a selectable expensive model whose id misses the
+  // table (e.g. an Opus-class id not shaped like `claude-3-opus`).
+  const rate = matched ?? config.defaultRate ?? maxEffectiveRate(config)
   const units = (inputTokens / 1_000_000) * rate.inputPerMillion + (outputTokens / 1_000_000) * rate.outputPerMillion
   return { units, usedDefault: matched === null }
 }

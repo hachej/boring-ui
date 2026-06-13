@@ -25,6 +25,13 @@ describe('buildCheckoutRequestBody', () => {
     expect(body.data.relationships.store.data.id).toBe('406592')
     expect(body.data.relationships.variant.data.id).toBe('42')
   })
+
+  it('omits enabled_variants (never [null]) for a non-numeric variant id', () => {
+    const body = buildCheckoutRequestBody({ ...INPUT, variantId: 'var10' }) as any
+    expect(body.data.attributes.product_options.enabled_variants).toBeUndefined()
+    // The variant relationship still selects it.
+    expect(body.data.relationships.variant.data.id).toBe('var10')
+  })
 })
 
 describe('createLemonSqueezyCheckout', () => {

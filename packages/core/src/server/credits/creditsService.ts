@@ -1,5 +1,5 @@
 import { InsufficientCreditError, type PostgresMeteringStore } from '../db/stores/PostgresMeteringStore.js'
-import { usageToCredits, CONSERVATIVE_DEFAULT_RATE, type CreditPricingConfig, type ModelTokenRate } from './pricing.js'
+import { usageToCredits, type CreditPricingConfig, type ModelTokenRate } from './pricing.js'
 
 /** Validate money-critical pricing config up front so a misconfigured host
  * (e.g. creditMicrosPerUnit 0, margin < 1, a non-positive rate) fails fast
@@ -52,7 +52,9 @@ export const DEFAULT_CREDITS_CONFIG: CreditsConfig = {
   runReservationMicros: 1_000_000,
   reservationTtlSeconds: 2 * 60 * 60,
   minBalanceMicros: 50_000, // €0.05
-  pricing: { margin: 1.3, creditMicrosPerUnit: 1_000_000, defaultRate: CONSERVATIVE_DEFAULT_RATE },
+  // No explicit defaultRate ⇒ an unmatched model bills at the highest effective
+  // rate (fail closed), not a cheap fallback.
+  pricing: { margin: 1.3, creditMicrosPerUnit: 1_000_000 },
 }
 
 export interface CreditBalance {

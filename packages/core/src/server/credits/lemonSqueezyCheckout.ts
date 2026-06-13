@@ -30,6 +30,10 @@ const LS_API = 'https://api.lemonsqueezy.com/v1/checkouts'
 
 /** Build the JSON:API request body for a checkout. Exported for testing. */
 export function buildCheckoutRequestBody(input: CreateCheckoutInput): Record<string, unknown> {
+  // Lemon Squeezy variant ids are integers; only emit the lock when it parses to
+  // one (Number('var10') → NaN would serialize to null and break the checkout).
+  const numericVariant = Number(input.variantId)
+  const enabledVariants = Number.isInteger(numericVariant) && numericVariant > 0 ? [numericVariant] : undefined
   return {
     data: {
       type: 'checkouts',
@@ -47,7 +51,7 @@ export function buildCheckoutRequestBody(input: CreateCheckoutInput): Record<str
         // enabled_variants, LS may let the buyer switch to another variant of the
         // product, which would then mis-credit or not credit at all.
         product_options: {
-          enabled_variants: [Number(input.variantId)],
+          ...(enabledVariants ? { enabled_variants: enabledVariants } : {}),
           ...(input.redirectUrl ? { redirect_url: input.redirectUrl } : {}),
         },
       },
