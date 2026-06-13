@@ -26,8 +26,7 @@ RUN pnpm --filter @hachej/boring-core exec tsup --no-dts \
 RUN pnpm --filter @hachej/boring-ui-kit exec tsup \
   && pnpm --filter @hachej/boring-ui-kit exec node scripts/build-styles.mjs
 
-RUN pnpm --filter @hachej/boring-agent exec tsup \
-  && cp packages/agent/src/front/styles/globals.css packages/agent/dist/front/styles.css
+RUN pnpm --filter @hachej/boring-agent run build
 
 RUN pnpm --filter @hachej/boring-workspace exec tsup --no-dts \
   && pnpm --filter @hachej/boring-workspace exec vite build \
