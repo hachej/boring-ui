@@ -11,8 +11,10 @@ ALTER TABLE "boring_credit_purchases" ADD COLUMN "refunded_at" timestamp;
 --> statement-breakpoint
 ALTER TABLE "boring_credit_purchases" ADD COLUMN "refunded_micros" bigint;
 --> statement-breakpoint
+ALTER TABLE "boring_credit_purchases" ADD COLUMN "pending_refund_ppm" bigint;
+--> statement-breakpoint
 ALTER TABLE "boring_credit_purchases" ADD CONSTRAINT "boring_credit_purchases_amount_check" CHECK ("amount_micros" IS NULL OR "amount_micros" > 0);
 --> statement-breakpoint
-ALTER TABLE "boring_credit_purchases" ADD CONSTRAINT "boring_credit_purchases_status_check" CHECK ("status" IN ('granted', 'refunded'));
+ALTER TABLE "boring_credit_purchases" ADD CONSTRAINT "boring_credit_purchases_status_check" CHECK ("status" IN ('granted', 'refunded', 'refund_pending'));
 --> statement-breakpoint
-ALTER TABLE "boring_credit_purchases" ADD CONSTRAINT "boring_credit_purchases_granted_check" CHECK ("status" = 'refunded' OR ("user_id" IS NOT NULL AND "amount_micros" IS NOT NULL));
+ALTER TABLE "boring_credit_purchases" ADD CONSTRAINT "boring_credit_purchases_granted_check" CHECK ("status" IN ('refunded', 'refund_pending') OR ("user_id" IS NOT NULL AND "amount_micros" IS NOT NULL));

@@ -33,7 +33,9 @@ export interface LemonSqueezyOrder {
   userId?: string
   userEmail?: string
   status?: string
-  testMode: boolean
+  /** Test/live mode. `undefined` when the payload omitted it — treated as a
+   * MISMATCH by isCreditOrder (never silently assumed live). */
+  testMode?: boolean
   /** Lemon Squeezy store the order belongs to. */
   storeId?: string
   currency?: string
@@ -87,7 +89,7 @@ export function parseLemonSqueezyOrder(payload: unknown): LemonSqueezyOrder | nu
     userId: asString(customData?.user_id),
     userEmail: asString(attrs.user_email),
     status: asString(attrs.status),
-    testMode: attrs.test_mode === true,
+    testMode: typeof attrs.test_mode === 'boolean' ? attrs.test_mode : undefined,
     storeId: attrs.store_id !== undefined ? String(attrs.store_id) : undefined,
     currency: asString(attrs.currency),
     subtotalCents: asNumber(attrs.subtotal),
@@ -201,9 +203,12 @@ export async function handleLemonSqueezyWebhook(
 
   const userId = (options.resolveUserId ?? ((o) => o.userId))(order)
   if (!userId) {
-    options.log?.('lemonsqueezy order missing user id', { orderId: order.orderId })
-    // 200 so LS doesn't retry forever; the order is logged for manual reconcile.
-    return { status: 200, body: { ok: false, reason: 'missing_user_id', orderId: order.orderId } }
+    options.log?.('lemonsqueezy PAID credit order missing user id — not crediting; returning 500 so LS retries', { orderId: order.orderId })
+    // The customer paid: a 200 ack would drop the order and lose the credits.
+    // Return 500 so Lemon Squeezy retries (its retry window surfaces it for
+    // operator reconcile). Server-side checkout always sets user_id, so this is
+    // an exceptional path, not the norm.
+    return { status: 500, body: { ok: false, reason: 'missing_user_id', orderId: order.orderId } }
   }
 
   const amountMicros = options.creditsForOrder(order)

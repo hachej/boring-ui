@@ -130,16 +130,26 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
     expect(rows[0]?.status).toBe('refunded')
   })
 
-  it('full refund-before-grant blocks a later grant; partial does not', async () => {
+  it('full refund-before-grant blocks a later grant; partial grants NET of the pending refund', async () => {
     // Full refund before order_created → terminal tombstone, later grant refused.
     expect(await store.revokePurchase('ord-full', { refundFraction: 1 })).toEqual({ revoked: false })
     expect(await store.grantPurchaseOnce({ orderId: 'ord-full', userId: USER, amountMicros: 10_000_000 })).toEqual({ granted: false })
 
-    // Partial refund before order_created must NOT block the grant (can't apply
-    // a partial against an unknown amount; would otherwise mint zero credits).
+    // Partial (50%) refund before order_created → recorded as pending; the later
+    // grant mints the full €10 then immediately revokes €5 → net €5 balance.
     expect(await store.revokePurchase('ord-part', { refundFraction: 0.5 })).toEqual({ revoked: false })
+    let rows = await sqlClient`SELECT status, pending_refund_ppm FROM boring_credit_purchases WHERE order_id = 'ord-part'`
+    expect(rows[0]?.status).toBe('refund_pending')
+    expect(Number(rows[0]?.pending_refund_ppm)).toBe(500_000)
     expect(await store.grantPurchaseOnce({ orderId: 'ord-part', userId: USER, amountMicros: 10_000_000 })).toEqual({ granted: true })
-    expect((await store.getBalance(USER)).remainingMicros).toBe(10_000_000)
+    expect((await store.getBalance(USER)).remainingMicros).toBe(5_000_000)
+    rows = await sqlClient`SELECT status, pending_refund_ppm, refunded_micros FROM boring_credit_purchases WHERE order_id = 'ord-part'`
+    expect(rows[0]?.status).toBe('granted')
+    expect(rows[0]?.pending_refund_ppm).toBeNull()
+    expect(Number(rows[0]?.refunded_micros)).toBe(5_000_000)
+    // A retry of the same grant does not re-credit.
+    expect(await store.grantPurchaseOnce({ orderId: 'ord-part', userId: USER, amountMicros: 10_000_000 })).toEqual({ granted: false })
+    expect((await store.getBalance(USER)).remainingMicros).toBe(5_000_000)
   })
 
   it('charges a fallback hold and settles when usage write failed', async () => {

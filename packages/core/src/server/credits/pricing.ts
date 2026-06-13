@@ -30,6 +30,13 @@ export interface CreditPricingConfig {
    * zero (free usage) in this prepaid path — set it explicitly to tune.
    */
   defaultRate?: ModelTokenRate
+  /**
+   * Trust a provider-reported cost over token pricing. Default false: for a
+   * prepaid credit balance, a provider cost in the wrong currency / stale test
+   * value / tiny non-zero number would undercharge, so we price from our own
+   * verified token rates with margin and ignore the reported cost.
+   */
+  preferProviderReportedCost?: boolean
 }
 
 /** Conservative fallback rate (≈ Claude Sonnet list price). EU open models are
@@ -141,7 +148,10 @@ export function usageToCredits(
     outputTokens,
     config,
   )
-  const providerUnits = reportedUnits > 0 ? reportedUnits : estimated.units
+  // Default: price from our verified token rates; only trust a provider-reported
+  // cost when explicitly opted in (a wrong/stale reported cost would undercharge).
+  const useReported = config.preferProviderReportedCost === true && reportedUnits > 0
+  const providerUnits = useReported ? reportedUnits : estimated.units
 
   // Guard against a misconfigured margin (0/negative/NaN) silently making usage
   // free; bill at cost (1×) in that case.
@@ -156,8 +166,8 @@ export function usageToCredits(
     cacheWriteTokens,
     providerCostMicros,
     billedCreditMicros,
-    // Only "default-priced" when we fell back to the estimate AND it used the
-    // default rate (a reported cost or a matched rate is authoritative).
-    pricedFromDefault: reportedUnits === 0 && estimated.usedDefault,
+    // Only "default-priced" when token pricing was used AND it fell back to the
+    // default rate (a trusted reported cost or a matched rate is authoritative).
+    pricedFromDefault: !useReported && estimated.usedDefault,
   }
 }

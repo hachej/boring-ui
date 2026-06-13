@@ -94,7 +94,8 @@ describe('CreditsService', () => {
     expect(id).toBe('res-1')
     expect(store.expireStaleReservations).toHaveBeenCalled()
     expect(store.reserve).toHaveBeenCalledWith(expect.objectContaining({
-      userId: 'u1', runId: 'r', amountMicros: 250_000, ttlSeconds: 7200, minAvailableMicros: 250_000,
+      // minAvailable = hold (250k) + floor (50k): keep the floor AFTER reserving.
+      userId: 'u1', runId: 'r', amountMicros: 250_000, ttlSeconds: 7200, minAvailableMicros: 300_000,
     }))
   })
 

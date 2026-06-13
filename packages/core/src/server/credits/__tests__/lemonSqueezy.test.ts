@@ -146,12 +146,13 @@ describe('handleLemonSqueezyWebhook', () => {
     expect(grant).not.toHaveBeenCalled()
   })
 
-  it('acknowledges (200) but skips grant when user id is missing', async () => {
+  it('returns a retryable 500 (not a 200 ack) when a paid credit order is missing its user id', async () => {
     const log = vi.fn()
     const { options, grant } = opts({ log })
     const body = orderPayload({ custom_data: {} })
     const res = await handleLemonSqueezyWebhook(body, sign(body), options)
-    expect(res).toMatchObject({ status: 200, body: { ok: false, reason: 'missing_user_id' } })
+    // 500 so LS retries — a 200 would drop a paid order and lose the credits.
+    expect(res).toMatchObject({ status: 500, body: { ok: false, reason: 'missing_user_id' } })
     expect(grant).not.toHaveBeenCalled()
     expect(log).toHaveBeenCalled()
   })

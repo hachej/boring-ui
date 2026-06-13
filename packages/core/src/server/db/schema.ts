@@ -294,11 +294,14 @@ export const creditGrants = pgTable(
 
 // One row per purchase order, keyed by the provider order id (PRIMARY KEY) so the
 // purchase lifecycle is globally idempotent per order. status models the lifecycle:
-//   'granted'  — credits were minted for this order
-//   'refunded' — refunded/disputed; either a tombstone written BEFORE any grant
-//                (user_id/amount_micros null) so a late order_created never grants,
-//                or a granted row transitioned after revocation.
-// userId/amountMicros are nullable to allow a refund-before-grant tombstone.
+//   'granted'        — credits were minted for this order
+//   'refunded'       — refunded/disputed; either a tombstone written BEFORE any
+//                      grant (user_id/amount null) so a late order_created never
+//                      grants, or a granted row transitioned after revocation.
+//   'refund_pending' — a PARTIAL refund arrived before order_created; the pending
+//                      fraction (pending_refund_ppm) is applied when the grant
+//                      lands (grant net of the refund) instead of being lost.
+// userId/amountMicros are nullable to allow a pre-grant tombstone.
 export const creditPurchases = pgTable(
   'boring_credit_purchases',
   {
@@ -312,16 +315,19 @@ export const creditPurchases = pgTable(
     /** Cumulative credit micros already revoked for this order (supports
      * repeated partial refunds without double-debiting). */
     refundedMicros: bigint('refunded_micros', { mode: 'number' }),
+    /** Pending refund fraction in parts-per-million (fraction × 1e6), set when a
+     * partial refund arrives before the grant; applied at grant time. */
+    pendingRefundPpm: bigint('pending_refund_ppm', { mode: 'number' }),
   },
   (table) => [
     index('boring_credit_purchases_user_idx').on(table.userId),
     check('boring_credit_purchases_amount_check', sql`${table.amountMicros} IS NULL OR ${table.amountMicros} > 0`),
-    check('boring_credit_purchases_status_check', sql`${table.status} IN ('granted', 'refunded')`),
-    // A granted row must carry the credited user + amount; only a refund
-    // tombstone may omit them.
+    check('boring_credit_purchases_status_check', sql`${table.status} IN ('granted', 'refunded', 'refund_pending')`),
+    // A granted row must carry the credited user + amount; a pre-grant tombstone
+    // ('refunded' full, or 'refund_pending' partial) may omit them.
     check(
       'boring_credit_purchases_granted_check',
-      sql`${table.status} = 'refunded' OR (${table.userId} IS NOT NULL AND ${table.amountMicros} IS NOT NULL)`,
+      sql`${table.status} IN ('refunded', 'refund_pending') OR (${table.userId} IS NOT NULL AND ${table.amountMicros} IS NOT NULL)`,
     ),
   ],
 )

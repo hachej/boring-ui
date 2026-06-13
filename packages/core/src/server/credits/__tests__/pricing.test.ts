@@ -7,6 +7,7 @@ const INFOMANIAK_RATE: CreditPricingConfig['rates'] = [[/infomaniak/, { inputPer
 const CONFIG: CreditPricingConfig = { margin: 1.3, creditMicrosPerUnit: 1_000_000, rates: INFOMANIAK_RATE }
 const AT_COST: CreditPricingConfig = { margin: 1, creditMicrosPerUnit: 1_000_000 }
 const AT_COST_INFOMANIAK: CreditPricingConfig = { margin: 1, creditMicrosPerUnit: 1_000_000, rates: INFOMANIAK_RATE }
+const AT_COST_PREFER_REPORTED: CreditPricingConfig = { margin: 1, creditMicrosPerUnit: 1_000_000, preferProviderReportedCost: true }
 
 describe('usageToCredits', () => {
   it('prices from configured token rates with margin when the provider reports no cost', () => {
@@ -30,13 +31,24 @@ describe('usageToCredits', () => {
     expect(cost.billedCreditMicros).toBe(Math.ceil(0.5 * 1.3 * 1_000_000)) // €0.65
   })
 
-  it('prefers a provider-reported cost over the token estimate', () => {
-    const cost = usageToCredits(
+  it('uses a provider-reported cost only when preferProviderReportedCost is set', () => {
+    const opted = usageToCredits(
       { inputTokens: 10, outputTokens: 10, providerReportedCost: 0.01 },
       { id: 'something' },
+      AT_COST_PREFER_REPORTED,
+    )
+    expect(opted.providerCostMicros).toBe(10_000) // €0.01 reported
+  })
+
+  it('ignores a provider-reported cost by default and prices from tokens (prepaid safety)', () => {
+    const cost = usageToCredits(
+      { inputTokens: 1_000_000, outputTokens: 0, providerReportedCost: 0.000001 }, // bogus tiny reported cost
+      { id: 'mystery-model' },
       AT_COST,
     )
-    expect(cost.providerCostMicros).toBe(10_000) // €0.01
+    // Token pricing at the conservative default (€3/MTok) wins over the tiny report.
+    expect(cost.providerCostMicros).toBe(3_000_000)
+    expect(cost.pricedFromDefault).toBe(true)
   })
 
   it('bills cache tokens at the input rate', () => {
@@ -69,9 +81,10 @@ describe('usageToCredits', () => {
     expect(cost.pricedFromDefault).toBe(true)
   })
 
-  it('does not mark a matched or reported-cost usage as default-priced', () => {
+  it('does not mark a matched or trusted-reported-cost usage as default-priced', () => {
     expect(usageToCredits({ inputTokens: 1_000_000, outputTokens: 0 }, { id: 'kimi-k2:1t' }, AT_COST).pricedFromDefault).toBe(false)
-    expect(usageToCredits({ inputTokens: 1, outputTokens: 1, providerReportedCost: 0.01 }, { id: 'x' }, AT_COST).pricedFromDefault).toBe(false)
+    // A trusted (opted-in) reported cost is authoritative, not default-priced.
+    expect(usageToCredits({ inputTokens: 1, outputTokens: 1, providerReportedCost: 0.01 }, { id: 'x' }, AT_COST_PREFER_REPORTED).pricedFromDefault).toBe(false)
   })
 
   it('honors a custom rate table override and falls back to the explicit default rate', () => {

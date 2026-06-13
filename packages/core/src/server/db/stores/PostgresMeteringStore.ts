@@ -149,33 +149,59 @@ export class PostgresMeteringStore {
     if (!Number.isSafeInteger(input.amountMicros) || input.amountMicros <= 0) {
       throw new Error('purchase amountMicros must be a positive integer')
     }
+    const source = input.source ?? 'lemonsqueezy'
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`purchase:${input.orderId}`}))`)
       const existing = await tx
-        .select({ status: creditPurchases.status })
+        .select({ status: creditPurchases.status, pendingRefundPpm: creditPurchases.pendingRefundPpm })
         .from(creditPurchases)
         .where(eq(creditPurchases.orderId, input.orderId))
         .limit(1)
-      // Already granted, or refunded (tombstone or transitioned) → never grant.
-      if (existing.length > 0) return { granted: false }
+      const prior = existing[0]
+      // Already granted, or fully refunded (tombstone/transitioned) → never grant.
+      if (prior && prior.status !== 'refund_pending') return { granted: false }
+
+      const insertGrant = async () => {
+        const grantRows = await tx
+          .insert(creditGrants)
+          .values({ userId: input.userId, reason: `purchase:${input.orderId}`, amountMicros: input.amountMicros })
+          .onConflictDoNothing({ target: [creditGrants.userId, creditGrants.reason] })
+          .returning({ id: creditGrants.id })
+        // The purchase row was just claimed, so the grant must be fresh. A
+        // conflict means a pre-existing grant with this reason (manual import /
+        // data repair) — fail loudly rather than record a purchase with no credit.
+        if (grantRows.length === 0) {
+          throw new Error(`purchase ${input.orderId} claimed but a credit grant already existed`)
+        }
+      }
+
+      if (prior?.status === 'refund_pending') {
+        // A partial refund landed before this grant: mint the full grant, then
+        // immediately revoke the pending fraction so the net credit is correct.
+        const pendingPpm = prior.pendingRefundPpm ?? 0
+        const revoke = Math.min(input.amountMicros, Math.round((input.amountMicros * pendingPpm) / 1_000_000))
+        await tx
+          .update(creditPurchases)
+          .set({ userId: input.userId, amountMicros: input.amountMicros, status: revoke >= input.amountMicros ? 'refunded' : 'granted', pendingRefundPpm: null, refundedMicros: revoke > 0 ? revoke : null, refundedAt: revoke > 0 ? new Date() : null })
+          .where(eq(creditPurchases.orderId, input.orderId))
+        await insertGrant()
+        if (revoke > 0) {
+          await tx
+            .insert(usageLedger)
+            .values({ id: `refund:${input.orderId}:${revoke}`, userId: input.userId, source: 'lemonsqueezy-refund', billedCostMicros: revoke, providerCostMicros: 0, metadata: { kind: 'purchase_refund', orderId: input.orderId, refundedToMicros: revoke, appliedAtGrant: true } })
+            .onConflictDoNothing({ target: usageLedger.id })
+        }
+        return { granted: true }
+      }
+
       await tx.insert(creditPurchases).values({
         orderId: input.orderId,
         userId: input.userId,
         amountMicros: input.amountMicros,
         status: 'granted',
-        source: input.source ?? 'lemonsqueezy',
+        source,
       })
-      const grantRows = await tx
-        .insert(creditGrants)
-        .values({ userId: input.userId, reason: `purchase:${input.orderId}`, amountMicros: input.amountMicros })
-        .onConflictDoNothing({ target: [creditGrants.userId, creditGrants.reason] })
-        .returning({ id: creditGrants.id })
-      // The purchase row was just claimed, so the grant must be fresh. A
-      // conflict means a pre-existing grant with this reason (manual import /
-      // data repair) — fail loudly rather than record a purchase with no credit.
-      if (grantRows.length === 0) {
-        throw new Error(`purchase ${input.orderId} claimed but a credit grant already existed`)
-      }
+      await insertGrant()
       return { granted: true }
     })
   }
@@ -220,16 +246,16 @@ export class PostgresMeteringStore {
       const fraction = opts.refundFraction ?? 1
       const row = existing[0]
       if (!row) {
-        // Refund before grant (out-of-order delivery). Only a FULL refund writes a
-        // terminal tombstone (the order must never be credited). A PARTIAL refund
-        // can't be applied yet (the credited amount is unknown), and tombstoning
-        // it would wrongly block the whole grant — so don't block; log for manual
-        // reconcile and let the later order_created grant normally.
-        if (fraction >= 1) {
-          await tx.insert(creditPurchases).values({ orderId, status: 'refunded', source, refundedAt: new Date() })
-        }
-        // else: partial refund before grant — intentionally not blocked; the
-        // later order_created grants normally (rare; reconcile manually).
+        // Refund before grant (out-of-order delivery). A FULL refund writes a
+        // terminal 'refunded' tombstone (the order must never be credited). A
+        // PARTIAL refund records the pending fraction as 'refund_pending' so the
+        // later order_created grants NET of it — neither losing the refund nor
+        // blocking the whole purchase.
+        await tx.insert(creditPurchases).values(
+          fraction >= 1
+            ? { orderId, status: 'refunded', source, refundedAt: new Date() }
+            : { orderId, status: 'refund_pending', source, refundedAt: new Date(), pendingRefundPpm: Math.round(fraction * 1_000_000) },
+        )
         return { revoked: false }
       }
       const credited = row.amountMicros ?? 0

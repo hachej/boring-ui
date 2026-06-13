@@ -1,5 +1,24 @@
 import { InsufficientCreditError, type PostgresMeteringStore } from '../db/stores/PostgresMeteringStore.js'
-import { usageToCredits, CONSERVATIVE_DEFAULT_RATE, type CreditPricingConfig } from './pricing.js'
+import { usageToCredits, CONSERVATIVE_DEFAULT_RATE, type CreditPricingConfig, type ModelTokenRate } from './pricing.js'
+
+/** Validate money-critical pricing config up front so a misconfigured host
+ * (e.g. creditMicrosPerUnit 0, margin < 1, a non-positive rate) fails fast
+ * rather than silently billing zero or corrupting the balance math. */
+function validatePricingConfig(p: CreditPricingConfig): void {
+  if (!Number.isSafeInteger(p.creditMicrosPerUnit) || p.creditMicrosPerUnit <= 0) {
+    throw new Error('credits pricing.creditMicrosPerUnit must be a positive safe integer')
+  }
+  if (!Number.isFinite(p.margin) || p.margin < 1) {
+    throw new Error('credits pricing.margin must be a finite number >= 1 (never bill below provider cost)')
+  }
+  const checkRate = (rate: ModelTokenRate, label: string) => {
+    if (!Number.isFinite(rate.inputPerMillion) || rate.inputPerMillion <= 0 || !Number.isFinite(rate.outputPerMillion) || rate.outputPerMillion <= 0) {
+      throw new Error(`credits pricing ${label} rate must have positive input/output rates`)
+    }
+  }
+  for (const [, rate] of p.rates ?? []) checkRate(rate, 'configured')
+  if (p.defaultRate) checkRate(p.defaultRate, 'default')
+}
 
 export const SIGNUP_GRANT_REASON = 'signup_grant'
 
@@ -111,7 +130,9 @@ export class CreditsService {
     private readonly store: CreditsMeteringStore,
     readonly config: CreditsConfig = DEFAULT_CREDITS_CONFIG,
     private readonly log?: CreditsLogger,
-  ) {}
+  ) {
+    validatePricingConfig(config.pricing)
+  }
 
   /** Idempotently grant the free starter credits (call from the post-signup hook
    * and lazily on first balance/reserve). */
@@ -180,7 +201,9 @@ export class CreditsService {
         source: 'pi-chat',
         amountMicros: this.config.runReservationMicros,
         ttlSeconds: this.config.reservationTtlSeconds,
-        minAvailableMicros: Math.max(this.config.minBalanceMicros, this.config.runReservationMicros),
+        // Must keep minBalanceMicros available AFTER placing the hold, so a run
+        // is admitted only when available ≥ hold + floor (matches the config doc).
+        minAvailableMicros: this.config.runReservationMicros + this.config.minBalanceMicros,
       })
       return reservationId
     } catch (error) {
