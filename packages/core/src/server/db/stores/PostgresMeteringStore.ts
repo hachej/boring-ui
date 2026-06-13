@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { creditGrants, usageLedger, usageReservations } from '../schema.js'
 
@@ -151,6 +151,19 @@ export class PostgresMeteringStore {
 
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${input.userId}))`)
+
+      // Demote the user's expired-but-still-active rows before reusing or
+      // inserting. Otherwise the idempotent lookup could return an expired
+      // reservation (which computeBalance no longer counts) — letting a retry
+      // run without re-checking the balance, i.e. bypassing the hard stop.
+      await tx
+        .update(usageReservations)
+        .set({ status: 'expired' })
+        .where(and(
+          eq(usageReservations.userId, input.userId),
+          eq(usageReservations.status, 'active'),
+          lte(usageReservations.expiresAt, now),
+        ))
 
       const existing = await tx
         .select({ id: usageReservations.id })

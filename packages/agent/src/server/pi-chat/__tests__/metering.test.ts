@@ -12,7 +12,7 @@ import type {
   MeteringSettleInput,
   MeteringUsageInput,
 } from '../metering'
-import { normalizeMeteringUsage } from '../metering'
+import { normalizeMeteringUsage, PiChatMeteringCoordinator } from '../metering'
 
 const ctx: PiSessionRequestContext = {
   workspaceId: 'workspace-a',
@@ -428,6 +428,37 @@ describe('pi chat metering', () => {
     run.resolve()
   })
 
+  it('meters a consumed follow-up when the native message carries no selectors (production path)', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'first', clientNonce: 'nonce-p' })
+    await service.followUp(ctx, 's1', { message: 'second', clientNonce: 'nonce-f', clientSeq: 0 })
+
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    adapter.emit(assistantMessageEnd({ id: 'a1' }))
+    // Production: pi consumes the queued follow-up and emits a user message
+    // WITHOUT clientNonce/clientSeq — enrichEvent recovers them by text match.
+    adapter.emit({
+      type: 'message_start',
+      message: { id: 'u2', role: 'user', content: [{ type: 'text', text: 'second' }] },
+    } as unknown as AgentSessionEvent)
+    adapter.emit(assistantMessageEnd({ id: 'a2' }))
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    expect(calls.usage).toEqual([
+      expect.objectContaining({ usageId: 'pi-usage:s1:message:a1', runId: 'pi-run:s1:prompt:nonce-p' }),
+      expect.objectContaining({ usageId: 'pi-usage:s1:message:a2', runId: 'pi-run:s1:followup:nonce-f:0' }),
+    ])
+    expect(calls.settled).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-p', status: 'ok' }),
+      expect.objectContaining({ runId: 'pi-run:s1:followup:nonce-f:0', status: 'ok' }),
+    ])
+    expect(calls.released).toEqual([])
+  })
+
   it('releases queued follow-up reservations on selector clear, full clear, and stop', async () => {
     const adapter = createAdapter()
     const { sink, calls } = createSink()
@@ -696,5 +727,51 @@ describe('normalizeMeteringUsage', () => {
     })
     expect(normalizeMeteringUsage(undefined)).toBeUndefined()
     expect(normalizeMeteringUsage('usage')).toBeUndefined()
+  })
+})
+
+describe('PiChatMeteringCoordinator promoted follow-up failure', () => {
+  function coordinatorSink() {
+    const calls: SinkCalls = { reserved: [], usage: [], settled: [], released: [] }
+    const sink: AgentMeteringSink = {
+      reserveRun: async (input) => { calls.reserved.push(input); return {} },
+      recordUsage: async (input) => { calls.usage.push(input) },
+      settleRun: async (input) => { calls.settled.push(input) },
+      releaseRun: async (input) => { calls.released.push(input) },
+    }
+    return { sink, calls }
+  }
+
+  const scope = { workspaceId: 'ws', userId: 'user-a', sessionId: 's1' }
+
+  it('releases a promoted follow-up that fails before agent-start and never binds it to a later run', async () => {
+    const { sink, calls } = coordinatorSink()
+    const coordinator = new PiChatMeteringCoordinator(sink, () => {})
+
+    await coordinator.reserveFollowUp({ ...scope, clientNonce: 'nonce-f', clientSeq: 0, message: 'queued' })
+    coordinator.promoteQueuedToPrompt('s1', { clientNonce: 'nonce-f', clientSeq: 0 })
+    // The fallback repost rejected before agent-start.
+    coordinator.failPromotedFollowUp('s1', { clientNonce: 'nonce-f', clientSeq: 0 })
+
+    // A later, unrelated prompt run must not inherit the released follow-up.
+    await coordinator.reservePrompt({ ...scope, clientNonce: 'nonce-p', message: 'next' })
+    coordinator.observe('s1', { type: 'agent_start', turnId: 't' }, [
+      { type: 'agent-start', seq: 1, turnId: 't' } as never,
+    ])
+    coordinator.observe('s1', { type: 'message_end', message: { id: 'a1', role: 'assistant', usage: USAGE } }, [])
+    coordinator.observe('s1', { type: 'agent_end', messages: [{ role: 'assistant', stopReason: 'stop' }] }, [
+      { type: 'agent-end', seq: 2, turnId: 't', status: 'ok' } as never,
+    ])
+    await coordinator.flush()
+
+    expect(calls.released).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:followup:nonce-f:0', reason: 'run-rejected' }),
+    ])
+    expect(calls.usage).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-p', usageId: 'pi-usage:s1:message:a1' }),
+    ])
+    expect(calls.settled).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-p', status: 'ok' }),
+    ])
   })
 })

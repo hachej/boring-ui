@@ -285,7 +285,14 @@ export class HarnessPiChatService implements PiChatSessionService {
     // Fallback re-posts the follow-up as a plain prompt; no followup-consumed
     // event will fire, so hand its reservation to the next agent-start.
     this.metering?.promoteQueuedToPrompt(sessionId, followUp)
-    await this.runPrompt(sessionId, adapter, metadata?.serverText ?? followUp.displayText)
+    try {
+      await this.runPrompt(sessionId, adapter, metadata?.serverText ?? followUp.displayText)
+    } catch (err) {
+      // The repost rejected before agent-start; release the promoted hold so
+      // it doesn't strand in pendingPrompts and misattribute later usage.
+      this.metering?.failPromotedFollowUp(sessionId, followUp)
+      throw err
+    }
     this.clearAutoPostedFollowUpForFallback(sessionId, adapter, followUp)
   }
 
@@ -446,11 +453,17 @@ export class HarnessPiChatService implements PiChatSessionService {
     const channel: LiveSessionChannel = { buffer, adapter, unsubscribe: () => {}, mapper, messageTurnIds: new Map() }
     const unsubscribe = adapter.subscribe((event) => {
       const mappedEvents = mapper.map(event)
+      // Metering observes the ENRICHED events: in production the native Pi
+      // message for a consumed follow-up carries no clientNonce/clientSeq —
+      // those selectors are recovered here by enrichEvent, and the metering
+      // coordinator needs them to attribute the follow-up's usage correctly.
+      const enrichedEvents: PiChatEvent[] = []
       for (const mapped of mappedEvents) {
         const enriched = this.messageMetadata.enrichEvent(sessionId, mapped)
+        enrichedEvents.push(enriched)
         this.publishChannelEvent(sessionId, channel, enriched)
       }
-      this.metering?.observe(sessionId, event, mappedEvents)
+      this.metering?.observe(sessionId, event, enrichedEvents)
     })
     channel.unsubscribe = unsubscribe
     this.channels.set(sessionId, channel)

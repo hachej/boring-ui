@@ -284,6 +284,23 @@ export class PiChatMeteringCoordinator {
   }
 
   /**
+   * A promoted-to-prompt follow-up failed before agent-start (the fallback
+   * repost rejected). Release its reservation instead of stranding it in
+   * pendingPrompts, where a later agent-start would otherwise misattribute
+   * usage to it.
+   */
+  failPromotedFollowUp(sessionId: string, selector: { clientNonce?: string; clientSeq?: number }): void {
+    const state = this.sessions.get(sessionId)
+    if (!state || selector.clientNonce === undefined || selector.clientSeq === undefined) return
+    const runId = followUpRunId(sessionId, selector.clientNonce, selector.clientSeq)
+    const index = state.pendingPrompts.findIndex((run) => run.scope.runId === runId)
+    if (index < 0) return
+    const [run] = state.pendingPrompts.splice(index, 1)
+    if (run) this.release(run, 'run-rejected')
+    this.pruneSession(sessionId, state)
+  }
+
+  /**
    * Release prompt runs reserved but not yet bound to an agent-start —
    * e.g. a stop/interrupt landing in the window between acceptance and the
    * native agent_start. Without this they would sit `active` in the store
@@ -347,14 +364,18 @@ export class PiChatMeteringCoordinator {
           }
           break
         }
-        case 'followup-consumed': {
-          const key = followUpKey(event)
-          const run = key === undefined ? undefined : state.queued.get(key)
-          if (key !== undefined && run) {
-            state.queued.delete(key)
-            if (state.active && !state.active.terminal) this.finishRun(state.active, 'ok')
-            state.active = run
+        case 'message-start': {
+          // Production consumption signal: an enriched user message-start
+          // carrying a follow-up selector (clientSeq present). Idempotent with
+          // the explicit followup-consumed event below — whichever lands first
+          // removes the run from the queue.
+          if (event.role === 'user' && event.clientSeq !== undefined) {
+            this.consumeFollowUp(state, event)
           }
+          break
+        }
+        case 'followup-consumed': {
+          this.consumeFollowUp(state, event)
           break
         }
         case 'agent-end': {
@@ -375,6 +396,16 @@ export class PiChatMeteringCoordinator {
 
     this.observeMessageEndUsage(state, nativeEvent)
     this.pruneSession(sessionId, state)
+  }
+
+  /** Promote a queued follow-up to the active run, settling the previous one. */
+  private consumeFollowUp(state: SessionMeteringState, selector: { clientNonce?: string; clientSeq?: number }): void {
+    const key = followUpKey(selector)
+    const run = key === undefined ? undefined : state.queued.get(key)
+    if (key === undefined || !run) return
+    state.queued.delete(key)
+    if (state.active && !state.active.terminal) this.finishRun(state.active, 'ok')
+    state.active = run
   }
 
   /** Test/diagnostic hook: resolves after every queued sink call settles. */

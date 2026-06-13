@@ -212,6 +212,37 @@ describe('PostgresMeteringStore', () => {
     expect(liveRow?.status).toBe('settled')
   })
 
+  it('does not reuse an expired-but-active reservation to bypass the hard stop', async () => {
+    await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 1_000_000 })
+    const stale = await store.reserve({ userId: USER, runId: 'turn-x', amountMicros: 750_000, ttlSeconds: 600 })
+    // The row is still status='active' but past its TTL (sweep hasn't run);
+    // computeBalance already excludes it, so available looks like the full grant.
+    await sqlClient`UPDATE boring_usage_reservations SET expires_at = now() - interval '1 minute' WHERE id = ${stale.reservationId}`
+    // Spend most of the grant so a fresh hold can no longer fit.
+    await store.recordUsage({ usageId: 'u1', userId: USER, runId: 'turn-x', billedCostMicros: 900_000 })
+
+    // Re-reserving the same run id must hit the hard stop, not silently return
+    // the stale (uncounted) reservation. (The failed reserve rolls back, so the
+    // stale row stays active until the next sweep/successful reserve.)
+    await expect(
+      store.reserve({ userId: USER, runId: 'turn-x', amountMicros: 750_000, ttlSeconds: 600 }),
+    ).rejects.toBeInstanceOf(InsufficientCreditError)
+  })
+
+  it('expires the stale row and mints a fresh hold when a same-run reserve succeeds after TTL', async () => {
+    await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 5_000_000 })
+    const stale = await store.reserve({ userId: USER, runId: 'turn-y', amountMicros: 750_000, ttlSeconds: 600 })
+    await sqlClient`UPDATE boring_usage_reservations SET expires_at = now() - interval '1 minute' WHERE id = ${stale.reservationId}`
+
+    const fresh = await store.reserve({ userId: USER, runId: 'turn-y', amountMicros: 750_000, ttlSeconds: 600 })
+    expect(fresh.reservationId).not.toBe(stale.reservationId)
+
+    const rows = await sqlClient`SELECT id, status FROM boring_usage_reservations WHERE run_id = 'turn-y'`
+    expect(rows.find((row) => row.id === stale.reservationId)?.status).toBe('expired')
+    expect(rows.find((row) => row.id === fresh.reservationId)?.status).toBe('active')
+    expect((await store.getBalance(USER)).activeReservedMicros).toBe(750_000)
+  })
+
   it('does not return another user\'s active reservation from the idempotent reserve path', async () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 5_000_000 })
     await store.grantOnce({ userId: OTHER_USER, reason: 'initial', amountMicros: 5_000_000 })
