@@ -196,7 +196,7 @@ describe('PostgresMeteringStore', () => {
     ).resolves.toMatchObject({ reservationId: expect.any(String) })
   })
 
-  it('settles only the newest row when a run id has an expired row plus a live retry', async () => {
+  it('settles the exact reservation by id when a run id has an expired row plus a live retry', async () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 5_000_000 })
     // Old reservation for the run expired before settlement; client retried
     // and a fresh active reservation now exists for the same run id.
@@ -204,14 +204,17 @@ describe('PostgresMeteringStore', () => {
     await sqlClient`UPDATE boring_usage_reservations SET status = 'expired' WHERE id = ${stale.reservationId}`
     const live = await store.reserve({ userId: USER, runId: 'turn-r', amountMicros: 500_000, ttlSeconds: 600 })
 
-    expect(await store.finishReservation({ runId: 'turn-r', userId: USER }, 'settled')).toEqual({ updated: true })
+    // A runId-only finish is ambiguous now (two finishable rows) and must be
+    // rejected rather than settling the wrong hold.
+    await expect(store.finishReservation({ runId: 'turn-r', userId: USER }, 'settled')).rejects.toThrow('ambiguous')
 
-    const rows = await sqlClient`SELECT id, status FROM boring_usage_reservations WHERE run_id = 'turn-r' ORDER BY created_at`
-    const staleRow = rows.find((row) => row.id === stale.reservationId)
-    const liveRow = rows.find((row) => row.id === live.reservationId)
-    // The dead row stays expired; only the live reservation is settled.
-    expect(staleRow?.status).toBe('expired')
-    expect(liveRow?.status).toBe('settled')
+    // The unambiguous reservation-id path settles exactly the targeted row.
+    expect(await store.finishReservation({ reservationId: stale.reservationId }, 'settled')).toEqual({ updated: true })
+
+    const rows = await sqlClient`SELECT id, status FROM boring_usage_reservations WHERE run_id = 'turn-r'`
+    expect(rows.find((row) => row.id === stale.reservationId)?.status).toBe('settled')
+    // The live retry's hold is untouched.
+    expect(rows.find((row) => row.id === live.reservationId)?.status).toBe('active')
   })
 
   it('does not reuse an expired-but-active reservation to bypass the hard stop', async () => {

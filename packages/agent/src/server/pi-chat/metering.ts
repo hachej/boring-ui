@@ -127,10 +127,13 @@ interface MeteringRun {
    * across run instances. */
   instanceId: number
   usageCount: number
-  /** Dedup keys (message id, or a usage signature for id-less messages) already
-   * recorded this attempt, so an agent_end final doesn't double-record the
-   * message_end. Cleared on auto-retry so each attempt meters independently. */
-  recordedUsageKeys: Set<string>
+  /** Message ids recorded this attempt (id-ful dedup of repeat message_end and
+   * the agent_end echo). Cleared on auto-retry. */
+  recordedMessageIds: Set<string>
+  /** Usage signature of the most recent id-less message recorded this attempt,
+   * so only the agent_end ECHO of it is skipped — distinct id-less messages
+   * (e.g. tool-loop calls) with the same usage are still each metered. */
+  lastIdlessUsageKey?: string
   /** Set when a recordUsage sink call rejected — at least one ledger row for
    * this run is missing, so the run must not falsely settle. */
   usageWriteFailed: boolean
@@ -478,7 +481,10 @@ export class PiChatMeteringCoordinator {
         case 'auto-retry-start': {
           // New attempt for the same run: reset per-attempt usage dedup so the
           // next attempt's usage (notably id-less) meters independently.
-          if (state.active) state.active.recordedUsageKeys.clear()
+          if (state.active) {
+            state.active.recordedMessageIds.clear()
+            state.active.lastIdlessUsageKey = undefined
+          }
           break
         }
         case 'agent-end': {
@@ -536,12 +542,16 @@ export class PiChatMeteringCoordinator {
     for (let index = nativeEvent.messages.length - 1; index >= 0; index -= 1) {
       const message = nativeEvent.messages[index]
       if (!isRecord(message) || message.role !== 'assistant') continue
-      this.recordAssistantUsage(state, message)
+      this.recordAssistantUsage(state, message, { isAgentEndFinal: true })
       return
     }
   }
 
-  private recordAssistantUsage(state: SessionMeteringState, message: unknown): void {
+  private recordAssistantUsage(
+    state: SessionMeteringState,
+    message: unknown,
+    opts: { isAgentEndFinal?: boolean } = {},
+  ): void {
     if (!isRecord(message) || message.role !== 'assistant') return
     const usage = normalizeMeteringUsage(message.usage)
     if (!usage) return
@@ -553,16 +563,19 @@ export class PiChatMeteringCoordinator {
     }
 
     const messageId = typeof message.id === 'string' && message.id.length > 0 ? message.id : undefined
-    const stopReasonForKey = typeof message.stopReason === 'string' ? message.stopReason : ''
-    // Dedup the agent_end final against the message_end of the SAME message
-    // within this attempt. With a native id that's exact; id-less, fall back to
-    // a usage signature. recordedUsageKeys is cleared on auto-retry so a new
-    // attempt's id-less usage is metered rather than skipped as a "duplicate".
-    const dedupKey = messageId
-      ? `id:${messageId}`
-      : `sig:${usage.input}:${usage.output}:${usage.cacheRead}:${usage.cacheWrite}:${usage.cost.total}:${stopReasonForKey}`
-    if (run.recordedUsageKeys.has(dedupKey)) return
-    run.recordedUsageKeys.add(dedupKey)
+    if (messageId) {
+      // id-ful: exact dedup of a repeat message_end and the agent_end echo.
+      if (run.recordedMessageIds.has(messageId)) return
+      run.recordedMessageIds.add(messageId)
+    } else {
+      // id-less: a message_end records unconditionally (distinct tool-loop calls
+      // can share a usage signature). Only the agent_end ECHO of the most
+      // recent id-less message is skipped.
+      const stopReason = typeof message.stopReason === 'string' ? message.stopReason : ''
+      const signature = `sig:${usage.input}:${usage.output}:${usage.cacheRead}:${usage.cacheWrite}:${usage.cost.total}:${stopReason}`
+      if (opts.isAgentEndFinal && signature === run.lastIdlessUsageKey) return
+      run.lastIdlessUsageKey = signature
+    }
 
     run.usageCount += 1
     const model = typeof message.model === 'string' && message.model.length > 0 ? message.model : undefined
@@ -607,7 +620,8 @@ export class PiChatMeteringCoordinator {
       reservationId: undefined,
       instanceId: (this.runInstances += 1),
       usageCount: 0,
-      recordedUsageKeys: new Set(),
+      recordedMessageIds: new Set(),
+      lastIdlessUsageKey: undefined,
       usageWriteFailed: false,
       reservation: Promise.resolve(),
       terminal: false,

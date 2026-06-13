@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm'
+import { and, eq, gt, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { creditGrants, usageLedger, usageReservations } from '../schema.js'
 
@@ -271,8 +271,13 @@ export class PostgresMeteringStore {
         .select({ id: usageReservations.id })
         .from(usageReservations)
         .where(and(...lookup))
-        .orderBy(desc(usageReservations.createdAt))
-        .limit(1)
+      if (found.length === 0) return { updated: false }
+      // A reused runId can have several finishable rows (e.g. an expired row
+      // plus a fresh active retry). Picking one blindly could settle the wrong
+      // hold, so demand the unambiguous reservationId instead.
+      if (found.length > 1) {
+        throw new Error('finishReservation by runId is ambiguous (multiple rows); pass reservationId')
+      }
       targetId = found[0]?.id
       if (!targetId) return { updated: false }
     }

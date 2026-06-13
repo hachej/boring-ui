@@ -1023,6 +1023,30 @@ describe('PiChatMeteringCoordinator promoted follow-up failure', () => {
     expect(calls.reserved).toHaveLength(1)
   })
 
+  it('meters two distinct id-less assistant messages with identical usage but dedups the agent_end echo', async () => {
+    const { sink, calls } = coordinatorSink()
+    const coordinator = new PiChatMeteringCoordinator(sink, () => {})
+    await coordinator.reservePrompt({ ...scope, clientNonce: 'n', message: 'a' })
+    coordinator.observe('s1', { type: 'agent_start', turnId: 't' }, [
+      { type: 'agent-start', seq: 1, turnId: 't' } as never,
+    ])
+
+    const idlessMessageEnd = { type: 'message_end', message: { role: 'assistant', stopReason: 'stop', usage: USAGE } }
+    // Two distinct model calls in one run (e.g. a tool loop), both id-less with
+    // identical usage — both must be billed.
+    coordinator.observe('s1', idlessMessageEnd, [])
+    coordinator.observe('s1', idlessMessageEnd, [])
+    // The agent_end final echoes the last assistant message — that one is skipped.
+    coordinator.observe('s1', { type: 'agent_end', messages: [{ role: 'assistant', stopReason: 'stop', usage: USAGE }] }, [
+      { type: 'agent-end', seq: 2, turnId: 't', status: 'ok' } as never,
+    ])
+    await coordinator.flush()
+
+    expect(calls.usage).toHaveLength(2)
+    expect(calls.usage[0]?.usageId).toBe('pi-usage:pi-run:s1:prompt:n:1:1')
+    expect(calls.usage[1]?.usageId).toBe('pi-usage:pi-run:s1:prompt:n:1:2')
+  })
+
   it('meters id-less usage from each failed retry attempt independently', async () => {
     const { sink, calls } = coordinatorSink()
     const coordinator = new PiChatMeteringCoordinator(sink, () => {})
