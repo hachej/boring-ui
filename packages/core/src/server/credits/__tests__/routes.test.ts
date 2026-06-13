@@ -49,7 +49,8 @@ describe('credits routes', () => {
     }
     registerCreditsRoutes(app, {
       service: new CreditsService(store, CONFIG),
-      lemonSqueezy: { webhookSecret: SECRET, creditVariantIds: ['1'], expectedTestMode: true, creditMicrosByVariant },
+      // Fixed per-variant value is now required; default variant '1' → €10.
+      lemonSqueezy: { webhookSecret: SECRET, creditVariantIds: ['1'], expectedTestMode: true, creditMicrosByVariant: creditMicrosByVariant ?? { '1': 10_000_000 } },
     })
     await app.ready()
     return app
@@ -234,10 +235,10 @@ describe('credits routes', () => {
     expect(store.revokePurchase).toHaveBeenCalledWith('order-77', expect.objectContaining({ allowTombstone: false }))
   })
 
-  it('credits the net pre-tax amount when a discount applied', async () => {
+  it('rejects a discounted underpayment for a fixed pack (net paid below pack value)', async () => {
     const store = makeStore()
-    const a = await build(store)
-    // subtotal €10, discount €4 → credit €6 (6_000_000 micros).
+    const a = await build(store, undefined, { '1': 10_000_000 }) // €10 pack
+    // subtotal €10, discount €4 → only €6 net paid for a €10 pack → underpaid.
     const body = JSON.stringify({
       meta: { event_name: 'order_created', custom_data: { user_id: 'user-1' } },
       data: { type: 'orders', id: 'order-disc', attributes: { status: 'paid', test_mode: true, currency: 'EUR', subtotal: 1000, discount_total: 400, total: 600, first_order_item: { variant_id: 1 } } },
@@ -249,7 +250,8 @@ describe('credits routes', () => {
       payload: body,
     })
     expect(res.statusCode).toBe(200)
-    expect(store.grantPurchaseOnce).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1', orderId: 'order-disc', amountMicros: 6_000_000 }))
+    expect(res.json()).toMatchObject({ reason: 'underpaid_order' })
+    expect(store.grantPurchaseOnce).not.toHaveBeenCalled()
   })
 
   it('rejects a webhook with a bad signature and never grants', async () => {
@@ -277,9 +279,10 @@ describe('credits routes', () => {
       service: new CreditsService(makeStore(), CONFIG),
       lemonSqueezy: {
         webhookSecret: SECRET,
-        creditVariantIds: ['var10', 'var25'],
+        creditVariantIds: ['912340', '912325'],
+        creditMicrosByVariant: { '912340': 10_000_000, '912325': 25_000_000 },
         expectedTestMode: true,
-        checkout: { apiKey: 'k', storeId: '406592', variants: { '10': 'var10', '25': 'var25' }, defaultPack: '10', testMode: true },
+        checkout: { apiKey: 'k', storeId: '406592', variants: { '10': '912340', '25': '912325' }, defaultPack: '10', testMode: true },
       },
     })
     await app.ready()
@@ -296,7 +299,7 @@ describe('credits routes', () => {
       expect(res.json().url).toBe('https://store/checkout/x')
       const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string)
       expect(sentBody.data.attributes.checkout_data.custom.user_id).toBe('u1') // from session, not request
-      expect(sentBody.data.relationships.variant.data.id).toBe('var25')
+      expect(sentBody.data.relationships.variant.data.id).toBe('912325')
     } finally {
       vi.unstubAllGlobals()
     }
@@ -316,7 +319,7 @@ describe('credits routes', () => {
       const res = await a.inject({ method: 'POST', url: '/api/credits/checkout', payload: {} })
       expect(res.statusCode).toBe(200)
       const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string)
-      expect(sentBody.data.relationships.variant.data.id).toBe('var10') // default pack '10'
+      expect(sentBody.data.relationships.variant.data.id).toBe('912340') // default pack '10'
     } finally {
       vi.unstubAllGlobals()
     }

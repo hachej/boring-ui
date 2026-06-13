@@ -158,20 +158,39 @@ export class PostgresMeteringStore {
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`purchase:${input.orderId}`}))`)
       const existing = await tx
-        .select({ status: creditPurchases.status, userId: creditPurchases.userId, amountMicros: creditPurchases.amountMicros, pendingRefundPpm: creditPurchases.pendingRefundPpm })
+        .select({
+          status: creditPurchases.status,
+          userId: creditPurchases.userId,
+          amountMicros: creditPurchases.amountMicros,
+          pendingRefundPpm: creditPurchases.pendingRefundPpm,
+          storeId: creditPurchases.storeId,
+          testMode: creditPurchases.testMode,
+          currency: creditPurchases.currency,
+          variantId: creditPurchases.variantId,
+        })
         .from(creditPurchases)
         .where(eq(creditPurchases.orderId, input.orderId))
         .limit(1)
       const prior = existing[0]
       // Already granted, or fully refunded (tombstone/transitioned) → never grant.
       if (prior && prior.status !== 'refund_pending') {
-        // A retry must carry the SAME user + amount. A mismatch means an
-        // attribution/amount bug or a reused order id — surface it loudly rather
-        // than silently 200-ack a money/accounting corruption as idempotent.
-        if (prior.status === 'granted' && (prior.userId !== input.userId || prior.amountMicros !== input.amountMicros)) {
+        // A retry must carry the SAME user, amount, AND provider identity. Any
+        // mismatch means an attribution bug or a reused/misrouted order id —
+        // surface it loudly rather than silently 200-ack accounting corruption.
+        if (
+          prior.status === 'granted' &&
+          (prior.userId !== input.userId ||
+            prior.amountMicros !== input.amountMicros ||
+            prior.storeId !== (input.storeId ?? null) ||
+            prior.testMode !== (input.testMode ?? null) ||
+            prior.currency !== (input.currency ?? null) ||
+            prior.variantId !== (input.variantId ?? null))
+        ) {
           throw new Error(
-            `purchase ${input.orderId} already granted to ${prior.userId} for ${prior.amountMicros} micros; ` +
-              `refusing conflicting re-grant to ${input.userId} for ${input.amountMicros} micros`,
+            `purchase ${input.orderId} already granted (user ${prior.userId}, ${prior.amountMicros} micros, ` +
+              `store ${prior.storeId}, testMode ${prior.testMode}, variant ${prior.variantId}); ` +
+              `refusing conflicting re-grant (user ${input.userId}, ${input.amountMicros} micros, ` +
+              `store ${input.storeId ?? null}, testMode ${input.testMode ?? null}, variant ${input.variantId ?? null})`,
           )
         }
         return { granted: false }

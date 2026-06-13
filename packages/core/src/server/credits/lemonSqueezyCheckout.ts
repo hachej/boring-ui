@@ -30,10 +30,14 @@ const LS_API = 'https://api.lemonsqueezy.com/v1/checkouts'
 
 /** Build the JSON:API request body for a checkout. Exported for testing. */
 export function buildCheckoutRequestBody(input: CreateCheckoutInput): Record<string, unknown> {
-  // Lemon Squeezy variant ids are integers; only emit the lock when it parses to
-  // one (Number('var10') → NaN would serialize to null and break the checkout).
+  // Fail closed: a Lemon Squeezy variant id MUST be a positive integer so the
+  // enabled_variants lock is always applied. A non-numeric id would otherwise
+  // create a checkout with no variant lock — the buyer could switch variants.
   const numericVariant = Number(input.variantId)
-  const enabledVariants = Number.isInteger(numericVariant) && numericVariant > 0 ? [numericVariant] : undefined
+  if (!Number.isInteger(numericVariant) || numericVariant <= 0) {
+    throw new Error(`Lemon Squeezy variantId must be a positive integer, got "${input.variantId}"`)
+  }
+  const enabledVariants = [numericVariant]
   return {
     data: {
       type: 'checkouts',
@@ -51,7 +55,7 @@ export function buildCheckoutRequestBody(input: CreateCheckoutInput): Record<str
         // enabled_variants, LS may let the buyer switch to another variant of the
         // product, which would then mis-credit or not credit at all.
         product_options: {
-          ...(enabledVariants ? { enabled_variants: enabledVariants } : {}),
+          enabled_variants: enabledVariants,
           ...(input.redirectUrl ? { redirect_url: input.redirectUrl } : {}),
         },
       },

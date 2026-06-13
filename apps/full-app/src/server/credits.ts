@@ -173,6 +173,11 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
     }
     creditMicrosByVariant[variantId] = micros
   }
+  // The webhook must know which store its orders belong to — otherwise any
+  // signed order in the right mode/currency/variant credits, with no store gate.
+  if (env.BORING_CREDITS_LS_WEBHOOK_SECRET && !env.BORING_CREDITS_LS_STORE_ID) {
+    throw new Error('BORING_CREDITS_LS_STORE_ID is required when BORING_CREDITS_LS_WEBHOOK_SECRET is set (the webhook must validate the order store)')
+  }
   // When Lemon Squeezy is configured, the test/live mode MUST be explicit — a
   // wrong default would either mint credits from non-charging test orders or
   // reject real live webhooks. Require an exact "0" (live) or "1" (test).

@@ -75,6 +75,16 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
     await expect(store.grantPurchaseOnce({ orderId: 'o', userId: USER, amountMicros: 0 })).rejects.toThrow('positive integer')
   })
 
+  it('treats a re-grant with mismatched provider identity as a conflict', async () => {
+    await store.grantPurchaseOnce({ orderId: 'ord-id', userId: USER, amountMicros: 10_000_000, storeId: 'A', testMode: false, variantId: '912340' })
+    // Identical retry (same identity) → idempotent no-op.
+    expect(await store.grantPurchaseOnce({ orderId: 'ord-id', userId: USER, amountMicros: 10_000_000, storeId: 'A', testMode: false, variantId: '912340' })).toEqual({ granted: false })
+    // Same user+amount but a DIFFERENT store/mode/variant → conflict, throws.
+    await expect(store.grantPurchaseOnce({ orderId: 'ord-id', userId: USER, amountMicros: 10_000_000, storeId: 'B', testMode: false, variantId: '912340' })).rejects.toThrow(/conflicting re-grant/)
+    await expect(store.grantPurchaseOnce({ orderId: 'ord-id', userId: USER, amountMicros: 10_000_000, storeId: 'A', testMode: true, variantId: '912340' })).rejects.toThrow(/conflicting re-grant/)
+    await expect(store.grantPurchaseOnce({ orderId: 'ord-id', userId: USER, amountMicros: 10_000_000, storeId: 'A', testMode: false, variantId: '999' })).rejects.toThrow(/conflicting re-grant/)
+  })
+
   it('revokes a refunded purchase once, deducting the credited amount', async () => {
     await store.grantPurchaseOnce({ orderId: 'ord-r', userId: USER, amountMicros: 10_000_000 })
     expect((await store.getBalance(USER)).remainingMicros).toBe(10_000_000)

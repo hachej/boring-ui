@@ -129,29 +129,24 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
 
   const webhookPath = ls.webhookPath ?? '/api/credits/webhooks/lemonsqueezy'
   const creditMicrosPerUnit = options.service.config.pricing.creditMicrosPerUnit
-  // €1 = 100 cents, so 1 cent = creditMicrosPerUnit / 100 credit micros.
-  const centsToMicros = (cents: number) => Math.round(Math.max(0, cents) * (creditMicrosPerUnit / 100))
-  // If fixed per-variant values are configured, EVERY credit variant must have
-  // one — a missing entry would silently fall back to order-amount crediting
-  // (the very coupling the fixed catalog avoids). Fail registration instead.
-  if (ls.creditMicrosByVariant) {
+  // Crediting basis (NO order-amount fallback — that couples credits to a
+  // multi-item/discounted/taxed order total). Require EITHER a fixed per-variant
+  // value covering every credit variant, OR an explicit creditsForOrder override
+  // (escape hatch for non-LS-pack hosts). Fail registration otherwise.
+  const variantCredits = ls.creditMicrosByVariant ?? {}
+  if (!ls.creditsForOrder) {
+    if (!ls.creditMicrosByVariant) {
+      throw new Error('credits: creditMicrosByVariant is required for the Lemon Squeezy webhook (fixed per-variant credit values; no order-amount fallback)')
+    }
     for (const variantId of ls.creditVariantIds) {
-      const value = ls.creditMicrosByVariant[variantId]
+      const value = variantCredits[variantId]
       if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
         throw new Error(`credits: creditMicrosByVariant is missing a positive value for credit variant "${variantId}"`)
       }
     }
   }
-  const variantCredits = ls.creditMicrosByVariant ?? {}
-  // Credits for an order: prefer the fixed per-variant value (immune to order
-  // amount, multi-item orders, discounts, and tax). Fall back to the net pre-tax
-  // subtotal only when a variant has no configured value.
-  const subtotalFallback = ls.creditsForOrder
-    ?? ((order: LemonSqueezyOrder) => centsToMicros(order.subtotalCents - order.discountTotalCents))
-  const creditsForOrder = (order: LemonSqueezyOrder): number => {
-    const fixed = order.variantId !== undefined ? variantCredits[order.variantId] : undefined
-    return typeof fixed === 'number' ? fixed : subtotalFallback(order)
-  }
+  const creditsForOrder = ls.creditsForOrder
+    ?? ((order: LemonSqueezyOrder): number => (order.variantId !== undefined ? variantCredits[order.variantId] ?? 0 : 0))
 
   // Fail closed: only credit paid orders for a configured pack variant, in the
   // required currency, and in the expected mode. Missing/absent fields are
