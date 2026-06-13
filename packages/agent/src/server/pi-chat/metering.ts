@@ -139,6 +139,10 @@ interface SessionMeteringState {
   queued: MeteringRun[]
 }
 
+// Run ids key the store's per-(runId, userId) reservation idempotency. They
+// intentionally omit workspaceId: a Pi session is bound to one workspace by the
+// session access policy (belongsToContext), so the same user cannot drive the
+// same sessionId — and thus the same runId — under two workspaces.
 function promptRunId(sessionId: string, clientNonce: string): string {
   return `pi-run:${sessionId}:prompt:${clientNonce}`
 }
@@ -235,30 +239,40 @@ export class PiChatMeteringCoordinator {
   }
 
   /** Reserve a prompt run. Throws (fail closed) when the sink rejects. */
-  async reservePrompt(input: ReservePromptInput): Promise<void> {
+  async reservePrompt(input: ReservePromptInput): Promise<boolean> {
     const state = this.sessionState(input.sessionId)
     const runId = promptRunId(input.sessionId, input.clientNonce)
-    // A client retry of the same nonce re-validates the balance through the
-    // sink (reserveRun is idempotent per runId) but must not double-track or
-    // release the in-flight run.
-    if (this.findRun(state, runId)) {
-      await this.reserve(input, 'prompt', runId)
-      return
+    // Duplicate (incl. two concurrent retries racing the gap before the async
+    // reserve resolves): the run is registered synchronously below, so the
+    // loser's findRun sees it. Return false so the caller skips execution.
+    if (this.findRun(state, runId)) return false
+    const run = this.createRun(input, 'prompt', runId)
+    state.pendingPrompts.push(run)
+    try {
+      await this.applyReservation(run, input)
+    } catch (err) {
+      this.removeReservingRun(state, run, input.sessionId)
+      throw err
     }
-    state.pendingPrompts.push(await this.reserve(input, 'prompt', runId))
+    return true
   }
 
-  /** Reserve a follow-up run. Throws (fail closed) when the sink rejects. */
-  async reserveFollowUp(input: ReserveFollowUpInput): Promise<void> {
+  /** Reserve a follow-up run. Throws (fail closed) when the sink rejects.
+   * Returns false when this selector already has a tracked run. */
+  async reserveFollowUp(input: ReserveFollowUpInput): Promise<boolean> {
     const state = this.sessionState(input.sessionId)
     const runId = followUpRunId(input.sessionId, input.clientNonce, input.clientSeq)
-    if (this.findRun(state, runId)) {
-      await this.reserve(input, 'followup', runId)
-      return
-    }
-    const run = await this.reserve(input, 'followup', runId)
+    if (this.findRun(state, runId)) return false
+    const run = this.createRun(input, 'followup', runId)
     run.followUp = { clientNonce: input.clientNonce, clientSeq: input.clientSeq }
     state.queued.push(run)
+    try {
+      await this.applyReservation(run, input)
+    } catch (err) {
+      this.removeReservingRun(state, run, input.sessionId)
+      throw err
+    }
+    return true
   }
 
   /** True while a non-terminal prompt run exists for this nonce (accept →
@@ -525,28 +539,19 @@ export class PiChatMeteringCoordinator {
     )
   }
 
-  private async reserve(
-    input: ReservePromptInput,
-    kind: MeteringRunKind,
-    runId: string,
-  ): Promise<MeteringRun> {
-    const scope: MeteringRunScope = {
-      workspaceId: input.workspaceId,
-      userId: input.userId,
-      sessionId: input.sessionId,
-      runId,
-      source: 'pi-chat',
-    }
-    const result = await this.sink.reserveRun({
-      ...scope,
-      kind,
-      message: input.message,
-      model: input.model,
-    })
+  /** Build a run synchronously (no await) so it can be registered before the
+   * reserve sink call, closing the concurrent-duplicate race. */
+  private createRun(input: ReservePromptInput, kind: MeteringRunKind, runId: string): MeteringRun {
     return {
-      scope,
+      scope: {
+        workspaceId: input.workspaceId,
+        userId: input.userId,
+        sessionId: input.sessionId,
+        runId,
+        source: 'pi-chat',
+      },
       kind,
-      reservationId: result?.reservationId,
+      reservationId: undefined,
       instanceId: (this.runInstances += 1),
       usageCount: 0,
       recordedMessageIds: new Set(),
@@ -554,6 +559,26 @@ export class PiChatMeteringCoordinator {
       terminal: false,
       ops: Promise.resolve(),
     }
+  }
+
+  /** Acquire the host reservation; throws (fail closed) on a rejecting sink. */
+  private async applyReservation(run: MeteringRun, input: ReservePromptInput): Promise<void> {
+    const result = await this.sink.reserveRun({
+      ...run.scope,
+      kind: run.kind,
+      message: input.message,
+      model: input.model,
+    })
+    run.reservationId = result?.reservationId
+  }
+
+  /** Remove a still-reserving run whose reservation failed, from either list. */
+  private removeReservingRun(state: SessionMeteringState, run: MeteringRun, sessionId: string): void {
+    const pendingIndex = state.pendingPrompts.indexOf(run)
+    if (pendingIndex >= 0) state.pendingPrompts.splice(pendingIndex, 1)
+    const queuedIndex = state.queued.indexOf(run)
+    if (queuedIndex >= 0) state.queued.splice(queuedIndex, 1)
+    this.pruneSession(sessionId, state)
   }
 
   private findRun(state: SessionMeteringState, runId: string): MeteringRun | undefined {

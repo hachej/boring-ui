@@ -888,6 +888,43 @@ describe('PiChatMeteringCoordinator promoted follow-up failure', () => {
 
   const scope = { workspaceId: 'ws', userId: 'user-a', sessionId: 's1' }
 
+  it('creates only one run for two concurrent same-nonce reserves racing the async sink', async () => {
+    const calls: SinkCalls = { reserved: [], usage: [], settled: [], released: [] }
+    const gate = deferred<void>()
+    const sink: AgentMeteringSink = {
+      reserveRun: async (input) => {
+        calls.reserved.push(input)
+        await gate.promise // hold both reserves open to force the race
+        return {}
+      },
+      recordUsage: async (input) => { calls.usage.push(input) },
+      settleRun: async (input) => { calls.settled.push(input) },
+      releaseRun: async (input) => { calls.released.push(input) },
+    }
+    const coordinator = new PiChatMeteringCoordinator(sink, () => {})
+
+    const first = coordinator.reservePrompt({ ...scope, clientNonce: 'n', message: 'a' })
+    const second = coordinator.reservePrompt({ ...scope, clientNonce: 'n', message: 'b' })
+    gate.resolve()
+    const [firstNew, secondNew] = await Promise.all([first, second])
+
+    // Exactly one new run; the loser is told it's a duplicate.
+    expect([firstNew, secondNew].filter(Boolean)).toHaveLength(1)
+
+    coordinator.observe('s1', { type: 'agent_start', turnId: 't' }, [
+      { type: 'agent-start', seq: 1, turnId: 't' } as never,
+    ])
+    coordinator.observe('s1', { type: 'message_end', message: { id: 'a1', role: 'assistant', usage: USAGE } }, [])
+    coordinator.observe('s1', { type: 'agent_end', messages: [{ role: 'assistant', stopReason: 'stop' }] }, [
+      { type: 'agent-end', seq: 2, turnId: 't', status: 'ok' } as never,
+    ])
+    await coordinator.flush()
+
+    expect(calls.usage).toHaveLength(1)
+    expect(calls.settled).toEqual([expect.objectContaining({ status: 'ok' })])
+    expect(calls.released).toEqual([])
+  })
+
   it('gives id-less usage distinct ids across run instances that reuse a run id', async () => {
     const { sink, calls } = coordinatorSink()
     const coordinator = new PiChatMeteringCoordinator(sink, () => {})

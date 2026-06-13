@@ -33,6 +33,9 @@ export const ErrorCode = z.enum([
   'CIRCUIT_OPEN',
   'ABORTED',
 
+  // Billing / metering
+  'PAYMENT_REQUIRED',
+
   // Session / bridge
   'SESSION_NOT_FOUND',
   'SESSION_LOCKED',

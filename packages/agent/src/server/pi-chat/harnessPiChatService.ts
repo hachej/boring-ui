@@ -171,15 +171,24 @@ export class HarnessPiChatService implements PiChatSessionService {
       }
     }
     // Reserve before execution; a rejecting sink (e.g. credits exhausted)
-    // fails the request closed before any model call happens.
-    await this.metering?.reservePrompt({
+    // fails the request closed before any model call happens. A false result
+    // means a concurrent duplicate already owns this run — skip execution.
+    const reservedNewRun = (await this.metering?.reservePrompt({
       workspaceId: ctx.workspaceId,
       userId: ctx.authSubject,
       sessionId,
       clientNonce: payload.clientNonce,
       message: payload.message,
       model: payload.model,
-    })
+    })) ?? true
+    if (!reservedNewRun) {
+      return {
+        accepted: true,
+        cursor: this.channels.get(sessionId)?.buffer.latestSeq ?? 0,
+        clientNonce: payload.clientNonce,
+        duplicate: true,
+      }
+    }
     this.messageMetadata.recordPrompt(sessionId, payload)
     const channel = this.channels.get(sessionId)
     const receiptCursor = nextPromptReceiptCursor(channel)
@@ -214,14 +223,24 @@ export class HarnessPiChatService implements PiChatSessionService {
         duplicate: true,
       }
     }
-    await this.metering?.reserveFollowUp({
+    const reservedNewFollowUp = (await this.metering?.reserveFollowUp({
       workspaceId: ctx.workspaceId,
       userId: ctx.authSubject,
       sessionId,
       clientNonce: payload.clientNonce,
       clientSeq: payload.clientSeq,
       message: payload.message,
-    })
+    })) ?? true
+    if (!reservedNewFollowUp) {
+      return {
+        accepted: true,
+        queued: true,
+        cursor: this.channels.get(sessionId)?.buffer.latestSeq ?? 0,
+        clientNonce: payload.clientNonce,
+        clientSeq: payload.clientSeq,
+        duplicate: true,
+      }
+    }
     this.messageMetadata.recordFollowUp(sessionId, payload)
     try {
       await adapter.followUp(payload.message, {
