@@ -131,10 +131,13 @@ export class PostgresMeteringStore {
   }
 
   /**
-   * Credit a purchase exactly once GLOBALLY per order id. Claims the order
-   * (order_id PK) and writes the grant in one transaction, so a webhook retry
-   * or a delivery misrouted to a different user can never double-credit a paid
-   * order. Returns `granted: false` when the order was already processed.
+   * Credit a purchase exactly once GLOBALLY per order id. The order id is the
+   * primary key, so a webhook retry or a delivery misrouted to a different user
+   * can never double-credit. A per-order advisory lock serializes this against
+   * revokePurchase so a refund that arrives BEFORE order_created (out-of-order
+   * delivery) leaves a 'refunded' tombstone that blocks this grant — the user
+   * never keeps credits for a refunded order. Returns `granted: false` when the
+   * order was already processed or has been refunded.
    */
   async grantPurchaseOnce(input: {
     orderId: string
@@ -147,53 +150,81 @@ export class PostgresMeteringStore {
       throw new Error('purchase amountMicros must be a positive integer')
     }
     return this.db.transaction(async (tx) => {
-      const claimed = await tx
-        .insert(creditPurchases)
-        .values({
-          orderId: input.orderId,
-          userId: input.userId,
-          amountMicros: input.amountMicros,
-          source: input.source ?? 'lemonsqueezy',
-        })
-        .onConflictDoNothing({ target: creditPurchases.orderId })
-        .returning({ orderId: creditPurchases.orderId })
-      if (claimed.length === 0) return { granted: false }
-      await tx
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`purchase:${input.orderId}`}))`)
+      const existing = await tx
+        .select({ status: creditPurchases.status })
+        .from(creditPurchases)
+        .where(eq(creditPurchases.orderId, input.orderId))
+        .limit(1)
+      // Already granted, or refunded (tombstone or transitioned) → never grant.
+      if (existing.length > 0) return { granted: false }
+      await tx.insert(creditPurchases).values({
+        orderId: input.orderId,
+        userId: input.userId,
+        amountMicros: input.amountMicros,
+        status: 'granted',
+        source: input.source ?? 'lemonsqueezy',
+      })
+      const grantRows = await tx
         .insert(creditGrants)
         .values({ userId: input.userId, reason: `purchase:${input.orderId}`, amountMicros: input.amountMicros })
         .onConflictDoNothing({ target: [creditGrants.userId, creditGrants.reason] })
+        .returning({ id: creditGrants.id })
+      // The purchase row was just claimed, so the grant must be fresh. A
+      // conflict means a pre-existing grant with this reason (manual import /
+      // data repair) — fail loudly rather than record a purchase with no credit.
+      if (grantRows.length === 0) {
+        throw new Error(`purchase ${input.orderId} claimed but a credit grant already existed`)
+      }
       return { granted: true }
     })
   }
 
   /**
-   * Revoke a refunded/disputed purchase: deduct the originally-credited amount
-   * via an idempotent usage-ledger debit (so the balance drops, possibly below
-   * zero, which then blocks new runs). Returns revoked=false for an unknown
-   * order or a repeat refund.
+   * Revoke a refunded/disputed purchase. Under the same per-order advisory lock
+   * as grantPurchaseOnce:
+   *  - granted order  → mark 'refunded' and post an idempotent usage-ledger debit
+   *    for the originally-credited amount (balance drops, possibly negative,
+   *    blocking new runs); returns revoked=true.
+   *  - not yet seen   → write a 'refunded' tombstone so a later order_created
+   *    cannot grant; returns revoked=false (nothing was credited yet).
+   *  - already refunded → no-op; returns revoked=false.
    */
   async revokePurchase(orderId: string, source = 'lemonsqueezy-refund'): Promise<{ revoked: boolean }> {
     if (!orderId) throw new Error('revokePurchase requires an orderId')
-    const purchase = await this.db
-      .select({ userId: creditPurchases.userId, amountMicros: creditPurchases.amountMicros })
-      .from(creditPurchases)
-      .where(eq(creditPurchases.orderId, orderId))
-      .limit(1)
-    const row = purchase[0]
-    if (!row) return { revoked: false }
-    const rows = await this.db
-      .insert(usageLedger)
-      .values({
-        id: `refund:${orderId}`,
-        userId: row.userId,
-        source,
-        billedCostMicros: row.amountMicros,
-        providerCostMicros: 0,
-        metadata: { kind: 'purchase_refund', orderId },
-      })
-      .onConflictDoNothing({ target: usageLedger.id })
-      .returning({ id: usageLedger.id })
-    return { revoked: rows.length > 0 }
+    return this.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`purchase:${orderId}`}))`)
+      const existing = await tx
+        .select({ userId: creditPurchases.userId, amountMicros: creditPurchases.amountMicros, status: creditPurchases.status })
+        .from(creditPurchases)
+        .where(eq(creditPurchases.orderId, orderId))
+        .limit(1)
+      const row = existing[0]
+      if (!row) {
+        // Refund before grant: tombstone the order so it can never be credited.
+        await tx.insert(creditPurchases).values({ orderId, status: 'refunded', source, refundedAt: new Date() })
+        return { revoked: false }
+      }
+      if (row.status === 'refunded') return { revoked: false }
+      // Granted order: transition to refunded and debit the credited amount.
+      await tx
+        .update(creditPurchases)
+        .set({ status: 'refunded', refundedAt: new Date() })
+        .where(eq(creditPurchases.orderId, orderId))
+      const debit = await tx
+        .insert(usageLedger)
+        .values({
+          id: `refund:${orderId}`,
+          userId: row.userId!,
+          source,
+          billedCostMicros: row.amountMicros!,
+          providerCostMicros: 0,
+          metadata: { kind: 'purchase_refund', orderId },
+        })
+        .onConflictDoNothing({ target: usageLedger.id })
+        .returning({ id: usageLedger.id })
+      return { revoked: debit.length > 0 }
+    })
   }
 
   async getBalance(userId: string, now: Date = new Date()): Promise<MeteringBalance> {

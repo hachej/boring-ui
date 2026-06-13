@@ -194,15 +194,29 @@ describe('credits routes', () => {
     expect(res.statusCode).toBe(401)
   })
 
-  it('falls back to the default pack for an unknown pack id', async () => {
+  it('uses the default pack when none is requested', async () => {
     const fetchMock = vi.fn(async (_url: string, _init: { body: string }) => new Response(JSON.stringify({ data: { attributes: { url: 'https://store/checkout/y' } } }), { status: 201 }))
     vi.stubGlobal('fetch', fetchMock)
     try {
       const a = await buildWithCheckout('u1')
-      const res = await a.inject({ method: 'POST', url: '/api/credits/checkout', payload: { pack: '999' } })
+      const res = await a.inject({ method: 'POST', url: '/api/credits/checkout', payload: {} })
       expect(res.statusCode).toBe(200)
       const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string)
       expect(sentBody.data.relationships.variant.data.id).toBe('var10') // default pack '10'
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('400s an explicitly-requested unknown pack id (never silently substitutes)', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      const a = await buildWithCheckout('u1')
+      const res = await a.inject({ method: 'POST', url: '/api/credits/checkout', payload: { pack: '999' } })
+      expect(res.statusCode).toBe(400)
+      expect(res.json().error.code).toBe('INVALID_PACK')
+      expect(fetchMock).not.toHaveBeenCalled()
     } finally {
       vi.unstubAllGlobals()
     }

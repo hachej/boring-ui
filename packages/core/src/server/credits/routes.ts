@@ -81,6 +81,11 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
         return reply.code(401).send({ error: { code: 'AUTH_REQUIRED', message: 'authentication required' } })
       }
       const pack = (request.body as { pack?: unknown } | undefined)?.pack
+      // Absent pack → default; an explicitly-requested unknown pack → 400 (don't
+      // silently charge for a different pack than the client asked for).
+      if (pack !== undefined && pack !== null && (typeof pack !== 'string' || !(pack in checkout.variants))) {
+        return reply.code(400).send({ error: { code: 'INVALID_PACK', message: 'unknown credit pack' } })
+      }
       const packId = typeof pack === 'string' && pack in checkout.variants ? pack : checkout.defaultPack
       const variantId = checkout.variants[packId]
       if (!variantId) {

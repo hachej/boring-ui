@@ -70,11 +70,14 @@ describe('CreditsService', () => {
     expect(store.grantOnce).toHaveBeenCalledWith(expect.objectContaining({ expiresAt: expect.any(Date) }))
   })
 
-  it('never reports negative balance', async () => {
+  it('never reports negative balance but surfaces debt', async () => {
     const store = makeStore({
       getBalance: vi.fn(async () => ({ userId: 'u1', grantedMicros: 0, usedMicros: 100, remainingMicros: -100, activeReservedMicros: 0, availableMicros: -100 })),
     })
-    expect((await new CreditsService(store, CONFIG).getBalance('u1')).remainingMicros).toBe(0)
+    const balance = await new CreditsService(store, CONFIG).getBalance('u1')
+    expect(balance.remainingMicros).toBe(0)
+    expect(balance.availableMicros).toBe(0)
+    expect(balance.debtMicros).toBe(100)
   })
 
   it('grants a purchase idempotently keyed on the order id', async () => {

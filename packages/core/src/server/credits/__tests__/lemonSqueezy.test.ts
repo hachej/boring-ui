@@ -79,6 +79,8 @@ describe('handleLemonSqueezyWebhook', () => {
         // €10 subtotal → €10 of credits at 1 credit = €0.000001 (1 cent = 10_000 micros).
         creditsForOrder: (o: LemonSqueezyOrder) => o.subtotalCents * 10_000,
         grant,
+        isCreditOrder: () => true,
+        onRefund: async () => ({ revoked: true }),
         ...overrides,
       },
     }
@@ -181,13 +183,5 @@ describe('handleLemonSqueezyWebhook', () => {
     const body = orderPayload({ event_name: 'order_refunded' }, { status: 'refunded' })
     const res = await handleLemonSqueezyWebhook(body, sign(body), options)
     expect(res).toMatchObject({ status: 200, body: { ok: true, reason: 'refund_noop' } })
-  })
-
-  it('acknowledges a refund event when no onRefund handler is wired', async () => {
-    const { options, grant } = opts()
-    const body = orderPayload({ event_name: 'order_refunded' }, { status: 'refunded' })
-    const res = await handleLemonSqueezyWebhook(body, sign(body), options)
-    expect(res).toMatchObject({ status: 200, body: { ok: true, reason: 'refund_not_handled' } })
-    expect(grant).not.toHaveBeenCalled()
   })
 })

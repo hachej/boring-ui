@@ -292,20 +292,28 @@ export const creditGrants = pgTable(
   ],
 )
 
-// One row per credited purchase. The provider order id is the PRIMARY KEY, so
-// crediting is globally idempotent per order regardless of which user it maps to
-// (a retry or a misrouted delivery cannot double-credit).
+// One row per purchase order, keyed by the provider order id (PRIMARY KEY) so the
+// purchase lifecycle is globally idempotent per order. status models the lifecycle:
+//   'granted'  — credits were minted for this order
+//   'refunded' — refunded/disputed; either a tombstone written BEFORE any grant
+//                (user_id/amount_micros null) so a late order_created never grants,
+//                or a granted row transitioned after revocation.
+// userId/amountMicros are nullable to allow a refund-before-grant tombstone.
 export const creditPurchases = pgTable(
   'boring_credit_purchases',
   {
     orderId: text('order_id').primaryKey(),
-    userId: text('user_id').notNull(),
-    amountMicros: bigint('amount_micros', { mode: 'number' }).notNull(),
+    userId: text('user_id'),
+    amountMicros: bigint('amount_micros', { mode: 'number' }),
+    status: text('status').notNull().default('granted'),
     source: text('source').notNull().default('lemonsqueezy'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
+    refundedAt: timestamp('refunded_at'),
   },
   (table) => [
     index('boring_credit_purchases_user_idx').on(table.userId),
+    check('boring_credit_purchases_amount_check', sql`${table.amountMicros} IS NULL OR ${table.amountMicros} > 0`),
+    check('boring_credit_purchases_status_check', sql`${table.status} IN ('granted', 'refunded')`),
   ],
 )
 

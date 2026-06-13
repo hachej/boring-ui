@@ -108,15 +108,17 @@ export interface LemonSqueezyWebhookOptions {
   creditableEvents?: string[]
   /**
    * Confirm this paid order is actually a credit-pack purchase before granting
-   * (e.g. currency, mode, and that the variant is a configured pack). Without
-   * it, ANY signed paid order on the store would mint credits. Returning false
-   * acks the webhook without crediting.
+   * (currency, mode, and that the variant is a configured pack). REQUIRED:
+   * without it, ANY signed paid order on the store would mint credits. Returning
+   * false acks the webhook without crediting.
    */
-  isCreditOrder?: (order: LemonSqueezyOrder) => boolean
+  isCreditOrder: (order: LemonSqueezyOrder) => boolean
   /** Events that revoke a previously-credited purchase. Default `order_refunded`. */
   refundEvents?: string[]
-  /** Revoke a refunded/disputed order's credits (idempotent per order). */
-  onRefund?: (order: LemonSqueezyOrder) => Promise<{ revoked: boolean }>
+  /** Revoke a refunded/disputed order's credits (idempotent per order). REQUIRED
+   * so a refund is never silently dropped (which would leave a refunded order
+   * credited). */
+  onRefund: (order: LemonSqueezyOrder) => Promise<{ revoked: boolean }>
   log?: (message: string, fields?: Record<string, unknown>) => void
 }
 
@@ -154,9 +156,6 @@ export async function handleLemonSqueezyWebhook(
   // Refund/dispute events revoke the order's credits (idempotent per order).
   const refundEvents = options.refundEvents ?? ['order_refunded']
   if (refundEvents.includes(order.eventName)) {
-    if (!options.onRefund) {
-      return { status: 200, body: { ok: true, reason: 'refund_not_handled', orderId: order.orderId } }
-    }
     const { revoked } = await options.onRefund(order)
     options.log?.('lemonsqueezy refund processed', { orderId: order.orderId, revoked })
     return { status: 200, body: { ok: true, reason: revoked ? 'refund_revoked' : 'refund_noop', orderId: order.orderId } }
@@ -172,7 +171,7 @@ export async function handleLemonSqueezyWebhook(
     return { status: 200, body: { ok: true, reason: `order_status_${order.status ?? 'unknown'}`, orderId: order.orderId } }
   }
   // Confirm it's actually a credit-pack purchase (currency/mode/variant).
-  if (options.isCreditOrder && !options.isCreditOrder(order)) {
+  if (!options.isCreditOrder(order)) {
     options.log?.('lemonsqueezy paid order is not a recognized credit pack', {
       orderId: order.orderId, variantId: order.variantId, currency: order.currency, testMode: order.testMode,
     })

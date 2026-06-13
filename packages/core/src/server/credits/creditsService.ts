@@ -45,6 +45,9 @@ export interface CreditBalance {
   activeReservedMicros: number
   /** remaining minus active holds; never negative in the response. */
   availableMicros: number
+  /** Owed amount when the ledger went negative (e.g. after a refund of spent
+   * credits); 0 otherwise. Surfaced for audit/support so debt isn't hidden. */
+  debtMicros: number
   currency: 'credits'
 }
 
@@ -90,6 +93,7 @@ function disabledBalance(userId: string): CreditBalance {
     activeReservedMicros: 0,
     remainingMicros: Number.MAX_SAFE_INTEGER,
     availableMicros: Number.MAX_SAFE_INTEGER,
+    debtMicros: 0,
     currency: 'credits',
   }
 }
@@ -153,6 +157,8 @@ export class CreditsService {
       // remaining = granted − used (ledger). available = remaining − active holds.
       remainingMicros: Math.max(0, balance.remainingMicros),
       availableMicros: Math.max(0, balance.availableMicros),
+      // Owed when the raw ledger is negative (refund of already-spent credits).
+      debtMicros: Math.max(0, -balance.remainingMicros),
       currency: 'credits',
     }
   }

@@ -10,9 +10,26 @@ import type { CoreWorkspaceAgentServer } from '@hachej/boring-core/app/server'
 
 const CREDIT_MICROS_PER_EUR = 1_000_000 // 1 credit = €0.000001
 
-function eurToMicros(value: string | undefined, fallbackEur: number): number {
-  const eur = value === undefined || value === '' ? fallbackEur : Number(value)
-  return Math.round((Number.isFinite(eur) && eur >= 0 ? eur : fallbackEur) * CREDIT_MICROS_PER_EUR)
+/** EUR env → credit micros. Money config is a trust boundary: a provided value
+ * that isn't a finite non-negative number THROWS (a typo must not silently
+ * collapse to the fallback). Fallback applies only when unset/empty. */
+function eurToMicros(name: string, value: string | undefined, fallbackEur: number): number {
+  if (value === undefined || value === '') return Math.round(fallbackEur * CREDIT_MICROS_PER_EUR)
+  const eur = Number(value)
+  if (!Number.isFinite(eur) || eur < 0) {
+    throw new Error(`invalid ${name}: expected a non-negative EUR amount, got "${value}"`)
+  }
+  return Math.round(eur * CREDIT_MICROS_PER_EUR)
+}
+
+/** Parse a provided numeric money env strictly; fallback only when unset/empty. */
+function parseNumberEnv(name: string, value: string | undefined, fallback: number, min: number): number {
+  if (value === undefined || value === '') return fallback
+  const n = Number(value)
+  if (!Number.isFinite(n) || n < min) {
+    throw new Error(`invalid ${name}: expected a number >= ${min}, got "${value}"`)
+  }
+  return n
 }
 
 /** Parse "10:var_abc,25:var_def,50:var_ghi" → { '10': 'var_abc', ... }. */
@@ -26,19 +43,29 @@ function parseVariants(raw: string | undefined): Record<string, string> {
   return out
 }
 
-/** Parse "regex=in:out;regex=in:out" → model rate table (EUR / MTok). */
+/**
+ * Parse "regex=in:out;regex=in:out" → model rate table (EUR / MTok). Money
+ * config is a trust boundary: a malformed or non-positive entry THROWS at
+ * startup rather than being silently skipped (which would let the matching
+ * model bill at €0 — free production usage) — fail closed, never fall open.
+ */
 function parseRates(raw: string | undefined): Array<[RegExp, { inputPerMillion: number; outputPerMillion: number }]> | undefined {
-  if (!raw) return undefined
+  if (!raw || raw.trim() === '') return undefined
   const rates: Array<[RegExp, { inputPerMillion: number; outputPerMillion: number }]> = []
   for (const entry of raw.split(';')) {
+    if (entry.trim() === '') continue
     const [pattern, prices] = entry.split('=')
     const [input, output] = (prices ?? '').split(':').map(Number)
-    if (pattern && Number.isFinite(input) && Number.isFinite(output)) {
-      try {
-        rates.push([new RegExp(pattern.trim(), 'i'), { inputPerMillion: input, outputPerMillion: output }])
-      } catch {
-        // skip a malformed pattern
-      }
+    if (!pattern || !pattern.trim()) {
+      throw new Error(`invalid BORING_CREDITS_RATES entry (missing pattern): "${entry}"`)
+    }
+    if (!Number.isFinite(input) || !Number.isFinite(output) || input <= 0 || output <= 0) {
+      throw new Error(`invalid BORING_CREDITS_RATES entry (rates must be positive EUR/MTok): "${entry}"`)
+    }
+    try {
+      rates.push([new RegExp(pattern.trim(), 'i'), { inputPerMillion: input, outputPerMillion: output }])
+    } catch {
+      throw new Error(`invalid BORING_CREDITS_RATES entry (bad regex): "${entry}"`)
     }
   }
   return rates.length > 0 ? rates : undefined
@@ -60,25 +87,52 @@ export interface FullAppCreditsConfig extends CreditsConfig {
   }
 }
 
+/** Conservative worst-case single-run cost (credit micros): the priciest rate
+ * (configured rates, floored at the conservative default) over the model's max
+ * context+output, with margin. The per-run hold must cover this for the hard
+ * stop to be tight, since actual cost is posted only after the run. */
+function worstCaseRunMicros(
+  rates: Array<[RegExp, { inputPerMillion: number; outputPerMillion: number }]> | undefined,
+  margin: number,
+  env: NodeJS.ProcessEnv,
+): number {
+  const maxContext = parseNumberEnv('BORING_CREDITS_MAX_CONTEXT_TOKENS', env.BORING_CREDITS_MAX_CONTEXT_TOKENS, 200_000, 1)
+  const maxOutput = parseNumberEnv('BORING_CREDITS_MAX_OUTPUT_TOKENS', env.BORING_CREDITS_MAX_OUTPUT_TOKENS, 16_384, 1)
+  const r = rates ?? []
+  const maxInput = r.reduce((m, [, x]) => Math.max(m, x.inputPerMillion), 3) // ≥ conservative default
+  const maxOut = r.reduce((m, [, x]) => Math.max(m, x.outputPerMillion), 15)
+  const eur = (maxContext / 1_000_000) * maxInput + (maxOutput / 1_000_000) * maxOut
+  return Math.ceil(eur * margin * CREDIT_MICROS_PER_EUR)
+}
+
 export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullAppCreditsConfig {
   const expiresRaw = env.BORING_CREDITS_SIGNUP_GRANT_EXPIRES_DAYS
   const variants = parseVariants(env.BORING_CREDITS_LS_VARIANTS)
   // Default to TEST mode; live deploys must set BORING_CREDITS_LS_TEST_MODE=0.
   const testMode = env.BORING_CREDITS_LS_TEST_MODE !== '0'
   const checkoutReady = Boolean(env.BORING_CREDITS_LS_API_KEY && env.BORING_CREDITS_LS_STORE_ID && Object.keys(variants).length > 0)
+  // Margin < 1 would bill below provider cost — reject it (fail closed).
+  const margin = parseNumberEnv('BORING_CREDITS_MARGIN', env.BORING_CREDITS_MARGIN, 1.3, 1)
+  // Verified per-model EUR/MTok rates (e.g. Infomaniak). Unset ⇒ unconfigured
+  // models bill at the conservative default (over-charge, never free).
+  const rates = parseRates(env.BORING_CREDITS_RATES)
+  // The per-run hold defaults to the worst-case run so the hard stop is tight by
+  // construction; an explicit BORING_CREDITS_RESERVATION_EUR is validated in attach().
+  const worstCase = worstCaseRunMicros(rates, margin, env)
+  const runReservationMicros = env.BORING_CREDITS_RESERVATION_EUR
+    ? eurToMicros('BORING_CREDITS_RESERVATION_EUR', env.BORING_CREDITS_RESERVATION_EUR, 1)
+    : worstCase
   return {
     enabled: env.BORING_CREDITS_ENABLED !== '0',
-    signupGrantMicros: eurToMicros(env.BORING_CREDITS_SIGNUP_GRANT_EUR, 2),
+    signupGrantMicros: eurToMicros('BORING_CREDITS_SIGNUP_GRANT_EUR', env.BORING_CREDITS_SIGNUP_GRANT_EUR, 2),
     signupGrantExpiresAfterDays: expiresRaw === undefined || expiresRaw === '0' ? null : Math.max(1, Number(expiresRaw) || 0) || null,
-    runReservationMicros: eurToMicros(env.BORING_CREDITS_RESERVATION_EUR, 1),
-    reservationTtlSeconds: Math.max(60, Number(env.BORING_CREDITS_RESERVATION_TTL_SECONDS ?? 7200) || 7200),
-    minBalanceMicros: eurToMicros(env.BORING_CREDITS_MIN_BALANCE_EUR, 0.05),
+    runReservationMicros,
+    reservationTtlSeconds: Math.max(60, parseNumberEnv('BORING_CREDITS_RESERVATION_TTL_SECONDS', env.BORING_CREDITS_RESERVATION_TTL_SECONDS, 7200, 60)),
+    minBalanceMicros: eurToMicros('BORING_CREDITS_MIN_BALANCE_EUR', env.BORING_CREDITS_MIN_BALANCE_EUR, 0.05),
     pricing: {
-      margin: Number(env.BORING_CREDITS_MARGIN ?? 1.3) || 1.3,
+      margin,
       creditMicrosPerUnit: CREDIT_MICROS_PER_EUR,
-      // Verified per-model EUR/MTok rates (e.g. Infomaniak). Unset ⇒ unconfigured
-      // models bill at the conservative default (over-charge, never free).
-      rates: parseRates(env.BORING_CREDITS_RATES),
+      rates,
     },
     lemonSqueezyWebhookSecret: env.BORING_CREDITS_LS_WEBHOOK_SECRET || undefined,
     lemonSqueezyVariants: variants,
@@ -94,19 +148,6 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
         }
       : undefined,
   }
-}
-
-/** Conservative worst-case single-run cost (credit micros) from the priciest
- * configured rate and the model's max context+output, used to warn when the
- * reservation hold is too small to make the hard stop tight. */
-function worstCaseRunMicros(config: FullAppCreditsConfig, env: NodeJS.ProcessEnv): number {
-  const maxContext = Number(env.BORING_CREDITS_MAX_CONTEXT_TOKENS ?? 200_000) || 200_000
-  const maxOutput = Number(env.BORING_CREDITS_MAX_OUTPUT_TOKENS ?? 16_384) || 16_384
-  const rates = config.pricing.rates ?? []
-  const maxInput = rates.reduce((m, [, r]) => Math.max(m, r.inputPerMillion), 3) // ≥ conservative default
-  const maxOut = rates.reduce((m, [, r]) => Math.max(m, r.outputPerMillion), 15)
-  const eur = (maxContext / 1_000_000) * maxInput + (maxOutput / 1_000_000) * maxOut
-  return Math.ceil(eur * config.pricing.margin * CREDIT_MICROS_PER_EUR)
 }
 
 /**
@@ -154,12 +195,16 @@ export function buildCreditsWiring(env: NodeJS.ProcessEnv = process.env): {
           app.log.warn('credits: Lemon Squeezy checkout not configured (need API key + store id + variants) — Buy-credits button disabled')
         }
       }
-      // Warn when the per-run hold can't cover a worst-case run (loose hard stop).
-      const worstCase = worstCaseRunMicros(config, env)
+      // The per-run hold is the only bound on a single run's overdraft (actual
+      // cost is posted after the run). If it can't cover a worst-case run, the
+      // hard stop isn't hard. Fail closed at startup rather than ship a config
+      // that lets one run push a user arbitrarily negative.
+      const worstCase = worstCaseRunMicros(config.pricing.rates, config.pricing.margin, env)
       if (config.enabled && config.runReservationMicros < worstCase) {
-        app.log.warn(
-          { runReservationMicros: config.runReservationMicros, worstCaseRunMicros: worstCase },
-          'credits: per-run reservation is below the estimated worst-case run cost — raise BORING_CREDITS_RESERVATION_EUR to make the hard stop tight',
+        throw new Error(
+          `credits: per-run reservation (${config.runReservationMicros} micros) is below the worst-case run cost ` +
+            `(${worstCase} micros). Raise BORING_CREDITS_RESERVATION_EUR (or lower BORING_CREDITS_MAX_CONTEXT_TOKENS/` +
+            `BORING_CREDITS_MAX_OUTPUT_TOKENS) so the per-run hard stop covers the priciest single run.`,
         )
       }
     },

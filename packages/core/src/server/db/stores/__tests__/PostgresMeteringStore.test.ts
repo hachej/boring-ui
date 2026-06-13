@@ -49,7 +49,8 @@ beforeEach(async () => {
   await sqlClient`DELETE FROM boring_usage_ledger WHERE user_id IN (${USER}, ${OTHER_USER})`
   await sqlClient`DELETE FROM boring_usage_reservations WHERE user_id IN (${USER}, ${OTHER_USER})`
   await sqlClient`DELETE FROM boring_credit_grants WHERE user_id IN (${USER}, ${OTHER_USER})`
-  await sqlClient`DELETE FROM boring_credit_purchases WHERE user_id IN (${USER}, ${OTHER_USER})`
+  // Includes refund-before-grant tombstones, which carry a NULL user_id.
+  await sqlClient`DELETE FROM boring_credit_purchases WHERE user_id IN (${USER}, ${OTHER_USER}) OR user_id IS NULL`
 })
 
 describe('grantPurchaseOnce (global per-order idempotency)', () => {
@@ -86,6 +87,27 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
 
   it('no-ops revoking an unknown order', async () => {
     expect(await store.revokePurchase('never-credited')).toEqual({ revoked: false })
+  })
+
+  it('refund-before-grant tombstones the order so a later order_created never credits', async () => {
+    // order_refunded arrives before order_created (out-of-order webhook delivery).
+    expect(await store.revokePurchase('ord-race')).toEqual({ revoked: false })
+    // The matching grant must now be refused — the user must not keep credits.
+    expect(await store.grantPurchaseOnce({ orderId: 'ord-race', userId: USER, amountMicros: 10_000_000 })).toEqual({ granted: false })
+    expect((await store.getBalance(USER)).grantedMicros).toBe(0)
+
+    const rows = await sqlClient`SELECT status FROM boring_credit_purchases WHERE order_id = 'ord-race'`
+    expect(rows[0]?.status).toBe('refunded')
+  })
+
+  it('marks a granted order refunded exactly once on revoke', async () => {
+    await store.grantPurchaseOnce({ orderId: 'ord-g', userId: USER, amountMicros: 10_000_000 })
+    expect(await store.revokePurchase('ord-g')).toEqual({ revoked: true })
+    const rows = await sqlClient`SELECT status FROM boring_credit_purchases WHERE order_id = 'ord-g'`
+    expect(rows[0]?.status).toBe('refunded')
+    // A second order_created for the same (now refunded) order does not re-credit.
+    expect(await store.grantPurchaseOnce({ orderId: 'ord-g', userId: USER, amountMicros: 10_000_000 })).toEqual({ granted: false })
+    expect((await store.getBalance(USER)).remainingMicros).toBe(0)
   })
 })
 
