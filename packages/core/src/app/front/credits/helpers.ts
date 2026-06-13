@@ -10,6 +10,8 @@ export interface CreditBalanceResponse {
   availableMicros: number
   /** Amount owed when the ledger went negative (e.g. refund of spent credits). */
   debtMicros: number
+  /** Server truth: whether the Buy-credits checkout is wired (avoids client drift). */
+  checkoutEnabled?: boolean
   currency: 'credits'
 }
 

@@ -4,7 +4,8 @@ import { formatCreditMicros, isLowBalance, type CreditBalanceResponse } from './
 export interface CreditBalanceBadgeProps {
   /** Base URL for the credits API (default: same origin). */
   apiBaseUrl?: string
-  /** Enable the "Buy credits" button (server creates the checkout). */
+  /** Fallback enable for the "Buy credits" button. The server's
+   * `checkoutEnabled` (from /api/credits/balance) takes precedence when present. */
   buyEnabled?: boolean
   /** Credit pack id to purchase (server maps it to a Lemon Squeezy variant). */
   pack?: string
@@ -87,6 +88,8 @@ export function CreditBalanceBadge({
 
   const inDebt = (balance.debtMicros ?? 0) > 0
   const low = inDebt || isLowBalance(balance.remainingMicros)
+  // Prefer server truth over the build-time flag so the button can't drift.
+  const showBuy = balance.checkoutEnabled ?? buyEnabled
 
   return (
     <div
@@ -102,7 +105,7 @@ export function CreditBalanceBadge({
       >
         {inDebt ? `−${formatCreditMicros(balance.debtMicros, locale)}` : formatCreditMicros(balance.remainingMicros, locale)}
       </span>
-      {buyEnabled ? (
+      {showBuy ? (
         <button type="button" className="credit-balance-badge__buy" onClick={() => void onBuy()} disabled={buying}>
           {buying ? 'Opening…' : 'Buy credits'}
         </button>

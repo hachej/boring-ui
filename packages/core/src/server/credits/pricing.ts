@@ -82,6 +82,26 @@ function rateForModel(modelId: string, config: CreditPricingConfig): ModelTokenR
   return table.find(([pattern]) => pattern.test(modelId))?.[1] ?? null
 }
 
+/**
+ * The highest input/output rate this pricing config can actually charge: the max
+ * over the EFFECTIVE rate table (configured rates if set, else
+ * DEFAULT_MODEL_RATES) AND the conservative default fallback. Size a per-run
+ * reservation hold from this — never a hardcoded floor — or an expensive model
+ * in the table (e.g. Claude Opus at 15/75) can bill above a hold sized for a
+ * cheaper rate, defeating the hard stop.
+ */
+export function maxEffectiveRate(config: CreditPricingConfig): ModelTokenRate {
+  const table = config.rates ?? DEFAULT_MODEL_RATES
+  const fallback = config.defaultRate ?? CONSERVATIVE_DEFAULT_RATE
+  let inputPerMillion = fallback.inputPerMillion
+  let outputPerMillion = fallback.outputPerMillion
+  for (const [, rate] of table) {
+    inputPerMillion = Math.max(inputPerMillion, rate.inputPerMillion)
+    outputPerMillion = Math.max(outputPerMillion, rate.outputPerMillion)
+  }
+  return { inputPerMillion, outputPerMillion }
+}
+
 /** Estimate raw provider cost (pricing-currency units) from token counts. Cache
  * tokens are billed at the input rate — a deliberate conservative over-count.
  * Unmatched models fall back to `config.defaultRate` (never zero). */

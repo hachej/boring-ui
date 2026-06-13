@@ -134,15 +134,15 @@ describe('credits routes', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({ ok: true, reason: 'refund_revoked', orderId: 'order-77' })
-    // No refunded_amount in the payload → full refund (refundToMicros undefined).
-    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', { refundToMicros: undefined })
+    // No refunded_amount in the payload → full refund (fraction undefined).
+    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', { refundFraction: undefined })
     expect(store.grantPurchaseOnce).not.toHaveBeenCalled()
   })
 
-  it('revokes only the partial refund delta when refunded_amount is set', async () => {
+  it('passes the cumulative refund fraction (refunded_amount / total) for a partial refund', async () => {
     const store = makeStore()
     const a = await build(store)
-    // €3 partial refund (300 cents) on a €10 order → revoke 3_000_000 micros.
+    // €3 refunded of a €10 order (tax-incl basis) → fraction 0.3.
     const body = JSON.stringify({
       meta: { event_name: 'order_refunded', custom_data: { user_id: 'user-1' } },
       data: { type: 'orders', id: 'order-77', attributes: { status: 'paid', test_mode: true, currency: 'EUR', subtotal: 1000, total: 1000, refunded: true, refunded_amount: 300, first_order_item: { variant_id: 1 } } },
@@ -154,7 +154,26 @@ describe('credits routes', () => {
       payload: body,
     })
     expect(res.statusCode).toBe(200)
-    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', { refundToMicros: 3_000_000 })
+    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', { refundFraction: 0.3 })
+  })
+
+  it('ignores a refund for an order from the wrong store/mode/variant', async () => {
+    const store = makeStore()
+    const a = await build(store) // creditVariantIds ['1'], expectedTestMode true
+    // Refund for variant 999 (not a credit pack) must not tombstone/revoke.
+    const body = JSON.stringify({
+      meta: { event_name: 'order_refunded', custom_data: { user_id: 'user-1' } },
+      data: { type: 'orders', id: 'order-77', attributes: { status: 'refunded', test_mode: true, currency: 'EUR', subtotal: 1000, total: 1000, refunded: true, refunded_amount: 1000, first_order_item: { variant_id: 999 } } },
+    })
+    const res = await a.inject({
+      method: 'POST',
+      url: '/api/credits/webhooks/lemonsqueezy',
+      headers: { 'content-type': 'application/json', 'x-signature': createHmac('sha256', SECRET).update(body).digest('hex') },
+      payload: body,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ reason: 'not_a_credit_order' })
+    expect(store.revokePurchase).not.toHaveBeenCalled()
   })
 
   it('credits the net pre-tax amount when a discount applied', async () => {

@@ -138,12 +138,12 @@ export class CreditsService {
     return { created: granted }
   }
 
-  /** Revoke a refunded/disputed purchase. `refundToMicros` is the cumulative
-   * amount to revoke (for partial refunds); omit for a full refund. Idempotent
-   * per cumulative level. */
-  async revokePurchase(orderId: string, refundToMicros?: number): Promise<{ revoked: boolean }> {
+  /** Revoke a refunded/disputed purchase. `refundFraction` is the cumulative
+   * fraction of the order refunded (LS refunded_amount / total) for partial
+   * refunds; omit for a full refund. Idempotent per cumulative level. */
+  async revokePurchase(orderId: string, refundFraction?: number): Promise<{ revoked: boolean }> {
     if (!this.config.enabled) return { revoked: false }
-    return this.store.revokePurchase(orderId, { refundToMicros })
+    return this.store.revokePurchase(orderId, { refundFraction })
   }
 
   async getBalance(userId: string): Promise<CreditBalance> {

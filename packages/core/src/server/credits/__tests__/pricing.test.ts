@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { usageToCredits, estimateProviderCost, type CreditPricingConfig } from '../pricing'
+import { usageToCredits, estimateProviderCost, maxEffectiveRate, type CreditPricingConfig } from '../pricing'
 
 // 1 credit = €0.000001 ⇒ 1 EUR = 1_000_000 credit micros.
 // Explicit Infomaniak rates (the production path supplies these via config.rates).
@@ -84,5 +84,34 @@ describe('usageToCredits', () => {
     expect(estimateProviderCost('my-model', 1_000_000, 1_000_000, config)).toEqual({ units: 30, usedDefault: false })
     // Unmatched (custom table doesn't have kimi) → explicit defaultRate, not the built-ins.
     expect(estimateProviderCost('kimi-k2', 1_000_000, 0, config)).toEqual({ units: 1, usedDefault: true })
+  })
+
+  describe('maxEffectiveRate (for sizing the per-run hold)', () => {
+    it('uses the priciest DEFAULT_MODEL_RATES entry when no rates are configured', () => {
+      // DEFAULT_MODEL_RATES includes Claude Opus at 15/75 — the hold must cover it.
+      expect(maxEffectiveRate({ margin: 1.3, creditMicrosPerUnit: 1_000_000 })).toEqual({ inputPerMillion: 15, outputPerMillion: 75 })
+    })
+
+    it('uses the priciest configured rate (with the conservative default as a floor)', () => {
+      const rate = maxEffectiveRate({
+        margin: 1.3,
+        creditMicrosPerUnit: 1_000_000,
+        rates: [[/infomaniak/, { inputPerMillion: 0.5, outputPerMillion: 1.5 }]],
+      })
+      // Configured rate is cheaper than the conservative default (3/15) → default floors it.
+      expect(rate).toEqual({ inputPerMillion: 3, outputPerMillion: 15 })
+    })
+
+    it('takes the max across multiple configured rates', () => {
+      const rate = maxEffectiveRate({
+        margin: 1.3,
+        creditMicrosPerUnit: 1_000_000,
+        rates: [
+          [/cheap/, { inputPerMillion: 1, outputPerMillion: 2 }],
+          [/pricey/, { inputPerMillion: 8, outputPerMillion: 40 }],
+        ],
+      })
+      expect(rate).toEqual({ inputPerMillion: 8, outputPerMillion: 40 })
+    })
   })
 })

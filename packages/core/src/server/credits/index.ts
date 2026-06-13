@@ -14,6 +14,7 @@ export type {
 export {
   usageToCredits,
   estimateProviderCost,
+  maxEffectiveRate,
   DEFAULT_MODEL_RATES,
 } from './pricing.js'
 export type {

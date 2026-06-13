@@ -181,6 +181,15 @@ describe('handleLemonSqueezyWebhook', () => {
     expect(grant).not.toHaveBeenCalled()
   })
 
+  it('ignores a refund that fails the credit-order check (wrong store/mode/variant)', async () => {
+    const onRefund = vi.fn(async () => ({ revoked: true }))
+    const { options } = opts({ isCreditOrder: () => false, onRefund })
+    const body = orderPayload({ event_name: 'order_refunded' }, { status: 'refunded' })
+    const res = await handleLemonSqueezyWebhook(body, sign(body), options)
+    expect(res).toMatchObject({ status: 200, body: { ok: true, reason: 'not_a_credit_order' } })
+    expect(onRefund).not.toHaveBeenCalled()
+  })
+
   it('reports refund_noop when nothing was revoked (unknown order)', async () => {
     const onRefund = vi.fn(async () => ({ revoked: false }))
     const { options } = opts({ onRefund })

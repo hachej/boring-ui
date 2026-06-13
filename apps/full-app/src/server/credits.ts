@@ -3,7 +3,9 @@ import {
   PostgresMeteringStore,
   createCreditsMeteringSink,
   registerCreditsRoutes,
+  maxEffectiveRate,
   type CreditsConfig,
+  type CreditPricingConfig,
 } from '@hachej/boring-core/server'
 import type { AgentMeteringSink } from '@hachej/boring-agent/server'
 import type { CoreWorkspaceAgentServer } from '@hachej/boring-core/app/server'
@@ -119,22 +121,24 @@ export interface FullAppCreditsConfig extends CreditsConfig {
   }
 }
 
-/** Conservative worst-case single-run cost (credit micros): the priciest rate
- * (configured rates, floored at the conservative default) over the model's max
- * context+output, with margin. The per-run hold must cover this for the hard
- * stop to be tight, since actual cost is posted only after the run. */
-function worstCaseRunMicros(
-  rates: Array<[RegExp, { inputPerMillion: number; outputPerMillion: number }]> | undefined,
-  margin: number,
-  env: NodeJS.ProcessEnv,
-): number {
+/**
+ * Conservative worst-case RUN cost (credit micros). A single Pi prompt can make
+ * several model calls (tool loop) before any debit posts, and each call is
+ * priced at the priciest rate the config can ACTUALLY charge (maxEffectiveRate —
+ * the same effective table usageToCredits uses, incl. DEFAULT_MODEL_RATES when
+ * no env rates are set) over the max context+output, with margin. The per-run
+ * hold must cover the whole run for the hard stop to be tight, so we multiply a
+ * worst-case call by BORING_CREDITS_MAX_CALLS_PER_RUN. A run that exceeds that
+ * call budget can still overshoot the hold; the overshoot is bounded and the
+ * user's NEXT run is then refused (negative balance), so exposure is capped.
+ */
+function worstCaseRunMicros(pricing: CreditPricingConfig, env: NodeJS.ProcessEnv): number {
   const maxContext = parseNumberEnv('BORING_CREDITS_MAX_CONTEXT_TOKENS', env.BORING_CREDITS_MAX_CONTEXT_TOKENS, 200_000, 1)
   const maxOutput = parseNumberEnv('BORING_CREDITS_MAX_OUTPUT_TOKENS', env.BORING_CREDITS_MAX_OUTPUT_TOKENS, 16_384, 1)
-  const r = rates ?? []
-  const maxInput = r.reduce((m, [, x]) => Math.max(m, x.inputPerMillion), 3) // ≥ conservative default
-  const maxOut = r.reduce((m, [, x]) => Math.max(m, x.outputPerMillion), 15)
-  const eur = (maxContext / 1_000_000) * maxInput + (maxOutput / 1_000_000) * maxOut
-  return Math.ceil(eur * margin * CREDIT_MICROS_PER_EUR)
+  const maxCalls = parseNumberEnv('BORING_CREDITS_MAX_CALLS_PER_RUN', env.BORING_CREDITS_MAX_CALLS_PER_RUN, 4, 1)
+  const rate = maxEffectiveRate(pricing)
+  const unitsPerCall = (maxContext / 1_000_000) * rate.inputPerMillion + (maxOutput / 1_000_000) * rate.outputPerMillion
+  return Math.ceil(unitsPerCall * maxCalls * pricing.margin * pricing.creditMicrosPerUnit)
 }
 
 export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullAppCreditsConfig {
@@ -156,7 +160,7 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
   const rates = parseRates(env.BORING_CREDITS_RATES)
   // The per-run hold defaults to the worst-case run so the hard stop is tight by
   // construction; an explicit BORING_CREDITS_RESERVATION_EUR is validated in attach().
-  const worstCase = worstCaseRunMicros(rates, margin, env)
+  const worstCase = worstCaseRunMicros({ margin, creditMicrosPerUnit: CREDIT_MICROS_PER_EUR, rates }, env)
   const runReservationMicros = env.BORING_CREDITS_RESERVATION_EUR
     ? eurToMicros('BORING_CREDITS_RESERVATION_EUR', env.BORING_CREDITS_RESERVATION_EUR, 1)
     : worstCase
@@ -247,12 +251,21 @@ export function buildCreditsWiring(env: NodeJS.ProcessEnv = process.env): {
       // cost is posted after the run). If it can't cover a worst-case run, the
       // hard stop isn't hard. Fail closed at startup rather than ship a config
       // that lets one run push a user arbitrarily negative.
-      const worstCase = worstCaseRunMicros(config.pricing.rates, config.pricing.margin, env)
+      const worstCase = worstCaseRunMicros(config.pricing, env)
       if (config.enabled && config.runReservationMicros < worstCase) {
         throw new Error(
           `credits: per-run reservation (${config.runReservationMicros} micros) is below the worst-case run cost ` +
             `(${worstCase} micros). Raise BORING_CREDITS_RESERVATION_EUR (or lower BORING_CREDITS_MAX_CONTEXT_TOKENS/` +
-            `BORING_CREDITS_MAX_OUTPUT_TOKENS) so the per-run hard stop covers the priciest single run.`,
+            `BORING_CREDITS_MAX_OUTPUT_TOKENS/BORING_CREDITS_MAX_CALLS_PER_RUN) so the per-run hard stop covers a run.`,
+        )
+      }
+      // A free-grant smaller than the per-run hold means new users can't start a
+      // run at all (reserve needs the full hold available). Surface it — the
+      // operator must raise the grant, lower the hold, or configure cheaper rates.
+      if (config.enabled && config.signupGrantMicros > 0 && config.signupGrantMicros < config.runReservationMicros) {
+        app.log.warn(
+          { signupGrantMicros: config.signupGrantMicros, runReservationMicros: config.runReservationMicros },
+          'credits: signup grant is below the per-run hold — new users will be blocked from their first run until they buy credits',
         )
       }
     },

@@ -63,12 +63,16 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
   const getUserId = options.getUserId ?? defaultGetUserId
   const balancePath = options.balancePath ?? '/api/credits/balance'
 
+  // Server truth for the Buy-credits button so the client flag can't drift from
+  // whether checkout is actually wired.
+  const checkoutEnabled = Boolean(options.lemonSqueezy?.checkout)
+
   app.get(balancePath, async (request, reply) => {
     const userId = getUserId(request)
     if (!userId) {
       return reply.code(401).send({ error: { code: 'AUTH_REQUIRED', message: 'authentication required' } })
     }
-    return reply.send(await options.service.getBalance(userId))
+    return reply.send({ ...(await options.service.getBalance(userId)), checkoutEnabled })
   })
 
   const ls = options.lemonSqueezy
@@ -152,16 +156,17 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
           creditsForOrder,
           isCreditOrder,
           grant: (input) => options.service.grantPurchase(input.userId, input.orderId, input.amountMicros),
-          // Refunds/disputes revoke the order's credits. Looked up by order id in
-          // our purchases table, so no variant/currency check is needed (an order
-          // we never credited returns revoked=false). For a PARTIAL refund, LS
-          // reports the cumulative refunded_amount (tax-incl) — pass it as the
-          // cumulative revoke target so only the delta is debited; a full refund
-          // (no/zero amount) revokes the entire credited amount.
+          // Refunds/disputes revoke the order's credits. For a PARTIAL refund, LS
+          // reports the cumulative refunded_amount (tax-incl) against the order
+          // total — pass that fraction so the store revokes the proportional
+          // share of the (pre-tax) credited amount; a full refund (no/zero amount,
+          // or amount ≥ total) revokes everything.
           onRefund: (order) =>
             options.service.revokePurchase(
               order.orderId,
-              order.refundedAmountCents > 0 ? centsToMicros(order.refundedAmountCents) : undefined,
+              order.refundedAmountCents > 0 && order.totalCents > 0
+                ? order.refundedAmountCents / order.totalCents
+                : undefined,
             ),
           log: options.log,
         },

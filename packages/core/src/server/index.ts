@@ -76,6 +76,7 @@ export {
   SIGNUP_GRANT_REASON,
   usageToCredits,
   estimateProviderCost,
+  maxEffectiveRate,
   DEFAULT_MODEL_RATES,
   createCreditsMeteringSink,
   verifyLemonSqueezySignature,

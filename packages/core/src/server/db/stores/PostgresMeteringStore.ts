@@ -183,11 +183,12 @@ export class PostgresMeteringStore {
   /**
    * Revoke a refunded/disputed purchase. Under the same per-order advisory lock
    * as grantPurchaseOnce, supports repeated PARTIAL refunds:
-   *  - `refundToMicros` is the cumulative credit micros that should be revoked
-   *    for this order (capped at the credited amount). The method debits only
-   *    the delta since the last refund, so a €1 partial refund of a €10 pack
-   *    revokes €1, and a later top-up to a full refund revokes the rest.
-   *    Omit it (undefined) for a full refund of the entire credited amount.
+   *  - `refundFraction` is the cumulative fraction of the order (by money) that
+   *    has been refunded — i.e. LS `refunded_amount / total` (both tax-inclusive),
+   *    which maps the refund onto the same basis as the credited amount. The
+   *    revoked credits = round(creditedMicros × fraction), capped at credited.
+   *    The method debits only the delta since the last refund. Omit (undefined)
+   *    for a full refund of the entire credited amount.
    *  - granted order  → debit the delta, track cumulative `refunded_micros`, and
    *    mark 'refunded' once fully revoked; returns revoked=true when a debit was
    *    posted.
@@ -197,12 +198,12 @@ export class PostgresMeteringStore {
    */
   async revokePurchase(
     orderId: string,
-    opts: { refundToMicros?: number; source?: string } = {},
+    opts: { refundFraction?: number; source?: string } = {},
   ): Promise<{ revoked: boolean }> {
     if (!orderId) throw new Error('revokePurchase requires an orderId')
     const source = opts.source ?? 'lemonsqueezy-refund'
-    if (opts.refundToMicros !== undefined && (!Number.isSafeInteger(opts.refundToMicros) || opts.refundToMicros < 0)) {
-      throw new Error('revokePurchase refundToMicros must be a non-negative integer')
+    if (opts.refundFraction !== undefined && (!Number.isFinite(opts.refundFraction) || opts.refundFraction < 0)) {
+      throw new Error('revokePurchase refundFraction must be a non-negative number')
     }
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`purchase:${orderId}`}))`)
@@ -216,16 +217,26 @@ export class PostgresMeteringStore {
         .from(creditPurchases)
         .where(eq(creditPurchases.orderId, orderId))
         .limit(1)
+      const fraction = opts.refundFraction ?? 1
       const row = existing[0]
       if (!row) {
-        // Refund before grant: tombstone the order so it can never be credited.
-        await tx.insert(creditPurchases).values({ orderId, status: 'refunded', source, refundedAt: new Date() })
+        // Refund before grant (out-of-order delivery). Only a FULL refund writes a
+        // terminal tombstone (the order must never be credited). A PARTIAL refund
+        // can't be applied yet (the credited amount is unknown), and tombstoning
+        // it would wrongly block the whole grant — so don't block; log for manual
+        // reconcile and let the later order_created grant normally.
+        if (fraction >= 1) {
+          await tx.insert(creditPurchases).values({ orderId, status: 'refunded', source, refundedAt: new Date() })
+        }
+        // else: partial refund before grant — intentionally not blocked; the
+        // later order_created grants normally (rare; reconcile manually).
         return { revoked: false }
       }
       const credited = row.amountMicros ?? 0
       const alreadyRefunded = row.refundedMicros ?? 0
-      // Target cumulative revoked amount, capped at what was actually credited.
-      const target = Math.min(opts.refundToMicros ?? credited, credited)
+      // Cumulative revoked amount on the credited (pre-tax) basis, capped at
+      // what was credited. A full refund (fraction undefined or ≥1) revokes all.
+      const target = Math.min(credited, Math.round(credited * Math.min(1, fraction)))
       const delta = target - alreadyRefunded
       const fullyRefunded = target >= credited
       if (delta <= 0) {
@@ -244,7 +255,7 @@ export class PostgresMeteringStore {
           source,
           billedCostMicros: delta,
           providerCostMicros: 0,
-          metadata: { kind: 'purchase_refund', orderId, refundToMicros: target },
+          metadata: { kind: 'purchase_refund', orderId, refundedToMicros: target },
         })
         .onConflictDoNothing({ target: usageLedger.id })
         .returning({ id: usageLedger.id })

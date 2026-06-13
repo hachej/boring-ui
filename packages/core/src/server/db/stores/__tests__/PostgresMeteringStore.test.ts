@@ -110,24 +110,36 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
     expect((await store.getBalance(USER)).remainingMicros).toBe(0)
   })
 
-  it('revokes only the delta across repeated partial refunds, then fully', async () => {
+  it('revokes the proportional delta across repeated partial refunds, then fully', async () => {
     await store.grantPurchaseOnce({ orderId: 'ord-p', userId: USER, amountMicros: 10_000_000 })
-    // First partial: revoke up to €3.
-    expect(await store.revokePurchase('ord-p', { refundToMicros: 3_000_000 })).toEqual({ revoked: true })
+    // 30% refunded cumulative → revoke €3.
+    expect(await store.revokePurchase('ord-p', { refundFraction: 0.3 })).toEqual({ revoked: true })
     expect((await store.getBalance(USER)).remainingMicros).toBe(7_000_000)
-    // Retry of the same cumulative level is a no-op (no double-debit).
-    expect(await store.revokePurchase('ord-p', { refundToMicros: 3_000_000 })).toEqual({ revoked: false })
+    // Retry of the same cumulative fraction is a no-op (no double-debit).
+    expect(await store.revokePurchase('ord-p', { refundFraction: 0.3 })).toEqual({ revoked: false })
     expect((await store.getBalance(USER)).remainingMicros).toBe(7_000_000)
-    // Second partial up to €8 revokes only the €5 delta.
-    expect(await store.revokePurchase('ord-p', { refundToMicros: 8_000_000 })).toEqual({ revoked: true })
+    // 80% cumulative → revoke only the €5 delta.
+    expect(await store.revokePurchase('ord-p', { refundFraction: 0.8 })).toEqual({ revoked: true })
     expect((await store.getBalance(USER)).remainingMicros).toBe(2_000_000)
     let rows = await sqlClient`SELECT status FROM boring_credit_purchases WHERE order_id = 'ord-p'`
     expect(rows[0]?.status).toBe('granted') // not fully refunded yet
-    // Full refund (cap at credited) revokes the remaining €2 and marks refunded.
-    expect(await store.revokePurchase('ord-p', { refundToMicros: 50_000_000 })).toEqual({ revoked: true })
+    // Full refund (fraction ≥ 1, capped) revokes the remaining €2 and marks refunded.
+    expect(await store.revokePurchase('ord-p', { refundFraction: 1.2 })).toEqual({ revoked: true })
     expect((await store.getBalance(USER)).remainingMicros).toBe(0)
     rows = await sqlClient`SELECT status FROM boring_credit_purchases WHERE order_id = 'ord-p'`
     expect(rows[0]?.status).toBe('refunded')
+  })
+
+  it('full refund-before-grant blocks a later grant; partial does not', async () => {
+    // Full refund before order_created → terminal tombstone, later grant refused.
+    expect(await store.revokePurchase('ord-full', { refundFraction: 1 })).toEqual({ revoked: false })
+    expect(await store.grantPurchaseOnce({ orderId: 'ord-full', userId: USER, amountMicros: 10_000_000 })).toEqual({ granted: false })
+
+    // Partial refund before order_created must NOT block the grant (can't apply
+    // a partial against an unknown amount; would otherwise mint zero credits).
+    expect(await store.revokePurchase('ord-part', { refundFraction: 0.5 })).toEqual({ revoked: false })
+    expect(await store.grantPurchaseOnce({ orderId: 'ord-part', userId: USER, amountMicros: 10_000_000 })).toEqual({ granted: true })
+    expect((await store.getBalance(USER)).remainingMicros).toBe(10_000_000)
   })
 
   it('charges a fallback hold and settles when usage write failed', async () => {
