@@ -25,6 +25,9 @@ export interface LemonSqueezyRouteOptions {
   /** Expected mode of credit orders: true = test, false = live. An order whose
    * test_mode differs is ignored (prevents test↔live cross-crediting). */
   expectedTestMode: boolean
+  /** Expected Lemon Squeezy store id. When set, an order from another store is
+   * ignored (defense in depth on top of the per-store webhook secret). */
+  expectedStoreId?: string
   /** Currency a paid order must be in to be credited (default 'EUR'). A missing
    * or mismatched currency is rejected. */
   requireCurrency?: string
@@ -113,8 +116,11 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
   const webhookPath = ls.webhookPath ?? '/api/credits/webhooks/lemonsqueezy'
   const creditMicrosPerUnit = options.service.config.pricing.creditMicrosPerUnit
   // €1 = 100 cents, so 1 cent = creditMicrosPerUnit / 100 credit micros.
+  const centsToMicros = (cents: number) => Math.round(Math.max(0, cents) * (creditMicrosPerUnit / 100))
+  // Credit the NET pre-tax amount paid (subtotal − discount), so a discount code
+  // can't mint full face-value credits for a partial payment.
   const creditsForOrder = ls.creditsForOrder
-    ?? ((order: LemonSqueezyOrder) => Math.round(order.subtotalCents * (creditMicrosPerUnit / 100)))
+    ?? ((order: LemonSqueezyOrder) => centsToMicros(order.subtotalCents - order.discountTotalCents))
 
   // Fail closed: only credit paid orders for a configured pack variant, in the
   // required currency, and in the expected mode. Missing/absent fields are
@@ -126,6 +132,7 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
     if (!order.variantId || !creditVariantIds.has(order.variantId)) return false
     if (!order.currency || order.currency.toUpperCase() !== requireCurrency) return false
     if (order.testMode !== ls.expectedTestMode) return false
+    if (ls.expectedStoreId && order.storeId !== ls.expectedStoreId) return false
     return true
   }
 
@@ -147,8 +154,15 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
           grant: (input) => options.service.grantPurchase(input.userId, input.orderId, input.amountMicros),
           // Refunds/disputes revoke the order's credits. Looked up by order id in
           // our purchases table, so no variant/currency check is needed (an order
-          // we never credited returns revoked=false).
-          onRefund: (order) => options.service.revokePurchase(order.orderId),
+          // we never credited returns revoked=false). For a PARTIAL refund, LS
+          // reports the cumulative refunded_amount (tax-incl) — pass it as the
+          // cumulative revoke target so only the delta is debited; a full refund
+          // (no/zero amount) revokes the entire credited amount.
+          onRefund: (order) =>
+            options.service.revokePurchase(
+              order.orderId,
+              order.refundedAmountCents > 0 ? centsToMicros(order.refundedAmountCents) : undefined,
+            ),
           log: options.log,
         },
       )

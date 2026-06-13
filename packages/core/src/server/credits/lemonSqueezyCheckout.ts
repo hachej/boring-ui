@@ -40,6 +40,9 @@ export function buildCheckoutRequestBody(input: CreateCheckoutInput): Record<str
           // Custom data is echoed back on the order webhook as meta.custom_data.
           custom: { user_id: input.userId },
         },
+        // Disable discount codes: credits are granted on the net pre-tax amount,
+        // and a discount must never let a buyer pay less than the credited value.
+        checkout_options: { discount: false },
         ...(input.redirectUrl ? { product_options: { redirect_url: input.redirectUrl } } : {}),
       },
       relationships: {

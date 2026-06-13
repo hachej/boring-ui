@@ -134,8 +134,45 @@ describe('credits routes', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({ ok: true, reason: 'refund_revoked', orderId: 'order-77' })
-    expect(store.revokePurchase).toHaveBeenCalledWith('order-77')
+    // No refunded_amount in the payload → full refund (refundToMicros undefined).
+    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', { refundToMicros: undefined })
     expect(store.grantPurchaseOnce).not.toHaveBeenCalled()
+  })
+
+  it('revokes only the partial refund delta when refunded_amount is set', async () => {
+    const store = makeStore()
+    const a = await build(store)
+    // €3 partial refund (300 cents) on a €10 order → revoke 3_000_000 micros.
+    const body = JSON.stringify({
+      meta: { event_name: 'order_refunded', custom_data: { user_id: 'user-1' } },
+      data: { type: 'orders', id: 'order-77', attributes: { status: 'paid', test_mode: true, currency: 'EUR', subtotal: 1000, total: 1000, refunded: true, refunded_amount: 300, first_order_item: { variant_id: 1 } } },
+    })
+    const res = await a.inject({
+      method: 'POST',
+      url: '/api/credits/webhooks/lemonsqueezy',
+      headers: { 'content-type': 'application/json', 'x-signature': createHmac('sha256', SECRET).update(body).digest('hex') },
+      payload: body,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', { refundToMicros: 3_000_000 })
+  })
+
+  it('credits the net pre-tax amount when a discount applied', async () => {
+    const store = makeStore()
+    const a = await build(store)
+    // subtotal €10, discount €4 → credit €6 (6_000_000 micros).
+    const body = JSON.stringify({
+      meta: { event_name: 'order_created', custom_data: { user_id: 'user-1' } },
+      data: { type: 'orders', id: 'order-disc', attributes: { status: 'paid', test_mode: true, currency: 'EUR', subtotal: 1000, discount_total: 400, total: 600, first_order_item: { variant_id: 1 } } },
+    })
+    const res = await a.inject({
+      method: 'POST',
+      url: '/api/credits/webhooks/lemonsqueezy',
+      headers: { 'content-type': 'application/json', 'x-signature': createHmac('sha256', SECRET).update(body).digest('hex') },
+      payload: body,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(store.grantPurchaseOnce).toHaveBeenCalledWith({ userId: 'user-1', orderId: 'order-disc', amountMicros: 6_000_000 })
   })
 
   it('rejects a webhook with a bad signature and never grants', async () => {

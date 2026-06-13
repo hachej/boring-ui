@@ -34,11 +34,19 @@ export interface LemonSqueezyOrder {
   userEmail?: string
   status?: string
   testMode: boolean
+  /** Lemon Squeezy store the order belongs to. */
+  storeId?: string
   currency?: string
   /** Pre-tax order amount in the smallest currency unit (cents). */
   subtotalCents: number
+  /** Discount applied, pre-tax, in cents. Net paid pre-tax = subtotal − discount. */
+  discountTotalCents: number
   /** Tax-inclusive total in cents (MoR adds VAT here). */
   totalCents: number
+  /** Whether the order has been (fully or partially) refunded. */
+  refunded: boolean
+  /** Cumulative amount refunded so far, tax-inclusive, in cents. */
+  refundedAmountCents: number
   variantId?: string
   productName?: string
 }
@@ -80,9 +88,13 @@ export function parseLemonSqueezyOrder(payload: unknown): LemonSqueezyOrder | nu
     userEmail: asString(attrs.user_email),
     status: asString(attrs.status),
     testMode: attrs.test_mode === true,
+    storeId: attrs.store_id !== undefined ? String(attrs.store_id) : undefined,
     currency: asString(attrs.currency),
     subtotalCents: asNumber(attrs.subtotal),
+    discountTotalCents: asNumber(attrs.discount_total),
     totalCents: asNumber(attrs.total),
+    refunded: attrs.refunded === true,
+    refundedAmountCents: asNumber(attrs.refunded_amount),
     variantId: firstItem?.variant_id !== undefined ? String(firstItem.variant_id) : undefined,
     productName: asString(firstItem?.product_name),
   }

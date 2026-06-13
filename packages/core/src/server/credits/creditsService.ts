@@ -138,10 +138,12 @@ export class CreditsService {
     return { created: granted }
   }
 
-  /** Revoke a refunded/disputed purchase (idempotent per order). */
-  async revokePurchase(orderId: string): Promise<{ revoked: boolean }> {
+  /** Revoke a refunded/disputed purchase. `refundToMicros` is the cumulative
+   * amount to revoke (for partial refunds); omit for a full refund. Idempotent
+   * per cumulative level. */
+  async revokePurchase(orderId: string, refundToMicros?: number): Promise<{ revoked: boolean }> {
     if (!this.config.enabled) return { revoked: false }
-    return this.store.revokePurchase(orderId)
+    return this.store.revokePurchase(orderId, { refundToMicros })
   }
 
   async getBalance(userId: string): Promise<CreditBalance> {
@@ -240,5 +242,33 @@ export class CreditsService {
   async releaseRun(userId: string, runId: string, reservationId?: string): Promise<void> {
     if (!this.config.enabled) return
     await this.store.finishReservation(reservationId ? { reservationId } : { runId, userId }, 'released')
+  }
+
+  /**
+   * Fail-closed billing for a completed run whose usage write failed: a run that
+   * already executed must never go free. Charge the per-run hold (worst-case)
+   * as a conservative, idempotent debit, then settle the reservation. Tagged
+   * source 'pi-chat-fallback' so it's reconcilable against the missing real
+   * usage row. Over-charges rather than risk free usage.
+   */
+  async chargeFallbackUsage(input: { userId: string; runId: string; reservationId?: string }): Promise<void> {
+    if (!this.config.enabled) return
+    const key = input.reservationId ?? input.runId
+    await this.store.recordUsage({
+      usageId: `usage-fallback:${key}`,
+      userId: input.userId,
+      runId: input.runId,
+      source: 'pi-chat-fallback',
+      billedCostMicros: this.config.runReservationMicros,
+      providerCostMicros: 0,
+      metadata: { kind: 'usage_write_failed_fallback', reservationId: input.reservationId ?? null, currency: 'credits' },
+    })
+    await this.store.finishReservation(
+      input.reservationId ? { reservationId: input.reservationId } : { runId: input.runId, userId: input.userId },
+      'settled',
+    )
+    this.log?.('credits: usage write failed — charged fallback hold and settled (reconcile against missing usage)', {
+      runId: input.runId, reservationId: input.reservationId, billedCostMicros: this.config.runReservationMicros,
+    })
   }
 }

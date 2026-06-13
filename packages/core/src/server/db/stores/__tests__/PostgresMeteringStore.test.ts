@@ -109,6 +109,40 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
     expect(await store.grantPurchaseOnce({ orderId: 'ord-g', userId: USER, amountMicros: 10_000_000 })).toEqual({ granted: false })
     expect((await store.getBalance(USER)).remainingMicros).toBe(0)
   })
+
+  it('revokes only the delta across repeated partial refunds, then fully', async () => {
+    await store.grantPurchaseOnce({ orderId: 'ord-p', userId: USER, amountMicros: 10_000_000 })
+    // First partial: revoke up to €3.
+    expect(await store.revokePurchase('ord-p', { refundToMicros: 3_000_000 })).toEqual({ revoked: true })
+    expect((await store.getBalance(USER)).remainingMicros).toBe(7_000_000)
+    // Retry of the same cumulative level is a no-op (no double-debit).
+    expect(await store.revokePurchase('ord-p', { refundToMicros: 3_000_000 })).toEqual({ revoked: false })
+    expect((await store.getBalance(USER)).remainingMicros).toBe(7_000_000)
+    // Second partial up to €8 revokes only the €5 delta.
+    expect(await store.revokePurchase('ord-p', { refundToMicros: 8_000_000 })).toEqual({ revoked: true })
+    expect((await store.getBalance(USER)).remainingMicros).toBe(2_000_000)
+    let rows = await sqlClient`SELECT status FROM boring_credit_purchases WHERE order_id = 'ord-p'`
+    expect(rows[0]?.status).toBe('granted') // not fully refunded yet
+    // Full refund (cap at credited) revokes the remaining €2 and marks refunded.
+    expect(await store.revokePurchase('ord-p', { refundToMicros: 50_000_000 })).toEqual({ revoked: true })
+    expect((await store.getBalance(USER)).remainingMicros).toBe(0)
+    rows = await sqlClient`SELECT status FROM boring_credit_purchases WHERE order_id = 'ord-p'`
+    expect(rows[0]?.status).toBe('refunded')
+  })
+
+  it('charges a fallback hold and settles when usage write failed', async () => {
+    await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 10_000_000 })
+    const { reservationId } = await store.reserve({
+      userId: USER, runId: 'run-fb', source: 'pi-chat', amountMicros: 1_000_000, ttlSeconds: 7200, minAvailableMicros: 1_000_000,
+    })
+    // Fallback debit equal to the hold + settle (idempotent).
+    await store.recordUsage({ usageId: `usage-fallback:${reservationId}`, userId: USER, runId: 'run-fb', source: 'pi-chat-fallback', billedCostMicros: 1_000_000 })
+    await store.recordUsage({ usageId: `usage-fallback:${reservationId}`, userId: USER, runId: 'run-fb', source: 'pi-chat-fallback', billedCostMicros: 1_000_000 })
+    await store.finishReservation({ reservationId }, 'settled')
+    const balance = await store.getBalance(USER)
+    expect(balance.usedMicros).toBe(1_000_000) // charged once, not free, not double
+    expect(balance.activeReservedMicros).toBe(0)
+  })
 })
 
 describe('PostgresMeteringStore', () => {

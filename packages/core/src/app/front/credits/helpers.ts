@@ -8,6 +8,8 @@ export interface CreditBalanceResponse {
   remainingMicros: number
   activeReservedMicros: number
   availableMicros: number
+  /** Amount owed when the ledger went negative (e.g. refund of spent credits). */
+  debtMicros: number
   currency: 'credits'
 }
 

@@ -182,20 +182,37 @@ export class PostgresMeteringStore {
 
   /**
    * Revoke a refunded/disputed purchase. Under the same per-order advisory lock
-   * as grantPurchaseOnce:
-   *  - granted order  → mark 'refunded' and post an idempotent usage-ledger debit
-   *    for the originally-credited amount (balance drops, possibly negative,
-   *    blocking new runs); returns revoked=true.
+   * as grantPurchaseOnce, supports repeated PARTIAL refunds:
+   *  - `refundToMicros` is the cumulative credit micros that should be revoked
+   *    for this order (capped at the credited amount). The method debits only
+   *    the delta since the last refund, so a €1 partial refund of a €10 pack
+   *    revokes €1, and a later top-up to a full refund revokes the rest.
+   *    Omit it (undefined) for a full refund of the entire credited amount.
+   *  - granted order  → debit the delta, track cumulative `refunded_micros`, and
+   *    mark 'refunded' once fully revoked; returns revoked=true when a debit was
+   *    posted.
    *  - not yet seen   → write a 'refunded' tombstone so a later order_created
    *    cannot grant; returns revoked=false (nothing was credited yet).
-   *  - already refunded → no-op; returns revoked=false.
+   *  - already fully refunded / no new delta → no-op; returns revoked=false.
    */
-  async revokePurchase(orderId: string, source = 'lemonsqueezy-refund'): Promise<{ revoked: boolean }> {
+  async revokePurchase(
+    orderId: string,
+    opts: { refundToMicros?: number; source?: string } = {},
+  ): Promise<{ revoked: boolean }> {
     if (!orderId) throw new Error('revokePurchase requires an orderId')
+    const source = opts.source ?? 'lemonsqueezy-refund'
+    if (opts.refundToMicros !== undefined && (!Number.isSafeInteger(opts.refundToMicros) || opts.refundToMicros < 0)) {
+      throw new Error('revokePurchase refundToMicros must be a non-negative integer')
+    }
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`purchase:${orderId}`}))`)
       const existing = await tx
-        .select({ userId: creditPurchases.userId, amountMicros: creditPurchases.amountMicros, status: creditPurchases.status })
+        .select({
+          userId: creditPurchases.userId,
+          amountMicros: creditPurchases.amountMicros,
+          status: creditPurchases.status,
+          refundedMicros: creditPurchases.refundedMicros,
+        })
         .from(creditPurchases)
         .where(eq(creditPurchases.orderId, orderId))
         .limit(1)
@@ -205,24 +222,36 @@ export class PostgresMeteringStore {
         await tx.insert(creditPurchases).values({ orderId, status: 'refunded', source, refundedAt: new Date() })
         return { revoked: false }
       }
-      if (row.status === 'refunded') return { revoked: false }
-      // Granted order: transition to refunded and debit the credited amount.
-      await tx
-        .update(creditPurchases)
-        .set({ status: 'refunded', refundedAt: new Date() })
-        .where(eq(creditPurchases.orderId, orderId))
+      const credited = row.amountMicros ?? 0
+      const alreadyRefunded = row.refundedMicros ?? 0
+      // Target cumulative revoked amount, capped at what was actually credited.
+      const target = Math.min(opts.refundToMicros ?? credited, credited)
+      const delta = target - alreadyRefunded
+      const fullyRefunded = target >= credited
+      if (delta <= 0) {
+        // No new amount to revoke; still ensure status reflects a full refund.
+        if (fullyRefunded && row.status !== 'refunded') {
+          await tx.update(creditPurchases).set({ status: 'refunded', refundedAt: new Date() }).where(eq(creditPurchases.orderId, orderId))
+        }
+        return { revoked: false }
+      }
+      // Post the incremental debit (idempotent per cumulative level).
       const debit = await tx
         .insert(usageLedger)
         .values({
-          id: `refund:${orderId}`,
+          id: `refund:${orderId}:${target}`,
           userId: row.userId!,
           source,
-          billedCostMicros: row.amountMicros!,
+          billedCostMicros: delta,
           providerCostMicros: 0,
-          metadata: { kind: 'purchase_refund', orderId },
+          metadata: { kind: 'purchase_refund', orderId, refundToMicros: target },
         })
         .onConflictDoNothing({ target: usageLedger.id })
         .returning({ id: usageLedger.id })
+      await tx
+        .update(creditPurchases)
+        .set({ refundedMicros: target, status: fullyRefunded ? 'refunded' : row.status, refundedAt: new Date() })
+        .where(eq(creditPurchases.orderId, orderId))
       return { revoked: debit.length > 0 }
     })
   }

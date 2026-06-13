@@ -85,20 +85,22 @@ export function CreditBalanceBadge({
 
   if (hidden || !balance) return null
 
-  const low = isLowBalance(balance.remainingMicros)
+  const inDebt = (balance.debtMicros ?? 0) > 0
+  const low = inDebt || isLowBalance(balance.remainingMicros)
 
   return (
     <div
       className="credit-balance-badge"
       data-low={low ? 'true' : 'false'}
+      data-debt={inDebt ? 'true' : 'false'}
       style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
     >
       <span
         className="credit-balance-badge__value"
-        title="Remaining credits"
+        title={inDebt ? 'Amount owed — top up to resume' : 'Remaining credits'}
         style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: low ? 'var(--color-danger, #c0392b)' : 'inherit' }}
       >
-        {formatCreditMicros(balance.remainingMicros, locale)}
+        {inDebt ? `−${formatCreditMicros(balance.debtMicros, locale)}` : formatCreditMicros(balance.remainingMicros, locale)}
       </span>
       {buyEnabled ? (
         <button type="button" className="credit-balance-badge__buy" onClick={() => void onBuy()} disabled={buying}>

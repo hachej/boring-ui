@@ -309,11 +309,20 @@ export const creditPurchases = pgTable(
     source: text('source').notNull().default('lemonsqueezy'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     refundedAt: timestamp('refunded_at'),
+    /** Cumulative credit micros already revoked for this order (supports
+     * repeated partial refunds without double-debiting). */
+    refundedMicros: bigint('refunded_micros', { mode: 'number' }),
   },
   (table) => [
     index('boring_credit_purchases_user_idx').on(table.userId),
     check('boring_credit_purchases_amount_check', sql`${table.amountMicros} IS NULL OR ${table.amountMicros} > 0`),
     check('boring_credit_purchases_status_check', sql`${table.status} IN ('granted', 'refunded')`),
+    // A granted row must carry the credited user + amount; only a refund
+    // tombstone may omit them.
+    check(
+      'boring_credit_purchases_granted_check',
+      sql`${table.status} = 'refunded' OR (${table.userId} IS NOT NULL AND ${table.amountMicros} IS NOT NULL)`,
+    ),
   ],
 )
 

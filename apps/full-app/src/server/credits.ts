@@ -32,15 +32,45 @@ function parseNumberEnv(name: string, value: string | undefined, fallback: numbe
   return n
 }
 
-/** Parse "10:var_abc,25:var_def,50:var_ghi" → { '10': 'var_abc', ... }. */
+/** Parse "10:var_abc,25:var_def,50:var_ghi" → { '10': 'var_abc', ... }. Throws on
+ * a malformed/empty/duplicate entry so checkout & webhook can't silently diverge
+ * from the intended packs (fail closed at startup). */
 function parseVariants(raw: string | undefined): Record<string, string> {
-  if (!raw) return {}
+  if (!raw || raw.trim() === '') return {}
   const out: Record<string, string> = {}
   for (const pair of raw.split(',')) {
+    if (pair.trim() === '') continue
     const [pack, variant] = pair.split(':').map((s) => s.trim())
-    if (pack && variant) out[pack] = variant
+    if (!pack || !variant) {
+      throw new Error(`invalid BORING_CREDITS_LS_VARIANTS entry (expected "pack:variantId"): "${pair}"`)
+    }
+    if (pack in out) throw new Error(`duplicate pack id in BORING_CREDITS_LS_VARIANTS: "${pack}"`)
+    out[pack] = variant
   }
   return out
+}
+
+/** Parse the LS test/live mode. When LS is configured the value MUST be an
+ * explicit "0" (live) or "1" (test); an unset/other value throws so production
+ * can't silently default to test mode. */
+function parseTestMode(value: string | undefined, lsConfigured: boolean): boolean {
+  if (value === '1') return true
+  if (value === '0') return false
+  if (!lsConfigured && (value === undefined || value === '')) return true
+  throw new Error(
+    `BORING_CREDITS_LS_TEST_MODE must be explicitly "0" (live) or "1" (test) when Lemon Squeezy is configured; got "${value ?? ''}"`,
+  )
+}
+
+/** Strictly parse the signup-grant expiry env: 0/unset ⇒ never expires; a
+ * provided value must be a positive integer day count (no silent fall-open). */
+function parseExpiryDays(value: string | undefined): number | null {
+  if (value === undefined || value === '' || value === '0') return null
+  const n = Number(value)
+  if (!Number.isInteger(n) || n < 1) {
+    throw new Error(`invalid BORING_CREDITS_SIGNUP_GRANT_EXPIRES_DAYS: expected a positive integer or 0, got "${value}"`)
+  }
+  return n
 }
 
 /**
@@ -77,6 +107,8 @@ export interface FullAppCreditsConfig extends CreditsConfig {
   lemonSqueezyVariants: Record<string, string>
   /** Expected LS mode (true = test, false = live). Default test. */
   lemonSqueezyTestMode: boolean
+  /** Expected LS store id; the webhook ignores orders from another store. */
+  lemonSqueezyStoreId?: string
   lemonSqueezyCheckout?: {
     apiKey: string
     storeId: string
@@ -106,10 +138,16 @@ function worstCaseRunMicros(
 }
 
 export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullAppCreditsConfig {
-  const expiresRaw = env.BORING_CREDITS_SIGNUP_GRANT_EXPIRES_DAYS
   const variants = parseVariants(env.BORING_CREDITS_LS_VARIANTS)
-  // Default to TEST mode; live deploys must set BORING_CREDITS_LS_TEST_MODE=0.
-  const testMode = env.BORING_CREDITS_LS_TEST_MODE !== '0'
+  const defaultPackEnv = env.BORING_CREDITS_LS_DEFAULT_PACK
+  if (defaultPackEnv && !(defaultPackEnv in variants)) {
+    throw new Error(`BORING_CREDITS_LS_DEFAULT_PACK "${defaultPackEnv}" is not a configured pack in BORING_CREDITS_LS_VARIANTS`)
+  }
+  // When Lemon Squeezy is configured, the test/live mode MUST be explicit — a
+  // wrong default would either mint credits from non-charging test orders or
+  // reject real live webhooks. Require an exact "0" (live) or "1" (test).
+  const lsConfigured = Boolean(env.BORING_CREDITS_LS_WEBHOOK_SECRET || env.BORING_CREDITS_LS_API_KEY)
+  const testMode = parseTestMode(env.BORING_CREDITS_LS_TEST_MODE, lsConfigured)
   const checkoutReady = Boolean(env.BORING_CREDITS_LS_API_KEY && env.BORING_CREDITS_LS_STORE_ID && Object.keys(variants).length > 0)
   // Margin < 1 would bill below provider cost — reject it (fail closed).
   const margin = parseNumberEnv('BORING_CREDITS_MARGIN', env.BORING_CREDITS_MARGIN, 1.3, 1)
@@ -125,7 +163,7 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
   return {
     enabled: env.BORING_CREDITS_ENABLED !== '0',
     signupGrantMicros: eurToMicros('BORING_CREDITS_SIGNUP_GRANT_EUR', env.BORING_CREDITS_SIGNUP_GRANT_EUR, 2),
-    signupGrantExpiresAfterDays: expiresRaw === undefined || expiresRaw === '0' ? null : Math.max(1, Number(expiresRaw) || 0) || null,
+    signupGrantExpiresAfterDays: parseExpiryDays(env.BORING_CREDITS_SIGNUP_GRANT_EXPIRES_DAYS),
     runReservationMicros,
     reservationTtlSeconds: Math.max(60, parseNumberEnv('BORING_CREDITS_RESERVATION_TTL_SECONDS', env.BORING_CREDITS_RESERVATION_TTL_SECONDS, 7200, 60)),
     minBalanceMicros: eurToMicros('BORING_CREDITS_MIN_BALANCE_EUR', env.BORING_CREDITS_MIN_BALANCE_EUR, 0.05),
@@ -137,6 +175,7 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
     lemonSqueezyWebhookSecret: env.BORING_CREDITS_LS_WEBHOOK_SECRET || undefined,
     lemonSqueezyVariants: variants,
     lemonSqueezyTestMode: testMode,
+    lemonSqueezyStoreId: env.BORING_CREDITS_LS_STORE_ID || undefined,
     lemonSqueezyCheckout: checkoutReady
       ? {
           apiKey: env.BORING_CREDITS_LS_API_KEY!,
@@ -173,19 +212,28 @@ export function buildCreditsWiring(env: NodeJS.ProcessEnv = process.env): {
       const store = new PostgresMeteringStore(app.db as unknown as ConstructorParameters<typeof PostgresMeteringStore>[0])
       service = new CreditsService(store, config, (message, fields) => app.log.warn(fields ?? {}, message))
       const creditVariantIds = Object.values(config.lemonSqueezyVariants)
-      registerCreditsRoutes(app, {
-        service,
-        lemonSqueezy: config.lemonSqueezyWebhookSecret
+      // When credits are disabled, do NOT expose checkout/webhook: a paid order
+      // acknowledged-but-not-persisted would be lost, and a refund wouldn't
+      // tombstone. The whole feature is off, so wire neither (balance still
+      // returns a disabled balance).
+      const lemonSqueezy =
+        config.enabled && config.lemonSqueezyWebhookSecret
           ? {
               webhookSecret: config.lemonSqueezyWebhookSecret,
               creditVariantIds,
               expectedTestMode: config.lemonSqueezyTestMode,
+              expectedStoreId: config.lemonSqueezyStoreId,
               checkout: config.lemonSqueezyCheckout,
             }
-          : undefined,
+          : undefined
+      registerCreditsRoutes(app, {
+        service,
+        lemonSqueezy,
         log: (message, fields) => app.log.warn(fields ?? {}, message),
       })
-      if (!config.lemonSqueezyWebhookSecret) {
+      if (!config.enabled) {
+        app.log.warn('credits: BORING_CREDITS_ENABLED=0 — consumption + purchase webhook/checkout disabled')
+      } else if (!config.lemonSqueezyWebhookSecret) {
         app.log.warn('credits: BORING_CREDITS_LS_WEBHOOK_SECRET unset — purchase webhook disabled (consumption still active)')
       } else {
         if (creditVariantIds.length === 0) {

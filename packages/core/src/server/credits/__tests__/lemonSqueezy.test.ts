@@ -54,9 +54,13 @@ describe('parseLemonSqueezyOrder', () => {
       userEmail: 'a@b.com',
       status: 'paid',
       testMode: true,
+      storeId: undefined,
       currency: 'EUR',
       subtotalCents: 1000,
+      discountTotalCents: 0,
       totalCents: 1190,
+      refunded: false,
+      refundedAmountCents: 0,
       variantId: '42',
       productName: '€10 credits',
     })
