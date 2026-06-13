@@ -18,6 +18,7 @@ const CONFIG: CreditsConfig = {
 function makeStore(): CreditsMeteringStore {
   return {
     grantOnce: vi.fn(async () => ({ created: true })),
+    grantPurchaseOnce: vi.fn(async () => ({ granted: true })),
     getBalance: vi.fn(async () => ({ userId: 'u1', grantedMicros: 2_000_000, usedMicros: 0, remainingMicros: 2_000_000, activeReservedMicros: 0, availableMicros: 2_000_000 })),
     reserve: vi.fn(async () => ({ reservationId: 'res-1' })),
     recordUsage: vi.fn(async () => ({ inserted: true })),
@@ -78,7 +79,7 @@ describe('credits routes', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({ ok: true, orderId: 'order-77' })
-    expect(store.grantOnce).toHaveBeenCalledWith({ userId: 'user-1', reason: 'purchase:order-77', amountMicros: 10_000_000 })
+    expect(store.grantPurchaseOnce).toHaveBeenCalledWith({ userId: 'user-1', orderId: 'order-77', amountMicros: 10_000_000 })
   })
 
   it('rejects a webhook with a bad signature and never grants', async () => {
@@ -92,7 +93,7 @@ describe('credits routes', () => {
       payload: body,
     })
     expect(res.statusCode).toBe(401)
-    expect(store.grantOnce).not.toHaveBeenCalled()
+    expect(store.grantPurchaseOnce).not.toHaveBeenCalled()
   })
 
   async function buildWithCheckout(asUser?: string) {

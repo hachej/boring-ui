@@ -2,16 +2,18 @@ import { describe, it, expect } from 'vitest'
 import { usageToCredits, estimateProviderCost, type CreditPricingConfig } from '../pricing'
 
 // 1 credit = €0.000001 ⇒ 1 EUR = 1_000_000 credit micros.
-const CONFIG: CreditPricingConfig = { margin: 1.3, creditMicrosPerUnit: 1_000_000 }
+// Explicit Infomaniak rates (the production path supplies these via config.rates).
+const INFOMANIAK_RATE: CreditPricingConfig['rates'] = [[/infomaniak/, { inputPerMillion: 0.5, outputPerMillion: 1.5 }]]
+const CONFIG: CreditPricingConfig = { margin: 1.3, creditMicrosPerUnit: 1_000_000, rates: INFOMANIAK_RATE }
 const AT_COST: CreditPricingConfig = { margin: 1, creditMicrosPerUnit: 1_000_000 }
+const AT_COST_INFOMANIAK: CreditPricingConfig = { margin: 1, creditMicrosPerUnit: 1_000_000, rates: INFOMANIAK_RATE }
 
 describe('usageToCredits', () => {
-  it('prices from token rates with margin when the provider reports no cost', () => {
-    // Infomaniak placeholder: €0.5/MTok in, €1.5/MTok out.
+  it('prices from configured token rates with margin when the provider reports no cost', () => {
     const cost = usageToCredits(
       { inputTokens: 1_000_000, outputTokens: 1_000_000 },
       { provider: 'infomaniak', id: 'infomaniak/mixtral-8x22b' },
-      AT_COST,
+      AT_COST_INFOMANIAK,
     )
     // raw = 0.5 + 1.5 = €2.0 → 2_000_000 micros at cost.
     expect(cost.providerCostMicros).toBe(2_000_000)

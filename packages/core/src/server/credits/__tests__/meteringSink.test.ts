@@ -15,6 +15,7 @@ const CONFIG: CreditsConfig = {
 function makeStore(): CreditsMeteringStore {
   return {
     grantOnce: vi.fn(async () => ({ created: false })),
+    grantPurchaseOnce: vi.fn(async () => ({ granted: true })),
     getBalance: vi.fn(async () => ({ userId: 'u1', grantedMicros: 2_000_000, usedMicros: 0, remainingMicros: 2_000_000, activeReservedMicros: 0, availableMicros: 2_000_000 })),
     reserve: vi.fn(async () => ({ reservationId: 'res-1' })),
     recordUsage: vi.fn(async () => ({ inserted: true })),

@@ -292,6 +292,23 @@ export const creditGrants = pgTable(
   ],
 )
 
+// One row per credited purchase. The provider order id is the PRIMARY KEY, so
+// crediting is globally idempotent per order regardless of which user it maps to
+// (a retry or a misrouted delivery cannot double-credit).
+export const creditPurchases = pgTable(
+  'boring_credit_purchases',
+  {
+    orderId: text('order_id').primaryKey(),
+    userId: text('user_id').notNull(),
+    amountMicros: bigint('amount_micros', { mode: 'number' }).notNull(),
+    source: text('source').notNull().default('lemonsqueezy'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('boring_credit_purchases_user_idx').on(table.userId),
+  ],
+)
+
 export const usageReservations = pgTable(
   'boring_usage_reservations',
   {

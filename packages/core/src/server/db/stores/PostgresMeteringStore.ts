@@ -1,6 +1,6 @@
 import { and, eq, gt, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
-import { creditGrants, usageLedger, usageReservations } from '../schema.js'
+import { creditGrants, creditPurchases, usageLedger, usageReservations } from '../schema.js'
 
 /**
  * Product-neutral credit metering primitives: grants, reservations, and an
@@ -128,6 +128,42 @@ export class PostgresMeteringStore {
       .onConflictDoNothing({ target: [creditGrants.userId, creditGrants.reason] })
       .returning({ id: creditGrants.id })
     return { created: rows.length > 0 }
+  }
+
+  /**
+   * Credit a purchase exactly once GLOBALLY per order id. Claims the order
+   * (order_id PK) and writes the grant in one transaction, so a webhook retry
+   * or a delivery misrouted to a different user can never double-credit a paid
+   * order. Returns `granted: false` when the order was already processed.
+   */
+  async grantPurchaseOnce(input: {
+    orderId: string
+    userId: string
+    amountMicros: number
+    source?: string
+  }): Promise<{ granted: boolean }> {
+    if (!input.orderId) throw new Error('grantPurchaseOnce requires an orderId')
+    if (!Number.isSafeInteger(input.amountMicros) || input.amountMicros <= 0) {
+      throw new Error('purchase amountMicros must be a positive integer')
+    }
+    return this.db.transaction(async (tx) => {
+      const claimed = await tx
+        .insert(creditPurchases)
+        .values({
+          orderId: input.orderId,
+          userId: input.userId,
+          amountMicros: input.amountMicros,
+          source: input.source ?? 'lemonsqueezy',
+        })
+        .onConflictDoNothing({ target: creditPurchases.orderId })
+        .returning({ orderId: creditPurchases.orderId })
+      if (claimed.length === 0) return { granted: false }
+      await tx
+        .insert(creditGrants)
+        .values({ userId: input.userId, reason: `purchase:${input.orderId}`, amountMicros: input.amountMicros })
+        .onConflictDoNothing({ target: [creditGrants.userId, creditGrants.reason] })
+      return { granted: true }
+    })
   }
 
   async getBalance(userId: string, now: Date = new Date()): Promise<MeteringBalance> {

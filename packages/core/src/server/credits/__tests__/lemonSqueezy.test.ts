@@ -124,6 +124,22 @@ describe('handleLemonSqueezyWebhook', () => {
     expect(grant).not.toHaveBeenCalled()
   })
 
+  it('does not credit an order with a missing status (must be explicitly paid)', async () => {
+    const { options, grant } = opts()
+    const body = orderPayload({}, { status: undefined })
+    const res = await handleLemonSqueezyWebhook(body, sign(body), options)
+    expect(res.body.reason).toBe('order_status_unknown')
+    expect(grant).not.toHaveBeenCalled()
+  })
+
+  it('skips a paid order that isCreditOrder rejects (wrong variant/currency/mode)', async () => {
+    const { options, grant } = opts({ isCreditOrder: (o) => o.variantId === '99' })
+    const body = orderPayload() // variant_id 42 ≠ 99
+    const res = await handleLemonSqueezyWebhook(body, sign(body), options)
+    expect(res).toMatchObject({ status: 200, body: { ok: true, reason: 'not_a_credit_order' } })
+    expect(grant).not.toHaveBeenCalled()
+  })
+
   it('acknowledges (200) but skips grant when user id is missing', async () => {
     const log = vi.fn()
     const { options, grant } = opts({ log })

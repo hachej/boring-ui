@@ -78,7 +78,7 @@ export class CreditExhaustedError extends Error {
  * upstream signature changes compile-time errors and lets tests stub it. */
 export type CreditsMeteringStore = Pick<
   PostgresMeteringStore,
-  'grantOnce' | 'getBalance' | 'reserve' | 'recordUsage' | 'finishReservation' | 'expireStaleReservations'
+  'grantOnce' | 'grantPurchaseOnce' | 'getBalance' | 'reserve' | 'recordUsage' | 'finishReservation' | 'expireStaleReservations'
 >
 
 function disabledBalance(userId: string): CreditBalance {
@@ -126,10 +126,12 @@ export class CreditsService {
     this.signupGrantedUsers.add(userId)
   }
 
-  /** Credit a completed purchase. Idempotent per order id (safe on webhook retry). */
+  /** Credit a completed purchase. Globally idempotent per order id (safe on
+   * webhook retry, and the same order can never be credited to two users). */
   async grantPurchase(userId: string, orderId: string, amountMicros: number): Promise<{ created: boolean }> {
     if (!this.config.enabled) return { created: false }
-    return this.store.grantOnce({ userId, reason: `purchase:${orderId}`, amountMicros })
+    const { granted } = await this.store.grantPurchaseOnce({ userId, orderId, amountMicros })
+    return { created: granted }
   }
 
   async getBalance(userId: string): Promise<CreditBalance> {
@@ -142,7 +144,8 @@ export class CreditsService {
       grantedMicros: balance.grantedMicros,
       usedMicros: balance.usedMicros,
       activeReservedMicros: balance.activeReservedMicros,
-      remainingMicros: Math.max(0, balance.availableMicros),
+      // remaining = granted − used (ledger). available = remaining − active holds.
+      remainingMicros: Math.max(0, balance.remainingMicros),
       availableMicros: Math.max(0, balance.availableMicros),
       currency: 'credits',
     }

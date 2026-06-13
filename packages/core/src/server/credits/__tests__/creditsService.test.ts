@@ -21,6 +21,7 @@ const CONFIG: CreditsConfig = {
 function makeStore(overrides: Partial<CreditsMeteringStore> = {}): CreditsMeteringStore {
   return {
     grantOnce: vi.fn(async () => ({ created: true })),
+    grantPurchaseOnce: vi.fn(async () => ({ granted: true })),
     getBalance: vi.fn(async () => ({
       userId: 'u1',
       grantedMicros: 2_000_000,
@@ -55,7 +56,8 @@ describe('CreditsService', () => {
       grantedMicros: 2_000_000,
       usedMicros: 500_000,
       activeReservedMicros: 250_000,
-      remainingMicros: 1_250_000,
+      // remaining = granted − used; available = remaining − active hold.
+      remainingMicros: 1_500_000,
       availableMicros: 1_250_000,
       currency: 'credits',
     })
@@ -78,7 +80,7 @@ describe('CreditsService', () => {
     const store = makeStore()
     const service = new CreditsService(store, CONFIG)
     await service.grantPurchase('u1', 'order-9', 10_000_000)
-    expect(store.grantOnce).toHaveBeenCalledWith({ userId: 'u1', reason: 'purchase:order-9', amountMicros: 10_000_000 })
+    expect(store.grantPurchaseOnce).toHaveBeenCalledWith({ userId: 'u1', orderId: 'order-9', amountMicros: 10_000_000 })
   })
 
   it('reserves a hold and returns the reservation id', async () => {
@@ -108,7 +110,10 @@ describe('CreditsService', () => {
 
   it('records usage priced token→credits with margin', async () => {
     const store = makeStore()
-    const service = new CreditsService(store, { ...CONFIG, pricing: { margin: 1.3, creditMicrosPerUnit: 1_000_000 } })
+    const service = new CreditsService(store, {
+      ...CONFIG,
+      pricing: { margin: 1.3, creditMicrosPerUnit: 1_000_000, rates: [[/infomaniak/, { inputPerMillion: 0.5, outputPerMillion: 1.5 }]] },
+    })
     await service.recordUsage({
       usageId: 'usage-1', userId: 'u1', runId: 'r', messageId: 'm', reservationId: 'res-1',
       provider: 'infomaniak', model: 'infomaniak/mistral',

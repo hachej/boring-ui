@@ -26,6 +26,24 @@ function parseVariants(raw: string | undefined): Record<string, string> {
   return out
 }
 
+/** Parse "regex=in:out;regex=in:out" → model rate table (EUR / MTok). */
+function parseRates(raw: string | undefined): Array<[RegExp, { inputPerMillion: number; outputPerMillion: number }]> | undefined {
+  if (!raw) return undefined
+  const rates: Array<[RegExp, { inputPerMillion: number; outputPerMillion: number }]> = []
+  for (const entry of raw.split(';')) {
+    const [pattern, prices] = entry.split('=')
+    const [input, output] = (prices ?? '').split(':').map(Number)
+    if (pattern && Number.isFinite(input) && Number.isFinite(output)) {
+      try {
+        rates.push([new RegExp(pattern.trim(), 'i'), { inputPerMillion: input, outputPerMillion: output }])
+      } catch {
+        // skip a malformed pattern
+      }
+    }
+  }
+  return rates.length > 0 ? rates : undefined
+}
+
 export interface FullAppCreditsConfig extends CreditsConfig {
   lemonSqueezyWebhookSecret?: string
   lemonSqueezyCheckout?: {
@@ -52,6 +70,9 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
     pricing: {
       margin: Number(env.BORING_CREDITS_MARGIN ?? 1.3) || 1.3,
       creditMicrosPerUnit: CREDIT_MICROS_PER_EUR,
+      // Verified per-model EUR/MTok rates (e.g. Infomaniak). Unset ⇒ unconfigured
+      // models bill at the conservative default (over-charge, never free).
+      rates: parseRates(env.BORING_CREDITS_RATES),
     },
     lemonSqueezyWebhookSecret: env.BORING_CREDITS_LS_WEBHOOK_SECRET || undefined,
     lemonSqueezyCheckout: checkoutReady

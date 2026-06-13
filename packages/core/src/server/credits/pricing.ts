@@ -36,13 +36,12 @@ export interface CreditPricingConfig {
  * cheaper, so this over-charges an un-configured model rather than billing zero. */
 export const CONSERVATIVE_DEFAULT_RATE: ModelTokenRate = { inputPerMillion: 3, outputPerMillion: 15 }
 
-// Default rate table (pricing currency = EUR). Confirm Infomaniak's published
-// per-token prices for the exact model ids you enable before launch; these are
-// conservative placeholders so an unrecognised model still meters rather than
-// billing zero.
+// Default rate table (pricing currency = EUR). These are PUBLIC list prices
+// only. Provider-specific rates you must verify (e.g. Infomaniak per model) are
+// intentionally NOT guessed here — supply them via CreditPricingConfig.rates.
+// An unconfigured model falls through to the conservative defaultRate
+// (over-charge, never free) until you add its real rate.
 export const DEFAULT_MODEL_RATES: Array<[RegExp, ModelTokenRate]> = [
-  // Infomaniak hosted open models (EUR / MTok). PLACEHOLDER — verify per model.
-  [/infomaniak|mixtral|mistral|llama|qwen/i, { inputPerMillion: 0.5, outputPerMillion: 1.5 }],
   // Kimi K2 (public token pricing) for Ollama-hosted demo parity.
   [/kimi-k2/i, { inputPerMillion: 0.6, outputPerMillion: 2.5 }],
   // Claude (public API list prices) as a fallback if ever routed there.
@@ -124,8 +123,11 @@ export function usageToCredits(
   )
   const providerUnits = reportedUnits > 0 ? reportedUnits : estimated.units
 
+  // Guard against a misconfigured margin (0/negative/NaN) silently making usage
+  // free; bill at cost (1×) in that case.
+  const margin = Number.isFinite(config.margin) && config.margin > 0 ? config.margin : 1
   const providerCostMicros = Math.ceil(providerUnits * config.creditMicrosPerUnit)
-  const billedCreditMicros = Math.ceil(providerUnits * config.margin * config.creditMicrosPerUnit)
+  const billedCreditMicros = Math.ceil(providerUnits * margin * config.creditMicrosPerUnit)
 
   return {
     inputTokens,

@@ -49,6 +49,27 @@ beforeEach(async () => {
   await sqlClient`DELETE FROM boring_usage_ledger WHERE user_id IN (${USER}, ${OTHER_USER})`
   await sqlClient`DELETE FROM boring_usage_reservations WHERE user_id IN (${USER}, ${OTHER_USER})`
   await sqlClient`DELETE FROM boring_credit_grants WHERE user_id IN (${USER}, ${OTHER_USER})`
+  await sqlClient`DELETE FROM boring_credit_purchases WHERE user_id IN (${USER}, ${OTHER_USER})`
+})
+
+describe('grantPurchaseOnce (global per-order idempotency)', () => {
+  it('credits a paid order exactly once, even across retries and a different user', async () => {
+    expect(await store.grantPurchaseOnce({ orderId: 'ord-1', userId: USER, amountMicros: 10_000_000 })).toEqual({ granted: true })
+    // Retry of the same order → no second grant.
+    expect(await store.grantPurchaseOnce({ orderId: 'ord-1', userId: USER, amountMicros: 10_000_000 })).toEqual({ granted: false })
+    // Same order id misrouted to a different user → still no grant (global key).
+    expect(await store.grantPurchaseOnce({ orderId: 'ord-1', userId: OTHER_USER, amountMicros: 10_000_000 })).toEqual({ granted: false })
+
+    expect((await store.getBalance(USER)).grantedMicros).toBe(10_000_000)
+    expect((await store.getBalance(OTHER_USER)).grantedMicros).toBe(0)
+    const purchases = await sqlClient`SELECT count(*)::int AS n FROM boring_credit_purchases WHERE order_id = 'ord-1'`
+    expect(purchases[0]?.n).toBe(1)
+  })
+
+  it('rejects invalid purchase input', async () => {
+    await expect(store.grantPurchaseOnce({ orderId: '', userId: USER, amountMicros: 1 })).rejects.toThrow('orderId')
+    await expect(store.grantPurchaseOnce({ orderId: 'o', userId: USER, amountMicros: 0 })).rejects.toThrow('positive integer')
+  })
 })
 
 describe('PostgresMeteringStore', () => {

@@ -106,6 +106,13 @@ export interface LemonSqueezyWebhookOptions {
   grant: (input: { userId: string; orderId: string; reason: string; amountMicros: number }) => Promise<{ created: boolean }>
   /** Which events to credit on. Defaults to `order_created`. */
   creditableEvents?: string[]
+  /**
+   * Confirm this paid order is actually a credit-pack purchase before granting
+   * (e.g. currency, mode, and that the variant is a configured pack). Without
+   * it, ANY signed paid order on the store would mint credits. Returning false
+   * acks the webhook without crediting.
+   */
+  isCreditOrder?: (order: LemonSqueezyOrder) => boolean
   log?: (message: string, fields?: Record<string, unknown>) => void
 }
 
@@ -145,8 +152,16 @@ export async function handleLemonSqueezyWebhook(
     // Acknowledge other events (subscriptions, refunds, etc.) so LS stops retrying.
     return { status: 200, body: { ok: true, reason: 'ignored_event', orderId: order.orderId } }
   }
-  if (order.status && order.status !== 'paid') {
-    return { status: 200, body: { ok: true, reason: `order_status_${order.status}`, orderId: order.orderId } }
+  // Require an explicit paid status — a missing/other status must not grant.
+  if (order.status !== 'paid') {
+    return { status: 200, body: { ok: true, reason: `order_status_${order.status ?? 'unknown'}`, orderId: order.orderId } }
+  }
+  // Confirm it's actually a credit-pack purchase (currency/mode/variant).
+  if (options.isCreditOrder && !options.isCreditOrder(order)) {
+    options.log?.('lemonsqueezy paid order is not a recognized credit pack', {
+      orderId: order.orderId, variantId: order.variantId, currency: order.currency, testMode: order.testMode,
+    })
+    return { status: 200, body: { ok: true, reason: 'not_a_credit_order', orderId: order.orderId } }
   }
 
   const userId = (options.resolveUserId ?? ((o) => o.userId))(order)

@@ -23,6 +23,8 @@ export interface LemonSqueezyRouteOptions {
    * (the user id is set server-side, not by the browser). */
   checkout?: LemonSqueezyCheckoutConfig
   checkoutPath?: string
+  /** Currency a paid order must be in to be credited (default 'EUR'). */
+  requireCurrency?: string
 }
 
 export interface CreditsRoutesOptions {
@@ -99,6 +101,19 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
   const creditsForOrder = ls.creditsForOrder
     ?? ((order: LemonSqueezyOrder) => Math.round(order.subtotalCents * (creditMicrosPerUnit / 100)))
 
+  // Only credit paid orders that match a configured pack variant + currency +
+  // mode, so unrelated products / wrong-currency / mode-mismatched orders on the
+  // same store never mint credits.
+  const configuredVariantIds = ls.checkout ? new Set(Object.values(ls.checkout.variants)) : undefined
+  const requireCurrency = ls.requireCurrency ?? 'EUR'
+  const requireTestMode = ls.checkout?.testMode
+  const isCreditOrder = (order: LemonSqueezyOrder): boolean => {
+    if (requireCurrency && order.currency && order.currency.toUpperCase() !== requireCurrency.toUpperCase()) return false
+    if (requireTestMode !== undefined && order.testMode !== requireTestMode) return false
+    if (configuredVariantIds && (!order.variantId || !configuredVariantIds.has(order.variantId))) return false
+    return true
+  }
+
   // Encapsulated scope so the raw-buffer body parser only applies to the webhook.
   app.register(async (scope) => {
     scope.addContentTypeParser('application/json', { parseAs: 'buffer' }, (_req, body, done) => {
@@ -113,6 +128,7 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
         {
           secret: ls.webhookSecret,
           creditsForOrder,
+          isCreditOrder,
           grant: (input) => options.service.grantPurchase(input.userId, input.orderId, input.amountMicros),
           log: options.log,
         },
