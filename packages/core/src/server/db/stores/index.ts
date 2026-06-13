@@ -11,4 +11,5 @@ export type {
   RecordUsageInput,
   RecordUsageResult,
   ReservationFinalStatus,
+  FinishReservationInput,
 } from './PostgresMeteringStore.js'

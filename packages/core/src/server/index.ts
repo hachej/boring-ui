@@ -33,6 +33,7 @@ export type {
   RecordUsageInput,
   RecordUsageResult,
   ReservationFinalStatus,
+  FinishReservationInput,
 } from './db/index.js'
 export {
   runCoreMigrationsFromEnv,

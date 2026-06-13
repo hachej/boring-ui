@@ -15,4 +15,5 @@ export type {
   RecordUsageInput,
   RecordUsageResult,
   ReservationFinalStatus,
+  FinishReservationInput,
 } from './stores/index.js'

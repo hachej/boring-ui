@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS "boring_usage_reservations" (
   "user_id" text NOT NULL,
   "workspace_id" text,
   "session_id" text,
-  "turn_id" text NOT NULL,
+  "run_id" text NOT NULL,
   "source" text DEFAULT '' NOT NULL,
   "amount_micros" bigint NOT NULL,
   "status" text DEFAULT 'active' NOT NULL,
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS "boring_usage_reservations" (
   CONSTRAINT "boring_usage_reservations_status_check" CHECK ("status" IN ('active', 'settled', 'released', 'expired'))
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS "boring_usage_reservations_active_turn_idx" ON "boring_usage_reservations" USING btree ("turn_id") WHERE "status" = 'active';
+CREATE UNIQUE INDEX IF NOT EXISTS "boring_usage_reservations_active_run_idx" ON "boring_usage_reservations" USING btree ("run_id") WHERE "status" = 'active';
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "boring_usage_reservations_user_status_idx" ON "boring_usage_reservations" USING btree ("user_id", "status", "expires_at");
 --> statement-breakpoint
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS "boring_usage_ledger" (
   "user_id" text NOT NULL,
   "workspace_id" text,
   "session_id" text,
-  "turn_id" text,
+  "run_id" text,
   "message_id" text,
   "source" text DEFAULT '' NOT NULL,
   "provider" text,
@@ -54,4 +54,4 @@ CREATE TABLE IF NOT EXISTS "boring_usage_ledger" (
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "boring_usage_ledger_user_created_idx" ON "boring_usage_ledger" USING btree ("user_id", "created_at");
 --> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "boring_usage_ledger_turn_idx" ON "boring_usage_ledger" USING btree ("turn_id");
+CREATE INDEX IF NOT EXISTS "boring_usage_ledger_run_idx" ON "boring_usage_ledger" USING btree ("run_id");

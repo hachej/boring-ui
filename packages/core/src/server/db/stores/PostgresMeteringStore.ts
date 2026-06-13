@@ -11,7 +11,11 @@ import { creditGrants, usageLedger, usageReservations } from '../schema.js'
  * (@hachej/boring-agent): reserve before a run executes, record usage rows
  * idempotently as native usage arrives, then settle or release the
  * reservation exactly once. Stale reservations expire without charging.
+ * All methods are idempotent so callers may safely retry.
  */
+
+/** The query surface shared by the root db handle and a transaction. */
+type Queryable = Pick<PostgresJsDatabase, 'select' | 'insert' | 'update'>
 
 export class InsufficientCreditError extends Error {
   readonly statusCode = 402
@@ -48,8 +52,8 @@ export interface ReserveInput {
   userId: string
   workspaceId?: string
   sessionId?: string
-  /** Stable run id; at most one active reservation may exist per turnId. */
-  turnId: string
+  /** Stable run id; at most one active reservation may exist per runId. */
+  runId: string
   source?: string
   amountMicros: number
   ttlSeconds: number
@@ -71,7 +75,7 @@ export interface RecordUsageInput {
   userId: string
   workspaceId?: string
   sessionId?: string
-  turnId?: string
+  runId?: string
   messageId?: string
   source?: string
   provider?: string
@@ -93,6 +97,14 @@ export interface RecordUsageResult {
 }
 
 export type ReservationFinalStatus = 'settled' | 'released'
+
+export interface FinishReservationInput {
+  /** Preferred key: the id returned by reserve(). */
+  reservationId?: string
+  /** Fallback key; pair with userId to scope across tenants. */
+  runId?: string
+  userId?: string
+}
 
 export class PostgresMeteringStore {
   constructor(private db: PostgresJsDatabase) {}
@@ -116,25 +128,14 @@ export class PostgresMeteringStore {
   }
 
   async getBalance(userId: string, now: Date = new Date()): Promise<MeteringBalance> {
-    const [granted, used, reserved] = await Promise.all([
-      this.sumGrants(userId, now),
-      this.sumUsage(userId),
-      this.sumActiveReservations(userId, now),
-    ])
-    const remainingMicros = granted - used
-    return {
-      userId,
-      grantedMicros: granted,
-      usedMicros: used,
-      remainingMicros,
-      activeReservedMicros: reserved,
-      availableMicros: remainingMicros - reserved,
-    }
+    return this.computeBalance(this.db, userId, now)
   }
 
   /**
    * Reserve credit for a run. Serialized per user (advisory transaction
-   * lock) so concurrent reservations cannot jointly overdraw. Throws
+   * lock) so concurrent reservations cannot jointly overdraw. Idempotent per
+   * runId: re-reserving while a reservation is still active returns the
+   * existing reservation instead of double-holding. Throws
    * InsufficientCreditError when the available balance is below
    * minAvailableMicros (default: the reservation amount itself).
    */
@@ -150,8 +151,16 @@ export class PostgresMeteringStore {
 
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${input.userId}))`)
-      const store = new PostgresMeteringStore(tx as unknown as PostgresJsDatabase)
-      const balance = await store.getBalance(input.userId, now)
+
+      const existing = await tx
+        .select({ id: usageReservations.id })
+        .from(usageReservations)
+        .where(and(eq(usageReservations.runId, input.runId), eq(usageReservations.status, 'active')))
+        .limit(1)
+      const existingId = existing[0]?.id
+      if (existingId) return { reservationId: existingId }
+
+      const balance = await this.computeBalance(tx, input.userId, now)
       if (balance.availableMicros < minAvailable) {
         throw new InsufficientCreditError(balance.availableMicros, minAvailable)
       }
@@ -161,7 +170,7 @@ export class PostgresMeteringStore {
           userId: input.userId,
           workspaceId: input.workspaceId ?? null,
           sessionId: input.sessionId ?? null,
-          turnId: input.turnId,
+          runId: input.runId,
           source: input.source ?? '',
           amountMicros: input.amountMicros,
           status: 'active',
@@ -186,7 +195,7 @@ export class PostgresMeteringStore {
         userId: input.userId,
         workspaceId: input.workspaceId ?? null,
         sessionId: input.sessionId ?? null,
-        turnId: input.turnId ?? null,
+        runId: input.runId ?? null,
         messageId: input.messageId ?? null,
         source: input.source ?? '',
         provider: input.provider ?? null,
@@ -206,17 +215,28 @@ export class PostgresMeteringStore {
   }
 
   /**
-   * Finish the active reservation for a run. Settling also recovers
-   * reservations that expired before a delayed settlement retry, so charged
-   * usage never leaves a reservation dangling. Releasing only touches active
-   * rows. Idempotent: repeat calls are no-ops.
+   * Finish a reservation. Settling also recovers reservations that expired
+   * before a delayed settlement retry, so charged usage never leaves a
+   * reservation dangling. Releasing only touches active rows. Idempotent:
+   * repeat calls are no-ops.
    */
-  async finishReservation(turnId: string, status: ReservationFinalStatus): Promise<{ updated: boolean }> {
+  async finishReservation(input: FinishReservationInput, status: ReservationFinalStatus): Promise<{ updated: boolean }> {
+    if (!input.reservationId && !input.runId) {
+      throw new Error('finishReservation requires reservationId or runId')
+    }
     const matchable = status === 'settled' ? ['active', 'expired'] : ['active']
+    const conditions = [inArray(usageReservations.status, matchable)]
+    if (input.reservationId) {
+      conditions.push(eq(usageReservations.id, input.reservationId))
+    } else if (input.runId) {
+      conditions.push(eq(usageReservations.runId, input.runId))
+    }
+    if (input.userId) conditions.push(eq(usageReservations.userId, input.userId))
+
     const rows = await this.db
       .update(usageReservations)
       .set({ status })
-      .where(and(eq(usageReservations.turnId, turnId), inArray(usageReservations.status, matchable)))
+      .where(and(...conditions))
       .returning({ id: usageReservations.id })
     return { updated: rows.length > 0 }
   }
@@ -231,24 +251,41 @@ export class PostgresMeteringStore {
     return rows.length
   }
 
-  private async sumGrants(userId: string, now: Date): Promise<number> {
-    const rows = await this.db
+  private async computeBalance(executor: Queryable, userId: string, now: Date): Promise<MeteringBalance> {
+    const [granted, used, reserved] = await Promise.all([
+      this.sumGrants(executor, userId, now),
+      this.sumUsage(executor, userId),
+      this.sumActiveReservations(executor, userId, now),
+    ])
+    const remainingMicros = granted - used
+    return {
+      userId,
+      grantedMicros: granted,
+      usedMicros: used,
+      remainingMicros,
+      activeReservedMicros: reserved,
+      availableMicros: remainingMicros - reserved,
+    }
+  }
+
+  private async sumGrants(executor: Queryable, userId: string, now: Date): Promise<number> {
+    const rows = await executor
       .select({ total: sql<string>`coalesce(sum(${creditGrants.amountMicros}), 0)` })
       .from(creditGrants)
       .where(and(eq(creditGrants.userId, userId), or(isNull(creditGrants.expiresAt), gt(creditGrants.expiresAt, now))))
     return Number(rows[0]?.total ?? 0)
   }
 
-  private async sumUsage(userId: string): Promise<number> {
-    const rows = await this.db
+  private async sumUsage(executor: Queryable, userId: string): Promise<number> {
+    const rows = await executor
       .select({ total: sql<string>`coalesce(sum(${usageLedger.billedCostMicros}), 0)` })
       .from(usageLedger)
       .where(eq(usageLedger.userId, userId))
     return Number(rows[0]?.total ?? 0)
   }
 
-  private async sumActiveReservations(userId: string, now: Date): Promise<number> {
-    const rows = await this.db
+  private async sumActiveReservations(executor: Queryable, userId: string, now: Date): Promise<number> {
+    const rows = await executor
       .select({ total: sql<string>`coalesce(sum(${usageReservations.amountMicros}), 0)` })
       .from(usageReservations)
       .where(

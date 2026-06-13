@@ -301,7 +301,7 @@ export const usageReservations = pgTable(
     userId: text('user_id').notNull(),
     workspaceId: text('workspace_id'),
     sessionId: text('session_id'),
-    turnId: text('turn_id').notNull(),
+    runId: text('run_id').notNull(),
     source: text('source').notNull().default(''),
     amountMicros: bigint('amount_micros', { mode: 'number' }).notNull(),
     status: text('status').notNull().default('active'),
@@ -309,8 +309,8 @@ export const usageReservations = pgTable(
     expiresAt: timestamp('expires_at').notNull(),
   },
   (table) => [
-    uniqueIndex('boring_usage_reservations_active_turn_idx')
-      .on(table.turnId)
+    uniqueIndex('boring_usage_reservations_active_run_idx')
+      .on(table.runId)
       .where(sql`${table.status} = 'active'`),
     index('boring_usage_reservations_user_status_idx').on(table.userId, table.status, table.expiresAt),
     check('boring_usage_reservations_amount_check', sql`${table.amountMicros} > 0`),
@@ -329,7 +329,7 @@ export const usageLedger = pgTable(
     userId: text('user_id').notNull(),
     workspaceId: text('workspace_id'),
     sessionId: text('session_id'),
-    turnId: text('turn_id'),
+    runId: text('run_id'),
     messageId: text('message_id'),
     source: text('source').notNull().default(''),
     provider: text('provider'),
@@ -346,7 +346,7 @@ export const usageLedger = pgTable(
   },
   (table) => [
     index('boring_usage_ledger_user_created_idx').on(table.userId, table.createdAt),
-    index('boring_usage_ledger_turn_idx').on(table.turnId),
+    index('boring_usage_ledger_run_idx').on(table.runId),
     check('boring_usage_ledger_billed_check', sql`${table.billedCostMicros} >= 0`),
     check(
       'boring_usage_ledger_tokens_check',

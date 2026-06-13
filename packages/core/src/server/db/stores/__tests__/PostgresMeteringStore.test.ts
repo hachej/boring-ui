@@ -71,7 +71,7 @@ describe('PostgresMeteringStore', () => {
 
   it('includes active reservations in the balance and enforces the hard stop', async () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 1_000_000 })
-    await store.reserve({ userId: USER, turnId: 'turn-1', amountMicros: 750_000, ttlSeconds: 600 })
+    await store.reserve({ userId: USER, runId: 'turn-1', amountMicros: 750_000, ttlSeconds: 600 })
 
     const balance = await store.getBalance(USER)
     expect(balance).toMatchObject({
@@ -83,19 +83,19 @@ describe('PostgresMeteringStore', () => {
     })
 
     await expect(
-      store.reserve({ userId: USER, turnId: 'turn-2', amountMicros: 750_000, ttlSeconds: 600 }),
+      store.reserve({ userId: USER, runId: 'turn-2', amountMicros: 750_000, ttlSeconds: 600 }),
     ).rejects.toBeInstanceOf(InsufficientCreditError)
 
     // A softer floor lets the second reservation through.
     await expect(
-      store.reserve({ userId: USER, turnId: 'turn-2', amountMicros: 750_000, ttlSeconds: 600, minAvailableMicros: 100_000 }),
+      store.reserve({ userId: USER, runId: 'turn-2', amountMicros: 750_000, ttlSeconds: 600, minAvailableMicros: 100_000 }),
     ).resolves.toMatchObject({ reservationId: expect.any(String) })
   })
 
   it('carries 402 metadata on the hard-stop error', async () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 100 })
     const error = await store
-      .reserve({ userId: USER, turnId: 'turn-1', amountMicros: 1_000, ttlSeconds: 60 })
+      .reserve({ userId: USER, runId: 'turn-1', amountMicros: 1_000, ttlSeconds: 60 })
       .then(() => null, (err: unknown) => err)
     expect(error).toBeInstanceOf(InsufficientCreditError)
     expect(error).toMatchObject({ statusCode: 402, code: 'INSUFFICIENT_CREDIT', availableMicros: 100, requiredMicros: 1_000 })
@@ -107,7 +107,7 @@ describe('PostgresMeteringStore', () => {
       usageId: 'pi-usage:s1:message:a1',
       userId: USER,
       sessionId: 's1',
-      turnId: 'turn-1',
+      runId: 'turn-1',
       messageId: 'a1',
       source: 'pi-chat',
       provider: 'ollama',
@@ -127,25 +127,25 @@ describe('PostgresMeteringStore', () => {
 
   it('settles a reservation after usage, and recovers an expired reservation on settlement retry', async () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 10_000_000 })
-    await store.reserve({ userId: USER, turnId: 'turn-1', amountMicros: 750_000, ttlSeconds: 600 })
-    await store.recordUsage({ usageId: 'u1', userId: USER, turnId: 'turn-1', billedCostMicros: 100_000 })
+    await store.reserve({ userId: USER, runId: 'turn-1', amountMicros: 750_000, ttlSeconds: 600 })
+    await store.recordUsage({ usageId: 'u1', userId: USER, runId: 'turn-1', billedCostMicros: 100_000 })
 
-    expect(await store.finishReservation('turn-1', 'settled')).toEqual({ updated: true })
-    expect(await store.finishReservation('turn-1', 'settled')).toEqual({ updated: false })
+    expect(await store.finishReservation({ runId: 'turn-1' }, 'settled')).toEqual({ updated: true })
+    expect(await store.finishReservation({ runId: 'turn-1' }, 'settled')).toEqual({ updated: false })
     expect((await store.getBalance(USER)).activeReservedMicros).toBe(0)
 
     // Settlement retry after the reservation already expired still closes it.
-    await store.reserve({ userId: USER, turnId: 'turn-2', amountMicros: 750_000, ttlSeconds: 600 })
-    await sqlClient`UPDATE boring_usage_reservations SET status = 'expired' WHERE turn_id = 'turn-2'`
-    expect(await store.finishReservation('turn-2', 'settled')).toEqual({ updated: true })
-    const statuses = await sqlClient`SELECT status FROM boring_usage_reservations WHERE turn_id = 'turn-2'`
+    await store.reserve({ userId: USER, runId: 'turn-2', amountMicros: 750_000, ttlSeconds: 600 })
+    await sqlClient`UPDATE boring_usage_reservations SET status = 'expired' WHERE run_id = 'turn-2'`
+    expect(await store.finishReservation({ runId: 'turn-2' }, 'settled')).toEqual({ updated: true })
+    const statuses = await sqlClient`SELECT status FROM boring_usage_reservations WHERE run_id = 'turn-2'`
     expect(statuses[0]?.status).toBe('settled')
   })
 
   it('releases reservations without charging', async () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 1_000_000 })
-    await store.reserve({ userId: USER, turnId: 'turn-1', amountMicros: 500_000, ttlSeconds: 600 })
-    expect(await store.finishReservation('turn-1', 'released')).toEqual({ updated: true })
+    await store.reserve({ userId: USER, runId: 'turn-1', amountMicros: 500_000, ttlSeconds: 600 })
+    expect(await store.finishReservation({ runId: 'turn-1' }, 'released')).toEqual({ updated: true })
     const balance = await store.getBalance(USER)
     expect(balance.usedMicros).toBe(0)
     expect(balance.activeReservedMicros).toBe(0)
@@ -153,9 +153,9 @@ describe('PostgresMeteringStore', () => {
 
   it('expires stale reservations without charging', async () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 1_000_000 })
-    await store.reserve({ userId: USER, turnId: 'turn-stale', amountMicros: 500_000, ttlSeconds: 600 })
-    await store.reserve({ userId: USER, turnId: 'turn-fresh', amountMicros: 100_000, ttlSeconds: 600 })
-    await sqlClient`UPDATE boring_usage_reservations SET expires_at = now() - interval '1 minute' WHERE turn_id = 'turn-stale'`
+    await store.reserve({ userId: USER, runId: 'turn-stale', amountMicros: 500_000, ttlSeconds: 600 })
+    await store.reserve({ userId: USER, runId: 'turn-fresh', amountMicros: 100_000, ttlSeconds: 600 })
+    await sqlClient`UPDATE boring_usage_reservations SET expires_at = now() - interval '1 minute' WHERE run_id = 'turn-stale'`
 
     const expired = await store.expireStaleReservations()
     expect(expired).toBe(1)
@@ -165,12 +165,32 @@ describe('PostgresMeteringStore', () => {
     expect(balance.activeReservedMicros).toBe(100_000)
   })
 
+  it('reserves idempotently per run id while the reservation is active', async () => {
+    await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 1_000_000 })
+    const first = await store.reserve({ userId: USER, runId: 'turn-retry', amountMicros: 750_000, ttlSeconds: 600 })
+    const second = await store.reserve({ userId: USER, runId: 'turn-retry', amountMicros: 750_000, ttlSeconds: 600 })
+
+    expect(second.reservationId).toBe(first.reservationId)
+    expect((await store.getBalance(USER)).activeReservedMicros).toBe(750_000)
+  })
+
+  it('finishes reservations by reservation id and scopes run-id finishes by user', async () => {
+    await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 1_000_000 })
+    await store.grantOnce({ userId: OTHER_USER, reason: 'initial', amountMicros: 1_000_000 })
+    const mine = await store.reserve({ userId: USER, runId: 'turn-shared', amountMicros: 100_000, ttlSeconds: 600 })
+
+    // Wrong-user scope is a no-op; right scope settles; id-keyed finish works.
+    expect(await store.finishReservation({ runId: 'turn-shared', userId: OTHER_USER }, 'released')).toEqual({ updated: false })
+    expect(await store.finishReservation({ reservationId: mine.reservationId }, 'settled')).toEqual({ updated: true })
+    await expect(store.finishReservation({}, 'settled')).rejects.toThrow('requires reservationId or runId')
+  })
+
   it('allows a new active reservation for a turn after the previous one finished', async () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 5_000_000 })
-    await store.reserve({ userId: USER, turnId: 'turn-1', amountMicros: 500_000, ttlSeconds: 600 })
-    await store.finishReservation('turn-1', 'released')
+    await store.reserve({ userId: USER, runId: 'turn-1', amountMicros: 500_000, ttlSeconds: 600 })
+    await store.finishReservation({ runId: 'turn-1' }, 'released')
     await expect(
-      store.reserve({ userId: USER, turnId: 'turn-1', amountMicros: 500_000, ttlSeconds: 600 }),
+      store.reserve({ userId: USER, runId: 'turn-1', amountMicros: 500_000, ttlSeconds: 600 }),
     ).resolves.toMatchObject({ reservationId: expect.any(String) })
   })
 
@@ -187,7 +207,7 @@ describe('PostgresMeteringStore', () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 1_000_000 })
     const attempts = await Promise.allSettled(
       Array.from({ length: 4 }, (_value, index) =>
-        store.reserve({ userId: USER, turnId: `turn-c${index}`, amountMicros: 400_000, ttlSeconds: 600 }),
+        store.reserve({ userId: USER, runId: `turn-c${index}`, amountMicros: 400_000, ttlSeconds: 600 }),
       ),
     )
     const granted = attempts.filter((attempt) => attempt.status === 'fulfilled')
@@ -197,7 +217,7 @@ describe('PostgresMeteringStore', () => {
 
   it('rejects invalid amounts', async () => {
     await expect(store.grantOnce({ userId: USER, reason: 'bad', amountMicros: 0 })).rejects.toThrow('positive integer')
-    await expect(store.reserve({ userId: USER, turnId: 't', amountMicros: 1.5, ttlSeconds: 60 })).rejects.toThrow('positive integer')
+    await expect(store.reserve({ userId: USER, runId: 't', amountMicros: 1.5, ttlSeconds: 60 })).rejects.toThrow('positive integer')
     await expect(store.recordUsage({ usageId: 'x', userId: USER, billedCostMicros: -1 })).rejects.toThrow('non-negative')
   })
 })

@@ -8,11 +8,11 @@ import { createLogger } from '../logging'
  * settle, release based on native Pi events); the host-provided sink owns
  * persistence and product policy (credits, pricing, currencies, hard stops).
  *
- * Lifecycle per accepted prompt/follow-up ("run", identified by `turnId`):
+ * Lifecycle per accepted prompt/follow-up ("run", identified by `runId`):
  *
  *   reserveRun        before execution starts; throwing rejects the request
  *                     (fail closed) so hosts can enforce hard stops.
- *   recordUsage       once per native assistant `message_end` carrying usage.
+ *   recordUsage       once per native assistant message carrying usage.
  *                     `usageId` is a stable idempotency key.
  *   settleRun         when the run reaches a native terminal state and usage
  *                     was recorded (or it finished ok).
@@ -22,10 +22,10 @@ import { createLogger } from '../logging'
  *
  * Every run terminates with exactly one settle or release from the
  * coordinator; sinks should still treat all four methods as idempotent
- * because process restarts can replay terminal transitions.
+ * because process restarts and client retries can replay transitions.
  */
 export interface AgentMeteringSink {
-  reserveRun(input: MeteringReserveInput): Promise<MeteringReservationResult | void>
+  reserveRun(input: MeteringReserveInput): Promise<MeteringReservationResult>
   recordUsage(input: MeteringUsageInput): Promise<void>
   settleRun(input: MeteringSettleInput): Promise<void>
   releaseRun(input: MeteringReleaseInput): Promise<void>
@@ -36,7 +36,7 @@ export interface MeteringRunScope {
   userId?: string
   sessionId: string
   /** Stable id for one accepted prompt/follow-up run. */
-  turnId: string
+  runId: string
   source: 'pi-chat'
 }
 
@@ -48,6 +48,7 @@ export interface MeteringReserveInput extends MeteringRunScope {
   model?: ChatModelSelection
 }
 
+/** Sinks without reservation rows can return an empty object. */
 export interface MeteringReservationResult {
   reservationId?: string
 }
@@ -107,18 +108,28 @@ interface MeteringRun {
   kind: MeteringRunKind
   reservationId?: string
   usageCount: number
+  /** Message ids already recorded, so agent_end finals don't double-record. */
+  recordedMessageIds: Set<string>
   terminal: boolean
   /** Serializes sink calls per run so settle/release never overtakes usage. */
   ops: Promise<void>
 }
 
 interface SessionMeteringState {
-  /** Reserved prompt run waiting for its agent-start. */
-  pendingPrompt?: MeteringRun
+  /** Reserved prompt runs awaiting their agent-start, in acceptance order. */
+  pendingPrompts: MeteringRun[]
   /** Run currently attributed native usage. */
   active?: MeteringRun
   /** Reserved follow-up runs awaiting consumption, keyed by nonce/seq. */
   queued: Map<string, MeteringRun>
+}
+
+function promptRunId(sessionId: string, clientNonce: string): string {
+  return `pi-run:${sessionId}:prompt:${clientNonce}`
+}
+
+function followUpRunId(sessionId: string, clientNonce: string, clientSeq: number): string {
+  return `pi-run:${sessionId}:followup:${clientNonce}:${clientSeq}`
 }
 
 function followUpKey(selector: { clientNonce?: string; clientSeq?: number }): string | undefined {
@@ -131,27 +142,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function readNumber(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+function readTokenCount(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0
 }
 
 /** Native Pi usage objects always carry token + cost breakdowns; normalize
- * defensively so a partial object from an unexpected provider still meters
- * as zeros instead of NaN. */
+ * defensively (zero-filling gaps and clamping negatives) so a partial object
+ * from an unexpected provider still meters as zeros instead of NaN. */
 export function normalizeMeteringUsage(value: unknown): MeteringUsage | undefined {
   if (!isRecord(value)) return undefined
   const cost = isRecord(value.cost) ? value.cost : {}
   return {
-    input: readNumber(value.input),
-    output: readNumber(value.output),
-    cacheRead: readNumber(value.cacheRead),
-    cacheWrite: readNumber(value.cacheWrite),
+    input: readTokenCount(value.input),
+    output: readTokenCount(value.output),
+    cacheRead: readTokenCount(value.cacheRead),
+    cacheWrite: readTokenCount(value.cacheWrite),
     cost: {
-      input: readNumber(cost.input),
-      output: readNumber(cost.output),
-      cacheRead: readNumber(cost.cacheRead),
-      cacheWrite: readNumber(cost.cacheWrite),
-      total: readNumber(cost.total),
+      input: readTokenCount(cost.input),
+      output: readTokenCount(cost.output),
+      cacheRead: readTokenCount(cost.cacheRead),
+      cacheWrite: readTokenCount(cost.cacheWrite),
+      total: readTokenCount(cost.total),
     },
   }
 }
@@ -176,12 +187,13 @@ export interface ReserveFollowUpInput extends ReservePromptInput {
  * calls the reserve/release entry points from its request handlers and feeds
  * every native adapter event (plus its mapped PiChatEvents) into observe().
  *
- * Correlation model: an accepted prompt becomes the active run at the next
- * `agent-start`; queued follow-ups become active when their
- * `followup-consumed` event arrives (settling the previous active run, which
- * is how each user input is metered independently even though Pi runs them
- * inside one agent loop). Native assistant `message_end` events carry the
- * authoritative usage and are attributed to the active run.
+ * Correlation model: accepted prompts queue in order and bind to agent-start
+ * events FIFO; queued follow-ups become active when their `followup-consumed`
+ * event arrives (settling the previous active run, which is how each user
+ * input is metered independently even though Pi runs them inside one agent
+ * loop). Native assistant usage (message_end, or the final assistant entry
+ * riding on agent_end) is attributed to the active run. An agent_end with
+ * `willRetry` is not terminal: Pi continues the same run after auto-retry.
  */
 export class PiChatMeteringCoordinator {
   private readonly sessions = new Map<string, SessionMeteringState>()
@@ -197,32 +209,33 @@ export class PiChatMeteringCoordinator {
   /** Reserve a prompt run. Throws (fail closed) when the sink rejects. */
   async reservePrompt(input: ReservePromptInput): Promise<void> {
     const state = this.sessionState(input.sessionId)
-    const run = await this.reserve(input, 'prompt', `pi-run:${input.sessionId}:prompt:${input.clientNonce}`)
-    // A prompt that never reached agent-start (rejected execution) is still
-    // pending; replace-and-release instead of leaking its reservation.
-    if (state.pendingPrompt && !state.pendingPrompt.terminal) {
-      this.release(state.pendingPrompt, 'run-rejected')
+    const runId = promptRunId(input.sessionId, input.clientNonce)
+    // A client retry of the same nonce re-validates the balance through the
+    // sink (reserveRun is idempotent per runId) but must not double-track or
+    // release the in-flight run.
+    if (this.findRun(state, runId)) {
+      await this.reserve(input, 'prompt', runId)
+      return
     }
-    state.pendingPrompt = run
+    state.pendingPrompts.push(await this.reserve(input, 'prompt', runId))
   }
 
   /** Reserve a follow-up run. Throws (fail closed) when the sink rejects. */
   async reserveFollowUp(input: ReserveFollowUpInput): Promise<void> {
     const state = this.sessionState(input.sessionId)
+    const runId = followUpRunId(input.sessionId, input.clientNonce, input.clientSeq)
+    if (this.findRun(state, runId)) {
+      await this.reserve(input, 'followup', runId)
+      return
+    }
+    const run = await this.reserve(input, 'followup', runId)
     const key = followUpKey(input)
-    const run = await this.reserve(
-      input,
-      'followup',
-      `pi-run:${input.sessionId}:followup:${input.clientNonce}:${input.clientSeq}`,
-    )
     if (key === undefined) {
       // Unreachable with current payload schemas (clientNonce is required);
       // never strand a reservation if that invariant changes.
       this.release(run, 'run-rejected')
       return
     }
-    const previous = state.queued.get(key)
-    if (previous && !previous.terminal) this.release(previous, 'run-rejected')
     state.queued.set(key, run)
   }
 
@@ -230,16 +243,16 @@ export class PiChatMeteringCoordinator {
   failPromptRun(sessionId: string, clientNonce: string): void {
     const state = this.sessions.get(sessionId)
     if (!state) return
-    const turnId = `pi-run:${sessionId}:prompt:${clientNonce}`
-    if (state.pendingPrompt?.scope.turnId === turnId) {
-      this.finishRun(state.pendingPrompt, 'error')
-      state.pendingPrompt = undefined
-      return
-    }
-    if (state.active?.scope.turnId === turnId) {
+    const runId = promptRunId(sessionId, clientNonce)
+    const pendingIndex = state.pendingPrompts.findIndex((run) => run.scope.runId === runId)
+    if (pendingIndex >= 0) {
+      const [run] = state.pendingPrompts.splice(pendingIndex, 1)
+      if (run) this.finishRun(run, 'error')
+    } else if (state.active?.scope.runId === runId) {
       this.finishRun(state.active, 'error')
       state.active = undefined
     }
+    this.pruneSession(sessionId, state)
   }
 
   /** A queued follow-up was rejected by the adapter before being queued. */
@@ -251,6 +264,7 @@ export class PiChatMeteringCoordinator {
     if (!run) return
     state.queued.delete(key)
     this.release(run, 'run-rejected')
+    this.pruneSession(sessionId, state)
   }
 
   /**
@@ -266,8 +280,7 @@ export class PiChatMeteringCoordinator {
     const run = state.queued.get(key)
     if (!run) return
     state.queued.delete(key)
-    if (state.pendingPrompt && !state.pendingPrompt.terminal) this.release(state.pendingPrompt, 'run-rejected')
-    state.pendingPrompt = run
+    state.pendingPrompts.push(run)
   }
 
   /** Queue cleared via selector or entirely; release affected reservations. */
@@ -281,10 +294,11 @@ export class PiChatMeteringCoordinator {
         state.queued.delete(key)
         this.release(run, 'queue-cleared')
       }
-      return
+    } else {
+      for (const run of state.queued.values()) this.release(run, 'queue-cleared')
+      state.queued.clear()
     }
-    for (const run of state.queued.values()) this.release(run, 'queue-cleared')
-    state.queued.clear()
+    this.pruneSession(sessionId, state)
   }
 
   /** Session deleted: tear down every non-terminal run without charging. */
@@ -292,7 +306,7 @@ export class PiChatMeteringCoordinator {
     const state = this.sessions.get(sessionId)
     if (!state) return
     for (const run of state.queued.values()) this.release(run, 'cancelled')
-    if (state.pendingPrompt) this.release(state.pendingPrompt, 'cancelled')
+    for (const run of state.pendingPrompts) this.release(run, 'cancelled')
     if (state.active) this.finishRun(state.active, 'aborted')
     this.sessions.delete(sessionId)
   }
@@ -309,10 +323,10 @@ export class PiChatMeteringCoordinator {
     for (const event of mappedEvents) {
       switch (event.type) {
         case 'agent-start': {
-          if (state.pendingPrompt) {
+          const next = state.pendingPrompts.shift()
+          if (next) {
             if (state.active && !state.active.terminal) this.finishRun(state.active, 'ok')
-            state.active = state.pendingPrompt
-            state.pendingPrompt = undefined
+            state.active = next
           }
           break
         }
@@ -327,6 +341,12 @@ export class PiChatMeteringCoordinator {
           break
         }
         case 'agent-end': {
+          // Pi auto-retries inside the same run (agent_end with willRetry,
+          // then auto_retry_* events, then the retried stream — without a new
+          // agent_start). Terminating here would release the reservation and
+          // drop the retried completion's usage.
+          if (isRecord(nativeEvent) && nativeEvent.willRetry === true) break
+          this.harvestAgentEndUsage(state, nativeEvent)
           if (state.active && !state.active.terminal) this.finishRun(state.active, event.status)
           state.active = undefined
           break
@@ -336,7 +356,8 @@ export class PiChatMeteringCoordinator {
       }
     }
 
-    this.observeNativeUsage(state, nativeEvent)
+    this.observeMessageEndUsage(state, nativeEvent)
+    this.pruneSession(sessionId, state)
   }
 
   /** Test/diagnostic hook: resolves after every queued sink call settles. */
@@ -348,27 +369,59 @@ export class PiChatMeteringCoordinator {
     }
   }
 
-  private observeNativeUsage(state: SessionMeteringState, nativeEvent: unknown): void {
+  private observeMessageEndUsage(state: SessionMeteringState, nativeEvent: unknown): void {
     if (!isRecord(nativeEvent) || nativeEvent.type !== 'message_end') return
-    const message = nativeEvent.message
+    this.recordAssistantUsage(state, nativeEvent.message)
+  }
+
+  /**
+   * Some failure/abort paths never emit message_end; the final assistant
+   * message (and its usage) only rides on agent_end's messages array. Runs
+   * with already-recorded usage dedupe via recordedMessageIds.
+   */
+  private harvestAgentEndUsage(state: SessionMeteringState, nativeEvent: unknown): void {
+    if (!isRecord(nativeEvent) || !Array.isArray(nativeEvent.messages)) return
+    for (let index = nativeEvent.messages.length - 1; index >= 0; index -= 1) {
+      const message = nativeEvent.messages[index]
+      if (!isRecord(message) || message.role !== 'assistant') continue
+      this.recordAssistantUsage(state, message, { finalFallback: true })
+      return
+    }
+  }
+
+  private recordAssistantUsage(
+    state: SessionMeteringState,
+    message: unknown,
+    opts: { finalFallback?: boolean } = {},
+  ): void {
     if (!isRecord(message) || message.role !== 'assistant') return
     const usage = normalizeMeteringUsage(message.usage)
     if (!usage) return
 
-    const run = state.active ?? state.pendingPrompt
+    const run = state.active ?? state.pendingPrompts[0]
     if (!run || run.terminal) {
       this.logError('assistant usage arrived with no reserved run; usage not metered', { messageRole: 'assistant' })
       return
     }
 
-    run.usageCount += 1
     const messageId = typeof message.id === 'string' && message.id.length > 0 ? message.id : undefined
+    if (messageId) {
+      if (run.recordedMessageIds.has(messageId)) return
+      run.recordedMessageIds.add(messageId)
+    } else if (opts.finalFallback && run.usageCount > 0) {
+      // An id-less agent_end final after message_end usage was already
+      // recorded is almost certainly the same message; skip rather than
+      // double-bill.
+      return
+    }
+
+    run.usageCount += 1
     const model = typeof message.model === 'string' && message.model.length > 0 ? message.model : undefined
     const provider = typeof message.provider === 'string' && message.provider.length > 0 ? message.provider : undefined
     const stopReason = typeof message.stopReason === 'string' ? message.stopReason : undefined
     const usageId = messageId
       ? `pi-usage:${run.scope.sessionId}:message:${messageId}`
-      : `pi-usage:${run.scope.turnId}:${run.usageCount}`
+      : `pi-usage:${run.scope.runId}:${run.usageCount}`
 
     this.enqueue(run, () =>
       this.sink.recordUsage({
@@ -387,13 +440,13 @@ export class PiChatMeteringCoordinator {
   private async reserve(
     input: ReservePromptInput,
     kind: MeteringRunKind,
-    turnId: string,
+    runId: string,
   ): Promise<MeteringRun> {
     const scope: MeteringRunScope = {
       workspaceId: input.workspaceId,
       userId: input.userId,
       sessionId: input.sessionId,
-      turnId,
+      runId,
       source: 'pi-chat',
     }
     const result = await this.sink.reserveRun({
@@ -407,9 +460,20 @@ export class PiChatMeteringCoordinator {
       kind,
       reservationId: result?.reservationId,
       usageCount: 0,
+      recordedMessageIds: new Set(),
       terminal: false,
       ops: Promise.resolve(),
     }
+  }
+
+  private findRun(state: SessionMeteringState, runId: string): MeteringRun | undefined {
+    if (state.active && !state.active.terminal && state.active.scope.runId === runId) return state.active
+    const pending = state.pendingPrompts.find((run) => run.scope.runId === runId)
+    if (pending) return pending
+    for (const run of state.queued.values()) {
+      if (run.scope.runId === runId) return run
+    }
+    return undefined
   }
 
   private finishRun(run: MeteringRun, status: MeteringRunStatus): void {
@@ -436,7 +500,7 @@ export class PiChatMeteringCoordinator {
 
   private enqueue(run: MeteringRun, op: () => Promise<void>, failureMessage: string): void {
     const chained = run.ops.then(op).catch((error) => {
-      this.logError(`${failureMessage} (turn ${run.scope.turnId})`, error)
+      this.logError(`${failureMessage} (run ${run.scope.runId})`, error)
     })
     run.ops = chained
     this.inflightOps.add(chained)
@@ -446,9 +510,15 @@ export class PiChatMeteringCoordinator {
   private sessionState(sessionId: string): SessionMeteringState {
     let state = this.sessions.get(sessionId)
     if (!state) {
-      state = { queued: new Map() }
+      state = { pendingPrompts: [], queued: new Map() }
       this.sessions.set(sessionId, state)
     }
     return state
+  }
+
+  private pruneSession(sessionId: string, state: SessionMeteringState): void {
+    if (!state.active && state.pendingPrompts.length === 0 && state.queued.size === 0) {
+      this.sessions.delete(sessionId)
+    }
   }
 }

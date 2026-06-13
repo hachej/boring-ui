@@ -153,10 +153,15 @@ function assistantMessageEnd(overrides: Record<string, unknown> = {}): AgentSess
   } as unknown as AgentSessionEvent
 }
 
-function agentEnd(stopReason: 'stop' | 'error' | 'aborted', errorMessage?: string): AgentSessionEvent {
+function agentEnd(
+  stopReason: 'stop' | 'error' | 'aborted',
+  errorMessage?: string,
+  opts: { willRetry?: boolean; messages?: unknown[] } = {},
+): AgentSessionEvent {
   return {
     type: 'agent_end',
-    messages: [{ role: 'assistant', content: [], stopReason, errorMessage }],
+    willRetry: opts.willRetry,
+    messages: opts.messages ?? [{ role: 'assistant', content: [], stopReason, errorMessage }],
   } as unknown as AgentSessionEvent
 }
 
@@ -181,7 +186,7 @@ describe('pi chat metering', () => {
         source: 'pi-chat',
         message: 'hello',
         model: { provider: 'ollama', id: 'kimi-k2:1t' },
-        turnId: 'pi-run:s1:prompt:nonce-1',
+        runId: 'pi-run:s1:prompt:nonce-1',
       }),
     ])
 
@@ -192,7 +197,7 @@ describe('pi chat metering', () => {
 
     expect(calls.usage).toEqual([
       expect.objectContaining({
-        turnId: 'pi-run:s1:prompt:nonce-1',
+        runId: 'pi-run:s1:prompt:nonce-1',
         reservationId: 'res-1',
         usageId: 'pi-usage:s1:message:a1',
         messageId: 'a1',
@@ -208,7 +213,7 @@ describe('pi chat metering', () => {
       }),
     ])
     expect(calls.settled).toEqual([
-      expect.objectContaining({ turnId: 'pi-run:s1:prompt:nonce-1', reservationId: 'res-1', status: 'ok' }),
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-1', reservationId: 'res-1', status: 'ok' }),
     ])
     expect(calls.released).toEqual([])
   })
@@ -262,7 +267,7 @@ describe('pi chat metering', () => {
     expect(calls.usage).toEqual([])
     expect(calls.settled).toEqual([])
     expect(calls.released).toEqual([
-      expect.objectContaining({ turnId: 'pi-run:s1:prompt:nonce-err', reason: 'error-before-usage' }),
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-err', reason: 'error-before-usage' }),
     ])
   })
 
@@ -280,7 +285,7 @@ describe('pi chat metering', () => {
 
     expect(calls.settled).toEqual([])
     expect(calls.released).toEqual([
-      expect.objectContaining({ turnId: 'pi-run:s1:prompt:nonce-reject', reason: 'error-before-usage' }),
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-reject', reason: 'error-before-usage' }),
     ])
   })
 
@@ -300,7 +305,7 @@ describe('pi chat metering', () => {
     expect(calls.released).toEqual([])
   })
 
-  it('keeps the usage idempotency key stable across duplicate native message_end events', async () => {
+  it('records duplicate native message_end events once, with a stable idempotency key', async () => {
     const adapter = createAdapter()
     const { sink, calls } = createSink()
     const { service } = createService(adapter, sink)
@@ -312,9 +317,8 @@ describe('pi chat metering', () => {
     adapter.emit(agentEnd('stop'))
     await service.flushMetering()
 
-    expect(calls.usage).toHaveLength(2)
+    expect(calls.usage).toHaveLength(1)
     expect(calls.usage[0]?.usageId).toBe('pi-usage:s1:message:a1')
-    expect(calls.usage[1]?.usageId).toBe('pi-usage:s1:message:a1')
   })
 
   it('meters consumed follow-ups independently from the originating prompt', async () => {
@@ -326,8 +330,8 @@ describe('pi chat metering', () => {
     await service.followUp(ctx, 's1', { message: 'second', clientNonce: 'nonce-f', clientSeq: 0 })
 
     expect(calls.reserved).toEqual([
-      expect.objectContaining({ kind: 'prompt', turnId: 'pi-run:s1:prompt:nonce-p' }),
-      expect.objectContaining({ kind: 'followup', turnId: 'pi-run:s1:followup:nonce-f:0' }),
+      expect.objectContaining({ kind: 'prompt', runId: 'pi-run:s1:prompt:nonce-p' }),
+      expect.objectContaining({ kind: 'followup', runId: 'pi-run:s1:followup:nonce-f:0' }),
     ])
 
     adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
@@ -342,12 +346,12 @@ describe('pi chat metering', () => {
     await service.flushMetering()
 
     expect(calls.usage).toEqual([
-      expect.objectContaining({ usageId: 'pi-usage:s1:message:a1', turnId: 'pi-run:s1:prompt:nonce-p' }),
-      expect.objectContaining({ usageId: 'pi-usage:s1:message:a2', turnId: 'pi-run:s1:followup:nonce-f:0' }),
+      expect.objectContaining({ usageId: 'pi-usage:s1:message:a1', runId: 'pi-run:s1:prompt:nonce-p' }),
+      expect.objectContaining({ usageId: 'pi-usage:s1:message:a2', runId: 'pi-run:s1:followup:nonce-f:0' }),
     ])
     expect(calls.settled).toEqual([
-      expect.objectContaining({ turnId: 'pi-run:s1:prompt:nonce-p', status: 'ok' }),
-      expect.objectContaining({ turnId: 'pi-run:s1:followup:nonce-f:0', status: 'ok' }),
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-p', status: 'ok' }),
+      expect.objectContaining({ runId: 'pi-run:s1:followup:nonce-f:0', status: 'ok' }),
     ])
     expect(calls.released).toEqual([])
   })
@@ -364,15 +368,15 @@ describe('pi chat metering', () => {
     await service.clearQueue(ctx, 's1', { clientNonce: 'nonce-q1' })
     await service.flushMetering()
     expect(calls.released).toEqual([
-      expect.objectContaining({ turnId: 'pi-run:s1:followup:nonce-q1:0', reason: 'queue-cleared' }),
+      expect.objectContaining({ runId: 'pi-run:s1:followup:nonce-q1:0', reason: 'queue-cleared' }),
     ])
 
     await service.stop(ctx, 's1', {})
     await service.flushMetering()
     expect(calls.released).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ turnId: 'pi-run:s1:followup:nonce-q2:1', reason: 'queue-cleared' }),
-        expect.objectContaining({ turnId: 'pi-run:s1:followup:nonce-q3:2', reason: 'queue-cleared' }),
+        expect.objectContaining({ runId: 'pi-run:s1:followup:nonce-q2:1', reason: 'queue-cleared' }),
+        expect.objectContaining({ runId: 'pi-run:s1:followup:nonce-q3:2', reason: 'queue-cleared' }),
       ]),
     )
     expect(calls.released).toHaveLength(3)
@@ -391,7 +395,118 @@ describe('pi chat metering', () => {
 
     expect(calls.settled).toEqual([])
     expect(calls.released).toEqual([
-      expect.objectContaining({ turnId: 'pi-run:s1:prompt:nonce-abort', reason: 'cancelled' }),
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-abort', reason: 'cancelled' }),
+    ])
+  })
+
+  it('keeps the run alive across pi auto-retry and bills the retried completion', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'flaky', clientNonce: 'nonce-retry' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    // Transient provider error: pi ends the turn with willRetry and continues
+    // the SAME run after auto_retry_* — no new agent_start.
+    adapter.emit(agentEnd('error', 'overloaded', { willRetry: true }))
+    adapter.emit({ type: 'auto_retry_start', attempt: 1, maxAttempts: 3, delayMs: 0, errorMessage: 'overloaded' } as unknown as AgentSessionEvent)
+    adapter.emit({ type: 'auto_retry_end', success: true, attempt: 1 } as unknown as AgentSessionEvent)
+    adapter.emit(assistantMessageEnd({ id: 'a-retried' }))
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    expect(calls.released).toEqual([])
+    expect(calls.usage).toEqual([
+      expect.objectContaining({ usageId: 'pi-usage:s1:message:a-retried', runId: 'pi-run:s1:prompt:nonce-retry' }),
+    ])
+    expect(calls.settled).toEqual([expect.objectContaining({ status: 'ok' })])
+  })
+
+  it('harvests usage riding only on agent_end final assistant messages', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'abrupt', clientNonce: 'nonce-final' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    // No message_end at all; the final (errored) assistant message with usage
+    // only rides on agent_end.
+    adapter.emit(agentEnd('error', 'tool crashed', {
+      messages: [{ role: 'assistant', content: [], stopReason: 'error', errorMessage: 'tool crashed', usage: USAGE, provider: 'ollama', model: 'kimi-k2:1t' }],
+    }))
+    await service.flushMetering()
+
+    expect(calls.usage).toEqual([
+      expect.objectContaining({ usageId: 'pi-usage:pi-run:s1:prompt:nonce-final:1', runId: 'pi-run:s1:prompt:nonce-final' }),
+    ])
+    // Usage was billable, so the errored run settles instead of releasing.
+    expect(calls.settled).toEqual([expect.objectContaining({ status: 'error' })])
+    expect(calls.released).toEqual([])
+  })
+
+  it('does not double-record when the message_end usage reappears on agent_end', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'both paths', clientNonce: 'nonce-both' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    adapter.emit(assistantMessageEnd({ id: 'a1' }))
+    adapter.emit(agentEnd('stop', undefined, {
+      messages: [{ id: 'a1', role: 'assistant', content: [], stopReason: 'stop', usage: USAGE }],
+    }))
+    await service.flushMetering()
+
+    expect(calls.usage).toHaveLength(1)
+  })
+
+  it('treats a client retry of the same prompt nonce as the same run', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'retry me', clientNonce: 'nonce-same' })
+    await service.prompt(ctx, 's1', { message: 'retry me', clientNonce: 'nonce-same' })
+
+    // Both requests re-validate through the sink, but nothing is released and
+    // only one run is tracked.
+    expect(calls.reserved).toHaveLength(2)
+    expect(calls.released).toEqual([])
+
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    adapter.emit(assistantMessageEnd())
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    expect(calls.usage).toHaveLength(1)
+    expect(calls.settled).toHaveLength(1)
+  })
+
+  it('bills overlapping prompts in acceptance order without dropping either', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    // Prompt B accepted before prompt A's agent_start was observed.
+    await service.prompt(ctx, 's1', { message: 'first', clientNonce: 'nonce-a' })
+    await service.prompt(ctx, 's1', { message: 'second', clientNonce: 'nonce-b' })
+    expect(calls.released).toEqual([])
+
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    adapter.emit(assistantMessageEnd({ id: 'a1' }))
+    adapter.emit(agentEnd('stop'))
+    adapter.emit({ type: 'agent_start', turnId: 'turn-2' } as unknown as AgentSessionEvent)
+    adapter.emit(assistantMessageEnd({ id: 'a2' }))
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    expect(calls.usage).toEqual([
+      expect.objectContaining({ usageId: 'pi-usage:s1:message:a1', runId: 'pi-run:s1:prompt:nonce-a' }),
+      expect.objectContaining({ usageId: 'pi-usage:s1:message:a2', runId: 'pi-run:s1:prompt:nonce-b' }),
+    ])
+    expect(calls.settled).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-a', status: 'ok' }),
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-b', status: 'ok' }),
     ])
   })
 
@@ -424,7 +539,7 @@ describe('pi chat metering', () => {
     await expect(service.followUp(ctx, 's1', { message: 'nope', clientNonce: 'nonce-q', clientSeq: 0 })).rejects.toThrow('queue full')
     await service.flushMetering()
     expect(calls.released).toEqual([
-      expect.objectContaining({ turnId: 'pi-run:s1:followup:nonce-q:0', reason: 'run-rejected' }),
+      expect.objectContaining({ runId: 'pi-run:s1:followup:nonce-q:0', reason: 'run-rejected' }),
     ])
   })
 
@@ -442,8 +557,8 @@ describe('pi chat metering', () => {
 
     expect(calls.released).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ turnId: 'pi-run:s1:followup:nonce-fq:0', reason: 'cancelled' }),
-        expect.objectContaining({ turnId: 'pi-run:s1:prompt:nonce-live', reason: 'cancelled' }),
+        expect.objectContaining({ runId: 'pi-run:s1:followup:nonce-fq:0', reason: 'cancelled' }),
+        expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-live', reason: 'cancelled' }),
       ]),
     )
   })
