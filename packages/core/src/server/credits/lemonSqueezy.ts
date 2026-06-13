@@ -92,7 +92,14 @@ export interface LemonSqueezyWebhookOptions {
   secret: string
   /** Credit amount (micros of your credit unit) to grant for this order. */
   creditsForOrder: (order: LemonSqueezyOrder) => number
-  /** Resolve the user to credit. Defaults to `order.userId` (custom_data). */
+  /**
+   * Resolve the user to credit. Defaults to `order.userId` (custom_data).
+   * SECURITY: only trust custom_data.user_id when checkouts are created
+   * SERVER-side (see createLemonSqueezyCheckout) so the id is set by your
+   * server, not a client-editable hosted-checkout URL. Because the server sets
+   * a deterministic user per order, `purchase:<orderId>` is then effectively a
+   * per-order idempotency key (the same order never maps to two users).
+   */
   resolveUserId?: (order: LemonSqueezyOrder) => string | undefined
   /** Grant credits idempotently. `reason` is `purchase:<orderId>` (the
    * idempotency key); `orderId` is provided so callers don't re-parse it. */

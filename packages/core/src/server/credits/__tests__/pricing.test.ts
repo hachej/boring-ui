@@ -59,19 +59,28 @@ describe('usageToCredits', () => {
     expect(cost.billedCreditMicros).toBe(0)
   })
 
-  it('bills zero for an unknown model with no reported cost', () => {
-    const cost = usageToCredits({ inputTokens: 1000, outputTokens: 1000 }, { id: 'mystery-model' }, CONFIG)
-    expect(cost.providerCostMicros).toBe(0)
-    expect(cost.billedCreditMicros).toBe(0)
+  it('fails safe: an unknown model bills at the conservative default rate (never zero)', () => {
+    const cost = usageToCredits({ inputTokens: 1_000_000, outputTokens: 0 }, { id: 'mystery-model' }, AT_COST)
+    // CONSERVATIVE_DEFAULT_RATE.inputPerMillion = €3.
+    expect(cost.providerCostMicros).toBe(3_000_000)
+    expect(cost.billedCreditMicros).toBe(3_000_000)
+    expect(cost.pricedFromDefault).toBe(true)
   })
 
-  it('honors a custom rate table override', () => {
+  it('does not mark a matched or reported-cost usage as default-priced', () => {
+    expect(usageToCredits({ inputTokens: 1_000_000, outputTokens: 0 }, { id: 'kimi-k2:1t' }, AT_COST).pricedFromDefault).toBe(false)
+    expect(usageToCredits({ inputTokens: 1, outputTokens: 1, providerReportedCost: 0.01 }, { id: 'x' }, AT_COST).pricedFromDefault).toBe(false)
+  })
+
+  it('honors a custom rate table override and falls back to the explicit default rate', () => {
     const config: CreditPricingConfig = {
       margin: 1,
       creditMicrosPerUnit: 1_000_000,
       rates: [[/my-model/, { inputPerMillion: 10, outputPerMillion: 20 }]],
+      defaultRate: { inputPerMillion: 1, outputPerMillion: 1 },
     }
-    expect(estimateProviderCost('my-model', 1_000_000, 1_000_000, config)).toBe(30)
-    expect(estimateProviderCost('kimi-k2', 1_000_000, 0, config)).toBe(0) // default table not used
+    expect(estimateProviderCost('my-model', 1_000_000, 1_000_000, config)).toEqual({ units: 30, usedDefault: false })
+    // Unmatched (custom table doesn't have kimi) → explicit defaultRate, not the built-ins.
+    expect(estimateProviderCost('kimi-k2', 1_000_000, 0, config)).toEqual({ units: 1, usedDefault: true })
   })
 })

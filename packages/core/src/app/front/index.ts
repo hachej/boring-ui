@@ -6,6 +6,5 @@ export type { CreditBalanceBadgeProps } from './credits/CreditBalanceBadge.js'
 export {
   formatCreditMicros,
   isLowBalance,
-  buildLemonSqueezyCheckoutUrl,
 } from './credits/helpers.js'
 export type { CreditBalanceResponse } from './credits/helpers.js'

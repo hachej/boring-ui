@@ -36,5 +36,17 @@ export type {
   LemonSqueezyWebhookResult,
 } from './lemonSqueezy.js'
 
+export {
+  createLemonSqueezyCheckout,
+  buildCheckoutRequestBody,
+} from './lemonSqueezyCheckout.js'
+export type { CreateCheckoutInput } from './lemonSqueezyCheckout.js'
+
 export { registerCreditsRoutes } from './routes.js'
-export type { CreditsRoutesOptions, LemonSqueezyRouteOptions } from './routes.js'
+export type {
+  CreditsRoutesOptions,
+  LemonSqueezyRouteOptions,
+  LemonSqueezyCheckoutConfig,
+} from './routes.js'
+
+export { CONSERVATIVE_DEFAULT_RATE } from './pricing.js'

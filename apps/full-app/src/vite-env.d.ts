@@ -1,8 +1,8 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  /** Lemon Squeezy hosted-checkout URL for a credit pack (build-time). */
-  readonly VITE_CREDITS_CHECKOUT_URL?: string
+  /** '1' to show the Buy-credits button (server must have LS checkout wired). */
+  readonly VITE_CREDITS_BUY_ENABLED?: string
 }
 
 interface ImportMeta {

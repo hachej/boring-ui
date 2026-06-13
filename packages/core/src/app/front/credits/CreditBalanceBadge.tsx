@@ -1,18 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
-import {
-  buildLemonSqueezyCheckoutUrl,
-  formatCreditMicros,
-  isLowBalance,
-  type CreditBalanceResponse,
-} from './helpers.js'
+import { formatCreditMicros, isLowBalance, type CreditBalanceResponse } from './helpers.js'
 
 export interface CreditBalanceBadgeProps {
   /** Base URL for the credits API (default: same origin). */
   apiBaseUrl?: string
-  /** Lemon Squeezy hosted-checkout URL; when unset the buy button is hidden. */
-  checkoutUrl?: string
-  /** Buyer email to prefill at checkout (optional). */
-  userEmail?: string
+  /** Enable the "Buy credits" button (server creates the checkout). */
+  buyEnabled?: boolean
+  /** Credit pack id to purchase (server maps it to a Lemon Squeezy variant). */
+  pack?: string
   /** Poll interval for the balance, ms (default 30s). */
   pollMs?: number
   locale?: string
@@ -26,13 +21,14 @@ export interface CreditBalanceBadgeProps {
  */
 export function CreditBalanceBadge({
   apiBaseUrl = '',
-  checkoutUrl,
-  userEmail,
+  buyEnabled = false,
+  pack,
   pollMs = 30_000,
   locale,
 }: CreditBalanceBadgeProps) {
   const [balance, setBalance] = useState<CreditBalanceResponse | null>(null)
   const [hidden, setHidden] = useState(false)
+  const [buying, setBuying] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
@@ -65,11 +61,27 @@ export function CreditBalanceBadge({
     }
   }, [refresh, pollMs])
 
-  const onBuy = useCallback(() => {
-    if (!balance) return
-    const url = buildLemonSqueezyCheckoutUrl(checkoutUrl, { userId: balance.userId, email: userEmail })
-    if (url) window.open(url, '_blank', 'noopener,noreferrer')
-  }, [balance, checkoutUrl, userEmail])
+  const onBuy = useCallback(async () => {
+    if (buying) return
+    setBuying(true)
+    try {
+      // Server creates the checkout and sets the buyer id from the session —
+      // the client never supplies the user id.
+      const res = await fetch(`${apiBaseUrl}/api/credits/checkout`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(pack ? { pack } : {}),
+      })
+      if (!res.ok) return
+      const { url } = (await res.json()) as { url?: string }
+      if (url) window.open(url, '_blank', 'noopener,noreferrer')
+    } catch {
+      // Surface nothing; the badge stays usable.
+    } finally {
+      setBuying(false)
+    }
+  }, [apiBaseUrl, pack, buying])
 
   if (hidden || !balance) return null
 
@@ -88,9 +100,9 @@ export function CreditBalanceBadge({
       >
         {formatCreditMicros(balance.remainingMicros, locale)}
       </span>
-      {checkoutUrl ? (
-        <button type="button" className="credit-balance-badge__buy" onClick={onBuy}>
-          Buy credits
+      {buyEnabled ? (
+        <button type="button" className="credit-balance-badge__buy" onClick={() => void onBuy()} disabled={buying}>
+          {buying ? 'Opening…' : 'Buy credits'}
         </button>
       ) : null}
     </div>

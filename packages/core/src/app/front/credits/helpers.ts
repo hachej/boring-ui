@@ -22,22 +22,6 @@ export function isLowBalance(micros: number, thresholdMicros = 500_000): boolean
   return Number.isFinite(micros) && micros <= thresholdMicros
 }
 
-/**
- * Build a Lemon Squeezy hosted-checkout URL with the buyer attached via custom
- * data, so the purchase webhook can credit the right user. Returns null when no
- * base checkout URL is configured.
- */
-export function buildLemonSqueezyCheckoutUrl(
-  baseUrl: string | undefined,
-  buyer: { userId: string; email?: string },
-): string | null {
-  if (!baseUrl) return null
-  try {
-    const url = new URL(baseUrl)
-    url.searchParams.set('checkout[custom][user_id]', buyer.userId)
-    if (buyer.email) url.searchParams.set('checkout[email]', buyer.email)
-    return url.toString()
-  } catch {
-    return null
-  }
-}
+// NOTE: there is intentionally no client-side checkout-URL builder. The buyer's
+// user id must be set SERVER-side (POST /api/credits/checkout) so a client can't
+// edit a hosted-checkout URL to credit another account.

@@ -94,4 +94,69 @@ describe('credits routes', () => {
     expect(res.statusCode).toBe(401)
     expect(store.grantOnce).not.toHaveBeenCalled()
   })
+
+  async function buildWithCheckout(asUser?: string) {
+    app = Fastify()
+    if (asUser) {
+      app.addHook('onRequest', async (request: FastifyRequest) => {
+        ;(request as unknown as { user: { id: string; email: string } }).user = { id: asUser, email: 'a@b.com' }
+      })
+    }
+    registerCreditsRoutes(app, {
+      service: new CreditsService(makeStore(), CONFIG),
+      lemonSqueezy: {
+        webhookSecret: SECRET,
+        checkout: { apiKey: 'k', storeId: '406592', variants: { '10': 'var10', '25': 'var25' }, defaultPack: '10', testMode: true },
+      },
+    })
+    await app.ready()
+    return app
+  }
+
+  it('creates a server-side checkout with the session user (never the client)', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init: { body: string }) => new Response(JSON.stringify({ data: { attributes: { url: 'https://store/checkout/x' } } }), { status: 201 }))
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      const a = await buildWithCheckout('u1')
+      const res = await a.inject({ method: 'POST', url: '/api/credits/checkout', payload: { pack: '25' } })
+      expect(res.statusCode).toBe(200)
+      expect(res.json().url).toBe('https://store/checkout/x')
+      const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+      expect(sentBody.data.attributes.checkout_data.custom.user_id).toBe('u1') // from session, not request
+      expect(sentBody.data.relationships.variant.data.id).toBe('var25')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('401s the checkout for an unauthenticated request', async () => {
+    const a = await buildWithCheckout()
+    const res = await a.inject({ method: 'POST', url: '/api/credits/checkout', payload: {} })
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('falls back to the default pack for an unknown pack id', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init: { body: string }) => new Response(JSON.stringify({ data: { attributes: { url: 'https://store/checkout/y' } } }), { status: 201 }))
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      const a = await buildWithCheckout('u1')
+      const res = await a.inject({ method: 'POST', url: '/api/credits/checkout', payload: { pack: '999' } })
+      expect(res.statusCode).toBe(200)
+      const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+      expect(sentBody.data.relationships.variant.data.id).toBe('var10') // default pack '10'
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('502s when checkout creation fails upstream', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('bad variant', { status: 422 })))
+    try {
+      const a = await buildWithCheckout('u1')
+      const res = await a.inject({ method: 'POST', url: '/api/credits/checkout', payload: {} })
+      expect(res.statusCode).toBe(502)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 })

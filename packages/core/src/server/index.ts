@@ -82,6 +82,9 @@ export {
   parseLemonSqueezyOrder,
   handleLemonSqueezyWebhook,
   registerCreditsRoutes,
+  createLemonSqueezyCheckout,
+  buildCheckoutRequestBody,
+  CONSERVATIVE_DEFAULT_RATE,
 } from './credits/index.js'
 export type {
   CreditsConfig,
@@ -97,4 +100,6 @@ export type {
   LemonSqueezyWebhookResult,
   CreditsRoutesOptions,
   LemonSqueezyRouteOptions,
+  LemonSqueezyCheckoutConfig,
+  CreateCheckoutInput,
 } from './credits/index.js'

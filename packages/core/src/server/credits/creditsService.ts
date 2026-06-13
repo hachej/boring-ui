@@ -1,7 +1,9 @@
 import { InsufficientCreditError, type PostgresMeteringStore } from '../db/stores/PostgresMeteringStore.js'
-import { usageToCredits, type CreditPricingConfig } from './pricing.js'
+import { usageToCredits, CONSERVATIVE_DEFAULT_RATE, type CreditPricingConfig } from './pricing.js'
 
 export const SIGNUP_GRANT_REASON = 'signup_grant'
+
+export type CreditsLogger = (message: string, fields?: Record<string, unknown>) => void
 
 export interface CreditsConfig {
   enabled: boolean
@@ -9,7 +11,13 @@ export interface CreditsConfig {
   signupGrantMicros: number
   /** Days until the signup grant expires; null = never. */
   signupGrantExpiresAfterDays: number | null
-  /** Per-run overdraft hold, in credit micros. */
+  /**
+   * Per-run hold, in credit micros. This is the per-run overdraft bound: a run
+   * is admitted against this hold, but the actual charge is posted afterward, so
+   * a single run can overshoot the hold by (actualCost − hold). Set this to
+   * cover your worst-case single run (max tokens on the priciest enabled model)
+   * so the hard stop is effectively exact.
+   */
   runReservationMicros: number
   reservationTtlSeconds: number
   /** Floor below which a run is refused. */
@@ -21,10 +29,11 @@ export const DEFAULT_CREDITS_CONFIG: CreditsConfig = {
   enabled: true,
   signupGrantMicros: 2_000_000, // €2
   signupGrantExpiresAfterDays: null,
-  runReservationMicros: 250_000, // €0.25 hold
+  // €1 hold — covers a worst-case single run so a run rarely overshoots its hold.
+  runReservationMicros: 1_000_000,
   reservationTtlSeconds: 2 * 60 * 60,
   minBalanceMicros: 50_000, // €0.05
-  pricing: { margin: 1.3, creditMicrosPerUnit: 1_000_000 },
+  pricing: { margin: 1.3, creditMicrosPerUnit: 1_000_000, defaultRate: CONSERVATIVE_DEFAULT_RATE },
 }
 
 export interface CreditBalance {
@@ -97,6 +106,7 @@ export class CreditsService {
   constructor(
     private readonly store: CreditsMeteringStore,
     readonly config: CreditsConfig = DEFAULT_CREDITS_CONFIG,
+    private readonly log?: CreditsLogger,
   ) {}
 
   /** Idempotently grant the free starter credits (call from the post-signup hook
@@ -179,6 +189,13 @@ export class CreditsService {
       model,
       this.config.pricing,
     )
+    if (cost.pricedFromDefault) {
+      // Unpriced model billed at the conservative default — surface it so an
+      // explicit rate gets configured.
+      this.log?.('credits: model billed at default rate (no configured rate)', {
+        model: input.model, provider: input.provider, billedCostMicros: cost.billedCreditMicros,
+      })
+    }
     await this.store.recordUsage({
       usageId: input.usageId,
       userId: input.userId,

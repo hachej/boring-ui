@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatCreditMicros, isLowBalance, buildLemonSqueezyCheckoutUrl } from '../helpers'
+import { formatCreditMicros, isLowBalance } from '../helpers'
 
 describe('formatCreditMicros', () => {
   it('formats credit micros as euros', () => {
@@ -22,20 +22,3 @@ describe('isLowBalance', () => {
   })
 })
 
-describe('buildLemonSqueezyCheckoutUrl', () => {
-  it('attaches user id and email as checkout custom data', () => {
-    const url = buildLemonSqueezyCheckoutUrl('https://store.lemonsqueezy.com/checkout/buy/abc', {
-      userId: 'user-1',
-      email: 'a@b.com',
-    })
-    expect(url).not.toBeNull()
-    const parsed = new URL(url!)
-    expect(parsed.searchParams.get('checkout[custom][user_id]')).toBe('user-1')
-    expect(parsed.searchParams.get('checkout[email]')).toBe('a@b.com')
-  })
-
-  it('returns null when no base url or an invalid one is given', () => {
-    expect(buildLemonSqueezyCheckoutUrl(undefined, { userId: 'u' })).toBeNull()
-    expect(buildLemonSqueezyCheckoutUrl('not a url', { userId: 'u' })).toBeNull()
-  })
-})

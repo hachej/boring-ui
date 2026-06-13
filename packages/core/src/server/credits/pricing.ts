@@ -24,7 +24,17 @@ export interface CreditPricingConfig {
   creditMicrosPerUnit: number
   /** Ordered [pattern, rate] table; first match wins. Overrides the defaults. */
   rates?: Array<[RegExp, ModelTokenRate]>
+  /**
+   * Rate applied when no pattern matches and the provider reported no cost.
+   * Defaults to CONSERVATIVE_DEFAULT_RATE so an unpriced model is never billed
+   * zero (free usage) in this prepaid path — set it explicitly to tune.
+   */
+  defaultRate?: ModelTokenRate
 }
+
+/** Conservative fallback rate (≈ Claude Sonnet list price). EU open models are
+ * cheaper, so this over-charges an un-configured model rather than billing zero. */
+export const CONSERVATIVE_DEFAULT_RATE: ModelTokenRate = { inputPerMillion: 3, outputPerMillion: 15 }
 
 // Default rate table (pricing currency = EUR). Confirm Infomaniak's published
 // per-token prices for the exact model ids you enable before launch; these are
@@ -59,6 +69,9 @@ export interface CreditCost {
   providerCostMicros: number
   /** Amount to charge against the balance, in credit micros (with margin). */
   billedCreditMicros: number
+  /** True when no model rate matched and the conservative defaultRate was used —
+   * a signal to the operator to add an explicit rate for this model. */
+  pricedFromDefault: boolean
 }
 
 function clampTokens(value: number | undefined): number {
@@ -71,16 +84,18 @@ function rateForModel(modelId: string, config: CreditPricingConfig): ModelTokenR
 }
 
 /** Estimate raw provider cost (pricing-currency units) from token counts. Cache
- * tokens are billed at the input rate — a deliberate conservative over-count. */
+ * tokens are billed at the input rate — a deliberate conservative over-count.
+ * Unmatched models fall back to `config.defaultRate` (never zero). */
 export function estimateProviderCost(
   modelId: string,
   inputTokens: number,
   outputTokens: number,
   config: CreditPricingConfig,
-): number {
-  const rate = rateForModel(modelId, config)
-  if (!rate) return 0
-  return (inputTokens / 1_000_000) * rate.inputPerMillion + (outputTokens / 1_000_000) * rate.outputPerMillion
+): { units: number; usedDefault: boolean } {
+  const matched = rateForModel(modelId, config)
+  const rate = matched ?? config.defaultRate ?? CONSERVATIVE_DEFAULT_RATE
+  const units = (inputTokens / 1_000_000) * rate.inputPerMillion + (outputTokens / 1_000_000) * rate.outputPerMillion
+  return { units, usedDefault: matched === null }
 }
 
 /**
@@ -101,13 +116,13 @@ export function usageToCredits(
 
   const reported = usage.providerReportedCost
   const reportedUnits = typeof reported === 'number' && Number.isFinite(reported) && reported > 0 ? reported : 0
-  const estimatedUnits = estimateProviderCost(
+  const estimated = estimateProviderCost(
     modelId,
     inputTokens + cacheReadTokens + cacheWriteTokens,
     outputTokens,
     config,
   )
-  const providerUnits = reportedUnits > 0 ? reportedUnits : estimatedUnits
+  const providerUnits = reportedUnits > 0 ? reportedUnits : estimated.units
 
   const providerCostMicros = Math.ceil(providerUnits * config.creditMicrosPerUnit)
   const billedCreditMicros = Math.ceil(providerUnits * config.margin * config.creditMicrosPerUnit)
@@ -119,5 +134,8 @@ export function usageToCredits(
     cacheWriteTokens,
     providerCostMicros,
     billedCreditMicros,
+    // Only "default-priced" when we fell back to the estimate AND it used the
+    // default rate (a reported cost or a matched rate is authoritative).
+    pricedFromDefault: reportedUnits === 0 && estimated.usedDefault,
   }
 }
