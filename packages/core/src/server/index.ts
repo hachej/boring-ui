@@ -68,3 +68,33 @@ export type {
   WorkspaceRuntimeStoreLike,
   WorkspaceSandboxHandleRecord,
 } from './runtime/index.js'
+
+export {
+  CreditsService,
+  CreditExhaustedError,
+  DEFAULT_CREDITS_CONFIG,
+  SIGNUP_GRANT_REASON,
+  usageToCredits,
+  estimateProviderCost,
+  DEFAULT_MODEL_RATES,
+  createCreditsMeteringSink,
+  verifyLemonSqueezySignature,
+  parseLemonSqueezyOrder,
+  handleLemonSqueezyWebhook,
+  registerCreditsRoutes,
+} from './credits/index.js'
+export type {
+  CreditsConfig,
+  CreditBalance,
+  CreditUsageRecord,
+  CreditsMeteringStore,
+  CreditPricingConfig,
+  ModelTokenRate,
+  CreditUsageInput,
+  CreditCost,
+  LemonSqueezyOrder,
+  LemonSqueezyWebhookOptions,
+  LemonSqueezyWebhookResult,
+  CreditsRoutesOptions,
+  LemonSqueezyRouteOptions,
+} from './credits/index.js'
