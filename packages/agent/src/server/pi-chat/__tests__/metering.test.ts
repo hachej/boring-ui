@@ -250,7 +250,7 @@ describe('pi chat metering', () => {
     expect(calls.settled).toHaveLength(1)
   })
 
-  it('settles ok without usage rows when the provider reported no usage', async () => {
+  it('does NOT settle a successful run for free when the provider reported no usage', async () => {
     const adapter = createAdapter()
     const { sink, calls } = createSink()
     const { service } = createService(adapter, sink)
@@ -260,9 +260,13 @@ describe('pi chat metering', () => {
     adapter.emit(agentEnd('stop'))
     await service.flushMetering()
 
+    // A successful run with no usage row would settle a paid hold for free — the
+    // coordinator routes it to the fallback-charge path instead of settling.
     expect(calls.usage).toEqual([])
-    expect(calls.settled).toEqual([expect.objectContaining({ status: 'ok' })])
-    expect(calls.released).toEqual([])
+    expect(calls.settled).toEqual([])
+    expect(calls.released).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-no-usage', reason: 'usage-write-failed' }),
+    ])
   })
 
   it('releases the reservation when the run errors before any usage arrived', async () => {

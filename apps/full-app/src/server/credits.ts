@@ -34,9 +34,10 @@ function parseNumberEnv(name: string, value: string | undefined, fallback: numbe
   return n
 }
 
-/** Parse "10:var_abc,25:var_def,50:var_ghi" → { '10': 'var_abc', ... }. Throws on
- * a malformed/empty/duplicate entry so checkout & webhook can't silently diverge
- * from the intended packs (fail closed at startup). */
+/** Parse "10:var_abc,25:var_def,50:var_ghi" → { '10': 'var_abc', ... }. The pack
+ * id is the EUR credit VALUE the pack grants (so it drives crediting, not the
+ * order amount). Throws on a malformed/empty/duplicate/non-positive-amount entry
+ * so checkout & webhook can't silently diverge from the intended packs. */
 function parseVariants(raw: string | undefined): Record<string, string> {
   if (!raw || raw.trim() === '') return {}
   const out: Record<string, string> = {}
@@ -44,7 +45,10 @@ function parseVariants(raw: string | undefined): Record<string, string> {
     if (pair.trim() === '') continue
     const [pack, variant] = pair.split(':').map((s) => s.trim())
     if (!pack || !variant) {
-      throw new Error(`invalid BORING_CREDITS_LS_VARIANTS entry (expected "pack:variantId"): "${pair}"`)
+      throw new Error(`invalid BORING_CREDITS_LS_VARIANTS entry (expected "creditEur:variantId"): "${pair}"`)
+    }
+    if (!Number.isFinite(Number(pack)) || Number(pack) <= 0) {
+      throw new Error(`invalid BORING_CREDITS_LS_VARIANTS pack id (must be a positive EUR credit value): "${pack}"`)
     }
     if (pack in out) throw new Error(`duplicate pack id in BORING_CREDITS_LS_VARIANTS: "${pack}"`)
     out[pack] = variant
@@ -105,8 +109,11 @@ function parseRates(raw: string | undefined): Array<[RegExp, { inputPerMillion: 
 
 export interface FullAppCreditsConfig extends CreditsConfig {
   lemonSqueezyWebhookSecret?: string
-  /** Pack id → LS variant id. Webhook only credits these variants. */
+  /** Pack id (EUR credit value) → LS variant id. Webhook only credits these variants. */
   lemonSqueezyVariants: Record<string, string>
+  /** LS variant id → fixed credit micros granted for that pack (immune to order
+   * amount/discount/tax). Derived from the pack id (EUR) × creditMicrosPerUnit. */
+  lemonSqueezyCreditMicrosByVariant: Record<string, number>
   /** Expected LS mode (true = test, false = live). Default test. */
   lemonSqueezyTestMode: boolean
   /** Expected LS store id; the webhook ignores orders from another store. */
@@ -147,6 +154,11 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
   if (defaultPackEnv && !(defaultPackEnv in variants)) {
     throw new Error(`BORING_CREDITS_LS_DEFAULT_PACK "${defaultPackEnv}" is not a configured pack in BORING_CREDITS_LS_VARIANTS`)
   }
+  // variant id → fixed credit micros (pack id is the EUR credit value).
+  const creditMicrosByVariant: Record<string, number> = {}
+  for (const [packEur, variantId] of Object.entries(variants)) {
+    creditMicrosByVariant[variantId] = Math.round(Number(packEur) * CREDIT_MICROS_PER_EUR)
+  }
   // When Lemon Squeezy is configured, the test/live mode MUST be explicit — a
   // wrong default would either mint credits from non-charging test orders or
   // reject real live webhooks. Require an exact "0" (live) or "1" (test).
@@ -178,6 +190,7 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
     },
     lemonSqueezyWebhookSecret: env.BORING_CREDITS_LS_WEBHOOK_SECRET || undefined,
     lemonSqueezyVariants: variants,
+    lemonSqueezyCreditMicrosByVariant: creditMicrosByVariant,
     lemonSqueezyTestMode: testMode,
     lemonSqueezyStoreId: env.BORING_CREDITS_LS_STORE_ID || undefined,
     lemonSqueezyCheckout: checkoutReady
@@ -225,6 +238,7 @@ export function buildCreditsWiring(env: NodeJS.ProcessEnv = process.env): {
           ? {
               webhookSecret: config.lemonSqueezyWebhookSecret,
               creditVariantIds,
+              creditMicrosByVariant: config.lemonSqueezyCreditMicrosByVariant,
               expectedTestMode: config.lemonSqueezyTestMode,
               expectedStoreId: config.lemonSqueezyStoreId,
               checkout: config.lemonSqueezyCheckout,

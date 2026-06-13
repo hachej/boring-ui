@@ -239,6 +239,7 @@ export class PostgresMeteringStore {
           amountMicros: creditPurchases.amountMicros,
           status: creditPurchases.status,
           refundedMicros: creditPurchases.refundedMicros,
+          pendingRefundPpm: creditPurchases.pendingRefundPpm,
         })
         .from(creditPurchases)
         .where(eq(creditPurchases.orderId, orderId))
@@ -256,6 +257,20 @@ export class PostgresMeteringStore {
             ? { orderId, status: 'refunded', source, refundedAt: new Date() }
             : { orderId, status: 'refund_pending', source, refundedAt: new Date(), pendingRefundPpm: Math.round(fraction * 1_000_000) },
         )
+        return { revoked: false }
+      }
+      // A second pre-grant refund (the row exists but the grant hasn't landed, so
+      // the credited amount is still unknown). Don't fall through to the
+      // credited-amount math (credited=0 would wrongly mark it fully refunded and
+      // block the grant) — accumulate the pending fraction instead.
+      if (row.status === 'refund_pending') {
+        if (fraction >= 1) {
+          await tx.update(creditPurchases).set({ status: 'refunded', pendingRefundPpm: null, refundedAt: new Date() }).where(eq(creditPurchases.orderId, orderId))
+        } else {
+          // LS refunded_amount is cumulative → keep the largest fraction seen.
+          const newPpm = Math.max(row.pendingRefundPpm ?? 0, Math.round(fraction * 1_000_000))
+          await tx.update(creditPurchases).set({ pendingRefundPpm: newPpm, refundedAt: new Date() }).where(eq(creditPurchases.orderId, orderId))
+        }
         return { revoked: false }
       }
       const credited = row.amountMicros ?? 0

@@ -152,6 +152,18 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
     expect((await store.getBalance(USER)).remainingMicros).toBe(5_000_000)
   })
 
+  it('accumulates repeated partial refunds before grant, then grants net', async () => {
+    // 30% then 80% (cumulative) refunds both arrive before order_created.
+    expect(await store.revokePurchase('ord-multi', { refundFraction: 0.3 })).toEqual({ revoked: false })
+    expect(await store.revokePurchase('ord-multi', { refundFraction: 0.8 })).toEqual({ revoked: false })
+    let rows = await sqlClient`SELECT status, pending_refund_ppm FROM boring_credit_purchases WHERE order_id = 'ord-multi'`
+    expect(rows[0]?.status).toBe('refund_pending') // NOT wrongly tombstoned to refunded
+    expect(Number(rows[0]?.pending_refund_ppm)).toBe(800_000)
+    // Later grant mints €10 then revokes 80% (€8) → net €2.
+    expect(await store.grantPurchaseOnce({ orderId: 'ord-multi', userId: USER, amountMicros: 10_000_000 })).toEqual({ granted: true })
+    expect((await store.getBalance(USER)).remainingMicros).toBe(2_000_000)
+  })
+
   it('charges a fallback hold and settles when usage write failed', async () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 10_000_000 })
     const { reservationId } = await store.reserve({

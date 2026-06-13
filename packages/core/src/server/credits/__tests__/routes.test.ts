@@ -39,7 +39,7 @@ describe('credits routes', () => {
   let app: FastifyInstance | undefined
   afterEach(async () => { await app?.close(); app = undefined })
 
-  async function build(store: CreditsMeteringStore, asUser?: string) {
+  async function build(store: CreditsMeteringStore, asUser?: string, creditMicrosByVariant?: Record<string, number>) {
     app = Fastify()
     if (asUser) {
       app.addHook('onRequest', async (request: FastifyRequest) => {
@@ -48,7 +48,7 @@ describe('credits routes', () => {
     }
     registerCreditsRoutes(app, {
       service: new CreditsService(store, CONFIG),
-      lemonSqueezy: { webhookSecret: SECRET, creditVariantIds: ['1'], expectedTestMode: true },
+      lemonSqueezy: { webhookSecret: SECRET, creditVariantIds: ['1'], expectedTestMode: true, creditMicrosByVariant },
     })
     await app.ready()
     return app
@@ -81,6 +81,24 @@ describe('credits routes', () => {
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({ ok: true, orderId: 'order-77' })
     expect(store.grantPurchaseOnce).toHaveBeenCalledWith({ userId: 'user-1', orderId: 'order-77', amountMicros: 10_000_000 })
+  })
+
+  it('grants the FIXED per-variant value, ignoring the order subtotal (multi-item/discount safe)', async () => {
+    const store = makeStore()
+    // Variant '1' is worth 5_000_000 micros regardless of the €10 order subtotal.
+    const a = await build(store, undefined, { '1': 5_000_000 })
+    const body = JSON.stringify({
+      meta: { event_name: 'order_created', custom_data: { user_id: 'user-1' } },
+      data: { type: 'orders', id: 'order-fix', attributes: { status: 'paid', test_mode: true, currency: 'EUR', subtotal: 1000, total: 1190, first_order_item: { variant_id: 1 } } },
+    })
+    const res = await a.inject({
+      method: 'POST',
+      url: '/api/credits/webhooks/lemonsqueezy',
+      headers: { 'content-type': 'application/json', 'x-signature': createHmac('sha256', SECRET).update(body).digest('hex') },
+      payload: body,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(store.grantPurchaseOnce).toHaveBeenCalledWith({ userId: 'user-1', orderId: 'order-fix', amountMicros: 5_000_000 })
   })
 
   it('does not credit a paid order for an unconfigured variant (fail closed)', async () => {

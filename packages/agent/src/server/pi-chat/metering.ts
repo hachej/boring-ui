@@ -668,17 +668,22 @@ export class PiChatMeteringCoordinator {
   private finishRun(run: MeteringRun, status: MeteringRunStatus): void {
     if (run.terminal) return
     if (status !== 'ok' && run.usageCount === 0) {
+      // No execution happened (error/cancel before any usage) → free release.
       this.release(run, status === 'error' ? 'error-before-usage' : 'cancelled')
       return
     }
     run.terminal = true
-    // Decided inside the op so it observes the result of the usage writes
-    // queued ahead of it on the same chain: if a write failed, the ledger is
-    // missing a row, so release (auditably) instead of settling a paid hold.
-    this.enqueue(run, () =>
-      run.usageWriteFailed
+    // A SUCCESSFUL run that recorded no usage (provider reported none/zero), or
+    // one whose usage write failed, has no ledger debit — settling would return a
+    // paid hold for free. Charge the fallback hold instead (the sink's
+    // usage-write-failed path), so an executed run is never free. Decided inside
+    // the op so it observes the usage writes queued ahead of it on the chain.
+    this.enqueue(run, () => {
+      const missingUsage = run.usageWriteFailed || run.usageCount === 0
+      return missingUsage
         ? this.sink.releaseRun({ ...run.scope, reservationId: run.reservationId, reason: 'usage-write-failed' })
-        : this.sink.settleRun({ ...run.scope, reservationId: run.reservationId, status }),
+        : this.sink.settleRun({ ...run.scope, reservationId: run.reservationId, status })
+    },
       'finishRun failed',
     )
   }
