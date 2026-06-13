@@ -19,7 +19,10 @@ type Queryable = Pick<PostgresJsDatabase, 'select' | 'insert' | 'update'>
 
 export class InsufficientCreditError extends Error {
   readonly statusCode = 402
-  readonly code = 'INSUFFICIENT_CREDIT'
+  // Matches @hachej/boring-agent's canonical ErrorCode so the agent route
+  // preserves it (instead of degrading to INTERNAL_ERROR) when a sink throws
+  // this across the boundary.
+  readonly code = 'PAYMENT_REQUIRED'
 
   constructor(
     readonly availableMicros: number,
@@ -145,6 +148,11 @@ export class PostgresMeteringStore {
     }
     if (!Number.isFinite(input.ttlSeconds) || input.ttlSeconds <= 0) {
       throw new Error('reserve ttlSeconds must be positive')
+    }
+    if (input.minAvailableMicros !== undefined && (!Number.isSafeInteger(input.minAvailableMicros) || input.minAvailableMicros < 0)) {
+      // This is the hard-stop floor; a NaN/negative value would silently weaken
+      // the admission check.
+      throw new Error('reserve minAvailableMicros must be a non-negative integer')
     }
     const minAvailable = input.minAvailableMicros ?? input.amountMicros
     const expiresAt = new Date(now.getTime() + input.ttlSeconds * 1000)

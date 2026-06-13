@@ -98,7 +98,7 @@ describe('PostgresMeteringStore', () => {
       .reserve({ userId: USER, runId: 'turn-1', amountMicros: 1_000, ttlSeconds: 60 })
       .then(() => null, (err: unknown) => err)
     expect(error).toBeInstanceOf(InsufficientCreditError)
-    expect(error).toMatchObject({ statusCode: 402, code: 'INSUFFICIENT_CREDIT', availableMicros: 100, requiredMicros: 1_000 })
+    expect(error).toMatchObject({ statusCode: 402, code: 'PAYMENT_REQUIRED', availableMicros: 100, requiredMicros: 1_000 })
   })
 
   it('inserts usage idempotently by usage id', async () => {
@@ -290,5 +290,15 @@ describe('PostgresMeteringStore', () => {
     await expect(store.grantOnce({ userId: USER, reason: 'bad', amountMicros: 0 })).rejects.toThrow('positive integer')
     await expect(store.reserve({ userId: USER, runId: 't', amountMicros: 1.5, ttlSeconds: 60 })).rejects.toThrow('positive integer')
     await expect(store.recordUsage({ usageId: 'x', userId: USER, billedCostMicros: -1 })).rejects.toThrow('non-negative')
+  })
+
+  it('rejects an invalid minAvailableMicros instead of weakening the hard stop', async () => {
+    await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 1_000 })
+    await expect(
+      store.reserve({ userId: USER, runId: 't', amountMicros: 100, ttlSeconds: 60, minAvailableMicros: Number.NaN }),
+    ).rejects.toThrow('minAvailableMicros')
+    await expect(
+      store.reserve({ userId: USER, runId: 't', amountMicros: 100, ttlSeconds: 60, minAvailableMicros: -5 }),
+    ).rejects.toThrow('minAvailableMicros')
   })
 })
