@@ -152,6 +152,19 @@ export class HarnessPiChatService implements PiChatSessionService {
   async prompt(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload): Promise<PromptReceipt> {
     const adapter = await this.getAdapter(ctx, sessionId, payload)
     await this.ensureChannel(ctx, sessionId, adapter)
+    // A duplicate in-flight prompt (client retry reusing the nonce) must not
+    // start a second model run or a second reservation — the original run
+    // owns execution and metering. Acknowledge it idempotently instead of
+    // re-issuing adapter.prompt(), whose busy-rejection would otherwise fail
+    // the shared metering run.
+    if (this.messageMetadata.hasPrompt(sessionId, { clientNonce: payload.clientNonce })) {
+      return {
+        accepted: true,
+        cursor: this.channels.get(sessionId)?.buffer.latestSeq ?? 0,
+        clientNonce: payload.clientNonce,
+        duplicate: true,
+      }
+    }
     // Reserve before execution; a rejecting sink (e.g. credits exhausted)
     // fails the request closed before any model call happens.
     await this.metering?.reservePrompt({

@@ -104,6 +104,11 @@ const defaultMeteringErrorLogger: MeteringErrorLogger = (message, error) => {
   meteringLogger.warn(message, { error })
 }
 
+interface FollowUpSelector {
+  clientNonce?: string
+  clientSeq?: number
+}
+
 interface MeteringRun {
   scope: MeteringRunScope
   kind: MeteringRunKind
@@ -114,6 +119,8 @@ interface MeteringRun {
   /** Set when a recordUsage sink call rejected — at least one ledger row for
    * this run is missing, so the run must not falsely settle. */
   usageWriteFailed: boolean
+  /** Present on queued follow-up runs; matched against clear/consume selectors. */
+  followUp?: FollowUpSelector
   terminal: boolean
   /** Serializes sink calls per run so settle/release never overtakes usage. */
   ops: Promise<void>
@@ -124,8 +131,8 @@ interface SessionMeteringState {
   pendingPrompts: MeteringRun[]
   /** Run currently attributed native usage. */
   active?: MeteringRun
-  /** Reserved follow-up runs awaiting consumption, keyed by nonce/seq. */
-  queued: Map<string, MeteringRun>
+  /** Reserved follow-up runs awaiting consumption. */
+  queued: MeteringRun[]
 }
 
 function promptRunId(sessionId: string, clientNonce: string): string {
@@ -136,10 +143,22 @@ function followUpRunId(sessionId: string, clientNonce: string, clientSeq: number
   return `pi-run:${sessionId}:followup:${clientNonce}:${clientSeq}`
 }
 
-function followUpKey(selector: { clientNonce?: string; clientSeq?: number }): string | undefined {
-  if (selector.clientNonce) return `nonce:${selector.clientNonce}`
-  if (selector.clientSeq !== undefined) return `seq:${selector.clientSeq}`
-  return undefined
+/** A clear/consume selector matches a queued run by whichever field it carries
+ * (nonce preferred). clearQueue may pass nonce-only OR seq-only, while runs
+ * always store both — so matching by one field, not a single composite key, is
+ * what lets a seq-only clear find a run. */
+function followUpMatches(run: MeteringRun, selector: FollowUpSelector): boolean {
+  const fu = run.followUp
+  if (!fu) return false
+  if (selector.clientNonce !== undefined) return fu.clientNonce === selector.clientNonce
+  if (selector.clientSeq !== undefined) return fu.clientSeq === selector.clientSeq
+  return false
+}
+
+function takeQueuedFollowUp(state: SessionMeteringState, selector: FollowUpSelector): MeteringRun | undefined {
+  const index = state.queued.findIndex((run) => followUpMatches(run, selector))
+  if (index < 0) return undefined
+  return state.queued.splice(index, 1)[0]
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -233,14 +252,8 @@ export class PiChatMeteringCoordinator {
       return
     }
     const run = await this.reserve(input, 'followup', runId)
-    const key = followUpKey(input)
-    if (key === undefined) {
-      // Unreachable with current payload schemas (clientNonce is required);
-      // never strand a reservation if that invariant changes.
-      this.release(run, 'run-rejected')
-      return
-    }
-    state.queued.set(key, run)
+    run.followUp = { clientNonce: input.clientNonce, clientSeq: input.clientSeq }
+    state.queued.push(run)
   }
 
   /** The accepted prompt failed before/without running (sync throw or run rejection). */
@@ -260,13 +273,11 @@ export class PiChatMeteringCoordinator {
   }
 
   /** A queued follow-up was rejected by the adapter before being queued. */
-  failFollowUpRun(sessionId: string, selector: { clientNonce?: string; clientSeq?: number }): void {
+  failFollowUpRun(sessionId: string, selector: FollowUpSelector): void {
     const state = this.sessions.get(sessionId)
-    const key = followUpKey(selector)
-    if (!state || key === undefined) return
-    const run = state.queued.get(key)
+    if (!state) return
+    const run = takeQueuedFollowUp(state, selector)
     if (!run) return
-    state.queued.delete(key)
     this.release(run, 'run-rejected')
     this.pruneSession(sessionId, state)
   }
@@ -277,13 +288,11 @@ export class PiChatMeteringCoordinator {
    * `followup-consumed` event will arrive, so bind its reservation to the
    * next agent-start instead.
    */
-  promoteQueuedToPrompt(sessionId: string, selector: { clientNonce?: string; clientSeq?: number }): void {
+  promoteQueuedToPrompt(sessionId: string, selector: FollowUpSelector): void {
     const state = this.sessions.get(sessionId)
-    const key = followUpKey(selector)
-    if (!state || key === undefined) return
-    const run = state.queued.get(key)
+    if (!state) return
+    const run = takeQueuedFollowUp(state, selector)
     if (!run) return
-    state.queued.delete(key)
     state.pendingPrompts.push(run)
   }
 
@@ -319,19 +328,15 @@ export class PiChatMeteringCoordinator {
   }
 
   /** Queue cleared via selector or entirely; release affected reservations. */
-  releaseQueued(sessionId: string, selector?: { clientNonce?: string; clientSeq?: number }): void {
+  releaseQueued(sessionId: string, selector?: FollowUpSelector): void {
     const state = this.sessions.get(sessionId)
     if (!state) return
     if (selector) {
-      const key = followUpKey(selector)
-      const run = key === undefined ? undefined : state.queued.get(key)
-      if (key !== undefined && run) {
-        state.queued.delete(key)
-        this.release(run, 'queue-cleared')
-      }
+      const run = takeQueuedFollowUp(state, selector)
+      if (run) this.release(run, 'queue-cleared')
     } else {
-      for (const run of state.queued.values()) this.release(run, 'queue-cleared')
-      state.queued.clear()
+      for (const run of state.queued) this.release(run, 'queue-cleared')
+      state.queued = []
     }
     this.pruneSession(sessionId, state)
   }
@@ -340,7 +345,7 @@ export class PiChatMeteringCoordinator {
   releaseSession(sessionId: string): void {
     const state = this.sessions.get(sessionId)
     if (!state) return
-    for (const run of state.queued.values()) this.release(run, 'cancelled')
+    for (const run of state.queued) this.release(run, 'cancelled')
     for (const run of state.pendingPrompts) this.release(run, 'cancelled')
     if (state.active) this.finishRun(state.active, 'aborted')
     this.sessions.delete(sessionId)
@@ -403,11 +408,9 @@ export class PiChatMeteringCoordinator {
   }
 
   /** Promote a queued follow-up to the active run, settling the previous one. */
-  private consumeFollowUp(state: SessionMeteringState, selector: { clientNonce?: string; clientSeq?: number }): void {
-    const key = followUpKey(selector)
-    const run = key === undefined ? undefined : state.queued.get(key)
-    if (key === undefined || !run) return
-    state.queued.delete(key)
+  private consumeFollowUp(state: SessionMeteringState, selector: FollowUpSelector): void {
+    const run = takeQueuedFollowUp(state, selector)
+    if (!run) return
     if (state.active && !state.active.terminal) this.finishRun(state.active, 'ok')
     state.active = run
   }
@@ -529,10 +532,7 @@ export class PiChatMeteringCoordinator {
     if (state.active && !state.active.terminal && state.active.scope.runId === runId) return state.active
     const pending = state.pendingPrompts.find((run) => run.scope.runId === runId)
     if (pending) return pending
-    for (const run of state.queued.values()) {
-      if (run.scope.runId === runId) return run
-    }
-    return undefined
+    return state.queued.find((run) => run.scope.runId === runId)
   }
 
   private finishRun(run: MeteringRun, status: MeteringRunStatus): void {
@@ -574,14 +574,14 @@ export class PiChatMeteringCoordinator {
   private sessionState(sessionId: string): SessionMeteringState {
     let state = this.sessions.get(sessionId)
     if (!state) {
-      state = { pendingPrompts: [], queued: new Map() }
+      state = { pendingPrompts: [], queued: [] }
       this.sessions.set(sessionId, state)
     }
     return state
   }
 
   private pruneSession(sessionId: string, state: SessionMeteringState): void {
-    if (!state.active && state.pendingPrompts.length === 0 && state.queued.size === 0) {
+    if (!state.active && state.pendingPrompts.length === 0 && state.queued.length === 0) {
       this.sessions.delete(sessionId)
     }
   }

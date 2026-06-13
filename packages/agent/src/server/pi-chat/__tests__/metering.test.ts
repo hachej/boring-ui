@@ -486,6 +486,22 @@ describe('pi chat metering', () => {
     expect(calls.settled).toEqual([])
   })
 
+  it('releases a queued follow-up reservation cleared by clientSeq alone', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.followUp(ctx, 's1', { message: 'q', clientNonce: 'nonce-seq', clientSeq: 3 })
+    // clearQueue may target by seq only, even though the run was reserved with
+    // both nonce and seq.
+    await service.clearQueue(ctx, 's1', { clientSeq: 3 })
+    await service.flushMetering()
+
+    expect(calls.released).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:followup:nonce-seq:3', reason: 'queue-cleared' }),
+    ])
+  })
+
   it('releases an aborted run without usage as cancelled', async () => {
     const adapter = createAdapter()
     const { sink, calls } = createSink()
@@ -563,17 +579,19 @@ describe('pi chat metering', () => {
     expect(calls.usage).toHaveLength(1)
   })
 
-  it('treats a client retry of the same prompt nonce as the same run', async () => {
+  it('suppresses a duplicate in-flight prompt nonce: one reservation, one execution', async () => {
     const adapter = createAdapter()
     const { sink, calls } = createSink()
     const { service } = createService(adapter, sink)
 
-    await service.prompt(ctx, 's1', { message: 'retry me', clientNonce: 'nonce-same' })
-    await service.prompt(ctx, 's1', { message: 'retry me', clientNonce: 'nonce-same' })
+    const first = await service.prompt(ctx, 's1', { message: 'retry me', clientNonce: 'nonce-same' })
+    const second = await service.prompt(ctx, 's1', { message: 'retry me', clientNonce: 'nonce-same' })
 
-    // Both requests re-validate through the sink, but nothing is released and
-    // only one run is tracked.
-    expect(calls.reserved).toHaveLength(2)
+    // The duplicate is acknowledged without a second reservation or model run.
+    expect(first).not.toHaveProperty('duplicate', true)
+    expect(second).toMatchObject({ accepted: true, clientNonce: 'nonce-same', duplicate: true })
+    expect(calls.reserved).toHaveLength(1)
+    expect(adapter.prompt).toHaveBeenCalledTimes(1)
     expect(calls.released).toEqual([])
 
     adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
