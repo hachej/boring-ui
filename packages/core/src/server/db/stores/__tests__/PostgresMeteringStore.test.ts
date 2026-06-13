@@ -70,6 +70,23 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
     await expect(store.grantPurchaseOnce({ orderId: '', userId: USER, amountMicros: 1 })).rejects.toThrow('orderId')
     await expect(store.grantPurchaseOnce({ orderId: 'o', userId: USER, amountMicros: 0 })).rejects.toThrow('positive integer')
   })
+
+  it('revokes a refunded purchase once, deducting the credited amount', async () => {
+    await store.grantPurchaseOnce({ orderId: 'ord-r', userId: USER, amountMicros: 10_000_000 })
+    expect((await store.getBalance(USER)).remainingMicros).toBe(10_000_000)
+
+    // Refund deducts the original credit via a usage-ledger debit.
+    expect(await store.revokePurchase('ord-r')).toEqual({ revoked: true })
+    expect((await store.getBalance(USER)).remainingMicros).toBe(0)
+
+    // Idempotent: a webhook retry of the same refund does not double-deduct.
+    expect(await store.revokePurchase('ord-r')).toEqual({ revoked: false })
+    expect((await store.getBalance(USER)).remainingMicros).toBe(0)
+  })
+
+  it('no-ops revoking an unknown order', async () => {
+    expect(await store.revokePurchase('never-credited')).toEqual({ revoked: false })
+  })
 })
 
 describe('PostgresMeteringStore', () => {

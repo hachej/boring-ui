@@ -78,7 +78,7 @@ export class CreditExhaustedError extends Error {
  * upstream signature changes compile-time errors and lets tests stub it. */
 export type CreditsMeteringStore = Pick<
   PostgresMeteringStore,
-  'grantOnce' | 'grantPurchaseOnce' | 'getBalance' | 'reserve' | 'recordUsage' | 'finishReservation' | 'expireStaleReservations'
+  'grantOnce' | 'grantPurchaseOnce' | 'revokePurchase' | 'getBalance' | 'reserve' | 'recordUsage' | 'finishReservation' | 'expireStaleReservations'
 >
 
 function disabledBalance(userId: string): CreditBalance {
@@ -132,6 +132,12 @@ export class CreditsService {
     if (!this.config.enabled) return { created: false }
     const { granted } = await this.store.grantPurchaseOnce({ userId, orderId, amountMicros })
     return { created: granted }
+  }
+
+  /** Revoke a refunded/disputed purchase (idempotent per order). */
+  async revokePurchase(orderId: string): Promise<{ revoked: boolean }> {
+    if (!this.config.enabled) return { revoked: false }
+    return this.store.revokePurchase(orderId)
   }
 
   async getBalance(userId: string): Promise<CreditBalance> {

@@ -113,6 +113,10 @@ export interface LemonSqueezyWebhookOptions {
    * acks the webhook without crediting.
    */
   isCreditOrder?: (order: LemonSqueezyOrder) => boolean
+  /** Events that revoke a previously-credited purchase. Default `order_refunded`. */
+  refundEvents?: string[]
+  /** Revoke a refunded/disputed order's credits (idempotent per order). */
+  onRefund?: (order: LemonSqueezyOrder) => Promise<{ revoked: boolean }>
   log?: (message: string, fields?: Record<string, unknown>) => void
 }
 
@@ -147,9 +151,20 @@ export async function handleLemonSqueezyWebhook(
     return { status: 400, body: { ok: false, reason: 'unparseable_order' } }
   }
 
+  // Refund/dispute events revoke the order's credits (idempotent per order).
+  const refundEvents = options.refundEvents ?? ['order_refunded']
+  if (refundEvents.includes(order.eventName)) {
+    if (!options.onRefund) {
+      return { status: 200, body: { ok: true, reason: 'refund_not_handled', orderId: order.orderId } }
+    }
+    const { revoked } = await options.onRefund(order)
+    options.log?.('lemonsqueezy refund processed', { orderId: order.orderId, revoked })
+    return { status: 200, body: { ok: true, reason: revoked ? 'refund_revoked' : 'refund_noop', orderId: order.orderId } }
+  }
+
   const creditable = options.creditableEvents ?? ['order_created']
   if (!creditable.includes(order.eventName)) {
-    // Acknowledge other events (subscriptions, refunds, etc.) so LS stops retrying.
+    // Acknowledge other events (subscriptions, etc.) so LS stops retrying.
     return { status: 200, body: { ok: true, reason: 'ignored_event', orderId: order.orderId } }
   }
   // Require an explicit paid status — a missing/other status must not grant.

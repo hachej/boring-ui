@@ -166,6 +166,36 @@ export class PostgresMeteringStore {
     })
   }
 
+  /**
+   * Revoke a refunded/disputed purchase: deduct the originally-credited amount
+   * via an idempotent usage-ledger debit (so the balance drops, possibly below
+   * zero, which then blocks new runs). Returns revoked=false for an unknown
+   * order or a repeat refund.
+   */
+  async revokePurchase(orderId: string, source = 'lemonsqueezy-refund'): Promise<{ revoked: boolean }> {
+    if (!orderId) throw new Error('revokePurchase requires an orderId')
+    const purchase = await this.db
+      .select({ userId: creditPurchases.userId, amountMicros: creditPurchases.amountMicros })
+      .from(creditPurchases)
+      .where(eq(creditPurchases.orderId, orderId))
+      .limit(1)
+    const row = purchase[0]
+    if (!row) return { revoked: false }
+    const rows = await this.db
+      .insert(usageLedger)
+      .values({
+        id: `refund:${orderId}`,
+        userId: row.userId,
+        source,
+        billedCostMicros: row.amountMicros,
+        providerCostMicros: 0,
+        metadata: { kind: 'purchase_refund', orderId },
+      })
+      .onConflictDoNothing({ target: usageLedger.id })
+      .returning({ id: usageLedger.id })
+    return { revoked: rows.length > 0 }
+  }
+
   async getBalance(userId: string, now: Date = new Date()): Promise<MeteringBalance> {
     return this.computeBalance(this.db, userId, now)
   }

@@ -16,6 +16,18 @@ export interface LemonSqueezyCheckoutConfig {
 
 export interface LemonSqueezyRouteOptions {
   webhookSecret: string
+  /**
+   * Variant ids that are credit packs. REQUIRED and non-empty for the webhook
+   * to credit anything — only orders for these variants mint credits, so
+   * unrelated products on the same store are ignored (fail closed).
+   */
+  creditVariantIds: string[]
+  /** Expected mode of credit orders: true = test, false = live. An order whose
+   * test_mode differs is ignored (prevents test↔live cross-crediting). */
+  expectedTestMode: boolean
+  /** Currency a paid order must be in to be credited (default 'EUR'). A missing
+   * or mismatched currency is rejected. */
+  requireCurrency?: string
   /** Credit micros to grant for an order. Default: subtotal × creditMicrosPerUnit. */
   creditsForOrder?: (order: LemonSqueezyOrder) => number
   webhookPath?: string
@@ -23,8 +35,6 @@ export interface LemonSqueezyRouteOptions {
    * (the user id is set server-side, not by the browser). */
   checkout?: LemonSqueezyCheckoutConfig
   checkoutPath?: string
-  /** Currency a paid order must be in to be credited (default 'EUR'). */
-  requireCurrency?: string
 }
 
 export interface CreditsRoutesOptions {
@@ -101,16 +111,16 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
   const creditsForOrder = ls.creditsForOrder
     ?? ((order: LemonSqueezyOrder) => Math.round(order.subtotalCents * (creditMicrosPerUnit / 100)))
 
-  // Only credit paid orders that match a configured pack variant + currency +
-  // mode, so unrelated products / wrong-currency / mode-mismatched orders on the
-  // same store never mint credits.
-  const configuredVariantIds = ls.checkout ? new Set(Object.values(ls.checkout.variants)) : undefined
-  const requireCurrency = ls.requireCurrency ?? 'EUR'
-  const requireTestMode = ls.checkout?.testMode
+  // Fail closed: only credit paid orders for a configured pack variant, in the
+  // required currency, and in the expected mode. Missing/absent fields are
+  // rejected — billing must not infer safety from absent data.
+  const creditVariantIds = new Set(ls.creditVariantIds)
+  const requireCurrency = (ls.requireCurrency ?? 'EUR').toUpperCase()
   const isCreditOrder = (order: LemonSqueezyOrder): boolean => {
-    if (requireCurrency && order.currency && order.currency.toUpperCase() !== requireCurrency.toUpperCase()) return false
-    if (requireTestMode !== undefined && order.testMode !== requireTestMode) return false
-    if (configuredVariantIds && (!order.variantId || !configuredVariantIds.has(order.variantId))) return false
+    if (creditVariantIds.size === 0) return false
+    if (!order.variantId || !creditVariantIds.has(order.variantId)) return false
+    if (!order.currency || order.currency.toUpperCase() !== requireCurrency) return false
+    if (order.testMode !== ls.expectedTestMode) return false
     return true
   }
 
@@ -130,6 +140,10 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
           creditsForOrder,
           isCreditOrder,
           grant: (input) => options.service.grantPurchase(input.userId, input.orderId, input.amountMicros),
+          // Refunds/disputes revoke the order's credits. Looked up by order id in
+          // our purchases table, so no variant/currency check is needed (an order
+          // we never credited returns revoked=false).
+          onRefund: (order) => options.service.revokePurchase(order.orderId),
           log: options.log,
         },
       )

@@ -22,6 +22,7 @@ function makeStore(overrides: Partial<CreditsMeteringStore> = {}): CreditsMeteri
   return {
     grantOnce: vi.fn(async () => ({ created: true })),
     grantPurchaseOnce: vi.fn(async () => ({ granted: true })),
+    revokePurchase: vi.fn(async () => ({ revoked: true })),
     getBalance: vi.fn(async () => ({
       userId: 'u1',
       grantedMicros: 2_000_000,

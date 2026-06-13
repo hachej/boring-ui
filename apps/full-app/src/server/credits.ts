@@ -46,19 +46,25 @@ function parseRates(raw: string | undefined): Array<[RegExp, { inputPerMillion: 
 
 export interface FullAppCreditsConfig extends CreditsConfig {
   lemonSqueezyWebhookSecret?: string
+  /** Pack id → LS variant id. Webhook only credits these variants. */
+  lemonSqueezyVariants: Record<string, string>
+  /** Expected LS mode (true = test, false = live). Default test. */
+  lemonSqueezyTestMode: boolean
   lemonSqueezyCheckout?: {
     apiKey: string
     storeId: string
     variants: Record<string, string>
     defaultPack: string
     redirectUrl?: string
-    testMode?: boolean
+    testMode: boolean
   }
 }
 
 export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullAppCreditsConfig {
   const expiresRaw = env.BORING_CREDITS_SIGNUP_GRANT_EXPIRES_DAYS
   const variants = parseVariants(env.BORING_CREDITS_LS_VARIANTS)
+  // Default to TEST mode; live deploys must set BORING_CREDITS_LS_TEST_MODE=0.
+  const testMode = env.BORING_CREDITS_LS_TEST_MODE !== '0'
   const checkoutReady = Boolean(env.BORING_CREDITS_LS_API_KEY && env.BORING_CREDITS_LS_STORE_ID && Object.keys(variants).length > 0)
   return {
     enabled: env.BORING_CREDITS_ENABLED !== '0',
@@ -75,6 +81,8 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
       rates: parseRates(env.BORING_CREDITS_RATES),
     },
     lemonSqueezyWebhookSecret: env.BORING_CREDITS_LS_WEBHOOK_SECRET || undefined,
+    lemonSqueezyVariants: variants,
+    lemonSqueezyTestMode: testMode,
     lemonSqueezyCheckout: checkoutReady
       ? {
           apiKey: env.BORING_CREDITS_LS_API_KEY!,
@@ -82,10 +90,23 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
           variants,
           defaultPack: env.BORING_CREDITS_LS_DEFAULT_PACK || Object.keys(variants)[0]!,
           redirectUrl: env.BORING_CREDITS_LS_REDIRECT_URL || undefined,
-          testMode: env.BORING_CREDITS_LS_TEST_MODE === '1' ? true : undefined,
+          testMode,
         }
       : undefined,
   }
+}
+
+/** Conservative worst-case single-run cost (credit micros) from the priciest
+ * configured rate and the model's max context+output, used to warn when the
+ * reservation hold is too small to make the hard stop tight. */
+function worstCaseRunMicros(config: FullAppCreditsConfig, env: NodeJS.ProcessEnv): number {
+  const maxContext = Number(env.BORING_CREDITS_MAX_CONTEXT_TOKENS ?? 200_000) || 200_000
+  const maxOutput = Number(env.BORING_CREDITS_MAX_OUTPUT_TOKENS ?? 16_384) || 16_384
+  const rates = config.pricing.rates ?? []
+  const maxInput = rates.reduce((m, [, r]) => Math.max(m, r.inputPerMillion), 3) // ≥ conservative default
+  const maxOut = rates.reduce((m, [, r]) => Math.max(m, r.outputPerMillion), 15)
+  const eur = (maxContext / 1_000_000) * maxInput + (maxOutput / 1_000_000) * maxOut
+  return Math.ceil(eur * config.pricing.margin * CREDIT_MICROS_PER_EUR)
 }
 
 /**
@@ -110,11 +131,14 @@ export function buildCreditsWiring(env: NodeJS.ProcessEnv = process.env): {
     attach(app) {
       const store = new PostgresMeteringStore(app.db as unknown as ConstructorParameters<typeof PostgresMeteringStore>[0])
       service = new CreditsService(store, config, (message, fields) => app.log.warn(fields ?? {}, message))
+      const creditVariantIds = Object.values(config.lemonSqueezyVariants)
       registerCreditsRoutes(app, {
         service,
         lemonSqueezy: config.lemonSqueezyWebhookSecret
           ? {
               webhookSecret: config.lemonSqueezyWebhookSecret,
+              creditVariantIds,
+              expectedTestMode: config.lemonSqueezyTestMode,
               checkout: config.lemonSqueezyCheckout,
             }
           : undefined,
@@ -122,8 +146,21 @@ export function buildCreditsWiring(env: NodeJS.ProcessEnv = process.env): {
       })
       if (!config.lemonSqueezyWebhookSecret) {
         app.log.warn('credits: BORING_CREDITS_LS_WEBHOOK_SECRET unset — purchase webhook disabled (consumption still active)')
-      } else if (!config.lemonSqueezyCheckout) {
-        app.log.warn('credits: Lemon Squeezy checkout not configured (need API key + store id + variants) — Buy-credits button disabled')
+      } else {
+        if (creditVariantIds.length === 0) {
+          app.log.warn('credits: BORING_CREDITS_LS_VARIANTS unset — purchase webhook will credit NOTHING (fail closed)')
+        }
+        if (!config.lemonSqueezyCheckout) {
+          app.log.warn('credits: Lemon Squeezy checkout not configured (need API key + store id + variants) — Buy-credits button disabled')
+        }
+      }
+      // Warn when the per-run hold can't cover a worst-case run (loose hard stop).
+      const worstCase = worstCaseRunMicros(config, env)
+      if (config.enabled && config.runReservationMicros < worstCase) {
+        app.log.warn(
+          { runReservationMicros: config.runReservationMicros, worstCaseRunMicros: worstCase },
+          'credits: per-run reservation is below the estimated worst-case run cost — raise BORING_CREDITS_RESERVATION_EUR to make the hard stop tight',
+        )
       }
     },
   }

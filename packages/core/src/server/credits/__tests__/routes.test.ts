@@ -19,6 +19,7 @@ function makeStore(): CreditsMeteringStore {
   return {
     grantOnce: vi.fn(async () => ({ created: true })),
     grantPurchaseOnce: vi.fn(async () => ({ granted: true })),
+    revokePurchase: vi.fn(async () => ({ revoked: true })),
     getBalance: vi.fn(async () => ({ userId: 'u1', grantedMicros: 2_000_000, usedMicros: 0, remainingMicros: 2_000_000, activeReservedMicros: 0, availableMicros: 2_000_000 })),
     reserve: vi.fn(async () => ({ reservationId: 'res-1' })),
     recordUsage: vi.fn(async () => ({ inserted: true })),
@@ -47,7 +48,7 @@ describe('credits routes', () => {
     }
     registerCreditsRoutes(app, {
       service: new CreditsService(store, CONFIG),
-      lemonSqueezy: { webhookSecret: SECRET },
+      lemonSqueezy: { webhookSecret: SECRET, creditVariantIds: ['1'], expectedTestMode: true },
     })
     await app.ready()
     return app
@@ -82,6 +83,61 @@ describe('credits routes', () => {
     expect(store.grantPurchaseOnce).toHaveBeenCalledWith({ userId: 'user-1', orderId: 'order-77', amountMicros: 10_000_000 })
   })
 
+  it('does not credit a paid order for an unconfigured variant (fail closed)', async () => {
+    const store = makeStore()
+    const a = await build(store)
+    const body = JSON.stringify({
+      meta: { event_name: 'order_created', custom_data: { user_id: 'user-1' } },
+      data: { type: 'orders', id: 'order-88', attributes: { status: 'paid', test_mode: true, currency: 'EUR', subtotal: 1000, total: 1000, first_order_item: { variant_id: 999 } } },
+    })
+    const res = await a.inject({
+      method: 'POST',
+      url: '/api/credits/webhooks/lemonsqueezy',
+      headers: { 'content-type': 'application/json', 'x-signature': createHmac('sha256', SECRET).update(body).digest('hex') },
+      payload: body,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ reason: 'not_a_credit_order' })
+    expect(store.grantPurchaseOnce).not.toHaveBeenCalled()
+  })
+
+  it('does not credit a paid order in the wrong mode (live order, test-mode webhook)', async () => {
+    const store = makeStore()
+    const a = await build(store)
+    const body = JSON.stringify({
+      meta: { event_name: 'order_created', custom_data: { user_id: 'user-1' } },
+      data: { type: 'orders', id: 'order-89', attributes: { status: 'paid', test_mode: false, currency: 'EUR', subtotal: 1000, total: 1000, first_order_item: { variant_id: 1 } } },
+    })
+    const res = await a.inject({
+      method: 'POST',
+      url: '/api/credits/webhooks/lemonsqueezy',
+      headers: { 'content-type': 'application/json', 'x-signature': createHmac('sha256', SECRET).update(body).digest('hex') },
+      payload: body,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ reason: 'not_a_credit_order' })
+    expect(store.grantPurchaseOnce).not.toHaveBeenCalled()
+  })
+
+  it('revokes credits on a refund webhook', async () => {
+    const store = makeStore()
+    const a = await build(store)
+    const body = JSON.stringify({
+      meta: { event_name: 'order_refunded', custom_data: { user_id: 'user-1' } },
+      data: { type: 'orders', id: 'order-77', attributes: { status: 'refunded', test_mode: true, currency: 'EUR', subtotal: 1000, total: 1000, first_order_item: { variant_id: 1 } } },
+    })
+    const res = await a.inject({
+      method: 'POST',
+      url: '/api/credits/webhooks/lemonsqueezy',
+      headers: { 'content-type': 'application/json', 'x-signature': createHmac('sha256', SECRET).update(body).digest('hex') },
+      payload: body,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ ok: true, reason: 'refund_revoked', orderId: 'order-77' })
+    expect(store.revokePurchase).toHaveBeenCalledWith('order-77')
+    expect(store.grantPurchaseOnce).not.toHaveBeenCalled()
+  })
+
   it('rejects a webhook with a bad signature and never grants', async () => {
     const store = makeStore()
     const a = await build(store)
@@ -107,6 +163,8 @@ describe('credits routes', () => {
       service: new CreditsService(makeStore(), CONFIG),
       lemonSqueezy: {
         webhookSecret: SECRET,
+        creditVariantIds: ['var10', 'var25'],
+        expectedTestMode: true,
         checkout: { apiKey: 'k', storeId: '406592', variants: { '10': 'var10', '25': 'var25' }, defaultPack: '10', testMode: true },
       },
     })
