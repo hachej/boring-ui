@@ -245,6 +245,11 @@ export class PostgresMeteringStore {
     if (!input.reservationId && !input.runId) {
       throw new Error('finishReservation requires reservationId or runId')
     }
+    // runId is not globally unique per tenant, so a runId-keyed finish must be
+    // scoped by userId to avoid touching another user's reservation.
+    if (!input.reservationId && !input.userId) {
+      throw new Error('finishReservation by runId requires userId')
+    }
     const matchable = status === 'settled' ? ['active', 'expired'] : ['active']
 
     let targetId = input.reservationId

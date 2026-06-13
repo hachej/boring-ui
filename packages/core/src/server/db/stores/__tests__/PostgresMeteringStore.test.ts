@@ -130,14 +130,14 @@ describe('PostgresMeteringStore', () => {
     await store.reserve({ userId: USER, runId: 'turn-1', amountMicros: 750_000, ttlSeconds: 600 })
     await store.recordUsage({ usageId: 'u1', userId: USER, runId: 'turn-1', billedCostMicros: 100_000 })
 
-    expect(await store.finishReservation({ runId: 'turn-1' }, 'settled')).toEqual({ updated: true })
-    expect(await store.finishReservation({ runId: 'turn-1' }, 'settled')).toEqual({ updated: false })
+    expect(await store.finishReservation({ runId: 'turn-1', userId: USER }, 'settled')).toEqual({ updated: true })
+    expect(await store.finishReservation({ runId: 'turn-1', userId: USER }, 'settled')).toEqual({ updated: false })
     expect((await store.getBalance(USER)).activeReservedMicros).toBe(0)
 
     // Settlement retry after the reservation already expired still closes it.
     await store.reserve({ userId: USER, runId: 'turn-2', amountMicros: 750_000, ttlSeconds: 600 })
     await sqlClient`UPDATE boring_usage_reservations SET status = 'expired' WHERE run_id = 'turn-2'`
-    expect(await store.finishReservation({ runId: 'turn-2' }, 'settled')).toEqual({ updated: true })
+    expect(await store.finishReservation({ runId: 'turn-2', userId: USER }, 'settled')).toEqual({ updated: true })
     const statuses = await sqlClient`SELECT status FROM boring_usage_reservations WHERE run_id = 'turn-2'`
     expect(statuses[0]?.status).toBe('settled')
   })
@@ -145,7 +145,7 @@ describe('PostgresMeteringStore', () => {
   it('releases reservations without charging', async () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 1_000_000 })
     await store.reserve({ userId: USER, runId: 'turn-1', amountMicros: 500_000, ttlSeconds: 600 })
-    expect(await store.finishReservation({ runId: 'turn-1' }, 'released')).toEqual({ updated: true })
+    expect(await store.finishReservation({ runId: 'turn-1', userId: USER }, 'released')).toEqual({ updated: true })
     const balance = await store.getBalance(USER)
     expect(balance.usedMicros).toBe(0)
     expect(balance.activeReservedMicros).toBe(0)
@@ -183,12 +183,14 @@ describe('PostgresMeteringStore', () => {
     expect(await store.finishReservation({ runId: 'turn-shared', userId: OTHER_USER }, 'released')).toEqual({ updated: false })
     expect(await store.finishReservation({ reservationId: mine.reservationId }, 'settled')).toEqual({ updated: true })
     await expect(store.finishReservation({}, 'settled')).rejects.toThrow('requires reservationId or runId')
+    // A runId-keyed finish must carry the tenant scope.
+    await expect(store.finishReservation({ runId: 'turn-shared' }, 'settled')).rejects.toThrow('requires userId')
   })
 
   it('allows a new active reservation for a turn after the previous one finished', async () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 5_000_000 })
     await store.reserve({ userId: USER, runId: 'turn-1', amountMicros: 500_000, ttlSeconds: 600 })
-    await store.finishReservation({ runId: 'turn-1' }, 'released')
+    await store.finishReservation({ runId: 'turn-1', userId: USER }, 'released')
     await expect(
       store.reserve({ userId: USER, runId: 'turn-1', amountMicros: 500_000, ttlSeconds: 600 }),
     ).resolves.toMatchObject({ reservationId: expect.any(String) })

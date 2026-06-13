@@ -666,6 +666,43 @@ describe('pi chat metering', () => {
     )
   })
 
+  it('releases (not settles) a run whose usage write failed, so no paid hold closes without a ledger row', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink({
+      recordUsage: async () => {
+        throw new Error('ledger insert failed')
+      },
+    })
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'lossy', clientNonce: 'nonce-loss' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    adapter.emit(assistantMessageEnd())
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    expect(calls.settled).toEqual([])
+    expect(calls.released).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-loss', reason: 'usage-write-failed' }),
+    ])
+  })
+
+  it('still settles when usage persisted even though a later settle attempt retries', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'ok', clientNonce: 'nonce-ok' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    adapter.emit(assistantMessageEnd())
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    expect(calls.usage).toHaveLength(1)
+    expect(calls.settled).toEqual([expect.objectContaining({ status: 'ok' })])
+    expect(calls.released).toEqual([])
+  })
+
   it('keeps publishing chat events when sink usage/settle calls fail', async () => {
     const adapter = createAdapter()
     const failures: unknown[] = []
@@ -673,7 +710,9 @@ describe('pi chat metering', () => {
       recordUsage: async () => {
         throw new Error('db down')
       },
-      settleRun: async () => {
+      // A failed usage write makes finishRun release (not settle); fail that
+      // too to prove the pipeline survives both.
+      releaseRun: async () => {
         throw new Error('db still down')
       },
     })

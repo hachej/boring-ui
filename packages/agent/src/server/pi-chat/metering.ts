@@ -89,6 +89,7 @@ export type MeteringReleaseReason =
   | 'queue-cleared'
   | 'cancelled'
   | 'error-before-usage'
+  | 'usage-write-failed'
 
 export interface MeteringReleaseInput extends MeteringRunScope {
   reservationId?: string
@@ -110,6 +111,9 @@ interface MeteringRun {
   usageCount: number
   /** Message ids already recorded, so agent_end finals don't double-record. */
   recordedMessageIds: Set<string>
+  /** Set when a recordUsage sink call rejected — at least one ledger row for
+   * this run is missing, so the run must not falsely settle. */
+  usageWriteFailed: boolean
   terminal: boolean
   /** Serializes sink calls per run so settle/release never overtakes usage. */
   ops: Promise<void>
@@ -471,16 +475,22 @@ export class PiChatMeteringCoordinator {
       ? `pi-usage:${run.scope.sessionId}:message:${messageId}`
       : `pi-usage:${run.scope.runId}:${run.usageCount}`
 
-    this.enqueue(run, () =>
-      this.sink.recordUsage({
-        ...run.scope,
-        reservationId: run.reservationId,
-        usageId,
-        messageId,
-        model: model || provider ? { provider, id: model } : undefined,
-        usage,
-        stopReason,
-      }),
+    this.enqueue(run, async () => {
+      try {
+        await this.sink.recordUsage({
+          ...run.scope,
+          reservationId: run.reservationId,
+          usageId,
+          messageId,
+          model: model || provider ? { provider, id: model } : undefined,
+          usage,
+          stopReason,
+        })
+      } catch (error) {
+        run.usageWriteFailed = true
+        throw error
+      }
+    },
       'recordUsage failed',
     )
   }
@@ -509,6 +519,7 @@ export class PiChatMeteringCoordinator {
       reservationId: result?.reservationId,
       usageCount: 0,
       recordedMessageIds: new Set(),
+      usageWriteFailed: false,
       terminal: false,
       ops: Promise.resolve(),
     }
@@ -531,9 +542,14 @@ export class PiChatMeteringCoordinator {
       return
     }
     run.terminal = true
+    // Decided inside the op so it observes the result of the usage writes
+    // queued ahead of it on the same chain: if a write failed, the ledger is
+    // missing a row, so release (auditably) instead of settling a paid hold.
     this.enqueue(run, () =>
-      this.sink.settleRun({ ...run.scope, reservationId: run.reservationId, status }),
-      'settleRun failed',
+      run.usageWriteFailed
+        ? this.sink.releaseRun({ ...run.scope, reservationId: run.reservationId, reason: 'usage-write-failed' })
+        : this.sink.settleRun({ ...run.scope, reservationId: run.reservationId, status }),
+      'finishRun failed',
     )
   }
 
