@@ -1,6 +1,6 @@
 # Workspace Interfaces
 
-Last updated: 2026-05-02
+Last updated: 2026-06-12
 
 `@hachej/boring-workspace` is a workspace UI and bridge package. The app shell owns
 auth, routing, application persistence, and the concrete chat component.

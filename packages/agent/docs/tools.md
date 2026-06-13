@@ -4,7 +4,10 @@
 
 The agent runtime ships a catalog of tools for interacting with the workspace filesystem and shell.
 
-## Built-in tools
+## Filesystem + shell tools
+
+These are adapted from `@earendil-works/pi-coding-agent` and bound to the
+selected runtime mode (see [runtime.md](./runtime.md)):
 
 | tool | description |
 |---|---|
@@ -15,24 +18,42 @@ The agent runtime ships a catalog of tools for interacting with the workspace fi
 | `find` | Find files by name pattern |
 | `grep` | Search file contents |
 | `ls` | List directory contents |
-| `exec_ui` | Post a command to the workspace UI (open panels, navigate, etc.) |
-| `get_ui_state` | Read what panels are currently open |
 
-## exec_ui
+## Tools added by this package
 
-The primary tool for interacting with the workspace frontend. See [bridge.md](../../workspace/docs/bridge.md) for the full command reference.
+| tool | description |
+|---|---|
+| `execute_isolated_code` | Run code in an isolated sandbox capability |
+| `upload_file` | Upload a workspace file to blob storage |
+| `plugin_diagnostics` | Report loaded plugins and any load errors |
 
-```json
-{
-  "kind": "openSurface",
-  "params": { "kind": "my-plugin.open", "target": "item-123" }
-}
-```
+## UI-bridge tools (workspace-owned)
+
+`exec_ui` and `get_ui_state` are **not** part of the standalone agent. They are
+contributed by `@hachej/boring-workspace` when the agent is mounted via the
+workspace-composed server surfaces (typically `createWorkspaceAgentServer`).
+Standalone `createAgentApp` ships no UI tools. For the UI command reference see
+`packages/workspace/docs/PLUGIN_SYSTEM.md`.
 
 ## Adding custom tools
 
-For statically composed app/server integrations, contribute tools from a
-workspace server plugin:
+Three paths — pick by who owns the tool and how it should update:
+
+| Path | Use when | Lifecycle |
+| --- | --- | --- |
+| `createAgentApp({ extraTools })` | App shell owns the tool, standalone agent | Boot-time |
+| `defineServerPlugin({ agentTools })` | A workspace plugin package contributes it | Boot-time |
+| Pi resources (`package.json#pi`, often in runtime plugins under `.pi/extensions/<name>/`) | Tool/skill/chat behavior should hot-reload with `/reload` | Hot-reloadable |
+
+**App-shell `extraTools`** — the simplest path for a standalone agent: pass
+`extraTools: [myTool]` to `createAgentApp(...)` (or `registerAgentRoutes`).
+Runnable example with a custom renderer:
+[`examples/with-custom-tool`](../examples/with-custom-tool/README.md).
+Collision precedence is built-in → `extraTools` → plugin tools, last wins
+(see [PLUGINS.md](./PLUGINS.md)).
+
+**Workspace server plugin** — for statically composed app/server integrations,
+contribute tools from a workspace server plugin:
 
 ```ts
 import { defineServerPlugin } from "@hachej/boring-workspace/server"
@@ -63,8 +84,10 @@ export default defineServerPlugin({
 Expose that entry with `package.json#boring.server` or pass the plugin object to
 `createWorkspaceAgentServer({ plugins: [...] })`. This is static/boot-time
 server composition; restart the host process after changing routes or tools.
+`execute(params, ctx)` also receives a context (`abortSignal`, `toolCallId`,
+`onUpdate`) — full contract in [PLUGINS.md](./PLUGINS.md#tool-contract).
 
-For hot-reloadable chat behavior in user plugin packages, prefer Pi-native
+**Pi-native resources** — for hot-reloadable chat behavior in user plugin packages, prefer Pi-native
 resources declared in `package.json#pi` (`extensions`, `skills`, `prompts`, and
 `systemPrompt`). Those participate in the `/reload` path and are the right
 place for tools/skills that should update without restarting the workspace

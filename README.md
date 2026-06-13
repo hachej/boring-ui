@@ -24,11 +24,14 @@ That's what the Boring UI core provides: a workbench the agent can control and r
 - [Give it a try](#give-it-a-try)
 - [Built on Pi](#built-on-pi)
 - [Make it yours](#make-it-yours)
-- [Built with boring-ui](#built-with-boring-ui)
 - [Roadmap](#roadmap)
 - [Repo map](#repo-map)
+- [Plugin shape](#plugin-shape)
+- [Built with boring-ui](#built-with-boring-ui)
 - [Architecture](#architecture)
+- [Hosting](#hosting)
 - [Working in the repo](#working-in-the-repo)
+- [Documentation](#documentation)
 
 # Give it a try
 
@@ -167,24 +170,6 @@ I have hundreds of ideas for plugins that could emerge from this model:
 - observability dashboards
 - workflow builders
 - an OpenClaw-like daemon
-
-# Built with boring-ui
-
-![grafik.png](assets/images/grafik-mppcynnf-92ktre.png)
-
-To demonstrate the power of this setup, I built a custom app: **[boring-macro](https://getmacroanalyst.com/)**.
-
-It’s an agent for macroeconomic research.
-
-The agent has access to economic series like GDP, employment rates, prices, and more. 
-
-It can explore data, perform ad hoc transformations, visualize series, and even generate slide decks.
-
-What’s interesting is that the entire app is implemented as a single Boring UI plugin.
-
-I think it’s a good illustration of how far you can go with this model: from data access, to analysis, to visualization, to presentation generation… All orchestrated through one agent-centric interface.
-
----
 
 # Roadmap
 
@@ -325,32 +310,6 @@ Ask in plain English, get charts back in under a minute. Behind the scenes the a
 
 ---
 
-# Repo map
-
-The repo is structured in packages, each with a focused scope.
-
-
-| Package                    | Role                             | README                                             |
-| -------------------------- | -------------------------------- | -------------------------------------------------- |
-| `@hachej/boring-agent`     | Agent runtime, tools, chat UI    | [packages/agent](packages/agent/README.md)         |
-| `@hachej/boring-workspace` | Workbench, panels, plugin system | [packages/workspace](packages/workspace/README.md) |
-| `@hachej/boring-core`      | Auth, DB, app factory            | [packages/core](packages/core/README.md)           |
-| `@hachej/boring-ui-kit`    | Shared UI primitives             | [packages/ui](packages/ui/README.md)               |
-| `@hachej/boring-ui-cli`    | Zero-setup local entrypoint      | [packages/cli](packages/cli/README.md)             |
-
-
-The repo also ships reference apps — drop one into any agent and it will scaffold a custom app for you in seconds.
-
-
-| App                         | Purpose                                                   | README                                                           |
-| --------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------- |
-| `apps/full-app`             | Production-shaped reference: auth, DB, multi-workspace    | [apps/full-app](apps/full-app/README.md)                         |
-| `apps/agent-playground`     | `@hachej/boring-agent` — single agent chat on top of Pi   | [apps/agent-playground](apps/agent-playground/README.md)         |
-| `apps/workspace-playground` | `@hachej/boring-workspace` — agent chat and the workbench | [apps/workspace-playground](apps/workspace-playground/README.md) |
-
-
----
-
 # Architecture
 
 Two layers connected by a bridge.
@@ -374,10 +333,10 @@ That's why `Workspace` and `Sandbox` exist: they abstract the execution layer so
 
 | Interface      | Defined in                 | Used for                                    | Adapters                                             |
 | -------------- | -------------------------- | ------------------------------------------- | ---------------------------------------------------- |
-| `Workspace`    | `@boring/agent/shared`     | Read/write files (agent + UI filetree)      | `NodeWorkspace`, `VercelSandboxWorkspace`            |
-| `Sandbox`      | `@boring/agent/shared`     | Shell execution (agent commands)            | `DirectSandbox`, `BwrapSandbox`, `VercelSandboxExec` |
-| `UiBridge`     | `@boring/workspace/shared` | Workbench control (agent + command palette) | in-memory bridge (room for browser-side adapter)     |
-| `AgentHarness` | `@boring/agent/shared`     | Agent loop                                  | Pi (room for more)                                   |
+| `Workspace`    | `@hachej/boring-agent/shared`     | Read/write files (agent + UI filetree)      | `NodeWorkspace`, `VercelSandboxWorkspace`            |
+| `Sandbox`      | `@hachej/boring-agent/shared`     | Shell execution (agent commands)            | `DirectSandbox`, `BwrapSandbox`, `VercelSandboxExec` |
+| `UiBridge`     | `@hachej/boring-workspace/shared` | Workbench control (agent + command palette) | in-memory bridge (room for browser-side adapter)     |
+| `AgentHarness` | `@hachej/boring-agent/shared`     | Agent loop                                  | Pi (room for more)                                   |
 
 
 ### Sandbox
@@ -422,9 +381,9 @@ Sandbox and Workspace are always created together as a pair so they share the sa
 The full app ships two deployment targets:
 
 - **Fly.io** — Docker container + Postgres. The `apps/full-app` Dockerfile builds the monorepo in dependency order. Run `fly launch`, set secrets (`DATABASE_URL`, `AUTH_SECRET`), deploy.
-- **Vercel** — serverless function for agent routes + edge static assets. `@boring/core` ships a `vercelEntry` and build script (`build-vercel-api.mjs`) that bundle the backend into a single Vercel Function.
+- **Vercel** — serverless function for agent routes + edge static assets. `@hachej/boring-core` ships a `vercelEntry` and build script (`build-vercel-api.mjs`) that bundle the backend into a single Vercel Function.
 
-Both targets use the same `@boring/core` app factory (`createCoreApp`) — swap the entry point, same app.
+Both targets use the same `@hachej/boring-core` app factory (`createCoreApp`) — swap the entry point, same app.
 
 ---
 
@@ -453,6 +412,16 @@ Apps that consume `@hachej/boring-workspace` source need the workspace built onc
 ```bash
 pnpm --filter @hachej/boring-workspace build && pnpm --filter workspace-playground test
 ```
+
+---
+
+# Documentation
+
+[`docs/README.md`](docs/README.md) is the documentation entry point: global
+structure, package map, and links to each package's own `docs/` (architecture,
+abstractions, decisions). Agent rules and coding guidance live in
+[`AGENTS.md`](AGENTS.md). Historical plans are archived under
+`docs/plans/archive/` and `packages/*/docs/plans/archive/`.
 
 ---
 

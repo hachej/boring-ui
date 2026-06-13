@@ -1,6 +1,6 @@
 # ERROR_CODES
 
-Canonical registry for stable `@boring/agent` error codes.
+Canonical registry for stable `@hachej/boring-agent` error codes.
 
 All API failures must use the response envelope:
 

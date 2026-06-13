@@ -1,9 +1,9 @@
 # Plugin Structure
 
 Canonical quick reference for boring-ui plugin layouts. For the full current
-contract, see [`PLUGIN_SYSTEM.md`](./PLUGIN_SYSTEM.md). For future hosted/runtime
-architecture, see the repo-level
-[`docs/runtime-plugin-v2-hot-reload-plan.md`](../../../docs/runtime-plugin-v2-hot-reload-plan.md).
+contract, see [`PLUGIN_SYSTEM.md`](./PLUGIN_SYSTEM.md). For the historical
+hosted/runtime architecture exploration, see the archived repo-level
+[`docs/plans/archive/runtime-plugin-v2-hot-reload-plan.md`](../../../docs/plans/archive/runtime-plugin-v2-hot-reload-plan.md).
 
 ## Generated/runtime plugin
 

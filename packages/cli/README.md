@@ -7,237 +7,133 @@
 
 </div>
 
-**Turn an agent into an app — in one command.** Start a full IDE-style workbench pointed at your current directory: chat, file tree, editor, command palette. No clone. No database. No config.
+**Turn an agent into an app — in one command.** Start a full IDE-style workbench pointed at a folder: chat, file tree, editor, command palette, plugins. No clone, no database, no config.
 
 ```bash
 npx @hachej/boring-ui-cli
 ```
 
----
-
-## TL;DR
-
-**The Problem**: You want a coding agent in a browser IDE — but you don't want to clone a repo, set up Postgres, configure auth, or deploy anything. You just want to talk to an AI about your code.
-
-**The Solution**: `npx @hachej/boring-ui-cli` starts a full workbench locally, using your current directory as the workspace. It opens a browser tab with chat, file explorer, and panels. Zero setup, zero config, zero deploy.
-
-### Why Use @hachej/boring-ui-cli?
-
-| Feature | What It Does |
-|---------|--------------|
-| **Zero-config startup** | `npx @hachej/boring-ui-cli` — that's it. Opens your browser to a full agent workbench. |
-| **Simple auth** | Set `ANTHROPIC_API_KEY` in your environment. The agent runs with direct filesystem access to your cwd. |
-| **Full workspace** | Chat, file tree, editor panels, command palette — all running against your real directory. |
-| **No database** | Runs in-memory. State persists for the session. No external dependencies. |
-| **Customizable port + root** | `PORT=8080` and `BORING_AGENT_WORKSPACE_ROOT=/path` env vars for power users. |
+The binary is `boring-ui`.
 
 ---
 
-## Quick Example
+## Quick start
 
 ```bash
-# Navigate to any project
-cd /path/to/my-project
-
-# Start the CLI — opens browser at localhost:5200
+# Open the current folder as a workspace (browser opens at localhost:5200)
 npx @hachej/boring-ui-cli
 
-# With a custom port
-PORT=8080 npx @hachej/boring-ui-cli
+# Open a specific folder
+npx @hachej/boring-ui-cli ~/projects/foo
 
-# Point at a specific directory
-BORING_AGENT_WORKSPACE_ROOT=/path/to/project npx @hachej/boring-ui-cli
-
-# With API key
-ANTHROPIC_API_KEY=sk-ant-... npx @hachej/boring-ui-cli
+# Custom port / host
+npx @hachej/boring-ui-cli --port 8080 --host 127.0.0.1
 ```
 
-Once the browser opens, you can:
+The CLI does not take an API key flag. On first run, if no LLM provider is
+configured it prints a guide: in another terminal run `pi` (or
+`npx @earendil-works/pi-coding-agent`) and use `/login` to add an API key or
+sign in to a subscription (Claude Pro/Max, ChatGPT Plus, Copilot). Credentials
+are saved at `~/.pi/agent/auth.json`; refresh the browser afterward.
+
+---
+
+## Commands
+
 ```
-# In the chat box:
-"read my README and suggest improvements"
-"find all TypeScript files that import 'react'"
-"rewrite the test file to use vitest"
+boring-ui [folder] [options]            Open a single folder as a workspace (folder mode)
+boring-ui workspaces                    Start the multi-workspace hub (workspaces mode)
+boring-ui workspaces add <folder>       Register a folder as a saved workspace
+boring-ui workspaces list               List saved workspaces
+boring-ui workspaces remove <id>        Remove a saved workspace
+boring-ui workspaces rename <id> <name> Rename a saved workspace
+boring-ui plugin <subcommand> …         Plugin authoring (delegates to boring-ui-plugin)
 ```
+
+`boring-ui plugin …` forwards to `@hachej/boring-ui-plugin-cli`; run
+`boring-ui plugin` with no subcommand for its usage.
+
+### Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-p, --port <port>` | `5200` (or `$PORT`) | HTTP port |
+| `--host <host>` | `0.0.0.0` (or `$HOST`) | Listen host |
+| `-m, --mode <mode>` | `local` | `local` (no sandbox, full network) or `local-sandbox` (bwrap-isolated, no network, Linux only) |
+| `-h, --help` | | Show help |
+
+### Environment variables
+
+| Variable | Description |
+|----------|-------------|
+| `PORT`, `HOST` | Fallbacks for `--port` / `--host` |
+| `BORING_MODE` | Fallback for `--mode` |
+| `BORING_AGENT_WORKSPACE_ROOT` | Overrides the folder argument in folder mode |
+| `BORING_UI_WORKSPACES_PATH` | Path to the workspaces registry (default `~/.boring-ui/workspaces.yaml`) |
+| `BORING_USE_LOCAL_PACKAGES` | `1` to resolve the bundled plugin-cli runtime from the local monorepo checkout |
 
 ---
 
 ## Installation
 
-No installation needed — use `npx`:
+No install needed — `npx @hachej/boring-ui-cli`. Or install globally:
 
 ```bash
-npx @hachej/boring-ui-cli
-```
-
-Or install globally for repeated use:
-
-```bash
-# npm
-npm install -g @hachej/boring-ui-cli
-
-# pnpm
-pnpm add -g @hachej/boring-ui-cli
-
-# Then just run:
+npm install -g @hachej/boring-ui-cli   # or: pnpm add -g @hachej/boring-ui-cli
 boring-ui
 ```
 
-### From Source
+### From source
 
 ```bash
 git clone https://github.com/hachej/boring-ui.git
 cd boring-ui && pnpm install
-pnpm --filter @hachej/boring-ui-cli build
-npx ./packages/cli/dist/index.js
+pnpm --filter @hachej/boring-ui-cli build:full   # builds front bundle + server
+node packages/cli/dist/index.js
 ```
 
-### Plugins
+`build:full` is required from source: the server refuses to start without a
+built frontend under `public/`.
 
-Plugin authoring operations live in the dedicated plugin CLI:
+---
+
+## Two modes
+
+- **Folder mode** (`boring-ui [folder]`) — one folder, one workspace. The fast
+  editor-launcher path, like `code .`.
+- **Workspaces mode** (`boring-ui workspaces`) — a persistent local hub serving
+  multiple folder-backed workspaces, with a workspace switcher in the UI. The
+  registry is a user-local YAML file, not a database.
+
+Both run a Fastify server that serves the prebuilt React/Vite SPA plus the agent
+and workspace API routes against your real filesystem. There is no database.
+
+## Plugins
+
+The CLI discovers plugins from Pi-shaped roots — `~/.pi/agent/extensions/*`
+(global) and `<workspace>/.pi/extensions/*` (workspace-local) — plus
+CLI-bundled defaults (e.g. `@hachej/boring-ask-user`). Authoring is handled by
+the bundled `boring-ui-plugin` CLI:
 
 ```bash
-boring-ui-plugin create my-package-plugin --path plugins
-boring-ui-plugin scaffold my-runtime-plugin "$BORING_AGENT_WORKSPACE_ROOT"
-boring-ui-plugin verify my-runtime-plugin "$BORING_AGENT_WORKSPACE_ROOT"
-boring-ui-plugin test my-runtime-plugin
+boring-ui-plugin create <name> --path plugins   # npm-package plugin (build step)
+boring-ui-plugin scaffold <name>                 # workspace runtime plugin (.pi/extensions, hot-reload)
+boring-ui-plugin verify [name]
+boring-ui-plugin test <name>
 ```
 
----
-
-## Authentication
-
-The CLI talks to Anthropic Claude via the agent runtime. You need a valid API key:
-
-```bash
-ANTHROPIC_API_KEY=sk-ant-... npx @hachej/boring-ui-cli
-```
-
-Only Anthropic Claude is wired in v1. The agent harness supports other providers via the `AgentHarness` interface, but only Anthropic is implemented.
+See `@hachej/boring-ui-plugin-cli` for the full plugin authoring workflow.
 
 ---
 
-## Options
+## Documentation
 
-| Environment Variable | Default | Description |
-|---------------------|---------|-------------|
-| `ANTHROPIC_API_KEY` | Yes | Anthropic API key. The agent requires a valid key to function. |
-| `PORT` | `5200` | Port to run the server on |
-| `BORING_AGENT_WORKSPACE_ROOT` | `.` (cwd) | Root directory for the workspace. The agent sees this as its filesystem. |
-| `BORING_AGENT_MODE` | `direct` | `direct` (no sandbox) or `local` (bwrap sandbox, Linux only) |
-| `BORING_AGENT_DEFAULT_MODEL_ID` | `claude-sonnet-4-6` | Default model to use |
+- [`docs/README.md`](./docs/README.md) — architecture and key abstractions
+- [`docs/plans/archive/`](./docs/plans/archive/) — historical design plans (not current docs)
 
 ---
 
-## Architecture
-
-```
-npx @hachej/boring-ui-cli
-  ├── Boot Fastify server (direct mode, in-memory)
-  ├── Serve frontend SPA (Vite-built bundle)
-  ├── Open browser → http://localhost:5200
-  └── Workspace = your current directory (or $BORING_AGENT_WORKSPACE_ROOT)
-```
-
-The CLI is the zero-config entry point to the full boring-ui stack. Under the hood it wires together:
-
-- `@hachej/boring-agent` — agent runtime, tools, chat UI
-- `@hachej/boring-workspace` — file tree, panels, command palette, plugins
-- `@hachej/boring-ui-kit` — shared UI primitives
-
-All running locally against your real filesystem with no database.
-
----
-
-## How @hachej/boring-ui-cli Compares
-
-| Feature | @hachej/boring-ui-cli | Claude Code | Codex CLI | Cursor |
-|---------|------------------------|-------------|-----------|--------|
-| Browser UI | ✅ Full IDE with panels | ❌ Terminal only | ❌ Terminal only | ✅ Desktop app |
-| File tree | ✅ Side panel | ❌ | ❌ | ✅ |
-| Zero setup | ✅ `npx` anywhere | ⚠️ Install + login | ⚠️ Install + login | ❌ Desktop app download |
-| Panel system | ✅ Dockview splittable panels | ❌ | ❌ | ❌ |
-| Plugin extensibility | ✅ Panels, commands, catalogs | ❌ | ❌ | ⚠️ Extensions |
-| Local filesystem | ✅ Direct access | ✅ | ✅ | ✅ |
-| Database required | ❌ None | ❌ | ❌ | ❌ |
-
-**When to use @hachej/boring-ui-cli:**
-- You want a browser-based coding agent with file tree and panels
-- You don't want to install anything — just `npx`
-- You want plugin extensibility (custom panels, data catalogs, etc.)
-
-**When it might not fit:**
-- You prefer terminal-only agent workflows (use Claude Code or Codex CLI)
-- You need multi-user auth, workspaces, or a database (use `@hachej/boring-core`)
-- You want a full desktop IDE with LSP, debugging, and git (use Cursor or VS Code)
-
----
-
-## Troubleshooting
-
-| Error | Cause | Fix |
-|-------|-------|-----|
-| `ANTHROPIC_API_KEY not set` | No API key | `export ANTHROPIC_API_KEY=sk-ant-...` before running |
-| `port already in use` | Port 5200 occupied | `PORT=5201 npx @hachej/boring-ui-cli` |
-| Browser doesn't open | `BROWSER=none` or no display | Manually navigate to `http://localhost:5200` |
-| Agent returns errors | Invalid API key | Verify your Anthropic API key is valid and has quota |
-| `workspace root not found` | `BORING_AGENT_WORKSPACE_ROOT` points to non-existent dir | Create the directory or unset the variable to use cwd |
-
----
-
-## Limitations
-
-- **In-memory only**: No database, no persistent workspaces. State is lost when the CLI exits.
-- **Single workspace**: Points at one directory. No multi-workspace switching.
-- **No auth management**: No user accounts, invites, or role-based access.
-- **Direct mode only**: No bwrap sandbox by default (use `BORING_AGENT_MODE=local` on Linux with bubblewrap installed).
-- **Not for production**: This is a developer tool, not a deployment target. Use `@hachej/boring-core` for multi-user apps.
-- **Only Anthropic Claude**: No OpenAI, Google, or other model providers wired in v1.
-
----
-
-## FAQ
-
-**Q: Do I need to install anything first?**  
-A: No. `npx` downloads and runs the package on first use. Subsequent runs use the cached version.
-
-**Q: What happens when I close the browser?**  
-A: The server keeps running. Stop it with `Ctrl+C` in the terminal.
-
-**Q: Can I use this with OpenAI models?**  
-A: Only Anthropic Claude is wired in v1. Additional providers may be supported in future versions.
-
-**Q: Is my code sent to the cloud?**  
-A: Yes — the agent sends file contents and chat messages to the LLM provider (e.g. Anthropic). The filesystem operations run locally on your machine.
-
-**Q: How is this different from `npx @hachej/boring-agent`?**  
-A: `@hachej/boring-ui-cli` ships the full workbench (file tree, editor, command palette, plugins). `@hachej/boring-agent` is just the agent + chat. The CLI is the batteries-included zero-config entry point.
-
-**Q: Can I extend the CLI with plugins?**  
-A: Not directly in v1. The CLI uses the default agent + workspace configuration. For plugin extensibility, build a custom app using `@hachej/boring-workspace` + `@hachej/boring-core`.
-
----
-
-## Building Something Bigger?
-
-`@hachej/boring-ui-cli` is the zero-config entry point. For a full app with:
-- Multi-user authentication
-- Persistent workspaces with Postgres
-- Email invites and password resets
-- Custom domain plugins
-
-See the [boring-ui monorepo](https://github.com/hachej/boring-ui) and its packages:
-
-| Package | Purpose |
-|---------|---------|
-| `@hachej/boring-core` | Auth, DB, app factory, multi-user |
-| `@hachej/boring-workspace` | Plugin system, panels, layouts |
-| `@hachej/boring-agent` | Agent runtime, tools, chat UI |
-| `@hachej/boring-ui-kit` | Shared React UI primitives |
-
----
-
-*About Contributions:* Please don't take this the wrong way, but I do not accept outside contributions for any of my projects. I simply don't have the mental bandwidth to review anything, and it's my name on the thing, so I'm responsible for any problems it causes; thus, the risk-reward is highly asymmetric from my perspective. I'd also have to worry about other "stakeholders," which seems unwise for tools I mostly make for myself for free. Feel free to submit issues, and even PRs if you want to illustrate a proposed fix, but know I won't merge them directly. Instead, I'll have Claude or Codex review submissions via `gh` and independently decide whether and how to address them. Bug reports in particular are welcome. Sorry if this offends, but I want to avoid wasted time and hurt feelings. I understand this isn't in sync with the prevailing open-source ethos that seeks community contributions, but it's the only way I can move at this velocity and keep my sanity.
+*About Contributions:* Please don't take this the wrong way, but I do not accept outside contributions for any of my projects. I simply don't have the mental bandwidth to review anything, and it's my name on the thing, so I'm responsible for any problems it causes; thus, the risk-reward is highly asymmetric from my perspective. Feel free to submit issues, and even PRs if you want to illustrate a proposed fix, but know I won't merge them directly. Instead, I'll have Claude or Codex review submissions via `gh` and independently decide whether and how to address them. Bug reports in particular are welcome. Sorry if this offends, but I want to avoid wasted time and hurt feelings.
 
 ---
 

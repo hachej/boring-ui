@@ -1,6 +1,6 @@
-# `@boring/agent`
+# `@hachej/boring-agent`
 
-`@boring/agent` is the coding-agent package: runtime, tools, chat UI, and standalone app shape.
+`@hachej/boring-agent` is the coding-agent package: runtime, tools, chat UI, and standalone app shape.
 
 ## What it owns
 
@@ -34,11 +34,13 @@ The important rule is that workspace and sandbox swap as a paired runtime mode a
 
 ## What it provides to apps
 
-- `ChatPanel`
-- `useAgentChat()`
-- `useSessions()`
-- server route registration / app creation
+- `ChatPanel` and related UI primitives from the front entry
+- session/chat hooks from the front entry
+- server route registration / app creation (`@hachej/boring-agent/server`)
 - tool execution surface (`bash`, `read`, `write`, `edit`, `find`, `grep`, `ls`)
+- package-added tools such as `upload_file`, `plugin_diagnostics`, and isolated-code execution when that capability is enabled
+
+> UI-aware tools (`get_ui_state`, `exec_ui`) and the `/api/v1/ui/*` routes live in `@hachej/boring-workspace`, not here. Standalone agent ships zero UI surface; hosts that want UI tooling compose via the workspace package.
 
 ## Important boundary
 
@@ -49,19 +51,20 @@ Agent is standalone-capable. It should not require runtime imports from core to 
 Embedded:
 
 ```ts
-import { registerAgentRoutes } from '@boring/agent/server'
+import { registerAgentRoutes } from '@hachej/boring-agent/server'
 await app.register(registerAgentRoutes)
 ```
 
 Standalone:
 
 ```ts
-import { createAgentApp } from '@boring/agent/server'
+import { createAgentApp } from '@hachej/boring-agent/server'
 const app = await createAgentApp({ mode: 'local', workspaceRoot: process.cwd() })
 ```
 
 ## Related docs
 
-- canonical spec: `packages/agent/docs/plans/agent-package-spec.md`
-- package docs: `packages/agent/docs/`
+- package docs: `packages/agent/docs/README.md`
+- [Design FAQ](../reference/design-faq.md)
+- [Troubleshooting map](../reference/troubleshooting.md)
 - [Composition guide](../guides/composition.md)

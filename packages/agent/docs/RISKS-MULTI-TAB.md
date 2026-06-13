@@ -2,7 +2,7 @@
 
 ## Scope
 
-This note documents current `@boring/agent` behavior when two browser tabs
+This note documents current `@hachej/boring-agent` behavior when two browser tabs
 point at the same workspace and edit the same file.
 
 ## Observed Behavior (v1)
