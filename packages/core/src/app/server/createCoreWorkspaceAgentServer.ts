@@ -752,6 +752,7 @@ export async function createCoreWorkspaceAgentServer(
     provisionWorkspace: options.provisionWorkspace,
     registerHealthRoute: options.registerHealthRoute ?? false,
     telemetry,
+    metering: options.metering,
   })
 
   await app.register(uiRoutes, {

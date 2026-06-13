@@ -2,7 +2,7 @@
 // Keep this as the single import point for drizzle.config.ts and migration tooling.
 export * from '../../../drizzle/schema.js'
 
-import { pgTable, text, uuid, jsonb, timestamp, primaryKey, index, integer, boolean, uniqueIndex, check, customType } from 'drizzle-orm/pg-core'
+import { pgTable, text, uuid, jsonb, timestamp, primaryKey, index, integer, bigint, boolean, uniqueIndex, check, customType } from 'drizzle-orm/pg-core'
 import { relations, sql } from 'drizzle-orm'
 import { users } from '../../../drizzle/schema.js'
 
@@ -266,6 +266,92 @@ export const idempotencyKeys = pgTable(
   },
   (table) => [
     index('idempotency_keys_created_at_idx').on(table.createdAt),
+  ],
+)
+
+// --- Usage metering -------------------------------------------------------
+// Product-neutral credit/usage primitives consumed through
+// PostgresMeteringStore. Amounts are integer micros of a host-defined
+// currency unit; the embedding app owns pricing, currency, and grant policy.
+
+export const creditGrants = pgTable(
+  'boring_credit_grants',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    userId: text('user_id').notNull(),
+    amountMicros: bigint('amount_micros', { mode: 'number' }).notNull(),
+    reason: text('reason').notNull(),
+    expiresAt: timestamp('expires_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('boring_credit_grants_user_reason_idx').on(table.userId, table.reason),
+    check('boring_credit_grants_amount_check', sql`${table.amountMicros} > 0`),
+  ],
+)
+
+export const usageReservations = pgTable(
+  'boring_usage_reservations',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    userId: text('user_id').notNull(),
+    workspaceId: text('workspace_id'),
+    sessionId: text('session_id'),
+    turnId: text('turn_id').notNull(),
+    source: text('source').notNull().default(''),
+    amountMicros: bigint('amount_micros', { mode: 'number' }).notNull(),
+    status: text('status').notNull().default('active'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    expiresAt: timestamp('expires_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('boring_usage_reservations_active_turn_idx')
+      .on(table.turnId)
+      .where(sql`${table.status} = 'active'`),
+    index('boring_usage_reservations_user_status_idx').on(table.userId, table.status, table.expiresAt),
+    check('boring_usage_reservations_amount_check', sql`${table.amountMicros} > 0`),
+    check(
+      'boring_usage_reservations_status_check',
+      sql`${table.status} IN ('active', 'settled', 'released', 'expired')`,
+    ),
+  ],
+)
+
+export const usageLedger = pgTable(
+  'boring_usage_ledger',
+  {
+    /** Caller-provided stable usage id; the idempotency key for inserts. */
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull(),
+    workspaceId: text('workspace_id'),
+    sessionId: text('session_id'),
+    turnId: text('turn_id'),
+    messageId: text('message_id'),
+    source: text('source').notNull().default(''),
+    provider: text('provider'),
+    model: text('model'),
+    inputTokens: bigint('input_tokens', { mode: 'number' }).notNull().default(0),
+    outputTokens: bigint('output_tokens', { mode: 'number' }).notNull().default(0),
+    cacheReadTokens: bigint('cache_read_tokens', { mode: 'number' }).notNull().default(0),
+    cacheWriteTokens: bigint('cache_write_tokens', { mode: 'number' }).notNull().default(0),
+    providerCostMicros: bigint('provider_cost_micros', { mode: 'number' }).notNull().default(0),
+    billedCostMicros: bigint('billed_cost_micros', { mode: 'number' }).notNull(),
+    stopReason: text('stop_reason'),
+    metadata: jsonb('metadata').notNull().default({}),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('boring_usage_ledger_user_created_idx').on(table.userId, table.createdAt),
+    index('boring_usage_ledger_turn_idx').on(table.turnId),
+    check('boring_usage_ledger_billed_check', sql`${table.billedCostMicros} >= 0`),
+    check(
+      'boring_usage_ledger_tokens_check',
+      sql`${table.inputTokens} >= 0 AND ${table.outputTokens} >= 0 AND ${table.cacheReadTokens} >= 0 AND ${table.cacheWriteTokens} >= 0 AND ${table.providerCostMicros} >= 0`,
+    ),
   ],
 )
 
