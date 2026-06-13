@@ -194,6 +194,37 @@ describe('PostgresMeteringStore', () => {
     ).resolves.toMatchObject({ reservationId: expect.any(String) })
   })
 
+  it('settles only the newest row when a run id has an expired row plus a live retry', async () => {
+    await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 5_000_000 })
+    // Old reservation for the run expired before settlement; client retried
+    // and a fresh active reservation now exists for the same run id.
+    const stale = await store.reserve({ userId: USER, runId: 'turn-r', amountMicros: 500_000, ttlSeconds: 600 })
+    await sqlClient`UPDATE boring_usage_reservations SET status = 'expired' WHERE id = ${stale.reservationId}`
+    const live = await store.reserve({ userId: USER, runId: 'turn-r', amountMicros: 500_000, ttlSeconds: 600 })
+
+    expect(await store.finishReservation({ runId: 'turn-r', userId: USER }, 'settled')).toEqual({ updated: true })
+
+    const rows = await sqlClient`SELECT id, status FROM boring_usage_reservations WHERE run_id = 'turn-r' ORDER BY created_at`
+    const staleRow = rows.find((row) => row.id === stale.reservationId)
+    const liveRow = rows.find((row) => row.id === live.reservationId)
+    // The dead row stays expired; only the live reservation is settled.
+    expect(staleRow?.status).toBe('expired')
+    expect(liveRow?.status).toBe('settled')
+  })
+
+  it('does not return another user\'s active reservation from the idempotent reserve path', async () => {
+    await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 5_000_000 })
+    await store.grantOnce({ userId: OTHER_USER, reason: 'initial', amountMicros: 5_000_000 })
+    await store.reserve({ userId: USER, runId: 'turn-collide', amountMicros: 100_000, ttlSeconds: 600 })
+
+    // The global partial unique index rejects a second active row for the same
+    // run id rather than letting the other user free-ride on USER's hold.
+    await expect(
+      store.reserve({ userId: OTHER_USER, runId: 'turn-collide', amountMicros: 100_000, ttlSeconds: 600 }),
+    ).rejects.toThrow()
+    expect((await store.getBalance(OTHER_USER)).activeReservedMicros).toBe(0)
+  })
+
   it('keeps balances isolated per user', async () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 1_000_000 })
     await store.grantOnce({ userId: OTHER_USER, reason: 'initial', amountMicros: 2_000_000 })

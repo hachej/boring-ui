@@ -283,6 +283,20 @@ export class PiChatMeteringCoordinator {
     state.pendingPrompts.push(run)
   }
 
+  /**
+   * Release prompt runs reserved but not yet bound to an agent-start —
+   * e.g. a stop/interrupt landing in the window between acceptance and the
+   * native agent_start. Without this they would sit `active` in the store
+   * until their TTL, holding the user's balance. No charge.
+   */
+  releasePending(sessionId: string): void {
+    const state = this.sessions.get(sessionId)
+    if (!state) return
+    for (const run of state.pendingPrompts) this.release(run, 'cancelled')
+    state.pendingPrompts = []
+    this.pruneSession(sessionId, state)
+  }
+
   /** Queue cleared via selector or entirely; release affected reservations. */
   releaseQueued(sessionId: string, selector?: { clientNonce?: string; clientSeq?: number }): void {
     const state = this.sessions.get(sessionId)
@@ -323,7 +337,10 @@ export class PiChatMeteringCoordinator {
     for (const event of mappedEvents) {
       switch (event.type) {
         case 'agent-start': {
-          const next = state.pendingPrompts.shift()
+          // Skip pending runs already released (e.g. raced with stop) so usage
+          // is never attributed to a terminal run.
+          let next = state.pendingPrompts.shift()
+          while (next && next.terminal) next = state.pendingPrompts.shift()
           if (next) {
             if (state.active && !state.active.terminal) this.finishRun(state.active, 'ok')
             state.active = next

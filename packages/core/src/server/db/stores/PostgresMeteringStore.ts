@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { creditGrants, usageLedger, usageReservations } from '../schema.js'
 
@@ -155,7 +155,11 @@ export class PostgresMeteringStore {
       const existing = await tx
         .select({ id: usageReservations.id })
         .from(usageReservations)
-        .where(and(eq(usageReservations.runId, input.runId), eq(usageReservations.status, 'active')))
+        .where(and(
+          eq(usageReservations.runId, input.runId),
+          eq(usageReservations.userId, input.userId),
+          eq(usageReservations.status, 'active'),
+        ))
         .limit(1)
       const existingId = existing[0]?.id
       if (existingId) return { reservationId: existingId }
@@ -219,18 +223,35 @@ export class PostgresMeteringStore {
    * before a delayed settlement retry, so charged usage never leaves a
    * reservation dangling. Releasing only touches active rows. Idempotent:
    * repeat calls are no-ops.
+   *
+   * A runId may have more than one row (an expired row plus a fresh active
+   * retry), so the runId fallback resolves to the single newest matching row
+   * — a settle never flips both the dead and the live reservation together.
    */
   async finishReservation(input: FinishReservationInput, status: ReservationFinalStatus): Promise<{ updated: boolean }> {
     if (!input.reservationId && !input.runId) {
       throw new Error('finishReservation requires reservationId or runId')
     }
     const matchable = status === 'settled' ? ['active', 'expired'] : ['active']
-    const conditions = [inArray(usageReservations.status, matchable)]
-    if (input.reservationId) {
-      conditions.push(eq(usageReservations.id, input.reservationId))
-    } else if (input.runId) {
-      conditions.push(eq(usageReservations.runId, input.runId))
+
+    let targetId = input.reservationId
+    if (!targetId) {
+      const lookup = [
+        eq(usageReservations.runId, input.runId as string),
+        inArray(usageReservations.status, matchable),
+      ]
+      if (input.userId) lookup.push(eq(usageReservations.userId, input.userId))
+      const found = await this.db
+        .select({ id: usageReservations.id })
+        .from(usageReservations)
+        .where(and(...lookup))
+        .orderBy(desc(usageReservations.createdAt))
+        .limit(1)
+      targetId = found[0]?.id
+      if (!targetId) return { updated: false }
     }
+
+    const conditions = [eq(usageReservations.id, targetId), inArray(usageReservations.status, matchable)]
     if (input.userId) conditions.push(eq(usageReservations.userId, input.userId))
 
     const rows = await this.db

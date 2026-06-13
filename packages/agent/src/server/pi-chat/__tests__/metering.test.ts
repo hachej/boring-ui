@@ -153,6 +153,16 @@ function assistantMessageEnd(overrides: Record<string, unknown> = {}): AgentSess
   } as unknown as AgentSessionEvent
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve
+    reject = nextReject
+  })
+  return { promise, resolve, reject }
+}
+
 function agentEnd(
   stopReason: 'stop' | 'error' | 'aborted',
   errorMessage?: string,
@@ -354,6 +364,68 @@ describe('pi chat metering', () => {
       expect.objectContaining({ runId: 'pi-run:s1:followup:nonce-f:0', status: 'ok' }),
     ])
     expect(calls.released).toEqual([])
+  })
+
+  it('releases a prompt reservation stranded before agent-start when the session is stopped', async () => {
+    const adapter = createAdapter()
+    const run = deferred<void>()
+    adapter.prompt = vi.fn(() => run.promise)
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    // Accepted, reserved, but no agent_start yet (run still in flight).
+    await service.prompt(ctx, 's1', { message: 'stranded', clientNonce: 'nonce-strand' })
+    expect(calls.reserved).toHaveLength(1)
+
+    await service.stop(ctx, 's1', {})
+    await service.flushMetering()
+
+    expect(calls.settled).toEqual([])
+    expect(calls.released).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-strand', reason: 'cancelled' }),
+    ])
+    run.resolve()
+  })
+
+  it('releases a stranded prompt reservation on interrupt', async () => {
+    const adapter = createAdapter()
+    const run = deferred<void>()
+    adapter.prompt = vi.fn(() => run.promise)
+    // interrupt awaits the in-flight run after aborting; the native abort
+    // settles it.
+    adapter.abort = vi.fn(async () => run.resolve())
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'stranded', clientNonce: 'nonce-int' })
+    await service.interrupt(ctx, 's1', {})
+    await service.flushMetering()
+
+    expect(calls.released).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-int', reason: 'cancelled' }),
+    ])
+  })
+
+  it('does not attribute usage to a prompt already released by a racing stop', async () => {
+    const adapter = createAdapter()
+    const run = deferred<void>()
+    adapter.prompt = vi.fn(() => run.promise)
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'raced', clientNonce: 'nonce-race' })
+    await service.stop(ctx, 's1', {})
+    // A late agent_start + usage races in after the stop released the run.
+    adapter.emit({ type: 'agent_start', turnId: 'turn-late' } as unknown as AgentSessionEvent)
+    adapter.emit(assistantMessageEnd())
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    expect(calls.usage).toEqual([])
+    expect(calls.released).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-race', reason: 'cancelled' }),
+    ])
+    run.resolve()
   })
 
   it('releases queued follow-up reservations on selector clear, full clear, and stop', async () => {

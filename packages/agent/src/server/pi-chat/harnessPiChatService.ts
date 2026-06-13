@@ -232,6 +232,10 @@ export class HarnessPiChatService implements PiChatSessionService {
     adapter.abortRetry?.()
     if (wasActive) await adapter.abort()
     await activeRun?.catch(() => {})
+    // Release prompt reservations stranded before agent-start. Safe before
+    // auto-post: the next follow-up is still in the queue (released only when
+    // promoted), not in pendingPrompts.
+    this.metering?.releasePending(sessionId)
     if (nextFollowUp) await this.autoPostInterruptedFollowUp(sessionId, adapter, nextFollowUp)
     return { accepted: true, cursor: this.channels.get(sessionId)?.buffer.latestSeq ?? 0 }
   }
@@ -239,8 +243,11 @@ export class HarnessPiChatService implements PiChatSessionService {
   async stop(ctx: PiSessionRequestContext, sessionId: string, _payload: StopPayload): Promise<StopReceipt> {
     const adapter = await this.getAdapter(ctx, sessionId, '')
     const clearedQueue = this.clearAllFollowUps(adapter, sessionId)
-    // The active run settles/releases via the native aborted agent-end.
+    // The active run settles/releases via the native aborted agent-end; queued
+    // and not-yet-started prompt reservations are released here so they don't
+    // hold the user's balance until TTL.
     this.metering?.releaseQueued(sessionId)
+    this.metering?.releasePending(sessionId)
     await adapter.abort()
     return { accepted: true, stopped: true, cursor: this.channels.get(sessionId)?.buffer.latestSeq ?? 0, clearedQueue: buildPiChatQueuedFollowUps(sessionId, clearedQueue) }
   }
