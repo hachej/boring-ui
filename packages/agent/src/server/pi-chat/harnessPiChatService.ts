@@ -201,6 +201,19 @@ export class HarnessPiChatService implements PiChatSessionService {
   async followUp(ctx: PiSessionRequestContext, sessionId: string, payload: FollowUpPayload): Promise<FollowUpReceipt> {
     const adapter = await this.getAdapter(ctx, sessionId, payload.message)
     await this.ensureChannel(ctx, sessionId, adapter)
+    // A duplicate follow-up (client retry reusing nonce/seq) must not enqueue a
+    // second native follow-up or take a second hold while the original is still
+    // queued/active. Acknowledge it idempotently.
+    if (this.metering?.hasFollowUpRun(sessionId, payload)) {
+      return {
+        accepted: true,
+        queued: true,
+        cursor: this.channels.get(sessionId)?.buffer.latestSeq ?? 0,
+        clientNonce: payload.clientNonce,
+        clientSeq: payload.clientSeq,
+        duplicate: true,
+      }
+    }
     await this.metering?.reserveFollowUp({
       workspaceId: ctx.workspaceId,
       userId: ctx.authSubject,

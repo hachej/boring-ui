@@ -559,6 +559,19 @@ describe('pi chat metering', () => {
     expect(calls.usage).toEqual([expect.objectContaining({ usageId: 'pi-usage:s1:message:a-ok' })])
   })
 
+  it('suppresses a duplicate follow-up retry (same nonce/seq) while queued', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.followUp(ctx, 's1', { message: 'q', clientNonce: 'nonce-fu', clientSeq: 0 })
+    const retry = await service.followUp(ctx, 's1', { message: 'q', clientNonce: 'nonce-fu', clientSeq: 0 })
+
+    expect(retry).toMatchObject({ duplicate: true, queued: true })
+    expect(calls.reserved).toHaveLength(1)
+    expect(adapter.followUp).toHaveBeenCalledTimes(1)
+  })
+
   it('releases a queued follow-up reservation cleared by clientSeq alone', async () => {
     const adapter = createAdapter()
     const { sink, calls } = createSink()
@@ -629,7 +642,8 @@ describe('pi chat metering', () => {
     await service.flushMetering()
 
     expect(calls.usage).toEqual([
-      expect.objectContaining({ usageId: 'pi-usage:pi-run:s1:prompt:nonce-final:1', runId: 'pi-run:s1:prompt:nonce-final' }),
+      // id-less fallback usage id: pi-usage:<runId>:<instanceId>:<n>
+      expect.objectContaining({ usageId: 'pi-usage:pi-run:s1:prompt:nonce-final:1:1', runId: 'pi-run:s1:prompt:nonce-final' }),
     ])
     // Usage was billable, so the errored run settles instead of releasing.
     expect(calls.settled).toEqual([expect.objectContaining({ status: 'error' })])
@@ -873,6 +887,29 @@ describe('PiChatMeteringCoordinator promoted follow-up failure', () => {
   }
 
   const scope = { workspaceId: 'ws', userId: 'user-a', sessionId: 's1' }
+
+  it('gives id-less usage distinct ids across run instances that reuse a run id', async () => {
+    const { sink, calls } = coordinatorSink()
+    const coordinator = new PiChatMeteringCoordinator(sink, () => {})
+    const idlessUsage = { type: 'message_end', message: { role: 'assistant', usage: USAGE } }
+
+    for (const turn of ['t1', 't2']) {
+      // Same client nonce → same runId; a fresh run instance each completion.
+      await coordinator.reservePrompt({ ...scope, clientNonce: 'n', message: turn })
+      coordinator.observe('s1', { type: 'agent_start', turnId: turn }, [
+        { type: 'agent-start', seq: 1, turnId: turn } as never,
+      ])
+      coordinator.observe('s1', idlessUsage, [])
+      coordinator.observe('s1', { type: 'agent_end', messages: [{ role: 'assistant', stopReason: 'stop' }] }, [
+        { type: 'agent-end', seq: 2, turnId: turn, status: 'ok' } as never,
+      ])
+    }
+    await coordinator.flush()
+
+    expect(calls.usage).toHaveLength(2)
+    expect(calls.usage[0]?.usageId).toBe('pi-usage:pi-run:s1:prompt:n:1:1')
+    expect(calls.usage[1]?.usageId).toBe('pi-usage:pi-run:s1:prompt:n:2:1')
+  })
 
   it('failFollowUpRun releases a queued run by selector and no-ops once it is consumed', async () => {
     const { sink, calls } = coordinatorSink()

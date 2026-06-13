@@ -113,6 +113,10 @@ interface MeteringRun {
   scope: MeteringRunScope
   kind: MeteringRunKind
   reservationId?: string
+  /** Monotonic per-coordinator run instance. runId is reused when a client
+   * replays a nonce after completion, so this distinguishes id-less usage rows
+   * across run instances. */
+  instanceId: number
   usageCount: number
   /** Message ids already recorded, so agent_end finals don't double-record. */
   recordedMessageIds: Set<string>
@@ -221,6 +225,7 @@ export interface ReserveFollowUpInput extends ReservePromptInput {
 export class PiChatMeteringCoordinator {
   private readonly sessions = new Map<string, SessionMeteringState>()
   private readonly inflightOps = new Set<Promise<void>>()
+  private runInstances = 0
   private readonly sink: AgentMeteringSink
   private readonly logError: MeteringErrorLogger
 
@@ -264,6 +269,16 @@ export class PiChatMeteringCoordinator {
     if (!state) return false
     const run = this.findRun(state, promptRunId(sessionId, clientNonce))
     return run !== undefined && !run.terminal
+  }
+
+  /** True while a non-terminal follow-up run exists for this selector (queued
+   * or consumed-and-active). Used to suppress duplicate follow-up enqueues. */
+  hasFollowUpRun(sessionId: string, selector: FollowUpSelector): boolean {
+    const state = this.sessions.get(sessionId)
+    if (!state) return false
+    if (state.queued.some((run) => followUpMatches(run, selector))) return true
+    const active = state.active
+    return active !== undefined && !active.terminal && active.followUp !== undefined && followUpMatches(active, selector)
   }
 
   /** The accepted prompt failed before/without running (sync throw or run rejection). */
@@ -488,7 +503,7 @@ export class PiChatMeteringCoordinator {
     const stopReason = typeof message.stopReason === 'string' ? message.stopReason : undefined
     const usageId = messageId
       ? `pi-usage:${run.scope.sessionId}:message:${messageId}`
-      : `pi-usage:${run.scope.runId}:${run.usageCount}`
+      : `pi-usage:${run.scope.runId}:${run.instanceId}:${run.usageCount}`
 
     this.enqueue(run, async () => {
       try {
@@ -532,6 +547,7 @@ export class PiChatMeteringCoordinator {
       scope,
       kind,
       reservationId: result?.reservationId,
+      instanceId: (this.runInstances += 1),
       usageCount: 0,
       recordedMessageIds: new Set(),
       usageWriteFailed: false,

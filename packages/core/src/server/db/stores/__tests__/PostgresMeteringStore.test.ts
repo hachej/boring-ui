@@ -279,6 +279,13 @@ describe('PostgresMeteringStore', () => {
     expect((await store.getBalance(USER)).activeReservedMicros).toBe(800_000)
   })
 
+  it('fails closed when a balance sum exceeds the safe integer range', async () => {
+    // Two individually-safe grants whose sum exceeds Number.MAX_SAFE_INTEGER.
+    await store.grantOnce({ userId: USER, reason: 'big-1', amountMicros: 6_000_000_000_000_000 })
+    await store.grantOnce({ userId: USER, reason: 'big-2', amountMicros: 6_000_000_000_000_000 })
+    await expect(store.getBalance(USER)).rejects.toThrow('safe integer range')
+  })
+
   it('rejects invalid amounts', async () => {
     await expect(store.grantOnce({ userId: USER, reason: 'bad', amountMicros: 0 })).rejects.toThrow('positive integer')
     await expect(store.reserve({ userId: USER, runId: 't', amountMicros: 1.5, ttlSeconds: 60 })).rejects.toThrow('positive integer')

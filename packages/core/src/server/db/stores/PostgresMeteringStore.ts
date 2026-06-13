@@ -312,7 +312,7 @@ export class PostgresMeteringStore {
       .select({ total: sql<string>`coalesce(sum(${creditGrants.amountMicros}), 0)` })
       .from(creditGrants)
       .where(and(eq(creditGrants.userId, userId), or(isNull(creditGrants.expiresAt), gt(creditGrants.expiresAt, now))))
-    return Number(rows[0]?.total ?? 0)
+    return toSafeMicros(rows[0]?.total, 'grant total')
   }
 
   private async sumUsage(executor: Queryable, userId: string): Promise<number> {
@@ -320,7 +320,7 @@ export class PostgresMeteringStore {
       .select({ total: sql<string>`coalesce(sum(${usageLedger.billedCostMicros}), 0)` })
       .from(usageLedger)
       .where(eq(usageLedger.userId, userId))
-    return Number(rows[0]?.total ?? 0)
+    return toSafeMicros(rows[0]?.total, 'usage total')
   }
 
   private async sumActiveReservations(executor: Queryable, userId: string, now: Date): Promise<number> {
@@ -334,6 +334,19 @@ export class PostgresMeteringStore {
           gt(usageReservations.expiresAt, now),
         ),
       )
-    return Number(rows[0]?.total ?? 0)
+    return toSafeMicros(rows[0]?.total, 'active reservation total')
   }
+}
+
+/**
+ * Postgres returns bigint sums as strings. Parse to number but fail closed
+ * above MAX_SAFE_INTEGER rather than silently rounding — a rounded balance
+ * could let the hard-stop comparison admit or reject reservations wrongly.
+ */
+function toSafeMicros(value: string | undefined, label: string): number {
+  const parsed = BigInt(value ?? '0')
+  if (parsed > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error(`metering ${label} exceeds the safe integer range (${parsed})`)
+  }
+  return Number(parsed)
 }
