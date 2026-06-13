@@ -22,7 +22,10 @@ export interface CreditPricingConfig {
   margin: number
   /** Credit micros per 1 pricing-currency unit. 1 credit = €0.000001 ⇒ 1_000_000. */
   creditMicrosPerUnit: number
-  /** Ordered [pattern, rate] table; first match wins. Overrides the defaults. */
+  /** Ordered [pattern, rate] table; checked BEFORE the built-in
+   * DEFAULT_MODEL_RATES (configured rate wins for a model it matches), but the
+   * defaults still apply to models you didn't list — so a selectable expensive
+   * model (e.g. Claude Opus) is never silently dropped to the cheap fallback. */
   rates?: Array<[RegExp, ModelTokenRate]>
   /**
    * Rate applied when no pattern matches and the provider reported no cost.
@@ -84,9 +87,15 @@ function clampTokens(value: number | undefined): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0
 }
 
+/** Effective rate table: configured rates first (they win for models they
+ * match), then the built-in defaults (so unlisted known-expensive models are
+ * still priced correctly, not dropped to the cheap fallback). */
+function effectiveRateTable(config: CreditPricingConfig): Array<[RegExp, ModelTokenRate]> {
+  return config.rates ? [...config.rates, ...DEFAULT_MODEL_RATES] : DEFAULT_MODEL_RATES
+}
+
 function rateForModel(modelId: string, config: CreditPricingConfig): ModelTokenRate | null {
-  const table = config.rates ?? DEFAULT_MODEL_RATES
-  return table.find(([pattern]) => pattern.test(modelId))?.[1] ?? null
+  return effectiveRateTable(config).find(([pattern]) => pattern.test(modelId))?.[1] ?? null
 }
 
 /**
@@ -98,7 +107,7 @@ function rateForModel(modelId: string, config: CreditPricingConfig): ModelTokenR
  * cheaper rate, defeating the hard stop.
  */
 export function maxEffectiveRate(config: CreditPricingConfig): ModelTokenRate {
-  const table = config.rates ?? DEFAULT_MODEL_RATES
+  const table = effectiveRateTable(config)
   const fallback = config.defaultRate ?? CONSERVATIVE_DEFAULT_RATE
   let inputPerMillion = fallback.inputPerMillion
   let outputPerMillion = fallback.outputPerMillion

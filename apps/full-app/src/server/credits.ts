@@ -41,6 +41,7 @@ function parseNumberEnv(name: string, value: string | undefined, fallback: numbe
 function parseVariants(raw: string | undefined): Record<string, string> {
   if (!raw || raw.trim() === '') return {}
   const out: Record<string, string> = {}
+  const seenVariants = new Set<string>()
   for (const pair of raw.split(',')) {
     if (pair.trim() === '') continue
     const [pack, variant] = pair.split(':').map((s) => s.trim())
@@ -51,6 +52,10 @@ function parseVariants(raw: string | undefined): Record<string, string> {
       throw new Error(`invalid BORING_CREDITS_LS_VARIANTS pack id (must be a positive EUR credit value): "${pack}"`)
     }
     if (pack in out) throw new Error(`duplicate pack id in BORING_CREDITS_LS_VARIANTS: "${pack}"`)
+    // Reject a variant id reused across packs — it would make one variant credit
+    // an ambiguous amount (the last pack to map to it would win).
+    if (seenVariants.has(variant)) throw new Error(`duplicate variant id in BORING_CREDITS_LS_VARIANTS: "${variant}"`)
+    seenVariants.add(variant)
     out[pack] = variant
   }
   return out
@@ -157,7 +162,11 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
   // variant id → fixed credit micros (pack id is the EUR credit value).
   const creditMicrosByVariant: Record<string, number> = {}
   for (const [packEur, variantId] of Object.entries(variants)) {
-    creditMicrosByVariant[variantId] = Math.round(Number(packEur) * CREDIT_MICROS_PER_EUR)
+    const micros = Math.round(Number(packEur) * CREDIT_MICROS_PER_EUR)
+    if (!Number.isSafeInteger(micros) || micros <= 0) {
+      throw new Error(`BORING_CREDITS_LS_VARIANTS pack "${packEur}" maps to a non-positive credit amount`)
+    }
+    creditMicrosByVariant[variantId] = micros
   }
   // When Lemon Squeezy is configured, the test/live mode MUST be explicit — a
   // wrong default would either mint credits from non-charging test orders or
@@ -254,8 +263,10 @@ export function buildCreditsWiring(env: NodeJS.ProcessEnv = process.env): {
       } else if (!config.lemonSqueezyWebhookSecret) {
         app.log.warn('credits: BORING_CREDITS_LS_WEBHOOK_SECRET unset — purchase webhook disabled (consumption still active)')
       } else {
+        // Webhook is enabled: empty variants would 200-ack paid orders WITHOUT
+        // crediting (customer pays, no credits, LS stops retrying). Fail fast.
         if (creditVariantIds.length === 0) {
-          app.log.warn('credits: BORING_CREDITS_LS_VARIANTS unset — purchase webhook will credit NOTHING (fail closed)')
+          throw new Error('credits: BORING_CREDITS_LS_WEBHOOK_SECRET is set but BORING_CREDITS_LS_VARIANTS is empty — paid orders would be acknowledged without crediting. Configure the credit packs or unset the webhook secret.')
         }
         if (!config.lemonSqueezyCheckout) {
           app.log.warn('credits: Lemon Squeezy checkout not configured (need API key + store id + variants) — Buy-credits button disabled')

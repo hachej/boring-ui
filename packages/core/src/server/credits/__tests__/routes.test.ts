@@ -101,6 +101,25 @@ describe('credits routes', () => {
     expect(store.grantPurchaseOnce).toHaveBeenCalledWith({ userId: 'user-1', orderId: 'order-fix', amountMicros: 5_000_000 })
   })
 
+  it('fails registration when a credit variant has no fixed credit value', async () => {
+    const a = Fastify()
+    await expect(
+      (async () => {
+        registerCreditsRoutes(a, {
+          service: new CreditsService(makeStore(), CONFIG),
+          lemonSqueezy: {
+            webhookSecret: SECRET,
+            creditVariantIds: ['1', '2'],
+            expectedTestMode: true,
+            creditMicrosByVariant: { '1': 10_000_000 }, // '2' missing → would fall back to subtotal
+          },
+        })
+        await a.ready()
+      })(),
+    ).rejects.toThrow(/creditMicrosByVariant is missing a positive value for credit variant "2"/)
+    await a.close()
+  })
+
   it('does not credit a paid order for an unconfigured variant (fail closed)', async () => {
     const store = makeStore()
     const a = await build(store)
@@ -152,8 +171,9 @@ describe('credits routes', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({ ok: true, reason: 'refund_revoked', orderId: 'order-77' })
-    // No refunded_amount in the payload → full refund (fraction undefined).
-    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', { refundFraction: undefined })
+    // No refunded_amount → full refund (fraction undefined); variant 1 is a credit
+    // order so a pre-grant tombstone is allowed.
+    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', { refundFraction: undefined, allowTombstone: true })
     expect(store.grantPurchaseOnce).not.toHaveBeenCalled()
   })
 
@@ -172,13 +192,15 @@ describe('credits routes', () => {
       payload: body,
     })
     expect(res.statusCode).toBe(200)
-    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', { refundFraction: 0.3 })
+    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', { refundFraction: 0.3, allowTombstone: true })
   })
 
-  it('ignores a refund for an order from the wrong store/mode/variant', async () => {
+  it('does not allow a pre-grant tombstone for a refund from the wrong store/mode/variant', async () => {
     const store = makeStore()
     const a = await build(store) // creditVariantIds ['1'], expectedTestMode true
-    // Refund for variant 999 (not a credit pack) must not tombstone/revoke.
+    // Refund for variant 999 (not a credit pack): the store is still asked to
+    // reconcile by order id (an order we credited is revocable), but a pre-grant
+    // tombstone is NOT allowed for this unrecognized order.
     const body = JSON.stringify({
       meta: { event_name: 'order_refunded', custom_data: { user_id: 'user-1' } },
       data: { type: 'orders', id: 'order-77', attributes: { status: 'refunded', test_mode: true, currency: 'EUR', subtotal: 1000, total: 1000, refunded: true, refunded_amount: 1000, first_order_item: { variant_id: 999 } } },
@@ -190,8 +212,7 @@ describe('credits routes', () => {
       payload: body,
     })
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toMatchObject({ reason: 'not_a_credit_order' })
-    expect(store.revokePurchase).not.toHaveBeenCalled()
+    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', { refundFraction: 1, allowTombstone: false })
   })
 
   it('credits the net pre-tax amount when a discount applied', async () => {

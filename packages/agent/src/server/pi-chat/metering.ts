@@ -127,6 +127,10 @@ interface MeteringRun {
    * across run instances. */
   instanceId: number
   usageCount: number
+  /** Count of recorded usage rows that carried positive tokens. A successful run
+   * with only zero-token usage (provider reported no/zero tokens) must not settle
+   * a paid hold for free — it falls back to the hold like a missing-usage run. */
+  billableUsageCount: number
   /** Message ids recorded this attempt (id-ful dedup of repeat message_end and
    * the agent_end echo). Cleared on auto-retry. */
   recordedMessageIds: Set<string>
@@ -578,6 +582,7 @@ export class PiChatMeteringCoordinator {
     }
 
     run.usageCount += 1
+    if (usage.input + usage.output + usage.cacheRead + usage.cacheWrite > 0) run.billableUsageCount += 1
     const model = typeof message.model === 'string' && message.model.length > 0 ? message.model : undefined
     const provider = typeof message.provider === 'string' && message.provider.length > 0 ? message.provider : undefined
     const stopReason = typeof message.stopReason === 'string' ? message.stopReason : undefined
@@ -629,6 +634,7 @@ export class PiChatMeteringCoordinator {
       reservationId: undefined,
       instanceId: (this.runInstances += 1),
       usageCount: 0,
+      billableUsageCount: 0,
       recordedMessageIds: new Set(),
       lastIdlessUsageKey: undefined,
       usageWriteFailed: false,
@@ -679,7 +685,10 @@ export class PiChatMeteringCoordinator {
     // usage-write-failed path), so an executed run is never free. Decided inside
     // the op so it observes the usage writes queued ahead of it on the chain.
     this.enqueue(run, () => {
-      const missingUsage = run.usageWriteFailed || run.usageCount === 0
+      // Missing usage = a failed write, OR no usage row carried positive tokens
+      // (provider reported none/zero). Either way there's no real debit, so
+      // fall back to the hold rather than settle a paid run for free.
+      const missingUsage = run.usageWriteFailed || run.billableUsageCount === 0
       return missingUsage
         ? this.sink.releaseRun({ ...run.scope, reservationId: run.reservationId, reason: 'usage-write-failed' })
         : this.sink.settleRun({ ...run.scope, reservationId: run.reservationId, status })

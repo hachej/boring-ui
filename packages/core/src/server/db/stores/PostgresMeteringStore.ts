@@ -224,10 +224,14 @@ export class PostgresMeteringStore {
    */
   async revokePurchase(
     orderId: string,
-    opts: { refundFraction?: number; source?: string } = {},
+    opts: { refundFraction?: number; source?: string; allowTombstone?: boolean } = {},
   ): Promise<{ revoked: boolean }> {
     if (!orderId) throw new Error('revokePurchase requires an orderId')
     const source = opts.source ?? 'lemonsqueezy-refund'
+    // A pre-grant tombstone is written only when the caller vouches the refund is
+    // for a credit order (variant/store/mode), so an unrelated refund can't
+    // tombstone by order id. An order we ALREADY credited is revoked regardless.
+    const allowTombstone = opts.allowTombstone ?? true
     if (opts.refundFraction !== undefined && (!Number.isFinite(opts.refundFraction) || opts.refundFraction < 0)) {
       throw new Error('revokePurchase refundFraction must be a non-negative number')
     }
@@ -247,11 +251,14 @@ export class PostgresMeteringStore {
       const fraction = opts.refundFraction ?? 1
       const row = existing[0]
       if (!row) {
-        // Refund before grant (out-of-order delivery). A FULL refund writes a
-        // terminal 'refunded' tombstone (the order must never be credited). A
-        // PARTIAL refund records the pending fraction as 'refund_pending' so the
-        // later order_created grants NET of it — neither losing the refund nor
-        // blocking the whole purchase.
+        // Refund before grant (out-of-order delivery), or a refund for an order
+        // we never credited. Only write a tombstone when the caller vouched the
+        // refund is for a credit order — otherwise ignore it (don't let an
+        // unrelated/cross-store refund tombstone a future order by id).
+        if (!allowTombstone) return { revoked: false }
+        // A FULL refund writes a terminal 'refunded' tombstone (never credit it).
+        // A PARTIAL refund records the pending fraction as 'refund_pending' so the
+        // later order_created grants NET of it.
         await tx.insert(creditPurchases).values(
           fraction >= 1
             ? { orderId, status: 'refunded', source, refundedAt: new Date() }

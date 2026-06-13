@@ -87,16 +87,20 @@ describe('usageToCredits', () => {
     expect(usageToCredits({ inputTokens: 1, outputTokens: 1, providerReportedCost: 0.01 }, { id: 'x' }, AT_COST_PREFER_REPORTED).pricedFromDefault).toBe(false)
   })
 
-  it('honors a custom rate table override and falls back to the explicit default rate', () => {
+  it('checks configured rates first but still consults the built-in defaults for unlisted models', () => {
     const config: CreditPricingConfig = {
       margin: 1,
       creditMicrosPerUnit: 1_000_000,
       rates: [[/my-model/, { inputPerMillion: 10, outputPerMillion: 20 }]],
       defaultRate: { inputPerMillion: 1, outputPerMillion: 1 },
     }
+    // Configured rate wins for the model it matches.
     expect(estimateProviderCost('my-model', 1_000_000, 1_000_000, config)).toEqual({ units: 30, usedDefault: false })
-    // Unmatched (custom table doesn't have kimi) → explicit defaultRate, not the built-ins.
-    expect(estimateProviderCost('kimi-k2', 1_000_000, 0, config)).toEqual({ units: 1, usedDefault: true })
+    // An unlisted model still matches the built-in defaults (kimi 0.6/MTok), NOT
+    // the cheap explicit defaultRate — so a known model is never undercharged.
+    expect(estimateProviderCost('kimi-k2', 1_000_000, 0, config)).toEqual({ units: 0.6, usedDefault: false })
+    // A truly-unknown model falls through to the explicit default rate.
+    expect(estimateProviderCost('zzz-unknown', 1_000_000, 0, config)).toEqual({ units: 1, usedDefault: true })
   })
 
   describe('maxEffectiveRate (for sizing the per-run hold)', () => {
@@ -105,26 +109,25 @@ describe('usageToCredits', () => {
       expect(maxEffectiveRate({ margin: 1.3, creditMicrosPerUnit: 1_000_000 })).toEqual({ inputPerMillion: 15, outputPerMillion: 75 })
     })
 
-    it('uses the priciest configured rate (with the conservative default as a floor)', () => {
+    it('still covers the built-in expensive defaults even when cheaper rates are configured', () => {
       const rate = maxEffectiveRate({
         margin: 1.3,
         creditMicrosPerUnit: 1_000_000,
         rates: [[/infomaniak/, { inputPerMillion: 0.5, outputPerMillion: 1.5 }]],
       })
-      // Configured rate is cheaper than the conservative default (3/15) → default floors it.
-      expect(rate).toEqual({ inputPerMillion: 3, outputPerMillion: 15 })
+      // Configured rates merge with the built-ins, so a selectable Opus (15/75)
+      // still drives the hold size — never silently dropped.
+      expect(rate).toEqual({ inputPerMillion: 15, outputPerMillion: 75 })
     })
 
-    it('takes the max across multiple configured rates', () => {
+    it('takes the max across configured rates and built-in defaults', () => {
       const rate = maxEffectiveRate({
         margin: 1.3,
         creditMicrosPerUnit: 1_000_000,
-        rates: [
-          [/cheap/, { inputPerMillion: 1, outputPerMillion: 2 }],
-          [/pricey/, { inputPerMillion: 8, outputPerMillion: 40 }],
-        ],
+        // A configured rate pricier than every built-in dominates.
+        rates: [[/pricey/, { inputPerMillion: 20, outputPerMillion: 100 }]],
       })
-      expect(rate).toEqual({ inputPerMillion: 8, outputPerMillion: 40 })
+      expect(rate).toEqual({ inputPerMillion: 20, outputPerMillion: 100 })
     })
   })
 })

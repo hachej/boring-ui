@@ -131,6 +131,17 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
   const creditMicrosPerUnit = options.service.config.pricing.creditMicrosPerUnit
   // €1 = 100 cents, so 1 cent = creditMicrosPerUnit / 100 credit micros.
   const centsToMicros = (cents: number) => Math.round(Math.max(0, cents) * (creditMicrosPerUnit / 100))
+  // If fixed per-variant values are configured, EVERY credit variant must have
+  // one — a missing entry would silently fall back to order-amount crediting
+  // (the very coupling the fixed catalog avoids). Fail registration instead.
+  if (ls.creditMicrosByVariant) {
+    for (const variantId of ls.creditVariantIds) {
+      const value = ls.creditMicrosByVariant[variantId]
+      if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+        throw new Error(`credits: creditMicrosByVariant is missing a positive value for credit variant "${variantId}"`)
+      }
+    }
+  }
   const variantCredits = ls.creditMicrosByVariant ?? {}
   // Credits for an order: prefer the fixed per-variant value (immune to order
   // amount, multi-item orders, discounts, and tax). Fall back to the net pre-tax
@@ -172,18 +183,21 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
           creditsForOrder,
           isCreditOrder,
           grant: (input) => options.service.grantPurchase(input.userId, input.orderId, input.amountMicros),
-          // Refunds/disputes revoke the order's credits. For a PARTIAL refund, LS
-          // reports the cumulative refunded_amount (tax-incl) against the order
-          // total — pass that fraction so the store revokes the proportional
-          // share of the (pre-tax) credited amount; a full refund (no/zero amount,
-          // or amount ≥ total) revokes everything.
+          // Refunds/disputes revoke the order's credits. A PARTIAL refund passes
+          // the cumulative refunded fraction (refunded_amount / total); a full
+          // refund passes undefined. allowTombstone gates writing a pre-grant
+          // tombstone for an order we HAVEN'T credited yet: only when the refund
+          // still validates as a credit order (prevents a cross-store/mode refund
+          // from tombstoning by order id). An order we already credited is always
+          // revocable regardless (reconciled by order id in the store).
           onRefund: (order) =>
-            options.service.revokePurchase(
-              order.orderId,
-              order.refundedAmountCents > 0 && order.totalCents > 0
-                ? order.refundedAmountCents / order.totalCents
-                : undefined,
-            ),
+            options.service.revokePurchase(order.orderId, {
+              refundFraction:
+                order.refundedAmountCents > 0 && order.totalCents > 0
+                  ? order.refundedAmountCents / order.totalCents
+                  : undefined,
+              allowTombstone: isCreditOrder(order),
+            }),
           log: options.log,
         },
       )

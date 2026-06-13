@@ -161,10 +161,13 @@ export class CreditsService {
 
   /** Revoke a refunded/disputed purchase. `refundFraction` is the cumulative
    * fraction of the order refunded (LS refunded_amount / total) for partial
-   * refunds; omit for a full refund. Idempotent per cumulative level. */
-  async revokePurchase(orderId: string, refundFraction?: number): Promise<{ revoked: boolean }> {
+   * refunds; omit for a full refund. `allowTombstone` permits writing a pre-grant
+   * refund tombstone for an order not yet credited (set only when the refund
+   * validates as a credit order); an already-credited order is always revocable.
+   * Idempotent per cumulative level. */
+  async revokePurchase(orderId: string, opts: { refundFraction?: number; allowTombstone?: boolean } = {}): Promise<{ revoked: boolean }> {
     if (!this.config.enabled) return { revoked: false }
-    return this.store.revokePurchase(orderId, { refundFraction })
+    return this.store.revokePurchase(orderId, { refundFraction: opts.refundFraction, allowTombstone: opts.allowTombstone })
   }
 
   async getBalance(userId: string): Promise<CreditBalance> {

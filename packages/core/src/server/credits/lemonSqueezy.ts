@@ -170,15 +170,11 @@ export async function handleLemonSqueezyWebhook(
   // Refund/dispute events revoke the order's credits (idempotent per order).
   const refundEvents = options.refundEvents ?? ['order_refunded']
   if (refundEvents.includes(order.eventName)) {
-    // Validate the refund against the SAME credit-order checks as a grant
-    // (variant/currency/store/mode). Without this a signed refund from another
-    // store or test↔live could tombstone/revoke a purchase by order id alone.
-    if (!options.isCreditOrder(order)) {
-      options.log?.('lemonsqueezy refund for a non-credit order ignored', {
-        orderId: order.orderId, variantId: order.variantId, currency: order.currency, storeId: order.storeId, testMode: order.testMode,
-      })
-      return { status: 200, body: { ok: true, reason: 'not_a_credit_order', orderId: order.orderId } }
-    }
+    // Always reconcile against the order we actually credited (looked up by id):
+    // an order whose pack variant was later retired from the allow-list must
+    // still be revocable. onRefund tombstones an UNKNOWN order only when it still
+    // validates as a credit order (so a cross-store/mode refund can't tombstone
+    // by order id alone) — that gate now lives in the refund handler.
     const { revoked } = await options.onRefund(order)
     options.log?.('lemonsqueezy refund processed', { orderId: order.orderId, revoked })
     return { status: 200, body: { ok: true, reason: revoked ? 'refund_revoked' : 'refund_noop', orderId: order.orderId } }

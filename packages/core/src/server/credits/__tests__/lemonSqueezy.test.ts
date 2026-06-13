@@ -182,13 +182,16 @@ describe('handleLemonSqueezyWebhook', () => {
     expect(grant).not.toHaveBeenCalled()
   })
 
-  it('ignores a refund that fails the credit-order check (wrong store/mode/variant)', async () => {
-    const onRefund = vi.fn(async () => ({ revoked: true }))
+  it('always dispatches a refund to onRefund (credit-order gating is the handler caller\'s job)', async () => {
+    // Even when isCreditOrder is false, the handler dispatches the refund — the
+    // store reconciles by order id (an order we credited is revocable) and the
+    // caller decides via allowTombstone whether an UNKNOWN order may be tombstoned.
+    const onRefund = vi.fn(async () => ({ revoked: false }))
     const { options } = opts({ isCreditOrder: () => false, onRefund })
     const body = orderPayload({ event_name: 'order_refunded' }, { status: 'refunded' })
     const res = await handleLemonSqueezyWebhook(body, sign(body), options)
-    expect(res).toMatchObject({ status: 200, body: { ok: true, reason: 'not_a_credit_order' } })
-    expect(onRefund).not.toHaveBeenCalled()
+    expect(res).toMatchObject({ status: 200, body: { ok: true, reason: 'refund_noop' } })
+    expect(onRefund).toHaveBeenCalledWith(expect.objectContaining({ orderId: 'order-123' }))
   })
 
   it('reports refund_noop when nothing was revoked (unknown order)', async () => {

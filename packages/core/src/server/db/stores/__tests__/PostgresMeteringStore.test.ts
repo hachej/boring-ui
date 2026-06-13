@@ -89,6 +89,23 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
     expect(await store.revokePurchase('never-credited')).toEqual({ revoked: false })
   })
 
+  it('revokes an already-credited order even when tombstoning is disallowed (retired variant)', async () => {
+    // The order was credited; a later refund whose variant was retired from the
+    // allow-list (allowTombstone=false) must still revoke by order id.
+    await store.grantPurchaseOnce({ orderId: 'ord-retired', userId: USER, amountMicros: 10_000_000 })
+    expect(await store.revokePurchase('ord-retired', { allowTombstone: false })).toEqual({ revoked: true })
+    expect((await store.getBalance(USER)).remainingMicros).toBe(0)
+  })
+
+  it('does not tombstone an unknown order when tombstoning is disallowed (cross-store refund)', async () => {
+    // A refund for an order we never credited, that doesn't validate as a credit
+    // order, must NOT write a blocking tombstone — a legit later order can grant.
+    expect(await store.revokePurchase('ord-foreign', { allowTombstone: false })).toEqual({ revoked: false })
+    const rows = await sqlClient`SELECT count(*)::int AS n FROM boring_credit_purchases WHERE order_id = 'ord-foreign'`
+    expect(rows[0]?.n).toBe(0)
+    expect(await store.grantPurchaseOnce({ orderId: 'ord-foreign', userId: USER, amountMicros: 5_000_000 })).toEqual({ granted: true })
+  })
+
   it('refund-before-grant tombstones the order so a later order_created never credits', async () => {
     // order_refunded arrives before order_created (out-of-order webhook delivery).
     expect(await store.revokePurchase('ord-race')).toEqual({ revoked: false })

@@ -269,6 +269,25 @@ describe('pi chat metering', () => {
     ])
   })
 
+  it('does NOT settle for free when usage arrives with all-zero tokens', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'hi', clientNonce: 'nonce-zero' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    // Provider reports a usage object but every token field is zero → not billable.
+    adapter.emit(assistantMessageEnd({ usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }))
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    // A zero-token usage row carries no real charge — fall back to the hold.
+    expect(calls.settled).toEqual([])
+    expect(calls.released).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-zero', reason: 'usage-write-failed' }),
+    ])
+  })
+
   it('releases the reservation when the run errors before any usage arrived', async () => {
     const adapter = createAdapter()
     const { sink, calls } = createSink()
