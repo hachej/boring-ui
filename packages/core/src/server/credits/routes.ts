@@ -34,26 +34,28 @@ export interface CreditPack {
 
 /**
  * Build the display-ready pack list from the configured checkout variants + per-variant
- * credit values, in config order. The pack id is the EUR credit value (the existing
- * convention), so priceMinor = id × 100 cents, currency EUR. Returns [] when checkout or
- * its variants aren't configured. Variant ids stay server-side.
+ * credit values, in config order. The pack id is the major-unit price (the existing
+ * convention), so priceMinor = id × 100. The currency follows the configured checkout
+ * currency (`requireCurrency`, default EUR) so a non-EUR store shows the right amount.
+ * Returns [] when checkout or its variants aren't configured. Variant ids stay server-side.
  */
 function buildCreditPacks(ls: LemonSqueezyRouteOptions, locale?: string): CreditPack[] {
   const checkout = ls.checkout
   if (!checkout) return []
   const credits = ls.creditMicrosByVariant ?? {}
+  const currency = ls.requireCurrency ?? 'EUR'
   const packs: CreditPack[] = []
   for (const [packId, variantId] of Object.entries(checkout.variants)) {
-    const eur = Number(packId)
+    const major = Number(packId)
     const creditMicros = credits[variantId]
-    if (!Number.isFinite(eur) || eur <= 0 || typeof creditMicros !== 'number' || creditMicros <= 0) continue
-    const priceMinor = Math.round(eur * 100)
+    if (!Number.isFinite(major) || major <= 0 || typeof creditMicros !== 'number' || creditMicros <= 0) continue
+    const priceMinor = Math.round(major * 100)
     packs.push({
       id: packId,
       creditMicros,
       priceMinor,
-      currency: 'EUR',
-      label: new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(eur),
+      currency,
+      label: new Intl.NumberFormat(locale, { style: 'currency', currency, maximumFractionDigits: 0 }).format(major),
       isDefault: packId === checkout.defaultPack,
     })
   }

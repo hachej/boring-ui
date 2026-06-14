@@ -71,6 +71,10 @@ export function useCreditBalance({
   const buyingRef = useRef(false)
   const burstRef = useRef(0)
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
+  // True while a retry burst is in flight: keeps `updating` latched across the
+  // individual retries so the UI shows "Updating…" continuously until the burst ends,
+  // rather than flicking back to "Updated" (with a possibly-stale value) between retries.
+  const burstActiveRef = useRef(false)
   // Latest known balance, read by buy() to stash a pre-checkout baseline without
   // adding `balance` to buy()'s deps (which would re-create the callback each poll).
   const balanceRef = useRef<CreditBalanceResponse | null>(null)
@@ -96,17 +100,34 @@ export function useCreditBalance({
     } catch {
       // Network blip — keep the last known balance (don't present it as fresh).
     } finally {
-      setUpdating(false)
+      // Don't drop the "updating" state mid-burst: a retry burst latches it until the
+      // final retry completes (see refreshWithRetry) so the balance isn't shown as
+      // fresh between retries while metering is still settling.
+      if (!burstActiveRef.current) setUpdating(false)
     }
   }, [apiBaseUrl])
 
   // Refetch now + a backoff burst. A new call cancels the prior burst's pending
-  // timers (token bump) so concurrent triggers don't stampede /balance.
+  // timers (token bump) so concurrent triggers don't stampede /balance. `updating`
+  // stays true for the whole burst and is cleared only after the last retry settles.
   const refreshWithRetry = useCallback(() => {
     const token = (burstRef.current += 1)
     for (const t of timersRef.current) clearTimeout(t)
-    timersRef.current = RETRY_BURST_MS.map((delay) =>
-      setTimeout(() => { if (burstRef.current === token) void refresh() }, delay),
+    burstActiveRef.current = true
+    setUpdating(true)
+    const lastIndex = RETRY_BURST_MS.length - 1
+    timersRef.current = RETRY_BURST_MS.map((delay, index) =>
+      setTimeout(async () => {
+        if (burstRef.current !== token) return
+        try {
+          await refresh()
+        } finally {
+          if (index === lastIndex && burstRef.current === token) {
+            burstActiveRef.current = false
+            setUpdating(false)
+          }
+        }
+      }, delay),
     )
   }, [refresh])
 

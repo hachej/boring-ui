@@ -100,6 +100,25 @@ describe('credits routes', () => {
     expect(body.packs[0]).not.toHaveProperty('variantId')
   })
 
+  it('renders packs in the configured checkout currency (not hard-coded EUR)', async () => {
+    const store = makeStore()
+    app = Fastify()
+    app.addHook('onRequest', async (request: FastifyRequest) => { ;(request as unknown as { user: { id: string } }).user = { id: 'u1' } })
+    registerCreditsRoutes(app, {
+      service: new CreditsService(store, CONFIG),
+      lemonSqueezy: {
+        webhookSecret: SECRET, creditVariantIds: ['1'], expectedTestMode: true, requireCurrency: 'USD',
+        creditMicrosByVariant: { '1': 10_000_000 }, creditOnlyStore: true,
+        checkout: { apiKey: 'k', storeId: 's', variants: { '10': '1' }, defaultPack: '10', testMode: true },
+      },
+    })
+    await app.ready()
+    const body = (await app.inject({ method: 'GET', url: '/api/credits/balance' })).json()
+    expect(body.packs).toEqual([
+      expect.objectContaining({ id: '10', priceMinor: 1000, currency: 'USD' }),
+    ])
+  })
+
   it('omits packs when checkout is not configured', async () => {
     const a = await build(makeStore(), 'u1')
     const body = (await a.inject({ method: 'GET', url: '/api/credits/balance' })).json()

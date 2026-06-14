@@ -770,9 +770,13 @@ export function PiChatPanel({
         restoreSubmittedDraft()
         return false
       }
-      // Admitted: this run supersedes a prior rejection, so retract its CTA. (A fresh
-      // rejection in the catch below re-renders it because dropLocalNotice un-dismisses.)
-      dropLocalNotice(RUN_REJECTED_NOTICE_ID)
+      // Only an ADMITTED server run (prompt/follow-up) supersedes a prior rejection —
+      // retract its CTA then. A local slash command (type: 'command', preserveDraft:false)
+      // admits no run, so it must leave the recovery CTA in place. (A fresh rejection in
+      // the catch below re-renders it because surfaceRunRejected un-dismisses.)
+      if (result.type === 'prompt' || result.type === 'followup') {
+        dropLocalNotice(RUN_REJECTED_NOTICE_ID)
+      }
       if (result.type === 'prompt' && activeChatSessionId) {
         if (shouldHoldLocalSubmitted(selectedPiSession, result.cursor)) markLocalSubmitted(activeChatSessionId)
         else clearLocalSubmitted(activeChatSessionId)
@@ -870,8 +874,11 @@ export function PiChatPanel({
         }
         return
       }
-      // Admitted: supersede a prior run-rejected CTA (same rule as the composer path).
-      dropLocalNotice(RUN_REJECTED_NOTICE_ID)
+      // Supersede a prior run-rejected CTA only on an admitted run (same rule as the
+      // composer path — a local command admits nothing).
+      if (result.type === 'prompt' || result.type === 'followup') {
+        dropLocalNotice(RUN_REJECTED_NOTICE_ID)
+      }
       if (result.type === 'prompt') {
         if (shouldHoldLocalSubmitted(selectedPiSession, result.cursor)) markLocalSubmitted(activeSessionId)
         else clearLocalSubmitted(activeSessionId)
