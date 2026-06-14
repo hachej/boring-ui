@@ -41,7 +41,7 @@ export function RuntimeNoticeMessages({
 }: {
   notices: PanelNotice[]
   onDismiss: (id: string) => void
-  /** Host-supplied action for a notice (e.g. a Buy button for PAYMENT_REQUIRED). */
+  /** Host-supplied action for a notice (e.g. a recovery action for PAYMENT_REQUIRED). */
   renderAction?: (notice: PanelNotice) => ReactNode
 }) {
   const visible = notices.filter((notice) =>

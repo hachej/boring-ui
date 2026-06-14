@@ -22,7 +22,18 @@ const buyEnabled = import.meta.env.VITE_CREDITS_BUY_ENABLED === '1'
 // Surface the current balance + a "Buy credits" action on the account settings
 // page (in addition to the top-bar badge). The panel self-hides when credits are
 // disabled, so this is safe to wire unconditionally.
-const AccountSettingsPage = () => <UserSettingsPage billing={<CreditsSettingsPanel />} />
+const AccountSettingsPage = () => (
+  <UserSettingsPage
+    extraSections={[
+      {
+        id: 'billing',
+        navLabel: 'Billing',
+        navDescription: 'Credits and top-up',
+        content: <CreditsSettingsPanel />,
+      },
+    ]}
+  />
+)
 
 // Credit-aware chat wiring — the ONLY place credits meet the agent. The agent
 // exposes generic seams (a stable error code + lifecycle callbacks); here we map

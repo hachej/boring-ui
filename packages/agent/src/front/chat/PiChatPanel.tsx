@@ -155,11 +155,11 @@ export interface PiChatPanelProps {
   onComposerStop?: () => void
   onComposerBlockerAction?: (blocker: ComposerBlocker, action: string) => void
   /** Fired once each time a run settles (busy → idle). Hosts use it to refresh
-   * out-of-band state after a turn (e.g. a credit balance). The agent stays
+   * out-of-band state after a turn (e.g. a usage/quota indicator). The agent stays
    * agnostic about what the host does with it. */
   onTurnComplete?: () => void
   /** Host-supplied action node for a runtime notice, keyed off notice.errorCode.
-   * Lets a host attach a code-specific control (e.g. a Buy-credits button for a
+   * Lets a host attach a recovery action for a specific error code (e.g. for a
    * PAYMENT_REQUIRED notice) without the agent knowing what the code means. */
   renderNoticeAction?: (notice: PiChatRuntimeNotice) => ReactNode
 }
@@ -334,10 +334,11 @@ export function PiChatPanel({
   }, [onAutoSubmitInitialDraftSettled])
   const prevStatusRef = useRef<PiChatStatus>('idle')
   const statusRef = useRef<PiChatStatus>('idle')
-  // Tracks the prior status for the onTurnComplete edge detector. Kept separate
-  // from prevStatusRef (which the auto-submit settle effect owns) so the two
-  // detectors don't clobber each other's bookkeeping.
-  const turnCompletePrevStatusRef = useRef<PiChatStatus | undefined>(undefined)
+  // Tracks the prior (session, status) for the onTurnComplete edge detector. Kept
+  // separate from prevStatusRef (which the auto-submit settle effect owns) so the two
+  // detectors don't clobber each other's bookkeeping. Scoped by session so switching
+  // away from a busy session to a different idle one isn't read as a turn settling.
+  const turnCompletePrevRef = useRef<{ sessionId?: string; status: PiChatStatus } | undefined>(undefined)
   const scrollToBottomRef = useRef<() => void>(() => {})
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const [localNotices, setLocalNotices] = useState<PanelNotice[]>([])
@@ -729,8 +730,8 @@ export function PiChatPanel({
   }, [activeChatSessionId, addLocalNotice, clearMentionedFiles, composerBlocked, composerBlockerLabel, effectiveMentionedFiles, markLocalSubmitted, onBeforeSubmit, onCommandResult, onComposerWarning, onMentionedFilesConsumed, openModelPicker, openThinkingPicker, registry, reloadAgentPlugins, resetSession, runPluginUpdate, selectComposerModel, selectComposerThinking, selectedModel, selectedPiSession, selectedThinking, setComposerDraft, submitThinkingControl])
 
   // Turn a rejected send (prompt/follow-up/auto-submit) into the single run-rejected
-  // notice, carrying the stable server error code so a host can attach a code-specific
-  // action (e.g. Buy credits for PAYMENT_REQUIRED).
+  // notice, carrying the stable server error code so a host can attach a recovery
+  // action for a specific code (e.g. for PAYMENT_REQUIRED).
   const surfaceRunRejected = useCallback((error: unknown) => {
     const errorCode = piChatErrorCode(error)
     addLocalNotice({
@@ -841,16 +842,17 @@ export function PiChatPanel({
   }, [settlePendingAutoSubmit, status])
 
   // Fire onTurnComplete once per run settle (busy/submitted → idle). Hosts use it
-  // to refresh out-of-band state after a turn (e.g. a credit balance); the agent
-  // stays agnostic about what that state is.
+  // to refresh out-of-band state after a turn (e.g. a usage/quota indicator); the
+  // agent stays agnostic about what that state is. Only an edge WITHIN the same
+  // active session counts — a session switch records the new baseline without firing.
   useEffect(() => {
-    const previous = turnCompletePrevStatusRef.current
-    turnCompletePrevStatusRef.current = status
-    if (previous === undefined) return
-    const wasBusy = isPiBusyStatus(previous) || previous === 'submitted'
+    const previous = turnCompletePrevRef.current
+    turnCompletePrevRef.current = { sessionId: activeSessionId, status }
+    if (previous === undefined || previous.sessionId !== activeSessionId) return
+    const wasBusy = isPiBusyStatus(previous.status) || previous.status === 'submitted'
     const settled = !isPiBusyStatus(status) && status !== 'submitted'
     if (wasBusy && settled) onTurnComplete?.()
-  }, [onTurnComplete, status])
+  }, [activeSessionId, onTurnComplete, status])
 
   useEffect(() => {
     if (!autoSubmitInitialDraft || !policy || !activeSessionId || composerBlocked) return

@@ -9,7 +9,9 @@ export interface CheckoutReturnBannerProps {
 const COPY: Record<string, { tone: string; text: string }> = {
   checking: { tone: 'info', text: 'Checking your payment…' },
   confirmed: { tone: 'success', text: 'Credits added — thank you!' },
-  processing: { tone: 'info', text: 'Payment received — your credits are still processing and usually appear within a minute.' },
+  // Reached on timeout WITHOUT a confirmed balance increase: don't claim the payment
+  // was received (we can't confirm that from the client), just that it's still pending.
+  processing: { tone: 'info', text: 'Your purchase is still being confirmed — credits usually appear within a minute. Refresh if it doesn’t update.' },
   cancelled: { tone: 'warning', text: 'Checkout cancelled — no charge was made.' },
 }
 

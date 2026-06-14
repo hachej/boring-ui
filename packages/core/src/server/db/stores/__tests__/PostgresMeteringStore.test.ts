@@ -625,6 +625,10 @@ describe('PostgresMeteringStore', () => {
     // No zero-amount (zero-token) noise; no other user's rows; descriptions are generic.
     expect(entries.every((e) => e.amountMicros !== 0)).toBe(true)
     expect(JSON.stringify(entries)).not.toContain('ord-1') // no order id leaked
+    // Ids are opaque tokens — no raw ledger keys (usage/refund/session/message ids).
+    const serialized = JSON.stringify(entries)
+    for (const raw of ['led-u1', 'led-fb', 'led-rf', 'pi-chat']) expect(serialized).not.toContain(raw)
+    expect(entries.every((e) => /^[gu]_[0-9a-f]{8}$/.test(e.id))).toBe(true)
   })
 
   it('listLedger clamps the limit to 1..50', async () => {

@@ -350,7 +350,7 @@ describe('PiChatPanel sandbox shell', () => {
     remote.prompt.mockRejectedValueOnce(Object.assign(new Error('You are out of credits.'), { errorCode: 'PAYMENT_REQUIRED' }))
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
     const renderNoticeAction = vi.fn((notice: { errorCode?: string }) =>
-      notice.errorCode === 'PAYMENT_REQUIRED' ? <button type="button">Buy credits</button> : null,
+      notice.errorCode === 'PAYMENT_REQUIRED' ? <button type="button">Resolve</button> : null,
     )
     render(
       <PiChatPanel
@@ -376,7 +376,7 @@ describe('PiChatPanel sandbox shell', () => {
     expect(notice.textContent).toContain('You are out of credits.')
     // The host's renderNoticeAction was invoked with the coded notice and its action shows.
     expect(renderNoticeAction).toHaveBeenCalledWith(expect.objectContaining({ errorCode: 'PAYMENT_REQUIRED' }))
-    expect(within(notice as HTMLElement).getByRole('button', { name: 'Buy credits' })).toBeTruthy()
+    expect(within(notice as HTMLElement).getByRole('button', { name: 'Resolve' })).toBeTruthy()
   })
 
   test('fires onTurnComplete once when a run settles from busy to idle', async () => {

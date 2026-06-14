@@ -6,6 +6,12 @@ import type { CreditBalanceResponse } from './helpers.js'
  * when a run finishes, so the balance updates without waiting for the poll. */
 export const CREDITS_REFRESH_EVENT = 'credits:refresh'
 
+/** sessionStorage key holding the balance captured immediately BEFORE a checkout is
+ * opened. The post-checkout return handler compares against this pre-checkout baseline
+ * so it confirms only on a real server-side increase — and never confirms when it can't
+ * establish a baseline (which would let a spoofed ?checkout=return fake a success). */
+export const CHECKOUT_BASELINE_STORAGE_KEY = 'credits:checkout-baseline'
+
 export interface UseCreditBalanceOptions {
   /** Base URL for the credits API (default: same origin). */
   apiBaseUrl?: string
@@ -60,6 +66,9 @@ export function useCreditBalance({
   const buyingRef = useRef(false)
   const burstRef = useRef(0)
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
+  // Latest known balance, read by buy() to stash a pre-checkout baseline without
+  // adding `balance` to buy()'s deps (which would re-create the callback each poll).
+  const balanceRef = useRef<CreditBalanceResponse | null>(null)
 
   const refresh = useCallback(async () => {
     setUpdating(true)
@@ -76,6 +85,7 @@ export function useCreditBalance({
         return
       }
       setBalance(data)
+      balanceRef.current = data
       setHidden(false)
       setLastUpdatedAt(Date.now())
     } catch {
@@ -132,6 +142,14 @@ export function useCreditBalance({
       if (!res.ok) return 'Could not start checkout. Please try again.'
       const { url } = (await res.json()) as { url?: string }
       if (!url) return 'Checkout is not available right now.'
+      // Stash the pre-checkout balance so the return handler can confirm only on a
+      // real increase. Best-effort: storage may be unavailable (private mode).
+      try {
+        const current = balanceRef.current?.remainingMicros
+        if (typeof current === 'number' && Number.isFinite(current)) {
+          window.sessionStorage.setItem(CHECKOUT_BASELINE_STORAGE_KEY, String(current))
+        }
+      } catch { /* sessionStorage unavailable — handler falls back to a fetched baseline */ }
       window.open(url, '_blank', 'noopener,noreferrer')
       return null
     } catch {

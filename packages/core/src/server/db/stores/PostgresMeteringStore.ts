@@ -495,7 +495,7 @@ export class PostgresMeteringStore {
     ])
     const entries: CreditLedgerEntry[] = [
       ...grants.map((g): CreditLedgerEntry => ({
-        id: `grant:${g.id}`,
+        id: opaqueLedgerId('g', g.id),
         ...describeGrant(g.reason),
         amountMicros: g.amountMicros,
         createdAt: g.createdAt.toISOString(),
@@ -503,7 +503,7 @@ export class PostgresMeteringStore {
       ...usage
         .filter((u) => u.billedCostMicros > 0)
         .map((u): CreditLedgerEntry => ({
-          id: `usage:${u.id}`,
+          id: opaqueLedgerId('u', u.id),
           ...describeUsage(u.source),
           amountMicros: -u.billedCostMicros,
           createdAt: u.createdAt.toISOString(),
@@ -874,6 +874,19 @@ function toSafeMicros(value: string | undefined, label: string): number {
 }
 
 /** Map a grant reason → display-safe ledger kind + description (no order ids etc.). */
+/** Opaque, stable display id for a ledger row. Raw ledger keys embed internals
+ * (agent session/message/run ids like `pi-usage:s1:message:a1`, and Lemon Squeezy
+ * order keys in refund ids), which must not leave the server. Hash them to a short
+ * opaque token — the client only uses this as a list key. */
+function opaqueLedgerId(prefix: string, raw: string): string {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < raw.length; i += 1) {
+    hash ^= raw.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return `${prefix}_${(hash >>> 0).toString(16).padStart(8, '0')}`
+}
+
 function describeGrant(reason: string): { kind: CreditLedgerKind; description: string } {
   if (reason === 'signup_grant') return { kind: 'grant', description: 'Signup grant' }
   if (reason.startsWith('purchase:')) return { kind: 'purchase', description: 'Credit purchase' }

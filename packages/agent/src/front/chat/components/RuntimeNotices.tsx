@@ -20,8 +20,8 @@ export interface RuntimeNoticesProps extends Omit<HTMLAttributes<HTMLDivElement>
   onDismiss?: (id: string) => void
   onAction?: (id: string) => void
   /** Host-supplied action node for a notice, rendered before the built-in
-   * onAction button. Lets a host attach a code-specific control (e.g. a Buy
-   * button for a PAYMENT_REQUIRED notice) without this component knowing the code. */
+   * onAction button. Lets a host attach a recovery action for a specific error
+   * code (e.g. for a PAYMENT_REQUIRED notice) without this component knowing the code. */
   renderAction?: (notice: RuntimeNotice) => ReactNode
 }
 

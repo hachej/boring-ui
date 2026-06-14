@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CREDITS_REFRESH_EVENT } from './useCreditBalance.js'
+import { CHECKOUT_BASELINE_STORAGE_KEY, CREDITS_REFRESH_EVENT } from './useCreditBalance.js'
 import type { CreditBalanceResponse } from './helpers.js'
 
 export type CheckoutReturnStatus = 'idle' | 'checking' | 'confirmed' | 'processing' | 'cancelled'
@@ -22,6 +22,20 @@ async function fetchBalance(apiBaseUrl: string): Promise<CreditBalanceResponse |
     const res = await fetch(`${apiBaseUrl}/api/credits/balance`, { credentials: 'include' })
     if (!res.ok) return null
     return (await res.json()) as CreditBalanceResponse
+  } catch {
+    return null
+  }
+}
+
+/** Read (and consume) the pre-checkout baseline stashed by buy(). Returns null when
+ * absent/unparseable so the caller can fall back to a fetched baseline. */
+function takeStoredBaseline(): number | null {
+  try {
+    const raw = window.sessionStorage.getItem(CHECKOUT_BASELINE_STORAGE_KEY)
+    if (raw === null) return null
+    window.sessionStorage.removeItem(CHECKOUT_BASELINE_STORAGE_KEY)
+    const value = Number(raw)
+    return Number.isFinite(value) ? value : null
   } catch {
     return null
   }
@@ -59,7 +73,11 @@ export function useCheckoutReturnHandler({ apiBaseUrl = '', param = 'checkout' }
     setStatus('checking')
 
     void (async () => {
-      const baseline = (await fetchBalance(apiBaseUrl))?.remainingMicros ?? null
+      // Prefer the pre-checkout baseline captured by buy(); fall back to a baseline
+      // fetched now (worse — a fast webhook may already be included). If we can't
+      // establish ANY baseline, we never confirm — only a real increase confirms, so
+      // a spoofed ?checkout=return can't fake success.
+      const baseline = takeStoredBaseline() ?? (await fetchBalance(apiBaseUrl))?.remainingMicros ?? null
       // Tell other tabs (and our own balance hooks) to refresh.
       window.dispatchEvent(new Event(CREDITS_REFRESH_EVENT))
       try { channel = new BroadcastChannel('credits'); channel.postMessage('refresh') } catch { /* unsupported */ }
@@ -69,7 +87,7 @@ export function useCheckoutReturnHandler({ apiBaseUrl = '', param = 'checkout' }
           if (cancelled) return
           const bal = await fetchBalance(apiBaseUrl)
           if (cancelled || !bal) return
-          if (baseline === null || bal.remainingMicros > baseline) {
+          if (baseline !== null && bal.remainingMicros > baseline) {
             setStatus('confirmed')
             cancelled = true
             window.dispatchEvent(new Event(CREDITS_REFRESH_EVENT))

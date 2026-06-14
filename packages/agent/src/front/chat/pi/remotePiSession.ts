@@ -607,7 +607,7 @@ class RemotePiSessionHttpError extends Error {
  * Extract the stable server error code (e.g. `PAYMENT_REQUIRED`) from an error thrown
  * by a command call (prompt/follow-up/etc). Returns undefined for non-HTTP errors or
  * bodies without a code. This is the agent's generic seam: callers map a code to UI
- * (a notice action) WITHOUT the agent knowing about credits/billing.
+ * (a notice action) WITHOUT the agent knowing what the code means.
  */
 export function piChatErrorCode(error: unknown): string | undefined {
   if (error instanceof RemotePiSessionHttpError) return error.errorCode

@@ -48,12 +48,22 @@ const changePasswordSchema = z
 
 type ChangePasswordData = z.infer<typeof changePasswordSchema>
 
+/** A host-provided settings section inserted after the profile panel, with its own
+ * nav entry. Lets a host add feature sections (e.g. billing) WITHOUT this page —
+ * which lives in the feature-agnostic `@hachej/boring-core/front` — knowing what
+ * they are. `id` must match the rendered content's anchor id for nav scroll. */
+export interface UserSettingsSection {
+  id: string
+  navLabel: string
+  navDescription?: string
+  content: ReactNode
+}
+
 export interface UserSettingsPageProps {
   topBar?: ReactNode
-  /** Optional billing/credits content (e.g. `<CreditsSettingsPanel/>` from
-   * `@hachej/boring-core/app/front`). Rendered as its own section with a nav entry
-   * when provided; omitted entirely otherwise so the page stays billing-agnostic. */
-  billing?: ReactNode
+  /** Extra settings sections (each with its own nav entry) inserted after the
+   * profile panel. Omitted entirely when not provided. */
+  extraSections?: UserSettingsSection[]
 }
 
 function initialsFor(name: string | null | undefined, email: string): string {
@@ -136,14 +146,13 @@ function SettingsPageHeader({
   )
 }
 
-const ACCOUNT_NAV_ITEMS = [
-  { href: '#profile', label: 'Profile', description: 'Identity and email' },
+const PROFILE_NAV_ITEM = { href: '#profile', label: 'Profile', description: 'Identity and email' }
+const ACCOUNT_TAIL_NAV_ITEMS = [
   { href: '#password', label: 'Password', description: 'Sign-in security' },
   { href: '#danger-zone', label: 'Deletion', description: 'Permanent actions' },
 ]
-const BILLING_NAV_ITEM = { href: '#billing', label: 'Billing', description: 'Credits and top-up' }
 
-export function UserSettingsPage({ topBar, billing }: UserSettingsPageProps = {}) {
+export function UserSettingsPage({ topBar, extraSections = [] }: UserSettingsPageProps = {}) {
   const session = useSession()
   const identity = useUser()
   const signOut = useSignOut()
@@ -249,7 +258,11 @@ export function UserSettingsPage({ topBar, billing }: UserSettingsPageProps = {}
           <aside className="boring-settings-sidebar">
             <UiSettingsNav
               label="Account settings"
-              items={billing ? [ACCOUNT_NAV_ITEMS[0], BILLING_NAV_ITEM, ...ACCOUNT_NAV_ITEMS.slice(1)] : ACCOUNT_NAV_ITEMS}
+              items={[
+                PROFILE_NAV_ITEM,
+                ...extraSections.map((s) => ({ href: `#${s.id}`, label: s.navLabel, description: s.navDescription })),
+                ...ACCOUNT_TAIL_NAV_ITEMS,
+              ]}
             />
           </aside>
 
@@ -293,7 +306,9 @@ export function UserSettingsPage({ topBar, billing }: UserSettingsPageProps = {}
             </DetailList>
           </UiSettingsPanel>
 
-          {billing}
+          {extraSections.map((section) => (
+            <div key={section.id}>{section.content}</div>
+          ))}
 
           <form onSubmit={handleSubmit(onChangePassword)} noValidate>
             <UiSettingsPanel
