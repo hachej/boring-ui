@@ -42,7 +42,9 @@ describe('createCreditsMeteringSink', () => {
   it('fails closed with 401 when the run has no user', async () => {
     const store = makeStore()
     const sink = createCreditsMeteringSink(() => new CreditsService(store, CONFIG))
-    await expect(sink.reserveRun({ ...BASE, kind: 'prompt', message: 'hi' })).rejects.toMatchObject({ statusCode: 401 })
+    // Code must be the canonical agent ErrorCode (UNAUTHORIZED) so the route
+    // serializes a stable 401, not INTERNAL_ERROR.
+    await expect(sink.reserveRun({ ...BASE, kind: 'prompt', message: 'hi' })).rejects.toMatchObject({ statusCode: 401, code: 'UNAUTHORIZED' })
     expect(store.reserve).not.toHaveBeenCalled()
   })
 

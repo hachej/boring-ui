@@ -8,6 +8,7 @@ import {
 } from '../error-codes'
 
 const EXPECTED_ERROR_CODES = [
+  'UNAUTHORIZED',
   'MISSING_API_KEY',
   'INVALID_API_KEY',
   'OIDC_REFRESH_FAILED',

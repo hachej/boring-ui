@@ -21,6 +21,7 @@ All API failures must use the response envelope:
 
 | Code | When it fires | HTTP status | Suggested client action | Log level | Stability |
 | --- | --- | --- | --- | --- | --- |
+| `UNAUTHORIZED` | Request reached a protected path (e.g. credit metering) without an authenticated user | 401 | re-auth | warn | stable (public API) |
 | `MISSING_API_KEY` | Required provider API key missing from runtime config | 500 | report-bug | error | stable (public API) |
 | `INVALID_API_KEY` | Provider rejects API key as malformed/invalid | 401 | re-auth | warn | stable (public API) |
 | `OIDC_REFRESH_FAILED` | OIDC refresh token exchange fails | 401 | re-auth | warn | stable (public API) |

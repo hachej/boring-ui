@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 export const ErrorCode = z.enum([
   // Auth / config
+  'UNAUTHORIZED',
   'MISSING_API_KEY',
   'INVALID_API_KEY',
   'OIDC_REFRESH_FAILED',

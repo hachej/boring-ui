@@ -9,7 +9,10 @@ import type {
 import type { CreditsService } from './creditsService.js'
 
 function authRequiredError(): Error {
-  return Object.assign(new Error('authentication required'), { statusCode: 401, code: 'AUTH_REQUIRED' })
+  // 'UNAUTHORIZED' must match @hachej/boring-agent's canonical ErrorCode enum so the
+  // agent route serializes a stable 401 code — a non-enum code would be coerced to
+  // INTERNAL_ERROR by sendRouteError, mislabeling an auth failure as a server error.
+  return Object.assign(new Error('authentication required'), { statusCode: 401, code: 'UNAUTHORIZED' })
 }
 
 /**
