@@ -525,6 +525,10 @@ export class PiChatMeteringCoordinator {
     if (!run) return
     if (run.followUp?.clientNonce) state.consumedFollowUpNonces.add(run.followUp.clientNonce)
     if (state.active && !state.active.terminal) this.finishRun(state.active, 'ok')
+    // Consumption IS the follow-up's execution signal (Pi is now processing its
+    // user message), the analogue of agent-start for prompts — mark it started so
+    // a later no-usage error charges the fallback hold instead of freeing it.
+    run.started = true
     state.active = run
   }
 

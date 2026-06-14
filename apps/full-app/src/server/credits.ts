@@ -161,6 +161,61 @@ function worstCaseRunMicros(pricing: CreditPricingConfig, env: NodeJS.ProcessEnv
   return Math.ceil(unitsPerCall * maxCalls * pricing.margin * pricing.creditMicrosPerUnit)
 }
 
+export type ReservationHoldVerdict =
+  | { action: 'ok' }
+  | { action: 'throw'; message: string }
+  | { action: 'warn'; message: string; fields: Record<string, number> }
+
+/**
+ * Decide whether the configured per-run hold is acceptable, against two thresholds:
+ *  - SERVED worst case (`maxServedRate`): the hold MUST cover a worst-case run on the
+ *    models this deployment serves. Below it, even a normal run overshoots → fatal
+ *    (`throw`) unless `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION=1` (a soft-stop
+ *    opt-in, forbidden in production). Only reachable with an explicit too-low
+ *    `BORING_CREDITS_RESERVATION_EUR` — the UNSET default IS the served worst case.
+ *  - EFFECTIVE worst case (`maxEffectiveRate`, incl. the built-in Opus rate an
+ *    UNMATCHED/misrouted model bills at): the served-rate default sits below it, so a
+ *    misrouted expensive run overshoots into recoverable debt (bounded; next run
+ *    refused). That's a documented accepted limitation → `warn`, never block (else the
+ *    recommended default could not boot).
+ * Pure (no app/db), so the default-config "must not crash startup" path is unit-testable.
+ */
+export function assessReservationHold(config: FullAppCreditsConfig, env: NodeJS.ProcessEnv = process.env): ReservationHoldVerdict {
+  if (!config.enabled) return { action: 'ok' }
+  const servedWorstCase = worstCaseRunMicros(config.pricing, env, maxServedRate(config.pricing))
+  const effectiveWorstCase = worstCaseRunMicros(config.pricing, env, maxEffectiveRate(config.pricing))
+  const hold = config.runReservationMicros
+  const unsafeAllowed = env.BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION === '1'
+  if (hold < servedWorstCase) {
+    if (unsafeAllowed && env.NODE_ENV === 'production') {
+      return { action: 'throw', message: 'credits: BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION=1 is not allowed in production — raise BORING_CREDITS_RESERVATION_EUR to cover at least the served worst-case run (or restrict served models)' }
+    }
+    if (unsafeAllowed) {
+      return {
+        action: 'warn',
+        message: 'credits: UNSAFE per-run reservation (below the SERVED worst-case run) explicitly allowed — even a normal run can overshoot the hold (bounded; next run refused). Launch-blocking debt.',
+        fields: { runReservationMicros: hold, servedWorstCaseMicros: servedWorstCase },
+      }
+    }
+    return {
+      action: 'throw',
+      message:
+        `credits: per-run reservation (${hold} micros) is below the SERVED worst-case run cost ` +
+        `(${servedWorstCase} micros) — even a normal run would not hold. Raise BORING_CREDITS_RESERVATION_EUR (or ` +
+        `lower BORING_CREDITS_MAX_CONTEXT_TOKENS/_MAX_OUTPUT_TOKENS/_MAX_CALLS_PER_RUN), or set ` +
+        `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION=1 to accept the soft stop deliberately.`,
+    }
+  }
+  if (hold < effectiveWorstCase) {
+    return {
+      action: 'warn',
+      message: 'credits: per-run hold covers the served models but not an unmatched/misrouted expensive model (e.g. Opus) — such a run can overshoot the hold into recoverable debt (bounded; next run refused). Restrict served models or raise BORING_CREDITS_RESERVATION_EUR for a hard stop on unknown models.',
+      fields: { runReservationMicros: hold, servedWorstCaseMicros: servedWorstCase, effectiveWorstCaseMicros: effectiveWorstCase },
+    }
+  }
+  return { action: 'ok' }
+}
+
 export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullAppCreditsConfig {
   const variants = parseVariants(env.BORING_CREDITS_LS_VARIANTS)
   const defaultPackEnv = env.BORING_CREDITS_LS_DEFAULT_PACK
@@ -200,8 +255,9 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
   const rates = parseRates(env.BORING_CREDITS_RATES)
   // The per-run hold defaults to the SERVED-rate worst case (proportional to the
   // models this deployment serves, so a small starter grant stays usable). attach()
-  // then checks it against the EFFECTIVE worst case and requires an explicit unsafe
-  // opt-in if it can't cover an unmatched expensive model.
+  // hard-throws only if the hold can't cover the SERVED worst case (an explicit
+  // too-low value), and merely WARNS if it covers the served but not the effective
+  // (unmatched/misrouted) worst case — so this recommended default boots cleanly.
   const pricingForHold: CreditPricingConfig = { margin, creditMicrosPerUnit: CREDIT_MICROS_PER_EUR, rates }
   const servedWorstCase = worstCaseRunMicros(pricingForHold, env, maxServedRate(pricingForHold))
   const runReservationMicros = env.BORING_CREDITS_RESERVATION_EUR
@@ -294,32 +350,14 @@ export function buildCreditsWiring(env: NodeJS.ProcessEnv = process.env): {
           app.log.warn('credits: Lemon Squeezy checkout not configured (need API key + store id + variants) — Buy-credits button disabled')
         }
       }
-      // The per-run hold bounds a single run's overdraft (actual cost is posted
-      // after the run). It must cover the EFFECTIVE worst case (an UNMATCHED model
-      // bills at maxEffectiveRate, e.g. Opus) to be a true hard stop. A served-rate
-      // hold (the usable default) is below that, so it requires an explicit unsafe
-      // opt-in acknowledging that a misrouted expensive model can overshoot.
-      const worstCase = worstCaseRunMicros(config.pricing, env, maxEffectiveRate(config.pricing))
-      if (config.enabled && config.runReservationMicros < worstCase) {
-        // The unsafe (soft-stop) override is forbidden in production — a misrouted
-        // expensive model could overshoot the hold into debt. Prod must size the
-        // hold to cover the effective worst case (or use a served-model allowlist).
-        if (env.BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION === '1' && env.NODE_ENV === 'production') {
-          throw new Error('credits: BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION=1 is not allowed in production — raise BORING_CREDITS_RESERVATION_EUR to cover the effective worst-case run (or restrict served models)')
-        }
-        if (env.BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION === '1') {
-          app.log.warn(
-            { runReservationMicros: config.runReservationMicros, worstCaseRunMicros: worstCase },
-            'credits: UNSAFE per-run reservation (below worst-case run) explicitly allowed — a single run can overshoot the hold (bounded; next run refused). Launch-blocking debt.',
-          )
-        } else {
-          throw new Error(
-            `credits: per-run reservation (${config.runReservationMicros} micros) is below the worst-case run cost ` +
-              `(${worstCase} micros) — the per-run hard stop would not hold. Raise BORING_CREDITS_RESERVATION_EUR (or ` +
-              `lower BORING_CREDITS_MAX_CONTEXT_TOKENS/_MAX_OUTPUT_TOKENS/_MAX_CALLS_PER_RUN), or set ` +
-              `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION=1 to accept the soft stop deliberately.`,
-          )
-        }
+      // The per-run hold bounds a single run's overdraft. Evaluate it against the
+      // served + effective worst cases (a 'throw' verdict is fatal; a 'warn' is a
+      // documented accepted posture). Extracted as a pure function so the default
+      // (served-rate) config is regression-tested to boot, not crash.
+      const verdict = assessReservationHold(config, env)
+      if (config.enabled) {
+        if (verdict.action === 'throw') throw new Error(verdict.message)
+        if (verdict.action === 'warn') app.log.warn(verdict.fields, verdict.message)
       }
       // A free-grant smaller than the per-run hold means new users can't start a
       // run at all (reserve needs the full hold available). Surface it — the

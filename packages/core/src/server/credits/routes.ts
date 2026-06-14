@@ -33,17 +33,15 @@ export interface LemonSqueezyRouteOptions {
    * or mismatched currency is rejected. */
   requireCurrency?: string
   /**
-   * Fixed credit micros to grant per credit-pack variant id. STRONGLY preferred
-   * over order-amount math: the grant is the pack's configured value, so a
-   * multi-item order, a discount, or a tax change can't change how many credits
-   * are minted. A variant not in this map (but in creditVariantIds) falls back
-   * to `creditsForOrder`.
+   * Fixed credit micros to grant per credit-pack variant id. REQUIRED, and the
+   * ONLY crediting basis — never order-amount math: the grant is the pack's
+   * configured value, so a multi-item order, a discount, or a tax change can't
+   * change how many credits are minted. Every entry in `creditVariantIds` must
+   * have a positive value here (enforced at registration). A non-pack host that
+   * needs a different policy must add an explicit, separately-tested route — the
+   * money webhook keeps exactly one safe path.
    */
-  creditMicrosByVariant?: Record<string, number>
-  /** Credit micros to grant for an order. Default: net pre-tax subtotal ×
-   * creditMicrosPerUnit. Only used when a variant has no creditMicrosByVariant
-   * entry — prefer the variant map to avoid whole-order-amount pitfalls. */
-  creditsForOrder?: (order: LemonSqueezyOrder) => number
+  creditMicrosByVariant: Record<string, number>
   webhookPath?: string
   /** Server-side checkout creation. Required for money-safe buyer attribution
    * (the user id is set server-side, not by the browser). */
@@ -146,9 +144,8 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
   const webhookPath = ls.webhookPath ?? '/api/credits/webhooks/lemonsqueezy'
   const creditMicrosPerUnit = options.service.config.pricing.creditMicrosPerUnit
   // Crediting basis (NO order-amount fallback — that couples credits to a
-  // multi-item/discounted/taxed order total). Require EITHER a fixed per-variant
-  // value covering every credit variant, OR an explicit creditsForOrder override
-  // (escape hatch for non-LS-pack hosts). Fail registration otherwise.
+  // multi-item/discounted/taxed order total). Require a fixed per-variant value
+  // covering every credit variant; fail registration otherwise.
   // Namespace the idempotency/purchase key by the configured store + mode so a
   // Lemon Squeezy order id that's reused across test/live or stores (or test data
   // sharing a prod DB before cutover) can't collide: a test order can't block a
@@ -157,24 +154,21 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
   const purchaseKey = (order: LemonSqueezyOrder): string =>
     `ls:${ls.expectedStoreId ?? 'default'}:${ls.expectedTestMode ? 'test' : 'live'}:${order.orderId}`
   const variantCredits = ls.creditMicrosByVariant ?? {}
-  if (!ls.creditsForOrder) {
-    if (!ls.creditMicrosByVariant) {
-      throw new Error('credits: creditMicrosByVariant is required for the Lemon Squeezy webhook (fixed per-variant credit values; no order-amount fallback)')
-    }
-    for (const variantId of ls.creditVariantIds) {
-      const value = variantCredits[variantId]
-      if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
-        throw new Error(`credits: creditMicrosByVariant must be a positive safe integer for credit variant "${variantId}"`)
-      }
+  if (!ls.creditMicrosByVariant) {
+    throw new Error('credits: creditMicrosByVariant is required for the Lemon Squeezy webhook (fixed per-variant credit values; no order-amount fallback)')
+  }
+  for (const variantId of ls.creditVariantIds) {
+    const value = variantCredits[variantId]
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+      throw new Error(`credits: creditMicrosByVariant must be a positive safe integer for credit variant "${variantId}"`)
     }
   }
-  const creditsForOrder = ls.creditsForOrder
-    ?? ((order: LemonSqueezyOrder): number => {
-      // Per-pack value × quantity, so a multi-pack purchase is credited fairly
-      // (the underpayment check then requires the net paid to cover the total).
-      const perUnit = order.variantId !== undefined ? variantCredits[order.variantId] ?? 0 : 0
-      return perUnit * Math.max(1, order.quantity)
-    })
+  const creditsForOrder = (order: LemonSqueezyOrder): number => {
+    // Per-pack value × quantity, so a multi-pack purchase is credited fairly
+    // (the underpayment check then requires the net paid to cover the total).
+    const perUnit = order.variantId !== undefined ? variantCredits[order.variantId] ?? 0 : 0
+    return perUnit * Math.max(1, order.quantity)
+  }
 
   // Fail closed: only credit paid orders for a configured pack variant, in the
   // required currency, and in the expected mode. Missing/absent fields are
@@ -200,11 +194,20 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
     if (order.storeId != null && ls.expectedStoreId != null && order.storeId !== ls.expectedStoreId) return false
     return true
   }
+  const isCreditVariant = (order: LemonSqueezyOrder): boolean =>
+    order.variantId != null && creditVariantIds.has(order.variantId)
   const isCreditOrder = (order: LemonSqueezyOrder): boolean => {
     if (creditVariantIds.size === 0) return false
-    if (!order.variantId || !creditVariantIds.has(order.variantId)) return false
+    if (!isCreditVariant(order)) return false
     return isOurStoreOrder(order)
   }
+  // A KNOWN credit variant, paid, that the strict store check rejects ONLY because
+  // a required identity field is MISSING (lenient check still passes = no present
+  // contradiction). That's a paid pack we can't safely attribute → fail loud (500),
+  // not a silent 200 drop. A genuinely foreign order (present mismatch) fails the
+  // lenient check too and is correctly left to the 200 not-a-credit-order path.
+  const isUnverifiedCreditOrder = (order: LemonSqueezyOrder): boolean =>
+    isCreditVariant(order) && !isOurStoreOrder(order) && isRefundForOurStore(order)
 
   // Encapsulated scope so the raw-buffer body parser only applies to the webhook.
   app.register(async (scope) => {
@@ -223,6 +226,9 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
           isCreditOrder,
           // Strict: an unknown-variant PAID order on our store surfaces as 500.
           isOurStoreOrder,
+          // Known credit variant with incomplete identity → retryable 500, not a
+          // silent 200 drop (a paid pack we can't safely attribute must fail loud).
+          isUnverifiedCreditOrder,
           // Lenient: a refund whose payload omits store/mode/currency still revokes
           // a credited order; only a present-and-mismatched field is rejected.
           isRefundForOurStore,

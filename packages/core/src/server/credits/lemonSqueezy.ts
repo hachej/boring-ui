@@ -165,6 +165,14 @@ export interface LemonSqueezyWebhookOptions {
    * rejects. A refund failing this is ignored (can't revoke a credited order by
    * order id alone). Defaults to always-true when omitted. */
   isRefundForOurStore?: (order: LemonSqueezyOrder) => boolean
+  /** Optional check: is this a paid order for a KNOWN credit-pack variant whose
+   * store/mode/currency identity is INCOMPLETE (a required field is missing rather
+   * than present-and-mismatched)? When true, the webhook returns a retryable 500
+   * instead of a silent 200 `not_a_credit_order` — a recognized paid pack we can't
+   * safely attribute must fail loud (parser gap / LS payload change), not drop the
+   * customer's credits. A genuinely foreign order (present field contradicts our
+   * config) is NOT this case and is still 200-ignored. */
+  isUnverifiedCreditOrder?: (order: LemonSqueezyOrder) => boolean
   /** Credit micros per 1 currency unit (e.g. 1_000_000 = €0.000001/credit). When
    * set, the webhook refuses to mint a fixed pack value unless the net paid
    * amount (subtotal − discount) covers it — so a dashboard/manual discount or LS
@@ -251,6 +259,17 @@ export async function handleLemonSqueezyWebhook(
         orderId: order.orderId, variantId: order.variantId, currency: order.currency, testMode: order.testMode,
       })
       return { status: 500, body: { ok: false, reason: 'unrecognized_credit_variant', orderId: order.orderId } }
+    }
+    // A paid order for a KNOWN credit-pack variant that we can't attribute because
+    // its store/mode/currency identity is incomplete (missing field, not a present
+    // mismatch). Every other unattributable-paid-order path here fails loud; match
+    // it — 500 so LS retries and the parser/payload gap surfaces, rather than a
+    // silent 200 that drops the customer's credits.
+    if (options.isUnverifiedCreditOrder?.(order)) {
+      options.log?.('lemonsqueezy paid order for a known credit variant has incomplete store/mode/currency identity — not crediting, retrying', {
+        orderId: order.orderId, variantId: order.variantId, currency: order.currency, testMode: order.testMode, storeId: order.storeId,
+      })
+      return { status: 500, body: { ok: false, reason: 'unverified_credit_order', orderId: order.orderId } }
     }
     options.log?.('lemonsqueezy paid order is not a recognized credit pack', {
       orderId: order.orderId, variantId: order.variantId, currency: order.currency, testMode: order.testMode,

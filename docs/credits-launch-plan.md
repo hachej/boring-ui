@@ -24,8 +24,10 @@ usage with a margin.
   still mint spendable credits (the balance isn't mode-scoped), so `NODE_ENV=production` +
   test mode throws at startup. Purge any test-mode credit grants before live cutover.
 - **No `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION=1` in production.** The soft-stop override
-  is rejected in prod; the per-run hold must cover the effective worst-case run (raise
-  `RESERVATION_EUR`/grant, or restrict served models).
+  is rejected in prod; the per-run hold must cover at least the **served** worst-case run
+  (raise `RESERVATION_EUR`/grant, or restrict served models). The override only matters for a
+  hold below the *served* worst case — the default (served-rate) hold needs no override and
+  boots cleanly in prod (it only warns about the unmatched/misrouted-model debt window).
 
 ## External / human-gated (not code)
 - Merge **boring-ui #294** (metering foundation) — everything here stacks on it.
@@ -86,8 +88,8 @@ All money config is **fail-closed**: a provided-but-invalid value throws at star
 | `BORING_CREDITS_ENABLED` | no (default on) | `0` disables consumption + purchase routes entirely. |
 | `BORING_CREDITS_SIGNUP_GRANT_EUR` | no (default 2) | Free starter grant, EUR. |
 | `BORING_CREDITS_SIGNUP_GRANT_EXPIRES_DAYS` | no (default never) | `0`/unset = never (the only supported value). A positive integer **throws at startup**: an expiring grant drops from `grantedMicros` on expiry while spent usage debits stay, turning a partly-spent trial into debt. Re-enable only once usage is allocated/capped against the promo balance. |
-| `BORING_CREDITS_RESERVATION_EUR` | no | Per-run hold. **Unset ⇒ computed worst-case run** (see limitations). An explicit value below the worst case **throws** unless `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION=1`. |
-| `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION` | no | `1` accepts a per-run hold below the worst-case run (soft stop; launch-blocking debt). |
+| `BORING_CREDITS_RESERVATION_EUR` | no | Per-run hold. **Unset ⇒ computed SERVED worst-case run** (see limitations). An explicit value below the **served** worst case **throws** unless `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION=1`; below the *effective* worst case only warns. |
+| `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION` | no | `1` accepts a per-run hold below the **served** worst-case run (soft stop; launch-blocking debt). Forbidden in production. Not needed for the served-rate default. |
 | `BORING_CREDITS_MIN_BALANCE_EUR` | no (default 0.05) | Floor kept available **after** a run's hold. |
 | `BORING_CREDITS_MARGIN` | no (default 1.3) | Pricing margin; must be ≥ 1. |
 | `BORING_CREDITS_RATES` | recommended | `regex=inEur:outEur;…` per-MTok rates (e.g. `infomaniak=0.5:1.5`). Matched against `provider/id`. Non-positive/malformed entries throw. |
@@ -113,13 +115,17 @@ fail closed at the highest effective rate.
 2. **Hold sizing: served vs effective.** The per-run hold defaults to the SERVED-rate worst
    case (`maxServedRate` — configured rates + conservative floor, excluding the built-in
    Opus default), so it's proportional to the models you serve and a small starter grant
-   stays usable. But an UNMATCHED model bills at `maxEffectiveRate` (incl. Opus), which can
-   exceed a served-rate hold → a misrouted expensive model creates recoverable single-run
-   debt, not a hard stop. So startup **throws** unless the hold covers the *effective* worst
-   case OR `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION=1` is set. **Action for launch:**
-   either set `BORING_CREDITS_RATES` for your served models + a model allowlist and accept the
-   served-rate hold via `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION=1`, or raise
-   `RESERVATION_EUR`/the starter grant to cover the effective worst case.
+   stays usable. Two thresholds at startup:
+   - Below the **served** worst case → **throws** (the hold can't even hold a normal run).
+     Only reachable with an explicit too-low `BORING_CREDITS_RESERVATION_EUR`; set
+     `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION=1` to accept it deliberately (forbidden in
+     production).
+   - Served ≤ hold < **effective** worst case (the default, since an UNMATCHED model bills at
+     `maxEffectiveRate` incl. Opus) → **warns only**. A misrouted/unknown expensive model
+     creates recoverable single-run debt (bounded; next run refused), not a hard stop. This is
+     the accepted launch posture; the recommended served-rate default boots cleanly with no
+     override. **Action for a hard stop on unknown models:** raise `RESERVATION_EUR`/the
+     starter grant to cover the effective worst case, or restrict served models.
 3. **Durable settlement under a sustained DB outage (narrowed).** `expireStaleReservations`
    now **charges-on-expire any reservation that has usage rows** (the run executed but its
    finalization never settled) — topping it up to the hold — and only **frees reservations

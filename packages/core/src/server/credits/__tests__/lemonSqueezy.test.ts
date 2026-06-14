@@ -165,6 +165,32 @@ describe('handleLemonSqueezyWebhook', () => {
     expect(grant).not.toHaveBeenCalled()
   })
 
+  it('500s (retryable) a paid KNOWN credit variant whose store identity is incomplete (not a silent 200 drop)', async () => {
+    const log = vi.fn()
+    const { options, grant } = opts({
+      isCreditOrder: () => false, // strict store check fails (e.g. store_id missing)
+      isOurStoreOrder: () => false, // not "our store, unknown variant"
+      isUnverifiedCreditOrder: () => true, // known credit variant, identity incomplete
+      log,
+    })
+    const body = orderPayload()
+    const res = await handleLemonSqueezyWebhook(body, sign(body), options)
+    expect(res).toMatchObject({ status: 500, body: { ok: false, reason: 'unverified_credit_order' } })
+    expect(grant).not.toHaveBeenCalled()
+  })
+
+  it('still 200-ignores a genuinely foreign order (present field mismatch, not incomplete identity)', async () => {
+    const { options, grant } = opts({
+      isCreditOrder: () => false,
+      isOurStoreOrder: () => false,
+      isUnverifiedCreditOrder: () => false, // present-mismatch → not unverified, genuinely foreign
+    })
+    const body = orderPayload()
+    const res = await handleLemonSqueezyWebhook(body, sign(body), options)
+    expect(res).toMatchObject({ status: 200, body: { ok: true, reason: 'not_a_credit_order' } })
+    expect(grant).not.toHaveBeenCalled()
+  })
+
   it('returns a retryable 500 (not a 200 ack) when a paid credit order is missing its user id', async () => {
     const log = vi.fn()
     const { options, grant } = opts({ log })

@@ -53,7 +53,7 @@ describe('CreditsService', () => {
     expect(store.grantOnce).toHaveBeenCalledWith(expect.objectContaining({
       userId: 'u1', reason: SIGNUP_GRANT_REASON, amountMicros: 2_000_000,
     }))
-    expect(store.grantOnce.mock.calls[0][0]).not.toHaveProperty('expiresAt')
+    expect(vi.mocked(store.grantOnce).mock.calls[0][0]).not.toHaveProperty('expiresAt')
     expect(balance).toMatchObject({
       enabled: true,
       userId: 'u1',
@@ -75,7 +75,7 @@ describe('CreditsService', () => {
     const store = makeStore()
     await new CreditsService(store, CONFIG).getBalance('u1')
     expect(store.grantOnce).toHaveBeenCalledWith(expect.objectContaining({ reason: SIGNUP_GRANT_REASON }))
-    expect(store.grantOnce.mock.calls[0][0]).not.toHaveProperty('expiresAt')
+    expect(vi.mocked(store.grantOnce).mock.calls[0][0]).not.toHaveProperty('expiresAt')
   })
 
   it('never reports negative balance but surfaces debt', async () => {

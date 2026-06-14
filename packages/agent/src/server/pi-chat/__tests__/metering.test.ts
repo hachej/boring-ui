@@ -485,6 +485,37 @@ describe('pi chat metering', () => {
     expect(calls.released).toEqual([])
   })
 
+  it('charges the fallback hold when a CONSUMED follow-up errors with no usage (it started executing)', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'first', clientNonce: 'nonce-p' })
+    await service.followUp(ctx, 's1', { message: 'second', clientNonce: 'nonce-f', clientSeq: 0 })
+
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    adapter.emit(assistantMessageEnd({ id: 'a1' }))
+    // Pi consumes the queued follow-up (it is now the active, executing run)...
+    adapter.emit({
+      type: 'message_start',
+      message: { id: 'u2', role: 'user', content: [{ type: 'text', text: 'second' }] },
+    } as unknown as AgentSessionEvent)
+    // ...then the provider errors before any follow-up usage arrives. Consumption
+    // started execution, so a paid call may have happened → fall back to the hold.
+    adapter.emit(agentEnd('error', 'provider failed after follow-up consumption'))
+    await service.flushMetering()
+
+    expect(calls.usage).toEqual([
+      expect.objectContaining({ usageId: 'pi-usage:s1:message:a1', runId: 'pi-run:s1:prompt:nonce-p' }),
+    ])
+    expect(calls.settled).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-p', status: 'ok' }),
+    ])
+    expect(calls.released).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:followup:nonce-f:0', reason: 'usage-write-failed' }),
+    ])
+  })
+
   it('releases queued follow-up reservations on selector clear, full clear, and stop', async () => {
     const adapter = createAdapter()
     const { sink, calls } = createSink()

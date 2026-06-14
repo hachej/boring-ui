@@ -9,6 +9,7 @@
     "start": "NODE_ENV=production node dist/server/main.js",
     "migrate": "tsx src/server/migrate.ts",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "lint": "pnpm run typecheck",
     "e2e": "playwright test --config e2e/playwright.config.ts",
     "e2e:smoke": "playwright test --config e2e/playwright.config.ts",
