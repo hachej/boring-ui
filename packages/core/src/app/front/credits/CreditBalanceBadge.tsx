@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import { formatCreditMicros, isLowBalance, type CreditBalanceResponse } from './helpers.js'
+import { formatCreditMicros, isLowBalance } from './helpers.js'
+import { useCreditBalance } from './useCreditBalance.js'
 
 export interface CreditBalanceBadgeProps {
   /** Base URL for the credits API (default: same origin). */
@@ -27,62 +27,8 @@ export function CreditBalanceBadge({
   pollMs = 30_000,
   locale,
 }: CreditBalanceBadgeProps) {
-  const [balance, setBalance] = useState<CreditBalanceResponse | null>(null)
-  const [hidden, setHidden] = useState(false)
-  const [buying, setBuying] = useState(false)
-
-  const refresh = useCallback(async () => {
-    try {
-      const res = await fetch(`${apiBaseUrl}/api/credits/balance`, { credentials: 'include' })
-      if (res.status === 401) {
-        setHidden(true)
-        return
-      }
-      if (!res.ok) return
-      const data = (await res.json()) as CreditBalanceResponse
-      if (!data.enabled) {
-        setHidden(true)
-        return
-      }
-      setBalance(data)
-      setHidden(false)
-    } catch {
-      // Network blip — keep the last known balance.
-    }
-  }, [apiBaseUrl])
-
-  useEffect(() => {
-    void refresh()
-    const interval = setInterval(() => void refresh(), pollMs)
-    const onFocus = () => void refresh()
-    window.addEventListener('focus', onFocus)
-    return () => {
-      clearInterval(interval)
-      window.removeEventListener('focus', onFocus)
-    }
-  }, [refresh, pollMs])
-
-  const onBuy = useCallback(async () => {
-    if (buying) return
-    setBuying(true)
-    try {
-      // Server creates the checkout and sets the buyer id from the session —
-      // the client never supplies the user id.
-      const res = await fetch(`${apiBaseUrl}/api/credits/checkout`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(pack ? { pack } : {}),
-      })
-      if (!res.ok) return
-      const { url } = (await res.json()) as { url?: string }
-      if (url) window.open(url, '_blank', 'noopener,noreferrer')
-    } catch {
-      // Surface nothing; the badge stays usable.
-    } finally {
-      setBuying(false)
-    }
-  }, [apiBaseUrl, pack, buying])
+  const { balance, hidden, buy, buying } = useCreditBalance({ apiBaseUrl, pollMs, pack })
+  const onBuy = buy
 
   if (hidden || !balance) return null
 

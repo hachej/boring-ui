@@ -50,6 +50,10 @@ type ChangePasswordData = z.infer<typeof changePasswordSchema>
 
 export interface UserSettingsPageProps {
   topBar?: ReactNode
+  /** Optional billing/credits content (e.g. `<CreditsSettingsPanel/>` from
+   * `@hachej/boring-core/app/front`). Rendered as its own section with a nav entry
+   * when provided; omitted entirely otherwise so the page stays billing-agnostic. */
+  billing?: ReactNode
 }
 
 function initialsFor(name: string | null | undefined, email: string): string {
@@ -137,8 +141,9 @@ const ACCOUNT_NAV_ITEMS = [
   { href: '#password', label: 'Password', description: 'Sign-in security' },
   { href: '#danger-zone', label: 'Deletion', description: 'Permanent actions' },
 ]
+const BILLING_NAV_ITEM = { href: '#billing', label: 'Billing', description: 'Credits and top-up' }
 
-export function UserSettingsPage({ topBar }: UserSettingsPageProps = {}) {
+export function UserSettingsPage({ topBar, billing }: UserSettingsPageProps = {}) {
   const session = useSession()
   const identity = useUser()
   const signOut = useSignOut()
@@ -242,7 +247,10 @@ export function UserSettingsPage({ topBar }: UserSettingsPageProps = {}) {
       <div className="boring-settings-scroll">
         <div className="boring-settings-layout">
           <aside className="boring-settings-sidebar">
-            <UiSettingsNav label="Account settings" items={ACCOUNT_NAV_ITEMS} />
+            <UiSettingsNav
+              label="Account settings"
+              items={billing ? [ACCOUNT_NAV_ITEMS[0], BILLING_NAV_ITEM, ...ACCOUNT_NAV_ITEMS.slice(1)] : ACCOUNT_NAV_ITEMS}
+            />
           </aside>
 
           <div className="boring-settings-content space-y-4">
@@ -284,6 +292,8 @@ export function UserSettingsPage({ topBar }: UserSettingsPageProps = {}) {
               </UiDetailLine>
             </DetailList>
           </UiSettingsPanel>
+
+          {billing}
 
           <form onSubmit={handleSubmit(onChangePassword)} noValidate>
             <UiSettingsPanel

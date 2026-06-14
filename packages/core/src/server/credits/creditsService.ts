@@ -92,7 +92,10 @@ export class CreditExhaustedError extends Error {
   readonly details: { balance: CreditBalance }
 
   constructor(balance: CreditBalance) {
-    super('insufficient credits')
+    // User-facing: shown in the chat error notice. Point them at the top-up action
+    // (the "Buy credits" button in the top bar / account settings) so an
+    // out-of-credits run is actionable, not a dead-end "error".
+    super("You're out of credits. Add more with the “Buy credits” button to keep going.")
     this.name = 'CreditExhaustedError'
     this.details = { balance }
   }
