@@ -397,22 +397,24 @@ describe('PostgresMeteringStore', () => {
     expect(balance.activeReservedMicros).toBe(100_000)
   })
 
-  it('charges an EXECUTED run (has usage) up to the hold when its reservation expires, not free', async () => {
+  it('settles an EXECUTED run at its ACTUAL usage on expiry (unmarked: hold released, real usage kept, not free, not over-charged)', async () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 10_000_000 })
     const { reservationId } = await store.reserve({ userId: USER, runId: 'turn-exec', amountMicros: 1_000_000, ttlSeconds: 600 })
     // The run executed and billed €0.2 of real usage (tagged with the reservation),
-    // but finalization never settled the reservation.
+    // but finalization never settled the reservation. No fallback marker (it had
+    // billable usage, so the coordinator settled, not fallback-charged).
     await store.recordUsage({ usageId: 'ux-1', userId: USER, runId: 'turn-exec', source: 'pi-chat', billedCostMicros: 200_000, metadata: { reservationId } })
     await sqlClient`UPDATE boring_usage_reservations SET expires_at = now() - interval '1 minute' WHERE run_id = 'turn-exec'`
 
     expect(await store.expireStaleReservations()).toBe(1)
-    // Topped up to the €1 hold (0.2 real + 0.8 fallback) — the executed run is NOT free.
+    // Charged the €0.2 it ACTUALLY used (the recorded debit); the hold is released —
+    // NOT topped up to the €1 hold (that would over-charge), NOT free.
     const balance = await store.getBalance(USER)
-    expect(balance.usedMicros).toBe(1_000_000)
+    expect(balance.usedMicros).toBe(200_000)
     expect(balance.activeReservedMicros).toBe(0)
-    // Idempotent: a second sweep does not double-charge.
+    // Idempotent: a second sweep does not change the charge.
     await store.expireStaleReservations()
-    expect((await store.getBalance(USER)).usedMicros).toBe(1_000_000)
+    expect((await store.getBalance(USER)).usedMicros).toBe(200_000)
   })
 
   it('does NOT charge a ZERO-billed run on expiry (only zero-token rows ⇒ no billable work ⇒ free)', async () => {
@@ -441,15 +443,16 @@ describe('PostgresMeteringStore', () => {
     expect((await store.getBalance(USER)).usedMicros).toBe(1_000_000) // full hold charged
   })
 
-  it('charges a partially-billed executed run on expiry, topping up to the hold', async () => {
+  it('settles a partially-billed UNMARKED run at its ACTUAL usage on expiry (does not top up to the hold)', async () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 10_000_000 })
     const { reservationId } = await store.reserve({ userId: USER, runId: 'turn-part', amountMicros: 1_000_000, ttlSeconds: 600 })
-    // Real billable usage (€0.3) exists but finalization was lost → top up to the
-    // €1 hold (executed run, conservative durable settlement).
+    // Real billable usage (€0.3) was recorded but only the final settle write was lost
+    // (no fallback marker). The €0.3 IS the actual charge; expiry must release the hold,
+    // NOT top up to the full €1 (which would over-charge a run that used €0.3).
     await store.recordUsage({ usageId: 'up-1', userId: USER, runId: 'turn-part', source: 'pi-chat', billedCostMicros: 300_000, metadata: { reservationId } })
     await sqlClient`UPDATE boring_usage_reservations SET expires_at = now() - interval '1 minute' WHERE run_id = 'turn-part'`
     await store.expireStaleReservations()
-    expect((await store.getBalance(USER)).usedMicros).toBe(1_000_000) // topped up to the hold
+    expect((await store.getBalance(USER)).usedMicros).toBe(300_000) // actual usage, not the hold
   })
 
   it('does not re-charge a reservation that already settled before the expiry sweep', async () => {
@@ -464,13 +467,15 @@ describe('PostgresMeteringStore', () => {
     expect((await store.getBalance(USER)).usedMicros).toBe(300_000)
   })
 
-  it('charges an executed stale reservation via the reserve() expiry path too (one expiry policy)', async () => {
+  it('expires a stale reservation via the reserve() path too, charging a MARKED run to its hold', async () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 10_000_000 })
     const { reservationId } = await store.reserve({ userId: USER, runId: 'turn-a', amountMicros: 1_000_000, ttlSeconds: 600 })
     await store.recordUsage({ usageId: 'ua-1', userId: USER, runId: 'turn-a', source: 'pi-chat', billedCostMicros: 300_000, metadata: { reservationId } })
+    // Marked as fallback-charge-owed (the coordinator's charge write failed), so the
+    // reserve()-path expiry tops it up to its €1 hold (crediting the €0.3 already billed).
+    await store.markReservationFallbackCharge(USER, reservationId)
     await sqlClient`UPDATE boring_usage_reservations SET expires_at = now() - interval '1 minute' WHERE run_id = 'turn-a'`
-    // A NEW reserve for the same user must expire the stale one through the same
-    // charge-aware policy (not free it).
+    // A NEW reserve for the same user expires the stale one through the same policy.
     await store.reserve({ userId: USER, runId: 'turn-b', amountMicros: 1_000_000, ttlSeconds: 600 })
     expect((await store.getBalance(USER)).usedMicros).toBe(1_000_000) // turn-a topped up to its hold
   })

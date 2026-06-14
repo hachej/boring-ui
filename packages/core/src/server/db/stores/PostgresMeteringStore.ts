@@ -727,17 +727,18 @@ export class PostgresMeteringStore {
         .from(usageLedger)
         .where(and(eq(usageLedger.userId, userId), sql`${usageLedger.metadata}->>'reservationId' = ${r.id}`))
       const billedTotal = Number(usage[0]?.total ?? 0)
-      // Charge-on-expire when the reservation has BILLABLE usage (a real debit
-      // exists), OR carries a durable fallback-charge marker (the coordinator decided
-      // this run must be charged but its charge write failed transiently). NOT on mere
-      // row existence: a run that wrote only zero-token usage rows and was NOT marked
-      // did no billable work, so it stays free even if its terminal release was lost
-      // (e.g. a user abort whose releaseRun failed). Charging the full hold for a
-      // non-billable, non-marked run would over-charge real money. The marker closes
-      // the inverse gap: a started/successful run with no billable row whose fallback
-      // charge failed would otherwise go free here.
-      const executed = billedTotal > 0 || r.chargeOnExpire
-      if (executed) {
+      // Top up to the hold ONLY when the reservation carries the durable fallback-charge
+      // marker (the coordinator decided a fallback charge is owed — a no-billable-usage
+      // or usage-write-failed run — and the charge write then failed transiently). We do
+      // NOT top up just because billed usage rows exist: those rows ARE the actual charge
+      // (the user is already debited for them), so a run whose only failure was the final
+      // settleRun write must simply have its hold released (the active→expired flip above,
+      // which computeBalance excludes from holds), NOT be charged the full worst-case hold
+      // on top of its real usage — that would over-charge (e.g. €0.20 used + a transient
+      // settle failure → charged the full hold). A non-marked, zero-billed run is likewise
+      // freed. topUp credits any already-billed amount so a partially-billed MARKED run
+      // (fallback) only tops up the remainder.
+      if (r.chargeOnExpire) {
         const topUp = Math.max(0, r.amountMicros - billedTotal)
         if (topUp > 0) {
           // Verified insert: if usage-fallback:<reservationId> already exists (the

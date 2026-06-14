@@ -136,17 +136,20 @@ fail closed at the highest effective rate.
      the accepted launch posture; the recommended served-rate default boots cleanly with no
      override. **Action for a hard stop on unknown models:** raise `RESERVATION_EUR`/the
      starter grant to cover the effective worst case, or restrict served models.
-3. **Durable settlement under a sustained DB outage (narrowed).** `expireStaleReservations`
-   **charges-on-expire** a reservation that either has **positive billed usage** (`billedTotal
-   > 0` — the run executed real billable work but its finalization never settled) OR carries a
-   durable **`charge_on_expire` marker** (the coordinator decided the run must be charged the
-   fallback hold — a started/successful run with no billable usage — and set the marker BEFORE
-   attempting the charge, so a charge write that then fails transiently is still recovered by
-   the sweep). It **frees** reservations that are neither billed nor marked (only zero-token
-   rows, or nothing at all — a genuine pre-execution/non-billable abandon, so we don't
-   over-charge a user who closed the tab). The residual free-run window is therefore only a run
-   whose terminal **marker write itself** failed (and stayed failed past TTL) — i.e. a DB outage
-   spanning the decision point, when nothing durable can be written anyway. The complete fix (an
+3. **Durable settlement under a sustained DB outage (narrowed).** On expiry, a stale
+   reservation's hold is released (the atomic active→expired flip, which `computeBalance`
+   excludes from holds), and `expireStaleReservations` **tops it up to the hold ONLY when it
+   carries a durable `charge_on_expire` marker** (the coordinator decided a fallback charge is
+   owed — a no-billable-usage or usage-write-failed run — and set the marker BEFORE attempting
+   the charge, so a charge write that then fails transiently is still recovered by the sweep;
+   the top-up credits any amount already billed). A reservation with **positive billed usage but
+   NO marker** is settled at its ACTUAL usage (those debits ARE the charge; only its final
+   `settleRun` write was lost) — it is **not** topped up to the worst-case hold (that would
+   over-charge a run that used less than its hold), and **not** freed. A reservation that is
+   neither billed nor marked is freed (a genuine pre-execution/non-billable abandon). The
+   residual free-run window is therefore only a run whose terminal **marker write itself** failed
+   (and stayed failed past TTL) — i.e. a DB outage spanning the decision point, when nothing
+   durable can be written anyway. The complete fix (an
    external out-of-DB settlement-intent log + retry worker) is a tracked follow-up. The sweep
    runs both on each `reserve()` (the current user, per-user-locked) AND on a **background timer**
    (`BORING_CREDITS_SWEEP_INTERVAL_SECONDS`, default 5 min, off the request path), so a marked
