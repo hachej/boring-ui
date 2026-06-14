@@ -102,11 +102,16 @@ fail closed at the highest effective rate.
    `MAX_CALLS_PER_RUN` worst-case calls); a run exceeding that budget can overshoot, bounded,
    and the user's *next* run is then refused. True per-call enforcement needs a Pi-runtime
    abort hook (the metering coordinator is an observer) — a deliberate follow-up.
-2. **Hold sizing includes built-in expensive defaults.** `maxEffectiveRate` covers Claude
-   Opus (15/75) from the built-in table even if you only serve Infomaniak, so the default
-   hold can exceed the €2 starter grant (a startup warning fires). **Action for launch:** set
-   `BORING_CREDITS_RATES` for your served models and tune `MAX_CONTEXT_TOKENS`/
-   `MAX_CALLS_PER_RUN` (or set `RESERVATION_EUR`) so the hold ≤ the starter grant.
+2. **Hold sizing: served vs effective.** The per-run hold defaults to the SERVED-rate worst
+   case (`maxServedRate` — configured rates + conservative floor, excluding the built-in
+   Opus default), so it's proportional to the models you serve and a small starter grant
+   stays usable. But an UNMATCHED model bills at `maxEffectiveRate` (incl. Opus), which can
+   exceed a served-rate hold → a misrouted expensive model creates recoverable single-run
+   debt, not a hard stop. So startup **throws** unless the hold covers the *effective* worst
+   case OR `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION=1` is set. **Action for launch:**
+   either set `BORING_CREDITS_RATES` for your served models + a model allowlist and accept the
+   served-rate hold via `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION=1`, or raise
+   `RESERVATION_EUR`/the starter grant to cover the effective worst case.
 3. **Durable settlement under a sustained DB outage (narrowed).** `expireStaleReservations`
    now **charges-on-expire any reservation that has usage rows** (the run executed but its
    finalization never settled) — topping it up to the hold — and only **frees reservations

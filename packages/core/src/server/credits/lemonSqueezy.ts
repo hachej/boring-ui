@@ -287,6 +287,20 @@ export async function handleLemonSqueezyWebhook(
   // Don't mint a fixed pack value for an underpaid order: require the net paid
   // amount (subtotal − discount, pre-tax) to cover the credits being granted.
   if (typeof options.creditMicrosPerUnit === 'number' && options.creditMicrosPerUnit > 0) {
+    // Money fields must be present and sane — a missing field parsed to 0, or a
+    // discount above subtotal, or a zero/absent total, must NOT look like a valid
+    // full payment. Fail closed (500) so the malformed delivery surfaces.
+    const moneySane =
+      Number.isFinite(order.subtotalCents) && order.subtotalCents >= 0 &&
+      Number.isFinite(order.discountTotalCents) && order.discountTotalCents >= 0 &&
+      Number.isFinite(order.totalCents) && order.totalCents > 0 &&
+      order.subtotalCents >= order.discountTotalCents
+    if (!moneySane) {
+      options.log?.('lemonsqueezy order has missing/inconsistent money fields — not granting', {
+        orderId: order.orderId, subtotalCents: order.subtotalCents, discountTotalCents: order.discountTotalCents, totalCents: order.totalCents,
+      })
+      return { status: 500, body: { ok: false, reason: 'invalid_money_fields', orderId: order.orderId } }
+    }
     // LS can report fractional cents (a tax-rounding artifact, e.g. 1499.985 for a
     // €15 pack). Tolerate a shortfall of strictly LESS than one cent (the artifact)
     // but reject a genuine one-cent-or-more underpayment (discount/price bug).

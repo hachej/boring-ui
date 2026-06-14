@@ -220,6 +220,24 @@ describe('handleLemonSqueezyWebhook', () => {
     expect(grant).not.toHaveBeenCalled()
   })
 
+  it('rejects an order with missing/inconsistent money fields (500, no grant)', async () => {
+    const { options, grant } = opts({ creditsForOrder: () => 10_000_000, creditMicrosPerUnit: 1_000_000 })
+    // subtotal looks like €10 but total is 0 (free) — a malformed/changed payload
+    // must not look like a valid full payment.
+    const body = orderPayload({}, { subtotal: 1000, discount_total: 0, total: 0 })
+    const res = await handleLemonSqueezyWebhook(body, sign(body), options)
+    expect(res).toMatchObject({ status: 500, body: { reason: 'invalid_money_fields' } })
+    expect(grant).not.toHaveBeenCalled()
+  })
+
+  it('rejects an order whose discount exceeds the subtotal', async () => {
+    const { options, grant } = opts({ creditsForOrder: () => 10_000_000, creditMicrosPerUnit: 1_000_000 })
+    const body = orderPayload({}, { subtotal: 1000, discount_total: 1500, total: 100 })
+    const res = await handleLemonSqueezyWebhook(body, sign(body), options)
+    expect(res).toMatchObject({ status: 500, body: { reason: 'invalid_money_fields' } })
+    expect(grant).not.toHaveBeenCalled()
+  })
+
   it('accepts an exact-cent payment for the pack value', async () => {
     const { options, grant } = opts({ creditsForOrder: () => 10_000_000, creditMicrosPerUnit: 1_000_000 })
     const body = orderPayload({}, { subtotal: 1000, discount_total: 0, total: 1000 })

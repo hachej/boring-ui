@@ -4,6 +4,7 @@ import {
   createCreditsMeteringSink,
   registerCreditsRoutes,
   maxServedRate,
+  maxEffectiveRate,
   type CreditsConfig,
   type CreditPricingConfig,
 } from '@hachej/boring-core/server'
@@ -152,11 +153,10 @@ export interface FullAppCreditsConfig extends CreditsConfig {
  * the user's NEXT run is then refused). Billing an unmatched model still fails
  * closed high (maxEffectiveRate).
  */
-function worstCaseRunMicros(pricing: CreditPricingConfig, env: NodeJS.ProcessEnv): number {
+function worstCaseRunMicros(pricing: CreditPricingConfig, env: NodeJS.ProcessEnv, rate: { inputPerMillion: number; outputPerMillion: number }): number {
   const maxContext = parseNumberEnv('BORING_CREDITS_MAX_CONTEXT_TOKENS', env.BORING_CREDITS_MAX_CONTEXT_TOKENS, 200_000, 1, true)
   const maxOutput = parseNumberEnv('BORING_CREDITS_MAX_OUTPUT_TOKENS', env.BORING_CREDITS_MAX_OUTPUT_TOKENS, 16_384, 1, true)
   const maxCalls = parseNumberEnv('BORING_CREDITS_MAX_CALLS_PER_RUN', env.BORING_CREDITS_MAX_CALLS_PER_RUN, 4, 1, true)
-  const rate = maxServedRate(pricing)
   const unitsPerCall = (maxContext / 1_000_000) * rate.inputPerMillion + (maxOutput / 1_000_000) * rate.outputPerMillion
   return Math.ceil(unitsPerCall * maxCalls * pricing.margin * pricing.creditMicrosPerUnit)
 }
@@ -192,12 +192,15 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
   // Verified per-model EUR/MTok rates (e.g. Infomaniak). Unset ⇒ unconfigured
   // models bill at the conservative default (over-charge, never free).
   const rates = parseRates(env.BORING_CREDITS_RATES)
-  // The per-run hold defaults to the worst-case run so the hard stop is tight by
-  // construction; an explicit BORING_CREDITS_RESERVATION_EUR is validated in attach().
-  const worstCase = worstCaseRunMicros({ margin, creditMicrosPerUnit: CREDIT_MICROS_PER_EUR, rates }, env)
+  // The per-run hold defaults to the SERVED-rate worst case (proportional to the
+  // models this deployment serves, so a small starter grant stays usable). attach()
+  // then checks it against the EFFECTIVE worst case and requires an explicit unsafe
+  // opt-in if it can't cover an unmatched expensive model.
+  const pricingForHold: CreditPricingConfig = { margin, creditMicrosPerUnit: CREDIT_MICROS_PER_EUR, rates }
+  const servedWorstCase = worstCaseRunMicros(pricingForHold, env, maxServedRate(pricingForHold))
   const runReservationMicros = env.BORING_CREDITS_RESERVATION_EUR
     ? eurToMicros('BORING_CREDITS_RESERVATION_EUR', env.BORING_CREDITS_RESERVATION_EUR, 1)
-    : worstCase
+    : servedWorstCase
   return {
     enabled: env.BORING_CREDITS_ENABLED !== '0',
     signupGrantMicros: eurToMicros('BORING_CREDITS_SIGNUP_GRANT_EUR', env.BORING_CREDITS_SIGNUP_GRANT_EUR, 2),
@@ -286,12 +289,11 @@ export function buildCreditsWiring(env: NodeJS.ProcessEnv = process.env): {
         }
       }
       // The per-run hold bounds a single run's overdraft (actual cost is posted
-      // after the run). A hold below the worst-case run lets a single run overshoot
-      // it (bounded; the user's next run is then refused) — i.e. not a hard stop.
-      // FAIL CLOSED by default; an operator who knowingly wants a small hold (to
-      // keep a small starter grant usable) must opt in explicitly. An unset
-      // reservation already defaults to the worst case (tight) in readCreditsConfig.
-      const worstCase = worstCaseRunMicros(config.pricing, env)
+      // after the run). It must cover the EFFECTIVE worst case (an UNMATCHED model
+      // bills at maxEffectiveRate, e.g. Opus) to be a true hard stop. A served-rate
+      // hold (the usable default) is below that, so it requires an explicit unsafe
+      // opt-in acknowledging that a misrouted expensive model can overshoot.
+      const worstCase = worstCaseRunMicros(config.pricing, env, maxEffectiveRate(config.pricing))
       if (config.enabled && config.runReservationMicros < worstCase) {
         if (env.BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION === '1') {
           app.log.warn(
