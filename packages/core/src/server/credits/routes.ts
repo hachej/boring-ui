@@ -94,6 +94,11 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
   if (!options.service.config.enabled) {
     throw new Error('credits: cannot register Lemon Squeezy checkout/webhook with a disabled credits service (paid orders would be acknowledged without crediting)')
   }
+  // An empty credit-variant list would treat every paid order as not-a-credit-
+  // order (200, no credit) — a paid customer gets nothing. Refuse to register.
+  if (ls.creditVariantIds.length === 0) {
+    throw new Error('credits: Lemon Squeezy webhook requires a non-empty creditVariantIds (else every paid order is acknowledged without crediting)')
+  }
 
   // Server-side checkout creation: the buyer's user id is taken from the
   // authenticated session, NOT the browser, so the webhook can trust it.

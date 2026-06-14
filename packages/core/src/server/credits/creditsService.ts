@@ -134,6 +134,16 @@ export class CreditsService {
     private readonly log?: CreditsLogger,
   ) {
     validatePricingConfig(config.pricing)
+    // Fail fast on bad money amounts rather than deferring to a later store call.
+    const posInt = (n: number) => Number.isSafeInteger(n) && n > 0
+    const nonNegInt = (n: number) => Number.isSafeInteger(n) && n >= 0
+    if (!nonNegInt(config.signupGrantMicros)) throw new Error('credits: signupGrantMicros must be a non-negative safe integer')
+    if (!posInt(config.runReservationMicros)) throw new Error('credits: runReservationMicros must be a positive safe integer')
+    if (!nonNegInt(config.minBalanceMicros)) throw new Error('credits: minBalanceMicros must be a non-negative safe integer')
+    if (!posInt(config.reservationTtlSeconds)) throw new Error('credits: reservationTtlSeconds must be a positive safe integer')
+    if (!Number.isSafeInteger(config.runReservationMicros + config.minBalanceMicros)) {
+      throw new Error('credits: runReservationMicros + minBalanceMicros exceeds the safe integer range')
+    }
   }
 
   /** Idempotently grant the free starter credits (call from the post-signup hook

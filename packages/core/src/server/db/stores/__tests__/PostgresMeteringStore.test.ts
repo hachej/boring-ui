@@ -102,6 +102,16 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
     expect(await store.revokePurchase('never-credited')).toEqual({ revoked: false })
   })
 
+  it('throws rather than mark refunded when a conflicting refund debit already exists', async () => {
+    await store.grantPurchaseOnce({ orderId: 'ord-conf', userId: USER, amountMicros: 10_000_000 })
+    // A corrupted/manual ledger row exists at the refund debit id with a WRONG amount.
+    await store.recordUsage({ usageId: 'refund:ord-conf:10000000', userId: USER, source: 'manual', billedCostMicros: 1, metadata: {} })
+    // The refund must NOT silently mark the purchase refunded without a real debit.
+    await expect(store.revokePurchase('ord-conf', { refundFraction: 1 })).rejects.toThrow(/refund ledger conflict/)
+    const rows = await sqlClient`SELECT status FROM boring_credit_purchases WHERE order_id = 'ord-conf'`
+    expect(rows[0]?.status).toBe('granted') // unchanged — transaction rolled back
+  })
+
   it('revokes only when the configured identity matches the credited row', async () => {
     await store.grantPurchaseOnce({ orderId: 'ord-idm', userId: USER, amountMicros: 10_000_000, storeId: 'S1', testMode: false, currency: 'EUR' })
     // Configured expected identity claims a DIFFERENT store → no revoke.

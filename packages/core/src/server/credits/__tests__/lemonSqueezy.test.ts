@@ -188,7 +188,8 @@ describe('handleLemonSqueezyWebhook', () => {
     const { options, grant } = opts({ creditsForOrder: () => 10_000_000, creditMicrosPerUnit: 1_000_000 })
     const body = orderPayload({}, { subtotal: 100, discount_total: 0, total: 100 })
     const res = await handleLemonSqueezyWebhook(body, sign(body), options)
-    expect(res).toMatchObject({ status: 200, body: { ok: false, reason: 'underpaid_order' } })
+    // 500 (retryable) so a recognized paid order isn't silently dropped.
+    expect(res).toMatchObject({ status: 500, body: { ok: false, reason: 'underpaid_order' } })
     expect(grant).not.toHaveBeenCalled()
   })
 
@@ -197,6 +198,15 @@ describe('handleLemonSqueezyWebhook', () => {
     // €10 subtotal − €4 discount = €6 net, grants €6 of credits.
     const body = orderPayload({}, { subtotal: 1000, discount_total: 400, total: 600 })
     await handleLemonSqueezyWebhook(body, sign(body), options)
+    expect(grant).toHaveBeenCalled()
+  })
+
+  it('accepts a fractional-cent subtotal for a full payment (tax-rounding artifact)', async () => {
+    const { options, grant } = opts({ creditsForOrder: () => 15_000_000, creditMicrosPerUnit: 1_000_000 })
+    // LS reports 1499.985 cents for a €15 pack — must round/tolerate, not reject.
+    const body = orderPayload({}, { subtotal: 1499.985, discount_total: 0, total: 1499.985 })
+    const res = await handleLemonSqueezyWebhook(body, sign(body), options)
+    expect(res).toMatchObject({ status: 200, body: { ok: true } })
     expect(grant).toHaveBeenCalled()
   })
 

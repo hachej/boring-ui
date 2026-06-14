@@ -246,21 +246,29 @@ export async function handleLemonSqueezyWebhook(
 
   const amountMicros = options.creditsForOrder(order)
   if (!Number.isSafeInteger(amountMicros) || amountMicros <= 0) {
-    options.log?.('lemonsqueezy order resolved to non-positive credits', { orderId: order.orderId, amountMicros })
-    return { status: 200, body: { ok: false, reason: 'no_credit_amount', orderId: order.orderId } }
+    options.log?.('lemonsqueezy recognized credit order resolved to non-positive credits — config bug', { orderId: order.orderId, amountMicros })
+    // Recognized, paid credit order that we can't credit (config bug): 500 so LS
+    // retries and the failure surfaces, rather than a 200 that drops a paid order.
+    return { status: 500, body: { ok: false, reason: 'no_credit_amount', orderId: order.orderId } }
   }
 
   // Don't mint a fixed pack value for an underpaid order: require the net paid
   // amount (subtotal − discount, pre-tax) to cover the credits being granted.
   if (typeof options.creditMicrosPerUnit === 'number' && options.creditMicrosPerUnit > 0) {
-    const netPaidMicros = Math.max(0, order.subtotalCents - order.discountTotalCents) * (options.creditMicrosPerUnit / 100)
-    if (netPaidMicros + 1e-6 < amountMicros) {
+    // LS can report fractional cents (a tax-rounding artifact, e.g. 1499.985):
+    // round to whole cents and allow one cent of slack so a legitimate full
+    // payment isn't rejected as underpaid.
+    const oneCentMicros = options.creditMicrosPerUnit / 100
+    const netPaidCents = Math.round(Math.max(0, order.subtotalCents - order.discountTotalCents))
+    const netPaidMicros = netPaidCents * oneCentMicros
+    if (netPaidMicros < amountMicros - oneCentMicros) {
       options.log?.('lemonsqueezy order underpaid for the credits it maps to — not granting', {
         orderId: order.orderId, amountMicros, netPaidMicros, subtotalCents: order.subtotalCents, discountTotalCents: order.discountTotalCents,
       })
-      // Deterministic underpayment (config/discount/bug) — ack so LS stops
-      // retrying; logged for operator reconcile (refund or manual credit).
-      return { status: 200, body: { ok: false, reason: 'underpaid_order', orderId: order.orderId } }
+      // A recognized paid order that didn't cover its pack value: 500 so LS
+      // retries and the failed delivery surfaces for operator reconcile (refund
+      // or manual credit), rather than a 200 that silently drops a paid order.
+      return { status: 500, body: { ok: false, reason: 'underpaid_order', orderId: order.orderId } }
     }
   }
 

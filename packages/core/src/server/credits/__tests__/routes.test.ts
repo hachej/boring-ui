@@ -121,6 +121,20 @@ describe('credits routes', () => {
     await a.close()
   })
 
+  it('refuses to register the LS webhook with an empty creditVariantIds', async () => {
+    const a = Fastify()
+    await expect(
+      (async () => {
+        registerCreditsRoutes(a, {
+          service: new CreditsService(makeStore(), CONFIG),
+          lemonSqueezy: { webhookSecret: SECRET, creditVariantIds: [], expectedTestMode: true, creditMicrosByVariant: {} },
+        })
+        await a.ready()
+      })(),
+    ).rejects.toThrow(/non-empty creditVariantIds/)
+    await a.close()
+  })
+
   it('fails registration when a credit variant has no fixed credit value', async () => {
     const a = Fastify()
     await expect(
@@ -287,7 +301,7 @@ describe('credits routes', () => {
       headers: { 'content-type': 'application/json', 'x-signature': createHmac('sha256', SECRET).update(body).digest('hex') },
       payload: body,
     })
-    expect(res.statusCode).toBe(200)
+    expect(res.statusCode).toBe(500) // retryable; surfaces for operator reconcile
     expect(res.json()).toMatchObject({ reason: 'underpaid_order' })
     expect(store.grantPurchaseOnce).not.toHaveBeenCalled()
   })

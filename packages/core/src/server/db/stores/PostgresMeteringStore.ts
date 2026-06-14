@@ -360,10 +360,11 @@ export class PostgresMeteringStore {
         return { revoked: false }
       }
       // Post the incremental debit (idempotent per cumulative level).
+      const debitId = `refund:${orderId}:${target}`
       const debit = await tx
         .insert(usageLedger)
         .values({
-          id: `refund:${orderId}:${target}`,
+          id: debitId,
           userId: row.userId!,
           source,
           billedCostMicros: delta,
@@ -372,6 +373,20 @@ export class PostgresMeteringStore {
         })
         .onConflictDoNothing({ target: usageLedger.id })
         .returning({ id: usageLedger.id })
+      if (debit.length === 0) {
+        // The debit id already existed (manual repair / corrupted retry). Verify
+        // it's the SAME debit before marking the purchase refunded — otherwise we'd
+        // record a refund the balance was never actually debited for.
+        const existing = await tx
+          .select({ userId: usageLedger.userId, billedCostMicros: usageLedger.billedCostMicros })
+          .from(usageLedger)
+          .where(eq(usageLedger.id, debitId))
+          .limit(1)
+        const e = existing[0]
+        if (!e || e.userId !== row.userId || e.billedCostMicros !== delta) {
+          throw new Error(`refund ledger conflict for ${debitId}: existing debit does not match (refusing to mark refunded without a real debit)`)
+        }
+      }
       await tx
         .update(creditPurchases)
         .set({ refundedMicros: target, status: fullyRefunded ? 'refunded' : row.status, refundedAt: new Date() })

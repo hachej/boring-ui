@@ -22,7 +22,9 @@ usage with a margin.
 ## External / human-gated (not code)
 - Merge **boring-ui #294** (metering foundation) — everything here stacks on it.
 - Lemon Squeezy: account **KYC + payout bank** (long pole), create the **packs** in the
-  dashboard (test mode), add the **webhook** (event `order_created`, signing secret).
+  dashboard (test mode; variant ids are positive integers), add the **webhook** subscribed
+  to **both `order_created` AND `order_refunded`** (signing secret). Without `order_refunded`
+  the refund-revoke path never fires and refunded credits stay spendable.
 - Secrets in Vault: `secret/shared/lemonsqueezy` → `test_api_key` (present), `webhook_secret`
   (to add); Infomaniak API key.
 - Test key confirmed: store "boring-ui" (id 406592), key `ovh`, **test mode**.
