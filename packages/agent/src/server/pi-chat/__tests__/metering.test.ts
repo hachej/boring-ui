@@ -265,7 +265,7 @@ describe('pi chat metering', () => {
     expect(calls.usage).toEqual([])
     expect(calls.settled).toEqual([])
     expect(calls.released).toEqual([
-      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-no-usage', reason: 'usage-write-failed' }),
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-no-usage', reason: 'fallback-hold-charge' }),
     ])
   })
 
@@ -284,7 +284,7 @@ describe('pi chat metering', () => {
     // A zero-token usage row carries no real charge — fall back to the hold.
     expect(calls.settled).toEqual([])
     expect(calls.released).toEqual([
-      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-zero', reason: 'usage-write-failed' }),
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-zero', reason: 'fallback-hold-charge' }),
     ])
   })
 
@@ -303,7 +303,7 @@ describe('pi chat metering', () => {
     expect(calls.usage).toEqual([])
     expect(calls.settled).toEqual([])
     expect(calls.released).toEqual([
-      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-err', reason: 'usage-write-failed' }),
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-err', reason: 'fallback-hold-charge' }),
     ])
   })
 
@@ -512,7 +512,7 @@ describe('pi chat metering', () => {
       expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-p', status: 'ok' }),
     ])
     expect(calls.released).toEqual([
-      expect.objectContaining({ runId: 'pi-run:s1:followup:nonce-f:0', reason: 'usage-write-failed' }),
+      expect.objectContaining({ runId: 'pi-run:s1:followup:nonce-f:0', reason: 'fallback-hold-charge' }),
     ])
   })
 

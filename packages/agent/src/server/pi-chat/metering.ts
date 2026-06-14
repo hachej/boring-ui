@@ -89,7 +89,13 @@ export type MeteringReleaseReason =
   | 'queue-cleared'
   | 'cancelled'
   | 'error-before-usage'
+  // A usage write was ATTEMPTED but FAILED — real tokens, no ledger row → charge the
+  // fallback hold (a paid run must never close free).
   | 'usage-write-failed'
+  // The run executed (successful with no/zero provider usage, or started then errored)
+  // but produced NO billable usage row — deliberately charge the fallback hold. Distinct
+  // from usage-write-failed (no write was attempted/failed); both charge the hold.
+  | 'fallback-hold-charge'
 
 export interface MeteringReleaseInput extends MeteringRunScope {
   reservationId?: string
@@ -714,7 +720,7 @@ export class PiChatMeteringCoordinator {
       // zero-token usage row arrived).
       const didPaidWork = status === 'ok' || (status === 'error' && run.started)
       if (didPaidWork) {
-        return this.sink.releaseRun({ ...run.scope, reservationId: run.reservationId, reason: 'usage-write-failed' })
+        return this.sink.releaseRun({ ...run.scope, reservationId: run.reservationId, reason: 'fallback-hold-charge' })
       }
       return this.sink.releaseRun({
         ...run.scope,

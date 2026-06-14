@@ -60,11 +60,13 @@ export function createCreditsMeteringSink(getService: () => CreditsService): Age
 
     async releaseRun(input: MeteringReleaseInput): Promise<void> {
       if (!input.userId) return
-      // A run that executed but failed to persist usage must not go free: charge
-      // the hold as a conservative fallback instead of returning it. Other
-      // release reasons (rejected/cancelled/error-before-usage) never produced
-      // billable usage and are correctly freed.
-      if (input.reason === 'usage-write-failed') {
+      // A run that executed but produced no billable ledger row must not go free:
+      // charge the hold as a conservative fallback instead of returning it. Two
+      // reasons map here — `usage-write-failed` (a usage write was attempted and
+      // failed) and `fallback-hold-charge` (the run executed but reported no/zero
+      // billable usage). Other release reasons (rejected/cancelled/error-before-usage)
+      // never produced billable usage and are correctly freed.
+      if (input.reason === 'usage-write-failed' || input.reason === 'fallback-hold-charge') {
         await getService().chargeFallbackUsage({
           userId: input.userId,
           runId: input.runId,

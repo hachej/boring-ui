@@ -81,6 +81,16 @@ describe('createCreditsMeteringSink', () => {
     expect(store.finishReservation).not.toHaveBeenCalledWith(expect.anything(), 'released')
   })
 
+  it('also charges the fallback hold on fallback-hold-charge (no-billable executed run)', async () => {
+    const store = makeStore()
+    const sink = createCreditsMeteringSink(() => new CreditsService(store, CONFIG))
+    await sink.releaseRun({ ...BASE, userId: 'u1', reservationId: 'res-1', reason: 'fallback-hold-charge' })
+    expect(store.recordUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ usageId: 'usage-fallback:res-1', billedCostMicros: CONFIG.runReservationMicros, source: 'pi-chat-fallback' }),
+    )
+    expect(store.finishReservation).toHaveBeenCalledWith({ reservationId: 'res-1' }, 'settled')
+  })
+
   it('skips usage/settle/release for userless runs', async () => {
     const store = makeStore()
     const sink = createCreditsMeteringSink(() => new CreditsService(store, CONFIG))
