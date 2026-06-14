@@ -22,12 +22,24 @@ export interface UseCreditBalanceResult {
   hidden: boolean
   /** Refetch the balance now. */
   refresh: () => Promise<void>
+  /** Refetch now, then a short backoff burst (~15s) — credit writes settle
+   * asynchronously after a run/purchase, so a single refetch can read a stale value.
+   * Concurrent bursts are deduped (a new call restarts the window). */
+  refreshWithRetry: () => void
   /** Start a Lemon Squeezy checkout (server creates it, sets the buyer id from the
-   * session) and open it in a new tab. Resolves to an error message on failure. */
-  buy: () => Promise<string | null>
+   * session) and open it in a new tab. Resolves to an error message on failure.
+   * Pass a pack id to buy a specific pack. */
+  buy: (pack?: string) => Promise<string | null>
   /** True while a checkout request is in flight. */
   buying: boolean
+  /** Epoch ms of the last successful balance read (null before first load). */
+  lastUpdatedAt: number | null
+  /** True while a refresh (incl. a retry burst) is in flight. */
+  updating: boolean
 }
+
+/** Backoff schedule (ms from the trigger) for the post-run/purchase retry burst. */
+const RETRY_BURST_MS = [0, 1_000, 2_000, 4_000, 8_000]
 
 /**
  * Shared credit-balance state for the top-bar badge and the settings panel:
@@ -43,9 +55,14 @@ export function useCreditBalance({
   const [balance, setBalance] = useState<CreditBalanceResponse | null>(null)
   const [hidden, setHidden] = useState(false)
   const [buying, setBuying] = useState(false)
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null)
+  const [updating, setUpdating] = useState(false)
   const buyingRef = useRef(false)
+  const burstRef = useRef(0)
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
 
   const refresh = useCallback(async () => {
+    setUpdating(true)
     try {
       const res = await fetch(`${apiBaseUrl}/api/credits/balance`, { credentials: 'include' })
       if (res.status === 401) {
@@ -60,35 +77,50 @@ export function useCreditBalance({
       }
       setBalance(data)
       setHidden(false)
+      setLastUpdatedAt(Date.now())
     } catch {
-      // Network blip — keep the last known balance.
+      // Network blip — keep the last known balance (don't present it as fresh).
+    } finally {
+      setUpdating(false)
     }
   }, [apiBaseUrl])
+
+  // Refetch now + a backoff burst. A new call cancels the prior burst's pending
+  // timers (token bump) so concurrent triggers don't stampede /balance.
+  const refreshWithRetry = useCallback(() => {
+    const token = (burstRef.current += 1)
+    for (const t of timersRef.current) clearTimeout(t)
+    timersRef.current = RETRY_BURST_MS.map((delay) =>
+      setTimeout(() => { if (burstRef.current === token) void refresh() }, delay),
+    )
+  }, [refresh])
 
   useEffect(() => {
     void refresh()
     const interval = setInterval(() => void refresh(), pollMs)
     const onFocus = () => void refresh()
-    const onRefreshEvent = () => void refresh()
+    const onRefreshEvent = () => refreshWithRetry()
     window.addEventListener('focus', onFocus)
     window.addEventListener(CREDITS_REFRESH_EVENT, onRefreshEvent)
     return () => {
       clearInterval(interval)
       window.removeEventListener('focus', onFocus)
       window.removeEventListener(CREDITS_REFRESH_EVENT, onRefreshEvent)
+      for (const t of timersRef.current) clearTimeout(t)
     }
-  }, [refresh, pollMs])
+  }, [refresh, refreshWithRetry, pollMs])
 
-  const buy = useCallback(async (): Promise<string | null> => {
+  const buy = useCallback(async (overridePack?: string): Promise<string | null> => {
     if (buyingRef.current) return null
     buyingRef.current = true
     setBuying(true)
     try {
+      const chosen = overridePack ?? pack
       const res = await fetch(`${apiBaseUrl}/api/credits/checkout`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(pack ? { pack } : {}),
+        body: JSON.stringify(chosen ? { pack: chosen } : {}),
       })
       if (!res.ok) return 'Could not start checkout. Please try again.'
       const { url } = (await res.json()) as { url?: string }
@@ -103,5 +135,5 @@ export function useCreditBalance({
     }
   }, [apiBaseUrl, pack])
 
-  return { balance, hidden, refresh, buy, buying }
+  return { balance, hidden, refresh, refreshWithRetry, buy, buying, lastUpdatedAt, updating }
 }

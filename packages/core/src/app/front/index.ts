@@ -7,8 +7,12 @@ export { CreditsSettingsPanel } from './credits/CreditsSettingsPanel.js'
 export type { CreditsSettingsPanelProps } from './credits/CreditsSettingsPanel.js'
 export { useCreditBalance, CREDITS_REFRESH_EVENT } from './credits/useCreditBalance.js'
 export type { UseCreditBalanceOptions, UseCreditBalanceResult } from './credits/useCreditBalance.js'
+export { useCreditHistory } from './credits/useCreditHistory.js'
+export type { UseCreditHistoryResult } from './credits/useCreditHistory.js'
 export {
   formatCreditMicros,
+  formatSignedCreditMicros,
+  formatMinorPrice,
   isLowBalance,
 } from './credits/helpers.js'
-export type { CreditBalanceResponse } from './credits/helpers.js'
+export type { CreditBalanceResponse, CreditPack, CreditLedgerEntry, CreditLedgerKind } from './credits/helpers.js'
