@@ -30,11 +30,12 @@ export interface LemonSqueezyRouteOptions {
    * ignored (defense in depth on top of the per-store webhook secret). */
   expectedStoreId?: string
   /**
-   * Whether this store sells ONLY credit packs. When true (a credit-only store), a
-   * paid order in our store/mode/currency whose variant isn't a configured credit
-   * pack is treated as a pack MISCONFIGURATION and returns a retryable 500 (the
-   * customer paid and would otherwise get nothing). When false (default — a MIXED
-   * store selling credits plus other products), such an order is a different product
+   * Whether this store sells ONLY credit packs. **Defaults to true (fail-closed).**
+   * When true (a credit-only store), a paid order in our store/mode/currency whose
+   * variant isn't a configured credit pack is treated as a pack MISCONFIGURATION and
+   * returns a retryable 500 (the customer paid and would otherwise get nothing — a
+   * visible, recoverable failure rather than a silent drop). Set **false** for a MIXED
+   * store selling credits plus other products: such an order is then a different product
    * and is 200-ignored, so its webhook isn't retried/alerted forever. A known credit
    * variant with incomplete identity always 500s regardless (see isUnverifiedCreditOrder).
    */
@@ -237,6 +238,11 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
   // lenient check too and is correctly left to the 200 not-a-credit-order path.
   const isUnverifiedCreditOrder = (order: LemonSqueezyOrder): boolean =>
     isCreditVariant(order) && !isOurStoreOrder(order) && isRefundForOurStore(order)
+  // Fail-closed default: a credits webhook is for a credit-only store unless the host
+  // explicitly opts into mixed-store behaviour (creditOnlyStore: false). So an unknown-
+  // variant paid order on our store surfaces as a retryable 500 (visible, recoverable)
+  // rather than a silent 200 drop that loses a paying customer's credits.
+  const creditOnlyStore = ls.creditOnlyStore !== false
 
   // Encapsulated scope so the raw-buffer body parser only applies to the webhook.
   app.register(async (scope) => {
@@ -257,7 +263,7 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
           // misconfiguration → retryable 500. Mixed store (default): such an order is
           // a different product → omit this predicate so the handler 200-ignores it
           // (no infinite retry/alert on legitimate non-credit sales).
-          isOurStoreOrder: ls.creditOnlyStore ? isOurStoreOrder : undefined,
+          isOurStoreOrder: creditOnlyStore ? isOurStoreOrder : undefined,
           // Known credit variant with incomplete identity → retryable 500, not a
           // silent 200 drop (a paid pack we can't safely attribute must fail loud).
           // Fires regardless of creditOnlyStore (it's a recognized pack either way).

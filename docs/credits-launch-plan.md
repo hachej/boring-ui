@@ -23,6 +23,11 @@ usage with a margin.
 - **`BORING_CREDITS_LS_TEST_MODE=0` in production.** Test-mode checkouts are non-charging but
   still mint spendable credits (the balance isn't mode-scoped), so `NODE_ENV=production` +
   test mode throws at startup. Purge any test-mode credit grants before live cutover.
+- **Webhook requires server-side checkout.** The webhook only credits orders carrying a
+  server-signed attribution token (`custom_data.uat`), which only a server-created checkout
+  mints. So `BORING_CREDITS_LS_WEBHOOK_SECRET` set without checkout config
+  (`BORING_CREDITS_LS_API_KEY` + store id + variants) **throws at startup** — otherwise real
+  orders would 500 forever as `untrusted_attribution` (paid, never credited).
 - **No `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION=1` in production.** The soft-stop override
   is rejected in prod; the per-run hold must cover at least the **served** worst-case run
   (raise `RESERVATION_EUR`/grant, or restrict served models). The override only matters for a

@@ -371,8 +371,13 @@ export function buildCreditsWiring(env: NodeJS.ProcessEnv = process.env): {
         if (creditVariantIds.length === 0) {
           throw new Error('credits: BORING_CREDITS_LS_WEBHOOK_SECRET is set but BORING_CREDITS_LS_VARIANTS is empty — paid orders would be acknowledged without crediting. Configure the credit packs or unset the webhook secret.')
         }
+        // The webhook requires a server-signed attribution token (custom_data.uat),
+        // which ONLY a server-created checkout mints. With the webhook enabled but no
+        // checkout configured, there's no way to produce attributable orders — every
+        // real order would 500 forever as untrusted_attribution (paid, never credited).
+        // Fail fast: the purchase flow is unusable without server-side checkout.
         if (!config.lemonSqueezyCheckout) {
-          app.log.warn('credits: Lemon Squeezy checkout not configured (need API key + store id + variants) — Buy-credits button disabled')
+          throw new Error('credits: BORING_CREDITS_LS_WEBHOOK_SECRET is set but server-side checkout is not configured (need BORING_CREDITS_LS_API_KEY + store id + variants). The webhook requires a server-signed attribution token that only server-created checkouts mint, so real orders would 500 forever as untrusted_attribution. Configure checkout or unset the webhook secret.')
         }
       }
       // The per-run hold bounds a single run's overdraft. Evaluate it against the
