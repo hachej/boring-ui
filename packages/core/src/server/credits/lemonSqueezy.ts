@@ -26,11 +26,29 @@ export function verifyLemonSqueezySignature(
   return timingSafeEqual(a, b)
 }
 
+/** Server-signed attribution token binding a user id to a server-created
+ * checkout. Set as `custom_data.uat`; verified on the webhook so a buyer-crafted
+ * hosted-checkout URL can't attribute a paid order to an arbitrary account. */
+export function signUserAttribution(userId: string, secret: string): string {
+  return createHmac('sha256', secret).update(`credit-user:${userId}`).digest('hex')
+}
+
+export function verifyUserAttribution(userId: string | undefined, token: string | undefined, secret: string): boolean {
+  if (!userId || !token) return false
+  const expected = Buffer.from(signUserAttribution(userId, secret), 'utf8')
+  const actual = Buffer.from(token, 'utf8')
+  if (expected.length !== actual.length) return false
+  return timingSafeEqual(expected, actual)
+}
+
 export interface LemonSqueezyOrder {
   eventName: string
   orderId: string
   /** From checkout `custom_data.user_id` — who to credit. */
   userId?: string
+  /** From checkout `custom_data.uat` — server-signed HMAC binding the user_id to
+   * a server-created checkout (a crafted hosted-checkout URL can't forge it). */
+  userAttributionToken?: string
   userEmail?: string
   status?: string
   /** Test/live mode. `undefined` when the payload omitted it — treated as a
@@ -87,6 +105,7 @@ export function parseLemonSqueezyOrder(payload: unknown): LemonSqueezyOrder | nu
     eventName,
     orderId,
     userId: asString(customData?.user_id),
+    userAttributionToken: asString(customData?.uat),
     userEmail: asString(attrs.user_email),
     status: asString(attrs.status),
     testMode: typeof attrs.test_mode === 'boolean' ? attrs.test_mode : undefined,
@@ -115,6 +134,10 @@ export interface LemonSqueezyWebhookOptions {
    * per-order idempotency key (the same order never maps to two users).
    */
   resolveUserId?: (order: LemonSqueezyOrder) => string | undefined
+  /** When set, the order's `custom_data.uat` MUST be a valid attribution token
+   * for its user_id (signUserAttribution) or the order is not credited — binds
+   * attribution to a server-created checkout, not a buyer-supplied user_id. */
+  attributionSecret?: string
   /** Grant credits idempotently. `reason` is `purchase:<orderId>` (the
    * idempotency key); `orderId` is provided so callers don't re-parse it. The
    * full `order` is passed so the grant can persist provider identity. */
@@ -201,6 +224,14 @@ export async function handleLemonSqueezyWebhook(
       orderId: order.orderId, variantId: order.variantId, currency: order.currency, testMode: order.testMode,
     })
     return { status: 200, body: { ok: true, reason: 'not_a_credit_order', orderId: order.orderId } }
+  }
+
+  // Bind attribution to a server-created checkout: reject a user_id that isn't
+  // accompanied by a valid server-signed token (a crafted hosted-checkout URL
+  // could otherwise carry an arbitrary user_id).
+  if (options.attributionSecret && !verifyUserAttribution(order.userId, order.userAttributionToken, options.attributionSecret)) {
+    options.log?.('lemonsqueezy order user attribution token invalid/missing — not crediting', { orderId: order.orderId })
+    return { status: 500, body: { ok: false, reason: 'untrusted_attribution', orderId: order.orderId } }
   }
 
   const userId = (options.resolveUserId ?? ((o) => o.userId))(order)

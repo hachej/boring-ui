@@ -82,6 +82,8 @@ export {
   verifyLemonSqueezySignature,
   parseLemonSqueezyOrder,
   handleLemonSqueezyWebhook,
+  signUserAttribution,
+  verifyUserAttribution,
   registerCreditsRoutes,
   createLemonSqueezyCheckout,
   buildCheckoutRequestBody,

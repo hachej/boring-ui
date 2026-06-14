@@ -282,16 +282,17 @@ export function buildCreditsWiring(env: NodeJS.ProcessEnv = process.env): {
           app.log.warn('credits: Lemon Squeezy checkout not configured (need API key + store id + variants) — Buy-credits button disabled')
         }
       }
-      // The per-run hold is the only bound on a single run's overdraft (actual
-      // cost is posted after the run). If it can't cover a worst-case run, the
-      // hard stop isn't hard. Fail closed at startup rather than ship a config
-      // that lets one run push a user arbitrarily negative.
+      // The per-run hold bounds a single run's overdraft (actual cost is posted
+      // after the run). A hold below the worst-case run means a run can overshoot
+      // it (bounded; the user's next run is then refused). This is a deliberate
+      // operator trade-off — a small hold keeps a small starter grant usable — so
+      // warn rather than block; an unset reservation already defaults to the
+      // worst case (tight) in readCreditsConfig.
       const worstCase = worstCaseRunMicros(config.pricing, env)
       if (config.enabled && config.runReservationMicros < worstCase) {
-        throw new Error(
-          `credits: per-run reservation (${config.runReservationMicros} micros) is below the worst-case run cost ` +
-            `(${worstCase} micros). Raise BORING_CREDITS_RESERVATION_EUR (or lower BORING_CREDITS_MAX_CONTEXT_TOKENS/` +
-            `BORING_CREDITS_MAX_OUTPUT_TOKENS/BORING_CREDITS_MAX_CALLS_PER_RUN) so the per-run hard stop covers a run.`,
+        app.log.warn(
+          { runReservationMicros: config.runReservationMicros, worstCaseRunMicros: worstCase },
+          'credits: per-run reservation is below the worst-case run cost — a single run can overshoot the hold (bounded; next run refused). Raise BORING_CREDITS_RESERVATION_EUR or lower MAX_CONTEXT/OUTPUT/CALLS to tighten.',
         )
       }
       // A free-grant smaller than the per-run hold means new users can't start a

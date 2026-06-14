@@ -54,10 +54,13 @@ export const CONSERVATIVE_DEFAULT_RATE: ModelTokenRate = { inputPerMillion: 3, o
 export const DEFAULT_MODEL_RATES: Array<[RegExp, ModelTokenRate]> = [
   // Kimi K2 (public token pricing) for Ollama-hosted demo parity.
   [/kimi-k2/i, { inputPerMillion: 0.6, outputPerMillion: 2.5 }],
-  // Claude (public API list prices) as a fallback if ever routed there.
-  [/claude-(?:sonnet|3-5-sonnet|3-7-sonnet|4|sonnet-4)/i, { inputPerMillion: 3, outputPerMillion: 15 }],
+  // Claude (public API list prices) as a fallback if ever routed there. Opus is
+  // listed FIRST and matches any opus SKU shape (3-opus / opus-4 / 4-opus) so an
+  // expensive Opus id is never undercharged at the Sonnet rate. The Sonnet entry
+  // deliberately does NOT include a bare "4" (which would catch claude-4-opus).
+  [/claude-(?:[0-9.-]*opus|opus[0-9.-]*)/i, { inputPerMillion: 15, outputPerMillion: 75 }],
+  [/claude-(?:sonnet|3-5-sonnet|3-7-sonnet|sonnet-4|4-sonnet|4-5-sonnet)/i, { inputPerMillion: 3, outputPerMillion: 15 }],
   [/claude-3-haiku/i, { inputPerMillion: 0.25, outputPerMillion: 1.25 }],
-  [/claude-3-opus/i, { inputPerMillion: 15, outputPerMillion: 75 }],
 ]
 
 export interface CreditUsageInput {

@@ -2,9 +2,12 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify'
 import { createHmac } from 'node:crypto'
 import { registerCreditsRoutes } from '../routes'
+import { signUserAttribution } from '../lemonSqueezy'
 import { CreditsService, type CreditsConfig, type CreditsMeteringStore } from '../creditsService'
 
 const SECRET = 'whsec_test'
+/** Valid server-signed attribution token for the webhook (custom_data.uat). */
+const uat = (userId: string) => signUserAttribution(userId, SECRET)
 const CONFIG: CreditsConfig = {
   enabled: true,
   signupGrantMicros: 2_000_000,
@@ -31,7 +34,7 @@ function makeStore(): CreditsMeteringStore {
 
 function orderBody(userId = 'user-1', subtotalCents = 1000): string {
   return JSON.stringify({
-    meta: { event_name: 'order_created', custom_data: { user_id: userId } },
+    meta: { event_name: 'order_created', custom_data: { user_id: userId, uat: uat(userId) } },
     data: { type: 'orders', id: 'order-77', attributes: { status: 'paid', test_mode: true, currency: 'EUR', subtotal: subtotalCents, total: subtotalCents, first_order_item: { variant_id: 1 } } },
   })
 }
@@ -90,7 +93,7 @@ describe('credits routes', () => {
     // Variant '1' is worth 5_000_000 micros regardless of the €10 order subtotal.
     const a = await build(store, undefined, { '1': 5_000_000 })
     const body = JSON.stringify({
-      meta: { event_name: 'order_created', custom_data: { user_id: 'user-1' } },
+      meta: { event_name: 'order_created', custom_data: { user_id: 'user-1', uat: uat('user-1') } },
       data: { type: 'orders', id: 'order-fix', attributes: { status: 'paid', test_mode: true, currency: 'EUR', subtotal: 1000, total: 1190, first_order_item: { variant_id: 1 } } },
     })
     const res = await a.inject({
@@ -120,6 +123,26 @@ describe('credits routes', () => {
       })(),
     ).rejects.toThrow(/creditMicrosByVariant is missing a positive value for credit variant "2"/)
     await a.close()
+  })
+
+  it('rejects a paid order whose attribution token is missing/forged (500, no credit)', async () => {
+    const store = makeStore()
+    const a = await build(store)
+    // Valid signature + valid pack, but custom_data has no server-signed uat
+    // (e.g. a crafted hosted-checkout URL carrying an arbitrary user_id).
+    const body = JSON.stringify({
+      meta: { event_name: 'order_created', custom_data: { user_id: 'victim', uat: 'forged' } },
+      data: { type: 'orders', id: 'order-att', attributes: { status: 'paid', test_mode: true, currency: 'EUR', subtotal: 1000, total: 1000, first_order_item: { variant_id: 1 } } },
+    })
+    const res = await a.inject({
+      method: 'POST',
+      url: '/api/credits/webhooks/lemonsqueezy',
+      headers: { 'content-type': 'application/json', 'x-signature': createHmac('sha256', SECRET).update(body).digest('hex') },
+      payload: body,
+    })
+    expect(res.statusCode).toBe(500)
+    expect(res.json()).toMatchObject({ reason: 'untrusted_attribution' })
+    expect(store.grantPurchaseOnce).not.toHaveBeenCalled()
   })
 
   it('does not credit a paid order for an unconfigured variant (fail closed)', async () => {
@@ -240,7 +263,7 @@ describe('credits routes', () => {
     const a = await build(store, undefined, { '1': 10_000_000 }) // €10 pack
     // subtotal €10, discount €4 → only €6 net paid for a €10 pack → underpaid.
     const body = JSON.stringify({
-      meta: { event_name: 'order_created', custom_data: { user_id: 'user-1' } },
+      meta: { event_name: 'order_created', custom_data: { user_id: 'user-1', uat: uat('user-1') } },
       data: { type: 'orders', id: 'order-disc', attributes: { status: 'paid', test_mode: true, currency: 'EUR', subtotal: 1000, discount_total: 400, total: 600, first_order_item: { variant_id: 1 } } },
     })
     const res = await a.inject({

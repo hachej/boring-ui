@@ -30,6 +30,8 @@ export {
   verifyLemonSqueezySignature,
   parseLemonSqueezyOrder,
   handleLemonSqueezyWebhook,
+  signUserAttribution,
+  verifyUserAttribution,
 } from './lemonSqueezy.js'
 export type {
   LemonSqueezyOrder,

@@ -7,12 +7,17 @@
  * alternative to client-built hosted-checkout links.
  */
 
+import { signUserAttribution } from './lemonSqueezy.js'
+
 export interface CreateCheckoutInput {
   apiKey: string
   storeId: string
   variantId: string
   /** Authenticated user id — written into checkout custom data server-side. */
   userId: string
+  /** Secret used to sign the user attribution token (custom_data.uat) so the
+   * webhook can verify the user_id came from this server-created checkout. */
+  attributionSecret?: string
   email?: string
   /** Where Lemon Squeezy redirects after a successful purchase. */
   redirectUrl?: string
@@ -46,7 +51,12 @@ export function buildCheckoutRequestBody(input: CreateCheckoutInput): Record<str
         checkout_data: {
           ...(input.email ? { email: input.email } : {}),
           // Custom data is echoed back on the order webhook as meta.custom_data.
-          custom: { user_id: input.userId },
+          // uat binds the user id to this server-created checkout (verified by the
+          // webhook), so a buyer can't credit an arbitrary account via a crafted URL.
+          custom: {
+            user_id: input.userId,
+            ...(input.attributionSecret ? { uat: signUserAttribution(input.userId, input.attributionSecret) } : {}),
+          },
         },
         // Disable discount codes: credits are granted on the net pre-tax amount,
         // and a discount must never let a buyer pay less than the credited value.

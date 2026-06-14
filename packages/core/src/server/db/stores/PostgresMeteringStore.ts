@@ -264,10 +264,12 @@ export class PostgresMeteringStore {
   ): Promise<{ revoked: boolean }> {
     if (!orderId) throw new Error('revokePurchase requires an orderId')
     const source = opts.source ?? 'lemonsqueezy-refund'
-    // A pre-grant tombstone is written only when the caller vouches the refund is
-    // for a credit order (variant/store/mode), so an unrelated refund can't
-    // tombstone by order id. An order we ALREADY credited is revoked regardless.
-    const allowTombstone = opts.allowTombstone ?? true
+    // A pre-grant tombstone is written only when the caller EXPLICITLY vouches the
+    // refund is for a credit order (variant/store/mode). Default false (fail
+    // closed): an admin/manual/future caller that forgets the gate can't tombstone
+    // an unknown order and block a legitimate later grant. An order we ALREADY
+    // credited is revoked regardless of this flag.
+    const allowTombstone = opts.allowTombstone === true
     if (opts.refundFraction !== undefined && (!Number.isFinite(opts.refundFraction) || opts.refundFraction < 0)) {
       throw new Error('revokePurchase refundFraction must be a non-negative number')
     }
@@ -326,6 +328,15 @@ export class PostgresMeteringStore {
         (row.testMode != null && opts.expectedTestMode != null && row.testMode !== opts.expectedTestMode)
       ) {
         return { revoked: false }
+      }
+      // Serialize the refund debit with run admission for this user: reserve()
+      // takes the same per-user advisory lock, so a run can't be admitted against
+      // a pre-refund balance while this debit is in flight (then commit and let
+      // the user overdraw refunded credits). Safe vs deadlock: reserve takes only
+      // the user lock; this path already holds the per-order lock and never blocks
+      // on a lock reserve wants.
+      if (row.userId) {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${row.userId}))`)
       }
       const credited = row.amountMicros ?? 0
       const alreadyRefunded = row.refundedMicros ?? 0

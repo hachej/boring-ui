@@ -107,7 +107,11 @@ fail closed at the highest effective rate.
 3. **Durable settlement under a sustained DB outage.** If usage write *and* the fallback
    charge both fail and stay failed past the reservation TTL, that one run can free up (the
    hold blocks the user until then; failures are logged for reconcile). A persistent
-   settlement-retry queue is a follow-up.
+   settlement-retry queue is a follow-up. **Related:** a reservation whose run outlives
+   `BORING_CREDITS_RESERVATION_TTL_SECONDS` (default 2h) is expired and freed, so a stuck/
+   abandoned run's hold doesn't leak — keep the TTL comfortably above any real run's max
+   runtime so an in-flight run's hold isn't released early. (Per-message usage is debited as
+   it arrives regardless of the hold.)
 4. **Single-store purchase key.** The purchase PK is `order_id`; cross-store/mode collisions
    are prevented by the per-store/mode webhook secret + config validation. A composite
    `store:mode:order_id` key would harden a future multi-tenant DB.

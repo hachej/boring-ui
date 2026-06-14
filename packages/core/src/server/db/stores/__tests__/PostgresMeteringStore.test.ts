@@ -121,7 +121,7 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
 
   it('refund-before-grant tombstones the order so a later order_created never credits', async () => {
     // order_refunded arrives before order_created (out-of-order webhook delivery).
-    expect(await store.revokePurchase('ord-race')).toEqual({ revoked: false })
+    expect(await store.revokePurchase('ord-race', { allowTombstone: true })).toEqual({ revoked: false })
     // The matching grant must now be refused — the user must not keep credits.
     expect(await store.grantPurchaseOnce({ orderId: 'ord-race', userId: USER, amountMicros: 10_000_000 })).toEqual({ granted: false })
     expect((await store.getBalance(USER)).grantedMicros).toBe(0)
@@ -162,12 +162,12 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
 
   it('full refund-before-grant blocks a later grant; partial grants NET of the pending refund', async () => {
     // Full refund before order_created → terminal tombstone, later grant refused.
-    expect(await store.revokePurchase('ord-full', { refundFraction: 1 })).toEqual({ revoked: false })
+    expect(await store.revokePurchase('ord-full', { refundFraction: 1, allowTombstone: true })).toEqual({ revoked: false })
     expect(await store.grantPurchaseOnce({ orderId: 'ord-full', userId: USER, amountMicros: 10_000_000 })).toEqual({ granted: false })
 
     // Partial (50%) refund before order_created → recorded as pending; the later
     // grant mints the full €10 then immediately revokes €5 → net €5 balance.
-    expect(await store.revokePurchase('ord-part', { refundFraction: 0.5 })).toEqual({ revoked: false })
+    expect(await store.revokePurchase('ord-part', { refundFraction: 0.5, allowTombstone: true })).toEqual({ revoked: false })
     let rows = await sqlClient`SELECT status, pending_refund_ppm FROM boring_credit_purchases WHERE order_id = 'ord-part'`
     expect(rows[0]?.status).toBe('refund_pending')
     expect(Number(rows[0]?.pending_refund_ppm)).toBe(500_000)
@@ -184,8 +184,8 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
 
   it('accumulates repeated partial refunds before grant, then grants net', async () => {
     // 30% then 80% (cumulative) refunds both arrive before order_created.
-    expect(await store.revokePurchase('ord-multi', { refundFraction: 0.3 })).toEqual({ revoked: false })
-    expect(await store.revokePurchase('ord-multi', { refundFraction: 0.8 })).toEqual({ revoked: false })
+    expect(await store.revokePurchase('ord-multi', { refundFraction: 0.3, allowTombstone: true })).toEqual({ revoked: false })
+    expect(await store.revokePurchase('ord-multi', { refundFraction: 0.8, allowTombstone: true })).toEqual({ revoked: false })
     let rows = await sqlClient`SELECT status, pending_refund_ppm FROM boring_credit_purchases WHERE order_id = 'ord-multi'`
     expect(rows[0]?.status).toBe('refund_pending') // NOT wrongly tombstoned to refunded
     expect(Number(rows[0]?.pending_refund_ppm)).toBe(800_000)

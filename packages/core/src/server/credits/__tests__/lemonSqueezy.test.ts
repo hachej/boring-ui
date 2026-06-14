@@ -4,6 +4,8 @@ import {
   handleLemonSqueezyWebhook,
   parseLemonSqueezyOrder,
   verifyLemonSqueezySignature,
+  signUserAttribution,
+  verifyUserAttribution,
   type LemonSqueezyOrder,
 } from '../lemonSqueezy'
 
@@ -44,6 +46,18 @@ describe('verifyLemonSqueezySignature', () => {
   })
 })
 
+describe('signUserAttribution / verifyUserAttribution', () => {
+  it('verifies a token it signed and rejects tampering', () => {
+    const token = signUserAttribution('user-9', 'secret')
+    expect(verifyUserAttribution('user-9', token, 'secret')).toBe(true)
+    expect(verifyUserAttribution('user-9', token, 'other')).toBe(false) // wrong secret
+    expect(verifyUserAttribution('attacker', token, 'secret')).toBe(false) // wrong user
+    expect(verifyUserAttribution('user-9', 'forged', 'secret')).toBe(false)
+    expect(verifyUserAttribution('user-9', undefined, 'secret')).toBe(false)
+    expect(verifyUserAttribution(undefined, token, 'secret')).toBe(false)
+  })
+})
+
 describe('parseLemonSqueezyOrder', () => {
   it('normalizes an order payload', () => {
     const order = parseLemonSqueezyOrder(JSON.parse(orderPayload()))
@@ -51,6 +65,7 @@ describe('parseLemonSqueezyOrder', () => {
       eventName: 'order_created',
       orderId: 'order-123',
       userId: 'user-1',
+      userAttributionToken: undefined,
       userEmail: 'a@b.com',
       status: 'paid',
       testMode: true,
@@ -183,6 +198,19 @@ describe('handleLemonSqueezyWebhook', () => {
     const body = orderPayload({}, { subtotal: 1000, discount_total: 400, total: 600 })
     await handleLemonSqueezyWebhook(body, sign(body), options)
     expect(grant).toHaveBeenCalled()
+  })
+
+  it('requires a valid attribution token when attributionSecret is set', async () => {
+    const { options: base, grant } = opts({ attributionSecret: 'attr-secret' })
+    // No uat → rejected with a retryable 500, no grant.
+    const noToken = orderPayload()
+    expect(await handleLemonSqueezyWebhook(noToken, sign(noToken), base)).toMatchObject({ status: 500, body: { reason: 'untrusted_attribution' } })
+    expect(grant).not.toHaveBeenCalled()
+
+    // Valid uat → granted.
+    const signed = orderPayload({ custom_data: { user_id: 'user-1', uat: signUserAttribution('user-1', 'attr-secret') } })
+    expect(await handleLemonSqueezyWebhook(signed, sign(signed), base)).toMatchObject({ status: 200, body: { ok: true } })
+    expect(grant).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1' }), expect.anything())
   })
 
   it('honors a custom resolveUserId', async () => {

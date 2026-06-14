@@ -111,6 +111,15 @@ describe('usageToCredits', () => {
     expect(estimateProviderCost('zzz-unknown', 1_000_000, 0, config)).toEqual({ units: 1, usedDefault: true })
   })
 
+  it('prices any Opus SKU at the Opus rate, never the cheaper Sonnet rate', () => {
+    for (const id of ['claude-3-opus', 'claude-opus-4', 'claude-4-opus', 'claude-opus-4-1']) {
+      const cost = usageToCredits({ inputTokens: 1_000_000, outputTokens: 0 }, { id }, AT_COST)
+      expect({ id, micros: cost.providerCostMicros }).toEqual({ id, micros: 15_000_000 }) // 15/MTok Opus
+    }
+    // Sonnet ids still get the 3/MTok rate.
+    expect(usageToCredits({ inputTokens: 1_000_000, outputTokens: 0 }, { id: 'claude-sonnet-4' }, AT_COST).providerCostMicros).toBe(3_000_000)
+  })
+
   it('matches a provider-keyed rate against the provider, not just the model id', () => {
     // Rate keyed by provider name; the model id alone ("Qwen/Qwen3.5") doesn't
     // contain "infomaniak", but the provider-qualified key does.

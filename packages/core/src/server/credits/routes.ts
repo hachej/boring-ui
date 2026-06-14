@@ -115,6 +115,9 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
           storeId: checkout.storeId,
           variantId,
           userId,
+          // Sign the attribution token with the webhook secret so the webhook
+          // can verify the buyer id came from this server-created checkout.
+          attributionSecret: ls.webhookSecret,
           email: typeof email === 'string' ? email : undefined,
           redirectUrl: checkout.redirectUrl,
           testMode: checkout.testMode,
@@ -184,6 +187,8 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
           secret: ls.webhookSecret,
           creditsForOrder,
           isCreditOrder,
+          // Bind buyer attribution to a server-created checkout (custom_data.uat).
+          attributionSecret: ls.webhookSecret,
           // Refuse to grant a fixed pack value the buyer didn't actually pay for.
           creditMicrosPerUnit,
           grant: (input, order) =>
@@ -209,10 +214,12 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
               // Tombstone an unknown order only if it's on our store/mode (NOT
               // requiring the variant, which a refund payload may omit).
               allowTombstone: isOurStoreOrder(order),
-              // Match a credited order against the CONFIGURED identity, not the
-              // (payload-controlled) refund fields.
-              expectedStoreId: ls.expectedStoreId,
-              expectedTestMode: ls.expectedTestMode,
+              // A credited order is revoked only if THIS refund's store/mode match
+              // the identity stored at grant — so a colliding order id from a
+              // different store/mode can't revoke our order (the store row, set at
+              // grant, was itself validated against the configured identity).
+              expectedStoreId: order.storeId,
+              expectedTestMode: order.testMode,
             }),
           log: options.log,
         },
