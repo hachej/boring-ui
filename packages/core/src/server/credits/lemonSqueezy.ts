@@ -304,14 +304,21 @@ export async function handleLemonSqueezyWebhook(
 
   // Bind attribution to a server-created checkout: reject a user_id that isn't
   // accompanied by a valid server-signed token (a crafted hosted-checkout URL
-  // could otherwise carry an arbitrary user_id). Enforced only when at least one
-  // attribution secret is configured (an empty array is treated as unset).
-  const attributionSecrets = typeof options.attributionSecret === 'string'
-    ? [options.attributionSecret]
-    : (options.attributionSecret ?? [])
-  if (attributionSecrets.length > 0 && !verifyUserAttribution(order.userId, order.userAttributionToken, attributionSecrets)) {
-    options.log?.('lemonsqueezy order user attribution token invalid/missing — not crediting', { orderId: order.orderId })
-    return { status: 500, body: { ok: false, reason: 'untrusted_attribution', orderId: order.orderId } }
+  // could otherwise carry an arbitrary user_id). attributionSecret UNDEFINED ⇒ no
+  // attribution required (explicit opt-out by omission). But a PROVIDED-yet-empty /
+  // all-blank array is a misconfiguration that would silently DISABLE verification —
+  // fail closed by normalizing it to the webhook `secret`, so verification stays
+  // enforced. (registerCreditsRoutes also normalizes; this guards direct callers.)
+  if (options.attributionSecret !== undefined) {
+    const provided = typeof options.attributionSecret === 'string'
+      ? [options.attributionSecret]
+      : options.attributionSecret
+    const attributionSecrets = provided.filter((s) => typeof s === 'string' && s.length > 0)
+    const effectiveSecrets = attributionSecrets.length > 0 ? attributionSecrets : [options.secret]
+    if (!verifyUserAttribution(order.userId, order.userAttributionToken, effectiveSecrets)) {
+      options.log?.('lemonsqueezy order user attribution token invalid/missing — not crediting', { orderId: order.orderId })
+      return { status: 500, body: { ok: false, reason: 'untrusted_attribution', orderId: order.orderId } }
+    }
   }
 
   const userId = (options.resolveUserId ?? ((o) => o.userId))(order)

@@ -527,50 +527,89 @@ export class PostgresMeteringStore {
     })
   }
 
-  /** Idempotent ledger insert; returns whether a new row was written. */
+  /** Idempotent ledger insert; returns whether a new row was written. Serialized
+   * under the user's advisory lock so a positive debit is ordered with that user's
+   * reserve()/expiry: a debit that pushes the balance below the floor is visible to a
+   * concurrent reserve (which then waits and is refused), keeping the documented
+   * "overshoot → next run refused" boundary even for over-budget/misrouted runs. */
   async recordUsage(input: RecordUsageInput): Promise<RecordUsageResult> {
     if (!Number.isSafeInteger(input.billedCostMicros) || input.billedCostMicros < 0) {
       throw new Error('billedCostMicros must be a non-negative integer')
     }
-    const rows = await this.db
-      .insert(usageLedger)
-      .values({
-        id: input.usageId,
-        userId: input.userId,
-        workspaceId: input.workspaceId ?? null,
-        sessionId: input.sessionId ?? null,
-        runId: input.runId ?? null,
-        messageId: input.messageId ?? null,
-        source: input.source ?? '',
-        provider: input.provider ?? null,
-        model: input.model ?? null,
-        inputTokens: input.inputTokens ?? 0,
-        outputTokens: input.outputTokens ?? 0,
-        cacheReadTokens: input.cacheReadTokens ?? 0,
-        cacheWriteTokens: input.cacheWriteTokens ?? 0,
-        providerCostMicros: input.providerCostMicros ?? 0,
-        billedCostMicros: input.billedCostMicros,
-        stopReason: input.stopReason ?? null,
-        metadata: input.metadata ?? {},
-      })
-      .onConflictDoNothing({ target: usageLedger.id })
-      .returning({ id: usageLedger.id })
-    if (rows.length > 0) return { inserted: true }
-    // The usage id already existed. A genuine idempotent retry carries the SAME
-    // user + amount; a COLLISION (a reused message id with different usage) would
-    // otherwise be silently dropped and the run settled free. Verify and THROW on
-    // mismatch so the coordinator's fallback-charge path runs instead.
-    const existing = await this.db
-      .select({ userId: usageLedger.userId, runId: usageLedger.runId, billedCostMicros: usageLedger.billedCostMicros, reservationId: sql<string | null>`${usageLedger.metadata}->>'reservationId'` })
-      .from(usageLedger)
-      .where(eq(usageLedger.id, input.usageId))
-      .limit(1)
-    const e = existing[0]
-    const incomingReservationId = (input.metadata?.reservationId as string | undefined) ?? null
-    if (!e || e.userId !== input.userId || e.runId !== (input.runId ?? null) || e.billedCostMicros !== input.billedCostMicros || e.reservationId !== incomingReservationId) {
-      throw new Error(`usage ledger id collision for ${input.usageId}: existing row does not match this usage (refusing to silently drop the debit)`)
-    }
-    return { inserted: false }
+    return this.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${input.userId}))`)
+      const rows = await tx
+        .insert(usageLedger)
+        .values({
+          id: input.usageId,
+          userId: input.userId,
+          workspaceId: input.workspaceId ?? null,
+          sessionId: input.sessionId ?? null,
+          runId: input.runId ?? null,
+          messageId: input.messageId ?? null,
+          source: input.source ?? '',
+          provider: input.provider ?? null,
+          model: input.model ?? null,
+          inputTokens: input.inputTokens ?? 0,
+          outputTokens: input.outputTokens ?? 0,
+          cacheReadTokens: input.cacheReadTokens ?? 0,
+          cacheWriteTokens: input.cacheWriteTokens ?? 0,
+          providerCostMicros: input.providerCostMicros ?? 0,
+          billedCostMicros: input.billedCostMicros,
+          stopReason: input.stopReason ?? null,
+          metadata: input.metadata ?? {},
+        })
+        .onConflictDoNothing({ target: usageLedger.id })
+        .returning({ id: usageLedger.id })
+      if (rows.length > 0) return { inserted: true }
+      // The usage id already existed. A genuine idempotent retry carries the SAME
+      // immutable content; a COLLISION (a reused id with DIFFERENT usage) would
+      // otherwise be silently dropped and the run settled free, AND the audit trail
+      // would lie. Compare ALL immutable ledger fields (not just user+amount) and
+      // THROW on any mismatch so the coordinator's fallback-charge path runs instead.
+      const existing = await tx
+        .select({
+          userId: usageLedger.userId,
+          runId: usageLedger.runId,
+          messageId: usageLedger.messageId,
+          source: usageLedger.source,
+          provider: usageLedger.provider,
+          model: usageLedger.model,
+          inputTokens: usageLedger.inputTokens,
+          outputTokens: usageLedger.outputTokens,
+          cacheReadTokens: usageLedger.cacheReadTokens,
+          cacheWriteTokens: usageLedger.cacheWriteTokens,
+          providerCostMicros: usageLedger.providerCostMicros,
+          billedCostMicros: usageLedger.billedCostMicros,
+          stopReason: usageLedger.stopReason,
+          reservationId: sql<string | null>`${usageLedger.metadata}->>'reservationId'`,
+        })
+        .from(usageLedger)
+        .where(eq(usageLedger.id, input.usageId))
+        .limit(1)
+      const e = existing[0]
+      const incomingReservationId = (input.metadata?.reservationId as string | undefined) ?? null
+      const matches =
+        e &&
+        e.userId === input.userId &&
+        e.runId === (input.runId ?? null) &&
+        e.messageId === (input.messageId ?? null) &&
+        e.source === (input.source ?? '') &&
+        e.provider === (input.provider ?? null) &&
+        e.model === (input.model ?? null) &&
+        e.inputTokens === (input.inputTokens ?? 0) &&
+        e.outputTokens === (input.outputTokens ?? 0) &&
+        e.cacheReadTokens === (input.cacheReadTokens ?? 0) &&
+        e.cacheWriteTokens === (input.cacheWriteTokens ?? 0) &&
+        e.providerCostMicros === (input.providerCostMicros ?? 0) &&
+        e.billedCostMicros === input.billedCostMicros &&
+        e.stopReason === (input.stopReason ?? null) &&
+        e.reservationId === incomingReservationId
+      if (!matches) {
+        throw new Error(`usage ledger id collision for ${input.usageId}: existing row does not match this usage (refusing to silently drop the debit or corrupt the audit trail)`)
+      }
+      return { inserted: false }
+    })
   }
 
   /**

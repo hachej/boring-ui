@@ -244,6 +244,20 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
     await expect(store.recordUsage({ usageId: 'um-2', userId: USER, runId: 'R', source: 'pi-chat', billedCostMicros: 100_000, metadata: { reservationId: 'res-B' } })).rejects.toThrow(/usage ledger id collision/)
   })
 
+  it('idempotency verification compares ALL immutable fields, not just user+amount (audit integrity)', async () => {
+    await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 10_000_000 })
+    await store.recordUsage({ usageId: 'um-3', userId: USER, runId: 'R', source: 'pi-chat', provider: 'infomaniak', model: 'm1', inputTokens: 100, billedCostMicros: 200_000 })
+    // Same id + same user + same billed amount, but a DIFFERENT model / token count —
+    // a genuine retry can't change these, so it's a collision that would corrupt the
+    // audit trail. Must throw, not silently accept as idempotent.
+    await expect(store.recordUsage({ usageId: 'um-3', userId: USER, runId: 'R', source: 'pi-chat', provider: 'infomaniak', model: 'm2-different', inputTokens: 100, billedCostMicros: 200_000 }))
+      .rejects.toThrow(/usage ledger id collision/)
+    await expect(store.recordUsage({ usageId: 'um-3', userId: USER, runId: 'R', source: 'pi-chat', provider: 'infomaniak', model: 'm1', inputTokens: 999, billedCostMicros: 200_000 }))
+      .rejects.toThrow(/usage ledger id collision/)
+    // The exact same content is still an idempotent no-op.
+    expect(await store.recordUsage({ usageId: 'um-3', userId: USER, runId: 'R', source: 'pi-chat', provider: 'infomaniak', model: 'm1', inputTokens: 100, billedCostMicros: 200_000 })).toEqual({ inserted: false })
+  })
+
   it('scopes fallback billing to the reservation, not the reused runId', async () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 10_000_000 })
     // Attempt A under reservation res-A bills €1 of real usage for runId R.

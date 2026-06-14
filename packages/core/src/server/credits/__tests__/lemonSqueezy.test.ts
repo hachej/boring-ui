@@ -335,6 +335,26 @@ describe('handleLemonSqueezyWebhook', () => {
     expect(grant).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1' }), expect.anything())
   })
 
+  it('an EMPTY attributionSecret array does NOT disable verification (falls back to the webhook secret)', async () => {
+    // A direct caller passing [] must not silently bypass attribution. The handler
+    // normalizes it to options.secret, so verification stays enforced.
+    const { options, grant } = opts({ attributionSecret: [] })
+    const noToken = orderPayload()
+    expect(await handleLemonSqueezyWebhook(noToken, sign(noToken), options)).toMatchObject({ status: 500, body: { reason: 'untrusted_attribution' } })
+    expect(grant).not.toHaveBeenCalled()
+    // A uat signed with the webhook secret (the fallback) verifies.
+    const signed = orderPayload({ custom_data: { user_id: 'user-1', uat: signUserAttribution('user-1', SECRET) } })
+    expect(await handleLemonSqueezyWebhook(signed, sign(signed), options)).toMatchObject({ status: 200, body: { ok: true } })
+  })
+
+  it('verifies against multiple attribution secrets (rotation) in the webhook handler', async () => {
+    const { options, grant } = opts({ attributionSecret: ['new-attr', 'old-attr'] })
+    // A uat signed with the PREVIOUS secret still verifies (rotation grace).
+    const signed = orderPayload({ custom_data: { user_id: 'user-1', uat: signUserAttribution('user-1', 'old-attr') } })
+    expect(await handleLemonSqueezyWebhook(signed, sign(signed), options)).toMatchObject({ status: 200, body: { ok: true } })
+    expect(grant).toHaveBeenCalled()
+  })
+
   it('honors a custom resolveUserId', async () => {
     const { options, grant } = opts({ resolveUserId: () => 'mapped-user' })
     const body = orderPayload({ custom_data: {} })
