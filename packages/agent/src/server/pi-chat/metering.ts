@@ -156,11 +156,6 @@ interface MeteringRun {
   /** Set when a recordUsage sink call rejected — at least one ledger row for
    * this run is missing, so the run must not falsely settle. */
   usageWriteFailed: boolean
-  /** Set once the run reached agent-start (execution began). A run that STARTED
-   * then errored/cancelled with no usage may have made a paid provider call
-   * before Pi emitted usage, so it must NOT be released free — it falls through
-   * to the fallback hold charge. Only a NOT-started terminal run is freed. */
-  started: boolean
   /** Present on queued follow-up runs; matched against clear/consume selectors. */
   followUp?: FollowUpSelector
   /** Resolves/rejects when the host reservation settles. Awaited by concurrent
@@ -484,7 +479,6 @@ export class PiChatMeteringCoordinator {
           while (next && next.terminal) next = state.pendingPrompts.shift()
           if (next) {
             if (state.active && !state.active.terminal) this.finishRun(state.active, 'ok')
-            next.started = true // execution began — a later no-usage error is charged, not freed
             state.active = next
           }
           break
@@ -540,10 +534,6 @@ export class PiChatMeteringCoordinator {
     if (!run) return
     if (run.followUp?.clientNonce) state.consumedFollowUpNonces.add(run.followUp.clientNonce)
     if (state.active && !state.active.terminal) this.finishRun(state.active, 'ok')
-    // Consumption IS the follow-up's execution signal (Pi is now processing its
-    // user message), the analogue of agent-start for prompts — mark it started so
-    // a later no-usage error charges the fallback hold instead of freeing it.
-    run.started = true
     state.active = run
   }
 
@@ -677,7 +667,6 @@ export class PiChatMeteringCoordinator {
       instanceId: (this.runInstances += 1),
       usageCount: 0,
       billableUsageCount: 0,
-      started: false,
       recordedMessageIds: new Set(),
       lastIdlessUsageKey: undefined,
       usageWriteFailed: false,
@@ -741,15 +730,17 @@ export class PiChatMeteringCoordinator {
         return this.sink.settleRun({ ...run.scope, reservationId: run.reservationId, status })
       }
       // No billable usage written and no failed write. Charge the fallback hold ONLY
-      // when the run still did paid work we couldn't capture: a SUCCESSFUL run that
-      // reported no/zero usage (don't return a paid hold free), or a STARTED run that
-      // ERRORED (a paid provider call may have happened with its usage object never
-      // delivered). Otherwise free the hold: a pre-execution error, or a user-initiated
-      // abort/cancel with nothing billable (Pi delivers a usage row whenever billable
-      // tokens were produced, so zero billable = nothing generated — charging the full
-      // worst-case hold for a non-billable stop would grossly over-charge, even if a
-      // zero-token usage row arrived).
-      const didPaidWork = status === 'ok' || (status === 'error' && run.started)
+      // for a SUCCESSFUL run that reported no/zero usage: a normal completion produces
+      // a usage row, so its absence suggests a reporting gap (uncaptured paid work) —
+      // don't return a paid hold free. An ERROR with no billable usage is FREED: Pi
+      // harvests a failed provider call's usage onto agent_end (so real paid work shows
+      // as billable usage above), which means a no-usage error is most likely
+      // non-billable — a pre-provider/config/auth failure (e.g. missing API key) that
+      // did no provider work. Charging the full worst-case hold for those would grossly
+      // over-charge a failed run that consumed nothing. (Residual: a provider that
+      // billed for a failed call whose usage Pi never reported at all goes free — a
+      // narrow under-charge, the symmetric cost of not over-charging config failures.)
+      const didPaidWork = status === 'ok'
       if (didPaidWork) {
         return this.sink.releaseRun({ ...run.scope, reservationId: run.reservationId, reason: 'fallback-hold-charge' })
       }

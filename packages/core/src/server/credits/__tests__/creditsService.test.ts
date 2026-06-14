@@ -101,7 +101,10 @@ describe('CreditsService', () => {
     const service = new CreditsService(store, CONFIG)
     const id = await service.reserveRun({ userId: 'u1', workspaceId: 'w', sessionId: 's', runId: 'r' })
     expect(id).toBe('res-1')
-    expect(store.expireStaleReservations).toHaveBeenCalled()
+    // No GLOBAL cross-user sweep on admission — store.reserve() expires THIS user's
+    // stale rows under the per-user lock (so an unrelated user's stale row can't fail
+    // or slow this reserve).
+    expect(store.expireStaleReservations).not.toHaveBeenCalled()
     expect(store.reserve).toHaveBeenCalledWith(expect.objectContaining({
       // minAvailable = hold (250k) + floor (50k): keep the floor AFTER reserving.
       userId: 'u1', runId: 'r', amountMicros: 250_000, ttlSeconds: 7200, minAvailableMicros: 300_000,

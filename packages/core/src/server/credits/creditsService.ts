@@ -229,7 +229,14 @@ export class CreditsService {
   async reserveRun(input: { userId: string; workspaceId?: string; sessionId?: string; runId: string }): Promise<string | undefined> {
     if (!this.config.enabled) return undefined
     await this.grantSignupCredits(input.userId)
-    await this.store.expireStaleReservations()
+    // NOTE: do NOT sweep ALL users' stale reservations here. store.reserve() already
+    // expires THIS user's stale reservations under the same per-user advisory lock
+    // (charge-aware), which is all this admission needs. A global cross-user sweep on
+    // every reserve would (a) put another user's ledger conflict / transient DB error
+    // on this user's request path (failing an unrelated run), and (b) add unbounded
+    // latency proportional to the number of users with stale rows. Inactive users'
+    // stale reservations are expired when THEY next reserve (or via a future
+    // background job); a never-returning user's hold harms only their own balance.
     try {
       const { reservationId } = await this.store.reserve({
         userId: input.userId,

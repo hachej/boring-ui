@@ -335,22 +335,23 @@ describe('pi chat metering', () => {
     ])
   })
 
-  it('charges the fallback hold when a STARTED run errors with no usage (a paid call may have happened)', async () => {
+  it('frees an errored run with NO billable usage (no over-charge for a pre-provider/config failure)', async () => {
     const adapter = createAdapter()
     const { sink, calls } = createSink()
     const { service } = createService(adapter, sink)
 
     await service.prompt(ctx, 's1', { message: 'boom', clientNonce: 'nonce-err' })
     adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
-    adapter.emit(agentEnd('error', 'provider failed mid-generation'))
+    // No usage at all (e.g. a missing/invalid API key or other pre-provider failure).
+    // Pi harvests a real failed-call's usage onto agent_end, so no billable usage
+    // means no provider work happened → free, never charge the full worst-case hold.
+    adapter.emit(agentEnd('error', 'no API key for provider'))
     await service.flushMetering()
 
-    // The run reached agent_start, so a paid provider call may have happened with
-    // no usage object delivered → fall back to the hold, never free.
     expect(calls.usage).toEqual([])
     expect(calls.settled).toEqual([])
     expect(calls.released).toEqual([
-      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-err', reason: 'fallback-hold-charge' }),
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-err', reason: 'error-before-usage' }),
     ])
   })
 
@@ -535,7 +536,7 @@ describe('pi chat metering', () => {
     expect(calls.released).toEqual([])
   })
 
-  it('charges the fallback hold when a CONSUMED follow-up errors with no usage (it started executing)', async () => {
+  it('frees a CONSUMED follow-up that errors with NO billable usage (no over-charge)', async () => {
     const adapter = createAdapter()
     const { sink, calls } = createSink()
     const { service } = createService(adapter, sink)
@@ -545,13 +546,13 @@ describe('pi chat metering', () => {
 
     adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
     adapter.emit(assistantMessageEnd({ id: 'a1' }))
-    // Pi consumes the queued follow-up (it is now the active, executing run)...
+    // Pi consumes the queued follow-up (it is now the active run)...
     adapter.emit({
       type: 'message_start',
       message: { id: 'u2', role: 'user', content: [{ type: 'text', text: 'second' }] },
     } as unknown as AgentSessionEvent)
-    // ...then the provider errors before any follow-up usage arrives. Consumption
-    // started execution, so a paid call may have happened → fall back to the hold.
+    // ...then it errors before any follow-up usage arrives. No billable usage for the
+    // follow-up → free it (the prompt that DID bill still settles).
     adapter.emit(agentEnd('error', 'provider failed after follow-up consumption'))
     await service.flushMetering()
 
@@ -562,7 +563,7 @@ describe('pi chat metering', () => {
       expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-p', status: 'ok' }),
     ])
     expect(calls.released).toEqual([
-      expect.objectContaining({ runId: 'pi-run:s1:followup:nonce-f:0', reason: 'fallback-hold-charge' }),
+      expect.objectContaining({ runId: 'pi-run:s1:followup:nonce-f:0', reason: 'error-before-usage' }),
     ])
   })
 
