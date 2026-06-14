@@ -137,6 +137,8 @@ function parseRates(raw: string | undefined): Array<[RegExp, { inputPerMillion: 
 }
 
 export interface FullAppCreditsConfig extends CreditsConfig {
+  /** Background stale-reservation sweep cadence (seconds). */
+  sweepIntervalSeconds: number
   lemonSqueezyWebhookSecret?: string
   /** Pack id (EUR credit value) → LS variant id. Webhook only credits these variants. */
   lemonSqueezyVariants: Record<string, string>
@@ -256,6 +258,7 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
       runReservationMicros: 1,
       reservationTtlSeconds: 60,
       minBalanceMicros: 0,
+      sweepIntervalSeconds: 300,
       pricing: { margin: 1, creditMicrosPerUnit: CREDIT_MICROS_PER_EUR, rates: [] },
       lemonSqueezyWebhookSecret: undefined,
       lemonSqueezyVariants: {},
@@ -300,6 +303,11 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
     )
   }
   const minBalanceMicros = eurToMicros('BORING_CREDITS_MIN_BALANCE_EUR', env.BORING_CREDITS_MIN_BALANCE_EUR, 0.05)
+  // Background stale-reservation sweep cadence. The per-user expiry in reserve()
+  // covers active users; this sweeper charges-on-expire the marked reservations of
+  // users who don't return, so a durable fallback charge whose write failed isn't
+  // lost. Off the request path (no cross-user coupling). Default 5 min.
+  const sweepIntervalSeconds = Math.max(30, parseNumberEnv('BORING_CREDITS_SWEEP_INTERVAL_SECONDS', env.BORING_CREDITS_SWEEP_INTERVAL_SECONDS, 300, 30))
   // Default the signup grant so a FRESH user can start their first run out of the box.
   // reserveRun admits a run only when available ≥ hold + floor, so an UNSET grant
   // defaults to max(€2, hold + floor). Without this, an unconfigured/dev deploy (high
@@ -318,6 +326,7 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
     runReservationMicros,
     reservationTtlSeconds,
     minBalanceMicros,
+    sweepIntervalSeconds,
     pricing: { margin, creditMicrosPerUnit: CREDIT_MICROS_PER_EUR, rates },
   }
 
@@ -486,6 +495,21 @@ export function buildCreditsWiring(env: NodeJS.ProcessEnv = process.env): {
           { signupGrantMicros: config.signupGrantMicros, runReservationMicros: config.runReservationMicros },
           'credits: signup grant is below the per-run hold — new users will be blocked from their first run until they buy credits',
         )
+      }
+      // Background charge-on-expire sweeper. reserve() expires the CURRENT user's
+      // stale reservations on admission, but a user who never returns would otherwise
+      // leave a marked (charge_on_expire) reservation un-charged past TTL — and
+      // computeBalance drops expired reservations from the hold, so the durable
+      // fallback charge would be lost. This periodic sweep (off the request path, so a
+      // cross-user conflict/DB blip just retries next tick) closes that gap.
+      if (config.enabled) {
+        const timer = setInterval(() => {
+          void store.expireStaleReservations().catch((error) =>
+            app.log.warn({ error: String(error) }, 'credits: background stale-reservation sweep failed (will retry next tick)'),
+          )
+        }, config.sweepIntervalSeconds * 1000)
+        timer.unref?.() // don't keep the process alive for the timer
+        app.addHook('onClose', async () => clearInterval(timer))
       }
     },
   }

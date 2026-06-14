@@ -101,6 +101,7 @@ All money config is **fail-closed**: a provided-but-invalid value throws at star
 | `BORING_CREDITS_MAX_CONTEXT_TOKENS` / `_MAX_OUTPUT_TOKENS` / `_MAX_CALLS_PER_RUN` | no (200k/16k/4) | Worst-case-run inputs for hold sizing. |
 | `BORING_CREDITS_MAX_RUN_SECONDS` | no (default 1800) | Declared max wall-clock runtime of a single run. Startup **throws** unless `RESERVATION_TTL_SECONDS ≥ this + 300s` slack — so the stale-reservation sweep can't charge-on-expire a still-alive run (overcharge). |
 | `BORING_CREDITS_RESERVATION_TTL_SECONDS` | no (default 7200) | How long a per-run hold survives before the sweep settles/expires it. Must exceed `MAX_RUN_SECONDS + 300s`. |
+| `BORING_CREDITS_SWEEP_INTERVAL_SECONDS` | no (default 300) | Cadence of the background charge-on-expire sweeper (off the request path). Charges-on-expire the marked reservations of users who don't return, so a durable fallback charge whose write failed isn't lost past TTL. |
 | `BORING_CREDITS_LS_WEBHOOK_SECRET` | for purchases | LS webhook signing secret (raw-body HMAC). |
 | `BORING_CREDITS_LS_STORE_ID` | **required if webhook secret set** | Webhook ignores orders from other stores. |
 | `BORING_CREDITS_LS_CREDIT_ONLY_STORE` | no (default 1) | `1` = the store sells only credit packs ⇒ an unknown-variant paid order on our store is a pack misconfig (retryable 500). `0` = a mixed store ⇒ such an order is a different product and is 200-ignored (no infinite retry/alert on legitimate non-credit sales). |
@@ -146,7 +147,10 @@ fail closed at the highest effective rate.
    over-charge a user who closed the tab). The residual free-run window is therefore only a run
    whose terminal **marker write itself** failed (and stayed failed past TTL) — i.e. a DB outage
    spanning the decision point, when nothing durable can be written anyway. The complete fix (an
-   external out-of-DB settlement-intent log + retry worker) is a tracked follow-up. The "TTL
+   external out-of-DB settlement-intent log + retry worker) is a tracked follow-up. The sweep
+   runs both on each `reserve()` (the current user, per-user-locked) AND on a **background timer**
+   (`BORING_CREDITS_SWEEP_INTERVAL_SECONDS`, default 5 min, off the request path), so a marked
+   reservation is charged-on-expire even for a user who never returns. The "TTL
    above any real run's max runtime" mitigation is now **enforced**, not folklore: startup
    throws unless
    `BORING_CREDITS_RESERVATION_TTL_SECONDS ≥ BORING_CREDITS_MAX_RUN_SECONDS + 300s`, so the sweep
