@@ -99,7 +99,7 @@ All money config is **fail-closed**: a provided-but-invalid value throws at star
 | `BORING_CREDITS_MARGIN` | no (default 1.3) | Pricing margin; must be ≥ 1. |
 | `BORING_CREDITS_RATES` | recommended | `regex=inEur:outEur;…` per-MTok rates (e.g. `infomaniak=0.5:1.5`). Matched against `provider/id`. Non-positive/malformed entries throw. |
 | `BORING_CREDITS_MAX_CONTEXT_TOKENS` / `_MAX_OUTPUT_TOKENS` / `_MAX_CALLS_PER_RUN` | no (200k/16k/4) | Worst-case-run inputs for hold sizing. |
-| `BORING_CREDITS_MAX_RUN_SECONDS` | no (default 1800) | Declared max wall-clock runtime of a single run. Startup **throws** unless `RESERVATION_TTL_SECONDS ≥ this + 300s` slack — so the stale-reservation sweep can't charge-on-expire a still-alive run (overcharge). |
+| `BORING_CREDITS_MAX_RUN_SECONDS` | no (default 1800) | **Declared** (not runtime-enforced) max wall-clock runtime of a single run — the operator's promise, used only to size the TTL invariant. Startup **throws** unless `RESERVATION_TTL_SECONDS ≥ this + 300s` slack, so the sweep can't charge-on-expire a run that respects the declared bound. A run that ACTUALLY exceeds it falls under limitation #1 (no per-call hard stop; bounded recoverable overdraft) — true enforcement needs the Pi-runtime abort hook. Set it ≥ your real worst-case run. |
 | `BORING_CREDITS_RESERVATION_TTL_SECONDS` | no (default 7200) | How long a per-run hold survives before the sweep settles/expires it. Must exceed `MAX_RUN_SECONDS + 300s`. |
 | `BORING_CREDITS_SWEEP_INTERVAL_SECONDS` | no (default 300) | Cadence of the background charge-on-expire sweeper (off the request path). Charges-on-expire the marked reservations of users who don't return, so a durable fallback charge whose write failed isn't lost past TTL. |
 | `BORING_CREDITS_LS_WEBHOOK_SECRET` | for purchases | LS webhook signing secret (raw-body HMAC). |
@@ -207,6 +207,14 @@ fail closed at the highest effective rate.
   fallback op on the same per-run op chain, so no concurrent same-reservation usage write can
   interleave during finalization — the race is prevented at the call site. The consolidation is a
   defense-in-depth hardening for direct/out-of-coordinator callers, not a live bug.
+- Close the deleted-user grant TOCTOU. The webhook `userExists` check (route → handler) runs
+  BEFORE the grant transaction, so it covers the realistic case (a stale `order_created` well
+  after deletion) but not a sub-second race where `deleteUserCompletely` commits between the
+  check and `grantPurchaseOnce`. The race re-creates a deleted user's rows. The robust fix is an
+  in-transaction user-existence recheck under the SAME per-user advisory lock that account
+  deletion takes (so grant and deletion serialize), or a FK to `users` with cascade — currently
+  blocked by the `user_id` text vs `users.id` uuid type mismatch (align the types first). A
+  periodic orphan-row sweep is an interim mitigation.
 - Store `raw_order_id` (and the validated identity) as first-class purchase columns and make
   refund reconciliation query by raw id + stored identity, rather than the composite
   `ls:<store>:<mode>:<orderId>` key. Today a refund-before-grant TOMBSTONE is written under the
