@@ -615,12 +615,40 @@ export class PostgresMeteringStore {
 
   /** Expire stale active reservations without charging. Returns the count. */
   async expireStaleReservations(now: Date = new Date()): Promise<number> {
-    const rows = await this.db
-      .update(usageReservations)
-      .set({ status: 'expired' })
-      .where(and(eq(usageReservations.status, 'active'), lt(usageReservations.expiresAt, now)))
-      .returning({ id: usageReservations.id })
-    return rows.length
+    return this.db.transaction(async (tx) => {
+      const stale = await tx
+        .select({ id: usageReservations.id, userId: usageReservations.userId, runId: usageReservations.runId, amountMicros: usageReservations.amountMicros })
+        .from(usageReservations)
+        .where(and(eq(usageReservations.status, 'active'), lt(usageReservations.expiresAt, now)))
+      for (const r of stale) {
+        // A reservation that reached TTL without an explicit settle/release had a
+        // failed finalization. If it has ANY billed usage, the run EXECUTED — top
+        // it up to the hold (idempotent) so a partially-billed run isn't freed.
+        // A reservation with NO usage is treated as never-executed (a legit
+        // abandon) and freed, so we don't over-charge a user who closed the tab.
+        const billedRows = await tx
+          .select({ total: sql<string>`coalesce(sum(${usageLedger.billedCostMicros}), 0)` })
+          .from(usageLedger)
+          .where(and(eq(usageLedger.userId, r.userId), sql`${usageLedger.metadata}->>'reservationId' = ${r.id}`))
+        const billed = Number(billedRows[0]?.total ?? 0)
+        if (billed > 0) {
+          const topUp = Math.max(0, r.amountMicros - billed)
+          if (topUp > 0) {
+            await tx
+              .insert(usageLedger)
+              .values({ id: `usage-fallback:${r.id}`, userId: r.userId, runId: r.runId, source: 'pi-chat-expired', billedCostMicros: topUp, providerCostMicros: 0, metadata: { kind: 'reservation_expired_fallback', reservationId: r.id } })
+              .onConflictDoNothing({ target: usageLedger.id })
+          }
+        }
+      }
+      if (stale.length > 0) {
+        await tx
+          .update(usageReservations)
+          .set({ status: 'expired' })
+          .where(inArray(usageReservations.id, stale.map((r) => r.id)))
+      }
+      return stale.length
+    })
   }
 
   private async computeBalance(executor: Queryable, userId: string, now: Date): Promise<MeteringBalance> {

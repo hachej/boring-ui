@@ -379,6 +379,24 @@ describe('PostgresMeteringStore', () => {
     expect(balance.activeReservedMicros).toBe(100_000)
   })
 
+  it('charges an EXECUTED run (has usage) up to the hold when its reservation expires, not free', async () => {
+    await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 10_000_000 })
+    const { reservationId } = await store.reserve({ userId: USER, runId: 'turn-exec', amountMicros: 1_000_000, ttlSeconds: 600 })
+    // The run executed and billed €0.2 of real usage (tagged with the reservation),
+    // but finalization never settled the reservation.
+    await store.recordUsage({ usageId: 'ux-1', userId: USER, runId: 'turn-exec', source: 'pi-chat', billedCostMicros: 200_000, metadata: { reservationId } })
+    await sqlClient`UPDATE boring_usage_reservations SET expires_at = now() - interval '1 minute' WHERE run_id = 'turn-exec'`
+
+    expect(await store.expireStaleReservations()).toBe(1)
+    // Topped up to the €1 hold (0.2 real + 0.8 fallback) — the executed run is NOT free.
+    const balance = await store.getBalance(USER)
+    expect(balance.usedMicros).toBe(1_000_000)
+    expect(balance.activeReservedMicros).toBe(0)
+    // Idempotent: a second sweep does not double-charge.
+    await store.expireStaleReservations()
+    expect((await store.getBalance(USER)).usedMicros).toBe(1_000_000)
+  })
+
   it('reserves idempotently per run id while the reservation is active', async () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 1_000_000 })
     const first = await store.reserve({ userId: USER, runId: 'turn-retry', amountMicros: 750_000, ttlSeconds: 600 })
