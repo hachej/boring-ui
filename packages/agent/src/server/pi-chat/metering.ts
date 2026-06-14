@@ -644,7 +644,16 @@ export class PiChatMeteringCoordinator {
         // a positive amount IS, so it won't be fallback-charged on top of its debit.
         if (result.billedMicros > 0) run.billableUsageCount += 1
       } catch (error) {
-        run.usageWriteFailed = true
+        // A FAILED write only counts as lost paid work (→ fallback hold charge) if
+        // the row could actually have billed a positive amount: positive tokens, or a
+        // positive provider cost that pricing MIGHT bill. An all-zero usage row prices
+        // to 0 regardless, so a failed write for it must NOT charge the hold — the
+        // successfully-written same row is released free, and the two must agree (else
+        // a transient write failure over-charges a non-billable aborted run). We can't
+        // read the real billed amount here (the write threw), so use the conservative
+        // could-bill heuristic: charge on positive/unknown, free on definitely-zero.
+        const couldBill = usage.input + usage.output + usage.cacheRead + usage.cacheWrite > 0 || usage.cost.total > 0
+        if (couldBill) run.usageWriteFailed = true
         throw error
       }
     },

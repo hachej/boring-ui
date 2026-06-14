@@ -965,6 +965,30 @@ describe('pi chat metering', () => {
     ])
   })
 
+  it('does NOT fallback-charge when a ZERO-billed usage write fails on an aborted run (frees, matching the success path)', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink({
+      recordUsage: async () => {
+        throw new Error('ledger insert failed')
+      },
+    })
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'stop', clientNonce: 'nonce-zfail' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    // An all-zero usage row (would bill €0) whose WRITE fails, then the user aborts.
+    // The failed write must NOT charge the hold — the same zero row written
+    // successfully releases free, and the two must agree (no overcharge).
+    adapter.emit(assistantMessageEnd({ usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }))
+    adapter.emit(agentEnd('aborted'))
+    await service.flushMetering()
+
+    expect(calls.settled).toEqual([])
+    expect(calls.released).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-zfail', reason: 'cancelled' }),
+    ])
+  })
+
   it('still settles when usage persisted even though a later settle attempt retries', async () => {
     const adapter = createAdapter()
     const { sink, calls } = createSink()
