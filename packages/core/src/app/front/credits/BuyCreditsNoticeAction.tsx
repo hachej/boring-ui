@@ -16,11 +16,12 @@ export interface BuyCreditsNoticeActionProps {
 export function BuyCreditsNoticeAction({ apiBaseUrl = '', label = 'Buy credits' }: BuyCreditsNoticeActionProps) {
   // A longer poll than the badge: this is a transient, error-state mount, so it
   // shouldn't add a second fast poller against /balance.
-  const { buy, buying, balance } = useCreditBalance({ apiBaseUrl, pollMs: 60_000 })
-  // Wait for a loaded balance before offering the action: buy() captures a pre-checkout
-  // baseline from the loaded balance, and we only show the button when checkout is wired.
-  // (Balance loads on mount within one fetch.)
-  if (!balance || balance.checkoutEnabled === false) return null
+  const { buy, buying, balance, hidden } = useCreditBalance({ apiBaseUrl, pollMs: 60_000 })
+  // Hide when the hook says the credit UI is unavailable (401/credits disabled) — the
+  // hook keeps the last balance value in that case, so `hidden` is the authoritative
+  // signal (matching the badge/settings panel). Also wait for a loaded balance with
+  // checkout wired: buy() captures its pre-checkout baseline from the loaded balance.
+  if (hidden || !balance || balance.checkoutEnabled === false) return null
   return (
     <Button type="button" size="sm" onClick={() => void buy()} disabled={buying} className="shrink-0">
       {buying ? 'Opening…' : label}

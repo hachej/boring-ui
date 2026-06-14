@@ -422,11 +422,15 @@ describe('PiChatPanel sandbox shell', () => {
     act(() => { remote.emit({ type: 'agent-start', seq: 8, turnId: 't1' }) })
     expect(onTurnComplete).not.toHaveBeenCalled()
 
-    // Each agent-end is one settled turn — fires once each, even back-to-back (no
-    // reliance on a rendered streaming→idle→streaming flicker the store may coalesce).
-    act(() => { remote.emit({ type: 'agent-end', seq: 9, turnId: 't1', status: 'ok' }) })
+    // A non-terminal (auto-retry) end must NOT count as a settle.
+    act(() => { remote.emit({ type: 'agent-end', seq: 9, turnId: 't1', status: 'error', willRetry: true }) })
+    expect(onTurnComplete).not.toHaveBeenCalled()
+
+    // Each TERMINAL agent-end is one settled turn — fires once each, even back-to-back
+    // (no reliance on a rendered streaming→idle→streaming flicker the store may coalesce).
+    act(() => { remote.emit({ type: 'agent-end', seq: 10, turnId: 't1', status: 'ok' }) })
     await waitFor(() => expect(onTurnComplete).toHaveBeenCalledTimes(1))
-    act(() => { remote.emit({ type: 'agent-end', seq: 10, turnId: 't2', status: 'ok' }) })
+    act(() => { remote.emit({ type: 'agent-end', seq: 11, turnId: 't2', status: 'ok' }) })
     await waitFor(() => expect(onTurnComplete).toHaveBeenCalledTimes(2))
   })
 

@@ -157,7 +157,16 @@ export function useCreditBalance({
     if (buyingRef.current) return null
     buyingRef.current = true
     setBuying(true)
+    // Open the tab SYNCHRONOUSLY (on the click) so the browser keeps the user activation
+    // and doesn't block it after the async checkout fetch. We navigate it once the server
+    // returns the URL. Can't use window.open(url, …, 'noopener') here: with noopener the
+    // call returns null even on success, so blocking couldn't be detected — instead open
+    // blank, detect blocking via the null handle, then sever opener for the same security.
+    let win: Window | null = null
     try {
+      win = window.open('about:blank', '_blank')
+      if (!win) return 'Could not open the checkout tab. Please allow pop-ups for this site and try again.'
+      try { win.opener = null } catch { /* some engines disallow assigning opener; ignore */ }
       const chosen = overridePack ?? pack
       const res = await fetch(`${apiBaseUrl}/api/credits/checkout`, {
         method: 'POST',
@@ -165,9 +174,9 @@ export function useCreditBalance({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(chosen ? { pack: chosen } : {}),
       })
-      if (!res.ok) return 'Could not start checkout. Please try again.'
+      if (!res.ok) { win.close(); return 'Could not start checkout. Please try again.' }
       const { url } = (await res.json()) as { url?: string }
-      if (!url) return 'Checkout is not available right now.'
+      if (!url) { win.close(); return 'Checkout is not available right now.' }
       // Stash the pre-checkout NET balance (+ timestamp) so the return handler — which
       // runs in the checkout tab — can confirm only on a real increase. localStorage so
       // it crosses tabs. Best-effort: storage may be unavailable (private mode).
@@ -182,13 +191,10 @@ export function useCreditBalance({
           )
         }
       } catch { /* localStorage unavailable — handler falls back to a fetched baseline */ }
-      // The checkout URL is fetched async (after the click), so the browser may have
-      // dropped the click's user activation and blocked the tab — window.open returns
-      // null. Surface that instead of silently reporting success with no checkout tab.
-      const opened = window.open(url, '_blank', 'noopener,noreferrer')
-      if (!opened) return 'Could not open the checkout tab. Please allow pop-ups for this site and try again.'
+      win.location.href = url
       return null
     } catch {
+      win?.close()
       return 'Could not reach the checkout service. Please try again.'
     } finally {
       buyingRef.current = false

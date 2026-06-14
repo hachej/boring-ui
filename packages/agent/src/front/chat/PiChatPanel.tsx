@@ -232,11 +232,12 @@ export function PiChatPanel({
     onEvent: (event: PiChatEvent) => {
       remoteSessionOptions?.onEvent?.(event)
       onDataRef.current?.(event)
-      // Fire onTurnComplete on the per-turn settle event. Driven by the event stream
-      // (not rendered status edges) so back-to-back queued turns each report once even
-      // when the store coalesces a streaming→idle→streaming flicker, and so a rejected
-      // send (which never produces agent-end) is never reported as a settled turn.
-      if (event.type === 'agent-end') onTurnCompleteRef.current?.()
+      // Fire onTurnComplete on the per-turn TERMINAL settle event. Driven by the event
+      // stream (not rendered status edges) so back-to-back queued turns each report once
+      // even when the store coalesces a streaming→idle→streaming flicker, and so a
+      // rejected send (which never produces agent-end) is never reported. Skip
+      // willRetry ends — those are non-terminal (pi will auto-retry) and would over-fire.
+      if (event.type === 'agent-end' && !event.willRetry) onTurnCompleteRef.current?.()
       if (shouldRefreshSessionListAfterEvent(event)) sessionListRefreshRef.current?.()
     },
   }), [hydrateMessages, remoteSessionOptions])
