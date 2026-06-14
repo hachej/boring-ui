@@ -36,9 +36,9 @@ export function createCreditsMeteringSink(getService: () => CreditsService): Age
       return { reservationId }
     },
 
-    async recordUsage(input: MeteringUsageInput): Promise<void> {
-      if (!input.userId) return
-      await getService().recordUsage({
+    async recordUsage(input: MeteringUsageInput): Promise<{ billedMicros: number }> {
+      if (!input.userId) return { billedMicros: 0 }
+      return getService().recordUsage({
         usageId: input.usageId,
         userId: input.userId,
         workspaceId: input.workspaceId,

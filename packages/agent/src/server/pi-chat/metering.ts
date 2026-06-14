@@ -26,9 +26,18 @@ import { createLogger } from '../logging'
  */
 export interface AgentMeteringSink {
   reserveRun(input: MeteringReserveInput): Promise<MeteringReservationResult>
-  recordUsage(input: MeteringUsageInput): Promise<void>
+  /** Records the usage and returns the credit micros it was actually billed. The
+   * coordinator counts a usage as billable from this charged amount (not raw provider
+   * fields), so a row that prices to 0 (e.g. cost-only usage when provider cost isn't
+   * trusted) doesn't make a free run settle. */
+  recordUsage(input: MeteringUsageInput): Promise<MeteringUsageResult>
   settleRun(input: MeteringSettleInput): Promise<void>
   releaseRun(input: MeteringReleaseInput): Promise<void>
+}
+
+export interface MeteringUsageResult {
+  /** Credit micros this usage row was billed (0 = no real debit). */
+  billedMicros: number
 }
 
 export interface MeteringRunScope {
@@ -598,14 +607,6 @@ export class PiChatMeteringCoordinator {
     }
 
     run.usageCount += 1
-    // Billable if the row carries positive tokens OR a positive provider-reported
-    // cost: a cost-only provider (no token breakdown, but cost.total > 0) still
-    // produces a real ledger debit, so it must count as billable — otherwise
-    // finishRun would see zero billable usage and fallback-charge the FULL hold,
-    // overcharging a run that already recorded its real cost.
-    if (usage.input + usage.output + usage.cacheRead + usage.cacheWrite > 0 || usage.cost.total > 0) {
-      run.billableUsageCount += 1
-    }
     const model = typeof message.model === 'string' && message.model.length > 0 ? message.model : undefined
     const provider = typeof message.provider === 'string' && message.provider.length > 0 ? message.provider : undefined
     const stopReason = typeof message.stopReason === 'string' ? message.stopReason : undefined
@@ -628,7 +629,7 @@ export class PiChatMeteringCoordinator {
 
     this.enqueue(run, async () => {
       try {
-        await this.sink.recordUsage({
+        const result = await this.sink.recordUsage({
           ...run.scope,
           reservationId: run.reservationId,
           usageId,
@@ -637,6 +638,11 @@ export class PiChatMeteringCoordinator {
           usage,
           stopReason,
         })
+        // Count billability from the ACTUAL billed amount, not raw provider fields:
+        // a row that priced to 0 (e.g. cost-only usage the pricing doesn't trust)
+        // is NOT billable, so finishRun won't settle a free hold; a row that billed
+        // a positive amount IS, so it won't be fallback-charged on top of its debit.
+        if (result.billedMicros > 0) run.billableUsageCount += 1
       } catch (error) {
         run.usageWriteFailed = true
         throw error

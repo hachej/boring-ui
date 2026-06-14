@@ -95,6 +95,13 @@ function createSink(overrides: Partial<AgentMeteringSink> = {}): { sink: AgentMe
     },
     recordUsage: async (input) => {
       calls.usage.push(input)
+      // Mirror real pricing's billability signal: token-bearing usage bills a
+      // positive amount; a zero-token row prices to 0 (the default sink doesn't
+      // trust provider-reported cost). Tests that need a cost-only positive bill
+      // override recordUsage to return a positive billedMicros.
+      const u = input.usage
+      const billedMicros = u.input + u.output + u.cacheRead + u.cacheWrite > 0 ? 1_000 : 0
+      return { billedMicros }
     },
     settleRun: async (input) => {
       calls.settled.push(input)
@@ -288,26 +295,43 @@ describe('pi chat metering', () => {
     ])
   })
 
-  it('SETTLES a cost-only usage row (positive provider cost, zero tokens) — does not fallback-charge the hold', async () => {
+  it('billability follows the ACTUAL billed amount: a cost-only row priced to €0 fallback-charges (not free settle)', async () => {
     const adapter = createAdapter()
+    // Default sink: a zero-token row bills 0 (provider cost not trusted by pricing).
     const { sink, calls } = createSink()
     const { service } = createService(adapter, sink)
 
-    await service.prompt(ctx, 's1', { message: 'hi', clientNonce: 'nonce-cost' })
+    await service.prompt(ctx, 's1', { message: 'hi', clientNonce: 'nonce-cost0' })
     adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
-    // A cost-only provider: no token breakdown but a positive reported cost. This is
-    // a real billable debit, so the run must SETTLE against it, not fallback-charge
-    // the full hold (which would overcharge).
-    adapter.emit(assistantMessageEnd({ id: 'a-cost', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.5 } } }))
+    adapter.emit(assistantMessageEnd({ id: 'a-cost0', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.5 } } }))
     adapter.emit(agentEnd('stop'))
     await service.flushMetering()
 
-    expect(calls.usage).toEqual([
-      expect.objectContaining({ usageId: 'pi-usage:s1:message:a-cost' }),
+    // Recorded, but priced to €0 → NOT billable → fallback-charge, never a free settle.
+    expect(calls.settled).toEqual([])
+    expect(calls.released).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-cost0', reason: 'fallback-hold-charge' }),
     ])
+  })
+
+  it('billability follows the ACTUAL billed amount: a cost-only row priced to >€0 SETTLES (no overcharge)', async () => {
+    const adapter = createAdapter()
+    // Sink prices the cost-only row to a positive amount (provider cost trusted).
+    const { sink, calls } = createSink({
+      recordUsage: async (input) => ({ billedMicros: input.usage.cost.total > 0 ? 5_000 : 0 }),
+    })
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'hi', clientNonce: 'nonce-cost1' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    adapter.emit(assistantMessageEnd({ id: 'a-cost1', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.5 } } }))
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    // A real positive debit was recorded → SETTLE against it, not fallback-charge.
     expect(calls.released).toEqual([])
     expect(calls.settled).toEqual([
-      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-cost', status: 'ok' }),
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-cost1', status: 'ok' }),
     ])
   })
 
@@ -1025,7 +1049,7 @@ describe('PiChatMeteringCoordinator promoted follow-up failure', () => {
     const calls: SinkCalls = { reserved: [], usage: [], settled: [], released: [] }
     const sink: AgentMeteringSink = {
       reserveRun: async (input) => { calls.reserved.push(input); return {} },
-      recordUsage: async (input) => { calls.usage.push(input) },
+      recordUsage: async (input) => { calls.usage.push(input); return { billedMicros: input.usage.input + input.usage.output + input.usage.cacheRead + input.usage.cacheWrite > 0 ? 1_000 : 0 } },
       settleRun: async (input) => { calls.settled.push(input) },
       releaseRun: async (input) => { calls.released.push(input) },
     }
@@ -1043,7 +1067,7 @@ describe('PiChatMeteringCoordinator promoted follow-up failure', () => {
         await gate.promise // hold both reserves open to force the race
         return {}
       },
-      recordUsage: async (input) => { calls.usage.push(input) },
+      recordUsage: async (input) => { calls.usage.push(input); return { billedMicros: input.usage.input + input.usage.output + input.usage.cacheRead + input.usage.cacheWrite > 0 ? 1_000 : 0 } },
       settleRun: async (input) => { calls.settled.push(input) },
       releaseRun: async (input) => { calls.released.push(input) },
     }
@@ -1100,7 +1124,7 @@ describe('PiChatMeteringCoordinator promoted follow-up failure', () => {
     const gate = deferred<void>()
     const sink: AgentMeteringSink = {
       reserveRun: async (input) => { calls.reserved.push(input); await gate.promise; return {} },
-      recordUsage: async (input) => { calls.usage.push(input) },
+      recordUsage: async (input) => { calls.usage.push(input); return { billedMicros: input.usage.input + input.usage.output + input.usage.cacheRead + input.usage.cacheWrite > 0 ? 1_000 : 0 } },
       settleRun: async (input) => { calls.settled.push(input) },
       releaseRun: async (input) => { calls.released.push(input) },
     }
@@ -1130,7 +1154,7 @@ describe('PiChatMeteringCoordinator promoted follow-up failure', () => {
         await gate.promise
         throw Object.assign(new Error('credits exhausted'), { statusCode: 402 })
       },
-      recordUsage: async (input) => { calls.usage.push(input) },
+      recordUsage: async (input) => { calls.usage.push(input); return { billedMicros: input.usage.input + input.usage.output + input.usage.cacheRead + input.usage.cacheWrite > 0 ? 1_000 : 0 } },
       settleRun: async (input) => { calls.settled.push(input) },
       releaseRun: async (input) => { calls.released.push(input) },
     }

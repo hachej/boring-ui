@@ -259,10 +259,11 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
           secret: ls.webhookSecret,
           creditsForOrder,
           isCreditOrder,
-          // Credit-only store: an unknown-variant PAID order on our store is a pack
-          // misconfiguration → retryable 500. Mixed store (default): such an order is
-          // a different product → omit this predicate so the handler 200-ignores it
-          // (no infinite retry/alert on legitimate non-credit sales).
+          // Credit-only store (the DEFAULT): an unknown-variant PAID order on our
+          // store is a pack misconfiguration → retryable 500. Mixed store (explicit
+          // creditOnlyStore: false): such an order is a different product → omit this
+          // predicate so the handler 200-ignores it (no infinite retry/alert on
+          // legitimate non-credit sales).
           isOurStoreOrder: creditOnlyStore ? isOurStoreOrder : undefined,
           // Known credit variant with incomplete identity → retryable 500, not a
           // silent 200 drop (a paid pack we can't safely attribute must fail loud).
@@ -296,8 +297,18 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
                   ? order.refundedAmountCents / order.totalCents
                   : undefined,
               // Tombstone an unknown order when the refund is compatible with our
-              // store/mode (lenient: missing fields OK). The composite purchase key
-              // already namespaces by store+mode, so this can't block a foreign order.
+              // store/mode (lenient: missing fields OK). This leniency is DELIBERATE:
+              // Lemon Squeezy refund payloads routinely omit the variant id (and often
+              // store/mode), so requiring strict identity here would SKIP the tombstone
+              // for a refund-before-grant whose payload lacks the variant — reintroducing
+              // the bug where the later order_created then grants credits for an order
+              // already refunded (the refund fired first, found nothing to revoke, and
+              // never re-fires). Safe because: (a) the per-store webhook secret already
+              // proves the refund is from our store; (b) the composite purchase key is
+              // namespaced by CONFIG store+mode (not the payload), so the tombstone lands
+              // in our namespace; (c) order ids are globally unique, so a tombstone can
+              // only ever net a FUTURE grant for that SAME order — exactly the intended
+              // refund-before-grant behaviour, never a different legitimate order.
               allowTombstone: isRefundForOurStore(order),
               // Match the credited row against the CONFIGURED identity (not the
               // payload's maybe-missing fields). The per-store/mode webhook secret

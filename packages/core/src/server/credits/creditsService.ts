@@ -252,9 +252,12 @@ export class CreditsService {
     }
   }
 
-  /** Charge native usage, priced token→credits with margin. */
-  async recordUsage(input: CreditUsageRecord): Promise<void> {
-    if (!this.config.enabled) return
+  /** Charge native usage, priced token→credits with margin. Returns the billed
+   * credit micros (0 when disabled or the usage priced to nothing) so the caller can
+   * decide billability from the ACTUAL charge, not raw provider fields — e.g. a
+   * cost-only row prices to 0 unless preferProviderReportedCost is set. */
+  async recordUsage(input: CreditUsageRecord): Promise<{ billedMicros: number }> {
+    if (!this.config.enabled) return { billedMicros: 0 }
     const model = { provider: input.provider, id: input.model }
     const cost = usageToCredits(
       {
@@ -295,6 +298,7 @@ export class CreditsService {
       // scope to the current reservation (runId is reused on client-nonce replay).
       metadata: { currency: 'credits', ...(input.reservationId ? { reservationId: input.reservationId } : {}) },
     })
+    return { billedMicros: cost.billedCreditMicros }
   }
 
   async settleRun(userId: string, runId: string, reservationId?: string): Promise<void> {
