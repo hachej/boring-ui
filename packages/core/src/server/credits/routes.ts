@@ -15,6 +15,51 @@ export interface LemonSqueezyCheckoutConfig {
   testMode?: boolean
 }
 
+/** Server-authored, display-ready credit pack the client can render WITHOUT inferring
+ * money from the pack id. The Lemon Squeezy variant id is intentionally NOT exposed. */
+export interface CreditPack {
+  /** Opaque pack id the client passes back to `POST /api/credits/checkout` as `{ pack }`. */
+  id: string
+  /** Credits granted, in credit micros. */
+  creditMicros: number
+  /** Price in the currency's minor unit (e.g. cents) for display. */
+  priceMinor: number
+  /** ISO 4217 currency of `priceMinor`. */
+  currency: string
+  /** Display label (e.g. "€10"). */
+  label: string
+  /** Whether this is the default pack (used when checkout is invoked without a pack). */
+  isDefault: boolean
+}
+
+/**
+ * Build the display-ready pack list from the configured checkout variants + per-variant
+ * credit values, in config order. The pack id is the EUR credit value (the existing
+ * convention), so priceMinor = id × 100 cents, currency EUR. Returns [] when checkout or
+ * its variants aren't configured. Variant ids stay server-side.
+ */
+function buildCreditPacks(ls: LemonSqueezyRouteOptions, locale?: string): CreditPack[] {
+  const checkout = ls.checkout
+  if (!checkout) return []
+  const credits = ls.creditMicrosByVariant ?? {}
+  const packs: CreditPack[] = []
+  for (const [packId, variantId] of Object.entries(checkout.variants)) {
+    const eur = Number(packId)
+    const creditMicros = credits[variantId]
+    if (!Number.isFinite(eur) || eur <= 0 || typeof creditMicros !== 'number' || creditMicros <= 0) continue
+    const priceMinor = Math.round(eur * 100)
+    packs.push({
+      id: packId,
+      creditMicros,
+      priceMinor,
+      currency: 'EUR',
+      label: new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(eur),
+      isDefault: packId === checkout.defaultPack,
+    })
+  }
+  return packs
+}
+
 export interface LemonSqueezyRouteOptions {
   webhookSecret: string
   /**
@@ -77,6 +122,7 @@ export interface CreditsRoutesOptions {
   /** Resolve the authenticated user id. Default: `request.user?.id`. */
   getUserId?: (request: FastifyRequest) => string | undefined
   balancePath?: string
+  historyPath?: string
   lemonSqueezy?: LemonSqueezyRouteOptions
   log?: (message: string, fields?: Record<string, unknown>) => void
 }
@@ -98,13 +144,33 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
   // Server truth for the Buy-credits button so the client flag can't drift from
   // whether checkout is actually wired.
   const checkoutEnabled = Boolean(options.lemonSqueezy?.checkout)
+  // Display-ready packs (only when checkout is wired); variant ids stay server-side.
+  const packs = options.lemonSqueezy ? buildCreditPacks(options.lemonSqueezy) : []
 
   app.get(balancePath, async (request, reply) => {
     const userId = getUserId(request)
     if (!userId) {
       return reply.code(401).send({ error: { code: ERROR_CODES.UNAUTHORIZED, message: 'authentication required' } })
     }
-    return reply.send({ ...(await options.service.getBalance(userId)), checkoutEnabled })
+    return reply.send({
+      ...(await options.service.getBalance(userId)),
+      checkoutEnabled,
+      ...(packs.length > 0 ? { packs } : {}),
+    })
+  })
+
+  // Read-only credit activity for the account page. Auth-gated, user-scoped, limit
+  // clamped server-side; entries carry only generic/sanitized descriptions.
+  const historyPath = options.historyPath ?? '/api/credits/history'
+  app.get(historyPath, async (request, reply) => {
+    const userId = getUserId(request)
+    if (!userId) {
+      return reply.code(401).send({ error: { code: ERROR_CODES.UNAUTHORIZED, message: 'authentication required' } })
+    }
+    const raw = (request.query as { limit?: unknown } | undefined)?.limit
+    const parsed = typeof raw === 'string' ? Number.parseInt(raw, 10) : typeof raw === 'number' ? raw : NaN
+    const limit = Number.isFinite(parsed) ? Math.min(50, Math.max(1, Math.trunc(parsed))) : 20
+    return reply.send({ entries: await options.service.listLedger(userId, limit) })
   })
 
   const ls = options.lemonSqueezy

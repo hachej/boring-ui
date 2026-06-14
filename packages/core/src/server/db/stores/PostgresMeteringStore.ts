@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { creditGrants, creditPurchases, usageLedger, usageReservations } from '../schema.js'
 
@@ -44,6 +44,20 @@ export interface MeteringBalance {
   activeReservedMicros: number
   /** remainingMicros minus activeReservedMicros; what a new reservation sees. */
   availableMicros: number
+}
+
+export type CreditLedgerKind = 'grant' | 'purchase' | 'usage' | 'refund' | 'fallback'
+
+/** One normalized, display-safe credit-ledger row for the account activity view.
+ * `amountMicros` is SIGNED: positive = credits added (grant/purchase), negative =
+ * consumed/removed (usage/refund). `description` is generic — no prompt/repo/model/
+ * provider/order/session details. */
+export interface CreditLedgerEntry {
+  id: string
+  kind: CreditLedgerKind
+  amountMicros: number
+  createdAt: string
+  description: string
 }
 
 export interface GrantOnceInput {
@@ -459,6 +473,45 @@ export class PostgresMeteringStore {
     return this.computeBalance(this.db, userId, now)
   }
 
+  /** Most-recent credit ledger for the account activity view: grants/purchases
+   * (positive) merged with usage/refund/fallback debits (negative), newest first,
+   * scoped to the user and capped at `limit` (clamped 1..50). Descriptions are
+   * generic/sanitized; zero-amount usage rows (zero-token) are omitted as noise. */
+  async listLedger(userId: string, limit: number): Promise<CreditLedgerEntry[]> {
+    const cap = Math.min(50, Math.max(1, Number.isFinite(limit) ? Math.trunc(limit) : 1))
+    const [grants, usage] = await Promise.all([
+      this.db
+        .select({ id: creditGrants.id, amountMicros: creditGrants.amountMicros, reason: creditGrants.reason, createdAt: creditGrants.createdAt })
+        .from(creditGrants)
+        .where(eq(creditGrants.userId, userId))
+        .orderBy(desc(creditGrants.createdAt))
+        .limit(cap),
+      this.db
+        .select({ id: usageLedger.id, billedCostMicros: usageLedger.billedCostMicros, source: usageLedger.source, createdAt: usageLedger.createdAt })
+        .from(usageLedger)
+        .where(eq(usageLedger.userId, userId))
+        .orderBy(desc(usageLedger.createdAt))
+        .limit(cap),
+    ])
+    const entries: CreditLedgerEntry[] = [
+      ...grants.map((g): CreditLedgerEntry => ({
+        id: `grant:${g.id}`,
+        ...describeGrant(g.reason),
+        amountMicros: g.amountMicros,
+        createdAt: g.createdAt.toISOString(),
+      })),
+      ...usage
+        .filter((u) => u.billedCostMicros > 0)
+        .map((u): CreditLedgerEntry => ({
+          id: `usage:${u.id}`,
+          ...describeUsage(u.source),
+          amountMicros: -u.billedCostMicros,
+          createdAt: u.createdAt.toISOString(),
+        })),
+    ]
+    return entries.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0)).slice(0, cap)
+  }
+
   /**
    * Reserve credit for a run. Serialized per user (advisory transaction
    * lock) so concurrent reservations cannot jointly overdraw. Idempotent per
@@ -818,4 +871,20 @@ function toSafeMicros(value: string | undefined, label: string): number {
     throw new Error(`metering ${label} exceeds the safe integer range (${parsed})`)
   }
   return Number(parsed)
+}
+
+/** Map a grant reason → display-safe ledger kind + description (no order ids etc.). */
+function describeGrant(reason: string): { kind: CreditLedgerKind; description: string } {
+  if (reason === 'signup_grant') return { kind: 'grant', description: 'Signup grant' }
+  if (reason.startsWith('purchase:')) return { kind: 'purchase', description: 'Credit purchase' }
+  return { kind: 'grant', description: 'Credit grant' }
+}
+
+/** Map a usage-ledger source → display-safe ledger kind + description. */
+function describeUsage(source: string): { kind: CreditLedgerKind; description: string } {
+  if (source === 'lemonsqueezy-refund') return { kind: 'refund', description: 'Refund' }
+  if (source.startsWith('pi-chat-fallback') || source.startsWith('pi-chat-expired')) {
+    return { kind: 'fallback', description: 'Usage reconciliation' }
+  }
+  return { kind: 'usage', description: 'Agent usage' }
 }

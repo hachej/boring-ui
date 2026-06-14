@@ -1,5 +1,7 @@
-import { InsufficientCreditError, type PostgresMeteringStore } from '../db/stores/PostgresMeteringStore.js'
+import { InsufficientCreditError, type PostgresMeteringStore, type CreditLedgerEntry } from '../db/stores/PostgresMeteringStore.js'
 import { usageToCredits, type CreditPricingConfig, type ModelTokenRate } from './pricing.js'
+
+export type { CreditLedgerEntry, CreditLedgerKind } from '../db/stores/PostgresMeteringStore.js'
 
 /** Validate money-critical pricing config up front so a misconfigured host
  * (e.g. creditMicrosPerUnit 0, margin < 1, a non-positive rate) fails fast
@@ -105,7 +107,7 @@ export class CreditExhaustedError extends Error {
  * upstream signature changes compile-time errors and lets tests stub it. */
 export type CreditsMeteringStore = Pick<
   PostgresMeteringStore,
-  'grantOnce' | 'grantPurchaseOnce' | 'revokePurchase' | 'getBalance' | 'reserve' | 'recordUsage' | 'finishReservation' | 'expireStaleReservations' | 'billedMicrosForRun' | 'billedMicrosForReservation' | 'markReservationFallbackCharge'
+  'grantOnce' | 'grantPurchaseOnce' | 'revokePurchase' | 'getBalance' | 'reserve' | 'recordUsage' | 'finishReservation' | 'expireStaleReservations' | 'billedMicrosForRun' | 'billedMicrosForReservation' | 'markReservationFallbackCharge' | 'listLedger'
 >
 
 function disabledBalance(userId: string): CreditBalance {
@@ -225,6 +227,14 @@ export class CreditsService {
       debtMicros: Math.max(0, -balance.remainingMicros),
       currency: 'credits',
     }
+  }
+
+  /** Recent credit ledger (grants/purchases + usage/refund debits) for the account
+   * activity view, newest first, capped (clamped 1..50 in the store). Empty when
+   * credits are disabled. */
+  async listLedger(userId: string, limit = 20): Promise<CreditLedgerEntry[]> {
+    if (!this.config.enabled) return []
+    return this.store.listLedger(userId, limit)
   }
 
   /** Reserve a per-run hold. Returns the reservation id; throws

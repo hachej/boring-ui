@@ -604,6 +604,35 @@ describe('PostgresMeteringStore', () => {
     await expect(store.getBalance(USER)).rejects.toThrow('safe integer range')
   })
 
+  it('listLedger returns merged, signed, sanitized, newest-first activity scoped to the user', async () => {
+    await store.grantOnce({ userId: USER, reason: 'signup_grant', amountMicros: 2_000_000 })
+    await store.grantOnce({ userId: USER, reason: 'purchase:ord-1', amountMicros: 10_000_000 })
+    await store.recordUsage({ usageId: 'led-u1', userId: USER, source: 'pi-chat', billedCostMicros: 300_000, metadata: {} })
+    await store.recordUsage({ usageId: 'led-fb', userId: USER, source: 'pi-chat-fallback', billedCostMicros: 50_000, metadata: {} })
+    await store.recordUsage({ usageId: 'led-rf', userId: USER, source: 'lemonsqueezy-refund', billedCostMicros: 1_000_000, metadata: {} })
+    await store.recordUsage({ usageId: 'led-zero', userId: USER, source: 'pi-chat', billedCostMicros: 0, metadata: {} }) // omitted (noise)
+    await store.grantOnce({ userId: OTHER_USER, reason: 'signup_grant', amountMicros: 2_000_000 }) // other user — excluded
+
+    const entries = await store.listLedger(USER, 50)
+    const kinds = entries.map((e) => e.kind).sort()
+    expect(kinds).toEqual(['fallback', 'grant', 'purchase', 'refund', 'usage'])
+    const byKind = Object.fromEntries(entries.map((e) => [e.kind, e]))
+    expect(byKind.grant).toMatchObject({ amountMicros: 2_000_000, description: 'Signup grant' })
+    expect(byKind.purchase).toMatchObject({ amountMicros: 10_000_000, description: 'Credit purchase' })
+    expect(byKind.usage).toMatchObject({ amountMicros: -300_000, description: 'Agent usage' })
+    expect(byKind.fallback).toMatchObject({ amountMicros: -50_000, description: 'Usage reconciliation' })
+    expect(byKind.refund).toMatchObject({ amountMicros: -1_000_000, description: 'Refund' })
+    // No zero-amount (zero-token) noise; no other user's rows; descriptions are generic.
+    expect(entries.every((e) => e.amountMicros !== 0)).toBe(true)
+    expect(JSON.stringify(entries)).not.toContain('ord-1') // no order id leaked
+  })
+
+  it('listLedger clamps the limit to 1..50', async () => {
+    await store.grantOnce({ userId: USER, reason: 'signup_grant', amountMicros: 1_000 })
+    expect(await store.listLedger(USER, 0)).toHaveLength(1) // clamped up to >=1, returns the one row
+    expect((await store.listLedger(USER, 9999)).length).toBeLessThanOrEqual(50)
+  })
+
   it('rejects invalid amounts', async () => {
     await expect(store.grantOnce({ userId: USER, reason: 'bad', amountMicros: 0 })).rejects.toThrow('positive integer')
     await expect(store.reserve({ userId: USER, runId: 't', amountMicros: 1.5, ttlSeconds: 60 })).rejects.toThrow('positive integer')

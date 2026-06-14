@@ -38,6 +38,7 @@ function makeStore(overrides: Partial<CreditsMeteringStore> = {}): CreditsMeteri
     billedMicrosForRun: vi.fn(async () => 0),
     billedMicrosForReservation: vi.fn(async () => 0),
     markReservationFallbackCharge: vi.fn(async () => {}),
+    listLedger: vi.fn(async () => []),
     ...overrides,
   }
 }

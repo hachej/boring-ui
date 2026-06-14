@@ -33,6 +33,7 @@ function makeStore(): CreditsMeteringStore {
     billedMicrosForRun: vi.fn(async () => 0),
     billedMicrosForReservation: vi.fn(async () => 0),
     markReservationFallbackCharge: vi.fn(async () => {}),
+    listLedger: vi.fn(async () => []),
   }
 }
 
@@ -75,6 +76,48 @@ describe('credits routes', () => {
     const a = await build(makeStore())
     const res = await a.inject({ method: 'GET', url: '/api/credits/balance' })
     expect(res.statusCode).toBe(401)
+  })
+
+  it('returns display-ready packs in the balance when checkout is configured (no variant ids leaked)', async () => {
+    const store = makeStore()
+    app = Fastify()
+    app.addHook('onRequest', async (request: FastifyRequest) => { ;(request as unknown as { user: { id: string } }).user = { id: 'u1' } })
+    registerCreditsRoutes(app, {
+      service: new CreditsService(store, CONFIG),
+      lemonSqueezy: {
+        webhookSecret: SECRET, creditVariantIds: ['1', '2'], expectedTestMode: true,
+        creditMicrosByVariant: { '1': 10_000_000, '2': 25_000_000 }, creditOnlyStore: true,
+        checkout: { apiKey: 'k', storeId: 's', variants: { '10': '1', '25': '2' }, defaultPack: '10', testMode: true },
+      },
+    })
+    await app.ready()
+    const body = (await app.inject({ method: 'GET', url: '/api/credits/balance' })).json()
+    expect(body.checkoutEnabled).toBe(true)
+    expect(body.packs).toEqual([
+      expect.objectContaining({ id: '10', creditMicros: 10_000_000, priceMinor: 1000, currency: 'EUR', isDefault: true }),
+      expect.objectContaining({ id: '25', creditMicros: 25_000_000, priceMinor: 2500, currency: 'EUR', isDefault: false }),
+    ])
+    expect(body.packs[0]).not.toHaveProperty('variantId')
+  })
+
+  it('omits packs when checkout is not configured', async () => {
+    const a = await build(makeStore(), 'u1')
+    const body = (await a.inject({ method: 'GET', url: '/api/credits/balance' })).json()
+    expect(body.checkoutEnabled).toBe(false)
+    expect(body.packs).toBeUndefined()
+  })
+
+  it('history: 401 unauthenticated; returns entries and clamps the limit when authed', async () => {
+    const store = makeStore()
+    const unauth = await build(store)
+    expect((await unauth.inject({ method: 'GET', url: '/api/credits/history' })).statusCode).toBe(401)
+    await unauth.close()
+
+    const a = await build(store, 'u1')
+    const res = await a.inject({ method: 'GET', url: '/api/credits/history?limit=999' })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ entries: [] })
+    expect(store.listLedger).toHaveBeenCalledWith('u1', 50) // clamped 1..50
   })
 
   it('grants credits on a correctly-signed webhook (subtotal → credits)', async () => {
