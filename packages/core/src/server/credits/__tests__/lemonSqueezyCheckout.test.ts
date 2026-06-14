@@ -19,9 +19,10 @@ describe('buildCheckoutRequestBody', () => {
     expect(body.data.attributes.checkout_data.email).toBe('a@b.com')
     expect(body.data.attributes.test_mode).toBe(true)
     expect(body.data.attributes.product_options.redirect_url).toBe('https://app/thanks')
-    // Discounts disabled and the checkout locked to exactly the selected variant.
+    // Discounts disabled and the checkout locked to exactly the selected variant + qty 1.
     expect(body.data.attributes.checkout_options.discount).toBe(false)
     expect(body.data.attributes.product_options.enabled_variants).toEqual([42])
+    expect(body.data.attributes.checkout_data.variant_quantities).toEqual([{ variant_id: 42, quantity: 1 }])
     expect(body.data.relationships.store.data.id).toBe('406592')
     expect(body.data.relationships.variant.data.id).toBe('42')
   })

@@ -3,7 +3,7 @@ import {
   PostgresMeteringStore,
   createCreditsMeteringSink,
   registerCreditsRoutes,
-  maxEffectiveRate,
+  maxServedRate,
   type CreditsConfig,
   type CreditPricingConfig,
 } from '@hachej/boring-core/server'
@@ -141,21 +141,22 @@ export interface FullAppCreditsConfig extends CreditsConfig {
 }
 
 /**
- * Conservative worst-case RUN cost (credit micros). A single Pi prompt can make
- * several model calls (tool loop) before any debit posts, and each call is
- * priced at the priciest rate the config can ACTUALLY charge (maxEffectiveRate —
- * the same effective table usageToCredits uses, incl. DEFAULT_MODEL_RATES when
- * no env rates are set) over the max context+output, with margin. The per-run
- * hold must cover the whole run for the hard stop to be tight, so we multiply a
- * worst-case call by BORING_CREDITS_MAX_CALLS_PER_RUN. A run that exceeds that
- * call budget can still overshoot the hold; the overshoot is bounded and the
- * user's NEXT run is then refused (negative balance), so exposure is capped.
+ * Conservative worst-case RUN cost (credit micros) for sizing the per-run hold.
+ * A single Pi prompt can make several model calls (tool loop) before any debit
+ * posts, each priced at the priciest SERVED rate (maxServedRate — configured
+ * rates + the conservative default, NOT the built-in DEFAULT_MODEL_RATES) over
+ * the max context+output, with margin, × BORING_CREDITS_MAX_CALLS_PER_RUN. Using
+ * served rates (not the built-in Opus default) keeps the hold proportional to the
+ * models this deployment actually serves so a small starter grant stays usable;
+ * an unconfigured/unreachable expensive model would overshoot the hold (bounded;
+ * the user's NEXT run is then refused). Billing an unmatched model still fails
+ * closed high (maxEffectiveRate).
  */
 function worstCaseRunMicros(pricing: CreditPricingConfig, env: NodeJS.ProcessEnv): number {
   const maxContext = parseNumberEnv('BORING_CREDITS_MAX_CONTEXT_TOKENS', env.BORING_CREDITS_MAX_CONTEXT_TOKENS, 200_000, 1, true)
   const maxOutput = parseNumberEnv('BORING_CREDITS_MAX_OUTPUT_TOKENS', env.BORING_CREDITS_MAX_OUTPUT_TOKENS, 16_384, 1, true)
   const maxCalls = parseNumberEnv('BORING_CREDITS_MAX_CALLS_PER_RUN', env.BORING_CREDITS_MAX_CALLS_PER_RUN, 4, 1, true)
-  const rate = maxEffectiveRate(pricing)
+  const rate = maxServedRate(pricing)
   const unitsPerCall = (maxContext / 1_000_000) * rate.inputPerMillion + (maxOutput / 1_000_000) * rate.outputPerMillion
   return Math.ceil(unitsPerCall * maxCalls * pricing.margin * pricing.creditMicrosPerUnit)
 }

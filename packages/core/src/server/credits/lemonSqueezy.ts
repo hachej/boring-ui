@@ -154,11 +154,17 @@ export interface LemonSqueezyWebhookOptions {
    * false acks the webhook without crediting.
    */
   isCreditOrder: (order: LemonSqueezyOrder) => boolean
-  /** Optional: is this order on OUR store/mode/currency (ignoring the variant)?
-   * When provided, a paid order that's ours but NOT a credit order (unknown/
-   * misconfigured variant) returns a retryable 500 instead of a 200 ack — so a
-   * paid customer on a credit-only store isn't silently left without credits. */
+  /** Optional STRICT check: is this order on OUR store/mode/currency (ignoring the
+   * variant, all fields required)? When provided, a paid order that's ours but NOT
+   * a credit order (unknown/misconfigured variant) returns a retryable 500 instead
+   * of a 200 ack — so a paid customer on a credit-only store isn't left without
+   * credits. */
   isOurStoreOrder?: (order: LemonSqueezyOrder) => boolean
+  /** Optional LENIENT check for REFUNDS: a refund payload may omit store/mode/
+   * currency, so a missing field passes and only a present-and-mismatched field
+   * rejects. A refund failing this is ignored (can't revoke a credited order by
+   * order id alone). Defaults to always-true when omitted. */
+  isRefundForOurStore?: (order: LemonSqueezyOrder) => boolean
   /** Credit micros per 1 currency unit (e.g. 1_000_000 = €0.000001/credit). When
    * set, the webhook refuses to mint a fixed pack value unless the net paid
    * amount (subtotal − discount) covers it — so a dashboard/manual discount or LS
@@ -209,10 +215,11 @@ export async function handleLemonSqueezyWebhook(
   if (refundEvents.includes(order.eventName)) {
     // A refund whose payload claims a DIFFERENT store/mode/currency than ours must
     // not revoke a credited order by order id alone (defense beyond the per-store/
-    // mode webhook secret). isOurStoreOrder checks store/mode/currency but NOT the
-    // variant, so a refund for an order whose pack variant was later retired is
-    // still revocable.
-    if (options.isOurStoreOrder && !options.isOurStoreOrder(order)) {
+    // mode webhook secret). LENIENT: a refund that OMITS these fields still
+    // revokes (the credited row carries the validated identity); only a present
+    // mismatch is rejected. Variant isn't checked, so a retired-variant refund
+    // is still revocable.
+    if (options.isRefundForOurStore && !options.isRefundForOurStore(order)) {
       options.log?.('lemonsqueezy refund payload is not for our store/mode/currency — ignoring', {
         orderId: order.orderId, storeId: order.storeId, currency: order.currency, testMode: order.testMode,
       })

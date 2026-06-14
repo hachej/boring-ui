@@ -110,7 +110,22 @@ function rateForModel(modelId: string, config: CreditPricingConfig): ModelTokenR
  * cheaper rate, defeating the hard stop.
  */
 export function maxEffectiveRate(config: CreditPricingConfig): ModelTokenRate {
-  const table = effectiveRateTable(config)
+  return maxRateOver(effectiveRateTable(config), config)
+}
+
+/**
+ * The priciest rate over only the SERVED models (configured rates + the
+ * conservative default), EXCLUDING the built-in DEFAULT_MODEL_RATES. Use this to
+ * size the per-run hold: the hold should reflect the models this deployment
+ * actually serves (so a small starter grant stays usable), while billing an
+ * unmatched model still fails closed at maxEffectiveRate. An unreachable
+ * expensive model would overshoot the hold — bounded; the next run is refused.
+ */
+export function maxServedRate(config: CreditPricingConfig): ModelTokenRate {
+  return maxRateOver(config.rates ?? [], config)
+}
+
+function maxRateOver(table: Array<[RegExp, ModelTokenRate]>, config: CreditPricingConfig): ModelTokenRate {
   const fallback = config.defaultRate ?? CONSERVATIVE_DEFAULT_RATE
   let inputPerMillion = fallback.inputPerMillion
   let outputPerMillion = fallback.outputPerMillion

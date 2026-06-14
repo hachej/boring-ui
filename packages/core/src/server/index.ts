@@ -77,6 +77,7 @@ export {
   usageToCredits,
   estimateProviderCost,
   maxEffectiveRate,
+  maxServedRate,
   DEFAULT_MODEL_RATES,
   createCreditsMeteringSink,
   verifyLemonSqueezySignature,

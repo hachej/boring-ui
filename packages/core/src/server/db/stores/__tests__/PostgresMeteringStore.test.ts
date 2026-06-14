@@ -108,7 +108,7 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
     // A corrupted ledger row already occupies the would-be refund debit id (€5 → refund:ord-pc:5000000), wrong amount.
     await store.recordUsage({ usageId: 'refund:ord-pc:5000000', userId: USER, source: 'manual', billedCostMicros: 1, metadata: {} })
     // The grant applying the pending refund must verify, not silently skip the debit.
-    await expect(store.grantPurchaseOnce({ orderId: 'ord-pc', userId: USER, amountMicros: 10_000_000 })).rejects.toThrow(/refund ledger conflict/)
+    await expect(store.grantPurchaseOnce({ orderId: 'ord-pc', userId: USER, amountMicros: 10_000_000 })).rejects.toThrow(/ledger debit conflict/)
     const rows = await sqlClient`SELECT status FROM boring_credit_purchases WHERE order_id = 'ord-pc'`
     expect(rows[0]?.status).toBe('refund_pending') // rolled back, not granted
   })
@@ -118,7 +118,7 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
     // A corrupted/manual ledger row exists at the refund debit id with a WRONG amount.
     await store.recordUsage({ usageId: 'refund:ord-conf:10000000', userId: USER, source: 'manual', billedCostMicros: 1, metadata: {} })
     // The refund must NOT silently mark the purchase refunded without a real debit.
-    await expect(store.revokePurchase('ord-conf', { refundFraction: 1 })).rejects.toThrow(/refund ledger conflict/)
+    await expect(store.revokePurchase('ord-conf', { refundFraction: 1 })).rejects.toThrow(/ledger debit conflict/)
     const rows = await sqlClient`SELECT status FROM boring_credit_purchases WHERE order_id = 'ord-conf'`
     expect(rows[0]?.status).toBe('granted') // unchanged — transaction rolled back
   })

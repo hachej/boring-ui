@@ -50,6 +50,10 @@ export function buildCheckoutRequestBody(input: CreateCheckoutInput): Record<str
         ...(input.testMode !== undefined ? { test_mode: input.testMode } : {}),
         checkout_data: {
           ...(input.email ? { email: input.email } : {}),
+          // Lock the purchased quantity to exactly 1 so a buyer can't pay for N
+          // packs and receive one pack's credits (the webhook credits the fixed
+          // per-variant value; this keeps order quantity == 1).
+          variant_quantities: [{ variant_id: numericVariant, quantity: 1 }],
           // Custom data is echoed back on the order webhook as meta.custom_data.
           // uat binds the user id to this server-created checkout (verified by the
           // webhook), so a buyer can't credit an arbitrary account via a crafted URL.

@@ -291,6 +291,24 @@ describe('credits routes', () => {
     expect(store.revokePurchase).toHaveBeenCalledWith(pkey('order-77'), expect.objectContaining({ allowTombstone: true }))
   })
 
+  it('still revokes a credited order when the refund payload OMITS store_id/test_mode (lenient)', async () => {
+    const store = makeStore()
+    const a = await build(store) // no expectedStoreId, expectedTestMode true, EUR
+    // Refund payload omits store_id AND test_mode entirely.
+    const body = JSON.stringify({
+      meta: { event_name: 'order_refunded', custom_data: { user_id: 'user-1' } },
+      data: { type: 'orders', id: 'order-77', attributes: { status: 'refunded', currency: 'EUR', subtotal: 1000, total: 1000, refunded: true, refunded_amount: 1000 } },
+    })
+    const res = await a.inject({
+      method: 'POST',
+      url: '/api/credits/webhooks/lemonsqueezy',
+      headers: { 'content-type': 'application/json', 'x-signature': createHmac('sha256', SECRET).update(body).digest('hex') },
+      payload: body,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(store.revokePurchase).toHaveBeenCalledWith(pkey('order-77'), expect.objectContaining({ allowTombstone: true }))
+  })
+
   it('ignores a refund whose payload is in the wrong mode (does not revoke at all)', async () => {
     const store = makeStore()
     const a = await build(store) // expectedTestMode true

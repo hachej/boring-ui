@@ -181,14 +181,23 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
   // rejected — billing must not infer safety from absent data.
   const creditVariantIds = new Set(ls.creditVariantIds)
   const requireCurrency = (ls.requireCurrency ?? 'EUR').toUpperCase()
-  // Store/mode/currency check WITHOUT the variant — used to decide whether a
-  // refund-before-grant may write a tombstone. Refund payloads can omit/alter
-  // first_order_item, so requiring the variant here would let a refunded order
-  // be granted later; the store/mode/currency are enough to know it's ours.
+  // STRICT store/mode/currency check (no variant) — a present field must match
+  // AND mode/currency must be present. Used for a PAID grant's "is this our
+  // store" decision (a paid order must not infer safety from absent data).
   const isOurStoreOrder = (order: LemonSqueezyOrder): boolean => {
     if (!order.currency || order.currency.toUpperCase() !== requireCurrency) return false
     if (order.testMode !== ls.expectedTestMode) return false
     if (ls.expectedStoreId && order.storeId !== ls.expectedStoreId) return false
+    return true
+  }
+  // LENIENT store/mode/currency check for REFUNDS: a refund payload may legitimately
+  // omit store_id/test_mode/currency, and the credited row already carries the
+  // validated identity. So a MISSING field passes; only a PRESENT field that
+  // contradicts config rejects (blocks a refund claiming a different store/mode).
+  const isRefundForOurStore = (order: LemonSqueezyOrder): boolean => {
+    if (order.currency != null && order.currency.toUpperCase() !== requireCurrency) return false
+    if (order.testMode != null && order.testMode !== ls.expectedTestMode) return false
+    if (order.storeId != null && ls.expectedStoreId != null && order.storeId !== ls.expectedStoreId) return false
     return true
   }
   const isCreditOrder = (order: LemonSqueezyOrder): boolean => {
@@ -212,7 +221,11 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
           secret: ls.webhookSecret,
           creditsForOrder,
           isCreditOrder,
+          // Strict: an unknown-variant PAID order on our store surfaces as 500.
           isOurStoreOrder,
+          // Lenient: a refund whose payload omits store/mode/currency still revokes
+          // a credited order; only a present-and-mismatched field is rejected.
+          isRefundForOurStore,
           // Bind buyer attribution to a server-created checkout (custom_data.uat).
           attributionSecret: ls.webhookSecret,
           // Refuse to grant a fixed pack value the buyer didn't actually pay for.
@@ -237,9 +250,10 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
                 order.refundedAmountCents > 0 && order.totalCents > 0
                   ? order.refundedAmountCents / order.totalCents
                   : undefined,
-              // Tombstone an unknown order only if it's on our store/mode (NOT
-              // requiring the variant, which a refund payload may omit).
-              allowTombstone: isOurStoreOrder(order),
+              // Tombstone an unknown order when the refund is compatible with our
+              // store/mode (lenient: missing fields OK). The composite purchase key
+              // already namespaces by store+mode, so this can't block a foreign order.
+              allowTombstone: isRefundForOurStore(order),
               // Match the credited row against the CONFIGURED identity (not the
               // payload's maybe-missing fields). The per-store/mode webhook secret
               // already proves the refund is from our store+mode; the row's stored

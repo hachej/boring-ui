@@ -223,7 +223,7 @@ export class PostgresMeteringStore {
           .where(eq(creditPurchases.orderId, input.orderId))
         await insertGrant()
         if (revoke > 0) {
-          await this.insertVerifiedRefundDebit(tx, {
+          await this.insertVerifiedLedgerDebit(tx, {
             id: `refund:${input.orderId}:${revoke}`,
             userId: input.userId,
             amountMicros: revoke,
@@ -369,7 +369,7 @@ export class PostgresMeteringStore {
       // Post the incremental debit (idempotent per cumulative level), verifying
       // any pre-existing row at this id matches before we mark the purchase
       // refunded (else we'd record a refund the balance was never debited for).
-      const inserted = await this.insertVerifiedRefundDebit(tx, {
+      const inserted = await this.insertVerifiedLedgerDebit(tx, {
         id: `refund:${orderId}:${target}`,
         userId: row.userId!,
         amountMicros: delta,
@@ -390,15 +390,16 @@ export class PostgresMeteringStore {
    * amount) — throw on mismatch so a caller never records a refund the balance was
    * not actually debited for. Returns true iff a new debit row was written.
    */
-  private async insertVerifiedRefundDebit(
+  private async insertVerifiedLedgerDebit(
     tx: Queryable,
-    input: { id: string; userId: string; amountMicros: number; source?: string; metadata: Record<string, unknown> },
+    input: { id: string; userId: string; amountMicros: number; source?: string; runId?: string; metadata: Record<string, unknown> },
   ): Promise<boolean> {
     const rows = await tx
       .insert(usageLedger)
       .values({
         id: input.id,
         userId: input.userId,
+        runId: input.runId ?? null,
         source: input.source ?? 'lemonsqueezy-refund',
         billedCostMicros: input.amountMicros,
         providerCostMicros: 0,
@@ -414,7 +415,7 @@ export class PostgresMeteringStore {
       .limit(1)
     const e = existing[0]
     if (!e || e.userId !== input.userId || e.billedCostMicros !== input.amountMicros) {
-      throw new Error(`refund ledger conflict for ${input.id}: existing debit does not match (refusing to record a refund without a real debit)`)
+      throw new Error(`ledger debit conflict for ${input.id}: existing debit does not match (refusing to record a debit that wasn't actually applied)`)
     }
     return false
   }
@@ -676,10 +677,18 @@ export class PostgresMeteringStore {
       if (executed) {
         const topUp = Math.max(0, r.amountMicros - Number(usage[0]?.total ?? 0))
         if (topUp > 0) {
-          await tx
-            .insert(usageLedger)
-            .values({ id: `usage-fallback:${r.id}`, userId, runId: r.runId, source: 'pi-chat-expired', billedCostMicros: topUp, providerCostMicros: 0, metadata: { kind: 'reservation_expired_fallback', reservationId: r.id } })
-            .onConflictDoNothing({ target: usageLedger.id })
+          // Verified insert: if usage-fallback:<reservationId> already exists (the
+          // sink's usage-write-failed fallback charged it), it must match — a
+          // mismatch throws rather than silently leaving the reservation expired
+          // with a wrong/no debit.
+          await this.insertVerifiedLedgerDebit(tx, {
+            id: `usage-fallback:${r.id}`,
+            userId,
+            runId: r.runId,
+            amountMicros: topUp,
+            source: 'pi-chat-expired',
+            metadata: { kind: 'reservation_expired_fallback', reservationId: r.id },
+          })
         }
       }
     }
