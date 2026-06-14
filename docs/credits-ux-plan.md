@@ -1,174 +1,145 @@
-# Credits UX completion plan (public-launch UX)
+# Credits UX completion plan (public-launch) — reviewed & corrected
 
-Five remaining user-facing gaps after the metering/money backend converged. Goal: a
-new user can see their balance, understand consumption, recover when out of credits,
-buy more, and have the balance reflect reality — without a page reload.
+Five user-facing gaps after the money backend converged. Revised per three gpt-5.5
+thermo reviews (pi design, codex design, pi layering) — all "needs-changes" on v1;
+this is the corrected spec. **Hard rule: the agent package (`@hachej/boring-agent`)
+must never gain a credits/billing concept; `@hachej/boring-core/front` (app shell) stays
+billing-agnostic; the credits feature lives in `@hachej/boring-core/{server,app/front}`;
+`apps/full-app` is the only place that wires credits into the agent + shell.**
 
-Stack: Vite/React front in three layers — `@hachej/boring-core/front` (app shell:
-auth, settings, routing in `CoreFront`), `@hachej/boring-core/app/front` (the
-credits feature UI: badge, settings panel, `useCreditBalance` hook), and
-`@hachej/boring-agent/front` (the Pi chat). `apps/full-app` composes them.
+Already shipped (`ff05cec8`): top-bar badge; settings "Billing & credits" panel
+(via a generic `billing` slot on `UserSettingsPage`); actionable `CreditExhaustedError`;
+shared `useCreditBalance` hook (poll + focus + `credits:refresh` event + `buy()`).
 
-Already shipped (`ff05cec8`): top-bar balance badge; account-settings "Billing &
-credits" panel; actionable `CreditExhaustedError` message; shared `useCreditBalance`
-hook with poll + window-focus + a `credits:refresh` window event + server-side
-checkout action.
-
----
-
-## 1. [HIGH] Inline "Buy credits" CTA on the out-of-credits chat error
-
-**Problem.** A run refused for credits throws 402 `{ error: { code: 'PAYMENT_REQUIRED', message } }`.
-In `remotePiSession.ts:509` the response becomes `RemotePiSessionHttpError(status, message, body)`
-but only the **message** is later surfaced; the `code` is dropped. The user sees a
-plain error notice with no way to act from the chat.
-
-**Approach.**
-1. `RemotePiSessionHttpError` already carries `body`. Extract the canonical code from
-   the body (`body.error.code`, validated against the agent `ErrorCode` enum) — add a
-   helper `routeErrorCode(body): ErrorCode | undefined` next to `routeErrorMessage`.
-2. When a prompt/follow-up POST rejects, dispatch a runtime notice that carries the
-   code. Extend `PiChatRuntimeNotice` (piChatReducer.ts:37) with an optional
-   `action?: { kind: 'buy-credits' }` (a closed union, not a free callback, so the
-   reducer/state stays serializable and the renderer owns the wiring).
-3. Map `code === PAYMENT_REQUIRED` → a notice `{ level: 'error', text, action: { kind: 'buy-credits' }, dismissible: true }`.
-   The text is the server message (already actionable after `ff05cec8`).
-4. `RuntimeNotices.tsx` renders the notice; when `action.kind === 'buy-credits'`, render
-   a "Buy credits" button beside the text. The button calls the credits checkout. To
-   avoid coupling the agent package to the credits feature, the chat exposes an
-   `onBuyCredits?: () => void` (or `noticeActions?: { buyCredits?: () => void }`) prop
-   threaded from full-app; full-app passes a handler that calls `useCreditBalance().buy()`.
-   **Open question for review:** prop-threading through `CoreWorkspaceAgentFront` →
-   `PiChatPanel` → `RuntimeNotices` vs. a neutral DOM event the credits layer listens
-   for. Prop is explicit/testable; event is zero-plumbing but implicit. Leaning prop.
-
-**Where the prompt rejection is caught.** `prompt()` rethrows after rollback
-(remotePiSession.ts:223); the React caller (composerPolicy.submit → the chat
-`onSubmitMessage`/queue controller) currently swallows/【shows】 it. Need to confirm the
-exact catch site and route it into the reducer as a notice (today only stream
-`protocol-error`/`error` events become notices, not POST rejections).
-
-**Edge cases.** Don't duplicate the notice on retry (stable notice id, e.g.
-`credit-exhausted`). Clear it when a later run is admitted (a successful submit removes
-the notice). Only show the CTA when checkout is actually wired (the handler is a no-op /
-absent otherwise — reuse `balance.checkoutEnabled`).
-
-**Tests.** reducer: a payment-required notice carries the `buy-credits` action; a
-generic error does not. RuntimeNotices: renders the button only for that action and
-invokes the handler. routeErrorCode: extracts/validates the code, undefined on junk.
+Implementation order (synergy + risk): #5 packs (server) → #4 history (server+front) →
+#1 CTA → #2 refresh → #3 landing (confirms via #4 history).
 
 ---
 
-## 2. [HIGH] Refresh the balance immediately after a run
+## 1. [HIGH] Inline PAYMENT_REQUIRED CTA — generic in agent, wired by full-app
 
-**Problem.** Badge/panel poll every 30s + on focus; after a run consumes credits the
-shown balance is stale until then.
+**Agent (`@hachej/boring-agent/front`) — generic only:**
+- `routeErrorCode(body): ErrorCode | undefined` beside `routeErrorMessage` in
+  `remotePiSession.ts` (validate against the shared `ErrorCode` enum).
+- `PiChatRuntimeNotice.errorCode?: ErrorCode` (piChatReducer.ts) — **no `buy-credits`**.
+- **Single normalization point:** route POST prompt/follow-up rejections into the SAME
+  runtime-notice path as stream errors (don't create a second error path). Confirm the
+  catch site (composerPolicy/queue controller → PiChatPanel) and emit a notice with
+  stable id `run-rejected` carrying `errorCode`. Clear it when a later run is admitted.
+- Generic render prop on `PiChatPanel` (threaded via `CoreWorkspaceAgentFront`/chatParams):
+  `renderNoticeAction?: (notice: PiChatRuntimeNotice) => ReactNode`. `RuntimeNotices.tsx`
+  renders it next to the notice text. Keyboard-reachable; ARIA via existing notice region.
 
-**Approach.** `useCreditBalance` already listens for the `credits:refresh` window event
-(`CREDITS_REFRESH_EVENT`). Need a dispatcher on turn completion. `PiChatPanel` has
-`prevStatusRef`; add an effect: when status transitions from a busy state to `idle`
-(a run finished), fire the signal. To keep the agent package credits-agnostic, dispatch
-a **neutral** event (e.g. `boring:agent-turn-complete`) and have `useCreditBalance`
-listen to BOTH that and `credits:refresh`; OR expose an `onTurnComplete?` callback prop
-that full-app wires to `dispatchEvent(new Event(CREDITS_REFRESH_EVENT))`.
-**Open question for review:** neutral event (decoupled, implicit) vs. callback prop
-(explicit, more plumbing). Leaning neutral event named generically, documented.
+**full-app:** passes `renderNoticeAction` that, when
+`notice.errorCode === ErrorCode.PAYMENT_REQUIRED && checkoutEnabled`, renders a
+"Buy credits" button calling `useCreditBalance().buy()` (disabled while `buying`; inline
+error text on failure). Dependency direction: full-app → agent/front and → core/app/front;
+agent imports neither.
 
-**Edge cases.** Debounce: only fire on busy→idle transitions, not every render. Don't
-fire on initial mount (`prevStatusRef` starts 'idle'). A follow-up that goes
-idle→submitted→idle fires once per completion — acceptable (each completion may bill).
+**Tests:** routeErrorCode (extract/validate/undefined-on-junk); reducer notice carries
+errorCode for a rejected POST and is cleared on next admit; RuntimeNotices renders the
+host action node; full-app maps PAYMENT_REQUIRED→button only when checkoutEnabled.
 
-**Tests.** A status transition busy→idle dispatches exactly one event; idle→idle and
-mount do not. Hook: receiving the event triggers a refetch.
+## 2. [HIGH] Refresh after a run — generic callback + retry burst (billing is async)
+
+**Critical:** `agent-end` is published BEFORE the metering observer settles the credit
+write, so a single immediate refetch can read a stale balance; queued follow-ups also
+keep the UI busy across multiple turn-ends. So:
+- **Agent:** generic `onTurnComplete?: () => void` on `PiChatPanel`, fired once per turn
+  settling (on agent-end, not just busy→idle), threaded via `CoreWorkspaceAgentFront`.
+  No credits concept; no global DOM event as the cross-package API.
+- **Credits hook:** add `refreshWithRetry()` — immediate refetch + a short backoff burst
+  (e.g. 0/1/2/4/8s, ~15s total) so it catches the async settle; **dedupe** concurrent
+  refreshes (ignore overlapping bursts). Track `lastUpdatedAt` + an `updating` flag so
+  the UI can show a subtle "Updating…" and not present a stale balance as fresh.
+- **full-app:** wires `onTurnComplete` → `refreshWithRetry()`.
+
+The existing `CREDITS_REFRESH_EVENT` stays an INTERNAL credits mechanism (used by #3),
+NOT the agent↔credits API.
+
+**Tests:** onTurnComplete fires once per turn-settle, not on mount/idle-idle; hook
+refreshWithRetry refetches with backoff and dedupes; updating/lastUpdatedAt surface.
+
+## 3. [MED] Post-purchase landing — confirm server-side, never trust the URL
+
+Lives in `apps/full-app` (or a `useCheckoutReturnHandler` in `core/app/front`) — **never
+`core/front`**.
+- Checkout stays **new-tab** (`window.open`, preserves app state). LS redirects the new
+  tab to a neutral marker `?checkout=return` (set `BORING_CREDITS_LS_REDIRECT_URL`).
+- The return handler shows **"Checking payment…"**, then CONFIRMS via the authenticated
+  server: poll `GET /api/credits/history` for a recent `purchase` entry (the #4 endpoint)
+  / balance increase, with backoff over ~30–60s. Copy: "Credits added." on confirm;
+  "Payment is still processing — credits usually appear within a minute." on timeout;
+  "We couldn't confirm your purchase — refresh or contact support." after the window.
+  Handle `?checkout=cancelled` and popup-blocked. **Never** say "received" from the param.
+- Cross-tab: the return page broadcasts (`BroadcastChannel('credits')` / storage event)
+  so the original app tab's `useCreditBalance` refreshes. Strip the query param via
+  `history.replaceState` after handling starts.
+
+**Tests:** `?checkout=return` → checking→confirmed (history shows purchase) vs.
+→processing (no purchase) vs. timeout; param stripped; cancelled path; spoofed param with
+no server purchase never shows success.
+
+## 4. [MED] Purchase / usage history — server-authoritative, sanitized, scoped
+
+**`@hachej/boring-core/server`:**
+- `CreditLedgerEntry` (credits types): `{ id, kind: 'grant'|'purchase'|'usage'|'refund'|'fallback',
+  amountMicros, createdAt, description }`. **Sign convention:** `amountMicros` positive =
+  credit added (grant/purchase), negative = consumed/removed (usage/refund). `kind` is a
+  stable enum.
+- `listLedger(userId, limit)` on the store interface + `PostgresMeteringStore` impl:
+  UNION ALL over `creditGrants` (+purchase rows) and `usageLedger`, **scoped to userId**,
+  ordered `created_at desc`, **limit clamped server-side to 1..50**. No agent/run/session
+  internals; the metering store stays generic ledger-shaped.
+- `GET /api/credits/history?limit=N` (credits routes): auth-gated (same `getUserId`),
+  clamps limit, returns `{ entries: CreditLedgerEntry[] }`. **Descriptions are generic
+  and sanitized** ("Signup grant", "Credit purchase", "Agent usage", "Refund",
+  "Usage reconciliation") — NO prompt text, repo paths, model/provider, session, or LS
+  order/customer ids.
+
+**`@hachej/boring-core/app/front`:** `useCreditHistory` hook + a "Recent activity"
+section in `CreditsSettingsPanel` (lazy-fetch on expand; loading / empty
+("No credit activity yet.") / error states; signed amounts via `formatCreditMicros`).
+
+**Tests:** store listLedger merges/orders/caps/scopes; route auth + clamp + sanitized
+shape; front renders rows + empty/error.
+
+## 5. [LOW] Pack picker — server display contract, settings-only
+
+**`@hachej/boring-core/server`:**
+- `CreditPack`: `{ id, creditMicros, priceMinor, currency, label, isDefault }` —
+  server-authored display contract (NEVER infer price from id; NEVER expose LS variant
+  ids). Derived from the configured checkout `variants` + `creditMicrosByVariant`
+  (priceMinor from the pack's EUR value × 100, currency from config, label e.g. "€25",
+  isDefault = configured default pack), in server config order.
+- Balance response gains `packs?: CreditPack[]` (only when checkout enabled). Checkout
+  route already accepts `{ pack }` (validated server-side).
+
+**`@hachej/boring-core/app/front`:** `CreditPackPicker` (radio-group semantics) in
+`CreditsSettingsPanel`; selecting a pack calls `buy({ pack })`; confirm shows the price
+("Buy €25"). Badge stays a one-click default. If packs absent but checkout enabled, fall
+back to the default CTA; if checkout disabled, hide the picker.
+
+**Tests:** balance route exposes packs from config (no variant ids); picker renders +
+sends chosen pack; default fallback.
 
 ---
 
-## 3. [MED] Post-purchase landing + auto-refresh
-
-**Problem.** Checkout opens LS in a new tab; `BORING_CREDITS_LS_REDIRECT_URL` is unset;
-on return there's no confirmation and no balance refresh.
-
-**Approach.**
-1. Set a sensible default redirect (full-app) back to the app with a marker query param,
-   e.g. `…/?checkout=success` (configurable via `BORING_CREDITS_LS_REDIRECT_URL`).
-2. On app load, detect `?checkout=success` (in full-app `main.tsx` or a tiny shell
-   effect): fire `CREDITS_REFRESH_EVENT`, show a transient success toast/notice
-   ("Payment received — credits added"), and strip the param from the URL
-   (`history.replaceState`) so a reload doesn't re-trigger.
-3. The balance is authoritative from the server (the webhook credited it); the refresh
-   just pulls the new value. If the webhook hasn't landed yet (race), the success
-   message is still correct ("payment received") and the next poll/refresh catches up —
-   optionally retry the refresh a couple times over ~5s.
-
-**Open question for review:** the checkout opens in a NEW TAB (`window.open`), so the
-redirect lands in that tab, not the app tab. Options: (a) keep new-tab + the success
-landing in that tab tells the user to return; (b) switch to same-tab redirect for
-checkout so the return lands in the app. Same-tab is the cleaner post-purchase UX but
-loses the app state during checkout (SPA reloads on return). Leaning: same-tab redirect
-to `?checkout=success`, since the SPA rehydrates and the marker drives the toast+refresh.
-
-**Tests.** A load with `?checkout=success` fires the refresh event, shows the toast, and
-clears the param; a normal load does nothing.
-
----
-
-## 4. [MED] Purchase / usage history
-
-**Problem.** No spending breakdown or receipt list.
-
-**Approach.**
-1. **Backend:** a read-only `GET /api/credits/history?limit=N` returning the user's
-   recent credit ledger — grants (signup + purchases) and usage debits — newest first,
-   each `{ id, kind: 'grant'|'purchase'|'usage'|'refund'|'fallback', amountMicros,
-   createdAt, description }`. New store method `listLedger(userId, limit)` querying
-   `creditGrants` + `usageLedger` (+ purchase metadata), capped (e.g. 50) and indexed by
-   `created_at`. Auth-gated (same `getUserId` as balance). Money-safe: read-only, no PII
-   beyond the user's own rows.
-2. **Frontend:** a collapsible "Recent activity" list in the `CreditsSettingsPanel`
-   (lazy-fetch on expand), formatted with `formatCreditMicros` + relative dates.
-
-**Open questions for review:** (a) merge grants+usage in one query (UNION + order +
-limit) vs. two queries + merge in code; (b) how much usage detail (per-run vs.
-per-message) — propose per-ledger-row, since that's what exists; (c) pagination — start
-with a capped most-recent list (no paging) and note paging as follow-up.
-
-**Tests.** store: `listLedger` returns merged, ordered, capped rows scoped to the user.
-route: auth required; returns the shape; respects the limit. front: renders rows, empty
-state.
-
----
-
-## 5. [LOW] Pack picker (€10 / €25 / €50)
-
-**Problem.** Checkout always uses the default pack; no chooser.
-
-**Approach.**
-1. Expose the available packs to the client. The balance endpoint already returns
-   `checkoutEnabled`; add `packs?: Array<{ id: string; credits: number }>` (id = the
-   EUR pack value; credits = micros) derived from the configured `checkout.variants` +
-   `creditMicrosByVariant`. (Variant ids stay server-only; the client only sees pack
-   ids.)
-2. The settings panel renders the packs as selectable options; the badge keeps the
-   single default-pack button. Selecting a pack passes `{ pack }` to
-   `POST /api/credits/checkout` (already supported + validated server-side).
-
-**Open question for review:** show the picker in the settings panel only (badge stays a
-one-click default), or also a small dropdown on the badge? Leaning settings-only to keep
-the top bar minimal.
-
-**Tests.** balance route exposes packs from config; panel renders them and sends the
-chosen pack to checkout.
-
----
-
-## Cross-cutting
-
-- **Layering:** the agent package must not import the credits feature. Items #1/#2 cross
-  the agent↔credits boundary — resolve via a neutral event or a callback prop (flagged
-  above for review).
-- **Build order:** core changes require a core rebuild before full-app typechecks
-  (separate dist entry points).
-- **No money-path change:** all five are read/display/UX; crediting, idempotency, and
-  fail-closed billing are untouched. The history endpoint is read-only.
-- **Test coverage:** unit tests per item (reducer, hook, store, route, components); core
-  + full-app typecheck + build green.
+## Cross-cutting acceptance criteria (all items)
+- **States:** explicit loading / empty / error / checkout-disabled / pending / stale for
+  every surface (badge, panel, history, picker, landing).
+- **Double-click:** every checkout CTA disabled+guarded while a request is in flight
+  (`useCreditBalance.buy()` already guards via `buyingRef`); surface checkout errors.
+- **Accessibility:** notice CTAs keyboard-reachable; error notices not color-only; ARIA
+  live for the landing toast; pack picker as an accessible radio group; focus management
+  on landing return.
+- **Currency/i18n:** server supplies currency + priceMinor; client formats with
+  `Intl.NumberFormat`; don't mix "€10" and "credits" ambiguously.
+- **Balance staleness:** `lastUpdatedAt` + "Updating…" after a run; on refresh failure
+  keep the last value but don't present it as fresh.
+- **No money-path change:** all five are read/display/UX; the history endpoint is
+  read-only; crediting/idempotency/fail-closed billing untouched.
+- **Layering (enforced):** agent stays credits-agnostic (generic errorCode + generic
+  callbacks only); core/front never imports app/front or detects checkout; credits server
+  module stays generic; full-app does the concrete wiring. Build core before full-app
+  typechecks (separate dist entries).
