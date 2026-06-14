@@ -718,7 +718,16 @@ export class PiChatMeteringCoordinator {
       if (run.usageWriteFailed) {
         return this.sink.releaseRun({ ...run.scope, reservationId: run.reservationId, reason: 'usage-write-failed' })
       }
-      // Real debits were written for this attempt → settle the hold against them.
+      // Real debits were written for this attempt → settle the hold against them,
+      // INCLUDING an errored run that produced billable usage. Pi reports a failed
+      // call's usage on agent_end (harvestAgentEndUsage captures it), so a started
+      // error's provider work is reflected in billableUsageCount — settling at the
+      // captured usage is correct. We deliberately do NOT top a billed errored run up
+      // to the full hold: that would over-charge the common cases (a local tool crash
+      // with no extra provider cost, or an error whose usage was already harvested)
+      // up to the worst-case reservation. The residual undercharge — a provider that
+      // billed for a failed call whose usage Pi never reported at all — is a narrow,
+      // accepted limitation, the symmetric cost of not over-charging errored runs.
       if (run.billableUsageCount > 0) {
         return this.sink.settleRun({ ...run.scope, reservationId: run.reservationId, status })
       }

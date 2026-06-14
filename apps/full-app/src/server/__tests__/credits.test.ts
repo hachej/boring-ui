@@ -73,13 +73,18 @@ describe('readCreditsConfig + assessReservationHold', () => {
       .not.toThrow()
   })
 
-  it('kill switch (ENABLED=0) bypasses ALL Lemon Squeezy validation gates (stale LS env must not crash startup)', () => {
-    // Webhook secret set but NO store id (would throw when enabled), plus a malformed
-    // mode and variants — none of it should fail startup when credits are disabled.
+  it('kill switch (ENABLED=0) bypasses ALL credit validation — stale/malformed core AND LS env must not crash startup', () => {
+    // Malformed CORE money/rate env (rates, margin, reservation, TTL) AND LS env
+    // (webhook secret without store id, garbage mode/variants) — none of it should
+    // fail startup when credits are disabled.
     let config!: FullAppCreditsConfig
     expect(() => {
       config = readCreditsConfig({
         BORING_CREDITS_ENABLED: '0',
+        BORING_CREDITS_RATES: 'totally::garbage::not-a-rate',
+        BORING_CREDITS_MARGIN: '0.1', // < 1 would throw when enabled
+        BORING_CREDITS_RESERVATION_EUR: 'NaN',
+        BORING_CREDITS_RESERVATION_TTL_SECONDS: '10', // below max-run+slack: would throw when enabled
         BORING_CREDITS_LS_WEBHOOK_SECRET: 'whsec_stale',
         BORING_CREDITS_LS_TEST_MODE: 'garbage',
         BORING_CREDITS_LS_VARIANTS: 'not-a-valid-spec',

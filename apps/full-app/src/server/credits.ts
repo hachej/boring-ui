@@ -223,9 +223,31 @@ export function assessReservationHold(config: FullAppCreditsConfig, env: NodeJS.
 export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullAppCreditsConfig {
   const enabled = env.BORING_CREDITS_ENABLED !== '0'
 
-  // --- Core config (always parsed): the credits service is constructed even when
-  // disabled, but its constructor skips validation when disabled, and these values
-  // are inert then. The per-run-hold/TTL gates below only fire when enabled. ---
+  // BORING_CREDITS_ENABLED=0 is a full emergency kill switch — it must boot through
+  // ANY stale/malformed credit env (rates, margin, reservation, TTL, LS). Return an
+  // inert default config WITHOUT parsing/validating any credit env. The service is
+  // still constructed (its constructor skips validation when disabled) and every
+  // method short-circuits, so these values are never read.
+  if (!enabled) {
+    return {
+      enabled: false,
+      signupGrantMicros: 0,
+      signupGrantExpiresAfterDays: null,
+      runReservationMicros: 1,
+      reservationTtlSeconds: 60,
+      minBalanceMicros: 0,
+      pricing: { margin: 1, creditMicrosPerUnit: CREDIT_MICROS_PER_EUR, rates: [] },
+      lemonSqueezyWebhookSecret: undefined,
+      lemonSqueezyVariants: {},
+      lemonSqueezyCreditMicrosByVariant: {},
+      lemonSqueezyTestMode: false,
+      lemonSqueezyStoreId: undefined,
+      lemonSqueezyCreditOnlyStore: true,
+      lemonSqueezyCheckout: undefined,
+    }
+  }
+
+  // --- Core config (enabled only). ---
   // Margin < 1 would bill below provider cost — reject it (fail closed).
   const margin = parseNumberEnv('BORING_CREDITS_MARGIN', env.BORING_CREDITS_MARGIN, 1.3, 1)
   // Verified per-model EUR/MTok rates (e.g. Infomaniak). Unset ⇒ unconfigured
@@ -250,7 +272,7 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
   const reservationTtlSeconds = Math.max(60, parseNumberEnv('BORING_CREDITS_RESERVATION_TTL_SECONDS', env.BORING_CREDITS_RESERVATION_TTL_SECONDS, 7200, 60))
   const maxRunSeconds = parseNumberEnv('BORING_CREDITS_MAX_RUN_SECONDS', env.BORING_CREDITS_MAX_RUN_SECONDS, 1800, 1, true)
   const SETTLEMENT_SLACK_SECONDS = 300
-  if (enabled && reservationTtlSeconds < maxRunSeconds + SETTLEMENT_SLACK_SECONDS) {
+  if (reservationTtlSeconds < maxRunSeconds + SETTLEMENT_SLACK_SECONDS) {
     throw new Error(
       `credits: BORING_CREDITS_RESERVATION_TTL_SECONDS (${reservationTtlSeconds}) must exceed BORING_CREDITS_MAX_RUN_SECONDS ` +
         `(${maxRunSeconds}) by at least ${SETTLEMENT_SLACK_SECONDS}s of settlement slack — otherwise the stale-reservation ` +
@@ -267,22 +289,7 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
     pricing: { margin, creditMicrosPerUnit: CREDIT_MICROS_PER_EUR, rates },
   }
 
-  // --- Lemon Squeezy purchase config: parsed/validated ONLY when credits are ON.
-  // BORING_CREDITS_ENABLED=0 is a full kill switch — attach() registers no webhook/
-  // checkout, so stale or invalid LS env must not fail startup. ---
-  if (!enabled) {
-    return {
-      ...common,
-      lemonSqueezyWebhookSecret: undefined,
-      lemonSqueezyVariants: {},
-      lemonSqueezyCreditMicrosByVariant: {},
-      lemonSqueezyTestMode: false,
-      lemonSqueezyStoreId: undefined,
-      lemonSqueezyCreditOnlyStore: true,
-      lemonSqueezyCheckout: undefined,
-    }
-  }
-
+  // --- Lemon Squeezy purchase config (enabled only; disabled returned inert above). ---
   const variants = parseVariants(env.BORING_CREDITS_LS_VARIANTS)
   const defaultPackEnv = env.BORING_CREDITS_LS_DEFAULT_PACK
   if (defaultPackEnv && !(defaultPackEnv in variants)) {

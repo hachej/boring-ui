@@ -163,6 +163,15 @@ fail closed at the highest effective rate.
    starts (per-user advisory lock).
 6. **A refund with a missing/zero `refunded_amount`** is treated as a full refund (merchant-
    safe; LS always sends the amount). Customer-fairness reconciliation is operator-side.
+7. **An errored run settles at its captured usage, not topped up to the hold.** When a run
+   starts, bills some usage, then ends with `status: error` (e.g. a tool crash, or a model call
+   that failed after a prior billed response), it settles at the usage actually captured rather
+   than charging the full worst-case hold. This is a deliberate choice to avoid OVER-charging the
+   common errored-run cases (a local tool crash does no extra provider work; Pi reports a failed
+   model call's usage on `agent_end`, which we harvest). The residual risk — a provider that
+   billed for a failed call whose usage Pi never reported at all — is a narrow under-charge,
+   accepted as the symmetric cost of not over-charging every errored run up to its reservation.
+   (A started/successful run with NO captured billable usage still charges the fallback hold.)
 
 ## Accepted structural debt (tracked, not blocking — money paths are correct & tested)
 - Extract a focused `PostgresCreditPurchaseStore` (purchase/refund lifecycle) and a

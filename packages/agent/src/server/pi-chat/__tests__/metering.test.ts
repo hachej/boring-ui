@@ -372,7 +372,7 @@ describe('pi chat metering', () => {
     ])
   })
 
-  it('settles an errored run that already produced billable usage', async () => {
+  it('settles an errored run at its captured usage (does not over-charge a tool crash up to the hold)', async () => {
     const adapter = createAdapter()
     const { sink, calls } = createSink()
     const { service } = createService(adapter, sink)
@@ -380,6 +380,9 @@ describe('pi chat metering', () => {
     await service.prompt(ctx, 's1', { message: 'partial', clientNonce: 'nonce-partial' })
     adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
     adapter.emit(assistantMessageEnd())
+    // A local tool crash after a billed message: the billable provider work IS
+    // captured (Pi reports failed-call usage on agent_end), so settle at the actual
+    // usage rather than topping a billed run up to the full worst-case hold.
     adapter.emit(agentEnd('error', 'tool crashed'))
     await service.flushMetering()
 

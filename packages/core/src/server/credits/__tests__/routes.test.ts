@@ -197,6 +197,47 @@ describe('credits routes', () => {
     await a.close()
   })
 
+  it('fails registration when checkout storeId does not match the webhook expectedStoreId (money trap)', async () => {
+    const a = Fastify()
+    await expect(
+      (async () => {
+        registerCreditsRoutes(a, {
+          service: new CreditsService(makeStore(), CONFIG),
+          lemonSqueezy: {
+            webhookSecret: SECRET,
+            creditVariantIds: ['1'],
+            expectedTestMode: true,
+            expectedStoreId: 'store-A',
+            creditMicrosByVariant: { '1': 10_000_000 },
+            checkout: { apiKey: 'k', storeId: 'store-B', variants: { '10': '1' }, defaultPack: '10', testMode: true },
+          },
+        })
+        await a.ready()
+      })(),
+    ).rejects.toThrow(/checkout storeId "store-B" does not match the webhook's expectedStoreId "store-A"/)
+    await a.close()
+  })
+
+  it('fails registration when checkout testMode does not match the webhook expectedTestMode (money trap)', async () => {
+    const a = Fastify()
+    await expect(
+      (async () => {
+        registerCreditsRoutes(a, {
+          service: new CreditsService(makeStore(), CONFIG),
+          lemonSqueezy: {
+            webhookSecret: SECRET,
+            creditVariantIds: ['1'],
+            expectedTestMode: true,
+            creditMicrosByVariant: { '1': 10_000_000 },
+            checkout: { apiKey: 'k', storeId: 's', variants: { '10': '1' }, defaultPack: '10', testMode: false },
+          },
+        })
+        await a.ready()
+      })(),
+    ).rejects.toThrow(/checkout testMode \(false\) does not match the webhook's expectedTestMode \(true\)/)
+    await a.close()
+  })
+
   it('rejects a paid order whose attribution token is missing/forged (500, no credit)', async () => {
     const store = makeStore()
     const a = await build(store)

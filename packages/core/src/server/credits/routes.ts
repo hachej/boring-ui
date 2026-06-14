@@ -133,6 +133,17 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
     if (!(checkout.defaultPack in checkout.variants)) {
       throw new Error(`credits: checkout defaultPack "${checkout.defaultPack}" is not one of the configured checkout variants`)
     }
+    // The checkout creates orders for checkout.storeId in checkout.testMode; the
+    // webhook only credits orders matching expectedStoreId/expectedTestMode. A
+    // mismatch is a money trap: the customer pays, but the resulting order is
+    // classified as not-a-credit-order and 200-ignored without crediting. Fail
+    // registration so checkout and webhook can't be wired to different store/mode.
+    if (ls.expectedStoreId !== undefined && checkout.storeId !== ls.expectedStoreId) {
+      throw new Error(`credits: checkout storeId "${checkout.storeId}" does not match the webhook's expectedStoreId "${ls.expectedStoreId}" — orders from this checkout would not be credited`)
+    }
+    if (checkout.testMode !== undefined && checkout.testMode !== ls.expectedTestMode) {
+      throw new Error(`credits: checkout testMode (${checkout.testMode}) does not match the webhook's expectedTestMode (${ls.expectedTestMode}) — orders from this checkout would be classified in the wrong mode and not credited`)
+    }
     app.post(ls.checkoutPath ?? '/api/credits/checkout', async (request, reply) => {
       const userId = getUserId(request)
       if (!userId) {
