@@ -256,6 +256,17 @@ describe('handleLemonSqueezyWebhook', () => {
     expect(grant).not.toHaveBeenCalled()
   })
 
+  it('rejects an order where total proves an UNREPORTED discount (missing discount_total would over-credit)', async () => {
+    const { options, grant } = opts({ creditsForOrder: () => 10_000_000, creditMicrosPerUnit: 1_000_000 })
+    // €10 pack: subtotal=1000 looks like a full €10 net, but total=600 proves only
+    // €6 was charged — a discount the discount_total field didn't report. Crediting
+    // on subtotal − discount(0) = €10 would over-credit; total < net must reject.
+    const body = orderPayload({}, { subtotal: 1000, discount_total: 0, total: 600 })
+    const res = await handleLemonSqueezyWebhook(body, sign(body), options)
+    expect(res).toMatchObject({ status: 500, body: { reason: 'invalid_money_fields' } })
+    expect(grant).not.toHaveBeenCalled()
+  })
+
   it('rejects an order whose discount exceeds the subtotal', async () => {
     const { options, grant } = opts({ creditsForOrder: () => 10_000_000, creditMicrosPerUnit: 1_000_000 })
     const body = orderPayload({}, { subtotal: 1000, discount_total: 1500, total: 100 })

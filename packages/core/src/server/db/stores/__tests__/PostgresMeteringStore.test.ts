@@ -401,15 +401,28 @@ describe('PostgresMeteringStore', () => {
     expect((await store.getBalance(USER)).usedMicros).toBe(1_000_000)
   })
 
-  it('charges a ZERO-billed executed run on expiry (usage row exists, even at €0)', async () => {
+  it('does NOT charge a ZERO-billed run on expiry (only zero-token rows ⇒ no billable work ⇒ free)', async () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 10_000_000 })
     const { reservationId } = await store.reserve({ userId: USER, runId: 'turn-zero', amountMicros: 1_000_000, ttlSeconds: 600 })
-    // A zero-token usage row was written (executed) but never settled.
+    // A zero-token usage row was written, then the terminal release was lost (e.g.
+    // a user abort whose releaseRun failed transiently). The sweep must treat this
+    // as non-billable and FREE it — charging the full hold would over-charge a run
+    // that did no billable work (pi r27 P1).
     await store.recordUsage({ usageId: 'uz-1', userId: USER, runId: 'turn-zero', source: 'pi-chat', billedCostMicros: 0, metadata: { reservationId } })
     await sqlClient`UPDATE boring_usage_reservations SET expires_at = now() - interval '1 minute' WHERE run_id = 'turn-zero'`
     await store.expireStaleReservations()
-    // Existence of a usage row ⇒ executed ⇒ charged the full hold (not free).
-    expect((await store.getBalance(USER)).usedMicros).toBe(1_000_000)
+    expect((await store.getBalance(USER)).usedMicros).toBe(0) // freed, not charged
+  })
+
+  it('charges a partially-billed executed run on expiry, topping up to the hold', async () => {
+    await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 10_000_000 })
+    const { reservationId } = await store.reserve({ userId: USER, runId: 'turn-part', amountMicros: 1_000_000, ttlSeconds: 600 })
+    // Real billable usage (€0.3) exists but finalization was lost → top up to the
+    // €1 hold (executed run, conservative durable settlement).
+    await store.recordUsage({ usageId: 'up-1', userId: USER, runId: 'turn-part', source: 'pi-chat', billedCostMicros: 300_000, metadata: { reservationId } })
+    await sqlClient`UPDATE boring_usage_reservations SET expires_at = now() - interval '1 minute' WHERE run_id = 'turn-part'`
+    await store.expireStaleReservations()
+    expect((await store.getBalance(USER)).usedMicros).toBe(1_000_000) // topped up to the hold
   })
 
   it('does not re-charge a reservation that already settled before the expiry sweep', async () => {

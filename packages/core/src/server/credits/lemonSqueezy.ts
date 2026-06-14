@@ -309,11 +309,20 @@ export async function handleLemonSqueezyWebhook(
     // Money fields must be present and sane — a missing field parsed to 0, or a
     // discount above subtotal, or a zero/absent total, must NOT look like a valid
     // full payment. Fail closed (500) so the malformed delivery surfaces.
+    //
+    // Crucially, cross-check the net we credit on (subtotal − discount, pre-tax)
+    // against `total` (the amount actually charged = subtotal − discount + tax +
+    // fees ≥ net for ANY legit order). If `total < subtotal − discount`, a discount
+    // was applied that the `discount_total` field didn't report (missing/renamed),
+    // so subtotal − discount OVER-states what the customer paid and would over-credit
+    // (e.g. subtotal=1000, total=600, discount_total missing → net looks like €10 but
+    // €6 was paid). A 1-cent slack absorbs fractional-cent tax rounding.
     const moneySane =
       Number.isFinite(order.subtotalCents) && order.subtotalCents >= 0 &&
       Number.isFinite(order.discountTotalCents) && order.discountTotalCents >= 0 &&
       Number.isFinite(order.totalCents) && order.totalCents > 0 &&
-      order.subtotalCents >= order.discountTotalCents
+      order.subtotalCents >= order.discountTotalCents &&
+      order.subtotalCents - order.discountTotalCents <= order.totalCents + 1
     if (!moneySane) {
       options.log?.('lemonsqueezy order has missing/inconsistent money fields — not granting', {
         orderId: order.orderId, subtotalCents: order.subtotalCents, discountTotalCents: order.discountTotalCents, totalCents: order.totalCents,

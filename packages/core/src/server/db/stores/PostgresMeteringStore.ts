@@ -670,12 +670,22 @@ export class PostgresMeteringStore {
       .returning({ id: usageReservations.id, runId: usageReservations.runId, amountMicros: usageReservations.amountMicros })
     for (const r of stale) {
       const usage = await tx
-        .select({ rows: sql<string>`count(*)`, total: sql<string>`coalesce(sum(${usageLedger.billedCostMicros}), 0)` })
+        .select({ total: sql<string>`coalesce(sum(${usageLedger.billedCostMicros}), 0)` })
         .from(usageLedger)
         .where(and(eq(usageLedger.userId, userId), sql`${usageLedger.metadata}->>'reservationId' = ${r.id}`))
-      const executed = Number(usage[0]?.rows ?? 0) > 0 // existence, not billed sum (zero-token rows count)
+      const billedTotal = Number(usage[0]?.total ?? 0)
+      // Charge-on-expire ONLY when the reservation has BILLABLE usage (a real debit
+      // exists), not on mere row existence: a run that wrote only zero-token usage
+      // rows did no billable work, so it must stay free even if its terminal
+      // release was lost (e.g. a user abort whose releaseRun failed transiently).
+      // Charging the full hold for a non-billable run would over-charge real money.
+      // (A successful run the provider reported zero tokens for is charged via the
+      // sink's fallback, which writes a positive `usage-fallback` debit, so it has
+      // billable usage here too; the residual "fallback charge ALSO lost" case joins
+      // the documented total-outage limitation — an under-charge, never an over-charge.)
+      const executed = billedTotal > 0
       if (executed) {
-        const topUp = Math.max(0, r.amountMicros - Number(usage[0]?.total ?? 0))
+        const topUp = Math.max(0, r.amountMicros - billedTotal)
         if (topUp > 0) {
           // Verified insert: if usage-fallback:<reservationId> already exists (the
           // sink's usage-write-failed fallback charged it), it must match — a
