@@ -168,11 +168,19 @@ describe('handleLemonSqueezyWebhook', () => {
     expect(grant).not.toHaveBeenCalled()
   })
 
-  it('does not credit an order with a missing status (must be explicitly paid)', async () => {
-    const { options, grant } = opts()
+  it('fails loud (500) on a recognized credit order with a MISSING status (parser gap, not a silent drop)', async () => {
+    const { options, grant } = opts() // isCreditOrder: () => true
     const body = orderPayload({}, { status: undefined })
     const res = await handleLemonSqueezyWebhook(body, sign(body), options)
-    expect(res.body.reason).toBe('order_status_unknown')
+    expect(res).toMatchObject({ status: 500, body: { reason: 'order_status_missing' } })
+    expect(grant).not.toHaveBeenCalled()
+  })
+
+  it('200-acks a missing status on a NON-credit order (not ours — nothing to fail loud about)', async () => {
+    const { options, grant } = opts({ isCreditOrder: () => false, isOurStoreOrder: () => false, isUnverifiedCreditOrder: () => false })
+    const body = orderPayload({}, { status: undefined })
+    const res = await handleLemonSqueezyWebhook(body, sign(body), options)
+    expect(res).toMatchObject({ status: 200, body: { reason: 'order_status_unknown' } })
     expect(grant).not.toHaveBeenCalled()
   })
 

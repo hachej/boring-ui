@@ -164,15 +164,20 @@ fail closed at the highest effective rate.
    starts (per-user advisory lock).
 6. **A refund with a missing/zero `refunded_amount`** is treated as a full refund (merchant-
    safe; LS always sends the amount). Customer-fairness reconciliation is operator-side.
-7. **An errored run settles at its captured usage, not topped up to the hold.** When a run
-   starts, bills some usage, then ends with `status: error` (e.g. a tool crash, or a model call
-   that failed after a prior billed response), it settles at the usage actually captured rather
-   than charging the full worst-case hold. This is a deliberate choice to avoid OVER-charging the
-   common errored-run cases (a local tool crash does no extra provider work; Pi reports a failed
-   model call's usage on `agent_end`, which we harvest). The residual risk — a provider that
-   billed for a failed call whose usage Pi never reported at all — is a narrow under-charge,
-   accepted as the symmetric cost of not over-charging every errored run up to its reservation.
-   (A started/successful run with NO captured billable usage still charges the fallback hold.)
+7. **An errored run is billed at its captured usage; a no-billable-usage error is FREED.**
+   `finishRun` settles an errored run at the usage actually captured, and FREES an error that
+   produced no billable usage (reason `error-before-usage`) rather than charging the full
+   worst-case hold. Deliberate, to avoid OVER-charging the common cases: a local tool crash does
+   no extra provider work; a pre-provider/config/auth failure (e.g. a missing/invalid API key)
+   reaches `agent_start` but makes no provider call; and Pi reports a real failed model call's
+   usage on `agent_end` (we harvest it → it shows as billable usage), so a no-usage error means
+   no captured provider work. The residual risk — a provider that billed for a failed call whose
+   usage Pi never reported at all — is a narrow under-charge, accepted as the symmetric cost of
+   not over-charging every errored/misconfigured run up to its reservation. **(Reviewer note:
+   the two review models split here — one favours charging started errors to avoid the
+   under-charge, the other flags charging config failures as an over-charge. This is the
+   deliberate resolution: only a SUCCESSFUL run with no billable usage charges the fallback hold,
+   since its missing usage row uniquely suggests a reporting gap rather than a non-billable stop.)**
 
 ## Accepted structural debt (tracked, not blocking — money paths are correct & tested)
 - Extract a focused `PostgresCreditPurchaseStore` (purchase/refund lifecycle) and a
@@ -187,6 +192,15 @@ fail closed at the highest effective rate.
   money-critical decision tree).
 - Promote `usage_ledger.reservationId` from JSON metadata to a first-class nullable column
   (the expiry fallback relies on the metadata tag today).
+- Store `raw_order_id` (and the validated identity) as first-class purchase columns and make
+  refund reconciliation query by raw id + stored identity, rather than the composite
+  `ls:<store>:<mode>:<orderId>` key. Today a refund-before-grant TOMBSTONE is written under the
+  CONFIGURED store/mode namespace with LENIENT identity (a refund may omit store/mode/variant —
+  required for refund-before-grant to work, since LS refund payloads commonly drop the variant).
+  The residual edge — a refund that omits its mode tombstoning the wrong test/live namespace — can
+  only mis-block a FUTURE grant if the same raw order id is reused across modes (the documented
+  test-data-in-prod scenario, limitation #4). A raw-id + stored-identity reconciliation would
+  remove the reliance on the composite key entirely.
 - **Signup grant is issued lazily on first balance/reserve, not at account creation.**
   `getBalance`/`reserveRun` call `grantSignupCredits(userId)` (idempotent per user), so any
   pre-existing account also receives the configured starter grant the first time it loads the

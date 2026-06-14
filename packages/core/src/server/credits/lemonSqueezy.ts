@@ -272,6 +272,19 @@ export async function handleLemonSqueezyWebhook(
   }
   // Require an explicit paid status — a missing/other status must not grant.
   if (order.status !== 'paid') {
+    // A MISSING/unparseable status (vs a KNOWN non-paid state like pending/refunded)
+    // on what looks like OUR credit order is a parser/API-shape gap — fail loud (500,
+    // retryable) rather than silently 200-drop a possibly-paid order. A known non-paid
+    // status, or a non-credit order, is a legit 200 ack.
+    const statusMissing = !order.status
+    const looksLikeOurCreditOrder =
+      options.isCreditOrder(order) || Boolean(options.isOurStoreOrder?.(order)) || Boolean(options.isUnverifiedCreditOrder?.(order))
+    if (statusMissing && looksLikeOurCreditOrder) {
+      options.log?.('lemonsqueezy recognized credit order has a missing/unparseable status — failing loud so a possibly-paid order is not dropped', {
+        orderId: order.orderId, variantId: order.variantId, currency: order.currency, testMode: order.testMode,
+      })
+      return { status: 500, body: { ok: false, reason: 'order_status_missing', orderId: order.orderId } }
+    }
     return { status: 200, body: { ok: true, reason: `order_status_${order.status ?? 'unknown'}`, orderId: order.orderId } }
   }
   // Confirm it's actually a credit-pack purchase (currency/mode/variant).
