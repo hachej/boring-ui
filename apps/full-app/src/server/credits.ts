@@ -186,6 +186,12 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
   // reject real live webhooks. Require an exact "0" (live) or "1" (test).
   const lsConfigured = Boolean(env.BORING_CREDITS_LS_WEBHOOK_SECRET || env.BORING_CREDITS_LS_API_KEY)
   const testMode = parseTestMode(env.BORING_CREDITS_LS_TEST_MODE, lsConfigured)
+  // Launch gate: test-mode Lemon Squeezy checkouts are non-charging but still mint
+  // real, spendable credits (the balance isn't mode-scoped). They must never run
+  // in production — purge any test grants before live cutover.
+  if (env.NODE_ENV === 'production' && lsConfigured && testMode) {
+    throw new Error('credits: BORING_CREDITS_LS_TEST_MODE=1 in production mints non-charging but spendable credits — set it to 0 and purge any test grants before live cutover')
+  }
   const checkoutReady = Boolean(env.BORING_CREDITS_LS_API_KEY && env.BORING_CREDITS_LS_STORE_ID && Object.keys(variants).length > 0)
   // Margin < 1 would bill below provider cost — reject it (fail closed).
   const margin = parseNumberEnv('BORING_CREDITS_MARGIN', env.BORING_CREDITS_MARGIN, 1.3, 1)
@@ -295,6 +301,12 @@ export function buildCreditsWiring(env: NodeJS.ProcessEnv = process.env): {
       // opt-in acknowledging that a misrouted expensive model can overshoot.
       const worstCase = worstCaseRunMicros(config.pricing, env, maxEffectiveRate(config.pricing))
       if (config.enabled && config.runReservationMicros < worstCase) {
+        // The unsafe (soft-stop) override is forbidden in production — a misrouted
+        // expensive model could overshoot the hold into debt. Prod must size the
+        // hold to cover the effective worst case (or use a served-model allowlist).
+        if (env.BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION === '1' && env.NODE_ENV === 'production') {
+          throw new Error('credits: BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION=1 is not allowed in production — raise BORING_CREDITS_RESERVATION_EUR to cover the effective worst-case run (or restrict served models)')
+        }
         if (env.BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION === '1') {
           app.log.warn(
             { runReservationMicros: config.runReservationMicros, worstCaseRunMicros: worstCase },

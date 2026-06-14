@@ -19,6 +19,14 @@ usage with a margin.
 - **Module home:** generic `credits` module in `@hachej/boring-core` (promoted from the
   macro demo adapter); `apps/full-app` wires it in one call.
 
+## Production launch gates (enforced at startup)
+- **`BORING_CREDITS_LS_TEST_MODE=0` in production.** Test-mode checkouts are non-charging but
+  still mint spendable credits (the balance isn't mode-scoped), so `NODE_ENV=production` +
+  test mode throws at startup. Purge any test-mode credit grants before live cutover.
+- **No `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION=1` in production.** The soft-stop override
+  is rejected in prod; the per-run hold must cover the effective worst-case run (raise
+  `RESERVATION_EUR`/grant, or restrict served models).
+
 ## External / human-gated (not code)
 - Merge **boring-ui #294** (metering foundation) — everything here stacks on it.
 - Lemon Squeezy: account **KYC + payout bank** (long pole), create the **packs** in the
