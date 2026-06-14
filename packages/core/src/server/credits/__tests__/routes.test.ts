@@ -234,7 +234,28 @@ describe('credits routes', () => {
         })
         await a.ready()
       })(),
-    ).rejects.toThrow(/checkout testMode \(false\) does not match the webhook's expectedTestMode \(true\)/)
+    ).rejects.toThrow(/checkout testMode \(false\) must be set and match the webhook's expectedTestMode \(true\)/)
+    await a.close()
+  })
+
+  it('fails registration when checkout testMode is OMITTED (would default to the wrong LS mode)', async () => {
+    const a = Fastify()
+    await expect(
+      (async () => {
+        registerCreditsRoutes(a, {
+          service: new CreditsService(makeStore(), CONFIG),
+          lemonSqueezy: {
+            webhookSecret: SECRET,
+            creditVariantIds: ['1'],
+            expectedTestMode: true,
+            creditMicrosByVariant: { '1': 10_000_000 },
+            // testMode omitted → LS would default it, possibly to the wrong mode.
+            checkout: { apiKey: 'k', storeId: 's', variants: { '10': '1' }, defaultPack: '10' },
+          },
+        })
+        await a.ready()
+      })(),
+    ).rejects.toThrow(/checkout testMode \(undefined\) must be set and match/)
     await a.close()
   })
 

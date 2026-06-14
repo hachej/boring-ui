@@ -166,8 +166,12 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
     if (ls.expectedStoreId !== undefined && checkout.storeId !== ls.expectedStoreId) {
       throw new Error(`credits: checkout storeId "${checkout.storeId}" does not match the webhook's expectedStoreId "${ls.expectedStoreId}" — orders from this checkout would not be credited`)
     }
-    if (checkout.testMode !== undefined && checkout.testMode !== ls.expectedTestMode) {
-      throw new Error(`credits: checkout testMode (${checkout.testMode}) does not match the webhook's expectedTestMode (${ls.expectedTestMode}) — orders from this checkout would be classified in the wrong mode and not credited`)
+    // checkout.testMode must be PRESENT and match: if omitted, createLemonSqueezyCheckout
+    // sends no test_mode and LS falls back to the store default, which may differ from
+    // expectedTestMode → the webhook classifies the paid order as not-a-credit-order and
+    // drops it. Require it explicitly so generated checkouts and the webhook can't disagree.
+    if (checkout.testMode !== ls.expectedTestMode) {
+      throw new Error(`credits: checkout testMode (${checkout.testMode}) must be set and match the webhook's expectedTestMode (${ls.expectedTestMode}) — otherwise orders from this checkout would be classified in the wrong mode and not credited`)
     }
     app.post(ls.checkoutPath ?? '/api/credits/checkout', async (request, reply) => {
       const userId = getUserId(request)
