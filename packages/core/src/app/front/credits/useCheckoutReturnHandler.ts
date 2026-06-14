@@ -111,7 +111,11 @@ export function useCheckoutReturnHandler({ apiBaseUrl = '', param = 'checkout' }
           if (creditNetMicros(bal) > baseline) {
             setStatus('confirmed')
             cancelled = true
+            // Notify our own hooks AND other tabs at the moment of confirmation: the
+            // webhook may have settled after the opener tab's retry burst ended, so the
+            // initial pre-poll broadcast isn't enough to refresh the original tab.
             window.dispatchEvent(new Event(CREDITS_REFRESH_EVENT))
+            try { channel?.postMessage('refresh') } catch { /* channel closed/unsupported */ }
           }
         }, delay))
       }

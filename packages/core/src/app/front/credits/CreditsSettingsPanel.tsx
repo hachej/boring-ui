@@ -35,12 +35,30 @@ function relativeTime(iso: string, locale?: string): string {
  * Renders nothing when credits are disabled or the user is unauthenticated.
  */
 export function CreditsSettingsPanel({ apiBaseUrl = '', locale }: CreditsSettingsPanelProps) {
-  const { balance, hidden, buy, buying, lastUpdatedAt, updating } = useCreditBalance({ apiBaseUrl })
+  const { balance, hidden, error, buy, buying, lastUpdatedAt, updating } = useCreditBalance({ apiBaseUrl })
   const history = useCreditHistory(apiBaseUrl)
   const [buyError, setBuyError] = useState<string | null>(null)
   const [selectedPack, setSelectedPack] = useState<string | null>(null)
 
-  if (hidden || !balance) return null
+  // Hide only when credits are authoritatively unavailable (disabled / unauthenticated).
+  if (hidden) return null
+  // Before the first successful load, keep a panel SHELL (loading or error) rather than
+  // collapsing to nothing — the Billing nav entry is registered unconditionally, so an
+  // empty target would look broken.
+  if (!balance) {
+    return (
+      <SettingsPanel
+        id="billing"
+        icon={<CreditCard className="h-3.5 w-3.5" aria-hidden="true" />}
+        title="Billing & credits"
+        description="Your remaining AI credits, how to top up, and recent activity."
+      >
+        {error
+          ? <Notice role="alert" tone="error" description={error} />
+          : <p className="text-[13px] text-muted-foreground">Loading your balance…</p>}
+      </SettingsPanel>
+    )
+  }
 
   const inDebt = (balance.debtMicros ?? 0) > 0
   const low = inDebt || isLowBalance(balance.remainingMicros)

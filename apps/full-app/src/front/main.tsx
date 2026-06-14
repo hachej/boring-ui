@@ -41,17 +41,14 @@ const AccountSettingsPage = () => (
 //  - onTurnComplete → broadcast a balance refresh so the badge updates right after
 //    a run settles (credits are debited async, so the hook's retry burst polls).
 //  - renderNoticeAction → attach a Buy-credits button to a PAYMENT_REQUIRED
-//    run-rejected notice (gated on the build flag; the button self-hides when the
-//    server reports checkout is disabled).
+//    run-rejected notice. Wired unconditionally: BuyCreditsNoticeAction self-hides on
+//    the SERVER's checkoutEnabled, so it can't be suppressed by a missing/stale Vite
+//    flag while checkout actually works (the flag only feeds the badge fallback).
 const chatParams = {
   thinkingControl: true,
   onTurnComplete: () => window.dispatchEvent(new Event(CREDITS_REFRESH_EVENT)),
-  ...(buyEnabled
-    ? {
-        renderNoticeAction: (notice: { errorCode?: string }) =>
-          isPaymentRequiredNotice(notice) ? <BuyCreditsNoticeAction /> : null,
-      }
-    : {}),
+  renderNoticeAction: (notice: { errorCode?: string }) =>
+    isPaymentRequiredNotice(notice) ? <BuyCreditsNoticeAction /> : null,
 }
 
 createRoot(document.getElementById('root')!).render(

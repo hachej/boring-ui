@@ -31,6 +31,9 @@ export interface UseCreditBalanceResult {
   balance: CreditBalanceResponse | null
   /** True when credits are disabled or the user is unauthenticated (UI should hide). */
   hidden: boolean
+  /** Set when a balance fetch failed (network/server) before a successful load; null
+   * otherwise. Lets a consumer show an error state rather than an endless spinner. */
+  error: string | null
   /** Refetch the balance now. */
   refresh: () => Promise<void>
   /** Refetch now, then a short backoff burst (~15s) — credit writes settle
@@ -68,6 +71,10 @@ export function useCreditBalance({
   const [buying, setBuying] = useState(false)
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null)
   const [updating, setUpdating] = useState(false)
+  // Set when a balance fetch fails (network/non-401). Lets a consumer show an error
+  // state instead of an indefinite spinner before the first successful load. Cleared
+  // on the next success. (401/disabled is signalled via `hidden`, not this.)
+  const [error, setError] = useState<string | null>(null)
   const buyingRef = useRef(false)
   const burstRef = useRef(0)
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
@@ -87,7 +94,10 @@ export function useCreditBalance({
         setHidden(true)
         return
       }
-      if (!res.ok) return
+      if (!res.ok) {
+        setError('Could not load your balance.')
+        return
+      }
       const data = (await res.json()) as CreditBalanceResponse
       if (!data.enabled) {
         setHidden(true)
@@ -96,9 +106,11 @@ export function useCreditBalance({
       setBalance(data)
       balanceRef.current = data
       setHidden(false)
+      setError(null)
       setLastUpdatedAt(Date.now())
     } catch {
       // Network blip — keep the last known balance (don't present it as fresh).
+      setError('Could not load your balance.')
     } finally {
       // Don't drop the "updating" state mid-burst: a retry burst latches it until the
       // final retry completes (see refreshWithRetry) so the balance isn't shown as
@@ -213,5 +225,5 @@ export function useCreditBalance({
     }
   }, [apiBaseUrl, pack])
 
-  return { balance, hidden, refresh, refreshWithRetry, buy, buying, lastUpdatedAt, updating }
+  return { balance, hidden, error, refresh, refreshWithRetry, buy, buying, lastUpdatedAt, updating }
 }
