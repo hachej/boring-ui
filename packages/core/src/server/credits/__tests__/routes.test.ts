@@ -372,6 +372,53 @@ describe('credits routes', () => {
     expect(store.grantPurchaseOnce).not.toHaveBeenCalled()
   })
 
+  it('credit-only store: unknown variant with MISSING store_id (expectedStoreId set) still 500s (no silent drop)', async () => {
+    const store = makeStore()
+    const a = Fastify()
+    registerCreditsRoutes(a, {
+      service: new CreditsService(store, CONFIG),
+      lemonSqueezy: { webhookSecret: SECRET, creditVariantIds: ['1'], expectedTestMode: true, expectedStoreId: 'store-A', creditMicrosByVariant: { '1': 10_000_000 }, creditOnlyStore: true },
+    })
+    await a.ready()
+    // expectedStoreId is set, but the payload OMITS store_id (LS gap / new pack). The
+    // strict check would 200-drop this; the lenient credit-only check 500s it.
+    const body = JSON.stringify({
+      meta: { event_name: 'order_created', custom_data: { user_id: 'user-1' } },
+      data: { type: 'orders', id: 'order-missing-store', attributes: { status: 'paid', test_mode: true, currency: 'EUR', subtotal: 1000, discount_total: 0, total: 1000, first_order_item: { variant_id: 999 } } },
+    })
+    const res = await a.inject({
+      method: 'POST',
+      url: '/api/credits/webhooks/lemonsqueezy',
+      headers: { 'content-type': 'application/json', 'x-signature': createHmac('sha256', SECRET).update(body).digest('hex') },
+      payload: body,
+    })
+    expect(res.statusCode).toBe(500)
+    expect(res.json()).toMatchObject({ reason: 'unrecognized_credit_variant' })
+    expect(store.grantPurchaseOnce).not.toHaveBeenCalled()
+    await a.close()
+
+    // A PRESENT-mismatched store (genuinely foreign) is still 200-ignored, not 500.
+    const b = Fastify()
+    registerCreditsRoutes(b, {
+      service: new CreditsService(makeStore(), CONFIG),
+      lemonSqueezy: { webhookSecret: SECRET, creditVariantIds: ['1'], expectedTestMode: true, expectedStoreId: 'store-A', creditMicrosByVariant: { '1': 10_000_000 }, creditOnlyStore: true },
+    })
+    await b.ready()
+    const foreign = JSON.stringify({
+      meta: { event_name: 'order_created', custom_data: { user_id: 'user-1' } },
+      data: { type: 'orders', id: 'order-foreign', attributes: { status: 'paid', test_mode: true, currency: 'EUR', store_id: 'store-OTHER', subtotal: 1000, discount_total: 0, total: 1000, first_order_item: { variant_id: 999 } } },
+    })
+    const foreignRes = await b.inject({
+      method: 'POST',
+      url: '/api/credits/webhooks/lemonsqueezy',
+      headers: { 'content-type': 'application/json', 'x-signature': createHmac('sha256', SECRET).update(foreign).digest('hex') },
+      payload: foreign,
+    })
+    expect(foreignRes.statusCode).toBe(200)
+    expect(foreignRes.json()).toMatchObject({ reason: 'not_a_credit_order' })
+    await b.close()
+  })
+
   it('does not credit a paid order in the wrong mode (live order, test-mode webhook)', async () => {
     const store = makeStore()
     const a = await build(store)

@@ -295,12 +295,14 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
           secret: ls.webhookSecret,
           creditsForOrder,
           isCreditOrder,
-          // Credit-only store (the DEFAULT): an unknown-variant PAID order on our
-          // store is a pack misconfiguration → retryable 500. Mixed store (explicit
-          // creditOnlyStore: false): such an order is a different product → omit this
-          // predicate so the handler 200-ignores it (no infinite retry/alert on
-          // legitimate non-credit sales).
-          isOurStoreOrder: creditOnlyStore ? isOurStoreOrder : undefined,
+          // Credit-only store (the DEFAULT): an unknown-variant PAID order on our store
+          // is a pack misconfiguration → retryable 500. Use the LENIENT identity check
+          // (isRefundForOurStore: missing store/mode/currency still counts as ours; only
+          // a PRESENT contradiction is exempt) so a misconfigured new pack whose payload
+          // omits store_id isn't silently 200-dropped. Mixed store (explicit
+          // creditOnlyStore: false): omit this predicate so the handler 200-ignores an
+          // unknown variant (a different product — no infinite retry on legit sales).
+          isOurStoreOrder: creditOnlyStore ? isRefundForOurStore : undefined,
           // Known credit variant with incomplete identity → retryable 500, not a
           // silent 200 drop (a paid pack we can't safely attribute must fail loud).
           // Fires regardless of creditOnlyStore (it's a recognized pack either way).

@@ -192,6 +192,14 @@ fail closed at the highest effective rate.
   money-critical decision tree).
 - Promote `usage_ledger.reservationId` from JSON metadata to a first-class nullable column
   (the expiry fallback relies on the metadata tag today).
+- Consolidate `CreditsService.chargeFallbackUsage` (mark → read billed → insert top-up → settle)
+  into a single user-locked store transaction `chargeReservationFallback(...)`. Today the
+  durable `charge_on_expire` mark is committed FIRST (separate tx, by design — see limitation
+  #3), and the read+insert+settle are separate locked calls. The read-then-insert is not atomic
+  in isolation, but in practice the metering coordinator enqueues a run's usage writes BEFORE the
+  fallback op on the same per-run op chain, so no concurrent same-reservation usage write can
+  interleave during finalization — the race is prevented at the call site. The consolidation is a
+  defense-in-depth hardening for direct/out-of-coordinator callers, not a live bug.
 - Store `raw_order_id` (and the validated identity) as first-class purchase columns and make
   refund reconciliation query by raw id + stored identity, rather than the composite
   `ls:<store>:<mode>:<orderId>` key. Today a refund-before-grant TOMBSTONE is written under the

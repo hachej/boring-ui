@@ -299,25 +299,26 @@ export async function handleLemonSqueezyWebhook(
   }
   // Confirm it's actually a credit-pack purchase (currency/mode/variant).
   if (!options.isCreditOrder(order)) {
-    // A paid order ON OUR store/mode/currency but with an unknown variant is a
-    // pack misconfiguration — the customer paid and would get nothing. Surface it
-    // with a retryable 500 rather than a silent 200 ack.
-    if (options.isOurStoreOrder?.(order)) {
-      options.log?.('lemonsqueezy paid order on our store has an unrecognized credit variant — not crediting', {
-        orderId: order.orderId, variantId: order.variantId, currency: order.currency, testMode: order.testMode,
-      })
-      return { status: 500, body: { ok: false, reason: 'unrecognized_credit_variant', orderId: order.orderId } }
-    }
-    // A paid order for a KNOWN credit-pack variant that we can't attribute because
-    // its store/mode/currency identity is incomplete (missing field, not a present
-    // mismatch). Every other unattributable-paid-order path here fails loud; match
-    // it — 500 so LS retries and the parser/payload gap surfaces, rather than a
-    // silent 200 that drops the customer's credits.
+    // KNOWN credit variant whose store/mode/currency identity is incomplete (a missing
+    // field, not a present mismatch) → can't safely attribute → fail loud (500).
+    // Checked FIRST so a known-variant order gets the precise reason even when the
+    // (credit-only-store) our-store predicate below is lenient about missing identity.
     if (options.isUnverifiedCreditOrder?.(order)) {
       options.log?.('lemonsqueezy paid order for a known credit variant has incomplete store/mode/currency identity — not crediting, retrying', {
         orderId: order.orderId, variantId: order.variantId, currency: order.currency, testMode: order.testMode, storeId: order.storeId,
       })
       return { status: 500, body: { ok: false, reason: 'unverified_credit_order', orderId: order.orderId } }
+    }
+    // A paid order that's OURS but has an UNKNOWN variant is a pack misconfiguration —
+    // the customer paid and would get nothing. Surface it with a retryable 500. For a
+    // credit-only store the route passes a LENIENT predicate here (missing store/mode
+    // identity still counts as ours; only a PRESENT contradiction is exempt), so a
+    // misconfigured new pack whose payload omits store_id isn't silently 200-dropped.
+    if (options.isOurStoreOrder?.(order)) {
+      options.log?.('lemonsqueezy paid order on our store has an unrecognized credit variant — not crediting', {
+        orderId: order.orderId, variantId: order.variantId, currency: order.currency, testMode: order.testMode, storeId: order.storeId,
+      })
+      return { status: 500, body: { ok: false, reason: 'unrecognized_credit_variant', orderId: order.orderId } }
     }
     options.log?.('lemonsqueezy paid order is not a recognized credit pack', {
       orderId: order.orderId, variantId: order.variantId, currency: order.currency, testMode: order.testMode,
