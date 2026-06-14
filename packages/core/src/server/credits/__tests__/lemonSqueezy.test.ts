@@ -269,6 +269,15 @@ describe('handleLemonSqueezyWebhook', () => {
     expect(onRefund).toHaveBeenCalledWith(expect.objectContaining({ orderId: 'order-123' }))
   })
 
+  it('ignores a refund whose payload is not for our store/mode (isOurStoreOrder false)', async () => {
+    const onRefund = vi.fn(async () => ({ revoked: true }))
+    const { options } = opts({ isOurStoreOrder: () => false, onRefund })
+    const body = orderPayload({ event_name: 'order_refunded' }, { status: 'refunded' })
+    const res = await handleLemonSqueezyWebhook(body, sign(body), options)
+    expect(res).toMatchObject({ status: 200, body: { ok: true, reason: 'refund_not_our_store' } })
+    expect(onRefund).not.toHaveBeenCalled()
+  })
+
   it('reports refund_noop when nothing was revoked (unknown order)', async () => {
     const onRefund = vi.fn(async () => ({ revoked: false }))
     const { options } = opts({ onRefund })

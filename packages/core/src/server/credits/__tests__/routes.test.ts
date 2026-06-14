@@ -8,6 +8,8 @@ import { CreditsService, type CreditsConfig, type CreditsMeteringStore } from '.
 const SECRET = 'whsec_test'
 /** Valid server-signed attribution token for the webhook (custom_data.uat). */
 const uat = (userId: string) => signUserAttribution(userId, SECRET)
+/** Composite purchase key as routes computes it (build() has no store id, test mode). */
+const pkey = (orderId: string) => `ls:default:test:${orderId}`
 const CONFIG: CreditsConfig = {
   enabled: true,
   signupGrantMicros: 2_000_000,
@@ -86,7 +88,7 @@ describe('credits routes', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({ ok: true, orderId: 'order-77' })
-    expect(store.grantPurchaseOnce).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1', orderId: 'order-77', amountMicros: 10_000_000 }))
+    expect(store.grantPurchaseOnce).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1', orderId: pkey('order-77'), amountMicros: 10_000_000 }))
   })
 
   it('grants the FIXED per-variant value, ignoring the order subtotal (multi-item/discount safe)', async () => {
@@ -104,7 +106,7 @@ describe('credits routes', () => {
       payload: body,
     })
     expect(res.statusCode).toBe(200)
-    expect(store.grantPurchaseOnce).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1', orderId: 'order-fix', amountMicros: 5_000_000 }))
+    expect(store.grantPurchaseOnce).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1', orderId: pkey('order-fix'), amountMicros: 5_000_000 }))
   })
 
   it('refuses to register the LS webhook with a disabled credits service', async () => {
@@ -189,7 +191,7 @@ describe('credits routes', () => {
       payload: body,
     })
     expect(res.statusCode).toBe(200)
-    expect(store.grantPurchaseOnce).toHaveBeenCalledWith(expect.objectContaining({ orderId: 'order-qty', amountMicros: 15_000_000 }))
+    expect(store.grantPurchaseOnce).toHaveBeenCalledWith(expect.objectContaining({ orderId: pkey('order-qty'), amountMicros: 15_000_000 }))
   })
 
   it('does not credit a paid order for an unconfigured variant (fail closed)', async () => {
@@ -247,7 +249,7 @@ describe('credits routes', () => {
     expect(res.json()).toMatchObject({ ok: true, reason: 'refund_revoked', orderId: 'order-77' })
     // No refunded_amount → full refund (fraction undefined); variant 1 is a credit
     // order so a pre-grant tombstone is allowed.
-    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', expect.objectContaining({ refundFraction: undefined, allowTombstone: true }))
+    expect(store.revokePurchase).toHaveBeenCalledWith(pkey('order-77'), expect.objectContaining({ refundFraction: undefined, allowTombstone: true }))
     expect(store.grantPurchaseOnce).not.toHaveBeenCalled()
   })
 
@@ -266,7 +268,7 @@ describe('credits routes', () => {
       payload: body,
     })
     expect(res.statusCode).toBe(200)
-    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', expect.objectContaining({ refundFraction: 0.3, allowTombstone: true }))
+    expect(store.revokePurchase).toHaveBeenCalledWith(pkey('order-77'), expect.objectContaining({ refundFraction: 0.3, allowTombstone: true }))
   })
 
   it('allows a pre-grant tombstone for a refund missing its variant (still our store/mode)', async () => {
@@ -286,13 +288,13 @@ describe('credits routes', () => {
       payload: body,
     })
     expect(res.statusCode).toBe(200)
-    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', expect.objectContaining({ allowTombstone: true }))
+    expect(store.revokePurchase).toHaveBeenCalledWith(pkey('order-77'), expect.objectContaining({ allowTombstone: true }))
   })
 
-  it('does not allow a pre-grant tombstone for a refund in the wrong mode', async () => {
+  it('ignores a refund whose payload is in the wrong mode (does not revoke at all)', async () => {
     const store = makeStore()
     const a = await build(store) // expectedTestMode true
-    // A LIVE-mode refund (test_mode false) is not ours → no tombstone.
+    // A LIVE-mode refund (test_mode false) is not ours → not dispatched to revoke.
     const body = JSON.stringify({
       meta: { event_name: 'order_refunded', custom_data: { user_id: 'user-1' } },
       data: { type: 'orders', id: 'order-77', attributes: { status: 'refunded', test_mode: false, currency: 'EUR', subtotal: 1000, total: 1000, refunded: true, refunded_amount: 1000, first_order_item: { variant_id: 1 } } },
@@ -304,7 +306,8 @@ describe('credits routes', () => {
       payload: body,
     })
     expect(res.statusCode).toBe(200)
-    expect(store.revokePurchase).toHaveBeenCalledWith('order-77', expect.objectContaining({ allowTombstone: false }))
+    expect(res.json()).toMatchObject({ reason: 'refund_not_our_store' })
+    expect(store.revokePurchase).not.toHaveBeenCalled()
   })
 
   it('rejects a discounted underpayment for a fixed pack (net paid below pack value)', async () => {

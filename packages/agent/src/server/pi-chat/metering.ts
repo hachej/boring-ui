@@ -593,6 +593,10 @@ export class PiChatMeteringCoordinator {
     // so the retried usage id matches and is deduped rather than double-billed.
     // Only when the sink returns no reservationId do we fall back to the
     // process-local run instance (best effort).
+    // The reservationId is carried in the usage metadata, so the store's
+    // recordUsage verifies it on an id collision: a reused session:message id from
+    // a DIFFERENT reservation (client-nonce replay) fails the match and throws,
+    // routing the run to the fallback hold charge instead of settling it free.
     const usageId = messageId
       ? `pi-usage:${run.scope.sessionId}:message:${messageId}`
       : run.reservationId

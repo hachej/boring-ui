@@ -542,12 +542,13 @@ export class PostgresMeteringStore {
     // otherwise be silently dropped and the run settled free. Verify and THROW on
     // mismatch so the coordinator's fallback-charge path runs instead.
     const existing = await this.db
-      .select({ userId: usageLedger.userId, runId: usageLedger.runId, billedCostMicros: usageLedger.billedCostMicros })
+      .select({ userId: usageLedger.userId, runId: usageLedger.runId, billedCostMicros: usageLedger.billedCostMicros, reservationId: sql<string | null>`${usageLedger.metadata}->>'reservationId'` })
       .from(usageLedger)
       .where(eq(usageLedger.id, input.usageId))
       .limit(1)
     const e = existing[0]
-    if (!e || e.userId !== input.userId || e.runId !== (input.runId ?? null) || e.billedCostMicros !== input.billedCostMicros) {
+    const incomingReservationId = (input.metadata?.reservationId as string | undefined) ?? null
+    if (!e || e.userId !== input.userId || e.runId !== (input.runId ?? null) || e.billedCostMicros !== input.billedCostMicros || e.reservationId !== incomingReservationId) {
       throw new Error(`usage ledger id collision for ${input.usageId}: existing row does not match this usage (refusing to silently drop the debit)`)
     }
     return { inserted: false }

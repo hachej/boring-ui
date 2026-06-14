@@ -149,6 +149,13 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
   // multi-item/discounted/taxed order total). Require EITHER a fixed per-variant
   // value covering every credit variant, OR an explicit creditsForOrder override
   // (escape hatch for non-LS-pack hosts). Fail registration otherwise.
+  // Namespace the idempotency/purchase key by the configured store + mode so a
+  // Lemon Squeezy order id that's reused across test/live or stores (or test data
+  // sharing a prod DB before cutover) can't collide: a test order can't block a
+  // live order, etc. The raw order id is preserved as the suffix + in the stored
+  // identity columns for audit.
+  const purchaseKey = (order: LemonSqueezyOrder): string =>
+    `ls:${ls.expectedStoreId ?? 'default'}:${ls.expectedTestMode ? 'test' : 'live'}:${order.orderId}`
   const variantCredits = ls.creditMicrosByVariant ?? {}
   if (!ls.creditsForOrder) {
     if (!ls.creditMicrosByVariant) {
@@ -211,7 +218,7 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
           // Refuse to grant a fixed pack value the buyer didn't actually pay for.
           creditMicrosPerUnit,
           grant: (input, order) =>
-            options.service.grantPurchase(input.userId, input.orderId, input.amountMicros, {
+            options.service.grantPurchase(input.userId, purchaseKey(order), input.amountMicros, {
               storeId: order.storeId,
               testMode: order.testMode,
               currency: order.currency,
@@ -225,7 +232,7 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
           // from tombstoning by order id). An order we already credited is always
           // revocable regardless (reconciled by order id in the store).
           onRefund: (order) =>
-            options.service.revokePurchase(order.orderId, {
+            options.service.revokePurchase(purchaseKey(order), {
               refundFraction:
                 order.refundedAmountCents > 0 && order.totalCents > 0
                   ? order.refundedAmountCents / order.totalCents

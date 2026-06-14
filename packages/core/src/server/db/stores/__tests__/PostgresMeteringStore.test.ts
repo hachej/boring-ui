@@ -238,6 +238,11 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
     expect((await store.getBalance(USER)).usedMicros).toBe(500_000)
     // A COLLISION: same id, DIFFERENT amount → must throw, not silently drop the debit.
     await expect(store.recordUsage({ usageId: 'um-1', userId: USER, runId: 'R', source: 'pi-chat', billedCostMicros: 999_999 })).rejects.toThrow(/usage ledger id collision/)
+    // A collision from a DIFFERENT reservation (same id+amount, replayed message
+    // id across reserve attempts) → must throw so the fallback hold charges.
+    await store.recordUsage({ usageId: 'um-2', userId: USER, runId: 'R', source: 'pi-chat', billedCostMicros: 100_000, metadata: { reservationId: 'res-A' } })
+    expect(await store.recordUsage({ usageId: 'um-2', userId: USER, runId: 'R', source: 'pi-chat', billedCostMicros: 100_000, metadata: { reservationId: 'res-A' } })).toEqual({ inserted: false })
+    await expect(store.recordUsage({ usageId: 'um-2', userId: USER, runId: 'R', source: 'pi-chat', billedCostMicros: 100_000, metadata: { reservationId: 'res-B' } })).rejects.toThrow(/usage ledger id collision/)
   })
 
   it('scopes fallback billing to the reservation, not the reused runId', async () => {
