@@ -36,6 +36,7 @@ function makeStore(overrides: Partial<CreditsMeteringStore> = {}): CreditsMeteri
     finishReservation: vi.fn(async () => ({ updated: true })),
     expireStaleReservations: vi.fn(async () => 0),
     billedMicrosForRun: vi.fn(async () => 0),
+    billedMicrosForReservation: vi.fn(async () => 0),
     ...overrides,
   }
 }
@@ -133,21 +134,32 @@ describe('CreditsService', () => {
     }))
   })
 
-  it('fallback-charges only the delta up to the hold (no double-charge on partial usage)', async () => {
-    // €0.2 of usage already billed for the run; hold is 250k → top up 50k only.
-    const store = makeStore({ billedMicrosForRun: vi.fn(async () => 200_000) })
+  it('fallback-charges only the delta up to the hold, scoped to THIS reservation', async () => {
+    // €0.2 already billed for this reservation; hold 250k → top up 50k only.
+    // billedMicrosForRun (reused runId) is large but must NOT be used.
+    const store = makeStore({ billedMicrosForReservation: vi.fn(async () => 200_000), billedMicrosForRun: vi.fn(async () => 9_999_999) })
     const service = new CreditsService(store, CONFIG)
     await service.chargeFallbackUsage({ userId: 'u1', runId: 'r', reservationId: 'res-1' })
+    expect(store.billedMicrosForReservation).toHaveBeenCalledWith('u1', 'res-1')
+    expect(store.billedMicrosForRun).not.toHaveBeenCalled()
     expect(store.recordUsage).toHaveBeenCalledWith(expect.objectContaining({ billedCostMicros: 50_000, source: 'pi-chat-fallback' }))
     expect(store.finishReservation).toHaveBeenCalledWith({ reservationId: 'res-1' }, 'settled')
   })
 
-  it('fallback skips the debit entirely when usage already met the hold', async () => {
-    const store = makeStore({ billedMicrosForRun: vi.fn(async () => 300_000) }) // ≥ hold
+  it('fallback skips the debit entirely when this reservation already met the hold', async () => {
+    const store = makeStore({ billedMicrosForReservation: vi.fn(async () => 300_000) }) // ≥ hold
     const service = new CreditsService(store, CONFIG)
     await service.chargeFallbackUsage({ userId: 'u1', runId: 'r', reservationId: 'res-1' })
     expect(store.recordUsage).not.toHaveBeenCalled()
     expect(store.finishReservation).toHaveBeenCalledWith({ reservationId: 'res-1' }, 'settled')
+  })
+
+  it('fallback falls back to runId scoping when no reservation id is known', async () => {
+    const store = makeStore({ billedMicrosForRun: vi.fn(async () => 100_000) })
+    const service = new CreditsService(store, CONFIG)
+    await service.chargeFallbackUsage({ userId: 'u1', runId: 'r' })
+    expect(store.billedMicrosForRun).toHaveBeenCalledWith('u1', 'r')
+    expect(store.recordUsage).toHaveBeenCalledWith(expect.objectContaining({ billedCostMicros: 150_000 }))
   })
 
   it('settles and releases by reservation id when present, else by run+user', async () => {

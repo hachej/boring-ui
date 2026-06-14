@@ -29,6 +29,7 @@ function makeStore(): CreditsMeteringStore {
     finishReservation: vi.fn(async () => ({ updated: true })),
     expireStaleReservations: vi.fn(async () => 0),
     billedMicrosForRun: vi.fn(async () => 0),
+    billedMicrosForReservation: vi.fn(async () => 0),
   }
 }
 
@@ -104,6 +105,20 @@ describe('credits routes', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(store.grantPurchaseOnce).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1', orderId: 'order-fix', amountMicros: 5_000_000 }))
+  })
+
+  it('refuses to register the LS webhook with a disabled credits service', async () => {
+    const a = Fastify()
+    await expect(
+      (async () => {
+        registerCreditsRoutes(a, {
+          service: new CreditsService(makeStore(), { ...CONFIG, enabled: false }),
+          lemonSqueezy: { webhookSecret: SECRET, creditVariantIds: ['1'], expectedTestMode: true, creditMicrosByVariant: { '1': 10_000_000 } },
+        })
+        await a.ready()
+      })(),
+    ).rejects.toThrow(/disabled credits service/)
+    await a.close()
   })
 
   it('fails registration when a credit variant has no fixed credit value', async () => {

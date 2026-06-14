@@ -102,7 +102,7 @@ export class CreditExhaustedError extends Error {
  * upstream signature changes compile-time errors and lets tests stub it. */
 export type CreditsMeteringStore = Pick<
   PostgresMeteringStore,
-  'grantOnce' | 'grantPurchaseOnce' | 'revokePurchase' | 'getBalance' | 'reserve' | 'recordUsage' | 'finishReservation' | 'expireStaleReservations' | 'billedMicrosForRun'
+  'grantOnce' | 'grantPurchaseOnce' | 'revokePurchase' | 'getBalance' | 'reserve' | 'recordUsage' | 'finishReservation' | 'expireStaleReservations' | 'billedMicrosForRun' | 'billedMicrosForReservation'
 >
 
 function disabledBalance(userId: string): CreditBalance {
@@ -175,7 +175,7 @@ export class CreditsService {
    * Idempotent per cumulative level. */
   async revokePurchase(
     orderId: string,
-    opts: { refundFraction?: number; allowTombstone?: boolean; expectedStoreId?: string; expectedTestMode?: boolean } = {},
+    opts: { refundFraction?: number; allowTombstone?: boolean; expectedStoreId?: string; expectedTestMode?: boolean; expectedCurrency?: string } = {},
   ): Promise<{ revoked: boolean }> {
     if (!this.config.enabled) return { revoked: false }
     return this.store.revokePurchase(orderId, {
@@ -183,6 +183,7 @@ export class CreditsService {
       allowTombstone: opts.allowTombstone,
       expectedStoreId: opts.expectedStoreId,
       expectedTestMode: opts.expectedTestMode,
+      expectedCurrency: opts.expectedCurrency,
     })
   }
 
@@ -272,7 +273,9 @@ export class CreditsService {
       providerCostMicros: cost.providerCostMicros,
       billedCostMicros: cost.billedCreditMicros,
       stopReason: input.stopReason,
-      metadata: { currency: 'credits' },
+      // reservationId tags the row to THIS run attempt so the fallback top-up can
+      // scope to the current reservation (runId is reused on client-nonce replay).
+      metadata: { currency: 'credits', ...(input.reservationId ? { reservationId: input.reservationId } : {}) },
     })
   }
 
@@ -296,10 +299,14 @@ export class CreditsService {
   async chargeFallbackUsage(input: { userId: string; runId: string; reservationId?: string }): Promise<void> {
     if (!this.config.enabled) return
     const key = input.reservationId ?? input.runId
-    // Top up to the hold, not ON TOP of it: if some usage rows for this run were
-    // already billed (partial write failure), charge only the missing delta so a
-    // partial-success run isn't double-charged.
-    const alreadyBilled = await this.store.billedMicrosForRun(input.userId, input.runId)
+    // Top up to the hold, not ON TOP of it: if some usage rows for this attempt
+    // were already billed (partial write failure), charge only the missing delta.
+    // Scope to the RESERVATION (this attempt) when known — runId is reused on a
+    // client-nonce replay, so summing by runId would let a reusing attempt that
+    // reports no usage settle free. Fall back to runId only when no reservation.
+    const alreadyBilled = input.reservationId
+      ? await this.store.billedMicrosForReservation(input.userId, input.reservationId)
+      : await this.store.billedMicrosForRun(input.userId, input.runId)
     const topUp = Math.max(0, this.config.runReservationMicros - alreadyBilled)
     if (topUp > 0) {
       await this.store.recordUsage({

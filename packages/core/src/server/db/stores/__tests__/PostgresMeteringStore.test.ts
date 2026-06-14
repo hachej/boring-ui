@@ -102,16 +102,18 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
     expect(await store.revokePurchase('never-credited')).toEqual({ revoked: false })
   })
 
-  it('fails closed on refund identity: a credited row with a store/mode is revoked only by a matching refund', async () => {
-    await store.grantPurchaseOnce({ orderId: 'ord-idm', userId: USER, amountMicros: 10_000_000, storeId: 'S1', testMode: false })
-    // Refund omitting store/mode (undefined expected) → must NOT revoke a row that has identity.
-    expect(await store.revokePurchase('ord-idm', { allowTombstone: false })).toEqual({ revoked: false })
+  it('revokes only when the configured identity matches the credited row', async () => {
+    await store.grantPurchaseOnce({ orderId: 'ord-idm', userId: USER, amountMicros: 10_000_000, storeId: 'S1', testMode: false, currency: 'EUR' })
+    // Configured expected identity claims a DIFFERENT store → no revoke.
+    expect(await store.revokePurchase('ord-idm', { expectedStoreId: 'S2', expectedTestMode: false, expectedCurrency: 'EUR' })).toEqual({ revoked: false })
+    // Wrong mode → no revoke.
+    expect(await store.revokePurchase('ord-idm', { expectedStoreId: 'S1', expectedTestMode: true, expectedCurrency: 'EUR' })).toEqual({ revoked: false })
+    // Wrong currency → no revoke.
+    expect(await store.revokePurchase('ord-idm', { expectedStoreId: 'S1', expectedTestMode: false, expectedCurrency: 'USD' })).toEqual({ revoked: false })
     expect((await store.getBalance(USER)).remainingMicros).toBe(10_000_000)
-    // Refund claiming a different store → no revoke.
-    expect(await store.revokePurchase('ord-idm', { expectedStoreId: 'S2', expectedTestMode: false })).toEqual({ revoked: false })
-    expect((await store.getBalance(USER)).remainingMicros).toBe(10_000_000)
-    // Matching store + mode → revoke.
-    expect(await store.revokePurchase('ord-idm', { expectedStoreId: 'S1', expectedTestMode: false })).toEqual({ revoked: true })
+    // Matching configured identity → revoke. (A refund whose payload omits a
+    // field still revokes because the caller passes the CONFIGURED identity.)
+    expect(await store.revokePurchase('ord-idm', { expectedStoreId: 'S1', expectedTestMode: false, expectedCurrency: 'EUR' })).toEqual({ revoked: true })
     expect((await store.getBalance(USER)).remainingMicros).toBe(0)
   })
 
@@ -205,6 +207,16 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
     // Later grant mints €10 then revokes 80% (€8) → net €2.
     expect(await store.grantPurchaseOnce({ orderId: 'ord-multi', userId: USER, amountMicros: 10_000_000 })).toEqual({ granted: true })
     expect((await store.getBalance(USER)).remainingMicros).toBe(2_000_000)
+  })
+
+  it('scopes fallback billing to the reservation, not the reused runId', async () => {
+    await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 10_000_000 })
+    // Attempt A under reservation res-A bills €1 of real usage for runId R.
+    await store.recordUsage({ usageId: 'u-A', userId: USER, runId: 'R', source: 'pi-chat', billedCostMicros: 1_000_000, metadata: { reservationId: 'res-A' } })
+    // billedMicrosForRun (reused runId) sees A's €1; billedMicrosForReservation(res-B) sees €0.
+    expect(await store.billedMicrosForRun(USER, 'R')).toBe(1_000_000)
+    expect(await store.billedMicrosForReservation(USER, 'res-B')).toBe(0)
+    expect(await store.billedMicrosForReservation(USER, 'res-A')).toBe(1_000_000)
   })
 
   it('charges a fallback hold and settles when usage write failed', async () => {

@@ -88,6 +88,13 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
   const ls = options.lemonSqueezy
   if (!ls) return
 
+  // A disabled credits service can't grant or tombstone, so exposing the
+  // checkout/webhook would 200-ack paid orders WITHOUT crediting (customer pays,
+  // no credits, LS stops retrying). Refuse to wire purchase routes when disabled.
+  if (!options.service.config.enabled) {
+    throw new Error('credits: cannot register Lemon Squeezy checkout/webhook with a disabled credits service (paid orders would be acknowledged without crediting)')
+  }
+
   // Server-side checkout creation: the buyer's user id is taken from the
   // authenticated session, NOT the browser, so the webhook can trust it.
   if (ls.checkout) {
@@ -214,12 +221,15 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
               // Tombstone an unknown order only if it's on our store/mode (NOT
               // requiring the variant, which a refund payload may omit).
               allowTombstone: isOurStoreOrder(order),
-              // A credited order is revoked only if THIS refund's store/mode match
-              // the identity stored at grant — so a colliding order id from a
-              // different store/mode can't revoke our order (the store row, set at
-              // grant, was itself validated against the configured identity).
-              expectedStoreId: order.storeId,
-              expectedTestMode: order.testMode,
+              // Match the credited row against the CONFIGURED identity (not the
+              // payload's maybe-missing fields). The per-store/mode webhook secret
+              // already proves the refund is from our store+mode; the row's stored
+              // identity equals config for legit grants, so a colliding order id
+              // from another store can't reach here (HMAC) and a legit refund whose
+              // payload omits store_id still revokes.
+              expectedStoreId: ls.expectedStoreId,
+              expectedTestMode: ls.expectedTestMode,
+              expectedCurrency: requireCurrency,
             }),
           log: options.log,
         },

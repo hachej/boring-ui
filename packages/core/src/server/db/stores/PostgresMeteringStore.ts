@@ -260,7 +260,7 @@ export class PostgresMeteringStore {
    */
   async revokePurchase(
     orderId: string,
-    opts: { refundFraction?: number; source?: string; allowTombstone?: boolean; expectedStoreId?: string; expectedTestMode?: boolean } = {},
+    opts: { refundFraction?: number; source?: string; allowTombstone?: boolean; expectedStoreId?: string; expectedTestMode?: boolean; expectedCurrency?: string } = {},
   ): Promise<{ revoked: boolean }> {
     if (!orderId) throw new Error('revokePurchase requires an orderId')
     const source = opts.source ?? 'lemonsqueezy-refund'
@@ -284,6 +284,7 @@ export class PostgresMeteringStore {
           pendingRefundPpm: creditPurchases.pendingRefundPpm,
           storeId: creditPurchases.storeId,
           testMode: creditPurchases.testMode,
+          currency: creditPurchases.currency,
         })
         .from(creditPurchases)
         .where(eq(creditPurchases.orderId, orderId))
@@ -322,13 +323,16 @@ export class PostgresMeteringStore {
         }
         return { revoked: false }
       }
-      // Defense in depth beyond the per-store/mode webhook secret: once the
-      // credited order has a stored identity, the refund MUST present a matching
-      // one — fail closed if it differs OR is missing (a refund that can't prove
-      // it's for this order must not revoke it; guards a raw-order-id collision).
+      // Defense in depth beyond the per-store/mode webhook secret (which already
+      // proves the refund came from the configured store+mode): when the credited
+      // row has a stored identity AND the caller supplies the CONFIGURED expected
+      // identity, they must match. Callers pass configured identity (not the
+      // payload's maybe-missing fields), so a legit refund whose payload omits a
+      // field still revokes.
       if (
-        (row.storeId != null && row.storeId !== opts.expectedStoreId) ||
-        (row.testMode != null && row.testMode !== opts.expectedTestMode)
+        (row.storeId != null && opts.expectedStoreId != null && row.storeId !== opts.expectedStoreId) ||
+        (row.testMode != null && opts.expectedTestMode != null && row.testMode !== opts.expectedTestMode) ||
+        (row.currency != null && opts.expectedCurrency != null && row.currency.toUpperCase() !== opts.expectedCurrency.toUpperCase())
       ) {
         return { revoked: false }
       }
@@ -383,6 +387,18 @@ export class PostgresMeteringStore {
       .select({ total: sql<string>`coalesce(sum(${usageLedger.billedCostMicros}), 0)` })
       .from(usageLedger)
       .where(and(eq(usageLedger.userId, userId), eq(usageLedger.runId, runId)))
+    return Number(rows[0]?.total ?? 0)
+  }
+
+  /** Total billed micros for a specific RESERVATION (run attempt). Preferred over
+   * billedMicrosForRun for fallback top-up: runId is reused on client-nonce
+   * replay, so summing by runId would count a prior attempt's billing and let a
+   * later reusing attempt settle free. */
+  async billedMicrosForReservation(userId: string, reservationId: string): Promise<number> {
+    const rows = await this.db
+      .select({ total: sql<string>`coalesce(sum(${usageLedger.billedCostMicros}), 0)` })
+      .from(usageLedger)
+      .where(and(eq(usageLedger.userId, userId), sql`${usageLedger.metadata}->>'reservationId' = ${reservationId}`))
     return Number(rows[0]?.total ?? 0)
   }
 
