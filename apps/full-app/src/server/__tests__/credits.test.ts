@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { readCreditsConfig, assessReservationHold } from '../credits'
+import { readCreditsConfig, assessReservationHold, type FullAppCreditsConfig } from '../credits'
 
 describe('readCreditsConfig + assessReservationHold', () => {
   it('a fully default (unconfigured) credits config boots — it warns, never throws', () => {
@@ -71,6 +71,29 @@ describe('readCreditsConfig + assessReservationHold', () => {
   it('does not enforce the TTL invariant when credits are disabled', () => {
     expect(() => readCreditsConfig({ BORING_CREDITS_ENABLED: '0', BORING_CREDITS_RESERVATION_TTL_SECONDS: '600', BORING_CREDITS_MAX_RUN_SECONDS: '1800' }))
       .not.toThrow()
+  })
+
+  it('kill switch (ENABLED=0) bypasses ALL Lemon Squeezy validation gates (stale LS env must not crash startup)', () => {
+    // Webhook secret set but NO store id (would throw when enabled), plus a malformed
+    // mode and variants — none of it should fail startup when credits are disabled.
+    let config!: FullAppCreditsConfig
+    expect(() => {
+      config = readCreditsConfig({
+        BORING_CREDITS_ENABLED: '0',
+        BORING_CREDITS_LS_WEBHOOK_SECRET: 'whsec_stale',
+        BORING_CREDITS_LS_TEST_MODE: 'garbage',
+        BORING_CREDITS_LS_VARIANTS: 'not-a-valid-spec',
+        NODE_ENV: 'production',
+      })
+    }).not.toThrow()
+    expect(config.enabled).toBe(false)
+    expect(config.lemonSqueezyWebhookSecret).toBeUndefined()
+    expect(config.lemonSqueezyCheckout).toBeUndefined()
+  })
+
+  it('STILL enforces the same LS gates when credits are enabled (webhook secret needs a store id)', () => {
+    expect(() => readCreditsConfig({ BORING_CREDITS_LS_WEBHOOK_SECRET: 'whsec_x' }))
+      .toThrow(/BORING_CREDITS_LS_STORE_ID is required/)
   })
 
   it('rejects an expiring signup grant config at parse time downstream (config carries it through)', () => {

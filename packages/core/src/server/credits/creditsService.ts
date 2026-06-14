@@ -133,6 +133,10 @@ export class CreditsService {
     readonly config: CreditsConfig = DEFAULT_CREDITS_CONFIG,
     private readonly log?: CreditsLogger,
   ) {
+    // When disabled, the service is a full kill switch — every public method
+    // short-circuits and never reads the config — so skip validation entirely. A
+    // deploy that turned credits off with stale/invalid credit config must still boot.
+    if (!config.enabled) return
     validatePricingConfig(config.pricing)
     // Fail fast on bad money amounts rather than deferring to a later store call.
     const posInt = (n: number) => Number.isSafeInteger(n) && n > 0

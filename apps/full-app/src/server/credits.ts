@@ -221,6 +221,68 @@ export function assessReservationHold(config: FullAppCreditsConfig, env: NodeJS.
 }
 
 export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullAppCreditsConfig {
+  const enabled = env.BORING_CREDITS_ENABLED !== '0'
+
+  // --- Core config (always parsed): the credits service is constructed even when
+  // disabled, but its constructor skips validation when disabled, and these values
+  // are inert then. The per-run-hold/TTL gates below only fire when enabled. ---
+  // Margin < 1 would bill below provider cost — reject it (fail closed).
+  const margin = parseNumberEnv('BORING_CREDITS_MARGIN', env.BORING_CREDITS_MARGIN, 1.3, 1)
+  // Verified per-model EUR/MTok rates (e.g. Infomaniak). Unset ⇒ unconfigured
+  // models bill at the conservative default (over-charge, never free).
+  const rates = parseRates(env.BORING_CREDITS_RATES)
+  // The per-run hold defaults to the SERVED-rate worst case (proportional to the
+  // models this deployment serves, so a small starter grant stays usable). attach()
+  // hard-throws only if the hold can't cover the SERVED worst case (an explicit
+  // too-low value), and merely WARNS if it covers the served but not the effective
+  // (unmatched/misrouted) worst case — so this recommended default boots cleanly.
+  const pricingForHold: CreditPricingConfig = { margin, creditMicrosPerUnit: CREDIT_MICROS_PER_EUR, rates }
+  const servedWorstCase = worstCaseRunMicros(pricingForHold, env, maxServedRate(pricingForHold))
+  const runReservationMicros = env.BORING_CREDITS_RESERVATION_EUR
+    ? eurToMicros('BORING_CREDITS_RESERVATION_EUR', env.BORING_CREDITS_RESERVATION_EUR, 1)
+    : servedWorstCase
+  // The stale-reservation sweep charges-on-expire any reservation past TTL that has
+  // usage rows (treating it as a run that executed but never settled). If the TTL
+  // could elapse while a run is STILL alive, that charge-on-expire plus the run's
+  // later usage would overcharge. Enforce the invariant (rather than leave it to
+  // operator folklore): TTL must exceed the declared max run runtime + a settlement
+  // slack, so a still-running run can never be old enough to be swept.
+  const reservationTtlSeconds = Math.max(60, parseNumberEnv('BORING_CREDITS_RESERVATION_TTL_SECONDS', env.BORING_CREDITS_RESERVATION_TTL_SECONDS, 7200, 60))
+  const maxRunSeconds = parseNumberEnv('BORING_CREDITS_MAX_RUN_SECONDS', env.BORING_CREDITS_MAX_RUN_SECONDS, 1800, 1, true)
+  const SETTLEMENT_SLACK_SECONDS = 300
+  if (enabled && reservationTtlSeconds < maxRunSeconds + SETTLEMENT_SLACK_SECONDS) {
+    throw new Error(
+      `credits: BORING_CREDITS_RESERVATION_TTL_SECONDS (${reservationTtlSeconds}) must exceed BORING_CREDITS_MAX_RUN_SECONDS ` +
+        `(${maxRunSeconds}) by at least ${SETTLEMENT_SLACK_SECONDS}s of settlement slack — otherwise the stale-reservation ` +
+        `sweep could charge-on-expire a run that is still alive (overcharge). Raise the TTL or lower the declared max run runtime.`,
+    )
+  }
+  const common = {
+    enabled,
+    signupGrantMicros: eurToMicros('BORING_CREDITS_SIGNUP_GRANT_EUR', env.BORING_CREDITS_SIGNUP_GRANT_EUR, 2),
+    signupGrantExpiresAfterDays: parseExpiryDays(env.BORING_CREDITS_SIGNUP_GRANT_EXPIRES_DAYS),
+    runReservationMicros,
+    reservationTtlSeconds,
+    minBalanceMicros: eurToMicros('BORING_CREDITS_MIN_BALANCE_EUR', env.BORING_CREDITS_MIN_BALANCE_EUR, 0.05),
+    pricing: { margin, creditMicrosPerUnit: CREDIT_MICROS_PER_EUR, rates },
+  }
+
+  // --- Lemon Squeezy purchase config: parsed/validated ONLY when credits are ON.
+  // BORING_CREDITS_ENABLED=0 is a full kill switch — attach() registers no webhook/
+  // checkout, so stale or invalid LS env must not fail startup. ---
+  if (!enabled) {
+    return {
+      ...common,
+      lemonSqueezyWebhookSecret: undefined,
+      lemonSqueezyVariants: {},
+      lemonSqueezyCreditMicrosByVariant: {},
+      lemonSqueezyTestMode: false,
+      lemonSqueezyStoreId: undefined,
+      lemonSqueezyCreditOnlyStore: true,
+      lemonSqueezyCheckout: undefined,
+    }
+  }
+
   const variants = parseVariants(env.BORING_CREDITS_LS_VARIANTS)
   const defaultPackEnv = env.BORING_CREDITS_LS_DEFAULT_PACK
   if (defaultPackEnv && !(defaultPackEnv in variants)) {
@@ -252,49 +314,8 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
     throw new Error('credits: BORING_CREDITS_LS_TEST_MODE=1 in production mints non-charging but spendable credits — set it to 0 and purge any test grants before live cutover')
   }
   const checkoutReady = Boolean(env.BORING_CREDITS_LS_API_KEY && env.BORING_CREDITS_LS_STORE_ID && Object.keys(variants).length > 0)
-  // Margin < 1 would bill below provider cost — reject it (fail closed).
-  const margin = parseNumberEnv('BORING_CREDITS_MARGIN', env.BORING_CREDITS_MARGIN, 1.3, 1)
-  // Verified per-model EUR/MTok rates (e.g. Infomaniak). Unset ⇒ unconfigured
-  // models bill at the conservative default (over-charge, never free).
-  const rates = parseRates(env.BORING_CREDITS_RATES)
-  // The per-run hold defaults to the SERVED-rate worst case (proportional to the
-  // models this deployment serves, so a small starter grant stays usable). attach()
-  // hard-throws only if the hold can't cover the SERVED worst case (an explicit
-  // too-low value), and merely WARNS if it covers the served but not the effective
-  // (unmatched/misrouted) worst case — so this recommended default boots cleanly.
-  const pricingForHold: CreditPricingConfig = { margin, creditMicrosPerUnit: CREDIT_MICROS_PER_EUR, rates }
-  const servedWorstCase = worstCaseRunMicros(pricingForHold, env, maxServedRate(pricingForHold))
-  const runReservationMicros = env.BORING_CREDITS_RESERVATION_EUR
-    ? eurToMicros('BORING_CREDITS_RESERVATION_EUR', env.BORING_CREDITS_RESERVATION_EUR, 1)
-    : servedWorstCase
-  // The stale-reservation sweep charges-on-expire any reservation past TTL that has
-  // usage rows (treating it as a run that executed but never settled). If the TTL
-  // could elapse while a run is STILL alive, that charge-on-expire plus the run's
-  // later usage would overcharge. Enforce the invariant (rather than leave it to
-  // operator folklore): TTL must exceed the declared max run runtime + a settlement
-  // slack, so a still-running run can never be old enough to be swept.
-  const reservationTtlSeconds = Math.max(60, parseNumberEnv('BORING_CREDITS_RESERVATION_TTL_SECONDS', env.BORING_CREDITS_RESERVATION_TTL_SECONDS, 7200, 60))
-  const maxRunSeconds = parseNumberEnv('BORING_CREDITS_MAX_RUN_SECONDS', env.BORING_CREDITS_MAX_RUN_SECONDS, 1800, 1, true)
-  const SETTLEMENT_SLACK_SECONDS = 300
-  if (env.BORING_CREDITS_ENABLED !== '0' && reservationTtlSeconds < maxRunSeconds + SETTLEMENT_SLACK_SECONDS) {
-    throw new Error(
-      `credits: BORING_CREDITS_RESERVATION_TTL_SECONDS (${reservationTtlSeconds}) must exceed BORING_CREDITS_MAX_RUN_SECONDS ` +
-        `(${maxRunSeconds}) by at least ${SETTLEMENT_SLACK_SECONDS}s of settlement slack — otherwise the stale-reservation ` +
-        `sweep could charge-on-expire a run that is still alive (overcharge). Raise the TTL or lower the declared max run runtime.`,
-    )
-  }
   return {
-    enabled: env.BORING_CREDITS_ENABLED !== '0',
-    signupGrantMicros: eurToMicros('BORING_CREDITS_SIGNUP_GRANT_EUR', env.BORING_CREDITS_SIGNUP_GRANT_EUR, 2),
-    signupGrantExpiresAfterDays: parseExpiryDays(env.BORING_CREDITS_SIGNUP_GRANT_EXPIRES_DAYS),
-    runReservationMicros,
-    reservationTtlSeconds,
-    minBalanceMicros: eurToMicros('BORING_CREDITS_MIN_BALANCE_EUR', env.BORING_CREDITS_MIN_BALANCE_EUR, 0.05),
-    pricing: {
-      margin,
-      creditMicrosPerUnit: CREDIT_MICROS_PER_EUR,
-      rates,
-    },
+    ...common,
     lemonSqueezyWebhookSecret: env.BORING_CREDITS_LS_WEBHOOK_SECRET || undefined,
     lemonSqueezyVariants: variants,
     lemonSqueezyCreditMicrosByVariant: creditMicrosByVariant,
