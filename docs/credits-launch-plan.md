@@ -85,7 +85,7 @@ All money config is **fail-closed**: a provided-but-invalid value throws at star
 |---|---|---|
 | `BORING_CREDITS_ENABLED` | no (default on) | `0` disables consumption + purchase routes entirely. |
 | `BORING_CREDITS_SIGNUP_GRANT_EUR` | no (default 2) | Free starter grant, EUR. |
-| `BORING_CREDITS_SIGNUP_GRANT_EXPIRES_DAYS` | no (default never) | `0`/unset = never; else a positive integer. |
+| `BORING_CREDITS_SIGNUP_GRANT_EXPIRES_DAYS` | no (default never) | `0`/unset = never (the only supported value). A positive integer **throws at startup**: an expiring grant drops from `grantedMicros` on expiry while spent usage debits stay, turning a partly-spent trial into debt. Re-enable only once usage is allocated/capped against the promo balance. |
 | `BORING_CREDITS_RESERVATION_EUR` | no | Per-run hold. **Unset ⇒ computed worst-case run** (see limitations). An explicit value below the worst case **throws** unless `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION=1`. |
 | `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION` | no | `1` accepts a per-run hold below the worst-case run (soft stop; launch-blocking debt). |
 | `BORING_CREDITS_MIN_BALANCE_EUR` | no (default 0.05) | Floor kept available **after** a run's hold. |
@@ -150,3 +150,11 @@ fail closed at the highest effective rate.
   an auditability refactor.
 - Promote `usage_ledger.reservationId` from JSON metadata to a first-class nullable column
   (the expiry fallback relies on the metadata tag today).
+- **Signup grant is issued lazily on first balance/reserve, not at account creation.**
+  `getBalance`/`reserveRun` call `grantSignupCredits(userId)` (idempotent per user), so any
+  pre-existing account also receives the configured starter grant the first time it loads the
+  balance badge — acceptable for a fresh launch (no prior users) and a single non-expiring
+  grant per user (the expiring-grant config is now rejected at startup, so this can't create
+  debt). Follow-up: wire the grant into the auth post-signup hook (`createPostSignupHook`
+  already exists) and a one-time backfill policy, then remove the lazy grant from the
+  read/admission paths so issuance is tied to account creation.

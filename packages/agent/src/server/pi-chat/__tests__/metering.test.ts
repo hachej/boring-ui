@@ -288,20 +288,22 @@ describe('pi chat metering', () => {
     ])
   })
 
-  it('releases the reservation when the run errors before any usage arrived', async () => {
+  it('charges the fallback hold when a STARTED run errors with no usage (a paid call may have happened)', async () => {
     const adapter = createAdapter()
     const { sink, calls } = createSink()
     const { service } = createService(adapter, sink)
 
     await service.prompt(ctx, 's1', { message: 'boom', clientNonce: 'nonce-err' })
     adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
-    adapter.emit(agentEnd('error', 'No API key for provider'))
+    adapter.emit(agentEnd('error', 'provider failed mid-generation'))
     await service.flushMetering()
 
+    // The run reached agent_start, so a paid provider call may have happened with
+    // no usage object delivered → fall back to the hold, never free.
     expect(calls.usage).toEqual([])
     expect(calls.settled).toEqual([])
     expect(calls.released).toEqual([
-      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-err', reason: 'error-before-usage' }),
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-err', reason: 'usage-write-failed' }),
     ])
   })
 

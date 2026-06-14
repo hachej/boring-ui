@@ -144,21 +144,25 @@ export class CreditsService {
     if (!Number.isSafeInteger(config.runReservationMicros + config.minBalanceMicros)) {
       throw new Error('credits: runReservationMicros + minBalanceMicros exceeds the safe integer range')
     }
+    // Expiring signup grants would create debt after partial spend (see
+    // grantSignupCredits) — reject the config until promo-balance allocation exists.
+    if (config.signupGrantExpiresAfterDays !== null) {
+      throw new Error('credits: signupGrantExpiresAfterDays is not supported yet (an expiring grant turns a partly-spent trial into debt); use null')
+    }
   }
 
   /** Idempotently grant the free starter credits (call from the post-signup hook
-   * and lazily on first balance/reserve). */
+   * and lazily on first balance/reserve). The grant NEVER expires: an expiring
+   * grant would drop from grantedMicros on expiry while spent usage stayed, turning
+   * a partly-spent trial into debt. (Proper expiry must cap/allocate usage against
+   * the promo balance — a tracked follow-up; the expiry config is rejected up front.) */
   async grantSignupCredits(userId: string): Promise<void> {
     if (!this.config.enabled || this.config.signupGrantMicros <= 0) return
     if (this.signupGrantedUsers.has(userId)) return
-    const expiresAt = this.config.signupGrantExpiresAfterDays === null
-      ? undefined
-      : new Date(Date.now() + this.config.signupGrantExpiresAfterDays * 24 * 60 * 60 * 1000)
     await this.store.grantOnce({
       userId,
       reason: SIGNUP_GRANT_REASON,
       amountMicros: this.config.signupGrantMicros,
-      expiresAt,
     })
     this.signupGrantedUsers.add(userId)
   }

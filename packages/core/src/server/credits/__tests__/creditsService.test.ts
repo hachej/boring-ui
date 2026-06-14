@@ -51,8 +51,9 @@ describe('CreditsService', () => {
 
     expect(store.grantOnce).toHaveBeenCalledTimes(1)
     expect(store.grantOnce).toHaveBeenCalledWith(expect.objectContaining({
-      userId: 'u1', reason: SIGNUP_GRANT_REASON, amountMicros: 2_000_000, expiresAt: undefined,
+      userId: 'u1', reason: SIGNUP_GRANT_REASON, amountMicros: 2_000_000,
     }))
+    expect(store.grantOnce.mock.calls[0][0]).not.toHaveProperty('expiresAt')
     expect(balance).toMatchObject({
       enabled: true,
       userId: 'u1',
@@ -66,10 +67,15 @@ describe('CreditsService', () => {
     })
   })
 
-  it('sets a grant expiry when configured', async () => {
+  it('rejects an expiring signup grant config (would create debt after partial spend)', () => {
+    expect(() => new CreditsService(makeStore(), { ...CONFIG, signupGrantExpiresAfterDays: 30 })).toThrow(/signupGrantExpiresAfterDays is not supported/)
+  })
+
+  it('grants the signup credits without an expiry', async () => {
     const store = makeStore()
-    await new CreditsService(store, { ...CONFIG, signupGrantExpiresAfterDays: 30 }).getBalance('u1')
-    expect(store.grantOnce).toHaveBeenCalledWith(expect.objectContaining({ expiresAt: expect.any(Date) }))
+    await new CreditsService(store, CONFIG).getBalance('u1')
+    expect(store.grantOnce).toHaveBeenCalledWith(expect.objectContaining({ reason: SIGNUP_GRANT_REASON }))
+    expect(store.grantOnce.mock.calls[0][0]).not.toHaveProperty('expiresAt')
   })
 
   it('never reports negative balance but surfaces debt', async () => {

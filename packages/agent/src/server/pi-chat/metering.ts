@@ -141,6 +141,11 @@ interface MeteringRun {
   /** Set when a recordUsage sink call rejected — at least one ledger row for
    * this run is missing, so the run must not falsely settle. */
   usageWriteFailed: boolean
+  /** Set once the run reached agent-start (execution began). A run that STARTED
+   * then errored/cancelled with no usage may have made a paid provider call
+   * before Pi emitted usage, so it must NOT be released free — it falls through
+   * to the fallback hold charge. Only a NOT-started terminal run is freed. */
+  started: boolean
   /** Present on queued follow-up runs; matched against clear/consume selectors. */
   followUp?: FollowUpSelector
   /** Resolves/rejects when the host reservation settles. Awaited by concurrent
@@ -464,6 +469,7 @@ export class PiChatMeteringCoordinator {
           while (next && next.terminal) next = state.pendingPrompts.shift()
           if (next) {
             if (state.active && !state.active.terminal) this.finishRun(state.active, 'ok')
+            next.started = true // execution began — a later no-usage error is charged, not freed
             state.active = next
           }
           break
@@ -639,6 +645,7 @@ export class PiChatMeteringCoordinator {
       instanceId: (this.runInstances += 1),
       usageCount: 0,
       billableUsageCount: 0,
+      started: false,
       recordedMessageIds: new Set(),
       lastIdlessUsageKey: undefined,
       usageWriteFailed: false,
@@ -678,9 +685,18 @@ export class PiChatMeteringCoordinator {
   private finishRun(run: MeteringRun, status: MeteringRunStatus): void {
     if (run.terminal) return
     if (status !== 'ok' && run.usageCount === 0) {
-      // No execution happened (error/cancel before any usage) → free release.
-      this.release(run, status === 'error' ? 'error-before-usage' : 'cancelled')
-      return
+      // Free release is safe UNLESS the run actually started AND errored: a
+      // provider/network failure after agent_start may have made a paid model
+      // call whose usage object never arrived → fall through to the fallback hold
+      // charge. A user-initiated abort/cancel with zero usage stays free: Pi
+      // delivers a usage row whenever billable tokens were produced, so zero
+      // usage means nothing billable was generated (charging the full worst-case
+      // hold for an instant-stop would grossly over-charge).
+      const startedError = status === 'error' && run.started
+      if (!startedError) {
+        this.release(run, status === 'error' ? 'error-before-usage' : 'cancelled')
+        return
+      }
     }
     run.terminal = true
     // A SUCCESSFUL run that recorded no usage (provider reported none/zero), or
