@@ -542,7 +542,21 @@ export class PostgresMeteringStore {
       })
       .onConflictDoNothing({ target: usageLedger.id })
       .returning({ id: usageLedger.id })
-    return { inserted: rows.length > 0 }
+    if (rows.length > 0) return { inserted: true }
+    // The usage id already existed. A genuine idempotent retry carries the SAME
+    // user + amount; a COLLISION (a reused message id with different usage) would
+    // otherwise be silently dropped and the run settled free. Verify and THROW on
+    // mismatch so the coordinator's fallback-charge path runs instead.
+    const existing = await this.db
+      .select({ userId: usageLedger.userId, runId: usageLedger.runId, billedCostMicros: usageLedger.billedCostMicros })
+      .from(usageLedger)
+      .where(eq(usageLedger.id, input.usageId))
+      .limit(1)
+    const e = existing[0]
+    if (!e || e.userId !== input.userId || e.runId !== (input.runId ?? null) || e.billedCostMicros !== input.billedCostMicros) {
+      throw new Error(`usage ledger id collision for ${input.usageId}: existing row does not match this usage (refusing to silently drop the debit)`)
+    }
+    return { inserted: false }
   }
 
   /**

@@ -68,6 +68,8 @@ export interface LemonSqueezyOrder {
   /** Cumulative amount refunded so far, tax-inclusive, in cents. */
   refundedAmountCents: number
   variantId?: string
+  /** Units of the pack purchased (default 1). Credits scale with it. */
+  quantity: number
   productName?: string
 }
 
@@ -117,6 +119,7 @@ export function parseLemonSqueezyOrder(payload: unknown): LemonSqueezyOrder | nu
     refunded: attrs.refunded === true,
     refundedAmountCents: asNumber(attrs.refunded_amount),
     variantId: firstItem?.variant_id !== undefined ? String(firstItem.variant_id) : undefined,
+    quantity: (() => { const q = asNumber(firstItem?.quantity); return Number.isInteger(q) && q > 0 ? q : 1 })(),
     productName: asString(firstItem?.product_name),
   }
 }
@@ -151,6 +154,11 @@ export interface LemonSqueezyWebhookOptions {
    * false acks the webhook without crediting.
    */
   isCreditOrder: (order: LemonSqueezyOrder) => boolean
+  /** Optional: is this order on OUR store/mode/currency (ignoring the variant)?
+   * When provided, a paid order that's ours but NOT a credit order (unknown/
+   * misconfigured variant) returns a retryable 500 instead of a 200 ack — so a
+   * paid customer on a credit-only store isn't silently left without credits. */
+  isOurStoreOrder?: (order: LemonSqueezyOrder) => boolean
   /** Credit micros per 1 currency unit (e.g. 1_000_000 = €0.000001/credit). When
    * set, the webhook refuses to mint a fixed pack value unless the net paid
    * amount (subtotal − discount) covers it — so a dashboard/manual discount or LS
@@ -220,6 +228,15 @@ export async function handleLemonSqueezyWebhook(
   }
   // Confirm it's actually a credit-pack purchase (currency/mode/variant).
   if (!options.isCreditOrder(order)) {
+    // A paid order ON OUR store/mode/currency but with an unknown variant is a
+    // pack misconfiguration — the customer paid and would get nothing. Surface it
+    // with a retryable 500 rather than a silent 200 ack.
+    if (options.isOurStoreOrder?.(order)) {
+      options.log?.('lemonsqueezy paid order on our store has an unrecognized credit variant — not crediting', {
+        orderId: order.orderId, variantId: order.variantId, currency: order.currency, testMode: order.testMode,
+      })
+      return { status: 500, body: { ok: false, reason: 'unrecognized_credit_variant', orderId: order.orderId } }
+    }
     options.log?.('lemonsqueezy paid order is not a recognized credit pack', {
       orderId: order.orderId, variantId: order.variantId, currency: order.currency, testMode: order.testMode,
     })
@@ -255,13 +272,12 @@ export async function handleLemonSqueezyWebhook(
   // Don't mint a fixed pack value for an underpaid order: require the net paid
   // amount (subtotal − discount, pre-tax) to cover the credits being granted.
   if (typeof options.creditMicrosPerUnit === 'number' && options.creditMicrosPerUnit > 0) {
-    // LS can report fractional cents (a tax-rounding artifact, e.g. 1499.985):
-    // round to whole cents and allow one cent of slack so a legitimate full
-    // payment isn't rejected as underpaid.
+    // LS can report fractional cents (a tax-rounding artifact, e.g. 1499.985 for a
+    // €15 pack). Tolerate a shortfall of strictly LESS than one cent (the artifact)
+    // but reject a genuine one-cent-or-more underpayment (discount/price bug).
     const oneCentMicros = options.creditMicrosPerUnit / 100
-    const netPaidCents = Math.round(Math.max(0, order.subtotalCents - order.discountTotalCents))
-    const netPaidMicros = netPaidCents * oneCentMicros
-    if (netPaidMicros < amountMicros - oneCentMicros) {
+    const netPaidMicros = Math.max(0, order.subtotalCents - order.discountTotalCents) * oneCentMicros
+    if (netPaidMicros + oneCentMicros <= amountMicros) {
       options.log?.('lemonsqueezy order underpaid for the credits it maps to — not granting', {
         orderId: order.orderId, amountMicros, netPaidMicros, subtotalCents: order.subtotalCents, discountTotalCents: order.discountTotalCents,
       })

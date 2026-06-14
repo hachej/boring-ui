@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
+import { ERROR_CODES } from '../../shared/errors.js'
 import type { CreditsService } from './creditsService.js'
 import { handleLemonSqueezyWebhook, type LemonSqueezyOrder } from './lemonSqueezy.js'
 import { createLemonSqueezyCheckout } from './lemonSqueezyCheckout.js'
@@ -80,7 +81,7 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
   app.get(balancePath, async (request, reply) => {
     const userId = getUserId(request)
     if (!userId) {
-      return reply.code(401).send({ error: { code: 'AUTH_REQUIRED', message: 'authentication required' } })
+      return reply.code(401).send({ error: { code: ERROR_CODES.UNAUTHORIZED, message: 'authentication required' } })
     }
     return reply.send({ ...(await options.service.getBalance(userId)), checkoutEnabled })
   })
@@ -107,18 +108,18 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
     app.post(ls.checkoutPath ?? '/api/credits/checkout', async (request, reply) => {
       const userId = getUserId(request)
       if (!userId) {
-        return reply.code(401).send({ error: { code: 'AUTH_REQUIRED', message: 'authentication required' } })
+        return reply.code(401).send({ error: { code: ERROR_CODES.UNAUTHORIZED, message: 'authentication required' } })
       }
       const pack = (request.body as { pack?: unknown } | undefined)?.pack
       // Absent pack → default; an explicitly-requested unknown pack → 400 (don't
       // silently charge for a different pack than the client asked for).
       if (pack !== undefined && pack !== null && (typeof pack !== 'string' || !(pack in checkout.variants))) {
-        return reply.code(400).send({ error: { code: 'INVALID_PACK', message: 'unknown credit pack' } })
+        return reply.code(400).send({ error: { code: ERROR_CODES.INVALID_PACK, message: 'unknown credit pack' } })
       }
       const packId = typeof pack === 'string' && pack in checkout.variants ? pack : checkout.defaultPack
       const variantId = checkout.variants[packId]
       if (!variantId) {
-        return reply.code(400).send({ error: { code: 'INVALID_PACK', message: 'unknown credit pack' } })
+        return reply.code(400).send({ error: { code: ERROR_CODES.INVALID_PACK, message: 'unknown credit pack' } })
       }
       const email = (request as FastifyRequest & { user?: { email?: unknown } }).user?.email
       try {
@@ -137,7 +138,7 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
         return reply.send({ url })
       } catch (error) {
         options.log?.('credits: checkout creation failed', { error: String(error) })
-        return reply.code(502).send({ error: { code: 'CHECKOUT_FAILED', message: 'could not create checkout' } })
+        return reply.code(502).send({ error: { code: ERROR_CODES.CHECKOUT_FAILED, message: 'could not create checkout' } })
       }
     })
   }
@@ -161,7 +162,12 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
     }
   }
   const creditsForOrder = ls.creditsForOrder
-    ?? ((order: LemonSqueezyOrder): number => (order.variantId !== undefined ? variantCredits[order.variantId] ?? 0 : 0))
+    ?? ((order: LemonSqueezyOrder): number => {
+      // Per-pack value × quantity, so a multi-pack purchase is credited fairly
+      // (the underpayment check then requires the net paid to cover the total).
+      const perUnit = order.variantId !== undefined ? variantCredits[order.variantId] ?? 0 : 0
+      return perUnit * Math.max(1, order.quantity)
+    })
 
   // Fail closed: only credit paid orders for a configured pack variant, in the
   // required currency, and in the expected mode. Missing/absent fields are
@@ -199,6 +205,7 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
           secret: ls.webhookSecret,
           creditsForOrder,
           isCreditOrder,
+          isOurStoreOrder,
           // Bind buyer attribution to a server-created checkout (custom_data.uat).
           attributionSecret: ls.webhookSecret,
           // Refuse to grant a fixed pack value the buyer didn't actually pay for.

@@ -174,6 +174,24 @@ describe('credits routes', () => {
     expect(store.grantPurchaseOnce).not.toHaveBeenCalled()
   })
 
+  it('grants per-variant value × quantity for a multi-pack purchase', async () => {
+    const store = makeStore()
+    const a = await build(store, undefined, { '1': 5_000_000 })
+    // 3 units of the €5 pack, paid €15 → grant 15_000_000.
+    const body = JSON.stringify({
+      meta: { event_name: 'order_created', custom_data: { user_id: 'user-1', uat: uat('user-1') } },
+      data: { type: 'orders', id: 'order-qty', attributes: { status: 'paid', test_mode: true, currency: 'EUR', subtotal: 1500, total: 1500, first_order_item: { variant_id: 1, quantity: 3 } } },
+    })
+    const res = await a.inject({
+      method: 'POST',
+      url: '/api/credits/webhooks/lemonsqueezy',
+      headers: { 'content-type': 'application/json', 'x-signature': createHmac('sha256', SECRET).update(body).digest('hex') },
+      payload: body,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(store.grantPurchaseOnce).toHaveBeenCalledWith(expect.objectContaining({ orderId: 'order-qty', amountMicros: 15_000_000 }))
+  })
+
   it('does not credit a paid order for an unconfigured variant (fail closed)', async () => {
     const store = makeStore()
     const a = await build(store)
@@ -187,8 +205,10 @@ describe('credits routes', () => {
       headers: { 'content-type': 'application/json', 'x-signature': createHmac('sha256', SECRET).update(body).digest('hex') },
       payload: body,
     })
-    expect(res.statusCode).toBe(200)
-    expect(res.json()).toMatchObject({ reason: 'not_a_credit_order' })
+    // Our store/mode/currency but an unknown variant → 500 (pack misconfig), so a
+    // paid customer on this credit-only store isn't silently left without credits.
+    expect(res.statusCode).toBe(500)
+    expect(res.json()).toMatchObject({ reason: 'unrecognized_credit_variant' })
     expect(store.grantPurchaseOnce).not.toHaveBeenCalled()
   })
 
@@ -384,7 +404,7 @@ describe('credits routes', () => {
       const a = await buildWithCheckout('u1')
       const res = await a.inject({ method: 'POST', url: '/api/credits/checkout', payload: { pack: '999' } })
       expect(res.statusCode).toBe(400)
-      expect(res.json().error.code).toBe('INVALID_PACK')
+      expect(res.json().error.code).toBe('invalid_pack')
       expect(fetchMock).not.toHaveBeenCalled()
     } finally {
       vi.unstubAllGlobals()

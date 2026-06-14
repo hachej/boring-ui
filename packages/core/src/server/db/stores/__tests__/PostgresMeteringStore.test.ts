@@ -230,6 +230,16 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
     expect((await store.getBalance(USER)).remainingMicros).toBe(2_000_000)
   })
 
+  it('verifies usage idempotency: same id+data is a no-op, a colliding id with different data throws', async () => {
+    await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 10_000_000 })
+    await store.recordUsage({ usageId: 'um-1', userId: USER, runId: 'R', source: 'pi-chat', billedCostMicros: 500_000 })
+    // Exact retry (same id + user + runId + amount) → idempotent no-op, no extra debit.
+    expect(await store.recordUsage({ usageId: 'um-1', userId: USER, runId: 'R', source: 'pi-chat', billedCostMicros: 500_000 })).toEqual({ inserted: false })
+    expect((await store.getBalance(USER)).usedMicros).toBe(500_000)
+    // A COLLISION: same id, DIFFERENT amount → must throw, not silently drop the debit.
+    await expect(store.recordUsage({ usageId: 'um-1', userId: USER, runId: 'R', source: 'pi-chat', billedCostMicros: 999_999 })).rejects.toThrow(/usage ledger id collision/)
+  })
+
   it('scopes fallback billing to the reservation, not the reused runId', async () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 10_000_000 })
     // Attempt A under reservation res-A bills €1 of real usage for runId R.
