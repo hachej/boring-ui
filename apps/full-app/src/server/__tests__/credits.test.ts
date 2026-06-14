@@ -109,6 +109,23 @@ describe('readCreditsConfig + assessReservationHold', () => {
     expect(config.signupGrantExpiresAfterDays).toBe(30)
   })
 
+  it('consumption-only deploy (no webhook secret / API key) ignores stale LS env without crashing', () => {
+    // Metering on, purchases off: a leftover malformed LS_VARIANTS / bad TEST_MODE
+    // must not fail startup, and LS fields are inert.
+    let config!: FullAppCreditsConfig
+    expect(() => {
+      config = readCreditsConfig({
+        BORING_CREDITS_LS_VARIANTS: 'garbage-not-a-spec',
+        BORING_CREDITS_LS_DEFAULT_PACK: 'nope',
+        BORING_CREDITS_LS_TEST_MODE: 'maybe',
+      })
+    }).not.toThrow()
+    expect(config.enabled).toBe(true)
+    expect(config.lemonSqueezyWebhookSecret).toBeUndefined()
+    expect(config.lemonSqueezyVariants).toEqual({})
+    expect(config.lemonSqueezyCheckout).toBeUndefined()
+  })
+
   it('parses a well-formed BORING_CREDITS_RATES entry', () => {
     const config = readCreditsConfig({ BORING_CREDITS_RATES: 'infomaniak=0.5:1.5' })
     expect(config.pricing.rates).toEqual([[/infomaniak/i, { inputPerMillion: 0.5, outputPerMillion: 1.5 }]])

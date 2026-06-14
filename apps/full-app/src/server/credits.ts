@@ -309,7 +309,25 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
     pricing: { margin, creditMicrosPerUnit: CREDIT_MICROS_PER_EUR, rates },
   }
 
-  // --- Lemon Squeezy purchase config (enabled only; disabled returned inert above). ---
+  // --- Lemon Squeezy purchase config (enabled only; disabled returned inert above).
+  // Only parse/validate LS env when Lemon Squeezy is actually configured (a webhook
+  // secret or API key is present). A consumption-only deployment (metering on, no
+  // purchases) must not crash on stale BORING_CREDITS_LS_VARIANTS / _DEFAULT_PACK /
+  // malformed _TEST_MODE — return inert LS fields. ---
+  const lsConfigured = Boolean(env.BORING_CREDITS_LS_WEBHOOK_SECRET || env.BORING_CREDITS_LS_API_KEY)
+  if (!lsConfigured) {
+    return {
+      ...common,
+      lemonSqueezyWebhookSecret: undefined,
+      lemonSqueezyVariants: {},
+      lemonSqueezyCreditMicrosByVariant: {},
+      lemonSqueezyTestMode: false,
+      lemonSqueezyStoreId: undefined,
+      lemonSqueezyCreditOnlyStore: true,
+      lemonSqueezyAttributionSecrets: undefined,
+      lemonSqueezyCheckout: undefined,
+    }
+  }
   const variants = parseVariants(env.BORING_CREDITS_LS_VARIANTS)
   const defaultPackEnv = env.BORING_CREDITS_LS_DEFAULT_PACK
   if (defaultPackEnv && !(defaultPackEnv in variants)) {
@@ -329,15 +347,14 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
   if (env.BORING_CREDITS_LS_WEBHOOK_SECRET && !env.BORING_CREDITS_LS_STORE_ID) {
     throw new Error('BORING_CREDITS_LS_STORE_ID is required when BORING_CREDITS_LS_WEBHOOK_SECRET is set (the webhook must validate the order store)')
   }
-  // When Lemon Squeezy is configured, the test/live mode MUST be explicit — a
-  // wrong default would either mint credits from non-charging test orders or
-  // reject real live webhooks. Require an exact "0" (live) or "1" (test).
-  const lsConfigured = Boolean(env.BORING_CREDITS_LS_WEBHOOK_SECRET || env.BORING_CREDITS_LS_API_KEY)
-  const testMode = parseTestMode(env.BORING_CREDITS_LS_TEST_MODE, lsConfigured)
+  // LS is configured here (we returned inert above otherwise). The test/live mode
+  // MUST be explicit — a wrong default would either mint credits from non-charging
+  // test orders or reject real live webhooks. Require an exact "0" (live) or "1".
+  const testMode = parseTestMode(env.BORING_CREDITS_LS_TEST_MODE, true)
   // Launch gate: test-mode Lemon Squeezy checkouts are non-charging but still mint
   // real, spendable credits (the balance isn't mode-scoped). They must never run
   // in production — purge any test grants before live cutover.
-  if (env.NODE_ENV === 'production' && lsConfigured && testMode) {
+  if (env.NODE_ENV === 'production' && testMode) {
     throw new Error('credits: BORING_CREDITS_LS_TEST_MODE=1 in production mints non-charging but spendable credits — set it to 0 and purge any test grants before live cutover')
   }
   const checkoutReady = Boolean(env.BORING_CREDITS_LS_API_KEY && env.BORING_CREDITS_LS_STORE_ID && Object.keys(variants).length > 0)

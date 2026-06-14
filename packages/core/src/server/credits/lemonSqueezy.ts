@@ -97,6 +97,17 @@ function asNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
+/** Normalize a nullable LS id (store_id / variant_id) to a present string or
+ * `undefined`. A literal `null` must NOT become the string "null" — that would read
+ * as a PRESENT value and a present mismatch (e.g. against expectedStoreId), which would
+ * 200-ignore a paid order as foreign, or skip revoking a refund. Absent ⇒ undefined,
+ * so the strict/lenient identity checks see it as genuinely missing. */
+function asOptionalId(value: unknown): string | undefined {
+  if (value === null || value === undefined) return undefined
+  const s = String(value)
+  return s.length > 0 ? s : undefined
+}
+
 /**
  * Parse a Lemon Squeezy webhook payload into a normalized order. Returns null
  * for non-order or malformed payloads.
@@ -121,7 +132,7 @@ export function parseLemonSqueezyOrder(payload: unknown): LemonSqueezyOrder | nu
     userEmail: asString(attrs.user_email),
     status: asString(attrs.status),
     testMode: typeof attrs.test_mode === 'boolean' ? attrs.test_mode : undefined,
-    storeId: attrs.store_id !== undefined ? String(attrs.store_id) : undefined,
+    storeId: asOptionalId(attrs.store_id),
     currency: asString(attrs.currency),
     subtotalCents: asNumber(attrs.subtotal),
     discountTotalCents: asNumber(attrs.discount_total),
@@ -129,7 +140,7 @@ export function parseLemonSqueezyOrder(payload: unknown): LemonSqueezyOrder | nu
     taxCents: asNumber(attrs.tax),
     refunded: attrs.refunded === true,
     refundedAmountCents: asNumber(attrs.refunded_amount),
-    variantId: firstItem?.variant_id !== undefined ? String(firstItem.variant_id) : undefined,
+    variantId: asOptionalId(firstItem?.variant_id),
     quantity: (() => { const q = asNumber(firstItem?.quantity); return Number.isInteger(q) && q > 0 ? q : 1 })(),
     productName: asString(firstItem?.product_name),
   }

@@ -100,6 +100,12 @@ describe('parseLemonSqueezyOrder', () => {
     expect(parseLemonSqueezyOrder({ meta: {}, data: {} })).toBeNull()
     expect(parseLemonSqueezyOrder({ meta: { event_name: 'x' }, data: { id: 'o' } })).toBeNull()
   })
+
+  it('treats a null store_id / variant_id as ABSENT (undefined), not the string "null"', () => {
+    const order = parseLemonSqueezyOrder(JSON.parse(orderPayload({}, { store_id: null, first_order_item: { variant_id: null } })))
+    expect(order?.storeId).toBeUndefined()
+    expect(order?.variantId).toBeUndefined()
+  })
 })
 
 describe('handleLemonSqueezyWebhook', () => {
