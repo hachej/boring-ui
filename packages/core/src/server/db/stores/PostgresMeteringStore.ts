@@ -466,18 +466,12 @@ export class PostgresMeteringStore {
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${input.userId}))`)
 
-      // Demote the user's expired-but-still-active rows before reusing or
-      // inserting. Otherwise the idempotent lookup could return an expired
-      // reservation (which computeBalance no longer counts) — letting a retry
-      // run without re-checking the balance, i.e. bypassing the hard stop.
-      await tx
-        .update(usageReservations)
-        .set({ status: 'expired' })
-        .where(and(
-          eq(usageReservations.userId, input.userId),
-          eq(usageReservations.status, 'active'),
-          lte(usageReservations.expiresAt, now),
-        ))
+      // Expire the user's stale rows before reusing or inserting — through the
+      // SAME charge-aware helper as expireStaleReservations (we already hold the
+      // user lock here), so an executed-but-unsettled run is charged on expiry
+      // rather than freed. Otherwise the idempotent lookup could return an expired
+      // reservation (which computeBalance no longer counts), bypassing the hard stop.
+      await this.expireUserStaleReservations(tx, input.userId, now)
 
       const existing = await tx
         .select({ id: usageReservations.id })
@@ -615,40 +609,60 @@ export class PostgresMeteringStore {
 
   /** Expire stale active reservations without charging. Returns the count. */
   async expireStaleReservations(now: Date = new Date()): Promise<number> {
-    return this.db.transaction(async (tx) => {
-      const stale = await tx
-        .select({ id: usageReservations.id, userId: usageReservations.userId, runId: usageReservations.runId, amountMicros: usageReservations.amountMicros })
-        .from(usageReservations)
-        .where(and(eq(usageReservations.status, 'active'), lt(usageReservations.expiresAt, now)))
-      for (const r of stale) {
-        // A reservation that reached TTL without an explicit settle/release had a
-        // failed finalization. If it has ANY billed usage, the run EXECUTED — top
-        // it up to the hold (idempotent) so a partially-billed run isn't freed.
-        // A reservation with NO usage is treated as never-executed (a legit
-        // abandon) and freed, so we don't over-charge a user who closed the tab.
-        const billedRows = await tx
-          .select({ total: sql<string>`coalesce(sum(${usageLedger.billedCostMicros}), 0)` })
-          .from(usageLedger)
-          .where(and(eq(usageLedger.userId, r.userId), sql`${usageLedger.metadata}->>'reservationId' = ${r.id}`))
-        const billed = Number(billedRows[0]?.total ?? 0)
-        if (billed > 0) {
-          const topUp = Math.max(0, r.amountMicros - billed)
-          if (topUp > 0) {
-            await tx
-              .insert(usageLedger)
-              .values({ id: `usage-fallback:${r.id}`, userId: r.userId, runId: r.runId, source: 'pi-chat-expired', billedCostMicros: topUp, providerCostMicros: 0, metadata: { kind: 'reservation_expired_fallback', reservationId: r.id } })
-              .onConflictDoNothing({ target: usageLedger.id })
-          }
+    // Process per user under that user's advisory lock (the same lock reserve()
+    // and revokePurchase() take), so an expiry top-up debit can't race a
+    // concurrent admission into overdrawing past the hard stop.
+    const users = await this.db
+      .selectDistinct({ userId: usageReservations.userId })
+      .from(usageReservations)
+      .where(and(eq(usageReservations.status, 'active'), lt(usageReservations.expiresAt, now)))
+    let total = 0
+    for (const { userId } of users) {
+      total += await this.db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`)
+        return this.expireUserStaleReservations(tx, userId, now)
+      })
+    }
+    return total
+  }
+
+  /**
+   * Expire one user's stale active reservations under the SINGLE charge-aware
+   * policy. CALLER MUST already hold pg_advisory_xact_lock(hashtext(userId)).
+   * A reservation that reached TTL without an explicit settle/release had a failed
+   * finalization: if ANY usage row exists for it the run EXECUTED (even a
+   * zero-token row), so top it up to the hold (idempotent) rather than free it; a
+   * reservation with NO usage is a pre-execution abandon and is freed (so a user
+   * who closed the tab isn't over-charged).
+   */
+  private async expireUserStaleReservations(tx: Queryable, userId: string, now: Date): Promise<number> {
+    const stale = await tx
+      .select({ id: usageReservations.id, runId: usageReservations.runId, amountMicros: usageReservations.amountMicros })
+      .from(usageReservations)
+      .where(and(eq(usageReservations.userId, userId), eq(usageReservations.status, 'active'), lte(usageReservations.expiresAt, now)))
+    for (const r of stale) {
+      const usage = await tx
+        .select({ rows: sql<string>`count(*)`, total: sql<string>`coalesce(sum(${usageLedger.billedCostMicros}), 0)` })
+        .from(usageLedger)
+        .where(and(eq(usageLedger.userId, userId), sql`${usageLedger.metadata}->>'reservationId' = ${r.id}`))
+      const executed = Number(usage[0]?.rows ?? 0) > 0 // existence, not billed sum (zero-token rows count)
+      if (executed) {
+        const topUp = Math.max(0, r.amountMicros - Number(usage[0]?.total ?? 0))
+        if (topUp > 0) {
+          await tx
+            .insert(usageLedger)
+            .values({ id: `usage-fallback:${r.id}`, userId, runId: r.runId, source: 'pi-chat-expired', billedCostMicros: topUp, providerCostMicros: 0, metadata: { kind: 'reservation_expired_fallback', reservationId: r.id } })
+            .onConflictDoNothing({ target: usageLedger.id })
         }
       }
-      if (stale.length > 0) {
-        await tx
-          .update(usageReservations)
-          .set({ status: 'expired' })
-          .where(inArray(usageReservations.id, stale.map((r) => r.id)))
-      }
-      return stale.length
-    })
+    }
+    if (stale.length > 0) {
+      await tx
+        .update(usageReservations)
+        .set({ status: 'expired' })
+        .where(inArray(usageReservations.id, stale.map((r) => r.id)))
+    }
+    return stale.length
   }
 
   private async computeBalance(executor: Queryable, userId: string, now: Date): Promise<MeteringBalance> {

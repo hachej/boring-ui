@@ -24,12 +24,13 @@ function eurToMicros(name: string, value: string | undefined, fallbackEur: numbe
   return Math.round(eur * CREDIT_MICROS_PER_EUR)
 }
 
-/** Parse a provided numeric money env strictly; fallback only when unset/empty. */
-function parseNumberEnv(name: string, value: string | undefined, fallback: number, min: number): number {
+/** Parse a provided numeric money env strictly; fallback only when unset/empty.
+ * `integer` requires a whole number (for discrete counts like tokens/calls). */
+function parseNumberEnv(name: string, value: string | undefined, fallback: number, min: number, integer = false): number {
   if (value === undefined || value === '') return fallback
   const n = Number(value)
-  if (!Number.isFinite(n) || n < min) {
-    throw new Error(`invalid ${name}: expected a number >= ${min}, got "${value}"`)
+  if (!Number.isFinite(n) || n < min || (integer && !Number.isInteger(n))) {
+    throw new Error(`invalid ${name}: expected ${integer ? 'an integer' : 'a number'} >= ${min}, got "${value}"`)
   }
   return n
 }
@@ -151,9 +152,9 @@ export interface FullAppCreditsConfig extends CreditsConfig {
  * user's NEXT run is then refused (negative balance), so exposure is capped.
  */
 function worstCaseRunMicros(pricing: CreditPricingConfig, env: NodeJS.ProcessEnv): number {
-  const maxContext = parseNumberEnv('BORING_CREDITS_MAX_CONTEXT_TOKENS', env.BORING_CREDITS_MAX_CONTEXT_TOKENS, 200_000, 1)
-  const maxOutput = parseNumberEnv('BORING_CREDITS_MAX_OUTPUT_TOKENS', env.BORING_CREDITS_MAX_OUTPUT_TOKENS, 16_384, 1)
-  const maxCalls = parseNumberEnv('BORING_CREDITS_MAX_CALLS_PER_RUN', env.BORING_CREDITS_MAX_CALLS_PER_RUN, 4, 1)
+  const maxContext = parseNumberEnv('BORING_CREDITS_MAX_CONTEXT_TOKENS', env.BORING_CREDITS_MAX_CONTEXT_TOKENS, 200_000, 1, true)
+  const maxOutput = parseNumberEnv('BORING_CREDITS_MAX_OUTPUT_TOKENS', env.BORING_CREDITS_MAX_OUTPUT_TOKENS, 16_384, 1, true)
+  const maxCalls = parseNumberEnv('BORING_CREDITS_MAX_CALLS_PER_RUN', env.BORING_CREDITS_MAX_CALLS_PER_RUN, 4, 1, true)
   const rate = maxEffectiveRate(pricing)
   const unitsPerCall = (maxContext / 1_000_000) * rate.inputPerMillion + (maxOutput / 1_000_000) * rate.outputPerMillion
   return Math.ceil(unitsPerCall * maxCalls * pricing.margin * pricing.creditMicrosPerUnit)

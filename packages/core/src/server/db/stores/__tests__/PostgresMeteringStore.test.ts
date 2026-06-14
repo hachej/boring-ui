@@ -397,6 +397,28 @@ describe('PostgresMeteringStore', () => {
     expect((await store.getBalance(USER)).usedMicros).toBe(1_000_000)
   })
 
+  it('charges a ZERO-billed executed run on expiry (usage row exists, even at €0)', async () => {
+    await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 10_000_000 })
+    const { reservationId } = await store.reserve({ userId: USER, runId: 'turn-zero', amountMicros: 1_000_000, ttlSeconds: 600 })
+    // A zero-token usage row was written (executed) but never settled.
+    await store.recordUsage({ usageId: 'uz-1', userId: USER, runId: 'turn-zero', source: 'pi-chat', billedCostMicros: 0, metadata: { reservationId } })
+    await sqlClient`UPDATE boring_usage_reservations SET expires_at = now() - interval '1 minute' WHERE run_id = 'turn-zero'`
+    await store.expireStaleReservations()
+    // Existence of a usage row ⇒ executed ⇒ charged the full hold (not free).
+    expect((await store.getBalance(USER)).usedMicros).toBe(1_000_000)
+  })
+
+  it('charges an executed stale reservation via the reserve() expiry path too (one expiry policy)', async () => {
+    await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 10_000_000 })
+    const { reservationId } = await store.reserve({ userId: USER, runId: 'turn-a', amountMicros: 1_000_000, ttlSeconds: 600 })
+    await store.recordUsage({ usageId: 'ua-1', userId: USER, runId: 'turn-a', source: 'pi-chat', billedCostMicros: 300_000, metadata: { reservationId } })
+    await sqlClient`UPDATE boring_usage_reservations SET expires_at = now() - interval '1 minute' WHERE run_id = 'turn-a'`
+    // A NEW reserve for the same user must expire the stale one through the same
+    // charge-aware policy (not free it).
+    await store.reserve({ userId: USER, runId: 'turn-b', amountMicros: 1_000_000, ttlSeconds: 600 })
+    expect((await store.getBalance(USER)).usedMicros).toBe(1_000_000) // turn-a topped up to its hold
+  })
+
   it('reserves idempotently per run id while the reservation is active', async () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 1_000_000 })
     const first = await store.reserve({ userId: USER, runId: 'turn-retry', amountMicros: 750_000, ttlSeconds: 600 })
