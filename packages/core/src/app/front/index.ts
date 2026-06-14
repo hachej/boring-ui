@@ -9,6 +9,10 @@ export { useCreditBalance, CREDITS_REFRESH_EVENT } from './credits/useCreditBala
 export type { UseCreditBalanceOptions, UseCreditBalanceResult } from './credits/useCreditBalance.js'
 export { useCreditHistory } from './credits/useCreditHistory.js'
 export type { UseCreditHistoryResult } from './credits/useCreditHistory.js'
+export { useCheckoutReturnHandler } from './credits/useCheckoutReturnHandler.js'
+export type { CheckoutReturnStatus, UseCheckoutReturnHandlerResult } from './credits/useCheckoutReturnHandler.js'
+export { CheckoutReturnBanner } from './credits/CheckoutReturnBanner.js'
+export type { CheckoutReturnBannerProps } from './credits/CheckoutReturnBanner.js'
 export {
   formatCreditMicros,
   formatSignedCreditMicros,

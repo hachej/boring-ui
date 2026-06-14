@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client'
 import {
+  CheckoutReturnBanner,
   CoreWorkspaceAgentFront,
   CreditBalanceBadge,
   CreditsSettingsPanel,
@@ -21,19 +22,23 @@ const buyEnabled = import.meta.env.VITE_CREDITS_BUY_ENABLED === '1'
 const AccountSettingsPage = () => <UserSettingsPage billing={<CreditsSettingsPanel />} />
 
 createRoot(document.getElementById('root')!).render(
-  <CoreWorkspaceAgentFront
-    apiBaseUrl=""
-    apiTimeout={10_000}
-    persistenceEnabled
-    chatEntryMode="chat-first"
-    chatParams={{ thinkingControl: true }}
-    plugins={[demoFrontPlugin]}
-    authPages={{ userSettings: AccountSettingsPage }}
-    topBarRight={
-      <>
-        <CreditBalanceBadge buyEnabled={buyEnabled} />
-        <DefaultTopBarRight />
-      </>
-    }
-  />,
+  <>
+    <CoreWorkspaceAgentFront
+      apiBaseUrl=""
+      apiTimeout={10_000}
+      persistenceEnabled
+      chatEntryMode="chat-first"
+      chatParams={{ thinkingControl: true }}
+      plugins={[demoFrontPlugin]}
+      authPages={{ userSettings: AccountSettingsPage }}
+      topBarRight={
+        <>
+          <CreditBalanceBadge buyEnabled={buyEnabled} />
+          <DefaultTopBarRight />
+        </>
+      }
+    />
+    {/* Post-checkout return (LS redirects to ?checkout=return); confirms server-side. */}
+    <CheckoutReturnBanner />
+  </>,
 )

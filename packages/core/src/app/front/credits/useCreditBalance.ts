@@ -102,11 +102,18 @@ export function useCreditBalance({
     const onRefreshEvent = () => refreshWithRetry()
     window.addEventListener('focus', onFocus)
     window.addEventListener(CREDITS_REFRESH_EVENT, onRefreshEvent)
+    // Cross-tab: a purchase confirmed in another tab broadcasts here.
+    let channel: BroadcastChannel | null = null
+    try {
+      channel = new BroadcastChannel('credits')
+      channel.onmessage = () => refreshWithRetry()
+    } catch { /* BroadcastChannel unsupported — focus/poll still cover it */ }
     return () => {
       clearInterval(interval)
       window.removeEventListener('focus', onFocus)
       window.removeEventListener(CREDITS_REFRESH_EVENT, onRefreshEvent)
       for (const t of timersRef.current) clearTimeout(t)
+      channel?.close()
     }
   }, [refresh, refreshWithRetry, pollMs])
 
