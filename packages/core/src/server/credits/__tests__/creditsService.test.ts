@@ -156,6 +156,17 @@ describe('CreditsService', () => {
     expect(store.finishReservation).toHaveBeenCalledWith({ reservationId: 'res-1' }, 'settled')
   })
 
+  it('tags fallback audit metadata by cause (usage_write_failed vs no_billable_usage)', async () => {
+    const store = makeStore()
+    const service = new CreditsService(store, CONFIG)
+    await service.chargeFallbackUsage({ userId: 'u1', runId: 'r', reservationId: 'res-1', kind: 'usage_write_failed' })
+    expect(store.recordUsage).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ kind: 'usage_write_failed_fallback' }) }))
+
+    const store2 = makeStore()
+    await new CreditsService(store2, CONFIG).chargeFallbackUsage({ userId: 'u1', runId: 'r', reservationId: 'res-2', kind: 'no_billable_usage' })
+    expect(store2.recordUsage).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ kind: 'no_billable_usage_fallback' }) }))
+  })
+
   it('fallback skips the debit entirely when this reservation already met the hold', async () => {
     const store = makeStore({ billedMicrosForReservation: vi.fn(async () => 300_000) }) // ≥ hold
     const service = new CreditsService(store, CONFIG)

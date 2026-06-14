@@ -107,6 +107,7 @@ All money config is **fail-closed**: a provided-but-invalid value throws at star
 | `BORING_CREDITS_LS_TEST_MODE` | **required if LS configured** | Exactly `0` (live) or `1` (test). |
 | `BORING_CREDITS_LS_VARIANTS` | for purchases | `creditEur:variantId,…` — pack value (EUR, drives crediting) → LS variant id (**positive integer**). Duplicate pack/variant ids throw. |
 | `BORING_CREDITS_LS_API_KEY` / `_LS_DEFAULT_PACK` / `_LS_REDIRECT_URL` | for checkout | Server-side checkout creation. |
+| `BORING_CREDITS_ATTRIBUTION_SECRET` / `_PREVIOUS` | no | Dedicated secret to sign/verify the checkout `uat` token, decoupled from the webhook secret (rotating the webhook secret won't break in-flight checkout links). Unset ⇒ falls back to the webhook secret. `_PREVIOUS` is a comma-separated list of prior secrets still accepted on verify (rotation grace). |
 | `VITE_CREDITS_BUY_ENABLED` | no | Front fallback for the Buy button (server `checkoutEnabled` takes precedence). |
 
 Money-safety invariants enforced in code: fixed per-variant crediting (no order-amount

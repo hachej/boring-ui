@@ -318,9 +318,13 @@ export class CreditsService {
    * source 'pi-chat-fallback' so it's reconcilable against the missing real
    * usage row. Over-charges rather than risk free usage.
    */
-  async chargeFallbackUsage(input: { userId: string; runId: string; reservationId?: string }): Promise<void> {
+  async chargeFallbackUsage(input: { userId: string; runId: string; reservationId?: string; kind?: 'usage_write_failed' | 'no_billable_usage' }): Promise<void> {
     if (!this.config.enabled) return
     const key = input.reservationId ?? input.runId
+    // Audit kind reflects WHY the fallback fired: a failed usage write, or an
+    // executed run that produced no billable usage (a deliberate hold charge). Money
+    // is identical; the distinction keeps reconciliation honest.
+    const metaKind = input.kind === 'no_billable_usage' ? 'no_billable_usage_fallback' : 'usage_write_failed_fallback'
     // Durably record the charge intent FIRST (its own committed statement), so if the
     // top-up/settle below fails transiently the reservation stays active+marked and
     // the expiry sweep still charges the hold — a started/no-billable-usage run can't
@@ -346,15 +350,15 @@ export class CreditsService {
         source: 'pi-chat-fallback',
         billedCostMicros: topUp,
         providerCostMicros: 0,
-        metadata: { kind: 'usage_write_failed_fallback', reservationId: input.reservationId ?? null, alreadyBilledMicros: alreadyBilled, currency: 'credits' },
+        metadata: { kind: metaKind, reservationId: input.reservationId ?? null, alreadyBilledMicros: alreadyBilled, currency: 'credits' },
       })
     }
     await this.store.finishReservation(
       input.reservationId ? { reservationId: input.reservationId } : { runId: input.runId, userId: input.userId },
       'settled',
     )
-    this.log?.('credits: usage write failed/missing — topped up to the hold and settled (reconcile against missing usage)', {
-      runId: input.runId, reservationId: input.reservationId, alreadyBilledMicros: alreadyBilled, topUpMicros: topUp,
+    this.log?.('credits: fallback hold charge — topped up to the hold and settled (reconcile against missing/non-billable usage)', {
+      kind: metaKind, runId: input.runId, reservationId: input.reservationId, alreadyBilledMicros: alreadyBilled, topUpMicros: topUp,
     })
   }
 }

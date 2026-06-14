@@ -18,6 +18,14 @@ export interface LemonSqueezyCheckoutConfig {
 export interface LemonSqueezyRouteOptions {
   webhookSecret: string
   /**
+   * Secret used to sign/verify the checkout attribution token (`custom_data.uat`).
+   * Defaults to `webhookSecret`, but SHOULD be a dedicated, stable secret so rotating
+   * the LS webhook secret doesn't invalidate in-flight checkout links. Provide an
+   * array (current first, then previous secrets) to allow rotation: checkouts sign
+   * with the first; the webhook verifies against ANY, so in-flight links survive.
+   */
+  attributionSecret?: string | readonly string[]
+  /**
    * Variant ids that are credit packs. REQUIRED and non-empty for the webhook
    * to credit anything — only orders for these variants mint credits, so
    * unrelated products on the same store are ignored (fail closed).
@@ -109,6 +117,23 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
   if (ls.creditVariantIds.length === 0) {
     throw new Error('credits: Lemon Squeezy webhook requires a non-empty creditVariantIds (else every paid order is acknowledged without crediting)')
   }
+  // Attribution secret(s), decoupled from the webhook secret so rotating the webhook
+  // secret doesn't invalidate in-flight checkout `uat` tokens. Default to the webhook
+  // secret (back-compat). Checkouts SIGN with the first; the webhook VERIFIES against
+  // all (current + previous) for rotation grace. An empty/all-blank array would leave
+  // signing on the webhook secret but DISABLE verification (length 0 ⇒ skipped),
+  // silently reopening the arbitrary-user_id attribution hole — so normalize an empty
+  // result back to the webhook secret for BOTH signing and verification.
+  const rawAttributionSecrets =
+    ls.attributionSecret === undefined
+      ? [ls.webhookSecret]
+      : typeof ls.attributionSecret === 'string'
+        ? [ls.attributionSecret]
+        : ls.attributionSecret
+  const filteredAttributionSecrets = rawAttributionSecrets.filter((s) => typeof s === 'string' && s.length > 0)
+  const attributionSecrets: readonly string[] =
+    filteredAttributionSecrets.length > 0 ? filteredAttributionSecrets : [ls.webhookSecret]
+  const attributionSigningSecret = attributionSecrets[0]
 
   // Server-side checkout creation: the buyer's user id is taken from the
   // authenticated session, NOT the browser, so the webhook can trust it.
@@ -167,9 +192,9 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
           storeId: checkout.storeId,
           variantId,
           userId,
-          // Sign the attribution token with the webhook secret so the webhook
-          // can verify the buyer id came from this server-created checkout.
-          attributionSecret: ls.webhookSecret,
+          // Sign the attribution token with the (current) attribution secret so the
+          // webhook can verify the buyer id came from this server-created checkout.
+          attributionSecret: attributionSigningSecret,
           email: typeof email === 'string' ? email : undefined,
           redirectUrl: checkout.redirectUrl,
           testMode: checkout.testMode,
@@ -284,7 +309,9 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
           // a credited order; only a present-and-mismatched field is rejected.
           isRefundForOurStore,
           // Bind buyer attribution to a server-created checkout (custom_data.uat).
-          attributionSecret: ls.webhookSecret,
+          // Verify against current + previous secrets so a rotation doesn't reject
+          // in-flight checkout links.
+          attributionSecret: attributionSecrets,
           // Refuse to grant a fixed pack value the buyer didn't actually pay for.
           creditMicrosPerUnit,
           grant: (input, order) =>

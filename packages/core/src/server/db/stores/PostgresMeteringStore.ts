@@ -10,10 +10,11 @@ import { creditGrants, creditPurchases, usageLedger, usageReservations } from '.
  * Designed as the persistence backend for an AgentMeteringSink
  * (@hachej/boring-agent): reserve before a run executes, record usage rows
  * idempotently as native usage arrives, then settle or release the
- * reservation exactly once. A stale reservation that has usage rows (the run
- * executed but never settled) is CHARGED up to its hold on expiry; one with no
- * usage (a pre-execution abandon) expires free. All methods are idempotent so
- * callers may safely retry.
+ * reservation exactly once. A stale reservation with positive billed usage or a
+ * durable charge-on-expire marker (the run did chargeable work but never settled)
+ * is CHARGED up to its hold on expiry; one with only zero-billed rows and no marker
+ * (a non-billable / pre-execution abandon) expires free. All methods are idempotent
+ * so callers may safely retry.
  */
 
 /** The query surface shared by the root db handle and a transaction. */
@@ -665,10 +666,11 @@ export class PostgresMeteringStore {
    * Expire one user's stale active reservations under the SINGLE charge-aware
    * policy. CALLER MUST already hold pg_advisory_xact_lock(hashtext(userId)).
    * A reservation that reached TTL without an explicit settle/release had a failed
-   * finalization: if ANY usage row exists for it the run EXECUTED (even a
-   * zero-token row), so top it up to the hold (idempotent) rather than free it; a
-   * reservation with NO usage is a pre-execution abandon and is freed (so a user
-   * who closed the tab isn't over-charged).
+   * finalization: if it has POSITIVE billed usage (`billedTotal > 0`) OR carries the
+   * durable `charge_on_expire` marker, the run did chargeable work, so top it up to
+   * the hold (idempotent) rather than free it; a reservation with only zero-billed
+   * rows and no marker is a non-billable/pre-execution abandon and is freed (so a
+   * user who closed the tab isn't over-charged).
    */
   private async expireUserStaleReservations(tx: Queryable, userId: string, now: Date): Promise<number> {
     // Atomically CLAIM the stale rows (active → expired, RETURNING) before

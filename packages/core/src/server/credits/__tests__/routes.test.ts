@@ -258,6 +258,31 @@ describe('credits routes', () => {
     expect(store.grantPurchaseOnce).not.toHaveBeenCalled()
   })
 
+  it('an EMPTY attributionSecret array still enforces verification (normalized to the webhook secret, not disabled)', async () => {
+    const store = makeStore()
+    const a = Fastify()
+    registerCreditsRoutes(a, {
+      service: new CreditsService(store, CONFIG),
+      // An empty array must NOT silently disable attribution verification.
+      lemonSqueezy: { webhookSecret: SECRET, attributionSecret: [], creditVariantIds: ['1'], expectedTestMode: true, creditMicrosByVariant: { '1': 10_000_000 }, creditOnlyStore: true },
+    })
+    await a.ready()
+    const body = JSON.stringify({
+      meta: { event_name: 'order_created', custom_data: { user_id: 'victim', uat: 'forged' } },
+      data: { type: 'orders', id: 'order-empty-attr', attributes: { status: 'paid', test_mode: true, currency: 'EUR', subtotal: 1000, total: 1000, first_order_item: { variant_id: 1 } } },
+    })
+    const res = await a.inject({
+      method: 'POST',
+      url: '/api/credits/webhooks/lemonsqueezy',
+      headers: { 'content-type': 'application/json', 'x-signature': createHmac('sha256', SECRET).update(body).digest('hex') },
+      payload: body,
+    })
+    expect(res.statusCode).toBe(500)
+    expect(res.json()).toMatchObject({ reason: 'untrusted_attribution' })
+    expect(store.grantPurchaseOnce).not.toHaveBeenCalled()
+    await a.close()
+  })
+
   it('grants per-variant value × quantity for a multi-pack purchase', async () => {
     const store = makeStore()
     const a = await build(store, undefined, { '1': 5_000_000 })

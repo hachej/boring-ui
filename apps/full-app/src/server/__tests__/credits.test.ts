@@ -108,4 +108,21 @@ describe('readCreditsConfig + assessReservationHold', () => {
     const config = readCreditsConfig({ BORING_CREDITS_SIGNUP_GRANT_EXPIRES_DAYS: '30' })
     expect(config.signupGrantExpiresAfterDays).toBe(30)
   })
+
+  it('parses a well-formed BORING_CREDITS_RATES entry', () => {
+    const config = readCreditsConfig({ BORING_CREDITS_RATES: 'infomaniak=0.5:1.5' })
+    expect(config.pricing.rates).toEqual([[/infomaniak/i, { inputPerMillion: 0.5, outputPerMillion: 1.5 }]])
+  })
+
+  it('fail-closes on malformed BORING_CREDITS_RATES (extra price field would silently truncate)', () => {
+    expect(() => readCreditsConfig({ BORING_CREDITS_RATES: 'model=0.5:1.5:75' })).toThrow(/exactly two ":"-separated prices/)
+  })
+
+  it('fail-closes on malformed BORING_CREDITS_RATES (extra "=" would silently truncate)', () => {
+    expect(() => readCreditsConfig({ BORING_CREDITS_RATES: 'model=0.5:1.5=oops' })).toThrow(/exactly one "="/)
+  })
+
+  it('fail-closes on a non-empty BORING_CREDITS_RATES that yields no entries', () => {
+    expect(() => readCreditsConfig({ BORING_CREDITS_RATES: ';;;' })).toThrow(/no valid entries parsed/)
+  })
 })

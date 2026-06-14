@@ -56,6 +56,18 @@ describe('signUserAttribution / verifyUserAttribution', () => {
     expect(verifyUserAttribution('user-9', undefined, 'secret')).toBe(false)
     expect(verifyUserAttribution(undefined, token, 'secret')).toBe(false)
   })
+
+  it('verifies against ANY of multiple secrets (rotation grace for in-flight tokens)', () => {
+    const tokenOld = signUserAttribution('user-9', 'old-secret')
+    const tokenNew = signUserAttribution('user-9', 'new-secret')
+    // After rotating to new-secret while keeping old as previous, BOTH verify.
+    expect(verifyUserAttribution('user-9', tokenOld, ['new-secret', 'old-secret'])).toBe(true)
+    expect(verifyUserAttribution('user-9', tokenNew, ['new-secret', 'old-secret'])).toBe(true)
+    // A token signed with a secret no longer in the list is rejected.
+    expect(verifyUserAttribution('user-9', signUserAttribution('user-9', 'gone'), ['new-secret', 'old-secret'])).toBe(false)
+    // Empty list never verifies.
+    expect(verifyUserAttribution('user-9', tokenNew, [])).toBe(false)
+  })
 })
 
 describe('parseLemonSqueezyOrder', () => {
@@ -74,6 +86,7 @@ describe('parseLemonSqueezyOrder', () => {
       subtotalCents: 1000,
       discountTotalCents: 0,
       totalCents: 1190,
+      taxCents: 0,
       refunded: false,
       refundedAmountCents: 0,
       variantId: '42',
@@ -278,6 +291,27 @@ describe('handleLemonSqueezyWebhook', () => {
   it('accepts an exact-cent payment for the pack value', async () => {
     const { options, grant } = opts({ creditsForOrder: () => 10_000_000, creditMicrosPerUnit: 1_000_000 })
     const body = orderPayload({}, { subtotal: 1000, discount_total: 0, total: 1000 })
+    await handleLemonSqueezyWebhook(body, sign(body), options)
+    expect(grant).toHaveBeenCalled()
+  })
+
+  it('rejects a discounted TAXED order where the missing discount is masked by tax (total−tax < subtotal−discount)', async () => {
+    const { options, grant } = opts({ creditsForOrder: () => 10_000_000, creditMicrosPerUnit: 1_000_000 })
+    // €10 pack discounted to €9 (discount_total absent → parsed 0) + €1.80 VAT:
+    // subtotal=1000, total=1080, tax=180. net-from-subtotal=1000 but net-from-total
+    // (cash, less tax)=900 → only €9 paid. The tax in `total` would mask this against
+    // a plain subtotal≤total check; the netA≤netB cross-check catches it.
+    const body = orderPayload({}, { subtotal: 1000, total: 1080, tax: 180 })
+    const res = await handleLemonSqueezyWebhook(body, sign(body), options)
+    expect(res).toMatchObject({ status: 500, body: { reason: 'invalid_money_fields' } })
+    expect(grant).not.toHaveBeenCalled()
+  })
+
+  it('accepts a correctly-discounted taxed order (consistent fields)', async () => {
+    const { options, grant } = opts({ creditsForOrder: () => 9_000_000, creditMicrosPerUnit: 1_000_000 })
+    // €9 of credits, €9 paid + €1.80 VAT, discount reported: subtotal=1000,
+    // discount=100, tax=180, total=1080. netA=900, netB=900 → consistent, grants €9.
+    const body = orderPayload({}, { subtotal: 1000, discount_total: 100, total: 1080, tax: 180 })
     await handleLemonSqueezyWebhook(body, sign(body), options)
     expect(grant).toHaveBeenCalled()
   })

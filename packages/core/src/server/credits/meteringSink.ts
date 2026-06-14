@@ -74,6 +74,8 @@ export function createCreditsMeteringSink(getService: () => CreditsService): Age
           userId: input.userId,
           runId: input.runId,
           reservationId: input.reservationId,
+          // Carry the cause through to the ledger metadata/log for honest audit.
+          kind: input.reason === 'usage-write-failed' ? 'usage_write_failed' : 'no_billable_usage',
         })
         return
       }

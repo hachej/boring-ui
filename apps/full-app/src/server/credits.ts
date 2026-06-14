@@ -103,11 +103,22 @@ function parseRates(raw: string | undefined): Array<[RegExp, { inputPerMillion: 
   const rates: Array<[RegExp, { inputPerMillion: number; outputPerMillion: number }]> = []
   for (const entry of raw.split(';')) {
     if (entry.trim() === '') continue
-    const [pattern, prices] = entry.split('=')
-    const [input, output] = (prices ?? '').split(':').map(Number)
+    // Exact arity, fail-closed: a typo like `model=0.5:1.5:75` or `model=0.5=oops`
+    // must NOT silently truncate (which could underprice). Require exactly one `=`
+    // and exactly two `:`-separated price fields.
+    const eq = entry.split('=')
+    if (eq.length !== 2) {
+      throw new Error(`invalid BORING_CREDITS_RATES entry (expected exactly one "=" as pattern=in:out): "${entry}"`)
+    }
+    const [pattern, prices] = eq
     if (!pattern || !pattern.trim()) {
       throw new Error(`invalid BORING_CREDITS_RATES entry (missing pattern): "${entry}"`)
     }
+    const priceParts = prices.split(':')
+    if (priceParts.length !== 2) {
+      throw new Error(`invalid BORING_CREDITS_RATES entry (expected exactly two ":"-separated prices in:out): "${entry}"`)
+    }
+    const [input, output] = priceParts.map(Number)
     if (!Number.isFinite(input) || !Number.isFinite(output) || input <= 0 || output <= 0) {
       throw new Error(`invalid BORING_CREDITS_RATES entry (rates must be positive EUR/MTok): "${entry}"`)
     }
@@ -117,7 +128,12 @@ function parseRates(raw: string | undefined): Array<[RegExp, { inputPerMillion: 
       throw new Error(`invalid BORING_CREDITS_RATES entry (bad regex): "${entry}"`)
     }
   }
-  return rates.length > 0 ? rates : undefined
+  // A non-empty raw that yielded no entries (e.g. ";;;") is malformed — fail closed
+  // rather than silently disabling rate config.
+  if (rates.length === 0) {
+    throw new Error(`invalid BORING_CREDITS_RATES (no valid entries parsed): "${raw}"`)
+  }
+  return rates
 }
 
 export interface FullAppCreditsConfig extends CreditsConfig {
@@ -131,6 +147,10 @@ export interface FullAppCreditsConfig extends CreditsConfig {
   lemonSqueezyTestMode: boolean
   /** Expected LS store id; the webhook ignores orders from another store. */
   lemonSqueezyStoreId?: string
+  /** Attribution signing/verify secret(s) for checkout `uat`, decoupled from the
+   * webhook secret. [current, ...previous] for rotation grace. Undefined ⇒ the route
+   * defaults to the webhook secret. */
+  lemonSqueezyAttributionSecrets?: readonly string[]
   /** Whether the LS store sells ONLY credit packs (default true). True ⇒ an
    * unknown-variant paid order on our store is a pack misconfig (retryable 500);
    * false (a mixed store) ⇒ it's a different product and is 200-ignored. */
@@ -321,6 +341,16 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
     throw new Error('credits: BORING_CREDITS_LS_TEST_MODE=1 in production mints non-charging but spendable credits — set it to 0 and purge any test grants before live cutover')
   }
   const checkoutReady = Boolean(env.BORING_CREDITS_LS_API_KEY && env.BORING_CREDITS_LS_STORE_ID && Object.keys(variants).length > 0)
+  // Dedicated attribution secret(s) for checkout `uat`, decoupled from the webhook
+  // secret so rotating the webhook secret doesn't break in-flight checkout links.
+  // [current, ...previous] for rotation grace. Unset ⇒ route falls back to the
+  // webhook secret (back-compat).
+  const attributionCurrent = env.BORING_CREDITS_ATTRIBUTION_SECRET || undefined
+  const attributionPrevious = (env.BORING_CREDITS_ATTRIBUTION_SECRET_PREVIOUS || '')
+    .split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+  const lemonSqueezyAttributionSecrets = attributionCurrent
+    ? [attributionCurrent, ...attributionPrevious]
+    : undefined
   return {
     ...common,
     lemonSqueezyWebhookSecret: env.BORING_CREDITS_LS_WEBHOOK_SECRET || undefined,
@@ -328,6 +358,7 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
     lemonSqueezyCreditMicrosByVariant: creditMicrosByVariant,
     lemonSqueezyTestMode: testMode,
     lemonSqueezyStoreId: env.BORING_CREDITS_LS_STORE_ID || undefined,
+    lemonSqueezyAttributionSecrets,
     // The launch store sells only credit packs → unknown-variant paid orders are
     // pack misconfigs that must fail loud. Set 0 for a mixed store (credits + other
     // products) so legitimate non-credit orders are ignored, not retried forever.
@@ -376,6 +407,7 @@ export function buildCreditsWiring(env: NodeJS.ProcessEnv = process.env): {
         config.enabled && config.lemonSqueezyWebhookSecret
           ? {
               webhookSecret: config.lemonSqueezyWebhookSecret,
+              attributionSecret: config.lemonSqueezyAttributionSecrets,
               creditVariantIds,
               creditMicrosByVariant: config.lemonSqueezyCreditMicrosByVariant,
               expectedTestMode: config.lemonSqueezyTestMode,

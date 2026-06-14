@@ -33,12 +33,18 @@ export function signUserAttribution(userId: string, secret: string): string {
   return createHmac('sha256', secret).update(`credit-user:${userId}`).digest('hex')
 }
 
-export function verifyUserAttribution(userId: string | undefined, token: string | undefined, secret: string): boolean {
+/** Verify the token against the signing secret, or ANY of several secrets (current
+ * + previous) to allow secret rotation without breaking in-flight checkout links. */
+export function verifyUserAttribution(userId: string | undefined, token: string | undefined, secret: string | readonly string[]): boolean {
   if (!userId || !token) return false
-  const expected = Buffer.from(signUserAttribution(userId, secret), 'utf8')
   const actual = Buffer.from(token, 'utf8')
-  if (expected.length !== actual.length) return false
-  return timingSafeEqual(expected, actual)
+  const secrets = typeof secret === 'string' ? [secret] : secret
+  return secrets.some((s) => {
+    if (!s) return false
+    const expected = Buffer.from(signUserAttribution(userId, s), 'utf8')
+    if (expected.length !== actual.length) return false
+    return timingSafeEqual(expected, actual)
+  })
 }
 
 export interface LemonSqueezyOrder {
@@ -63,6 +69,10 @@ export interface LemonSqueezyOrder {
   discountTotalCents: number
   /** Tax-inclusive total in cents (MoR adds VAT here). */
   totalCents: number
+  /** Tax amount in cents. Net paid pre-tax also = total − tax, an independent
+   * cross-check against subtotal − discount (catches a missing/inconsistent
+   * discount field that tax would otherwise mask). */
+  taxCents: number
   /** Whether the order has been (fully or partially) refunded. */
   refunded: boolean
   /** Cumulative amount refunded so far, tax-inclusive, in cents. */
@@ -116,6 +126,7 @@ export function parseLemonSqueezyOrder(payload: unknown): LemonSqueezyOrder | nu
     subtotalCents: asNumber(attrs.subtotal),
     discountTotalCents: asNumber(attrs.discount_total),
     totalCents: asNumber(attrs.total),
+    taxCents: asNumber(attrs.tax),
     refunded: attrs.refunded === true,
     refundedAmountCents: asNumber(attrs.refunded_amount),
     variantId: firstItem?.variant_id !== undefined ? String(firstItem.variant_id) : undefined,
@@ -139,8 +150,10 @@ export interface LemonSqueezyWebhookOptions {
   resolveUserId?: (order: LemonSqueezyOrder) => string | undefined
   /** When set, the order's `custom_data.uat` MUST be a valid attribution token
    * for its user_id (signUserAttribution) or the order is not credited — binds
-   * attribution to a server-created checkout, not a buyer-supplied user_id. */
-  attributionSecret?: string
+   * attribution to a server-created checkout, not a buyer-supplied user_id. May be
+   * an array (current + previous secrets) to allow rotation: a token signed with any
+   * listed secret verifies, so in-flight checkout links survive a secret rotation. */
+  attributionSecret?: string | readonly string[]
   /** Grant credits idempotently. `reason` is `purchase:<orderId>` (the
    * idempotency key); `orderId` is provided so callers don't re-parse it. The
    * full `order` is passed so the grant can persist provider identity. */
@@ -280,8 +293,12 @@ export async function handleLemonSqueezyWebhook(
 
   // Bind attribution to a server-created checkout: reject a user_id that isn't
   // accompanied by a valid server-signed token (a crafted hosted-checkout URL
-  // could otherwise carry an arbitrary user_id).
-  if (options.attributionSecret && !verifyUserAttribution(order.userId, order.userAttributionToken, options.attributionSecret)) {
+  // could otherwise carry an arbitrary user_id). Enforced only when at least one
+  // attribution secret is configured (an empty array is treated as unset).
+  const attributionSecrets = typeof options.attributionSecret === 'string'
+    ? [options.attributionSecret]
+    : (options.attributionSecret ?? [])
+  if (attributionSecrets.length > 0 && !verifyUserAttribution(order.userId, order.userAttributionToken, attributionSecrets)) {
     options.log?.('lemonsqueezy order user attribution token invalid/missing — not crediting', { orderId: order.orderId })
     return { status: 500, body: { ok: false, reason: 'untrusted_attribution', orderId: order.orderId } }
   }
@@ -311,22 +328,29 @@ export async function handleLemonSqueezyWebhook(
     // discount above subtotal, or a zero/absent total, must NOT look like a valid
     // full payment. Fail closed (500) so the malformed delivery surfaces.
     //
-    // Crucially, cross-check the net we credit on (subtotal − discount, pre-tax)
-    // against `total` (the amount actually charged = subtotal − discount + tax +
-    // fees ≥ net for ANY legit order). If `total < subtotal − discount`, a discount
-    // was applied that the `discount_total` field didn't report (missing/renamed),
-    // so subtotal − discount OVER-states what the customer paid and would over-credit
-    // (e.g. subtotal=1000, total=600, discount_total missing → net looks like €10 but
-    // €6 was paid). A 1-cent slack absorbs fractional-cent tax rounding.
+    // Crucially, cross-check the pre-tax net computed TWO independent ways:
+    //   netA = subtotal − discount   (the basis we credit on)
+    //   netB = total − tax           (the actual cash received, less tax remitted)
+    // We require netA ≤ netB (+1-cent slack). For a legit order netA == netB, or
+    // netB is slightly larger (one-time setup fees ride in `total` but not the pre-tax
+    // line net). The over-credit case is netA > netB: a discount the `discount_total`
+    // field didn't report inflates netA, while netB (from the real charged `total`,
+    // less tax) reflects what was actually paid — tax in `total` would otherwise mask
+    // the gap (subtotal=1000, discount missing, tax=180, total=1080 → netA=1000 but
+    // netB=900, only €9 paid). Fail closed (500) rather than over-credit.
+    const netFromSubtotal = order.subtotalCents - order.discountTotalCents
+    const netFromTotal = order.totalCents - order.taxCents
     const moneySane =
       Number.isFinite(order.subtotalCents) && order.subtotalCents >= 0 &&
       Number.isFinite(order.discountTotalCents) && order.discountTotalCents >= 0 &&
       Number.isFinite(order.totalCents) && order.totalCents > 0 &&
+      Number.isFinite(order.taxCents) && order.taxCents >= 0 &&
       order.subtotalCents >= order.discountTotalCents &&
-      order.subtotalCents - order.discountTotalCents <= order.totalCents + 1
+      order.totalCents >= order.taxCents &&
+      netFromSubtotal <= netFromTotal + 1
     if (!moneySane) {
       options.log?.('lemonsqueezy order has missing/inconsistent money fields — not granting', {
-        orderId: order.orderId, subtotalCents: order.subtotalCents, discountTotalCents: order.discountTotalCents, totalCents: order.totalCents,
+        orderId: order.orderId, subtotalCents: order.subtotalCents, discountTotalCents: order.discountTotalCents, totalCents: order.totalCents, taxCents: order.taxCents,
       })
       return { status: 500, body: { ok: false, reason: 'invalid_money_fields', orderId: order.orderId } }
     }
