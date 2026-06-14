@@ -126,6 +126,21 @@ describe('readCreditsConfig + assessReservationHold', () => {
     expect(config.lemonSqueezyCheckout).toBeUndefined()
   })
 
+  it('default signup grant admits a first run out of the box (grant >= hold + floor)', () => {
+    const config = readCreditsConfig({})
+    expect(config.signupGrantMicros).toBeGreaterThanOrEqual(config.runReservationMicros + config.minBalanceMicros)
+  })
+
+  it('respects an explicit signup grant even if below the hold (operator choice)', () => {
+    const config = readCreditsConfig({ BORING_CREDITS_SIGNUP_GRANT_EUR: '0.5' })
+    expect(config.signupGrantMicros).toBe(500_000)
+  })
+
+  it('keeps the default grant at €2 when the served hold is small (configured cheap rates)', () => {
+    const config = readCreditsConfig({ BORING_CREDITS_RATES: 'infomaniak=0.5:1.5', BORING_CREDITS_RESERVATION_EUR: '0.5' })
+    expect(config.signupGrantMicros).toBe(2_000_000)
+  })
+
   it('parses a well-formed BORING_CREDITS_RATES entry', () => {
     const config = readCreditsConfig({ BORING_CREDITS_RATES: 'infomaniak=0.5:1.5' })
     expect(config.pricing.rates).toEqual([[/infomaniak/i, { inputPerMillion: 0.5, outputPerMillion: 1.5 }]])

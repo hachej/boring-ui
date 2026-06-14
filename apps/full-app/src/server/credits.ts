@@ -299,13 +299,25 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
         `sweep could charge-on-expire a run that is still alive (overcharge). Raise the TTL or lower the declared max run runtime.`,
     )
   }
+  const minBalanceMicros = eurToMicros('BORING_CREDITS_MIN_BALANCE_EUR', env.BORING_CREDITS_MIN_BALANCE_EUR, 0.05)
+  // Default the signup grant so a FRESH user can start their first run out of the box.
+  // reserveRun admits a run only when available ≥ hold + floor, so an UNSET grant
+  // defaults to max(€2, hold + floor). Without this, an unconfigured/dev deploy (high
+  // served-rate floor → ~€4 hold) would 402 every first run with no in-app way to buy.
+  // An EXPLICIT BORING_CREDITS_SIGNUP_GRANT_EUR is respected as-is (attach() still warns
+  // if an explicit grant is below the hold). A configured deploy with cheap rates has a
+  // low hold, so this stays at €2.
+  const defaultSignupGrantMicros = Math.max(2 * CREDIT_MICROS_PER_EUR, runReservationMicros + minBalanceMicros)
+  const signupGrantMicros = env.BORING_CREDITS_SIGNUP_GRANT_EUR
+    ? eurToMicros('BORING_CREDITS_SIGNUP_GRANT_EUR', env.BORING_CREDITS_SIGNUP_GRANT_EUR, 2)
+    : defaultSignupGrantMicros
   const common = {
     enabled,
-    signupGrantMicros: eurToMicros('BORING_CREDITS_SIGNUP_GRANT_EUR', env.BORING_CREDITS_SIGNUP_GRANT_EUR, 2),
+    signupGrantMicros,
     signupGrantExpiresAfterDays: parseExpiryDays(env.BORING_CREDITS_SIGNUP_GRANT_EXPIRES_DAYS),
     runReservationMicros,
     reservationTtlSeconds,
-    minBalanceMicros: eurToMicros('BORING_CREDITS_MIN_BALANCE_EUR', env.BORING_CREDITS_MIN_BALANCE_EUR, 0.05),
+    minBalanceMicros,
     pricing: { margin, creditMicrosPerUnit: CREDIT_MICROS_PER_EUR, rates },
   }
 
