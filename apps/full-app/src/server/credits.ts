@@ -283,17 +283,26 @@ export function buildCreditsWiring(env: NodeJS.ProcessEnv = process.env): {
         }
       }
       // The per-run hold bounds a single run's overdraft (actual cost is posted
-      // after the run). A hold below the worst-case run means a run can overshoot
-      // it (bounded; the user's next run is then refused). This is a deliberate
-      // operator trade-off — a small hold keeps a small starter grant usable — so
-      // warn rather than block; an unset reservation already defaults to the
-      // worst case (tight) in readCreditsConfig.
+      // after the run). A hold below the worst-case run lets a single run overshoot
+      // it (bounded; the user's next run is then refused) — i.e. not a hard stop.
+      // FAIL CLOSED by default; an operator who knowingly wants a small hold (to
+      // keep a small starter grant usable) must opt in explicitly. An unset
+      // reservation already defaults to the worst case (tight) in readCreditsConfig.
       const worstCase = worstCaseRunMicros(config.pricing, env)
       if (config.enabled && config.runReservationMicros < worstCase) {
-        app.log.warn(
-          { runReservationMicros: config.runReservationMicros, worstCaseRunMicros: worstCase },
-          'credits: per-run reservation is below the worst-case run cost — a single run can overshoot the hold (bounded; next run refused). Raise BORING_CREDITS_RESERVATION_EUR or lower MAX_CONTEXT/OUTPUT/CALLS to tighten.',
-        )
+        if (env.BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION === '1') {
+          app.log.warn(
+            { runReservationMicros: config.runReservationMicros, worstCaseRunMicros: worstCase },
+            'credits: UNSAFE per-run reservation (below worst-case run) explicitly allowed — a single run can overshoot the hold (bounded; next run refused). Launch-blocking debt.',
+          )
+        } else {
+          throw new Error(
+            `credits: per-run reservation (${config.runReservationMicros} micros) is below the worst-case run cost ` +
+              `(${worstCase} micros) — the per-run hard stop would not hold. Raise BORING_CREDITS_RESERVATION_EUR (or ` +
+              `lower BORING_CREDITS_MAX_CONTEXT_TOKENS/_MAX_OUTPUT_TOKENS/_MAX_CALLS_PER_RUN), or set ` +
+              `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION=1 to accept the soft stop deliberately.`,
+          )
+        }
       }
       // A free-grant smaller than the per-run hold means new users can't start a
       // run at all (reserve needs the full hold available). Surface it — the

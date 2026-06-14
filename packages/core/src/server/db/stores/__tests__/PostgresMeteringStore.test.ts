@@ -102,6 +102,19 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
     expect(await store.revokePurchase('never-credited')).toEqual({ revoked: false })
   })
 
+  it('fails closed on refund identity: a credited row with a store/mode is revoked only by a matching refund', async () => {
+    await store.grantPurchaseOnce({ orderId: 'ord-idm', userId: USER, amountMicros: 10_000_000, storeId: 'S1', testMode: false })
+    // Refund omitting store/mode (undefined expected) → must NOT revoke a row that has identity.
+    expect(await store.revokePurchase('ord-idm', { allowTombstone: false })).toEqual({ revoked: false })
+    expect((await store.getBalance(USER)).remainingMicros).toBe(10_000_000)
+    // Refund claiming a different store → no revoke.
+    expect(await store.revokePurchase('ord-idm', { expectedStoreId: 'S2', expectedTestMode: false })).toEqual({ revoked: false })
+    expect((await store.getBalance(USER)).remainingMicros).toBe(10_000_000)
+    // Matching store + mode → revoke.
+    expect(await store.revokePurchase('ord-idm', { expectedStoreId: 'S1', expectedTestMode: false })).toEqual({ revoked: true })
+    expect((await store.getBalance(USER)).remainingMicros).toBe(0)
+  })
+
   it('revokes an already-credited order even when tombstoning is disallowed (retired variant)', async () => {
     // The order was credited; a later refund whose variant was retired from the
     // allow-list (allowTombstone=false) must still revoke by order id.

@@ -298,11 +298,13 @@ export class PostgresMeteringStore {
         if (!allowTombstone) return { revoked: false }
         // A FULL refund writes a terminal 'refunded' tombstone (never credit it).
         // A PARTIAL refund records the pending fraction as 'refund_pending' so the
-        // later order_created grants NET of it.
+        // later order_created grants NET of it. Capture the refund's store/mode on
+        // the tombstone for reconcile/audit.
+        const tombstoneIdentity = { storeId: opts.expectedStoreId ?? null, testMode: opts.expectedTestMode ?? null }
         await tx.insert(creditPurchases).values(
           fraction >= 1
-            ? { orderId, status: 'refunded', source, refundedAt: new Date() }
-            : { orderId, status: 'refund_pending', source, refundedAt: new Date(), pendingRefundPpm: Math.round(fraction * 1_000_000) },
+            ? { orderId, status: 'refunded', source, refundedAt: new Date(), ...tombstoneIdentity }
+            : { orderId, status: 'refund_pending', source, refundedAt: new Date(), pendingRefundPpm: Math.round(fraction * 1_000_000), ...tombstoneIdentity },
         )
         return { revoked: false }
       }
@@ -320,12 +322,13 @@ export class PostgresMeteringStore {
         }
         return { revoked: false }
       }
-      // Defense in depth beyond the per-store/mode webhook secret: when the
-      // credited order has a stored store/mode, a refund claiming a different
-      // store or mode must NOT revoke it (guards a raw-order-id collision).
+      // Defense in depth beyond the per-store/mode webhook secret: once the
+      // credited order has a stored identity, the refund MUST present a matching
+      // one — fail closed if it differs OR is missing (a refund that can't prove
+      // it's for this order must not revoke it; guards a raw-order-id collision).
       if (
-        (row.storeId != null && opts.expectedStoreId != null && row.storeId !== opts.expectedStoreId) ||
-        (row.testMode != null && opts.expectedTestMode != null && row.testMode !== opts.expectedTestMode)
+        (row.storeId != null && row.storeId !== opts.expectedStoreId) ||
+        (row.testMode != null && row.testMode !== opts.expectedTestMode)
       ) {
         return { revoked: false }
       }

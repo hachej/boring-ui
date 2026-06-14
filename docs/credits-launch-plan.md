@@ -76,7 +76,8 @@ All money config is **fail-closed**: a provided-but-invalid value throws at star
 | `BORING_CREDITS_ENABLED` | no (default on) | `0` disables consumption + purchase routes entirely. |
 | `BORING_CREDITS_SIGNUP_GRANT_EUR` | no (default 2) | Free starter grant, EUR. |
 | `BORING_CREDITS_SIGNUP_GRANT_EXPIRES_DAYS` | no (default never) | `0`/unset = never; else a positive integer. |
-| `BORING_CREDITS_RESERVATION_EUR` | no | Per-run hold. **Unset ⇒ computed worst-case run** (see limitations). An explicit value below the worst case throws. |
+| `BORING_CREDITS_RESERVATION_EUR` | no | Per-run hold. **Unset ⇒ computed worst-case run** (see limitations). An explicit value below the worst case **throws** unless `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION=1`. |
+| `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION` | no | `1` accepts a per-run hold below the worst-case run (soft stop; launch-blocking debt). |
 | `BORING_CREDITS_MIN_BALANCE_EUR` | no (default 0.05) | Floor kept available **after** a run's hold. |
 | `BORING_CREDITS_MARGIN` | no (default 1.3) | Pricing margin; must be ≥ 1. |
 | `BORING_CREDITS_RATES` | recommended | `regex=inEur:outEur;…` per-MTok rates (e.g. `infomaniak=0.5:1.5`). Matched against `provider/id`. Non-positive/malformed entries throw. |
