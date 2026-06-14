@@ -27,21 +27,25 @@ async function fetchBalance(apiBaseUrl: string): Promise<CreditBalanceResponse |
   }
 }
 
+function clearStoredBaseline(): void {
+  try { window.localStorage.removeItem(CHECKOUT_BASELINE_STORAGE_KEY) } catch { /* ignore */ }
+}
+
 /** Read (and consume) the pre-checkout NET baseline stashed by buy() in localStorage.
- * Returns null when absent/unparseable/stale so the caller can fall back to a fetched
- * baseline. Always removes the key (even when stale) so it can't linger and mislead a
- * later checkout. */
-function takeStoredBaseline(now: number): number | null {
+ * Returns the baseline + the user it was captured for, or null when absent/unparseable/
+ * stale. Always removes the key (even when stale) so it can't linger and mislead a later
+ * checkout. The caller must still match userId before trusting it. */
+function takeStoredBaseline(now: number): { net: number; userId?: string } | null {
   try {
     const raw = window.localStorage.getItem(CHECKOUT_BASELINE_STORAGE_KEY)
     if (raw === null) return null
     window.localStorage.removeItem(CHECKOUT_BASELINE_STORAGE_KEY)
-    const parsed = JSON.parse(raw) as { net?: unknown; ts?: unknown }
+    const parsed = JSON.parse(raw) as { net?: unknown; ts?: unknown; userId?: unknown }
     const net = Number(parsed?.net)
     const ts = Number(parsed?.ts)
     if (!Number.isFinite(net) || !Number.isFinite(ts)) return null
     if (now - ts > CHECKOUT_BASELINE_TTL_MS) return null // stale / abandoned checkout
-    return net
+    return { net, userId: typeof parsed?.userId === 'string' ? parsed.userId : undefined }
   } catch {
     return null
   }
@@ -69,6 +73,8 @@ export function useCheckoutReturnHandler({ apiBaseUrl = '', param = 'checkout' }
     window.history.replaceState(window.history.state, '', url.toString())
 
     if (marker === 'cancelled') {
+      // Drop any baseline from the abandoned checkout so it can't mislead a later return.
+      clearStoredBaseline()
       setStatus('cancelled')
       return
     }
@@ -79,13 +85,18 @@ export function useCheckoutReturnHandler({ apiBaseUrl = '', param = 'checkout' }
     setStatus('checking')
 
     void (async () => {
-      // Prefer the pre-checkout NET baseline captured by buy() (crosses tabs via
-      // localStorage); fall back to a baseline fetched now (worse — a fast webhook may
-      // already be included). If we can't establish ANY baseline, we never confirm —
-      // only a real net increase confirms, so a spoofed ?checkout=return can't fake
-      // success. Net (remaining − debt) so a debt-clearing top-up also confirms.
+      // Establish the confirmation baseline (NET = remaining − debt, so a debt-clearing
+      // top-up also confirms). Prefer the pre-checkout baseline captured by buy()
+      // (crosses tabs via localStorage) — but ONLY when it was captured for the SAME
+      // authenticated user (shared localStorage could hold another user's baseline).
+      // Otherwise fall back to a baseline fetched now (worse — a fast webhook may already
+      // be included). If we can't establish ANY baseline, we never confirm — only a real
+      // net increase confirms, so a spoofed/cross-user ?checkout=return can't fake success.
       const stored = takeStoredBaseline(Date.now())
-      const baseline = stored ?? (await fetchBalance(apiBaseUrl).then((b) => (b ? creditNetMicros(b) : null)))
+      const current = await fetchBalance(apiBaseUrl)
+      const baseline = stored && current && stored.userId === current.userId
+        ? stored.net
+        : (current ? creditNetMicros(current) : null)
       // Tell other tabs (and our own balance hooks) to refresh.
       window.dispatchEvent(new Event(CREDITS_REFRESH_EVENT))
       try { channel = new BroadcastChannel('credits'); channel.postMessage('refresh') } catch { /* unsupported */ }

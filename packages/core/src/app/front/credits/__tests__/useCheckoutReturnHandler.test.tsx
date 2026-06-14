@@ -4,10 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useCheckoutReturnHandler } from '../useCheckoutReturnHandler'
 import { CHECKOUT_BASELINE_STORAGE_KEY } from '../useCreditBalance'
 
-function balance(remainingMicros: number, debtMicros = 0) {
+function balance(remainingMicros: number, debtMicros = 0, userId = 'u1') {
   return {
     enabled: true,
-    userId: 'u1',
+    userId,
     grantedMicros: 0,
     usedMicros: 0,
     remainingMicros,
@@ -47,12 +47,23 @@ async function settle() {
 
 describe('useCheckoutReturnHandler', () => {
   it('confirms only after a real net increase vs the stored pre-checkout baseline', async () => {
-    window.localStorage.setItem(CHECKOUT_BASELINE_STORAGE_KEY, JSON.stringify({ net: 0, ts: Date.now() }))
+    window.localStorage.setItem(CHECKOUT_BASELINE_STORAGE_KEY, JSON.stringify({ net: 0, ts: Date.now(), userId: 'u1' }))
     vi.stubGlobal('fetch', mockBalanceFetch(balance(1_000_000)))
 
     const { result } = renderHook(() => useCheckoutReturnHandler())
     await settle()
     expect(result.current.status).toBe('confirmed')
+  })
+
+  it('does NOT trust a baseline captured for a different user (shared localStorage)', async () => {
+    // Baseline belongs to 'other'; the authenticated user is 'u1'. The stored baseline
+    // must be ignored, so a pre-existing balance is not mistaken for a new purchase.
+    window.localStorage.setItem(CHECKOUT_BASELINE_STORAGE_KEY, JSON.stringify({ net: 0, ts: Date.now(), userId: 'other' }))
+    vi.stubGlobal('fetch', mockBalanceFetch(balance(9_000_000, 0, 'u1')))
+
+    const { result } = renderHook(() => useCheckoutReturnHandler())
+    await settle()
+    expect(result.current.status).toBe('processing')
   })
 
   it('does NOT confirm a spoofed return when no baseline can be established', async () => {
@@ -67,7 +78,7 @@ describe('useCheckoutReturnHandler', () => {
 
   it('confirms a debt-clearing top-up even though remainingMicros stays at 0', async () => {
     // Pre-checkout: in debt (net −5e6). After: debt cleared (net 0) → increase.
-    window.localStorage.setItem(CHECKOUT_BASELINE_STORAGE_KEY, JSON.stringify({ net: -5_000_000, ts: Date.now() }))
+    window.localStorage.setItem(CHECKOUT_BASELINE_STORAGE_KEY, JSON.stringify({ net: -5_000_000, ts: Date.now(), userId: 'u1' }))
     vi.stubGlobal('fetch', mockBalanceFetch(balance(0, 0)))
 
     const { result } = renderHook(() => useCheckoutReturnHandler())

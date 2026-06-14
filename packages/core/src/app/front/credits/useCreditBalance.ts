@@ -155,7 +155,9 @@ export function useCreditBalance({
         if (current) {
           window.localStorage.setItem(
             CHECKOUT_BASELINE_STORAGE_KEY,
-            JSON.stringify({ net: creditNetMicros(current), ts: Date.now() }),
+            // userId so the return handler can reject a baseline left by a DIFFERENT
+            // user (shared localStorage) instead of confirming a phantom purchase.
+            JSON.stringify({ net: creditNetMicros(current), ts: Date.now(), userId: current.userId }),
           )
         }
       } catch { /* localStorage unavailable — handler falls back to a fetched baseline */ }

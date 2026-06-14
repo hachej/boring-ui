@@ -119,6 +119,13 @@ class FakeRemotePiSession {
     this.state = state
     for (const listener of this.listeners) listener()
   }
+
+  // Set by remoteFactory from the session options; lets tests push stream events
+  // (e.g. agent-end) the way RemotePiSession would when frames arrive.
+  onEvent?: (event: unknown) => void
+  emit(event: unknown): void {
+    this.onEvent?.(event)
+  }
 }
 
 function remoteState(overrides: Partial<PiChatState> = {}): PiChatState {
@@ -142,6 +149,7 @@ function remoteFactory(remote: FakeRemotePiSession) {
       workspaceId: options.workspaceId,
       storageScope: options.storageScope ?? remote.state.storageScope,
     }
+    remote.onEvent = options.onEvent as ((event: unknown) => void) | undefined
     return remote as unknown as RemotePiSession
   })
   return factory
@@ -393,7 +401,7 @@ describe('PiChatPanel sandbox shell', () => {
     expect(onTurnComplete).not.toHaveBeenCalled()
   })
 
-  test('fires onTurnComplete once when a run settles from busy to idle', async () => {
+  test('fires onTurnComplete per turn-settle event, including back-to-back queued turns', async () => {
     const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
     const onTurnComplete = vi.fn()
@@ -410,12 +418,16 @@ describe('PiChatPanel sandbox shell', () => {
     await screen.findByText('committed from /state')
     expect(onTurnComplete).not.toHaveBeenCalled()
 
-    act(() => { remote.setState({ ...remote.state, status: 'streaming' }) })
-    await waitFor(() => expect(screen.queryByTestId('chat-working')).toBeTruthy())
+    // Non-settle events don't trigger it.
+    act(() => { remote.emit({ type: 'agent-start', seq: 8, turnId: 't1' }) })
     expect(onTurnComplete).not.toHaveBeenCalled()
 
-    act(() => { remote.setState({ ...remote.state, status: 'idle' }) })
+    // Each agent-end is one settled turn — fires once each, even back-to-back (no
+    // reliance on a rendered streaming→idle→streaming flicker the store may coalesce).
+    act(() => { remote.emit({ type: 'agent-end', seq: 9, turnId: 't1', status: 'ok' }) })
     await waitFor(() => expect(onTurnComplete).toHaveBeenCalledTimes(1))
+    act(() => { remote.emit({ type: 'agent-end', seq: 10, turnId: 't2', status: 'ok' }) })
+    await waitFor(() => expect(onTurnComplete).toHaveBeenCalledTimes(2))
   })
 
   test('shows session controls by default for managed Pi sessions', async () => {

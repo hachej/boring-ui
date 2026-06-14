@@ -219,6 +219,10 @@ export function PiChatPanel({
   const showSessionSidebar = showSessions ?? externalSessionId === undefined
   const onDataRef = useRef(onData)
   onDataRef.current = onData
+  // Ref so the (memoized) session-options closure can fire onTurnComplete without
+  // re-creating the session each time the callback identity changes.
+  const onTurnCompleteRef = useRef(onTurnComplete)
+  onTurnCompleteRef.current = onTurnComplete
   const sessionListRefreshRef = useRef<(() => void) | undefined>(undefined)
   const requestHeadersKey = useMemo(() => headersContentKey(requestHeaders), [requestHeaders])
   const normalizedRequestHeaders = useMemo(() => normalizedHeadersFromContentKey(requestHeadersKey), [requestHeadersKey])
@@ -228,6 +232,11 @@ export function PiChatPanel({
     onEvent: (event: PiChatEvent) => {
       remoteSessionOptions?.onEvent?.(event)
       onDataRef.current?.(event)
+      // Fire onTurnComplete on the per-turn settle event. Driven by the event stream
+      // (not rendered status edges) so back-to-back queued turns each report once even
+      // when the store coalesces a streaming→idle→streaming flicker, and so a rejected
+      // send (which never produces agent-end) is never reported as a settled turn.
+      if (event.type === 'agent-end') onTurnCompleteRef.current?.()
       if (shouldRefreshSessionListAfterEvent(event)) sessionListRefreshRef.current?.()
     },
   }), [hydrateMessages, remoteSessionOptions])
@@ -334,11 +343,6 @@ export function PiChatPanel({
   }, [onAutoSubmitInitialDraftSettled])
   const prevStatusRef = useRef<PiChatStatus>('idle')
   const statusRef = useRef<PiChatStatus>('idle')
-  // Tracks the prior (session, status) for the onTurnComplete edge detector. Kept
-  // separate from prevStatusRef (which the auto-submit settle effect owns) so the two
-  // detectors don't clobber each other's bookkeeping. Scoped by session so switching
-  // away from a busy session to a different idle one isn't read as a turn settling.
-  const turnCompletePrevRef = useRef<{ sessionId?: string; status: PiChatStatus } | undefined>(undefined)
   const scrollToBottomRef = useRef<() => void>(() => {})
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const [localNotices, setLocalNotices] = useState<PanelNotice[]>([])
@@ -736,7 +740,7 @@ export function PiChatPanel({
     const errorCode = piChatErrorCode(error)
     // Un-dismiss first: if the user dismissed a prior rejection, the id sits in
     // dismissedNoticeIds and would filter out this fresh one — leaving them with no
-    // recovery action while the error persists (e.g. still out of credits).
+    // recovery action while the same error condition persists.
     dropLocalNotice(RUN_REJECTED_NOTICE_ID)
     addLocalNotice({
       id: RUN_REJECTED_NOTICE_ID,
@@ -847,21 +851,6 @@ export function PiChatPanel({
     settlePendingAutoSubmit()
   }, [settlePendingAutoSubmit, status])
 
-  // Fire onTurnComplete once per run settle (busy → idle). Hosts use it to refresh
-  // out-of-band state after a turn (e.g. a usage/quota indicator); the agent stays
-  // agnostic about what that state is. Keyed off the SERVER status (remoteStatus), not
-  // the derived/optimistic one — a rejected send only flips the local 'submitted'
-  // marker, which must NOT count as a settled turn. Only an edge WITHIN the same active
-  // session counts; a session switch records the new baseline without firing.
-  useEffect(() => {
-    const previous = turnCompletePrevRef.current
-    turnCompletePrevRef.current = { sessionId: activeSessionId, status: remoteStatus }
-    if (previous === undefined || previous.sessionId !== activeSessionId) return
-    const wasBusy = isPiBusyStatus(previous.status) || previous.status === 'submitted'
-    const settled = !isPiBusyStatus(remoteStatus) && remoteStatus !== 'submitted'
-    if (wasBusy && settled) onTurnComplete?.()
-  }, [activeSessionId, onTurnComplete, remoteStatus])
-
   useEffect(() => {
     if (!autoSubmitInitialDraft || !policy || !activeSessionId || composerBlocked) return
     if (!initialDraftGuard.current.claimAutoSubmit(activeSessionId, initialDraft)) return
@@ -896,9 +885,9 @@ export function PiChatPanel({
       clearLocalSubmitted(activeSessionId)
       restoreSubmittedDraft()
       settlePendingAutoSubmit(activeSessionId)
-      // Same normalization as the composer path so an auto-submitted run that the
-      // server rejects (e.g. out of credits) surfaces the actionable run-rejected
-      // notice instead of an inert generic error.
+      // Same normalization as the composer path so an auto-submitted run the server
+      // rejects (for any reason) surfaces the actionable run-rejected notice instead
+      // of an inert generic error.
       surfaceRunRejected(error)
     })
   }, [activeSessionId, autoSubmitInitialDraft, clearLocalSubmitted, composerBlocked, dropLocalNotice, initialDraft, markLocalSubmitted, onAutoSubmitInitialDraftAccepted, policy, selectedPiSession, setComposerDraft, settlePendingAutoSubmit, surfaceRunRejected])
