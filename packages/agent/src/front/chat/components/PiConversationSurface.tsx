@@ -40,8 +40,8 @@ export interface PiConversationSurfaceProps {
   toolRenderers: ToolRendererOverrides
   runtimeNotices: PanelNotice[]
   onDismissNotice: (id: string) => void
-  /** Host-supplied action node for a runtime notice (e.g. a recovery action for a
-   * PAYMENT_REQUIRED notice). Forwarded to RuntimeNoticeMessages. */
+  /** Host-supplied recovery action node for a runtime notice, keyed off its error
+   * code. Forwarded to RuntimeNoticeMessages. */
   renderNoticeAction?: (notice: PanelNotice) => ReactNode
   onScrollToBottomReady: (scrollToBottom: () => void) => void
   onSuggestionSubmit: (payload: { text: string; files: FileUIPart[]; source: 'suggestion' }) => Promise<false | void>

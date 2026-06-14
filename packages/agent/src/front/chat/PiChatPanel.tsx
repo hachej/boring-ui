@@ -159,8 +159,8 @@ export interface PiChatPanelProps {
    * agnostic about what the host does with it. */
   onTurnComplete?: () => void
   /** Host-supplied action node for a runtime notice, keyed off notice.errorCode.
-   * Lets a host attach a recovery action for a specific error code (e.g. for a
-   * PAYMENT_REQUIRED notice) without the agent knowing what the code means. */
+   * Lets a host attach a recovery action for a specific error code without the agent
+   * knowing what the code means or what the action does. */
   renderNoticeAction?: (notice: PiChatRuntimeNotice) => ReactNode
 }
 
@@ -731,7 +731,7 @@ export function PiChatPanel({
 
   // Turn a rejected send (prompt/follow-up/auto-submit) into the single run-rejected
   // notice, carrying the stable server error code so a host can attach a recovery
-  // action for a specific code (e.g. for PAYMENT_REQUIRED).
+  // action for a specific code.
   const surfaceRunRejected = useCallback((error: unknown) => {
     const errorCode = piChatErrorCode(error)
     addLocalNotice({
@@ -752,17 +752,19 @@ export function PiChatPanel({
     const restoreSubmittedDraft = () => {
       if (draftRef.current === '') setComposerDraft(submittedDraft)
     }
-    // Retract a prior run-rejected CTA: this admit supersedes it (and a fresh
-    // rejection should re-render rather than be suppressed).
-    dropLocalNotice(RUN_REJECTED_NOTICE_ID)
     setComposerDraft('', false)
     scrollToBottomRef.current()
     try {
       const result = await policy.submit({ text, files, source })
       if (result.preserveDraft) {
+        // Locally blocked (composer blocker, onBeforeSubmit veto): NOT an admit, so
+        // leave any prior run-rejected CTA in place — nothing superseded it.
         restoreSubmittedDraft()
         return false
       }
+      // Admitted: this run supersedes a prior rejection, so retract its CTA. (A fresh
+      // rejection in the catch below re-renders it because dropLocalNotice un-dismisses.)
+      dropLocalNotice(RUN_REJECTED_NOTICE_ID)
       if (result.type === 'prompt' && activeChatSessionId) {
         if (shouldHoldLocalSubmitted(selectedPiSession, result.cursor)) markLocalSubmitted(activeChatSessionId)
         else clearLocalSubmitted(activeChatSessionId)
@@ -772,9 +774,9 @@ export function PiChatPanel({
       clearLocalSubmitted(activeChatSessionId)
       restoreSubmittedDraft()
       // Single normalization point for rejected sends: surface as one stable
-      // notice carrying the server error code so a host can attach a code-specific
-      // action (e.g. Buy credits for PAYMENT_REQUIRED). Swallow the rejection
-      // afterwards so the fire-and-forget composer callsite has nothing to leak.
+      // notice carrying the server error code so a host can attach a recovery
+      // action for a specific code. Swallow the rejection afterwards so the
+      // fire-and-forget composer callsite has nothing to leak.
       surfaceRunRejected(error)
       return false
     }
@@ -873,6 +875,8 @@ export function PiChatPanel({
         }
         return
       }
+      // Admitted: supersede a prior run-rejected CTA (same rule as the composer path).
+      dropLocalNotice(RUN_REJECTED_NOTICE_ID)
       if (result.type === 'prompt') {
         if (shouldHoldLocalSubmitted(selectedPiSession, result.cursor)) markLocalSubmitted(activeSessionId)
         else clearLocalSubmitted(activeSessionId)
@@ -891,7 +895,7 @@ export function PiChatPanel({
       // notice instead of an inert generic error.
       surfaceRunRejected(error)
     })
-  }, [activeSessionId, autoSubmitInitialDraft, clearLocalSubmitted, composerBlocked, initialDraft, markLocalSubmitted, onAutoSubmitInitialDraftAccepted, policy, selectedPiSession, setComposerDraft, settlePendingAutoSubmit, surfaceRunRejected])
+  }, [activeSessionId, autoSubmitInitialDraft, clearLocalSubmitted, composerBlocked, dropLocalNotice, initialDraft, markLocalSubmitted, onAutoSubmitInitialDraftAccepted, policy, selectedPiSession, setComposerDraft, settlePendingAutoSubmit, surfaceRunRejected])
 
   useEffect(() => {
     if (workspaceWarmupStatus?.status === 'ready') {

@@ -662,12 +662,12 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
-  it('surfaces the stable server error code from a rejected prompt via piChatErrorCode', async () => {
+  it('surfaces the stable, canonical server error code from a rejected command via piChatErrorCode', async () => {
     const events = openNdjsonStream()
     const fetchMock = vi.fn(async (url: string) => {
       if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
       if (url.endsWith('/prompt')) {
-        return jsonResponse({ error: { code: 'PAYMENT_REQUIRED', message: 'out of credits' } }, 402)
+        return jsonResponse({ error: { code: ErrorCode.enum.SESSION_LOCKED, message: 'locked' } }, 423)
       }
       throw new Error(`unexpected URL ${url}`)
     }) as unknown as MockFetch
@@ -677,17 +677,19 @@ describe('RemotePiSession', () => {
       () => { throw new Error('prompt should have rejected') },
       (err: unknown) => err,
     )
-    expect(piChatErrorCode(error)).toBe('PAYMENT_REQUIRED')
+    expect(piChatErrorCode(error)).toBe(ErrorCode.enum.SESSION_LOCKED)
     // The rejection also rolls back the optimistic message so the composer recovers.
     expect(session.getState().optimisticOutbox).toEqual({})
 
     session.dispose()
   })
 
-  it('piChatErrorCode returns undefined for errors without a code and reads a plain errorCode', () => {
+  it('piChatErrorCode ignores non-canonical/missing codes and reads a plain canonical errorCode', () => {
     expect(piChatErrorCode(new Error('boom'))).toBeUndefined()
     expect(piChatErrorCode(undefined)).toBeUndefined()
-    expect(piChatErrorCode(Object.assign(new Error('x'), { errorCode: 'PAYMENT_REQUIRED' }))).toBe('PAYMENT_REQUIRED')
+    // A non-canonical code must NOT be surfaced as a host action key.
+    expect(piChatErrorCode(Object.assign(new Error('x'), { errorCode: 'NOT_A_REAL_CODE' }))).toBeUndefined()
+    expect(piChatErrorCode(Object.assign(new Error('x'), { errorCode: ErrorCode.enum.SESSION_LOCKED }))).toBe(ErrorCode.enum.SESSION_LOCKED)
   })
 
   it('clears optimistic queued follow-ups from the stop receipt before a queue echo arrives', async () => {

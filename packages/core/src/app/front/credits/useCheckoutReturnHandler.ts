@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { CHECKOUT_BASELINE_STORAGE_KEY, CREDITS_REFRESH_EVENT } from './useCreditBalance.js'
-import type { CreditBalanceResponse } from './helpers.js'
+import { CHECKOUT_BASELINE_STORAGE_KEY, CHECKOUT_BASELINE_TTL_MS, CREDITS_REFRESH_EVENT } from './useCreditBalance.js'
+import { creditNetMicros, type CreditBalanceResponse } from './helpers.js'
 
 export type CheckoutReturnStatus = 'idle' | 'checking' | 'confirmed' | 'processing' | 'cancelled'
 
@@ -27,15 +27,21 @@ async function fetchBalance(apiBaseUrl: string): Promise<CreditBalanceResponse |
   }
 }
 
-/** Read (and consume) the pre-checkout baseline stashed by buy(). Returns null when
- * absent/unparseable so the caller can fall back to a fetched baseline. */
-function takeStoredBaseline(): number | null {
+/** Read (and consume) the pre-checkout NET baseline stashed by buy() in localStorage.
+ * Returns null when absent/unparseable/stale so the caller can fall back to a fetched
+ * baseline. Always removes the key (even when stale) so it can't linger and mislead a
+ * later checkout. */
+function takeStoredBaseline(now: number): number | null {
   try {
-    const raw = window.sessionStorage.getItem(CHECKOUT_BASELINE_STORAGE_KEY)
+    const raw = window.localStorage.getItem(CHECKOUT_BASELINE_STORAGE_KEY)
     if (raw === null) return null
-    window.sessionStorage.removeItem(CHECKOUT_BASELINE_STORAGE_KEY)
-    const value = Number(raw)
-    return Number.isFinite(value) ? value : null
+    window.localStorage.removeItem(CHECKOUT_BASELINE_STORAGE_KEY)
+    const parsed = JSON.parse(raw) as { net?: unknown; ts?: unknown }
+    const net = Number(parsed?.net)
+    const ts = Number(parsed?.ts)
+    if (!Number.isFinite(net) || !Number.isFinite(ts)) return null
+    if (now - ts > CHECKOUT_BASELINE_TTL_MS) return null // stale / abandoned checkout
+    return net
   } catch {
     return null
   }
@@ -73,11 +79,13 @@ export function useCheckoutReturnHandler({ apiBaseUrl = '', param = 'checkout' }
     setStatus('checking')
 
     void (async () => {
-      // Prefer the pre-checkout baseline captured by buy(); fall back to a baseline
-      // fetched now (worse — a fast webhook may already be included). If we can't
-      // establish ANY baseline, we never confirm — only a real increase confirms, so
-      // a spoofed ?checkout=return can't fake success.
-      const baseline = takeStoredBaseline() ?? (await fetchBalance(apiBaseUrl))?.remainingMicros ?? null
+      // Prefer the pre-checkout NET baseline captured by buy() (crosses tabs via
+      // localStorage); fall back to a baseline fetched now (worse — a fast webhook may
+      // already be included). If we can't establish ANY baseline, we never confirm —
+      // only a real net increase confirms, so a spoofed ?checkout=return can't fake
+      // success. Net (remaining − debt) so a debt-clearing top-up also confirms.
+      const stored = takeStoredBaseline(Date.now())
+      const baseline = stored ?? (await fetchBalance(apiBaseUrl).then((b) => (b ? creditNetMicros(b) : null)))
       // Tell other tabs (and our own balance hooks) to refresh.
       window.dispatchEvent(new Event(CREDITS_REFRESH_EVENT))
       try { channel = new BroadcastChannel('credits'); channel.postMessage('refresh') } catch { /* unsupported */ }
@@ -87,7 +95,7 @@ export function useCheckoutReturnHandler({ apiBaseUrl = '', param = 'checkout' }
           if (cancelled) return
           const bal = await fetchBalance(apiBaseUrl)
           if (cancelled || !bal) return
-          if (baseline !== null && bal.remainingMicros > baseline) {
+          if (baseline !== null && creditNetMicros(bal) > baseline) {
             setStatus('confirmed')
             cancelled = true
             window.dispatchEvent(new Event(CREDITS_REFRESH_EVENT))

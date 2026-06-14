@@ -41,6 +41,15 @@ export interface CreditLedgerEntry {
   description: string
 }
 
+/** Net credit position in micros: remaining minus any debt. Used to detect a real
+ * top-up after checkout — `remainingMicros` is clamped at 0, so for a user in debt a
+ * purchase that only reduces debt wouldn't raise it; the net DOES rise. */
+export function creditNetMicros(balance: Pick<CreditBalanceResponse, 'remainingMicros' | 'debtMicros'>): number {
+  const remaining = Number.isFinite(balance.remainingMicros) ? balance.remainingMicros : 0
+  const debt = Number.isFinite(balance.debtMicros) ? balance.debtMicros : 0
+  return remaining - debt
+}
+
 /** Format SIGNED credit micros as a euro string with an explicit +/− sign. */
 export function formatSignedCreditMicros(micros: number, locale?: string): string {
   const euros = (Number.isFinite(micros) ? micros : 0) / 1_000_000

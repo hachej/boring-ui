@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { CreditBalanceResponse } from './helpers.js'
+import { creditNetMicros, type CreditBalanceResponse } from './helpers.js'
 
 /** Window event other code can dispatch to force an immediate balance refetch —
  * e.g. the chat dispatching `window.dispatchEvent(new Event(CREDITS_REFRESH_EVENT))`
  * when a run finishes, so the balance updates without waiting for the poll. */
 export const CREDITS_REFRESH_EVENT = 'credits:refresh'
 
-/** sessionStorage key holding the balance captured immediately BEFORE a checkout is
- * opened. The post-checkout return handler compares against this pre-checkout baseline
- * so it confirms only on a real server-side increase — and never confirms when it can't
- * establish a baseline (which would let a spoofed ?checkout=return fake a success). */
+/** localStorage key holding the NET balance captured immediately BEFORE a checkout is
+ * opened. localStorage (not sessionStorage) because the hosted checkout opens/redirects
+ * in a SEPARATE tab, which needs to read the opener tab's baseline. The post-checkout
+ * return handler confirms only on a real net increase vs this baseline — and never
+ * confirms when it can't establish one (so a spoofed ?checkout=return can't fake success). */
 export const CHECKOUT_BASELINE_STORAGE_KEY = 'credits:checkout-baseline'
+
+/** Max age for a stored checkout baseline. Beyond this it's treated as stale (an
+ * abandoned checkout from a previous session) and ignored. */
+export const CHECKOUT_BASELINE_TTL_MS = 60 * 60 * 1000
 
 export interface UseCreditBalanceOptions {
   /** Base URL for the credits API (default: same origin). */
@@ -142,14 +147,18 @@ export function useCreditBalance({
       if (!res.ok) return 'Could not start checkout. Please try again.'
       const { url } = (await res.json()) as { url?: string }
       if (!url) return 'Checkout is not available right now.'
-      // Stash the pre-checkout balance so the return handler can confirm only on a
-      // real increase. Best-effort: storage may be unavailable (private mode).
+      // Stash the pre-checkout NET balance (+ timestamp) so the return handler — which
+      // runs in the checkout tab — can confirm only on a real increase. localStorage so
+      // it crosses tabs. Best-effort: storage may be unavailable (private mode).
       try {
-        const current = balanceRef.current?.remainingMicros
-        if (typeof current === 'number' && Number.isFinite(current)) {
-          window.sessionStorage.setItem(CHECKOUT_BASELINE_STORAGE_KEY, String(current))
+        const current = balanceRef.current
+        if (current) {
+          window.localStorage.setItem(
+            CHECKOUT_BASELINE_STORAGE_KEY,
+            JSON.stringify({ net: creditNetMicros(current), ts: Date.now() }),
+          )
         }
-      } catch { /* sessionStorage unavailable — handler falls back to a fetched baseline */ }
+      } catch { /* localStorage unavailable — handler falls back to a fetched baseline */ }
       window.open(url, '_blank', 'noopener,noreferrer')
       return null
     } catch {

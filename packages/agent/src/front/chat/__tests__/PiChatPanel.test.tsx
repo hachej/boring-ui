@@ -347,10 +347,11 @@ describe('PiChatPanel sandbox shell', () => {
 
   test('surfaces a rejected run as one notice and lets a host attach a code-specific action', async () => {
     const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
-    remote.prompt.mockRejectedValueOnce(Object.assign(new Error('You are out of credits.'), { errorCode: 'PAYMENT_REQUIRED' }))
+    // A canonical, non-billing ErrorCode — the seam is generic; the host decides the action.
+    remote.prompt.mockRejectedValueOnce(Object.assign(new Error('Session is locked.'), { errorCode: 'SESSION_LOCKED' }))
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
     const renderNoticeAction = vi.fn((notice: { errorCode?: string }) =>
-      notice.errorCode === 'PAYMENT_REQUIRED' ? <button type="button">Resolve</button> : null,
+      notice.errorCode === 'SESSION_LOCKED' ? <button type="button">Resolve</button> : null,
     )
     render(
       <PiChatPanel
@@ -373,9 +374,9 @@ describe('PiChatPanel sandbox shell', () => {
       if (!el) throw new Error('run-rejected notice not yet rendered')
       return el
     })
-    expect(notice.textContent).toContain('You are out of credits.')
+    expect(notice.textContent).toContain('Session is locked.')
     // The host's renderNoticeAction was invoked with the coded notice and its action shows.
-    expect(renderNoticeAction).toHaveBeenCalledWith(expect.objectContaining({ errorCode: 'PAYMENT_REQUIRED' }))
+    expect(renderNoticeAction).toHaveBeenCalledWith(expect.objectContaining({ errorCode: 'SESSION_LOCKED' }))
     expect(within(notice as HTMLElement).getByRole('button', { name: 'Resolve' })).toBeTruthy()
   })
 

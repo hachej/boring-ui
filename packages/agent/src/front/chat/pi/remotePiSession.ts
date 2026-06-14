@@ -604,17 +604,19 @@ class RemotePiSessionHttpError extends Error {
 }
 
 /**
- * Extract the stable server error code (e.g. `PAYMENT_REQUIRED`) from an error thrown
- * by a command call (prompt/follow-up/etc). Returns undefined for non-HTTP errors or
- * bodies without a code. This is the agent's generic seam: callers map a code to UI
- * (a notice action) WITHOUT the agent knowing what the code means.
+ * Extract the stable, CANONICAL server error code (a member of the shared ErrorCode
+ * enum, e.g. `SESSION_LOCKED`) from an error thrown by a command call (prompt/follow-up/
+ * etc). Returns undefined for non-HTTP errors, bodies without a code, or non-canonical
+ * codes. This is the agent's generic seam: callers map a code to UI (a notice action)
+ * WITHOUT the agent knowing what the code means.
  */
 export function piChatErrorCode(error: unknown): string | undefined {
   if (error instanceof RemotePiSessionHttpError) return error.errorCode
   // Also accept a plain `errorCode` carried on any thrown value, so callers that
-  // re-wrap or synthesize a command error can still surface a stable code.
-  const code = (error as { errorCode?: unknown } | null)?.errorCode
-  return typeof code === 'string' && code ? code : undefined
+  // re-wrap or synthesize a command error can still surface a stable code — but only
+  // when it's a canonical ErrorCode, never an arbitrary string.
+  const parsed = ErrorCode.safeParse((error as { errorCode?: unknown } | null)?.errorCode)
+  return parsed.success ? parsed.data : undefined
 }
 
 function toOptimisticUserMessage(payload: PromptPayload | FollowUpPayload): OptimisticUserMessage {
@@ -660,7 +662,10 @@ function routeErrorCode(body: unknown): string | undefined {
   if (typeof body !== 'object' || body === null) return undefined
   const error = (body as Record<string, unknown>).error
   const payload = typeof error === 'object' && error !== null ? error as Record<string, unknown> : body as Record<string, unknown>
-  return typeof payload.code === 'string' && payload.code ? payload.code : undefined
+  // Only surface a CANONICAL code: hosts treat notice.errorCode as a stable action
+  // key, so a malformed/legacy body must not leak an arbitrary string.
+  const parsed = ErrorCode.safeParse(payload.code)
+  return parsed.success ? parsed.data : undefined
 }
 
 function errorMessage(error: unknown, fallback: string): string {
