@@ -182,7 +182,11 @@ export function useCreditBalance({
           )
         }
       } catch { /* localStorage unavailable — handler falls back to a fetched baseline */ }
-      window.open(url, '_blank', 'noopener,noreferrer')
+      // The checkout URL is fetched async (after the click), so the browser may have
+      // dropped the click's user activation and blocked the tab — window.open returns
+      // null. Surface that instead of silently reporting success with no checkout tab.
+      const opened = window.open(url, '_blank', 'noopener,noreferrer')
+      if (!opened) return 'Could not open the checkout tab. Please allow pop-ups for this site and try again.'
       return null
     } catch {
       return 'Could not reach the checkout service. Please try again.'

@@ -489,7 +489,9 @@ export class PostgresMeteringStore {
       this.db
         .select({ id: usageLedger.id, billedCostMicros: usageLedger.billedCostMicros, source: usageLedger.source, createdAt: usageLedger.createdAt })
         .from(usageLedger)
-        .where(eq(usageLedger.userId, userId))
+        // Exclude zero-cost (zero-token) rows IN SQL, before the limit: otherwise a run
+        // of recent zero-cost rows could fill `cap` and hide older billable activity.
+        .where(and(eq(usageLedger.userId, userId), gt(usageLedger.billedCostMicros, 0)))
         .orderBy(desc(usageLedger.createdAt))
         .limit(cap),
     ])
@@ -501,7 +503,6 @@ export class PostgresMeteringStore {
         createdAt: g.createdAt.toISOString(),
       })),
       ...usage
-        .filter((u) => u.billedCostMicros > 0)
         .map((u): CreditLedgerEntry => ({
           id: opaqueLedgerId('u', u.id),
           ...describeUsage(u.source),

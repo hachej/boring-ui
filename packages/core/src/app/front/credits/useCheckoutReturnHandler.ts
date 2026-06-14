@@ -84,19 +84,18 @@ export function useCheckoutReturnHandler({ apiBaseUrl = '', param = 'checkout' }
     let channel: BroadcastChannel | null = null
     setStatus('checking')
 
+    // Confirmation baseline (NET = remaining − debt, so a debt-clearing top-up confirms
+    // too). Prefer the pre-checkout baseline captured by buy() (crosses tabs via
+    // localStorage) but ONLY for the SAME authenticated user (shared localStorage could
+    // hold another user's). It is established LAZILY on the first SUCCESSFUL same-user
+    // poll, so a transient first balance failure doesn't permanently block confirmation.
+    // Without a usable stored baseline we fall back to that first poll's value (worse — a
+    // fast webhook may already be included); we never confirm without a baseline, so a
+    // spoofed/cross-user ?checkout=return can't fake success.
+    const stored = takeStoredBaseline(Date.now())
+    let baseline: number | null = null
+
     void (async () => {
-      // Establish the confirmation baseline (NET = remaining − debt, so a debt-clearing
-      // top-up also confirms). Prefer the pre-checkout baseline captured by buy()
-      // (crosses tabs via localStorage) — but ONLY when it was captured for the SAME
-      // authenticated user (shared localStorage could hold another user's baseline).
-      // Otherwise fall back to a baseline fetched now (worse — a fast webhook may already
-      // be included). If we can't establish ANY baseline, we never confirm — only a real
-      // net increase confirms, so a spoofed/cross-user ?checkout=return can't fake success.
-      const stored = takeStoredBaseline(Date.now())
-      const current = await fetchBalance(apiBaseUrl)
-      const baseline = stored && current && stored.userId === current.userId
-        ? stored.net
-        : (current ? creditNetMicros(current) : null)
       // Tell other tabs (and our own balance hooks) to refresh.
       window.dispatchEvent(new Event(CREDITS_REFRESH_EVENT))
       try { channel = new BroadcastChannel('credits'); channel.postMessage('refresh') } catch { /* unsupported */ }
@@ -106,7 +105,10 @@ export function useCheckoutReturnHandler({ apiBaseUrl = '', param = 'checkout' }
           if (cancelled) return
           const bal = await fetchBalance(apiBaseUrl)
           if (cancelled || !bal) return
-          if (baseline !== null && creditNetMicros(bal) > baseline) {
+          if (baseline === null) {
+            baseline = stored && stored.userId === bal.userId ? stored.net : creditNetMicros(bal)
+          }
+          if (creditNetMicros(bal) > baseline) {
             setStatus('confirmed')
             cancelled = true
             window.dispatchEvent(new Event(CREDITS_REFRESH_EVENT))

@@ -637,6 +637,18 @@ describe('PostgresMeteringStore', () => {
     expect((await store.listLedger(USER, 9999)).length).toBeLessThanOrEqual(50)
   })
 
+  it('listLedger does not let recent zero-cost rows hide older billable usage', async () => {
+    // Older billable usage, then several newer zero-cost (zero-token) rows.
+    await store.recordUsage({ usageId: 'led-old', userId: USER, source: 'pi-chat', billedCostMicros: 700_000, metadata: {} })
+    for (let i = 0; i < 3; i += 1) {
+      await store.recordUsage({ usageId: `led-zero-${i}`, userId: USER, source: 'pi-chat', billedCostMicros: 0, metadata: {} })
+    }
+    // Even with a small limit, the billable row must surface (zero rows are excluded in SQL).
+    const entries = await store.listLedger(USER, 2)
+    expect(entries.some((e) => e.kind === 'usage' && e.amountMicros === -700_000)).toBe(true)
+    expect(entries.every((e) => e.amountMicros !== 0)).toBe(true)
+  })
+
   it('rejects invalid amounts', async () => {
     await expect(store.grantOnce({ userId: USER, reason: 'bad', amountMicros: 0 })).rejects.toThrow('positive integer')
     await expect(store.reserve({ userId: USER, runId: 't', amountMicros: 1.5, ttlSeconds: 60 })).rejects.toThrow('positive integer')
