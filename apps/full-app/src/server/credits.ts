@@ -263,12 +263,28 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
   const runReservationMicros = env.BORING_CREDITS_RESERVATION_EUR
     ? eurToMicros('BORING_CREDITS_RESERVATION_EUR', env.BORING_CREDITS_RESERVATION_EUR, 1)
     : servedWorstCase
+  // The stale-reservation sweep charges-on-expire any reservation past TTL that has
+  // usage rows (treating it as a run that executed but never settled). If the TTL
+  // could elapse while a run is STILL alive, that charge-on-expire plus the run's
+  // later usage would overcharge. Enforce the invariant (rather than leave it to
+  // operator folklore): TTL must exceed the declared max run runtime + a settlement
+  // slack, so a still-running run can never be old enough to be swept.
+  const reservationTtlSeconds = Math.max(60, parseNumberEnv('BORING_CREDITS_RESERVATION_TTL_SECONDS', env.BORING_CREDITS_RESERVATION_TTL_SECONDS, 7200, 60))
+  const maxRunSeconds = parseNumberEnv('BORING_CREDITS_MAX_RUN_SECONDS', env.BORING_CREDITS_MAX_RUN_SECONDS, 1800, 1, true)
+  const SETTLEMENT_SLACK_SECONDS = 300
+  if (env.BORING_CREDITS_ENABLED !== '0' && reservationTtlSeconds < maxRunSeconds + SETTLEMENT_SLACK_SECONDS) {
+    throw new Error(
+      `credits: BORING_CREDITS_RESERVATION_TTL_SECONDS (${reservationTtlSeconds}) must exceed BORING_CREDITS_MAX_RUN_SECONDS ` +
+        `(${maxRunSeconds}) by at least ${SETTLEMENT_SLACK_SECONDS}s of settlement slack — otherwise the stale-reservation ` +
+        `sweep could charge-on-expire a run that is still alive (overcharge). Raise the TTL or lower the declared max run runtime.`,
+    )
+  }
   return {
     enabled: env.BORING_CREDITS_ENABLED !== '0',
     signupGrantMicros: eurToMicros('BORING_CREDITS_SIGNUP_GRANT_EUR', env.BORING_CREDITS_SIGNUP_GRANT_EUR, 2),
     signupGrantExpiresAfterDays: parseExpiryDays(env.BORING_CREDITS_SIGNUP_GRANT_EXPIRES_DAYS),
     runReservationMicros,
-    reservationTtlSeconds: Math.max(60, parseNumberEnv('BORING_CREDITS_RESERVATION_TTL_SECONDS', env.BORING_CREDITS_RESERVATION_TTL_SECONDS, 7200, 60)),
+    reservationTtlSeconds,
     minBalanceMicros: eurToMicros('BORING_CREDITS_MIN_BALANCE_EUR', env.BORING_CREDITS_MIN_BALANCE_EUR, 0.05),
     pricing: {
       margin,

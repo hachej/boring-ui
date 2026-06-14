@@ -94,6 +94,8 @@ All money config is **fail-closed**: a provided-but-invalid value throws at star
 | `BORING_CREDITS_MARGIN` | no (default 1.3) | Pricing margin; must be ≥ 1. |
 | `BORING_CREDITS_RATES` | recommended | `regex=inEur:outEur;…` per-MTok rates (e.g. `infomaniak=0.5:1.5`). Matched against `provider/id`. Non-positive/malformed entries throw. |
 | `BORING_CREDITS_MAX_CONTEXT_TOKENS` / `_MAX_OUTPUT_TOKENS` / `_MAX_CALLS_PER_RUN` | no (200k/16k/4) | Worst-case-run inputs for hold sizing. |
+| `BORING_CREDITS_MAX_RUN_SECONDS` | no (default 1800) | Declared max wall-clock runtime of a single run. Startup **throws** unless `RESERVATION_TTL_SECONDS ≥ this + 300s` slack — so the stale-reservation sweep can't charge-on-expire a still-alive run (overcharge). |
+| `BORING_CREDITS_RESERVATION_TTL_SECONDS` | no (default 7200) | How long a per-run hold survives before the sweep settles/expires it. Must exceed `MAX_RUN_SECONDS + 300s`. |
 | `BORING_CREDITS_LS_WEBHOOK_SECRET` | for purchases | LS webhook signing secret (raw-body HMAC). |
 | `BORING_CREDITS_LS_STORE_ID` | **required if webhook secret set** | Webhook ignores orders from other stores. |
 | `BORING_CREDITS_LS_TEST_MODE` | **required if LS configured** | Exactly `0` (live) or `1` (test). |
@@ -134,9 +136,12 @@ fail closed at the highest effective rate.
    *and* fallback charge *both* failed from the very start (no usage row ever written) and
    stayed failed past TTL — i.e. a total DB outage spanning the whole run, when nothing durable
    can be written anyway. The complete fix (an external out-of-DB settlement-intent log +
-   retry worker) is a tracked follow-up. Mitigation: keep `BORING_CREDITS_RESERVATION_TTL_SECONDS`
-   (default 2h) above any real run's max runtime, and alert on logged fallback failures.
-   (Per-message usage is debited as it arrives regardless of the hold.)
+   retry worker) is a tracked follow-up. The "TTL above any real run's max runtime" mitigation
+   is now **enforced**, not folklore: startup throws unless
+   `BORING_CREDITS_RESERVATION_TTL_SECONDS ≥ BORING_CREDITS_MAX_RUN_SECONDS + 300s`, so the sweep
+   can't charge-on-expire a still-alive long run (which would overcharge it: the hold top-up plus
+   the run's later usage). Alert on logged fallback failures. (Per-message usage is debited as it
+   arrives regardless of the hold.)
 4. **Purchase key is namespaced by store+mode** at the route layer
    (`ls:<store>:<test|live>:<orderId>`), so a Lemon Squeezy order id reused across test/live
    or stores (or test data sharing a prod DB) can't collide. The DB column is still a plain
@@ -152,8 +157,14 @@ fail closed at the highest effective rate.
 ## Accepted structural debt (tracked, not blocking — money paths are correct & tested)
 - Extract a focused `PostgresCreditPurchaseStore` (purchase/refund lifecycle) and a
   `LemonSqueezyCreditPolicy` (one normalized validated-order decision) out of
-  `PostgresMeteringStore`/`routes`. The logic is correct and covered by 129+ tests; this is
+  `PostgresMeteringStore`/`routes`. The logic is correct and covered by 130+ tests; this is
   an auditability refactor.
+- Consolidate the webhook's store/mode/currency/variant predicates (`isOurStoreOrder`,
+  `isRefundForOurStore`, `isCreditVariant`, `isCreditOrder`, `isUnverifiedCreditOrder`) into one
+  pure `classifyLemonSqueezyOrder(order, policy) → 'credit' | 'foreign' | 'unknown_variant' |
+  'incomplete_identity'` with a direct decision-table test. Behaviour is correct and covered by
+  the webhook tests today; this is an auditability refactor (the overlapping booleans encode one
+  money-critical decision tree).
 - Promote `usage_ledger.reservationId` from JSON metadata to a first-class nullable column
   (the expiry fallback relies on the metadata tag today).
 - **Signup grant is issued lazily on first balance/reserve, not at account creation.**

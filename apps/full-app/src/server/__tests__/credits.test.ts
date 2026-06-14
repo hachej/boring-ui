@@ -56,6 +56,23 @@ describe('readCreditsConfig + assessReservationHold', () => {
     expect(verdict.action).toBe('ok')
   })
 
+  it('throws when the reservation TTL is not safely above the declared max run runtime', () => {
+    // TTL must exceed MAX_RUN_SECONDS + 300s slack, else the stale sweep could
+    // charge-on-expire a still-alive run (overcharge).
+    expect(() => readCreditsConfig({ BORING_CREDITS_RESERVATION_TTL_SECONDS: '600', BORING_CREDITS_MAX_RUN_SECONDS: '1800' }))
+      .toThrow(/must exceed BORING_CREDITS_MAX_RUN_SECONDS/)
+  })
+
+  it('accepts a TTL safely above the declared max run runtime', () => {
+    const config = readCreditsConfig({ BORING_CREDITS_RESERVATION_TTL_SECONDS: '2400', BORING_CREDITS_MAX_RUN_SECONDS: '1800' })
+    expect(config.reservationTtlSeconds).toBe(2400)
+  })
+
+  it('does not enforce the TTL invariant when credits are disabled', () => {
+    expect(() => readCreditsConfig({ BORING_CREDITS_ENABLED: '0', BORING_CREDITS_RESERVATION_TTL_SECONDS: '600', BORING_CREDITS_MAX_RUN_SECONDS: '1800' }))
+      .not.toThrow()
+  })
+
   it('rejects an expiring signup grant config at parse time downstream (config carries it through)', () => {
     // readCreditsConfig parses the value; CreditsService construction is what
     // rejects it. Here we just confirm the parsed config surfaces the days so the

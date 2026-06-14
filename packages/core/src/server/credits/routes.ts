@@ -103,6 +103,25 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
   // authenticated session, NOT the browser, so the webhook can trust it.
   if (ls.checkout) {
     const checkout = ls.checkout
+    // A checkout pack the webhook can't credit is a money trap: the customer pays
+    // through a server-created checkout and the webhook then fails to credit (or
+    // 500s as an unrecognized variant). Fail registration unless every checkout
+    // variant is a configured credit variant with a positive credit value, and the
+    // default pack exists. (Full-app derives both maps from one env, but the
+    // exported route API must not allow the unsafe wiring.)
+    const checkoutCreditVariants = new Set(ls.creditVariantIds)
+    for (const [packId, variantId] of Object.entries(checkout.variants)) {
+      if (!checkoutCreditVariants.has(variantId)) {
+        throw new Error(`credits: checkout pack "${packId}" maps to variant "${variantId}", which is not a configured credit variant (creditVariantIds) — a paid checkout for it would not be credited by the webhook`)
+      }
+      const micros = ls.creditMicrosByVariant?.[variantId]
+      if (typeof micros !== 'number' || !Number.isSafeInteger(micros) || micros <= 0) {
+        throw new Error(`credits: checkout pack "${packId}" variant "${variantId}" has no positive creditMicrosByVariant entry — a paid checkout for it could not be credited`)
+      }
+    }
+    if (!(checkout.defaultPack in checkout.variants)) {
+      throw new Error(`credits: checkout defaultPack "${checkout.defaultPack}" is not one of the configured checkout variants`)
+    }
     app.post(ls.checkoutPath ?? '/api/credits/checkout', async (request, reply) => {
       const userId = getUserId(request)
       if (!userId) {

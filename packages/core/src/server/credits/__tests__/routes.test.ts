@@ -156,6 +156,46 @@ describe('credits routes', () => {
     await a.close()
   })
 
+  it('fails registration when a checkout pack maps to a non-credit variant (money trap)', async () => {
+    const a = Fastify()
+    await expect(
+      (async () => {
+        registerCreditsRoutes(a, {
+          service: new CreditsService(makeStore(), CONFIG),
+          lemonSqueezy: {
+            webhookSecret: SECRET,
+            creditVariantIds: ['1'],
+            expectedTestMode: true,
+            creditMicrosByVariant: { '1': 10_000_000 },
+            checkout: { apiKey: 'k', storeId: 's', variants: { '10': '1', '25': '999' }, defaultPack: '10' },
+          },
+        })
+        await a.ready()
+      })(),
+    ).rejects.toThrow(/checkout pack "25" maps to variant "999", which is not a configured credit variant/)
+    await a.close()
+  })
+
+  it('fails registration when the checkout defaultPack is not a configured checkout variant', async () => {
+    const a = Fastify()
+    await expect(
+      (async () => {
+        registerCreditsRoutes(a, {
+          service: new CreditsService(makeStore(), CONFIG),
+          lemonSqueezy: {
+            webhookSecret: SECRET,
+            creditVariantIds: ['1'],
+            expectedTestMode: true,
+            creditMicrosByVariant: { '1': 10_000_000 },
+            checkout: { apiKey: 'k', storeId: 's', variants: { '10': '1' }, defaultPack: '25' },
+          },
+        })
+        await a.ready()
+      })(),
+    ).rejects.toThrow(/checkout defaultPack "25" is not one of the configured checkout variants/)
+    await a.close()
+  })
+
   it('rejects a paid order whose attribution token is missing/forged (500, no credit)', async () => {
     const store = makeStore()
     const a = await build(store)
