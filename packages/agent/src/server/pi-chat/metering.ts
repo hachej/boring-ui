@@ -688,34 +688,39 @@ export class PiChatMeteringCoordinator {
 
   private finishRun(run: MeteringRun, status: MeteringRunStatus): void {
     if (run.terminal) return
-    if (status !== 'ok' && run.usageCount === 0) {
-      // Free release is safe UNLESS the run actually started AND errored: a
-      // provider/network failure after agent_start may have made a paid model
-      // call whose usage object never arrived → fall through to the fallback hold
-      // charge. A user-initiated abort/cancel with zero usage stays free: Pi
-      // delivers a usage row whenever billable tokens were produced, so zero
-      // usage means nothing billable was generated (charging the full worst-case
-      // hold for an instant-stop would grossly over-charge).
-      const startedError = status === 'error' && run.started
-      if (!startedError) {
-        this.release(run, status === 'error' ? 'error-before-usage' : 'cancelled')
-        return
-      }
-    }
     run.terminal = true
-    // A SUCCESSFUL run that recorded no usage (provider reported none/zero), or
-    // one whose usage write failed, has no ledger debit — settling would return a
-    // paid hold for free. Charge the fallback hold instead (the sink's
-    // usage-write-failed path), so an executed run is never free. Decided inside
-    // the op so it observes the usage writes queued ahead of it on the chain.
+    // Decide settle vs fallback-charge vs free-release INSIDE the op so it observes
+    // every usage write queued ahead of it on the chain (billableUsageCount and
+    // usageWriteFailed are then final).
     this.enqueue(run, () => {
-      // Missing usage = a failed write, OR no usage row carried positive tokens
-      // (provider reported none/zero). Either way there's no real debit, so
-      // fall back to the hold rather than settle a paid run for free.
-      const missingUsage = run.usageWriteFailed || run.billableUsageCount === 0
-      return missingUsage
-        ? this.sink.releaseRun({ ...run.scope, reservationId: run.reservationId, reason: 'usage-write-failed' })
-        : this.sink.settleRun({ ...run.scope, reservationId: run.reservationId, status })
+      // A usage write was ATTEMPTED but FAILED → there's no ledger row, so settling
+      // would close a paid hold for free. Charge the fallback hold (real tokens,
+      // lost). Highest precedence: this run did paid work we couldn't persist.
+      if (run.usageWriteFailed) {
+        return this.sink.releaseRun({ ...run.scope, reservationId: run.reservationId, reason: 'usage-write-failed' })
+      }
+      // Real debits were written for this attempt → settle the hold against them.
+      if (run.billableUsageCount > 0) {
+        return this.sink.settleRun({ ...run.scope, reservationId: run.reservationId, status })
+      }
+      // No billable usage written and no failed write. Charge the fallback hold ONLY
+      // when the run still did paid work we couldn't capture: a SUCCESSFUL run that
+      // reported no/zero usage (don't return a paid hold free), or a STARTED run that
+      // ERRORED (a paid provider call may have happened with its usage object never
+      // delivered). Otherwise free the hold: a pre-execution error, or a user-initiated
+      // abort/cancel with nothing billable (Pi delivers a usage row whenever billable
+      // tokens were produced, so zero billable = nothing generated — charging the full
+      // worst-case hold for a non-billable stop would grossly over-charge, even if a
+      // zero-token usage row arrived).
+      const didPaidWork = status === 'ok' || (status === 'error' && run.started)
+      if (didPaidWork) {
+        return this.sink.releaseRun({ ...run.scope, reservationId: run.reservationId, reason: 'usage-write-failed' })
+      }
+      return this.sink.releaseRun({
+        ...run.scope,
+        reservationId: run.reservationId,
+        reason: status === 'error' ? 'error-before-usage' : 'cancelled',
+      })
     },
       'finishRun failed',
     )

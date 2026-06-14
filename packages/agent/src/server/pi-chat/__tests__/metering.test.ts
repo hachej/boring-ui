@@ -661,6 +661,25 @@ describe('pi chat metering', () => {
     ])
   })
 
+  it('frees an aborted run that emitted a ZERO-token usage row (does not charge the hold)', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'stop me', clientNonce: 'nonce-abz' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    // Pi emits an all-zero usage object (usageCount > 0) but nothing billable, then
+    // the user aborts. This must stay FREE — not charge the full worst-case hold.
+    adapter.emit(assistantMessageEnd({ id: 'a-zero', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }))
+    adapter.emit(agentEnd('aborted'))
+    await service.flushMetering()
+
+    expect(calls.settled).toEqual([])
+    expect(calls.released).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-abz', reason: 'cancelled' }),
+    ])
+  })
+
   it('keeps the run alive across pi auto-retry and bills the retried completion', async () => {
     const adapter = createAdapter()
     const { sink, calls } = createSink()
