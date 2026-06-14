@@ -598,7 +598,14 @@ export class PiChatMeteringCoordinator {
     }
 
     run.usageCount += 1
-    if (usage.input + usage.output + usage.cacheRead + usage.cacheWrite > 0) run.billableUsageCount += 1
+    // Billable if the row carries positive tokens OR a positive provider-reported
+    // cost: a cost-only provider (no token breakdown, but cost.total > 0) still
+    // produces a real ledger debit, so it must count as billable — otherwise
+    // finishRun would see zero billable usage and fallback-charge the FULL hold,
+    // overcharging a run that already recorded its real cost.
+    if (usage.input + usage.output + usage.cacheRead + usage.cacheWrite > 0 || usage.cost.total > 0) {
+      run.billableUsageCount += 1
+    }
     const model = typeof message.model === 'string' && message.model.length > 0 ? message.model : undefined
     const provider = typeof message.provider === 'string' && message.provider.length > 0 ? message.provider : undefined
     const stopReason = typeof message.stopReason === 'string' ? message.stopReason : undefined

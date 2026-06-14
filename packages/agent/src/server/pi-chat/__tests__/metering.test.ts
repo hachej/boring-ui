@@ -288,6 +288,29 @@ describe('pi chat metering', () => {
     ])
   })
 
+  it('SETTLES a cost-only usage row (positive provider cost, zero tokens) — does not fallback-charge the hold', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'hi', clientNonce: 'nonce-cost' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    // A cost-only provider: no token breakdown but a positive reported cost. This is
+    // a real billable debit, so the run must SETTLE against it, not fallback-charge
+    // the full hold (which would overcharge).
+    adapter.emit(assistantMessageEnd({ id: 'a-cost', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.5 } } }))
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    expect(calls.usage).toEqual([
+      expect.objectContaining({ usageId: 'pi-usage:s1:message:a-cost' }),
+    ])
+    expect(calls.released).toEqual([])
+    expect(calls.settled).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-cost', status: 'ok' }),
+    ])
+  })
+
   it('charges the fallback hold when a STARTED run errors with no usage (a paid call may have happened)', async () => {
     const adapter = createAdapter()
     const { sink, calls } = createSink()
