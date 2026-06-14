@@ -94,10 +94,11 @@ export class CreditExhaustedError extends Error {
   readonly details: { balance: CreditBalance }
 
   constructor(balance: CreditBalance) {
-    // User-facing: shown in the chat error notice. Point them at the top-up action
-    // (the "Buy credits" button in the top bar / account settings) so an
-    // out-of-credits run is actionable, not a dead-end "error".
-    super("You're out of credits. Add more with the “Buy credits” button to keep going.")
+    // User-facing: shown in the chat error notice. Keep it NEUTRAL — don't name a
+    // specific recovery control. The app/front attaches the actual "Buy credits" CTA
+    // to this notice only when checkout is configured (consumption-only deployments
+    // enable credits without checkout, where a "Buy credits" button wouldn't exist).
+    super("You're out of credits. Top up your balance to keep going.")
     this.name = 'CreditExhaustedError'
     this.details = { balance }
   }

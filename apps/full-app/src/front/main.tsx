@@ -8,6 +8,7 @@ import {
   CreditsSettingsPanel,
   DefaultTopBarRight,
   isPaymentRequiredNotice,
+  useCreditBalance,
 } from '@hachej/boring-core/app/front'
 import { UserSettingsPage } from '@hachej/boring-core/front'
 import '@hachej/boring-core/app/front/styles.css'
@@ -19,21 +20,30 @@ import { demoFrontPlugin } from '../plugins/demo/front'
 // server-side so the buyer id can't be tampered with.
 const buyEnabled = import.meta.env.VITE_CREDITS_BUY_ENABLED === '1'
 
-// Surface the current balance + a "Buy credits" action on the account settings
-// page (in addition to the top-bar badge). The panel self-hides when credits are
-// disabled, so this is safe to wire unconditionally.
-const AccountSettingsPage = () => (
-  <UserSettingsPage
-    extraSections={[
-      {
-        id: 'billing',
-        navLabel: 'Billing',
-        navDescription: 'Credits and top-up',
-        content: <CreditsSettingsPanel />,
-      },
-    ]}
-  />
-)
+// Surface the current balance + a "Buy credits" action on the account settings page
+// (in addition to the top-bar badge). Gate the Billing section on the same hook the
+// panel uses, so the nav entry and the panel appear/disappear together — `hidden` is
+// true when credits are disabled or the user is unauthenticated, where the panel would
+// self-hide and otherwise leave a dangling nav link with no target.
+const AccountSettingsPage = () => {
+  const { hidden } = useCreditBalance()
+  return (
+    <UserSettingsPage
+      extraSections={
+        hidden
+          ? []
+          : [
+              {
+                id: 'billing',
+                navLabel: 'Billing',
+                navDescription: 'Credits and top-up',
+                content: <CreditsSettingsPanel />,
+              },
+            ]
+      }
+    />
+  )
+}
 
 // Credit-aware chat wiring — the ONLY place credits meet the agent. The agent
 // exposes generic seams (a stable error code + lifecycle callbacks); here we map
