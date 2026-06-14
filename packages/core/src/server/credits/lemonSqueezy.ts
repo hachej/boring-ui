@@ -63,15 +63,17 @@ export interface LemonSqueezyOrder {
   /** Lemon Squeezy store the order belongs to. */
   storeId?: string
   currency?: string
-  /** Pre-tax order amount in the smallest currency unit (cents). */
-  subtotalCents: number
-  /** Discount applied, pre-tax, in cents. Net paid pre-tax = subtotal − discount. */
-  discountTotalCents: number
-  /** Tax-inclusive total in cents (MoR adds VAT here). */
-  totalCents: number
-  /** Tax amount in cents. Net paid pre-tax also = total − tax, an independent
-   * cross-check against subtotal − discount (catches a missing/inconsistent
-   * discount field that tax would otherwise mask). */
+  /** Pre-tax order amount in cents. `undefined` if the field was ABSENT (vs a real 0)
+   * so the underpayment check can fail closed on a missing required money field. */
+  subtotalCents: number | undefined
+  /** Discount applied, pre-tax, in cents. Net paid pre-tax = subtotal − discount.
+   * `undefined` if absent (presence-preserving — a missing discount must not look
+   * like a real 0, which could over-credit a discounted order). */
+  discountTotalCents: number | undefined
+  /** Tax-inclusive total in cents (MoR adds VAT here). `undefined` if absent. */
+  totalCents: number | undefined
+  /** Tax amount in cents (0 when no tax). Net paid pre-tax also = total − tax, an
+   * independent cross-check against subtotal − discount. */
   taxCents: number
   /** Whether the order has been (fully or partially) refunded. */
   refunded: boolean
@@ -95,6 +97,14 @@ function asString(value: unknown): string | undefined {
 
 function asNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+/** Presence-preserving numeric parse for money fields the underpayment invariant
+ * depends on: a MISSING/non-numeric field becomes `undefined` (not silently 0), so
+ * validation can fail closed on an absent required field rather than treat it as a
+ * real zero (which could mask an under-paid/over-credited order). */
+function asOptionalNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
 /** Normalize a nullable LS id (store_id / variant_id) to a present string or
@@ -134,9 +144,9 @@ export function parseLemonSqueezyOrder(payload: unknown): LemonSqueezyOrder | nu
     testMode: typeof attrs.test_mode === 'boolean' ? attrs.test_mode : undefined,
     storeId: asOptionalId(attrs.store_id),
     currency: asString(attrs.currency),
-    subtotalCents: asNumber(attrs.subtotal),
-    discountTotalCents: asNumber(attrs.discount_total),
-    totalCents: asNumber(attrs.total),
+    subtotalCents: asOptionalNumber(attrs.subtotal),
+    discountTotalCents: asOptionalNumber(attrs.discount_total),
+    totalCents: asOptionalNumber(attrs.total),
     taxCents: asNumber(attrs.tax),
     refunded: attrs.refunded === true,
     refundedAmountCents: asNumber(attrs.refunded_amount),
@@ -355,33 +365,37 @@ export async function handleLemonSqueezyWebhook(
   // Don't mint a fixed pack value for an underpaid order: require the net paid
   // amount (subtotal − discount, pre-tax) to cover the credits being granted.
   if (typeof options.creditMicrosPerUnit === 'number' && options.creditMicrosPerUnit > 0) {
-    // Money fields must be present and sane — a missing field parsed to 0, or a
-    // discount above subtotal, or a zero/absent total, must NOT look like a valid
-    // full payment. Fail closed (500) so the malformed delivery surfaces.
-    //
-    // Crucially, cross-check the pre-tax net computed TWO independent ways:
+    // Fail CLOSED on an ABSENT required money field: a missing subtotal/discount/total
+    // is `undefined` (not silently 0), so a parser/API gap can't masquerade as a real
+    // zero and over-credit. taxCents defaults to 0 (LS sends 0 when no tax).
+    const { subtotalCents, discountTotalCents, totalCents, taxCents } = order
+    if (subtotalCents === undefined || discountTotalCents === undefined || totalCents === undefined) {
+      options.log?.('lemonsqueezy order is MISSING a required money field (subtotal/discount/total) — not granting', {
+        orderId: order.orderId, subtotalCents, discountTotalCents, totalCents,
+      })
+      return { status: 500, body: { ok: false, reason: 'invalid_money_fields', orderId: order.orderId } }
+    }
+    // Cross-check the pre-tax net computed TWO independent ways:
     //   netA = subtotal − discount   (the basis we credit on)
     //   netB = total − tax           (the actual cash received, less tax remitted)
-    // We require netA ≤ netB (+1-cent slack). For a legit order netA == netB, or
-    // netB is slightly larger (one-time setup fees ride in `total` but not the pre-tax
-    // line net). The over-credit case is netA > netB: a discount the `discount_total`
-    // field didn't report inflates netA, while netB (from the real charged `total`,
-    // less tax) reflects what was actually paid — tax in `total` would otherwise mask
-    // the gap (subtotal=1000, discount missing, tax=180, total=1080 → netA=1000 but
-    // netB=900, only €9 paid). Fail closed (500) rather than over-credit.
-    const netFromSubtotal = order.subtotalCents - order.discountTotalCents
-    const netFromTotal = order.totalCents - order.taxCents
+    // Require netA ≤ netB (+1-cent slack). For a legit order netA == netB, or netB is
+    // slightly larger (one-time setup fees ride in `total`). The over-credit case is
+    // netA > netB: a discount the field didn't report inflates netA, while netB (from
+    // the real charged `total`, less tax) reflects what was actually paid. Combined
+    // with the presence guard above, a missing discount can no longer hide behind tax.
+    const netFromSubtotal = subtotalCents - discountTotalCents
+    const netFromTotal = totalCents - taxCents
     const moneySane =
-      Number.isFinite(order.subtotalCents) && order.subtotalCents >= 0 &&
-      Number.isFinite(order.discountTotalCents) && order.discountTotalCents >= 0 &&
-      Number.isFinite(order.totalCents) && order.totalCents > 0 &&
-      Number.isFinite(order.taxCents) && order.taxCents >= 0 &&
-      order.subtotalCents >= order.discountTotalCents &&
-      order.totalCents >= order.taxCents &&
+      subtotalCents >= 0 &&
+      discountTotalCents >= 0 &&
+      totalCents > 0 &&
+      Number.isFinite(taxCents) && taxCents >= 0 &&
+      subtotalCents >= discountTotalCents &&
+      totalCents >= taxCents &&
       netFromSubtotal <= netFromTotal + 1
     if (!moneySane) {
-      options.log?.('lemonsqueezy order has missing/inconsistent money fields — not granting', {
-        orderId: order.orderId, subtotalCents: order.subtotalCents, discountTotalCents: order.discountTotalCents, totalCents: order.totalCents, taxCents: order.taxCents,
+      options.log?.('lemonsqueezy order has inconsistent money fields — not granting', {
+        orderId: order.orderId, subtotalCents, discountTotalCents, totalCents, taxCents,
       })
       return { status: 500, body: { ok: false, reason: 'invalid_money_fields', orderId: order.orderId } }
     }
@@ -389,7 +403,7 @@ export async function handleLemonSqueezyWebhook(
     // €15 pack). Tolerate a shortfall of strictly LESS than one cent (the artifact)
     // but reject a genuine one-cent-or-more underpayment (discount/price bug).
     const oneCentMicros = options.creditMicrosPerUnit / 100
-    const netPaidMicros = Math.max(0, order.subtotalCents - order.discountTotalCents) * oneCentMicros
+    const netPaidMicros = Math.max(0, netFromSubtotal) * oneCentMicros
     if (netPaidMicros + oneCentMicros <= amountMicros) {
       options.log?.('lemonsqueezy order underpaid for the credits it maps to — not granting', {
         orderId: order.orderId, amountMicros, netPaidMicros, subtotalCents: order.subtotalCents, discountTotalCents: order.discountTotalCents,

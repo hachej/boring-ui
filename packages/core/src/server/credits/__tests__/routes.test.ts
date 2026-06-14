@@ -39,7 +39,7 @@ function makeStore(): CreditsMeteringStore {
 function orderBody(userId = 'user-1', subtotalCents = 1000): string {
   return JSON.stringify({
     meta: { event_name: 'order_created', custom_data: { user_id: userId, uat: uat(userId) } },
-    data: { type: 'orders', id: 'order-77', attributes: { status: 'paid', test_mode: true, currency: 'EUR', subtotal: subtotalCents, total: subtotalCents, first_order_item: { variant_id: 1 } } },
+    data: { type: 'orders', id: 'order-77', attributes: { status: 'paid', test_mode: true, currency: 'EUR', subtotal: subtotalCents, discount_total: 0, total: subtotalCents, first_order_item: { variant_id: 1 } } },
   })
 }
 
@@ -98,7 +98,7 @@ describe('credits routes', () => {
     const a = await build(store, undefined, { '1': 5_000_000 })
     const body = JSON.stringify({
       meta: { event_name: 'order_created', custom_data: { user_id: 'user-1', uat: uat('user-1') } },
-      data: { type: 'orders', id: 'order-fix', attributes: { status: 'paid', test_mode: true, currency: 'EUR', subtotal: 1000, total: 1190, first_order_item: { variant_id: 1 } } },
+      data: { type: 'orders', id: 'order-fix', attributes: { status: 'paid', test_mode: true, currency: 'EUR', subtotal: 1000, discount_total: 0, total: 1190, first_order_item: { variant_id: 1 } } },
     })
     const res = await a.inject({
       method: 'POST',
@@ -289,7 +289,7 @@ describe('credits routes', () => {
     // 3 units of the €5 pack, paid €15 → grant 15_000_000.
     const body = JSON.stringify({
       meta: { event_name: 'order_created', custom_data: { user_id: 'user-1', uat: uat('user-1') } },
-      data: { type: 'orders', id: 'order-qty', attributes: { status: 'paid', test_mode: true, currency: 'EUR', subtotal: 1500, total: 1500, first_order_item: { variant_id: 1, quantity: 3 } } },
+      data: { type: 'orders', id: 'order-qty', attributes: { status: 'paid', test_mode: true, currency: 'EUR', subtotal: 1500, discount_total: 0, total: 1500, first_order_item: { variant_id: 1, quantity: 3 } } },
     })
     const res = await a.inject({
       method: 'POST',

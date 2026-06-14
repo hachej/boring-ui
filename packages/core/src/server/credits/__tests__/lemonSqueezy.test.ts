@@ -27,6 +27,7 @@ function orderPayload(overrides: Record<string, unknown> = {}, attrs: Record<str
         test_mode: true,
         currency: 'EUR',
         subtotal: 1000,
+        discount_total: 0,
         total: 1190,
         first_order_item: { variant_id: 42, product_name: '€10 credits' },
         ...attrs,
@@ -116,7 +117,7 @@ describe('handleLemonSqueezyWebhook', () => {
       options: {
         secret: SECRET,
         // €10 subtotal → €10 of credits at 1 credit = €0.000001 (1 cent = 10_000 micros).
-        creditsForOrder: (o: LemonSqueezyOrder) => o.subtotalCents * 10_000,
+        creditsForOrder: (o: LemonSqueezyOrder) => (o.subtotalCents ?? 0) * 10_000,
         grant,
         isCreditOrder: () => true,
         onRefund: async () => ({ revoked: true }),
@@ -278,6 +279,28 @@ describe('handleLemonSqueezyWebhook', () => {
     // subtotal looks like €10 but total is 0 (free) — a malformed/changed payload
     // must not look like a valid full payment.
     const body = orderPayload({}, { subtotal: 1000, discount_total: 0, total: 0 })
+    const res = await handleLemonSqueezyWebhook(body, sign(body), options)
+    expect(res).toMatchObject({ status: 500, body: { reason: 'invalid_money_fields' } })
+    expect(grant).not.toHaveBeenCalled()
+  })
+
+  it('rejects a credit order with an ABSENT required money field (presence guard, not silently 0)', async () => {
+    const { options, grant } = opts({ creditsForOrder: () => 10_000_000, creditMicrosPerUnit: 1_000_000 })
+    // discount_total OMITTED entirely (not 0) on a taxed+discounted order — would
+    // collapse to 0 and over-credit. Presence guard: a missing required money field
+    // is undefined → 500, regardless of whether tax is present to mask it.
+    const body = orderPayload({}, { subtotal: 1000, total: 1080, tax: 180, discount_total: undefined })
+    const res = await handleLemonSqueezyWebhook(body, sign(body), options)
+    expect(res).toMatchObject({ status: 500, body: { reason: 'invalid_money_fields' } })
+    expect(grant).not.toHaveBeenCalled()
+  })
+
+  it('rejects a discounted taxed order with BOTH discount AND tax fields missing (no over-credit)', async () => {
+    const { options, grant } = opts({ creditsForOrder: () => 10_000_000, creditMicrosPerUnit: 1_000_000 })
+    // €10 pack discounted to €9 + €1.80 VAT, but discount_total AND tax both omitted.
+    // Old asymmetric check would pass (netB=total-0=1080 ≥ netA=1000); the presence
+    // guard rejects the missing discount_total before that.
+    const body = orderPayload({}, { subtotal: 1000, total: 1080, discount_total: undefined, tax: undefined })
     const res = await handleLemonSqueezyWebhook(body, sign(body), options)
     expect(res).toMatchObject({ status: 500, body: { reason: 'invalid_money_fields' } })
     expect(grant).not.toHaveBeenCalled()

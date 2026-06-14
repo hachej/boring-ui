@@ -330,8 +330,10 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
           // revocable regardless (reconciled by order id in the store).
           onRefund: (order) =>
             options.service.revokePurchase(purchaseKey(order), {
+              // A partial refund passes the fraction refunded; a missing/zero total
+              // (totalCents undefined) or refunded amount falls back to a full refund.
               refundFraction:
-                order.refundedAmountCents > 0 && order.totalCents > 0
+                order.refundedAmountCents > 0 && order.totalCents !== undefined && order.totalCents > 0
                   ? order.refundedAmountCents / order.totalCents
                   : undefined,
               // Tombstone an unknown order when the refund is compatible with our
