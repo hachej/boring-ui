@@ -39,6 +39,10 @@ export interface PiChatRuntimeNotice {
   level: 'info' | 'warning' | 'error'
   text: string
   dismissible?: boolean
+  /** Stable server error code (e.g. PAYMENT_REQUIRED) when this notice came from a
+   * rejected run. Lets a host render a code-specific action (e.g. a Buy button)
+   * without the agent knowing what the code means. */
+  errorCode?: string
 }
 
 export interface PiChatRetryNotice {

@@ -1,6 +1,6 @@
 "use client"
 
-import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
+import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FileUIPart } from 'ai'
 import { ArtifactOpenProvider } from '../ArtifactOpenContext'
@@ -32,7 +32,8 @@ import {
   type ChatPanelWorkspaceWarmupStatus,
 } from './chatPanelWorkspaceWarmup'
 import { selectMessagesForRender, selectQueuePreview, selectRuntimeNotices } from './pi/selectors'
-import type { RemotePiSession, RemotePiSessionOptions } from './pi/remotePiSession'
+import { piChatErrorCode, type RemotePiSession, type RemotePiSessionOptions } from './pi/remotePiSession'
+import type { PiChatRuntimeNotice } from './pi/piChatReducer'
 import {
   InitialDraftAutoSubmitGuard,
   createPiComposerPolicyController,
@@ -74,6 +75,9 @@ const DebugDrawer = lazy(() => import('../DebugDrawer').then((m) => ({ default: 
 const EMPTY_COMMANDS: SlashCommand[] = []
 const EMPTY_COMMAND_NAMES: string[] = []
 const EMPTY_BLOCKERS: Array<{ id: string; sessionId?: string; label?: string; reason?: string }> = []
+/** Stable id for the notice that surfaces a rejected run (so re-rejections replace
+ * it rather than stacking, and the next admit can retract it). */
+const RUN_REJECTED_NOTICE_ID = 'run-rejected'
 
 export type { ComposerBlocker, ComposerBlockerAction, PanelNotice }
 
@@ -150,6 +154,14 @@ export interface PiChatPanelProps {
   composerBlockers?: ComposerBlocker[]
   onComposerStop?: () => void
   onComposerBlockerAction?: (blocker: ComposerBlocker, action: string) => void
+  /** Fired once each time a run settles (busy → idle). Hosts use it to refresh
+   * out-of-band state after a turn (e.g. a credit balance). The agent stays
+   * agnostic about what the host does with it. */
+  onTurnComplete?: () => void
+  /** Host-supplied action node for a runtime notice, keyed off notice.errorCode.
+   * Lets a host attach a code-specific control (e.g. a Buy-credits button for a
+   * PAYMENT_REQUIRED notice) without the agent knowing what the code means. */
+  renderNoticeAction?: (notice: PiChatRuntimeNotice) => ReactNode
 }
 
 export function PiChatPanel({
@@ -200,6 +212,8 @@ export function PiChatPanel({
   composerBlockers = EMPTY_BLOCKERS,
   onComposerStop,
   onComposerBlockerAction,
+  onTurnComplete,
+  renderNoticeAction,
 }: PiChatPanelProps) {
   const externalSessionId = sessionId?.trim() || undefined
   const showSessionSidebar = showSessions ?? externalSessionId === undefined
@@ -320,6 +334,10 @@ export function PiChatPanel({
   }, [onAutoSubmitInitialDraftSettled])
   const prevStatusRef = useRef<PiChatStatus>('idle')
   const statusRef = useRef<PiChatStatus>('idle')
+  // Tracks the prior status for the onTurnComplete edge detector. Kept separate
+  // from prevStatusRef (which the auto-submit settle effect owns) so the two
+  // detectors don't clobber each other's bookkeeping.
+  const turnCompletePrevStatusRef = useRef<PiChatStatus | undefined>(undefined)
   const scrollToBottomRef = useRef<() => void>(() => {})
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const [localNotices, setLocalNotices] = useState<PanelNotice[]>([])
@@ -415,6 +433,19 @@ export function PiChatPanel({
 
   const clearLocalNotice = useCallback((id: string) => {
     setDismissedNoticeIds((previous) => new Set(previous).add(id))
+    setLocalNotices((previous) => previous.filter((notice) => notice.id !== id))
+  }, [])
+
+  // Remove a notice so it can be shown again later (unlike clearLocalNotice, which
+  // permanently dismisses the id). Used to retract the run-rejected CTA on the next
+  // submit so a fresh rejection re-renders rather than being suppressed.
+  const dropLocalNotice = useCallback((id: string) => {
+    setDismissedNoticeIds((previous) => {
+      if (!previous.has(id)) return previous
+      const next = new Set(previous)
+      next.delete(id)
+      return next
+    })
     setLocalNotices((previous) => previous.filter((notice) => notice.id !== id))
   }, [])
 
@@ -697,6 +728,20 @@ export function PiChatPanel({
     })
   }, [activeChatSessionId, addLocalNotice, clearMentionedFiles, composerBlocked, composerBlockerLabel, effectiveMentionedFiles, markLocalSubmitted, onBeforeSubmit, onCommandResult, onComposerWarning, onMentionedFilesConsumed, openModelPicker, openThinkingPicker, registry, reloadAgentPlugins, resetSession, runPluginUpdate, selectComposerModel, selectComposerThinking, selectedModel, selectedPiSession, selectedThinking, setComposerDraft, submitThinkingControl])
 
+  // Turn a rejected send (prompt/follow-up/auto-submit) into the single run-rejected
+  // notice, carrying the stable server error code so a host can attach a code-specific
+  // action (e.g. Buy credits for PAYMENT_REQUIRED).
+  const surfaceRunRejected = useCallback((error: unknown) => {
+    const errorCode = piChatErrorCode(error)
+    addLocalNotice({
+      id: RUN_REJECTED_NOTICE_ID,
+      level: 'error',
+      text: errorMessage(error, 'Could not send your message.'),
+      dismissible: true,
+      ...(errorCode ? { errorCode } : {}),
+    })
+  }, [addLocalNotice])
+
   const sendComposerMessage = useCallback(async ({ text, files, source = 'composer' }: ComposerSendPayload) => {
     if (!policy) {
       addLocalNotice({ id: 'composer-no-session', level: 'warning', text: 'Create or select a Pi session before sending.', dismissible: true })
@@ -706,6 +751,9 @@ export function PiChatPanel({
     const restoreSubmittedDraft = () => {
       if (draftRef.current === '') setComposerDraft(submittedDraft)
     }
+    // Retract a prior run-rejected CTA: this admit supersedes it (and a fresh
+    // rejection should re-render rather than be suppressed).
+    dropLocalNotice(RUN_REJECTED_NOTICE_ID)
     setComposerDraft('', false)
     scrollToBottomRef.current()
     try {
@@ -722,9 +770,14 @@ export function PiChatPanel({
     } catch (error) {
       clearLocalSubmitted(activeChatSessionId)
       restoreSubmittedDraft()
-      throw error
+      // Single normalization point for rejected sends: surface as one stable
+      // notice carrying the server error code so a host can attach a code-specific
+      // action (e.g. Buy credits for PAYMENT_REQUIRED). Swallow the rejection
+      // afterwards so the fire-and-forget composer callsite has nothing to leak.
+      surfaceRunRejected(error)
+      return false
     }
-  }, [activeChatSessionId, addLocalNotice, clearLocalSubmitted, markLocalSubmitted, policy, selectedPiSession, setComposerDraft])
+  }, [activeChatSessionId, clearLocalSubmitted, dropLocalNotice, markLocalSubmitted, policy, selectedPiSession, setComposerDraft, surfaceRunRejected])
 
   const editQueued = useCallback(() => {
     if (!policy) return
@@ -787,6 +840,18 @@ export function PiChatPanel({
     settlePendingAutoSubmit()
   }, [settlePendingAutoSubmit, status])
 
+  // Fire onTurnComplete once per run settle (busy/submitted → idle). Hosts use it
+  // to refresh out-of-band state after a turn (e.g. a credit balance); the agent
+  // stays agnostic about what that state is.
+  useEffect(() => {
+    const previous = turnCompletePrevStatusRef.current
+    turnCompletePrevStatusRef.current = status
+    if (previous === undefined) return
+    const wasBusy = isPiBusyStatus(previous) || previous === 'submitted'
+    const settled = !isPiBusyStatus(status) && status !== 'submitted'
+    if (wasBusy && settled) onTurnComplete?.()
+  }, [onTurnComplete, status])
+
   useEffect(() => {
     if (!autoSubmitInitialDraft || !policy || !activeSessionId || composerBlocked) return
     if (!initialDraftGuard.current.claimAutoSubmit(activeSessionId, initialDraft)) return
@@ -819,9 +884,12 @@ export function PiChatPanel({
       clearLocalSubmitted(activeSessionId)
       restoreSubmittedDraft()
       settlePendingAutoSubmit(activeSessionId)
-      addLocalNotice({ id: 'auto-submit-error', level: 'error', text: errorMessage(error, 'Could not auto-submit the initial draft.'), dismissible: true })
+      // Same normalization as the composer path so an auto-submitted run that the
+      // server rejects (e.g. out of credits) surfaces the actionable run-rejected
+      // notice instead of an inert generic error.
+      surfaceRunRejected(error)
     })
-  }, [activeSessionId, addLocalNotice, autoSubmitInitialDraft, clearLocalSubmitted, composerBlocked, initialDraft, markLocalSubmitted, onAutoSubmitInitialDraftAccepted, policy, selectedPiSession, setComposerDraft, settlePendingAutoSubmit])
+  }, [activeSessionId, autoSubmitInitialDraft, clearLocalSubmitted, composerBlocked, initialDraft, markLocalSubmitted, onAutoSubmitInitialDraftAccepted, policy, selectedPiSession, setComposerDraft, settlePendingAutoSubmit, surfaceRunRejected])
 
   useEffect(() => {
     if (workspaceWarmupStatus?.status === 'ready') {
@@ -933,6 +1001,7 @@ export function PiChatPanel({
               toolRenderers={mergedToolRenderers}
               runtimeNotices={runtimeNotices}
               onDismissNotice={clearLocalNotice}
+              renderNoticeAction={renderNoticeAction}
               onScrollToBottomReady={(scrollToBottom) => {
                 scrollToBottomRef.current = scrollToBottom
               }}

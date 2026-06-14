@@ -66,6 +66,17 @@ export function isLowBalance(micros: number, thresholdMicros = 500_000): boolean
   return Number.isFinite(micros) && micros <= thresholdMicros
 }
 
+/** Stable server error code for an out-of-credits rejection (mirrors the agent's
+ * ErrorCode enum). Kept here so the credits feature owns the credit↔code mapping
+ * and the agent stays billing-agnostic. */
+export const PAYMENT_REQUIRED_ERROR_CODE = 'PAYMENT_REQUIRED'
+
+/** True when a run-rejected notice was an out-of-credits rejection. Hosts use this
+ * in renderNoticeAction to decide whether to show the Buy-credits CTA. */
+export function isPaymentRequiredNotice(notice: { errorCode?: string }): boolean {
+  return notice.errorCode === PAYMENT_REQUIRED_ERROR_CODE
+}
+
 // NOTE: there is intentionally no client-side checkout-URL builder. The buyer's
 // user id must be set SERVER-side (POST /api/credits/checkout) so a client can't
 // edit a hosted-checkout URL to credit another account.

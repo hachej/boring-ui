@@ -506,7 +506,7 @@ export class RemotePiSession {
     try {
       const response = await this.fetchImpl(url, { ...init, signal: controller.signal })
       const body = await safeReadJson(response)
-      if (!response.ok) throw new RemotePiSessionHttpError(response.status, routeErrorMessage(body, `HTTP ${response.status}`), body)
+      if (!response.ok) throw new RemotePiSessionHttpError(response.status, routeErrorMessage(body, `HTTP ${response.status}`), body, routeErrorCode(body))
       return body
     } catch (error) {
       // Distinguish our own timeout abort from a dispose-driven abort: a
@@ -597,10 +597,24 @@ export function createRemotePiSession(options: RemotePiSessionOptions): RemotePi
 }
 
 class RemotePiSessionHttpError extends Error {
-  constructor(readonly status: number, message: string, readonly body: unknown) {
+  constructor(readonly status: number, message: string, readonly body: unknown, readonly errorCode?: string) {
     super(message)
     this.name = 'RemotePiSessionHttpError'
   }
+}
+
+/**
+ * Extract the stable server error code (e.g. `PAYMENT_REQUIRED`) from an error thrown
+ * by a command call (prompt/follow-up/etc). Returns undefined for non-HTTP errors or
+ * bodies without a code. This is the agent's generic seam: callers map a code to UI
+ * (a notice action) WITHOUT the agent knowing about credits/billing.
+ */
+export function piChatErrorCode(error: unknown): string | undefined {
+  if (error instanceof RemotePiSessionHttpError) return error.errorCode
+  // Also accept a plain `errorCode` carried on any thrown value, so callers that
+  // re-wrap or synthesize a command error can still surface a stable code.
+  const code = (error as { errorCode?: unknown } | null)?.errorCode
+  return typeof code === 'string' && code ? code : undefined
 }
 
 function toOptimisticUserMessage(payload: PromptPayload | FollowUpPayload): OptimisticUserMessage {
@@ -640,6 +654,13 @@ function routeErrorMessage(body: unknown, fallback: string): string {
   const error = (body as Record<string, unknown>).error
   const payload = typeof error === 'object' && error !== null ? error as Record<string, unknown> : body as Record<string, unknown>
   return typeof payload.message === 'string' && payload.message ? payload.message : fallback
+}
+
+function routeErrorCode(body: unknown): string | undefined {
+  if (typeof body !== 'object' || body === null) return undefined
+  const error = (body as Record<string, unknown>).error
+  const payload = typeof error === 'object' && error !== null ? error as Record<string, unknown> : body as Record<string, unknown>
+  return typeof payload.code === 'string' && payload.code ? payload.code : undefined
 }
 
 function errorMessage(error: unknown, fallback: string): string {

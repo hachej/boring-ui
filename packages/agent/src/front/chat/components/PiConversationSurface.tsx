@@ -1,6 +1,7 @@
 "use client"
 
 import type { FileUIPart } from 'ai'
+import type { ReactNode } from 'react'
 import { Loader2 } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useStickToBottomContext } from 'use-stick-to-bottom'
@@ -39,6 +40,9 @@ export interface PiConversationSurfaceProps {
   toolRenderers: ToolRendererOverrides
   runtimeNotices: PanelNotice[]
   onDismissNotice: (id: string) => void
+  /** Host-supplied action node for a runtime notice (e.g. a Buy button for a
+   * PAYMENT_REQUIRED notice). Forwarded to RuntimeNoticeMessages. */
+  renderNoticeAction?: (notice: PanelNotice) => ReactNode
   onScrollToBottomReady: (scrollToBottom: () => void) => void
   onSuggestionSubmit: (payload: { text: string; files: FileUIPart[]; source: 'suggestion' }) => Promise<false | void>
   onRestoreDraft: (text: string) => void
@@ -58,6 +62,7 @@ export function PiConversationSurface({
   toolRenderers,
   runtimeNotices,
   onDismissNotice,
+  renderNoticeAction,
   onScrollToBottomReady,
   onSuggestionSubmit,
   onRestoreDraft,
@@ -127,7 +132,7 @@ export function PiConversationSurface({
             toolRenderers={toolRenderers}
           />
         ))}
-        <RuntimeNoticeMessages notices={runtimeNotices} onDismiss={onDismissNotice} />
+        <RuntimeNoticeMessages notices={runtimeNotices} onDismiss={onDismissNotice} renderAction={renderNoticeAction} />
       </ConversationContent>
       <ConversationScrollButton />
     </Conversation>

@@ -1,6 +1,6 @@
 "use client"
 
-import type { HTMLAttributes } from 'react'
+import type { HTMLAttributes, ReactNode } from 'react'
 import { memo } from 'react'
 import { AlertTriangleIcon, InfoIcon, Loader2Icon, PlugZapIcon, RefreshCwIcon, XIcon } from 'lucide-react'
 import { Button } from '@hachej/boring-ui-kit'
@@ -19,9 +19,13 @@ export interface RuntimeNoticesProps extends Omit<HTMLAttributes<HTMLDivElement>
   notices: RuntimeNotice[]
   onDismiss?: (id: string) => void
   onAction?: (id: string) => void
+  /** Host-supplied action node for a notice, rendered before the built-in
+   * onAction button. Lets a host attach a code-specific control (e.g. a Buy
+   * button for a PAYMENT_REQUIRED notice) without this component knowing the code. */
+  renderAction?: (notice: RuntimeNotice) => ReactNode
 }
 
-export const RuntimeNotices = memo(({ notices, onDismiss, onAction, className, ...props }: RuntimeNoticesProps) => {
+export const RuntimeNotices = memo(({ notices, onDismiss, onAction, renderAction, className, ...props }: RuntimeNoticesProps) => {
   if (notices.length === 0) return null
 
   return (
@@ -31,7 +35,7 @@ export const RuntimeNotices = memo(({ notices, onDismiss, onAction, className, .
       {...props}
     >
       {notices.map((notice) => (
-        <RuntimeNoticeRow key={notice.id} notice={notice} onDismiss={onDismiss} onAction={onAction} />
+        <RuntimeNoticeRow key={notice.id} notice={notice} onDismiss={onDismiss} onAction={onAction} renderAction={renderAction} />
       ))}
     </div>
   )
@@ -43,12 +47,14 @@ interface RuntimeNoticeRowProps {
   notice: RuntimeNotice
   onDismiss?: (id: string) => void
   onAction?: (id: string) => void
+  renderAction?: (notice: RuntimeNotice) => ReactNode
 }
 
-function RuntimeNoticeRow({ notice, onDismiss, onAction }: RuntimeNoticeRowProps) {
+function RuntimeNoticeRow({ notice, onDismiss, onAction, renderAction }: RuntimeNoticeRowProps) {
   const kind = inferNoticeKind(notice)
   const Icon = iconForNotice(kind, notice.level)
   const actionLabel = notice.actionLabel ?? defaultActionLabel(kind)
+  const hostAction = renderAction?.(notice)
 
   return (
     <div
@@ -67,6 +73,7 @@ function RuntimeNoticeRow({ notice, onDismiss, onAction }: RuntimeNoticeRowProps
       <div className="min-w-0 flex-1">
         <p className={noticeTextClass()}>{notice.text}</p>
       </div>
+      {hostAction ?? null}
       {actionLabel && onAction ? (
         <Button type="button" variant="ghost" size="sm" onClick={() => onAction(notice.id)}>
           {actionLabel}

@@ -1,10 +1,13 @@
 import { createRoot } from 'react-dom/client'
 import {
+  BuyCreditsNoticeAction,
   CheckoutReturnBanner,
   CoreWorkspaceAgentFront,
+  CREDITS_REFRESH_EVENT,
   CreditBalanceBadge,
   CreditsSettingsPanel,
   DefaultTopBarRight,
+  isPaymentRequiredNotice,
 } from '@hachej/boring-core/app/front'
 import { UserSettingsPage } from '@hachej/boring-core/front'
 import '@hachej/boring-core/app/front/styles.css'
@@ -21,6 +24,25 @@ const buyEnabled = import.meta.env.VITE_CREDITS_BUY_ENABLED === '1'
 // disabled, so this is safe to wire unconditionally.
 const AccountSettingsPage = () => <UserSettingsPage billing={<CreditsSettingsPanel />} />
 
+// Credit-aware chat wiring — the ONLY place credits meet the agent. The agent
+// exposes generic seams (a stable error code + lifecycle callbacks); here we map
+// them to credit UX without the agent knowing about billing:
+//  - onTurnComplete → broadcast a balance refresh so the badge updates right after
+//    a run settles (credits are debited async, so the hook's retry burst polls).
+//  - renderNoticeAction → attach a Buy-credits button to a PAYMENT_REQUIRED
+//    run-rejected notice (gated on the build flag; the button self-hides when the
+//    server reports checkout is disabled).
+const chatParams = {
+  thinkingControl: true,
+  onTurnComplete: () => window.dispatchEvent(new Event(CREDITS_REFRESH_EVENT)),
+  ...(buyEnabled
+    ? {
+        renderNoticeAction: (notice: { errorCode?: string }) =>
+          isPaymentRequiredNotice(notice) ? <BuyCreditsNoticeAction /> : null,
+      }
+    : {}),
+}
+
 createRoot(document.getElementById('root')!).render(
   <>
     <CoreWorkspaceAgentFront
@@ -28,7 +50,7 @@ createRoot(document.getElementById('root')!).render(
       apiTimeout={10_000}
       persistenceEnabled
       chatEntryMode="chat-first"
-      chatParams={{ thinkingControl: true }}
+      chatParams={chatParams}
       plugins={[demoFrontPlugin]}
       authPages={{ userSettings: AccountSettingsPage }}
       topBarRight={

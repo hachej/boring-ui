@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ErrorCode } from '../../../../shared/error-codes'
 import type { PiChatEvent, PiChatSnapshot } from '../../../../shared/chat'
 import { PI_CHAT_CURSOR_AHEAD_CODE, PI_CHAT_REPLAY_GAP_CODE } from '../piChatStream'
-import { RemotePiSession } from '../remotePiSession'
+import { RemotePiSession, piChatErrorCode } from '../remotePiSession'
 
 const encoder = new TextEncoder()
 
@@ -660,6 +660,34 @@ describe('RemotePiSession', () => {
     expect(session.getState().optimisticOutbox).toEqual({})
 
     session.dispose()
+  })
+
+  it('surfaces the stable server error code from a rejected prompt via piChatErrorCode', async () => {
+    const events = openNdjsonStream()
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
+      if (url.endsWith('/prompt')) {
+        return jsonResponse({ error: { code: 'PAYMENT_REQUIRED', message: 'out of credits' } }, 402)
+      }
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { autoStart: false })
+
+    const error = await session.prompt({ message: 'hello', clientNonce: 'nonce-1' }).then(
+      () => { throw new Error('prompt should have rejected') },
+      (err: unknown) => err,
+    )
+    expect(piChatErrorCode(error)).toBe('PAYMENT_REQUIRED')
+    // The rejection also rolls back the optimistic message so the composer recovers.
+    expect(session.getState().optimisticOutbox).toEqual({})
+
+    session.dispose()
+  })
+
+  it('piChatErrorCode returns undefined for errors without a code and reads a plain errorCode', () => {
+    expect(piChatErrorCode(new Error('boom'))).toBeUndefined()
+    expect(piChatErrorCode(undefined)).toBeUndefined()
+    expect(piChatErrorCode(Object.assign(new Error('x'), { errorCode: 'PAYMENT_REQUIRED' }))).toBe('PAYMENT_REQUIRED')
   })
 
   it('clears optimistic queued follow-ups from the stop receipt before a queue echo arrives', async () => {

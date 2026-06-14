@@ -13,10 +13,14 @@ export { useCheckoutReturnHandler } from './credits/useCheckoutReturnHandler.js'
 export type { CheckoutReturnStatus, UseCheckoutReturnHandlerResult } from './credits/useCheckoutReturnHandler.js'
 export { CheckoutReturnBanner } from './credits/CheckoutReturnBanner.js'
 export type { CheckoutReturnBannerProps } from './credits/CheckoutReturnBanner.js'
+export { BuyCreditsNoticeAction } from './credits/BuyCreditsNoticeAction.js'
+export type { BuyCreditsNoticeActionProps } from './credits/BuyCreditsNoticeAction.js'
 export {
   formatCreditMicros,
   formatSignedCreditMicros,
   formatMinorPrice,
   isLowBalance,
+  isPaymentRequiredNotice,
+  PAYMENT_REQUIRED_ERROR_CODE,
 } from './credits/helpers.js'
 export type { CreditBalanceResponse, CreditPack, CreditLedgerEntry, CreditLedgerKind } from './credits/helpers.js'

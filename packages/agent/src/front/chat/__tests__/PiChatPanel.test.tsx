@@ -345,6 +345,65 @@ describe('PiChatPanel sandbox shell', () => {
     expect(slot?.getAttribute('aria-hidden')).toBe('true')
   })
 
+  test('surfaces a rejected run as one notice and lets a host attach a code-specific action', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
+    remote.prompt.mockRejectedValueOnce(Object.assign(new Error('You are out of credits.'), { errorCode: 'PAYMENT_REQUIRED' }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+    const renderNoticeAction = vi.fn((notice: { errorCode?: string }) =>
+      notice.errorCode === 'PAYMENT_REQUIRED' ? <button type="button">Buy credits</button> : null,
+    )
+    render(
+      <PiChatPanel
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+        renderNoticeAction={renderNoticeAction}
+      />,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'expensive prompt' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalled())
+    // The rejection surfaces as a single run-rejected notice carrying the server code.
+    const notice = await waitFor(() => {
+      const el = document.querySelector('[data-runtime-notice-id="run-rejected"]')
+      if (!el) throw new Error('run-rejected notice not yet rendered')
+      return el
+    })
+    expect(notice.textContent).toContain('You are out of credits.')
+    // The host's renderNoticeAction was invoked with the coded notice and its action shows.
+    expect(renderNoticeAction).toHaveBeenCalledWith(expect.objectContaining({ errorCode: 'PAYMENT_REQUIRED' }))
+    expect(within(notice as HTMLElement).getByRole('button', { name: 'Buy credits' })).toBeTruthy()
+  })
+
+  test('fires onTurnComplete once when a run settles from busy to idle', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+    const onTurnComplete = vi.fn()
+    render(
+      <PiChatPanel
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+        onTurnComplete={onTurnComplete}
+      />,
+    )
+
+    await screen.findByText('committed from /state')
+    expect(onTurnComplete).not.toHaveBeenCalled()
+
+    act(() => { remote.setState({ ...remote.state, status: 'streaming' }) })
+    await waitFor(() => expect(screen.queryByTestId('chat-working')).toBeTruthy())
+    expect(onTurnComplete).not.toHaveBeenCalled()
+
+    act(() => { remote.setState({ ...remote.state, status: 'idle' }) })
+    await waitFor(() => expect(onTurnComplete).toHaveBeenCalledTimes(1))
+  })
+
   test('shows session controls by default for managed Pi sessions', async () => {
     const remote = new FakeRemotePiSession(remoteState())
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1', 'Default visible session')]))
