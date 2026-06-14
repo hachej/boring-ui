@@ -44,9 +44,10 @@ function parseVariants(raw: string | undefined): Record<string, string> {
   const seenVariants = new Set<string>()
   for (const pair of raw.split(',')) {
     if (pair.trim() === '') continue
-    const [pack, variant] = pair.split(':').map((s) => s.trim())
-    if (!pack || !variant) {
-      throw new Error(`invalid BORING_CREDITS_LS_VARIANTS entry (expected "creditEur:variantId"): "${pair}"`)
+    const parts = pair.split(':').map((s) => s.trim())
+    const [pack, variant] = parts
+    if (parts.length !== 2 || !pack || !variant) {
+      throw new Error(`invalid BORING_CREDITS_LS_VARIANTS entry (expected exactly "creditEur:variantId"): "${pair}"`)
     }
     if (!Number.isFinite(Number(pack)) || Number(pack) <= 0) {
       throw new Error(`invalid BORING_CREDITS_LS_VARIANTS pack id (must be a positive EUR credit value): "${pack}"`)

@@ -221,10 +221,12 @@ export class PostgresMeteringStore {
           .where(eq(creditPurchases.orderId, input.orderId))
         await insertGrant()
         if (revoke > 0) {
-          await tx
-            .insert(usageLedger)
-            .values({ id: `refund:${input.orderId}:${revoke}`, userId: input.userId, source: 'lemonsqueezy-refund', billedCostMicros: revoke, providerCostMicros: 0, metadata: { kind: 'purchase_refund', orderId: input.orderId, refundedToMicros: revoke, appliedAtGrant: true } })
-            .onConflictDoNothing({ target: usageLedger.id })
+          await this.insertVerifiedRefundDebit(tx, {
+            id: `refund:${input.orderId}:${revoke}`,
+            userId: input.userId,
+            amountMicros: revoke,
+            metadata: { kind: 'purchase_refund', orderId: input.orderId, refundedToMicros: revoke, appliedAtGrant: true },
+          })
         }
         return { granted: true }
       }
@@ -359,40 +361,57 @@ export class PostgresMeteringStore {
         }
         return { revoked: false }
       }
-      // Post the incremental debit (idempotent per cumulative level).
-      const debitId = `refund:${orderId}:${target}`
-      const debit = await tx
-        .insert(usageLedger)
-        .values({
-          id: debitId,
-          userId: row.userId!,
-          source,
-          billedCostMicros: delta,
-          providerCostMicros: 0,
-          metadata: { kind: 'purchase_refund', orderId, refundedToMicros: target },
-        })
-        .onConflictDoNothing({ target: usageLedger.id })
-        .returning({ id: usageLedger.id })
-      if (debit.length === 0) {
-        // The debit id already existed (manual repair / corrupted retry). Verify
-        // it's the SAME debit before marking the purchase refunded — otherwise we'd
-        // record a refund the balance was never actually debited for.
-        const existing = await tx
-          .select({ userId: usageLedger.userId, billedCostMicros: usageLedger.billedCostMicros })
-          .from(usageLedger)
-          .where(eq(usageLedger.id, debitId))
-          .limit(1)
-        const e = existing[0]
-        if (!e || e.userId !== row.userId || e.billedCostMicros !== delta) {
-          throw new Error(`refund ledger conflict for ${debitId}: existing debit does not match (refusing to mark refunded without a real debit)`)
-        }
-      }
+      // Post the incremental debit (idempotent per cumulative level), verifying
+      // any pre-existing row at this id matches before we mark the purchase
+      // refunded (else we'd record a refund the balance was never debited for).
+      const inserted = await this.insertVerifiedRefundDebit(tx, {
+        id: `refund:${orderId}:${target}`,
+        userId: row.userId!,
+        amountMicros: delta,
+        source,
+        metadata: { kind: 'purchase_refund', orderId, refundedToMicros: target },
+      })
       await tx
         .update(creditPurchases)
         .set({ refundedMicros: target, status: fullyRefunded ? 'refunded' : row.status, refundedAt: new Date() })
         .where(eq(creditPurchases.orderId, orderId))
-      return { revoked: debit.length > 0 }
+      return { revoked: inserted }
     })
+  }
+
+  /**
+   * Insert a refund debit idempotently by id. If the id already exists (manual
+   * repair / corrupted retry), VERIFY the existing row is the same debit (user +
+   * amount) — throw on mismatch so a caller never records a refund the balance was
+   * not actually debited for. Returns true iff a new debit row was written.
+   */
+  private async insertVerifiedRefundDebit(
+    tx: Queryable,
+    input: { id: string; userId: string; amountMicros: number; source?: string; metadata: Record<string, unknown> },
+  ): Promise<boolean> {
+    const rows = await tx
+      .insert(usageLedger)
+      .values({
+        id: input.id,
+        userId: input.userId,
+        source: input.source ?? 'lemonsqueezy-refund',
+        billedCostMicros: input.amountMicros,
+        providerCostMicros: 0,
+        metadata: input.metadata,
+      })
+      .onConflictDoNothing({ target: usageLedger.id })
+      .returning({ id: usageLedger.id })
+    if (rows.length > 0) return true
+    const existing = await tx
+      .select({ userId: usageLedger.userId, billedCostMicros: usageLedger.billedCostMicros })
+      .from(usageLedger)
+      .where(eq(usageLedger.id, input.id))
+      .limit(1)
+    const e = existing[0]
+    if (!e || e.userId !== input.userId || e.billedCostMicros !== input.amountMicros) {
+      throw new Error(`refund ledger conflict for ${input.id}: existing debit does not match (refusing to record a refund without a real debit)`)
+    }
+    return false
   }
 
   /** Total billed micros already recorded for a run (for fallback top-up so a

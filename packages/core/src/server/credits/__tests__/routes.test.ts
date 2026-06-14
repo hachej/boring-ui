@@ -150,7 +150,7 @@ describe('credits routes', () => {
         })
         await a.ready()
       })(),
-    ).rejects.toThrow(/creditMicrosByVariant is missing a positive value for credit variant "2"/)
+    ).rejects.toThrow(/creditMicrosByVariant must be a positive safe integer for credit variant "2"/)
     await a.close()
   })
 

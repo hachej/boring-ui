@@ -109,12 +109,16 @@ fail closed at the highest effective rate.
    `MAX_CALLS_PER_RUN` (or set `RESERVATION_EUR`) so the hold ≤ the starter grant.
 3. **Durable settlement under a sustained DB outage.** If usage write *and* the fallback
    charge both fail and stay failed past the reservation TTL, that one run can free up (the
-   hold blocks the user until then; failures are logged for reconcile). A persistent
-   settlement-retry queue is a follow-up. **Related:** a reservation whose run outlives
-   `BORING_CREDITS_RESERVATION_TTL_SECONDS` (default 2h) is expired and freed, so a stuck/
-   abandoned run's hold doesn't leak — keep the TTL comfortably above any real run's max
-   runtime so an in-flight run's hold isn't released early. (Per-message usage is debited as
-   it arrives regardless of the hold.)
+   hold blocks the user until then; failures are logged for reconcile).
+   **Why not charge-on-expire:** expiry also frees genuinely-abandoned reservations (a user
+   who closes the tab mid-run), so blanket-charging expired holds would over-charge legitimate
+   users — a worse, more common failure than the rare free-run, which requires a *total* DB
+   outage during finalization (when nothing durable can be written anyway). The correct fix is
+   an external (out-of-DB) settlement-retry queue/log — a deliberate follow-up, not a hot-path
+   change. Mitigation today: keep `BORING_CREDITS_RESERVATION_TTL_SECONDS` (default 2h)
+   comfortably above any real run's max runtime so an in-flight run's hold isn't freed early,
+   and reconcile from the logged fallback failures. (Per-message usage is debited as it
+   arrives regardless of the hold.)
 4. **Single-store purchase key.** The purchase PK is `order_id`; cross-store/mode collisions
    are prevented by the per-store/mode webhook secret + config validation. A composite
    `store:mode:order_id` key would harden a future multi-tenant DB.

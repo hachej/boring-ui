@@ -102,6 +102,17 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
     expect(await store.revokePurchase('never-credited')).toEqual({ revoked: false })
   })
 
+  it('throws on a conflicting refund debit when applying a pending refund at grant time', async () => {
+    // Partial refund before grant → refund_pending at 50%.
+    await store.revokePurchase('ord-pc', { refundFraction: 0.5, allowTombstone: true })
+    // A corrupted ledger row already occupies the would-be refund debit id (€5 → refund:ord-pc:5000000), wrong amount.
+    await store.recordUsage({ usageId: 'refund:ord-pc:5000000', userId: USER, source: 'manual', billedCostMicros: 1, metadata: {} })
+    // The grant applying the pending refund must verify, not silently skip the debit.
+    await expect(store.grantPurchaseOnce({ orderId: 'ord-pc', userId: USER, amountMicros: 10_000_000 })).rejects.toThrow(/refund ledger conflict/)
+    const rows = await sqlClient`SELECT status FROM boring_credit_purchases WHERE order_id = 'ord-pc'`
+    expect(rows[0]?.status).toBe('refund_pending') // rolled back, not granted
+  })
+
   it('throws rather than mark refunded when a conflicting refund debit already exists', async () => {
     await store.grantPurchaseOnce({ orderId: 'ord-conf', userId: USER, amountMicros: 10_000_000 })
     // A corrupted/manual ledger row exists at the refund debit id with a WRONG amount.

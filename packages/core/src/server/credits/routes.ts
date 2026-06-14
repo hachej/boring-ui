@@ -155,8 +155,8 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
     }
     for (const variantId of ls.creditVariantIds) {
       const value = variantCredits[variantId]
-      if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-        throw new Error(`credits: creditMicrosByVariant is missing a positive value for credit variant "${variantId}"`)
+      if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+        throw new Error(`credits: creditMicrosByVariant must be a positive safe integer for credit variant "${variantId}"`)
       }
     }
   }
