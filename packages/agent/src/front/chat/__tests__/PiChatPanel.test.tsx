@@ -345,11 +345,12 @@ describe('PiChatPanel sandbox shell', () => {
     expect(slot?.getAttribute('aria-hidden')).toBe('true')
   })
 
-  test('surfaces a rejected run as one notice and lets a host attach a code-specific action', async () => {
+  test('surfaces a rejected run as one notice, re-appears after dismissal, and never reports a turn', async () => {
     const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
     // A canonical, non-billing ErrorCode — the seam is generic; the host decides the action.
-    remote.prompt.mockRejectedValueOnce(Object.assign(new Error('Session is locked.'), { errorCode: 'SESSION_LOCKED' }))
+    remote.prompt.mockRejectedValue(Object.assign(new Error('Session is locked.'), { errorCode: 'SESSION_LOCKED' }))
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+    const onTurnComplete = vi.fn()
     const renderNoticeAction = vi.fn((notice: { errorCode?: string }) =>
       notice.errorCode === 'SESSION_LOCKED' ? <button type="button">Resolve</button> : null,
     )
@@ -360,6 +361,7 @@ describe('PiChatPanel sandbox shell', () => {
         fetch={fetchMock as unknown as typeof fetch}
         createRemoteSession={remoteFactory(remote)}
         renderNoticeAction={renderNoticeAction}
+        onTurnComplete={onTurnComplete}
       />,
     )
 
@@ -367,7 +369,7 @@ describe('PiChatPanel sandbox shell', () => {
     fireEvent.change(textarea, { target: { value: 'expensive prompt' } })
     fireEvent.keyDown(textarea, { key: 'Enter' })
 
-    await waitFor(() => expect(remote.prompt).toHaveBeenCalled())
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledTimes(1))
     // The rejection surfaces as a single run-rejected notice carrying the server code.
     const notice = await waitFor(() => {
       const el = document.querySelector('[data-runtime-notice-id="run-rejected"]')
@@ -375,9 +377,20 @@ describe('PiChatPanel sandbox shell', () => {
       return el
     })
     expect(notice.textContent).toContain('Session is locked.')
-    // The host's renderNoticeAction was invoked with the coded notice and its action shows.
     expect(renderNoticeAction).toHaveBeenCalledWith(expect.objectContaining({ errorCode: 'SESSION_LOCKED' }))
     expect(within(notice as HTMLElement).getByRole('button', { name: 'Resolve' })).toBeTruthy()
+
+    // Dismissing it must not suppress it permanently — a fresh rejection re-renders it.
+    fireEvent.click(within(notice as HTMLElement).getByRole('button', { name: 'Dismiss notice' }))
+    await waitFor(() => expect(document.querySelector('[data-runtime-notice-id="run-rejected"]')).toBeNull())
+
+    fireEvent.change(textarea, { target: { value: 'try again' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(document.querySelector('[data-runtime-notice-id="run-rejected"]')).toBeTruthy())
+
+    // A rejected send never admits a server turn, so it must not report one.
+    expect(onTurnComplete).not.toHaveBeenCalled()
   })
 
   test('fires onTurnComplete once when a run settles from busy to idle', async () => {

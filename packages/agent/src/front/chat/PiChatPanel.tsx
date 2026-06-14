@@ -734,6 +734,10 @@ export function PiChatPanel({
   // action for a specific code.
   const surfaceRunRejected = useCallback((error: unknown) => {
     const errorCode = piChatErrorCode(error)
+    // Un-dismiss first: if the user dismissed a prior rejection, the id sits in
+    // dismissedNoticeIds and would filter out this fresh one — leaving them with no
+    // recovery action while the error persists (e.g. still out of credits).
+    dropLocalNotice(RUN_REJECTED_NOTICE_ID)
     addLocalNotice({
       id: RUN_REJECTED_NOTICE_ID,
       level: 'error',
@@ -741,7 +745,7 @@ export function PiChatPanel({
       dismissible: true,
       ...(errorCode ? { errorCode } : {}),
     })
-  }, [addLocalNotice])
+  }, [addLocalNotice, dropLocalNotice])
 
   const sendComposerMessage = useCallback(async ({ text, files, source = 'composer' }: ComposerSendPayload) => {
     if (!policy) {
@@ -843,18 +847,20 @@ export function PiChatPanel({
     settlePendingAutoSubmit()
   }, [settlePendingAutoSubmit, status])
 
-  // Fire onTurnComplete once per run settle (busy/submitted → idle). Hosts use it
-  // to refresh out-of-band state after a turn (e.g. a usage/quota indicator); the
-  // agent stays agnostic about what that state is. Only an edge WITHIN the same
-  // active session counts — a session switch records the new baseline without firing.
+  // Fire onTurnComplete once per run settle (busy → idle). Hosts use it to refresh
+  // out-of-band state after a turn (e.g. a usage/quota indicator); the agent stays
+  // agnostic about what that state is. Keyed off the SERVER status (remoteStatus), not
+  // the derived/optimistic one — a rejected send only flips the local 'submitted'
+  // marker, which must NOT count as a settled turn. Only an edge WITHIN the same active
+  // session counts; a session switch records the new baseline without firing.
   useEffect(() => {
     const previous = turnCompletePrevRef.current
-    turnCompletePrevRef.current = { sessionId: activeSessionId, status }
+    turnCompletePrevRef.current = { sessionId: activeSessionId, status: remoteStatus }
     if (previous === undefined || previous.sessionId !== activeSessionId) return
     const wasBusy = isPiBusyStatus(previous.status) || previous.status === 'submitted'
-    const settled = !isPiBusyStatus(status) && status !== 'submitted'
+    const settled = !isPiBusyStatus(remoteStatus) && remoteStatus !== 'submitted'
     if (wasBusy && settled) onTurnComplete?.()
-  }, [activeSessionId, onTurnComplete, status])
+  }, [activeSessionId, onTurnComplete, remoteStatus])
 
   useEffect(() => {
     if (!autoSubmitInitialDraft || !policy || !activeSessionId || composerBlocked) return
