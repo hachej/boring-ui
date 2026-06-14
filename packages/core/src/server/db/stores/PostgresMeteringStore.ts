@@ -442,6 +442,18 @@ export class PostgresMeteringStore {
     return Number(rows[0]?.total ?? 0)
   }
 
+  /** Durably record that an ACTIVE reservation must be charged the fallback hold if
+   * it expires, BEFORE attempting the actual fallback charge. Committed on its own so
+   * the intent survives a subsequent failed charge write — the expiry sweep then
+   * charges a marked reservation even with zero billed rows (no free started run on a
+   * brief finalization-time DB outage). Idempotent; a no-op on a non-active row. */
+  async markReservationFallbackCharge(userId: string, reservationId: string): Promise<void> {
+    await this.db
+      .update(usageReservations)
+      .set({ chargeOnExpire: true })
+      .where(and(eq(usageReservations.id, reservationId), eq(usageReservations.userId, userId), eq(usageReservations.status, 'active')))
+  }
+
   async getBalance(userId: string, now: Date = new Date()): Promise<MeteringBalance> {
     return this.computeBalance(this.db, userId, now)
   }
@@ -667,23 +679,23 @@ export class PostgresMeteringStore {
       .update(usageReservations)
       .set({ status: 'expired' })
       .where(and(eq(usageReservations.userId, userId), eq(usageReservations.status, 'active'), lte(usageReservations.expiresAt, now)))
-      .returning({ id: usageReservations.id, runId: usageReservations.runId, amountMicros: usageReservations.amountMicros })
+      .returning({ id: usageReservations.id, runId: usageReservations.runId, amountMicros: usageReservations.amountMicros, chargeOnExpire: usageReservations.chargeOnExpire })
     for (const r of stale) {
       const usage = await tx
         .select({ total: sql<string>`coalesce(sum(${usageLedger.billedCostMicros}), 0)` })
         .from(usageLedger)
         .where(and(eq(usageLedger.userId, userId), sql`${usageLedger.metadata}->>'reservationId' = ${r.id}`))
       const billedTotal = Number(usage[0]?.total ?? 0)
-      // Charge-on-expire ONLY when the reservation has BILLABLE usage (a real debit
-      // exists), not on mere row existence: a run that wrote only zero-token usage
-      // rows did no billable work, so it must stay free even if its terminal
-      // release was lost (e.g. a user abort whose releaseRun failed transiently).
-      // Charging the full hold for a non-billable run would over-charge real money.
-      // (A successful run the provider reported zero tokens for is charged via the
-      // sink's fallback, which writes a positive `usage-fallback` debit, so it has
-      // billable usage here too; the residual "fallback charge ALSO lost" case joins
-      // the documented total-outage limitation — an under-charge, never an over-charge.)
-      const executed = billedTotal > 0
+      // Charge-on-expire when the reservation has BILLABLE usage (a real debit
+      // exists), OR carries a durable fallback-charge marker (the coordinator decided
+      // this run must be charged but its charge write failed transiently). NOT on mere
+      // row existence: a run that wrote only zero-token usage rows and was NOT marked
+      // did no billable work, so it stays free even if its terminal release was lost
+      // (e.g. a user abort whose releaseRun failed). Charging the full hold for a
+      // non-billable, non-marked run would over-charge real money. The marker closes
+      // the inverse gap: a started/successful run with no billable row whose fallback
+      // charge failed would otherwise go free here.
+      const executed = billedTotal > 0 || r.chargeOnExpire
       if (executed) {
         const topUp = Math.max(0, r.amountMicros - billedTotal)
         if (topUp > 0) {

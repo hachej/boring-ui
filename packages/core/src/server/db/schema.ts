@@ -351,6 +351,13 @@ export const usageReservations = pgTable(
     source: text('source').notNull().default(''),
     amountMicros: bigint('amount_micros', { mode: 'number' }).notNull(),
     status: text('status').notNull().default('active'),
+    // Durable terminal-charge intent: set true when the coordinator decided this
+    // run must be charged the fallback hold (started/successful run with no billable
+    // usage, or a failed usage write) BEFORE attempting the charge. If that charge
+    // write then fails transiently, the stale-expiry sweep still charges the hold
+    // (a marked reservation with zero billed rows is NOT freed) — so a started run
+    // can't go free on a brief finalization-time DB outage.
+    chargeOnExpire: boolean('charge_on_expire').notNull().default(false),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     expiresAt: timestamp('expires_at').notNull(),
   },

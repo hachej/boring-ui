@@ -37,6 +37,7 @@ function makeStore(overrides: Partial<CreditsMeteringStore> = {}): CreditsMeteri
     expireStaleReservations: vi.fn(async () => 0),
     billedMicrosForRun: vi.fn(async () => 0),
     billedMicrosForReservation: vi.fn(async () => 0),
+    markReservationFallbackCharge: vi.fn(async () => {}),
     ...overrides,
   }
 }
@@ -146,6 +147,9 @@ describe('CreditsService', () => {
     const store = makeStore({ billedMicrosForReservation: vi.fn(async () => 200_000), billedMicrosForRun: vi.fn(async () => 9_999_999) })
     const service = new CreditsService(store, CONFIG)
     await service.chargeFallbackUsage({ userId: 'u1', runId: 'r', reservationId: 'res-1' })
+    // The durable charge intent is recorded BEFORE the top-up/settle, so a failed
+    // charge write still lets expiry charge the hold.
+    expect(store.markReservationFallbackCharge).toHaveBeenCalledWith('u1', 'res-1')
     expect(store.billedMicrosForReservation).toHaveBeenCalledWith('u1', 'res-1')
     expect(store.billedMicrosForRun).not.toHaveBeenCalled()
     expect(store.recordUsage).toHaveBeenCalledWith(expect.objectContaining({ billedCostMicros: 50_000, source: 'pi-chat-fallback' }))

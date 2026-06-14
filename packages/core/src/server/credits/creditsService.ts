@@ -102,7 +102,7 @@ export class CreditExhaustedError extends Error {
  * upstream signature changes compile-time errors and lets tests stub it. */
 export type CreditsMeteringStore = Pick<
   PostgresMeteringStore,
-  'grantOnce' | 'grantPurchaseOnce' | 'revokePurchase' | 'getBalance' | 'reserve' | 'recordUsage' | 'finishReservation' | 'expireStaleReservations' | 'billedMicrosForRun' | 'billedMicrosForReservation'
+  'grantOnce' | 'grantPurchaseOnce' | 'revokePurchase' | 'getBalance' | 'reserve' | 'recordUsage' | 'finishReservation' | 'expireStaleReservations' | 'billedMicrosForRun' | 'billedMicrosForReservation' | 'markReservationFallbackCharge'
 >
 
 function disabledBalance(userId: string): CreditBalance {
@@ -313,6 +313,14 @@ export class CreditsService {
   async chargeFallbackUsage(input: { userId: string; runId: string; reservationId?: string }): Promise<void> {
     if (!this.config.enabled) return
     const key = input.reservationId ?? input.runId
+    // Durably record the charge intent FIRST (its own committed statement), so if the
+    // top-up/settle below fails transiently the reservation stays active+marked and
+    // the expiry sweep still charges the hold — a started/no-billable-usage run can't
+    // go free on a brief finalization-time DB outage. (Only when the reservation id is
+    // known; the runId-only path predates per-reservation marking.)
+    if (input.reservationId) {
+      await this.store.markReservationFallbackCharge(input.userId, input.reservationId)
+    }
     // Top up to the hold, not ON TOP of it: if some usage rows for this attempt
     // were already billed (partial write failure), charge only the missing delta.
     // Scope to the RESERVATION (this attempt) when known — runId is reused on a

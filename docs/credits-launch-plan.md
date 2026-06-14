@@ -130,15 +130,19 @@ fail closed at the highest effective rate.
      override. **Action for a hard stop on unknown models:** raise `RESERVATION_EUR`/the
      starter grant to cover the effective worst case, or restrict served models.
 3. **Durable settlement under a sustained DB outage (narrowed).** `expireStaleReservations`
-   now **charges-on-expire any reservation that has usage rows** (the run executed but its
-   finalization never settled) — topping it up to the hold — and only **frees reservations
-   with no usage** (treated as a genuine pre-execution abandon, so we don't over-charge a user
-   who closed the tab). The residual free-run window is therefore only a run whose usage write
-   *and* fallback charge *both* failed from the very start (no usage row ever written) and
-   stayed failed past TTL — i.e. a total DB outage spanning the whole run, when nothing durable
-   can be written anyway. The complete fix (an external out-of-DB settlement-intent log +
-   retry worker) is a tracked follow-up. The "TTL above any real run's max runtime" mitigation
-   is now **enforced**, not folklore: startup throws unless
+   **charges-on-expire** a reservation that either has **positive billed usage** (`billedTotal
+   > 0` — the run executed real billable work but its finalization never settled) OR carries a
+   durable **`charge_on_expire` marker** (the coordinator decided the run must be charged the
+   fallback hold — a started/successful run with no billable usage — and set the marker BEFORE
+   attempting the charge, so a charge write that then fails transiently is still recovered by
+   the sweep). It **frees** reservations that are neither billed nor marked (only zero-token
+   rows, or nothing at all — a genuine pre-execution/non-billable abandon, so we don't
+   over-charge a user who closed the tab). The residual free-run window is therefore only a run
+   whose terminal **marker write itself** failed (and stayed failed past TTL) — i.e. a DB outage
+   spanning the decision point, when nothing durable can be written anyway. The complete fix (an
+   external out-of-DB settlement-intent log + retry worker) is a tracked follow-up. The "TTL
+   above any real run's max runtime" mitigation is now **enforced**, not folklore: startup
+   throws unless
    `BORING_CREDITS_RESERVATION_TTL_SECONDS ≥ BORING_CREDITS_MAX_RUN_SECONDS + 300s`, so the sweep
    can't charge-on-expire a still-alive long run (which would overcharge it: the hold top-up plus
    the run's later usage). Alert on logged fallback failures. (Per-message usage is debited as it

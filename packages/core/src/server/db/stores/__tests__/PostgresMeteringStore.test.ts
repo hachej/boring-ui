@@ -414,6 +414,19 @@ describe('PostgresMeteringStore', () => {
     expect((await store.getBalance(USER)).usedMicros).toBe(0) // freed, not charged
   })
 
+  it('charges a marked (fallback-intent) run on expiry even with ZERO billed rows (durable settlement)', async () => {
+    await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 10_000_000 })
+    const { reservationId } = await store.reserve({ userId: USER, runId: 'turn-mark', amountMicros: 1_000_000, ttlSeconds: 600 })
+    // The coordinator decided this started/no-billable run must be charged and durably
+    // marked it — but the actual fallback charge write then FAILED (no usage row). The
+    // sweep must still charge the hold (a brief finalization-time outage must not free
+    // a started run). pi r28 P1.
+    await store.markReservationFallbackCharge(USER, reservationId)
+    await sqlClient`UPDATE boring_usage_reservations SET expires_at = now() - interval '1 minute' WHERE run_id = 'turn-mark'`
+    await store.expireStaleReservations()
+    expect((await store.getBalance(USER)).usedMicros).toBe(1_000_000) // full hold charged
+  })
+
   it('charges a partially-billed executed run on expiry, topping up to the hold', async () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 10_000_000 })
     const { reservationId } = await store.reserve({ userId: USER, runId: 'turn-part', amountMicros: 1_000_000, ttlSeconds: 600 })

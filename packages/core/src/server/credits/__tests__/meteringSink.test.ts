@@ -24,6 +24,7 @@ function makeStore(): CreditsMeteringStore {
     expireStaleReservations: vi.fn(async () => 0),
     billedMicrosForRun: vi.fn(async () => 0),
     billedMicrosForReservation: vi.fn(async () => 0),
+    markReservationFallbackCharge: vi.fn(async () => {}),
   }
 }
 
