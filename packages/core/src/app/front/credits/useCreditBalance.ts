@@ -180,8 +180,19 @@ export function useCreditBalance({
       // Stash the pre-checkout NET balance (+ timestamp) so the return handler — which
       // runs in the checkout tab — can confirm only on a real increase. localStorage so
       // it crosses tabs. Best-effort: storage may be unavailable (private mode).
+      // Capture a FRESH server balance for the baseline rather than the hook's cached
+      // value: this runs in the exact async-settlement window where a prior run's debit
+      // may not have landed yet, so the cache can read higher than the true pre-checkout
+      // net and make a real top-up look like no increase. Fall back to cache on failure.
       try {
-        const current = balanceRef.current
+        let current = balanceRef.current
+        try {
+          const bres = await fetch(`${apiBaseUrl}/api/credits/balance`, { credentials: 'include' })
+          if (bres.ok) {
+            const fresh = (await bres.json()) as CreditBalanceResponse
+            if (fresh?.enabled) current = fresh
+          }
+        } catch { /* keep cached value */ }
         if (current) {
           window.localStorage.setItem(
             CHECKOUT_BASELINE_STORAGE_KEY,
