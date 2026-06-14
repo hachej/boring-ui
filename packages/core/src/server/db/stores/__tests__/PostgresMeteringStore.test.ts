@@ -412,6 +412,18 @@ describe('PostgresMeteringStore', () => {
     expect((await store.getBalance(USER)).usedMicros).toBe(1_000_000)
   })
 
+  it('does not re-charge a reservation that already settled before the expiry sweep', async () => {
+    await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 10_000_000 })
+    const { reservationId } = await store.reserve({ userId: USER, runId: 'turn-settled', amountMicros: 1_000_000, ttlSeconds: 600 })
+    await store.recordUsage({ usageId: 'us-1', userId: USER, runId: 'turn-settled', source: 'pi-chat', billedCostMicros: 300_000, metadata: { reservationId } })
+    await store.finishReservation({ reservationId }, 'settled') // real usage only
+    await sqlClient`UPDATE boring_usage_reservations SET expires_at = now() - interval '1 minute' WHERE id = ${reservationId}`
+    // Expiry's atomic claim only touches ACTIVE rows, so a settled row is not
+    // topped up to the hold — the run is charged its real €0.3, not €1.
+    await store.expireStaleReservations()
+    expect((await store.getBalance(USER)).usedMicros).toBe(300_000)
+  })
+
   it('charges an executed stale reservation via the reserve() expiry path too (one expiry policy)', async () => {
     await store.grantOnce({ userId: USER, reason: 'initial', amountMicros: 10_000_000 })
     const { reservationId } = await store.reserve({ userId: USER, runId: 'turn-a', amountMicros: 1_000_000, ttlSeconds: 600 })

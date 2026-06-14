@@ -580,37 +580,53 @@ export class PostgresMeteringStore {
     }
     const matchable = status === 'settled' ? ['active', 'expired'] : ['active']
 
-    let targetId = input.reservationId
-    if (!targetId) {
-      const lookup = [
-        eq(usageReservations.runId, input.runId as string),
-        inArray(usageReservations.status, matchable),
-      ]
-      if (input.userId) lookup.push(eq(usageReservations.userId, input.userId))
-      const found = await this.db
-        .select({ id: usageReservations.id })
-        .from(usageReservations)
-        .where(and(...lookup))
-      if (found.length === 0) return { updated: false }
-      // A reused runId can have several finishable rows (e.g. an expired row
-      // plus a fresh active retry). Picking one blindly could settle the wrong
-      // hold, so demand the unambiguous reservationId instead.
-      if (found.length > 1) {
-        throw new Error('finishReservation by runId is ambiguous (multiple rows); pass reservationId')
+    // Run under the user's advisory lock so a settle/release is serialized with
+    // reserve() and the charge-on-expire sweep — an expiry sweep can't overwrite
+    // a concurrently-settled row (or vice versa) and overcharge.
+    return this.db.transaction(async (tx) => {
+      let userId = input.userId
+      if (!userId && input.reservationId) {
+        const owner = await tx
+          .select({ userId: usageReservations.userId })
+          .from(usageReservations)
+          .where(eq(usageReservations.id, input.reservationId))
+          .limit(1)
+        userId = owner[0]?.userId
       }
-      targetId = found[0]?.id
-      if (!targetId) return { updated: false }
-    }
+      if (userId) await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`)
 
-    const conditions = [eq(usageReservations.id, targetId), inArray(usageReservations.status, matchable)]
-    if (input.userId) conditions.push(eq(usageReservations.userId, input.userId))
+      let targetId = input.reservationId
+      if (!targetId) {
+        const lookup = [
+          eq(usageReservations.runId, input.runId as string),
+          inArray(usageReservations.status, matchable),
+        ]
+        if (input.userId) lookup.push(eq(usageReservations.userId, input.userId))
+        const found = await tx
+          .select({ id: usageReservations.id })
+          .from(usageReservations)
+          .where(and(...lookup))
+        if (found.length === 0) return { updated: false }
+        // A reused runId can have several finishable rows (e.g. an expired row
+        // plus a fresh active retry). Picking one blindly could settle the wrong
+        // hold, so demand the unambiguous reservationId instead.
+        if (found.length > 1) {
+          throw new Error('finishReservation by runId is ambiguous (multiple rows); pass reservationId')
+        }
+        targetId = found[0]?.id
+        if (!targetId) return { updated: false }
+      }
 
-    const rows = await this.db
-      .update(usageReservations)
-      .set({ status })
-      .where(and(...conditions))
-      .returning({ id: usageReservations.id })
-    return { updated: rows.length > 0 }
+      const conditions = [eq(usageReservations.id, targetId), inArray(usageReservations.status, matchable)]
+      if (input.userId) conditions.push(eq(usageReservations.userId, input.userId))
+
+      const rows = await tx
+        .update(usageReservations)
+        .set({ status })
+        .where(and(...conditions))
+        .returning({ id: usageReservations.id })
+      return { updated: rows.length > 0 }
+    })
   }
 
   /** Expire stale active reservations without charging. Returns the count. */
@@ -642,10 +658,15 @@ export class PostgresMeteringStore {
    * who closed the tab isn't over-charged).
    */
   private async expireUserStaleReservations(tx: Queryable, userId: string, now: Date): Promise<number> {
+    // Atomically CLAIM the stale rows (active → expired, RETURNING) before
+    // charging: whoever flips the row status first wins, so a concurrent
+    // finishReservation (settle/release) can't be overwritten and a settled run
+    // can't be charged the hold. (Both paths also hold this user's advisory lock.)
     const stale = await tx
-      .select({ id: usageReservations.id, runId: usageReservations.runId, amountMicros: usageReservations.amountMicros })
-      .from(usageReservations)
+      .update(usageReservations)
+      .set({ status: 'expired' })
       .where(and(eq(usageReservations.userId, userId), eq(usageReservations.status, 'active'), lte(usageReservations.expiresAt, now)))
+      .returning({ id: usageReservations.id, runId: usageReservations.runId, amountMicros: usageReservations.amountMicros })
     for (const r of stale) {
       const usage = await tx
         .select({ rows: sql<string>`count(*)`, total: sql<string>`coalesce(sum(${usageLedger.billedCostMicros}), 0)` })
@@ -662,13 +683,7 @@ export class PostgresMeteringStore {
         }
       }
     }
-    if (stale.length > 0) {
-      await tx
-        .update(usageReservations)
-        .set({ status: 'expired' })
-        .where(inArray(usageReservations.id, stale.map((r) => r.id)))
-    }
-    return stale.length
+    return stale.length // already marked expired by the atomic claim above
   }
 
   private async computeBalance(executor: Queryable, userId: string, now: Date): Promise<MeteringBalance> {
