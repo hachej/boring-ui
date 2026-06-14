@@ -118,6 +118,22 @@ fail closed at the highest effective rate.
    retry worker) is a tracked follow-up. Mitigation: keep `BORING_CREDITS_RESERVATION_TTL_SECONDS`
    (default 2h) above any real run's max runtime, and alert on logged fallback failures.
    (Per-message usage is debited as it arrives regardless of the hold.)
-4. **Single-store purchase key.** The purchase PK is `order_id`; cross-store/mode collisions
-   are prevented by the per-store/mode webhook secret + config validation. A composite
-   `store:mode:order_id` key would harden a future multi-tenant DB.
+4. **Purchase key is namespaced by store+mode** at the route layer
+   (`ls:<store>:<test|live>:<orderId>`), so a Lemon Squeezy order id reused across test/live
+   or stores (or test data sharing a prod DB) can't collide. The DB column is still a plain
+   text PK holding that composite value (the raw id is the suffix + an audit column).
+5. **Refund vs in-flight admission = recoverable debt, not free credits.** A run admitted
+   just before a refund commits runs on credits the refund removes; its usage posts and the
+   refund debit drives the balance negative (surfaced as `debtMicros`, blocking the next run).
+   This is recoverable debt, not free usage. A run never admitted *after* refund processing
+   starts (per-user advisory lock).
+6. **A refund with a missing/zero `refunded_amount`** is treated as a full refund (merchant-
+   safe; LS always sends the amount). Customer-fairness reconciliation is operator-side.
+
+## Accepted structural debt (tracked, not blocking — money paths are correct & tested)
+- Extract a focused `PostgresCreditPurchaseStore` (purchase/refund lifecycle) and a
+  `LemonSqueezyCreditPolicy` (one normalized validated-order decision) out of
+  `PostgresMeteringStore`/`routes`. The logic is correct and covered by 129+ tests; this is
+  an auditability refactor.
+- Promote `usage_ledger.reservationId` from JSON metadata to a first-class nullable column
+  (the expiry fallback relies on the metadata tag today).

@@ -123,14 +123,13 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
     expect(rows[0]?.status).toBe('granted') // unchanged — transaction rolled back
   })
 
-  it('revokes only when the configured identity matches the credited row', async () => {
+  it('revokes only when the configured identity matches the credited row (mismatch throws)', async () => {
     await store.grantPurchaseOnce({ orderId: 'ord-idm', userId: USER, amountMicros: 10_000_000, storeId: 'S1', testMode: false, currency: 'EUR' })
-    // Configured expected identity claims a DIFFERENT store → no revoke.
-    expect(await store.revokePurchase('ord-idm', { expectedStoreId: 'S2', expectedTestMode: false, expectedCurrency: 'EUR' })).toEqual({ revoked: false })
-    // Wrong mode → no revoke.
-    expect(await store.revokePurchase('ord-idm', { expectedStoreId: 'S1', expectedTestMode: true, expectedCurrency: 'EUR' })).toEqual({ revoked: false })
-    // Wrong currency → no revoke.
-    expect(await store.revokePurchase('ord-idm', { expectedStoreId: 'S1', expectedTestMode: false, expectedCurrency: 'USD' })).toEqual({ revoked: false })
+    // An anomalous identity mismatch THROWS (surfaces as retryable 500), rather
+    // than silently leaving a credited order un-revoked.
+    await expect(store.revokePurchase('ord-idm', { expectedStoreId: 'S2', expectedTestMode: false, expectedCurrency: 'EUR' })).rejects.toThrow(/refund identity mismatch/)
+    await expect(store.revokePurchase('ord-idm', { expectedStoreId: 'S1', expectedTestMode: true, expectedCurrency: 'EUR' })).rejects.toThrow(/refund identity mismatch/)
+    await expect(store.revokePurchase('ord-idm', { expectedStoreId: 'S1', expectedTestMode: false, expectedCurrency: 'USD' })).rejects.toThrow(/refund identity mismatch/)
     expect((await store.getBalance(USER)).remainingMicros).toBe(10_000_000)
     // Matching configured identity → revoke. (A refund whose payload omits a
     // field still revokes because the caller passes the CONFIGURED identity.)

@@ -10,8 +10,10 @@ import { creditGrants, creditPurchases, usageLedger, usageReservations } from '.
  * Designed as the persistence backend for an AgentMeteringSink
  * (@hachej/boring-agent): reserve before a run executes, record usage rows
  * idempotently as native usage arrives, then settle or release the
- * reservation exactly once. Stale reservations expire without charging.
- * All methods are idempotent so callers may safely retry.
+ * reservation exactly once. A stale reservation that has usage rows (the run
+ * executed but never settled) is CHARGED up to its hold on expiry; one with no
+ * usage (a pre-execution abandon) expires free. All methods are idempotent so
+ * callers may safely retry.
  */
 
 /** The query surface shared by the root db handle and a transaction. */
@@ -325,25 +327,28 @@ export class PostgresMeteringStore {
         }
         return { revoked: false }
       }
-      // Defense in depth beyond the per-store/mode webhook secret (which already
-      // proves the refund came from the configured store+mode): when the credited
-      // row has a stored identity AND the caller supplies the CONFIGURED expected
-      // identity, they must match. Callers pass configured identity (not the
-      // payload's maybe-missing fields), so a legit refund whose payload omits a
-      // field still revokes.
+      // Backstop beyond the per-store/mode webhook secret + the handler's payload
+      // identity gate: a credited row's stored identity must match the configured
+      // expected identity. A mismatch here is anomalous (data corruption / a
+      // changed config revoking an order credited under different settings) — THROW
+      // so it surfaces as a retryable 500/alert rather than a silent
+      // already-credited-but-not-revoked no-op.
       if (
         (row.storeId != null && opts.expectedStoreId != null && row.storeId !== opts.expectedStoreId) ||
         (row.testMode != null && opts.expectedTestMode != null && row.testMode !== opts.expectedTestMode) ||
         (row.currency != null && opts.expectedCurrency != null && row.currency.toUpperCase() !== opts.expectedCurrency.toUpperCase())
       ) {
-        return { revoked: false }
+        throw new Error(`refund identity mismatch for ${orderId}: credited row (store=${row.storeId}, testMode=${row.testMode}, currency=${row.currency}) does not match expected (store=${opts.expectedStoreId}, testMode=${opts.expectedTestMode}, currency=${opts.expectedCurrency})`)
       }
-      // Serialize the refund debit with run admission for this user: reserve()
-      // takes the same per-user advisory lock, so a run can't be admitted against
-      // a pre-refund balance while this debit is in flight (then commit and let
-      // the user overdraw refunded credits). Safe vs deadlock: reserve takes only
-      // the user lock; this path already holds the per-order lock and never blocks
-      // on a lock reserve wants.
+      // Take the per-user advisory lock (the same one reserve() and the expiry
+      // top-up take) so the refund debit is serialized with run admission and is
+      // durably recorded against the balance. NOTE: this does NOT prevent a run
+      // that was ALREADY admitted (reserve completed just before this lock) from
+      // running on credits this refund removes — that run posts its usage and the
+      // refund debit drives the balance negative, i.e. recoverable DEBT (surfaced
+      // as debtMicros and blocking the next run), not free credits. Safe vs
+      // deadlock: reserve takes only the user lock; this path already holds the
+      // per-order lock and never blocks on a lock reserve wants.
       if (row.userId) {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${row.userId}))`)
       }
