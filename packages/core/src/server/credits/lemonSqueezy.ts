@@ -169,6 +169,10 @@ export interface LemonSqueezyWebhookOptions {
    * per-order idempotency key (the same order never maps to two users).
    */
   resolveUserId?: (order: LemonSqueezyOrder) => string | undefined
+  /** Optional: returns whether the resolved user still exists. When provided, a credit
+   * order for a non-existent (deleted) user is 200-acked WITHOUT granting, so a stale
+   * webhook can't resurrect a deleted user's purchase/grant rows (PII). */
+  userExists?: (userId: string) => Promise<boolean>
   /** When set, the order's `custom_data.uat` MUST be a valid attribution token
    * for its user_id (signUserAttribution) or the order is not credited — binds
    * attribution to a server-created checkout, not a buyer-supplied user_id. May be
@@ -353,6 +357,15 @@ export async function handleLemonSqueezyWebhook(
     // operator reconcile). Server-side checkout always sets user_id, so this is
     // an exceptional path, not the norm.
     return { status: 500, body: { ok: false, reason: 'missing_user_id', orderId: order.orderId } }
+  }
+  // A stale/delayed order_created (or a checkout URL that outlived the account) must not
+  // recreate purchase/grant rows for a DELETED user — that would resurrect their PII
+  // after account deletion. If the resolved user no longer exists, ACK 200 (don't
+  // retry — the account is gone, retrying can't help) and log for operator reconcile
+  // (the charge is refundable operator-side). Skipped when no userExists check is wired.
+  if (options.userExists && !(await options.userExists(userId))) {
+    options.log?.('lemonsqueezy credit order for a non-existent (deleted) user — not crediting (no PII resurrection)', { orderId: order.orderId, userId })
+    return { status: 200, body: { ok: true, reason: 'user_not_found', orderId: order.orderId } }
   }
 
   const amountMicros = options.creditsForOrder(order)

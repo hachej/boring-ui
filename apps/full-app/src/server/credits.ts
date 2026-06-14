@@ -446,6 +446,9 @@ export function buildCreditsWiring(env: NodeJS.ProcessEnv = process.env): {
           ? {
               webhookSecret: config.lemonSqueezyWebhookSecret,
               attributionSecret: config.lemonSqueezyAttributionSecrets,
+              // Don't let a stale order_created webhook resurrect a deleted user's
+              // purchase/grant rows (PII) after account deletion.
+              userExists: async (userId: string) => (await app.userStore.getById(userId)) !== null,
               creditVariantIds,
               creditMicrosByVariant: config.lemonSqueezyCreditMicrosByVariant,
               expectedTestMode: config.lemonSqueezyTestMode,

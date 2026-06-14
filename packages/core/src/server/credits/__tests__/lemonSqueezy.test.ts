@@ -386,6 +386,21 @@ describe('handleLemonSqueezyWebhook', () => {
     expect(grant).toHaveBeenCalled()
   })
 
+  it('does NOT grant for a deleted user (userExists false) — 200 ack, no PII resurrection', async () => {
+    const { options, grant } = opts({ userExists: async () => false })
+    const body = orderPayload()
+    const res = await handleLemonSqueezyWebhook(body, sign(body), options)
+    expect(res).toMatchObject({ status: 200, body: { reason: 'user_not_found' } })
+    expect(grant).not.toHaveBeenCalled()
+  })
+
+  it('grants normally when the user still exists (userExists true)', async () => {
+    const { options, grant } = opts({ userExists: async () => true })
+    const body = orderPayload()
+    await handleLemonSqueezyWebhook(body, sign(body), options)
+    expect(grant).toHaveBeenCalled()
+  })
+
   it('honors a custom resolveUserId', async () => {
     const { options, grant } = opts({ resolveUserId: () => 'mapped-user' })
     const body = orderPayload({ custom_data: {} })

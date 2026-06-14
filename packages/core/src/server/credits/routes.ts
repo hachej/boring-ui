@@ -25,6 +25,10 @@ export interface LemonSqueezyRouteOptions {
    * with the first; the webhook verifies against ANY, so in-flight links survive.
    */
   attributionSecret?: string | readonly string[]
+  /** Optional: resolve whether a credited user still exists. When provided, a credit
+   * order for a deleted user is 200-acked without granting (no PII resurrection via a
+   * stale webhook). */
+  userExists?: (userId: string) => Promise<boolean>
   /**
    * Variant ids that are credit packs. REQUIRED and non-empty for the webhook
    * to credit anything — only orders for these variants mint credits, so
@@ -298,6 +302,8 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
         {
           secret: ls.webhookSecret,
           creditsForOrder,
+          // Don't resurrect a deleted user's PII via a stale order_created webhook.
+          userExists: ls.userExists,
           isCreditOrder,
           // Credit-only store (the DEFAULT): an unknown-variant PAID order on our store
           // is a pack misconfiguration → retryable 500. Use the LENIENT identity check
