@@ -131,6 +131,10 @@ export interface FullAppCreditsConfig extends CreditsConfig {
   lemonSqueezyTestMode: boolean
   /** Expected LS store id; the webhook ignores orders from another store. */
   lemonSqueezyStoreId?: string
+  /** Whether the LS store sells ONLY credit packs (default true). True ⇒ an
+   * unknown-variant paid order on our store is a pack misconfig (retryable 500);
+   * false (a mixed store) ⇒ it's a different product and is 200-ignored. */
+  lemonSqueezyCreditOnlyStore: boolean
   lemonSqueezyCheckout?: {
     apiKey: string
     storeId: string
@@ -296,6 +300,10 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
     lemonSqueezyCreditMicrosByVariant: creditMicrosByVariant,
     lemonSqueezyTestMode: testMode,
     lemonSqueezyStoreId: env.BORING_CREDITS_LS_STORE_ID || undefined,
+    // The launch store sells only credit packs → unknown-variant paid orders are
+    // pack misconfigs that must fail loud. Set 0 for a mixed store (credits + other
+    // products) so legitimate non-credit orders are ignored, not retried forever.
+    lemonSqueezyCreditOnlyStore: env.BORING_CREDITS_LS_CREDIT_ONLY_STORE !== '0',
     lemonSqueezyCheckout: checkoutReady
       ? {
           apiKey: env.BORING_CREDITS_LS_API_KEY!,
@@ -344,6 +352,7 @@ export function buildCreditsWiring(env: NodeJS.ProcessEnv = process.env): {
               creditMicrosByVariant: config.lemonSqueezyCreditMicrosByVariant,
               expectedTestMode: config.lemonSqueezyTestMode,
               expectedStoreId: config.lemonSqueezyStoreId,
+              creditOnlyStore: config.lemonSqueezyCreditOnlyStore,
               checkout: config.lemonSqueezyCheckout,
             }
           : undefined

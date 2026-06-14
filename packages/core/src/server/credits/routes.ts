@@ -29,6 +29,16 @@ export interface LemonSqueezyRouteOptions {
   /** Expected Lemon Squeezy store id. When set, an order from another store is
    * ignored (defense in depth on top of the per-store webhook secret). */
   expectedStoreId?: string
+  /**
+   * Whether this store sells ONLY credit packs. When true (a credit-only store), a
+   * paid order in our store/mode/currency whose variant isn't a configured credit
+   * pack is treated as a pack MISCONFIGURATION and returns a retryable 500 (the
+   * customer paid and would otherwise get nothing). When false (default — a MIXED
+   * store selling credits plus other products), such an order is a different product
+   * and is 200-ignored, so its webhook isn't retried/alerted forever. A known credit
+   * variant with incomplete identity always 500s regardless (see isUnverifiedCreditOrder).
+   */
+  creditOnlyStore?: boolean
   /** Currency a paid order must be in to be credited (default 'EUR'). A missing
    * or mismatched currency is rejected. */
   requireCurrency?: string
@@ -243,10 +253,14 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
           secret: ls.webhookSecret,
           creditsForOrder,
           isCreditOrder,
-          // Strict: an unknown-variant PAID order on our store surfaces as 500.
-          isOurStoreOrder,
+          // Credit-only store: an unknown-variant PAID order on our store is a pack
+          // misconfiguration → retryable 500. Mixed store (default): such an order is
+          // a different product → omit this predicate so the handler 200-ignores it
+          // (no infinite retry/alert on legitimate non-credit sales).
+          isOurStoreOrder: ls.creditOnlyStore ? isOurStoreOrder : undefined,
           // Known credit variant with incomplete identity → retryable 500, not a
           // silent 200 drop (a paid pack we can't safely attribute must fail loud).
+          // Fires regardless of creditOnlyStore (it's a recognized pack either way).
           isUnverifiedCreditOrder,
           // Lenient: a refund whose payload omits store/mode/currency still revokes
           // a credited order; only a present-and-mismatched field is rejected.

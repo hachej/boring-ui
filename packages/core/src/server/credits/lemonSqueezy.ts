@@ -155,10 +155,11 @@ export interface LemonSqueezyWebhookOptions {
    */
   isCreditOrder: (order: LemonSqueezyOrder) => boolean
   /** Optional STRICT check: is this order on OUR store/mode/currency (ignoring the
-   * variant, all fields required)? When provided, a paid order that's ours but NOT
-   * a credit order (unknown/misconfigured variant) returns a retryable 500 instead
-   * of a 200 ack — so a paid customer on a credit-only store isn't left without
-   * credits. */
+   * variant, all fields required)? Provide it ONLY for a credit-only store: then a
+   * paid order that's ours but NOT a credit order (unknown/misconfigured variant)
+   * returns a retryable 500 instead of a 200 ack — so a paid customer isn't left
+   * without credits. Omit it for a MIXED store (credits + other products), so a
+   * legitimate non-credit order is 200-ignored rather than retried/alerted forever. */
   isOurStoreOrder?: (order: LemonSqueezyOrder) => boolean
   /** Optional LENIENT check for REFUNDS: a refund payload may omit store/mode/
    * currency, so a missing field passes and only a present-and-mismatched field

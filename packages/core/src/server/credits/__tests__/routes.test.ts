@@ -56,7 +56,7 @@ describe('credits routes', () => {
     registerCreditsRoutes(app, {
       service: new CreditsService(store, CONFIG),
       // Fixed per-variant value is now required; default variant '1' → €10.
-      lemonSqueezy: { webhookSecret: SECRET, creditVariantIds: ['1'], expectedTestMode: true, creditMicrosByVariant: creditMicrosByVariant ?? { '1': 10_000_000 } },
+      lemonSqueezy: { webhookSecret: SECRET, creditVariantIds: ['1'], expectedTestMode: true, creditMicrosByVariant: creditMicrosByVariant ?? { '1': 10_000_000 }, creditOnlyStore: true },
     })
     await app.ready()
     return app
@@ -234,7 +234,33 @@ describe('credits routes', () => {
     expect(store.grantPurchaseOnce).toHaveBeenCalledWith(expect.objectContaining({ orderId: pkey('order-qty'), amountMicros: 15_000_000 }))
   })
 
-  it('does not credit a paid order for an unconfigured variant (fail closed)', async () => {
+  it('200-ignores an unknown-variant order on a MIXED store (a different product, not a credit pack)', async () => {
+    // No creditOnlyStore → a non-credit product sold on the same store must be
+    // ignored, not 500-retried/alerted forever.
+    const store = makeStore()
+    const a = Fastify()
+    registerCreditsRoutes(a, {
+      service: new CreditsService(store, CONFIG),
+      lemonSqueezy: { webhookSecret: SECRET, creditVariantIds: ['1'], expectedTestMode: true, creditMicrosByVariant: { '1': 10_000_000 } },
+    })
+    await a.ready()
+    const body = JSON.stringify({
+      meta: { event_name: 'order_created', custom_data: { user_id: 'user-1' } },
+      data: { type: 'orders', id: 'order-mixed', attributes: { status: 'paid', test_mode: true, currency: 'EUR', subtotal: 1000, total: 1000, first_order_item: { variant_id: 999 } } },
+    })
+    const res = await a.inject({
+      method: 'POST',
+      url: '/api/credits/webhooks/lemonsqueezy',
+      headers: { 'content-type': 'application/json', 'x-signature': createHmac('sha256', SECRET).update(body).digest('hex') },
+      payload: body,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ reason: 'not_a_credit_order' })
+    expect(store.grantPurchaseOnce).not.toHaveBeenCalled()
+    await a.close()
+  })
+
+  it('does not credit a paid order for an unconfigured variant on a credit-only store (fail closed, 500)', async () => {
     const store = makeStore()
     const a = await build(store)
     const body = JSON.stringify({

@@ -98,6 +98,7 @@ All money config is **fail-closed**: a provided-but-invalid value throws at star
 | `BORING_CREDITS_RESERVATION_TTL_SECONDS` | no (default 7200) | How long a per-run hold survives before the sweep settles/expires it. Must exceed `MAX_RUN_SECONDS + 300s`. |
 | `BORING_CREDITS_LS_WEBHOOK_SECRET` | for purchases | LS webhook signing secret (raw-body HMAC). |
 | `BORING_CREDITS_LS_STORE_ID` | **required if webhook secret set** | Webhook ignores orders from other stores. |
+| `BORING_CREDITS_LS_CREDIT_ONLY_STORE` | no (default 1) | `1` = the store sells only credit packs ⇒ an unknown-variant paid order on our store is a pack misconfig (retryable 500). `0` = a mixed store ⇒ such an order is a different product and is 200-ignored (no infinite retry/alert on legitimate non-credit sales). |
 | `BORING_CREDITS_LS_TEST_MODE` | **required if LS configured** | Exactly `0` (live) or `1` (test). |
 | `BORING_CREDITS_LS_VARIANTS` | for purchases | `creditEur:variantId,…` — pack value (EUR, drives crediting) → LS variant id (**positive integer**). Duplicate pack/variant ids throw. |
 | `BORING_CREDITS_LS_API_KEY` / `_LS_DEFAULT_PACK` / `_LS_REDIRECT_URL` | for checkout | Server-side checkout creation. |
