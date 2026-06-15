@@ -18,6 +18,7 @@ function isFullPageRoute(): boolean {
 
 interface WorkspaceMeta {
   projectName?: string
+  workspaceId?: string
 }
 
 const playgroundDeckWidgets: DeckWidgetDefinition[] = [
@@ -42,6 +43,25 @@ const playgroundDeckPlugin = createDeckPlugin({
 
 const workspacePlugins = [askUserPlugin, playgroundDeckPlugin]
 const externalPluginsEnabled = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BORING_EXTERNAL_PLUGINS === "1"
+
+function resetPlaygroundStorageIfRequested(): void {
+  if (typeof window === "undefined") return
+  const params = new URLSearchParams(window.location.search)
+  if (params.get("fresh") !== "1") return
+  const prefixes = [
+    "boring-ui-v2:layout:playground",
+    "boring-workspace:",
+    "boring-agent:",
+  ]
+  for (const key of Object.keys(window.localStorage)) {
+    if (prefixes.some((prefix) => key.startsWith(prefix))) {
+      window.localStorage.removeItem(key)
+    }
+  }
+  params.delete("fresh")
+  const nextSearch = params.toString()
+  window.history.replaceState(null, "", `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`)
+}
 
 function WorkspaceFullPageShell() {
   const parsed = parseFullPagePanelLocation(window.location.search)
@@ -74,9 +94,11 @@ function WorkspaceFullPageShell() {
 }
 
 export function WorkspaceShell() {
+  resetPlaygroundStorageIfRequested()
   const showcase = useMemo(isShowcaseRoute, [])
   const fullPage = useMemo(isFullPageRoute, [])
   const [projectName, setProjectName] = useState("Workspace")
+  const [workspaceId, setWorkspaceId] = useState("Workspace")
   const [metaLoaded, setMetaLoaded] = useState(showcase || fullPage)
 
   const sessions = useMemo(
@@ -107,8 +129,12 @@ export function WorkspaceShell() {
       .then((meta) => {
         if (cancelled) return
         const next = meta?.projectName?.trim()
+        const nextWorkspaceId = meta?.workspaceId?.trim() || next
         if (next) {
           setProjectName(next)
+        }
+        if (nextWorkspaceId) {
+          setWorkspaceId(nextWorkspaceId)
         }
         setMetaLoaded(true)
       })
@@ -130,11 +156,11 @@ export function WorkspaceShell() {
 
   return (
     <WorkspaceAgentFront
-      workspaceId={showcase ? "playground" : projectName}
+      workspaceId={showcase ? "playground" : workspaceId}
       apiBaseUrl=""
       persistenceEnabled
       debug
-      providerStorageKey="boring-ui-v2:layout:playground"
+      providerStorageKey={showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${workspaceId}`}
       appTitle={showcase ? "Boring" : projectName}
       workspaceLabel={showcase ? undefined : projectName}
       defaultSessionTitle={showcase ? "New session" : projectName}

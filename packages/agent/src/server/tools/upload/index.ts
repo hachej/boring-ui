@@ -42,7 +42,6 @@ function basenameForUpload(filename: string): string {
 
 export function buildUploadAgentTools(bundle: RuntimeBundle): AgentTool[] {
   const { workspace } = bundle
-  const storageRoot = getRuntimeBundleStorageRoot(bundle)
 
   return [
     {
@@ -86,7 +85,7 @@ export function buildUploadAgentTools(bundle: RuntimeBundle): AgentTool[] {
         try {
           const bytes = workspace.readBinaryFile
             ? Buffer.from(await workspace.readBinaryFile(filePath))
-            : await readFile(join(storageRoot, filePath))
+            : await readFile(join(getRuntimeBundleStorageRoot(bundle), filePath))
           if (bytes.byteLength === 0 || bytes.byteLength > MAX_UPLOAD_BYTES) {
             return {
               content: [{ type: 'text', text: `file must be between 1 byte and ${MAX_UPLOAD_BYTES} bytes` }],

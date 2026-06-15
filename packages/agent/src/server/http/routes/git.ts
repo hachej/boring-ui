@@ -9,7 +9,7 @@ import {
 export interface GitRouteOptions {
   // Resolve the workspace root per-request. Called lazily inside the handler so
   // unrelated routes don't pay the cost of provisioning the runtime binding.
-  getWorkspaceRoot?: (request: FastifyRequest) => string | Promise<string>
+  getWorkspaceRoot?: (request: FastifyRequest) => string | undefined | Promise<string | undefined>
 }
 
 function requirePath(value: unknown, reply: FastifyReply): string | null {
@@ -45,9 +45,10 @@ export function gitRoutes(
 
     const workspaceRoot = await resolveWorkspaceRoot(request)
     if (!workspaceRoot) {
-      return reply.code(500).send({
-        error: { code: ERROR_CODE_INTERNAL, message: 'workspace root unavailable' },
-      })
+      return {
+        enabled: false,
+        reason: 'Git file URLs are unavailable for this runtime.',
+      }
     }
 
     try {
