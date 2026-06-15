@@ -84,7 +84,7 @@ jobs:
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
 
       - name: Deploy boring-full-app
-        run: flyctl deploy --remote-only --app boring-full-app --config apps/full-app/fly.toml
+        run: flyctl deploy --remote-only --app boring-full-app --config apps/full-app/fly.toml --build-target runtime
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
