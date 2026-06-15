@@ -7,6 +7,7 @@ export const VITE_PORT = Number(process.env.PORT) || 5200
 export const APP_ROOT = resolve(import.meta.dirname, "../..")
 export const FIXTURES_DIR = resolve(APP_ROOT, "src/fixtures")
 export const WORKSPACE_DIR = resolve(APP_ROOT, "workspace")
+const EXTERNAL_PLUGINS_ENABLED = process.env.BORING_EXTERNAL_PLUGINS === "1"
 
 function seedFixtureEntry(srcRoot: string, destRoot: string): void {
   for (const name of readdirSync(srcRoot)) {
@@ -46,6 +47,7 @@ export async function startPlaygroundServer(): Promise<void> {
       appRoot: APP_ROOT,
       mode: "local",
       logger: true,
+      externalPlugins: EXTERNAL_PLUGINS_ENABLED,
       defaultPluginPackages: ["@hachej/boring-ask-user"],
     })
     app.get("/api/v1/workspace/meta", async () => ({

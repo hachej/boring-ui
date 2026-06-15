@@ -301,7 +301,7 @@ export class BoringPluginAssetManager {
       additionalSkillPaths: [...new Set(plugins.flatMap((plugin) => plugin.skillPaths ?? []).map(skillPathForPiLoader))],
       packages: compactPiPackages(normalizeBoringPluginPiPackages(plugins)),
       extensionPaths: plugins.flatMap((plugin) => plugin.extensionPaths ?? []),
-      ...(prompts.length > 0 ? { systemPromptAppend: `# Loaded boring-ui plugin context\n\n${prompts.join("\n\n")}` } : {}),
+      ...(prompts.length > 0 ? { systemPromptAppend: `# Loaded app-provided context\n\n${prompts.join("\n\n")}` } : {}),
     }
   }
 
