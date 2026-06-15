@@ -1,20 +1,21 @@
-# @boring/core bundle size
+# @hachej/boring-core bundle size
 
 | Entry  | Gzip (KB) |
 |--------|-----------|
-| front  |     27.83 |
-| server |     31.38 |
+| front  |     31.26 |
+| server |     58.06 |
 
 ### Chunk breakdown
 
 **front**
-- `chunk-3ATBRYMW.js`: 27.05 KB
 - `chunk-HYNKZSTF.js`: 0.24 KB
-- `front/index.js`: 0.54 KB
+- `chunk-WK7GFJZX.js`: 30.47 KB
+- `front/index.js`: 0.56 KB
 
 **server**
-- `chunk-HSRBZLKT.js`: 10.86 KB
-- `chunk-MVIUKXQ3.js`: 19.28 KB
-- `server/index.js`: 1.24 KB
+- `chunk-I56OTSPB.js`: 19.54 KB
+- `chunk-LIBHVT7V.js`: 0.88 KB
+- `chunk-RG2NE33D.js`: 19.69 KB
+- `server/index.js`: 17.95 KB
 
-_Updated: 2026-05-06_
+_Updated: 2026-06-15_
