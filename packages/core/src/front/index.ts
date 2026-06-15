@@ -49,8 +49,6 @@ export type {
   UserIdentityProviderProps,
   AuthClient,
   GoogleAuthButtonProps,
-  UserSettingsPageProps,
-  UserSettingsSection,
 } from './auth/index.js'
 
 export {
