@@ -735,6 +735,12 @@ export async function createCoreWorkspaceAgentServer(
     }
   })
 
+  const resolveSessionNamespace: NonNullable<RegisterAgentRoutesOptions['getSessionNamespace']> = async (ctx) => (
+    options.getSessionNamespace
+      ? await options.getSessionNamespace(ctx)
+      : options.sessionNamespace ?? ctx.workspaceId
+  )
+
   await app.register(registerAgentRoutes, {
     workspaceRoot,
     sessionId: options.sessionId,
@@ -751,8 +757,7 @@ export async function createCoreWorkspaceAgentServer(
     systemPromptAppend: pluginCollection.agentOptions.systemPromptAppend,
     pi: pluginCollection.agentOptions.pi,
     getPi: resolvePiOptions,
-    sessionNamespace: options.sessionNamespace,
-    getSessionNamespace: options.getSessionNamespace,
+    getSessionNamespace: resolveSessionNamespace,
     getExtraTools: async (ctx) => {
       const callerTools = options.getExtraTools ? await options.getExtraTools(ctx) : []
       return [
