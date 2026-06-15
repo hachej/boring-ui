@@ -9,5 +9,5 @@
     "lib": ["ES2022"]
   },
   "include": ["src/server/**/*.ts", "src/plugins/**/server.ts", "src/types/**/*.d.ts"],
-  "exclude": ["src/front", "node_modules", "dist"]
+  "exclude": ["src/front", "src/plugins/demo", "node_modules", "dist"]
 }
