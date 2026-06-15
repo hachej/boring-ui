@@ -172,6 +172,10 @@ describe('handleStripeWebhook', () => {
     // A uat signed for a DIFFERENT pack must not validate (binds user AND pack).
     const wrongPack = completedEvent({ metadata: { user_id: 'u1', pack_id: '10', uat: signStripeAttribution('u1', '5', ATTR) } })
     expect((await handleStripeWebhook(wrongPack, sign(wrongPack), makeOptions({ attributionSecret: ATTR }))).body.reason).toBe('untrusted_attribution')
+    // Rotation: a uat signed with a PREVIOUS secret still validates against [current, previous].
+    const old = signStripeAttribution('u1', '10', 'old_secret')
+    const rotated = completedEvent({ metadata: { user_id: 'u1', pack_id: '10', uat: old } })
+    expect((await handleStripeWebhook(rotated, sign(rotated), makeOptions({ attributionSecret: ['new_secret', 'old_secret'] }))).status).toBe(200)
   })
 
   it('revokes on a refund', async () => {

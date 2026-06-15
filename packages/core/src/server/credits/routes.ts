@@ -100,7 +100,7 @@ function buildStripePacks(stripe: StripeRouteOptions, locale?: string): CreditPa
       priceMinor: checkout.customPack.minMinor,
       currency,
       label: 'Custom amount',
-      isDefault: false,
+      isDefault: checkout.customPack.id === checkout.defaultPack,
       custom: true,
     })
   }
@@ -180,6 +180,10 @@ export interface StripeRouteOptions {
   /** Webhook endpoint signing secret (whsec_…). When omitted, the webhook route is NOT
    * registered (checkout can still open, but purchases won't auto-credit). */
   webhookSecret?: string
+  /** Secret(s) to sign/verify the attribution token (metadata.uat). Defaults to the
+   * webhook secret. Provide [current, ...previous] so rotating the webhook secret doesn't
+   * reject in-flight checkouts: sessions sign with the first; the webhook verifies any. */
+  attributionSecret?: string | readonly string[]
   /** true = test mode. The webhook only credits sessions whose livemode matches. */
   expectedTestMode: boolean
   /** Currency a paid session must be in to be credited (default 'EUR'). */
@@ -576,6 +580,20 @@ function registerStripeRoutes(
   if (stripe.checkout && !stripe.webhookSecret) {
     throw new Error('credits: Stripe checkout is configured but no webhookSecret — buyers would be charged without being credited (no fulfillment webhook). Set BORING_CREDITS_STRIPE_WEBHOOK_SECRET.')
   }
+  const webhookSecret = stripe.webhookSecret
+  // No secret ⇒ no checkout either (guarded above), so nothing to register.
+  if (!webhookSecret) return
+
+  // Attribution secrets (current + previous) decoupled from the webhook secret so rotating
+  // it doesn't reject in-flight checkouts. Default to the webhook secret. Sign with the
+  // first; verify against all. Normalize an empty/all-blank list back to the webhook secret
+  // so verification can't be silently disabled.
+  const rawAttribution = stripe.attributionSecret === undefined
+    ? [webhookSecret]
+    : typeof stripe.attributionSecret === 'string' ? [stripe.attributionSecret] : stripe.attributionSecret
+  const attributionSecrets = rawAttribution.filter((s) => typeof s === 'string' && s.length > 0)
+  const effectiveAttributionSecrets: readonly string[] = attributionSecrets.length > 0 ? attributionSecrets : [webhookSecret]
+  const attributionSigningSecret = effectiveAttributionSecrets[0]
 
   if (stripe.checkout) {
     const checkout = stripe.checkout
@@ -676,7 +694,7 @@ function registerStripeRoutes(
           userId,
           packId,
           // Sign (user, pack) so the webhook can confirm THIS adapter created the session.
-          attributionSecret: stripe.webhookSecret,
+          attributionSecret: attributionSigningSecret,
           email: typeof email === 'string' ? email : undefined,
           redirectUrl: checkout.redirectUrl,
         })
@@ -688,9 +706,6 @@ function registerStripeRoutes(
     })
   }
 
-  const webhookSecret = stripe.webhookSecret
-  // No secret here means no checkout either (guarded above), so nothing to register.
-  if (!webhookSecret) return
   const webhookPath = stripe.webhookPath ?? '/api/credits/webhooks/stripe'
   app.register(async (scope) => {
     // Raw body so the Stripe signature can be verified before parsing.
@@ -714,9 +729,10 @@ function registerStripeRoutes(
           isUnverifiedCreditOrder,
           isRefundForOurStore,
           creditMicrosPerUnit,
-          // Verify the session was created by THIS adapter (metadata.uat) — same secret the
-          // checkout signs with. Defends a mixed Stripe account from a colliding pack_id.
-          attributionSecret: webhookSecret,
+          // Verify the session was created by THIS adapter (metadata.uat). Verify against
+          // ALL attribution secrets (current + previous) so a rotation doesn't reject
+          // in-flight checkouts. Defends a mixed Stripe account from a colliding pack_id.
+          attributionSecret: effectiveAttributionSecrets,
           grant: (input, order) =>
             service.grantPurchase(input.userId, purchaseKey(order.paymentIntentId as string), input.amountMicros, {
               testMode: stripe.expectedTestMode,
@@ -725,6 +741,12 @@ function registerStripeRoutes(
             }),
           onRefund: (order) =>
             service.revokePurchase(purchaseKey(order.paymentIntentId as string), {
+              // charge.refunded carries amount_refunded/amount → a proportional fraction
+              // for partial refunds. charge.dispute.created carries neither, so the fraction
+              // is undefined ⇒ FULL revoke. That's deliberate and safe: a dispute withholds
+              // the funds immediately, so revoking the whole order's credits is the
+              // conservative direction (a rare partial dispute over-revokes, recoverable by
+              // re-grant, vs. the worse alternative of leaving clawed-back funds credited).
               refundFraction:
                 order.amountRefundedMinor !== undefined && order.amountRefundedMinor > 0 && order.amountMinor !== undefined && order.amountMinor > 0
                   ? order.amountRefundedMinor / order.amountMinor

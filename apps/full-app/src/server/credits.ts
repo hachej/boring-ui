@@ -104,6 +104,7 @@ function parseStripeVariants(raw: string | undefined): Record<string, string> {
  * Configured = a secret key or webhook secret is present (mirrors the LS gate). */
 function readStripeRouteConfig(env: NodeJS.ProcessEnv): {
   webhookSecret?: string
+  attributionSecret?: string | readonly string[]
   expectedTestMode: boolean
   requireCurrency: string
   creditOnlyStore: boolean
@@ -156,8 +157,14 @@ function readStripeRouteConfig(env: NodeJS.ProcessEnv): {
     throw new Error(`BORING_CREDITS_STRIPE_DEFAULT_PACK "${defaultPackEnv}" is not a configured pack in BORING_CREDITS_STRIPE_VARIANTS (or the custom pack)`)
   }
   const checkoutReady = Boolean(apiKey && (Object.keys(variants).length > 0 || customPack))
+  // Dedicated attribution secret(s), decoupled from the webhook secret so rotating the
+  // webhook secret doesn't invalidate in-flight checkout uat tokens. [current, ...previous].
+  const attrCurrent = env.BORING_CREDITS_STRIPE_ATTRIBUTION_SECRET || undefined
+  const attrPrevious = (env.BORING_CREDITS_STRIPE_ATTRIBUTION_SECRET_PREVIOUS || '').split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+  const attributionSecret = attrCurrent ? [attrCurrent, ...attrPrevious] : undefined
   return {
     webhookSecret,
+    attributionSecret,
     expectedTestMode: testMode,
     requireCurrency: env.BORING_CREDITS_STRIPE_CURRENCY || 'EUR',
     creditOnlyStore: env.BORING_CREDITS_STRIPE_CREDIT_ONLY_STORE !== '0',

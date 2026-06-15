@@ -28,6 +28,13 @@ describe('buildStripeCheckoutForm', () => {
     expect(p.get('cancel_url')).toBe('https://app.test/account?x=1&checkout=cancelled')
   })
 
+  it('writes a signed uat token only when an attribution secret is given', () => {
+    expect(form(base).get('metadata[uat]')).toBeNull()
+    const p = form({ ...base, attributionSecret: 'attr_secret' })
+    const uat = p.get('metadata[uat]')
+    expect(uat).toMatch(/^[0-9a-f]{64}$/)
+  })
+
   it('rejects a malformed price id and a missing pack id', () => {
     expect(() => buildStripeCheckoutForm({ ...base, priceId: 'prod_oops' })).toThrow(/price_/)
     expect(() => buildStripeCheckoutForm({ ...base, packId: '' })).toThrow(/packId/)
