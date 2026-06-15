@@ -45,6 +45,7 @@ export async function startPlaygroundServer(): Promise<void> {
       workspaceRoot,
       mode: "local",
       logger: true,
+      externalPlugins: false,
       defaultPluginPackages: ["@hachej/boring-ask-user"],
     })
     app.get("/api/v1/workspace/meta", async () => ({

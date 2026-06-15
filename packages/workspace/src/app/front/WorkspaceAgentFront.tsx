@@ -419,6 +419,7 @@ export function WorkspaceAgentFront<
   defaultTheme,
   onThemeChange,
   persistenceEnabled,
+  debug,
   bridgeEndpoint,
   fullPageBasePath,
   onAuthError,
@@ -1244,6 +1245,7 @@ export function WorkspaceAgentFront<
         workspaceLabel={workspaceLabel}
         storageKey={resolvedProviderStorageKey}
         persistenceEnabled={persistenceEnabled}
+        debug={debug}
         bridgeEndpoint={null}
         onAuthError={onAuthError}
         frontPluginHotReload={frontPluginHotReload}

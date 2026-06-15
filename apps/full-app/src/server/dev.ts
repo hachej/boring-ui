@@ -17,6 +17,7 @@ startCoreWorkspaceAgentDevServer({
     createCoreWorkspaceAgentServer({
       ...options,
       plugins: serverPlugins,
+      externalPlugins: false,
       installPluginAuthoring: pluginAuthoringEnabledFromEnv(),
     }),
 }).catch((error) => {

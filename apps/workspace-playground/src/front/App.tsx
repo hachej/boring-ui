@@ -132,11 +132,13 @@ export function WorkspaceShell() {
       workspaceId={showcase ? "playground" : projectName}
       apiBaseUrl=""
       persistenceEnabled
+      debug
       providerStorageKey="boring-ui-v2:layout:playground"
       appTitle={showcase ? "Boring" : projectName}
       workspaceLabel={showcase ? undefined : projectName}
       defaultSessionTitle={showcase ? "New session" : projectName}
-      frontPluginHotReload="vite"
+      frontPluginHotReload={false}
+      hotReloadEnabled={false}
       fullPageBasePath="/full-page"
       provisionWorkspace={!showcase}
       sessions={sessions}

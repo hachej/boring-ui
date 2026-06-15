@@ -72,6 +72,40 @@ async function createDummySkill(): Promise<string> {
   return root
 }
 
+test('registerAgentRoutes externalPlugins=false keeps local plugin files out of catalog', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-plugin-disabled-')
+  const pluginDir = join(workspaceRoot, '.pi', 'extensions')
+  await mkdir(pluginDir, { recursive: true })
+  await writeFile(
+    join(pluginDir, 'hidden.mjs'),
+    [
+      'export default {',
+      "  name: 'a4s_embed_plugin_hidden',",
+      "  description: 'hidden embedded plugin tool',",
+      "  parameters: { type: 'object', properties: {} },",
+      '  async execute() { return { content: [{ type: \'text\', text: \'hidden\' }] } },',
+      '}',
+      '',
+    ].join('\n'),
+  )
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    externalPlugins: false,
+  })
+
+  try {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
+    expect(res.statusCode).toBe(200)
+    const names = res.json().tools.map((tool: { name: string }) => tool.name)
+    expect(names).not.toContain('a4s_embed_plugin_hidden')
+    expect(names).toContain('bash')
+  } finally {
+    await app.close()
+  }
+})
+
 test('registerAgentRoutes provisions embedded runtime plugins before host app routes are ready', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-provision-')
   const packageRoot = await createDummyNodeSdkPackage()

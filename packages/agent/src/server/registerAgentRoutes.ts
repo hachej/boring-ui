@@ -289,6 +289,12 @@ export interface RegisterAgentRoutesOptions {
   sessionNamespace?: string
   /** Optional best-effort telemetry sink supplied by an embedding host. */
   telemetry?: TelemetrySink
+  /**
+   * Enable user/global Pi extension auto-discovery from .pi/ and ~/.pi.
+   * App/internal plugins should be passed through extraTools/pi instead.
+   * Defaults to true for standalone agent compatibility.
+   */
+  externalPlugins?: boolean
   getSessionNamespace?: (ctx: {
     workspaceId: string
     workspaceRoot: string
@@ -354,6 +360,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     typeof opts.getSessionNamespace === 'function' ||
     typeof opts.getSystemPromptDynamic === 'function'
   const sessionChangesTracker = new InMemorySessionChangesTracker()
+  const externalPluginsEnabled = opts.externalPlugins !== false
   const runtimeBindings = new Map<string, RuntimeBindingEntry>()
   const MAX_RUNTIME_BINDINGS = 256
   function evictRuntimeBindings(): void {
@@ -573,7 +580,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       }),
       ...buildFilesystemAgentTools(runtimeBundle),
       ...buildUploadAgentTools(runtimeBundle),
-      createPluginDiagnosticsTool({
+      ...(externalPluginsEnabled ? [createPluginDiagnosticsTool({
         // `binding` is assigned later in this function; read through thunks.
         getLastReloadDiagnostics: () => binding?.lastReloadDiagnostics ?? [],
         getHarness: () => binding?.harness,
@@ -583,11 +590,11 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
                 opts.getPluginDiagnostics!({ workspaceId, workspaceRoot: root }),
             }
           : {}),
-      }),
+      })] : []),
     ]
     const pluginTools: PluginToolRegistration[] = []
 
-    if (modeAdapter.workspaceFsCapability === 'strong') {
+    if (externalPluginsEnabled && modeAdapter.workspaceFsCapability === 'strong') {
       const pluginResult = await loadPlugins({ cwd: root })
       if (pluginResult.errors.length > 0) {
         for (const e of pluginResult.errors) {

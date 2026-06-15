@@ -469,6 +469,42 @@ test('createAgentApp throws clearly when templatePath is missing', async () => {
   ).rejects.toThrow(`Failed to copy template from "${missingTemplate}"`)
 })
 
+test('externalPlugins=false keeps local plugin files out of the app catalog', async () => {
+  const workspaceRoot = await makeWorkspaceLocalTempDir('boring-ui-plugin-disabled-')
+  const pluginDir = join(workspaceRoot, '.pi', 'extensions')
+  await mkdir(pluginDir, { recursive: true })
+  await writeFile(
+    join(pluginDir, 'hidden.mjs'),
+    [
+      'export default {',
+      "  name: 'a4s_plugin_hidden',",
+      "  description: 'hidden plugin tool',",
+      "  parameters: { type: 'object', properties: {} },",
+      '  async execute() { return { content: [{ type: \'text\', text: \'hidden\' }] } },',
+      '}',
+      '',
+    ].join('\n'),
+    'utf-8',
+  )
+
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    externalPlugins: false,
+  })
+
+  try {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
+    expect(res.statusCode).toBe(200)
+    const names = res.json().tools.map((t: { name: string }) => t.name)
+    expect(names).not.toContain('a4s_plugin_hidden')
+    expect(names).toContain('bash')
+  } finally {
+    await app.close()
+  }
+})
+
 test('real local plugin file remains callable and appears in app catalog', async () => {
   const workspaceRoot = await makeWorkspaceLocalTempDir('boring-ui-plugin-e2e-')
   const pluginDir = join(workspaceRoot, '.pi', 'extensions')
