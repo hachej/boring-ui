@@ -31,6 +31,11 @@ export const ERROR_CODES = {
   MAIL_DISABLED: 'mail_disabled',
   DB_UNAVAILABLE: 'db_unavailable',
   INTERNAL_ERROR: 'internal_error',
+
+  // Credits + purchases
+  PAYMENT_REQUIRED: 'payment_required',
+  INVALID_PACK: 'invalid_pack',
+  CHECKOUT_FAILED: 'checkout_failed',
 } as const
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES]

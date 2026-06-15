@@ -10,6 +10,7 @@ import { PiChatEventMapper } from './piChatEvents'
 import { PiChatReplayBuffer } from './piChatReplayBuffer'
 import { followUpSelector, hasFollowUpSelector, PiChatMessageMetadataReconciler } from './piChatMessageMetadataReconciler'
 import { buildPiChatHistory } from './piChatHistory'
+import { PiChatMeteringCoordinator, type AgentMeteringSink, type MeteringErrorLogger } from './metering'
 
 type PiNativeHarness = AgentHarness & {
   getPiSessionAdapter?: (input: SendMessageInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
@@ -41,6 +42,15 @@ export interface HarnessPiChatServiceOptions {
   harness: AgentHarness
   sessionStore: SessionStore
   workdir: string
+  /**
+   * Optional host billing sink. When set, accepted prompts/follow-ups reserve
+   * before execution (a rejecting sink blocks the request), native assistant
+   * usage is recorded per message, and every run settles or releases from
+   * native terminal lifecycle.
+   */
+  metering?: AgentMeteringSink
+  /** Receives non-fatal metering pipeline failures (default: console.warn). */
+  meteringLogger?: MeteringErrorLogger
 }
 
 export class HarnessPiChatService implements PiChatSessionService {
@@ -57,11 +67,20 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly activePromptRuns = new Map<string, Promise<void>>()
   private readonly syntheticPromptFailures = new Map<string, SyntheticPromptFailure[]>()
   private readonly activeSyntheticPromptErrors = new Map<string, ChatError>()
+  private readonly metering?: PiChatMeteringCoordinator
 
   constructor(options: HarnessPiChatServiceOptions) {
     this.harness = options.harness as PiNativeHarness
     this.sessionStore = options.sessionStore
     this.workdir = options.workdir
+    this.metering = options.metering
+      ? new PiChatMeteringCoordinator(options.metering, options.meteringLogger)
+      : undefined
+  }
+
+  /** Test/diagnostic hook: resolves once queued metering sink calls settle. */
+  async flushMetering(): Promise<void> {
+    await this.metering?.flush()
   }
 
   async listSessions(ctx: PiSessionRequestContext, options?: SessionListOptions) {
@@ -73,8 +92,20 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   async deleteSession(ctx: PiSessionRequestContext, sessionId: string) {
-    this.channels.get(sessionId)?.unsubscribe()
+    const channel = this.channels.get(sessionId)
+    if (channel) {
+      // sessionStore.delete only disposes the Pi listener; it does not abort the
+      // underlying Agent run. Abort it first (so it stops generating billable
+      // usage) and await the in-flight run while the subscription is still live,
+      // so the native aborted agent-end finalizes the active metering run with
+      // its observed usage before we tear the channel down.
+      const activeRun = this.activePromptRuns.get(sessionId)
+      await channel.adapter.abort()
+      await activeRun?.catch(() => {})
+    }
+    channel?.unsubscribe()
     this.channels.delete(sessionId)
+    this.metering?.releaseSession(sessionId)
     this.messageMetadata.clearSession(sessionId)
     this.syntheticPromptFailures.delete(sessionId)
     this.activeSyntheticPromptErrors.delete(sessionId)
@@ -132,16 +163,42 @@ export class HarnessPiChatService implements PiChatSessionService {
   async prompt(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload): Promise<PromptReceipt> {
     const adapter = await this.getAdapter(ctx, sessionId, payload)
     await this.ensureChannel(ctx, sessionId, adapter)
+    // Reserve before execution. The coordinator is the single source of dedup
+    // truth: it awaits the owning run's reservation, so a concurrent duplicate
+    // sees the same accept/reject (a rejecting sink — e.g. credits exhausted —
+    // re-throws here and fails the request closed before any model call).
+    //   - 'duplicate'  another run owns this nonce → acknowledge, don't execute.
+    //   - 'cancelled'  a concurrent stop/interrupt terminated the run mid-reserve
+    //                  → surface as aborted rather than a fake accepted run.
+    const outcome = (await this.metering?.reservePrompt({
+      workspaceId: ctx.workspaceId,
+      userId: ctx.authSubject,
+      sessionId,
+      clientNonce: payload.clientNonce,
+      message: payload.message,
+      model: payload.model,
+    })) ?? 'created'
+    if (outcome === 'duplicate') {
+      return {
+        accepted: true,
+        cursor: this.channels.get(sessionId)?.buffer.latestSeq ?? 0,
+        clientNonce: payload.clientNonce,
+        duplicate: true,
+      }
+    }
+    if (outcome === 'cancelled') throw promptCancelledError()
     this.messageMetadata.recordPrompt(sessionId, payload)
     const channel = this.channels.get(sessionId)
     const receiptCursor = nextPromptReceiptCursor(channel)
     try {
       const run = this.trackActiveRun(sessionId, adapter.prompt(toPiPromptInput(payload)))
       run.catch((error) => {
+        this.metering?.failPromptRun(sessionId, payload.clientNonce)
         if (!this.messageMetadata.hasPrompt(sessionId, { clientNonce: payload.clientNonce, displayText: payload.displayMessage ?? payload.message })) return
         this.publishPromptRunError(sessionId, channel, payload, error)
       })
     } catch (err) {
+      this.metering?.failPromptRun(sessionId, payload.clientNonce)
       this.messageMetadata.removePrompt(sessionId, { clientNonce: payload.clientNonce })
       throw err
     }
@@ -151,6 +208,28 @@ export class HarnessPiChatService implements PiChatSessionService {
   async followUp(ctx: PiSessionRequestContext, sessionId: string, payload: FollowUpPayload): Promise<FollowUpReceipt> {
     const adapter = await this.getAdapter(ctx, sessionId, payload.message)
     await this.ensureChannel(ctx, sessionId, adapter)
+    // Reserve before enqueuing; the coordinator awaits the owner's reservation
+    // and dedups concurrent/consumed retries (so a duplicate doesn't take a
+    // second hold or queue a second native follow-up).
+    const outcome = (await this.metering?.reserveFollowUp({
+      workspaceId: ctx.workspaceId,
+      userId: ctx.authSubject,
+      sessionId,
+      clientNonce: payload.clientNonce,
+      clientSeq: payload.clientSeq,
+      message: payload.message,
+    })) ?? 'created'
+    if (outcome === 'duplicate') {
+      return {
+        accepted: true,
+        queued: true,
+        cursor: this.channels.get(sessionId)?.buffer.latestSeq ?? 0,
+        clientNonce: payload.clientNonce,
+        clientSeq: payload.clientSeq,
+        duplicate: true,
+      }
+    }
+    if (outcome === 'cancelled') throw promptCancelledError()
     this.messageMetadata.recordFollowUp(sessionId, payload)
     try {
       await adapter.followUp(payload.message, {
@@ -159,6 +238,7 @@ export class HarnessPiChatService implements PiChatSessionService {
         clientSeq: payload.clientSeq,
       })
     } catch (err) {
+      this.metering?.failFollowUpRun(sessionId, payload)
       this.messageMetadata.removeFollowUp(sessionId, payload)
       throw err
     }
@@ -171,10 +251,14 @@ export class HarnessPiChatService implements PiChatSessionService {
       const before = adapter.readSnapshot().followUpMessages.length
       adapter.clearFollowUp(payload)
       const after = adapter.readSnapshot().followUpMessages.length
-      if (after < before) this.messageMetadata.removeFollowUp(sessionId, payload)
+      if (after < before) {
+        this.messageMetadata.removeFollowUp(sessionId, payload)
+        this.metering?.releaseQueued(sessionId, payload)
+      }
       return { accepted: true, cursor: this.channels.get(sessionId)?.buffer.latestSeq ?? 0, cleared: Math.max(0, before - after) }
     }
     const clearedQueue = this.clearAllFollowUps(adapter, sessionId)
+    this.metering?.releaseQueued(sessionId)
     return { accepted: true, cursor: this.channels.get(sessionId)?.buffer.latestSeq ?? 0, cleared: clearedQueue.length }
   }
 
@@ -187,6 +271,10 @@ export class HarnessPiChatService implements PiChatSessionService {
     adapter.abortRetry?.()
     if (wasActive) await adapter.abort()
     await activeRun?.catch(() => {})
+    // Release prompt reservations stranded before agent-start. Safe before
+    // auto-post: the next follow-up is still in the queue (released only when
+    // promoted), not in pendingPrompts.
+    this.metering?.releasePending(sessionId)
     if (nextFollowUp) await this.autoPostInterruptedFollowUp(sessionId, adapter, nextFollowUp)
     return { accepted: true, cursor: this.channels.get(sessionId)?.buffer.latestSeq ?? 0 }
   }
@@ -194,6 +282,11 @@ export class HarnessPiChatService implements PiChatSessionService {
   async stop(ctx: PiSessionRequestContext, sessionId: string, _payload: StopPayload): Promise<StopReceipt> {
     const adapter = await this.getAdapter(ctx, sessionId, '')
     const clearedQueue = this.clearAllFollowUps(adapter, sessionId)
+    // The active run settles/releases via the native aborted agent-end; queued
+    // and not-yet-started prompt reservations are released here so they don't
+    // hold the user's balance until TTL.
+    this.metering?.releaseQueued(sessionId)
+    this.metering?.releasePending(sessionId)
     await adapter.abort()
     return { accepted: true, stopped: true, cursor: this.channels.get(sessionId)?.buffer.latestSeq ?? 0, clearedQueue: buildPiChatQueuedFollowUps(sessionId, clearedQueue) }
   }
@@ -222,13 +315,30 @@ export class HarnessPiChatService implements PiChatSessionService {
     const metadata = this.messageMetadata.findFollowUpForQueueItem(sessionId, followUp)
     this.messageMetadata.recordConsumingFollowUp(sessionId, followUp, metadata?.serverText)
     if (adapter.continueQueuedFollowUp) {
-      await this.trackActiveRun(sessionId, adapter.continueQueuedFollowUp())
+      try {
+        await this.trackActiveRun(sessionId, adapter.continueQueuedFollowUp())
+      } catch (err) {
+        // Rejected before Pi consumed the follow-up; release its reservation.
+        // A no-op if it was already consumed (the run left the queue).
+        this.metering?.failFollowUpRun(sessionId, followUp)
+        throw err
+      }
       return
     }
     if (!this.canClearAutoPostedFollowUpForFallback(adapter, followUp)) {
       throw new AutoPostFollowUpError('Cannot auto-post queued follow-up because this runtime cannot safely remove only the consumed queued item.')
     }
-    await this.runPrompt(sessionId, adapter, metadata?.serverText ?? followUp.displayText)
+    // Fallback re-posts the follow-up as a plain prompt; no followup-consumed
+    // event will fire, so hand its reservation to the next agent-start.
+    this.metering?.promoteQueuedToPrompt(sessionId, followUp)
+    try {
+      await this.runPrompt(sessionId, adapter, metadata?.serverText ?? followUp.displayText)
+    } catch (err) {
+      // The repost rejected before agent-start; release the promoted hold so
+      // it doesn't strand in pendingPrompts and misattribute later usage.
+      this.metering?.failPromotedFollowUp(sessionId, followUp)
+      throw err
+    }
     this.clearAutoPostedFollowUpForFallback(sessionId, adapter, followUp)
   }
 
@@ -388,10 +498,18 @@ export class HarnessPiChatService implements PiChatSessionService {
     const mapper = new PiChatEventMapper({ sessionId, initialSeq: buffer.latestSeq })
     const channel: LiveSessionChannel = { buffer, adapter, unsubscribe: () => {}, mapper, messageTurnIds: new Map() }
     const unsubscribe = adapter.subscribe((event) => {
-      for (const mapped of mapper.map(event)) {
+      const mappedEvents = mapper.map(event)
+      // Metering observes the ENRICHED events: in production the native Pi
+      // message for a consumed follow-up carries no clientNonce/clientSeq —
+      // those selectors are recovered here by enrichEvent, and the metering
+      // coordinator needs them to attribute the follow-up's usage correctly.
+      const enrichedEvents: PiChatEvent[] = []
+      for (const mapped of mappedEvents) {
         const enriched = this.messageMetadata.enrichEvent(sessionId, mapped)
+        enrichedEvents.push(enriched)
         this.publishChannelEvent(sessionId, channel, enriched)
       }
+      this.metering?.observe(sessionId, event, enrichedEvents)
     })
     channel.unsubscribe = unsubscribe
     this.channels.set(sessionId, channel)
@@ -401,6 +519,17 @@ export class HarnessPiChatService implements PiChatSessionService {
 }
 
 class AutoPostFollowUpError extends Error {}
+
+/** A prompt/follow-up whose run was cancelled by a concurrent stop/interrupt
+ * during reservation. Surfaced as a retryable 409 (ABORTED) rather than a fake
+ * accepted run the client would wait on forever. */
+function promptCancelledError(): Error {
+  return Object.assign(new Error('request cancelled before execution'), {
+    statusCode: 409,
+    code: ErrorCode.enum.ABORTED,
+    retryable: true,
+  })
+}
 
 function nextPromptReceiptCursor(channel: LiveSessionChannel | undefined): number {
   return (channel?.buffer.latestSeq ?? 0) + 1

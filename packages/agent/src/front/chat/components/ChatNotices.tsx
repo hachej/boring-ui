@@ -4,6 +4,7 @@ import { AlertCircleIcon, ListRestartIcon, Loader2 } from 'lucide-react'
 import { IconButton } from '@hachej/boring-ui-kit'
 import type { QueuedUserMessage } from '../../../shared/chat'
 import { ErrorCode } from '../../../shared/error-codes'
+import type { ReactNode } from 'react'
 import { cn } from '../../lib'
 import { noticeSurfaceClass, noticeTextClass } from './noticeStyles'
 import { RuntimeNotices } from './RuntimeNotices'
@@ -13,6 +14,9 @@ export interface PanelNotice {
   level: 'info' | 'warning' | 'error'
   text: string
   dismissible?: boolean
+  /** Stable server error code when this notice came from a rejected run (see
+   * PiChatRuntimeNotice.errorCode). Used by a host-supplied renderNoticeAction. */
+  errorCode?: string
 }
 
 export interface ComposerBlockerAction {
@@ -30,7 +34,16 @@ export interface ComposerBlocker {
   target?: unknown
 }
 
-export function RuntimeNoticeMessages({ notices, onDismiss }: { notices: PanelNotice[]; onDismiss: (id: string) => void }) {
+export function RuntimeNoticeMessages({
+  notices,
+  onDismiss,
+  renderAction,
+}: {
+  notices: PanelNotice[]
+  onDismiss: (id: string) => void
+  /** Host-supplied recovery action for a notice, keyed off its error code. */
+  renderAction?: (notice: PanelNotice) => ReactNode
+}) {
   const visible = notices.filter((notice) =>
     notice.level === 'error' ||
     notice.level === 'warning' ||
@@ -45,6 +58,7 @@ export function RuntimeNoticeMessages({ notices, onDismiss }: { notices: PanelNo
     <RuntimeNotices
       notices={visible}
       onDismiss={onDismiss}
+      renderAction={renderAction}
       className="mx-auto w-full max-w-3xl px-0 py-0"
     />
   )

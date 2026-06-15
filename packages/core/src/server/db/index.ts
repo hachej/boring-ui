@@ -6,3 +6,14 @@ export { LocalUserStore } from './stores/index.js'
 export { LocalWorkspaceStore } from './stores/index.js'
 export { PostgresWorkspaceStore } from './stores/index.js'
 export { PostgresUserStore } from './stores/index.js'
+export { PostgresMeteringStore, InsufficientCreditError } from './stores/index.js'
+export type {
+  MeteringBalance,
+  GrantOnceInput,
+  ReserveInput,
+  ReserveResult,
+  RecordUsageInput,
+  RecordUsageResult,
+  ReservationFinalStatus,
+  FinishReservationInput,
+} from './stores/index.js'
