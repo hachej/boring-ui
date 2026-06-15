@@ -81,9 +81,9 @@ function bashOptionsForMode(
   bundle: RuntimeBundle,
   runtime?: HarnessRuntimeProvisioningOptions,
 ): BashToolOptions {
-  const storageRoot = getRuntimeBundleStorageRoot(bundle)
   switch (bundle.sandbox.provider) {
     case 'vercel-sandbox':
+    case 'remote-worker':
       return {
         operations: vercelBashOps(bundle.sandbox, {
           // The pi bash tool's env may include the host process env. Never
@@ -92,16 +92,20 @@ function bashOptionsForMode(
           mergeEnv: () => mergeRuntimeEnv(runtime, { PATH: VERCEL_SAFE_DEFAULT_PATH }),
         }),
       }
-    case 'bwrap':
+    case 'bwrap': {
+      const storageRoot = getRuntimeBundleStorageRoot(bundle)
       return {
         operations: createLocalBashOperations(),
         spawnHook: bwrapSpawnHook(storageRoot, runtime),
       }
-    default:
+    }
+    default: {
+      const storageRoot = getRuntimeBundleStorageRoot(bundle)
       return {
         operations: createLocalBashOperations(),
         spawnHook: directSpawnHook(storageRoot, runtime),
       }
+    }
   }
 }
 

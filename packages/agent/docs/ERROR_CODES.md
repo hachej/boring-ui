@@ -43,6 +43,8 @@ All API failures must use the response envelope:
 | `SANDBOX_NOT_READY` | Remote sandbox cold start / provisioning | 503 | retry | warn | stable (public API) |
 | `SANDBOX_EXPIRED` | Remote sandbox TTL elapsed | 410 | retry | warn | stable (public API) |
 | `VERCEL_API_ERROR` | Generic upstream Vercel SDK/API failure | 502 | retry | error | stable (public API) |
+| `REMOTE_WORKER_TIMEOUT` | Remote worker request exceeded its client-side timeout before a response arrived | 504 | retry | warn | stable (public API) |
+| `REMOTE_WORKER_STREAM_CLOSED` | Remote worker filesystem event stream closed unexpectedly | 502 | retry | warn | stable (public API) |
 | `CIRCUIT_OPEN` | Circuit breaker open; request fast-failed | 503 | retry | warn | stable (public API) |
 | `ABORTED` | Request cancelled via `AbortSignal` | 499 | retry | warn | stable (public API) |
 | `SESSION_NOT_FOUND` | Session id does not exist | 404 | user-fix | warn | stable (public API) |
