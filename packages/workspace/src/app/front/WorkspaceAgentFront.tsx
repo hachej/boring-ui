@@ -147,10 +147,6 @@ export interface WorkspaceAgentFrontProps<
   onWorkspaceWarmupStatusChange?: (status: WorkspaceWarmupStatus) => void
 }
 
-function isAutoCreatedEmptySession(session: WorkspaceAgentSession | null | undefined, defaultSessionTitle: string): boolean {
-  return Boolean(session && session.title === defaultSessionTitle && session.turnCount === 0)
-}
-
 function shellStorageKeyFromSurfaceStorage(
   surfaceKey: string,
   fallback: string,
@@ -597,6 +593,9 @@ export function WorkspaceAgentFront<
     && remoteSessionSnapshot.workspaceId === workspaceId
     && remoteSessionSnapshot.sessions.length > 0
   const pendingStoredActiveSessionId = remoteSessionsPending ? readStoredSessionId(resolvedSessionStorageKey) : null
+  const pendingRemoteActiveSessionId = remoteSessionsPending && !remoteSessionsArePreviousWorkspace
+    ? remoteSessionApi.activeSessionId ?? null
+    : null
   const activeRemoteSessions = remoteSessionsAvailable
     ? remoteSessionApi.sessions
     : remoteSessionsHaveStaleData
@@ -636,7 +635,17 @@ export function WorkspaceAgentFront<
       && !suppressEmptyAutoCreateRef.current
       && !remoteInitialSessionFailed,
   )
-  const remoteSessionsTransitioning = remoteEmptySessionsSettling || remoteInitialSessionCreating || remoteInitialSessionNeeded
+  const remoteSessionsInitialLoading = Boolean(
+    remoteSessionsPending
+      && remoteSessionApi.loading
+      && !remoteSessionApi.error
+      && shouldUseRemoteSessions
+      && !hasExplicitSessionProps
+      && !remoteSessionsHaveStaleData
+      && !pendingStoredActiveSessionId
+      && !pendingRemoteActiveSessionId,
+  )
+  const remoteSessionsTransitioning = remoteSessionsInitialLoading || remoteEmptySessionsSettling || remoteInitialSessionCreating || remoteInitialSessionNeeded
 
   useEffect(() => {
     if (!remoteEmptySessionsSettling) {
@@ -675,7 +684,7 @@ export function WorkspaceAgentFront<
   const resolvedActiveId = sessionApi
     ? activeRemoteSessionId ?? null
     : remoteSessionsPending
-      ? pendingStoredActiveSessionId
+      ? pendingStoredActiveSessionId ?? pendingRemoteActiveSessionId
       : hasExplicitSessionProps
         ? activeSessionId ?? null
         : localSessions.activeId
@@ -727,20 +736,10 @@ export function WorkspaceAgentFront<
   const resolvedCreate = remoteSessionsPending
     ? remoteSessionActionsUnavailable
     : sessionApi
-      ? () => {
-          const emptyAutoSession = activeRemoteSessions.find((session) => (
-            session.id === effectiveActiveSessionId
-            && isAutoCreatedEmptySession(session, defaultSessionTitle)
-          ))
-          const created = sessionApi.create()
-          if (emptyAutoSession) {
-            void Promise.resolve(created)
-              .then(() => sessionApi.delete(emptyAutoSession.id))
-              .catch(() => {})
-          }
-          return created
-        }
-      : onCreateSession ?? localSessionStore.create
+      ? () => sessionApi.create()
+      : onCreateSession
+        ? () => onCreateSession()
+        : () => localSessionStore.create()
   const rawDelete = remoteSessionsPending
     ? remoteSessionActionsUnavailable
     : sessionApi?.delete ?? onDeleteSession ?? localSessionStore.remove

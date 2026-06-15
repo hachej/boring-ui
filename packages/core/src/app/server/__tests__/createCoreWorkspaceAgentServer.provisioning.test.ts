@@ -117,6 +117,37 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
   }
 })
 
+test('core/full-app defaults session namespace to workspace id', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [],
+    provisioningContributions: [],
+    agentOptions: {
+      extraTools: [],
+      pi: { additionalSkillPaths: [], packages: [] },
+      systemPromptAppend: undefined,
+    },
+    preservedUiStateKeys: [],
+    routeContributions: [],
+  })
+
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    workspaceRoot: '/tmp/full-app-workspaces',
+    serveFrontend: false,
+    registerHealthRoute: false,
+  })
+
+  try {
+    const options = (mocks.registerAgentRoutes as any).mock.calls[0]?.[1] as Record<string, unknown>
+    expect(options).not.toHaveProperty('sessionNamespace')
+    const getSessionNamespace = options.getSessionNamespace as (ctx: { workspaceId: string; workspaceRoot: string }) => Promise<string>
+    await expect(getSessionNamespace({ workspaceId: 'workspace-a', workspaceRoot: '/tmp/full-app-workspaces/workspace-a' })).resolves.toBe('workspace-a')
+  } finally {
+    await app.close()
+  }
+})
+
 test('core/full-app skips built-in plugin CLI provisioning unless plugin authoring is enabled', async () => {
   const runtimePlugin = {
     id: 'workspace-runtime-plugin',
