@@ -167,7 +167,10 @@ async function main() {
       body: JSON.stringify({ cmd: 'cat from-public.txt', timeoutMs: 10000 }),
     })
     const workerStdout = Buffer.from(seenByWorker.stdoutBase64, 'base64').toString('utf8')
-    if (workerStdout !== 'public->worker') fail(`worker did not see public write: ${JSON.stringify(workerStdout)}`)
+    const workerStderr = Buffer.from(seenByWorker.stderrBase64, 'base64').toString('utf8')
+    if (seenByWorker.exitCode !== 0 || workerStdout !== 'public->worker') {
+      fail(`worker did not see public write: ${JSON.stringify({ exitCode: seenByWorker.exitCode, stdout: workerStdout, stderr: workerStderr })}`)
+    }
 
     const envProbe = await jsonFetch(`${workerBaseUrl}/internal/workspaces/${workspaceId}/exec`, {
       method: 'POST',
