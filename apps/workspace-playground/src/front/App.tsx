@@ -137,8 +137,7 @@ export function WorkspaceShell() {
       appTitle={showcase ? "Boring" : projectName}
       workspaceLabel={showcase ? undefined : projectName}
       defaultSessionTitle={showcase ? "New session" : projectName}
-      frontPluginHotReload={false}
-      hotReloadEnabled={false}
+      externalPlugins={false}
       fullPageBasePath="/full-page"
       provisionWorkspace={!showcase}
       sessions={sessions}

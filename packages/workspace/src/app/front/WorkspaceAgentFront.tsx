@@ -127,6 +127,12 @@ export interface WorkspaceAgentFrontProps<
   onActiveSessionIdChange?: (sessionId: string | null) => void
   chatParams?: Record<string, unknown>
   /**
+   * Enable user-authored external plugin UX in the frontend. When `false`,
+   * disables front plugin hot reload and hides the chat `/reload` UX. App/
+   * internal statically composed plugins still work.
+   */
+  externalPlugins?: boolean
+  /**
    * Forward to ChatPanel — when `false`, the `/reload` slash command is
    * hidden and the PluginUpdateStatus banner above the composer is
    * suppressed. Production apps that don't ship live plugin editing
@@ -441,6 +447,7 @@ export function WorkspaceAgentFront<
   topBarRight,
   showThemeToggle = true,
   chatParams,
+  externalPlugins,
   hotReloadEnabled,
   frontPluginHotReload,
   extraPanels,
@@ -453,6 +460,9 @@ export function WorkspaceAgentFront<
   surfaceButtonBottomOffset,
   className,
 }: WorkspaceAgentFrontProps<TSession>) {
+  const externalPluginsEnabled = externalPlugins !== false
+  const resolvedFrontPluginHotReload = externalPluginsEnabled ? frontPluginHotReload : false
+  const resolvedHotReloadEnabled = externalPluginsEnabled ? hotReloadEnabled : false
   const resolvedProviderStorageKey =
     providerStorageKey ?? `boring-ui-v2:layout:${workspaceId}`
   const resolvedSurfaceStorageKey =
@@ -1176,10 +1186,10 @@ export function WorkspaceAgentFront<
       // Forward the explicit prop when set. Omitting the key (when undefined)
       // lets ChatPanel apply its own default (true) and avoids overriding a
       // value passed through chatParams.
-      ...(hotReloadEnabled !== undefined ? { hotReloadEnabled } : {}),
+      ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, extraCommands, workspaceWarmupStatus, hydrateMessages, hotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, workspaceId],
+    [apiBaseUrl, chatParams, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, extraCommands, workspaceWarmupStatus, hydrateMessages, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionId),
@@ -1248,7 +1258,7 @@ export function WorkspaceAgentFront<
         debug={debug}
         bridgeEndpoint={null}
         onAuthError={onAuthError}
-        frontPluginHotReload={frontPluginHotReload}
+        frontPluginHotReload={resolvedFrontPluginHotReload}
         fullPageBasePath={fullPageBasePath}
       >
         {beforeShell}
