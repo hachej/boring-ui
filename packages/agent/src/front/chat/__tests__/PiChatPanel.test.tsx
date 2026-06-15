@@ -1446,10 +1446,10 @@ describe('PiChatPanel sandbox shell', () => {
     render(<PiChatPanel debug serverResourcesEnabled={false} storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={remoteFactory(remote)} />)
 
     await waitFor(() => expect(screen.getAllByText('visible answer').length).toBeGreaterThan(0))
-    expect(screen.getByText(/Large Pi chat state/)).toBeTruthy()
-    const debugPanel = await screen.findByRole('region', { name: 'Pi chat debug metadata' })
+    expect(screen.getByText(/Large chat state/)).toBeTruthy()
+    const debugPanel = await screen.findByRole('region', { name: 'Chat debug metadata' })
     expect(debugPanel.textContent).toContain('pi-1')
-    expect(debugPanel.textContent).toContain('Resume command')
+    expect(debugPanel.textContent).toContain('Runtime session id')
     expect(debugPanel.textContent).not.toContain('SECRET_PROMPT_BODY')
     expect(debugPanel.textContent).not.toContain('/home/ubuntu/project/file.txt')
     expect(debugPanel.textContent).not.toContain('SECRET_ATTACHMENT_NAME')
@@ -1567,7 +1567,7 @@ describe('PiChatPanel sandbox shell', () => {
     fireEvent.change(textarea, { target: { value: '/reload' } })
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
 
-    await waitFor(() => expect(onCommandResult).toHaveBeenCalledWith('Plugin update failed: Agent plugin reload is not configured.'))
+    await waitFor(() => expect(onCommandResult).toHaveBeenCalledWith('Extension update failed: Agent plugin reload is not configured.'))
     expect(commandsRequestCount).toBe(preReloadCount)
     expect(container.querySelector('[data-boring-plugin-update="error"]')).toBeTruthy()
     expect(container.querySelector('[data-boring-plugin-update="success"]')).toBeNull()
@@ -1599,7 +1599,7 @@ describe('PiChatPanel sandbox shell', () => {
     fireEvent.change(textarea, { target: { value: '/reload' } })
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
 
-    await waitFor(() => expect(onCommandResult).toHaveBeenCalledWith('Plugin update failed: Agent harness does not support reload'))
+    await waitFor(() => expect(onCommandResult).toHaveBeenCalledWith('Extension update failed: Agent harness does not support reload'))
     expect(container.querySelector('[data-boring-plugin-update="error"]')).toBeTruthy()
     expect(container.querySelector('[data-boring-plugin-update="success"]')).toBeNull()
     expect(remote.prompt).not.toHaveBeenCalled()

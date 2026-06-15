@@ -83,10 +83,10 @@ function SettingsTopBar() {
           aria-hidden="true"
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
         >
-          B
+          S
         </div>
         <span className="truncate text-[13px] font-medium tracking-tight text-foreground">
-          Boring
+          Sovereign Workspace
         </span>
         <span aria-hidden="true" className="text-muted-foreground/30">/</span>
         <span className="truncate text-[13px] text-muted-foreground">Account settings</span>

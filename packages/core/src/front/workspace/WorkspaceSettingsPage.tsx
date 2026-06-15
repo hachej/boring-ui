@@ -62,10 +62,10 @@ function SettingsTopBar({ workspaceId, workspaceName }: { workspaceId: string; w
           onClick={() => navigate(workspaceHref)}
           className="shrink-0 bg-foreground text-[12px] font-semibold text-background hover:bg-foreground/90"
         >
-          B
+          S
         </IconButton>
         <span className="truncate text-[13px] font-medium tracking-tight text-foreground">
-          Boring
+          Sovereign Workspace
         </span>
         <span aria-hidden="true" className="text-muted-foreground/30">/</span>
         <span className="truncate text-[13px] text-muted-foreground">{workspaceName}</span>

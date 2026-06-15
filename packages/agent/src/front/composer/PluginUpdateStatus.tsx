@@ -73,7 +73,7 @@ export function PluginUpdateStatus({
         tone="running"
         dataAttribute="data-boring-plugin-update"
         maxWidthClassName={maxWidthClassName}
-        runningContent="Updating plugins…"
+        runningContent="Updating extensions…"
       />
     )
   }
@@ -90,9 +90,9 @@ export function PluginUpdateStatus({
       : "Reload queued"
     const detail = state.reloaded
       ? hasWarningsOrDiagnostics
-        ? "Some plugin changes need attention."
+        ? "Some extension changes need attention."
         : frontEvents.length > 0
-          ? `${frontEvents.length} plugin module${frontEvents.length === 1 ? "" : "s"} refreshed. Changes are live.`
+          ? `${frontEvents.length} extension module${frontEvents.length === 1 ? "" : "s"} refreshed. Changes are live.`
           : "Changes are live."
       : undefined
     return (
@@ -116,7 +116,7 @@ export function PluginUpdateStatus({
             <div className="flex items-center gap-1.5 font-medium text-[oklch(0.48_0.15_60)]">
               <span aria-hidden="true">⚠</span>
               <span>
-                Reload diagnostics for {diagnostics.length} plugin{diagnostics.length === 1 ? "" : "s"}
+                Reload diagnostics for {diagnostics.length} extension{diagnostics.length === 1 ? "" : "s"}
               </span>
             </div>
             <ul className="mt-1 ml-4 list-disc text-foreground/85">
@@ -139,7 +139,7 @@ export function PluginUpdateStatus({
             <div className="flex items-center gap-1.5 font-medium text-[oklch(0.48_0.15_60)]">
               <span aria-hidden="true">⚠</span>
               <span>
-                Restart needed for {warnings.length} plugin{warnings.length === 1 ? "" : "s"}
+                Restart needed for {warnings.length} extension{warnings.length === 1 ? "" : "s"}
               </span>
             </div>
             <ul className="mt-1 ml-4 list-disc text-foreground/85">
@@ -150,7 +150,7 @@ export function PluginUpdateStatus({
               ))}
             </ul>
             <p className="mt-1 text-foreground/70">
-              The front bundle reloaded successfully, but routes and agent tools were wired at boot. Stop and restart the workspace process (Ctrl-C, then re-run your dev command) to pick up the new code.
+              The interface reloaded successfully, but routes and tools were wired at boot. Restart the workspace process to pick up the new code.
             </p>
           </div>
         ) : null}
@@ -163,7 +163,7 @@ export function PluginUpdateStatus({
       tone="error"
       dataAttribute="data-boring-plugin-update"
       maxWidthClassName={maxWidthClassName}
-      title="Plugin update failed."
+      title="Extension update failed."
       message={state.message}
       onRetry={onRetry}
       onDismiss={onDismiss}
