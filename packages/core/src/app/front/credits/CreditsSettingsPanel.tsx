@@ -127,10 +127,19 @@ export function CreditsSettingsPanel({ apiBaseUrl = '', locale }: CreditsSetting
                       checked={selected}
                       onChange={() => setSelectedPack(p.id)}
                     />
-                    <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {formatMinorPrice(p.priceMinor, p.currency, locale)}
-                    </span>
-                    <span className="text-muted-foreground">· {formatCreditMicros(p.creditMicros, locale)}</span>
+                    {p.custom ? (
+                      <span>
+                        Custom
+                        <span className="text-muted-foreground"> · from {formatMinorPrice(p.priceMinor, p.currency, locale)}</span>
+                      </span>
+                    ) : (
+                      <>
+                        <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+                          {formatMinorPrice(p.priceMinor, p.currency, locale)}
+                        </span>
+                        <span className="text-muted-foreground">· {formatCreditMicros(p.creditMicros, locale)}</span>
+                      </>
+                    )}
                   </label>
                 )
               })}
@@ -143,9 +152,11 @@ export function CreditsSettingsPanel({ apiBaseUrl = '', locale }: CreditsSetting
             >
               {buying
                 ? 'Opening checkout…'
-                : activePackObj
-                  ? `Buy ${formatMinorPrice(activePackObj.priceMinor, activePackObj.currency, locale)}`
-                  : 'Buy credits'}
+                : activePackObj?.custom
+                  ? 'Choose amount'
+                  : activePackObj
+                    ? `Buy ${formatMinorPrice(activePackObj.priceMinor, activePackObj.currency, locale)}`
+                    : 'Buy credits'}
             </Button>
           </fieldset>
         )}

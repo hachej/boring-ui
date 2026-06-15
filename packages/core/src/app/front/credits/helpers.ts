@@ -1,15 +1,19 @@
 /** Front-end helpers for the credit balance badge + buy-credits flow. */
 
 /** Display-ready credit pack (server-authored). The client never infers price from
- * the id and never sees the Lemon Squeezy variant id. */
+ * the id and never sees the provider's price/variant id. */
 export interface CreditPack {
   id: string
   creditMicros: number
-  /** Price in the currency's minor unit (e.g. cents). */
+  /** Price in the currency's minor unit (e.g. cents). For a custom pack, the MINIMUM. */
   priceMinor: number
   currency: string
   label: string
   isDefault: boolean
+  /** Pay-what-you-want pack: the buyer enters the amount on the hosted checkout, so
+   * `creditMicros` is 0 here and `priceMinor` is the minimum. The picker shows an
+   * "enter amount" option instead of a fixed price. */
+  custom?: boolean
 }
 
 export interface CreditBalanceResponse {

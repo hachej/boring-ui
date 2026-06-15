@@ -3,6 +3,8 @@ import { ERROR_CODES } from '../../shared/errors.js'
 import type { CreditsService } from './creditsService.js'
 import { handleLemonSqueezyWebhook, type LemonSqueezyOrder } from './lemonSqueezy.js'
 import { createLemonSqueezyCheckout } from './lemonSqueezyCheckout.js'
+import { handleStripeWebhook, type StripeOrder } from './stripe.js'
+import { createStripeCheckout } from './stripeCheckout.js'
 
 export interface LemonSqueezyCheckoutConfig {
   apiKey: string
@@ -30,6 +32,10 @@ export interface CreditPack {
   label: string
   /** Whether this is the default pack (used when checkout is invoked without a pack). */
   isDefault: boolean
+  /** A pay-what-you-want pack: the buyer enters the amount on the hosted checkout, and
+   * credits are granted proportional to what they pay. `priceMinor` is the MINIMUM and
+   * `creditMicros` is 0 (unknown until paid). The client renders an "enter amount" CTA. */
+  custom?: boolean
 }
 
 /**
@@ -57,6 +63,45 @@ function buildCreditPacks(ls: LemonSqueezyRouteOptions, locale?: string): Credit
       currency,
       label: new Intl.NumberFormat(locale, { style: 'currency', currency, maximumFractionDigits: 0 }).format(major),
       isDefault: packId === checkout.defaultPack,
+    })
+  }
+  return packs
+}
+
+/**
+ * Build display-ready packs for the Stripe provider: the fixed packs (pack id = major-unit
+ * price, like LS) plus, when configured, the pay-what-you-want custom pack (priceMinor =
+ * the minimum, creditMicros 0, custom: true). Currency follows requireCurrency. Price ids
+ * stay server-side.
+ */
+function buildStripePacks(stripe: StripeRouteOptions, locale?: string): CreditPack[] {
+  const checkout = stripe.checkout
+  if (!checkout) return []
+  const credits = stripe.creditMicrosByPack ?? {}
+  const currency = (stripe.requireCurrency ?? 'EUR').toUpperCase()
+  const packs: CreditPack[] = []
+  for (const [packId] of Object.entries(checkout.variants)) {
+    const major = Number(packId)
+    const creditMicros = credits[packId]
+    if (!Number.isFinite(major) || major <= 0 || typeof creditMicros !== 'number' || creditMicros <= 0) continue
+    packs.push({
+      id: packId,
+      creditMicros,
+      priceMinor: Math.round(major * 100),
+      currency,
+      label: new Intl.NumberFormat(locale, { style: 'currency', currency, maximumFractionDigits: 0 }).format(major),
+      isDefault: packId === checkout.defaultPack,
+    })
+  }
+  if (checkout.customPack) {
+    packs.push({
+      id: checkout.customPack.id,
+      creditMicros: 0,
+      priceMinor: checkout.customPack.minMinor,
+      currency,
+      label: 'Custom amount',
+      isDefault: false,
+      custom: true,
     })
   }
   return packs
@@ -119,13 +164,48 @@ export interface LemonSqueezyRouteOptions {
   checkoutPath?: string
 }
 
+export interface StripeCheckoutConfig {
+  /** Stripe secret key (sk_… or rk_…). */
+  apiKey: string
+  /** Fixed packs keyed by a short pack id the client requests (e.g. "10","25") → Stripe Price id. */
+  variants: Record<string, string>
+  /** Pack id used when the request names none. */
+  defaultPack: string
+  /** Optional pay-what-you-want pack (custom_unit_amount price). */
+  customPack?: { id: string; priceId: string; minMinor: number }
+  redirectUrl?: string
+}
+
+export interface StripeRouteOptions {
+  /** Webhook endpoint signing secret (whsec_…). When omitted, the webhook route is NOT
+   * registered (checkout can still open, but purchases won't auto-credit). */
+  webhookSecret?: string
+  /** true = test mode. The webhook only credits sessions whose livemode matches. */
+  expectedTestMode: boolean
+  /** Currency a paid session must be in to be credited (default 'EUR'). */
+  requireCurrency?: string
+  /** Whether the account sells only credit packs (default true → an unknown-pack PAID
+   * session is a misconfig that fails loud rather than a silent drop). */
+  creditOnlyStore?: boolean
+  /** Resolve whether a credited user still exists (no PII resurrection on a stale webhook). */
+  userExists?: (userId: string) => Promise<boolean>
+  /** Fixed pack id → credit micros (the authoritative value the webhook grants). The
+   * custom pack is credited from the amount paid, not this map. */
+  creditMicrosByPack: Record<string, number>
+  checkout?: StripeCheckoutConfig
+  checkoutPath?: string
+  webhookPath?: string
+}
+
 export interface CreditsRoutesOptions {
   service: CreditsService
   /** Resolve the authenticated user id. Default: `request.user?.id`. */
   getUserId?: (request: FastifyRequest) => string | undefined
   balancePath?: string
   historyPath?: string
+  /** Configure at most ONE purchase provider. */
   lemonSqueezy?: LemonSqueezyRouteOptions
+  stripe?: StripeRouteOptions
   log?: (message: string, fields?: Record<string, unknown>) => void
 }
 
@@ -143,11 +223,19 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
   const getUserId = options.getUserId ?? defaultGetUserId
   const balancePath = options.balancePath ?? '/api/credits/balance'
 
+  if (options.lemonSqueezy && options.stripe) {
+    throw new Error('credits: configure at most one purchase provider (lemonSqueezy OR stripe), not both')
+  }
+
   // Server truth for the Buy-credits button so the client flag can't drift from
   // whether checkout is actually wired.
-  const checkoutEnabled = Boolean(options.lemonSqueezy?.checkout)
-  // Display-ready packs (only when checkout is wired); variant ids stay server-side.
-  const packs = options.lemonSqueezy ? buildCreditPacks(options.lemonSqueezy) : []
+  const checkoutEnabled = Boolean(options.lemonSqueezy?.checkout || options.stripe?.checkout)
+  // Display-ready packs (only when checkout is wired); provider price/variant ids stay server-side.
+  const packs = options.lemonSqueezy
+    ? buildCreditPacks(options.lemonSqueezy)
+    : options.stripe
+      ? buildStripePacks(options.stripe)
+      : []
 
   app.get(balancePath, async (request, reply) => {
     const userId = getUserId(request)
@@ -174,6 +262,17 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
     const limit = Number.isFinite(parsed) ? Math.min(50, Math.max(1, Math.trunc(parsed))) : 20
     return reply.send({ entries: await options.service.listLedger(userId, limit) })
   })
+
+  const stripeOpts = options.stripe
+  if (stripeOpts) {
+    // A disabled credits service can't grant/tombstone, so exposing checkout/webhook
+    // would 200-ack paid orders WITHOUT crediting (customer pays, no credits).
+    if (!options.service.config.enabled) {
+      throw new Error('credits: cannot register Stripe checkout/webhook with a disabled credits service (paid orders would be acknowledged without crediting)')
+    }
+    registerStripeRoutes(app, options.service, getUserId, stripeOpts, options.log)
+    return
+  }
 
   const ls = options.lemonSqueezy
   if (!ls) return
@@ -441,6 +540,169 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
               expectedCurrency: requireCurrency,
             }),
           log: options.log,
+        },
+      )
+      return reply.code(result.status).send(result.body)
+    })
+  })
+}
+
+/**
+ * Register the Stripe checkout + webhook routes. Mirrors the Lemon Squeezy wiring's
+ * money-safety posture (mode/currency gating, idempotent grant per PaymentIntent, refund
+ * revoke, fail-loud on a recognized-but-unattributable paid order). Adds the pay-what-you-
+ * want "custom" pack: credited from the amount actually paid, not a fixed pack value.
+ */
+function registerStripeRoutes(
+  app: FastifyInstance,
+  service: CreditsService,
+  getUserId: (request: FastifyRequest) => string | undefined,
+  stripe: StripeRouteOptions,
+  log: ((message: string, fields?: Record<string, unknown>) => void) | undefined,
+): void {
+  const creditMicrosPerUnit = service.config.pricing.creditMicrosPerUnit
+  // Stripe currencies arrive lowercase; store/compare uppercased for the ledger identity.
+  const requireCurrency = (stripe.requireCurrency ?? 'EUR').toUpperCase()
+  const expectedLiveMode = !stripe.expectedTestMode
+  const creditOnlyStore = stripe.creditOnlyStore !== false
+  const fixedPackMicros = stripe.creditMicrosByPack ?? {}
+  const customPackId = stripe.checkout?.customPack?.id
+
+  if (stripe.checkout) {
+    const checkout = stripe.checkout
+    // Every fixed checkout pack must have a positive credit value, and the default must
+    // exist — else a paid checkout for it couldn't be credited (a money trap).
+    for (const [packId, priceId] of Object.entries(checkout.variants)) {
+      const micros = fixedPackMicros[packId]
+      if (typeof micros !== 'number' || !Number.isSafeInteger(micros) || micros <= 0) {
+        throw new Error(`credits: stripe checkout pack "${packId}" (price ${priceId}) has no positive creditMicrosByPack entry`)
+      }
+    }
+    if (!(checkout.defaultPack in checkout.variants)) {
+      throw new Error(`credits: stripe checkout defaultPack "${checkout.defaultPack}" is not one of the configured packs`)
+    }
+    if (customPackId && customPackId in checkout.variants) {
+      throw new Error(`credits: stripe custom pack id "${customPackId}" collides with a fixed pack id`)
+    }
+  }
+
+  const isFixedPack = (packId: string | undefined): boolean => packId != null && packId in fixedPackMicros
+  const isCustomPack = (packId: string | undefined): boolean => customPackId != null && packId === customPackId
+  const isKnownPack = (packId: string | undefined): boolean => isFixedPack(packId) || isCustomPack(packId)
+
+  // micros granted per 1 minor currency unit (e.g. per rappen/cent).
+  const ratePerMinor = creditMicrosPerUnit / 100
+  const creditsForOrder = (order: StripeOrder): number => {
+    if (isCustomPack(order.packId)) {
+      // Pay-what-you-want: credit the net pre-tax amount actually paid. By construction
+      // this can't over-credit (credits == paid × rate), so the underpayment guard always
+      // passes for it; the Stripe-enforced minimum bounds it below.
+      const sub = order.amountSubtotalMinor
+      return typeof sub === 'number' && sub > 0 ? Math.floor(sub * ratePerMinor) : 0
+    }
+    if (isFixedPack(order.packId)) return fixedPackMicros[order.packId as string] ?? 0
+    return 0
+  }
+
+  // STRICT (paid grant): mode + currency must be PRESENT and match.
+  const isOurStoreOrder = (order: StripeOrder): boolean =>
+    order.livemode === expectedLiveMode && order.currency != null && order.currency.toUpperCase() === requireCurrency
+  // LENIENT (refund): a missing field passes; only a present contradiction rejects.
+  const isRefundForOurStore = (order: StripeOrder): boolean => {
+    if (order.livemode != null && order.livemode !== expectedLiveMode) return false
+    if (order.currency != null && order.currency.toUpperCase() !== requireCurrency) return false
+    return true
+  }
+  const isCreditOrder = (order: StripeOrder): boolean => isKnownPack(order.packId) && isOurStoreOrder(order)
+  const isUnverifiedCreditOrder = (order: StripeOrder): boolean =>
+    isKnownPack(order.packId) && !isOurStoreOrder(order) && isRefundForOurStore(order)
+
+  // Namespace the idempotency/purchase key by mode so a PaymentIntent id can't collide
+  // across test/live (e.g. test data sharing a DB before cutover).
+  const purchaseKey = (paymentIntentId: string): string => `stripe:${stripe.expectedTestMode ? 'test' : 'live'}:${paymentIntentId}`
+
+  if (stripe.checkout) {
+    const checkout = stripe.checkout
+    app.post(stripe.checkoutPath ?? '/api/credits/checkout', async (request, reply) => {
+      const userId = getUserId(request)
+      if (!userId) {
+        return reply.code(401).send({ error: { code: ERROR_CODES.UNAUTHORIZED, message: 'authentication required' } })
+      }
+      const pack = (request.body as { pack?: unknown } | undefined)?.pack
+      let packId: string
+      let priceId: string
+      if (pack === undefined || pack === null) {
+        packId = checkout.defaultPack
+        priceId = checkout.variants[packId] as string
+      } else if (typeof pack === 'string' && pack in checkout.variants) {
+        packId = pack
+        priceId = checkout.variants[pack] as string
+      } else if (typeof pack === 'string' && isCustomPack(pack) && checkout.customPack) {
+        packId = pack
+        priceId = checkout.customPack.priceId
+      } else {
+        return reply.code(400).send({ error: { code: ERROR_CODES.INVALID_PACK, message: 'unknown credit pack' } })
+      }
+      const email = (request as FastifyRequest & { user?: { email?: unknown } }).user?.email
+      try {
+        const { url } = await createStripeCheckout({
+          apiKey: checkout.apiKey,
+          priceId,
+          userId,
+          packId,
+          email: typeof email === 'string' ? email : undefined,
+          redirectUrl: checkout.redirectUrl,
+        })
+        return reply.send({ url })
+      } catch (error) {
+        log?.('credits: stripe checkout creation failed', { error: String(error) })
+        return reply.code(502).send({ error: { code: ERROR_CODES.CHECKOUT_FAILED, message: 'could not create checkout' } })
+      }
+    })
+  }
+
+  const webhookSecret = stripe.webhookSecret
+  if (!webhookSecret) return // checkout-only: no webhook secret ⇒ no auto-crediting route
+  const webhookPath = stripe.webhookPath ?? '/api/credits/webhooks/stripe'
+  app.register(async (scope) => {
+    // Raw body so the Stripe signature can be verified before parsing.
+    scope.addContentTypeParser('application/json', { parseAs: 'buffer' }, (_req, body, done) => {
+      done(null, body)
+    })
+    scope.post(webhookPath, async (request, reply) => {
+      const rawBody = request.body as Buffer
+      const signature = request.headers['stripe-signature']
+      const result = await handleStripeWebhook(
+        rawBody,
+        typeof signature === 'string' ? signature : Array.isArray(signature) ? signature[0] : undefined,
+        {
+          secret: webhookSecret,
+          creditsForOrder,
+          userExists: stripe.userExists,
+          isCreditOrder,
+          // Credit-only store (default): a paid session that's ours but an unknown pack →
+          // retryable 500 (lenient identity) rather than a silent drop. Mixed store: omit.
+          isOurStoreOrder: creditOnlyStore ? isRefundForOurStore : undefined,
+          isUnverifiedCreditOrder,
+          isRefundForOurStore,
+          creditMicrosPerUnit,
+          grant: (input, order) =>
+            service.grantPurchase(input.userId, purchaseKey(order.paymentIntentId as string), input.amountMicros, {
+              testMode: stripe.expectedTestMode,
+              currency: order.currency?.toUpperCase(),
+              variantId: order.packId,
+            }),
+          onRefund: (order) =>
+            service.revokePurchase(purchaseKey(order.paymentIntentId as string), {
+              refundFraction:
+                order.amountRefundedMinor !== undefined && order.amountRefundedMinor > 0 && order.amountMinor !== undefined && order.amountMinor > 0
+                  ? order.amountRefundedMinor / order.amountMinor
+                  : undefined,
+              allowTombstone: isRefundForOurStore(order),
+              expectedTestMode: stripe.expectedTestMode,
+              expectedCurrency: requireCurrency,
+            }),
+          log,
         },
       )
       return reply.code(result.status).send(result.body)

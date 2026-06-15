@@ -46,11 +46,30 @@ export {
 } from './lemonSqueezyCheckout.js'
 export type { CreateCheckoutInput } from './lemonSqueezyCheckout.js'
 
+export {
+  verifyStripeSignature,
+  parseStripeEvent,
+  handleStripeWebhook,
+} from './stripe.js'
+export type {
+  StripeOrder,
+  StripeWebhookOptions,
+  StripeWebhookResult,
+} from './stripe.js'
+
+export {
+  createStripeCheckout,
+  buildStripeCheckoutForm,
+} from './stripeCheckout.js'
+export type { CreateStripeCheckoutInput } from './stripeCheckout.js'
+
 export { registerCreditsRoutes } from './routes.js'
 export type {
   CreditsRoutesOptions,
   LemonSqueezyRouteOptions,
   LemonSqueezyCheckoutConfig,
+  StripeRouteOptions,
+  StripeCheckoutConfig,
 } from './routes.js'
 
 export { CONSERVATIVE_DEFAULT_RATE } from './pricing.js'

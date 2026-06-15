@@ -69,6 +69,100 @@ function parseVariants(raw: string | undefined): Record<string, string> {
   return out
 }
 
+const STRIPE_CUSTOM_PACK_ID = 'custom'
+
+/** Parse "5:price_x,10:price_y" → { '5': 'price_x', ... } for Stripe. Pack id is the
+ * major-unit price (= EUR credit value granted); the value is a Stripe Price id. Throws
+ * on malformed/duplicate/non-positive entries so checkout & webhook can't diverge. */
+function parseStripeVariants(raw: string | undefined): Record<string, string> {
+  if (!raw || raw.trim() === '') return {}
+  const out: Record<string, string> = {}
+  const seenPrices = new Set<string>()
+  for (const pair of raw.split(',')) {
+    if (pair.trim() === '') continue
+    const parts = pair.split(':').map((s) => s.trim())
+    const [pack, priceId] = parts
+    if (parts.length !== 2 || !pack || !priceId) {
+      throw new Error(`invalid BORING_CREDITS_STRIPE_VARIANTS entry (expected "creditEur:priceId"): "${pair}"`)
+    }
+    if (!Number.isFinite(Number(pack)) || Number(pack) <= 0) {
+      throw new Error(`invalid BORING_CREDITS_STRIPE_VARIANTS pack id (must be a positive EUR credit value): "${pack}"`)
+    }
+    if (!/^price_[A-Za-z0-9]+$/.test(priceId)) {
+      throw new Error(`invalid BORING_CREDITS_STRIPE_VARIANTS price id (must look like "price_…"): "${priceId}"`)
+    }
+    if (pack in out) throw new Error(`duplicate pack id in BORING_CREDITS_STRIPE_VARIANTS: "${pack}"`)
+    if (pack === STRIPE_CUSTOM_PACK_ID) throw new Error(`BORING_CREDITS_STRIPE_VARIANTS pack id "${STRIPE_CUSTOM_PACK_ID}" is reserved for the custom pay-what-you-want pack`)
+    if (seenPrices.has(priceId)) throw new Error(`duplicate price id in BORING_CREDITS_STRIPE_VARIANTS: "${priceId}"`)
+    seenPrices.add(priceId)
+    out[pack] = priceId
+  }
+  return out
+}
+
+/** Build the Stripe route wiring from env, or undefined when Stripe isn't configured.
+ * Configured = a secret key or webhook secret is present (mirrors the LS gate). */
+function readStripeRouteConfig(env: NodeJS.ProcessEnv): {
+  webhookSecret?: string
+  expectedTestMode: boolean
+  requireCurrency: string
+  creditOnlyStore: boolean
+  creditMicrosByPack: Record<string, number>
+  checkout?: { apiKey: string; variants: Record<string, string>; defaultPack: string; customPack?: { id: string; priceId: string; minMinor: number }; redirectUrl?: string }
+} | undefined {
+  const apiKey = env.BORING_CREDITS_STRIPE_SECRET_KEY || undefined
+  const webhookSecret = env.BORING_CREDITS_STRIPE_WEBHOOK_SECRET || undefined
+  if (!apiKey && !webhookSecret) return undefined
+
+  // Mode MUST be explicit when Stripe is configured (no silent prod-defaults-to-test).
+  const tmRaw = env.BORING_CREDITS_STRIPE_TEST_MODE
+  if (tmRaw !== '0' && tmRaw !== '1') {
+    throw new Error(`BORING_CREDITS_STRIPE_TEST_MODE must be explicitly "0" (live) or "1" (test) when Stripe is configured; got "${tmRaw ?? ''}"`)
+  }
+  const testMode = tmRaw === '1'
+  // Test-mode purchases mint real spendable credits — never allow in production.
+  if (env.NODE_ENV === 'production' && testMode) {
+    throw new Error('credits: BORING_CREDITS_STRIPE_TEST_MODE=1 in production mints non-charging but spendable credits — set it to 0 and purge any test grants before live cutover')
+  }
+  const variants = parseStripeVariants(env.BORING_CREDITS_STRIPE_VARIANTS)
+  const creditMicrosByPack: Record<string, number> = {}
+  for (const packId of Object.keys(variants)) {
+    const micros = Math.round(Number(packId) * CREDIT_MICROS_PER_EUR)
+    if (!Number.isSafeInteger(micros) || micros <= 0) {
+      throw new Error(`BORING_CREDITS_STRIPE_VARIANTS pack "${packId}" maps to a non-positive credit amount`)
+    }
+    creditMicrosByPack[packId] = micros
+  }
+  const defaultPackEnv = env.BORING_CREDITS_STRIPE_DEFAULT_PACK
+  if (defaultPackEnv && !(defaultPackEnv in variants)) {
+    throw new Error(`BORING_CREDITS_STRIPE_DEFAULT_PACK "${defaultPackEnv}" is not a configured pack in BORING_CREDITS_STRIPE_VARIANTS`)
+  }
+  const customPrice = env.BORING_CREDITS_STRIPE_CUSTOM_PRICE || undefined
+  if (customPrice && !/^price_[A-Za-z0-9]+$/.test(customPrice)) {
+    throw new Error(`invalid BORING_CREDITS_STRIPE_CUSTOM_PRICE (must look like "price_…"): "${customPrice}"`)
+  }
+  const customPack = customPrice
+    ? { id: STRIPE_CUSTOM_PACK_ID, priceId: customPrice, minMinor: parseNumberEnv('BORING_CREDITS_STRIPE_CUSTOM_MIN_MINOR', env.BORING_CREDITS_STRIPE_CUSTOM_MIN_MINOR, 50, 1, true) }
+    : undefined
+  const checkoutReady = Boolean(apiKey && (Object.keys(variants).length > 0 || customPack))
+  return {
+    webhookSecret,
+    expectedTestMode: testMode,
+    requireCurrency: env.BORING_CREDITS_STRIPE_CURRENCY || 'EUR',
+    creditOnlyStore: env.BORING_CREDITS_STRIPE_CREDIT_ONLY_STORE !== '0',
+    creditMicrosByPack,
+    checkout: checkoutReady
+      ? {
+          apiKey: apiKey!,
+          variants,
+          defaultPack: defaultPackEnv || Object.keys(variants)[0] || STRIPE_CUSTOM_PACK_ID,
+          customPack,
+          redirectUrl: env.BORING_CREDITS_STRIPE_REDIRECT_URL || undefined,
+        }
+      : undefined,
+  }
+}
+
 /** Parse the LS test/live mode. When LS is configured the value MUST be an
  * explicit "0" (live) or "1" (test); an unset/other value throws so production
  * can't silently default to test mode. */
@@ -457,11 +551,32 @@ export function buildCreditsWiring(env: NodeJS.ProcessEnv = process.env): {
               checkout: config.lemonSqueezyCheckout,
             }
           : undefined
+      // Stripe purchase wiring (alternative provider). Only when credits are enabled;
+      // userExists guards against PII resurrection on a stale webhook (as with LS).
+      const stripeRoute = readStripeRouteConfig(env)
+      const stripe =
+        config.enabled && stripeRoute
+          ? {
+              ...stripeRoute,
+              userExists: async (userId: string) => (await app.userStore.getById(userId)) !== null,
+            }
+          : undefined
+      if (lemonSqueezy && stripe) {
+        throw new Error('credits: configure at most one purchase provider — both Lemon Squeezy (BORING_CREDITS_LS_*) and Stripe (BORING_CREDITS_STRIPE_*) are configured')
+      }
       registerCreditsRoutes(app, {
         service,
         lemonSqueezy,
+        stripe,
         log: (message, fields) => app.log.warn(fields ?? {}, message),
       })
+      if (config.enabled && stripeRoute) {
+        if (!stripeRoute.checkout) {
+          app.log.warn('credits: Stripe configured but checkout not ready (need BORING_CREDITS_STRIPE_SECRET_KEY + variants or a custom price) — Buy button hidden')
+        } else if (!stripeRoute.webhookSecret) {
+          app.log.warn('credits: BORING_CREDITS_STRIPE_WEBHOOK_SECRET unset — checkout opens but purchases will NOT auto-credit (no webhook). Use `stripe listen` or set the secret.')
+        }
+      }
       if (!config.enabled) {
         app.log.warn('credits: BORING_CREDITS_ENABLED=0 — consumption + purchase webhook/checkout disabled')
       } else if (!config.lemonSqueezyWebhookSecret) {
