@@ -226,7 +226,12 @@ export async function createAgentApp(
   // Powers the file-tree "Copy Git URL" action. Must use the HOST storage root
   // (where .git lives), not workspace.root — in sandbox modes the latter is the
   // in-sandbox cwd (e.g. /workspace) and git would not find the repo.
-  await app.register(gitRoutes, { getWorkspaceRoot: () => getRuntimeBundleStorageRoot(runtimeBundle) })
+  await app.register(gitRoutes, {
+    getWorkspaceRoot: () => {
+      if (runtimeBundle.sandbox.provider === 'remote-worker') return undefined
+      return getRuntimeBundleStorageRoot(runtimeBundle)
+    },
+  })
   const piChatService = new HarnessPiChatService({
     harness,
     sessionStore: harness.sessions,

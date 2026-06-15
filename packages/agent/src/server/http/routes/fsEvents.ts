@@ -28,7 +28,8 @@ import {
  *   - `seq` is monotonic per workspace; the SSE `id:` line uses it
  *     so EventSource auto-sends `Last-Event-ID` on reconnect.
  *   - On reconnect with a stale `Last-Event-ID`, the server emits
- *     `resync-required` and closes — clients invalidate everything.
+ *     `resync-required` — clients invalidate everything while the
+ *     stream remains open for future live events.
  *
  * One broadcaster per workspace, shared across all SSE connections.
  */
@@ -119,7 +120,10 @@ export function fsEventsRoutes(
     try {
       sub = entry.broadcaster.subscribe(
         (env) => writeChange(reply.raw, env),
-        lastSeenSeq != null ? { lastSeenSeq } : undefined,
+        {
+          ...(lastSeenSeq != null ? { lastSeenSeq } : {}),
+          onResyncRequired: () => writeSse(reply.raw, 'resync-required', {}),
+        },
       )
     } catch (error) {
       releaseBroadcaster(workspaceId, entry)
@@ -131,10 +135,6 @@ export function fsEventsRoutes(
 
     if (sub.resyncRequired) {
       writeSse(reply.raw, 'resync-required', {})
-      sub.unsubscribe()
-      releaseBroadcaster(workspaceId, entry)
-      reply.raw.end()
-      return
     }
 
     // Drain the replay backlog before any live event can interleave.

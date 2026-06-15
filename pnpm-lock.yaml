@@ -90,6 +90,9 @@ importers:
 
   apps/full-app:
     dependencies:
+      '@hachej/boring-agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
       '@hachej/boring-core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -102,6 +105,9 @@ importers:
       '@vercel/sandbox':
         specifier: 2.0.0-beta.14
         version: 2.0.0-beta.14
+      fastify:
+        specifier: ^5.3.3
+        version: 5.8.5
       react:
         specifier: ^19.1.0
         version: 19.2.5

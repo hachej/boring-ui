@@ -925,8 +925,11 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     getFileSearch: async (request) => (await getBindingForRequest(request)).runtimeBundle.fileSearch,
   })
   await app.register(gitRoutes, {
-    getWorkspaceRoot: async (request) =>
-      getRuntimeBundleStorageRoot((await getBindingForRequest(request)).runtimeBundle),
+    getWorkspaceRoot: async (request) => {
+      const bundle = (await getBindingForRequest(request)).runtimeBundle
+      if (bundle.sandbox.provider === 'remote-worker') return undefined
+      return getRuntimeBundleStorageRoot(bundle)
+    },
   })
   await app.register(piChatRoutes, {
     getService: async (request) => {

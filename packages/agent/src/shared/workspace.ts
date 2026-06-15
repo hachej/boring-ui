@@ -95,6 +95,20 @@ export type WorkspaceWatcherReadiness =
   | { ok: true }
   | { ok: false; reason: string; message?: string }
 
+export interface WorkspaceWatchControlEvent {
+  type: 'resync-required'
+  reason: string
+}
+
+export interface WorkspaceWatchSubscribeOptions {
+  /**
+   * Called when the watcher detects a gap where changes may have been
+   * missed. Consumers should drop caches/refetch instead of trusting
+   * incremental events alone.
+   */
+  onControlEvent?: (event: WorkspaceWatchControlEvent) => void
+}
+
 export interface WorkspaceWatcher {
   /**
    * Add a listener for change events. Returns an unsubscribe fn —
@@ -102,7 +116,10 @@ export interface WorkspaceWatcher {
    * itself is disposed, so unsubscribing one listener is cheap and
    * does NOT tear down the watcher.
    */
-  subscribe(listener: (event: WorkspaceChangeEvent) => void): () => void
+  subscribe(
+    listener: (event: WorkspaceChangeEvent) => void,
+    options?: WorkspaceWatchSubscribeOptions,
+  ): () => void
 
   /**
    * Optional readiness probe. Implementations with a startup guard

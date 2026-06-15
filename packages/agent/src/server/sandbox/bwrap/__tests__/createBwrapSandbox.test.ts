@@ -215,6 +215,33 @@ describeIfBwrap('createBwrapSandbox', () => {
     expect(result.stdout.length + result.stderr.length).toBeLessThanOrEqual(1_024)
   })
 
+  test('resource limits are applied before the user command', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'boring-ui-bwrap-limits-'))
+    tempDirs.push(root)
+    const runtimeContext = { runtimeCwd: '/workspace' }
+    const workspace = createNodeWorkspace(root, { runtimeContext })
+    const sandbox = createBwrapSandbox({
+      hostWorkspaceRoot: root,
+      runtimeContext,
+      resourceLimits: {
+        cpuSeconds: 7,
+        fileSizeBlocks: 11,
+        maxProcesses: 512,
+        openFiles: 64,
+        virtualMemoryKb: 262_144,
+      },
+    })
+    await sandbox.init?.({ workspace, sessionId: 'limits-check' })
+
+    const result = await sandbox.exec(
+      'printf "%s,%s,%s,%s,%s" "$(ulimit -t)" "$(ulimit -f)" "$(ulimit -u)" "$(ulimit -n)" "$(ulimit -v)"',
+    )
+    const output = Buffer.from(result.stdout).toString('utf-8')
+
+    expect(result.exitCode).toBe(0)
+    expect(output).toBe('7,11,512,64,262144')
+  })
+
   test('cwd maps from host workspace path to /workspace', async () => {
     const { sandbox, workspace, root } = await setupSandbox()
     await workspace.mkdir('nested', { recursive: true })

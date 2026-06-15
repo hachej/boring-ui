@@ -2,27 +2,33 @@ import { describe, expect, it } from 'vitest'
 import { createFsEventBroadcaster } from '../fsEventBroadcaster'
 import type {
   WorkspaceChangeEvent,
+  WorkspaceWatchControlEvent,
+  WorkspaceWatchSubscribeOptions,
   WorkspaceWatcher,
 } from '../../../shared/workspace'
 
 function makeStubWatcher(): {
   watcher: WorkspaceWatcher
   emit: (e: WorkspaceChangeEvent) => void
+  control: (e: WorkspaceWatchControlEvent) => void
 } {
-  const listeners = new Set<(e: WorkspaceChangeEvent) => void>()
+  const listeners = new Map<(e: WorkspaceChangeEvent) => void, WorkspaceWatchSubscribeOptions | undefined>()
   const emit = (e: WorkspaceChangeEvent) => {
-    for (const l of [...listeners]) l(e)
+    for (const l of [...listeners.keys()]) l(e)
+  }
+  const control = (e: WorkspaceWatchControlEvent) => {
+    for (const opts of [...listeners.values()]) opts?.onControlEvent?.(e)
   }
   const watcher: WorkspaceWatcher = {
-    subscribe(listener) {
-      listeners.add(listener)
-      return () => listeners.delete(listener)
+    subscribe(listener, opts) {
+      listeners.set(listener, opts)
+      return () => { listeners.delete(listener) }
     },
     close() {
       listeners.clear()
     },
   }
-  return { watcher, emit }
+  return { watcher, emit, control }
 }
 
 describe('createFsEventBroadcaster', () => {
@@ -90,6 +96,30 @@ describe('createFsEventBroadcaster', () => {
     const sub = b.subscribe(() => {}, { lastSeenSeq: 2 })
     expect(sub.resyncRequired).toBe(false)
     expect(sub.replay.map((e) => e.seq)).toEqual([3, 4])
+    sub.unsubscribe()
+    b.close()
+  })
+
+  it('signals resync when the underlying watcher reports a gap', () => {
+    const { watcher, emit, control } = makeStubWatcher()
+    const b = createFsEventBroadcaster(watcher)
+    const seen: number[] = []
+    const resyncs: number[] = []
+
+    const sub = b.subscribe(
+      (env) => seen.push(env.seq),
+      { onResyncRequired: () => resyncs.push(Date.now()) },
+    )
+    emit({ op: 'write', path: 'before-gap.ts' })
+    control({ type: 'resync-required', reason: 'stream_closed' })
+    emit({ op: 'write', path: 'after-gap.ts' })
+
+    expect(seen).toEqual([1, 2])
+    expect(resyncs).toHaveLength(1)
+
+    const stale = b.subscribe(() => {}, { lastSeenSeq: 1 })
+    expect(stale.resyncRequired).toBe(true)
+    stale.unsubscribe()
     sub.unsubscribe()
     b.close()
   })

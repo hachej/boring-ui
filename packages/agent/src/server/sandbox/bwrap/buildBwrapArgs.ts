@@ -55,15 +55,21 @@ function validateWorkspaceRoot(workspaceRoot: string): void {
 export interface BwrapArgsOptions {
   extraArgs?: string[]
   postWorkspaceArgs?: string[]
+  network?: 'shared' | 'isolated'
+  newSession?: boolean
+  dropAllCapabilities?: boolean
 }
 
 export function buildBwrapArgs(workspaceRoot: string, options?: BwrapArgsOptions): string[] {
   validateWorkspaceRoot(workspaceRoot)
 
+  const network = options?.network ?? 'shared'
   const args: string[] = [
     '--unshare-all',
-    '--share-net',
+    ...(network === 'shared' ? ['--share-net'] : []),
     '--die-with-parent',
+    ...(options?.newSession === false ? [] : ['--new-session']),
+    ...(options?.dropAllCapabilities ? ['--cap-drop', 'ALL'] : []),
     '--tmpfs', '/',
     '--proc', '/proc',
     '--dev', '/dev',

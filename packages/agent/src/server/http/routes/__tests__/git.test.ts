@@ -78,13 +78,16 @@ test('rejects a path containing null bytes', async () => {
   await app.close()
 })
 
-test('returns 500 when the workspace root is unavailable', async () => {
+test('returns a disabled result when the workspace root is unavailable', async () => {
   const app = buildApp(undefined)
   await app.ready()
 
   const res = await app.inject({ method: 'GET', url: '/api/v1/git/file-url?path=index.ts' })
-  expect(res.statusCode).toBe(500)
-  expect(res.json().error.code).toBe('internal')
+  expect(res.statusCode).toBe(200)
+  expect(res.json()).toEqual({
+    enabled: false,
+    reason: 'Git file URLs are unavailable for this runtime.',
+  })
 
   await app.close()
 })

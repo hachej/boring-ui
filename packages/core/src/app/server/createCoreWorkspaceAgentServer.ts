@@ -4,6 +4,7 @@ import path from 'node:path'
 
 import {
   compactPiPackages,
+  createRemoteWorkerModeAdapter,
   provisionWorkspaceRuntime,
   registerAgentRoutes,
   type RegisterAgentRoutesOptions,
@@ -675,6 +676,10 @@ export async function createCoreWorkspaceAgentServer(
       : await resolveWorkspaceRoot(workspaceRoot, workspaceId)
     return root
   }
+  const workerBaseUrl = process.env.BORING_WORKER_BASE_URL?.trim()
+  const remoteWorkerModeAdapter = workerBaseUrl
+    ? createRemoteWorkerModeAdapter({ baseUrl: workerBaseUrl })
+    : undefined
   const piOptionsByRoot = new Map<string, AgentPiOptions>()
   const getPluginPiOptions = (root: string): AgentPiOptions => {
     const resolvedRoot = path.resolve(root)
@@ -696,12 +701,19 @@ export async function createCoreWorkspaceAgentServer(
     return scopedPluginCollection.agentOptions.pi
   }
   const resolvePiOptions: NonNullable<RegisterAgentRoutesOptions['getPi']> = async (ctx) => {
-    const pluginOptions = getPluginPiOptions(ctx.workspaceRoot)
+    // In remote-worker mode the workspace filesystem lives on the worker. Do
+    // not scan per-workspace Pi skills/plugins from the public host path — it
+    // can be stale after volume cutover and would reintroduce split-brain. Keep
+    // only static app/plugin Pi config plus explicit caller overrides.
+    const pluginOptions = remoteWorkerModeAdapter
+      ? pluginCollection.agentOptions.pi
+      : getPluginPiOptions(ctx.workspaceRoot)
     const callerOptions = options.getPi
       ? await options.getPi(ctx)
       : undefined
     return mergePiOptions(pluginOptions, callerOptions)
   }
+
   await app.register(registerAgentRoutes, {
     workspaceRoot,
     sessionId: options.sessionId,
@@ -709,6 +721,7 @@ export async function createCoreWorkspaceAgentServer(
     getTemplatePath: options.getTemplatePath,
     mode: options.mode,
     externalPlugins: externalPluginsEnabled,
+    runtimeModeAdapter: remoteWorkerModeAdapter,
     version: options.version,
     extraTools: [
       ...(options.extraTools ?? []),

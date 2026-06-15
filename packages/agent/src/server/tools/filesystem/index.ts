@@ -83,9 +83,8 @@ function adaptPiTool<TParams extends Record<string, unknown>>(
 
 export function buildFilesystemAgentTools(bundle: RuntimeBundle): AgentTool[] {
   const cwd = bundle.workspace.root
-  const storageRoot = getRuntimeBundleStorageRoot(bundle)
 
-  if (bundle.sandbox.provider === 'vercel-sandbox') {
+  if (bundle.sandbox.provider === 'vercel-sandbox' || bundle.sandbox.provider === 'remote-worker') {
     return [
       adaptPiTool(createReadToolDefinition(cwd, { operations: vercelReadOps(bundle.workspace) })),
       adaptPiTool(createWriteToolDefinition(cwd, { operations: vercelWriteOps(bundle.workspace) })),
@@ -96,6 +95,7 @@ export function buildFilesystemAgentTools(bundle: RuntimeBundle): AgentTool[] {
     ]
   }
 
+  const storageRoot = getRuntimeBundleStorageRoot(bundle)
   const ops = boundFs(storageRoot, { runtimeRoot: cwd })
   return [
     adaptPiTool(createReadToolDefinition(cwd, { operations: ops.read })),

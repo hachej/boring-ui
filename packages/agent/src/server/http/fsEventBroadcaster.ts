@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import type { WorkspaceChangeEvent, WorkspaceWatcher } from '../../shared/workspace'
+import type {
+  WorkspaceChangeEvent,
+  WorkspaceWatchControlEvent,
+  WorkspaceWatcher,
+} from '../../shared/workspace'
 
 /**
  * Wraps a `WorkspaceWatcher` with two reliability primitives:
@@ -61,7 +65,7 @@ export interface FsEventBroadcaster {
    */
   subscribe(
     listener: (env: FsEventEnvelope) => void,
-    opts?: { lastSeenSeq?: number },
+    opts?: { lastSeenSeq?: number; onResyncRequired?: () => void },
   ): FsSubscribeResult
 
   /** Tear down the broadcaster (and its underlying watcher). */
@@ -76,9 +80,19 @@ export function createFsEventBroadcaster(
 ): FsEventBroadcaster {
   const bufferSize = opts.bufferSize ?? DEFAULT_BUFFER_SIZE
   const buffer: FsEventEnvelope[] = []
-  const listeners = new Set<(env: FsEventEnvelope) => void>()
+  const listeners = new Map<(env: FsEventEnvelope) => void, { onResyncRequired?: () => void }>()
   let nextSeq = 1
   let closed = false
+  let gapAfterSeq: number | null = null
+
+  const handleControlEvent = (event: WorkspaceWatchControlEvent): void => {
+    if (closed || event.type !== 'resync-required') return
+    gapAfterSeq = nextSeq - 1
+    buffer.length = 0
+    for (const { onResyncRequired } of [...listeners.values()]) {
+      try { onResyncRequired?.() } catch { /* one bad listener doesn't kill the chain */ }
+    }
+  }
 
   const watcherUnsub = watcher.subscribe((change) => {
     if (closed) return
@@ -90,10 +104,10 @@ export function createFsEventBroadcaster(
     }
     buffer.push(env)
     if (buffer.length > bufferSize) buffer.shift()
-    for (const l of [...listeners]) {
+    for (const l of [...listeners.keys()]) {
       try { l(env) } catch { /* one bad listener doesn't kill the chain */ }
     }
-  })
+  }, { onControlEvent: handleControlEvent })
 
   return {
     subscribe(listener, sopts) {
@@ -106,9 +120,13 @@ export function createFsEventBroadcaster(
 
       if (typeof sopts?.lastSeenSeq === 'number' && sopts.lastSeenSeq > 0) {
         const head = buffer.length > 0 ? buffer[0]!.seq : nextSeq
-        if (sopts.lastSeenSeq < head - 1) {
+        if (
+          (gapAfterSeq != null && sopts.lastSeenSeq <= gapAfterSeq) ||
+          sopts.lastSeenSeq < head - 1
+        ) {
           // Gap: client's last-seen is older than what we still
-          // have buffered. We can't fill it — flag resync.
+          // have buffered, or the watcher explicitly reported a
+          // disconnect gap. We can't fill it — flag resync.
           resyncRequired = true
         } else {
           // Replay events strictly newer than lastSeenSeq.
@@ -116,7 +134,7 @@ export function createFsEventBroadcaster(
         }
       }
 
-      listeners.add(listener)
+      listeners.set(listener, { onResyncRequired: sopts?.onResyncRequired })
       return {
         replay,
         resyncRequired,
