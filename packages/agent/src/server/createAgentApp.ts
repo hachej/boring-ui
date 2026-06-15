@@ -72,6 +72,12 @@ export interface CreateAgentAppOptions {
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
   sessionDir?: string
   /**
+   * Enable user/global Pi extension auto-discovery from .pi/ and ~/.pi.
+   * App/internal plugins should be passed through extraTools/pi instead.
+   * Defaults to true for standalone agent compatibility.
+   */
+  externalPlugins?: boolean
+  /**
    * Called BEFORE the harness reloads its session. May return a
    * `ReloadHookResult` (with `restart_warnings` and/or diagnostics) —
    * surfaced verbatim on the /api/v1/agent/reload response. `void` /
@@ -121,7 +127,8 @@ export async function createAgentApp(
   // createAgentApp() directly. Standalone agent (CLI, no workspace)
   // ships zero UI surface — smaller bundle, honest contract.
   const pluginTools: AgentTool[] = []
-  if (modeAdapter.workspaceFsCapability === 'strong') {
+  const externalPluginsEnabled = opts.externalPlugins !== false
+  if (externalPluginsEnabled && modeAdapter.workspaceFsCapability === 'strong') {
     const pluginResult = await loadPlugins({ cwd: workspaceRoot })
     if (pluginResult.errors.length > 0) {
       for (const e of pluginResult.errors) {
@@ -158,7 +165,7 @@ export async function createAgentApp(
     ...(opts.disableDefaultFileTools ? [] : buildFilesystemAgentTools(runtimeBundle)),
     ...(opts.extraTools ?? []),
     ...pluginTools,
-    createPluginDiagnosticsTool({
+    ...(externalPluginsEnabled ? [createPluginDiagnosticsTool({
       getLastReloadDiagnostics: () => lastReloadDiagnostics,
       getHarness: () => harnessRef,
       ...(opts.getPluginDiagnostics
@@ -167,7 +174,7 @@ export async function createAgentApp(
               opts.getPluginDiagnostics!({ workspaceId: sessionId, workspaceRoot }),
           }
         : {}),
-    }),
+    })] : []),
   ]
 
   const harnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({

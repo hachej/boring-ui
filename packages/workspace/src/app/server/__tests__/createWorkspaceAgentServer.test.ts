@@ -232,6 +232,35 @@ describe("default boring-ui CLI provisioning", () => {
     },
   )
 
+  test("externalPlugins=false removes plugin CLI provisioning and prompt commands", async () => {
+    const workspaceRoot = await makeTempDir("boring-cli-external-disabled-")
+    let capturedPrompt: string | undefined
+    mockCreateAgentAppOnce(async (opts: unknown) => {
+      const agentOpts = opts as { externalPlugins?: boolean; systemPromptAppend?: string }
+      expect(agentOpts.externalPlugins).toBe(false)
+      capturedPrompt = agentOpts.systemPromptAppend
+      return { register: vi.fn(async () => {}) } as never
+    })
+
+    await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "local",
+      logger: false,
+      externalPlugins: false,
+    })
+
+    const [provisionOpts] = agentServerMock.provisionWorkspaceRuntime.mock.calls[0] as unknown as [
+      { plugins: Array<{ id: string }> },
+    ]
+    expect(findBoringUiCliContribution(provisionOpts.plugins)).toBeUndefined()
+    expect(capturedPrompt ?? "").toContain("does not expose Boring plugin creation or installation")
+    expect(capturedPrompt ?? "").not.toContain("Generated plugin skills")
+    expect(capturedPrompt ?? "").not.toContain("external plugin authoring")
+    expect(capturedPrompt ?? "").not.toContain("boring-ui-plugin scaffold")
+    expect(capturedPrompt ?? "").not.toContain("boring-ui-plugin verify")
+    expect(capturedPrompt ?? "").not.toContain("boring-plugin-authoring")
+  })
+
   test("excludeDefaults removes built-in plugin CLI provisioning and prompt commands", async () => {
     const workspaceRoot = await makeTempDir("boring-cli-exclude-runtime-")
     let capturedPrompt: string | undefined
@@ -294,6 +323,58 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     const refreshed = agentOptions.pi?.getHotReloadableResources?.()
     expect(refreshed?.extensionPaths).not.toContain(join(workspaceRoot, ".pi", "extensions", "hot-plugin", "agent", "one.ts"))
     expect(refreshed?.extensionPaths).toContain(join(workspaceRoot, ".pi", "extensions", "hot-plugin", "agent", "two.ts"))
+  })
+
+  test("externalPlugins=true keeps workspace .pi plugins hot-reloadable", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-external-enabled-")
+    await writeHotPlugin(workspaceRoot, "visible.ts")
+
+    await createWorkspaceAgentServer({
+      workspaceRoot,
+      logger: false,
+      provisionWorkspace: false,
+      externalPlugins: true,
+    })
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+      {
+        externalPlugins?: boolean
+        pi?: { getHotReloadableResources?: () => { extensionPaths?: string[]; additionalSkillPaths?: string[] } }
+      },
+    ]
+    expect(agentOptions.externalPlugins).toBe(true)
+    expect(agentOptions.pi?.getHotReloadableResources?.().extensionPaths).toContain(
+      join(workspaceRoot, ".pi", "extensions", "hot-plugin", "agent", "visible.ts"),
+    )
+    expect(agentOptions.pi?.getHotReloadableResources?.().additionalSkillPaths).toContain(
+      join(workspaceRoot, ".pi", "extensions", "hot-plugin", "agent", "skills"),
+    )
+  })
+
+  test("externalPlugins=false excludes workspace .pi plugins from hot-reloadable resources", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-external-disabled-")
+    await writeHotPlugin(workspaceRoot, "hidden.ts")
+
+    await createWorkspaceAgentServer({
+      workspaceRoot,
+      logger: false,
+      provisionWorkspace: false,
+      externalPlugins: false,
+    })
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+      {
+        externalPlugins?: boolean
+        pi?: { getHotReloadableResources?: () => { extensionPaths?: string[]; additionalSkillPaths?: string[] } }
+      },
+    ]
+    expect(agentOptions.externalPlugins).toBe(false)
+    expect(agentOptions.pi?.getHotReloadableResources?.().extensionPaths ?? []).not.toContain(
+      join(workspaceRoot, ".pi", "extensions", "hot-plugin", "agent", "hidden.ts"),
+    )
+    expect(agentOptions.pi?.getHotReloadableResources?.().additionalSkillPaths ?? []).not.toContain(
+      join(workspaceRoot, ".pi", "extensions", "hot-plugin", "agent", "skills"),
+    )
   })
 
   test("does not crash while collecting Pi entries from invalid package.json plugins", async () => {

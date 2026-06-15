@@ -41,6 +41,7 @@ const playgroundDeckPlugin = createDeckPlugin({
 })
 
 const workspacePlugins = [askUserPlugin, playgroundDeckPlugin]
+const externalPluginsEnabled = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BORING_EXTERNAL_PLUGINS === "1"
 
 function WorkspaceFullPageShell() {
   const parsed = parseFullPagePanelLocation(window.location.search)
@@ -132,11 +133,13 @@ export function WorkspaceShell() {
       workspaceId={showcase ? "playground" : projectName}
       apiBaseUrl=""
       persistenceEnabled
+      debug
       providerStorageKey="boring-ui-v2:layout:playground"
       appTitle={showcase ? "Boring" : projectName}
       workspaceLabel={showcase ? undefined : projectName}
       defaultSessionTitle={showcase ? "New session" : projectName}
-      frontPluginHotReload="vite"
+      externalPlugins={externalPluginsEnabled}
+      frontPluginHotReload={externalPluginsEnabled ? "vite" : undefined}
       fullPageBasePath="/full-page"
       provisionWorkspace={!showcase}
       sessions={sessions}

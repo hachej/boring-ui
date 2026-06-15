@@ -14,6 +14,7 @@ async function main() {
     appRoot,
     serveFrontend: true,
     plugins: serverPlugins,
+    externalPlugins: false,
     installPluginAuthoring: pluginAuthoringEnabledFromEnv(),
   })
   const address = await app.listen({ host: app.config.host, port: app.config.port })
