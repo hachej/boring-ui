@@ -234,8 +234,8 @@ async function ensureVercelRuntimePrimitives(
     throw new Error(`runtime bootstrap (uv) failed (exit ${result.exitCode ?? 'unknown'})`)
   }
   // Provisioning invokes uv by explicit path (correctness must not depend on the
-  // non-interactive exec PATH). Default BORING_AGENT_UV_BIN to where the Node
-  // bootstrap installs uv; an explicit deploy-config value still wins. Routed
+  // non-interactive exec PATH). Default BORING_AGENT_UV_BIN to the `.boring-agent`
+  // uv installed by the Node bootstrap; an explicit deploy-config value still wins. Routed
   // through config/env so we never touch process.env directly (invariant).
   if (isNodeFamilyRuntime(runtime)) {
     setEnvDefault('BORING_AGENT_UV_BIN', VERCEL_UV_BIN)

@@ -217,6 +217,7 @@ export class RemotePiSession {
       this.store.dispatch({ type: 'optimistic-user-message', message: toOptimisticUserMessage(payload) }, { flush: true })
     }
     if (!this.started) await this.start(this.store.getState().lastSeq)
+    else this.ensureReconnectScheduled()
     try {
       const receipt = await this.postCommand('/prompt', payload, PromptReceiptSchema)
       return receipt
@@ -231,6 +232,7 @@ export class RemotePiSession {
       this.store.dispatch({ type: 'optimistic-user-message', message: toOptimisticUserMessage(payload) }, { flush: true })
     }
     if (!this.started) await this.start(this.store.getState().lastSeq)
+    else this.ensureReconnectScheduled()
     try {
       const receipt = await this.postCommand('/followup', payload, FollowUpReceiptSchema)
       return receipt
@@ -431,9 +433,9 @@ export class RemotePiSession {
       // would normally swallow it; treat it instead as a recoverable
       // disconnect that schedules a reconnect against the recovered server.
       if (!connectTimedOut && shouldIgnoreStreamClose(error, controller)) return
-      this.dispatchProtocolError(connectTimedOut
-        ? `Pi chat event stream timed out after ${this.requestTimeoutMs}ms.`
-        : errorMessage(error, 'Pi chat event stream disconnected.'))
+      if (!connectTimedOut) {
+        this.dispatchProtocolError(errorMessage(error, 'Pi chat event stream disconnected.'))
+      }
       this.scheduleReconnect(generation)
     } finally {
       clearConnectTimer()
@@ -445,6 +447,14 @@ export class RemotePiSession {
     this.streamRunId += 1
     this.abortEventStream()
     void this.hydrateAndConnect(generation, options)
+  }
+
+  private ensureReconnectScheduled(): void {
+    if (!this.isGenerationActive(this.generation)) return
+    const state = this.store.getState()
+    if (state.connection.state === 'connected' || state.connection.state === 'connecting') return
+    if (this.reconnectTimer !== undefined) return
+    void this.hydrateAndConnect(this.generation)
   }
 
   private scheduleReconnect(generation: number): void {

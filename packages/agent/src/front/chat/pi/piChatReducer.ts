@@ -157,10 +157,18 @@ export function piChatReducer(state: PiChatState, action: PiChatReducerAction): 
         queue: { followUps: clearQueuedFollowUps(state.queue.followUps, action) },
         optimisticOutbox: clearOptimisticFollowUps(state.optimisticOutbox, action),
       }
-    case 'connection-state':
-      return { ...state, connection: { ...state.connection, state: action.state } }
+    case 'connection-state': {
+      const nextState = {
+        ...state,
+        connection: { ...state.connection, state: action.state },
+      }
+      return action.state === 'connected' ? clearProtocolError(nextState) : nextState
+    }
     case 'heartbeat':
-      return { ...state, connection: { ...state.connection, lastHeartbeatAt: action.now ?? Date.now() } }
+      return clearProtocolError({
+        ...state,
+        connection: { ...state.connection, lastHeartbeatAt: action.now ?? Date.now() },
+      })
     case 'protocol-error':
       return {
         ...state,
@@ -178,6 +186,15 @@ export function piChatReducer(state: PiChatState, action: PiChatReducerAction): 
   }
 }
 
+function clearProtocolError(state: PiChatState): PiChatState {
+  if (!state.notices.some((notice) => notice.id === 'protocol-error')) return state
+  return {
+    ...state,
+    error: undefined,
+    notices: state.notices.filter((notice) => notice.id !== 'protocol-error'),
+  }
+}
+
 function syncCursor(state: PiChatState, cursor: number): PiChatState {
   if (cursor <= state.lastSeq) return { ...state, hydrated: true, needsResync: undefined }
   return { ...state, lastSeq: cursor, hydrated: true, needsResync: undefined }
@@ -191,7 +208,11 @@ function hydrateFromSnapshot(
   if (snapshot.seq < state.lastSeq && !options.allowSeqRewind) return state
 
   const queue = { followUps: enrichQueueWithKnownMetadata(snapshot.queue.followUps, state.optimisticOutbox, state.queue.followUps) }
-  const committedMessages = normalizeSnapshotMessages(snapshot.messages)
+  const snapshotMessages = normalizeSnapshotMessages(snapshot.messages)
+  const preserveLocalHistory = shouldPreserveLocalCommittedHistory(state, snapshot, snapshotMessages, options)
+  const committedMessages = preserveLocalHistory
+    ? mergeSnapshotMessagesIntoLocal(state.committedMessages, snapshotMessages)
+    : snapshotMessages
   const serverNonces = new Set<string>()
   for (const message of committedMessages) {
     if (message.clientNonce) serverNonces.add(message.clientNonce)
@@ -201,7 +222,14 @@ function hydrateFromSnapshot(
   }
 
   const nextOutbox: Record<string, OptimisticUserMessage> = {}
-  const staleOutbox = Object.values(state.optimisticOutbox).filter((message) => !serverNonces.has(message.clientNonce))
+  if (preserveLocalHistory) {
+    for (const message of Object.values(state.optimisticOutbox)) {
+      if (!serverNonces.has(message.clientNonce)) nextOutbox[message.clientNonce] = message
+    }
+  }
+  const staleOutbox = preserveLocalHistory
+    ? []
+    : Object.values(state.optimisticOutbox).filter((message) => !serverNonces.has(message.clientNonce))
 
   const notices = staleOutbox.length > 0
     ? upsertNotice(state.notices, {
@@ -231,6 +259,32 @@ function hydrateFromSnapshot(
     hydrated: true,
     needsResync: undefined,
   }
+}
+
+function shouldPreserveLocalCommittedHistory(
+  state: PiChatState,
+  snapshot: PiChatSnapshot,
+  snapshotMessages: BoringChatMessage[],
+  options: { allowSeqRewind?: boolean },
+): boolean {
+  if (options.allowSeqRewind) return false
+  if (!state.hydrated) return false
+  if (state.sessionId !== snapshot.sessionId) return false
+  if (state.committedMessages.length === 0) return false
+  if (snapshotMessages.length < state.committedMessages.length) return true
+  for (let index = 0; index < state.committedMessages.length; index += 1) {
+    if (snapshotMessages[index]?.id !== state.committedMessages[index]?.id) return true
+  }
+  return false
+}
+
+function mergeSnapshotMessagesIntoLocal(
+  currentMessages: BoringChatMessage[],
+  snapshotMessages: BoringChatMessage[],
+): BoringChatMessage[] {
+  let merged = currentMessages
+  for (const message of snapshotMessages) merged = replaceOrAppendMessage(merged, message)
+  return merged
 }
 
 function applySequencedEvent(state: PiChatState, event: PiChatEvent): PiChatState {
