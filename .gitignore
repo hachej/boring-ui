@@ -134,3 +134,6 @@ packages/workspace/src/plugins/eval-*/
 
 # Local credits-testing dev bootstrap (not committed)
 /apps/full-app/src/server/dev-credits.ts
+
+# Dev-server workspace runtime dirs (UUID-named) created under the app cwd during local runs
+/apps/full-app/*-*-*-*-*/
