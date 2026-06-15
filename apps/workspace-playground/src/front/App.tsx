@@ -41,6 +41,7 @@ const playgroundDeckPlugin = createDeckPlugin({
 })
 
 const workspacePlugins = [askUserPlugin, playgroundDeckPlugin]
+const externalPluginsEnabled = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BORING_EXTERNAL_PLUGINS === "1"
 
 function WorkspaceFullPageShell() {
   const parsed = parseFullPagePanelLocation(window.location.search)
@@ -137,7 +138,8 @@ export function WorkspaceShell() {
       appTitle={showcase ? "Boring" : projectName}
       workspaceLabel={showcase ? undefined : projectName}
       defaultSessionTitle={showcase ? "New session" : projectName}
-      externalPlugins={false}
+      externalPlugins={externalPluginsEnabled}
+      frontPluginHotReload={externalPluginsEnabled ? "vite" : undefined}
       fullPageBasePath="/full-page"
       provisionWorkspace={!showcase}
       sessions={sessions}
