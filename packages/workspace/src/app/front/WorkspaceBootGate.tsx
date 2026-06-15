@@ -143,7 +143,7 @@ export function WorkspaceBootGate({
   return (
     <WorkspaceLoadingState
       title="Opening workspace"
-      description="Waking the sandbox and preparing files, sessions, and layout."
+      description="Preparing secure runtime, files, sessions, and layout."
       status={state.label}
     />
   )

@@ -143,27 +143,11 @@ function modelTriggerLabel(value: ModelSelection | null, options: AvailableModel
     ? rawTriggerLabel && current?.label && current.label !== value.id && /[A-Z]/.test(current.label)
       ? current.label
       : displayModelLabel(rawTriggerLabel ?? value.id)
-    : 'Pi default'
+    : 'Default model'
 }
 
-function modelMenuOptions(value: ModelSelection | null, options: AvailableModel[]): AvailableModel[] {
-  const currentKey = value ? encodeModelKey(value) : null
-  const triggerLabel = modelTriggerLabel(value, options)
-  const availableOptions = options.filter((m) => m.available)
-  const hasCurrentOption = currentKey
-    ? availableOptions.some((m) => encodeModelKey(m) === currentKey)
-    : true
-  return hasCurrentOption || !value
-    ? availableOptions
-    : [
-        {
-          provider: value.provider,
-          id: value.id,
-          label: triggerLabel,
-          available: true,
-        },
-        ...availableOptions,
-      ]
+function modelMenuOptions(_value: ModelSelection | null, options: AvailableModel[]): AvailableModel[] {
+  return options.filter((m) => m.available)
 }
 
 function groupModelOptions(options: AvailableModel[]): Map<string, AvailableModel[]> {
@@ -196,8 +180,8 @@ export const ModelSelectTrigger = forwardRef<HTMLButtonElement, ModelSelectTrigg
 }, ref) {
   const triggerLabel = modelTriggerLabel(value, options)
   // Show the provider alongside the model so the same model name across
-  // providers stays unambiguous, e.g. "Sonnet (Anthropic)". 'Pi default'
-  // (no explicit selection) has no provider to show.
+  // providers stays unambiguous. The default automatic selection has no
+  // provider to show.
   const triggerDisplay = value ? `${triggerLabel} (${displayProviderLabel(value.provider)})` : triggerLabel
   return (
     <button
@@ -239,6 +223,7 @@ export function ModelPickerMenu({
   onChange,
   options,
   disabled,
+  hideDefaultOption = false,
   onClose,
   className,
 }: {
@@ -246,6 +231,7 @@ export function ModelPickerMenu({
   onChange: (next: ModelSelection | null) => void
   options: AvailableModel[]
   disabled?: boolean
+  hideDefaultOption?: boolean
   onClose?: () => void
   className?: string
 }) {
@@ -253,7 +239,7 @@ export function ModelPickerMenu({
   const menuOptions = modelMenuOptions(value, options)
   const groups = groupModelOptions(menuOptions)
   const groupedOptions = [...groups.values()].flat()
-  const keyboardOptions = [null, ...groupedOptions]
+  const keyboardOptions = hideDefaultOption ? groupedOptions : [null, ...groupedOptions]
   const selectedIndex = currentKey
     ? Math.max(0, keyboardOptions.findIndex((option) => option && encodeModelKey(option) === currentKey))
     : 0
@@ -292,7 +278,8 @@ export function ModelPickerMenu({
     window.addEventListener('keydown', handler, { capture: true })
     return () => window.removeEventListener('keydown', handler, { capture: true })
   }, [activeIndex, disabled, keyboardOptions, onChange, onClose])
-  const optionIndexes = new Map(groupedOptions.map((option, index) => [encodeModelKey(option), index + 1]))
+  const optionIndexOffset = hideDefaultOption ? 0 : 1
+  const optionIndexes = new Map(groupedOptions.map((option, index) => [encodeModelKey(option), index + optionIndexOffset]))
   return (
     <div ref={menuRef} data-boring-agent="" data-boring-agent-part="model-picker-menu" className={cn(composerPickerMenuClass, className)}>
       <Command className="bg-transparent text-[color:var(--popover-foreground)]">
@@ -309,26 +296,28 @@ export function ModelPickerMenu({
           <CommandEmpty className="py-4 text-center text-[13px] text-muted-foreground">
             No models found
           </CommandEmpty>
-          <CommandGroup>
-            <CommandItem
-              value="Pi default automatic auto"
-              onSelect={() => {
-                if (disabled) return
-                onChange(null)
-                onClose?.()
-              }}
-              className={selectorItemClass(!value || activeIndex === 0)}
-            >
-              <CheckIcon
-                className={cn(
-                  "h-3.5 w-3.5 shrink-0",
-                  !value ? "text-[color:var(--accent)] opacity-100" : "opacity-0",
-                )}
-              />
-              <span className="truncate">Pi default</span>
-              <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/60">auto</span>
-            </CommandItem>
-          </CommandGroup>
+          {!hideDefaultOption ? (
+            <CommandGroup>
+              <CommandItem
+                value="Default model automatic auto"
+                onSelect={() => {
+                  if (disabled) return
+                  onChange(null)
+                  onClose?.()
+                }}
+                className={selectorItemClass(!value || activeIndex === 0)}
+              >
+                <CheckIcon
+                  className={cn(
+                    "h-3.5 w-3.5 shrink-0",
+                    !value ? "text-[color:var(--accent)] opacity-100" : "opacity-0",
+                  )}
+                />
+                <span className="truncate">Default model</span>
+                <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/60">auto</span>
+              </CommandItem>
+            </CommandGroup>
+          ) : null}
           {[...groups.entries()].map(([provider, list]) => (
             <CommandGroup
               key={provider}

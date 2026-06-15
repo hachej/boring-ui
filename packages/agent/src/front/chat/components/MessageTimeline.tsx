@@ -62,7 +62,7 @@ export const MessageTimeline = memo(({
           <ConversationEmptyState
             data-boring-agent-part="chat-empty-state"
             title={emptyState?.title ?? 'What are we building?'}
-            description={emptyState?.description ?? 'Send a prompt to start a Pi-native agent session.'}
+            description={emptyState?.description ?? 'Send a prompt to start an assistant session.'}
             icon={emptyState?.icon}
           />
         ) : (

@@ -106,7 +106,7 @@ function OpenInNewTabIcon({ className }: { className?: string }) {
 }
 
 export function WorkspaceSwitcher({
-  appTitle = 'Boring',
+  appTitle = 'Sovereign Workspace',
   workspacePathPrefix = '/workspace',
 }: WorkspaceSwitcherProps) {
   const navigate = useNavigate()

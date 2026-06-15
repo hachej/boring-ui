@@ -109,6 +109,7 @@ export interface WorkspaceAgentFrontProps<
   defaultNavOpen?: boolean
   defaultSurfaceOpen?: boolean
   defaultWorkbenchLeftTab?: string
+  defaultWorkbenchLeftOpen?: boolean
   surfaceInitialPanels?: SurfaceShellProps["initialPanels"]
   topBarLeft?: ReactNode
   topBarRight?: ReactNode
@@ -197,9 +198,9 @@ function WorkbenchWarmupOverlay({ status }: { status: WorkspaceWarmupStatus }) {
     ? requirement === "workspace-fs"
       ? "Preparing files…"
       : requirement === "sandbox-exec"
-        ? "Waking sandbox…"
+        ? "Preparing secure runtime…"
         : requirement === "ui-bridge"
-          ? "Connecting workspace UI…"
+          ? "Connecting workspace…"
           : "Preparing workspace…"
     : "Workspace workbench failed"
   const description = status.status === "failed"
@@ -240,7 +241,7 @@ function workspaceIdFromHeaders(headers?: Record<string, string>): string | null
 }
 
 function pluginReloadMessage(payload: { reloaded?: boolean; diagnostics?: Array<{ message?: string }> }): string {
-  const base = payload.reloaded ? "Agent plugins reloaded." : "Agent plugins will reload on the next message."
+  const base = payload.reloaded ? "Extensions reloaded." : "Extensions will reload on the next message."
   const diagnosticMessages = Array.isArray(payload.diagnostics)
     ? payload.diagnostics.map((item) => item.message).filter((message): message is string => Boolean(message))
     : []
@@ -435,13 +436,14 @@ export function WorkspaceAgentFront<
   onCreateSession,
   onDeleteSession,
   onActiveSessionIdChange,
-  appTitle = "Boring",
+  appTitle = "Sovereign Workspace",
   workspaceLabel,
   defaultSessionTitle = "New session",
   navEnabled = true,
   defaultNavOpen = false,
   defaultSurfaceOpen,
   defaultWorkbenchLeftTab,
+  defaultWorkbenchLeftOpen,
   surfaceInitialPanels,
   topBarLeft,
   topBarRight,
@@ -767,9 +769,11 @@ export function WorkspaceAgentFront<
   const [surfaceReady, setSurfaceReady] = useState(false)
   const [workbenchLeftOpen, setWorkbenchLeftOpen] = useStoredBooleanState(
     `${shellStorageKey}:workbenchLeftOpen`,
-    true,
+    defaultWorkbenchLeftOpen ?? false,
     shellPersistenceEnabled,
   )
+  const [workbenchLeftExplicitOpen, setWorkbenchLeftExplicitOpen] = useState(() => defaultWorkbenchLeftOpen ?? false)
+  const effectiveWorkbenchLeftOpen = defaultWorkbenchLeftOpen === false ? workbenchLeftExplicitOpen : workbenchLeftOpen
   const autoCreateSessionRef = useRef(false)
   const pendingCreatePaneRef = useRef<PendingCreatePane | null>(null)
   const surfaceOpenRef = useRef(surfaceOpen)
@@ -868,6 +872,7 @@ export function WorkspaceAgentFront<
     surfaceOpenRef.current = true
     setSurfaceOpen(true)
     setWorkbenchLeftOpen(true)
+    setWorkbenchLeftExplicitOpen(true)
   }, [setSurfaceOpen, setWorkbenchLeftOpen])
   const closeWorkbench = useCallback(() => {
     surfaceOpenRef.current = false
@@ -1324,11 +1329,17 @@ export function WorkspaceAgentFront<
               surface={surfaceOpen ? "artifact-surface" : null}
               surfaceParams={surfaceParams as Record<string, unknown>}
               surfaceOverlay={workbenchOverlay}
-              sidebar={surfaceOpen && !workbenchBlocked && hasLeftTabs && workbenchLeftOpen ? "workbench-left" : null}
+              sidebar={surfaceOpen && !workbenchBlocked && hasLeftTabs && effectiveWorkbenchLeftOpen ? "workbench-left" : null}
               sidebarParams={surfaceOpen && !workbenchBlocked && hasLeftTabs ? {
                 ...(defaultWorkbenchLeftTab ? { defaultTab: defaultWorkbenchLeftTab } : {}),
-                onClose: () => setWorkbenchLeftOpen(false),
-                onCollapse: () => setWorkbenchLeftOpen(false),
+                onClose: () => {
+                  setWorkbenchLeftOpen(false)
+                  setWorkbenchLeftExplicitOpen(false)
+                },
+                onCollapse: () => {
+                  setWorkbenchLeftOpen(false)
+                  setWorkbenchLeftExplicitOpen(false)
+                },
               } : undefined}
               storageKey={shellPersistenceEnabled ? shellStorageKey : undefined}
               onOpenNav={navEnabled ? () => {
@@ -1345,6 +1356,7 @@ export function WorkspaceAgentFront<
                 surfaceOpenRef.current = true
                 setSurfaceOpen(true)
                 setWorkbenchLeftOpen(true)
+                setWorkbenchLeftExplicitOpen(true)
               } : undefined}
             />
           )}

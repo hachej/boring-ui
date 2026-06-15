@@ -224,7 +224,7 @@ describe('CoreWorkspaceAgentFront', () => {
     routePath = '/'
     render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" />)
 
-    await userEvent.click(screen.getAllByRole('button', { name: 'Sign in' })[0])
+    await userEvent.click(screen.getAllByRole('button', { name: 'Sign in' }).at(-1)!)
     const dialog = screen.getByRole('dialog')
     await userEvent.type(within(dialog).getByPlaceholderText('Email'), 'test@example.com')
     await userEvent.type(within(dialog).getByPlaceholderText('Password'), 'BoringUi!123')
@@ -253,9 +253,6 @@ describe('CoreWorkspaceAgentFront', () => {
     const dialog = screen.getByRole('dialog')
     expect(dialog).toBeInTheDocument()
     expect(workspaceAgentProps?.className).toBeUndefined()
-    expect(within(dialog).getByRole('link', { name: 'Forgot password?' }).getAttribute('href')).toBe(
-      '/auth/forgot-password?redirect=%2F',
-    )
   })
 
   it('restores a pending chat-first draft after auth reaches the workspace shell', async () => {

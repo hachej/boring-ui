@@ -290,12 +290,8 @@ export function buildPromptPolicyPayload({
   }
 }
 
-export function modelOptionsForSelection(options: AvailableModel[], selected: ModelSelection | null): AvailableModel[] {
-  if (!selected) return options.filter((model) => model.available)
-  const available = options.filter((model) => model.available)
-  return available.some((model) => model.provider === selected.provider && model.id === selected.id)
-    ? available
-    : [{ ...selected, label: selected.id, available: true }, ...available]
+export function modelOptionsForSelection(options: AvailableModel[], _selected: ModelSelection | null): AvailableModel[] {
+  return options.filter((model) => model.available)
 }
 
 function readStoredScopedModel(options: PiComposerSettingsStorageOptions): ModelSelection | null {

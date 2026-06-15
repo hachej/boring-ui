@@ -58,21 +58,12 @@ function DebugValue({ label, value }: { label: string; value: string }) {
 }
 
 function SessionTab({ sessionId }: { sessionId: string }) {
-  const resumeCommand = `pi --session ${sessionId}`
-
   return (
     <div className="flex flex-col gap-3 overflow-auto p-3 text-[11px] text-muted-foreground dark:text-zinc-300">
       <p className="text-muted-foreground dark:text-zinc-300">
-        This web chat is backed by a pi session. Use the id below from the
-        workspace root to resume the same conversation in a terminal.
+        This web chat is backed by a runtime session. Use the id below for support or debugging.
       </p>
-      <DebugValue label="Pi session id" value={sessionId} />
-      <DebugValue label="Resume command" value={resumeCommand} />
-      <p className="rounded-md border border-border/30 bg-muted/10 p-2 text-[10px] leading-relaxed text-muted-foreground dark:text-zinc-300">
-        Tip: <code className="font-mono text-foreground/80">pi --continue</code>{' '}
-        opens the most recent session for the current working directory. The
-        explicit command above targets this session directly.
-      </p>
+      <DebugValue label="Runtime session id" value={sessionId} />
     </div>
   )
 }

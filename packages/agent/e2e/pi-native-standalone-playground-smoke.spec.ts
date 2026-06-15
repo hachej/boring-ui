@@ -25,7 +25,7 @@ test.describe('Standalone agent playground smoke', () => {
       await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'domcontentloaded' })
 
       await expect(page.getByRole('button', { name: 'chat' })).toBeVisible()
-      await expect(page.getByRole('region', { name: 'Pi chat debug metadata' })).toBeVisible()
+      await expect(page.getByRole('region', { name: 'Chat debug metadata' })).toBeVisible()
 
       const composer = page.locator('[data-boring-agent-part="composer-input"]')
       await expect(composer).toBeVisible({ timeout: 15_000 })
