@@ -112,6 +112,13 @@ body,
   }
 }
 
+/* Top-bias the hero + composer group instead of vertically centering it, so it
+   doesn't float to mid-screen (with a large empty band on top) on tall windows. */
+.public-chat-first-shell [class*="justify-center"]:has([data-boring-agent-part="empty-state"]) {
+  justify-content: flex-start;
+  padding-top: clamp(28px, 9vh, 132px);
+}
+
 /* Command launcher cards — make the slash commands read as runnable. */
 .public-chat-first-shell [data-boring-agent-part="suggestion-grid"] {
   margin-top: 28px;
