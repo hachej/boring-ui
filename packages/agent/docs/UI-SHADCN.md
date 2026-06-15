@@ -1,14 +1,14 @@
 # Agent UI
 
-`@boring/agent` exports the pane-embeddable `ChatPanel` and its frontend
+`@hachej/boring-agent` exports the pane-embeddable `ChatPanel` and its frontend
 primitives. The default styled surface is packaged with precompiled CSS.
 
 ## Quickstart
 
 ```tsx
-import "@boring/workspace/globals.css"
-import "@boring/agent/front/styles.css"
-import { ChatPanel } from "@boring/agent"
+import "@hachej/boring-workspace/globals.css"
+import "@hachej/boring-agent/front/styles.css"
+import { ChatPanel } from "@hachej/boring-agent"
 
 function App() {
   return <ChatPanel sessionId="my-session" />
@@ -18,8 +18,8 @@ function App() {
 Import app overrides after the package CSS when customizing:
 
 ```ts
-import "@boring/workspace/globals.css"
-import "@boring/agent/front/styles.css"
+import "@hachej/boring-workspace/globals.css"
+import "@hachej/boring-agent/front/styles.css"
 import "./app.css"
 ```
 
@@ -27,7 +27,7 @@ import "./app.css"
 
 | Concern | Contract |
 |---|---|
-| Package CSS | `@boring/agent/front/styles.css` |
+| Package CSS | `@hachej/boring-agent/front/styles.css` |
 | Root selector | `[data-boring-agent]` |
 | Parts | `[data-boring-agent-part="composer"]`, `[data-boring-agent-part="tool-card"]`, etc. |
 | Message role | `[data-boring-agent-message-role="assistant"]` |

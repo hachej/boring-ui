@@ -20,6 +20,10 @@ describe('GET /api/v1/agent/skills', () => {
     await app.close()
   })
 
+  // Ambient-skill discovery (noSkills: false) is covered end-to-end in
+  // ../../../__tests__/registerAgentRoutes.test.ts — fs fixtures are not
+  // allowed under routes/ (see scripts/check-invariants.sh).
+
   test('surfaces an error field instead of silently swallowing failures', async () => {
     const app = await buildApp({
       workspaceRoot: process.cwd(),

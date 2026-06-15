@@ -2,7 +2,7 @@
 
 ## Abandoned Vercel sandboxes (xzr)
 
-`@boring/agent` v1 intentionally does **not** implement a session-close release hook.
+`@hachej/boring-agent` v1 intentionally does **not** implement a session-close release hook.
 If a process crashes or a client disappears before cleanup, the sandbox may remain
 alive until Vercel timeout/TTL.
 
@@ -68,8 +68,8 @@ v1 status: **accepted risk**, documented and monitored.
 
 ## GitHub Connect + `/api/v1/git/*` deferred to v1.x (nfx)
 
-Git HTTP routes are intentionally not shipped in v1. Both `@boring/agent` v1
-and `@boring/workspace` v1 dropped git UI consumers, so `/api/v1/git/*` would
+Git HTTP routes are intentionally not shipped in v1. Both `@hachej/boring-agent` v1
+and `@hachej/boring-workspace` v1 dropped git UI consumers, so `/api/v1/git/*` would
 be dead code today.
 
 ### Current v1 behavior

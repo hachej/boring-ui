@@ -72,6 +72,46 @@ async function createDummySkill(): Promise<string> {
   return root
 }
 
+test('registerAgentRoutes externalPlugins=false keeps local plugin files out of catalog', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-plugin-disabled-')
+  const pluginDir = join(workspaceRoot, '.pi', 'extensions')
+  await mkdir(pluginDir, { recursive: true })
+  await writeFile(
+    join(pluginDir, 'hidden.mjs'),
+    [
+      'export default {',
+      "  name: 'a4s_embed_plugin_hidden',",
+      "  description: 'hidden embedded plugin tool',",
+      "  parameters: { type: 'object', properties: {} },",
+      '  async execute() { return { content: [{ type: \'text\', text: \'hidden\' }] } },',
+      '}',
+      '',
+    ].join('\n'),
+  )
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    externalPlugins: false,
+  })
+
+  try {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
+    expect(res.statusCode).toBe(200)
+    const names = res.json().tools.map((tool: { name: string }) => tool.name)
+    expect(names).not.toContain('a4s_embed_plugin_hidden')
+    expect(names).not.toContain('plugin_diagnostics')
+    expect(names).toContain('bash')
+    const catalogText = JSON.stringify(res.json()).toLowerCase()
+    expect(catalogText).not.toContain('boring-ui-plugin')
+    expect(catalogText).not.toContain('boring-plugin-authoring')
+    expect(catalogText).not.toContain('plugin-owned')
+    expect(catalogText).not.toContain('my-plugin')
+  } finally {
+    await app.close()
+  }
+})
+
 test('registerAgentRoutes provisions embedded runtime plugins before host app routes are ready', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-provision-')
   const packageRoot = await createDummyNodeSdkPackage()
@@ -777,6 +817,9 @@ test('skills endpoint lists Pi-resolved project skills', async () => {
   await app.register(registerAgentRoutes, {
     workspaceRoot,
     mode: 'direct',
+    // Skill discovery is off by default (withPiHarnessDefaults); hosts that
+    // want pi-resolved skills in the picker opt in, like the CLI does.
+    pi: { noSkills: false },
   })
   await app.ready()
 
@@ -784,6 +827,34 @@ test('skills endpoint lists Pi-resolved project skills', async () => {
   expect(res.statusCode).toBe(200)
   const names: string[] = res.json().skills.map((skill: { name: string }) => skill.name)
   expect(names).toContain('project-skill')
+
+  await app.close()
+})
+
+test('skills endpoint discovers workspace .agents/skills when ambient skills are enabled', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-skills-ambient-')
+  const skillRoot = join(workspaceRoot, '.agents', 'skills', 'cli-project-skill')
+  await mkdir(skillRoot, { recursive: true })
+  await writeFile(
+    join(skillRoot, 'SKILL.md'),
+    '---\nname: cli-project-skill\ndescription: Project skill visible in standalone CLI mode.\n---\n# CLI project skill\n',
+    'utf-8',
+  )
+
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    // The standalone CLI's config: ambient discovery on (default is off).
+    pi: { noSkills: false },
+  })
+  await app.ready()
+
+  const res = await app.inject({ method: 'GET', url: '/api/v1/agent/skills?refresh=1' })
+  expect(res.statusCode).toBe(200)
+  expect(res.json().skills).toEqual(expect.arrayContaining([
+    expect.objectContaining({ name: 'cli-project-skill' }),
+  ]))
 
   await app.close()
 })
@@ -802,6 +873,7 @@ test('skills endpoint does not require unrelated runtime-only dynamic hooks', as
   await app.register(registerAgentRoutes, {
     workspaceRoot,
     mode: 'direct',
+    pi: { noSkills: false },
     getSessionNamespace: () => {
       throw new Error('session namespace should not be needed for skill listing')
     },

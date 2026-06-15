@@ -651,7 +651,8 @@ export async function createCoreWorkspaceAgentServer(
     )),
   )
 
-  const installPluginAuthoring = options.installPluginAuthoring === true
+  const externalPluginsEnabled = options.externalPlugins !== false
+  const installPluginAuthoring = externalPluginsEnabled && options.installPluginAuthoring === true
   const pluginCollection = collectWorkspaceAgentServerPlugins({
     workspaceRoot: pluginWorkspaceRoot,
     systemPromptAppend: staticSystemPromptAppend,
@@ -707,6 +708,7 @@ export async function createCoreWorkspaceAgentServer(
     templatePath: options.templatePath,
     getTemplatePath: options.getTemplatePath,
     mode: options.mode,
+    externalPlugins: externalPluginsEnabled,
     version: options.version,
     extraTools: [
       ...(options.extraTools ?? []),

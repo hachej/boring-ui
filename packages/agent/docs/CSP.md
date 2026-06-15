@@ -1,6 +1,6 @@
 # CSP Compatibility
 
-`@boring/agent` is compatible with a strict CSP, with one required exception:
+`@hachej/boring-agent` is compatible with a strict CSP, with one required exception:
 `style-src` must allow inline styles for editor/runtime integrations that do
 not support nonces end-to-end.
 
@@ -20,13 +20,14 @@ Content-Security-Policy:
 
 - `script-src` does **not** require `'unsafe-eval'`.
 - No `eval()` or `new Function()` usage is expected in audited agent UI surfaces
-  (shadcn ChatPanel + example apps).
-- Shared helper lives at `src/server/http/csp.ts`; example servers consume it
-  via `examples/csp.ts`.
+  (`ChatPanel` + example apps).
+- Server helper `applyCspHeaders` lives at `src/server/http/csp.ts` (exported
+  from `@hachej/boring-agent/server`); example servers consume it via
+  `examples/csp.ts`.
 
-## Audited Scope (tv4)
+## Audited Scope
 
-- `src/front/ChatPanel.tsx`
+- `src/front/chat/PiChatPanel.tsx`
 - `examples/with-custom-tool/*`
 - `apps/agent-playground/*`
 
@@ -35,6 +36,6 @@ Content-Security-Policy:
 Even with this cleanup, downstream consumers that enable rich editor stacks
 (for example CodeMirror/Tiptap integrations in workspace-oriented shells) should
 keep `style-src 'unsafe-inline'` until upstream libraries expose nonce-safe
-style injection across the full stack. The default non-shadcn primitive
-stack (`src/front/primitives/*`) also still relies on inline style attributes,
-so `style-src 'unsafe-inline'` remains required there as well.
+style injection across the full stack. The primitive stack
+(`src/front/primitives/*`) also still relies on inline style attributes, so
+`style-src 'unsafe-inline'` remains required there as well.
