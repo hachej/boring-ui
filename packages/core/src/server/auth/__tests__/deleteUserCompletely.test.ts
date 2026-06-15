@@ -139,6 +139,12 @@ beforeEach(async () => {
     DELETE FROM verification_tokens
     WHERE identifier LIKE ${emailPattern}
   `
+  for (const table of ['boring_usage_reservations', 'boring_usage_ledger', 'boring_credit_grants', 'boring_credit_purchases']) {
+    await sqlClient`
+      DELETE FROM ${sqlClient(table)}
+      WHERE user_id IN (SELECT id::text FROM users WHERE email LIKE ${emailPattern})
+    `
+  }
   await sqlClient`
     DELETE FROM users
     WHERE email LIKE ${emailPattern}
@@ -199,6 +205,22 @@ describe('deleteUserCompletely', () => {
       WHERE identifier = ${user.email}
     `
     expect(tokensCount.count).toBe(0)
+  })
+
+  it('deletes the user credit/metering rows (grants, usage, reservations, purchases) with the account', async () => {
+    const user = await seedUser('with-credits')
+    await sqlClient`INSERT INTO boring_credit_grants (user_id, reason, amount_micros) VALUES (${user.id}, 'signup_grant', 2000000)`
+    await sqlClient`INSERT INTO boring_usage_ledger (id, user_id, source, billed_cost_micros) VALUES (${`u-${randomUUID()}`}, ${user.id}, 'pi-chat', 100000)`
+    await sqlClient`INSERT INTO boring_usage_reservations (user_id, run_id, amount_micros, expires_at) VALUES (${user.id}, ${`r-${randomUUID()}`}, 250000, NOW() + interval '1 hour')`
+    await sqlClient`INSERT INTO boring_credit_purchases (order_id, user_id, amount_micros, status) VALUES (${`ls:default:test:ord-${randomUUID()}`}, ${user.id}, 10000000, 'granted')`
+
+    await deleteUserCompletely(user.id, { db: drizzle(sqlClient) })
+
+    expect(await userStore.getById(user.id)).toBeNull()
+    for (const table of ['boring_credit_grants', 'boring_usage_ledger', 'boring_usage_reservations', 'boring_credit_purchases']) {
+      const [row] = await sqlClient`SELECT COUNT(*)::int AS count FROM ${sqlClient(table)} WHERE user_id = ${user.id}`
+      expect(row.count).toBe(0)
+    }
   })
 
   it('promotes oldest editor for sole-owner workspaces and deletes workspaces with no editors', async () => {

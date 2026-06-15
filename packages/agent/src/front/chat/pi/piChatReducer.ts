@@ -39,6 +39,10 @@ export interface PiChatRuntimeNotice {
   level: 'info' | 'warning' | 'error'
   text: string
   dismissible?: boolean
+  /** Stable, canonical server error code (a shared ErrorCode enum member) when this
+   * notice came from a rejected run. Lets a host render a recovery action for a specific
+   * code without the agent knowing what the code means. */
+  errorCode?: string
 }
 
 export interface PiChatRetryNotice {

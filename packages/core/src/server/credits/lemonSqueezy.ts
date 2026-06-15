@@ -1,0 +1,442 @@
+import { createHmac, timingSafeEqual } from 'node:crypto'
+
+/**
+ * Lemon Squeezy (Merchant of Record) credit purchases.
+ *
+ * Product-neutral: this module verifies the webhook, parses the order, and
+ * grants credits via a host-supplied grant function. The host owns how many
+ * credits an order is worth (pricing/bonus policy) and which user it belongs
+ * to. Grants are idempotent per order id, so webhook retries never double-credit.
+ *
+ * Lemon Squeezy signs webhooks with HMAC-SHA256 of the raw request body using
+ * the store's signing secret, in the `X-Signature` header.
+ */
+
+/** Verify the `X-Signature` HMAC against the raw request body. Timing-safe. */
+export function verifyLemonSqueezySignature(
+  rawBody: string | Buffer,
+  signatureHeader: string | undefined,
+  secret: string,
+): boolean {
+  if (!signatureHeader || !secret) return false
+  const expected = createHmac('sha256', secret).update(rawBody).digest('hex')
+  const a = Buffer.from(expected, 'utf8')
+  const b = Buffer.from(signatureHeader, 'utf8')
+  if (a.length !== b.length) return false
+  return timingSafeEqual(a, b)
+}
+
+/** Server-signed attribution token binding a user id to a server-created
+ * checkout. Set as `custom_data.uat`; verified on the webhook so a buyer-crafted
+ * hosted-checkout URL can't attribute a paid order to an arbitrary account. */
+export function signUserAttribution(userId: string, secret: string): string {
+  return createHmac('sha256', secret).update(`credit-user:${userId}`).digest('hex')
+}
+
+/** Verify the token against the signing secret, or ANY of several secrets (current
+ * + previous) to allow secret rotation without breaking in-flight checkout links. */
+export function verifyUserAttribution(userId: string | undefined, token: string | undefined, secret: string | readonly string[]): boolean {
+  if (!userId || !token) return false
+  const actual = Buffer.from(token, 'utf8')
+  const secrets = typeof secret === 'string' ? [secret] : secret
+  return secrets.some((s) => {
+    if (!s) return false
+    const expected = Buffer.from(signUserAttribution(userId, s), 'utf8')
+    if (expected.length !== actual.length) return false
+    return timingSafeEqual(expected, actual)
+  })
+}
+
+export interface LemonSqueezyOrder {
+  eventName: string
+  orderId: string
+  /** From checkout `custom_data.user_id` — who to credit. */
+  userId?: string
+  /** From checkout `custom_data.uat` — server-signed HMAC binding the user_id to
+   * a server-created checkout (a crafted hosted-checkout URL can't forge it). */
+  userAttributionToken?: string
+  userEmail?: string
+  status?: string
+  /** Test/live mode. `undefined` when the payload omitted it — treated as a
+   * MISMATCH by isCreditOrder (never silently assumed live). */
+  testMode?: boolean
+  /** Lemon Squeezy store the order belongs to. */
+  storeId?: string
+  currency?: string
+  /** Pre-tax order amount in cents. `undefined` if the field was ABSENT (vs a real 0)
+   * so the underpayment check can fail closed on a missing required money field. */
+  subtotalCents: number | undefined
+  /** Discount applied, pre-tax, in cents. Net paid pre-tax = subtotal − discount.
+   * `undefined` if absent (presence-preserving — a missing discount must not look
+   * like a real 0, which could over-credit a discounted order). */
+  discountTotalCents: number | undefined
+  /** Tax-inclusive total in cents (MoR adds VAT here). `undefined` if absent. */
+  totalCents: number | undefined
+  /** Tax amount in cents (0 when no tax). Net paid pre-tax also = total − tax, an
+   * independent cross-check against subtotal − discount. */
+  taxCents: number
+  /** Whether the order has been (fully or partially) refunded. */
+  refunded: boolean
+  /** Cumulative amount refunded so far, tax-inclusive, in cents. */
+  refundedAmountCents: number
+  variantId?: string
+  /** Units of the pack purchased (default 1). Credits scale with it. */
+  quantity: number
+  productName?: string
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+function asNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+/** Presence-preserving numeric parse for money fields the underpayment invariant
+ * depends on: a MISSING/non-numeric field becomes `undefined` (not silently 0), so
+ * validation can fail closed on an absent required field rather than treat it as a
+ * real zero (which could mask an under-paid/over-credited order). */
+function asOptionalNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+/** Normalize a nullable LS id (store_id / variant_id) to a present string or
+ * `undefined`. A literal `null` must NOT become the string "null" — that would read
+ * as a PRESENT value and a present mismatch (e.g. against expectedStoreId), which would
+ * 200-ignore a paid order as foreign, or skip revoking a refund. Absent ⇒ undefined,
+ * so the strict/lenient identity checks see it as genuinely missing. */
+function asOptionalId(value: unknown): string | undefined {
+  if (value === null || value === undefined) return undefined
+  const s = String(value)
+  return s.length > 0 ? s : undefined
+}
+
+/**
+ * Parse a Lemon Squeezy webhook payload into a normalized order. Returns null
+ * for non-order or malformed payloads.
+ */
+export function parseLemonSqueezyOrder(payload: unknown): LemonSqueezyOrder | null {
+  const root = asRecord(payload)
+  const meta = asRecord(root?.meta)
+  const data = asRecord(root?.data)
+  const attrs = asRecord(data?.attributes)
+  const eventName = asString(meta?.event_name)
+  const orderId = asString(data?.id)
+  if (!eventName || !orderId || !attrs) return null
+
+  const customData = asRecord(meta?.custom_data)
+  const firstItem = asRecord(attrs.first_order_item)
+
+  return {
+    eventName,
+    orderId,
+    userId: asString(customData?.user_id),
+    userAttributionToken: asString(customData?.uat),
+    userEmail: asString(attrs.user_email),
+    status: asString(attrs.status),
+    testMode: typeof attrs.test_mode === 'boolean' ? attrs.test_mode : undefined,
+    storeId: asOptionalId(attrs.store_id),
+    currency: asString(attrs.currency),
+    subtotalCents: asOptionalNumber(attrs.subtotal),
+    discountTotalCents: asOptionalNumber(attrs.discount_total),
+    totalCents: asOptionalNumber(attrs.total),
+    taxCents: asNumber(attrs.tax),
+    refunded: attrs.refunded === true,
+    refundedAmountCents: asNumber(attrs.refunded_amount),
+    variantId: asOptionalId(firstItem?.variant_id),
+    quantity: (() => { const q = asNumber(firstItem?.quantity); return Number.isInteger(q) && q > 0 ? q : 1 })(),
+    productName: asString(firstItem?.product_name),
+  }
+}
+
+export interface LemonSqueezyWebhookOptions {
+  secret: string
+  /** Credit amount (micros of your credit unit) to grant for this order. */
+  creditsForOrder: (order: LemonSqueezyOrder) => number
+  /**
+   * Resolve the user to credit. Defaults to `order.userId` (custom_data).
+   * SECURITY: only trust custom_data.user_id when checkouts are created
+   * SERVER-side (see createLemonSqueezyCheckout) so the id is set by your
+   * server, not a client-editable hosted-checkout URL. Because the server sets
+   * a deterministic user per order, `purchase:<orderId>` is then effectively a
+   * per-order idempotency key (the same order never maps to two users).
+   */
+  resolveUserId?: (order: LemonSqueezyOrder) => string | undefined
+  /** Optional: returns whether the resolved user still exists. When provided, a credit
+   * order for a non-existent (deleted) user is 200-acked WITHOUT granting, so a stale
+   * webhook can't resurrect a deleted user's purchase/grant rows (PII). */
+  userExists?: (userId: string) => Promise<boolean>
+  /** When set, the order's `custom_data.uat` MUST be a valid attribution token
+   * for its user_id (signUserAttribution) or the order is not credited — binds
+   * attribution to a server-created checkout, not a buyer-supplied user_id. May be
+   * an array (current + previous secrets) to allow rotation: a token signed with any
+   * listed secret verifies, so in-flight checkout links survive a secret rotation. */
+  attributionSecret?: string | readonly string[]
+  /** Grant credits idempotently. `reason` is `purchase:<orderId>` (the
+   * idempotency key); `orderId` is provided so callers don't re-parse it. The
+   * full `order` is passed so the grant can persist provider identity. */
+  grant: (input: { userId: string; orderId: string; reason: string; amountMicros: number }, order: LemonSqueezyOrder) => Promise<{ created: boolean }>
+  /** Which events to credit on. Defaults to `order_created`. */
+  creditableEvents?: string[]
+  /**
+   * Confirm this paid order is actually a credit-pack purchase before granting
+   * (currency, mode, and that the variant is a configured pack). REQUIRED:
+   * without it, ANY signed paid order on the store would mint credits. Returning
+   * false acks the webhook without crediting.
+   */
+  isCreditOrder: (order: LemonSqueezyOrder) => boolean
+  /** Optional STRICT check: is this order on OUR store/mode/currency (ignoring the
+   * variant, all fields required)? Provide it ONLY for a credit-only store: then a
+   * paid order that's ours but NOT a credit order (unknown/misconfigured variant)
+   * returns a retryable 500 instead of a 200 ack — so a paid customer isn't left
+   * without credits. Omit it for a MIXED store (credits + other products), so a
+   * legitimate non-credit order is 200-ignored rather than retried/alerted forever. */
+  isOurStoreOrder?: (order: LemonSqueezyOrder) => boolean
+  /** Optional LENIENT check for REFUNDS: a refund payload may omit store/mode/
+   * currency, so a missing field passes and only a present-and-mismatched field
+   * rejects. A refund failing this is ignored (can't revoke a credited order by
+   * order id alone). Defaults to always-true when omitted. */
+  isRefundForOurStore?: (order: LemonSqueezyOrder) => boolean
+  /** Optional check: is this a paid order for a KNOWN credit-pack variant whose
+   * store/mode/currency identity is INCOMPLETE (a required field is missing rather
+   * than present-and-mismatched)? When true, the webhook returns a retryable 500
+   * instead of a silent 200 `not_a_credit_order` — a recognized paid pack we can't
+   * safely attribute must fail loud (parser gap / LS payload change), not drop the
+   * customer's credits. A genuinely foreign order (present field contradicts our
+   * config) is NOT this case and is still 200-ignored. */
+  isUnverifiedCreditOrder?: (order: LemonSqueezyOrder) => boolean
+  /** Credit micros per 1 currency unit (e.g. 1_000_000 = €0.000001/credit). When
+   * set, the webhook refuses to mint a fixed pack value unless the net paid
+   * amount (subtotal − discount) covers it — so a dashboard/manual discount or LS
+   * bug can't grant full credits for an underpaid order. */
+  creditMicrosPerUnit?: number
+  /** Events that revoke a previously-credited purchase. Default `order_refunded`. */
+  refundEvents?: string[]
+  /** Revoke a refunded/disputed order's credits (idempotent per order). REQUIRED
+   * so a refund is never silently dropped (which would leave a refunded order
+   * credited). */
+  onRefund: (order: LemonSqueezyOrder) => Promise<{ revoked: boolean }>
+  log?: (message: string, fields?: Record<string, unknown>) => void
+}
+
+export interface LemonSqueezyWebhookResult {
+  status: number
+  body: { ok: boolean; reason?: string; orderId?: string; created?: boolean }
+}
+
+/**
+ * Full webhook handler: verify signature → parse → grant. Framework-agnostic
+ * (takes the raw body + header) so the host wires it to any router with raw-body
+ * access. Returns the HTTP status + JSON body to send.
+ */
+export async function handleLemonSqueezyWebhook(
+  rawBody: string | Buffer,
+  signatureHeader: string | undefined,
+  options: LemonSqueezyWebhookOptions,
+): Promise<LemonSqueezyWebhookResult> {
+  if (!verifyLemonSqueezySignature(rawBody, signatureHeader, options.secret)) {
+    return { status: 401, body: { ok: false, reason: 'invalid_signature' } }
+  }
+
+  let payload: unknown
+  try {
+    payload = JSON.parse(typeof rawBody === 'string' ? rawBody : rawBody.toString('utf8'))
+  } catch {
+    return { status: 400, body: { ok: false, reason: 'invalid_json' } }
+  }
+
+  const order = parseLemonSqueezyOrder(payload)
+  if (!order) {
+    return { status: 400, body: { ok: false, reason: 'unparseable_order' } }
+  }
+
+  // Refund/dispute events revoke the order's credits (idempotent per order).
+  const refundEvents = options.refundEvents ?? ['order_refunded']
+  if (refundEvents.includes(order.eventName)) {
+    // A refund whose payload claims a DIFFERENT store/mode/currency than ours must
+    // not revoke a credited order by order id alone (defense beyond the per-store/
+    // mode webhook secret). LENIENT: a refund that OMITS these fields still
+    // revokes (the credited row carries the validated identity); only a present
+    // mismatch is rejected. Variant isn't checked, so a retired-variant refund
+    // is still revocable.
+    if (options.isRefundForOurStore && !options.isRefundForOurStore(order)) {
+      options.log?.('lemonsqueezy refund payload is not for our store/mode/currency — ignoring', {
+        orderId: order.orderId, storeId: order.storeId, currency: order.currency, testMode: order.testMode,
+      })
+      return { status: 200, body: { ok: true, reason: 'refund_not_our_store', orderId: order.orderId } }
+    }
+    // Reconcile against the order we actually credited (looked up by id). onRefund
+    // tombstones an UNKNOWN order only when it still validates as a credit order.
+    const { revoked } = await options.onRefund(order)
+    options.log?.('lemonsqueezy refund processed', { orderId: order.orderId, revoked })
+    return { status: 200, body: { ok: true, reason: revoked ? 'refund_revoked' : 'refund_noop', orderId: order.orderId } }
+  }
+
+  const creditable = options.creditableEvents ?? ['order_created']
+  if (!creditable.includes(order.eventName)) {
+    // Acknowledge other events (subscriptions, etc.) so LS stops retrying.
+    return { status: 200, body: { ok: true, reason: 'ignored_event', orderId: order.orderId } }
+  }
+  // Require an explicit paid status — a missing/other status must not grant.
+  if (order.status !== 'paid') {
+    // A MISSING/unparseable status (vs a KNOWN non-paid state like pending/refunded)
+    // on what looks like OUR credit order is a parser/API-shape gap — fail loud (500,
+    // retryable) rather than silently 200-drop a possibly-paid order. A known non-paid
+    // status, or a non-credit order, is a legit 200 ack.
+    const statusMissing = !order.status
+    const looksLikeOurCreditOrder =
+      options.isCreditOrder(order) || Boolean(options.isOurStoreOrder?.(order)) || Boolean(options.isUnverifiedCreditOrder?.(order))
+    if (statusMissing && looksLikeOurCreditOrder) {
+      options.log?.('lemonsqueezy recognized credit order has a missing/unparseable status — failing loud so a possibly-paid order is not dropped', {
+        orderId: order.orderId, variantId: order.variantId, currency: order.currency, testMode: order.testMode,
+      })
+      return { status: 500, body: { ok: false, reason: 'order_status_missing', orderId: order.orderId } }
+    }
+    return { status: 200, body: { ok: true, reason: `order_status_${order.status ?? 'unknown'}`, orderId: order.orderId } }
+  }
+  // Confirm it's actually a credit-pack purchase (currency/mode/variant).
+  if (!options.isCreditOrder(order)) {
+    // KNOWN credit variant whose store/mode/currency identity is incomplete (a missing
+    // field, not a present mismatch) → can't safely attribute → fail loud (500).
+    // Checked FIRST so a known-variant order gets the precise reason even when the
+    // (credit-only-store) our-store predicate below is lenient about missing identity.
+    if (options.isUnverifiedCreditOrder?.(order)) {
+      options.log?.('lemonsqueezy paid order for a known credit variant has incomplete store/mode/currency identity — not crediting, retrying', {
+        orderId: order.orderId, variantId: order.variantId, currency: order.currency, testMode: order.testMode, storeId: order.storeId,
+      })
+      return { status: 500, body: { ok: false, reason: 'unverified_credit_order', orderId: order.orderId } }
+    }
+    // A paid order that's OURS but has an UNKNOWN variant is a pack misconfiguration —
+    // the customer paid and would get nothing. Surface it with a retryable 500. For a
+    // credit-only store the route passes a LENIENT predicate here (missing store/mode
+    // identity still counts as ours; only a PRESENT contradiction is exempt), so a
+    // misconfigured new pack whose payload omits store_id isn't silently 200-dropped.
+    if (options.isOurStoreOrder?.(order)) {
+      options.log?.('lemonsqueezy paid order on our store has an unrecognized credit variant — not crediting', {
+        orderId: order.orderId, variantId: order.variantId, currency: order.currency, testMode: order.testMode, storeId: order.storeId,
+      })
+      return { status: 500, body: { ok: false, reason: 'unrecognized_credit_variant', orderId: order.orderId } }
+    }
+    options.log?.('lemonsqueezy paid order is not a recognized credit pack', {
+      orderId: order.orderId, variantId: order.variantId, currency: order.currency, testMode: order.testMode,
+    })
+    return { status: 200, body: { ok: true, reason: 'not_a_credit_order', orderId: order.orderId } }
+  }
+
+  // Bind attribution to a server-created checkout: reject a user_id that isn't
+  // accompanied by a valid server-signed token (a crafted hosted-checkout URL
+  // could otherwise carry an arbitrary user_id). attributionSecret UNDEFINED ⇒ no
+  // attribution required (explicit opt-out by omission). But a PROVIDED-yet-empty /
+  // all-blank array is a misconfiguration that would silently DISABLE verification —
+  // fail closed by normalizing it to the webhook `secret`, so verification stays
+  // enforced. (registerCreditsRoutes also normalizes; this guards direct callers.)
+  if (options.attributionSecret !== undefined) {
+    const provided = typeof options.attributionSecret === 'string'
+      ? [options.attributionSecret]
+      : options.attributionSecret
+    const attributionSecrets = provided.filter((s) => typeof s === 'string' && s.length > 0)
+    const effectiveSecrets = attributionSecrets.length > 0 ? attributionSecrets : [options.secret]
+    if (!verifyUserAttribution(order.userId, order.userAttributionToken, effectiveSecrets)) {
+      options.log?.('lemonsqueezy order user attribution token invalid/missing — not crediting', { orderId: order.orderId })
+      return { status: 500, body: { ok: false, reason: 'untrusted_attribution', orderId: order.orderId } }
+    }
+  }
+
+  const userId = (options.resolveUserId ?? ((o) => o.userId))(order)
+  if (!userId) {
+    options.log?.('lemonsqueezy PAID credit order missing user id — not crediting; returning 500 so LS retries', { orderId: order.orderId })
+    // The customer paid: a 200 ack would drop the order and lose the credits.
+    // Return 500 so Lemon Squeezy retries (its retry window surfaces it for
+    // operator reconcile). Server-side checkout always sets user_id, so this is
+    // an exceptional path, not the norm.
+    return { status: 500, body: { ok: false, reason: 'missing_user_id', orderId: order.orderId } }
+  }
+  // A stale/delayed order_created (or a checkout URL that outlived the account) must not
+  // recreate purchase/grant rows for a DELETED user — that would resurrect their PII
+  // after account deletion. If the resolved user no longer exists, ACK 200 (don't
+  // retry — the account is gone, retrying can't help) and log for operator reconcile
+  // (the charge is refundable operator-side). Skipped when no userExists check is wired.
+  if (options.userExists && !(await options.userExists(userId))) {
+    options.log?.('lemonsqueezy credit order for a non-existent (deleted) user — not crediting (no PII resurrection)', { orderId: order.orderId, userId })
+    return { status: 200, body: { ok: true, reason: 'user_not_found', orderId: order.orderId } }
+  }
+
+  const amountMicros = options.creditsForOrder(order)
+  if (!Number.isSafeInteger(amountMicros) || amountMicros <= 0) {
+    options.log?.('lemonsqueezy recognized credit order resolved to non-positive credits — config bug', { orderId: order.orderId, amountMicros })
+    // Recognized, paid credit order that we can't credit (config bug): 500 so LS
+    // retries and the failure surfaces, rather than a 200 that drops a paid order.
+    return { status: 500, body: { ok: false, reason: 'no_credit_amount', orderId: order.orderId } }
+  }
+
+  // Don't mint a fixed pack value for an underpaid order: require the net paid
+  // amount (subtotal − discount, pre-tax) to cover the credits being granted.
+  if (typeof options.creditMicrosPerUnit === 'number' && options.creditMicrosPerUnit > 0) {
+    // Fail CLOSED on an ABSENT required money field: a missing subtotal/discount/total
+    // is `undefined` (not silently 0), so a parser/API gap can't masquerade as a real
+    // zero and over-credit. taxCents defaults to 0 (LS sends 0 when no tax).
+    const { subtotalCents, discountTotalCents, totalCents, taxCents } = order
+    if (subtotalCents === undefined || discountTotalCents === undefined || totalCents === undefined) {
+      options.log?.('lemonsqueezy order is MISSING a required money field (subtotal/discount/total) — not granting', {
+        orderId: order.orderId, subtotalCents, discountTotalCents, totalCents,
+      })
+      return { status: 500, body: { ok: false, reason: 'invalid_money_fields', orderId: order.orderId } }
+    }
+    // Cross-check the pre-tax net computed TWO independent ways:
+    //   netA = subtotal − discount   (the basis we credit on)
+    //   netB = total − tax           (the actual cash received, less tax remitted)
+    // Require netA ≤ netB (+1-cent slack). For a legit order netA == netB, or netB is
+    // slightly larger (one-time setup fees ride in `total`). The over-credit case is
+    // netA > netB: a discount the field didn't report inflates netA, while netB (from
+    // the real charged `total`, less tax) reflects what was actually paid. Combined
+    // with the presence guard above, a missing discount can no longer hide behind tax.
+    const netFromSubtotal = subtotalCents - discountTotalCents
+    const netFromTotal = totalCents - taxCents
+    const moneySane =
+      subtotalCents >= 0 &&
+      discountTotalCents >= 0 &&
+      totalCents > 0 &&
+      Number.isFinite(taxCents) && taxCents >= 0 &&
+      subtotalCents >= discountTotalCents &&
+      totalCents >= taxCents &&
+      netFromSubtotal <= netFromTotal + 1
+    if (!moneySane) {
+      options.log?.('lemonsqueezy order has inconsistent money fields — not granting', {
+        orderId: order.orderId, subtotalCents, discountTotalCents, totalCents, taxCents,
+      })
+      return { status: 500, body: { ok: false, reason: 'invalid_money_fields', orderId: order.orderId } }
+    }
+    // LS can report fractional cents (a tax-rounding artifact, e.g. 1499.985 for a
+    // €15 pack). Tolerate a shortfall of strictly LESS than one cent (the artifact)
+    // but reject a genuine one-cent-or-more underpayment (discount/price bug).
+    const oneCentMicros = options.creditMicrosPerUnit / 100
+    const netPaidMicros = Math.max(0, netFromSubtotal) * oneCentMicros
+    if (netPaidMicros + oneCentMicros <= amountMicros) {
+      options.log?.('lemonsqueezy order underpaid for the credits it maps to — not granting', {
+        orderId: order.orderId, amountMicros, netPaidMicros, subtotalCents: order.subtotalCents, discountTotalCents: order.discountTotalCents,
+      })
+      // A recognized paid order that didn't cover its pack value: 500 so LS
+      // retries and the failed delivery surfaces for operator reconcile (refund
+      // or manual credit), rather than a 200 that silently drops a paid order.
+      return { status: 500, body: { ok: false, reason: 'underpaid_order', orderId: order.orderId } }
+    }
+  }
+
+  const { created } = await options.grant(
+    {
+      userId,
+      orderId: order.orderId,
+      reason: `purchase:${order.orderId}`,
+      amountMicros,
+    },
+    order,
+  )
+  return { status: 200, body: { ok: true, orderId: order.orderId, created } }
+}

@@ -49,7 +49,9 @@ export interface CoreWorkspaceAgentFrontProps<
   bootPreloadPaths?: string[]
 }
 
-function DefaultTopBarRight() {
+/** Default top-bar right content. Exported so apps can compose extra widgets
+ * (e.g. a credit balance badge) alongside the user menu. */
+export function DefaultTopBarRight() {
   // Theme switching lives in the UserMenu for the full app, so no separate
   // top-bar toggle here (that's only for standalone hosts like the playground).
   return <UserMenu />

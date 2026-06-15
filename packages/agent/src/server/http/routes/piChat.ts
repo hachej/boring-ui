@@ -412,5 +412,6 @@ function statusCodeFromError(err: unknown): number {
   }
   const parsedCode = ErrorCode.safeParse((err as { code?: unknown })?.code)
   if (parsedCode.success && parsedCode.data === ErrorCode.enum.SESSION_NOT_FOUND) return 404
+  if (parsedCode.success && parsedCode.data === ErrorCode.enum.PAYMENT_REQUIRED) return 402
   return 500
 }

@@ -78,6 +78,34 @@
       "when": 1779537600000,
       "tag": "0010_telemetry_events",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1781308800000,
+      "tag": "0011_usage_metering",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1781395200000,
+      "tag": "0012_credit_purchases",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1781481600000,
+      "tag": "0013_credit_purchase_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1781568000000,
+      "tag": "0014_reservation_charge_on_expire",
+      "breakpoints": true
     }
   ]
 }

@@ -45,6 +45,7 @@ import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
 import type { AgentHarness } from '../shared/harness'
 import { HarnessPiChatService } from './pi-chat/harnessPiChatService'
+import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 
 const DEFAULT_VERSION = '0.1.0-dev'
@@ -289,6 +290,13 @@ export interface RegisterAgentRoutesOptions {
   sessionNamespace?: string
   /** Optional best-effort telemetry sink supplied by an embedding host. */
   telemetry?: TelemetrySink
+  /**
+   * Optional billing sink for native Pi usage. Reserve happens before
+   * accepted prompt/follow-up execution (fail closed), usage is recorded from
+   * native assistant message_end events, and runs settle/release from native
+   * terminal lifecycle. See AgentMeteringSink.
+   */
+  metering?: AgentMeteringSink
   /**
    * Enable user/global Pi extension auto-discovery from .pi/ and ~/.pi.
    * App/internal plugins should be passed through extraTools/pi instead.
@@ -938,6 +946,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         harness: binding.harness,
         sessionStore: binding.harness.sessions,
         workdir: binding.runtimeBundle.workspace.root,
+        metering: opts.metering,
       })
       return binding.piChatService
     },

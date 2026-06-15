@@ -21,6 +21,7 @@ All API failures must use the response envelope:
 
 | Code | When it fires | HTTP status | Suggested client action | Log level | Stability |
 | --- | --- | --- | --- | --- | --- |
+| `UNAUTHORIZED` | Request reached a protected path (e.g. credit metering) without an authenticated user | 401 | re-auth | warn | stable (public API) |
 | `MISSING_API_KEY` | Required provider API key missing from runtime config | 500 | report-bug | error | stable (public API) |
 | `INVALID_API_KEY` | Provider rejects API key as malformed/invalid | 401 | re-auth | warn | stable (public API) |
 | `OIDC_REFRESH_FAILED` | OIDC refresh token exchange fails | 401 | re-auth | warn | stable (public API) |
@@ -47,6 +48,7 @@ All API failures must use the response envelope:
 | `REMOTE_WORKER_STREAM_CLOSED` | Remote worker filesystem event stream closed unexpectedly | 502 | retry | warn | stable (public API) |
 | `CIRCUIT_OPEN` | Circuit breaker open; request fast-failed | 503 | retry | warn | stable (public API) |
 | `ABORTED` | Request cancelled via `AbortSignal` | 499 | retry | warn | stable (public API) |
+| `PAYMENT_REQUIRED` | Billing/metering sink rejected the run (e.g. credits exhausted) | 402 | user-fix | warn | stable (public API) |
 | `SESSION_NOT_FOUND` | Session id does not exist | 404 | user-fix | warn | stable (public API) |
 | `SESSION_LOCKED` | Session currently locked by concurrent writer | 409 | retry | warn | stable (public API) |
 | `STREAM_BUFFER_EVICTED` | Resume cursor evicted from in-memory stream buffer | 410 | retry | warn | stable (public API) |

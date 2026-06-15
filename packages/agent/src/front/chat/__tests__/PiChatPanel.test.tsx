@@ -119,6 +119,13 @@ class FakeRemotePiSession {
     this.state = state
     for (const listener of this.listeners) listener()
   }
+
+  // Set by remoteFactory from the session options; lets tests push stream events
+  // (e.g. agent-end) the way RemotePiSession would when frames arrive.
+  onEvent?: (event: unknown) => void
+  emit(event: unknown): void {
+    this.onEvent?.(event)
+  }
 }
 
 function remoteState(overrides: Partial<PiChatState> = {}): PiChatState {
@@ -142,6 +149,7 @@ function remoteFactory(remote: FakeRemotePiSession) {
       workspaceId: options.workspaceId,
       storageScope: options.storageScope ?? remote.state.storageScope,
     }
+    remote.onEvent = options.onEvent as ((event: unknown) => void) | undefined
     return remote as unknown as RemotePiSession
   })
   return factory
@@ -343,6 +351,87 @@ describe('PiChatPanel sandbox shell', () => {
     await waitFor(() => expect(screen.queryByTestId('chat-working')).toBeNull())
     expect(document.querySelector('[data-boring-agent-part="chat-working-slot"]')).toBe(slot)
     expect(slot?.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  test('surfaces a rejected run as one notice, re-appears after dismissal, and never reports a turn', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
+    // A canonical, non-billing ErrorCode — the seam is generic; the host decides the action.
+    remote.prompt.mockRejectedValue(Object.assign(new Error('Session is locked.'), { errorCode: 'SESSION_LOCKED' }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+    const onTurnComplete = vi.fn()
+    const renderNoticeAction = vi.fn((notice: { errorCode?: string }) =>
+      notice.errorCode === 'SESSION_LOCKED' ? <button type="button">Resolve</button> : null,
+    )
+    render(
+      <PiChatPanel
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+        renderNoticeAction={renderNoticeAction}
+        onTurnComplete={onTurnComplete}
+      />,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'expensive prompt' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledTimes(1))
+    // The rejection surfaces as a single run-rejected notice carrying the server code.
+    const notice = await waitFor(() => {
+      const el = document.querySelector('[data-runtime-notice-id="run-rejected"]')
+      if (!el) throw new Error('run-rejected notice not yet rendered')
+      return el
+    })
+    expect(notice.textContent).toContain('Session is locked.')
+    expect(renderNoticeAction).toHaveBeenCalledWith(expect.objectContaining({ errorCode: 'SESSION_LOCKED' }))
+    expect(within(notice as HTMLElement).getByRole('button', { name: 'Resolve' })).toBeTruthy()
+
+    // Dismissing it must not suppress it permanently — a fresh rejection re-renders it.
+    fireEvent.click(within(notice as HTMLElement).getByRole('button', { name: 'Dismiss notice' }))
+    await waitFor(() => expect(document.querySelector('[data-runtime-notice-id="run-rejected"]')).toBeNull())
+
+    fireEvent.change(textarea, { target: { value: 'try again' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(document.querySelector('[data-runtime-notice-id="run-rejected"]')).toBeTruthy())
+
+    // A rejected send never admits a server turn, so it must not report one.
+    expect(onTurnComplete).not.toHaveBeenCalled()
+  })
+
+  test('fires onTurnComplete per turn-settle event, including back-to-back queued turns', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+    const onTurnComplete = vi.fn()
+    render(
+      <PiChatPanel
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+        onTurnComplete={onTurnComplete}
+      />,
+    )
+
+    await screen.findByText('committed from /state')
+    expect(onTurnComplete).not.toHaveBeenCalled()
+
+    // Non-settle events don't trigger it.
+    act(() => { remote.emit({ type: 'agent-start', seq: 8, turnId: 't1' }) })
+    expect(onTurnComplete).not.toHaveBeenCalled()
+
+    // A non-terminal (auto-retry) end must NOT count as a settle.
+    act(() => { remote.emit({ type: 'agent-end', seq: 9, turnId: 't1', status: 'error', willRetry: true }) })
+    expect(onTurnComplete).not.toHaveBeenCalled()
+
+    // Each TERMINAL agent-end is one settled turn — fires once each, even back-to-back
+    // (no reliance on a rendered streaming→idle→streaming flicker the store may coalesce).
+    act(() => { remote.emit({ type: 'agent-end', seq: 10, turnId: 't1', status: 'ok' }) })
+    await waitFor(() => expect(onTurnComplete).toHaveBeenCalledTimes(1))
+    act(() => { remote.emit({ type: 'agent-end', seq: 11, turnId: 't2', status: 'ok' }) })
+    await waitFor(() => expect(onTurnComplete).toHaveBeenCalledTimes(2))
   })
 
   test('shows session controls by default for managed Pi sessions', async () => {
