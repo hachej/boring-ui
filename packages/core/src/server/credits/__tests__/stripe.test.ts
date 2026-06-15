@@ -132,6 +132,14 @@ describe('handleStripeWebhook', () => {
     expect(res.body.reason).toBe('underpaid_order')
   })
 
+  it('uses the NET (discount-aware) amount: a discounted pack-10 session is underpaid', async () => {
+    // subtotal looks like a full pack-10 (1000) but a discount drops the real paid total.
+    const body = completedEvent({ amount_subtotal: 1000, amount_total: 400, total_details: { amount_discount: 600, amount_tax: 0 } })
+    const res = await handleStripeWebhook(body, sign(body), makeOptions())
+    expect(res.status).toBe(500)
+    expect(res.body.reason).toBe('underpaid_order')
+  })
+
   it('500s an unknown pack paid on our store (credit-only), 200-ignores a foreign-currency order', async () => {
     const unknown = completedEvent({ metadata: { user_id: 'u1', pack_id: '99' } })
     expect((await handleStripeWebhook(unknown, sign(unknown), makeOptions())).status).toBe(500)

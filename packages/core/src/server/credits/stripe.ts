@@ -85,10 +85,14 @@ export interface StripeOrder {
   livemode?: boolean
   /** Lowercase ISO currency (e.g. 'chf'). */
   currency?: string
-  /** Pre-tax amount in minor units (the underpayment basis). `undefined` if absent. */
+  /** Pre-tax, PRE-discount amount in minor units (Stripe `amount_subtotal`). */
   amountSubtotalMinor?: number
-  /** Tax-inclusive amount in minor units. `undefined` if absent. */
+  /** Tax+discount-inclusive amount in minor units (Stripe `amount_total`). */
   amountTotalMinor?: number
+  /** Discount applied, minor units (Stripe `total_details.amount_discount`). */
+  amountDiscountMinor?: number
+  /** Tax, minor units (Stripe `total_details.amount_tax`). */
+  amountTaxMinor?: number
   /** Pack id (metadata.pack_id). The route maps it to the CONFIGURED credit value for a
    * fixed pack, or credits the amount paid for the custom pay-what-you-want pack. There is
    * deliberately NO buyer-influenceable credit amount in metadata. */
@@ -116,6 +120,29 @@ function asId(value: unknown): string | undefined {
   const id = asRecord(value)?.id
   return typeof id === 'string' && id.length > 0 ? id : undefined
 }
+/**
+ * Validated NET pre-tax amount paid, in minor units, or null when the money fields are
+ * missing/inconsistent (fail closed). Net = amount_subtotal − amount_discount, cross-checked
+ * against amount_total − amount_tax (the two must agree within 1 minor unit). This is the
+ * authoritative basis for BOTH the fixed-pack underpayment guard and the custom pack's
+ * credit amount, so a Dashboard/coupon discount can't mint credits the buyer didn't pay for.
+ */
+export function stripeNetPaidMinor(order: StripeOrder): number | null {
+  const sub = order.amountSubtotalMinor
+  const total = order.amountTotalMinor
+  const disc = order.amountDiscountMinor ?? 0
+  const tax = order.amountTaxMinor ?? 0
+  if (typeof sub !== 'number' || typeof total !== 'number') return null
+  const netFromSubtotal = sub - disc
+  const netFromTotal = total - tax
+  const sane =
+    sub >= 0 && disc >= 0 && total >= 0 && tax >= 0 &&
+    sub >= disc && total >= tax &&
+    netFromSubtotal <= netFromTotal + 1
+  if (!sane) return null
+  return Math.max(0, netFromSubtotal)
+}
+
 /** Parse a Stripe webhook event into a normalized order. Returns null if not an event. */
 export function parseStripeEvent(payload: unknown): StripeOrder | null {
   const root = asRecord(payload)
@@ -126,6 +153,7 @@ export function parseStripeEvent(payload: unknown): StripeOrder | null {
   // checkout.session.* — a purchase.
   if (eventType.startsWith('checkout.session.')) {
     const meta = asRecord(object.metadata)
+    const totals = asRecord(object.total_details)
     return {
       eventType,
       paymentIntentId: asId(object.payment_intent),
@@ -136,6 +164,8 @@ export function parseStripeEvent(payload: unknown): StripeOrder | null {
       currency: asString(object.currency)?.toLowerCase(),
       amountSubtotalMinor: asOptionalNumber(object.amount_subtotal),
       amountTotalMinor: asOptionalNumber(object.amount_total),
+      amountDiscountMinor: asOptionalNumber(totals?.amount_discount),
+      amountTaxMinor: asOptionalNumber(totals?.amount_tax),
       packId: asString(meta?.pack_id),
     }
   }
@@ -293,17 +323,19 @@ export async function handleStripeWebhook(
     return { status: 500, body: { ok: false, reason: 'no_credit_amount', orderId: order.paymentIntentId } }
   }
 
-  // Underpayment guard: the net pre-tax paid (amount_subtotal) must cover the credits.
+  // Underpayment guard: the NET pre-tax paid (subtotal − discount, cross-checked against
+  // total − tax) must cover the credits — so a Dashboard/coupon discount can't mint a
+  // full pack value the buyer didn't pay for.
   if (typeof options.creditMicrosPerUnit === 'number' && options.creditMicrosPerUnit > 0) {
-    const subtotal = order.amountSubtotalMinor
-    if (subtotal === undefined || !Number.isFinite(subtotal) || subtotal < 0) {
-      options.log?.('stripe order missing/invalid amount_subtotal — not granting', { paymentIntentId: order.paymentIntentId, subtotal })
+    const netPaidMinor = stripeNetPaidMinor(order)
+    if (netPaidMinor === null) {
+      options.log?.('stripe order has missing/inconsistent money fields — not granting', { paymentIntentId: order.paymentIntentId, amountSubtotalMinor: order.amountSubtotalMinor, amountTotalMinor: order.amountTotalMinor, amountDiscountMinor: order.amountDiscountMinor, amountTaxMinor: order.amountTaxMinor })
       return { status: 500, body: { ok: false, reason: 'invalid_money_fields', orderId: order.paymentIntentId } }
     }
     const oneUnitMinorMicros = options.creditMicrosPerUnit / 100 // micros per 1 minor unit
-    const netPaidMicros = subtotal * oneUnitMinorMicros
+    const netPaidMicros = netPaidMinor * oneUnitMinorMicros
     if (netPaidMicros + oneUnitMinorMicros <= amountMicros) {
-      options.log?.('stripe order underpaid for the credits it maps to — not granting', { paymentIntentId: order.paymentIntentId, amountMicros, netPaidMicros, subtotal })
+      options.log?.('stripe order underpaid for the credits it maps to — not granting', { paymentIntentId: order.paymentIntentId, amountMicros, netPaidMicros, netPaidMinor })
       return { status: 500, body: { ok: false, reason: 'underpaid_order', orderId: order.paymentIntentId } }
     }
   }

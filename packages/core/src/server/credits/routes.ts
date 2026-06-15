@@ -3,7 +3,7 @@ import { ERROR_CODES } from '../../shared/errors.js'
 import type { CreditsService } from './creditsService.js'
 import { handleLemonSqueezyWebhook, type LemonSqueezyOrder } from './lemonSqueezy.js'
 import { createLemonSqueezyCheckout } from './lemonSqueezyCheckout.js'
-import { handleStripeWebhook, type StripeOrder } from './stripe.js'
+import { handleStripeWebhook, stripeNetPaidMinor, type StripeOrder } from './stripe.js'
 import { createStripeCheckout } from './stripeCheckout.js'
 
 export interface LemonSqueezyCheckoutConfig {
@@ -579,6 +579,11 @@ function registerStripeRoutes(
 
   if (stripe.checkout) {
     const checkout = stripe.checkout
+    // Stripe payment-mode Checkout REQUIRES success_url; without a redirect url every
+    // checkout creation would 502. Fail fast rather than advertise a broken Buy button.
+    if (!checkout.redirectUrl) {
+      throw new Error('credits: Stripe checkout requires a redirect URL (BORING_CREDITS_STRIPE_REDIRECT_URL) — Stripe rejects payment-mode sessions without a success_url')
+    }
     // Every fixed checkout pack must have a positive credit value, and the default must
     // exist — else a paid checkout for it couldn't be credited (a money trap).
     for (const [packId, priceId] of Object.entries(checkout.variants)) {
@@ -607,13 +612,13 @@ function registerStripeRoutes(
   const customMinMinor = stripe.checkout?.customPack?.minMinor ?? 0
   const creditsForOrder = (order: StripeOrder): number => {
     if (isCustomPack(order.packId)) {
-      // Pay-what-you-want: credit the net pre-tax amount actually paid (credits == paid ×
-      // rate, so the underpayment guard always passes). Enforce the configured minimum
-      // SERVER-side too (don't rely solely on the Stripe price minimum): a below-min paid
-      // amount returns 0 → the handler fails loud (no_credit_amount 500) for operator review.
-      const sub = order.amountSubtotalMinor
-      if (typeof sub !== 'number' || sub <= 0 || sub < customMinMinor) return 0
-      return Math.floor(sub * ratePerMinor)
+      // Pay-what-you-want: credit the NET pre-tax amount actually paid (subtotal − discount,
+      // validated), not the pre-discount subtotal — so a discount can't over-credit. Enforce
+      // the configured minimum SERVER-side too; a below-min/invalid amount returns 0 → the
+      // handler fails loud (no_credit_amount 500) for operator review.
+      const net = stripeNetPaidMinor(order)
+      if (net === null || net <= 0 || net < customMinMinor) return 0
+      return Math.floor(net * ratePerMinor)
     }
     if (isFixedPack(order.packId)) return fixedPackMicros[order.packId as string] ?? 0
     return 0

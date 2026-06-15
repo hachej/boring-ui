@@ -49,6 +49,7 @@ export type { CreateCheckoutInput } from './lemonSqueezyCheckout.js'
 export {
   verifyStripeSignature,
   parseStripeEvent,
+  stripeNetPaidMinor,
   handleStripeWebhook,
 } from './stripe.js'
 export type {

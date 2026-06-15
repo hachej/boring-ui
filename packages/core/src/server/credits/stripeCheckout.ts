@@ -54,6 +54,10 @@ export function buildStripeCheckoutForm(input: CreateStripeCheckoutInput): strin
     // Lock quantity: buyer can't change it on the hosted page (so a fixed pack's
     // amount == price; a custom pack collects its amount via custom_unit_amount).
     ['line_items[0][adjustable_quantity][enabled]', 'false'],
+    // Disable Adaptive Pricing: it can localize the session into another currency,
+    // which our webhook's strict currency gate would then reject — leaving the buyer
+    // charged but uncredited. Pin the currency to the configured one.
+    ['adaptive_pricing[enabled]', 'false'],
     // Buyer attribution (server-set). Both client_reference_id and metadata carry it
     // so the webhook can read it off the session regardless of Stripe shape changes.
     ['client_reference_id', input.userId],
