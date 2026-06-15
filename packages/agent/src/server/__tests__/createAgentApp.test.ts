@@ -499,7 +499,13 @@ test('externalPlugins=false keeps local plugin files out of the app catalog', as
     expect(res.statusCode).toBe(200)
     const names = res.json().tools.map((t: { name: string }) => t.name)
     expect(names).not.toContain('a4s_plugin_hidden')
+    expect(names).not.toContain('plugin_diagnostics')
     expect(names).toContain('bash')
+    const catalogText = JSON.stringify(res.json()).toLowerCase()
+    expect(catalogText).not.toContain('boring-ui-plugin')
+    expect(catalogText).not.toContain('boring-plugin-authoring')
+    expect(catalogText).not.toContain('plugin-owned')
+    expect(catalogText).not.toContain('my-plugin')
   } finally {
     await app.close()
   }

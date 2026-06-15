@@ -253,6 +253,9 @@ describe("default boring-ui CLI provisioning", () => {
       { plugins: Array<{ id: string }> },
     ]
     expect(findBoringUiCliContribution(provisionOpts.plugins)).toBeUndefined()
+    expect(capturedPrompt ?? "").toContain("does not expose Boring plugin creation or installation")
+    expect(capturedPrompt ?? "").not.toContain("Generated plugin skills")
+    expect(capturedPrompt ?? "").not.toContain("external plugin authoring")
     expect(capturedPrompt ?? "").not.toContain("boring-ui-plugin scaffold")
     expect(capturedPrompt ?? "").not.toContain("boring-ui-plugin verify")
     expect(capturedPrompt ?? "").not.toContain("boring-plugin-authoring")

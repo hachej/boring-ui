@@ -121,10 +121,11 @@ export interface CreateWorkspaceAgentServerOptions
   /**
    * Install and advertise the boring plugin-authoring runtime.
    *
-   * Keep this off for production/hosted workspaces unless a plugin-editing
-   * experience is explicitly enabled. Remote sandboxes can support authoring,
-   * but the CLI should be provisioned only for that activated editing mode,
-   * not for every normal workspace boot.
+   * This option is ignored when `externalPlugins` is false. Keep it off for
+   * production/hosted workspaces unless a plugin-editing experience is
+   * explicitly enabled. Remote sandboxes can support authoring, but the CLI
+   * should be provisioned only for that activated editing mode, not for every
+   * normal workspace boot.
    *
    * Defaults to true for local/standalone strong-filesystem runtimes and false
    * for remote/best-effort runtimes. Core/full-app may choose a stricter
@@ -134,9 +135,11 @@ export interface CreateWorkspaceAgentServerOptions
   /** Optional host-owned front-target override for boring plugin list/event payloads. */
   boringPluginFrontTargetResolver?: BoringPluginFrontTargetResolver
   /**
-   * Enable user/global external plugins discovered from .pi/, ~/.pi, and Pi settings.
-   * App/internal plugins from explicit `plugins`, `defaultPluginPackages`, and
-   * `additionalBoringPluginDirs` continue to work when this is false.
+   * Single public-mode switch for user/global external plugins. When false,
+   * the server disables .pi/~/.pi/Pi-settings discovery, authoring CLI/prompt
+   * provisioning, plugin diagnostics, and external hot-reload resources. App/
+   * internal plugins from explicit `plugins`, `defaultPluginPackages`, and
+   * `additionalBoringPluginDirs` continue to work.
    */
   externalPlugins?: boolean
 }
