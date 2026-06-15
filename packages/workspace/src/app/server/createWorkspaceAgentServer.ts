@@ -121,10 +121,11 @@ export interface CreateWorkspaceAgentServerOptions
   /**
    * Install and advertise the boring plugin-authoring runtime.
    *
-   * Keep this off for production/hosted workspaces unless a plugin-editing
-   * experience is explicitly enabled. Remote sandboxes can support authoring,
-   * but the CLI should be provisioned only for that activated editing mode,
-   * not for every normal workspace boot.
+   * This option is ignored when `externalPlugins` is false. Keep it off for
+   * production/hosted workspaces unless a plugin-editing experience is
+   * explicitly enabled. Remote sandboxes can support authoring, but the CLI
+   * should be provisioned only for that activated editing mode, not for every
+   * normal workspace boot.
    *
    * Defaults to true for local/standalone strong-filesystem runtimes and false
    * for remote/best-effort runtimes. Core/full-app may choose a stricter
@@ -133,6 +134,14 @@ export interface CreateWorkspaceAgentServerOptions
   installPluginAuthoring?: boolean
   /** Optional host-owned front-target override for boring plugin list/event payloads. */
   boringPluginFrontTargetResolver?: BoringPluginFrontTargetResolver
+  /**
+   * Single public-mode switch for user/global external plugins. When false,
+   * the server disables .pi/~/.pi/Pi-settings discovery, authoring CLI/prompt
+   * provisioning, plugin diagnostics, and external hot-reload resources. App/
+   * internal plugins from explicit `plugins`, `defaultPluginPackages`, and
+   * `additionalBoringPluginDirs` continue to work.
+   */
+  externalPlugins?: boolean
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -268,8 +277,9 @@ function createBoringPiPackageSource(workspaceRoot: string): WorkspacePiPackageS
  * The boring-pi package source above is the canonical declarative way to
  * register the skill, but Pi's DefaultResourceLoader skips package-resolved
  * skills (`enabledSkills`) when `noSkills: true` is set — and boring's
- * default agent factory does set `noSkills: true` so user-global skills
- * (~/.agents/skills) don't leak into the agent's prompt. To keep OUR
+ * canonical harness policy (`withPiHarnessDefaults` in @hachej/boring-agent)
+ * defaults to `noSkills: true` so user-global skills (~/.agents/skills)
+ * don't leak into hosted agents' prompts. To keep OUR
  * skill flowing regardless of that filter, we also push the SKILL.md
  * path into `additionalSkillPaths`, which Pi loads via its skillsOverride
  * even under noSkills. Belt-and-suspenders so the agent always sees the
@@ -304,13 +314,20 @@ export interface CollectWorkspaceAgentServerPluginsOptions
   installPluginAuthoring?: boolean
 }
 
-export function buildWorkspaceContextPrompt(): string {
+export function buildWorkspaceContextPrompt(options: { pluginAuthoringEnabled?: boolean } = {}): string {
   return [
     '## Workspace',
     '- Root: `$BORING_AGENT_WORKSPACE_ROOT` (exported into every bash invocation)',
-    '- Generated plugin skills: `$BORING_AGENT_WORKSPACE_ROOT/.boring-agent/skills/` — readable with normal file tools',
     '- User workspace skills: `$BORING_AGENT_WORKSPACE_ROOT/.agents/skills/`',
-    '- Runtime CLIs (`boring-ui-plugin`, `bm`, `python`, `pip`, `uv`) come from `.boring-agent/node`, `.boring-agent/venv`, and `.boring-agent/sdk/uv` and are already on PATH',
+    ...(options.pluginAuthoringEnabled
+      ? [
+          '- Generated plugin skills: `$BORING_AGENT_WORKSPACE_ROOT/.boring-agent/skills/` — readable with normal file tools',
+          '- Runtime CLIs (`boring-ui-plugin`, `bm`, `python`, `pip`, `uv`) come from `.boring-agent/node`, `.boring-agent/venv`, and `.boring-agent/sdk/uv` and are already on PATH',
+        ]
+      : [
+          '- Runtime CLIs (`bm`, `python`, `pip`, `uv`) come from `.boring-agent/node`, `.boring-agent/venv`, and `.boring-agent/sdk/uv` when provisioned',
+          '- This public app does not expose Boring plugin creation or installation. If asked about Boring plugins, do not explain how to create/install them; say that this app does not expose that feature and continue with normal workspace tasks.',
+        ]),
   ].join('\n')
 }
 
@@ -435,6 +452,7 @@ function collectBoringPluginSources(
   workspaceRoot: string,
   pluginCollection: WorkspaceAgentServerPluginCollection,
   additionalPluginDirs: BoringPluginSourceInput[] = [],
+  externalPluginsEnabled = true,
 ): BoringPluginSource[] {
   const extensionPaths = pluginCollection.agentOptions.pi?.extensionPaths ?? []
   const pluginRoots = extensionPaths.flatMap((path) => {
@@ -444,13 +462,16 @@ function collectBoringPluginSources(
       return []
     }
   })
-  return uniquePluginSources([
+  const externalSources: BoringPluginSource[] = externalPluginsEnabled ? [
     { rootDir: join(workspaceRoot, ".pi", "extensions"), kind: "external", workspaceId: workspaceRoot },
     { rootDir: join(workspaceRoot, ".pi", "npm"), kind: "external", workspaceId: workspaceRoot },
     { rootDir: join(workspaceRoot, ".pi", "git"), kind: "external", workspaceId: workspaceRoot },
     { rootDir: join(homedir(), ".pi", "agent", "extensions"), kind: "external" },
     ...readPiSettingsBoringPluginSources(join(workspaceRoot, ".pi", "settings.json"), workspaceRoot),
     ...readPiSettingsBoringPluginSources(join(homedir(), ".pi", "agent", "settings.json")),
+  ] : []
+  return uniquePluginSources([
+    ...externalSources,
     ...pluginRoots.map((rootDir): BoringPluginSource => ({ rootDir, kind: "internal" })),
     ...additionalPluginDirs.map((entry): BoringPluginSource => typeof entry === "string"
       ? { rootDir: entry, kind: "internal" }
@@ -524,7 +545,7 @@ function aggregatePluginSystemPromptsFromScan(scan: ReturnType<typeof scanBoring
     .map((plugin) => plugin.pi?.systemPrompt?.trim())
     .filter((prompt): prompt is string => Boolean(prompt))
   if (prompts.length === 0) return undefined
-  return `# Loaded boring-ui plugin context\n\n${prompts.join("\n\n")}`
+  return `# Loaded app-provided context\n\n${prompts.join("\n\n")}`
 }
 
 export function readWorkspacePluginPackagePiSnapshot(pluginDirs: BoringPluginSourceInput[]): WorkspacePluginPackagePiSnapshot {
@@ -559,6 +580,7 @@ export async function createWorkspaceAgentServer(
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
   const workspaceFsCapability = modeAdapter.workspaceFsCapability ?? "best-effort"
   const validateUiPaths = opts.validateUiPaths ?? workspaceFsCapability === "strong"
+  const externalPluginsEnabled = opts.externalPlugins !== false
   const uiTools = createWorkspaceUiTools(bridge, {
     workspaceRoot: validateUiPaths ? workspaceRoot : undefined,
   })
@@ -589,7 +611,8 @@ export async function createWorkspaceAgentServer(
   const resolvedPlugins = await Promise.all(
     allPluginEntries.map((entry) => resolveOnePluginEntry<WorkspaceServerPlugin>(entry, ctx)),
   )
-  const pluginAuthoringEnabled = (opts.installPluginAuthoring ?? workspaceFsCapability === "strong")
+  const pluginAuthoringEnabled = externalPluginsEnabled
+    && (opts.installPluginAuthoring ?? workspaceFsCapability === "strong")
     && !(opts.excludeDefaults ?? []).includes("boring-ui-plugin-cli-package")
   const pluginCollection = collectWorkspaceAgentServerPlugins({
     ...opts,
@@ -619,7 +642,7 @@ export async function createWorkspaceAgentServer(
   const refreshBoringPluginDirs = (): BoringPluginSource[] => {
     const next = uniquePluginSources([
       ...defaultPluginPackagePaths.map((rootDir): BoringPluginSource => ({ rootDir, kind: "internal" })),
-      ...collectBoringPluginSources(workspaceRoot, pluginCollection, opts.additionalBoringPluginDirs),
+      ...collectBoringPluginSources(workspaceRoot, pluginCollection, opts.additionalBoringPluginDirs, externalPluginsEnabled),
     ])
     boringPluginDirs.splice(0, boringPluginDirs.length, ...next)
     return boringPluginDirs
@@ -699,13 +722,14 @@ export async function createWorkspaceAgentServer(
     ...opts,
     mode: resolvedMode,
     workspaceRoot,
+    externalPlugins: externalPluginsEnabled,
     extraTools: [
       ...(opts.extraTools ?? []),
       ...uiTools,
       ...(pluginCollection.agentOptions.extraTools ?? []),
     ],
     systemPromptAppend: [
-      workspaceFsCapability === "strong" ? buildWorkspaceContextPrompt() : undefined,
+      workspaceFsCapability === "strong" ? buildWorkspaceContextPrompt({ pluginAuthoringEnabled }) : undefined,
       // `boring-ui-plugin` resolves via PATH from the provisioned workspace
       // runtime. It is the slim setup component for agent-authored plugins;
       // do not route plugin authoring through the full human-facing CLI.

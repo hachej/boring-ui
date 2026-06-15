@@ -17,9 +17,9 @@ import { ErrorCode } from '../shared/error-codes'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createVercelSandboxModeAdapter } from './runtime/modes/vercel-sandbox'
 import { evictSandboxHandleCacheForWorkspace } from './sandbox/vercel-sandbox/resolveSandboxHandle'
-import { createPiCodingAgentHarness } from './harness/pi-coding-agent/createHarness'
+import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
 import { PiSessionStore } from './harness/pi-coding-agent/sessions'
-import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
+import type { PiHarnessOptions, ResolvedPiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { registerConfiguredModelProviders } from './models/modelConfig'
 import { mergeTools, type PluginToolRegistration } from './catalog/mergeTools'
@@ -126,13 +126,13 @@ interface RuntimeScope {
   root: string
   key: string
   templatePath?: string
-  pi?: PiHarnessOptions
+  pi: ResolvedPiHarnessOptions
   sessionNamespace?: string
 }
 
 interface SkillScope {
   root: string
-  pi?: PiHarnessOptions
+  pi: ResolvedPiHarnessOptions
 }
 
 function selectRuntimeModeAdapter(
@@ -297,6 +297,12 @@ export interface RegisterAgentRoutesOptions {
    * terminal lifecycle. See AgentMeteringSink.
    */
   metering?: AgentMeteringSink
+  /**
+   * Enable user/global Pi extension auto-discovery from .pi/ and ~/.pi.
+   * App/internal plugins should be passed through extraTools/pi instead.
+   * Defaults to true for standalone agent compatibility.
+   */
+  externalPlugins?: boolean
   getSessionNamespace?: (ctx: {
     workspaceId: string
     workspaceRoot: string
@@ -362,6 +368,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     typeof opts.getSessionNamespace === 'function' ||
     typeof opts.getSystemPromptDynamic === 'function'
   const sessionChangesTracker = new InMemorySessionChangesTracker()
+  const externalPluginsEnabled = opts.externalPlugins !== false
   const runtimeBindings = new Map<string, RuntimeBindingEntry>()
   const MAX_RUNTIME_BINDINGS = 256
   function evictRuntimeBindings(): void {
@@ -370,6 +377,20 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     for (let i = 0; i < keys.length - MAX_RUNTIME_BINDINGS; i++) {
       runtimeBindings.delete(keys[i])
     }
+  }
+
+  // Chokepoint where a scope's pi options are born: resolve the host's
+  // static/dynamic pi config and apply boring's canonical harness defaults,
+  // so every downstream consumer (harness factory, skills routes) reads
+  // already-defaulted flags instead of re-applying the policy themselves.
+  async function resolveScopePi(
+    workspaceId: string,
+    root: string,
+    request?: FastifyRequest,
+  ): Promise<ResolvedPiHarnessOptions> {
+    return withPiHarnessDefaults(opts.getPi
+      ? await opts.getPi({ workspaceId, workspaceRoot: root, request })
+      : opts.pi)
   }
 
   async function resolveRuntimeScope(
@@ -382,9 +403,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     const scopedTemplatePath = opts.getTemplatePath
       ? await opts.getTemplatePath({ workspaceId, workspaceRoot: root, request })
       : templatePath
-    const pi = opts.getPi
-      ? await opts.getPi({ workspaceId, workspaceRoot: root, request })
-      : opts.pi
+    const pi = await resolveScopePi(workspaceId, root, request)
     const sessionNamespace = normalizeSessionNamespace(opts.getSessionNamespace
       ? await opts.getSessionNamespace({ workspaceId, workspaceRoot: root, request })
       : opts.sessionNamespace)
@@ -398,7 +417,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         workspaceId,
         root,
         scopedTemplatePath ?? null,
-        pi ?? null,
+        pi,
         sessionNamespace ?? null,
       ]),
     }
@@ -411,24 +430,22 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     const root = request && opts.getWorkspaceRoot
       ? await opts.getWorkspaceRoot(workspaceId, request)
       : workspaceRoot
-    const pi = opts.getPi
-      ? await opts.getPi({ workspaceId, workspaceRoot: root, request })
-      : opts.pi
-    const hot = pi?.getHotReloadableResources?.()
+    const pi = await resolveScopePi(workspaceId, root, request)
+    const hot = pi.getHotReloadableResources?.()
     return {
       root,
       pi: hot ? {
         ...pi,
         additionalSkillPaths: [
-          ...(pi?.additionalSkillPaths ?? []),
+          ...(pi.additionalSkillPaths ?? []),
           ...(hot.additionalSkillPaths ?? []),
         ],
         packages: [
-          ...(pi?.packages ?? []),
+          ...(pi.packages ?? []),
           ...(hot.packages ?? []),
         ],
         extensionPaths: [
-          ...(pi?.extensionPaths ?? []),
+          ...(pi.extensionPaths ?? []),
           ...(hot.extensionPaths ?? []),
         ],
       } : pi,
@@ -581,7 +598,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       }),
       ...buildFilesystemAgentTools(runtimeBundle),
       ...buildUploadAgentTools(runtimeBundle),
-      createPluginDiagnosticsTool({
+      ...(externalPluginsEnabled ? [createPluginDiagnosticsTool({
         // `binding` is assigned later in this function; read through thunks.
         getLastReloadDiagnostics: () => binding?.lastReloadDiagnostics ?? [],
         getHarness: () => binding?.harness,
@@ -591,11 +608,11 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
                 opts.getPluginDiagnostics!({ workspaceId, workspaceRoot: root }),
             }
           : {}),
-      }),
+      })] : []),
     ]
     const pluginTools: PluginToolRegistration[] = []
 
-    if (modeAdapter.workspaceFsCapability === 'strong') {
+    if (externalPluginsEnabled && modeAdapter.workspaceFsCapability === 'strong') {
       const pluginResult = await loadPlugins({ cwd: root })
       if (pluginResult.errors.length > 0) {
         for (const e of pluginResult.errors) {
@@ -631,14 +648,13 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     const harnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
       ...input,
       pi: {
-        noContextFiles: true,
-        noSkills: true,
+        // scope.pi is already defaulted at the resolveScopePi chokepoint.
         ...scope.pi,
         additionalSkillPaths: [
-          ...(scope.pi?.additionalSkillPaths ?? []),
+          ...(scope.pi.additionalSkillPaths ?? []),
         ],
         getHotReloadableResources: () => {
-          const hot = scope.pi?.getHotReloadableResources?.() ?? {}
+          const hot = scope.pi.getHotReloadableResources?.() ?? {}
           return {
             ...hot,
             additionalSkillPaths: [
@@ -943,6 +959,8 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       ...(opts.pi?.additionalSkillPaths ?? []),
     ],
     piPackages: opts.pi?.packages,
+    // Undefined is fine: skillsRoutes resolves it through the canonical
+    // harness policy (withPiHarnessDefaults), same as the factory above.
     noSkills: opts.pi?.noSkills,
     getWorkspaceRoot: staticBinding
       ? undefined
@@ -951,19 +969,19 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       ? undefined
       : async (request) => {
           const scope = await getSkillsScopeForRequest(request)
-          if (!hasRuntimeProvisioningInput) return scope.pi?.additionalSkillPaths
+          if (!hasRuntimeProvisioningInput) return scope.pi.additionalSkillPaths
           const binding = await getBindingForRequest(request)
           return [
             ...(binding.runtimeProvisioning?.skillPaths ?? []),
-            ...(scope.pi?.additionalSkillPaths ?? []),
+            ...(scope.pi.additionalSkillPaths ?? []),
           ]
         },
     getPiPackages: staticBinding
       ? undefined
-      : async (request) => (await getSkillsScopeForRequest(request)).pi?.packages,
+      : async (request) => (await getSkillsScopeForRequest(request)).pi.packages,
     getNoSkills: staticBinding
       ? undefined
-      : async (request) => (await getSkillsScopeForRequest(request)).pi?.noSkills,
+      : async (request) => (await getSkillsScopeForRequest(request)).pi.noSkills,
   })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   app.post<{ Body: { sessionId?: string } }>('/api/v1/agent/reload', async (request, reply) => {

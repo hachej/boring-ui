@@ -84,6 +84,17 @@ export interface WorkspaceChangeEvent {
   mtimeMs?: number
 }
 
+/**
+ * Result of a watcher's readiness probe. `ok: false` means the
+ * implementation decided it cannot observe this workspace (e.g. the
+ * tree is too large to watch without harming the host process) —
+ * hosts should tell clients to fall back rather than wait for events
+ * that will never come.
+ */
+export type WorkspaceWatcherReadiness =
+  | { ok: true }
+  | { ok: false; reason: string; message?: string }
+
 export interface WorkspaceWatcher {
   /**
    * Add a listener for change events. Returns an unsubscribe fn —
@@ -92,6 +103,14 @@ export interface WorkspaceWatcher {
    * does NOT tear down the watcher.
    */
   subscribe(listener: (event: WorkspaceChangeEvent) => void): () => void
+
+  /**
+   * Optional readiness probe. Implementations with a startup guard
+   * (workspace-size check, native module availability, …) resolve it
+   * once the underlying source is observing — or with `ok: false`
+   * when observation was refused. Absent → assume always ready.
+   */
+  whenReady?(): Promise<WorkspaceWatcherReadiness>
 
   /**
    * Tear down the underlying observation source (chokidar instance,

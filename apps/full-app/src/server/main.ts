@@ -18,6 +18,7 @@ async function main() {
     appRoot,
     serveFrontend: true,
     plugins: serverPlugins,
+    externalPlugins: false,
     installPluginAuthoring: pluginAuthoringEnabledFromEnv(),
     metering: credits.meteringSink,
   })

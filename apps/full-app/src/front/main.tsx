@@ -15,6 +15,8 @@ import '@hachej/boring-core/app/front/styles.css'
 import './app.css'
 import { demoFrontPlugin } from '../plugins/demo/front'
 
+const PRODUCT_NAME = 'Seneca AI'
+
 // Show the Buy-credits button when the server has Lemon Squeezy checkout wired
 // (set this alongside the server-side LS env). The checkout itself is created
 // server-side so the buyer id can't be tampered with.
@@ -67,6 +69,7 @@ createRoot(document.getElementById('root')!).render(
       apiBaseUrl=""
       apiTimeout={10_000}
       persistenceEnabled
+      appTitle={PRODUCT_NAME}
       chatEntryMode="chat-first"
       chatParams={chatParams}
       plugins={[demoFrontPlugin]}

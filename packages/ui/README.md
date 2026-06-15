@@ -124,22 +124,28 @@ Then every UI kit component picks up those variables automatically.
 Override any CSS variable at any scope:
 
 ```css
-/* Use :root for normal React apps, :host for Shadow DOM */
+/* Use :root for normal React apps, :host for Shadow DOM.
+   Token values are color/length primitives, not CSS shorthands.
+   The canonical defaults ship in @hachej/boring-ui-kit/tokens.css. */
 :root {
-  --boring-border: 1px solid rgba(255, 255, 255, 0.1);
-  --boring-radius: 6px;
-  --boring-color-bg: #1a1a1a;
-  --boring-color-text: #e0e0e0;
-  /* ... more vars set by @hachej/boring-workspace/globals.css */
+  --boring-background: oklch(0.18 0.004 72);
+  --boring-foreground: oklch(0.985 0.002 72);
+  --boring-border: oklch(0.269 0.006 285.885);
+  --boring-radius: 0.625rem;
+  /* ... full token set in tokens.css; see styles.css for the utility mapping */
 }
 ```
 
 ### Theming
 
+Import the default palette, then override individual `--boring-*` variables:
+
 ```css
+@import "@hachej/boring-ui-kit/tokens.css";
+
 .my-green-panel {
-  --boring-color-accent: #22c55e;
-  --boring-color-accent-hover: #16a34a;
+  --boring-primary: oklch(0.72 0.19 150);
+  --boring-accent: oklch(0.72 0.19 150);
 }
 ```
 
@@ -258,9 +264,9 @@ The kit uses class-variance-authority (CVA) for consistent variant patterns:
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| Unstyled components | Host CSS variables not set | Import `@hachej/boring-workspace/globals.css` or `@hachej/boring-ui-kit/styles.css` |
+| Unstyled components | No utility CSS loaded | Import `@hachej/boring-ui-kit/styles.css` once (it ships the Tailwind utilities the kit needs); a full workspace app already loads `@hachej/boring-workspace/globals.css` |
+| Wrong/missing colors | `--boring-*` tokens not set | Import `@hachej/boring-ui-kit/tokens.css` or set the tokens yourself |
 | `Cannot find module` | Package not built | Run `pnpm --filter @hachej/boring-ui-kit build` |
-| Dialog not showing | Portal container missing | Ensure `<div id="overlay-root">` exists in your DOM |
 | Theme looks wrong | CSS vars overridden elsewhere | Check specificity — your vars should be at `:root` or `html` scope |
 
 ---
