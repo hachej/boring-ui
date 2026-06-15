@@ -322,6 +322,7 @@ export function buildWorkspaceContextPrompt(options: { pluginAuthoringEnabled?: 
         ]
       : [
           '- Runtime CLIs (`bm`, `python`, `pip`, `uv`) come from `.boring-agent/node`, `.boring-agent/venv`, and `.boring-agent/sdk/uv` when provisioned',
+          '- This public app does not expose Boring plugin creation or installation. If asked about Boring plugins, do not explain how to create/install them; say that this app does not expose that feature and continue with normal workspace tasks.',
         ]),
   ].join('\n')
 }
