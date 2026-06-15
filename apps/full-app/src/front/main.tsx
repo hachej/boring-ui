@@ -61,15 +61,15 @@ const chatParams = {
   hideDefaultModelOption: true,
   emptyState: {
     eyebrow: 'Private workspace',
-    title: 'What should the assistant work on?',
+    title: 'What should we build?',
     description:
-      'Ask the assistant to inspect files, edit safely, run checks, or explain the workspace. Commands and file access stay scoped to this workspace.',
+      'Ask the assistant to fetch data, run an analysis, and turn it into something you can use — a chart, a deck, a report. It works in your private workspace and opens results as tabs you can inspect.',
   },
   suggestions: [
-    { label: 'Inspect this workspace', hint: 'Summarize files and architecture.', prompt: 'Inspect this workspace and summarize the key files, architecture, and next steps.' },
-    { label: 'Run a safety pass', hint: 'Find risks before changes.', prompt: 'Review this workspace for launch risks, security issues, and missing verification.' },
-    { label: 'Make a verified change', hint: 'Edit, test, summarize.', prompt: 'Make the requested change, run the relevant checks, and summarize exactly what changed.' },
-    { label: 'Explain data boundaries', hint: 'Files, commands, model provider.', prompt: 'Explain what data and files are available in this workspace and what provider processes model requests.' },
+    { label: 'Fetch & explore data', hint: 'Pull a dataset, surface the trends.', prompt: 'Fetch a relevant dataset, then summarize the key series, trends, and anything that stands out.' },
+    { label: 'Create a deck', hint: 'Turn findings into slides.', prompt: 'Analyze the data and build a clean, presentation-ready slide deck of the key findings.' },
+    { label: 'Build a chart', hint: 'Visualize the key numbers.', prompt: 'Create a clear chart that visualizes the most important series, and explain what it shows.' },
+    { label: 'Analyze & report', hint: 'Insights, written up.', prompt: 'Run an analysis on the data and write up the key insights as a short, sourced report.' },
   ],
   // Credit seams: refresh the balance after each run, and offer a Buy CTA on an
   // out-of-credits (PAYMENT_REQUIRED) notice.

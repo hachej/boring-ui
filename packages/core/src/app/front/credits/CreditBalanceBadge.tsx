@@ -38,6 +38,10 @@ export function CreditBalanceBadge({
   const showBuy = balance.checkoutEnabled ?? buyEnabled
   // Fixed packs only (custom pay-what-you-want is not offered).
   const packs = (balance.packs ?? []).filter((p) => !p.custom)
+  // Render the balance in the configured purchase currency (1 credit-unit = 1 major unit),
+  // not a hard-coded EUR — packs carry the configured currency; fall back to EUR when no
+  // purchase provider is wired (consumption-only).
+  const currency = balance.packs?.[0]?.currency ?? 'EUR'
 
   const pick = async (packId?: string) => {
     setOpen(false)
@@ -51,7 +55,7 @@ export function CreditBalanceBadge({
         title={inDebt ? 'Amount owed — top up to resume' : 'Remaining credits'}
         className={`text-[11px] tabular-nums ${low ? 'text-destructive' : 'text-muted-foreground'}`}
       >
-        {inDebt ? `−${formatCreditMicros(balance.debtMicros, locale)}` : formatCreditMicros(balance.remainingMicros, locale)}
+        {inDebt ? `−${formatCreditMicros(balance.debtMicros, currency, locale)}` : formatCreditMicros(balance.remainingMicros, currency, locale)}
       </span>
       {showBuy ? (
         <Popover open={open} onOpenChange={setOpen}>
@@ -80,7 +84,7 @@ export function CreditBalanceBadge({
                     className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-[13px] hover:bg-muted disabled:opacity-50"
                   >
                     <span className="tabular-nums font-medium">{formatMinorPrice(p.priceMinor, p.currency, locale)}</span>
-                    <span className="text-[11px] text-muted-foreground">{formatCreditMicros(p.creditMicros, locale)}</span>
+                    <span className="text-[11px] text-muted-foreground">{formatCreditMicros(p.creditMicros, p.currency, locale)}</span>
                   </button>
                 ))}
               </div>
