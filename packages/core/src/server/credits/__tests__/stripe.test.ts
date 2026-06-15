@@ -47,7 +47,8 @@ function makeOptions(over: Partial<StripeWebhookOptions> = {}): StripeWebhookOpt
       : (o.packId ? FIXED[o.packId] ?? 0 : 0),
     isCreditOrder: (o) => isKnown(o.packId) && strictOurs(o),
     isOurStoreOrder: (o) => lenientOurs(o),
-    isUnverifiedCreditOrder: (o) => isKnown(o.packId) && !strictOurs(o) && lenientOurs(o),
+    // Known pack = server-created/ours → a strict mismatch is unverified (fail loud), not foreign.
+    isUnverifiedCreditOrder: (o) => isKnown(o.packId) && !strictOurs(o),
     isRefundForOurStore: (o) => lenientOurs(o),
     creditMicrosPerUnit: 1_000_000,
     grant,
@@ -140,13 +141,21 @@ describe('handleStripeWebhook', () => {
     expect(res.body.reason).toBe('underpaid_order')
   })
 
-  it('500s an unknown pack paid on our store (credit-only), 200-ignores a foreign-currency order', async () => {
+  it('500s an unknown pack paid on our store, and 500s a KNOWN pack with a currency mismatch (never silent-drops)', async () => {
     const unknown = completedEvent({ metadata: { user_id: 'u1', pack_id: '99' } })
     expect((await handleStripeWebhook(unknown, sign(unknown), makeOptions())).status).toBe(500)
+    // A known pack is server-created/ours; a currency mismatch is a misconfig → fail loud.
     const foreign = completedEvent({ currency: 'usd', metadata: { user_id: 'u1', pack_id: '10' } })
     const res = await handleStripeWebhook(foreign, sign(foreign), makeOptions())
-    expect(res.status).toBe(200)
-    expect(res.body.reason).toBe('not_a_credit_order')
+    expect(res.status).toBe(500)
+    expect(res.body.reason).toBe('unverified_credit_order')
+  })
+
+  it('fails loud (500) on a refund for our store with no payment_intent to map', async () => {
+    const body = refundEvent({ payment_intent: null })
+    const res = await handleStripeWebhook(body, sign(body), makeOptions())
+    expect(res.status).toBe(500)
+    expect(res.body.reason).toBe('refund_unmappable')
   })
 
   it('revokes on a refund', async () => {

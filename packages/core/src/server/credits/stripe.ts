@@ -256,14 +256,17 @@ export async function handleStripeWebhook(
   // --- Refund / dispute → revoke ---
   const refundEvents = options.refundEvents ?? ['charge.refunded', 'charge.dispute.created']
   if (refundEvents.includes(order.eventType)) {
-    if (!order.paymentIntentId) {
-      // No PaymentIntent to map back to a grant — can't revoke by id. Ack so Stripe stops.
-      options.log?.('stripe refund without a payment_intent — cannot map to a grant, ignoring', { eventType: order.eventType })
-      return { status: 200, body: { ok: true, reason: 'refund_no_payment_intent' } }
-    }
+    // Foreign refund/dispute (a PRESENT mode/currency mismatch) → ignore (not ours).
     if (options.isRefundForOurStore && !options.isRefundForOurStore(order)) {
       options.log?.('stripe refund not for our mode/currency — ignoring', { paymentIntentId: order.paymentIntentId, currency: order.currency, livemode: order.livemode })
       return { status: 200, body: { ok: true, reason: 'refund_not_our_store', orderId: order.paymentIntentId } }
+    }
+    // Ours (or unattributable) but no PaymentIntent to map back to a grant — FAIL LOUD so
+    // Stripe retries and an operator reconciles, rather than silently leaving a refunded/
+    // disputed purchase credited (a 200 here would stop retries and drop the reversal).
+    if (!order.paymentIntentId) {
+      options.log?.('stripe refund/dispute for our store has no payment_intent to map to a grant — failing loud', { eventType: order.eventType, currency: order.currency, livemode: order.livemode })
+      return { status: 500, body: { ok: false, reason: 'refund_unmappable' } }
     }
     const { revoked } = await options.onRefund(order)
     options.log?.('stripe refund processed', { paymentIntentId: order.paymentIntentId, revoked })

@@ -634,8 +634,12 @@ function registerStripeRoutes(
     return true
   }
   const isCreditOrder = (order: StripeOrder): boolean => isKnownPack(order.packId) && isOurStoreOrder(order)
+  // A known pack_id only exists on a session WE created (we set it in metadata), so a paid
+  // known-pack session that fails the strict mode/currency check is OURS-but-misconfigured
+  // (e.g. a Price in the wrong currency), NOT a foreign order. Treat it as unverified →
+  // the handler returns a retryable 500, never a silent 200 drop of a paid order.
   const isUnverifiedCreditOrder = (order: StripeOrder): boolean =>
-    isKnownPack(order.packId) && !isOurStoreOrder(order) && isRefundForOurStore(order)
+    isKnownPack(order.packId) && !isOurStoreOrder(order)
 
   // Namespace the idempotency/purchase key by mode so a PaymentIntent id can't collide
   // across test/live (e.g. test data sharing a DB before cutover).
