@@ -50,7 +50,7 @@ export function selectQueuePreview(state: PiChatState): QueuedUserMessage[] {
 
 export function selectRuntimeNotices(state: PiChatState): PiChatRuntimeNotice[] {
   const notices = [...state.notices]
-  if (state.connection.state === 'reconnecting') {
+  if (state.connection.state === 'reconnecting' && hasVisibleReconnectWork(state)) {
     notices.push({ id: 'connection-reconnecting', level: 'warning', text: 'Reconnecting to the agent session…' })
   }
   if (state.retryNotice) {
@@ -64,6 +64,13 @@ export function selectRuntimeNotices(state: PiChatState): PiChatRuntimeNotice[] 
     notices.push({ id: 'chat-error', level: 'error', text: state.error.message, dismissible: true })
   }
   return notices
+}
+
+function hasVisibleReconnectWork(state: PiChatState): boolean {
+  return state.status !== 'idle'
+    || state.queue.followUps.length > 0
+    || Object.keys(state.optimisticOutbox).length > 0
+    || state.pendingToolCallIds.size > 0
 }
 
 function optimisticText(message: BoringChatMessage): string {

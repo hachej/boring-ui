@@ -29,6 +29,16 @@ function assistantFinal(id: string, text: string): BoringChatMessage {
   return { id, role: 'assistant', status: 'done', parts: [{ type: 'text', id: 'p1', text }] }
 }
 
+function optimistic(clientNonce: string, text: string): OptimisticUserMessage {
+  return {
+    id: `optimistic:${clientNonce}`,
+    role: 'user',
+    status: 'pending',
+    clientNonce,
+    parts: [{ type: 'text', text }],
+  }
+}
+
 function reduceEvents(events: PiChatEvent[]) {
   return events.reduce((state, event) => piChatReducer(state, { type: 'event', event }), initial())
 }
@@ -68,6 +78,34 @@ describe('piChatReducer', () => {
     expect(state.committedMessages).toEqual([userMessage('u1', 'committed')])
     expect(state.optimisticOutbox).toEqual({})
     expect(state.notices).toContainEqual(expect.objectContaining({ id: 'stale-outbox-cleared', level: 'warning' }))
+  })
+
+  it('does not let a reconnect hydration reset local history with a short snapshot', () => {
+    let state = piChatReducer(initial(), {
+      type: 'hydrate',
+      snapshot: snapshot({
+        seq: 10,
+        status: 'idle',
+        activeTurnId: undefined,
+        messages: [userMessage('u1', 'hello'), assistantFinal('a1', 'hi')],
+      }),
+    })
+    state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('nonce-next', 'next') })
+
+    state = piChatReducer(state, {
+      type: 'hydrate',
+      snapshot: snapshot({
+        seq: 11,
+        status: 'streaming',
+        activeTurnId: 'turn-next',
+        messages: [],
+      }),
+    })
+
+    expect(state).toMatchObject({ status: 'streaming', turnId: 'turn-next', lastSeq: 11, hydrated: true })
+    expect(state.committedMessages).toEqual([userMessage('u1', 'hello'), assistantFinal('a1', 'hi')])
+    expect(state.optimisticOutbox['nonce-next']).toEqual(expect.objectContaining({ clientNonce: 'nonce-next' }))
+    expect(state.notices.some((notice) => notice.id === 'stale-outbox-cleared')).toBe(false)
   })
 
   it('preserves the emitted part order from the snapshot during /state hydration', () => {
