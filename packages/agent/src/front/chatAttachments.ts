@@ -11,6 +11,9 @@ export async function resolveAttachmentUrls(files: FileUIPart[] | undefined) {
     url: file.url.startsWith('blob:')
       ? (await convertBlobUrlToDataUrl(file.url)) ?? file.url
       : file.url,
+    ...(typeof (file as unknown as { path?: unknown }).path === 'string'
+      ? { path: (file as unknown as { path: string }).path }
+      : {}),
   })))
 }
 

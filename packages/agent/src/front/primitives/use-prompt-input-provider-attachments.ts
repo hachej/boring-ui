@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } fro
 import type { AttachmentEntry, AttachmentsContext } from './prompt-input-context'
 
 export function usePromptInputProviderAttachments(
-  onUploadFile?: (file: File) => Promise<{ url: string }>,
+  onUploadFile?: (file: File) => Promise<{ url: string; path?: string }>,
 ): {
   attachments: AttachmentsContext
   registerFileInput: (ref: RefObject<HTMLInputElement | null>, open: () => void) => void
@@ -13,11 +13,11 @@ export function usePromptInputProviderAttachments(
   // oxlint-disable-next-line eslint(no-empty-function)
   const openRef = useRef<() => void>(() => {})
 
-  const setFileUrl = useCallback((id: string, url: string, status: 'ready' | 'error') => {
+  const setFileUrl = useCallback((id: string, url: string, status: 'ready' | 'error', path?: string) => {
     setAttachmentFiles((prev) => prev.map((f) => {
       if (f.id !== id) return f
       if (f.url !== url && f.url.startsWith('blob:')) URL.revokeObjectURL(f.url)
-      return { ...f, url, status }
+      return { ...f, url, status, ...(path ? { path } : {}) }
     }))
   }, [])
 
@@ -40,7 +40,7 @@ export function usePromptInputProviderAttachments(
       for (const entry of entries) {
         const file = incoming[entries.indexOf(entry)]
         onUploadFile(file)
-          .then(({ url }) => setFileUrl(entry.id, url, 'ready'))
+          .then(({ url, path }) => setFileUrl(entry.id, url, 'ready', path))
           .catch(() => setFileUrl(entry.id, entry.url, 'error'))
       }
     }

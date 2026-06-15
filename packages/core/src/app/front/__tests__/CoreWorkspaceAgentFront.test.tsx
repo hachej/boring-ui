@@ -95,6 +95,7 @@ describe('CoreWorkspaceAgentFront', () => {
     expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
     expect(workspaceAgentProps).toMatchObject({
       workspaceId: 'workspace-a',
+      workspaceLabel: 'Workspace A',
       requestHeaders: {
         existing: 'request',
         'x-boring-workspace-id': 'workspace-a',

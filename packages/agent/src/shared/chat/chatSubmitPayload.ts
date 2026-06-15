@@ -9,6 +9,8 @@ export interface ChatAttachmentPayload {
   filename?: string
   mediaType?: string
   url: string
+  /** Workspace-relative path when the browser upload endpoint persisted the attachment. */
+  path?: string
 }
 
 export interface ChatSubmitPayload {

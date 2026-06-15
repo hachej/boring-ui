@@ -803,6 +803,63 @@ test('request-scoped models endpoint does not require workspace header', async (
   await app.close()
 }, 15_000)
 
+test('request-scoped commands endpoint uses the workspace harness', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-commands-')
+  const app = Fastify({ logger: false })
+  const getSlashCommands = vi.fn(async () => [{ name: 'open-test-panel', source: 'extension' as const }])
+  let scopeChecks = 0
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    getWorkspaceId: (request) => {
+      scopeChecks += 1
+      const value = request.headers['x-boring-workspace-id']
+      if (typeof value !== 'string') {
+        const error = new Error('workspace id is required') as Error & { statusCode: number }
+        error.statusCode = 400
+        throw error
+      }
+      return value
+    },
+    getWorkspaceRoot: () => workspaceRoot,
+    harnessFactory: async () => ({
+      id: 'commands-test-harness',
+      placement: 'server' as const,
+      sessions: {
+        async list() { return [] },
+        async create() {
+          const now = new Date().toISOString()
+          return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0 }
+        },
+        async load() {
+          const now = new Date().toISOString()
+          return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0, messages: [] }
+        },
+        async delete() {},
+      },
+      getSlashCommands,
+    }),
+  })
+  await app.ready()
+
+  try {
+    const commandsRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/commands?sessionId=custom',
+      headers: { 'x-boring-workspace-id': 'workspace-a' },
+    })
+    expect(commandsRes.statusCode).toBe(200)
+    expect(commandsRes.json()).toEqual({
+      commands: [{ name: 'open-test-panel', source: 'extension' }],
+    })
+    expect(getSlashCommands).toHaveBeenCalledWith('custom', expect.objectContaining({ workdir: workspaceRoot }))
+    expect(scopeChecks).toBe(1)
+  } finally {
+    await app.close()
+  }
+}, 15_000)
+
 test('skills endpoint lists Pi-resolved project skills', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-skills-project-')
   const projectSkillDir = join(workspaceRoot, '.pi', 'skills', 'project-skill')

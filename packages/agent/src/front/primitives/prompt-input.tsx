@@ -181,7 +181,7 @@ const captureScreenshot = async (): Promise<File | null> => {
 
 export type PromptInputProviderProps = PropsWithChildren<{
   initialInput?: string;
-  onUploadFile?: (file: File) => Promise<{ url: string }>;
+  onUploadFile?: (file: File) => Promise<{ url: string; path?: string }>;
 }>;
 
 /**
@@ -328,7 +328,7 @@ export type PromptInputProps = Omit<
   ) => false | void | Promise<false | void>;
   /** When provided, files are uploaded to the server immediately on add and the
    * attachment URL is replaced with the stable server path before submit. */
-  onUploadFile?: (file: File) => Promise<{ url: string }>;
+  onUploadFile?: (file: File) => Promise<{ url: string; path?: string }>;
 };
 
 export const PromptInput = ({
@@ -360,11 +360,11 @@ export const PromptInput = ({
   // ----- Local attachments (only used when no provider)
   const [items, setItems] = useState<AttachmentEntry[]>([]);
 
-  const setFileUrlLocal = useCallback((id: string, url: string, status: 'ready' | 'error') => {
+  const setFileUrlLocal = useCallback((id: string, url: string, status: 'ready' | 'error', path?: string) => {
     setItems((prev) => prev.map((f) => {
       if (f.id !== id) return f;
       if (f.url !== url && f.url.startsWith('blob:')) URL.revokeObjectURL(f.url);
-      return { ...f, url, status };
+      return { ...f, url, status, ...(path ? { path } : {}) };
     }));
   }, []);
   const files = usingProvider ? controller.attachments.files : items;
@@ -459,7 +459,7 @@ export const PromptInput = ({
           const entry = entries[i];
           const file = capped[i];
           onUploadFile(file)
-            .then(({ url }) => setFileUrlLocal(entry.id, url, 'ready'))
+            .then(({ url, path }) => setFileUrlLocal(entry.id, url, 'ready', path))
             .catch(() => setFileUrlLocal(entry.id, entry.url, 'error'));
         }
       }

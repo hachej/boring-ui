@@ -38,6 +38,7 @@ import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
 import { readyStatusRoutes } from './http/routes/readyStatus'
+import { commandsRoutes } from './http/routes/commands'
 import type { ReloadHookResult } from './http/routes/reload'
 import { searchRoutes } from './http/routes/search'
 import { gitRoutes } from './http/routes/git'
@@ -78,9 +79,15 @@ function pluginNameFromPath(path: string): string {
 function getAvailableModelProviders(): string[] {
   const authStorage = AuthStorage.create()
   const registry = ModelRegistry.create(authStorage)
-  registerConfiguredModelProviders(registry)
+  const configuredModels = registerConfiguredModelProviders(registry)
+  const configuredModelSet = new Set(
+    configuredModels.map((model) => `${model.provider}:${model.id}`),
+  )
+  const availableModels = configuredModelSet.size > 0
+    ? registry.getAvailable().filter((model) => configuredModelSet.has(`${model.provider}:${model.id}`))
+    : registry.getAvailable()
   return Array.from(
-    new Set(registry.getAvailable().map((model) => model.provider)),
+    new Set(availableModels.map((model) => model.provider)),
   ).sort((a, b) => a.localeCompare(b))
 }
 
@@ -1038,6 +1045,18 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   await app.register(catalogRoutes, staticBinding
     ? { tools: staticBinding.tools }
     : { getTools: async (request) => (await getBindingForRequest(request)).tools },
+  )
+  await app.register(commandsRoutes, staticBinding
+    ? {
+        harness: staticBinding.harness,
+        defaultSessionId: sessionId,
+        workdir: staticBinding.runtimeBundle.workspace.root,
+      }
+    : {
+        defaultSessionId: sessionId,
+        getHarness: async (request) => (await getBindingForRequest(request)).harness,
+        getWorkdir: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace.root,
+      },
   )
   await app.register(readyStatusRoutes, staticBinding
     ? { tracker: staticBinding.readyTracker }

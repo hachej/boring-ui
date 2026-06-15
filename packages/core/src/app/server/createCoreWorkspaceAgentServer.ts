@@ -714,6 +714,27 @@ export async function createCoreWorkspaceAgentServer(
     return mergePiOptions(pluginOptions, callerOptions)
   }
 
+  app.get('/api/v1/workspace/meta', async (request, reply) => {
+    try {
+      const workspaceId = await resolveWorkspaceId(request)
+      const [workspace, workspaceRootForRequest] = await Promise.all([
+        workspaceStore.get(workspaceId),
+        resolveRoot(workspaceId, request),
+      ])
+      return {
+        workspaceId,
+        workspaceRoot: workspaceRootForRequest,
+        projectName: workspace?.name ?? 'Workspace',
+      }
+    } catch (error) {
+      const statusCode = typeof (error as { statusCode?: unknown })?.statusCode === 'number'
+        ? (error as { statusCode: number }).statusCode
+        : 500
+      const message = error instanceof Error ? error.message : 'workspace meta failed'
+      return reply.code(statusCode).send({ error: message })
+    }
+  })
+
   await app.register(registerAgentRoutes, {
     workspaceRoot,
     sessionId: options.sessionId,

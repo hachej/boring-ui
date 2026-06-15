@@ -3,6 +3,7 @@ export interface UploadFileOptions {
   workspaceRequestId?: string | null
   directory?: string
   sourcePath?: string
+  fetch?: typeof globalThis.fetch
 }
 
 export interface UploadFileResult {
@@ -23,7 +24,7 @@ export async function uploadFile(
   file: File,
   opts: UploadFileOptions = {},
 ): Promise<UploadFileResult> {
-  const { apiBaseUrl = '', workspaceRequestId, directory, sourcePath } = opts
+  const { apiBaseUrl = '', workspaceRequestId, directory, sourcePath, fetch: fetchImpl = globalThis.fetch } = opts
 
   const dataUrl = await readAsDataUrl(file)
   const comma = dataUrl.indexOf(',')
@@ -33,7 +34,7 @@ export async function uploadFile(
   if (workspaceRequestId) headers['x-boring-workspace-id'] = workspaceRequestId
 
   const base = apiBaseUrl.replace(/\/$/, '')
-  const res = await fetch(`${base}/api/v1/files/upload`, {
+  const res = await fetchImpl(`${base}/api/v1/files/upload`, {
     method: 'POST',
     headers,
     credentials: 'include',
