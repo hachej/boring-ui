@@ -75,11 +75,11 @@ describe('ModelSelect', () => {
     }
     const { rerender } = render(<ModelSelect {...props} openSignal={0} />)
 
-    expect(screen.queryByText('Pi default')).toBeNull()
+    expect(screen.queryByText('Default model')).toBeNull()
 
     rerender(<ModelSelect {...props} openSignal={1} />)
 
-    expect(await screen.findByText('Pi default')).toBeTruthy()
+    expect(await screen.findByText('Default model')).toBeTruthy()
   })
 
   // REGRESSION: when option count > 8, the search CommandInput renders.
@@ -136,7 +136,7 @@ describe('ModelSelect', () => {
     )
   })
 
-  it('lets users clear a model override back to Pi default', () => {
+  it('lets users clear a model override back to the default model', () => {
     const onChange = vi.fn()
     render(
       <ModelSelect
@@ -206,8 +206,8 @@ describe('ModelSelect', () => {
       />,
     )
 
-    const trigger = screen.getByRole('button', { name: /Current model: Pi default/ })
-    expect(trigger.textContent).toContain('/model: Pi default')
+    const trigger = screen.getByRole('button', { name: /Current model: Default model/ })
+    expect(trigger.textContent).toContain('/model: Default model')
     expect(trigger.className).toContain('whitespace-nowrap')
     expect(trigger.className).toContain('overflow-hidden')
     expect(trigger.className).toContain('text-ellipsis')

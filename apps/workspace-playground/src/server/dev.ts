@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto"
 import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node:fs"
 import { basename, dirname, resolve } from "node:path"
+import { createRemoteWorkerModeAdapter } from "@hachej/boring-agent/server"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 
 export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
@@ -41,19 +43,36 @@ export async function startPlaygroundServer(): Promise<void> {
     if (process.env.BORING_WORKSPACE_PLAYGROUND_SEED_FIXTURES !== "0") {
       seedWorkspaceFromFixtures(workspaceRoot)
     }
+    const workerBaseUrl = process.env.BORING_WORKER_BASE_URL?.trim()
+    const remoteWorkerModeAdapter = workerBaseUrl
+      ? createRemoteWorkerModeAdapter({ baseUrl: workerBaseUrl })
+      : undefined
+    const remoteWorkerWorkspaceId = remoteWorkerModeAdapter
+      ? (process.env.BORING_WORKSPACE_PLAYGROUND_WORKSPACE_ID?.trim() || randomUUID())
+      : undefined
     console.log(`[workspace-playground] workspace root: ${workspaceRoot}`)
+    console.log(`[workspace-playground] runtime mode: ${remoteWorkerModeAdapter ? "remote-worker" : "local"}`)
+    if (remoteWorkerWorkspaceId) {
+      console.log(`[workspace-playground] remote worker workspace id: ${remoteWorkerWorkspaceId}`)
+    }
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
       appRoot: APP_ROOT,
-      mode: "local",
+      sessionId: remoteWorkerWorkspaceId,
+      mode: remoteWorkerModeAdapter ? undefined : "local",
+      runtimeModeAdapter: remoteWorkerModeAdapter,
       logger: true,
       externalPlugins: EXTERNAL_PLUGINS_ENABLED,
       defaultPluginPackages: ["@hachej/boring-ask-user"],
     })
-    app.get("/api/v1/workspace/meta", async () => ({
-      projectName: basename(workspaceRoot) || "Workspace",
-      workspaceRoot,
-    }))
+    app.get("/api/v1/workspace/meta", async () => {
+      const localName = basename(workspaceRoot) || "Workspace"
+      return {
+        projectName: remoteWorkerWorkspaceId ? "Remote worker playground" : localName,
+        workspaceId: remoteWorkerWorkspaceId ?? localName,
+        workspaceRoot,
+      }
+    })
     await app.listen({ port: AGENT_API_PORT, host: "127.0.0.1" })
   })()
   return agentBoot

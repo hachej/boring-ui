@@ -1,0 +1,54 @@
+name: Fly Worker Volume Backup
+
+on:
+  schedule:
+    # Fly also has scheduled volume snapshots enabled; this job enforces that
+    # setting and creates an explicit recovery point once per day.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      create_snapshot:
+        description: "Create an immediate Fly volume snapshot"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      retention_days:
+        description: "Fly volume snapshot retention in days"
+        required: true
+        default: "14"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fly-worker-volume-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: Snapshot boring-sandbox-worker volume
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22.19.0
+
+      - name: Setup flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
+
+      - name: Enforce snapshots and create recovery point
+        run: node apps/full-app/scripts/fly-worker-volume-backup.mjs
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_WORKER_APP: boring-sandbox-worker
+          FLY_WORKER_VOLUME_NAME: worker_workspace_data
+          FLY_CREATE_VOLUME_SNAPSHOT: ${{ github.event_name == 'workflow_dispatch' && inputs.create_snapshot || 'true' }}
+          FLY_SNAPSHOT_RETENTION_DAYS: ${{ github.event_name == 'workflow_dispatch' && inputs.retention_days || '14' }}

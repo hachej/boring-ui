@@ -101,6 +101,8 @@ export interface ChatPanelEmptyState {
   eyebrow?: string
   title?: string
   description?: string
+  /** Optional content rendered below the suggestion grid (e.g. a footer link). */
+  footer?: ReactNode
 }
 
 export interface PiChatPanelProps {
@@ -131,6 +133,9 @@ export interface PiChatPanelProps {
   model?: ModelSelection | null
   defaultModel?: ModelSelection
   availableModels?: AvailableModel[]
+  hideDefaultModelOption?: boolean
+  hideComposerSettings?: boolean
+  suppressPreSubmitCancelledWarning?: boolean
   thinkingLevel?: ThinkingLevel
   thinkingControl?: boolean
   serverResourcesEnabled?: boolean
@@ -190,6 +195,9 @@ export function PiChatPanel({
   model,
   defaultModel,
   availableModels,
+  hideDefaultModelOption = false,
+  hideComposerSettings = false,
+  suppressPreSubmitCancelledWarning = false,
   thinkingLevel,
   thinkingControl = true,
   serverResourcesEnabled = true,
@@ -423,7 +431,7 @@ export function PiChatPanel({
       ? [{
           id: 'large-state-warning',
           level: 'warning' as const,
-          text: `Large Pi chat state: ${debugState.largeStateWarning.messageCount} messages, approximately ${debugState.largeStateWarning.approxBytes} bytes.`,
+          text: `Large chat state: ${debugState.largeStateWarning.messageCount} messages, approximately ${debugState.largeStateWarning.approxBytes} bytes.`,
           dismissible: true,
         }]
       : []
@@ -458,7 +466,7 @@ export function PiChatPanel({
   const createSession = useCallback(() => {
     if (externalSessionId) return
     void sessions.create().catch((error) => {
-      addLocalNotice({ id: 'session-create-error', level: 'error', text: errorMessage(error, 'Could not create a Pi session.'), dismissible: true })
+      addLocalNotice({ id: 'session-create-error', level: 'error', text: errorMessage(error, 'Could not create a chat session.'), dismissible: true })
     })
   }, [addLocalNotice, externalSessionId, sessions.create])
 
@@ -469,7 +477,7 @@ export function PiChatPanel({
     autoCreateInFlightRef.current = true
     void sessions.create().catch((error) => {
       autoCreateInFlightRef.current = false
-      addLocalNotice({ id: 'session-auto-create-error', level: 'error', text: errorMessage(error, 'Could not create a Pi session.'), dismissible: true })
+      addLocalNotice({ id: 'session-auto-create-error', level: 'error', text: errorMessage(error, 'Could not create a chat session.'), dismissible: true })
     })
   }, [activeSessionId, addLocalNotice, externalSessionId, sessionList.length, sessions.create, sessionsError, sessionsLoading])
 
@@ -482,7 +490,7 @@ export function PiChatPanel({
   const deleteSession = useCallback((sessionId: string) => {
     if (externalSessionId) return
     void sessions.delete(sessionId).catch((error) => {
-      addLocalNotice({ id: `session-delete-error:${sessionId}`, level: 'error', text: errorMessage(error, 'Could not delete the Pi session.'), dismissible: true })
+      addLocalNotice({ id: `session-delete-error:${sessionId}`, level: 'error', text: errorMessage(error, 'Could not delete the chat session.'), dismissible: true })
     })
   }, [addLocalNotice, externalSessionId, sessions.delete])
 
@@ -499,7 +507,7 @@ export function PiChatPanel({
       await sessions.create()
       await onSessionReset?.()
     })().catch((error) => {
-      addLocalNotice({ id: 'session-reset-error', level: 'error', text: errorMessage(error, 'Could not reset the Pi session.'), dismissible: true })
+      addLocalNotice({ id: 'session-reset-error', level: 'error', text: errorMessage(error, 'Could not reset the chat session.'), dismissible: true })
     }).finally(() => {
       resetInProgressRef.current = false
     })
@@ -517,15 +525,15 @@ export function PiChatPanel({
       const failureMessage = pluginReloadFailureMessage(message)
       if (failureMessage) {
         setPluginUpdateState({ kind: 'error', message: failureMessage })
-        return `Plugin update failed: ${failureMessage}`
+        return `Extension update failed: ${failureMessage}`
       }
       setPluginUpdateState({ kind: 'success', reloaded: !/will reload on the next message/i.test(message) })
       setServerSkillsRefreshKey((key) => key + 1)
       return message
     } catch (error) {
-      const message = errorMessage(error, 'Agent plugin reload failed.')
+      const message = errorMessage(error, 'Extension reload failed.')
       setPluginUpdateState({ kind: 'error', message })
-      return `Plugin update failed: ${message}`
+      return `Extension update failed: ${message}`
     }
   }, [reloadAgentPlugins])
 
@@ -690,7 +698,7 @@ export function PiChatPanel({
         clearMessages: () => addLocalNotice({
           id: 'clear-not-supported',
           level: 'info',
-          text: '/clear is not available in the Pi-native chat panel.',
+          text: '/clear is not available in this chat panel.',
           dismissible: true,
         }),
         resetSession,
@@ -724,6 +732,7 @@ export function PiChatPanel({
         addLocalNotice({ id: `command:${Date.now()}`, level: 'info', text: message, dismissible: true })
       },
       onWarning: (message) => {
+        if (suppressPreSubmitCancelledWarning && message === 'Submit was cancelled before sending.') return
         onComposerWarning?.(message)
         addLocalNotice({ id: `composer-warning:${Date.now()}`, level: 'warning', text: message, dismissible: true })
       },
@@ -732,7 +741,7 @@ export function PiChatPanel({
         onMentionedFilesConsumed?.()
       },
     })
-  }, [activeChatSessionId, addLocalNotice, clearMentionedFiles, composerBlocked, composerBlockerLabel, effectiveMentionedFiles, markLocalSubmitted, onBeforeSubmit, onCommandResult, onComposerWarning, onMentionedFilesConsumed, openModelPicker, openThinkingPicker, registry, reloadAgentPlugins, resetSession, runPluginUpdate, selectComposerModel, selectComposerThinking, selectedModel, selectedPiSession, selectedThinking, setComposerDraft, submitThinkingControl])
+  }, [activeChatSessionId, addLocalNotice, clearMentionedFiles, composerBlocked, composerBlockerLabel, effectiveMentionedFiles, markLocalSubmitted, onBeforeSubmit, onCommandResult, onComposerWarning, onMentionedFilesConsumed, openModelPicker, openThinkingPicker, registry, reloadAgentPlugins, resetSession, runPluginUpdate, selectComposerModel, selectComposerThinking, selectedModel, selectedPiSession, selectedThinking, setComposerDraft, submitThinkingControl, suppressPreSubmitCancelledWarning])
 
   // Turn a rejected send (prompt/follow-up/auto-submit) into the single run-rejected
   // notice, carrying the stable server error code so a host can attach a recovery
@@ -754,7 +763,7 @@ export function PiChatPanel({
 
   const sendComposerMessage = useCallback(async ({ text, files, source = 'composer' }: ComposerSendPayload) => {
     if (!policy) {
-      addLocalNotice({ id: 'composer-no-session', level: 'warning', text: 'Create or select a Pi session before sending.', dismissible: true })
+      addLocalNotice({ id: 'composer-no-session', level: 'warning', text: 'Create or select a chat session before sending.', dismissible: true })
       return false
     }
     const submittedDraft = text
@@ -807,13 +816,13 @@ export function PiChatPanel({
   const stop = useCallback(() => {
     onComposerStop?.()
     void policy?.stop().catch((error) => {
-      addLocalNotice({ id: 'stop-error', level: 'error', text: errorMessage(error, 'Could not stop the Pi session.'), dismissible: true })
+      addLocalNotice({ id: 'stop-error', level: 'error', text: errorMessage(error, 'Could not stop the chat session.'), dismissible: true })
     })
   }, [addLocalNotice, onComposerStop, policy])
 
   const interrupt = useCallback(() => {
     void policy?.interrupt().catch((error) => {
-      addLocalNotice({ id: 'interrupt-error', level: 'error', text: errorMessage(error, 'Could not interrupt the Pi session.'), dismissible: true })
+      addLocalNotice({ id: 'interrupt-error', level: 'error', text: errorMessage(error, 'Could not interrupt the chat session.'), dismissible: true })
     })
   }, [addLocalNotice, policy])
 
@@ -1058,6 +1067,8 @@ export function PiChatPanel({
               selectedModel={selectedModel}
               modelOptions={modelOptions}
               modelControlled={model !== undefined}
+              hideDefaultModelOption={hideDefaultModelOption}
+              hideComposerSettings={hideComposerSettings}
               onModelChange={modelDiscovery.setModel}
               onSetModelPickerOpen={setModelPickerOpen}
               onOpenModelPicker={openModelPicker}
@@ -1079,7 +1090,7 @@ export function PiChatPanel({
         </div>
         {debug ? (
           <Suspense fallback={null}>
-            <div aria-label="Pi chat debug metadata" className="contents" role="region">
+            <div aria-label="Chat debug metadata" className="contents" role="region">
               <DebugDrawer
                 apiBaseUrl={apiBaseUrl}
                 fetch={fetch}

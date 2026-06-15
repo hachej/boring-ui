@@ -100,6 +100,8 @@ export interface PiChatComposerSurfaceProps {
   selectedModel: ModelSelection | null
   modelOptions: AvailableModel[]
   modelControlled: boolean
+  hideDefaultModelOption?: boolean
+  hideComposerSettings?: boolean
   onModelChange: (model: ModelSelection | null) => void
   onSetModelPickerOpen: (open: boolean) => void
   onOpenModelPicker: () => boolean
@@ -157,6 +159,8 @@ export function PiChatComposerSurface({
   selectedModel,
   modelOptions,
   modelControlled,
+  hideDefaultModelOption = false,
+  hideComposerSettings = false,
   onModelChange,
   onSetModelPickerOpen,
   onOpenModelPicker,
@@ -285,6 +289,7 @@ export function PiChatComposerSurface({
             onChange={onModelChange}
             options={modelOptions}
             disabled={isStreaming || modelControlled}
+            hideDefaultOption={hideDefaultModelOption}
             onClose={() => onSetModelPickerOpen(false)}
           />
         ) : null}
@@ -392,6 +397,7 @@ export function PiChatComposerSurface({
           </div>
         </PromptInput>
       </div>
+      {hideComposerSettings ? null : (
       <div
         data-boring-agent-part="composer-settings-row"
         className={cn(
@@ -429,6 +435,7 @@ export function PiChatComposerSurface({
           />
         ) : null}
       </div>
+      )}
     </div>
   )
 }

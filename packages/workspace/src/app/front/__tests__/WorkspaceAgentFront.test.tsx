@@ -1422,7 +1422,7 @@ describe("WorkspaceAgentFront", () => {
 
       await waitFor(() => expect(typeof capturedChatProps?.onReloadAgentPlugins).toBe("function"))
       const message = await (capturedChatProps?.onReloadAgentPlugins as () => Promise<string>)()
-      expect(message).toContain("Agent plugins reloaded.")
+      expect(message).toContain("Extensions reloaded.")
       expect(message).toContain("rebuilt plugin front")
       expect(fetchMock).toHaveBeenCalledWith("/agent/api/v1/agent/reload", expect.objectContaining({ method: "POST" }))
       expect(reloadEvents).toContainEqual({ reloaded: true, diagnostics: [{ message: "rebuilt plugin front" }] })

@@ -33,6 +33,7 @@ export interface PiConversationSurfaceProps {
     eyebrow?: string
     title?: string
     description?: string
+    footer?: ReactNode
   }
   suggestions: ChatSuggestion[]
   isStreaming: boolean
@@ -108,6 +109,7 @@ export function PiConversationSurface({
             eyebrow={emptyState?.eyebrow}
             title={emptyState?.title}
             description={emptyState?.description}
+            footer={emptyState?.footer}
             suggestions={suggestions}
             className={emptyHero ? 'items-center text-center [&>p]:mx-auto' : undefined}
             onSelect={(suggestion) => {
