@@ -215,6 +215,7 @@ export const ChatAttachmentPayloadSchema = z.object({
   filename: z.string().optional(),
   mediaType: z.string().optional(),
   url: nonEmptyString,
+  path: z.string().optional(),
 }) satisfies z.ZodType<ChatAttachmentPayload>
 
 export const PromptPayloadSchema = z.object({

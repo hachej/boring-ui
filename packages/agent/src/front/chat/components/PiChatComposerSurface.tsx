@@ -27,6 +27,7 @@ import {
 } from '../../primitives/prompt-input'
 import { SlashCommandPicker } from '../../primitives/slash-command-picker'
 import type { SlashCommand } from '../../slashCommands'
+import { uploadFile } from '../../upload/uploadFile'
 import { AttachmentButton, AttachmentsList } from './ComposerAttachments'
 import {
   ComposerBlockerNotice,
@@ -178,6 +179,12 @@ export function PiChatComposerSurface({
   onSubmitMessage,
   onStop,
 }: PiChatComposerSurfaceProps) {
+  const uploadAttachment = useCallback((file: File) => uploadFile(file, {
+    apiBaseUrl,
+    workspaceRequestId: requestHeaders?.['x-boring-workspace-id'],
+    fetch,
+  }), [apiBaseUrl, fetch, requestHeaders])
+
   const resizeTextarea = useCallback((node: HTMLTextAreaElement | null) => {
     if (!node) return
     node.style.height = 'auto'
@@ -323,6 +330,7 @@ export function PiChatComposerSurface({
         <PromptInput
           data-boring-state={status}
           onSubmit={(message) => onSubmitMessage({ text: message.text, files: message.files })}
+          onUploadFile={uploadAttachment}
           multiple
           maxFiles={disabled || isStreaming ? 0 : MAX_PROMPT_ATTACHMENTS}
           maxFileSize={MAX_PROMPT_ATTACHMENT_BYTES}
