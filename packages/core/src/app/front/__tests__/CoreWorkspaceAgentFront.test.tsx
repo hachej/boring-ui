@@ -217,6 +217,47 @@ describe('CoreWorkspaceAgentFront', () => {
     })
   })
 
+  it('keeps public launch panels scoped out of authenticated workspaces', async () => {
+    const { CoreWorkspaceAgentFront } = await importSubject()
+    const publicPlugin = { id: 'public-plugin' }
+    const publicPanels = [{ id: 'public-landing-page', component: 'public.launch.landing', title: 'Landing page' }]
+
+    render(
+      <CoreWorkspaceAgentFront
+        chatEntryMode="chat-first"
+        chatFirstPublicWorkspaceProps={{
+          plugins: [publicPlugin] as never,
+          surfaceInitialPanels: publicPanels,
+        }}
+      />,
+    )
+
+    expect(workspaceAgentProps).toMatchObject({ workspaceId: 'workspace-a' })
+    expect(workspaceAgentProps?.plugins).toBeUndefined()
+    expect(workspaceAgentProps?.surfaceInitialPanels).toBeUndefined()
+
+    workspaceAgentProps = null
+    sessionState = { data: null, isPending: false }
+    currentWorkspaceId = null
+    routePath = '/'
+
+    render(
+      <CoreWorkspaceAgentFront
+        chatEntryMode="chat-first"
+        chatFirstPublicWorkspaceProps={{
+          plugins: [publicPlugin] as never,
+          surfaceInitialPanels: publicPanels,
+        }}
+      />,
+    )
+
+    expect(workspaceAgentProps).toMatchObject({
+      workspaceId: 'public',
+      plugins: [publicPlugin],
+      surfaceInitialPanels: publicPanels,
+    })
+  })
+
   it('signs in from the chat-first auth overlay without a hard browser reload', async () => {
     const { CoreWorkspaceAgentFront } = await importSubject()
     sessionState = { data: null, isPending: false }

@@ -110,10 +110,12 @@ createRoot(document.getElementById('root')!).render(
         ],
       }}
       chatParams={chatParams}
-      surfaceInitialPanels={[
-        { id: 'public-landing-page', component: 'public.launch.landing', title: 'Landing page' },
-      ]}
-      plugins={[publicLaunchPlugin]}
+      chatFirstPublicWorkspaceProps={{
+        surfaceInitialPanels: [
+          { id: 'public-landing-page', component: 'public.launch.landing', title: 'Landing page' },
+        ],
+        plugins: [publicLaunchPlugin],
+      }}
       authPages={{ userSettings: AccountSettingsPage }}
       topBarRight={
         <>
