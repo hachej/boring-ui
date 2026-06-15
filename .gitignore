@@ -131,3 +131,6 @@ packages/workspace/src/plugins/eval-*/
 /.vibe/
 /.windsurf/
 /.zencoder/
+
+# Local credits-testing dev bootstrap (not committed)
+/apps/full-app/src/server/dev-credits.ts

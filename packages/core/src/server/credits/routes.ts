@@ -227,14 +227,17 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
     throw new Error('credits: configure at most one purchase provider (lemonSqueezy OR stripe), not both')
   }
 
+  // Stripe checkout is only "live" when its webhook is ALSO wired — otherwise a buyer
+  // would be charged with no webhook to credit them. Don't advertise it without both.
+  const stripeReady = Boolean(options.stripe?.checkout && options.stripe?.webhookSecret)
   // Server truth for the Buy-credits button so the client flag can't drift from
   // whether checkout is actually wired.
-  const checkoutEnabled = Boolean(options.lemonSqueezy?.checkout || options.stripe?.checkout)
+  const checkoutEnabled = Boolean(options.lemonSqueezy?.checkout) || stripeReady
   // Display-ready packs (only when checkout is wired); provider price/variant ids stay server-side.
   const packs = options.lemonSqueezy
     ? buildCreditPacks(options.lemonSqueezy)
-    : options.stripe
-      ? buildStripePacks(options.stripe)
+    : stripeReady
+      ? buildStripePacks(options.stripe!)
       : []
 
   app.get(balancePath, async (request, reply) => {
@@ -568,6 +571,12 @@ function registerStripeRoutes(
   const fixedPackMicros = stripe.creditMicrosByPack ?? {}
   const customPackId = stripe.checkout?.customPack?.id
 
+  // Exposing checkout without a webhook would charge buyers with nothing to credit them
+  // (and no refund tombstone). Require the webhook secret whenever checkout is configured.
+  if (stripe.checkout && !stripe.webhookSecret) {
+    throw new Error('credits: Stripe checkout is configured but no webhookSecret — buyers would be charged without being credited (no fulfillment webhook). Set BORING_CREDITS_STRIPE_WEBHOOK_SECRET.')
+  }
+
   if (stripe.checkout) {
     const checkout = stripe.checkout
     // Every fixed checkout pack must have a positive credit value, and the default must
@@ -578,8 +587,11 @@ function registerStripeRoutes(
         throw new Error(`credits: stripe checkout pack "${packId}" (price ${priceId}) has no positive creditMicrosByPack entry`)
       }
     }
-    if (!(checkout.defaultPack in checkout.variants)) {
-      throw new Error(`credits: stripe checkout defaultPack "${checkout.defaultPack}" is not one of the configured packs`)
+    // The default pack must be a configured fixed pack OR the custom pack (a custom-only
+    // deployment defaults to the custom pack).
+    const defaultIsCustom = customPackId != null && checkout.defaultPack === customPackId && checkout.customPack != null
+    if (!(checkout.defaultPack in checkout.variants) && !defaultIsCustom) {
+      throw new Error(`credits: stripe checkout defaultPack "${checkout.defaultPack}" is not one of the configured packs (or the custom pack)`)
     }
     if (customPackId && customPackId in checkout.variants) {
       throw new Error(`credits: stripe custom pack id "${customPackId}" collides with a fixed pack id`)
@@ -592,13 +604,16 @@ function registerStripeRoutes(
 
   // micros granted per 1 minor currency unit (e.g. per rappen/cent).
   const ratePerMinor = creditMicrosPerUnit / 100
+  const customMinMinor = stripe.checkout?.customPack?.minMinor ?? 0
   const creditsForOrder = (order: StripeOrder): number => {
     if (isCustomPack(order.packId)) {
-      // Pay-what-you-want: credit the net pre-tax amount actually paid. By construction
-      // this can't over-credit (credits == paid × rate), so the underpayment guard always
-      // passes for it; the Stripe-enforced minimum bounds it below.
+      // Pay-what-you-want: credit the net pre-tax amount actually paid (credits == paid ×
+      // rate, so the underpayment guard always passes). Enforce the configured minimum
+      // SERVER-side too (don't rely solely on the Stripe price minimum): a below-min paid
+      // amount returns 0 → the handler fails loud (no_credit_amount 500) for operator review.
       const sub = order.amountSubtotalMinor
-      return typeof sub === 'number' && sub > 0 ? Math.floor(sub * ratePerMinor) : 0
+      if (typeof sub !== 'number' || sub <= 0 || sub < customMinMinor) return 0
+      return Math.floor(sub * ratePerMinor)
     }
     if (isFixedPack(order.packId)) return fixedPackMicros[order.packId as string] ?? 0
     return 0
@@ -633,7 +648,8 @@ function registerStripeRoutes(
       let priceId: string
       if (pack === undefined || pack === null) {
         packId = checkout.defaultPack
-        priceId = checkout.variants[packId] as string
+        // The default may be the custom pack (custom-only deployment) — resolve its price.
+        priceId = isCustomPack(packId) && checkout.customPack ? checkout.customPack.priceId : (checkout.variants[packId] as string)
       } else if (typeof pack === 'string' && pack in checkout.variants) {
         packId = pack
         priceId = checkout.variants[pack] as string
@@ -662,7 +678,8 @@ function registerStripeRoutes(
   }
 
   const webhookSecret = stripe.webhookSecret
-  if (!webhookSecret) return // checkout-only: no webhook secret ⇒ no auto-crediting route
+  // No secret here means no checkout either (guarded above), so nothing to register.
+  if (!webhookSecret) return
   const webhookPath = stripe.webhookPath ?? '/api/credits/webhooks/stripe'
   app.register(async (scope) => {
     // Raw body so the Stripe signature can be verified before parsing.

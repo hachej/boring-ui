@@ -124,6 +124,15 @@ function readStripeRouteConfig(env: NodeJS.ProcessEnv): {
   if (env.NODE_ENV === 'production' && testMode) {
     throw new Error('credits: BORING_CREDITS_STRIPE_TEST_MODE=1 in production mints non-charging but spendable credits — set it to 0 and purge any test grants before live cutover')
   }
+  // The key's own mode determines the session livemode, which the webhook gates on. A
+  // key/mode disagreement would create sessions the webhook then drops as not-our-mode
+  // (paid, never credited). Require the sk_/rk_ test/live prefix to match testMode.
+  if (apiKey) {
+    const keyIsTest = /^(sk|rk)_test_/.test(apiKey)
+    const keyIsLive = /^(sk|rk)_live_/.test(apiKey)
+    if (keyIsTest && !testMode) throw new Error('credits: BORING_CREDITS_STRIPE_SECRET_KEY is a TEST key but BORING_CREDITS_STRIPE_TEST_MODE=0 — checkouts would be test-mode but the webhook expects live, so paid orders would not be credited')
+    if (keyIsLive && testMode) throw new Error('credits: BORING_CREDITS_STRIPE_SECRET_KEY is a LIVE key but BORING_CREDITS_STRIPE_TEST_MODE=1 — checkouts would be live but the webhook expects test, so paid orders would not be credited')
+  }
   const variants = parseStripeVariants(env.BORING_CREDITS_STRIPE_VARIANTS)
   const creditMicrosByPack: Record<string, number> = {}
   for (const packId of Object.keys(variants)) {
@@ -551,9 +560,10 @@ export function buildCreditsWiring(env: NodeJS.ProcessEnv = process.env): {
               checkout: config.lemonSqueezyCheckout,
             }
           : undefined
-      // Stripe purchase wiring (alternative provider). Only when credits are enabled;
-      // userExists guards against PII resurrection on a stale webhook (as with LS).
-      const stripeRoute = readStripeRouteConfig(env)
+      // Stripe purchase wiring (alternative provider). Only PARSE Stripe env when credits
+      // are enabled — the BORING_CREDITS_ENABLED=0 kill switch must boot even with stale/
+      // invalid Stripe env. userExists guards against PII resurrection on a stale webhook.
+      const stripeRoute = config.enabled ? readStripeRouteConfig(env) : undefined
       const stripe =
         config.enabled && stripeRoute
           ? {
