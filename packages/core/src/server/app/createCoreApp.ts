@@ -240,6 +240,7 @@ export async function createCoreApp(
             styleSrcAttr: ["'unsafe-inline'"],
             imgSrc: ["'self'", 'data:', 'blob:'],
             connectSrc: ["'self'"],
+            frameSrc: ["'self'", 'https://calendly.com'],
             fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
             objectSrc: ["'none'"],
             frameAncestors: ["'none'"],
