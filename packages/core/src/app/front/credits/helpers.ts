@@ -54,11 +54,13 @@ export function creditNetMicros(balance: Pick<CreditBalanceResponse, 'remainingM
   return remaining - debt
 }
 
-/** Format SIGNED credit micros as a euro string with an explicit +/− sign. */
-export function formatSignedCreditMicros(micros: number, locale?: string): string {
-  const euros = (Number.isFinite(micros) ? micros : 0) / 1_000_000
-  const sign = euros > 0 ? '+' : euros < 0 ? '−' : ''
-  const abs = new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' }).format(Math.abs(euros))
+/** Format SIGNED credit micros as a currency string with an explicit +/− sign.
+ * `currency` is the configured display currency (1 credit-unit = 1 major unit); defaults
+ * to EUR for callers without a configured purchase currency. */
+export function formatSignedCreditMicros(micros: number, currency = 'EUR', locale?: string): string {
+  const major = (Number.isFinite(micros) ? micros : 0) / 1_000_000
+  const sign = major > 0 ? '+' : major < 0 ? '−' : ''
+  const abs = new Intl.NumberFormat(locale, { style: 'currency', currency }).format(Math.abs(major))
   return `${sign}${abs}`
 }
 
@@ -68,10 +70,12 @@ export function formatMinorPrice(priceMinor: number, currency: string, locale?: 
   return new Intl.NumberFormat(locale, { style: 'currency', currency, maximumFractionDigits: major % 1 === 0 ? 0 : 2 }).format(major)
 }
 
-/** Format credit micros as a euro string. 1 credit = €0.000001 ⇒ µ/1e6 euros. */
-export function formatCreditMicros(micros: number, locale?: string): string {
-  const euros = (Number.isFinite(micros) ? Math.max(0, micros) : 0) / 1_000_000
-  return new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' }).format(euros)
+/** Format credit micros as a currency string. 1 credit-unit = 1 major unit of the
+ * configured display `currency` (µ/1e6). Defaults to EUR for callers without a
+ * configured purchase currency (e.g. a consumption-only deployment). */
+export function formatCreditMicros(micros: number, currency = 'EUR', locale?: string): string {
+  const major = (Number.isFinite(micros) ? Math.max(0, micros) : 0) / 1_000_000
+  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(major)
 }
 
 /** True when the remaining balance is at or below the low-balance threshold. */
