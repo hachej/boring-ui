@@ -18,6 +18,7 @@ function isFullPageRoute(): boolean {
 
 interface WorkspaceMeta {
   projectName?: string
+  workspaceId?: string
 }
 
 const playgroundDeckWidgets: DeckWidgetDefinition[] = [
@@ -77,6 +78,7 @@ export function WorkspaceShell() {
   const showcase = useMemo(isShowcaseRoute, [])
   const fullPage = useMemo(isFullPageRoute, [])
   const [projectName, setProjectName] = useState("Workspace")
+  const [workspaceId, setWorkspaceId] = useState("Workspace")
   const [metaLoaded, setMetaLoaded] = useState(showcase || fullPage)
 
   const sessions = useMemo(
@@ -107,8 +109,12 @@ export function WorkspaceShell() {
       .then((meta) => {
         if (cancelled) return
         const next = meta?.projectName?.trim()
+        const nextWorkspaceId = meta?.workspaceId?.trim() || next
         if (next) {
           setProjectName(next)
+        }
+        if (nextWorkspaceId) {
+          setWorkspaceId(nextWorkspaceId)
         }
         setMetaLoaded(true)
       })
@@ -130,7 +136,7 @@ export function WorkspaceShell() {
 
   return (
     <WorkspaceAgentFront
-      workspaceId={showcase ? "playground" : projectName}
+      workspaceId={showcase ? "playground" : workspaceId}
       apiBaseUrl=""
       persistenceEnabled
       debug

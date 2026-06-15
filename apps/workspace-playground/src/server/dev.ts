@@ -67,6 +67,7 @@ export async function startPlaygroundServer(): Promise<void> {
     })
     app.get("/api/v1/workspace/meta", async () => ({
       projectName: basename(workspaceRoot) || "Workspace",
+      workspaceId: remoteWorkerWorkspaceId ?? (basename(workspaceRoot) || "Workspace"),
       workspaceRoot,
     }))
     await app.listen({ port: AGENT_API_PORT, host: "127.0.0.1" })
