@@ -31,8 +31,13 @@ items flagged "UNPROVEN" below. This is the punch list to take it live.
 ## 2. Credits economics (MUST validate before launch)
 
 ### Configured values (current policy)
-- **Signup grant**: `BORING_CREDITS_SIGNUP_GRANT_EUR=0` → no free credits; users must buy
-  before their first run (the out-of-credits gate + Buy CTA fires on the first prompt).
+- **Signup grant**: `BORING_CREDITS_SIGNUP_GRANT_EUR=1` → 1 CHF free per signup.
+- **Per-run hold**: `BORING_CREDITS_MAX_CALLS_PER_RUN=1` → hold ≈ CHF 0.93 (worst case floors at
+  the conservative 3/15 rate × maxCalls × margin), so a 1 CHF signup can start a run. Default
+  (4) would hold CHF 3.72 and block the trial. Actual billing is the cheap Qwen rate, so normal
+  runs settle in cents; only a pathological long run overshoots into small bounded debt (next
+  run refused). NB: `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION` is **rejected in production**,
+  so lower the hold via maxCalls (not RESERVATION_EUR below the served worst case).
 - **Margin**: `BORING_CREDITS_MARGIN=1.1` → 10% over raw provider cost.
 - **Rates** (`BORING_CREDITS_RATES`, raw provider CHF/MTok — margin applied on top):
   verified Infomaniak AI prices (excl. VAT, source: infomaniak.com/en/hosting/ai-services/prices):
@@ -71,8 +76,9 @@ trial into debt — the service rejects expiring grants for this reason).
       reserve/hold is proven but real token→credit pricing is not.
 - [ ] Tune the per-run hold: `BORING_CREDITS_RESERVATION_EUR` (or the derived served
       worst-case), `BORING_CREDITS_MAX_CONTEXT_TOKENS/_OUTPUT_TOKENS/_CALLS_PER_RUN`.
-- [ ] **Signup grant is 0** (`BORING_CREDITS_SIGNUP_GRANT_EUR=0`) — confirm the first-run
-      out-of-credits gate (402) + Buy CTA is the intended new-user experience.
+- [ ] **Signup grant is 1 CHF** (`BORING_CREDITS_SIGNUP_GRANT_EUR=1`, hold lowered via
+      `BORING_CREDITS_MAX_CALLS_PER_RUN=1` so it's spendable) — new users get a free trial run;
+      the out-of-credits gate + Buy CTA fires once it's exhausted.
 
 ## 3. App / infra
 - [ ] Run DB migrations on the prod DB (`pnpm --filter full-app run migrate`); the credits/
