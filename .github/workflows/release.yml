@@ -71,3 +71,23 @@ jobs:
             tarball=$(cd $pkg && pnpm pack 2>&1 | tail -1)
             npm publish "$pkg/$tarball" --access public --provenance
           done
+
+  deploy-full-app:
+    name: Deploy full-app to Fly.io
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
+
+      - name: Deploy boring-full-app
+        run: flyctl deploy --remote-only --app boring-full-app --config apps/full-app/fly.toml
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      # boring-macro is deployed from its canonical standalone repository:
+      # https://github.com/hachej/boring-macro
+      # Do not deploy it from this monorepo.
