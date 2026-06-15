@@ -62,6 +62,11 @@ export function AuthCard({
           ) : null}
           <input className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-ring" type="email" autoComplete="email" placeholder="Email" value={email} onChange={(event) => setEmail(event.currentTarget.value)} required />
           <input className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-ring" type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} placeholder="Password" value={password} onChange={(event) => setPassword(event.currentTarget.value)} required />
+          {mode === 'signin' ? (
+            <div className="flex justify-end">
+              <a href={routes.forgotPassword} className="text-xs text-muted-foreground hover:underline">Forgot password?</a>
+            </div>
+          ) : null}
           <button type="submit" className="w-full rounded-xl bg-primary px-3 py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-50" disabled={submitting}>
             {submitting ? 'Please wait…' : mode === 'signin' ? 'Continue with email' : 'Create account'}
           </button>
