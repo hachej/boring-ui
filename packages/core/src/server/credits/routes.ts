@@ -6,6 +6,15 @@ import { createLemonSqueezyCheckout } from './lemonSqueezyCheckout.js'
 import { handleStripeWebhook, stripeNetPaidMinor, type StripeOrder } from './stripe.js'
 import { createStripeCheckout } from './stripeCheckout.js'
 
+/** Currencies whose minor unit is NOT 1/100 of the major (0-decimal and 3-decimal). The
+ * Stripe credit math assumes 100 minor units/major, so these are rejected at config time. */
+const NON_TWO_DECIMAL_CURRENCIES = new Set<string>([
+  // 0-decimal
+  'BIF', 'CLP', 'DJF', 'GNF', 'JPY', 'KMF', 'KRW', 'MGA', 'PYG', 'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF',
+  // 3-decimal
+  'BHD', 'IQD', 'JOD', 'KWD', 'LYD', 'OMR', 'TND',
+])
+
 export interface LemonSqueezyCheckoutConfig {
   apiKey: string
   storeId: string
@@ -578,6 +587,13 @@ function registerStripeRoutes(
   const creditMicrosPerUnit = service.config.pricing.creditMicrosPerUnit
   // Stripe currencies arrive lowercase; store/compare uppercased for the ledger identity.
   const requireCurrency = (stripe.requireCurrency ?? 'EUR').toUpperCase()
+  // The credit math assumes 100 minor units per major unit (ratePerMinor = micros/100).
+  // That's wrong for 0-decimal (e.g. JPY) and 3-decimal (e.g. KWD/BHD) currencies, which
+  // would mis-credit real paid orders. Restrict to 2-decimal currencies at startup rather
+  // than silently mis-credit; non-2-decimal support would need a per-currency exponent.
+  if (NON_TWO_DECIMAL_CURRENCIES.has(requireCurrency)) {
+    throw new Error(`credits: Stripe currency "${requireCurrency}" is not a 2-decimal currency; the credit math assumes 100 minor units per major unit. Use a 2-decimal currency (e.g. EUR/USD/GBP/CHF).`)
+  }
   const expectedLiveMode = !stripe.expectedTestMode
   const creditOnlyStore = stripe.creditOnlyStore !== false
   const fixedPackMicros = stripe.creditMicrosByPack ?? {}
