@@ -5,7 +5,9 @@ import type { ToolUiMetadata } from '../tool-ui'
 
 export type PiChatEvent =
   | { type: 'agent-start'; seq: number; turnId: string }
-  | { type: 'agent-end'; seq: number; turnId: string; status: 'ok' | 'aborted' | 'error' }
+  // willRetry=true marks a NON-terminal end (pi will auto-retry this turn). Consumers
+  // that act once-per-settle (e.g. a host's onTurnComplete) must ignore those.
+  | { type: 'agent-end'; seq: number; turnId: string; status: 'ok' | 'aborted' | 'error'; willRetry?: boolean }
   | {
       type: 'message-start'
       seq: number

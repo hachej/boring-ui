@@ -43,6 +43,24 @@ function readModelInput(name: string): Array<'text' | 'image'> {
   return parsed.length > 0 ? parsed : ['text']
 }
 
+function readMaxTokensField(name: string): 'max_tokens' | 'max_completion_tokens' {
+  const raw = clean(getEnv(name))
+  return raw === 'max_tokens' || raw === 'max_completion_tokens' ? raw : 'max_completion_tokens'
+}
+
+// Some OpenAI-compatible gateways (e.g. Ollama) reject store/developer-role/
+// reasoning-effort fields or want `max_tokens`; let hosts tune compat per
+// provider env prefix instead of hardcoding OpenAI defaults.
+function buildOpenAICompletionsCompat(envPrefix: string) {
+  return {
+    supportsStore: readBoolean(`${envPrefix}_SUPPORTS_STORE`, false),
+    supportsDeveloperRole: readBoolean(`${envPrefix}_SUPPORTS_DEVELOPER_ROLE`, true),
+    supportsReasoningEffort: readBoolean(`${envPrefix}_SUPPORTS_REASONING_EFFORT`, true),
+    supportsUsageInStreaming: readBoolean(`${envPrefix}_SUPPORTS_USAGE_IN_STREAMING`, true),
+    maxTokensField: readMaxTokensField(`${envPrefix}_MAX_TOKENS_FIELD`),
+  }
+}
+
 function readApiKeyEnv(candidates: string[]): string | undefined {
   for (const candidate of candidates) {
     const envName = clean(candidate)
@@ -78,13 +96,7 @@ function buildOpenAICompatibleProviderConfig(opts: {
           `${opts.envPrefix}_MAX_TOKENS`,
           DEFAULT_CUSTOM_MODEL_MAX_TOKENS,
         ),
-        compat: {
-          supportsStore: false,
-          supportsDeveloperRole: true,
-          supportsReasoningEffort: true,
-          supportsUsageInStreaming: true,
-          maxTokensField: 'max_completion_tokens',
-        },
+        compat: buildOpenAICompletionsCompat(opts.envPrefix),
       },
     ],
   }

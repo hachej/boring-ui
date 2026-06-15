@@ -64,7 +64,9 @@ export class PiChatEventMapper {
         const mapped = [
           ...this.mapAgentEndFinalAssistant(event, turnId),
           ...this.mapAgentEndError(event, turnId, status),
-          this.event({ type: 'agent-end', turnId, status }),
+          // willRetry marks a non-terminal end (auto-retry coming) so once-per-settle
+          // consumers can ignore it; mirrors mapAgentEndError's own willRetry gate.
+          this.event({ type: 'agent-end', turnId, status, ...(event.willRetry === true ? { willRetry: true } : {}) }),
         ]
         this.activeAssistantMessageId = undefined
         this.toolCallMessageIds.clear()
