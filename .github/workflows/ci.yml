@@ -288,8 +288,12 @@ jobs:
         run: |
           docker run --rm --entrypoint sh boring-sandbox-worker:ci -lc '
             command -v bwrap >/dev/null
+            command -v python3 >/dev/null
             command -v rg >/dev/null
             command -v setpriv >/dev/null
+            command -v uv >/dev/null
+            python3 -m venv /tmp/worker-smoke-venv
+            uv --version >/dev/null
             test ! -e /app/apps/full-app
             test ! -e /app/apps
           '

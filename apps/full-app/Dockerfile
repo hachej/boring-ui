@@ -88,9 +88,11 @@ CMD ["node", "apps/full-app/dist/server/main.js"]
 
 FROM node:22-slim AS worker-runtime
 WORKDIR /app
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends bubblewrap ca-certificates ripgrep util-linux \
+  && apt-get install -y --no-install-recommends bubblewrap ca-certificates curl git python3 python3-pip python3-venv ripgrep util-linux \
   && rm -rf /var/lib/apt/lists/* \
+  && corepack enable \
   && groupadd --system --gid 10001 boring \
   && useradd --system --uid 10001 --gid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin boring
 
