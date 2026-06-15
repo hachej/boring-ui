@@ -6,7 +6,7 @@ import { getEnv } from './config/env'
 import type { RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
 import { getRuntimeBundleStorageRoot } from './runtime/mode'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
-import { createPiCodingAgentHarness } from './harness/pi-coding-agent/createHarness'
+import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
 import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import type { WorkspaceProvisioningResult } from './workspace/provisioning'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
@@ -142,7 +142,7 @@ export async function createAgentApp(
 
   const getRuntimeProvisioning = opts.getRuntimeProvisioning ?? (() => opts.runtimeProvisioning)
   const runtimePi: PiHarnessOptions = {
-    ...opts.pi,
+    ...withPiHarnessDefaults(opts.pi),
     additionalSkillPaths: [
       ...(getRuntimeProvisioning()?.skillPaths ?? []),
       ...(opts.pi?.additionalSkillPaths ?? []),
@@ -179,11 +179,7 @@ export async function createAgentApp(
 
   const harnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
     ...input,
-    pi: {
-      noContextFiles: true,
-      noSkills: true,
-      ...runtimePi,
-    },
+    pi: runtimePi,
   }))
   const harness = await harnessFactory({
     tools,

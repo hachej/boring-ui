@@ -186,10 +186,8 @@ workspace file contexts).
 
 - deck files live under `deck/*.md` by default
 - `---` on its own line splits slides
-- widgets use moustache syntax
-- inline widgets stay inline; block widgets render as their own block
-
-Example:
+- widgets use moustache syntax; inline widgets stay inline, block widgets render
+  as their own block
 
 ```md
 # Quarterly update
@@ -205,30 +203,19 @@ Welcome {{Badge text="draft"}}
 
 ## Widget injection
 
-Widgets stay app-owned. The generic package only provides the registry and
-rendering contract.
+Widgets stay app-owned — the package only provides the registry and rendering
+contract. Unknown widgets and widget parse/render failures render a visible
+placeholder locally instead of crashing the deck.
 
 ```tsx
-import { createDeckPlugin } from "@hachej/boring-deck/front"
-import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
-
 const badgeWidget: DeckWidgetDefinition = {
   name: "Badge",
   display: "inline",
-  render: ({ attrs }) => <span className="rounded-full border px-2 py-0.5 text-xs">{attrs.text}</span>,
+  render: ({ attrs }) => <span className="badge">{attrs.text}</span>,
 }
 
-const deckPlugin = createDeckPlugin({
-  widgets: [badgeWidget],
-  theme: {
-    className: "my-deck-theme",
-    slideClassName: "my-deck-slide",
-  },
-})
+const deckPlugin = createDeckPlugin({ widgets: [badgeWidget] })
 ```
-
-Unknown widgets render a visible placeholder instead of crashing the whole deck.
-Widget parse/render failures stay local to the widget.
 
 ## Theming
 
