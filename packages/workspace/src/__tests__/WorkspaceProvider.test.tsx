@@ -522,6 +522,7 @@ describe("WorkspaceProvider — document title", () => {
     expect(formatWorkspaceDocumentTitle({ workspaceLabel: "::1" })).toBe("Boring UI")
     expect(formatWorkspaceDocumentTitle({ workspaceLabel: "C:/Users/demo/project" })).toBe("Boring UI")
     expect(formatWorkspaceDocumentTitle({ workspaceLabel: "HTTPS://workspace.example.com" })).toBe("Boring UI")
+    expect(formatWorkspaceDocumentTitle({ workspaceId: "ac9ea9fc-0151-4e89-bd39-be38ac4d53cc" })).toBe("Boring UI")
   })
 
   it("updates document.title when workspace metadata changes", () => {

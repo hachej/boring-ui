@@ -47,19 +47,27 @@ export function modelsRoutes(
   // Cached so repeated GETs don't re-scan auth every request.
   const authStorage = AuthStorage.create()
   const registry = ModelRegistry.create(authStorage)
-  registerConfiguredModelProviders(registry)
+  const configuredModels = registerConfiguredModelProviders(registry)
+  const configuredModelSet = new Set(
+    configuredModels.map((model) => `${model.provider}:${model.id}`),
+  )
   app.get('/api/v1/agent/models', async (_request, reply) => {
     const availableModels = registry.getAvailable()
     const availableSet = new Set(
       availableModels.map((m) => `${m.provider}:${m.id}`),
     )
-    const models: ModelSummary[] = registry.getAll().map((m) => ({
+    const allModels = configuredModelSet.size > 0
+      ? registry.getAll().filter((m) => configuredModelSet.has(`${m.provider}:${m.id}`))
+      : registry.getAll()
+    const models: ModelSummary[] = allModels.map((m) => ({
       provider: m.provider,
       id: m.id,
       label: (m as unknown as { label?: string }).label ?? m.id,
       // Keep this endpoint cheap: it is fetched on chat mount, so it must never
       // block workspace load on deep provider auth resolution. ModelRegistry's
-      // available set is already derived from configured auth sources.
+      // available set is already derived from configured auth sources. When
+      // hosts configure launch/custom providers, those configured models are an
+      // allowlist: do not leak the built-in registry's unavailable catalog.
       available: availableSet.has(`${m.provider}:${m.id}`),
     }))
     // Stable order: available first, then alphabetically by (provider, id).

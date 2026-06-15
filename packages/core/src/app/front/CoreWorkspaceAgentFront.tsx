@@ -304,6 +304,7 @@ function WorkspaceRoute<
       key={workspaceId}
       {...workspaceProps}
       workspaceId={workspaceId}
+      workspaceLabel={workspaceProps.workspaceLabel ?? currentWorkspace.name}
       requestHeaders={requestHeaders}
       authHeaders={authHeaders}
       chatParams={chatParams}

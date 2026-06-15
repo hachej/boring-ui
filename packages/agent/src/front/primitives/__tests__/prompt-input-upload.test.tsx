@@ -29,7 +29,7 @@ function AttachmentStatus() {
 }
 
 interface HarnessProps {
-  onUploadFile?: (f: File) => Promise<{ url: string }>
+  onUploadFile?: (f: File) => Promise<{ url: string; path?: string }>
   onSubmit?: (v: { text: string; files: unknown[] }) => false | void | Promise<false | void>
 }
 
@@ -123,7 +123,7 @@ describe('PromptInput — upload flow', () => {
   })
 
   it('submits uploaded stable attachment URLs once ready', async () => {
-    const onUploadFile = vi.fn(() => Promise.resolve({ url: 'https://example.com/img.png' }))
+    const onUploadFile = vi.fn(() => Promise.resolve({ url: 'https://example.com/img.png', path: 'assets/images/img.png' }))
     const onSubmit = vi.fn()
 
     render(<Harness onUploadFile={onUploadFile} onSubmit={onSubmit} />)
@@ -145,7 +145,7 @@ describe('PromptInput — upload flow', () => {
       expect(onSubmit).toHaveBeenCalledWith(
         {
           text: 'describe image',
-          files: [expect.objectContaining({ filename: 'img.png', mediaType: 'image/png', url: 'https://example.com/img.png' })],
+          files: [expect.objectContaining({ filename: 'img.png', mediaType: 'image/png', url: 'https://example.com/img.png', path: 'assets/images/img.png' })],
         },
         expect.anything(),
       )
