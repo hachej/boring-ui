@@ -65,11 +65,14 @@ export async function startPlaygroundServer(): Promise<void> {
       externalPlugins: EXTERNAL_PLUGINS_ENABLED,
       defaultPluginPackages: ["@hachej/boring-ask-user"],
     })
-    app.get("/api/v1/workspace/meta", async () => ({
-      projectName: basename(workspaceRoot) || "Workspace",
-      workspaceId: remoteWorkerWorkspaceId ?? (basename(workspaceRoot) || "Workspace"),
-      workspaceRoot,
-    }))
+    app.get("/api/v1/workspace/meta", async () => {
+      const localName = basename(workspaceRoot) || "Workspace"
+      return {
+        projectName: remoteWorkerWorkspaceId ? "Remote worker playground" : localName,
+        workspaceId: remoteWorkerWorkspaceId ?? localName,
+        workspaceRoot,
+      }
+    })
     await app.listen({ port: AGENT_API_PORT, host: "127.0.0.1" })
   })()
   return agentBoot

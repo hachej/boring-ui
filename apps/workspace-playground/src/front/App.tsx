@@ -140,7 +140,7 @@ export function WorkspaceShell() {
       apiBaseUrl=""
       persistenceEnabled
       debug
-      providerStorageKey="boring-ui-v2:layout:playground"
+      providerStorageKey={showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${workspaceId}`}
       appTitle={showcase ? "Boring" : projectName}
       workspaceLabel={showcase ? undefined : projectName}
       defaultSessionTitle={showcase ? "New session" : projectName}
