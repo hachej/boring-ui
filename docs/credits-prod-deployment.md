@@ -129,13 +129,17 @@ flyctl secrets set -a boring-full-app \
   BORING_CREDITS_RATES="Qwen3.5-122B=0.40:3.20;Kimi-K2=0.60:3.00;Apertus=0.70:2.50;Ministral=0.30:0.40;gemma-4=0.20:0.40;Nemotron=0.05:0.20;Mistral-Small=0.20:0.75" \
   BORING_CREDITS_STRIPE_SECRET_KEY="<vault: secret/shared/senecaapp/stripe live_sk>" \
   BORING_CREDITS_STRIPE_WEBHOOK_SECRET="<whsec from webhook we_1TidMg...>" \
-  BORING_CREDITS_STRIPE_VARIANTS="5:price_1TicyDIKOzu3eMXHeKajQcTf;10:price_1TicyDIKOzu3eMXHzcDolLt3;25:price_1TicyDIKOzu3eMXHmFf8nL8v" \
+  BORING_CREDITS_STRIPE_VARIANTS="5:price_1TicyDIKOzu3eMXHeKajQcTf,10:price_1TicyDIKOzu3eMXHzcDolLt3,25:price_1TicyDIKOzu3eMXHmFf8nL8v" \
   BORING_CREDITS_STRIPE_DEFAULT_PACK=10 \
   BORING_CREDITS_STRIPE_CURRENCY=CHF \
   BORING_CREDITS_STRIPE_TEST_MODE=0 \
   BORING_CREDITS_STRIPE_REDIRECT_URL="https://app.senecaapp.ai/" \
   BORING_CREDITS_STRIPE_ATTRIBUTION_SECRET="$(openssl rand -hex 32)"
 ```
+⚠️ **Separator gotcha:** `BORING_CREDITS_RATES` is `;`-separated but `BORING_CREDITS_STRIPE_VARIANTS`
+is `,`-separated (`pack:priceId,pack:priceId`). Using `;` in VARIANTS fails LOUD at boot
+(`invalid BORING_CREDITS_STRIPE_VARIANTS entry`) and crash-loops the app — verify `/health` after deploy.
+
 `sk_live_` with `TEST_MODE=0` is enforced (key↔mode mismatch fails boot); the webhook also drops
 events whose `livemode` ≠ expected. `_ATTRIBUTION_SECRET` is optional but recommended (signs the
 user↔pack binding carried through checkout).
