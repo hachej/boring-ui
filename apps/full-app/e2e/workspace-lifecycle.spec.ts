@@ -124,6 +124,8 @@ async function installWorkspaceLifecycleMocks(page: Page, baseURL: string | unde
   ])
   const sessionsByWorkspace = new Map<string, SessionSummary[]>()
   const sessionRequests: string[] = []
+  const sessionCreates: Array<{ workspaceId: string; body: unknown }> = []
+  const piChatRequests: Array<{ workspaceId: string; sessionId: string; endpoint: string; method: string }> = []
   const treeRequests: string[] = []
   const fileWrites: Array<{ workspaceId: string; path: string; content: string }> = []
   const uiCommandsByWorkspace = new Map<string, unknown[]>()
@@ -234,6 +236,7 @@ async function installWorkspaceLifecycleMocks(page: Page, baseURL: string | unde
       const workspaceId = workspaceIdFromRequest(route)
       sessionRequests.push(workspaceId)
       const body = JSON.parse(request.postData() ?? '{}') as { title?: string }
+      sessionCreates.push({ workspaceId, body })
       const now = new Date().toISOString()
       const session: SessionSummary = {
         id: `${workspaceId}-session-${++sessionSeq}`,
@@ -247,6 +250,30 @@ async function installWorkspaceLifecycleMocks(page: Page, baseURL: string | unde
         ...(sessionsByWorkspace.get(workspaceId) ?? []),
       ])
       return route.fulfill(json(session, 201))
+    }
+
+    const piChatMatch = path.match(/^\/api\/v1\/agent\/pi-chat\/([^/]+)\/(state|events|prompt)$/)
+    if (piChatMatch) {
+      const workspaceId = workspaceIdFromRequest(route)
+      const [, sessionId, endpoint] = piChatMatch
+      piChatRequests.push({ workspaceId, sessionId, endpoint, method })
+      if (endpoint === 'events') {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/x-ndjson',
+          body: '{"type":"heartbeat","now":"2026-01-01T00:00:00.000Z"}\n',
+        })
+      }
+      if (endpoint === 'prompt') return route.fulfill(json({ accepted: true, cursor: 0, clientNonce: sessionId }))
+      return route.fulfill(json({
+        protocolVersion: 1,
+        sessionId,
+        seq: 0,
+        status: 'idle',
+        messages: [],
+        queue: { followUps: [] },
+        followUpMode: 'one-at-a-time',
+      }))
     }
 
     const sessionDetailMatch = path.match(/^\/api\/v1\/agent\/sessions\/([^/]+)$/)
@@ -292,7 +319,7 @@ async function installWorkspaceLifecycleMocks(page: Page, baseURL: string | unde
     return route.continue()
   })
 
-  return { filesByWorkspace, fileWrites, sessionRequests, treeRequests, uiCommandsByWorkspace }
+  return { filesByWorkspace, fileWrites, sessionsByWorkspace, sessionRequests, sessionCreates, piChatRequests, treeRequests, uiCommandsByWorkspace }
 }
 
 async function openWorkspaceMenu(page: Page) {
@@ -341,6 +368,43 @@ test('agent openFile command opens a closed workbench and focuses the file', asy
   await expect(page.getByLabel('Surface')).toBeVisible({ timeout: 10_000 })
   await expect(page.getByText('Nothing open yet')).toBeHidden({ timeout: 10_000 })
   await expect(page.locator('.cm-content')).toContainText('export const alpha = 1', { timeout: 10_000 })
+})
+
+test('new chat in additional workspace preserves the first session and stays workspace-scoped', async ({ page, baseURL }) => {
+  const state = await installWorkspaceLifecycleMocks(page, baseURL)
+
+  await page.goto('/workspace/ws-beta')
+  await expect(page.getByRole('button', { name: /Workspace menu: Beta Workspace/ }))
+    .toBeVisible({ timeout: 10_000 })
+
+  await expect.poll(() => state.sessionsByWorkspace.get('ws-beta')?.length ?? 0, {
+    timeout: 10_000,
+  }).toBe(1)
+  const firstSession = state.sessionsByWorkspace.get('ws-beta')?.[0]
+  expect(firstSession?.id).toMatch(/^ws-beta-session-/)
+
+  await page.getByRole('button', { name: 'New chat' }).click()
+
+  await expect.poll(() => state.sessionsByWorkspace.get('ws-beta')?.length ?? 0, {
+    timeout: 10_000,
+  }).toBe(2)
+  const betaSessionIds = state.sessionsByWorkspace.get('ws-beta')?.map((session) => session.id) ?? []
+  expect(betaSessionIds).toContain(firstSession?.id)
+  expect(betaSessionIds.every((id) => id.startsWith('ws-beta-session-'))).toBe(true)
+
+  const betaCreates = state.sessionCreates.filter((create) => create.workspaceId === 'ws-beta')
+  expect(betaCreates.map((create) => create.body)).toEqual([
+    { title: 'New session' },
+    {},
+  ])
+  expect(state.sessionsByWorkspace.get('ws-alpha') ?? []).toHaveLength(0)
+  expect(state.piChatRequests.some((request) => request.workspaceId === 'ws-beta' && request.sessionId === 'default')).toBe(false)
+
+  await switchWorkspace(page, 'Alpha Workspace', 'ws-alpha')
+  await expect.poll(() => state.sessionsByWorkspace.get('ws-alpha')?.length ?? 0, {
+    timeout: 10_000,
+  }).toBe(1)
+  expect(state.sessionsByWorkspace.get('ws-beta')?.map((session) => session.id)).toEqual(betaSessionIds)
 })
 
 test('workspace create and switch keeps files and sessions scoped per workspace', async ({ page, baseURL }) => {

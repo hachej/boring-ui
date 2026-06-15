@@ -170,7 +170,7 @@ describe("WorkspaceAgentFront", () => {
     expect(captured?.hotReloadEnabled).toBe(false)
   })
 
-  it("renders the chat shell while remote sessions are still loading", () => {
+  it("keeps the chat shell in transition while remote sessions are still loading without an active session", () => {
     const PendingChatPanel = (props: WorkspaceChatPanelProps) => (
       <div data-testid="chat-panel">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>
     )
@@ -192,8 +192,59 @@ describe("WorkspaceAgentFront", () => {
       />,
     )
 
-    expect(screen.getByTestId("chat-panel")).toHaveTextContent("Chat default hydrate=false")
+    expect(screen.queryByTestId("chat-panel")).not.toBeInTheDocument()
+    expect(screen.getAllByText("Loading sessions…").length).toBeGreaterThan(0)
+  })
+
+  it("renders a known active session while remote sessions are still loading", () => {
+    const PendingChatPanel = (props: WorkspaceChatPanelProps) => (
+      <div data-testid="chat-panel">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>
+    )
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="known-session-list"
+        chatPanel={PendingChatPanel}
+        useSessions={() => ({
+          sessions: [],
+          activeSession: null,
+          activeSessionId: "known-active",
+          loading: true,
+          error: undefined,
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+        })}
+      />,
+    )
+
+    expect(screen.getByTestId("chat-panel")).toHaveTextContent("Chat known-active hydrate=true")
     expect(screen.queryByText("Loading sessions…")).not.toBeInTheDocument()
+  })
+
+  it("renders the chat shell when remote sessions fail instead of pinning loading", () => {
+    const FailedChatPanel = (props: WorkspaceChatPanelProps) => (
+      <div data-testid="chat-panel">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>
+    )
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="failed-session-list"
+        chatPanel={FailedChatPanel}
+        useSessions={() => ({
+          sessions: [],
+          activeSession: null,
+          activeSessionId: null,
+          loading: false,
+          error: new Error("failed"),
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+        })}
+      />,
+    )
+
+    expect(screen.getByTestId("chat-panel")).toHaveTextContent("Chat default hydrate=false")
   })
 
   it("keeps session history closed by default and opens it from the rail button", async () => {
@@ -1289,7 +1340,7 @@ describe("WorkspaceAgentFront", () => {
     })
   })
 
-  it("removes the empty auto-created default when the user manually creates a chat", async () => {
+  it("keeps the existing remote session when the user manually creates another chat", async () => {
     const create = vi.fn(async () => ({ id: "manual", title: "New session", updatedAt: Date.now(), turnCount: 0 }))
     const deleted = vi.fn()
 
@@ -1329,8 +1380,34 @@ describe("WorkspaceAgentFront", () => {
 
     await waitFor(() => {
       expect(create).toHaveBeenCalledOnce()
-      expect(deleted).toHaveBeenCalledWith("auto")
     })
+    expect(deleted).not.toHaveBeenCalled()
+  })
+
+  it("does not pass the New chat click event into remote session creation", () => {
+    const create = vi.fn(async () => ({ id: "manual", title: "Manual", updatedAt: Date.now(), turnCount: 0 }))
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="create-click-event"
+        chatPanel={ChatPanel}
+        useSessions={() => ({
+          sessions: [{ id: "existing", title: "Existing", updatedAt: Date.now(), turnCount: 0 }],
+          activeSessionId: "existing",
+          activeSession: { id: "existing", title: "Existing", updatedAt: Date.now(), turnCount: 0 },
+          loading: false,
+          create,
+          switch: vi.fn(),
+          delete: vi.fn(),
+        })}
+        persistenceEnabled={false}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }))
+
+    expect(create).toHaveBeenCalledOnce()
+    expect(create.mock.calls[0]).toEqual([])
   })
 
   it("does not auto-create a replacement after the user deletes the last remote session", async () => {
