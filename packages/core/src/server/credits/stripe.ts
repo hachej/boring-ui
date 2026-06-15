@@ -156,9 +156,12 @@ function asId(value: unknown): string | undefined {
 export function stripeNetPaidMinor(order: StripeOrder): number | null {
   const sub = order.amountSubtotalMinor
   const total = order.amountTotalMinor
-  const disc = order.amountDiscountMinor ?? 0
-  const tax = order.amountTaxMinor ?? 0
-  if (typeof sub !== 'number' || typeof total !== 'number') return null
+  const disc = order.amountDiscountMinor
+  const tax = order.amountTaxMinor
+  // Presence-preserving (like the LS adapter): a MISSING discount/tax (absent total_details)
+  // must NOT be read as a real 0 — a discount that tax offsets could otherwise slip past the
+  // cross-check and credit the pre-discount subtotal. Require all four money fields present.
+  if (typeof sub !== 'number' || typeof total !== 'number' || typeof disc !== 'number' || typeof tax !== 'number') return null
   const netFromSubtotal = sub - disc
   const netFromTotal = total - tax
   const sane =

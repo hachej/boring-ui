@@ -93,14 +93,16 @@ function buildStripePacks(stripe: StripeRouteOptions, locale?: string): CreditPa
       isDefault: packId === checkout.defaultPack,
     })
   }
-  if (checkout.customPack) {
+  // Show the custom pack only when it's both a webhook policy AND buyable (a price to create
+  // a checkout with). Its display minimum/id come from the top-level customPack policy.
+  if (stripe.customPack && checkout.customPriceId) {
     packs.push({
-      id: checkout.customPack.id,
+      id: stripe.customPack.id,
       creditMicros: 0,
-      priceMinor: checkout.customPack.minMinor,
+      priceMinor: stripe.customPack.minMinor,
       currency,
       label: 'Custom amount',
-      isDefault: checkout.customPack.id === checkout.defaultPack,
+      isDefault: stripe.customPack.id === checkout.defaultPack,
       custom: true,
     })
   }
@@ -171,8 +173,9 @@ export interface StripeCheckoutConfig {
   variants: Record<string, string>
   /** Pack id used when the request names none. */
   defaultPack: string
-  /** Optional pay-what-you-want pack (custom_unit_amount price). */
-  customPack?: { id: string; priceId: string; minMinor: number }
+  /** Stripe Price id of the custom (pay-what-you-want) pack, for creating its checkout.
+   * The custom pack's webhook policy (id, minimum) lives on StripeRouteOptions.customPack. */
+  customPriceId?: string
   redirectUrl?: string
 }
 
@@ -196,6 +199,11 @@ export interface StripeRouteOptions {
   /** Fixed pack id → credit micros (the authoritative value the webhook grants). The
    * custom pack is credited from the amount paid, not this map. */
   creditMicrosByPack: Record<string, number>
+  /** Pay-what-you-want pack WEBHOOK policy — its reserved id and minimum (minor units).
+   * Top-level (not under checkout) so a paid custom session is still recognized/credited
+   * even if checkout creation is temporarily unconfigured. The price id for CREATING the
+   * checkout lives at checkout.customPriceId. */
+  customPack?: { id: string; minMinor: number }
   checkout?: StripeCheckoutConfig
   checkoutPath?: string
   webhookPath?: string
@@ -573,7 +581,7 @@ function registerStripeRoutes(
   const expectedLiveMode = !stripe.expectedTestMode
   const creditOnlyStore = stripe.creditOnlyStore !== false
   const fixedPackMicros = stripe.creditMicrosByPack ?? {}
-  const customPackId = stripe.checkout?.customPack?.id
+  const customPackId = stripe.customPack?.id
 
   // Exposing checkout without a webhook would charge buyers with nothing to credit them
   // (and no refund tombstone). Require the webhook secret whenever checkout is configured.
@@ -611,8 +619,8 @@ function registerStripeRoutes(
       }
     }
     // The default pack must be a configured fixed pack OR the custom pack (a custom-only
-    // deployment defaults to the custom pack).
-    const defaultIsCustom = customPackId != null && checkout.defaultPack === customPackId && checkout.customPack != null
+    // deployment defaults to the custom pack — requires its price id to create the checkout).
+    const defaultIsCustom = customPackId != null && checkout.defaultPack === customPackId && checkout.customPriceId != null
     if (!(checkout.defaultPack in checkout.variants) && !defaultIsCustom) {
       throw new Error(`credits: stripe checkout defaultPack "${checkout.defaultPack}" is not one of the configured packs (or the custom pack)`)
     }
@@ -627,7 +635,7 @@ function registerStripeRoutes(
 
   // micros granted per 1 minor currency unit (e.g. per rappen/cent).
   const ratePerMinor = creditMicrosPerUnit / 100
-  const customMinMinor = stripe.checkout?.customPack?.minMinor ?? 0
+  const customMinMinor = stripe.customPack?.minMinor ?? 0
   const creditsForOrder = (order: StripeOrder): number => {
     if (isCustomPack(order.packId)) {
       // Pay-what-you-want: credit the NET pre-tax amount actually paid (subtotal − discount,
@@ -676,13 +684,13 @@ function registerStripeRoutes(
       if (pack === undefined || pack === null) {
         packId = checkout.defaultPack
         // The default may be the custom pack (custom-only deployment) — resolve its price.
-        priceId = isCustomPack(packId) && checkout.customPack ? checkout.customPack.priceId : (checkout.variants[packId] as string)
+        priceId = isCustomPack(packId) && checkout.customPriceId ? checkout.customPriceId : (checkout.variants[packId] as string)
       } else if (typeof pack === 'string' && pack in checkout.variants) {
         packId = pack
         priceId = checkout.variants[pack] as string
-      } else if (typeof pack === 'string' && isCustomPack(pack) && checkout.customPack) {
+      } else if (typeof pack === 'string' && isCustomPack(pack) && checkout.customPriceId) {
         packId = pack
-        priceId = checkout.customPack.priceId
+        priceId = checkout.customPriceId
       } else {
         return reply.code(400).send({ error: { code: ERROR_CODES.INVALID_PACK, message: 'unknown credit pack' } })
       }

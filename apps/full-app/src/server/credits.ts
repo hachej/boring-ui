@@ -109,7 +109,8 @@ function readStripeRouteConfig(env: NodeJS.ProcessEnv): {
   requireCurrency: string
   creditOnlyStore: boolean
   creditMicrosByPack: Record<string, number>
-  checkout?: { apiKey: string; variants: Record<string, string>; defaultPack: string; customPack?: { id: string; priceId: string; minMinor: number }; redirectUrl?: string }
+  customPack?: { id: string; minMinor: number }
+  checkout?: { apiKey: string; variants: Record<string, string>; defaultPack: string; customPriceId?: string; redirectUrl?: string }
 } | undefined {
   const apiKey = env.BORING_CREDITS_STRIPE_SECRET_KEY || undefined
   const webhookSecret = env.BORING_CREDITS_STRIPE_WEBHOOK_SECRET || undefined
@@ -148,7 +149,7 @@ function readStripeRouteConfig(env: NodeJS.ProcessEnv): {
     throw new Error(`invalid BORING_CREDITS_STRIPE_CUSTOM_PRICE (must look like "price_…"): "${customPrice}"`)
   }
   const customPack = customPrice
-    ? { id: STRIPE_CUSTOM_PACK_ID, priceId: customPrice, minMinor: parseNumberEnv('BORING_CREDITS_STRIPE_CUSTOM_MIN_MINOR', env.BORING_CREDITS_STRIPE_CUSTOM_MIN_MINOR, 50, 1, true) }
+    ? { id: STRIPE_CUSTOM_PACK_ID, minMinor: parseNumberEnv('BORING_CREDITS_STRIPE_CUSTOM_MIN_MINOR', env.BORING_CREDITS_STRIPE_CUSTOM_MIN_MINOR, 50, 1, true) }
     : undefined
   // Validate the default AFTER the custom pack is known: it may be a fixed pack OR the
   // reserved custom id (a custom-only deployment can default to "custom").
@@ -169,12 +170,14 @@ function readStripeRouteConfig(env: NodeJS.ProcessEnv): {
     requireCurrency: env.BORING_CREDITS_STRIPE_CURRENCY || 'EUR',
     creditOnlyStore: env.BORING_CREDITS_STRIPE_CREDIT_ONLY_STORE !== '0',
     creditMicrosByPack,
+    // Custom-pack WEBHOOK policy (top-level): recognized even if checkout is unconfigured.
+    customPack,
     checkout: checkoutReady
       ? {
           apiKey: apiKey!,
           variants,
           defaultPack: defaultPackEnv || Object.keys(variants)[0] || STRIPE_CUSTOM_PACK_ID,
-          customPack,
+          customPriceId: customPrice,
           redirectUrl: env.BORING_CREDITS_STRIPE_REDIRECT_URL || undefined,
         }
       : undefined,

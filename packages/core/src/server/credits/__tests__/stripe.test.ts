@@ -17,6 +17,7 @@ function completedEvent(over: Record<string, unknown> = {}): string {
     data: { object: {
       id: 'cs_1', payment_intent: 'pi_1', payment_status: 'paid', currency: 'chf',
       amount_subtotal: 1000, amount_total: 1000, livemode: false,
+      total_details: { amount_discount: 0, amount_tax: 0 },
       client_reference_id: 'u1', metadata: { user_id: 'u1', pack_id: '10' },
       ...over,
     } },
@@ -131,6 +132,13 @@ describe('handleStripeWebhook', () => {
     const res = await handleStripeWebhook(body, sign(body), makeOptions())
     expect(res.status).toBe(500)
     expect(res.body.reason).toBe('underpaid_order')
+  })
+
+  it('fails closed (500 invalid_money_fields) when total_details is absent', async () => {
+    const body = completedEvent({ total_details: null })
+    const res = await handleStripeWebhook(body, sign(body), makeOptions())
+    expect(res.status).toBe(500)
+    expect(res.body.reason).toBe('invalid_money_fields')
   })
 
   it('uses the NET (discount-aware) amount: a discounted pack-10 session is underpaid', async () => {
