@@ -30,14 +30,17 @@ const DEFAULT_WORKSPACE_ROUTE = '/workspace/:id'
 const DEFAULT_WORKSPACE_ID_PARAM = 'id'
 
 type ChatEntryMode = 'auth-first' | 'chat-first'
+type RoutedWorkspaceAgentProps<TSession extends WorkspaceAgentSession = WorkspaceAgentSession> = Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'>
 
 export interface CoreWorkspaceAgentFrontProps<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
-> extends Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'> {
+> extends RoutedWorkspaceAgentProps<TSession> {
   /** Core consumes plugins statically for now; app-level hot reload is explicitly unsupported. */
   hotReload?: false
   chatEntryMode?: ChatEntryMode
   chatFirstPublicShell?: ChatFirstPublicShellOptions
+  /** Extra workspace props used only by the unauthenticated chat-first public shell. */
+  chatFirstPublicWorkspaceProps?: Partial<RoutedWorkspaceAgentProps<TSession>>
   publicPaths?: string[]
   authPages?: CoreFrontAuthPagesOverride
   cspNonce?: string
@@ -94,6 +97,29 @@ function WorkspaceLoadingPage({
   )
 }
 
+function mergePublicWorkspaceProps<TSession extends WorkspaceAgentSession = WorkspaceAgentSession>(
+  workspaceProps: RoutedWorkspaceAgentProps<TSession>,
+  publicWorkspaceProps?: Partial<RoutedWorkspaceAgentProps<TSession>>,
+): RoutedWorkspaceAgentProps<TSession> {
+  if (!publicWorkspaceProps) return workspaceProps
+  return {
+    ...workspaceProps,
+    ...publicWorkspaceProps,
+    requestHeaders: {
+      ...workspaceProps.requestHeaders,
+      ...publicWorkspaceProps.requestHeaders,
+    },
+    authHeaders: {
+      ...workspaceProps.authHeaders,
+      ...publicWorkspaceProps.authHeaders,
+    },
+    chatParams: {
+      ...workspaceProps.chatParams,
+      ...publicWorkspaceProps.chatParams,
+    },
+  }
+}
+
 function usePendingChatDraft() {
   const session = useSession()
   const userId = session.data?.user?.id ?? null
@@ -120,13 +146,15 @@ function HomeRedirect<TSession extends WorkspaceAgentSession = WorkspaceAgentSes
   appTitle,
   workspaceProps,
   chatFirstPublicShell,
+  chatFirstPublicWorkspaceProps,
 }: {
   loadingFallback: ReactNode
   workspaceHref: (workspaceId: string) => string
   chatEntryMode: ChatEntryMode
   appTitle: string
-  workspaceProps: Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'>
+  workspaceProps: RoutedWorkspaceAgentProps<TSession>
   chatFirstPublicShell?: ChatFirstPublicShellOptions
+  chatFirstPublicWorkspaceProps?: Partial<RoutedWorkspaceAgentProps<TSession>>
 }) {
   const location = useLocation()
   const session = useSession()
@@ -138,7 +166,15 @@ function HomeRedirect<TSession extends WorkspaceAgentSession = WorkspaceAgentSes
     location.search,
     location.hash,
   )
-  if (!session.data?.user && chatEntryMode === 'chat-first') return <ChatFirstPublicShell appTitle={appTitle} publicShell={chatFirstPublicShell} workspaceProps={workspaceProps} />
+  if (!session.data?.user && chatEntryMode === 'chat-first') {
+    return (
+      <ChatFirstPublicShell
+        appTitle={appTitle}
+        publicShell={chatFirstPublicShell}
+        workspaceProps={mergePublicWorkspaceProps(workspaceProps, chatFirstPublicWorkspaceProps)}
+      />
+    )
+  }
   if (!workspace && chatEntryMode === 'chat-first' && session.data?.user && restorePendingDraft) {
     return (
       <ChatFirstAuthenticatedShell
@@ -180,15 +216,17 @@ function WorkspaceRoute<
   appTitle,
   workspaceRoute,
   chatFirstPublicShell,
+  chatFirstPublicWorkspaceProps,
 }: {
   workspaceIdParam: string
   loadingFallback: ReactNode
   bootPreloadPaths?: string[]
-  workspaceProps: Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'>
+  workspaceProps: RoutedWorkspaceAgentProps<TSession>
   chatEntryMode: ChatEntryMode
   appTitle: string
   workspaceRoute: string
   chatFirstPublicShell?: ChatFirstPublicShellOptions
+  chatFirstPublicWorkspaceProps?: Partial<RoutedWorkspaceAgentProps<TSession>>
 }) {
   const params = useParams()
   const location = useLocation()
@@ -221,7 +259,14 @@ function WorkspaceRoute<
   if (!workspaceId) return <>{loadingFallback}</>
 
   if (!session.data?.user && chatEntryMode === 'chat-first') {
-    return <ChatFirstPublicShell appTitle={appTitle} intendedWorkspaceId={workspaceId} publicShell={chatFirstPublicShell} workspaceProps={workspaceProps} />
+    return (
+      <ChatFirstPublicShell
+        appTitle={appTitle}
+        intendedWorkspaceId={workspaceId}
+        publicShell={chatFirstPublicShell}
+        workspaceProps={mergePublicWorkspaceProps(workspaceProps, chatFirstPublicWorkspaceProps)}
+      />
+    )
   }
 
   if (routeStatus.status === 'not-found' || routeStatus.status === 'forbidden' || routeStatus.status === 'switch-failed') {
@@ -259,6 +304,7 @@ function WorkspaceRoute<
       key={workspaceId}
       {...workspaceProps}
       workspaceId={workspaceId}
+      workspaceLabel={workspaceProps.workspaceLabel ?? currentWorkspace.name}
       requestHeaders={requestHeaders}
       authHeaders={authHeaders}
       chatParams={chatParams}
@@ -292,6 +338,7 @@ export function CoreWorkspaceAgentFront<
   hotReload = false,
   chatEntryMode = 'auth-first',
   chatFirstPublicShell,
+  chatFirstPublicWorkspaceProps,
   publicPaths,
   ...workspaceProps
 }: CoreWorkspaceAgentFrontProps<TSession>) {
@@ -308,7 +355,7 @@ export function CoreWorkspaceAgentFront<
     />
   )
 
-  const resolvedWorkspaceProps: Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'> = {
+  const resolvedWorkspaceProps: RoutedWorkspaceAgentProps<TSession> = {
     ...workspaceProps,
     appTitle,
     topBarLeft,
@@ -334,6 +381,7 @@ export function CoreWorkspaceAgentFront<
             appTitle={appTitle}
             workspaceProps={resolvedWorkspaceProps}
             chatFirstPublicShell={chatFirstPublicShell}
+            chatFirstPublicWorkspaceProps={chatFirstPublicWorkspaceProps}
           />
         }
       />
@@ -349,6 +397,7 @@ export function CoreWorkspaceAgentFront<
             appTitle={appTitle}
             workspaceRoute={workspaceRoute}
             chatFirstPublicShell={chatFirstPublicShell}
+            chatFirstPublicWorkspaceProps={chatFirstPublicWorkspaceProps}
           />
         }
       />

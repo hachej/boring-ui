@@ -714,6 +714,33 @@ export async function createCoreWorkspaceAgentServer(
     return mergePiOptions(pluginOptions, callerOptions)
   }
 
+  app.get('/api/v1/workspace/meta', async (request, reply) => {
+    try {
+      const workspaceId = await resolveWorkspaceId(request)
+      const [workspace, workspaceRootForRequest] = await Promise.all([
+        workspaceStore.get(workspaceId),
+        resolveRoot(workspaceId, request),
+      ])
+      return {
+        workspaceId,
+        workspaceRoot: workspaceRootForRequest,
+        projectName: workspace?.name ?? 'Workspace',
+      }
+    } catch (error) {
+      const statusCode = typeof (error as { statusCode?: unknown })?.statusCode === 'number'
+        ? (error as { statusCode: number }).statusCode
+        : 500
+      const message = error instanceof Error ? error.message : 'workspace meta failed'
+      return reply.code(statusCode).send({ error: message })
+    }
+  })
+
+  const resolveSessionNamespace: NonNullable<RegisterAgentRoutesOptions['getSessionNamespace']> = async (ctx) => (
+    options.getSessionNamespace
+      ? await options.getSessionNamespace(ctx)
+      : options.sessionNamespace ?? ctx.workspaceId
+  )
+
   await app.register(registerAgentRoutes, {
     workspaceRoot,
     sessionId: options.sessionId,
@@ -730,8 +757,7 @@ export async function createCoreWorkspaceAgentServer(
     systemPromptAppend: pluginCollection.agentOptions.systemPromptAppend,
     pi: pluginCollection.agentOptions.pi,
     getPi: resolvePiOptions,
-    sessionNamespace: options.sessionNamespace,
-    getSessionNamespace: options.getSessionNamespace,
+    getSessionNamespace: resolveSessionNamespace,
     getExtraTools: async (ctx) => {
       const callerTools = options.getExtraTools ? await options.getExtraTools(ctx) : []
       return [

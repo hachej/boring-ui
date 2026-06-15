@@ -24,11 +24,17 @@ export async function createEnrichedSubmitPayload({
   for (const file of files ?? []) {
     const label = file.filename ?? 'attachment'
     const mime = file.mediaType ?? 'application/octet-stream'
+    const workspacePath = typeof (file as unknown as { path?: unknown }).path === 'string'
+      ? (file as unknown as { path: string }).path
+      : undefined
+    const pathNote = workspacePath
+      ? `\nSaved in workspace at: ${workspacePath}\nUse the workspace file/read tools with this path if you need to inspect it.`
+      : ''
     const content = await readFileAsText(file)
     if (content !== null) {
-      attachmentSummaries.push(`[attached: ${label} (${mime})]\n\`\`\`\n${content}\n\`\`\``)
+      attachmentSummaries.push(`[attached: ${label} (${mime})${pathNote}]\n\`\`\`\n${content}\n\`\`\``)
     } else {
-      attachmentSummaries.push(`[attached: ${label} (${mime}, not inlined — binary)]`)
+      attachmentSummaries.push(`[attached: ${label} (${mime}, not inlined — binary)${pathNote}]`)
     }
   }
 

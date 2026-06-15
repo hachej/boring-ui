@@ -1,7 +1,7 @@
 import type { FileUIPart, SourceDocumentUIPart } from 'ai'
 import { createContext, useContext, type RefObject } from 'react'
 
-export type AttachmentEntry = FileUIPart & { id: string; status?: 'uploading' | 'ready' | 'error' }
+export type AttachmentEntry = FileUIPart & { id: string; status?: 'uploading' | 'ready' | 'error'; path?: string }
 
 export interface AttachmentsContext {
   files: AttachmentEntry[]
@@ -10,7 +10,7 @@ export interface AttachmentsContext {
   clear: () => void
   openFileDialog: () => void
   fileInputRef: RefObject<HTMLInputElement | null>
-  setFileUrl: (id: string, url: string, status: 'ready' | 'error') => void
+  setFileUrl: (id: string, url: string, status: 'ready' | 'error', path?: string) => void
 }
 
 export interface TextInputContext {

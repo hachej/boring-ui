@@ -95,6 +95,7 @@ describe('CoreWorkspaceAgentFront', () => {
     expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
     expect(workspaceAgentProps).toMatchObject({
       workspaceId: 'workspace-a',
+      workspaceLabel: 'Workspace A',
       requestHeaders: {
         existing: 'request',
         'x-boring-workspace-id': 'workspace-a',
@@ -214,6 +215,47 @@ describe('CoreWorkspaceAgentFront', () => {
       suggestions: [
         { label: 'Search series', hint: 'Find FRED data', prompt: 'Find CPI and unemployment series.' },
       ],
+    })
+  })
+
+  it('keeps public launch panels scoped out of authenticated workspaces', async () => {
+    const { CoreWorkspaceAgentFront } = await importSubject()
+    const publicPlugin = { id: 'public-plugin' }
+    const publicPanels = [{ id: 'public-landing-page', component: 'public.launch.landing', title: 'Landing page' }]
+
+    render(
+      <CoreWorkspaceAgentFront
+        chatEntryMode="chat-first"
+        chatFirstPublicWorkspaceProps={{
+          plugins: [publicPlugin] as never,
+          surfaceInitialPanels: publicPanels,
+        }}
+      />,
+    )
+
+    expect(workspaceAgentProps).toMatchObject({ workspaceId: 'workspace-a' })
+    expect(workspaceAgentProps?.plugins).toBeUndefined()
+    expect(workspaceAgentProps?.surfaceInitialPanels).toBeUndefined()
+
+    workspaceAgentProps = null
+    sessionState = { data: null, isPending: false }
+    currentWorkspaceId = null
+    routePath = '/'
+
+    render(
+      <CoreWorkspaceAgentFront
+        chatEntryMode="chat-first"
+        chatFirstPublicWorkspaceProps={{
+          plugins: [publicPlugin] as never,
+          surfaceInitialPanels: publicPanels,
+        }}
+      />,
+    )
+
+    expect(workspaceAgentProps).toMatchObject({
+      workspaceId: 'public',
+      plugins: [publicPlugin],
+      surfaceInitialPanels: publicPanels,
     })
   })
 
