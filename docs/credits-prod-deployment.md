@@ -29,16 +29,50 @@ items flagged "UNPROVEN" below. This is the punch list to take it live.
       ephemeral) — upload via Dashboard or point at the deployed `/logo.png`.
 
 ## 2. Credits economics (MUST validate before launch)
-- [ ] **UNPROVEN: consumption.** Validate `BORING_CREDITS_RATES` (per-model EUR/MTok) against
-      a REAL model run — confirm a turn debits a sane credit amount. All local tests used a
-      dummy model, so the reserve/hold is proven but real token→credit pricing is not.
+
+### Configured values (current policy)
+- **Signup grant**: `BORING_CREDITS_SIGNUP_GRANT_EUR=0` → no free credits; users must buy
+  before their first run (the out-of-credits gate + Buy CTA fires on the first prompt).
+- **Margin**: `BORING_CREDITS_MARGIN=1.1` → 10% over raw provider cost.
+- **Rates** (`BORING_CREDITS_RATES`, raw provider CHF/MTok — margin applied on top):
+  verified Infomaniak AI prices (excl. VAT, source: infomaniak.com/en/hosting/ai-services/prices):
+  | model | in CHF/MTok | out CHF/MTok |
+  | --- | --- | --- |
+  | Qwen3.5-122B (served) | 0.40 | 3.20 |
+  | Kimi-K2 | 0.60 | 3.00 |
+  | Apertus-70B | 0.70 | 2.50 |
+  | Ministral-3-14B | 0.30 | 0.40 |
+  | gemma-4-31B | 0.20 | 0.40 |
+  | Nemotron-3-Nano | 0.05 | 0.20 |
+  | Mistral-Small-4 | 0.20 | 0.75 |
+  ```
+  BORING_CREDITS_RATES="Qwen3.5-122B=0.40:3.20;Kimi-K2=0.60:3.00;Apertus=0.70:2.50;Ministral=0.30:0.40;gemma-4=0.20:0.40;Nemotron=0.05:0.20;Mistral-Small=0.20:0.75"
+  ```
+### Ad-hoc free credits (hand-picked testers)
+No automatic signup grant — instead grant credits manually to selected high-potential
+testers. Insert one row into `boring_credit_grants` (idempotent per `(user_id, reason)`,
+so use a unique/dated reason; `amount_micros = CHF × 1_000_000`):
+```sql
+-- e.g. 10 CHF of free credits for a beta tester
+INSERT INTO boring_credit_grants (user_id, amount_micros, reason)
+VALUES ('<auth_user_id>', 10000000, 'manual:beta-tester:2026-06');
+```
+The balance picks it up immediately (grants − spend). Use a fresh `reason` to top the
+same user up again. Do NOT set `expires_at` (an expiring grant after partial spend turns a
+trial into debt — the service rejects expiring grants for this reason).
+
+- **Currency alignment**: Stripe charges CHF and Infomaniak bills CHF, so we treat
+  1 credit-unit = 1 CHF (no FX). The `_EUR` suffix in var names is cosmetic — keep ALL
+  values (grant, rates, packs) in CHF and the books stay consistent. If you ever charge a
+  currency ≠ the provider's billing currency, add an explicit FX step instead.
+
+- [ ] **UNPROVEN: consumption.** Validate `BORING_CREDITS_RATES` against a REAL model run —
+      confirm a turn debits a sane credit amount. Local tests used a dummy model, so the
+      reserve/hold is proven but real token→credit pricing is not.
 - [ ] Tune the per-run hold: `BORING_CREDITS_RESERVATION_EUR` (or the derived served
       worst-case), `BORING_CREDITS_MAX_CONTEXT_TOKENS/_OUTPUT_TOKENS/_CALLS_PER_RUN`.
-- [ ] Set the **signup grant**: `BORING_CREDITS_SIGNUP_GRANT_EUR` (≥ the per-run hold, or new
-      users can't run their first turn) + optional `_EXPIRES_DAYS`.
-- [ ] Decide **currency vs. credit unit**: credits are internally EUR-valued
-      (`CREDIT_MICROS_PER_EUR`), but Stripe may charge CHF/USD. Today 1 major unit ≈ 1
-      credit-euro (no FX). Confirm this is acceptable or add an FX conversion.
+- [ ] **Signup grant is 0** (`BORING_CREDITS_SIGNUP_GRANT_EUR=0`) — confirm the first-run
+      out-of-credits gate (402) + Buy CTA is the intended new-user experience.
 
 ## 3. App / infra
 - [ ] Run DB migrations on the prod DB (`pnpm --filter full-app run migrate`); the credits/
