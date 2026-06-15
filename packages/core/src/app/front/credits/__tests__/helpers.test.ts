@@ -1,15 +1,28 @@
 import { describe, it, expect } from 'vitest'
-import { creditNetMicros, formatCreditMicros, isLowBalance, isPaymentRequiredNotice, PAYMENT_REQUIRED_ERROR_CODE } from '../helpers'
+import { creditNetMicros, formatCreditMicros, formatSignedCreditMicros, isLowBalance, isPaymentRequiredNotice, PAYMENT_REQUIRED_ERROR_CODE } from '../helpers'
 
 describe('formatCreditMicros', () => {
-  it('formats credit micros as euros', () => {
-    expect(formatCreditMicros(10_000_000, 'en-IE')).toBe('€10.00')
-    expect(formatCreditMicros(1_250_000, 'en-IE')).toBe('€1.25')
-    expect(formatCreditMicros(0, 'en-IE')).toBe('€0.00')
+  it('defaults to euros when no currency is given', () => {
+    expect(formatCreditMicros(10_000_000, undefined, 'en-IE')).toBe('€10.00')
+    expect(formatCreditMicros(1_250_000, undefined, 'en-IE')).toBe('€1.25')
+    expect(formatCreditMicros(0, undefined, 'en-IE')).toBe('€0.00')
+  })
+  it('renders the configured display currency (1 credit-unit = 1 major unit)', () => {
+    expect(formatCreditMicros(10_000_000, 'CHF', 'en-CH')).toContain('10.00')
+    expect(formatCreditMicros(10_000_000, 'CHF', 'de-CH')).toMatch(/CHF/)
+    expect(formatCreditMicros(5_000_000, 'USD', 'en-US')).toBe('$5.00')
   })
   it('clamps negative/invalid to zero', () => {
-    expect(formatCreditMicros(-5, 'en-IE')).toBe('€0.00')
-    expect(formatCreditMicros(Number.NaN, 'en-IE')).toBe('€0.00')
+    expect(formatCreditMicros(-5, 'EUR', 'en-IE')).toBe('€0.00')
+    expect(formatCreditMicros(Number.NaN, 'EUR', 'en-IE')).toBe('€0.00')
+  })
+})
+
+describe('formatSignedCreditMicros', () => {
+  it('signs and renders the configured currency', () => {
+    expect(formatSignedCreditMicros(10_000_000, 'CHF', 'de-CH')).toMatch(/^\+.*CHF/)
+    expect(formatSignedCreditMicros(-10_000_000, 'USD', 'en-US')).toBe('−$10.00')
+    expect(formatSignedCreditMicros(0, 'EUR', 'en-IE')).toBe('€0.00')
   })
 })
 
