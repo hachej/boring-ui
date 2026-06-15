@@ -95,3 +95,59 @@ trial into debt — the service rejects expiring grants for this reason).
 - [ ] Reconciliation runbook for stuck/parked orders (Stripe Dashboard ↔ ledger).
 - [ ] Before go-live: purge any test-mode grants from the prod DB (test purchases mint real
       spendable credits — the app refuses test mode in prod for this reason).
+
+## 6. Go-live runbook — app.senecaapp.ai (Fly app `boring-full-app`, LIVE Stripe)
+Prod currently runs an OLD consumption-only build: all purchase routes 404
+(`/api/credits/{checkout,webhooks/stripe,webhooks/lemonsqueezy}`) and it still hands out the
+legacy default signup grant. Setting env alone does NOTHING until the new build ships. Run in order:
+
+**1. Ship the build that contains the Stripe provider + grant=0 + Infomaniak rates (PR #294):**
+```bash
+gh pr merge 294 --squash         # then deploy the merged main:
+flyctl deploy -a boring-full-app  # release_command runs migrate.js → creates purchase tables
+```
+
+**2. LIVE Stripe catalog — ALREADY CREATED (account: Sumeo Solutions Sàrl, CH/CHF, charges+payouts enabled):**
+- Product `prod_UhuqgFEy62sh0q` "Seneca AI Credits" (image → `https://app.senecaapp.ai/logo.png`)
+- LIVE one-time CHF prices:
+  - 5 CHF  → `price_1TicyDIKOzu3eMXHeKajQcTf`
+  - 10 CHF → `price_1TicyDIKOzu3eMXHzcDolLt3`
+  - 25 CHF → `price_1TicyDIKOzu3eMXHmFf8nL8v`
+  - (a 4th `price_1TicyCIKOzu3eMXHNNPUzyzI` is custom/pay-what-you-want — UNUSED by the fixed-pack config)
+- **Dashboard-only TODO:** Settings → Payments → disable "Adaptive Pricing"; set **Public business name = "Seneca AI"** (currently "Sumeo Solutions Sàrl" — this is the merchant header at checkout, not API-settable).
+
+**3. LIVE webhook — ALREADY CREATED:** `we_1TidMgIKOzu3eMXHolmHkhy2` → `https://app.senecaapp.ai/api/credits/webhooks/stripe`,
+events `checkout.session.completed, checkout.session.async_payment_succeeded, charge.refunded, charge.dispute.created`.
+Signing secret stored in Vault as needed for the `_WEBHOOK_SECRET` fly secret.
+
+**4. Set prod secrets (triggers a redeploy):**
+```bash
+flyctl secrets set -a boring-full-app \
+  BORING_CREDITS_ENABLED=1 \
+  BORING_CREDITS_SIGNUP_GRANT_EUR=0 \
+  BORING_CREDITS_MARGIN=1.1 \
+  BORING_CREDITS_RATES="Qwen3.5-122B=0.40:3.20;Kimi-K2=0.60:3.00;Apertus=0.70:2.50;Ministral=0.30:0.40;gemma-4=0.20:0.40;Nemotron=0.05:0.20;Mistral-Small=0.20:0.75" \
+  BORING_CREDITS_STRIPE_SECRET_KEY="<vault: secret/shared/senecaapp/stripe live_sk>" \
+  BORING_CREDITS_STRIPE_WEBHOOK_SECRET="<whsec from webhook we_1TidMg...>" \
+  BORING_CREDITS_STRIPE_VARIANTS="5:price_1TicyDIKOzu3eMXHeKajQcTf;10:price_1TicyDIKOzu3eMXHzcDolLt3;25:price_1TicyDIKOzu3eMXHmFf8nL8v" \
+  BORING_CREDITS_STRIPE_DEFAULT_PACK=10 \
+  BORING_CREDITS_STRIPE_CURRENCY=CHF \
+  BORING_CREDITS_STRIPE_TEST_MODE=0 \
+  BORING_CREDITS_STRIPE_REDIRECT_URL="https://app.senecaapp.ai/" \
+  BORING_CREDITS_STRIPE_ATTRIBUTION_SECRET="$(openssl rand -hex 32)"
+```
+`sk_live_` with `TEST_MODE=0` is enforced (key↔mode mismatch fails boot); the webhook also drops
+events whose `livemode` ≠ expected. `_ATTRIBUTION_SECRET` is optional but recommended (signs the
+user↔pack binding carried through checkout).
+
+**5. Verify on prod:**
+```bash
+# purchase routes now exist (bad-sig 400, NOT 404):
+curl -s -o /dev/null -w "%{http_code}\n" -X POST https://app.senecaapp.ai/api/credits/webhooks/stripe -d '{}'
+# authed balance → "checkoutEnabled":true and "grantedMicros":0 for a fresh account
+```
+Then in the browser: new account → first prompt hits 402 + Buy CTA → `+` → pick pack → LIVE card →
+balance credits → run burns it down. Issue a refund → credits revoked.
+
+**Note:** existing accounts created under the old build keep their legacy ~4.45 grant; grant=0 only
+affects NEW signups. Zero out old test grants in the prod DB if you want a clean slate.
