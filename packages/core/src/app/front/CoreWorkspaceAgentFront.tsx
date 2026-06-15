@@ -38,6 +38,7 @@ export interface CoreWorkspaceAgentFrontProps<
   hotReload?: false
   chatEntryMode?: ChatEntryMode
   chatFirstPublicShell?: ChatFirstPublicShellOptions
+  publicPaths?: string[]
   authPages?: CoreFrontAuthPagesOverride
   cspNonce?: string
   children?: ReactNode
@@ -284,11 +285,12 @@ export function CoreWorkspaceAgentFront<
   bootPreloadPaths,
   topBarLeft = <WorkspaceSwitcher />,
   topBarRight = <DefaultTopBarRight />,
-  appTitle = 'Boring',
+  appTitle = 'Sovereign Workspace',
   bridgeEndpoint = '/api/v1/ui',
   hotReload = false,
   chatEntryMode = 'auth-first',
   chatFirstPublicShell,
+  publicPaths,
   ...workspaceProps
 }: CoreWorkspaceAgentFrontProps<TSession>) {
   if ((hotReload as unknown) !== false) {
@@ -318,7 +320,7 @@ export function CoreWorkspaceAgentFront<
       cspNonce={cspNonce}
       workspaceRoute={workspaceRoute}
       workspaceIdParam={workspaceIdParam}
-      publicPaths={chatEntryMode === 'chat-first' ? chatFirstPublicPaths(workspaceRoute) : undefined}
+      publicPaths={chatEntryMode === 'chat-first' ? [...chatFirstPublicPaths(workspaceRoute), ...(publicPaths ?? [])] : publicPaths}
     >
       <Route
         path="/"
