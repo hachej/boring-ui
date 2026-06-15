@@ -40,6 +40,15 @@ test('always includes required security flags', () => {
   expect(args).toContain('--unshare-all')
   expect(args).toContain('--share-net')
   expect(args).toContain('--die-with-parent')
+  expect(args).toContain('--new-session')
+})
+
+test('can isolate networking and drop capabilities for hardened worker mode', () => {
+  const args = buildBwrapArgs('/tmp/workspace', { network: 'isolated', dropAllCapabilities: true })
+
+  expect(args).toContain('--unshare-all')
+  expect(args).not.toContain('--share-net')
+  expect(findTupleIndex(args, ['--cap-drop', 'ALL'])).toBeGreaterThanOrEqual(0)
 })
 
 test('binds workspace root exactly once and keeps it writable', () => {
