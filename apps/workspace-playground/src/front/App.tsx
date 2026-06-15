@@ -44,6 +44,25 @@ const playgroundDeckPlugin = createDeckPlugin({
 const workspacePlugins = [askUserPlugin, playgroundDeckPlugin]
 const externalPluginsEnabled = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BORING_EXTERNAL_PLUGINS === "1"
 
+function resetPlaygroundStorageIfRequested(): void {
+  if (typeof window === "undefined") return
+  const params = new URLSearchParams(window.location.search)
+  if (params.get("fresh") !== "1") return
+  const prefixes = [
+    "boring-ui-v2:layout:playground",
+    "boring-workspace:",
+    "boring-agent:",
+  ]
+  for (const key of Object.keys(window.localStorage)) {
+    if (prefixes.some((prefix) => key.startsWith(prefix))) {
+      window.localStorage.removeItem(key)
+    }
+  }
+  params.delete("fresh")
+  const nextSearch = params.toString()
+  window.history.replaceState(null, "", `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`)
+}
+
 function WorkspaceFullPageShell() {
   const parsed = parseFullPagePanelLocation(window.location.search)
 
@@ -75,6 +94,7 @@ function WorkspaceFullPageShell() {
 }
 
 export function WorkspaceShell() {
+  resetPlaygroundStorageIfRequested()
   const showcase = useMemo(isShowcaseRoute, [])
   const fullPage = useMemo(isFullPageRoute, [])
   const [projectName, setProjectName] = useState("Workspace")
