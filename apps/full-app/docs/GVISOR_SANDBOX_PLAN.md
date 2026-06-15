@@ -165,3 +165,97 @@ Add a CI job `gvisor-worker-smoke` (needs Docker-in-Docker / privileged runner).
 ## Recommended sequencing
 
 Run **Phase 0 this week** (prove gVisor/systrap on Fly + benchmark). Keep **Vercel as the launch substrate** until the gVisor worker passes its full smoke suite; the public cutover is a later, separate decision.
+
+---
+
+# Appendix — Background, decisions & rationale
+
+> Captured from the 2026-06-15 review + design session so we don't restart from scratch. This is the "why", the plan above is the "what/how".
+
+## A. Decision log (how we got here)
+
+1. **Security review** of the remote bwrap worker (#301) — full findings in §B.
+2. **Threat model fixed:** exfiltration of a user's *own* workspace data is **acceptable** (inherent to internet-enabled sandboxes). We **must** prevent (a) **main-app attack** (sandbox → public app / Postgres / Fly 6PN / metadata) and (b) **cross-workspace attack** (A → B).
+3. **Finding:** the current shared-net bwrap worker does **not** meet (a) or (b). Worse, (b) is broken **without any escape** — `--share-net` shares one netns across all sandboxes, so A reaches B's `localhost` (e.g. a dev server). See §C.
+4. **Launch decision:** ship **on Vercel Sandbox** (already the default), park the bwrap worker. See §D.
+5. **Strategy reframe:** the remote worker is the **first step toward our own sandbox service** — it nailed the *Contract*; *Substrate* + *Orchestration* remain. See §E.
+6. **Substrate choice for in-house v1:** **gVisor** (this plan). **Machine-per-workspace rejected on cost** (would pay ~per workspace; gVisor packs many sandboxes per Machine → cost scales with concurrency, not user count). See §F.
+
+**Standing decisions:**
+- Launch substrate = **Vercel** (now); in-house substrate = **gVisor** (later, this plan).
+- Exfil **accepted**; main-app + cross-workspace are **hard requirements**.
+- gVisor chosen over bwrap/plain-Docker (shared kernel) and over Machine-per-workspace (cost).
+- Network rules (per-workspace netns + egress firewall) are required **in addition** to gVisor — different axis (§C/§F).
+- Keep the remote-worker **Contract** (protocol/auth/fs/tenancy) constant across all substrates.
+
+## B. Security review findings — remote bwrap worker (#301)
+
+**Verified solid (do not re-review):**
+- **Secret isolation holds & is smoke-tested** — worker secrets never enter the sandbox. `buildExecEnv` (`apps/full-app/src/server/worker/exec.ts:22`) + `withWorkspacePythonEnv` (`packages/agent/src/server/sandbox/workspacePythonEnv.ts:30`, `baseEnv = passed env`, not `process.env`) + control-plane `mergeEnv` barrier that drops host env for both vercel-sandbox and remote-worker (`packages/agent/src/server/tools/harness/index.ts:84`). Smoke probe asserts `DATABASE_URL`/`*_TOKEN`/process-secret all empty inside the sandbox (`apps/full-app/scripts/remote-worker-smoke.mjs:175-189`).
+- **Tenancy gated** — `resolveAuthorizedWorkspaceId` → `isMember` (403) before any worker call (`packages/core/src/app/server/createCoreWorkspaceAgentServer.ts` ~335-352).
+- **Worker hardening** — non-root uid 10001, `setpriv --reset-env --no-new-privs`, `--cap-drop ALL`, `--unshare-all`, `--new-session`, fails closed if token missing (`apps/full-app/docker/worker-entrypoint.sh`).
+- **Path confinement** realpath-based (`packages/agent/src/server/workspace/paths.ts`); **constant-time token** (`workerClient.ts:273`); token never logged.
+- **Mode dormant/opt-in** — active only if `BORING_WORKER_BASE_URL` is set (`createCoreWorkspaceAgentServer.ts:679-682`); public app uses `vercel-sandbox` (`apps/full-app/Dockerfile:80`).
+- **CI** enforces no-app-code-in-image + auth-401 + env-no-leak + limits; **backups** are Fly-native volume snapshots (no off-platform exfil).
+
+**Open risks (the reason for this plan):**
+- **H1 — shared-net on Fly 6PN** (lateral movement) + open egress (`apps/full-app/fly.worker.toml:17`, `buildBwrapArgs.ts:66`).
+- **H2 — no seccomp + shared kernel/uid/process** → one escape = all workspaces' files + the worker token.
+- **M1 — unbounded `runtimes` map** → fd/memory leak (`apps/full-app/src/server/worker/routes.ts:50`).
+- **M2 — single shared internal token** = all-workspace authority (no per-workspace scoping).
+- **M3 — no TLS enforcement** on `BORING_WORKER_BASE_URL` (`workerClient.ts:54`).
+- **M4 — auth at `preHandler`** (after 20 MB body parse) + no rate limit (`routes.ts:79`).
+- **L1 — `buildExecEnv` denylist** case-sensitive / misses `AWS_*` (defense-in-depth only; control plane already sends no secrets).
+- **L3 — whole `/etc` RO-bound** into the sandbox (audit for secrets).
+- Authors' own backlog: seccomp, cgroup limits, egress allowlist, scheduled image rebuilds, non-root smoke (`apps/full-app/docs/REMOTE_BWRAP_WORKER_HARDENING_TODO.md`).
+
+This plan addresses H1 (netns + firewall + separate net), H2 (gVisor + cgroups), and M1 (lifecycle/reaping).
+
+## C. Why bwrap + network rules alone still isn't enough
+
+| Attack | Needs an escape? | Fixed by network rules? |
+| --- | --- | --- |
+| Connect to DB / main-app / 6PN / metadata | no | ✅ egress firewall |
+| Connect to peer workspace's `localhost` | no | ✅ per-workspace netns |
+| LPE escape → read every workspace off host FS | **yes** | ❌ kernel/FS isolation, not network |
+| LPE → root → flush firewall → reach main-app | **yes** | ❌ escape lands below the firewall |
+
+**gVisor and the network rules defend orthogonal axes** — gVisor = "can it escape the box?"; netns+firewall = "what can it reach from inside the box?". The main-app and cross-workspace-network attacks need **no escape** (`connect()` is a legal syscall gVisor forwards), so the network layer must stop them; the host-FS cross-workspace attack needs gVisor. The threat model has all three → pair them.
+
+## D. Why Vercel for launch (and migration later)
+
+- **Per-workspace microVM** — Vercel sandboxes are keyed per `workspaceId` (`packages/agent/src/server/runtime/modes/vercel-sandbox.ts:397-408`), each its own Firecracker microVM ⇒ separate kernel + netns ⇒ cross-workspace is a hard boundary, no shared loopback.
+- **Off our network** ⇒ can't reach 6PN/DB/metadata; only our public, auth-gated URL — i.e. just another internet client.
+- Internet works (installs); already the production default ⇒ **verify, don't build**.
+- **Files live in Vercel** (persistent sandbox + snapshots, keyed by workspaceId) — not on a Fly volume.
+- **Launch checklist:** deploy from `main` with `BORING_AGENT_MODE=vercel-sandbox`; **ensure `BORING_WORKER_BASE_URL` is unset** (else it bypasses Vercel → bwrap worker); don't deploy `boring-sandbox-worker`.
+- **Caveat — EU residency:** Vercel Sandbox compute is likely US. If EU residency is a hard requirement, don't open public untrusted signup on Vercel — launch **invite-only on Fly** (trusted users) or hold for the gVisor worker.
+- **Migration off Vercel is tractable, not a re-platform:** workspace identity/membership live in **Postgres** (backend-independent); both backends implement the same `Workspace` interface ⇒ migration = walk-tree-and-copy (or Vercel snapshot export → Fly volume). Gotchas: escaping **symlinks** (rejected by `assertRealPathWithinWorkspace` on access — validate/rewrite during copy), a **read-only/quiesce window**, and confirming chat-session state lives in Postgres. Launching on Vercel does **not** raise migration cost.
+
+## E. Strategy — our own sandbox = Contract + Substrate + Orchestration
+
+| Layer | What it is | Status |
+| --- | --- | --- |
+| **Contract** | `Sandbox`/`Workspace` interfaces, remote RPC protocol (exec/fs/fs-events + token), tenancy gating, secret stripping, backups, smoke/CI | ✅ **built — the remote worker** |
+| **Substrate** | the per-tenant isolation boundary (Vercel = Firecracker microVM) | ❌ bwrap-on-shared-VM today → **gVisor (this plan)** |
+| **Orchestration** | lifecycle, snapshot/restore, warm pools, idle reaping, scheduling, autoscale | ❌ single static worker |
+
+The worker isn't a detour from Vercel — it's the **in-house version of it**, one substrate upgrade away. Build order is sound: prove the Contract with a cheap data plane (bwrap), then upgrade the substrate (gVisor → microVM if ever needed).
+
+## F. Substrate comparison
+
+| Substrate | Boundary | Needs KVM? | Verdict |
+| --- | --- | --- | --- |
+| bwrap / plain Docker (`runc`) / namespace-based BoxLite | **shared kernel** | no | ergonomics only; cross-workspace = best-effort. **Rejected.** |
+| **gVisor (`runsc`)** | user-space kernel + seccomp | **no** | strong, production-proven (Google), runs on Fly. **Chosen.** |
+| Kata Containers | **real microVM** behind OCI | yes | VM-grade + Docker UX, but needs bare-metal/KVM (e.g. OVH). Future option. |
+| Firecracker direct / **Fly Machine per workspace** | **real microVM** | yes (Fly provides it) | strongest; **rejected for v1 on cost**. |
+
+Notes: "our own Docker solution" alone = `runc` = shared kernel (same class as bwrap) — not a guarantee; you must plug in gVisor or Kata. gVisor's edge for us: **no KVM**, so it runs inside a Fly Machine today. Network rules (§C) are required regardless of substrate.
+
+## G. What's exfiltratable (the accepted-risk scope)
+
+With gVisor + netns + CIDR firewall, the **only** exfiltratable thing is the **attacker's own workspace** (files at `/workspace`, anything brought into `HOME=/workspace`, non-secret env). **Not** reachable: other workspaces (netns + gVisor), platform/provider secrets (stripped before reaching the sandbox), DB / main-app / metadata (firewall). So exfil is **self-scoped — no privilege escalation, no multi-tenant breach.**
+- **Nuance:** "own data" includes the **prompt-injection** case — a malicious repo/doc can make the agent exfiltrate the *honest* user's own workspace to a third party. Still one tenant, but name it as a known product decision.
+- **Edge cases that widen it:** anything you **seed/mount in** (keep non-sensitive); any **feature credential** deliberately placed in the workspace (GitHub clone tokens, etc. — make short-lived/least-privilege).
+- **Sibling risk of open egress** (not exfil): sandboxes used for **outbound abuse** (crypto-mining/DDoS/spam) → IP-reputation damage. A filtering proxy would address both this and injection-exfil; deferred because exfil is accepted.
