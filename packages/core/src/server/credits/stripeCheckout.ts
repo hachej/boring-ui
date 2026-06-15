@@ -1,14 +1,14 @@
 /**
  * Server-side Stripe Checkout Session creation.
  *
- * The buyer's user id and the chosen pack id are written into the session metadata
- * HERE, server-side (a Checkout Session can only be created with the secret key — the
- * browser never can). The webhook resolves the credit amount from `metadata.pack_id`
- * (the CONFIGURED value for a fixed pack, or the amount actually paid for a custom
- * pay-what-you-want pack) — never from a buyer-influenceable number. So this is the
- * Stripe analogue of createLemonSqueezyCheckout, and (unlike Lemon Squeezy) no signed
- * attribution token is needed: there's no buyer-crafted-URL surface to defend.
+ * The buyer's user id and the chosen pack id are written into the session metadata HERE,
+ * server-side. The webhook resolves the credit amount from `metadata.pack_id` (the
+ * CONFIGURED value for a fixed pack, or the amount actually paid for a custom pay-what-you-
+ * want pack) — never from a buyer-influenceable number. A signed `metadata.uat` token binds
+ * (user, pack) to a session THIS adapter created, so on a mixed Stripe account another
+ * integration's colliding pack_id can't be credited (the webhook verifies it).
  */
+import { signStripeAttribution } from './stripe.js'
 
 export interface CreateStripeCheckoutInput {
   apiKey: string
@@ -19,6 +19,9 @@ export interface CreateStripeCheckoutInput {
   /** Pack id (e.g. "10" or the custom-pack id), echoed into metadata. The webhook maps
    * it to a configured credit value, or (custom pack) credits the amount paid. */
   packId: string
+  /** Secret to sign the (user, pack) attribution token (metadata.uat) so the webhook can
+   * confirm THIS adapter created the session. Omit to skip (no attribution binding). */
+  attributionSecret?: string
   email?: string
   /** Base URL the buyer returns to. `?checkout=return` / `?checkout=cancelled`
    * are appended for success / cancel. */
@@ -68,6 +71,10 @@ export function buildStripeCheckoutForm(input: CreateStripeCheckoutInput): strin
     ['payment_intent_data[metadata][user_id]', input.userId],
     ['payment_intent_data[metadata][pack_id]', input.packId],
   ]
+  if (input.attributionSecret) {
+    // Bind (user, pack) to this server-created session; the webhook verifies metadata.uat.
+    params.push(['metadata[uat]', signStripeAttribution(input.userId, input.packId, input.attributionSecret)])
+  }
   if (input.email) params.push(['customer_email', input.email])
   if (input.redirectUrl) {
     params.push(['success_url', appendCheckoutMarker(input.redirectUrl, 'return')])

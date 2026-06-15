@@ -50,6 +50,8 @@ export {
   verifyStripeSignature,
   parseStripeEvent,
   stripeNetPaidMinor,
+  signStripeAttribution,
+  verifyStripeAttribution,
   handleStripeWebhook,
 } from './stripe.js'
 export type {

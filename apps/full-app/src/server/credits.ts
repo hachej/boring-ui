@@ -142,10 +142,6 @@ function readStripeRouteConfig(env: NodeJS.ProcessEnv): {
     }
     creditMicrosByPack[packId] = micros
   }
-  const defaultPackEnv = env.BORING_CREDITS_STRIPE_DEFAULT_PACK
-  if (defaultPackEnv && !(defaultPackEnv in variants)) {
-    throw new Error(`BORING_CREDITS_STRIPE_DEFAULT_PACK "${defaultPackEnv}" is not a configured pack in BORING_CREDITS_STRIPE_VARIANTS`)
-  }
   const customPrice = env.BORING_CREDITS_STRIPE_CUSTOM_PRICE || undefined
   if (customPrice && !/^price_[A-Za-z0-9]+$/.test(customPrice)) {
     throw new Error(`invalid BORING_CREDITS_STRIPE_CUSTOM_PRICE (must look like "price_…"): "${customPrice}"`)
@@ -153,6 +149,12 @@ function readStripeRouteConfig(env: NodeJS.ProcessEnv): {
   const customPack = customPrice
     ? { id: STRIPE_CUSTOM_PACK_ID, priceId: customPrice, minMinor: parseNumberEnv('BORING_CREDITS_STRIPE_CUSTOM_MIN_MINOR', env.BORING_CREDITS_STRIPE_CUSTOM_MIN_MINOR, 50, 1, true) }
     : undefined
+  // Validate the default AFTER the custom pack is known: it may be a fixed pack OR the
+  // reserved custom id (a custom-only deployment can default to "custom").
+  const defaultPackEnv = env.BORING_CREDITS_STRIPE_DEFAULT_PACK
+  if (defaultPackEnv && !(defaultPackEnv in variants) && !(customPack && defaultPackEnv === STRIPE_CUSTOM_PACK_ID)) {
+    throw new Error(`BORING_CREDITS_STRIPE_DEFAULT_PACK "${defaultPackEnv}" is not a configured pack in BORING_CREDITS_STRIPE_VARIANTS (or the custom pack)`)
+  }
   const checkoutReady = Boolean(apiKey && (Object.keys(variants).length > 0 || customPack))
   return {
     webhookSecret,

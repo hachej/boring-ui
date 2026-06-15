@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto'
 import { describe, it, expect, vi } from 'vitest'
-import { verifyStripeSignature, parseStripeEvent, handleStripeWebhook, type StripeWebhookOptions } from '../stripe.js'
+import { verifyStripeSignature, parseStripeEvent, handleStripeWebhook, signStripeAttribution, type StripeWebhookOptions } from '../stripe.js'
 
 const SECRET = 'whsec_test'
 const NOW = 1_700_000_000_000 // fixed ms
@@ -156,6 +156,22 @@ describe('handleStripeWebhook', () => {
     const res = await handleStripeWebhook(body, sign(body), makeOptions())
     expect(res.status).toBe(500)
     expect(res.body.reason).toBe('refund_unmappable')
+  })
+
+  it('requires a valid attribution token when attributionSecret is set', async () => {
+    const ATTR = 'attr_secret'
+    // No uat → untrusted (500).
+    const noUat = completedEvent()
+    expect((await handleStripeWebhook(noUat, sign(noUat), makeOptions({ attributionSecret: ATTR }))).body.reason).toBe('untrusted_attribution')
+    // Valid uat bound to (user, pack) → grants.
+    const uat = signStripeAttribution('u1', '10', ATTR)
+    const ok = completedEvent({ metadata: { user_id: 'u1', pack_id: '10', uat } })
+    const res = await handleStripeWebhook(ok, sign(ok), makeOptions({ attributionSecret: ATTR }))
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ ok: true, created: true })
+    // A uat signed for a DIFFERENT pack must not validate (binds user AND pack).
+    const wrongPack = completedEvent({ metadata: { user_id: 'u1', pack_id: '10', uat: signStripeAttribution('u1', '5', ATTR) } })
+    expect((await handleStripeWebhook(wrongPack, sign(wrongPack), makeOptions({ attributionSecret: ATTR }))).body.reason).toBe('untrusted_attribution')
   })
 
   it('revokes on a refund', async () => {

@@ -18,6 +18,29 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 
 const DEFAULT_TOLERANCE_SECONDS = 300
 
+/**
+ * Server-signed attribution token binding (user, pack) to a checkout created BY THIS
+ * adapter. Set as `metadata.uat`; verified on the webhook. A Stripe webhook signature only
+ * proves the event is from the account — on a mixed/shared account another integration (or
+ * Payment Link) could carry a colliding `metadata.pack_id`. The token proves OUR route
+ * created the session, so the metadata is trustworthy (Stripe analogue of LS's uat). */
+export function signStripeAttribution(userId: string, packId: string, secret: string): string {
+  return createHmac('sha256', secret).update(`credit:${userId}:${packId}`).digest('hex')
+}
+
+/** Verify the token against any of the given secrets (current + previous, for rotation). */
+export function verifyStripeAttribution(userId: string | undefined, packId: string | undefined, token: string | undefined, secret: string | readonly string[]): boolean {
+  if (!userId || !packId || !token) return false
+  const actual = Buffer.from(token, 'utf8')
+  const secrets = typeof secret === 'string' ? [secret] : secret
+  return secrets.some((s) => {
+    if (!s) return false
+    const expected = Buffer.from(signStripeAttribution(userId, packId, s), 'utf8')
+    if (expected.length !== actual.length) return false
+    return timingSafeEqual(expected, actual)
+  })
+}
+
 /** Parse the `Stripe-Signature` header into its timestamp + v1 signatures. */
 function parseSignatureHeader(header: string): { t: number | null; v1: string[] } {
   let t: number | null = null
@@ -79,6 +102,9 @@ export interface StripeOrder {
   sessionId?: string
   /** From session metadata.user_id / client_reference_id — who to credit. */
   userId?: string
+  /** From metadata.uat — server-signed token binding (user, pack) to a session this
+   * adapter created (verified when attributionSecret is set). */
+  userAttributionToken?: string
   /** Stripe payment_status ('paid' when funds captured). */
   paymentStatus?: string
   /** false = test mode, true = live. `undefined` when absent (treated as a mismatch). */
@@ -159,6 +185,7 @@ export function parseStripeEvent(payload: unknown): StripeOrder | null {
       paymentIntentId: asId(object.payment_intent),
       sessionId: asString(object.id),
       userId: asString(meta?.user_id) ?? asString(object.client_reference_id),
+      userAttributionToken: asString(meta?.uat),
       paymentStatus: asString(object.payment_status),
       livemode: typeof object.livemode === 'boolean' ? object.livemode : undefined,
       currency: asString(object.currency)?.toLowerCase(),
@@ -218,6 +245,11 @@ export interface StripeWebhookOptions {
   /** Credit micros per 1 major currency unit. When set, refuse to mint a pack value the
    * buyer didn't actually pay for (net pre-tax = amount_subtotal must cover it). */
   creditMicrosPerUnit?: number
+  /** When set, the session's `metadata.uat` MUST be a valid attribution token for its
+   * (user_id, pack_id) — proving THIS adapter created the session. Defends a mixed Stripe
+   * account where another integration could carry a colliding metadata.pack_id. May be an
+   * array (current + previous) for secret rotation. Undefined ⇒ no attribution required. */
+  attributionSecret?: string | readonly string[]
   now?: number
   toleranceSeconds?: number
   log?: (message: string, fields?: Record<string, unknown>) => void
@@ -302,6 +334,19 @@ export async function handleStripeWebhook(
       return { status: 500, body: { ok: false, reason: 'unrecognized_credit_pack', orderId: order.paymentIntentId } }
     }
     return { status: 200, body: { ok: true, reason: 'not_a_credit_order', orderId: order.paymentIntentId } }
+  }
+
+  // Bind attribution to a session THIS adapter created: require a valid metadata.uat for
+  // (user_id, pack_id). A webhook signature only proves the event is from the account, not
+  // that we created the session — so on a mixed account a colliding pack_id can't mint
+  // credits. attributionSecret undefined ⇒ no attribution required (opt-out by omission).
+  if (options.attributionSecret !== undefined) {
+    const provided = typeof options.attributionSecret === 'string' ? [options.attributionSecret] : options.attributionSecret
+    const secrets = provided.filter((s) => typeof s === 'string' && s.length > 0)
+    if (secrets.length === 0 || !verifyStripeAttribution(order.userId, order.packId, order.userAttributionToken, secrets)) {
+      options.log?.('stripe paid known-pack session has an invalid/missing attribution token — not crediting', { paymentIntentId: order.paymentIntentId, packId: order.packId })
+      return { status: 500, body: { ok: false, reason: 'untrusted_attribution', orderId: order.paymentIntentId } }
+    }
   }
 
   // A paid credit order without a PaymentIntent can't be keyed idempotently/revoked → 500.

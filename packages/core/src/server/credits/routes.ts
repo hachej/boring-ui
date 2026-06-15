@@ -675,6 +675,8 @@ function registerStripeRoutes(
           priceId,
           userId,
           packId,
+          // Sign (user, pack) so the webhook can confirm THIS adapter created the session.
+          attributionSecret: stripe.webhookSecret,
           email: typeof email === 'string' ? email : undefined,
           redirectUrl: checkout.redirectUrl,
         })
@@ -712,6 +714,9 @@ function registerStripeRoutes(
           isUnverifiedCreditOrder,
           isRefundForOurStore,
           creditMicrosPerUnit,
+          // Verify the session was created by THIS adapter (metadata.uat) — same secret the
+          // checkout signs with. Defends a mixed Stripe account from a colliding pack_id.
+          attributionSecret: webhookSecret,
           grant: (input, order) =>
             service.grantPurchase(input.userId, purchaseKey(order.paymentIntentId as string), input.amountMicros, {
               testMode: stripe.expectedTestMode,
