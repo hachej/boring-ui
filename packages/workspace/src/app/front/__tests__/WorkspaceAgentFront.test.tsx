@@ -124,6 +124,29 @@ describe("WorkspaceAgentFront", () => {
     expect(MockEventSource.instances.filter((instance) => instance.url.includes("/api/v1/agent-plugins/events"))).toHaveLength(0)
   })
 
+  it("externalPlugins=true preserves explicit front and chat plugin reload UX", () => {
+    MockEventSource.instances = []
+    vi.stubGlobal("EventSource", MockEventSource)
+    let captured: WorkspaceChatPanelProps | undefined
+    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
+      captured = props
+      return <div>Chat panel</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="external-plugins-on"
+        chatPanel={CapturingChatPanel}
+        externalPlugins
+        frontPluginHotReload="vite"
+        hotReloadEnabled
+      />,
+    )
+
+    expect(MockEventSource.instances.filter((instance) => instance.url.includes("/api/v1/agent-plugins/events"))).toHaveLength(1)
+    expect(captured?.hotReloadEnabled).toBe(true)
+  })
+
   it("externalPlugins=false disables front and chat plugin reload UX", () => {
     MockEventSource.instances = []
     vi.stubGlobal("EventSource", MockEventSource)
