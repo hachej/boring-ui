@@ -85,34 +85,3 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://localhost:3000/health').then(r=>{if(!r.ok)throw r.status}).catch(()=>process.exit(1))"
 
 CMD ["node", "apps/full-app/dist/server/main.js"]
-
-FROM node:22-slim AS worker-runtime
-WORKDIR /app
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends bubblewrap ca-certificates curl git python3 python3-pip python3-venv ripgrep util-linux \
-  && rm -rf /var/lib/apt/lists/* \
-  && corepack enable \
-  && groupadd --system --gid 10001 boring \
-  && useradd --system --uid 10001 --gid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin boring
-
-# Worker image intentionally excludes the full-app frontend and main server.
-# It contains only the internal worker entrypoint plus the agent package it uses
-# for workspace/path validation and bwrap execution.
-RUN printf '{"type":"module"}\n' > package.json
-COPY --from=build /app/node_modules/ node_modules/
-COPY --from=build /app/packages/agent/dist/ packages/agent/dist/
-COPY --from=build /app/packages/agent/package.json packages/agent/package.json
-COPY --from=build /app/packages/agent/node_modules/ packages/agent/node_modules/
-COPY --from=build /app/apps/full-app/dist/server/agent-worker.js worker/agent-worker.js
-COPY --from=build /app/apps/full-app/dist/server/worker/ worker/worker/
-COPY apps/full-app/docker/worker-entrypoint.sh /usr/local/bin/worker-entrypoint
-RUN chmod 0755 /usr/local/bin/worker-entrypoint
-
-ENV NODE_ENV=production
-EXPOSE 3000
-
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD node -e "fetch('http://localhost:3000/health').then(r=>{if(!r.ok)throw r.status}).catch(()=>process.exit(1))"
-
-CMD ["/usr/local/bin/worker-entrypoint", "node", "worker/agent-worker.js"]
