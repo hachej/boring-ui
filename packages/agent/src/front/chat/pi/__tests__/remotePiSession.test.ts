@@ -155,6 +155,34 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
+  it('silently reconnects after a hung event stream connect times out', async () => {
+    const events = openNdjsonStream()
+    let eventCalls = 0
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url.endsWith('/state')) return Promise.resolve(jsonResponse(snapshot({ seq: 7, status: 'idle', activeTurnId: undefined })))
+      if (url.endsWith('/events?cursor=7')) {
+        eventCalls += 1
+        if (eventCalls === 1) {
+          const signal = init?.signal
+          return new Promise<Response>((_resolve, reject) => {
+            signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true })
+          })
+        }
+        return Promise.resolve(new Response(events.stream))
+      }
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { requestTimeoutMs: 20 })
+
+    await waitUntil(() => eventCalls >= 2, 3000)
+    await waitUntil(() => session.getState().connection.state === 'connected', 3000)
+
+    expect(session.getState().notices.some((notice) => notice.id === 'protocol-error')).toBe(false)
+    expect(session.getState().error).toBeUndefined()
+
+    session.dispose()
+  })
+
   it('recovers a hung /state hydration via the request timeout instead of stalling forever', async () => {
     // First /state never settles (saturated/restarting server). Without a
     // per-attempt timeout the chat stays stuck "Loading chat history…"; the

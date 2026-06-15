@@ -1,10 +1,10 @@
 /**
- * Authoritative uv path installed by the Vercel Node-runtime bootstrap (the
- * Astral standalone installer drops the binary in `$HOME/.local/bin`). That dir
- * is NOT on PATH for non-interactive provisioning exec, so internal callers must
- * invoke uv via this explicit path, never bare `uv`.
+ * Authoritative uv path installed by the Vercel Node-runtime bootstrap.
+ * This path is intentionally inside the workspace's `.boring-agent` runtime
+ * directory because the interactive agent shell includes it on PATH.
  */
-export const VERCEL_UV_BIN = '/home/vercel-sandbox/.local/bin/uv'
+export const VERCEL_UV_BIN_DIR = '/workspace/.boring-agent/sdk/uv/bin'
+export const VERCEL_UV_BIN = `${VERCEL_UV_BIN_DIR}/uv`
 
 /**
  * uv setup for Python-family runtimes (e.g. Vercel `python3.13`), which already
@@ -19,14 +19,15 @@ export const UV_SETUP_COMMANDS = [
  * uv setup for Node-family runtimes (Vercel `node22`/`node24`/`node26`), which
  * ship node/npm/pnpm + Amazon Linux `python3` but NO `pip` and NO Astral `uv`.
  *
- * Install uv via the Astral standalone installer (`curl … | sh`), which lands a
- * prebuilt binary at `$HOME/.local/bin/uv` and needs NEITHER `pip` NOR `dnf`.
- * Verified live on node24: ~1.3s vs ~15.6s for the old `dnf install python3-pip`
- * + `pip install --user uv` path (the `dnf` step alone was ~13s). Provisioning
- * uses uv exclusively, so no system `pip3` is required at all.
+ * Install uv via the Astral standalone installer (`curl … | sh`), pinned to the
+ * workspace's `.boring-agent` runtime directory with `UV_INSTALL_DIR`; it needs
+ * NEITHER `pip` NOR `dnf`. Verified live on node24: ~1.3s vs ~15.6s for the old
+ * `dnf install python3-pip` + `pip install --user uv` path (the `dnf` step alone
+ * was ~13s). Provisioning uses uv exclusively, so no system `pip3` is required.
  */
 export const NODE_UV_SETUP_COMMANDS = [
-  `[ -x ${VERCEL_UV_BIN} ] || curl -LsSf https://astral.sh/uv/install.sh | sh`,
+  `mkdir -p ${VERCEL_UV_BIN_DIR}`,
+  `[ -x ${VERCEL_UV_BIN} ] || curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=${VERCEL_UV_BIN_DIR} sh`,
   `${VERCEL_UV_BIN} --version`,
 ] as const
 

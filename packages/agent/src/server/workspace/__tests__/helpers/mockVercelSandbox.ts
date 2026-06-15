@@ -140,7 +140,7 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
       }
 
       // uv runtime bootstrap (Layer A): simulate uv installing/verifying successfully.
-      if (script.includes('astral.sh/uv/install') || script.includes('.local/bin/uv --version')) {
+      if (script.includes('astral.sh/uv/install') || script.includes('/.boring-agent/sdk/uv/bin/uv --version')) {
         return emitResult(0, 'uv 0.0.0\n', '')
       }
 

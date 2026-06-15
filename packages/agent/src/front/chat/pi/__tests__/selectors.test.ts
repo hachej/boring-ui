@@ -289,6 +289,27 @@ describe('Pi chat selectors and store', () => {
     expect(selectMessagesForRender(state)).toEqual([])
   })
 
+  it('hides background reconnect notices while an idle chat has no pending work', () => {
+    let state = createInitialPiChatState({ sessionId: 's1', storageScope: 'scope', status: 'idle' })
+    state = piChatReducer(state, { type: 'connection-state', state: 'reconnecting' })
+
+    expect(selectRuntimeNotices(state).map((notice) => notice.id)).toEqual([])
+
+    state = piChatReducer(state, {
+      type: 'optimistic-user-message',
+      message: {
+        id: 'optimistic:nonce-1',
+        role: 'user',
+        status: 'pending',
+        clientNonce: 'nonce-1',
+        createdAt: '2026-06-15T00:00:00.000Z',
+        parts: [{ type: 'text', id: 'optimistic:nonce-1:text', text: 'hello' }],
+      },
+    })
+
+    expect(selectRuntimeNotices(state).map((notice) => notice.id)).toEqual(['connection-reconnecting'])
+  })
+
   it('coalesces high-frequency delta notifications while reducer seq advances immediately', () => {
     const notify = vi.fn()
     const scheduled: Array<() => void> = []

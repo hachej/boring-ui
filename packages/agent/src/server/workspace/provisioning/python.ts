@@ -45,11 +45,11 @@ export async function ensureUv(options: {
   runtimeLayout: BoringAgentRuntimePaths
   uvStandaloneSource?: string | URL
   /**
-   * Explicit absolute path to a uv binary (e.g. the Vercel Node-runtime
-   * bootstrap installs uv at /home/vercel-sandbox/.local/bin/uv, which is NOT on
-   * the non-interactive exec PATH). Provider-neutral: supplied by the caller, not
-   * hardcoded here. When set and runnable it is preferred over bare `uv`, so
-   * provisioning correctness never depends on PATH propagation.
+   * Explicit absolute path to a uv binary (e.g. Vercel Node-runtime bootstrap
+   * installs uv into `.boring-agent` before Python provisioning starts).
+   * Provider-neutral: supplied by the caller, not hardcoded here. When set and
+   * runnable it is preferred over bare `uv`, so provisioning correctness never
+   * depends on PATH propagation.
    */
   explicitUvBin?: string
 }): Promise<EnsureUvResult> {

@@ -40,6 +40,9 @@ test('Node-family runtimes install uv via the standalone curl installer (no pip/
     expect(joined, `runtime=${runtime} must install uv via the curl installer`).toContain(
       'curl -LsSf https://astral.sh/uv/install.sh',
     )
+    expect(joined, `runtime=${runtime} must install uv into .boring-agent`).toContain(
+      `UV_INSTALL_DIR=/workspace/.boring-agent/sdk/uv/bin sh`,
+    )
     expect(joined, `runtime=${runtime} must verify the explicit UV_BIN`).toContain(
       `${VERCEL_UV_BIN} --version`,
     )
