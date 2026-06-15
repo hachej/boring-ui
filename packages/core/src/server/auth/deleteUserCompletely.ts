@@ -9,6 +9,10 @@ import {
   workspaceMembers,
   workspaceRuntimes,
   workspaceSettings,
+  creditGrants,
+  usageLedger,
+  usageReservations,
+  creditPurchases,
 } from '../db/schema.js'
 
 const RETRYABLE_TX_ERROR_CODES = new Set(['40001', '40P01'])
@@ -209,6 +213,16 @@ export async function deleteUserCompletely(
             .delete(verification_tokens)
             .where(eq(verification_tokens.identifier, userRow.email))
         }
+
+        // Credit/metering rows carry the user id as a plain text column (no FK
+        // cascade), so they'd otherwise outlive the account (PII + orphaned financial
+        // rows). Delete the user's reservations, usage ledger, grants, and purchase
+        // rows with the account. (Refund-before-grant tombstones in credit_purchases
+        // have a NULL user_id and are intentionally left as cross-store/mode guards.)
+        await tx.delete(usageReservations).where(eq(usageReservations.userId, userId))
+        await tx.delete(usageLedger).where(eq(usageLedger.userId, userId))
+        await tx.delete(creditGrants).where(eq(creditGrants.userId, userId))
+        await tx.delete(creditPurchases).where(eq(creditPurchases.userId, userId))
 
         await tx.delete(users).where(eq(users.id, userId))
       })

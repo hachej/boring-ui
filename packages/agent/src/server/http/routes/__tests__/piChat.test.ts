@@ -338,6 +338,27 @@ describe('piChatRoutes', () => {
     await app.close()
   })
 
+  test('POST /prompt surfaces a metering PAYMENT_REQUIRED rejection as HTTP 402 even without an explicit statusCode', async () => {
+    const service = new FakePiChatService()
+    service.prompt = vi.fn(async () => {
+      // A metering sink rejecting reserveRun with the canonical code but no
+      // statusCode (e.g. core's InsufficientCreditError shape minus statusCode).
+      throw Object.assign(new Error('insufficient credit'), { code: ErrorCode.enum.PAYMENT_REQUIRED })
+    }) as unknown as FakePiChatService['prompt']
+    const { app } = await buildApp(service)
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/pi-1/prompt',
+      payload: { message: 'hello', clientNonce: 'nonce-1' },
+    })
+
+    expect(res.statusCode).toBe(402)
+    expect(res.json().error.code).toBe(ErrorCode.enum.PAYMENT_REQUIRED)
+
+    await app.close()
+  })
+
   test('POST /followup validates nonce/seq and returns queued receipt', async () => {
     const { app, service } = await buildApp()
 
