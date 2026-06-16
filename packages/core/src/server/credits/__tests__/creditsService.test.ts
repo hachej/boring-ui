@@ -73,6 +73,10 @@ describe('CreditsService', () => {
     expect(() => new CreditsService(makeStore(), { ...CONFIG, signupGrantExpiresAfterDays: 30 })).toThrow(/signupGrantExpiresAfterDays is not supported/)
   })
 
+  it('rejects a malformed explicit run admission threshold', () => {
+    expect(() => new CreditsService(makeStore(), { ...CONFIG, runAdmissionMicros: -1 })).toThrow(/runAdmissionMicros/)
+  })
+
   it('grants the signup credits without an expiry', async () => {
     const store = makeStore()
     await new CreditsService(store, CONFIG).getBalance('u1')
@@ -107,8 +111,18 @@ describe('CreditsService', () => {
     // or slow this reserve).
     expect(store.expireStaleReservations).not.toHaveBeenCalled()
     expect(store.reserve).toHaveBeenCalledWith(expect.objectContaining({
-      // minAvailable = hold (250k) + floor (50k): keep the floor AFTER reserving.
+      // Conservative default admission = hold (250k) + post-hold floor (50k).
       userId: 'u1', runId: 'r', amountMicros: 250_000, ttlSeconds: 7200, minAvailableMicros: 300_000,
+    }))
+  })
+
+  it('allows apps to set an explicit low-balance run admission threshold', async () => {
+    const store = makeStore()
+    const service = new CreditsService(store, { ...CONFIG, runAdmissionMicros: 100_000 })
+    await service.reserveRun({ userId: 'u1', runId: 'r' })
+    expect(store.reserve).toHaveBeenCalledWith(expect.objectContaining({
+      amountMicros: 250_000,
+      minAvailableMicros: 100_000,
     }))
   })
 

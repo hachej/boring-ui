@@ -95,7 +95,8 @@ All money config is **fail-closed**: a provided-but-invalid value throws at star
 | `BORING_CREDITS_SIGNUP_GRANT_EXPIRES_DAYS` | no (default never) | `0`/unset = never (the only supported value). A positive integer **throws at startup**: an expiring grant drops from `grantedMicros` on expiry while spent usage debits stay, turning a partly-spent trial into debt. Re-enable only once usage is allocated/capped against the promo balance. |
 | `BORING_CREDITS_RESERVATION_EUR` | no | Per-run hold. **Unset ⇒ computed SERVED worst-case run** (see limitations). An explicit value below the **served** worst case **throws** unless `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION=1`; below the *effective* worst case only warns. |
 | `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION` | no | `1` accepts a per-run hold below the **served** worst-case run (soft stop; launch-blocking debt). Forbidden in production. Not needed for the served-rate default. |
-| `BORING_CREDITS_MIN_BALANCE_EUR` | no (default 0.05) | Floor kept available **after** a run's hold. |
+| `BORING_CREDITS_RUN_ADMISSION_EUR` | no (default 0.10) | Minimum available balance required **before** starting a run. The per-run hold is still placed, but it is not added to this admission threshold. Low-balance runs can create bounded recoverable debt. |
+| `BORING_CREDITS_MIN_BALANCE_EUR` | no (default 0.05) | Conservative post-hold floor used for grant sizing and by the generic credits service when no explicit run-admission threshold is set. |
 | `BORING_CREDITS_MARGIN` | no (default 1.3) | Pricing margin; must be ≥ 1. |
 | `BORING_CREDITS_RATES` | recommended | `regex=inEur:outEur;…` per-MTok rates (e.g. `infomaniak=0.5:1.5`). Matched against `provider/id`. Non-positive/malformed entries throw. |
 | `BORING_CREDITS_MAX_CONTEXT_TOKENS` / `_MAX_OUTPUT_TOKENS` / `_MAX_CALLS_PER_RUN` | no (200k/16k/4) | Worst-case-run inputs for hold sizing. |
@@ -118,10 +119,12 @@ detection; refund reconciliation by order id with store/mode matching; unknown m
 fail closed at the highest effective rate.
 
 ## Known limitations (accepted for launch, documented)
-1. **Per-run hard stop is not per-call.** The hold bounds a run's overdraft (sized for
-   `MAX_CALLS_PER_RUN` worst-case calls); a run exceeding that budget can overshoot, bounded,
-   and the user's *next* run is then refused. True per-call enforcement needs a Pi-runtime
-   abort hook (the metering coordinator is an observer) — a deliberate follow-up.
+1. **Per-run hard stop is not per-call.** The hold bounds the fallback charge/usage budget
+   (sized for `MAX_CALLS_PER_RUN` worst-case calls), but app admission only requires the
+   explicit `BORING_CREDITS_RUN_ADMISSION_EUR` floor. A low-balance run can therefore create
+   bounded recoverable debt (up to roughly hold minus starting balance, plus any over-budget
+   usage), and the user's *next* run is then refused. True per-call enforcement needs a
+   Pi-runtime abort hook (the metering coordinator is an observer) — a deliberate follow-up.
 2. **Hold sizing: served vs effective.** The per-run hold defaults to the SERVED-rate worst
    case (`maxServedRate` — configured rates + conservative floor, excluding the built-in
    Opus default), so it's proportional to the models you serve and a small starter grant

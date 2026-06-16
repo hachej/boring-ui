@@ -418,18 +418,23 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
     )
   }
   const minBalanceMicros = eurToMicros('BORING_CREDITS_MIN_BALANCE_EUR', env.BORING_CREDITS_MIN_BALANCE_EUR, 0.05)
+  // Product admission threshold: let users spend down to roughly CHF/EUR 0.10
+  // while keeping the per-run hold as the fallback-charge/usage budget. This is
+  // deliberately separate from minBalanceMicros so low-balance admission is an
+  // explicit app policy, not a semantic change to the generic credits service.
+  const runAdmissionMicros = eurToMicros('BORING_CREDITS_RUN_ADMISSION_EUR', env.BORING_CREDITS_RUN_ADMISSION_EUR, 0.1)
   // Background stale-reservation sweep cadence. The per-user expiry in reserve()
   // covers active users; this sweeper charges-on-expire the marked reservations of
   // users who don't return, so a durable fallback charge whose write failed isn't
   // lost. Off the request path (no cross-user coupling). Default 5 min.
   const sweepIntervalSeconds = Math.max(30, parseNumberEnv('BORING_CREDITS_SWEEP_INTERVAL_SECONDS', env.BORING_CREDITS_SWEEP_INTERVAL_SECONDS, 300, 30))
-  // Default the signup grant so a FRESH user can start their first run out of the box.
-  // reserveRun admits a run only when available ≥ hold + floor, so an UNSET grant
-  // defaults to max(€2, hold + floor). Without this, an unconfigured/dev deploy (high
-  // served-rate floor → ~€4 hold) would 402 every first run with no in-app way to buy.
-  // An EXPLICIT BORING_CREDITS_SIGNUP_GRANT_EUR is respected as-is (attach() still warns
-  // if an explicit grant is below the hold). A configured deploy with cheap rates has a
-  // low hold, so this stays at €2.
+  // Default the signup grant so a FRESH user has at least one full hold of runway.
+  // runAdmissionMicros lets existing users spend down to the low-balance floor, but
+  // an UNSET grant still defaults to max(€2, hold + floor) to avoid immediately
+  // pushing first-run users into debt on fallback. An EXPLICIT
+  // BORING_CREDITS_SIGNUP_GRANT_EUR is respected as-is (attach() still warns if a
+  // positive grant is below the start-balance floor). A configured deploy with cheap
+  // rates has a low hold, so this stays at €2.
   const defaultSignupGrantMicros = Math.max(2 * CREDIT_MICROS_PER_EUR, runReservationMicros + minBalanceMicros)
   const signupGrantMicros = env.BORING_CREDITS_SIGNUP_GRANT_EUR
     ? eurToMicros('BORING_CREDITS_SIGNUP_GRANT_EUR', env.BORING_CREDITS_SIGNUP_GRANT_EUR, 2)
@@ -441,6 +446,7 @@ export function readCreditsConfig(env: NodeJS.ProcessEnv = process.env): FullApp
     runReservationMicros,
     reservationTtlSeconds,
     minBalanceMicros,
+    runAdmissionMicros,
     sweepIntervalSeconds,
     pricing: { margin, creditMicrosPerUnit: CREDIT_MICROS_PER_EUR, rates },
   }
@@ -619,22 +625,24 @@ export function buildCreditsWiring(env: NodeJS.ProcessEnv = process.env): {
           throw new Error('credits: BORING_CREDITS_LS_WEBHOOK_SECRET is set but server-side checkout is not configured (need BORING_CREDITS_LS_API_KEY + store id + variants). The webhook requires a server-signed attribution token that only server-created checkouts mint, so real orders would 500 forever as untrusted_attribution. Configure checkout or unset the webhook secret.')
         }
       }
-      // The per-run hold bounds a single run's overdraft. Evaluate it against the
-      // served + effective worst cases (a 'throw' verdict is fatal; a 'warn' is a
-      // documented accepted posture). Extracted as a pure function so the default
-      // (served-rate) config is regression-tested to boot, not crash.
+      // The per-run hold is the fallback-charge/usage budget. Evaluate it against
+      // the served + effective worst cases (a 'throw' verdict is fatal; a 'warn' is
+      // a documented accepted posture). Admission itself uses runAdmissionMicros so
+      // low-balance users can start down to the configured floor.
       const verdict = assessReservationHold(config, env)
       if (config.enabled) {
         if (verdict.action === 'throw') throw new Error(verdict.message)
         if (verdict.action === 'warn') app.log.warn(verdict.fields, verdict.message)
       }
-      // A free-grant smaller than the per-run hold means new users can't start a
-      // run at all (reserve needs the full hold available). Surface it — the
-      // operator must raise the grant, lower the hold, or configure cheaper rates.
-      if (config.enabled && config.signupGrantMicros > 0 && config.signupGrantMicros < config.runReservationMicros) {
+      // A positive free-grant smaller than the admission floor means new users still
+      // can't start a run. Surface it — the operator must raise the grant or lower
+      // BORING_CREDITS_RUN_ADMISSION_EUR. A zero grant is a deliberate no-trial setup.
+      const runAdmissionMicros = config.runAdmissionMicros
+        ?? config.runReservationMicros + config.minBalanceMicros
+      if (config.enabled && config.signupGrantMicros > 0 && config.signupGrantMicros < runAdmissionMicros) {
         app.log.warn(
-          { signupGrantMicros: config.signupGrantMicros, runReservationMicros: config.runReservationMicros },
-          'credits: signup grant is below the per-run hold — new users will be blocked from their first run until they buy credits',
+          { signupGrantMicros: config.signupGrantMicros, runAdmissionMicros },
+          'credits: signup grant is below the run admission threshold — new users will be blocked from their first run until they buy credits',
         )
       }
       // Background charge-on-expire sweeper. reserve() expires the CURRENT user's
