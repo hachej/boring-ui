@@ -1,5 +1,6 @@
 import { InsufficientCreditError, type PostgresMeteringStore, type CreditLedgerEntry } from '../db/stores/PostgresMeteringStore.js'
 import { usageToCredits, type CreditPricingConfig, type ModelTokenRate } from './pricing.js'
+import { safeCapture, noopTelemetry, type TelemetrySink } from '../../shared/telemetry.js'
 
 export type { CreditLedgerEntry, CreditLedgerKind } from '../db/stores/PostgresMeteringStore.js'
 
@@ -138,6 +139,7 @@ export class CreditsService {
     private readonly store: CreditsMeteringStore,
     readonly config: CreditsConfig = DEFAULT_CREDITS_CONFIG,
     private readonly log?: CreditsLogger,
+    private readonly telemetry: TelemetrySink = noopTelemetry,
   ) {
     // When disabled, the service is a full kill switch — every public method
     // short-circuits and never reads the config — so skip validation entirely. A
@@ -187,7 +189,25 @@ export class CreditsService {
     identity?: { storeId?: string; testMode?: boolean; currency?: string; variantId?: string },
   ): Promise<{ created: boolean }> {
     if (!this.config.enabled) return { created: false }
-    const { granted } = await this.store.grantPurchaseOnce({ userId, orderId, amountMicros, ...identity })
+    const { granted, refundAppliedMicros } = await this.store.grantPurchaseOnce({ userId, orderId, amountMicros, ...identity })
+    // Revenue event — only on a fresh grant (idempotent retries return granted=false).
+    if (granted) {
+      safeCapture(this.telemetry, {
+        name: 'purchase.completed',
+        distinctId: userId,
+        properties: {
+          creditMicros: amountMicros,
+          currency: identity?.currency,
+          packId: identity?.variantId,
+        },
+      })
+    }
+    // Out-of-order refund-before-grant: the refund debit is applied here (not at refund
+    // time), so emit purchase.refunded now or it would be missed. Anonymous (no distinctId)
+    // to match the revoke path — purchase.refunded is a consistent count either way.
+    if (refundAppliedMicros && refundAppliedMicros > 0) {
+      safeCapture(this.telemetry, { name: 'purchase.refunded' })
+    }
     return { created: granted }
   }
 
@@ -202,13 +222,16 @@ export class CreditsService {
     opts: { refundFraction?: number; allowTombstone?: boolean; expectedStoreId?: string; expectedTestMode?: boolean; expectedCurrency?: string } = {},
   ): Promise<{ revoked: boolean }> {
     if (!this.config.enabled) return { revoked: false }
-    return this.store.revokePurchase(orderId, {
+    const result = await this.store.revokePurchase(orderId, {
       refundFraction: opts.refundFraction,
       allowTombstone: opts.allowTombstone,
       expectedStoreId: opts.expectedStoreId,
       expectedTestMode: opts.expectedTestMode,
       expectedCurrency: opts.expectedCurrency,
     })
+    // Refund/dispute event (count). No distinctId — revoke is keyed by order, not user.
+    if (result.revoked) safeCapture(this.telemetry, { name: 'purchase.refunded' })
+    return result
   }
 
   async getBalance(userId: string): Promise<CreditBalance> {
@@ -252,7 +275,7 @@ export class CreditsService {
     // stale reservations are expired when THEY next reserve (or via a future
     // background job); a never-returning user's hold harms only their own balance.
     try {
-      const { reservationId } = await this.store.reserve({
+      const { reservationId, created } = await this.store.reserve({
         userId: input.userId,
         workspaceId: input.workspaceId,
         sessionId: input.sessionId,
@@ -264,9 +287,14 @@ export class CreditsService {
         // is admitted only when available ≥ hold + floor (matches the config doc).
         minAvailableMicros: this.config.runReservationMicros + this.config.minBalanceMicros,
       })
+      // Only on a NEW hold — reserve is idempotent (a retry for the same run returns the
+      // existing reservation), so gating on `created` avoids inflating started counts.
+      if (created) safeCapture(this.telemetry, { name: 'run.started', distinctId: input.userId })
       return reservationId
     } catch (error) {
       if (error instanceof InsufficientCreditError) {
+        // The trial wall / monetization trigger.
+        safeCapture(this.telemetry, { name: 'credits.exhausted', distinctId: input.userId })
         throw new CreditExhaustedError(await this.getBalance(input.userId))
       }
       throw error
@@ -324,7 +352,11 @@ export class CreditsService {
 
   async settleRun(userId: string, runId: string, reservationId?: string): Promise<void> {
     if (!this.config.enabled) return
-    await this.store.finishReservation(reservationId ? { reservationId } : { runId, userId }, 'settled')
+    const { updated } = await this.store.finishReservation(reservationId ? { reservationId } : { runId, userId }, 'settled')
+    // Activation/usage event — only on the real settle transition (idempotent retries
+    // return updated=false), so completions aren't double-counted. Count only; per-run
+    // cost lives in usage_ledger. First run.completed per user in SQL = activation.
+    if (updated) safeCapture(this.telemetry, { name: 'run.completed', distinctId: userId })
   }
 
   async releaseRun(userId: string, runId: string, reservationId?: string): Promise<void> {
@@ -374,10 +406,14 @@ export class CreditsService {
         metadata: { kind: metaKind, reservationId: input.reservationId ?? null, alreadyBilledMicros: alreadyBilled, currency: 'credits' },
       })
     }
-    await this.store.finishReservation(
+    const { updated } = await this.store.finishReservation(
       input.reservationId ? { reservationId: input.reservationId } : { runId: input.runId, userId: input.userId },
       'settled',
     )
+    // A fallback-charged run still SETTLED (it started, then errored / produced no billable
+    // usage and was charged the hold) — count it as completed so every run.started has a
+    // matching run.completed (gated on the real transition, like settleRun).
+    if (updated) safeCapture(this.telemetry, { name: 'run.completed', distinctId: input.userId })
     this.log?.('credits: fallback hold charge — topped up to the hold and settled (reconcile against missing/non-billable usage)', {
       kind: metaKind, runId: input.runId, reservationId: input.reservationId, alreadyBilledMicros: alreadyBilled, topUpMicros: topUp,
     })
