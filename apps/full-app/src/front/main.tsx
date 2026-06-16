@@ -88,7 +88,7 @@ createRoot(document.getElementById('root')!).render(
       chatEntryMode="chat-first"
       publicPaths={[]}
       chatFirstPublicShell={{
-        showTeachingArrows: false,
+        showTeachingArrows: true,
         composerPlaceholder: 'Sign in to chat with the agent — or type a command like /landing-page',
         emptyState: {
           eyebrow: 'Seneca AI · Live demo',

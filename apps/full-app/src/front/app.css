@@ -79,6 +79,11 @@ body,
   }
 }
 
+/* Keep opened workspace panes above the teaching arrows. */
+.public-chat-first-shell [data-boring-workspace-part="workbench"] {
+  z-index: 30;
+}
+
 /* --- Prominent hero (public no-auth empty state only) --- */
 .public-chat-first-shell [data-boring-agent-part="empty-state"] {
   max-width: min(1120px, 92vw);
