@@ -69,6 +69,18 @@ function isPublicPath(pathname: string, publicPaths: string[]): boolean {
   })
 }
 
+function shouldBlockUnverifiedUser(
+  pathname: string,
+  hasSession: boolean,
+  requireEmailVerification: boolean,
+  isEmailVerified: boolean,
+): boolean {
+  return hasSession
+    && requireEmailVerification
+    && !isEmailVerified
+    && !UNVERIFIED_ALLOWED_PATHS.has(normalizePath(pathname))
+}
+
 function readSafeRedirect(search?: string): string | null {
   const redirect = new URLSearchParams(normalizeSearch(search)).get('redirect')
   if (!redirect) return null
@@ -140,11 +152,9 @@ export function AuthGate({
       // Better-auth signs users in immediately after signup. When email verification
       // is available, keep unverified signed-in users in the verification flow
       // instead of letting the fresh session through to the workspace.
-      if (requireEmailVerification && !isEmailVerified) {
-        if (!UNVERIFIED_ALLOWED_PATHS.has(pathname)) {
-          goTo(routes.verifyEmail, { replace: true })
-          return
-        }
+      if (shouldBlockUnverifiedUser(pathname, true, requireEmailVerification, isEmailVerified)) {
+        goTo(routes.verifyEmail, { replace: true })
+        return
       }
 
       if (pathname === routes.signin) {
@@ -185,6 +195,7 @@ export function AuthGate({
   }, [currentLocation, goTo, graceMs, isEmailVerified, normalizedPublicPaths, readNow, requireEmailVerification, session.data, session.isPending])
 
   const pathname = normalizePath(currentLocation.pathname)
+  if (shouldBlockUnverifiedUser(pathname, Boolean(session.data), requireEmailVerification, isEmailVerified)) return null
   if (session.isPending && !isPublicPath(pathname, normalizedPublicPaths)) return null
 
   return <>{children}</>

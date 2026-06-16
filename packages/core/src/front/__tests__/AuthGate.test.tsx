@@ -288,6 +288,7 @@ describe('AuthGate', () => {
     )
 
     expect(navigate).toHaveBeenCalledWith('/auth/verify-email', { replace: true })
+    expect(screen.queryByText('Protected Content')).toBeNull()
   })
 
   it('allows unverified users on verify-email page when requireEmailVerification is true', () => {
