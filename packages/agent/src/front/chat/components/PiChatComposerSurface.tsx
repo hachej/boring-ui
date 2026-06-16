@@ -391,7 +391,7 @@ export function PiChatComposerSurface({
                   className={cn(
                     'h-8 w-8 shrink-0 rounded-full',
                     'bg-foreground',
-                    '!text-background',
+                    'text-background',
                     'transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]',
                     'hover:bg-foreground/90 hover:shadow-[0_0_0_3px_oklch(from_var(--foreground)_l_c_h/0.12)] hover:scale-[1.04]',
                     'active:scale-[0.93] active:brightness-95',
