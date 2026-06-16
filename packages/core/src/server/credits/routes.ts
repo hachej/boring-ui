@@ -229,7 +229,10 @@ export interface CreditsRoutesOptions {
   lemonSqueezy?: LemonSqueezyRouteOptions
   stripe?: StripeRouteOptions
   log?: (message: string, fields?: Record<string, unknown>) => void
-  /** Best-effort telemetry for checkout.started / purchase.webhook_rejected (default noop). */
+  /** Best-effort telemetry sink (default noop). Currently emits checkout.started /
+   * purchase.webhook_rejected for the STRIPE routes only (the live provider); Lemon
+   * Squeezy parity is a follow-up if it ships. purchase.completed/refunded + run.*
+   * events come from CreditsService regardless of provider. */
   telemetry?: TelemetrySink
 }
 
@@ -787,7 +790,13 @@ function registerStripeRoutes(
             }),
           log,
         },
-      )
+      ).catch((error: unknown) => {
+        // A THROWN handler (DB outage, conflicting re-grant, refund identity mismatch) →
+        // Fastify returns a retryable 500. Emit the billing-specific rejection too, then
+        // rethrow so the 500/retry behaviour is unchanged.
+        safeCapture(telemetry, { name: 'purchase.webhook_rejected', properties: { provider: 'stripe', reason: 'handler_error' } })
+        throw error
+      })
       // Billing-error signal: a rejected/retryable webhook (bad attribution, underpaid,
       // invalid money, refund-unmappable…). Successes (2xx) are not noise here.
       if (result.status >= 400) {

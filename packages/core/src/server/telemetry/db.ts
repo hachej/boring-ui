@@ -35,13 +35,12 @@ const ALLOWED_PROPERTY_KEYS = new Set([
   'templateDirCount',
   'packageName',
   'packageVersion',
-  // Credits / billing (provider/pack/currency/reason are slugs; *Micros are non-negative ints).
+  // Credits / billing (provider/pack/currency/reason are slugs; creditMicros is a non-negative int).
   'provider',
   'packId',
   'currency',
   'reason',
   'creditMicros',
-  'billedMicros',
 ])
 
 type SafeTelemetryProperty = string | number

@@ -189,7 +189,7 @@ export class CreditsService {
     identity?: { storeId?: string; testMode?: boolean; currency?: string; variantId?: string },
   ): Promise<{ created: boolean }> {
     if (!this.config.enabled) return { created: false }
-    const { granted } = await this.store.grantPurchaseOnce({ userId, orderId, amountMicros, ...identity })
+    const { granted, refundAppliedMicros } = await this.store.grantPurchaseOnce({ userId, orderId, amountMicros, ...identity })
     // Revenue event — only on a fresh grant (idempotent retries return granted=false).
     if (granted) {
       safeCapture(this.telemetry, {
@@ -201,6 +201,11 @@ export class CreditsService {
           packId: identity?.variantId,
         },
       })
+    }
+    // Out-of-order refund-before-grant: the refund debit is applied here (not at refund
+    // time), so emit purchase.refunded now or it would be missed.
+    if (refundAppliedMicros && refundAppliedMicros > 0) {
+      safeCapture(this.telemetry, { name: 'purchase.refunded', distinctId: userId })
     }
     return { created: granted }
   }
@@ -269,7 +274,7 @@ export class CreditsService {
     // stale reservations are expired when THEY next reserve (or via a future
     // background job); a never-returning user's hold harms only their own balance.
     try {
-      const { reservationId } = await this.store.reserve({
+      const { reservationId, created } = await this.store.reserve({
         userId: input.userId,
         workspaceId: input.workspaceId,
         sessionId: input.sessionId,
@@ -281,7 +286,9 @@ export class CreditsService {
         // is admitted only when available ≥ hold + floor (matches the config doc).
         minAvailableMicros: this.config.runReservationMicros + this.config.minBalanceMicros,
       })
-      safeCapture(this.telemetry, { name: 'run.started', distinctId: input.userId })
+      // Only on a NEW hold — reserve is idempotent (a retry for the same run returns the
+      // existing reservation), so gating on `created` avoids inflating started counts.
+      if (created) safeCapture(this.telemetry, { name: 'run.started', distinctId: input.userId })
       return reservationId
     } catch (error) {
       if (error instanceof InsufficientCreditError) {
@@ -344,10 +351,11 @@ export class CreditsService {
 
   async settleRun(userId: string, runId: string, reservationId?: string): Promise<void> {
     if (!this.config.enabled) return
-    await this.store.finishReservation(reservationId ? { reservationId } : { runId, userId }, 'settled')
-    // Activation/usage event (count; per-run cost lives in usage_ledger). The first
-    // run.completed per user in SQL is the activation moment.
-    safeCapture(this.telemetry, { name: 'run.completed', distinctId: userId })
+    const { updated } = await this.store.finishReservation(reservationId ? { reservationId } : { runId, userId }, 'settled')
+    // Activation/usage event — only on the real settle transition (idempotent retries
+    // return updated=false), so completions aren't double-counted. Count only; per-run
+    // cost lives in usage_ledger. First run.completed per user in SQL = activation.
+    if (updated) safeCapture(this.telemetry, { name: 'run.completed', distinctId: userId })
   }
 
   async releaseRun(userId: string, runId: string, reservationId?: string): Promise<void> {

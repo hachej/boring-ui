@@ -31,7 +31,7 @@ function makeStore(overrides: Partial<CreditsMeteringStore> = {}): CreditsMeteri
       activeReservedMicros: 250_000,
       availableMicros: 1_250_000,
     })),
-    reserve: vi.fn(async () => ({ reservationId: 'res-1' })),
+    reserve: vi.fn(async () => ({ reservationId: 'res-1', created: true })),
     recordUsage: vi.fn(async () => ({ inserted: true })),
     finishReservation: vi.fn(async () => ({ updated: true })),
     expireStaleReservations: vi.fn(async () => 0),
@@ -249,6 +249,29 @@ describe('CreditsService', () => {
         new CreditsService(brokeStore, CONFIG, undefined, sink).reserveRun({ userId: 'u2', runId: 'r2' }),
       ).rejects.toBeInstanceOf(CreditExhaustedError)
       expect(events.find((e) => e.name === 'credits.exhausted')?.distinctId).toBe('u2')
+    })
+
+    it('does NOT double-count on idempotent retries (reserve reused / settle no-op)', async () => {
+      const { events, sink } = withCapture()
+      const store = makeStore({
+        reserve: vi.fn(async () => ({ reservationId: 'res-1', created: false })),
+        finishReservation: vi.fn(async () => ({ updated: false })),
+      })
+      const service = new CreditsService(store, CONFIG, undefined, sink)
+      await service.reserveRun({ userId: 'u1', runId: 'r1' })
+      await service.settleRun('u1', 'r1', 'res-1')
+      expect(events.find((e) => e.name === 'run.started')).toBeUndefined()
+      expect(events.find((e) => e.name === 'run.completed')).toBeUndefined()
+    })
+
+    it('emits purchase.refunded when an out-of-order refund is applied during grant', async () => {
+      const { events, sink } = withCapture()
+      const store = makeStore({
+        grantPurchaseOnce: vi.fn(async () => ({ granted: true, refundAppliedMicros: 4_000_000 })),
+      })
+      await new CreditsService(store, CONFIG, undefined, sink).grantPurchase('u1', 'o1', 10_000_000, { currency: 'CHF', variantId: '10' })
+      expect(events.find((e) => e.name === 'purchase.completed')?.distinctId).toBe('u1')
+      expect(events.find((e) => e.name === 'purchase.refunded')?.distinctId).toBe('u1')
     })
   })
 })
