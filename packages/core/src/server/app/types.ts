@@ -102,7 +102,7 @@ declare module 'fastify' {
     capabilitiesCache: CapabilitiesResponse | null
   }
   interface FastifyRequest {
-    user?: { id: string; email: string; name: string | null } | null
+    user?: { id: string; email: string; name: string | null; emailVerified: boolean } | null
     cspNonce?: string
   }
 }

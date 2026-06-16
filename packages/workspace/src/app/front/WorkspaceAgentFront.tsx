@@ -1290,6 +1290,7 @@ export function WorkspaceAgentFront<
         onThemeChange={onThemeChange}
         workspaceId={workspaceId}
         workspaceLabel={workspaceLabel}
+        appTitle={appTitle}
         storageKey={resolvedProviderStorageKey}
         persistenceEnabled={persistenceEnabled}
         debug={debug}

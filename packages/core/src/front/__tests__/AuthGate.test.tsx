@@ -21,14 +21,14 @@ import { AuthProvider } from '../auth/AuthProvider'
 import { AuthGate } from '../AuthGate'
 import type { AuthGateLocation } from '../AuthGate'
 
-function makeAuthenticatedSession() {
+function makeSession({ emailVerified = true }: { emailVerified?: boolean } = {}) {
   return {
     data: {
       user: {
         id: 'u1',
         email: 'test@test.dev',
         name: 'Test',
-        emailVerified: true,
+        emailVerified,
         image: null,
         createdAt: new Date('2026-01-01'),
         updatedAt: new Date('2026-01-02'),
@@ -38,6 +38,10 @@ function makeAuthenticatedSession() {
     isPending: false,
     error: null,
   }
+}
+
+function makeAuthenticatedSession() {
+  return makeSession()
 }
 
 function makeNullSession() {
@@ -54,6 +58,7 @@ interface HarnessProps {
   now: () => number
   graceMs?: number
   publicPaths?: string[]
+  requireEmailVerification?: boolean
   children?: ReactNode
 }
 
@@ -63,6 +68,7 @@ function Harness({
   now,
   graceMs,
   publicPaths,
+  requireEmailVerification,
   children,
 }: HarnessProps) {
   return (
@@ -73,6 +79,7 @@ function Harness({
         now={now}
         graceMs={graceMs}
         publicPaths={publicPaths}
+        requireEmailVerification={requireEmailVerification}
       >
         {children ?? <div>Protected Content</div>}
       </AuthGate>
@@ -264,5 +271,146 @@ describe('AuthGate', () => {
     expect(navigate).toHaveBeenCalledWith('/auth/signin?redirect=%2Fprojects%2Fabc%2Fsettings', {
       replace: true,
     })
+  })
+
+  it('redirects unverified users to verify-email page when requireEmailVerification is true', () => {
+    const navigate = vi.fn()
+
+    mockUseSession.mockReturnValue(makeSession({ emailVerified: false }))
+
+    render(
+      <Harness
+        location={{ pathname: '/dashboard' }}
+        navigate={navigate}
+        now={() => 0}
+        requireEmailVerification
+      />,
+    )
+
+    expect(navigate).toHaveBeenCalledWith('/auth/verify-email', { replace: true })
+    expect(screen.queryByText('Protected Content')).toBeNull()
+  })
+
+  it('allows unverified users on verify-email page when requireEmailVerification is true', () => {
+    const navigate = vi.fn()
+
+    mockUseSession.mockReturnValue(makeSession({ emailVerified: false }))
+
+    render(
+      <Harness
+        location={{ pathname: '/auth/verify-email' }}
+        navigate={navigate}
+        now={() => 0}
+        requireEmailVerification
+      />,
+    )
+
+    expect(navigate).not.toHaveBeenCalled()
+    expect(screen.getByText('Protected Content')).toBeTruthy()
+  })
+
+  it('allows unverified users on auth pages when requireEmailVerification is true', () => {
+    const navigate = vi.fn()
+
+    mockUseSession.mockReturnValue(makeSession({ emailVerified: false }))
+
+    // Auth pages are allowed for unverified users
+    render(
+      <Harness
+        location={{ pathname: '/auth/verify-email' }}
+        navigate={navigate}
+        now={() => 0}
+        requireEmailVerification
+      />,
+    )
+
+    expect(navigate).not.toHaveBeenCalled()
+
+    // Also allow signup page
+    navigate.mockClear()
+    const { rerender } = render(
+      <Harness
+        location={{ pathname: '/auth/signup' }}
+        navigate={navigate}
+        now={() => 0}
+        requireEmailVerification
+      />,
+    )
+
+    expect(navigate).not.toHaveBeenCalled()
+
+    // Also allow forgot-password page
+    navigate.mockClear()
+    rerender(
+      <Harness
+        location={{ pathname: '/auth/forgot-password' }}
+        navigate={navigate}
+        now={() => 0}
+        requireEmailVerification
+      />,
+    )
+
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it('redirects unverified users away from non-allowlisted auth pages', () => {
+    const navigate = vi.fn()
+
+    mockUseSession.mockReturnValue(makeSession({ emailVerified: false }))
+
+    render(
+      <Harness
+        location={{ pathname: '/auth/new-future-page' }}
+        navigate={navigate}
+        now={() => 0}
+        requireEmailVerification
+      />,
+    )
+
+    expect(navigate).toHaveBeenCalledWith('/auth/verify-email', { replace: true })
+  })
+
+  it('does not redirect verified users when requireEmailVerification is true', () => {
+    let nowMs = 0
+    const now = () => nowMs
+    const navigate = vi.fn()
+
+    mockUseSession.mockReturnValue(makeAuthenticatedSession())
+
+    render(
+      <Harness
+        location={{ pathname: '/dashboard' }}
+        navigate={navigate}
+        now={now}
+        requireEmailVerification
+      />,
+    )
+
+    nowMs += 60_000
+    vi.advanceTimersByTime(60_000)
+    expect(navigate).not.toHaveBeenCalled()
+    expect(screen.getByText('Protected Content')).toBeTruthy()
+  })
+
+  it('does not enforce email verification when requireEmailVerification is false', () => {
+    let nowMs = 0
+    const now = () => nowMs
+    const navigate = vi.fn()
+
+    mockUseSession.mockReturnValue(makeSession({ emailVerified: false }))
+
+    render(
+      <Harness
+        location={{ pathname: '/dashboard' }}
+        navigate={navigate}
+        now={now}
+        requireEmailVerification={false}
+      />,
+    )
+
+    nowMs += 60_000
+    vi.advanceTimersByTime(60_000)
+    expect(navigate).not.toHaveBeenCalled()
+    expect(screen.getByText('Protected Content')).toBeTruthy()
   })
 })

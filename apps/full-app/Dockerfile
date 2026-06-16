@@ -21,7 +21,10 @@ COPY apps/full-app/ apps/full-app/
 # workspace tsup skips dts (vite-plugin-dts covers the front entries instead).
 # tsup's onSuccess hook copies core's hand-authored CSS (theme.css, styles.css,
 # chatFirst/*) into dist, so this stays in sync with `pnpm build` automatically.
-RUN pnpm --filter @hachej/boring-core exec tsup --no-dts
+# build:assert (dts-agnostic) then verifies every exported artifact + CSS @import
+# is present in dist, so a drift fails the image build instead of reaching prod.
+RUN pnpm --filter @hachej/boring-core exec tsup --no-dts \
+  && pnpm --filter @hachej/boring-core run build:assert
 
 RUN pnpm --filter @hachej/boring-ui-kit exec tsup \
   && pnpm --filter @hachej/boring-ui-kit exec node scripts/build-styles.mjs

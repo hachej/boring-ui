@@ -1,7 +1,9 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { isRuntimeEmailVerificationEnabled } from '../../../shared/authPolicy.js'
 import {
   routes,
+  useConfig,
   useSignIn,
   useSignUp,
 } from '../../../front/index.js'
@@ -14,6 +16,7 @@ export function AuthCard({
   onClose?: () => void
 }) {
   const navigate = useNavigate()
+  const config = useConfig()
   const signIn = useSignIn()
   const signUp = useSignUp()
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
@@ -36,6 +39,10 @@ export function AuthCard({
         return
       }
       onClose?.()
+      if (mode === 'signup' && isRuntimeEmailVerificationEnabled(config)) {
+        navigate(routes.verifyEmail, { replace: true })
+        return
+      }
       navigate(returnTo, { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : `${mode === 'signin' ? 'Sign in' : 'Sign up'} failed`)

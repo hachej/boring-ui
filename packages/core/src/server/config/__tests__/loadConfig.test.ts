@@ -459,6 +459,7 @@ describe('buildRuntimeConfigPayload', () => {
           googleOauth: false,
           invitesEnabled: true,
           sendWelcomeEmail: true,
+          emailVerification: false,
         },
       })
 

@@ -4,6 +4,7 @@ export const ERROR_CODES = {
   FORBIDDEN: 'forbidden',
   WEAK_PASSWORD: 'weak_password',
   EMAIL_IN_USE: 'email_in_use',
+  EMAIL_NOT_VERIFIED: 'email_not_verified',
 
   // Workspace membership
   NOT_MEMBER: 'not_member',
