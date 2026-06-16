@@ -16,12 +16,20 @@ export interface ChatFirstPublicShellOptions {
   emptyState?: {
     eyebrow?: string
     title?: string
-    description?: string
+    description?: ReactNode
     footer?: ReactNode
   }
   suggestions?: ChatSuggestion[]
   /**
-   * Hand-drawn "Your agent" / "Your remote computer" annotations point at the
+   * Predefined models for the composer's model picker. When provided, the
+   * composer settings row (model + thinking pickers) is shown in the no-auth
+   * hero, mirroring a regular chat session. The no-auth shell can't fetch the
+   * model list from the server (server resources are disabled), so it must be
+   * passed in here. `available` defaults to `true`.
+   */
+  models?: Array<{ provider: string; id: string; label: string; available?: boolean }>
+  /**
+   * Hand-drawn "Ask your AI here" / "Review its work here" annotations point at the
    * composer and the workspace surface to teach the empty public shell. Apps
    * that open a center panel on load (e.g. a landing page) should disable them,
    * otherwise the fixed-position arrows overlay the open panel. Defaults to on.
@@ -69,6 +77,8 @@ export function ChatFirstPublicShell<
   const promptedDraft = new URLSearchParams(location.search).get('prompt')?.trim() ?? ''
   const pendingReturnTo = promptedDraft ? '/' : returnTo
   const workspaceId = intendedWorkspaceId || 'public'
+  const publicModels = (publicShell?.models ?? []).map((m) => ({ ...m, available: m.available ?? true }))
+  const showComposerSettings = publicModels.length > 0
   const openAuth = (draft = readComposerDraftFromDom()) => {
     writePendingChatEntry({ draft, returnTo: pendingReturnTo, ...(intendedWorkspaceId ? { intendedWorkspaceId } : {}) })
     setModalOpen(true)
@@ -165,7 +175,7 @@ export function ChatFirstPublicShell<
       {publicShell?.showTeachingArrows !== false && (
         <>
           <div className="public-arrow public-arrow-computer" aria-hidden="true">
-            <span className="public-arrow-label">Your remote computer</span>
+            <span className="public-arrow-label">Review its work here</span>
             <svg className="public-arrow-svg" viewBox="0 0 190 140" fill="none">
               <path
                 className="paw-stroke"
@@ -184,7 +194,7 @@ export function ChatFirstPublicShell<
               <path className="paw-stroke" d="M76 10 C 70 16 62 19 53 20" />
               <path className="paw-stroke" d="M76 10 C 82 14 87 21 90 29" />
             </svg>
-            <span className="public-arrow-label">Your agent</span>
+            <span className="public-arrow-label">Ask your AI here</span>
           </div>
         </>
       )}
@@ -199,16 +209,40 @@ export function ChatFirstPublicShell<
         showComposerBlocker={false}
         workspaceProps={{
             ...workspaceProps,
+            // No-auth landing should open with the workspace surface closed —
+            // a fresh load/hard refresh shows just the hero, not a re-opened
+            // panel. The /landing-page command still opens it on demand.
+            defaultSurfaceOpen: false,
             topBarRight: <button type="button" className="rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted" onClick={() => openAuth()}>Sign in</button>,
+            // No-auth shell has no real session yet — show just the brand, hide the
+            // "· New session" placeholder that the default TopBar would render.
+            topBarLeft: (
+              <>
+                <span
+                  aria-hidden="true"
+                  className="grid size-[22px] shrink-0 place-items-center rounded-sm bg-foreground text-[11px] font-semibold leading-none tracking-tight text-background"
+                >
+                  {(appTitle?.[0] ?? 'B').toUpperCase()}
+                </span>
+                <span className="truncate text-[13px] font-medium leading-none tracking-tight text-foreground">{appTitle}</span>
+              </>
+            ),
             className: workspaceProps.className,
             surfaceButtonBottomOffset: 456,
             chatParams: {
               ...workspaceProps.chatParams,
               emptyPlacement: 'hero',
               composerPlaceholder: publicShell?.composerPlaceholder ?? 'Type /landing-page or /reach-out',
-              hideComposerSettings: true,
+              hideComposerSettings: !showComposerSettings,
               suppressPreSubmitCancelledWarning: true,
-              thinkingControl: false,
+              thinkingControl: showComposerSettings,
+              ...(showComposerSettings
+                ? {
+                    availableModels: publicModels,
+                    hideDefaultModelOption: true,
+                    defaultModel: { provider: publicModels[0].provider, id: publicModels[0].id },
+                  }
+                : {}),
               initialDraft: promptedDraft || undefined,
               emptyState: {
                 ...defaultPublicEmptyState,
