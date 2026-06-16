@@ -10,16 +10,30 @@ describe("sanitizeFileTree", () => {
       { name: "bad-empty", kind: "file", path: "" },
       { name: "bad-null", kind: "file", path: null as unknown as string },
     ] as FileTreeNode[]
-    const result = sanitizeFileTree(dirty)
-    expect(result.map((n) => n.name)).toEqual(["ok.ts"])
-    expect(result.every((n) => typeof n.path === "string" && n.path.length > 0)).toBe(true)
+    const { nodes, dropped } = sanitizeFileTree(dirty)
+    expect(nodes.map((n) => n.name)).toEqual(["ok.ts"])
+    expect(nodes.every((n) => typeof n.path === "string" && n.path.length > 0)).toBe(true)
+    expect(dropped).toBe(3)
   })
 
-  it("recurses into children and keeps clean trees by reference (no-op)", () => {
+  it("drops duplicate-path nodes (react-arborist ids must be unique)", () => {
+    const dupes: FileTreeNode[] = [
+      { name: "a", kind: "file", path: "x.ts" },
+      { name: "a-again", kind: "file", path: "x.ts" }, // same id
+      { name: "b", kind: "file", path: "y.ts" },
+    ]
+    const { nodes, dropped } = sanitizeFileTree(dupes)
+    expect(nodes.map((n) => n.path)).toEqual(["x.ts", "y.ts"])
+    expect(dropped).toBe(1)
+  })
+
+  it("recurses into children and reports a clean tree as 0 dropped", () => {
     const clean: FileTreeNode[] = [
       { name: "src", kind: "dir", path: "src", children: [{ name: "i.ts", kind: "file", path: "src/i.ts" }] },
     ]
-    expect(sanitizeFileTree(clean)).toBe(clean)
+    const cleanResult = sanitizeFileTree(clean)
+    expect(cleanResult.dropped).toBe(0)
+    expect(cleanResult.nodes[0].children?.map((c) => c.name)).toEqual(["i.ts"])
 
     const withBadChild: FileTreeNode[] = [
       { name: "src", kind: "dir", path: "src", children: [
@@ -27,7 +41,9 @@ describe("sanitizeFileTree", () => {
         { name: "bad", kind: "file" } as unknown as FileTreeNode,
       ] },
     ]
-    expect(sanitizeFileTree(withBadChild)[0].children?.map((c) => c.name)).toEqual(["good"])
+    const result = sanitizeFileTree(withBadChild)
+    expect(result.nodes[0].children?.map((c) => c.name)).toEqual(["good"])
+    expect(result.dropped).toBe(1)
   })
 })
 
