@@ -1,6 +1,35 @@
 import { describe, it, expect, vi } from "vitest"
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
-import { FileTree, type FileTreeNode } from "../FileTree"
+import { FileTree, sanitizeFileTree, type FileTreeNode } from "../FileTree"
+
+describe("sanitizeFileTree", () => {
+  it("drops nodes without a usable string path (so react-arborist can't crash)", () => {
+    const dirty = [
+      { name: "ok.ts", kind: "file", path: "ok.ts" },
+      { name: "bad-undef", kind: "file" } as unknown as FileTreeNode, // no path
+      { name: "bad-empty", kind: "file", path: "" },
+      { name: "bad-null", kind: "file", path: null as unknown as string },
+    ] as FileTreeNode[]
+    const result = sanitizeFileTree(dirty)
+    expect(result.map((n) => n.name)).toEqual(["ok.ts"])
+    expect(result.every((n) => typeof n.path === "string" && n.path.length > 0)).toBe(true)
+  })
+
+  it("recurses into children and keeps clean trees by reference (no-op)", () => {
+    const clean: FileTreeNode[] = [
+      { name: "src", kind: "dir", path: "src", children: [{ name: "i.ts", kind: "file", path: "src/i.ts" }] },
+    ]
+    expect(sanitizeFileTree(clean)).toBe(clean)
+
+    const withBadChild: FileTreeNode[] = [
+      { name: "src", kind: "dir", path: "src", children: [
+        { name: "good", kind: "file", path: "src/good.ts" },
+        { name: "bad", kind: "file" } as unknown as FileTreeNode,
+      ] },
+    ]
+    expect(sanitizeFileTree(withBadChild)[0].children?.map((c) => c.name)).toEqual(["good"])
+  })
+})
 
 const sampleFiles: FileTreeNode[] = [
   {

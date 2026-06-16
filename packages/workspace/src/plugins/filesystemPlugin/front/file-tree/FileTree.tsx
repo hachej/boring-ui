@@ -151,6 +151,38 @@ function InlineEditInput({
   )
 }
 
+/**
+ * Drop any node without a usable string `path` before handing data to react-arborist
+ * (which uses `idAccessor="path"` and THROWS "Data must contain an 'id' property …" if a
+ * node's id resolves to a non-string). A pathless node is unidentifiable/unopenable anyway,
+ * so dropping it is correct — and it stops one malformed backend listing entry from
+ * crashing the whole file panel. Recurses into children. Returns the same array reference
+ * when nothing needed removing (cheap no-op for the common clean case).
+ */
+export function sanitizeFileTree(nodes: FileTreeNode[]): FileTreeNode[] {
+  let changed = false
+  const cleaned: FileTreeNode[] = []
+  for (const node of nodes) {
+    if (typeof node?.path !== "string" || node.path.length === 0) {
+      changed = true
+      if (typeof console !== "undefined") {
+        console.warn("[filesystem] dropped a file-tree node with no path", node)
+      }
+      continue
+    }
+    if (node.children && node.children.length > 0) {
+      const cleanedChildren = sanitizeFileTree(node.children)
+      if (cleanedChildren !== node.children) {
+        changed = true
+        cleaned.push({ ...node, children: cleanedChildren })
+        continue
+      }
+    }
+    cleaned.push(node)
+  }
+  return changed ? cleaned : nodes
+}
+
 function countVisibleNodes(
   nodes: FileTreeNode[],
   searchQuery: string | undefined,
@@ -285,6 +317,9 @@ export function FileTree({
   className,
 }: FileTreeProps) {
   const treeRef = useRef<TreeApi<FileTreeNode> | null>(null)
+  // Guard react-arborist (idAccessor="path") against a listing entry with no path —
+  // one such node would otherwise throw and crash the whole file panel.
+  const safeFiles = useMemo(() => sanitizeFileTree(files), [files])
 
   useEffect(() => {
     if (!editing?.isDraft) return
@@ -436,7 +471,7 @@ export function FileTree({
       <div data-boring-workspace-part="file-tree" className={cn("file-tree", className)}>
         <Tree<FileTreeNode>
           ref={treeRef}
-          data={files}
+          data={safeFiles}
           idAccessor="path"
           childrenAccessor="children"
           openByDefault={false}
