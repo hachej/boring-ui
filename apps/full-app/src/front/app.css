@@ -83,8 +83,12 @@ body,
   transform: rotate(-4deg);
 }
 
-@media (max-width: 1100px) {
-  .public-arrow {
+/* Cramped viewports: the (tall) model-picker menu and composer collide with the
+   fixed teaching arrows and the bottom-left sign-in card. Drop those decorations
+   on small/short screens — the top-right "Sign in" button still opens auth. */
+@media (max-width: 1366px), (max-height: 960px) {
+  .public-arrow,
+  .public-chat-first-shell > aside {
     display: none;
   }
 }
