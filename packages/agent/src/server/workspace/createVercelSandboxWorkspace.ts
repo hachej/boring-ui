@@ -248,6 +248,21 @@ export function createVercelSandboxWorkspace(
     )
   }
 
+  async function statSandboxPath(sandboxPath: string): Promise<Stat> {
+    if (remote.fs?.stat) {
+      const fileStat = await remote.fs.stat(sandboxPath)
+      return {
+        size: fileStat.size,
+        mtimeMs: fileStat.mtimeMs,
+        kind: fileStat.isDirectory() ? 'dir' : 'file',
+      }
+    }
+    return await runJson<Stat>(
+      remote,
+      `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const s=fs.statSync(p); process.stdout.write(JSON.stringify({size:s.size,mtimeMs:s.mtimeMs,kind:s.isDirectory()?'dir':'file'}))`)} ${shellQuote(sandboxPath)}`,
+    )
+  }
+
   return {
     root: VERCEL_SANDBOX_RUNTIME_CONTEXT.runtimeCwd,
     runtimeContext: VERCEL_SANDBOX_RUNTIME_CONTEXT,
@@ -351,7 +366,7 @@ export function createVercelSandboxWorkspace(
       const sandboxPath = toSandboxPath(relPath)
       const payload = Buffer.from(data, 'utf-8')
 
-      if (payload.byteLength > MAX_INLINE_WRITE_BYTES) {
+      if (remote.fs?.stat || payload.byteLength > MAX_INLINE_WRITE_BYTES) {
         await sandbox.writeFiles([
           {
             path: sandboxPath,
@@ -360,19 +375,7 @@ export function createVercelSandboxWorkspace(
         ])
         invalidateMetadataCache()
         workspaceOpts.onMutation?.()
-        const writtenStat = remote.fs?.stat
-          ? await (async (): Promise<Stat> => {
-              const fileStat = await remote.fs!.stat(sandboxPath)
-              return {
-                size: fileStat.size,
-                mtimeMs: fileStat.mtimeMs,
-                kind: fileStat.isDirectory() ? 'dir' : 'file',
-              }
-            })()
-          : await runJson<Stat>(
-              remote,
-              `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const s=fs.statSync(p); process.stdout.write(JSON.stringify({size:s.size,mtimeMs:s.mtimeMs,kind:s.isDirectory()?'dir':'file'}))`)} ${shellQuote(sandboxPath)}`,
-            )
+        const writtenStat = await statSandboxPath(sandboxPath)
         statCache.set(sandboxPath, writtenStat)
         emitChange({ op: 'write', path: relPath, mtimeMs: writtenStat.mtimeMs })
         return cloneStat(writtenStat)
@@ -393,7 +396,7 @@ export function createVercelSandboxWorkspace(
       const sandboxPath = toSandboxPath(relPath)
       const payload = Buffer.from(data)
 
-      if (payload.byteLength > MAX_INLINE_WRITE_BYTES) {
+      if (remote.fs?.stat || payload.byteLength > MAX_INLINE_WRITE_BYTES) {
         await sandbox.writeFiles([
           {
             path: sandboxPath,
@@ -402,19 +405,7 @@ export function createVercelSandboxWorkspace(
         ])
         invalidateMetadataCache()
         workspaceOpts.onMutation?.()
-        const writtenStat = remote.fs?.stat
-          ? await (async (): Promise<Stat> => {
-              const fileStat = await remote.fs!.stat(sandboxPath)
-              return {
-                size: fileStat.size,
-                mtimeMs: fileStat.mtimeMs,
-                kind: fileStat.isDirectory() ? 'dir' : 'file',
-              }
-            })()
-          : await runJson<Stat>(
-              remote,
-              `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const s=fs.statSync(p); process.stdout.write(JSON.stringify({size:s.size,mtimeMs:s.mtimeMs,kind:s.isDirectory()?'dir':'file'}))`)} ${shellQuote(sandboxPath)}`,
-            )
+        const writtenStat = await statSandboxPath(sandboxPath)
         statCache.set(sandboxPath, writtenStat)
         emitChange({ op: 'write', path: relPath, mtimeMs: writtenStat.mtimeMs })
         return cloneStat(writtenStat)

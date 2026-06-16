@@ -673,7 +673,7 @@ export function FileTreeView({
           addOptimisticEntry(dir, optimisticEntry)
           addedOptimisticPath = newPath
           if (current.kind === "create-file") {
-            await writeFile({ path: newPath, content: "" })
+            await writeFile({ path: newPath, content: "", returnMtimeMs: false })
             // useFileWrite emits changed (it can't tell create from edit);
             // the call site knows this was a creation, so emit here.
             // useCreateDir already emits its own filesystem create event.

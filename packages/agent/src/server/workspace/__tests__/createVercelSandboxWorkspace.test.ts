@@ -77,20 +77,39 @@ test('optimized read/write with stat helpers return content and metadata', async
   }
 })
 
-test('optimized small writes return stat in a single sandbox command', async () => {
+test('optimized small writes avoid sandbox command startup', async () => {
   const harness = await createMockVercelSandboxHarness()
   const runSpy = vi.spyOn(harness.sandbox, 'runCommand')
   const writeFilesSpy = vi.spyOn(harness.sandbox, 'writeFiles')
+  const statSpy = vi.spyOn((harness.sandbox as any).fs, 'stat')
   const workspace = createVercelSandboxWorkspace(harness.sandbox)
 
   try {
-    await workspace.writeFileWithStat?.('single-call.txt', 'hello')
+    const stat = await workspace.writeFileWithStat?.('single-call.txt', 'hello')
 
-    expect(runSpy).toHaveBeenCalledTimes(1)
-    expect(writeFilesSpy).not.toHaveBeenCalled()
+    expect(stat).toMatchObject({ kind: 'file', size: 5 })
+    expect(writeFilesSpy).toHaveBeenCalledTimes(1)
+    expect(statSpy).toHaveBeenCalledTimes(1)
+    expect(runSpy).not.toHaveBeenCalled()
   } finally {
     await harness.cleanup()
   }
+})
+
+test('optimized small writes keep single-command fallback when native stat is unavailable', async () => {
+  const runCommand = vi.fn(async () => ({
+    exitCode: 0,
+    stdout: async () => JSON.stringify({ size: 5, mtimeMs: 123, kind: 'file' }),
+    stderr: async () => '',
+  }))
+  const writeFiles = vi.fn(async () => {})
+  const workspace = createVercelSandboxWorkspace({ writeFiles, runCommand } as any)
+
+  const stat = await workspace.writeFileWithStat?.('single-call.txt', 'hello')
+
+  expect(stat).toMatchObject({ kind: 'file', size: 5, mtimeMs: 123 })
+  expect(runCommand).toHaveBeenCalledTimes(1)
+  expect(writeFiles).not.toHaveBeenCalled()
 })
 
 test('reuses stat/readdir cache entries inside ttl and refreshes after expiry', async () => {

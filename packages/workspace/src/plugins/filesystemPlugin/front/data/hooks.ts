@@ -108,6 +108,11 @@ export interface FileWriteVariables {
    * if the file has changed since. Omit to force-overwrite.
    */
   expectedMtimeMs?: number
+  /**
+   * Set false for writes that do not need a fresh server mtime. Keeps
+   * remote-sandbox creates fast by avoiding an immediate post-write stat.
+   */
+  returnMtimeMs?: boolean
 }
 
 export interface FileWriteResult {
@@ -118,8 +123,13 @@ export interface FileWriteResult {
 export function useFileWrite(): UseMutationResult<FileWriteResult, Error, FileWriteVariables> {
   const client = useDataClient()
   return useMutation({
-    mutationFn: ({ path, content, expectedMtimeMs }) =>
-      client.writeFile(path, content, expectedMtimeMs != null ? { expectedMtimeMs } : undefined),
+    mutationFn: ({ path, content, expectedMtimeMs, returnMtimeMs }) => {
+      const opts = {
+        ...(expectedMtimeMs != null ? { expectedMtimeMs } : {}),
+        ...(returnMtimeMs === false ? { returnMtimeMs: false } : {}),
+      }
+      return client.writeFile(path, content, Object.keys(opts).length > 0 ? opts : undefined)
+    },
     onSuccess: (_, { path }) => {
       // Single source of truth: emit onto the bus, the centralized
       // invalidator (`useFileEventInvalidation`) handles cache

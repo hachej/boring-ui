@@ -325,6 +325,7 @@ export function fileRoutes(
     const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
       ? body.expectedMtimeMs
       : null
+    const shouldReturnMtimeMs = body.returnMtimeMs !== false || expectedMtimeMs !== null
 
     try {
       const workspace = await resolveWorkspace(request)
@@ -364,6 +365,10 @@ export function fileRoutes(
         if (dir) await workspace.mkdir(dir, { recursive: true })
       }
       const content = body.content
+      if (!shouldReturnMtimeMs) {
+        await workspace.writeFile(path, content)
+        return { ok: true }
+      }
       const stat = workspace.writeFileWithStat
         ? await workspace.writeFileWithStat(path, content)
         : await (async () => {
