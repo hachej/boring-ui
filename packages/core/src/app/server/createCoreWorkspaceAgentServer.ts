@@ -109,6 +109,9 @@ export type CoreWorkspaceAgentServer = FastifyInstance & {
   db: Database
   userStore: UserStore
   workspaceStore: WorkspaceStore
+  /** Best-effort telemetry sink (DB-backed when BORING_TELEMETRY_ENABLED=true, else noop).
+   * Consumed by request hooks and the credit service to emit product events. */
+  telemetry: TelemetrySink
 }
 
 export type CoreWorkspaceAgentServerPlugin = WorkspaceServerPlugin & {
@@ -466,12 +469,23 @@ function captureAppOpened(telemetry: TelemetrySink, requestId: string): void {
 
 function registerTelemetryHooks(app: CoreWorkspaceAgentServer, telemetry: TelemetrySink): void {
   app.addHook('onResponse', async (request, reply) => {
-    if (reply.statusCode < 500) return
+    const status = reply.statusCode
+    // Rate-limited requests (429) are a distinct abuse/capacity signal. Same namespace as
+    // server.request.failed; only stable, non-path metadata (URL/route excluded — see the
+    // privacy test).
+    if (status === 429) {
+      safeCapture(telemetry, {
+        name: 'server.request.rate_limited',
+        properties: { requestId: request.id },
+      })
+      return
+    }
+    if (status < 500) return
     safeCapture(telemetry, {
       name: 'server.request.failed',
       properties: {
         requestId: request.id,
-        status: reply.statusCode,
+        status,
         errorCode: ERROR_CODES.INTERNAL_ERROR,
       },
     })
@@ -523,12 +537,13 @@ async function registerFrontendFallback(
   })
 }
 
-async function createCoreRuntime(config: CoreConfig): Promise<{
+async function createCoreRuntime(config: CoreConfig, customTelemetry?: TelemetrySink): Promise<{
   app: CoreWorkspaceAgentServer
   sql: postgres.Sql
   db: Database
   userStore: UserStore
   workspaceStore: WorkspaceStore
+  telemetry: TelemetrySink
 }> {
   if (config.stores !== 'postgres') {
     throw new Error('createCoreWorkspaceAgentServer currently supports only CORE_STORES=postgres')
@@ -543,21 +558,27 @@ async function createCoreRuntime(config: CoreConfig): Promise<{
   )
 
   const app = await createCoreApp(config) as CoreWorkspaceAgentServer
-  const auth = createAuth(config, db, {
-    workspaceStore,
-    logger: app.log,
-  })
+  // Resolve the telemetry sink here (db exists now) so the auth hooks get a plain sink.
+  const telemetry = customTelemetry ?? createDatabaseTelemetryFromEnv(db, { appId: config.appId }, process.env)
+  const telemetrySource = customTelemetry
+    ? 'custom'
+    : process.env.BORING_TELEMETRY_ENABLED === 'true'
+      ? 'db-env'
+      : 'noop-env'
+  app.log.debug({ telemetry: { source: telemetrySource } }, 'resolved telemetry sink')
+  const auth = createAuth(config, db, { workspaceStore, logger: app.log, telemetry })
 
   app.decorate('db', db)
   app.decorate('auth', auth)
   app.decorate('userStore', userStore)
   app.decorate('workspaceStore', workspaceStore)
+  app.decorate('telemetry', telemetry)
 
   app.addHook('onClose', async () => {
     await sql.end()
   })
 
-  return { app, sql, db, userStore, workspaceStore }
+  return { app, sql, db, userStore, workspaceStore, telemetry }
 }
 
 async function registerCoreRoutes({
@@ -598,20 +619,12 @@ export async function createCoreWorkspaceAgentServer(
   assertCoreStaticPluginEntries(options.plugins)
 
   const config = options.config ?? (await loadConfig(resolveCoreLoadConfigOptions(options)))
-  const { app, sql, db, userStore, workspaceStore } = await createCoreRuntime(config)
+  const { app, sql, db, userStore, workspaceStore, telemetry } = await createCoreRuntime(config, options.telemetry)
   const appRoot = options.appRoot
   const serveFrontend =
     options.serveFrontend ?? (process.env.NODE_ENV !== 'development' && Boolean(appRoot))
   const pluginWorkspaceRoot = process.cwd()
   const workspaceRoot = options.workspaceRoot ?? process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd()
-  const telemetrySource = options.telemetry
-    ? 'custom'
-    : process.env.BORING_TELEMETRY_ENABLED === 'true'
-      ? 'db-env'
-      : 'noop-env'
-  const telemetry = options.telemetry ?? createDatabaseTelemetryFromEnv(db, { appId: config.appId }, process.env)
-  app.log.debug({ telemetry: { source: telemetrySource } }, 'resolved telemetry sink')
-
   registerTelemetryHooks(app, telemetry)
 
   await registerCoreRoutes({ app, sql, db, userStore, workspaceStore })

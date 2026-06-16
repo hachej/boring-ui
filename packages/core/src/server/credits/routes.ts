@@ -5,6 +5,7 @@ import { handleLemonSqueezyWebhook, type LemonSqueezyOrder } from './lemonSqueez
 import { createLemonSqueezyCheckout } from './lemonSqueezyCheckout.js'
 import { handleStripeWebhook, stripeNetPaidMinor, type StripeOrder } from './stripe.js'
 import { createStripeCheckout } from './stripeCheckout.js'
+import { safeCapture, noopTelemetry, type TelemetrySink } from '../../shared/telemetry.js'
 
 /** Currencies whose minor unit is NOT 1/100 of the major (0-decimal and 3-decimal). The
  * Stripe credit math assumes 100 minor units/major, so these are rejected at config time. */
@@ -228,6 +229,11 @@ export interface CreditsRoutesOptions {
   lemonSqueezy?: LemonSqueezyRouteOptions
   stripe?: StripeRouteOptions
   log?: (message: string, fields?: Record<string, unknown>) => void
+  /** Best-effort telemetry sink (default noop). Currently emits checkout.started /
+   * purchase.webhook_rejected for the STRIPE routes only (the live provider); Lemon
+   * Squeezy parity is a follow-up if it ships. purchase.completed/refunded + run.*
+   * events come from CreditsService regardless of provider. */
+  telemetry?: TelemetrySink
 }
 
 function defaultGetUserId(request: FastifyRequest): string | undefined {
@@ -242,6 +248,7 @@ function defaultGetUserId(request: FastifyRequest): string | undefined {
  */
 export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRoutesOptions): void {
   const getUserId = options.getUserId ?? defaultGetUserId
+  const telemetry = options.telemetry ?? noopTelemetry
   const balancePath = options.balancePath ?? '/api/credits/balance'
 
   if (options.lemonSqueezy && options.stripe) {
@@ -294,7 +301,7 @@ export function registerCreditsRoutes(app: FastifyInstance, options: CreditsRout
     if (!options.service.config.enabled) {
       throw new Error('credits: cannot register Stripe checkout/webhook with a disabled credits service (paid orders would be acknowledged without crediting)')
     }
-    registerStripeRoutes(app, options.service, getUserId, stripeOpts, options.log)
+    registerStripeRoutes(app, options.service, getUserId, stripeOpts, options.log, telemetry)
     return
   }
 
@@ -583,6 +590,7 @@ function registerStripeRoutes(
   getUserId: (request: FastifyRequest) => string | undefined,
   stripe: StripeRouteOptions,
   log: ((message: string, fields?: Record<string, unknown>) => void) | undefined,
+  telemetry: TelemetrySink = noopTelemetry,
 ): void {
   const creditMicrosPerUnit = service.config.pricing.creditMicrosPerUnit
   // Stripe currencies arrive lowercase; store/compare uppercased for the ledger identity.
@@ -722,6 +730,7 @@ function registerStripeRoutes(
           email: typeof email === 'string' ? email : undefined,
           redirectUrl: checkout.redirectUrl,
         })
+        safeCapture(telemetry, { name: 'checkout.started', distinctId: userId, properties: { provider: 'stripe', packId } })
         return reply.send({ url })
       } catch (error) {
         log?.('credits: stripe checkout creation failed', { error: String(error) })
@@ -781,7 +790,22 @@ function registerStripeRoutes(
             }),
           log,
         },
-      )
+      ).catch((error: unknown) => {
+        // A THROWN handler (DB outage, conflicting re-grant, refund identity mismatch) →
+        // Fastify returns a retryable 500. Emit the billing-specific rejection too, then
+        // rethrow so the 500/retry behaviour is unchanged.
+        safeCapture(telemetry, { name: 'purchase.webhook_rejected', properties: { provider: 'stripe', reason: 'handler_error' } })
+        throw error
+      })
+      // Billing-error signal: a rejected/retryable webhook (bad attribution, underpaid,
+      // invalid money, refund-unmappable…). Successes (2xx) are not noise here.
+      if (result.status >= 400) {
+        const reason = (result.body as { reason?: unknown })?.reason
+        safeCapture(telemetry, {
+          name: 'purchase.webhook_rejected',
+          properties: { provider: 'stripe', reason: typeof reason === 'string' ? reason : undefined },
+        })
+      }
       return reply.code(result.status).send(result.body)
     })
   })
