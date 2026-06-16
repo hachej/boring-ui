@@ -159,6 +159,22 @@ function getRequestWorkspaceId(request: FastifyRequest): string {
   return request.workspaceContext?.workspaceId ?? DEFAULT_WORKSPACE_ID
 }
 
+function promoteRawFileWorkspaceQueryToHeader(request: FastifyRequest): void {
+  const pathname = request.url.split('?')[0] ?? request.url
+  // Browser media previews (img/object/etc.) cannot attach custom headers, so
+  // raw workspace file URLs carry workspaceId as a query param. Promote it into
+  // the existing header-based resolver path instead of bypassing host auth.
+  if (pathname !== '/api/v1/files/raw') return
+  const hasWorkspaceHeader = Object.keys(request.headers)
+    .some((key) => key.toLowerCase() === 'x-boring-workspace-id')
+  if (hasWorkspaceHeader) return
+  const queryIndex = request.url.indexOf('?')
+  if (queryIndex < 0) return
+  const workspaceId = new URLSearchParams(request.url.slice(queryIndex + 1)).get('workspaceId')?.trim()
+  if (!workspaceId) return
+  request.headers['x-boring-workspace-id'] = workspaceId
+}
+
 function isWorkspaceAgnosticAgentRequest(
   request: FastifyRequest,
   options?: { readyStatusWorkspaceScoped?: boolean },
@@ -885,6 +901,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   app.addHook('onRequest', async (request, reply) => {
     const user = (request as unknown as { user?: { id: string } | null }).user
     let workspaceId = DEFAULT_WORKSPACE_ID
+    promoteRawFileWorkspaceQueryToHeader(request)
     if (opts.getWorkspaceId && !isWorkspaceAgnosticAgentRequest(request, { readyStatusWorkspaceScoped: requestScopedRuntime })) {
       try {
         workspaceId = (await opts.getWorkspaceId(request)).trim()
@@ -953,6 +970,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         harness: binding.harness,
         sessionStore: binding.harness.sessions,
         workdir: binding.runtimeBundle.workspace.root,
+        workspace: binding.runtimeBundle.workspace,
         metering: opts.metering,
       })
       return binding.piChatService

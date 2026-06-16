@@ -1,5 +1,5 @@
-import type { FileUIPart } from 'ai'
 import type { BoringChatMessage, ChatAttachmentPayload, PromptPayload } from '../../../shared/chat'
+import type { PromptInputFilePart } from '../../primitives/prompt-input-context'
 import type { AvailableModel, ModelSelection, ThinkingLevel } from '../../chatPanelSettings'
 import { DEFAULT_THINKING, isThinkingLevel, parseModelSelection } from '../../chatPanelSettings'
 import { createEnrichedSubmitPayload } from '../../chatSubmit'
@@ -31,7 +31,7 @@ export interface PiComposerSettings {
 
 export interface PiComposerSubmitInput {
   text: string
-  files?: FileUIPart[]
+  files?: PromptInputFilePart[]
   source?: 'composer' | 'suggestion' | 'auto-submit'
 }
 
@@ -46,7 +46,7 @@ export interface PiComposerPolicyOptions extends PiQueueControllerOptions {
   composerBlocked?: boolean
   blockerMessage?: string
   isActiveSession?: () => boolean
-  onBeforeSubmit?: (draft: string, context: { files: FileUIPart[]; source: PiComposerSubmitInput['source'] }) => boolean | Promise<boolean>
+  onBeforeSubmit?: (draft: string, context: { files: PromptInputFilePart[]; source: PiComposerSubmitInput['source'] }) => boolean | Promise<boolean>
   onCommandResult?: (message: string) => void
   onMentionedFilesConsumed?: () => void
 }
@@ -159,7 +159,7 @@ export class PiComposerPolicyController {
     return { type: 'command', command: commandName, ...(message ? { result: message } : {}), preserveDraft }
   }
 
-  private async runBeforeSubmit(draft: string, files: FileUIPart[], source: PiComposerSubmitInput['source']): Promise<boolean> {
+  private async runBeforeSubmit(draft: string, files: PromptInputFilePart[], source: PiComposerSubmitInput['source']): Promise<boolean> {
     const result = await this.options.onBeforeSubmit?.(draft, { files, source })
     return result !== false
   }
@@ -181,11 +181,12 @@ export class PiComposerPolicyController {
     return mentioned ?? []
   }
 
-  private toAttachmentPayloads(files: FileUIPart[]): ChatAttachmentPayload[] {
+  private toAttachmentPayloads(files: PromptInputFilePart[]): ChatAttachmentPayload[] {
     return files.map((file) => ({
       filename: file.filename,
       mediaType: file.mediaType,
       url: file.url,
+      ...(file.path ? { path: file.path } : {}),
     }))
   }
 }

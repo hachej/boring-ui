@@ -2,7 +2,7 @@
 
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { FileUIPart } from 'ai'
+import type { PromptInputFilePart } from '../primitives/prompt-input'
 import { ArtifactOpenProvider } from '../ArtifactOpenContext'
 import {
   WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT,
@@ -86,14 +86,14 @@ export type { ChatPanelRuntimeDependenciesWarmupStatus, ChatPanelWorkspaceWarmup
 export type ChatSubmitSource = 'composer' | 'suggestion' | 'auto-submit'
 
 export interface ChatSubmitContext {
-  files: FileUIPart[]
+  files: PromptInputFilePart[]
   sessionId: string
   source: ChatSubmitSource
 }
 
 interface ComposerSendPayload {
   text: string
-  files: FileUIPart[]
+  files: PromptInputFilePart[]
   source?: ChatSubmitSource
 }
 
@@ -815,10 +815,11 @@ export function PiChatPanel({
 
   const stop = useCallback(() => {
     onComposerStop?.()
+    clearLocalSubmitted(activeChatSessionId)
     void policy?.stop().catch((error) => {
       addLocalNotice({ id: 'stop-error', level: 'error', text: errorMessage(error, 'Could not stop the chat session.'), dismissible: true })
     })
-  }, [addLocalNotice, onComposerStop, policy])
+  }, [activeChatSessionId, addLocalNotice, clearLocalSubmitted, onComposerStop, policy])
 
   const interrupt = useCallback(() => {
     void policy?.interrupt().catch((error) => {

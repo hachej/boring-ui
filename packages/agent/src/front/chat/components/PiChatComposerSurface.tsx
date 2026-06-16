@@ -2,7 +2,6 @@
 
 import type { CSSProperties, ChangeEvent, KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react'
 import { useCallback, useLayoutEffect } from 'react'
-import type { FileUIPart } from 'ai'
 import { motion } from 'motion/react'
 import type { QueuedUserMessage } from '../../../shared/chat'
 import type { AvailableModel, ModelSelection, ThinkingLevel } from '../../chatPanelSettings'
@@ -24,6 +23,7 @@ import {
   PromptInputFooter,
   PromptInputSubmit,
   PromptInputTextarea,
+  type PromptInputFilePart,
 } from '../../primitives/prompt-input'
 import { SlashCommandPicker } from '../../primitives/slash-command-picker'
 import type { SlashCommand } from '../../slashCommands'
@@ -117,7 +117,7 @@ export interface PiChatComposerSurfaceProps {
   textareaRef: RefObject<HTMLTextAreaElement | null>
   onTextareaChange: (event: ChangeEvent<HTMLTextAreaElement>) => void
   onTextareaKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void
-  onSubmitMessage: (payload: { text: string; files: FileUIPart[] }) => false | void | Promise<false | void>
+  onSubmitMessage: (payload: { text: string; files: PromptInputFilePart[] }) => false | void | Promise<false | void>
   onStop: () => void
 }
 
@@ -179,11 +179,13 @@ export function PiChatComposerSurface({
   onSubmitMessage,
   onStop,
 }: PiChatComposerSurfaceProps) {
+  const workspaceRequestId = getHeaderValue(requestHeaders, 'x-boring-workspace-id')
   const uploadAttachment = useCallback((file: File) => uploadFile(file, {
     apiBaseUrl,
-    workspaceRequestId: requestHeaders?.['x-boring-workspace-id'],
+    workspaceRequestId,
+    responseUrl: 'raw',
     fetch,
-  }), [apiBaseUrl, fetch, requestHeaders])
+  }), [apiBaseUrl, fetch, workspaceRequestId])
 
   const resizeTextarea = useCallback((node: HTMLTextAreaElement | null) => {
     if (!node) return
@@ -447,3 +449,9 @@ export function PiChatComposerSurface({
     </div>
   )
 }
+
+function getHeaderValue(headers: Record<string, string> | undefined, name: string): string | undefined {
+  if (!headers) return undefined
+  return headers[name] ?? Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1]
+}
+

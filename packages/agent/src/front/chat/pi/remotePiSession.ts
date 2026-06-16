@@ -646,6 +646,7 @@ function toOptimisticUserMessage(payload: PromptPayload | FollowUpPayload): Opti
         filename: attachment.filename,
         mediaType: attachment.mediaType,
         url: attachment.url,
+        path: attachment.path,
       })),
     ],
   }
