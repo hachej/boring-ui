@@ -70,6 +70,7 @@ COPY --from=build /app/packages/workspace/package.json packages/workspace/packag
 COPY --from=build /app/packages/workspace/node_modules/ packages/workspace/node_modules/
 
 COPY --from=build /app/apps/full-app/dist/ apps/full-app/dist/
+COPY --from=build /app/apps/full-app/boring.app.toml apps/full-app/boring.app.toml
 COPY --from=build /app/apps/full-app/package.json apps/full-app/package.json
 COPY --from=build /app/apps/full-app/node_modules/ apps/full-app/node_modules/
 

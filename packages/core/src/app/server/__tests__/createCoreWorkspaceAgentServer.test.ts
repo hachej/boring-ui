@@ -1,5 +1,36 @@
 import { describe, expect, it } from 'vitest'
-import { createCoreWorkspaceAgentServer } from '../createCoreWorkspaceAgentServer.js'
+import { resolve } from 'node:path'
+import {
+  createCoreWorkspaceAgentServer,
+  resolveCoreLoadConfigOptions,
+} from '../createCoreWorkspaceAgentServer.js'
+
+describe('resolveCoreLoadConfigOptions', () => {
+  it('defaults to the app-root boring.app.toml when appRoot is provided', () => {
+    const appRoot = '/tmp/test-app'
+
+    expect(resolveCoreLoadConfigOptions({ appRoot }, 'development')).toEqual({
+      allowMissingSecrets: true,
+      tomlPath: resolve(appRoot, 'boring.app.toml'),
+    })
+  })
+
+  it('does not override an explicit TOML path', () => {
+    expect(resolveCoreLoadConfigOptions(
+      {
+        appRoot: '/tmp/test-app',
+        loadConfigOptions: {
+          tomlPath: '/tmp/custom.toml',
+          allowMissingSecrets: false,
+        },
+      },
+      'development',
+    )).toEqual({
+      allowMissingSecrets: false,
+      tomlPath: '/tmp/custom.toml',
+    })
+  })
+})
 
 describe('createCoreWorkspaceAgentServer', () => {
   it('fails fast when core app hot reload is requested', async () => {

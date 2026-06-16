@@ -85,6 +85,7 @@ const inviteRoutesPlugin: FastifyPluginAsync<InviteRoutesOptions> = async (app, 
           const email = await renderWorkspaceInvite({
             to: parsed.data.email,
             acceptUrl,
+            appName: app.config.appName,
             inviterName: request.user!.name ?? request.user!.email,
             workspaceName: workspace?.name ?? 'Workspace',
             role: parsed.data.role,

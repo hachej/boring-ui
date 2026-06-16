@@ -3,6 +3,7 @@ import { Layout } from './Layout'
 
 interface WorkspaceInviteProps {
   acceptUrl: string
+  appName: string
   inviterName: string
   workspaceName: string
   role: string
@@ -11,6 +12,7 @@ interface WorkspaceInviteProps {
 
 export function WorkspaceInvite({
   acceptUrl,
+  appName,
   inviterName,
   workspaceName,
   role,
@@ -19,7 +21,7 @@ export function WorkspaceInvite({
   return (
     <Layout
       preview={`${inviterName} invited you to ${workspaceName}`}
-      appName={workspaceName}
+      appName={appName}
     >
       <Section style={content}>
         <Text style={heading}>You&apos;ve been invited</Text>

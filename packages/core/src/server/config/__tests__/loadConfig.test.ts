@@ -128,6 +128,22 @@ describe('loadConfig', () => {
     ).rejects.toThrow(ConfigValidationError)
   })
 
+  it('validates app name before normalizing the mail sender name', async () => {
+    writeToml(`
+[frontend.branding]
+name = 123
+`)
+
+    await expect(loadConfig({
+      tomlPath: TOML_PATH,
+      env: {
+        ...VALID_ENV,
+        MAIL_FROM: 'noreply@test.dev',
+        MAIL_TRANSPORT_URL: 'console://',
+      },
+    })).rejects.toThrow(ConfigValidationError)
+  })
+
   it('fills placeholders with allowMissingSecrets', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
@@ -205,9 +221,35 @@ describe('loadConfig', () => {
     })
 
     expect(config.auth.mail).toEqual({
-      from: 'noreply@test.dev',
+      from: 'Test App <noreply@test.dev>',
       transportUrl: 'console://',
     })
+  })
+
+  it('replaces the default boring.ui mail sender name with the app name', async () => {
+    const config = await loadConfig({
+      tomlPath: TOML_PATH,
+      env: {
+        ...VALID_ENV,
+        MAIL_FROM: 'boring.ui <noreply@test.dev>',
+        MAIL_TRANSPORT_URL: 'console://',
+      },
+    })
+
+    expect(config.auth.mail?.from).toBe('Test App <noreply@test.dev>')
+  })
+
+  it('preserves custom mail sender display names', async () => {
+    const config = await loadConfig({
+      tomlPath: TOML_PATH,
+      env: {
+        ...VALID_ENV,
+        MAIL_FROM: 'Acme Support <noreply@test.dev>',
+        MAIL_TRANSPORT_URL: 'console://',
+      },
+    })
+
+    expect(config.auth.mail?.from).toBe('Acme Support <noreply@test.dev>')
   })
 
   it('omits mail config when MAIL_FROM is missing', async () => {

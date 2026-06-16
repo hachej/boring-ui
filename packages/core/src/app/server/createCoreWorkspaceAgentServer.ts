@@ -148,6 +148,22 @@ export interface CreateCoreWorkspaceAgentServerOptions
 
 type AgentPiOptions = RegisterAgentRoutesOptions['pi']
 
+export function resolveCoreLoadConfigOptions(
+  options: Pick<
+    CreateCoreWorkspaceAgentServerOptions,
+    'appRoot' | 'loadConfigOptions'
+  > = {},
+  nodeEnv = process.env.NODE_ENV,
+): LoadConfigOptions {
+  return {
+    allowMissingSecrets: nodeEnv !== 'production',
+    ...(options.appRoot && !options.loadConfigOptions?.tomlPath
+      ? { tomlPath: path.resolve(options.appRoot, 'boring.app.toml') }
+      : {}),
+    ...options.loadConfigOptions,
+  }
+}
+
 function dedupeStrings(values: string[]): string[] {
   return Array.from(new Set(values))
 }
@@ -581,10 +597,7 @@ export async function createCoreWorkspaceAgentServer(
   }
   assertCoreStaticPluginEntries(options.plugins)
 
-  const config = options.config ?? (await loadConfig({
-    allowMissingSecrets: process.env.NODE_ENV !== 'production',
-    ...options.loadConfigOptions,
-  }))
+  const config = options.config ?? (await loadConfig(resolveCoreLoadConfigOptions(options)))
   const { app, sql, db, userStore, workspaceStore } = await createCoreRuntime(config)
   const appRoot = options.appRoot
   const serveFrontend =
