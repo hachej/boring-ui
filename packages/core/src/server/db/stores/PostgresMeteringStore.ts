@@ -87,6 +87,9 @@ export interface ReserveInput {
 
 export interface ReserveResult {
   reservationId: string
+  /** false when an existing active reservation for this run was returned (idempotent
+   * retry), true when a new hold was placed. Lets callers avoid double-counting. */
+  created: boolean
 }
 
 export interface RecordUsageInput {
@@ -165,7 +168,7 @@ export class PostgresMeteringStore {
     testMode?: boolean
     currency?: string
     variantId?: string
-  }): Promise<{ granted: boolean }> {
+  }): Promise<{ granted: boolean; refundAppliedMicros?: number }> {
     if (!input.orderId) throw new Error('grantPurchaseOnce requires an orderId')
     if (!Number.isSafeInteger(input.amountMicros) || input.amountMicros <= 0) {
       throw new Error('purchase amountMicros must be a positive integer')
@@ -245,7 +248,10 @@ export class PostgresMeteringStore {
             metadata: { kind: 'purchase_refund', orderId: input.orderId, refundedToMicros: revoke, appliedAtGrant: true },
           })
         }
-        return { granted: true }
+        // Surface a refund applied during grant (out-of-order refund-before-grant) so the
+        // caller can emit purchase.refunded — it wasn't emitted at refund time (the refund
+        // arrived first and only wrote a pending tombstone).
+        return { granted: true, refundAppliedMicros: revoke > 0 ? revoke : undefined }
       }
 
       await tx.insert(creditPurchases).values({
@@ -556,7 +562,7 @@ export class PostgresMeteringStore {
         ))
         .limit(1)
       const existingId = existing[0]?.id
-      if (existingId) return { reservationId: existingId }
+      if (existingId) return { reservationId: existingId, created: false }
 
       const balance = await this.computeBalance(tx, input.userId, now)
       if (balance.availableMicros < minAvailable) {
@@ -577,7 +583,7 @@ export class PostgresMeteringStore {
         .returning({ id: usageReservations.id })
       const reservationId = rows[0]?.id
       if (!reservationId) throw new Error('reservation insert returned no id')
-      return { reservationId }
+      return { reservationId, created: true }
     })
   }
 

@@ -35,6 +35,12 @@ const ALLOWED_PROPERTY_KEYS = new Set([
   'templateDirCount',
   'packageName',
   'packageVersion',
+  // Credits / billing (provider/pack/currency/reason are slugs; creditMicros is a non-negative int).
+  'provider',
+  'packId',
+  'currency',
+  'reason',
+  'creditMicros',
 ])
 
 type SafeTelemetryProperty = string | number
@@ -116,6 +122,11 @@ function sanitizeTelemetryProperty(key: string, value: unknown): SafeTelemetryPr
       ? value
       : undefined
   }
+  if (key.endsWith('Micros')) {
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0
+      ? value
+      : undefined
+  }
   if (key === 'status' && typeof value === 'number') {
     return Number.isInteger(value) && value >= 100 && value <= 599 ? value : undefined
   }
@@ -154,6 +165,11 @@ function sanitizeTelemetryString(key: string, value: string): string | undefined
       return SAFE_PACKAGE_NAME_PATTERN.test(value) ? value : undefined
     case 'packageVersion':
       return SAFE_PACKAGE_VERSION_PATTERN.test(value) ? value : undefined
+    case 'provider':
+    case 'packId':
+    case 'currency':
+    case 'reason':
+      return SAFE_SLUG_PATTERN.test(value) ? value : undefined
     default:
       return undefined
   }

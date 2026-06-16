@@ -254,4 +254,27 @@ describe('sanitizeTelemetryProperties', () => {
       }),
     ).toEqual({})
   })
+
+  it('keeps billing keys: *Micros as non-negative ints, provider/pack/currency/reason as slugs', () => {
+    expect(
+      sanitizeTelemetryProperties({
+        creditMicros: 10_000_000,
+        currency: 'CHF',
+        packId: '10',
+        provider: 'stripe',
+        reason: 'underpaid_order',
+      }),
+    ).toEqual({
+      creditMicros: 10_000_000,
+      currency: 'CHF',
+      packId: '10',
+      provider: 'stripe',
+      reason: 'underpaid_order',
+    })
+
+    // Wrong types / unsafe shapes drop.
+    expect(sanitizeTelemetryProperties({ creditMicros: -5 })).toEqual({})
+    expect(sanitizeTelemetryProperties({ creditMicros: 1.5 })).toEqual({})
+    expect(sanitizeTelemetryProperties({ provider: 'a b/c' })).toEqual({})
+  })
 })

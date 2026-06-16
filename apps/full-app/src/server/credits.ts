@@ -550,7 +550,7 @@ export function buildCreditsWiring(env: NodeJS.ProcessEnv = process.env): {
     meteringSink: createCreditsMeteringSink(getService),
     attach(app) {
       const store = new PostgresMeteringStore(app.db as unknown as ConstructorParameters<typeof PostgresMeteringStore>[0])
-      service = new CreditsService(store, config, (message, fields) => app.log.warn(fields ?? {}, message))
+      service = new CreditsService(store, config, (message, fields) => app.log.warn(fields ?? {}, message), app.telemetry)
       const creditVariantIds = Object.values(config.lemonSqueezyVariants)
       // When credits are disabled, do NOT expose checkout/webhook: a paid order
       // acknowledged-but-not-persisted would be lost, and a refund wouldn't
@@ -591,6 +591,7 @@ export function buildCreditsWiring(env: NodeJS.ProcessEnv = process.env): {
         lemonSqueezy,
         stripe,
         log: (message, fields) => app.log.warn(fields ?? {}, message),
+        telemetry: app.telemetry,
       })
       if (config.enabled && stripeRoute) {
         if (!stripeRoute.checkout) {
