@@ -111,6 +111,7 @@ createRoot(document.getElementById('root')!).render(
       }}
       chatParams={chatParams}
       chatFirstPublicWorkspaceProps={{
+        defaultSurfaceOpen: true,
         surfaceInitialPanels: [
           { id: 'public-landing-page', component: 'public.launch.landing', title: 'Landing page' },
         ],
