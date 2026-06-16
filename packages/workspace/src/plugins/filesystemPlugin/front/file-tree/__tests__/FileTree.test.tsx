@@ -1,6 +1,51 @@
 import { describe, it, expect, vi } from "vitest"
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
-import { FileTree, type FileTreeNode } from "../FileTree"
+import { FileTree, sanitizeFileTree, type FileTreeNode } from "../FileTree"
+
+describe("sanitizeFileTree", () => {
+  it("drops nodes without a usable string path (so react-arborist can't crash)", () => {
+    const dirty = [
+      { name: "ok.ts", kind: "file", path: "ok.ts" },
+      { name: "bad-undef", kind: "file" } as unknown as FileTreeNode, // no path
+      { name: "bad-empty", kind: "file", path: "" },
+      { name: "bad-null", kind: "file", path: null as unknown as string },
+    ] as FileTreeNode[]
+    const { nodes, dropped } = sanitizeFileTree(dirty)
+    expect(nodes.map((n) => n.name)).toEqual(["ok.ts"])
+    expect(nodes.every((n) => typeof n.path === "string" && n.path.length > 0)).toBe(true)
+    expect(dropped).toBe(3)
+  })
+
+  it("drops duplicate-path nodes (react-arborist ids must be unique)", () => {
+    const dupes: FileTreeNode[] = [
+      { name: "a", kind: "file", path: "x.ts" },
+      { name: "a-again", kind: "file", path: "x.ts" }, // same id
+      { name: "b", kind: "file", path: "y.ts" },
+    ]
+    const { nodes, dropped } = sanitizeFileTree(dupes)
+    expect(nodes.map((n) => n.path)).toEqual(["x.ts", "y.ts"])
+    expect(dropped).toBe(1)
+  })
+
+  it("recurses into children and reports a clean tree as 0 dropped", () => {
+    const clean: FileTreeNode[] = [
+      { name: "src", kind: "dir", path: "src", children: [{ name: "i.ts", kind: "file", path: "src/i.ts" }] },
+    ]
+    const cleanResult = sanitizeFileTree(clean)
+    expect(cleanResult.dropped).toBe(0)
+    expect(cleanResult.nodes[0].children?.map((c) => c.name)).toEqual(["i.ts"])
+
+    const withBadChild: FileTreeNode[] = [
+      { name: "src", kind: "dir", path: "src", children: [
+        { name: "good", kind: "file", path: "src/good.ts" },
+        { name: "bad", kind: "file" } as unknown as FileTreeNode,
+      ] },
+    ]
+    const result = sanitizeFileTree(withBadChild)
+    expect(result.nodes[0].children?.map((c) => c.name)).toEqual(["good"])
+    expect(result.dropped).toBe(1)
+  })
+})
 
 const sampleFiles: FileTreeNode[] = [
   {
@@ -66,6 +111,26 @@ describe("FileTree", () => {
     const pkg = screen.getByText("package.json")
     fireEvent.click(pkg)
     expect(onSelect).toHaveBeenCalledWith("package.json")
+  })
+
+  it("does NOT crash the panel when a listing entry has no path (react-arborist idAccessor)", () => {
+    // The exact prod scenario: one malformed backend entry with no `path`. Before the
+    // fix react-arborist threw "Data must contain an 'id' property…" on render, killing
+    // the whole panel. With sanitizeFileTree the bad node is dropped and the rest renders.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const withBadEntry = [
+      { name: "good.ts", kind: "file", path: "good.ts" },
+      { name: "broken", kind: "file" } as unknown as FileTreeNode, // no path → would crash
+      { name: "data.csv", kind: "file", path: "data.csv" },
+    ] as FileTreeNode[]
+
+    expect(() => render(<FileTree files={withBadEntry} height={200} />)).not.toThrow()
+    // The valid files still render; the pathless one is gone (and was warned about).
+    expect(screen.getByText("good.ts")).toBeInTheDocument()
+    expect(screen.getByText("data.csv")).toBeInTheDocument()
+    expect(screen.queryByText("broken")).not.toBeInTheDocument()
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
   })
 
   it("calls onContextMenu with event and node on right-click", () => {
