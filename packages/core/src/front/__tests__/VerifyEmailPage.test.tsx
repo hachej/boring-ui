@@ -66,6 +66,26 @@ describe('VerifyEmailPage', () => {
   )
 
   it(
+    'shows check-your-email UI for signed-in users redirected without a token',
+    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      mockUseSession.mockReturnValue({
+        data: { user: { id: 'u1', email: 'test@test.dev', emailVerified: false }, expiresAt: '' },
+        isPending: false,
+        error: null,
+      })
+      window.history.pushState({}, '', '/auth/verify-email')
+
+      render(<VerifyEmailPage />, { wrapper: Wrapper })
+
+      expect(screen.getByText(/check your email/i)).toBeTruthy()
+      expect(screen.getByText(/we sent a verification link/i)).toBeTruthy()
+      expect(screen.getByRole('button', { name: /resend verification email/i })).not.toBeDisabled()
+      expect(mockVerifyEmail).not.toHaveBeenCalled()
+      assertionPassed('no-token-signed-in-check-email-ui')
+    }),
+  )
+
+  it(
     'shows verifying state then verified on success',
     withBeadId(BEAD_ID, async ({ assertionPassed }) => {
       let resolveVerify!: (v: unknown) => void

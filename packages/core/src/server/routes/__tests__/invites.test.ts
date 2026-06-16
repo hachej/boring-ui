@@ -193,8 +193,8 @@ beforeAll(async () => {
     if (userId) {
       const user = fakeUsers[userId]
       request.user = user
-        ? { id: user.id, email: user.email, name: user.name }
-        : { id: userId, email: `${userId}@test.dev`, name: null }
+        ? { id: user.id, email: user.email, name: user.name, emailVerified: true }
+        : { id: userId, email: `${userId}@test.dev`, name: null, emailVerified: true }
     } else {
       request.user = null
     }
