@@ -16,6 +16,8 @@ import type {
 import { useRegistry } from "../../front/registry"
 import { captureFrontPlugin } from "../../shared/plugins/frontFactory"
 import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
+import type { CommandResult, Unsubscribe } from "../../front/bridge"
+import type { FileTreeBridge } from "../../plugins/filesystemPlugin/front/file-tree/FileTreeView"
 import { readStoredBoolean, writeStoredBoolean } from "../../front/store/localStorageValues"
 import {
   createLocalStorageSessions,
@@ -778,6 +780,11 @@ export function WorkspaceAgentFront<
   const surfaceOpenRef = useRef(surfaceOpen)
   const surfaceKeyRef = useRef(resolvedSurfaceStorageKey)
   const surfaceRef = useRef<{ key: string; api: SurfaceShellApi } | null>(null)
+  // Ops issued (e.g. agent openFile/openPanel) while the SurfaceShell isn't
+  // mounted yet — collapsed surface or warmup overlay still showing. The
+  // dispatcher parks them here instead of dropping after its retry budget;
+  // handleSurfaceReady drains them once the surface mounts.
+  const pendingSurfaceOpsRef = useRef<Array<(api: SurfaceShellApi) => void>>([])
   // Keep the latest key available to stable command callbacks. We tag the
   // SurfaceShell handle instead of clearing it in an effect: clearing after
   // mount races with Dockview's onReady on the initial render.
@@ -800,6 +807,9 @@ export function WorkspaceAgentFront<
 
   useEffect(() => {
     setSurfaceReady(false)
+    // Drop any ops parked for the previous workspace's surface so we never
+    // replay them against a freshly-swapped workspace.
+    pendingSurfaceOpsRef.current = []
   }, [resolvedSurfaceStorageKey])
 
   useEffect(() => {
@@ -849,7 +859,14 @@ export function WorkspaceAgentFront<
       key: resolvedSurfaceStorageKey,
       snapshot: api.getSnapshot(),
     })
+    // Flush ops parked while the surface was unmounted (collapsed/warming up).
+    const ops = pendingSurfaceOpsRef.current.splice(0)
+    for (const op of ops) op(api)
   }, [resolvedSurfaceStorageKey])
+
+  const enqueueSurfaceOp = useCallback((run: (api: SurfaceShellApi) => void) => {
+    pendingSurfaceOpsRef.current.push(run)
+  }, [])
 
   const handleSurfaceChange = useCallback((snapshot: SurfaceShellSnapshot) => {
     setSurfaceSnapshotState({
@@ -879,6 +896,31 @@ export function WorkspaceAgentFront<
     setSurfaceReady(false)
     setSurfaceOpen(false)
   }, [setSurfaceOpen])
+
+  // Minimal surface-backed bridge for the file tree. The left-tab file tree
+  // only needs click-to-open + active-file reveal; back those by the live
+  // SurfaceShell handle so a click actually opens the file in the surface.
+  const fileTreeBridge = useMemo<FileTreeBridge>(() => ({
+    openFile: async (path: string): Promise<CommandResult> => {
+      // Route through the shared dispatcher so a click gets the same
+      // open-workbench + surface-ready retry + pending-op queue as agent
+      // commands. A direct getSurface().openFile() drops the click when the
+      // surface hasn't mounted yet (the race on the first click after open).
+      dispatchUiCommand(
+        { kind: "openFile", params: { path } },
+        {
+          surface: getSurface,
+          isWorkbenchOpen,
+          openWorkbench,
+          openWorkbenchSources,
+          enqueue: enqueueSurfaceOp,
+        },
+      )
+      return { seq: 0, status: "ok" }
+    },
+    getActiveFile: () => getSurface()?.getSnapshot().activeTab ?? null,
+    select: (): Unsubscribe => () => {},
+  }), [getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, enqueueSurfaceOp])
   const capturedPlugins = useMemo(
     () => plugins?.map(captureFrontPlugin) ?? [],
     [plugins],
@@ -1121,11 +1163,12 @@ export function WorkspaceAgentFront<
         isWorkbenchOpen,
         openWorkbench,
         openWorkbenchSources,
+        enqueue: enqueueSurfaceOp,
       })
     }
     globalThis.addEventListener?.(UI_COMMAND_EVENT, handler)
     return () => globalThis.removeEventListener?.(UI_COMMAND_EVENT, handler)
-  }, [getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources])
+  }, [getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, enqueueSurfaceOp])
 
   useEffect(() => {
     if (remoteSessionsPending) return
@@ -1177,6 +1220,7 @@ export function WorkspaceAgentFront<
       openWorkbench,
       openWorkbenchSources,
       closeWorkbench,
+      enqueueSurfaceOp,
       extraCommands,
       workspaceWarmupStatus,
       hydrateMessages,
@@ -1193,7 +1237,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, extraCommands, workspaceWarmupStatus, hydrateMessages, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, workspaceId],
+    [apiBaseUrl, chatParams, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, enqueueSurfaceOp, extraCommands, workspaceWarmupStatus, hydrateMessages, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionId),
@@ -1331,6 +1375,7 @@ export function WorkspaceAgentFront<
               sidebar={surfaceOpen && !workbenchBlocked && hasLeftTabs && effectiveWorkbenchLeftOpen ? "workbench-left" : null}
               sidebarParams={surfaceOpen && !workbenchBlocked && hasLeftTabs ? {
                 ...(defaultWorkbenchLeftTab ? { defaultTab: defaultWorkbenchLeftTab } : {}),
+                bridge: fileTreeBridge,
                 onClose: () => {
                   setWorkbenchLeftOpen(false)
                   setWorkbenchLeftExplicitOpen(false)

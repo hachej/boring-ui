@@ -18,6 +18,8 @@ export interface ChatPanelHostShellProps {
   openWorkbench?: () => void
   openWorkbenchSources?: () => void
   closeWorkbench?: () => void
+  /** Park surface ops issued before the SurfaceShell mounts; replayed on ready. */
+  enqueueSurfaceOp?: (run: (surface: SurfaceShellApi) => void) => void
 }
 
 export type ChatPanelHostProps = WorkspaceChatPanelProps & ChatPanelHostShellProps
@@ -57,6 +59,7 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
     openWorkbench,
     openWorkbenchSources,
     closeWorkbench,
+    enqueueSurfaceOp,
     bridgeEndpoint,
     ...chatPanelProps
   } = props
@@ -86,12 +89,12 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
       if (getSurface && isWorkbenchOpen && openWorkbench) {
         dispatchUiCommand(
           { kind: "openFile", params: { path: resolved } },
-          { surface: getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench },
+          { surface: getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, enqueue: enqueueSurfaceOp },
         )
       }
       props.onOpenArtifact?.(resolved)
     },
-    [getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, props.onOpenArtifact],
+    [getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, enqueueSurfaceOp, props.onOpenArtifact],
   )
 
   const uiWorkspaceId = workspaceIdFromHeaders(chatPanelProps.requestHeaders)
@@ -108,9 +111,10 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
         openWorkbench,
         openWorkbenchSources,
         closeWorkbench,
+        enqueue: enqueueSurfaceOp,
       },
     })
-  }, [bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, uiWorkspaceId])
+  }, [bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, enqueueSurfaceOp, uiWorkspaceId])
 
   const handleComposerStop = useCallback(() => {
     window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: chatPanelProps.sessionId } }))
@@ -127,11 +131,11 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
       if (getSurface && isWorkbenchOpen && openWorkbench) {
         dispatchUiCommand(
           { kind: "openSurface", params: { kind: blocker.surfaceKind, target: blocker.target, meta: {} } },
-          { surface: getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench },
+          { surface: getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, enqueue: enqueueSurfaceOp },
         )
       }
     },
-    [chatPanelProps.sessionId, closeWorkbench, getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources],
+    [chatPanelProps.sessionId, closeWorkbench, enqueueSurfaceOp, getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources],
   )
 
   const handleData = useCallback(
