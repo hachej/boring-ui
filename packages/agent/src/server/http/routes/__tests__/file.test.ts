@@ -2,8 +2,9 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 
+import type { Workspace } from '../../../../shared/workspace'
 import { createNodeWorkspace } from '../../../workspace/createNodeWorkspace'
 import { fileRoutes } from '../file'
 
@@ -18,6 +19,14 @@ afterEach(async () => {
     }),
   )
 })
+
+async function createTestAppWithWorkspace(workspace: Workspace): Promise<FastifyInstance> {
+  const app = Fastify({ logger: false })
+  await app.register(fileRoutes, { workspace })
+  await app.ready()
+  apps.push(app)
+  return app
+}
 
 async function createTestApp(): Promise<{ app: FastifyInstance; workspaceRoot: string }> {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'boring-ui-file-routes-'))
@@ -113,6 +122,71 @@ describe('file routes (NodeWorkspace integration)', () => {
     })
     expect(readRes.statusCode).toBe(200)
     expect(readRes.json().content).toBe('export {}')
+  })
+
+  test('POST /api/v1/files can skip post-write stat when mtime is not needed', async () => {
+    const writeFileMock = vi.fn(async () => {})
+    const writeFileWithStatMock = vi.fn(async () => ({ kind: 'file' as const, size: 4, mtimeMs: 123 }))
+    const app = await createTestAppWithWorkspace({
+      root: '/workspace',
+      runtimeContext: { runtimeCwd: '/workspace' },
+      fsCapability: 'best-effort',
+      readFile: vi.fn(async () => ''),
+      writeFile: writeFileMock,
+      writeFileWithStat: writeFileWithStatMock,
+      unlink: vi.fn(async () => {}),
+      readdir: vi.fn(async () => []),
+      stat: vi.fn(async () => ({ kind: 'file' as const, size: 4, mtimeMs: 123 })),
+      mkdir: vi.fn(async () => {}),
+      rename: vi.fn(async () => {}),
+    })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files',
+      payload: { path: 'fast.txt', content: 'fast', returnMtimeMs: false },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ ok: true })
+    expect(writeFileMock).toHaveBeenCalledWith('fast.txt', 'fast')
+    expect(writeFileWithStatMock).not.toHaveBeenCalled()
+  })
+
+  test('POST /api/v1/files keeps mtime result for OCC writes even when returnMtimeMs is false', async () => {
+    const writeFileMock = vi.fn(async () => {})
+    const writeFileWithStatMock = vi.fn(async () => ({ kind: 'file' as const, size: 4, mtimeMs: 456 }))
+    const statMock = vi.fn(async () => ({ kind: 'file' as const, size: 3, mtimeMs: 123 }))
+    const app = await createTestAppWithWorkspace({
+      root: '/workspace',
+      runtimeContext: { runtimeCwd: '/workspace' },
+      fsCapability: 'best-effort',
+      readFile: vi.fn(async () => ''),
+      writeFile: writeFileMock,
+      writeFileWithStat: writeFileWithStatMock,
+      unlink: vi.fn(async () => {}),
+      readdir: vi.fn(async () => []),
+      stat: statMock,
+      mkdir: vi.fn(async () => {}),
+      rename: vi.fn(async () => {}),
+    })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files',
+      payload: {
+        path: 'occ.txt',
+        content: 'next',
+        expectedMtimeMs: 123,
+        returnMtimeMs: false,
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ ok: true, mtimeMs: 456 })
+    expect(statMock).toHaveBeenCalledWith('occ.txt')
+    expect(writeFileWithStatMock).toHaveBeenCalledWith('occ.txt', 'next')
+    expect(writeFileMock).not.toHaveBeenCalled()
   })
 
   test('multi-tab stale write overwrites newer content (last write wins)', async () => {
