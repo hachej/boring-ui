@@ -2,8 +2,10 @@ import { createContext, useContext } from 'react'
 import type { ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { matchPath, useLocation, useParams } from 'react-router-dom'
+import { useOptionalConfig } from './ConfigProvider.js'
 import { useSession } from './auth/AuthProvider.js'
 import { apiFetchJson, getHttpErrorDetail } from './utils.js'
+import { canUseProtectedApi, isRuntimeEmailVerificationEnabled } from '../shared/authPolicy.js'
 import type { MemberRole, Workspace } from '../shared/types.js'
 
 type WorkspaceDetail = {
@@ -101,12 +103,17 @@ export function WorkspaceAuthProvider({
   const queryClient = useQueryClient()
   const routeWorkspaceId = id?.trim() ? id : workspaceIdFromPath(location.pathname, workspaceRoute, workspaceIdParam)
   const session = useSession()
-  const isAuthenticated = Boolean(session.data?.user)
+  const config = useOptionalConfig()
+  const user = session.data?.user ?? null
+  const canQueryProtectedApi = canUseProtectedApi(
+    user,
+    isRuntimeEmailVerificationEnabled(config),
+  )
 
   const workspacesQuery = useQuery({
     queryKey: WORKSPACES_QUERY_KEY,
     queryFn: fetchWorkspaces,
-    enabled: isAuthenticated,
+    enabled: canQueryProtectedApi,
   })
 
   const defaultWorkspace =
@@ -128,14 +135,14 @@ export function WorkspaceAuthProvider({
       }
       return fetchWorkspace(resolvedId)
     },
-    enabled: isAuthenticated && resolvedId !== null,
+    enabled: canQueryProtectedApi && resolvedId !== null,
   })
 
   const detail = detailQuery.data ?? cachedDetail ?? null
   const workspace = detailQuery.isError ? null : detail?.workspace ?? null
   const role = detailQuery.isError ? null : detail?.role ?? null
   const routeStatus: WorkspaceRouteStatus = (() => {
-    if (!isAuthenticated) return { status: 'idle', workspaceId: routeWorkspaceId }
+    if (!canQueryProtectedApi) return { status: 'idle', workspaceId: routeWorkspaceId }
     if (routeWorkspaceId === null) return { status: 'idle', workspaceId: null }
     if (detailQuery.isError) return routeStatusFromError(routeWorkspaceId, detailQuery.error)
     if (detailQuery.isPending && !detail) return { status: 'loading', workspaceId: routeWorkspaceId }

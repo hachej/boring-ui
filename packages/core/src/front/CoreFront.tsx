@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Helmet, HelmetProvider } from 'react-helmet-async'
 
 import { AppErrorBoundary } from './AppErrorBoundary.js'
-import { ConfigProvider } from './ConfigProvider.js'
+import { ConfigProvider, useConfig } from './ConfigProvider.js'
 import { ThemeProvider } from './ThemeProvider.js'
 import { AuthProvider } from './auth/AuthProvider.js'
 import { UserIdentityProvider } from './auth/UserIdentityProvider.js'
@@ -23,6 +23,7 @@ import { InvitesPage } from './workspace/InvitesPage.js'
 import { MembersPage } from './workspace/MembersPage.js'
 import { WorkspaceSettingsPage } from './workspace/WorkspaceSettingsPage.js'
 import { InviteAcceptPage } from './auth/InviteAcceptPage.js'
+import { isRuntimeEmailVerificationEnabled } from '../shared/authPolicy.js'
 import { routes } from './utils.js'
 
 export interface CoreFrontAuthPagesOverride {
@@ -69,6 +70,7 @@ function createDefaultQueryClient(): QueryClient {
 }
 
 function RouterAuthGate({ children, publicPaths }: { children: ReactNode; publicPaths?: string[] }) {
+  const config = useConfig()
   const location = useLocation()
   const navigate = useNavigate()
   const authLocation = useMemo(
@@ -87,6 +89,7 @@ function RouterAuthGate({ children, publicPaths }: { children: ReactNode; public
       location={authLocation}
       navigate={navigateWithinRouter}
       publicPaths={publicPaths}
+      requireEmailVerification={isRuntimeEmailVerificationEnabled(config)}
     >
       {children}
     </AuthGate>

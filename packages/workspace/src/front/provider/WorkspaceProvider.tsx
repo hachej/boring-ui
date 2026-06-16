@@ -359,6 +359,7 @@ export interface WorkspaceProviderProps {
   onThemeChange?: (theme: "light" | "dark") => void
   workspaceId?: string
   workspaceLabel?: string
+  appTitle?: string
   storageKey?: string
   persistenceEnabled?: boolean
   manageDocumentTitle?: boolean
@@ -410,6 +411,7 @@ export function WorkspaceProvider({
   onThemeChange,
   workspaceId,
   workspaceLabel,
+  appTitle,
   storageKey,
   persistenceEnabled = true,
   manageDocumentTitle = true,
@@ -573,8 +575,8 @@ export function WorkspaceProvider({
 
   useEffect(() => {
     if (!manageDocumentTitle) return
-    document.title = formatWorkspaceDocumentTitle({ workspaceLabel, workspaceId })
-  }, [manageDocumentTitle, workspaceId, workspaceLabel])
+    document.title = formatWorkspaceDocumentTitle({ appTitle, workspaceLabel, workspaceId })
+  }, [appTitle, manageDocumentTitle, workspaceId, workspaceLabel])
 
   const [bridgeConnected, setBridgeConnected] = useState(false)
 

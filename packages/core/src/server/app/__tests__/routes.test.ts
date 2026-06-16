@@ -50,7 +50,11 @@ let sessionCookie: string
 let sessionUserId: string
 let sessionUserEmail: string
 
-async function createSessionUser(prefix: string): Promise<{
+async function verifyUserEmail(userId: string): Promise<void> {
+  await rawSql`UPDATE users SET email_verified = true WHERE id = ${userId}`
+}
+
+async function createSessionUser(prefix: string, opts?: { verified?: boolean }): Promise<{
   id: string
   email: string
   cookie: string
@@ -73,6 +77,9 @@ async function createSessionUser(prefix: string): Promise<{
   const cookie = cookies.map((c) => c.split(';')[0]).join('; ')
 
   const body = signupRes.json() as { user: { id: string; email: string } }
+  if (opts?.verified !== false) {
+    await verifyUserEmail(body.user.id)
+  }
   return { id: body.user.id, email: body.user.email, cookie }
 }
 
@@ -116,25 +123,10 @@ beforeAll(async () => {
 
   await app.ready()
 
-  const signupRes = await app.inject({
-    method: 'POST',
-    url: '/auth/sign-up/email',
-    payload: {
-      name: 'Routes Test User',
-      email: 'routes-test@routes-test.dev',
-      password: 'Zk8$mN!qR2xFgWpJ',
-    },
-  })
-
-  const setCookie = signupRes.headers['set-cookie']
-  if (setCookie) {
-    const cookies = Array.isArray(setCookie) ? setCookie : [setCookie]
-    sessionCookie = cookies.map((c) => c.split(';')[0]).join('; ')
-  }
-
-  const signupBody = signupRes.json() as { user: { id: string; email: string } }
-  sessionUserId = signupBody.user.id
-  sessionUserEmail = signupBody.user.email
+  const sessionUser = await createSessionUser('routes-test')
+  sessionCookie = sessionUser.cookie
+  sessionUserId = sessionUser.id
+  sessionUserEmail = sessionUser.email
 })
 
 afterAll(async () => {
@@ -287,7 +279,7 @@ describe('GET /api/v1/config', () => {
       appName: 'Test App',
       appLogo: null,
       apiBase: 'http://localhost:3000',
-      features: { githubOauth: false, googleOauth: false, invitesEnabled: true, sendWelcomeEmail: true },
+      features: { githubOauth: false, googleOauth: false, invitesEnabled: true, sendWelcomeEmail: true, emailVerification: true },
     })
     expect(body.auth).toBeUndefined()
     expect(body.databaseUrl).toBeUndefined()
@@ -300,6 +292,19 @@ describe('GET /api/v1/me', () => {
     const res = await app.inject({ method: 'GET', url: '/api/v1/me' })
     expect(res.statusCode).toBe(401)
     expect(res.json().code).toBe('unauthorized')
+  })
+
+  it('returns 403 for unverified sessions when email verification is enabled', async () => {
+    const user = await createSessionUser('unverified-me', { verified: false })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/me',
+      headers: { cookie: user.cookie },
+    })
+
+    expect(res.statusCode).toBe(403)
+    expect(res.json().code).toBe('email_not_verified')
   })
 
   it('returns user and settings with valid session', async () => {

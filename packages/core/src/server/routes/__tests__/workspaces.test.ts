@@ -86,7 +86,7 @@ beforeAll(async () => {
   app.addHook('onRequest', async (request) => {
     const userId = request.headers['x-test-user'] as string | undefined
     if (userId) {
-      request.user = { id: userId, email: `${userId}@test.dev`, name: null }
+      request.user = { id: userId, email: `${userId}@test.dev`, name: null, emailVerified: true }
     } else {
       request.user = null
     }
@@ -445,7 +445,7 @@ describe('Provisioner integration', () => {
     provApp.addHook('onRequest', async (request) => {
       const userId = request.headers['x-test-user'] as string | undefined
       if (userId) {
-        request.user = { id: userId, email: `${userId}@test.dev`, name: null }
+        request.user = { id: userId, email: `${userId}@test.dev`, name: null, emailVerified: true }
       } else {
         request.user = null
       }

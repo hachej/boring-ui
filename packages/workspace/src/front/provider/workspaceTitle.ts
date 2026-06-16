@@ -10,14 +10,16 @@ function sanitizeWorkspaceTitleSegment(value: string | null | undefined): string
 }
 
 export function formatWorkspaceDocumentTitle(input: {
+  appTitle?: string | null
   workspaceLabel?: string | null
   workspaceId?: string | null
 }): string {
+  const appTitle = sanitizeWorkspaceTitleSegment(input.appTitle) ?? DEFAULT_WORKSPACE_TITLE
   const label = sanitizeWorkspaceTitleSegment(input.workspaceLabel)
-  if (label) return `${label} · ${DEFAULT_WORKSPACE_TITLE}`
+  if (label) return `${label} · ${appTitle}`
 
   const workspaceId = sanitizeWorkspaceTitleSegment(input.workspaceId)
-  if (workspaceId) return `${workspaceId} · ${DEFAULT_WORKSPACE_TITLE}`
+  if (workspaceId) return `${workspaceId} · ${appTitle}`
 
-  return DEFAULT_WORKSPACE_TITLE
+  return appTitle
 }

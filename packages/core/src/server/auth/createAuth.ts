@@ -16,6 +16,7 @@ import {
   renderMagicLink,
 } from '../mail/templates/index.js'
 import { createPostSignupHook } from './postSignupHook.js'
+import { isCoreEmailVerificationEnabled } from '../../shared/authPolicy.js'
 import { safeCapture, noopTelemetry, type TelemetrySink } from '../../shared/telemetry.js'
 
 const MIN_ZXCVBN_SCORE = 2
@@ -66,8 +67,9 @@ export interface CreateAuthOptions {
 export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOptions): Auth<any> {
   const transport = buildMailTransport(config)
   const telemetry = opts?.telemetry ?? noopTelemetry
+  const emailVerificationEnabled = isCoreEmailVerificationEnabled(config)
 
-  const emailVerificationConfig = transport
+  const emailVerificationConfig = emailVerificationEnabled && transport
     ? {
         sendOnSignUp: true as const,
         sendVerificationEmail: async (data: any) => {

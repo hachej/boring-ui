@@ -25,3 +25,9 @@ export type { ErrorCode } from './errors.js'
 
 export { noopTelemetry, safeCapture } from './telemetry.js'
 export type { TelemetryEvent, TelemetrySink } from './telemetry.js'
+
+export {
+  canUseProtectedApi,
+  isCoreEmailVerificationEnabled,
+  isRuntimeEmailVerificationEnabled,
+} from './authPolicy.js'

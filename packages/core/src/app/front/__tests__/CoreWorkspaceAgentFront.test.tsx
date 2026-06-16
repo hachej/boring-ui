@@ -39,7 +39,8 @@ vi.mock('../../../front/index.js', () => ({
   UserMenu: () => <div>User menu</div>,
   ThemeToggle: () => <div>Theme toggle</div>,
   WorkspaceSwitcher: () => <div>Switcher</div>,
-  routes: { signin: '/auth/signin', forgotPassword: '/auth/forgot-password' },
+  routes: { signin: '/auth/signin', forgotPassword: '/auth/forgot-password', verifyEmail: '/auth/verify-email' },
+  useConfig: () => ({ features: { emailVerification: false } }),
   useCurrentWorkspace: () => currentWorkspaceId ? ({ id: currentWorkspaceId, name: 'Workspace A' }) : null,
   useSession: () => unstableSessionObject && sessionState.data
     ? { data: { user: { ...sessionState.data.user } }, isPending: sessionState.isPending }

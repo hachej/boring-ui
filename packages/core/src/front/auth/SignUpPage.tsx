@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
+import { useNavigate } from 'react-router-dom'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Button, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle, Input, Label } from '@hachej/boring-ui-kit'
 import { useSignUp } from './AuthProvider.js'
 import { GoogleAuthButton } from './GoogleAuthButton.js'
+import { isRuntimeEmailVerificationEnabled } from '../../shared/authPolicy.js'
 import { useOptionalConfig } from '../ConfigProvider.js'
 import { routes } from '../utils.js'
 
@@ -26,6 +28,7 @@ function readGoogleAuthError(): string | null {
 
 export function SignUpPage() {
   const signUp = useSignUp()
+  const navigate = useNavigate()
   const config = useOptionalConfig()
   const [serverError, setServerError] = useState<string | null>(null)
   const [oauthError, setOauthError] = useState<string | null>(() => readGoogleAuthError())
@@ -60,6 +63,8 @@ export function SignUpPage() {
       )
       if (result.error) {
         setServerError(result.error.message ?? 'Sign up failed')
+      } else if (isRuntimeEmailVerificationEnabled(config)) {
+        navigate(routes.verifyEmail, { replace: true })
       } else {
         setSuccess(true)
       }

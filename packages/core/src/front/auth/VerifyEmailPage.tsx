@@ -191,6 +191,8 @@ export function VerifyEmailPage() {
     )
   }
 
+  const isWaitingForEmailClick = status === 'no-token' && Boolean(sessionEmail)
+
   // 'invalid' or 'no-token'
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
@@ -203,11 +205,13 @@ export function VerifyEmailPage() {
           </div>
         )}
         <CardHeader>
-          <CardTitle>Invalid verification link</CardTitle>
+          <CardTitle>{isWaitingForEmailClick ? 'Check your email' : 'Invalid verification link'}</CardTitle>
           <CardDescription>
-            {status === 'no-token'
-              ? 'No verification token found. Check the link in your email.'
-              : 'This verification link is invalid. Request a new one below.'}
+            {isWaitingForEmailClick
+              ? 'We sent a verification link to your email address. Please check your inbox to continue.'
+              : status === 'no-token'
+                ? 'No verification token found. Check the link in your email.'
+                : 'This verification link is invalid. Request a new one below.'}
           </CardDescription>
         </CardHeader>
         <CardContent>{resendSection}</CardContent>

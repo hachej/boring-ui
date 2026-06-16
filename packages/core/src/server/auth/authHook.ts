@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify'
 import fp from 'fastify-plugin'
+import { isCoreEmailVerificationEnabled } from '../../shared/authPolicy.js'
 import { HttpError, ERROR_CODES } from '../../shared/errors.js'
 import type { BetterAuthInstance } from './createAuth.js'
 
@@ -38,6 +39,7 @@ const authHookPlugin: FastifyPluginAsync<AuthHookOptions> = async (app, opts) =>
             id: result.user.id,
             email: result.user.email,
             name: result.user.name ?? null,
+            emailVerified: Boolean(result.user.emailVerified),
           }
         }
       } catch {
@@ -46,15 +48,22 @@ const authHookPlugin: FastifyPluginAsync<AuthHookOptions> = async (app, opts) =>
     }
 
     const path = request.url.split('?')[0]
-    if (
-      path.startsWith('/api/v1/') &&
-      !publicPatterns.some((re) => re.test(path)) &&
-      !request.user
-    ) {
+    const isProtectedApi = path.startsWith('/api/v1/') && !publicPatterns.some((re) => re.test(path))
+
+    if (isProtectedApi && !request.user) {
       throw new HttpError({
         status: 401,
         code: ERROR_CODES.UNAUTHORIZED,
         message: 'Authentication required',
+        requestId: request.id,
+      })
+    }
+
+    if (isProtectedApi && isCoreEmailVerificationEnabled(app.config) && request.user?.emailVerified !== true) {
+      throw new HttpError({
+        status: 403,
+        code: ERROR_CODES.EMAIL_NOT_VERIFIED,
+        message: 'Email verification required',
         requestId: request.id,
       })
     }

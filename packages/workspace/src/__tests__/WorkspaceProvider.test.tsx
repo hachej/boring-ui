@@ -512,6 +512,10 @@ describe("WorkspaceProvider — document title", () => {
     expect(formatWorkspaceDocumentTitle({ workspaceLabel: "deadbeef" })).toBe("deadbeef · Boring UI")
   })
 
+  it("uses the app title when provided", () => {
+    expect(formatWorkspaceDocumentTitle({ appTitle: "Seneca AI", workspaceLabel: "Workspace A" })).toBe("Workspace A · Seneca AI")
+  })
+
   it("falls back to the default title when no safe workspace metadata exists", () => {
     expect(formatWorkspaceDocumentTitle({})).toBe("Boring UI")
     expect(formatWorkspaceDocumentTitle({ workspaceLabel: "   ", workspaceId: "" })).toBe("Boring UI")
@@ -527,20 +531,20 @@ describe("WorkspaceProvider — document title", () => {
 
   it("updates document.title when workspace metadata changes", () => {
     const { rerender } = render(
-      <WorkspaceProvider workspaceId="workspace-a" workspaceLabel="Workspace A" persistenceEnabled={false}>
+      <WorkspaceProvider appTitle="Seneca AI" workspaceId="workspace-a" workspaceLabel="Workspace A" persistenceEnabled={false}>
         <div />
       </WorkspaceProvider>,
     )
 
-    expect(document.title).toBe("Workspace A · Boring UI")
+    expect(document.title).toBe("Workspace A · Seneca AI")
 
     rerender(
-      <WorkspaceProvider workspaceId="workspace-b" workspaceLabel="Workspace B" persistenceEnabled={false}>
+      <WorkspaceProvider appTitle="Seneca AI" workspaceId="workspace-b" workspaceLabel="Workspace B" persistenceEnabled={false}>
         <div />
       </WorkspaceProvider>,
     )
 
-    expect(document.title).toBe("Workspace B · Boring UI")
+    expect(document.title).toBe("Workspace B · Seneca AI")
   })
 
   it("falls back to workspaceId in document.title when label is missing", () => {

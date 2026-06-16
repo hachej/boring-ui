@@ -45,6 +45,24 @@ let app: FastifyInstance
 let rawSql: postgres.Sql
 let sessionCookie: string
 
+async function signUpAndReadCookie(email: string): Promise<string> {
+  const signupRes = await app.inject({
+    method: 'POST',
+    url: '/auth/sign-up/email',
+    payload: {
+      name: 'Hook Test User',
+      email,
+      password: 'Zk8$mN!qR2xFgWpJ',
+    },
+  })
+
+  const setCookie = signupRes.headers['set-cookie']
+  const cookies = Array.isArray(setCookie) ? setCookie : setCookie ? [setCookie] : []
+  return cookies
+    .map((c) => c.split(';')[0])
+    .join('; ')
+}
+
 beforeAll(async () => {
   const config = makeConfig()
   await runMigrations(config)
@@ -83,23 +101,7 @@ beforeAll(async () => {
 
   await app.ready()
 
-  const signupRes = await app.inject({
-    method: 'POST',
-    url: '/auth/sign-up/email',
-    payload: {
-      name: 'Hook Test User',
-      email: 'hook-test@auth-test.dev',
-      password: 'Zk8$mN!qR2xFgWpJ',
-    },
-  })
-
-  const setCookie = signupRes.headers['set-cookie']
-  if (setCookie) {
-    const cookies = Array.isArray(setCookie) ? setCookie : [setCookie]
-    sessionCookie = cookies
-      .map((c) => c.split(';')[0])
-      .join('; ')
-  }
+  sessionCookie = await signUpAndReadCookie('hook-test@auth-test.dev')
 })
 
 afterAll(async () => {
@@ -130,8 +132,23 @@ describe('authHook', () => {
     expect(body.code).toBe('unauthorized')
   })
 
-  it('private path with valid session returns user', async () => {
+  it('private path with unverified session returns 403 when email verification is enabled', async () => {
+    const cookie = await signUpAndReadCookie(`unverified-${Date.now()}@auth-test.dev`)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/me',
+      headers: { cookie },
+    })
+
+    expect(res.statusCode).toBe(403)
+    const body = res.json()
+    expect(body.code).toBe('email_not_verified')
+  })
+
+  it('private path with verified session returns user', async () => {
     expect(sessionCookie).toBeDefined()
+    await rawSql`UPDATE users SET email_verified = true WHERE email = 'hook-test@auth-test.dev'`
 
     const res = await app.inject({
       method: 'GET',
@@ -143,6 +160,7 @@ describe('authHook', () => {
     const body = res.json()
     expect(body.user).toBeDefined()
     expect(body.user.email).toBe('hook-test@auth-test.dev')
+    expect(body.user.emailVerified).toBe(true)
     expect(body.user.id).toBeDefined()
   })
 
