@@ -4,3 +4,7 @@
 @import "../../front/theme.css";
 @import "@hachej/boring-workspace/globals.css";
 @import "@hachej/boring-agent/front/styles.css";
+
+/* Default styling for the chat-first public (no-auth) shell. Imported last so
+   its plain rules sit after Tailwind's utilities in the cascade. */
+@import "./chatFirst/chatFirstPublicShell.css";

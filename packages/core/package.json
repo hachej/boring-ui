@@ -53,7 +53,7 @@
     "drizzle"
   ],
   "scripts": {
-    "build": "tsup && cp src/front/theme.css dist/front/theme.css && mkdir -p dist/app/front && cp src/app/front/styles.css dist/app/front/styles.css",
+    "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run --no-file-parallelism",
     "test:watch": "vitest",
