@@ -32,7 +32,7 @@ import {
   parentDir,
   type DraftEditing,
 } from "./treeModel"
-import type { WorkspaceBridge } from "../../../../front/bridge/types"
+import type { FileTreeBridge } from "../../../../front/bridge/types"
 import { PanelChrome } from "../../../../front/dock"
 import {
   DEFAULT_TREE_IGNORE,
@@ -102,17 +102,6 @@ function clampContextMenuPosition(
     ),
   }
 }
-
-/**
- * The minimal slice of {@link WorkspaceBridge} the file tree actually uses:
- * click-to-open (`openFile`), initial selection (`getActiveFile`), and
- * reactive reveal (`select`, plus optional `subscribe`). Exported so the
- * intermediate hosts (WorkbenchLeftPane, LeftTabParams, FileTreePane) can
- * forward a surface-backed adapter that satisfies just this slice instead of
- * the full bridge.
- */
-export type FileTreeBridge = Pick<WorkspaceBridge, "openFile" | "getActiveFile" | "select"> &
-  Partial<Pick<WorkspaceBridge, "subscribe">>
 
 export interface FileTreeViewProps {
   rootDir?: string

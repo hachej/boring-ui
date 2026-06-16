@@ -16,8 +16,7 @@ import type {
 import { useRegistry } from "../../front/registry"
 import { captureFrontPlugin } from "../../shared/plugins/frontFactory"
 import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
-import type { CommandResult, DispatchContext, Unsubscribe } from "../../front/bridge"
-import type { FileTreeBridge } from "../../plugins/filesystemPlugin/front/file-tree/FileTreeView"
+import type { CommandResult, DispatchContext, FileTreeBridge, Unsubscribe } from "../../front/bridge"
 import { readStoredBoolean, writeStoredBoolean } from "../../front/store/localStorageValues"
 import {
   createLocalStorageSessions,

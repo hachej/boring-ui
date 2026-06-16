@@ -609,13 +609,12 @@ export function MarkdownEditor({
       const next = e.getMarkdown?.() ?? e.getHTML()
       // Remember our own serialized output so the content-sync effect can tell
       // a save round-trip (normalized markdown) apart from a genuine external
-      // change, and never re-seeds / re-dirties on what we produced.
+      // change, and never re-seeds / re-dirties on what we produced. This is the
+      // load-bearing fix for the autosave/conflict storm — see the sync effect.
       lastEmittedRef.current = next
-      // Only a real user edit (which requires focus) should propagate as a
-      // dirty change. Unfocused emissions are TipTap settling on init / remount
-      // / re-parent and must not trigger autosave-on-open. (This focus guard
-      // subsumes the old empty-while-unfocused case in isUserEditedChange.)
-      if (!e.isFocused) return
+      // Drop a transient empty emission from an unfocused editor (settling on
+      // init/remount); real edits — typing AND toolbar actions — still flow.
+      if (!isUserEditedChange(next, e.isFocused)) return
       onChangeRef.current?.(next)
     },
   })
