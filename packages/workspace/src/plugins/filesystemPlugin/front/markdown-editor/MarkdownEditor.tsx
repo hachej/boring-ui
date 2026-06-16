@@ -613,9 +613,9 @@ export function MarkdownEditor({
       lastEmittedRef.current = next
       // Only a real user edit (which requires focus) should propagate as a
       // dirty change. Unfocused emissions are TipTap settling on init / remount
-      // / re-parent and must not trigger autosave-on-open.
+      // / re-parent and must not trigger autosave-on-open. (This focus guard
+      // subsumes the old empty-while-unfocused case in isUserEditedChange.)
       if (!e.isFocused) return
-      if (!isUserEditedChange(next, e.isFocused)) return
       onChangeRef.current?.(next)
     },
   })
