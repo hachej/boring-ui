@@ -97,6 +97,26 @@ describe("FileTree", () => {
     expect(onSelect).toHaveBeenCalledWith("package.json")
   })
 
+  it("does NOT crash the panel when a listing entry has no path (react-arborist idAccessor)", () => {
+    // The exact prod scenario: one malformed backend entry with no `path`. Before the
+    // fix react-arborist threw "Data must contain an 'id' property…" on render, killing
+    // the whole panel. With sanitizeFileTree the bad node is dropped and the rest renders.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const withBadEntry = [
+      { name: "good.ts", kind: "file", path: "good.ts" },
+      { name: "broken", kind: "file" } as unknown as FileTreeNode, // no path → would crash
+      { name: "data.csv", kind: "file", path: "data.csv" },
+    ] as FileTreeNode[]
+
+    expect(() => render(<FileTree files={withBadEntry} height={200} />)).not.toThrow()
+    // The valid files still render; the pathless one is gone (and was warned about).
+    expect(screen.getByText("good.ts")).toBeInTheDocument()
+    expect(screen.getByText("data.csv")).toBeInTheDocument()
+    expect(screen.queryByText("broken")).not.toBeInTheDocument()
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
   it("calls onContextMenu with event and node on right-click", () => {
     const onContextMenu = vi.fn()
     render(
