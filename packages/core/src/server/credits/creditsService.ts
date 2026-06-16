@@ -203,9 +203,10 @@ export class CreditsService {
       })
     }
     // Out-of-order refund-before-grant: the refund debit is applied here (not at refund
-    // time), so emit purchase.refunded now or it would be missed.
+    // time), so emit purchase.refunded now or it would be missed. Anonymous (no distinctId)
+    // to match the revoke path — purchase.refunded is a consistent count either way.
     if (refundAppliedMicros && refundAppliedMicros > 0) {
-      safeCapture(this.telemetry, { name: 'purchase.refunded', distinctId: userId })
+      safeCapture(this.telemetry, { name: 'purchase.refunded' })
     }
     return { created: granted }
   }
@@ -405,10 +406,14 @@ export class CreditsService {
         metadata: { kind: metaKind, reservationId: input.reservationId ?? null, alreadyBilledMicros: alreadyBilled, currency: 'credits' },
       })
     }
-    await this.store.finishReservation(
+    const { updated } = await this.store.finishReservation(
       input.reservationId ? { reservationId: input.reservationId } : { runId: input.runId, userId: input.userId },
       'settled',
     )
+    // A fallback-charged run still SETTLED (it started, then errored / produced no billable
+    // usage and was charged the hold) — count it as completed so every run.started has a
+    // matching run.completed (gated on the real transition, like settleRun).
+    if (updated) safeCapture(this.telemetry, { name: 'run.completed', distinctId: input.userId })
     this.log?.('credits: fallback hold charge — topped up to the hold and settled (reconcile against missing/non-billable usage)', {
       kind: metaKind, runId: input.runId, reservationId: input.reservationId, alreadyBilledMicros: alreadyBilled, topUpMicros: topUp,
     })

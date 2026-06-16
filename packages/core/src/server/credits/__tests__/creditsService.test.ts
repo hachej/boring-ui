@@ -271,7 +271,7 @@ describe('CreditsService', () => {
       })
       await new CreditsService(store, CONFIG, undefined, sink).grantPurchase('u1', 'o1', 10_000_000, { currency: 'CHF', variantId: '10' })
       expect(events.find((e) => e.name === 'purchase.completed')?.distinctId).toBe('u1')
-      expect(events.find((e) => e.name === 'purchase.refunded')?.distinctId).toBe('u1')
+      expect(events.some((e) => e.name === 'purchase.refunded')).toBe(true)
     })
   })
 })
