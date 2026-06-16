@@ -109,6 +109,9 @@ export type CoreWorkspaceAgentServer = FastifyInstance & {
   db: Database
   userStore: UserStore
   workspaceStore: WorkspaceStore
+  /** Best-effort telemetry sink (DB-backed when BORING_TELEMETRY_ENABLED=true, else noop).
+   * Consumed by request hooks and the credit service to emit product events. */
+  telemetry: TelemetrySink
 }
 
 export type CoreWorkspaceAgentServerPlugin = WorkspaceServerPlugin & {
@@ -569,6 +572,7 @@ async function createCoreRuntime(config: CoreConfig, customTelemetry?: Telemetry
   app.decorate('auth', auth)
   app.decorate('userStore', userStore)
   app.decorate('workspaceStore', workspaceStore)
+  app.decorate('telemetry', telemetry)
 
   app.addHook('onClose', async () => {
     await sql.end()

@@ -1,5 +1,6 @@
 import { InsufficientCreditError, type PostgresMeteringStore, type CreditLedgerEntry } from '../db/stores/PostgresMeteringStore.js'
 import { usageToCredits, type CreditPricingConfig, type ModelTokenRate } from './pricing.js'
+import { safeCapture, noopTelemetry, type TelemetrySink } from '../../shared/telemetry.js'
 
 export type { CreditLedgerEntry, CreditLedgerKind } from '../db/stores/PostgresMeteringStore.js'
 
@@ -138,6 +139,7 @@ export class CreditsService {
     private readonly store: CreditsMeteringStore,
     readonly config: CreditsConfig = DEFAULT_CREDITS_CONFIG,
     private readonly log?: CreditsLogger,
+    private readonly telemetry: TelemetrySink = noopTelemetry,
   ) {
     // When disabled, the service is a full kill switch — every public method
     // short-circuits and never reads the config — so skip validation entirely. A
@@ -188,6 +190,18 @@ export class CreditsService {
   ): Promise<{ created: boolean }> {
     if (!this.config.enabled) return { created: false }
     const { granted } = await this.store.grantPurchaseOnce({ userId, orderId, amountMicros, ...identity })
+    // Revenue event — only on a fresh grant (idempotent retries return granted=false).
+    if (granted) {
+      safeCapture(this.telemetry, {
+        name: 'purchase.completed',
+        distinctId: userId,
+        properties: {
+          creditMicros: amountMicros,
+          currency: identity?.currency,
+          packId: identity?.variantId,
+        },
+      })
+    }
     return { created: granted }
   }
 
@@ -202,13 +216,16 @@ export class CreditsService {
     opts: { refundFraction?: number; allowTombstone?: boolean; expectedStoreId?: string; expectedTestMode?: boolean; expectedCurrency?: string } = {},
   ): Promise<{ revoked: boolean }> {
     if (!this.config.enabled) return { revoked: false }
-    return this.store.revokePurchase(orderId, {
+    const result = await this.store.revokePurchase(orderId, {
       refundFraction: opts.refundFraction,
       allowTombstone: opts.allowTombstone,
       expectedStoreId: opts.expectedStoreId,
       expectedTestMode: opts.expectedTestMode,
       expectedCurrency: opts.expectedCurrency,
     })
+    // Refund/dispute event (count). No distinctId — revoke is keyed by order, not user.
+    if (result.revoked) safeCapture(this.telemetry, { name: 'purchase.refunded' })
+    return result
   }
 
   async getBalance(userId: string): Promise<CreditBalance> {
@@ -264,9 +281,12 @@ export class CreditsService {
         // is admitted only when available ≥ hold + floor (matches the config doc).
         minAvailableMicros: this.config.runReservationMicros + this.config.minBalanceMicros,
       })
+      safeCapture(this.telemetry, { name: 'run.started', distinctId: input.userId })
       return reservationId
     } catch (error) {
       if (error instanceof InsufficientCreditError) {
+        // The trial wall / monetization trigger.
+        safeCapture(this.telemetry, { name: 'credits.exhausted', distinctId: input.userId })
         throw new CreditExhaustedError(await this.getBalance(input.userId))
       }
       throw error
@@ -325,6 +345,9 @@ export class CreditsService {
   async settleRun(userId: string, runId: string, reservationId?: string): Promise<void> {
     if (!this.config.enabled) return
     await this.store.finishReservation(reservationId ? { reservationId } : { runId, userId }, 'settled')
+    // Activation/usage event (count; per-run cost lives in usage_ledger). The first
+    // run.completed per user in SQL is the activation moment.
+    safeCapture(this.telemetry, { name: 'run.completed', distinctId: userId })
   }
 
   async releaseRun(userId: string, runId: string, reservationId?: string): Promise<void> {

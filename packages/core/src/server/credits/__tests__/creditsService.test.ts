@@ -209,4 +209,46 @@ describe('CreditsService', () => {
     expect(store.recordUsage).not.toHaveBeenCalled()
     expect(store.finishReservation).not.toHaveBeenCalled()
   })
+
+  describe('telemetry', () => {
+    function withCapture() {
+      const events: Array<{ name: string; distinctId?: string; properties?: Record<string, unknown> }> = []
+      return { events, sink: { capture: (e: typeof events[number]) => { events.push(e) } } }
+    }
+
+    it('emits purchase.completed with amount/currency/pack on a fresh grant only', async () => {
+      const { events, sink } = withCapture()
+      const store = makeStore()
+      const service = new CreditsService(store, CONFIG, undefined, sink)
+      await service.grantPurchase('u1', 'order-1', 10_000_000, { currency: 'CHF', variantId: '10' })
+
+      const purchase = events.find((e) => e.name === 'purchase.completed')
+      expect(purchase).toMatchObject({
+        distinctId: 'u1',
+        properties: { creditMicros: 10_000_000, currency: 'CHF', packId: '10' },
+      })
+
+      // Idempotent retry (granted=false) must NOT re-emit.
+      events.length = 0
+      ;(store.grantPurchaseOnce as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ granted: false })
+      await service.grantPurchase('u1', 'order-1', 10_000_000, { currency: 'CHF', variantId: '10' })
+      expect(events.find((e) => e.name === 'purchase.completed')).toBeUndefined()
+    })
+
+    it('emits run.started on reserve and credits.exhausted when out of credits', async () => {
+      const { events, sink } = withCapture()
+      const okStore = makeStore()
+      await new CreditsService(okStore, CONFIG, undefined, sink).reserveRun({ userId: 'u1', runId: 'r1' })
+      expect(events.find((e) => e.name === 'run.started')?.distinctId).toBe('u1')
+
+      events.length = 0
+      const brokeStore = makeStore({
+        reserve: vi.fn(async () => { throw new InsufficientCreditError(100, 250_000) }),
+      })
+      await expect(
+        new CreditsService(brokeStore, CONFIG, undefined, sink).reserveRun({ userId: 'u2', runId: 'r2' }),
+      ).rejects.toBeInstanceOf(CreditExhaustedError)
+      expect(events.find((e) => e.name === 'credits.exhausted')?.distinctId).toBe('u2')
+    })
+  })
 })
