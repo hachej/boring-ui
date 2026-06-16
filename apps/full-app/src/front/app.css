@@ -5,3 +5,452 @@ body,
   margin: 0;
   overflow: hidden;
 }
+
+/* --- Hand-drawn teaching annotations (public no-auth shell) --- */
+.public-arrow {
+  pointer-events: none;
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  color: color-mix(in oklch, var(--foreground) 55%, transparent);
+}
+
+.public-arrow-svg {
+  overflow: visible;
+}
+
+.public-arrow .paw-stroke {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.public-arrow-label {
+  font-family: "Caveat", ui-rounded, "Segoe Print", cursive;
+  font-weight: 700;
+  font-size: 26px;
+  line-height: 1;
+  color: color-mix(in oklch, var(--foreground) 78%, transparent);
+  white-space: nowrap;
+}
+
+/* Right: points to the workspace surface button on the right edge. */
+.public-arrow-computer {
+  right: 12px;
+  bottom: 374px;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.public-arrow-computer .public-arrow-label {
+  margin-bottom: 6px;
+  transform: rotate(-5deg);
+}
+
+.public-arrow-computer .public-arrow-svg {
+  width: 178px;
+  height: 134px;
+}
+
+/* Bottom: points up to the composer (the agent input). */
+.public-arrow-agent {
+  left: 50%;
+  bottom: 78px;
+  flex-direction: column;
+  align-items: center;
+  transform: translateX(-50%);
+  gap: 2px;
+}
+
+.public-arrow-agent .public-arrow-svg {
+  width: 96px;
+  height: 92px;
+}
+
+.public-arrow-agent .public-arrow-label {
+  transform: rotate(-4deg);
+}
+
+@media (max-width: 1100px) {
+  .public-arrow {
+    display: none;
+  }
+}
+
+/* --- Prominent hero (public no-auth empty state only) --- */
+.public-chat-first-shell [data-boring-agent-part="empty-state"] {
+  max-width: min(1120px, 92vw);
+}
+
+.public-chat-first-shell [data-boring-agent-part="empty-state"] > div:first-child {
+  font-size: 12px;
+  letter-spacing: 0.18em;
+}
+
+.public-chat-first-shell [data-boring-agent-part="empty-state"] h3 {
+  margin-top: 22px;
+  font-size: clamp(34px, 5.4vw, 82px);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  white-space: nowrap;
+}
+
+.public-chat-first-shell [data-boring-agent-part="empty-state"] > p {
+  display: block;
+  margin-top: 22px;
+  max-width: 58ch;
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+@media (max-width: 560px) {
+  .public-chat-first-shell [data-boring-agent-part="empty-state"] h3 {
+    white-space: normal;
+  }
+}
+
+/* Top-bias the hero + composer group instead of vertically centering it, so it
+   doesn't float to mid-screen (with a large empty band on top) on tall windows. */
+.public-chat-first-shell [class*="justify-center"]:has([data-boring-agent-part="empty-state"]) {
+  justify-content: flex-start;
+  padding-top: clamp(28px, 9vh, 132px);
+}
+
+/* Command launcher cards — make the slash commands read as runnable. */
+.public-chat-first-shell [data-boring-agent-part="suggestion-grid"] {
+  margin-top: 28px;
+  max-width: 560px;
+  margin-left: auto;
+  margin-right: auto;
+  border-radius: 14px;
+}
+
+.public-chat-first-shell [data-boring-agent-part="suggestion-card"] {
+  padding-top: 15px;
+  padding-bottom: 15px;
+}
+
+.public-chat-first-shell [data-boring-agent-part="suggestion-card"] > span > span:first-child {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--accent);
+}
+
+.public-chat-first-shell [data-boring-agent-part="suggestion-card"] > span > span:nth-child(2) {
+  margin-top: 2px;
+  font-size: 12.5px;
+}
+
+.public-chat-first-shell .public-hero-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  margin-top: 22px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.public-chat-first-shell .public-hero-foot span {
+  color: var(--muted-foreground);
+}
+
+.public-chat-first-shell .public-hero-foot a {
+  color: var(--foreground);
+  font-weight: 500;
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in oklch, var(--accent) 55%, transparent);
+  padding-bottom: 1px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.public-chat-first-shell .public-hero-foot a:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.public-pages-pane {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  color: var(--foreground);
+}
+
+.public-pages-pane-header {
+  margin-bottom: 8px;
+}
+
+.public-pages-pane-header p {
+  margin: 0 0 6px;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.public-pages-pane-header h2 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: -0.03em;
+}
+
+.public-pages-pane-header span,
+.public-pages-pane-note span {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.public-pages-pane button {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+  padding: 9px 11px;
+  text-align: left;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.public-pages-pane button strong {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.public-pages-pane button:hover {
+  border-color: var(--border);
+  background: var(--muted);
+}
+
+.public-pages-pane button span {
+  color: var(--muted-foreground);
+  font: 600 11.5px/1.3 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.public-pages-pane-note {
+  margin-top: auto;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: color-mix(in oklch, var(--card) 80%, var(--background));
+  padding: 12px;
+}
+
+.public-html-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  background: var(--background);
+}
+
+.public-workspace-tab {
+  min-height: 100%;
+  overflow: auto;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 70% 0%, color-mix(in oklch, var(--primary) 12%, transparent), transparent 34rem),
+    var(--background);
+}
+
+.artifact-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 0 auto 22px;
+  max-width: 980px;
+}
+
+.artifact-header p {
+  margin: 0 0 8px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.artifact-header h1 {
+  margin: 0;
+  font-size: clamp(32px, 5vw, 56px);
+  line-height: 0.95;
+  letter-spacing: -0.055em;
+}
+
+.artifact-header span {
+  display: block;
+  margin-top: 12px;
+  max-width: 560px;
+  color: var(--muted-foreground);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.artifact-header button {
+  border: 1px solid var(--foreground);
+  border-radius: 999px;
+  background: var(--foreground);
+  color: var(--background);
+  cursor: pointer;
+  padding: 11px 16px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.artifact-card {
+  margin: 0 auto;
+  max-width: 980px;
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  background: color-mix(in oklch, var(--card) 88%, transparent);
+  box-shadow: 0 24px 80px color-mix(in oklch, var(--foreground) 10%, transparent);
+  padding: clamp(24px, 5vw, 48px);
+}
+
+.artifact-kicker {
+  margin: 0 0 16px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.artifact-card h2 {
+  margin: 0;
+  max-width: 760px;
+  font-size: clamp(36px, 7vw, 76px);
+  line-height: 0.92;
+  letter-spacing: -0.07em;
+}
+
+.artifact-card p {
+  max-width: 680px;
+  color: var(--muted-foreground);
+  font-size: 17px;
+  line-height: 1.65;
+}
+
+.artifact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 28px 0;
+}
+
+.artifact-actions a {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 11px 15px;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.artifact-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 30px;
+}
+
+.artifact-feature-grid div {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--background);
+  padding: 16px;
+}
+
+.artifact-feature-grid strong,
+.artifact-feature-grid span {
+  display: block;
+}
+
+.artifact-feature-grid span {
+  margin-top: 8px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.chat-artifact {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(320px, 1.15fr);
+  gap: 24px;
+  align-items: stretch;
+}
+
+.chat-artifact h2 {
+  font-size: clamp(34px, 5vw, 58px);
+}
+
+.calendly-frame-wrap {
+  min-height: 620px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--background);
+}
+
+.calendly-frame {
+  width: 100%;
+  height: 720px;
+  border: 0;
+}
+
+.calendly-frame-full {
+  display: block;
+  height: 100%;
+  min-height: 760px;
+  background: var(--background);
+}
+
+.calendly-placeholder {
+  display: flex;
+  height: 100%;
+  min-height: 520px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 28px;
+  text-align: center;
+}
+
+.calendly-placeholder span {
+  max-width: 360px;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+@media (max-width: 860px) {
+  .artifact-header,
+  .chat-artifact,
+  .artifact-feature-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .artifact-header {
+    flex-direction: column;
+  }
+}
