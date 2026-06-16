@@ -59,14 +59,13 @@ function buildMailTransport(config: CoreConfig): MailTransport | null {
 export interface CreateAuthOptions {
   workspaceStore?: WorkspaceStore
   logger?: { warn: (obj: Record<string, unknown>, msg: string) => void }
-  /** Lazy accessor for the telemetry sink (resolved after createAuth runs, so it's a
-   * getter, not the sink itself). Used to emit auth.signed_up / auth.signed_in. */
-  getTelemetry?: () => TelemetrySink
+  /** Telemetry sink for auth.signed_up / auth.session_started (defaults to noop). */
+  telemetry?: TelemetrySink
 }
 
 export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOptions): Auth<any> {
   const transport = buildMailTransport(config)
-  const getTelemetry = opts?.getTelemetry ?? (() => noopTelemetry)
+  const telemetry = opts?.telemetry ?? noopTelemetry
 
   const emailVerificationConfig = transport
     ? {
@@ -117,7 +116,7 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
         workspaceStore: opts.workspaceStore,
         transport,
         logger: opts.logger,
-        getTelemetry,
+        telemetry,
       })
     : undefined
 
@@ -156,13 +155,14 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
             },
           }
         : {}),
-      // Every new session (sign-in, and the session minted on sign-up) → auth.signed_in.
-      // distinctId is the user id; no PII in properties.
+      // Fires for every new session — sign-in AND the session minted on sign-up — so the
+      // name reflects that (a true returning-sign-in count = session_started minus the
+      // first session per user, derivable in SQL). distinctId = user id; no properties.
       session: {
         create: {
           after: async (session: { userId?: string } & Record<string, unknown>) => {
-            safeCapture(getTelemetry(), {
-              name: 'auth.signed_in',
+            safeCapture(telemetry, {
+              name: 'auth.session_started',
               distinctId: typeof session?.userId === 'string' ? session.userId : undefined,
             })
           },

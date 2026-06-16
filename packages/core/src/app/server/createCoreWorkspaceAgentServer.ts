@@ -33,7 +33,7 @@ import type { FastifyInstance } from 'fastify'
 import type postgres from 'postgres'
 import type { CoreConfig } from '../../shared/types.js'
 import { ERROR_CODES } from '../../shared/errors.js'
-import { safeCapture, noopTelemetry, type TelemetrySink } from '../../shared/telemetry.js'
+import { safeCapture, type TelemetrySink } from '../../shared/telemetry.js'
 import {
   authHook,
   createAuth,
@@ -536,12 +536,13 @@ async function registerFrontendFallback(
   })
 }
 
-async function createCoreRuntime(config: CoreConfig): Promise<{
+async function createCoreRuntime(config: CoreConfig, customTelemetry?: TelemetrySink): Promise<{
   app: CoreWorkspaceAgentServer
   sql: postgres.Sql
   db: Database
   userStore: UserStore
   workspaceStore: WorkspaceStore
+  telemetry: TelemetrySink
 }> {
   if (config.stores !== 'postgres') {
     throw new Error('createCoreWorkspaceAgentServer currently supports only CORE_STORES=postgres')
@@ -556,24 +557,28 @@ async function createCoreRuntime(config: CoreConfig): Promise<{
   )
 
   const app = await createCoreApp(config) as CoreWorkspaceAgentServer
-  const auth = createAuth(config, db, {
-    workspaceStore,
-    logger: app.log,
-    // Lazy: app.telemetry is decorated later in startup, before any request — the auth
-    // hooks (signup/signin) fire at request time, so they read the resolved sink.
-    getTelemetry: () => (app as CoreWorkspaceAgentServer).telemetry ?? noopTelemetry,
-  })
+  // Resolve the telemetry sink here (db exists now) so the auth hooks get a plain sink.
+  const telemetry = customTelemetry ?? createDatabaseTelemetryFromEnv(db, { appId: config.appId }, process.env)
+  const telemetrySource = customTelemetry
+    ? 'custom'
+    : process.env.BORING_TELEMETRY_ENABLED === 'true'
+      ? 'db-env'
+      : 'noop-env'
+  app.log.debug({ telemetry: { source: telemetrySource } }, 'resolved telemetry sink')
+  const auth = createAuth(config, db, { workspaceStore, logger: app.log, telemetry })
 
   app.decorate('db', db)
   app.decorate('auth', auth)
   app.decorate('userStore', userStore)
   app.decorate('workspaceStore', workspaceStore)
+  // Decorated for request hooks and (later) the credit service to emit product events.
+  app.decorate('telemetry', telemetry)
 
   app.addHook('onClose', async () => {
     await sql.end()
   })
 
-  return { app, sql, db, userStore, workspaceStore }
+  return { app, sql, db, userStore, workspaceStore, telemetry }
 }
 
 async function registerCoreRoutes({
@@ -614,23 +619,12 @@ export async function createCoreWorkspaceAgentServer(
   assertCoreStaticPluginEntries(options.plugins)
 
   const config = options.config ?? (await loadConfig(resolveCoreLoadConfigOptions(options)))
-  const { app, sql, db, userStore, workspaceStore } = await createCoreRuntime(config)
+  const { app, sql, db, userStore, workspaceStore, telemetry } = await createCoreRuntime(config, options.telemetry)
   const appRoot = options.appRoot
   const serveFrontend =
     options.serveFrontend ?? (process.env.NODE_ENV !== 'development' && Boolean(appRoot))
   const pluginWorkspaceRoot = process.cwd()
   const workspaceRoot = options.workspaceRoot ?? process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd()
-  const telemetrySource = options.telemetry
-    ? 'custom'
-    : process.env.BORING_TELEMETRY_ENABLED === 'true'
-      ? 'db-env'
-      : 'noop-env'
-  const telemetry = options.telemetry ?? createDatabaseTelemetryFromEnv(db, { appId: config.appId }, process.env)
-  app.log.debug({ telemetry: { source: telemetrySource } }, 'resolved telemetry sink')
-  // Expose the resolved sink so request handlers, the auth hooks, and the credit
-  // service can emit product events through the same pipeline.
-  app.decorate('telemetry', telemetry)
-
   registerTelemetryHooks(app, telemetry)
 
   await registerCoreRoutes({ app, sql, db, userStore, workspaceStore })

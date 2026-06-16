@@ -33,14 +33,8 @@ export interface PostSignupHookDeps {
   workspaceStore: WorkspaceStore
   transport: MailTransport | null
   logger?: { warn: (obj: Record<string, unknown>, msg: string) => void }
-  /** Lazy telemetry accessor (sink resolves after createAuth runs). */
-  getTelemetry?: () => TelemetrySink
-}
-
-/** Domain part of an email (no local part → no PII). 'a@b.com' → 'b.com'. */
-function emailDomain(email: string): string | undefined {
-  const at = email.lastIndexOf('@')
-  return at >= 0 && at < email.length - 1 ? email.slice(at + 1).toLowerCase() : undefined
+  /** Telemetry sink for auth.signed_up (defaults to noop). */
+  telemetry?: TelemetrySink
 }
 
 function readHeader(ctx: PostSignupContext | null, name: string): string | null {
@@ -54,7 +48,7 @@ function readHeader(ctx: PostSignupContext | null, name: string): string | null 
 
 export function createPostSignupHook(deps: PostSignupHookDeps) {
   const { config, workspaceStore, transport, logger } = deps
-  const getTelemetry = deps.getTelemetry ?? (() => noopTelemetry)
+  const telemetry = deps.telemetry ?? noopTelemetry
 
   return async function postSignupHook(
     user: PostSignupUser & Record<string, unknown>,
@@ -114,15 +108,13 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
       }
     }
 
-    // Acquisition event. distinctId = user id; no raw email (domain only).
-    safeCapture(getTelemetry(), {
+    // Acquisition event. distinctId = user id; no properties (the DB sink allowlists
+    // keys + accepts string|number only, so extra props would be silently dropped — and
+    // a raw email/referer would breach the no-PII contract). Segment in SQL via the
+    // users table if needed.
+    safeCapture(telemetry, {
       name: 'auth.signed_up',
       distinctId: user.id,
-      properties: {
-        email_domain: emailDomain(user.email),
-        via_invite: inviteAccepted,
-        referrer: readHeader(ctx, 'referer') ?? undefined,
-      },
     })
   }
 
