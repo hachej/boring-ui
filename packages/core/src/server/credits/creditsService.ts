@@ -34,16 +34,21 @@ export interface CreditsConfig {
   /** Days until the signup grant expires; null = never. */
   signupGrantExpiresAfterDays: number | null
   /**
-   * Per-run hold, in credit micros. This is the per-run overdraft bound: a run
-   * is admitted against this hold, but the actual charge is posted afterward, so
-   * a single run can overshoot the hold by (actualCost − hold). Set this to
-   * cover your worst-case single run (max tokens on the priciest enabled model)
-   * so the hard stop is effectively exact.
+   * Per-run hold, in credit micros. This is the per-run fallback-charge / usage
+   * budget: the actual charge is posted afterward, so a single run can overshoot
+   * the hold by (actualCost − hold).
    */
   runReservationMicros: number
   reservationTtlSeconds: number
-  /** Floor below which a run is refused. */
+  /** Floor kept available after placing the hold when runAdmissionMicros is unset. */
   minBalanceMicros: number
+  /**
+   * Available balance required before a run can start. Defaults to
+   * runReservationMicros + minBalanceMicros for the conservative no-debt posture.
+   * Apps may set this lower intentionally to let users spend down to a product
+   * threshold, accepting bounded recoverable debt for low-balance runs.
+   */
+  runAdmissionMicros?: number
   pricing: CreditPricingConfig
 }
 
@@ -152,6 +157,7 @@ export class CreditsService {
     if (!nonNegInt(config.signupGrantMicros)) throw new Error('credits: signupGrantMicros must be a non-negative safe integer')
     if (!posInt(config.runReservationMicros)) throw new Error('credits: runReservationMicros must be a positive safe integer')
     if (!nonNegInt(config.minBalanceMicros)) throw new Error('credits: minBalanceMicros must be a non-negative safe integer')
+    if (config.runAdmissionMicros !== undefined && !nonNegInt(config.runAdmissionMicros)) throw new Error('credits: runAdmissionMicros must be a non-negative safe integer')
     if (!posInt(config.reservationTtlSeconds)) throw new Error('credits: reservationTtlSeconds must be a positive safe integer')
     if (!Number.isSafeInteger(config.runReservationMicros + config.minBalanceMicros)) {
       throw new Error('credits: runReservationMicros + minBalanceMicros exceeds the safe integer range')
@@ -283,9 +289,10 @@ export class CreditsService {
         source: 'pi-chat',
         amountMicros: this.config.runReservationMicros,
         ttlSeconds: this.config.reservationTtlSeconds,
-        // Must keep minBalanceMicros available AFTER placing the hold, so a run
-        // is admitted only when available ≥ hold + floor (matches the config doc).
-        minAvailableMicros: this.config.runReservationMicros + this.config.minBalanceMicros,
+        // Conservative default is hold + floor; apps can explicitly lower this
+        // threshold with runAdmissionMicros to allow bounded-debt low-balance runs.
+        minAvailableMicros: this.config.runAdmissionMicros
+          ?? this.config.runReservationMicros + this.config.minBalanceMicros,
       })
       // Only on a NEW hold — reserve is idempotent (a retry for the same run returns the
       // existing reservation), so gating on `created` avoids inflating started counts.

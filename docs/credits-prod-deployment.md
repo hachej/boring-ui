@@ -33,11 +33,12 @@ items flagged "UNPROVEN" below. This is the punch list to take it live.
 ### Configured values (current policy)
 - **Signup grant**: `BORING_CREDITS_SIGNUP_GRANT_EUR=1` → 1 CHF free per signup.
 - **Per-run hold**: `BORING_CREDITS_MAX_CALLS_PER_RUN=1` → hold ≈ CHF 0.93 (worst case floors at
-  the conservative 3/15 rate × maxCalls × margin), so a 1 CHF signup can start a run. Default
-  (4) would hold CHF 3.72 and block the trial. Actual billing is the cheap Qwen rate, so normal
-  runs settle in cents; only a pathological long run overshoots into small bounded debt (next
-  run refused). NB: `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION` is **rejected in production**,
-  so lower the hold via maxCalls (not RESERVATION_EUR below the served worst case).
+  the conservative 3/15 rate × maxCalls × margin). The user-facing start threshold is separate:
+  `BORING_CREDITS_RUN_ADMISSION_EUR=0.1`, so a user with CHF 0.90 can still start a run. Default
+  maxCalls (4) would hold CHF 3.72. Actual billing is the cheap Qwen rate, so normal runs settle
+  in cents; only a pathological long run overshoots into bounded debt (next run refused). NB:
+  `BORING_CREDITS_ALLOW_UNSAFE_LOW_RESERVATION` is **rejected in production**, so lower the hold
+  via maxCalls (not RESERVATION_EUR below the served worst case).
 - **Margin**: `BORING_CREDITS_MARGIN=1.1` → 10% over raw provider cost.
 - **Rates** (`BORING_CREDITS_RATES`, raw provider CHF/MTok — margin applied on top):
   verified Infomaniak AI prices (excl. VAT, source: infomaniak.com/en/hosting/ai-services/prices):
@@ -76,9 +77,9 @@ trial into debt — the service rejects expiring grants for this reason).
       reserve/hold is proven but real token→credit pricing is not.
 - [ ] Tune the per-run hold: `BORING_CREDITS_RESERVATION_EUR` (or the derived served
       worst-case), `BORING_CREDITS_MAX_CONTEXT_TOKENS/_OUTPUT_TOKENS/_CALLS_PER_RUN`.
-- [ ] **Signup grant is 1 CHF** (`BORING_CREDITS_SIGNUP_GRANT_EUR=1`, hold lowered via
-      `BORING_CREDITS_MAX_CALLS_PER_RUN=1` so it's spendable) — new users get a free trial run;
-      the out-of-credits gate + Buy CTA fires once it's exhausted.
+- [ ] **Signup grant is 1 CHF** (`BORING_CREDITS_SIGNUP_GRANT_EUR=1`, with
+      `BORING_CREDITS_RUN_ADMISSION_EUR=0.1` so it remains spendable below the hold) — new users
+      get a free trial run; the out-of-credits gate + Buy CTA fires once it's exhausted.
 
 ## 3. App / infra
 - [ ] Run DB migrations on the prod DB (`pnpm --filter full-app run migrate`); the credits/
@@ -132,6 +133,7 @@ flyctl secrets set -a boring-full-app \
   BORING_CREDITS_ENABLED=1 \
   BORING_CREDITS_SIGNUP_GRANT_EUR=0 \
   BORING_CREDITS_MARGIN=1.1 \
+  BORING_CREDITS_RUN_ADMISSION_EUR=0.1 \
   BORING_CREDITS_RATES="Qwen3.5-122B=0.40:3.20;Kimi-K2=0.60:3.00;Apertus=0.70:2.50;Ministral=0.30:0.40;gemma-4=0.20:0.40;Nemotron=0.05:0.20;Mistral-Small=0.20:0.75" \
   BORING_CREDITS_STRIPE_SECRET_KEY="<vault: secret/shared/senecaapp/stripe live_sk>" \
   BORING_CREDITS_STRIPE_WEBHOOK_SECRET="<whsec from webhook we_1TidMg...>" \

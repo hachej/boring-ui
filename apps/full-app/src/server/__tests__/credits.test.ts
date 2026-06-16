@@ -126,8 +126,10 @@ describe('readCreditsConfig + assessReservationHold', () => {
     expect(config.lemonSqueezyCheckout).toBeUndefined()
   })
 
-  it('default signup grant admits a first run out of the box (grant >= hold + floor)', () => {
+  it('defaults run admission to €0.10 while sizing the starter grant with hold runway', () => {
     const config = readCreditsConfig({})
+    expect(config.minBalanceMicros).toBe(50_000)
+    expect(config.runAdmissionMicros).toBe(100_000)
     expect(config.signupGrantMicros).toBeGreaterThanOrEqual(config.runReservationMicros + config.minBalanceMicros)
   })
 
