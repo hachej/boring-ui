@@ -34,6 +34,35 @@ interface TomlAppConfig {
   }
 }
 
+function formatDisplayName(name: string): string {
+  const trimmed = name.trim().replace(/[<>]/g, '')
+  if (/^[A-Za-z0-9 ._-]+$/.test(trimmed)) return trimmed
+  return `"${trimmed.replace(/["\\]/g, '\\$&')}"`
+}
+
+function isDefaultBoringDisplayName(name: string): boolean {
+  return name.toLowerCase().replace(/[\s._-]+/g, '') === 'boringui'
+}
+
+function normalizeMailFrom(appName: string, rawFrom: string): string {
+  const from = rawFrom.trim()
+  const addressWithDisplay = from.match(/^(.*?)\s*<([^>]+)>$/)
+  if (addressWithDisplay) {
+    const displayName = addressWithDisplay[1].trim().replace(/^"(.*)"$/, '$1')
+    const address = addressWithDisplay[2].trim()
+    if (!displayName || isDefaultBoringDisplayName(displayName)) {
+      return `${formatDisplayName(appName)} <${address}>`
+    }
+    return from
+  }
+
+  if (/^[^\s@<>]+@[^\s@<>]+$/.test(from)) {
+    return `${formatDisplayName(appName)} <${from}>`
+  }
+
+  return from
+}
+
 function parseRateLimitOverrides(
   raw: string | undefined,
 ): Record<string, { max: number; window: string }> | undefined {
@@ -205,7 +234,19 @@ export async function loadConfig(
     },
   }
 
-  return validateConfig(raw)
+  const config = validateConfig(raw)
+  if (!config.auth.mail) return config
+
+  return {
+    ...config,
+    auth: {
+      ...config.auth,
+      mail: {
+        ...config.auth.mail,
+        from: normalizeMailFrom(config.appName, config.auth.mail.from),
+      },
+    },
+  }
 }
 
 export function validateConfig(raw: unknown): CoreConfig {
