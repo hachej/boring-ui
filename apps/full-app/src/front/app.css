@@ -127,12 +127,12 @@ body,
 
 .public-chat-first-shell [data-boring-agent-part="empty-state"] > p {
   display: block;
-  /* Match the subhead's own line gap (17px × 1.6 ≈ 10px) so the title → line 1
-     spacing equals the line 1 → line 2 spacing for an even rhythm. */
-  margin-top: 10px;
+  /* Let the subhead breathe: more space from the title and looser leading
+     between the two lines. */
+  margin-top: 18px;
   max-width: 58ch;
   font-size: 17px;
-  line-height: 1.6;
+  line-height: 1.85;
   /* Honor the explicit \n after "Choose the AI you trust." in the subhead. */
   white-space: pre-line;
 }
@@ -208,7 +208,7 @@ body,
   align-items: center;
   justify-content: center;
   gap: 8px;
-  margin-top: 22px;
+  margin-top: 30px;
   font-size: 12.5px;
   line-height: 1.4;
 }
