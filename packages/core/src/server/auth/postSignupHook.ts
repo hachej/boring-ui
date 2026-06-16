@@ -3,6 +3,7 @@ import type { CoreConfig } from '../../shared/types.js'
 import type { WorkspaceStore } from '../app/types.js'
 import type { MailTransport } from '../mail/transport.js'
 import { renderWelcome } from '../mail/templates/index.js'
+import { safeCapture, noopTelemetry, type TelemetrySink } from '../../shared/telemetry.js'
 
 export interface PostSignupUser {
   id: string
@@ -32,6 +33,14 @@ export interface PostSignupHookDeps {
   workspaceStore: WorkspaceStore
   transport: MailTransport | null
   logger?: { warn: (obj: Record<string, unknown>, msg: string) => void }
+  /** Lazy telemetry accessor (sink resolves after createAuth runs). */
+  getTelemetry?: () => TelemetrySink
+}
+
+/** Domain part of an email (no local part → no PII). 'a@b.com' → 'b.com'. */
+function emailDomain(email: string): string | undefined {
+  const at = email.lastIndexOf('@')
+  return at >= 0 && at < email.length - 1 ? email.slice(at + 1).toLowerCase() : undefined
 }
 
 function readHeader(ctx: PostSignupContext | null, name: string): string | null {
@@ -45,6 +54,7 @@ function readHeader(ctx: PostSignupContext | null, name: string): string | null 
 
 export function createPostSignupHook(deps: PostSignupHookDeps) {
   const { config, workspaceStore, transport, logger } = deps
+  const getTelemetry = deps.getTelemetry ?? (() => noopTelemetry)
 
   return async function postSignupHook(
     user: PostSignupUser & Record<string, unknown>,
@@ -103,6 +113,17 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
         )
       }
     }
+
+    // Acquisition event. distinctId = user id; no raw email (domain only).
+    safeCapture(getTelemetry(), {
+      name: 'auth.signed_up',
+      distinctId: user.id,
+      properties: {
+        email_domain: emailDomain(user.email),
+        via_invite: inviteAccepted,
+        referrer: readHeader(ctx, 'referer') ?? undefined,
+      },
+    })
   }
 
   async function tryAcceptInvite(

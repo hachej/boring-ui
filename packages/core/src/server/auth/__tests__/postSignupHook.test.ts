@@ -3,7 +3,10 @@ import Fastify from 'fastify'
 import type { FastifyInstance } from 'fastify'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
+import { randomUUID } from 'node:crypto'
 import { createAuth } from '../createAuth'
+import { createPostSignupHook } from '../postSignupHook'
+import type { TelemetryEvent } from '../../../shared/telemetry'
 import { authHook } from '../authHook'
 import { registerErrorHandler } from '../../app/errorHandler'
 import { runMigrations } from '../../db/migrate'
@@ -328,5 +331,31 @@ describe('post-signup hook — invite acceptance', () => {
     const failedCookie = cookies.find((c) => c.includes('boring_invite_failed'))
     expect(failedCookie).toBeDefined()
     expect(failedCookie).toContain('invite_already_accepted')
+  })
+})
+
+describe('post-signup hook — telemetry', () => {
+  // Fake workspace store so the unit test touches no DB; we only assert the event.
+  const fakeWorkspaceStore = { create: async () => {} } as unknown as PostgresWorkspaceStore
+
+  it('emits auth.signed_up with the email domain (never the raw email)', async () => {
+    const events: TelemetryEvent[] = []
+    const hook = createPostSignupHook({
+      config: makeConfig({ features: { ...makeConfig().features, sendWelcomeEmail: false } }),
+      workspaceStore: fakeWorkspaceStore,
+      transport: null,
+      getTelemetry: () => ({ capture: (e: TelemetryEvent) => { events.push(e) } }),
+    })
+
+    const userId = randomUUID()
+    await hook({ id: userId, email: 'analyst@acme-corp.test', name: 'Analyst' }, null)
+
+    const signup = events.find((e) => e.name === 'auth.signed_up')
+    expect(signup).toBeDefined()
+    expect(signup?.distinctId).toBe(userId)
+    expect(signup?.properties?.email_domain).toBe('acme-corp.test')
+    expect(signup?.properties?.via_invite).toBe(false)
+    // Privacy: the local-part / full email must never reach telemetry.
+    expect(JSON.stringify(events)).not.toContain('analyst@')
   })
 })

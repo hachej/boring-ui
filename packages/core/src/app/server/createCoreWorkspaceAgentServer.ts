@@ -33,7 +33,7 @@ import type { FastifyInstance } from 'fastify'
 import type postgres from 'postgres'
 import type { CoreConfig } from '../../shared/types.js'
 import { ERROR_CODES } from '../../shared/errors.js'
-import { safeCapture, type TelemetrySink } from '../../shared/telemetry.js'
+import { safeCapture, noopTelemetry, type TelemetrySink } from '../../shared/telemetry.js'
 import {
   authHook,
   createAuth,
@@ -109,6 +109,9 @@ export type CoreWorkspaceAgentServer = FastifyInstance & {
   db: Database
   userStore: UserStore
   workspaceStore: WorkspaceStore
+  /** Best-effort telemetry sink (DB-backed when BORING_TELEMETRY_ENABLED=true, else noop).
+   * Decorated so request handlers / hooks / the credit service can emit product events. */
+  telemetry: TelemetrySink
 }
 
 export type CoreWorkspaceAgentServerPlugin = WorkspaceServerPlugin & {
@@ -466,12 +469,22 @@ function captureAppOpened(telemetry: TelemetrySink, requestId: string): void {
 
 function registerTelemetryHooks(app: CoreWorkspaceAgentServer, telemetry: TelemetrySink): void {
   app.addHook('onResponse', async (request, reply) => {
-    if (reply.statusCode < 500) return
+    const status = reply.statusCode
+    // Rate-limited requests (429) are a distinct abuse/capacity signal. Keep only stable,
+    // non-path metadata (the URL/route is intentionally excluded — see the privacy test).
+    if (status === 429) {
+      safeCapture(telemetry, {
+        name: 'error.rate_limited',
+        properties: { requestId: request.id },
+      })
+      return
+    }
+    if (status < 500) return
     safeCapture(telemetry, {
       name: 'server.request.failed',
       properties: {
         requestId: request.id,
-        status: reply.statusCode,
+        status,
         errorCode: ERROR_CODES.INTERNAL_ERROR,
       },
     })
@@ -546,6 +559,9 @@ async function createCoreRuntime(config: CoreConfig): Promise<{
   const auth = createAuth(config, db, {
     workspaceStore,
     logger: app.log,
+    // Lazy: app.telemetry is decorated later in startup, before any request — the auth
+    // hooks (signup/signin) fire at request time, so they read the resolved sink.
+    getTelemetry: () => (app as CoreWorkspaceAgentServer).telemetry ?? noopTelemetry,
   })
 
   app.decorate('db', db)
@@ -611,6 +627,9 @@ export async function createCoreWorkspaceAgentServer(
       : 'noop-env'
   const telemetry = options.telemetry ?? createDatabaseTelemetryFromEnv(db, { appId: config.appId }, process.env)
   app.log.debug({ telemetry: { source: telemetrySource } }, 'resolved telemetry sink')
+  // Expose the resolved sink so request handlers, the auth hooks, and the credit
+  // service can emit product events through the same pipeline.
+  app.decorate('telemetry', telemetry)
 
   registerTelemetryHooks(app, telemetry)
 

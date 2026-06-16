@@ -16,6 +16,7 @@ import {
   renderMagicLink,
 } from '../mail/templates/index.js'
 import { createPostSignupHook } from './postSignupHook.js'
+import { safeCapture, noopTelemetry, type TelemetrySink } from '../../shared/telemetry.js'
 
 const MIN_ZXCVBN_SCORE = 2
 
@@ -58,10 +59,14 @@ function buildMailTransport(config: CoreConfig): MailTransport | null {
 export interface CreateAuthOptions {
   workspaceStore?: WorkspaceStore
   logger?: { warn: (obj: Record<string, unknown>, msg: string) => void }
+  /** Lazy accessor for the telemetry sink (resolved after createAuth runs, so it's a
+   * getter, not the sink itself). Used to emit auth.signed_up / auth.signed_in. */
+  getTelemetry?: () => TelemetrySink
 }
 
 export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOptions): Auth<any> {
   const transport = buildMailTransport(config)
+  const getTelemetry = opts?.getTelemetry ?? (() => noopTelemetry)
 
   const emailVerificationConfig = transport
     ? {
@@ -112,6 +117,7 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
         workspaceStore: opts.workspaceStore,
         transport,
         logger: opts.logger,
+        getTelemetry,
       })
     : undefined
 
@@ -140,15 +146,29 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
     baseURL: config.auth.url,
     basePath: '/auth',
     trustedOrigins: config.cors.origins,
-    databaseHooks: postSignupHook
-      ? {
-          user: {
-            create: {
-              after: postSignupHook as any,
+    databaseHooks: {
+      ...(postSignupHook
+        ? {
+            user: {
+              create: {
+                after: postSignupHook as any,
+              },
             },
+          }
+        : {}),
+      // Every new session (sign-in, and the session minted on sign-up) → auth.signed_in.
+      // distinctId is the user id; no PII in properties.
+      session: {
+        create: {
+          after: async (session: { userId?: string } & Record<string, unknown>) => {
+            safeCapture(getTelemetry(), {
+              name: 'auth.signed_in',
+              distinctId: typeof session?.userId === 'string' ? session.userId : undefined,
+            })
           },
-        }
-      : undefined,
+        },
+      },
+    },
     advanced: {
       database: {
         generateId: 'uuid',
