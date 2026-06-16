@@ -32,7 +32,7 @@ export interface PiConversationSurfaceProps {
   emptyState?: {
     eyebrow?: string
     title?: string
-    description?: string
+    description?: ReactNode
     footer?: ReactNode
   }
   suggestions: ChatSuggestion[]

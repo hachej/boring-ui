@@ -73,7 +73,7 @@ export interface ChatEmptyStateProps {
   /** Large headline. Editorial tone. */
   title?: string
   /** Single-paragraph description below the headline. */
-  description?: string
+  description?: ReactNode
   /**
    * Suggestion cards. Pass `[]` to hide the grid entirely (headline still
    * renders). Defaults to `defaultChatSuggestions`.

@@ -100,7 +100,7 @@ interface ComposerSendPayload {
 export interface ChatPanelEmptyState {
   eyebrow?: string
   title?: string
-  description?: string
+  description?: ReactNode
   /** Optional content rendered below the suggestion grid (e.g. a footer link). */
   footer?: ReactNode
 }

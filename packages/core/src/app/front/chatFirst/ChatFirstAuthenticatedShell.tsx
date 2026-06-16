@@ -48,7 +48,7 @@ export function ChatFirstAuthenticatedShell<
       {...workspaceProps}
       workspaceId={workspaceId}
       appTitle={appTitle}
-      topBarLeft={null}
+      topBarLeft={workspaceProps.topBarLeft ?? null}
       sessions={[]}
       activeSessionId={null}
       onSwitchSession={() => undefined}
