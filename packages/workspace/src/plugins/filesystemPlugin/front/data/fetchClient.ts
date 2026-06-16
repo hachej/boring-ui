@@ -157,20 +157,27 @@ export class FetchClient {
    * `FileConflictError` so the editor can ask the user to reload or
    * force-overwrite. The returned `mtimeMs` is the server's stat
    * after the write; callers use it as the OCC baseline for the
-   * next save.
+   * next save. Set `returnMtimeMs: false` only for writes that do
+   * not need a fresh OCC baseline (for example, creating an empty
+   * file before immediately opening/refetching it). That lets remote
+   * sandboxes skip an expensive post-write stat.
    */
   async writeFile(
     path: string,
     content: string,
-    opts?: { expectedMtimeMs?: number },
+    opts?: { expectedMtimeMs?: number; returnMtimeMs?: boolean },
   ): Promise<{ mtimeMs?: number }> {
     try {
+      const body: { path: string; content: string; expectedMtimeMs?: number; returnMtimeMs?: boolean } = {
+        path,
+        content,
+      }
+      if (opts?.expectedMtimeMs != null) body.expectedMtimeMs = opts.expectedMtimeMs
+      if (opts?.returnMtimeMs === false) body.returnMtimeMs = false
       const res = await this.request<{ ok: boolean; mtimeMs?: number }>(
         "POST",
         "/api/v1/files",
-        opts?.expectedMtimeMs != null
-          ? { path, content, expectedMtimeMs: opts.expectedMtimeMs }
-          : { path, content },
+        body,
       )
       return { mtimeMs: res.mtimeMs }
     } catch (err) {

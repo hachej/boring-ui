@@ -829,6 +829,7 @@ describe("FileTreePane", () => {
         expect(mockFileWrite).toHaveBeenCalledWith({
           path: "notes.md",
           content: "",
+          returnMtimeMs: false,
         }),
       )
     })
@@ -958,6 +959,7 @@ describe("FileTreePane", () => {
         expect(mockFileWrite).toHaveBeenCalledWith({
           path: "src/child.ts",
           content: "",
+          returnMtimeMs: false,
         }),
       )
     })
