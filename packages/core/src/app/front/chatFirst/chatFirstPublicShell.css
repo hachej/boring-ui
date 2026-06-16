@@ -1,0 +1,269 @@
+/*
+ * Default styling for the chat-first public (no-auth) shell rendered by
+ * `ChatFirstPublicShell`. Brand-agnostic and token-driven (`--accent`,
+ * `--foreground`, `--muted-foreground`) so every consumer — full-app and child
+ * apps alike — inherits a polished landing. Apps customize via design tokens +
+ * the `chatFirstPublicShell` props (copy, `models`, suggestions), not by
+ * re-implementing this sheet. Imported via the package's `styles.css` entry.
+ */
+
+/* Subtle warm glow behind the hero so the flat background reads with depth.
+   Layers as a background-image over the shell's bg-background color. */
+.public-chat-first-shell {
+  background-image: radial-gradient(
+    70% 52% at 30% 22%,
+    color-mix(in oklch, var(--accent) 11%, transparent),
+    transparent 68%
+  );
+}
+
+/* --- Hand-drawn teaching annotations (public no-auth shell) --- */
+.public-arrow {
+  pointer-events: none;
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  color: color-mix(in oklch, var(--foreground) 55%, transparent);
+}
+
+.public-arrow-svg {
+  overflow: visible;
+}
+
+.public-arrow .paw-stroke {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.public-arrow-label {
+  font-family: "Caveat", ui-rounded, "Segoe Print", cursive;
+  font-weight: 700;
+  font-size: 26px;
+  line-height: 1;
+  color: color-mix(in oklch, var(--foreground) 78%, transparent);
+  white-space: nowrap;
+}
+
+/* Right: points to the workspace surface button on the right edge. */
+.public-arrow-computer {
+  right: 12px;
+  bottom: 374px;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.public-arrow-computer .public-arrow-label {
+  margin-bottom: 6px;
+  transform: rotate(-5deg);
+}
+
+.public-arrow-computer .public-arrow-svg {
+  width: 178px;
+  height: 134px;
+}
+
+/* Bottom: points up to the composer (the agent input). */
+.public-arrow-agent {
+  left: 50%;
+  bottom: 78px;
+  flex-direction: column;
+  align-items: center;
+  transform: translateX(-50%);
+  gap: 2px;
+}
+
+.public-arrow-agent .public-arrow-svg {
+  width: 96px;
+  height: 92px;
+}
+
+.public-arrow-agent .public-arrow-label {
+  transform: rotate(-4deg);
+}
+
+/* Teaching arrows + bottom-left sign-in card are edge decorations that need
+   horizontal room — keep them on normal screens, hide only when genuinely
+   narrow (where they'd collide with the centered hero/composer). */
+@media (max-width: 1100px) {
+  .public-arrow,
+  .public-chat-first-shell > aside {
+    display: none;
+  }
+}
+
+/* The composer's model/thinking picker menu expands upward over the hero. It
+   lives deep in the chat content (a non-positioned ancestor), so a z-index
+   can't lift it above the fixed teaching arrow / sign-in card. Instead, while a
+   picker menu is open, hide the bottom "Ask your AI here" arrow and the sign-in
+   card so the menu reads cleanly; they return as soon as it closes. */
+.public-chat-first-shell:has([data-boring-agent-part="model-picker-menu"], [data-boring-agent-part="thinking-picker-menu"]) .public-arrow-agent,
+.public-chat-first-shell:has([data-boring-agent-part="model-picker-menu"], [data-boring-agent-part="thinking-picker-menu"]) > aside {
+  display: none;
+}
+
+/* Hide the chat-pane header strip ("New session") in the no-auth shell — there's
+   only ever a single pane here, so its title/drag/close bar is pure noise. */
+.public-chat-first-shell .dv-chat-stage .dv-tabs-and-actions-container {
+  display: none;
+}
+
+/* Keep opened workspace panes above the teaching arrows. */
+.public-chat-first-shell [data-boring-workspace-part="workbench"] {
+  z-index: 30;
+}
+
+/* --- Prominent hero (public no-auth empty state only) --- */
+.public-chat-first-shell [data-boring-agent-part="empty-state"] {
+  max-width: min(1120px, 92vw);
+}
+
+.public-chat-first-shell [data-boring-agent-part="empty-state"] > div:first-child {
+  font-size: 12px;
+  letter-spacing: 0.18em;
+}
+
+.public-chat-first-shell [data-boring-agent-part="empty-state"] h3 {
+  margin-top: 22px;
+  font-size: clamp(30px, 4.4vw, 60px);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  white-space: nowrap;
+}
+
+/* Editorial accent on the closing period (the title string omits its own). */
+.public-chat-first-shell [data-boring-agent-part="empty-state"] h3::after {
+  content: ".";
+  color: var(--accent);
+}
+
+.public-chat-first-shell [data-boring-agent-part="empty-state"] > p {
+  display: block;
+  /* Let the subhead breathe: more space from the title and looser leading
+     between the two lines. */
+  margin-top: 18px;
+  max-width: 58ch;
+  font-size: 17px;
+  line-height: 1.85;
+  /* Honor the explicit \n after "Choose the AI you trust." in the subhead. */
+  white-space: pre-line;
+}
+
+@media (max-width: 560px) {
+  .public-chat-first-shell [data-boring-agent-part="empty-state"] h3 {
+    white-space: normal;
+  }
+}
+
+/* Top-bias the hero + composer group instead of vertically centering it, so it
+   doesn't float to mid-screen (with a large empty band on top) on tall windows. */
+.public-chat-first-shell [class*="justify-center"]:has([data-boring-agent-part="empty-state"]) {
+  justify-content: flex-start;
+  padding-top: clamp(28px, 9vh, 132px);
+}
+
+/* Move the /command cards to the bottom of the hero block (after the footer),
+   so they sit directly above the composer. The empty-state is a flex column,
+   so `order` reorders without touching the React tree. */
+.public-chat-first-shell [data-boring-agent-part="empty-state"] .public-hero-foot {
+  order: 10;
+}
+.public-chat-first-shell [data-boring-agent-part="empty-state"] [data-boring-agent-part="suggestion-grid"] {
+  order: 20;
+}
+
+/* Command launcher cards — make the slash commands read as runnable. */
+.public-chat-first-shell [data-boring-agent-part="suggestion-grid"] {
+  margin-top: 28px;
+  max-width: 560px;
+  margin-left: auto;
+  margin-right: auto;
+  /* Match the composer's rounding + 1px outline so cards + input read as one
+     design system (composer rail is rounded-[28px] with a border/0.7 outline). */
+  border-radius: 20px;
+}
+
+/* Accent send button — make the composer's primary action carry the accent so
+   the orange reads as intentional, not just decoration on the slash cards.
+   Scoped to the public hero; the shared composer elsewhere stays neutral. */
+.public-chat-first-shell [data-boring-agent-part="composer-submit"] {
+  background-color: var(--accent);
+}
+
+.public-chat-first-shell [data-boring-agent-part="composer-submit"]:hover {
+  background-color: color-mix(in oklch, var(--accent) 90%, var(--foreground));
+}
+
+.public-chat-first-shell [data-boring-agent-part="suggestion-card"] {
+  padding-top: 15px;
+  padding-bottom: 15px;
+}
+
+.public-chat-first-shell [data-boring-agent-part="suggestion-card"] > span > span:first-child {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--accent);
+}
+
+.public-chat-first-shell [data-boring-agent-part="suggestion-card"] > span > span:nth-child(2) {
+  margin-top: 2px;
+  font-size: 12.5px;
+}
+
+/* Single compact footer line: "providers … · Open source [logo]". */
+.public-chat-first-shell .public-hero-foot {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 30px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.public-chat-first-shell .public-hero-foot span {
+  color: var(--muted-foreground);
+}
+
+.public-chat-first-shell .public-hero-foot .public-hero-providers {
+  color: color-mix(in oklch, var(--foreground) 60%, transparent);
+  letter-spacing: 0.01em;
+}
+
+.public-chat-first-shell .public-hero-foot .public-hero-dot {
+  color: var(--muted-foreground);
+  opacity: 0.5;
+}
+
+.public-chat-first-shell .public-hero-foot .public-hero-github {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--foreground);
+  font-weight: 500;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.public-chat-first-shell .public-hero-foot .public-hero-github svg {
+  width: 15px;
+  height: 15px;
+}
+
+.public-chat-first-shell .public-hero-foot .public-hero-github:hover {
+  color: var(--accent);
+}
+
+/* Emphasize the trusted choice in the subhead without it reading as a link. */
+.public-chat-first-shell [data-boring-agent-part="empty-state"] > p .public-hero-trust {
+  font-style: normal;
+  font-weight: 600;
+  color: color-mix(in oklch, var(--foreground) 88%, transparent);
+}
