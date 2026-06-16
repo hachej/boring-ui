@@ -16,7 +16,7 @@ import { Menu, Search, X } from "lucide-react"
 import { IconButton, Input } from "@hachej/boring-ui-kit"
 import { ControlTooltip } from "../../components/ControlTooltip"
 import { cn } from "../../lib/utils"
-import type { WorkspaceBridge } from "../../bridge/types"
+import type { FileTreeBridge } from "../../bridge/types"
 import { useRegistry } from "../../registry"
 import type { PaneProps, PanelConfig } from "../../registry/types"
 import type { LeftTabParams } from "../../../shared/plugins/types"
@@ -35,7 +35,7 @@ export interface WorkbenchLeftPaneOpenPanelConfig {
 
 export interface WorkbenchLeftPaneProps {
   rootDir?: string
-  bridge?: WorkspaceBridge
+  bridge?: FileTreeBridge
   defaultTab?: WorkbenchLeftTabId
   revealFileTreeRequest?: { path: string; seq: number } | null
   onOpenPanel?: (config: WorkbenchLeftPaneOpenPanelConfig) => void

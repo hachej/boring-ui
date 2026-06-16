@@ -31,6 +31,13 @@ export interface DispatchContext {
   openWorkbenchSources?: () => void
   /** Close the workbench pane when a command opened it only for an ephemeral task. */
   closeWorkbench?: () => void
+  /**
+   * Park an op that couldn't run because the surface never mounted within the
+   * retry budget (collapsed surface / warmup overlay). The host flushes parked
+   * ops when the SurfaceShell next becomes ready. Without this the op is
+   * silently dropped.
+   */
+  enqueue?: (run: (surface: SurfaceShellApi) => void) => void
 }
 
 const KNOWN_KINDS = new Set([
@@ -83,7 +90,14 @@ function runWhenSurfaceReady(
     run(surface)
     return
   }
-  if (!ctx.isWorkbenchOpen() || attempts <= 0) return
+  if (!ctx.isWorkbenchOpen()) return
+  if (attempts <= 0) {
+    // Out of retry budget but the workbench is open and just hasn't mounted
+    // its SurfaceShell yet (collapsed / warming up). Park the op so it replays
+    // on surface ready instead of being silently dropped.
+    ctx.enqueue?.(run)
+    return
+  }
   requestAnimationFrame(() => runWhenSurfaceReady(ctx, run, attempts - 1))
 }
 

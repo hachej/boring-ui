@@ -149,7 +149,7 @@ describe("ChatPanelHost", () => {
     render(
       <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
         <Blocker sessionId="s1" />
-        <ChatPanelHost sessionId="s1" getSurface={() => surface} isWorkbenchOpen={() => true} openWorkbench={vi.fn()} />
+        <ChatPanelHost sessionId="s1" surfaceDispatch={{ surface: () => surface, isWorkbenchOpen: () => true, openWorkbench: vi.fn() }} />
       </WorkspaceProvider>,
     )
     fireEvent.click(screen.getByRole("button", { name: "open blocker" }))
@@ -181,9 +181,7 @@ describe("ChatPanelHost", () => {
           <ChatPanelHost
             sessionId="s1"
             onOpenArtifact={onOpenArtifact}
-            getSurface={() => surface}
-            isWorkbenchOpen={() => false}
-            openWorkbench={() => setSurfaceOpen(true)}
+            surfaceDispatch={{ surface: () => surface, isWorkbenchOpen: () => false, openWorkbench: () => setSurfaceOpen(true) }}
           />
         </WorkspaceProvider>,
       )

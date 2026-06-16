@@ -32,7 +32,7 @@ import {
   parentDir,
   type DraftEditing,
 } from "./treeModel"
-import type { WorkspaceBridge } from "../../../../front/bridge/types"
+import type { FileTreeBridge } from "../../../../front/bridge/types"
 import { PanelChrome } from "../../../../front/dock"
 import {
   DEFAULT_TREE_IGNORE,
@@ -107,7 +107,7 @@ export interface FileTreeViewProps {
   rootDir?: string
   /** Already-debounced query. Empty/undefined means no filter. */
   searchQuery?: string
-  bridge?: Pick<WorkspaceBridge, "openFile" | "getActiveFile" | "select"> & Partial<Pick<WorkspaceBridge, "subscribe">>
+  bridge?: FileTreeBridge
   revealFileTreeRequest?: { path: string; seq: number } | null
   /**
    * Names (or regex patterns) to hide from the tree. Defaults to
@@ -939,7 +939,7 @@ export interface FileTreePaneProps extends Partial<PaneProps<FileTreePaneParams>
   rootDir?: string
   searchQuery?: string
   panelApi?: DockviewPanelApi
-  bridge?: WorkspaceBridge
+  bridge?: FileTreeBridge
   chromeless?: boolean
   className?: string
 }
@@ -960,7 +960,7 @@ export function FileTreePane({
   className,
 }: FileTreePaneProps) {
   const effectiveRootDir = params?.rootDir ?? rootDir
-  const effectiveBridge = (params?.bridge as WorkspaceBridge | undefined) ?? bridge
+  const effectiveBridge = (params?.bridge as FileTreeBridge | undefined) ?? bridge
   const effectiveChromeless = params?.chromeless ?? chromeless
   const effectiveRevealRequest = params?.revealFileTreeRequest ?? null
   const externalSearchQuery =

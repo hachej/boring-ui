@@ -10,6 +10,7 @@ export type { DispatchContext } from "./uiCommandDispatcher"
 export type { UiCommand } from "./types"
 export type {
   WorkspaceBridge,
+  FileTreeBridge,
   BridgeEventMap,
   CommandResult,
   DynamicPaneConfig,
