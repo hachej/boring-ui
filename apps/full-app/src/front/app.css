@@ -83,14 +83,24 @@ body,
   transform: rotate(-4deg);
 }
 
-/* Cramped viewports: the (tall) model-picker menu and composer collide with the
-   fixed teaching arrows and the bottom-left sign-in card. Drop those decorations
-   on small/short screens — the top-right "Sign in" button still opens auth. */
-@media (max-width: 1366px), (max-height: 960px) {
+/* Teaching arrows + bottom-left sign-in card are edge decorations that need
+   horizontal room — keep them on normal screens, hide only when genuinely
+   narrow (where they'd collide with the centered hero/composer). */
+@media (max-width: 1100px) {
   .public-arrow,
   .public-chat-first-shell > aside {
     display: none;
   }
+}
+
+/* The composer's model/thinking picker menu expands upward over the hero. It
+   lives deep in the chat content (a non-positioned ancestor), so a z-index
+   can't lift it above the fixed teaching arrow / sign-in card. Instead, while a
+   picker menu is open, hide the bottom "Ask your AI here" arrow and the sign-in
+   card so the menu reads cleanly; they return as soon as it closes. */
+.public-chat-first-shell:has([data-boring-agent-part="model-picker-menu"], [data-boring-agent-part="thinking-picker-menu"]) .public-arrow-agent,
+.public-chat-first-shell:has([data-boring-agent-part="model-picker-menu"], [data-boring-agent-part="thinking-picker-menu"]) > aside {
+  display: none;
 }
 
 /* Hide the chat-pane header strip ("New session") in the no-auth shell — there's
