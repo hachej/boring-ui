@@ -3,9 +3,7 @@ import Fastify from 'fastify'
 import type { FastifyInstance } from 'fastify'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
-import { randomUUID } from 'node:crypto'
 import { createAuth } from '../createAuth'
-import { createPostSignupHook } from '../postSignupHook'
 import type { TelemetryEvent } from '../../../shared/telemetry'
 import { authHook } from '../authHook'
 import { registerErrorHandler } from '../../app/errorHandler'
@@ -70,11 +68,12 @@ afterAll(async () => {
   await rawSql.end()
 })
 
-function buildApp(config: CoreConfig) {
+function buildApp(config: CoreConfig, telemetry?: { capture: (e: TelemetryEvent) => void }) {
   const db = drizzle(rawSql)
   const auth = createAuth(config, db, {
     workspaceStore,
     logger: { warn: () => {} },
+    telemetry,
   })
 
   const app = Fastify({ logger: false })
@@ -334,27 +333,32 @@ describe('post-signup hook — invite acceptance', () => {
   })
 })
 
-describe('post-signup hook — telemetry', () => {
-  // Fake workspace store so the unit test touches no DB; we only assert the event.
-  const fakeWorkspaceStore = { create: async () => {} } as unknown as PostgresWorkspaceStore
+describe('auth telemetry', () => {
+  let app: FastifyInstance
+  const events: TelemetryEvent[] = []
 
-  it('emits auth.signed_up keyed by user id, with no PII', async () => {
-    const events: TelemetryEvent[] = []
-    const hook = createPostSignupHook({
-      config: makeConfig({ features: { ...makeConfig().features, sendWelcomeEmail: false } }),
-      workspaceStore: fakeWorkspaceStore,
-      transport: null,
-      telemetry: { capture: (e: TelemetryEvent) => { events.push(e) } },
+  beforeAll(async () => {
+    const built = buildApp(makeConfig(), { capture: (e) => { events.push(e) } })
+    app = built.app
+    await app.ready()
+  })
+  afterAll(async () => { await app.close() })
+
+  it('emits auth.signed_up (and auth.session_started) on signup — user id only, no PII', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/sign-up/email',
+      payload: { name: 'Telemetry User', email: 'telemetry@post-signup-test.dev', password: 'Zk8$mN!qR2xFgWpJ' },
     })
-
-    const userId = randomUUID()
-    await hook({ id: userId, email: 'analyst@acme-corp.test', name: 'Analyst' }, null)
+    expect(res.statusCode).toBe(200)
+    const userId = JSON.parse(res.body)?.user?.id
 
     const signup = events.find((e) => e.name === 'auth.signed_up')
-    expect(signup).toBeDefined()
     expect(signup?.distinctId).toBe(userId)
-    // No raw email (or any of it) must reach telemetry.
-    expect(JSON.stringify(events)).not.toContain('analyst@')
-    expect(JSON.stringify(events)).not.toContain('acme-corp')
+    // The sign-up also mints a session.
+    expect(events.some((e) => e.name === 'auth.session_started' && e.distinctId === userId)).toBe(true)
+    // No raw email anywhere in the telemetry.
+    expect(JSON.stringify(events)).not.toContain('telemetry@')
+    expect(signup?.properties).toBeUndefined()
   })
 })

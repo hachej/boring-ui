@@ -3,7 +3,6 @@ import type { CoreConfig } from '../../shared/types.js'
 import type { WorkspaceStore } from '../app/types.js'
 import type { MailTransport } from '../mail/transport.js'
 import { renderWelcome } from '../mail/templates/index.js'
-import { safeCapture, noopTelemetry, type TelemetrySink } from '../../shared/telemetry.js'
 
 export interface PostSignupUser {
   id: string
@@ -33,8 +32,6 @@ export interface PostSignupHookDeps {
   workspaceStore: WorkspaceStore
   transport: MailTransport | null
   logger?: { warn: (obj: Record<string, unknown>, msg: string) => void }
-  /** Telemetry sink for auth.signed_up (defaults to noop). */
-  telemetry?: TelemetrySink
 }
 
 function readHeader(ctx: PostSignupContext | null, name: string): string | null {
@@ -48,7 +45,6 @@ function readHeader(ctx: PostSignupContext | null, name: string): string | null 
 
 export function createPostSignupHook(deps: PostSignupHookDeps) {
   const { config, workspaceStore, transport, logger } = deps
-  const telemetry = deps.telemetry ?? noopTelemetry
 
   return async function postSignupHook(
     user: PostSignupUser & Record<string, unknown>,
@@ -107,15 +103,6 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
         )
       }
     }
-
-    // Acquisition event. distinctId = user id; no properties (the DB sink allowlists
-    // keys + accepts string|number only, so extra props would be silently dropped — and
-    // a raw email/referer would breach the no-PII contract). Segment in SQL via the
-    // users table if needed.
-    safeCapture(telemetry, {
-      name: 'auth.signed_up',
-      distinctId: user.id,
-    })
   }
 
   async function tryAcceptInvite(

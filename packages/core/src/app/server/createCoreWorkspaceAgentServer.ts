@@ -109,9 +109,6 @@ export type CoreWorkspaceAgentServer = FastifyInstance & {
   db: Database
   userStore: UserStore
   workspaceStore: WorkspaceStore
-  /** Best-effort telemetry sink (DB-backed when BORING_TELEMETRY_ENABLED=true, else noop).
-   * Decorated so request handlers / hooks / the credit service can emit product events. */
-  telemetry: TelemetrySink
 }
 
 export type CoreWorkspaceAgentServerPlugin = WorkspaceServerPlugin & {
@@ -470,11 +467,12 @@ function captureAppOpened(telemetry: TelemetrySink, requestId: string): void {
 function registerTelemetryHooks(app: CoreWorkspaceAgentServer, telemetry: TelemetrySink): void {
   app.addHook('onResponse', async (request, reply) => {
     const status = reply.statusCode
-    // Rate-limited requests (429) are a distinct abuse/capacity signal. Keep only stable,
-    // non-path metadata (the URL/route is intentionally excluded — see the privacy test).
+    // Rate-limited requests (429) are a distinct abuse/capacity signal. Same namespace as
+    // server.request.failed; only stable, non-path metadata (URL/route excluded — see the
+    // privacy test).
     if (status === 429) {
       safeCapture(telemetry, {
-        name: 'error.rate_limited',
+        name: 'server.request.rate_limited',
         properties: { requestId: request.id },
       })
       return
@@ -571,8 +569,6 @@ async function createCoreRuntime(config: CoreConfig, customTelemetry?: Telemetry
   app.decorate('auth', auth)
   app.decorate('userStore', userStore)
   app.decorate('workspaceStore', workspaceStore)
-  // Decorated for request hooks and (later) the credit service to emit product events.
-  app.decorate('telemetry', telemetry)
 
   app.addHook('onClose', async () => {
     await sql.end()
