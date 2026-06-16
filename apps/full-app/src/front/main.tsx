@@ -13,9 +13,7 @@ import {
 import { UserSettingsPage } from '@hachej/boring-core/front'
 import '@hachej/boring-core/app/front/styles.css'
 import './app.css'
-import { publicLaunchPlugin } from './PublicLaunchPages'
-
-const PRODUCT_NAME = 'Seneca AI'
+import { PublicHeroDescription, publicLaunchPlugin } from './PublicLaunchPages'
 
 // Show the Buy-credits button when the server has Lemon Squeezy checkout wired
 // (set this alongside the server-side LS env). The checkout itself is created
@@ -84,21 +82,15 @@ createRoot(document.getElementById('root')!).render(
       apiBaseUrl=""
       apiTimeout={10_000}
       persistenceEnabled
-      appTitle={PRODUCT_NAME}
       chatEntryMode="chat-first"
       publicPaths={[]}
       chatFirstPublicShell={{
         showTeachingArrows: true,
         composerPlaceholder: 'Sign in to chat with the agent — or type a command like /landing-page',
         emptyState: {
-          eyebrow: 'Seneca AI',
+          eyebrow: 'Private AI workspace',
           title: 'One workspace. Any AI provider',
-          description: (
-            <>
-              Choose the AI you <em className="public-hero-trust">trust</em>.<br />
-              Seneca gives it a private remote computer where it can read files, run tasks, make changes, and show you the work for review.
-            </>
-          ),
+          description: <PublicHeroDescription />,
           footer: (
             <div className="public-hero-foot">
               <span className="public-hero-providers">Supports local models, European-hosted providers, and frontier AI labs</span>
