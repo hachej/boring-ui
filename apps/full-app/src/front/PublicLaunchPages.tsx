@@ -75,9 +75,9 @@ const landingPageHtml = `<!doctype html>
 
   <div class="wrap">
     <section class="hero">
-      <p class="kicker">Open source · Private · Model-agnostic</p>
-      <h1>An AI workspace you <em>own</em>.</h1>
-      <p class="lead">Seneca is the open-source alternative to Claude Desktop and Codex App: a private workspace where an agent reads your files, runs your tools, and builds real things. Run it on local models, open models hosted in Europe, or US frontier models — you choose the model, and where your data lives.</p>
+      <p class="kicker">Open source · Private · Works with any model</p>
+      <h1>One workspace. <em>Any AI provider</em>.</h1>
+      <p class="lead">Seneca gives the AI of your choice a private remote computer to do real work for you: read files, run tasks, make changes, and show you what changed.<br /><br />Don’t let one provider own your workflow. Seneca is open source and model-agnostic. Use local models, European-hosted models, or frontier labs — and switch whenever you need.</p>
       <div class="actions">
         <a class="btn primary" href="${githubUrl}" target="_blank" rel="noreferrer">
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 1.3a10.7 10.7 0 0 0-3.38 20.86c.53.1.73-.23.73-.51v-1.8c-2.97.65-3.6-1.43-3.6-1.43-.49-1.24-1.19-1.57-1.19-1.57-.97-.66.08-.65.08-.65 1.07.08 1.64 1.1 1.64 1.1.95 1.64 2.5 1.17 3.11.89.1-.69.37-1.17.68-1.44-2.37-.27-4.86-1.19-4.86-5.27 0-1.16.42-2.12 1.1-2.86-.11-.27-.48-1.35.1-2.82 0 0 .9-.29 2.95 1.1a10.2 10.2 0 0 1 5.36 0c2.04-1.39 2.94-1.1 2.94-1.1.59 1.47.22 2.55.11 2.82.69.74 1.1 1.7 1.1 2.86 0 4.09-2.49 4.99-4.87 5.26.38.33.72.98.72 1.98v2.93c0 .29.2.62.74.51A10.7 10.7 0 0 0 12 1.3"/></svg>

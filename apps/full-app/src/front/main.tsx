@@ -92,9 +92,9 @@ createRoot(document.getElementById('root')!).render(
         composerPlaceholder: 'Sign in to chat with the agent — or type a command like /landing-page',
         emptyState: {
           eyebrow: 'Seneca AI · Live demo',
-          title: 'An AI workspace you own',
+          title: 'One workspace. Any AI provider.',
           description:
-            'A real, open-source workspace where the agent reads your files, runs your tools, and opens the results as tabs you can inspect.',
+            'Seneca gives the AI of your choice a private remote computer to do real work for you: read files, run tasks, make changes, and show you what changed.',
           footer: (
             <div className="public-hero-foot">
               <span>Sign in to test the chat.</span>
