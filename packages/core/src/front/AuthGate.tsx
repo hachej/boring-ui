@@ -6,6 +6,15 @@ import { routes } from './utils.js'
 
 const DEFAULT_GRACE_MS = 30_000
 const UNSAFE_REDIRECT_RE = /[\0\r\n<>"'`]/
+const UNVERIFIED_ALLOWED_PATHS = new Set<string>([
+  routes.signup,
+  routes.forgotPassword,
+  routes.resetPassword,
+  routes.verifyEmail,
+  routes.authError,
+  routes.callbackGithub,
+  routes.callbackGoogle,
+])
 
 export interface AuthGateLocation {
   pathname: string
@@ -20,6 +29,7 @@ export interface AuthGateProps {
   location?: AuthGateLocation
   navigate?: (to: string, options?: { replace?: boolean }) => void
   now?: () => number
+  requireEmailVerification?: boolean
 }
 
 function normalizePath(pathname: string): string {
@@ -92,6 +102,7 @@ export function AuthGate({
   location,
   navigate,
   now,
+  requireEmailVerification = false,
 }: AuthGateProps) {
   const session = useSession()
   const nullSinceRef = useRef<number | null>(null)
@@ -104,6 +115,7 @@ export function AuthGate({
     () => publicPaths.map(normalizePublicPath),
     [publicPaths],
   )
+  const isEmailVerified = session.data?.user?.emailVerified ?? false
 
   useEffect(() => {
     return () => {
@@ -124,6 +136,16 @@ export function AuthGate({
 
     if (session.data) {
       nullSinceRef.current = null
+
+      // Better-auth signs users in immediately after signup. When email verification
+      // is available, keep unverified signed-in users in the verification flow
+      // instead of letting the fresh session through to the workspace.
+      if (requireEmailVerification && !isEmailVerified) {
+        if (!UNVERIFIED_ALLOWED_PATHS.has(pathname)) {
+          goTo(routes.verifyEmail, { replace: true })
+          return
+        }
+      }
 
       if (pathname === routes.signin) {
         const destination = readSafeRedirect(currentLocation.search) ?? '/'
@@ -160,7 +182,7 @@ export function AuthGate({
       goTo(`${routes.signin}?redirect=${encodeURIComponent(currentPath)}`, { replace: true })
     }, remainingMs)
     redirectTimerRef.current.unref?.()
-  }, [currentLocation, goTo, graceMs, normalizedPublicPaths, readNow, session.data, session.isPending])
+  }, [currentLocation, goTo, graceMs, isEmailVerified, normalizedPublicPaths, readNow, requireEmailVerification, session.data, session.isPending])
 
   const pathname = normalizePath(currentLocation.pathname)
   if (session.isPending && !isPublicPath(pathname, normalizedPublicPaths)) return null

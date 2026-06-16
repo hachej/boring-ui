@@ -190,6 +190,7 @@ export interface RuntimeConfig {
     googleOauth: boolean
     invitesEnabled: boolean
     sendWelcomeEmail: boolean
+    emailVerification: boolean
   }
 }
 
