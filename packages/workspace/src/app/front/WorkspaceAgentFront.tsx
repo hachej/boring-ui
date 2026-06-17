@@ -433,7 +433,7 @@ export function WorkspaceAgentFront<
   onCreateSession,
   onDeleteSession,
   onActiveSessionIdChange,
-  appTitle = "Sovereign Workspace",
+  appTitle = "Boring UI",
   workspaceLabel,
   defaultSessionTitle = "New session",
   navEnabled = true,

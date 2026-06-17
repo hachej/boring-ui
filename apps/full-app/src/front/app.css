@@ -9,7 +9,7 @@ body,
 /* NOTE: the chat-first public no-auth shell styling (hero, teaching arrows,
    sign-in card, suggestion grid, footer) now ships from the core package
    (`@hachej/boring-core/app/front/styles.css` → chatFirst/chatFirstPublicShell.css)
-   so every consumer inherits it. Only Seneca-specific PublicLaunchPages tab
+   so every consumer inherits it. Only full-app-specific PublicLaunchPages tab
    styling remains below. */
 
 .public-pages-pane {

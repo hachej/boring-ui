@@ -40,7 +40,19 @@ vi.mock('../../../front/index.js', () => ({
   ThemeToggle: () => <div>Theme toggle</div>,
   WorkspaceSwitcher: () => <div>Switcher</div>,
   routes: { signin: '/auth/signin', forgotPassword: '/auth/forgot-password', verifyEmail: '/auth/verify-email' },
-  useConfig: () => ({ features: { emailVerification: false } }),
+  useConfig: () => ({
+    appId: 'test-app',
+    appName: 'Test Workspace',
+    appLogo: null,
+    apiBase: '/api/v1',
+    features: {
+      githubOauth: false,
+      googleOauth: false,
+      invitesEnabled: true,
+      sendWelcomeEmail: false,
+      emailVerification: false,
+    },
+  }),
   useCurrentWorkspace: () => currentWorkspaceId ? ({ id: currentWorkspaceId, name: 'Workspace A' }) : null,
   useSession: () => unstableSessionObject && sessionState.data
     ? { data: { user: { ...sessionState.data.user } }, isPending: sessionState.isPending }
@@ -94,6 +106,7 @@ describe('CoreWorkspaceAgentFront', () => {
     )
 
     expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
+    expect(workspaceAgentProps?.appTitle).toBe('Test Workspace')
     expect(workspaceAgentProps).toMatchObject({
       workspaceId: 'workspace-a',
       workspaceLabel: 'Workspace A',
@@ -107,6 +120,15 @@ describe('CoreWorkspaceAgentFront', () => {
       },
       bootPreloadPaths: ['/custom-preload'],
     })
+  })
+
+  it('allows apps to suppress the default workspace switcher', async () => {
+    const { CoreWorkspaceAgentFront } = await importSubject()
+
+    render(<CoreWorkspaceAgentFront topBarLeft={null} />)
+
+    expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
+    expect(workspaceAgentProps?.topBarLeft).toBeNull()
   })
 
   it('keeps identity loading/mismatch as the only transition blocker', async () => {
