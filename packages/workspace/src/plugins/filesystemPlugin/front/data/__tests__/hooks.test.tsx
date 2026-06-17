@@ -12,6 +12,7 @@ import {
   useMoveFile,
   useDeleteFile,
 } from "../hooks"
+import { FetchError } from "../fetchClient"
 import { events } from "../../../../../front/events"
 import { filesystemEvents } from "../../../shared/events"
 
@@ -45,6 +46,7 @@ beforeEach(() => {
   queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
+  events._reset()
   mockClient = {
     getFile: vi.fn(),
     getTree: vi.fn(),
@@ -81,6 +83,60 @@ describe("useFileContent", () => {
     await waitFor(() => expect(r2.current.isSuccess).toBe(true))
     expect(r1.current.data?.content).toBe("a")
     expect(r2.current.data?.content).toBe("b")
+  })
+
+  it("creates and returns missing file content when createIfMissing is provided", async () => {
+    const created = vi.fn()
+    events.on(filesystemEvents.created, created)
+    mockClient.getFile.mockRejectedValueOnce(new FetchError(404, "not found"))
+    mockClient.writeFile.mockResolvedValue({ mtimeMs: 2000 })
+
+    const { result } = renderHook(
+      () => useFileContent("/deck/new.md", { createIfMissing: "# Default\n" }),
+      { wrapper },
+    )
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(mockClient.writeFile).toHaveBeenCalledWith("/deck/new.md", "# Default\n")
+    expect(result.current.data).toEqual({ content: "# Default\n", mtimeMs: 2000 })
+    expect(created).toHaveBeenCalledWith(expect.objectContaining({ path: "/deck/new.md", kind: "file" }))
+  })
+
+  it("allows empty createIfMissing content", async () => {
+    mockClient.getFile.mockRejectedValueOnce(new FetchError(404, "not found"))
+    mockClient.writeFile.mockResolvedValue({ mtimeMs: 2001 })
+
+    const { result } = renderHook(
+      () => useFileContent("/empty.md", { createIfMissing: "" }),
+      { wrapper },
+    )
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(mockClient.writeFile).toHaveBeenCalledWith("/empty.md", "")
+    expect(result.current.data).toEqual({ content: "", mtimeMs: 2001 })
+  })
+
+  it("does not create missing files unless createIfMissing is provided", async () => {
+    mockClient.getFile.mockRejectedValue(new FetchError(404, "not found"))
+
+    const { result } = renderHook(() => useFileContent("/deck/new.md"), { wrapper })
+
+    await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(mockClient.writeFile).not.toHaveBeenCalled()
+  })
+
+  it("surfaces create failures instead of leaving the stale 404 as the error", async () => {
+    const createError = new Error("permission denied")
+    mockClient.getFile.mockRejectedValueOnce(new FetchError(404, "not found"))
+    mockClient.writeFile.mockRejectedValue(createError)
+
+    const { result } = renderHook(
+      () => useFileContent("/deck/new.md", { createIfMissing: "# Default\n" }),
+      { wrapper },
+    )
+
+    await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(result.current.error).toBe(createError)
   })
 })
 
