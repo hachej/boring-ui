@@ -97,15 +97,21 @@ function SettingsTopBar() {
       aria-label="App top bar"
     >
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
-        <div
-          aria-hidden="true"
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
+        <a
+          href="/"
+          aria-label={`${appTitle} home`}
+          className="flex min-w-0 items-center gap-2.5 rounded-md outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {appInitial}
-        </div>
-        <span className="truncate text-[13px] font-medium tracking-tight text-foreground">
-          {appTitle}
-        </span>
+          <div
+            aria-hidden="true"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
+          >
+            {appInitial}
+          </div>
+          <span className="truncate text-[13px] font-medium tracking-tight text-foreground">
+            {appTitle}
+          </span>
+        </a>
         <span aria-hidden="true" className="text-muted-foreground/30">/</span>
         <span className="truncate text-[13px] text-muted-foreground">Account settings</span>
       </div>
