@@ -8,3 +8,46 @@
 /* Default styling for the chat-first public (no-auth) shell. Imported last so
    its plain rules sit after Tailwind's utilities in the cascade. */
 @import "./chatFirst/chatFirstPublicShell.css";
+
+/* Credit notice CTA renders inside the agent subtree. Keep this selector after
+   Tailwind + agent globals so it beats both the Button variant colors and
+   [data-boring-agent] button color reset. */
+[data-boring-agent] .boring-buy-credits-notice-button,
+.boring-buy-credits-notice-button {
+  border: 1px solid color-mix(in oklab, var(--foreground) 18%, transparent);
+  background: var(--foreground);
+  color: var(--background);
+}
+
+[data-boring-agent] .boring-buy-credits-notice-button:hover,
+.boring-buy-credits-notice-button:hover {
+  background: color-mix(in oklab, var(--foreground) 90%, transparent);
+}
+
+html[data-theme="dark"] [data-boring-agent] .boring-buy-credits-notice-button,
+html[data-theme="dark"] .boring-buy-credits-notice-button {
+  border-color: oklch(1 0 0 / 0.2);
+  background: oklch(0.985 0 0);
+  color: oklch(0.145 0.004 285.823);
+}
+
+html[data-theme="dark"] [data-boring-agent] .boring-buy-credits-notice-button:hover,
+html[data-theme="dark"] .boring-buy-credits-notice-button:hover {
+  background: oklch(0.9 0 0);
+}
+
+/* The public-shell chat composer submit button sits on a brand/accent foreground.
+   The generic inverse text is too low-contrast on that amber CTA, so pin the public
+   shell icon to dark ink while leaving authenticated workspace composers alone. */
+.public-chat-first-shell [data-boring-agent] [data-boring-agent-part="composer-submit"] {
+  color: oklch(0.145 0.004 285.823) !important;
+}
+
+html[data-theme="dark"] .public-chat-first-shell [data-boring-agent] [data-boring-agent-part="composer-submit"] {
+  background: oklch(0.985 0 0) !important;
+  color: oklch(0.145 0.004 285.823) !important;
+}
+
+html[data-theme="dark"] .public-chat-first-shell [data-boring-agent] [data-boring-agent-part="composer-submit"]:hover {
+  background: oklch(0.9 0 0) !important;
+}
