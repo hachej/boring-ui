@@ -91,6 +91,7 @@ export interface DeckPaneProps {
   onError?: (error: DeckError) => void
   initialMode?: "read" | "edit" | "present"
   getPresentHref?: (path: string) => string
+  createIfMissing?: string
 }
 
 export function DeckPane(props: DeckPaneProps) {
@@ -225,6 +226,7 @@ function FileBackedDeckPane({
   onError,
   initialMode = "read",
   getPresentHref,
+  createIfMissing,
 }: DeckPaneProps) {
   const path = params?.path ?? ""
   const hasSelectedPath = /\S/.test(path)
@@ -243,7 +245,7 @@ function FileBackedDeckPane({
     onReloadFromServer,
     setContent,
     tabTitle,
-  } = useFilePane({ path, panelId: api?.id })
+  } = useFilePane({ path, panelId: api?.id, createIfMissing })
   const parsed = useMemo(() => (content == null ? null : parseDeckContent(content, path)), [content, path])
 
   useEffect(() => {

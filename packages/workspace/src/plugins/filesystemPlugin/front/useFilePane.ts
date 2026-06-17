@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useFileContent, useFileWrite } from "./data"
-import { FileConflictError } from "./data/fetchClient"
+import { FetchError, FileConflictError } from "./data/fetchClient"
 import { useEditorLifecycle, type EditorLifecycleAdapter } from "../../../front/hooks"
 
 let nextFallbackPanelId = 0
@@ -14,6 +14,8 @@ export interface UseFilePaneOptions {
   panelId?: string
   /** Initial content (optional, for draft/unsaved files). */
   initialContent?: string
+  /** When supplied, auto-create the file with this content if it does not exist. */
+  createIfMissing?: string
 }
 
 export interface UseFilePaneReturn {
@@ -72,7 +74,7 @@ export interface UseFilePaneReturn {
  * ```
  */
 export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
-  const { path, panelId, initialContent = null } = options
+  const { path, panelId, initialContent = null, createIfMissing } = options
   const activePath = /\S/.test(path) ? path : null
   const fallbackPanelIdRef = useRef(panelId ?? `file-pane:${nextFallbackPanelId++}`)
   const lifecyclePanelId = panelId ?? fallbackPanelIdRef.current
@@ -100,6 +102,10 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   // Conflict state
   const [conflict, setConflict] = useState<FileConflictError | null>(null)
 
+  // Auto-create state
+  const [autoCreating, setAutoCreating] = useState(false)
+  const autoCreateAttempted = useRef(false)
+
   // TypeScript workaround: track content state for the return type
   // so we can reference it in the function body
 
@@ -115,6 +121,18 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
       loadedPathRef.current = path
     }
   }, [path, initialContent])
+
+  // Auto-create missing file exactly once per path mount.
+  useEffect(() => {
+    if (!activePath || !createIfMissing || autoCreateAttempted.current) return
+    if (!(error instanceof FetchError) || error.status !== 404) return
+    autoCreateAttempted.current = true
+    setAutoCreating(true)
+    writeFile({ path: activePath, content: createIfMissing })
+      .then(() => refetchFileData())
+      .catch(() => {})
+      .finally(() => setAutoCreating(false))
+  }, [activePath, createIfMissing, error, writeFile, refetchFileData])
 
   // Load file content on mount or when file data changes
   useEffect(() => {
@@ -296,7 +314,7 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   }, [lifecycle])
 
   return {
-    isLoading,
+    isLoading: isLoading || autoCreating,
     error: error as Error | null,
     content,
     isDirty: lifecycle.isDirty,
