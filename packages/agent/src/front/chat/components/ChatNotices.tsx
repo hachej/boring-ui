@@ -96,14 +96,16 @@ function NoticeText({ className, children }: { className?: string; children: str
   )
 }
 
-export function ComposerBlockerNotice({
+export function ComposerBlockerNotice<
+  TComposerBlocker extends ComposerBlocker = ComposerBlocker,
+>({
   blocker,
   label,
   onAction,
 }: {
-  blocker?: ComposerBlocker
+  blocker?: TComposerBlocker
   label: string
-  onAction?: (blocker: ComposerBlocker, action: string) => void
+  onAction?: (blocker: TComposerBlocker, action: string) => void
 }) {
   return (
     <div
