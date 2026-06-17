@@ -1,13 +1,9 @@
 "use client"
 
-import { lazy } from "react"
 import type { PaneProps } from "../../../../front/registry/types"
 import { useFilePane } from "../useFilePane"
 import { FilePaneShell } from "../FilePaneShell"
-
-const CodeEditor = lazy(() =>
-  import("./CodeEditor").then((m) => ({ default: m.CodeEditor })),
-)
+import { CodeEditor } from "./CodeEditor"
 
 function extToLanguage(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase()
