@@ -233,6 +233,10 @@ function contentType(filePath: string): string {
   return MIME_TYPES[ext] ?? 'application/octet-stream'
 }
 
+function isFrontendAssetPath(pathname: string): boolean {
+  return pathname === '/assets' || pathname.startsWith('/assets/')
+}
+
 function injectCspNonceIntoHtml(html: string, nonce: string | undefined): string {
   if (!nonce) return html
 
@@ -392,7 +396,12 @@ function shouldServeFrontend(pathname: string): boolean {
 
 async function serveFrontendShell(
   request: { id: string; cspNonce?: string },
-  reply: { status: (code: number) => unknown; type: (value: string) => unknown; send: (body: unknown) => unknown },
+  reply: {
+    status: (code: number) => unknown
+    type: (value: string) => unknown
+    header: (name: string, value: string) => unknown
+    send: (body: unknown) => unknown
+  },
   indexPath: string,
   telemetry: TelemetrySink,
 ) {
@@ -406,6 +415,7 @@ async function serveFrontendShell(
 
   const html = await readFile(indexPath, 'utf-8')
   captureAppOpened(telemetry, request.id)
+  reply.header('cache-control', 'no-store')
   reply.type('text/html; charset=utf-8')
   return reply.send(injectCspNonceIntoHtml(html, request.cspNonce))
 }
@@ -529,8 +539,17 @@ async function registerFrontendFallback(
     }
 
     if (await pathIsFile(candidate)) {
+      if (isFrontendAssetPath(pathname)) {
+        reply.header('cache-control', 'public, max-age=31536000, immutable')
+      }
       reply.type(contentType(candidate))
       return reply.send(createReadStream(candidate))
+    }
+
+    if (isFrontendAssetPath(pathname)) {
+      reply.status(404)
+      reply.header('cache-control', 'no-store')
+      return { error: 'asset_not_found' }
     }
 
     return serveFrontendShell(request, reply, indexPath, telemetry)
