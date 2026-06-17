@@ -199,6 +199,31 @@ In `direct` mode this is also the model-visible workspace root. In isolated
 modes, the adapter maps that host path into the public runtime namespace
 (`/workspace`).
 
+### Production storage roots in `vercel-sandbox` mode
+
+In a Fly-hosted app using `BORING_AGENT_MODE=vercel-sandbox`, there are two
+filesystems with different jobs:
+
+```txt
+Fly app container / mounted volume:
+  /data/workspaces/<workspaceId>   host/control-plane workspace anchor
+  /data/pi-sessions/<workspaceId>  durable chat transcript storage
+
+Vercel sandbox:
+  /workspace                       agent-visible cwd, file tree, and shell root
+```
+
+`BORING_AGENT_WORKSPACE_ROOT=/data/workspaces` is a host-side configuration
+input. Core resolves each authorized workspace to `/data/workspaces/<id>` and
+ensures that directory exists so host-side resource lookups have a durable,
+workspace-scoped anchor. In `vercel-sandbox` mode, it is not where normal agent
+file edits, shell output, Python files, or uploaded workspace files should live.
+Those belong to the sandbox runtime root, `/workspace`.
+
+Production chat history also must not use the container root filesystem. Set
+`BORING_AGENT_SESSION_ROOT` to a mounted-volume path such as `/data/pi-sessions`
+so Pi wrapper/native transcripts survive Fly deploys and restarts.
+
 ## Adding a custom runtime mode
 
 A mode is a `RuntimeModeAdapter` (defined in `src/server/runtime/mode.ts`).

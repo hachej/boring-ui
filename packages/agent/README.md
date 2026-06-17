@@ -54,7 +54,8 @@ function App() {
 
 Set an API key for the model provider (e.g. `ANTHROPIC_API_KEY`). Common env
 vars: `BORING_AGENT_MODE` (default `direct`), `BORING_AGENT_WORKSPACE_ROOT`
-(default cwd), `BORING_AGENT_PORT`, and the `BORING_AGENT_DEFAULT_MODEL*` /
+(default cwd), `BORING_AGENT_SESSION_ROOT` (durable Pi session storage),
+`BORING_AGENT_PORT`, and the `BORING_AGENT_DEFAULT_MODEL*` /
 `BORING_AGENT_CUSTOM_MODEL*` / `BORING_AGENT_INFOMANIAK*` provider settings. See
 [docs/runtime.md](./docs/runtime.md) and [docs/API.md](./docs/API.md).
 

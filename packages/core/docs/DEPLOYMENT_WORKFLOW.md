@@ -51,7 +51,15 @@ node:22-slim
 bubblewrap ca-certificates
 BORING_AGENT_MODE=vercel-sandbox
 BORING_AGENT_WORKSPACE_ROOT=/data/workspaces
+BORING_AGENT_SESSION_ROOT=/data/pi-sessions
 ```
+
+In this mode, `/data/workspaces/<workspaceId>` is the Fly app's durable
+host/control-plane anchor. Core creates the directory and host-side resource
+lookups may read workspace-scoped config from it, but normal agent file edits and
+shell state live in the Vercel sandbox at `/workspace`. Chat transcripts are not
+sandbox files; they are Pi session files and should use the mounted Fly volume
+via `/data/pi-sessions/<workspaceId>`.
 
 Fly release command currently runs migrations:
 
