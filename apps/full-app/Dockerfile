@@ -79,10 +79,12 @@ COPY --from=build /app/apps/full-app/node_modules/ apps/full-app/node_modules/
 
 # BORING_AGENT_MODE=vercel-sandbox: even on Fly.io the server itself runs here
 # but agent tool execution (bash/files) runs in remote Vercel sandbox containers.
-# BORING_AGENT_WORKSPACE_ROOT and model config come from fly secrets.
+# Store chat transcripts on the Fly volume; the container root filesystem is ephemeral.
+# Model config comes from Fly secrets.
 ENV NODE_ENV=production \
   BORING_AGENT_MODE=vercel-sandbox \
-  BORING_AGENT_WORKSPACE_ROOT=/data/workspaces
+  BORING_AGENT_WORKSPACE_ROOT=/data/workspaces \
+  BORING_AGENT_SESSION_ROOT=/data/pi-sessions
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
