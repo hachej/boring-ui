@@ -109,6 +109,17 @@ describe('UserSettingsPage', () => {
   )
 
   it(
+    'links the top-left brand to home',
+    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      render(<UserSettingsPage />, { wrapper: Wrapper })
+      await waitFor(() => expect(screen.getByText('test@test.dev')).toBeTruthy())
+      const homeLink = screen.getByRole('link', { name: /home/i })
+      expect(homeLink.getAttribute('href')).toBe('/')
+      assertionPassed('brand-links-home')
+    }),
+  )
+
+  it(
     'renders host-provided extra sections with their own nav entry (stays feature-agnostic)',
     withBeadId(BEAD_ID, async ({ assertionPassed }) => {
       render(
