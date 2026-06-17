@@ -67,9 +67,9 @@
     "react-dom": "^19.1.0",
     "tsup": "^8.4.0",
     "typescript": "^5.8.3",
-    "vitest": "^3.2.6",
-    "@tailwindcss/postcss": "^4.2.4",
-    "postcss": "^8.5.13",
-    "tailwindcss": "^4.2.4"
+    "vitest": "^4.1.9",
+    "@tailwindcss/postcss": "^4.3.1",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^4.3.1"
   }
 }
