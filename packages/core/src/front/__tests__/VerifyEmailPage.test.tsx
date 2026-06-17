@@ -315,15 +315,23 @@ describe('VerifyEmailPage', () => {
   )
 
   it(
-    'has back to sign in link on error states',
+    'signs out before returning to sign in from error states',
     withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      mockUseSession.mockReturnValue({
+        data: { user: { id: 'u1', email: 'test@test.dev', emailVerified: false }, expiresAt: '' },
+        isPending: false,
+        error: null,
+      })
       window.history.pushState({}, '', '/auth/verify-email')
 
       render(<VerifyEmailPage />, { wrapper: Wrapper })
 
-      const link = screen.getByText(/back to sign in/i).closest('a')
-      expect(link?.getAttribute('href')).toBe('/auth/signin')
-      assertionPassed('back-to-signin-link')
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: /back to sign in/i }))
+
+      expect(mockSignOut).toHaveBeenCalledOnce()
+      expect(window.location.pathname).toBe('/auth/signin')
+      assertionPassed('back-to-signin-signs-out')
     }),
   )
 
