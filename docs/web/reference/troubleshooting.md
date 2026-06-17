@@ -161,7 +161,51 @@ Assuming all modes should expose identical host env details. The mental model st
 **Common mistake**
 Encoding product/domain behavior directly into panel ids.
 
-## 8. "Where should this feature live?"
+## 8. An editor or preview renders blank/unstyled in prod but works locally
+
+**Typical symptoms**
+- a component (e.g. the CodeMirror code editor) mounts but is blank and uninteractive in prod
+- gutters/line numbers show, but the content area is empty and you can't type
+- it works perfectly when run locally against the Vite dev server
+
+**Root cause**
+Production sends a strict, **nonce-only** Content-Security-Policy. `style-src` is
+`'self' https://fonts.googleapis.com 'nonce-<per-request>'` — there is **no
+`'unsafe-inline'`** (see `packages/core/src/server/app/createCoreApp.ts`). Any library
+that injects a `<style>` tag at runtime must stamp it with the request nonce, or the
+browser silently drops the styles. Local dev does not enforce this — the dev policy is
+`style-src 'self' 'unsafe-inline'` (`packages/agent/src/server/http/csp.ts`), so inline
+styles work unconditionally and the bug is invisible locally.
+
+The nonce is published to the page as `<meta name="boring-csp-nonce" content="…">`
+(injected in `packages/core/src/app/server/createCoreWorkspaceAgentServer.ts`) and matches
+the CSP header. Front-end code reads it and forwards it to the library:
+- **CodeMirror** — `EditorView.cspNonce.of(nonce)`
+  (`packages/workspace/src/plugins/filesystemPlugin/front/code-editor/CodeEditor.tsx`,
+  fixed in PR #343).
+
+**Whether it breaks visibly depends on whether the injected styles are load-bearing**
+- **Load-bearing** (CodeMirror: layout + `.cm-content` contentEditable sizing) → hard
+  break, blank and unusable.
+- **Non-load-bearing** (TipTap markdown editor: real styling comes from the bundled
+  `tiptap-prose` stylesheet loaded as a normal `'self'` sheet; TipTap's own injected
+  defaults are minor) → no visible break even though the tag is dropped. Verified working
+  in prod, so it does **not** need a nonce today.
+
+**What is allowed**
+- inline `style="…"` **attributes** are permitted via `styleSrcAttr: 'unsafe-inline'`
+  (kept so DockView/React runtime layout sizing survives). Only `<style>` **tags** need a
+  nonce.
+- there is no `'unsafe-eval'` and `connect-src` is `'self'` only — `eval`/`new Function`
+  and cross-origin fetches will also be blocked.
+
+**If you add a new runtime-style-injecting library**
+Read the nonce from the meta tag and pass it through the library's nonce option. One
+still-unverified spot is mermaid diagram rendering in agent chat (`@streamdown/mermaid`),
+whose SVG `<style>` is the same load-bearing kind — check it if diagrams look unstyled in
+prod.
+
+## 9. "Where should this feature live?"
 
 Use this fast rule:
 - needs DB, auth, membership, or durable app identity → `@hachej/boring-core`
