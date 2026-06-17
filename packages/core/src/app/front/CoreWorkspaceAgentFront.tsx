@@ -22,6 +22,7 @@ import {
 } from '@hachej/boring-workspace/app/front'
 import { ChatFirstAuthenticatedShell } from './chatFirst/ChatFirstAuthenticatedShell.js'
 import { ChatFirstPublicShell, type ChatFirstPublicShellOptions } from './chatFirst/ChatFirstPublicShell.js'
+import { installVitePreloadRecovery } from './vitePreloadRecovery.js'
 import {
   clearPendingChatEntry,
   DEFAULT_CHAT_FIRST_PENDING_WORKSPACE_ID,
@@ -31,6 +32,8 @@ import {
   type PendingChatEntryState,
   workspaceIdFromPath,
 } from './chatFirst/pendingChatEntry.js'
+
+installVitePreloadRecovery()
 
 const DEFAULT_WORKSPACE_ROUTE = '/workspace/:id'
 const DEFAULT_WORKSPACE_ID_PARAM = 'id'
