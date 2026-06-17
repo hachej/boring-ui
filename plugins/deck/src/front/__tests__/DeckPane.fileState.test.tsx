@@ -16,7 +16,7 @@ vi.mock("@hachej/boring-workspace", async () => {
   }
 })
 
-import { WorkspaceFilesProvider } from "@hachej/boring-workspace"
+import { WorkspaceFilesProvider, WorkspaceProvider } from "@hachej/boring-workspace"
 import { DeckPane } from "../DeckPane"
 
 function Wrapper({ children }: { children: ReactNode }) {
@@ -27,6 +27,18 @@ function Wrapper({ children }: { children: ReactNode }) {
     >
       {children}
     </WorkspaceFilesProvider>
+  )
+}
+
+function FullPageWrapper({ children }: { children: ReactNode }) {
+  return (
+    <WorkspaceProvider
+      persistenceEnabled={false}
+      manageDocumentTitle={false}
+      fullPageBasePath="/full-page?workspaceId=workspace-1"
+    >
+      <Wrapper>{children}</Wrapper>
+    </WorkspaceProvider>
   )
 }
 
@@ -59,6 +71,19 @@ describe("DeckPane file-state integration", () => {
         type: "storage",
         path: "deck/missing.md",
       }),
+    )
+  })
+
+  it("links the new-tab action to the workspace full-page route", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ content: "# Intro\n\nOpen me", mtimeMs: 1 }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(<DeckPane params={{ path: "deck/intro.md" }} />, { wrapper: FullPageWrapper })
+
+    await waitFor(() => expect(screen.getByTestId("deck-open-present")).toBeInTheDocument())
+    expect(screen.getByTestId("deck-open-present")).toHaveAttribute(
+      "href",
+      "/full-page?workspaceId=workspace-1&component=deck&params=%7B%22path%22%3A%22deck%2Fintro.md%22%7D",
     )
   })
 

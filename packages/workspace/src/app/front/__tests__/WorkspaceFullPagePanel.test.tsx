@@ -65,6 +65,14 @@ describe("full-page panel helpers", () => {
       }),
     ).toBe("/full-page?component=deck&params=%7B%22path%22%3A%22deck%2Fintro.md%22%7D")
 
+    expect(
+      buildFullPagePanelHref({
+        componentId: "deck",
+        params: { path: "deck/intro.md" },
+        basePath: "/full-page?workspaceId=workspace-a",
+      }),
+    ).toBe("/full-page?workspaceId=workspace-a&component=deck&params=%7B%22path%22%3A%22deck%2Fintro.md%22%7D")
+
     const wrapper = ({ children }: { children: ReactNode }) => (
       <WorkspaceProvider persistenceEnabled={false} fullPageBasePath="/full-page">
         {children}
