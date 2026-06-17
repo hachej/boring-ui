@@ -4,7 +4,12 @@ export { uploadFile } from './upload/uploadFile'
 export type { UploadFileOptions, UploadFileResult } from './upload/uploadFile'
 
 export { PiChatPanel, PiChatPanel as ChatPanel } from './chat/PiChatPanel'
-export type { PiChatPanelProps, PiChatPanelProps as ChatPanelProps } from './chat/PiChatPanel'
+export type {
+  ComposerBlocker,
+  ComposerBlockerAction,
+  PiChatPanelProps,
+  PiChatPanelProps as ChatPanelProps,
+} from './chat/PiChatPanel'
 export { DebugDrawer } from './DebugDrawer'
 export {
   ArtifactOpenProvider,

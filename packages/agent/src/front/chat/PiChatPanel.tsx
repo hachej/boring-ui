@@ -74,7 +74,7 @@ const DebugDrawer = lazy(() => import('../DebugDrawer').then((m) => ({ default: 
 
 const EMPTY_COMMANDS: SlashCommand[] = []
 const EMPTY_COMMAND_NAMES: string[] = []
-const EMPTY_BLOCKERS: Array<{ id: string; sessionId?: string; label?: string; reason?: string }> = []
+const EMPTY_BLOCKERS: never[] = []
 /** Stable id for the notice that surfaces a rejected run (so re-rejections replace
  * it rather than stacking, and the next admit can retract it). */
 const RUN_REJECTED_NOTICE_ID = 'run-rejected'
@@ -105,7 +105,9 @@ export interface ChatPanelEmptyState {
   footer?: ReactNode
 }
 
-export interface PiChatPanelProps {
+export interface PiChatPanelProps<
+  TComposerBlocker extends ComposerBlocker = ComposerBlocker,
+> {
   /** Optional externally selected Pi session id. When provided, session navigation is owned by the host. */
   sessionId?: string
   /** Alias kept for consumers that still pass the pre-cutover prop name. */
@@ -156,9 +158,9 @@ export interface PiChatPanelProps {
   onMentionedFilesConsumed?: () => void
   onData?: (part: unknown) => void
   onOpenArtifact?: (path: string) => void
-  composerBlockers?: ComposerBlocker[]
+  composerBlockers?: TComposerBlocker[]
   onComposerStop?: () => void
-  onComposerBlockerAction?: (blocker: ComposerBlocker, action: string) => void
+  onComposerBlockerAction?: (blocker: TComposerBlocker, action: string) => void
   /** Fired once each time a run settles (busy → idle). Hosts use it to refresh
    * out-of-band state after a turn (e.g. a usage/quota indicator). The agent stays
    * agnostic about what the host does with it. */
@@ -169,7 +171,9 @@ export interface PiChatPanelProps {
   renderNoticeAction?: (notice: PiChatRuntimeNotice) => ReactNode
 }
 
-export function PiChatPanel({
+export function PiChatPanel<
+  TComposerBlocker extends ComposerBlocker = ComposerBlocker,
+>({
   sessionId,
   extraCommands,
   apiBaseUrl,
@@ -222,7 +226,7 @@ export function PiChatPanel({
   onComposerBlockerAction,
   onTurnComplete,
   renderNoticeAction,
-}: PiChatPanelProps) {
+}: PiChatPanelProps<TComposerBlocker>) {
   const externalSessionId = sessionId?.trim() || undefined
   const showSessionSidebar = showSessions ?? externalSessionId === undefined
   const onDataRef = useRef(onData)

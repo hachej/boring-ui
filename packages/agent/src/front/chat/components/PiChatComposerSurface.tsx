@@ -62,7 +62,9 @@ function hasSoftWrappedLine(node: HTMLTextAreaElement, style: CSSStyleDeclaratio
   })
 }
 
-export interface PiChatComposerSurfaceProps {
+export interface PiChatComposerSurfaceProps<
+  TComposerBlocker extends ComposerBlocker = ComposerBlocker,
+> {
   chrome: boolean
   isStreaming: boolean
   status: string
@@ -74,8 +76,8 @@ export interface PiChatComposerSurfaceProps {
   composerPlaceholder?: string
   composerStatusNotice: { title: string; detail?: string; code?: string } | null
   workspaceWarmupBlocked: boolean
-  primaryComposerBlocker?: ComposerBlocker
-  onComposerBlockerAction?: (blocker: ComposerBlocker, action: string) => void
+  primaryComposerBlocker?: TComposerBlocker
+  onComposerBlockerAction?: (blocker: TComposerBlocker, action: string) => void
   queuePreview: QueuedUserMessage[]
   onEditQueued: () => void
   hotReloadEnabled: boolean
@@ -121,7 +123,9 @@ export interface PiChatComposerSurfaceProps {
   onStop: () => void
 }
 
-export function PiChatComposerSurface({
+export function PiChatComposerSurface<
+  TComposerBlocker extends ComposerBlocker = ComposerBlocker,
+>({
   chrome,
   isStreaming,
   status,
@@ -178,7 +182,7 @@ export function PiChatComposerSurface({
   onTextareaKeyDown,
   onSubmitMessage,
   onStop,
-}: PiChatComposerSurfaceProps) {
+}: PiChatComposerSurfaceProps<TComposerBlocker>) {
   const workspaceRequestId = getHeaderValue(requestHeaders, 'x-boring-workspace-id')
   const uploadAttachment = useCallback((file: File) => uploadFile(file, {
     apiBaseUrl,

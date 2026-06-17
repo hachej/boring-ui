@@ -1,15 +1,12 @@
+import type { PiChatPanelProps } from "@hachej/boring-agent/front"
 import type { ComponentType } from "react"
 import type { WorkspaceAttentionBlocker } from "../../provider"
 import type { SurfaceShellApi } from "../artifact-surface/SurfaceShell"
 
 export type OpenArtifactHandler = (path: string) => void
 
-export interface WorkspaceChatPanelProps {
+export interface WorkspaceChatPanelProps extends PiChatPanelProps<WorkspaceAttentionBlocker> {
   sessionId: string
-  onData?: (part: unknown) => void
-  requestHeaders?: Record<string, string>
-  onOpenArtifact?: OpenArtifactHandler
-  className?: string
   /** Endpoint base for agent → visible-workbench UI commands. */
   bridgeEndpoint?: string | null
   /** Imperative handle getter for the visible workbench surface. */
@@ -22,13 +19,6 @@ export interface WorkspaceChatPanelProps {
   openWorkbenchSources?: () => void
   /** Closes the visible workbench surface after an ephemeral command finishes. */
   closeWorkbench?: () => void
-  /** Generic workspace blockers that should prevent submitting new chat turns. */
-  composerBlockers?: WorkspaceAttentionBlocker[]
-  /** Called when the user presses Stop in the composer. */
-  onComposerStop?: () => void
-  /** Called when the chat implementation wants to run an action exposed by a blocker. */
-  onComposerBlockerAction?: (blocker: WorkspaceAttentionBlocker, action: string) => void
-  [key: string]: unknown
 }
 
 // The app shell owns the actual chat implementation. Workspace only needs a
