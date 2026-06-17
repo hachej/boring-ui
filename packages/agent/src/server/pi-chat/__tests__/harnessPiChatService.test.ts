@@ -3,6 +3,7 @@ import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 import type { AgentHarness, RunContext, SendMessageInput } from '../../../shared/harness'
 import type { SessionStore } from '../../../shared/session'
 import type { PiChatEvent } from '../../../shared/chat'
+import type { Workspace } from '../../../shared/workspace'
 import { createInitialPiChatState, piChatReducer } from '../../../front/chat/pi/piChatReducer'
 import { selectMessagesForRender } from '../../../front/chat/pi/selectors'
 import type { PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../PiAgentSessionAdapter'
@@ -99,12 +100,13 @@ function createHarness(adapter: PiAgentSessionAdapter): AgentHarness & {
   }
 }
 
-function createService(adapter = createAdapter()) {
+function createService(adapter = createAdapter(), workspace?: Workspace) {
   const harness = createHarness(adapter)
   const service = new HarnessPiChatService({
     harness,
     sessionStore,
     workdir: '/workspace',
+    ...(workspace ? { workspace } : {}),
   })
   return { service, harness, adapter }
 }
@@ -154,6 +156,48 @@ describe('HarnessPiChatService', () => {
     if (subscription.type === 'ok') subscription.unsubscribe()
   })
 
+  it('keeps enriched prompt notes out of visible user message finals', async () => {
+    const adapter = createAdapter()
+    const { service } = createService(adapter)
+    const events: PiChatEvent[] = []
+    const subscription = await service.subscribe(ctx, 's1', 0, (event) => events.push(event))
+    expect(subscription.type).toBe('ok')
+
+    const displayText = 'can you read this ?'
+    const serverText = `${displayText}\n\n[attached: grafik.png (image/png, not inlined — binary) Saved in workspace at: assets/images/grafik.png]`
+
+    await service.prompt(ctx, 's1', {
+      message: serverText,
+      displayMessage: displayText,
+      clientNonce: 'nonce-attachment-note',
+      attachments: [{ filename: 'grafik.png', mediaType: 'image/png', url: '/api/v1/files/raw?path=assets%2Fimages%2Fgrafik.png', path: 'assets/images/grafik.png' }],
+    })
+
+    adapter.emit({
+      type: 'message_start',
+      message: { id: 'u-attachment', role: 'user', content: [{ type: 'text', text: serverText }] },
+    } as unknown as AgentSessionEvent)
+    adapter.emit({
+      type: 'message_end',
+      message: { id: 'u-attachment', role: 'user', content: [{ type: 'text', text: serverText }] },
+    } as unknown as AgentSessionEvent)
+
+    expect(events.find((event) => event.type === 'message-start')).toMatchObject({
+      type: 'message-start',
+      text: displayText,
+      clientNonce: 'nonce-attachment-note',
+      files: [expect.objectContaining({ type: 'file', path: 'assets/images/grafik.png' })],
+    })
+    const final = events.find((event): event is Extract<PiChatEvent, { type: 'message-end' }> => event.type === 'message-end')?.final
+    expect(final?.clientNonce).toBe('nonce-attachment-note')
+    expect(final?.parts).toEqual([
+      expect.objectContaining({ type: 'text', text: displayText }),
+      expect.objectContaining({ type: 'file', filename: 'grafik.png', path: 'assets/images/grafik.png' }),
+    ])
+
+    if (subscription.type === 'ok') subscription.unsubscribe()
+  })
+
   it('forwards prompt model, thinking, and image attachments through the Pi-native adapter path', async () => {
     const adapter = createAdapter()
     const { service, harness } = createService(adapter)
@@ -183,6 +227,138 @@ describe('HarnessPiChatService', () => {
         images: [{ type: 'image', mimeType: 'image/png', data: 'abc123' }],
       },
     })
+  })
+
+  it('expands uploaded workspace image paths before prompting Pi', async () => {
+    const adapter = createAdapter()
+    const pngBytes = new Uint8Array(Buffer.from('iVBORw0KGgo=', 'base64'))
+    const workspace = {
+      stat: vi.fn(async () => ({ kind: 'file', size: pngBytes.byteLength, mtimeMs: 1 })),
+      readBinaryFile: vi.fn(async (path: string) => {
+        expect(path).toBe('assets/images/diagram.png')
+        return pngBytes
+      }),
+    } as unknown as Workspace
+    const { service } = createService(adapter, workspace)
+
+    await service.prompt(ctx, 's1', {
+      message: 'look at this',
+      clientNonce: 'nonce-workspace-image',
+      attachments: [
+        {
+          filename: 'diagram.png',
+          mediaType: 'image/png',
+          url: '/api/v1/files/raw?path=assets%2Fimages%2Fdiagram.png&workspaceId=workspace-a',
+          path: 'assets/images/diagram.png',
+        },
+      ],
+    })
+
+    expect(adapter.prompt).toHaveBeenCalledWith({
+      text: 'look at this',
+      options: {
+        images: [{ type: 'image', mimeType: 'image/png', data: Buffer.from(pngBytes).toString('base64') }],
+      },
+    })
+  })
+
+  it('does not expand non-image workspace file attachments', async () => {
+    const adapter = createAdapter()
+    const workspace = {
+      stat: vi.fn(async () => ({ kind: 'file', size: 8, mtimeMs: 1 })),
+      readBinaryFile: vi.fn(async () => new Uint8Array(Buffer.from('%PDF-1.4'))),
+    } as unknown as Workspace
+    const { service } = createService(adapter, workspace)
+
+    await service.prompt(ctx, 's1', {
+      message: 'read this pdf',
+      clientNonce: 'nonce-pdf',
+      attachments: [
+        {
+          filename: 'manual.pdf',
+          mediaType: 'application/pdf',
+          url: '/api/v1/files/raw?path=assets%2Fuploads%2Fmanual.pdf&workspaceId=workspace-a',
+          path: 'assets/uploads/manual.pdf',
+        },
+      ],
+    })
+
+    expect(workspace.readBinaryFile).not.toHaveBeenCalled()
+    expect(adapter.prompt).toHaveBeenCalledWith('read this pdf')
+  })
+
+  it('does not expand fake workspace image paths with non-image bytes', async () => {
+    const adapter = createAdapter()
+    const workspace = {
+      stat: vi.fn(async () => ({ kind: 'file', size: 8, mtimeMs: 1 })),
+      readBinaryFile: vi.fn(async () => new Uint8Array(Buffer.from('%PDF-1.4'))),
+    } as unknown as Workspace
+    const { service } = createService(adapter, workspace)
+
+    await service.prompt(ctx, 's1', {
+      message: 'attached fake image',
+      clientNonce: 'nonce-fake-image',
+      attachments: [
+        {
+          filename: 'fake.png',
+          mediaType: 'image/png',
+          url: '/api/v1/files/raw?path=assets%2Fimages%2Ffake.png&workspaceId=workspace-a',
+          path: 'assets/images/fake.png',
+        },
+      ],
+    })
+
+    expect(workspace.readBinaryFile).toHaveBeenCalledWith('assets/images/fake.png')
+    expect(adapter.prompt).toHaveBeenCalledWith('attached fake image')
+  })
+
+  it('does not expand oversized workspace image paths', async () => {
+    const adapter = createAdapter()
+    const workspace = {
+      stat: vi.fn(async () => ({ kind: 'file', size: 11 * 1024 * 1024, mtimeMs: 1 })),
+      readBinaryFile: vi.fn(async () => new Uint8Array(Buffer.from('too-large'))),
+    } as unknown as Workspace
+    const { service } = createService(adapter, workspace)
+
+    await service.prompt(ctx, 's1', {
+      message: 'attached large image',
+      clientNonce: 'nonce-large-image',
+      attachments: [
+        {
+          filename: 'large.png',
+          mediaType: 'image/png',
+          url: '/api/v1/files/raw?path=assets%2Fimages%2Flarge.png&workspaceId=workspace-a',
+          path: 'assets/images/large.png',
+        },
+      ],
+    })
+
+    expect(workspace.readBinaryFile).not.toHaveBeenCalled()
+    expect(adapter.prompt).toHaveBeenCalledWith('attached large image')
+  })
+
+  it('does not expand workspace images that grow after stat', async () => {
+    const adapter = createAdapter()
+    const workspace = {
+      stat: vi.fn(async () => ({ kind: 'file', size: 8, mtimeMs: 1 })),
+      readBinaryFile: vi.fn(async () => new Uint8Array(11 * 1024 * 1024)),
+    } as unknown as Workspace
+    const { service } = createService(adapter, workspace)
+
+    await service.prompt(ctx, 's1', {
+      message: 'attached growing image',
+      clientNonce: 'nonce-growing-image',
+      attachments: [
+        {
+          filename: 'growing.png',
+          mediaType: 'image/png',
+          url: '/api/v1/files/raw?path=assets%2Fimages%2Fgrowing.png&workspaceId=workspace-a',
+          path: 'assets/images/growing.png',
+        },
+      ],
+    })
+
+    expect(adapter.prompt).toHaveBeenCalledWith('attached growing image')
   })
 
   it('acknowledges prompt acceptance before the active run settles', async () => {

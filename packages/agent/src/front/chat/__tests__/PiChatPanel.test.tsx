@@ -290,6 +290,31 @@ describe('PiChatPanel sandbox shell', () => {
     })
   })
 
+  test('stop clears local submitted state when no stream events arrived yet', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ status: 'idle', lastSeq: 7 }))
+    const promptReceipt = deferred<{ accepted: true; cursor: number; clientNonce: string }>()
+    remote.prompt.mockImplementationOnce(async () => promptReceipt.promise)
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+    render(<PiChatPanel serverResourcesEnabled={false} storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={remoteFactory(remote)} />)
+
+    const textarea = await screen.findByLabelText('Agent prompt') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'will be stopped before events' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({ message: 'will be stopped before events' })))
+
+    await act(async () => {
+      promptReceipt.resolve({ accepted: true, cursor: 8, clientNonce: 'nonce' })
+      await promptReceipt.promise
+    })
+
+    await screen.findByTestId('chat-working')
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+
+    await waitFor(() => expect(remote.stop).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.queryByTestId('chat-working')).toBeNull())
+    await screen.findByRole('button', { name: 'Submit' })
+  })
+
   test('does not hold submitted state when stream events catch up before prompt receipt resolves', async () => {
     const remote = new FakeRemotePiSession(remoteState({ status: 'idle', lastSeq: 7 }))
     const promptReceipt = deferred<{ accepted: true; cursor: number; clientNonce: string }>()

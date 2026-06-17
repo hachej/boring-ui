@@ -3,6 +3,7 @@ export interface UploadFileOptions {
   workspaceRequestId?: string | null
   directory?: string
   sourcePath?: string
+  responseUrl?: 'markdown' | 'raw'
   fetch?: typeof globalThis.fetch
 }
 
@@ -24,7 +25,7 @@ export async function uploadFile(
   file: File,
   opts: UploadFileOptions = {},
 ): Promise<UploadFileResult> {
-  const { apiBaseUrl = '', workspaceRequestId, directory, sourcePath, fetch: fetchImpl = globalThis.fetch } = opts
+  const { apiBaseUrl = '', workspaceRequestId, directory, sourcePath, responseUrl = 'markdown', fetch: fetchImpl = globalThis.fetch } = opts
 
   const dataUrl = await readAsDataUrl(file)
   const comma = dataUrl.indexOf(',')
@@ -50,7 +51,23 @@ export async function uploadFile(
   if (!res.ok) throw new Error(`Upload failed: ${res.status}`)
 
   const body = (await res.json()) as { markdownUrl?: string; path?: string }
-  const url = body.markdownUrl ?? body.path
+  const path = body.path
+  if (responseUrl === 'raw') {
+    if (!path) throw new Error('Upload response missing path')
+    return { url: rawWorkspaceFileUrl(path, { apiBaseUrl, workspaceRequestId }), path }
+  }
+
+  const url = body.markdownUrl ?? path
   if (!url) throw new Error('Upload response missing url')
-  return { url, path: body.path ?? url }
+  return { url, path: path ?? url }
+}
+
+function rawWorkspaceFileUrl(
+  path: string,
+  opts: { apiBaseUrl?: string; workspaceRequestId?: string | null },
+): string {
+  const base = (opts.apiBaseUrl ?? '').replace(/\/$/, '')
+  const params = new URLSearchParams({ path })
+  if (opts.workspaceRequestId) params.set('workspaceId', opts.workspaceRequestId)
+  return `${base}/api/v1/files/raw?${params.toString()}`
 }

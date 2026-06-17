@@ -239,6 +239,7 @@ export async function createAgentApp(
     harness,
     sessionStore: harness.sessions,
     workdir: runtimeBundle.workspace.root,
+    workspace: runtimeBundle.workspace,
     metering: opts.metering,
   })
   await app.register(piChatRoutes, { service: piChatService })

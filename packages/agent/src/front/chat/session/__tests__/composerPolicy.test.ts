@@ -147,7 +147,7 @@ describe('PiComposerPolicyController submit policy', () => {
       attachments: [{ filename: 'spec.md', mediaType: 'text/markdown', url: 'https://files.test/spec.md' }],
     })])
     expect(session.prompts[0]?.message).toContain('Build it')
-    expect(session.prompts[0]?.message).toContain('[attached: spec.md (text/markdown)]')
+    expect(session.prompts[0]?.message).toContain('<attachment data-boring-agent="composer-file" filename="spec.md" mime="text/markdown">')
     expect(session.prompts[0]?.message).toContain('@files: src/app.ts')
     expect(session.prompts[0]?.displayMessage).toBe('Build it')
   })

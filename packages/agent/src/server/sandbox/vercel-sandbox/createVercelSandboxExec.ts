@@ -166,7 +166,7 @@ export function createVercelSandboxExec(
         }
       } catch (error) {
         if (timedOut) {
-          return timeoutResult(Date.now() - start)
+          return timeoutResult(Math.max(Date.now() - start, timeoutMs))
         }
         throw error
       } finally {

@@ -2,6 +2,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import type { BoringChatMessage } from '../../../../shared/chat'
+import { ArtifactOpenProvider } from '../../../ArtifactOpenContext'
 import { PiTimelineMessage } from '../PiTimelineMessage'
 
 vi.mock('../../../primitives/message', () => ({
@@ -34,7 +35,7 @@ vi.mock('../../../primitives/tool-call-group', () => ({
 
 vi.mock('../../../primitives/attachments', () => ({
   Attachments: ({ children }: any) => <div data-testid="attachments">{children}</div>,
-  Attachment: ({ children, data }: any) => <div data-filename={data.filename}>{children}</div>,
+  Attachment: ({ children, data, ...props }: any) => <div data-filename={data.filename} {...props}>{children}</div>,
   AttachmentPreview: () => <span>preview</span>,
   AttachmentInfo: () => <span>info</span>,
 }))
@@ -140,6 +141,112 @@ describe('PiTimelineMessage', () => {
     expect(screen.getByTestId('attachments').querySelector('[data-filename="image.png"]')).toBeTruthy()
     expect(screen.getByTestId('message-response').textContent).toBe('wait is inside the image?')
     expect(screen.queryByText(/attached: image\.png/)).toBeNull()
+  })
+
+  test('opens uploaded workspace attachment chips through the artifact opener', () => {
+    const onOpenArtifact = vi.fn()
+    const message: BoringChatMessage = {
+      id: 'u-open-file',
+      role: 'user',
+      status: 'done',
+      parts: [
+        { type: 'file', id: 'u-open-file:file', filename: 'image.png', mediaType: 'image/png', url: '/raw', path: 'assets/images/image.png' },
+      ],
+    }
+
+    render(
+      <ArtifactOpenProvider onOpenArtifact={onOpenArtifact}>
+        <PiTimelineMessage
+          message={message}
+          isLast={false}
+          isStreaming={false}
+          showThoughts={false}
+          toolRenderers={{}}
+        />
+      </ArtifactOpenProvider>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open image.png in workspace' }))
+    expect(onOpenArtifact).toHaveBeenCalledWith('assets/images/image.png')
+  })
+
+  test('opens recovered history attachment chips using the stripped workspace path note', () => {
+    const onOpenArtifact = vi.fn()
+    const message: BoringChatMessage = {
+      id: 'u-recovered-path',
+      role: 'user',
+      status: 'done',
+      parts: [
+        { type: 'file', id: 'u-recovered-path:file', mediaType: 'image/png', url: 'data:image/png;base64,abc123' },
+        { type: 'text', id: 'u-recovered-path:text', text: 'can you read this ?\n\n[attached: grafik.png (image/png, not inlined — binary)\nSaved in workspace at: assets/images/grafik-mqhmrp1k-2drpcs.png\nUse the workspace file/read tools with this path if you need to inspect it.]' },
+      ],
+    }
+
+    render(
+      <ArtifactOpenProvider onOpenArtifact={onOpenArtifact}>
+        <PiTimelineMessage
+          message={message}
+          isLast={false}
+          isStreaming={false}
+          showThoughts={false}
+          toolRenderers={{}}
+        />
+      </ArtifactOpenProvider>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open assets/images/grafik-mqhmrp1k-2drpcs.png in workspace' }))
+    expect(onOpenArtifact).toHaveBeenCalledWith('assets/images/grafik-mqhmrp1k-2drpcs.png')
+    expect(screen.getByTestId('message-response').textContent).toBe('can you read this ?')
+  })
+
+  test('strips generated binary attachment path notes from recovered user text', () => {
+    const message: BoringChatMessage = {
+      id: 'u-path-note',
+      role: 'user',
+      status: 'done',
+      parts: [
+        { type: 'text', id: 'u-path-note:text', text: 'can you read this ?\n\n[attached: grafik.png (image/png, not inlined — binary)\nSaved in workspace at: assets/images/grafik-mqhmrp1k-2drpcs.png\nUse the workspace file/read tools with this path if you need to inspect it.]' },
+      ],
+    }
+
+    render(
+      <PiTimelineMessage
+        message={message}
+        isLast={false}
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+      />,
+    )
+
+    expect(screen.getByTestId('message-response').textContent).toBe('can you read this ?')
+    expect(screen.queryByText(/attached: grafik\.png/)).toBeNull()
+    expect(screen.queryByText(/Saved in workspace at/)).toBeNull()
+  })
+
+  test('strips generated structured attachment tags from recovered user text', () => {
+    const message: BoringChatMessage = {
+      id: 'u-tag-note',
+      role: 'user',
+      status: 'done',
+      parts: [
+        { type: 'text', id: 'u-tag-note:text', text: 'please review\n\n<attachment data-boring-agent="composer-file" filename="spec.md" mime="text/markdown" path="assets/uploads/spec.md">\n```\n# spec\n```\n</attachment>' },
+      ],
+    }
+
+    render(
+      <PiTimelineMessage
+        message={message}
+        isLast={false}
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+      />,
+    )
+
+    expect(screen.getByTestId('message-response').textContent).toBe('please review')
+    expect(screen.queryByText(/attachment data-boring-agent/)).toBeNull()
+    expect(screen.queryByText(/# spec/)).toBeNull()
   })
 
   test('strips generated text attachment blocks from recovered user text', () => {

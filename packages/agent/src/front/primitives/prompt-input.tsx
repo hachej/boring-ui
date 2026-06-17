@@ -25,7 +25,7 @@ import {
 } from "@hachej/boring-ui-kit";
 import { Input, Spinner } from "@hachej/boring-ui-kit";
 import { cn } from "@/front/lib";
-import type { ChatStatus, FileUIPart, SourceDocumentUIPart } from "ai";
+import type { ChatStatus, SourceDocumentUIPart } from "ai";
 import {
   CornerDownLeftIcon,
   ImageIcon,
@@ -59,6 +59,7 @@ import {
   type AttachmentEntry,
   type AttachmentsContext,
   type PromptInputControllerProps,
+  type PromptInputFilePart,
   type ReferencedSourcesContext,
 } from "./prompt-input-context";
 import {
@@ -77,6 +78,7 @@ export {
   type AttachmentEntry,
   type AttachmentsContext,
   type PromptInputControllerProps,
+  type PromptInputFilePart,
   type ReferencedSourcesContext,
   type TextInputContext,
 } from "./prompt-input-context";
@@ -300,7 +302,7 @@ export const PromptInputActionAddScreenshot = ({
 
 export interface PromptInputMessage {
   text: string;
-  files: FileUIPart[];
+  files: PromptInputFilePart[];
 }
 
 export type PromptInputProps = Omit<
@@ -716,7 +718,7 @@ export const PromptInput = ({
       try {
         // Convert remaining blob URLs to data URLs (fallback for files without
         // onUploadFile, or files whose upload failed and kept the blob URL).
-        const convertedFiles: FileUIPart[] = await Promise.all(
+        const convertedFiles: PromptInputFilePart[] = await Promise.all(
           files.map(async ({ id: _id, status: _status, ...item }) => {
             if (item.url?.startsWith("blob:")) {
               const dataUrl = await convertBlobUrlToDataUrl(item.url);

@@ -46,15 +46,6 @@ export const builtinCommands: SlashCommand[] = [
     },
   },
   {
-    name: 'think',
-    description: 'Alias for /thinking',
-    handler(args, ctx) {
-      const query = args.trim()
-      if (query) return ctx.selectComposerThinking?.(query)
-      if (ctx.openThinkingPicker?.() === false) return { preserveDraft: true }
-    },
-  },
-  {
     name: 'help',
     description: 'Show available commands',
     handler(_, ctx) {

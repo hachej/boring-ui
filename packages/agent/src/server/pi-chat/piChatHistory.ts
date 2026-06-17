@@ -71,6 +71,7 @@ function filePartsFromContent(content: unknown, messageId: string): BoringChatPa
         ...(optionalString(part.filename) ? { filename: optionalString(part.filename) } : {}),
         ...(mediaType ? { mediaType } : {}),
         ...(imagePartUrl(part, mediaType) ? { url: imagePartUrl(part, mediaType) } : {}),
+        ...(optionalString(part.path) ? { path: optionalString(part.path) } : {}),
       },
     ]
   })

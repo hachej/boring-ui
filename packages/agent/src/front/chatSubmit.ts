@@ -1,9 +1,17 @@
-import type { FileUIPart } from 'ai'
+import type { PromptInputFilePart } from './primitives/prompt-input-context'
 import { readFileAsText, resolveAttachmentUrls } from './chatAttachments'
 
 export interface EnrichedSubmitPayload {
   serverMessage: string
   attachments: Awaited<ReturnType<typeof resolveAttachmentUrls>>
+}
+
+function escapeAttachmentAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
 }
 
 export async function createEnrichedSubmitPayload({
@@ -12,29 +20,31 @@ export async function createEnrichedSubmitPayload({
   mentionedFiles,
 }: {
   text: string
-  files: FileUIPart[]
+  files: PromptInputFilePart[]
   mentionedFiles: string[]
 }): Promise<EnrichedSubmitPayload> {
   // Build the server-side enriched message (text attachments inlined for
   // pi, which is text-only). Importantly, the VISIBLE user bubble only
   // shows the raw `text` plus file chips — the enriched version is not
-  // rendered in the UI, just sent to the server. This keeps
-  // "[attached: foo.png …]" markers out of the message bubble.
+  // rendered in the UI, just sent to the server. Keep the model-facing
+  // attachment note structured so reload/history code can strip it reliably.
   const attachmentSummaries: string[] = []
   for (const file of files ?? []) {
     const label = file.filename ?? 'attachment'
     const mime = file.mediaType ?? 'application/octet-stream'
-    const workspacePath = typeof (file as unknown as { path?: unknown }).path === 'string'
-      ? (file as unknown as { path: string }).path
-      : undefined
-    const pathNote = workspacePath
-      ? `\nSaved in workspace at: ${workspacePath}\nUse the workspace file/read tools with this path if you need to inspect it.`
-      : ''
+    const workspacePath = file.path
+    const attrs: Array<[string, string]> = [
+      ['data-boring-agent', 'composer-file'],
+      ['filename', label],
+      ['mime', mime],
+    ]
+    if (workspacePath) attrs.push(['path', workspacePath])
+    const attrText = attrs.map(([name, value]) => `${name}="${escapeAttachmentAttr(value)}"`).join(' ')
     const content = await readFileAsText(file)
     if (content !== null) {
-      attachmentSummaries.push(`[attached: ${label} (${mime})${pathNote}]\n\`\`\`\n${content}\n\`\`\``)
+      attachmentSummaries.push(`<attachment ${attrText}>\n\`\`\`\n${content}\n\`\`\`\n</attachment>`)
     } else {
-      attachmentSummaries.push(`[attached: ${label} (${mime}, not inlined — binary)${pathNote}]`)
+      attachmentSummaries.push(`<attachment ${attrText} binary="true" />`)
     }
   }
 

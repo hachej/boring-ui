@@ -452,6 +452,7 @@ function filePartsFromContent(content: unknown, messageId: string): BoringChatPa
       ...(optionalString(part.filename) ? { filename: optionalString(part.filename) } : {}),
       ...(mediaType ? { mediaType } : {}),
       ...(url ? { url } : {}),
+      ...(optionalString(part.path) ? { path: optionalString(part.path) } : {}),
     }]
   })
 }

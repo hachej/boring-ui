@@ -111,7 +111,7 @@ describe('/model', () => {
   })
 })
 
-describe('/thinking and /think', () => {
+describe('/thinking', () => {
   test('/thinking opens thinking picker when no args', () => {
     const openThinkingPicker = vi.fn(() => true)
     const ctx = makeContext({ openThinkingPicker })
@@ -119,16 +119,13 @@ describe('/thinking and /think', () => {
     expect(openThinkingPicker).toHaveBeenCalledOnce()
   })
 
-  test('/think is an alias for /thinking', () => {
-    const selectComposerThinking = vi.fn()
-    const ctx = makeContext({ selectComposerThinking })
-    getBuiltin('think').handler('high', ctx)
-    expect(selectComposerThinking).toHaveBeenCalledWith('high')
+  test('does not register the old /think alias', () => {
+    expect(builtinCommands.find((c) => c.name === 'think')).toBeUndefined()
   })
 })
 
 describe('all builtins registered', () => {
-  test.each(['reset', 'clear', 'reload', 'model', 'thinking', 'think', 'help'])('includes /%s', (name) => {
+  test.each(['reset', 'clear', 'reload', 'model', 'thinking', 'help'])('includes /%s', (name) => {
     expect(builtinCommands.find((c) => c.name === name)).toBeDefined()
   })
 

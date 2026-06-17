@@ -207,6 +207,40 @@ test('registerAgentRoutes provisions the resolved request workspace, not the hos
   }
 }, 15_000)
 
+test('registerAgentRoutes resolves raw file preview workspace from query param', async () => {
+  const baseRoot = await makeTempDir('boring-agent-raw-preview-base-')
+  const workspaceA = await makeTempDir('boring-agent-raw-preview-a-')
+  await writeFile(join(baseRoot, 'chart.png'), 'base-root')
+  await writeFile(join(workspaceA, 'chart.png'), 'workspace-a')
+  const getWorkspaceId = vi.fn(async (request: { headers: Record<string, unknown> }) => String(request.headers['x-boring-workspace-id'] ?? ''))
+  const getWorkspaceRoot = vi.fn(async (workspaceId: string) => workspaceId === 'workspace-a' ? workspaceA : baseRoot)
+  const app = Fastify({ logger: false })
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot: baseRoot,
+    mode: 'direct',
+    getWorkspaceId,
+    getWorkspaceRoot,
+  })
+  await app.ready()
+
+  try {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files/raw?path=chart.png&workspaceId=workspace-a',
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toBe('workspace-a')
+    expect(getWorkspaceId).toHaveBeenCalledWith(expect.objectContaining({
+      headers: expect.objectContaining({ 'x-boring-workspace-id': 'workspace-a' }),
+    }))
+    expect(getWorkspaceRoot).toHaveBeenCalledWith('workspace-a', expect.anything())
+  } finally {
+    await app.close()
+  }
+})
+
 test('request-scoped ready-status resolves the requested workspace', async () => {
   const baseRoot = await makeTempDir('boring-agent-ready-base-')
   const workspaceA = await makeTempDir('boring-agent-ready-workspace-a-')

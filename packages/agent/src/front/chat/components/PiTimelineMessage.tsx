@@ -1,10 +1,11 @@
 "use client"
 
-import type { MouseEvent as ReactMouseEvent } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { useCallback, useEffect, useState } from 'react'
 import { CheckIcon, CopyIcon } from 'lucide-react'
 import { Button } from '@hachej/boring-ui-kit'
 import type { BoringChatMessage, BoringChatPart } from '../../../shared/chat'
+import { useOpenArtifact } from '../../ArtifactOpenContext'
 import { resolveToolRendererForPart, toToolPart, type ToolRendererOverrides } from '../../bareToolRenderers'
 import { cn } from '../../lib'
 import {
@@ -46,6 +47,8 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
   const textParts = message.parts.filter((part): part is Extract<BoringChatPart, { type: 'text' }> => part.type === 'text')
   const fileParts = message.parts.filter((part): part is Extract<BoringChatPart, { type: 'file' }> => part.type === 'file')
   const finalParts = groupRenderableParts(message)
+  const attachmentSummaryPaths = role === 'user' ? attachmentPathsFromTextParts(textParts) : []
+  const openArtifact = useOpenArtifact()
   const shouldReserveStreamingActions = isStreaming && isAssistant && isLast
 
   return (
@@ -79,15 +82,40 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
                 : undefined,
             )}
           >
-            {fileParts.map((file, index) => (
-              <Attachment
-                key={`file-${message.id}-${index}`}
-                data={toAttachmentData(file, `file-${message.id}-${index}`)}
-              >
-                <AttachmentPreview className={role === 'user' ? '!size-5 shrink-0 rounded-[var(--radius-sm)]' : 'size-10 shrink-0 rounded-[var(--radius-md)]'} />
-                <AttachmentInfo className={role === 'user' ? 'min-w-0 max-w-[220px] flex-1 text-[12px]' : 'min-w-0 flex-1'} />
-              </Attachment>
-            ))}
+            {fileParts.map((file, index) => {
+              const openPath = file.path ?? attachmentSummaryPaths[index]
+              const canOpen = Boolean(openArtifact && openPath)
+              const openAttachment = () => {
+                if (!openPath) return
+                openArtifact?.(openPath)
+              }
+              const openAttachmentFromKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return
+                event.preventDefault()
+                openAttachment()
+              }
+
+              return (
+                <Attachment
+                  key={`file-${message.id}-${index}`}
+                  data={toAttachmentData(file, `file-${message.id}-${index}`)}
+                  {...(canOpen
+                    ? {
+                        role: 'button',
+                        tabIndex: 0,
+                        title: `Open ${openPath} in workspace`,
+                        'aria-label': `Open ${file.filename ?? openPath} in workspace`,
+                        'data-workspace-path': openPath,
+                        onClick: openAttachment,
+                        onKeyDown: openAttachmentFromKeyboard,
+                      }
+                    : undefined)}
+                >
+                  <AttachmentPreview className={role === 'user' ? '!size-5 shrink-0 rounded-[var(--radius-sm)]' : 'size-10 shrink-0 rounded-[var(--radius-md)]'} />
+                  <AttachmentInfo className={role === 'user' ? 'min-w-0 max-w-[220px] flex-1 text-[12px]' : 'min-w-0 flex-1'} />
+                </Attachment>
+              )
+            })}
           </Attachments>
         ) : null}
         {finalParts.map((item) => {
@@ -289,7 +317,35 @@ function stripAttachmentSummaryBlocks(text: string): string {
 }
 
 function isAttachmentSummaryLine(line: string): boolean {
-  return /^\[attached: .+ \(.+\)\]$/.test(line.trim())
+  const trimmed = line.trim()
+  return trimmed.startsWith('[attached: ')
+    || (trimmed.startsWith('<attachment ') && trimmed.includes('data-boring-agent="composer-file"'))
+}
+
+function attachmentPathsFromTextParts(parts: Extract<BoringChatPart, { type: 'text' }>[]): string[] {
+  return parts.flatMap((part) => part.text.split('\n').flatMap((line) => {
+    const trimmed = line.trim()
+    const taggedPath = attachmentTagAttr(trimmed, 'path')
+    if (taggedPath) return [taggedPath]
+    const oldInline = trimmed.match(/^\[attached: .+ Saved in workspace at: (.+?) Use the workspace file\/read tools/)
+    if (oldInline?.[1]) return [oldInline[1]]
+    const oldMultiline = trimmed.match(/^Saved in workspace at: (.+)$/)
+    return oldMultiline?.[1] ? [oldMultiline[1]] : []
+  }))
+}
+
+function attachmentTagAttr(line: string, name: string): string | undefined {
+  if (!line.startsWith('<attachment ') || !line.includes('data-boring-agent="composer-file"')) return undefined
+  const match = line.match(new RegExp(`\\b${name}="([^"]*)"`))
+  return match?.[1] ? unescapeAttachmentAttr(match[1]) : undefined
+}
+
+function unescapeAttachmentAttr(value: string): string {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&gt;/g, '>')
+    .replace(/&lt;/g, '<')
+    .replace(/&amp;/g, '&')
 }
 
 function MessageActionsBar({

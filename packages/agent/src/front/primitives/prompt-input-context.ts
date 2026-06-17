@@ -1,7 +1,8 @@
 import type { FileUIPart, SourceDocumentUIPart } from 'ai'
 import { createContext, useContext, type RefObject } from 'react'
 
-export type AttachmentEntry = FileUIPart & { id: string; status?: 'uploading' | 'ready' | 'error'; path?: string }
+export type PromptInputFilePart = FileUIPart & { path?: string }
+export type AttachmentEntry = PromptInputFilePart & { id: string; status?: 'uploading' | 'ready' | 'error' }
 
 export interface AttachmentsContext {
   files: AttachmentEntry[]
