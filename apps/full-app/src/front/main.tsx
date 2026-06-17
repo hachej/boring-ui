@@ -15,6 +15,8 @@ import '@hachej/boring-core/app/front/styles.css'
 import './app.css'
 import { PublicHeroDescription, publicLaunchPlugin } from './PublicLaunchPages'
 
+const PRODUCT_NAME = 'Seneca AI'
+
 // Show the Buy-credits button when the server has Lemon Squeezy checkout wired
 // (set this alongside the server-side LS env). The checkout itself is created
 // server-side so the buyer id can't be tampered with.
@@ -82,13 +84,14 @@ createRoot(document.getElementById('root')!).render(
       apiBaseUrl=""
       apiTimeout={10_000}
       persistenceEnabled
+      appTitle={PRODUCT_NAME}
       chatEntryMode="chat-first"
       publicPaths={[]}
       chatFirstPublicShell={{
         showTeachingArrows: true,
         composerPlaceholder: 'Sign in to chat with the agent — or type a command like /landing-page',
         emptyState: {
-          eyebrow: 'Private AI workspace',
+          eyebrow: PRODUCT_NAME,
           title: 'One workspace. Any AI provider',
           description: <PublicHeroDescription />,
           footer: (
