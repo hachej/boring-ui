@@ -31,6 +31,7 @@ import { cn } from "../../../../front/lib/utils"
 
 const LARGE_FILE_THRESHOLD = 1_000_000
 const DOWNLOAD_THRESHOLD = 10_000_000
+const CSP_NONCE_META_NAME = "boring-csp-nonce"
 
 export interface CodeEditorProps {
   content: string
@@ -40,6 +41,15 @@ export interface CodeEditorProps {
   lineNumbers?: boolean
   wordWrap?: boolean
   className?: string
+}
+
+function readCspNonceFromDom(): string | null {
+  if (typeof document === "undefined") return null
+  const nonce = document
+    .querySelector(`meta[name="${CSP_NONCE_META_NAME}"]`)
+    ?.getAttribute("content")
+    ?.trim()
+  return nonce || null
 }
 
 function getLanguageExtension(language: string): Extension | null {
@@ -96,12 +106,14 @@ export function CodeEditor({
   const effectiveReadOnly = readOnly || isLargeFile
 
   const extensions = useMemo(() => {
+    const cspNonce = readCspNonceFromDom()
     const exts: Extension[] = [
       readOnlyCompartment.current.of(EditorState.readOnly.of(effectiveReadOnly)),
       lineNumbersCompartment.current.of(lineNumbers ? lineNumbersExt() : []),
       wordWrapCompartment.current.of(wordWrap ? EditorView.lineWrapping : []),
       drawSelection(),
       highlightActiveLine(),
+      ...(cspNonce ? [EditorView.cspNonce.of(cspNonce)] : []),
       bracketMatching(),
       indentOnInput(),
       history(),
