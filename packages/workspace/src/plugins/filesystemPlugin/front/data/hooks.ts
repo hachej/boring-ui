@@ -20,16 +20,36 @@ function noRetryOn404(count: number, error: Error): boolean {
   return count < 3
 }
 
-export function useFileContent(path: string | null): UseQueryResult<FileContent> {
+export interface UseFileContentOptions {
+  /** Create the file with this content when the initial read returns 404. */
+  createIfMissing?: string
+}
+
+export function useFileContent(
+  path: string | null,
+  options: UseFileContentOptions = {},
+): UseQueryResult<FileContent> {
   const client = useDataClient()
   const base = useApiBaseUrl()
   const workspaceId = useWorkspaceRequestId()
+  const createIfMissing = options.createIfMissing
   return useQuery({
-    queryKey: [base, workspaceId, FILES_QUERY_KEY_SEGMENT, path],
-    queryFn: ({ signal }) => client.getFile(path!, signal),
+    queryKey: [base, workspaceId, FILES_QUERY_KEY_SEGMENT, path, createIfMissing ?? null],
+    queryFn: async ({ signal }) => {
+      const activePath = path!
+      try {
+        return await client.getFile(activePath, signal)
+      } catch (err) {
+        if (createIfMissing === undefined || !(err instanceof FetchError) || err.status !== 404) throw err
+        if (signal.aborted) throw new DOMException("Aborted", "AbortError")
+        const created = await client.writeFile(activePath, createIfMissing)
+        events.emit(filesystemEvents.created, { ...userMeta(), path: activePath, kind: "file" })
+        return { content: createIfMissing, mtimeMs: created.mtimeMs }
+      }
+    },
     enabled: path != null,
     staleTime: 0,
-    retry: noRetryOn404,
+    retry: createIfMissing === undefined ? noRetryOn404 : false,
   })
 }
 
