@@ -369,6 +369,25 @@ describe("PiSessionStore", () => {
     expect(() => new PiSessionStore("/tmp", { sessionNamespace: "../bad" })).toThrow("session namespace");
   });
 
+  it("honors BORING_AGENT_SESSION_ROOT for namespaced session stores", async () => {
+    const previous = process.env.BORING_AGENT_SESSION_ROOT;
+    process.env.BORING_AGENT_SESSION_ROOT = tmpDir;
+    try {
+      const store = new PiSessionStore("/workspace", { sessionNamespace: "workspace-a" });
+      expect(store.getSessionDir()).toBe(join(tmpDir, "workspace-a"));
+
+      const session = await store.create(ctx, { title: "Persistent" });
+      await expect(readFile(join(tmpDir, "workspace-a", `${session.id}.jsonl`), "utf-8"))
+        .resolves.toContain("Persistent");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.BORING_AGENT_SESSION_ROOT;
+      } else {
+        process.env.BORING_AGENT_SESSION_ROOT = previous;
+      }
+    }
+  });
+
   it("can store session files under host cwd while writing runtime cwd in session header", async () => {
     const store = new PiSessionStore("/workspace", { storageCwd: "/tmp/host-storage-root", sessionDir: tmpDir });
     const session = await store.create(ctx, { title: "Runtime cwd" });
