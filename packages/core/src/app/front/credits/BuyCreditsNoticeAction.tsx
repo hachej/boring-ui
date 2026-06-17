@@ -35,17 +35,12 @@ export function BuyCreditsNoticeAction({ apiBaseUrl = '', label = 'Buy credits' 
 
   return (
     <div className="flex shrink-0 flex-col items-end gap-1">
-      {/* Use foreground/background (not the primary token) for the label: this notice renders
-          inside the agent's [data-boring-agent] subtree, where the dark-mode `--primary-foreground`
-          mis-cascades to white (its dark tokens are keyed on .dark, but the host toggles
-          [data-theme="dark"]), producing a white-on-white button. foreground/background resolve
-          correctly here, so the CTA stays high-contrast in both themes. */}
       <Button
         type="button"
         size="sm"
         onClick={() => void onBuy()}
         disabled={buying}
-        className="bg-foreground text-background hover:bg-foreground/90"
+        className="boring-buy-credits-notice-button"
       >
         {buying ? 'Opening…' : label}
       </Button>
