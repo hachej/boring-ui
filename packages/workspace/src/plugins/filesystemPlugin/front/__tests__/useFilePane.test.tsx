@@ -8,14 +8,16 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ReactNode } from "react"
 import { events, workspaceEvents } from "../../../../front/events"
 import { useFilePane } from "../useFilePane"
-import { FetchError, FileConflictError } from "../data/fetchClient"
+import { FileConflictError } from "../data/fetchClient"
 
 // Mock the data layer — we exercise the hook's state machine, not React Query.
 const mockWriteFile = vi.fn()
 const mockFileContent = vi.fn()
 
 vi.mock("../data", () => ({
-  useFileContent: (path: string | null) => mockFileContent(path),
+  useFileContent: (path: string | null, options?: { createIfMissing?: string }) => (
+    options === undefined ? mockFileContent(path) : mockFileContent(path, options)
+  ),
   useFileWrite: () => ({ mutateAsync: mockWriteFile }),
 }))
 
@@ -291,72 +293,12 @@ describe("useFilePane", () => {
   })
 
   describe("createIfMissing", () => {
-    it("auto-creates a missing file when createIfMissing content is provided", async () => {
-      mockFileContent.mockReturnValue({
-        data: undefined,
-        isLoading: false,
-        error: new FetchError(404, "not found"),
-        refetch: vi.fn(async () => ({ data: { content: "default", mtimeMs: 2000 } })),
-      })
-
-      const { result } = renderHook(
-        () => useFilePane({ path: "deck/new.md", createIfMissing: "# Default\n" }),
-        { wrapper },
-      )
+    it("delegates missing-file creation to the file-content query", async () => {
+      renderHook(() => useFilePane({ path: "deck/new.md", createIfMissing: "# Default\n" }), { wrapper })
       await act(async () => {})
 
-      expect(mockWriteFile).toHaveBeenCalledTimes(1)
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.objectContaining({ path: "deck/new.md", content: "# Default\n" }),
-      )
-
-      // After write resolves, auto-creating finishes. The mocked refetch
-      // does not update React Query state in this unit test, so content
-      // remains null; we just verify the hook is no longer in a creating/
-      // loading state and no error is surfaced.
-      await act(async () => {
-        await Promise.resolve()
-      })
-      // The mock refetch does not update React Query state in this unit
-      // test, so the 404 error remains. The real hook clears it once
-      // the query re-runs with data after the write succeeds.
-      expect(result.current.error).toBeInstanceOf(FetchError)
-      expect(result.current.isLoading).toBe(false)
-    })
-
-    it("does not auto-create when createIfMissing is omitted", async () => {
-      mockFileContent.mockReturnValue({
-        data: undefined,
-        isLoading: false,
-        error: new FetchError(404, "not found"),
-        refetch: vi.fn(),
-      })
-
-      renderHook(() => useFilePane({ path: "deck/new.md" }), { wrapper })
-      await act(async () => {})
-
+      expect(mockFileContent).toHaveBeenCalledWith("deck/new.md", { createIfMissing: "# Default\n" })
       expect(mockWriteFile).not.toHaveBeenCalled()
-    })
-
-    it("only attempts auto-creation once per path mount", async () => {
-      mockFileContent.mockReturnValue({
-        data: undefined,
-        isLoading: false,
-        error: new FetchError(404, "not found"),
-        refetch: vi.fn(),
-      })
-
-      const { rerender } = renderHook(
-        () => useFilePane({ path: "deck/new.md", createIfMissing: "# A\n" }),
-        { wrapper },
-      )
-      await act(async () => {})
-      expect(mockWriteFile).toHaveBeenCalledTimes(1)
-
-      // Re-render with the same path should not re-trigger.
-      rerender({ path: "deck/new.md", createIfMissing: "# A\n" })
-      await act(async () => {})
-      expect(mockWriteFile).toHaveBeenCalledTimes(1)
     })
   })
 })
