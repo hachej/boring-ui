@@ -517,6 +517,64 @@ describe('file routes (NodeWorkspace integration)', () => {
     await expect(readFile(join(workspaceRoot, body.path))).resolves.toEqual(pngBytes)
   })
 
+  test('POST /api/v1/files/upload stores non-image files under uploads path', async () => {
+    const { app, workspaceRoot } = await createTestApp()
+    const pdfBytes = Buffer.from('%PDF-1.4\n')
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files/upload',
+      payload: {
+        filename: 'Report.pdf',
+        contentType: 'application/pdf',
+        contentBase64: pdfBytes.toString('base64'),
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.path).toMatch(/^assets\/uploads\/Report-[a-z0-9]+-[a-z0-9]+\.pdf$/)
+    expect(body.markdownUrl).toBe(body.path)
+    await expect(readFile(join(workspaceRoot, body.path))).resolves.toEqual(pdfBytes)
+
+    const raw = await app.inject({ method: 'GET', url: `/api/v1/files/raw?path=${encodeURIComponent(body.path)}` })
+    expect(raw.statusCode).toBe(200)
+    expect(raw.headers['content-type']).toBe('application/pdf')
+    expect(raw.headers['x-content-type-options']).toBe('nosniff')
+  })
+
+  test('POST /api/v1/files/upload does not preserve SVG as active web content', async () => {
+    const { app } = await createTestApp()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files/upload',
+      payload: {
+        filename: 'payload.svg',
+        contentType: 'image/svg+xml',
+        contentBase64: Buffer.from('<svg><script>alert(1)</script></svg>').toString('base64'),
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().path).toMatch(/^assets\/images\/payload-[a-z0-9]+-[a-z0-9]+\.bin$/)
+  })
+
+  test('POST /api/v1/files/upload does not preserve executable web extensions', async () => {
+    const { app } = await createTestApp()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files/upload',
+      payload: {
+        filename: 'payload.html',
+        contentType: 'text/html',
+        contentBase64: Buffer.from('<script>alert(1)</script>').toString('base64'),
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().path).toMatch(/^assets\/uploads\/payload-[a-z0-9]+-[a-z0-9]+\.bin$/)
+  })
+
   test('GET/PUT /api/v1/workspace-settings round-trips markdown image path', async () => {
     const { app, workspaceRoot } = await createTestApp()
 

@@ -16,8 +16,10 @@ describe('createEnrichedSubmitPayload', () => {
     })
 
     expect(result.serverMessage).toContain('can you read this?')
-    expect(result.serverMessage).toContain('Screenshot.png')
-    expect(result.serverMessage).toContain('Saved in workspace at: assets/images/screenshot-abc.png')
+    expect(result.serverMessage).toContain('<attachment data-boring-agent="composer-file"')
+    expect(result.serverMessage).toContain('filename="Screenshot.png"')
+    expect(result.serverMessage).toContain('path="assets/images/screenshot-abc.png"')
+    expect(result.serverMessage).toContain('binary="true"')
     expect(result.attachments).toEqual([
       expect.objectContaining({
         filename: 'Screenshot.png',

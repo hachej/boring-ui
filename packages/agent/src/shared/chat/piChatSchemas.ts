@@ -83,6 +83,7 @@ export const BoringChatPartSchema: z.ZodType<BoringChatPart, z.ZodTypeDef, unkno
     filename: z.string().optional(),
     mediaType: z.string().optional(),
     url: z.string().optional(),
+    path: z.string().optional(),
   }),
   z.object({
     type: z.literal('notice'),

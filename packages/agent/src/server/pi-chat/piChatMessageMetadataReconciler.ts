@@ -1,5 +1,6 @@
 import type {
   BoringChatMessage,
+  BoringChatPart,
   FollowUpPayload,
   PiChatEvent,
   PiChatSnapshot,
@@ -15,6 +16,7 @@ interface FollowUpMetadata {
   clientNonce?: string
   clientSeq?: number
   recordedAt?: number
+  files?: Extract<BoringChatPart, { type: 'file' }>[]
 }
 
 export class PiChatMessageMetadataReconciler {
@@ -35,11 +37,13 @@ export class PiChatMessageMetadataReconciler {
   recordPrompt(sessionId: string, payload: PromptPayload): void {
     const metadata = this.promptMetadata.get(sessionId) ?? []
     const displayText = payload.displayMessage ?? payload.message
+    const files = filePartsFromPromptPayload(payload)
     metadata.push({
       displayText,
       ...(displayText !== payload.message ? { serverText: payload.message } : {}),
       clientNonce: payload.clientNonce,
       recordedAt: Date.now(),
+      ...(files ? { files } : {}),
     })
     this.promptMetadata.set(sessionId, metadata)
   }
@@ -117,9 +121,16 @@ export class PiChatMessageMetadataReconciler {
     }
     if (event.type === 'message-start' && event.role === 'user' && !hasFollowUpSelector(event)) {
       const promptMetadata = this.findPrompt(sessionId, event.text)
-      if (promptMetadata) return { ...event, text: promptMetadata.displayText, clientNonce: promptMetadata.clientNonce }
+      if (promptMetadata) return withMessageStartMetadata(event, promptMetadata)
       const metadata = this.findFollowUp(sessionId, event.text)
-      if (metadata) return { ...event, text: metadata.displayText, clientNonce: metadata.clientNonce, clientSeq: metadata.clientSeq }
+      if (metadata) return withMessageStartMetadata(event, metadata)
+    }
+    if (event.type === 'message-end' && event.final.role === 'user' && !hasMessageSelector(event.final)) {
+      const text = messageText(event.final)
+      const promptMetadata = this.findPrompt(sessionId, text)
+      if (promptMetadata) return { ...event, final: withMessageSelector(event.final, promptMetadata) }
+      const metadata = this.findFollowUp(sessionId, text)
+      if (metadata) return { ...event, final: withMessageSelector(event.final, metadata) }
     }
     return event
   }
@@ -207,13 +218,30 @@ export class PiChatMessageMetadataReconciler {
   }
 
   private consumePromptFromEvent(sessionId: string, event: PiChatEvent): void {
-    if (event.type !== 'message-start' || event.role !== 'user') return
-    if (event.clientSeq !== undefined) return
-    if (event.clientNonce) {
-      this.removePrompt(sessionId, { clientNonce: event.clientNonce })
+    if (event.type === 'message-start' && event.role === 'user') {
+      if (event.clientSeq !== undefined) return
+      const prompt = event.clientNonce
+        ? this.promptMetadata.get(sessionId)?.find((entry) => entry.clientNonce === event.clientNonce)
+        : this.findPrompt(sessionId, event.text)
+      // Keep enriched prompts past `message-start`: Pi can later emit a final
+      // `message-end` carrying the raw server prompt, and that final replaces
+      // the start message in the reducer. Plain prompts can be consumed now.
+      if (prompt?.serverText) return
+      if (event.clientNonce) {
+        this.removePrompt(sessionId, { clientNonce: event.clientNonce })
+        return
+      }
+      this.removePrompt(sessionId, { displayText: event.text })
       return
     }
-    this.removePrompt(sessionId, { displayText: event.text })
+
+    if (event.type !== 'message-end' || event.final.role !== 'user') return
+    if (event.final.clientSeq !== undefined) return
+    if (event.final.clientNonce) {
+      this.removePrompt(sessionId, { clientNonce: event.final.clientNonce })
+      return
+    }
+    this.removePrompt(sessionId, { displayText: messageText(event.final) })
   }
 
   private removeFirstFollowUpByText(sessionId: string, text: string | undefined): void {
@@ -276,9 +304,19 @@ function matchesMetadataText(entry: FollowUpMetadata | undefined, text: string |
   return entry.displayText === text || entry.serverText === text
 }
 
+function withMessageStartMetadata(event: Extract<PiChatEvent, { type: 'message-start' }>, metadata: FollowUpMetadata): PiChatEvent {
+  return {
+    ...event,
+    text: metadata.displayText,
+    ...(metadata.clientNonce ? { clientNonce: metadata.clientNonce } : {}),
+    ...(metadata.clientSeq !== undefined ? { clientSeq: metadata.clientSeq } : {}),
+    ...(metadata.files && metadata.files.length > 0 ? { files: metadata.files } : {}),
+  }
+}
+
 function withMessageSelector(message: BoringChatMessage, metadata: FollowUpMetadata): BoringChatMessage {
   return {
-    ...withMessageDisplayText(message, metadata.displayText),
+    ...withMessageFiles(withMessageDisplayText(message, metadata.displayText), metadata.files),
     ...(metadata.clientNonce ? { clientNonce: metadata.clientNonce } : {}),
     ...(metadata.clientSeq !== undefined ? { clientSeq: metadata.clientSeq } : {}),
   }
@@ -293,6 +331,24 @@ function withMessageDisplayText(message: BoringChatMessage, displayText: string)
     return [{ ...part, text: displayText }]
   })
   return { ...message, parts }
+}
+
+function withMessageFiles(message: BoringChatMessage, files: FollowUpMetadata['files']): BoringChatMessage {
+  if (!files || files.length === 0) return message
+  const nonFileParts = message.parts.filter((part) => part.type !== 'file')
+  return { ...message, parts: [...nonFileParts, ...files] }
+}
+
+function filePartsFromPromptPayload(payload: PromptPayload): Extract<BoringChatPart, { type: 'file' }>[] | undefined {
+  if (!payload.attachments || payload.attachments.length === 0) return undefined
+  return payload.attachments.map((attachment, index) => ({
+    type: 'file',
+    id: `prompt:${payload.clientNonce}:file:${index}`,
+    filename: attachment.filename,
+    mediaType: attachment.mediaType,
+    url: attachment.url,
+    path: attachment.path,
+  }))
 }
 
 function withQueuedSelector(followUp: QueuedUserMessage, metadata: FollowUpMetadata): QueuedUserMessage {

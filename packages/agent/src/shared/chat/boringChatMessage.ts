@@ -26,7 +26,7 @@ export type BoringChatPart =
       errorText?: string
       ui?: ToolUiMetadata
     }
-  | { type: 'file'; id?: string; filename?: string; mediaType?: string; url?: string }
+  | { type: 'file'; id?: string; filename?: string; mediaType?: string; url?: string; path?: string }
   | { type: 'notice'; id?: string; level: 'info' | 'warning' | 'error'; text: string }
 
 export interface BoringChatMessage {
