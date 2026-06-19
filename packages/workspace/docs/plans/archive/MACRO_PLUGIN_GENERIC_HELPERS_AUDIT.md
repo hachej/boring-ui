@@ -733,7 +733,7 @@ server response shape `{ items, total, hasMore }`. Do not move macro routes.
 
 Macro currently uses workspace event bus indirectly:
 
-- `openSeriesPane()` posts `workspace:ui.command` through `emitUiEffect()`.
+- `openSeriesPane()` posts `workspace:ui.command` through `postUiCommand()`.
 - tests subscribe to `events.on("workspace:ui.command", ...)`.
 - filesystem/agent events are owned by workspace/filesystem plugin, not macro.
 

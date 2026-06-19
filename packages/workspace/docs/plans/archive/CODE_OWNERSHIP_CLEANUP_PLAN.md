@@ -142,7 +142,7 @@ Each can evolve at its own pace.
   `@boring/workspace` UI bridge (`exec_ui` + `openPanel` command) already
   covers everything tabBus does (push a "show this series" command from
   the agent to the workbench). Migrate the macro call sites that still
-  push to tabBus over to `bridge.emitUiEffect({kind:"openPanel", ...})`
+  push to tabBus over to `bridge.postCommand({kind:"openPanel", ...})`
   and delete the file. Adding tabBus's API to workspace would duplicate
   the bridge surface.
 - reusable pieces from `src/server/services/clickhouse.ts`
@@ -195,7 +195,7 @@ Each can evolve at its own pace.
   ".":           "./dist/workspace.js",   // main API (ChatCenteredShell, panes, hooks, …)
   "./testing":   "./dist/testing.js",     // test helpers (TestWorkspaceProvider, mocks)
   "./ui-shadcn": "./dist/ui-shadcn.js",   // shadcn primitives (Button, Card, …)
-  "./shared":    "./dist/shared.js",      // WorkspaceBridge / UiCommand / UiState types
+  "./shared":    "./dist/shared.js",      // UiBridge / UiCommand / UiState types
   "./server":    "./dist/server.js"       // createWorkspaceAgentApp, uiRoutes, uiTools
 }
 ```
@@ -207,7 +207,7 @@ consumer outside the monorepo (or any tool that bypasses Vite's path
 aliases) gets a broken import.
 
 This is why earlier work had to **inline `createWorkspaceAgentApp` into
-the consuming app** (`boring-macro-v2/src/server/workspaceBridge.ts` is a
+the consuming app** (`boring-macro-v2/src/server/uiBridge.ts` is a
 copy-paste of `packages/workspace/src/server/createWorkspaceAgentApp.ts`
 + `uiTools.ts` + `uiRoutes.ts`). Phase 1's "import from
 `@boring/workspace/server`" doesn't actually work today; it has to be
@@ -227,7 +227,7 @@ made to work first.
    package.
 5. Confirm `pnpm --filter @boring/workspace build` produces all five
    entries declared in the exports map.
-6. Delete `boring-macro-v2/src/server/workspaceBridge.ts` and replace with
+6. Delete `boring-macro-v2/src/server/uiBridge.ts` and replace with
    `import { createWorkspaceAgentApp } from "@boring/workspace/server"`.
    This is the ground-truth verification that the build works.
 
@@ -236,7 +236,7 @@ to inline the same code), Phase 4 (extractions that target package
 surfaces require the targets to actually be buildable), and the macro
 consolidation work in
 [`apps/boring-macro-v2/docs/CONSOLIDATE_AND_STANDALONIZE.md`](../../../apps/boring-macro-v2/docs/CONSOLIDATE_AND_STANDALONIZE.md)
-(its Phase C drops the inlined `workspaceBridge.ts` workaround).
+(its Phase C drops the inlined `uiBridge.ts` workaround).
 
 Estimated cost: half a day. Adds zero behavioural change — just makes
 the package's declared API match what's shipped.
@@ -315,7 +315,7 @@ After Phase 2, `apps/boring-macro-v2/e2e/` shrinks from 29 → ~14 specs:
 1. Stage reusable full-app server glue (auth proxy, static SPA fallback,
    CSP nonce HTML transforms) in `apps/full-app/src/server/_shared/`.
    Promote to `@boring/core/server` once core stabilises.
-2. Replace macro `tabBus.ts` with `bridge.emitUiEffect({kind:"openPanel", ...})`
+2. Replace macro `tabBus.ts` with `bridge.postCommand({kind:"openPanel", ...})`
    call sites — no extraction needed; the workspace UI bridge already
    owns this surface.
 3. Extract generic queue/rate-limit primitive used by macro refresh

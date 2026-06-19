@@ -197,7 +197,7 @@ workspace-dev-server scope.
   manifest shape.
 - Server-only runtime manifests stay under `server/agentPlugins`.
 - Shared/browser code must not import `@hachej/boring-agent` values.
-- `WorkspaceBridge.emitUiEffect` remains the single UI effect dispatch source.
+- `UiBridge.postCommand` remains the single command dispatch source.
 
 ## Done in PR #18
 

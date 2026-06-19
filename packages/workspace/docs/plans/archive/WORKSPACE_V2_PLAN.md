@@ -30,7 +30,7 @@ Use this section as the live handoff ledger while executing this plan.
 - Verified items:
   - **Phase 1 (Foundation):** package.json deps ✓, 18 shadcn components vendored ✓, DockviewShell with LayoutConfig ✓, PanelChrome ✓, dockview-overrides.css ✓, Zustand persist with 2 partition keys ✓, PanelRegistry (register/get/list/has/resolve + filePatterns + lazy loading) ✓, IdeLayout (~42 lines) + ChatLayout (~45 lines) ✓
   - **Phase 2 (Panes):** FileTree (react-arborist) ✓, MarkdownEditor (tiptap, 10 extensions) ✓, CodeEditor (CodeMirror 6) ✓, DataCatalogPane ✓, EmptyPane ✓, DataProvider + useFileContent/useFileList/useFileWrite ✓, useEditorLifecycle shared hook ✓
-  - **Phase 3a (Integration):** Bridge SSE client ✓, Bridge UI effect dispatch via Zustand ✓, ArtifactSurfacePane with nested DockviewShell ✓, WorkspaceProvider ✓
+  - **Phase 3a (Integration):** Bridge SSE client ✓, Bridge command dispatch via Zustand ✓, ArtifactSurfacePane with nested DockviewShell ✓, WorkspaceProvider ✓
   - **Phase 4 (Polish):** useTheme hook ✓, CommandPalette (Cmd+P/K) ✓, ResponsiveDockviewShell with Sheet for mobile ✓, PanelErrorBoundary ✓, Testing module (@boring/workspace/testing) ✓
 - Current assessment: Package is feature-complete per this plan. Remaining work is app-shell migration (tracked in beads).
 
@@ -1120,7 +1120,7 @@ Guide for the implementing agent. For each v2 area, the v1 file(s) to study for 
 
 | v2 target | v1 reference | What to learn |
 |-----------|-------------|---------------|
-| `bridge/client.ts` + `bridge/commands.ts` | `packages/workspace/src/server/services/uiStateImpl.ts` (201 lines) + `packages/workspace/src/front/utils/frontendState.js` (2.6 KB) | Current UI state bridge: panel snapshots, command queuing, client-scoped state. v2: bridge reads/writes the single Zustand store (tenth pass). SSE client in `bridge/client.ts`, UI effect dispatcher in `bridge/commands.ts`. Study the state shape: `{ openPanels, activeFile, commands }`. |
+| `bridge/client.ts` + `bridge/commands.ts` | `packages/workspace/src/server/services/uiStateImpl.ts` (201 lines) + `packages/workspace/src/front/utils/frontendState.js` (2.6 KB) | Current UI state bridge: panel snapshots, command queuing, client-scoped state. v2: bridge reads/writes the single Zustand store (tenth pass). SSE client in `bridge/client.ts`, command dispatcher in `bridge/commands.ts`. Study the state shape: `{ openPanels, activeFile, commands }`. |
 | `bridge/client.ts` | `packages/workspace/src/server/http/uiStateRoutes.ts` (289 lines) | Current HTTP endpoints: `GET /ui/state`, `POST /ui/command`, `GET /ui/panels`. **Replace** with command-based bridge (tenth pass): SSE `event: command` stream + `PUT /api/v1/ui/state` with `causedBy` + POST commands. Port the command vocabulary (openPanel, navigateFile, showNotification). |
 | `dynamicLoader.ts` | No direct v1 equivalent | New for v2. Reference: Vite's `import.meta.glob()` for dynamic imports. React `lazy()` + `Suspense` pattern from v1's pane registry (`panes.jsx` lines 20-50). Error boundary pattern from `PanelErrorBoundary.jsx` (58 lines). |
 | Agent pane slot | `packages/workspace/src/front/registry/panes.jsx` — agent pane registration (lines 440-470) | How agent panel is registered with capability gating (`requiresCapabilities: ['agent.chat']`). Lazy loading pattern. |

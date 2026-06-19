@@ -28,7 +28,7 @@ The execution abstraction for shell commands and optional isolated-code executio
 A named pairing of workspace adapter plus sandbox adapter, such as `direct`, `local`, or `vercel-sandbox`.
 
 ## UI bridge
-The command/state bridge between backend intent and frontend workspace behavior. `WorkspaceBridge.emitUiEffect` is the single dispatch source.
+The command/state bridge between backend intent and frontend workspace behavior. `UiBridge.postCommand` is the single dispatch source.
 
 ## Runtime/generated plugin
 A workspace-local plugin under `.pi/extensions/*`. Hot-reloadable for front and Pi resources, but route-free. Also called an **external plugin** in the current trust-model docs; this does **not** mean a hosted/untrusted marketplace plugin.

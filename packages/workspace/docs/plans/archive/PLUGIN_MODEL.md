@@ -13,7 +13,7 @@
 > mapping lives in `plugins/filesystemPlugin/surfaceResolver.ts`; data catalog
 > row-to-visualization mapping now lives in `@hachej/boring-data-catalog`.
 
-Prior status (v7.6): round-5 review patches — Step 0 sequencing (move workspace into v7.5 layout BEFORE Phase 1, not after); split plugin entrypoints (index.ts client + server.ts per plugin); strict type-only imports for cross-folder Plugin refs; cleanup pack (workspaceBridge dedup, EmptyFilePanel relocation, A/B parallelism tightened, TL;DR scrub, tsconfig excludes, pi-tools-migration catch-up). **Meta-rule: when files move, they go DIRECTLY to final v7.6 destinations — no intermediate placements.**
+Prior status (v7.6): round-5 review patches — Step 0 sequencing (move workspace into v7.5 layout BEFORE Phase 1, not after); split plugin entrypoints (index.ts client + server.ts per plugin); strict type-only imports for cross-folder Plugin refs; cleanup pack (uiBridge dedup, EmptyFilePanel relocation, A/B parallelism tightened, TL;DR scrub, tsconfig excludes, pi-tools-migration catch-up). **Meta-rule: when files move, they go DIRECTLY to final v7.6 destinations — no intermediate placements.**
 
 > **Factory pattern:** Plugins may be exposed as factories when they need
 > runtime config (e.g. macro's `makeMacroServerPlugin()`). v7.0 dropped the
@@ -93,7 +93,7 @@ APIs:
 
 Plus chat suggestions (a 6th but UX-bounded thing) and ~150 LOC of
 `@boring/workspace`'s UI bridge code inlined into
-`apps/boring-macro-v2/src/server/workspaceBridge.ts` (still present at 9.3
+`apps/boring-macro-v2/src/server/uiBridge.ts` (still present at 9.3
 KB on disk — confirmed). The workspace package's server export now
 builds; the inlined copy is dead weight that this plan deletes.
 
@@ -872,7 +872,7 @@ be possible.
 - Per-type registries (Catalog new; Command + Panel retrofitted
   subscribable)
 - EventBus (already shipped in `packages/workspace/src/events/`)
-- WorkspaceBridge (in-memory message queue;
+- UiBridge (in-memory message queue;
   `@boring/workspace/src/bridge/`)
 - React component primitives: `CodeEditor`, `MarkdownEditor`,
   `FileTree`, `DataExplorer`, `EmptyPane`, `EmptyFilePanel` (the
@@ -1725,7 +1725,7 @@ apps/boring-macro-v2/
 │       │                                             server/index.ts]
 │       ├── macroTools.ts                            [EXISTS — referenced as
 │       │                                             plugin.agentTools]
-│       └── workspaceBridge.ts                              [DELETED — 150 LOC; the
+│       └── uiBridge.ts                              [DELETED — 150 LOC; the
 │                                                     workspace's UI bridge core
 │                                                     replaces it]
 ```
@@ -2004,7 +2004,7 @@ await app.register(uiRoutes)
 await app.register(registerMacroRoutes, { clickhouse, deckRoot })
 await app.listen({ port })
 
-// apps/boring-macro-v2/src/server/workspaceBridge.ts — ~150 LOC
+// apps/boring-macro-v2/src/server/uiBridge.ts — ~150 LOC
 // Full inlined copy of @boring/workspace/server's UI bridge.
 ```
 
@@ -2086,7 +2086,7 @@ const app = await createWorkspaceAgentApp({
 await app.register(registerMacroRoutes, { clickhouse, deckRoot })
 await app.listen({ port })
 
-// DELETED: apps/boring-macro-v2/src/server/workspaceBridge.ts (~150 LOC)
+// DELETED: apps/boring-macro-v2/src/server/uiBridge.ts (~150 LOC)
 ```
 
 ### LOC accounting
@@ -2095,7 +2095,7 @@ await app.listen({ port })
 |---|--:|--:|--:|
 | `src/web/App.tsx` | 80 | 6 | -74 |
 | `src/server/index.ts` | 30 | 11 | -19 |
-| `src/server/workspaceBridge.ts` | 150 | 0 | -150 |
+| `src/server/uiBridge.ts` | 150 | 0 | -150 |
 | `src/plugin/index.ts` (client) | 0 | 18 | +18 |
 | `src/plugin/server.ts` | 0 | 10 | +10 |
 | **Total** | **260** | **46** | **-214 (-82%)** |
@@ -2594,7 +2594,7 @@ A and B can run in parallel. C depends on A. D, E, F can run in parallel after A
 │  - Rewrite apps/boring-macro-v2/src/server/index.ts to use        │
 │    createWorkspaceAgentApp({ plugins: [macroServerPlugin()] })   │
 │    + app.register(registerMacroRoutes, opts)                     │
-│  - macro's workspaceBridge.ts is ALREADY deleted in Step 1a (NOT here   │
+│  - macro's uiBridge.ts is ALREADY deleted in Step 1a (NOT here   │
 │    — gemini P2 catch).                                           │
 │  - Confirm boring-macro e2e tests pass                           │
 │  Beads: j9p7.18 (plugin module), j9p7.19 (app refactor),         │
@@ -2833,9 +2833,9 @@ pre-migration are not this gate's job.
 - ChatSuggestion + ChatEmptyState (kept as-is):
   `packages/agent/src/front-shadcn/ChatEmptyState.tsx`
 - Boring-macro-v2 host (the migration target — `src/web/`, not
-  `src/front/`; workspaceBridge.ts confirmed at 9.3 KB):
+  `src/front/`; uiBridge.ts confirmed at 9.3 KB):
   `/home/ubuntu/projects/boring-macro-v2/src/{server/index.ts,
-  web/App.tsx, server/macroTools.ts, server/workspaceBridge.ts,
+  web/App.tsx, server/macroTools.ts, server/uiBridge.ts,
   server/macroRoutes.ts}`
 - Sibling plans:
   - `UNIFIED_EVENT_BUS.md` — bus model (already implemented)
@@ -2902,7 +2902,7 @@ Codex flagged that Phase A still said `panes/<id>/`, Phase C said `layouts/TopBa
 
 ### P2 cleanup pack (applied)
 
-1. **workspaceBridge dedup** — drop deletion from Phase E; keep in Step 1a only (gemini P2)
+1. **uiBridge dedup** — drop deletion from Phase E; keep in Step 1a only (gemini P2)
 2. **EmptyFilePanel relocation** — `panes/EmptyFilePanel/` → `front/chrome/empty-file-panel/` to kill the lone-resident `panes/` folder (gemini P2)
 3. **TL;DR scrub** — "two default plugins" wording in scope text → "one default plugin: filesystemPlugin" (codex P2)
 4. **A/B parallelism tightened** — "B can start in parallel but cannot close before A's definition.ts files exist" (codex P2)
@@ -3053,7 +3053,7 @@ User decision (2026-04-29): **merge into one mega-plan + one epic**. The earlier
 
 ### Why merge (vs keep two plans)
 
-The two plans had ~37 + 24 = 61 cross-references between them (`ChatCenteredShell`, `macroPlugin`, `delete workspaceBridge`). Macro migration was duplicated: j9p7 had it as Step 6; zrby had it as Phase E. The risk of doing j9p7's "ChatCenteredShell drops props" THEN having zrby delete the shell entirely is real wasted work — the user named it as the deciding concern.
+The two plans had ~37 + 24 = 61 cross-references between them (`ChatCenteredShell`, `macroPlugin`, `delete uiBridge`). Macro migration was duplicated: j9p7 had it as Step 6; zrby had it as Phase E. The risk of doing j9p7's "ChatCenteredShell drops props" THEN having zrby delete the shell entirely is real wasted work — the user named it as the deciding concern.
 
 Merging gives:
 - One coherent narrative: "build plugin model machinery → migrate consumers to declarative composition"

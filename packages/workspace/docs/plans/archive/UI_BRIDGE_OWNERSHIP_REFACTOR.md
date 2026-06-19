@@ -18,15 +18,15 @@
 
 `@boring/agent` currently owns four things that are conceptually workspace concerns:
 
-1. **`WorkspaceBridge` interface + `UiState` / `UiCommand` types** in `src/shared/ui-bridge.ts`. The discriminated union in `UiCommand` (`openFile` / `openPanel` / `closePanel` / `navigateToLine` / `expandToFile` / `showNotification`) describes operations on a workspace, not on an LLM harness.
+1. **`UiBridge` interface + `UiState` / `UiCommand` types** in `src/shared/ui-bridge.ts`. The discriminated union in `UiCommand` (`openFile` / `openPanel` / `closePanel` / `navigateToLine` / `expandToFile` / `showNotification`) describes operations on a workspace, not on an LLM harness.
 2. **`createInMemoryBridge()`** in `src/server/ui-bridge/createInMemoryBridge.ts`. The bridge is the message queue between "frontend pushed UI state" and "agent dispatched UI command" — both endpoints of the bridge are workspace concerns.
 3. **`uiRoutes` plugin** in `src/server/http/routes/ui.ts`. Serves `/api/v1/ui/*` (PUT state, POST commands, SSE drain). Today this is registered inside `createAgentApp`.
-4. **`createGetUiStateTool` / `createExecUiTool`** in `src/server/catalog/standardCatalog.ts`. The `standardCatalog` factory takes a `workspaceBridge?: WorkspaceBridge` parameter and conditionally appends the two tools. `createAgentApp` constructs an in-memory bridge and passes it.
+4. **`createGetUiStateTool` / `createExecUiTool`** in `src/server/catalog/standardCatalog.ts`. The `standardCatalog` factory takes a `uiBridge?: UiBridge` parameter and conditionally appends the two tools. `createAgentApp` constructs an in-memory bridge and passes it.
 
 Symptoms:
 
 - Standalone `@boring/agent` (CLI mode, no workspace) ships UI tools and HTTP routes the harness can never fulfill — wasted bundle, misleading capability surface for non-workspace consumers.
-- `standardCatalog`'s `workspaceBridge?` branch is the only place where the catalog has a knob; everything else is fixed. Asymmetric.
+- `standardCatalog`'s `uiBridge?` branch is the only place where the catalog has a knob; everything else is fixed. Asymmetric.
 - The agent package's "shared" types are mixed: `AgentTool` (truly generic) sits next to `UiCommand` (workspace-specific). Future readers can't tell which is which.
 - Adding a workspace-specific tool today (e.g., `query_data_catalog`, `focus_chart`) means either bolting it into agent's `standardCatalog` or threading it through `extraTools` from the app shell. Workspace doesn't currently have a clean place to define server-side tool factories.
 
@@ -41,7 +41,7 @@ Symptoms:
 
 `@boring/workspace` owns everything UI-bridge-related:
 
-- The `WorkspaceBridge` interface, `UiCommand` discriminated union, `UiState` shape (in a new `@boring/workspace/shared` subpath — needed on both client and server, so it lives outside both bundles).
+- The `UiBridge` interface, `UiCommand` discriminated union, `UiState` shape (in a new `@boring/workspace/shared` subpath — needed on both client and server, so it lives outside both bundles).
 - `createInMemoryBridge()` impl.
 - `uiRoutes` Fastify plugin.
 - `createGetUiStateTool` / `createExecUiTool` factories.
@@ -69,7 +69,7 @@ app shell
   └─→ @boring/workspace/server
         └─→ @boring/agent/server  (createAgentApp, FastifyInstance type)
         └─→ @boring/agent/shared  (AgentTool interface, ToolResult — only the truly generic tool types stay here)
-        └─→ @boring/workspace/shared  (WorkspaceBridge / UiCommand / UiState)
+        └─→ @boring/workspace/shared  (UiBridge / UiCommand / UiState)
 @boring/workspace/front
         └─→ @boring/workspace/shared (for UiCommand type)
         └─→ @boring/agent/ui-shadcn  (ChatPanel — unchanged)
@@ -80,18 +80,18 @@ app shell
 
 `@boring/boring-macro` (existing) imports `AgentTool` + `ToolResult` from `@boring/agent/shared` — those are pure tool types and stay in agent. No change.
 
-`@boring/agent/front-shadcn/ChatPanel.tsx` currently has a `bridge?: WorkspaceBridge` prop that is **unused in the implementation**. The prop is destructured at the top of `ChatPanel` but never threaded into any child. It's dead-code that gives the impression WorkspaceBridge is a ChatPanel concern. **Drop the prop entirely** as part of this PR — removes the last surface in agent that references WorkspaceBridge.
+`@boring/agent/front-shadcn/ChatPanel.tsx` currently has a `bridge?: UiBridge` prop that is **unused in the implementation**. The prop is destructured at the top of `ChatPanel` but never threaded into any child. It's dead-code that gives the impression UiBridge is a ChatPanel concern. **Drop the prop entirely** as part of this PR — removes the last surface in agent that references UiBridge.
 
-`@boring/core` does not import `WorkspaceBridge` / `UiCommand` / `UiState` from anywhere (verified via repo-wide grep). After refactor, core depends only on `@boring/workspace/front` (existing) and never transitively pulls fastify, since workspace's front bundle is split from its server bundle (see Bundling section).
+`@boring/core` does not import `UiBridge` / `UiCommand` / `UiState` from anywhere (verified via repo-wide grep). After refactor, core depends only on `@boring/workspace/front` (existing) and never transitively pulls fastify, since workspace's front bundle is split from its server bundle (see Bundling section).
 
 ## Scope
 
 ### In scope
 
 - File moves listed below.
-- `standardCatalog` API change — drop `workspaceBridge?` from both the parameter destructure AND the `ToolCatalog` interface definition (per Gemini: "remove from the interface, not just the function").
+- `standardCatalog` API change — drop `uiBridge?` from both the parameter destructure AND the `ToolCatalog` interface definition (per Gemini: "remove from the interface, not just the function").
 - `createAgentApp` — drop `uiRoutes` registration, drop the `createInMemoryBridge()` call. Keep `extraTools`.
-- `@boring/agent`'s `front-shadcn/ChatPanel` — drop the unused `bridge?: WorkspaceBridge` prop and the corresponding type import.
+- `@boring/agent`'s `front-shadcn/ChatPanel` — drop the unused `bridge?: UiBridge` prop and the corresponding type import.
 - Workspace package: new `./shared` and `./server` exports, new `tsconfig.server.json` and `tsconfig.front.json`, new `fastify` dependency.
 - App shell migration: `apps/workspace-playground/vite.config.ts` switches from `createAgentApp` to `createWorkspaceAgentApp`.
 - All affected tests move with their code; one new agent-side regression test asserts UI tools are NOT in the standalone catalog.
@@ -118,20 +118,20 @@ app shell
 
 ### Files edited in `@boring/agent`
 
-- `src/server/catalog/standardCatalog.ts` — drop `workspaceBridge?` from the destructured `ToolCatalog` deps AND from the `ToolCatalog` interface definition. Drop the `if (workspaceBridge) {...}` branch. The catalog signature shrinks; no other behavioural change.
+- `src/server/catalog/standardCatalog.ts` — drop `uiBridge?` from the destructured `ToolCatalog` deps AND from the `ToolCatalog` interface definition. Drop the `if (uiBridge) {...}` branch. The catalog signature shrinks; no other behavioural change.
 - `src/server/createAgentApp.ts` — delete:
   - `import { uiRoutes } from './http/routes/ui'`
   - `import { createInMemoryBridge } from './ui-bridge/createInMemoryBridge'`
-  - `const workspaceBridge = createInMemoryBridge()` line
-  - `await app.register(uiRoutes, { bridge: workspaceBridge })` line
-  - The `workspaceBridge` arg to `standardCatalog({ ...runtimeBundle, workspaceBridge })` — becomes `standardCatalog(runtimeBundle)`.
-- `src/front-shadcn/ChatPanel.tsx` — drop `bridge?: WorkspaceBridge` from `ChatPanelProps`, drop the destructure, drop the `import type { WorkspaceBridge }` line.
+  - `const uiBridge = createInMemoryBridge()` line
+  - `await app.register(uiRoutes, { bridge: uiBridge })` line
+  - The `uiBridge` arg to `standardCatalog({ ...runtimeBundle, uiBridge })` — becomes `standardCatalog(runtimeBundle)`.
+- `src/front-shadcn/ChatPanel.tsx` — drop `bridge?: UiBridge` from `ChatPanelProps`, drop the destructure, drop the `import type { UiBridge }` line.
 - `src/server/__tests__/createAgentApp.test.ts` — three tests added in commit `01bf41f` (`createAgentApp registers get_ui_state and exec_ui in the catalog`, `PUT /api/v1/ui/state is round-tripped by GET`, `exec_ui-style POST /api/v1/ui/commands enqueues for drain`) **move to workspace** — they now assert against `createWorkspaceAgentApp`. Add **one new test in agent** asserting the standalone agent's catalog does NOT include UI tools AND `/api/v1/ui/state` returns 404 — regression test pinning the new contract.
-- `src/index.ts` / `src/server/index.ts` / `src/shared/index.ts` — remove any re-exports of `WorkspaceBridge`, `UiCommand`, `UiState`, `createInMemoryBridge`.
+- `src/index.ts` / `src/server/index.ts` / `src/shared/index.ts` — remove any re-exports of `UiBridge`, `UiCommand`, `UiState`, `createInMemoryBridge`.
 
 ### Files added in `@boring/workspace`
 
-- `packages/workspace/src/shared/index.ts` — re-export `WorkspaceBridge`, `UiCommand`, `UiState`, `CommandResult` types from the moved `ui-bridge.ts`. **Strict isolation rule (build-enforced — see Bundling section): zero imports from `../server/**` or `../components/**` or `../front/**`.**
+- `packages/workspace/src/shared/index.ts` — re-export `UiBridge`, `UiCommand`, `UiState`, `CommandResult` types from the moved `ui-bridge.ts`. **Strict isolation rule (build-enforced — see Bundling section): zero imports from `../server/**` or `../components/**` or `../front/**`.**
 - `packages/workspace/src/server/index.ts` — public server-side surface:
   ```ts
   export { createWorkspaceAgentApp } from "./createWorkspaceAgentApp"
@@ -222,7 +222,7 @@ In addition to the test migration table:
 ```ts
 // agent
 import { createAgentApp } from "@boring/agent/server"
-import type { UiCommand, UiState, WorkspaceBridge } from "@boring/agent/shared"
+import type { UiCommand, UiState, UiBridge } from "@boring/agent/shared"
 
 const app = await createAgentApp({ workspaceRoot, mode: "local" })
 // app exposes /api/v1/agent/*, /api/v1/ui/*, includes get_ui_state + exec_ui in catalog
@@ -257,7 +257,7 @@ Implementation order within the PR (driven by what compiles at each step):
 
 1. Create `packages/workspace/src/shared/` and copy `ui-bridge.ts` types in. Update workspace's `tsconfig.json` → `tsconfig.front.json` + `tsconfig.server.json` + root project references. Add `fastify` + `zod` to workspace `package.json`.
 2. Create `packages/workspace/src/server/` with `createInMemoryBridge.ts`, `uiTools.ts`, `http/uiRoutes.ts`, `createWorkspaceAgentApp.ts`, `index.ts`. Update workspace `package.json` `exports` to expose `./shared` and `./server`.
-3. In agent: drop `bridge?: WorkspaceBridge` prop from ChatPanel, drop UI bridge import. Drop `workspaceBridge?` from `standardCatalog` interface and impl. In `createAgentApp`, remove the `createInMemoryBridge()` + `app.register(uiRoutes)` lines and the imports that supported them. Delete `src/shared/ui-bridge.ts`, `src/server/ui-bridge/`, `src/server/http/routes/ui.ts`, the UI tool factories, the related tests.
+3. In agent: drop `bridge?: UiBridge` prop from ChatPanel, drop UI bridge import. Drop `uiBridge?` from `standardCatalog` interface and impl. In `createAgentApp`, remove the `createInMemoryBridge()` + `app.register(uiRoutes)` lines and the imports that supported them. Delete `src/shared/ui-bridge.ts`, `src/server/ui-bridge/`, `src/server/http/routes/ui.ts`, the UI tool factories, the related tests.
 4. In agent's `createAgentApp.test.ts`: replace the three UI bridge tests with the regression test (catalog has no UI tools, `/api/v1/ui/state` is 404).
 5. Add the new tests in workspace: round-trip / queue-drain against `createWorkspaceAgentApp`, plus the `extraTools` merge test.
 6. Migrate `apps/workspace-playground/vite.config.ts` to use `createWorkspaceAgentApp`.
@@ -272,7 +272,7 @@ CI must be green at the END of the PR. Intermediate commits within the PR may be
 
 2. **Fastify peer/direct dep duplication** — workspace will declare `fastify` directly; agent already declares it. pnpm will hoist a single instance, so route collisions don't happen at the module-identity level. Verified during implementation that `pnpm why fastify` in `apps/workspace-playground` resolves to one instance.
 
-3. **`workspaceBridge` removal from `ToolCatalog` interface** — this is a breaking type change for any direct consumer of `ToolCatalog`. Inside the monorepo only `standardCatalog` consumes it. External consumers don't exist yet (pre-1.0). Caught via grep during step 3.
+3. **`uiBridge` removal from `ToolCatalog` interface** — this is a breaking type change for any direct consumer of `ToolCatalog`. Inside the monorepo only `standardCatalog` consumes it. External consumers don't exist yet (pre-1.0). Caught via grep during step 3.
 
 4. **In-flight session migration** — none. The bridge is in-memory and ephemeral. Across an agent server restart all state is lost regardless. Refactor doesn't change that.
 
@@ -283,7 +283,7 @@ CI must be green at the END of the PR. Intermediate commits within the PR may be
 | Q | Resolution |
 |---|------------|
 | 1. Multi-commit migration vs single PR? | Single PR — multi-commit hits `FST_ERR_DUP_ROUTE` in intermediate state. |
-| 2. Split `WorkspaceBridge` interface from impl? | Yes — interface in `workspace/shared`, impl in `workspace/server`. Mirrors agent's existing convention. |
+| 2. Split `UiBridge` interface from impl? | Yes — interface in `workspace/shared`, impl in `workspace/server`. Mirrors agent's existing convention. |
 | 3. `toolFactories` mechanism on `createAgentApp`? | No — workspace tools close over their bridge in the wrapper. Defer until a real second use case emerges. |
 | 4. Core dep on UI types? | Verified clean — core has zero imports of UI bridge surface. |
 | 5. `createWorkspaceAgentApp` naming? | Keep — precisely describes "agent app + workspace UI surface". |
@@ -297,7 +297,7 @@ CI must be green at the END of the PR. Intermediate commits within the PR may be
 - [ ] `pnpm --filter @boring/workspace build` produces `dist/index.js` (front, no fastify), `dist/server/index.js` (server, no React), `dist/shared/index.js` (no runtime deps).
 - [ ] `scripts/assert-bundle-isolation.mjs` passes as a postbuild step.
 - [ ] CI runtime test confirms importing `@boring/workspace` in node does not pull `fastify` into the module graph.
-- [ ] No remaining `import ... from "@boring/agent/shared"` for `WorkspaceBridge` / `UiCommand` / `UiState` anywhere in the repo.
-- [ ] `@boring/agent`'s `ChatPanel` no longer references `WorkspaceBridge`.
+- [ ] No remaining `import ... from "@boring/agent/shared"` for `UiBridge` / `UiCommand` / `UiState` anywhere in the repo.
+- [ ] `@boring/agent`'s `ChatPanel` no longer references `UiBridge`.
 - [ ] `archive/WORKSPACE_V2_PLAN.md` and `agent/docs/API.md` reflect the new shape.
 - [ ] Single PR (multiple commits within it OK as long as the final tree is green).

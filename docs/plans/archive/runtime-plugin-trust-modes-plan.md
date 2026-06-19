@@ -430,7 +430,7 @@ Initial bridge ops should be narrow:
 
 - `files.read`
 - `ui.openPanel`
-- `ui.emitUiEffect`
+- `ui.postCommand`
 - `theme.get`
 - `plugin.rpc` (later phase)
 

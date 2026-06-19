@@ -181,13 +181,13 @@ Generated/runtime plugins use:
 - manifest-declared tools for agent-triggered work;
 - optional runtime plugin RPC for frontend-triggered backend-like work;
 - workspace file APIs for file read/write/list;
-- WorkspaceBridge actions for UI control flow.
+- UiBridge actions for UI control flow.
 
-### Ask User should move into WorkspaceBridge actions
+### Ask User should move into UiBridge actions
 
 Ask User currently has a custom route for browser answer submission. That route
 is UI control flow, not a domain data API. Long term it should become a host
-WorkspaceBridge/control-plane action, e.g.:
+UiBridge/control-plane action, e.g.:
 
 ```txt
 ask-user.answer
