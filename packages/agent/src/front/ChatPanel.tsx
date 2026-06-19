@@ -260,6 +260,7 @@ function mergeSettledPiFallbacksInPlace(messages: UIMessage[], piMessages: UIMes
 }
 
 const SLASH_COMMAND_MENTION_PATTERN = /(^|[^`\w])\/(\w[\w-]*)\b/g
+const SLASH_COMMAND_LINK_BASE = 'https://boring.invalid/__agent_slash__'
 
 function escapeMarkdownLinkLabel(text: string): string {
   return text.replace(/([\[\]\\])/g, '\\$1')
@@ -272,14 +273,20 @@ function decorateSlashCommandMentions(text: string, commands: SlashCommand[]): s
     const command = byName.get(name)
     if (!command || !command.clickBehavior) return match
     const slashText = `/${name}`
-    return `${prefix}[${escapeMarkdownLinkLabel(slashText)}](agent-slash:${command.clickBehavior}:${name})`
+    return `${prefix}[${escapeMarkdownLinkLabel(slashText)}](${SLASH_COMMAND_LINK_BASE}/${command.clickBehavior}/${name})`
   })
 }
 
 function parseSlashCommandHref(href: string): { behavior: 'execute' | 'insert' | 'disabled'; name: string } | null {
-  const match = /^agent-slash:(execute|insert|disabled):([a-z0-9][\w-]*)$/i.exec(href)
-  if (!match) return null
-  return { behavior: match[1] as 'execute' | 'insert' | 'disabled', name: match[2] }
+  try {
+    const url = new URL(href)
+    if (url.origin !== 'https://boring.invalid') return null
+    const match = /^\/__agent_slash__\/(execute|insert|disabled)\/([a-z0-9][\w-]*)$/i.exec(url.pathname)
+    if (!match) return null
+    return { behavior: match[1] as 'execute' | 'insert' | 'disabled', name: match[2] }
+  } catch {
+    return null
+  }
 }
 
 function SlashCommandMentionLink(

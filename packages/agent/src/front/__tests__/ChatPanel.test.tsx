@@ -41,13 +41,13 @@ vi.mock('../primitives/message', () => ({
   MessageResponse: ({ children, components }: any) => {
     const text = typeof children === 'string' ? children : ''
     const Anchor = components?.a ?? ((props: any) => <a {...props} />)
-    const parts = text.split(/(\[[^\]]+\]\(agent-slash:(?:execute|insert|disabled):[^\)]+\))/g)
+    const parts = text.split(/(\[[^\]]+\]\(https:\/\/boring\.invalid\/__agent_slash__\/(?:execute|insert|disabled)\/[^\)]+\))/g)
     return (
       <div data-testid="message-response">
         {parts.map((part: string, index: number) => {
-          const match = /^\[([^\]]+)\]\(agent-slash:(execute|insert|disabled):([^\)]+)\)$/.exec(part)
+          const match = /^\[([^\]]+)\]\(https:\/\/boring\.invalid\/__agent_slash__\/(execute|insert|disabled)\/([^\)]+)\)$/.exec(part)
           if (!match) return <span key={index}>{part}</span>
-          return <Anchor key={index} href={`agent-slash:${match[2]}:${match[3]}`}>{match[1]}</Anchor>
+          return <Anchor key={index} href={`https://boring.invalid/__agent_slash__/${match[2]}/${match[3]}`}>{match[1]}</Anchor>
         })}
       </div>
     )
