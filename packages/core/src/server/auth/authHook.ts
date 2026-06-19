@@ -2,6 +2,7 @@ import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify'
 import fp from 'fastify-plugin'
 import { isCoreEmailVerificationEnabled } from '../../shared/authPolicy.js'
 import { HttpError, ERROR_CODES } from '../../shared/errors.js'
+import { decideAnonymousRequest } from '../outreach/policy.js'
 import type { BetterAuthInstance } from './createAuth.js'
 
 export interface AuthHookOptions {
@@ -35,11 +36,18 @@ const authHookPlugin: FastifyPluginAsync<AuthHookOptions> = async (app, opts) =>
 
         const result = await app.auth.api.getSession({ headers })
         if (result?.user) {
+          const authUser = result.user as typeof result.user & { isAnonymous?: boolean }
+          const isAuthAnonymous = Boolean(authUser.isAnonymous)
+          const isOutreachLead = app.isAnonymousOutreachUser
+            ? await app.isAnonymousOutreachUser(app.config.appId, authUser.id)
+            : false
+          const isAnonymous = isAuthAnonymous || isOutreachLead
           request.user = {
-            id: result.user.id,
-            email: result.user.email,
-            name: result.user.name ?? null,
-            emailVerified: Boolean(result.user.emailVerified),
+            id: authUser.id,
+            email: isAnonymous ? '' : authUser.email,
+            name: isAnonymous ? 'Anonymous lead' : authUser.name ?? null,
+            emailVerified: Boolean(authUser.emailVerified),
+            isAnonymousLead: isAnonymous,
           }
         }
       } catch {
@@ -48,6 +56,14 @@ const authHookPlugin: FastifyPluginAsync<AuthHookOptions> = async (app, opts) =>
     }
 
     const path = request.url.split('?')[0]
+    if (path === '/auth/sign-in/anonymous' || path === '/auth/delete-anonymous-user') {
+      throw new HttpError({
+        status: 404,
+        code: ERROR_CODES.NOT_FOUND,
+        message: 'Auth endpoint not found',
+        requestId: request.id,
+      })
+    }
     const isProtectedApi = path.startsWith('/api/v1/') && !publicPatterns.some((re) => re.test(path))
 
     if (isProtectedApi && !request.user) {
@@ -59,7 +75,30 @@ const authHookPlugin: FastifyPluginAsync<AuthHookOptions> = async (app, opts) =>
       })
     }
 
-    if (isProtectedApi && isCoreEmailVerificationEnabled(app.config) && request.user?.emailVerified !== true) {
+    if (isProtectedApi && request.user?.isAnonymousLead) {
+      const hasOutreachLead = app.isAnonymousOutreachUser
+        ? await app.isAnonymousOutreachUser(app.config.appId, request.user.id)
+        : false
+      if (!hasOutreachLead && path !== '/api/v1/me') {
+        throw new HttpError({
+          status: 403,
+          code: ERROR_CODES.FORBIDDEN,
+          message: 'Anonymous auth sessions must enter through an outreach link.',
+          requestId: request.id,
+        })
+      }
+      const decision = decideAnonymousRequest(request.method, path)
+      if (!decision.allowed) {
+        throw new HttpError({
+          status: 403,
+          code: ERROR_CODES.FORBIDDEN,
+          message: decision.reason,
+          requestId: request.id,
+        })
+      }
+    }
+
+    if (isProtectedApi && !request.user?.isAnonymousLead && isCoreEmailVerificationEnabled(app.config) && request.user?.emailVerified !== true) {
       throw new HttpError({
         status: 403,
         code: ERROR_CODES.EMAIL_NOT_VERIFIED,

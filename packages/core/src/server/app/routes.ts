@@ -94,7 +94,12 @@ const routesPlugin: FastifyPluginAsync<RoutesOptions> = async (app, opts) => {
   app.get('/api/v1/me', async (request) => {
     const user = request.user!
     const settings = await userStore.getUserSettings(user.id, app.config.appId)
-    return { user, settings }
+    return {
+      user: user.isAnonymousLead
+        ? { ...user, email: null, name: 'Anonymous lead', isAnonymousLead: true }
+        : user,
+      settings,
+    }
   })
 
   app.put('/api/v1/me/settings', async (request, reply) => {

@@ -48,6 +48,7 @@ import {
 import {
   registerInviteRoutes,
   registerMemberRoutes,
+  registerOutreachRoutes,
   registerSettingsRoutes,
   registerWorkspaceRoutes,
 } from '../../server/routes/index.js'
@@ -60,6 +61,7 @@ import {
 import { loadConfig, type LoadConfigOptions } from '../../server/config/index.js'
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
 import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
+import { isAnonymousOutreachUser } from '../../server/outreach/policy.js'
 
 const MIME_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
@@ -592,6 +594,7 @@ async function createCoreRuntime(config: CoreConfig, customTelemetry?: Telemetry
   app.decorate('userStore', userStore)
   app.decorate('workspaceStore', workspaceStore)
   app.decorate('telemetry', telemetry)
+  app.decorate('isAnonymousOutreachUser', (appId: string, userId: string) => isAnonymousOutreachUser(db, appId, userId))
 
   app.addHook('onClose', async () => {
     await sql.end()
@@ -624,6 +627,7 @@ async function registerCoreRoutes({
   await app.register(registerMemberRoutes)
   await app.register(registerSettingsRoutes)
   await app.register(registerInviteRoutes)
+  await app.register(registerOutreachRoutes, { db, workspaceStore })
 }
 
 export async function createCoreWorkspaceAgentServer(

@@ -255,6 +255,147 @@ export const workspaceInvitesRelations = relations(
   }),
 )
 
+export const outreachExperiences = pgTable(
+  'outreach_experiences',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    appId: text('app_id').notNull(),
+    name: text('name').notNull(),
+    provisioningMode: text('provisioning_mode').notNull(),
+    templateWorkspaceId: uuid('template_workspace_id').references(() => workspaces.id),
+    defaultTargetPath: text('default_target_path').notNull().default('/'),
+    anonymousCapabilityProfile: text('anonymous_capability_profile').notNull().default('trial'),
+    config: jsonb('config').notNull().default({}),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'restrict' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('outreach_experiences_app_id_idx').on(table.appId),
+    check(
+      'outreach_experiences_mode_check',
+      sql`${table.provisioningMode} IN ('clone_per_lead', 'shared_readonly', 'existing_workspace_viewer')`,
+    ),
+  ],
+)
+
+export const outreachLinks = pgTable(
+  'outreach_links',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    appId: text('app_id').notNull(),
+    experienceId: uuid('experience_id')
+      .notNull()
+      .references(() => outreachExperiences.id, { onDelete: 'cascade' }),
+    campaignId: text('campaign_id'),
+    tokenHash: text('token_hash').notNull(),
+    recipientHint: text('recipient_hint'),
+    expiresAt: timestamp('expires_at').notNull(),
+    revokedAt: timestamp('revoked_at'),
+    maxLeads: integer('max_leads'),
+    leadCount: integer('lead_count').notNull().default(0),
+    firstOpenedAt: timestamp('first_opened_at'),
+    lastOpenedAt: timestamp('last_opened_at'),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'restrict' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('outreach_links_token_hash_idx').on(table.tokenHash),
+    index('outreach_links_app_id_idx').on(table.appId),
+    index('outreach_links_experience_id_idx').on(table.experienceId),
+    check('outreach_links_max_leads_check', sql`${table.maxLeads} IS NULL OR ${table.maxLeads} > 0`),
+    check('outreach_links_lead_count_check', sql`${table.leadCount} >= 0`),
+  ],
+)
+
+export const outreachLeads = pgTable(
+  'outreach_leads',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    appId: text('app_id').notNull(),
+    outreachLinkId: uuid('outreach_link_id')
+      .notNull()
+      .references(() => outreachLinks.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    provisionedWorkspaceId: uuid('provisioned_workspace_id').references(() => workspaces.id),
+    provisionedTargetPath: text('provisioned_target_path'),
+    provisionResult: jsonb('provision_result').notNull().default({}),
+    provisioningStatus: text('provisioning_status').notNull().default('pending'),
+    provisioningErrorCode: text('provisioning_error_code'),
+    provisioningAttemptedAt: timestamp('provisioning_attempted_at'),
+    provisioningCompletedAt: timestamp('provisioning_completed_at'),
+    resumeNonceHash: text('resume_nonce_hash'),
+    status: text('status').notNull().default('anonymous'),
+    claimedAt: timestamp('claimed_at'),
+    claimedEmail: text('claimed_email'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('outreach_leads_user_id_idx').on(table.userId),
+    index('outreach_leads_link_status_idx').on(table.outreachLinkId, table.status),
+    check(
+      'outreach_leads_status_check',
+      sql`${table.status} IN ('anonymous', 'claimed', 'blocked')`,
+    ),
+    check(
+      'outreach_leads_provisioning_status_check',
+      sql`${table.provisioningStatus} IN ('pending', 'provisioning', 'provisioned', 'failed')`,
+    ),
+    check(
+      'outreach_leads_provision_result_check',
+      sql`(${table.provisionedWorkspaceId} IS NULL AND ${table.provisionedTargetPath} IS NULL) OR (${table.provisionedWorkspaceId} IS NOT NULL AND ${table.provisionedTargetPath} IS NOT NULL)`,
+    ),
+  ],
+)
+
+export const outreachExperiencesRelations = relations(outreachExperiences, ({ one, many }) => ({
+  templateWorkspace: one(workspaces, {
+    fields: [outreachExperiences.templateWorkspaceId],
+    references: [workspaces.id],
+  }),
+  creator: one(users, {
+    fields: [outreachExperiences.createdBy],
+    references: [users.id],
+  }),
+  links: many(outreachLinks),
+}))
+
+export const outreachLinksRelations = relations(outreachLinks, ({ one, many }) => ({
+  experience: one(outreachExperiences, {
+    fields: [outreachLinks.experienceId],
+    references: [outreachExperiences.id],
+  }),
+  creator: one(users, {
+    fields: [outreachLinks.createdBy],
+    references: [users.id],
+  }),
+  leads: many(outreachLeads),
+}))
+
+export const outreachLeadsRelations = relations(outreachLeads, ({ one }) => ({
+  link: one(outreachLinks, {
+    fields: [outreachLeads.outreachLinkId],
+    references: [outreachLinks.id],
+  }),
+  user: one(users, {
+    fields: [outreachLeads.userId],
+    references: [users.id],
+  }),
+  workspace: one(workspaces, {
+    fields: [outreachLeads.provisionedWorkspaceId],
+    references: [workspaces.id],
+  }),
+}))
+
 export const idempotencyKeys = pgTable(
   'idempotency_keys',
   {

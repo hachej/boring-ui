@@ -100,9 +100,10 @@ declare module 'fastify' {
       fn: CapabilitiesContributor,
     ): void
     capabilitiesCache: CapabilitiesResponse | null
+    isAnonymousOutreachUser?: (appId: string, userId: string) => Promise<boolean>
   }
   interface FastifyRequest {
-    user?: { id: string; email: string; name: string | null; emailVerified: boolean } | null
+    user?: { id: string; email: string; name: string | null; emailVerified: boolean; isAnonymousLead?: boolean } | null
     cspNonce?: string
   }
 }
