@@ -41,13 +41,16 @@ vi.mock('../primitives/message', () => ({
   MessageResponse: ({ children, components }: any) => {
     const text = typeof children === 'string' ? children : ''
     const Anchor = components?.a ?? ((props: any) => <a {...props} />)
-    const parts = text.split(/(\[[^\]]+\]\(https:\/\/boring\.invalid\/__agent_slash__\/(?:execute|insert|disabled)\/[^\)]+\))/g)
+    const Code = components?.code ?? ((props: any) => <code {...props} />)
+    const tokens = text.split(/(\[[^\]]+\]\(https:\/\/boring\.invalid\/__agent_slash__\/(?:execute|insert|disabled)\/[^\)]+\)|`[^`]+`)/g)
     return (
       <div data-testid="message-response">
-        {parts.map((part: string, index: number) => {
-          const match = /^\[([^\]]+)\]\(https:\/\/boring\.invalid\/__agent_slash__\/(execute|insert|disabled)\/([^\)]+)\)$/.exec(part)
-          if (!match) return <span key={index}>{part}</span>
-          return <Anchor key={index} href={`https://boring.invalid/__agent_slash__/${match[2]}/${match[3]}`}>{match[1]}</Anchor>
+        {tokens.map((part: string, index: number) => {
+          const linkMatch = /^\[([^\]]+)\]\(https:\/\/boring\.invalid\/__agent_slash__\/(execute|insert|disabled)\/([^\)]+)\)$/.exec(part)
+          if (linkMatch) return <Anchor key={index} href={`https://boring.invalid/__agent_slash__/${linkMatch[2]}/${linkMatch[3]}`}>{linkMatch[1]}</Anchor>
+          const codeMatch = /^`([^`]+)`$/.exec(part)
+          if (codeMatch) return <Code key={index} inline>{codeMatch[1]}</Code>
+          return <span key={index}>{part}</span>
         })}
       </div>
     )
@@ -1063,6 +1066,30 @@ describe('ChatPanel (shadcn)', () => {
     })
 
     render(<ChatPanel sessionId="sess-chip-help" />)
+
+    fireEvent.click(screen.getByRole('button', { name: '/help' }))
+
+    expect((screen.getByTestId('prompt-textarea') as HTMLTextAreaElement).value).toBe('/help')
+    expect(mockSendMessage).not.toHaveBeenCalled()
+  })
+
+  test('inline-code slash command mentions are also clickable', () => {
+    mockUseAgentChat.mockReturnValue({
+      messages: [
+        {
+          id: 'a-code-help',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'Try `/help` to see commands.' }],
+        },
+      ],
+      sendMessage: mockSendMessage,
+      setMessages: mockSetMessages,
+      stop: mockStop,
+      status: 'ready',
+      error: undefined,
+    })
+
+    render(<ChatPanel sessionId="sess-code-chip-help" />)
 
     fireEvent.click(screen.getByRole('button', { name: '/help' }))
 

@@ -1,7 +1,7 @@
 import type { FileUIPart, UIMessage } from 'ai'
 import { isToolUIPart } from 'ai'
 import { motion } from 'motion/react'
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from '../shared/agentPluginEvents'
 import { ErrorCode } from '../shared/error-codes'
@@ -321,6 +321,12 @@ function SlashCommandMentionLink(
       {children}
     </button>
   )
+}
+
+function extractInlineSlashCommand(children: unknown): string | null {
+  if (typeof children !== 'string') return null
+  const match = /^\/([a-z0-9][\w-]*)$/i.exec(children.trim())
+  return match ? match[1] : null
 }
 
 function composerNoticeForWarmup(status: ChatPanelWorkspaceWarmupStatus | undefined): { title: string; detail?: string; code?: string } | null {
@@ -915,7 +921,26 @@ export function ChatPanel(props: ChatPanelProps) {
   }, [runSlashCommand, setComposerDraft])
   const assistantMessageComponents = useMemo<MessageResponseProps['components']>(() => ({
     a: (props) => <SlashCommandMentionLink {...props} onSlashCommand={handleAssistantSlashCommand} />,
-  }), [handleAssistantSlashCommand])
+    code: (rawProps) => {
+      const { inline, children, className, ...props } = rawProps as { inline?: boolean; children?: unknown; className?: string } & Record<string, unknown>
+      const content = children as ReactNode
+      if (inline === false) return <code className={className} {...props}>{content}</code>
+      const commandName = extractInlineSlashCommand(children)
+      const command = commandName ? registry.get(commandName) : undefined
+      if (!command?.clickBehavior) {
+        return <code className={className} {...props}>{content}</code>
+      }
+      return (
+        <SlashCommandMentionLink
+          href={`${SLASH_COMMAND_LINK_BASE}/${command.clickBehavior}/${command.name}`}
+          onSlashCommand={handleAssistantSlashCommand}
+          className={className}
+        >
+          {content}
+        </SlashCommandMentionLink>
+      )
+    },
+  }), [handleAssistantSlashCommand, registry])
   const {
     mentionState,
     slashQuery,
