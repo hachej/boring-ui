@@ -1,5 +1,4 @@
 import type { ExtensionAPI, ExtensionFactory, ToolDefinition } from '@mariozechner/pi-coding-agent'
-import { Type } from '@sinclair/typebox'
 import Fastify from 'fastify'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -293,7 +292,7 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
             name: 'test-owner',
             label: 'test owner',
             description: 'test owner bridge tool',
-            parameters: Type.Object({}),
+            parameters: { type: 'object', properties: {} },
             async execute(_toolCallId, _params, _signal, _onUpdate, toolCtx) {
               const response = await ctx.callAsRuntime<{ ownerId: string | null }>({ op: 'test.v1.owner', input: {} }, {
                 sessionId: toolCtx.sessionManager.getSessionId(),
@@ -364,7 +363,7 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
             name: 'test-persist',
             label: 'test persist',
             description: 'test persist bridge tool',
-            parameters: Type.Object({}),
+            parameters: { type: 'object', properties: {} },
             async execute() {
               return {
                 details: await ctx.callAsRuntime({ op: 'test.v1.persist', input: {} }),
