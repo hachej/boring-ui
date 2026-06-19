@@ -26,6 +26,7 @@ export interface OutreachLink {
   expiresAt: string
   revokedAt: string | null
   maxLeads: number | null
+  initialCreditMicros: number
   leadCount: number
   firstOpenedAt: string | null
   lastOpenedAt: string | null

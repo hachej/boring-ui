@@ -6,6 +6,7 @@ import type { WorkspaceStore } from '../app/types.js'
 import { ERROR_CODES, HttpError } from '../../shared/errors.js'
 import {
   DefaultExperienceProvisioner,
+  type OutreachCreditGrantStore,
   consumeOutreachForUser,
   createOutreachExperience,
   createOutreachLink,
@@ -16,6 +17,7 @@ import {
 export interface OutreachRoutesOptions {
   db: Database
   workspaceStore: WorkspaceStore
+  creditGrantStore: OutreachCreditGrantStore
 }
 
 const createExperienceBody = z.object({
@@ -33,6 +35,7 @@ const createLinkBody = z.object({
   recipientHint: z.string().min(1).nullable().optional(),
   ttlHours: z.number().int().positive().max(24 * 365).optional(),
   maxLeads: z.number().int().positive().nullable().optional(),
+  initialCreditMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
 }).strict()
 
 function toHeaders(source: Record<string, string | string[] | undefined>): Headers {
@@ -42,6 +45,20 @@ function toHeaders(source: Record<string, string | string[] | undefined>): Heade
     headers.set(key, Array.isArray(value) ? value[0] : value)
   }
   return headers
+}
+
+function readMaxInitialCreditMicros(): number {
+  const raw = process.env.BORING_OUTREACH_MAX_INITIAL_CREDIT_MICROS
+  if (raw === undefined || raw.trim() === '') return 10_000_000
+  const parsed = Number(raw)
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new HttpError({
+      status: 500,
+      code: ERROR_CODES.INTERNAL_ERROR,
+      message: 'BORING_OUTREACH_MAX_INITIAL_CREDIT_MICROS must be a non-negative safe integer',
+    })
+  }
+  return parsed
 }
 
 function requireOutreachAdmin(user: { email: string; isAnonymousLead?: boolean } | null | undefined): void {
@@ -162,6 +179,8 @@ const outreachRoutesPlugin: FastifyPluginAsync<OutreachRoutesOptions> = async (a
       recipientHint: parsed.data.recipientHint,
       ttlHours: parsed.data.ttlHours,
       maxLeads: parsed.data.maxLeads,
+      initialCreditMicros: parsed.data.initialCreditMicros,
+      maxInitialCreditMicros: readMaxInitialCreditMicros(),
       createdBy: request.user?.id ?? null,
     })
 
@@ -197,6 +216,7 @@ const outreachRoutesPlugin: FastifyPluginAsync<OutreachRoutesOptions> = async (a
         token,
         userId: request.user.id,
         provisioner,
+        creditGrantStore: opts.creditGrantStore,
       })
       reply.redirect(consumed.targetPath)
       return
@@ -210,6 +230,7 @@ const outreachRoutesPlugin: FastifyPluginAsync<OutreachRoutesOptions> = async (a
       token,
       userId: anonymous.userId,
       provisioner,
+      creditGrantStore: opts.creditGrantStore,
     })
     setResponseCookies(reply, anonymous.response)
     reply.redirect(consumed.targetPath)

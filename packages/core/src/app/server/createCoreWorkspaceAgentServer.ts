@@ -54,6 +54,7 @@ import {
 } from '../../server/routes/index.js'
 import {
   createDatabase,
+  PostgresMeteringStore,
   PostgresUserStore,
   PostgresWorkspaceStore,
   type Database,
@@ -564,6 +565,7 @@ async function createCoreRuntime(config: CoreConfig, customTelemetry?: Telemetry
   db: Database
   userStore: UserStore
   workspaceStore: WorkspaceStore
+  meteringStore: PostgresMeteringStore
   telemetry: TelemetrySink
 }> {
   if (config.stores !== 'postgres') {
@@ -577,6 +579,7 @@ async function createCoreRuntime(config: CoreConfig, customTelemetry?: Telemetry
     storeDb,
     config.encryption.workspaceSettingsKey,
   )
+  const meteringStore = new PostgresMeteringStore(storeDb)
 
   const app = await createCoreApp(config) as CoreWorkspaceAgentServer
   // Resolve the telemetry sink here (db exists now) so the auth hooks get a plain sink.
@@ -600,7 +603,7 @@ async function createCoreRuntime(config: CoreConfig, customTelemetry?: Telemetry
     await sql.end()
   })
 
-  return { app, sql, db, userStore, workspaceStore, telemetry }
+  return { app, sql, db, userStore, workspaceStore, meteringStore, telemetry }
 }
 
 async function registerCoreRoutes({
@@ -609,12 +612,14 @@ async function registerCoreRoutes({
   db,
   userStore,
   workspaceStore,
+  meteringStore,
 }: {
   app: CoreWorkspaceAgentServer
   sql: postgres.Sql
   db: Database
   userStore: UserStore
   workspaceStore: WorkspaceStore
+  meteringStore: PostgresMeteringStore
 }) {
   await app.register(authHook)
   await app.register(registerRoutes, {
@@ -627,7 +632,7 @@ async function registerCoreRoutes({
   await app.register(registerMemberRoutes)
   await app.register(registerSettingsRoutes)
   await app.register(registerInviteRoutes)
-  await app.register(registerOutreachRoutes, { db, workspaceStore })
+  await app.register(registerOutreachRoutes, { db, workspaceStore, creditGrantStore: meteringStore })
 }
 
 export async function createCoreWorkspaceAgentServer(
@@ -642,7 +647,7 @@ export async function createCoreWorkspaceAgentServer(
   assertCoreStaticPluginEntries(options.plugins)
 
   const config = options.config ?? (await loadConfig(resolveCoreLoadConfigOptions(options)))
-  const { app, sql, db, userStore, workspaceStore, telemetry } = await createCoreRuntime(config, options.telemetry)
+  const { app, sql, db, userStore, workspaceStore, meteringStore, telemetry } = await createCoreRuntime(config, options.telemetry)
   const appRoot = options.appRoot
   const serveFrontend =
     options.serveFrontend ?? (process.env.NODE_ENV !== 'development' && Boolean(appRoot))
@@ -650,7 +655,7 @@ export async function createCoreWorkspaceAgentServer(
   const workspaceRoot = options.workspaceRoot ?? process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd()
   registerTelemetryHooks(app, telemetry)
 
-  await registerCoreRoutes({ app, sql, db, userStore, workspaceStore })
+  await registerCoreRoutes({ app, sql, db, userStore, workspaceStore, meteringStore })
 
   if (serveFrontend && appRoot) {
     await registerFrontendAuthPages(app, appRoot, telemetry)

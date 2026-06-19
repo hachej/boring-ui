@@ -12,6 +12,10 @@ import { normalizeOutreachTargetPath, resolveWorkspaceTargetPath } from '../../s
 import { buildOutreachUrl, generateOutreachToken, hashOutreachToken } from './tokens.js'
 import type { ExperienceProvisioner, OutreachExperience, ProvisionedExperience } from './types.js'
 
+export interface OutreachCreditGrantStore {
+  grantOnce(input: { userId: string; reason: string; amountMicros: number }): Promise<{ created: boolean }>
+}
+
 function toIso(value: Date | string | null): string | null {
   if (value === null) return null
   return typeof value === 'string' ? value : value.toISOString()
@@ -178,6 +182,8 @@ export async function createOutreachLink(input: {
   recipientHint?: string | null
   ttlHours?: number
   maxLeads?: number | null
+  initialCreditMicros?: number
+  maxInitialCreditMicros?: number
   createdBy: string | null
 }): Promise<{ url: string; expiresAt: string; id: string }> {
   const experienceRows = await input.db
@@ -187,6 +193,18 @@ export async function createOutreachLink(input: {
     .limit(1)
   if (!experienceRows[0]) {
     throw new HttpError({ status: 404, code: ERROR_CODES.NOT_FOUND, message: 'Outreach experience not found' })
+  }
+
+  const initialCreditMicros = input.initialCreditMicros ?? 0
+  const maxInitialCreditMicros = input.maxInitialCreditMicros ?? 10_000_000
+  if (!Number.isSafeInteger(maxInitialCreditMicros) || maxInitialCreditMicros < 0) {
+    throw new HttpError({ status: 500, code: ERROR_CODES.INTERNAL_ERROR, message: 'maxInitialCreditMicros must be a non-negative safe integer' })
+  }
+  if (!Number.isSafeInteger(initialCreditMicros) || initialCreditMicros < 0) {
+    throw new HttpError({ status: 400, code: ERROR_CODES.VALIDATION_FAILED, message: 'initialCreditMicros must be a non-negative safe integer' })
+  }
+  if (initialCreditMicros > maxInitialCreditMicros) {
+    throw new HttpError({ status: 400, code: ERROR_CODES.VALIDATION_FAILED, message: `initialCreditMicros must be <= ${maxInitialCreditMicros}` })
   }
 
   const rawToken = generateOutreachToken()
@@ -202,6 +220,7 @@ export async function createOutreachLink(input: {
       recipientHint: input.recipientHint ?? null,
       expiresAt,
       maxLeads: input.maxLeads ?? null,
+      initialCreditMicros,
       createdBy: input.createdBy,
     })
     .returning({ id: outreachLinks.id, expiresAt: outreachLinks.expiresAt })
@@ -396,6 +415,7 @@ export async function consumeOutreachForUser(input: {
   token: string
   userId: string
   provisioner: ExperienceProvisioner
+  creditGrantStore: OutreachCreditGrantStore
 }): Promise<{ targetPath: string; leadId: string }> {
   const existingLead = await getLeadForUser({ db: input.db, appId: input.appId, userId: input.userId })
   const { link } = await findValidOutreachLink({
@@ -428,6 +448,13 @@ export async function consumeOutreachForUser(input: {
     leadId: lead.id,
     userId: input.userId,
   })
+  if (link.initialCreditMicros > 0) {
+    await input.creditGrantStore.grantOnce({ 
+      userId: input.userId,
+      reason: `outreach:${link.id}:initial_credit`,
+      amountMicros: link.initialCreditMicros,
+    })
+  }
   return { targetPath: result.targetPath, leadId: lead.id }
 }
 

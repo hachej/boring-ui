@@ -22,3 +22,4 @@ export type {
   OutreachProvisioningStatus,
   ProvisionedExperience,
 } from './types.js'
+export type { OutreachCreditGrantStore } from './service.js'

@@ -297,6 +297,7 @@ export const outreachLinks = pgTable(
     expiresAt: timestamp('expires_at').notNull(),
     revokedAt: timestamp('revoked_at'),
     maxLeads: integer('max_leads'),
+    initialCreditMicros: bigint('initial_credit_micros', { mode: 'number' }).notNull().default(0),
     leadCount: integer('lead_count').notNull().default(0),
     firstOpenedAt: timestamp('first_opened_at'),
     lastOpenedAt: timestamp('last_opened_at'),
@@ -308,6 +309,7 @@ export const outreachLinks = pgTable(
     index('outreach_links_app_id_idx').on(table.appId),
     index('outreach_links_experience_id_idx').on(table.experienceId),
     check('outreach_links_max_leads_check', sql`${table.maxLeads} IS NULL OR ${table.maxLeads} > 0`),
+    check('outreach_links_initial_credit_check', sql`${table.initialCreditMicros} >= 0`),
     check('outreach_links_lead_count_check', sql`${table.leadCount} >= 0`),
   ],
 )
