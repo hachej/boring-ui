@@ -23,6 +23,31 @@ Keep these dimensions separate. `Status` answers "where is this globally?",
 `Loop Status` answers "what does the work need next?", and `Type` answers
 "what kind of work is this?"
 
+## Color Conventions
+
+GitHub Project single-select options should stay color-coded for scanning:
+
+| Field | Value | Color |
+| --- | --- | --- |
+| `Status` | `Backlog` | Gray |
+| `Status` | `Doing` | Blue |
+| `Status` | `Done` | Green |
+| `Loop Status` | `Needs Triage` | Gray |
+| `Loop Status` | `Needs Grill` | Purple |
+| `Loop Status` | `Needs Plan` | Yellow |
+| `Loop Status` | `Needs Review` | Orange |
+| `Loop Status` | `Ready` | Blue |
+| `Loop Status` | `Executing` | Green |
+| `Loop Status` | `Blocked` | Red |
+| `Type` | `Bug` | Red |
+| `Type` | `Feature` | Green |
+| `Type` | `Refactor` | Purple |
+| `Type` | `Architecture` | Blue |
+| `Type` | `Dependencies` | Orange |
+| `Type` | `Documentation` | Yellow |
+| `Type` | `Chore` | Gray |
+| `Type` | `Story` | Pink |
+
 ## Status
 
 Use `Status` for the coarse roadmap lane only.
