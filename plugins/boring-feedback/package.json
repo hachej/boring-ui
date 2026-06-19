@@ -1,0 +1,81 @@
+{
+  "name": "@hachej/boring-feedback",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Installable boring-ui feedback intake plugin with a /feedback Pi command and bundled triage skill.",
+  "boring": {
+    "label": "Feedback",
+    "front": "dist/front/index.js"
+  },
+  "pi": {
+    "systemPrompt": "When the user submits /feedback or asks to capture product feedback, use the boring-feedback skill. Capture, enrich, redact, route to a GitHub issue or Project backlog item, and leave implementation to scheduled triage.",
+    "skills": [
+      "skills/boring-feedback"
+    ],
+    "extensions": [
+      "agent/index.ts"
+    ],
+    "slashCommands": [
+      {
+        "name": "feedback",
+        "description": "Capture feedback and route it through the boring feedback loop."
+      }
+    ]
+  },
+  "files": [
+    "dist",
+    "agent",
+    "skills",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./front": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./shared": {
+      "types": "./dist/shared/index.d.ts",
+      "import": "./dist/shared/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && tsc --noEmit",
+    "test": "pnpm --filter @hachej/boring-ui-kit build && vitest run --passWithNoTests",
+    "lint": "pnpm run typecheck",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "peerDependencies": {
+    "@hachej/boring-workspace": "workspace:*",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "dependencies": {
+    "@hachej/boring-ui-kit": "workspace:*"
+  },
+  "devDependencies": {
+    "@hachej/boring-workspace": "workspace:*",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "jsdom": "^29.0.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^3.1.3"
+  }
+}

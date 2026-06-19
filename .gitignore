@@ -89,6 +89,12 @@ packages/workspace/src/plugins/eval-*/
 # Skill-install artifacts (npx skills add) — per-tool symlink dirs + skill store.
 # Machine/tool-local; not part of the app source.
 /.agents/
+!/.agents/
+!/.agents/skills/
+!/.agents/skills/boring-orchestration/
+!/.agents/skills/boring-orchestration/**
+!/.agents/skills/boring-triage/
+!/.agents/skills/boring-triage/**
 /skills/
 /skills-lock.json
 /.adal/

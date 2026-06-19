@@ -41,6 +41,7 @@ standalone (`createAgentApp`) with zero core dependency.
 | Plugin | One-liner | Docs |
 | --- | --- | --- |
 | `ask-user` | `ask_user` agent tool + Questions pane: typed, validated form question that blocks until the user submits or cancels. | [README](../plugins/ask-user/README.md) |
+| `boring-feedback` | Installable `/feedback` intake plugin with a feedback panel, Pi slash command, and bundled routing skill. | [README](../plugins/boring-feedback/README.md) |
 | `data-catalog` | Builder (`createDataCatalogPlugin`) binding an adapter into a left tab + visualization panel + catalog + surface resolver, plus a `query_data_catalog` agent tool. | [README](../plugins/data-catalog/README.md) |
 | `data-explorer` | Headless searchable/faceted table primitive (`<DataExplorer>` + `ExplorerDataSource` contract) that data-catalog builds on. | [README](../plugins/data-explorer/README.md) |
 | `deck` | Front-only markdown slide-deck plugin: read/edit/present modes, `workspace.open.path` resolver, app-owned widget injection, bundled `deck-authoring` Pi skill. | [README](../plugins/deck/README.md) |
@@ -62,6 +63,7 @@ standalone (`createAgentApp`) with zero core dependency.
 - [`WORKSPACE_CONTRACT.md`](WORKSPACE_CONTRACT.md) — the agent ↔ workspace integration contract: HTTP routes, component exports, UiBridge/UiCommand semantics, import boundaries.
 - [`TAILWIND-V4-STYLE-ISOLATION.md`](TAILWIND-V4-STYLE-ISOLATION.md) — how packages share Tailwind v4 tokens: workspace owns `--boring-*` `:root` tokens; agent inherits them scoped to `[data-boring-agent]` (test-enforced).
 - [`PERFORMANCE.md`](PERFORMANCE.md) — historical Vercel-sandbox vs local FS latency benchmarks (harness removed; kept for reference).
+- [`kanzen/`](kanzen/) — analysis of a 5-minute maintainer orchestration loop for repo triage, worker threads, proof gates, owner decisions, and budgeted autonomy.
 - [`procedures/proof-of-work.md`](procedures/proof-of-work.md) — required GitHub proof-of-work procedure for PRs.
 - [`web/`](web/README.md) — human-oriented guide: architecture overview, full package map, getting started, composition guide, design FAQ, troubleshooting map, per-package explainers, glossary. Orientation, not normative spec — canonical specs live in `packages/*/docs/`.
 
