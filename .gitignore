@@ -91,6 +91,7 @@ packages/workspace/src/plugins/eval-*/
 /.agents/
 !/.agents/
 !/.agents/skills/
+!/.agents/skills/boring-feedback
 !/.agents/skills/boring-orchestration/
 !/.agents/skills/boring-orchestration/**
 !/.agents/skills/boring-triage/
