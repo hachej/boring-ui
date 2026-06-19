@@ -41,7 +41,6 @@ standalone (`createAgentApp`) with zero core dependency.
 | Plugin | One-liner | Docs |
 | --- | --- | --- |
 | `ask-user` | `ask_user` agent tool + Questions pane: typed, validated form question that blocks until the user submits or cancels. | [README](../plugins/ask-user/README.md) |
-| `boring-feedback` | Installable `/feedback` intake plugin with a feedback panel, Pi slash command, and bundled routing skill. | [README](../plugins/boring-feedback/README.md) |
 | `data-catalog` | Builder (`createDataCatalogPlugin`) binding an adapter into a left tab + visualization panel + catalog + surface resolver, plus a `query_data_catalog` agent tool. | [README](../plugins/data-catalog/README.md) |
 | `data-explorer` | Headless searchable/faceted table primitive (`<DataExplorer>` + `ExplorerDataSource` contract) that data-catalog builds on. | [README](../plugins/data-explorer/README.md) |
 | `deck` | Front-only markdown slide-deck plugin: read/edit/present modes, `workspace.open.path` resolver, app-owned widget injection, bundled `deck-authoring` Pi skill. | [README](../plugins/deck/README.md) |

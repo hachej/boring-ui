@@ -7,8 +7,8 @@ them, and merge only when policy allows.
 Read:
 
 - [`boring-loop.md`](boring-loop.md) - vision and product shape.
-- [`boring-feedback`](../../plugins/boring-feedback/skills/boring-feedback/SKILL.md)
-  - `/feedback` intake plugin skill.
+- [`boring-feedback`](../../.agents/skills/boring-feedback/SKILL.md)
+  - `/feedback` intake skill.
 - [`boring-orchestration`](../../.agents/skills/boring-orchestration/SKILL.md)
   - orchestration skill.
 - [`boring-triage`](../../.agents/skills/boring-triage/SKILL.md) - triage

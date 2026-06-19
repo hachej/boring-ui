@@ -13,9 +13,9 @@ control plane where autonomy is earned one gate at a time.
   - skill for running the maintainer loop.
 - [`boring-triage`](../../.agents/skills/boring-triage/SKILL.md) - skill for
   classifying issues, PRs, feedback, and stack candidates.
-- [`boring-feedback`](../../plugins/boring-feedback/skills/boring-feedback/SKILL.md)
-  - installable plugin skill for `/feedback` capture, enrichment, backlog/bug
-  routing, and grill deferral.
+- [`boring-feedback`](../../.agents/skills/boring-feedback/SKILL.md)
+  - skill for `/feedback` capture, enrichment, backlog/bug routing, and grill
+  deferral.
 - [`sources/theo_loop.md`](sources/theo_loop.md) - source transcript.
 - [`sources/steinberger_loop.md`](sources/steinberger_loop.md) - source skill
   analysis.
@@ -162,10 +162,11 @@ flowchart TD
 
 ## First Cut
 
-Build this as the `@hachej/boring-feedback` plugin plus narrow GitHub/project
-integrations:
+Build this first as three `.agents` skills plus narrow GitHub/project
+integrations. A richer UI surface can come later only if it adds real value
+such as context capture, preview UI, or screenshots.
 
-1. `/feedback` command with preview-before-submit issue creation.
+1. `/feedback` intake skill with preview-before-submit issue creation.
 2. Issue/PR board fields for status, proof, review, stack, and merge
    eligibility.
 3. `Run triage`, `Create stack plan`, `Run autoreview`, and `Evaluate

@@ -1,6 +1,6 @@
 ---
 name: boring-feedback
-description: "Use this skill when a user submits /feedback inside boring-ui or installs the @hachej/boring-feedback plugin: capture and redact context, decide whether to create a GitHub bug issue or a GitHub Project backlog item, optionally grill/refine the report with targeted questions, and leave unclear entries in status:needs-grill until the user answers."
+description: "Use this skill when a user submits /feedback or asks to capture product feedback inside boring-ui: capture and redact context, decide whether to create a GitHub bug issue or a GitHub Project backlog item, optionally grill/refine the report with targeted questions, and leave unclear entries in status:needs-grill until the user answers."
 ---
 
 # Boring Feedback
@@ -13,8 +13,9 @@ Handle `/feedback` intake. Do not implement. Capture, enrich, route, and queue.
 - `/feedback` with no args: ask for the report first.
 - direct user request: use the same flow when the user asks to capture feedback.
 
-The `@hachej/boring-feedback` plugin may open a feedback panel, but the agent
-workflow is still the source of truth for GitHub/project mutations.
+`/feedback` is an agent workflow trigger here, not a required UI extension. If
+a richer slash-command surface exists later, it may provide better context, but
+this skill remains the source of truth for intake behavior.
 
 ## Workflow
 
