@@ -35,6 +35,24 @@ export interface PaneProps<T = unknown> {
   className?: string
 }
 
+export interface WorkspaceSourceOpenPanelConfig {
+  id: string
+  component: string
+  title?: string
+  params?: Record<string, unknown>
+}
+
+/**
+ * Props for workspace source panes hosted in the left workspace rail.
+ * These are not Dockview panels: they receive only source-pane params and
+ * the explicit actions that the source host supports.
+ */
+export interface WorkspaceSourceProps<T = unknown> {
+  params: T
+  className?: string
+  openPanel?: (config: WorkspaceSourceOpenPanelConfig) => void
+}
+
 export type PanelPlacement =
   | "left"
   | "center"
@@ -42,7 +60,9 @@ export type PanelPlacement =
   | "bottom"
   | "shared-dockview"
   | "workspace-page"
+  /** @deprecated Use registerWorkspaceSource instead. */
   | "workspace-source"
+  /** @deprecated Use registerWorkspaceSource instead. */
   | "left-tab"
   | "right-tab"
 
@@ -68,7 +88,7 @@ export interface PanelConfig<T = any> {
   essential?: boolean
   chromeless?: boolean
   supportsFullPage?: boolean
-  /** Panel id opened when this config is used as an internal workspace source. */
+  /** @deprecated Only honored for legacy workspace-source/left-tab panels. Use WorkspaceSourceConfig.defaultPanelId. */
   defaultPanelId?: string
   /** Source: "builtin" | "app" */
   source?: string
@@ -85,6 +105,25 @@ export interface PanelConfig<T = any> {
 }
 
 export type PanelRegistration<T = any> = Omit<PanelConfig<T>, 'id'>
+
+export interface WorkspaceSourceConfig<T = any> {
+  id: string
+  title: string
+  icon?: ComponentType<{ className?: string }>
+  component: ComponentType<WorkspaceSourceProps<T>> | (() => Promise<{ default: ComponentType<WorkspaceSourceProps<T>> }>)
+  requiresCapabilities?: string[]
+  chromeless?: boolean
+  /** Panel id opened in the main workspace when this source is selected. */
+  defaultPanelId?: string
+  /** Source: "builtin" | "app" */
+  source?: string
+  pluginId?: string
+  /** Revision emitted by the runtime plugin asset manager for hot-loaded sources. */
+  pluginRevision?: number
+  lazy?: boolean
+}
+
+export type WorkspaceSourceRegistration<T = any> = Omit<WorkspaceSourceConfig<T>, 'id'>
 
 /**
  * Identity helper for type-safe panel registration. Pure runtime

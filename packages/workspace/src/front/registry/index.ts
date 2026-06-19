@@ -1,13 +1,24 @@
 export { PanelRegistry } from "./PanelRegistry"
+export { WorkspaceSourceRegistry } from "./WorkspaceSourceRegistry"
 export {
   RegistryProvider,
   useRegistry,
+  useWorkspaceSourceRegistry,
   useCommandRegistry,
   useCatalogRegistry,
   useSurfaceResolverRegistry,
 } from "./RegistryProvider"
 export { getFileIcon } from "./getFileIcon"
-export type { PanelConfig, PanelRegistration, CommandConfig, PaneProps } from "./types"
+export type {
+  PanelConfig,
+  PanelRegistration,
+  CommandConfig,
+  PaneProps,
+  WorkspaceSourceConfig,
+  WorkspaceSourceOpenPanelConfig,
+  WorkspaceSourceProps,
+  WorkspaceSourceRegistration,
+} from "./types"
 export type {
   SurfaceOpenRequest,
   SurfacePanelResolution,

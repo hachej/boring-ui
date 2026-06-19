@@ -19,6 +19,7 @@ export type {
   BoringFrontBindingRegistration,
   BoringFrontPanelRegistration,
   BoringFrontPanelCommandRegistration,
+  BoringFrontWorkspaceSourceRegistration,
   BoringFrontProviderRegistration,
   BoringFrontSurfaceResolverRegistration,
   CapturedBoringFrontRegistrations,
@@ -54,4 +55,4 @@ export type {
   BoringPluginManifestValidationResult,
   BoringPluginPackageJson,
 } from "./shared/plugins/manifest"
-export type { PaneProps } from "./shared/types/panel"
+export type { PaneProps, WorkspaceSourceProps, WorkspaceSourceOpenPanelConfig } from "./shared/types/panel"

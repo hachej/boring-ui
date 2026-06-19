@@ -5,7 +5,7 @@ import type {
   ToolExecContext,
   ToolResult,
 } from "../types/agent-tool"
-import type { PaneProps, PanelConfig } from "../types/panel"
+import type { PaneProps, PanelConfig, WorkspaceSourceProps } from "../types/panel"
 
 export type {
   AgentTool,
@@ -97,4 +97,4 @@ export interface LeftTabParams {
   revealFileTreeRequest?: { path: string; seq: number } | null
 }
 
-export type LeftTabComponent = ComponentType<PaneProps<LeftTabParams>>
+export type LeftTabComponent = ComponentType<WorkspaceSourceProps<LeftTabParams>>

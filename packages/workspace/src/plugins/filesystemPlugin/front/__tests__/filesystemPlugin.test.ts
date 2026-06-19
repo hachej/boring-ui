@@ -24,17 +24,15 @@ describe("filesystemPlugin", () => {
       "filesystem-file-panel",
       "filesystem-agent-file-bridge",
     ])
-    expect(registrations.panels[0]).toEqual(
+    expect(registrations.workspaceSources[0]).toEqual(
       expect.objectContaining({
         id: "files",
         label: "Files",
-        placement: "workspace-source",
         source: "builtin",
       }),
     )
     expect(resolver).toEqual(expect.objectContaining({ id: "filesystem-path" }))
     expect(registrations.panels.map((panel) => panel.id)).toEqual([
-      "files",
       "empty-file-panel",
       "code-editor",
       "csv-viewer",
@@ -45,8 +43,9 @@ describe("filesystemPlugin", () => {
     ])
   })
 
-  it("all panels have source 'builtin'", () => {
+  it("all panels and workspace sources have source 'builtin'", () => {
     for (const panel of registrations.panels) expect(panel.source).toBe("builtin")
+    for (const source of registrations.workspaceSources) expect(source.source).toBe("builtin")
   })
 
   it("surface resolver routes common code extensions", () => {

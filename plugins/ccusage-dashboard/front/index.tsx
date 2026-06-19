@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react"
-import { useApiBaseUrl, useWorkspaceRequestId } from "@hachej/boring-workspace"
+import { useWorkspacePluginClient, type WorkspacePluginClient } from "@hachej/boring-workspace"
 import { definePlugin, type PaneProps } from "@hachej/boring-workspace/plugin"
 
 const DATA_PATH = ".pi/extensions/ccusage-dashboard/usage.json"
@@ -21,15 +21,6 @@ interface UsageData {
 
 type Report = typeof REPORTS[number]
 type Source = typeof SOURCES[number]
-
-function workspaceIdFromLocation(): string | undefined {
-  const importMatch = /\/runtime\/([^/?#]+)\//.exec(import.meta.url)
-  if (importMatch?.[1]) return importMatch[1]
-  if (typeof window === "undefined") return undefined
-  const direct = new URLSearchParams(window.location.search).get("workspaceId")
-  if (direct) return direct
-  return /\/runtime\/([^/?#]+)/.exec(window.location.pathname)?.[1]
-}
 
 function num(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0
@@ -57,55 +48,10 @@ function total(data: UsageData | undefined, keys: string[], rowGetter: (row: Usa
   return rows(data).reduce((sum, row) => sum + rowGetter(row), 0)
 }
 
-async function fetchUsage(apiBaseUrl: string, workspaceId: string | undefined): Promise<UsageData> {
-  const query = new URLSearchParams({ path: DATA_PATH, t: String(Date.now()) })
-  if (workspaceId) query.set("workspaceId", workspaceId)
-  const headers: Record<string, string> = {}
-  if (workspaceId) headers["x-boring-workspace-id"] = workspaceId
-  const response = await fetch(`${apiBaseUrl.replace(/\/$/, "")}/api/v1/files/raw?${query.toString()}`, {
-    credentials: "include",
-    headers,
+async function fetchUsage(client: WorkspacePluginClient): Promise<UsageData> {
+  return client.readJsonFile<UsageData>(DATA_PATH, {
+    missingMessage: "No ccusage data yet. Click Refresh, or ask the agent to run refresh_ccusage_dashboard.",
   })
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "")
-    throw new Error(`No ccusage data yet. Click Refresh, or ask the agent to run refresh_ccusage_dashboard.${detail ? ` (${response.status}: ${detail.slice(0, 160)})` : ""}`)
-  }
-  return await response.json() as UsageData
-}
-
-async function readResponseError(response: Response): Promise<string> {
-  const text = await response.text().catch(() => "")
-  if (!text) return `agent request failed (${response.status})`
-  try {
-    const parsed = JSON.parse(text) as { error?: { message?: unknown }; message?: unknown }
-    if (typeof parsed.error?.message === "string") return parsed.error.message
-    if (typeof parsed.message === "string") return parsed.message
-  } catch {}
-  return text.slice(0, 200)
-}
-
-async function sendAgentChat(message: string): Promise<void> {
-  const workspaceId = workspaceIdFromLocation()
-  const query = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ""
-  const headers: Record<string, string> = { "content-type": "application/json" }
-  if (workspaceId) headers["x-boring-workspace-id"] = workspaceId
-  const sessionResponse = await fetch(`/api/v1/agent/pi-chat/sessions${query}`, {
-    method: "POST",
-    credentials: "include",
-    headers,
-    body: JSON.stringify({ title: "ccusage dashboard refresh" }),
-  })
-  if (!sessionResponse.ok) throw new Error(await readResponseError(sessionResponse))
-  const session = await sessionResponse.json().catch(() => null) as { id?: unknown } | null
-  if (typeof session?.id !== "string") throw new Error("agent session creation did not return a session id")
-  const promptResponse = await fetch(`/api/v1/agent/pi-chat/${encodeURIComponent(session.id)}/prompt${query}`, {
-    method: "POST",
-    credentials: "include",
-    headers,
-    body: JSON.stringify({ message, clientNonce: `ccusage-dashboard-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}` }),
-  })
-  if (!promptResponse.ok) throw new Error(await readResponseError(promptResponse))
-  await promptResponse.text().catch(() => undefined)
 }
 
 function refreshPrompt(report: Report, source: Source, since: string, until: string, timezone: string): string {
@@ -182,8 +128,7 @@ function Chart({ rows: chartInput }: { rows: UsageRow[] }) {
 }
 
 function CcusageDashboard({ params }: PaneProps<{ report?: Report; source?: Source }>) {
-  const apiBaseUrl = useApiBaseUrl()
-  const workspaceRequestId = useWorkspaceRequestId() || workspaceIdFromLocation()
+  const pluginClient = useWorkspacePluginClient()
   const [report, setReport] = useState<Report>(params.report ?? "daily")
   const [source, setSource] = useState<Source>(params.source ?? "all")
   const [since, setSince] = useState("")
@@ -199,18 +144,21 @@ function CcusageDashboard({ params }: PaneProps<{ report?: Report; source?: Sour
     let active = true
     setLoading(true)
     setError(undefined)
-    fetchUsage(apiBaseUrl, workspaceRequestId)
+    fetchUsage(pluginClient)
       .then((next) => { if (active) setData(next) })
       .catch((caught: unknown) => { if (active) setError(caught instanceof Error ? caught.message : String(caught)) })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [apiBaseUrl, workspaceRequestId, loadKey])
+  }, [pluginClient, loadKey])
 
   async function refresh() {
     setRefreshing(true)
     setError(undefined)
     try {
-      await sendAgentChat(refreshPrompt(report, source, since, until, timezone))
+      await pluginClient.sendAgentPrompt(refreshPrompt(report, source, since, until, timezone), {
+        title: "ccusage dashboard refresh",
+        noncePrefix: "ccusage-dashboard",
+      })
       window.setTimeout(() => setLoadKey((key) => key + 1), 1500)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))

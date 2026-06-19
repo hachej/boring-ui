@@ -84,10 +84,9 @@ function RuntimePane() {
 
 export default definePlugin({
   id: ${JSON.stringify(options.pluginId)},
-  panels: [{
+  workspaceSources: [{
     id: ${JSON.stringify(options.panelId ?? `${options.pluginId}.tab`)},
     label: ${JSON.stringify(options.title)},
-    placement: "workspace-source",
     component: RuntimePane,
   }],
 })
@@ -145,6 +144,7 @@ browserTest("built folder mode browser path hot-loads, preserves previous-good r
     title: "Runtime Tab",
     label: "Runtime Plugin",
     bodyText: "runtime-plugin-ready-v1",
+    extraImports: 'import { useWorkspacePluginClient } from "@hachej/boring-workspace"\n',
   })
 
   const app = await createLocalFolderModeApp({

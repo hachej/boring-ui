@@ -11,12 +11,13 @@ import {
   type BoringFrontFactoryWithId,
   type CapturedBoringFrontRegistrations,
 } from "../../shared/plugins/frontFactory"
+import { adaptLegacyPanelToWorkspaceSource } from "../../shared/plugins/legacyWorkspaceSource"
 import type { BoringPluginEvent, BoringPluginFrontTarget } from "../../shared/plugins/runtimePluginTypes"
 import type { CatalogConfig } from "../../shared/plugins/types"
-import type { PanelConfig } from "../../shared/types/panel"
+import { isWorkspaceSourcePlacement, type PanelConfig, type WorkspaceSourceConfig } from "../../shared/types/panel"
 import type { SurfaceResolverConfig } from "../../shared/types/surface"
 import type { CommandConfig } from "../registry/types"
-import { useCatalogRegistry, useCommandRegistry, useRegistry, useSurfaceResolverRegistry } from "../registry/RegistryProvider"
+import { useCatalogRegistry, useCommandRegistry, useRegistry, useSurfaceResolverRegistry, useWorkspaceSourceRegistry } from "../registry/RegistryProvider"
 import { postUiCommand } from "../bridge"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "./reloadEvent"
 
@@ -119,11 +120,12 @@ function resolveFrontEntryUrl(
 
 function getRegistries(
   panels: ReturnType<typeof useRegistry>,
+  workspaceSources: ReturnType<typeof useWorkspaceSourceRegistry>,
   commands: ReturnType<typeof useCommandRegistry>,
   catalogs: ReturnType<typeof useCatalogRegistry>,
   surfaceResolvers: ReturnType<typeof useSurfaceResolverRegistry>,
 ) {
-  return { panels, commands, catalogs, surfaceResolvers }
+  return { panels, workspaceSources, commands, catalogs, surfaceResolvers }
 }
 
 function getAuthHeader(headers: Record<string, string> | undefined, name: string): string | undefined {
@@ -250,12 +252,31 @@ function buildRegistryPayloads(
   captured: CapturedBoringFrontRegistrations,
 ): {
   panels: PanelConfig[]
+  workspaceSources: WorkspaceSourceConfig[]
   commands: CommandConfig[]
   catalogs: CatalogConfig[]
   surfaceResolvers: SurfaceResolverConfig[]
 } {
   const panels: PanelConfig[] = []
+  const workspaceSources: WorkspaceSourceConfig[] = []
   for (const panel of captured.panels) {
+    if (isWorkspaceSourcePlacement(panel.placement)) {
+      const title = panel.label ?? panel.id
+      workspaceSources.push({
+        id: panel.id,
+        title,
+        component: adaptLegacyPanelToWorkspaceSource(panel.id, title, panel.component, panel.lazy),
+        source: panel.source ?? "plugin",
+        pluginId,
+        pluginRevision: revision,
+        ...(panel.icon ? { icon: panel.icon } : {}),
+        ...(panel.requiresCapabilities ? { requiresCapabilities: panel.requiresCapabilities } : {}),
+        ...(panel.lazy !== undefined ? { lazy: panel.lazy } : {}),
+        ...(panel.chromeless !== undefined ? { chromeless: panel.chromeless } : {}),
+        ...(panel.defaultPanelId !== undefined ? { defaultPanelId: panel.defaultPanelId } : {}),
+      } as WorkspaceSourceConfig)
+      continue
+    }
     panels.push({
       id: panel.id,
       title: panel.label ?? panel.id,
@@ -269,8 +290,22 @@ function buildRegistryPayloads(
       ...(panel.essential !== undefined ? { essential: panel.essential } : {}),
       ...(panel.lazy !== undefined ? { lazy: panel.lazy } : {}),
       ...(panel.chromeless !== undefined ? { chromeless: panel.chromeless } : {}),
-      ...(panel.defaultPanelId !== undefined ? { defaultPanelId: panel.defaultPanelId } : {}),
     } as PanelConfig)
+  }
+  for (const source of captured.workspaceSources) {
+    workspaceSources.push({
+      id: source.id,
+      title: source.label ?? source.id,
+      component: source.component,
+      source: source.source ?? "plugin",
+      pluginId,
+      pluginRevision: revision,
+      ...(source.icon ? { icon: source.icon } : {}),
+      ...(source.requiresCapabilities ? { requiresCapabilities: source.requiresCapabilities } : {}),
+      ...(source.lazy !== undefined ? { lazy: source.lazy } : {}),
+      ...(source.chromeless !== undefined ? { chromeless: source.chromeless } : {}),
+      ...(source.defaultPanelId !== undefined ? { defaultPanelId: source.defaultPanelId } : {}),
+    } as WorkspaceSourceConfig)
   }
   const commands: CommandConfig[] = captured.panelCommands.map((command) => {
     const run = command.run ?? (command.panelId
@@ -301,7 +336,7 @@ function buildRegistryPayloads(
     const { id, config } = normalizeFrontSurfaceResolver(resolver, pluginId)
     return { id, ...config }
   })
-  return { panels, commands, catalogs, surfaceResolvers }
+  return { panels, workspaceSources, commands, catalogs, surfaceResolvers }
 }
 
 /**
@@ -330,7 +365,7 @@ function ownerLabel(pluginId: string | undefined): string {
 
 function outputCollisionError(
   pluginId: string,
-  kind: "panel" | "command" | "catalog" | "surface-resolver",
+  kind: "panel" | "workspace-source" | "command" | "catalog" | "surface-resolver",
   id: string,
   existingOwner: string | undefined,
 ): Error {
@@ -350,6 +385,12 @@ function assertNoOutputCollisions(
     const existing = registries.panels.get(panel.id)
     if (existing && existing.pluginId !== pluginId) {
       throw outputCollisionError(pluginId, "panel", panel.id, existing.pluginId)
+    }
+  }
+  for (const source of payloads.workspaceSources) {
+    const existing = registries.workspaceSources.get(source.id)
+    if (existing && existing.pluginId !== pluginId) {
+      throw outputCollisionError(pluginId, "workspace-source", source.id, existing.pluginId)
     }
   }
   for (const command of payloads.commands) {
@@ -389,6 +430,7 @@ function commitCapturedFrontFactory(
   const payloads = buildRegistryPayloads(pluginId, revision, captured)
   assertNoOutputCollisions(pluginId, payloads, registries)
   registries.panels.replaceByPluginId(pluginId, payloads.panels)
+  registries.workspaceSources.replaceByPluginId(pluginId, payloads.workspaceSources)
   registries.commands.replaceByPluginId(pluginId, payloads.commands)
   registries.catalogs.replaceByPluginId(pluginId, payloads.catalogs)
   registries.surfaceResolvers.replaceByPluginId(pluginId, payloads.surfaceResolvers)
@@ -396,6 +438,7 @@ function commitCapturedFrontFactory(
 
 function unregisterPlugin(pluginId: string, registries: ReturnType<typeof getRegistries>): void {
   registries.panels.replaceByPluginId(pluginId, [])
+  registries.workspaceSources.replaceByPluginId(pluginId, [])
   registries.commands.replaceByPluginId(pluginId, [])
   registries.catalogs.replaceByPluginId(pluginId, [])
   registries.surfaceResolvers.replaceByPluginId(pluginId, [])
@@ -418,6 +461,7 @@ function isPluginReloadCommandEvent(detail: unknown): boolean {
 
 export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): void {
   const panels = useRegistry()
+  const workspaceSources = useWorkspaceSourceRegistry()
   const commands = useCommandRegistry()
   const catalogs = useCatalogRegistry()
   const surfaceResolvers = useSurfaceResolverRegistry()
@@ -471,7 +515,7 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
       return
     }
     let disposed = false
-    const registries = getRegistries(panels, commands, catalogs, surfaceResolvers)
+    const registries = getRegistries(panels, workspaceSources, commands, catalogs, surfaceResolvers)
     const url = withWorkspaceId(joinUrl(options.apiBaseUrl ?? "", "/api/v1/agent-plugins/events"), options.workspaceId)
     const es = new EventSource(url, { withCredentials: true })
 
@@ -708,5 +752,5 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
       }
       es.close()
     }
-  }, [options.apiBaseUrl, options.workspaceId, options.enabled, options.authHeaders, options.importFront, options.frontImportRetry, panels, commands, catalogs, surfaceResolvers, reloadNonce])
+  }, [options.apiBaseUrl, options.workspaceId, options.enabled, options.authHeaders, options.importFront, options.frontImportRetry, panels, workspaceSources, commands, catalogs, surfaceResolvers, reloadNonce])
 }

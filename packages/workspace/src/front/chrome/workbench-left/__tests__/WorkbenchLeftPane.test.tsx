@@ -3,16 +3,38 @@ import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, test, vi } from "vitest"
 import { RegistryProvider } from "../../../registry/RegistryProvider"
 import { PanelRegistry } from "../../../registry/PanelRegistry"
+import { WorkspaceSourceRegistry } from "../../../registry/WorkspaceSourceRegistry"
 import { CommandRegistry } from "../../../../shared/plugins/CommandRegistry"
 import { SurfaceResolverRegistry } from "../../../../shared/plugins/SurfaceResolverRegistry"
-import type { PaneProps } from "../../../registry/types"
+import type { WorkspaceSourceProps } from "../../../registry/types"
 import { WorkbenchLeftPane } from "../WorkbenchLeftPane"
 
-function WorkspaceSourceWithButton({ containerApi }: PaneProps) {
+function renderLeftPane({
+  panels = new PanelRegistry(),
+  sources = new WorkspaceSourceRegistry(),
+  children,
+}: {
+  panels?: PanelRegistry
+  sources?: WorkspaceSourceRegistry
+  children: React.ReactNode
+}) {
+  return render(
+    <RegistryProvider
+      panelRegistry={panels}
+      workspaceSourceRegistry={sources}
+      commandRegistry={new CommandRegistry()}
+      surfaceResolverRegistry={new SurfaceResolverRegistry()}
+    >
+      {children}
+    </RegistryProvider>,
+  )
+}
+
+function WorkspaceSourceWithButton({ openPanel }: WorkspaceSourceProps) {
   return (
     <button
       type="button"
-      onClick={() => containerApi.addPanel({
+      onClick={() => openPanel?.({
         id: "demo-instance",
         component: "demo.panel",
         title: "Demo Panel",
@@ -24,34 +46,16 @@ function WorkspaceSourceWithButton({ containerApi }: PaneProps) {
   )
 }
 
-function WorkspaceSourceWithUnsafeAddPanel({ containerApi }: PaneProps) {
-  containerApi.addPanel({
-    id: "unsafe-instance",
-    component: "unsafe.panel",
-    title: "Unsafe Panel",
-  })
-  return <div>unsafe rendered</div>
-}
-
 describe("WorkbenchLeftPane", () => {
-  test("workspace-source panels can open shared panels through containerApi.addPanel", () => {
-    const panelRegistry = new PanelRegistry()
-    panelRegistry.register("demo.left", {
+  test("workspace sources can open shared panels through explicit openPanel", () => {
+    const sources = new WorkspaceSourceRegistry()
+    sources.register("demo.left", {
       title: "Demo",
-      placement: "workspace-source",
       component: WorkspaceSourceWithButton,
     })
     const onOpenPanel = vi.fn()
 
-    render(
-      <RegistryProvider
-        panelRegistry={panelRegistry}
-        commandRegistry={new CommandRegistry()}
-        surfaceResolverRegistry={new SurfaceResolverRegistry()}
-      >
-        <WorkbenchLeftPane onOpenPanel={onOpenPanel} />
-      </RegistryProvider>,
-    )
+    renderLeftPane({ sources, children: <WorkbenchLeftPane onOpenPanel={onOpenPanel} /> })
 
     fireEvent.click(screen.getByRole("button", { name: "Open demo panel" }))
 
@@ -63,32 +67,28 @@ describe("WorkbenchLeftPane", () => {
     })
   })
 
-  test("workspace-source containerApi.addPanel fails loudly when the host omitted onOpenPanel", () => {
-    const panelRegistry = new PanelRegistry()
-    panelRegistry.register("demo.left", {
-      title: "Demo",
-      placement: "workspace-source",
-      component: WorkspaceSourceWithUnsafeAddPanel,
+  test("lazy workspace sources resolve with a stable lazy component", async () => {
+    const sources = new WorkspaceSourceRegistry()
+    const importer = vi.fn(async () => ({
+      default: () => <div>lazy body</div>,
+    }))
+    sources.register("lazy.source", {
+      title: "Lazy",
+      component: importer,
+      lazy: true,
     })
 
-    render(
-      <RegistryProvider
-        panelRegistry={panelRegistry}
-        commandRegistry={new CommandRegistry()}
-        surfaceResolverRegistry={new SurfaceResolverRegistry()}
-      >
-        <WorkbenchLeftPane />
-      </RegistryProvider>,
-    )
+    renderLeftPane({ sources, children: <WorkbenchLeftPane /> })
 
-    expect(screen.getByText(/containerApi\.addPanel/)).toBeInTheDocument()
+    expect(await screen.findByText("lazy body")).toBeInTheDocument()
+    expect(importer).toHaveBeenCalledTimes(1)
   })
 
   test("selecting a category opens its associated default center panel", () => {
     const panelRegistry = new PanelRegistry()
-    panelRegistry.register("files", {
+    const sources = new WorkspaceSourceRegistry()
+    sources.register("files", {
       title: "Files",
-      placement: "workspace-source",
       component: () => <div>files body</div>,
     })
     panelRegistry.register("data.panel", {
@@ -96,23 +96,14 @@ describe("WorkbenchLeftPane", () => {
       placement: "center",
       component: () => <div>data center</div>,
     })
-    panelRegistry.register("data.tab", {
+    sources.register("data.tab", {
       title: "Data",
-      placement: "workspace-source",
       defaultPanelId: "data.panel",
       component: () => <div>data body</div>,
     })
     const onOpenPanel = vi.fn()
 
-    render(
-      <RegistryProvider
-        panelRegistry={panelRegistry}
-        commandRegistry={new CommandRegistry()}
-        surfaceResolverRegistry={new SurfaceResolverRegistry()}
-      >
-        <WorkbenchLeftPane defaultTab="files" onOpenPanel={onOpenPanel} />
-      </RegistryProvider>,
-    )
+    renderLeftPane({ panels: panelRegistry, sources, children: <WorkbenchLeftPane defaultTab="files" onOpenPanel={onOpenPanel} /> })
 
     fireEvent.click(screen.getByRole("button", { name: "Data" }))
 
@@ -124,23 +115,14 @@ describe("WorkbenchLeftPane", () => {
   })
 
   test("right-clicking a category reloads agent plugins", () => {
-    const panelRegistry = new PanelRegistry()
-    panelRegistry.register("data.tab", {
+    const sources = new WorkspaceSourceRegistry()
+    sources.register("data.tab", {
       title: "Data",
-      placement: "workspace-source",
       component: () => <div>data body</div>,
     })
     const onReloadAgentPlugins = vi.fn()
 
-    render(
-      <RegistryProvider
-        panelRegistry={panelRegistry}
-        commandRegistry={new CommandRegistry()}
-        surfaceResolverRegistry={new SurfaceResolverRegistry()}
-      >
-        <WorkbenchLeftPane onReloadAgentPlugins={onReloadAgentPlugins} />
-      </RegistryProvider>,
-    )
+    renderLeftPane({ sources, children: <WorkbenchLeftPane onReloadAgentPlugins={onReloadAgentPlugins} /> })
 
     fireEvent.contextMenu(screen.getByRole("button", { name: "Data" }))
 
@@ -148,28 +130,18 @@ describe("WorkbenchLeftPane", () => {
   })
 
   test("categories render as a rail with a calm active state and menu collapse", () => {
-    const panelRegistry = new PanelRegistry()
-    panelRegistry.register("files", {
+    const sources = new WorkspaceSourceRegistry()
+    sources.register("files", {
       title: "Files",
-      placement: "workspace-source",
       component: () => <div>files body</div>,
     })
-    panelRegistry.register("data", {
+    sources.register("data", {
       title: "Data",
-      placement: "workspace-source",
       component: () => <div>data body</div>,
     })
     const onCollapse = vi.fn()
 
-    render(
-      <RegistryProvider
-        panelRegistry={panelRegistry}
-        commandRegistry={new CommandRegistry()}
-        surfaceResolverRegistry={new SurfaceResolverRegistry()}
-      >
-        <WorkbenchLeftPane defaultTab="files" onCollapse={onCollapse} />
-      </RegistryProvider>,
-    )
+    renderLeftPane({ sources, children: <WorkbenchLeftPane defaultTab="files" onCollapse={onCollapse} /> })
 
     const rail = screen.getByRole("navigation", { name: "Workspace categories" })
     expect(rail).toBeInTheDocument()
@@ -177,7 +149,6 @@ describe("WorkbenchLeftPane", () => {
     const dataButton = screen.getByRole("button", { name: "Data" })
     expect(filesButton).toHaveAttribute("aria-pressed", "true")
     expect(dataButton).toHaveAttribute("aria-pressed", "false")
-    // No accent stripe: the active state is the shared grey surface.
     expect(filesButton.className).not.toContain("accent")
 
     fireEvent.click(dataButton)
@@ -190,9 +161,9 @@ describe("WorkbenchLeftPane", () => {
 
   test("workspace-page entries act as rail launchers while the Files icon owns the file tree", () => {
     const panelRegistry = new PanelRegistry()
-    panelRegistry.register("files", {
+    const sources = new WorkspaceSourceRegistry()
+    sources.register("files", {
       title: "Files",
-      placement: "workspace-source",
       component: () => <div>file tree body</div>,
     })
     panelRegistry.register("macro.page", {
@@ -205,15 +176,11 @@ describe("WorkbenchLeftPane", () => {
     const onExpand = vi.fn()
     const onCloseSourcePane = vi.fn()
 
-    render(
-      <RegistryProvider
-        panelRegistry={panelRegistry}
-        commandRegistry={new CommandRegistry()}
-        surfaceResolverRegistry={new SurfaceResolverRegistry()}
-      >
-        <WorkbenchLeftPane defaultTab="files" onOpenPanel={onOpenPanel} onCollapse={onCollapse} onExpand={onExpand} onCloseSourcePane={onCloseSourcePane} />
-      </RegistryProvider>,
-    )
+    renderLeftPane({
+      panels: panelRegistry,
+      sources,
+      children: <WorkbenchLeftPane defaultTab="files" onOpenPanel={onOpenPanel} onCollapse={onCollapse} onExpand={onExpand} onCloseSourcePane={onCloseSourcePane} />,
+    })
 
     expect(screen.getByText("file tree body")).toBeInTheDocument()
 
@@ -237,23 +204,14 @@ describe("WorkbenchLeftPane", () => {
   })
 
   test("clicking the active source icon untoggles the source pane", () => {
-    const panelRegistry = new PanelRegistry()
-    panelRegistry.register("files", {
+    const sources = new WorkspaceSourceRegistry()
+    sources.register("files", {
       title: "Files",
-      placement: "workspace-source",
       component: () => <div>file tree body</div>,
     })
     const onCloseSourcePane = vi.fn()
 
-    render(
-      <RegistryProvider
-        panelRegistry={panelRegistry}
-        commandRegistry={new CommandRegistry()}
-        surfaceResolverRegistry={new SurfaceResolverRegistry()}
-      >
-        <WorkbenchLeftPane defaultTab="files" onCloseSourcePane={onCloseSourcePane} />
-      </RegistryProvider>,
-    )
+    renderLeftPane({ sources, children: <WorkbenchLeftPane defaultTab="files" onCloseSourcePane={onCloseSourcePane} /> })
 
     expect(screen.getByText("file tree body")).toBeInTheDocument()
 
@@ -264,9 +222,9 @@ describe("WorkbenchLeftPane", () => {
 
   test("rail-only mode keeps plugin and Files icons visible without rendering the file tree", () => {
     const panelRegistry = new PanelRegistry()
-    panelRegistry.register("files", {
+    const sources = new WorkspaceSourceRegistry()
+    sources.register("files", {
       title: "Files",
-      placement: "workspace-source",
       component: () => <div>file tree body</div>,
     })
     panelRegistry.register("full.page", {
@@ -279,15 +237,11 @@ describe("WorkbenchLeftPane", () => {
     const onExpand = vi.fn()
     const onCloseSourcePane = vi.fn()
 
-    render(
-      <RegistryProvider
-        panelRegistry={panelRegistry}
-        commandRegistry={new CommandRegistry()}
-        surfaceResolverRegistry={new SurfaceResolverRegistry()}
-      >
-        <WorkbenchLeftPane defaultTab="files" railOnly onOpenPanel={onOpenPanel} onCollapse={onCollapse} onExpand={onExpand} onCloseSourcePane={onCloseSourcePane} />
-      </RegistryProvider>,
-    )
+    renderLeftPane({
+      panels: panelRegistry,
+      sources,
+      children: <WorkbenchLeftPane defaultTab="files" railOnly onOpenPanel={onOpenPanel} onCollapse={onCollapse} onExpand={onExpand} onCloseSourcePane={onCloseSourcePane} />,
+    })
 
     expect(screen.getByRole("button", { name: "Files" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Full Page" })).toBeInTheDocument()
@@ -310,30 +264,18 @@ describe("WorkbenchLeftPane", () => {
   })
 
   test("icon-less categories fall back to an initial-letter glyph", () => {
-    const panelRegistry = new PanelRegistry()
-    panelRegistry.register("files", {
+    const sources = new WorkspaceSourceRegistry()
+    sources.register("files", {
       title: "Files",
-      placement: "workspace-source",
       component: () => <div>files body</div>,
     })
-    panelRegistry.register("data", {
+    sources.register("data", {
       title: "Data",
-      placement: "workspace-source",
       component: () => <div>data body</div>,
     })
 
-    render(
-      <RegistryProvider
-        panelRegistry={panelRegistry}
-        commandRegistry={new CommandRegistry()}
-        surfaceResolverRegistry={new SurfaceResolverRegistry()}
-      >
-        <WorkbenchLeftPane defaultTab="files" />
-      </RegistryProvider>,
-    )
+    renderLeftPane({ sources, children: <WorkbenchLeftPane defaultTab="files" /> })
 
-    // Neither panel registers an icon: each rail button shows its own
-    // initial instead of a shared generic glyph.
     const filesButton = screen.getByRole("button", { name: "Files" })
     const dataButton = screen.getByRole("button", { name: "Data" })
     expect(filesButton.querySelector('[data-boring-workspace-part="category-initial"]')?.textContent).toBe("F")

@@ -1,4 +1,5 @@
 import React from "react"
+import { useWorkspacePluginClient, type WorkspacePluginClient } from "@hachej/boring-workspace"
 import { definePlugin, type PaneProps } from "@hachej/boring-workspace/plugin"
 import "./styles.css"
 import { fetchPrData, requestAgentClassifyIssues, requestAgentLabelIssue, requestServerRefresh } from "./data"
@@ -9,7 +10,7 @@ import { Button, classes, EmptyState, Spinner } from "./ui"
 const PLUGIN_ID = "github-pr-tracker"
 const MAIN_PANEL_ID = `${PLUGIN_ID}.panel`
 
-function usePrData() {
+function usePrData(pluginClient: WorkspacePluginClient) {
   const [data, setData] = React.useState<PrData | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
@@ -17,13 +18,13 @@ function usePrData() {
     setLoading(true)
     setError(null)
     try {
-      setData(await fetchPrData())
+      setData(await fetchPrData(pluginClient))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [pluginClient])
   React.useEffect(() => { void refresh() }, [refresh])
   React.useEffect(() => {
     let cancelled = false
@@ -31,12 +32,12 @@ function usePrData() {
     const tick = async () => {
       if (running || cancelled) return
       running = true
-      try { await requestServerRefresh(); if (!cancelled) await refresh() } catch {}
+      try { await requestServerRefresh(pluginClient); if (!cancelled) await refresh() } catch {}
       finally { running = false }
     }
     const id = window.setInterval(() => { void tick() }, 60_000)
     return () => { cancelled = true; window.clearInterval(id) }
-  }, [refresh])
+  }, [pluginClient, refresh])
   return { data, loading, error, refresh }
 }
 
@@ -64,7 +65,7 @@ const ISSUE_FILTERS: Array<{ id: IssueFilter; label: string; test: (issue: Issue
   { id: "executable", label: "bclaw:ready", test: (issue) => issue.labels.some((label) => label.toLowerCase() === "bclaw:ready") },
 ]
 
-function IssuesKanban({ data, onRefresh }: { data: PrData; onRefresh: () => void }) {
+function IssuesKanban({ data, onRefresh, pluginClient }: { data: PrData; onRefresh: () => void; pluginClient: WorkspacePluginClient }) {
   const [busy, setBusy] = React.useState<string | null>(null)
   const [filter, setFilter] = React.useState<IssueFilter>("all")
   const [localColumns, setLocalColumns] = React.useState<Record<number, IssueCard["column"]>>({})
@@ -92,7 +93,7 @@ function IssuesKanban({ data, onRefresh }: { data: PrData; onRefresh: () => void
       const nextAdd = [...new Set([...existing.add, ...add].filter((label) => !remove.some((removed) => removed.toLowerCase() === label.toLowerCase())))]
       return { ...current, [issue.number]: { add: nextAdd, remove: nextRemove } }
     })
-    void run(key, () => requestAgentLabelIssue(issue.number, add, remove))
+    void run(key, () => requestAgentLabelIssue(pluginClient, issue.number, add, remove))
   }
   const moveIssue = (issue: IssueCard, column: IssueCard["column"]) => {
     if (issue.column === column) return
@@ -106,7 +107,7 @@ function IssuesKanban({ data, onRefresh }: { data: PrData; onRefresh: () => void
           <h2 className="text-base font-semibold text-foreground">Issues Kanban</h2>
           <p className="text-xs text-muted-foreground">{issues.length}/{allIssues.length} open issues · labels drive columns and difficulty</p>
         </div>
-        <Button variant="secondary" onClick={() => void run("classify", requestAgentClassifyIssues)} disabled={!!busy}>{busy === "classify" ? <Spinner className="size-3" /> : "LLM classify: easy / needs-plan"}</Button>
+        <Button variant="secondary" onClick={() => void run("classify", () => requestAgentClassifyIssues(pluginClient))} disabled={!!busy}>{busy === "classify" ? <Spinner className="size-3" /> : "LLM classify: easy / needs-plan"}</Button>
       </div>
       <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-muted/20 p-2">
         {ISSUE_FILTERS.map((candidate) => {
@@ -144,7 +145,8 @@ function PullRequestsDashboard({ prs, onOpenPr }: { prs: PullRequest[]; onOpenPr
 }
 
 function MainPane({ params, containerApi }: PaneProps<{ number?: number; view?: "issues" | "prs" }>) {
-  const { data, loading, error, refresh } = usePrData()
+  const pluginClient = useWorkspacePluginClient()
+  const { data, loading, error, refresh } = usePrData(pluginClient)
   const number = params?.number
   const [view, setView] = React.useState<"issues" | "prs">(params?.view ?? "issues")
   const [classifying, setClassifying] = React.useState(false)
@@ -156,7 +158,7 @@ function MainPane({ params, containerApi }: PaneProps<{ number?: number; view?: 
   const openPr = (pr: PullRequest) => containerApi.addPanel({ id: `${MAIN_PANEL_ID}.${pr.number}`, component: MAIN_PANEL_ID, title: `PR #${pr.number}`, params: { number: pr.number } })
   const classifyIssues = async () => {
     setClassifying(true)
-    try { await requestAgentClassifyIssues() }
+    try { await requestAgentClassifyIssues(pluginClient) }
     finally { setClassifying(false) }
   }
 
@@ -192,7 +194,7 @@ function MainPane({ params, containerApi }: PaneProps<{ number?: number; view?: 
             <PullRequestsDashboard prs={prs} onOpenPr={openPr} />
           )}
           {data && typeof number !== "number" && view !== "prs" && (
-            <IssuesKanban data={data} onRefresh={() => void refresh()} />
+            <IssuesKanban data={data} onRefresh={() => void refresh()} pluginClient={pluginClient} />
           )}
           {data && typeof number === "number" && !selected && (
             <EmptyState

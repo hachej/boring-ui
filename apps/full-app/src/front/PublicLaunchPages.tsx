@@ -310,7 +310,6 @@ export const publicLaunchPlugin = definePlugin({
       id: 'Pages',
       title: 'Pages',
       placement: 'workspace-page',
-      defaultPanelId: 'public.launch.landing',
       component: PublicPagesPane,
     }),
     definePanel({

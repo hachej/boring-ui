@@ -1,4 +1,5 @@
 import React from "react"
+import { useWorkspacePluginClient } from "@hachej/boring-workspace"
 import { buildPortUrl, fetchPrData, relativeTime, requestAgentRefresh, requestServerRefresh, timestamp } from "./data"
 import { attentionNotes, needsAttention, StatusInline, toneText } from "./status"
 import type { IssueCard, PrData, PullRequest } from "./types"
@@ -153,6 +154,7 @@ export interface PrListPaneProps {
 }
 
 export function PrListPane({ onOpenPr, onOpenPrDashboard, onOpenIssueDashboard }: PrListPaneProps) {
+  const pluginClient = useWorkspacePluginClient()
   const [data, setData] = React.useState<PrData | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
@@ -168,13 +170,13 @@ export function PrListPane({ onOpenPr, onOpenPrDashboard, onOpenIssueDashboard }
     setLoading(true)
     setError(null)
     try {
-      setData(await fetchPrData())
+      setData(await fetchPrData(pluginClient))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [pluginClient])
 
   React.useEffect(() => { void refresh() }, [refresh])
   React.useEffect(() => {
@@ -184,8 +186,8 @@ export function PrListPane({ onOpenPr, onOpenPrDashboard, onOpenIssueDashboard }
       if (running || cancelled) return
       running = true
       try {
-        await requestServerRefresh()
-        if (!cancelled) setData(await fetchPrData())
+        await requestServerRefresh(pluginClient)
+        if (!cancelled) setData(await fetchPrData(pluginClient))
         if (!cancelled) setError(null)
       } catch (cause) {
         // Keep the last good snapshot visible. The footer shows stale age; manual refetch can surface details.
@@ -196,18 +198,18 @@ export function PrListPane({ onOpenPr, onOpenPrDashboard, onOpenIssueDashboard }
     }
     const id = window.setInterval(() => { void tick() }, 60_000)
     return () => { cancelled = true; window.clearInterval(id) }
-  }, [data, refresh])
+  }, [data, pluginClient, refresh])
 
   const refetchViaAgent = async () => {
     setRefetching(true)
     setRefetchMessage("Refreshing from GitHub…")
     const before = data?.generatedAt
     try {
-      await requestAgentRefresh()
+      await requestAgentRefresh(pluginClient)
       // The agent executes the refresh tool on its own schedule — poll until
       // the data file actually changes instead of trusting the chat response.
       for (let waited = 0; waited <= 120_000; waited += 4_000) {
-        const next = await fetchPrData().catch(() => null)
+        const next = await fetchPrData(pluginClient).catch(() => null)
         if (next && next.generatedAt !== before) {
           setData(next)
           setError(null)

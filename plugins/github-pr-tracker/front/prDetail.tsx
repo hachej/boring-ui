@@ -1,4 +1,5 @@
 import React from "react"
+import { useWorkspacePluginClient } from "@hachej/boring-workspace"
 import { buildPortUrl, fetchPrData, relativeTime, requestAgentLabel } from "./data"
 import { DiffExplorer } from "./diffExplorer"
 import { statusLabel, toneSoftBadge, toneText } from "./status"
@@ -6,6 +7,7 @@ import type { PullRequest, VisualProof } from "./types"
 import { Badge, Button, classes, Input, LinkButton, Separator, TextArea } from "./ui"
 
 function TagEditor({ pr, allLabels, onChanged }: { pr: PullRequest; allLabels?: string[]; onChanged?: () => void }) {
+  const pluginClient = useWorkspacePluginClient()
   const [draft, setDraft] = React.useState("")
   const [busy, setBusy] = React.useState(false)
   const [status, setStatus] = React.useState<string | null>(null)
@@ -14,11 +16,11 @@ function TagEditor({ pr, allLabels, onChanged }: { pr: PullRequest; allLabels?: 
     setBusy(true)
     setStatus("Asking the agent…")
     try {
-      await requestAgentLabel(pr.number, add, remove)
+      await requestAgentLabel(pluginClient, pr.number, add, remove)
       // The agent applies labels on its own schedule — poll the data file
       // until this PR reflects the change.
       for (let waited = 0; waited <= 90_000; waited += 4_000) {
-        const next = await fetchPrData().catch(() => null)
+        const next = await fetchPrData(pluginClient).catch(() => null)
         const updated = next?.prs.find((candidate) => candidate.number === pr.number)
         if (
           updated &&

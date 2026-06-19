@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from "react"
-import type { PanelConfig, PaneProps, PanelPlacement } from "../types/panel"
+import { isWorkspaceSourcePlacement, type PanelConfig, type PaneProps, type PanelPlacement, type WorkspaceSourceProps } from "../types/panel"
 import type { SurfaceOpenRequest, SurfacePanelResolution, SurfaceResolverExample, SurfaceResolverRegistration } from "../types/surface"
 import { PluginError } from "./errors"
 import type {
@@ -19,6 +19,19 @@ export interface BoringFrontPanelRegistration<T = unknown> {
   lazy?: boolean
   chromeless?: boolean
   supportsFullPage?: boolean
+  /** @deprecated Only honored for legacy workspace-source/left-tab panels. Use registerWorkspaceSource.defaultPanelId. */
+  defaultPanelId?: string
+  source?: string
+}
+
+export interface BoringFrontWorkspaceSourceRegistration<T = unknown> {
+  id: string
+  component: ComponentType<WorkspaceSourceProps<T>> | (() => Promise<{ default: ComponentType<WorkspaceSourceProps<T>> }>)
+  label?: string
+  icon?: ComponentType<{ className?: string }>
+  requiresCapabilities?: string[]
+  lazy?: boolean
+  chromeless?: boolean
   defaultPanelId?: string
   source?: string
 }
@@ -91,6 +104,7 @@ export interface BoringFrontAPI {
   registerBinding(registration: BoringFrontBindingRegistration): void
   registerCatalog(registration: CatalogConfig): void
   registerPanel<T = unknown>(registration: BoringFrontPanelRegistration<T>): void
+  registerWorkspaceSource<T = unknown>(registration: BoringFrontWorkspaceSourceRegistration<T>): void
   registerPanelCommand(registration: BoringFrontPanelCommandRegistration): void
   registerSurfaceResolver(registration: BoringFrontSurfaceResolverRegistration): void
   registerToolRenderer(registration: BoringFrontToolRendererRegistration): void
@@ -124,6 +138,7 @@ export interface DefinePluginConfig {
   id: string
   label?: string
   panels?: ReadonlyArray<BoringFrontPanelRegistration<any>>
+  workspaceSources?: ReadonlyArray<BoringFrontWorkspaceSourceRegistration<any>>
   commands?: ReadonlyArray<BoringFrontPanelCommandRegistration>
   surfaceResolvers?: ReadonlyArray<BoringFrontSurfaceResolverRegistration>
   providers?: ReadonlyArray<BoringFrontProviderRegistration>
@@ -163,6 +178,7 @@ export function definePlugin<const Config extends DefinePluginConfig>(
   }
   const factory: BoringFrontFactory = (api) => {
     for (const panel of config.panels ?? []) api.registerPanel(panel)
+    for (const source of config.workspaceSources ?? []) api.registerWorkspaceSource(source)
     for (const command of config.commands ?? []) api.registerPanelCommand(command)
     for (const resolver of config.surfaceResolvers ?? []) api.registerSurfaceResolver(resolver)
     for (const provider of config.providers ?? []) api.registerProvider(provider)
@@ -197,6 +213,7 @@ export interface CapturedBoringFrontRegistrations {
   bindings: BoringFrontBindingRegistration[]
   catalogs: CatalogConfig[]
   panels: BoringFrontPanelRegistration<any>[]
+  workspaceSources: BoringFrontWorkspaceSourceRegistration<any>[]
   panelCommands: BoringFrontPanelCommandRegistration[]
   surfaceResolvers: BoringFrontSurfaceResolverRegistration[]
   toolRenderers: BoringFrontToolRendererRegistration[]
@@ -221,6 +238,7 @@ export function createCapturingBoringFrontAPI(options: { pluginId?: string } = {
   const bindings: BoringFrontBindingRegistration[] = []
   const catalogs: CatalogConfig[] = []
   const panels: BoringFrontPanelRegistration<any>[] = []
+  const workspaceSources: BoringFrontWorkspaceSourceRegistration<any>[] = []
   const panelCommands: BoringFrontPanelCommandRegistration[] = []
   const surfaceResolvers: BoringFrontSurfaceResolverRegistration[] = []
   const toolRenderers: BoringFrontToolRendererRegistration[] = []
@@ -256,8 +274,12 @@ export function createCapturingBoringFrontAPI(options: { pluginId?: string } = {
       catalogs.push(registration)
     },
     registerPanel(registration) {
-      claim("panel", registration.id)
+      claim(isWorkspaceSourcePlacement(registration.placement) ? "workspace-source" : "panel", registration.id)
       panels.push(registration)
+    },
+    registerWorkspaceSource(registration) {
+      claim("workspace-source", registration.id)
+      workspaceSources.push(registration)
     },
     registerPanelCommand(registration) {
       claim("command", registration.id)
@@ -278,6 +300,7 @@ export function createCapturingBoringFrontAPI(options: { pluginId?: string } = {
         bindings: clone(bindings),
         catalogs: clone(catalogs),
         panels: clone(panels),
+        workspaceSources: clone(workspaceSources),
         panelCommands: clone(panelCommands),
         surfaceResolvers: clone(surfaceResolvers),
         toolRenderers: clone(toolRenderers),

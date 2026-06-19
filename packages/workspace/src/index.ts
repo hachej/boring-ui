@@ -17,6 +17,7 @@ export type {
   BootstrapOptions,
   BootstrapResult,
   PanelRegistryLike,
+  WorkspaceSourceRegistryLike,
   CommandRegistryLike,
   CatalogRegistryLike,
   SurfaceResolverRegistryLike,
@@ -51,8 +52,11 @@ export {
   PluginErrorBoundary,
   PluginErrorProvider,
   usePluginErrors,
+  WorkspacePluginClientProvider,
+  createWorkspacePluginClient,
+  useWorkspacePluginClient,
 } from "./front/plugin"
-export type { PluginError as PluginContributionError } from "./front/plugin"
+export type { PluginError as PluginContributionError, WorkspacePluginClient } from "./front/plugin"
 export {
   filesystemPlugin,
   emitFilesystemAgentFileChange,
@@ -88,11 +92,13 @@ export { cn } from "./front/lib/utils"
 
 // Registry & panel management
 export { PanelRegistry } from "./front/registry/PanelRegistry"
+export { WorkspaceSourceRegistry } from "./front/registry/WorkspaceSourceRegistry"
 export { CommandRegistry } from "./shared/plugins/CommandRegistry"
 export { SurfaceResolverRegistry } from "./shared/plugins/SurfaceResolverRegistry"
 export {
   RegistryProvider,
   useRegistry,
+  useWorkspaceSourceRegistry,
   useCommandRegistry,
   useCatalogRegistry,
   useSurfaceResolverRegistry,
@@ -104,6 +110,10 @@ export type {
   PanelRegistration,
   CommandConfig,
   PaneProps,
+  WorkspaceSourceConfig,
+  WorkspaceSourceOpenPanelConfig,
+  WorkspaceSourceProps,
+  WorkspaceSourceRegistration,
   SurfaceOpenRequest,
   SurfacePanelResolution,
   SurfaceResolverConfig,

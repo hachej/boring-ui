@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 import { describe, expect, it } from "vitest"
-import type { PaneProps } from "../../types/panel"
+import type { PaneProps, WorkspaceSourceProps } from "../../types/panel"
 import {
   captureFrontPlugin,
   createCapturingBoringFrontAPI,
@@ -10,6 +10,10 @@ import {
 import { PluginError } from "../errors"
 
 function TestPanel(_props: PaneProps): null {
+  return null
+}
+
+function TestSource(_props: WorkspaceSourceProps): null {
   return null
 }
 
@@ -192,6 +196,12 @@ describe("intra-pluginId collision detection (PLUGIN_SYSTEM.md §5.7)", () => {
       expect((e as PluginError).message).toContain('plugin "concrete"')
       expect((e as PluginError).message).toContain('panel "table"')
     }
+  })
+
+  it("legacy workspace-source panel ids collide with workspace source ids", () => {
+    const api = createCapturingBoringFrontAPI({ pluginId: "concrete" })
+    api.registerPanel({ id: "source", label: "Legacy", component: TestPanel, placement: "left-tab" })
+    expect(() => api.registerWorkspaceSource({ id: "source", label: "Source", component: TestSource })).toThrow(/workspace-source "source" twice/)
   })
 
   it("collision spans output kinds — panel and command can share the same id", () => {

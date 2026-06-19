@@ -2,7 +2,6 @@
 
 import {
   createElement,
-  lazy,
   Suspense,
   useCallback,
   useEffect,
@@ -10,15 +9,14 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type ComponentType,
 } from "react"
 import { Menu, Search, X } from "lucide-react"
 import { IconButton, Input } from "@hachej/boring-ui-kit"
 import { ControlTooltip } from "../../components/ControlTooltip"
 import { cn } from "../../lib/utils"
 import type { FileTreeBridge } from "../../bridge/types"
-import { useRegistry } from "../../registry"
-import type { PaneProps, PanelConfig } from "../../registry/types"
+import { useRegistry, useWorkspaceSourceRegistry } from "../../registry"
+import type { PanelConfig, WorkspaceSourceConfig } from "../../registry/types"
 import { isWorkspacePagePlacement, isWorkspaceSourcePlacement } from "../../../shared/types/panel"
 import type { LeftTabParams } from "../../../shared/plugins/types"
 import { PluginErrorBoundary } from "../../plugin/PluginErrorBoundary"
@@ -66,32 +64,56 @@ export function WorkbenchLeftPane({
   className,
 }: WorkbenchLeftPaneProps) {
   const panelRegistry = useRegistry()
+  const workspaceSourceRegistry = useWorkspaceSourceRegistry()
   const panels = useSyncExternalStore(
     panelRegistry.subscribe,
     panelRegistry.getSnapshot,
     panelRegistry.getSnapshot,
   )
-  const railPanels = useMemo(
-    () => panels.filter((panel) => isWorkspaceSourcePlacement(panel.placement) || isWorkspacePagePlacement(panel.placement)),
+  const workspaceSources = useSyncExternalStore(
+    workspaceSourceRegistry.subscribe,
+    workspaceSourceRegistry.getSnapshot,
+    workspaceSourceRegistry.getSnapshot,
+  )
+  type LeftPaneEntry = {
+    id: string
+    title: string
+    icon: React.ReactNode
+    source?: WorkspaceSourceConfig
+    panel?: PanelConfig
+    kind: "source" | "workspace-page"
+  }
+  const workspacePagePanels = useMemo(
+    () => panels.filter((panel) => isWorkspacePagePlacement(panel.placement)),
     [panels],
   )
   const tabs = useMemo(() => {
-    const next: Array<{ id: string; title: string; icon: React.ReactNode; panel?: PanelConfig; kind: "source" | "workspace-page" }> = []
-    for (const panel of railPanels) {
+    const next: LeftPaneEntry[] = []
+    for (const source of workspaceSources) {
+      const Icon = source.icon
+      next.push({
+        id: source.id,
+        title: source.title,
+        kind: "source",
+        // Icon-less plugins get an initial-letter glyph instead of a shared
+        // generic icon — on an icon-only rail, two identical fallback icons
+        // would be indistinguishable.
+        icon: Icon ? <Icon className="h-4 w-4" /> : <CategoryInitial title={source.title} />,
+        source,
+      })
+    }
+    for (const panel of workspacePagePanels) {
       const Icon = panel.icon
       next.push({
         id: panel.id,
         title: panel.title,
-        kind: isWorkspacePagePlacement(panel.placement) ? "workspace-page" : "source",
-        // Icon-less plugins get an initial-letter glyph instead of a shared
-        // generic icon — on an icon-only rail, two identical fallback icons
-        // would be indistinguishable.
+        kind: "workspace-page",
         icon: Icon ? <Icon className="h-4 w-4" /> : <CategoryInitial title={panel.title} />,
         panel,
       })
     }
     return next
-  }, [railPanels])
+  }, [workspacePagePanels, workspaceSources])
   const [tab, setTab] = useState<WorkbenchLeftTabId>(defaultTab ?? "")
   const selectedTab = controlledActiveTab ?? tab
   const activeTab = tabs.some((entry) => entry.id === selectedTab) ? selectedTab : (tabs[0]?.id ?? "")
@@ -132,7 +154,7 @@ export function WorkbenchLeftPane({
     }
   }, [revealFileTreeRequest, setActiveTab, tabs])
 
-  const openPanelForEntry = useCallback((entry: { panel?: PanelConfig; kind: "source" | "workspace-page" }) => {
+  const openPanelForEntry = useCallback((entry: LeftPaneEntry) => {
     if (!onOpenPanel) return
     if (entry.kind === "workspace-page" && entry.panel) {
       onOpenPanel({
@@ -142,7 +164,7 @@ export function WorkbenchLeftPane({
       })
       return
     }
-    const defaultPanelId = entry.panel?.defaultPanelId
+    const defaultPanelId = entry.source?.defaultPanelId
     if (!defaultPanelId) return
     const target = panels.find((panel) => panel.id === defaultPanelId && !isWorkspaceSourcePlacement(panel.placement))
     if (!target) return
@@ -153,7 +175,7 @@ export function WorkbenchLeftPane({
     })
   }, [onOpenPanel, panels])
 
-  const selectTab = useCallback((entry: { id: string; panel?: PanelConfig; kind: "source" | "workspace-page" }) => {
+  const selectTab = useCallback((entry: LeftPaneEntry) => {
     if (entry.kind === "source") {
       if (!railOnly && entry.id === activeTab) {
         onCloseSourcePane?.()
@@ -185,8 +207,8 @@ export function WorkbenchLeftPane({
   }, [])
 
   const activeEntry = tabs.find((entry) => entry.id === activeTab)
-  const activeSourcePanel = activeEntry?.kind === "source" ? activeEntry.panel : undefined
-  const activeOwnsSearch = Boolean((activeSourcePanel as { chromeless?: boolean } | undefined)?.chromeless)
+  const activeSource = activeEntry?.kind === "source" ? activeEntry.source : undefined
+  const activeOwnsSearch = Boolean(activeSource?.chromeless)
   const showChromeSearch = !activeOwnsSearch
   const leftTabParams = useMemo<LeftTabParams>(
     () => ({
@@ -321,7 +343,7 @@ export function WorkbenchLeftPane({
           {activeEntry?.kind === "workspace-page" ? (
             <WorkspacePageLauncher title={activeEntry.title} />
           ) : (
-            <LeftTabPanelHost panel={activeSourcePanel} params={leftTabParams} onOpenPanel={onOpenPanel} />
+            <LeftTabPanelHost source={activeSource} params={leftTabParams} onOpenPanel={onOpenPanel} />
           )}
         </div>
       </div>
@@ -351,45 +373,11 @@ function CategoryInitial({ title }: { title: string }) {
   )
 }
 
-function unsupportedWorkspaceSourceApi(method: string): never {
-  throw new Error(`Workspace source panes are not Dockview panels; PaneProps.${method} is unavailable in the left source host.`)
-}
+function LeftTabPanelHost({ source, params, onOpenPanel }: { source?: WorkspaceSourceConfig; params: LeftTabParams; onOpenPanel?: WorkbenchLeftPaneProps["onOpenPanel"] }) {
+  const workspaceSourceRegistry = useWorkspaceSourceRegistry()
+  const Inner = source ? workspaceSourceRegistry.getComponent(source.id) : null
 
-const workspaceSourcePaneApi = new Proxy(
-  {},
-  {
-    get: (_target, prop) => () => unsupportedWorkspaceSourceApi(`api.${String(prop)}`),
-  },
-) as PaneProps["api"]
-function createLeftTabContainerApi(onOpenPanel: WorkbenchLeftPaneProps["onOpenPanel"]): PaneProps["containerApi"] {
-  return new Proxy(
-    {},
-    {
-      get: (_target, prop) => {
-        if (prop === "addPanel") return (config: WorkbenchLeftPaneOpenPanelConfig) => {
-          if (!onOpenPanel) unsupportedWorkspaceSourceApi("containerApi.addPanel")
-          onOpenPanel(config)
-        }
-        return () => unsupportedWorkspaceSourceApi(`containerApi.${String(prop)}`)
-      },
-    },
-  ) as PaneProps["containerApi"]
-}
-
-function LeftTabPanelHost({ panel, params, onOpenPanel }: { panel?: PanelConfig; params: LeftTabParams; onOpenPanel?: WorkbenchLeftPaneProps["onOpenPanel"] }) {
-  const Inner = useMemo(() => {
-    if (!panel) return null
-    if (panel.lazy) {
-      return lazy(
-        panel.component as () => Promise<{ default: ComponentType<unknown> }>,
-      )
-    }
-    return panel.component as ComponentType<any>
-  }, [panel])
-
-  const containerApi = useMemo(() => createLeftTabContainerApi(onOpenPanel), [onOpenPanel])
-
-  if (!panel || !Inner) {
+  if (!source || !Inner) {
     return (
       <div className="flex h-full items-center justify-center px-4 text-center text-[12px] text-muted-foreground">
         No workspace category registered.
@@ -398,9 +386,9 @@ function LeftTabPanelHost({ panel, params, onOpenPanel }: { panel?: PanelConfig;
   }
   return (
     <PluginErrorBoundary
-      pluginId={panel.pluginId ?? panel.id}
-      contributionKind="panel"
-      contributionId={panel.id}
+      pluginId={source.pluginId ?? source.id}
+      contributionKind="workspace-source"
+      contributionId={source.id}
     >
       <Suspense
         fallback={
@@ -411,8 +399,7 @@ function LeftTabPanelHost({ panel, params, onOpenPanel }: { panel?: PanelConfig;
       >
         {createElement(Inner, {
           params,
-          api: workspaceSourcePaneApi,
-          containerApi,
+          openPanel: onOpenPanel,
           className: "h-full",
         })}
       </Suspense>

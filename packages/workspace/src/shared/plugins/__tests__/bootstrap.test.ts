@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import { CommandRegistry } from "../CommandRegistry"
 import { PanelRegistry } from "../../../front/registry/PanelRegistry"
+import { WorkspaceSourceRegistry } from "../../../front/registry/WorkspaceSourceRegistry"
 import { SurfaceResolverRegistry } from "../SurfaceResolverRegistry"
 import type { CommandConfig } from "../../types/panel"
 import { bootstrap } from "../bootstrap"
@@ -15,6 +16,7 @@ const DummyChatPanel = () => null
 function makeRegistries() {
   return {
     panels: new PanelRegistry(),
+    workspaceSources: new WorkspaceSourceRegistry(),
     commands: new CommandRegistry(),
     catalogs: new CatalogRegistry({ warnOnDuplicate: false }),
     surfaceResolvers: new SurfaceResolverRegistry(),
@@ -92,6 +94,43 @@ describe("bootstrap", () => {
     )
     expect(registries.surfaceResolvers.get("surface")).toEqual(
       expect.objectContaining({ id: "surface", pluginId: "host" }),
+    )
+  })
+
+  it("throws instead of silently dropping workspace sources when registry is missing", () => {
+    expect(() => bootstrap({
+      chatPanel: DummyChatPanel,
+      defaults: [],
+      plugins: [definePlugin({
+        id: "source-plugin",
+        workspaceSources: [{ id: "source", label: "Source", component: DummyPanel }],
+      })],
+      registries: {
+        panels: new PanelRegistry(),
+        commands: new CommandRegistry(),
+        catalogs: new CatalogRegistry({ warnOnDuplicate: false }),
+      },
+    })).toThrow("registries.workspaceSources is missing")
+  })
+
+  it("bridges legacy workspace-source panel placements into workspace source registry", () => {
+    const registries = makeRegistries()
+
+    bootstrap({
+      chatPanel: DummyChatPanel,
+      plugins: [
+        definePlugin({
+          id: "legacy",
+          panels: [{ id: "legacy.files", label: "Legacy Files", component: DummyPanel, placement: "left-tab", defaultPanelId: "legacy.center" }],
+        }),
+      ],
+      defaults: [],
+      registries,
+    })
+
+    expect(registries.panels.get("legacy.files")).toBeUndefined()
+    expect(registries.workspaceSources.get("legacy.files")).toEqual(
+      expect.objectContaining({ id: "legacy.files", title: "Legacy Files", pluginId: "legacy", defaultPanelId: "legacy.center" }),
     )
   })
 

@@ -1,3 +1,4 @@
+import type { WorkspacePluginClient } from "@hachej/boring-workspace"
 import type { PrData } from "./types"
 
 const DATA_PATH = ".pi/extensions/github-pr-tracker/prs.json"
@@ -37,111 +38,46 @@ export function buildPortUrl(port: number): string {
   return url.toString()
 }
 
-function workspaceIdFromLocation(): string | undefined {
-  const importMatch = /\/runtime\/([^/?#]+)\//.exec(import.meta.url)
-  if (importMatch?.[1]) return importMatch[1]
-  if (typeof window === "undefined") return undefined
-  const direct = new URLSearchParams(window.location.search).get("workspaceId")
-  if (direct) return direct
-  const pathMatch = /\/runtime\/([^/?#]+)/.exec(window.location.pathname)
-  return pathMatch?.[1]
-}
-
-export async function fetchPrData(): Promise<PrData> {
-  const query = new URLSearchParams({ path: DATA_PATH, t: String(Date.now()) })
-  const workspaceId = workspaceIdFromLocation()
-  if (workspaceId) query.set("workspaceId", workspaceId)
-  const headers: Record<string, string> = {}
-  if (workspaceId) headers["x-boring-workspace-id"] = workspaceId
-  const response = await fetch(`/api/v1/files/raw?${query.toString()}`, { credentials: "include", headers })
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "")
-    throw new Error(`No PR data yet. Ask the agent to refresh github pr tracker.${detail ? ` (${response.status}: ${detail.slice(0, 160)})` : ""}`)
-  }
-  return await response.json() as PrData
-}
-
-async function readResponseError(response: Response): Promise<string> {
-  const text = await response.text().catch(() => "")
-  if (!text) return `agent request failed (${response.status})`
-  try {
-    const parsed = JSON.parse(text) as { error?: { message?: unknown }; message?: unknown }
-    const message = typeof parsed.error?.message === "string"
-      ? parsed.error.message
-      : typeof parsed.message === "string"
-        ? parsed.message
-        : text
-    return `${message} (${response.status})`
-  } catch {
-    return `${text.slice(0, 200)} (${response.status})`
-  }
-}
-
-async function sendAgentChat(message: string): Promise<void> {
-  const workspaceId = workspaceIdFromLocation()
-  const query = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ""
-  const headers: Record<string, string> = { "content-type": "application/json" }
-  if (workspaceId) headers["x-boring-workspace-id"] = workspaceId
-
-  // The old /api/v1/agent/chat endpoint no longer exists. Use the Pi chat
-  // API directly: create a short-lived session and submit the prompt to it.
-  const sessionResponse = await fetch(`/api/v1/agent/pi-chat/sessions${query}`, {
-    method: "POST",
-    credentials: "include",
-    headers,
-    body: JSON.stringify({ title: "GitHub PR Tracker refresh" }),
+export async function fetchPrData(client: WorkspacePluginClient): Promise<PrData> {
+  return client.readJsonFile<PrData>(DATA_PATH, {
+    missingMessage: "No PR data yet. Ask the agent to refresh github pr tracker.",
   })
-  if (!sessionResponse.ok) throw new Error(await readResponseError(sessionResponse))
-  const session = await sessionResponse.json().catch(() => null) as { id?: unknown } | null
-  const sessionId = typeof session?.id === "string" ? session.id : undefined
-  if (!sessionId) throw new Error("agent session creation did not return a session id")
+}
 
-  const promptResponse = await fetch(`/api/v1/agent/pi-chat/${encodeURIComponent(sessionId)}/prompt${query}`, {
-    method: "POST",
-    credentials: "include",
-    headers,
-    body: JSON.stringify({
-      message,
-      clientNonce: `github-pr-tracker-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
-    }),
+async function sendAgentChat(client: WorkspacePluginClient, message: string): Promise<void> {
+  await client.sendAgentPrompt(message, {
+    title: "GitHub PR Tracker refresh",
+    noncePrefix: "github-pr-tracker",
   })
-  if (!promptResponse.ok) throw new Error(await readResponseError(promptResponse))
-  await promptResponse.text().catch(() => undefined)
 }
 
-export async function requestServerRefresh(): Promise<void> {
-  const workspaceId = workspaceIdFromLocation()
-  const query = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ""
-  const headers: Record<string, string> = {}
-  if (workspaceId) headers["x-boring-workspace-id"] = workspaceId
-  const response = await fetch(`/api/v1/github-pr-tracker/refresh${query}`, { method: "POST", credentials: "include", headers })
-  if (!response.ok) throw new Error(await readResponseError(response))
-  await response.json().catch(() => undefined)
+export async function requestServerRefresh(client: WorkspacePluginClient): Promise<void> {
+  await client.postJson("/api/v1/github-pr-tracker/refresh")
 }
 
-export async function requestAgentRefresh(): Promise<void> {
-  try { await requestServerRefresh(); return } catch {}
-  await sendAgentChat("refresh github pr tracker")
+export async function requestAgentRefresh(client: WorkspacePluginClient): Promise<void> {
+  try { await requestServerRefresh(client); return } catch {}
+  await sendAgentChat(client, "refresh github pr tracker")
 }
 
-export async function requestAgentClassifyIssues(): Promise<void> {
-  await sendAgentChat("Classify all open GitHub issues in the GitHub PR Tracker data into exactly one difficulty label: easy or needs-plan. Then apply labels with label_github_issue. Use easy only for small, self-contained issues; use needs-plan for broad/ambiguous/risky/multi-file work. If an issue is ready for boring-claw/bead workflow, add bclaw:ready. Also keep/assign one board status label if obvious: status:to-plan, status:to-review, or status:to-merge. Refresh github pr tracker after labeling.")
+export async function requestAgentClassifyIssues(client: WorkspacePluginClient): Promise<void> {
+  await sendAgentChat(client, "Classify all open GitHub issues in the GitHub PR Tracker data into exactly one difficulty label: easy or needs-plan. Then apply labels with label_github_issue. Use easy only for small, self-contained issues; use needs-plan for broad/ambiguous/risky/multi-file work. If an issue is ready for boring-claw/bead workflow, add bclaw:ready. Also keep/assign one board status label if obvious: status:to-plan, status:to-review, or status:to-merge. Refresh github pr tracker after labeling.")
 }
 
-export async function requestAgentLabelIssue(number: number, add: string[], remove: string[] = []): Promise<void> {
+export async function requestAgentLabelIssue(client: WorkspacePluginClient, number: number, add: string[], remove: string[] = []): Promise<void> {
   const parts = [
     add.length > 0 ? `add ${add.map((label) => JSON.stringify(label)).join(", ")}` : null,
     remove.length > 0 ? `remove ${remove.map((label) => JSON.stringify(label)).join(", ")}` : null,
   ].filter(Boolean).join(" and ")
-  await sendAgentChat(`Use the label_github_issue tool to update labels on issue #${number}: ${parts}.`)
+  await sendAgentChat(client, `Use the label_github_issue tool to update labels on issue #${number}: ${parts}.`)
 }
 
-export async function requestAgentLabel(number: number, add: string[], remove: string[]): Promise<void> {
+export async function requestAgentLabel(client: WorkspacePluginClient, number: number, add: string[], remove: string[]): Promise<void> {
   const parts = [
     add.length > 0 ? `add ${add.map((label) => JSON.stringify(label)).join(", ")}` : null,
     remove.length > 0 ? `remove ${remove.map((label) => JSON.stringify(label)).join(", ")}` : null,
   ].filter(Boolean).join(" and ")
-  await sendAgentChat(`Use the label_github_pr tool to update labels on PR #${number}: ${parts}.`)
+  await sendAgentChat(client, `Use the label_github_pr tool to update labels on PR #${number}: ${parts}.`)
 }
 
 export function isDocOrTestFile(path: string): boolean {
