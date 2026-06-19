@@ -3,7 +3,7 @@ import { defineConfig } from "tsup"
 export default defineConfig({
   entry: {
     "front/index": "src/front/index.tsx",
-    "agent/index": "src/agent/index.ts",
+    "server/index": "src/server/index.ts",
     "shared/index": "src/shared/index.ts",
   },
   format: ["esm"],

@@ -13,7 +13,8 @@
   "boring": {
     "id": "ask-user",
     "label": "Questions",
-    "front": "dist/front/index.js"
+    "front": "dist/front/index.js",
+    "server": "dist/server/index.js"
   },
   "pi": {
     "systemPrompt": "Use the ask-user tool when you need a decision, confirmation, or freeform input from the user before continuing. The user answers via the Questions panel and the tool resolves with their response."
@@ -30,9 +31,9 @@
       "types": "./dist/front/index.d.ts",
       "import": "./dist/front/index.js"
     },
-    "./agent": {
-      "types": "./dist/agent/index.d.ts",
-      "import": "./dist/agent/index.js"
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
     },
     "./shared": {
       "types": "./dist/shared/index.d.ts",
@@ -56,7 +57,6 @@
   },
   "dependencies": {
     "@hachej/boring-ui-kit": "workspace:*",
-    "@sinclair/typebox": "^0.34.49",
     "lucide-react": "^1.8.0",
     "zod": "^3.23.0"
   },

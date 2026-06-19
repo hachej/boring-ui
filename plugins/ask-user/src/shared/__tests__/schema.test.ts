@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest"
-import { ASK_USER_SCHEMA_LIMITS } from "../constants"
+import { ASK_USER_COMMAND_KINDS, ASK_USER_SCHEMA_LIMITS } from "../constants"
 import { ASK_USER_ERROR_CODES, ASK_USER_ERROR_CODE_VALUES } from "../error-codes"
 import {
   AskUserFormSchemaSchema,
   AskUserToolInputSchema,
+  QuestionsCommandSchema,
 } from "../schema"
 
 const validSchema = {
@@ -155,6 +156,26 @@ describe("ask-user shared schema", () => {
     ).toBe(false)
   })
 
+  it("validates Questions command payloads", () => {
+    expect(
+      QuestionsCommandSchema.safeParse({
+        kind: ASK_USER_COMMAND_KINDS.SUBMIT,
+        params: {
+          questionId: "q1",
+          sessionId: "s1",
+          answerToken: "token",
+          values: { strategy: "redis" },
+        },
+      }).success,
+    ).toBe(true)
+
+    expect(
+      QuestionsCommandSchema.safeParse({
+        kind: ASK_USER_COMMAND_KINDS.SUBMIT,
+        params: { questionId: "q1", sessionId: "s1", values: {} },
+      }).success,
+    ).toBe(false)
+  })
 })
 
 describe("ask-user error codes", () => {

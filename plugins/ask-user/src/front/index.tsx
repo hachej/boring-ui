@@ -17,22 +17,18 @@ import { HelpCircle, XCircle } from "lucide-react"
 import { createContext, useContext, useEffect, useMemo, useSyncExternalStore, useState } from "react"
 import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../shared/constants"
 import type { AskUserQuestion } from "../shared/types"
-import { createQuestionsClient, normalizeQuestion, QuestionsClientError } from "./client"
-import { QuestionCancelButton, QuestionFields, QuestionForm, QuestionFormProvider, QuestionSubmitButton, type QuestionFormValues } from "./primitives"
+import { createQuestionsClient, readPendingQuestionFromState, QuestionsClientError } from "./client"
+import { QuestionCancelButton, QuestionFields, QuestionForm, QuestionFormProvider, QuestionSubmitButton } from "./primitives"
 
 type QuestionsStore = {
   getPending(): AskUserQuestion | null
   setPending(question: AskUserQuestion | null): void
-  getDraft(question: AskUserQuestion): QuestionFormValues | undefined
-  setDraft(question: AskUserQuestion, values: QuestionFormValues): void
-  clearDraft(question: AskUserQuestion): void
   subscribe(listener: () => void): () => void
 }
 
 type QuestionsRuntime = QuestionsStore & {
   apiBaseUrl: string
   authHeaders?: Record<string, string>
-  activeSessionId?: string | null
 }
 
 function createQuestionsStore(): QuestionsStore {
@@ -43,15 +39,6 @@ function createQuestionsStore(): QuestionsStore {
     setPending(question) {
       pending = question
       for (const listener of [...listeners]) listener()
-    },
-    getDraft(question) {
-      return readQuestionDraft(question)
-    },
-    setDraft(question, values) {
-      writeQuestionDraft(question, values)
-    },
-    clearDraft(question) {
-      clearQuestionDraft(question)
     },
     subscribe(listener) {
       listeners.add(listener)
@@ -64,25 +51,6 @@ function createQuestionsStore(): QuestionsStore {
 // predicate can check the pending state without React. The provider mounts
 // this same instance into its runtime context.
 const sharedQuestionsStore: QuestionsStore = createQuestionsStore()
-
-function draftKey(question: AskUserQuestion): string {
-  return `ask-user:draft:${question.sessionId}:${question.questionId}`
-}
-
-function readQuestionDraft(question: AskUserQuestion): QuestionFormValues | undefined {
-  try {
-    const raw = window.localStorage.getItem(draftKey(question))
-    return raw ? JSON.parse(raw) as QuestionFormValues : undefined
-  } catch { return undefined }
-}
-
-function writeQuestionDraft(question: AskUserQuestion, values: QuestionFormValues): void {
-  try { window.localStorage.setItem(draftKey(question), JSON.stringify(values)) } catch { /* best effort */ }
-}
-
-function clearQuestionDraft(question: AskUserQuestion): void {
-  try { window.localStorage.removeItem(draftKey(question)) } catch { /* best effort */ }
-}
 
 const QuestionsRuntimeContext = createContext<QuestionsRuntime | null>(null)
 
@@ -101,9 +69,9 @@ function useQuestionsRuntime(): QuestionsRuntime {
   return ctx
 }
 
-function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }: PluginProviderProps) {
+function AskUserProvider({ apiBaseUrl, authHeaders, children }: PluginProviderProps) {
   const { addBlocker, removeBlocker } = useWorkspaceAttention()
-  const runtime = useMemo<QuestionsRuntime>(() => ({ ...sharedQuestionsStore, apiBaseUrl, authHeaders, activeSessionId }), [apiBaseUrl, authHeaders, activeSessionId])
+  const runtime = useMemo<QuestionsRuntime>(() => ({ ...sharedQuestionsStore, apiBaseUrl, authHeaders }), [apiBaseUrl, authHeaders])
   const pendingSnapshot = useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
   useEffect(() => {
     const pending = runtime.getPending()
@@ -138,9 +106,9 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }:
     let stopped = false
     async function refreshPending() {
       try {
-        const sessionId = runtime.activeSessionId ?? runtime.getPending()?.sessionId ?? "default"
-        const pending = await createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }).pending(sessionId)
-        if (!stopped) runtime.setPending(pending)
+        const response = await fetch(`${apiBaseUrl}/api/v1/ui/state`, { headers: authHeaders })
+        const state = await response.json().catch(() => null) as Record<string, unknown> | null
+        if (!stopped) runtime.setPending(readPendingQuestionFromState(state))
       } catch { /* best effort */ }
     }
     const onVisibility = () => { if (document.visibilityState === "visible") void refreshPending() }
@@ -170,7 +138,7 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }:
       document.removeEventListener("visibilitychange", onVisibility)
       window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)
     }
-  }, [runtime])
+  }, [apiBaseUrl, authHeaders, runtime])
   return <QuestionsRuntimeContext.Provider value={runtime}>{children}</QuestionsRuntimeContext.Provider>
 }
 
@@ -184,10 +152,6 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   const [submitting, setSubmitting] = useState(false)
   const paramQuestion = params?.question
   const question = pending ?? (paramQuestion?.questionId === closedQuestionId ? null : paramQuestion) ?? null
-  const initialDraft = useMemo(
-    () => question ? runtime.getDraft(question) : undefined,
-    [runtime, question?.questionId, question?.sessionId],
-  )
   const client = useMemo(() => createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }), [runtime.apiBaseUrl, runtime.authHeaders])
   useEffect(() => {
     const onStop = (event: Event) => {
@@ -208,19 +172,19 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
     <Pane className="h-full min-h-0 overflow-hidden border-0 bg-background text-sm">
       <PaneHeader className="border-b bg-background/95">
         <div>
-          <PaneTitle className="flex items-center gap-2"><HelpCircle className="h-4 w-4 text-muted-foreground" /> Questions</PaneTitle>
+          <PaneTitle className="flex items-center gap-2"><HelpCircle className="h-4 w-4 text-muted-foreground" /> Agent needs input</PaneTitle>
         </div>
       </PaneHeader>
       {!question ? <PaneBody className="overflow-auto p-4"><EmptyState icon={<HelpCircle className="h-5 w-5" />} title="No pending questions" description="When the agent needs a decision, the form will appear here." className="border border-dashed bg-muted/20" /></PaneBody> : null}
       {question?.status === "ready" && question.schema ? (
-        <QuestionFormProvider schema={question.schema} submitting={submitting} initialValues={initialDraft} onValuesChange={(values) => runtime.setDraft(question, values)} onSubmit={async (values) => {
+        <QuestionFormProvider schema={question.schema} submitting={submitting} onSubmit={async (values) => {
           setSubmitting(true); setError(null)
-          try { await client.submit(question, values); runtime.clearDraft(question); setClosedQuestionId(question.questionId); runtime.setPending(null); api.close(); params?.__closeWorkbenchOnDone?.() }
+          try { await client.submit(question, values); setClosedQuestionId(question.questionId); runtime.setPending(null); api.close(); params?.__closeWorkbenchOnDone?.() }
           catch (err) { setError(err instanceof QuestionsClientError ? err.message : String(err)) }
           finally { setSubmitting(false) }
         }} onCancel={async () => {
           setSubmitting(true); setError(null)
-          try { await client.cancel(question); runtime.clearDraft(question); setClosedQuestionId(question.questionId); runtime.setPending(null); api.close(); params?.__closeWorkbenchOnDone?.() }
+          try { await client.cancel(question); setClosedQuestionId(question.questionId); runtime.setPending(null); api.close(); params?.__closeWorkbenchOnDone?.() }
           catch (err) { setError(err instanceof QuestionsClientError ? err.message : String(err)) }
           finally { setSubmitting(false) }
         }}>
@@ -228,7 +192,7 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
             <PaneBody className="overflow-auto p-4">
               <div className="space-y-4">
                 <section className="rounded-md border border-border/60 bg-muted/30 p-4">
-                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Agent needs input</div>
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Waiting for answer</div>
                   <h2 className="mt-2 text-balance text-sm font-semibold leading-5 text-foreground">{question.title ?? "Question"}</h2>
                   {question.context ? <p className="mt-2 max-w-prose text-sm leading-6 text-muted-foreground">{question.context}</p> : null}
                 </section>
@@ -240,29 +204,9 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
           </QuestionForm>
         </QuestionFormProvider>
       ) : null}
-      {question && question.status !== "ready" ? <TerminalQuestionCard status={question.status} /> : null}
+      {question && question.status !== "ready" ? <PaneBody className="p-5"><Notice><span className="flex items-center gap-2"><XCircle className="h-4 w-4 text-muted-foreground" />Question {question.status}</span></Notice></PaneBody> : null}
     </Pane>
   </div>
-}
-
-function TerminalQuestionCard({ status }: { status: AskUserQuestion["status"] }) {
-  const label = terminalQuestionLabel(status)
-  return <PaneBody className="p-5">
-    <Notice>
-      <span className="flex items-center gap-2"><XCircle className="h-4 w-4 text-muted-foreground" />{label}</span>
-    </Notice>
-  </PaneBody>
-}
-
-function terminalQuestionLabel(status: AskUserQuestion["status"]): string {
-  switch (status) {
-    case "answered": return "Question answered"
-    case "cancelled": return "Question cancelled"
-    case "timed_out": return "Question timed out"
-    case "ui_unavailable": return "Question unavailable"
-    case "abandoned": return "Question abandoned"
-    case "ready": return "Question ready"
-  }
 }
 
 /**
@@ -277,9 +221,6 @@ function terminalQuestionLabel(status: AskUserQuestion["status"]): string {
  * The panel is opened via the surface resolver (kind: ASK_USER_SURFACE_KIND),
  * which is how the server-side agent tool triggers it.
  */
-export { usePendingQuestion } from "./hooks"
-export type { PendingQuestionState } from "./hooks"
-
 export const askUserPlugin: BoringFrontFactoryWithId = definePlugin({
   id: ASK_USER_PLUGIN_ID,
   label: ASK_USER_PANEL_TITLE,
@@ -310,24 +251,7 @@ export const askUserPlugin: BoringFrontFactoryWithId = definePlugin({
       resolve(request) {
         const metaQuestion =
           typeof request.meta === "object" && request.meta && "question" in request.meta
-            ? normalizeQuestion((request.meta as { question?: unknown }).question)
-            : undefined
-        return {
-          component: ASK_USER_PANEL_ID,
-          id: ASK_USER_PANEL_ID,
-          title: ASK_USER_PANEL_TITLE,
-          params: { questionId: request.target, question: metaQuestion },
-        }
-      },
-    },
-    {
-      id: `${ASK_USER_PLUGIN_ID}.human-input-surface`,
-      kind: "human-input",
-      source: "builtin",
-      resolve(request) {
-        const metaQuestion =
-          typeof request.meta === "object" && request.meta && "question" in request.meta
-            ? normalizeQuestion((request.meta as { question?: unknown }).question)
+            ? (request.meta as { question?: AskUserQuestion }).question
             : undefined
         return {
           component: ASK_USER_PANEL_ID,

@@ -59,7 +59,6 @@ export type QuestionFormProviderProps = {
   rendererRegistry?: QuestionFieldRendererRegistry
   onSubmit?(values: QuestionFormValues): void | Promise<void>
   onCancel?(): void
-  onValuesChange?(values: QuestionFormValues): void
   children: React.ReactNode
 }
 
@@ -72,7 +71,6 @@ export function QuestionFormProvider({
   rendererRegistry = {},
   onSubmit,
   onCancel,
-  onValuesChange,
   children,
 }: QuestionFormProviderProps) {
   const [values, setValues] = useState<QuestionFormValues>(() => defaultsFor(schema, initialValues))
@@ -93,10 +91,6 @@ export function QuestionFormProvider({
       return next
     })
   }, [schema, initialValues, touched])
-
-  useEffect(() => {
-    onValuesChange?.(values)
-  }, [onValuesChange, values])
 
   const errors = useMemo(() => {
     if (!schema) return {}
