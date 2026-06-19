@@ -54,12 +54,14 @@ beforeEach(() => {
 vi.mock('../../../server/routes/index.js', () => ({
   registerInviteRoutes: async () => {},
   registerMemberRoutes: async () => {},
+  registerOutreachRoutes: async () => {},
   registerSettingsRoutes: async () => {},
   registerWorkspaceRoutes: async () => {},
 }))
 
 vi.mock('../../../server/db/index.js', () => ({
   createDatabase: () => ({ db: {}, sql: { end: vi.fn(async () => {}) } }),
+  PostgresMeteringStore: class {},
   PostgresUserStore: class {},
   PostgresWorkspaceStore: class {
     async isMember() { return true }
