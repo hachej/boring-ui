@@ -54,7 +54,26 @@ export type {
   PostSignupHookDeps,
 } from './auth/index.js'
 
-export { registerWorkspaceRoutes, registerMemberRoutes, registerSettingsRoutes, registerInviteRoutes } from './routes/index.js'
+export { registerWorkspaceRoutes, registerMemberRoutes, registerSettingsRoutes, registerInviteRoutes, registerOutreachRoutes } from './routes/index.js'
+export {
+  DefaultExperienceProvisioner,
+  attachProvisionResult,
+  createLeadForUser,
+  createOutreachExperience,
+  createOutreachLink,
+  findValidOutreachLink,
+  getLeadForUser,
+} from './outreach/index.js'
+export type {
+  ExperienceProvisioner,
+  OutreachExperience,
+  OutreachLead,
+  OutreachLeadStatus,
+  OutreachLink,
+  OutreachProvisioningMode,
+  OutreachProvisioningStatus,
+  ProvisionedExperience,
+} from './outreach/index.js'
 
 export { createIdempotencyMiddleware, createDrizzleIdempotencyStore } from './middleware/index.js'
 export type { IdempotencyKeyStore, IdempotencyEntry } from './middleware/index.js'
