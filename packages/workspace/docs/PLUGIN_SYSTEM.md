@@ -6,8 +6,9 @@ example `PLUGIN_SYSTEM.md §4.5`), so keep headings stable when editing.
 
 This document describes the implementation as it exists now. Historical
 implementation plans live under `packages/workspace/docs/plans/archive/`.
-For future generated/hosted runtime-plugin architecture, see the repo-level
-`docs/runtime-plugin-v2-hot-reload-plan.md`.
+For the historical generated/hosted runtime-plugin architecture exploration,
+see the archived repo-level
+`docs/plans/archive/runtime-plugin-v2-hot-reload-plan.md`.
 
 ## Contents
 
@@ -27,13 +28,32 @@ For future generated/hosted runtime-plugin architecture, see the repo-level
 | Term | Definition |
 | --- | --- |
 | **App/internal plugin** | Trusted package composed by the app at boot. May export `boring.server`, Fastify routes, agent tools, providers, catalogs, and domain APIs. Server changes require restart/redeploy. |
-| **Runtime/generated plugin** | Workspace-local plugin under `.pi/extensions/<id>/`, usually produced by `boring-ui scaffold-plugin`. It is hot-loaded for front/Pi resources, but must not rely on dynamic backend routes. |
+| **Runtime/generated plugin** | Workspace-local plugin under `.pi/extensions/<id>/`, usually produced by `boring-ui-plugin scaffold`. Also called an **external** plugin in trust-model terms. It is hot-loaded for front/Pi resources, but must not rely on dynamic backend routes. |
 | **Boring plugin package** | Node package with `package.json#boring` and/or `package.json#pi`. App-default packages are declared in `package.json#boring.defaultPluginPackages` or passed to `createWorkspaceAgentServer`. |
 | **Boring front factory** | Default export of `boring.front`: `(api: BoringFrontAPI) => void | Promise<void>`. Usually created with `definePlugin({ ... })`. |
 | **Workspace server plugin** | Trusted boot-time server contribution returned by `defineServerPlugin({ ... })` or a compatible object. May include routes, tools, system prompt, Pi resources, and provisioning. |
 | **Asset manager** | `BoringPluginAssetManager`. Scans plugin dirs, computes signatures, tracks revisions, emits `boring.plugin.{load,unload,error}` events, and backs `/api/v1/agent-plugins`. |
 | **Revision** | Per-plugin monotonic integer. It bumps on signature changes and is appended to browser front imports for cache busting. |
 | **Surface resolver** | Front contribution that maps a typed request such as `open-path` to a panel id/title/params. File opens should route through this path. |
+
+### 1.1 Trust model (internal vs external)
+
+The two tiers differ by **provenance and trust**, not just lifecycle:
+
+| | App/internal plugin | Runtime/generated ("external") plugin |
+| --- | --- | --- |
+| Provenance | App-owned package, composed at boot | Workspace-local `.pi/extensions/`, often agent-generated |
+| Trust | Trusted app module | Trusted **only** as local developer/workspace code |
+| Front | Native React in the host tree | Native React (local trusted context) |
+| Server/routes/tools | Full power: Fastify routes, static `agentTools`, providers, domain APIs | Route-free; no `boring.server`; backend work goes through Pi tools |
+| Reload | Restart/redeploy | `/reload` hot-swaps front + Pi resources |
+
+Plugin tools' `execute()` run in the **host Node process and bypass the
+sandbox by design**; plugin loading is local-mode-only (skipped under
+`vercel-sandbox`). Hosted/marketplace plugins — untrusted external code that
+would need iframe fronts and sandbox-proxied tools — are **not implemented**;
+that provenance/permission model is a future phase (see §7 and the archived
+repo-level `docs/plans/archive/runtime-plugin-trust-modes-plan.md`).
 
 ---
 
@@ -57,8 +77,8 @@ For future generated/hosted runtime-plugin architecture, see the repo-level
 1. Agent/user runs the workspace-local CLI:
 
    ```bash
-   boring-ui scaffold-plugin <name>
-   boring-ui verify-plugin <name>
+   boring-ui-plugin scaffold <name>
+   boring-ui-plugin verify <name>
    ```
 
 2. The plugin lives under `.pi/extensions/<name>/`.
@@ -218,9 +238,9 @@ running Fastify/agent process by `/reload`.
 
 | Surface | Runtime `.pi/extensions` | App/internal package plugin | Notes |
 | --- | --- | --- | --- |
-| `pi.systemPrompt` | `/reload`, next turn | `/reload` in dev when discovered; static in production if hot reload disabled | Appended by `systemPromptDynamic`. |
+| `pi.systemPrompt` | `/reload`, next turn | `/reload` when discovered | Appended by `systemPromptDynamic`. |
 | `pi.extensions` | `/reload` through Pi session reload | `/reload` when discovered as package resources | File paths are re-read from manifest. |
-| `pi.skills` / `pi.packages` | `/reload` through dynamic resource getter | `/reload` in dev; boot snapshot when `pluginHotReload=false` | `verify-plugin` checks declared local skill paths. |
+| `pi.skills` / `pi.packages` | `/reload` through dynamic resource getter | `/reload` when discovered as package resources | `verify-plugin` checks declared local skill paths. |
 | `boring.front` panels/commands/catalogs/surface resolvers | `/reload` + SSE + browser dynamic import | `/reload` in dev when front URL is served by the app/Vite | Previous version stays live on import/register failure. |
 | `boring.server` routes/agentTools | Not supported for generated plugins | Boot-time only | `/reload` can warn `requiresRestart`. Restart process to apply. |
 | Providers/bindings from hot-loaded front factories | Skipped | Static composition only | Dynamic provider tree mounting is intentionally not implemented yet. |
@@ -234,23 +254,33 @@ write/read `.error` state, and keep their previous live UI where possible.
 Generated plugin authoring uses the provisioned workspace-local CLI:
 
 ```bash
-boring-ui scaffold-plugin <name>
-boring-ui verify-plugin <name>
+boring-ui-plugin scaffold <name>
+boring-ui-plugin verify <name>
 ```
 
-Do not teach agents to copy `packages/cli/templates/plugin` for generated runtime
+Do not teach agents to copy `packages/plugin-cli/templates/plugin` for generated runtime
 plugins. That template is an app/internal publishable package example.
 
-### 4.7 `pluginHotReload`
+### 4.7 Chat slash commands
 
-`createWorkspaceAgentServer({ pluginHotReload })` controls runtime plugin
-reload endpoints and dynamic Pi/package refresh.
+Plugins can contribute **chat `/slash` commands** — a separate surface from the
+command-palette `commands` output. There is no `!` bang-command; the composer
+parses `/name args` only.
 
-- `true` (default): registers `/api/boring.reload`, keeps
-  `/api/v1/agent-plugins/events` active, and refreshes discovered plugin Pi
-  resources on `/api/v1/agent/reload`.
-- `false`: static discovery/listing remains available, but package resources
-  are snapped once at boot and the developer reload endpoint is disabled.
+- **Front registry** (`packages/agent/src/front/slashCommands/registry.ts`):
+  `SlashCommand { name, description, kind?, source?, sourcePlugin?, handler }`.
+  `kind: 'local'` runs in the browser; `kind: 'skill'` is forwarded to the Pi
+  agent as `skill: <name>\n\n<args>`. The chat composer (`PiChatPanel`)
+  intercepts `/` input before it reaches the harness.
+- **Server commands** are listed from the harness via
+  `GET /api/v1/agent/commands` (consumed by `useServerCommands`) and executed
+  via `POST /api/v1/agent/commands/execute` — this route **bypasses the
+  harness chat loop**; Pi executes the command natively. `source`
+  (`extension`/`prompt`/`skill`) and `sourcePlugin` tag where a command came
+  from in the picker.
+- **How a plugin contributes one**: ship a Pi extension/prompt/skill in its
+  `package.json#pi` block — Pi-sourced commands appear automatically. No
+  harness changes required.
 
 ---
 
@@ -338,7 +368,8 @@ while capturing the front factory.
   plugin RPC for purity.
 - Dynamic provider/binding trees for runtime hot-loaded plugins in this PR.
 - Marketplace signing/provenance/permissions. Those belong to the next runtime
-  plugin architecture phase.
+  plugin architecture phase. Promotion (external → internal) is designed as an
+  explicit admin action with pinned provenance + restart — not implemented yet.
 
 ---
 

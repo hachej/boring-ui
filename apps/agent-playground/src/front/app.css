@@ -1,6 +1,9 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
 
+/* Standard boring theme (light + dark --boring-* values + shadcn bridge). */
+@import '@hachej/boring-ui-kit/tokens.css' layer(base);
+
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* App-local Tailwind scan roots only. Agent classes ship precompiled via
@@ -8,7 +11,20 @@
 @source "./**/*.{ts,tsx,js,jsx}";
 @source "../../index.html";
 
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-canvas: var(--canvas);
+}
+
 @layer base {
   * { border-color: var(--color-border); }
   body { background-color: var(--color-background); color: var(--color-foreground); }
+}
+
+.agent-playground-chat-pane {
+  width: 100%;
 }

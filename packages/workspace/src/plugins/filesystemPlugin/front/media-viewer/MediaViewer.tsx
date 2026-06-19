@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { Download, RefreshCw } from "lucide-react"
 import { ErrorState, Spinner } from "@hachej/boring-ui-kit"
 import { useApiBaseUrl, useWorkspaceRequestId } from "../data/DataProvider"
 import { cn } from "../../../../front/lib/utils"
@@ -8,6 +9,8 @@ import { cn } from "../../../../front/lib/utils"
 export interface MediaViewerProps {
   path: string
   kind: "image" | "pdf"
+  reloadKey?: number
+  onReload?: () => void
   className?: string
 }
 
@@ -20,17 +23,18 @@ function filename(path: string): string {
   return path.split("/").pop() ?? path
 }
 
-export function MediaViewer({ path, kind, className }: MediaViewerProps) {
+export function MediaViewer({ path, kind, reloadKey = 0, onReload, className }: MediaViewerProps) {
   const apiBaseUrl = useApiBaseUrl()
   const workspaceRequestId = useWorkspaceRequestId()
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const rawUrl = useMemo(
-    () => apiUrl(apiBaseUrl, `/api/v1/files/raw?path=${encodeURIComponent(path)}`),
-    [apiBaseUrl, path],
-  )
+  const rawUrl = useMemo(() => {
+    const query = new URLSearchParams({ path })
+    if (reloadKey > 0) query.set("reload", String(reloadKey))
+    return apiUrl(apiBaseUrl, `/api/v1/files/raw?${query.toString()}`)
+  }, [apiBaseUrl, path, reloadKey])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -75,39 +79,45 @@ export function MediaViewer({ path, kind, className }: MediaViewerProps) {
     )
   }
 
-  if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
-        <Spinner className="size-3.5" />
-        <span>Loading preview...</span>
-      </div>
-    )
-  }
-
-  if (error || !objectUrl) {
-    return (
-      <div className="flex h-full items-center justify-center p-6">
-        <ErrorState title="Failed to load preview" description={error ?? "Preview unavailable."} />
-      </div>
-    )
-  }
-
   return (
     <div className={cn("flex h-full min-h-0 flex-col bg-background", className)}>
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/60 px-3 py-2">
         <div className="min-w-0 truncate text-xs font-medium text-muted-foreground" title={path}>
           {filename(path)}
         </div>
-        <a
-          href={objectUrl}
-          download={filename(path)}
-          className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          Download
-        </a>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onReload}
+            disabled={!onReload}
+            className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+            aria-label={`Reload ${filename(path)}`}
+            title="Reload preview"
+          >
+            <RefreshCw className="size-3.5" />
+          </button>
+          {objectUrl ? (
+            <a
+              href={objectUrl}
+              download={filename(path)}
+              className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label={`Download ${filename(path)}`}
+              title="Download"
+            >
+              <Download className="size-3.5" />
+            </a>
+          ) : null}
+        </div>
       </div>
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
-        {kind === "image" ? (
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Spinner className="size-3.5" />
+            <span>Loading preview...</span>
+          </div>
+        ) : error || !objectUrl ? (
+          <ErrorState title="Failed to load preview" description={error ?? "Preview unavailable."} />
+        ) : kind === "image" ? (
           <img
             src={objectUrl}
             alt={filename(path)}

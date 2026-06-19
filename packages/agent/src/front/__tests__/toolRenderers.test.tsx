@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * Unit tests for the shadcn-styled tool renderers — pinning the rendered
  * shape of the high-frequency tools (exec_ui in particular) so a future
@@ -11,10 +12,12 @@
  * call the body shows both the input JSON (kind + params) and the
  * output JSON (seq, status).
  */
-import { describe, test, expect } from "vitest"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { renderToStaticMarkup } from "react-dom/server"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import { ErrorCode } from "../../shared/error-codes"
 import { shadcnDefaultToolRenderers } from "../toolRenderers"
+import { Tool, ToolHeader, ToolOutput } from "../primitives/tool"
 import type { ToolPart } from "../../front/toolRenderers"
 import { buildFilesystemAgentTools } from "../../server/tools/filesystem"
 import type { RuntimeBundle } from "../../server/runtime/mode"
@@ -108,6 +111,74 @@ describe("workspace readiness tool status", () => {
     })
     const html = renderToStaticMarkup(<>{shadcnDefaultToolRenderers.read!(part)}</>)
     expect(html).not.toContain("Files are still loading.")
+  })
+
+  test("renders friendly retryable runtime readiness status", () => {
+    const part = makePart({
+      toolName: "bash",
+      state: "output-error",
+      output: {
+        content: [{ type: "text", text: "bm: command not found" }],
+        details: {
+          code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
+          retryable: true,
+          requirement: "runtime:python",
+          state: "preparing",
+        },
+      },
+      errorText: "bm: command not found",
+    })
+    const html = renderToStaticMarkup(<>{shadcnDefaultToolRenderers.bash!(part)}</>)
+    expect(html).toContain("Python runtime dependencies are still installing.")
+    expect(html).toContain("This is retryable")
+    expect(html).not.toContain("bm: command not found")
+  })
+})
+
+describe("tool output formatting", () => {
+  test("keeps failed command headers in bounded title, badge, and chevron lanes", () => {
+    const html = renderToStaticMarkup(
+      <Tool>
+        <ToolHeader
+          type="dynamic-tool"
+          toolName="bash"
+          state="output-error"
+          title="bash · printf a-very-long-unbroken-token-that-should-not-push-the-error-badge-away"
+        />
+      </Tool>,
+    )
+
+    expect(html).toContain('data-boring-agent-part="tool-header"')
+    expect(html).toContain('flex w-full min-w-0 items-center')
+    expect(html).toContain('data-boring-agent-part="tool-title"')
+    expect(html).toContain('min-w-0 flex-1 truncate text-sm font-medium')
+    expect(html).toContain('data-slot="badge"')
+    expect(html).toContain('data-boring-agent-part="tool-chevron"')
+    expect(html).toContain("Error")
+  })
+
+  test("formats multiline failed command errors as preformatted text", () => {
+    const html = renderToStaticMarkup(
+      <ToolOutput output={undefined} errorText={'line one\nline two'} />,
+    )
+
+    expect(html).toContain("<pre")
+    expect(html).toContain("whitespace-pre-wrap")
+    expect(html).toContain("overflow-hidden")
+    expect(html).toContain("font-mono")
+    expect(html).toContain("line one\nline two")
+    expect(html).not.toContain("<div></div>")
+  })
+
+  test("does not duplicate object output when an explicit tool error is present", () => {
+    const html = renderToStaticMarkup(
+      <ToolOutput output={{ content: 'line one', errorText: 'line one' }} errorText="line one" />,
+    )
+
+    expect(html).toContain("<pre")
+    expect(html).toContain("line one")
+    expect(html).not.toContain('"content"')
+    expect(html).not.toContain('"errorText"')
   })
 })
 
@@ -205,5 +276,35 @@ describe("shadcn exec_ui renderer", () => {
     const html = renderToStaticMarkup(<>{shadcnDefaultToolRenderers.exec_ui!(part)}</>)
     expect(html).toContain("(empty)")
     expect(html).toContain("Pending")
+  })
+})
+
+describe("write tool renderer copy action", () => {
+  const originalExecCommand = document.execCommand
+
+  afterEach(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: undefined,
+    })
+    document.execCommand = originalExecCommand
+  })
+
+  test("falls back to legacy copy when clipboard API is unavailable", async () => {
+    const execCommand = vi.fn().mockReturnValue(true)
+    document.execCommand = execCommand
+    const part = makePart({
+      toolName: "write",
+      input: { path: "src/example.ts", content: "export const ok = true" },
+    })
+
+    render(<>{shadcnDefaultToolRenderers.write!(part)}</>)
+
+    fireEvent.click(screen.getByRole("button", { name: /writesrc\/example\.tsCompleted/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }))
+
+    await waitFor(() => {
+      expect(execCommand).toHaveBeenCalledWith("copy")
+    })
   })
 })

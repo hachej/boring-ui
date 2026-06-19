@@ -10,11 +10,11 @@
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import {
   langFromPath,
+  resolveToolRendererForPart,
   type ToolPart,
   type ToolRenderer,
   type ToolRendererOverrides,
 } from './bareToolRenderers'
-import type { defaultToolRenderers as bareDefaults } from './bareToolRenderers/renderers'
 import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput, getStatusBadge } from './primitives/tool'
 import { CollapsibleTrigger } from '@hachej/boring-ui-kit'
 import { ChevronDownIcon, ExternalLinkIcon, FileDiffIcon, FilePlus2Icon, FileTextIcon, SearchIcon, SquareTerminalIcon, ZapIcon } from 'lucide-react'
@@ -30,7 +30,10 @@ import {
   ArtifactTitle,
 } from './primitives/artifact'
 import { CopyIcon, DownloadIcon } from 'lucide-react'
+import { copyTextToClipboard } from './clipboard'
 import { cn } from './lib'
+import { ErrorCode } from '../shared/error-codes'
+import { getRuntimeReadinessStatus } from './runtimeReadinessStatus'
 import { getWorkspaceNotReadyStatus } from './workspaceReadinessStatus'
 
 export type { ToolPart, ToolRenderer, ToolRendererOverrides }
@@ -135,6 +138,28 @@ function renderWorkspaceNotReady(part: ToolPart): ReactNode | null {
   )
 }
 
+function renderRuntimeNotReady(part: ToolPart): ReactNode | null {
+  const status = getRuntimeReadinessStatus(part.output)
+  if (!status) return null
+  const suffix = status.code === ErrorCode.enum.RUNTIME_PROVISIONING_FAILED
+    ? 'Retry or reload the workspace.'
+    : 'This is retryable; try again shortly.'
+  return (
+    <Tool>
+      <ToolHeader title={`${part.toolName} · ${status.message} ${suffix}`} {...toHeaderProps(part)} />
+      <ToolContent>
+        <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+          {status.message} {suffix}
+        </div>
+      </ToolContent>
+    </Tool>
+  )
+}
+
+function renderReadinessBlock(part: ToolPart): ReactNode | null {
+  return renderWorkspaceNotReady(part) ?? renderRuntimeNotReady(part)
+}
+
 function pathTitle(prefix: string, path: string): ReactNode {
   return (
     <span className="flex min-w-0 items-center gap-1.5">
@@ -148,7 +173,7 @@ function pathTitle(prefix: string, path: string): ReactNode {
 // ---- bash ----
 
 function renderBash(part: ToolPart): ReactNode {
-  const readiness = renderWorkspaceNotReady(part)
+  const readiness = renderReadinessBlock(part)
   if (readiness) return readiness
   const input = asRecord(part.input)
   const output = asRecord(part.output)
@@ -189,7 +214,7 @@ function renderBash(part: ToolPart): ReactNode {
 // ---- read ----
 
 function renderRead(part: ToolPart): ReactNode {
-  const readiness = renderWorkspaceNotReady(part)
+  const readiness = renderReadinessBlock(part)
   if (readiness) return readiness
   const input = asRecord(part.input)
   const output = asRecord(part.output)
@@ -222,7 +247,7 @@ function renderRead(part: ToolPart): ReactNode {
 // + copy actions, matching the Vercel artifact pattern.
 
 function renderWrite(part: ToolPart): ReactNode {
-  const readiness = renderWorkspaceNotReady(part)
+  const readiness = renderReadinessBlock(part)
   if (readiness) return readiness
   const input = asRecord(part.input)
   const path = typeof input.path === 'string' ? input.path : ''
@@ -252,9 +277,7 @@ function renderWrite(part: ToolPart): ReactNode {
                 tooltip="Copy contents"
                 label="Copy"
                 onClick={() => {
-                  if (typeof navigator !== 'undefined' && navigator.clipboard) {
-                    navigator.clipboard.writeText(content).catch(() => {})
-                  }
+                  void copyTextToClipboard(content)
                 }}
               />
               <ArtifactAction
@@ -291,7 +314,7 @@ function renderWrite(part: ToolPart): ReactNode {
 // ---- edit ----
 
 function renderEdit(part: ToolPart): ReactNode {
-  const readiness = renderWorkspaceNotReady(part)
+  const readiness = renderReadinessBlock(part)
   if (readiness) return readiness
   const input = asRecord(part.input)
   const path = typeof input.path === 'string' ? input.path : ''
@@ -330,7 +353,7 @@ function renderEdit(part: ToolPart): ReactNode {
 // ---- find / grep / ls ----
 
 function renderSearchLike(toolName: 'find' | 'grep' | 'ls', part: ToolPart): ReactNode {
-  const readiness = renderWorkspaceNotReady(part)
+  const readiness = renderReadinessBlock(part)
   if (readiness) return readiness
   const input = asRecord(part.input)
   const SearchLikeIcon = toolName === 'find' || toolName === 'grep' ? SearchIcon : FileTextIcon
@@ -386,7 +409,7 @@ function extractParamTokens(value: unknown, depth = 0): string[] {
 }
 
 function renderExecUi(part: ToolPart): ReactNode {
-  const readiness = renderWorkspaceNotReady(part)
+  const readiness = renderReadinessBlock(part)
   if (readiness) return readiness
   const input = asRecord(part.input)
   const kind = typeof input.kind === 'string' ? input.kind : '(empty)'
@@ -445,12 +468,18 @@ function renderExecUi(part: ToolPart): ReactNode {
 
 // ---- fallback ----
 
+function fallbackTitle(part: ToolPart): string {
+  const requested = part.rendererResolution?.requestedRendererId
+  if (requested && requested !== part.toolName) return `${part.toolName} · renderer ${requested} unavailable`
+  return part.toolName
+}
+
 function renderFallback(part: ToolPart): ReactNode {
-  const readiness = renderWorkspaceNotReady(part)
+  const readiness = renderReadinessBlock(part)
   if (readiness) return readiness
   return (
     <Tool>
-      <ToolHeader title={part.toolName} {...toHeaderProps(part)} />
+      <ToolHeader title={fallbackTitle(part)} {...toHeaderProps(part)} />
       <ToolContent>
         {part.input !== undefined && part.input !== null && (
           <ToolInput input={part.input} />
@@ -486,4 +515,4 @@ export function mergeShadcnToolRenderers(
   return result
 }
 
-export { bareDefaults as bareDefaultToolRenderers }
+export { resolveToolRendererForPart }

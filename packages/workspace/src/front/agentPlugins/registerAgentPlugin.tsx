@@ -3,7 +3,7 @@ import * as ReactDom from "react-dom"
 import * as ReactDomClient from "react-dom/client"
 import * as ReactJsxDevRuntime from "react/jsx-dev-runtime"
 import * as ReactJsxRuntime from "react/jsx-runtime"
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import type { ErrorCode } from "@hachej/boring-agent/shared"
 import {
   createCapturingBoringFrontAPI,
@@ -49,6 +49,19 @@ export interface RegisterAgentPluginOptions {
   enabled?: boolean
   authHeaders?: Record<string, string>
   importFront?: (frontUrl: string, revision: number) => Promise<{ default?: BoringFrontFactoryWithId }>
+  // Bounded retry for transient cold-start front-import failures (singleton
+  // graph not yet warm after a hard refresh). Exposed mainly for tests.
+  frontImportRetry?: { attempts?: number; delayMs?: number }
+  // Reports an exhausted front import failure back to the server diagnostics
+  // channel. Defaults to a fetch POST; overridable for tests.
+  reportFrontError?: (report: FrontErrorReport) => void
+}
+
+export interface FrontErrorReport {
+  pluginId: string
+  revision: number
+  message: string
+  url?: string
 }
 
 function joinUrl(base: string, path: string): string {
@@ -66,6 +79,29 @@ function isAbsoluteModuleUrl(url: string): boolean {
   return /^[A-Za-z][A-Za-z0-9+.-]*:/.test(url) || url.startsWith("//")
 }
 
+// Posts an exhausted front import failure to the server so it surfaces in the
+// runtime-plugin-diagnostics response and the plugin_diagnostics agent tool —
+// otherwise a plugin that fails to evaluate in the browser looks healthy
+// server-side (its manifest scan and runtime transform both succeeded).
+function postFrontError(
+  options: Pick<RegisterAgentPluginOptions, "apiBaseUrl" | "workspaceId" | "authHeaders">,
+  report: FrontErrorReport,
+): void {
+  if (typeof fetch !== "function") return
+  const url = withWorkspaceId(
+    joinUrl(options.apiBaseUrl ?? "", `/api/v1/agent-plugins/${encodeURIComponent(report.pluginId)}/front-error`),
+    options.workspaceId,
+  )
+  void fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(options.authHeaders ?? {}) },
+    body: JSON.stringify({ revision: report.revision, message: report.message, ...(report.url ? { url: report.url } : {}) }),
+    keepalive: true,
+  }).catch(() => {
+    // Best-effort: a failed report-back must never break plugin loading.
+  })
+}
+
 function resolveFrontUrl(frontUrl: string, apiBaseUrl: string | undefined): string {
   if (!apiBaseUrl || isAbsoluteModuleUrl(frontUrl)) return frontUrl
   return joinUrl(apiBaseUrl, frontUrl.startsWith("/") ? frontUrl : `/${frontUrl}`)
@@ -75,10 +111,8 @@ function resolveFrontEntryUrl(
   event: Extract<RuntimePluginBrowserEvent, { type: "boring.plugin.load" }>,
   apiBaseUrl: string | undefined,
 ): string | undefined {
-  const frontTarget = event.frontTarget as BoringPluginFrontTarget | undefined
-  if (frontTarget?.entryUrl) return resolveFrontUrl(frontTarget.entryUrl, apiBaseUrl)
-  if (event.frontUrl) return resolveFrontUrl(event.frontUrl, apiBaseUrl)
-  return undefined
+  if (!event.frontTarget?.entryUrl) return undefined
+  return resolveFrontUrl(event.frontTarget.entryUrl, apiBaseUrl)
 }
 
 function getRegistries(
@@ -151,6 +185,57 @@ async function captureFrontFactory(pluginId: string, frontUrl: string, revision:
   return api.flush()
 }
 
+// Cold-start retry for plugin front imports. On a hard refresh while the
+// embedded Vite plugin runtime is still warming, the imported module can
+// evaluate against a not-yet-ready singleton graph and throw (the silent
+// "keeping previous version" + "definePlugin: id is required" path). That
+// failure is transient — a moment later the same revision imports cleanly —
+// but it used to be permanent until a revision bump or workspace switch. Retry
+// the import (NOT the register) with exponential backoff so the plugin
+// recovers in place. The budget must outlast a cold-start server stall (a
+// hard reload can race tens of seconds of server-side warmup work): 7
+// attempts at 750ms doubling ≈ 47s of cover, capped at 10s per wait.
+const FRONT_IMPORT_RETRY_ATTEMPTS = 7
+const FRONT_IMPORT_RETRY_DELAY_MS = 750
+const FRONT_IMPORT_RETRY_MAX_DELAY_MS = 10_000
+
+async function importFrontWithRetry({
+  pluginId,
+  frontEntryUrl,
+  revision,
+  importFront,
+  isStale,
+  attempts = FRONT_IMPORT_RETRY_ATTEMPTS,
+  delayMs = FRONT_IMPORT_RETRY_DELAY_MS,
+}: {
+  pluginId: string
+  frontEntryUrl: string
+  revision: number
+  importFront: RegisterAgentPluginOptions["importFront"]
+  isStale: () => boolean
+  attempts?: number
+  delayMs?: number
+}): Promise<CapturedBoringFrontRegistrations> {
+  const maxAttempts = Math.max(1, attempts)
+  let lastError: unknown
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (isStale()) throw lastError ?? new Error(`plugin ${pluginId} front import superseded`)
+    try {
+      return await captureFrontFactory(pluginId, frontEntryUrl, revision, importFront)
+    } catch (error) {
+      lastError = error
+      if (attempt === maxAttempts - 1 || isStale()) break
+      console.warn(
+        `[boring-ui] plugin ${pluginId} front import failed (attempt ${attempt + 1}/${maxAttempts}); retrying`,
+        error,
+      )
+      const backoff = Math.min(delayMs * 2 ** attempt, FRONT_IMPORT_RETRY_MAX_DELAY_MS)
+      await new Promise((resolve) => setTimeout(resolve, backoff))
+    }
+  }
+  throw lastError
+}
+
 /**
  * Translate a CapturedBoringFrontRegistrations into the registry shapes
  * expected by the atomic `replaceByPluginId` ops. Providers and bindings
@@ -159,6 +244,7 @@ async function captureFrontFactory(pluginId: string, frontUrl: string, revision:
  */
 function buildRegistryPayloads(
   pluginId: string,
+  revision: number,
   captured: CapturedBoringFrontRegistrations,
 ): {
   panels: PanelConfig[]
@@ -167,6 +253,7 @@ function buildRegistryPayloads(
   surfaceResolvers: SurfaceResolverConfig[]
 } {
   const panels: PanelConfig[] = []
+  const panelsById = new Map(captured.panels.map((panel) => [panel.id, panel]))
   for (const panel of captured.panels) {
     panels.push({
       id: panel.id,
@@ -175,6 +262,7 @@ function buildRegistryPayloads(
       placement: panel.placement ?? "center",
       source: panel.source ?? "plugin",
       pluginId,
+      pluginRevision: revision,
       ...(panel.icon ? { icon: panel.icon } : {}),
       ...(panel.requiresCapabilities ? { requiresCapabilities: panel.requiresCapabilities } : {}),
       ...(panel.essential !== undefined ? { essential: panel.essential } : {}),
@@ -183,13 +271,26 @@ function buildRegistryPayloads(
     } as PanelConfig)
   }
   for (const tab of captured.leftTabs) {
+    const referencedPanel = panelsById.get(tab.panelId)
+    if (!tab.component && !referencedPanel) {
+      // A leftTab pointing at an unknown panelId renders an empty pane —
+      // almost always a typo in the plugin (the panel id and the tab's
+      // panelId drifted apart). Be loud: the silent fallback cost real
+      // debugging time in the field.
+      console.warn(
+        `[boring-ui] plugin "${pluginId}": left tab "${tab.id}" references unknown panelId "${tab.panelId}" `
+        + `(registered panels: ${[...panelsById.keys()].join(", ") || "none"}). The tab will render empty.`,
+      )
+    }
     panels.push({
       id: tab.id,
       title: tab.title,
-      component: tab.component ?? (() => null),
+      component: tab.component ?? referencedPanel?.component ?? (() => null),
       placement: "left-tab",
+      defaultPanelId: tab.panelId,
       source: tab.source ?? "plugin",
       pluginId,
+      pluginRevision: revision,
       ...(tab.icon ? { icon: tab.icon } : {}),
       ...(tab.requiresCapabilities ? { requiresCapabilities: tab.requiresCapabilities } : {}),
       ...(tab.lazy !== undefined ? { lazy: tab.lazy } : {}),
@@ -291,17 +392,19 @@ function assertNoOutputCollisions(
 
 function commitCapturedFrontFactory(
   pluginId: string,
+  revision: number,
   captured: CapturedBoringFrontRegistrations,
   registries: ReturnType<typeof getRegistries>,
 ): void {
   if (captured.providers.length > 0 || captured.bindings.length > 0) {
     warnUnsupportedDynamicContributions(pluginId, captured)
     // Provider/binding contributions require mounting in the provider tree,
-    // which hot reload cannot do safely yet. Throw so the caller preserves any
-    // existing static or previously-loaded registrations.
-    throw new Error(`PLUGIN_UNSUPPORTED_DYNAMIC_CONTRIBUTIONS: plugin "${pluginId}" registered provider/binding outputs that require an app restart`)
+    // which hot reload cannot do safely yet. Keep any provider/binding from the
+    // statically mounted app, but still refresh hot-swappable panel/command/
+    // catalog/resolver outputs. If a newly-added panel depends on an unmounted
+    // provider, the panel render self-test reports that concrete render error.
   }
-  const payloads = buildRegistryPayloads(pluginId, captured)
+  const payloads = buildRegistryPayloads(pluginId, revision, captured)
   assertNoOutputCollisions(pluginId, payloads, registries)
   registries.panels.replaceByPluginId(pluginId, payloads.panels)
   registries.commands.replaceByPluginId(pluginId, payloads.commands)
@@ -316,6 +419,21 @@ function unregisterPlugin(pluginId: string, registries: ReturnType<typeof getReg
   registries.surfaceResolvers.replaceByPluginId(pluginId, [])
 }
 
+/**
+ * True when a dispatched WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT originates from
+ * the `/reload` slash command (ChatPanel's `callPluginReload`) rather than from
+ * this hook's own per-plugin lifecycle dispatches. The hook always tags its
+ * dispatches with a `type` of "boring.plugin.*"; the `/reload` POST forwards the
+ * server response (`{ reloaded, restartWarnings, diagnostics }`), which has no
+ * such `type`. We listen only for the `/reload` variant so we never re-trigger
+ * ourselves from our own events.
+ */
+function isPluginReloadCommandEvent(detail: unknown): boolean {
+  if (!detail || typeof detail !== "object") return true
+  const type = (detail as { type?: unknown }).type
+  return typeof type !== "string" || !type.startsWith("boring.plugin.")
+}
+
 export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): void {
   const panels = useRegistry()
   const commands = useCommandRegistry()
@@ -324,9 +442,46 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
   const lastSeenRef = useRef(new Map<string, number>())
   const latestRequestedRef = useRef(new Map<string, number>())
   const replaySeenRef = useRef(new Set<string>())
+  // Tracks plugins that were successfully registered via commitCapturedFrontFactory.
+  // The SSE channel only carries external plugins (internal ones are statically
+  // bundled by the app and filtered server-side), so this hook owns the full
+  // lifecycle of everything it sees here.
+  const registeredRef = useRef(new Set<string>())
+  // Bumped by a window listener whenever `/reload` runs (while hot reload is
+  // active). Included in the EventSource effect deps so `/reload` reopens the
+  // stream and re-imports, mirroring a workspace switch — without a full remount.
+  // `reloadReconnectRef` marks the reconnect as reload-triggered so that (a) the
+  // outgoing effect's cleanup KEEPS plugin registrations in place (the replay
+  // swaps them atomically; tearing them down here briefly removes the panels from
+  // the registry and therefore from the live dock's component map, which the dock
+  // never re-adds without a remount — the "plugin vanishes on /reload" bug), and
+  // (b) the next connection re-imports the replayed current bundles even at an
+  // unchanged revision.
+  const [reloadNonce, setReloadNonce] = useState(0)
+  const reloadReconnectRef = useRef(false)
 
   useEffect(() => {
     if (options.enabled === false || typeof EventSource === "undefined") return
+    const onReloadCommand = (raw: Event) => {
+      const detail = (raw as CustomEvent).detail
+      if (!isPluginReloadCommandEvent(detail)) return
+      reloadReconnectRef.current = true
+      setReloadNonce((n) => n + 1)
+    }
+    window.addEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, onReloadCommand as EventListener)
+    return () => window.removeEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, onReloadCommand as EventListener)
+  }, [options.enabled])
+
+  useEffect(() => {
+    if (options.enabled === false || typeof EventSource === "undefined") return
+    // A `/reload`-triggered reconnect must re-import the replayed current bundles
+    // even though their revision is unchanged. Rather than clearing the
+    // revision-dedupe maps (which would drop the knowledge needed to prune deleted
+    // plugins on replay-complete), keep them and let `forceReimport` bypass the
+    // revision gate for the replayed snapshot below. The cache-busting timestamp in
+    // `appendFrontImportRevision` ensures a fresh module instance loads.
+    const forceReimport = reloadReconnectRef.current
+    reloadReconnectRef.current = false
     if (hasBearerAuth(options.authHeaders)) {
       console.warn(
         "[boring-ui] front plugin hot reload disabled: native EventSource cannot send Authorization bearer headers, and this server does not advertise a token-query fallback for /api/v1/agent-plugins/events.",
@@ -347,9 +502,12 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           if (disposed) return
           if (event.workspaceId && options.workspaceId && event.workspaceId !== options.workspaceId) return
           if (event.replay) replaySeenRef.current.add(event.id)
+          // On a `/reload`-triggered reconnect, re-import the replayed snapshot even
+          // at an unchanged revision (its registrations were kept, not torn down).
+          const bypassGate = forceReimport && event.replay === true
           const lastSeen = lastSeenRef.current.get(event.id) ?? 0
           const latestRequested = latestRequestedRef.current.get(event.id) ?? 0
-          if (event.revision <= Math.max(lastSeen, latestRequested)) return
+          if (!bypassGate && event.revision <= Math.max(lastSeen, latestRequested)) return
           latestRequestedRef.current.set(event.id, event.revision)
           const frontEntryUrl = resolveFrontEntryUrl(event, options.apiBaseUrl)
           if (frontEntryUrl) {
@@ -367,7 +525,16 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           let captured: CapturedBoringFrontRegistrations | null = null
           try {
             captured = frontEntryUrl
-              ? await captureFrontFactory(event.id, frontEntryUrl, event.revision, options.importFront)
+              ? await importFrontWithRetry({
+                  pluginId: event.id,
+                  frontEntryUrl,
+                  revision: event.revision,
+                  importFront: options.importFront,
+                  isStale: () =>
+                    disposed || latestRequestedRef.current.get(event!.id) !== event!.revision,
+                  ...(options.frontImportRetry?.attempts !== undefined ? { attempts: options.frontImportRetry.attempts } : {}),
+                  ...(options.frontImportRetry?.delayMs !== undefined ? { delayMs: options.frontImportRetry.delayMs } : {}),
+                })
               : null
           } catch (error) {
             throw {
@@ -377,11 +544,18 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           }
           if (disposed) return
           if (latestRequestedRef.current.get(event.id) !== event.revision) return
-          if (event.revision <= (lastSeenRef.current.get(event.id) ?? 0)) return
+          if (!bypassGate && event.revision <= (lastSeenRef.current.get(event.id) ?? 0)) return
           if (!captured) {
-            unregisterPlugin(event.id, registries)
+            // Only unregister if we previously dynamically loaded a front module for
+            // this plugin. Static/internal plugins (no frontTarget) are registered by
+            // the app bootstrap and must not be cleared by the SSE reload hook —
+            // doing so removes their panels from the registry while their providers
+            // remain mounted, which causes "must be rendered under Provider" errors.
+            if (registeredRef.current.has(event.id)) {
+              unregisterPlugin(event.id, registries)
+              registeredRef.current.delete(event.id)
+            }
             lastSeenRef.current.set(event.id, event.revision)
-            window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: event }))
             return
           }
           // Atomic per-registry replace: `replaceByPluginId` drops
@@ -389,13 +563,14 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           // Subscribers (including DockView) see exactly one
           // transition — never an intermediate empty state.
           try {
-            commitCapturedFrontFactory(event.id, captured, registries)
+            commitCapturedFrontFactory(event.id, event.revision, captured, registries)
           } catch (error) {
             throw {
               stage: "register",
               error,
             }
           }
+          registeredRef.current.add(event.id)
           lastSeenRef.current.set(event.id, event.revision)
           window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: event }))
         } catch (error) {
@@ -413,6 +588,15 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           const message = actualError instanceof Error ? actualError.message : String(actualError)
           console.error(`[boring-ui] failed to load plugin ${label}; keeping previous version`, actualError)
           if (event) {
+            const failedFrontUrl = resolveFrontEntryUrl(event, options.apiBaseUrl)
+            const report: FrontErrorReport = {
+              pluginId: event.id,
+              revision: event.revision,
+              message,
+              ...(failedFrontUrl ? { url: failedFrontUrl } : {}),
+            }
+            if (options.reportFrontError) options.reportFrontError(report)
+            else postFrontError(options, report)
             window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, {
               detail: {
                 type: "boring.plugin.front-error",
@@ -451,7 +635,10 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
         const latestRequested = latestRequestedRef.current.get(event.id) ?? 0
         if (event.revision <= Math.max(lastSeen, latestRequested)) return
         latestRequestedRef.current.set(event.id, event.revision)
-        unregisterPlugin(event.id, registries)
+        if (registeredRef.current.has(event.id)) {
+          unregisterPlugin(event.id, registries)
+          registeredRef.current.delete(event.id)
+        }
         lastSeenRef.current.set(event.id, event.revision)
         window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: event }))
       } catch (error) {
@@ -488,7 +675,12 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
         const replaySeen = replaySeenRef.current
         for (const [pluginId, revision] of lastSeenRef.current.entries()) {
           if (replaySeen.has(pluginId)) continue
-          unregisterPlugin(pluginId, registries)
+          // Only unregister if the plugin was dynamically loaded — static/internal
+          // plugins keep their bootstrap registrations across workspace reconnects.
+          if (registeredRef.current.has(pluginId)) {
+            unregisterPlugin(pluginId, registries)
+            registeredRef.current.delete(pluginId)
+          }
           lastSeenRef.current.delete(pluginId)
           latestRequestedRef.current.delete(pluginId)
           window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, {
@@ -514,11 +706,25 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
     es.addEventListener("boring.plugin.replay-complete", handleReplayComplete as EventListener)
     return () => {
       disposed = true
-      for (const pluginId of lastSeenRef.current.keys()) unregisterPlugin(pluginId, registries)
-      lastSeenRef.current.clear()
-      latestRequestedRef.current.clear()
-      replaySeenRef.current.clear()
+      // Keep registrations across a `/reload`-triggered reconnect: the immediately
+      // following connection replays and atomically swaps each plugin in place
+      // (replaceByPluginId), and replay-complete prunes any plugin missing from the
+      // new snapshot. A full teardown here would briefly unregister the panels —
+      // removing them from the live dock's component map, which the dock never
+      // re-adds without a remount. Only tear down for genuine disconnects
+      // (workspace switch, hot-reload disabled, unmount), where reloadReconnectRef
+      // is false.
+      if (!reloadReconnectRef.current) {
+        // Only unregister dynamically-loaded plugins. Static/internal plugins keep
+        // their bootstrap registrations — the WorkspaceProvider re-runs bootstrap on
+        // remount (workspace switch) which re-registers them.
+        for (const pluginId of registeredRef.current) unregisterPlugin(pluginId, registries)
+        registeredRef.current.clear()
+        lastSeenRef.current.clear()
+        latestRequestedRef.current.clear()
+        replaySeenRef.current.clear()
+      }
       es.close()
     }
-  }, [options.apiBaseUrl, options.workspaceId, options.enabled, options.authHeaders, options.importFront, panels, commands, catalogs, surfaceResolvers])
+  }, [options.apiBaseUrl, options.workspaceId, options.enabled, options.authHeaders, options.importFront, options.frontImportRetry, panels, commands, catalogs, surfaceResolvers, reloadNonce])
 }

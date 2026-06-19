@@ -1,29 +1,31 @@
-import { resolve } from 'node:path'
 import {
   appRootFromImportMeta,
   createCoreWorkspaceAgentServer,
   startCoreWorkspaceAgentDevServer,
 } from '@hachej/boring-core/app/server'
-import { createAskUserPiExtensionFactory } from '@hachej/boring-ask-user/agent'
-import { demoServerPlugin } from '../plugins/demo/server'
+import { serverPlugins } from './plugins.js'
+import { buildCreditsWiring } from './credits.js'
 
 const appRoot = appRootFromImportMeta(import.meta.url, 2)
 
+function pluginAuthoringEnabledFromEnv(): boolean {
+  return process.env.BORING_PLUGIN_AUTHORING === '1'
+}
+
 startCoreWorkspaceAgentDevServer({
   appRoot,
-  buildServer: (options) => createCoreWorkspaceAgentServer({
-    ...options,
-    appPackageJsonPath: resolve(appRoot, 'package.json'),
-    plugins: [demoServerPlugin],
-    getWorkspaceBridgePi: (ctx) => ({
-      extensionFactories: [createAskUserPiExtensionFactory({
-        callHumanInputRequest: async (input, signal) => await ctx.callAsRuntime(
-          { op: 'human-input.v1.request', requestId: input.requestId, input },
-          { sessionId: input.sessionId, signal },
-        ),
-      })],
-    }),
-  }),
+  buildServer: async (options) => {
+    const credits = buildCreditsWiring()
+    const app = await createCoreWorkspaceAgentServer({
+      ...options,
+      plugins: serverPlugins,
+      externalPlugins: false,
+      installPluginAuthoring: pluginAuthoringEnabledFromEnv(),
+      metering: credits.meteringSink,
+    })
+    credits.attach(app)
+    return app
+  },
 }).catch((error) => {
   console.error(error)
   process.exit(1)

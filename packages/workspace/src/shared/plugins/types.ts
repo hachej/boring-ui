@@ -93,6 +93,8 @@ export interface LeftTabParams {
   searchQuery?: string
   bridge?: unknown
   chromeless?: boolean
+  /** Optional DOM target for left-tab toolbar actions owned by the pane. */
+  chromeActionsElement?: Element | null
   revealFileTreeRequest?: { path: string; seq: number } | null
 }
 

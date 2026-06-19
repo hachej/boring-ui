@@ -1,5 +1,9 @@
 # Performance Benchmarks
 
+> **Status: historical.** These are one-off benchmark results from a since-removed
+> harness, kept for reference. Numbers are not re-run in CI and may not reflect the
+> current `@hachej/boring-agent` runtime. The mitigation tools below shipped.
+
 ## Vercel Sandbox FS Latency (boring-ui-v2-f4f)
 
 Recorded: 2026-04-23  

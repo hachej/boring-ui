@@ -16,6 +16,9 @@ interface MentionPickerProps {
   onSelect: (path: string) => void
   onDismiss: () => void
   apiBaseUrl?: string
+  fetch?: typeof globalThis.fetch
+  requestHeaders?: Record<string, string | undefined>
+  storageScope?: string
 }
 
 export const mentionSearchGlob = toFileSearchGlob
@@ -27,7 +30,15 @@ function highlight(text: string, query: string): { before: string; match: string
   return { before: text.slice(0, idx), match: text.slice(idx, idx + query.length), after: text.slice(idx + query.length) }
 }
 
-export function MentionPicker({ mention, onSelect, onDismiss, apiBaseUrl = '' }: MentionPickerProps) {
+export function MentionPicker({
+  mention,
+  onSelect,
+  onDismiss,
+  apiBaseUrl = '',
+  fetch: fetchImpl,
+  requestHeaders,
+  storageScope,
+}: MentionPickerProps) {
   const [results, setResults] = useState<string[]>([])
   const [activeIdx, setActiveIdx] = useState(0)
   const listRef = useRef<HTMLUListElement>(null)
@@ -35,8 +46,14 @@ export function MentionPicker({ mention, onSelect, onDismiss, apiBaseUrl = '' }:
   useEffect(() => {
     setActiveIdx(0)
     const ctrl = new AbortController()
+    const runFetch = fetchImpl ?? globalThis.fetch.bind(globalThis)
+    const headers = scopedHeaders(requestHeaders, storageScope)
+    const base = apiBaseUrl.replace(/\/$/, '')
     const t = setTimeout(() => {
-      fetch(`${apiBaseUrl}/api/v1/files/search?q=${encodeURIComponent(mentionSearchGlob(mention.query))}&limit=8`, { signal: ctrl.signal })
+      runFetch(`${base}/api/v1/files/search?q=${encodeURIComponent(mentionSearchGlob(mention.query))}&limit=8`, {
+        signal: ctrl.signal,
+        ...(headers ? { headers } : {}),
+      })
         .then((r) => r.ok ? r.json() : null)
         .then((data: { results?: string[] } | null) => {
           if (data?.results) setResults(data.results.slice(0, 8))
@@ -44,7 +61,7 @@ export function MentionPicker({ mention, onSelect, onDismiss, apiBaseUrl = '' }:
         .catch(() => {})
     }, 120)
     return () => { clearTimeout(t); ctrl.abort() }
-  }, [mention.query, apiBaseUrl])
+  }, [mention.query, apiBaseUrl, fetchImpl, requestHeaders, storageScope])
 
   const handleSelect = useCallback((idx: number) => {
     if (results[idx]) onSelect(results[idx])
@@ -93,4 +110,17 @@ export function detectMention(value: string, cursorPos: number): MentionState | 
   if (!match) return null
   const atIdx = before.lastIndexOf('@')
   return { query: match[2], anchorStart: atIdx, anchorEnd: cursorPos }
+}
+
+function scopedHeaders(
+  requestHeaders: Record<string, string | undefined> | undefined,
+  storageScope: string | undefined,
+): Record<string, string> | undefined {
+  const headers: Record<string, string> = {}
+  for (const [key, value] of Object.entries(requestHeaders ?? {})) {
+    if (value !== undefined) headers[key] = value
+  }
+  const hasStorageScope = Object.keys(headers).some((key) => key.toLowerCase() === 'x-boring-storage-scope')
+  if (storageScope && !hasStorageScope) headers['x-boring-storage-scope'] = storageScope
+  return Object.keys(headers).length > 0 ? headers : undefined
 }

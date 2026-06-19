@@ -1,13 +1,16 @@
 export { createBridge } from "./createBridge"
 export { createBridgeClient } from "./client"
-export { dispatchUiCommand } from "./uiCommandDispatcher"
-export { UI_COMMAND_EVENT, emitUiEffect } from "./uiCommandBus"
+export { dispatchUiCommand, WORKSPACE_COMMAND_NOTIFY_EVENT } from "./uiCommandDispatcher"
+export { UI_COMMAND_EVENT, emitUiEffect, postUiCommand } from "./uiCommandBus"
+export { WorkspaceLink, workspaceLinkCommand, workspaceLinkHref } from "./WorkspaceLink"
+export type { WorkspaceLinkProps, WorkspaceLinkTarget } from "./WorkspaceLink"
 export { startUiCommandStream } from "./uiCommandStream"
 export type { BridgeClient, BridgeClientOptions, UIStatePut } from "./client"
 export type { DispatchContext } from "./uiCommandDispatcher"
 export type { UiCommand } from "./types"
 export type {
   WorkspaceBridge,
+  FileTreeBridge,
   BridgeEventMap,
   CommandResult,
   DynamicPaneConfig,

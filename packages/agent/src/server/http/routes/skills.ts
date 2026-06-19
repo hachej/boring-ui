@@ -16,11 +16,15 @@ import {
   loadSkills,
 } from '@mariozechner/pi-coding-agent'
 import type { PiPackageSource } from '../../piPackages'
-import { createResourceSettingsManager } from '../../harness/pi-coding-agent/createHarness'
+import { createResourceSettingsManager, withPiHarnessDefaults } from '../../harness/pi-coding-agent/createHarness'
 
 export interface SkillSummary {
   name: string
   description: string
+}
+
+interface SkillsQuery {
+  refresh?: string
 }
 
 const CACHE_TTL_MS = 30_000
@@ -43,7 +47,7 @@ export function skillsRoutes(
 ): void {
   const cached = new Map<string, { skills: SkillSummary[]; expiresAt: number }>()
 
-  app.get('/api/v1/agent/skills', async (request, reply) => {
+  app.get<{ Querystring: SkillsQuery }>('/api/v1/agent/skills', async (request, reply) => {
     try {
       const workspaceRoot = opts.getWorkspaceRoot
         ? await opts.getWorkspaceRoot(request)
@@ -54,16 +58,20 @@ export function skillsRoutes(
       const piPackages = opts.getPiPackages
         ? await opts.getPiPackages(request)
         : opts.piPackages
-      const noSkills = opts.getNoSkills
+      // `undefined` means the host didn't say — resolve through the canonical
+      // harness policy so a bare registration can't silently flip ambient
+      // skill discovery on.
+      const noSkills = (opts.getNoSkills
         ? await opts.getNoSkills(request)
-        : opts.noSkills
-      const cacheKey = JSON.stringify([workspaceRoot, additionalSkillPaths ?? [], piPackages ?? [], Boolean(noSkills)])
+        : opts.noSkills) ?? withPiHarnessDefaults().noSkills
+      const cacheKey = JSON.stringify([workspaceRoot, additionalSkillPaths ?? [], piPackages ?? [], noSkills])
       const now = Date.now()
       for (const [key, entry] of cached) {
         if (entry.expiresAt <= now) cached.delete(key)
       }
       const cachedEntry = cached.get(cacheKey)
-      if (cachedEntry && cachedEntry.expiresAt > now) {
+      const refresh = request.query.refresh === '1'
+      if (!refresh && cachedEntry && cachedEntry.expiresAt > now) {
         return reply.code(200).send({ skills: cachedEntry.skills })
       }
 
@@ -90,7 +98,7 @@ export function skillsRoutes(
         cwd: workspaceRoot,
         agentDir,
         skillPaths: [...packageSkillPaths, ...(additionalSkillPaths ?? [])],
-        includeDefaults: false,
+        includeDefaults: !noSkills,
       })
       const skills: SkillSummary[] = result.skills.map((s) => ({
         name: s.name,
@@ -98,8 +106,12 @@ export function skillsRoutes(
       }))
       cached.set(cacheKey, { skills, expiresAt: now + CACHE_TTL_MS })
       return reply.code(200).send({ skills })
-    } catch {
-      return reply.code(200).send({ skills: [] })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      request.log.warn({ err: error }, '[agent] failed to load skills')
+      // Still 200 so the slash-command picker keeps working; the `error`
+      // field makes the failure observable to callers that inspect it.
+      return reply.code(200).send({ skills: [], error: message })
     }
   })
 

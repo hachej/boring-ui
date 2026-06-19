@@ -16,7 +16,7 @@ import { dirname, join } from "node:path"
 export interface BuildBoringSystemPromptOptions {
   /**
    * CLI invocation that writes the canonical files (e.g.
-   * `boring-ui scaffold-plugin`). When unset, step 1 falls back to
+   * `boring-ui-plugin scaffold`). When unset, step 1 falls back to
    * "read the skill" — the agent then has no canonical anchor and
    * reliability suffers on smaller models, so always provide this in
    * production.
@@ -71,7 +71,7 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): s
   if (opts.scaffoldCommand) {
     n += 1
     steps.push(
-      `**${n}. Check plugin-root support, then scaffold.** Bash \`boring-ui plugin-status --json\`; continue only if \`workspaceLocalPluginRoots\` is \`true\`. Then bash \`${opts.scaffoldCommand} <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"\`. Read generated \`package.json\` + \`front/index.tsx\`; do NOT write from memory.`,
+      `**${n}. Check plugin-root support, then scaffold.** Bash \`boring-ui-plugin status --json\`; continue only if \`workspaceLocalPluginRoots\` is \`true\`. Then bash \`${opts.scaffoldCommand} <kebab-name> "$BORING_AGENT_WORKSPACE_ROOT"\`. Read generated \`package.json\` + \`front/index.tsx\`; do NOT write from memory.`,
     )
   } else {
     n += 1
@@ -83,8 +83,13 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): s
   n += 1
   steps.push(
     opts.scaffoldCommand
-      ? `**${n}. Edit the generated files to implement the request.** Keep the scaffold imports, \`definePlugin\` shape, and manifest layout; replace only placeholder content/ids/labels with the real implementation.`
-      : `**${n}. Create or edit the plugin files to implement what the user asked for.** Use the boring-plugin-authoring skill as the canonical source for imports, the \`definePlugin\` call shape, and the manifest layout.`,
+      ? `**${n}. Edit the generated files.** Keep scaffold imports/layout. Use \`@hachej/boring-ui-kit\` + workspace primitives for native UI; avoid ad-hoc inline UI.`
+      : `**${n}. Create or edit plugin files.** Use the boring-plugin-authoring skill for imports, \`definePlugin\`, manifest layout, and boring-ui-kit design defaults.`,
+  )
+
+  n += 1
+  steps.push(
+    `**${n}. Install plugin-local deps only when needed.** If adding a browser package, bash \`cd "$BORING_AGENT_WORKSPACE_ROOT/.pi/extensions/<kebab-name>" && npm install <dep>\`; never install at workspace root. \`/reload\` never installs packages.`,
   )
 
   n += 1
@@ -114,7 +119,7 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): s
       ].join("\n")
 
   return [
-    "You are operating inside boring-ui. Before `.pi/extensions/<name>/`, run `boring-ui plugin-status --json`; continue only when `workspaceLocalPluginRoots` is `true`. Default to `.pi/extensions/<name>/`. Global `~/.pi/agent/extensions/` only for explicit requests.",
+    "You are operating inside boring-ui. Before `.pi/extensions/<name>/`, run `boring-ui-plugin status --json`; continue only when `workspaceLocalPluginRoots` is `true`. Default to `.pi/extensions/<name>/`. Global `~/.pi/agent/extensions/` only for explicit requests.",
     [
       "## Plugin authoring — required workflow",
       "",
@@ -125,11 +130,18 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): s
       "- Imperative method names: `registerComponent`, `addPanel`, `registerCommand` (no `Panel`), `registerTab` — the actual names are `registerPanel`, `registerPanelCommand`, `registerLeftTab`, `registerSurfaceResolver` (and you usually express these declaratively, not as method calls).",
       "- Import paths: `@hachej/boring-pi` (it's a skills package, not for code), `@boring-ui/*`, `@hachej/pi-sdk` — use `@hachej/boring-workspace/plugin` for front and `@hachej/boring-workspace/server` for server.",
       "- File visualizers: import `WORKSPACE_OPEN_PATH_SURFACE_KIND`/`PaneProps` from `@hachej/boring-workspace/plugin`; import `useApiBaseUrl`/`useWorkspaceRequestId` from `@hachej/boring-workspace`; read `request.target`; fetch `${apiBaseUrl}/api/v1/files/raw?...` with `credentials: \"include\"` and `x-boring-workspace-id` when present. Never use `/workspace/read` or string kind `\"WORKSPACE_OPEN_PATH_SURFACE_KIND\"`.",
-      "- Pi extension tools: `defineTool` and `export const tools` do NOT exist. Export `default function (pi) { pi.registerTool({ name, description, execute }) }`.",
+      "- Pi extension tools: `defineTool` and `export const tools` do NOT exist. Export `default function (pi) { pi.registerTool({ name, description, parameters: { type: \"object\", properties: {} }, execute }) }`. `parameters` is mandatory even for no-arg tools; omitting it breaks tool execution.",
       "- Server/Pi tool method: `handler` — use `execute`. Return shape: `{ content: [{ type: \"text\", text }] }` (NEVER a bare string).",
       "- Manifest values: `boring.server: true` — use `false`/omit for hot-reload user plugins, or a relative path string only for advanced boot-time/static server integration.",
       "- File layout: files at the package root, or `src/` / `dist/` / `lib/` subdirectories — the scaffold's hot-reload layout (`front/index.tsx`, optional `agent/index.ts` declared in `pi.extensions`) is the one the workspace refreshes on `/reload`.",
+      "- Dependency installs: do NOT install plugin UI dependencies at the workspace root. Install them inside `.pi/extensions/<name>/` and keep React/workspace/boring-ui-kit imports as host singletons, not plugin dependencies.",
       "- Hot-reload agent tools: do NOT put them in `.pi/extensions/<name>/server/index.ts`; use `pi.extensions` instead. `boring.server` requires static composition plus process restart.",
+    ].join("\n"),
+    [
+      "## Installing an existing or published plugin",
+      "To ADD an existing or published plugin (not author a new one), use `boring-ui-plugin install <source>` via bash — `<source>` is `npm:<package>`, `git:<repo>`, `github:<owner>/<repo>`, an `http(s)` git URL, or a local path; add `--global` for all workspaces (default is this workspace).",
+      "A bare `npm install <package>` does NOT register it as a plugin (no `.pi/settings.json` package source), so it will NOT load — always use `boring-ui-plugin install`, then ask the user to `/reload` (a `boring.server` backend also needs a process restart).",
+      "Inspect with `boring-ui-plugin list [--json]`; remove with `boring-ui-plugin remove <id-or-source>`.",
     ].join("\n"),
     docsBlock,
   ].join("\n\n")

@@ -67,9 +67,16 @@ export type {
 } from "./plugins/filesystemPlugin/front"
 export {
   DataProvider as WorkspaceFilesProvider,
+  readFileRecords,
   useApiBaseUrl,
   useHasDataClient as useHasWorkspaceFilesProvider,
   useWorkspaceRequestId,
+} from "./plugins/filesystemPlugin/front/data"
+export type {
+  FileRecordsFormat,
+  FileRecordsResult,
+  FileRecordsSource,
+  ReadFileRecordsOptions,
 } from "./plugins/filesystemPlugin/front/data"
 // Public file-state seam for package consumers (for example future deck-like
 // plugins). Hooks from this seam must run under `WorkspaceFilesProvider`, or a
@@ -203,6 +210,7 @@ export {
   userMeta,
   agentMeta,
   emitAgentData,
+  workspaceEvents,
 } from "./front/events"
 export type {
   Origin,
@@ -225,11 +233,13 @@ export type {
 // Bridge
 export { createBridge } from "./front/bridge"
 export { createBridgeClient } from "./front/bridge"
-export { emitUiEffect, UI_COMMAND_EVENT } from "./front/bridge"
+export { postUiCommand, UI_COMMAND_EVENT, WorkspaceLink, workspaceLinkCommand, workspaceLinkHref } from "./front/bridge"
 export type {
   BridgeClient,
   BridgeClientOptions,
   UIStatePut,
+  WorkspaceLinkProps,
+  WorkspaceLinkTarget,
 } from "./front/bridge"
 export type {
   DispatchContext,
@@ -250,26 +260,6 @@ export {
   expandToFileSchema,
   MAX_PANELS,
 } from "./front/bridge"
-export {
-  WorkspaceBridgeErrorCode,
-  createWorkspaceBridgeError,
-} from "./shared/workspace-bridge-rpc"
-export type {
-  BridgeActorAttribution,
-  BridgeActorKind,
-  BridgeAuthContext,
-  BridgeCallerClass,
-  BridgeIdempotencyPolicy,
-  BridgeRedactedActorRef,
-  WorkspaceBridgeCallFailure,
-  WorkspaceBridgeCallRequest,
-  WorkspaceBridgeCallResponse,
-  WorkspaceBridgeCallSuccess,
-  WorkspaceBridgeError,
-  WorkspaceBridgeFileAssetPointer,
-  WorkspaceBridgeJsonValue,
-  WorkspaceBridgeOperationDefinition,
-} from "./shared/workspace-bridge-rpc"
 
 // shadcn UI primitives
 

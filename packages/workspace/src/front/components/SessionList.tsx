@@ -148,6 +148,37 @@ export function SessionList({
   )
 }
 
+async function copyText(text: string): Promise<boolean> {
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      // Fall through to legacy copy for HTTP dev URLs or unfocused pages.
+    }
+  }
+
+  if (typeof document === "undefined") return false
+  const textarea = document.createElement("textarea")
+  textarea.value = text
+  textarea.setAttribute("readonly", "")
+  textarea.style.position = "fixed"
+  textarea.style.top = "-9999px"
+  textarea.style.left = "-9999px"
+  textarea.style.opacity = "0"
+  textarea.style.pointerEvents = "none"
+  document.body.appendChild(textarea)
+  try {
+    textarea.focus()
+    textarea.select()
+    return document.execCommand?.("copy") ?? false
+  } catch {
+    return false
+  } finally {
+    document.body.removeChild(textarea)
+  }
+}
+
 function SessionRow({
   session,
   isActive,
@@ -170,9 +201,8 @@ function SessionRow({
   const [copied, setCopied] = useState(false)
   const copySessionId = useCallback((event: MouseEvent) => {
     event.stopPropagation()
-    const writeText = navigator.clipboard?.writeText?.bind(navigator.clipboard)
-    if (!writeText) return
-    void writeText(session.id).then(() => {
+    void copyText(session.id).then((ok) => {
+      if (!ok) return
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1200)
     })
@@ -203,7 +233,7 @@ function SessionRow({
         type="button"
         variant="ghost"
         size="icon-xs"
-        className="shrink-0 text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 group-data-[focused=true]:opacity-100"
+        className="hidden shrink-0 text-muted-foreground hover:text-foreground group-hover:inline-flex group-data-[focused=true]:inline-flex"
         onClick={copySessionId}
         tabIndex={isFocused ? 0 : -1}
         aria-label={`Copy Pi session id for ${session.title}`}
@@ -222,7 +252,7 @@ function SessionRow({
           type="button"
           variant="ghost"
           size="icon-xs"
-          className="shrink-0 text-muted-foreground opacity-0 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 group-data-[focused=true]:opacity-100"
+          className="hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:inline-flex group-data-[focused=true]:inline-flex"
           onClick={(e) => {
             e.stopPropagation()
             onDelete(session.id)

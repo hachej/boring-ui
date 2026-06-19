@@ -1,13 +1,13 @@
 import Fastify, { type FastifyInstance } from 'fastify'
 import type { AgentTool } from '../shared/tool'
-import type { AgentHarnessFactory } from '../shared/harness'
-import type { SessionStore } from '../shared/session'
+import type { AgentHarness, AgentHarnessFactory } from '../shared/harness'
 import type { TelemetrySink } from '../shared/telemetry'
 import { getEnv } from './config/env'
 import type { RuntimeBundle, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
+import { getRuntimeBundleStorageRoot } from './runtime/mode'
 import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runtimeEnvContributions'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
-import { createPiCodingAgentHarness } from './harness/pi-coding-agent/createHarness'
+import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
 import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import type { WorkspaceProvisioningResult } from './workspace/provisioning'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
@@ -18,18 +18,23 @@ import { healthRoutes } from './http/routes/health'
 import { fileRoutes } from './http/routes/file'
 import { fsEventsRoutes } from './http/routes/fsEvents'
 import { treeRoutes } from './http/routes/tree'
-import { chatRoutes } from './http/routes/chat'
 import { modelsRoutes } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
-import { sessionRoutes } from './http/routes/sessions'
+import { piChatRoutes } from './http/routes/piChat'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
 import { readyStatusRoutes } from './http/routes/readyStatus'
+import { commandsRoutes } from './http/routes/commands'
 import { reloadRoutes } from './http/routes/reload'
 import { searchRoutes } from './http/routes/search'
+import { gitRoutes } from './http/routes/git'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
+import { HarnessPiChatService } from './pi-chat/harnessPiChatService'
+import type { AgentMeteringSink } from './pi-chat/metering'
+import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
+import type { ReloadHookDiagnostic } from './http/routes/reload'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
@@ -66,6 +71,8 @@ export interface CreateAgentAppOptions {
   sessionNamespace?: string
   /** Optional best-effort telemetry sink supplied by an embedding host. */
   telemetry?: TelemetrySink
+  /** Optional billing sink for native Pi usage (see AgentMeteringSink). */
+  metering?: AgentMeteringSink
   /** Generic runtime env contributors. Agent stays workspace-neutral; hosts decide env names/values. */
   runtimeEnvContributions?: RuntimeEnvContribution[]
   /** Runtime-aware provisioning hook. Runs after Workspace/Sandbox creation and before tools/harness. */
@@ -76,6 +83,12 @@ export interface CreateAgentAppOptions {
   }) => Promise<void>
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
   sessionDir?: string
+  /**
+   * Enable user/global Pi extension auto-discovery from .pi/ and ~/.pi.
+   * App/internal plugins should be passed through extraTools/pi instead.
+   * Defaults to true for standalone agent compatibility.
+   */
+  externalPlugins?: boolean
   /**
    * Called BEFORE the harness reloads its session. May return a
    * `ReloadHookResult` (with `restart_warnings` and/or diagnostics) —
@@ -93,6 +106,15 @@ export interface CreateAgentAppOptions {
    * the workspace plugin layer.
    */
   systemPromptDynamic?: () => string | undefined | Promise<string | undefined>
+  /**
+   * Optional host callback returning current plugin/skill load diagnostics
+   * for this workspace. Surfaced by the `plugin_diagnostics` agent tool so the
+   * model can iterate on plugin/skill load errors after a /reload.
+   */
+  getPluginDiagnostics?: (args: {
+    workspaceId: string
+    workspaceRoot: string
+  }) => Promise<Array<{ source: string; message: string; pluginId?: string }>>
 }
 
 export async function createAgentApp(
@@ -130,7 +152,8 @@ export async function createAgentApp(
   // createAgentApp() directly. Standalone agent (CLI, no workspace)
   // ships zero UI surface — smaller bundle, honest contract.
   const pluginTools: AgentTool[] = []
-  if (modeAdapter.workspaceFsCapability === 'strong') {
+  const externalPluginsEnabled = opts.externalPlugins !== false
+  if (externalPluginsEnabled && modeAdapter.workspaceFsCapability === 'strong') {
     const pluginResult = await loadPlugins({ cwd: workspaceRoot })
     if (pluginResult.errors.length > 0) {
       for (const e of pluginResult.errors) {
@@ -144,12 +167,18 @@ export async function createAgentApp(
 
   const getRuntimeProvisioning = opts.getRuntimeProvisioning ?? (() => opts.runtimeProvisioning)
   const runtimePi: PiHarnessOptions = {
-    ...opts.pi,
+    ...withPiHarnessDefaults(opts.pi),
     additionalSkillPaths: [
       ...(getRuntimeProvisioning()?.skillPaths ?? []),
       ...(opts.pi?.additionalSkillPaths ?? []),
     ],
   }
+
+  // Captured after the harness is built; read through thunks because the
+  // plugin_diagnostics tool is added to the tool catalog before the harness
+  // exists, and diagnostics accumulate on each /reload.
+  let harnessRef: AgentHarness | undefined
+  let lastReloadDiagnostics: ReloadHookDiagnostic[] = []
 
   const tools: AgentTool[] = [
     ...buildHarnessAgentTools(runtimeBundle, {
@@ -161,15 +190,21 @@ export async function createAgentApp(
     ...(opts.disableDefaultFileTools ? [] : buildFilesystemAgentTools(runtimeBundle)),
     ...(opts.extraTools ?? []),
     ...pluginTools,
+    ...(externalPluginsEnabled ? [createPluginDiagnosticsTool({
+      getLastReloadDiagnostics: () => lastReloadDiagnostics,
+      getHarness: () => harnessRef,
+      ...(opts.getPluginDiagnostics
+        ? {
+            getPluginErrors: () =>
+              opts.getPluginDiagnostics!({ workspaceId: sessionId, workspaceRoot }),
+          }
+        : {}),
+    })] : []),
   ]
 
   const harnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
     ...input,
-    pi: {
-      noContextFiles: true,
-      noSkills: true,
-      ...runtimePi,
-    },
+    pi: runtimePi,
   }))
   const harness = await harnessFactory({
     tools,
@@ -180,6 +215,7 @@ export async function createAgentApp(
     systemPromptDynamic: opts.systemPromptDynamic,
     telemetry: opts.telemetry,
   })
+  harnessRef = harness
   const sessionChangesTracker = new InMemorySessionChangesTracker()
 
   const readyTracker = new ReadyStatusTracker({
@@ -212,17 +248,23 @@ export async function createAgentApp(
   // (runtimeBundle.fileSearch). One impl, one set of glob semantics,
   // one bound-to-workspace-root guarantee.
   await app.register(searchRoutes, { fileSearch: runtimeBundle.fileSearch })
-  await app.register(chatRoutes, {
-    harness,
-    workdir: runtimeBundle.workspace.root,
-    sessionChangesTracker,
-    telemetry: opts.telemetry,
+  // Powers the file-tree "Copy Git URL" action. Must use the HOST storage root
+  // (where .git lives), not workspace.root — in sandbox modes the latter is the
+  // in-sandbox cwd (e.g. /workspace) and git would not find the repo.
+  await app.register(gitRoutes, {
+    getWorkspaceRoot: () => {
+      if (runtimeBundle.sandbox.provider === 'remote-worker') return undefined
+      return getRuntimeBundleStorageRoot(runtimeBundle)
+    },
   })
-  await app.register(sessionRoutes, {
-    sessionStore: harness.sessions as unknown as SessionStore,
+  const piChatService = new HarnessPiChatService({
     harness,
+    sessionStore: harness.sessions,
     workdir: runtimeBundle.workspace.root,
+    workspace: runtimeBundle.workspace,
+    metering: opts.metering,
   })
+  await app.register(piChatRoutes, { service: piChatService })
   await app.register(systemPromptRoutes, { harness })
   await app.register(modelsRoutes)
   await app.register(skillsRoutes, {
@@ -242,7 +284,15 @@ export async function createAgentApp(
   })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })
-  await app.register(reloadRoutes, { harness, defaultSessionId: sessionId, beforeReload: opts.beforeReload })
+  await app.register(commandsRoutes, { harness, defaultSessionId: sessionId, workdir: runtimeBundle.workspace.root })
+  await app.register(reloadRoutes, {
+    harness,
+    defaultSessionId: sessionId,
+    beforeReload: opts.beforeReload,
+    onDiagnostics: (diagnostics) => {
+      lastReloadDiagnostics = diagnostics
+    },
+  })
   await app.register(readyStatusRoutes, { tracker: readyTracker })
 
   return app

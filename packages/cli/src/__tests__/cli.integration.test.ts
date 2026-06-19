@@ -15,6 +15,7 @@ const distBin = join(cliRoot, "dist", "index.js")
 const tempDirs: string[] = []
 
 beforeAll(() => {
+  execFileSync("pnpm", ["--dir", resolve(cliRoot, "../plugin-cli"), "build"], { stdio: "pipe" })
   execFileSync("pnpm", ["--dir", cliRoot, "build"], { stdio: "pipe" })
 }, 60_000)
 
@@ -49,6 +50,31 @@ test("installed boring-ui --help exits without starting a workspace", async () =
   })
 })
 
+test("boring-ui plugin reuses plugin CLI install/list/remove handlers", async () => {
+  const root = await makeTempDir("boring-cli-plugin-facade-")
+  const workspaceRoot = join(root, "workspace")
+  const pluginRoot = join(root, "facade-plugin")
+  await mkdir(join(pluginRoot, "front"), { recursive: true })
+  await mkdir(workspaceRoot, { recursive: true })
+  await writeFile(join(pluginRoot, "front", "index.tsx"), "export default function Plugin() { return null }\n", "utf-8")
+  await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
+    name: "facade-plugin",
+    version: "1.0.0",
+    boring: { front: "front/index.tsx" },
+  }), "utf-8")
+
+  const install = await runCli(["plugin", "install", pluginRoot, "--workspace", workspaceRoot], {})
+  expect(install.stdout).toContain("installed facade-plugin")
+  expect(install.stdout).toContain("scope local")
+
+  const list = await runCli(["plugin", "list", "--json", "--workspace", workspaceRoot], {})
+  expect(JSON.parse(list.stdout).records).toEqual([expect.objectContaining({ id: "facade-plugin", scope: "local" })])
+
+  await expect(runCli(["plugin", "remove", "facade-plugin", "--workspace", workspaceRoot], {})).resolves.toMatchObject({
+    stdout: expect.stringContaining("removed facade-plugin"),
+  })
+}, 20_000)
+
 test("package exposes an installable boring-ui bin with published assets", async () => {
   const packageJson = JSON.parse(await readFile(join(cliRoot, "package.json"), "utf-8")) as {
     bin?: Record<string, string>
@@ -61,6 +87,7 @@ test("package exposes an installable boring-ui bin with published assets", async
   expect(packageJson.dependencies).toEqual(expect.objectContaining({
     "@fastify/static": expect.any(String),
     "@hachej/boring-agent": expect.any(String),
+    "@hachej/boring-ask-user": expect.any(String),
     "@hachej/boring-workspace": expect.any(String),
     fastify: expect.any(String),
   }))
@@ -135,79 +162,15 @@ test("installed CLI serves built assets with browser-safe MIME types", async () 
   }
 }, 20_000)
 
-test("installed CLI reports plugin-root support and refuses scaffold when disabled", async () => {
-  const workspace = await makeTempDir("boring-cli-plugin-status-")
-  const enabled = await runCli(["plugin-status", "--json"], { BORING_AGENT_WORKSPACE_ROOT: workspace })
-  expect(JSON.parse(enabled.stdout)).toMatchObject({
-    workspaceLocalPluginRoots: true,
-    workspaceRoot: workspace,
-    extensionsDir: join(workspace, ".pi", "extensions"),
-    reloadSupported: true,
-  })
+test("installed boring-ui help does not expose plugin authoring commands", async () => {
+  const result = await runCli(["--help"], {})
 
-  const disabled = await runCli(["plugin-status", "--json"], {
-    BORING_AGENT_WORKSPACE_ROOT: workspace,
-    BORING_AGENT_WORKSPACE_LOCAL_PLUGIN_ROOTS: "0",
-  })
-  expect(JSON.parse(disabled.stdout)).toMatchObject({
-    workspaceLocalPluginRoots: false,
-    reloadSupported: false,
-    reason: expect.stringContaining("remote sandbox"),
-  })
-
-  await expect(runCli(["scaffold-plugin", "blocked-plugin", workspace], {
-    BORING_AGENT_WORKSPACE_LOCAL_PLUGIN_ROOTS: "0",
-  })).rejects.toMatchObject({
-    stderr: expect.stringContaining("Do not scaffold into .pi/extensions"),
-  })
-}, 20_000)
-
-test("installed CLI scaffolds a hot-reloadable plugin", async () => {
-  const workspace = await makeTempDir("boring-cli-scaffold-")
-  const result = await runCli(["scaffold-plugin", "demo-plugin", workspace], {})
-  expect(result.stdout).toContain("scaffolded demo-plugin")
-  expect(result.stdout).toContain("Next steps:")
-
-  const pluginDir = join(workspace, ".pi", "extensions", "demo-plugin")
-  const pkg = JSON.parse(await readFile(join(pluginDir, "package.json"), "utf-8")) as {
-    name: string
-    boring: { front: string }
-  }
-  expect(pkg.name).toBe("demo-plugin")
-  expect(pkg.boring.front).toBe("front/index.tsx")
-
-  const front = await readFile(join(pluginDir, "front", "index.tsx"), "utf-8")
-  expect(front).toContain("definePlugin")
-  expect(front).toContain('"demo-plugin"')
-  expect(front).toContain("useApiBaseUrl/useWorkspaceRequestId")
-  expect(front).toContain("x-boring-workspace-id")
-
-  await expect(runCli(["scaffold-plugin", "BadName"], {})).rejects.toMatchObject({
-    stderr: expect.stringContaining("kebab-case"),
-  })
-})
-
-test("plugin CLI commands default to BORING_AGENT_WORKSPACE_ROOT", async () => {
-  const workspace = await makeTempDir("boring-cli-env-workspace-")
-  const otherCwd = await makeTempDir("boring-cli-env-other-")
-
-  await execFile(process.execPath, [distBin, "scaffold-plugin", "env-plugin"], {
-    cwd: otherCwd,
-    env: testEnv({ BORING_AGENT_WORKSPACE_ROOT: workspace }),
-    timeout: 10_000,
-  })
-
-  const pluginDir = join(workspace, ".pi", "extensions", "env-plugin")
-  const pkg = JSON.parse(await readFile(join(pluginDir, "package.json"), "utf-8")) as { name: string }
-  expect(pkg.name).toBe("env-plugin")
-
-  await expect(
-    execFile(process.execPath, [distBin, "verify-plugin", "env-plugin"], {
-      cwd: otherCwd,
-      env: testEnv({ BORING_AGENT_WORKSPACE_ROOT: workspace }),
-      timeout: 10_000,
-    }),
-  ).resolves.toMatchObject({ stdout: expect.stringContaining("✓ env-plugin") })
+  expect(result.stdout).toContain("Usage: boring-ui")
+  expect(result.stdout).not.toContain("plugin-status")
+  expect(result.stdout).not.toContain("scaffold-plugin")
+  expect(result.stdout).not.toContain("verify-plugin")
+  expect(result.stdout).not.toContain("test-plugin")
+  expect(result.stdout).not.toContain("plugin create")
 })
 
 test("installed CLI rejects file paths as local workspaces", async () => {

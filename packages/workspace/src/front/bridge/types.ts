@@ -68,4 +68,14 @@ export interface WorkspaceBridge {
   ): Unsubscribe
 }
 
+/**
+ * The minimal slice of {@link WorkspaceBridge} a file tree needs: click-to-open
+ * (`openFile`), initial selection (`getActiveFile`), reactive reveal (`select`,
+ * plus optional `subscribe`). Lives here (core bridge layer) — not in the
+ * filesystem plugin — so core chrome (WorkbenchLeftPane) can forward a
+ * surface-backed adapter without importing a plugin module.
+ */
+export type FileTreeBridge = Pick<WorkspaceBridge, "openFile" | "getActiveFile" | "select"> &
+  Partial<Pick<WorkspaceBridge, "subscribe">>
+
 export type CausedBy = "user" | "agent" | "restore"

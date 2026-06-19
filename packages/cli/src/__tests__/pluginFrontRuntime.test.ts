@@ -36,6 +36,8 @@ async function writeRuntimePlugin(root: string, files: Record<string, string>): 
     version: "1.0.0",
     boring: { front: "front/index.tsx", label: "Runtime Plugin" },
     frontPath: join(root, "front", "index.tsx"),
+    source: { rootDir: root, kind: "external" },
+    hasBoring: true,
   }
 }
 
@@ -217,6 +219,49 @@ describe("pluginFrontRuntime", () => {
     }
   }, 20_000)
 
+  test("warmupWorkspace pre-transforms tracked front entries so the first browser hit is a cache-hit", async () => {
+    const diagnostics: PluginFrontRuntimeDiagnostic[] = []
+    const pluginRoot = await makeTempDir("plugin-front-runtime-warmup-")
+    const plugin = await writeRuntimePlugin(pluginRoot, {
+      "front/index.tsx": 'import "./styles.css"\nexport const ok = true\n',
+      "front/styles.css": ".runtime-panel { color: tomato; }\n",
+    })
+
+    const host = await createPluginFrontRuntimeHost({ onDiagnostic: (entry) => diagnostics.push(entry) })
+    host.trackPlugin({
+      workspaceId: "workspace-a",
+      plugin,
+      revision: 1,
+      frontEntrySubpath: "front/index.tsx",
+    })
+
+    try {
+      // No-op for an unknown / empty workspace — must not throw.
+      await host.warmupWorkspace("does-not-exist")
+
+      await host.warmupWorkspace("workspace-a")
+      const afterWarmupCacheMisses = diagnostics.filter(
+        (d) => d.outcome === "cache-miss" && d.requestedPath === "front/index.tsx",
+      ).length
+      expect(afterWarmupCacheMisses).toBe(1)
+
+      // The browser's first request now reuses the warm transform cache.
+      const served = await host.serve({
+        workspaceId: "workspace-a",
+        pluginId: "runtime-plugin",
+        revision: 1,
+        subpath: "front/index.tsx",
+      })
+      expect(served.body).toContain("export const ok")
+      const cacheHits = diagnostics.filter(
+        (d) => d.outcome === "cache-hit" && d.requestedPath === "front/index.tsx",
+      ).length
+      expect(cacheHits).toBeGreaterThanOrEqual(1)
+    } finally {
+      await host.close()
+    }
+  }, 20_000)
+
   test("rejects direct __vite proxy access that was never minted by a validated runtime request", async () => {
     const host = await createPluginFrontRuntimeHost()
     const app = fastify({ logger: false })
@@ -262,6 +307,8 @@ describe("pluginFrontRuntime", () => {
       version: "1.0.0",
       boring: { front: "front/index.tsx", label: "Runtime Plugin" },
       frontPath: join(pluginRoot, "front", "index.tsx"),
+      source: { rootDir: pluginRoot, kind: "external" },
+      hasBoring: true,
     }
 
     const host = await createPluginFrontRuntimeHost()
@@ -391,6 +438,199 @@ describe("pluginFrontRuntime", () => {
         url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/late.tsx`,
       })
       expect(lateFileOnOldRevision.statusCode).toBe(404)
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
+
+  test("resolves ui-kit imports from the host package instead of plugin-local deps", async () => {
+    const pluginRoot = await makeTempDir("plugin-front-runtime-ui-kit-")
+    const plugin = await writeRuntimePlugin(pluginRoot, {
+      "front/index.tsx": 'import { Button } from "@hachej/boring-ui-kit"\nexport const Component = Button\n',
+    })
+
+    const host = await createPluginFrontRuntimeHost()
+    try {
+      host.trackPlugin({ workspaceId: "workspace-a", plugin, revision: 1, frontEntrySubpath: "front/index.tsx" })
+      const entry = await host.serve({
+        workspaceId: "workspace-a",
+        pluginId: "runtime-plugin",
+        revision: 1,
+        subpath: "front/index.tsx",
+      })
+      expect(String(entry.body)).toMatch(/__vite\/proxy\/(?:packages%2Fui%2Fsrc%2Findex\.ts|packages%2Fui%2Fdist%2Findex\.js|@id)/)
+    } finally {
+      await host.close()
+    }
+  }, 20_000)
+
+  test("resolves plugin-local bare imports through the runtime proxy", async () => {
+    const pluginRoot = await makeTempDir("plugin-front-runtime-local-dep-")
+    const plugin = await writeRuntimePlugin(pluginRoot, {
+      "front/index.tsx": 'import { value } from "tiny-lib"\nexport const answer = value\n',
+      "node_modules/tiny-lib/package.json": JSON.stringify({ name: "tiny-lib", version: "1.0.0", main: "index.js" }),
+      "node_modules/tiny-lib/index.js": 'export const value = "plugin local dep"\n',
+    })
+
+    const host = await createPluginFrontRuntimeHost()
+    const app = fastify({ logger: false })
+    await host.registerRoutes(app)
+    host.trackPlugin({ workspaceId: "workspace-a", plugin, revision: 1, frontEntrySubpath: "front/index.tsx" })
+
+    try {
+      const entry = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/index.tsx`,
+      })
+      expect(entry.statusCode).toBe(200)
+      const depPath = entry.body.match(new RegExp(`"(${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/[^"']*)"`))?.[1]
+      expect(depPath, entry.body).toBeTruthy()
+
+      const dep = await app.inject({ method: "GET", url: depPath! })
+      expect(dep.statusCode, dep.body).toBe(200)
+      expect(dep.body).toContain("plugin local dep")
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
+
+  test("does not rewrite a dependency's own react.js module to the react singleton", async () => {
+    // Regression: dockview ships dist/esm/react.js (exporting ReactPart).
+    // The optimizer-chunk filename heuristic ("react.js" → react singleton)
+    // must not capture dependency-internal modules that merely share the
+    // filename — the singleton lacks their exports, which kills the whole
+    // importing plugin graph with a named-export SyntaxError.
+    const pluginRoot = await makeTempDir("plugin-front-runtime-react-name-clash-")
+    const plugin = await writeRuntimePlugin(pluginRoot, {
+      "front/index.tsx": 'import { value } from "dockish"\nexport const answer = value\n',
+      "node_modules/dockish/package.json": JSON.stringify({ name: "dockish", version: "1.0.0", main: "index.js" }),
+      "node_modules/dockish/index.js": 'import { ReactPart } from "./react.js"\nexport const value = ReactPart\n',
+      "node_modules/dockish/react.js": 'export const ReactPart = "dep-owned react module"\n',
+    })
+
+    const host = await createPluginFrontRuntimeHost()
+    const app = fastify({ logger: false })
+    await host.registerRoutes(app)
+    host.trackPlugin({ workspaceId: "workspace-a", plugin, revision: 1, frontEntrySubpath: "front/index.tsx" })
+
+    try {
+      const entry = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/index.tsx`,
+      })
+      expect(entry.statusCode).toBe(200)
+      const depPath = entry.body.match(new RegExp(`"(${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/[^"']*)"`))?.[1]
+      expect(depPath, entry.body).toBeTruthy()
+
+      const dep = await app.inject({ method: "GET", url: depPath! })
+      expect(dep.statusCode, dep.body).toBe(200)
+      // The dep's internal ./react.js import must stay a proxy URL, not the singleton.
+      expect(dep.body).not.toContain("/__vite/singleton/react")
+      const innerPath = dep.body.match(new RegExp(`"(${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/[^"']*react[^"']*)"`))?.[1]
+      expect(innerPath, dep.body).toBeTruthy()
+      const inner = await app.inject({ method: "GET", url: innerPath! })
+      expect(inner.statusCode, inner.body).toBe(200)
+      expect(inner.body).toContain("dep-owned react module")
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
+
+  test("maps installed-layout @hachej/boring-workspace imports to the host singleton", async () => {
+    // In an installed CLI the workspace package resolves under
+    // node_modules/@hachej/boring-workspace (not packages/workspace). The
+    // root import must hit the host singleton — a proxied second copy reads
+    // the wrong React context and drags un-interop'd app-level CJS deps.
+    const pluginRoot = await makeTempDir("plugin-front-runtime-installed-ws-")
+    const plugin = await writeRuntimePlugin(pluginRoot, {
+      "front/index.tsx": 'import { useApiBaseUrl } from "@hachej/boring-workspace"\nexport const hook = useApiBaseUrl\n',
+      "node_modules/@hachej/boring-workspace/package.json": JSON.stringify({
+        name: "@hachej/boring-workspace",
+        version: "0.0.0",
+        exports: { ".": "./dist/workspace.js" },
+      }),
+      "node_modules/@hachej/boring-workspace/dist/workspace.js": "export const useApiBaseUrl = () => { throw new Error('proxied copy must not load') }\n",
+    })
+
+    const host = await createPluginFrontRuntimeHost()
+    const app = fastify({ logger: false })
+    await host.registerRoutes(app)
+    host.trackPlugin({ workspaceId: "workspace-a", plugin, revision: 1, frontEntrySubpath: "front/index.tsx" })
+
+    try {
+      const entry = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/index.tsx`,
+      })
+      expect(entry.statusCode).toBe(200)
+      expect(entry.body).toContain("/__vite/singleton/%40hachej%2Fboring-workspace")
+      expect(entry.body).not.toContain("boring-workspace%2Fdist%2Fworkspace.js")
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
+
+  test("rejects plugin-local dependency attempts to import arbitrary /@fs paths", async () => {
+    const pluginRoot = await makeTempDir("plugin-front-runtime-bad-dep-")
+    const plugin = await writeRuntimePlugin(pluginRoot, {
+      "front/index.tsx": 'import { value } from "bad-lib"\nexport const answer = value\n',
+      "node_modules/bad-lib/package.json": JSON.stringify({ name: "bad-lib", version: "1.0.0", main: "index.js" }),
+      "node_modules/bad-lib/index.js": 'import secret from "/@fs/etc/passwd?raw"\nexport const value = secret\n',
+    })
+
+    const host = await createPluginFrontRuntimeHost()
+    const app = fastify({ logger: false })
+    await host.registerRoutes(app)
+    host.trackPlugin({ workspaceId: "workspace-a", plugin, revision: 1, frontEntrySubpath: "front/index.tsx" })
+
+    try {
+      const entry = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/index.tsx`,
+      })
+      expect(entry.statusCode).toBe(200)
+      const depPath = entry.body.match(new RegExp(`"(${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/[^"']*)"`))?.[1]
+      expect(depPath, entry.body).toBeTruthy()
+
+      const dep = await app.inject({ method: "GET", url: depPath! })
+      expect(dep.statusCode).toBe(400)
+      expect(dep.body).toContain(ErrorCode.enum.PLUGIN_RUNTIME_UNSAFE_IMPORT)
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
+
+  test("rejects plugin-local dependency CSS url attempts to reference arbitrary /@fs paths", async () => {
+    const pluginRoot = await makeTempDir("plugin-front-runtime-bad-dep-css-")
+    const plugin = await writeRuntimePlugin(pluginRoot, {
+      "front/index.tsx": 'import "bad-css-lib"\nexport const ok = true\n',
+      "node_modules/bad-css-lib/package.json": JSON.stringify({ name: "bad-css-lib", version: "1.0.0", main: "index.js" }),
+      "node_modules/bad-css-lib/index.js": 'import "./style.css"\nexport const value = true\n',
+      "node_modules/bad-css-lib/style.css": 'body { background: url("/@fs/etc/passwd"); }\n',
+    })
+
+    const host = await createPluginFrontRuntimeHost()
+    const app = fastify({ logger: false })
+    await host.registerRoutes(app)
+    host.trackPlugin({ workspaceId: "workspace-a", plugin, revision: 1, frontEntrySubpath: "front/index.tsx" })
+
+    try {
+      const entry = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/index.tsx`,
+      })
+      expect(entry.statusCode).toBe(200)
+      const depPath = entry.body.match(new RegExp(`"(${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/[^"']*)"`))?.[1]
+      expect(depPath, entry.body).toBeTruthy()
+
+      const dep = await app.inject({ method: "GET", url: depPath! })
+      expect(dep.statusCode, dep.body).toBe(200)
+      const cssPath = dep.body.match(new RegExp(`"(${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/[^"']*style\.css[^"']*)"`))?.[1]
+      expect(cssPath, dep.body).toBeTruthy()
+
+      const css = await app.inject({ method: "GET", url: cssPath! })
+      expect(css.statusCode).toBe(400)
+      expect(css.body).toContain(ErrorCode.enum.PLUGIN_RUNTIME_UNSAFE_IMPORT)
     } finally {
       await app.close()
     }
@@ -530,6 +770,7 @@ describe("pluginFrontRuntime", () => {
       const jsxDevSingletonCode = __testingRuntimeSingletonModuleCode("react/jsx-dev-runtime") ?? ""
       expect(jsxDevSingletonCode).toContain("export default normalized")
       expect(jsxDevSingletonCode).toContain("export const jsxDEV = normalized")
+      expect(__testingRuntimeSingletonModuleCode("@hachej/boring-ui-kit")).toBeFalsy()
 
       await expect(host.serve({
         workspaceId: "workspace-a",
@@ -681,6 +922,93 @@ describe("pluginFrontRuntime", () => {
           code: ErrorCode.enum.PATH_NOT_FOUND,
         }),
       ]))
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
+
+  test("serves a CommonJS plugin dependency as browser-evaluable ESM with interop", async () => {
+    const pluginRoot = await makeTempDir("plugin-front-runtime-cjs-interop-")
+    const plugin = await writeRuntimePlugin(pluginRoot, {
+      "front/index.tsx": 'import { getVal } from "cjs-lib/compat/get"\nexport const answer = getVal\n',
+      "node_modules/cjs-lib/package.json": JSON.stringify({ name: "cjs-lib", version: "1.0.0", main: "index.js" }),
+      "node_modules/cjs-lib/index.js": "module.exports = { hi: 1 }\n",
+      // CJS that re-exports through a nested require() — both the bare
+      // `module.exports`/`exports` globals AND the synchronous require() must be
+      // shimmed for the browser, or the whole importing graph dies.
+      "node_modules/cjs-lib/compat/get.js": 'module.exports.getVal = require("../dist/inner.js").value;\n',
+      "node_modules/cjs-lib/dist/inner.js": 'Object.defineProperty(exports, "__esModule", { value: true });\nexports.value = "DEEP-CJS-VALUE";\n',
+    })
+
+    const host = await createPluginFrontRuntimeHost()
+    const app = fastify({ logger: false })
+    await host.registerRoutes(app)
+    host.trackPlugin({ workspaceId: "workspace-a", plugin, revision: 1, frontEntrySubpath: "front/index.tsx" })
+
+    try {
+      const entry = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/index.tsx`,
+      })
+      expect(entry.statusCode, entry.body).toBe(200)
+      const depPath = entry.body.match(new RegExp(`"(${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/[^"']*)"`))?.[1]
+      expect(depPath, entry.body).toBeTruthy()
+
+      const dep = await app.inject({ method: "GET", url: depPath! })
+      expect(dep.statusCode, dep.body).toBe(200)
+      // The served module must be real ESM the browser can evaluate: a default
+      // export, the lexer-detected named export, and the nested require()
+      // rewritten to a hoisted proxy import (never a bare top-level require()).
+      expect(dep.body).toContain("export default")
+      expect(dep.body).toContain("export const getVal")
+      expect(dep.body).toMatch(new RegExp(`import \\* as [^\\n]*from "${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/`))
+      // No un-shimmed top-level CJS globals leak out (the only `module.exports`
+      // text left is inside the wrapped IIFE that receives them as parameters).
+      const beforeWrapper = dep.body.slice(0, dep.body.indexOf("(function (module, exports, require)"))
+      expect(beforeWrapper).not.toMatch(/\bmodule\.exports\b/)
+      expect(beforeWrapper).not.toMatch(/\bexports\./)
+
+      // The deep nested require() target is itself served as interop'd ESM.
+      const innerPath = dep.body.match(new RegExp(`"(${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/[^"']*inner[^"']*)"`))?.[1]
+      expect(innerPath, dep.body).toBeTruthy()
+      const inner = await app.inject({ method: "GET", url: innerPath! })
+      expect(inner.statusCode, inner.body).toBe(200)
+      expect(inner.body).toContain("DEEP-CJS-VALUE")
+      expect(inner.body).toContain("export default")
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
+
+  test("resolves a dependency subpath to the actual subpath file, not the package main", async () => {
+    const pluginRoot = await makeTempDir("plugin-front-runtime-subpath-")
+    const plugin = await writeRuntimePlugin(pluginRoot, {
+      "front/index.tsx": 'import { value } from "sub-lib/es6"\nexport const answer = value\n',
+      "node_modules/sub-lib/package.json": JSON.stringify({ name: "sub-lib", version: "1.0.0", main: "lib/index.js", module: "es6/index.js" }),
+      "node_modules/sub-lib/lib/index.js": 'export const value = "MAIN-SHOULD-NOT-LOAD"\n',
+      "node_modules/sub-lib/es6/index.js": 'export const value = "ES6-SUBPATH-LOADED"\n',
+    })
+
+    const host = await createPluginFrontRuntimeHost()
+    const app = fastify({ logger: false })
+    await host.registerRoutes(app)
+    host.trackPlugin({ workspaceId: "workspace-a", plugin, revision: 1, frontEntrySubpath: "front/index.tsx" })
+
+    try {
+      const entry = await app.inject({
+        method: "GET",
+        url: `${PLUGIN_FRONT_RUNTIME_BASE_PATH}/workspace-a/runtime-plugin/1/front/index.tsx`,
+      })
+      expect(entry.statusCode, entry.body).toBe(200)
+      const depPath = entry.body.match(new RegExp(`"(${PLUGIN_FRONT_RUNTIME_BASE_PATH}/__vite/proxy/[^"']*)"`))?.[1]
+      expect(depPath, entry.body).toBeTruthy()
+
+      const dep = await app.inject({ method: "GET", url: depPath! })
+      expect(dep.statusCode, dep.body).toBe(200)
+      // The bare `sub-lib/es6` specifier must resolve to es6/index.js — the
+      // subpath the import named — and never collapse to the package main.
+      expect(dep.body).toContain("ES6-SUBPATH-LOADED")
+      expect(dep.body).not.toContain("MAIN-SHOULD-NOT-LOAD")
     } finally {
       await app.close()
     }

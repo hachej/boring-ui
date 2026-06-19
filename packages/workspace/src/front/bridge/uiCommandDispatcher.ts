@@ -9,6 +9,13 @@ import type { SurfaceShellApi, OpenPanelConfig } from "../chrome/artifact-surfac
 import type { UiCommand } from "./types"
 import type { SurfaceOpenRequest } from "../../shared/types/surface"
 
+/**
+ * Browser CustomEvent name dispatched on `window` when a `showNotification`
+ * UI command is dispatched from the server. Keep in sync with
+ * `WORKSPACE_COMMAND_NOTIFY_EVENT` in `@hachej/boring-agent/shared`.
+ */
+export const WORKSPACE_COMMAND_NOTIFY_EVENT = "boring-ui:command-notify"
+
 export interface DispatchContext {
   /**
    * Imperative handle to the workbench surface. Function (getter) so a
@@ -24,6 +31,13 @@ export interface DispatchContext {
   openWorkbenchSources?: () => void
   /** Close the workbench pane when a command opened it only for an ephemeral task. */
   closeWorkbench?: () => void
+  /**
+   * Park an op that couldn't run because the surface never mounted within the
+   * retry budget (collapsed surface / warmup overlay). The host flushes parked
+   * ops when the SurfaceShell next becomes ready. Without this the op is
+   * silently dropped.
+   */
+  enqueue?: (run: (surface: SurfaceShellApi) => void) => void
 }
 
 const KNOWN_KINDS = new Set([
@@ -76,7 +90,14 @@ function runWhenSurfaceReady(
     run(surface)
     return
   }
-  if (!ctx.isWorkbenchOpen() || attempts <= 0) return
+  if (!ctx.isWorkbenchOpen()) return
+  if (attempts <= 0) {
+    // Out of retry budget but the workbench is open and just hasn't mounted
+    // its SurfaceShell yet (collapsed / warming up). Park the op so it replays
+    // on surface ready instead of being silently dropped.
+    ctx.enqueue?.(run)
+    return
+  }
   requestAnimationFrame(() => runWhenSurfaceReady(ctx, run, attempts - 1))
 }
 
@@ -189,6 +210,22 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
     }
     case "closeWorkbenchLeftPane": {
       runWhenSurfaceReady(ctx, (surface) => surface.closeWorkbenchLeftPane())
+      return
+    }
+    case "showNotification": {
+      const msg = strParam(cmd.params, "msg")
+      if (!msg) return
+      const rawLevel = cmd.params?.level
+      const level: "success" | "error" | "info" | "warn" =
+        rawLevel === "error" ? "error" : rawLevel === "warn" ? "warn" : "info"
+      const command = strParam(cmd.params, "command") ?? undefined
+      if (typeof globalThis.dispatchEvent === "function" && typeof CustomEvent !== "undefined") {
+        globalThis.dispatchEvent(
+          new CustomEvent(WORKSPACE_COMMAND_NOTIFY_EVENT, {
+            detail: { message: msg, tone: level, command },
+          }),
+        )
+      }
       return
     }
   }

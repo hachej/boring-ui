@@ -1,5 +1,5 @@
 import React, { useSyncExternalStore } from "react"
-import { render, screen, waitFor } from "@testing-library/react"
+import { act, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises"
 import { join } from "node:path"
@@ -200,7 +200,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl,
+      frontTarget: { kind: "module-url", entryUrl: frontUrl, revision: 1 },
       boring: { front: "./front.mjs" },
     })
 
@@ -213,7 +213,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 2,
-      frontUrl,
+      frontTarget: { kind: "module-url", entryUrl: frontUrl, revision: 1 },
       boring: { front: "./front.mjs" },
     })
 
@@ -224,14 +224,79 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl,
+      frontTarget: { kind: "module-url", entryUrl: frontUrl, revision: 1 },
       boring: { front: "./front.mjs" },
     })
 
     expect(screen.getByTestId("hot-pane")).toHaveTextContent("version two")
   })
 
-  test("prefers frontTarget.entryUrl over legacy frontUrl payloads", async () => {
+  test("command-originated /reload reconnects and re-imports replayed same-revision plugins without lifecycle loops", async () => {
+    let text = "version one"
+    const importFront = vi.fn(async (): Promise<{ default: BoringFrontFactoryWithId }> => ({
+      default: hotPlugin("hot-plugin", (api) => {
+        api.registerPanel({
+          id: "hot-pane",
+          label: "Hot Pane",
+          component: function HotPane() {
+            return React.createElement("div", { "data-testid": "hot-pane" }, text)
+          },
+        })
+      }),
+    }))
+
+    function ReloadHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <PaneRenderer id="hot-pane" />
+        </RegistryProvider>
+      )
+    }
+
+    render(<ReloadHarness />)
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      workspaceId: "test-workspace",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
+      boring: { front: "./front.mjs" },
+    })
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version one"))
+    expect(importFront).toHaveBeenCalledTimes(1)
+
+    text = "version two"
+    window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: { reloaded: true } }))
+    await waitFor(() => expect(MockEventSource.instances).toHaveLength(2))
+    expect(MockEventSource.instances[0].closed).toBe(true)
+
+    MockEventSource.instances[1].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      workspaceId: "test-workspace",
+      replay: true,
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
+      boring: { front: "./front.mjs" },
+    })
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version two"))
+    expect(importFront).toHaveBeenCalledTimes(2)
+
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    expect(MockEventSource.instances).toHaveLength(2)
+  })
+
+  test("imports native frontTarget entry urls through importFront", async () => {
     const importFront = vi.fn(async () => ({
       default: hotPlugin("hot-plugin", (api) => {
         api.registerPanel({
@@ -266,7 +331,6 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/legacy-front.mjs",
       frontTarget: { kind: "native", entryUrl: "/runtime/front-target.mjs", revision: 1, trust: "local-trusted-native" },
       boring: { front: "./front.mjs" },
     })
@@ -374,7 +438,7 @@ describe("useAgentPluginHotReload", () => {
         id: "csv-plugin",
         version: "1.0.0",
         revision: 1,
-        frontUrl: "/@fs/csv-plugin.tsx",
+        frontTarget: { kind: "module-url", entryUrl: "/@fs/csv-plugin.tsx", revision: 1 },
         boring: { front: "front/index.tsx" },
       })
 
@@ -397,6 +461,115 @@ describe("useAgentPluginHotReload", () => {
     } finally {
       consoleError.mockRestore()
       window.removeEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
+    }
+  })
+
+  test("reports an exhausted front import failure back to the server diagnostics channel", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+    const reportFrontError = vi.fn()
+    const importFront = vi.fn(async (): Promise<{ default: BoringFrontFactoryWithId }> => {
+      throw new Error("exports is not defined")
+    })
+
+    function FailureHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({
+          workspaceId: "test-workspace",
+          importFront,
+          reportFrontError,
+          // Single attempt, no delay: exhaust the retry immediately.
+          frontImportRetry: { attempts: 1, delayMs: 0 },
+        })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+        </RegistryProvider>
+      )
+    }
+
+    try {
+      render(<FailureHarness />)
+      MockEventSource.instances[0].dispatch("boring.plugin.load", {
+        type: "boring.plugin.load",
+        id: "ccusage-dashboard",
+        version: "1.0.0",
+        revision: 3,
+        frontTarget: { kind: "module-url", entryUrl: "/runtime/ccusage.mjs", revision: 3 },
+        boring: { front: "front/index.tsx" },
+      })
+
+      await waitFor(() => {
+        expect(reportFrontError).toHaveBeenCalledTimes(1)
+      })
+      expect(reportFrontError).toHaveBeenCalledWith(expect.objectContaining({
+        pluginId: "ccusage-dashboard",
+        revision: 3,
+        message: "exports is not defined",
+        url: "/runtime/ccusage.mjs",
+      }))
+    } finally {
+      consoleError.mockRestore()
+    }
+  })
+
+  test("default front-error reporter POSTs the failure to the server endpoint", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 204 } as Response))
+    const originalFetch = globalThis.fetch
+    ;(globalThis as { fetch?: typeof fetch }).fetch = fetchMock as unknown as typeof fetch
+    const importFront = vi.fn(async (): Promise<{ default: BoringFrontFactoryWithId }> => {
+      throw new Error("recharts proxy failed")
+    })
+
+    function FailureHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({
+          apiBaseUrl: "/agent",
+          workspaceId: "test-workspace",
+          importFront,
+          frontImportRetry: { attempts: 1, delayMs: 0 },
+        })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+        </RegistryProvider>
+      )
+    }
+
+    try {
+      render(<FailureHarness />)
+      MockEventSource.instances[0].dispatch("boring.plugin.load", {
+        type: "boring.plugin.load",
+        id: "ccusage-dashboard",
+        version: "1.0.0",
+        revision: 2,
+        frontTarget: { kind: "module-url", entryUrl: "/runtime/ccusage.mjs", revision: 2 },
+        boring: { front: "front/index.tsx" },
+      })
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+      })
+      const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+      expect(url).toBe("/agent/api/v1/agent-plugins/ccusage-dashboard/front-error?workspaceId=test-workspace")
+      expect(init.method).toBe("POST")
+      expect(JSON.parse(String(init.body))).toEqual(expect.objectContaining({
+        revision: 2,
+        message: "recharts proxy failed",
+      }))
+    } finally {
+      consoleError.mockRestore()
+      ;(globalThis as { fetch?: typeof fetch }).fetch = originalFetch
     }
   })
 
@@ -443,7 +616,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/hook-front.tsx",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/hook-front.tsx", revision: 1 },
       boring: { front: "front/index.tsx" },
     })
 
@@ -480,7 +653,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/front.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
 
@@ -541,7 +714,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/front.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version 1"))
@@ -554,12 +727,108 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 2,
-      frontUrl: "/@fs/front.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version 2"))
     expect(screen.getByTestId("panel-ids")).not.toHaveTextContent("removed-pane")
     expect(screen.getByTestId("all-panel-ids")).not.toHaveTextContent("hidden-removed-pane")
+  })
+
+  test("renders runtime left tabs by resolving their panelId component", async () => {
+    const importFront = async (): Promise<{ default: BoringFrontFactoryWithId }> => ({
+      default: hotPlugin("hot-plugin", (api) => {
+        api.registerPanel({
+          id: "hot-left-pane",
+          label: "Hot Left Pane",
+          component: function HotLeftPane() {
+            return <div data-testid="hot-left-pane">left tab content</div>
+          },
+        })
+        api.registerLeftTab({
+          id: "hot-left-tab",
+          title: "Hot Left",
+          panelId: "hot-left-pane",
+        })
+      }),
+    })
+
+    function LeftTabHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <PaneRenderer id="hot-left-tab" />
+        </RegistryProvider>
+      )
+    }
+
+    render(<LeftTabHarness />)
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
+      boring: { front: "./front.mjs" },
+    })
+
+    await waitFor(() => expect(screen.getByTestId("hot-left-pane")).toHaveTextContent("left tab content"))
+  })
+
+  test("warns when a left tab references an unknown panelId", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    try {
+      const importFront = async (): Promise<{ default: BoringFrontFactoryWithId }> => ({
+        default: hotPlugin("hot-plugin", (api) => {
+          api.registerPanel({
+            id: "hot-plugin.panel",
+            label: "Real Panel",
+            component: function RealPanel() { return null },
+          })
+          api.registerLeftTab({
+            id: "hot-plugin.tab",
+            title: "Typo Tab",
+            panelId: "hot-plugin-typo.panel",
+          })
+        }),
+      })
+
+      function WarnHarness() {
+        const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+        const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+        const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+        function Listener() {
+          useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+          return null
+        }
+        return (
+          <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+            <Listener />
+          </RegistryProvider>
+        )
+      }
+
+      render(<WarnHarness />)
+      MockEventSource.instances[0].dispatch("boring.plugin.load", {
+        type: "boring.plugin.load",
+        id: "hot-plugin",
+        version: "1.0.0",
+        revision: 1,
+        frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
+        boring: { front: "./front.mjs" },
+      })
+
+      await waitFor(() => expect(warn).toHaveBeenCalledWith(expect.stringContaining('references unknown panelId "hot-plugin-typo.panel"')))
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   test("updates command palette entries when plugin front registrations change", async () => {
@@ -602,7 +871,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/front.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("command-list")).toHaveTextContent("hot-plugin.open:Open Hot Plugin"))
@@ -613,7 +882,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 2,
-      frontUrl: "/@fs/front.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("command-list")).toHaveTextContent("hot-plugin.open:Open Hot Plugin v2"))
@@ -663,7 +932,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/front.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("catalog-list")).toHaveTextContent("hot-catalog:Hot Catalog"))
@@ -674,7 +943,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 2,
-      frontUrl: "/@fs/front.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("catalog-list")).toHaveTextContent("hot-catalog:Hot Catalog v2"))
@@ -729,7 +998,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/front.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("loaded"))
@@ -743,7 +1012,7 @@ describe("useAgentPluginHotReload", () => {
     expect(screen.getByTestId("panel-ids")).toHaveTextContent("")
   })
 
-  test("warns and preserves previous UI when a hot-load revision adds provider/binding contributions", async () => {
+  test("warns but refreshes supported UI when a hot-load revision includes provider/binding contributions", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
     const importFront = async (_url: string, revision: number): Promise<{ default: BoringFrontFactoryWithId }> => ({
       default: hotPlugin("provider-plugin", (api) => {
@@ -760,7 +1029,7 @@ describe("useAgentPluginHotReload", () => {
           id: "hot-pane",
           label: "Hot Pane",
           component: function HotPane() {
-            return React.createElement("div", { "data-testid": "hot-pane" }, revision === 1 ? "version one" : "should not mount")
+            return React.createElement("div", { "data-testid": "hot-pane" }, revision === 1 ? "version one" : "version two")
           },
         })
       }),
@@ -809,7 +1078,7 @@ describe("useAgentPluginHotReload", () => {
         id: "provider-plugin",
         version: "1.0.0",
         revision: 1,
-        frontUrl: "/@fs/front.mjs",
+        frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
         boring: { front: "./front.mjs" },
       })
       await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version one"))
@@ -819,12 +1088,12 @@ describe("useAgentPluginHotReload", () => {
         id: "provider-plugin",
         version: "1.0.0",
         revision: 2,
-        frontUrl: "/@fs/front.mjs",
+        frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
         boring: { front: "./front.mjs" },
       })
 
       await waitFor(() => expect(warn).toHaveBeenCalledWith(expect.stringContaining("Dynamic provider/binding mounting is not implemented")))
-      expect(screen.getByTestId("hot-pane")).toHaveTextContent("version one")
+      await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version two"))
     } finally {
       warn.mockRestore()
     }
@@ -901,7 +1170,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/slow-one.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/slow-one.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
     MockEventSource.instances[0].dispatch("boring.plugin.load", {
@@ -909,7 +1178,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 2,
-      frontUrl: "/@fs/fast-two.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/fast-two.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
 
@@ -964,7 +1233,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/slow.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/slow.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(oldImportCalls).toBe(1))
@@ -976,7 +1245,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/fresh.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/fresh.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     })
 
@@ -1014,7 +1283,9 @@ describe("useAgentPluginHotReload", () => {
       const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
       const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
       function Listener() {
-        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        // Disable the cold-start auto-retry so this test exercises the
+        // single-attempt fail → error-event → recover-on-next-dispatch path.
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront, frontImportRetry: { attempts: 1 } })
         return null
       }
       return (
@@ -1032,7 +1303,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl: "/@fs/flaky.mjs",
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/flaky.mjs", revision: 1 },
       boring: { front: "./front.mjs" },
     }
       MockEventSource.instances[0].dispatch("boring.plugin.load", event)
@@ -1049,6 +1320,68 @@ describe("useAgentPluginHotReload", () => {
       MockEventSource.instances[0].dispatch("boring.plugin.load", event)
       await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("retry recovered"))
     } finally {
+      window.removeEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
+    }
+  })
+
+  test("auto-recovers a transient cold-start front import failure without a re-dispatch", async () => {
+    // Mirrors the hard-refresh case where the first import evaluates against a
+    // not-yet-warm singleton graph and throws, but the same revision imports
+    // cleanly a moment later. The hook must retry in place and register the
+    // plugin without a workspace switch or another load event.
+    const browserEvents: Array<Record<string, unknown>> = []
+    const listener = (event: Event) => browserEvents.push((event as CustomEvent<Record<string, unknown>>).detail)
+    window.addEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
+    let attempts = 0
+    const importFront = async (): Promise<{ default?: BoringFrontFactoryWithId }> => {
+      attempts += 1
+      if (attempts < 3) throw new Error("definePlugin: `id` is required and must be a non-empty string")
+      return {
+        default: hotPlugin("hot-plugin", (api) => {
+          api.registerPanel({
+            id: "hot-pane",
+            label: "Hot Pane",
+            component: function HotPane() {
+              return React.createElement("div", { "data-testid": "hot-pane" }, "auto recovered")
+            },
+          })
+        }),
+      }
+    }
+
+    function AutoRetryHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront, frontImportRetry: { attempts: 4, delayMs: 5 } })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <PaneRenderer id="hot-pane" />
+        </RegistryProvider>
+      )
+    }
+
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    try {
+      render(<AutoRetryHarness />)
+      MockEventSource.instances[0].dispatch("boring.plugin.load", {
+        type: "boring.plugin.load",
+        id: "hot-plugin",
+        version: "1.0.0",
+        revision: 1,
+        frontTarget: { kind: "module-url", entryUrl: "/@fs/flaky.mjs", revision: 1 },
+        boring: { front: "./front.mjs" },
+      })
+      await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("auto recovered"))
+      expect(attempts).toBe(3)
+      // No terminal front-error should be emitted once the retry succeeds.
+      expect(browserEvents).not.toContainEqual(expect.objectContaining({ type: "boring.plugin.front-error" }))
+    } finally {
+      consoleWarn.mockRestore()
       window.removeEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
     }
   })
@@ -1071,7 +1404,9 @@ describe("useAgentPluginHotReload", () => {
         return await importFrontFromDisk(url)
       }, [])
       function Listener() {
-        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        // Disable the cold-start auto-retry so this test exercises the
+        // single-attempt "keep previous version on a broken replacement" path.
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront, frontImportRetry: { attempts: 1 } })
         return null
       }
       return (
@@ -1089,7 +1424,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl,
+      frontTarget: { kind: "module-url", entryUrl: frontUrl, revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("stable"))
@@ -1100,7 +1435,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 2,
-      frontUrl,
+      frontTarget: { kind: "module-url", entryUrl: frontUrl, revision: 1 },
       boring: { front: "./front.mjs" },
     })
 
@@ -1120,7 +1455,7 @@ describe("useAgentPluginHotReload", () => {
         id: "hot-plugin",
         version: "1.0.0",
         revision: 3,
-        frontUrl,
+        frontTarget: { kind: "module-url", entryUrl: frontUrl, revision: 1 },
         boring: { front: "./front.mjs" },
       })
       await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("recovered"))
@@ -1156,7 +1491,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl,
+      frontTarget: { kind: "module-url", entryUrl: frontUrl, revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("loaded"))
@@ -1184,7 +1519,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl,
+      frontTarget: { kind: "module-url", entryUrl: frontUrl, revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("loaded"))
@@ -1209,7 +1544,7 @@ describe("useAgentPluginHotReload", () => {
       id: "hot-plugin",
       version: "1.0.0",
       revision: 1,
-      frontUrl,
+      frontTarget: { kind: "module-url", entryUrl: frontUrl, revision: 1 },
       boring: { front: "./front.mjs" },
     })
     await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("loaded"))
@@ -1221,5 +1556,160 @@ describe("useAgentPluginHotReload", () => {
     })
 
     await waitFor(() => expect(screen.getByTestId("pane-missing")).toHaveTextContent("missing"))
+  })
+
+  test("keeps panels registered through a /reload reconnect and re-imports the replayed snapshot", async () => {
+    const presence: boolean[] = []
+    let importText = "v1"
+    let importCalls = 0
+    const importFront = async (): Promise<{ default?: BoringFrontFactoryWithId }> => {
+      importCalls += 1
+      const text = importText
+      return {
+        default: hotPlugin("hot-plugin", (api) => {
+          api.registerPanel({
+            id: "hot-pane",
+            label: "Hot Pane",
+            component: function HotPane() {
+              return React.createElement("div", { "data-testid": "hot-pane" }, text)
+            },
+          })
+        }),
+      }
+    }
+
+    function PresenceProbe() {
+      const registry = useRegistry()
+      useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot)
+      presence.push(Boolean(registry.get("hot-pane")))
+      return null
+    }
+
+    function ReloadHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <PaneRenderer id="hot-pane" />
+          <PresenceProbe />
+        </RegistryProvider>
+      )
+    }
+
+    render(<ReloadHarness />)
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/v1.mjs", revision: 1 },
+      boring: { front: "./front.mjs" },
+    })
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("v1"))
+
+    // After the initial load the panel must never disappear, even momentarily.
+    const fromHere = presence.length
+    importText = "v2"
+
+    // The `/reload` slash command forwards the server response, which carries no
+    // "boring.plugin.*" type — that is what triggers the reload reconnect.
+    act(() => {
+      window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: { reloaded: ["hot-plugin"] } }))
+    })
+
+    // A new stream opens without tearing the previous registration down.
+    await waitFor(() => expect(MockEventSource.instances.length).toBe(2))
+    MockEventSource.instances[1].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      replay: true,
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/v2.mjs", revision: 1 },
+      boring: { front: "./front.mjs" },
+    })
+
+    // The replayed snapshot re-imports at the unchanged revision (fresh module).
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("v2"))
+    expect(importCalls).toBe(2)
+    // No render between the load and now ever observed the panel missing.
+    expect(presence.slice(fromHere).every(Boolean)).toBe(true)
+  })
+
+  test("/reload reconnect still prunes plugins absent from the replayed snapshot", async () => {
+    const importFront = async (frontUrl: string): Promise<{ default?: BoringFrontFactoryWithId }> => {
+      const id = frontUrl.includes("alpha") ? "alpha" : "beta"
+      return {
+        default: hotPlugin(id, (api) => {
+          api.registerPanel({
+            id: `${id}-pane`,
+            label: `${id} Pane`,
+            component: function Pane() {
+              return React.createElement("div", { "data-testid": `${id}-pane` }, id)
+            },
+          })
+        }),
+      }
+    }
+
+    function TwoPluginHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <PaneRenderer id="alpha-pane" />
+          <AllPanelIds />
+        </RegistryProvider>
+      )
+    }
+
+    render(<TwoPluginHarness />)
+    for (const id of ["alpha", "beta"]) {
+      MockEventSource.instances[0].dispatch("boring.plugin.load", {
+        type: "boring.plugin.load",
+        id,
+        version: "1.0.0",
+        revision: 1,
+        frontTarget: { kind: "module-url", entryUrl: `/@fs/${id}.mjs`, revision: 1 },
+        boring: { front: "./front.mjs" },
+      })
+    }
+    await waitFor(() => expect(screen.getByTestId("all-panel-ids")).toHaveTextContent("alpha-pane"))
+    await waitFor(() => expect(screen.getByTestId("all-panel-ids")).toHaveTextContent("beta-pane"))
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: { reloaded: ["alpha", "beta"] } }))
+    })
+    await waitFor(() => expect(MockEventSource.instances.length).toBe(2))
+
+    // Only alpha replays; beta is gone from the new snapshot.
+    MockEventSource.instances[1].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "alpha",
+      version: "1.0.0",
+      revision: 1,
+      replay: true,
+      frontTarget: { kind: "module-url", entryUrl: "/@fs/alpha.mjs", revision: 1 },
+      boring: { front: "./front.mjs" },
+    })
+    MockEventSource.instances[1].dispatch("boring.plugin.replay-complete", {
+      type: "boring.plugin.replay-complete",
+      workspaceId: "test-workspace",
+    })
+
+    await waitFor(() => expect(screen.getByTestId("all-panel-ids")).not.toHaveTextContent("beta-pane"))
+    expect(screen.getByTestId("all-panel-ids")).toHaveTextContent("alpha-pane")
   })
 })

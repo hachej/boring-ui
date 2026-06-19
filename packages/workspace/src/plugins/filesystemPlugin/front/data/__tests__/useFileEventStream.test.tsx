@@ -105,9 +105,11 @@ describe("useFileEventStream", () => {
     )
   })
 
-  it("emits filesystem changed onto the bus with cause:remote on a write event", () => {
-    const fn = vi.fn()
-    events.on(filesystemEvents.changed, fn)
+  it("emits filesystem created + changed onto the bus for a write event", () => {
+    const created = vi.fn()
+    const changed = vi.fn()
+    events.on(filesystemEvents.created, created)
+    events.on(filesystemEvents.changed, changed)
     renderHook(() => useFileEventStream(), { wrapper: Wrapper })
 
     MockEventSource.lastInstance().dispatch(
@@ -115,7 +117,10 @@ describe("useFileEventStream", () => {
       envelope({ op: "write", path: "src/a.ts", mtimeMs: 9 }),
     )
 
-    expect(fn).toHaveBeenCalledWith(
+    expect(created).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "src/a.ts", kind: "file", cause: "remote" }),
+    )
+    expect(changed).toHaveBeenCalledWith(
       expect.objectContaining({ path: "src/a.ts", cause: "remote" }),
     )
   })
@@ -166,8 +171,10 @@ describe("useFileEventStream", () => {
   })
 
   it("dedupes by eventId — repeated envelopes only relay once", () => {
-    const fn = vi.fn()
-    events.on(filesystemEvents.changed, fn)
+    const created = vi.fn()
+    const changed = vi.fn()
+    events.on(filesystemEvents.created, created)
+    events.on(filesystemEvents.changed, changed)
     renderHook(() => useFileEventStream(), { wrapper: Wrapper })
 
     const dup = JSON.stringify({
@@ -180,7 +187,8 @@ describe("useFileEventStream", () => {
     MockEventSource.lastInstance().dispatch("change", dup)
     MockEventSource.lastInstance().dispatch("change", dup)
 
-    expect(fn).toHaveBeenCalledTimes(1)
+    expect(created).toHaveBeenCalledTimes(1)
+    expect(changed).toHaveBeenCalledTimes(1)
   })
 
   it("on resync-required: invalidates file/tree/stat/search keys, keeps stream open", () => {

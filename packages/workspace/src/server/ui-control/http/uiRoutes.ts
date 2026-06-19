@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z, type ZodSchema } from "zod";
-import type { WorkspaceBridge, UiCommand } from "../../../shared/ui-bridge";
+import type { UiBridge, UiCommand } from "../../../shared/ui-bridge";
+import { createPaneRenderStatusStore, type PaneRenderStatusStore } from "../panelStatus/paneRenderStatusStore";
+import { paneRenderStatusRoutes, resolvePaneStatusWorkspaceId } from "./paneRenderStatusRoutes";
 
 const UI_BRIDGE_PROTOCOL_VERSION = 1;
 const HEARTBEAT_MS = 15_000;
@@ -10,7 +12,7 @@ const setStateBodySchema = z.object({
   causedBy: z.enum(["user", "agent", "restore"]).optional(),
 });
 
-const emitUiEffectBodySchema = z.object({
+const postCommandBodySchema = z.object({
   kind: z.string().min(1),
   params: z.record(z.unknown()).default({}),
 });
@@ -39,14 +41,16 @@ function createBodyValidator<T>(schema: ZodSchema<T>) {
 }
 
 export interface UiRoutesOptions {
-  bridge?: WorkspaceBridge;
-  getBridge?: (request: FastifyRequest) => WorkspaceBridge | Promise<WorkspaceBridge>;
+  bridge?: UiBridge;
+  getBridge?: (request: FastifyRequest) => UiBridge | Promise<UiBridge>;
+  getWorkspaceId?: (request: FastifyRequest) => string | undefined | Promise<string | undefined>;
   /**
    * Server/plugin-owned state slots preserved across browser full-state PUTs.
    * Browser UI snapshots are replace-style for normal workspace state, but
    * these slots are published out-of-band by server plugins.
    */
   preserveStateKeys?: string[];
+  paneStatusStore?: PaneRenderStatusStore;
 }
 
 export function uiRoutes(
@@ -55,9 +59,14 @@ export function uiRoutes(
   done: (err?: Error) => void,
 ): void {
   const fallbackBridge = opts.bridge;
+  const paneStatusStore = opts.paneStatusStore ?? createPaneRenderStatusStore();
+  const getPaneWorkspaceId = async (request: FastifyRequest) => (await opts.getWorkspaceId?.(request)) ?? resolvePaneStatusWorkspaceId(request);
+  const touchUi = async (request: FastifyRequest) => {
+    paneStatusStore.touchUi(await getPaneWorkspaceId(request));
+  };
   const validateSetState = createBodyValidator(setStateBodySchema);
-  const validateEmitUiEffect = createBodyValidator(emitUiEffectBodySchema);
-  const resolveBridge = async (request: FastifyRequest): Promise<WorkspaceBridge> => {
+  const validatePostCommand = createBodyValidator(postCommandBodySchema);
+  const resolveBridge = async (request: FastifyRequest): Promise<UiBridge> => {
     if (opts.getBridge) return await opts.getBridge(request);
     if (fallbackBridge) return fallbackBridge;
     throw new Error("uiRoutes requires bridge or getBridge");
@@ -69,7 +78,10 @@ export function uiRoutes(
     params: cmd.params,
   });
 
+  paneRenderStatusRoutes(app, { store: paneStatusStore, getWorkspaceId: getPaneWorkspaceId }, () => {});
+
   app.get("/api/v1/ui/state", async (request) => {
+    await touchUi(request);
     const bridge = await resolveBridge(request);
     return (await bridge.getState()) ?? {};
   });
@@ -78,6 +90,7 @@ export function uiRoutes(
     "/api/v1/ui/state",
     { preHandler: validateSetState },
     async (request, reply) => {
+      await touchUi(request);
       const body = request.body as z.infer<typeof setStateBodySchema>;
       const bridge = await resolveBridge(request);
       const current = (await bridge.getState()) ?? {};
@@ -93,16 +106,17 @@ export function uiRoutes(
 
   app.post(
     "/api/v1/ui/commands",
-    { preHandler: validateEmitUiEffect },
+    { preHandler: validatePostCommand },
     async (request) => {
-      const body = request.body as z.infer<typeof emitUiEffectBodySchema>;
+      const body = request.body as z.infer<typeof postCommandBodySchema>;
       const bridge = await resolveBridge(request);
       const cmd: UiCommand = { kind: body.kind, params: body.params };
-      return await bridge.emitUiEffect(cmd);
+      return await bridge.postCommand(cmd);
     },
   );
 
   app.get("/api/v1/ui/commands/next", async (request, reply) => {
+    await touchUi(request);
     const bridge = await resolveBridge(request);
     const query = request.query as Record<string, string>;
 
@@ -124,7 +138,7 @@ export function uiRoutes(
 
     // Drain any commands queued BEFORE this subscriber connected. Without
     // this, a command posted in the gap between page-reload and EventSource-
-    // reconnect is silently dropped: emitUiEffect broadcasts to the (empty)
+    // reconnect is silently dropped: postCommand broadcasts to the (empty)
     // subscriber set, the message lands in pendingCommands, and the next
     // subscriber only sees future broadcasts. Tests that bootClean → POST
     // openPanel hit this race when Vite is cold.
@@ -138,10 +152,17 @@ export function uiRoutes(
     }
 
     const unsub = bridge.subscribeCommands((cmd) => {
-      reply.raw.write(`event: command\ndata: ${JSON.stringify(encodeCommand(cmd))}\n\n`);
+      if (reply.raw.destroyed || reply.raw.writableEnded) return false;
+      try {
+        reply.raw.write(`event: command\ndata: ${JSON.stringify(encodeCommand(cmd))}\n\n`);
+        return true;
+      } catch {
+        return false;
+      }
     });
     const heartbeat = setInterval(() => {
       if (reply.raw.writableEnded) return;
+      void touchUi(request);
       reply.raw.write(
         `event: heartbeat\ndata: ${JSON.stringify({ v: UI_BRIDGE_PROTOCOL_VERSION })}\n\n`,
       );

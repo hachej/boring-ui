@@ -22,6 +22,7 @@ import { createWorkspaceStore } from "../store"
 import { bindStore, useThemePreference } from "../store/selectors"
 import { createBridge } from "../bridge/createBridge"
 import { createBridgeClient, type BridgeClient } from "../bridge/client"
+import { PanelRenderStatusProvider } from "../registry/PanelRenderStatusBoundary"
 import { CommandPalette } from "../components/CommandPalette"
 import { events, workspaceEvents } from "../events"
 import { Toaster } from "../toast"
@@ -39,6 +40,7 @@ import type { CatalogConfig } from "../../shared/plugins/types"
 import type { WorkspaceChatPanelComponent, WorkspaceChatPanelProps } from "../chrome/chat/types"
 import { WorkspaceAttentionProvider } from "../attention"
 import { useAgentPluginHotReload } from "../agentPlugins/registerAgentPlugin"
+import { formatWorkspaceDocumentTitle } from "./workspaceTitle"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -361,8 +363,11 @@ export interface WorkspaceProviderProps {
   defaultTheme?: "light" | "dark" | undefined
   onThemeChange?: (theme: "light" | "dark") => void
   workspaceId?: string
+  workspaceLabel?: string
+  appTitle?: string
   storageKey?: string
   persistenceEnabled?: boolean
+  manageDocumentTitle?: boolean
   bridgeEndpoint?: string | null
   onAuthError?: (statusCode: number) => void
   onOpenFile?: (path: string) => void
@@ -411,8 +416,11 @@ export function WorkspaceProvider({
   defaultTheme,
   onThemeChange,
   workspaceId,
+  workspaceLabel,
+  appTitle,
   storageKey,
   persistenceEnabled = true,
+  manageDocumentTitle = true,
   bridgeEndpoint,
   onAuthError,
   onOpenFile,
@@ -571,6 +579,11 @@ export function WorkspaceProvider({
     [authHeaders, workspaceId],
   )
 
+  useEffect(() => {
+    if (!manageDocumentTitle) return
+    document.title = formatWorkspaceDocumentTitle({ appTitle, workspaceLabel, workspaceId })
+  }, [appTitle, manageDocumentTitle, workspaceId, workspaceLabel])
+
   const [bridgeConnected, setBridgeConnected] = useState(false)
 
   const bridgeValue = useMemo<WorkspaceBridgeContextValue>(
@@ -595,6 +608,7 @@ export function WorkspaceProvider({
               catalogRegistry={catalogRegistry}
               surfaceResolverRegistry={surfaceResolverRegistry}
             >
+              <PanelRenderStatusProvider apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} authHeaders={resolvedAuthHeaders}>
               <WorkspacePluginProviders
                 plugins={pluginsWithBindings}
                 apiBaseUrl={apiBaseUrl}
@@ -616,6 +630,7 @@ export function WorkspaceProvider({
                 {children}
                 {(typeof import.meta !== 'undefined' && import.meta.env?.DEV) && <PluginInspector plugins={pluginMetas} />}
               </WorkspacePluginProviders>
+              </PanelRenderStatusProvider>
             </RegistryProvider>
           </PluginErrorProvider>
           </WorkspaceAttentionProvider>

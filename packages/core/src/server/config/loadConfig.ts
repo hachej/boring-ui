@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { parse as parseTOML } from 'smol-toml'
+import { isCoreEmailVerificationEnabled } from '../../shared/authPolicy.js'
 import type { CoreConfig, RuntimeConfig } from '../../shared/types.js'
 import { ConfigValidationError } from '../../shared/errors.js'
 import { coreConfigSchema } from './schema.js'
@@ -32,6 +33,35 @@ interface TomlAppConfig {
     invites_enabled?: boolean
     invite_ttl_days?: number
   }
+}
+
+function formatDisplayName(name: string): string {
+  const trimmed = name.trim().replace(/[<>]/g, '')
+  if (/^[A-Za-z0-9 ._-]+$/.test(trimmed)) return trimmed
+  return `"${trimmed.replace(/["\\]/g, '\\$&')}"`
+}
+
+function isDefaultBoringDisplayName(name: string): boolean {
+  return name.toLowerCase().replace(/[\s._-]+/g, '') === 'boringui'
+}
+
+function normalizeMailFrom(appName: string, rawFrom: string): string {
+  const from = rawFrom.trim()
+  const addressWithDisplay = from.match(/^(.*?)\s*<([^>]+)>$/)
+  if (addressWithDisplay) {
+    const displayName = addressWithDisplay[1].trim().replace(/^"(.*)"$/, '$1')
+    const address = addressWithDisplay[2].trim()
+    if (!displayName || isDefaultBoringDisplayName(displayName)) {
+      return `${formatDisplayName(appName)} <${address}>`
+    }
+    return from
+  }
+
+  if (/^[^\s@<>]+@[^\s@<>]+$/.test(from)) {
+    return `${formatDisplayName(appName)} <${from}>`
+  }
+
+  return from
 }
 
 function parseRateLimitOverrides(
@@ -205,7 +235,19 @@ export async function loadConfig(
     },
   }
 
-  return validateConfig(raw)
+  const config = validateConfig(raw)
+  if (!config.auth.mail) return config
+
+  return {
+    ...config,
+    auth: {
+      ...config.auth,
+      mail: {
+        ...config.auth.mail,
+        from: normalizeMailFrom(config.appName, config.auth.mail.from),
+      },
+    },
+  }
 }
 
 export function validateConfig(raw: unknown): CoreConfig {
@@ -236,6 +278,7 @@ export function buildRuntimeConfigPayload(config: CoreConfig): RuntimeConfig {
       googleOauth: isGoogleOauthUsable(config),
       invitesEnabled: config.features.invitesEnabled,
       sendWelcomeEmail: config.features.sendWelcomeEmail,
+      emailVerification: isCoreEmailVerificationEnabled(config),
     },
   }
 }

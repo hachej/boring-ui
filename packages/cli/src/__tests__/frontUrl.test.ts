@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { CliVersionBadge, cliWorkspacePath, workspaceIdFromCliUrl } from "../front/App"
+import { CliVersionBadge, chatSessionIdFromCliUrl, cliWorkspacePath, workspaceIdFromCliUrl } from "../front/App"
 
 describe("CLI chrome", () => {
   test("renders a compact version badge when CLI meta has a version", () => {
@@ -15,8 +15,16 @@ describe("CLI chrome", () => {
     expect(workspaceIdFromCliUrl("/")).toBeNull()
   })
 
-  test("builds navigable workspace paths", () => {
+  test("builds navigable workspace paths without a session query", () => {
     expect(cliWorkspacePath("project-123")).toBe("/workspace/project-123")
     expect(cliWorkspacePath("project name")).toBe("/workspace/project%20name")
+  })
+
+  test("reads a legacy chat session id from the workspace URL query", () => {
+    // Read-only back-compat: legacy deep links still carry ?session=, which we
+    // honor once on load (then strip). The path builder above never writes it.
+    expect(chatSessionIdFromCliUrl("?session=chat-abc")).toBe("chat-abc")
+    expect(chatSessionIdFromCliUrl("?session=")).toBeNull()
+    expect(chatSessionIdFromCliUrl("")).toBeNull()
   })
 })

@@ -34,6 +34,17 @@ export {
   isValidBoringPluginId,
 } from "./shared/plugins/manifest"
 export { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "./shared/types/surface"
+
+// In-process UI bridge access for plugin Pi slash commands. Lets a command
+// open panels / show notifications directly (no BORING_UI_URL, no fetch).
+export {
+  execWorkspaceUi,
+  getWorkspaceUiBridge,
+  notify,
+  openPanel,
+  NoWorkspaceUiBridgeError,
+} from "./shared/plugins/uiBridgeRegistry"
+export type { OpenPanelArgs } from "./shared/plugins/uiBridgeRegistry"
 export type {
   BoringPackageBoringField,
   BoringPackagePiField,

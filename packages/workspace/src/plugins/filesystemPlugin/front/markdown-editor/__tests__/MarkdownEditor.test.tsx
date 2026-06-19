@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
-import { MarkdownEditor, sanitizeHtml, isSafeUrl, rawFileUrlForMarkdownImage, isUserEditedChange } from "../MarkdownEditor"
+import { UI_COMMAND_EVENT } from "../../../../../front/bridge/uiCommandBus"
+import { MarkdownEditor, sanitizeHtml, isSafeUrl, rawFileUrlForMarkdownImage, workspaceFilePathForMarkdownLink, isUserEditedChange, countMarkdownWords } from "../MarkdownEditor"
 
 describe("MarkdownEditor", () => {
   beforeEach(() => {
@@ -31,6 +32,20 @@ describe("MarkdownEditor", () => {
     expect(scrollRegion.className).toContain("flex-1")
   })
 
+  describe("countMarkdownWords", () => {
+    it("returns 0 for an empty document", () => {
+      expect(countMarkdownWords("")).toBe(0)
+    })
+
+    it("counts readable markdown text instead of common syntax noise", () => {
+      expect(countMarkdownWords("# Hello world\n\n- one **two**\n- [three](https://example.com)\n> four")).toBe(6)
+    })
+
+    it("ignores fenced code blocks and images", () => {
+      expect(countMarkdownWords("Intro words\n\n```ts\nconst hidden = true\n```\n\n![Diagram](./diagram.png)")).toBe(2)
+    })
+  })
+
   describe("isUserEditedChange", () => {
     // Regression: an editor that emits an empty document while unfocused is a
     // spurious init/remount/re-parent artifact, not a user clearing the file.
@@ -56,6 +71,65 @@ describe("MarkdownEditor", () => {
         "boring-ui-v2-36cd3172",
       ),
     ).toBe("/api/v1/files/raw?path=docs%2Fassets%2Freadme%2Fhero.png&workspaceId=boring-ui-v2-36cd3172")
+  })
+
+  it("resolves relative markdown file links against the current document", () => {
+    expect(
+      workspaceFilePathForMarkdownLink(
+        "profiles/001-romain-rissoan.md",
+        "consulting-research/profiles-index.md",
+      ),
+    ).toBe("consulting-research/profiles/001-romain-rissoan.md")
+    expect(workspaceFilePathForMarkdownLink("../outside.md", "index.md")).toBeNull()
+    expect(workspaceFilePathForMarkdownLink("https://example.com", "docs/index.md")).toBeNull()
+  })
+
+  it("opens relative markdown links through the workspace bridge", async () => {
+    const commands: unknown[] = []
+    const onCommand = (event: Event) => commands.push((event as CustomEvent).detail)
+    window.addEventListener(UI_COMMAND_EVENT, onCommand)
+    try {
+      render(
+        <MarkdownEditor
+          content="[Romain Rissoan](profiles/001-romain-rissoan.md)"
+          documentPath="consulting-research/profiles-index.md"
+          readOnly
+        />,
+      )
+      const link = await screen.findByRole("link", { name: "Romain Rissoan" })
+      fireEvent.click(link)
+      expect(commands).toContainEqual({
+        kind: "openFile",
+        params: { path: "consulting-research/profiles/001-romain-rissoan.md" },
+      })
+    } finally {
+      window.removeEventListener(UI_COMMAND_EVENT, onCommand)
+    }
+  })
+
+  it("does not fall through to the browser opener for editable relative links", async () => {
+    const commands: unknown[] = []
+    const onCommand = (event: Event) => commands.push((event as CustomEvent).detail)
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null)
+    window.addEventListener(UI_COMMAND_EVENT, onCommand)
+    try {
+      render(
+        <MarkdownEditor
+          content="[Profile](profiles/001-romain-rissoan.md)"
+          documentPath="consulting-research/profiles-index.md"
+        />,
+      )
+      const link = await screen.findByRole("link", { name: "Profile" })
+      fireEvent.click(link)
+      expect(commands).toContainEqual({
+        kind: "openFile",
+        params: { path: "consulting-research/profiles/001-romain-rissoan.md" },
+      })
+      expect(openSpy).not.toHaveBeenCalled()
+    } finally {
+      openSpy.mockRestore()
+      window.removeEventListener(UI_COMMAND_EVENT, onCommand)
+    }
   })
 
   it("renders markdown tables", async () => {
@@ -93,6 +167,26 @@ describe("MarkdownEditor", () => {
     expect(screen.getByTitle("Highlight")).toBeInTheDocument()
     expect(screen.getByTitle("Horizontal rule")).toBeInTheDocument()
     expect(screen.getByTitle("Raw markdown")).toBeInTheDocument()
+  })
+
+  it("shows a word count footer", async () => {
+    render(<MarkdownEditor content="# Hello\n\nWorld" />)
+    await waitFor(() => {
+      expect(screen.getByTestId("markdown-word-count")).toHaveTextContent("3 words")
+    })
+  })
+
+  it("updates the word count when raw markdown changes", async () => {
+    const onChange = vi.fn()
+    const { rerender } = render(<MarkdownEditor content="" onChange={onChange} />)
+    await waitFor(() => {
+      expect(screen.getByTestId("markdown-word-count")).toHaveTextContent("0 words")
+    })
+
+    rerender(<MarkdownEditor content="one two three" onChange={onChange} />)
+    await waitFor(() => {
+      expect(screen.getByTestId("markdown-word-count")).toHaveTextContent("3 words")
+    })
   })
 
   it("toggles a discreet raw markdown editor", async () => {

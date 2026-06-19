@@ -1,11 +1,11 @@
 import { expectTypeOf, test } from 'vitest'
 
-import type { UIMessage, UIMessageChunk } from '../message'
 import type {
   SessionCtx,
   SessionDetail,
   SessionStore,
   SessionSummary,
+  SessionListOptions,
 } from '../session'
 
 test('SessionStore contract', () => {
@@ -15,7 +15,7 @@ test('SessionStore contract', () => {
   expectTypeOf<SessionStore>().toHaveProperty('delete')
   expectTypeOf<SessionStore>().not.toHaveProperty('rename')
 
-  expectTypeOf<SessionStore['list']>().parameters.toEqualTypeOf<[ctx: SessionCtx]>()
+  expectTypeOf<SessionStore['list']>().parameters.toEqualTypeOf<[ctx: SessionCtx, options?: SessionListOptions]>()
   expectTypeOf<SessionStore['list']>().returns.toEqualTypeOf<Promise<SessionSummary[]>>()
   expectTypeOf<SessionStore['create']>().parameters.toEqualTypeOf<
     [ctx: SessionCtx, init?: { title?: string }]
@@ -41,12 +41,5 @@ test('Session shapes', () => {
     turnCount: number
   }>()
 
-  expectTypeOf<SessionDetail['messages']>().toEqualTypeOf<UIMessage[]>()
-})
-
-test('Message type re-exports', () => {
-  expectTypeOf<UIMessage>().toMatchTypeOf<{
-    role: 'system' | 'user' | 'assistant' | 'tool'
-  }>()
-  expectTypeOf<UIMessageChunk>().toHaveProperty('type')
+  expectTypeOf<SessionDetail>().toEqualTypeOf<SessionSummary>()
 })

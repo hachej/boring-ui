@@ -25,8 +25,10 @@ export interface ArtifactOpenProviderProps {
 }
 
 export function ArtifactOpenProvider({ onOpenArtifact, children }: ArtifactOpenProviderProps) {
+  const inheritedOpenArtifact = useContext(ArtifactOpenContext)
+
   return (
-    <ArtifactOpenContext.Provider value={onOpenArtifact ?? null}>
+    <ArtifactOpenContext.Provider value={onOpenArtifact ?? inheritedOpenArtifact}>
       {children}
     </ArtifactOpenContext.Provider>
   )

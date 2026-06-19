@@ -13,9 +13,13 @@
       "@hachej/boring-agent/shared": ["../agent/src/shared/index.ts"],
       "@hachej/boring-agent/server": ["../agent/src/server/index.ts"],
       "@hachej/boring-agent/eval": ["../agent/src/eval/index.ts"],
+      "@hachej/boring-ask-user/front": ["../../plugins/ask-user/src/front/index.tsx"],
+      "@hachej/boring-ask-user/server": ["../../plugins/ask-user/src/server/index.ts"],
+      "@hachej/boring-ask-user/shared": ["../../plugins/ask-user/src/shared/index.ts"],
       "@hachej/boring-workspace": ["../workspace/src/index.ts"],
       "@hachej/boring-workspace/server": ["../workspace/src/server/index.ts"],
-      "@hachej/boring-workspace/app/server": ["../workspace/src/app/server/index.ts"]
+      "@hachej/boring-workspace/app/server": ["../workspace/src/app/server/index.ts"],
+      "@hachej/boring-ui-plugin-cli": ["../plugin-cli/src/index.ts"]
     }
   },
   "include": ["src/**/*", "scripts/**/*"],

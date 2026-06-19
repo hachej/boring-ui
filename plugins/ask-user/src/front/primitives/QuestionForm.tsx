@@ -130,15 +130,26 @@ export function QuestionFormProvider({
   return <QuestionFormContext.Provider value={value}>{children}</QuestionFormContext.Provider>
 }
 
-export function QuestionForm({ children, "aria-label": ariaLabel = "Question form" }: React.PropsWithChildren<{ "aria-label"?: string }>) {
+export function QuestionForm({ children, "aria-label": ariaLabel = "Question form", className }: React.PropsWithChildren<{ "aria-label"?: string; className?: string }>) {
   const { submit, cancel, status, formRef } = useQuestionForm()
-  return <form ref={formRef} data-question-form aria-label={ariaLabel} onSubmit={(event) => { event.preventDefault(); void submit() }} onKeyDown={(event) => {
-    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); void submit() }
+  return <form ref={formRef} data-question-form aria-label={ariaLabel} className={className} onSubmit={(event) => { event.preventDefault(); void submit() }} onKeyDown={(event) => {
+    if (event.key === "Enter" && shouldSubmitOnEnter(event)) { event.preventDefault(); void submit() }
     if (event.key === "Escape") { event.preventDefault(); cancel() }
   }}>
     <div aria-live="polite" className="sr-only">{status === "ready" ? "Question ready" : `Question ${status}`}</div>
     {children}
   </form>
+}
+
+function shouldSubmitOnEnter(event: React.KeyboardEvent<HTMLFormElement>): boolean {
+  if (event.metaKey || event.ctrlKey) return true
+  if (event.shiftKey) return false
+  const target = event.target as HTMLElement | null
+  if (!target) return true
+  const tagName = target.tagName.toLowerCase()
+  if (tagName === "textarea" || tagName === "button" || tagName === "a") return false
+  if (target.isContentEditable) return false
+  return true
 }
 
 export function QuestionFields() {

@@ -1,17 +1,17 @@
 # Plugin Structure
 
 Canonical quick reference for boring-ui plugin layouts. For the full current
-contract, see [`PLUGIN_SYSTEM.md`](./PLUGIN_SYSTEM.md). For future hosted/runtime
-architecture, see the repo-level
-[`docs/runtime-plugin-v2-hot-reload-plan.md`](../../../docs/runtime-plugin-v2-hot-reload-plan.md).
+contract, see [`PLUGIN_SYSTEM.md`](./PLUGIN_SYSTEM.md). For the historical
+hosted/runtime architecture exploration, see the archived repo-level
+[`docs/plans/archive/runtime-plugin-v2-hot-reload-plan.md`](../../../docs/plans/archive/runtime-plugin-v2-hot-reload-plan.md).
 
 ## Generated/runtime plugin
 
 Use the workspace-local CLI from inside the agent/runtime workspace:
 
 ```bash
-boring-ui scaffold-plugin <name>
-boring-ui verify-plugin <name>
+boring-ui-plugin scaffold <name>
+boring-ui-plugin verify <name>
 ```
 
 Default shape:
@@ -29,8 +29,9 @@ backend registration.
 
 ## App/internal publishable package plugin
 
-Use [`packages/cli/templates/plugin`](../../../packages/cli/templates/plugin/) as the reference
-shape when building a trusted package composed by an app shell:
+Run `boring-ui-plugin create <name> --path plugins` for the trusted package
+shape composed by an app shell. The command uses
+[`packages/plugin-cli/templates/plugin`](../../../packages/plugin-cli/templates/plugin/) as its reference:
 
 ```txt
 plugins/<name>/

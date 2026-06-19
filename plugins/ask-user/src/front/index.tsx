@@ -3,7 +3,9 @@
 import { Button, EmptyState, Notice, Pane, PaneBody, PaneFooter, PaneHeader, PaneTitle } from "@hachej/boring-ui-kit"
 import {
   UI_COMMAND_EVENT,
+  events,
   useWorkspaceAttention,
+  workspaceEvents,
   type PaneProps,
   type PluginProviderProps,
 } from "@hachej/boring-workspace"
@@ -114,7 +116,7 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }:
         target: pending.questionId,
         label: "Answer the question in Questions to continue",
         sessionId: sessionScopedBlockerId(pending.sessionId),
-        actions: [{ id: "open", label: "Open Questions" }],
+        actions: [{ id: "open", label: "Open Questions" }, { id: "cancel", label: "Cancel question" }],
       })
     }
     return () => { if (blockerId) removeBlocker(blockerId) }
@@ -143,12 +145,27 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }:
     }
     const onVisibility = () => { if (document.visibilityState === "visible") void refreshPending() }
     const onUiCommand = () => { void refreshPending() }
+    // Questions are created mid-run by the ask_user tool, with no focus or
+    // UI-command transition to piggyback on. Throttle-refresh while agent
+    // stream parts flow so the pending question (and its blocker/badge)
+    // appears without requiring a tab switch or reload.
+    let agentDataTimer: ReturnType<typeof setTimeout> | null = null
+    const onAgentData = () => {
+      if (agentDataTimer) return
+      agentDataTimer = setTimeout(() => {
+        agentDataTimer = null
+        void refreshPending()
+      }, 1200)
+    }
+    const offAgentData = events.on(workspaceEvents.agentData, onAgentData)
     void refreshPending()
     window.addEventListener("focus", refreshPending)
     document.addEventListener("visibilitychange", onVisibility)
     window.addEventListener(UI_COMMAND_EVENT, onUiCommand)
     return () => {
       stopped = true
+      if (agentDataTimer) clearTimeout(agentDataTimer)
+      offAgentData()
       window.removeEventListener("focus", refreshPending)
       document.removeEventListener("visibilitychange", onVisibility)
       window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)
@@ -187,8 +204,8 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
     if (question && pending === null && !paramQuestion) api.close()
   }, [api, pending, paramQuestion, question])
 
-  return <div className={className ?? "h-full"}>
-    <Pane className="h-full border-0 bg-background text-sm">
+  return <div className={className ? `${className} min-h-0 overflow-hidden` : "h-full min-h-0 overflow-hidden"}>
+    <Pane className="h-full min-h-0 overflow-hidden border-0 bg-background text-sm">
       <PaneHeader className="border-b bg-background/95">
         <div>
           <PaneTitle className="flex items-center gap-2"><HelpCircle className="h-4 w-4 text-muted-foreground" /> Questions</PaneTitle>
@@ -207,7 +224,7 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
           catch (err) { setError(err instanceof QuestionsClientError ? err.message : String(err)) }
           finally { setSubmitting(false) }
         }}>
-          <QuestionForm>
+          <QuestionForm className="flex min-h-0 flex-1 flex-col">
             <PaneBody className="overflow-auto p-4">
               <div className="space-y-4">
                 <section className="rounded-md border border-border/60 bg-muted/30 p-4">

@@ -410,6 +410,42 @@ describe("ShadcnTab", () => {
     expect(screen.getByLabelText("Close My Tab")).toBeInTheDocument()
   })
 
+  it("closes the panel from the overflow dropdown without re-activating it", () => {
+    // Reproduce dockview's overflow popover row: the tab is wrapped in an
+    // element with a NATIVE bubble-phase click listener that re-activates the
+    // panel (and dockview also tears the popover down). Closing via the X must
+    // call api.close() and must NOT let that native listener re-activate the
+    // just-closed panel.
+    const mockApi = {
+      title: "Overflow Tab",
+      id: "tab-overflow",
+      close: vi.fn(),
+      setActive: vi.fn(),
+    }
+    const wrapper = document.createElement("div")
+    const wrapperClick = vi.fn(() => mockApi.setActive())
+    wrapper.addEventListener("click", wrapperClick)
+    document.body.appendChild(wrapper)
+
+    render(
+      <ShadcnTab
+        api={mockApi as any}
+        containerApi={{} as any}
+        params={{}}
+        tabLocation={"headerOverflow" as any}
+      />,
+      { container: wrapper },
+    )
+
+    fireEvent.click(screen.getByLabelText("Close Overflow Tab"))
+
+    expect(mockApi.close).toHaveBeenCalledTimes(1)
+    expect(mockApi.setActive).not.toHaveBeenCalled()
+    expect(wrapperClick).not.toHaveBeenCalled()
+
+    document.body.removeChild(wrapper)
+  })
+
   it("falls back to id when title is undefined", () => {
     const mockApi = {
       title: undefined,
@@ -471,6 +507,35 @@ describe("ShadcnTab", () => {
     expect(siblingApi.close).toHaveBeenCalledTimes(1)
   })
 
+  it("close all closes every tab in the current group", () => {
+    const currentApi = {
+      title: "Current",
+      id: "tab-current",
+      close: vi.fn(),
+      setActive: vi.fn(),
+    }
+    const siblingApi = { title: "Sibling", id: "tab-sibling", close: vi.fn() }
+    const otherGroupApi = { title: "Other", id: "tab-other", close: vi.fn() }
+    ;(currentApi as any).group = { panels: [{ api: currentApi }, { api: siblingApi }] }
+
+    render(
+      <ShadcnTab
+        api={currentApi as any}
+        containerApi={{ panels: [{ api: currentApi }, { api: siblingApi }, { api: otherGroupApi }] } as any}
+        params={{}}
+        tabLocation={"header" as any}
+      />,
+    )
+
+    fireEvent.contextMenu(screen.getByTitle("Current"))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close all" }))
+
+    expect(currentApi.setActive).toHaveBeenCalled()
+    expect(currentApi.close).toHaveBeenCalledTimes(1)
+    expect(siblingApi.close).toHaveBeenCalledTimes(1)
+    expect(otherGroupApi.close).not.toHaveBeenCalled()
+  })
+
   it("shows copy path and hides close-other when there are no other tabs", () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, "clipboard", {
@@ -493,6 +558,7 @@ describe("ShadcnTab", () => {
     expect(screen.getByRole("menuitem", { name: "Copy path" })).toBeInTheDocument()
     expect(screen.queryByRole("menuitem", { name: "Copy absolute path" })).not.toBeInTheDocument()
     expect(screen.queryByRole("menuitem", { name: "Close other tabs" })).not.toBeInTheDocument()
+    expect(screen.getByRole("menuitem", { name: "Close all" })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("menuitem", { name: "Copy path" }))
     expect(writeText).toHaveBeenCalledWith("src/App.tsx")
@@ -632,22 +698,26 @@ describe("ShadcnTab", () => {
     expect(siblingB.api.close).toHaveBeenCalledTimes(1)
   })
 
-  it("shows a saving spinner while save start is in flight, hides on save end", async () => {
+  it("keeps the file icon stable and shows a dot while save is in flight", async () => {
     events._reset()
     const mockApi = { title: "doc.md", id: "panel-7", close: vi.fn() }
-    render(<ShadcnTab api={mockApi as any} containerApi={{} as any} params={{}} tabLocation={"header" as any} />)
+    const { container } = render(<ShadcnTab api={mockApi as any} containerApi={{} as any} params={{}} tabLocation={"header" as any} />)
 
-    expect(screen.queryByTestId("tab-saving-spinner")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("tab-dirty-dot")).not.toBeInTheDocument()
+    const iconBefore = container.querySelector("svg")
+    expect(iconBefore).toBeInTheDocument()
 
     act(() => {
       events.emit(workspaceEvents.editorSaveStart, { panelId: "panel-7" })
     })
-    expect(screen.getByTestId("tab-saving-spinner")).toBeInTheDocument()
+    expect(screen.getByTestId("tab-dirty-dot")).toBeInTheDocument()
+    expect(container.querySelector("svg")).toBe(iconBefore)
 
     act(() => {
       events.emit(workspaceEvents.editorSaveEnd, { panelId: "panel-7" })
     })
-    expect(screen.queryByTestId("tab-saving-spinner")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("tab-dirty-dot")).not.toBeInTheDocument()
+    expect(container.querySelector("svg")).toBe(iconBefore)
   })
 
   it("ignores save events for OTHER panel ids", async () => {
@@ -657,21 +727,21 @@ describe("ShadcnTab", () => {
     act(() => {
       events.emit(workspaceEvents.editorSaveStart, { panelId: "someone-else" })
     })
-    expect(screen.queryByTestId("tab-saving-spinner")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("tab-dirty-dot")).not.toBeInTheDocument()
   })
 
-  it("clears the spinner on save:end even when the save itself failed (lifecycle hook always emits)", async () => {
+  it("clears the save dot on save:end even when the save itself failed (lifecycle hook always emits)", async () => {
     events._reset()
     const mockApi = { title: "x.md", id: "p", close: vi.fn() }
     render(<ShadcnTab api={mockApi as any} containerApi={{} as any} params={{}} tabLocation={"header" as any} />)
     act(() => {
       events.emit(workspaceEvents.editorSaveStart, { panelId: "p" })
     })
-    expect(screen.getByTestId("tab-saving-spinner")).toBeInTheDocument()
+    expect(screen.getByTestId("tab-dirty-dot")).toBeInTheDocument()
     act(() => {
       events.emit(workspaceEvents.editorSaveEnd, { panelId: "p" })
     })
-    expect(screen.queryByTestId("tab-saving-spinner")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("tab-dirty-dot")).not.toBeInTheDocument()
   })
 })
 

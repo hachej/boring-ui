@@ -1,45 +1,67 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  clearStoredModelSelection,
   parseModelSelection,
-  readStoredModelState,
-  writeStoredModelSelection,
   type AvailableModel,
   type ModelSelection,
 } from '../chatPanelSettings'
+import type { ActiveSessionStorageLike } from '../chat/session/activeSessionStorage'
+import {
+  readPiComposerSettings,
+  writePiComposerModelSelection,
+} from '../chat/session/composerPolicy'
 
 export function useChatModelSelection({
+  apiBaseUrl,
   defaultModel,
+  fetch: fetchImpl,
   requestHeaders,
+  storage,
+  storageScope,
   enabled = true,
 }: {
+  apiBaseUrl?: string
   defaultModel?: ModelSelection
+  fetch?: typeof globalThis.fetch
   requestHeaders?: Record<string, string>
+  storage?: ActiveSessionStorageLike
+  storageScope?: string
   enabled?: boolean
 }) {
-  const initialModelState = useMemo(readStoredModelState, [])
+  const initialModelState = useMemo(() => readPiComposerSettings({ storageScope, storage }), [])
   const [model, setModelState] = useState<ModelSelection | null>(
     () => initialModelState.model ?? defaultModel ?? null,
   )
   const [userSelectedModel, setUserSelectedModel] = useState<boolean>(
-    () => initialModelState.userSelected,
+    () => initialModelState.userSelectedModel,
   )
   const userSelectedModelRef = useRef(userSelectedModel)
+  const loadedSettingsSourceRef = useRef({ storage, storageScope })
   useEffect(() => {
     userSelectedModelRef.current = userSelectedModel
   }, [userSelectedModel])
 
-  const setModel = useCallback((next: ModelSelection) => {
-    setUserSelectedModel(true)
+  const setModel = useCallback((next: ModelSelection | null) => {
+    userSelectedModelRef.current = next !== null
+    setUserSelectedModel(next !== null)
     setModelState(next)
-  }, [])
+    writePiComposerModelSelection(next, { storageScope, storage })
+  }, [storage, storageScope])
 
   const [availableModels, setAvailableModels] = useState<AvailableModel[]>([])
 
   useEffect(() => {
+    if (loadedSettingsSourceRef.current.storage !== storage || loadedSettingsSourceRef.current.storageScope !== storageScope) return
     if (!userSelectedModel || !model) return
-    writeStoredModelSelection(model)
-  }, [model, userSelectedModel])
+    writePiComposerModelSelection(model, { storageScope, storage })
+  }, [model, storage, storageScope, userSelectedModel])
+
+  useEffect(() => {
+    const settings = readPiComposerSettings({ storageScope, storage })
+    loadedSettingsSourceRef.current = { storage, storageScope }
+    userSelectedModelRef.current = settings.userSelectedModel
+    setUserSelectedModel(settings.userSelectedModel)
+    setModelState(settings.model ?? defaultModel ?? null)
+  }, [storage, storageScope])
 
   useEffect(() => {
     if (userSelectedModelRef.current || !defaultModel) return
@@ -51,7 +73,10 @@ export function useChatModelSelection({
   useEffect(() => {
     if (!enabled) return
     let aborted = false
-    fetch('/api/v1/agent/models', { headers: requestHeaders })
+    const nextFetch = fetchImpl ?? globalThis.fetch.bind(globalThis)
+    nextFetch(agentResourceUrl(apiBaseUrl, '/api/v1/agent/models'), {
+      headers: scopedHeaders(requestHeaders, storageScope),
+    })
       .then((res) => (res.ok ? res.json() : null))
       .then((payload: { models?: AvailableModel[]; defaultModel?: ModelSelection } | null) => {
         if (aborted || !payload?.models) return
@@ -65,7 +90,7 @@ export function useChatModelSelection({
 
           userSelectedModelRef.current = false
           setUserSelectedModel(false)
-          clearStoredModelSelection()
+          writePiComposerModelSelection(null, { storageScope, storage })
 
           return payload.defaultModel
             ? { provider: payload.defaultModel.provider, id: payload.defaultModel.id }
@@ -74,7 +99,7 @@ export function useChatModelSelection({
       })
       .catch(() => { /* offline — leave list empty, fall back to raw id text */ })
     return () => { aborted = true }
-  }, [enabled, requestHeaders])
+  }, [apiBaseUrl, enabled, fetchImpl, requestHeaders, storage, storageScope])
 
   // Optional integration hook for host slash commands. Accepts explicit
   // provider-qualified selections only ({ provider, id } or "provider:id");
@@ -90,4 +115,17 @@ export function useChatModelSelection({
   }, [setModel])
 
   return { availableModels, model, setModel }
+}
+
+function agentResourceUrl(apiBaseUrl: string | undefined, path: string): string {
+  const base = apiBaseUrl?.replace(/\/$/, '') ?? ''
+  return `${base}${path}`
+}
+
+function scopedHeaders(headers: Record<string, string> | undefined, storageScope: string | undefined): Record<string, string> | undefined {
+  if (!headers && !storageScope) return undefined
+  const result: Record<string, string> = { ...(headers ?? {}) }
+  const hasStorageScope = Object.keys(result).some((key) => key.toLowerCase() === 'x-boring-storage-scope')
+  if (storageScope && !hasStorageScope) result['x-boring-storage-scope'] = storageScope
+  return result
 }

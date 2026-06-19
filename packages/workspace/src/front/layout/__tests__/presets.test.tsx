@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { act, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { useEffect } from "react"
 import userEvent from "@testing-library/user-event"
 import { buildIdeLayout } from "../IdeLayout"
 import { buildChatLayout } from "../ChatLayout"
@@ -10,7 +11,7 @@ import { PanelRegistry } from "../../registry/PanelRegistry"
 import { CommandRegistry } from "../../../shared/plugins/CommandRegistry"
 import { bindStore } from "../../store/selectors"
 import { createWorkspaceStore } from "../../store"
-import { WorkspaceProvider } from "../../provider"
+import { WorkspaceProvider, useWorkspaceAttention } from "../../provider"
 import type { SurfaceShellApi } from "../../chrome/artifact-surface/SurfaceShell"
 
 // Verify barrel exports work
@@ -25,6 +26,22 @@ import {
 
 function DummyPanel() {
   return <div data-testid="dummy-panel">panel</div>
+}
+
+function StreamingChatPanel() {
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return
+      const target = e.target instanceof HTMLElement ? e.target : null
+      if (target?.closest('[role="dialog"], [role="menu"], [role="listbox"]')) return
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    window.addEventListener("keydown", onKeyDown, { capture: true })
+    return () => window.removeEventListener("keydown", onKeyDown, { capture: true })
+  }, [])
+
+  return <div data-boring-agent-part="chat" tabIndex={0}>streaming chat</div>
 }
 
 function setup(panels: string[]) {
@@ -166,6 +183,9 @@ describe("buildChatLayout", () => {
     expect(center.position).toBe("center")
     expect(center.panel).toBe("chat")
     expect(center.hideHeader).toBe(true)
+    // Collapse is handled by the live flex ChatLayout component, not dock config.
+    expect(center.collapsible).toBeUndefined()
+    expect(center.collapsedWidth).toBeUndefined()
   })
 
   it("passes panel params through to layout groups", () => {
@@ -506,6 +526,36 @@ describe("ChatLayout component", () => {
     expect(closeSurface).toHaveBeenCalledTimes(2)
   })
 
+  it("lets active chat Escape stop streaming before shell close shortcuts run", () => {
+    const closeNav = vi.fn()
+    const closeSurface = vi.fn()
+    const { panelRegistry, commandRegistry } = setup(["chat", "session-list", "artifact-surface"])
+    panelRegistry.register("chat", { title: "chat", lazy: false, component: StreamingChatPanel })
+
+    render(
+      <WorkspaceProvider persistenceEnabled={false}>
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+          <ChatLayout
+            nav="session-list"
+            navParams={{ onClose: closeNav }}
+            surface="artifact-surface"
+            surfaceParams={{ onClose: closeSurface }}
+          />
+        </RegistryProvider>
+      </WorkspaceProvider>,
+    )
+
+    const root = document.querySelector('[data-boring-agent-part="chat"]')
+    expect(root).toBeTruthy()
+
+    act(() => {
+      fireEvent.keyDown(root ?? document.body, { key: "Escape", bubbles: true, cancelable: true })
+    })
+
+    expect(closeNav).not.toHaveBeenCalled()
+    expect(closeSurface).not.toHaveBeenCalled()
+  })
+
   it("opens hidden shell panes with the shell keyboard shortcuts", () => {
     const openNav = vi.fn()
     const openSurface = vi.fn()
@@ -525,6 +575,189 @@ describe("ChatLayout component", () => {
 
     expect(openNav).toHaveBeenCalledOnce()
     expect(openSurface).toHaveBeenCalledOnce()
+  })
+
+  it("collapses and re-expands the chat panel with the keyboard shortcut", () => {
+    renderWithRegistry(
+      <ChatLayout center="chat" storageKey="chat-layout-test" />,
+      ["chat", "session-list"],
+    )
+
+    const chatPanel = screen.getByLabelText("Chat")
+    expect(chatPanel).toHaveAttribute("data-boring-state", "expanded")
+
+    act(() => fireShortcut("\\", { metaKey: true }))
+    expect(screen.getByLabelText("Collapsed chat")).toHaveAttribute("data-boring-state", "collapsed")
+
+    act(() => fireShortcut("\\", { metaKey: true }))
+    expect(screen.getByLabelText("Chat")).toHaveAttribute("data-boring-state", "expanded")
+  })
+
+  it("collapses the chat to zero width and shows a floating expand button", () => {
+    renderWithRegistry(
+      <ChatLayout center="chat" storageKey="chat-layout-rail" />,
+      ["chat", "session-list"],
+    )
+
+    expect(screen.queryByRole("button", { name: "Expand chat" })).not.toBeInTheDocument()
+
+    act(() => fireShortcut("\\", { metaKey: true }))
+
+    // The chat panel collapses to zero width (no 40px rail) ...
+    const collapsed = screen.getByLabelText("Collapsed chat")
+    expect(collapsed).toHaveAttribute("data-boring-state", "collapsed")
+    expect(collapsed).toHaveAttribute("aria-hidden", "true")
+    // ... and re-opening is a floating left-edge button.
+    expect(screen.getByRole("button", { name: "Expand chat" })).toBeInTheDocument()
+
+    act(() => fireShortcut("\\", { metaKey: true }))
+    expect(screen.queryByRole("button", { name: "Expand chat" })).not.toBeInTheDocument()
+    expect(screen.getByLabelText("Chat")).toHaveAttribute("data-boring-state", "expanded")
+  })
+
+  it("renders chat panes with active focus state and pane-level controls", async () => {
+    const user = userEvent.setup()
+    const setActive = vi.fn()
+    const closePane = vi.fn()
+    const createAfter = vi.fn()
+
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        nav={null}
+        chatPanes={[
+          { id: "s1", title: "First", panel: "chat", params: { sessionId: "s1" } },
+          { id: "s2", title: "Second", panel: "chat", params: { sessionId: "s2" } },
+        ]}
+        activeChatPaneId="s2"
+        onActiveChatPaneChange={setActive}
+        onCloseChatPane={closePane}
+        onCreateChatPaneAfter={createAfter}
+      />,
+      ["chat", "session-list"],
+    )
+
+    expect(screen.getByLabelText("Chat session First")).toHaveAttribute("data-boring-state", "inactive")
+    expect(screen.getByLabelText("Chat session Second")).toHaveAttribute("data-boring-state", "active")
+    expect(document.querySelector(".dv-chat-stage")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "New chat" })).toBeInTheDocument()
+
+    await user.click(screen.getByLabelText("Chat session First"))
+    expect(setActive).toHaveBeenCalledWith("s1")
+
+    await user.click(screen.getByLabelText("Close Second pane"))
+    expect(closePane).toHaveBeenCalledWith("s2")
+
+    // The floating left-edge "+" creates next to the active pane.
+    await user.click(screen.getByRole("button", { name: "New chat" }))
+    expect(createAfter).toHaveBeenCalledWith("s2")
+  })
+
+  it("does not activate an inactive pane when using its header controls", async () => {
+    const user = userEvent.setup()
+    const setActive = vi.fn()
+    const closePane = vi.fn()
+    const createAfter = vi.fn()
+
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        nav={null}
+        chatPanes={[
+          { id: "s1", title: "First", panel: "chat", params: { sessionId: "s1" } },
+          { id: "s2", title: "Second", panel: "chat", params: { sessionId: "s2" } },
+        ]}
+        activeChatPaneId="s2"
+        onActiveChatPaneChange={setActive}
+        onCloseChatPane={closePane}
+        onCreateChatPaneAfter={createAfter}
+      />,
+      ["chat", "session-list"],
+    )
+
+    await user.click(screen.getByLabelText("Close First pane"))
+    expect(closePane).toHaveBeenCalledWith("s1")
+    expect(setActive).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole("button", { name: "New chat" }))
+    expect(createAfter).toHaveBeenCalledWith("s2")
+    expect(setActive).not.toHaveBeenCalled()
+  })
+
+  it("keeps the collapse control with a single chat pane", () => {
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        chatPanes={[
+          { id: "s1", title: "First", panel: "chat", params: { sessionId: "s1" } },
+        ]}
+        activeChatPaneId="s1"
+      />,
+      ["chat", "session-list"],
+    )
+
+    expect(screen.getByRole("button", { name: "Collapse chat" })).toBeInTheDocument()
+  })
+
+  it("keeps the collapse control with multiple chat panes", () => {
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        chatPanes={[
+          { id: "s1", title: "First", panel: "chat", params: { sessionId: "s1" } },
+          { id: "s2", title: "Second", panel: "chat", params: { sessionId: "s2" } },
+        ]}
+        activeChatPaneId="s1"
+      />,
+      ["chat", "session-list"],
+    )
+
+    expect(screen.getByRole("button", { name: "Collapse chat" })).toBeInTheDocument()
+  })
+
+  it("stacks the floating expand-chat button above the sessions button on the left edge", () => {
+    renderWithRegistry(
+      <ChatLayout center="chat" nav={null} onOpenNav={vi.fn()} storageKey="chat-layout-stack" />,
+      ["chat", "session-list"],
+    )
+
+    act(() => fireShortcut("\\", { metaKey: true }))
+
+    const sessionsButton = screen.getByRole("button", { name: "Sessions" })
+    const chatButton = screen.getByRole("button", { name: "Expand chat" })
+    // Both anchor to the left edge and are vertically offset so they never overlap.
+    expect(sessionsButton.className).toContain("left-2")
+    expect(chatButton.className).toContain("left-2")
+    expect(sessionsButton.style.transform).toContain("translateY(calc(-50% - 0px))")
+    expect(chatButton.style.transform).toContain("translateY(calc(-50% - 44px))")
+  })
+
+  it("auto-expands the chat panel when a blocker appears while collapsed", async () => {
+    function Host() {
+      const { addBlocker } = useWorkspaceAttention()
+      return (
+        <>
+          <ChatLayout center="chat" storageKey="chat-layout-blocker" />
+          <button
+            type="button"
+            onClick={() => addBlocker({ id: "b1", reason: "Approve", label: "Approve" })}
+          >
+            Add blocker
+          </button>
+        </>
+      )
+    }
+
+    const user = userEvent.setup()
+    renderWithRegistry(<Host />, ["chat", "session-list"])
+
+    act(() => fireShortcut("\\", { metaKey: true }))
+    expect(screen.getByLabelText("Collapsed chat")).toHaveAttribute("data-boring-state", "collapsed")
+
+    await user.click(screen.getByRole("button", { name: "Add blocker" }))
+    await waitFor(() =>
+      expect(screen.getByLabelText("Chat")).toHaveAttribute("data-boring-state", "expanded"),
+    )
   })
 
   it("dispatches plugin UI commands through the workbench contract", () => {

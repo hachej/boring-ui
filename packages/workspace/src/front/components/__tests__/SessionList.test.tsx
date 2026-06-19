@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest"
-import { render, screen, fireEvent } from "@testing-library/react"
+import { afterEach, describe, it, expect, vi } from "vitest"
+import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { SessionList, type SessionItem } from "../SessionList"
 
@@ -10,6 +10,16 @@ const sessions: SessionItem[] = [
 ]
 
 describe("SessionList", () => {
+  const originalExecCommand = document.execCommand
+
+  afterEach(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: undefined,
+    })
+    document.execCommand = originalExecCommand
+  })
+
   it("renders list of sessions with titles", () => {
     render(<SessionList sessions={sessions} />)
     expect(screen.getByText("First session")).toBeInTheDocument()
@@ -29,6 +39,20 @@ describe("SessionList", () => {
     render(<SessionList sessions={sessions} onSwitch={onSwitch} />)
     fireEvent.click(screen.getByText("Second session"))
     expect(onSwitch).toHaveBeenCalledWith("s2")
+  })
+
+  it("copy session id falls back to legacy copy without switching sessions", async () => {
+    const onSwitch = vi.fn()
+    const execCommand = vi.fn().mockReturnValue(true)
+    document.execCommand = execCommand
+    render(<SessionList sessions={sessions} activeId="s1" onSwitch={onSwitch} />)
+
+    fireEvent.click(screen.getByLabelText("Copy Pi session id for First session"))
+
+    await waitFor(() => {
+      expect(execCommand).toHaveBeenCalledWith("copy")
+    })
+    expect(onSwitch).not.toHaveBeenCalled()
   })
 
   it("create button calls onCreate", () => {

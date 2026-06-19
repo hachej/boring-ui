@@ -142,7 +142,9 @@ export type {
 } from "./humanInput/pendingQuestionStore"
 export {
   bootstrapServer,
+  definePluginAsset,
   defineServerPlugin,
+  resolvePluginAssetPath,
   validateServerPlugin,
 } from "./plugins/bootstrapServer"
 export type {
@@ -152,12 +154,13 @@ export type {
   WorkspaceProvisioningContribution,
   WorkspaceRouteContribution,
   WorkspaceServerPlugin,
+  WorkspaceServerPluginAsset,
 } from "./plugins/bootstrapServer"
 // Boring plugin asset manager + reload-pluggability helpers.
 export { buildBoringSystemPrompt } from "./boringSystemPrompt"
 export { BoringPluginAssetManager } from "./agentPlugins/manager"
 export { boringPluginRoutes, collectRestartWarnings } from "./agentPlugins/routes"
-export type { PluginReloadRebuild, PluginRestartWarning } from "./agentPlugins/routes"
+export type { PluginRestartWarning } from "./agentPlugins/routes"
 export { aggregatePluginPrompts } from "./agentPlugins/aggregatePluginPrompts"
 export { preflightBoringPlugins, readBoringPlugins, scanBoringPlugins } from "./agentPlugins/scan"
 export type { BoringPluginScanResult } from "./agentPlugins/scan"
@@ -173,6 +176,26 @@ export {
   readPluginSignatureCache,
   writePluginSignatureCache,
 } from "./agentPlugins/signatureCache"
+export {
+  defineRuntimeServerPlugin,
+  runtimeBackendGateway,
+  RuntimeBackendError,
+  RuntimeBackendRegistry,
+  validateRuntimeServerPlugin,
+} from "./runtimeBackend"
+export type {
+  RuntimeBackendDiagnostic,
+  RuntimeBackendDispatchRequest,
+  RuntimeBackendDispatchResponse,
+  RuntimeBackendDispatcher,
+  RuntimeBackendGatewayOptions,
+  RuntimeBackendReloadResult,
+  RuntimePluginContext,
+  RuntimePluginHandler,
+  RuntimePluginResponse,
+  RuntimePluginRouter,
+  RuntimeServerPlugin,
+} from "./runtimeBackend"
 export type {
   BoringPluginEvent,
   BoringPluginFrontTarget,
@@ -181,6 +204,9 @@ export type {
   BoringPluginNativeFrontTarget,
   BoringPluginNativeFrontTargetTrust,
   BoringPluginListEntry,
+  BoringPluginSource,
+  BoringPluginSourceInput,
+  BoringPluginSourceKind,
   BoringServerPluginManifest,
 } from "./agentPlugins/types"
 

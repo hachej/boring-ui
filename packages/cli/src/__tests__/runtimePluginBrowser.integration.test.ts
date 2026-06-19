@@ -157,12 +157,12 @@ browserTest("built folder mode browser path hot-loads, preserves previous-good r
   await withBrowser(async (page, trace) => {
     trace.push("open folder mode page")
     await page.goto(address, { waitUntil: "load" })
-    await pwExpect(page.getByText("Trusted local runtime plugins")).toBeVisible()
     await page.getByRole("button", { name: "Workbench" }).click()
-    await pwExpect(page.getByText("Runtime Tab")).toBeVisible()
+    const runtimeTab = page.getByRole("button", { name: "Runtime Tab" })
+    await pwExpect(runtimeTab).toBeVisible()
 
     trace.push("render runtime plugin left tab v1")
-    await page.locator('button[role="tab"]').filter({ hasText: "Runtime Tab" }).click({ force: true })
+    await runtimeTab.click({ force: true })
     await pwExpect(page.getByText("runtime-plugin-ready-v1")).toBeVisible()
 
     trace.push("reload to v2")
@@ -248,7 +248,6 @@ browserTest("built workspaces mode browser path handles zero-plugin replay compl
     await page.goto(`${address}/workspace/${encodeURIComponent(registeredA.id)}`, { waitUntil: "domcontentloaded" })
     await page.goto(`${address}/workspace/${encodeURIComponent(registeredB.id)}`, { waitUntil: "load" })
 
-    await pwExpect(page.getByText("Trusted local runtime plugins")).toBeVisible()
     await pwExpect(page.getByText("Plugins loading…")).toHaveCount(0)
     await pwExpect(page.getByText("Slow Tab")).toHaveCount(0)
     await pwExpect(page.getByText("slow-plugin-ready")).toHaveCount(0)

@@ -185,15 +185,68 @@ async function buildGlobalToolMounts(workspaceRoot: string): Promise<string[]> {
   return args
 }
 
+export interface BwrapResourceLimits {
+  cpuSeconds?: number
+  fileSizeBlocks?: number
+  maxProcesses?: number
+  openFiles?: number
+  virtualMemoryKb?: number
+}
+
 export interface CreateBwrapSandboxOptions {
   hostWorkspaceRoot?: string
   runtimeContext?: WorkspaceRuntimeContext
+  network?: 'shared' | 'isolated'
+  dropAllCapabilities?: boolean
+  resourceLimits?: BwrapResourceLimits
 }
 
+function positiveInteger(value: number | undefined, name: string): number | undefined {
+  if (value === undefined) return undefined
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer`)
+  }
+  return Math.floor(value)
+}
+
+function buildResourceLimitCommands(limits: BwrapResourceLimits | undefined): string[] {
+  if (!limits) return []
+
+  const commands: string[] = []
+  const cpuSeconds = positiveInteger(limits.cpuSeconds, 'resourceLimits.cpuSeconds')
+  const fileSizeBlocks = positiveInteger(limits.fileSizeBlocks, 'resourceLimits.fileSizeBlocks')
+  const maxProcesses = positiveInteger(limits.maxProcesses, 'resourceLimits.maxProcesses')
+  const openFiles = positiveInteger(limits.openFiles, 'resourceLimits.openFiles')
+  const virtualMemoryKb = positiveInteger(limits.virtualMemoryKb, 'resourceLimits.virtualMemoryKb')
+
+  if (cpuSeconds !== undefined) commands.push(`ulimit -t ${cpuSeconds}`)
+  if (fileSizeBlocks !== undefined) commands.push(`ulimit -f ${fileSizeBlocks}`)
+  if (maxProcesses !== undefined) commands.push(`ulimit -u ${maxProcesses}`)
+  if (openFiles !== undefined) commands.push(`ulimit -n ${openFiles}`)
+  if (virtualMemoryKb !== undefined) commands.push(`ulimit -v ${virtualMemoryKb}`)
+
+  return commands
+}
+
+function buildCommandArgs(cmd: string, limits: BwrapResourceLimits | undefined): string[] {
+  const limitCommands = buildResourceLimitCommands(limits)
+  if (limitCommands.length === 0) return ['bash', '-c', cmd]
+
+  return [
+    'bash',
+    '-c',
+    `${limitCommands.join('\n')}\nexec bash -c "$1"`,
+    'boring-exec',
+    cmd,
+  ]
+}
+
+
 export function createBwrapSandbox(opts: CreateBwrapSandboxOptions = {}): Sandbox {
+  const sandboxOptions = opts
   let workspace: Workspace | null = null
-  let hostWorkspaceRoot = opts.hostWorkspaceRoot
-  let runtimeContext = opts.runtimeContext ?? { runtimeCwd: SANDBOX_HOME }
+  let hostWorkspaceRoot = sandboxOptions.hostWorkspaceRoot
+  let runtimeContext = sandboxOptions.runtimeContext ?? { runtimeCwd: SANDBOX_HOME }
 
   return {
     id: 'bwrap',
@@ -205,8 +258,8 @@ export function createBwrapSandbox(opts: CreateBwrapSandboxOptions = {}): Sandbo
     },
     async init(ctx) {
       workspace = ctx.workspace
-      hostWorkspaceRoot = opts.hostWorkspaceRoot ?? getNodeWorkspaceHostRoot(ctx.workspace) ?? ctx.workspace.root
-      runtimeContext = opts.runtimeContext ?? { runtimeCwd: SANDBOX_HOME }
+      hostWorkspaceRoot = sandboxOptions.hostWorkspaceRoot ?? getNodeWorkspaceHostRoot(ctx.workspace) ?? ctx.workspace.root
+      runtimeContext = sandboxOptions.runtimeContext ?? { runtimeCwd: SANDBOX_HOME }
       await assertBwrapAvailable()
     },
     async exec(cmd, opts) {
@@ -220,12 +273,14 @@ export function createBwrapSandbox(opts: CreateBwrapSandboxOptions = {}): Sandbo
       const workspaceRoot = hostWorkspaceRoot ?? workspace.root
       const sandboxCwd = computeSandboxCwd(workspaceRoot, runtimeContext.runtimeCwd, opts?.cwd)
       const postWorkspaceArgs = await buildGlobalToolMounts(workspaceRoot)
-      const baseArgs = buildBwrapArgs(workspaceRoot, { postWorkspaceArgs })
+      const baseArgs = buildBwrapArgs(workspaceRoot, {
+        postWorkspaceArgs,
+        network: sandboxOptions.network,
+        dropAllCapabilities: sandboxOptions.dropAllCapabilities,
+      })
       const args = [
         ...withSandboxCwd(baseArgs, sandboxCwd),
-        'bash',
-        '-c',
-        cmd,
+        ...buildCommandArgs(cmd, sandboxOptions.resourceLimits),
       ]
 
       return await new Promise((resolve, reject) => {

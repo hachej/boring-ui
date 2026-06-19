@@ -3,21 +3,16 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "boring": {
-    "defaultPluginPackages": [
-      "@hachej/boring-ask-user",
-      "@hachej/boring-deck",
-      "./src/plugins/playgroundDataCatalog"
-    ]
-  },
   "scripts": {
-    "build:deps": "pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-explorer build && pnpm --filter @hachej/boring-data-catalog build",
+    "build:deps": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-ui-plugin-cli build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-explorer build && pnpm --filter @hachej/boring-data-catalog build",
     "dev": "pnpm run build:deps && vite",
     "build": "pnpm run build:deps && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "pnpm run build:deps && playwright test",
-    "smoke:bridge": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && tsx scripts/bridge-e2e.ts"
+    "eval": "AGENT_API_PORT=5350 vite-node src/eval/run.ts",
+    "eval:slash-command": "AGENT_API_PORT=5350 vite-node src/eval/run.ts src/eval/plugin-slash-command.yaml",
+    "eval:woreplace": "AGENT_API_PORT=5350 vite-node src/eval/run.ts src/eval/woreplace-skill.yaml"
   },
   "dependencies": {
     "@hachej/boring-agent": "workspace:*",
@@ -38,8 +33,7 @@
     "@vitejs/plugin-react": "^4.0.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.4.0",
-    "tsx": "^4.21.0",
-    "vitest": "^4.1.2",
+    "vitest": "^3.2.6",
     "vite": "^6.0.0"
   }
 }

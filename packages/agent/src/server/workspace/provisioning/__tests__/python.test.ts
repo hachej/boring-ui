@@ -98,7 +98,7 @@ async function fakePyprojectRoot(prefix = 'boring macro sdk-'): Promise<{ root: 
   return { root, pyproject }
 }
 
-const VERCEL_UV = '/home/vercel-sandbox/.local/bin/uv'
+const VERCEL_UV = '/workspace/.boring-agent/sdk/uv/bin/uv'
 
 test('ensureUv prefers explicitUvBin over bare uv (PATH-independence)', async () => {
   const workspaceRoot = await tempWorkspace()
@@ -198,6 +198,26 @@ test('skips install when composite fingerprint matches and bm exists', async () 
   const adapter = createFakeAdapter(workspaceRoot, state)
 
   const first = await ensurePythonRuntime({ adapter, runtimeLayout: paths, packages })
+  const second = await ensurePythonRuntime({ adapter, runtimeLayout: paths, packages })
+
+  expect(first.changed).toBe(true)
+  expect(second.changed).toBe(false)
+  expect(state.commands.filter((cmd) => cmd.args[0] === 'pip')).toHaveLength(1)
+})
+
+test('does not reinstall when only the venv interpreter symlink is unreadable (direct-mode escape)', async () => {
+  const workspaceRoot = await tempWorkspace()
+  const paths = getBoringAgentRuntimePaths(workspaceRoot)
+  const { pyproject } = await fakePyprojectRoot()
+  const state: FakeAdapterState = { commands: [], resolved: [], systemUv: true }
+  const packages = [{ id: 'macro-sdk', packageName: 'boring-macro-sdk', projectFile: pyproject, expectedBins: ['bm'] }]
+  const adapter = createFakeAdapter(workspaceRoot, state)
+
+  const first = await ensurePythonRuntime({ adapter, runtimeLayout: paths, packages })
+  // Simulate direct-mode's filesystem rejecting bin/python: it is a symlink to
+  // the system interpreter that resolves outside the workspace, so exists()
+  // reports it missing even though the venv and its package bins are intact.
+  await rm(paths.venvPython, { force: true })
   const second = await ensurePythonRuntime({ adapter, runtimeLayout: paths, packages })
 
   expect(first.changed).toBe(true)

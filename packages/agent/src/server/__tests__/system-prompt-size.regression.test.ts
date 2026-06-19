@@ -49,10 +49,10 @@ describe('system-prompt-size regression', () => {
     // materialize — pi builds it during session bootstrap.
     await app.inject({
       method: 'POST',
-      url: '/api/v1/agent/chat',
+      url: `/api/v1/agent/pi-chat/${sessionId}/prompt`,
       payload: {
-        sessionId,
         message: 'Say only the word "ok" and nothing else.',
+        clientNonce: 'prompt-size-test',
         model: { provider: 'anthropic', id: 'claude-haiku-4-5-20251001' },
       },
     })

@@ -1,5 +1,7 @@
+// @vitest-environment jsdom
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 
 vi.mock('lucide-react', () => {
   const Icon = () => <svg />
@@ -15,7 +17,17 @@ vi.mock('lucide-react', () => {
 import { DebugDrawer } from '../DebugDrawer'
 
 describe('DebugDrawer', () => {
-  test('shows pi session id and terminal resume command by default', () => {
+  const originalExecCommand = document.execCommand
+
+  afterEach(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: undefined,
+    })
+    document.execCommand = originalExecCommand
+  })
+
+  test('shows runtime session id by default', () => {
     const html = renderToStaticMarkup(
       <DebugDrawer
         sessionId="sess-debug-123"
@@ -26,9 +38,29 @@ describe('DebugDrawer', () => {
     )
 
     expect(html).toContain('Session')
-    expect(html).toContain('Pi session id')
+    expect(html).toContain('Runtime session id')
     expect(html).toContain('sess-debug-123')
-    expect(html).toContain('pi --session sess-debug-123')
-    expect(html).toContain('pi --continue')
+    expect(html).not.toContain('pi --session sess-debug-123')
+    expect(html).not.toContain('pi --continue')
+  })
+
+  test('copy buttons use legacy fallback when clipboard API is unavailable', async () => {
+    const execCommand = vi.fn().mockReturnValue(true)
+    document.execCommand = execCommand
+
+    render(
+      <DebugDrawer
+        sessionId="sess-debug-123"
+        messages={[]}
+        width={440}
+        onWidthChange={() => {}}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Runtime session id' }))
+
+    await waitFor(() => {
+      expect(execCommand).toHaveBeenCalledWith('copy')
+    })
   })
 })

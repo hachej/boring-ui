@@ -5,6 +5,7 @@
  */
 import { useCallback, useState } from 'react'
 import { Button } from '@hachej/boring-ui-kit'
+import { copyTextToClipboard } from '../clipboard'
 import { cn } from '../lib'
 
 export interface CodeBlockProps {
@@ -27,7 +28,8 @@ export function CodeBlock({
   const [copied, setCopied] = useState(false)
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(code).then(() => {
+    void copyTextToClipboard(code).then((ok) => {
+      if (!ok) return
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })

@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 export const ErrorCode = z.enum([
   // Auth / config
+  'UNAUTHORIZED',
   'MISSING_API_KEY',
   'INVALID_API_KEY',
   'OIDC_REFRESH_FAILED',
@@ -30,8 +31,13 @@ export const ErrorCode = z.enum([
   'SANDBOX_NOT_READY',
   'SANDBOX_EXPIRED',
   'VERCEL_API_ERROR',
+  'REMOTE_WORKER_TIMEOUT',
+  'REMOTE_WORKER_STREAM_CLOSED',
   'CIRCUIT_OPEN',
   'ABORTED',
+
+  // Billing / metering
+  'PAYMENT_REQUIRED',
 
   // Session / bridge
   'SESSION_NOT_FOUND',
@@ -52,6 +58,11 @@ export const ErrorCode = z.enum([
   'PLUGIN_RUNTIME_PRIVATE_FILE',
   'PLUGIN_RUNTIME_UNSAFE_IMPORT',
   'PLUGIN_RUNTIME_TRANSFORM_FAILED',
+  'RUNTIME_PLUGIN_NOT_FOUND',
+  'RUNTIME_PLUGIN_ROUTE_NOT_FOUND',
+  'RUNTIME_PLUGIN_HANDLER_FAILED',
+  'RUNTIME_PLUGIN_LOAD_FAILED',
+  'RUNTIME_PLUGIN_RESPONSE_UNSUPPORTED',
 
   // Runtime provisioning
   'PROVISIONING_LAYOUT_FAILED',

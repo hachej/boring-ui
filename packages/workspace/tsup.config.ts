@@ -6,6 +6,7 @@ export default defineConfig({
   entry: {
     "app-server": "src/app/server/index.ts",
     server: "src/server/index.ts",
+    "runtime-server": "src/server/runtimeBackend/defineRuntimeServerPlugin.ts",
     shared: "src/shared/index.ts",
     "bridge-client": "src/bridge-client/index.ts",
     events: "src/front/events/index.ts",
@@ -16,7 +17,8 @@ export default defineConfig({
     resolve: false,
     entry: {
       "app-server": "src/app/server/index.ts",
-      server: "src/server/index.ts",
+        server: "src/server/index.ts",
+      "runtime-server": "src/server/runtimeBackend/defineRuntimeServerPlugin.ts",
       shared: "src/shared/index.ts",
       "bridge-client": "src/bridge-client/index.ts",
       events: "src/front/events/index.ts",
@@ -38,5 +40,6 @@ export default defineConfig({
     // external so Node consumers resolve from their own node_modules;
     // browser bundles never reach the server entry so it doesn't leak.
     "@mariozechner/pi-coding-agent",
+    /^@hachej\/boring-ui-plugin-cli(\/.*)?$/,
   ],
 })

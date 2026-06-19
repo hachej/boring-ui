@@ -2,12 +2,20 @@ import { useEffect, useState } from 'react'
 import type { CommandRegistry } from '../slashCommands/registry'
 
 export function useServerSkills({
+  apiBaseUrl,
+  fetch: fetchImpl,
   registry,
   requestHeaders,
+  storageScope,
+  refreshKey,
   enabled = true,
 }: {
+  apiBaseUrl?: string
+  fetch?: typeof globalThis.fetch
   registry: CommandRegistry
   requestHeaders?: Record<string, string>
+  storageScope?: string
+  refreshKey?: unknown
   enabled?: boolean
 }): number {
   // Bumped when server skills are added to registry so the picker re-renders.
@@ -19,14 +27,18 @@ export function useServerSkills({
   useEffect(() => {
     if (!enabled) return
     let aborted = false
-    fetch('/api/v1/agent/skills', { headers: requestHeaders })
+    const nextFetch = fetchImpl ?? globalThis.fetch.bind(globalThis)
+    const path = refreshKey ? '/api/v1/agent/skills?refresh=1' : '/api/v1/agent/skills'
+    nextFetch(agentResourceUrl(apiBaseUrl, path), {
+      headers: scopedHeaders(requestHeaders, storageScope),
+    })
       .then((res) => (res.ok ? res.json() : null))
       .then((payload: { skills?: Array<{ name: string; description: string }> } | null) => {
         if (aborted || !payload?.skills) return
         let added = 0
         for (const skill of payload.skills) {
           if (!registry.get(skill.name)) {
-            registry.register({ name: skill.name, description: skill.description, kind: 'skill', handler: () => {} })
+            registry.register({ name: skill.name, description: skill.description, kind: 'skill', source: 'skill', handler: () => {} })
             added++
           }
         }
@@ -34,7 +46,20 @@ export function useServerSkills({
       })
       .catch(() => {})
     return () => { aborted = true }
-  }, [enabled, requestHeaders, registry])
+  }, [apiBaseUrl, enabled, fetchImpl, refreshKey, requestHeaders, registry, storageScope])
 
   return skillsStamp
+}
+
+function agentResourceUrl(apiBaseUrl: string | undefined, path: string): string {
+  const base = apiBaseUrl?.replace(/\/$/, '') ?? ''
+  return `${base}${path}`
+}
+
+function scopedHeaders(headers: Record<string, string> | undefined, storageScope: string | undefined): Record<string, string> | undefined {
+  if (!headers && !storageScope) return undefined
+  const result: Record<string, string> = { ...(headers ?? {}) }
+  const hasStorageScope = Object.keys(result).some((key) => key.toLowerCase() === 'x-boring-storage-scope')
+  if (storageScope && !hasStorageScope) result['x-boring-storage-scope'] = storageScope
+  return result
 }

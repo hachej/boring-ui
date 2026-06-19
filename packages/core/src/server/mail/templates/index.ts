@@ -85,6 +85,7 @@ export async function renderMagicLink(
 interface WorkspaceInviteData {
   to: string
   acceptUrl: string
+  appName: string
   inviterName: string
   workspaceName: string
   role: string
@@ -96,6 +97,7 @@ export async function renderWorkspaceInvite(
 ): Promise<RenderedEmail> {
   const element = WorkspaceInvite({
     acceptUrl: data.acceptUrl,
+    appName: data.appName,
     inviterName: data.inviterName,
     workspaceName: data.workspaceName,
     role: data.role,

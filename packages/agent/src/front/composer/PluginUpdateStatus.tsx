@@ -13,8 +13,9 @@
  *  - "error"    — red-ish accent, with the diagnostic message and a
  *    "Try again" button that re-runs `/reload`.
  */
-import { useEffect, type ReactElement } from "react"
+import { useEffect, useRef, type ReactElement } from "react"
 import { cn } from "../lib"
+import { ComposerStatusBanner } from "./ComposerStatusBanner"
 import type { PluginRestartWarning } from "../../shared/agentPluginEvents"
 
 export type { PluginRestartWarning }
@@ -36,38 +37,44 @@ export interface PluginUpdateStatusProps {
   onRetry: () => void
   /** Auto-dismiss clean success banners. Set to 0 to disable. */
   successAutoDismissMs?: number
+  /** Width class supplied by ChatPanel so the banner matches the composer. */
+  maxWidthClassName?: string
 }
 
 export function PluginUpdateStatus({
   state,
   onDismiss,
   onRetry,
-  successAutoDismissMs = 4000,
+  successAutoDismissMs = 1400,
+  maxWidthClassName = "max-w-3xl",
 }: PluginUpdateStatusProps): ReactElement | null {
+  const onDismissRef = useRef(onDismiss)
+  useEffect(() => {
+    onDismissRef.current = onDismiss
+  }, [onDismiss])
+
+  const successDismissKey = state?.kind === "success"
+    ? `${state.reloaded}:${(state.restartWarnings?.length ?? 0) > 0 || (state.diagnostics?.length ?? 0) > 0}`
+    : null
+
   useEffect(() => {
     if (!state || state.kind !== "success" || successAutoDismissMs <= 0) return
-    const hasDetails = (state.restartWarnings?.length ?? 0) > 0 || (state.diagnostics?.length ?? 0) > 0 || (state.frontEvents?.length ?? 0) > 0
-    if (hasDetails) return
-    const timeout = window.setTimeout(onDismiss, successAutoDismissMs)
+    const hasWarningsOrDiagnostics = (state.restartWarnings?.length ?? 0) > 0 || (state.diagnostics?.length ?? 0) > 0
+    if (hasWarningsOrDiagnostics) return
+    const timeout = window.setTimeout(() => onDismissRef.current(), successAutoDismissMs)
     return () => window.clearTimeout(timeout)
-  }, [state, onDismiss, successAutoDismissMs])
+  }, [state?.kind, successDismissKey, successAutoDismissMs])
 
   if (!state) return null
 
   if (state.kind === "running") {
     return (
-      <div
-        data-boring-plugin-update="running"
-        role="status"
-        aria-live="polite"
-        className={cn(
-          "mx-auto mb-2 w-full max-w-3xl rounded-[var(--radius-md)] border border-accent/30 bg-[color:var(--accent-soft)]",
-          "px-3 py-2 text-xs text-foreground flex items-center gap-2",
-        )}
-      >
-        <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-accent" aria-hidden="true" />
-        <span>Updating plugins…</span>
-      </div>
+      <ComposerStatusBanner
+        tone="running"
+        dataAttribute="data-boring-plugin-update"
+        maxWidthClassName={maxWidthClassName}
+        runningContent="Updating extensions…"
+      />
     )
   }
 
@@ -75,36 +82,29 @@ export function PluginUpdateStatus({
     const warnings = state.restartWarnings ?? []
     const diagnostics = state.diagnostics ?? []
     const frontEvents = state.frontEvents ?? []
+    const hasWarningsOrDiagnostics = warnings.length > 0 || diagnostics.length > 0
+    const title = state.reloaded
+      ? hasWarningsOrDiagnostics
+        ? "Reload finished with warnings"
+        : "Reload complete"
+      : "Reload queued"
+    const detail = state.reloaded
+      ? hasWarningsOrDiagnostics
+        ? "Some extension changes need attention."
+        : frontEvents.length > 0
+          ? `${frontEvents.length} extension module${frontEvents.length === 1 ? "" : "s"} refreshed. Changes are live.`
+          : "Changes are live."
+      : undefined
     return (
-      <div
-        data-boring-plugin-update="success"
-        role="status"
-        aria-live="polite"
-        className={cn(
-          "mx-auto mb-2 w-full max-w-3xl rounded-[var(--radius-md)] border border-[oklch(0.78_0.13_148)]/40 bg-[oklch(0.95_0.05_148/0.3)]",
-          "px-3 py-2 text-xs text-foreground",
-        )}
+      <ComposerStatusBanner
+        tone="success"
+        dataAttribute="data-boring-plugin-update"
+        maxWidthClassName={maxWidthClassName}
+        title={title}
+        detail={detail}
+        onDismiss={onDismiss}
+        dismissAriaLabel="Dismiss plugin update status"
       >
-        <div className="flex items-center gap-2">
-          <span className="text-[oklch(0.45_0.13_148)]" aria-hidden="true">✓</span>
-          <span className="flex-1">
-            {state.reloaded
-              ? warnings.length > 0 || diagnostics.length > 0
-                ? "Plugins updated with warnings."
-                : frontEvents.length > 0
-                  ? "Plugins updated. Browser modules reloaded."
-                  : "Plugins updated."
-              : "Plugins will reload on the next message."}
-          </span>
-          <button
-            type="button"
-            onClick={onDismiss}
-            className="rounded border border-transparent px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-            aria-label="Dismiss plugin update status"
-          >
-            Dismiss
-          </button>
-        </div>
         {diagnostics.length > 0 ? (
           <div
             data-boring-plugin-update-diagnostics=""
@@ -116,36 +116,13 @@ export function PluginUpdateStatus({
             <div className="flex items-center gap-1.5 font-medium text-[oklch(0.48_0.15_60)]">
               <span aria-hidden="true">⚠</span>
               <span>
-                Reload diagnostics for {diagnostics.length} plugin{diagnostics.length === 1 ? "" : "s"}
+                Reload diagnostics for {diagnostics.length} extension{diagnostics.length === 1 ? "" : "s"}
               </span>
             </div>
             <ul className="mt-1 ml-4 list-disc text-foreground/85">
               {diagnostics.map((diagnostic, index) => (
                 <li key={`${diagnostic.pluginId ?? diagnostic.source ?? "plugin"}-${index}`}>
                   <code className="font-mono text-[10.5px]">{diagnostic.pluginId ?? diagnostic.source ?? "plugin"}</code> — {diagnostic.message ?? "reload diagnostic"}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-        {frontEvents.length > 0 ? (
-          <div
-            data-boring-plugin-update-front-events=""
-            className={cn(
-              "mt-2 rounded border border-[oklch(0.78_0.13_148)]/35 bg-[oklch(0.95_0.05_148/0.25)]",
-              "px-2 py-1.5 text-[11px] text-foreground",
-            )}
-          >
-            <div className="flex items-center gap-1.5 font-medium text-[oklch(0.45_0.13_148)]">
-              <span aria-hidden="true">✓</span>
-              <span>
-                Browser plugin modules updated ({frontEvents.length})
-              </span>
-            </div>
-            <ul className="mt-1 ml-4 list-disc text-foreground/85">
-              {frontEvents.map((event, index) => (
-                <li key={`${event.pluginId ?? event.source ?? "plugin"}-${index}`}>
-                  <code className="font-mono text-[10.5px]">{event.pluginId ?? event.source ?? "plugin"}</code> — {event.message ?? "front module updated"}
                 </li>
               ))}
             </ul>
@@ -162,7 +139,7 @@ export function PluginUpdateStatus({
             <div className="flex items-center gap-1.5 font-medium text-[oklch(0.48_0.15_60)]">
               <span aria-hidden="true">⚠</span>
               <span>
-                Restart needed for {warnings.length} plugin{warnings.length === 1 ? "" : "s"}
+                Restart needed for {warnings.length} extension{warnings.length === 1 ? "" : "s"}
               </span>
             </div>
             <ul className="mt-1 ml-4 list-disc text-foreground/85">
@@ -173,44 +150,25 @@ export function PluginUpdateStatus({
               ))}
             </ul>
             <p className="mt-1 text-foreground/70">
-              The front bundle reloaded successfully, but routes and agent tools were wired at boot. Stop and restart the workspace process (Ctrl-C, then re-run your dev command) to pick up the new code.
+              The interface reloaded successfully, but routes and tools were wired at boot. Restart the workspace process to pick up the new code.
             </p>
           </div>
         ) : null}
-      </div>
+      </ComposerStatusBanner>
     )
   }
 
   return (
-    <div
-      data-boring-plugin-update="error"
-      role="status"
-      aria-live="polite"
-      className={cn(
-        "mx-auto mb-2 w-full max-w-3xl rounded-[var(--radius-md)] border border-destructive/40 bg-destructive/10",
-        "px-3 py-2 text-xs text-foreground",
-      )}
-    >
-      <div className="flex items-center gap-2">
-        <span className="text-destructive" aria-hidden="true">⚠</span>
-        <span className="flex-1 font-medium">Plugin update failed.</span>
-        <button
-          type="button"
-          onClick={onRetry}
-          className="rounded border border-destructive/40 px-2 py-0.5 text-[11px] font-medium hover:bg-destructive/10"
-        >
-          Try again
-        </button>
-        <button
-          type="button"
-          onClick={onDismiss}
-          className="rounded border border-transparent px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-          aria-label="Dismiss plugin update status"
-        >
-          Dismiss
-        </button>
-      </div>
-      <pre className="mt-2 whitespace-pre-wrap break-words text-[11px] text-destructive/90">{state.message}</pre>
-    </div>
+    <ComposerStatusBanner
+      tone="error"
+      dataAttribute="data-boring-plugin-update"
+      maxWidthClassName={maxWidthClassName}
+      title="Extension update failed."
+      message={state.message}
+      onRetry={onRetry}
+      onDismiss={onDismiss}
+      retryLabel="Try again"
+      dismissAriaLabel="Dismiss plugin update status"
+    />
   )
 }

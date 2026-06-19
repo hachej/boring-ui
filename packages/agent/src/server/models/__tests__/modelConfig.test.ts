@@ -16,7 +16,10 @@ const ENV_KEYS = [
   'BORING_AGENT_INFOMANIAK_PRODUCT_ID',
   'BORING_AGENT_INFOMANIAK_BASE_URL',
   'BORING_AGENT_INFOMANIAK_MODEL',
+  'BORING_AGENT_INFOMANIAK_MODELS',
   'BORING_AGENT_INFOMANIAK_MODEL_NAME',
+  'BORING_AGENT_INFOMANIAK_SUPPORTS_DEVELOPER_ROLE',
+  'BORING_AGENT_INFOMANIAK_SUPPORTS_REASONING_EFFORT',
   'BORING_AGENT_INFOMANIAK_API_KEY_ENV',
   'BORING_AGENT_INFOMANIAK_API_KEY',
   'BORING_AGENT_CUSTOM_MODEL_PROVIDER',
@@ -56,7 +59,7 @@ afterEach(async () => {
 })
 
 describe('agent model env config', () => {
-  it('registers Infomaniak OpenAI-compatible model from env', () => {
+  it('registers the launch Infomaniak OpenAI-compatible models from env', () => {
     process.env.BORING_AGENT_INFOMANIAK_PRODUCT_ID = '108321'
     process.env.BORING_AGENT_INFOMANIAK_MODEL = 'Qwen/Qwen3.5-122B-A10B-FP8'
     process.env.INFOMANIAK_API_TOKEN = 'test-token'
@@ -69,6 +72,8 @@ describe('agent model env config', () => {
     }
 
     expect(registerConfiguredModelProviders(registry as never)).toEqual([
+      { provider: 'infomaniak', id: 'moonshotai/Kimi-K2.6' },
+      { provider: 'infomaniak', id: 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8' },
       { provider: 'infomaniak', id: 'Qwen/Qwen3.5-122B-A10B-FP8' },
     ])
     expect(registered).toHaveLength(1)
@@ -79,12 +84,23 @@ describe('agent model env config', () => {
       api: 'openai-completions',
       models: [
         {
-          id: 'Qwen/Qwen3.5-122B-A10B-FP8',
-          name: 'Qwen/Qwen3.5-122B-A10B-FP8',
+          id: 'moonshotai/Kimi-K2.6',
+          name: 'moonshotai/Kimi-K2.6',
           reasoning: true,
           input: ['text'],
           maxTokens: 16384,
           contextWindow: 200000,
+          compat: expect.objectContaining({ supportsDeveloperRole: false, supportsReasoningEffort: false }),
+        },
+        {
+          id: 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8',
+          name: 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8',
+          compat: expect.objectContaining({ supportsDeveloperRole: false, supportsReasoningEffort: false }),
+        },
+        {
+          id: 'Qwen/Qwen3.5-122B-A10B-FP8',
+          name: 'Qwen/Qwen3.5-122B-A10B-FP8',
+          compat: expect.objectContaining({ supportsDeveloperRole: false, supportsReasoningEffort: false }),
         },
       ],
     })

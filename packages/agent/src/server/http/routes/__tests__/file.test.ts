@@ -2,8 +2,9 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 
+import type { Workspace } from '../../../../shared/workspace'
 import { createNodeWorkspace } from '../../../workspace/createNodeWorkspace'
 import { fileRoutes } from '../file'
 
@@ -18,6 +19,14 @@ afterEach(async () => {
     }),
   )
 })
+
+async function createTestAppWithWorkspace(workspace: Workspace): Promise<FastifyInstance> {
+  const app = Fastify({ logger: false })
+  await app.register(fileRoutes, { workspace })
+  await app.ready()
+  apps.push(app)
+  return app
+}
 
 async function createTestApp(): Promise<{ app: FastifyInstance; workspaceRoot: string }> {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'boring-ui-file-routes-'))
@@ -113,6 +122,71 @@ describe('file routes (NodeWorkspace integration)', () => {
     })
     expect(readRes.statusCode).toBe(200)
     expect(readRes.json().content).toBe('export {}')
+  })
+
+  test('POST /api/v1/files can skip post-write stat when mtime is not needed', async () => {
+    const writeFileMock = vi.fn(async () => {})
+    const writeFileWithStatMock = vi.fn(async () => ({ kind: 'file' as const, size: 4, mtimeMs: 123 }))
+    const app = await createTestAppWithWorkspace({
+      root: '/workspace',
+      runtimeContext: { runtimeCwd: '/workspace' },
+      fsCapability: 'best-effort',
+      readFile: vi.fn(async () => ''),
+      writeFile: writeFileMock,
+      writeFileWithStat: writeFileWithStatMock,
+      unlink: vi.fn(async () => {}),
+      readdir: vi.fn(async () => []),
+      stat: vi.fn(async () => ({ kind: 'file' as const, size: 4, mtimeMs: 123 })),
+      mkdir: vi.fn(async () => {}),
+      rename: vi.fn(async () => {}),
+    })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files',
+      payload: { path: 'fast.txt', content: 'fast', returnMtimeMs: false },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ ok: true })
+    expect(writeFileMock).toHaveBeenCalledWith('fast.txt', 'fast')
+    expect(writeFileWithStatMock).not.toHaveBeenCalled()
+  })
+
+  test('POST /api/v1/files keeps mtime result for OCC writes even when returnMtimeMs is false', async () => {
+    const writeFileMock = vi.fn(async () => {})
+    const writeFileWithStatMock = vi.fn(async () => ({ kind: 'file' as const, size: 4, mtimeMs: 456 }))
+    const statMock = vi.fn(async () => ({ kind: 'file' as const, size: 3, mtimeMs: 123 }))
+    const app = await createTestAppWithWorkspace({
+      root: '/workspace',
+      runtimeContext: { runtimeCwd: '/workspace' },
+      fsCapability: 'best-effort',
+      readFile: vi.fn(async () => ''),
+      writeFile: writeFileMock,
+      writeFileWithStat: writeFileWithStatMock,
+      unlink: vi.fn(async () => {}),
+      readdir: vi.fn(async () => []),
+      stat: statMock,
+      mkdir: vi.fn(async () => {}),
+      rename: vi.fn(async () => {}),
+    })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files',
+      payload: {
+        path: 'occ.txt',
+        content: 'next',
+        expectedMtimeMs: 123,
+        returnMtimeMs: false,
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ ok: true, mtimeMs: 456 })
+    expect(statMock).toHaveBeenCalledWith('occ.txt')
+    expect(writeFileWithStatMock).toHaveBeenCalledWith('occ.txt', 'next')
+    expect(writeFileMock).not.toHaveBeenCalled()
   })
 
   test('multi-tab stale write overwrites newer content (last write wins)', async () => {
@@ -246,6 +320,170 @@ describe('file routes (NodeWorkspace integration)', () => {
     expect(res.rawPayload).toEqual(pngBytes)
   })
 
+  test('GET /api/v1/files/records pages JSON array records', async () => {
+    const { app, workspaceRoot } = await createTestApp()
+    await writeFile(join(workspaceRoot, 'niches.json'), JSON.stringify([
+      { id: 'n1', name: 'Climate Tools', score: 9 },
+      { id: 'n2', name: 'Ledger Apps', score: 7 },
+      { id: 'n3', name: 'Climate Finance', score: 8 },
+    ]), 'utf8')
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files/records?path=niches.json&offset=0&limit=2',
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      source: { kind: 'file', path: 'niches.json', format: 'json-array' },
+      path: 'niches.json',
+      format: 'json-array',
+      total: 3,
+      hasMore: true,
+      offset: 0,
+      limit: 2,
+      rows: [
+        { id: 'n1', name: 'Climate Tools', score: 9 },
+        { id: 'n2', name: 'Ledger Apps', score: 7 },
+      ],
+    })
+    expect(res.json().columns).toEqual([
+      { name: 'id', type: 'string' },
+      { name: 'name', type: 'string' },
+      { name: 'score', type: 'number' },
+    ])
+    expect(typeof res.json().mtimeMs).toBe('number')
+  })
+
+  test('GET /api/v1/files/records filters before paginating', async () => {
+    const { app, workspaceRoot } = await createTestApp()
+    await writeFile(join(workspaceRoot, 'niches.json'), JSON.stringify([
+      { id: 'n1', name: 'Climate Tools' },
+      { id: 'n2', name: 'Ledger Apps' },
+      { id: 'n3', name: 'Climate Finance' },
+    ]), 'utf8')
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files/records?path=niches.json&q=climate&offset=1&limit=1',
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      total: 2,
+      hasMore: false,
+      rows: [{ id: 'n3', name: 'Climate Finance' }],
+    })
+  })
+
+  test('GET /api/v1/files/records pages NDJSON records', async () => {
+    const { app, workspaceRoot } = await createTestApp()
+    await writeFile(join(workspaceRoot, 'events.ndjson'), [
+      JSON.stringify({ id: 1, kind: 'start' }),
+      JSON.stringify({ id: 2, kind: 'stop' }),
+    ].join('\n'), 'utf8')
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files/records?path=events.ndjson&offset=1&limit=10',
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      format: 'ndjson',
+      total: 2,
+      hasMore: false,
+      rows: [{ id: 2, kind: 'stop' }],
+    })
+  })
+
+  test('GET /api/v1/files/records pages CSV header records', async () => {
+    const { app, workspaceRoot } = await createTestApp()
+    await writeFile(join(workspaceRoot, 'niches.csv'), 'id,name\n1,Climate Tools\n2,Ledger Apps\n', 'utf8')
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files/records?path=niches.csv&limit=1',
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      format: 'csv',
+      total: 2,
+      hasMore: true,
+      rows: [{ id: '1', name: 'Climate Tools' }],
+    })
+  })
+
+  test('GET /api/v1/files/records handles quoted CSV and rejects malformed CSV', async () => {
+    const { app, workspaceRoot } = await createTestApp()
+    await writeFile(join(workspaceRoot, 'quoted.csv'), 'id,name,notes\n1,"Climate, Tools","line one\nline two"\n', 'utf8')
+    await writeFile(join(workspaceRoot, 'bad.csv'), 'id,name\n1,"unterminated\n', 'utf8')
+
+    const quotedRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files/records?path=quoted.csv',
+    })
+    expect(quotedRes.statusCode).toBe(200)
+    expect(quotedRes.json().rows).toEqual([{ id: '1', name: 'Climate, Tools', notes: 'line one\nline two' }])
+
+    const badRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files/records?path=bad.csv',
+    })
+    expect(badRes.statusCode).toBe(400)
+    expect(badRes.json().error.code).toBe('validation_error')
+  })
+
+  test('GET /api/v1/files/records clamps limit to host max', async () => {
+    const { app, workspaceRoot } = await createTestApp()
+    const rows = Array.from({ length: 120 }, (_, index) => ({ id: index }))
+    await writeFile(join(workspaceRoot, 'many.json'), JSON.stringify(rows), 'utf8')
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files/records?path=many.json&limit=999',
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().limit).toBe(100)
+    expect(res.json().rows).toHaveLength(100)
+    expect(res.json().hasMore).toBe(true)
+  })
+
+  test('GET /api/v1/files/records rejects recordSet, traversal, and oversize files', async () => {
+    const { app, workspaceRoot } = await createTestApp()
+
+    const recordSetRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files/records?path=data.json&recordSet=items',
+    })
+    expect(recordSetRes.statusCode).toBe(400)
+    expect(recordSetRes.json().error.field).toBe('recordSet')
+
+    const traversalRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files/records?path=..%2Fetc%2Fpasswd',
+    })
+    expect(traversalRes.statusCode).toBe(403)
+    expect(traversalRes.json().error.code).toBe('path_rejected')
+
+    await writeFile(join(workspaceRoot, 'huge.json'), `[${JSON.stringify({ value: 'x'.repeat(2 * 1024 * 1024) })}]`, 'utf8')
+    const hugeRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files/records?path=huge.json',
+    })
+    expect(hugeRes.statusCode).toBe(400)
+    expect(hugeRes.json().error.code).toBe('validation_error')
+
+    const hugeOffsetRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files/records?path=huge.json&offset=999999999999999999999999',
+    })
+    expect(hugeOffsetRes.statusCode).toBe(400)
+    expect(hugeOffsetRes.json().error.field).toBe('offset')
+  })
+
   test('POST /api/v1/files/upload stores image bytes under configured path', async () => {
     const { app, workspaceRoot } = await createTestApp()
 
@@ -277,6 +515,64 @@ describe('file routes (NodeWorkspace integration)', () => {
     expect(body.path).toMatch(/^media\/md-images\/My-Chart-[a-z0-9]+-[a-z0-9]+\.png$/)
     expect(body.markdownUrl).toMatch(/^\.\.\/media\/md-images\/My-Chart-[a-z0-9]+-[a-z0-9]+\.png$/)
     await expect(readFile(join(workspaceRoot, body.path))).resolves.toEqual(pngBytes)
+  })
+
+  test('POST /api/v1/files/upload stores non-image files under uploads path', async () => {
+    const { app, workspaceRoot } = await createTestApp()
+    const pdfBytes = Buffer.from('%PDF-1.4\n')
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files/upload',
+      payload: {
+        filename: 'Report.pdf',
+        contentType: 'application/pdf',
+        contentBase64: pdfBytes.toString('base64'),
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.path).toMatch(/^assets\/uploads\/Report-[a-z0-9]+-[a-z0-9]+\.pdf$/)
+    expect(body.markdownUrl).toBe(body.path)
+    await expect(readFile(join(workspaceRoot, body.path))).resolves.toEqual(pdfBytes)
+
+    const raw = await app.inject({ method: 'GET', url: `/api/v1/files/raw?path=${encodeURIComponent(body.path)}` })
+    expect(raw.statusCode).toBe(200)
+    expect(raw.headers['content-type']).toBe('application/pdf')
+    expect(raw.headers['x-content-type-options']).toBe('nosniff')
+  })
+
+  test('POST /api/v1/files/upload does not preserve SVG as active web content', async () => {
+    const { app } = await createTestApp()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files/upload',
+      payload: {
+        filename: 'payload.svg',
+        contentType: 'image/svg+xml',
+        contentBase64: Buffer.from('<svg><script>alert(1)</script></svg>').toString('base64'),
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().path).toMatch(/^assets\/images\/payload-[a-z0-9]+-[a-z0-9]+\.bin$/)
+  })
+
+  test('POST /api/v1/files/upload does not preserve executable web extensions', async () => {
+    const { app } = await createTestApp()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files/upload',
+      payload: {
+        filename: 'payload.html',
+        contentType: 'text/html',
+        contentBase64: Buffer.from('<script>alert(1)</script>').toString('base64'),
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().path).toMatch(/^assets\/uploads\/payload-[a-z0-9]+-[a-z0-9]+\.bin$/)
   })
 
   test('GET/PUT /api/v1/workspace-settings round-trips markdown image path', async () => {

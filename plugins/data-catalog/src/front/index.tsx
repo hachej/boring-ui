@@ -84,6 +84,7 @@ export function createDataCatalogPlugin(
   const catalogLabel = options.catalogLabel ?? label
   const leftTabId = options.leftTabId ?? `${id}-tab`
   const leftTabTitle = options.leftTabTitle ?? label
+  const leftTabIcon = options.leftTabIcon ?? Database
   const visualizationPanelId = options.visualizationPanelId ?? `${id}-visualization`
   const visualizationTitle = options.visualizationTitle ?? `${label} View`
   const surfaceKind = options.surfaceKind ?? DATA_CATALOG_ROW_SURFACE_KIND
@@ -105,6 +106,7 @@ export function createDataCatalogPlugin(
     const { query, controlled } = useDataCatalogQuery(params)
     const bridge = params?.bridge as WorkspaceBridge | undefined
     const handleSelect = (row: ExplorerItem) => onSelect(row, { params, bridge })
+    const usesOuterChromeSearch = controlled && params?.chromeless === true
     return (
       <DataExplorer
         adapter={options.adapter}
@@ -114,8 +116,11 @@ export function createDataCatalogPlugin(
         getDragPayload={options.getDragPayload}
         emptyState={emptyState}
         searchPlaceholder={searchPlaceholder}
-        query={controlled ? query : undefined}
-        searchable={!controlled}
+        toolbarTitle={usesOuterChromeSearch ? undefined : leftTabTitle}
+        toolbarIcon={usesOuterChromeSearch ? undefined : leftTabIcon}
+        query={usesOuterChromeSearch ? query : undefined}
+        searchable={!usesOuterChromeSearch}
+        toolbarPortalElement={usesOuterChromeSearch ? params?.chromeActionsElement : undefined}
         pageSize={options.pageSize}
         debounceMs={options.debounceMs}
         className={className ?? "h-full"}
@@ -175,10 +180,9 @@ export function createDataCatalogPlugin(
     ? {
         id: leftTabId,
         title: leftTabTitle,
-        icon: options.leftTabIcon ?? Database,
+        icon: leftTabIcon,
         component: DataCatalogLeftTab,
         source,
-        chromeless: true,
         panelId: leftTabId,
       }
     : undefined

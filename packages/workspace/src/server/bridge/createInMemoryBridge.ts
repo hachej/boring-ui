@@ -6,7 +6,7 @@ import type {
 } from "../../shared/ui-bridge";
 
 type AnnotatedCommand = UiCommand & { seq: number };
-type CommandHandler = (cmd: AnnotatedCommand) => void;
+type CommandHandler = (cmd: AnnotatedCommand) => unknown;
 const MAX_PENDING_COMMANDS = 1_000;
 
 export function createInMemoryBridge(): WorkspaceBridge {
@@ -22,6 +22,17 @@ export function createInMemoryBridge(): WorkspaceBridge {
     }
   }
 
+  async function dispatchCommand(cmd: UiCommand): Promise<CommandResult> {
+    const seq = nextSeq++;
+    const annotated: AnnotatedCommand = { ...cmd, seq };
+    let delivered = false;
+    for (const handler of subscribers) {
+      if (handler(annotated) !== false) delivered = true;
+    }
+    if (!delivered) enqueuePending(annotated);
+    return { seq, status: "ok" };
+  }
+
   return {
     async getState() {
       return state;
@@ -31,14 +42,12 @@ export function createInMemoryBridge(): WorkspaceBridge {
       state = s;
     },
 
+    async postCommand(cmd: UiCommand): Promise<CommandResult> {
+      return dispatchCommand(cmd);
+    },
+
     async emitUiEffect(cmd: UiCommand): Promise<CommandResult> {
-      const seq = nextSeq++;
-      const annotated: AnnotatedCommand = { ...cmd, seq };
-      if (subscribers.size === 0) enqueuePending(annotated);
-      for (const handler of subscribers) {
-        handler(annotated);
-      }
-      return { seq, status: "ok" };
+      return dispatchCommand(cmd);
     },
 
     subscribeCommands(handler: CommandHandler): () => void {

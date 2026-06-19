@@ -61,10 +61,14 @@ describe("buildWorkspaceContextPrompt — unit", () => {
     }
   })
 
-  test("contains generated and user skill directories", () => {
+  test("contains user skill directory by default and generated skill directory only for plugin authoring", () => {
     const prompt = buildWorkspaceContextPrompt()
-    expect(prompt).toContain(".boring-agent/skills")
+    expect(prompt).not.toContain(".boring-agent/skills")
     expect(prompt).toContain(".agents/skills")
+
+    const authoringPrompt = buildWorkspaceContextPrompt({ pluginAuthoringEnabled: true })
+    expect(authoringPrompt).toContain(".boring-agent/skills")
+    expect(authoringPrompt).toContain(".agents/skills")
   })
 
   test("contains runtime package locations, not legacy shim locations", () => {
@@ -88,7 +92,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
     })
     await app.close()
     expect(capturedSystemPromptAppend).toBeDefined()
-    expect(capturedSystemPromptAppend).toContain(buildWorkspaceContextPrompt())
+    expect(capturedSystemPromptAppend).toContain(buildWorkspaceContextPrompt({ pluginAuthoringEnabled: true }))
   })
 
   test("mode: 'local' — workspace context IS injected", async () => {
@@ -101,7 +105,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
     })
     await app.close()
     expect(capturedSystemPromptAppend).toBeDefined()
-    expect(capturedSystemPromptAppend).toContain(buildWorkspaceContextPrompt())
+    expect(capturedSystemPromptAppend).toContain(buildWorkspaceContextPrompt({ pluginAuthoringEnabled: true }))
   })
 
   test("mode: 'vercel-sandbox' — workspace context is NOT injected", async () => {
@@ -129,7 +133,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
     })
     await app.close()
     expect(capturedSystemPromptAppend).toBeDefined()
-    expect(capturedSystemPromptAppend).toContain(buildWorkspaceContextPrompt())
+    expect(capturedSystemPromptAppend).toContain(buildWorkspaceContextPrompt({ pluginAuthoringEnabled: true }))
   })
 
   test("boring-ui docs prompt is included by default", async () => {
@@ -145,8 +149,8 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
     // a stable substring of the resulting prompt rather than the entire
     // bare-args output.
     expect(capturedSystemPromptAppend).toContain("Plugin authoring — required workflow")
-    expect(capturedSystemPromptAppend).toContain("boring-ui scaffold-plugin")
-    expect(capturedSystemPromptAppend).toContain("boring-ui verify-plugin")
+    expect(capturedSystemPromptAppend).toContain("boring-ui-plugin scaffold")
+    expect(capturedSystemPromptAppend).toContain("boring-ui-plugin verify")
   })
 
   test("plugin system prompts appear alongside workspace context in direct mode", async () => {
@@ -159,7 +163,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       plugins: [{ id: "my-plugin", systemPrompt: "Plugin capabilities here." }],
     })
     await app.close()
-    expect(capturedSystemPromptAppend).toContain(buildWorkspaceContextPrompt())
+    expect(capturedSystemPromptAppend).toContain(buildWorkspaceContextPrompt({ pluginAuthoringEnabled: true }))
     expect(capturedSystemPromptAppend).toContain("Plugin capabilities here.")
   })
 
@@ -174,12 +178,12 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
     })
     await app.close()
     const prompt = capturedSystemPromptAppend!
-    const contextIdx = prompt.indexOf(buildWorkspaceContextPrompt())
+    const contextIdx = prompt.indexOf(buildWorkspaceContextPrompt({ pluginAuthoringEnabled: true }))
     const pluginIdx = prompt.indexOf("Plugin capabilities here.")
     expect(contextIdx).toBeLessThan(pluginIdx)
   })
 
-  test("vercel-sandbox omits workspace context even with default app prompts", async () => {
+  test("vercel-sandbox omits workspace context and plugin-authoring guidance by default", async () => {
     const workspaceRoot = await makeTempDir("boring-wcp-vs-undef-")
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
@@ -188,7 +192,21 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       provisionWorkspace: false,
     })
     await app.close()
-    expect(capturedSystemPromptAppend).toBeDefined()
-    expect(capturedSystemPromptAppend).not.toContain(buildWorkspaceContextPrompt())
+    expect(capturedSystemPromptAppend ?? "").not.toContain(buildWorkspaceContextPrompt())
+    expect(capturedSystemPromptAppend ?? "").not.toContain("boring-ui-plugin scaffold")
+  })
+
+  test("vercel-sandbox can include plugin-authoring guidance when explicitly enabled", async () => {
+    const workspaceRoot = await makeTempDir("boring-wcp-vs-authoring-")
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "vercel-sandbox",
+      logger: false,
+      provisionWorkspace: false,
+      installPluginAuthoring: true,
+    })
+    await app.close()
+    expect(capturedSystemPromptAppend).toContain("Plugin authoring — required workflow")
+    expect(capturedSystemPromptAppend).toContain("boring-ui-plugin scaffold")
   })
 })

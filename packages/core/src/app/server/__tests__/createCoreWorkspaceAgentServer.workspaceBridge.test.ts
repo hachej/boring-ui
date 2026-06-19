@@ -157,10 +157,11 @@ vi.mock('../../../server/app/index.js', () => ({
     app.addHook('preHandler', async (request) => {
       const userId = request.headers['x-test-user-id']
       if (typeof userId === 'string' && userId.length > 0) {
-        ;(request as typeof request & { user?: { id: string; email?: string; name?: string | null } }).user = {
+        ;(request as typeof request & { user?: { id: string; email: string; name: string | null; emailVerified: boolean } }).user = {
           id: userId,
           email: `${userId}@example.test`,
           name: userId,
+          emailVerified: true,
         }
       }
     })

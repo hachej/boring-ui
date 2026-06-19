@@ -15,7 +15,9 @@ const mockWriteFile = vi.fn()
 const mockFileContent = vi.fn()
 
 vi.mock("../data", () => ({
-  useFileContent: (path: string | null) => mockFileContent(path),
+  useFileContent: (path: string | null, options?: { createIfMissing?: string }) => (
+    options === undefined ? mockFileContent(path) : mockFileContent(path, options)
+  ),
   useFileWrite: () => ({ mutateAsync: mockWriteFile }),
 }))
 
@@ -287,6 +289,16 @@ describe("useFilePane", () => {
       await act(async () => {})
 
       expect(mockFileContent).toHaveBeenCalledWith(" notes.md ")
+    })
+  })
+
+  describe("createIfMissing", () => {
+    it("delegates missing-file creation to the file-content query", async () => {
+      renderHook(() => useFilePane({ path: "deck/new.md", createIfMissing: "# Default\n" }), { wrapper })
+      await act(async () => {})
+
+      expect(mockFileContent).toHaveBeenCalledWith("deck/new.md", { createIfMissing: "# Default\n" })
+      expect(mockWriteFile).not.toHaveBeenCalled()
     })
   })
 })

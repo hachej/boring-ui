@@ -1,0 +1,143 @@
+/*
+ * @hachej/boring-ui-kit standard theme.
+ *
+ * The default boring palette (light + dark) for the public @boring token
+ * contract. Hosts import this instead of hand-copying oklch values, then
+ * override individual --boring-* variables for branding:
+ *
+ *   @import '@hachej/boring-ui-kit/tokens.css';
+ *   :root { --boring-accent: oklch(0.55 0.18 250); }
+ *
+ * Values mirror @hachej/boring-workspace/src/globals.css (the canonical
+ * theme). This file is plain CSS — no Tailwind required; the utility-name
+ * mapping lives in styles.css (@theme inline → --boring-*).
+ */
+
+:root {
+  --boring-background: oklch(0.995 0.0015 72);
+  --boring-foreground: oklch(0.18 0.004 72);
+  --boring-card: oklch(1 0 0);
+  --boring-card-foreground: oklch(0.18 0.004 72);
+  --boring-popover: oklch(1 0 0);
+  --boring-popover-foreground: oklch(0.18 0.004 72);
+  --boring-primary: oklch(0.22 0.006 72);
+  --boring-primary-foreground: oklch(0.985 0.002 72);
+  --boring-secondary: oklch(0.965 0.003 72);
+  --boring-secondary-foreground: oklch(0.22 0.006 72);
+  --boring-muted: oklch(0.965 0.003 72);
+  --boring-muted-foreground: oklch(0.52 0.008 72);
+  --boring-destructive: oklch(0.577 0.245 27.325);
+  --boring-destructive-foreground: oklch(0.985 0.002 72);
+  --boring-border: oklch(0.915 0.004 72);
+  --boring-input: oklch(0.915 0.004 72);
+  --boring-accent: oklch(0.62 0.14 65);
+  --boring-accent-foreground: oklch(0.995 0 0);
+  --boring-accent-soft: oklch(0.96 0.03 65);
+  --boring-success: oklch(0.58 0.13 145);
+  --boring-success-foreground: oklch(0.995 0 0);
+  --boring-success-soft: oklch(0.95 0.035 145);
+  --boring-ring: oklch(0.62 0.14 65);
+  --boring-radius: 0.625rem;
+  --boring-radius-sm: calc(var(--boring-radius) - 4px);
+  --boring-radius-md: calc(var(--boring-radius) - 2px);
+  --boring-radius-lg: var(--boring-radius);
+  --boring-radius-xl: calc(var(--boring-radius) + 4px);
+  --boring-font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --boring-font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --boring-canvas: oklch(0.928 0.006 72);
+  --boring-surface-chat: oklch(1 0 0);
+  --boring-surface-workbench: oklch(1 0 0);
+  --boring-surface-workbench-left: oklch(0.976 0.003 72);
+
+  /* Internal shadcn-style bridge. */
+  --background: var(--boring-background);
+  --foreground: var(--boring-foreground);
+  --card: var(--boring-card);
+  --card-foreground: var(--boring-card-foreground);
+  --popover: var(--boring-popover);
+  --popover-foreground: var(--boring-popover-foreground);
+  --primary: var(--boring-primary);
+  --primary-foreground: var(--boring-primary-foreground);
+  --secondary: var(--boring-secondary);
+  --secondary-foreground: var(--boring-secondary-foreground);
+  --muted: var(--boring-muted);
+  --muted-foreground: var(--boring-muted-foreground);
+  --destructive: var(--boring-destructive);
+  --destructive-foreground: var(--boring-destructive-foreground);
+  --border: var(--boring-border);
+  --input: var(--boring-input);
+  --accent: var(--boring-accent);
+  --accent-foreground: var(--boring-accent-foreground);
+  --accent-soft: var(--boring-accent-soft);
+  --success: var(--boring-success);
+  --success-foreground: var(--boring-success-foreground);
+  --success-soft: var(--boring-success-soft);
+  --ring: var(--boring-ring);
+  --radius: var(--boring-radius);
+  --font-sans: var(--boring-font-sans);
+  --font-mono: var(--boring-font-mono);
+  --canvas: var(--boring-canvas);
+  --surface-chat: var(--boring-surface-chat);
+  --surface-workbench: var(--boring-surface-workbench);
+  --surface-workbench-left: var(--boring-surface-workbench-left);
+}
+
+.dark {
+  --boring-background: oklch(0.145 0.004 285.823);
+  --boring-foreground: oklch(0.985 0 0);
+  --boring-card: oklch(0.145 0.004 285.823);
+  --boring-card-foreground: oklch(0.985 0 0);
+  --boring-popover: oklch(0.145 0.004 285.823);
+  --boring-popover-foreground: oklch(0.985 0 0);
+  --boring-primary: oklch(0.985 0 0);
+  --boring-primary-foreground: oklch(0.205 0.006 285.885);
+  --boring-secondary: oklch(0.269 0.006 285.885);
+  --boring-secondary-foreground: oklch(0.985 0 0);
+  --boring-muted: oklch(0.269 0.006 285.885);
+  --boring-muted-foreground: oklch(0.708 0.01 286.073);
+  --boring-accent: oklch(0.72 0.13 65);
+  --boring-accent-foreground: oklch(0.18 0.02 65);
+  --boring-accent-soft: oklch(0.28 0.04 65);
+  --boring-success: oklch(0.74 0.14 145);
+  --boring-success-foreground: oklch(0.12 0.004 285.823);
+  --boring-success-soft: oklch(0.22 0.04 145);
+  --boring-destructive: oklch(0.396 0.141 25.768);
+  --boring-destructive-foreground: oklch(0.985 0 0);
+  --boring-border: oklch(0.269 0.006 285.885);
+  --boring-input: oklch(0.269 0.006 285.885);
+  --boring-ring: oklch(0.72 0.13 65);
+  --boring-canvas: oklch(0.12 0.004 285.823);
+  --boring-surface-chat: oklch(0.165 0.004 285.823);
+  --boring-surface-workbench: oklch(0.165 0.004 285.823);
+  --boring-surface-workbench-left: oklch(0.195 0.004 285.823);
+
+  /* Re-declare the bridge so dark works when .dark sits on a nested wrapper
+   * (custom properties resolve var() at the declaring element). */
+  --background: var(--boring-background);
+  --foreground: var(--boring-foreground);
+  --card: var(--boring-card);
+  --card-foreground: var(--boring-card-foreground);
+  --popover: var(--boring-popover);
+  --popover-foreground: var(--boring-popover-foreground);
+  --primary: var(--boring-primary);
+  --primary-foreground: var(--boring-primary-foreground);
+  --secondary: var(--boring-secondary);
+  --secondary-foreground: var(--boring-secondary-foreground);
+  --muted: var(--boring-muted);
+  --muted-foreground: var(--boring-muted-foreground);
+  --destructive: var(--boring-destructive);
+  --destructive-foreground: var(--boring-destructive-foreground);
+  --border: var(--boring-border);
+  --input: var(--boring-input);
+  --accent: var(--boring-accent);
+  --accent-foreground: var(--boring-accent-foreground);
+  --accent-soft: var(--boring-accent-soft);
+  --success: var(--boring-success);
+  --success-foreground: var(--boring-success-foreground);
+  --success-soft: var(--boring-success-soft);
+  --ring: var(--boring-ring);
+  --canvas: var(--boring-canvas);
+  --surface-chat: var(--boring-surface-chat);
+  --surface-workbench: var(--boring-surface-workbench);
+  --surface-workbench-left: var(--boring-surface-workbench-left);
+}

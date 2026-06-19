@@ -10,11 +10,31 @@ import type {
   BoringPluginNativeFrontTargetTrust as SharedBoringPluginNativeFrontTargetTrust,
 } from "../../shared/plugins/runtimePluginTypes"
 
+export type BoringPluginSourceKind = "internal" | "external"
+
+export interface BoringPluginSource {
+  rootDir: string
+  kind: BoringPluginSourceKind
+  workspaceId?: string
+  /**
+   * True when the user explicitly registered this directory as a plugin
+   * source (e.g. a `packages` entry in Pi settings.json). Registered
+   * sources that are missing, lack a package.json, or carry no plugin
+   * metadata surface as preflight errors instead of being silently
+   * skipped the way speculative scan roots are.
+   */
+  registered?: boolean
+}
+
+export type BoringPluginSourceInput = string | BoringPluginSource
+
 export interface BoringServerPluginManifest {
   id: string
   rootDir: string
   version: string
   boring: BoringPackageBoringField
+  /** True when package.json explicitly declares a boring manifest. Pi-only packages remain valid Pi resources but are not listed as Boring plugins. */
+  hasBoring: boolean
   pi?: BoringPackagePiField
   frontPath?: string
   /** Legacy Vite-dev browser import fallback (`/@fs/...`). */
@@ -22,6 +42,7 @@ export interface BoringServerPluginManifest {
   serverPath?: string
   extensionPaths?: string[]
   skillPaths?: string[]
+  source: BoringPluginSource
 }
 
 export type BoringPluginNativeFrontTargetTrust = SharedBoringPluginNativeFrontTargetTrust

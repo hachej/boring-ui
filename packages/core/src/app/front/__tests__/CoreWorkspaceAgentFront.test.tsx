@@ -12,6 +12,9 @@ let routeStatus: { status: string; workspaceId?: string | null; message?: string
   workspaceId: 'workspace-a',
 }
 let workspaceAgentProps: Record<string, unknown> | null = null
+let workspaceProviderProps: Record<string, unknown> | null = null
+let workspaceBootGateProps: Record<string, unknown> | null = null
+let workspaceFullPagePanelProps: Record<string, unknown> | null = null
 let coreFrontProps: Record<string, unknown> | null = null
 let sessionState: { data: { user: { id: string } } | null; isPending: boolean } = {
   data: { user: { id: 'user-1' } },
@@ -37,8 +40,22 @@ vi.mock('../../../front/index.js', () => ({
     )
   },
   UserMenu: () => <div>User menu</div>,
+  ThemeToggle: () => <div>Theme toggle</div>,
   WorkspaceSwitcher: () => <div>Switcher</div>,
-  routes: { signin: '/auth/signin', forgotPassword: '/auth/forgot-password' },
+  routes: { signin: '/auth/signin', forgotPassword: '/auth/forgot-password', verifyEmail: '/auth/verify-email' },
+  useConfig: () => ({
+    appId: 'test-app',
+    appName: 'Test Workspace',
+    appLogo: null,
+    apiBase: '/api/v1',
+    features: {
+      githubOauth: false,
+      googleOauth: false,
+      invitesEnabled: true,
+      sendWelcomeEmail: false,
+      emailVerification: false,
+    },
+  }),
   useCurrentWorkspace: () => currentWorkspaceId ? ({ id: currentWorkspaceId, name: 'Workspace A' }) : null,
   useSession: () => unstableSessionObject && sessionState.data
     ? { data: { user: { ...sessionState.data.user } }, isPending: sessionState.isPending }
@@ -47,6 +64,17 @@ vi.mock('../../../front/index.js', () => ({
   useSignUp: () => ({ email: signUpEmailMock }),
   useWorkspaceRouteStatus: () => routeStatus,
 }))
+
+vi.mock('@hachej/boring-workspace', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@hachej/boring-workspace')>()
+  return {
+    ...actual,
+    WorkspaceProvider: ({ children, ...props }: { children?: ReactNode }) => {
+      workspaceProviderProps = props
+      return <div data-testid="workspace-provider">{children}</div>
+    },
+  }
+})
 
 vi.mock('@hachej/boring-workspace/app/front', () => ({
   WorkspaceAgentFront: (props: Record<string, unknown>) => {
@@ -57,6 +85,30 @@ vi.mock('@hachej/boring-workspace/app/front', () => ({
         {props.topBarRight as ReactNode}
       </div>
     )
+  },
+  WorkspaceBootGate: ({ children, ...props }: { children?: ReactNode }) => {
+    workspaceBootGateProps = props
+    return <div data-testid="workspace-boot-gate">{children}</div>
+  },
+  WorkspaceFullPagePanel: (props: Record<string, unknown>) => {
+    workspaceFullPagePanelProps = props
+    return <div data-testid="workspace-full-page-panel">Full page panel</div>
+  },
+  parseFullPagePanelLocation: (search: string) => {
+    const query = new URLSearchParams(search)
+    const componentId = query.get('component')?.trim() ?? ''
+    if (!componentId) {
+      return {
+        componentId: null,
+        params: {},
+        error: { code: 'FULL_PAGE_PANEL_MISSING_COMPONENT', message: 'Missing full-page panel component id.' },
+      }
+    }
+    const rawParams = query.get('params')
+    return {
+      componentId,
+      params: rawParams ? JSON.parse(rawParams) as Record<string, unknown> : {},
+    }
   },
 }))
 
@@ -70,6 +122,9 @@ describe('CoreWorkspaceAgentFront', () => {
     routePath = '/workspace/workspace-a'
     routeStatus = { status: 'matched', workspaceId: 'workspace-a' }
     workspaceAgentProps = null
+    workspaceProviderProps = null
+    workspaceBootGateProps = null
+    workspaceFullPagePanelProps = null
     coreFrontProps = null
     sessionState = { data: { user: { id: 'user-1' } }, isPending: false }
     unstableSessionObject = false
@@ -92,43 +147,29 @@ describe('CoreWorkspaceAgentFront', () => {
     )
 
     expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
+    expect(workspaceAgentProps?.appTitle).toBe('Test Workspace')
     expect(workspaceAgentProps).toMatchObject({
       workspaceId: 'workspace-a',
+      workspaceLabel: 'Workspace A',
       requestHeaders: {
         existing: 'request',
-        'x-csrf-token': 'boring-ui',
         'x-boring-workspace-id': 'workspace-a',
       },
       authHeaders: {
         existing: 'auth',
-        'x-csrf-token': 'boring-ui',
         'x-boring-workspace-id': 'workspace-a',
       },
       bootPreloadPaths: ['/custom-preload'],
     })
   })
 
-  it('preserves explicit csrf headers while forwarding workspace props', async () => {
+  it('allows apps to suppress the default workspace switcher', async () => {
     const { CoreWorkspaceAgentFront } = await importSubject()
 
-    render(
-      <CoreWorkspaceAgentFront
-        apiBaseUrl="/api-base"
-        requestHeaders={{ 'x-csrf-token': 'custom-request' }}
-        authHeaders={{ 'x-csrf-token': 'custom-auth' }}
-      />,
-    )
+    render(<CoreWorkspaceAgentFront topBarLeft={null} />)
 
-    expect(workspaceAgentProps).toMatchObject({
-      requestHeaders: {
-        'x-csrf-token': 'custom-request',
-        'x-boring-workspace-id': 'workspace-a',
-      },
-      authHeaders: {
-        'x-csrf-token': 'custom-auth',
-        'x-boring-workspace-id': 'workspace-a',
-      },
-    })
+    expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
+    expect(workspaceAgentProps?.topBarLeft).toBeNull()
   })
 
   it('keeps identity loading/mismatch as the only transition blocker', async () => {
@@ -177,6 +218,66 @@ describe('CoreWorkspaceAgentFront', () => {
     expect(workspaceAgentProps).toMatchObject({
       workspaceId: 'project-1',
       requestHeaders: { 'x-boring-workspace-id': 'project-1' },
+    })
+  })
+
+  it('scopes full-page panel links to the routed workspace', async () => {
+    const { CoreWorkspaceAgentFront } = await importSubject()
+
+    render(<CoreWorkspaceAgentFront />)
+
+    expect(workspaceAgentProps).toMatchObject({
+      workspaceId: 'workspace-a',
+      fullPageBasePath: '/full-page?workspaceId=workspace-a',
+    })
+  })
+
+  it('renders the core full-page panel route inside workspace providers', async () => {
+    const { CoreWorkspaceAgentFront } = await importSubject()
+    const plugin = { id: 'deck-plugin' }
+    routePath = '/full-page?workspaceId=workspace-a&component=deck&params=%7B%22path%22%3A%22deck%2Fintro.md%22%7D'
+
+    render(
+      <CoreWorkspaceAgentFront
+        plugins={[plugin] as never}
+        apiBaseUrl="/api-base"
+        requestHeaders={{ request: 'header' }}
+        authHeaders={{ existing: 'auth' }}
+        providerStorageKey="layout-key"
+        bootPreloadPaths={['/api/v1/files?path=deck']}
+      />,
+    )
+
+    expect(screen.getByTestId('workspace-boot-gate')).toBeInTheDocument()
+    expect(screen.getByTestId('workspace-full-page-panel')).toBeInTheDocument()
+    expect(workspaceAgentProps).toBeNull()
+    expect(workspaceProviderProps).toMatchObject({
+      workspaceId: 'workspace-a',
+      plugins: [plugin],
+      apiBaseUrl: '/api-base',
+      authHeaders: {
+        request: 'header',
+        existing: 'auth',
+        'x-boring-workspace-id': 'workspace-a',
+      },
+      storageKey: 'layout-key',
+      manageDocumentTitle: false,
+      fullPageBasePath: '/full-page?workspaceId=workspace-a',
+    })
+    expect(workspaceProviderProps?.frontPluginHotReload).toBe(false)
+    expect(workspaceProviderProps?.bridgeEndpoint).toBeNull()
+    expect(workspaceBootGateProps).toMatchObject({
+      workspaceId: 'workspace-a',
+      requestHeaders: {
+        request: 'header',
+        'x-boring-workspace-id': 'workspace-a',
+      },
+      apiBaseUrl: '/api-base',
+      preloadPaths: ['/api/v1/files?path=deck'],
+    })
+    expect(workspaceFullPagePanelProps).toEqual({
+      componentId: 'deck',
+      params: { path: 'deck/intro.md' },
     })
   })
 
@@ -241,6 +342,47 @@ describe('CoreWorkspaceAgentFront', () => {
     })
   })
 
+  it('keeps public launch panels scoped out of authenticated workspaces', async () => {
+    const { CoreWorkspaceAgentFront } = await importSubject()
+    const publicPlugin = { id: 'public-plugin' }
+    const publicPanels = [{ id: 'public-landing-page', component: 'public.launch.landing', title: 'Landing page' }]
+
+    render(
+      <CoreWorkspaceAgentFront
+        chatEntryMode="chat-first"
+        chatFirstPublicWorkspaceProps={{
+          plugins: [publicPlugin] as never,
+          surfaceInitialPanels: publicPanels,
+        }}
+      />,
+    )
+
+    expect(workspaceAgentProps).toMatchObject({ workspaceId: 'workspace-a' })
+    expect(workspaceAgentProps?.plugins).toBeUndefined()
+    expect(workspaceAgentProps?.surfaceInitialPanels).toBeUndefined()
+
+    workspaceAgentProps = null
+    sessionState = { data: null, isPending: false }
+    currentWorkspaceId = null
+    routePath = '/'
+
+    render(
+      <CoreWorkspaceAgentFront
+        chatEntryMode="chat-first"
+        chatFirstPublicWorkspaceProps={{
+          plugins: [publicPlugin] as never,
+          surfaceInitialPanels: publicPanels,
+        }}
+      />,
+    )
+
+    expect(workspaceAgentProps).toMatchObject({
+      workspaceId: 'public',
+      plugins: [publicPlugin],
+      surfaceInitialPanels: publicPanels,
+    })
+  })
+
   it('signs in from the chat-first auth overlay without a hard browser reload', async () => {
     const { CoreWorkspaceAgentFront } = await importSubject()
     sessionState = { data: null, isPending: false }
@@ -248,7 +390,7 @@ describe('CoreWorkspaceAgentFront', () => {
     routePath = '/'
     render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" />)
 
-    await userEvent.click(screen.getAllByRole('button', { name: 'Sign in' })[0])
+    await userEvent.click(screen.getAllByRole('button', { name: 'Sign in' }).at(-1)!)
     const dialog = screen.getByRole('dialog')
     await userEvent.type(within(dialog).getByPlaceholderText('Email'), 'test@example.com')
     await userEvent.type(within(dialog).getByPlaceholderText('Password'), 'BoringUi!123')
@@ -277,9 +419,6 @@ describe('CoreWorkspaceAgentFront', () => {
     const dialog = screen.getByRole('dialog')
     expect(dialog).toBeInTheDocument()
     expect(workspaceAgentProps?.className).toBeUndefined()
-    expect(within(dialog).getByRole('link', { name: 'Forgot password?' }).getAttribute('href')).toBe(
-      '/auth/forgot-password?redirect=%2F',
-    )
   })
 
   it('restores a pending chat-first draft after auth reaches the workspace shell', async () => {

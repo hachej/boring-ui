@@ -50,7 +50,7 @@ function mockConfigEndpoint() {
     appName: 'Test App',
     appLogo: null,
     apiBase: '',
-    features: { githubOauth: false, googleOauth: false, invitesEnabled: false, sendWelcomeEmail: false },
+    features: { githubOauth: false, googleOauth: false, invitesEnabled: false, sendWelcomeEmail: false, emailVerification: false },
   }
   useMswHandler(async (input) => {
     const url =

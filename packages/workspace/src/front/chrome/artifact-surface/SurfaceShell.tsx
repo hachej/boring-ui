@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { DockviewApi } from "dockview-react"
-import { ChevronRight, FolderTree } from "lucide-react"
+import { ChevronRight, Menu } from "lucide-react"
+import { ControlTooltip } from "../../components/ControlTooltip"
 import { Button, IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { ArtifactSurfacePane } from "./ArtifactSurfacePane"
@@ -87,6 +88,7 @@ export interface SurfaceShellProps {
    */
   extraPanels?: string[]
   defaultLeftTab?: string
+  onReloadAgentPlugins?: () => void | Promise<unknown>
   initialPanels?: Array<{ id: string; component: string; title?: string; params?: Record<string, unknown> }>
   className?: string
 }
@@ -139,6 +141,7 @@ export function SurfaceShell({
   onClose,
   extraPanels,
   defaultLeftTab,
+  onReloadAgentPlugins,
   initialPanels,
   className,
 }: SurfaceShellProps) {
@@ -634,6 +637,8 @@ export function SurfaceShell({
               bridge={bridge}
               defaultTab={defaultLeftTab}
               revealFileTreeRequest={fileTreeRevealRequest}
+              onOpenPanel={openPanelSync}
+              onReloadAgentPlugins={onReloadAgentPlugins}
               onCollapse={() => setCollapsed(true)}
             />
           </aside>
@@ -672,21 +677,29 @@ export function SurfaceShell({
           />
         </div>
         {/* Header overlays — always reachable, including existing/single-tab
-            dockview groups where header action slots can be squeezed/hidden. */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between" style={{ height: 44 }}>
+            dockview groups where header action slots can be squeezed/hidden.
+            zIndex must beat dockview's "open tabs" overflow popover (built by
+            PopupService at --dv-overlay-z-index 999, sometimes doubled to ~1998)
+            so the close-workspace control on the right edge is never covered by
+            an open dropdown menu. */}
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between"
+          style={{ height: 44, zIndex: 2000 }}
+        >
           <div>
             {collapsed && (
-              <IconButton
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => setCollapsed(false)}
-                className="pointer-events-auto ml-2"
-                aria-label="Show sources"
-                title="Show sources"
-              >
-                <FolderTree className="h-4 w-4" strokeWidth={1.75} />
-              </IconButton>
+              <ControlTooltip label="Show workspace menu" side="right">
+                <IconButton
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => setCollapsed(false)}
+                  className="pointer-events-auto ml-2"
+                  aria-label="Show workspace menu"
+                >
+                  <Menu className="h-4 w-4" strokeWidth={1.75} />
+                </IconButton>
+              </ControlTooltip>
             )}
           </div>
           {onClose && <WorkbenchCloseAction onClose={onClose} />}
@@ -744,17 +757,18 @@ function EmptyWorkbenchOverlay({
       {/* Fallback top bar so icons are always visible even with no tabs */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-0.5 border-b border-[color:oklch(from_var(--border)_l_c_h/0.4)] bg-background px-1" style={{ height: 44 }}>
         {collapsed && (
-          <IconButton
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            onClick={onExpandFiles}
-            className="pointer-events-auto mx-1"
-            aria-label="Show sources"
-            title="Show sources"
-          >
-            <FolderTree className="h-4 w-4" strokeWidth={1.75} />
-          </IconButton>
+          <ControlTooltip label="Show workspace menu" side="right">
+            <IconButton
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              onClick={onExpandFiles}
+              className="pointer-events-auto mx-1"
+              aria-label="Show workspace menu"
+            >
+              <Menu className="h-4 w-4" strokeWidth={1.75} />
+            </IconButton>
+          </ControlTooltip>
         )}
         <div className="flex-1" />
       </div>
@@ -776,8 +790,8 @@ function EmptyWorkbenchOverlay({
             onClick={onExpandFiles}
             className="pointer-events-auto mt-2 gap-1.5 text-[12px] hover:border-[color:var(--accent)]/40 hover:text-[color:var(--accent)]"
           >
-            <FolderTree className="h-3.5 w-3.5" strokeWidth={1.75} />
-            Show sources
+            <Menu className="h-3.5 w-3.5" strokeWidth={1.75} />
+            Show workspace menu
           </Button>
         )}
       </div>

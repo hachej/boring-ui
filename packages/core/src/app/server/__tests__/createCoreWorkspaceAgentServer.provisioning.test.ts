@@ -1,5 +1,5 @@
 import Fastify from 'fastify'
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 import type { CoreConfig } from '../../../shared/types.js'
 import { createTestCoreConfig } from '../../../server/__tests__/createTestApp.js'
 
@@ -19,6 +19,7 @@ vi.mock('@hachej/boring-agent/server', () => ({
 vi.mock('@hachej/boring-workspace/app/server', () => ({
   collectWorkspaceAgentServerPlugins: mocks.collectWorkspaceAgentServerPlugins,
   hasDirServerPlugin: () => false,
+  omitPluginAuthoringProvisioning: (plugins: Array<{ id: string }>) => plugins.filter((plugin) => plugin.id !== 'boring-ui-plugin-cli-package'),
   readWorkspacePluginPackagePiSnapshot: () => ({
     additionalSkillPaths: [],
     packages: [],
@@ -56,6 +57,11 @@ vi.mock('../../../server/auth/index.js', () => ({
   authHook: async () => {},
   createAuth: () => ({ handler: vi.fn(async () => new Response(null, { status: 404 })) }),
 }))
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  mocks.provisionWorkspaceRuntime.mockResolvedValue({ changed: false, env: {}, pathEntries: [], skillPaths: [] })
+})
 
 vi.mock('../../../server/routes/index.js', () => ({
   registerInviteRoutes: async () => {},
@@ -117,6 +123,131 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
       adapter,
       runtimeLayout,
       telemetry: expect.any(Object),
+    }))
+  } finally {
+    await app.close()
+  }
+})
+
+test('core/full-app defaults session namespace to workspace id', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [],
+    provisioningContributions: [],
+    agentOptions: {
+      extraTools: [],
+      pi: { additionalSkillPaths: [], packages: [] },
+      systemPromptAppend: undefined,
+    },
+    preservedUiStateKeys: [],
+    routeContributions: [],
+  })
+
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    workspaceRoot: '/tmp/full-app-workspaces',
+    serveFrontend: false,
+    registerHealthRoute: false,
+  })
+
+  try {
+    const options = (mocks.registerAgentRoutes as any).mock.calls[0]?.[1] as Record<string, unknown>
+    expect(options).not.toHaveProperty('sessionNamespace')
+    const getSessionNamespace = options.getSessionNamespace as (ctx: { workspaceId: string; workspaceRoot: string }) => Promise<string>
+    await expect(getSessionNamespace({ workspaceId: 'workspace-a', workspaceRoot: '/tmp/full-app-workspaces/workspace-a' })).resolves.toBe('workspace-a')
+  } finally {
+    await app.close()
+  }
+})
+
+test('core/full-app skips built-in plugin CLI provisioning unless plugin authoring is enabled', async () => {
+  const runtimePlugin = {
+    id: 'workspace-runtime-plugin',
+    provisioning: { python: [] },
+  }
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [runtimePlugin],
+    provisioningContributions: [],
+    agentOptions: {
+      extraTools: [],
+      pi: { additionalSkillPaths: [], packages: [] },
+      systemPromptAppend: undefined,
+    },
+    preservedUiStateKeys: [],
+    routeContributions: [],
+  })
+
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    workspaceRoot: '/tmp/full-app-workspaces',
+    serveFrontend: false,
+    registerHealthRoute: false,
+  })
+
+  try {
+    const options = (mocks.registerAgentRoutes as any).mock.calls[0]?.[1] as Record<string, unknown>
+    const provisionRuntime = options.provisionRuntime as (ctx: Record<string, unknown>) => Promise<unknown>
+    const adapter = { workspaceFs: {} }
+    const runtimeLayout = { workspaceRoot: '/workspace' }
+    expect(mocks.collectWorkspaceAgentServerPlugins).toHaveBeenCalledWith(expect.objectContaining({
+      installPluginAuthoring: false,
+    }))
+    await provisionRuntime({ provisioningAdapter: adapter, runtimeLayout, runtimeMode: 'vercel-sandbox' })
+    expect(mocks.provisionWorkspaceRuntime).toHaveBeenCalledWith(expect.objectContaining({
+      plugins: [runtimePlugin],
+      adapter,
+      runtimeLayout,
+    }))
+  } finally {
+    await app.close()
+  }
+})
+
+test('core/full-app can enable plugin CLI provisioning for remote plugin editing', async () => {
+  const pluginCli = {
+    id: 'boring-ui-plugin-cli-package',
+    provisioning: { nodePackages: [{ packageName: '@hachej/boring-ui-plugin-cli' }] },
+  }
+  const runtimePlugin = {
+    id: 'workspace-runtime-plugin',
+    provisioning: { python: [] },
+  }
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [pluginCli, runtimePlugin],
+    provisioningContributions: [],
+    agentOptions: {
+      extraTools: [],
+      pi: { additionalSkillPaths: [], packages: [] },
+      systemPromptAppend: 'plugin authoring prompt',
+    },
+    preservedUiStateKeys: [],
+    routeContributions: [],
+  })
+
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    workspaceRoot: '/tmp/full-app-workspaces',
+    serveFrontend: false,
+    registerHealthRoute: false,
+    installPluginAuthoring: true,
+  })
+
+  try {
+    expect(mocks.collectWorkspaceAgentServerPlugins).toHaveBeenCalledWith(expect.objectContaining({
+      installPluginAuthoring: true,
+    }))
+    const options = (mocks.registerAgentRoutes as any).mock.calls[0]?.[1] as Record<string, unknown>
+    expect(options.systemPromptAppend).toBe('plugin authoring prompt')
+    const provisionRuntime = options.provisionRuntime as (ctx: Record<string, unknown>) => Promise<unknown>
+    const adapter = { workspaceFs: {} }
+    const runtimeLayout = { workspaceRoot: '/workspace' }
+    await provisionRuntime({ provisioningAdapter: adapter, runtimeLayout, runtimeMode: 'vercel-sandbox' })
+    expect(mocks.provisionWorkspaceRuntime).toHaveBeenCalledWith(expect.objectContaining({
+      plugins: [pluginCli, runtimePlugin],
+      adapter,
+      runtimeLayout,
     }))
   } finally {
     await app.close()

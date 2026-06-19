@@ -27,6 +27,12 @@ function FakeChatPanel({ onData, onOpenArtifact, composerBlockers, onComposerSto
       >
         emit data
       </button>
+      <button
+        type="button"
+        onClick={() => onData?.({ type: "file-changed", seq: 7, changeType: "write", path: "src/pi.ts" })}
+      >
+        emit pi file event
+      </button>
       <button type="button" onClick={() => onOpenArtifact?.("src/example.ts")}>
         open artifact
       </button>
@@ -83,6 +89,23 @@ describe("ChatPanelHost", () => {
     )
   })
 
+  it("maps Pi file-changed events into the workspace file-change bridge", () => {
+    const changed = vi.fn()
+    events.on(filesystemEvents.changed, changed)
+
+    render(
+      <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
+        <ChatPanelHost sessionId="s1" />
+      </WorkspaceProvider>,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "emit pi file event" }))
+
+    expect(changed).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "src/pi.ts", cause: "agent", toolCallId: "pi:7" }),
+    )
+  })
+
   it("passes generic session-scoped composer blockers to the chat implementation", async () => {
     render(
       <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
@@ -126,7 +149,7 @@ describe("ChatPanelHost", () => {
     render(
       <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
         <Blocker sessionId="s1" />
-        <ChatPanelHost sessionId="s1" getSurface={() => surface} isWorkbenchOpen={() => true} openWorkbench={vi.fn()} />
+        <ChatPanelHost sessionId="s1" surfaceDispatch={{ surface: () => surface, isWorkbenchOpen: () => true, openWorkbench: vi.fn() }} />
       </WorkspaceProvider>,
     )
     fireEvent.click(screen.getByRole("button", { name: "open blocker" }))
@@ -158,9 +181,7 @@ describe("ChatPanelHost", () => {
           <ChatPanelHost
             sessionId="s1"
             onOpenArtifact={onOpenArtifact}
-            getSurface={() => surface}
-            isWorkbenchOpen={() => false}
-            openWorkbench={() => setSurfaceOpen(true)}
+            surfaceDispatch={{ surface: () => surface, isWorkbenchOpen: () => false, openWorkbench: () => setSurfaceOpen(true) }}
           />
         </WorkspaceProvider>,
       )

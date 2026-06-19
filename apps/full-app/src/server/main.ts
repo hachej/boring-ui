@@ -1,27 +1,28 @@
-import { resolve } from 'node:path'
 import {
   appRootFromImportMeta,
   createCoreWorkspaceAgentServer,
 } from '@hachej/boring-core/app/server'
-import { createAskUserPiExtensionFactory } from '@hachej/boring-ask-user/agent'
-import { demoServerPlugin } from '../plugins/demo/server'
+import { serverPlugins } from './plugins.js'
+import { buildCreditsWiring } from './credits.js'
 
-async function main(): Promise<void> {
+function pluginAuthoringEnabledFromEnv(): boolean {
+  return process.env.BORING_PLUGIN_AUTHORING === '1'
+}
+
+async function main() {
   const appRoot = appRootFromImportMeta(import.meta.url, 2)
+  // Build the metering sink up-front; the credit service attaches after the
+  // server (and its db) exists.
+  const credits = buildCreditsWiring()
   const app = await createCoreWorkspaceAgentServer({
     appRoot,
-    appPackageJsonPath: resolve(appRoot, 'package.json'),
     serveFrontend: true,
-    plugins: [demoServerPlugin],
-    getWorkspaceBridgePi: (ctx) => ({
-      extensionFactories: [createAskUserPiExtensionFactory({
-        callHumanInputRequest: async (input, signal) => await ctx.callAsRuntime(
-          { op: 'human-input.v1.request', requestId: input.requestId, input },
-          { sessionId: input.sessionId, signal },
-        ),
-      })],
-    }),
+    plugins: serverPlugins,
+    externalPlugins: false,
+    installPluginAuthoring: pluginAuthoringEnabledFromEnv(),
+    metering: credits.meteringSink,
   })
+  credits.attach(app)
   const address = await app.listen({ host: app.config.host, port: app.config.port })
   app.log.info({ event: 'core.server.ready', address }, 'core.server.ready')
 }

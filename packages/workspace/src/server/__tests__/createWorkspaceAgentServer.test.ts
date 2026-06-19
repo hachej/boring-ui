@@ -9,7 +9,7 @@
  */
 import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 import { afterEach, beforeEach, expect, test, describe } from "vitest"
 import {
   collectWorkspaceAgentServerPlugins,
@@ -44,6 +44,18 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir
 }
 
+async function writeRuntimePlugin(root: string, id: string, prompt: string): Promise<void> {
+  await mkdir(join(root, "front"), { recursive: true })
+  await mkdir(join(root, "server"), { recursive: true })
+  await writeFile(join(root, "front", "index.tsx"), "export default function PluginPane() { return null }\n", "utf8")
+  await writeFile(join(root, "server", "index.js"), `export default { id: ${JSON.stringify(id)}, systemPrompt: ${JSON.stringify(prompt)} }\n`, "utf8")
+  await writeFile(join(root, "package.json"), JSON.stringify({
+    name: id,
+    version: "1.0.0",
+    boring: { front: "front/index.tsx", server: "server/index.js" },
+  }), "utf8")
+}
+
 function getProvisionedNodePackage(collection: ReturnType<typeof collectWorkspaceAgentServerPlugins>, id: string) {
   return collection.runtimePlugins
     .flatMap((plugin) => plugin.provisioning?.nodePackages ?? [])
@@ -55,11 +67,11 @@ describe("createWorkspaceAgentServer — runtime provisioning packages", () => {
     const previous = process.env.BORING_USE_LOCAL_PACKAGES
     delete process.env.BORING_USE_LOCAL_PACKAGES
     try {
-      const cli = getProvisionedNodePackage(collectWorkspaceAgentServerPlugins(), "boring-ui-cli")
+      const cli = getProvisionedNodePackage(collectWorkspaceAgentServerPlugins(), "boring-ui-plugin-cli")
       expect(cli).toMatchObject({
-        id: "boring-ui-cli",
-        packageName: "@hachej/boring-ui-cli",
-        expectedBins: ["boring-ui"],
+        id: "boring-ui-plugin-cli",
+        packageName: "@hachej/boring-ui-plugin-cli",
+        expectedBins: ["boring-ui-plugin"],
       })
       // In a monorepo layout the CLI package root resolves locally,
       // so published provisioning omits the version (npm picks latest).
@@ -74,17 +86,23 @@ describe("createWorkspaceAgentServer — runtime provisioning packages", () => {
     }
   })
 
-  test("keeps local CLI package provisioning behind BORING_USE_LOCAL_PACKAGES", () => {
+  test("keeps local CLI package provisioning behind BORING_USE_LOCAL_PACKAGES when a built package exists", () => {
     const previous = process.env.BORING_USE_LOCAL_PACKAGES
     process.env.BORING_USE_LOCAL_PACKAGES = "1"
     try {
-      const cli = getProvisionedNodePackage(collectWorkspaceAgentServerPlugins(), "boring-ui-cli")
+      const cli = getProvisionedNodePackage(collectWorkspaceAgentServerPlugins(), "boring-ui-plugin-cli")
       expect(cli).toMatchObject({
-        id: "boring-ui-cli",
-        packageName: "@hachej/boring-ui-cli",
+        id: "boring-ui-plugin-cli",
+        packageName: "@hachej/boring-ui-plugin-cli",
       })
-      expect(typeof cli?.packageRoot).toBe("string")
-      expect(cli).not.toHaveProperty("version")
+      // Local source installs require built dist/bin.js. Fresh CI checkouts may
+      // run workspace tests before plugin-cli is built, so provisioning falls
+      // back to the published package instead of installing a broken source dir.
+      if (cli?.packageRoot) {
+        expect(cli).not.toHaveProperty("version")
+      } else {
+        expect(cli?.version).toMatch(/^\d+\.\d+\.\d+/)
+      }
     } finally {
       if (previous === undefined) delete process.env.BORING_USE_LOCAL_PACKAGES
       else process.env.BORING_USE_LOCAL_PACKAGES = previous
@@ -387,11 +405,10 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
 })
 
 describe("createWorkspaceAgentServer — plugin provisioning", () => {
-  test("materializes the boring-plugin-authoring skill into the workspace-local runtime", async () => {
-    // The system prompt is minimal (it just points at this skill); the
-    // skill itself is the doc the agent reads. The runtime provisioner
-    // must materialize it under .boring-agent/node so Pi can load it
-    // without writing generated packages into the user workspace root.
+  test("exposes boring-plugin-authoring skill without provisioning boring-pi into node_modules", async () => {
+    // The agent should see the built-in plugin-authoring skill via static Pi
+    // package resources. Direct-mode runtime provisioning stays slim and does
+    // not install built-in authoring packages into .boring-agent/node.
     const workspaceRoot = await makeTempDir("boring-workspace-skill-")
 
     const app = await createWorkspaceAgentServer({
@@ -401,34 +418,21 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     })
 
     try {
-      const skill = await readFile(
+      await expect(readFile(
         join(workspaceRoot, ".boring-agent", "node", "node_modules", "@hachej", "boring-pi", "skills", "boring-plugin-authoring", "SKILL.md"),
         "utf8",
-      )
-      expect(skill).toContain("name: boring-plugin-authoring")
-      expect(skill).toContain("../../references/workspace/plugins.md")
+      )).rejects.toThrow()
+
+      const res = await app.inject({ method: "GET", url: "/api/v1/agent/skills" })
+      expect(res.statusCode).toBe(200)
+      const skillNames: string[] = res.json().skills.map((s: { name: string }) => s.name)
+      expect(skillNames).toContain("boring-plugin-authoring")
     } finally {
       await app.close()
     }
   }, 15_000)
 
-  /**
-   * Simulates the CLI scenario: a globally-installed boring-ui binary runs
-   * in a fresh user workspace with no pre-populated node_modules. The chain
-   * we exercise is:
-   *
-   *   require.resolve("@hachej/boring-pi/package.json")  // CLI process
-   *     ↓ runtime provisioning installs skills under .boring-agent/node/
-   *     ↓ createBoringPiPackageSource emits the package source
-   *     ↓ createResourceSettingsManager injects it into Pi's project settings
-   *     ↓ Pi indexes package.json#pi.skills
-   *     ↓ Pi surfaces the skill via /api/v1/agent/skills
-   *
-   * If any link breaks (package missing on publish, provisioning skips the
-   * skills dir, injection drops the package), the skill goes silent for
-   * every CLI user. This test fails loudly before any of that ships.
-   */
-  test("provisions boring-ui CLI in a fresh workspace", async () => {
+  test("direct mode skips workspace-local boring-ui plugin CLI provisioning", async () => {
     const workspaceRoot = await makeTempDir("boring-cli-shim-")
 
     const app = await createWorkspaceAgentServer({
@@ -438,12 +442,9 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     })
 
     try {
-      const provisionedCli = join(workspaceRoot, ".boring-agent", "node", "node_modules", "@hachej", "boring-ui-cli")
-      await expect(readFile(join(provisionedCli, "package.json"), "utf8")).resolves.toContain("@hachej/boring-ui-cli")
-      await expect(readFile(join(provisionedCli, "templates", "front-canonical.tsx"), "utf8")).resolves.toContain("definePlugin")
-
-      // No shell shim anymore — scaffold/verify commands flow directly
-      // through the system prompt (boring-ui resolves via PATH).
+      const provisionedCli = join(workspaceRoot, ".boring-agent", "node", "node_modules", "@hachej", "boring-ui-plugin-cli")
+      await expect(readFile(join(provisionedCli, "package.json"), "utf8")).rejects.toThrow()
+      await expect(readFile(join(workspaceRoot, ".boring-agent", "node", "node_modules", ".bin", "boring-ui-plugin"), "utf8")).rejects.toThrow()
     } finally {
       await app.close()
     }
@@ -463,6 +464,38 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
       expect(res.statusCode).toBe(200)
       const skillNames: string[] = res.json().skills.map((s: { name: string }) => s.name)
       expect(skillNames).toContain("boring-plugin-authoring")
+    } finally {
+      await app.close()
+    }
+  }, 15_000)
+
+  // Issue #200: a workspace-local `.agents/skills/<name>` skill must appear in
+  // the slash-command list (the unified /api/v1/agent/commands endpoint), not
+  // only in the /skills API — alongside the existing package/global skills.
+  test("local .agents/skills skill appears in the slash-command list (#200)", async () => {
+    const workspaceRoot = await makeTempDir("boring-local-skill-slash-")
+    await mkdir(join(workspaceRoot, ".agents", "skills", "local-test-skill"), { recursive: true })
+    await writeFile(
+      join(workspaceRoot, ".agents", "skills", "local-test-skill", "SKILL.md"),
+      "---\nname: local-test-skill\ndescription: A workspace-local skill for the slash list.\n---\n# Local test skill\n",
+      "utf8",
+    )
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+    })
+
+    try {
+      const res = await app.inject({ method: "GET", url: "/api/v1/agent/commands?sessionId=default" })
+      expect(res.statusCode).toBe(200)
+      const commands = res.json().commands as Array<{ name: string; source: string }>
+      const skillCommands = commands.filter((c) => c.source === "skill").map((c) => c.name)
+      // Pi prefixes skill commands with `skill:`. The local skill must be listed
+      // and existing package skills must still be present.
+      expect(skillCommands).toContain("skill:local-test-skill")
+      expect(skillCommands).toContain("skill:boring-plugin-authoring")
     } finally {
       await app.close()
     }
@@ -563,6 +596,89 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     try {
       const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: { sessionId: "missing" } })
       expect(reload.statusCode).toBe(200)
+    } finally {
+      await app.close()
+    }
+  }, 15_000)
+
+  test("POST /api/v1/agent/reload returns diagnostics for malformed plugin rebuilds", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-reload-diagnostics-")
+    const pluginRoot = await makeTempDir("boring-workspace-reload-diagnostic-plugin-")
+    await writeRuntimePlugin(pluginRoot, "reload-diagnostic-plugin", "OK")
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      provisionWorkspace: false,
+      defaultPluginPackages: [pluginRoot],
+    })
+
+    try {
+      await writeFile(join(pluginRoot, "package.json"), "{ not json", "utf8")
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: { sessionId: "missing" } })
+      expect(reload.statusCode).toBe(200)
+      const body = reload.json() as {
+        ok: boolean
+        diagnostics?: Array<{ source: string; message: string; pluginId?: string }>
+      }
+      expect(body.ok).toBe(true)
+      expect(body.diagnostics?.length).toBeGreaterThan(0)
+      expect(body.diagnostics).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          source: expect.stringContaining("boring plugin asset scan"),
+          message: expect.stringMatching(/JSON|package\.json|Unexpected/),
+        }),
+        expect.objectContaining({
+          source: expect.stringContaining(`directory (${pluginRoot})`),
+          message: expect.stringContaining("package.json"),
+        }),
+      ]))
+    } finally {
+      await app.close()
+    }
+  }, 15_000)
+
+  test("POST /api/v1/agent/reload returns restart_warnings when a server entry changes", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-reload-warning-")
+    const pluginRoot = await makeTempDir("boring-workspace-reload-warning-plugin-")
+    await writeRuntimePlugin(pluginRoot, "reload-warning-plugin", "V1")
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      provisionWorkspace: false,
+      defaultPluginPackages: [pluginRoot],
+    })
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      await writeFile(
+        join(pluginRoot, "server", "index.js"),
+        "export default { id: 'reload-warning-plugin', systemPrompt: 'V2' }\n",
+        "utf8",
+      )
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: { sessionId: "missing" } })
+      expect(reload.statusCode).toBe(200)
+      const body = reload.json() as {
+        ok: boolean
+        restart_warnings?: Array<{ id: string; surfaces: string[]; message: string }>
+        diagnostics?: unknown[]
+      }
+      expect(body.ok).toBe(true)
+      // Session "missing" has no live agent session, so the only diagnostic is
+      // the "nothing reloaded yet" note.
+      expect(body.diagnostics).toEqual([
+        { source: "reload", message: "No live agent session to reload yet — changes apply to the next session." },
+      ])
+      expect(body.restart_warnings).toEqual([
+        expect.objectContaining({
+          id: "reload-warning-plugin",
+          surfaces: ["routes", "agentTools"],
+          message: expect.stringContaining("restart"),
+        }),
+      ])
     } finally {
       await app.close()
     }
@@ -769,6 +885,9 @@ describe("createWorkspaceAgentServer — defaultPluginPackages (standard load pr
       mode: "direct",
       logger: false,
       disableDefaultFileTools: true,
+      // The fixture package is a dep of @hachej/boring-workspace itself —
+      // anchor npm-name resolution there, like a host app passing its root.
+      appRoot: resolve(__dirname, "..", "..", ".."),
       // Workspace-local fixture package — proves require.resolve + DirPluginEntry
       // + BoringPluginAssetManager scan all wire together correctly without
       // coupling this workspace test to a real plugin package like ask-user.
@@ -784,15 +903,16 @@ describe("createWorkspaceAgentServer — defaultPluginPackages (standard load pr
       expect(toolNames).toContain("fixture_ping")
 
       // Front-side discovery: the package appears in /api/v1/agent-plugins
-      // with a frontUrl pointing at its boring.front entry. The
-      // front-side SSE subscriber would dynamic-import this URL.
+      // with a module-url frontTarget pointing at its boring.front entry.
+      // The front-side SSE subscriber would dynamic-import this URL.
       const plugins = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
       expect(plugins.statusCode).toBe(200)
       // Plugin id is derived from package.json#name via @scope/name → scope-name
-      const list = plugins.json() as Array<{ id: string; frontUrl?: string }>
+      const list = plugins.json() as Array<{ id: string; frontTarget?: { kind: string; entryUrl: string } }>
       const found = list.find((p) => p.id === "boring-fixtures-default-plugin")
       expect(found, `boring-fixtures-default-plugin not in /api/v1/agent-plugins; got: ${JSON.stringify(list)}`).toBeDefined()
-      expect(found?.frontUrl).toMatch(/\/@fs\//)
+      expect(found?.frontTarget?.kind).toBe("module-url")
+      expect(found?.frontTarget?.entryUrl).toMatch(/\/@fs\//)
     } finally {
       await app.close()
     }

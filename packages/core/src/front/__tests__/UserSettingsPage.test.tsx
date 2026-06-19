@@ -109,6 +109,46 @@ describe('UserSettingsPage', () => {
   )
 
   it(
+    'links the top-left brand to home',
+    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      render(<UserSettingsPage />, { wrapper: Wrapper })
+      await waitFor(() => expect(screen.getByText('test@test.dev')).toBeTruthy())
+      const homeLink = screen.getByRole('link', { name: /home/i })
+      expect(homeLink.getAttribute('href')).toBe('/')
+      assertionPassed('brand-links-home')
+    }),
+  )
+
+  it(
+    'renders host-provided extra sections with their own nav entry (stays feature-agnostic)',
+    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      render(
+        <UserSettingsPage
+          extraSections={[
+            { id: 'billing', navLabel: 'Billing', navDescription: 'Credits and top-up', content: <div id="billing">Billing section body</div> },
+          ]}
+        />,
+        { wrapper: Wrapper },
+      )
+
+      await waitFor(() => expect(screen.getByText('Billing section body')).toBeTruthy())
+      const nav = screen.getByRole('link', { name: /Billing/i })
+      expect(nav.getAttribute('href')).toBe('#billing')
+      assertionPassed('extra-section-rendered')
+    }),
+  )
+
+  it(
+    'omits extra-section nav entries when none are provided',
+    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      render(<UserSettingsPage />, { wrapper: Wrapper })
+      await waitFor(() => expect(screen.getByText('test@test.dev')).toBeTruthy())
+      expect(screen.queryByRole('link', { name: /Billing/i })).toBeNull()
+      assertionPassed('no-extra-sections')
+    }),
+  )
+
+  it(
     'renders change password form fields',
     withBeadId(BEAD_ID, async ({ assertionPassed }) => {
       render(<UserSettingsPage />, { wrapper: Wrapper })

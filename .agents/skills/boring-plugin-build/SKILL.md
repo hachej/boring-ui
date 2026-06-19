@@ -64,7 +64,7 @@ Use `DECISION_TREE.md` before writing files.
 Use when:
 
 - iterating inside a workspace
-- authoring with the boring CLI
+- authoring with the `boring-ui-plugin` CLI
 - relying on `/reload` for front/Pi resources
 - avoiding custom backend routes
 
@@ -72,7 +72,7 @@ Workflow:
 
 1. run the scaffold command from the canonical skill
 2. edit the generated files in place
-3. run `boring-ui verify-plugin <name> "$BORING_AGENT_WORKSPACE_ROOT"`
+3. run `boring-ui-plugin verify <name> "$BORING_AGENT_WORKSPACE_ROOT"`
 4. tell the user to run `/reload`
 
 Use `SNIPPETS.md` if you want copy-paste commands instead of rebuilding them by hand.
@@ -105,7 +105,7 @@ Concrete in-repo app-local example:
 
 Important:
 
-- `plugins/<name>/` is the home that matches `boring-ui plugin create <name> --path plugins`
+- `plugins/<name>/` is the repo-level packaged plugin home; create it with `boring-ui-plugin create <name> --path plugins`
 - `apps/<app>/src/plugins/<name>/` follows the direct-source app-local pattern shown in the playground example, not the built `dist/*` CLI template shape
 
 Use the same manifest principles as the canonical skill:
@@ -199,7 +199,7 @@ This is the shortest path from idea to production-safe plugin.
 For runtime plugins:
 
 ```bash
-boring-ui verify-plugin <name> "$BORING_AGENT_WORKSPACE_ROOT"
+boring-ui-plugin verify <name> "$BORING_AGENT_WORKSPACE_ROOT"
 ```
 
 For app/internal plugins:
@@ -228,6 +228,50 @@ Stop and ask if any of these are unclear:
 - does it need provider/binding behavior?
 
 Do not pick silently. Plugin shape drives everything else.
+
+---
+
+## Slash commands that open a panel (UI actions)
+
+Runtime plugins can register slash commands that open their panel (or trigger any in-process action) directly from the Pi composer. Two steps:
+
+### 1. Declare in `package.json`
+
+```json
+{
+  "pi": {
+    "extensions": ["agent/index.ts"],
+    "slashCommands": [
+      { "name": "open-<kebab-name>", "description": "Open the <Label> panel" }
+    ]
+  }
+}
+```
+
+- `name` — command name **without** a leading slash (e.g. `"open-counter"`, not `"/counter"`).
+- `description` — one-line hint shown in the picker.
+- No `command`, `title`, `action`, or `handler` keys — those are not part of the schema and will be ignored.
+
+### 2. Register the handler in `agent/index.ts`
+
+```ts
+import { openPanel, notify } from '@hachej/boring-workspace/plugin'
+
+export default function (pi: PiApi) {
+  pi.registerCommand('open-<kebab-name>', async () => {
+    await openPanel({ pluginName: '<kebab-name>' })
+    await notify({ message: '<Label> opened' })
+  })
+}
+```
+
+`openPanel` and `notify` are imported from `@hachej/boring-workspace/plugin`.
+
+**Key rules:**
+- The `name` in `pi.slashCommands` must exactly match the command name passed to `pi.registerCommand`.
+- The declaration in `package.json` is for picker discoverability; the actual behavior lives in `registerCommand`.
+- `openPanel({ pluginName })` uses the `pluginName` matching `package.json#boring.label` (or the inferred kebab name).
+- `notify` is optional — use it to give the user feedback after the action.
 
 ---
 

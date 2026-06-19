@@ -11,6 +11,12 @@ import {
   ERROR_CODE_VALIDATION_ERROR,
 } from '../middleware'
 import { createLogger } from '../../logging'
+import {
+  FileRecordsValidationError,
+  MAX_RECORD_FILE_BYTES,
+  buildFileRecordsResult,
+  parseFileRecordsRequest,
+} from './fileRecords'
 
 const log = createLogger('boring/workspace-settings')
 
@@ -21,7 +27,32 @@ interface PathValidationLike {
 
 const BORING_SETTINGS_PATH = '.boring/settings'
 const DEFAULT_MARKDOWN_IMAGE_UPLOAD_DIR = 'assets/images'
+const DEFAULT_FILE_UPLOAD_DIR = 'assets/uploads'
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
+const IMAGE_UPLOAD_EXTENSIONS = new Set(['avif', 'gif', 'jpg', 'jpeg', 'png', 'webp'])
+const SAFE_UNKNOWN_FILE_EXTENSIONS = new Set(['csv', 'doc', 'docx', 'json', 'md', 'pdf', 'ppt', 'pptx', 'rtf', 'txt', 'xls', 'xlsx', 'zip'])
+const MIME_UPLOAD_EXTENSIONS: Record<string, string[]> = {
+  'application/json': ['json'],
+  'application/msword': ['doc'],
+  'application/pdf': ['pdf'],
+  'application/rtf': ['rtf'],
+  'application/vnd.ms-excel': ['xls'],
+  'application/vnd.ms-powerpoint': ['ppt'],
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['pptx'],
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['xlsx'],
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['docx'],
+  'application/zip': ['zip'],
+  'image/avif': ['avif'],
+  'image/gif': ['gif'],
+  'image/jpeg': ['jpg', 'jpeg'],
+  'image/png': ['png'],
+  'image/svg+xml': ['bin'],
+  'image/webp': ['webp'],
+  'text/csv': ['csv'],
+  'text/markdown': ['md'],
+  'text/plain': ['txt'],
+}
 
 interface BoringWorkspaceSettings {
   markdown?: {
@@ -155,12 +186,11 @@ function normalizeUploadDir(value: unknown): string | null {
 
 function extForUpload(filename: string, contentType: string): string {
   const fromName = extname(filename).toLowerCase().replace(/^\./, '')
-  if (/^[a-z0-9]{1,12}$/.test(fromName)) return fromName
-  if (contentType === 'image/jpeg') return 'jpg'
-  if (contentType === 'image/png') return 'png'
-  if (contentType === 'image/gif') return 'gif'
-  if (contentType === 'image/webp') return 'webp'
-  if (contentType === 'image/svg+xml') return 'svg'
+  const safeFromName = /^[a-z0-9]{1,12}$/.test(fromName) ? fromName : ''
+  const allowed = MIME_UPLOAD_EXTENSIONS[contentType]
+  if (allowed) return safeFromName && allowed.includes(safeFromName) ? safeFromName : allowed[0] ?? 'bin'
+  if (contentType.startsWith('image/')) return safeFromName && IMAGE_UPLOAD_EXTENSIONS.has(safeFromName) ? safeFromName : 'bin'
+  if (contentType === 'application/octet-stream' && safeFromName && SAFE_UNKNOWN_FILE_EXTENSIONS.has(safeFromName)) return safeFromName
   return 'bin'
 }
 
@@ -191,14 +221,28 @@ function contentTypeForPath(path: string): string {
     case '.png': return 'image/png'
     case '.svg': return 'image/svg+xml'
     case '.webp': return 'image/webp'
-    case '.css': return 'text/css; charset=utf-8'
-    case '.html':
-    case '.htm': return 'text/html; charset=utf-8'
-    case '.js': return 'text/javascript; charset=utf-8'
-    case '.mjs': return 'text/javascript; charset=utf-8'
+    case '.txt': return 'text/plain; charset=utf-8'
+    case '.md': return 'text/markdown; charset=utf-8'
+    case '.json': return 'application/json; charset=utf-8'
+    case '.csv': return 'text/csv; charset=utf-8'
     case '.pdf': return 'application/pdf'
+    case '.doc': return 'application/msword'
+    case '.docx': return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    case '.xls': return 'application/vnd.ms-excel'
+    case '.xlsx': return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    case '.ppt': return 'application/vnd.ms-powerpoint'
+    case '.pptx': return 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    case '.rtf': return 'application/rtf'
+    case '.zip': return 'application/zip'
     default: return 'application/octet-stream'
   }
+}
+
+
+function sendValidationError(reply: FastifyReply, message: string, field?: string): FastifyReply {
+  return reply.code(400).send({
+    error: { code: ERROR_CODE_VALIDATION_ERROR, message, ...(field ? { field } : {}) },
+  })
 }
 
 export function fileRoutes(
@@ -238,8 +282,40 @@ export function fileRoutes(
         .header('content-type', contentTypeForPath(path))
         .header('content-length', String(bytes.byteLength))
         .header('cache-control', 'no-store')
+        .header('x-content-type-options', 'nosniff')
         .send(Buffer.from(bytes))
     } catch (err) {
+      return classifyError(err, reply, 'file')
+    }
+  })
+
+  app.get('/api/v1/files/records', async (request, reply) => {
+    try {
+      const parsed = parseFileRecordsRequest(request.query as Record<string, unknown>)
+      const workspace = await resolveWorkspace(request)
+      const stat = await workspace.stat(parsed.path)
+      if (stat.kind !== 'file') {
+        return sendValidationError(reply, 'path is not a file', 'path')
+      }
+      if (stat.size > MAX_RECORD_FILE_BYTES) {
+        return sendValidationError(reply, 'records file is too large', 'path')
+      }
+      const content = await workspace.readFile(parsed.path)
+      if (Buffer.byteLength(content, 'utf8') > MAX_RECORD_FILE_BYTES) {
+        return sendValidationError(reply, 'records file is too large', 'path')
+      }
+      return buildFileRecordsResult({
+        path: parsed.path,
+        content,
+        mtimeMs: stat.mtimeMs,
+        offset: parsed.offset,
+        limit: parsed.limit,
+        q: parsed.q,
+      })
+    } catch (err) {
+      if (err instanceof FileRecordsValidationError) {
+        return sendValidationError(reply, err.message, err.field)
+      }
       return classifyError(err, reply, 'file')
     }
   })
@@ -281,6 +357,7 @@ export function fileRoutes(
     const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
       ? body.expectedMtimeMs
       : null
+    const shouldReturnMtimeMs = body.returnMtimeMs !== false || expectedMtimeMs !== null
 
     try {
       const workspace = await resolveWorkspace(request)
@@ -320,6 +397,10 @@ export function fileRoutes(
         if (dir) await workspace.mkdir(dir, { recursive: true })
       }
       const content = body.content
+      if (!shouldReturnMtimeMs) {
+        await workspace.writeFile(path, content)
+        return { ok: true }
+      }
       const stat = workspace.writeFileWithStat
         ? await workspace.writeFileWithStat(path, content)
         : await (async () => {
@@ -338,17 +419,17 @@ export function fileRoutes(
     if (filename === null) return
     const contentBase64 = requireStringParam(body?.contentBase64, 'contentBase64', reply)
     if (contentBase64 === null) return
-    const contentType = typeof body.contentType === 'string' ? body.contentType.trim().toLowerCase() : ''
-    if (!contentType.startsWith('image/')) {
-      return reply.code(400).send({
-        error: { code: ERROR_CODE_VALIDATION_ERROR, message: 'contentType must be an image/* MIME type', field: 'contentType' },
-      })
-    }
+    const contentType = typeof body.contentType === 'string' && body.contentType.trim()
+      ? body.contentType.trim().toLowerCase()
+      : 'application/octet-stream'
 
     try {
       const workspace = await resolveWorkspace(request)
       const settings = await readWorkspaceSettings(workspace)
-      const dir = normalizeUploadDir(body.directory) ?? normalizeUploadDir(settings.markdown?.imageUploadDir) ?? DEFAULT_MARKDOWN_IMAGE_UPLOAD_DIR
+      const isImage = contentType.startsWith('image/')
+      const dir = isImage
+        ? normalizeUploadDir(body.directory) ?? normalizeUploadDir(settings.markdown?.imageUploadDir) ?? DEFAULT_MARKDOWN_IMAGE_UPLOAD_DIR
+        : DEFAULT_FILE_UPLOAD_DIR
       const ext = extForUpload(filename, contentType)
       const base = basenameForUpload(filename)
       const unique = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`

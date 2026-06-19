@@ -18,11 +18,12 @@ const root = resolve(__dirname, "..")
 const PUBLISHABLE_PACKAGES = [
   "packages/ui",
   "packages/agent",
+  "packages/plugin-cli",
   "packages/workspace",
   "packages/core",
-  "packages/cli",
   "plugins/deck",
   "plugins/ask-user",
+  "packages/cli",
   "plugins/data-explorer",
   "plugins/data-catalog",
 ]

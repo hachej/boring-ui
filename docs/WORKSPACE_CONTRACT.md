@@ -1,6 +1,6 @@
 # Workspace Integration Contract
 
-Defines the contracts between `@boring/agent` and `@boring/workspace`. Both packages are composed at the **app-shell level** -- neither imports from the other at runtime.
+Defines the contracts between `@hachej/boring-agent` and `@hachej/boring-workspace`. Both packages are composed at the **app-shell level** -- neither imports from the other at runtime.
 
 See also: [DECISIONS.md](./DECISIONS.md) (locked decisions), [REVIEW_DECISIONS.md](./REVIEW_DECISIONS.md) (adopted/deferred findings).
 
@@ -9,13 +9,13 @@ See also: [DECISIONS.md](./DECISIONS.md) (locked decisions), [REVIEW_DECISIONS.m
 ## Integration Pattern: App-Shell Composition
 
 ```
-@boring/agent         @boring/workspace         App Shell
+@hachej/boring-agent  @hachej/boring-workspace  App Shell
 ┌──────────────┐     ┌──────────────────┐     ┌─────────────────────┐
 │ ChatPanel    │     │ WorkspaceProvider│     │ import { ChatPanel }│
-│ useAgentChat │     │ IdeLayout        │     │   from '@boring/agent'│
-│ theme.css    │     │ PanelRegistry    │     │ import { Workspace  │
+│ usePiSessions│     │ IdeLayout        │     │   from agent        │
+│ styles.css   │     │ PanelRegistry    │     │ import { Workspace  │
 │              │     │ Zustand store    │     │   Provider } from   │
-│              │     │                  │     │   '@boring/workspace'│
+│              │     │                  │     │   workspace         │
 └──────────────┘     └──────────────────┘     └─────────────────────┘
        │                      │                        │
        └──────────────────────┴────────────────────────┘
@@ -23,15 +23,15 @@ See also: [DECISIONS.md](./DECISIONS.md) (locked decisions), [REVIEW_DECISIONS.m
 ```
 
 **Rules:**
-1. `@boring/workspace` has **zero imports** from `@boring/agent`.
-2. `@boring/agent` has **zero imports** from `@boring/workspace`.
-3. The app shell imports from both and wires them via `createWorkspaceAgentServer` (server) + `WorkspaceAgentFront` / `WorkspaceProvider` (frontend).
-4. Shared types (`WorkspaceBridge`, `UiCommand`, `CommandResult`) live in `@boring/workspace/shared` and are re-exported from `@boring/workspace/server`.
+1. `@hachej/boring-workspace` **base** front/shared code has **zero value imports** from `@hachej/boring-agent`. The agent wiring lives only in the `app/*` composition layers (`app/front`, `app/server`) and a small set of server/plugin seams — that is the intended composition point, not a violation.
+2. `@hachej/boring-agent` has **zero imports** from `@hachej/boring-workspace`.
+3. The app shell imports from both and wires them via `createWorkspaceAgentServer` (server, from `@hachej/boring-workspace/app/server`) + `WorkspaceAgentFront` (from `@hachej/boring-workspace/app/front`) / `WorkspaceProvider` (frontend).
+4. Shared types (`UiBridge`, `UiCommand`, `CommandResult`) live in `@hachej/boring-workspace/shared` and are re-exported from `@hachej/boring-workspace/server`.
 
 **App-shell wiring example (plugin-based — recommended):**
 
 ```tsx
-import { WorkspaceAgentFront } from '@boring/workspace'
+import { WorkspaceAgentFront } from '@hachej/boring-workspace/app/front'
 import { myPlugin } from './plugins/myPlugin'
 
 function App() {
@@ -47,8 +47,8 @@ function App() {
 **Low-level example (manual `WorkspaceProvider`):**
 
 ```tsx
-import { ChatPanel } from '@boring/agent'
-import { WorkspaceProvider, IdeLayout } from '@boring/workspace'
+import { ChatPanel } from '@hachej/boring-agent'
+import { WorkspaceProvider, IdeLayout } from '@hachej/boring-workspace'
 
 function App() {
   return (
@@ -65,7 +65,7 @@ function App() {
 
 ### 1. HTTP Routes
 
-`@boring/agent` standalone owns agent/file/session endpoints. UI bridge endpoints are owned by the app-shell workspace server surface (typically via `createWorkspaceAgentApp`). Workspace frontend calls these via `fetch` / `EventSource`.
+`@hachej/boring-agent` standalone owns agent/file/session endpoints. UI bridge endpoints are owned by the app-shell workspace server surface (typically via `createWorkspaceAgentApp`). Workspace frontend calls these via `fetch` / `EventSource`.
 
 #### Files
 
@@ -114,34 +114,32 @@ All routes use standard error codes: `validation_error`, `not_found`, `internal`
 
 ### 2. Component Exports (for App Shell)
 
-These are exported by `@boring/agent` for the app shell to compose into `WorkspaceProvider`. Workspace does NOT import these directly.
+These are exported by `@hachej/boring-agent` (front entry) for the app shell to compose into `WorkspaceProvider`. Workspace does NOT import these directly. The surface evolves; the canonical list is `packages/agent/src/front/index.ts`.
 
 | Export | Tier | Purpose |
 |---|---|---|
-| `ChatPanel` | Default | Drop-in chat experience. Pass via `panels` prop. |
-| `SessionToolbar` | Default | Session list/switch/create/delete UI. |
-| `Composer` | Primitive | Textarea + model picker + thinking toggle. |
-| `Message` | Primitive | Single message container with role-based styling. |
-| `NewChatButton` | Primitive | Button to create new session. |
-| `ModelPicker` | Primitive | Model selection dropdown. |
-| `ThinkingToggle` | Primitive | Thinking level toggle. |
-| `Tool` | Primitive | Tool call card with expand/collapse and elapsed timer. |
-| `Terminal` | Primitive | Terminal output display. |
+| `ChatPanel` (alias of `PiChatPanel`) | Default | Drop-in chat experience. Pass via `panels` prop. |
+| `SessionList` / `SessionBrowser` (`PiSessionList` / `PiSessionBrowser`) | Default | Session list/switch/create/delete UI. |
+| `PromptInput*` (`PromptInputTextarea`, `PromptInputFooter`, `PromptInputSubmit`) | Primitive | Composer textarea + footer + submit. |
+| `Message` / `MessageContent` / `MessageActions` | Primitive | Message container + content + actions. |
+| `Conversation` / `ConversationContent` / `ConversationScrollButton` | Primitive | Scrollable conversation surface. |
+| `ToolRenderer` / `ToolCallGroup` / `ToolPart` | Primitive | Tool call rendering. |
 | `CodeBlock` | Primitive | Syntax-highlighted code block. |
-| `Reasoning` | Primitive | Collapsible reasoning/thinking display. |
-| `useAgentChat` | Hook | Headless chat state management. |
-| `useSessions` | Hook | Headless session CRUD. |
-| `theme.css` | Style | CSS custom properties (`--boring-agent-*`). |
+| `Reasoning` / `ReasoningTrigger` / `ReasoningContent` | Primitive | Collapsible reasoning/thinking display. |
+| `usePiSessions` | Hook | Headless session state + CRUD. |
+| `useOpenArtifact` | Hook | Artifact open handling. |
+| `@hachej/boring-agent/front/styles.css` | Style | CSS custom properties (`--boring-agent-*`) and component styles. |
 
 ### 3. Styling Contract
 
-- All chat styles use `--boring-agent-*` CSS custom properties defined in `theme.css`.
+- All chat styles use `--boring-agent-*` CSS custom properties, shipped via `@hachej/boring-agent/front/styles.css` (the package's `globals.css`). There is no separate `theme.css` subpath.
+- Tokens are scoped to `[data-boring-agent]` and consume the host's public `--boring-*` tokens (owned by `@hachej/boring-workspace`) with package-default fallbacks. See `docs/TAILWIND-V4-STYLE-ISOLATION.md`.
 - Workspace can override at any scope via the `data-boring-agent` attribute on the panel container.
-- No CSS-in-JS runtime; no Tailwind dependency from agent side.
+- The agent's shipped CSS contains no `@import "tailwindcss"`; it relies on the consumer's Tailwind setup.
 
-### 4. WorkspaceBridge Semantics
+### 4. UiBridge Semantics
 
-- **UI effect dispatch**: single source via `WorkspaceBridge.emitUiEffect()`. Agent tools call this; workspace receives via SSE through the workspace/app-shell hosted `/api/v1/ui/*` bridge.
+- **Command dispatch**: single source via `UiBridge.postCommand()`. Agent tools call this; workspace receives via SSE through the workspace/app-shell hosted `/api/v1/ui/*` bridge.
 - **State ownership**: workspace PUTs state after applying changes. Agent reads state via `get_ui_state` tool.
 - **Seq numbering**: monotonically increasing per command. Same `seq` appears in SSE event and POST response.
 - **Display parts**: `data-ui-command` message parts are display-only in the chat stream. Workspace must NOT dispatch from these; SSE is the authoritative dispatch channel.
@@ -213,7 +211,7 @@ When the app shell wants chat, it passes a panel config:
 {
   id: 'agent',
   title: 'Chat',
-  component: ChatPanel, // imported from @boring/agent
+  component: ChatPanel, // imported from @hachej/boring-agent
   essential: true,
   source: 'app',
 }
@@ -229,6 +227,7 @@ Workspace implements handlers for commands it cares about:
 |---|---|
 | `openFile` | Open file in editor pane |
 | `openPanel` | Activate/create panel by id |
+| `openSurface` | Resolve a domain target through registered surface resolvers, then open the resolved panel |
 | `closePanel` | Remove panel |
 | `showNotification` | Display toast/notification |
 | `navigateToLine` | Scroll editor to file:line |
@@ -241,9 +240,10 @@ Unknown kinds are silently ignored (forward-compatible).
 ## Import Convention
 
 ```
-@boring/agent          → top-level, browser-safe (components + hooks + CSS)
-@boring/agent/server   → Node-only (Fastify app, harness, session store)
-@boring/agent/shared   → type-only (interfaces, schemas)
+@hachej/boring-agent              → top-level, browser-safe (components + hooks)
+@hachej/boring-agent/front/styles.css → CSS (tokens + component styles)
+@hachej/boring-agent/server       → Node-only (Fastify app, harness, session store)
+@hachej/boring-agent/shared       → type-only (interfaces, schemas)
 ```
 
 Workspace imports **none** of these. The app shell imports from the top-level entry point.
@@ -254,12 +254,17 @@ Workspace imports **none** of these. The app shell imports from the top-level en
 
 ### Bundle Isolation
 
-Workspace package's production bundle must contain zero exports from `@boring/agent`. Verify with:
+Workspace **base** front/shared bundle must contain zero value imports from `@hachej/boring-agent`; agent imports are confined to the `app/*` composition layers and a few server/plugin seams. The import-boundary audit enforces this:
 
 ```bash
-# Check workspace source for agent imports
-grep -r "from.*@boring/agent" packages/workspace/src/
-# Expected: no output
+pnpm audit:imports   # scripts/audit-imports.ts — fails on illegal cross-package imports
+```
+
+A manual spot check (note: `app/*` and `*/server` seams legitimately import agent):
+
+```bash
+grep -rn "from.*@hachej/boring-agent" packages/workspace/src/front/ packages/workspace/src/shared/
+# Expected: no value imports (type-only imports are allowed)
 ```
 
 ### E2E Integration Test

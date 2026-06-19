@@ -1,9 +1,15 @@
-export interface WorkspaceBridge {
+export interface UiBridge {
   getState(): Promise<UiState | null>
   setState(state: UiState): Promise<void>
-  emitUiEffect(cmd: UiCommand): Promise<CommandResult>
-  subscribeCommands(handler: (cmd: UiCommand & { seq: number }) => void): () => void
+  /** Canonical UI command dispatch method. */
+  postCommand(cmd: UiCommand): Promise<CommandResult>
+  subscribeCommands(handler: (cmd: UiCommand & { seq: number }) => unknown): () => void
   drainCommands?(): Promise<Array<UiCommand & { seq: number }>>
+}
+
+export type WorkspaceBridge = UiBridge & {
+  /** @deprecated Use postCommand. Kept as a compatibility alias for WorkspaceBridge RPC callers. */
+  emitUiEffect(cmd: UiCommand): Promise<CommandResult>
 }
 
 export type UiState = Record<string, unknown>

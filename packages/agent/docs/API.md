@@ -1,64 +1,91 @@
 # API
 
-This file documents the package API as it exists today in the v2 scaffold.
-Roadmap-only APIs are explicitly marked.
+The package exposes four entry points. Browser code imports the top-level (or
+`/front`) barrel; Node servers import `/server`; both share types from
+`/shared`. The eval toolkit ships under `/eval`.
 
 ## Entry Points
 
-`@boring/agent` currently maps to the frontend entry (`dist/front.js`).
+| Import | Environment | Source barrel |
+|---|---|---|
+| `@hachej/boring-agent` | Browser | `src/front/index.ts` (alias of `/front`) |
+| `@hachej/boring-agent/front` | Browser | `src/front/index.ts` |
+| `@hachej/boring-agent/front/styles.css` | Browser | precompiled CSS |
+| `@hachej/boring-agent/server` | Node | `src/server/index.ts` |
+| `@hachej/boring-agent/shared` | Any | `src/shared/index.ts` |
+| `@hachej/boring-agent/eval` | Node | `src/eval/index.ts` |
 
-Additional subpath exports:
+## `@hachej/boring-agent/front`
 
-- `@boring/agent/front`
-- `@boring/agent/shared`
-- `@boring/agent/server`
+The styled chat UI and its building blocks. Key exports:
 
-## Current Runtime Surface
+- `ChatPanel` (alias of `PiChatPanel`) — the pane-embeddable chat component.
+  Props include `apiBaseUrl`, `sessionId`, and `toolRenderers`. See
+  `src/front/chat/PiChatPanel.tsx`.
+- `usePiSessions` and session helpers (`readActiveSessionId`,
+  `writeActiveSessionId`, `PiSessionList`, `PiSessionBrowser`).
+- Slash-command surface: `builtinCommands`, `createCommandRegistry`,
+  `parseSlashCommand`, `getAgentCommands`.
+- Tool renderers: `defaultToolRenderers`, `mergeToolRenderers`,
+  `resolveToolRenderer`, `mergeShadcnToolRenderers`, `ToolCallGroup`.
+- Primitives (`Message`, `Conversation`, `Reasoning`, `CodeBlock`,
+  `PromptInput`, …) and the `cn` class helper.
+- `DebugDrawer`, `ChatEmptyState`, `ArtifactOpenProvider`/`useOpenArtifact`,
+  `uploadFile`.
 
-### `@boring/agent/server`
+> Note: there is no `useAgentChat` hook. The chat lifecycle lives inside
+> `ChatPanel`/`PiChatPanel` and the `usePiSessions` hook.
 
-Currently exported:
+## `@hachej/boring-agent/server`
 
-- `createDirectSandbox` from `src/server/sandbox/direct/createDirectSandbox.ts`
+The Node runtime. Key exports:
 
-Notes:
+- `createAgentApp(opts)` — standalone Fastify factory. Zero dependency on
+  `@hachej/boring-core` or `@hachej/boring-workspace`. See
+  `src/server/createAgentApp.ts`.
+- `registerAgentRoutes(app, opts)` — mounts the agent HTTP routes onto an
+  existing Fastify instance (used by `@hachej/boring-workspace`). Paths are
+  absolute under `/api/v1/agent/*`, `/api/v1/files`, etc.
+- Sandbox adapters: `createDirectSandbox`, `createBwrapSandbox`, plus the
+  Vercel sandbox/snapshot helpers (`createVercelSandboxWorkspace`,
+  `bakeSnapshotIfNeeded`, deployment-snapshot providers, `FileHandleStore`).
+- Workspace adapters: `createNodeWorkspace`, `createVercelSandboxWorkspace`.
+- Mode resolution: `autoDetectMode`, `resolveMode`, `hasBwrap`. Custom execution backends are injected via the `runtimeModeAdapter` option — see [runtime.md §Adding a custom runtime mode](./runtime.md#adding-a-custom-runtime-mode).
+- Provisioning: `provisionRuntimeWorkspace`, `provisionWorkspaceRuntime`,
+  `getBoringAgentRuntimePaths`, `getBoringAgentRuntimeEnv`,
+  `createVercelProvisioningAdapter`.
+- HTTP/CSP: `applyCspHeaders`; `fileRoutes` for mounting file routes alone.
+- Harness: `createResourceSettingsManager` and the Pi harness option types.
+- `createLogger`.
 
-- This is the only runtime mode implementation currently available.
-- Local `bwrap` and remote `vercel-sandbox` adapters are planned.
+## `@hachej/boring-agent/shared`
 
-### `@boring/agent/shared`
+Platform-agnostic contracts (types + zod schemas). Source of truth for the
+public interfaces:
 
-Current contract files:
+- `harness.ts` — `AgentHarness`, `SendMessageInput`, `RunContext`,
+  `AgentHarnessFactory`.
+- `tool.ts` / `tool-ui.ts` — `AgentTool`, `ToolExecContext`, `ToolResult`,
+  `JSONSchema`, `ToolUiMetadata`.
+- `workspace.ts` — `Workspace`, `Entry`, `Stat`.
+- `sandbox.ts` — `Sandbox`, `SandboxCapability`, `ExecOptions`, `ExecResult`.
+- `catalog.ts` — `CatalogDeps`, `ToolCatalog`.
+- `session.ts` — `SessionStore`, `SessionSummary`, `SessionDetail`.
+- `config-schema.ts` — `ConfigSchema`, `EnvSchema`, `RuntimeModeSchema`,
+  `validateConfig`.
+- `error-codes.ts` — `ErrorCode`, `ERROR_CODES`, error-envelope schemas
+  (see [ERROR_CODES.md](./ERROR_CODES.md)).
+- `chat.ts` — `BoringChatMessage`, `PiChatEvent`, stream/snapshot frames and
+  their zod schemas.
+- `capabilities.ts`, `telemetry.ts`, `runtime.ts`, `sandbox-handle-store.ts`,
+  `validateTool.ts`, `agentPluginEvents.ts`.
 
-- `harness.ts` — `AgentHarness`, streaming event contracts.
-- `tool.ts` — `AgentTool`, `ToolExecContext`, `ToolResult`.
-- `workspace.ts` — platform-agnostic filesystem contract.
-- `sandbox.ts` — command execution contract.
-- `session.ts` — `SessionStore` and session models.
-- `ui-bridge.ts` — `WorkspaceBridge`, `UiCommand`, `CommandResult`.
-- `catalog.ts`, `file-search.ts`, `message.ts`, `sandbox-handle-store.ts`.
+> There is no `ui-bridge.ts` or `message.ts` in `shared/`. UI-bridge tools
+> (`exec_ui`, `get_ui_state`) and their types now live in
+> `@hachej/boring-workspace` — `createAgentApp` ships zero UI tools by design.
 
-These files are the source of truth for TypeScript interfaces while higher-level
-helpers are still being implemented.
+## Deferred HTTP Git Surface
 
-## Shipped High-Level API
-
-- `createAgentApp(config)` — standalone Fastify factory. Zero dependency on `@boring/core`. Powers `npx @boring/agent`. See `packages/agent/src/server/createAgentApp.ts`.
-- `ChatPanel` — React component exported from `@boring/agent/front` (and top-level barrel). See `packages/agent/src/front/index.ts:2`.
-- `useAgentChat(...)` — React hook, same export surface.
-
-## Planned High-Level API (Not Implemented Yet)
-
-- `registerAgentRoutes(app, opts)` — new Fastify plugin export for embedding into a core-built server. Lands in agent M4 alongside core's integration milestone. Paths are absolute (`/api/v1/agent/*`); no `prefix` option.
-
-Track implementation progress in `docs/plans/agent-package-spec.md` and beads.
-
-## Deferred HTTP Git Surface (v1.x)
-
-`/api/v1/git/*` routes are intentionally not part of agent v1.
-
-- Reason: there is no first-party git UI consumer in agent/workspace v1, so
-  these routes would be dead code.
-- Current behavior: use the `bash` tool for git commands.
-- Activation point: when git UI returns (status/diff/badges), add the routes as
-  thin wrappers over sandbox git execution.
+`/api/v1/git/*` routes exist but are intentionally thin/minimal: there is no
+first-party git UI consumer in the agent today, so git operations run through
+the `bash` tool. See [KNOWN_LIMITATIONS.md](./KNOWN_LIMITATIONS.md).

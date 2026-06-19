@@ -8,7 +8,8 @@ import {
 } from '@mariozechner/pi-coding-agent'
 
 import type { Sandbox } from '../../../shared/sandbox'
-import type { AgentTool, ToolResult } from '../../../shared/tool'
+import type { AgentTool, ToolReadinessRequirement, ToolResult } from '../../../shared/tool'
+import { runtimeNotReadyToolResult, type ToolReadinessState } from '../../catalog/toolReadiness'
 import { getRuntimeBundleStorageRoot, type RuntimeBundle } from '../../runtime/mode'
 import { buildBwrapArgs } from '../../sandbox/bwrap/buildBwrapArgs'
 import { withWorkspacePythonEnv } from '../../sandbox/workspacePythonEnv'
@@ -25,6 +26,7 @@ export interface HarnessRuntimeProvisioningSnapshot {
 
 export interface HarnessRuntimeProvisioningOptions extends HarnessRuntimeProvisioningSnapshot {
   getCurrent?: () => HarnessRuntimeProvisioningSnapshot | undefined
+  getReadiness?: () => ToolReadinessState
 }
 
 function mergeRuntimeEnv(
@@ -70,6 +72,7 @@ function directSpawnHook(
     env: withWorkspacePythonEnv({
       workspaceRoot,
       env: mergeRuntimeEnv(runtime, context.env),
+      preserveHostHome: true,
     }),
   })
 }
@@ -105,9 +108,9 @@ function bashOptionsForMode(
   runtime?: HarnessRuntimeProvisioningOptions,
   executionRuntimeEnv?: Record<string, string>,
 ): BashToolOptions {
-  const storageRoot = getRuntimeBundleStorageRoot(bundle)
   switch (bundle.sandbox.provider) {
     case 'vercel-sandbox':
+    case 'remote-worker':
       return {
         operations: vercelBashOps(bundle.sandbox, {
           // The pi bash tool's env may include the host process env. Never
@@ -117,7 +120,8 @@ function bashOptionsForMode(
           mergeEnv: () => mergeVercelRuntimeEnv(runtime, executionRuntimeEnv),
         }),
       }
-    case 'bwrap':
+    case 'bwrap': {
+      const storageRoot = getRuntimeBundleStorageRoot(bundle)
       return {
         // localBashOperationsWithRuntimeEnv() injects bundle.getRuntimeEnv()
         // into the outer shell env before the spawned `bwrap ... bash -lc`
@@ -126,11 +130,14 @@ function bashOptionsForMode(
         operations: localBashOperationsWithRuntimeEnv(bundle),
         spawnHook: bwrapSpawnHook(storageRoot, runtime),
       }
-    default:
+    }
+    default: {
+      const storageRoot = getRuntimeBundleStorageRoot(bundle)
       return {
         operations: localBashOperationsWithRuntimeEnv(bundle),
         spawnHook: directSpawnHook(storageRoot, runtime),
       }
+    }
   }
 }
 
@@ -154,6 +161,36 @@ function redactSecrets<T>(value: T, secrets: readonly string[]): T {
   ) as T
 }
 
+function isRuntimeReady(readiness: ToolReadinessState | undefined): boolean {
+  return readiness === undefined || readiness === true || (typeof readiness === 'object' && readiness !== null && readiness.ready === true)
+}
+
+function runtimeRequirementForCommand(command: string): ToolReadinessRequirement | undefined {
+  if (command.includes('.boring-agent/venv/bin/')) return 'runtime:python'
+  if (/python(?:3)?\s+-c\s+['\"][^'\"]*(?:from\s+\S+\s+)?import\s+/.test(command)) return 'runtime:python'
+  if (command.includes('.boring-agent/node/')) return 'runtime:node'
+  if (command.includes('.boring-agent/')) return 'runtime-dependencies'
+  return undefined
+}
+
+function runtimeRequirementForFailure(text: string): ToolReadinessRequirement | undefined {
+  if (/\.boring-agent\/venv\/bin\/[^\s:]+: (?:No such file or directory|not found)/i.test(text)) return 'runtime:python'
+  if (/ModuleNotFoundError: No module named ['\"][^'\"]+['\"]/i.test(text)) return 'runtime:python'
+  if (/\.boring-agent\/node\/[^\s:]+: (?:No such file or directory|not found)/i.test(text)) return 'runtime:node'
+  if (/(?:^|\n)(?:[^\n:]+:\s*)?(?:line \d+:\s*)?[A-Za-z0-9_.-]+: command not found/i.test(text)) return 'runtime-dependencies'
+  return undefined
+}
+
+function runtimeNotReadyFromState(
+  requirement: ToolReadinessRequirement,
+  readiness: ToolReadinessState | undefined,
+): ToolResult {
+  return runtimeNotReadyToolResult(requirement,
+    readiness && typeof readiness === 'object' && readiness.ready === false
+      ? readiness
+      : { ready: false, state: 'preparing', retryable: true })
+}
+
 function adaptPiTool(
   bundle: RuntimeBundle,
   runtime?: HarnessRuntimeProvisioningOptions,
@@ -164,7 +201,15 @@ function adaptPiTool(
     description: template.description,
     promptSnippet: template.promptSnippet,
     parameters: template.parameters as unknown as Record<string, unknown>,
+    readinessRequirements: ['sandbox-exec'],
     async execute(params, ctx) {
+      const command = typeof params.command === 'string' ? params.command : ''
+      const readiness = runtime?.getReadiness?.()
+      const commandRuntimeRequirement = command ? runtimeRequirementForCommand(command) : undefined
+      if (commandRuntimeRequirement && !isRuntimeReady(readiness)) {
+        return runtimeNotReadyFromState(commandRuntimeRequirement, readiness)
+      }
+
       const runtimeEnv = await bundle.getRuntimeEnv?.()
       const secrets = runtimeSecretValues(runtimeEnv)
       const executionBundle = runtimeEnv === undefined
@@ -178,8 +223,9 @@ function adaptPiTool(
         bashOptionsForMode(executionBundle, runtime, runtimeEnv),
       )
       let emittedRedactionNotice = false
+      let result: Awaited<ReturnType<typeof piTool.execute>>
       try {
-        const result = await piTool.execute(
+        result = await piTool.execute(
           ctx.toolCallId,
           params as any,
           ctx.abortSignal,
@@ -201,25 +247,37 @@ function adaptPiTool(
             : undefined,
           {} as never,
         )
-        if (secrets.length > 0 && result.details && typeof result.details === 'object' && 'fullOutputPath' in result.details && typeof (result.details as { fullOutputPath?: unknown }).fullOutputPath === 'string') {
-          await unlink((result.details as { fullOutputPath: string }).fullOutputPath).catch(() => undefined)
-          delete (result.details as { fullOutputPath?: string }).fullOutputPath
-        }
-        const textContent = (result.content ?? [])
-          .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
-          .map((c) => ({ type: 'text' as const, text: redactSecretsInString(c.text, secrets) }))
-        return {
-          content: textContent.length > 0 ? textContent : [{ type: 'text', text: '' }],
-          isError: false,
-          details: redactSecrets(result.details, secrets),
-        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
+        const latestReadiness = runtime?.getReadiness?.()
+        const failureRuntimeRequirement = runtimeRequirementForFailure(message)
+        if (command && failureRuntimeRequirement && !isRuntimeReady(latestReadiness)) {
+          return runtimeNotReadyFromState(failureRuntimeRequirement, latestReadiness)
+        }
         return {
           content: [{ type: 'text', text: redactSecretsInString(message, secrets) }],
           isError: true,
           details: {},
         }
+      }
+
+      if (secrets.length > 0 && result.details && typeof result.details === 'object' && 'fullOutputPath' in result.details && typeof (result.details as { fullOutputPath?: unknown }).fullOutputPath === 'string') {
+        await unlink((result.details as { fullOutputPath: string }).fullOutputPath).catch(() => undefined)
+        delete (result.details as { fullOutputPath?: string }).fullOutputPath
+      }
+      const textContent = (result.content ?? [])
+        .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
+        .map((c) => ({ type: 'text' as const, text: redactSecretsInString(c.text, secrets) }))
+      const text = textContent.map((part) => part.text).join('\n')
+      const latestReadiness = runtime?.getReadiness?.()
+      const failureRuntimeRequirement = runtimeRequirementForFailure(text)
+      if (command && failureRuntimeRequirement && !isRuntimeReady(latestReadiness)) {
+        return runtimeNotReadyFromState(failureRuntimeRequirement, latestReadiness)
+      }
+      return {
+        content: textContent.length > 0 ? textContent : [{ type: 'text', text: '' }],
+        isError: Boolean((result as { isError?: unknown }).isError),
+        details: redactSecrets(result.details, secrets),
       }
     },
   }

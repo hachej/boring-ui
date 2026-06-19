@@ -2,7 +2,7 @@
 // Keep this as the single import point for drizzle.config.ts and migration tooling.
 export * from '../../../drizzle/schema.js'
 
-import { pgTable, text, uuid, jsonb, timestamp, primaryKey, index, integer, boolean, uniqueIndex, check, customType } from 'drizzle-orm/pg-core'
+import { pgTable, text, uuid, jsonb, timestamp, primaryKey, index, integer, bigint, boolean, uniqueIndex, check, customType } from 'drizzle-orm/pg-core'
 import { relations, sql } from 'drizzle-orm'
 import { users } from '../../../drizzle/schema.js'
 
@@ -266,6 +266,145 @@ export const idempotencyKeys = pgTable(
   },
   (table) => [
     index('idempotency_keys_created_at_idx').on(table.createdAt),
+  ],
+)
+
+// --- Usage metering -------------------------------------------------------
+// Product-neutral credit/usage primitives consumed through
+// PostgresMeteringStore. Amounts are integer micros of a host-defined
+// currency unit; the embedding app owns pricing, currency, and grant policy.
+
+export const creditGrants = pgTable(
+  'boring_credit_grants',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    userId: text('user_id').notNull(),
+    amountMicros: bigint('amount_micros', { mode: 'number' }).notNull(),
+    reason: text('reason').notNull(),
+    expiresAt: timestamp('expires_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('boring_credit_grants_user_reason_idx').on(table.userId, table.reason),
+    check('boring_credit_grants_amount_check', sql`${table.amountMicros} > 0`),
+  ],
+)
+
+// One row per purchase order, keyed by the provider order id (PRIMARY KEY) so the
+// purchase lifecycle is globally idempotent per order. status models the lifecycle:
+//   'granted'        — credits were minted for this order
+//   'refunded'       — refunded/disputed; either a tombstone written BEFORE any
+//                      grant (user_id/amount null) so a late order_created never
+//                      grants, or a granted row transitioned after revocation.
+//   'refund_pending' — a PARTIAL refund arrived before order_created; the pending
+//                      fraction (pending_refund_ppm) is applied when the grant
+//                      lands (grant net of the refund) instead of being lost.
+// userId/amountMicros are nullable to allow a pre-grant tombstone.
+export const creditPurchases = pgTable(
+  'boring_credit_purchases',
+  {
+    orderId: text('order_id').primaryKey(),
+    userId: text('user_id'),
+    amountMicros: bigint('amount_micros', { mode: 'number' }),
+    status: text('status').notNull().default('granted'),
+    source: text('source').notNull().default('lemonsqueezy'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    refundedAt: timestamp('refunded_at'),
+    /** Cumulative credit micros already revoked for this order (supports
+     * repeated partial refunds without double-debiting). */
+    refundedMicros: bigint('refunded_micros', { mode: 'number' }),
+    /** Pending refund fraction in parts-per-million (fraction × 1e6), set when a
+     * partial refund arrives before the grant; applied at grant time. */
+    pendingRefundPpm: bigint('pending_refund_ppm', { mode: 'number' }),
+    /** Provider identity captured at grant time, for audit/reconcile and to match
+     * a later refund against the order we actually credited. */
+    storeId: text('store_id'),
+    testMode: boolean('test_mode'),
+    currency: text('currency'),
+    variantId: text('variant_id'),
+  },
+  (table) => [
+    index('boring_credit_purchases_user_idx').on(table.userId),
+    check('boring_credit_purchases_amount_check', sql`${table.amountMicros} IS NULL OR ${table.amountMicros} > 0`),
+    check('boring_credit_purchases_status_check', sql`${table.status} IN ('granted', 'refunded', 'refund_pending')`),
+    // A granted row must carry the credited user + amount; a pre-grant tombstone
+    // ('refunded' full, or 'refund_pending' partial) may omit them.
+    check(
+      'boring_credit_purchases_granted_check',
+      sql`${table.status} IN ('refunded', 'refund_pending') OR (${table.userId} IS NOT NULL AND ${table.amountMicros} IS NOT NULL)`,
+    ),
+  ],
+)
+
+export const usageReservations = pgTable(
+  'boring_usage_reservations',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    userId: text('user_id').notNull(),
+    workspaceId: text('workspace_id'),
+    sessionId: text('session_id'),
+    runId: text('run_id').notNull(),
+    source: text('source').notNull().default(''),
+    amountMicros: bigint('amount_micros', { mode: 'number' }).notNull(),
+    status: text('status').notNull().default('active'),
+    // Durable terminal-charge intent: set true when the coordinator decided this
+    // run must be charged the fallback hold (started/successful run with no billable
+    // usage, or a failed usage write) BEFORE attempting the charge. If that charge
+    // write then fails transiently, the stale-expiry sweep still charges the hold
+    // (a marked reservation with zero billed rows is NOT freed) — so a started run
+    // can't go free on a brief finalization-time DB outage.
+    chargeOnExpire: boolean('charge_on_expire').notNull().default(false),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    expiresAt: timestamp('expires_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('boring_usage_reservations_active_run_idx')
+      .on(table.runId)
+      .where(sql`${table.status} = 'active'`),
+    index('boring_usage_reservations_user_status_idx').on(table.userId, table.status, table.expiresAt),
+    check('boring_usage_reservations_amount_check', sql`${table.amountMicros} > 0`),
+    check(
+      'boring_usage_reservations_status_check',
+      sql`${table.status} IN ('active', 'settled', 'released', 'expired')`,
+    ),
+  ],
+)
+
+export const usageLedger = pgTable(
+  'boring_usage_ledger',
+  {
+    /** Caller-provided stable usage id; the idempotency key for inserts. */
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull(),
+    workspaceId: text('workspace_id'),
+    sessionId: text('session_id'),
+    runId: text('run_id'),
+    messageId: text('message_id'),
+    source: text('source').notNull().default(''),
+    provider: text('provider'),
+    model: text('model'),
+    inputTokens: bigint('input_tokens', { mode: 'number' }).notNull().default(0),
+    outputTokens: bigint('output_tokens', { mode: 'number' }).notNull().default(0),
+    cacheReadTokens: bigint('cache_read_tokens', { mode: 'number' }).notNull().default(0),
+    cacheWriteTokens: bigint('cache_write_tokens', { mode: 'number' }).notNull().default(0),
+    providerCostMicros: bigint('provider_cost_micros', { mode: 'number' }).notNull().default(0),
+    billedCostMicros: bigint('billed_cost_micros', { mode: 'number' }).notNull(),
+    stopReason: text('stop_reason'),
+    metadata: jsonb('metadata').notNull().default({}),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('boring_usage_ledger_user_created_idx').on(table.userId, table.createdAt),
+    index('boring_usage_ledger_run_idx').on(table.runId),
+    check('boring_usage_ledger_billed_check', sql`${table.billedCostMicros} >= 0`),
+    check(
+      'boring_usage_ledger_tokens_check',
+      sql`${table.inputTokens} >= 0 AND ${table.outputTokens} >= 0 AND ${table.cacheReadTokens} >= 0 AND ${table.cacheWriteTokens} >= 0 AND ${table.providerCostMicros} >= 0`,
+    ),
   ],
 )
 

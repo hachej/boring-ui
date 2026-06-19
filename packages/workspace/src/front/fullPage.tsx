@@ -32,11 +32,17 @@ export interface BuildFullPagePanelHrefInput {
 }
 
 export function buildFullPagePanelHref({ componentId, params, basePath }: BuildFullPagePanelHrefInput): string {
-  const search = new URLSearchParams({ component: componentId })
+  const [pathWithSearch, hash = ""] = basePath.split("#", 2)
+  const [path, rawSearch = ""] = pathWithSearch.split("?", 2)
+  const search = new URLSearchParams(rawSearch)
+  search.set("component", componentId)
   if (params && Object.keys(params).length > 0) {
     search.set("params", JSON.stringify(params))
+  } else {
+    search.delete("params")
   }
-  return `${basePath}?${search.toString()}`
+  const suffix = hash ? `#${hash}` : ""
+  return `${path}?${search.toString()}${suffix}`
 }
 
 export function useFullPagePanelHref(input: {

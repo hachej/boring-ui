@@ -344,6 +344,24 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
     }
   })
 
+  it('does not serve the SPA shell for missing built assets', async () => {
+    const app = await createCoreWorkspaceAgentServer({
+      appRoot: await createBuiltFrontendRoot(),
+      serveFrontend: true,
+      telemetry: { capture: vi.fn() },
+    })
+    try {
+      const res = await app.inject({ method: 'GET', url: '/assets/missing-chunk.js' })
+
+      expect(res.statusCode).toBe(404)
+      expect(res.headers['cache-control']).toBe('no-store')
+      expect(res.body).toContain('asset_not_found')
+      expect(res.body).not.toContain('<!doctype html>')
+    } finally {
+      await app.close()
+    }
+  })
+
   it('keeps serving the shell when telemetry capture fails', async () => {
     const app = await createCoreWorkspaceAgentServer({
       appRoot: await createBuiltFrontendRoot(),

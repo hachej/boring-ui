@@ -24,6 +24,17 @@ export {
 
 export { createDatabase, runMigrations } from './db/index.js'
 export type { Database } from './db/index.js'
+export { PostgresMeteringStore, InsufficientCreditError } from './db/index.js'
+export type {
+  MeteringBalance,
+  GrantOnceInput,
+  ReserveInput,
+  ReserveResult,
+  RecordUsageInput,
+  RecordUsageResult,
+  ReservationFinalStatus,
+  FinishReservationInput,
+} from './db/index.js'
 export {
   runCoreMigrationsFromEnv,
   type RunCoreMigrationsFromEnvOptions,
@@ -57,3 +68,42 @@ export type {
   WorkspaceRuntimeStoreLike,
   WorkspaceSandboxHandleRecord,
 } from './runtime/index.js'
+
+export {
+  CreditsService,
+  CreditExhaustedError,
+  DEFAULT_CREDITS_CONFIG,
+  SIGNUP_GRANT_REASON,
+  usageToCredits,
+  estimateProviderCost,
+  maxEffectiveRate,
+  maxServedRate,
+  DEFAULT_MODEL_RATES,
+  createCreditsMeteringSink,
+  verifyLemonSqueezySignature,
+  parseLemonSqueezyOrder,
+  handleLemonSqueezyWebhook,
+  signUserAttribution,
+  verifyUserAttribution,
+  registerCreditsRoutes,
+  createLemonSqueezyCheckout,
+  buildCheckoutRequestBody,
+  CONSERVATIVE_DEFAULT_RATE,
+} from './credits/index.js'
+export type {
+  CreditsConfig,
+  CreditBalance,
+  CreditUsageRecord,
+  CreditsMeteringStore,
+  CreditPricingConfig,
+  ModelTokenRate,
+  CreditUsageInput,
+  CreditCost,
+  LemonSqueezyOrder,
+  LemonSqueezyWebhookOptions,
+  LemonSqueezyWebhookResult,
+  CreditsRoutesOptions,
+  LemonSqueezyRouteOptions,
+  LemonSqueezyCheckoutConfig,
+  CreateCheckoutInput,
+} from './credits/index.js'

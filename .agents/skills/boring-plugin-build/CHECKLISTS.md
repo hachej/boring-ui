@@ -9,9 +9,9 @@
 
 ## Runtime plugin checklist
 
-- [ ] scaffolded through boring-ui CLI path
+- [ ] scaffolded through `boring-ui-plugin scaffold ...`
 - [ ] edited in place
-- [ ] verified with `boring-ui verify-plugin ...`
+- [ ] verified with `boring-ui-plugin verify ...`
 - [ ] user told to run `/reload`
 
 ## App/internal plugin checklist
