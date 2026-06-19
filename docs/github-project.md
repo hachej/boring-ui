@@ -16,7 +16,7 @@ The project has three useful dimensions:
 | Field | Purpose | Values |
 | --- | --- | --- |
 | `Status` | Global project flow | `Backlog`, `Doing`, `Done` |
-| `Loop Status` | Agent/maintainer execution loop | `Needs Triage`, `Needs Grill`, `Needs Plan`, `Needs Review`, `Ready`, `Executing`, `Blocked` |
+| `Loop Status` | Agent/maintainer execution loop | `Needs Triage`, `Needs Grill`, `Needs Review`, `Ready`, `Executing`, `Blocked` |
 | `Type` | Primary work kind visible in the project view | `Bug`, `Feature`, `Refactor`, `Architecture`, `Dependencies`, `Documentation`, `Chore`, `Story` |
 
 Keep these dimensions separate. `Status` answers "where is this globally?",
@@ -34,7 +34,6 @@ GitHub Project single-select options should stay color-coded for scanning:
 | `Status` | `Done` | Green |
 | `Loop Status` | `Needs Triage` | Gray |
 | `Loop Status` | `Needs Grill` | Purple |
-| `Loop Status` | `Needs Plan` | Yellow |
 | `Loop Status` | `Needs Review` | Orange |
 | `Loop Status` | `Ready` | Blue |
 | `Loop Status` | `Executing` | Green |
@@ -68,8 +67,7 @@ Use `Loop Status` for the execution loop.
 | Loop Status | Meaning |
 | --- | --- |
 | `Needs Triage` | The item exists but has not been classified well enough to trust. |
-| `Needs Grill` | The direction needs pressure-testing before planning or implementation. Use this for major architecture/product bets. |
-| `Needs Plan` | The direction is accepted, but the implementation plan is not ready. |
+| `Needs Grill` | The work needs planning, pressure-testing, or decision shaping before implementation. |
 | `Needs Review` | A plan, branch, draft PR, or implementation exists and needs human/agent review. |
 | `Ready` | Ready to implement, but not currently executing. |
 | `Executing` | Currently being worked. Issues with open linked PRs should be here. |
@@ -83,7 +81,7 @@ Default mapping from issue labels:
 | `status:to-review`, `status:to-plan-review`, `status:to-code-review`, `need-review` | `Needs Review` |
 | `status:to-code`, `status:to-implement`, `status:to-merge` | `Ready` |
 | `story` or broad `architecture` + planning labels | `Needs Grill` |
-| `status:to-plan` or `needs-plan` | `Needs Plan` |
+| `status:to-plan` or `needs-plan` | `Needs Grill` |
 | Unlabeled or unclear | `Needs Triage` |
 
 ## Type
@@ -153,8 +151,7 @@ This gives a compact overview:
 
 ```text
 Backlog
-  Needs Grill     Architecture / Story
-  Needs Plan      Feature / Refactor / Bug
+  Needs Grill     Work that needs planning, pressure-testing, or shaping
   Needs Review    Plans or draft work awaiting review
   Ready           Implementable work waiting for an owner
 
