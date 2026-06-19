@@ -16,7 +16,7 @@ describe("filesystemPlugin", () => {
     expect(filesystemPlugin.pluginLabel).toBe("Filesystem")
   })
 
-  it("registers provider, preload binding, files left tab, surface resolver, and editor/viewer panels", () => {
+  it("registers provider, preload binding, files workspace source, surface resolver, and editor/viewer panels", () => {
     expect(registrations.providers.map((provider) => provider.id)).toEqual(["filesystem-data"])
     expect(registrations.bindings.map((binding) => binding.id)).toEqual([
       "filesystem-tree-preload",
@@ -24,15 +24,17 @@ describe("filesystemPlugin", () => {
       "filesystem-file-panel",
       "filesystem-agent-file-bridge",
     ])
-    expect(registrations.leftTabs[0]).toEqual(
+    expect(registrations.panels[0]).toEqual(
       expect.objectContaining({
         id: "files",
-        title: "Files",
+        label: "Files",
+        placement: "workspace-source",
         source: "builtin",
       }),
     )
     expect(resolver).toEqual(expect.objectContaining({ id: "filesystem-path" }))
     expect(registrations.panels.map((panel) => panel.id)).toEqual([
+      "files",
       "empty-file-panel",
       "code-editor",
       "csv-viewer",

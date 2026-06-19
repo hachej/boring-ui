@@ -35,17 +35,40 @@ export interface PaneProps<T = unknown> {
   className?: string
 }
 
+export type PanelPlacement =
+  | "left"
+  | "center"
+  | "right"
+  | "bottom"
+  | "shared-dockview"
+  | "workspace-page"
+  | "workspace-source"
+  | "left-tab"
+  | "right-tab"
+
+export function isSharedDockviewPlacement(placement: string | undefined): boolean {
+  return placement === undefined || placement === "center" || placement === "shared-dockview" || placement === "workspace-page"
+}
+
+export function isWorkspacePagePlacement(placement: string | undefined): boolean {
+  return placement === "workspace-page"
+}
+
+export function isWorkspaceSourcePlacement(placement: string | undefined): boolean {
+  return placement === "workspace-source" || placement === "left-tab"
+}
+
 export interface PanelConfig<T = any> {
   id: string
   title: string
   icon?: ComponentType<{ className?: string }>
-  /** Placement hint: "left" | "center" | "right" | "bottom" | "left-tab" | "right-tab" */
-  placement?: string
+  /** Placement hint. Public plugin placements: "workspace-page" | "shared-dockview". */
+  placement?: PanelPlacement | string
   requiresCapabilities?: string[]
   essential?: boolean
   chromeless?: boolean
   supportsFullPage?: boolean
-  /** Center-panel id opened when this config is used as a left-tab category. */
+  /** Panel id opened when this config is used as an internal workspace source. */
   defaultPanelId?: string
   /** Source: "builtin" | "app" */
   source?: string

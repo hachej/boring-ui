@@ -1,16 +1,15 @@
 import { PluginError } from "./errors"
 import {
   captureFrontPlugin,
+  normalizeFrontSurfaceResolver,
   type BoringFrontFactoryWithId,
-  type BoringFrontLeftTabRegistration,
   type BoringFrontPanelRegistration,
   type BoringFrontPanelCommandRegistration,
-  type BoringFrontSurfaceResolverRegistration,
   type CapturedFrontPlugin,
 } from "./frontFactory"
 import type { CatalogConfig } from "./types"
 import type { CommandConfig, PanelRegistration } from "../types/panel"
-import type { SurfaceOpenRequest, SurfaceResolverRegistration } from "../types/surface"
+import type { SurfaceResolverRegistration } from "../types/surface"
 
 export interface PanelRegistryLike {
   register(id: string, config: PanelRegistration): void
@@ -39,6 +38,7 @@ export interface BootstrapOptions {
     catalogs: CatalogRegistryLike
     surfaceResolvers?: SurfaceResolverRegistryLike
   }
+  panelCommandRunner?: (command: BoringFrontPanelCommandRegistration) => (() => void) | undefined
 }
 
 export interface BootstrapResult {
@@ -59,29 +59,22 @@ function panelRegistration(panel: BoringFrontPanelRegistration<any>, pluginId: s
     ...(panel.lazy !== undefined ? { lazy: panel.lazy } : {}),
     ...(panel.chromeless !== undefined ? { chromeless: panel.chromeless } : {}),
     ...(panel.supportsFullPage !== undefined ? { supportsFullPage: panel.supportsFullPage } : {}),
+    ...(panel.defaultPanelId !== undefined ? { defaultPanelId: panel.defaultPanelId } : {}),
   }
 }
 
-function leftTabRegistration(tab: BoringFrontLeftTabRegistration<any>, pluginId: string): PanelRegistration {
-  return {
-    title: tab.title,
-    component: tab.component ?? (() => null),
-    placement: "left-tab",
-    defaultPanelId: tab.panelId,
-    source: tab.source ?? "plugin",
-    pluginId,
-    ...(tab.icon ? { icon: tab.icon } : {}),
-    ...(tab.requiresCapabilities ? { requiresCapabilities: tab.requiresCapabilities } : {}),
-    ...(tab.lazy !== undefined ? { lazy: tab.lazy } : {}),
-    ...(tab.chromeless !== undefined ? { chromeless: tab.chromeless } : {}),
-  }
-}
-
-function commandRegistration(command: BoringFrontPanelCommandRegistration, pluginId: string): CommandConfig {
+function commandRegistration(
+  command: BoringFrontPanelCommandRegistration,
+  pluginId: string,
+  panelCommandRunner?: BootstrapOptions["panelCommandRunner"],
+): CommandConfig {
+  const run = command.run ?? panelCommandRunner?.(command) ?? (() => {
+    throw new Error(`Panel command "${command.id}" must provide run() or panelId.`)
+  })
   return {
     id: command.id,
     title: command.title,
-    run: command.run ?? (() => undefined),
+    run,
     pluginId,
     ...(command.keywords ? { keywords: command.keywords } : command.panelId ? { keywords: [command.panelId] } : {}),
     ...(command.shortcut ? { shortcut: command.shortcut } : {}),
@@ -89,43 +82,23 @@ function commandRegistration(command: BoringFrontPanelCommandRegistration, plugi
   }
 }
 
-function surfaceResolverRegistration(
-  resolver: BoringFrontSurfaceResolverRegistration,
-  pluginId: string,
-): { id: string; config: SurfaceResolverRegistration } {
-  const id = resolver.id ?? `${pluginId}:${resolver.kind}`
-  return {
-    id,
-    config: {
-      source: resolver.source ?? "plugin",
-      pluginId,
-      resolve(request: SurfaceOpenRequest) {
-        if (request.kind !== resolver.kind) return undefined
-        return resolver.resolve(request) ?? undefined
-      },
-    },
-  }
-}
-
 export function registerCapturedFrontPlugin(
   plugin: CapturedFrontPlugin,
   registries: BootstrapOptions["registries"],
+  panelCommandRunner?: BootstrapOptions["panelCommandRunner"],
 ): void {
   const { registrations } = plugin
   for (const panel of registrations.panels) {
     registries.panels.register(panel.id, panelRegistration(panel, plugin.id))
   }
-  for (const tab of registrations.leftTabs) {
-    registries.panels.register(tab.id, leftTabRegistration(tab, plugin.id))
-  }
   for (const command of registrations.panelCommands) {
-    registries.commands.registerCommand(commandRegistration(command, plugin.id))
+    registries.commands.registerCommand(commandRegistration(command, plugin.id, panelCommandRunner))
   }
   for (const catalog of registrations.catalogs) {
     registries.catalogs.register(catalog, plugin.id)
   }
   for (const resolver of registrations.surfaceResolvers) {
-    const { id, config } = surfaceResolverRegistration(resolver, plugin.id)
+    const { id, config } = normalizeFrontSurfaceResolver(resolver, plugin.id)
     registries.surfaceResolvers?.register(id, config)
   }
 }
@@ -156,7 +129,7 @@ export function bootstrap(options: BootstrapOptions): BootstrapResult {
 
   const captured = finalPlugins.map(captureFrontPlugin)
   for (const plugin of captured) {
-    registerCapturedFrontPlugin(plugin, options.registries)
+    registerCapturedFrontPlugin(plugin, options.registries, options.panelCommandRunner)
   }
 
   return {

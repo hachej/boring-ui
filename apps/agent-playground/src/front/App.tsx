@@ -1,6 +1,6 @@
 import './app.css'
-import { useCallback, useEffect, useState } from 'react'
-import { ChatPanel as PiChatPanel } from '@hachej/boring-agent/front'
+import { useCallback, useEffect, useState, type ComponentType } from 'react'
+import { ChatPanel as PiChatPanel, type ChatPanelProps } from '@hachej/boring-agent/front'
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from '@hachej/boring-agent/shared'
 import { Showcase } from '../Showcase'
 
@@ -29,7 +29,11 @@ function useStandalonePluginReload() {
   }, [])
 }
 
-export function App() {
+interface AppProps {
+  ChatPanelComponent?: ComponentType<ChatPanelProps>
+}
+
+export function App({ ChatPanelComponent = PiChatPanel }: AppProps = {}) {
   const [tab, setTab] = useState<'chat' | 'showcase'>('chat')
   const [chrome, setChrome] = useState(true)
   const [debug, setDebug] = useState(true)
@@ -88,7 +92,7 @@ export function App() {
           </div>
         ) : (
           <div className="agent-playground-chat-pane h-full min-w-0 border-r border-border/60 bg-background">
-            <PiChatPanel
+            <ChatPanelComponent
               chrome={chrome}
               thinkingControl={thinkingControl}
               debug={debug}

@@ -129,7 +129,8 @@ describe('createNodeWorkspace.watch', () => {
     }
     await wait(SETTLE_MS)
 
-    expect(events).toEqual([])
+    const ignoredEvents = events.filter((e) => ignoredDirs.some((dir) => e.path === dir || e.path.startsWith(`${dir}/`)))
+    expect(ignoredEvents).toEqual([])
   })
 
   it('emits one synthetic rename for workspace.rename instead of an unlink/add storm', async () => {

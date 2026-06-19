@@ -1580,6 +1580,7 @@ describe("WorkspaceAgentFront", () => {
         activeTab: string | null
         activeFile: string | null
         availablePanels: string[]
+        availableSurfaces: Array<{ id: string; kind: string; title?: string }>
       }
       causedBy: string
     }
@@ -1599,6 +1600,11 @@ describe("WorkspaceAgentFront", () => {
     })
     expect(body.state.availablePanels).toEqual(
       expect.arrayContaining(["chat", "artifact-surface"]),
+    )
+    expect(body.state.availableSurfaces).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "filesystem-path", kind: "workspace.open.path" }),
+      ]),
     )
   })
 

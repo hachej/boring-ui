@@ -19,6 +19,7 @@ import { cn } from "../../lib/utils"
 import type { FileTreeBridge } from "../../bridge/types"
 import { useRegistry } from "../../registry"
 import type { PaneProps, PanelConfig } from "../../registry/types"
+import { isWorkspacePagePlacement, isWorkspaceSourcePlacement } from "../../../shared/types/panel"
 import type { LeftTabParams } from "../../../shared/plugins/types"
 import { PluginErrorBoundary } from "../../plugin/PluginErrorBoundary"
 
@@ -37,10 +38,15 @@ export interface WorkbenchLeftPaneProps {
   rootDir?: string
   bridge?: FileTreeBridge
   defaultTab?: WorkbenchLeftTabId
+  activeTab?: WorkbenchLeftTabId
+  onActiveTabChange?: (tab: WorkbenchLeftTabId) => void
   revealFileTreeRequest?: { path: string; seq: number } | null
   onOpenPanel?: (config: WorkbenchLeftPaneOpenPanelConfig) => void
   onReloadAgentPlugins?: () => void | Promise<unknown>
   onCollapse?: () => void
+  onExpand?: (tab?: WorkbenchLeftTabId) => void
+  onCloseSourcePane?: () => void
+  railOnly?: boolean
   className?: string
 }
 
@@ -48,10 +54,15 @@ export function WorkbenchLeftPane({
   rootDir = "",
   bridge,
   defaultTab,
+  activeTab: controlledActiveTab,
+  onActiveTabChange,
   revealFileTreeRequest,
   onOpenPanel,
   onReloadAgentPlugins,
   onCollapse,
+  onExpand,
+  onCloseSourcePane,
+  railOnly = false,
   className,
 }: WorkbenchLeftPaneProps) {
   const panelRegistry = useRegistry()
@@ -60,17 +71,18 @@ export function WorkbenchLeftPane({
     panelRegistry.getSnapshot,
     panelRegistry.getSnapshot,
   )
-  const leftTabPanels = useMemo(
-    () => panels.filter((panel) => panel.placement === "left-tab"),
+  const railPanels = useMemo(
+    () => panels.filter((panel) => isWorkspaceSourcePlacement(panel.placement) || isWorkspacePagePlacement(panel.placement)),
     [panels],
   )
   const tabs = useMemo(() => {
-    const next: Array<{ id: string; title: string; icon: React.ReactNode; panel?: PanelConfig }> = []
-    for (const panel of leftTabPanels) {
+    const next: Array<{ id: string; title: string; icon: React.ReactNode; panel?: PanelConfig; kind: "source" | "workspace-page" }> = []
+    for (const panel of railPanels) {
       const Icon = panel.icon
       next.push({
         id: panel.id,
         title: panel.title,
+        kind: isWorkspacePagePlacement(panel.placement) ? "workspace-page" : "source",
         // Icon-less plugins get an initial-letter glyph instead of a shared
         // generic icon — on an icon-only rail, two identical fallback icons
         // would be indistinguishable.
@@ -79,9 +91,14 @@ export function WorkbenchLeftPane({
       })
     }
     return next
-  }, [leftTabPanels])
+  }, [railPanels])
   const [tab, setTab] = useState<WorkbenchLeftTabId>(defaultTab ?? "")
-  const activeTab = tabs.some((entry) => entry.id === tab) ? tab : (tabs[0]?.id ?? "")
+  const selectedTab = controlledActiveTab ?? tab
+  const activeTab = tabs.some((entry) => entry.id === selectedTab) ? selectedTab : (tabs[0]?.id ?? "")
+  const setActiveTab = useCallback((next: WorkbenchLeftTabId) => {
+    if (controlledActiveTab === undefined) setTab(next)
+    onActiveTabChange?.(next)
+  }, [controlledActiveTab, onActiveTabChange])
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
@@ -103,22 +120,31 @@ export function WorkbenchLeftPane({
   }, [searchOpen])
 
   useEffect(() => {
-    if (tabs.length > 0 && !tabs.some((entry) => entry.id === tab)) {
-      setTab(tabs[0]!.id)
+    if (tabs.length > 0 && !tabs.some((entry) => entry.id === selectedTab)) {
+      setActiveTab(tabs[0]!.id)
     }
-  }, [tab, tabs])
+  }, [selectedTab, setActiveTab, tabs])
 
   useEffect(() => {
     if (!revealFileTreeRequest) return
     if (tabs.some((entry) => entry.id === FILES_LEFT_TAB_ID)) {
-      setTab(FILES_LEFT_TAB_ID)
+      setActiveTab(FILES_LEFT_TAB_ID)
     }
-  }, [revealFileTreeRequest, tabs])
+  }, [revealFileTreeRequest, setActiveTab, tabs])
 
-  const openDefaultPanelForTab = useCallback((entry: { panel?: PanelConfig }) => {
+  const openPanelForEntry = useCallback((entry: { panel?: PanelConfig; kind: "source" | "workspace-page" }) => {
+    if (!onOpenPanel) return
+    if (entry.kind === "workspace-page" && entry.panel) {
+      onOpenPanel({
+        id: entry.panel.id,
+        component: entry.panel.id,
+        title: entry.panel.title,
+      })
+      return
+    }
     const defaultPanelId = entry.panel?.defaultPanelId
-    if (!defaultPanelId || !onOpenPanel) return
-    const target = panels.find((panel) => panel.id === defaultPanelId && panel.placement !== "left-tab")
+    if (!defaultPanelId) return
+    const target = panels.find((panel) => panel.id === defaultPanelId && !isWorkspaceSourcePlacement(panel.placement))
     if (!target) return
     onOpenPanel({
       id: target.id,
@@ -127,10 +153,21 @@ export function WorkbenchLeftPane({
     })
   }, [onOpenPanel, panels])
 
-  const selectTab = useCallback((entry: { id: string; panel?: PanelConfig }) => {
-    setTab(entry.id)
-    openDefaultPanelForTab(entry)
-  }, [openDefaultPanelForTab])
+  const selectTab = useCallback((entry: { id: string; panel?: PanelConfig; kind: "source" | "workspace-page" }) => {
+    if (entry.kind === "source") {
+      if (!railOnly && entry.id === activeTab) {
+        onCloseSourcePane?.()
+        return
+      }
+      setActiveTab(entry.id)
+      onExpand?.(entry.id)
+      openPanelForEntry(entry)
+      return
+    }
+    setActiveTab(entry.id)
+    openPanelForEntry(entry)
+    onCloseSourcePane?.()
+  }, [activeTab, onCloseSourcePane, onExpand, openPanelForEntry, railOnly, setActiveTab])
 
   const toggleSearch = useCallback(() => {
     setSearchOpen((s) => {
@@ -148,7 +185,8 @@ export function WorkbenchLeftPane({
   }, [])
 
   const activeEntry = tabs.find((entry) => entry.id === activeTab)
-  const activeOwnsSearch = Boolean((activeEntry?.panel as { chromeless?: boolean } | undefined)?.chromeless)
+  const activeSourcePanel = activeEntry?.kind === "source" ? activeEntry.panel : undefined
+  const activeOwnsSearch = Boolean((activeSourcePanel as { chromeless?: boolean } | undefined)?.chromeless)
   const showChromeSearch = !activeOwnsSearch
   const leftTabParams = useMemo<LeftTabParams>(
     () => ({
@@ -212,6 +250,14 @@ export function WorkbenchLeftPane({
     </nav>
   )
 
+  if (railOnly) {
+    return (
+      <div data-boring-workspace-part="workbench-left" className={cn("workbench-left-root flex h-full min-h-0", className)}>
+        {rail}
+      </div>
+    )
+  }
+
   return (
     <div data-boring-workspace-part="workbench-left" className={cn("workbench-left-root flex h-full min-h-0", className)}>
       {rail}
@@ -272,9 +318,22 @@ export function WorkbenchLeftPane({
         )}
 
         <div className="min-h-0 flex-1 overflow-hidden">
-          <LeftTabPanelHost panel={activeEntry?.panel} params={leftTabParams} onOpenPanel={onOpenPanel} />
+          {activeEntry?.kind === "workspace-page" ? (
+            <WorkspacePageLauncher title={activeEntry.title} />
+          ) : (
+            <LeftTabPanelHost panel={activeSourcePanel} params={leftTabParams} onOpenPanel={onOpenPanel} />
+          )}
         </div>
       </div>
+    </div>
+  )
+}
+
+function WorkspacePageLauncher({ title }: { title: string }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-4 text-center text-[12px] text-muted-foreground">
+      <div className="mb-1 text-sm font-medium text-foreground">{title}</div>
+      <div>Opened in the workspace.</div>
     </div>
   )
 }
@@ -292,11 +351,14 @@ function CategoryInitial({ title }: { title: string }) {
   )
 }
 
-const noopDisposable = { dispose() {} }
-const noopPaneApi = new Proxy(
+function unsupportedWorkspaceSourceApi(method: string): never {
+  throw new Error(`Workspace source panes are not Dockview panels; PaneProps.${method} is unavailable in the left source host.`)
+}
+
+const workspaceSourcePaneApi = new Proxy(
   {},
   {
-    get: () => () => noopDisposable,
+    get: (_target, prop) => () => unsupportedWorkspaceSourceApi(`api.${String(prop)}`),
   },
 ) as PaneProps["api"]
 function createLeftTabContainerApi(onOpenPanel: WorkbenchLeftPaneProps["onOpenPanel"]): PaneProps["containerApi"] {
@@ -304,8 +366,11 @@ function createLeftTabContainerApi(onOpenPanel: WorkbenchLeftPaneProps["onOpenPa
     {},
     {
       get: (_target, prop) => {
-        if (prop === "addPanel") return (config: WorkbenchLeftPaneOpenPanelConfig) => onOpenPanel?.(config)
-        return () => undefined
+        if (prop === "addPanel") return (config: WorkbenchLeftPaneOpenPanelConfig) => {
+          if (!onOpenPanel) unsupportedWorkspaceSourceApi("containerApi.addPanel")
+          onOpenPanel(config)
+        }
+        return () => unsupportedWorkspaceSourceApi(`containerApi.${String(prop)}`)
       },
     },
   ) as PaneProps["containerApi"]
@@ -346,7 +411,7 @@ function LeftTabPanelHost({ panel, params, onOpenPanel }: { panel?: PanelConfig;
       >
         {createElement(Inner, {
           params,
-          api: noopPaneApi,
+          api: workspaceSourcePaneApi,
           containerApi,
           className: "h-full",
         })}

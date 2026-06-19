@@ -60,7 +60,7 @@ async function writeRuntimePlugin(root: string, options: {
   title: string
   label: string
   bodyText: string
-  leftTabId?: string
+  panelId?: string
   extraImports?: string
   delayMs?: number
 }) {
@@ -84,10 +84,10 @@ function RuntimePane() {
 
 export default definePlugin({
   id: ${JSON.stringify(options.pluginId)},
-  leftTabs: [{
-    id: ${JSON.stringify(options.leftTabId ?? `${options.pluginId}.tab`)},
-    title: ${JSON.stringify(options.title)},
-    panelId: ${JSON.stringify(options.leftTabId ?? `${options.pluginId}.tab`)},
+  panels: [{
+    id: ${JSON.stringify(options.panelId ?? `${options.pluginId}.tab`)},
+    label: ${JSON.stringify(options.title)},
+    placement: "workspace-source",
     component: RuntimePane,
   }],
 })
@@ -203,7 +203,7 @@ browserTest("built folder mode browser path hot-loads, preserves previous-good r
       title: "Runtime Tab",
       label: "Runtime Plugin",
       bodyText: "runtime-plugin-bad-register",
-      leftTabId: "files",
+      panelId: "files",
     })
     const reloadBadRegister = await reloadViaBrowser(page)
     expect(reloadBadRegister.status).toBe(200)

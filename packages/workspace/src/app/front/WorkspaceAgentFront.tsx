@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react"
 import {
   PiChatPanel as DefaultPiChatPanel,
   usePiSessions as useDefaultPiSessions,
@@ -13,8 +13,9 @@ import type {
   SurfaceShellProps,
   SurfaceShellSnapshot,
 } from "../../front/chrome/artifact-surface/SurfaceShell"
-import { useRegistry } from "../../front/registry"
+import { useRegistry, useSurfaceResolverRegistry } from "../../front/registry"
 import { captureFrontPlugin } from "../../shared/plugins/frontFactory"
+import { surfaceResolverDescriptor } from "../../shared/types/surface"
 import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
 import type { CommandResult, DispatchContext, FileTreeBridge, Unsubscribe } from "../../front/bridge"
 import { readStoredBoolean, writeStoredBoolean } from "../../front/store/localStorageValues"
@@ -360,6 +361,17 @@ function WorkspaceUiStateSync({
   snapshot: SurfaceShellSnapshot
 }) {
   const panelRegistry = useRegistry()
+  const surfaceResolverRegistry = useSurfaceResolverRegistry()
+  const panelRegistrySnapshot = useSyncExternalStore(
+    panelRegistry.subscribe,
+    panelRegistry.getSnapshot,
+    panelRegistry.getSnapshot,
+  )
+  const surfaceResolverSnapshot = useSyncExternalStore(
+    surfaceResolverRegistry.subscribe,
+    surfaceResolverRegistry.getSnapshot,
+    surfaceResolverRegistry.getSnapshot,
+  )
   const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
@@ -379,7 +391,11 @@ function WorkspaceUiStateSync({
       openTabs: snapshot.openTabs,
       activeTab: snapshot.activeTab,
       activeFile: activeFileFromSnapshot(snapshot),
-      availablePanels: panelRegistry.list().map((panel) => panel.id),
+      availablePanels: panelRegistrySnapshot.map((panel) => panel.id),
+      availableSurfaces: surfaceResolverSnapshot.flatMap((surface) => {
+        const descriptor = surfaceResolverDescriptor(surface)
+        return descriptor ? [descriptor] : []
+      }),
     }
 
     void fetch(uiStateEndpointUrl(bridgeEndpoint), {
@@ -394,7 +410,7 @@ function WorkspaceUiStateSync({
     return () => {
       controller.abort()
     }
-  }, [bridgeEndpoint, navOpen, panelRegistry, requestHeaders, snapshot, surfaceOpen, surfaceReady])
+  }, [bridgeEndpoint, navOpen, panelRegistrySnapshot, requestHeaders, snapshot, surfaceOpen, surfaceReady, surfaceResolverSnapshot])
 
   return null
 }
@@ -925,10 +941,7 @@ export function WorkspaceAgentFront<
     () => plugins?.map(captureFrontPlugin) ?? [],
     [plugins],
   )
-  const hasLeftTabs = useMemo(
-    () => capturedPlugins.some((plugin) => plugin.registrations.leftTabs.length > 0),
-    [capturedPlugins],
-  )
+  const hasLeftTabs = false
   const pluginPanelIds = useMemo(
     () => capturedPlugins.flatMap((plugin) => plugin.registrations.panels.map((panel) => panel.id)),
     [capturedPlugins],

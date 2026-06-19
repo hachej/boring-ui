@@ -21,6 +21,7 @@ import { FullPageBasePathProvider } from "../fullPage"
 import { createWorkspaceStore } from "../store"
 import { bindStore, useThemePreference } from "../store/selectors"
 import { createBridge } from "../bridge/createBridge"
+import { postUiCommand } from "../bridge"
 import { createBridgeClient, type BridgeClient } from "../bridge/client"
 import { PanelRenderStatusProvider } from "../registry/PanelRenderStatusBoundary"
 import { CommandPalette } from "../components/CommandPalette"
@@ -510,6 +511,16 @@ export function WorkspaceProvider({
       defaults: defaultPlugins,
       excludeDefaults,
       registries: { panels: pr, commands: cr, catalogs: cat, surfaceResolvers: sr },
+      panelCommandRunner: (command) => command.panelId
+        ? () => postUiCommand({
+            kind: "openPanel",
+            params: {
+              id: command.panelId!,
+              component: command.panelId!,
+              title: command.title,
+            },
+          })
+        : undefined,
     })
 
     const metas: RegisteredPluginMeta[] = [

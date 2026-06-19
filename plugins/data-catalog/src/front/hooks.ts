@@ -22,7 +22,7 @@ export function resolveDataCatalogQuery(
   params: LeftTabParams | DataCatalogVisualizationParams | undefined,
 ): string | undefined {
   if (!params) return undefined
-  // Left-pane search is owned by workbench chrome, so it takes precedence.
+  // Host chrome search, when supplied, takes precedence.
   if ("searchQuery" in params && typeof params.searchQuery === "string") {
     return params.searchQuery
   }

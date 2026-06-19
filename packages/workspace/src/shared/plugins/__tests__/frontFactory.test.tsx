@@ -22,24 +22,23 @@ function TestBinding(): null {
 }
 
 describe("createCapturingBoringFrontAPI", () => {
-  it("captures providers, bindings, catalogs, panels, commands, left tabs, and surface resolvers", () => {
+  it("captures providers, bindings, catalogs, panels, commands, and surface resolvers", () => {
     const api = createCapturingBoringFrontAPI()
     api.registerProvider({ id: "runtime", component: TestProvider })
     api.registerBinding({ id: "listener", component: TestBinding })
     api.registerCatalog({ id: "catalog", label: "Catalog", adapter: {} as any, onSelect: () => undefined })
     api.registerPanel({ id: "chart", label: "Chart", component: TestPanel })
+    api.registerPanel({ id: "macro-page", label: "Macro", component: TestPanel, placement: "workspace-page" })
     api.registerPanelCommand({ id: "open-chart", title: "Open chart", panelId: "chart" })
-    api.registerLeftTab({ id: "macro-tab", title: "Macro", panelId: "chart", component: TestPanel })
-    api.registerSurfaceResolver({ kind: "macro.open", resolve: () => ({ component: "chart" }) })
+    api.registerSurfaceResolver({ kind: "macro.open", title: "Open macro", resolve: () => ({ component: "chart" }) })
 
     expect(api.flush()).toMatchObject({
       providers: [{ id: "runtime" }],
       bindings: [{ id: "listener" }],
       catalogs: [{ id: "catalog", label: "Catalog" }],
-      panels: [{ id: "chart", label: "Chart" }],
+      panels: [{ id: "chart", label: "Chart" }, { id: "macro-page", label: "Macro", placement: "workspace-page" }],
       panelCommands: [{ id: "open-chart", title: "Open chart", panelId: "chart" }],
-      leftTabs: [{ id: "macro-tab", title: "Macro", panelId: "chart" }],
-      surfaceResolvers: [{ kind: "macro.open" }],
+      surfaceResolvers: [{ kind: "macro.open", title: "Open macro" }],
     })
   })
 })
@@ -49,9 +48,11 @@ describe("captureFrontPlugin", () => {
     const plugin = definePlugin({
       id: "macro",
       label: "Macro",
-      panels: [{ id: "chart", label: "Chart", component: TestPanel }],
+      panels: [
+        { id: "chart", label: "Chart", component: TestPanel },
+        { id: "macro-page", label: "Macro", component: TestPanel, placement: "workspace-page" },
+      ],
       commands: [{ id: "open-chart", title: "Open chart", panelId: "chart" }],
-      leftTabs: [{ id: "macro-tab", title: "Macro", panelId: "chart", component: TestPanel }],
       surfaceResolvers: [{ kind: "macro.open", resolve: () => ({ component: "chart", id: "chart:CPI" }) }],
     })
 
@@ -60,8 +61,8 @@ describe("captureFrontPlugin", () => {
     expect(captured.id).toBe("macro")
     expect(captured.label).toBe("Macro")
     expect(captured.registrations.panels[0]).toMatchObject({ id: "chart", label: "Chart" })
+    expect(captured.registrations.panels[1]).toMatchObject({ id: "macro-page", placement: "workspace-page" })
     expect(captured.registrations.panelCommands[0]).toMatchObject({ id: "open-chart", panelId: "chart" })
-    expect(captured.registrations.leftTabs[0]).toMatchObject({ id: "macro-tab" })
     expect(captured.registrations.surfaceResolvers[0]).toMatchObject({ kind: "macro.open" })
   })
 
@@ -113,19 +114,17 @@ describe("definePlugin brand semantics (PLUGIN_SYSTEM.md §4.3 + §7)", () => {
 })
 
 describe("definePlugin declarative config form", () => {
-  it("accepts a config object with panels/commands/leftTabs/surfaceResolvers", () => {
+  it("accepts a config object with panels/commands/surfaceResolvers", () => {
     const wrapped = definePlugin({
       id: "decl",
       label: "Declarative",
-      panels: [{ id: "decl.panel", label: "Decl", component: TestPanel }],
+      panels: [{ id: "decl.panel", label: "Decl", component: TestPanel, placement: "workspace-page" }],
       commands: [{ id: "decl.open", title: "Open Decl", panelId: "decl.panel" }],
-      leftTabs: [{ id: "decl.tab", title: "Decl", panelId: "decl.panel" }],
       surfaceResolvers: [{ id: "decl.surface", kind: "decl.open", resolve: () => null }],
     })
     const captured = captureFrontPlugin(wrapped)
     expect(captured.registrations.panels).toHaveLength(1)
     expect(captured.registrations.panelCommands).toHaveLength(1)
-    expect(captured.registrations.leftTabs).toHaveLength(1)
     expect(captured.registrations.surfaceResolvers).toHaveLength(1)
   })
 

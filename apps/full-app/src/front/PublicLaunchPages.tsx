@@ -309,20 +309,20 @@ export const publicLaunchPlugin = definePlugin({
     definePanel({
       id: 'Pages',
       title: 'Pages',
-      placement: 'left-tab',
+      placement: 'workspace-page',
       defaultPanelId: 'public.launch.landing',
       component: PublicPagesPane,
     }),
     definePanel({
       id: 'public.launch.landing',
       title: 'Landing page',
-      placement: 'center',
+      placement: 'shared-dockview',
       component: LandingPageDemo,
     }),
     definePanel({
       id: 'public.launch.lets-chat',
       title: 'Let’s chat',
-      placement: 'center',
+      placement: 'shared-dockview',
       component: LetsChatDemo,
     }),
   ],

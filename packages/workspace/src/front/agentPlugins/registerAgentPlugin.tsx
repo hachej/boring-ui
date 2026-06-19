@@ -7,15 +7,17 @@ import { useEffect, useRef, useState } from "react"
 import type { ErrorCode } from "@hachej/boring-agent/shared"
 import {
   createCapturingBoringFrontAPI,
+  normalizeFrontSurfaceResolver,
   type BoringFrontFactoryWithId,
   type CapturedBoringFrontRegistrations,
 } from "../../shared/plugins/frontFactory"
 import type { BoringPluginEvent, BoringPluginFrontTarget } from "../../shared/plugins/runtimePluginTypes"
 import type { CatalogConfig } from "../../shared/plugins/types"
 import type { PanelConfig } from "../../shared/types/panel"
-import type { SurfaceOpenRequest, SurfaceResolverConfig } from "../../shared/types/surface"
+import type { SurfaceResolverConfig } from "../../shared/types/surface"
 import type { CommandConfig } from "../registry/types"
 import { useCatalogRegistry, useCommandRegistry, useRegistry, useSurfaceResolverRegistry } from "../registry/RegistryProvider"
+import { postUiCommand } from "../bridge"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "./reloadEvent"
 
 const PLUGIN_LOAD_FAILED_CODE = "PLUGIN_LOAD_FAILED" satisfies ErrorCode
@@ -253,7 +255,6 @@ function buildRegistryPayloads(
   surfaceResolvers: SurfaceResolverConfig[]
 } {
   const panels: PanelConfig[] = []
-  const panelsById = new Map(captured.panels.map((panel) => [panel.id, panel]))
   for (const panel of captured.panels) {
     panels.push({
       id: panel.id,
@@ -268,57 +269,38 @@ function buildRegistryPayloads(
       ...(panel.essential !== undefined ? { essential: panel.essential } : {}),
       ...(panel.lazy !== undefined ? { lazy: panel.lazy } : {}),
       ...(panel.chromeless !== undefined ? { chromeless: panel.chromeless } : {}),
+      ...(panel.defaultPanelId !== undefined ? { defaultPanelId: panel.defaultPanelId } : {}),
     } as PanelConfig)
   }
-  for (const tab of captured.leftTabs) {
-    const referencedPanel = panelsById.get(tab.panelId)
-    if (!tab.component && !referencedPanel) {
-      // A leftTab pointing at an unknown panelId renders an empty pane —
-      // almost always a typo in the plugin (the panel id and the tab's
-      // panelId drifted apart). Be loud: the silent fallback cost real
-      // debugging time in the field.
-      console.warn(
-        `[boring-ui] plugin "${pluginId}": left tab "${tab.id}" references unknown panelId "${tab.panelId}" `
-        + `(registered panels: ${[...panelsById.keys()].join(", ") || "none"}). The tab will render empty.`,
-      )
-    }
-    panels.push({
-      id: tab.id,
-      title: tab.title,
-      component: tab.component ?? referencedPanel?.component ?? (() => null),
-      placement: "left-tab",
-      defaultPanelId: tab.panelId,
-      source: tab.source ?? "plugin",
+  const commands: CommandConfig[] = captured.panelCommands.map((command) => {
+    const run = command.run ?? (command.panelId
+      ? () => postUiCommand({
+          kind: "openPanel",
+          params: {
+            id: command.panelId!,
+            component: command.panelId!,
+            title: command.title,
+          },
+        })
+      : () => { throw new Error(`Panel command "${command.id}" must provide run() or panelId.`) })
+    return {
+      id: command.id,
+      title: command.title,
+      run,
       pluginId,
-      pluginRevision: revision,
-      ...(tab.icon ? { icon: tab.icon } : {}),
-      ...(tab.requiresCapabilities ? { requiresCapabilities: tab.requiresCapabilities } : {}),
-      ...(tab.lazy !== undefined ? { lazy: tab.lazy } : {}),
-      ...(tab.chromeless !== undefined ? { chromeless: tab.chromeless } : {}),
-    } as PanelConfig)
-  }
-  const commands: CommandConfig[] = captured.panelCommands.map((command) => ({
-    id: command.id,
-    title: command.title,
-    run: command.run ?? (() => undefined),
-    pluginId,
-    ...(command.keywords ? { keywords: command.keywords } : command.panelId ? { keywords: [command.panelId] } : {}),
-    ...(command.shortcut ? { shortcut: command.shortcut } : {}),
-    ...(command.when ? { when: command.when } : {}),
-  }))
+      ...(command.keywords ? { keywords: command.keywords } : command.panelId ? { keywords: [command.panelId] } : {}),
+      ...(command.shortcut ? { shortcut: command.shortcut } : {}),
+      ...(command.when ? { when: command.when } : {}),
+    }
+  })
   const catalogs: CatalogConfig[] = captured.catalogs.map((catalog) => ({
     ...catalog,
     pluginId,
   }))
-  const surfaceResolvers: SurfaceResolverConfig[] = captured.surfaceResolvers.map((resolver) => ({
-    id: resolver.id ?? `${pluginId}:${resolver.kind}`,
-    source: resolver.source ?? "plugin",
-    pluginId,
-    resolve(request: SurfaceOpenRequest) {
-      if (request.kind !== resolver.kind) return undefined
-      return resolver.resolve(request) ?? undefined
-    },
-  }))
+  const surfaceResolvers: SurfaceResolverConfig[] = captured.surfaceResolvers.map((resolver) => {
+    const { id, config } = normalizeFrontSurfaceResolver(resolver, pluginId)
+    return { id, ...config }
+  })
   return { panels, commands, catalogs, surfaceResolvers }
 }
 

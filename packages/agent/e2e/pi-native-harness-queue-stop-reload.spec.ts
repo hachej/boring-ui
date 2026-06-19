@@ -44,7 +44,7 @@ test.describe('Pi-native harness-backed queue stop reload', () => {
       await expect(chat).toHaveAttribute('data-pi-chat-connection', /connected|connecting/, { timeout: 10_000 })
       await expect(queuePreviewText).toContainText('harness queued survives reload then stop', { timeout: 10_000 })
 
-      await page.getByRole('button', { name: 'Stop' }).click()
+      await page.getByRole('button', { name: 'Stop', exact: true }).click()
       await expect(queuePreview).toHaveCount(0, { timeout: 10_000 })
       await expect(conversation.getByText('harness queued survives reload then stop')).toHaveCount(0)
 
@@ -147,7 +147,7 @@ test.describe('Pi-native harness-backed queue stop reload', () => {
         timeout: 10_000,
       }).toEqual(['user', 'assistant', 'user', 'assistant'])
 
-      await page.getByRole('button', { name: 'Stop' }).click()
+      await page.getByRole('button', { name: 'Stop', exact: true }).click()
       await expect.poll(async () => {
         const state = await readChatDomState(page)
         return state.messages.map((message) => `${message.role}:${message.status}`)
