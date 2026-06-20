@@ -352,7 +352,7 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).getByRole("button", { name: "Plugins" })).toBeInTheDocument()
     expect(within(appNav).getByRole("button", { name: "Skills" })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Sessions" })).not.toBeInTheDocument()
-    expect(screen.queryByText("Projects")).not.toBeInTheDocument()
+    expect(screen.getByText("Projects")).toBeInTheDocument()
     expect(screen.queryByText("Codex mobile")).not.toBeInTheDocument()
     expect(screen.queryByText("Automations")).not.toBeInTheDocument()
 
@@ -374,7 +374,7 @@ describe("WorkspaceAgentFront", () => {
     await user.click(within(appNav).getByRole("button", { name: "Open Third session in new chat pane" }))
     expect(onSwitchSession).toHaveBeenCalledWith("s3")
 
-    await user.click(screen.getByRole("button", { name: "Collapse app navigation" }))
+    await user.click(screen.getByRole("button", { name: "Hide app navigation" }))
     expect(screen.queryByLabelText("App navigation")).not.toBeInTheDocument()
     expect(document.querySelector('[data-boring-workspace-part="app-left-pane"]')).toBeNull()
     expect(screen.getByRole("button", { name: "Open app navigation" })).toBeInTheDocument()

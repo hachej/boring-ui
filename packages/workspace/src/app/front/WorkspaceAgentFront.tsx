@@ -1414,7 +1414,6 @@ export function WorkspaceAgentFront<
     <PluginTabsWorkspaceShell
       collapsed={appLeftPaneCollapsed}
       onExpand={() => setAppLeftPaneCollapsed(false)}
-      onCollapse={() => setAppLeftPaneCollapsed(true)}
       leftOverlay={leftOverlayNode}
       leftPane={(
         <AppLeftPane
@@ -1433,6 +1432,7 @@ export function WorkspaceAgentFront<
           onToggleSessionPinned={toggleSessionPinned}
           onOpenPlugins={() => setLeftOverlay((cur) => cur === "plugins" ? null : "plugins")}
           onOpenSkills={() => setLeftOverlay((cur) => cur === "skills" ? null : "skills")}
+          onCollapse={() => setAppLeftPaneCollapsed(true)}
         />
       )}
     >

@@ -1,7 +1,8 @@
 "use client"
 
-import { useMemo, type ReactNode } from "react"
-import { Clock3, MessageSquarePlus, Pin, Plug, Plus, Search, Sparkles } from "lucide-react"
+import { useMemo, useState, type ReactNode } from "react"
+import { ChevronRight, Clock3, MessageSquarePlus, Pin, Plug, Plus, Search, Sparkles, PanelLeftClose } from "lucide-react"
+import { ControlTooltip } from "../../components/ControlTooltip"
 import { cn } from "../../lib/utils"
 
 export interface AppLeftPaneSession {
@@ -27,13 +28,16 @@ export interface AppLeftPaneProps {
   onToggleSessionPinned: (id: string) => void
   onOpenPlugins: () => void
   onOpenSkills: () => void
+  /** Collapse the app-left pane to nothing (reveal reserves nothing). Rendered
+   *  as an in-pane control so it matches the workbench-left "Hide workspace
+   *  menu" rail button rather than a floating corner chrome. */
+  onCollapse: () => void
 }
 
 type SessionRowState = "normal" | "open" | "active"
 
 export function AppLeftPane({
   appTitle,
-  sessionTitle,
   topSlot,
   bottomSlot,
   sessions,
@@ -47,6 +51,7 @@ export function AppLeftPane({
   onToggleSessionPinned,
   onOpenPlugins,
   onOpenSkills,
+  onCollapse,
 }: AppLeftPaneProps) {
   const openSet = useMemo(() => new Set(openSessionIds), [openSessionIds])
   const pinnedSet = useMemo(() => new Set(pinnedSessionIds), [pinnedSessionIds])
@@ -85,13 +90,31 @@ export function AppLeftPane({
       className="flex h-full min-h-0 w-[268px] shrink-0 flex-col border-r border-border bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)] text-sm"
       aria-label="App navigation"
     >
-      <header className="flex shrink-0 items-start border-b border-border/60 py-3 pl-11 pr-3">
+      {/* Top row: current project label (or host topSlot) + in-pane collapse
+          control. The collapse control mirrors the workbench-left "Hide
+          workspace menu" rail button (32px, 16px icon, ghost) so the app-nav
+          collapse reads as the same family as the workspace collapse. */}
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 px-2 py-2">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-semibold tracking-tight text-foreground">{appTitle || "Boring UI"}</div>
-          <div className="truncate text-[12px] text-muted-foreground">{sessionTitle || "New session"}</div>
-          {topSlot ? <div className="mt-2 min-w-0">{topSlot}</div> : null}
+          {topSlot ? (
+            topSlot
+          ) : (
+            <span className="truncate px-1 text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
+              {appTitle || "Boring UI"}
+            </span>
+          )}
         </div>
-      </header>
+        <ControlTooltip label="Hide app navigation" side="bottom">
+          <button
+            type="button"
+            aria-label="Hide app navigation"
+            onClick={onCollapse}
+            className="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          >
+            <PanelLeftClose className="h-4 w-4" strokeWidth={1.75} />
+          </button>
+        </ControlTooltip>
+      </div>
 
       <nav className="shrink-0 space-y-1 border-b border-border/60 px-2 py-2" aria-label="Primary workspace actions">
         <PrimaryAction icon={<Plus className="h-4 w-4" />} label="New chat" onClick={onCreateSession} />
@@ -101,12 +124,19 @@ export function AppLeftPane({
       </nav>
 
       <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-2 py-2">
-        <SessionSection title="Pinned" empty="No pinned sessions yet.">
-          {pinnedSessions.map((session) => renderSession(session, true))}
-        </SessionSection>
-        <SessionSection title="Sessions" empty="No sessions yet.">
-          {regularSessions.map((session) => renderSession(session, false))}
-        </SessionSection>
+        <CollapsibleSection title="Projects" defaultOpen={false}>
+          <div className="flex min-h-9 w-full items-center gap-2 rounded-lg bg-foreground/[0.06] px-2.5 py-1.5 text-[13px] font-medium text-foreground">
+            <span className="truncate">{appTitle || "Boring UI"}</span>
+          </div>
+        </CollapsibleSection>
+        <CollapsibleSection title="Chats" defaultOpen>
+          <SessionSubSection title="Pinned" empty="No pinned sessions yet.">
+            {pinnedSessions.map((session) => renderSession(session, true))}
+          </SessionSubSection>
+          <SessionSubSection title="Sessions" empty="No sessions yet.">
+            {regularSessions.map((session) => renderSession(session, false))}
+          </SessionSubSection>
+        </CollapsibleSection>
       </div>
 
       {bottomSlot ? <footer className="shrink-0 border-t border-border/60 p-2">{bottomSlot}</footer> : null}
@@ -127,17 +157,52 @@ function PrimaryAction({ icon, label, onClick }: { icon: ReactNode; label: strin
   )
 }
 
-function SessionSection({ title, empty, children }: { title: string; empty: string; children: ReactNode }) {
+/**
+ * Collapsible section header with a rotating chevron. Matches the reference
+ * shape: "Projects >" / "Chats >" — right-pointing chevron when collapsed,
+ * rotating 90° to point down when expanded.
+ */
+function CollapsibleSection({
+  title,
+  defaultOpen = true,
+  children,
+}: {
+  title: string
+  defaultOpen?: boolean
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <section data-boring-workspace-part="app-left-pane-section" className="py-1">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+      >
+        <ChevronRight
+          className={cn("h-3.5 w-3.5 shrink-0 transition-transform duration-150", open && "rotate-90")}
+          strokeWidth={1.75}
+          aria-hidden="true"
+        />
+        <span>{title}</span>
+      </button>
+      {open ? <div className="mt-0.5 space-y-1.5">{children}</div> : null}
+    </section>
+  )
+}
+
+function SessionSubSection({ title, empty, children }: { title: string; empty: string; children: ReactNode }) {
   const hasChildren = Array.isArray(children) ? children.length > 0 : Boolean(children)
   return (
-    <section data-boring-workspace-part="app-left-pane-section" className="py-2">
-      <div className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/60">
+    <div className="space-y-0.5">
+      <div className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/50">
         {title}
       </div>
       <div className="space-y-0.5">
-        {hasChildren ? children : <div className="px-2 py-2 text-xs text-muted-foreground/70">{empty}</div>}
+        {hasChildren ? children : <div className="px-2 py-1.5 text-xs text-muted-foreground/70">{empty}</div>}
       </div>
-    </section>
+    </div>
   )
 }
 
