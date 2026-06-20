@@ -128,11 +128,11 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }:
         const state = await response.json().catch(() => null) as Record<string, unknown> | null
         const hint = readPendingQuestionHintFromState(state)
         if (!hint) {
-          if (!stopped) runtime.setPending(null)
+          if (!stopped && !runtime.getPending()) runtime.setPending(null)
           return
         }
         await runtime.refreshPending(hint.sessionId)
-      } catch { if (!stopped) runtime.setPending(null) }
+      } catch { if (!stopped && !runtime.getPending()) runtime.setPending(null) }
     }
     const onVisibility = () => { if (document.visibilityState === "visible") void refreshPending() }
     const onUiCommand = () => { void refreshPending() }

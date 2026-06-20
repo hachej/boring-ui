@@ -63,6 +63,27 @@ describe("askUserPlugin front shell", () => {
     })
   })
 
+  it("rehydrates the same session pending question after provider remount", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.pending")) {
+        return Response.json({ ok: true, output: { pending: question } })
+      }
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json({})
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+    const Panel = getPanel()
+
+    const first = render(<Provider apiBaseUrl="" activeSessionId="default"><Panel params={{}} api={{ close: vi.fn() }} className="h-full" /></Provider>)
+    expect(await screen.findByText("Choose A or B")).toBeInTheDocument()
+    first.unmount()
+
+    render(<Provider apiBaseUrl="" activeSessionId="default"><Panel params={{}} api={{ close: vi.fn() }} className="h-full" /></Provider>)
+    expect(await screen.findByText("Choose A or B")).toBeInTheDocument()
+    expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.pending")).length).toBeGreaterThanOrEqual(2)
+  })
+
   it("rehydrates question from human-input pending when opened from surface metadata", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.pending")) {

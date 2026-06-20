@@ -76,9 +76,9 @@ export class FileAskUserStore implements AskUserStore {
 
   async createPending(question: AskUserQuestion): Promise<void> {
     await this.mutate(async (state) => {
-      const existing = Object.values(state.pendingBySession).find((questionId) => isPending(state.questions[questionId]))
-      if (existing) {
-        throw new AskUserStoreError(ASK_USER_ERROR_CODES.PENDING_EXISTS, "a pending question already exists")
+      const existing = state.pendingBySession[question.sessionId]
+      if (existing && isPending(state.questions[existing])) {
+        throw new AskUserStoreError(ASK_USER_ERROR_CODES.PENDING_EXISTS, "a pending question already exists for this session")
       }
       state.questions[question.questionId] = clone(question)
       if (isPending(question)) state.pendingBySession[question.sessionId] = question.questionId

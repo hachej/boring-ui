@@ -46,8 +46,8 @@ export class MemoryAskUserStore implements AskUserStore {
   }
 
   async createPending(question: AskUserQuestion): Promise<void> {
-    const existing = [...this.pendingBySession.values()].some((id) => this.questions.get(id)?.status === "ready")
-    if (existing) throw new AskUserStoreError(ASK_USER_ERROR_CODES.PENDING_EXISTS, "a pending question already exists")
+    const existing = this.pendingBySession.get(question.sessionId)
+    if (existing && this.questions.get(existing)?.status === "ready") throw new AskUserStoreError(ASK_USER_ERROR_CODES.PENDING_EXISTS, "a pending question already exists for this session")
     this.questions.set(question.questionId, clone(question))
     if (question.status === "ready") this.pendingBySession.set(question.sessionId, question.questionId)
     this.emit({ sessionId: question.sessionId, questionId: question.questionId, reason: "create" })

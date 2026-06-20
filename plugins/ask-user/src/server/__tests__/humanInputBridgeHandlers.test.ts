@@ -86,6 +86,50 @@ describe("plugin-owned human-input WorkspaceBridge handlers", () => {
     })
   })
 
+  it("keeps pending questions scoped by session", async () => {
+    const { store, registry } = fixture()
+    const c1 = new AbortController()
+    const c2 = new AbortController()
+    controllers.push(c1, c2)
+    const r1 = registry.call({
+      op: HUMAN_INPUT_OPS.request,
+      input: { sessionId: "s1", title: "S1", schema, timeoutMs: 60_000 },
+      requestId: "req-s1",
+    }, runtimeContext({ sessionId: "s1", signal: c1.signal }))
+    const r2 = registry.call({
+      op: HUMAN_INPUT_OPS.request,
+      input: { sessionId: "s2", title: "S2", schema, timeoutMs: 60_000 },
+      requestId: "req-s2",
+    }, runtimeContext({ sessionId: "s2", signal: c2.signal }))
+
+    const q1 = await vi.waitFor(async () => {
+      const pending = await store.getPending("s1")
+      expect(pending).not.toBeNull()
+      return pending!
+    }, { timeout: 10_000 })
+    const q2 = await vi.waitFor(async () => {
+      const pending = await store.getPending("s2")
+      expect(pending).not.toBeNull()
+      return pending!
+    }, { timeout: 10_000 })
+    expect(q1.questionId).not.toBe(q2.questionId)
+
+    const p1 = await registry.call({ op: HUMAN_INPUT_OPS.pending, input: { sessionId: "s1" } }, browserContext("user-1", [HUMAN_INPUT_CAPABILITIES.pending]))
+    const p2 = await registry.call({ op: HUMAN_INPUT_OPS.pending, input: { sessionId: "s2" } }, { ...browserContext("user-1", [HUMAN_INPUT_CAPABILITIES.pending]), sessionId: "s2" })
+    expect(p1).toMatchObject({ ok: true, output: { pending: { questionId: q1.questionId } } })
+    expect(p2).toMatchObject({ ok: true, output: { pending: { questionId: q2.questionId } } })
+
+    const answer = await registry.call({
+      op: HUMAN_INPUT_OPS.answer,
+      input: { questionId: q1.questionId, sessionId: "s1", answerToken: q1.answerToken, values: { answer: "ok" } },
+    }, browserContext("user-1", [HUMAN_INPUT_CAPABILITIES.answer]))
+    expect(answer).toMatchObject({ ok: true, output: { status: "answered" } })
+    await expect(r1).resolves.toMatchObject({ ok: true, output: { status: "answered" } })
+    await expect(store.getPending("s2")).resolves.toMatchObject({ questionId: q2.questionId })
+    c2.abort()
+    await expect(r2).resolves.toMatchObject({ ok: true, output: { status: "cancelled" } })
+  })
+
   it("denies runtime requests for a different session than the verified runtime context", async () => {
     const { registry } = fixture()
     const denied = await registry.call({
