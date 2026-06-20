@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 import { ASK_USER_ERROR_CODES } from "../../shared/error-codes"
 import type { AskUserFormSchema, AskUserQuestion } from "../../shared/types"
 import type { AskUserStore } from "../askUserStore"
+import type { UiBridge, UiCommand, UiState } from "@hachej/boring-workspace/server"
 import { AskUserRuntime, InProcessAskUserCoordinator, requireAskUserRuntime } from "../askUserRuntime"
 import { MemoryAskUserStore } from "./testAskUserStore"
 
@@ -11,6 +12,37 @@ const schema: AskUserFormSchema = { wireVersion: 1, fields: [{ type: "text", nam
 
 async function makeStore() {
   return new MemoryAskUserStore()
+}
+
+function bridge(): UiBridge & { commands: UiCommand[] } {
+  let state: UiState | null = null
+  const commands: UiCommand[] = []
+  return {
+    commands,
+    async getState() { return state },
+    async setState(next) { state = next },
+    async postCommand(cmd) { commands.push(cmd); return { seq: commands.length, status: "ok" } },
+    subscribeCommands() { return () => undefined },
+  }
+}
+
+class DelayedCreateStore extends MemoryAskUserStore {
+  readonly createStarted: Promise<void>
+  private readonly createRelease: Promise<void>
+  private createStartedResolve!: () => void
+  releaseCreate!: () => void
+
+  constructor() {
+    super()
+    this.createStarted = new Promise<void>((resolve) => { this.createStartedResolve = resolve })
+    this.createRelease = new Promise<void>((resolve) => { this.releaseCreate = resolve })
+  }
+
+  override async createPending(question: AskUserQuestion): Promise<void> {
+    this.createStartedResolve()
+    await this.createRelease
+    await super.createPending(question)
+  }
 }
 
 async function pendingQuestion(store: AskUserStore, sessionId: string) {
@@ -87,6 +119,31 @@ describe("AskUserRuntime", () => {
     await expect(result).resolves.toMatchObject({ status: "answered", answer: { values: { answer: "yes" } } })
   }, 30_000)
 
+  it("registers the waiter before publishing the pending question", async () => {
+    const store = await makeStore()
+    const runtime = new AskUserRuntime({ store })
+    const result = runtime.ask({ sessionId: "s1", title: "T", schema })
+    const question = await pendingQuestion(store, "s1")
+    await runtime.submitAnswer(question.questionId, "s1", { answer: "fast" })
+    await expect(result).resolves.toMatchObject({ status: "answered", answer: { values: { answer: "fast" } } })
+  }, 30_000)
+
+  it("cancels persisted questions if abort wins while createPending is in flight", async () => {
+    const store = new DelayedCreateStore()
+    const ui = bridge()
+    const runtime = new AskUserRuntime({ store, uiBridge: ui })
+    const controller = new AbortController()
+    const result = runtime.ask({ sessionId: "s1", title: "T", schema }, controller.signal)
+
+    await store.createStarted
+    controller.abort()
+    store.releaseCreate()
+
+    await expect(result).resolves.toMatchObject({ status: "cancelled", reason: "aborted" })
+    await expect(store.getPending("s1")).resolves.toBeNull()
+    expect(ui.commands).toEqual([])
+  })
+
   it("cancels on timeout and abort", async () => {
     const store = await makeStore()
     const runtime = new AskUserRuntime({ store })
@@ -96,6 +153,24 @@ describe("AskUserRuntime", () => {
     const promise = runtime.ask({ sessionId: "s2", title: "T", schema }, controller.signal)
     controller.abort()
     await expect(promise).resolves.toMatchObject({ status: "cancelled", reason: "aborted" })
+  })
+
+  it("rate limits by per-request owner principal when provided", async () => {
+    const store = await makeStore()
+    const runtime = new AskUserRuntime({ store, limits: { perSessionPerMinute: 99, perPrincipalPerHour: 1 } })
+    const firstController = new AbortController()
+    const first = runtime.ask({ sessionId: "s1", schema, ownerPrincipalId: "p1" }, firstController.signal)
+    const q1 = await pendingQuestion(store, "s1")
+    await waitForRuntimeWaiter(runtime, q1.questionId)
+    firstController.abort()
+    await expect(first).resolves.toMatchObject({ status: "cancelled", reason: "aborted" })
+    await expect(runtime.ask({ sessionId: "s2", schema, ownerPrincipalId: "p1" })).rejects.toMatchObject({ code: ASK_USER_ERROR_CODES.RATE_LIMITED })
+    const secondController = new AbortController()
+    const second = runtime.ask({ sessionId: "s3", schema, ownerPrincipalId: "p2" }, secondController.signal)
+    const q2 = await pendingQuestion(store, "s3")
+    await waitForRuntimeWaiter(runtime, q2.questionId)
+    secondController.abort()
+    await expect(second).resolves.toMatchObject({ status: "cancelled", reason: "aborted" })
   })
 
   it("rate limits by session", async () => {

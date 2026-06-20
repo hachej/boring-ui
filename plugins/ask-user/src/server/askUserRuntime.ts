@@ -129,15 +129,34 @@ export class AskUserRuntime {
 
 
   async ask(request: AskUserRequest, signal?: AbortSignal): Promise<AskUserToolResult> {
-    this.assertAllowed(request.sessionId)
-    const question = this.createQuestion(request)
+    const ownerPrincipalId = request.ownerPrincipalId ?? this.ownerPrincipalId
+    this.assertAllowed(request.sessionId, ownerPrincipalId)
+    const question = this.createQuestion({ ...request, ownerPrincipalId })
     const parsed = AskUserFormSchemaSchema.safeParse(request.schema)
     if (!parsed.success) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.SCHEMA_INVALID, parsed.error.message)
     question.schema = parsed.data
-    await this.store.createPending(question)
-    await this.store.appendTranscriptEvent({ type: "created", question, at: this.isoNow() })
-    await this.store.appendTranscriptEvent({ type: "ready", questionId: question.questionId, sessionId: question.sessionId, schema: parsed.data, at: this.isoNow() })
-    return this.waitForAnswerWithOpen(question, request.timeoutMs, signal)
+
+    // Register the waiter before publishing/persisting the question. The UI
+    // state publisher can make a question answerable as soon as createPending
+    // mutates the store; if the browser answers in that small window before the
+    // waiter exists, submitAnswer correctly treats it as abandoned. Cancellation
+    // is armed only after persistence so abort/timeout cannot leave a visible
+    // question with no waiter.
+    const pendingAnswer = this.coordinator.registerWaiter(question.questionId, question.sessionId)
+    try {
+      await this.store.createPending(question)
+      await this.store.appendTranscriptEvent({ type: "created", question, at: this.isoNow() })
+      await this.store.appendTranscriptEvent({ type: "ready", questionId: question.questionId, sessionId: question.sessionId, schema: parsed.data, at: this.isoNow() })
+      if (signal?.aborted) {
+        await this.cancelQuestion(question.questionId, question.sessionId, "aborted")
+        return await pendingAnswer
+      }
+      void this.openQuestionSurface(question)
+      return await this.waitForAnswer(question, pendingAnswer, request.timeoutMs, signal)
+    } catch (error) {
+      this.coordinator.resolveCancelled(question.questionId, "abandoned")
+      throw error
+    }
   }
 
   async submitAnswer(questionId: string, sessionId: string, values: AskUserAnswer["values"]): Promise<"answered" | "abandoned"> {
@@ -166,43 +185,40 @@ export class AskUserRuntime {
     this.coordinator.resolveCancelled(questionId, reason)
   }
 
-  private async waitForAnswerWithOpen(question: AskUserQuestion, timeoutMs?: number, signal?: AbortSignal): Promise<AskUserToolResult> {
-    const pendingAnswer = this.waitForAnswer(question, timeoutMs, signal)
-    void this.openQuestionSurface(question)
-    return pendingAnswer
-  }
-
   private async openQuestionSurface(question: AskUserQuestion): Promise<void> {
     if (!this.uiBridge) return
     try {
-      await this.uiBridge.postCommand({ kind: "openSurface", params: { kind: ASK_USER_SURFACE_KIND, target: question.questionId, meta: { question } } })
+      await this.uiBridge.postCommand({ kind: "openSurface", params: { kind: ASK_USER_SURFACE_KIND, target: question.questionId, meta: { sessionId: question.sessionId } } })
     } catch {
       // Opening the pane is best-effort. The pending question is already persisted
       // and published via UI state, so a stale/disconnected browser can refresh and answer.
     }
   }
 
-  private async waitForAnswer(question: AskUserQuestion, timeoutMs?: number, signal?: AbortSignal): Promise<AskUserToolResult> {
-    const controller = new AbortController()
-    const relayAbort = () => controller.abort()
-    signal?.addEventListener("abort", relayAbort, { once: true })
-    if (signal?.aborted) controller.abort()
-    const timeout = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : undefined
-    const result = await this.coordinator.registerWaiter(question.questionId, question.sessionId, controller.signal)
-    signal?.removeEventListener("abort", relayAbort)
-    if (timeout) clearTimeout(timeout)
-    if (result.status === "cancelled" && result.reason === "aborted") {
-      const reason: AskUserCancelReason = signal?.aborted ? "aborted" : "timeout"
-      try {
-        await this.store.cancel(question.questionId)
-        await this.store.appendTranscriptEvent({ type: "cancelled", questionId: question.questionId, sessionId: question.sessionId, reason, at: this.isoNow() })
-      } catch {
-        // The browser may have submitted/cancelled or another startup path may have abandoned the
-        // question in the small window after the waiter settled but before the store transition.
-      }
-      return { status: "cancelled", questionId: question.questionId, sessionId: question.sessionId, reason }
+  private async waitForAnswer(
+    question: AskUserQuestion,
+    pendingAnswer: Promise<AskUserToolResult>,
+    timeoutMs?: number,
+    signal?: AbortSignal,
+  ): Promise<AskUserToolResult> {
+    let settled = false
+    const cancel = (reason: AskUserCancelReason) => {
+      if (settled) return
+      void this.cancelQuestion(question.questionId, question.sessionId, reason).catch(() => undefined)
     }
-    return result
+    const onAbort = () => cancel("aborted")
+    signal?.addEventListener("abort", onAbort, { once: true })
+    if (signal?.aborted) cancel("aborted")
+    const timeout = timeoutMs ? setTimeout(() => cancel("timeout"), timeoutMs) : undefined
+    try {
+      const result = await pendingAnswer
+      settled = true
+      return result
+    } finally {
+      settled = true
+      signal?.removeEventListener("abort", onAbort)
+      if (timeout) clearTimeout(timeout)
+    }
   }
 
   private async abandon(questionId: string, sessionId: string): Promise<void> {
@@ -211,12 +227,12 @@ export class AskUserRuntime {
     this.coordinator.resolveCancelled(questionId, "abandoned")
   }
 
-  private createQuestion(request: Pick<AskUserRequest, "sessionId" | "title" | "context">): AskUserQuestion {
+  private createQuestion(request: Pick<AskUserRequest, "sessionId" | "title" | "context" | "ownerPrincipalId">): AskUserQuestion {
     const at = this.isoNow()
     return {
       questionId: randomUUID(),
       sessionId: request.sessionId,
-      ownerPrincipalId: this.ownerPrincipalId,
+      ownerPrincipalId: request.ownerPrincipalId ?? this.ownerPrincipalId,
       status: "ready",
       title: request.title,
       context: request.context,
@@ -226,8 +242,7 @@ export class AskUserRuntime {
     }
   }
 
-  private assertAllowed(sessionId: string): void {
-    const principalId = this.ownerPrincipalId
+  private assertAllowed(sessionId: string, principalId: string): void {
     if (!this.consume(this.sessionBuckets, sessionId, 60_000, this.perSessionPerMinute) || !this.consume(this.principalBuckets, principalId, 3_600_000, this.perPrincipalPerHour)) {
       throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.RATE_LIMITED, "ask_user rate limit exceeded")
     }

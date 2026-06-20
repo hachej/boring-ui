@@ -41,6 +41,22 @@ defineServerPlugin({
 
 Product-specific operation names and validation belong to the product/plugin that owns the domain. `@hachej/boring-workspace` only provides the generic bridge registry, auth, token, idempotency, and transport machinery.
 
+## Ask-user human input
+
+`@hachej/boring-ask-user/server` owns the `human-input.v1.*` operation family. Normal ask-user setup contributes those handlers through `workspaceBridgeHandlers` instead of registering a plugin-owned `/api/v1/questions/commands` route.
+
+Registered operations:
+
+- `human-input.v1.request` — runtime/server asks a blocking structured question.
+- `human-input.v1.pending` — browser/server reads the pending question for a session.
+- `human-input.v1.answer` — browser/server submits answers with the question answer token and idempotency key.
+- `human-input.v1.cancel` — browser/server cancels a pending question with the question answer token and idempotency key.
+- `human-input.v1.transcript` — server-only transcript read.
+
+The plugin owns question validation, storage, answer-token checks, UI-state publishing, and pending-question coordination. The workspace package remains domain-neutral: it hosts only the generic RPC core and the trusted handler contribution seam.
+
+For normal setup, browser reads/mutations are scoped by the verified bridge session (`x-boring-session-id` or app-auth equivalent), not by body-only session values. Runtime requests must be made with a session-scoped bridge token when a session id is present. UI effects and UI state may carry question/session hints for navigation and badges, but answer tokens and full answerable question payloads stay behind the `human-input.v1.pending` RPC read.
+
 ## Runtime bridge env
 
 When enabled and valid, agent/runtime executions receive:

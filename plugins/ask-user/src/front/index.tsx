@@ -17,7 +17,7 @@ import { HelpCircle, XCircle } from "lucide-react"
 import { createContext, useContext, useEffect, useMemo, useSyncExternalStore, useState } from "react"
 import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../shared/constants"
 import type { AskUserQuestion } from "../shared/types"
-import { createQuestionsClient, readPendingQuestionFromState, QuestionsClientError } from "./client"
+import { createQuestionsClient, readPendingQuestionHintFromState, QuestionsClientError } from "./client"
 import { QuestionCancelButton, QuestionFields, QuestionForm, QuestionFormProvider, QuestionSubmitButton } from "./primitives"
 
 type QuestionsStore = {
@@ -29,6 +29,7 @@ type QuestionsStore = {
 type QuestionsRuntime = QuestionsStore & {
   apiBaseUrl: string
   authHeaders?: Record<string, string>
+  refreshPending(sessionId: string): Promise<AskUserQuestion | null>
 }
 
 function createQuestionsStore(): QuestionsStore {
@@ -69,9 +70,18 @@ function useQuestionsRuntime(): QuestionsRuntime {
   return ctx
 }
 
-function AskUserProvider({ apiBaseUrl, authHeaders, children }: PluginProviderProps) {
+function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }: PluginProviderProps) {
   const { addBlocker, removeBlocker } = useWorkspaceAttention()
-  const runtime = useMemo<QuestionsRuntime>(() => ({ ...sharedQuestionsStore, apiBaseUrl, authHeaders }), [apiBaseUrl, authHeaders])
+  const runtime = useMemo<QuestionsRuntime>(() => ({
+    ...sharedQuestionsStore,
+    apiBaseUrl,
+    authHeaders,
+    async refreshPending(sessionId) {
+      const pending = await createQuestionsClient({ apiBaseUrl, headers: authHeaders }).pending(sessionId)
+      sharedQuestionsStore.setPending(pending)
+      return pending
+    },
+  }), [apiBaseUrl, authHeaders])
   const pendingSnapshot = useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
   useEffect(() => {
     const pending = runtime.getPending()
@@ -105,11 +115,24 @@ function AskUserProvider({ apiBaseUrl, authHeaders, children }: PluginProviderPr
   useEffect(() => {
     let stopped = false
     async function refreshPending() {
+      if (activeSessionId) {
+        try {
+          await runtime.refreshPending(activeSessionId)
+        } catch {
+          if (!stopped) runtime.setPending(null)
+        }
+        return
+      }
       try {
         const response = await fetch(`${apiBaseUrl}/api/v1/ui/state`, { headers: authHeaders })
         const state = await response.json().catch(() => null) as Record<string, unknown> | null
-        if (!stopped) runtime.setPending(readPendingQuestionFromState(state))
-      } catch { /* best effort */ }
+        const hint = readPendingQuestionHintFromState(state)
+        if (!hint) {
+          if (!stopped) runtime.setPending(null)
+          return
+        }
+        await runtime.refreshPending(hint.sessionId)
+      } catch { if (!stopped) runtime.setPending(null) }
     }
     const onVisibility = () => { if (document.visibilityState === "visible") void refreshPending() }
     const onUiCommand = () => { void refreshPending() }
@@ -138,11 +161,11 @@ function AskUserProvider({ apiBaseUrl, authHeaders, children }: PluginProviderPr
       document.removeEventListener("visibilitychange", onVisibility)
       window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)
     }
-  }, [apiBaseUrl, authHeaders, runtime])
+  }, [activeSessionId, apiBaseUrl, authHeaders, runtime])
   return <QuestionsRuntimeContext.Provider value={runtime}>{children}</QuestionsRuntimeContext.Provider>
 }
 
-type QuestionsPaneParams = { questionId?: string; question?: AskUserQuestion; __closeWorkbenchOnDone?: () => void }
+type QuestionsPaneParams = { questionId?: string; sessionId?: string; __closeWorkbenchOnDone?: () => void }
 
 function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams>) {
   const runtime = useQuestionsRuntime()
@@ -150,8 +173,7 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   const [closedQuestionId, setClosedQuestionId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const paramQuestion = params?.question
-  const question = pending ?? (paramQuestion?.questionId === closedQuestionId ? null : paramQuestion) ?? null
+  const question = pending?.questionId === closedQuestionId ? null : pending
   const client = useMemo(() => createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }), [runtime.apiBaseUrl, runtime.authHeaders])
   useEffect(() => {
     const onStop = (event: Event) => {
@@ -165,8 +187,8 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
     return () => window.removeEventListener("boring:workspace-composer-stop", onStop)
   }, [api, question, runtime])
   useEffect(() => {
-    if (question && pending === null && !paramQuestion) api.close()
-  }, [api, pending, paramQuestion, question])
+    if (!pending && params?.sessionId) void runtime.refreshPending(params.sessionId).catch(() => undefined)
+  }, [params?.sessionId, pending, runtime])
 
   return <div className={className ? `${className} min-h-0 overflow-hidden` : "h-full min-h-0 overflow-hidden"}>
     <Pane className="h-full min-h-0 overflow-hidden border-0 bg-background text-sm">
@@ -249,15 +271,15 @@ export const askUserPlugin: BoringFrontFactoryWithId = definePlugin({
       // No inner kind guard — the workspace's surface registry already
       // pre-filters by the top-level `kind` field before calling resolve.
       resolve(request) {
-        const metaQuestion =
-          typeof request.meta === "object" && request.meta && "question" in request.meta
-            ? (request.meta as { question?: AskUserQuestion }).question
+        const sessionId =
+          typeof request.meta === "object" && request.meta && typeof (request.meta as { sessionId?: unknown }).sessionId === "string"
+            ? (request.meta as { sessionId: string }).sessionId
             : undefined
         return {
           component: ASK_USER_PANEL_ID,
           id: ASK_USER_PANEL_ID,
           title: ASK_USER_PANEL_TITLE,
-          params: { questionId: request.target, question: metaQuestion },
+          params: { questionId: request.target, sessionId },
         }
       },
     },

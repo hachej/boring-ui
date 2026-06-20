@@ -41,10 +41,14 @@ test.describe("ask_user Questions pane", () => {
       await route.fulfill({ status: 204 })
     })
 
-    await page.route("**/api/v1/questions/commands", async (route) => {
+    await page.route("**/api/v1/workspace-bridge/call", async (route) => {
       const body = route.request().postDataJSON()
       commands.push(body)
-      await route.fulfill({ json: { ok: true, status: "answered" } })
+      if (body.op === "human-input.v1.pending") {
+        await route.fulfill({ json: { ok: true, op: body.op, requestId: "req-e2e", output: { pending: question } } })
+        return
+      }
+      await route.fulfill({ json: { ok: true, op: body.op, requestId: "req-e2e", output: { ok: true, status: "answered" } } })
     })
 
     const commandStreamReady = page.waitForRequest((request) => request.url().includes("/api/v1/ui/commands/next"), { timeout: 10_000 })
@@ -53,13 +57,13 @@ test.describe("ask_user Questions pane", () => {
     const workbenchButton = page.getByRole("button", { name: /^workbench$/i })
     if (await workbenchButton.isVisible().catch(() => false)) await workbenchButton.click()
     await commandStreamReady
-    await page.request.post("/api/v1/ui/commands", { data: { kind: "openSurface", params: { kind: "questions", target: question.questionId, meta: { question } } } })
+    await page.request.post("/api/v1/ui/commands", { data: { kind: "openSurface", params: { kind: "questions", target: question.questionId, meta: { sessionId: question.sessionId } } } })
 
     await expect(page.getByText("Choose A or B")).toBeVisible({ timeout: 8_000 })
     await page.getByRole("radio", { name: "A" }).click()
     await page.getByTestId("artifact-surface").getByRole("button", { name: "Submit" }).click()
 
-    await expect.poll(() => commands.some((cmd: any) => cmd.kind === "questions.submit" && cmd.params?.answerToken === "secret-e2e" && cmd.params?.values?.choice === "A")).toBe(true)
+    await expect.poll(() => commands.some((cmd: any) => cmd.op === "human-input.v1.answer" && cmd.input?.answerToken === "secret-e2e" && cmd.input?.values?.choice === "A")).toBe(true)
     await expect(page.getByText("Choose A or B")).toBeHidden({ timeout: 5_000 })
   })
 })

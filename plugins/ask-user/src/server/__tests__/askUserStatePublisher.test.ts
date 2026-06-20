@@ -43,6 +43,32 @@ async function waitForRuntimeWaiter(runtime: AskUserRuntime, questionId: string)
 }
 
 describe("AskUserStatePublisher", () => {
+  it("sanitizes preserved legacy full-question UI state on start", async () => {
+    const store = await makeStore()
+    const ui = bridge()
+    await ui.setState({
+      [ASK_USER_UI_STATE_SLOTS.PENDING]: {
+        question: {
+          questionId: "q1",
+          sessionId: "s1",
+          status: "ready",
+          answerToken: "secret-token",
+          schema,
+          title: "Legacy",
+        },
+      },
+    })
+
+    const publisher = new AskUserStatePublisher(store, ui)
+    publisher.start()
+
+    await vi.waitFor(async () => {
+      const slot = (await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]
+      expect(slot).toEqual({ hint: { questionId: "q1", sessionId: "s1", status: "ready" } })
+      expect(JSON.stringify(slot)).not.toContain("secret-token")
+    })
+  })
+
   it("publishes pending slot on create, answer, cancel, and abandon", async () => {
     const store = await makeStore()
     const ui = bridge()
@@ -52,20 +78,21 @@ describe("AskUserStatePublisher", () => {
     const pending = runtime.ask({ sessionId: "s1", title: "T", schema })
     const question = await vi.waitFor(async () => {
       const slot = (await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]
-      expect(slot).toMatchObject({ question: { status: "ready" } })
-      return (slot as { question: { questionId: string } }).question
+      expect(slot).toMatchObject({ hint: { status: "ready" } })
+      expect(JSON.stringify(slot)).not.toContain("answerToken")
+      return (slot as { hint: { questionId: string } }).hint
     })
     await waitForRuntimeWaiter(runtime, question.questionId)
     await runtime.submitAnswer(question.questionId, "s1", { answer: "ok" })
     await expect(pending).resolves.toMatchObject({ status: "answered" })
-    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null }))
+    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ hint: null }))
 
     const cancelPending = runtime.ask({ sessionId: "s1", schema })
     const q2 = await waitForPending(store, "s1")
     await waitForRuntimeWaiter(runtime, q2.questionId)
     await runtime.cancelQuestion(q2.questionId, "s1")
     await expect(cancelPending).resolves.toMatchObject({ status: "cancelled" })
-    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null }))
+    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ hint: null }))
 
     const abandonedController = new AbortController()
     const abandonedPending = runtime.ask({ sessionId: "s1", schema }, abandonedController.signal)
@@ -73,7 +100,7 @@ describe("AskUserStatePublisher", () => {
     await store.markAbandoned(q3.questionId)
     abandonedController.abort()
     await expect(abandonedPending).resolves.toMatchObject({ status: "cancelled" })
-    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null }))
+    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ hint: null }))
   }, 30_000)
 })
 

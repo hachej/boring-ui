@@ -1,15 +1,15 @@
-import Fastify from "fastify"
 import { mkdtemp } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
-import { ASK_USER_COMMAND_KINDS, ASK_USER_UI_STATE_SLOTS } from "../../shared/constants"
+import { HUMAN_INPUT_CAPABILITIES, HUMAN_INPUT_OPS } from "../../shared/bridge"
+import { ASK_USER_UI_STATE_SLOTS } from "../../shared/constants"
 import { FileAskUserStore } from "../askUserStore"
 import { AskUserRuntime } from "../askUserRuntime"
 import { AskUserStatePublisher } from "../askUserStatePublisher"
 import { createAskUserTool } from "../createAskUserTool"
-import { questionsRoutes } from "../questionsRoutes"
-import type { UiBridge, UiCommand, UiState } from "@hachej/boring-workspace/server"
+import { createAskUserHumanInputBridgeHandlers } from "../humanInputBridgeHandlers"
+import { createWorkspaceBridgeRegistry, type UiBridge, type UiCommand, type UiState, type WorkspaceBridgeCallContext } from "@hachej/boring-workspace/server"
 
 function createBridge(): UiBridge & { commands: UiCommand[] } {
   let state: UiState | null = null
@@ -29,18 +29,23 @@ async function makeStore() {
 }
 
 describe("ask-user full workflow", () => {
-  it("runs tool -> pending state -> submit route -> tool result", async () => {
+  it("runs tool -> pending state -> human-input bridge answer -> tool result", async () => {
     const store = await makeStore()
     const bridge = createBridge()
     const runtime = new AskUserRuntime({ store, uiBridge: bridge, ownerPrincipalId: "p1" })
     new AskUserStatePublisher(store, bridge).start()
 
-    const app = Fastify()
-    app.register(questionsRoutes, {
-      store,
-      runtime,
-      getAuthContext: () => ({ sessionId: "s1", principalId: "p1" }),
-    })
+    const registry = createWorkspaceBridgeRegistry()
+    for (const entry of createAskUserHumanInputBridgeHandlers({ store, runtime })) {
+      registry.registerHandler(entry.definition, entry.handler)
+    }
+    const browserContext: WorkspaceBridgeCallContext = {
+      callerClass: "browser",
+      workspaceId: "workspace-1",
+      sessionId: "s1",
+      capabilities: [HUMAN_INPUT_CAPABILITIES.answer],
+      actor: { actorKind: "human", performedBy: { id: "p1", label: "user:p1" } },
+    }
 
     const tool = createAskUserTool({ runtime, sessionId: "s1" })
     const toolResult = tool.execute("call-1", {
@@ -62,37 +67,34 @@ describe("ask-user full workflow", () => {
 
     await vi.waitFor(() => {
       expect(bridge.commands).toEqual([
-        { kind: "openSurface", params: { kind: "questions", target: pending.questionId, meta: { question: expect.objectContaining({ questionId: pending.questionId, status: "ready" }) } } },
+        { kind: "openSurface", params: { kind: "questions", target: pending.questionId, meta: { sessionId: "s1" } } },
       ])
     })
     await vi.waitFor(async () => {
-      expect((await bridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({ question: { questionId: pending.questionId, status: "ready" } })
+      const slot = (await bridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]
+      expect(slot).toMatchObject({ hint: { questionId: pending.questionId, sessionId: "s1", status: "ready" } })
+      expect(JSON.stringify(slot)).not.toContain("answerToken")
     })
 
 
-    const submit = await app.inject({
-      method: "POST",
-      url: "/api/v1/questions/commands",
-      payload: {
-        kind: ASK_USER_COMMAND_KINDS.SUBMIT,
-        params: {
-          questionId: pending.questionId,
-          sessionId: "s1",
-          answerToken: pending.answerToken,
-          values: { region: "iad", confirm: true },
-        },
+    const submit = await registry.call({
+      op: HUMAN_INPUT_OPS.answer,
+      input: {
+        questionId: pending.questionId,
+        sessionId: "s1",
+        answerToken: pending.answerToken,
+        values: { region: "iad", confirm: true },
       },
-    })
-    expect(submit.statusCode).toBe(200)
+    }, browserContext)
+    expect(submit).toMatchObject({ ok: true, output: { status: "answered" } })
     await expect(toolResult).resolves.toMatchObject({
       details: { status: "answered", answer: { values: { region: "iad", confirm: true } } },
     })
-    await vi.waitFor(async () => expect((await bridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({ question: null }))
+    await vi.waitFor(async () => expect((await bridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({ hint: null }))
     await expect(store.getTranscriptEventsForQuestion(pending.questionId)).resolves.toEqual([
       expect.objectContaining({ type: "created" }),
       expect.objectContaining({ type: "ready" }),
       expect.objectContaining({ type: "answered" }),
     ])
-    await app.close()
   })
 })

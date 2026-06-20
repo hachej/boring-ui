@@ -4,6 +4,7 @@ import { vi } from "vitest"
 
 vi.mock("@boring/agent/server", () => ({}))
 
+import Fastify from "fastify"
 import { existsSync } from "node:fs"
 import { mkdtemp } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -112,12 +113,34 @@ describe("ask-user Pi tool", () => {
 })
 
 describe("createAskUserServerPlugin", () => {
-  it("exports routes and agent tool without @hachej/boring-agent ask-user APIs", async () => {
+  it("exports plugin-owned human-input bridge handlers and agent tool", async () => {
     const { store, runtime } = await fixture()
     const plugin = createAskUserServerPlugin({ store, runtime, sessionId: "s1" })
     expect(plugin.id).toBe("ask-user")
     expect(plugin.routes).toEqual(expect.any(Function))
     expect(plugin.agentTools).toHaveLength(1)
+    expect(plugin.workspaceBridgeHandlers?.map((entry) => entry.definition.op)).toEqual([
+      "human-input.v1.request",
+      "human-input.v1.answer",
+      "human-input.v1.cancel",
+      "human-input.v1.pending",
+      "human-input.v1.transcript",
+    ])
+  })
+
+  it("rejects legacy route options instead of silently ignoring them", async () => {
+    const { store, runtime } = await fixture()
+    expect(() => createAskUserServerPlugin({ store, runtime, routes: {} })).toThrow(/no longer registers/)
+  })
+
+  it("does not register the legacy plugin-owned question command route by default", async () => {
+    const { store, runtime } = await fixture()
+    const plugin = createAskUserServerPlugin({ store, runtime, sessionId: "s1" })
+    const app = Fastify()
+    await app.register(plugin.routes!)
+    const response = await app.inject({ method: "POST", url: "/api/v1/questions/commands", payload: {} })
+    expect(response.statusCode).toBe(404)
+    await app.close()
   })
 
   it("creates default runtime/store/publisher from workspaceRoot and bridge", async () => {
