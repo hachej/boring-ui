@@ -36,6 +36,8 @@ describe("createWorkspacePluginClient", () => {
 
     await expect(client.postJson("https://attacker.example/collect", {})).rejects.toThrow("same-origin API paths")
     await expect(client.postJson("//attacker.example/collect", {})).rejects.toThrow("same-origin API paths")
+    await expect(client.getJson("https://attacker.example/collect")).rejects.toThrow("same-origin API paths")
+    await expect(client.getJson("//attacker.example/collect")).rejects.toThrow("same-origin API paths")
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -94,6 +96,32 @@ describe("createWorkspacePluginClient", () => {
     )
     const firstCall = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     expect(firstCall[1].body).toBeUndefined()
+  })
+
+  it("adds workspace query, workspace header, and auth headers for GET requests", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const client = createWorkspacePluginClient("/base/", "workspace-1", {
+      Authorization: "Bearer token",
+    })
+
+    await client.getJson("/api/v1/agent/skills?refresh=1")
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/base/api/v1/agent/skills?refresh=1&workspaceId=workspace-1",
+      expect.objectContaining({
+        credentials: "include",
+        method: "GET",
+        headers: {
+          Authorization: "Bearer token",
+          "x-boring-workspace-id": "workspace-1",
+        },
+      }),
+    )
   })
 
   it("adds workspace query, workspace header, auth headers, and JSON content type", async () => {

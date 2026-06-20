@@ -161,6 +161,7 @@ export function WorkspaceShell() {
       persistenceEnabled
       debug
       providerStorageKey={showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${workspaceId}`}
+      workspaceLayout="plugin-tabs"
       appTitle={showcase ? "Boring" : projectName}
       workspaceLabel={showcase ? undefined : projectName}
       defaultSessionTitle={showcase ? "New session" : projectName}

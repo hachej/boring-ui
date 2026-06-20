@@ -24,6 +24,8 @@ export { normalizeSurfaceOpenRequest, resolvePanelForPath } from "./surfaceShell
 
 export interface SurfaceShellTab {
   id: string
+  /** Registered panel component id for this tab. May differ from the tab instance id. */
+  component?: string
   title: string
   params?: Record<string, unknown>
 }
@@ -423,11 +425,15 @@ export function SurfaceShell({
   const getSnapshot = useCallback((): SurfaceShellSnapshot => {
     const api = apiRef.current
     if (!api) return { openTabs: [], activeTab: null }
-    const openTabs: SurfaceShellTab[] = api.panels.map((p) => ({
-      id: p.id,
-      title: (p.title ?? p.id) as string,
-      params: (p.params as Record<string, unknown> | undefined) ?? undefined,
-    }))
+    const openTabs: SurfaceShellTab[] = api.panels.map((p) => {
+      const component = dockviewPanelComponent(p)
+      return {
+        id: p.id,
+        ...(component ? { component } : {}),
+        title: (p.title ?? p.id) as string,
+        params: (p.params as Record<string, unknown> | undefined) ?? undefined,
+      }
+    })
     return { openTabs, activeTab: api.activePanel?.id ?? null }
   }, [])
 
