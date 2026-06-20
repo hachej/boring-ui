@@ -8,21 +8,15 @@ import {
 import { createTestBridgeOperationDefinition } from "../testing/harness"
 
 const browserOp = createTestBridgeOperationDefinition({
-  op: "human-input.v1.answer",
+  op: "example.v1.respond",
   callerClassesAllowed: ["browser"],
-  requiredCapabilities: ["human-input:answer"],
+  requiredCapabilities: ["example:respond"],
 })
 
 const runtimeOnlyOp = createTestBridgeOperationDefinition({
-  op: "macro.v1.transform.persist",
+  op: "example.v1.records.write",
   callerClassesAllowed: ["runtime"],
-  requiredCapabilities: ["macro:transform.persist"],
-})
-
-const transcriptOp = createTestBridgeOperationDefinition({
-  op: "human-input.v1.transcript",
-  callerClassesAllowed: ["browser", "server"],
-  requiredCapabilities: ["human-input:transcript.read"],
+  requiredCapabilities: ["example:records.write"],
 })
 
 describe("BridgeAuthPolicy adapters", () => {
@@ -32,7 +26,7 @@ describe("BridgeAuthPolicy adapters", () => {
       authorizeWorkspace: ({ workspaceId }) => ({
         allowed: workspaceId === "workspace-1",
         role: "member",
-        capabilities: ["human-input:answer"],
+        capabilities: ["example:respond"],
       }),
       allowedOrigins: ["https://app.example.test"],
       requireCsrfHeader: true,
@@ -55,7 +49,7 @@ describe("BridgeAuthPolicy adapters", () => {
       callerClass: "browser",
       workspaceId: "workspace-1",
       sessionId: "session-1",
-      capabilities: ["human-input:answer"],
+      capabilities: ["example:respond"],
       actor: {
         actorKind: "human",
         performedBy: { label: "user:u1@example.test", id: "user-1" },
@@ -70,7 +64,7 @@ describe("BridgeAuthPolicy adapters", () => {
       getPrincipal: () => principal,
       authorizeWorkspace: ({ workspaceId }) => ({
         allowed: workspaceId === "workspace-1",
-        capabilities: ["human-input:answer"],
+        capabilities: ["example:respond"],
       }),
     })
 
@@ -82,7 +76,7 @@ describe("BridgeAuthPolicy adapters", () => {
 
     const unauthenticated = createBrowserBridgeAuthPolicy({
       getPrincipal: () => null,
-      authorizeWorkspace: () => ({ allowed: true, capabilities: ["human-input:answer"] }),
+      authorizeWorkspace: () => ({ allowed: true, capabilities: ["example:respond"] }),
     })
     await expect(unauthenticated.resolve({
       callerClass: "browser",
@@ -94,7 +88,7 @@ describe("BridgeAuthPolicy adapters", () => {
   it("denies browser callers for runtime-only operations", async () => {
     const policy = createBrowserBridgeAuthPolicy({
       getPrincipal: () => ({ userId: "user-1" }),
-      authorizeWorkspace: () => ({ allowed: true, capabilities: ["macro:transform.persist"] }),
+      authorizeWorkspace: () => ({ allowed: true, capabilities: ["example:records.write"] }),
     })
 
     await expect(policy.resolve({
@@ -107,7 +101,7 @@ describe("BridgeAuthPolicy adapters", () => {
   it("ignores browser body spoofing for callerClass, workspace, session, and actor attribution", async () => {
     const policy = createBrowserBridgeAuthPolicy({
       getPrincipal: () => ({ userId: "user-1" }),
-      authorizeWorkspace: () => ({ allowed: true, capabilities: ["human-input:answer"] }),
+      authorizeWorkspace: () => ({ allowed: true, capabilities: ["example:respond"] }),
     })
     const body = {
       callerClass: "server",
@@ -136,7 +130,7 @@ describe("BridgeAuthPolicy adapters", () => {
   it("supports local CLI/no-auth browser policy without Better Auth or core DB", async () => {
     const policy = createLocalCliBridgeAuthPolicy({
       workspaceId: "workspace-local",
-      capabilities: ["human-input:answer"],
+      capabilities: ["example:respond"],
     })
 
     const resolved = await policy.resolve({
@@ -149,30 +143,6 @@ describe("BridgeAuthPolicy adapters", () => {
       callerClass: "browser",
       workspaceId: "workspace-local",
       actor: { actorKind: "human", performedBy: { label: "local-cli:user" } },
-    })
-  })
-
-  it("represents super-admin/debug transcript access while normal browser is denied", async () => {
-    const normal = createBrowserBridgeAuthPolicy({
-      getPrincipal: () => ({ userId: "user-1", roles: ["member"] }),
-      authorizeWorkspace: () => ({ allowed: true, capabilities: [] }),
-    })
-    await expect(normal.resolve({
-      callerClass: "browser",
-      definition: transcriptOp,
-      workspaceId: "workspace-1",
-    })).rejects.toMatchObject({ code: WorkspaceBridgeErrorCode.CapabilityDenied })
-
-    const debug = createBrowserBridgeAuthPolicy({
-      getPrincipal: () => ({ userId: "debug-1", roles: ["debug"] }),
-      authorizeWorkspace: () => ({ allowed: true, capabilities: [] }),
-    })
-    await expect(debug.resolve({
-      callerClass: "browser",
-      definition: transcriptOp,
-      workspaceId: "workspace-1",
-    })).resolves.toMatchObject({
-      context: { capabilities: ["human-input:transcript.read"] },
     })
   })
 })

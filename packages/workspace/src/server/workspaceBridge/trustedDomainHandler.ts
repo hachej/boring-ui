@@ -5,9 +5,9 @@ import {
   type BridgeIdempotencyPolicy,
   type WorkspaceBridgeOperationDefinition,
 } from "../../shared/workspace-bridge-rpc"
-import type { WorkspaceBridgeHandler } from "./registry"
+import { RESERVED_WORKSPACE_BRIDGE_OP_PREFIXES, type WorkspaceBridgeHandler } from "./registry"
 
-const DEFAULT_RESERVED_OP_PREFIXES = ["workspace-files.v1."]
+const DEFAULT_RESERVED_OP_PREFIXES = RESERVED_WORKSPACE_BRIDGE_OP_PREFIXES
 const VERSIONED_OP_PATTERN = /^[a-z][a-z0-9-]*\.v[1-9][0-9]*\.[a-z][a-z0-9.-]*$/
 
 export interface TrustedDomainBridgeHandlerPolicy {

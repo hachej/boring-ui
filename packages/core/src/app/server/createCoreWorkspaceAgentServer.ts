@@ -12,6 +12,7 @@ import {
   type RuntimeProvisioningContribution,
 } from '@hachej/boring-agent/server'
 import {
+  assertWorkspaceBridgeHandlersTrusted,
   collectWorkspaceAgentServerPlugins,
   hasDirServerPlugin,
   omitPluginAuthoringProvisioning,
@@ -714,7 +715,7 @@ export async function createCoreWorkspaceAgentServer(
     .filter(Boolean)
     .join('\n\n') || undefined
   const defaultPluginDirEntries: CoreWorkspacePluginEntry[] = defaultPluginPackagePaths
-    .map((dir) => ({ dir, hotReload: false as const }))
+    .map((dir) => ({ dir, hotReload: false as const, trust: 'internal' as const }))
     .filter((entry) => hasDirServerPlugin(entry))
   const pluginEntries: CoreWorkspacePluginEntry[] = [
     ...defaultPluginDirEntries,
@@ -725,10 +726,14 @@ export async function createCoreWorkspaceAgentServer(
     bridge: createUnavailableCorePluginBridge(),
   }
   const resolvedPlugins = await Promise.all(
-    pluginEntries.map((entry) => resolveOnePluginEntry<CoreWorkspaceAgentServerPlugin>(
-      entry,
-      pluginResolveContext,
-    )),
+    pluginEntries.map(async (entry) => {
+      const plugin = await resolveOnePluginEntry<CoreWorkspaceAgentServerPlugin>(
+        entry,
+        pluginResolveContext,
+      )
+      assertWorkspaceBridgeHandlersTrusted(plugin, entry)
+      return plugin
+    }),
   )
 
   const externalPluginsEnabled = options.externalPlugins !== false
@@ -756,7 +761,13 @@ export async function createCoreWorkspaceAgentServer(
     return root
   }
   const coreBridge = createCoreWorkspaceBridge({
-    workspaceBridge: options.workspaceBridge,
+    workspaceBridge: {
+      ...options.workspaceBridge,
+      handlers: [
+        ...(options.workspaceBridge?.handlers ?? []),
+        ...(pluginCollection.workspaceBridgeHandlers ?? []),
+      ],
+    },
     resolveWorkspaceId,
     workspaceStore,
     corsOrigins: app.config.cors.origins,

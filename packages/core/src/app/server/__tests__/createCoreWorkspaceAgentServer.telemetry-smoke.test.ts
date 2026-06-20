@@ -137,7 +137,6 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
 
 vi.mock('@hachej/boring-workspace/server', () => ({
   createBrowserBridgeAuthPolicy: () => vi.fn(),
-  createHumanInputBridgeHandlers: () => [],
   createInMemoryBridge: () => ({
     drainCommands: vi.fn(),
     getState: vi.fn(),
@@ -151,11 +150,7 @@ vi.mock('@hachej/boring-workspace/server', () => ({
     registerHandler: vi.fn(),
   }),
   createWorkspaceUiTools: () => [],
-  InMemoryPendingQuestionStore: class InMemoryPendingQuestionStore {},
   InMemoryWorkspaceBridgeIdempotencyStore: class InMemoryWorkspaceBridgeIdempotencyStore {},
-  PendingQuestionRuntime: class PendingQuestionRuntime {
-    abandonServerRestart = vi.fn()
-  },
   uiRoutes: async () => {},
   workspaceBridgeHttpRoutes: async () => {},
 }))

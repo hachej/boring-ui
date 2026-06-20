@@ -100,11 +100,7 @@ vi.mock('@hachej/boring-workspace/server', () => {
     for (const entry of opts?.handlers ?? []) {
       registry.registerHandler(entry.definition, entry.handler)
     }
-    return {
-      registry,
-      pendingQuestionStore: { async getPending() { return null } },
-      pendingQuestionRuntime: { abandonServerRestart: vi.fn() },
-    }
+    return { registry }
   },
   createWorkspaceBridgeRuntimeEnvContribution: vi.fn((opts: Record<string, unknown>) => {
     workspaceServerMock.runtimeEnvCalls.push(opts)

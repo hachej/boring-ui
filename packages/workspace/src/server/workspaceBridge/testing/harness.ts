@@ -126,7 +126,7 @@ export function createTestRuntimeTokenClaims(
     workspaceId: overrides.workspaceId ?? "workspace-test",
     sessionId: overrides.sessionId ?? "session-test",
     pluginId: overrides.pluginId ?? "plugin-test",
-    capabilities: overrides.capabilities ?? ["macro:catalog.search"],
+    capabilities: overrides.capabilities ?? ["example:catalog.search"],
     expiresAt: overrides.expiresAt ?? "2099-01-01T00:00:00.000Z",
   }
 }

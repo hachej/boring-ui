@@ -28,7 +28,7 @@ describe("WorkspaceBridge test harness", () => {
   it("fakes auth policy capability/resource resolution and runtime token claims", () => {
     const token = createTestRuntimeTokenClaims({
       jti: "jti-secret-token",
-      capabilities: ["macro:catalog.search", "macro:series.data"],
+      capabilities: ["example:catalog.search", "example:records.read"],
     })
     const policy = createFakeBridgeAuthPolicy({
       resourceScopes: { paths: ["generated/out.json"] },
@@ -37,7 +37,7 @@ describe("WorkspaceBridge test harness", () => {
     const resolved = policy.resolve({ callerClass: "runtime", token })
 
     expect(resolved.context.tokenId).toBe("jti-secret-token")
-    expect(resolved.effectiveCapabilities).toContain("macro:series.data")
+    expect(resolved.effectiveCapabilities).toContain("example:records.read")
     expect(resolved.resourceScopes).toMatchObject({
       workspaceId: "workspace-test",
       sessionId: "session-test",
@@ -86,7 +86,7 @@ describe("WorkspaceBridge test harness", () => {
       questionId: "question_1",
       sessionId: "session_1",
       workspaceId: "workspace_1",
-      op: "human-input.v1.answer",
+      op: "example.v1.prompt.answer",
       callerClass: "browser",
       token: "bridge-token-secret",
       answer: "my private answer",
@@ -98,27 +98,27 @@ describe("WorkspaceBridge test harness", () => {
     const text = logger.text()
     assertNoSensitiveBridgeLeaks(text, sensitive)
     expect(text).toContain("req_1")
-    expect(text).toContain("human-input.v1.answer")
+    expect(text).toContain("example.v1.prompt.answer")
     expect(text).toContain(BRIDGE_TEST_REDACTION)
   })
 
   it("supports sample operation, clock, and file-asset fixtures", () => {
     const op = createTestBridgeOperationDefinition({
-      op: "macro.v1.catalog.search",
+      op: "example.v1.catalog.search",
       callerClassesAllowed: ["browser", "runtime", "server"],
-      requiredCapabilities: ["macro:catalog.search"],
+      requiredCapabilities: ["example:catalog.search"],
     })
     const clock = createFakeClock()
     const asset = createTestFileAssetPointer({ path: "generated/macro/catalog.json" })
 
-    expect(op.requiredCapabilities).toEqual(["macro:catalog.search"])
+    expect(op.requiredCapabilities).toEqual(["example:catalog.search"])
     expect(clock.advanceMs(1_000).toISOString()).toBe("2026-01-01T00:00:01.000Z")
     expect(asset).toMatchObject({ kind: "file-asset", path: "generated/macro/catalog.json" })
   })
 
   it("fails fast if a generic workspace-files bridge op is registered", () => {
     expect(() => assertNoGenericWorkspaceFilesOps([
-      createTestBridgeOperationDefinition({ op: "macro.v1.series.data" }),
+      createTestBridgeOperationDefinition({ op: "example.v1.records.read" }),
     ])).not.toThrow()
 
     expect(() => assertNoGenericWorkspaceFilesOps([

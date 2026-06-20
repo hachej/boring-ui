@@ -49,8 +49,9 @@ test.describe("ask_user Questions pane", () => {
 
     const commandStreamReady = page.waitForRequest((request) => request.url().includes("/api/v1/ui/commands/next"), { timeout: 10_000 })
     await page.goto("/", { waitUntil: "domcontentloaded" })
-    await expect(page.getByRole("textbox", { name: "Ask anything…" })).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByText("Nothing open yet")).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole("textbox", { name: "Agent prompt" })).toBeVisible({ timeout: 10_000 })
+    const workbenchButton = page.getByRole("button", { name: /^workbench$/i })
+    if (await workbenchButton.isVisible().catch(() => false)) await workbenchButton.click()
     await commandStreamReady
     await page.request.post("/api/v1/ui/commands", { data: { kind: "openSurface", params: { kind: "questions", target: question.questionId, meta: { question } } } })
 

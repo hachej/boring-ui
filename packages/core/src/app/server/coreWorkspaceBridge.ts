@@ -8,8 +8,6 @@ import {
   runWithWorkspaceBridgeIdempotency,
   verifyWorkspaceBridgeRuntimeToken,
   workspaceBridgeHttpRoutes,
-  type PendingQuestionRuntime,
-  type PendingQuestionStore,
   type UiCommand,
   type WorkspaceBridge,
   type WorkspaceBridgeCallRequest,
@@ -26,8 +24,6 @@ const MAX_SESSION_OWNER_CACHE = 5_000
 
 interface CoreWorkspaceBridgeRuntime {
   registry: WorkspaceBridgeRegistry
-  pendingQuestionStore: PendingQuestionStore
-  pendingQuestionRuntime: PendingQuestionRuntime
   idempotencyStore: WorkspaceBridgeIdempotencyStore
   sessionOwners: Map<string, string>
 }
@@ -65,8 +61,8 @@ export interface CoreWorkspaceBridge {
 /**
  * Multi-tenant WorkspaceBridge wiring for the core app server, extracted from
  * the server composition function. Owns the per-workspace UI bridge map and the
- * per-workspace bridge runtime (registry + pending-question store/runtime +
- * idempotency store + session-owner cache), and exposes the seams the server
+ * per-workspace bridge runtime (registry + idempotency store + session-owner
+ * cache), and exposes the seams the server
  * needs (UI bridge, runtime calls, ownership tracking, env injection, HTTP route).
  */
 export function createCoreWorkspaceBridge(options: CoreWorkspaceBridgeOptions): CoreWorkspaceBridge {
@@ -91,12 +87,9 @@ export function createCoreWorkspaceBridge(options: CoreWorkspaceBridgeOptions): 
       const sessionOwners = new Map<string, string>()
       const core = createWorkspaceBridgeRuntimeCore({
         handlers: options.workspaceBridge?.handlers,
-        resolveOwnerPrincipalId: (sessionId) => sessionOwners.get(sessionId),
       })
       runtime = {
         registry: core.registry,
-        pendingQuestionStore: core.pendingQuestionStore,
-        pendingQuestionRuntime: core.pendingQuestionRuntime,
         idempotencyStore: new InMemoryWorkspaceBridgeIdempotencyStore(),
         sessionOwners,
       }
@@ -122,9 +115,6 @@ export function createCoreWorkspaceBridge(options: CoreWorkspaceBridgeOptions): 
     if (!sessionId) return
     const workspaceId = await resolveWorkspaceId(request)
     const runtime = getRuntime(workspaceId)
-    const pending = await runtime.pendingQuestionStore.getPending(sessionId)
-    const pendingOwnerId = pending?.ownerPrincipalId
-    if (pendingOwnerId && pendingOwnerId !== user.id) return
     runtime.sessionOwners.delete(sessionId)
     runtime.sessionOwners.set(sessionId, user.id)
     // Synchronous FIFO eviction — never block the request on async store reads.

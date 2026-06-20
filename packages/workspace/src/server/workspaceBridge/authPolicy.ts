@@ -103,7 +103,7 @@ export function createBrowserBridgeAuthPolicy(
         )
       }
 
-      const capabilities = withTranscriptDebugCapability(grant.capabilities, principal.roles)
+      const capabilities = grant.capabilities
       ensureCapabilities(capabilities, input.requiredCapabilities ?? input.definition.requiredCapabilities)
 
       const context = makeContext({
@@ -226,16 +226,6 @@ function firstHeader(
   if (!headers) return undefined
   const direct = headers[name] ?? headers[name.toLowerCase()]
   return Array.isArray(direct) ? direct[0] : direct
-}
-
-function withTranscriptDebugCapability(
-  capabilities: readonly string[],
-  roles: readonly string[] | undefined,
-): readonly string[] {
-  if (!roles?.some((role) => role === "super-admin" || role === "debug")) {
-    return capabilities
-  }
-  return Array.from(new Set([...capabilities, "human-input:transcript.read"]))
 }
 
 function makeContext(context: BridgeAuthContext): BridgeAuthContext {

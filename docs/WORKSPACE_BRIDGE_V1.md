@@ -5,13 +5,13 @@ WorkspaceBridge v1 lets sandboxed runtimes call host-owned workspace operations 
 It adds a bounded RPC lane next to the existing UI bridge lane:
 
 - **UI lane:** `postCommand(...)` remains the canonical UI command dispatch API. `emitUiEffect(...)` is kept as a compatibility alias where older bridge callers use that name.
-- **RPC lane:** `call(op, input, options)` / `registerHandler(...)` is request-response host capability RPC.
+- **RPC lane:** `call(op, input, options)` / registered handlers provide request-response host capability RPC.
 
-The RPC lane is not a generic HTTP proxy. Handlers must be explicitly registered by the host with an operation definition, allowed caller classes, capability requirements, size limits, timeout, and idempotency policy.
+The RPC lane is not a generic HTTP proxy. Handlers must be explicitly registered with an operation definition, allowed caller classes, capability requirements, size limits, timeout, and idempotency policy.
 
-## Runtime bridge env
+## Handler registration
 
-A bridge-capable app opts in through `workspaceBridge` server options:
+Apps can register bridge handlers directly:
 
 ```ts
 createWorkspaceAgentServer({
@@ -19,7 +19,7 @@ createWorkspaceAgentServer({
     runtimeTokenSecret: process.env.BORING_WORKSPACE_BRIDGE_TOKEN_SECRET,
     runtimeEnv: {
       bridgeUrl: "https://app.example.com", // or full /api/v1/workspace-bridge/call URL
-      capabilities: ["macro:series.read", "macro:transform.persist"],
+      capabilities: ["example:read", "example:write"],
     },
     handlers: [{ definition, handler }],
   },
@@ -27,6 +27,21 @@ createWorkspaceAgentServer({
 ```
 
 `createCoreWorkspaceAgentServer(...)` accepts the same `workspaceBridge` shape.
+
+Trusted boot-time server plugins can also contribute handlers:
+
+```ts
+defineServerPlugin({
+  id: "example-internal-plugin",
+  workspaceBridgeHandlers: [{ definition, handler }],
+})
+```
+
+`workspaceBridgeHandlers` is for app/internal server plugins only. Pre-built plugin objects supplied by host code are trusted. Directory-source server plugins must be installed by the host with `trust: "internal"` before they may contribute bridge handlers; unmarked directory plugins that declare handlers are rejected. User hot-reload/runtime plugins should not self-register host bridge operations; they should call operations exposed by the app or trusted internal plugins.
+
+Product-specific operation names and validation belong to the product/plugin that owns the domain. `@hachej/boring-workspace` only provides the generic bridge registry, auth, token, idempotency, and transport machinery.
+
+## Runtime bridge env
 
 When enabled and valid, agent/runtime executions receive:
 
@@ -45,10 +60,10 @@ TypeScript runtime code should use the package client:
 import { WorkspaceBridgeClient } from "@hachej/boring-workspace/bridge-client"
 
 const bridge = WorkspaceBridgeClient.fromEnv()
-await bridge.call("macro.v1.transform.persist", {
-  output_id: "GDP_YOY",
-  title: "GDP YoY",
-}, { idempotencyKey: "macro-transform:GDP_YOY" })
+await bridge.call("example.v1.write", {
+  id: "output-1",
+  title: "Generated output",
+}, { idempotencyKey: "example-write:output-1" })
 ```
 
 Non-TypeScript runtimes can call the HTTP transport directly:
@@ -60,9 +75,9 @@ resp = requests.post(
     os.environ["BORING_WORKSPACE_BRIDGE_URL"],
     headers={"authorization": f"Bearer {os.environ['BORING_WORKSPACE_BRIDGE_TOKEN']}"},
     json={
-        "op": "macro.v1.transform.persist",
-        "idempotencyKey": "macro-transform:GDP_YOY",
-        "input": {"output_id": "GDP_YOY", "title": "GDP YoY"},
+        "op": "example.v1.write",
+        "idempotencyKey": "example-write:output-1",
+        "input": {"id": "output-1", "title": "Generated output"},
     },
     timeout=30,
 )
@@ -83,4 +98,4 @@ Never log tokens, Authorization headers, full payloads, host paths, user answers
 
 ## Why this matters
 
-The bridge fixes remote-sandbox tools that previously assumed the app was reachable at `127.0.0.1`. For example, MacroAnalyst `bm` transforms can use the injected bridge URL/token to call the real app backend instead of a sandbox-local port, without exposing a global backend token.
+The bridge fixes remote-sandbox tools that previously assumed the app was reachable at `127.0.0.1`. Downstream apps can register their own domain operations and let sandboxed tools call the real app backend through scoped bridge env instead of exposing a global backend token.

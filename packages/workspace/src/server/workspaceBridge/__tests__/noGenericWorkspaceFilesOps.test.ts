@@ -8,11 +8,15 @@ describe("WorkspaceBridge v1 no generic workspace-files API guardrail", () => {
   test("registered bridge definitions must not include workspace-files.v1 operations", () => {
     const registry = new WorkspaceBridgeRegistry()
     registry.registerHandler(
-      createTestBridgeOperationDefinition({ op: "macro.v1.series.data" }),
+      createTestBridgeOperationDefinition({ op: "example.v1.records.read" }),
       () => ({ values: [] }),
     )
 
     expect(() => assertNoGenericWorkspaceFilesOps(registry.listDefinitions())).not.toThrow()
+    expect(() => registry.registerHandler(
+      createTestBridgeOperationDefinition({ op: "workspace-files.v1.read" }),
+      () => ({ content: "not allowed" }),
+    )).toThrow(expect.objectContaining({ code: WorkspaceBridgeErrorCode.InvalidRequest }))
   })
 
   test("trusted domain helper also rejects workspace-files.v1 operations", () => {

@@ -30,6 +30,7 @@ import { RuntimeBackendRegistry, runtimeBackendGateway } from "../../server/runt
 import { aggregatePluginPrompts } from "../../server/agentPlugins/aggregatePluginPrompts"
 import { normalizeBoringPluginPiPackages } from "../../server/agentPlugins/piPackages"
 import {
+  assertWorkspaceBridgeHandlersTrusted,
   hasDirServerPlugin,
   resolveOnePluginEntry,
   type DirPluginEntry,
@@ -47,8 +48,6 @@ import {
   InMemoryWorkspaceBridgeIdempotencyStore,
   createWorkspaceBridgeRuntimeEnvContribution,
   workspaceBridgeHttpRoutes,
-  PendingQuestionRuntime,
-  type PendingQuestionStore,
   type WorkspaceBridgeHandler,
   type WorkspaceBridgeOperationDefinition,
   type WorkspaceBridgeRegistry,
@@ -90,10 +89,11 @@ export interface WorkspaceAgentServerPluginContext {
 /**
  * Single install entry type. Accepts:
  *  - `WorkspaceServerPlugin` — pre-built plugin object.
- *  - `{ dir, options?, hotReload? }` — directory-source plugin resolved
+ *  - `{ dir, options?, hotReload?, trust? }` — directory-source plugin resolved
  *     via explicit package.json#boring.server. Declared-but-missing throws.
  *     hotReload uses jiti for diagnostic re-imports, while route/tool
- *     registration is still boot-time.
+ *     registration is still boot-time. Directory entries may contribute
+ *     `workspaceBridgeHandlers` only when marked `trust: "internal"`.
  */
 export type WorkspacePluginEntry = WorkspaceServerPlugin | DirPluginEntry
 
@@ -101,8 +101,10 @@ export interface CreateWorkspaceAgentServerOptions
   extends WorkspaceAgentCreateOptions,
     Pick<ServerBootstrapOptions, "defaults" | "excludeDefaults"> {
   /**
-   * Plugins to install. Accepts pre-built `WorkspaceServerPlugin` objects
-   * or `{ dir, options?, hotReload? }` directory-source entries.
+   * Host-installed server plugins. Accepts pre-built `WorkspaceServerPlugin`
+   * objects or `{ dir, options?, hotReload?, trust? }` directory-source entries.
+   * Directory entries may contribute privileged `workspaceBridgeHandlers` only
+   * when explicitly marked `trust: "internal"`.
    */
   plugins?: WorkspacePluginEntry[]
   provisionWorkspace?: boolean
@@ -129,10 +131,6 @@ export interface CreateWorkspaceAgentServerOptions
    * live under the app directory.
    */
   appRoot?: string
-  humanInput?: {
-    pendingQuestionStore?: PendingQuestionStore
-    pendingQuestionRuntime?: PendingQuestionRuntime
-  }
   workspaceBridge?: {
     registry?: WorkspaceBridgeRegistry
     runtimeTokenSecret?: string
@@ -324,6 +322,7 @@ export interface WorkspaceAgentServerPluginCollection {
   provisioningContributions: WorkspaceProvisioningContribution[]
   runtimePlugins: WorkspaceRuntimeProvisioningInput[]
   routeContributions: WorkspaceRouteContribution[]
+  workspaceBridgeHandlers: WorkspaceServerPlugin["workspaceBridgeHandlers"]
   preservedUiStateKeys: string[]
   agentOptions: Pick<
     WorkspaceAgentCreateOptions,
@@ -388,6 +387,7 @@ export function collectWorkspaceAgentServerPlugins(
       ...result.runtimePlugins,
     ],
     routeContributions: result.routeContributions,
+    workspaceBridgeHandlers: result.workspaceBridgeHandlers,
     preservedUiStateKeys: result.preservedUiStateKeys,
     agentOptions: {
       extraTools: result.agentTools,
@@ -602,16 +602,6 @@ export async function createWorkspaceAgentServer(
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const bridge = createInMemoryBridge()
   const unregisterUiBridge = registerWorkspaceUiBridge(bridge)
-  const {
-    registry: workspaceBridgeRegistry,
-    pendingQuestionStore: effectivePendingQuestionStore,
-    pendingQuestionRuntime,
-  } = createWorkspaceBridgeRuntimeCore({
-    registry: opts.workspaceBridge?.registry,
-    pendingQuestionStore: opts.humanInput?.pendingQuestionStore,
-    pendingQuestionRuntime: opts.humanInput?.pendingQuestionRuntime,
-    handlers: opts.workspaceBridge?.handlers,
-  })
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
   const workspaceFsCapability = modeAdapter.workspaceFsCapability ?? "best-effort"
@@ -635,7 +625,7 @@ export async function createWorkspaceAgentServer(
     anchorDir: opts.appRoot,
   })
   const defaultPluginDirEntries: WorkspacePluginEntry[] = defaultPluginPackagePaths
-    .map((dir) => ({ dir, hotReload: true }))
+    .map((dir) => ({ dir, hotReload: true, trust: "internal" as const }))
     .filter((entry) => hasDirServerPlugin(entry))
 
   const allPluginEntries: WorkspacePluginEntry[] = [
@@ -645,7 +635,11 @@ export async function createWorkspaceAgentServer(
   // Each entry (pre-built plugin or { dir, ... }) is resolved by
   // resolveOnePluginEntry. Same logic serves rebuilds on /reload.
   const resolvedPlugins = await Promise.all(
-    allPluginEntries.map((entry) => resolveOnePluginEntry<WorkspaceServerPlugin>(entry, ctx)),
+    allPluginEntries.map(async (entry) => {
+      const plugin = await resolveOnePluginEntry<WorkspaceServerPlugin>(entry, ctx)
+      assertWorkspaceBridgeHandlersTrusted(plugin, entry)
+      return plugin
+    }),
   )
   const pluginAuthoringEnabled = externalPluginsEnabled
     && (opts.installPluginAuthoring ?? workspaceFsCapability === "strong")
@@ -654,6 +648,14 @@ export async function createWorkspaceAgentServer(
     ...opts,
     plugins: resolvedPlugins,
     installPluginAuthoring: pluginAuthoringEnabled,
+  })
+
+  const { registry: workspaceBridgeRegistry } = createWorkspaceBridgeRuntimeCore({
+    registry: opts.workspaceBridge?.registry,
+    handlers: [
+      ...(opts.workspaceBridge?.handlers ?? []),
+      ...(pluginCollection.workspaceBridgeHandlers ?? []),
+    ],
   })
 
   // Static Pi resources known at boot: workspace skill dir,
@@ -885,14 +887,12 @@ export async function createWorkspaceAgentServer(
   // also wired into `beforeReload` so /reload triggers it automatically.
   interface BoringWorkspaceInternals {
     __boringWorkspaceBridgeRegistry?: WorkspaceBridgeRegistry
-    __boringPendingQuestionRuntime?: PendingQuestionRuntime
     __boringRebuildPlugins?: () => Promise<PluginRebuildResult>
     __boringAssetManager?: BoringPluginAssetManager
     __boringRuntimeBackendRegistry?: RuntimeBackendRegistry
   }
   const internals = app as FastifyInstance & BoringWorkspaceInternals
   internals.__boringWorkspaceBridgeRegistry = workspaceBridgeRegistry
-  internals.__boringPendingQuestionRuntime = pendingQuestionRuntime
   internals.__boringRebuildPlugins = rebuildPlugins
   internals.__boringAssetManager = boringAssetManager
   internals.__boringRuntimeBackendRegistry = runtimeBackendRegistry

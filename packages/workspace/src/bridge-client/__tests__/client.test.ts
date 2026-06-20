@@ -22,7 +22,7 @@ describe("WorkspaceBridgeClient", () => {
       BORING_WORKSPACE_BRIDGE_TOKEN: "secret-token",
     }, { fetch: fetchMock })
 
-    const output = await client.call("macro.v1.series.data", { seriesId: "GDPC1" }, { requestId: "req-1" })
+    const output = await client.call("example.v1.records.read", { seriesId: "GDPC1" }, { requestId: "req-1" })
 
     expect(output).toEqual({ value: 42 })
     expect(fetchMock).toHaveBeenCalledWith("https://example.test/api/v1/workspace-bridge/call", {
@@ -31,7 +31,7 @@ describe("WorkspaceBridgeClient", () => {
         "content-type": "application/json",
         authorization: "Bearer secret-token",
       },
-      body: JSON.stringify({ op: "macro.v1.series.data", input: { seriesId: "GDPC1" }, requestId: "req-1" }),
+      body: JSON.stringify({ op: "example.v1.records.read", input: { seriesId: "GDPC1" }, requestId: "req-1" }),
     })
   })
 
@@ -43,13 +43,13 @@ describe("WorkspaceBridgeClient", () => {
       fetch: fetchMock,
     })
 
-    await client.call("macro.v1.transform.persist", { id: "t1" }, {
+    await client.call("example.v1.records.write", { id: "t1" }, {
       idempotencyKey: "idem-1",
     })
 
     const body = JSON.parse((fetchMock.mock.calls[0]?.[1] as RequestInit).body as string)
     expect(body).toEqual({
-      op: "macro.v1.transform.persist",
+      op: "example.v1.records.write",
       input: { id: "t1" },
       idempotencyKey: "idem-1",
     })
@@ -67,7 +67,7 @@ describe("WorkspaceBridgeClient", () => {
       fetch: fetchMock,
     })
 
-    await expect(client.call("macro.v1.series.data", {})).rejects.toMatchObject({
+    await expect(client.call("example.v1.records.read", {})).rejects.toMatchObject({
       name: "WorkspaceBridgeClientError",
       code: "BRIDGE_CAPABILITY_DENIED",
       status: 403,

@@ -18,7 +18,7 @@ function mint(overrides: Partial<Parameters<typeof mintWorkspaceBridgeRuntimeTok
     workspaceId: "workspace-1",
     sessionId: "session-1",
     runtimeId: "runtime-1",
-    capabilities: ["macro:catalog.search", "macro:series.data"],
+    capabilities: ["example:catalog.search", "example:records.read"],
     nowMs: NOW,
     ttlMs: 60_000,
     jti: "jti-1",
@@ -32,7 +32,7 @@ describe("WorkspaceBridge runtime token primitives", () => {
     const verified = verifyWorkspaceBridgeRuntimeToken(token, {
       secret: SECRET,
       nowMs: NOW + 1_000,
-      requiredCapabilities: ["macro:catalog.search"],
+      requiredCapabilities: ["example:catalog.search"],
     })
 
     expect(verified.claims).toMatchObject({
@@ -82,7 +82,7 @@ describe("WorkspaceBridge runtime token primitives", () => {
     expect(() => verifyWorkspaceBridgeRuntimeToken(mint(), {
       secret: SECRET,
       nowMs: NOW,
-      requiredCapabilities: ["macro:sql.query"],
+      requiredCapabilities: ["example:query"],
     })).toThrow(expect.objectContaining({ code: WorkspaceBridgeErrorCode.CapabilityDenied }))
   })
 

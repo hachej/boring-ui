@@ -15,11 +15,11 @@ const auth = createTestBridgeContext({
   tokenId: "secret-token-jti",
 })
 const requiredDefinition = createTestBridgeOperationDefinition<{ value: string }, { ok: boolean }>({
-  op: "macro.v1.transform.persist",
+  op: "example.v1.records.write",
   idempotencyPolicy: "required",
 })
 const answerDefinition = createTestBridgeOperationDefinition({
-  op: "human-input.v1.answer",
+  op: "example.v1.prompt.answer",
   idempotencyPolicy: "required",
 })
 

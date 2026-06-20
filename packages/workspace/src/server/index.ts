@@ -44,6 +44,7 @@ export type {
 export {
   WorkspaceBridgeRegistry,
   createWorkspaceBridgeRegistry,
+  validateWorkspaceBridgeOperationDefinition,
 } from "./workspaceBridge/registry"
 export type {
   RegisterWorkspaceBridgeHandlerOptions,
@@ -100,25 +101,11 @@ export {
   resolveBridgeCallUrl,
 } from "./workspaceBridge/runtimeEnv"
 export { defineTrustedDomainBridgeHandler } from "./workspaceBridge/trustedDomainHandler"
-export { MACRO_BRIDGE_OPS, guardMacroSqlQuery, registerMacroBridgeHandlers } from "./workspaceBridge/macroBridgeHandlers"
 export type {
   CreateWorkspaceBridgeRuntimeEnvContributionOptions,
   WorkspaceBridgeRuntimeEnvDisabledReason,
   WorkspaceBridgeRuntimeEnvOptions,
 } from "./workspaceBridge/runtimeEnv"
-export type {
-  MacroBridgeDataService,
-  MacroBridgeHandlersOptions,
-  MacroBridgeInput,
-  MacroFileAssetWriteInput,
-  MacroFileAssetWriter,
-  MacroBridgeOp,
-  MacroBridgeOutput,
-  MacroBridgeServiceContext,
-  MacroSqlGuardDefaults,
-  MacroSqlQueryInput,
-  RegisteredMacroBridgeHandlers,
-} from "./workspaceBridge/macroBridgeHandlers"
 export type {
   TrustedDomainBridgeHandlerOptions,
   TrustedDomainBridgeHandlerPolicy,
@@ -126,20 +113,6 @@ export type {
 } from "./workspaceBridge/trustedDomainHandler"
 export { createWorkspaceBridgeRuntimeCore } from "./workspaceBridge/runtimeCore"
 export type { WorkspaceBridgeRuntimeCore, WorkspaceBridgeRuntimeCoreOptions } from "./workspaceBridge/runtimeCore"
-export { createHumanInputBridgeHandlers, HUMAN_INPUT_OPS } from "./humanInput/humanInputBridgeHandlers"
-export { PendingQuestionRuntime } from "./humanInput/pendingQuestionRuntime"
-export { InMemoryPendingQuestionStore, PendingQuestionStoreError, PENDING_QUESTION_ERROR_CODES } from "./humanInput/pendingQuestionStore"
-export type {
-  HumanInputBridgeHandlersOptions,
-} from "./humanInput/humanInputBridgeHandlers"
-export type {
-  PendingQuestionAnswer,
-  PendingQuestionCancelReason,
-  PendingQuestionRecord,
-  PendingQuestionStatus,
-  PendingQuestionStore,
-  PendingQuestionTranscriptEvent,
-} from "./humanInput/pendingQuestionStore"
 export {
   bootstrapServer,
   definePluginAsset,
@@ -150,6 +123,7 @@ export {
 export type {
   ServerBootstrapOptions,
   ServerBootstrapResult,
+  WorkspaceBridgeHandlerContribution,
   WorkspacePiPackageSource,
   WorkspaceProvisioningContribution,
   WorkspaceRouteContribution,

@@ -21,11 +21,11 @@ describe("WorkspaceBridge RPC shared contracts", () => {
     }
 
     const definition = {
-      op: "macro.v1.sql.query",
+      op: "example.v1.query",
       version: 1,
       owner: "macro",
       callerClassesAllowed: ["runtime", "server"],
-      requiredCapabilities: ["macro:sql.query"],
+      requiredCapabilities: ["example:query"],
       inputSchema: { type: "object" },
       outputSchema: { type: "object" },
       timeoutMs: 5_000,
@@ -65,13 +65,13 @@ describe("WorkspaceBridge RPC shared contracts", () => {
       workspaceId: "workspace-1",
       sessionId: "session-1",
       pluginId: "macro",
-      capabilities: ["macro:catalog.search"],
+      capabilities: ["example:catalog.search"],
       actor,
       tokenId: "jti-redacted",
     } satisfies BridgeAuthContext
 
     const request = {
-      op: "macro.v1.catalog.search",
+      op: "example.v1.catalog.search",
       input: { q: "gdp" },
       requestId: "req_actor",
     } satisfies WorkspaceBridgeCallRequest<{ q: string }>

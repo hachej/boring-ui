@@ -52,24 +52,39 @@ describe("WorkspaceBridgeRegistry", () => {
     )
   })
 
+  it("rejects malformed operation definitions before registration", () => {
+    const registry = createWorkspaceBridgeRegistry()
+    const missingMaxInputBytes = createTestBridgeOperationDefinition({ op: "test.v1.malformed" }) as unknown as Record<string, unknown>
+    delete missingMaxInputBytes.maxInputBytes
+    const nullInputSchema = createTestBridgeOperationDefinition({ op: "test.v1.null-schema" }) as unknown as Record<string, unknown>
+    nullInputSchema.inputSchema = null
+
+    expect(() => registry.registerHandler(missingMaxInputBytes as never, () => ({}))).toThrow(
+      expect.objectContaining({ code: WorkspaceBridgeErrorCode.InvalidRequest }),
+    )
+    expect(() => registry.registerHandler(nullInputSchema as never, () => ({}))).toThrow(
+      expect.objectContaining({ code: WorkspaceBridgeErrorCode.InvalidRequest }),
+    )
+  })
+
   it("validates caller classes and capabilities", async () => {
     const registry = createWorkspaceBridgeRegistry()
     registry.registerHandler(
       createTestBridgeOperationDefinition({
-        op: "macro.v1.series.data",
+        op: "example.v1.records.read",
         callerClassesAllowed: ["runtime"],
-        requiredCapabilities: ["macro:series.data"],
+        requiredCapabilities: ["example:records.read"],
       }),
       () => ({ rows: [] }),
     )
 
     await expect(registry.call(
-      { op: "macro.v1.series.data", input: {}, requestId: "req_browser" },
-      createTestBridgeContext({ callerClass: "browser", capabilities: ["macro:series.data"] }),
+      { op: "example.v1.records.read", input: {}, requestId: "req_browser" },
+      createTestBridgeContext({ callerClass: "browser", capabilities: ["example:records.read"] }),
     )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.CallerNotAllowed } })
 
     await expect(registry.call(
-      { op: "macro.v1.series.data", input: {}, requestId: "req_cap" },
+      { op: "example.v1.records.read", input: {}, requestId: "req_cap" },
       createTestBridgeContext({ callerClass: "runtime", capabilities: [] }),
     )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.CapabilityDenied } })
   })
@@ -97,6 +112,11 @@ describe("WorkspaceBridgeRegistry", () => {
     const context = createTestBridgeContext()
     await expect(registry.call(
       { op: "test.v1.schema", input: { value: 1 }, requestId: "req_input_schema" },
+      context,
+    )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.SchemaInvalid } })
+
+    await expect(registry.call(
+      { op: "test.v1.bad-output", input: null, requestId: "req_json_schema_type" },
       context,
     )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.SchemaInvalid } })
 
@@ -202,7 +222,7 @@ describe("WorkspaceBridgeRegistry", () => {
     const registry = createWorkspaceBridgeRegistry()
     const emitUiEffect = vi.fn(async () => ({ seq: 1, status: "ok" as const }))
     registry.registerHandler(
-      createTestBridgeOperationDefinition({ op: "human-input.v1.request" }),
+      createTestBridgeOperationDefinition({ op: "example.v1.prompt.request" }),
       async ({ emitUiEffect: emit }) => {
         await emit?.({ kind: "openPanel", params: { id: "questions", component: "Questions" } })
         return { questionId: "question-1" }
@@ -210,7 +230,7 @@ describe("WorkspaceBridgeRegistry", () => {
     )
 
     const response = await registry.call(
-      { op: "human-input.v1.request", input: {}, requestId: "req_ui" },
+      { op: "example.v1.prompt.request", input: {}, requestId: "req_ui" },
       { ...createTestBridgeContext(), emitUiEffect },
     )
 

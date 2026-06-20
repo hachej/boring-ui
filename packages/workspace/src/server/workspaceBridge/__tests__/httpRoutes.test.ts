@@ -201,8 +201,8 @@ describe("workspaceBridgeHttpRoutes", () => {
 
   it("in-process registry calls do not require the HTTP route", async () => {
     const registry = createWorkspaceBridgeRegistry()
-    registry.registerHandler(createTestBridgeOperationDefinition({ op: "human-input.v1.request" }), () => ({ questionId: "q1" }))
-    await expect(registry.call({ op: "human-input.v1.request", input: {} }, {
+    registry.registerHandler(createTestBridgeOperationDefinition({ op: "example.v1.prompt.request" }), () => ({ questionId: "q1" }))
+    await expect(registry.call({ op: "example.v1.prompt.request", input: {} }, {
       callerClass: "server",
       workspaceId: "workspace-1",
       capabilities: [],
