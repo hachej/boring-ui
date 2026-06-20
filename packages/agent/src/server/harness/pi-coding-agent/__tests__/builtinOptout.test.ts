@@ -8,9 +8,9 @@ describe("pi built-in tools opt-out", () => {
     "utf8",
   )
 
-  it("uses an empty built-in tool list while still wiring custom tools", () => {
-    expect(harnessSource).toContain("tools: []")
-    expect(harnessSource).not.toContain('noTools: "builtin"')
+  it("disables only Pi built-in tools while still wiring custom tools", () => {
+    expect(harnessSource).toContain('noTools: "builtin"')
+    expect(harnessSource).not.toContain("tools: []")
   })
 
   it("passes customTools to createAgentSession for our adapted tools", () => {
