@@ -14,6 +14,7 @@ import { PanelLeftClose, Search, X } from "lucide-react"
 import { IconButton, Input } from "@hachej/boring-ui-kit"
 import { ControlTooltip } from "../../components/ControlTooltip"
 import { cn } from "../../lib/utils"
+import { PaneCollapseButton } from "../../layout/paneCollapseButton"
 import type { FileTreeBridge } from "../../bridge/types"
 import { useRegistry, useWorkspaceSourceRegistry } from "../../registry"
 import type { PanelConfig, WorkspaceSourceConfig } from "../../registry/types"
@@ -234,16 +235,9 @@ export function WorkbenchLeftPane({
       aria-label="Workspace categories"
     >
       {onCollapse && (
-        <ControlTooltip label="Hide workspace menu" side="right">
-          <button
-            type="button"
-            aria-label="Hide workspace menu"
-            onClick={onCollapse}
-            className="mb-1 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-          >
-            <PanelLeftClose className="h-4 w-4" strokeWidth={1.75} />
-          </button>
-        </ControlTooltip>
+        <PaneCollapseButton label="Hide workspace menu" side="right" onClick={onCollapse} className="mb-1">
+          <PanelLeftClose className="h-4 w-4" strokeWidth={1.75} />
+        </PaneCollapseButton>
       )}
       {tabs.map((entry) => {
         const active = entry.id === activeTab

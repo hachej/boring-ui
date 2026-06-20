@@ -1354,6 +1354,11 @@ export function WorkspaceAgentFront<
         }
       : undefined
   ), [activeChatPaneId, chatPaneIds, isPluginTabsLayout, openChatPane, resolvedSessions, switchToChatPane])
+  const leftOverlayNode = leftOverlay === "skills" ? (
+    <SkillsPage onClose={() => setLeftOverlay(null)} />
+  ) : leftOverlay === "plugins" ? (
+    <PluginsOverlay plugins={capturedPlugins} onClose={() => setLeftOverlay(null)} />
+  ) : null
   const mainContent = remoteSessionsTransitioning ? (
     <ChatSessionTransitionState />
   ) : (
@@ -1372,6 +1377,7 @@ export function WorkspaceAgentFront<
       flashChatPaneId={flashChatPane?.workspaceId === workspaceId ? flashChatPane.id : null}
       surface={surfaceOpen ? "artifact-surface" : null}
       surfaceParams={surfaceParams as Record<string, unknown>}
+      chatOverlay={isPluginTabsLayout ? leftOverlayNode : null}
       surfaceOverlay={workbenchOverlay}
       sidebar={surfaceOpen && !workbenchBlocked && hasLeftTabs && effectiveWorkbenchLeftOpen ? "workbench-left" : null}
       sidebarParams={surfaceOpen && !workbenchBlocked && hasLeftTabs ? {
@@ -1405,16 +1411,11 @@ export function WorkspaceAgentFront<
       } : undefined}
     />
   )
-  const leftOverlayNode = leftOverlay === "skills" ? (
-    <SkillsPage onClose={() => setLeftOverlay(null)} />
-  ) : leftOverlay === "plugins" ? (
-    <PluginsOverlay plugins={capturedPlugins} onClose={() => setLeftOverlay(null)} />
-  ) : null
   const shellContent = isPluginTabsLayout ? (
     <PluginTabsWorkspaceShell
       collapsed={appLeftPaneCollapsed}
       onExpand={() => setAppLeftPaneCollapsed(false)}
-      leftOverlay={leftOverlayNode}
+      onCollapse={() => setAppLeftPaneCollapsed(true)}
       leftPane={(
         <AppLeftPane
           appTitle={appTitle}
@@ -1432,7 +1433,6 @@ export function WorkspaceAgentFront<
           onToggleSessionPinned={toggleSessionPinned}
           onOpenPlugins={() => setLeftOverlay((cur) => cur === "plugins" ? null : "plugins")}
           onOpenSkills={() => setLeftOverlay((cur) => cur === "skills" ? null : "skills")}
-          onCollapse={() => setAppLeftPaneCollapsed(true)}
         />
       )}
     >

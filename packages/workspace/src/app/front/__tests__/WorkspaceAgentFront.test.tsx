@@ -421,7 +421,14 @@ describe("WorkspaceAgentFront", () => {
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
       if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
       if (url.includes("/api/v1/agent/skills")) {
-        return new Response(JSON.stringify({ skills: [{ name: "review", description: "Review the current diff", source: "project" }] }), {
+        return new Response(JSON.stringify({
+          skills: [{
+            name: "review",
+            description: "Review the current diff",
+            source: "project",
+            filePath: ".agents/skills/review/SKILL.md",
+          }],
+        }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         })
@@ -439,26 +446,40 @@ describe("WorkspaceAgentFront", () => {
       panels: [{ id: "overlay-plugin.panel", label: "Demo Panel", placement: "workspace-page", component: PluginPanel }],
     })
 
-    render(
-      <WorkspaceAgentFront
-        workspaceId="plugin-tabs-overlays"
-        workspaceLayout="plugin-tabs"
-        chatPanel={SessionIdChatPanel}
-        sessions={[{ id: "s1", title: "First session" }]}
-        activeSessionId="s1"
-        plugins={[plugin]}
-        persistenceEnabled={false}
-      />,
-    )
+    const commands: UiCommand[] = []
+    const onUiCommand = (event: Event) => commands.push((event as CustomEvent<UiCommand>).detail)
+    window.addEventListener(UI_COMMAND_EVENT, onUiCommand)
+    try {
+      render(
+        <WorkspaceAgentFront
+          workspaceId="plugin-tabs-overlays"
+          workspaceLayout="plugin-tabs"
+          chatPanel={SessionIdChatPanel}
+          sessions={[{ id: "s1", title: "First session" }]}
+          activeSessionId="s1"
+          plugins={[plugin]}
+          persistenceEnabled={false}
+        />,
+      )
 
-    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Skills" }))
-    await waitFor(() => expect(screen.getByText("/review")).toBeInTheDocument())
-    expect(screen.getByText("Review the current diff")).toBeInTheDocument()
+      await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Skills" }))
+      await waitFor(() => expect(screen.getByText("/review")).toBeInTheDocument())
+      expect(screen.getByText("Review the current diff")).toBeInTheDocument()
 
-    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Plugins" }))
-    const overlay = document.querySelector('[data-boring-workspace-part="plugins-overlay"]')
-    expect(overlay).not.toBeNull()
-    expect(overlay!).toHaveTextContent("Demo Plugin")
+      await user.click(screen.getByRole("button", { name: "Open skill review in workspace" }))
+      expect(commands).toContainEqual({
+        kind: "openFile",
+        params: { path: ".agents/skills/review/SKILL.md", mode: "view" },
+      })
+      expect(screen.queryByText("/review")).not.toBeInTheDocument()
+
+      await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Plugins" }))
+      const overlay = document.querySelector('[data-boring-workspace-part="plugins-overlay"]')
+      expect(overlay).not.toBeNull()
+      expect(overlay!).toHaveTextContent("Demo Plugin")
+    } finally {
+      window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)
+    }
   })
 
   it("opens a controlled void-created session as a pane to the right", async () => {

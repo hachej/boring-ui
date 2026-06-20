@@ -1,8 +1,7 @@
 "use client"
 
 import { useMemo, useState, type ReactNode } from "react"
-import { ChevronRight, Clock3, MessageSquarePlus, Pin, Plug, Plus, Search, Sparkles, PanelLeftClose } from "lucide-react"
-import { ControlTooltip } from "../../components/ControlTooltip"
+import { ChevronRight, Clock3, MessageSquarePlus, Pin, Plug, Plus, Search, Sparkles } from "lucide-react"
 import { cn } from "../../lib/utils"
 
 export interface AppLeftPaneSession {
@@ -28,10 +27,7 @@ export interface AppLeftPaneProps {
   onToggleSessionPinned: (id: string) => void
   onOpenPlugins: () => void
   onOpenSkills: () => void
-  /** Collapse the app-left pane to nothing (reveal reserves nothing). Rendered
-   *  as an in-pane control so it matches the workbench-left "Hide workspace
-   *  menu" rail button rather than a floating corner chrome. */
-  onCollapse: () => void
+
 }
 
 type SessionRowState = "normal" | "open" | "active"
@@ -51,7 +47,6 @@ export function AppLeftPane({
   onToggleSessionPinned,
   onOpenPlugins,
   onOpenSkills,
-  onCollapse,
 }: AppLeftPaneProps) {
   const openSet = useMemo(() => new Set(openSessionIds), [openSessionIds])
   const pinnedSet = useMemo(() => new Set(pinnedSessionIds), [pinnedSessionIds])
@@ -90,11 +85,11 @@ export function AppLeftPane({
       className="flex h-full min-h-0 w-[268px] shrink-0 flex-col border-r border-border bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)] text-sm"
       aria-label="App navigation"
     >
-      {/* Top row: current project label (or host topSlot) + in-pane collapse
-          control. The collapse control mirrors the workbench-left "Hide
-          workspace menu" rail button (32px, 16px icon, ghost) so the app-nav
-          collapse reads as the same family as the workspace collapse. */}
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 px-2 py-2">
+      {/* Top row: current project label (or host topSlot). The fixed-position
+          app-nav collapse/expand button is rendered by PluginTabsWorkspaceShell
+          at the same x/y in both states, so reserve the same quiet leading
+          space here instead of moving the button into this row. */}
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 py-2 pl-11 pr-2">
         <div className="min-w-0 flex-1">
           {topSlot ? (
             topSlot
@@ -104,23 +99,13 @@ export function AppLeftPane({
             </span>
           )}
         </div>
-        <ControlTooltip label="Hide app navigation" side="bottom">
-          <button
-            type="button"
-            aria-label="Hide app navigation"
-            onClick={onCollapse}
-            className="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-          >
-            <PanelLeftClose className="h-4 w-4" strokeWidth={1.75} />
-          </button>
-        </ControlTooltip>
       </div>
 
       <nav className="shrink-0 space-y-1 border-b border-border/60 px-2 py-2" aria-label="Primary workspace actions">
-        <PrimaryAction icon={<Plus className="h-4 w-4" />} label="New chat" onClick={onCreateSession} />
-        <PrimaryAction icon={<Search className="h-4 w-4" />} label="Search" onClick={onOpenCommandPalette} />
-        <PrimaryAction icon={<Plug className="h-4 w-4" />} label="Plugins" onClick={onOpenPlugins} />
-        <PrimaryAction icon={<Sparkles className="h-4 w-4" />} label="Skills" onClick={onOpenSkills} />
+        <PrimaryAction icon={<Plus className="h-4 w-4" strokeWidth={1.75} />} label="New chat" onClick={onCreateSession} />
+        <PrimaryAction icon={<Search className="h-4 w-4" strokeWidth={1.75} />} label="Search" onClick={onOpenCommandPalette} />
+        <PrimaryAction icon={<Plug className="h-4 w-4" strokeWidth={1.75} />} label="Plugins" onClick={onOpenPlugins} />
+        <PrimaryAction icon={<Sparkles className="h-4 w-4" strokeWidth={1.75} />} label="Skills" onClick={onOpenSkills} />
       </nav>
 
       <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-2 py-2">
@@ -187,7 +172,7 @@ function CollapsibleSection({
         />
         <span>{title}</span>
       </button>
-      {open ? <div className="mt-0.5 space-y-1.5">{children}</div> : null}
+      {open ? <div className="mt-0.5 space-y-1.5 pl-5">{children}</div> : null}
     </section>
   )
 }
@@ -238,12 +223,12 @@ function AppSessionRow({
         activate()
       }}
       className={cn(
-        "group flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+        "group flex min-h-9 w-full items-center gap-2 rounded-lg border-l-2 px-2.5 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
         state === "active"
-          ? "bg-foreground/[0.09] text-foreground"
+          ? "border-l-[color:var(--accent)] bg-foreground/[0.09] text-foreground"
           : state === "open"
-            ? "bg-foreground/[0.045] text-foreground/90 hover:bg-foreground/[0.07]"
-            : "text-foreground/78 hover:bg-foreground/[0.055] hover:text-foreground",
+            ? "border-l-[color:var(--accent)] bg-transparent text-foreground/90 hover:bg-foreground/[0.04]"
+            : "border-l-transparent text-foreground/78 hover:bg-foreground/[0.055] hover:text-foreground",
       )}
     >
       <Clock3

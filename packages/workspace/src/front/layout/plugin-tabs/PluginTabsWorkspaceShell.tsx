@@ -1,20 +1,16 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { PanelLeftOpen } from "lucide-react"
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react"
 import { cn } from "../../lib/utils"
-import { CornerChromeButton } from "../cornerChrome"
+import { PaneCollapseButton } from "../paneCollapseButton"
 
 export interface PluginTabsWorkspaceShellProps {
   collapsed: boolean
   leftPane: ReactNode
   children: ReactNode
   onExpand: () => void
-  /** Optional content hosted as a chat overlay (e.g. Skills / Plugins).
-   *  When set, rendered over the entire chat region — not as a workbench/
-   *  workspace panel — so it covers all open chat panes (including split
-   *  panes), not just the left edge. */
-  leftOverlay?: ReactNode | null
+  onCollapse: () => void
   className?: string
 }
 
@@ -23,7 +19,7 @@ export function PluginTabsWorkspaceShell({
   leftPane,
   children,
   onExpand,
-  leftOverlay,
+  onCollapse,
   className,
 }: PluginTabsWorkspaceShellProps) {
   return (
@@ -35,36 +31,25 @@ export function PluginTabsWorkspaceShell({
       {collapsed ? null : leftPane}
       <div className="relative min-w-0 flex-1">
         {children}
-        {leftOverlay ? (
-          <div
-            data-boring-workspace-part="chat-left-overlay"
-            className="absolute inset-0 z-40 flex bg-background"
-          >
-            <div className="mx-auto flex w-full max-w-2xl flex-col border-x border-border bg-background">
-              {leftOverlay}
-            </div>
-          </div>
-        ) : null}
       </div>
-      {/* Collapsed-only restore control. When the pane is expanded, the
-          collapse control lives inside AppLeftPane (matching the
-          workbench-left "Hide workspace menu" rail button). When collapsed,
-          render a floating restore control whose icon size (16px) matches the
-          workbench "Show workspace menu" overlay so the two left-pane collapse
-          controls read as the same family. Hidden while a chat overlay is open
-          over the collapsed pane. */}
-      {collapsed && !leftOverlay ? (
-        <div className="pointer-events-none absolute left-3 top-2.5 z-[70]">
-          <CornerChromeButton
-            label="Open app navigation"
-            side="right"
-            onClick={onExpand}
-            pressed={false}
-          >
+
+      {/* One collapse rule: same place, same button style in both states;
+          only the icon changes. The app pane reserves matching header padding
+          while expanded, and the collapsed chat tab strip keeps 48px leading
+          clearance via dockview-overrides.css. */}
+      <div className="pointer-events-none absolute left-1.5 top-2 z-[70]">
+        <PaneCollapseButton
+          label={collapsed ? "Open app navigation" : "Hide app navigation"}
+          side="right"
+          onClick={collapsed ? onExpand : onCollapse}
+        >
+          {collapsed ? (
             <PanelLeftOpen className="h-4 w-4" strokeWidth={1.75} />
-          </CornerChromeButton>
-        </div>
-      ) : null}
+          ) : (
+            <PanelLeftClose className="h-4 w-4" strokeWidth={1.75} />
+          )}
+        </PaneCollapseButton>
+      </div>
     </div>
   )
 }

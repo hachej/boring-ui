@@ -1,9 +1,10 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { RefreshCw, Sparkles, X } from "lucide-react"
+import { FileText, RefreshCw, Sparkles, X } from "lucide-react"
 import { Button, IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
+import { postUiCommand } from "../../bridge"
 import { useWorkspacePluginClient } from "../../plugin/useWorkspacePluginClient"
 import type { PaneProps } from "../../registry/types"
 
@@ -11,6 +12,9 @@ interface SkillSummary {
   name: string
   description?: string
   source?: string
+  /** Absolute path to the skill's SKILL.md. Used to open the skill through
+   *  the workspace UI bridge, not by mutating chat/composer DOM. */
+  filePath?: string
 }
 
 interface SkillsResponse {
@@ -31,6 +35,12 @@ export type SkillsPageProps = Partial<PaneProps> & {
 export function SkillsPage({ onClose }: SkillsPageProps) {
   const client = useWorkspacePluginClient()
   const [state, setState] = useState<LoadState>({ status: "loading", skills: [] })
+
+  const openSkillInWorkspace = useCallback((skill: SkillSummary) => {
+    if (!skill.filePath) return
+    postUiCommand({ kind: "openFile", params: { path: skill.filePath, mode: "view" } })
+    onClose?.()
+  }, [onClose])
 
   const loadSkills = useCallback(async (refresh = false) => {
     setState((current) => ({ status: "loading", skills: current.skills }))
@@ -120,26 +130,54 @@ export function SkillsPage({ onClose }: SkillsPageProps) {
           </div>
         ) : (
           <ul role="list" className="grid gap-2">
-            {sortedSkills.map((skill) => (
-              <li
-                key={skill.name}
-                className="rounded-xl border border-border/60 bg-card/70 px-3 py-2.5 shadow-sm"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium text-foreground">/{skill.name}</div>
-                    {skill.description ? (
-                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{skill.description}</p>
-                    ) : null}
-                  </div>
-                  {skill.source ? (
-                    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                      {skill.source}
-                    </span>
-                  ) : null}
-                </div>
-              </li>
-            ))}
+            {sortedSkills.map((skill) => {
+              const openable = Boolean(skill.filePath)
+              return (
+                <li
+                  key={skill.name}
+                  className={cn(
+                    "rounded-xl border border-border/60 bg-card/70 px-3 py-2.5",
+                    openable
+                      ? "cursor-pointer transition-colors hover:border-border hover:bg-muted/60"
+                      : "",
+                  )}
+                >
+                  {openable ? (
+                    <button
+                      type="button"
+                      onClick={() => openSkillInWorkspace(skill)}
+                      title="Open skill in workspace"
+                      aria-label={`Open skill ${skill.name} in workspace`}
+                      className="block w-full text-left"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-foreground">/{skill.name}</div>
+                          {skill.description ? (
+                            <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{skill.description}</p>
+                          ) : null}
+                        </div>
+                        <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} aria-hidden="true" />
+                      </div>
+                    </button>
+                  ) : (
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-foreground">/{skill.name}</div>
+                        {skill.description ? (
+                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{skill.description}</p>
+                        ) : null}
+                      </div>
+                      {skill.source ? (
+                        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          {skill.source}
+                        </span>
+                      ) : null}
+                    </div>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>

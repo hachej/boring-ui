@@ -138,7 +138,7 @@ export function ResponsiveDockviewShell({
         <div
           className={cn(
             "absolute z-30",
-            isMobile ? "left-2 top-2" : "left-1 top-2",
+            "left-2 top-2",
           )}
         >
           <Button

@@ -21,15 +21,14 @@ import { cn } from "../lib/utils"
  * - Resting `text-muted-foreground` so chrome recedes; hover/pressed lift to
  *   `text-foreground` on a darker fill (`bg-foreground/[0.06]` →
  *   `bg-foreground/[0.09]`) — a monotonic step, no shadow.
- * - Vertical position is set per-corner at the call site so each control
- *   centers in its own header band (44px workbench strip / 61px app-nav
- *   header), since those bands have different heights.
+ * - Vertical position is set at the call site so the top-right controls
+ *   center in the 44px workbench/header strip.
  * - Visible focus ring is provided by the `IconButton` base
  *   (`focus-visible:ring-[3px] ring-ring/50`) — keyboard-accessible by default.
  *
- * Used by the top-right workbench/chat toggles (`ChatLayout`) and the top-left
- * app-navigation toggle (`PluginTabsWorkspaceShell`). One component = one
- * family, no drift.
+ * Used by the top-right workbench/chat toggles (`ChatLayout`). Left-pane
+ * collapse controls use `PaneCollapseButton` because they belong to the
+ * workspace-left rail family (32px button / 16px icon).
  */
 
 const CORNER_CHROME_CLASS =

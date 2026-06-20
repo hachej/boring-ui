@@ -8,6 +8,7 @@ export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
 export const VITE_PORT = Number(process.env.PORT) || 5200
 export const APP_ROOT = resolve(import.meta.dirname, "../..")
 export const FIXTURES_DIR = resolve(APP_ROOT, "src/fixtures")
+export const PLAYGROUND_SKILLS_DIR = resolve(APP_ROOT, "src/skills")
 export const WORKSPACE_DIR = resolve(APP_ROOT, "workspace")
 const EXTERNAL_PLUGINS_ENABLED = process.env.BORING_EXTERNAL_PLUGINS === "1"
 
@@ -34,6 +35,15 @@ export function seedWorkspaceFromFixtures(workspaceRoot = WORKSPACE_DIR): void {
   seedFixtureEntry(FIXTURES_DIR, workspaceRoot)
 }
 
+function seedPlaygroundSkills(workspaceRoot = WORKSPACE_DIR): string {
+  const workspaceSkillsDir = resolve(workspaceRoot, ".agents/skills")
+  if (existsSync(PLAYGROUND_SKILLS_DIR)) {
+    mkdirSync(workspaceSkillsDir, { recursive: true })
+    seedFixtureEntry(PLAYGROUND_SKILLS_DIR, workspaceSkillsDir)
+  }
+  return workspaceSkillsDir
+}
+
 let agentBoot: Promise<void> | null = null
 
 export async function startPlaygroundServer(): Promise<void> {
@@ -43,6 +53,7 @@ export async function startPlaygroundServer(): Promise<void> {
     if (process.env.BORING_WORKSPACE_PLAYGROUND_SEED_FIXTURES !== "0") {
       seedWorkspaceFromFixtures(workspaceRoot)
     }
+    const playgroundSkillsDir = seedPlaygroundSkills(workspaceRoot)
     const workerBaseUrl = process.env.BORING_WORKER_BASE_URL?.trim()
     const remoteWorkerModeAdapter = workerBaseUrl
       ? createRemoteWorkerModeAdapter({ baseUrl: workerBaseUrl })
@@ -65,10 +76,10 @@ export async function startPlaygroundServer(): Promise<void> {
       externalPlugins: EXTERNAL_PLUGINS_ENABLED,
       defaultPluginPackages: ["@hachej/boring-ask-user"],
       // Surface a sample project-local skill so the Skills overlay has content
-      // in the playground. `additionalSkillPaths` are loaded even with the
-      // harness default `noSkills: true`, so this opts into ONE seeded skill
-      // without surfacing the full user-global skill set.
-      pi: { additionalSkillPaths: [resolve(APP_ROOT, "src/skills")] },
+      // in the playground. We copy it into the workspace-local .agents/skills
+      // tree so clicking it can use the UI bridge openFile command against a
+      // normal workspace-relative path.
+      pi: { additionalSkillPaths: [playgroundSkillsDir] },
     })
     app.get("/api/v1/workspace/meta", async () => {
       const localName = basename(workspaceRoot) || "Workspace"
