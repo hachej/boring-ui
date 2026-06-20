@@ -64,6 +64,18 @@
   padding-left: 44px !important;
 }
 
+/* Plugin-tabs shell: when the app-navigation left pane is collapsed, the
+   fixed top-left "Open app navigation" corner control (24px at left-3,
+   right edge x=36) overlays the chat stage. Reserve header-only space on the
+   chat stage's flat pane header so the session title clears that control
+   instead of sitting underneath it. Only applies in the collapsed state; when
+   the left pane is open the control sits over the app-nav header, not the
+   chat. 48px = control right edge (36) + 12px gap. */
+[data-boring-workspace-part="plugin-tabs-shell"][data-boring-state="collapsed"] .dv-chat-stage .dv-tabs-and-actions-container,
+[data-boring-workspace-part="plugin-tabs-shell"][data-boring-state="collapsed"] .dv-chat-stage .tabs-and-actions-container {
+  padding-left: 48px !important;
+}
+
 /* The app shell renders fixed top-right workbench/full-workspace controls
    over this 44px tab strip. Reserve enough room so dockview's built-in open-tabs
    overflow trigger sits left of that chrome instead of underneath it.
