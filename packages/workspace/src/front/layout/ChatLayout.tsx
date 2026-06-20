@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react"
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from "react"
 import { IconButton, LoadingState, ResizeHandle as UiResizeHandle } from "@hachej/boring-ui-kit"
 import { Maximize2, Minimize2, PanelRight } from "lucide-react"
 import { cn } from "../lib/utils"
@@ -14,6 +14,7 @@ import { readStoredNumber, writeStoredNumber } from "../store/localStorageValues
 import type { ChatLayoutProps } from "./types"
 import { useWorkspaceAttention, useWorkspaceContext } from "../provider"
 import { ChatPaneStage } from "./ChatPaneStage"
+import { CornerChromeButton } from "./cornerChrome"
 
 export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
   const {
@@ -718,7 +719,7 @@ function TopRightWorkspaceControls({
     : surfaceConfigured ? "Expand workbench" : "Collapse chat"
 
   return (
-    <div className="pointer-events-none absolute right-3 top-3 z-[70] flex items-center gap-1">
+    <div className="pointer-events-none absolute right-3 top-2 z-[70] flex items-center gap-1.5">
       {showChatToggle ? (
         <CornerChromeButton
           label={chatLabel}
@@ -745,45 +746,6 @@ function TopRightWorkspaceControls({
         </CornerChromeButton>
       ) : null}
     </div>
-  )
-}
-
-function CornerChromeButton({
-  label,
-  hint,
-  onClick,
-  pressed,
-  pulse = false,
-  children,
-}: {
-  label: string
-  hint?: string
-  onClick: () => void
-  pressed: boolean
-  pulse?: boolean
-  children: ReactNode
-}) {
-  return (
-    <ControlTooltip label={label} hint={hint} side="bottom">
-      <IconButton
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        onClick={onClick}
-        aria-label={label}
-        aria-pressed={pressed}
-        title={label}
-        className={cn(
-          "pointer-events-auto relative !h-9 !w-9 rounded-xl bg-background/90 text-muted-foreground shadow-[0_1px_2px_-1px_oklch(0_0_0/0.08),0_2px_10px_-5px_oklch(0_0_0/0.18),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.75)] backdrop-blur transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-ring/40",
-          pressed && "bg-foreground/[0.09] text-foreground shadow-[0_1px_2px_-1px_oklch(0_0_0/0.10),0_4px_14px_-6px_oklch(0_0_0/0.22),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.9)]",
-        )}
-      >
-        {children}
-        {pulse ? (
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[color:var(--accent)]" aria-hidden="true" />
-        ) : null}
-      </IconButton>
-    </ControlTooltip>
   )
 }
 
