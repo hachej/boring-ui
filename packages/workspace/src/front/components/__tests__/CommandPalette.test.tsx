@@ -236,6 +236,45 @@ describe("CommandPalette", () => {
     })
   })
 
+  describe("chat session search", () => {
+    it("shows session results and routes select/split actions", async () => {
+      const user = userEvent.setup()
+      const onSwitch = vi.fn()
+      const onOpenAsTab = vi.fn()
+
+      render(
+        <CommandPalette
+          sessionSearch={{
+            sessions: [
+              { id: "session-a", title: "Alpha plan" },
+              { id: "session-b", title: "Beta build" },
+            ],
+            activeId: "session-a",
+            openIds: ["session-a"],
+            onSwitch,
+            onOpenAsTab,
+          }}
+        />,
+        { wrapper: createWrapper() },
+      )
+
+      fireKeydown("k", { metaKey: true })
+      await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument())
+      expect(screen.getByText("Chat session search")).toBeInTheDocument()
+
+      await typePaletteQuery(user, "beta")
+      await user.click(screen.getByRole("option", { name: /Beta build/ }))
+      expect(onSwitch).toHaveBeenCalledWith("session-b")
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+
+      fireKeydown("k", { metaKey: true })
+      await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument())
+      await typePaletteQuery(user, "alpha")
+      await user.click(screen.getByRole("button", { name: "Open Alpha plan in new chat pane" }))
+      expect(onOpenAsTab).toHaveBeenCalledWith("session-a")
+    })
+  })
+
   describe("catalog quick-open", () => {
     it("shows catalog results from registered catalogs", async () => {
       const user = userEvent.setup()

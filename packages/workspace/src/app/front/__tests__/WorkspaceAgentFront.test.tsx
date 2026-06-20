@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { useEffect, useState } from "react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -320,6 +320,159 @@ describe("WorkspaceAgentFront", () => {
     expect(switchCalls).toContain("s2")
     expect(visibleChatSessionIds()).toEqual(["s2"])
     expect(screen.getByText("First session")).toBeInTheDocument()
+  })
+
+  it("renders plugin-tabs app navigation without classic session edge controls", async () => {
+    const user = userEvent.setup()
+    const onSwitchSession = vi.fn()
+    const onCreateSession = vi.fn()
+    const sessions = [
+      { id: "s1", title: "First session", updatedAt: Date.now() - 1_000 },
+      { id: "s2", title: "Second session", updatedAt: Date.now() - 2_000 },
+      { id: "s3", title: "Third session", updatedAt: Date.now() - 3_000 },
+    ]
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-nav"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        sessions={sessions}
+        activeSessionId="s1"
+        onSwitchSession={onSwitchSession}
+        onCreateSession={onCreateSession}
+        persistenceEnabled={false}
+      />,
+    )
+
+    const appNav = screen.getByLabelText("App navigation")
+    expect(appNav).toBeInTheDocument()
+    expect(within(appNav).getAllByRole("button", { name: "New chat" })).toHaveLength(1)
+    expect(within(appNav).getByRole("button", { name: "Search" })).toBeInTheDocument()
+    expect(within(appNav).getByRole("button", { name: "Plugins" })).toBeInTheDocument()
+    expect(within(appNav).getByRole("button", { name: "Skills" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Sessions" })).not.toBeInTheDocument()
+    expect(screen.queryByText("Projects")).not.toBeInTheDocument()
+    expect(screen.queryByText("Codex mobile")).not.toBeInTheDocument()
+    expect(screen.queryByText("Automations")).not.toBeInTheDocument()
+
+    const appRows = Array.from(appNav.querySelectorAll<HTMLElement>('[data-boring-workspace-part="app-session-row"]'))
+    const firstRow = appRows.find((row) => row.textContent?.includes("First session"))
+    const secondRow = appRows.find((row) => row.textContent?.includes("Second session"))
+    expect(firstRow).toHaveAttribute("data-boring-session-state", "active")
+    expect(secondRow).toHaveAttribute("data-boring-session-state", "normal")
+
+    await user.click(within(secondRow!).getByText("Second session"))
+    expect(onSwitchSession).toHaveBeenCalledWith("s2")
+
+    const switchCallsAfterRowClick = onSwitchSession.mock.calls.length
+    await user.click(within(appNav).getByRole("button", { name: "Pin Second session" }))
+    expect(onSwitchSession).toHaveBeenCalledTimes(switchCallsAfterRowClick)
+    expect(within(appNav).getByText("Pinned")).toBeInTheDocument()
+    expect(within(appNav).getByText("Sessions")).toBeInTheDocument()
+
+    await user.click(within(appNav).getByRole("button", { name: "Open Third session in new chat pane" }))
+    expect(onSwitchSession).toHaveBeenCalledWith("s3")
+
+    await user.click(within(appNav).getByRole("button", { name: "Collapse app navigation" }))
+    expect(screen.queryByLabelText("App navigation")).not.toBeInTheDocument()
+    expect(document.querySelector('[data-boring-workspace-part="app-left-pane"]')).toBeNull()
+    expect(screen.getByRole("button", { name: "Open app navigation" })).toBeInTheDocument()
+  })
+
+  it("focuses the current workspace-page instance from Plugins", async () => {
+    const user = userEvent.setup()
+
+    function FallbackPluginPage() {
+      return <div>Fallback plugin page body</div>
+    }
+    function CurrentPluginPage() {
+      return <div>Current plugin page body</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-current-page"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "First session" }]}
+        activeSessionId="s1"
+        panels={[
+          {
+            id: "plugin.fallback",
+            title: "Fallback Plugin",
+            placement: "workspace-page",
+            source: "plugin",
+            component: FallbackPluginPage,
+          },
+          {
+            id: "plugin.current",
+            title: "Current Plugin",
+            placement: "workspace-page",
+            source: "plugin",
+            component: CurrentPluginPage,
+          },
+        ]}
+        surfaceInitialPanels={[{
+          id: "current-instance",
+          component: "plugin.current",
+          title: "Current Plugin Instance",
+        }]}
+        defaultSurfaceOpen
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByText("Current plugin page body")).toBeInTheDocument())
+    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Plugins" }))
+    await waitFor(() => expect(screen.getByText("Current plugin page body")).toBeInTheDocument())
+    expect(screen.queryByText("Fallback plugin page body")).not.toBeInTheDocument()
+  })
+
+  it("opens plugin-tabs workspace pages from Plugins and Skills", async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agent/skills")) {
+        return new Response(JSON.stringify({ skills: [{ name: "review", description: "Review the current diff", source: "project" }] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    }))
+
+    function PluginPage() {
+      return <div>Plugin workspace page body</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-pages"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "First session" }]}
+        activeSessionId="s1"
+        panels={[{
+          id: "plugin.page",
+          title: "Plugin Page",
+          placement: "workspace-page",
+          source: "plugin",
+          component: PluginPage,
+        }]}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Plugins" }))
+    await waitFor(() => expect(screen.getByText("Plugin workspace page body")).toBeInTheDocument())
+
+    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Skills" }))
+    await waitFor(() => expect(screen.getByText("/review")).toBeInTheDocument())
+    expect(screen.getByText("Review the current diff")).toBeInTheDocument()
   })
 
   it("opens a controlled void-created session as a pane to the right", async () => {

@@ -7,6 +7,8 @@ import {
   ClockIcon,
   CornerDownLeft,
   FileIcon,
+  MessageSquare,
+  MessageSquarePlus,
   TerminalIcon,
 } from "lucide-react"
 import {
@@ -44,9 +46,26 @@ import type { CatalogConfig, CatalogRow } from "../../shared/plugins/types"
 import type { CommandConfig } from "../registry/types"
 import type { RecentEntry } from "./recent"
 
-export type CommandPaletteProps = Record<string, never>
+export interface CommandPaletteSessionItem {
+  id: string
+  title?: string | null
+  updatedAt?: string | number
+  turnCount?: number
+}
 
-export function CommandPalette(_props?: CommandPaletteProps) {
+export interface CommandPaletteSessionSearchConfig {
+  sessions: CommandPaletteSessionItem[]
+  activeId?: string | null
+  openIds?: readonly string[]
+  onSwitch: (id: string) => void
+  onOpenAsTab: (id: string) => void
+}
+
+export interface CommandPaletteProps {
+  sessionSearch?: CommandPaletteSessionSearchConfig
+}
+
+export function CommandPalette({ sessionSearch }: CommandPaletteProps = {}) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [mode, setMode] = useState<PaletteMode>("catalogs")
@@ -90,6 +109,18 @@ export function CommandPalette(_props?: CommandPaletteProps) {
     if (!isCommandMode) return []
     return searchCommands(commands, searchQuery)
   }, [commands, isCommandMode, searchQuery])
+
+  const sessionResults = useMemo(() => {
+    if (!sessionSearch || isCommandMode) return []
+    const normalized = searchQuery.toLowerCase()
+    return sessionSearch.sessions
+      .filter((session) => {
+        if (!normalized) return true
+        const title = session.title || session.id
+        return title.toLowerCase().includes(normalized) || session.id.toLowerCase().includes(normalized)
+      })
+      .slice(0, 8)
+  }, [isCommandMode, searchQuery, sessionSearch])
 
   const {
     recentEntries,
@@ -141,6 +172,12 @@ export function CommandPalette(_props?: CommandPaletteProps) {
               recentEntries={recentEntries}
               searchQuery={searchQuery}
               onRecentSelect={handleRecentSelect}
+            />
+            <SessionSearchResultsSection
+              isCommandMode={isCommandMode}
+              sessionSearch={sessionSearch}
+              sessions={sessionResults}
+              close={() => setOpen(false)}
             />
             <CatalogResultsSections
               catalogGroups={catalogGroups}
@@ -279,6 +316,75 @@ function RecentResultsSection({
                 </span>
               </>
             )}
+          </CommandItem>
+        )
+      })}
+    </CommandGroup>
+  )
+}
+
+function SessionSearchResultsSection({
+  isCommandMode,
+  sessionSearch,
+  sessions,
+  close,
+}: {
+  isCommandMode: boolean
+  sessionSearch?: CommandPaletteSessionSearchConfig
+  sessions: CommandPaletteSessionItem[]
+  close: () => void
+}) {
+  if (isCommandMode || !sessionSearch || sessions.length === 0) return null
+  const openSet = new Set(sessionSearch.openIds ?? [])
+  const activeId = sessionSearch.activeId ?? null
+
+  return (
+    <CommandGroup heading="Chat session search">
+      {sessions.map((session) => {
+        const title = session.title || "Untitled"
+        const active = session.id === activeId
+        const open = openSet.has(session.id)
+        return (
+          <CommandItem
+            key={`chat-session:${session.id}`}
+            value={`chat-session:${session.id}:${title}`}
+            onSelect={() => {
+              if (!active) sessionSearch.onSwitch(session.id)
+              close()
+            }}
+            className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm aria-selected:bg-[color:oklch(from_var(--accent)_l_c_h/0.10)] aria-selected:text-foreground"
+          >
+            <MessageSquare className="size-4 shrink-0 text-muted-foreground/70 group-aria-selected:text-[color:var(--accent)]" />
+            <span className="flex min-w-0 flex-1 items-center gap-2 truncate">
+              <span className="truncate font-medium text-foreground">{title}</span>
+              {active ? (
+                <span className="shrink-0 rounded bg-[color:oklch(from_var(--accent)_l_c_h/0.14)] px-1.5 py-0.5 text-[10px] font-medium text-[color:var(--accent)]">active</span>
+              ) : open ? (
+                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">open</span>
+              ) : null}
+            </span>
+            <button
+              type="button"
+              aria-label={`Open ${title} in new chat pane`}
+              title="Open in new chat pane"
+              onPointerDown={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+              }}
+              onMouseDown={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+              }}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                sessionSearch.onOpenAsTab(session.id)
+                close()
+              }}
+              className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 group-hover:opacity-100 group-aria-selected:opacity-100"
+            >
+              <MessageSquarePlus className="h-3.5 w-3.5" strokeWidth={1.75} />
+            </button>
           </CommandItem>
         )
       })}

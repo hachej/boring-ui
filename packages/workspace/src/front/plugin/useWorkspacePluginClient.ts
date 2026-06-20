@@ -4,6 +4,7 @@ export interface WorkspacePluginClient {
   apiBaseUrl: string
   workspaceId?: string
   workspaceHeaders(): Record<string, string>
+  getJson<T = unknown>(path: string, options?: { missingMessage?: string }): Promise<T>
   readJsonFile<T>(path: string, options?: { missingMessage?: string }): Promise<T>
   postJson<T = unknown>(path: string, body?: unknown, options?: { headers?: Record<string, string> }): Promise<T>
   sendAgentPrompt(message: string, options?: { title?: string; noncePrefix?: string }): Promise<void>
@@ -123,6 +124,10 @@ function createWorkspacePluginClientWithOptions(
     }
     return await response.json() as T
   }
+  const getJson = async <T = unknown,>(
+    path: string,
+    options?: { missingMessage?: string },
+  ): Promise<T> => fetchJson<T>(path, { method: "GET" }, options?.missingMessage ?? `request failed for ${path}`)
   const postJson = async <T = unknown,>(
     path: string,
     body?: unknown,
@@ -164,6 +169,7 @@ function createWorkspacePluginClientWithOptions(
     apiBaseUrl: base,
     ...(workspaceId ? { workspaceId } : {}),
     workspaceHeaders,
+    getJson,
     readJsonFile,
     postJson,
     sendAgentPrompt,
