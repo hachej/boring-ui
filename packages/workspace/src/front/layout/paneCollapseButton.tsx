@@ -15,8 +15,8 @@ export interface PaneCollapseButtonProps {
 /**
  * Canonical chrome for left-pane collapse/expand controls.
  *
- * Rule: collapsed and expanded states must keep the same button position,
- * size, and style; only the icon changes (PanelLeftClose ↔ PanelLeftOpen).
+ * Rule: collapsed and expanded states keep the same button position, size,
+ * style, and icon family. The action changes; the chrome does not jump.
  */
 export function PaneCollapseButton({
   label,

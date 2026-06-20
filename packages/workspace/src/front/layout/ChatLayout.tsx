@@ -1,6 +1,6 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from "react"
 import { IconButton, LoadingState, ResizeHandle as UiResizeHandle } from "@hachej/boring-ui-kit"
-import { Maximize2, Minimize2, PanelRightClose, PanelRightOpen } from "lucide-react"
+import { Maximize2, Minimize2, PanelRight } from "lucide-react"
 import { cn } from "../lib/utils"
 import { ControlTooltip } from "../components/ControlTooltip"
 import { dispatchUiCommand, type DispatchContext } from "../bridge"
@@ -402,7 +402,7 @@ export function ChatLayout(props: ChatLayoutProps) {
               data-boring-workspace-part="chat-left-overlay"
               className="absolute inset-0 z-40 flex bg-background"
             >
-              <div className="mx-auto flex w-full max-w-2xl flex-col border-x border-border bg-background">
+              <div className="flex h-full w-full max-w-[520px] flex-col border-r border-border bg-background">
                 {props.chatOverlay}
               </div>
             </div>
@@ -752,11 +752,7 @@ function TopRightWorkspaceControls({
           onClick={onToggleSurface}
           pressed={surfaceOpen}
         >
-          {surfaceOpen ? (
-            <PanelRightClose className="size-3" strokeWidth={1.75} />
-          ) : (
-            <PanelRightOpen className="size-3" strokeWidth={1.75} />
-          )}
+          <PanelRight className="size-3" strokeWidth={1.75} />
         </CornerChromeButton>
       ) : null}
     </div>

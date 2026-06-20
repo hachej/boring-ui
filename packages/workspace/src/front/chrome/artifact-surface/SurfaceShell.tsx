@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { DockviewApi } from "dockview-react"
-import { ChevronRight, PanelLeftOpen } from "lucide-react"
+import { ChevronRight, PanelLeft } from "lucide-react"
 import { ControlTooltip } from "../../components/ControlTooltip"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
@@ -801,7 +801,7 @@ export function SurfaceShell({
           <div className="self-start pl-1.5 pt-2">
             {leftBlockCollapsed && (
               <PaneCollapseButton label="Show workspace menu" side="right" onClick={expandLeftBlock}>
-                <PanelLeftOpen className="h-4 w-4" strokeWidth={1.75} />
+                <PanelLeft className="h-4 w-4" strokeWidth={1.75} />
               </PaneCollapseButton>
             )}
           </div>
