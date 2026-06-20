@@ -5,7 +5,7 @@
  *
  * Gated on OPENROUTER_API_KEY — skipped silently in CI without it.
  * Run manually:
- *   OPENROUTER_API_KEY=sk-or-v1-... pnpm --filter @hachej/boring-workspace exec vitest run ../../plugins/askUserPlugin/server/__tests__/ask-user-tool.eval.test.ts
+ *   OPENROUTER_API_KEY=sk-or-v1-... ASK_USER_EVAL_MODEL=openai/gpt-5.5 pnpm --filter @hachej/boring-ask-user exec vitest run src/server/__tests__/ask-user-tool.eval.test.ts
  */
 import { describe, expect, test } from "vitest"
 import { mkdtemp } from "node:fs/promises"
@@ -16,6 +16,7 @@ import { AskUserRuntime, createAskUserTool, FileAskUserStore } from "../index"
 const HAS_KEY = !!process.env.OPENROUTER_API_KEY
 const describeIf = HAS_KEY ? describe : describe.skip
 const SESSION_ID = "eval-ask-user-session"
+const ASK_USER_EVAL_MODEL = process.env.ASK_USER_EVAL_MODEL ?? "x-ai/grok-code-fast-1"
 
 describeIf("ask-user eval (live LLM)", () => {
   test("real model calls ask_user for a required deployment-region decision", async () => {
@@ -54,7 +55,7 @@ async function callOpenRouterWithAskUserTool(parameters: Record<string, unknown>
       "x-title": "boring-ui ask_user eval",
     },
     body: JSON.stringify({
-      model: "x-ai/grok-code-fast-1",
+      model: ASK_USER_EVAL_MODEL,
       max_tokens: 300,
       temperature: 0,
       tool_choice: { type: "function", function: { name: "ask_user" } },
