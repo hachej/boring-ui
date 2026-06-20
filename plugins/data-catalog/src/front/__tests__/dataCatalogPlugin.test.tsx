@@ -73,6 +73,7 @@ function makeMockApi(): { api: BoringFrontAPI; captured: CapturedRegistrations }
     registerPanel: vi.fn((p) => {
       captured.panels.push(p)
     }),
+    registerWorkspaceSource: vi.fn(),
     registerPanelCommand: vi.fn(),
     registerSurfaceResolver: vi.fn((r) => {
       captured.surfaceResolvers.push(r)
