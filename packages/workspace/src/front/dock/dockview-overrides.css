@@ -67,11 +67,11 @@
 /* The app shell renders fixed top-right workbench/full-workspace controls
    over this 44px tab strip. Reserve enough room so dockview's built-in open-tabs
    overflow trigger sits left of that chrome instead of underneath it.
-   Two 36px controls + 6px gap anchored at right-3 (12px) reach ~90px from the
-   right edge; 100px keeps them clear with breathing room. */
+   Two 24px controls + 4px gap anchored at right-3 (12px) reach ~64px from the
+   right edge; 72px keeps them clear with breathing room. */
 .workbench-dockview .dv-tabs-and-actions-container,
 .workbench-dockview .tabs-and-actions-container {
-  padding-right: 100px !important;
+  padding-right: 72px !important;
 }
 
 /* Tab base — pill-style, rounded top */

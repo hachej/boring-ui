@@ -30,14 +30,14 @@ export function PluginTabsWorkspaceShell({
     >
       {collapsed ? null : leftPane}
       <div className="min-w-0 flex-1">{children}</div>
-:      <div className="pointer-events-none absolute left-3 top-2 z-[70]">
+:      <div className="pointer-events-none absolute left-3 top-2.5 z-[70]">
         <CornerChromeButton
           label={collapsed ? "Open app navigation" : "Collapse app navigation"}
           side="right"
           onClick={collapsed ? onExpand : onCollapse}
           pressed={!collapsed}
         >
-          <PanelLeft className="h-4 w-4" strokeWidth={1.75} />
+          <PanelLeft className="size-3" strokeWidth={1.75} />
         </CornerChromeButton>
       </div>
     </div>

@@ -719,7 +719,7 @@ function TopRightWorkspaceControls({
     : surfaceConfigured ? "Expand workbench" : "Collapse chat"
 
   return (
-    <div className="pointer-events-none absolute right-3 top-2 z-[70] flex items-center gap-1.5">
+    <div className="pointer-events-none absolute right-3 top-2.5 z-[70] flex items-center gap-1">
       {showChatToggle ? (
         <CornerChromeButton
           label={chatLabel}
@@ -729,9 +729,9 @@ function TopRightWorkspaceControls({
           pulse={chatPulse}
         >
           {chatCollapsed ? (
-            <Minimize2 className="h-4 w-4" strokeWidth={1.75} />
+            <Minimize2 className="size-3" strokeWidth={1.75} />
           ) : (
-            <Maximize2 className="h-4 w-4" strokeWidth={1.75} />
+            <Maximize2 className="size-3" strokeWidth={1.75} />
           )}
         </CornerChromeButton>
       ) : null}
@@ -742,7 +742,7 @@ function TopRightWorkspaceControls({
           onClick={onToggleSurface}
           pressed={surfaceOpen}
         >
-          <PanelRight className="h-4 w-4" strokeWidth={1.75} />
+          <PanelRight className="size-3" strokeWidth={1.75} />
         </CornerChromeButton>
       ) : null}
     </div>
