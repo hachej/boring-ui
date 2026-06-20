@@ -78,6 +78,8 @@ export interface SurfaceShellProps {
   onChange?: (snapshot: SurfaceShellSnapshot) => void
   /** Optional close action for hosts that model the workbench as collapsible. */
   onClose?: () => void
+  /** Render the built-in top-right close affordance. Hosts can set false when they provide their own chrome. */
+  showCloseAction?: boolean
   /**
    * Extra panel ids (registered via WorkspaceProvider's `panels` prop) that
    * this workbench is allowed to render. Defaults to the built-in
@@ -210,6 +212,7 @@ export function SurfaceShell({
   onReady,
   onChange,
   onClose,
+  showCloseAction = true,
   extraPanels,
   defaultLeftTab,
   onReloadAgentPlugins,
@@ -810,7 +813,7 @@ export function SurfaceShell({
               </ControlTooltip>
             )}
           </div>
-          {onClose && <WorkbenchCloseAction onClose={onClose} />}
+          {showCloseAction && onClose && <WorkbenchCloseAction onClose={onClose} />}
         </div>
         <EmptyWorkbenchOverlay api={api} />
       </div>

@@ -1,9 +1,7 @@
 "use client"
 
 import { useMemo, useSyncExternalStore, type ReactNode } from "react"
-import { Clock3, MessageSquarePlus, PanelLeftClose, Pin, Plug, Plus, Search, Sparkles } from "lucide-react"
-import { IconButton } from "@hachej/boring-ui-kit"
-import { ControlTooltip } from "../../components/ControlTooltip"
+import { Clock3, MessageSquarePlus, Pin, Plug, Plus, Search, Sparkles } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { useRegistry } from "../../registry"
 import type { OpenPanelConfig, SurfaceShellSnapshot } from "../../chrome/artifact-surface/SurfaceShell"
@@ -28,7 +26,6 @@ export interface AppLeftPaneProps {
   pinnedSessionIds: readonly string[]
   surfaceSnapshot: SurfaceShellSnapshot
   skillsPanelId: string
-  onCollapse: () => void
   onCreateSession: () => void
   onOpenCommandPalette: () => void
   onSwitchSession: (id: string) => void
@@ -51,7 +48,6 @@ export function AppLeftPane({
   pinnedSessionIds,
   surfaceSnapshot,
   skillsPanelId,
-  onCollapse,
   onCreateSession,
   onOpenCommandPalette,
   onSwitchSession,
@@ -108,20 +104,7 @@ export function AppLeftPane({
       className="flex h-full min-h-0 w-[268px] shrink-0 flex-col border-r border-border bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)] text-sm"
       aria-label="App navigation"
     >
-      <header className="flex shrink-0 items-start gap-2 border-b border-border/60 px-3 py-3">
-        <ControlTooltip label="Collapse app navigation" side="right">
-          <IconButton
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            onClick={onCollapse}
-            aria-label="Collapse app navigation"
-            title="Collapse app navigation"
-            className="mt-0.5 h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:text-foreground"
-          >
-            <PanelLeftClose className="h-4 w-4" strokeWidth={1.75} />
-          </IconButton>
-        </ControlTooltip>
+      <header className="flex shrink-0 items-start border-b border-border/60 py-3 pl-14 pr-3">
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13px] font-semibold tracking-tight text-foreground">{appTitle || "Boring UI"}</div>
           <div className="truncate text-[12px] text-muted-foreground">{sessionTitle || "New session"}</div>

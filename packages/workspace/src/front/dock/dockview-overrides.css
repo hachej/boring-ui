@@ -64,16 +64,12 @@
   padding-left: 44px !important;
 }
 
-/* The workbench renders a "close workspace" control as an absolute overlay on
-   the right edge of the tab strip (see SurfaceShell's WorkbenchCloseAction:
-   a 24px icon button + 4px margins each side = ~32px wide, vertically centred
-   in the 44px bar). Reserve room at the right of the tab strip so dockview's
-   built-in "open tabs" overflow dropdown trigger (the ⌄ chevron at the end of
-   the tab row) sits clearly LEFT of that control with a visible gap, instead of
-   tucking right under it. 32px control + ~8px gap + the chevron's own width. */
+/* The app shell renders fixed top-right workbench/full-workspace controls
+   over this 44px tab strip. Reserve enough room so dockview's built-in open-tabs
+   overflow trigger sits left of that chrome instead of underneath it. */
 .workbench-dockview .dv-tabs-and-actions-container,
 .workbench-dockview .tabs-and-actions-container {
-  padding-right: 44px !important;
+  padding-right: 88px !important;
 }
 
 /* Tab base — pill-style, rounded top */

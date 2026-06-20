@@ -374,7 +374,7 @@ describe("WorkspaceAgentFront", () => {
     await user.click(within(appNav).getByRole("button", { name: "Open Third session in new chat pane" }))
     expect(onSwitchSession).toHaveBeenCalledWith("s3")
 
-    await user.click(within(appNav).getByRole("button", { name: "Collapse app navigation" }))
+    await user.click(screen.getByRole("button", { name: "Collapse app navigation" }))
     expect(screen.queryByLabelText("App navigation")).not.toBeInTheDocument()
     expect(document.querySelector('[data-boring-workspace-part="app-left-pane"]')).toBeNull()
     expect(screen.getByRole("button", { name: "Open app navigation" })).toBeInTheDocument()
@@ -972,7 +972,7 @@ describe("WorkspaceAgentFront", () => {
     )
 
     expect(screen.getByText("Preparing workspace…")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Workbench" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Open workbench" })).toBeInTheDocument()
   })
 
   it("does not start default remote session warmup when provisioning is disabled", async () => {

@@ -1296,6 +1296,7 @@ export function WorkspaceAgentFront<
     onReady: handleSurfaceReady,
     onChange: handleSurfaceChange,
     onClose: closeWorkbench,
+    showCloseAction: false,
   }), [
     closeWorkbench,
     defaultWorkbenchLeftTab,
@@ -1407,6 +1408,7 @@ export function WorkspaceAgentFront<
     <PluginTabsWorkspaceShell
       collapsed={appLeftPaneCollapsed}
       onExpand={() => setAppLeftPaneCollapsed(false)}
+      onCollapse={() => setAppLeftPaneCollapsed(true)}
       leftPane={(
         <AppLeftPane
           appTitle={appTitle}
@@ -1419,7 +1421,6 @@ export function WorkspaceAgentFront<
           pinnedSessionIds={pinnedIds}
           surfaceSnapshot={surfaceSnapshot}
           skillsPanelId={WORKSPACE_SKILLS_PANEL_ID}
-          onCollapse={() => setAppLeftPaneCollapsed(true)}
           onCreateSession={() => { void resolvedCreate() }}
           onOpenCommandPalette={openCommandPalette}
           onSwitchSession={switchToChatPane}

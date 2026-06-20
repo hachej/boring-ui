@@ -1,6 +1,6 @@
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from "react"
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react"
 import { IconButton, LoadingState, ResizeHandle as UiResizeHandle } from "@hachej/boring-ui-kit"
-import { ChevronLeft, MessageSquare } from "lucide-react"
+import { Maximize2, Minimize2, PanelRight } from "lucide-react"
 import { cn } from "../lib/utils"
 import { ControlTooltip } from "../components/ControlTooltip"
 import { dispatchUiCommand, type DispatchContext } from "../bridge"
@@ -396,26 +396,6 @@ export function ChatLayout(props: ChatLayoutProps) {
               <PanelSlot id={centerId} params={props.centerParams} />
             )}
           </div>
-          {!chatCollapsed ? (
-            <ControlTooltip label="Collapse chat" hint="⌘\" side="bottom">
-              <IconButton
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                onClick={toggleChatCollapsed}
-                // With multiple panes the rightmost pane header owns the
-                // top-right corner; drop the collapse control to the
-                // bottom-right so the two never overlap.
-                className={cn(
-                  "absolute right-2 z-30 rounded-full bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:bg-muted hover:text-foreground",
-                  hasChatPanes && chatPanes.length > 1 ? "bottom-2" : "top-2",
-                )}
-                aria-label="Collapse chat"
-              >
-                <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
-              </IconButton>
-            </ControlTooltip>
-          ) : null}
         </main>
 
         {surfaceConfigured ? (
@@ -448,29 +428,11 @@ export function ChatLayout(props: ChatLayoutProps) {
                 "h-full min-h-0 overflow-hidden",
                 "transition-[opacity,padding] duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
                 surfaceOpen ? "opacity-100" : "opacity-0",
-                // When the chat is collapsed the workbench fills the full width
-                // and the left-edge "expand chat" float button would sit on top
-                // of the filetree — inset the content to leave a clear gutter.
-                chatCollapsed && surfaceOpen && !navOpen && "pl-14",
               )}
             >
               {props.surfaceOverlay ? (
                 <div className="relative h-full min-h-0">
                   {props.surfaceOverlay}
-                  {closeSurface ? (
-                    <ControlTooltip label="Close workbench" hint="⌘2" side="left">
-                      <IconButton
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={closeSurface}
-                        className="absolute right-3 top-3 z-20 rounded-full bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:bg-muted hover:text-foreground"
-                        aria-label="Close workbench"
-                      >
-                        <span aria-hidden="true">›</span>
-                      </IconButton>
-                    </ControlTooltip>
-                  ) : null}
                 </div>
               ) : <PanelSlot id={surfaceId} params={props.surfaceParams} />}
             </div>
@@ -485,6 +447,17 @@ export function ChatLayout(props: ChatLayoutProps) {
         ) : null}
 
       </div>
+
+      <TopRightWorkspaceControls
+        surfaceOpen={surfaceOpen}
+        canToggleSurface={canControlSurface}
+        onToggleSurface={toggleSurface}
+        chatCollapsed={chatCollapsed}
+        canToggleChat={centerId === "chat"}
+        onToggleChat={toggleChatCollapsed}
+        chatPulse={chatRailPulse || blockers.length > 0}
+        surfaceConfigured={surfaceConfigured}
+      />
 
       {!navOpen && props.onOpenNav ? (
         <FloatingEdgeButton
@@ -507,30 +480,6 @@ export function ChatLayout(props: ChatLayoutProps) {
           // Sits directly above the Sessions toggle; when the session drawer
           // is open the drawer's own header "+" takes over and this hides.
           stackIndex={props.onOpenNav ? 1 : 0}
-        />
-      ) : null}
-      {chatCollapsed ? (
-        <FloatingEdgeButton
-          side="left"
-          icon="chat"
-          onClick={toggleChatCollapsed}
-          label="Expand chat"
-          hint="⌘\\"
-          // Anchored to the shell's left edge (not the content region) so it
-          // stays pinned to the left even when the session drawer is open and
-          // pushes the content rightward.
-          stackIndex={1}
-          pulse={chatRailPulse || blockers.length > 0}
-        />
-      ) : null}
-      {!surfaceOpen && props.onOpenSurface ? (
-        <FloatingEdgeButton
-          side="right"
-          icon="workbench"
-          onClick={props.onOpenSurface}
-          label="Workbench"
-          hint="⌘2"
-          bottomOffset={props.surfaceButtonBottomOffset}
         />
       ) : null}
     </div>
@@ -741,6 +690,103 @@ function createPanelApi(id: string): Partial<PaneProps["api"]> {
   } as Partial<PaneProps["api"]>
 }
 
+function TopRightWorkspaceControls({
+  surfaceOpen,
+  canToggleSurface,
+  onToggleSurface,
+  chatCollapsed,
+  canToggleChat,
+  onToggleChat,
+  chatPulse,
+  surfaceConfigured,
+}: {
+  surfaceOpen: boolean
+  canToggleSurface: boolean
+  onToggleSurface: () => void
+  chatCollapsed: boolean
+  canToggleChat: boolean
+  onToggleChat: () => void
+  chatPulse: boolean
+  surfaceConfigured: boolean
+}) {
+  const showSurfaceToggle = canToggleSurface
+  const showChatToggle = canToggleChat
+  if (!showSurfaceToggle && !showChatToggle) return null
+
+  const chatLabel = chatCollapsed
+    ? "Show chat"
+    : surfaceConfigured ? "Expand workbench" : "Collapse chat"
+
+  return (
+    <div className="pointer-events-none absolute right-3 top-3 z-[70] flex items-center gap-1">
+      {showChatToggle ? (
+        <CornerChromeButton
+          label={chatLabel}
+          hint="⌘\\"
+          onClick={onToggleChat}
+          pressed={chatCollapsed}
+          pulse={chatPulse}
+        >
+          {chatCollapsed ? (
+            <Minimize2 className="h-4 w-4" strokeWidth={1.75} />
+          ) : (
+            <Maximize2 className="h-4 w-4" strokeWidth={1.75} />
+          )}
+        </CornerChromeButton>
+      ) : null}
+      {showSurfaceToggle ? (
+        <CornerChromeButton
+          label={surfaceOpen ? "Close workbench" : "Open workbench"}
+          hint="⌘2"
+          onClick={onToggleSurface}
+          pressed={surfaceOpen}
+        >
+          <PanelRight className="h-4 w-4" strokeWidth={1.75} />
+        </CornerChromeButton>
+      ) : null}
+    </div>
+  )
+}
+
+function CornerChromeButton({
+  label,
+  hint,
+  onClick,
+  pressed,
+  pulse = false,
+  children,
+}: {
+  label: string
+  hint?: string
+  onClick: () => void
+  pressed: boolean
+  pulse?: boolean
+  children: ReactNode
+}) {
+  return (
+    <ControlTooltip label={label} hint={hint} side="bottom">
+      <IconButton
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        onClick={onClick}
+        aria-label={label}
+        aria-pressed={pressed}
+        title={label}
+        className={cn(
+          "pointer-events-auto relative h-9 w-9 rounded-xl bg-background/90 text-muted-foreground shadow-[0_1px_2px_-1px_oklch(0_0_0/0.08),0_2px_10px_-5px_oklch(0_0_0/0.18),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.75)] backdrop-blur transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-ring/40",
+          pressed && "bg-foreground/[0.09] text-foreground shadow-[0_1px_2px_-1px_oklch(0_0_0/0.10),0_4px_14px_-6px_oklch(0_0_0/0.22),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.9)]",
+        )}
+      >
+        {children}
+        {pulse ? (
+          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[color:var(--accent)]" aria-hidden="true" />
+        ) : null}
+      </IconButton>
+    </ControlTooltip>
+  )
+}
+
 function FloatingEdgeButton({
   side,
   icon,
@@ -749,10 +795,9 @@ function FloatingEdgeButton({
   hint,
   bottomOffset,
   stackIndex = 0,
-  pulse = false,
 }: {
   side: "left" | "right"
-  icon: "sessions" | "workbench" | "chat" | "plus"
+  icon: "sessions" | "plus"
   onClick: () => void
   label: string
   hint?: string
@@ -760,7 +805,6 @@ function FloatingEdgeButton({
   // Stack offset for multiple buttons sharing the same vertical edge anchor.
   // Each step lifts the button by one button-height + gap above the previous.
   stackIndex?: number
-  pulse?: boolean
 }) {
   const dockToBottom = side === "right" && bottomOffset !== undefined
   // Buttons are h-9 (36px); stack them with a 8px gap so they never overlap.
@@ -792,20 +836,9 @@ function FloatingEdgeButton({
           <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
           <path d="M12 7v5l3.2 2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
-      ) : icon === "chat" ? (
-        <span className="relative flex items-center justify-center">
-          <MessageSquare className="h-[15px] w-[15px]" strokeWidth={1.8} aria-hidden="true" />
-          {pulse ? (
-            <span className="absolute -right-1.5 -top-1.5 h-2 w-2 rounded-full bg-[color:var(--accent)]" aria-hidden="true" />
-          ) : null}
-        </span>
-      ) : icon === "plus" ? (
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
       ) : (
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M3 7.5 A1.5 1.5 0 0 1 4.5 6 h4 l2 2 h9 A1.5 1.5 0 0 1 21 9.5 V17.5 A1.5 1.5 0 0 1 19.5 19 H4.5 A1.5 1.5 0 0 1 3 17.5 Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+          <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
       )}
     </IconButton>
