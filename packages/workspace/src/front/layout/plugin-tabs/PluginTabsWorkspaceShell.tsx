@@ -1,7 +1,7 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { PanelLeft } from "lucide-react"
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { CornerChromeButton } from "../cornerChrome"
 
@@ -53,7 +53,11 @@ export function PluginTabsWorkspaceShell({
             onClick={collapsed ? onExpand : onCollapse}
             pressed={!collapsed}
           >
-            <PanelLeft className="size-3" strokeWidth={1.75} />
+            {collapsed ? (
+              <PanelLeftOpen className="size-3" strokeWidth={1.75} />
+            ) : (
+              <PanelLeftClose className="size-3" strokeWidth={1.75} />
+            )}
           </CornerChromeButton>
         </div>
       )}
