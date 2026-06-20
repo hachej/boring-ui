@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   provisionWorkspaceRuntime: vi.fn(async () => ({ changed: false, env: {}, pathEntries: [], skillPaths: [] })),
   collectWorkspaceAgentServerPlugins: vi.fn(),
   createWorkspaceUiTools: vi.fn(() => []),
+  registerOutreachRoutes: vi.fn(async () => {}),
 }))
 
 vi.mock('@hachej/boring-agent/server', () => ({
@@ -54,7 +55,7 @@ beforeEach(() => {
 vi.mock('../../../server/routes/index.js', () => ({
   registerInviteRoutes: async () => {},
   registerMemberRoutes: async () => {},
-  registerOutreachRoutes: async () => {},
+  registerOutreachRoutes: mocks.registerOutreachRoutes,
   registerSettingsRoutes: async () => {},
   registerWorkspaceRoutes: async () => {},
 }))
@@ -99,6 +100,12 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
 
   try {
     expect(mocks.registerAgentRoutes).toHaveBeenCalledTimes(1)
+    expect(mocks.registerOutreachRoutes).toHaveBeenCalledTimes(1)
+    expect(mocks.registerOutreachRoutes).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      db: expect.any(Object),
+      workspaceStore: expect.any(Object),
+      creditGrantStore: expect.any(Object),
+    }), expect.any(Function))
     const options = (mocks.registerAgentRoutes as any).mock.calls[0]?.[1] as Record<string, unknown>
     expect(options).toHaveProperty('provisionRuntime')
     expect(options).not.toHaveProperty('runtimeProvisioningPlugins')
