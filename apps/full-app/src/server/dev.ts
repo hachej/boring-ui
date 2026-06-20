@@ -12,6 +12,10 @@ function pluginAuthoringEnabledFromEnv(): boolean {
   return process.env.BORING_PLUGIN_AUTHORING === '1'
 }
 
+function hostedExternalPluginsEnabledFromEnv(): boolean {
+  return process.env.BORING_HOSTED_EXTERNAL_PLUGINS === '1'
+}
+
 startCoreWorkspaceAgentDevServer({
   appRoot,
   buildServer: async (options) => {
@@ -20,6 +24,7 @@ startCoreWorkspaceAgentDevServer({
       ...options,
       plugins: serverPlugins,
       externalPlugins: false,
+      hostedExternalPlugins: hostedExternalPluginsEnabledFromEnv(),
       installPluginAuthoring: pluginAuthoringEnabledFromEnv(),
       metering: credits.meteringSink,
     })

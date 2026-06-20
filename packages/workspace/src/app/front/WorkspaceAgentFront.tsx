@@ -134,6 +134,8 @@ export interface WorkspaceAgentFrontProps<
    * internal statically composed plugins still work.
    */
   externalPlugins?: boolean
+  /** Enable remote-safe hosted iframe plugin event consumption without trusted native plugin imports. */
+  hostedExternalPlugins?: boolean
   /**
    * Forward to ChatPanel — when `false`, the `/reload` slash command is
    * hidden and the PluginUpdateStatus banner above the composer is
@@ -447,6 +449,7 @@ export function WorkspaceAgentFront<
   showThemeToggle = true,
   chatParams,
   externalPlugins,
+  hostedExternalPlugins,
   hotReloadEnabled,
   frontPluginHotReload,
   extraPanels,
@@ -459,9 +462,16 @@ export function WorkspaceAgentFront<
   surfaceButtonBottomOffset,
   className,
 }: WorkspaceAgentFrontProps<TSession>) {
-  const externalPluginsEnabled = externalPlugins !== false
-  const resolvedFrontPluginHotReload = externalPluginsEnabled ? frontPluginHotReload : false
-  const resolvedHotReloadEnabled = externalPluginsEnabled ? hotReloadEnabled : false
+  const hostedExternalPluginsEnabled = hostedExternalPlugins === true
+  const externalPluginsEnabled = externalPlugins === false
+    ? false
+    : hostedExternalPluginsEnabled
+      ? externalPlugins === true
+      : true
+  const resolvedFrontPluginHotReload = hostedExternalPluginsEnabled
+    ? (externalPluginsEnabled ? (frontPluginHotReload === false ? "hosted" : (frontPluginHotReload ?? "vite")) : "hosted")
+    : (externalPluginsEnabled ? frontPluginHotReload : false)
+  const resolvedHotReloadEnabled = externalPluginsEnabled ? hotReloadEnabled : (hostedExternalPluginsEnabled ? hotReloadEnabled : false)
   const resolvedProviderStorageKey =
     providerStorageKey ?? `boring-ui-v2:layout:${workspaceId}`
   const resolvedSurfaceStorageKey =

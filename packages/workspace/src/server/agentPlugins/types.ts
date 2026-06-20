@@ -6,6 +6,7 @@ import type {
   BoringPluginEvent as SharedBoringPluginEvent,
   BoringPluginFrontTarget as SharedBoringPluginFrontTarget,
   BoringPluginListEntry as SharedBoringPluginListEntry,
+  BoringPluginIframeFrontTarget as SharedBoringPluginIframeFrontTarget,
   BoringPluginNativeFrontTarget as SharedBoringPluginNativeFrontTarget,
   BoringPluginNativeFrontTargetTrust as SharedBoringPluginNativeFrontTargetTrust,
 } from "../../shared/plugins/runtimePluginTypes"
@@ -47,8 +48,22 @@ export interface BoringServerPluginManifest {
 
 export type BoringPluginNativeFrontTargetTrust = SharedBoringPluginNativeFrontTargetTrust
 export type BoringPluginNativeFrontTarget = SharedBoringPluginNativeFrontTarget
+export type BoringPluginIframeFrontTarget = SharedBoringPluginIframeFrontTarget
 export type BoringPluginFrontTarget = SharedBoringPluginFrontTarget
 export type BoringPluginListEntry = SharedBoringPluginListEntry
+
+export interface BoringPluginIframeDocumentResult {
+  srcdoc: string
+  revision: number
+}
+
+export interface BoringPluginRouteManager {
+  list(): BoringPluginListEntry[] | Promise<BoringPluginListEntry[]>
+  listExternal(): BoringPluginListEntry[] | Promise<BoringPluginListEntry[]>
+  subscribe(listener: (event: BoringPluginEvent) => void): () => void
+  getError(id: string): string | undefined | null
+  getIframeDocument?(id: string, panelId: string, nonce: string): Promise<BoringPluginIframeDocumentResult | undefined>
+}
 
 export interface BoringPluginFrontTargetResolverContext {
   revision: number

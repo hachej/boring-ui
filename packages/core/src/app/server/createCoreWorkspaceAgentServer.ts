@@ -23,13 +23,16 @@ import {
   type WorkspaceAgentServerPluginContext,
 } from '@hachej/boring-workspace/app/server'
 import {
+  HostedPluginManager,
+  boringPluginRoutes,
   createInMemoryBridge,
   createWorkspaceUiTools,
   uiRoutes,
+  type BoringPluginRouteManager,
   type UiBridge,
   type WorkspaceServerPlugin,
 } from '@hachej/boring-workspace/server'
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type postgres from 'postgres'
 import type { CoreConfig } from '../../shared/types.js'
 import { ERROR_CODES } from '../../shared/errors.js'
@@ -141,6 +144,8 @@ export interface CreateCoreWorkspaceAgentServerOptions
   installPluginAuthoring?: CreateWorkspaceAgentServerOptions['installPluginAuthoring']
   /** Core consumes plugins statically for now; app-level hot reload is explicitly unsupported. */
   hotReload?: false
+  /** Enable remote-safe hosted iframe plugins from the runtime workspace. Trusted native external plugins remain controlled by externalPlugins. */
+  hostedExternalPlugins?: CreateWorkspaceAgentServerOptions['hostedExternalPlugins']
   forceProvisioning?: boolean
   extraTools?: RegisterAgentRoutesOptions['extraTools']
   systemPromptAppend?: string
@@ -697,7 +702,12 @@ export async function createCoreWorkspaceAgentServer(
     )),
   )
 
-  const externalPluginsEnabled = options.externalPlugins !== false
+  const hostedExternalPluginsEnabled = options.hostedExternalPlugins === true
+  const externalPluginsEnabled = options.externalPlugins === false
+    ? false
+    : hostedExternalPluginsEnabled
+      ? options.externalPlugins === true
+      : true
   const installPluginAuthoring = externalPluginsEnabled && options.installPluginAuthoring === true
   const pluginCollection = collectWorkspaceAgentServerPlugins({
     workspaceRoot: pluginWorkspaceRoot,
@@ -758,6 +768,56 @@ export async function createCoreWorkspaceAgentServer(
       : undefined
     return mergePiOptions(pluginOptions, callerOptions)
   }
+  let runtimeRouteHelpers: Parameters<NonNullable<RegisterAgentRoutesOptions['registerRuntimeRoutes']>>[1] | undefined
+  const hostedManagers = new Map<string, { workspace: unknown; manager: HostedPluginManager }>()
+  const hostedManagerSubscriptions = new Map<string, number>()
+  const maxHostedManagers = 64
+  const evictInactiveHostedManagers = (currentWorkspaceId: string): void => {
+    if (hostedManagers.size <= maxHostedManagers) return
+    for (const key of hostedManagers.keys()) {
+      if (key === currentWorkspaceId) continue
+      if ((hostedManagerSubscriptions.get(key) ?? 0) > 0) continue
+      hostedManagers.delete(key)
+      hostedManagerSubscriptions.delete(key)
+      if (hostedManagers.size <= maxHostedManagers) return
+    }
+  }
+  const getHostedManagerEntry = async (request: FastifyRequest): Promise<{ workspaceId: string; manager: HostedPluginManager }> => {
+    if (!runtimeRouteHelpers) throw new Error('hosted runtime route helpers are not initialized')
+    const ctx = await runtimeRouteHelpers.getRuntimeContext(request)
+    let cached = hostedManagers.get(ctx.workspaceId)
+    if (!cached || cached.workspace !== ctx.workspace) {
+      cached = { workspace: ctx.workspace, manager: new HostedPluginManager({ workspace: ctx.workspace }) }
+      hostedManagers.set(ctx.workspaceId, cached)
+      evictInactiveHostedManagers(ctx.workspaceId)
+    }
+    await cached.manager.load()
+    return { workspaceId: ctx.workspaceId, manager: cached.manager }
+  }
+  const getHostedRouteManager = async (request: FastifyRequest): Promise<BoringPluginRouteManager> => {
+    const { workspaceId, manager } = await getHostedManagerEntry(request)
+    return {
+      list: () => manager.list(),
+      listExternal: () => manager.listExternal(),
+      getError: (id) => manager.getError(id),
+      getIframeDocument: (id, panelId, nonce) => manager.getIframeDocument(id, panelId, nonce),
+      subscribe: (listener) => {
+        hostedManagerSubscriptions.set(workspaceId, (hostedManagerSubscriptions.get(workspaceId) ?? 0) + 1)
+        const unsubscribe = manager.subscribe(listener)
+        return () => {
+          unsubscribe()
+          const next = Math.max(0, (hostedManagerSubscriptions.get(workspaceId) ?? 1) - 1)
+          if (next === 0) hostedManagerSubscriptions.delete(workspaceId)
+          else hostedManagerSubscriptions.set(workspaceId, next)
+        }
+      },
+    }
+  }
+
+  app.addHook('onClose', async () => {
+    hostedManagers.clear()
+    hostedManagerSubscriptions.clear()
+  })
 
   app.get('/api/v1/workspace/meta', async (request, reply) => {
     try {
@@ -793,6 +853,7 @@ export async function createCoreWorkspaceAgentServer(
     getTemplatePath: options.getTemplatePath,
     mode: options.mode,
     externalPlugins: externalPluginsEnabled,
+    pluginDiagnostics: externalPluginsEnabled || hostedExternalPluginsEnabled,
     runtimeModeAdapter: remoteWorkerModeAdapter,
     version: options.version,
     extraTools: [
@@ -802,6 +863,19 @@ export async function createCoreWorkspaceAgentServer(
     systemPromptAppend: pluginCollection.agentOptions.systemPromptAppend,
     pi: pluginCollection.agentOptions.pi,
     getPi: resolvePiOptions,
+    getPluginDiagnostics: hostedExternalPluginsEnabled || options.getPluginDiagnostics
+      ? async (ctx) => {
+          const hostedDiagnostics = hostedExternalPluginsEnabled
+            ? (hostedManagers.get(ctx.workspaceId)?.manager.getErrors() ?? []).map((error) => ({
+                source: 'hosted-plugin-load',
+                message: error.message,
+                ...(error.id ? { pluginId: error.id } : {}),
+              }))
+            : []
+          const callerDiagnostics = options.getPluginDiagnostics ? await options.getPluginDiagnostics(ctx) : []
+          return [...hostedDiagnostics, ...callerDiagnostics]
+        }
+      : undefined,
     getSessionNamespace: resolveSessionNamespace,
     getExtraTools: async (ctx) => {
       const callerTools = options.getExtraTools ? await options.getExtraTools(ctx) : []
@@ -839,6 +913,35 @@ export async function createCoreWorkspaceAgentServer(
     registerHealthRoute: options.registerHealthRoute ?? false,
     telemetry,
     metering: options.metering,
+    beforeReload: hostedExternalPluginsEnabled || options.beforeReload
+      ? async (ctx) => {
+          const hostedDiagnostics: Array<{ source: string; message: string; pluginId?: string }> = []
+          if (hostedExternalPluginsEnabled && runtimeRouteHelpers) {
+            const { manager } = await getHostedManagerEntry(ctx.request)
+            await manager.load()
+            hostedDiagnostics.push(...manager.getErrors().map((error) => ({
+              source: 'hosted-plugin-load',
+              message: error.message,
+              ...(error.id ? { pluginId: error.id } : {}),
+            })))
+          }
+          const caller = await options.beforeReload?.(ctx)
+          const diagnostics = [...hostedDiagnostics, ...(caller?.diagnostics ?? [])]
+          return {
+            ...(diagnostics.length > 0 ? { diagnostics } : {}),
+            ...(caller?.restart_warnings?.length ? { restart_warnings: caller.restart_warnings } : {}),
+          }
+        }
+      : undefined,
+    registerRuntimeRoutes: hostedExternalPluginsEnabled || options.registerRuntimeRoutes
+      ? async (runtimeApp, helpers) => {
+          runtimeRouteHelpers = helpers
+          if (hostedExternalPluginsEnabled) {
+            await runtimeApp.register(boringPluginRoutes, { manager: getHostedRouteManager, iframeDocuments: true })
+          }
+          await options.registerRuntimeRoutes?.(runtimeApp, helpers)
+        }
+      : undefined,
   })
 
   await app.register(uiRoutes, {

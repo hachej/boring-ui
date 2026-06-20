@@ -28,6 +28,8 @@ export interface Workspace {
   unlink(relPath: string): Promise<void>
   readdir(relPath: string): Promise<Entry[]>
   stat(relPath: string): Promise<Stat>
+  /** Optional no-follow stat. Implementations return kind='symlink' for a symlink final path. */
+  lstat?(relPath: string): Promise<Lstat>
   mkdir(relPath: string, opts?: { recursive?: boolean }): Promise<void>
   rename(fromRelPath: string, toRelPath: string): Promise<void>
 
@@ -68,6 +70,12 @@ export interface Stat {
   size: number
   mtimeMs: number
   kind: 'file' | 'dir'
+}
+
+export interface Lstat {
+  size: number
+  mtimeMs: number
+  kind: 'file' | 'dir' | 'symlink' | 'other'
 }
 
 /**

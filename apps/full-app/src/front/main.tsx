@@ -21,6 +21,7 @@ const PRODUCT_NAME = 'Seneca AI'
 // (set this alongside the server-side LS env). The checkout itself is created
 // server-side so the buyer id can't be tampered with.
 const buyEnabled = import.meta.env.VITE_CREDITS_BUY_ENABLED === '1'
+const hostedExternalPluginsEnabled = import.meta.env.VITE_BORING_HOSTED_EXTERNAL_PLUGINS === '1'
 
 // Surface the current balance + a "Buy credits" action on the account settings page
 // (in addition to the top-bar badge). Gate the Billing section on the same hook the
@@ -87,6 +88,8 @@ createRoot(document.getElementById('root')!).render(
       appTitle={PRODUCT_NAME}
       chatEntryMode="chat-first"
       publicPaths={[]}
+      externalPlugins={false}
+      hostedExternalPlugins={hostedExternalPluginsEnabled}
       chatFirstPublicShell={{
         showTeachingArrows: true,
         composerPlaceholder: 'Sign in to chat with the agent — or type a command like /landing-page',
@@ -120,6 +123,7 @@ createRoot(document.getElementById('root')!).render(
       }}
       chatParams={chatParams}
       chatFirstPublicWorkspaceProps={{
+        hostedExternalPlugins: false,
         surfaceInitialPanels: [
           { id: 'public-landing-page', component: 'public.launch.landing', title: 'Landing page' },
         ],

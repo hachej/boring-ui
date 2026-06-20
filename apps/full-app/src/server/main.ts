@@ -9,6 +9,10 @@ function pluginAuthoringEnabledFromEnv(): boolean {
   return process.env.BORING_PLUGIN_AUTHORING === '1'
 }
 
+function hostedExternalPluginsEnabledFromEnv(): boolean {
+  return process.env.BORING_HOSTED_EXTERNAL_PLUGINS === '1'
+}
+
 async function main() {
   const appRoot = appRootFromImportMeta(import.meta.url, 2)
   // Build the metering sink up-front; the credit service attaches after the
@@ -19,6 +23,7 @@ async function main() {
     serveFrontend: true,
     plugins: serverPlugins,
     externalPlugins: false,
+    hostedExternalPlugins: hostedExternalPluginsEnabledFromEnv(),
     installPluginAuthoring: pluginAuthoringEnabledFromEnv(),
     metering: credits.meteringSink,
   })

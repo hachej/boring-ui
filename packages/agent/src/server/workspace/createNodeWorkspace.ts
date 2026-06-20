@@ -119,6 +119,15 @@ export function createNodeWorkspace(root: string, opts: CreateNodeWorkspaceOptio
         kind: fileStat.isDirectory() ? 'dir' : 'file',
       }
     },
+    async lstat(relPath) {
+      const absPath = validatePath(root, relPath)
+      const fileStat = await lstat(absPath)
+      return {
+        size: fileStat.size,
+        mtimeMs: fileStat.mtimeMs,
+        kind: fileStat.isSymbolicLink() ? 'symlink' : fileStat.isDirectory() ? 'dir' : fileStat.isFile() ? 'file' : 'other',
+      }
+    },
     async mkdir(relPath, opts) {
       const absPath = validatePath(root, relPath)
       let existingAncestor = absPath

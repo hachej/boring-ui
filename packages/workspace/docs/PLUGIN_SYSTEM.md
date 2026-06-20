@@ -10,6 +10,14 @@ For the historical generated/hosted runtime-plugin architecture exploration,
 see the archived repo-level
 `docs/plans/archive/runtime-plugin-v2-hot-reload-plan.md`.
 
+## Trust modes
+
+- **Internal trusted**: host-app bundled plugins. These may contribute native front components and trusted server/Pi surfaces.
+- **Local trusted native (`externalPlugins`)**: existing local `.pi/extensions` behavior. `boring.front`, `boring.server`, Pi resources, tools, and routes remain trusted and unchanged.
+- **Hosted untrusted iframe (`hostedExternalPlugins`)**: remote-safe opt-in. The server scans `.pi/extensions/<plugin>/package.json` via the runtime `Workspace` abstraction and only honors `boring.iframePanels`. It never imports or executes hosted `boring.front`, `boring.server`, Pi extensions/resources, tools, routes, or backend code.
+
+Hosted iframe panels must use safe plugin-relative `.html` entries. Manifest files are limited to 256 KiB, iframe documents to 1 MiB, entry strings to 256 characters, and resolved workspace-relative document paths to 512 characters. The host checks iframe document size before reading and then checks again while building `srcdoc`. The host renders iframe `srcdoc` with `sandbox="allow-scripts"`, `referrerPolicy="no-referrer"`, strict CSP, and a cryptographically random per-load nonce/MessageChannel bridge for ready/log/error diagnostics only. Hosted plugins cannot use backend routes, host React imports, filesystem writes, network proxies, or arbitrary RPC. `hostedExternalPlugins` is wired through `createWorkspaceAgentServer`, core, and `apps/full-app`; full-app enables it only with `BORING_HOSTED_EXTERNAL_PLUGINS=1` on the server and `VITE_BORING_HOSTED_EXTERNAL_PLUGINS=1` in the front bundle. When hosted mode is enabled without explicitly setting `externalPlugins:true`, external `.pi/extensions` run in hosted-only mode so native `boring.front`, `boring.server`, and `pi` fields are not imported or provisioned.
+
 ## Contents
 
 1. [Glossary](#1-glossary)
@@ -50,10 +58,10 @@ The two tiers differ by **provenance and trust**, not just lifecycle:
 
 Plugin tools' `execute()` run in the **host Node process and bypass the
 sandbox by design**; plugin loading is local-mode-only (skipped under
-`vercel-sandbox`). Hosted/marketplace plugins — untrusted external code that
-would need iframe fronts and sandbox-proxied tools — are **not implemented**;
-that provenance/permission model is a future phase (see §7 and the archived
-repo-level `docs/plans/archive/runtime-plugin-trust-modes-plan.md`).
+`vercel-sandbox`). Hosted iframe plugins now cover the remote-safe panel-only subset for
+untrusted external UI. Marketplace distribution and sandbox-proxied hosted
+backend/tool permissions remain future work (see §7 and the archived repo-level
+`docs/plans/archive/runtime-plugin-trust-modes-plan.md`).
 
 ---
 

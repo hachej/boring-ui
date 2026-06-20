@@ -136,6 +136,8 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
 }))
 
 vi.mock('@hachej/boring-workspace/server', () => ({
+  HostedPluginManager: class {},
+  boringPluginRoutes: async () => {},
   createInMemoryBridge: () => ({
     drainCommands: vi.fn(),
     getState: vi.fn(),

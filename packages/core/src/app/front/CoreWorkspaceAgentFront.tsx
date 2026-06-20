@@ -367,7 +367,7 @@ function WorkspaceRoute<
       chatParams={chatParams}
       bootPreloadPaths={bootPreloadPaths}
       frontPluginHotReload={false}
-      hotReloadEnabled={false}
+      hotReloadEnabled={resolvedWorkspaceProps.hostedExternalPlugins === true}
       showThemeToggle={false}
     />
   )
@@ -482,7 +482,7 @@ function CoreFullPagePanelRoute<TSession extends WorkspaceAgentSession = Workspa
       onAuthError={workspaceProps.onAuthError}
       onOpenFile={workspaceProps.onOpenFile}
       debug={workspaceProps.debug}
-      frontPluginHotReload={false}
+      frontPluginHotReload={workspaceProps.hostedExternalPlugins === true ? "hosted" : false}
       fullPageBasePath={scopedFullPageBasePath}
     >
       <WorkspaceBootGate

@@ -4,6 +4,7 @@ import type { AgentHarness, AgentHarnessFactory } from '../shared/harness'
 import type { TelemetrySink } from '../shared/telemetry'
 import { getEnv } from './config/env'
 import type { RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
+import type { FsCapability, Workspace } from '../shared/workspace'
 import { getRuntimeBundleStorageRoot } from './runtime/mode'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
@@ -37,6 +38,13 @@ import type { ReloadHookDiagnostic } from './http/routes/reload'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
+
+export interface AgentRuntimeRouteContext {
+  workspaceId: string
+  runtimeMode: RuntimeModeId
+  workspace: Workspace
+  workspaceFsCapability?: FsCapability
+}
 
 export interface CreateAgentAppOptions {
   workspaceRoot?: string
@@ -80,6 +88,8 @@ export interface CreateAgentAppOptions {
    * Defaults to true for standalone agent compatibility.
    */
   externalPlugins?: boolean
+  /** Enable the plugin diagnostics tool without enabling native external plugin loading. */
+  pluginDiagnostics?: boolean
   /**
    * Called BEFORE the harness reloads its session. May return a
    * `ReloadHookResult` (with `restart_warnings` and/or diagnostics) —
@@ -106,6 +116,8 @@ export interface CreateAgentAppOptions {
     workspaceId: string
     workspaceRoot: string
   }) => Promise<Array<{ source: string; message: string; pluginId?: string }>>
+  /** Register runtime-scoped routes using only the runtime Workspace abstraction; raw host roots are intentionally not exposed. */
+  registerRuntimeRoutes?: (app: FastifyInstance, context: AgentRuntimeRouteContext) => Promise<void> | void
 }
 
 export async function createAgentApp(
@@ -168,7 +180,7 @@ export async function createAgentApp(
     ...(opts.disableDefaultFileTools ? [] : buildFilesystemAgentTools(runtimeBundle)),
     ...(opts.extraTools ?? []),
     ...pluginTools,
-    ...(externalPluginsEnabled ? [createPluginDiagnosticsTool({
+    ...(externalPluginsEnabled || opts.pluginDiagnostics === true ? [createPluginDiagnosticsTool({
       getLastReloadDiagnostics: () => lastReloadDiagnostics,
       getHarness: () => harnessRef,
       ...(opts.getPluginDiagnostics
@@ -272,6 +284,12 @@ export async function createAgentApp(
     },
   })
   await app.register(readyStatusRoutes, { tracker: readyTracker })
+  await opts.registerRuntimeRoutes?.(app, {
+    workspaceId: sessionId,
+    runtimeMode: resolvedMode,
+    workspace: runtimeBundle.workspace,
+    workspaceFsCapability: modeAdapter.workspaceFsCapability,
+  })
 
   return app
 }

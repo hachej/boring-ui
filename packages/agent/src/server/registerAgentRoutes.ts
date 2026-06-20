@@ -12,6 +12,7 @@ import { getRuntimeBundleStorageRoot } from './runtime/mode'
 import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from './workspace/runtimeLayout'
 import { VERCEL_SANDBOX_WORKSPACE_ROOT } from './workspace/createVercelSandboxWorkspace'
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningResult } from './workspace/provisioning'
+import type { AgentRuntimeRouteContext } from './createAgentApp'
 import type { Workspace } from '../shared/workspace'
 import { ErrorCode } from '../shared/error-codes'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
@@ -326,6 +327,8 @@ export interface RegisterAgentRoutesOptions {
    * Defaults to true for standalone agent compatibility.
    */
   externalPlugins?: boolean
+  /** Enable the plugin diagnostics tool without enabling native external plugin loading. */
+  pluginDiagnostics?: boolean
   getSessionNamespace?: (ctx: {
     workspaceId: string
     workspaceRoot: string
@@ -364,6 +367,10 @@ export interface RegisterAgentRoutesOptions {
     workspaceId: string
     workspaceRoot: string
   }) => Promise<Array<{ source: string; message: string; pluginId?: string }>>
+  /** Register runtime-scoped routes using only the runtime Workspace abstraction; raw host roots are intentionally not exposed. */
+  registerRuntimeRoutes?: (app: FastifyInstance, helpers: {
+    getRuntimeContext(request: FastifyRequest): Promise<AgentRuntimeRouteContext>
+  }) => Promise<void> | void
 }
 
 /**
@@ -621,7 +628,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       }),
       ...buildFilesystemAgentTools(runtimeBundle),
       ...buildUploadAgentTools(runtimeBundle),
-      ...(externalPluginsEnabled ? [createPluginDiagnosticsTool({
+      ...(externalPluginsEnabled || opts.pluginDiagnostics === true ? [createPluginDiagnosticsTool({
         // `binding` is assigned later in this function; read through thunks.
         getLastReloadDiagnostics: () => binding?.lastReloadDiagnostics ?? [],
         getHarness: () => binding?.harness,
@@ -1080,4 +1087,16 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     ? { tracker: staticBinding.readyTracker }
     : { getTracker: async (request) => (await getBindingForRequest(request)).readyTracker },
   )
+  await opts.registerRuntimeRoutes?.(app, {
+    getRuntimeContext: async (request) => {
+      const workspaceId = getRequestWorkspaceId(request)
+      const binding = await getBindingForRequest(request)
+      return {
+        workspaceId,
+        runtimeMode: resolvedMode,
+        workspace: binding.runtimeBundle.workspace,
+        workspaceFsCapability: binding.runtimeBundle.workspace.fsCapability ?? modeAdapter.workspaceFsCapability,
+      }
+    },
+  })
 }

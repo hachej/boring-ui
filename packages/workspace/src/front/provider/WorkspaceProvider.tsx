@@ -50,14 +50,15 @@ function NullChatPanel(_props: WorkspaceChatPanelProps) {
   return null
 }
 
-export type FrontPluginHotReloadMode = "vite" | false
+export type FrontPluginHotReloadMode = "vite" | "hosted" | false
 
 function AgentPluginHotReloadBridge(props: { apiBaseUrl: string; workspaceId?: string; mode: FrontPluginHotReloadMode; authHeaders?: Record<string, string> }) {
   useAgentPluginHotReload({
     apiBaseUrl: props.apiBaseUrl,
     workspaceId: props.workspaceId,
     authHeaders: props.authHeaders,
-    enabled: props.mode === "vite",
+    mode: props.mode === "hosted" ? "hosted" : "vite",
+    enabled: props.mode === "vite" || props.mode === "hosted",
   })
   return null
 }

@@ -2,7 +2,7 @@
 
 export type { AgentHarness, SendMessageInput, RunContext } from './harness'
 export type { WorkspaceRuntimeContext } from './runtime'
-export type { Workspace, Entry, Stat } from './workspace'
+export type { Workspace, Entry, Lstat, Stat } from './workspace'
 export type {
   Sandbox,
   SandboxCapability,

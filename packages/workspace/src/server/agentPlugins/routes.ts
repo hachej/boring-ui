@@ -1,6 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
-import type { BoringPluginAssetManager } from "./manager"
-import type { BoringPluginEvent, PluginRestartSurface } from "./types"
+import type { BoringPluginRouteManager, BoringPluginEvent, PluginRestartSurface } from "./types"
 
 /**
  * One per plugin whose load event carried a non-empty
@@ -35,17 +34,23 @@ export function collectRestartWarnings(events: BoringPluginEvent[]): PluginResta
   return warnings
 }
 
+export type BoringPluginRouteManagerResolver = BoringPluginRouteManager | ((request: FastifyRequest) => BoringPluginRouteManager | Promise<BoringPluginRouteManager>)
+
 export interface BoringPluginRoutesOptions {
-  manager: BoringPluginAssetManager
+  manager: BoringPluginRouteManagerResolver
+  iframeDocuments?: boolean
+}
+
+async function resolveRouteManager(manager: BoringPluginRouteManagerResolver, request: FastifyRequest): Promise<BoringPluginRouteManager> {
+  return typeof manager === "function" ? await manager(request) : manager
 }
 
 export async function boringPluginRoutes(app: FastifyInstance, opts: BoringPluginRoutesOptions): Promise<void> {
-  const { manager } = opts
-
-  const listPlugins = async () => manager.list()
+  const listPlugins = async (request: FastifyRequest) => (await resolveRouteManager(opts.manager, request)).list()
   app.get("/api/v1/agent-plugins", listPlugins)
 
   const getPluginError = async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    const manager = await resolveRouteManager(opts.manager, request)
     const error = manager.getError(request.params.id)
     if (error == null) return reply.status(404).send({ error: "not_found" })
     return reply.type("text/plain").send(error)
@@ -53,6 +58,13 @@ export async function boringPluginRoutes(app: FastifyInstance, opts: BoringPlugi
   app.get<{ Params: { id: string } }>("/api/v1/agent-plugins/:id/error", getPluginError)
 
   app.get("/api/v1/agent-plugins/events", async (request, reply) => {
+    let manager: BoringPluginRouteManager
+    try {
+      manager = await resolveRouteManager(opts.manager, request)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      return reply.status(500).send({ error: "agent_plugin_manager_error", message })
+    }
     reply.hijack()
     const res = reply.raw
     res.statusCode = 200
@@ -82,7 +94,7 @@ export async function boringPluginRoutes(app: FastifyInstance, opts: BoringPlugi
       write(event.type, payload)
     })
 
-    for (const plugin of manager.listExternal()) {
+    for (const plugin of await manager.listExternal()) {
       write("boring.plugin.load", {
         type: "boring.plugin.load",
         id: plugin.id,
@@ -107,4 +119,24 @@ export async function boringPluginRoutes(app: FastifyInstance, opts: BoringPlugi
       unsubscribe()
     })
   })
+
+  const registerIframeDocumentEndpoint = opts.iframeDocuments ?? (typeof opts.manager !== "function" && typeof opts.manager.getIframeDocument === "function")
+  if (registerIframeDocumentEndpoint) {
+    app.get<{ Params: { id: string; panelId: string }; Querystring: { nonce?: string } }>(
+      "/api/v1/agent-plugins/:id/iframe/:panelId/document",
+      async (request, reply) => {
+        const manager = await resolveRouteManager(opts.manager, request)
+        if (!manager.getIframeDocument) return reply.status(404).send({ error: "not_found" })
+        const nonce = typeof request.query.nonce === "string" ? request.query.nonce : ""
+        try {
+          const document = await manager.getIframeDocument(request.params.id, request.params.panelId, nonce)
+          if (!document) return reply.status(404).send({ error: "not_found" })
+          return reply.header("Cache-Control", "no-store").send(document)
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          return reply.status(400).send({ error: "hosted_plugin_document_error", message })
+        }
+      },
+    )
+  }
 }

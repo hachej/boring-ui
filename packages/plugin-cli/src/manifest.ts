@@ -8,6 +8,16 @@
  * - `boring`: workspace/UI package discovery (front/server entrypoints and labels)
  */
 
+export interface BoringIframePanelManifest {
+  id: string
+  title: string
+  entry: string
+  placement?: string
+  chromeless?: boolean
+  supportsFullPage?: boolean
+  openCommand?: string
+}
+
 export interface BoringPackageBoringField {
   /** Optional stable plugin id. Defaults to package.json#name normalized for package discovery. */
   id?: string
@@ -16,6 +26,8 @@ export interface BoringPackageBoringField {
   /** Workspace/UI support server entry. Set false to disable convention lookup. */
   server?: string | false
   label?: string
+  /** Remote-safe hosted mode: self-contained iframe panels only. */
+  iframePanels?: BoringIframePanelManifest[]
 }
 
 export interface BoringPackagePiSourceObject {
@@ -55,12 +67,15 @@ export interface BoringPluginPackageJson {
   pi?: BoringPackagePiField
 }
 
+export const BORING_PLUGIN_IFRAME_ENTRY_MAX_LENGTH = 256
+
 export type BoringPluginManifestErrorCode =
   | "INVALID_ID"
   | "INVALID_VERSION"
   | "INVALID_FIELD"
   | "INVALID_PATH"
   | "MISSING_REQUIRED_FIELD"
+  | "SIZE_LIMIT_EXCEEDED"
 
 export interface BoringPluginManifestIssue {
   code: BoringPluginManifestErrorCode
@@ -133,6 +148,65 @@ function validateStringArray(
 
 const REMOVED_BORING_UI_FIELDS = ["outputs", "panels", "commands", "leftTabs", "surfaceResolvers", "providers", "bindings", "catalogs"] as const
 
+function validateIframePanels(
+  issues: BoringPluginManifestIssue[],
+  value: unknown,
+): BoringIframePanelManifest[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) {
+    issues.push(issue("INVALID_FIELD", "boring.iframePanels", "boring.iframePanels must be an array when provided"))
+    return undefined
+  }
+  const panels: BoringIframePanelManifest[] = []
+  value.forEach((rawPanel, index) => {
+    const field = `boring.iframePanels[${index}]`
+    if (!isRecord(rawPanel)) {
+      issues.push(issue("INVALID_FIELD", field, `${field} must be an object`))
+      return
+    }
+    const id = rawPanel.id
+    const entry = rawPanel.entry
+    const title = rawPanel.title
+    if (typeof id !== "string" || !isValidBoringPluginId(id)) {
+      issues.push(issue("INVALID_ID", `${field}.id`, `${field}.id must be a stable plugin id`))
+    }
+    if (typeof entry !== "string" || entry.length === 0) {
+      issues.push(issue("INVALID_FIELD", `${field}.entry`, `${field}.entry must be a non-empty string`))
+    } else if (entry.length > BORING_PLUGIN_IFRAME_ENTRY_MAX_LENGTH) {
+      issues.push(issue("SIZE_LIMIT_EXCEEDED", `${field}.entry`, `${field}.entry must be at most ${BORING_PLUGIN_IFRAME_ENTRY_MAX_LENGTH} characters`))
+    } else if (!isSafePluginRelativePath(entry) || !entry.toLowerCase().endsWith(".html")) {
+      issues.push(issue("INVALID_PATH", `${field}.entry`, `${field}.entry must be a safe relative .html path`))
+    }
+    if (typeof title !== "string" || title.length === 0) {
+      issues.push(issue("INVALID_FIELD", `${field}.title`, `${field}.title must be a non-empty string`))
+    }
+    if (rawPanel.placement !== undefined && typeof rawPanel.placement !== "string") {
+      issues.push(issue("INVALID_FIELD", `${field}.placement`, `${field}.placement must be a string when provided`))
+    }
+    if (rawPanel.chromeless !== undefined && typeof rawPanel.chromeless !== "boolean") {
+      issues.push(issue("INVALID_FIELD", `${field}.chromeless`, `${field}.chromeless must be a boolean when provided`))
+    }
+    if (rawPanel.supportsFullPage !== undefined && typeof rawPanel.supportsFullPage !== "boolean") {
+      issues.push(issue("INVALID_FIELD", `${field}.supportsFullPage`, `${field}.supportsFullPage must be a boolean when provided`))
+    }
+    if (rawPanel.openCommand !== undefined && typeof rawPanel.openCommand !== "string") {
+      issues.push(issue("INVALID_FIELD", `${field}.openCommand`, `${field}.openCommand must be a string when provided`))
+    }
+    if (typeof id === "string" && typeof entry === "string" && typeof title === "string") {
+      panels.push({
+        id,
+        entry,
+        title,
+        ...(typeof rawPanel.placement === "string" ? { placement: rawPanel.placement } : {}),
+        ...(typeof rawPanel.chromeless === "boolean" ? { chromeless: rawPanel.chromeless } : {}),
+        ...(typeof rawPanel.supportsFullPage === "boolean" ? { supportsFullPage: rawPanel.supportsFullPage } : {}),
+        ...(typeof rawPanel.openCommand === "string" ? { openCommand: rawPanel.openCommand } : {}),
+      })
+    }
+  })
+  return panels
+}
+
 function validateBoringField(
   issues: BoringPluginManifestIssue[],
   boring: unknown,
@@ -165,11 +239,13 @@ function validateBoringField(
   if (boring.label !== undefined && typeof boring.label !== "string") {
     issues.push(issue("INVALID_FIELD", "boring.label", "boring.label must be a string when provided"))
   }
+  const iframePanels = validateIframePanels(issues, boring.iframePanels)
   return {
     ...(typeof boring.id === "string" ? { id: boring.id } : {}),
     ...(typeof boring.front === "string" ? { front: boring.front } : {}),
     ...(typeof boring.server === "string" || boring.server === false ? { server: boring.server } : {}),
     ...(typeof boring.label === "string" ? { label: boring.label } : {}),
+    ...(iframePanels ? { iframePanels } : {}),
   }
 }
 

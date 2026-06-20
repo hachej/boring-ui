@@ -147,6 +147,46 @@ describe("WorkspaceAgentFront", () => {
     expect(captured?.hotReloadEnabled).toBe(true)
   })
 
+  it("hostedExternalPlugins defaults to hosted-only front reload", () => {
+    MockEventSource.instances = []
+    vi.stubGlobal("EventSource", MockEventSource)
+    let captured: WorkspaceChatPanelProps | undefined
+    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
+      captured = props
+      return <div>Chat panel</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="hosted-plugins-on"
+        chatPanel={CapturingChatPanel}
+        hostedExternalPlugins
+        frontPluginHotReload="vite"
+        hotReloadEnabled
+      />,
+    )
+
+    expect(MockEventSource.instances.filter((instance) => instance.url.includes("/api/v1/agent-plugins/events"))).toHaveLength(1)
+    expect(captured?.hotReloadEnabled).toBe(true)
+  })
+
+  it("hostedExternalPlugins forces the event stream even when native reload mode is false", () => {
+    MockEventSource.instances = []
+    vi.stubGlobal("EventSource", MockEventSource)
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="hosted-combined"
+        chatPanel={ChatPanel}
+        hostedExternalPlugins
+        externalPlugins
+        frontPluginHotReload={false}
+      />,
+    )
+
+    expect(MockEventSource.instances.filter((instance) => instance.url.includes("/api/v1/agent-plugins/events"))).toHaveLength(1)
+  })
+
   it("externalPlugins=false disables front and chat plugin reload UX", () => {
     MockEventSource.instances = []
     vi.stubGlobal("EventSource", MockEventSource)

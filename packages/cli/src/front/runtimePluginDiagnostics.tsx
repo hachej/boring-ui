@@ -197,6 +197,11 @@ function badgeClass(status: RuntimePluginDiagnosticsEntry["status"]): string {
   }
 }
 
+function frontTargetLabel(entry: RuntimePluginDiagnosticsEntry): string {
+  if (entry.frontTarget?.kind === "iframe") return `iframe (${entry.frontTarget.panels.length} panel${entry.frontTarget.panels.length === 1 ? "" : "s"})`
+  return entry.frontTarget?.entryUrl ?? entry.host?.entryUrl ?? "—"
+}
+
 function pluginSummary(entry: RuntimePluginDiagnosticsEntry): string {
   if (entry.browser?.lastBrowserError) return entry.browser.lastBrowserError.message
   if (entry.host?.lastErrorMessage) return entry.host.lastErrorMessage
@@ -248,7 +253,7 @@ export function RuntimePluginDiagnosticsButton(props: {
                   <div>server revision: {entry.serverLoadedRevision ?? "—"} · browser revision: {entry.browser?.latestBrowserRegisteredRevision ?? "—"} · previous good: {entry.browser?.previousGoodRevision ?? "—"}</div>
                   <div>front entry: {entry.frontPath ?? "—"}</div>
                   <div>root: {entry.rootDir ?? "—"}</div>
-                  <div>front target: {entry.frontTarget?.entryUrl ?? entry.host?.entryUrl ?? "—"}</div>
+                  <div>front target: {frontTargetLabel(entry)}</div>
                   <div>request: {entry.host?.lastRequestedPath ?? "—"} · transform ok: {entry.host?.lastTransformAt ? "yes" : "no"} · register ok: {entry.browser?.latestBrowserRegisteredRevision === entry.serverLoadedRevision ? "yes" : "no"} · unload seen: {entry.browser?.unloaded || entry.host?.lastDisposedAt ? "yes" : "no"}</div>
                   {entry.serverError ? <div className="text-red-700">server error: {entry.serverError}</div> : null}
                   {entry.host?.lastErrorMessage ? <div className="text-red-700">runtime host error: {entry.host.lastErrorCode ?? "unknown"} — {entry.host.lastErrorMessage}</div> : null}

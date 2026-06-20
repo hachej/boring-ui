@@ -3,6 +3,7 @@ import {
   isSafePluginRelativePath,
   isValidBoringPluginId,
   validateBoringPluginManifest,
+  validateBoringPluginManifestText,
 } from "../manifest"
 
 describe("package.json plugin manifest helpers", () => {
@@ -176,6 +177,50 @@ describe("validateBoringPluginManifest", () => {
     if (result.valid) {
       expect(result.packageJson.boring?.id).toBe("filesystem")
     }
+  })
+
+  it("accepts hosted iframe panel manifests", () => {
+    const result = validateBoringPluginManifest({
+      name: "hosted-panel",
+      version: "1.0.0",
+      boring: { id: "hosted-panel", label: "Hosted", iframePanels: [{ id: "main", title: "Main", entry: "panel.html", placement: "right" }] },
+    })
+    expect(result.valid).toBe(true)
+    if (result.valid) expect(result.packageJson.boring?.iframePanels?.[0]?.entry).toBe("panel.html")
+  })
+
+  it("rejects unsafe hosted iframe entries", () => {
+    const result = validateBoringPluginManifest({
+      name: "hosted-panel",
+      boring: { iframePanels: [
+        { id: "main", title: "Main", entry: "../panel.html" },
+        { id: "main", title: "Other", entry: "panel.txt" },
+      ] },
+    })
+    expect(result.valid).toBe(false)
+    if (!result.valid) {
+      expect(result.issues).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "INVALID_PATH", field: "boring.iframePanels[0].entry" }),
+        expect.objectContaining({ code: "INVALID_PATH", field: "boring.iframePanels[1].entry" }),
+      ]))
+    }
+  })
+
+  it("allows hosted iframe duplicate panel ids for hosted-scan diagnostics", () => {
+    const result = validateBoringPluginManifest({
+      name: "hosted-panel",
+      boring: { iframePanels: [
+        { id: "main", title: "Main", entry: "panel.html" },
+        { id: "main", title: "Other", entry: "other.html" },
+      ] },
+    })
+    expect(result.valid).toBe(true)
+  })
+
+  it("rejects oversized manifest text before parsing", () => {
+    const result = validateBoringPluginManifestText("{" + "\"x\":" + JSON.stringify("x".repeat(300 * 1024)) + "}")
+    expect(result.valid).toBe(false)
+    if (!result.valid) expect(result.issues[0]).toEqual(expect.objectContaining({ code: "SIZE_LIMIT_EXCEEDED" }))
   })
 
   it("rejects invalid boring.id", () => {

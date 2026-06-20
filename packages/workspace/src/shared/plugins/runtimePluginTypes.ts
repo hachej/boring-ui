@@ -1,4 +1,5 @@
 import type {
+  BoringIframePanelManifest,
   BoringPackageBoringField,
   BoringPackagePiField,
 } from "./manifest"
@@ -30,7 +31,14 @@ export interface BoringPluginModuleUrlFrontTarget {
   revision: number
 }
 
-export type BoringPluginFrontTarget = BoringPluginNativeFrontTarget | BoringPluginModuleUrlFrontTarget
+export interface BoringPluginIframeFrontTarget {
+  kind: "iframe"
+  revision: number
+  trust: "hosted-untrusted-iframe"
+  panels: BoringIframePanelManifest[]
+}
+
+export type BoringPluginFrontTarget = BoringPluginNativeFrontTarget | BoringPluginModuleUrlFrontTarget | BoringPluginIframeFrontTarget
 
 export type BoringPluginEvent =
   | {

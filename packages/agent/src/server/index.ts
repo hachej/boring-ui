@@ -96,7 +96,7 @@ export type {
 } from './workspace/provisioning'
 export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
 export { createAgentApp } from './createAgentApp'
-export type { CreateAgentAppOptions } from './createAgentApp'
+export type { AgentRuntimeRouteContext, CreateAgentAppOptions } from './createAgentApp'
 export type { AgentHarnessFactory, AgentHarnessFactoryInput } from '../shared/harness'
 export { applyCspHeaders } from './http/csp'
 export type {

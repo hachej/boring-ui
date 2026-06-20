@@ -182,6 +182,118 @@ describe("appendFrontImportRevision", () => {
 })
 
 describe("useAgentPluginHotReload", () => {
+  test("registers hosted iframe front targets without importing modules", async () => {
+    const importFront = vi.fn()
+    function Listener() {
+      useAgentPluginHotReload({ apiBaseUrl: "/agent", workspaceId: "test-workspace", importFront })
+      return null
+    }
+    function HostedHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <PanelIds />
+          <CommandList />
+        </RegistryProvider>
+      )
+    }
+    render(<HostedHarness />)
+    await waitFor(() => expect(MockEventSource.instances).toHaveLength(1))
+    act(() => {
+      MockEventSource.instances[0]!.dispatch("boring.plugin.load", {
+        type: "boring.plugin.load",
+        id: "hosted",
+        boring: { id: "hosted", iframePanels: [{ id: "main", title: "Hosted", entry: "panel.html", openCommand: "Open Hosted" }] },
+        version: "1.0.0",
+        revision: 1,
+        frontTarget: { kind: "iframe", trust: "hosted-untrusted-iframe", revision: 1, panels: [{ id: "main", title: "Hosted", entry: "panel.html", openCommand: "Open Hosted" }] },
+      })
+    })
+    await waitFor(() => expect(screen.getByTestId("panel-ids").textContent).toContain("hosted.main"))
+    expect(screen.getByTestId("command-list").textContent).toContain("hosted.main.open:Open Hosted")
+    expect(importFront).not.toHaveBeenCalled()
+  })
+
+  test("hosted mode consumes iframe targets without importing native front modules", async () => {
+    const importFront = vi.fn()
+    function Listener() {
+      useAgentPluginHotReload({ apiBaseUrl: "/agent", workspaceId: "test-workspace", mode: "hosted", importFront })
+      return null
+    }
+    function HostedModeHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+        </RegistryProvider>
+      )
+    }
+    render(<HostedModeHarness />)
+    await waitFor(() => expect(MockEventSource.instances).toHaveLength(1))
+    act(() => {
+      MockEventSource.instances[0]!.dispatch("boring.plugin.load", {
+        type: "boring.plugin.load",
+        id: "native",
+        boring: { front: "front.mjs" },
+        version: "1.0.0",
+        revision: 1,
+        frontTarget: { kind: "module-url", entryUrl: "/front.mjs", revision: 1 },
+      })
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(importFront).not.toHaveBeenCalled()
+  })
+
+  test("rejects hosted iframe targets that collide with trusted plugin ids", async () => {
+    function Listener() {
+      useAgentPluginHotReload({ apiBaseUrl: "/agent", workspaceId: "test-workspace" })
+      return null
+    }
+    function CollisionHarness() {
+      const panelRegistry = React.useMemo(() => {
+        const registry = new PanelRegistry()
+        registry.register("trusted.panel", { title: "Trusted", pluginId: "trusted", component: () => <div>trusted</div> })
+        return registry
+      }, [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <AllPanelIds />
+        </RegistryProvider>
+      )
+    }
+
+    render(<CollisionHarness />)
+    await waitFor(() => expect(MockEventSource.instances).toHaveLength(1))
+    act(() => {
+      MockEventSource.instances[0]!.dispatch("boring.plugin.load", {
+        type: "boring.plugin.load",
+        id: "trusted",
+        boring: { id: "trusted", iframePanels: [{ id: "main", title: "Hosted", entry: "panel.html" }] },
+        version: "1.0.0",
+        revision: 1,
+        frontTarget: { kind: "iframe", trust: "hosted-untrusted-iframe", revision: 1, panels: [{ id: "main", title: "Hosted", entry: "panel.html" }] },
+      })
+    })
+
+    await waitFor(() => expect(screen.getByTestId("all-panel-ids").textContent).toBe("trusted.panel"))
+    act(() => {
+      MockEventSource.instances[0]!.dispatch("boring.plugin.unload", {
+        type: "boring.plugin.unload",
+        id: "trusted",
+        revision: 2,
+      })
+    })
+    await waitFor(() => expect(screen.getByTestId("all-panel-ids").textContent).toBe("trusted.panel"))
+  })
+
   test("imports plugin front modules from SSE load events and remounts updated panes by revision", async () => {
     const dir = await makeTempDir("boring-front-hot-reload-")
     const frontPath = join(dir, "front.mjs")

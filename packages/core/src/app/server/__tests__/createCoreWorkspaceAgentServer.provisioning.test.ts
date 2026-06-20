@@ -31,6 +31,8 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
 }))
 
 vi.mock('@hachej/boring-workspace/server', () => ({
+  HostedPluginManager: class {},
+  boringPluginRoutes: async () => {},
   createInMemoryBridge: () => ({ postCommand: vi.fn() }),
   createWorkspaceUiTools: mocks.createWorkspaceUiTools,
   uiRoutes: async () => {},

@@ -86,6 +86,9 @@ export async function runWorkspaceOp(workspace: Workspace, op: RemoteWorkerWorks
       return { entries: await workspace.readdir(op.path) }
     case 'stat':
       return { stat: await workspace.stat(op.path) }
+    case 'lstat':
+      if (!workspace.lstat) throw Object.assign(new Error('lstat unsupported'), { statusCode: 501, code: 'not_implemented' })
+      return { stat: await workspace.lstat(op.path) }
     case 'mkdir':
       await workspace.mkdir(op.path, { recursive: op.recursive })
       return { ok: true }

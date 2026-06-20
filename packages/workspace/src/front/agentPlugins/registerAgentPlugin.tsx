@@ -15,7 +15,9 @@ import type { CatalogConfig } from "../../shared/plugins/types"
 import type { PanelConfig } from "../../shared/types/panel"
 import type { SurfaceOpenRequest, SurfaceResolverConfig } from "../../shared/types/surface"
 import type { CommandConfig } from "../registry/types"
+import { postUiCommand } from "../bridge"
 import { useCatalogRegistry, useCommandRegistry, useRegistry, useSurfaceResolverRegistry } from "../registry/RegistryProvider"
+import { HostedPluginIframePanel } from "./HostedPluginIframePanel"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "./reloadEvent"
 
 const PLUGIN_LOAD_FAILED_CODE = "PLUGIN_LOAD_FAILED" satisfies ErrorCode
@@ -48,6 +50,7 @@ export interface RegisterAgentPluginOptions {
   workspaceId?: string
   enabled?: boolean
   authHeaders?: Record<string, string>
+  mode?: "vite" | "hosted"
   importFront?: (frontUrl: string, revision: number) => Promise<{ default?: BoringFrontFactoryWithId }>
   // Bounded retry for transient cold-start front-import failures (singleton
   // graph not yet warm after a hard refresh). Exposed mainly for tests.
@@ -111,7 +114,8 @@ function resolveFrontEntryUrl(
   event: Extract<RuntimePluginBrowserEvent, { type: "boring.plugin.load" }>,
   apiBaseUrl: string | undefined,
 ): string | undefined {
-  if (!event.frontTarget?.entryUrl) return undefined
+  if (!event.frontTarget || event.frontTarget.kind === "iframe") return undefined
+  if (!event.frontTarget.entryUrl) return undefined
   return resolveFrontUrl(event.frontTarget.entryUrl, apiBaseUrl)
 }
 
@@ -412,6 +416,67 @@ function commitCapturedFrontFactory(
   registries.surfaceResolvers.replaceByPluginId(pluginId, payloads.surfaceResolvers)
 }
 
+function hasExistingNonRuntimePluginId(
+  pluginId: string,
+  registries: ReturnType<typeof getRegistries>,
+  registeredPluginIds: Set<string>,
+): boolean {
+  if (registeredPluginIds.has(pluginId)) return false
+  return registries.panels.listAll().some((panel) => panel.pluginId === pluginId) ||
+    registries.commands.getCommands().some((command) => command.pluginId === pluginId) ||
+    registries.catalogs.list().some((catalog) => catalog.pluginId === pluginId) ||
+    registries.surfaceResolvers.list().some((resolver) => resolver.pluginId === pluginId)
+}
+
+function commitIframeFrontTarget(
+  event: Extract<RuntimePluginBrowserEvent, { type: "boring.plugin.load" }>,
+  options: RegisterAgentPluginOptions,
+  registries: ReturnType<typeof getRegistries>,
+  registeredPluginIds: Set<string>,
+): boolean {
+  if (event.frontTarget?.kind !== "iframe") return false
+  if (hasExistingNonRuntimePluginId(event.id, registries, registeredPluginIds)) {
+    console.warn(`[boring-ui] hosted plugin "${event.id}" collides with an existing trusted plugin id; ignoring iframe target`)
+    return false
+  }
+  const panels: PanelConfig[] = event.frontTarget.panels.map((panel) => ({
+    id: `${event.id}.${panel.id}`,
+    title: panel.title,
+    placement: panel.placement ?? "right",
+    ...(panel.chromeless !== undefined ? { chromeless: panel.chromeless } : {}),
+    ...(panel.supportsFullPage !== undefined ? { supportsFullPage: panel.supportsFullPage } : {}),
+    pluginId: event.id,
+    pluginRevision: event.revision,
+    lazy: false,
+    component: (props) => <HostedPluginIframePanel {...props} params={{ ...(typeof props.params === "object" && props.params ? props.params : {}), apiBaseUrl: options.apiBaseUrl, workspaceId: options.workspaceId, pluginId: event.id, panelId: panel.id, revision: event.revision }} />,
+  }))
+  const commands: CommandConfig[] = event.frontTarget.panels
+    .filter((panel) => typeof panel.openCommand === "string" && panel.openCommand.length > 0)
+    .map((panel) => ({
+      id: `${event.id}.${panel.id}.open`,
+      title: panel.openCommand!,
+      pluginId: event.id,
+      run: () => {
+        postUiCommand({
+          kind: "openPanel",
+          params: {
+            id: `${event.id}.${panel.id}.instance`,
+            component: `${event.id}.${panel.id}`,
+            title: panel.title,
+            params: { apiBaseUrl: options.apiBaseUrl, workspaceId: options.workspaceId, pluginId: event.id, panelId: panel.id, revision: event.revision },
+          },
+        })
+      },
+    }))
+  const payloads = { panels, commands, catalogs: [], surfaceResolvers: [] }
+  assertNoOutputCollisions(event.id, payloads, registries)
+  registries.panels.replaceByPluginId(event.id, panels)
+  registries.commands.replaceByPluginId(event.id, commands)
+  registries.catalogs.replaceByPluginId(event.id, [])
+  registries.surfaceResolvers.replaceByPluginId(event.id, [])
+  return true
+}
+
 function unregisterPlugin(pluginId: string, registries: ReturnType<typeof getRegistries>): void {
   registries.panels.replaceByPluginId(pluginId, [])
   registries.commands.replaceByPluginId(pluginId, [])
@@ -501,7 +566,6 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           event = JSON.parse(raw.data) as Extract<RuntimePluginBrowserEvent, { type: "boring.plugin.load" }>
           if (disposed) return
           if (event.workspaceId && options.workspaceId && event.workspaceId !== options.workspaceId) return
-          if (event.replay) replaySeenRef.current.add(event.id)
           // On a `/reload`-triggered reconnect, re-import the replayed snapshot even
           // at an unchanged revision (its registrations were kept, not torn down).
           const bypassGate = forceReimport && event.replay === true
@@ -509,6 +573,16 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           const latestRequested = latestRequestedRef.current.get(event.id) ?? 0
           if (!bypassGate && event.revision <= Math.max(lastSeen, latestRequested)) return
           latestRequestedRef.current.set(event.id, event.revision)
+          if (event.frontTarget?.kind === "iframe") {
+            if (!commitIframeFrontTarget(event, options, registries, registeredRef.current)) return
+            if (event.replay) replaySeenRef.current.add(event.id)
+            registeredRef.current.add(event.id)
+            lastSeenRef.current.set(event.id, event.revision)
+            window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: event }))
+            return
+          }
+          if (options.mode === "hosted") return
+          if (event.replay) replaySeenRef.current.add(event.id)
           const frontEntryUrl = resolveFrontEntryUrl(event, options.apiBaseUrl)
           if (frontEntryUrl) {
             pendingTracked = true

@@ -154,6 +154,22 @@ describe("boring agent plugin assets", () => {
     }
   })
 
+  test("native-only plugin routes do not mount the hosted iframe document endpoint", async () => {
+    const root = await tmp("boring-plugin-native-no-iframe-route-")
+    const manager = new BoringPluginAssetManager({ pluginDirs: [], errorRoot: join(root, ".errors") })
+    await manager.load()
+
+    const app = Fastify({ logger: false })
+    await app.register(boringPluginRoutes, { manager })
+    try {
+      const response = await app.inject({ method: "GET", url: "/api/v1/agent-plugins/example/iframe/main/document?nonce=abc" })
+      expect(response.statusCode).toBe(404)
+      expect(response.json()).not.toEqual({ error: "not_found" })
+    } finally {
+      await app.close()
+    }
+  })
+
   test("manager emits module-url front targets when no frontTargetResolver is supplied", async () => {
     const root = await tmp("boring-plugin-front-fallback-")
     await writePlugin(root)

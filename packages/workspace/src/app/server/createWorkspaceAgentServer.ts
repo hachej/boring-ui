@@ -24,9 +24,10 @@ import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
 import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
 import { BoringPluginAssetManager } from "../../server/agentPlugins/manager"
-import type { BoringPluginFrontTargetResolver, BoringPluginSource, BoringPluginSourceInput } from "../../server/agentPlugins/types"
+import type { BoringPluginEvent, BoringPluginFrontTargetResolver, BoringPluginListEntry, BoringPluginRouteManager, BoringPluginSource, BoringPluginSourceInput } from "../../server/agentPlugins/types"
 import { boringPluginRoutes, collectRestartWarnings } from "../../server/agentPlugins/routes"
 import { RuntimeBackendRegistry, runtimeBackendGateway } from "../../server/runtimeBackend"
+import { HostedPluginManager } from "../../server/hostedPlugins/manager"
 import { aggregatePluginPrompts } from "../../server/agentPlugins/aggregatePluginPrompts"
 import { normalizeBoringPluginPiPackages } from "../../server/agentPlugins/piPackages"
 import {
@@ -142,6 +143,8 @@ export interface CreateWorkspaceAgentServerOptions
    * `additionalBoringPluginDirs` continue to work.
    */
   externalPlugins?: boolean
+  /** Opt-in remote-safe hosted plugin mode. Emits iframe targets only and never imports plugin code. */
+  hostedExternalPlugins?: boolean
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -570,6 +573,68 @@ export function readWorkspacePluginPackagePiSnapshot(pluginDirs: BoringPluginSou
   }
 }
 
+class CombinedPluginRouteManager implements BoringPluginRouteManager {
+  constructor(private readonly managers: BoringPluginRouteManager[]) {}
+  private merge(entries: BoringPluginListEntry[]): BoringPluginListEntry[] {
+    const byId = new Map<string, BoringPluginListEntry>()
+    for (const entry of entries) {
+      const current = byId.get(entry.id)
+      if (!current || entry.frontTarget?.kind === "iframe" || current.frontTarget?.kind !== "iframe") byId.set(entry.id, entry)
+    }
+    return [...byId.values()]
+  }
+  async list() { return this.merge((await Promise.all(this.managers.map((manager) => manager.list()))).flat()) }
+  async listExternal() { return this.merge((await Promise.all(this.managers.map((manager) => manager.listExternal()))).flat()) }
+  private async listAllExternal(): Promise<BoringPluginListEntry[]> {
+    return (await Promise.all(this.managers.map((manager) => manager.listExternal()))).flat()
+  }
+  private async hasHostedIframeEntry(id: string): Promise<boolean> {
+    return (await this.listAllExternal()).some((entry) => entry.id === id && entry.frontTarget?.kind === "iframe")
+  }
+  private async nativeEntryFor(id: string): Promise<BoringPluginListEntry | undefined> {
+    return (await this.listAllExternal()).find((entry) => entry.id === id && entry.frontTarget?.kind !== "iframe")
+  }
+  subscribe(listener: (event: BoringPluginEvent) => void) {
+    const wrapped = (event: BoringPluginEvent) => {
+      void (async () => {
+        if (event.type === "boring.plugin.load" && event.frontTarget?.kind !== "iframe" && await this.hasHostedIframeEntry(event.id)) return
+        if (event.type === "boring.plugin.unload") {
+          if (await this.hasHostedIframeEntry(event.id)) return
+          const nativeEntry = await this.nativeEntryFor(event.id)
+          if (nativeEntry) {
+            listener({
+              type: "boring.plugin.load",
+              id: nativeEntry.id,
+              boring: nativeEntry.boring,
+              version: nativeEntry.version,
+              revision: Math.max(nativeEntry.revision, event.revision + 1),
+              ...(nativeEntry.frontTarget ? { frontTarget: { ...nativeEntry.frontTarget, revision: Math.max(nativeEntry.frontTarget.revision, event.revision + 1) } } : {}),
+            })
+            return
+          }
+        }
+        listener(event)
+      })()
+    }
+    const unsubs = this.managers.map((manager) => manager.subscribe(wrapped))
+    return () => { for (const unsub of unsubs) unsub() }
+  }
+  getError(id: string) {
+    for (const manager of this.managers) {
+      const error = manager.getError(id)
+      if (error) return error
+    }
+    return null
+  }
+  async getIframeDocument(id: string, panelId: string, nonce: string) {
+    for (const manager of this.managers) {
+      const document = await manager.getIframeDocument?.(id, panelId, nonce)
+      if (document) return document
+    }
+    return undefined
+  }
+}
+
 export async function createWorkspaceAgentServer(
   opts: CreateWorkspaceAgentServerOptions = {},
 ): Promise<FastifyInstance> {
@@ -580,7 +645,15 @@ export async function createWorkspaceAgentServer(
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
   const workspaceFsCapability = modeAdapter.workspaceFsCapability ?? "best-effort"
   const validateUiPaths = opts.validateUiPaths ?? workspaceFsCapability === "strong"
-  const externalPluginsEnabled = opts.externalPlugins !== false
+  const hostedExternalPluginsEnabled = opts.hostedExternalPlugins === true
+  const externalPluginsEnabled = opts.externalPlugins === false
+    ? false
+    : hostedExternalPluginsEnabled
+      ? opts.externalPlugins === true
+      : true
+  const runtimePluginTrustMode = hostedExternalPluginsEnabled
+    ? externalPluginsEnabled ? "combined" : "hosted-only"
+    : "native-only"
   const uiTools = createWorkspaceUiTools(bridge, {
     workspaceRoot: validateUiPaths ? workspaceRoot : undefined,
   })
@@ -674,6 +747,7 @@ export async function createWorkspaceAgentServer(
     errorRoot: join(workspaceRoot, ".pi", "extensions"),
     frontTargetResolver: opts.boringPluginFrontTargetResolver,
   })
+  let hostedPluginManager: HostedPluginManager | undefined
   const runtimeBackendRegistry = new RuntimeBackendRegistry()
 
   const buildRuntimeProvisioningInputs = () => {
@@ -723,6 +797,7 @@ export async function createWorkspaceAgentServer(
     mode: resolvedMode,
     workspaceRoot,
     externalPlugins: externalPluginsEnabled,
+    pluginDiagnostics: externalPluginsEnabled || hostedExternalPluginsEnabled,
     extraTools: [
       ...(opts.extraTools ?? []),
       ...uiTools,
@@ -756,6 +831,7 @@ export async function createWorkspaceAgentServer(
       let restart_warnings: ReturnType<typeof collectRestartWarnings> = []
       let diagnostics: PluginRebuildResult["diagnostics"] = []
       refreshBoringPluginDirs()
+      await hostedPluginManager?.load()
       const scan = await boringAssetManager.load()
       const backendReload = await runtimeBackendRegistry.reloadFromLoadedPlugins(boringAssetManager.inspectLoaded())
       restart_warnings = collectRestartWarnings(scan.events)
@@ -764,8 +840,13 @@ export async function createWorkspaceAgentServer(
         message: error.message,
         pluginId: error.id,
       }))
+      const hostedDiagnostics = (hostedPluginManager?.getErrors() ?? []).map((error) => ({
+        source: "hosted-plugin-load",
+        message: error.message,
+        ...(error.id ? { pluginId: error.id } : {}),
+      }))
       const rebuild = await rebuildPlugins()
-      diagnostics = [...scanDiagnostics, ...backendReload.diagnostics, ...rebuild.diagnostics]
+      diagnostics = [...scanDiagnostics, ...hostedDiagnostics, ...backendReload.diagnostics, ...rebuild.diagnostics]
       await runRuntimeProvisioning()
       const callerResult = await opts.beforeReload?.()
       const callerRestartWarnings = callerResult && typeof callerResult === "object"
@@ -787,6 +868,11 @@ export async function createWorkspaceAgentServer(
       }
     },
     getPluginDiagnostics: async () => [
+      ...(hostedPluginManager?.getErrors() ?? []).map((error) => ({
+        source: "hosted-plugin-load",
+        message: error.message,
+        ...(error.id ? { pluginId: error.id } : {}),
+      })),
       ...boringAssetManager.getErrors().map((error) => ({
         source: "plugin-load",
         message: error.message,
@@ -809,9 +895,22 @@ export async function createWorkspaceAgentServer(
       getHotReloadableResources: getHotReloadablePiResources,
     },
     systemPromptDynamic: () => aggregatePluginPrompts(boringAssetManager),
+    registerRuntimeRoutes: async (runtimeApp, runtimeContext) => {
+      if (runtimePluginTrustMode !== "native-only") {
+        hostedPluginManager = new HostedPluginManager({ workspace: runtimeContext.workspace })
+        await hostedPluginManager.load()
+      }
+      await opts.registerRuntimeRoutes?.(runtimeApp, runtimeContext)
+    },
   })
   refreshBoringPluginDirs()
   await boringAssetManager.load()
+  const pluginRouteManagers: BoringPluginRouteManager[] = [boringAssetManager]
+  if (hostedPluginManager) pluginRouteManagers.push(hostedPluginManager)
+  await app.register(boringPluginRoutes, {
+    manager: pluginRouteManagers.length === 1 ? pluginRouteManagers[0]! : new CombinedPluginRouteManager(pluginRouteManagers),
+    iframeDocuments: Boolean(hostedPluginManager),
+  })
   await runtimeBackendRegistry.reloadFromLoadedPlugins(boringAssetManager.inspectLoaded())
   if (typeof app.addHook === "function") {
     app.addHook("onClose", async () => {
@@ -820,9 +919,6 @@ export async function createWorkspaceAgentServer(
     })
   }
   await app.register(uiRoutes, { bridge, preserveStateKeys: pluginCollection.preservedUiStateKeys })
-  await app.register(boringPluginRoutes, {
-    manager: boringAssetManager,
-  })
   await app.register(runtimeBackendGateway, { registry: runtimeBackendRegistry, defaultWorkspaceId: workspaceRoot })
   for (const { routes } of pluginCollection.routeContributions) {
     await app.register(routes)

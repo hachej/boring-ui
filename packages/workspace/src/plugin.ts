@@ -30,6 +30,7 @@ export type {
 
 export {
   validateBoringPluginManifest,
+  validateBoringPluginManifestText,
   isSafePluginRelativePath,
   isValidBoringPluginId,
 } from "./shared/plugins/manifest"
@@ -46,6 +47,7 @@ export {
 } from "./shared/plugins/uiBridgeRegistry"
 export type { OpenPanelArgs } from "./shared/plugins/uiBridgeRegistry"
 export type {
+  BoringIframePanelManifest,
   BoringPackageBoringField,
   BoringPackagePiField,
   BoringPackagePiSource,

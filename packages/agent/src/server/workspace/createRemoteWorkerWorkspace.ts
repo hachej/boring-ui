@@ -1,5 +1,6 @@
 import type {
   Entry,
+  Lstat,
   Stat,
   Workspace,
   WorkspaceChangeEvent,
@@ -24,8 +25,13 @@ function expectData(result: RemoteWorkerWorkspaceResult): Uint8Array {
 }
 
 function expectStat(result: RemoteWorkerWorkspaceResult): Stat {
-  if ('stat' in result && result.stat) return result.stat
+  if ('stat' in result && result.stat && result.stat.kind !== 'symlink') return result.stat as Stat
   throw new Error('remote worker returned invalid stat response')
+}
+
+function expectLstat(result: RemoteWorkerWorkspaceResult): Lstat {
+  if ('stat' in result && result.stat) return result.stat
+  throw new Error('remote worker returned invalid lstat response')
 }
 
 function expectEntries(result: RemoteWorkerWorkspaceResult): Entry[] {
@@ -141,6 +147,9 @@ export function createRemoteWorkerWorkspace(client: RemoteWorkerClient): Workspa
     },
     async stat(path) {
       return expectStat(await client.workspace({ op: 'stat', path }))
+    },
+    async lstat(path) {
+      return expectLstat(await client.workspace({ op: 'lstat', path }))
     },
     async mkdir(path, opts) {
       await client.workspace({ op: 'mkdir', path, recursive: opts?.recursive })

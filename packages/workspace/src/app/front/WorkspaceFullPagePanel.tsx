@@ -1,7 +1,7 @@
 "use client"
 
 import { ErrorState } from "@hachej/boring-ui-kit"
-import { useLayoutEffect, useMemo } from "react"
+import { useLayoutEffect, useMemo, useSyncExternalStore } from "react"
 import { PanelRenderModeProvider } from "../../front/fullPage"
 import { usePluginErrors } from "../../front/plugin"
 import { useRegistry } from "../../front/registry"
@@ -115,6 +115,7 @@ function FullPagePanelError({ code, title, description }: { code: WorkspaceFullP
 
 export function WorkspaceFullPagePanel({ componentId, params = {} }: WorkspaceFullPagePanelProps) {
   const registry = useRegistry()
+  useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot)
   const { errors } = usePluginErrors()
   const panel = registry.get(componentId)
   const WrappedComponent = registry.getComponents()[componentId]

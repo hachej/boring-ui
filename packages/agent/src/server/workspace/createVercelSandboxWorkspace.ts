@@ -2,6 +2,7 @@ import type { Sandbox as VercelSandbox } from '@vercel/sandbox'
 
 import type {
   Entry,
+  Lstat,
   Stat,
   Workspace,
   WorkspaceChangeEvent,
@@ -485,6 +486,13 @@ export function createVercelSandboxWorkspace(
         statCache.set(sandboxPath, mappedStat)
       }
       return cloneStat(mappedStat)
+    },
+    async lstat(relPath) {
+      const sandboxPath = toSandboxPath(relPath)
+      return await runJson<Lstat>(
+        remote,
+        `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const s=fs.lstatSync(p); process.stdout.write(JSON.stringify({size:s.size,mtimeMs:s.mtimeMs,kind:s.isSymbolicLink()?'symlink':s.isDirectory()?'dir':s.isFile()?'file':'other'}))`)} ${shellQuote(sandboxPath)}`,
+      )
     },
     async mkdir(relPath, opts) {
       const sandboxPath = toSandboxPath(relPath)

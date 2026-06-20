@@ -22,6 +22,7 @@ vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
   }
 })
 
+import { createNodeWorkspace } from "@hachej/boring-agent/server"
 import {
   collectWorkspaceAgentServerPlugins,
   createWorkspaceAgentServer,
@@ -623,6 +624,61 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       expect(agentOptions.pi?.getHotReloadableResources?.().additionalSkillPaths).toContain(join(pluginRoot, "agent", "skills"))
       expect(agentOptions.pi?.getHotReloadableResources?.().extensionPaths).toContain(join(pluginRoot, "agent", "index.ts"))
       expect(agentOptions.systemPromptDynamic?.()).toContain("GLOBAL_PLUGIN_PROMPT")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("hostedExternalPlugins defaults to hosted-only for external .pi plugins", async () => {
+    const workspaceRoot = await makeTempDir("boring-hosted-only-workspace-")
+    const pluginRoot = join(workspaceRoot, ".pi", "extensions", "hosted-only")
+    await mkdir(join(pluginRoot, "front"), { recursive: true })
+    await mkdir(join(pluginRoot, "server"), { recursive: true })
+    await mkdir(join(pluginRoot, "agent", "skills"), { recursive: true })
+    await writeFile(join(pluginRoot, "panel.html"), "<p>hosted</p>", "utf8")
+    await writeFile(join(pluginRoot, "front", "index.tsx"), "throw new Error('native front imported')\n", "utf8")
+    await writeFile(join(pluginRoot, "server", "index.ts"), "throw new Error('native server imported')\n", "utf8")
+    await writeFile(join(pluginRoot, "agent", "index.ts"), "throw new Error('pi extension imported')\n", "utf8")
+    await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
+      name: "hosted-only",
+      version: "1.0.0",
+      boring: {
+        front: "front/index.tsx",
+        server: "server/index.ts",
+        iframePanels: [{ id: "main", title: "Main", entry: "panel.html" }],
+      },
+      pi: { extensions: ["agent/index.ts"], skills: ["agent/skills"] },
+    }), "utf8")
+
+    mockCreateAgentAppOnce(async (rawOpts) => {
+      const app = Fastify({ logger: false })
+      const opts = rawOpts as { registerRuntimeRoutes?: (app: ReturnType<typeof Fastify>, context: unknown) => Promise<void>; externalPlugins?: boolean }
+      expect(opts.externalPlugins).toBe(false)
+      await opts.registerRuntimeRoutes?.(app, {
+        workspaceId: "test-workspace",
+        runtimeMode: "vercel-sandbox",
+        workspace: createNodeWorkspace(workspaceRoot),
+        workspaceFsCapability: "best-effort",
+      })
+      return app
+    })
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      logger: false,
+      provisionWorkspace: false,
+      hostedExternalPlugins: true,
+    })
+
+    try {
+      const list = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
+      expect(list.statusCode).toBe(200)
+      expect(list.json()).toEqual([
+        expect.objectContaining({
+          id: "hosted-only",
+          frontTarget: expect.objectContaining({ kind: "iframe" }),
+        }),
+      ])
     } finally {
       await app.close()
     }

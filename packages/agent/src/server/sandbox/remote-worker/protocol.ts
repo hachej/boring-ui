@@ -1,4 +1,4 @@
-import type { Entry, Stat, WorkspaceChangeEvent } from '../../../shared/workspace'
+import type { Entry, Lstat, Stat, WorkspaceChangeEvent } from '../../../shared/workspace'
 import type { ExecResult } from '../../../shared/sandbox'
 
 export const REMOTE_WORKER_RUNTIME_CWD = '/workspace'
@@ -19,13 +19,14 @@ export type RemoteWorkerWorkspaceOp =
   | { op: 'unlink'; path: string }
   | { op: 'readdir'; path: string }
   | { op: 'stat'; path: string }
+  | { op: 'lstat'; path: string }
   | { op: 'mkdir'; path: string; recursive?: boolean }
   | { op: 'rename'; from: string; to: string }
 
 export type RemoteWorkerWorkspaceResult =
   | { content: string }
   | { dataBase64: string }
-  | { stat: Stat }
+  | { stat: Stat | Lstat }
   | { content: string; stat: Stat }
   | { entries: Entry[] }
   | { ok: true }
