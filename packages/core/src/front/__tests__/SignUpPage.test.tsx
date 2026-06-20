@@ -135,6 +135,36 @@ describe('SignUpPage', () => {
   )
 
   it(
+    'uses claim copy and redirects back to the outreach workspace after account creation',
+    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      mockSignUpEmail.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null })
+      window.history.pushState({}, '', '/auth/signup?claim=1&callbackURL=%2Fworkspace%2Fw1%3Ftab%3Dchat')
+
+      render(
+        <>
+          <SignUpPage />
+          <CurrentPath />
+        </>,
+        { wrapper: Wrapper },
+      )
+
+      expect(screen.getByText(/save your account/i)).toBeTruthy()
+      expect(screen.getByText(/keep your workspace, credits, and history/i)).toBeTruthy()
+
+      const user = userEvent.setup()
+      await user.type(screen.getByLabelText(/name/i), 'Claimed User')
+      await user.type(screen.getByLabelText(/email/i), 'claimed@example.com')
+      await user.type(screen.getByLabelText(/password/i), 'secret12345')
+      await user.click(screen.getByRole('button', { name: /sign up/i }))
+
+      await waitFor(() =>
+        expect(screen.getByTestId('current-path').textContent).toBe('/workspace/w1'),
+      )
+      assertionPassed('signup-claim-redirect')
+    }),
+  )
+
+  it(
     'shows Google sign-up on the normal signup flow when enabled',
     withBeadId(GOOGLE_BEAD_ID, async ({ assertionPassed }) => {
       mockUseOptionalConfig.mockReturnValue({ features: { googleOauth: true } })

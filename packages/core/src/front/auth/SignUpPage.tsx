@@ -26,6 +26,17 @@ function readGoogleAuthError(): string | null {
   return error ? DEFAULT_GOOGLE_SIGNUP_ERROR : null
 }
 
+function readSignUpParams(): { inviteToken: string | null; claim: boolean; callbackURL: string } {
+  if (typeof window === 'undefined') return { inviteToken: null, claim: false, callbackURL: '/' }
+  const params = new URLSearchParams(window.location.search)
+  const callbackURL = params.get('callbackURL') ?? '/'
+  return {
+    inviteToken: params.get('invite_token'),
+    claim: params.get('claim') === '1',
+    callbackURL: callbackURL.startsWith('/') && !callbackURL.startsWith('//') ? callbackURL : '/',
+  }
+}
+
 export function SignUpPage() {
   const signUp = useSignUp()
   const navigate = useNavigate()
@@ -35,9 +46,7 @@ export function SignUpPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
 
-  const inviteToken = typeof window !== 'undefined'
-    ? new URLSearchParams(window.location.search).get('invite_token')
-    : null
+  const { inviteToken, claim, callbackURL } = readSignUpParams()
   const showGoogleAuth = config?.features.googleOauth === true && !inviteToken
 
   const {
@@ -65,6 +74,8 @@ export function SignUpPage() {
         setServerError(result.error.message ?? 'Sign up failed')
       } else if (isRuntimeEmailVerificationEnabled(config)) {
         navigate(routes.verifyEmail, { replace: true })
+      } else if (claim) {
+        navigate(callbackURL, { replace: true })
       } else {
         setSuccess(true)
       }
@@ -99,8 +110,12 @@ export function SignUpPage() {
     <div className="flex min-h-screen items-center justify-center p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>Create an account</CardTitle>
-          <CardDescription>Enter your details to get started</CardDescription>
+          <CardTitle>{claim ? 'Save your account' : 'Create an account'}</CardTitle>
+          <CardDescription>
+            {claim
+              ? 'Create an account to keep your workspace, credits, and history.'
+              : 'Enter your details to get started'}
+          </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit(onSubmit)} noValidate>
           <CardContent className="space-y-4">
