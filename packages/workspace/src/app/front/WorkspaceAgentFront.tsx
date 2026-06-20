@@ -14,7 +14,6 @@ import type {
   SurfaceShellProps,
   SurfaceShellSnapshot,
 } from "../../front/chrome/artifact-surface/SurfaceShell"
-import { WORKSPACE_SKILLS_PANEL_ID, workspaceSkillsPanel } from "../../front/chrome/skills/definition"
 import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
 import { AppLeftPane } from "../../front/layout/plugin-tabs/AppLeftPane"
@@ -502,11 +501,10 @@ export function WorkspaceAgentFront<
   )
   const shellPersistenceEnabled = persistenceEnabled !== false
   const isPluginTabsLayout = workspaceLayout === "plugin-tabs"
-  const providerPanels = useMemo(() => {
-    if (!isPluginTabsLayout) return panels
-    if (panels?.some((panel) => panel.id === WORKSPACE_SKILLS_PANEL_ID)) return panels
-    return [...(panels ?? []), workspaceSkillsPanel]
-  }, [isPluginTabsLayout, panels])
+  // Skills is only ever a chat-left overlay (see leftOverlay node below); it is
+  // intentionally NOT registered as a workspace panel so it never appears in the
+  // workbench surface.
+  const providerPanels = panels
   const resolvedSessionStorageKey =
     sessionStorageKey ?? `boring-workspace:sessions:${workspaceId}`
   const resolvedRequestHeaders = useMemo(
