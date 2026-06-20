@@ -1,12 +1,8 @@
 "use client"
 
-import { useMemo, useSyncExternalStore, type ReactNode } from "react"
+import { useMemo, type ReactNode } from "react"
 import { Clock3, MessageSquarePlus, Pin, Plug, Plus, Search, Sparkles } from "lucide-react"
 import { cn } from "../../lib/utils"
-import { useRegistry } from "../../registry"
-import type { OpenPanelConfig, SurfaceShellSnapshot } from "../../chrome/artifact-surface/SurfaceShell"
-import type { PanelConfig } from "../../registry/types"
-import { isWorkspacePagePlacement } from "../../../shared/types/panel"
 
 export interface AppLeftPaneSession {
   id: string
@@ -24,14 +20,12 @@ export interface AppLeftPaneProps {
   activeSessionId?: string | null
   openSessionIds: readonly string[]
   pinnedSessionIds: readonly string[]
-  surfaceSnapshot: SurfaceShellSnapshot
-  skillsPanelId: string
   onCreateSession: () => void
   onOpenCommandPalette: () => void
   onSwitchSession: (id: string) => void
   onOpenSessionAsPane: (id: string) => void
   onToggleSessionPinned: (id: string) => void
-  onOpenPlugins: (panel?: OpenPanelConfig) => void
+  onOpenPlugins: () => void
   onOpenSkills: () => void
 }
 
@@ -46,8 +40,6 @@ export function AppLeftPane({
   activeSessionId,
   openSessionIds,
   pinnedSessionIds,
-  surfaceSnapshot,
-  skillsPanelId,
   onCreateSession,
   onOpenCommandPalette,
   onSwitchSession,
@@ -56,12 +48,6 @@ export function AppLeftPane({
   onOpenPlugins,
   onOpenSkills,
 }: AppLeftPaneProps) {
-  const panelRegistry = useRegistry()
-  const panels = useSyncExternalStore(
-    panelRegistry.subscribe,
-    panelRegistry.getSnapshot,
-    panelRegistry.getSnapshot,
-  )
   const openSet = useMemo(() => new Set(openSessionIds), [openSessionIds])
   const pinnedSet = useMemo(() => new Set(pinnedSessionIds), [pinnedSessionIds])
   const pinnedSessions = useMemo(
@@ -74,11 +60,6 @@ export function AppLeftPane({
     () => sessions.filter((session) => !pinnedSet.has(session.id)),
     [pinnedSet, sessions],
   )
-  const pluginPanel = useMemo(
-    () => resolveCurrentPluginWorkspacePage(panels, surfaceSnapshot, skillsPanelId),
-    [panels, skillsPanelId, surfaceSnapshot],
-  )
-
   const renderSession = (session: AppLeftPaneSession, pinned: boolean) => {
     const state: SessionRowState = session.id === activeSessionId
       ? "active"
@@ -115,7 +96,7 @@ export function AppLeftPane({
       <nav className="shrink-0 space-y-1 border-b border-border/60 px-2 py-2" aria-label="Primary workspace actions">
         <PrimaryAction icon={<Plus className="h-4 w-4" />} label="New chat" onClick={onCreateSession} />
         <PrimaryAction icon={<Search className="h-4 w-4" />} label="Search" onClick={onOpenCommandPalette} />
-        <PrimaryAction icon={<Plug className="h-4 w-4" />} label="Plugins" onClick={() => onOpenPlugins(pluginPanel)} />
+        <PrimaryAction icon={<Plug className="h-4 w-4" />} label="Plugins" onClick={onOpenPlugins} />
         <PrimaryAction icon={<Sparkles className="h-4 w-4" />} label="Skills" onClick={onOpenSkills} />
       </nav>
 
@@ -257,39 +238,4 @@ function AppSessionRow({
       </span>
     </div>
   )
-}
-
-function resolveCurrentPluginWorkspacePage(
-  panels: readonly PanelConfig[],
-  snapshot: SurfaceShellSnapshot,
-  skillsPanelId: string,
-): OpenPanelConfig | undefined {
-  const workspacePages = panels.filter((panel) => (
-    isWorkspacePagePlacement(panel.placement)
-    && panel.id !== skillsPanelId
-    && panel.source !== "core"
-  ))
-  if (workspacePages.length === 0) return undefined
-
-  type ResolvedWorkspacePage = { panel: PanelConfig; tab?: SurfaceShellSnapshot["openTabs"][number] }
-  const byComponent = new Map(workspacePages.map((panel) => [panel.id, panel]))
-  const panelForTab = (tab: SurfaceShellSnapshot["openTabs"][number]): ResolvedWorkspacePage | undefined => {
-    const panel = byComponent.get(tab.component ?? tab.id)
-    return panel ? { panel, tab } : undefined
-  }
-  const activeTab = snapshot.activeTab
-    ? snapshot.openTabs.find((tab) => tab.id === snapshot.activeTab)
-    : undefined
-  const active = activeTab ? panelForTab(activeTab) : undefined
-  const lastOpen = [...snapshot.openTabs]
-    .reverse()
-    .map(panelForTab)
-    .find((entry): entry is ResolvedWorkspacePage => Boolean(entry))
-  const fallback: ResolvedWorkspacePage | undefined = workspacePages[0] ? { panel: workspacePages[0] } : undefined
-  const resolved: ResolvedWorkspacePage | undefined = active ?? lastOpen ?? fallback
-  return resolved ? {
-    id: resolved.tab?.id ?? resolved.panel.id,
-    component: resolved.panel.id,
-    title: resolved.tab?.title ?? resolved.panel.title,
-  } : undefined
 }

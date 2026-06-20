@@ -1,8 +1,8 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { RefreshCw, Sparkles } from "lucide-react"
-import { Button } from "@hachej/boring-ui-kit"
+import { RefreshCw, Sparkles, X } from "lucide-react"
+import { Button, IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { useWorkspacePluginClient } from "../../plugin/useWorkspacePluginClient"
 import type { PaneProps } from "../../registry/types"
@@ -22,7 +22,13 @@ type LoadState =
   | { status: "ready"; skills: SkillSummary[]; error?: undefined }
   | { status: "error"; skills: SkillSummary[]; error: string }
 
-export function SkillsPage(_props: PaneProps) {
+export type SkillsPageProps = Partial<PaneProps> & {
+  /** When provided, renders a close control in the header — used when Skills
+   *  is hosted as a chat left overlay rather than a workspace panel. */
+  onClose?: () => void
+}
+
+export function SkillsPage({ onClose }: SkillsPageProps) {
   const client = useWorkspacePluginClient()
   const [state, setState] = useState<LoadState>({ status: "loading", skills: [] })
 
@@ -66,17 +72,32 @@ export function SkillsPage(_props: PaneProps) {
             <p className="truncate text-xs text-muted-foreground">Workspace skills available to slash commands</p>
           </div>
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => void loadSkills(true)}
-          disabled={state.status === "loading"}
-          className="gap-1.5 text-xs"
-        >
-          <RefreshCw className={cn("h-3.5 w-3.5", state.status === "loading" && "animate-spin")} strokeWidth={1.75} />
-          Refresh
-        </Button>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => void loadSkills(true)}
+            disabled={state.status === "loading"}
+            className="gap-1.5 text-xs"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", state.status === "loading" && "animate-spin")} strokeWidth={1.75} />
+            Refresh
+          </Button>
+          {onClose ? (
+            <IconButton
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              onClick={onClose}
+              aria-label="Close skills"
+              title="Close"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-3" strokeWidth={1.75} />
+            </IconButton>
+          ) : null}
+        </div>
       </header>
 
       <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto p-4" aria-live="polite">

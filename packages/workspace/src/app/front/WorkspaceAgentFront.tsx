@@ -15,6 +15,8 @@ import type {
   SurfaceShellSnapshot,
 } from "../../front/chrome/artifact-surface/SurfaceShell"
 import { WORKSPACE_SKILLS_PANEL_ID, workspaceSkillsPanel } from "../../front/chrome/skills/definition"
+import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
+import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
 import { AppLeftPane } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
 import { useRegistry, useSurfaceResolverRegistry } from "../../front/registry"
@@ -796,6 +798,7 @@ export function WorkspaceAgentFront<
     false,
     shellPersistenceEnabled,
   )
+  const [leftOverlay, setLeftOverlay] = useState<"skills" | "plugins" | null>(null)
   const effectiveNavOpen = navEnabled && navOpen
   const [surfaceOpen, setSurfaceOpen] = useStoredBooleanState(
     // Key must NOT match resolvedSurfaceStorageKey (which stores the dockview
@@ -1404,11 +1407,17 @@ export function WorkspaceAgentFront<
       } : undefined}
     />
   )
+  const leftOverlayNode = leftOverlay === "skills" ? (
+    <SkillsPage onClose={() => setLeftOverlay(null)} />
+  ) : leftOverlay === "plugins" ? (
+    <PluginsOverlay plugins={capturedPlugins} onClose={() => setLeftOverlay(null)} />
+  ) : null
   const shellContent = isPluginTabsLayout ? (
     <PluginTabsWorkspaceShell
       collapsed={appLeftPaneCollapsed}
       onExpand={() => setAppLeftPaneCollapsed(false)}
       onCollapse={() => setAppLeftPaneCollapsed(true)}
+      leftOverlay={leftOverlayNode}
       leftPane={(
         <AppLeftPane
           appTitle={appTitle}
@@ -1419,19 +1428,13 @@ export function WorkspaceAgentFront<
           activeSessionId={activeChatPaneId}
           openSessionIds={chatPaneIds}
           pinnedSessionIds={pinnedIds}
-          surfaceSnapshot={surfaceSnapshot}
-          skillsPanelId={WORKSPACE_SKILLS_PANEL_ID}
           onCreateSession={() => { void resolvedCreate() }}
           onOpenCommandPalette={openCommandPalette}
           onSwitchSession={switchToChatPane}
           onOpenSessionAsPane={openChatPane}
           onToggleSessionPinned={toggleSessionPinned}
-          onOpenPlugins={openWorkspacePanel}
-          onOpenSkills={() => openWorkspacePanel({
-            id: WORKSPACE_SKILLS_PANEL_ID,
-            component: WORKSPACE_SKILLS_PANEL_ID,
-            title: "Skills",
-          })}
+          onOpenPlugins={() => setLeftOverlay((cur) => cur === "plugins" ? null : "plugins")}
+          onOpenSkills={() => setLeftOverlay((cur) => cur === "skills" ? null : "skills")}
         />
       )}
     >

@@ -380,56 +380,41 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByRole("button", { name: "Open app navigation" })).toBeInTheDocument()
   })
 
-  it("focuses the current workspace-page instance from Plugins", async () => {
+  it("opens the Plugins overlay from the app nav and lists registered front plugins", async () => {
     const user = userEvent.setup()
 
-    function FallbackPluginPage() {
-      return <div>Fallback plugin page body</div>
+    function PluginPanel() {
+      return <div>Demo plugin panel body</div>
     }
-    function CurrentPluginPage() {
-      return <div>Current plugin page body</div>
-    }
+    const plugin = definePlugin({
+      id: "demo-plugin",
+      label: "Demo Plugin",
+      panels: [{ id: "demo-plugin.panel", label: "Demo Panel", placement: "workspace-page", component: PluginPanel }],
+    })
 
     render(
       <WorkspaceAgentFront
-        workspaceId="plugin-tabs-current-page"
+        workspaceId="plugin-tabs-plugins-overlay"
         workspaceLayout="plugin-tabs"
         chatPanel={SessionIdChatPanel}
         sessions={[{ id: "s1", title: "First session" }]}
         activeSessionId="s1"
-        panels={[
-          {
-            id: "plugin.fallback",
-            title: "Fallback Plugin",
-            placement: "workspace-page",
-            source: "plugin",
-            component: FallbackPluginPage,
-          },
-          {
-            id: "plugin.current",
-            title: "Current Plugin",
-            placement: "workspace-page",
-            source: "plugin",
-            component: CurrentPluginPage,
-          },
-        ]}
-        surfaceInitialPanels={[{
-          id: "current-instance",
-          component: "plugin.current",
-          title: "Current Plugin Instance",
-        }]}
-        defaultSurfaceOpen
+        plugins={[plugin]}
         persistenceEnabled={false}
       />,
     )
 
-    await waitFor(() => expect(screen.getByText("Current plugin page body")).toBeInTheDocument())
     await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Plugins" }))
-    await waitFor(() => expect(screen.getByText("Current plugin page body")).toBeInTheDocument())
-    expect(screen.queryByText("Fallback plugin page body")).not.toBeInTheDocument()
+    const overlay = document.querySelector('[data-boring-workspace-part="plugins-overlay"]')
+    expect(overlay).not.toBeNull()
+    expect(overlay!).toHaveTextContent("Demo Plugin")
+    expect(overlay!).toHaveTextContent("Demo Panel")
+
+    await user.click(screen.getByRole("button", { name: "Close plugins" }))
+    expect(document.querySelector('[data-boring-workspace-part="plugins-overlay"]')).toBeNull()
   })
 
-  it("opens plugin-tabs workspace pages from Plugins and Skills", async () => {
+  it("opens Skills and Plugins as chat left overlays", async () => {
     const user = userEvent.setup()
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
@@ -445,34 +430,35 @@ describe("WorkspaceAgentFront", () => {
       return new Response(null, { status: 204 })
     }))
 
-    function PluginPage() {
-      return <div>Plugin workspace page body</div>
+    function PluginPanel() {
+      return <div>Plugin panel body</div>
     }
+    const plugin = definePlugin({
+      id: "overlay-plugin",
+      label: "Demo Plugin",
+      panels: [{ id: "overlay-plugin.panel", label: "Demo Panel", placement: "workspace-page", component: PluginPanel }],
+    })
 
     render(
       <WorkspaceAgentFront
-        workspaceId="plugin-tabs-pages"
+        workspaceId="plugin-tabs-overlays"
         workspaceLayout="plugin-tabs"
         chatPanel={SessionIdChatPanel}
         sessions={[{ id: "s1", title: "First session" }]}
         activeSessionId="s1"
-        panels={[{
-          id: "plugin.page",
-          title: "Plugin Page",
-          placement: "workspace-page",
-          source: "plugin",
-          component: PluginPage,
-        }]}
+        plugins={[plugin]}
         persistenceEnabled={false}
       />,
     )
 
-    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Plugins" }))
-    await waitFor(() => expect(screen.getByText("Plugin workspace page body")).toBeInTheDocument())
-
     await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Skills" }))
     await waitFor(() => expect(screen.getByText("/review")).toBeInTheDocument())
     expect(screen.getByText("Review the current diff")).toBeInTheDocument()
+
+    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Plugins" }))
+    const overlay = document.querySelector('[data-boring-workspace-part="plugins-overlay"]')
+    expect(overlay).not.toBeNull()
+    expect(overlay!).toHaveTextContent("Demo Plugin")
   })
 
   it("opens a controlled void-created session as a pane to the right", async () => {

@@ -64,6 +64,11 @@ export async function startPlaygroundServer(): Promise<void> {
       logger: true,
       externalPlugins: EXTERNAL_PLUGINS_ENABLED,
       defaultPluginPackages: ["@hachej/boring-ask-user"],
+      // Surface a sample project-local skill so the Skills overlay has content
+      // in the playground. `additionalSkillPaths` are loaded even with the
+      // harness default `noSkills: true`, so this opts into ONE seeded skill
+      // without surfacing the full user-global skill set.
+      pi: { additionalSkillPaths: [resolve(APP_ROOT, "src/skills")] },
     })
     app.get("/api/v1/workspace/meta", async () => {
       const localName = basename(workspaceRoot) || "Workspace"
