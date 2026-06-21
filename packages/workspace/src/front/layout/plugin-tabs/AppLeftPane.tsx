@@ -12,6 +12,7 @@ export interface AppLeftPaneSession {
 }
 
 export interface AppLeftPaneProps {
+  width?: number
   appTitle?: string
   sessionTitle?: string
   topSlot?: ReactNode
@@ -33,6 +34,7 @@ export interface AppLeftPaneProps {
 type SessionRowState = "normal" | "open" | "active"
 
 export function AppLeftPane({
+  width = 268,
   appTitle,
   topSlot,
   bottomSlot,
@@ -82,7 +84,8 @@ export function AppLeftPane({
   return (
     <aside
       data-boring-workspace-part="app-left-pane"
-      className="flex h-full min-h-0 w-[268px] shrink-0 flex-col border-r border-border bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)] text-sm"
+      className="flex h-full min-h-0 shrink-0 flex-col border-r border-border bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)] text-sm"
+      style={{ width, minWidth: width, maxWidth: width }}
       aria-label="App navigation"
     >
       {/* Top row: current project label (or host topSlot). The fixed-position

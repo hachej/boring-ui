@@ -23,7 +23,7 @@ import { captureFrontPlugin } from "../../shared/plugins/frontFactory"
 import { surfaceResolverDescriptor } from "../../shared/types/surface"
 import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
 import type { CommandResult, DispatchContext, FileTreeBridge, Unsubscribe } from "../../front/bridge"
-import { readStoredBoolean, writeStoredBoolean } from "../../front/store/localStorageValues"
+import { readStoredBoolean, readStoredNumber, writeStoredBoolean, writeStoredNumber } from "../../front/store/localStorageValues"
 import {
   createLocalStorageSessions,
   useLocalStorageSessions,
@@ -170,6 +170,31 @@ function shellStorageKeyFromSurfaceStorage(
     : fallback
 }
 
+function useStoredNumberState(
+  key: string,
+  fallback: number,
+  enabled: boolean,
+): [number, (next: number | ((previous: number) => number)) => void] {
+  const [value, setValue] = useState(() => readStoredNumber(key, fallback, enabled))
+
+  useEffect(() => {
+    setValue(readStoredNumber(key, fallback, enabled))
+  }, [key, fallback, enabled])
+
+  const setStoredValue = useCallback(
+    (next: number | ((previous: number) => number)) => {
+      setValue((previous) => {
+        const resolved = typeof next === "function" ? next(previous) : next
+        writeStoredNumber(key, resolved, enabled)
+        return resolved
+      })
+    },
+    [enabled, key],
+  )
+
+  return [value, setStoredValue]
+}
+
 function useStoredBooleanState(
   key: string,
   fallback: boolean,
@@ -195,6 +220,10 @@ function useStoredBooleanState(
 const EMPTY_HEADERS: Record<string, string> = {}
 const EMPTY_STRING_LIST: string[] = []
 const PREPARING_WARMUP_STATUS: WorkspaceWarmupStatus = { status: "preparing" }
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
 
 const emptySurfaceSnapshot: SurfaceShellSnapshot = {
   openTabs: [],
@@ -796,6 +825,12 @@ export function WorkspaceAgentFront<
     false,
     shellPersistenceEnabled,
   )
+  const [appLeftPaneWidth, setAppLeftPaneWidth] = useStoredNumberState(
+    `${shellStorageKey}:appLeftPaneWidth`,
+    268,
+    shellPersistenceEnabled,
+  )
+  const effectiveAppLeftPaneWidth = clampNumber(appLeftPaneWidth, 220, 420)
   const [leftOverlay, setLeftOverlay] = useState<"skills" | "plugins" | null>(null)
   const effectiveNavOpen = navEnabled && navOpen
   const [surfaceOpen, setSurfaceOpen] = useStoredBooleanState(
@@ -1444,8 +1479,10 @@ export function WorkspaceAgentFront<
       collapsed={appLeftPaneCollapsed}
       onExpand={() => setAppLeftPaneCollapsed(false)}
       onCollapse={() => setAppLeftPaneCollapsed(true)}
+      onResizeLeftPane={(delta) => setAppLeftPaneWidth((width) => clampNumber(width + delta, 220, 420))}
       leftPane={(
         <AppLeftPane
+          width={effectiveAppLeftPaneWidth}
           appTitle={appTitle}
           sessionTitle={remoteSessionsTransitioning ? "Loading sessions…" : resolvedSessionTitle ?? defaultSessionTitle}
           topSlot={topBarLeft}
