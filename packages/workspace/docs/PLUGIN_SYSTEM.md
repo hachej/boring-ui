@@ -282,6 +282,56 @@ parses `/name args` only.
   `package.json#pi` block — Pi-sourced commands appear automatically. No
   harness changes required.
 
+### 4.8 Generic session attention badges
+
+`WorkspaceAttention` is the generic way for plugins to say “this chat session
+needs attention”. The workspace owns only the display and routing mechanics;
+plugins own the domain semantics, surface UI, and bridge/API operations.
+
+A plugin should use its own `reason` namespace and may attach a `sessionBadge`
+for the session list:
+
+```ts
+const { addBlocker, removeBlocker } = useWorkspaceAttention()
+
+addBlocker({
+  id: `pr-review:${sessionId}:123`,
+  reason: "pr-review.review",
+  sessionId,
+  surfaceKind: "pr-review",
+  target: "review-123",
+  label: "Review PR #123 to continue",
+  sessionBadge: {
+    kind: "review",
+    label: "review",
+    tone: "warning",
+    priority: 20,
+  },
+  actions: [{ id: "open", label: "Open review" }],
+})
+```
+
+`sessionBadge.kind` is stable metadata for tests/styling
+(`data-boring-badge="review"`). `label` is the short text rendered in the row.
+`tone` is visual only; plugin code should not infer behavior from it. If several
+plugins mark one session, the highest `priority` badge wins.
+
+Ask-user consumes this as an ask-user-specific attention type:
+
+```ts
+reason: "ask-user.question"
+sessionBadge: { kind: "question", label: "question", tone: "attention" }
+```
+
+Other plugins should not reuse ask-user’s reason or badge kind unless they are
+actually delegating to ask-user. For example, a PR review plugin should use
+`reason: "pr-review.review"` and `kind: "review"` even if both are ultimately
+“human input”.
+
+Compatibility: old blockers with `reason: "waiting_for_user_input"` still render
+a legacy `needs input` badge, but new plugins should provide `sessionBadge`
+explicitly.
+
 ---
 
 ## 5. Key algorithms
