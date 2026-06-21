@@ -162,6 +162,14 @@ describe("dispatchUiCommand", () => {
     ])
   })
 
+  it("skips openSurface when the host policy rejects it", () => {
+    const openWorkbench = vi.fn()
+    const c = ctx({ openWorkbench, shouldOpenSurface: () => false })
+    dispatchUiCommand({ kind: "openSurface", params: { kind: "questions", target: "q1", meta: { openOnlyWhenSessionOpen: true } } }, c)
+    expect(c.__surface.__surfaces).toEqual([])
+    expect(openWorkbench).not.toHaveBeenCalled()
+  })
+
   it("marks openSurface as ephemeral when it had to open a closed workbench", () => {
     const raf = vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => { cb(0); return 0 })
     const surface = fakeSurface()

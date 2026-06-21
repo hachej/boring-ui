@@ -188,7 +188,7 @@ export class AskUserRuntime {
   private async openQuestionSurface(question: AskUserQuestion): Promise<void> {
     if (!this.uiBridge) return
     try {
-      await this.uiBridge.postCommand({ kind: "openSurface", params: { kind: ASK_USER_SURFACE_KIND, target: question.questionId, meta: { sessionId: question.sessionId } } })
+      await this.uiBridge.postCommand({ kind: "openSurface", params: { kind: ASK_USER_SURFACE_KIND, target: question.questionId, meta: { sessionId: question.sessionId, openOnlyWhenSessionOpen: true } } })
     } catch {
       // Opening the pane is best-effort. The pending question is already persisted
       // and published via UI state, so a stale/disconnected browser can refresh and answer.

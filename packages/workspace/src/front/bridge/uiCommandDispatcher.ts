@@ -38,6 +38,8 @@ export interface DispatchContext {
    * silently dropped.
    */
   enqueue?: (run: (surface: SurfaceShellApi) => void) => void
+  /** Optional host policy hook for surface requests that are only relevant in a visible/open context. */
+  shouldOpenSurface?: (request: SurfaceOpenRequest) => boolean
 }
 
 const KNOWN_KINDS = new Set([
@@ -140,6 +142,7 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
     case "openSurface": {
       const request = surfaceRequestParam(cmd.params)
       if (!request) return
+      if (ctx.shouldOpenSurface?.(request) === false) return
       const wasClosed = !ctx.isWorkbenchOpen()
       if (wasClosed) {
         request.meta = { ...(request.meta ?? {}), closeWorkbenchOnDone: true }

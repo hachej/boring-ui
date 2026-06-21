@@ -10,12 +10,15 @@ export type AskUserPendingHint = {
 }
 
 export type AskUserPendingState = {
+  /** Compatibility/current hint for older frontends. */
   hint: AskUserPendingHint | null
+  /** Session-indexed hints so background sessions can show a badge without exposing answer tokens. */
+  hintsBySession: Record<string, AskUserPendingHint>
 }
 
 export class AskUserStatePublisher {
   private unsubscribe?: () => void
-  private readonly publishChains = new Map<string, Promise<void>>()
+  private publishChain = Promise.resolve()
 
   constructor(
     private readonly store: AskUserStore,
@@ -34,28 +37,32 @@ export class AskUserStatePublisher {
   stop(): void {
     this.unsubscribe?.()
     this.unsubscribe = undefined
-    this.publishChains.clear()
+    this.publishChain = Promise.resolve()
   }
 
   async publishSession(sessionId: string): Promise<void> {
     const hint = toPendingHint(await this.store.getPending(sessionId))
     const current = (await this.bridge.getState()) ?? {}
+    const currentPending = sanitizePendingState(current[ASK_USER_UI_STATE_SLOTS.PENDING])
+    const hintsBySession = { ...currentPending.hintsBySession }
+    if (hint) hintsBySession[sessionId] = hint
+    else delete hintsBySession[sessionId]
+    const nextPending: AskUserPendingState = {
+      hint: hint ?? Object.values(hintsBySession)[0] ?? null,
+      hintsBySession,
+    }
     const next: UiState = {
       ...current,
-      [ASK_USER_UI_STATE_SLOTS.PENDING]: { hint } satisfies AskUserPendingState,
+      [ASK_USER_UI_STATE_SLOTS.PENDING]: nextPending,
     }
     await this.bridge.setState(next)
   }
 
   private enqueuePublishSession(sessionId: string): Promise<void> {
-    const previous = this.publishChains.get(sessionId) ?? Promise.resolve()
-    const next = previous
+    const next = this.publishChain
       .catch(() => undefined)
       .then(() => this.publishSession(sessionId))
-      .finally(() => {
-        if (this.publishChains.get(sessionId) === next) this.publishChains.delete(sessionId)
-      })
-    this.publishChains.set(sessionId, next)
+    this.publishChain = next.catch(() => undefined)
     return next
   }
 
@@ -82,9 +89,18 @@ function toPendingHint(question: AskUserQuestion | null): AskUserPendingHint | n
 }
 
 function sanitizePendingState(value: unknown): AskUserPendingState {
-  if (!value || typeof value !== "object") return { hint: null }
-  const raw = value as { hint?: unknown; question?: unknown }
-  return { hint: toHintFromUnknown(raw.hint) ?? toHintFromUnknown(raw.question) }
+  if (!value || typeof value !== "object") return { hint: null, hintsBySession: {} }
+  const raw = value as { hint?: unknown; question?: unknown; hintsBySession?: unknown }
+  const hintsBySession: Record<string, AskUserPendingHint> = {}
+  if (raw.hintsBySession && typeof raw.hintsBySession === "object" && !Array.isArray(raw.hintsBySession)) {
+    for (const [sessionId, candidate] of Object.entries(raw.hintsBySession as Record<string, unknown>)) {
+      const hint = toHintFromUnknown(candidate)
+      if (hint && hint.sessionId === sessionId) hintsBySession[sessionId] = hint
+    }
+  }
+  const hint = toHintFromUnknown(raw.hint) ?? toHintFromUnknown(raw.question) ?? Object.values(hintsBySession)[0] ?? null
+  if (hint) hintsBySession[hint.sessionId] = hint
+  return { hint, hintsBySession }
 }
 
 function toHintFromUnknown(value: unknown): AskUserPendingHint | null {

@@ -4,6 +4,7 @@ import { Button, EmptyState, Notice, Pane, PaneBody, PaneFooter, PaneHeader, Pan
 import {
   UI_COMMAND_EVENT,
   events,
+  postUiCommand,
   useWorkspaceAttention,
   workspaceEvents,
   type PaneProps,
@@ -14,32 +15,64 @@ import {
   type BoringFrontFactoryWithId,
 } from "@hachej/boring-workspace/plugin"
 import { HelpCircle, XCircle } from "lucide-react"
-import { createContext, useContext, useEffect, useMemo, useSyncExternalStore, useState } from "react"
+import { createContext, useContext, useEffect, useMemo, useRef, useSyncExternalStore, useState } from "react"
 import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../shared/constants"
 import type { AskUserQuestion } from "../shared/types"
-import { createQuestionsClient, readPendingQuestionHintFromState, QuestionsClientError } from "./client"
+import { createQuestionsClient, readPendingQuestionHintsFromState, QuestionsClientError, type PendingQuestionHint } from "./client"
 import { QuestionCancelButton, QuestionFields, QuestionForm, QuestionFormProvider, QuestionSubmitButton } from "./primitives"
 
 type QuestionsStore = {
-  getPending(): AskUserQuestion | null
-  setPending(question: AskUserQuestion | null): void
+  getPending(sessionId?: string | null): AskUserQuestion | null
+  setPending(question: AskUserQuestion | null, sessionId?: string | null): void
+  getPendingHints(): PendingQuestionHint[]
+  setPendingHints(hints: PendingQuestionHint[]): void
   subscribe(listener: () => void): () => void
 }
 
 type QuestionsRuntime = QuestionsStore & {
   apiBaseUrl: string
   authHeaders?: Record<string, string>
+  activeSessionId?: string | null
   refreshPending(sessionId: string): Promise<AskUserQuestion | null>
 }
 
 function createQuestionsStore(): QuestionsStore {
   const listeners = new Set<() => void>()
-  let pending: AskUserQuestion | null = null
+  const pendingBySession = new Map<string, AskUserQuestion>()
+  const hintsBySession = new Map<string, PendingQuestionHint>()
+  let lastSessionId: string | null = null
+  const emit = () => { for (const listener of [...listeners]) listener() }
   return {
-    getPending: () => pending,
-    setPending(question) {
-      pending = question
-      for (const listener of [...listeners]) listener()
+    getPending(sessionId) {
+      const id = sessionId ?? lastSessionId
+      return id ? pendingBySession.get(id) ?? null : null
+    },
+    setPending(question, sessionId) {
+      if (question) {
+        pendingBySession.set(question.sessionId, question)
+        hintsBySession.set(question.sessionId, { questionId: question.questionId, sessionId: question.sessionId, status: question.status })
+        lastSessionId = question.sessionId
+      } else if (sessionId) {
+        pendingBySession.delete(sessionId)
+        hintsBySession.delete(sessionId)
+        if (lastSessionId === sessionId) lastSessionId = null
+      } else {
+        pendingBySession.clear()
+        hintsBySession.clear()
+        lastSessionId = null
+      }
+      emit()
+    },
+    getPendingHints() {
+      return [...hintsBySession.values()]
+    },
+    setPendingHints(hints) {
+      hintsBySession.clear()
+      for (const hint of hints) hintsBySession.set(hint.sessionId, hint)
+      for (const question of pendingBySession.values()) {
+        hintsBySession.set(question.sessionId, { questionId: question.questionId, sessionId: question.sessionId, status: question.status })
+      }
+      emit()
     },
     subscribe(listener) {
       listeners.add(listener)
@@ -60,8 +93,10 @@ function sessionScopedBlockerId(sessionId: string): string | undefined {
 }
 
 function pendingQuestionSnapshot(store: QuestionsStore): string {
-  const pending = store.getPending()
-  return pending ? `${pending.sessionId}:${pending.questionId}:${pending.status}` : "none"
+  const hints = store.getPendingHints()
+    .map((hint) => `${hint.sessionId}:${hint.questionId}:${hint.status ?? "ready"}`)
+    .sort()
+  return hints.length ? hints.join("|") : "none"
 }
 
 function useQuestionsRuntime(): QuestionsRuntime {
@@ -76,36 +111,57 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }:
     ...sharedQuestionsStore,
     apiBaseUrl,
     authHeaders,
+    activeSessionId,
     async refreshPending(sessionId) {
       const pending = await createQuestionsClient({ apiBaseUrl, headers: authHeaders }).pending(sessionId)
-      sharedQuestionsStore.setPending(pending)
+      sharedQuestionsStore.setPending(pending, sessionId)
       return pending
     },
-  }), [apiBaseUrl, authHeaders])
+  }), [activeSessionId, apiBaseUrl, authHeaders])
   const pendingSnapshot = useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
+  const autoOpenedQuestionsRef = useRef(new Set<string>())
   useEffect(() => {
-    const pending = runtime.getPending()
-    const blockerId = pending ? `${ASK_USER_PLUGIN_ID}:${pending.sessionId}:${pending.questionId}` : null
-    if (pending?.status === "ready" && blockerId) {
+    const blockerIds: string[] = []
+    for (const hint of runtime.getPendingHints()) {
+      if (hint.status && hint.status !== "ready") continue
+      const blockerId = `${ASK_USER_PLUGIN_ID}:${hint.sessionId}:${hint.questionId}`
+      blockerIds.push(blockerId)
       addBlocker({
         id: blockerId,
         reason: "waiting_for_user_input",
         surfaceKind: ASK_USER_SURFACE_KIND,
-        target: pending.questionId,
+        target: hint.questionId,
         label: "Answer the question in Questions to continue",
-        sessionId: sessionScopedBlockerId(pending.sessionId),
+        sessionId: sessionScopedBlockerId(hint.sessionId),
         actions: [{ id: "open", label: "Open Questions" }, { id: "cancel", label: "Cancel question" }],
       })
     }
-    return () => { if (blockerId) removeBlocker(blockerId) }
+    return () => { for (const blockerId of blockerIds) removeBlocker(blockerId) }
   }, [addBlocker, removeBlocker, runtime, pendingSnapshot])
 
   useEffect(() => {
+    if (!activeSessionId) return
+    const hint = runtime.getPendingHints().find((candidate) => candidate.sessionId === activeSessionId)
+    if (!hint || (hint.status && hint.status !== "ready")) return
+    const key = `${hint.sessionId}:${hint.questionId}`
+    if (autoOpenedQuestionsRef.current.has(key)) return
+    autoOpenedQuestionsRef.current.add(key)
+    postUiCommand({
+      kind: "openSurface",
+      params: {
+        kind: ASK_USER_SURFACE_KIND,
+        target: hint.questionId,
+        meta: { sessionId: hint.sessionId, openOnlyWhenSessionOpen: true },
+      },
+    })
+  }, [activeSessionId, runtime, pendingSnapshot])
+
+  useEffect(() => {
     const onStop = (event: Event) => {
-      const sessionId = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId
-      const pending = runtime.getPending()
+      const sessionId = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId ?? runtime.activeSessionId
+      const pending = runtime.getPending(sessionId)
       if (!pending || (sessionId && sessionScopedBlockerId(pending.sessionId) && sessionId !== pending.sessionId)) return
-      runtime.setPending(null)
+      runtime.setPending(null, pending.sessionId)
       void createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }).cancel(pending).catch(() => undefined)
     }
     window.addEventListener("boring:workspace-composer-stop", onStop)
@@ -115,24 +171,25 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }:
   useEffect(() => {
     let stopped = false
     async function refreshPending() {
+      let hints: PendingQuestionHint[] = []
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/v1/ui/state`, { headers: authHeaders })
+        const state = await response.json().catch(() => null) as Record<string, unknown> | null
+        hints = readPendingQuestionHintsFromState(state)
+        if (!stopped) runtime.setPendingHints(hints)
+      } catch {
+        // UI state is a hint channel only; keep already-hydrated pending payloads.
+      }
       if (activeSessionId) {
         try {
           await runtime.refreshPending(activeSessionId)
         } catch {
-          if (!stopped) runtime.setPending(null)
+          if (!stopped) runtime.setPending(null, activeSessionId)
         }
-        return
+      } else {
+        const hint = hints[0]
+        if (hint) await runtime.refreshPending(hint.sessionId).catch(() => undefined)
       }
-      try {
-        const response = await fetch(`${apiBaseUrl}/api/v1/ui/state`, { headers: authHeaders })
-        const state = await response.json().catch(() => null) as Record<string, unknown> | null
-        const hint = readPendingQuestionHintFromState(state)
-        if (!hint) {
-          if (!stopped && !runtime.getPending()) runtime.setPending(null)
-          return
-        }
-        await runtime.refreshPending(hint.sessionId)
-      } catch { if (!stopped && !runtime.getPending()) runtime.setPending(null) }
     }
     const onVisibility = () => { if (document.visibilityState === "visible") void refreshPending() }
     const onUiCommand = () => { void refreshPending() }
@@ -169,7 +226,8 @@ type QuestionsPaneParams = { questionId?: string; sessionId?: string; __closeWor
 
 function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams>) {
   const runtime = useQuestionsRuntime()
-  const pending = useSyncExternalStore(runtime.subscribe, runtime.getPending, runtime.getPending)
+  const paneSessionId = params?.sessionId ?? runtime.activeSessionId ?? null
+  const pending = useSyncExternalStore(runtime.subscribe, () => runtime.getPending(paneSessionId), () => runtime.getPending(paneSessionId))
   const [closedQuestionId, setClosedQuestionId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -180,15 +238,15 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
       const sessionId = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId
       if (!question || (sessionId && sessionScopedBlockerId(question.sessionId) && sessionId !== question.sessionId)) return
       setClosedQuestionId(question.questionId)
-      runtime.setPending(null)
+      runtime.setPending(null, question.sessionId)
       api.close()
     }
     window.addEventListener("boring:workspace-composer-stop", onStop)
     return () => window.removeEventListener("boring:workspace-composer-stop", onStop)
   }, [api, question, runtime])
   useEffect(() => {
-    if (!pending && params?.sessionId) void runtime.refreshPending(params.sessionId).catch(() => undefined)
-  }, [params?.sessionId, pending, runtime])
+    if (!pending && paneSessionId) void runtime.refreshPending(paneSessionId).catch(() => undefined)
+  }, [paneSessionId, pending, runtime])
 
   return <div className={className ? `${className} min-h-0 overflow-hidden` : "h-full min-h-0 overflow-hidden"}>
     <Pane className="h-full min-h-0 overflow-hidden border-0 bg-background text-sm">
@@ -201,12 +259,12 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
       {question?.status === "ready" && question.schema ? (
         <QuestionFormProvider schema={question.schema} submitting={submitting} onSubmit={async (values) => {
           setSubmitting(true); setError(null)
-          try { await client.submit(question, values); setClosedQuestionId(question.questionId); runtime.setPending(null); api.close(); params?.__closeWorkbenchOnDone?.() }
+          try { await client.submit(question, values); setClosedQuestionId(question.questionId); runtime.setPending(null, question.sessionId); api.close(); params?.__closeWorkbenchOnDone?.() }
           catch (err) { setError(err instanceof QuestionsClientError ? err.message : String(err)) }
           finally { setSubmitting(false) }
         }} onCancel={async () => {
           setSubmitting(true); setError(null)
-          try { await client.cancel(question); setClosedQuestionId(question.questionId); runtime.setPending(null); api.close(); params?.__closeWorkbenchOnDone?.() }
+          try { await client.cancel(question); setClosedQuestionId(question.questionId); runtime.setPending(null, question.sessionId); api.close(); params?.__closeWorkbenchOnDone?.() }
           catch (err) { setError(err instanceof QuestionsClientError ? err.message : String(err)) }
           finally { setSubmitting(false) }
         }}>

@@ -15,28 +15,34 @@ type BridgeResponse<T> =
   | { ok: true; output: T }
   | { ok: false; error?: { code?: string; message?: string } }
 
-export type PendingQuestionHint = { questionId: string; sessionId: string }
+export type PendingQuestionHint = { questionId: string; sessionId: string; status?: AskUserQuestion["status"] }
+
+export function readPendingQuestionHintsFromState(state: Record<string, unknown> | null | undefined): PendingQuestionHint[] {
+  const slot = state?.[ASK_USER_UI_STATE_SLOTS.PENDING]
+  if (!slot || typeof slot !== "object") return []
+  const hints = new Map<string, PendingQuestionHint>()
+  const rawSlot = slot as { hint?: unknown; question?: unknown; hintsBySession?: unknown }
+  if (rawSlot.hintsBySession && typeof rawSlot.hintsBySession === "object" && !Array.isArray(rawSlot.hintsBySession)) {
+    for (const [sessionId, candidate] of Object.entries(rawSlot.hintsBySession as Record<string, unknown>)) {
+      const hint = readHint(candidate)
+      if (hint && hint.sessionId === sessionId) hints.set(sessionId, hint)
+    }
+  }
+  const current = readHint(rawSlot.hint) ?? readHint(rawSlot.question)
+  if (current) hints.set(current.sessionId, current)
+  return [...hints.values()]
+}
 
 export function readPendingQuestionHintFromState(state: Record<string, unknown> | null | undefined): PendingQuestionHint | null {
-  const slot = state?.[ASK_USER_UI_STATE_SLOTS.PENDING]
-  if (!slot || typeof slot !== "object") return null
-  const hint = (slot as { hint?: unknown }).hint
-  if (hint && typeof hint === "object") {
-    const raw = hint as { questionId?: unknown; sessionId?: unknown }
-    return typeof raw.questionId === "string" && typeof raw.sessionId === "string"
-      ? { questionId: raw.questionId, sessionId: raw.sessionId }
-      : null
-  }
-  // Legacy/manual hosts may still publish a full question. Treat it only as a
-  // rehydration hint; never trust UI state as an answerable question payload.
-  const question = (slot as { question?: unknown }).question
-  if (question && typeof question === "object") {
-    const raw = question as { questionId?: unknown; sessionId?: unknown }
-    return typeof raw.questionId === "string" && typeof raw.sessionId === "string"
-      ? { questionId: raw.questionId, sessionId: raw.sessionId }
-      : null
-  }
-  return null
+  return readPendingQuestionHintsFromState(state)[0] ?? null
+}
+
+function readHint(value: unknown): PendingQuestionHint | null {
+  if (!value || typeof value !== "object") return null
+  const raw = value as { questionId?: unknown; sessionId?: unknown; status?: unknown }
+  if (typeof raw.questionId !== "string" || typeof raw.sessionId !== "string") return null
+  const status = normalizeQuestionStatus(raw.status)
+  return { questionId: raw.questionId, sessionId: raw.sessionId, ...(status === "abandoned" && raw.status === undefined ? {} : { status }) }
 }
 
 export function createQuestionsClient(options: QuestionsClientOptions = {}) {

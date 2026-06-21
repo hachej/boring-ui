@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { createQuestionsClient, deriveIdempotencyKey } from "../client"
+import { createQuestionsClient, deriveIdempotencyKey, readPendingQuestionHintFromState, readPendingQuestionHintsFromState } from "../client"
+import { ASK_USER_UI_STATE_SLOTS } from "../../shared/constants"
 import type { AskUserQuestion } from "../../shared/types"
 
 afterEach(() => {
@@ -28,6 +29,25 @@ describe("ask-user front client", () => {
     expect(first).toMatch(/^ask-user-idem:[0-9a-f]{32}$/)
     expect(first).toBe(second)
     expect(first).not.toBe(different)
+  })
+
+  it("reads session-indexed pending hints from UI state", () => {
+    const state = {
+      [ASK_USER_UI_STATE_SLOTS.PENDING]: {
+        hint: { questionId: "legacy", sessionId: "s-legacy", status: "ready" },
+        hintsBySession: {
+          s1: { questionId: "q1", sessionId: "s1", status: "ready" },
+          s2: { questionId: "q2", sessionId: "s2", status: "ready" },
+        },
+      },
+    }
+
+    expect(readPendingQuestionHintsFromState(state)).toEqual([
+      { questionId: "q1", sessionId: "s1", status: "ready" },
+      { questionId: "q2", sessionId: "s2", status: "ready" },
+      { questionId: "legacy", sessionId: "s-legacy", status: "ready" },
+    ])
+    expect(readPendingQuestionHintFromState(state)).toEqual({ questionId: "q1", sessionId: "s1", status: "ready" })
   })
 
   it("cancels through the bridge when crypto.subtle is unavailable", async () => {

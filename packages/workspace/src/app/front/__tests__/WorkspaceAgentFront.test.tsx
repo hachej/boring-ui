@@ -1229,6 +1229,46 @@ describe("WorkspaceAgentFront", () => {
     })
   })
 
+  it("does not auto-open an openOnlyWhenSessionOpen surface for a closed chat session", async () => {
+    render(
+      <WorkspaceAgentFront
+        workspaceId="session-gated-surface"
+        chatPanel={SessionIdChatPanel}
+        sessions={[
+          { id: "s1", title: "Open", createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString(), turnCount: 0 },
+          { id: "s2", title: "Closed", createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString(), turnCount: 0 },
+        ]}
+        activeSessionId="s1"
+        onSwitchSession={vi.fn()}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await screen.findByText("Chat pane s1")
+    expect(screen.queryByLabelText("Surface")).not.toBeInTheDocument()
+
+    window.dispatchEvent(new CustomEvent(UI_COMMAND_EVENT, {
+      detail: {
+        kind: "openSurface",
+        params: { kind: "questions", target: "q2", meta: { sessionId: "s2", openOnlyWhenSessionOpen: true } },
+      } satisfies UiCommand,
+    }))
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(screen.queryByLabelText("Surface")).not.toBeInTheDocument()
+
+    window.dispatchEvent(new CustomEvent(UI_COMMAND_EVENT, {
+      detail: {
+        kind: "openSurface",
+        params: { kind: "questions", target: "q1", meta: { sessionId: "s1", openOnlyWhenSessionOpen: true } },
+      } satisfies UiCommand,
+    }))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Surface")).toHaveAttribute("aria-hidden", "false")
+    })
+  })
+
   it("dispatches browser UI command events into the app surface", async () => {
     render(
       <WorkspaceAgentFront
