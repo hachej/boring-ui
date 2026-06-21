@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, ExternalLink, Pin, Plus } from "lucide-react
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { ControlTooltip } from "../../components/ControlTooltip"
-import { useWorkspaceAttention } from "../../attention/WorkspaceAttentionProvider"
+import { useWorkspaceAttention, type WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 import { CHAT_SESSION_DRAG_TYPE } from "../../layout/ChatPaneStage"
 import type { SessionItem } from "../../components/SessionList"
 
@@ -113,6 +113,24 @@ function groupSessions(sessions: SessionItem[]): Group[] {
   return groups
 }
 
+function sessionBadgeToneClassName(tone: WorkspaceAttentionSessionBadge["tone"]): string {
+  switch (tone) {
+    case "danger": return "bg-destructive/12 text-destructive"
+    case "warning": return "bg-amber-500/12 text-amber-700 dark:text-amber-300"
+    case "neutral": return "bg-foreground/[0.07] text-muted-foreground"
+    default: return "bg-[color:var(--accent)]/12 text-[color:var(--accent)]"
+  }
+}
+
+function sessionBadgeDotClassName(tone: WorkspaceAttentionSessionBadge["tone"]): string {
+  switch (tone) {
+    case "danger": return "bg-destructive"
+    case "warning": return "bg-amber-500"
+    case "neutral": return "bg-muted-foreground"
+    default: return "bg-[color:var(--accent)]"
+  }
+}
+
 function relativeTime(value: SessionItem["updatedAt"]): string {
   const d = toDate(value)
   if (!d) return ""
@@ -184,12 +202,16 @@ export function SessionBrowser({
   )
   const workingSessionIds = useWorkingSessionIds()
   const { blockers } = useWorkspaceAttention()
-  const needsInputSessionIds = useMemo(() => {
-    const ids = new Set<string>()
+  const sessionBadges = useMemo(() => {
+    const badges = new Map<string, WorkspaceAttentionSessionBadge>()
     for (const blocker of blockers) {
-      if (blocker.reason === "waiting_for_user_input" && blocker.sessionId) ids.add(blocker.sessionId)
+      if (!blocker.sessionId || !blocker.sessionBadge) continue
+      const existing = badges.get(blocker.sessionId)
+      if (!existing || (blocker.sessionBadge.priority ?? 0) > (existing.priority ?? 0)) {
+        badges.set(blocker.sessionId, blocker.sessionBadge)
+      }
     }
-    return ids
+    return badges
   }, [blockers])
 
   return (
@@ -251,7 +273,7 @@ export function SessionBrowser({
                     open={openSet.has(session.id)}
                     pinned
                     working={workingSessionIds.has(session.id)}
-                    needsInput={needsInputSessionIds.has(session.id)}
+                    attentionBadge={sessionBadges.get(session.id)}
                     onSwitch={onSwitch}
                     onOpenAsTab={onOpenAsTab}
                     onTogglePin={onTogglePin}
@@ -281,7 +303,7 @@ export function SessionBrowser({
                     open
                     pinned={pinnedSet.has(session.id)}
                     working={workingSessionIds.has(session.id)}
-                    needsInput={needsInputSessionIds.has(session.id)}
+                    attentionBadge={sessionBadges.get(session.id)}
                     onSwitch={onSwitch}
                     onOpenAsTab={onOpenAsTab}
                     onTogglePin={onTogglePin}
@@ -321,7 +343,7 @@ export function SessionBrowser({
                           open={false}
                           pinned={pinnedSet.has(session.id)}
                           working={workingSessionIds.has(session.id)}
-                          needsInput={needsInputSessionIds.has(session.id)}
+                          attentionBadge={sessionBadges.get(session.id)}
                           onSwitch={onSwitch}
                           onOpenAsTab={onOpenAsTab}
                           onTogglePin={onTogglePin}
@@ -391,7 +413,7 @@ function SessionRow({
   open,
   pinned,
   working,
-  needsInput,
+  attentionBadge,
   onSwitch,
   onOpenAsTab,
   onTogglePin,
@@ -402,7 +424,7 @@ function SessionRow({
   open: boolean
   pinned: boolean
   working: boolean
-  needsInput: boolean
+  attentionBadge?: WorkspaceAttentionSessionBadge
   onSwitch?: (id: string) => void
   onOpenAsTab?: (id: string) => void
   onTogglePin?: (id: string) => void
@@ -454,14 +476,14 @@ function SessionRow({
           </span>
         )}
       </span>
-      {needsInput ? (
+      {attentionBadge ? (
         <span
           data-boring-workspace-part="session-badge"
-          data-boring-badge="needs-input"
-          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-destructive/12 px-1.5 py-0.5 text-[10px] font-medium leading-none text-destructive"
+          data-boring-badge={attentionBadge.kind}
+          className={cn("inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none", sessionBadgeToneClassName(attentionBadge.tone))}
         >
-          <span aria-hidden="true" className="h-1.5 w-1.5 animate-pulse rounded-full bg-destructive" />
-          needs input
+          <span aria-hidden="true" className={cn("h-1.5 w-1.5 animate-pulse rounded-full", sessionBadgeDotClassName(attentionBadge.tone))} />
+          {attentionBadge.label}
         </span>
       ) : working ? (
         <span

@@ -7,13 +7,27 @@ export type WorkspaceAttentionBlockerAction = {
   label: string
 }
 
+export type WorkspaceAttentionSessionBadge = {
+  /** Stable badge kind for data attributes and plugin-specific styling hooks. */
+  kind: string
+  /** Short text rendered on the session row, e.g. "question", "review", "approval". */
+  label: string
+  /** Visual tone only; semantics are owned by the plugin-specific kind/reason. */
+  tone?: "attention" | "danger" | "neutral" | "warning"
+  /** Higher priority wins when several plugins mark the same session. */
+  priority?: number
+}
+
 export type WorkspaceAttentionBlocker = {
   id: string
+  /** Plugin/domain-specific reason, e.g. "ask-user.question" or "pr-review.review". */
   reason: string
   surfaceKind?: string
   target?: string
   label?: string
   sessionId?: string
+  /** Optional generic session-row badge contributed by the plugin that owns this attention. */
+  sessionBadge?: WorkspaceAttentionSessionBadge
   actions?: WorkspaceAttentionBlockerAction[]
 }
 

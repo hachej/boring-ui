@@ -173,11 +173,16 @@ describe("SessionBrowser", () => {
     expect(document.querySelector('[data-boring-badge="working"]')).toBeNull()
   })
 
-  it("shows a needs-input badge for sessions blocked on the user", () => {
+  it("shows a plugin-provided attention badge for session-scoped blockers", () => {
     function BlockSession({ sessionId }: { sessionId: string }) {
       const { addBlocker, removeBlocker } = useWorkspaceAttention()
       useEffect(() => {
-        addBlocker({ id: `ask:${sessionId}`, reason: "waiting_for_user_input", sessionId })
+        addBlocker({
+          id: `ask:${sessionId}`,
+          reason: "ask-user.question",
+          sessionId,
+          sessionBadge: { kind: "question", label: "question", tone: "attention" },
+        })
         return () => removeBlocker(`ask:${sessionId}`)
       }, [addBlocker, removeBlocker, sessionId])
       return null
@@ -190,14 +195,15 @@ describe("SessionBrowser", () => {
       </WorkspaceAttentionProvider>,
     )
 
-    // A blocked session outranks "working": send both signals for s3.
+    // A plugin attention badge outranks "working": send both signals for s3.
     act(() => {
       window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
         detail: { sessionId: "s3", working: true },
       }))
     })
-    const badge = document.querySelector('[data-boring-badge="needs-input"]')
+    const badge = document.querySelector('[data-boring-badge="question"]')
     expect(badge).toBeInTheDocument()
+    expect(badge).toHaveTextContent("question")
     expect(badge?.closest("li")?.textContent).toContain("Third session")
     expect(document.querySelector('[data-boring-badge="working"]')).toBeNull()
   })

@@ -769,7 +769,7 @@ describe("ChatLayout component", () => {
           <ChatLayout center="chat" centerParams={{ sessionId: "s1" }} storageKey="chat-layout-background-blocker" />
           <button
             type="button"
-            onClick={() => addBlocker({ id: "b2", reason: "waiting_for_user_input", label: "Answer", sessionId: "s2" })}
+            onClick={() => addBlocker({ id: "b2", reason: "plugin.review", label: "Review", sessionId: "s2", sessionBadge: { kind: "review", label: "review" } })}
           >
             Add background blocker
           </button>

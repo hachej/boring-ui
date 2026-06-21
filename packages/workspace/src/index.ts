@@ -324,6 +324,7 @@ export type {
   WorkspaceContextValue,
   WorkspaceAttentionBlocker,
   WorkspaceAttentionContextValue,
+  WorkspaceAttentionSessionBadge,
 } from "./front/provider"
 
 // Store (selectors only — store itself is NOT exported)

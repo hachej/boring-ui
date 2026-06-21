@@ -147,11 +147,12 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }:
       const hydrated = runtime.getPending(hint.sessionId)
       addBlocker({
         id: blockerId,
-        reason: "waiting_for_user_input",
+        reason: "ask-user.question",
         surfaceKind: ASK_USER_SURFACE_KIND,
         target: hint.questionId,
         label: "Answer the question in Questions to continue",
         sessionId: sessionScopedBlockerId(hint.sessionId),
+        sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
         actions: hydrated ? [{ id: "open", label: "Open Questions" }, { id: "cancel", label: "Cancel question" }] : undefined,
       })
     }
