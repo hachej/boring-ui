@@ -301,6 +301,15 @@ export function ChatLayout(props: ChatLayoutProps) {
     }
   }, [activeSessionId, chatCollapsed, setChatCollapsed])
 
+  // On compact widths, a fixed workbench beside app navigation can crush the
+  // chat into an unusable sliver. Prefer a calm one-pane workbench takeover:
+  // the workbench fills the available center area and the chat can be restored
+  // from the stable top-right chrome.
+  useEffect(() => {
+    if (!surfaceOpen || chatCollapsed) return
+    if (viewport < 1180) setChatCollapsed(true)
+  }, [chatCollapsed, setChatCollapsed, surfaceOpen, viewport])
+
   // Never leave a blank middle: if the workbench is closed while the chat is
   // collapsed, re-open the chat. Mirror of "collapsing the chat opens the
   // workbench" so at least one of the two is always visible.

@@ -142,9 +142,10 @@ export function CommandPalette({ sessionSearch }: CommandPaletteProps = {}) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
-        className="cmdk-shell flex flex-col gap-0 overflow-hidden border-border/60 p-0 shadow-2xl backdrop-blur-md [&>button.dialog-close]:hidden"
+        className="cmdk-shell flex flex-col gap-0 overflow-hidden border-border/60 bg-background p-0 shadow-none backdrop-blur-0 [&>button.dialog-close]:hidden"
         style={{ height: 520, width: "min(640px, calc(100vw - 2rem))", maxWidth: 640 }}
         showCloseButton={false}
+        overlayClassName="bg-transparent"
         onPointerDownOutside={() => setOpen(false)}
         onEscapeKeyDown={() => setOpen(false)}
       >

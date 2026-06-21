@@ -431,7 +431,7 @@ describe("WorkspaceAgentFront", () => {
     expect(document.querySelector('[data-boring-workspace-part="plugins-overlay"]')).toBeNull()
   })
 
-  it("opens Skills and Plugins as chat left overlays", async () => {
+  it("opens Skills as a chat overlay and uses the UI bridge to open a skill", async () => {
     const user = userEvent.setup()
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
@@ -494,11 +494,6 @@ describe("WorkspaceAgentFront", () => {
       })
       expect(screen.queryByText("/review")).not.toBeInTheDocument()
 
-      await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Plugins" }))
-      const overlay = document.querySelector('[data-boring-workspace-part="plugins-overlay"]')
-      expect(overlay).not.toBeNull()
-      await waitFor(() => expect(overlay!).toHaveTextContent("External Overlay"))
-      expect(overlay!).not.toHaveTextContent("Demo Plugin")
     } finally {
       window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)
     }

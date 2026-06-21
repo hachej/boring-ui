@@ -1129,6 +1129,31 @@ export function WorkspaceAgentFront<
     if (nextActiveId && current.activeId === sessionId) rawSwitch(nextActiveId)
   }, [chatPaneState, chatSessionId, rawSwitch, workspaceId])
 
+  const createChatSession = useCallback(() => {
+    const created = resolvedCreate()
+    void Promise.resolve(created).then((session) => {
+      const id = createdSessionId(session)
+      if (!id) return
+      setChatPaneState((previous) => {
+        const current = previous.workspaceId === workspaceId
+          ? previous
+          : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }
+        const ids = current.ids.length > 0 ? current.ids : [chatSessionId]
+        const activeId = current.activeId ?? ids[0] ?? chatSessionId
+        return {
+          workspaceId,
+          ids: replaceActivePane(ids, activeId, id),
+          activeId: id,
+        }
+      })
+      rawSwitch(id)
+    }).catch(() => {
+      // Creation errors are surfaced by the session API/chat layer; the left
+      // action should not leave stale optimistic panes behind.
+    })
+    return created
+  }, [chatSessionId, rawSwitch, resolvedCreate, workspaceId])
+
   const createChatPaneAfter = useCallback((afterId: string) => {
     const pendingCreatePane = {
       afterId,
@@ -1429,7 +1454,7 @@ export function WorkspaceAgentFront<
           activeSessionId={activeChatPaneId}
           openSessionIds={chatPaneIds}
           pinnedSessionIds={pinnedIds}
-          onCreateSession={() => { void createChatPaneAfter(activeChatPaneId) }}
+          onCreateSession={() => { void createChatSession() }}
           onOpenCommandPalette={openCommandPalette}
           onSwitchSession={switchToChatPane}
           onOpenSessionAsPane={openChatPane}
