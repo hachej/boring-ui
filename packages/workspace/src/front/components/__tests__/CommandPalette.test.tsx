@@ -260,7 +260,9 @@ describe("CommandPalette", () => {
 
       fireKeydown("k", { metaKey: true })
       await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument())
-      expect(screen.getByText("Chat session search")).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Chats" })).toHaveAttribute("aria-pressed", "true")
+      expect(screen.getByRole("button", { name: "Catalogs" })).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Commands" })).toBeInTheDocument()
 
       await typePaletteQuery(user, "beta")
       await user.click(screen.getByRole("option", { name: /Beta build/ }))

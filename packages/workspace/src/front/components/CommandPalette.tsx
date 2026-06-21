@@ -68,7 +68,7 @@ export interface CommandPaletteProps {
 export function CommandPalette({ sessionSearch }: CommandPaletteProps = {}) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
-  const [mode, setMode] = useState<PaletteMode>("catalogs")
+  const [mode, setMode] = useState<PaletteMode>(() => sessionSearch ? "chats" : "catalogs")
   const catalogs = useCatalogs()
   const commands = useCommands()
   const workspaceCtx = useWorkspaceContextOptional()
@@ -79,12 +79,15 @@ export function CommandPalette({ sessionSearch }: CommandPaletteProps = {}) {
     }
     return map
   }, [workspaceCtx?.registeredPlugins])
+  const hasChatMode = Boolean(sessionSearch)
+  const isChatMode = mode === "chats"
+  const isCatalogMode = mode === "catalogs"
   const isCommandMode = mode === "commands"
   const searchQuery = query.trim()
 
   const catalogGroups = useCommandPaletteCatalogSearch({
     catalogs,
-    isCommandMode,
+    isCommandMode: !isCatalogMode,
     searchQuery,
   })
 
@@ -94,6 +97,7 @@ export function CommandPalette({ sessionSearch }: CommandPaletteProps = {}) {
     mode,
     setMode,
     setQuery,
+    defaultMode: hasChatMode ? "chats" : "catalogs",
   })
 
   const handleQueryChange = useCallback((next: string) => {
@@ -111,7 +115,7 @@ export function CommandPalette({ sessionSearch }: CommandPaletteProps = {}) {
   }, [commands, isCommandMode, searchQuery])
 
   const sessionResults = useMemo(() => {
-    if (!sessionSearch || isCommandMode) return []
+    if (!sessionSearch || !isChatMode) return []
     const normalized = searchQuery.toLowerCase()
     return sessionSearch.sessions
       .filter((session) => {
@@ -120,7 +124,7 @@ export function CommandPalette({ sessionSearch }: CommandPaletteProps = {}) {
         return title.toLowerCase().includes(normalized) || session.id.toLowerCase().includes(normalized)
       })
       .slice(0, 8)
-  }, [isCommandMode, searchQuery, sessionSearch])
+  }, [isChatMode, searchQuery, sessionSearch])
 
   const {
     recentEntries,
@@ -151,12 +155,15 @@ export function CommandPalette({ sessionSearch }: CommandPaletteProps = {}) {
         <Command shouldFilter={false} className="flex min-h-0 flex-1 flex-col bg-transparent">
           <PaletteSearchHeader
             inputRef={inputRef}
+            hasChatMode={hasChatMode}
+            isChatMode={isChatMode}
+            isCatalogMode={isCatalogMode}
             isCommandMode={isCommandMode}
             query={query}
             onQueryChange={handleQueryChange}
             onInputKeyDown={handleInputKeyDown}
             onSwitchMode={switchMode}
-            loading={!isCommandMode && catalogGroups.some((group) => group.loading)}
+            loading={isCatalogMode && catalogGroups.some((group) => group.loading)}
           />
 
           <CommandList
@@ -164,24 +171,24 @@ export function CommandPalette({ sessionSearch }: CommandPaletteProps = {}) {
             style={{ maxHeight: "none" }}
           >
             <CommandEmpty className="py-10 text-center text-sm text-muted-foreground">
-              {isCommandMode ? "No matching commands" : "No catalog results"}
+              {isCommandMode ? "No matching commands" : isChatMode ? "No matching chats" : "No catalog results"}
             </CommandEmpty>
 
             <RecentResultsSection
-              isCommandMode={isCommandMode}
+              isCatalogMode={isCatalogMode}
               recentEntries={recentEntries}
               searchQuery={searchQuery}
               onRecentSelect={handleRecentSelect}
             />
             <SessionSearchResultsSection
-              isCommandMode={isCommandMode}
+              isChatMode={isChatMode}
               sessionSearch={sessionSearch}
               sessions={sessionResults}
               close={() => setOpen(false)}
             />
             <CatalogResultsSections
               catalogGroups={catalogGroups}
-              isCommandMode={isCommandMode}
+              isCatalogMode={isCatalogMode}
               onCatalogSelect={handleCatalogSelect}
             />
             <CommandResultsSection
@@ -192,7 +199,7 @@ export function CommandPalette({ sessionSearch }: CommandPaletteProps = {}) {
             />
           </CommandList>
 
-          <PaletteFooter isCommandMode={isCommandMode} />
+          <PaletteFooter mode={mode} />
         </Command>
       </DialogContent>
     </Dialog>
@@ -201,6 +208,9 @@ export function CommandPalette({ sessionSearch }: CommandPaletteProps = {}) {
 
 function PaletteSearchHeader({
   inputRef,
+  hasChatMode,
+  isChatMode,
+  isCatalogMode,
   isCommandMode,
   query,
   onQueryChange,
@@ -209,6 +219,9 @@ function PaletteSearchHeader({
   loading,
 }: {
   inputRef: React.RefObject<HTMLInputElement | null>
+  hasChatMode: boolean
+  isChatMode: boolean
+  isCatalogMode: boolean
   isCommandMode: boolean
   query: string
   onQueryChange: (next: string) => void
@@ -235,8 +248,16 @@ function PaletteSearchHeader({
           aria-label="Palette mode"
           className="my-2 ml-3 inline-flex shrink-0 self-center rounded-md border border-border/60 bg-muted/40 p-0.5"
         >
+          {hasChatMode ? (
+            <ModeButton
+              active={isChatMode}
+              icon={<MessageSquare className="size-3" />}
+              label="Chats"
+              onClick={() => onSwitchMode("chats")}
+            />
+          ) : null}
           <ModeButton
-            active={!isCommandMode}
+            active={isCatalogMode}
             icon={<FileIcon className="size-3" />}
             label={CATALOG_MODE_LABEL}
             onClick={() => onSwitchMode("catalogs")}
@@ -253,7 +274,9 @@ function PaletteSearchHeader({
           placeholder={
             isCommandMode
               ? "Run a command..."
-              : "Search catalogs or type > for commands"
+              : isChatMode
+                ? "Search chats..."
+                : "Search catalogs or type > for commands"
           }
           value={query}
           onValueChange={onQueryChange}
@@ -276,17 +299,17 @@ function PaletteSearchHeader({
 }
 
 function RecentResultsSection({
-  isCommandMode,
+  isCatalogMode,
   recentEntries,
   searchQuery,
   onRecentSelect,
 }: {
-  isCommandMode: boolean
+  isCatalogMode: boolean
   recentEntries: RecentEntry[]
   searchQuery: string
   onRecentSelect: (entry: RecentEntry) => void
 }) {
-  if (isCommandMode || recentEntries.length === 0 || searchQuery) return null
+  if (!isCatalogMode || recentEntries.length === 0 || searchQuery) return null
 
   return (
     <CommandGroup heading="Recent">
@@ -324,22 +347,22 @@ function RecentResultsSection({
 }
 
 function SessionSearchResultsSection({
-  isCommandMode,
+  isChatMode,
   sessionSearch,
   sessions,
   close,
 }: {
-  isCommandMode: boolean
+  isChatMode: boolean
   sessionSearch?: CommandPaletteSessionSearchConfig
   sessions: CommandPaletteSessionItem[]
   close: () => void
 }) {
-  if (isCommandMode || !sessionSearch || sessions.length === 0) return null
+  if (!isChatMode || !sessionSearch || sessions.length === 0) return null
   const openSet = new Set(sessionSearch.openIds ?? [])
   const activeId = sessionSearch.activeId ?? null
 
   return (
-    <CommandGroup heading="Chat session search">
+    <CommandGroup heading="Chats">
       {sessions.map((session) => {
         const title = session.title || "Untitled"
         const active = session.id === activeId
@@ -394,14 +417,14 @@ function SessionSearchResultsSection({
 
 function CatalogResultsSections({
   catalogGroups,
-  isCommandMode,
+  isCatalogMode,
   onCatalogSelect,
 }: {
   catalogGroups: CatalogSearchGroup[]
-  isCommandMode: boolean
+  isCatalogMode: boolean
   onCatalogSelect: (catalog: CatalogConfig, row: CatalogRow) => void
 }) {
-  if (isCommandMode) return null
+  if (!isCatalogMode) return null
 
   return (
     <>
@@ -484,11 +507,12 @@ function CommandResultsSection({
   )
 }
 
-function PaletteFooter({ isCommandMode }: { isCommandMode: boolean }) {
+function PaletteFooter({ mode }: { mode: PaletteMode }) {
+  const label = mode === "commands" ? "Commands" : mode === "chats" ? "Chats" : CATALOG_MODE_LABEL
   return (
     <div className="flex items-center justify-between border-t border-border/50 bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
       <span className="font-medium tracking-wide uppercase">
-        {isCommandMode ? "Commands" : CATALOG_MODE_LABEL}
+        {label}
       </span>
       <div className="flex items-center gap-3">
         <span className="flex items-center gap-1">

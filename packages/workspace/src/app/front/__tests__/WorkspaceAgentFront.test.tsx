@@ -100,6 +100,8 @@ describe("WorkspaceAgentFront", () => {
         return new Response(JSON.stringify([]), { status: 200 })
       }
       if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agent-plugins")) return new Response(JSON.stringify([]), { status: 200 })
+      if (url.includes("/api/v1/agent/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
       if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
       return new Response(null, { status: 204 })
     }))
@@ -351,8 +353,10 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).getByRole("button", { name: "Search" })).toBeInTheDocument()
     expect(within(appNav).getByRole("button", { name: "Plugins" })).toBeInTheDocument()
     expect(within(appNav).getByRole("button", { name: "Skills" })).toBeInTheDocument()
+    await user.click(within(appNav).getByRole("button", { name: "New chat" }))
+    expect(onCreateSession).toHaveBeenCalledOnce()
     expect(screen.queryByRole("button", { name: "Sessions" })).not.toBeInTheDocument()
-    expect(screen.getByText("Projects")).toBeInTheDocument()
+    expect(screen.getByText("Workspaces")).toBeInTheDocument()
     expect(screen.queryByText("Codex mobile")).not.toBeInTheDocument()
     expect(screen.queryByText("Automations")).not.toBeInTheDocument()
 
@@ -380,8 +384,19 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByRole("button", { name: "Open app navigation" })).toBeInTheDocument()
   })
 
-  it("opens the Plugins overlay from the app nav and lists registered front plugins", async () => {
+  it("opens the Plugins overlay from the app nav and lists external plugins only", async () => {
     const user = userEvent.setup()
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agent-plugins")) {
+        return new Response(JSON.stringify([{ id: "external-plugin", boring: { label: "External Plugin" }, version: "1.2.3", revision: 4, frontTarget: { kind: "module-url", revision: 4 } }]), { status: 200 })
+      }
+      if (url.includes("/api/v1/agent/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
+      if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    }))
 
     function PluginPanel() {
       return <div>Demo plugin panel body</div>
@@ -407,8 +422,10 @@ describe("WorkspaceAgentFront", () => {
     await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Plugins" }))
     const overlay = document.querySelector('[data-boring-workspace-part="plugins-overlay"]')
     expect(overlay).not.toBeNull()
-    expect(overlay!).toHaveTextContent("Demo Plugin")
-    expect(overlay!).toHaveTextContent("Demo Panel")
+    await waitFor(() => expect(overlay!).toHaveTextContent("External Plugin"))
+    expect(overlay!).toHaveTextContent("external-plugin")
+    expect(overlay!).not.toHaveTextContent("Demo Plugin")
+    expect(overlay!).not.toHaveTextContent("Demo Panel")
 
     await user.click(screen.getByRole("button", { name: "Close plugins" }))
     expect(document.querySelector('[data-boring-workspace-part="plugins-overlay"]')).toBeNull()
@@ -433,6 +450,10 @@ describe("WorkspaceAgentFront", () => {
           headers: { "Content-Type": "application/json" },
         })
       }
+      if (url.includes("/api/v1/agent-plugins")) {
+        return new Response(JSON.stringify([{ id: "external-overlay-plugin", boring: { label: "External Overlay" }, revision: 2 }]), { status: 200 })
+      }
+      if (url.includes("/api/v1/agent/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
       if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
       return new Response(null, { status: 204 })
     }))
@@ -476,7 +497,8 @@ describe("WorkspaceAgentFront", () => {
       await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Plugins" }))
       const overlay = document.querySelector('[data-boring-workspace-part="plugins-overlay"]')
       expect(overlay).not.toBeNull()
-      expect(overlay!).toHaveTextContent("Demo Plugin")
+      await waitFor(() => expect(overlay!).toHaveTextContent("External Overlay"))
+      expect(overlay!).not.toHaveTextContent("Demo Plugin")
     } finally {
       window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)
     }

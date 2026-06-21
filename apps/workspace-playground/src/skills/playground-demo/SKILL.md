@@ -1,18 +1,18 @@
 ---
-name: playground-demo
-description: A sample skill seeded into the workspace playground so the Skills overlay has content to show. It demonstrates skill discovery and rendering — not a functional workflow.
+name: local-test
+description: Local test skill seeded into the workspace playground. Use it to verify the Skills overlay, workspace-local skill discovery, and UI-bridge open-file behavior.
 ---
 
-# Playground Demo Skill
+# Local Test Skill
 
-This is a sample skill seeded into the **workspace playground** so the
-Skills overlay (chat left overlay) has at least one entry to render.
+This skill is intentionally tiny and workspace-local. It is copied into:
 
-It exists purely to verify:
+`.agents/skills/playground-demo/SKILL.md`
 
-- The `/api/v1/agent/skills` endpoint discovers project-local skills passed
-  via `additionalSkillPaths`.
-- The Skills overlay lists skills with their name and description.
+when the workspace playground starts, then loaded through `pi.additionalSkillPaths`.
 
-It does not define a functional workflow. Remove it or replace it with real
-workspace skills when wiring a production app.
+Use it to verify:
+
+- the Skills overlay shows workspace-local skills;
+- clicking a skill opens its `SKILL.md` through the UI bridge;
+- reloading skills picks up the seeded workspace copy.

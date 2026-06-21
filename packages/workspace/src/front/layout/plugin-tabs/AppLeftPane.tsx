@@ -109,7 +109,7 @@ export function AppLeftPane({
       </nav>
 
       <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-2 py-2">
-        <CollapsibleSection title="Projects" defaultOpen={false}>
+        <CollapsibleSection title="Workspaces" defaultOpen={false}>
           <div className="flex min-h-9 w-full items-center gap-2 rounded-lg bg-foreground/[0.06] px-2.5 py-1.5 text-[13px] font-medium text-foreground">
             <span className="truncate">{appTitle || "Boring UI"}</span>
           </div>
@@ -144,7 +144,7 @@ function PrimaryAction({ icon, label, onClick }: { icon: ReactNode; label: strin
 
 /**
  * Collapsible section header with a rotating chevron. Matches the reference
- * shape: "Projects >" / "Chats >" — right-pointing chevron when collapsed,
+ * shape: "Workspaces >" / "Chats >" — right-pointing chevron when collapsed,
  * rotating 90° to point down when expanded.
  */
 function CollapsibleSection({

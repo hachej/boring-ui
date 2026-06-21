@@ -1357,7 +1357,10 @@ export function WorkspaceAgentFront<
   const leftOverlayNode = leftOverlay === "skills" ? (
     <SkillsPage onClose={() => setLeftOverlay(null)} />
   ) : leftOverlay === "plugins" ? (
-    <PluginsOverlay plugins={capturedPlugins} onClose={() => setLeftOverlay(null)} />
+    <PluginsOverlay
+      onClose={() => setLeftOverlay(null)}
+      onReloadExternalPlugins={() => reloadAgentPluginsForSession(effectiveActiveSessionId ?? chatSessionId)}
+    />
   ) : null
   const mainContent = remoteSessionsTransitioning ? (
     <ChatSessionTransitionState />
@@ -1426,7 +1429,7 @@ export function WorkspaceAgentFront<
           activeSessionId={activeChatPaneId}
           openSessionIds={chatPaneIds}
           pinnedSessionIds={pinnedIds}
-          onCreateSession={() => { void resolvedCreate() }}
+          onCreateSession={() => { void createChatPaneAfter(activeChatPaneId) }}
           onOpenCommandPalette={openCommandPalette}
           onSwitchSession={switchToChatPane}
           onOpenSessionAsPane={openChatPane}

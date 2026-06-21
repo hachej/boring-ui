@@ -42,8 +42,10 @@ export interface BoringPluginRoutesOptions {
 export async function boringPluginRoutes(app: FastifyInstance, opts: BoringPluginRoutesOptions): Promise<void> {
   const { manager } = opts
 
-  const listPlugins = async () => manager.list()
-  app.get("/api/v1/agent-plugins", listPlugins)
+  const listPlugins = async (request: FastifyRequest<{ Querystring: { external?: string } }>) => (
+    request.query.external === "1" ? manager.listExternal() : manager.list()
+  )
+  app.get<{ Querystring: { external?: string } }>("/api/v1/agent-plugins", listPlugins)
 
   const getPluginError = async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
     const error = manager.getError(request.params.id)

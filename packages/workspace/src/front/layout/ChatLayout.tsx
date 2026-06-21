@@ -402,7 +402,7 @@ export function ChatLayout(props: ChatLayoutProps) {
               data-boring-workspace-part="chat-left-overlay"
               className="absolute inset-0 z-40 flex bg-background"
             >
-              <div className="flex h-full w-full max-w-[520px] flex-col border-r border-border bg-background">
+              <div className="flex h-full w-full flex-col border-r border-border bg-background">
                 {props.chatOverlay}
               </div>
             </div>

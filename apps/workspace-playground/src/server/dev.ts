@@ -12,17 +12,17 @@ export const PLAYGROUND_SKILLS_DIR = resolve(APP_ROOT, "src/skills")
 export const WORKSPACE_DIR = resolve(APP_ROOT, "workspace")
 const EXTERNAL_PLUGINS_ENABLED = process.env.BORING_EXTERNAL_PLUGINS === "1"
 
-function seedFixtureEntry(srcRoot: string, destRoot: string): void {
+function seedFixtureEntry(srcRoot: string, destRoot: string, overwrite = false): void {
   for (const name of readdirSync(srcRoot)) {
     const src = resolve(srcRoot, name)
     const stats = statSync(src)
     if (stats.isDirectory()) {
-      seedFixtureEntry(src, resolve(destRoot, name))
+      seedFixtureEntry(src, resolve(destRoot, name), overwrite)
       continue
     }
     if (!stats.isFile()) continue
     const dest = resolve(destRoot, name)
-    if (existsSync(dest)) continue
+    if (existsSync(dest) && !overwrite) continue
     mkdirSync(dirname(dest), { recursive: true })
     copyFileSync(src, dest)
   }
@@ -39,7 +39,7 @@ function seedPlaygroundSkills(workspaceRoot = WORKSPACE_DIR): string {
   const workspaceSkillsDir = resolve(workspaceRoot, ".agents/skills")
   if (existsSync(PLAYGROUND_SKILLS_DIR)) {
     mkdirSync(workspaceSkillsDir, { recursive: true })
-    seedFixtureEntry(PLAYGROUND_SKILLS_DIR, workspaceSkillsDir)
+    seedFixtureEntry(PLAYGROUND_SKILLS_DIR, workspaceSkillsDir, true)
   }
   return workspaceSkillsDir
 }
