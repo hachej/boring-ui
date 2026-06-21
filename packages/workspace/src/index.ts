@@ -233,7 +233,7 @@ export type {
 // Bridge
 export { createBridge } from "./front/bridge"
 export { createBridgeClient } from "./front/bridge"
-export { emitUiEffect, postUiCommand, UI_COMMAND_EVENT, WorkspaceLink, workspaceLinkCommand, workspaceLinkHref } from "./front/bridge"
+export { emitUiEffect, postUiCommand, UI_COMMAND_EVENT, WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT, WorkspaceLink, workspaceLinkCommand, workspaceLinkHref } from "./front/bridge"
 export type {
   BridgeClient,
   BridgeClientOptions,

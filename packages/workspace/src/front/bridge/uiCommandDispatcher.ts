@@ -15,6 +15,7 @@ import type { SurfaceOpenRequest } from "../../shared/types/surface"
  * `WORKSPACE_COMMAND_NOTIFY_EVENT` in `@hachej/boring-agent/shared`.
  */
 export const WORKSPACE_COMMAND_NOTIFY_EVENT = "boring-ui:command-notify"
+export const WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT = "boring-workspace:surface-open-skipped"
 
 export interface DispatchContext {
   /**
@@ -67,6 +68,12 @@ function recordParam(
     return value as Record<string, unknown>
   }
   return undefined
+}
+
+function notifySurfaceOpenSkipped(request: SurfaceOpenRequest): void {
+  if (typeof globalThis.dispatchEvent === "function" && typeof CustomEvent !== "undefined") {
+    globalThis.dispatchEvent(new CustomEvent(WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT, { detail: request }))
+  }
 }
 
 function surfaceRequestParam(params: Record<string, unknown>): SurfaceOpenRequest | null {
@@ -142,7 +149,10 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
     case "openSurface": {
       const request = surfaceRequestParam(cmd.params)
       if (!request) return
-      if (ctx.shouldOpenSurface?.(request) === false) return
+      if (ctx.shouldOpenSurface?.(request) === false) {
+        notifySurfaceOpenSkipped(request)
+        return
+      }
       const wasClosed = !ctx.isWorkbenchOpen()
       if (wasClosed) {
         request.meta = { ...(request.meta ?? {}), closeWorkbenchOnDone: true }

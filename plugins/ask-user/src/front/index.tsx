@@ -3,6 +3,7 @@
 import { Button, EmptyState, Notice, Pane, PaneBody, PaneFooter, PaneHeader, PaneTitle } from "@hachej/boring-ui-kit"
 import {
   UI_COMMAND_EVENT,
+  WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT,
   events,
   postUiCommand,
   useWorkspaceAttention,
@@ -213,6 +214,10 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }:
     }
     const onVisibility = () => { if (document.visibilityState === "visible") void refreshPending() }
     const onUiCommand = () => { void refreshPending() }
+    const onSurfaceOpenSkipped = (event: Event) => {
+      const detail = (event as CustomEvent<{ kind?: unknown }>).detail
+      if (detail?.kind === ASK_USER_SURFACE_KIND) void refreshPending()
+    }
     // Questions are created mid-run by the ask_user tool, with no focus or
     // UI-command transition to piggyback on. Throttle-refresh while agent
     // stream parts flow so the pending question (and its blocker/badge)
@@ -231,6 +236,7 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }:
     window.addEventListener("focus", refreshPending)
     document.addEventListener("visibilitychange", onVisibility)
     window.addEventListener(UI_COMMAND_EVENT, onUiCommand)
+    window.addEventListener(WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT, onSurfaceOpenSkipped)
     return () => {
       stopped = true
       if (agentDataTimer) clearTimeout(agentDataTimer)
@@ -239,6 +245,7 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }:
       window.removeEventListener("focus", refreshPending)
       document.removeEventListener("visibilitychange", onVisibility)
       window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)
+      window.removeEventListener(WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT, onSurfaceOpenSkipped)
     }
   }, [activeSessionId, apiBaseUrl, authHeaders, runtime])
   return <QuestionsRuntimeContext.Provider value={runtime}>{children}</QuestionsRuntimeContext.Provider>
