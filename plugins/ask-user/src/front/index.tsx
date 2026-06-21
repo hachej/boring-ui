@@ -249,6 +249,7 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   const paneSessionId = params?.sessionId ?? runtime.activeSessionId ?? null
   const pending = useSyncExternalStore(runtime.subscribe, () => runtime.getPending(paneSessionId), () => runtime.getPending(paneSessionId))
   const [closedQuestionId, setClosedQuestionId] = useState<string | null>(null)
+  const retargetRefreshRef = useRef<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const question = pending?.questionId === closedQuestionId ? null : pending
@@ -266,9 +267,20 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   }, [api, question, runtime])
   useEffect(() => {
     if (!paneSessionId) return
-    if (!pending || (params?.questionId && pending.questionId !== params.questionId)) {
+    const targetQuestionId = params?.questionId
+    if (!pending) {
+      retargetRefreshRef.current = null
       void runtime.refreshPending(paneSessionId).catch(() => undefined)
+      return
     }
+    if (!targetQuestionId || pending.questionId === targetQuestionId) {
+      retargetRefreshRef.current = null
+      return
+    }
+    const refreshKey = `${paneSessionId}:${targetQuestionId}`
+    if (retargetRefreshRef.current === refreshKey) return
+    retargetRefreshRef.current = refreshKey
+    void runtime.refreshPending(paneSessionId).catch(() => undefined)
   }, [paneSessionId, params?.questionId, pending, runtime])
 
   return <div className={className ? `${className} min-h-0 overflow-hidden` : "h-full min-h-0 overflow-hidden"}>
@@ -280,7 +292,7 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
       </PaneHeader>
       {!question ? <PaneBody className="overflow-auto p-4"><EmptyState icon={<HelpCircle className="h-5 w-5" />} title="No pending questions" description="When the agent needs a decision, the form will appear here." className="border border-dashed bg-muted/20" /></PaneBody> : null}
       {question?.status === "ready" && question.schema ? (
-        <QuestionFormProvider schema={question.schema} submitting={submitting} onSubmit={async (values) => {
+        <QuestionFormProvider key={question.questionId} schema={question.schema} submitting={submitting} onSubmit={async (values) => {
           setSubmitting(true); setError(null)
           try { await client.submit(question, values); setClosedQuestionId(question.questionId); runtime.setPending(null, question.sessionId); api.close(); params?.__closeWorkbenchOnDone?.() }
           catch (err) { setError(err instanceof QuestionsClientError ? err.message : String(err)) }
