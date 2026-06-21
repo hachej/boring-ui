@@ -28,7 +28,7 @@ export class AskUserStatePublisher {
 
   start(): () => void {
     if (this.unsubscribe) return this.unsubscribe
-    void this.sanitizePreservedState().catch(() => undefined)
+    void this.initializeFromStore().catch(() => undefined)
     this.unsubscribe = this.store.subscribe((change) => {
       void this.enqueuePublishSession(change.sessionId)
     })
@@ -47,16 +47,19 @@ export class AskUserStatePublisher {
     const current = (await this.bridge.getState()) ?? {}
     if (hint) this.hintsBySession.set(sessionId, hint)
     else this.hintsBySession.delete(sessionId)
-    const hintsBySession = Object.fromEntries(this.hintsBySession.entries())
-    const nextPending: AskUserPendingState = {
-      hint: hint ?? Object.values(hintsBySession)[0] ?? null,
-      hintsBySession,
-    }
     const next: UiState = {
       ...current,
-      [ASK_USER_UI_STATE_SLOTS.PENDING]: nextPending,
+      [ASK_USER_UI_STATE_SLOTS.PENDING]: this.currentPendingState(hint),
     }
     await this.bridge.setState(next)
+  }
+
+  private currentPendingState(preferredHint?: AskUserPendingHint | null): AskUserPendingState {
+    const hintsBySession = Object.fromEntries(this.hintsBySession.entries())
+    return {
+      hint: preferredHint ?? Object.values(hintsBySession)[0] ?? null,
+      hintsBySession,
+    }
   }
 
   private enqueuePublishSession(sessionId: string): Promise<void> {
@@ -67,15 +70,18 @@ export class AskUserStatePublisher {
     return next
   }
 
-  private async sanitizePreservedState(): Promise<void> {
-    const current = await this.bridge.getState()
-    if (!current || !(ASK_USER_UI_STATE_SLOTS.PENDING in current)) return
-    const existing = current[ASK_USER_UI_STATE_SLOTS.PENDING]
-    const sanitized = sanitizePendingState(existing)
-    if (JSON.stringify(existing) === JSON.stringify(sanitized)) return
+  private async initializeFromStore(): Promise<void> {
+    this.hintsBySession.clear()
+    for (const question of await this.store.listPending()) {
+      const hint = toPendingHint(question)
+      if (hint) this.hintsBySession.set(hint.sessionId, hint)
+    }
+    const current = (await this.bridge.getState()) ?? {}
+    const nextPending = this.currentPendingState()
+    if (JSON.stringify(current[ASK_USER_UI_STATE_SLOTS.PENDING]) === JSON.stringify(nextPending)) return
     await this.bridge.setState({
       ...current,
-      [ASK_USER_UI_STATE_SLOTS.PENDING]: sanitized,
+      [ASK_USER_UI_STATE_SLOTS.PENDING]: nextPending,
     })
   }
 }
@@ -87,33 +93,6 @@ function toPendingHint(question: AskUserQuestion | null): AskUserPendingHint | n
     sessionId: question.sessionId,
     status: question.status,
   }
-}
-
-function sanitizePendingState(value: unknown): AskUserPendingState {
-  if (!value || typeof value !== "object") return { hint: null, hintsBySession: {} }
-  const raw = value as { hint?: unknown; question?: unknown; hintsBySession?: unknown }
-  const hintsBySession: Record<string, AskUserPendingHint> = {}
-  if (raw.hintsBySession && typeof raw.hintsBySession === "object" && !Array.isArray(raw.hintsBySession)) {
-    for (const [sessionId, candidate] of Object.entries(raw.hintsBySession as Record<string, unknown>)) {
-      const hint = toHintFromUnknown(candidate)
-      if (hint && hint.sessionId === sessionId) hintsBySession[sessionId] = hint
-    }
-  }
-  const hint = toHintFromUnknown(raw.hint) ?? toHintFromUnknown(raw.question) ?? Object.values(hintsBySession)[0] ?? null
-  if (hint) hintsBySession[hint.sessionId] = hint
-  return { hint, hintsBySession }
-}
-
-function toHintFromUnknown(value: unknown): AskUserPendingHint | null {
-  if (!value || typeof value !== "object") return null
-  const raw = value as { questionId?: unknown; sessionId?: unknown; status?: unknown }
-  if (typeof raw.questionId !== "string" || typeof raw.sessionId !== "string" || typeof raw.status !== "string") return null
-  if (!isQuestionStatus(raw.status)) return null
-  return { questionId: raw.questionId, sessionId: raw.sessionId, status: raw.status }
-}
-
-function isQuestionStatus(value: string): value is AskUserQuestion["status"] {
-  return value === "ready" || value === "answered" || value === "cancelled" || value === "abandoned"
 }
 
 export type { AskUserStoreChange }

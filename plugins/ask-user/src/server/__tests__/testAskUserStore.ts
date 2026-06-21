@@ -40,6 +40,13 @@ export class MemoryAskUserStore implements AskUserStore {
     return question?.status === "ready" ? clone(question) : null
   }
 
+  async listPending(): Promise<AskUserQuestion[]> {
+    return [...this.pendingBySession.values()]
+      .map((questionId) => this.questions.get(questionId))
+      .filter((question): question is AskUserQuestion => question?.status === "ready")
+      .map((question) => clone(question))
+  }
+
   async getByQuestionId(questionId: string): Promise<AskUserQuestion | null> {
     const question = this.questions.get(questionId)
     return question ? clone(question) : null

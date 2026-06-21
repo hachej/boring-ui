@@ -27,6 +27,7 @@ export type AskUserStoreListener = (change: AskUserStoreChange) => void
 
 export interface AskUserStore {
   getPending(sessionId: string): Promise<AskUserQuestion | null>
+  listPending(): Promise<AskUserQuestion[]>
   getByQuestionId(questionId: string): Promise<AskUserQuestion | null>
   createPending(question: AskUserQuestion): Promise<void>
   answer(questionId: string, answer: AskUserAnswer): Promise<void>
@@ -67,6 +68,14 @@ export class FileAskUserStore implements AskUserStore {
     const question = state.questions[questionId]
     if (!question || !isPending(question)) return null
     return clone(question)
+  }
+
+  async listPending(): Promise<AskUserQuestion[]> {
+    const state = await this.load()
+    return Object.values(state.pendingBySession)
+      .map((questionId) => state.questions[questionId])
+      .filter(isPending)
+      .map((question) => clone(question))
   }
 
   async getByQuestionId(questionId: string): Promise<AskUserQuestion | null> {

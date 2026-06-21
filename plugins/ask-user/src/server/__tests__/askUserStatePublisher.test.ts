@@ -43,7 +43,7 @@ async function waitForRuntimeWaiter(runtime: AskUserRuntime, questionId: string)
 }
 
 describe("AskUserStatePublisher", () => {
-  it("sanitizes preserved legacy full-question UI state on start", async () => {
+  it("clears preserved legacy full-question UI state when the store has no pending question", async () => {
     const store = await makeStore()
     const ui = bridge()
     await ui.setState({
@@ -64,10 +64,7 @@ describe("AskUserStatePublisher", () => {
 
     await vi.waitFor(async () => {
       const slot = (await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]
-      expect(slot).toEqual({
-        hint: { questionId: "q1", sessionId: "s1", status: "ready" },
-        hintsBySession: { s1: { questionId: "q1", sessionId: "s1", status: "ready" } },
-      })
+      expect(slot).toEqual({ hint: null, hintsBySession: {} })
       expect(JSON.stringify(slot)).not.toContain("secret-token")
     })
   })
@@ -96,6 +93,40 @@ describe("AskUserStatePublisher", () => {
     await waitForRuntimeWaiter(runtime, q1.questionId)
     await runtime.cancelQuestion(q1.questionId, "s1")
     await expect(pending).resolves.toMatchObject({ status: "cancelled" })
+  }, 30_000)
+
+  it("seeds pending hints from store on start and keeps untouched sessions after another session resolves", async () => {
+    const store = await makeStore()
+    const ui = bridge()
+    const runtime = new AskUserRuntime({ store })
+    const s1 = runtime.ask({ sessionId: "s1", title: "S1", schema })
+    const s2 = runtime.ask({ sessionId: "s2", title: "S2", schema })
+    const q1 = await waitForPending(store, "s1")
+    const q2 = await waitForPending(store, "s2")
+
+    const publisher = new AskUserStatePublisher(store, ui)
+    publisher.start()
+
+    await vi.waitFor(async () => {
+      expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({
+        hintsBySession: {
+          s1: { questionId: q1.questionId, sessionId: "s1", status: "ready" },
+          s2: { questionId: q2.questionId, sessionId: "s2", status: "ready" },
+        },
+      })
+    })
+    await waitForRuntimeWaiter(runtime, q1.questionId)
+    await waitForRuntimeWaiter(runtime, q2.questionId)
+    await runtime.submitAnswer(q2.questionId, "s2", { answer: "ok" })
+    await expect(s2).resolves.toMatchObject({ status: "answered" })
+    await vi.waitFor(async () => {
+      expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({
+        hint: { questionId: q1.questionId, sessionId: "s1", status: "ready" },
+        hintsBySession: { s1: { questionId: q1.questionId, sessionId: "s1", status: "ready" } },
+      })
+    })
+    await runtime.cancelQuestion(q1.questionId, "s1")
+    await expect(s1).resolves.toMatchObject({ status: "cancelled" })
   }, 30_000)
 
   it("publishes independent hints for multiple pending sessions", async () => {
