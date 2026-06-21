@@ -43,11 +43,11 @@ describe("ask-user front client", () => {
     }
 
     expect(readPendingQuestionHintsFromState(state)).toEqual([
+      { questionId: "legacy", sessionId: "s-legacy", status: "ready" },
       { questionId: "q1", sessionId: "s1", status: "ready" },
       { questionId: "q2", sessionId: "s2", status: "ready" },
-      { questionId: "legacy", sessionId: "s-legacy", status: "ready" },
     ])
-    expect(readPendingQuestionHintFromState(state)).toEqual({ questionId: "q1", sessionId: "s1", status: "ready" })
+    expect(readPendingQuestionHintFromState(state)).toEqual({ questionId: "legacy", sessionId: "s-legacy", status: "ready" })
   })
 
   it("cancels through the bridge when crypto.subtle is unavailable", async () => {

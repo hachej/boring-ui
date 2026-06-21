@@ -22,14 +22,14 @@ export function readPendingQuestionHintsFromState(state: Record<string, unknown>
   if (!slot || typeof slot !== "object") return []
   const hints = new Map<string, PendingQuestionHint>()
   const rawSlot = slot as { hint?: unknown; question?: unknown; hintsBySession?: unknown }
+  const current = readHint(rawSlot.hint) ?? readHint(rawSlot.question)
+  if (current) hints.set(current.sessionId, current)
   if (rawSlot.hintsBySession && typeof rawSlot.hintsBySession === "object" && !Array.isArray(rawSlot.hintsBySession)) {
     for (const [sessionId, candidate] of Object.entries(rawSlot.hintsBySession as Record<string, unknown>)) {
       const hint = readHint(candidate)
       if (hint && hint.sessionId === sessionId) hints.set(sessionId, hint)
     }
   }
-  const current = readHint(rawSlot.hint) ?? readHint(rawSlot.question)
-  if (current) hints.set(current.sessionId, current)
   return [...hints.values()]
 }
 
