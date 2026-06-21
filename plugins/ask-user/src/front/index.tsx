@@ -161,6 +161,8 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }:
     if (!activeSessionId) return
     const hint = runtime.getPendingHints().find((candidate) => candidate.sessionId === activeSessionId)
     if (!hint || (hint.status && hint.status !== "ready")) return
+    const hydrated = runtime.getPending(activeSessionId)
+    if (!hydrated || hydrated.questionId !== hint.questionId || hydrated.status !== "ready") return
     const key = `${hint.sessionId}:${hint.questionId}`
     if (autoOpenedQuestionsRef.current.has(key)) return
     autoOpenedQuestionsRef.current.add(key)
