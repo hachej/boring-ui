@@ -101,8 +101,8 @@ const sharedQuestionsStore: QuestionsStore = createQuestionsStore()
 
 const QuestionsRuntimeContext = createContext<QuestionsRuntime | null>(null)
 
-function sessionScopedBlockerId(sessionId: string): string | undefined {
-  return sessionId === "default" || sessionId === "anonymous" ? undefined : sessionId
+function sessionScopedBlockerId(sessionId: string): string {
+  return sessionId
 }
 
 function pendingQuestionSnapshot(store: QuestionsStore): string {
@@ -145,6 +145,12 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }:
       const blockerId = `${ASK_USER_PLUGIN_ID}:${hint.sessionId}:${hint.questionId}`
       blockerIds.push(blockerId)
       const hydrated = runtime.getPending(hint.sessionId)
+      const isActiveHint = runtime.activeSessionId === hint.sessionId
+      const actions = hydrated
+        ? [{ id: "open", label: "Open Questions" }, { id: "cancel", label: "Cancel question" }]
+        : isActiveHint
+          ? [{ id: "open", label: "Open Questions" }]
+          : undefined
       addBlocker({
         id: blockerId,
         reason: "ask-user.question",
@@ -153,7 +159,7 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }:
         label: "Answer the question in Questions to continue",
         sessionId: sessionScopedBlockerId(hint.sessionId),
         sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
-        actions: hydrated ? [{ id: "open", label: "Open Questions" }, { id: "cancel", label: "Cancel question" }] : undefined,
+        actions,
       })
     }
     return () => { for (const blockerId of blockerIds) removeBlocker(blockerId) }
