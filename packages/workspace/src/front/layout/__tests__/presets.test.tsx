@@ -13,6 +13,7 @@ import { bindStore } from "../../store/selectors"
 import { createWorkspaceStore } from "../../store"
 import { WorkspaceProvider, useWorkspaceAttention } from "../../provider"
 import type { SurfaceShellApi } from "../../chrome/artifact-surface/SurfaceShell"
+import type { DispatchContext } from "../../bridge"
 
 // Verify barrel exports work
 import {
@@ -785,6 +786,40 @@ describe("ChatLayout component", () => {
     await user.click(screen.getByRole("button", { name: "Add background blocker" }))
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(screen.getByLabelText("Collapsed chat")).toHaveAttribute("data-boring-state", "collapsed")
+  })
+
+  it("applies a provided surface dispatch policy on the layout event path", () => {
+    const openSurface = vi.fn()
+    const openWorkbench = vi.fn()
+    const surface: SurfaceShellApi = {
+      openFile: vi.fn(),
+      openSurface,
+      openPanel: vi.fn(),
+      closeWorkbenchLeftPane: vi.fn(),
+      expandToFile: vi.fn(),
+      getSnapshot: () => ({ openTabs: [], activeTab: null }),
+    }
+    const surfaceDispatch: DispatchContext = {
+      surface: () => surface,
+      isWorkbenchOpen: () => false,
+      openWorkbench,
+      shouldOpenSurface: () => false,
+    }
+
+    renderWithRegistry(
+      <ChatLayout center="chat" centerParams={{ surfaceDispatch }} />,
+      ["chat", "session-list"],
+    )
+
+    act(() => {
+      events.emit(workspaceEvents.uiCommand, {
+        ...userMeta(),
+        command: { kind: "openSurface", params: { kind: "questions", target: "q-closed", meta: { openOnlyWhenSessionOpen: true } } },
+      })
+    })
+
+    expect(openSurface).not.toHaveBeenCalled()
+    expect(openWorkbench).not.toHaveBeenCalled()
   })
 
   it("dispatches plugin UI commands through the workbench contract", () => {

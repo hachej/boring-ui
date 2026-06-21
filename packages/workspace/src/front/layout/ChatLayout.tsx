@@ -112,6 +112,7 @@ export function ChatLayout(props: ChatLayoutProps) {
   const uiOpenWorkbench = getFunction<() => void>(props.centerParams, "openWorkbench")
   const uiOpenWorkbenchSources = getFunction<() => void>(props.centerParams, "openWorkbenchSources")
   const uiCloseWorkbench = getFunction<() => void>(props.centerParams, "closeWorkbench")
+  const uiSurfaceDispatch = getDispatchContext(props.centerParams, "surfaceDispatch")
   const closeNav = getCallback(props.navParams, "onClose")
   const closeSurface = getCallback(props.surfaceParams, "onClose")
   const closeSidebar = getCallback(props.sidebarParams, "onClose")
@@ -263,18 +264,22 @@ export function ChatLayout(props: ChatLayoutProps) {
   ])
 
   useEffect(() => {
-    if (!uiSurface || !uiIsWorkbenchOpen || !uiOpenWorkbench) return
-    const ctx: DispatchContext = {
-      surface: uiSurface,
-      isWorkbenchOpen: uiIsWorkbenchOpen,
-      openWorkbench: uiOpenWorkbench,
-      openWorkbenchSources: uiOpenWorkbenchSources,
-      closeWorkbench: uiCloseWorkbench,
-    }
+    const ctx: DispatchContext | undefined = uiSurfaceDispatch ?? (
+      uiSurface && uiIsWorkbenchOpen && uiOpenWorkbench
+        ? {
+            surface: uiSurface,
+            isWorkbenchOpen: uiIsWorkbenchOpen,
+            openWorkbench: uiOpenWorkbench,
+            openWorkbenchSources: uiOpenWorkbenchSources,
+            closeWorkbench: uiCloseWorkbench,
+          }
+        : undefined
+    )
+    if (!ctx) return
     return events.on(workspaceEvents.uiCommand, ({ command }) => {
       dispatchUiCommand(command, ctx)
     })
-  }, [uiSurface, uiIsWorkbenchOpen, uiOpenWorkbench, uiOpenWorkbenchSources, uiCloseWorkbench])
+  }, [uiSurfaceDispatch, uiSurface, uiIsWorkbenchOpen, uiOpenWorkbench, uiOpenWorkbenchSources, uiCloseWorkbench])
 
   useEvent(workspaceEvents.agentData, () => {
     if (chatCollapsed) setChatRailPulse(true)
@@ -666,6 +671,15 @@ function ResizeHandle({ side, ariaLabel, onResize }: ResizeHandleProps) {
       )}
     />
   )
+}
+
+function getDispatchContext(params: Record<string, unknown> | undefined, key: string): DispatchContext | undefined {
+  const value = params?.[key]
+  if (!value || typeof value !== "object") return undefined
+  const candidate = value as Partial<DispatchContext>
+  return typeof candidate.surface === "function" && typeof candidate.isWorkbenchOpen === "function" && typeof candidate.openWorkbench === "function"
+    ? candidate as DispatchContext
+    : undefined
 }
 
 function getFunction<T extends (...args: unknown[]) => unknown>(
