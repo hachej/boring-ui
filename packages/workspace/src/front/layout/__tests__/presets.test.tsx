@@ -761,6 +761,34 @@ describe("ChatLayout component", () => {
     )
   })
 
+  it("auto-expands collapsed chat for a session-scoped blocker when the layout has no active session id", async () => {
+    function Host() {
+      const { addBlocker } = useWorkspaceAttention()
+      return (
+        <>
+          <ChatLayout center="chat" storageKey="chat-layout-sessionless-blocker" />
+          <button
+            type="button"
+            onClick={() => addBlocker({ id: "default-question", reason: "ask-user.question", label: "Question", sessionId: "default", sessionBadge: { kind: "question", label: "question" } })}
+          >
+            Add default blocker
+          </button>
+        </>
+      )
+    }
+
+    const user = userEvent.setup()
+    renderWithRegistry(<Host />, ["chat", "session-list"])
+
+    act(() => fireShortcut("\\", { metaKey: true }))
+    expect(screen.getByLabelText("Collapsed chat")).toHaveAttribute("data-boring-state", "collapsed")
+
+    await user.click(screen.getByRole("button", { name: "Add default blocker" }))
+    await waitFor(() =>
+      expect(screen.getByLabelText("Chat")).toHaveAttribute("data-boring-state", "expanded"),
+    )
+  })
+
   it("does not auto-expand collapsed chat for a blocker scoped to another session", async () => {
     function Host() {
       const { addBlocker } = useWorkspaceAttention()

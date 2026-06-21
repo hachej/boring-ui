@@ -100,7 +100,7 @@ export function ChatLayout(props: ChatLayoutProps) {
   const { blockers } = useWorkspaceAttention()
   const activeSessionId = (props.activeChatPaneId ?? props.centerParams?.sessionId) as string | undefined
   const activeBlockers = useMemo(
-    () => blockers.filter((blocker) => !blocker.sessionId || blocker.sessionId === activeSessionId),
+    () => blockers.filter((blocker) => !blocker.sessionId || !activeSessionId || blocker.sessionId === activeSessionId),
     [activeSessionId, blockers],
   )
   const commandRegistry = useCommandRegistry()
