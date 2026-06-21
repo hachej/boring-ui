@@ -6,7 +6,7 @@ import { AskUserRuntime } from "./askUserRuntime"
 import { FileAskUserStore, type AskUserStore } from "./askUserStore"
 import { AskUserStatePublisher } from "./askUserStatePublisher"
 import { createAskUserTool } from "./createAskUserTool"
-import { createAskUserHumanInputBridgeHandlers } from "./humanInputBridgeHandlers"
+import { createAskUserBridgeHandlers } from "./askUserBridgeHandlers"
 import type { QuestionsRoutesOptions } from "./questionsRoutes"
 
 export type AskUserServerPluginOptions = {
@@ -17,7 +17,7 @@ export type AskUserServerPluginOptions = {
   sessionId?: string | (() => string)
   /**
    * @deprecated Normal setup no longer registers plugin-owned HTTP command
-   * routes. Use WorkspaceBridge `human-input.v1.*` handlers instead. The
+   * routes. Use WorkspaceBridge `ask-user.v1.*` handlers instead. The
    * `questionsRoutes` export remains available for manual legacy wiring.
    */
   routes?: Omit<QuestionsRoutesOptions, "runtime" | "store">
@@ -26,7 +26,7 @@ export type AskUserServerPluginOptions = {
 
 export function createAskUserServerPlugin(options: AskUserServerPluginOptions): WorkspaceServerPlugin {
   if (options.routes) {
-    throw new Error("createAskUserServerPlugin no longer registers /api/v1/questions/commands; use WorkspaceBridge human-input.v1.* handlers or import questionsRoutes for manual legacy wiring")
+    throw new Error("createAskUserServerPlugin no longer registers /api/v1/questions/commands; use WorkspaceBridge ask-user.v1.* handlers or import questionsRoutes for manual legacy wiring")
   }
   const store = options.store ?? createDefaultStore(options.workspaceRoot)
   const runtime = options.runtime ?? new AskUserRuntime({ store, uiBridge: options.bridge })
@@ -49,7 +49,7 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
       parameters: askUserTool.parameters,
       execute(params, ctx) { return askUserTool.execute(ctx.toolCallId, params, ctx.abortSignal, ctx.sessionId) },
     }],
-    workspaceBridgeHandlers: createAskUserHumanInputBridgeHandlers({ runtime, store }),
+    workspaceBridgeHandlers: createAskUserBridgeHandlers({ runtime, store }),
     routes: lifecycle,
     preservedUiStateKeys: [ASK_USER_UI_STATE_SLOTS.PENDING],
   })

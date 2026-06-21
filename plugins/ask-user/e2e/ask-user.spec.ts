@@ -44,7 +44,7 @@ test.describe("ask_user Questions pane", () => {
     await page.route("**/api/v1/workspace-bridge/call", async (route) => {
       const body = route.request().postDataJSON()
       commands.push(body)
-      if (body.op === "human-input.v1.pending") {
+      if (body.op === "ask-user.v1.pending") {
         await route.fulfill({ json: { ok: true, op: body.op, requestId: "req-e2e", output: { pending: question } } })
         return
       }
@@ -63,7 +63,7 @@ test.describe("ask_user Questions pane", () => {
     await page.getByRole("radio", { name: "A" }).click()
     await page.getByTestId("artifact-surface").getByRole("button", { name: "Submit" }).click()
 
-    await expect.poll(() => commands.some((cmd: any) => cmd.op === "human-input.v1.answer" && cmd.input?.answerToken === "secret-e2e" && cmd.input?.values?.choice === "A")).toBe(true)
+    await expect.poll(() => commands.some((cmd: any) => cmd.op === "ask-user.v1.answer" && cmd.input?.answerToken === "secret-e2e" && cmd.input?.values?.choice === "A")).toBe(true)
     await expect(page.getByText("Choose A or B")).toBeHidden({ timeout: 5_000 })
   })
 })

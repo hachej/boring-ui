@@ -10,7 +10,7 @@
  *   - runtime token mint/verify
  *   - idempotency replay + failure-releases-key
  *   - trusted boot-time server-plugin handler contribution
- *   - plugin-owned ask-user human-input request→answer cycle
+ *   - plugin-owned ask-user request→answer cycle
  */
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -18,7 +18,7 @@ import { join } from 'node:path'
 import { createWorkspaceAgentServer } from '@hachej/boring-workspace/app/server'
 import { defineServerPlugin, mintWorkspaceBridgeRuntimeToken } from '@hachej/boring-workspace/server'
 import { createAskUserServerPlugin } from '@hachej/boring-ask-user/server'
-import { HUMAN_INPUT_CAPABILITIES, HUMAN_INPUT_OPS } from '@hachej/boring-ask-user/shared'
+import { ASK_USER_BRIDGE_CAPABILITIES, ASK_USER_BRIDGE_OPS } from '@hachej/boring-ask-user/shared'
 
 const SECRET = 'e2e-test-secret-do-not-use-in-prod'
 const results: { name: string; ok: boolean; detail: string }[] = []
@@ -163,17 +163,17 @@ async function main() {
       check('T7 trusted server-plugin bridge handler contribution', r.status === 200 && r.json.ok === true && r.json.output?.pluginEchoed?.from === 'plugin', `status=${r.status}`)
     }
 
-    // T8/T9 — ask-user owns and registers human-input.v1.* bridge handlers.
+    // T8/T9 — ask-user owns and registers ask-user.v1.* bridge handlers.
     {
       const token = mintWorkspaceBridgeRuntimeToken({
         secret: SECRET,
         workspaceId: 'default',
         sessionId: 's1',
-        capabilities: [HUMAN_INPUT_CAPABILITIES.request],
+        capabilities: [ASK_USER_BRIDGE_CAPABILITIES.request],
         runtimeId: 'ask-user-e2e-runtime',
       })
       const requestPromise = post({
-        op: HUMAN_INPUT_OPS.request,
+        op: ASK_USER_BRIDGE_OPS.request,
         requestId: 'ask-user-e2e-request',
         input: {
           sessionId: 's1',
@@ -185,21 +185,21 @@ async function main() {
 
       let pending: any = null
       for (let i = 0; i < 40; i++) {
-        const r = await post({ op: HUMAN_INPUT_OPS.pending, input: { sessionId: 's1' } }, { 'x-boring-session-id': 's1' })
+        const r = await post({ op: ASK_USER_BRIDGE_OPS.pending, input: { sessionId: 's1' } }, { 'x-boring-session-id': 's1' })
         pending = r.json.output?.pending ?? null
         if (pending?.questionId) break
         await new Promise((resolve) => setTimeout(resolve, 50))
       }
-      check('T8 ask-user human-input pending via plugin bridge', pending?.title === 'Bridge question' && typeof pending?.answerToken === 'string', `questionId=${pending?.questionId ?? 'none'}`)
+      check('T8 ask-user pending via plugin bridge', pending?.title === 'Bridge question' && typeof pending?.answerToken === 'string', `questionId=${pending?.questionId ?? 'none'}`)
 
       const answer = await post({
-        op: HUMAN_INPUT_OPS.answer,
+        op: ASK_USER_BRIDGE_OPS.answer,
         input: { questionId: pending?.questionId, sessionId: 's1', answerToken: pending?.answerToken, values: { answer: 'yes' } },
         idempotencyKey: 'ask-user-e2e-answer',
       }, { 'x-boring-session-id': 's1' })
       const request = await requestPromise
       check(
-        'T9 ask-user human-input answer resolves runtime request',
+        'T9 ask-user answer resolves runtime request',
         answer.status === 200 && answer.json.ok === true && request.status === 200 && request.json.output?.status === 'answered' && request.json.output?.answer?.values?.answer === 'yes',
         `answer.status=${answer.status} request.status=${request.status} result=${request.json.output?.status}`,
       )

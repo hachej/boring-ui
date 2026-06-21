@@ -113,18 +113,18 @@ describe("ask-user Pi tool", () => {
 })
 
 describe("createAskUserServerPlugin", () => {
-  it("exports plugin-owned human-input bridge handlers and agent tool", async () => {
+  it("exports plugin-owned ask-user bridge handlers and agent tool", async () => {
     const { store, runtime } = await fixture()
     const plugin = createAskUserServerPlugin({ store, runtime, sessionId: "s1" })
     expect(plugin.id).toBe("ask-user")
     expect(plugin.routes).toEqual(expect.any(Function))
     expect(plugin.agentTools).toHaveLength(1)
     expect(plugin.workspaceBridgeHandlers?.map((entry) => entry.definition.op)).toEqual([
-      "human-input.v1.request",
-      "human-input.v1.answer",
-      "human-input.v1.cancel",
-      "human-input.v1.pending",
-      "human-input.v1.transcript",
+      "ask-user.v1.request",
+      "ask-user.v1.answer",
+      "ask-user.v1.cancel",
+      "ask-user.v1.pending",
+      "ask-user.v1.transcript",
     ])
   })
 

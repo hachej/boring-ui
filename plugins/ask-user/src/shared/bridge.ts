@@ -7,23 +7,23 @@ import type {
   AskUserTranscriptEvent,
 } from "./types"
 
-export const HUMAN_INPUT_OPS = {
-  request: "human-input.v1.request",
-  answer: "human-input.v1.answer",
-  cancel: "human-input.v1.cancel",
-  pending: "human-input.v1.pending",
-  transcript: "human-input.v1.transcript",
+export const ASK_USER_BRIDGE_OPS = {
+  request: "ask-user.v1.request",
+  answer: "ask-user.v1.answer",
+  cancel: "ask-user.v1.cancel",
+  pending: "ask-user.v1.pending",
+  transcript: "ask-user.v1.transcript",
 } as const
 
-export const HUMAN_INPUT_CAPABILITIES = {
-  request: "human-input:request",
-  answer: "human-input:answer",
-  cancel: "human-input:cancel",
-  pending: "human-input:pending",
-  transcriptRead: "human-input:transcript.read",
+export const ASK_USER_BRIDGE_CAPABILITIES = {
+  request: "ask-user:request",
+  answer: "ask-user:answer",
+  cancel: "ask-user:cancel",
+  pending: "ask-user:pending",
+  transcriptRead: "ask-user:transcript.read",
 } as const
 
-export type HumanInputRequestInput = {
+export type AskUserBridgeRequestInput = {
   sessionId: string
   title?: string
   context?: string
@@ -31,43 +31,69 @@ export type HumanInputRequestInput = {
   timeoutMs?: number
 }
 
-export type HumanInputAnswerInput = {
+export type AskUserBridgeAnswerInput = {
   questionId: string
   sessionId: string
   answerToken: string
   values: Record<string, AskUserAnswerValue>
 }
 
-export type HumanInputCancelInput = {
+export type AskUserBridgeCancelInput = {
   questionId: string
   sessionId: string
   answerToken: string
 }
 
-export type HumanInputPendingInput = {
+export type AskUserBridgePendingInput = {
   sessionId: string
 }
 
-export type HumanInputTranscriptInput = {
+export type AskUserBridgeTranscriptInput = {
   sessionId: string
 }
 
-export type HumanInputRequestOutput = AskUserToolResult
+export type AskUserBridgeRequestOutput = AskUserToolResult
 
-export type HumanInputMutationOutput = {
+export type AskUserBridgeMutationOutput = {
   ok: true
   status: string
 }
 
-export type HumanInputPendingOutput = {
+export type AskUserBridgePendingOutput = {
   pending: AskUserQuestion | null
 }
 
-export type HumanInputTranscriptOutput = {
+export type AskUserBridgeTranscriptOutput = {
   events: AskUserTranscriptEvent[]
 }
 
-export type HumanInputAnswerOutput = {
+export type AskUserBridgeAnswerOutput = {
   status: "answered"
   answer: AskUserAnswer
 }
+
+/** @deprecated Use ASK_USER_BRIDGE_OPS. */
+export const HUMAN_INPUT_OPS = ASK_USER_BRIDGE_OPS
+/** @deprecated Use ASK_USER_BRIDGE_CAPABILITIES. */
+export const HUMAN_INPUT_CAPABILITIES = ASK_USER_BRIDGE_CAPABILITIES
+
+/** @deprecated Use AskUserBridgeRequestInput. */
+export type HumanInputRequestInput = AskUserBridgeRequestInput
+/** @deprecated Use AskUserBridgeAnswerInput. */
+export type HumanInputAnswerInput = AskUserBridgeAnswerInput
+/** @deprecated Use AskUserBridgeCancelInput. */
+export type HumanInputCancelInput = AskUserBridgeCancelInput
+/** @deprecated Use AskUserBridgePendingInput. */
+export type HumanInputPendingInput = AskUserBridgePendingInput
+/** @deprecated Use AskUserBridgeTranscriptInput. */
+export type HumanInputTranscriptInput = AskUserBridgeTranscriptInput
+/** @deprecated Use AskUserBridgeRequestOutput. */
+export type HumanInputRequestOutput = AskUserBridgeRequestOutput
+/** @deprecated Use AskUserBridgeMutationOutput. */
+export type HumanInputMutationOutput = AskUserBridgeMutationOutput
+/** @deprecated Use AskUserBridgePendingOutput. */
+export type HumanInputPendingOutput = AskUserBridgePendingOutput
+/** @deprecated Use AskUserBridgeTranscriptOutput. */
+export type HumanInputTranscriptOutput = AskUserBridgeTranscriptOutput
+/** @deprecated Use AskUserBridgeAnswerOutput. */
+export type HumanInputAnswerOutput = AskUserBridgeAnswerOutput

@@ -47,7 +47,7 @@ Plugins that need a human to act should combine domain-specific bridge ops with
 the generic workspace attention/surface mechanics:
 
 1. Publish or discover plugin-owned pending state through plugin-owned bridge
-   operations, e.g. `human-input.v1.pending` or `pr-review.v1.pending`.
+   operations, e.g. `ask-user.v1.pending` or `pr-review.v1.pending`.
 2. Add a `WorkspaceAttentionBlocker` with the plugin's own `reason` namespace
    and a `sessionBadge` so the session list can mark the affected session.
 3. Use `openSurface` with `meta.sessionId` and
@@ -73,21 +73,21 @@ that event and refresh its pending hints; the session list badge remains the
 non-stealing notification path. Workspace does not know whether the attention is
 a question, PR review, approval gate, or some other domain-specific workflow.
 
-## Ask-user human input
+## Ask-user bridge operations
 
-`@hachej/boring-ask-user/server` owns the `human-input.v1.*` operation family. Normal ask-user setup contributes those handlers through `workspaceBridgeHandlers` instead of registering a plugin-owned `/api/v1/questions/commands` route.
+`@hachej/boring-ask-user/server` owns the `ask-user.v1.*` operation family. Normal ask-user setup contributes those handlers through `workspaceBridgeHandlers` instead of registering a plugin-owned `/api/v1/questions/commands` route.
 
 Registered operations:
 
-- `human-input.v1.request` — runtime/server asks a blocking structured question.
-- `human-input.v1.pending` — browser/server reads the pending question for a session.
-- `human-input.v1.answer` — browser/server submits answers with the question answer token and idempotency key.
-- `human-input.v1.cancel` — browser/server cancels a pending question with the question answer token and idempotency key.
-- `human-input.v1.transcript` — server-only transcript read.
+- `ask-user.v1.request` — runtime/server asks a blocking structured question.
+- `ask-user.v1.pending` — browser/server reads the pending question for a session.
+- `ask-user.v1.answer` — browser/server submits answers with the question answer token and idempotency key.
+- `ask-user.v1.cancel` — browser/server cancels a pending question with the question answer token and idempotency key.
+- `ask-user.v1.transcript` — server-only transcript read.
 
 The plugin owns question validation, storage, answer-token checks, UI-state publishing, and pending-question coordination. The workspace package remains domain-neutral: it hosts only the generic RPC core, the trusted handler contribution seam, and generic session attention/surface dispatch.
 
-For normal setup, browser reads/mutations are scoped by the verified bridge session (`x-boring-session-id` or app-auth equivalent), not by body-only session values. Runtime requests must be made with a session-scoped bridge token when a session id is present. UI effects and UI state may carry question/session hints for navigation and badges, but answer tokens and full answerable question payloads stay behind the `human-input.v1.pending` RPC read.
+For normal setup, browser reads/mutations are scoped by the verified bridge session (`x-boring-session-id` or app-auth equivalent), not by body-only session values. Runtime requests must be made with a session-scoped bridge token when a session id is present. UI effects and UI state may carry question/session hints for navigation and badges, but answer tokens and full answerable question payloads stay behind the `ask-user.v1.pending` RPC read.
 
 ## Runtime bridge env
 

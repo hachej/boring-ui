@@ -1,4 +1,4 @@
-import { HUMAN_INPUT_OPS } from "../shared/bridge"
+import { ASK_USER_BRIDGE_OPS } from "../shared/bridge"
 import { ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
 import type { AskUserAnswerValue, AskUserFormSchema, AskUserQuestion } from "../shared/types"
@@ -83,7 +83,7 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
   return {
     async pending(sessionId: string): Promise<AskUserQuestion | null> {
       const output = await callBridge<{ pending: AskUserQuestion | null }>(
-        HUMAN_INPUT_OPS.pending,
+        ASK_USER_BRIDGE_OPS.pending,
         { sessionId },
         sessionId,
       )
@@ -92,14 +92,14 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
     async cancel(question: AskUserQuestion) {
       ensureAnswerToken(question)
       return await callBridge<QuestionsClientResult>(
-        HUMAN_INPUT_OPS.cancel,
+        ASK_USER_BRIDGE_OPS.cancel,
         {
           questionId: question.questionId,
           sessionId: question.sessionId,
           answerToken: question.answerToken,
         },
         question.sessionId,
-        await deriveIdempotencyKey(HUMAN_INPUT_OPS.cancel, {
+        await deriveIdempotencyKey(ASK_USER_BRIDGE_OPS.cancel, {
           questionId: question.questionId,
           sessionId: question.sessionId,
           answerToken: question.answerToken,
@@ -112,7 +112,7 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
       const validation = validateQuestionValues(question.schema, values as QuestionFormValues)
       if (!validation.valid) throw new QuestionsClientError(ASK_USER_ERROR_CODES.ANSWER_INVALID, firstValidationMessage(validation))
       return await callBridge<QuestionsClientResult>(
-        HUMAN_INPUT_OPS.answer,
+        ASK_USER_BRIDGE_OPS.answer,
         {
           questionId: question.questionId,
           sessionId: question.sessionId,
@@ -120,7 +120,7 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
           values,
         },
         question.sessionId,
-        await deriveIdempotencyKey(HUMAN_INPUT_OPS.answer, {
+        await deriveIdempotencyKey(ASK_USER_BRIDGE_OPS.answer, {
           questionId: question.questionId,
           sessionId: question.sessionId,
           answerToken: question.answerToken,

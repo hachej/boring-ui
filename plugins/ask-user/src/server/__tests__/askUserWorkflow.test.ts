@@ -2,13 +2,13 @@ import { mkdtemp } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
-import { HUMAN_INPUT_CAPABILITIES, HUMAN_INPUT_OPS } from "../../shared/bridge"
+import { ASK_USER_BRIDGE_CAPABILITIES, ASK_USER_BRIDGE_OPS } from "../../shared/bridge"
 import { ASK_USER_UI_STATE_SLOTS } from "../../shared/constants"
 import { FileAskUserStore } from "../askUserStore"
 import { AskUserRuntime } from "../askUserRuntime"
 import { AskUserStatePublisher } from "../askUserStatePublisher"
 import { createAskUserTool } from "../createAskUserTool"
-import { createAskUserHumanInputBridgeHandlers } from "../humanInputBridgeHandlers"
+import { createAskUserBridgeHandlers } from "../askUserBridgeHandlers"
 import { createWorkspaceBridgeRegistry, type UiBridge, type UiCommand, type UiState, type WorkspaceBridgeCallContext } from "@hachej/boring-workspace/server"
 
 function createBridge(): UiBridge & { commands: UiCommand[] } {
@@ -29,21 +29,21 @@ async function makeStore() {
 }
 
 describe("ask-user full workflow", () => {
-  it("runs tool -> pending state -> human-input bridge answer -> tool result", async () => {
+  it("runs tool -> pending state -> ask-user bridge answer -> tool result", async () => {
     const store = await makeStore()
     const bridge = createBridge()
     const runtime = new AskUserRuntime({ store, uiBridge: bridge, ownerPrincipalId: "p1" })
     new AskUserStatePublisher(store, bridge).start()
 
     const registry = createWorkspaceBridgeRegistry()
-    for (const entry of createAskUserHumanInputBridgeHandlers({ store, runtime })) {
+    for (const entry of createAskUserBridgeHandlers({ store, runtime })) {
       registry.registerHandler(entry.definition, entry.handler)
     }
     const browserContext: WorkspaceBridgeCallContext = {
       callerClass: "browser",
       workspaceId: "workspace-1",
       sessionId: "s1",
-      capabilities: [HUMAN_INPUT_CAPABILITIES.answer],
+      capabilities: [ASK_USER_BRIDGE_CAPABILITIES.answer],
       actor: { actorKind: "human", performedBy: { id: "p1", label: "user:p1" } },
     }
 
@@ -78,7 +78,7 @@ describe("ask-user full workflow", () => {
 
 
     const submit = await registry.call({
-      op: HUMAN_INPUT_OPS.answer,
+      op: ASK_USER_BRIDGE_OPS.answer,
       input: {
         questionId: pending.questionId,
         sessionId: "s1",

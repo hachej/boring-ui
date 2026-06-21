@@ -22,9 +22,9 @@ describe("ask-user front client", () => {
   it("derives deterministic idempotency keys when crypto.subtle is unavailable", async () => {
     vi.stubGlobal("crypto", {})
 
-    const first = await deriveIdempotencyKey("human-input.v1.answer", { b: 2, a: 1 })
-    const second = await deriveIdempotencyKey("human-input.v1.answer", { a: 1, b: 2 })
-    const different = await deriveIdempotencyKey("human-input.v1.answer", { a: 1, b: 3 })
+    const first = await deriveIdempotencyKey("ask-user.v1.answer", { b: 2, a: 1 })
+    const second = await deriveIdempotencyKey("ask-user.v1.answer", { a: 1, b: 2 })
+    const different = await deriveIdempotencyKey("ask-user.v1.answer", { a: 1, b: 3 })
 
     expect(first).toMatch(/^ask-user-idem:[0-9a-f]{32}$/)
     expect(first).toBe(second)
@@ -59,7 +59,7 @@ describe("ask-user front client", () => {
 
     const body = JSON.parse(String(fetchMock.mock.calls[0]![1]!.body))
     expect(body).toMatchObject({
-      op: "human-input.v1.cancel",
+      op: "ask-user.v1.cancel",
       input: { questionId: "q1", sessionId: "default", answerToken: "secret" },
     })
     expect(body.idempotencyKey).toMatch(/^ask-user-idem:[0-9a-f]{32}$/)
