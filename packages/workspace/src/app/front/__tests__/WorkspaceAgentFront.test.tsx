@@ -1235,8 +1235,8 @@ describe("WorkspaceAgentFront", () => {
         workspaceId="session-gated-surface"
         chatPanel={SessionIdChatPanel}
         sessions={[
-          { id: "s1", title: "Open", createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString(), turnCount: 0 },
-          { id: "s2", title: "Closed", createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString(), turnCount: 0 },
+          { id: "s1", title: "Open", updatedAt: new Date(0).toISOString(), turnCount: 0 },
+          { id: "s2", title: "Closed", updatedAt: new Date(0).toISOString(), turnCount: 0 },
         ]}
         activeSessionId="s1"
         onSwitchSession={vi.fn()}

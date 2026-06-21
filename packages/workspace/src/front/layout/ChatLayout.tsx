@@ -98,6 +98,11 @@ export function ChatLayout(props: ChatLayoutProps) {
   )
   const [chatRailPulse, setChatRailPulse] = useState(false)
   const { blockers } = useWorkspaceAttention()
+  const activeSessionId = (props.activeChatPaneId ?? props.centerParams?.sessionId) as string | undefined
+  const activeBlockers = useMemo(
+    () => blockers.filter((blocker) => !blocker.sessionId || blocker.sessionId === activeSessionId),
+    [activeSessionId, blockers],
+  )
   const commandRegistry = useCommandRegistry()
   const effectiveNavWidth = clamp(navWidth, 200, 360)
   const surfaceMax = Math.max(480, Math.floor(viewport * 0.72))
@@ -280,17 +285,16 @@ export function ChatLayout(props: ChatLayoutProps) {
       setChatRailPulse(false)
       return
     }
-    if (blockers.length > 0) {
+    if (activeBlockers.length > 0) {
       setChatCollapsed(false)
       setChatRailPulse(false)
       scheduleComposerFocus()
     }
-  }, [blockers.length, chatCollapsed, setChatCollapsed])
+  }, [activeBlockers.length, chatCollapsed, setChatCollapsed])
 
   // Switching to a different session re-opens the chat if it was collapsed, so
   // the newly selected conversation is visible. Skips the initial mount (only
   // reacts to an actual change of the active session id).
-  const activeSessionId = (props.activeChatPaneId ?? props.centerParams?.sessionId) as string | undefined
   const prevSessionIdRef = useRef(activeSessionId)
   useEffect(() => {
     const prev = prevSessionIdRef.current
@@ -520,7 +524,7 @@ export function ChatLayout(props: ChatLayoutProps) {
           // stays pinned to the left even when the session drawer is open and
           // pushes the content rightward.
           stackIndex={1}
-          pulse={chatRailPulse || blockers.length > 0}
+          pulse={chatRailPulse || activeBlockers.length > 0}
         />
       ) : null}
       {!surfaceOpen && props.onOpenSurface ? (

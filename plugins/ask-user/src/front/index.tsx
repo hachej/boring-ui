@@ -16,7 +16,7 @@ import {
 } from "@hachej/boring-workspace/plugin"
 import { HelpCircle, XCircle } from "lucide-react"
 import { createContext, useContext, useEffect, useMemo, useRef, useSyncExternalStore, useState } from "react"
-import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../shared/constants"
+import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND, ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import type { AskUserQuestion } from "../shared/types"
 import { createQuestionsClient, readPendingQuestionHintsFromState, QuestionsClientError, type PendingQuestionHint } from "./client"
 import { QuestionCancelButton, QuestionFields, QuestionForm, QuestionFormProvider, QuestionSubmitButton } from "./primitives"
@@ -68,10 +68,15 @@ function createQuestionsStore(): QuestionsStore {
     },
     setPendingHints(hints) {
       hintsBySession.clear()
-      for (const hint of hints) hintsBySession.set(hint.sessionId, hint)
-      for (const question of pendingBySession.values()) {
-        hintsBySession.set(question.sessionId, { questionId: question.questionId, sessionId: question.sessionId, status: question.status })
+      const authoritativeSessionIds = new Set<string>()
+      for (const hint of hints) {
+        hintsBySession.set(hint.sessionId, hint)
+        authoritativeSessionIds.add(hint.sessionId)
       }
+      for (const sessionId of [...pendingBySession.keys()]) {
+        if (!authoritativeSessionIds.has(sessionId)) pendingBySession.delete(sessionId)
+      }
+      if (lastSessionId && !pendingBySession.has(lastSessionId)) lastSessionId = null
       emit()
     },
     subscribe(listener) {
@@ -97,6 +102,10 @@ function pendingQuestionSnapshot(store: QuestionsStore): string {
     .map((hint) => `${hint.sessionId}:${hint.questionId}:${hint.status ?? "ready"}`)
     .sort()
   return hints.length ? hints.join("|") : "none"
+}
+
+function hasPendingStateSlot(state: Record<string, unknown> | null): boolean {
+  return !!state && Object.prototype.hasOwnProperty.call(state, ASK_USER_UI_STATE_SLOTS.PENDING)
 }
 
 function useQuestionsRuntime(): QuestionsRuntime {
@@ -176,7 +185,7 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }:
         const response = await fetch(`${apiBaseUrl}/api/v1/ui/state`, { headers: authHeaders })
         const state = await response.json().catch(() => null) as Record<string, unknown> | null
         hints = readPendingQuestionHintsFromState(state)
-        if (!stopped) runtime.setPendingHints(hints)
+        if (!stopped && hasPendingStateSlot(state)) runtime.setPendingHints(hints)
       } catch {
         // UI state is a hint channel only; keep already-hydrated pending payloads.
       }

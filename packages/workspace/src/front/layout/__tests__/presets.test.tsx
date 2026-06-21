@@ -760,6 +760,33 @@ describe("ChatLayout component", () => {
     )
   })
 
+  it("does not auto-expand collapsed chat for a blocker scoped to another session", async () => {
+    function Host() {
+      const { addBlocker } = useWorkspaceAttention()
+      return (
+        <>
+          <ChatLayout center="chat" centerParams={{ sessionId: "s1" }} storageKey="chat-layout-background-blocker" />
+          <button
+            type="button"
+            onClick={() => addBlocker({ id: "b2", reason: "waiting_for_user_input", label: "Answer", sessionId: "s2" })}
+          >
+            Add background blocker
+          </button>
+        </>
+      )
+    }
+
+    const user = userEvent.setup()
+    renderWithRegistry(<Host />, ["chat", "session-list"])
+
+    act(() => fireShortcut("\\", { metaKey: true }))
+    expect(screen.getByLabelText("Collapsed chat")).toHaveAttribute("data-boring-state", "collapsed")
+
+    await user.click(screen.getByRole("button", { name: "Add background blocker" }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(screen.getByLabelText("Collapsed chat")).toHaveAttribute("data-boring-state", "collapsed")
+  })
+
   it("dispatches plugin UI commands through the workbench contract", () => {
     const openFile = vi.fn()
     const surface: SurfaceShellApi = {
