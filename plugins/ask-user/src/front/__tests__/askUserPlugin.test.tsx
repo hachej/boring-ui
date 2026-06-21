@@ -1,5 +1,6 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { events, userMeta, workspaceEvents } from "@hachej/boring-workspace"
 import { captureFrontPlugin } from "@hachej/boring-workspace/plugin"
 import type { AskUserQuestion } from "../../shared/types"
 import { askUserPlugin } from "../index"
@@ -17,6 +18,22 @@ const question: AskUserQuestion = {
   createdAt: new Date(0).toISOString(),
   updatedAt: new Date(0).toISOString(),
   schema: { wireVersion: 1, fields: [{ type: "radio", name: "choice", label: "Choose one", required: true, options: [{ value: "A", label: "A" }, { value: "B", label: "B" }] }] },
+}
+
+const nextQuestion: AskUserQuestion = {
+  ...question,
+  questionId: "q2",
+  title: "Choose again",
+  answerToken: "secret-2",
+}
+
+function pendingStateFor(q: AskUserQuestion | null) {
+  return {
+    "questions.pending": q ? {
+      hint: { questionId: q.questionId, sessionId: q.sessionId, status: q.status },
+      hintsBySession: { [q.sessionId]: { questionId: q.questionId, sessionId: q.sessionId, status: q.status } },
+    } : { hint: null, hintsBySession: {} },
+  }
 }
 
 function getProvider() {
@@ -82,6 +99,33 @@ describe("askUserPlugin front shell", () => {
     render(<Provider apiBaseUrl="" activeSessionId="default"><Panel params={{}} api={{ close: vi.fn() }} className="h-full" /></Provider>)
     expect(await screen.findByText("Choose A or B")).toBeInTheDocument()
     expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.pending")).length).toBeGreaterThanOrEqual(2)
+  })
+
+  it("invalidates a cached payload when the authoritative session hint advances", async () => {
+    const staleQuestion = { ...question, questionId: "stale-q1", sessionId: "stale-session", title: "First stale question" }
+    const staleNextQuestion = { ...nextQuestion, questionId: "stale-q2", sessionId: "stale-session", title: "Second stale question" }
+    let current: AskUserQuestion | null = staleQuestion
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.pending")) {
+        return Response.json({ ok: true, output: { pending: current } })
+      }
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(current))
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+    const Panel = getPanel()
+
+    render(<Provider apiBaseUrl="" activeSessionId="stale-session"><Panel params={{ sessionId: "stale-session" }} api={{ close: vi.fn() }} className="h-full" /></Provider>)
+    expect(await screen.findByText("First stale question")).toBeInTheDocument()
+
+    current = staleNextQuestion
+    act(() => {
+      events.emit(workspaceEvents.uiCommand, { ...userMeta(), command: { kind: "openSurface", params: { kind: "questions", target: "stale-q2", meta: { sessionId: "stale-session", openOnlyWhenSessionOpen: true } } } })
+    })
+
+    expect(await screen.findByText("Second stale question")).toBeInTheDocument()
+    expect(screen.queryByText("First stale question")).not.toBeInTheDocument()
   })
 
   it("rehydrates question from human-input pending when opened from surface metadata", async () => {

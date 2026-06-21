@@ -68,13 +68,16 @@ function createQuestionsStore(): QuestionsStore {
     },
     setPendingHints(hints) {
       hintsBySession.clear()
-      const authoritativeSessionIds = new Set<string>()
+      const authoritativeHints = new Map<string, PendingQuestionHint>()
       for (const hint of hints) {
         hintsBySession.set(hint.sessionId, hint)
-        authoritativeSessionIds.add(hint.sessionId)
+        authoritativeHints.set(hint.sessionId, hint)
       }
-      for (const sessionId of [...pendingBySession.keys()]) {
-        if (!authoritativeSessionIds.has(sessionId)) pendingBySession.delete(sessionId)
+      for (const [sessionId, question] of [...pendingBySession.entries()]) {
+        const hint = authoritativeHints.get(sessionId)
+        if (!hint || hint.questionId !== question.questionId || (hint.status && hint.status !== question.status)) {
+          pendingBySession.delete(sessionId)
+        }
       }
       if (lastSessionId && !pendingBySession.has(lastSessionId)) lastSessionId = null
       emit()
@@ -215,6 +218,7 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }:
       }, 1200)
     }
     const offAgentData = events.on(workspaceEvents.agentData, onAgentData)
+    const offUiCommand = events.on(workspaceEvents.uiCommand, onUiCommand)
     void refreshPending()
     window.addEventListener("focus", refreshPending)
     document.addEventListener("visibilitychange", onVisibility)
@@ -223,6 +227,7 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }:
       stopped = true
       if (agentDataTimer) clearTimeout(agentDataTimer)
       offAgentData()
+      offUiCommand()
       window.removeEventListener("focus", refreshPending)
       document.removeEventListener("visibilitychange", onVisibility)
       window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)
