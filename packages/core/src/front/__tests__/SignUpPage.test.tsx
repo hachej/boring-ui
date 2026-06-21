@@ -148,8 +148,8 @@ describe('SignUpPage', () => {
         { wrapper: Wrapper },
       )
 
-      expect(screen.getByText(/save your account/i)).toBeTruthy()
-      expect(screen.getByText(/keep your workspace, credits, and history/i)).toBeTruthy()
+      expect(screen.getByText(/^sign up to keep your workspace$/i)).toBeTruthy()
+      expect(screen.getByText(/^sign up to keep your workspace, credits, and history\.$/i)).toBeTruthy()
 
       const user = userEvent.setup()
       await user.type(screen.getByLabelText(/name/i), 'Claimed User')

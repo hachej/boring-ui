@@ -274,7 +274,7 @@ describe('CoreFront', () => {
     }),
   )
 
-  it('shows a save-account banner for anonymous outreach leads', async () => {
+  it('shows a signup-to-keep banner for anonymous outreach leads', async () => {
     mockConfigEndpoint()
     mockApiEndpoints()
     useMswHandler(async (input) => {
@@ -319,10 +319,11 @@ describe('CoreFront', () => {
     render(<CoreFront><Route path="/workspace/:id" element={<div>Workspace</div>} /></CoreFront>)
 
     expect(await screen.findByText(/temporary account/i)).toBeTruthy()
-    const saveLink = screen.getByRole('link', { name: /save account/i })
-    expect(saveLink.getAttribute('href')).toContain('/auth/signup?')
-    expect(saveLink.getAttribute('href')).toContain('claim=1')
-    expect(saveLink.getAttribute('href')).toContain('callbackURL=%2Fworkspace%2Fw1%3Ftab%3Dchat')
+    expect(screen.getByText(/sign up to keep this workspace/i)).toBeTruthy()
+    const signUpLink = screen.getByRole('link', { name: /sign up to keep it/i })
+    expect(signUpLink.getAttribute('href')).toContain('/auth/signup?')
+    expect(signUpLink.getAttribute('href')).toContain('claim=1')
+    expect(signUpLink.getAttribute('href')).toContain('callbackURL=%2Fworkspace%2Fw1%3Ftab%3Dchat')
   })
 
   it(

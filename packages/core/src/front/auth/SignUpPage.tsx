@@ -110,10 +110,10 @@ export function SignUpPage() {
     <div className="flex min-h-screen items-center justify-center p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>{claim ? 'Save your account' : 'Create an account'}</CardTitle>
+          <CardTitle>{claim ? 'Sign up to keep your workspace' : 'Create an account'}</CardTitle>
           <CardDescription>
             {claim
-              ? 'Create an account to keep your workspace, credits, and history.'
+              ? 'Sign up to keep your workspace, credits, and history.'
               : 'Enter your details to get started'}
           </CardDescription>
         </CardHeader>

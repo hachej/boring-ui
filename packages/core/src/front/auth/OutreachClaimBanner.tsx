@@ -68,10 +68,10 @@ export function OutreachClaimBanner() {
       <div className="mx-auto flex max-w-7xl flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
         <div>
           <strong className="font-semibold">Temporary account.</strong>{' '}
-          Create an account to keep this workspace, credits, and history.
+          Sign up to keep this workspace, credits, and history.
         </div>
         <Button asChild size="sm" className="w-full sm:w-auto">
-          <Link to={claimHref}>Save account</Link>
+          <Link to={claimHref}>Sign up to keep it</Link>
         </Button>
       </div>
     </div>
