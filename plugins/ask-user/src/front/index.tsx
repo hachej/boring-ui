@@ -259,8 +259,11 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
     return () => window.removeEventListener("boring:workspace-composer-stop", onStop)
   }, [api, question, runtime])
   useEffect(() => {
-    if (!pending && paneSessionId) void runtime.refreshPending(paneSessionId).catch(() => undefined)
-  }, [paneSessionId, pending, runtime])
+    if (!paneSessionId) return
+    if (!pending || (params?.questionId && pending.questionId !== params.questionId)) {
+      void runtime.refreshPending(paneSessionId).catch(() => undefined)
+    }
+  }, [paneSessionId, params?.questionId, pending, runtime])
 
   return <div className={className ? `${className} min-h-0 overflow-hidden` : "h-full min-h-0 overflow-hidden"}>
     <Pane className="h-full min-h-0 overflow-hidden border-0 bg-background text-sm">

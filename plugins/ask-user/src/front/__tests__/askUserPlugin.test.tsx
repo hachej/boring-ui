@@ -101,6 +101,32 @@ describe("askUserPlugin front shell", () => {
     expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.pending")).length).toBeGreaterThanOrEqual(2)
   })
 
+  it("refreshes the pane when surface params retarget a newer question in the same session", async () => {
+    const first = { ...question, questionId: "retarget-q1", sessionId: "retarget-session", title: "Retarget first" }
+    const second = { ...nextQuestion, questionId: "retarget-q2", sessionId: "retarget-session", title: "Retarget second" }
+    let current: AskUserQuestion | null = first
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.pending")) {
+        return Response.json({ ok: true, output: { pending: current } })
+      }
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json({})
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+    const Panel = getPanel()
+    const api = { close: vi.fn() }
+
+    const view = render(<Provider apiBaseUrl="" activeSessionId="retarget-session"><Panel params={{ sessionId: "retarget-session", questionId: "retarget-q1" }} api={api} className="h-full" /></Provider>)
+    expect(await screen.findByText("Retarget first")).toBeInTheDocument()
+
+    current = second
+    view.rerender(<Provider apiBaseUrl="" activeSessionId="retarget-session"><Panel params={{ sessionId: "retarget-session", questionId: "retarget-q2" }} api={api} className="h-full" /></Provider>)
+
+    expect(await screen.findByText("Retarget second")).toBeInTheDocument()
+    expect(screen.queryByText("Retarget first")).not.toBeInTheDocument()
+  })
+
   it("invalidates a cached payload when the authoritative session hint advances", async () => {
     const staleQuestion = { ...question, questionId: "stale-q1", sessionId: "stale-session", title: "First stale question" }
     const staleNextQuestion = { ...nextQuestion, questionId: "stale-q2", sessionId: "stale-session", title: "Second stale question" }
