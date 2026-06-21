@@ -173,6 +173,29 @@ describe("SessionBrowser", () => {
     expect(document.querySelector('[data-boring-badge="working"]')).toBeNull()
   })
 
+  it("shows a legacy needs-input badge for older waiting-for-input blockers", () => {
+    function BlockSession({ sessionId }: { sessionId: string }) {
+      const { addBlocker, removeBlocker } = useWorkspaceAttention()
+      useEffect(() => {
+        addBlocker({ id: `legacy:${sessionId}`, reason: "waiting_for_user_input", sessionId })
+        return () => removeBlocker(`legacy:${sessionId}`)
+      }, [addBlocker, removeBlocker, sessionId])
+      return null
+    }
+
+    render(
+      <WorkspaceAttentionProvider>
+        <BlockSession sessionId="s3" />
+        <SessionBrowser sessions={sample} activeId="s1" />
+      </WorkspaceAttentionProvider>,
+    )
+
+    const badge = document.querySelector('[data-boring-badge="needs-input"]')
+    expect(badge).toBeInTheDocument()
+    expect(badge).toHaveTextContent("needs input")
+    expect(badge?.closest("li")?.textContent).toContain("Third session")
+  })
+
   it("shows a plugin-provided attention badge for session-scoped blockers", () => {
     function BlockSession({ sessionId }: { sessionId: string }) {
       const { addBlocker, removeBlocker } = useWorkspaceAttention()

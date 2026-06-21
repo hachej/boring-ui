@@ -113,6 +113,13 @@ function groupSessions(sessions: SessionItem[]): Group[] {
   return groups
 }
 
+function legacySessionBadgeForBlocker(reason: string): WorkspaceAttentionSessionBadge | null {
+  // Compatibility for pre-sessionBadge callers. New plugins should provide
+  // their own plugin-specific sessionBadge instead of relying on reason strings.
+  if (reason === "waiting_for_user_input") return { kind: "needs-input", label: "needs input", tone: "danger", priority: -1 }
+  return null
+}
+
 function sessionBadgeToneClassName(tone: WorkspaceAttentionSessionBadge["tone"]): string {
   switch (tone) {
     case "danger": return "bg-destructive/12 text-destructive"
@@ -205,10 +212,12 @@ export function SessionBrowser({
   const sessionBadges = useMemo(() => {
     const badges = new Map<string, WorkspaceAttentionSessionBadge>()
     for (const blocker of blockers) {
-      if (!blocker.sessionId || !blocker.sessionBadge) continue
+      if (!blocker.sessionId) continue
+      const badge = blocker.sessionBadge ?? legacySessionBadgeForBlocker(blocker.reason)
+      if (!badge) continue
       const existing = badges.get(blocker.sessionId)
-      if (!existing || (blocker.sessionBadge.priority ?? 0) > (existing.priority ?? 0)) {
-        badges.set(blocker.sessionId, blocker.sessionBadge)
+      if (!existing || (badge.priority ?? 0) > (existing.priority ?? 0)) {
+        badges.set(blocker.sessionId, badge)
       }
     }
     return badges
