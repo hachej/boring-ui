@@ -25,6 +25,7 @@ type QuestionsStore = {
   getPending(sessionId?: string | null): AskUserQuestion | null
   setPending(question: AskUserQuestion | null, sessionId?: string | null): void
   getPendingHints(): PendingQuestionHint[]
+  getHydratedPendingKeys(): string[]
   setPendingHints(hints: PendingQuestionHint[]): void
   subscribe(listener: () => void): () => void
 }
@@ -66,6 +67,9 @@ function createQuestionsStore(): QuestionsStore {
     getPendingHints() {
       return [...hintsBySession.values()]
     },
+    getHydratedPendingKeys() {
+      return [...pendingBySession.values()].map((question) => `${question.sessionId}:${question.questionId}:${question.status}`)
+    },
     setPendingHints(hints) {
       hintsBySession.clear()
       const authoritativeHints = new Map<string, PendingQuestionHint>()
@@ -104,7 +108,8 @@ function pendingQuestionSnapshot(store: QuestionsStore): string {
   const hints = store.getPendingHints()
     .map((hint) => `${hint.sessionId}:${hint.questionId}:${hint.status ?? "ready"}`)
     .sort()
-  return hints.length ? hints.join("|") : "none"
+  const hydrated = store.getHydratedPendingKeys().sort()
+  return `${hints.length ? hints.join("|") : "none"}#hydrated=${hydrated.join("|")}`
 }
 
 function hasPendingStateSlot(state: Record<string, unknown> | null): boolean {
@@ -138,6 +143,7 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }:
       if (hint.status && hint.status !== "ready") continue
       const blockerId = `${ASK_USER_PLUGIN_ID}:${hint.sessionId}:${hint.questionId}`
       blockerIds.push(blockerId)
+      const hydrated = runtime.getPending(hint.sessionId)
       addBlocker({
         id: blockerId,
         reason: "waiting_for_user_input",
@@ -145,7 +151,7 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }:
         target: hint.questionId,
         label: "Answer the question in Questions to continue",
         sessionId: sessionScopedBlockerId(hint.sessionId),
-        actions: [{ id: "open", label: "Open Questions" }, { id: "cancel", label: "Cancel question" }],
+        actions: hydrated ? [{ id: "open", label: "Open Questions" }, { id: "cancel", label: "Cancel question" }] : undefined,
       })
     }
     return () => { for (const blockerId of blockerIds) removeBlocker(blockerId) }
