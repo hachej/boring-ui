@@ -149,6 +149,10 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
     case "openSurface": {
       const request = surfaceRequestParam(cmd.params)
       if (!request) return
+      if (request.meta?.openOnlyWhenSessionOpen === true && !ctx.shouldOpenSurface) {
+        notifySurfaceOpenSkipped(request)
+        return
+      }
       if (ctx.shouldOpenSurface?.(request) === false) {
         notifySurfaceOpenSkipped(request)
         return

@@ -316,6 +316,13 @@ addBlocker({
 `tone` is visual only; plugin code should not infer behavior from it. If several
 plugins mark one session, the highest `priority` badge wins.
 
+Composer blocker actions are plugin-defined. Workspace provides a convenience
+for `id: "open"` when `surfaceKind` is present, and emits
+`WORKSPACE_ATTENTION_ACTION_EVENT` for every action with `{ blockerId, actionId,
+sessionId, blocker }`. The owning plugin should listen for its domain-specific
+actions such as `approve`, `request-changes`, or `cancel`; workspace does not
+assign semantics to those action ids.
+
 Ask-user consumes this as an ask-user-specific attention type:
 
 ```ts

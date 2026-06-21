@@ -12,7 +12,7 @@ import { useCommandRegistry, useRegistry } from "../registry"
 import type { PaneProps } from "../registry/types"
 import { readStoredNumber, writeStoredNumber } from "../store/localStorageValues"
 import type { ChatLayoutProps } from "./types"
-import { useWorkspaceAttention, useWorkspaceContext } from "../provider"
+import { useWorkspaceAttention, useWorkspaceContext, workspaceAttentionSessionBadgeForBlocker } from "../provider"
 import { ChatPaneStage } from "./ChatPaneStage"
 
 export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
@@ -104,7 +104,7 @@ export function ChatLayout(props: ChatLayoutProps) {
     [activeSessionId, blockers],
   )
   const hasSessionAttention = useMemo(
-    () => blockers.some((blocker) => blocker.sessionBadge || blocker.reason === "waiting_for_user_input"),
+    () => blockers.some((blocker) => !!blocker.sessionId && !!workspaceAttentionSessionBadgeForBlocker(blocker)),
     [blockers],
   )
   const commandRegistry = useCommandRegistry()
@@ -276,6 +276,11 @@ export function ChatLayout(props: ChatLayoutProps) {
             openWorkbench: uiOpenWorkbench,
             openWorkbenchSources: uiOpenWorkbenchSources,
             closeWorkbench: uiCloseWorkbench,
+            // Fallback dispatch has no host-owned open-session set. Treat
+            // session-gated requests as closed instead of accidentally opening
+            // UI for a background session. Full shells should pass
+            // `surfaceDispatch.shouldOpenSurface` to make this gate precise.
+            shouldOpenSurface: (request) => request.meta?.openOnlyWhenSessionOpen === true ? false : true,
           }
         : undefined
     )

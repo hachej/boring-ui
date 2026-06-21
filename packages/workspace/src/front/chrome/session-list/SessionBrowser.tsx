@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, ExternalLink, Pin, Plus } from "lucide-react
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { ControlTooltip } from "../../components/ControlTooltip"
-import { useWorkspaceAttention, type WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
+import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 import { CHAT_SESSION_DRAG_TYPE } from "../../layout/ChatPaneStage"
 import type { SessionItem } from "../../components/SessionList"
 
@@ -113,13 +113,6 @@ function groupSessions(sessions: SessionItem[]): Group[] {
   return groups
 }
 
-function legacySessionBadgeForBlocker(reason: string): WorkspaceAttentionSessionBadge | null {
-  // Compatibility for pre-sessionBadge callers. New plugins should provide
-  // their own plugin-specific sessionBadge instead of relying on reason strings.
-  if (reason === "waiting_for_user_input") return { kind: "needs-input", label: "needs input", tone: "attention", priority: -1 }
-  return null
-}
-
 function sessionBadgeToneClassName(tone: WorkspaceAttentionSessionBadge["tone"]): string {
   switch (tone) {
     case "danger": return "bg-destructive/12 text-destructive"
@@ -213,7 +206,7 @@ export function SessionBrowser({
     const badges = new Map<string, WorkspaceAttentionSessionBadge>()
     for (const blocker of blockers) {
       if (!blocker.sessionId) continue
-      const badge = blocker.sessionBadge ?? legacySessionBadgeForBlocker(blocker.reason)
+      const badge = workspaceAttentionSessionBadgeForBlocker(blocker)
       if (!badge) continue
       const existing = badges.get(blocker.sessionId)
       if (!existing || (badge.priority ?? 0) > (existing.priority ?? 0)) {

@@ -293,6 +293,20 @@ export type {
   WorkspaceChatPanelComponent,
   WorkspaceChatPanelProps,
 } from "./front/chrome/chat/types"
+export {
+  WORKSPACE_COMPOSER_STOP_EVENT,
+  WORKSPACE_COMPOSER_STOP_REASONS,
+  emitWorkspaceComposerStop,
+  isWorkspaceComposerStopDetail,
+  isWorkspaceComposerStopReason,
+  workspaceComposerStopAppliesToSession,
+  workspaceComposerStopTargetSessionId,
+} from "./front/chrome/chat/composerStop"
+export type {
+  WorkspaceComposerStopDetail,
+  WorkspaceComposerStopMatchOptions,
+  WorkspaceComposerStopReason,
+} from "./front/chrome/chat/composerStop"
 export type {
   SurfaceShellProps,
   SurfaceShellApi,
@@ -314,7 +328,11 @@ export {
   useWorkspaceContext,
   useWorkspaceContextOptional,
   useWorkspaceChatPanel,
+  LEGACY_WORKSPACE_INPUT_ATTENTION_REASON,
+  WORKSPACE_ATTENTION_ACTION_EVENT,
+  emitWorkspaceAttentionAction,
   useWorkspaceAttention,
+  workspaceAttentionSessionBadgeForBlocker,
 } from "./front/provider"
 export type {
   WorkspaceProviderProps,
@@ -322,7 +340,9 @@ export type {
   ThemeProviderProps,
   WorkspaceBridgeContextValue,
   WorkspaceContextValue,
+  WorkspaceAttentionActionDetail,
   WorkspaceAttentionBlocker,
+  WorkspaceAttentionBlockerAction,
   WorkspaceAttentionContextValue,
   WorkspaceAttentionSessionBadge,
 } from "./front/provider"

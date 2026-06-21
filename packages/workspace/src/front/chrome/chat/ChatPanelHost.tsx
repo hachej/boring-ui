@@ -1,11 +1,12 @@
 "use client"
 
 import { useCallback, useEffect, useRef } from "react"
-import { useWorkspaceAttention, useWorkspaceChatPanel } from "../../provider"
+import { emitWorkspaceAttentionAction, useWorkspaceAttention, useWorkspaceChatPanel } from "../../provider"
 import { emitAgentData } from "../../events"
 import { dispatchUiCommand, startUiCommandStream } from "../../bridge"
 import { relativizeWorkspacePath } from "../../../app/front/workspacePreload"
 import type { DispatchContext } from "../../bridge"
+import { WORKSPACE_COMPOSER_STOP_REASONS, emitWorkspaceComposerStop } from "./composerStop"
 import type { WorkspaceChatPanelProps } from "./types"
 
 export interface ChatPanelHostShellProps {
@@ -89,6 +90,9 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
   )
 
   const uiWorkspaceId = workspaceIdFromHeaders(chatPanelProps.requestHeaders)
+  // A missing host session id means a single/sessionless chat host. In that
+  // mode, keep scoped blockers visible instead of hiding the only attention UI.
+  // Multi-session hosts should pass `sessionId` so unrelated blockers filter out.
   const composerBlockers = blockers.filter((blocker) => !blocker.sessionId || !chatPanelProps.sessionId || blocker.sessionId === chatPanelProps.sessionId)
 
   useEffect(() => {
@@ -101,19 +105,16 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
   }, [bridgeEndpoint, surfaceDispatch, uiWorkspaceId])
 
   const handleComposerStop = useCallback(() => {
-    window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: chatPanelProps.sessionId, reason: "user-stop" } }))
+    emitWorkspaceComposerStop({ sessionId: chatPanelProps.sessionId, reason: WORKSPACE_COMPOSER_STOP_REASONS.userStop })
     props.onComposerStop?.()
   }, [chatPanelProps.sessionId, props.onComposerStop])
 
   const handleComposerBlockerAction = useCallback(
     (blocker: NonNullable<WorkspaceChatPanelProps["composerBlockers"]>[number], action: string) => {
-      if (action === "cancel") {
-        window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: chatPanelProps.sessionId, reason: "blocker-cancel" } }))
-        return
-      }
+      const sessionId = blocker.sessionId ?? chatPanelProps.sessionId
+      emitWorkspaceAttentionAction({ blockerId: blocker.id, actionId: action, blocker, sessionId })
       if (action !== "open" || !blocker.surfaceKind) return
       if (surfaceDispatch) {
-        const sessionId = blocker.sessionId ?? chatPanelProps.sessionId
         dispatchUiCommand(
           {
             kind: "openSurface",

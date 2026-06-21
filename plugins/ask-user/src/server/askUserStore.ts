@@ -56,6 +56,7 @@ const EMPTY_STATE: StoredAskUserState = {
 
 export class FileAskUserStore implements AskUserStore {
   private state: StoredAskUserState | null = null
+  private loadInFlight: Promise<StoredAskUserState> | null = null
   private writeChain = Promise.resolve()
   private readonly listeners = new Set<AskUserStoreListener>()
 
@@ -181,14 +182,21 @@ export class FileAskUserStore implements AskUserStore {
 
   private async load(): Promise<StoredAskUserState> {
     if (this.state) return this.state
-    try {
-      const raw = await readFile(this.filePath, "utf8")
-      this.state = { ...clone(EMPTY_STATE), ...JSON.parse(raw) }
-    } catch (error) {
-      if ((error as { code?: string }).code !== "ENOENT") throw error
-      this.state = clone(EMPTY_STATE)
+    if (!this.loadInFlight) {
+      this.loadInFlight = (async () => {
+        try {
+          const raw = await readFile(this.filePath, "utf8")
+          this.state = { ...clone(EMPTY_STATE), ...JSON.parse(raw) }
+        } catch (error) {
+          if ((error as { code?: string }).code !== "ENOENT") throw error
+          this.state = clone(EMPTY_STATE)
+        }
+        return this.state as StoredAskUserState
+      })().finally(() => {
+        this.loadInFlight = null
+      })
     }
-    return this.state as StoredAskUserState
+    return this.loadInFlight
   }
 
   private async save(state: StoredAskUserState): Promise<void> {

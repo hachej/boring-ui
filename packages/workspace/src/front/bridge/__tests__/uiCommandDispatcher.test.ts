@@ -177,6 +177,21 @@ describe("dispatchUiCommand", () => {
     expect(skipped).toHaveBeenCalledWith(expect.objectContaining({ detail: { kind: "questions", target: "q1", meta: { openOnlyWhenSessionOpen: true } } }))
   })
 
+  it("skips session-gated openSurface when no host policy is available", () => {
+    const openWorkbench = vi.fn()
+    const skipped = vi.fn()
+    window.addEventListener(WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT, skipped)
+    const c = ctx({ openWorkbench })
+    try {
+      dispatchUiCommand({ kind: "openSurface", params: { kind: "questions", target: "q1", meta: { sessionId: "s1", openOnlyWhenSessionOpen: true } } }, c)
+    } finally {
+      window.removeEventListener(WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT, skipped)
+    }
+    expect(c.__surface.__surfaces).toEqual([])
+    expect(openWorkbench).not.toHaveBeenCalled()
+    expect(skipped).toHaveBeenCalledWith(expect.objectContaining({ detail: { kind: "questions", target: "q1", meta: { sessionId: "s1", openOnlyWhenSessionOpen: true } } }))
+  })
+
   it("marks openSurface as ephemeral when it had to open a closed workbench", () => {
     const raf = vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => { cb(0); return 0 })
     const surface = fakeSurface()

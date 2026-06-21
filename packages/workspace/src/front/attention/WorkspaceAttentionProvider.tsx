@@ -2,10 +2,17 @@
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react"
 
+export const WORKSPACE_ATTENTION_ACTION_EVENT = "boring-workspace:attention-action" as const
+
 export type WorkspaceAttentionBlockerAction = {
   id: string
   label: string
 }
+
+// Legacy compatibility only. New plugins must provide `sessionBadge` and must
+// not depend on workspace interpreting reason strings. Remove after all
+// pre-sessionBadge callers have migrated.
+export const LEGACY_WORKSPACE_INPUT_ATTENTION_REASON = "waiting_for_user_input" as const
 
 export type WorkspaceAttentionSessionBadge = {
   /** Stable badge kind for data attributes and plugin-specific styling hooks. */
@@ -29,6 +36,26 @@ export type WorkspaceAttentionBlocker = {
   /** Optional generic session-row badge contributed by the plugin that owns this attention. */
   sessionBadge?: WorkspaceAttentionSessionBadge
   actions?: WorkspaceAttentionBlockerAction[]
+}
+
+export type WorkspaceAttentionActionDetail = {
+  blockerId: string
+  actionId: string
+  blocker: WorkspaceAttentionBlocker
+  sessionId?: string
+}
+
+export function emitWorkspaceAttentionAction(detail: WorkspaceAttentionActionDetail): void {
+  if (typeof globalThis.dispatchEvent !== "function" || typeof CustomEvent === "undefined") return
+  globalThis.dispatchEvent(new CustomEvent<WorkspaceAttentionActionDetail>(WORKSPACE_ATTENTION_ACTION_EVENT, { detail }))
+}
+
+export function workspaceAttentionSessionBadgeForBlocker(blocker: Pick<WorkspaceAttentionBlocker, "reason" | "sessionBadge">): WorkspaceAttentionSessionBadge | null {
+  if (blocker.sessionBadge) return blocker.sessionBadge
+  // Compatibility for pre-sessionBadge callers. New plugins should provide
+  // their own plugin-specific sessionBadge instead of relying on reason strings.
+  if (blocker.reason === LEGACY_WORKSPACE_INPUT_ATTENTION_REASON) return { kind: "needs-input", label: "needs input", tone: "attention", priority: -1 }
+  return null
 }
 
 export interface WorkspaceAttentionContextValue {

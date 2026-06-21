@@ -877,6 +877,41 @@ describe("ChatLayout component", () => {
     expect(openWorkbench).not.toHaveBeenCalled()
   })
 
+  it("fallback surface dispatch treats session-gated opens as closed when no host policy is available", () => {
+    const openSurface = vi.fn()
+    const openWorkbench = vi.fn()
+    const surface: SurfaceShellApi = {
+      openFile: vi.fn(),
+      openSurface,
+      openPanel: vi.fn(),
+      closeWorkbenchLeftPane: vi.fn(),
+      expandToFile: vi.fn(),
+      getSnapshot: () => ({ openTabs: [], activeTab: null }),
+    }
+
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        centerParams={{
+          getSurface: () => surface,
+          isWorkbenchOpen: () => true,
+          openWorkbench,
+        }}
+      />,
+      ["chat", "session-list"],
+    )
+
+    act(() => {
+      events.emit(workspaceEvents.uiCommand, {
+        ...userMeta(),
+        command: { kind: "openSurface", params: { kind: "questions", target: "q-closed", meta: { sessionId: "closed", openOnlyWhenSessionOpen: true } } },
+      })
+    })
+
+    expect(openSurface).not.toHaveBeenCalled()
+    expect(openWorkbench).not.toHaveBeenCalled()
+  })
+
   it("dispatches plugin UI commands through the workbench contract", () => {
     const openFile = vi.fn()
     const surface: SurfaceShellApi = {

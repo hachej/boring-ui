@@ -20,11 +20,17 @@ export type {
 } from "./WorkspaceProvider"
 export { formatWorkspaceDocumentTitle } from "./workspaceTitle"
 export {
+  LEGACY_WORKSPACE_INPUT_ATTENTION_REASON,
+  WORKSPACE_ATTENTION_ACTION_EVENT,
   WorkspaceAttentionProvider,
+  emitWorkspaceAttentionAction,
   useWorkspaceAttention,
+  workspaceAttentionSessionBadgeForBlocker,
 } from "../attention"
 export type {
+  WorkspaceAttentionActionDetail,
   WorkspaceAttentionBlocker,
+  WorkspaceAttentionBlockerAction,
   WorkspaceAttentionContextValue,
   WorkspaceAttentionSessionBadge,
 } from "../attention"

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { useEffect } from "react"
-import { WorkspaceProvider, useWorkspaceAttention } from "../../../provider"
+import { WORKSPACE_ATTENTION_ACTION_EVENT, WorkspaceProvider, useWorkspaceAttention } from "../../../provider"
 import { events } from "../../../events"
 import { filesystemEvents } from "../../../../plugins/filesystemPlugin/shared/events"
 import type { SurfaceShellApi } from "../../artifact-surface/SurfaceShell"
@@ -42,6 +42,9 @@ function FakeChatPanel({ onData, onOpenArtifact, composerBlockers, onComposerSto
       <button type="button" onClick={() => composerBlockers?.[0] && onComposerBlockerAction?.(composerBlockers[0], "open")}>
         open blocker
       </button>
+      <button type="button" onClick={() => composerBlockers?.[0] && onComposerBlockerAction?.(composerBlockers[0], "approve")}>
+        custom blocker action
+      </button>
     </div>
   )
 }
@@ -49,7 +52,7 @@ function FakeChatPanel({ onData, onOpenArtifact, composerBlockers, onComposerSto
 function Blocker({ sessionId = "s1" }: { sessionId?: string }) {
   const { addBlocker, removeBlocker } = useWorkspaceAttention()
   useEffect(() => {
-    addBlocker({ id: `test:${sessionId}`, reason: "test", sessionId, label: "Blocked", surfaceKind: "questions", target: "q1", actions: [{ id: "open", label: "Open Questions" }] })
+    addBlocker({ id: `test:${sessionId}`, reason: "test", sessionId, label: "Blocked", surfaceKind: "questions", target: "q1", actions: [{ id: "open", label: "Open Questions" }, { id: "approve", label: "Approve" }] })
     return () => removeBlocker(`test:${sessionId}`)
   }, [addBlocker, removeBlocker, sessionId])
   return null
@@ -133,6 +136,32 @@ describe("ChatPanelHost", () => {
       expect(onStop).toHaveBeenCalled()
     } finally {
       window.removeEventListener("boring:workspace-composer-stop", observed)
+    }
+  })
+
+  it("emits generic attention action events for plugin-defined blocker actions", () => {
+    const observed = vi.fn()
+    window.addEventListener(WORKSPACE_ATTENTION_ACTION_EVENT, observed)
+    try {
+      render(
+        <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
+          <Blocker sessionId="s1" />
+          <ChatPanelHost sessionId="s1" />
+        </WorkspaceProvider>,
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "custom blocker action" }))
+
+      expect(observed).toHaveBeenCalledWith(expect.objectContaining({
+        detail: expect.objectContaining({
+          blockerId: "test:s1",
+          actionId: "approve",
+          sessionId: "s1",
+          blocker: expect.objectContaining({ reason: "test", target: "q1" }),
+        }),
+      }))
+    } finally {
+      window.removeEventListener(WORKSPACE_ATTENTION_ACTION_EVENT, observed)
     }
   })
 

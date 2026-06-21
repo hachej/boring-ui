@@ -7,6 +7,7 @@ import {
 } from "@hachej/boring-agent/front"
 import { WorkspaceProvider, type WorkspaceProviderProps } from "../../front/provider/WorkspaceProvider"
 import { ChatLayout, TopBar, ThemeToggle, type ChatLayoutProps } from "../../front/layout"
+import { WORKSPACE_COMPOSER_STOP_REASONS, emitWorkspaceComposerStop } from "../../front/chrome/chat/composerStop"
 import type { WorkspaceChatPanelProps } from "../../front/chrome/chat/types"
 import type {
   SurfaceShellApi,
@@ -730,7 +731,7 @@ export function WorkspaceAgentFront<
     : sessionApi?.switch ?? onSwitchSession ?? localSessionStore.switchTo
   const resolvedSwitch = useCallback((nextSessionId: string) => {
     if (effectiveActiveSessionId && nextSessionId !== effectiveActiveSessionId) {
-      window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: effectiveActiveSessionId, reason: "session-switch" } }))
+      emitWorkspaceComposerStop({ sessionId: effectiveActiveSessionId, reason: WORKSPACE_COMPOSER_STOP_REASONS.sessionSwitch })
     }
     return rawSwitch(nextSessionId)
   }, [effectiveActiveSessionId, rawSwitch])
@@ -1020,7 +1021,9 @@ export function WorkspaceAgentFront<
     ? chatPaneState
     : { workspaceId, ids: [], activeId: null }
   const chatPaneIds = activeChatPaneState.ids.length > 0 ? activeChatPaneState.ids : [chatSessionId]
-  openChatSessionIdsRef.current = new Set(chatPaneIds)
+  useEffect(() => {
+    openChatSessionIdsRef.current = new Set(chatPaneIds)
+  }, [chatPaneIds])
   const activeChatPaneId = activeChatPaneState.activeId ?? chatPaneIds[0] ?? chatSessionId
 
   const switchToChatPane = useCallback((nextSessionId: string) => {

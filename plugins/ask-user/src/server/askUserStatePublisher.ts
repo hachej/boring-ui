@@ -10,7 +10,10 @@ export type AskUserPendingHint = {
 }
 
 export type AskUserPendingState = {
-  /** Compatibility/current hint for older frontends. */
+  /**
+   * Compatibility/current hint for older frontends.
+   * Non-authoritative in multi-session state; new readers must use hintsBySession.
+   */
   hint: AskUserPendingHint | null
   /** Session-indexed hints so background sessions can show a badge without exposing answer tokens. */
   hintsBySession: Record<string, AskUserPendingHint>
@@ -28,10 +31,10 @@ export class AskUserStatePublisher {
 
   start(): () => void {
     if (this.unsubscribe) return this.unsubscribe
-    void this.initializeFromStore().catch(() => undefined)
     this.unsubscribe = this.store.subscribe((change) => {
       void this.enqueuePublishSession(change.sessionId)
     })
+    void this.enqueueInitializeFromStore().catch(() => undefined)
     return () => this.stop()
   }
 
@@ -63,9 +66,17 @@ export class AskUserStatePublisher {
   }
 
   private enqueuePublishSession(sessionId: string): Promise<void> {
+    return this.enqueuePublish(() => this.publishSession(sessionId))
+  }
+
+  private enqueueInitializeFromStore(): Promise<void> {
+    return this.enqueuePublish(() => this.initializeFromStore())
+  }
+
+  private enqueuePublish(run: () => Promise<void>): Promise<void> {
     const next = this.publishChain
       .catch(() => undefined)
-      .then(() => this.publishSession(sessionId))
+      .then(run)
     this.publishChain = next.catch(() => undefined)
     return next
   }
