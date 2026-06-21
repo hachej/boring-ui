@@ -116,7 +116,7 @@ function groupSessions(sessions: SessionItem[]): Group[] {
 function legacySessionBadgeForBlocker(reason: string): WorkspaceAttentionSessionBadge | null {
   // Compatibility for pre-sessionBadge callers. New plugins should provide
   // their own plugin-specific sessionBadge instead of relying on reason strings.
-  if (reason === "waiting_for_user_input") return { kind: "needs-input", label: "needs input", tone: "danger", priority: -1 }
+  if (reason === "waiting_for_user_input") return { kind: "needs-input", label: "needs input", tone: "attention", priority: -1 }
   return null
 }
 
