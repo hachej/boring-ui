@@ -19,6 +19,7 @@ export type AskUserPendingState = {
 export class AskUserStatePublisher {
   private unsubscribe?: () => void
   private publishChain = Promise.resolve()
+  private readonly hintsBySession = new Map<string, AskUserPendingHint>()
 
   constructor(
     private readonly store: AskUserStore,
@@ -38,15 +39,15 @@ export class AskUserStatePublisher {
     this.unsubscribe?.()
     this.unsubscribe = undefined
     this.publishChain = Promise.resolve()
+    this.hintsBySession.clear()
   }
 
   async publishSession(sessionId: string): Promise<void> {
     const hint = toPendingHint(await this.store.getPending(sessionId))
     const current = (await this.bridge.getState()) ?? {}
-    const currentPending = sanitizePendingState(current[ASK_USER_UI_STATE_SLOTS.PENDING])
-    const hintsBySession = { ...currentPending.hintsBySession }
-    if (hint) hintsBySession[sessionId] = hint
-    else delete hintsBySession[sessionId]
+    if (hint) this.hintsBySession.set(sessionId, hint)
+    else this.hintsBySession.delete(sessionId)
+    const hintsBySession = Object.fromEntries(this.hintsBySession.entries())
     const nextPending: AskUserPendingState = {
       hint: hint ?? Object.values(hintsBySession)[0] ?? null,
       hintsBySession,

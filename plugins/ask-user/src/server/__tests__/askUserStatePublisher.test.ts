@@ -72,6 +72,32 @@ describe("AskUserStatePublisher", () => {
     })
   })
 
+  it("does not carry forward stale hints from existing UI state", async () => {
+    const store = await makeStore()
+    const ui = bridge()
+    await ui.setState({
+      [ASK_USER_UI_STATE_SLOTS.PENDING]: {
+        hint: { questionId: "stale-q", sessionId: "stale-session", status: "ready" },
+        hintsBySession: { "stale-session": { questionId: "stale-q", sessionId: "stale-session", status: "ready" } },
+      },
+    })
+    const publisher = new AskUserStatePublisher(store, ui)
+    publisher.start()
+    const runtime = new AskUserRuntime({ store })
+    const pending = runtime.ask({ sessionId: "s1", title: "S1", schema })
+    const q1 = await waitForPending(store, "s1")
+    await vi.waitFor(async () => {
+      const slot = (await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]
+      expect(slot).toEqual({
+        hint: { questionId: q1.questionId, sessionId: "s1", status: "ready" },
+        hintsBySession: { s1: { questionId: q1.questionId, sessionId: "s1", status: "ready" } },
+      })
+    })
+    await waitForRuntimeWaiter(runtime, q1.questionId)
+    await runtime.cancelQuestion(q1.questionId, "s1")
+    await expect(pending).resolves.toMatchObject({ status: "cancelled" })
+  }, 30_000)
+
   it("publishes independent hints for multiple pending sessions", async () => {
     const store = await makeStore()
     const ui = bridge()
