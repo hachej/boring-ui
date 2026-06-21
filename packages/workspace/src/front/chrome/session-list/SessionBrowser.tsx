@@ -269,6 +269,7 @@ export function SessionBrowser({
             <SectionHeader
               label="Pinned"
               count={pinnedSessions.length}
+              attentionCount={attentionCount(pinnedSessions, sessionBadges)}
               collapsed={pinnedCollapsed}
               onToggle={() => setPinnedCollapsed((value) => !value)}
             />
@@ -299,6 +300,7 @@ export function SessionBrowser({
             <SectionHeader
               label="Active"
               count={activeSessions.length}
+              attentionCount={attentionCount(activeSessions, sessionBadges)}
               collapsed={activeCollapsed}
               onToggle={() => setActiveCollapsed((value) => !value)}
             />
@@ -332,6 +334,7 @@ export function SessionBrowser({
             <SectionHeader
               label="History"
               count={historySessions.length}
+              attentionCount={attentionCount(historySessions, sessionBadges)}
               collapsed={historyCollapsed}
               onToggle={() => setHistoryCollapsed((value) => !value)}
             />
@@ -384,14 +387,20 @@ export function SessionBrowser({
   )
 }
 
+function attentionCount(items: SessionItem[], badges: ReadonlyMap<string, WorkspaceAttentionSessionBadge>): number {
+  return items.reduce((count, session) => count + (badges.has(session.id) ? 1 : 0), 0)
+}
+
 function SectionHeader({
   label,
   count,
+  attentionCount = 0,
   collapsed,
   onToggle,
 }: {
   label: string
   count: number
+  attentionCount?: number
   collapsed: boolean
   onToggle: () => void
 }) {
@@ -410,6 +419,16 @@ function SectionHeader({
           strokeWidth={2}
         />
         {label}
+        {attentionCount > 0 ? (
+          <span
+            data-boring-workspace-part="session-section-attention"
+            data-boring-badge="attention-rollup"
+            className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[color:var(--accent)]/12 px-1 text-[9.5px] font-semibold tabular-nums text-[color:var(--accent)]"
+            aria-label={`${attentionCount} session${attentionCount === 1 ? "" : "s"} need attention`}
+          >
+            {attentionCount}
+          </span>
+        ) : null}
       </span>
       <span aria-hidden="true" className="text-[10.5px] tabular-nums text-muted-foreground/40">{count}</span>
     </button>

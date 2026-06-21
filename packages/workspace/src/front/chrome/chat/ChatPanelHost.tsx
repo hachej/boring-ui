@@ -89,7 +89,7 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
   )
 
   const uiWorkspaceId = workspaceIdFromHeaders(chatPanelProps.requestHeaders)
-  const composerBlockers = blockers.filter((blocker) => !blocker.sessionId || blocker.sessionId === chatPanelProps.sessionId)
+  const composerBlockers = blockers.filter((blocker) => !blocker.sessionId || !chatPanelProps.sessionId || blocker.sessionId === chatPanelProps.sessionId)
 
   useEffect(() => {
     if (bridgeEndpoint === null || !surfaceDispatch) return

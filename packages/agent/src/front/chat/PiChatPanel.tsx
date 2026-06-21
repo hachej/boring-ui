@@ -406,7 +406,7 @@ export function PiChatPanel<
   const runtimeDependenciesNotice = composerNoticeForRuntimeDependencies(workspaceWarmupStatus)
   const workspaceWarmupBlocked = Boolean(warmupNotice)
   const activeBlockers = useMemo(
-    () => composerBlockers.filter((blocker) => !blocker.sessionId || blocker.sessionId === activeSessionId),
+    () => composerBlockers.filter((blocker) => !blocker.sessionId || !activeSessionId || blocker.sessionId === activeSessionId),
     [activeSessionId, composerBlockers],
   )
   const canonicalMessages = selectedChatState ? selectMessagesForRender(selectedChatState) : []

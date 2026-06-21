@@ -196,6 +196,29 @@ describe("SessionBrowser", () => {
     expect(badge?.closest("li")?.textContent).toContain("Third session")
   })
 
+  it("rolls up attention badges into collapsed sections", () => {
+    function BlockSession({ sessionId }: { sessionId: string }) {
+      const { addBlocker, removeBlocker } = useWorkspaceAttention()
+      useEffect(() => {
+        addBlocker({ id: `review:${sessionId}`, reason: "pr-review.review", sessionId, sessionBadge: { kind: "review", label: "review" } })
+        return () => removeBlocker(`review:${sessionId}`)
+      }, [addBlocker, removeBlocker, sessionId])
+      return null
+    }
+
+    render(
+      <WorkspaceAttentionProvider>
+        <BlockSession sessionId="s3" />
+        <SessionBrowser sessions={sample} activeId="s1" openIds={["s1"]} />
+      </WorkspaceAttentionProvider>,
+    )
+
+    expect(screen.queryByText(/Third session/)).not.toBeInTheDocument()
+    const rollup = document.querySelector('[data-boring-badge="attention-rollup"]')
+    expect(rollup).toBeInTheDocument()
+    expect(rollup).toHaveTextContent("1")
+  })
+
   it("shows a plugin-provided attention badge for session-scoped blockers", () => {
     function BlockSession({ sessionId }: { sessionId: string }) {
       const { addBlocker, removeBlocker } = useWorkspaceAttention()

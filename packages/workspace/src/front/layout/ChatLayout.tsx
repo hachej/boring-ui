@@ -103,6 +103,10 @@ export function ChatLayout(props: ChatLayoutProps) {
     () => blockers.filter((blocker) => !blocker.sessionId || !activeSessionId || blocker.sessionId === activeSessionId),
     [activeSessionId, blockers],
   )
+  const hasSessionAttention = useMemo(
+    () => blockers.some((blocker) => blocker.sessionBadge || blocker.reason === "waiting_for_user_input"),
+    [blockers],
+  )
   const commandRegistry = useCommandRegistry()
   const effectiveNavWidth = clamp(navWidth, 200, 360)
   const surfaceMax = Math.max(480, Math.floor(viewport * 0.72))
@@ -502,6 +506,7 @@ export function ChatLayout(props: ChatLayoutProps) {
           onClick={props.onOpenNav}
           label="Sessions"
           hint="⌘1"
+          pulse={hasSessionAttention}
         />
       ) : null}
       {!chatCollapsed && !navOpen && hasChatPanes && props.onCreateChatPaneAfter ? (
@@ -806,10 +811,15 @@ function FloatingEdgeButton({
       }
     >
       {icon === "sessions" ? (
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
-          <path d="M12 7v5l3.2 2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
+        <span className="relative flex items-center justify-center">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+            <path d="M12 7v5l3.2 2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          </svg>
+          {pulse ? (
+            <span className="absolute -right-1.5 -top-1.5 h-2 w-2 rounded-full bg-[color:var(--accent)]" aria-hidden="true" data-boring-workspace-part="edge-attention-dot" />
+          ) : null}
+        </span>
       ) : icon === "chat" ? (
         <span className="relative flex items-center justify-center">
           <MessageSquare className="h-[15px] w-[15px]" strokeWidth={1.8} aria-hidden="true" />

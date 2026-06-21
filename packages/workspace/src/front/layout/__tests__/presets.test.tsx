@@ -761,6 +761,33 @@ describe("ChatLayout component", () => {
     )
   })
 
+  it("pulses the collapsed sessions rail when any session has plugin attention", async () => {
+    function Host() {
+      const { addBlocker } = useWorkspaceAttention()
+      return (
+        <>
+          <ChatLayout center="chat" nav={null} onOpenNav={vi.fn()} storageKey="chat-layout-session-attention-rail" />
+          <button
+            type="button"
+            onClick={() => addBlocker({ id: "review-s2", reason: "pr-review.review", label: "Review", sessionId: "s2", sessionBadge: { kind: "review", label: "review" } })}
+          >
+            Add review blocker
+          </button>
+        </>
+      )
+    }
+
+    const user = userEvent.setup()
+    renderWithRegistry(<Host />, ["chat", "session-list"])
+    expect(screen.getByRole("button", { name: "Sessions" }).querySelector('[data-boring-workspace-part="edge-attention-dot"]')).toBeNull()
+
+    await user.click(screen.getByRole("button", { name: "Add review blocker" }))
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Sessions" }).querySelector('[data-boring-workspace-part="edge-attention-dot"]')).toBeInTheDocument()
+    })
+  })
+
   it("auto-expands collapsed chat for a session-scoped blocker when the layout has no active session id", async () => {
     function Host() {
       const { addBlocker } = useWorkspaceAttention()
