@@ -730,7 +730,7 @@ export function WorkspaceAgentFront<
     : sessionApi?.switch ?? onSwitchSession ?? localSessionStore.switchTo
   const resolvedSwitch = useCallback((nextSessionId: string) => {
     if (effectiveActiveSessionId && nextSessionId !== effectiveActiveSessionId) {
-      window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: effectiveActiveSessionId } }))
+      window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: effectiveActiveSessionId, reason: "session-switch" } }))
     }
     return rawSwitch(nextSessionId)
   }, [effectiveActiveSessionId, rawSwitch])
@@ -1296,7 +1296,8 @@ export function WorkspaceAgentFront<
         apiBaseUrl={apiBaseUrl}
         authHeaders={resolvedAuthHeaders}
         apiTimeout={apiTimeout}
-        activeSessionId={chatSessionId}
+        activeSessionId={activeChatPaneId}
+        openSessionIds={chatPaneIds}
         defaultTheme={defaultTheme}
         onThemeChange={onThemeChange}
         workspaceId={workspaceId}

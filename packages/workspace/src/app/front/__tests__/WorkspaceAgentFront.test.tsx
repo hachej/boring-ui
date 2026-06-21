@@ -1662,7 +1662,7 @@ describe("WorkspaceAgentFront", () => {
     expandHistory()
     await user.click(screen.getByText("Session two"))
     expect(onSwitchSession).toHaveBeenCalledWith("s2")
-    expect(observed).toHaveBeenCalledWith(expect.objectContaining({ detail: { sessionId: "s1" } }))
+    expect(observed).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.objectContaining({ sessionId: "s1", reason: "session-switch" }) }))
 
     window.removeEventListener("boring:workspace-composer-stop", observed)
   })

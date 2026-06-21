@@ -74,6 +74,7 @@ export interface PluginProviderProps {
   onAuthError?: (statusCode: number) => void
   apiTimeout?: number
   activeSessionId?: string | null
+  openSessionIds?: readonly string[]
   children: ReactNode
 }
 

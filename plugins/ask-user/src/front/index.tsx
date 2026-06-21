@@ -35,6 +35,7 @@ type QuestionsRuntime = QuestionsStore & {
   apiBaseUrl: string
   authHeaders?: Record<string, string>
   activeSessionId?: string | null
+  openSessionIds?: readonly string[]
   refreshPending(sessionId: string): Promise<AskUserQuestion | null>
 }
 
@@ -105,6 +106,16 @@ function sessionScopedBlockerId(sessionId: string): string {
   return sessionId
 }
 
+type ComposerStopDetail = { sessionId?: string; reason?: string; source?: string }
+
+function isSessionSwitchStop(detail: ComposerStopDetail | undefined): boolean {
+  return detail?.reason === "session-switch" || detail?.source === "session-switch"
+}
+
+function isSessionOpen(runtime: Pick<QuestionsRuntime, "openSessionIds">, sessionId: string): boolean {
+  return !runtime.openSessionIds || runtime.openSessionIds.includes(sessionId)
+}
+
 function pendingQuestionSnapshot(store: QuestionsStore): string {
   const hints = store.getPendingHints()
     .map((hint) => `${hint.sessionId}:${hint.questionId}:${hint.status ?? "ready"}`)
@@ -123,19 +134,20 @@ function useQuestionsRuntime(): QuestionsRuntime {
   return ctx
 }
 
-function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }: PluginProviderProps) {
+function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, openSessionIds, children }: PluginProviderProps) {
   const { addBlocker, removeBlocker } = useWorkspaceAttention()
   const runtime = useMemo<QuestionsRuntime>(() => ({
     ...sharedQuestionsStore,
     apiBaseUrl,
     authHeaders,
     activeSessionId,
+    openSessionIds,
     async refreshPending(sessionId) {
       const pending = await createQuestionsClient({ apiBaseUrl, headers: authHeaders }).pending(sessionId)
       sharedQuestionsStore.setPending(pending, sessionId)
       return pending
     },
-  }), [activeSessionId, apiBaseUrl, authHeaders])
+  }), [activeSessionId, apiBaseUrl, authHeaders, openSessionIds])
   const pendingSnapshot = useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
   const autoOpenedQuestionsRef = useRef(new Set<string>())
   useEffect(() => {
@@ -145,7 +157,7 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }:
       const blockerId = `${ASK_USER_PLUGIN_ID}:${hint.sessionId}:${hint.questionId}`
       blockerIds.push(blockerId)
       const hydrated = runtime.getPending(hint.sessionId)
-      const isActiveHint = runtime.activeSessionId === hint.sessionId
+      const isActiveHint = runtime.activeSessionId === hint.sessionId && isSessionOpen(runtime, hint.sessionId)
       const actions = hydrated
         ? [{ id: "open", label: "Open Questions" }, { id: "cancel", label: "Cancel question" }]
         : isActiveHint
@@ -166,7 +178,7 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }:
   }, [addBlocker, removeBlocker, runtime, pendingSnapshot])
 
   useEffect(() => {
-    if (!activeSessionId) return
+    if (!activeSessionId || !isSessionOpen(runtime, activeSessionId)) return
     const hint = runtime.getPendingHints().find((candidate) => candidate.sessionId === activeSessionId)
     if (!hint || (hint.status && hint.status !== "ready")) return
     const hydrated = runtime.getPending(activeSessionId)
@@ -186,7 +198,9 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, children }:
 
   useEffect(() => {
     const onStop = (event: Event) => {
-      const sessionId = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId ?? runtime.activeSessionId
+      const detail = (event as CustomEvent<ComposerStopDetail>).detail
+      if (isSessionSwitchStop(detail)) return
+      const sessionId = detail?.sessionId ?? runtime.activeSessionId
       const pending = runtime.getPending(sessionId)
       if (!pending || (sessionId && sessionScopedBlockerId(pending.sessionId) && sessionId !== pending.sessionId)) return
       runtime.setPending(null, pending.sessionId)
@@ -272,7 +286,9 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   const client = useMemo(() => createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }), [runtime.apiBaseUrl, runtime.authHeaders])
   useEffect(() => {
     const onStop = (event: Event) => {
-      const sessionId = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId
+      const detail = (event as CustomEvent<ComposerStopDetail>).detail
+      if (isSessionSwitchStop(detail)) return
+      const sessionId = detail?.sessionId
       if (!question || (sessionId && sessionScopedBlockerId(question.sessionId) && sessionId !== question.sessionId)) return
       setClosedQuestionId(question.questionId)
       runtime.setPending(null, question.sessionId)

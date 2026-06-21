@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { events, userMeta, workspaceEvents } from "@hachej/boring-workspace"
+import { UI_COMMAND_EVENT, events, userMeta, workspaceEvents } from "@hachej/boring-workspace"
 import { captureFrontPlugin } from "@hachej/boring-workspace/plugin"
 import type { AskUserQuestion } from "../../shared/types"
 import { askUserPlugin } from "../index"
@@ -33,6 +33,15 @@ function pendingStateFor(q: AskUserQuestion | null) {
       hint: { questionId: q.questionId, sessionId: q.sessionId, status: q.status },
       hintsBySession: { [q.sessionId]: { questionId: q.questionId, sessionId: q.sessionId, status: q.status } },
     } : { hint: null, hintsBySession: {} },
+  }
+}
+
+function pendingStateForMany(questions: AskUserQuestion[]) {
+  return {
+    "questions.pending": {
+      hint: questions[0] ? { questionId: questions[0].questionId, sessionId: questions[0].sessionId, status: questions[0].status } : null,
+      hintsBySession: Object.fromEntries(questions.map((q) => [q.sessionId, { questionId: q.questionId, sessionId: q.sessionId, status: q.status }])),
+    },
   }
 }
 
@@ -169,6 +178,54 @@ describe("askUserPlugin front shell", () => {
 
     expect(await screen.findByText("Choose A or B")).toBeInTheDocument()
     expect(container.firstElementChild).toHaveClass("overflow-hidden")
+  })
+
+  it("does not cancel pending questions when a session switch stops the previous composer", async () => {
+    const s1Question = { ...question, questionId: "switch-q1", sessionId: "s1", title: "Question for s1" }
+    const s2Question = { ...nextQuestion, questionId: "switch-q2", sessionId: "s2", title: "Question for s2" }
+    const pendingBySession = new Map<string, AskUserQuestion>([["s1", s1Question], ["s2", s2Question]])
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.pending")) {
+        const body = JSON.parse(String(init?.body)) as { input?: { sessionId?: string } }
+        return Response.json({ ok: true, output: { pending: pendingBySession.get(body.input?.sessionId ?? "") ?? null } })
+      }
+      if (String(url).endsWith("/api/v1/workspace-bridge/call")) return Response.json({ ok: true, output: { ok: true, status: "cancelled" } })
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateForMany([...pendingBySession.values()]))
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+
+    render(<Provider apiBaseUrl="" activeSessionId="s1" openSessionIds={["s1"]}><div>child</div></Provider>)
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.pending"))).toBe(true))
+
+    window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: "s1", reason: "session-switch" } }))
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.cancel"))).toBe(false)
+  })
+
+  it("does not auto-open Questions for a pending session that is not open in the app", async () => {
+    const closedQuestion = { ...question, questionId: "closed-q1", sessionId: "closed-session", title: "Closed session question" }
+    const commands: unknown[] = []
+    const onCommand = (event: Event) => commands.push((event as CustomEvent).detail)
+    window.addEventListener(UI_COMMAND_EVENT, onCommand)
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.pending")) return Response.json({ ok: true, output: { pending: closedQuestion } })
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(closedQuestion))
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+
+    try {
+      render(<Provider apiBaseUrl="" activeSessionId="closed-session" openSessionIds={["other-session"]}><div>child</div></Provider>)
+      await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("human-input.v1.pending"))).toBe(true))
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(commands).not.toContainEqual(expect.objectContaining({ kind: "openSurface" }))
+    } finally {
+      window.removeEventListener(UI_COMMAND_EVENT, onCommand)
+    }
   })
 
   it("composer stop cancels pending question even when pane is closed", async () => {

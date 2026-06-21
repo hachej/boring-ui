@@ -129,7 +129,7 @@ describe("ChatPanelHost", () => {
         </WorkspaceProvider>,
       )
       fireEvent.click(screen.getByRole("button", { name: "stop composer" }))
-      expect(observed).toHaveBeenCalledWith(expect.objectContaining({ detail: { sessionId: "s1" } }))
+      expect(observed).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.objectContaining({ sessionId: "s1", reason: "user-stop" }) }))
       expect(onStop).toHaveBeenCalled()
     } finally {
       window.removeEventListener("boring:workspace-composer-stop", observed)
@@ -153,7 +153,7 @@ describe("ChatPanelHost", () => {
       </WorkspaceProvider>,
     )
     fireEvent.click(screen.getByRole("button", { name: "open blocker" }))
-    expect(openSurface).toHaveBeenCalledWith(expect.objectContaining({ kind: "questions", target: "q1" }))
+    expect(openSurface).toHaveBeenCalledWith(expect.objectContaining({ kind: "questions", target: "q1", meta: { sessionId: "s1", openOnlyWhenSessionOpen: true } }))
   })
 
   it("composes workspace artifact opening with caller onOpenArtifact", () => {

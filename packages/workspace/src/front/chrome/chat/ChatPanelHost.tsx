@@ -101,20 +101,28 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
   }, [bridgeEndpoint, surfaceDispatch, uiWorkspaceId])
 
   const handleComposerStop = useCallback(() => {
-    window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: chatPanelProps.sessionId } }))
+    window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: chatPanelProps.sessionId, reason: "user-stop" } }))
     props.onComposerStop?.()
   }, [chatPanelProps.sessionId, props.onComposerStop])
 
   const handleComposerBlockerAction = useCallback(
     (blocker: NonNullable<WorkspaceChatPanelProps["composerBlockers"]>[number], action: string) => {
       if (action === "cancel") {
-        window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: chatPanelProps.sessionId } }))
+        window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: chatPanelProps.sessionId, reason: "blocker-cancel" } }))
         return
       }
       if (action !== "open" || !blocker.surfaceKind) return
       if (surfaceDispatch) {
+        const sessionId = blocker.sessionId ?? chatPanelProps.sessionId
         dispatchUiCommand(
-          { kind: "openSurface", params: { kind: blocker.surfaceKind, target: blocker.target, meta: {} } },
+          {
+            kind: "openSurface",
+            params: {
+              kind: blocker.surfaceKind,
+              target: blocker.target,
+              meta: sessionId ? { sessionId, openOnlyWhenSessionOpen: true } : {},
+            },
+          },
           surfaceDispatch,
         )
       }
