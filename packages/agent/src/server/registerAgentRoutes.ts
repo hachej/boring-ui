@@ -10,13 +10,10 @@ import { getEnv } from './config/env'
 import type { RuntimeBundle, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
 import { getOptionalRuntimeBundleStorageRoot } from './runtime/mode'
 import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from './workspace/runtimeLayout'
-import { VERCEL_SANDBOX_WORKSPACE_ROOT } from './workspace/createVercelSandboxWorkspace'
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningResult } from './workspace/provisioning'
 import type { Workspace } from '../shared/workspace'
 import { ErrorCode } from '../shared/error-codes'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
-import { createVercelSandboxModeAdapter } from './runtime/modes/vercel-sandbox'
-import { evictSandboxHandleCacheForWorkspace } from './sandbox/vercel-sandbox/resolveSandboxHandle'
 import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
 import { PiSessionStore } from './harness/pi-coding-agent/sessions'
 import type { PiHarnessOptions, ResolvedPiHarnessOptions } from './harness/pi-coding-agent/createHarness'
@@ -43,7 +40,8 @@ import type { ReloadHookResult } from './http/routes/reload'
 import { searchRoutes } from './http/routes/search'
 import { gitRoutes } from './http/routes/git'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
-import { ReadyStatusTracker } from './runtime/readyStatus'
+import type { ReadyStatusTracker } from './runtime/readyStatus'
+import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
 import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runtimeEnvContributions'
 import type { AgentHarness } from '../shared/harness'
 import { HarnessPiChatService } from './pi-chat/harnessPiChatService'
@@ -53,7 +51,6 @@ import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_WORKSPACE_ID = 'default'
 const STANDARD_AGENT_TOOL_NAMES = ['bash', 'read', 'write', 'edit', 'find', 'grep', 'ls']
-const VERCEL_BINDING_HEALTHCHECK_INTERVAL_MS = 15_000
 
 type AgentCapabilities = {
   agent: {
@@ -143,19 +140,6 @@ interface SkillScope {
   pi: ResolvedPiHarnessOptions
 }
 
-function selectRuntimeModeAdapter(
-  mode: RuntimeModeId,
-  sandboxHandleStore: SandboxHandleStore | undefined,
-): RuntimeModeAdapter {
-  if (mode === 'vercel-sandbox' && sandboxHandleStore) {
-    return createVercelSandboxModeAdapter({
-      store: sandboxHandleStore,
-      orphanGuardMaxIdleMs: null,
-    })
-  }
-  return resolveMode(mode)
-}
-
 function getRequestWorkspaceId(request: FastifyRequest): string {
   return request.workspaceContext?.workspaceId ?? DEFAULT_WORKSPACE_ID
 }
@@ -185,32 +169,10 @@ function isWorkspaceAgnosticAgentRequest(
   return pathname === '/health' || pathname === '/ready' || pathname === '/api/v1/agent/models'
 }
 
-function extractHttpStatus(error: unknown): number | null {
-  const statusCode = (error as { statusCode?: unknown } | null)?.statusCode
-  if (typeof statusCode === 'number') return statusCode
-
-  const status = (error as { status?: unknown } | null)?.status
-  if (typeof status === 'number') return status
-
-  const responseStatus = (error as { response?: { status?: unknown } } | null)?.response?.status
-  return typeof responseStatus === 'number' ? responseStatus : null
-}
-
 function normalizeSessionNamespace(value: string | undefined): string | undefined {
   if (typeof value !== 'string') return undefined
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : undefined
-}
-
-function isExpiredSandboxRuntimeError(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code
-  if (code === ErrorCode.enum.SANDBOX_EXPIRED) return true
-
-  const status = extractHttpStatus(error)
-  if (status === 404 || status === 410) return true
-
-  const message = error instanceof Error ? error.message : String(error)
-  return /status code (404|410) is not ok/i.test(message)
 }
 
 function createHttpError(
@@ -382,7 +344,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
 
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
-  const modeAdapter = opts.runtimeModeAdapter ?? selectRuntimeModeAdapter(resolvedMode, opts.sandboxHandleStore)
+  const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode, { sandboxHandleStore: opts.sandboxHandleStore })
   app.addHook('onClose', async () => {
     await modeAdapter.dispose?.()
   })
@@ -492,9 +454,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       requestId: request?.id,
       telemetry: opts.telemetry,
     }
-    const runtimeLayout = getBoringAgentRuntimePaths(
-      resolvedMode === 'vercel-sandbox' ? VERCEL_SANDBOX_WORKSPACE_ROOT : scope.root,
-    )
+    const runtimeLayout = getBoringAgentRuntimePaths(modeAdapter.getRuntimeLayoutRoot?.(modeCtx) ?? scope.root)
     return await opts.provisionRuntime({
       workspaceId,
       workspaceRoot: scope.root,
@@ -539,18 +499,13 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
         runtimeBundle,
       }, opts.runtimeEnvContributions, opts.telemetry)
     }
-    const readyTracker = new ReadyStatusTracker({
-      sandboxReady: resolvedMode !== 'vercel-sandbox',
+    const readyTracker = createRuntimeReadyStatusTracker(modeAdapter, {
       harnessReady: false,
       capabilities: {
         chat: { state: 'preparing' },
-        workspace: { state: resolvedMode !== 'vercel-sandbox' ? 'ready' : 'preparing' },
         runtimeDependencies,
       },
     })
-    if (resolvedMode === 'vercel-sandbox') {
-      queueMicrotask(() => readyTracker.markSandboxReady())
-    }
 
     let binding: RuntimeBinding | undefined
     const updateRuntimeDependencies = (next: RuntimeDependencyReadiness) => {
@@ -798,7 +753,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     scope: RuntimeScope,
   ): Promise<RuntimeBinding> {
     runtimeBindings.delete(scope.key)
-    evictSandboxHandleCacheForWorkspace(workspaceId)
+    modeAdapter.evictCachedRuntime?.({ workspaceId })
 
     const created = createRuntimeBindingEntry(workspaceId, scope)
     runtimeBindings.set(scope.key, created)
@@ -818,30 +773,30 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     scope: RuntimeScope,
     binding: RuntimeBinding,
   ): Promise<RuntimeBinding> {
-    if (resolvedMode !== 'vercel-sandbox') return binding
+    const healthCheck = modeAdapter.cachedBindingHealthCheck
+    if (!healthCheck) return binding
 
     const now = Date.now()
+    const intervalMs = healthCheck.intervalMs ?? 15_000
     if (
       binding.lastHealthCheckMs !== undefined &&
-      now - binding.lastHealthCheckMs < VERCEL_BINDING_HEALTHCHECK_INTERVAL_MS
+      now - binding.lastHealthCheckMs < intervalMs
     ) {
       return binding
     }
 
-    try {
-      await binding.runtimeBundle.workspace.stat('.')
+    const result = await healthCheck.check({ runtimeBundle: binding.runtimeBundle, workspaceId })
+    if (result.state === 'ok') {
       binding.lastHealthCheckMs = now
       return binding
-    } catch (error) {
-      if (!isExpiredSandboxRuntimeError(error)) throw error
-
-      app.log.warn({
-        err: error,
-        workspaceId,
-      }, '[sandbox] cached runtime expired; recreating from persisted handle')
-
-      return await recreateRuntimeBinding(workspaceId, scope)
     }
+
+    app.log.warn({
+      err: result.error,
+      workspaceId,
+    }, result.message ?? '[runtime] cached runtime invalid; recreating')
+
+    return await recreateRuntimeBinding(workspaceId, scope)
   }
 
   const hasRuntimeProvisioningInput = opts.provisionWorkspace !== false && Boolean(opts.provisionRuntime)

@@ -1,24 +1,12 @@
 import { unlink } from 'node:fs/promises'
-import {
-  type BashOperations,
-  type BashSpawnHook,
-  type BashToolOptions,
-  createBashToolDefinition,
-  createLocalBashOperations,
-} from '@mariozechner/pi-coding-agent'
+import { createBashToolDefinition } from '@mariozechner/pi-coding-agent'
 
 import type { Sandbox } from '../../../shared/sandbox'
 import type { AgentTool, ToolReadinessRequirement, ToolResult } from '../../../shared/tool'
 import { runtimeNotReadyToolResult, type ToolReadinessState } from '../../catalog/toolReadiness'
-import { mergeRuntimeProvisioningEnv, type RuntimeProvisioningOptions, type RuntimeProvisioningSnapshot } from '../../runtime/env'
-import { getRuntimeBundleStorageRoot, type RuntimeBundle } from '../../runtime/mode'
-import { buildBwrapArgs } from '../../sandbox/bwrap/buildBwrapArgs'
-import { withWorkspacePythonEnv } from '../../sandbox/workspacePythonEnv'
-import { vercelBashOps } from '../operations/vercel'
-
-function shellEscape(s: string): string {
-  return `'${s.replace(/'/g, "'\\''")}'`
-}
+import { createBashToolOptionsForRuntime } from '../../runtime/bashToolOptions'
+import type { RuntimeProvisioningOptions, RuntimeProvisioningSnapshot } from '../../runtime/env'
+import type { RuntimeBundle } from '../../runtime/mode'
 
 export type HarnessRuntimeProvisioningSnapshot = RuntimeProvisioningSnapshot
 
@@ -26,83 +14,12 @@ export interface HarnessRuntimeProvisioningOptions extends RuntimeProvisioningOp
   getReadiness?: () => ToolReadinessState
 }
 
-function bwrapSpawnHook(
-  workspaceRoot: string,
-  runtime?: HarnessRuntimeProvisioningOptions,
-): BashSpawnHook {
-  const args = buildBwrapArgs(workspaceRoot)
-  const bwrapPrefix = ['bwrap', ...args].map(shellEscape).join(' ')
-  return (context) => ({
-    ...context,
-    command: `${bwrapPrefix} bash -lc ${shellEscape(context.command)}`,
-    env: withWorkspacePythonEnv({
-      workspaceRoot,
-      env: mergeRuntimeProvisioningEnv(runtime, context.env),
-      sandboxRoot: '/workspace',
-    }),
-  })
-}
-
-function directSpawnHook(
-  workspaceRoot: string,
-  runtime?: HarnessRuntimeProvisioningOptions,
-): BashSpawnHook {
-  return (context) => ({
-    ...context,
-    env: withWorkspacePythonEnv({
-      workspaceRoot,
-      env: mergeRuntimeProvisioningEnv(runtime, context.env),
-      preserveHostHome: true,
-    }),
-  })
-}
-
-function localBashOperationsWithRuntimeEnv(bundle: RuntimeBundle): BashOperations {
-  const local = createLocalBashOperations()
-  return {
-    async exec(command, cwd, options) {
-      const runtimeEnv = await bundle.getRuntimeEnv?.()
-      return local.exec(command, cwd, {
-        ...options,
-        env: { ...(options.env ?? {}), ...(runtimeEnv ?? {}) },
-      })
-    },
-  }
-}
-
-function bashOptionsForMode(
+function bashOptionsForBundle(
   bundle: RuntimeBundle,
   runtime?: HarnessRuntimeProvisioningOptions,
   executionRuntimeEnv?: Record<string, string>,
-): BashToolOptions {
-  switch (bundle.sandbox.provider) {
-    case 'vercel-sandbox':
-    case 'remote-worker':
-      return {
-        operations: vercelBashOps(bundle.sandbox, {
-          runtime,
-          executionRuntimeEnv,
-        }),
-      }
-    case 'bwrap': {
-      const storageRoot = getRuntimeBundleStorageRoot(bundle)
-      return {
-        // localBashOperationsWithRuntimeEnv() injects bundle.getRuntimeEnv()
-        // into the outer shell env before the spawned `bwrap ... bash -lc`
-        // command runs, so bridge runtime env reaches local Linux sandboxed
-        // commands without relying on provisioning PATH/env alone.
-        operations: localBashOperationsWithRuntimeEnv(bundle),
-        spawnHook: bwrapSpawnHook(storageRoot, runtime),
-      }
-    }
-    default: {
-      const storageRoot = getRuntimeBundleStorageRoot(bundle)
-      return {
-        operations: localBashOperationsWithRuntimeEnv(bundle),
-        spawnHook: directSpawnHook(storageRoot, runtime),
-      }
-    }
-  }
+) {
+  return createBashToolOptionsForRuntime(bundle, runtime, executionRuntimeEnv)
 }
 
 function runtimeSecretValues(env: Record<string, string> | undefined): string[] {
@@ -159,7 +76,7 @@ function adaptPiTool(
   bundle: RuntimeBundle,
   runtime?: HarnessRuntimeProvisioningOptions,
 ): AgentTool {
-  const template = createBashToolDefinition(bundle.workspace.root, bashOptionsForMode(bundle, runtime))
+  const template = createBashToolDefinition(bundle.workspace.root, bashOptionsForBundle(bundle, runtime))
   return {
     name: template.name,
     description: template.description,
@@ -184,7 +101,7 @@ function adaptPiTool(
           }
       const piTool = createBashToolDefinition(
         bundle.workspace.root,
-        bashOptionsForMode(executionBundle, runtime, runtimeEnv),
+        bashOptionsForBundle(executionBundle, runtime, runtimeEnv),
       )
       let emittedRedactionNotice = false
       let result: Awaited<ReturnType<typeof piTool.execute>>

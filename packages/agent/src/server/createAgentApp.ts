@@ -30,7 +30,7 @@ import { reloadRoutes } from './http/routes/reload'
 import { searchRoutes } from './http/routes/search'
 import { gitRoutes } from './http/routes/git'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
-import { ReadyStatusTracker } from './runtime/readyStatus'
+import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
 import { HarnessPiChatService } from './pi-chat/harnessPiChatService'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
@@ -218,13 +218,9 @@ export async function createAgentApp(
   harnessRef = harness
   const sessionChangesTracker = new InMemorySessionChangesTracker()
 
-  const readyTracker = new ReadyStatusTracker({
-    sandboxReady: resolvedMode !== 'vercel-sandbox',
+  const readyTracker = createRuntimeReadyStatusTracker(modeAdapter, {
     harnessReady: true,
   })
-  if (resolvedMode === 'vercel-sandbox') {
-    queueMicrotask(() => readyTracker.markSandboxReady())
-  }
 
   app.addHook(
     'onRequest',

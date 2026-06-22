@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import type { ExecResult, Sandbox } from '../../../../shared/sandbox'
 import type { Workspace } from '../../../../shared/workspace'
-import type { RuntimeBundle } from '../../../runtime/mode'
+import type { RuntimeBashStrategy, RuntimeBundle } from '../../../runtime/mode'
 import { ErrorCode } from '../../../../shared/error-codes'
 import { buildHarnessAgentTools } from '../index'
 
@@ -45,12 +45,18 @@ function mockSandbox(provider: string, capabilities: string[] = ['exec']): Sandb
 }
 
 function mockBundle(provider: string, capabilities?: string[], workspaceRoot = '/workspace'): RuntimeBundle {
+  const bash: RuntimeBashStrategy | undefined = provider === 'vercel-sandbox'
+    ? { kind: 'remote', defaultPath: '/vercel/runtimes/node24/bin:/vercel/runtimes/node22/bin:/usr/local/bin:/usr/bin:/bin' }
+    : provider === 'bwrap'
+      ? { kind: 'local-sandbox', sandboxRoot: '/workspace' }
+      : undefined
   return {
     workspace: mockWorkspace(workspaceRoot),
     sandbox: mockSandbox(provider, capabilities),
     fileSearch: { search: vi.fn(async () => []) },
     getRuntimeEnv: vi.fn(async () => ({})),
     storageRoot: workspaceRoot,
+    ...(bash ? { bash } : {}),
   }
 }
 
@@ -255,6 +261,7 @@ describe('buildHarnessAgentTools', () => {
       workspace: mockWorkspace('/workspace'),
       sandbox: mockSandbox('bwrap'),
       fileSearch: { search: vi.fn(async () => []) },
+      bash: { kind: 'local-sandbox', sandboxRoot: '/workspace' },
     }
     const tools = buildHarnessAgentTools(bundle, {
       pathEntries: ['/workspace/.boring-agent/node/node_modules/.bin'],

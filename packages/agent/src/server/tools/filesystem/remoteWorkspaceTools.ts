@@ -1,16 +1,22 @@
 import {
   createEditToolDefinition,
   createFindToolDefinition,
-  createGrepToolDefinition,
   createLsToolDefinition,
   createReadToolDefinition,
   createWriteToolDefinition,
 } from '@mariozechner/pi-coding-agent'
 
 import type { AgentTool } from '../../../shared/tool'
-import { getRuntimeBundleStorageRoot, type RuntimeBundle } from '../../runtime/mode'
-import { boundFs } from '../operations/bound'
-import { buildRemoteWorkspaceFilesystemAgentTools } from './remoteWorkspaceTools'
+import type { RuntimeBundle } from '../../runtime/mode'
+import {
+  remoteWorkspaceEditOps,
+  remoteWorkspaceFindOps,
+  remoteWorkspaceLsOps,
+  type RemoteWorkspacePathOptions,
+  remoteWorkspaceReadOps,
+  remoteWorkspaceWriteOps,
+} from '../operations/remoteWorkspace'
+import { remoteWorkspaceGrepTool } from '../remoteWorkspaceGrepTool'
 
 interface PiToolResultLike {
   content?: Array<{ type: string; text?: string }>
@@ -74,21 +80,17 @@ function adaptPiTool<TParams extends Record<string, unknown>>(
   }
 }
 
-export function buildFilesystemAgentTools(bundle: RuntimeBundle): AgentTool[] {
+export function buildRemoteWorkspaceFilesystemAgentTools(
+  bundle: RuntimeBundle,
+  pathOptions?: RemoteWorkspacePathOptions,
+): AgentTool[] {
   const cwd = bundle.workspace.root
-
-  if (bundle.filesystem?.kind === 'remote-workspace') {
-    return buildRemoteWorkspaceFilesystemAgentTools(bundle, bundle.filesystem.pathOptions)
-  }
-
-  const storageRoot = getRuntimeBundleStorageRoot(bundle)
-  const ops = boundFs(storageRoot, { runtimeRoot: cwd })
   return [
-    adaptPiTool(createReadToolDefinition(cwd, { operations: ops.read })),
-    adaptPiTool(createWriteToolDefinition(cwd, { operations: ops.write })),
-    adaptPiTool(createEditToolDefinition(cwd, { operations: ops.edit })),
-    adaptPiTool(createFindToolDefinition(cwd, { operations: ops.find })),
-    adaptPiTool(createGrepToolDefinition(cwd, { operations: ops.grep })),
-    adaptPiTool(createLsToolDefinition(cwd, { operations: ops.ls })),
+    adaptPiTool(createReadToolDefinition(cwd, { operations: remoteWorkspaceReadOps(bundle.workspace, pathOptions) })),
+    adaptPiTool(createWriteToolDefinition(cwd, { operations: remoteWorkspaceWriteOps(bundle.workspace, pathOptions) })),
+    adaptPiTool(createEditToolDefinition(cwd, { operations: remoteWorkspaceEditOps(bundle.workspace, pathOptions) })),
+    adaptPiTool(createFindToolDefinition(cwd, { operations: remoteWorkspaceFindOps(bundle.sandbox, bundle.workspace, pathOptions) })),
+    { ...remoteWorkspaceGrepTool(bundle.sandbox, cwd, pathOptions), readinessRequirements: ['workspace-fs'] },
+    adaptPiTool(createLsToolDefinition(cwd, { operations: remoteWorkspaceLsOps(bundle.workspace, pathOptions) })),
   ]
 }

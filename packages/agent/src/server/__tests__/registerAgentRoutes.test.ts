@@ -593,6 +593,19 @@ test('registerAgentRoutes registers agent capabilities contributor when host sup
   await app.close()
 })
 
+test('generic agent composition does not special-case provider-specific sandboxes', async () => {
+  const files = [
+    'createAgentApp.ts',
+    'registerAgentRoutes.ts',
+    'tools/harness/index.ts',
+    'tools/filesystem/index.ts',
+  ]
+  for (const rel of files) {
+    const source = await readFile(join(process.cwd(), 'src/server', rel), 'utf8')
+    expect(source).not.toMatch(/vercel|remote-worker|resolvedMode\s*[!=]==\s*['"]vercel-sandbox['"]|sandbox\.provider\s*[!=]==/i)
+  }
+})
+
 test('createAgentApp has zero runtime imports from @hachej/boring-core', async () => {
   // Read the built output or source to verify no runtime imports from core.
   // We check the source file directly — type-only imports are erased by tsc,
@@ -1055,7 +1068,7 @@ test('runtimeEnvContributions merge generic host env into sandbox exec without w
       const sandbox = {
         id: 'env-sandbox',
         placement: 'server' as const,
-        provider: 'vercel-sandbox',
+        provider: 'custom-env-sandbox',
         capabilities: ['exec'],
         runtimeContext,
         async exec(_cmd: string, opts?: { env?: Record<string, string> }) {
@@ -1063,7 +1076,7 @@ test('runtimeEnvContributions merge generic host env into sandbox exec without w
           return { stdout: new TextEncoder().encode('ok'), stderr: new Uint8Array(), exitCode: 0, durationMs: 1, truncated: false }
         },
       }
-      return { runtimeContext, workspace, sandbox, fileSearch: createServerFileSearch(workspace, sandbox) }
+      return { runtimeContext, workspace, sandbox, fileSearch: createServerFileSearch(workspace, sandbox), bash: { kind: 'remote' } }
     },
   }
   let capturedTools: import('../../shared/tool').AgentTool[] = []

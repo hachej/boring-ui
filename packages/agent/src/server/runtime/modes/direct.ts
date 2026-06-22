@@ -23,6 +23,8 @@ export const directModeAdapter: RuntimeModeAdapter = {
     return {
       runtimeContext,
       storageRoot: ctx.workspaceRoot,
+      bash: { kind: 'host', preserveHostHome: true },
+      filesystem: { kind: 'host' },
       workspace,
       sandbox,
       fileSearch: createServerFileSearch(workspace, sandbox),

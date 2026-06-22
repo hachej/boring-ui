@@ -69,6 +69,7 @@ function mockBundle(provider: string, root = '/workspace', storageRoot?: string)
     workspace: mockWorkspace(root),
     sandbox: { ...mockSandbox(provider), runtimeContext },
     fileSearch: mockFileSearch(),
+    filesystem: provider === 'vercel-sandbox' ? { kind: 'remote-workspace' } : { kind: 'host' },
   }
 }
 
@@ -114,10 +115,11 @@ describe('buildFilesystemAgentTools', () => {
     )
   })
 
-  test('remote placement uses workspace-backed tools without a provider-name allowlist', async () => {
+  test('uses runtime-provided remote filesystem tools without a provider-name allowlist', async () => {
     const bundle = mockBundle('custom-remote', '/workspace', undefined)
     bundle.storageRoot = undefined
     bundle.sandbox = { ...bundle.sandbox, placement: 'remote' }
+    bundle.filesystem = { kind: 'remote-workspace' }
     vi.mocked(bundle.workspace.readFile).mockResolvedValueOnce('remote content')
 
     const tools = buildFilesystemAgentTools(bundle)
