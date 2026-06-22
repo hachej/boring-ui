@@ -18,6 +18,7 @@ import { createQuestionsClient, QuestionsClientError } from "./client"
 import {
   pendingQuestionSnapshot,
   QuestionsRuntimeContext,
+  isSessionOpen,
   sharedQuestionsStore,
   useQuestionsRuntime,
   type QuestionsRuntime,
@@ -59,8 +60,17 @@ type QuestionsPaneParams = { questionId?: string; sessionId?: string; __closeWor
 
 function paneQuestionSessionId(runtime: QuestionsRuntime, params: QuestionsPaneParams | undefined): string | null {
   const activeSessionId = runtime.activeSessionId ?? null
-  if (activeSessionId && hasReadyQuestion(runtime, activeSessionId)) return activeSessionId
-  return params?.sessionId ?? activeSessionId
+  if (activeSessionId && isPaneSessionVisible(runtime, activeSessionId) && hasReadyQuestion(runtime, activeSessionId)) return activeSessionId
+  if (params?.sessionId && isPaneSessionVisible(runtime, params.sessionId)) return params.sessionId
+  return activeSessionId && isPaneSessionVisible(runtime, activeSessionId) ? activeSessionId : null
+}
+
+function isPaneSessionVisible(runtime: QuestionsRuntime, sessionId: string): boolean {
+  return !runtime.openSessionIds || isSessionOpen(runtime, sessionId)
+}
+
+function isPaneSessionKnownHidden(runtime: QuestionsRuntime, sessionId: string): boolean {
+  return !!runtime.openSessionIds && !isSessionOpen(runtime, sessionId)
 }
 
 function hasReadyQuestion(runtime: QuestionsRuntime, sessionId: string): boolean {
@@ -79,6 +89,13 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   const [submitting, setSubmitting] = useState(false)
   const question = pending?.questionId === closedQuestionId ? null : pending
   const client = useMemo(() => createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }), [runtime.apiBaseUrl, runtime.authHeaders])
+  useEffect(() => {
+    if (!params?.sessionId || !isPaneSessionKnownHidden(runtime, params.sessionId)) return
+    const activeSessionId = runtime.activeSessionId ?? null
+    const canShowActiveQuestion = activeSessionId && isPaneSessionVisible(runtime, activeSessionId) && hasReadyQuestion(runtime, activeSessionId)
+    if (!canShowActiveQuestion) api.close()
+  }, [api, params?.sessionId, runtime])
+
   useEffect(() => {
     const onStop = (event: Event) => {
       const detail = (event as CustomEvent<unknown>).detail

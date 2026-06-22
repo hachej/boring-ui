@@ -110,6 +110,31 @@ describe("askUserPlugin front shell", () => {
     expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")).length).toBeGreaterThanOrEqual(2)
   })
 
+  it("closes the Questions pane when its owning session is no longer open", async () => {
+    const s1Question = { ...question, questionId: "hidden-pane-q1", sessionId: "hidden-pane-s1", title: "Question for hidden session", answerToken: "hidden-pane-token-1" }
+    const pendingBySession = new Map<string, AskUserQuestion>([[s1Question.sessionId, s1Question]])
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
+        const body = JSON.parse(String(init?.body)) as { input?: { sessionId?: string } }
+        return Response.json({ ok: true, output: { pending: pendingBySession.get(body.input?.sessionId ?? "") ?? null } })
+      }
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateForMany([...pendingBySession.values()]))
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+    const Panel = getPanel()
+    const api = { close: vi.fn() }
+
+    const view = render(<Provider apiBaseUrl="" activeSessionId={s1Question.sessionId} openSessionIds={[s1Question.sessionId, "other-open-session"]}><Panel params={{ sessionId: s1Question.sessionId, questionId: s1Question.questionId }} api={api} className="h-full" /></Provider>)
+    expect(await screen.findByText("Question for hidden session")).toBeInTheDocument()
+
+    view.rerender(<Provider apiBaseUrl="" activeSessionId="other-open-session" openSessionIds={["other-open-session"]}><Panel params={{ sessionId: s1Question.sessionId, questionId: s1Question.questionId }} api={api} className="h-full" /></Provider>)
+
+    await waitFor(() => expect(api.close).toHaveBeenCalled())
+    expect(screen.queryByText("Question for hidden session")).not.toBeInTheDocument()
+  })
+
   it("switches the Questions pane between independently pending active sessions", async () => {
     const s1Question = { ...question, questionId: "multi-switch-q1", sessionId: "multi-switch-s1", title: "Question for session one", answerToken: "multi-token-1" }
     const s2Question = { ...nextQuestion, questionId: "multi-switch-q2", sessionId: "multi-switch-s2", title: "Question for session two", answerToken: "multi-token-2" }
