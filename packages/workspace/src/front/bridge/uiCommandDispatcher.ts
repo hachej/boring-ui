@@ -124,7 +124,8 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
       if (wasClosed) ctx.openWorkbench()
       const run = (surface: SurfaceShellApi) => {
         try {
-          surface.openFile(path, openOpts)
+          if (openOpts) surface.openFile(path, openOpts)
+          else surface.openFile(path)
         } catch (err) {
           // eslint-disable-next-line no-console -- intentional dev signal
           console.warn(
