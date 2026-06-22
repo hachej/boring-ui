@@ -114,6 +114,26 @@ describe('buildFilesystemAgentTools', () => {
     )
   })
 
+  test('remote placement uses workspace-backed tools without a provider-name allowlist', async () => {
+    const bundle = mockBundle('custom-remote', '/workspace', undefined)
+    bundle.storageRoot = undefined
+    bundle.sandbox = { ...bundle.sandbox, placement: 'remote' }
+    vi.mocked(bundle.workspace.readFile).mockResolvedValueOnce('remote content')
+
+    const tools = buildFilesystemAgentTools(bundle)
+    const read = tools.find((tool) => tool.name === 'read')
+    expect(read).toBeDefined()
+
+    const result = await read!.execute(
+      { path: 'remote.txt' },
+      { abortSignal: new AbortController().signal, toolCallId: 'read-custom-remote' },
+    )
+
+    expect(result.isError).toBe(false)
+    expect(result.content[0].text).toContain('remote content')
+    expect(bundle.workspace.readFile).toHaveBeenCalledWith('remote.txt')
+  })
+
   test('switching modes returns fresh tool objects', () => {
     logStep('mode-switch:fresh-objects')
 

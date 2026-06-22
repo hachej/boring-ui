@@ -10,6 +10,7 @@ import {
 import type { Sandbox } from '../../../shared/sandbox'
 import type { AgentTool, ToolReadinessRequirement, ToolResult } from '../../../shared/tool'
 import { runtimeNotReadyToolResult, type ToolReadinessState } from '../../catalog/toolReadiness'
+import { mergeRuntimeProvisioningEnv, type RuntimeProvisioningOptions, type RuntimeProvisioningSnapshot } from '../../runtime/env'
 import { getRuntimeBundleStorageRoot, type RuntimeBundle } from '../../runtime/mode'
 import { buildBwrapArgs } from '../../sandbox/bwrap/buildBwrapArgs'
 import { withWorkspacePythonEnv } from '../../sandbox/workspacePythonEnv'
@@ -19,31 +20,10 @@ function shellEscape(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`
 }
 
-export interface HarnessRuntimeProvisioningSnapshot {
-  env?: Record<string, string>
-  pathEntries?: string[]
-}
+export type HarnessRuntimeProvisioningSnapshot = RuntimeProvisioningSnapshot
 
-export interface HarnessRuntimeProvisioningOptions extends HarnessRuntimeProvisioningSnapshot {
-  getCurrent?: () => HarnessRuntimeProvisioningSnapshot | undefined
+export interface HarnessRuntimeProvisioningOptions extends RuntimeProvisioningOptions {
   getReadiness?: () => ToolReadinessState
-}
-
-function mergeRuntimeEnv(
-  runtime: HarnessRuntimeProvisioningOptions | undefined,
-  commandEnv: Record<string, string | undefined> | undefined,
-): Record<string, string | undefined> | undefined {
-  const current = runtime?.getCurrent?.() ?? runtime
-  if (!current?.env && !current?.pathEntries?.length) return commandEnv
-  const merged: Record<string, string | undefined> = {
-    ...(current.env ?? {}),
-    ...(commandEnv ?? {}),
-  }
-  const pathParts = [...(current.pathEntries ?? [])]
-  if (current.env?.PATH) pathParts.push(current.env.PATH)
-  if (commandEnv?.PATH) pathParts.push(commandEnv.PATH)
-  if (pathParts.length > 0) merged.PATH = pathParts.join(':')
-  return merged
 }
 
 function bwrapSpawnHook(
@@ -57,7 +37,7 @@ function bwrapSpawnHook(
     command: `${bwrapPrefix} bash -lc ${shellEscape(context.command)}`,
     env: withWorkspacePythonEnv({
       workspaceRoot,
-      env: mergeRuntimeEnv(runtime, context.env),
+      env: mergeRuntimeProvisioningEnv(runtime, context.env),
       sandboxRoot: '/workspace',
     }),
   })
@@ -71,22 +51,9 @@ function directSpawnHook(
     ...context,
     env: withWorkspacePythonEnv({
       workspaceRoot,
-      env: mergeRuntimeEnv(runtime, context.env),
+      env: mergeRuntimeProvisioningEnv(runtime, context.env),
       preserveHostHome: true,
     }),
-  })
-}
-
-const VERCEL_SAFE_DEFAULT_PATH = '/vercel/runtimes/node24/bin:/vercel/runtimes/node22/bin:/usr/local/bin:/usr/bin:/bin'
-
-function mergeVercelRuntimeEnv(
-  runtime: HarnessRuntimeProvisioningOptions | undefined,
-  executionRuntimeEnv: Record<string, string> | undefined,
-): Record<string, string | undefined> | undefined {
-  const { PATH: executionPath, ...executionEnv } = executionRuntimeEnv ?? {}
-  return mergeRuntimeEnv(runtime, {
-    ...executionEnv,
-    PATH: executionPath ? `${executionPath}:${VERCEL_SAFE_DEFAULT_PATH}` : VERCEL_SAFE_DEFAULT_PATH,
   })
 }
 
@@ -113,11 +80,8 @@ function bashOptionsForMode(
     case 'remote-worker':
       return {
         operations: vercelBashOps(bundle.sandbox, {
-          // The pi bash tool's env may include the host process env. Never
-          // forward host secrets into a remote sandbox; provide only the
-          // provisioned runtime env, the execution-scoped runtime env, and a
-          // conservative remote PATH tail.
-          mergeEnv: () => mergeVercelRuntimeEnv(runtime, executionRuntimeEnv),
+          runtime,
+          executionRuntimeEnv,
         }),
       }
     case 'bwrap': {

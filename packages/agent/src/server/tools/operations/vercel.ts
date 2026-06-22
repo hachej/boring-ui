@@ -11,12 +11,25 @@ import type {
 
 import type { Sandbox } from '../../../shared/sandbox'
 import type { Workspace } from '../../../shared/workspace'
+import { mergeRuntimeProvisioningEnv, type RuntimeProvisioningOptions } from '../../runtime/env'
 import {
   VERCEL_SANDBOX_REMOTE_ROOT,
   VERCEL_SANDBOX_WORKSPACE_ROOT,
 } from '../../workspace/createVercelSandboxWorkspace'
 
 const VERCEL_SANDBOX_LEGACY_ROOT = '/vercel/sandbox'
+const VERCEL_SAFE_DEFAULT_PATH = '/vercel/runtimes/node24/bin:/vercel/runtimes/node22/bin:/usr/local/bin:/usr/bin:/bin'
+
+function mergeVercelBashRuntimeEnv(
+  runtime: RuntimeProvisioningOptions | undefined,
+  executionRuntimeEnv: Record<string, string> | undefined,
+): Record<string, string | undefined> | undefined {
+  const { PATH: executionPath, ...executionEnv } = executionRuntimeEnv ?? {}
+  return mergeRuntimeProvisioningEnv(runtime, {
+    ...executionEnv,
+    PATH: executionPath ? `${executionPath}:${VERCEL_SAFE_DEFAULT_PATH}` : VERCEL_SAFE_DEFAULT_PATH,
+  })
+}
 
 function rootAliases(workspace: Workspace): string[] {
   const aliases = [workspace.root]
@@ -54,10 +67,16 @@ function toRelPath(workspace: Workspace, absolutePath: string): string {
 
 export function vercelBashOps(sandbox: Sandbox, opts: {
   mergeEnv?: (env: Record<string, string | undefined> | undefined) => Record<string, string | undefined> | undefined
+  runtime?: RuntimeProvisioningOptions
+  executionRuntimeEnv?: Record<string, string>
 } = {}): BashOperations {
   return {
     exec(command, cwd, { onData, signal, timeout, env }) {
-      const effectiveEnv = opts.mergeEnv ? opts.mergeEnv(env) : env
+      const effectiveEnv = opts.mergeEnv
+        ? opts.mergeEnv(env)
+        : opts.runtime || opts.executionRuntimeEnv
+          ? mergeVercelBashRuntimeEnv(opts.runtime, opts.executionRuntimeEnv)
+          : env
       const filteredEnv = effectiveEnv
         ? Object.fromEntries(Object.entries(effectiveEnv).filter((e): e is [string, string] => e[1] != null))
         : undefined

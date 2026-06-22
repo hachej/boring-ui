@@ -47,12 +47,13 @@ export interface RuntimeBundle {
   getRuntimeEnv?: () => Promise<Record<string, string>>
 }
 
-export function getRuntimeBundleStorageRoot(bundle: RuntimeBundle): string {
-  const hostRoot = bundle.storageRoot ?? getNodeWorkspaceHostRoot(bundle.workspace)
-  if (hostRoot) return hostRoot
+export function getOptionalRuntimeBundleStorageRoot(bundle: RuntimeBundle): string | undefined {
+  return bundle.storageRoot ?? getNodeWorkspaceHostRoot(bundle.workspace) ?? undefined
+}
 
-  // vercel-sandbox: no host filesystem — tools use workspace methods instead.
-  if (bundle.sandbox.provider === 'vercel-sandbox') return bundle.workspace.root
+export function getRuntimeBundleStorageRoot(bundle: RuntimeBundle): string {
+  const hostRoot = getOptionalRuntimeBundleStorageRoot(bundle)
+  if (hostRoot) return hostRoot
 
   throw new Error(
     'RuntimeBundle.storageRoot is required for host-filesystem tools. ' +

@@ -4,7 +4,7 @@ import type { AgentHarness, AgentHarnessFactory } from '../shared/harness'
 import type { TelemetrySink } from '../shared/telemetry'
 import { getEnv } from './config/env'
 import type { RuntimeBundle, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
-import { getRuntimeBundleStorageRoot } from './runtime/mode'
+import { getOptionalRuntimeBundleStorageRoot } from './runtime/mode'
 import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runtimeEnvContributions'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
@@ -30,7 +30,7 @@ import { reloadRoutes } from './http/routes/reload'
 import { searchRoutes } from './http/routes/search'
 import { gitRoutes } from './http/routes/git'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
-import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
+import { ReadyStatusTracker } from './runtime/readyStatus'
 import { HarnessPiChatService } from './pi-chat/harnessPiChatService'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
@@ -252,10 +252,7 @@ export async function createAgentApp(
   // (where .git lives), not workspace.root — in sandbox modes the latter is the
   // in-sandbox cwd (e.g. /workspace) and git would not find the repo.
   await app.register(gitRoutes, {
-    getWorkspaceRoot: () => {
-      if (runtimeBundle.sandbox.provider === 'remote-worker') return undefined
-      return getRuntimeBundleStorageRoot(runtimeBundle)
-    },
+    getWorkspaceRoot: () => getOptionalRuntimeBundleStorageRoot(runtimeBundle),
   })
   const piChatService = new HarnessPiChatService({
     harness,

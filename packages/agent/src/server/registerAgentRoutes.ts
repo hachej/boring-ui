@@ -8,7 +8,7 @@ import type { TelemetrySink } from '../shared/telemetry'
 import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
 import { getEnv } from './config/env'
 import type { RuntimeBundle, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
-import { getRuntimeBundleStorageRoot } from './runtime/mode'
+import { getOptionalRuntimeBundleStorageRoot } from './runtime/mode'
 import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from './workspace/runtimeLayout'
 import { VERCEL_SANDBOX_WORKSPACE_ROOT } from './workspace/createVercelSandboxWorkspace'
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningResult } from './workspace/provisioning'
@@ -43,7 +43,7 @@ import type { ReloadHookResult } from './http/routes/reload'
 import { searchRoutes } from './http/routes/search'
 import { gitRoutes } from './http/routes/git'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
-import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
+import { ReadyStatusTracker } from './runtime/readyStatus'
 import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runtimeEnvContributions'
 import type { AgentHarness } from '../shared/harness'
 import { HarnessPiChatService } from './pi-chat/harnessPiChatService'
@@ -968,11 +968,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     getFileSearch: async (request) => (await getBindingForRequest(request)).runtimeBundle.fileSearch,
   })
   await app.register(gitRoutes, {
-    getWorkspaceRoot: async (request) => {
-      const bundle = (await getBindingForRequest(request)).runtimeBundle
-      if (bundle.sandbox.provider === 'remote-worker') return undefined
-      return getRuntimeBundleStorageRoot(bundle)
-    },
+    getWorkspaceRoot: async (request) => getOptionalRuntimeBundleStorageRoot((await getBindingForRequest(request)).runtimeBundle),
   })
   await app.register(piChatRoutes, {
     getService: async (request) => {

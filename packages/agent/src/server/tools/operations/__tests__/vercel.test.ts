@@ -74,6 +74,30 @@ describe('vercelBashOps', () => {
     })
   })
 
+  test('builds remote-safe runtime env without forwarding caller env when runtime options are supplied', async () => {
+    const sandbox = mockSandbox()
+    const ops = vercelBashOps(sandbox, {
+      runtime: {
+        env: { BORING_MACRO_API_URL: 'http://macro', PATH: '/runtime/base' },
+        pathEntries: ['/workspace/.boring-agent/venv/bin'],
+      },
+      executionRuntimeEnv: { BORING_WORKSPACE_BRIDGE_TOKEN: 'bridge-token', PATH: '/execution/bin' },
+    })
+
+    await ops.exec('echo hi', '/workspace', {
+      onData: vi.fn(),
+      env: { HOST_SECRET: 'do-not-forward', PATH: '/host/bin' },
+    })
+
+    const execOptions = vi.mocked(sandbox.exec).mock.calls[0][1]
+    expect(execOptions?.env).toEqual(expect.objectContaining({
+      BORING_MACRO_API_URL: 'http://macro',
+      BORING_WORKSPACE_BRIDGE_TOKEN: 'bridge-token',
+    }))
+    expect(execOptions?.env?.PATH).toBe('/workspace/.boring-agent/venv/bin:/runtime/base:/execution/bin:/vercel/runtimes/node24/bin:/vercel/runtimes/node22/bin:/usr/local/bin:/usr/bin:/bin')
+    expect(execOptions?.env).not.toHaveProperty('HOST_SECRET')
+  })
+
   test('streams stdout and stderr to onData', async () => {
     const sandbox: Sandbox = {
       id: 'test',
