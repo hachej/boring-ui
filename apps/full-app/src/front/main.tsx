@@ -6,11 +6,10 @@ import {
   CREDITS_REFRESH_EVENT,
   CreditBalanceBadge,
   CreditsSettingsPanel,
-  DefaultTopBarRight,
   isPaymentRequiredNotice,
   useCreditBalance,
 } from '@hachej/boring-core/app/front'
-import { UserSettingsPage } from '@hachej/boring-core/front'
+import { UserMenu, UserSettingsPage } from '@hachej/boring-core/front'
 import '@hachej/boring-core/app/front/styles.css'
 import './app.css'
 import { PublicHeroDescription, publicLaunchPlugin } from './PublicLaunchPages'
@@ -85,6 +84,10 @@ createRoot(document.getElementById('root')!).render(
       apiTimeout={10_000}
       persistenceEnabled
       appTitle={PRODUCT_NAME}
+      workspaceLayout="plugin-tabs"
+      workspaceSectionTitle="Projects"
+      showSkills={false}
+      showPlugins={false}
       chatEntryMode="chat-first"
       publicPaths={[]}
       chatFirstPublicShell={{
@@ -129,7 +132,7 @@ createRoot(document.getElementById('root')!).render(
       topBarRight={
         <>
           <CreditBalanceBadge buyEnabled={buyEnabled} />
-          <DefaultTopBarRight />
+          <UserMenu contentSide="top" contentAlign="start" />
         </>
       }
     />

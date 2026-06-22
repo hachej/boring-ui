@@ -14,6 +14,8 @@ export interface AppLeftPaneSession {
 export interface AppLeftPaneProps {
   width?: number
   appTitle?: string
+  workspaceLabel?: string
+  workspaceSectionTitle?: string
   sessionTitle?: string
   topSlot?: ReactNode
   bottomSlot?: ReactNode
@@ -38,6 +40,8 @@ type SessionRowState = "normal" | "open" | "active"
 export function AppLeftPane({
   width = 268,
   appTitle,
+  workspaceLabel,
+  workspaceSectionTitle = "Workspaces",
   topSlot,
   bottomSlot,
   sessions,
@@ -116,9 +120,9 @@ export function AppLeftPane({
       </nav>
 
       <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-2 py-2">
-        <CollapsibleSection title="Workspaces" defaultOpen={false}>
+        <CollapsibleSection title={workspaceSectionTitle} defaultOpen={false}>
           <div className="flex min-h-9 w-full items-center gap-2 rounded-lg bg-foreground/[0.06] px-2.5 py-1.5 text-[13px] font-medium text-foreground">
-            <span className="truncate">{appTitle || "Boring UI"}</span>
+            <span className="truncate">{workspaceLabel || appTitle || "Boring UI"}</span>
           </div>
         </CollapsibleSection>
         <CollapsibleSection title="Chats" defaultOpen>

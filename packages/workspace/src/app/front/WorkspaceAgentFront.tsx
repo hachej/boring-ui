@@ -115,6 +115,8 @@ export interface WorkspaceAgentFrontProps<
   afterShell?: ReactNode
   appTitle?: string
   workspaceLabel?: string
+  /** App-left workspace/project section title. Defaults to "Workspaces". */
+  workspaceSectionTitle?: string
   defaultSessionTitle?: string
   /**
    * Opt into the Phase 2 app/session left-pane shell. Defaults to the
@@ -498,6 +500,7 @@ export function WorkspaceAgentFront<
   onActiveSessionIdChange,
   appTitle = "Boring UI",
   workspaceLabel,
+  workspaceSectionTitle = "Workspaces",
   defaultSessionTitle = "New session",
   workspaceLayout = "classic",
   navEnabled = true,
@@ -1504,6 +1507,8 @@ export function WorkspaceAgentFront<
         <AppLeftPane
           width={effectiveAppLeftPaneWidth}
           appTitle={appTitle}
+          workspaceLabel={workspaceLabel}
+          workspaceSectionTitle={workspaceSectionTitle}
           sessionTitle={remoteSessionsTransitioning ? "Loading sessions…" : resolvedSessionTitle ?? defaultSessionTitle}
           topSlot={topBarLeft}
           bottomSlot={showThemeToggle || topBarRight != null ? <div className="flex items-center gap-2">{topBarRightContent}</div> : undefined}

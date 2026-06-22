@@ -90,7 +90,11 @@ describe("CliWorkspaceShell", () => {
 
     // Must mount the URL workspace, never the fallback.
     await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
-    expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({ workspaceId: "target" })
+    expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+      workspaceId: "target",
+      workspaceLayout: "plugin-tabs",
+      workspaceSectionTitle: "Projects",
+    })
     expect(window.location.pathname).toBe("/workspace/target")
   })
 
@@ -156,6 +160,8 @@ describe("CliWorkspaceShell", () => {
     await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
     expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({
       frontPluginHotReload: "vite",
+      workspaceLayout: "plugin-tabs",
+      workspaceSectionTitle: "Project",
       appTitle: "Folder Workspace",
       plugins: [expect.objectContaining({ pluginId: "ask-user" })],
     })
@@ -251,6 +257,8 @@ describe("CliWorkspaceShell", () => {
     expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({
       workspaceId: "ws-alpha-be8d3c24",
       workspaceLabel: "Alpha Project",
+      workspaceLayout: "plugin-tabs",
+      workspaceSectionTitle: "Projects",
     })
   })
 

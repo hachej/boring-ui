@@ -328,6 +328,8 @@ export function CliWorkspaceShell() {
         key={activeWorkspace.id}
         workspaceId={activeWorkspace.id}
         workspaceLabel={activeWorkspace.name}
+        workspaceSectionTitle="Projects"
+        workspaceLayout="plugin-tabs"
         requestHeaders={requestHeaders}
         authHeaders={requestHeaders}
         plugins={plugins}
@@ -371,6 +373,9 @@ export function CliWorkspaceShell() {
       persistenceEnabled
       providerStorageKey={`boring-ui-v2:layout:${projectName}`}
       appTitle={projectName}
+      workspaceLabel={projectName}
+      workspaceSectionTitle="Project"
+      workspaceLayout="plugin-tabs"
       defaultSessionTitle={projectName}
       activeSessionId={initialSessionId ?? undefined}
       chatParams={{ thinkingControl: true }}
