@@ -1,6 +1,6 @@
 "use client"
 
-import { AlertCircleIcon, ListRestartIcon, Loader2 } from 'lucide-react'
+import { AlertCircleIcon, ExternalLinkIcon, ListRestartIcon, Loader2, XIcon } from 'lucide-react'
 import { IconButton } from '@hachej/boring-ui-kit'
 import type { QueuedUserMessage } from '../../../shared/chat'
 import { ErrorCode } from '../../../shared/error-codes'
@@ -114,18 +114,40 @@ export function ComposerBlockerNotice<
       className={noticeSurfaceClass('info', 'mx-auto mb-2 w-full max-w-3xl text-xs')}
     >
       <span>{label}</span>
-      {blocker?.actions?.map((action) => (
-        <button
-          key={action.id}
-          type="button"
-          className="ml-2 rounded border border-primary/30 px-2 py-0.5 text-[11px] font-medium hover:bg-primary/10"
-          onClick={() => onAction?.(blocker, action.id)}
-        >
-          {action.label}
-        </button>
-      ))}
+      {blocker?.actions?.map((action) => {
+        const icon = composerBlockerActionIcon(action.id)
+        return icon ? (
+          <IconButton
+            key={action.id}
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="ml-1.5 h-6 w-6 rounded-md border border-primary/25 text-muted-foreground hover:bg-primary/10 hover:text-foreground"
+            onClick={() => onAction?.(blocker, action.id)}
+            aria-label={action.label}
+            title={action.label}
+          >
+            {icon}
+          </IconButton>
+        ) : (
+          <button
+            key={action.id}
+            type="button"
+            className="ml-2 rounded border border-primary/30 px-2 py-0.5 text-[11px] font-medium hover:bg-primary/10"
+            onClick={() => onAction?.(blocker, action.id)}
+          >
+            {action.label}
+          </button>
+        )
+      })}
     </div>
   )
+}
+
+function composerBlockerActionIcon(actionId: string): ReactNode | null {
+  if (actionId === 'open') return <ExternalLinkIcon className="size-3.5" aria-hidden="true" />
+  if (actionId === 'cancel') return <XIcon className="size-3.5" aria-hidden="true" />
+  return null
 }
 
 export function QueuedComposerNotice({ followUps, onEdit }: { followUps: QueuedUserMessage[]; onEdit: () => void }) {

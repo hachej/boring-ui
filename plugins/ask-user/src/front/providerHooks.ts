@@ -49,6 +49,9 @@ export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSn
 export function useAskUserAutoOpen(runtime: QuestionsRuntime, activeSessionId: string | null | undefined, pendingSnapshot: string): void {
   const autoOpenedQuestionsRef = useRef(new Set<string>())
   useEffect(() => {
+    for (const hint of runtime.getPendingHints()) {
+      if (!isSessionOpen(runtime, hint.sessionId)) autoOpenedQuestionsRef.current.delete(`${hint.sessionId}:${hint.questionId}`)
+    }
     if (!activeSessionId || !isSessionOpen(runtime, activeSessionId)) return
     const hint = runtime.getPendingHints().find((candidate) => candidate.sessionId === activeSessionId)
     if (!hint || (hint.status && hint.status !== "ready")) return

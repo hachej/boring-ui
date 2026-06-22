@@ -45,6 +45,12 @@ function pendingStateForMany(questions: AskUserQuestion[]) {
   }
 }
 
+function isOpenQuestionCommand(value: unknown, questionId: string): boolean {
+  if (!value || typeof value !== "object") return false
+  const command = value as { kind?: unknown; params?: { kind?: unknown; target?: unknown } }
+  return command.kind === "openSurface" && command.params?.kind === "questions" && command.params?.target === questionId
+}
+
 function getProvider() {
   return capturedPlugin.registrations.providers[0]!.component as any
 }
@@ -353,6 +359,34 @@ describe("askUserPlugin front shell", () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.cancel") && String(init?.body).includes(s2Question.sessionId))).toBe(true))
     expect(pendingBySession.has(s1Question.sessionId)).toBe(true)
     expect(pendingBySession.has(s2Question.sessionId)).toBe(false)
+  })
+
+  it("re-opens Questions when a hidden pending session becomes visible again", async () => {
+    const reopenQuestion = { ...question, questionId: "reopen-q1", sessionId: "reopen-s1", title: "Reopen me", answerToken: "reopen-token-1" }
+    const commands: unknown[] = []
+    const onCommand = (event: Event) => commands.push((event as CustomEvent).detail)
+    window.addEventListener(UI_COMMAND_EVENT, onCommand)
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: reopenQuestion } })
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(reopenQuestion))
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+
+    try {
+      const view = render(<Provider apiBaseUrl="" activeSessionId={reopenQuestion.sessionId} openSessionIds={[reopenQuestion.sessionId]}><div>child</div></Provider>)
+      await waitFor(() => expect(commands.filter((cmd) => isOpenQuestionCommand(cmd, reopenQuestion.questionId))).toHaveLength(1))
+
+      view.rerender(<Provider apiBaseUrl="" activeSessionId="other-visible-session" openSessionIds={["other-visible-session"]}><div>child</div></Provider>)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(commands.filter((cmd) => isOpenQuestionCommand(cmd, reopenQuestion.questionId))).toHaveLength(1)
+
+      view.rerender(<Provider apiBaseUrl="" activeSessionId={reopenQuestion.sessionId} openSessionIds={[reopenQuestion.sessionId]}><div>child</div></Provider>)
+      await waitFor(() => expect(commands.filter((cmd) => isOpenQuestionCommand(cmd, reopenQuestion.questionId))).toHaveLength(2))
+    } finally {
+      window.removeEventListener(UI_COMMAND_EVENT, onCommand)
+    }
   })
 
   it("does not auto-open Questions for a pending session that is not open in the app", async () => {
