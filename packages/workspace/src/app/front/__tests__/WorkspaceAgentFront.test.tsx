@@ -385,6 +385,27 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByRole("button", { name: "Open app navigation" })).toBeInTheDocument()
   })
 
+  it("can hide plugin-tabs Skills and Plugins actions", () => {
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-hidden-overlays"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "First session" }]}
+        activeSessionId="s1"
+        showSkills={false}
+        showPlugins={false}
+        persistenceEnabled={false}
+      />,
+    )
+
+    const appNav = screen.getByLabelText("App navigation")
+    expect(within(appNav).getByRole("button", { name: "New chat" })).toBeInTheDocument()
+    expect(within(appNav).getByRole("button", { name: "Search" })).toBeInTheDocument()
+    expect(within(appNav).queryByRole("button", { name: "Skills" })).not.toBeInTheDocument()
+    expect(within(appNav).queryByRole("button", { name: "Plugins" })).not.toBeInTheDocument()
+  })
+
   it("opens the Plugins overlay from the app nav and lists external plugins only", async () => {
     const user = userEvent.setup()
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
@@ -495,8 +516,12 @@ describe("WorkspaceAgentFront", () => {
       })
       expect(screen.getByText("/review")).toBeInTheDocument()
 
+      await user.click(screen.getByRole("button", { name: "Hide app navigation" }))
+      expect(screen.getByText("Skills").closest("header")?.className).toContain("pl-12")
+
       await user.click(screen.getByRole("button", { name: "Close skills" }))
       expect(screen.queryByText("/review")).not.toBeInTheDocument()
+      await user.click(screen.getByRole("button", { name: "Open app navigation" }))
       await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Skills" }))
       await waitFor(() => expect(screen.getByText("/review")).toBeInTheDocument())
 

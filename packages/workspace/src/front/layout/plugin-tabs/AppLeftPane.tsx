@@ -26,6 +26,8 @@ export interface AppLeftPaneProps {
   onSwitchSession: (id: string) => void
   onOpenSessionAsPane: (id: string) => void
   onToggleSessionPinned: (id: string) => void
+  showPlugins?: boolean
+  showSkills?: boolean
   onOpenPlugins: () => void
   onOpenSkills: () => void
 
@@ -47,6 +49,8 @@ export function AppLeftPane({
   onSwitchSession,
   onOpenSessionAsPane,
   onToggleSessionPinned,
+  showPlugins = true,
+  showSkills = true,
   onOpenPlugins,
   onOpenSkills,
 }: AppLeftPaneProps) {
@@ -107,8 +111,8 @@ export function AppLeftPane({
       <nav className="shrink-0 space-y-1 border-b border-border/60 px-2 py-2" aria-label="Primary workspace actions">
         <PrimaryAction icon={<Plus className="h-4 w-4" strokeWidth={1.75} />} label="New chat" onClick={onCreateSession} />
         <PrimaryAction icon={<Search className="h-4 w-4" strokeWidth={1.75} />} label="Search" onClick={onOpenCommandPalette} />
-        <PrimaryAction icon={<Plug className="h-4 w-4" strokeWidth={1.75} />} label="Plugins" onClick={onOpenPlugins} />
-        <PrimaryAction icon={<Sparkles className="h-4 w-4" strokeWidth={1.75} />} label="Skills" onClick={onOpenSkills} />
+        {showPlugins ? <PrimaryAction icon={<Plug className="h-4 w-4" strokeWidth={1.75} />} label="Plugins" onClick={onOpenPlugins} /> : null}
+        {showSkills ? <PrimaryAction icon={<Sparkles className="h-4 w-4" strokeWidth={1.75} />} label="Skills" onClick={onOpenSkills} /> : null}
       </nav>
 
       <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-2 py-2">

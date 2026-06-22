@@ -12,6 +12,8 @@ export interface PluginsOverlayProps {
   /** Reload external/runtime plugins. The host owns the exact session-aware
    *  reload payload; this overlay owns only the chrome. */
   onReloadExternalPlugins?: () => Promise<string | undefined> | string | undefined
+  /** Reserve room for shell-level chrome that floats over collapsed app nav. */
+  headerInsetStart?: boolean
 }
 
 interface ExternalPluginEntry {
@@ -48,7 +50,7 @@ function upsertPlugin(plugins: ExternalPluginEntry[], plugin: ExternalPluginEntr
  * Lists only runtime/external plugins; statically bundled app plugins (Deck,
  * Questions, etc.) are intentionally hidden here.
  */
-export function PluginsOverlay({ onClose, onReloadExternalPlugins }: PluginsOverlayProps) {
+export function PluginsOverlay({ onClose, onReloadExternalPlugins, headerInsetStart = false }: PluginsOverlayProps) {
   const client = useWorkspacePluginClient()
   const [state, setState] = useState<LoadState>({ status: "loading", plugins: [] })
   const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(() => new Set())
@@ -147,7 +149,10 @@ export function PluginsOverlay({ onClose, onReloadExternalPlugins }: PluginsOver
 
   return (
     <div data-boring-workspace-part="plugins-overlay" className="flex h-full min-h-0 flex-col bg-background">
-      <header className="flex h-12 shrink-0 items-center justify-between border-b border-border/60 px-4">
+      <header className={cn(
+        "flex h-12 shrink-0 items-center justify-between border-b border-border/60 pr-4",
+        headerInsetStart ? "pl-12" : "pl-4",
+      )}>
         <div className="flex min-w-0 items-center gap-2">
           <span className="grid size-7 place-items-center rounded-lg bg-foreground/[0.06] text-muted-foreground">
             <Plug className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />

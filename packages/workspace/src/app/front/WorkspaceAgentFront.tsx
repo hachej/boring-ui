@@ -136,6 +136,10 @@ export interface WorkspaceAgentFrontProps<
    * UserMenu) should set this to false to avoid a duplicate control.
    */
   showThemeToggle?: boolean
+  /** Show the plugin-tabs Skills action/overlay. Defaults to true. */
+  showSkills?: boolean
+  /** Show the plugin-tabs Plugins action/overlay. Defaults to true. */
+  showPlugins?: boolean
   sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number; turnCount?: number }>
   activeSessionId?: string | null
   onSwitchSession?: (id: string) => void
@@ -505,6 +509,8 @@ export function WorkspaceAgentFront<
   topBarLeft,
   topBarRight,
   showThemeToggle = true,
+  showSkills = true,
+  showPlugins = true,
   chatParams,
   externalPlugins,
   hotReloadEnabled,
@@ -532,6 +538,8 @@ export function WorkspaceAgentFront<
   )
   const shellPersistenceEnabled = persistenceEnabled !== false
   const isPluginTabsLayout = workspaceLayout === "plugin-tabs"
+  const skillsActionEnabled = showSkills !== false
+  const pluginsActionEnabled = showPlugins !== false
   // Skills is only ever a chat-left overlay (see leftOverlay node below); it is
   // intentionally NOT registered as a workspace panel so it never appears in the
   // workbench surface.
@@ -834,6 +842,11 @@ export function WorkspaceAgentFront<
   )
   const effectiveAppLeftPaneWidth = clampNumber(appLeftPaneWidth, 220, 420)
   const [leftOverlay, setLeftOverlay] = useState<"skills" | "plugins" | null>(null)
+  useEffect(() => {
+    if ((leftOverlay === "skills" && !skillsActionEnabled) || (leftOverlay === "plugins" && !pluginsActionEnabled)) {
+      setLeftOverlay(null)
+    }
+  }, [leftOverlay, pluginsActionEnabled, skillsActionEnabled])
   const effectiveNavOpen = navEnabled && navOpen
   const [surfaceOpen, setSurfaceOpen] = useStoredBooleanState(
     // Key must NOT match resolvedSurfaceStorageKey (which stores the dockview
@@ -1417,12 +1430,16 @@ export function WorkspaceAgentFront<
         }
       : undefined
   ), [activeChatPaneId, chatPaneIds, isPluginTabsLayout, openChatPane, resolvedSessions, switchToChatPane])
-  const leftOverlayNode = leftOverlay === "skills" ? (
-    <SkillsPage onClose={() => setLeftOverlay(null)} />
-  ) : leftOverlay === "plugins" ? (
+  const leftOverlayNode = leftOverlay === "skills" && skillsActionEnabled ? (
+    <SkillsPage
+      onClose={() => setLeftOverlay(null)}
+      headerInsetStart={appLeftPaneCollapsed}
+    />
+  ) : leftOverlay === "plugins" && pluginsActionEnabled ? (
     <PluginsOverlay
       onClose={() => setLeftOverlay(null)}
       onReloadExternalPlugins={() => reloadAgentPluginsForSession(effectiveActiveSessionId ?? chatSessionId)}
+      headerInsetStart={appLeftPaneCollapsed}
     />
   ) : null
   const mainContent = remoteSessionsTransitioning ? (
@@ -1499,8 +1516,14 @@ export function WorkspaceAgentFront<
           onSwitchSession={switchToChatPane}
           onOpenSessionAsPane={openChatPane}
           onToggleSessionPinned={toggleSessionPinned}
-          onOpenPlugins={() => setLeftOverlay((cur) => cur === "plugins" ? null : "plugins")}
-          onOpenSkills={() => setLeftOverlay((cur) => cur === "skills" ? null : "skills")}
+          showPlugins={pluginsActionEnabled}
+          showSkills={skillsActionEnabled}
+          onOpenPlugins={() => {
+            if (pluginsActionEnabled) setLeftOverlay((cur) => cur === "plugins" ? null : "plugins")
+          }}
+          onOpenSkills={() => {
+            if (skillsActionEnabled) setLeftOverlay((cur) => cur === "skills" ? null : "skills")
+          }}
         />
       )}
     >

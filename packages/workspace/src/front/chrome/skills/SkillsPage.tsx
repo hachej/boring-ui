@@ -30,9 +30,11 @@ export type SkillsPageProps = Partial<PaneProps> & {
   /** When provided, renders a close control in the header — used when Skills
    *  is hosted as a chat left overlay rather than a workspace panel. */
   onClose?: () => void
+  /** Reserve room for shell-level chrome that floats over collapsed app nav. */
+  headerInsetStart?: boolean
 }
 
-export function SkillsPage({ onClose }: SkillsPageProps) {
+export function SkillsPage({ onClose, headerInsetStart = false }: SkillsPageProps) {
   const client = useWorkspacePluginClient()
   const [state, setState] = useState<LoadState>({ status: "loading", skills: [] })
 
@@ -71,7 +73,10 @@ export function SkillsPage({ onClose }: SkillsPageProps) {
 
   return (
     <div data-boring-workspace-part="skills-page" className="flex h-full min-h-0 flex-col bg-background">
-      <header className="flex h-12 shrink-0 items-center justify-between border-b border-border/60 px-4">
+      <header className={cn(
+        "flex h-12 shrink-0 items-center justify-between border-b border-border/60 pr-4",
+        headerInsetStart ? "pl-12" : "pl-4",
+      )}>
         <div className="flex min-w-0 items-center gap-2">
           <span className="grid size-7 place-items-center rounded-lg bg-[color:oklch(from_var(--accent)_l_c_h/0.12)] text-[color:var(--accent)]">
             <Sparkles className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
