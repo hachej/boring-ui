@@ -17,7 +17,7 @@ import type {
 } from "../../front/chrome/artifact-surface/SurfaceShell"
 import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
-import { AppLeftPane } from "../../front/layout/plugin-tabs/AppLeftPane"
+import { AppLeftPane, type AppLeftPaneProject } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
 import { useRegistry, useSurfaceResolverRegistry } from "../../front/registry"
 import { captureFrontPlugin } from "../../shared/plugins/frontFactory"
@@ -117,6 +117,12 @@ export interface WorkspaceAgentFrontProps<
   workspaceLabel?: string
   /** App-left workspace/project section title. Defaults to "Workspaces". */
   workspaceSectionTitle?: string
+  /** Optional cross-project overview rendered in the app-left workspace/project section. */
+  appLeftProjects?: AppLeftPaneProject[]
+  appLeftActiveProjectId?: string | null
+  onSwitchAppLeftProject?: (projectId: string) => void
+  onOpenAppLeftProjectSession?: (projectId: string, sessionId: string) => void
+  onShowMoreAppLeftProjectSessions?: (projectId: string) => void
   defaultSessionTitle?: string
   /**
    * Opt into the Phase 2 app/session left-pane shell. Defaults to the
@@ -501,6 +507,11 @@ export function WorkspaceAgentFront<
   appTitle = "Boring UI",
   workspaceLabel,
   workspaceSectionTitle = "Workspaces",
+  appLeftProjects,
+  appLeftActiveProjectId,
+  onSwitchAppLeftProject,
+  onOpenAppLeftProjectSession,
+  onShowMoreAppLeftProjectSessions,
   defaultSessionTitle = "New session",
   workspaceLayout = "classic",
   navEnabled = true,
@@ -1509,9 +1520,14 @@ export function WorkspaceAgentFront<
           appTitle={appTitle}
           workspaceLabel={workspaceLabel}
           workspaceSectionTitle={workspaceSectionTitle}
+          projects={appLeftProjects}
+          activeProjectId={appLeftActiveProjectId ?? workspaceId}
+          onSwitchProject={onSwitchAppLeftProject}
+          onOpenProjectSession={onOpenAppLeftProjectSession}
+          onShowMoreProjectSessions={onShowMoreAppLeftProjectSessions}
           sessionTitle={remoteSessionsTransitioning ? "Loading sessions…" : resolvedSessionTitle ?? defaultSessionTitle}
           topSlot={topBarLeft}
-          bottomSlot={showThemeToggle || topBarRight != null ? <div className="flex items-center gap-2">{topBarRightContent}</div> : undefined}
+          bottomSlot={showThemeToggle || topBarRight != null ? <div className="flex w-full min-w-0 items-center gap-2">{topBarRightContent}</div> : undefined}
           sessions={resolvedSessions}
           activeSessionId={activeChatPaneId}
           openSessionIds={chatPaneIds}

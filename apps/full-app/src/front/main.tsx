@@ -130,10 +130,12 @@ createRoot(document.getElementById('root')!).render(
       }}
       authPages={{ userSettings: AccountSettingsPage }}
       topBarRight={
-        <>
+        <div className="flex w-full min-w-0 flex-col gap-2">
           <CreditBalanceBadge buyEnabled={buyEnabled} />
-          <UserMenu contentSide="top" contentAlign="start" />
-        </>
+          <div className="flex justify-end">
+            <UserMenu contentSide="top" contentAlign="start" />
+          </div>
+        </div>
       }
     />
     {/* Post-checkout return (LS redirects to ?checkout=return); confirms server-side. */}

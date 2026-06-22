@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState, type ReactNode } from "react"
-import { ChevronRight, Clock3, MessageSquarePlus, Pin, Plug, Plus, Search, Sparkles } from "lucide-react"
+import { ChevronRight, Clock3, Folder, FolderOpen, MessageSquarePlus, Pin, Plug, Plus, Search, Sparkles } from "lucide-react"
 import { cn } from "../../lib/utils"
 
 export interface AppLeftPaneSession {
@@ -11,11 +11,32 @@ export interface AppLeftPaneSession {
   turnCount?: number
 }
 
+export interface AppLeftPaneProjectSession {
+  id: string
+  title?: string | null
+  updatedAt?: string | number
+}
+
+export interface AppLeftPaneProject {
+  id: string
+  name: string
+  available?: boolean
+  sessionCount?: number
+  sessions?: AppLeftPaneProjectSession[]
+  hasMoreSessions?: boolean
+  loadingSessions?: boolean
+}
+
 export interface AppLeftPaneProps {
   width?: number
   appTitle?: string
   workspaceLabel?: string
   workspaceSectionTitle?: string
+  projects?: AppLeftPaneProject[]
+  activeProjectId?: string | null
+  onSwitchProject?: (projectId: string) => void
+  onOpenProjectSession?: (projectId: string, sessionId: string) => void
+  onShowMoreProjectSessions?: (projectId: string) => void
   sessionTitle?: string
   topSlot?: ReactNode
   bottomSlot?: ReactNode
@@ -42,6 +63,11 @@ export function AppLeftPane({
   appTitle,
   workspaceLabel,
   workspaceSectionTitle = "Workspaces",
+  projects,
+  activeProjectId,
+  onSwitchProject,
+  onOpenProjectSession,
+  onShowMoreProjectSessions,
   topSlot,
   bottomSlot,
   sessions,
@@ -70,6 +96,7 @@ export function AppLeftPane({
     () => sessions.filter((session) => !pinnedSet.has(session.id)),
     [pinnedSet, sessions],
   )
+  const projectItems = useMemo(() => projects ?? [], [projects])
   const renderSession = (session: AppLeftPaneSession, pinned: boolean) => {
     const state: SessionRowState = session.id === activeSessionId
       ? "active"
@@ -120,10 +147,21 @@ export function AppLeftPane({
       </nav>
 
       <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-2 py-2">
-        <CollapsibleSection title={workspaceSectionTitle} defaultOpen={false}>
-          <div className="flex min-h-9 w-full items-center gap-2 rounded-lg bg-foreground/[0.06] px-2.5 py-1.5 text-[13px] font-medium text-foreground">
-            <span className="truncate">{workspaceLabel || appTitle || "Boring UI"}</span>
-          </div>
+        <CollapsibleSection title={workspaceSectionTitle} defaultOpen={projectItems.length > 0}>
+          {projectItems.length > 0 ? (
+            <ProjectOverview
+              projects={projectItems}
+              activeProjectId={activeProjectId}
+              fallbackName={workspaceLabel || appTitle || "Boring UI"}
+              onSwitchProject={onSwitchProject}
+              onOpenProjectSession={onOpenProjectSession}
+              onShowMoreProjectSessions={onShowMoreProjectSessions}
+            />
+          ) : (
+            <div className="flex min-h-9 w-full items-center gap-2 rounded-lg bg-foreground/[0.06] px-2.5 py-1.5 text-[13px] font-medium text-foreground">
+              <span className="truncate">{workspaceLabel || appTitle || "Boring UI"}</span>
+            </div>
+          )}
         </CollapsibleSection>
         <CollapsibleSection title="Chats" defaultOpen>
           <SessionSubSection title="Pinned" empty="No pinned sessions yet.">
@@ -138,6 +176,124 @@ export function AppLeftPane({
       {bottomSlot ? <footer className="shrink-0 border-t border-border/60 p-2">{bottomSlot}</footer> : null}
     </aside>
   )
+}
+
+function ProjectOverview({
+  projects,
+  activeProjectId,
+  fallbackName,
+  onSwitchProject,
+  onOpenProjectSession,
+  onShowMoreProjectSessions,
+}: {
+  projects: AppLeftPaneProject[]
+  activeProjectId?: string | null
+  fallbackName: string
+  onSwitchProject?: (projectId: string) => void
+  onOpenProjectSession?: (projectId: string, sessionId: string) => void
+  onShowMoreProjectSessions?: (projectId: string) => void
+}) {
+  const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(() => (
+    activeProjectId ? new Set([activeProjectId]) : new Set(projects[0]?.id ? [projects[0].id] : [])
+  ))
+
+  const activeId = activeProjectId ?? projects[0]?.id ?? null
+
+  return (
+    <div className="space-y-1">
+      {projects.map((project) => {
+        const active = project.id === activeId
+        const expanded = expandedIds.has(project.id) || active
+        const sessions = project.sessions ?? []
+        const count = project.sessionCount ?? sessions.length
+        const unavailable = project.available === false
+        return (
+          <div key={project.id} className="space-y-0.5">
+            <button
+              type="button"
+              aria-expanded={expanded}
+              aria-current={active ? "page" : undefined}
+              onClick={() => {
+                if (!active && !unavailable) onSwitchProject?.(project.id)
+                setExpandedIds((current) => {
+                  const next = new Set(current)
+                  if (next.has(project.id) && !active) next.delete(project.id)
+                  else next.add(project.id)
+                  return next
+                })
+              }}
+              className={cn(
+                "group flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                active
+                  ? "bg-foreground/[0.085] text-foreground"
+                  : unavailable
+                    ? "text-muted-foreground/45"
+                    : "text-foreground/84 hover:bg-foreground/[0.055] hover:text-foreground",
+              )}
+            >
+              {expanded ? (
+                <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} aria-hidden="true" />
+              ) : (
+                <Folder className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} aria-hidden="true" />
+              )}
+              <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{project.name || fallbackName}</span>
+              {count > 0 ? (
+                <span className="grid min-w-6 place-items-center rounded-full bg-foreground/[0.08] px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  {count > 99 ? "99+" : count}
+                </span>
+              ) : null}
+            </button>
+            {expanded ? (
+              <div className="space-y-0.5 pl-8">
+                {project.loadingSessions && sessions.length === 0 ? (
+                  <div className="px-1 py-1.5 text-xs text-muted-foreground/70">Loading sessions…</div>
+                ) : sessions.length === 0 ? (
+                  <div className="px-1 py-1.5 text-xs text-muted-foreground/70">No sessions yet.</div>
+                ) : (
+                  sessions.map((session) => (
+                    <button
+                      key={session.id}
+                      type="button"
+                      onClick={() => onOpenProjectSession?.(project.id, session.id)}
+                      className="flex min-h-8 w-full items-center gap-2 rounded-md px-1 py-1 text-left text-[13px] text-foreground/78 hover:bg-foreground/[0.045] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                    >
+                      <span className="min-w-0 flex-1 truncate">{session.title || "Untitled"}</span>
+                      {session.updatedAt ? <span className="shrink-0 text-xs text-muted-foreground/70">{relativeSessionTime(session.updatedAt)}</span> : null}
+                    </button>
+                  ))
+                )}
+                {project.hasMoreSessions ? (
+                  <button
+                    type="button"
+                    onClick={() => onShowMoreProjectSessions?.(project.id)}
+                    className="rounded-md px-1 py-1 text-left text-[13px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  >
+                    Show more
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function relativeSessionTime(value: string | number): string {
+  const timestamp = typeof value === "number" ? value : Date.parse(value)
+  if (!Number.isFinite(timestamp)) return ""
+  const diffMs = Date.now() - timestamp
+  if (diffMs < 60_000) return "now"
+  const minutes = Math.floor(diffMs / 60_000)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h`
+  const days = Math.floor(hours / 24)
+  if (days < 14) return `${days}d`
+  const weeks = Math.floor(days / 7)
+  if (weeks < 10) return `${weeks}w`
+  return `${Math.floor(days / 30)}mo`
 }
 
 function PrimaryAction({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
