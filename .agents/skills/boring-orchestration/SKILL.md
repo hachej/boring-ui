@@ -19,10 +19,10 @@ Run `/triage`. One issue, one next action. Do not invent extra states.
 
 | Gate | Action |
 | --- | --- |
-| `clarity` | `/loop-grill`: grill-me plus ask-user; stay `state:blocked phase:grill` |
+| `clarity` | use `loop-grill`: grill-me plus ask-user; stay `state:blocked phase:grill` |
 | `risk` | keep `track:owner`; upgrade to `track:fast` only when all fast-track rules pass |
-| `plan` | `/loop-plan`: smallest useful plan; plan file plus thermo review for risky or multi-PR work |
-| `implementation` | `/loop-implement`: one worker lane for one issue/PR |
+| `plan` | use `loop-plan`: smallest useful plan; plan file plus thermo review for risky or multi-PR work |
+| `implementation` | use `loop-implement`: one worker lane for one issue/PR |
 | `proof` | tests, CI, screenshots, demo workspace proof when useful |
 | `merge` | fast-track merge or owner review |
 

@@ -97,6 +97,12 @@ packages/workspace/src/plugins/eval-*/
 !/.agents/skills/boring-orchestration/**
 !/.agents/skills/boring-triage/
 !/.agents/skills/boring-triage/**
+!/.agents/skills/loop-grill/
+!/.agents/skills/loop-grill/**
+!/.agents/skills/loop-plan/
+!/.agents/skills/loop-plan/**
+!/.agents/skills/loop-implement/
+!/.agents/skills/loop-implement/**
 /skills/
 /skills-lock.json
 /.adal/

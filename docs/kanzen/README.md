@@ -20,6 +20,10 @@ Read:
   - orchestration skill.
 - [`boring-triage`](../../.agents/skills/boring-triage/SKILL.md) - triage
   skill.
+- [`loop-grill`](../../.agents/skills/loop-grill/SKILL.md) - clarity loop.
+- [`loop-plan`](../../.agents/skills/loop-plan/SKILL.md) - planning loop.
+- [`loop-implement`](../../.agents/skills/loop-implement/SKILL.md)
+  - implementation loop.
 
 Source notes live in [`sources/`](sources/):
 
