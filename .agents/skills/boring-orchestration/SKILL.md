@@ -1,51 +1,52 @@
 ---
 name: boring-orchestration
-description: "Use for scheduled /triage: refresh GitHub, run the first unmet gate, collect proof, and merge only fast-track-safe PRs."
+description: "Use to run /triage for boring-ui: refresh GitHub state, apply triage gates, run grill/plan/implement subloops, collect proof, and merge only fast-track-safe PRs."
 ---
 
 # Boring Orchestration
 
-Run scheduled `/triage`.
-
-Canonical model: `../../../docs/kanzen/boring-loop.md`.
-How-to details: `../../../docs/kanzen/procedures/` and
-`../../../docs/procedures/proof-of-work.md`.
+Run `/triage`. One issue, one next action. Do not invent extra states.
 
 ## Sweep
 
-1. Refresh issues, PRs, comments, labels, CI, reviews, proof, head SHA, sessions.
-2. Read newest owner instruction.
-3. Run `boring-triage`.
-4. Execute first unmet gate only.
-5. Record labels, gate, proof/reviewed SHA, next action, sessions.
+1. Refresh issues, PRs, comments, labels, CI, reviews, proof, and head SHA.
+2. Read newest Julien/owner instruction first.
+3. Run `boring-triage` on queued or stale items.
+4. Execute the first unmet gate only.
+5. Record labels, gate, proof, reviewed SHA, and next action.
 
-## Gates
+## Gate Actions
 
 | Gate | Action |
 | --- | --- |
-| `intake` | repair issue body: context, redaction note, first plan |
-| `clarity` | `/loop-grill`; use grill-me plus ask-user when async |
-| `risk` | keep `track:owner`; upgrade only when fast-track rules pass |
-| `flag` | require `not-needed`, safe feature flag, or abstraction path |
-| `plan` | use `boring-loop-plan`; issue-linked plan for risky or multi-PR work |
-| `implementation` | use `boring-loop-implement`; one parent lane owns one issue/PR |
-| `proof` | tests, CI, proof-of-work comment, screenshots, and demo proof when useful |
-| `merge` | fast-track merge if all gates pass, otherwise owner review |
+| `clarity` | `/loop-grill`: grill-me plus ask-user; stay `state:blocked phase:grill` |
+| `risk` | keep `track:owner`; upgrade to `track:fast` only when all fast-track rules pass |
+| `plan` | `/loop-plan`: smallest useful plan; plan file plus thermo review for risky or multi-PR work |
+| `implementation` | `/loop-implement`: one worker lane for one issue/PR |
+| `proof` | tests, CI, screenshots, demo workspace proof when useful |
+| `merge` | fast-track merge or owner review |
 
-## Rules
+## Worker Rule
 
-- Labels: only `state:*`, `phase:*`, `track:*`, optional `source:feedback`.
-- Sessions: comments only; include id, purpose, scope, reason.
-- Lane: one parent thread/run, one checkout context, one GitHub item.
-- Subagents: allowed for slices/review; return findings to parent lane.
-- Trunk/budget: `../../../docs/kanzen/procedures/trunk-flags-review-budget.md`.
-- Issue plans: `../../../docs/kanzen/procedures/issue-plans.md`.
-- Commit/coding rules: `../../../docs/kanzen/procedures/coding-rules.md`.
-- Review: fix/re-review plus thermo until clean or blocked.
-- Head SHA: proof, review, thermo must match.
-- Owner review: use `../../../docs/kanzen/procedures/visual-review.md`.
+One lane means one Codex/Kanzen thread/run, one branch/worktree, one GitHub
+item. Stop for missing owner input, missing access, destructive actions,
+release/publish work, or merge without policy permission.
 
-## Merge
+## Review Rule
 
-- Apply fast-track checklist in `../../../docs/kanzen/boring-loop.md`.
-- If any item fails: owner review brief, `track:owner`.
+For non-trivial work, run review/fix/re-review plus thermo-nuclear
+implementation review. Proof and review must match the current head SHA.
+
+## Merge Rule
+
+Auto-merge only when:
+
+- labels include `state:ready phase:merge track:fast`;
+- author/agent is trusted by repo policy;
+- PR is non-draft on a worker-owned branch;
+- CI, tests, review, thermo check, and proof are current;
+- no restricted area is touched;
+- proof comment is posted.
+
+Otherwise set `track:owner` and prepare a short ask-user/PR review brief for
+Julien.
