@@ -449,7 +449,7 @@ describe("WorkspaceAgentFront", () => {
     expect(overlay!).not.toHaveTextContent("Demo Plugin")
     expect(overlay!).not.toHaveTextContent("Demo Panel")
 
-    await user.click(screen.getByRole("button", { name: "Close plugins" }))
+    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
     expect(document.querySelector('[data-boring-workspace-part="plugins-overlay"]')).toBeNull()
   })
 
@@ -524,6 +524,8 @@ describe("WorkspaceAgentFront", () => {
       await user.click(screen.getByRole("button", { name: "Open app navigation" }))
       await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Skills" }))
       await waitFor(() => expect(screen.getByText("/review")).toBeInTheDocument())
+      await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
+      expect(screen.queryByText("/review")).not.toBeInTheDocument()
 
     } finally {
       window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)

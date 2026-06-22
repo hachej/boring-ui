@@ -10,7 +10,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react"
-import { PanelLeft, Search, X } from "lucide-react"
+import { PanelLeftClose, Search, X } from "lucide-react"
 import { IconButton, Input } from "@hachej/boring-ui-kit"
 import { ControlTooltip } from "../../components/ControlTooltip"
 import { cn } from "../../lib/utils"
@@ -236,7 +236,7 @@ export function WorkbenchLeftPane({
     >
       {onCollapse && (
         <PaneCollapseButton label="Hide workspace menu" side="right" onClick={onCollapse} className="mb-1">
-          <PanelLeft className="h-4 w-4" strokeWidth={1.75} />
+          <PanelLeftClose className="h-4 w-4" strokeWidth={1.75} />
         </PaneCollapseButton>
       )}
       {tabs.map((entry) => {

@@ -1,6 +1,6 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from "react"
 import { IconButton, LoadingState, ResizeHandle as UiResizeHandle } from "@hachej/boring-ui-kit"
-import { Maximize2, Minimize2, PanelRight } from "lucide-react"
+import { Maximize2, Minimize2, PanelRightClose, PanelRightOpen } from "lucide-react"
 import { cn } from "../lib/utils"
 import { ControlTooltip } from "../components/ControlTooltip"
 import { dispatchUiCommand, type DispatchContext } from "../bridge"
@@ -768,7 +768,11 @@ function TopRightWorkspaceControls({
           onClick={onToggleSurface}
           pressed={surfaceOpen}
         >
-          <PanelRight className="size-3" strokeWidth={1.75} />
+          {surfaceOpen ? (
+            <PanelRightClose className="size-3" strokeWidth={1.75} />
+          ) : (
+            <PanelRightOpen className="size-3" strokeWidth={1.75} />
+          )}
         </CornerChromeButton>
       ) : null}
     </div>

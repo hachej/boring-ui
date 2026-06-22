@@ -1511,7 +1511,10 @@ export function WorkspaceAgentFront<
           activeSessionId={activeChatPaneId}
           openSessionIds={chatPaneIds}
           pinnedSessionIds={pinnedIds}
-          onCreateSession={() => { void createChatSession() }}
+          onCreateSession={() => {
+            setLeftOverlay(null)
+            void createChatSession()
+          }}
           onOpenCommandPalette={openCommandPalette}
           onSwitchSession={switchToChatPane}
           onOpenSessionAsPane={openChatPane}

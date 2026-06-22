@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
-import { PanelLeft } from "lucide-react"
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { PaneCollapseButton } from "../paneCollapseButton"
 
@@ -75,17 +75,21 @@ export function PluginTabsWorkspaceShell({
         {children}
       </div>
 
-      {/* One collapse rule: same place, same button style, same plain panel
-          icon in both states. The app pane reserves matching header padding
-          while expanded, and the collapsed chat tab strip keeps 48px leading
-          clearance via dockview-overrides.css. */}
+      {/* One collapse rule: same place and style in both states; only the
+          quiet panel glyph changes to show open vs close mode. The app pane
+          reserves matching header padding while expanded, and the collapsed
+          chat tab strip keeps 48px leading clearance via dockview-overrides.css. */}
       <div className="pointer-events-none absolute left-1.5 top-2 z-[70]">
         <PaneCollapseButton
           label={collapsed ? "Open app navigation" : "Hide app navigation"}
           side="right"
           onClick={collapsed ? onExpand : onCollapse}
         >
-          <PanelLeft className="h-4 w-4" strokeWidth={1.75} />
+          {collapsed ? (
+            <PanelLeftOpen className="h-4 w-4" strokeWidth={1.75} />
+          ) : (
+            <PanelLeftClose className="h-4 w-4" strokeWidth={1.75} />
+          )}
         </PaneCollapseButton>
       </div>
     </div>
