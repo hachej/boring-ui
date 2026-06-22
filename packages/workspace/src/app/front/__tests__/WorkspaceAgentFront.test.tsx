@@ -364,6 +364,7 @@ describe("WorkspaceAgentFront", () => {
     const firstRow = appRows.find((row) => row.textContent?.includes("First session"))
     const secondRow = appRows.find((row) => row.textContent?.includes("Second session"))
     expect(firstRow).toHaveAttribute("data-boring-session-state", "active")
+    expect(firstRow?.className).not.toContain("border-l-2")
     expect(secondRow).toHaveAttribute("data-boring-session-state", "normal")
 
     await user.click(within(secondRow!).getByText("Second session"))
@@ -492,7 +493,12 @@ describe("WorkspaceAgentFront", () => {
         kind: "openFile",
         params: { path: ".agents/skills/review/SKILL.md", mode: "view" },
       })
+      expect(screen.getByText("/review")).toBeInTheDocument()
+
+      await user.click(screen.getByRole("button", { name: "Close skills" }))
       expect(screen.queryByText("/review")).not.toBeInTheDocument()
+      await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Skills" }))
+      await waitFor(() => expect(screen.getByText("/review")).toBeInTheDocument())
 
     } finally {
       window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)

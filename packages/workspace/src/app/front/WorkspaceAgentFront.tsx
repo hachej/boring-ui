@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import {
   PiChatPanel as DefaultPiChatPanel,
   usePiSessions as useDefaultPiSessions,
+  searchPiSessions,
   type SlashCommand,
   type ToolRendererOverrides,
 } from "@hachej/boring-agent/front"
@@ -22,6 +23,7 @@ import { useRegistry, useSurfaceResolverRegistry } from "../../front/registry"
 import { captureFrontPlugin } from "../../shared/plugins/frontFactory"
 import { surfaceResolverDescriptor } from "../../shared/types/surface"
 import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
+import type { CommandPaletteSessionItem } from "../../front/components/CommandPalette"
 import type { CommandResult, DispatchContext, FileTreeBridge, Unsubscribe } from "../../front/bridge"
 import { readStoredBoolean, readStoredNumber, writeStoredBoolean, writeStoredNumber } from "../../front/store/localStorageValues"
 import {
@@ -1409,6 +1411,7 @@ export function WorkspaceAgentFront<
           sessions: resolvedSessions,
           activeId: activeChatPaneId,
           openIds: chatPaneIds,
+          search: (sessions: readonly CommandPaletteSessionItem[], query: string) => searchPiSessions(sessions, query, { limit: 8 }),
           onSwitch: switchToChatPane,
           onOpenAsTab: openChatPane,
         }

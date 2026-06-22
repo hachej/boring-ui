@@ -226,12 +226,12 @@ function AppSessionRow({
         activate()
       }}
       className={cn(
-        "group flex min-h-9 w-full items-center gap-2 rounded-lg border-l-2 px-2.5 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+        "group flex min-h-9 w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
         state === "active"
-          ? "border-l-[color:var(--accent)] bg-foreground/[0.09] text-foreground"
+          ? "border-[color:oklch(from_var(--accent)_l_c_h/0.28)] bg-[color:oklch(from_var(--accent)_l_c_h/0.10)] text-foreground"
           : state === "open"
-            ? "border-l-[color:var(--accent)] bg-transparent text-foreground/90 hover:bg-foreground/[0.04]"
-            : "border-l-transparent text-foreground/78 hover:bg-foreground/[0.055] hover:text-foreground",
+            ? "border-border/45 bg-background/25 text-foreground/90 hover:bg-foreground/[0.04]"
+            : "border-transparent text-foreground/78 hover:border-border/35 hover:bg-foreground/[0.055] hover:text-foreground",
       )}
     >
       <Clock3

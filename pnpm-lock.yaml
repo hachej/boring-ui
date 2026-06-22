@@ -209,6 +209,9 @@ importers:
 
   packages/agent:
     dependencies:
+      '@earendil-works/pi-tui':
+        specifier: 0.75.5
+        version: 0.75.5
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../ui

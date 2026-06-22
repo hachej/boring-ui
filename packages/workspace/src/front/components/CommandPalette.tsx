@@ -58,6 +58,7 @@ export interface CommandPaletteSessionSearchConfig {
   sessions: CommandPaletteSessionItem[]
   activeId?: string | null
   openIds?: readonly string[]
+  search?: (sessions: readonly CommandPaletteSessionItem[], query: string) => CommandPaletteSessionItem[]
   onSwitch: (id: string) => void
   onOpenAsTab: (id: string) => void
 }
@@ -90,6 +91,18 @@ function toFileSearchGlob(query: string): string {
 
 function emptySearchResult(): CatalogSearchResult {
   return { items: [], total: 0, hasMore: false }
+}
+
+function defaultSessionSearch(
+  sessions: readonly CommandPaletteSessionItem[],
+  query: string,
+): CommandPaletteSessionItem[] {
+  const normalized = query.trim().toLowerCase()
+  if (!normalized) return [...sessions]
+  return sessions.filter((session) => {
+    const title = session.title || session.id
+    return title.toLowerCase().includes(normalized) || session.id.toLowerCase().includes(normalized)
+  })
 }
 
 function createFallbackFilesCatalog(): CatalogConfig {
@@ -178,14 +191,10 @@ export function CommandPalette({ sessionSearch }: CommandPaletteProps = {}) {
 
   const sessionResults = useMemo(() => {
     if (!sessionSearch || !isChatMode) return []
-    const normalized = searchQuery.toLowerCase()
-    return sessionSearch.sessions
-      .filter((session) => {
-        if (!normalized) return true
-        const title = session.title || session.id
-        return title.toLowerCase().includes(normalized) || session.id.toLowerCase().includes(normalized)
-      })
-      .slice(0, 8)
+    const results = sessionSearch.search
+      ? sessionSearch.search(sessionSearch.sessions, searchQuery)
+      : defaultSessionSearch(sessionSearch.sessions, searchQuery)
+    return results.slice(0, 8)
   }, [isChatMode, searchQuery, sessionSearch])
 
   const {

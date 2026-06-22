@@ -306,9 +306,16 @@ export function ChatLayout(props: ChatLayoutProps) {
   // the workbench fills the available center area and the chat can be restored
   // from the stable top-right chrome.
   useEffect(() => {
-    if (!surfaceOpen || chatCollapsed) return
+    if (!surfaceOpen || chatCollapsed || props.chatOverlay) return
     if (viewport < 1180) setChatCollapsed(true)
-  }, [chatCollapsed, setChatCollapsed, surfaceOpen, viewport])
+  }, [chatCollapsed, props.chatOverlay, setChatCollapsed, surfaceOpen, viewport])
+
+  // Chat-hosted overlays (Skills/Plugins) must remain visible while workbench
+  // content opens beside them. If chat was collapsed by a previous compact
+  // workbench takeover, opening an overlay restores the chat area first.
+  useEffect(() => {
+    if (props.chatOverlay && chatCollapsed) setChatCollapsed(false)
+  }, [chatCollapsed, props.chatOverlay, setChatCollapsed])
 
   // Never leave a blank middle: if the workbench is closed while the chat is
   // collapsed, re-open the chat. Mirror of "collapsing the chat opens the

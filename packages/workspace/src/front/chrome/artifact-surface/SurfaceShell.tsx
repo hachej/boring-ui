@@ -49,7 +49,7 @@ export interface OpenPanelConfig {
 
 export interface SurfaceShellApi {
   /** Open a file in the workbench. Idempotent — re-activates an existing pane for the same path. */
-  openFile: (path: string) => void
+  openFile: (path: string, opts?: { mode?: "view" | "edit" | "diff" }) => void
   /** Open a plugin-defined surface target through the registered surface resolvers. */
   openSurface: (request: SurfaceOpenRequest) => void
   /**
@@ -189,10 +189,12 @@ let seqCounter = 0
 function fileBackedParams(
   params: Record<string, unknown> | undefined,
   path: string,
+  opts?: { mode?: "view" | "edit" | "diff" },
 ): Record<string, unknown> {
   return {
     ...(params ?? {}),
     path: typeof params?.path === "string" ? params.path : path,
+    ...(opts?.mode ? { mode: opts.mode } : {}),
     [FILE_BACKED_PARAM]: true,
   }
 }
@@ -337,7 +339,7 @@ export function SurfaceShell({
     if (component) applyPanelPlacementTransition(component)
   }, [applyPanelPlacementTransition])
 
-  const openFileSync = useCallback((path: string) => {
+  const openFileSync = useCallback((path: string, opts?: { mode?: "view" | "edit" | "diff" }) => {
     const api = apiRef.current
     if (!api) {
       console.warn("[SurfaceShell] openFile: surface not ready (dockview not initialized)")
@@ -360,7 +362,7 @@ export function SurfaceShell({
         id: panelId,
         component: resolved.component,
         title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
-        params: fileBackedParams(resolved.params, normalizedPath),
+        params: fileBackedParams(resolved.params, normalizedPath, opts),
       })
       return
     }
@@ -393,8 +395,13 @@ export function SurfaceShell({
       fileBackedPanelIdsRef.current.add(panelId)
     }
     const closeWorkbenchOnDone = normalizedRequest.meta?.closeWorkbenchOnDone === true
+    const surfaceMode = normalizedRequest.meta?.mode
     const baseParams = normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
-      ? fileBackedParams(resolved.params, normalizedRequest.target)
+      ? fileBackedParams(
+          resolved.params,
+          normalizedRequest.target,
+          surfaceMode === "view" || surfaceMode === "edit" || surfaceMode === "diff" ? { mode: surfaceMode } : undefined,
+        )
       : resolved.params
     const resolvedParams = closeWorkbenchOnDone && onCloseRef.current
       ? { ...(baseParams ?? {}), __closeWorkbenchOnDone: onCloseRef.current }
@@ -543,7 +550,7 @@ export function SurfaceShell({
 
 
   const openFile = useCallback(
-    async (path: string): Promise<CommandResult> => {
+    async (path: string, opts?: { mode?: "view" | "edit" | "diff" }): Promise<CommandResult> => {
       try {
         const api = apiRef.current
         if (!api) return err("not-ready", "surface not ready")
@@ -566,7 +573,7 @@ export function SurfaceShell({
             id: panelId,
             component: resolved.component,
             title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
-            params: fileBackedParams(resolved.params, normalizedPath),
+            params: fileBackedParams(resolved.params, normalizedPath, opts),
           })
           return ok()
         }

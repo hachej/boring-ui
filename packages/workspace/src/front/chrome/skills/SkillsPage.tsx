@@ -39,8 +39,7 @@ export function SkillsPage({ onClose }: SkillsPageProps) {
   const openSkillInWorkspace = useCallback((skill: SkillSummary) => {
     if (!skill.filePath) return
     postUiCommand({ kind: "openFile", params: { path: skill.filePath, mode: "view" } })
-    onClose?.()
-  }, [onClose])
+  }, [])
 
   const loadSkills = useCallback(async (refresh = false) => {
     setState((current) => ({ status: "loading", skills: current.skills }))

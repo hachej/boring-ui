@@ -239,6 +239,39 @@ describe("CommandPalette", () => {
   })
 
   describe("chat session search", () => {
+    it("uses an injected session search adapter before rendering chat results", async () => {
+      const user = userEvent.setup()
+      const onSwitch = vi.fn()
+      const onOpenAsTab = vi.fn()
+      const search = vi.fn((sessions: readonly { id: string; title?: string | null }[], query: string) => (
+        query === "bbp" ? sessions.filter((session) => session.id === "session-b") : [...sessions]
+      ))
+
+      render(
+        <CommandPalette
+          sessionSearch={{
+            sessions: [
+              { id: "session-a", title: "Alpha plan" },
+              { id: "session-b", title: "Beta build polish" },
+            ],
+            activeId: "session-a",
+            openIds: ["session-a"],
+            search,
+            onSwitch,
+            onOpenAsTab,
+          }}
+        />,
+        { wrapper: createWrapper() },
+      )
+
+      fireKeydown("k", { metaKey: true })
+      await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument())
+      await typePaletteQuery(user, "bbp")
+      expect(search).toHaveBeenLastCalledWith(expect.any(Array), "bbp")
+      expect(screen.getByRole("option", { name: /Beta build polish/ })).toBeInTheDocument()
+      expect(screen.queryByRole("option", { name: /Alpha plan/ })).not.toBeInTheDocument()
+    })
+
     it("shows session results and routes select/split actions", async () => {
       const user = userEvent.setup()
       const onSwitch = vi.fn()
