@@ -1,12 +1,19 @@
 # Kanzen
 
-Kanzen is the boring-ui maintainer loop: capture feedback, enrich it into
-GitHub work, triage risk, route safe work to workers, prove changes, review
-them, and merge only when policy allows.
+Kanzen is the boring-ui maintainer loop:
+
+```text
+/feedback -> enriched GitHub issue
+/triage   -> grill, plan, implement, review, prove, or merge
+```
+
+Keep it simple: state says whether work can move, phase says what kind of work
+is next, gates say why it cannot move yet.
 
 Read:
 
-- [`boring-loop.md`](boring-loop.md) - vision and product shape.
+- [`boring-loop.md`](boring-loop.md) - clean model, labels, gates, and product
+  shape.
 - [`boring-feedback`](../../.agents/skills/boring-feedback/SKILL.md)
   - `/feedback` intake skill.
 - [`boring-orchestration`](../../.agents/skills/boring-orchestration/SKILL.md)

@@ -92,15 +92,28 @@ vault kv list secret/agent/app/
 
 The agent token is read-only for `secret/agent/*` and `secret/shared/*`.
 
-## GitHub labels
+## GitHub Labels
 
-Every issue should have exactly one `status:` label plus relevant package/plugin labels.
+Default repo issues should have exactly one `status:` label plus relevant
+package/plugin labels.
 
-Status flow:
+Default status flow:
 
 ```text
 status:to-plan → status:to-plan-review → status:to-code → status:to-code-review → closed
 ```
+
+Kanzen-managed issues are the exception. When an issue is created or routed by
+`/feedback`, `boring-triage`, or `boring-orchestration`, use the Kanzen label
+set instead of `status:*`:
+
+```text
+one state:* + one phase:* + one track:*
+```
+
+Do not mix `status:*` and Kanzen state labels on the same issue. See
+[`docs/kanzen/boring-loop.md`](kanzen/boring-loop.md) for the Kanzen gates and
+label values.
 
 Package labels: `package:core`, `package:agent`, `package:workspace`, `package:ui`, `package:cli`, `package:pi`.
 
