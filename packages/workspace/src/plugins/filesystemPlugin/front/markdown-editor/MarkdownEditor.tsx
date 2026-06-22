@@ -526,6 +526,7 @@ export function MarkdownEditor({
   // Stable ref so handlePaste (created once in useEditor) always calls the latest version.
   const insertImageRef = useRef<(file: File) => Promise<void>>(async () => {})
   insertImageRef.current = async (file: File) => {
+    userInteractedRef.current = true
     const editor = editorRef.current
     if (!editor) return
 
