@@ -1,0 +1,83 @@
+{
+  "name": "@hachej/boring-bi-dashboard",
+  "version": "0.1.53",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "description": "BI dashboard plugin primitives for Boring workspace: BSL-backed dashboard specs, charts, metrics, filters, and Perspective panels.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hachej/boring-ui"
+  },
+  "homepage": "https://github.com/hachej/boring-ui",
+  "boring": {
+    "id": "bi-dashboard",
+    "label": "BI Dashboard",
+    "front": "dist/front/index.js",
+    "server": false
+  },
+  "pi": {
+    "skills": [
+      "skills/bi-dashboard-authoring"
+    ],
+    "systemPrompt": "Use the bi-dashboard-authoring skill when the user asks to create, edit, or open a BI dashboard. Dashboard files should live under dashboards/*.dashboard.json."
+  },
+  "files": [
+    "dist",
+    "skills",
+    "example",
+    "playground",
+    "docs",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./front": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./shared": {
+      "types": "./dist/shared/index.d.ts",
+      "import": "./dist/shared/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "playground:eval": "tsx playground/run-eval.ts",
+    "lint": "pnpm run typecheck",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "peerDependencies": {
+    "@hachej/boring-workspace": "workspace:*",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "dependencies": {
+    "@hachej/boring-generated-pane": "workspace:*",
+    "@hachej/boring-ui-kit": "workspace:*",
+    "lucide-react": "^1.8.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-workspace": "workspace:*",
+    "@hachej/data-bridge": "workspace:*",
+    "@json-render/core": "^0.19.0",
+    "@json-render/react": "^0.19.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tsup": "^8.4.0",
+    "tsx": "^4.21.0",
+    "typescript": "~5.9.3",
+    "vitest": "^3.2.6"
+  }
+}

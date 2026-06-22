@@ -1,0 +1,16 @@
+*
+!.gitignore
+!README.md
+!dashboards/
+!dashboards/**
+!data/
+!data/**
+!eval/
+!eval/**
+!.pi/
+!.pi/extensions/
+!.pi/extensions/bi-dashboard/
+!.pi/extensions/bi-dashboard/package.json
+!.pi/extensions/bi-dashboard/front/
+!.pi/extensions/bi-dashboard/front/index.ts
+.pi/extensions/bi-dashboard/.boring-signature.json

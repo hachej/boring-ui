@@ -1,0 +1,12 @@
+*
+!.gitignore
+!README.md
+!panes/
+!panes/**
+!eval/
+!eval/**
+!.pi/
+!.pi/extensions/
+!.pi/extensions/generated-pane/
+!.pi/extensions/generated-pane/**
+.pi/extensions/generated-pane/.boring-signature.json

@@ -1,0 +1,138 @@
+{
+  "kind": "boring.generated-pane",
+  "profile": "bi-dashboard",
+  "version": 1,
+  "title": "People Operations Command Center",
+  "description": "An agent-authored BI dashboard rendered from safe JSON: controllers, metrics, charts, and Perspective-style tables.",
+  "queries": {
+    "total_revenue": {
+      "id": "total_revenue",
+      "model": "people",
+      "measures": ["revenue"],
+      "dataRef": { "kind": "workspace-file", "path": "data/people.csv" }
+    },
+    "headcount": {
+      "id": "headcount",
+      "model": "people",
+      "measures": ["count"],
+      "dataRef": { "kind": "workspace-file", "path": "data/people.csv" }
+    },
+    "revenue_by_role": {
+      "id": "revenue_by_role",
+      "model": "people",
+      "groupBy": ["role"],
+      "measures": ["revenue"],
+      "orderBy": [["revenue", "desc"]],
+      "dataRef": { "kind": "workspace-file", "path": "data/people.csv" }
+    },
+    "headcount_by_region": {
+      "id": "headcount_by_region",
+      "model": "people",
+      "groupBy": ["region"],
+      "measures": ["count"],
+      "orderBy": [["count", "desc"]],
+      "dataRef": { "kind": "workspace-file", "path": "data/people.csv" }
+    },
+    "revenue_by_region": {
+      "id": "revenue_by_region",
+      "model": "people",
+      "groupBy": ["region"],
+      "measures": ["revenue"],
+      "orderBy": [["revenue", "desc"]],
+      "dataRef": { "kind": "workspace-file", "path": "data/people.csv" }
+    },
+    "people_detail": {
+      "id": "people_detail",
+      "model": "people",
+      "groupBy": ["role", "region"],
+      "measures": ["revenue"],
+      "orderBy": [["revenue", "desc"]],
+      "dataRef": { "kind": "workspace-file", "path": "data/people.csv" }
+    }
+  },
+  "root": "dashboard",
+  "elements": {
+    "dashboard": {
+      "type": "DashboardGrid",
+      "props": { "columns": 12 },
+      "children": [
+        "summary",
+        "total-revenue",
+        "headcount",
+        "role-controller",
+        "region-controller",
+        "role-chart",
+        "region-chart",
+        "perspective-role",
+        "perspective-detail"
+      ]
+    },
+    "summary": {
+      "type": "BSLText",
+      "props": {
+        "markdown": "Control-plane view for a people/revenue dataset. The JSON spec defines only catalog components and data queries; the plugin decides how to render charts and Perspective-style tables."
+      }
+    },
+    "total-revenue": {
+      "type": "BSLMetric",
+      "props": { "queryId": "total_revenue", "valueField": "revenue", "label": "Total revenue", "format": "currency" }
+    },
+    "headcount": {
+      "type": "BSLMetric",
+      "props": { "queryId": "headcount", "valueField": "count", "label": "People", "format": "number" }
+    },
+    "role-controller": {
+      "type": "BSLFilter",
+      "props": { "id": "role-filter", "field": "role", "label": "Role controller", "controlType": "multiSelect", "targetQueries": ["revenue_by_role", "people_detail"] }
+    },
+    "region-controller": {
+      "type": "BSLFilter",
+      "props": { "id": "region-filter", "field": "region", "label": "Region controller", "controlType": "select", "targetQueries": ["headcount_by_region", "revenue_by_region", "people_detail"] }
+    },
+    "role-chart": {
+      "type": "BSLChart",
+      "props": {
+        "queryId": "revenue_by_role",
+        "title": "Revenue by role",
+        "renderer": "echarts",
+        "chartType": "bar",
+        "x": "role",
+        "y": "revenue",
+        "controls": ["role-filter"]
+      }
+    },
+    "region-chart": {
+      "type": "BSLChart",
+      "props": {
+        "queryId": "revenue_by_region",
+        "title": "Revenue by region",
+        "renderer": "echarts",
+        "chartType": "bar",
+        "x": "region",
+        "y": "revenue",
+        "controls": ["region-filter"]
+      }
+    },
+    "perspective-role": {
+      "type": "BSLPerspectiveViewer",
+      "props": {
+        "queryId": "headcount_by_region",
+        "title": "Perspective: headcount by region",
+        "plugin": "Y Bar",
+        "columns": ["region", "count"],
+        "sort": [["count", "desc"]]
+      }
+    },
+    "perspective-detail": {
+      "type": "BSLPerspectiveViewer",
+      "props": {
+        "queryId": "people_detail",
+        "title": "Perspective: role × region revenue",
+        "plugin": "Datagrid",
+        "columns": ["role", "region", "revenue"],
+        "groupBy": ["role"],
+        "sort": [["revenue", "desc"]]
+      }
+    }
+  }
+}
