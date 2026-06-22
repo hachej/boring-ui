@@ -32,6 +32,12 @@ The UI should show this as chips plus one sentence, not a wall of text.
   classify state, track, and next gate.
 - [`boring-orchestration`](../../.agents/skills/boring-orchestration/SKILL.md):
   run `/triage`, workers, review, proof, and merge decisions.
+- [`loop-grill`](../../.agents/skills/loop-grill/SKILL.md):
+  clarify blocked issues through grill-me and ask-user.
+- [`loop-plan`](../../.agents/skills/loop-plan/SKILL.md):
+  create the smallest useful plan and run thermo review when needed.
+- [`loop-implement`](../../.agents/skills/loop-implement/SKILL.md):
+  implement, review, prove, and prepare a PR.
 - [`sources/theo_loop.md`](sources/theo_loop.md): source transcript.
 - [`sources/steinberger_loop.md`](sources/steinberger_loop.md): source notes.
 
@@ -103,16 +109,17 @@ before merge.
 correct labels, and a first plan. If the report is unclear, create the issue as
 `state:blocked phase:grill`.
 
-`/loop-grill`: use the grill-me skill and ask-user pane. This can run now or
-wait asynchronously in the pending session list. Exit when the issue is clear.
+[`/loop-grill`](../../.agents/skills/loop-grill/SKILL.md): use the grill-me
+skill and ask-user pane. This can run now or wait asynchronously in the pending
+session list. Exit when the issue is clear.
 
-`/loop-plan`: produce the smallest useful plan. Use an inline plan for small
-work. Use a plan file plus thermo-nuclear review for important, risky, or
-multi-PR work.
+[`/loop-plan`](../../.agents/skills/loop-plan/SKILL.md): produce the smallest
+useful plan. Use an inline plan for small work. Use a plan file plus
+thermo-nuclear review for important, risky, or multi-PR work.
 
-`/loop-implement`: implement the plan, open/update the PR, run review/fix
-rounds, run thermo-nuclear implementation review when non-trivial, and collect
-proof.
+[`/loop-implement`](../../.agents/skills/loop-implement/SKILL.md): implement
+the plan, open/update the PR, run review/fix rounds, run thermo-nuclear
+implementation review when non-trivial, and collect proof.
 
 `/triage`: orchestrate the queue. It should perform one next action per issue,
 then record the new state/gate.
