@@ -135,6 +135,33 @@ describe("askUserPlugin front shell", () => {
     expect(screen.queryByText("Question for hidden session")).not.toBeInTheDocument()
   })
 
+  it("drops a hidden session question and retargets to the visible active session in multi-session mode", async () => {
+    const hiddenQuestion = { ...question, questionId: "multi-hide-q1", sessionId: "multi-hide-s1", title: "Hidden session question", answerToken: "multi-hide-token-1" }
+    const visibleQuestion = { ...nextQuestion, questionId: "multi-hide-q2", sessionId: "multi-hide-s2", title: "Visible session question", answerToken: "multi-hide-token-2" }
+    const pendingBySession = new Map<string, AskUserQuestion>([[hiddenQuestion.sessionId, hiddenQuestion], [visibleQuestion.sessionId, visibleQuestion]])
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
+        const body = JSON.parse(String(init?.body)) as { input?: { sessionId?: string } }
+        return Response.json({ ok: true, output: { pending: pendingBySession.get(body.input?.sessionId ?? "") ?? null } })
+      }
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateForMany([...pendingBySession.values()]))
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+    const Panel = getPanel()
+    const api = { close: vi.fn() }
+
+    const view = render(<Provider apiBaseUrl="" activeSessionId={hiddenQuestion.sessionId} openSessionIds={[hiddenQuestion.sessionId, visibleQuestion.sessionId]}><Panel params={{ sessionId: hiddenQuestion.sessionId, questionId: hiddenQuestion.questionId }} api={api} className="h-full" /></Provider>)
+    expect(await screen.findByText("Hidden session question")).toBeInTheDocument()
+
+    view.rerender(<Provider apiBaseUrl="" activeSessionId={visibleQuestion.sessionId} openSessionIds={[visibleQuestion.sessionId]}><Panel params={{ sessionId: hiddenQuestion.sessionId, questionId: hiddenQuestion.questionId }} api={api} className="h-full" /></Provider>)
+
+    expect(await screen.findByText("Visible session question")).toBeInTheDocument()
+    expect(screen.queryByText("Hidden session question")).not.toBeInTheDocument()
+    expect(api.close).not.toHaveBeenCalled()
+  })
+
   it("switches the Questions pane between independently pending active sessions", async () => {
     const s1Question = { ...question, questionId: "multi-switch-q1", sessionId: "multi-switch-s1", title: "Question for session one", answerToken: "multi-token-1" }
     const s2Question = { ...nextQuestion, questionId: "multi-switch-q2", sessionId: "multi-switch-s2", title: "Question for session two", answerToken: "multi-token-2" }
