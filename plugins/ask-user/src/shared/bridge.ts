@@ -68,29 +68,3 @@ export type AskUserBridgeTranscriptOutput = {
   events: AskUserTranscriptEvent[]
 }
 
-/** @deprecated Use ASK_USER_BRIDGE_OPS. */
-export const HUMAN_INPUT_OPS = ASK_USER_BRIDGE_OPS
-/** @deprecated Use ASK_USER_BRIDGE_CAPABILITIES. */
-export const HUMAN_INPUT_CAPABILITIES = ASK_USER_BRIDGE_CAPABILITIES
-
-/** @deprecated Use AskUserBridgeRequestInput. */
-export type HumanInputRequestInput = AskUserBridgeRequestInput
-/** @deprecated Use AskUserBridgeAnswerInput. */
-export type HumanInputAnswerInput = AskUserBridgeAnswerInput
-/** @deprecated Use AskUserBridgeCancelInput. */
-export type HumanInputCancelInput = AskUserBridgeCancelInput
-/** @deprecated Use AskUserBridgePendingInput. */
-export type HumanInputPendingInput = AskUserBridgePendingInput
-/** @deprecated Use AskUserBridgeTranscriptInput. */
-export type HumanInputTranscriptInput = AskUserBridgeTranscriptInput
-/** @deprecated Use AskUserBridgeRequestOutput. */
-export type HumanInputRequestOutput = AskUserBridgeRequestOutput
-/** @deprecated Use AskUserBridgeMutationOutput. */
-export type HumanInputMutationOutput = AskUserBridgeMutationOutput
-/** @deprecated Use AskUserBridgePendingOutput. */
-export type HumanInputPendingOutput = AskUserBridgePendingOutput
-/** @deprecated Use AskUserBridgeTranscriptOutput. */
-export type HumanInputTranscriptOutput = AskUserBridgeTranscriptOutput
-/** @deprecated Use AskUserBridgeAnswerOutput. */
-export type HumanInputAnswerOutput = AskUserBridgeAnswerOutput
-

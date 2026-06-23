@@ -1,6 +1,5 @@
 export {
   WORKSPACE_ATTENTION_ACTION_EVENT,
-  LEGACY_WORKSPACE_INPUT_ATTENTION_REASON,
   WorkspaceAttentionProvider,
   emitWorkspaceAttentionAction,
   useWorkspaceAttention,

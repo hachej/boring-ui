@@ -328,7 +328,6 @@ export {
   useWorkspaceContext,
   useWorkspaceContextOptional,
   useWorkspaceChatPanel,
-  LEGACY_WORKSPACE_INPUT_ATTENTION_REASON,
   WORKSPACE_ATTENTION_ACTION_EVENT,
   emitWorkspaceAttentionAction,
   useWorkspaceAttention,
