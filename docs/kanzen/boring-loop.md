@@ -50,8 +50,6 @@ Keep the loop about routing and gates. Put mechanics here:
 
 - [`procedures/branch-worktree.md`](procedures/branch-worktree.md):
   branch, worktree, lane, and stacked-PR mechanics.
-- [`procedures/review-loop.md`](procedures/review-loop.md):
-  autoreview and thermo review loop.
 - [`procedures/proof-of-work.md`](procedures/proof-of-work.md):
   proof comment, demo workspace proof, and evidence.
 - [`procedures/owner-review-card.md`](procedures/owner-review-card.md):
@@ -134,7 +132,7 @@ useful plan. Use an inline plan for small work. Use a plan file plus
 thermo-nuclear review for important, risky, or multi-PR work.
 
 [`/loop-implement`](../../.agents/skills/loop-implement/SKILL.md): implement
-the plan, open/update the PR, run review/fix rounds, and collect proof.
+the plan, run review/fix rounds, open/update the PR, and collect proof.
 
 One implementation lane owns one issue/PR and may use bounded helpers. Use
 procedures for branch/worktree, review, proof, and owner handoff details.

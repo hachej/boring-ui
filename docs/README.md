@@ -71,8 +71,6 @@ standalone (`createAgentApp`) with zero core dependency.
 - [`kanzen/`](kanzen/) — analysis of a 5-minute maintainer triage loop for repo routing, worker lanes, proof gates, owner decisions, and budgeted autonomy.
 - [`kanzen/procedures/branch-worktree.md`](kanzen/procedures/branch-worktree.md) — branch,
   worktree, lane, and stacked-PR mechanics.
-- [`kanzen/procedures/review-loop.md`](kanzen/procedures/review-loop.md) — autoreview,
-  thermo review, fix, and re-review loop.
 - [`kanzen/procedures/proof-of-work.md`](kanzen/procedures/proof-of-work.md) — required GitHub proof-of-work procedure for PRs.
 - [`kanzen/procedures/owner-review-card.md`](kanzen/procedures/owner-review-card.md) — human
   review handoff card for PRs that need owner review.
