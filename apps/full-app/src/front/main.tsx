@@ -130,8 +130,11 @@ createRoot(document.getElementById('root')!).render(
       }}
       authPages={{ userSettings: AccountSettingsPage }}
       topBarRight={
-        <div className="flex w-full min-w-0 flex-col gap-1.5">
-          <CreditBalanceBadge buyEnabled={buyEnabled} />
+        <div className="flex w-full min-w-0 flex-col gap-1">
+          <div className="flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-[12px] text-muted-foreground">
+            <span>Credits</span>
+            <CreditBalanceBadge buyEnabled={buyEnabled} />
+          </div>
           <UserMenu variant="bar" contentSide="top" contentAlign="start" />
         </div>
       }

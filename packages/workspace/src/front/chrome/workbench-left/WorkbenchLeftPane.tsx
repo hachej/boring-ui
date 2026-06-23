@@ -241,6 +241,12 @@ export function WorkbenchLeftPane({
       )}
       {tabs.map((entry) => {
         const active = entry.id === activeTab
+        // Accent (orange) only when the plugin's content is actually visible: a
+        // "source" lives in the collapsible left pane → accent only while it's
+        // expanded; a "workspace-page" is a full window → accent once it's open.
+        // When a source is selected but the left pane is collapsed, show a quiet
+        // neutral highlight, not the accent.
+        const showAccent = active && (entry.kind === "workspace-page" || !railOnly)
         return (
           <ControlTooltip key={entry.id} label={entry.title} side="right">
             <button
@@ -255,11 +261,18 @@ export function WorkbenchLeftPane({
               }}
               className={cn(
                 "relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                // Open plugin must be obvious: accent-coloured icon on a clearly
-                // elevated chip (the previous bg-muted/35 matched the rail, so
-                // the active state was invisible).
-                active && "bg-foreground/[0.10] text-[color:var(--accent)] shadow-sm hover:bg-foreground/[0.10] hover:text-[color:var(--accent)]",
               )}
+              // Inline (not arbitrary Tailwind classes) so it applies even when
+              // the host's prebuilt CSS doesn't include these classes. Open plugin
+              // (pane visible) = accent icon on an elevated chip; selected but
+              // collapsed = quiet neutral, no accent.
+              style={
+                showAccent
+                  ? { color: "var(--accent)", backgroundColor: "color-mix(in oklch, var(--foreground) 10%, transparent)" }
+                  : active
+                    ? { backgroundColor: "color-mix(in oklch, var(--foreground) 6%, transparent)" }
+                    : undefined
+              }
             >
               {entry.icon}
             </button>

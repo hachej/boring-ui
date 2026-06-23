@@ -136,14 +136,12 @@ export function AppLeftPane({
           the app title, so it never reads "Seneca AI / Seneca AI"). In
           multi-project mode the host topSlot (switcher) can replace the label. */}
       <div className="shrink-0 border-b border-border/60 px-2 pb-2 pt-2">
-        <div className="flex h-8 items-center gap-2.5 pl-11 pr-1">
-          <span
-            aria-hidden="true"
-            className="grid size-7 shrink-0 place-items-center rounded-md bg-foreground text-[12px] font-semibold text-background"
-          >
-            {(appTitle || "B").charAt(0).toUpperCase()}
-          </span>
-          <span className="truncate text-[14px] font-semibold tracking-tight text-foreground" data-boring-workspace-part="app-left-pane-brand">
+        {/* Text-only brand: the collapse button is the only box at the top-left,
+            so a glyph box here collided with it. Inline paddingLeft clears the
+            fixed collapse button (inline so it works even if the Tailwind class
+            isn't in the host's prebuilt CSS). */}
+        <div className="flex h-8 items-center pr-1" style={{ paddingLeft: "2.5rem" }}>
+          <span className="truncate text-[15px] font-semibold tracking-tight text-foreground" data-boring-workspace-part="app-left-pane-brand">
             {appTitle || "Boring UI"}
           </span>
         </div>
