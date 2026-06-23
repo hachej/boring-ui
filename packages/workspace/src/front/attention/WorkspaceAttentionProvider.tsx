@@ -51,8 +51,8 @@ export function emitWorkspaceAttentionAction(detail: WorkspaceAttentionActionDet
 
 export function workspaceAttentionSessionBadgeForBlocker(blocker: Pick<WorkspaceAttentionBlocker, "reason" | "sessionBadge">): WorkspaceAttentionSessionBadge | null {
   if (blocker.sessionBadge) return blocker.sessionBadge
-  // Runtime compatibility for older blockers. Do not export this reason as a
-  // public constant: new plugins must provide their own sessionBadge.
+  // Runtime compatibility for older blockers. New plugins must provide their
+  // own sessionBadge instead of relying on this deprecated public reason.
   if (blocker.reason === LEGACY_WORKSPACE_INPUT_ATTENTION_REASON) return { kind: "needs-input", label: "needs input", tone: "attention", priority: -1 }
   return null
 }
