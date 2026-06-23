@@ -72,6 +72,9 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Build package artifacts for full-app typecheck
+        run: pnpm run build:packages
+
       - name: Typecheck full-app
         run: pnpm --filter full-app run typecheck
 
