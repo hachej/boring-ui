@@ -822,7 +822,7 @@ convenience accessors `command.stdout()` + `command.stderr()` by choice,
 not necessity. `DirectSandbox` and `BwrapSandbox` use `child_process`
 which has streamed via `child.stdout.on('data', ...)` since forever.
 
-**Mitigation: bead `uhwx.5b` (a new precursor)** extends `ExecOptions`
+**Mitigation: task `uhwx.5b` (a new precursor)** extends `ExecOptions`
 with optional `onStdout`/`onStderr` callbacks and updates all three
 sandbox adapters to invoke them as bytes arrive. ~4-6 hours total. Gates
 `uhwx.6` (vercel*Ops) and `uhwx.7` (buildHarnessAgentTools) since both

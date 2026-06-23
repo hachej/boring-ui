@@ -3,12 +3,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { withBeadId } from '../../server/__tests__/_setup'
+import { withTaskId } from '../../server/__tests__/_setup'
 import type { EnrichedMember } from '../hooks/useWorkspaceMembers'
 import { useWorkspaceMembers } from '../hooks/useWorkspaceMembers'
 import { useMswHandler } from './_setup'
 
-const BEAD_ID = 'boring-ui-v2-0o1k'
+const TASK_ID = 'boring-ui-v2-0o1k'
 const WS_ID = 'ws-001'
 
 const MEMBERS: EnrichedMember[] = [
@@ -66,7 +66,7 @@ afterEach(() => {
 describe('useWorkspaceMembers', () => {
   it(
     'fetches and returns enriched member list',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
 
       useMswHandler(async (input) => {
@@ -107,7 +107,7 @@ describe('useWorkspaceMembers', () => {
 
   it(
     'does not fetch when workspaceId is empty',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       let fetchCalled = false
 
@@ -137,7 +137,7 @@ describe('useWorkspaceMembers', () => {
 
   it(
     'encodes workspaceId in the members URL',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       const workspaceId = 'team/a b'
       let requestedUrl = ''
@@ -176,7 +176,7 @@ describe('useWorkspaceMembers', () => {
 
   it(
     'exposes error when API returns 500',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       vi.spyOn(console, 'error').mockImplementation(() => {})
 

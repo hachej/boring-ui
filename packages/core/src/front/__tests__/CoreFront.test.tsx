@@ -19,13 +19,13 @@ vi.mock('better-auth/client/plugins', () => ({
   magicLinkClient: () => ({ id: 'magic-link' }),
 }))
 
-import { withBeadId } from '../../server/__tests__/_setup'
+import { withTaskId } from '../../server/__tests__/_setup'
 import type { RuntimeConfig } from '../../shared/types'
 import { CoreFront } from '../CoreFront'
 import { useTopBarSlot } from '../components/TopBarSlot'
 import { useMswHandler } from './_setup'
 
-const BEAD_ID = 'boring-ui-v2-p2at'
+const TASK_ID = 'boring-ui-v2-p2at'
 
 function stubMatchMedia() {
   Object.defineProperty(window, 'matchMedia', {
@@ -122,7 +122,7 @@ afterEach(() => {
 describe('CoreFront', () => {
   it(
     'renders real SignInPage at /auth/signin',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       setupAll()
       render(<CoreFront />)
 
@@ -135,7 +135,7 @@ describe('CoreFront', () => {
 
   it(
     'accepts authPages override prop',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       setupAll()
       const CustomSignIn = () => <div data-testid="custom-signin">Custom</div>
 
@@ -151,7 +151,7 @@ describe('CoreFront', () => {
 
   it(
     'renders child Route elements alongside defaults',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       setupAll()
       window.history.pushState({}, '', '/custom')
 
@@ -170,7 +170,7 @@ describe('CoreFront', () => {
 
   it(
     'AppErrorBoundary catches ConfigProvider failure',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       vi.spyOn(console, 'error').mockImplementation(() => {})
 
       useMswHandler(async (input) => {
@@ -201,7 +201,7 @@ describe('CoreFront', () => {
 
   it(
     'all default routes are mounted',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       setupAll()
       const routes: Array<{ path: string; marker: string }> = [
         { path: '/auth/signin', marker: 'Sign in' },
@@ -232,7 +232,7 @@ describe('CoreFront', () => {
 
   it(
     'threads csp nonce into Helmet script tags',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       setupAll()
       render(<CoreFront cspNonce="test-nonce-123" />)
 
@@ -250,7 +250,7 @@ describe('CoreFront', () => {
 
   it(
     'redirects authenticated auth pages through the router without a document reload',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       setupAll()
       mockUseSession.mockReturnValue({
         data: {
@@ -276,7 +276,7 @@ describe('CoreFront', () => {
 
   it(
     'provides UserMenu through the top bar slot context',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       setupAll()
       mockUseSession.mockReturnValue({
         data: {
