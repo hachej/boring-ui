@@ -248,6 +248,10 @@ export function SurfaceShell({
   const containerRef = useRef<HTMLDivElement | null>(null)
   const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const [api, setApi] = useState<DockviewApi | null>(null)
+  // Active dockview panel id, tracked reactively so the workbench rail can accent
+  // a workspace-page icon only while its page is the focused surface tab (the rail's
+  // own activeTab is set on icon-click and goes stale when you switch surface tabs).
+  const [activeSurfacePanelId, setActiveSurfacePanelId] = useState<string | null>(null)
   const [fileTreeRevealRequest, setFileTreeRevealRequest] = useState<{ path: string; seq: number } | null>(null)
   const onReadyRef = useRef(onReady)
   onReadyRef.current = onReady
@@ -534,6 +538,7 @@ export function SurfaceShell({
     // dockview instance lives for the SurfaceShell's entire lifetime, and
     // SurfaceShell unmounts disposes the dockview itself.
     const emit = () => {
+      setActiveSurfacePanelId(ready.activePanel?.id ?? null)
       onChangeRef.current?.(getSnapshot())
       emitBridgeState()
     }
@@ -749,6 +754,7 @@ export function SurfaceShell({
             bridge={bridge}
             defaultTab={defaultLeftTab}
             activeTab={activeLeftTab}
+            activePanelId={activeSurfacePanelId}
             onActiveTabChange={setActiveLeftTab}
             revealFileTreeRequest={fileTreeRevealRequest}
             onOpenPanel={openPanelSync}

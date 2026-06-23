@@ -38,6 +38,12 @@ export interface WorkbenchLeftPaneProps {
   bridge?: FileTreeBridge
   defaultTab?: WorkbenchLeftTabId
   activeTab?: WorkbenchLeftTabId
+  /**
+   * Id of the currently-focused surface tab (dockview's active panel). Drives the
+   * accent for "workspace-page" rail icons so a page only glows while it's the open
+   * tab — `activeTab` is the rail's own click state and goes stale on tab switches.
+   */
+  activePanelId?: string | null
   onActiveTabChange?: (tab: WorkbenchLeftTabId) => void
   revealFileTreeRequest?: { path: string; seq: number } | null
   onOpenPanel?: (config: WorkbenchLeftPaneOpenPanelConfig) => void
@@ -54,6 +60,7 @@ export function WorkbenchLeftPane({
   bridge,
   defaultTab,
   activeTab: controlledActiveTab,
+  activePanelId,
   onActiveTabChange,
   revealFileTreeRequest,
   onOpenPanel,
@@ -240,13 +247,19 @@ export function WorkbenchLeftPane({
         </PaneCollapseButton>
       )}
       {tabs.map((entry) => {
-        const active = entry.id === activeTab
-        // Accent (orange) only when the plugin's content is actually visible: a
-        // "source" lives in the collapsible left pane → accent only while it's
-        // expanded; a "workspace-page" is a full window → accent once it's open.
-        // When a source is selected but the left pane is collapsed, show a quiet
-        // neutral highlight, not the accent.
-        const showAccent = active && (entry.kind === "workspace-page" || !railOnly)
+        // A "source" lives in the collapsible left pane: its "selected" state is the
+        // rail's own activeTab. A "workspace-page" is a full-window surface tab: its
+        // "selected" state is whether it's the focused surface tab (activePanelId),
+        // NOT the rail click — otherwise the icon stays lit after you switch tabs.
+        const isPage = entry.kind === "workspace-page"
+        const active = isPage ? entry.id === activePanelId : entry.id === activeTab
+        // At most ONE plugin is "focused" (accent/orange) at a time. A source pane and
+        // a page surface tab can be open at once (source on the left, page in the main
+        // area), so gate by railOnly (= source pane collapsed): while a source pane is
+        // open the active source is focused; while it's collapsed the active surface
+        // page is focused. The other, if still open, falls through to the quiet neutral
+        // highlight below — never a second accent.
+        const showAccent = isPage ? active && railOnly : active && !railOnly
         return (
           <ControlTooltip key={entry.id} label={entry.title} side="right">
             <button
