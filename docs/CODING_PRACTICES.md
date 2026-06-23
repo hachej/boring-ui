@@ -1,6 +1,8 @@
 # Coding Practices
 
-Project-wide engineering rules for boring-ui v2. `AGENTS.md` stays short and points here.
+Project-wide engineering rules for boring-ui v2. `AGENTS.md` stays short and
+points here. This file is not the coding workflow; the canonical workflow lives
+in [`AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md).
 
 ## Safety
 

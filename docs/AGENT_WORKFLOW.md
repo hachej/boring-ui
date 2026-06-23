@@ -1,6 +1,23 @@
 # Agent Workflow
 
-Operational workflow for agents working in boring-ui v2.
+Canonical coding workflow for agents working in boring-ui v2.
+
+This file is the single source of truth for how coding work moves from task
+selection to implementation, review, proof, commit, and GitHub labeling. Keep
+`AGENTS.md` and `CLAUDE.md` as routing files; do not duplicate coding workflow
+steps there.
+
+## Sources Of Truth
+
+| Concern | Source |
+| --- | --- |
+| Hard rules and routing | [`AGENTS.md`](../AGENTS.md) |
+| Coding workflow | this file |
+| Engineering invariants | [`docs/CODING_PRACTICES.md`](CODING_PRACTICES.md) |
+| Proof comments | [`docs/procedures/proof-of-work.md`](procedures/proof-of-work.md) |
+| Kanzen maintainer loop | [`docs/kanzen/boring-loop.md`](kanzen/boring-loop.md) |
+
+Kanzen routes GitHub work into this workflow; it does not replace it.
 
 ## Tools
 
@@ -14,11 +31,12 @@ Operational workflow for agents working in boring-ui v2.
 | MCP Agent Mail | Peer coordination, claims, reservations | register, fetch inbox, send `[CLAIM]` / `[DONE]` |
 | `vault kv get/list` | Read-only secrets for agent/shared paths | never commit or log secrets |
 
-Hard rules:
+Workflow guardrails:
 
-- Never launch bare `bv`.
+- Root hard rules live in [`AGENTS.md`](../AGENTS.md) and always apply.
+- Never launch bare `bv`; use only `bv --robot-*`.
 - Never edit `.beads/*.jsonl` by hand.
-- Never commit secrets.
+- Never commit or log secrets.
 - Use MCP tools natively; do not wrap them with ad hoc HTTP clients.
 
 ## Session startup

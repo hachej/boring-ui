@@ -3,7 +3,8 @@
 Read this first. Re-read after compaction.
 
 This file is intentionally lean: it contains only hard rules and routing pointers.
-Detailed coding practices, workflow, architecture, and package docs live under `docs/`.
+The canonical coding workflow lives in [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md).
+Detailed coding practices, architecture, and package docs live under `docs/`.
 
 ## Hard rules
 
@@ -24,7 +25,7 @@ Detailed coding practices, workflow, architecture, and package docs live under `
 | --- | --- |
 | Project/package map | [`docs/README.md`](docs/README.md) |
 | Coding best practices, invariants, commands | [`docs/CODING_PRACTICES.md`](docs/CODING_PRACTICES.md) |
-| Agent/bead workflow, review, commit, GitHub labels | [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md) |
+| Canonical coding workflow, review, commit, GitHub labels | [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md) |
 | Architecture decisions | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
 | Agent ↔ workspace contract | [`docs/WORKSPACE_CONTRACT.md`](docs/WORKSPACE_CONTRACT.md) |
 | Proof-of-work comments | [`docs/procedures/proof-of-work.md`](docs/procedures/proof-of-work.md) |
@@ -63,8 +64,5 @@ See [`docs/CODING_PRACTICES.md`](docs/CODING_PRACTICES.md#critical-architectural
 
 ## When coding
 
-1. State assumptions if the task is ambiguous.
-2. Make surgical, minimal changes.
-3. Add/update tests for behavior changes.
-4. Run relevant checks.
-5. For bead work, follow [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md).
+Follow [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md). Do not add alternate
+coding workflow steps here; keep this file to hard rules and routing.

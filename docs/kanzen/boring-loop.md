@@ -9,6 +9,10 @@ Boring Loop is the smallest useful maintainer system:
 
 Autonomy is not a mood. It is a label plus passed gates.
 
+Boundary: Boring Loop decides what should happen next for GitHub work. Actual
+coding work still follows the canonical workflow in
+[`../AGENT_WORKFLOW.md`](../AGENT_WORKFLOW.md).
+
 ## One Screen
 
 Every issue card should be understandable from these columns:

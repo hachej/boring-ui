@@ -6,8 +6,10 @@ describes: every substantial package has its own `docs/README.md` covering its
 architecture, abstractions, and decisions. Read this file first, then descend
 only into the package you're working on.
 
-Rules and coding guidance for agents live in [`AGENTS.md`](../AGENTS.md) (imported
-by `CLAUDE.md`).
+Agent hard rules and routing live in [`AGENTS.md`](../AGENTS.md) (imported by
+`CLAUDE.md`). The canonical coding workflow lives in
+[`AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md). Engineering practices and invariants
+live in [`CODING_PRACTICES.md`](CODING_PRACTICES.md).
 
 ## What this is
 
@@ -55,8 +57,12 @@ standalone (`createAgentApp`) with zero core dependency.
 
 ## Cross-cutting docs (this folder)
 
-- [`CODING_PRACTICES.md`](CODING_PRACTICES.md) — engineering rules, simplicity/surgical-change guidance, commands, and invariant details referenced by `AGENTS.md`.
-- [`AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md) — bead workflow, cross-review, commits, Agent Mail, labels, and proof-of-work pointers.
+- [`CODING_PRACTICES.md`](CODING_PRACTICES.md) — engineering rules,
+  simplicity/surgical-change guidance, commands, and invariant details
+  referenced by `AGENTS.md`; not a workflow doc.
+- [`AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md) — single source of truth for the
+  coding workflow: bead selection, cross-review, commits, Agent Mail, labels,
+  and proof-of-work pointers.
 - [`DECISIONS.md`](DECISIONS.md) — locked architectural decisions registry for the agent runtime (what/why/rationale/re-evaluate-when). Changing a locked decision requires updating this doc.
 - [`REVIEW_DECISIONS.md`](REVIEW_DECISIONS.md) — what was adopted vs deferred from external reviews; check before re-litigating "why don't we have X".
 - [`WORKSPACE_CONTRACT.md`](WORKSPACE_CONTRACT.md) — the agent ↔ workspace integration contract: HTTP routes, component exports, UiBridge/UiCommand semantics, import boundaries.
