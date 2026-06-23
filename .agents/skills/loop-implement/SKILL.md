@@ -15,7 +15,7 @@ merge by default.
 | scope | one GitHub issue or PR in one repo |
 | branch | `codex/issue-<number>-<slug>` unless instructed otherwise |
 | helpers | allowed only for bounded subfeatures, review, investigation, or proof |
-| proof | must match final head SHA |
+| proof | follow `docs/procedures/proof-of-work.md`; must match final head SHA |
 | stop | missing owner input, access, destructive action, release/publish, or unsafe merge |
 
 ## Flow
@@ -62,10 +62,12 @@ Please test:
 Decision needed:
 ```
 
-Use a demo/dev URL when UI or workspace behavior can be validated manually. If
-no demo is available, say why and list the closest proof. Make `Please test`
-concrete enough that Julien can approve or reject without reconstructing the
-whole PR.
+First post the final proof comment required by
+`docs/procedures/proof-of-work.md`. The card's `Proof:` field summarizes or
+links to that proof; it does not replace it. Use a demo/dev URL when UI or
+workspace behavior can be validated manually. If no demo is available, say why
+and list the closest proof. Make `Please test` concrete enough that Julien can
+approve or reject without reconstructing the whole PR.
 
 ## Helpers
 

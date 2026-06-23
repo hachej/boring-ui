@@ -143,6 +143,8 @@ then record the new state/gate.
   verify.
 - Owner review card shows PR, issue, risk, proof, demo URL when relevant, and
   the exact decision needed.
+- Proof follows [`../procedures/proof-of-work.md`](../procedures/proof-of-work.md);
+  the review card summarizes that proof instead of replacing it.
 
 ## Maintenance
 
