@@ -1,0 +1,71 @@
+# Kamal template for the no-domain self-host v0.
+# Copy outside git as deploy.full-app.production.yml and replace placeholders with
+# the App VM Tailscale hostname plus vault-backed env files before use.
+#
+# Important: deployd/operator must verify the GHCR digest and provenance before
+# running Kamal. Kamal deploys the commit tag only after that digest check passes.
+
+service: boring-full-app
+image: ghcr.io/OWNER/boring-ui-full-app
+
+registry:
+  server: ghcr.io
+  username:
+    - KAMAL_REGISTRY_USERNAME
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+servers:
+  web:
+    hosts:
+      - REPLACE_WITH_APP_VM_TAILSCALE_HOSTNAME
+    options:
+      security-opt: no-new-privileges:true
+      read-only: false
+
+# No public proxy/domain for v0. Access should be over Tailscale or an explicit
+# local tunnel only. Add proxy/Cloudflare hostnames later at public cutover.
+
+ssh:
+  user: debian
+
+builder:
+  arch: amd64
+  context: .
+  dockerfile: apps/full-app/Dockerfile
+  target: web-runtime
+  args:
+    REVISION: <%= ENV.fetch("BORING_DEPLOY_COMMIT") %>
+    SOURCE: https://github.com/hachej/boring-ui
+
+env:
+  clear:
+    NODE_ENV: production
+    HOST: 0.0.0.0
+    PORT: 3000
+    BORING_AGENT_MODE: vercel-sandbox
+    BORING_AGENT_WORKSPACE_ROOT: /data/workspaces
+    BORING_AGENT_SESSION_ROOT: /data/pi-sessions
+    BORING_AGENT_SNAPSHOT_KEEP: "2"
+  secret:
+    - DATABASE_URL
+    - DATABASE_MIGRATION_URL
+    - BETTER_AUTH_SECRET
+    - BETTER_AUTH_URL
+    - CORS_ORIGINS
+    - WORKSPACE_SETTINGS_ENCRYPTION_KEY
+    - MAIL_FROM
+    - MAIL_TRANSPORT_URL
+    - BORING_AGENT_DEFAULT_MODEL_PROVIDER
+    - BORING_AGENT_DEFAULT_MODEL_ID
+    - INFOMANIAK_API_TOKEN
+    - BORING_AGENT_INFOMANIAK_PRODUCT_ID
+    - BORING_AGENT_INFOMANIAK_MODEL
+    - VERCEL_TEAM_ID
+    - VERCEL_PROJECT_ID
+    - VERCEL_TOKEN
+    - BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS
+
+volumes:
+  - /data/pi-sessions:/data/pi-sessions
+  - /data/workspaces:/data/workspaces

@@ -64,6 +64,7 @@ standalone (`createAgentApp`) with zero core dependency.
 - [`PERFORMANCE.md`](PERFORMANCE.md) — historical Vercel-sandbox vs local FS latency benchmarks (harness removed; kept for reference).
 - [`kanzen/`](kanzen/) — analysis of a 5-minute maintainer orchestration loop for repo triage, worker threads, proof gates, owner decisions, and budgeted autonomy.
 - [`procedures/proof-of-work.md`](procedures/proof-of-work.md) — required GitHub proof-of-work procedure for PRs.
+- [`deployment/self-host/`](deployment/self-host/README.md) — planning artifacts and templates for the public full-app App VM + DB VM self-host deployment with Vercel Sandbox.
 - [`web/`](web/README.md) — human-oriented guide: architecture overview, full package map, getting started, composition guide, design FAQ, troubleshooting map, per-package explainers, glossary. Orientation, not normative spec — canonical specs live in `packages/*/docs/`.
 
 ## Normative specs (code cites these)
