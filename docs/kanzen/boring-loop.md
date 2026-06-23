@@ -124,6 +124,12 @@ thermo-nuclear review for important, risky, or multi-PR work.
 the plan, open/update the PR, run review/fix rounds, run thermo-nuclear
 implementation review when non-trivial, and collect proof.
 
+One implementation lane owns one issue/PR, one branch/worktree, and one final
+proof trail. That lane can use bounded helpers for isolated subfeatures,
+thermo review, narrow investigation, or demo proof. Helpers report back to the
+lane; they do not merge, change labels, ask Julien directly, or create more
+lanes.
+
 `/triage`: orchestrate the queue. It should perform one next action per issue,
 then record the new state/gate.
 
