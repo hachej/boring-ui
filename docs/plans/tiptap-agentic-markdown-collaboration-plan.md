@@ -241,7 +241,7 @@ Range policy:
 
 Phase 1 supports only direct apply. Do **not** add `preview` to shared contracts until Phase 3. If future compatibility is needed, reserve an opaque `options?: { experimental?: Record<string, unknown> }` field, but do not add enum values that every implementation must branch on before they work.
 
-The operation executor is the canonical abstraction. Agent tools map onto `MarkdownOperation[]`; UI bridge commands transport `MarkdownOperation[]`; TipTap and headless adapters execute `MarkdownOperation[]`.
+The operation executor is the canonical abstraction. Agent tools map onto `MarkdownOperation[]`; UI bridge commands transport `MarkdownOperation[]`; TipTap and headless adapters execute `MarkdownOperation[]`. Multi-operation requests must be preflighted and applied atomically, or rejected before mutation. No implementation may partially apply an operation batch and then return an error.
 
 ### D. Document mode policy
 
